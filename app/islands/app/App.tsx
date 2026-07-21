@@ -31,6 +31,7 @@ import {
   handleShortcutArrowNav,
   handleShortcutSearchFocusKey,
   handleShortcutSizeKey,
+  handleZoomWheel,
   handleEscDismissDetail,
   handleOutsideClickDismissDetail,
   handleTabBarKeydown,
@@ -161,11 +162,16 @@ function GlobalShortcuts() {
       handleShortcutSizeKey(e);
     };
     const onMouseup = (e: MouseEvent) => handleShortcutMouseNav(e);
+    // Ctrl+wheel = content size (#141). Non-passive on purpose: the handler
+    // preventDefaults to keep Chromium's page zoom out of the grid.
+    const onWheel = (e: WheelEvent) => handleZoomWheel(e);
     document.addEventListener('keydown', onKeydown);
     window.addEventListener('mouseup', onMouseup);
+    window.addEventListener('wheel', onWheel, { passive: false });
     return () => {
       document.removeEventListener('keydown', onKeydown);
       window.removeEventListener('mouseup', onMouseup);
+      window.removeEventListener('wheel', onWheel);
     };
   }, []);
   return null;

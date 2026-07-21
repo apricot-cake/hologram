@@ -85,8 +85,8 @@
       'display:none',
       'flex-direction:column',
       'align-items:center',
-      'gap:10px',
-      'padding:26px 22px 22px',
+      'gap:14px',
+      'padding:32px 22px 28px',
       'border-radius:20px',
       'border:1px solid transparent', // themed surface props (border-color/background/…) land in setState
       `font:600 14px/1.5 ${G.FONT_SANS}`,
@@ -102,7 +102,7 @@
     el.appendChild(ring);
 
     const badge = document.createElement('div');
-    badge.style.cssText = `width:52px;height:52px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:${G.ACCENT_SOFT};color:${G.ACCENT_TEXT};pointer-events:none;transition:background ${G.DUR_HOVER}ms,color ${G.DUR_HOVER}ms;`;
+    badge.style.cssText = `width:60px;height:60px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:${G.ACCENT_SOFT};color:${G.ACCENT_TEXT};pointer-events:none;transition:background ${G.DUR_HOVER}ms,color ${G.DUR_HOVER}ms;`;
     el.appendChild(badge);
 
     const label = document.createElement('div');

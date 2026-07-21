@@ -71,7 +71,17 @@
     RING: 'rgba(255,255,255,0.30)', // dashed drop-target ring, resting
     RING_ACCENT: 'rgba(94,197,236,0.85)', // dashed ring while dragging over (sky-300 tier)
     CARD_BG: 'rgba(20, 22, 26, 0.86)', // app --scrim-bg (scrim solid, no blur)
-    CARD_BORDER: 'rgba(255,255,255,0.16)',
+    // The card's only outline against an arbitrary host page, so it carries the
+    // whole "this surface is separate from the site" job. The white must stay
+    // heavy: background-clip defaults to border-box, so the border composites
+    // over the dark fill, and a low alpha resolves to grey rather than white.
+    // At 0.16 the edge resolved to roughly rgb(57,59,62) on every dark host —
+    // 1.5:1 against X's dim and pixiv's grey, 1.8:1 against X's true black,
+    // all under the 3:1 tier for a meaningful boundary. 0.45 clears 3:1 on all
+    // four reference hosts (worst case the white page at 3.15:1, the darks at
+    // 4.1–5.1:1). The drop shadow is no help on the dark side — it is black, so
+    // it vanishes on exactly the pages where the fill stops separating too.
+    CARD_BORDER: 'rgba(255,255,255,0.45)',
     CARD_SHADOW: '0 12px 36px -8px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.10)',
     // App --font-sans: system stack with Japanese fallbacks (banner strings are
     // Japanese-primary; the host page's own font must not leak in).
