@@ -69,9 +69,14 @@ const evalJs = `(async () => {
   const postCards = () => [...document.querySelectorAll('#postGrid .post-card')];
   const cardOf = (key) => document.querySelector('#postGrid .post-card[data-key="' + key + '"]');
   const selectedKeys = () => [...document.querySelectorAll('#postGrid .post-card.selected')].map(c => c.dataset.key).sort();
+  const selectedCard = () => document.querySelector('#postGrid .post-card.selected');
+  const selectedIndex = () => { const c = selectedCard(); return c ? Number(c.dataset.index) : -1; };
+  const arrow = (key) => document.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }));
   const click = (el, mods) => el && el.dispatchEvent(new MouseEvent('click', Object.assign({ bubbles: true }, mods)));
   const dblclick = (el) => el && el.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
   const inspVisible = () => byId('postDetail') && !byId('postDetail').hidden;
+  // The peek overlay is conditionally rendered (P2⑦) — its presence IS its open state.
+  const peekOpen = () => !!document.querySelector('[data-slot="lightbox"]');
   const errors = [];
   window.addEventListener('error', (e) => errors.push(String((e && e.message) || e)));
   const out = {};
@@ -84,17 +89,17 @@ const evalJs = `(async () => {
   // B. plain click = single-select + inspector (post kind, no poster head)
   click(cardOf('dummy-c1'));
   out.inspOpenedB = await waitFor(inspVisible);
-  out.inspIsPost = inspVisible() && !byId('postDetail').querySelector('.iv-poster-head');
+  out.inspIsPost = inspVisible() && !!byId('postDetail').querySelector('[data-slot="inspector-post"]');
   await sleep(60);
   out.selAfterB = selectedKeys().join(',');
 
   // C. inspector preview thumbnail → quick-view lightbox (peek); Esc closes it
-  const thumb = byId('postDetail').querySelector('.iv-insp-thumb');
-  out.thumbPeekable = !!(thumb && thumb.classList.contains('iv-insp-thumb--peek'));
+  const thumb = byId('postDetail').querySelector('[data-slot="inspector-thumb"]');
+  out.thumbPeekable = !!(thumb && thumb.getAttribute('data-peek') === 'true');
   click(thumb);
-  out.lightboxOpened = await waitFor(() => byId('lightbox') && byId('lightbox').childElementCount > 0);
+  out.lightboxOpened = await waitFor(() => peekOpen());
   document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-  out.lightboxClosed = await waitFor(() => byId('lightbox') && byId('lightbox').childElementCount === 0);
+  out.lightboxClosed = await waitFor(() => !peekOpen());
 
   // D. Ctrl-click adds a second card (plain click above kept c1 selected)
   click(cardOf('dummy-c2'), { ctrlKey: true });
@@ -105,13 +110,33 @@ const evalJs = `(async () => {
   // selected now, so Space must NOT open the lightbox), then collapse to one and retry.
   document.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', code: 'Space', bubbles: true }));
   await sleep(80);
-  out.spaceIgnoredForMulti = !(byId('lightbox') && byId('lightbox').childElementCount > 0);
+  out.spaceIgnoredForMulti = !(peekOpen());
   click(cardOf('dummy-c1')); // collapse to a single selection
   await sleep(60);
   document.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', code: 'Space', bubbles: true }));
-  out.spacePeeked = await waitFor(() => byId('lightbox') && byId('lightbox').childElementCount > 0);
+  out.spacePeeked = await waitFor(() => peekOpen());
   document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-  await waitFor(() => byId('lightbox') && byId('lightbox').childElementCount === 0);
+  await waitFor(() => !peekOpen());
+
+  // D3. Arrow keys move the single selection through the grid (P2⑥), and the
+  // inspector follows — the pair that makes 連続タグ付け a composition. Starts from
+  // the MIDDLE card so both directions have somewhere to go whatever the sort is.
+  click(cardOf('dummy-c2'));
+  await sleep(60);
+  const startIdx = Number(cardOf('dummy-c2').dataset.index);
+  arrow('ArrowRight');
+  await sleep(80);
+  out.arrowRightSel = selectedKeys().join(',');
+  out.arrowRightStep = selectedIndex() - startIdx;
+  out.arrowFollowsInspector = selectedCard() && selectedCard().classList.contains('inspected');
+  arrow('ArrowLeft');
+  arrow('ArrowLeft');
+  await sleep(80);
+  out.arrowLeftStep = selectedIndex() - startIdx;
+  // Clamps at the first card instead of wrapping to the last.
+  arrow('ArrowLeft');
+  await sleep(80);
+  out.arrowClampedAtStart = selectedIndex() === 0;
 
   // The 投稿者 nav's active state tracks browseMode (grids are CSS-hidden, not
   // unmounted, so poster cards stay in the DOM — the active nav is the mode marker).
@@ -125,7 +150,7 @@ const evalJs = `(async () => {
   // F. plain click a poster → poster inspector (has the poster head block)
   document.querySelector('#posterGrid .poster-card')?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
   out.inspOpenedF = await waitFor(inspVisible);
-  out.inspIsPoster = inspVisible() && !!byId('postDetail').querySelector('.iv-poster-head');
+  out.inspIsPoster = inspVisible() && !!byId('postDetail').querySelector('[data-slot="inspector-poster"]');
 
   // G. double-click a poster → drill into their posts (browseMode leaves posters)
   dblclick(document.querySelector('#posterGrid .poster-card'));
@@ -177,6 +202,10 @@ child.on('close', () => {
     ['Ctrl-click adds a second card', r.selAfterD === 'dummy-c1,dummy-c2'],
     ['Space is ignored while multiple are selected', r.spaceIgnoredForMulti === true],
     ['Space peeks the single selected card', r.spacePeeked === true],
+    ['→ moves the selection one card and keeps it single', r.arrowRightStep === 1 && r.arrowRightSel.split(',').length === 1],
+    ['arrow movement swaps the inspector to the new card', r.arrowFollowsInspector === true],
+    ['← moves the selection back', r.arrowLeftStep === -1],
+    ['← clamps at the first card instead of wrapping', r.arrowClampedAtStart === true],
     ['poster cards render', r.posterCardsShown === true],
     ['poster cards have no ℹ button', r.posterHoverInfo === 0],
     ['plain click opens the poster inspector', r.inspOpenedF === true && r.inspIsPoster === true],

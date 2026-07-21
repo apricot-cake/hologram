@@ -1,7 +1,7 @@
 // Presentational post card — the one cell component of the virtualized grid
 // island (islands/grid). Emits the same DOM contract the old string-template
 // path did — `.post-card[data-url/data-index/data-key]` with the
-// `.act-pill`, `.clip-btn[data-clip]` / `.tag-btn[data-tagedit]` hover buttons,
+// `.act-pill`, the `.clip-btn[data-clip]` hover button,
 // `.card-thumb > .card-img`,
 // `.card-ntag`, `.card-overlay`, and the `.post-meta` block.
 // That contract is LOAD-BEARING: every delegated click/contextmenu/dblclick
@@ -113,9 +113,6 @@ export function PostCard({ m, L, cellRef, onImgLoad }: { m: PostCardModel; L: Re
       <div className="act-pill" aria-hidden="true" />
       <button className={'clip-btn' + (m.clipped ? ' in' : '')} data-clip={m.index} data-tip={L.tipClip} aria-label={L.tipClip}>
         <ClipIcon />
-      </button>
-      <button className="tag-btn" data-tagedit={m.index} data-tip={L.tipTagEdit} aria-label={L.tipTagEdit}>
-        <TagIcon />
       </button>
       {/* draggable on the video placeholder only — an <img> already is by default.
           Both hand the gesture to the #postGrid dragstart delegate, which cancels

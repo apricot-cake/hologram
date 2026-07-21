@@ -3,6 +3,7 @@ import { useEffect, useLayoutEffect, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
 import { AppShell } from '../shell/AppShell.tsx';
 import { get as confirmGet, subscribe as confirmSubscribe } from '../../renderer/confirm.ts';
+import { isOpen as lightboxIsOpen, subscribe as lightboxSubscribe } from '../../renderer/lightbox.ts';
 import { ConfirmHost } from '../confirm/Confirm.tsx';
 import { PromptHost } from '../prompt/Prompt.tsx';
 import { ContextMenuHost } from '../context-menu/ContextMenu.tsx';
@@ -10,7 +11,7 @@ import { FolderManagerHost } from '../folders/FolderManagerModal.tsx';
 import { KindMenuHost } from '../kind-menu/KindMenu.tsx';
 import { LightboxHost } from '../lightbox/index.tsx';
 import { SettingsHost } from '../settings/index.tsx';
-import { TagPopHost } from '../tag-pop/TagPop.tsx';
+import { BulkTagDialogHost } from '../selection/BulkTagDialog.tsx';
 import { Toaster } from '@/components/ui/sonner';
 import { TooltipHost } from '../tooltip/TooltipHost.tsx';
 import { onPostsChanged } from '../../renderer/posts.ts';
@@ -27,6 +28,7 @@ import {
   handleShortcutSelectAllKey,
   handleShortcutCopyKey,
   handleShortcutQuickView,
+  handleShortcutArrowNav,
   handleShortcutSearchFocusKey,
   handleShortcutSizeKey,
   handleZoomWheel,
@@ -109,15 +111,19 @@ function ShellClasses() {
 // the recolor, the dedupe, the paint-timing deferral — is gone.
 function ModalChrome() {
   // Scroll-lock (`.modal-open` = overflow:hidden) is for the LEGACY overlays that aren't Base
-  // UI (folder modal + lightbox) plus the confirm AlertDialog. The shadcn Dialog/AlertDialog
-  // lock their own scroll, so settings isn't in this set.
+  // UI (the folder modal) plus the confirm AlertDialog and the quick-view peek. The shadcn
+  // Dialog/AlertDialog lock their own scroll, so settings isn't in this set.
+  //
+  // The peek is a plain subscription now that it is React-rendered (P2⑦) — no DOM
+  // visibility to observe. The folder modal keeps the MutationObserver until ⑧ reworks it.
   const confirmOpen = useSyncExternalStore(confirmSubscribe, () => !!confirmGet());
+  const peekOpen = useSyncExternalStore(lightboxSubscribe, lightboxIsOpen);
   useEffect(() => {
-    const ids = ['ivFolderModal', 'lightbox'];
+    const ids = ['ivFolderModal'];
     const visible = (el: HTMLElement | null) => !!el && !el.hasAttribute('hidden') && getComputedStyle(el).display !== 'none';
     const sync = () => {
       const legacy = ids.some((id) => visible(document.getElementById(id)));
-      const scrollLock = confirmOpen || legacy;
+      const scrollLock = confirmOpen || peekOpen || legacy;
       document.documentElement.classList.toggle('modal-open', scrollLock);
       document.body.classList.toggle('modal-open', scrollLock);
     };
@@ -131,7 +137,7 @@ function ModalChrome() {
       });
     sync();
     return () => observers.forEach((mo) => mo.disconnect());
-  }, [confirmOpen]);
+  }, [confirmOpen, peekOpen]);
   return null;
 }
 
@@ -151,6 +157,7 @@ function GlobalShortcuts() {
       handleShortcutSelectAllKey(e);
       handleShortcutCopyKey(e);
       handleShortcutQuickView(e);
+      handleShortcutArrowNav(e);
       handleShortcutSearchFocusKey(e);
       handleShortcutSizeKey(e);
     };
@@ -288,22 +295,23 @@ export function App() {
           with the shell-embedded islands (tabs / grids / inspector / image-tab / search /
           chips / empty / mirror) rendered in place (redesign §3, P1-2..P1-5). */}
       <AppShell />
-      {/* Body-level overlays. Menus / confirm / tag-pop / toaster / tooltip self-portal onto
-          document.body; the lightbox / settings / folder-modal still portal into the three
-          overlay containers kept static in index.html (folded into the shell when those
-          surfaces are reworked — lightbox P2⑦ / settings P2⑩ / folders P2⑧). */}
+      {/* Body-level overlays. Menus / confirm / dialogs / toaster / tooltip / quick-view peek
+          self-portal onto document.body; settings and the folder modal still portal into the
+          two overlay containers kept static in index.html (folded into the shell when those
+          surfaces are reworked — settings P2⑩ / folders P2⑧). */}
       <ContextMenuHost />
       <KindMenuHost />
-      <TagPopHost />
       <ConfirmHost />
       {/* Shared naming dialog (prompt.ts bridge) — window.prompt is unavailable in
           the Electron renderer, so naming flows go through this instead. A shadcn
           Dialog, so it locks its own scroll and needs no ModalChrome entry. */}
       <PromptHost />
+      {/* Bulk tagging for the selection (bulk-tag.ts bridge, P2⑦) — the one tagging
+          flow that stages before it writes, so it gets a Dialog rather than the
+          inspector's inline field. */}
+      <BulkTagDialogHost />
       <FolderManagerHost />
-      <Portal id="lightbox">
-        <LightboxHost />
-      </Portal>
+      <LightboxHost />
       <Portal id="settingsRoot">
         <SettingsHost />
       </Portal>

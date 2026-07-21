@@ -7,6 +7,11 @@
    pre-paint boot), not the shadcn default .dark class — match both. */
 @custom-variant dark (&:is(.dark *, [data-theme=dark] *));
 
+/* a11y escape hatch for the backdrop-filter surfaces (the legacy sheet has its own
+   copy of this for the surfaces it still owns). Solid-color fallbacks opt in per
+   utility rather than a blanket override, so each surface picks its own opaque tone. */
+@custom-variant reduced-transparency (@media (prefers-reduced-transparency: reduce));
+
 @theme inline {
     --font-heading: var(--font-sans);
     --font-sans: 'Geist Variable', sans-serif;

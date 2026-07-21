@@ -72,7 +72,7 @@ export function makeTags(deps: {
 
   // Tag vocabulary grouped by tag-group (defined groups in order, then 未分類 =
   // ungrouped tags that exist on posts), each section filtered by `query`. Shared
-  // by the inspector's TagEditor and the bulk edit modal (via inspectorTagPickerData).
+  // by the inspector's tag field and the bulk tag dialog (via inspectorTagPickerData).
   function groupedTagVocab(query: string, opts?: { scope?: 'post' | 'poster' } | null): Array<{ name: string; tags: string[] }> {
     const scope = (opts && opts.scope) || 'post';
     const q = (query || '').toLowerCase();

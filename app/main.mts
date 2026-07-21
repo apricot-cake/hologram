@@ -1286,7 +1286,11 @@ if (!gotSingleInstanceLock) {
           quit('SMOKE_OK');
         }, 1300),
       );
-      setTimeout(() => quit('SMOKE_TIMEOUT'), 9000);
+      // Backstop for a renderer that never answers, not a budget for the eval: the
+      // eval scripts carry their own waitFor timeouts, so a real hang still ends here
+      // while a legitimately long flow (multi-step UI harnesses) is not cut off
+      // mid-run — which reads as "no eval result" and is easy to misread as a bug.
+      setTimeout(() => quit('SMOKE_TIMEOUT'), 25000);
       return;
     }
 

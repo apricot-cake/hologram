@@ -5,14 +5,15 @@
 // functions in. selection.ts (the hologramStore-backed selectedSet/anchor
 // bridge) stays untouched — this module is one of its consumers (the
 // selection-bar island's own model derivation is the other, unaffected here).
-// タグを追加 (openTagPopForSelection) is bulk-edit-builder.ts territory
-// (re-targeted at tag-pop for Issue #22). It's constructed right after this module
+// タグを追加 (openBulkTagDialog) is bulk-edit-builder.ts territory
+// (re-targeted at a Dialog in P2⑦). It's constructed right after this module
 // in viewer.ts (needs this module's own selectedRecords), so this module only
 // calls it via a deferred dep, same shape as jumpToPoster/showToast forward-
 // references in inspector-builder.ts.
 import * as selection from './selection.ts';
 import * as folders from './folders.ts';
 import { isOpen as lightboxIsOpen } from './lightbox.ts';
+import { gridColumnCount, scrollGridIndexIntoView } from './grid-nav.ts';
 import { postIdKey } from './records.ts';
 import { deletePost } from './posts.ts';
 import { get as confirmGet, open as confirmOpen } from './confirm.ts';
@@ -29,9 +30,9 @@ export interface SelectionBarDeps {
   loadPosts(keepLimit?: boolean): Promise<void>;
   persistManual(): void;
   showFoldMenu(g: HologramPostGroup, x: number, y: number): void;
-  // openTagPopForSelection lives in bulk-edit-builder.ts — a
-  // deferred dep, same shape as jumpToPoster/showToast in inspector-builder.ts.
-  openTagPopForSelection(anchorRect: HologramAnchorRect): void;
+  // openBulkTagDialog lives in bulk-edit-builder.ts — a deferred dep, same shape
+  // as jumpToPoster/showToast in inspector-builder.ts.
+  openBulkTagDialog(): void;
   // browseMode is a viewer.ts `let` (read/written outside this cluster too) — a
   // getter since its value changes over the module's lifetime.
   getBrowseMode(): string;
@@ -42,6 +43,10 @@ export interface SelectionBarDeps {
   // 未決事項3). Same wiring as the inspector thumbnail's onThumbClick;
   // orchestrator supplies the gallery items.
   openQuickView(g: HologramPostGroup): void;
+  // Swap the inspector to a group — inspector-builder.ts's showDetail, so arrow
+  // movement lands the same way a plain click does. A deferred dep for the same
+  // reason as openBulkTagDialog: it is constructed after this module.
+  showDetail(g: HologramPostGroup): void;
 }
 
 export function makeSelectionBar(deps: SelectionBarDeps) {
@@ -194,6 +199,58 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
     deps.openQuickView(groups[0]);
   }
 
+  // Arrow keys move the selection through the grid (redesign P2⑥, the last piece of
+  // it). This is what makes 連続タグ付け a composition instead of a dedicated mode:
+  // filter to 「タグなし」, then arrow to the next card and type into the inspector's
+  // tag field — the same loop Lightroom and Eagle give you without a tagging screen.
+  //
+  // Left/Right step one card; Up/Down step one ROW, which is why the column count has
+  // to come from the live layout (renderer/grid-nav.ts) rather than the model — masonic
+  // derives it from the container width. Movement clamps at both ends (no wrap): in a
+  // grid, wrapping from the last card to the first is disorienting and no file manager
+  // or photo library does it.
+  //
+  // Plain arrows only. Shift+Arrow (extend the range) is deliberately NOT wired: the
+  // range primitive here moves the anchor to the new index on every call, so repeated
+  // extends would only ever grow the selection and could never shrink it back — the
+  // opposite of what Shift+Arrow means. Doing it properly needs a fixed anchor plus a
+  // separate cursor, which is its own change.
+  //
+  // Same guard shape as the Space peek below it, plus one of its own: with no anchor
+  // and no single selection there is nothing to move FROM, so the first press selects
+  // the first card rather than guessing. Registration lives in the GlobalShortcuts
+  // component (app/islands/app/App.tsx).
+  function handleShortcutArrowNav(e: KeyboardEvent) {
+    if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return;
+    const step = e.key === 'ArrowLeft' ? -1 : e.key === 'ArrowRight' ? 1 : e.key === 'ArrowUp' ? -gridColumnCount() : e.key === 'ArrowDown' ? gridColumnCount() : 0;
+    if (!step) return;
+    const t = e.target as HTMLElement | null;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+    if (confirmGet() || lightboxIsOpen()) return;
+    if (settingsIsOpen()) return;
+    if (!byId('ivFolderModal').hidden) return;
+    if (document.body.classList.contains('image-tab-active')) return;
+    if (deps.getBrowseMode() !== 'posts') return;
+    const groups = deps.getViewGroups();
+    if (groups.length === 0) return;
+    e.preventDefault(); // the grid scrolls on arrows otherwise, and the selection would slide out of view
+
+    // Where we are: the anchor is authoritative (selectOnly/toggle keep it current).
+    // It's null after select-all / clear / a deselecting toggle, so fall back to a lone
+    // selected card, then to "nothing yet" — where the first press lands on card 0.
+    const selected = selection.selectedGroups(groups, postIdKey);
+    const from = selection.anchorIndex() ?? (selected.length === 1 ? groups.indexOf(selected[0]) : -1);
+    const next = from < 0 ? 0 : Math.min(groups.length - 1, Math.max(0, from + step));
+    if (next === from) return; // already at that edge — don't churn the inspector
+
+    const g = groups[next];
+    if (!g) return;
+    selection.selectOnly(next, postIdKey(g.rep));
+    syncSelectionClasses();
+    scrollGridIndexIntoView(next);
+    deps.showDetail(g); // the inspector follows, exactly as it does for a plain click
+  }
+
   function requestDeleteSelected() {
     if (selection.size() === 0) return;
     confirmOpen({
@@ -216,13 +273,13 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
   // FloatingBar.tsx) — it calls these named actions straight through orchestrator's
   // exports (onClick → function), so there's no #selectionBar container, no data-act
   // DOM contract, and no delegated dispatcher anymore (redesign §8-1 ゼロ許容). The
-  // pop-anchored actions (tag / folder) take the clicked button's rect so their
-  // pop/menu opens against it (Base UI collision-flips it above the bottom bar).
+  // The one menu-anchored action left (folder) takes the clicked button's rect so
+  // its menu opens against it (Base UI collision-flips it above the bottom bar).
 
-  // タグを追加: open the bulk tag-pop anchored to the button (reworked to an inspector-
-  // inline / Dialog editor in P2⑦; the tag-pop path stands in until then).
-  function tagSelection(anchorRect: HologramAnchorRect) {
-    deps.openTagPopForSelection(anchorRect);
+  // タグを追加: stage tags for the whole selection in a Dialog (P2⑦). Centered and
+  // modal, so unlike the folder menu below it takes no anchor rect.
+  function tagSelection() {
+    deps.openBulkTagDialog();
   }
 
   // フォルダに追加: open the folder picker for the whole selection (you choose the
@@ -246,6 +303,7 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
     handleShortcutSelectAllKey,
     handleShortcutCopyKey,
     handleShortcutQuickView,
+    handleShortcutArrowNav,
     toggleSelectAll,
     groupSelected,
     requestDeleteSelected,

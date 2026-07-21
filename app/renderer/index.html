@@ -674,22 +674,6 @@
     .poster-foot { display: flex; align-items: center; gap: 8px; margin-top: 4px; min-width: 0; }
     .poster-foot .pf-tag { display: inline-flex; align-items: center; gap: 5px; font-size: 10px; letter-spacing: .04em; text-transform: uppercase; color: var(--text-muted); white-space: nowrap; }
     .poster-count { font-size: 11px; color: var(--text-subtle); white-space: nowrap; }
-    /* Hover actions float over the avatar (top-right) — dark glass so they read on any
-       avatar (card + tile). Mirror the library card: 🏷 tag → 🔖 collection → ℹ info
-       (L→R). List overrides them to plain ghost buttons over the row. */
-    .poster-info, .poster-tag {
-      position: absolute; top: 8px; width: 26px; height: 26px;
-      display: flex; align-items: center; justify-content: center;
-      border: none; border-radius: 50%; cursor: pointer; padding: 0; opacity: 0;
-      background: rgba(0,0,0,.34); color: #fff;
-      transition: opacity .15s, background .15s, color .15s, transform .15s;
-    }
-    .poster-info { right: 8px; }
-    .poster-tag { right: 38px; }
-    .poster-card:hover .poster-info, .poster-info:focus-visible,
-    .poster-card:hover .poster-tag, .poster-tag:focus-visible { opacity: 1; }
-    .poster-info:hover, .poster-tag:hover { background: rgba(0,0,0,.5); transform: scale(1.1); }
-    .poster-info svg, .poster-tag svg { width: 16px; height: 16px; display: block; }
     /* Tile density: same avatar-led square but meta OVERLAID (compact, no card chrome). */
     .poster-grid.tile-view .poster-card { border-radius: 12px; }
     .poster-grid.tile-view .poster-meta { position: absolute; left: 0; right: 0; bottom: 0; gap: 1px; padding: 18px 10px 8px; background: linear-gradient(to top, rgba(0,0,0,.72), rgba(0,0,0,0)); pointer-events: none; }
@@ -708,8 +692,6 @@
        second circle (the fixed row height makes the frame's cqw scaling moot here). */
     .poster-grid.list-view .poster-mono { width: 100%; height: 100%; font-size: 15px; }
     .poster-grid.list-view .poster-meta { flex: 1; padding: 0; }
-    .poster-grid.list-view .poster-info, .poster-grid.list-view .poster-tag { background: transparent; color: var(--text-subtle); }
-    .poster-grid.list-view .poster-info:hover, .poster-grid.list-view .poster-tag:hover { background: var(--hover); color: var(--text); }
     #posterControls .poster-sort-title { margin-top: 0; }
     #posterFilterRows { margin-top: 22px; }
     /* Poster toggle row (no flyout): active = monotone contrast
@@ -734,21 +716,6 @@
     .pf-new { display: flex; gap: 6px; margin-top: 8px; }
     .pf-new-input { flex: 1; min-width: 0; padding: 5px 8px; border: 1px solid var(--border-strong); border-radius: 7px; background: var(--field-bg); color: var(--text); font-size: 12.5px; }
     .pf-new-btn { flex: none; }
-    /* Inspector folder chips (toggle membership + ＋ new). */
-    .iv-poster-folders-row .iv-insp-v { width: 100%; }
-    .iv-poster-folder-chips { display: flex; flex-wrap: wrap; gap: 5px; }
-    .iv-folder-chip { font-size: 11px; padding: 3px 9px; border-radius: 999px; border: 1px solid var(--border); background: var(--chip-bg); color: var(--text); cursor: pointer; white-space: nowrap; }
-    .iv-folder-chip:hover { background: var(--chip-bg-hover); }
-    .iv-folder-chip.on { background: var(--accent-subtle); color: var(--text-strong); border-color: var(--accent-soft); }
-    .iv-folder-add { color: var(--text-muted); font-weight: 600; }
-    /* Poster inspector header: bigger avatar + name (reuses .iv-insp-avatar sizing). */
-    .iv-poster-head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; padding-right: 20px; }
-    .iv-poster-head .iv-insp-avatar { width: 40px; height: 40px; }
-    .iv-poster-head .iv-poster-name { flex: 1; font-size: 15px; font-weight: 600; color: var(--text); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    /* Recent works strip in the poster inspector — preview of who this poster is. */
-    .iv-poster-works { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; margin-top: 12px; }
-    .iv-poster-thumb { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 7px; cursor: pointer; background: var(--surface-3); border: 1px solid var(--border-soft); transition: transform .15s; }
-    .iv-poster-thumb:hover { transform: scale(1.04); }
     /* Poster-mode sidebar controls: only while browsing posters. */
     #posterControls, #posterViewSection { display: none; }
     body.browse-posters #posterControls, body.browse-posters #posterViewSection { display: block; }
@@ -1048,7 +1015,7 @@
     /* Selection mode (≥1 selected): clicking anywhere on a card toggles it, so
        every ring stays visible and the per-card hover actions step aside. */
     .post-grid.selecting .select-check { opacity: 1; }
-    .post-grid.selecting .info-btn, .post-grid.selecting .clip-btn, .post-grid.selecting .tag-btn, .post-grid.selecting .act-pill { display: none; }
+    .post-grid.selecting .info-btn, .post-grid.selecting .clip-btn, .post-grid.selecting .act-pill { display: none; }
     .post-grid.selecting:not(.tile-view) .card-ntag { opacity: 0; }
     /* every click selects now — plain pointer everywhere (no zoom-in over images,
        no "click to expand" hint on the text) */
@@ -1113,18 +1080,16 @@
        180×0.13=23.4px) rounds width and height differently at fractional
        display scaling and the circles render as slight ellipses */
     .post-grid.tile-view { --act: round(nearest, clamp(18px, calc(var(--tile-size, 180px) * 0.13), 26px), 1px); }
-    .post-grid.tile-view .info-btn, .post-grid.tile-view .clip-btn, .post-grid.tile-view .tag-btn {
+    .post-grid.tile-view .info-btn, .post-grid.tile-view .clip-btn {
       width: var(--act); height: var(--act); top: 6px; font-size: calc(var(--act) * 0.55);
     }
-    /* Same relative order as card/list (🏷 → 🔖 → ℹ, left to right) */
+    /* Same relative order as card/list (🔖 → ℹ, left to right) */
     .post-grid.tile-view .info-btn { right: 6px; }
     .post-grid.tile-view .clip-btn { right: calc(6px + var(--act) + 4px); }
-    .post-grid.tile-view .tag-btn { right: calc(6px + 2 * (var(--act) + 4px)); }
     .post-grid.tile-view .act-pill { width: var(--act); height: var(--act); top: 6px; right: 6px; }
     .post-grid.tile-view .post-card:has(.clip-btn:hover) .act-pill { right: calc(6px + var(--act) + 4px); }
     .post-grid.tile-view .post-card:has(.info-btn:hover) .act-pill { right: 6px; }
-    .post-grid.tile-view .post-card:has(.tag-btn:hover) .act-pill { right: calc(6px + 2 * (var(--act) + 4px)); }
-    .post-grid.tile-view .info-btn svg, .post-grid.tile-view .clip-btn svg, .post-grid.tile-view .tag-btn svg { width: 60%; height: 60%; }
+    .post-grid.tile-view .info-btn svg, .post-grid.tile-view .clip-btn svg { width: 60%; height: 60%; }
     .post-grid.tile-view .post-card:hover { box-shadow: var(--shadow-md); }
     .post-grid.tile-view .card-img { width: 100%; height: 100%; max-height: none; object-fit: cover; }
     .post-grid.tile-view .post-meta { display: none; }
@@ -1236,24 +1201,9 @@
     }
     .file-input-hidden { display: none; }
 
-    /* --- Image lightbox --- */
-    .lightbox-overlay {
-      display: none; position: fixed; inset: 0;
-      /* Quick Look-style: lighter dim + blur so the grid ghosts behind the
-         image instead of vanishing — keeps spatial context, image still pops. */
-      background: rgba(0,0,0,0.72); z-index: 11000;
-      backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
-      justify-content: center; align-items: center;
-      cursor: zoom-out;
-    }
-    .lightbox-overlay.show { display: flex; }
-    .lightbox-overlay img, .lightbox-overlay video {
-      max-width: 95vw; max-height: 95vh; object-fit: contain;
-      border-radius: 4px;
-    }
     .card-video { display: flex; align-items: center; justify-content: center; min-height: 120px; background: var(--surface-2); color: var(--text-muted); font-size: 30px; cursor: pointer; }
-    /* #143: the lightbox is a single-image peek — no prev/next nav or page counter
-       (full gallery paging lives in the image view). */
+    /* The quick-view peek overlay is Tailwind in islands/lightbox now (P2⑦) — it was
+       .lightbox-overlay here while #lightbox was a static container. */
 
     /* --- Image tab (type:'image') — fit-to-screen detail view --- */
     /* The active image tab swaps the browse chrome (query bar / sidebar / grid)
@@ -1311,24 +1261,6 @@
     /* --- Tags --- */
     .tags-label { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 4px; }
     .tag-chip { font-size: 10px; background: var(--surface-3); border-radius: 10px; padding: 1px 8px; color: var(--text-muted); }
-    /* タグ編集ダイアログ: チップクリック＝削除なので、ホバーで控えめな赤に
-       （srgb 混合 — oklch でサーフェスと混ぜると紫に寄って見える） */
-    #editTagsList .tag-chip:hover { background: color-mix(in srgb, var(--red-500) 20%, transparent); color: var(--danger); }
-    /* Tag chips (removable) + a grouped, searchable picker of every existing tag
-       (recognition over recall) + free-text create — shared by TagEditor.tsx's
-       callers (tag-pop is the only one left, Issue #22). */
-    .edit-current { display: flex; flex-wrap: wrap; gap: 4px; margin: 8px 0 10px; }
-    .edit-addrow { display: flex; gap: 6px; }
-    .edit-addrow input { flex: 1; padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; background: var(--surface); color: var(--text); outline: none; }
-    .edit-addrow input:focus { border-color: var(--accent); }
-    .edit-addrow .btn-outline { padding: 6px 12px; flex-shrink: 0; }
-    .edit-picker { margin-top: 12px; max-height: 260px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding-right: 2px; }
-    .edit-pick-gname { font-size: 10px; font-weight: 600; color: var(--text-subtle); text-transform: uppercase; letter-spacing: .3px; margin-bottom: 5px; }
-    .edit-pick-chips { display: flex; flex-wrap: wrap; gap: 5px; }
-    .edit-pick-chip { display: inline-flex; align-items: center; gap: 5px; border: none; background: var(--chip-bg); color: var(--text); border-radius: 999px; padding: 4px 11px; font-size: 12px; cursor: pointer; transition: background .12s, box-shadow .12s, color .12s; }
-    .edit-pick-chip:hover { background: var(--chip-bg-hover); }
-    .edit-pick-chip.on { box-shadow: inset 0 0 0 1.5px var(--accent-soft); color: var(--text-strong); font-weight: 600; }
-    .edit-empty { font-size: 12px; color: var(--text-subtle); }
     /* Flags (リプライ/引用/動画 etc.): quiet muted text, NOT boxed chips —
        the boxed-tint chips were more outlined boxes (wireframe feel) and
        競合した with the real value chips in the sidebar. */
@@ -1349,7 +1281,7 @@
     /* Hover buttons are glass-chrome (icon-only, floating OVER the thumbnail).
        The blur layer is enabled only on the hovered card so 150
        offscreen-invisible buttons don't each cost a backdrop pass. */
-    .post-card:hover .clip-btn, .post-card:hover .info-btn, .post-card:hover .tag-btn {
+    .post-card:hover .clip-btn, .post-card:hover .info-btn {
       backdrop-filter: var(--chrome-glass-blur); -webkit-backdrop-filter: var(--chrome-glass-blur);
     }
     .post-card:hover .clip-btn { opacity: 1; }
@@ -1370,15 +1302,6 @@
     .fold-menu.kind-menu { z-index: 13500; }   /* above the edit modal (13000) so the 種別 menu shows on top */
     .fold-menu.show { display: block; animation: hologramPopIn var(--dur-pop) var(--ease-out) both; }
     .fold-menu.qf-pop.show { display: flex; flex-direction: column; max-height: calc(100vh - var(--tabbar-h) - 16px); }
-    /* Tag picker pop (Issue #22): the single popup for 🏷 / inspector ✎ / selection
-       bar "タグを追加". Fixed width (chip wrap assumes it, unlike qf-pop's
-       max-content). TagPop.tsx caps the pop's own max-height (viewport clamp) but
-       does NOT make the pop itself scroll — .edit-picker (below) already owns the
-       one scroll region, so chips/input stay put and only the vocab list scrolls. */
-    .fold-menu.tag-pop { width: 320px; max-width: 320px; }
-    .tag-pop-footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border); }
-    .tag-pop-hint { font-size: 11px; color: var(--text-subtle); }
-    .tag-pop-apply { flex-shrink: 0; padding: 6px 12px; background: var(--accent); color: #fff; border-color: var(--accent); }
     .fold-menu .fm-row {
       display: flex; align-items: center; gap: 6px; padding: 5px 8px;
       border-radius: 5px; cursor: pointer; font-size: 12px; color: var(--text);
@@ -1426,21 +1349,6 @@
     .post-card:hover .info-btn { opacity: 1; }
     .post-grid.list-view .info-btn { top: 50%; right: 8px; transform: translateY(-50%); }
 
-    /* --- 🏷 edit-tags button on card (third hover pill, left of ℹ/🔖). The
-       2-button cap was lifted to 3 (🔖ws · ℹinfo · 🏷tags) by user call. --- */
-    .tag-btn {
-      position: absolute; top: 8px; right: 72px;
-      width: 28px; height: 28px; border-radius: 50%;
-      background: var(--chrome-glass-bg); color: #fff; border: none;
-      box-shadow: inset 0 1px 0 rgba(255,255,255,0.18);
-      display: flex; align-items: center; justify-content: center;
-      cursor: pointer; opacity: 0; transition: opacity 0.15s, background 0.15s;
-      z-index: 1;
-    }
-    .tag-btn svg { display: block; }
-    .post-card:hover .tag-btn { opacity: 1; }
-    .post-grid.list-view .tag-btn { top: 50%; right: 72px; transform: translateY(-50%); }
-
     /* Liquid hover highlight: ONE accent blob shared by the two hover buttons,
        gliding between them (iPadOS pointer-style), driven by :has() — no JS.
        It sits under the buttons (earlier in DOM, same z-index), so opaque
@@ -1459,7 +1367,6 @@
     }
     .post-card:has(.clip-btn:hover) .act-pill { right: 40px; opacity: 1; }
     .post-card:has(.info-btn:hover) .act-pill { right: 8px; opacity: 1; }
-    .post-card:has(.tag-btn:hover) .act-pill { right: 72px; opacity: 1; }
     .post-grid.list-view .act-pill { top: 50%; transform: translateY(-50%); }
 
     /* --- Popovers --- */
@@ -1858,21 +1765,17 @@
 <body>
   <!-- Legacy shell markup removed (redesign P1 cutover): the React AppShell
        (islands/shell/AppShell.tsx) now owns the tab bar, sidebar, toolbar, grid host
-       and inspector. The three overlay containers below (#ivFolderModal / #lightbox /
-       #settingsRoot) stay static until their surfaces are reworked (P2 ⑦/⑧/⑩). -->
+       and inspector. The two overlay containers below (#ivFolderModal / #settingsRoot)
+       stay static until their surfaces are reworked (P2 ⑧/⑩). -->
 
   <!-- Folder management modal (shared by both modes) — React island (FolderManagerModal,
        app/islands/folders) owns the content + [hidden] visibility; folders.ts's
        openManager()/closeManager() drive it. -->
   <div id="ivFolderModal" class="iv-detail-overlay" hidden></div>
 
-  <!-- Image quick-view peek — React island (renderer/lightbox.ts + islands/lightbox)
-       owns the overlay contents + show class; orchestrator.ts feeds it the one item. -->
-  <div class="lightbox-overlay" id="lightbox"></div>
-
-  <!-- Bulk "add tags to selection" is the tag-pop React island now (Issue #22,
-       app/islands/tag-pop) — no static markup here (it portals onto document.body
-       like qf-pop/context-menu). -->
+  <!-- Bulk "add tags to selection" is a React Dialog now (P2⑦,
+       app/islands/selection/BulkTagDialog.tsx) — no static markup here (it portals
+       onto document.body like qf-pop/context-menu). -->
 
   <!-- Date / engagement / poster-date-range popovers are the filter-popover React
        island now (app/islands/filter-popover) — no static markup here. -->
@@ -1903,30 +1806,6 @@
     .iv-insp-close { float: right; border: none; background: none; font-size: 18px; line-height: 1; color: var(--muted); cursor: pointer; }
     .iv-insp-close:hover { color: var(--fg); }
     .iv-insp-title { font-size: 13px; font-weight: 600; line-height: 1.5; word-break: break-word; margin-bottom: 8px; padding-right: 20px; }
-    .iv-insp-thumb { width: 100%; border-radius: 8px; border: 1px solid var(--border); margin-bottom: 12px; display: block; }
-    .iv-insp-thumb--peek { cursor: zoom-in; }
-    .iv-insp-row { display: flex; gap: 8px; padding: 5px 0; border-bottom: 1px solid var(--border-soft); }
-    .iv-insp-k { color: var(--muted); flex: 0 0 72px; }
-    .iv-insp-v { flex: 1; word-break: break-word; }
-    .iv-insp-author { display: flex; align-items: center; gap: 7px; }
-    /* Author name+avatar as a jump-to-poster link (双方向ナビ). Looks like text until
-       hover, where it tints + rings the avatar to read as actionable. */
-    .iv-insp-author-link {
-      display: inline-flex; align-items: center; gap: 7px;
-      border: none; background: none; padding: 0; margin: 0;
-      font: inherit; color: inherit; text-align: left; cursor: pointer;
-      transition: color .12s;
-    }
-    .iv-insp-author-link:hover { color: var(--accent-text); }
-    .iv-insp-author-link:hover .iv-insp-avatar { box-shadow: 0 0 0 2px var(--accent-soft); }
-    .iv-insp-avatar { width: 26px; height: 26px; border-radius: 50%; object-fit: cover; flex: none; border: 1px solid var(--border-soft); }
-    .iv-insp-tags { display: flex; flex-wrap: wrap; gap: 4px; }
-    .iv-insp-tag { background: var(--hover); border-radius: 10px; padding: 1px 8px; font-size: 11px; color: var(--text-muted); }
-    /* Source-tag chips are buttons: dashed outline signals "click to adopt". */
-    .iv-insp-tag-src { border: 1px dashed var(--border-soft); background: transparent; color: var(--text-muted); cursor: pointer; font: inherit; font-size: 11px; line-height: 1.5; transition: background .12s, color .12s, border-color .12s; }
-    .iv-insp-tag-src:hover { background: var(--hover); color: var(--text); border-color: var(--accent-soft); }
-    .iv-insp-open { display: inline-block; margin-top: 12px; color: var(--accent-text); cursor: pointer; }
-    .iv-insp-open:hover { text-decoration: underline; }
 
     /* Inspector: an inline right column, at every window width (#243). The panel
        used to detach into a fixed slide-over below 1280px; that automatic reshape
@@ -1970,8 +1849,6 @@
     body.image-tab-active .inspector--overlay .inspector-titlebar { display: block; }
     .inspector[hidden] { display: none; }
     .inspector:not([hidden]) { animation: hologramPanelIn var(--dur-panel) var(--ease-out); }
-    .iv-insp-actions { display: flex; flex-direction: column; gap: 6px; margin-top: 14px; align-items: flex-start; }
-    .iv-insp-actions .iv-insp-open { margin-top: 0; }
     /* Inspector inline tag editor — always shown while the inspector is open: tag
        editing is per-card here, no mode to enter (posts + posters behave the same). */
     .iv-tag-edit, .iv-tag-edit-poster { display: flex; flex-direction: column; gap: 8px; margin: 6px 0 4px; }
@@ -2066,10 +1943,9 @@
     /* a11y escape hatch: text faces are already solid (#136), so only the two
        remaining backdrop-filter users need a fallback here. */
     @media (prefers-reduced-transparency: reduce) {
-      .glass-chrome, .clip-btn, .info-btn, .tag-btn, #sidebar #sbTop { background: rgba(20,22,26,0.86); }
-      .post-card:hover .clip-btn, .post-card:hover .info-btn, .post-card:hover .tag-btn,
+      .glass-chrome, .clip-btn, .info-btn, #sidebar #sbTop { background: rgba(20,22,26,0.86); }
+      .post-card:hover .clip-btn, .post-card:hover .info-btn,
       .glass-chrome, #sidebar #sbTop { backdrop-filter: none; -webkit-backdrop-filter: none; }
-      .lightbox-overlay { background: rgba(0,0,0,0.85); backdrop-filter: none; -webkit-backdrop-filter: none; }
     }
     } /* @layer legacy */
   </style>
@@ -2083,7 +1959,6 @@
     @keyframes hologramCardIn { from { opacity: 0; transform: translateY(11px) scale(.985); } to { opacity: 1; transform: none; } }
     @keyframes hologramFadeIn { from { opacity: 0; } to { opacity: 1; } }
     @keyframes hologramPopIn { from { opacity: 0; transform: scale(.96); } to { opacity: 1; transform: none; } }
-    @keyframes hologramSlideIn { from { opacity: 0; transform: scale(.97); } to { opacity: 1; transform: none; } }
     @keyframes hologramPanelIn { from { opacity: 0; transform: translateX(18px); } to { opacity: 1; transform: none; } }
     @keyframes hologramPillIn { from { opacity: 0; transform: scale(.6); } to { opacity: 1; transform: scale(1); } }
     /* Chip exit — the island marks removed values .leaving and prunes them
@@ -2148,11 +2023,6 @@
        removing [hidden] re-mounts the element (display:none -> flex). */
     .iv-detail-overlay:not([hidden]) { animation: hologramFadeIn .16s ease-out; }
     .iv-detail-overlay:not([hidden]) .iv-detail-box { animation: hologramPopIn .2s ease-out; }
-
-    /* Lightbox: backdrop fades on open; the slide itself animates via .lb-in
-       (viewer.js restarts it on open AND on prev/next for a consistent feel). */
-    .lightbox-overlay.show { animation: hologramFadeIn .16s ease-out; }
-    .lightbox-overlay .lb-in { animation: hologramSlideIn .2s ease-out; }
 
     @media (prefers-reduced-motion: reduce) {
       *, *::before, *::after {

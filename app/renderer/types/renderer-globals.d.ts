@@ -75,11 +75,6 @@ interface HologramPostGroup {
 // real ES module (named exports) now — no ambient Window-shaped interface
 // needed. ----
 
-// ---- renderer/bulk-edit.ts — the bulk "add tags to selection" staging list
-// (records/tags/additive-flag) held while tag-pop is open in mode:'bulk' (Issue
-// #22). A real ES module (named exports) now — no ambient Window-shaped
-// interface needed.
-
 // ---- renderer/facets.ts — facet counts + value-flyout row models. makeFacets
 // (facets.ts) and makeCooc (cooc.ts) are real ES modules (named exports) now; only
 // HologramQfRow stays here as a cross-module value-flyout row shape. ----

@@ -48,7 +48,7 @@ export interface PostGridBuilderDeps {
   onPostsLoaded(): void;
   getInspectedKey(): string | null;
   closeDetail(): void;
-  showDetail(g: HologramPostGroup): void;
+  showDetail(g: HologramPostGroup, opts?: { focusTags?: boolean }): void;
   jumpToPoster(post: HologramPost): void;
   addImageTab(g: HologramPostGroup): void;
 }
@@ -276,7 +276,6 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
     tipSelect: deps.t('tipSelect'),
     tipClip: deps.t('tipClip'),
     tipInfo: deps.t('tipInfo'),
-    tipTagEdit: deps.t('tipTagEdit'),
     clickToExpand: deps.t('clickToExpand'),
   };
   // modelOf/keyOf/labels/onAspect never change identity meaningfully between
@@ -431,6 +430,7 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
     poster: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>',
     newtab: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 9h18"/><path d="M12 12.5v4M10 14.5h4"/></svg>',
     reveal: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><path d="M9 13.5h6"/><path d="m12.8 11 2.5 2.5-2.5 2.5"/></svg>',
+    tag: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r=".5" fill="currentColor"/></svg>',
     copy: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>',
   };
   // Card context menu — React-owned glass menu (menu.ts); viewer owns
@@ -447,6 +447,9 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
     items.push({ label: deps.t('tipFolder'), act: 'folder', icon: CM_IC.folder });
     if (CF()) items.push({ label: inClip ? deps.t('ctxClipRemove') : deps.t('ctxClipAdd'), act: 'clip', icon: CM_IC.clip });
     items.push({ label: deps.t('tipInfo'), act: 'info', icon: CM_IC.info });
+    // タグを編集 is the card's route into tagging since the hover 🏷 (and the popover it
+    // opened) went away in P2⑦ — it opens the inspector with the caret in the tag field.
+    items.push({ label: deps.t('ctxEditTags'), act: 'tags', icon: CM_IC.tag });
     if (canPoster) items.push({ label: deps.t('ctxViewPoster'), act: 'poster', icon: CM_IC.poster });
     // The file the card is showing right now (capture or artwork per density).
     const cardFile = densityImage(g.rep, deps.currentView()) || g.rep.image || '';
@@ -477,6 +480,7 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
       const b = document.querySelector(`.clip-btn[data-clip="${viewGroups.indexOf(g)}"]`) as HTMLElement | null;
       if (b) b.click();
     } else if (act === 'info') deps.showDetail(g);
+    else if (act === 'tags') deps.showDetail(g, { focusTags: true });
     else if (act === 'poster') deps.jumpToPoster(g.rep);
     else if (act === 'sauce') hologramIpc.openExternal('https://saucenao.com/search.php?url=' + encodeURIComponent(srcUrl));
     else if (act === 'ascii') hologramIpc.openExternal('https://ascii2d.net/search/url/' + encodeURIComponent(srcUrl));

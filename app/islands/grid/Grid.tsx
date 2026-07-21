@@ -57,5 +57,7 @@ function Cell({ index, data }: GridCellProps) {
 }
 
 export function GridHost({ model }: { model: HologramGridModel }) {
-  return <VirtualGridHost model={model} cell={Cell} />;
+  // nav: this is the grid selection moves through, so it publishes its column count
+  // and scroll geometry to renderer/grid-nav.ts (the poster grid has no selection).
+  return <VirtualGridHost model={model} cell={Cell} nav />;
 }

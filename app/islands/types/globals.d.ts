@@ -248,27 +248,17 @@ declare global {
 
   // ---- renderer/inspector.js — model mechanics; the deep field lists live in
   // viewer.js's model builders. ----
-  // Tag-editing callbacks TagEditor.tsx (_shared) requires — its onAdd/onRemove/
-  // onToggle/onContextMenu props are all required. TagEditor.tsx now renders in
-  // exactly ONE place: HologramTagPopModel below (Issue #22 retired both the
-  // inspector's always-live editor and the bulk edit-overlay modal in favor of
-  // one shared pop).
-  interface HologramTagEditorCallbacks {
-    onTagAdd(tag: string): void;
-    onTagRemove(tag: string): void;
-    onTagToggle(tag: string): void;
-    onTagContextMenu(tag: string, x: number, y: number): void;
-  }
-  // NOT extending HologramTagEditorCallbacks: the inspector (post AND poster,
-  // Inspector.tsx) is read-only (Issue #22) and only needs onTagContextMenu
-  // (right-click still opens the kind-menu — a read operation) + onEditTags
-  // (opens tag-pop for this card/poster).
+  // The inspector's tag field edits in place (P2⑦), so the model carries the tag
+  // mutations themselves; onTagContextMenu is the kind-menu (a read).
   interface HologramInspectorModel {
     kind: 'post' | 'poster';
     openId: number;
     onClose(): void;
+    onTagAdd(tag: string): void;
+    onTagRemove(tag: string): void;
     onTagContextMenu(tag: string, x: number, y: number): void;
-    onEditTags(anchorRect: HologramAnchorRect): void;
+    /** Open with the caret already in the tag field — the context menu's タグを編集. */
+    focusTags?: boolean;
     // Post-only (Inspector.tsx renders these when present).
     onThumbClick?(): void; // preview thumbnail → quick-view peek (#143)
     onOpenExternal?(): void;
@@ -283,43 +273,6 @@ declare global {
   }
   // HologramInspector (the open/refresh/close/get/subscribe API) removed —
   // inspector.ts is a real ES module now, imported directly by its consumers.
-  // HologramEditOverlayModel removed with edit-overlay.ts/EditOverlay.tsx (Issue #22
-  // retired the bulk modal — see HologramTagPopModel's mode:'bulk' below).
-
-  // ---- renderer/tag-pop.ts — tag picker pop (Issue #22): the single popup that
-  // replaced both the inspector's always-live TagEditor and the bulk edit-overlay
-  // modal. 'single' mode wires straight to the SAME onTagAdd/onTagRemove/onTagToggle
-  // persistence orchestrator.ts's inspector builder already had (immediate save +
-  // undo); 'bulk' mode wires to bulk-edit.ts's staging list instead and adds
-  // applyLabel/additiveHint/onApply (the staged "N件に適用" commit). Extends
-  // HologramTagEditorCallbacks (unlike HologramInspectorModel above) because
-  // TagEditor.tsx is tag-pop's ONLY content now — every caller must supply all four.
-  interface HologramTagPopModel extends HologramTagEditorCallbacks {
-    openId: number;
-    anchorRect: HologramAnchorRect;
-    mode: 'single' | 'bulk';
-    // Which target this pop is currently showing (inspectedKey's format for single —
-    // postIdKey(g.rep) / 'poster:'+key — a fixed sentinel for bulk). The SOLE source
-    // of truth for "is the pop open for X": inspector-builder.ts and
-    // poster-grid-builder.ts each track their own group/poster but must agree on
-    // ONE answer to "is tag-pop open for MY card" even though tag-pop.ts is a
-    // singleton bridge shared by both — reading it back off the live model (via
-    // tag-pop.ts's get()) instead of two independent local booleans is what keeps
-    // them from going stale against each other (post opens → poster opens →
-    // post's own tracking would otherwise still think it owns the pop).
-    forKey: string;
-    tags: string[];
-    tagLabels: Record<string, string>;
-    // bulk-only.
-    applyLabel?: string;
-    additiveHint?: string;
-    onApply?(): void;
-    // Outside-click / Esc — the caller decides what "closing" means (single: just
-    // close the pop; bulk: also discard the staging list).
-    onDismiss(): void;
-    [extra: string]: any;
-  }
-
   // ---- renderer/sidebar.ts — the two filter-row columns (converted
   // from a PUSHED bridge — viewer built a full model incl. labels and called
   // render()/renderPoster() — to a PULLED source, same shape as the grid/image-tab/
@@ -402,6 +355,44 @@ declare global {
     onCancel?(): void;
   }
   interface HologramPromptModel extends HologramPromptConfig {
+    openId: number;
+  }
+  // Bulk tag dialog (bulk-tag.ts + BulkTagDialog) — "タグを追加" on the selection
+  // bar (P2⑦), the replacement for the retired tag-pop's bulk mode. The staged tags
+  // are the dialog's own React state, so nothing here carries them: the renderer
+  // supplies only what it alone knows (the vocabulary, the kind menu, the write),
+  // and gets the finished list back once, on apply.
+  interface HologramBulkTagConfig {
+    count: number; // selected posts — the apply button and the toast count them
+    tagLabels: Record<string, string>; // TagField's labels bundle
+    labels: { title: string; additiveHint: string; apply: string; cancel: string };
+    /** Vocabulary/co-occurrence/source-tag groups for the picker, given the tags staged so far. */
+    pickerData(tags: string[]): { vocabGroups?: any; coocGroups?: any; srcTagsForPicker?: any };
+    /** Right-click a tag → kind menu. onChange re-derives pickerData (a kind change re-sections the vocabulary). */
+    onKindMenu(tag: string, x: number, y: number, onChange: () => void): void;
+    /** Persist the staged tags onto the selection. The host closes the dialog first. */
+    onApply(tags: string[]): void;
+  }
+  interface HologramBulkTagModel extends HologramBulkTagConfig {
+    openId: number;
+  }
+  // Bulk tag dialog (bulk-tag.ts + BulkTagDialog) — "タグを追加" on the selection
+  // bar (P2⑦), the replacement for tag-pop's mode:'bulk'. The staged tags are the
+  // dialog's own React state, so nothing here carries them: the renderer supplies
+  // only what it alone knows (the vocabulary, the kind menu, the write), and gets
+  // the finished list back once, on apply.
+  interface HologramBulkTagConfig {
+    count: number; // selected posts — the apply button and the toast count them
+    tagLabels: Record<string, string>; // TagField's labels bundle
+    labels: { title: string; additiveHint: string; apply: string; cancel: string };
+    /** Vocabulary/co-occurrence/source-tag groups for the picker, given the tags staged so far. */
+    pickerData(tags: string[]): { vocabGroups?: any; coocGroups?: any; srcTagsForPicker?: any };
+    /** Right-click a tag → kind menu. onChange re-derives pickerData (a kind change re-sections the vocabulary). */
+    onKindMenu(tag: string, x: number, y: number, onChange: () => void): void;
+    /** Persist the staged tags onto the selection. The host closes the dialog first. */
+    onApply(tags: string[]): void;
+  }
+  interface HologramBulkTagModel extends HologramBulkTagConfig {
     openId: number;
   }
   // HologramConfirm / HologramEditOverlay (the open/close/get/subscribe APIs)
