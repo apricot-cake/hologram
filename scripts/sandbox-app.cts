@@ -14,8 +14,9 @@
 //     this instance coexists with the real app.
 //   - HOLOGRAM_SANDBOX=1 → main.mts skips native host registration (no HKCU
 //     writes, no copy into the shared ~/.hologram).
-//   - config.json is always written BEFORE first launch, so the one-time
-//     %APPDATA% migration in main.mts can never adopt the real library.
+//   - config.json is always written BEFORE first launch, pointing saveFolder at
+//     the sandbox library — an unconfigured launch would fall back to the real
+//     default library dir.
 //   - CDP port is probed from 9333 (the real app owns :9222) and recorded in
 //     .sandbox/instance.json. Connect with: CDP_PORT=<port> node scripts/cdp-verify.cts
 //
@@ -36,7 +37,7 @@ const electronPath = require(path.join(appDir, 'node_modules', 'electron'));
 const sandboxRoot = path.join(repoRoot, '.sandbox');
 const configDir = path.join(sandboxRoot, 'config');
 const saveFolder = path.join(sandboxRoot, 'library');
-const appData = path.join(sandboxRoot, 'appdata'); // empty stand-in so the %APPDATA% migration finds nothing
+const appData = path.join(sandboxRoot, 'appdata'); // keep any %APPDATA% fallback reads/writes out of the real one (same practice as the test-app-* harnesses)
 const instanceFile = path.join(sandboxRoot, 'instance.json');
 
 // ---- fixture images: solid-color PNGs, no deps -----------------------------
