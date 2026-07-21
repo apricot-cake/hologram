@@ -122,6 +122,32 @@ function createFolderStore({ idPrefix, persist, isLibrary }: { idPrefix: string;
     persist();
     return true;
   }
+  // One drop = one write. A tree drag can change BOTH the parent and the position
+  // among siblings ("put it under 資料, third from the top"), and doing that as a
+  // reparent followed by a reorder would persist twice and let subscribers see the
+  // folder in a place the user never dropped it.
+  //   into   — make it a child of targetId (null = the root)
+  //   before / after — put it beside targetId, adopting that row's parent
+  function place(draggedId: string | null | undefined, targetId: string | null, mode: 'into' | 'before' | 'after') {
+    const f = byId(draggedId);
+    if (!f || !draggedId || draggedId === targetId) return false;
+    const target = byId(targetId);
+    if (mode !== 'into' && !target) return false; // "beside" needs a row to be beside
+    const newParent = mode === 'into' ? (target ? target.id : null) : (target as HologramFolder).parentId || null;
+    // Same refusal as reparent: a folder cannot land inside its own subtree.
+    if (newParent && subtreeIds(draggedId).has(newParent)) return false;
+    const parentChanged = (f.parentId || null) !== newParent;
+    if (mode === 'into' && !parentChanged) return false; // already there
+    f.parentId = newParent;
+    if (target && mode !== 'into') {
+      folders.splice(folders.indexOf(f), 1);
+      const to = folders.indexOf(target);
+      folders.splice(mode === 'before' ? to : to + 1, 0, f);
+    }
+    invalidateTree();
+    persist();
+    return true;
+  }
   const byId = (id: string | null | undefined) => folders.find((f) => f.id === id) || null;
   const has = (id: string | null | undefined, key: string) => {
     const f = byId(id);
@@ -249,6 +275,7 @@ function createFolderStore({ idPrefix, persist, isLibrary }: { idPrefix: string;
     pathOf,
     subtreeIds,
     reparent,
+    place,
     create,
     remove,
     rename,
@@ -390,6 +417,11 @@ export const hasDeep = store.hasDeep;
 export const childrenOf = store.childrenOf;
 export const pathOf = store.pathOf;
 export const subtreeIds = store.subtreeIds;
+export function placeFolder(id: string | null | undefined, targetId: string | null, mode: 'into' | 'before' | 'after') {
+  const ok = store.place(id, targetId, mode);
+  if (ok) notify('list');
+  return ok;
+}
 export function reparentFolder(id: string | null | undefined, parentId: string | null) {
   const ok = store.reparent(id, parentId);
   if (ok) notify('list');

@@ -137,6 +137,27 @@ async function main() {
     leaves.some((c) => c.type === 'tag' && c.value === 'keep'),
   );
 
+  // --- ツリー DnD の着地（placeFolder）: 1ドロップ＝1書き込み ---
+  // 兄弟順は配列順そのものなので、「A の前へ」は結果の並びで検証する。
+  const a = F.createFolder('A');
+  const b = F.createFolder('B');
+  const c = F.createFolder('C');
+  // 前段のテストが作ったフォルダも同じルートに並ぶので、この3つだけを見る。
+  const rootOrder = () =>
+    F.childrenOf(null)
+      .map((f) => f.name)
+      .filter((n) => 'ABC'.includes(n));
+
+  assert('中央へのドロップ＝子にする', F.placeFolder(c.id, a.id, 'into') === true && F.byId(c.id).parentId === a.id);
+  assert('自分の子孫の下へは落とせない', F.placeFolder(a.id, c.id, 'into') === false && F.byId(a.id).parentId === null);
+  assert('同じ親への「子にする」は書き込まない', F.placeFolder(c.id, a.id, 'into') === false);
+  // 「隣へ」は落とした先の親を引き継ぐ＝親の変更と並べ替えが同時に起きる。
+  assert('行の上端へのドロップ＝その手前の兄弟になる', F.placeFolder(c.id, b.id, 'before') === true && F.byId(c.id).parentId === null);
+  assert('並び順が実際に入れ替わる', rootOrder().join(',') === 'A,C,B');
+  assert('行の下端へのドロップ＝その直後', F.placeFolder(c.id, b.id, 'after') === true && rootOrder().join(',') === 'A,B,C');
+  F.placeFolder(b.id, a.id, 'into');
+  assert('見出しへのドロップ＝ルートへ戻す', F.byId(b.id).parentId === a.id && F.placeFolder(b.id, null, 'into') === true && F.byId(b.id).parentId === null);
+
   console.log(failed ? `\n${failed} test(s) FAILED` : '\nall folder-nesting tests passed');
   process.exit(failed ? 1 : 0);
 }

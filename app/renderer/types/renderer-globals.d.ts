@@ -215,6 +215,8 @@ interface HologramFolderStore {
   subtreeIds(id: string | null | undefined): Set<string>;
   /** Move a folder under a new parent (null = root). Refuses itself and its own subtree. */
   reparent(id: string | null | undefined, parentId: string | null): boolean;
+  /** Tree drop in one write: into a folder (null = root), or beside one — adopting that row's parent. */
+  place(draggedId: string | null | undefined, targetId: string | null, mode: 'into' | 'before' | 'after'): boolean;
   rename(id: string | null | undefined, name: string | null | undefined): boolean;
   /** Toggle one key or a whole group in the folder; anchorKey decides the resulting state. Returns the action or null. */
   toggleIn(id: string | null | undefined, keys: string | string[] | null | undefined, anchorKey?: string | null): 'added' | 'removed' | null;
