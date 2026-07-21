@@ -71,6 +71,7 @@ export let handleShortcutCopyKey: (e: KeyboardEvent) => void;
 export let handleShortcutQuickView: (e: KeyboardEvent) => void;
 export let handleShortcutSearchFocusKey: (e: KeyboardEvent) => void;
 export let handleShortcutSizeKey: (e: KeyboardEvent) => void;
+export let handleZoomWheel: (e: WheelEvent) => void;
 export let handleEscDismissDetail: (e: KeyboardEvent) => void;
 // Outside-click dismissal for the narrow overlay (#259). Back after #243 removed it —
 // this time the width test lives in layout-mode.ts, not in the handler's own media query.
@@ -1687,6 +1688,7 @@ export function endFilterEditSession(): void {
   // Registration lives in the GlobalShortcuts component (app/islands/app/App.tsx), which
   // imports this directly.
   handleShortcutSizeKey = gridDensity.handleShortcutSizeKey;
+  handleZoomWheel = gridDensity.handleZoomWheel;
   // Size-slider bindings for the display popover (P2②) — see the export decls above.
   getPostSizeTrack = gridDensity.computeSizeTrack;
   applyPostSize = gridDensity.setSizeFromSlider;
