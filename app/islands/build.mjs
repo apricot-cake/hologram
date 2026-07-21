@@ -109,6 +109,34 @@ await build({
   },
 });
 
+// native-host/bridge.cts (+ its local modules) → native-host/dist/bridge.js.
+// The bridge is the process Chrome spawns per native-messaging connection. It runs
+// from the ASCII config dir (see install.cts's deployBridge), so every local module
+// it require()s used to be copied there one by one — a missed file crashed the host
+// with no hint beyond "Error when communicating with the native messaging host".
+// Bundling makes the deployed artifact ONE file with no runtime resolution left,
+// and lets the host use npm deps (nothing outside node builtins can be copied by
+// hand). Node builtins stay external; unminified because a silent host crash is
+// diagnosed by reading bridge.log against this file.
+await build({
+  root: path.join(appRoot, '..'),
+  configFile: false,
+  logLevel: 'warn',
+  build: {
+    outDir: path.join(appRoot, '..', 'native-host', 'dist'),
+    emptyOutDir: true, // a dedicated build dir — nothing hand-written lives here
+    target: 'node20', // Electron 43 runs Node 20 in ELECTRON_RUN_AS_NODE; system Node ≥ 20 for the dev CLI
+    minify: false,
+    sourcemap: false,
+    lib: {
+      entry: path.join(appRoot, '..', 'native-host', 'bridge.cts'),
+      formats: ['cjs'],
+      fileName: () => 'bridge.js',
+    },
+    rollupOptions: { external: [/^node:/] },
+  },
+});
+
 // Build every island as ONE IIFE bundle via the app/index.tsx barrel.
 await build({
   root: appRoot,
@@ -137,4 +165,4 @@ await build({
   },
 });
 
-console.log('[islands] built renderer/theme.js + renderer/islands/app.js (IIFE) + preload.js (CJS) via Vite lib mode');
+console.log('[islands] built renderer/theme.js + renderer/islands/app.js (IIFE) + preload.js (CJS) + native-host/dist/bridge.js (CJS) via Vite lib mode');

@@ -1,26 +1,24 @@
 {
   // TypeScript stage 2, native-host half (BACKLOG 採用#1「残り②」= P3): the
-  // build-less native-messaging-host layer (bridge.cts + install.cts +
-  // paths.cts + media-download.cts + config-recovery.cts).
+  // native-messaging-host layer (bridge.cts + install.cts + paths.cts +
+  // media-download.cts + config-recovery.cts).
   //
   // Separate project from tsconfig.main.json / tsconfig.renderer.json because
   // this is a THIRD runtime: a standalone Node process (spawned by Chrome via
   // native messaging, or via the Electron binary in ELECTRON_RUN_AS_NODE mode),
-  // never bundled, never imported by ESM import — only by CommonJS require()
-  // (computed-path from app/main.mts, or a relative require() between these
-  // files themselves). These files stay .cts (not .mts) — bridge.cts is
-  // deployed by copying the RAW SOURCE into ~/.hologram and executed there by a
-  // generated launcher (.bat/.sh), so it must keep working as a plain
-  // require()/module.exports CommonJS file with no build step, exactly like it
-  // did as bridge.js. Node's type-stripping erases the annotations at runtime
-  // whether invoked as `node bridge.cts` (dev CLI / Chrome launcher) or via the
-  // Electron binary in RunAsNode mode — proven identical on this machine
-  // (system Node and Electron 43 are both Node 24).
+  // never imported by ESM import — only by CommonJS require() (computed-path
+  // from app/main.mts, or a relative require() between these files themselves).
+  // These files stay .cts (not .mts) and CommonJS for two reasons that outlived
+  // the deploy change: install.cts is require()d as raw source by the Electron
+  // app (type-stripped, no build), and the tests require the bridge sources
+  // directly. bridge.cts is no longer deployed as raw source — it is bundled
+  // (app/islands/build.mjs → dist/bridge.js, CJS output) and the BUNDLE is what
+  // lands in ~/.hologram — but the sources keep the CJS shape the bundler reads.
   //
   // Sibling requires use the explicit .cts extension (require('./paths.cts'),
-  // not require('./paths')) because the deployed copy in ~/.hologram has no
-  // build step to rewrite specifiers — the extension in the source IS the
-  // extension Node resolves at runtime. Plain require() calls aren't
+  // not require('./paths')) because that is what the source-loading paths
+  // (Electron require of install.cts, the tests) resolve at runtime; the bundler
+  // follows the same specifiers. Plain require() calls aren't
   // cross-file type-checked by tsc (require() types as NodeRequire → any);
   // that already matches how app/main.mts's own dynamic computed-path
   // require() of this directory works (see tsconfig.main.json) — each file's

@@ -2,12 +2,12 @@
 
 // Shared best-effort still-image downloader (original media + author avatars).
 //
-// Extracted from bridge.js so the SAME SSRF guard, size/time caps, and manual
+// Extracted from the bridge so the SAME SSRF guard, size/time caps, and manual
 // redirect handling are reused by every path that pulls remote images into the
 // library:
-//   - native-host/bridge.js          (capture / drag save)
-//   - app/main.js                    (import-posts)
-//   - scripts/backfill-metadata.js   (backfill + existing-data avatar fill)
+//   - native-host/bridge.cts          (capture / drag save)
+//   - app/main.mts                    (import-posts)
+//   - scripts/backfill-metadata.cts   (backfill + existing-data avatar fill)
 // Keeping it in ONE place means the security-sensitive guard never drifts apart
 // between callers. Every function here is best-effort: a failure returns null and
 // is the caller's cue to drop that file — it must never throw the save/import.

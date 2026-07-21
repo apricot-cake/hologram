@@ -4,6 +4,7 @@ app/node_modules/
 app/dist/
 extension/node_modules/
 extension/dist/
+native-host/dist/
 app/.smoke-shot*.png
 app/.theme-*.png
 app/.ia-*.png
