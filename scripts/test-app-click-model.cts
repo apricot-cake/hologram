@@ -72,6 +72,8 @@ const evalJs = `(async () => {
   const click = (el, mods) => el && el.dispatchEvent(new MouseEvent('click', Object.assign({ bubbles: true }, mods)));
   const dblclick = (el) => el && el.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
   const inspVisible = () => byId('postDetail') && !byId('postDetail').hidden;
+  // The peek overlay is conditionally rendered (P2⑦) — its presence IS its open state.
+  const peekOpen = () => !!document.querySelector('[data-slot="lightbox"]');
   const errors = [];
   window.addEventListener('error', (e) => errors.push(String((e && e.message) || e)));
   const out = {};
@@ -92,9 +94,9 @@ const evalJs = `(async () => {
   const thumb = byId('postDetail').querySelector('[data-slot="inspector-thumb"]');
   out.thumbPeekable = !!(thumb && thumb.getAttribute('data-peek') === 'true');
   click(thumb);
-  out.lightboxOpened = await waitFor(() => byId('lightbox') && byId('lightbox').childElementCount > 0);
+  out.lightboxOpened = await waitFor(() => peekOpen());
   document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-  out.lightboxClosed = await waitFor(() => byId('lightbox') && byId('lightbox').childElementCount === 0);
+  out.lightboxClosed = await waitFor(() => !peekOpen());
 
   // D. Ctrl-click adds a second card (plain click above kept c1 selected)
   click(cardOf('dummy-c2'), { ctrlKey: true });
@@ -105,13 +107,13 @@ const evalJs = `(async () => {
   // selected now, so Space must NOT open the lightbox), then collapse to one and retry.
   document.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', code: 'Space', bubbles: true }));
   await sleep(80);
-  out.spaceIgnoredForMulti = !(byId('lightbox') && byId('lightbox').childElementCount > 0);
+  out.spaceIgnoredForMulti = !(peekOpen());
   click(cardOf('dummy-c1')); // collapse to a single selection
   await sleep(60);
   document.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', code: 'Space', bubbles: true }));
-  out.spacePeeked = await waitFor(() => byId('lightbox') && byId('lightbox').childElementCount > 0);
+  out.spacePeeked = await waitFor(() => peekOpen());
   document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-  await waitFor(() => byId('lightbox') && byId('lightbox').childElementCount === 0);
+  await waitFor(() => !peekOpen());
 
   // The 投稿者 nav's active state tracks browseMode (grids are CSS-hidden, not
   // unmounted, so poster cards stay in the DOM — the active nav is the mode marker).
