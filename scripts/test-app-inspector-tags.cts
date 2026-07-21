@@ -175,6 +175,21 @@ const evalJs = `(async () => {
   out.chipRemoved = await waitFor(() => chips().length > 0 && !chips().includes('新規タグ'));
   out.chipsFinal = chips().join(',');
 
+  // G. arrows inside the tag input belong to the CARET, not to the grid. This is the
+  // 連続タグ付け loop's load-bearing guard: arrow to the next card, type, arrow within
+  // what you typed — if the grid ate those the selection would jump mid-word.
+  const el3 = input();
+  el3.focus();
+  setInput(el3, 'あいう');
+  const selBefore = [...document.querySelectorAll('#postGrid .post-card.selected')].map(c => c.dataset.key).join(',');
+  el3.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }));
+  el3.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+  await sleep(120);
+  out.selectionHeldWhileTyping = [...document.querySelectorAll('#postGrid .post-card.selected')].map(c => c.dataset.key).join(',') === selBefore;
+  setInput(el3, '');
+  key(el3, 'Escape');
+  await sleep(60);
+
   await sleep(300); // let the sidecar write land before the harness reads it
   out.errors = errors;
   return JSON.stringify(out);
@@ -228,6 +243,7 @@ child.on('close', () => {
     ['the card context menu offers タグを編集', r.menuOpened === true],
     ['タグを編集 opens the panel for that card with the caret in the field', r.menuOpenedPanel === true && r.tagInputFocused === true],
     ["the chip's × removes the tag", r.hasRemoveBtn === true && r.chipRemoved === true],
+    ['arrows while typing a tag move the caret, not the selection', r.selectionHeldWhileTyping === true],
     ['the surviving tag was persisted to the sidecar', persisted.includes('ソースタグ')],
     ['the removed tag is gone from the sidecar', !persisted.includes('新規タグ')],
     ['no handler threw', Array.isArray(r.errors) && r.errors.length === 0],

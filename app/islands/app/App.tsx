@@ -28,6 +28,7 @@ import {
   handleShortcutSelectAllKey,
   handleShortcutCopyKey,
   handleShortcutQuickView,
+  handleShortcutArrowNav,
   handleShortcutSearchFocusKey,
   handleShortcutSizeKey,
   handleEscDismissDetail,
@@ -155,6 +156,7 @@ function GlobalShortcuts() {
       handleShortcutSelectAllKey(e);
       handleShortcutCopyKey(e);
       handleShortcutQuickView(e);
+      handleShortcutArrowNav(e);
       handleShortcutSearchFocusKey(e);
       handleShortcutSizeKey(e);
     };

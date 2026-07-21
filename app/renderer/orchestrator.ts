@@ -69,6 +69,7 @@ export let handleShortcutUndoKey: (e: KeyboardEvent) => void;
 export let handleShortcutSelectAllKey: (e: KeyboardEvent) => void;
 export let handleShortcutCopyKey: (e: KeyboardEvent) => void;
 export let handleShortcutQuickView: (e: KeyboardEvent) => void;
+export let handleShortcutArrowNav: (e: KeyboardEvent) => void;
 export let handleShortcutSearchFocusKey: (e: KeyboardEvent) => void;
 export let handleShortcutSizeKey: (e: KeyboardEvent) => void;
 export let handleEscDismissDetail: (e: KeyboardEvent) => void;
@@ -1164,6 +1165,7 @@ export function endFilterEditSession(): void {
     getBrowseMode: () => browseMode, // orchestrator.ts `let`, read live
     copyGroupImage: (g) => postGrid.copyGroupImage(g),
     openQuickView: (g) => lightboxOpen(buildGroupGalleryItems(g)[0]), // Space peek (single image, #143)
+    showDetail: (g) => showDetail(g), // arrow movement swaps the inspector, same as a plain click
   });
   const { selectedRecords } = selectionCtl;
   // Selection is driven entirely by the unified card gesture above (plain =
@@ -1176,6 +1178,7 @@ export function endFilterEditSession(): void {
   handleShortcutSelectAllKey = selectionCtl.handleShortcutSelectAllKey;
   handleShortcutCopyKey = selectionCtl.handleShortcutCopyKey;
   handleShortcutQuickView = selectionCtl.handleShortcutQuickView;
+  handleShortcutArrowNav = selectionCtl.handleShortcutArrowNav;
   // Bulk-action bindings for the bottom floating bar (P2⑥) — called straight from the
   // FloatingBar island (no #selectionBar container, no data-act dispatch anymore).
   selectionSelectAll = selectionCtl.toggleSelectAll;

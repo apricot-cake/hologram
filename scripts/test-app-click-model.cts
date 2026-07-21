@@ -69,6 +69,9 @@ const evalJs = `(async () => {
   const postCards = () => [...document.querySelectorAll('#postGrid .post-card')];
   const cardOf = (key) => document.querySelector('#postGrid .post-card[data-key="' + key + '"]');
   const selectedKeys = () => [...document.querySelectorAll('#postGrid .post-card.selected')].map(c => c.dataset.key).sort();
+  const selectedCard = () => document.querySelector('#postGrid .post-card.selected');
+  const selectedIndex = () => { const c = selectedCard(); return c ? Number(c.dataset.index) : -1; };
+  const arrow = (key) => document.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }));
   const click = (el, mods) => el && el.dispatchEvent(new MouseEvent('click', Object.assign({ bubbles: true }, mods)));
   const dblclick = (el) => el && el.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
   const inspVisible = () => byId('postDetail') && !byId('postDetail').hidden;
@@ -114,6 +117,26 @@ const evalJs = `(async () => {
   out.spacePeeked = await waitFor(() => peekOpen());
   document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
   await waitFor(() => !peekOpen());
+
+  // D3. Arrow keys move the single selection through the grid (P2⑥), and the
+  // inspector follows — the pair that makes 連続タグ付け a composition. Starts from
+  // the MIDDLE card so both directions have somewhere to go whatever the sort is.
+  click(cardOf('dummy-c2'));
+  await sleep(60);
+  const startIdx = Number(cardOf('dummy-c2').dataset.index);
+  arrow('ArrowRight');
+  await sleep(80);
+  out.arrowRightSel = selectedKeys().join(',');
+  out.arrowRightStep = selectedIndex() - startIdx;
+  out.arrowFollowsInspector = selectedCard() && selectedCard().classList.contains('inspected');
+  arrow('ArrowLeft');
+  arrow('ArrowLeft');
+  await sleep(80);
+  out.arrowLeftStep = selectedIndex() - startIdx;
+  // Clamps at the first card instead of wrapping to the last.
+  arrow('ArrowLeft');
+  await sleep(80);
+  out.arrowClampedAtStart = selectedIndex() === 0;
 
   // The 投稿者 nav's active state tracks browseMode (grids are CSS-hidden, not
   // unmounted, so poster cards stay in the DOM — the active nav is the mode marker).
@@ -179,6 +202,10 @@ child.on('close', () => {
     ['Ctrl-click adds a second card', r.selAfterD === 'dummy-c1,dummy-c2'],
     ['Space is ignored while multiple are selected', r.spaceIgnoredForMulti === true],
     ['Space peeks the single selected card', r.spacePeeked === true],
+    ['→ moves the selection one card and keeps it single', r.arrowRightStep === 1 && r.arrowRightSel.split(',').length === 1],
+    ['arrow movement swaps the inspector to the new card', r.arrowFollowsInspector === true],
+    ['← moves the selection back', r.arrowLeftStep === -1],
+    ['← clamps at the first card instead of wrapping', r.arrowClampedAtStart === true],
     ['poster cards render', r.posterCardsShown === true],
     ['poster cards have no ℹ button', r.posterHoverInfo === 0],
     ['plain click opens the poster inspector', r.inspOpenedF === true && r.inspIsPoster === true],

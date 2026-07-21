@@ -13,6 +13,7 @@
 import * as selection from './selection.ts';
 import * as folders from './folders.ts';
 import { isOpen as lightboxIsOpen } from './lightbox.ts';
+import { gridColumnCount, scrollGridIndexIntoView } from './grid-nav.ts';
 import { postIdKey } from './records.ts';
 import { deletePost } from './posts.ts';
 import { get as confirmGet, open as confirmOpen } from './confirm.ts';
@@ -42,6 +43,10 @@ export interface SelectionBarDeps {
   // 未決事項3). Same wiring as the inspector thumbnail's onThumbClick;
   // orchestrator supplies the gallery items.
   openQuickView(g: HologramPostGroup): void;
+  // Swap the inspector to a group — inspector-builder.ts's showDetail, so arrow
+  // movement lands the same way a plain click does. A deferred dep for the same
+  // reason as openBulkTagDialog: it is constructed after this module.
+  showDetail(g: HologramPostGroup): void;
 }
 
 export function makeSelectionBar(deps: SelectionBarDeps) {
@@ -194,6 +199,58 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
     deps.openQuickView(groups[0]);
   }
 
+  // Arrow keys move the selection through the grid (redesign P2⑥, the last piece of
+  // it). This is what makes 連続タグ付け a composition instead of a dedicated mode:
+  // filter to 「タグなし」, then arrow to the next card and type into the inspector's
+  // tag field — the same loop Lightroom and Eagle give you without a tagging screen.
+  //
+  // Left/Right step one card; Up/Down step one ROW, which is why the column count has
+  // to come from the live layout (renderer/grid-nav.ts) rather than the model — masonic
+  // derives it from the container width. Movement clamps at both ends (no wrap): in a
+  // grid, wrapping from the last card to the first is disorienting and no file manager
+  // or photo library does it.
+  //
+  // Plain arrows only. Shift+Arrow (extend the range) is deliberately NOT wired: the
+  // range primitive here moves the anchor to the new index on every call, so repeated
+  // extends would only ever grow the selection and could never shrink it back — the
+  // opposite of what Shift+Arrow means. Doing it properly needs a fixed anchor plus a
+  // separate cursor, which is its own change.
+  //
+  // Same guard shape as the Space peek below it, plus one of its own: with no anchor
+  // and no single selection there is nothing to move FROM, so the first press selects
+  // the first card rather than guessing. Registration lives in the GlobalShortcuts
+  // component (app/islands/app/App.tsx).
+  function handleShortcutArrowNav(e: KeyboardEvent) {
+    if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return;
+    const step = e.key === 'ArrowLeft' ? -1 : e.key === 'ArrowRight' ? 1 : e.key === 'ArrowUp' ? -gridColumnCount() : e.key === 'ArrowDown' ? gridColumnCount() : 0;
+    if (!step) return;
+    const t = e.target as HTMLElement | null;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+    if (confirmGet() || lightboxIsOpen()) return;
+    if (settingsIsOpen()) return;
+    if (!byId('ivFolderModal').hidden) return;
+    if (document.body.classList.contains('image-tab-active')) return;
+    if (deps.getBrowseMode() !== 'posts') return;
+    const groups = deps.getViewGroups();
+    if (groups.length === 0) return;
+    e.preventDefault(); // the grid scrolls on arrows otherwise, and the selection would slide out of view
+
+    // Where we are: the anchor is authoritative (selectOnly/toggle keep it current).
+    // It's null after select-all / clear / a deselecting toggle, so fall back to a lone
+    // selected card, then to "nothing yet" — where the first press lands on card 0.
+    const selected = selection.selectedGroups(groups, postIdKey);
+    const from = selection.anchorIndex() ?? (selected.length === 1 ? groups.indexOf(selected[0]) : -1);
+    const next = from < 0 ? 0 : Math.min(groups.length - 1, Math.max(0, from + step));
+    if (next === from) return; // already at that edge — don't churn the inspector
+
+    const g = groups[next];
+    if (!g) return;
+    selection.selectOnly(next, postIdKey(g.rep));
+    syncSelectionClasses();
+    scrollGridIndexIntoView(next);
+    deps.showDetail(g); // the inspector follows, exactly as it does for a plain click
+  }
+
   function requestDeleteSelected() {
     if (selection.size() === 0) return;
     confirmOpen({
@@ -246,6 +303,7 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
     handleShortcutSelectAllKey,
     handleShortcutCopyKey,
     handleShortcutQuickView,
+    handleShortcutArrowNav,
     toggleSelectAll,
     groupSelected,
     requestDeleteSelected,

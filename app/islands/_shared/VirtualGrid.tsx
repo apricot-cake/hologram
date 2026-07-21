@@ -14,6 +14,7 @@ import { createPortal, flushSync } from 'react-dom';
 import { useMasonry, usePositioner, useResizeObserver } from 'masonic';
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { ComponentType, ReactNode } from 'react';
+import { registerGridNav } from '../../renderer/grid-nav.ts';
 
 // The cell component each grid island supplies (masonic's render component).
 export interface GridCellProps {
@@ -29,7 +30,7 @@ const ModelCtx = createContext<HologramGridModel | null>(null);
 // Cells mount only inside the provider, so the null default never escapes.
 export const useGridModel = () => useContext(ModelCtx) as HologramGridModel;
 
-export function VirtualGridHost({ model, cell }: { model: HologramGridModel; cell: ComponentType<GridCellProps> }) {
+export function VirtualGridHost({ model, cell, nav }: { model: HologramGridModel; cell: ComponentType<GridCellProps>; nav?: boolean }) {
   const scroller = document.getElementById('mode-post') as HTMLElement; // the app's scroll container (never the window); static HTML, always present
   const containerRef = useRef<HTMLElement | null>(null);
   // offset of the masonry container's top inside the scroller's CONTENT (the
@@ -98,6 +99,39 @@ export function VirtualGridHost({ model, cell }: { model: HologramGridModel; cel
     [model.itemsKey],
   );
   const resizeObserver = useResizeObserver(positioner); // cell height changes (text expand, late image) re-flow the column
+
+  // Height masonic itself uses for an unmeasured cell — the fallback below reuses it
+  // so an estimated scroll lands where the grid will actually put the item.
+  const heightEstimate = model.square ? positioner.columnWidth : model.itemHeightEstimate || 120;
+
+  // Publish the geometry keyboard selection movement needs (renderer/grid-nav.ts).
+  // Re-registers whenever the positioner is recreated (itemsKey / width change) so the
+  // handle never closes over a stale position cache.
+  useEffect(() => {
+    if (!nav) return;
+    return registerGridNav({
+      columnCount: () => positioner.columnCount,
+      scrollIntoView: (index: number) => {
+        const pos = positioner.get(index);
+        const pad = model.rowGutter || 0;
+        const viewTop = scroller.scrollTop;
+        const viewHeight = scroller.clientHeight;
+        if (!pos) {
+          // Not measured yet — masonic only measures what it has rendered, so this is
+          // the far-away jump (Home/End-sized moves, not a step to a neighbour). Aim at
+          // the estimated height of everything above it and center, then let the real
+          // position take over once it renders.
+          const est = positioner.estimateHeight(index, heightEstimate);
+          scroller.scrollTo({ top: Math.max(0, offsetRef.current + est - viewHeight / 2) });
+          return;
+        }
+        const top = offsetRef.current + pos.top;
+        const bottom = top + pos.height;
+        if (top - pad < viewTop) scroller.scrollTo({ top: Math.max(0, top - pad) });
+        else if (bottom + pad > viewTop + viewHeight) scroller.scrollTo({ top: bottom + pad - viewHeight });
+      },
+    });
+  }, [nav, positioner, scroller, heightEstimate, model.rowGutter]);
 
   const gridEl = useMasonry({
     positioner,
