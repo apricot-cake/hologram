@@ -81,8 +81,9 @@
       "recommended": true,
       // 無効化はすべて「リポの意図的イディオム/方針との衝突」。正しさ系は全て有効のまま。
       "a11y": {
-        // デスクトップ Electron アプリで a11y/キーボード操作は目的に掲げない方針
-        // （メモリ hologram-react-settings-pilot「挙動の堅牢性は目的でない」）。
+        // デスクトップアプリとして a11y/キーボード操作を目標に掲げていないため
+        // 一括で無効化している。指摘は 21 件（2026-07-22 実測）で、方針を変える
+        // 場合は全体を戻すのでなくルール単位で有効化する。
         "recommended": false
       },
       "style": {
@@ -99,9 +100,9 @@
         "noAssignInExpressions": "off", // while ((m = re.exec())) 等のイディオム
         "noArrayIndexKey": "off", // 島はモデル丸ごと再pushで index key が正（部分並べ替えをしない）
         "noRedundantUseStrict": "off", // Biome は .js を ESM 扱い＝CJS/plain-script の 'use strict' は本物。削ると sloppy 化の実害
-        // TS 段階導入（BACKLOG 採用#1）の方針: 素JS層（viewer.js/ブリッジ実装）が
-        // 未型付けの間、境界を越えるモデル/ペイロードの明示 any は「意図的な契約」
-        // （globals.d.ts に集約）。素JS層が TS 化される単一バンドル化以降に再訪。
+        // 明示 any が 380 箇所（2026-07-22 実測）。境界を越えるペイロード（IPC・
+        // 拡張⇄ホスト間のメッセージ）の契約として意図的に置いたものを含むため、
+        // 有効化するなら段階的な型付けとセットで行う。
         "noExplicitAny": "off"
       },
       "performance": {
