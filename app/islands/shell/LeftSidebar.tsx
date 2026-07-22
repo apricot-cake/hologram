@@ -15,18 +15,21 @@ import { Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupConte
 import type { PanelResize } from './use-panel-resize.ts';
 import { MirrorStatus } from '../mirror/MirrorStatus.tsx';
 import { t } from '../_shared/i18n.ts';
-import { get as storeGet, set as storeSet, subscribe as storeSubscribe } from '../../renderer/store.ts';
+import { get as storeGet, subscribe as storeSubscribe } from '../../renderer/store.ts';
 import { open as openSettings } from '../../renderer/settings.ts';
 import { all as folderAll, isSavedSearch, load as folderLoad, onChange as folderOnChange, removeFolder, renameFolder, toast, updateFolder } from '../../renderer/folders.ts';
 import { cloneTree } from '../../renderer/query.ts';
 import { open as menuOpen } from '../../renderer/menu.ts';
 import { promptName } from '../prompt/Prompt.tsx';
-import { applyFolderFilter, applySavedSearch } from '../../renderer/orchestrator.ts';
+import { applyFolderFilter, applySavedSearch, browseTo } from '../../renderer/orchestrator.ts';
 
-// browseMode is the single source of truth for the active destination. Writing
-// the store IS the interface — orchestrator.ts subscribes and runs the heavy
-// switch (handleBrowseModeStoreChange → setBrowseMode); the store.set idempotent
-// guard means no echo loop.
+// browseMode is the single source of truth for the active destination (read here
+// for the row's active state). Choosing a destination goes through orchestrator
+// actions (browseTo / applyFolderFilter / applySavedSearch) rather than a raw
+// store write: off the image view they still funnel through the store's heavy
+// switch (handleBrowseModeStoreChange → setBrowseMode) with its idempotent guard,
+// but while the image view is up the destination has to LEAVE it (#312) — a
+// same-value store write is swallowed by that guard and would strand the view.
 const subBrowse = (cb: () => void) => storeSubscribe('browseMode', cb);
 const getBrowse = (): string => (storeGet('browseMode') as string) || 'posts';
 
@@ -80,9 +83,6 @@ export function LeftSidebar({ resize }: { resize?: PanelResize }) {
       } else if (item.act === 'delete') removeFolder(f.id);
     });
   };
-  // Clicking a post-side row while the poster grid is up would otherwise write a
-  // query nobody can see — the destination switches with it.
-  const toPosts = () => storeSet('browseMode', 'posts');
   return (
     <Sidebar collapsible="icon">
       {/* Titlebar-height drag strip (Obsidian-type shell, #154): the sidebar starts at
@@ -97,13 +97,13 @@ export function LeftSidebar({ resize }: { resize?: PanelResize }) {
           <SidebarGroupContent>
             <SidebarMenu>
               <SidebarMenuItem>
-                <SidebarMenuButton isActive={!isPosters} tooltip={t('browsePosts')} onClick={() => storeSet('browseMode', 'posts')}>
+                <SidebarMenuButton isActive={!isPosters} tooltip={t('browsePosts')} onClick={() => browseTo('posts')}>
                   <LayoutGrid />
                   <span>{t('browsePosts')}</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
               <SidebarMenuItem>
-                <SidebarMenuButton isActive={isPosters} tooltip={t('browsePosters')} onClick={() => storeSet('browseMode', 'posters')}>
+                <SidebarMenuButton isActive={isPosters} tooltip={t('browsePosters')} onClick={() => browseTo('posters')}>
                   <Users />
                   <span>{t('browsePosters')}</span>
                 </SidebarMenuButton>
@@ -119,14 +119,10 @@ export function LeftSidebar({ resize }: { resize?: PanelResize }) {
                 {folders.map((f) => (
                   <SidebarMenuItem key={f.id}>
                     {/* Click = apply this folder as a place filter on the post query
-                        (redesign §3-1). Hierarchy + create/rename/delete come with #41. */}
-                    <SidebarMenuButton
-                      tooltip={f.name}
-                      onClick={() => {
-                        toPosts();
-                        applyFolderFilter(f.id);
-                      }}
-                    >
+                        (redesign §3-1). applyFolderFilter switches to the posts grid and
+                        leaves the image view itself (#312). Hierarchy + create/rename/
+                        delete come with #41. */}
+                    <SidebarMenuButton tooltip={f.name} onClick={() => applyFolderFilter(f.id)}>
                       <Folder />
                       <span>{f.name}</span>
                     </SidebarMenuButton>
@@ -149,15 +145,7 @@ export function LeftSidebar({ resize }: { resize?: PanelResize }) {
               <SidebarMenu>
                 {saved.map((f) => (
                   <SidebarMenuItem key={f.id}>
-                    <SidebarMenuButton
-                      tooltip={f.name}
-                      isActive={!!currentKey && currentKey === treeKey(f.tree)}
-                      onContextMenu={(e) => savedSearchMenu(e, f)}
-                      onClick={() => {
-                        toPosts();
-                        applySavedSearch(f.id);
-                      }}
-                    >
+                    <SidebarMenuButton tooltip={f.name} isActive={!!currentKey && currentKey === treeKey(f.tree)} onContextMenu={(e) => savedSearchMenu(e, f)} onClick={() => applySavedSearch(f.id)}>
                       <Search />
                       <span>{f.name}</span>
                     </SidebarMenuButton>
