@@ -59,6 +59,7 @@ const TESTS = [
   'test-metadata-origin',
   'test-content-fixtures',
   'test-bridge',
+  'test-bridge-query',
   'test-bridge-ssrf',
   'test-media',
   'test-drag',

@@ -42,9 +42,22 @@
   /* The body background must still paint the whole viewport around the
      centered column. */
   html { background: var(--bg); }
-  /* No settings yet — the page is the diagnostics escape hatch and the future
-     home for capture settings. The link keeps its footnote-quiet styling:
-     normal users never need diag, so it shouldn't read as a call to action. */
+  /* One setting row: the control leads, its explanation sits under the label
+     in muted text (the app Settings pane's shape). */
+  .row {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    margin: 0 0 32px;
+  }
+  .row input { margin: 2px 0 0; }
+  .row .desc {
+    margin: 4px 0 0;
+    color: var(--text-muted);
+    font-size: 12px;
+  }
+  /* The diagnostics link keeps its footnote-quiet styling: normal users never
+     need diag, so it shouldn't read as a call to action. */
   .foot {
     margin: 0;
     font-size: 12px;
@@ -58,6 +71,13 @@
   .foot a:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--focus-ring); border-radius: 4px; }
 </style>
 <body>
+  <div class="row">
+    <input type="checkbox" id="savedBadge" checked>
+    <div>
+      <label for="savedBadge" id="savedBadgeLabel">保存済みの投稿に印をつける</label>
+      <p class="desc" id="savedBadgeDesc">タイムライン上で、すでに Hologram に保存した投稿の画像に小さな印を表示します。判定はこのPCの中だけで行われます。</p>
+    </div>
+  </div>
   <p class="foot"><a href="diag.html" target="_blank" id="diagLink">診断ページを開く</a></p>
   <script src="options.js"></script>
 </body>

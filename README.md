@@ -38,6 +38,8 @@ When you find a post you like —
 
 What you save gathers automatically in the desktop app (it watches the save folder, so new captures show up in the list right away).
 
+While you scroll a timeline, images you've already saved carry a small mark — no more stopping to wonder whether you saved that one. The check happens entirely on your computer, and works with the app closed. Turn it off on the extension's options page if you'd rather not see it.
+
 ### 2. Browse & read
 
 Switch between **card / tile / list** views at the top of the left sidebar. Tile is good for browsing illustrations side by side; list is good for reading text.

@@ -78,6 +78,7 @@
     "test-backfill-metadata.cts",
     "test-backup-guard.cts",
     "test-bridge.cts",
+    "test-bridge-query.cts",
     "test-bridge-ssrf.cts",
     "test-config-recovery.cts",
     "test-content-fixtures.cts",

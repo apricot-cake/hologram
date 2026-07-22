@@ -38,6 +38,9 @@
 
       // drag.js: drop-zone hint (the toasts reuse the banner* keys above)
       dragDropHint: 'ここにドロップで Hologram に保存',
+
+      // badge.js: tooltip on the timeline's "already saved" mark
+      badgeSaved: 'Hologram に保存済み',
     },
 
     en: {
@@ -56,6 +59,9 @@
 
       // drag.js: drop-zone hint (the toasts reuse the banner* keys above)
       dragDropHint: 'Drop here to save to Hologram',
+
+      // badge.js: tooltip on the timeline's "already saved" mark
+      badgeSaved: 'Saved in Hologram',
     },
   };
 

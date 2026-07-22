@@ -12,6 +12,13 @@
 // plain named export now (the planned duplicate-save detection can import the same
 // URL→key normalization when it lands).
 import { hologramIpc } from './ipc.ts';
+// URL→identity-key normalization lives in native-host/ because the bridge owns it
+// too (the TL "saved" badge asks it whether a permalink is already in the library,
+// #54) and a second copy here would let the badge and the grid disagree about
+// which posts are the same post. Re-exported so every renderer importer keeps
+// reaching it through this service, unchanged.
+import { postKeyOf } from '../../native-host/post-key.mts';
+export { postKeyOf };
 
 // Per-density image source. A post may carry both a capture (screenshot) and
 // real media/artwork; the density decides which leads:
@@ -43,25 +50,6 @@ export function densityImage(p: HologramPost, density: string): string {
 // one post) collapse into one card. Manual groups (manual-groups.json) win
 // over auto. ungrouped.json opts individual post keys out.
 export const postIdKey = (p: HologramPost): string => p.captureId || (p.url || '') + '|' + (p.capturedAt || '');
-// Same URL patterns as metadata.js parsePostUrl (renderer-side copy). null = don't group.
-export function postKeyOf(url: string | null | undefined): string | null {
-  if (!url) return null;
-  let u: any;
-  try {
-    u = new URL(url);
-  } catch {
-    return null;
-  }
-  const host = u.hostname,
-    pa = u.pathname;
-  let m: any;
-  if (host === 'bsky.app' && (m = pa.match(/^\/profile\/([^/]+)\/post\/([^/?#]+)/))) return 'bluesky:' + m[1] + '/' + m[2];
-  if ((host === 'x.com' || host === 'twitter.com') && (m = pa.match(/\/status\/(\d+)/))) return 'x:' + m[1];
-  if ((m = pa.match(/^\/@[^/]+\/(\d[\w-]*)\/?$/))) return 'mastodon:' + host + ':' + m[1];
-  if ((m = pa.match(/^\/notes\/([^/?#]+)/))) return 'misskey:' + host + ':' + m[1];
-  if ((host === 'www.pixiv.net' || host === 'pixiv.net') && (m = pa.match(/^(?:\/[a-z]{2})?\/artworks\/(\d+)/))) return 'pixiv:' + m[1];
-  return null;
-}
 // The "artwork pages" of one record: original media, else the dragged/migrated image.
 export const groupFilesOf = (p: HologramPost): string[] => {
   const m = mediaFilesOf(p);

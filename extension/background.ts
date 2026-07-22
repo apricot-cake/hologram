@@ -157,11 +157,13 @@ async function captureAndSave(tab, rect, postUrl, sendPlatform) {
   });
 
   const metaOk = metaFetched(meta);
+  let ack: any;
   try {
-    await sendToBridge(captureId, jpegBase64, record, metaOk);
+    ack = await sendToBridge(captureId, jpegBase64, record, metaOk);
   } catch (err) {
     throw stageError('bridge', err?.message || 'bridge save failed');
   }
+  markSaved([record.url, postUrl], ack?.file || captureId, tab.id); // light this post's TL badge now
   // grouped = prior saves of this post this session → the banner says the save
   // merged with them (the app folds same-URL records into one card).
   const grouped = await bumpRecentSave(record.url);
@@ -274,6 +276,153 @@ function sendDraggedToBridge(captureId, imageUrl, imageReferer, record, metaOk) 
 function notify(tabId, success, extra = {}) {
   chrome.tabs.sendMessage(tabId, { type: 'notify', success, ...extra }).catch(() => {});
 }
+
+// --- "Already saved?" lookups (TL badge, #54) ---------------------------------
+// badge.js asks whether the permalinks it can see are already in the library.
+// The answer comes from the native host (which reads the library's index — it
+// works with the desktop app closed), through a port that STAYS OPEN: a timeline
+// scroll asks a few times a second, and connectNative spawns a fresh host process
+// per connection, so the per-save one-shot shape would fork a process per query.
+//
+// One port, many in-flight requests: each carries an id the host echoes back.
+// The service worker can be killed at any idle moment, taking the port with it —
+// that is fine, the next query reconnects (and a killed SW has no badges to keep
+// current anyway).
+let queryPort: chrome.runtime.Port | null = null;
+let nextQueryId = 1;
+const pendingQueries = new Map<number, { resolve: (r: any) => void; reject: (e: Error) => void; timer: ReturnType<typeof setTimeout> }>();
+
+function failAllPending(message: string) {
+  for (const [, p] of pendingQueries) {
+    clearTimeout(p.timer);
+    p.reject(new Error(message));
+  }
+  pendingQueries.clear();
+}
+
+function getQueryPort(): chrome.runtime.Port {
+  if (queryPort) return queryPort;
+  const port = chrome.runtime.connectNative(NATIVE_HOST);
+  queryPort = port;
+  port.onMessage.addListener((msg: any) => {
+    const p = msg && msg.id != null ? pendingQueries.get(msg.id) : null;
+    if (!p) return; // late reply to a timed-out request — nothing to settle
+    pendingQueries.delete(msg.id);
+    clearTimeout(p.timer);
+    p.resolve(msg);
+  });
+  port.onDisconnect.addListener(() => {
+    if (queryPort === port) queryPort = null;
+    failAllPending(chrome.runtime.lastError?.message || 'Native host disconnected');
+  });
+  return port;
+}
+
+// Ask the host about a batch of URLs. Rejects (rather than answering "not
+// saved") when the host can't be reached, so a missing host shows NO badges
+// instead of asserting that a saved post isn't saved.
+function queryBridge(urls: string[]): Promise<Record<string, string | null>> {
+  return new Promise((resolve, reject) => {
+    let port: chrome.runtime.Port;
+    try {
+      port = getQueryPort();
+    } catch (error: any) {
+      reject(new Error(`Native host unavailable: ${error?.message || error}`));
+      return;
+    }
+    const id = nextQueryId++;
+    const timer = setTimeout(() => {
+      pendingQueries.delete(id);
+      reject(new Error('Native host timed out'));
+    }, 8000);
+    pendingQueries.set(id, { resolve: (msg) => resolve((msg && msg.results) || {}), reject, timer });
+    try {
+      port.postMessage({ type: 'query', id, urls });
+    } catch (error: any) {
+      pendingQueries.delete(id);
+      clearTimeout(timer);
+      queryPort = null;
+      reject(new Error(`Native host unavailable: ${error?.message || error}`));
+    }
+  });
+}
+
+// Answers already known, so scrolling back over a post costs nothing.
+// A "saved" answer can only be invalidated by a delete in the desktop app, which
+// this side never sees — so positives are kept for the life of the worker and a
+// deleted post keeps its badge until the SW restarts. A "not saved" answer goes
+// stale the moment the user saves that post, so negatives expire quickly (a save
+// made HERE updates the entry directly — see markSaved).
+const SAVED_TTL_MS = 60_000; // negatives only
+const SAVED_CACHE_MAX = 2000;
+const savedCache = new Map<string, { id: string | null; until: number }>();
+
+function cacheGet(url: string): { id: string | null } | undefined {
+  const hit = savedCache.get(url);
+  if (!hit) return undefined;
+  if (hit.until && hit.until < Date.now()) {
+    savedCache.delete(url);
+    return undefined;
+  }
+  return hit;
+}
+
+function cacheSet(url: string, id: string | null) {
+  savedCache.delete(url); // re-insert so Map iteration order is LRU-ish
+  savedCache.set(url, { id, until: id === null ? Date.now() + SAVED_TTL_MS : 0 });
+  if (savedCache.size > SAVED_CACHE_MAX) {
+    for (const k of [...savedCache.keys()].slice(0, savedCache.size - SAVED_CACHE_MAX)) savedCache.delete(k);
+  }
+}
+
+// A save just landed: the badge for that post must appear now, not after the
+// negative entry expires. Told to the saving tab directly — other tabs pick it
+// up when their own negatives expire.
+//
+// BOTH url forms are marked: the record's url comes from the platform API and
+// the page's permalink from the DOM, and the two can differ in spelling for the
+// same post (the host normalizes them to one key, this side deliberately does
+// not — see native-host/post-key.mts). Caching only one form would leave the
+// other's negative entry to expire on its own, and the badge would lag a minute
+// behind the save that just happened in front of the user.
+function markSaved(urls: Array<string | null | undefined>, captureId: string | null, tabId?: number) {
+  const seen = new Set<string>();
+  for (const url of urls) {
+    if (!url || seen.has(url)) continue;
+    seen.add(url);
+    cacheSet(url, captureId || '');
+    if (tabId != null) chrome.tabs.sendMessage(tabId, { type: 'savedUpdate', url }).catch(() => {});
+  }
+}
+
+chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (message.type !== 'checkSaved') return false;
+  const urls: string[] = Array.isArray(message.urls) ? message.urls.filter((u) => typeof u === 'string' && u) : [];
+  const results: Record<string, string | null> = {};
+  const ask: string[] = [];
+  for (const u of urls) {
+    const hit = cacheGet(u);
+    if (hit) results[u] = hit.id;
+    else ask.push(u);
+  }
+  if (!ask.length) {
+    sendResponse({ ok: true, results });
+    return false;
+  }
+  queryBridge(ask)
+    .then((fresh) => {
+      for (const u of ask) {
+        const id = Object.hasOwn(fresh, u) ? fresh[u] : null;
+        cacheSet(u, id);
+        results[u] = id;
+      }
+      sendResponse({ ok: true, results });
+    })
+    // Unreachable host → report the failure instead of a page full of
+    // "not saved": badge.js leaves those posts unmarked and retries later.
+    .catch((error) => sendResponse({ ok: false, error: error?.message, results }));
+  return true; // async response
+});
 
 // --- Recent-save memory (per post URL) ------------------------------------------
 // Consecutive saves of the SAME post (multi-page manga, re-grabs) merge into one
@@ -471,6 +620,7 @@ async function captureAndSaveDragged(tab, sendPlatform, postUrl, imageUrls) {
   } catch (err) {
     throw stageError('bridge', err?.message || 'bridge save failed');
   }
+  markSaved([record.url, postUrl], ack?.file || captureId, tab.id); // light this post's TL badge now
   // Surface metadata-fetch failure to the drop overlay (same partial-success
   // signal as the click-save banner) so a screenshot-less illustration that
   // saved without post info isn't shown as a plain success. grouped = prior
