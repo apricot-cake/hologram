@@ -1,7 +1,5 @@
 # Hologram スクリプト・テスト
 
-> CLAUDE.md のスリム化に伴い、`scripts/` のカタログとテスト手順をここへ集約（2026-06-17）。CLAUDE.md 側には「再テストしない／test-progress.md を必ず確認」という**行動ルールだけ**残す。
-
 ## テストケース定義・進捗
 
 - テストケース定義: `scripts/test-plan.md`
