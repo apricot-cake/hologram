@@ -331,6 +331,13 @@
 
   addEventListener('scroll', scheduleReposition, { capture: true, passive: true });
   addEventListener('resize', scheduleReposition, { passive: true });
+  // A post can be answered BEFORE its picture has a size: the observer's margin
+  // deliberately reaches past the viewport, and a feed's images are lazy. Such a
+  // media box measures 0×0 and placeBadge skips it (verified on a live x.com
+  // timeline), so the mark would wait for the next scroll. An image's own load
+  // event is exactly when the box gains its size — on `document` in the capture
+  // phase, since load does not bubble.
+  document.addEventListener('load', scheduleReposition, { capture: true, passive: true });
 
   // === per-platform DOM ===
 

@@ -43,6 +43,13 @@ const X_HTML = `<!doctype html><html><body>
       <a href="/bob/status/222"><time datetime="2026-07-01T00:00:00Z">2h</time></a>
       <div data-testid="tweetPhoto" data-rect-top="400"><img src="https://pbs.twimg.com/media/BBB.jpg"></div>
     </article>
+    <!-- p3's photo has no size yet (no data-rect-top): a lazy image below the
+         fold, which is how a real timeline answers a post before its picture
+         has laid out. -->
+    <article data-testid="tweet" id="p3">
+      <a href="/carol/status/333"><time datetime="2026-07-01T00:00:00Z">3h</time></a>
+      <div data-testid="tweetPhoto"><img id="lazy" src="https://pbs.twimg.com/media/CCC.jpg"></div>
+    </article>
   </div>
 </body></html>`;
 
@@ -127,7 +134,7 @@ const layerBadges = (): any[] => Array.from(window.document.querySelectorAll('#_
 const settle = () => new Promise((r) => setTimeout(r, 400)); // past the 300ms query debounce
 
 (async () => {
-  check('both posts are observed after the initial scan', observed.size === 2);
+  check('every post is observed after the initial scan', observed.size === 3);
 
   // --- only the visible posts are asked about, and in one batch ---
   savedAnswer = { 'https://x.com/alice/status/111': '1780000000000-aa' };
@@ -161,12 +168,21 @@ const settle = () => new Promise((r) => setTimeout(r, 400)); // past the 300ms q
   for (const fn of runtimeListeners) fn({ type: 'savedUpdate', url: 'https://x.com/bob/status/222' });
   check('a savedUpdate push marks the post immediately', layerBadges().length === 2);
 
+  // --- a saved post whose picture had no size yet still gets marked ---
+  savedAnswer['https://x.com/carol/status/333'] = '1780000000002-cc';
+  intersect(['p3'], true);
+  await settle();
+  check('a zero-size media box is skipped, not badly placed', layerBadges().length === 2);
+  window.document.querySelector('#p3 [data-testid="tweetPhoto"]').setAttribute('data-rect-top', '800');
+  window.document.getElementById('lazy').dispatchEvent(new window.Event('load'));
+  check('its load event places the mark without waiting for a scroll', layerBadges().length === 3);
+
   // --- the options switch takes effect live, both ways ---
   setSetting('savedBadge', false);
   check('turning the setting off removes every mark', layerBadges().length === 0);
   setSetting('savedBadge', true);
   await settle();
-  check('turning it back on restores them', layerBadges().length === 2);
+  check('turning it back on restores them', layerBadges().length === 3);
 
   console.log(fail === 0 ? `PASS test-badge-unit: ${pass} checks` : `FAIL test-badge-unit: ${fail} of ${pass + fail} checks failed`);
   process.exit(fail === 0 ? 0 : 1);
