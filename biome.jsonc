@@ -92,7 +92,7 @@
         "noParameterAssign": "off" // 引数の正規化再代入（v = coerce(v)）は常用パターン
       },
       "complexity": {
-        "useOptionalChain": "off", // a && a.b イディオム（259件）＝viewer.js は React 化で解体予定・今の一括書換はblame汚しだけ
+        "useOptionalChain": "off", // a && a.b イディオムが 245 箇所（2026-07-22 実測）＝一括書換は blame を汚すだけで得るものがない
         "noForEach": "off", // forEach は許容
         "useArrowFunction": "off" // function 式は hoisting/this 都合で意図的な箇所あり
       },
