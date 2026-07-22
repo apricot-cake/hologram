@@ -32,6 +32,7 @@ const countingFs = {
   },
 };
 const writeSidecar = (name, rec) => realFs.writeFileSync(path.join(dir, name), JSON.stringify(rec));
+const writeSidecarIn = (d, name, rec) => realFs.writeFileSync(path.join(d, name), JSON.stringify(rec));
 
 (async () => {
   writeSidecar('a.json', { captureId: 'a', image: 'a.jpg', capturedAt: '2026-01-01T00:00:00Z' });
@@ -171,8 +172,50 @@ const writeSidecar = (name, rec) => realFs.writeFileSync(path.join(dir, name), J
   assert.strictEqual(sidecarReads, 0, 'BOM snapshot still avoids the cold rescan');
   realFs.rmSync(dir3, { recursive: true, force: true });
 
+  // --- readImageDims folder clamp (#216): a sidecar `image` value that escapes
+  //     the save folder (a hostile export ZIP's JSON is read verbatim) must be
+  //     skipped — never opened — while a normal in-folder image still sizes.
+  //     Uses an fs with a REAL open() (countingFs above has none, so augmentDims
+  //     is a no-op there) that records every path it opens.
+  const opened: string[] = [];
+  const dimsFs = {
+    promises: {
+      readdir: (...a) => realFs.promises.readdir(...a),
+      stat: (...a) => realFs.promises.stat(...a),
+      readFile: (...a) => realFs.promises.readFile(...a),
+      writeFile: (...a) => realFs.promises.writeFile(...a),
+      rename: (...a) => realFs.promises.rename(...a),
+      open: (p, ...a) => {
+        opened.push(String(p));
+        return realFs.promises.open(p, ...a);
+      },
+    },
+  };
+  const png1x1 = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMBAQDJ/pLvAAAAAElFTkSuQmCC', 'base64');
+  const dir4 = realFs.mkdtempSync(path.join(os.tmpdir(), 'hologram-index-clamp-'));
+  const outside = realFs.mkdtempSync(path.join(os.tmpdir(), 'hologram-outside-'));
+  const secret = path.join(outside, 'secret.png');
+  realFs.writeFileSync(secret, png1x1);
+  realFs.writeFileSync(path.join(dir4, 'good.png'), png1x1);
+  writeSidecarIn(dir4, 'good.json', { captureId: 'good', image: 'good.png', capturedAt: '2026-04-01T00:00:00Z' });
+  // Hostile sidecar: image escapes dir4 via ../ up into the sibling outside dir.
+  const escapeRel = path.relative(dir4, secret).split(path.sep).join('/');
+  writeSidecarIn(dir4, 'evil.json', { captureId: 'evil', image: escapeRel, capturedAt: '2026-04-02T00:00:00Z' });
+
+  opened.length = 0;
+  const idxE = createPostIndex({ fs: dimsFs, internalFiles: INTERNAL });
+  const re = await idxE.list(dir4);
+  const good = re.posts.find((p) => p.captureId === 'good');
+  const evil = re.posts.find((p) => p.captureId === 'evil');
+  assert.strictEqual(good.shotW, 1, 'in-folder image still sizes (no regression)');
+  assert.strictEqual(good.shotH, 1, 'in-folder image height read');
+  assert.ok(!opened.some((p) => p.endsWith('secret.png')), '#216: folder-external image is never opened');
+  assert.strictEqual(evil.shotW, 0, '#216: escaping image is skipped -> unsizable sentinel (0/0)');
+  realFs.rmSync(dir4, { recursive: true, force: true });
+  realFs.rmSync(outside, { recursive: true, force: true });
+
   realFs.rmSync(dir, { recursive: true, force: true });
-  console.log('PASS test-index: reuse, prune, snapshot cold-restore, computeDelta, targeted applyChanges, and BOM tolerance verified');
+  console.log('PASS test-index: reuse, prune, snapshot cold-restore, computeDelta, targeted applyChanges, BOM tolerance, and #216 folder clamp verified');
 })().catch((e) => {
   try {
     realFs.rmSync(dir, { recursive: true, force: true });

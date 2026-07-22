@@ -61,12 +61,27 @@ function createPostIndex(opts) {
   let map = new Map<string, any>(); // filename -> { mtimeMs, record|null }  (null = known non-post)
   let snapshotLoaded = false;
 
+  // Clamp a sidecar-derived filename to WITHIN `folder` before opening it. The
+  // card image is attacker-influenced (a hostile export ZIP's sidecar JSON is
+  // read verbatim — zip-slip guards only vet entry names, not the values inside
+  // a sidecar), so an `"image": "../../../x.png"` must not escape the folder.
+  // Resolve then containment-check, skipping anything outside — the same rule
+  // resolveInFolder (asset route) and delete-post's path.basename already apply
+  // to these exact rec.image / media[].file values. #216.
+  function resolveWithin(folder, file) {
+    const root = path.resolve(folder);
+    const full = path.resolve(root, String(file));
+    return full === root || full.startsWith(root + path.sep) ? full : null;
+  }
+
   // Read just the image header (no decode) and return { width, height } or null.
   async function readImageDims(folder, file) {
     if (!fs.promises || typeof fs.promises.open !== 'function') return null; // test fs has no open()
+    const full = resolveWithin(folder, file);
+    if (!full) return null; // escapes the save folder -> skip (never opened)
     let fh: any = null;
     try {
-      fh = await fs.promises.open(path.join(folder, file), 'r');
+      fh = await fs.promises.open(full, 'r');
       const buf = Buffer.alloc(HEADER_BYTES);
       const { bytesRead } = await fh.read(buf, 0, HEADER_BYTES, 0);
       let dim = imageSize(buf.subarray(0, bytesRead));
