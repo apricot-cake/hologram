@@ -338,7 +338,10 @@
     if (hostnameMatches('x.com') || hostnameMatches('twitter.com')) {
       return {
         unitSelector: 'article[data-testid="tweet"]',
-        mediaOf: (unit) => unit.querySelector('[data-testid="tweetPhoto"] img, [data-testid="tweetPhoto"] video, [data-testid="tweetPhoto"]'),
+        // querySelector returns document order, not selector order: a post with
+        // several photos has one tweetPhoto box each, so this is the FIRST
+        // image's box — where the badge belongs on a multi-image post.
+        mediaOf: (unit) => unit.querySelector('[data-testid="tweetPhoto"], [data-testid="videoPlayer"]'),
       };
     }
     if (hostnameMatches('bsky.app')) {

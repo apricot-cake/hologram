@@ -58,6 +58,7 @@ const TESTS = [
   'test-metadata-correctness',
   'test-metadata-origin',
   'test-content-fixtures',
+  'test-badge-unit',
   'test-bridge',
   'test-bridge-query',
   'test-bridge-ssrf',
