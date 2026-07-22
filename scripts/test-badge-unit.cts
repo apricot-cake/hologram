@@ -74,6 +74,12 @@ window.requestAnimationFrame = (fn) => {
   return 0;
 };
 
+// Worth knowing before adding a listener assertion here: jsdom does NOT put the
+// Window in the propagation path of an event dispatched on an element, so a
+// capture-phase listener registered on `window` never fires under this harness
+// even though it does in a browser. Listen on `document` (as badge.js's load
+// handler does) or the test silently proves nothing.
+
 // IntersectionObserver: the test drives visibility by hand.
 let ioCallback: any = null;
 const observed = new Set<any>();
