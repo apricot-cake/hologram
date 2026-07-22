@@ -5,8 +5,8 @@
   "description": "Remotion project for the Hologram promo end-card logo motion",
   "scripts": {
     "studio": "remotion studio",
-    "render:slide": "remotion render LogoSlide out/slide-seq --sequence --image-format=png && node scripts/stitch.mjs out/slide-seq out/logo-slide.mp4",
-    "render:fill": "remotion render LogoFill out/fill-seq --sequence --image-format=png && node scripts/stitch.mjs out/fill-seq out/logo-fill.mp4",
+    "render:slide": "remotion render LogoSlide out/logo-slide.mp4",
+    "render:fill": "remotion render LogoFill out/logo-fill.mp4",
     "still": "remotion still"
   },
   "dependencies": {
@@ -16,8 +16,6 @@
     "remotion": "^4.0.0"
   },
   "devDependencies": {
-    "@ffmpeg/core": "^0.11.0",
-    "@ffmpeg/ffmpeg": "^0.11.6",
     "@types/react": "^19.0.0",
     "typescript": "^5.5.0"
   }
