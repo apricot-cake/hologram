@@ -31,11 +31,18 @@
 // media[], avatarFile } (native-host/bridge.cts). Re-derive from the real schema
 // if it drifts (this is a dev tool, expected to age with schema changes).
 //
-// KNOWN LIMITATION (#175 follow-up): every placeholder image is a PNG, so no record
-// is classified as a screenshot (isScreenshot in app/renderer/records.ts keys off a
-// .jpg/.jpeg extension). Card/tile/gallery for media-bearing posts are unaffected
-// (the card image is media[0] regardless), but the list-density "capture leads" and
-// the gallery "screenshot rides the tail" branches are not exercised by this data.
+// KNOWN LIMITATION 1: every placeholder image is a PNG, so no record is classified
+// as a screenshot (isScreenshot in app/renderer/records.ts keys off a .jpg/.jpeg
+// extension). Card/tile/gallery for media-bearing posts are unaffected (the card
+// image is media[0] regardless), but the list-density "capture leads" and the
+// gallery "screenshot rides the tail" branches are not exercised by this data.
+//
+// KNOWN LIMITATION 2: the display-name pools below are small (192 JA / 168 EN
+// combinations) while the author count scales with --count, so names repeat at
+// large scales (~9 authors per JA name at 10k posts, ~91 at 100k). Real platforms
+// do share display names, but with a long tail of unique ones; here the sharing is
+// uniform and nothing is unique. Handles stay unique (the author index is part of
+// screenName), so record identity and per-author grouping stay correct.
 
 const fs = require('node:fs');
 const path = require('node:path');
