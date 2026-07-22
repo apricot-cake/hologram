@@ -72,4 +72,6 @@ electron-builder, win/nsis。
 - `assets/icon.png`（256）＝汎用ブランドラスター/ファビコン。
 - `assets/banner-{light,dark,en-light,en-dark}.svg`＝README バナー。ワードマーク `hologram`＋タグラインは保持し、先頭マークだけ虹色スクエアの埋め込み画像（base64）に差し替え。
 
+**マスターを差し替えたとき以外は実行しない**: リサンプル結果は実行環境（Electron のバージョン等）で変わるため、マスターが同じでも再実行すれば全派生アイコンに差分が出る。見た目は変わらないので得るものがなく、意図して固定したバイト列を崩すだけになる。過去のフレームへ戻す場合も再生成でなく git のブロブから復元する（前例は c49aa8e）。
+
 Electron 経由で実行するのは nativeImage の高品質リサンプラを使うため（ウィンドウもネットワークも無し・リポへのファイル出力のみ）。拡張子が `.cjs`（周囲の `scripts/*.cts` と異なる）のは、Electron 43／Node 22 が `.cts` エントリを ESM 経由で読み `require('electron')` の注入が効かなくなるため＝classic CommonJS ローダを強制する必要がある（詳細はスクリプト冒頭コメント）。`.cts` へ戻さないこと。
