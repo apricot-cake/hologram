@@ -115,6 +115,14 @@ export let applyPosterSize: (value: number, min: number, max: number) => void;
 // popover's re-roll button calls it; picking 'random' seeds itself (see the
 // sortSelect change listener).
 export let rerollShuffle: () => void;
+// Go to a browse destination (投稿グリッド / 投稿者グリッド) from the left sidebar.
+// The sidebar is the "go to another place" axis (browser address bar / bookmarks),
+// so choosing a destination while the image view is up LEAVES it and lands on that
+// grid — even when the mode is unchanged (#312). Off the image view it is the plain
+// mode switch, so the active destination stays a no-op. Called by LeftSidebar's two
+// mode buttons; the folder / saved-search rows leave via applyFolderFilter /
+// applySavedSearch below, which do the same before mutating the query.
+export let browseTo: (mode: string) => void;
 // Apply a library folder as a place filter (redesign §3-1): replace the post query's
 // folder facet with the clicked folder, then re-render. The new left sidebar's
 // folder rows call this directly (no qf-pop flyout).
@@ -700,9 +708,21 @@ export function endFilterEditSession(): void {
   function afterQueryChange() {
     postQB.refresh();
   }
+  // A post-side sidebar destination (folder / saved search) is a navigation to
+  // another place, not just a query edit (#312). If the image view is up, leave it
+  // and make sure we are on the posts grid first — WITHOUT a render of its own: the
+  // query mutation that follows renders exactly once and records the single grid
+  // entry (activeImageTab is cleared by then, so that render is no longer swallowed
+  // as a background refresh). setBrowseModeLite is the render-free mode flip; both
+  // calls are no-ops when the view is hidden and we are already browsing posts.
+  function enterPostsForSidebar() {
+    imageTabCtl.hideImageView();
+    setBrowseModeLite('posts');
+  }
   // Folder-as-place: clear any existing folder leaves, then add the clicked
   // one. addFilter goes through facetAdd + the qb's re-render, so the grid + chips refresh.
   applyFolderFilter = (id) => {
+    enterPostsForSidebar();
     removeCondsMatching((c) => c.type === 'folder');
     addFilter({ type: 'folder', value: id });
   };
@@ -712,6 +732,7 @@ export function endFilterEditSession(): void {
   applySavedSearch = (id) => {
     const f = CF() && CF().byId(id);
     if (!f || f.kind !== 'dynamic') return;
+    enterPostsForSidebar();
     postQB.setTree(f.tree || null);
     searchEditing.clear();
     setSearchBoxValue('');
@@ -1262,6 +1283,23 @@ export function endFilterEditSession(): void {
     clearTimeout(_browseRenderT);
     _browseRenderT = setTimeout(render, 0);
   }
+  // Sidebar mode button → browse destination (#312). While the image view is up,
+  // the destination is a place to move TO: hide the view, then let setBrowseMode
+  // render and record the grid entry — even for the current mode (setBrowseMode
+  // still renders, and with activeImageTab cleared that render records the entry
+  // the store's same-value guard would otherwise swallow, stranding the view on the
+  // image). Off the image view the store stays the interface, so its same-value
+  // guard keeps pressing the active destination a genuine no-op (no re-render, no
+  // stray history entry).
+  browseTo = (mode) => {
+    mode = mode === 'posters' ? 'posters' : 'posts';
+    if (imageTabCtl.isShowing()) {
+      imageTabCtl.hideImageView();
+      setBrowseMode(mode);
+    } else {
+      storeSet('browseMode', mode);
+    }
+  };
   // Browse mode is the left sidebar's (hologramStore 'browseMode').
   // React owns the active state + glass thumb; orchestrator reacts to a mode change by running
   // the heavy switch. The idempotent guard skips the no-op set from the pref restore
