@@ -48,6 +48,7 @@
     "backfill-metadata.cts",
     "cdp-verify.cts",
     "e2e-capture-test.cts",
+    "gen-dummy-library.cts",
     "run-app-tests.cts",
     "run-tests.cts",
     "self-test.cts",
