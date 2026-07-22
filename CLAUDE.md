@@ -6,14 +6,11 @@ Hologram = ウェブのコンテンツ（現対応はSNS投稿）を出自・エ
 
 # ストレージと実行環境
 - 配置は`~/.hologram`(config/ログ)と`saveFolder`(既定`~/Hologram/library`)＝**AppData外必須**（MSIX仮想化でのライブラリ消失事故対策・2026-06-23）
-- アプリ起動は必ず`HologramLaunch`タスク経由（直接起動はHKCU仮想化でNative Messaging登録が実Chromeから見えず破損／詳細docs/build.md）
-- **レジストリ確認（`reg query`等）は自分で実行せずユーザーに依頼**＝Claude Code自身がMSIX経由でパッケージ専用ハイブにリダイレクトされ誤診するため
-- テストは`HOLOGRAM_CONFIG_DIR=<tmp>`でサンドボックス化（Electronスモークは`HOLOGRAM_SMOKE=1`）
+- この開発機（MSIXコンテナ内）固有の作法＝アプリ起動は`HologramLaunch`タスク経由・レジストリ確認は自分で実行せずユーザーに依頼・テストは`HOLOGRAM_CONFIG_DIR`でサンドボックス化。手順と理由はdocs/build.md「コード変更の反映」「検証ルール」
 
 # ルール
 - lint/format＝Biome（`npm run lint`／1.9.4完全固定・設定と固定理由は biome.jsonc）
-- npm スクリプトは2箇所に分かれる＝**リポジトリ直下は `lint`/`test` のみ、`build:islands`/`typecheck`/`dev:renderer`/`dist` は `app/` で実行**（#156 でワークスペース化して直下へ集約予定）
-- 反映: renderer/islands=`app/` で `npm run build:islands`→リロード（devサーバー時のみ自動）／native-host=`build:islands`でバンドル→`node native-host/install.cts`で`~/.hologram`へ再配備（再起動不要）／mainプロセスのみ再起動要（詳細docs/build.md）
+- **renderer/islands・native-hostを直したら`app/`で`npm run build:islands`**（走らせないと古いバンドルのまま動き、直っていないものを検証してしまう）。npmスクリプトの置き場と反映手順の全体はdocs/build.md「コード変更の反映」
 - **個人ライブラリと後方互換を製品判断のゲートにしない**（2026-07-11 統合改訂）:
   - 私個人ライブラリの事情（規模・件数・利用実態）に合わせた機能開発・採否・優先度・**据置の発火条件**・性能目標の判断をしない。一般ユーザーにも有用な機能、もしくは単なるライブラリの整理や修正ならOK。
   - 私のライブラリに気を使って（既存データとの互換維持などを理由に）**設計を歪めない**。
