@@ -22,17 +22,20 @@ Hologram の名乗りは「**ウェブのコンテンツを、出自・エンゲ
 
 キャプチャは拡張（タブキャプチャ＋API由来メタ）→ **Native Messaging ブリッジ**（`native-host/`・拡張/アプリ未起動でも動作）→ **保存先フォルダ（既定 `~/Hologram/library`・変更可）に `<captureId>.jpg`（純JPEG）+ `<captureId>.json`（サイドカー＝メタデータ）を書き出す**。閲覧は Electron アプリ（`app/`）がサイドカーを走査。旧・拡張内ビューアと EXIF/storage 方式は撤去済み。配布パッケージングの手順は `docs/build.md`。
 
+逆向き（ライブラリ→拡張）の経路は1本だけ＝**「この投稿は保存済みか」の問い合わせ**（`{type:'query'}`・#54 のTLバッジ）。ブリッジがライブラリ側の索引を読んで答えるため**アプリ未起動でも判定できる**。保存先には何も書かない読み取り専用経路。
+
 ## 構成
 
 ### `extension/` — Chrome拡張一式（MV3）
 
 TypeScript ソース（`.ts`）。ブラウザは TypeScript を直接実行できない唯一のレイヤーなので、`npm run build`（`extension/build.mjs`＝tsc コンパイル＋静的資産コピー）で `extension/dist/` へビルドし、**`extension/dist/` を Load unpacked する**（`extension/` 直下ではない）。`manifest.json` に固定 `key` があるため拡張機能IDはロード元フォルダに依存しない（メモリ `ext-signing-key`）。
 
-- `manifest.json` — 権限（`activeTab`/`scripting`/`nativeMessaging`/`storage` / host_permissions: `cdn.syndication.twimg.com` ＋ pixiv）、content_scripts（`i18n.js`/`glass-ui.js`/`drag.js`＝X/Bluesky/pixiv・document_idle）、`options_ui`（タブで開く）、ショートカット `Alt+S`、`default_locale`/`_locales`
+- `manifest.json` — 権限（`activeTab`/`scripting`/`nativeMessaging`/`storage` / host_permissions: `cdn.syndication.twimg.com` ＋ pixiv）、content_scripts（`i18n.js`/`glass-ui.js`/`site-detect.js`/`badge.js`/`drag.js`＝X/Bluesky/pixiv・document_idle）、`options_ui`（タブで開く）、ショートカット `Alt+S`、`default_locale`/`_locales`
 - `background.ts` — Service Worker。タブキャプチャ → クロップ → `metadata.ts` でAPI取得 → Native Messaging 送信。**クリック保存** と **画像ドラッグ保存**(`drag.ts`) の2経路（`pickPrimaryImage` で原寸を選択）。
 - `content.ts` — 投稿選択UI・クロップ（キャプチャセッションの IIFE）
 - `site-detect.ts` — プラットフォーム検出・投稿要素特定・permalink/rect 抽出（content.ts から分離した副作用なし関数群＝Node+jsdom で単体テスト可・`test-content-fixtures.cts`）
 - `drag.ts` — 画像のドラッグ保存（投稿の原寸画像を直接保存）
+- `badge.ts` — TL上の「保存済み」マーク（#54）。可視投稿の permalink を `site-detect.ts` で拾い、300msバッチで background → ブリッジへ照会。マークは body 直下の1枚のオーバーレイ層に置き、投稿のDOMには触れない（ホスト側フレームワークの再描画と衝突させないため）。設定ページでOFF可（既定ON）
 - `glass-ui.ts` — ページ内UI（キャプチャバナー・ドラッグのドロップゾーン）共通の見た目基盤＝アプリのフローティング面マテリアル/モーション語彙をホストページ用に再構築
 - `metadata.ts` — 投稿URLから X（syndication JSON・非公式）/ Bluesky（`public.api.bsky.app`）/ Misskey（`/api/notes/show`）/ Mastodon（`/api/v1/statuses/:id`）/ **pixiv** でメタ取得・正規化。**失敗時は空レコードを返す（throwしない）**。dual export（`module.exports`）＝ビルド後の `dist/metadata.js` を node からも require 可（`scripts/backfill-metadata.cts` 等）。Xはリポスト/ブックマーク/閲覧数を含まない。`fetchPostMetadata(url, {expectedHost})` で Misskey/Mastodon（hostが投稿URL由来＝任意）の API fetch を sender tab の host に固定（SSRF防御。X/Bluesky/pixiv は固定hostなので無関係）
 - `i18n.ts` — content.ts のバナー用 i18n（拡張側のみ。アプリは `app/renderer/i18n.ts`）
@@ -42,9 +45,10 @@ TypeScript ソース（`.ts`）。ブラウザは TypeScript を直接実行で�
 
 ### `native-host/` — Native Messaging ブリッジ
 
-全ファイル `.cts`（CJS維持）。`install.cts` はアプリが生ソースのまま require（Node 型消去）。`bridge.cts` とその依存は **`dist/bridge.js` へバンドル**され（`app/islands/build.mjs`・node 組み込みのみ external）、`install.cts` が `~/.hologram` へ配備するのはこのバンドル1ファイル＝配備物に実行時のモジュール解決が残らない（配備漏れが起きえない・host 側で npm 依存を使える）。
+`post-key.mts` を除き全ファイル `.cts`（CJS維持）。`install.cts` はアプリが生ソースのまま require（Node 型消去）。`bridge.cts` とその依存は **`dist/bridge.js` へバンドル**され（`app/islands/build.mjs`・node 組み込みのみ external）、`install.cts` が `~/.hologram` へ配備するのはこのバンドル1ファイル＝配備物に実行時のモジュール解決が残らない（配備漏れが起きえない・host 側で npm 依存を使える）。
 
-- `bridge.cts` — 保存先に jpg+サイドカーを書き込み専用で生成。サイドカーの `media[]`（API由来の原寸URL）と著者アバターを**ベストエフォートでDL**し `<id>-media-N.<ext>` / `<id>-avatar.<ext>` に保存
+- `bridge.cts` — 保存先に jpg+サイドカーを書き込み専用で生成。サイドカーの `media[]`（API由来の原寸URL）と著者アバターを**ベストエフォートでDL**し `<id>-media-N.<ext>` / `<id>-avatar.<ext>` に保存。加えて「保存済みか」の照会（`{type:'query'}`）に答える＝アプリの `.index.json` を postKey の表に落として常駐させ、**スナップショットが取りこぼす分を2枚で補う**（①自分が保存した分を `~/.hologram/bridge-journal.jsonl` に追記＝アプリ未起動中の保存をカバー ②スナップショットより新しいサイドカーだけ限定再走査＝保存時刻がファイル名に入っているので stat 不要）
+- `post-key.mts` — URL→投稿の同一性キー（`postKeyOf`）の**唯一の実装**。レンダラのグループ化（`app/renderer/records.ts` が再exportして使用）とバッジ判定が同じ規則でなければ、アプリが同一視する投稿をバッジが取りこぼす。拡張側は正規化せず permalink を渡すだけ。ここだけ ESM（`.mts`）＝レンダラが ES import する唯一のファイルで、`.cts` では tsc から export が見えないため（理由は `tsconfig.json` 冒頭）
 - `media-download.cts` — **静止画DLの共有モジュール**（SSRFガード・25MB/12s/12件上限・https限定・手動リダイレクト・失敗時dropで保存を失敗させない）。`fetchStillImage`/`downloadMedia`/`downloadAvatar`/`pixivRefererFor` を export し、bridge・app(`import-posts`)・`backfill-metadata.cts` で同一ロジックを共有（ガードが経路ごとにズレないように一箇所へ集約）
 - `install.cts` — ホスト登録
 - `paths.cts` — 共有configパス

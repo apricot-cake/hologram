@@ -22,5 +22,13 @@
   "optionsOpenDiag": {
     "message": "診断ページを開く",
     "description": "Link to the diagnostics page"
+  },
+  "optionsSavedBadge": {
+    "message": "保存済みの投稿に印をつける",
+    "description": "Options label for the timeline saved-post badge"
+  },
+  "optionsSavedBadgeDesc": {
+    "message": "タイムライン上で、すでに Hologram に保存した投稿の画像に小さな印を表示します。判定はこのPCの中だけで行われます。",
+    "description": "Options description for the timeline saved-post badge"
   }
 }

@@ -20,8 +20,8 @@ Except for the pixiv requests described above, no authentication tokens, cookies
 
 - **activeTab** — Access the current tab only when you activate the extension.
 - **scripting** — Inject the post selection UI into the current page.
-- **nativeMessaging** — Hand each capture to the Hologram desktop app on your device, which writes the image and its metadata to the folder you chose.
-- **storage** — Keep a per-browsing-session count of recent saves (so repeat saves of the same post can be labelled; cleared when the browser closes), and a small local ring buffer of capture diagnostics used only when the desktop app cannot be reached. Both stay on your device.
+- **nativeMessaging** — Hand each capture to the Hologram desktop app on your device, which writes the image and its metadata to the folder you chose. The same local channel is asked which posts you have already saved, so timeline posts already in your library can be marked; the links of the posts on screen are sent to that local companion app and nowhere else.
+- **storage** — Keep a per-browsing-session count of recent saves (so repeat saves of the same post can be labelled; cleared when the browser closes), your on/off preference for the "already saved" mark, and a small local ring buffer of capture diagnostics used only when the desktop app cannot be reached. All stay on your device.
 - **Host permissions** (`cdn.syndication.twimg.com`, `www.pixiv.net`) — Allow the metadata requests described above.
 
 ## Data Storage

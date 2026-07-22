@@ -22,5 +22,13 @@
   "optionsOpenDiag": {
     "message": "Open diagnostics page",
     "description": "Link to the diagnostics page"
+  },
+  "optionsSavedBadge": {
+    "message": "Mark posts you've already saved",
+    "description": "Options label for the timeline saved-post badge"
+  },
+  "optionsSavedBadgeDesc": {
+    "message": "Shows a small mark on timeline images that are already in your Hologram library. The check happens entirely on this computer.",
+    "description": "Options description for the timeline saved-post badge"
   }
 }
