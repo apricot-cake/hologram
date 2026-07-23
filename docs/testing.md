@@ -2,8 +2,7 @@
 
 ## テストケース定義・進捗
 
-- テストケース定義: `scripts/test-plan.md`
-- テスト進捗記録: `scripts/test-progress.md`
+- テストケース定義: `scripts/test-plan.md`（プラットフォーム × ページ種別の取得マトリクス）
 
 ## `scripts/` カタログ（俯瞰）
 
@@ -27,13 +26,12 @@
 ## キャプチャテスト手順（半自動フロー）
 
 1. `node scripts/test-select-posts.cts` — テスト対象投稿を公開APIから自動選別（セルごとのURL・アクション・期待値のシートを出力）
-2. `node scripts/test-watch-verify.cts` — 保存先フォルダの監視を開始（キャプチャごとにAPI再照合し PASS/FAIL ＋ test-progress 用の行を自動出力）
+2. `node scripts/test-watch-verify.cts` — 保存先フォルダの監視を開始（キャプチャごとにAPI再照合し PASS/FAIL を出力）
 3. claude が in chrome でシートのURLを開く → ユーザーが Alt+S → クリック（またはドラッグ）
-4. watcher の出力行を `scripts/test-progress.md` に記録
-5. 次のセルに進む（過去分の一括点検は `node scripts/test-watch-verify.cts --recent N`）
+4. 次のセルに進む（過去分の一括点検は `node scripts/test-watch-verify.cts --recent N`）
 
 ### 注意（行動ルール）
 
-- テスト済みのケースを再テストしない（`test-progress.md` を必ず確認）
+- 同じセルを手で繰り返し叩かない。どこまでカバー済みかは `e2e-capture-test.cts` の実行結果で確かめる
 - 1つの投稿で複数のケースをカバーできる場合はまとめて記録（例: A-1b と A-1h）
 - **手元にないデータはダミーで補ってよい（区別必須）**: 既存ライブラリに無いデータ（例: アバター画像の無い投稿者）を実機検証したいときは、**区別がつくダミーを保存先に追加してよい**。区別の規約＝captureId とコンパニオン（画像/アバター）のファイル名を `dummy-` で始める（検索・一括掃除で実データと確実に分離できる）。`inject-dummy.cjs` がこの規約のダミー（アバター付き・条件網羅）を生成する。**常設の検証フィクスチャとして残してよい**＝再注入の手間が省け、全PF/種別/メディア/反応域/アバターを常に網羅するので普段使い中の退行にも気づける（ユーザー方針 2026-06-21）。データモデルが変わって古びたら `inject-dummy.cjs` を再実行して入れ替える。不要になれば保存先の `dummy-*` を削除すれば fs-watch が一覧から落とす。

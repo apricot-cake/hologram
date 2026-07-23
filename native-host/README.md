@@ -67,9 +67,10 @@ binary via `ELECTRON_RUN_AS_NODE`, so end users don't need Node installed).
 
 ## Extension ID
 
-The host's `allowed_origins` must list the calling extension's exact ID. We do
-**not** commit a `key` to pin the ID, so the unpacked extension gets a
-path-derived ID (shown in `chrome://extensions`). Paste that ID into the desktop
+The host's `allowed_origins` must list the calling extension's exact ID.
+`extension/manifest.json` commits a `key`, so the ID is derived from that key and
+stays the same whichever folder the unpacked extension is loaded from (it's shown
+in `chrome://extensions`). Paste that ID into the desktop
 app (it's saved as `extensionId` in `config.json`); the app then re-writes the
 host manifest with `chrome-extension://<id>/`. Until an ID is set,
 `allowed_origins` is empty and Chrome will refuse the connection.
