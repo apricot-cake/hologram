@@ -183,7 +183,7 @@ function initSaveFolderRedundancy() {
 // persistTabsDebounced, folders/groups/ungrouped on edits), so the watcher must
 // IGNORE them — otherwise each write self-triggers a full library reload
 // (listPosts re-reads all sidecars, ~1s on a 9k-post folder) and the UI stalls.
-const INTERNAL_FILES = new Set(['config.json', '.index.json', 'tag-groups.json', 'tag-types.json', 'ungrouped.json', 'manual-groups.json', 'folders.json', 'tabs.json', 'poster-favorites.json', 'poster-folders.json', 'poster-tags.json']);
+const INTERNAL_FILES = new Set(['config.json', '.index.json', 'tag-types.json', 'ungrouped.json', 'manual-groups.json', 'folders.json', 'tabs.json', 'poster-favorites.json', 'poster-folders.json', 'poster-tags.json']);
 
 // The subset of INTERNAL_FILES that the renderer REWRITES in place on every edit
 // (organization layer: tags / groups / folders / clip / poster-* / open tabs).
@@ -194,7 +194,7 @@ const INTERNAL_FILES = new Set(['config.json', '.index.json', 'tag-groups.json',
 // these whenever the source changed (size or mtime). config.json lives in
 // configDir (never in the save folder) and .index.json is a rebuildable snapshot
 // already skipped by the backup, so neither belongs here.
-const MUTABLE_INTERNAL = new Set(['tag-groups.json', 'tag-types.json', 'ungrouped.json', 'manual-groups.json', 'folders.json', 'tabs.json', 'poster-favorites.json', 'poster-folders.json', 'poster-tags.json']);
+const MUTABLE_INTERNAL = new Set(['tag-types.json', 'ungrouped.json', 'manual-groups.json', 'folders.json', 'tabs.json', 'poster-favorites.json', 'poster-folders.json', 'poster-tags.json']);
 
 // Watch the save folder and tell the renderer to refresh when files change
 // (e.g. a new capture arrives, or dummy data is injected). Debounced because a
@@ -485,7 +485,7 @@ function registerImageProtocol() {
 // Posts handlers (list-posts / list-posts-delta / image-data-url) were extracted to
 // ./ipc-posts.js (registered via ipcPosts.register below).
 
-// Organization-layer handlers (tag-groups / tag-types / ungrouped / manual-groups /
+// Organization-layer handlers (tag-types / ungrouped / manual-groups /
 // folders / collections / poster-folders / poster-tags) were extracted to
 // ./ipc-organize.js (registered via registerOrganize(ipcCtx) below).
 

@@ -230,7 +230,7 @@ function register(ctx) {
 
   // --- Complete export (directly re-importable snapshot) ------------------------
   // One ZIP that mirrors the whole library under library/: every capture file
-  // (jpg/json/media) PLUS the organization JSONs (folders/tag-groups/ungrouped/
+  // (jpg/json/media) PLUS the organization JSONs (folders/tag-types/ungrouped/
   // manual-groups). Excludes config.json (machine-specific) and .index.json
   // (cache). Manual-only: the scheduled path is the incremental mirror (runBackup),
   // which replaced the old scheduled-ZIP idea — ZIP stays as the hand-carried snapshot.

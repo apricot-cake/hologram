@@ -36,7 +36,6 @@ async function main() {
 
   const active = new Set(['platform:x', 'tag:風景']);
   const posterActive = new Set(['tag:P趣味']);
-  let tagGroups: any[] = [];
   const multiOnly = false;
 
   const KIND = { 作品A: 'work', キャラX: 'character', P作品: 'work' };
@@ -62,10 +61,9 @@ async function main() {
       }
     },
     userKey: (p) => p.platform + ':' + (p.userId || '@' + (p.screenName || '')),
-    t: (key) => ({ kindPost: 'SNS投稿', kindImage: '画像', qfPost: '投稿', qfReply: 'リプライ', qfQuote: '引用', qfThread: 'スレッド', qfImage: '画像', qfVideo: '動画', qfGif: 'GIF', qfMultiImage: '複数画像', qfPlatformNone: 'なし', tagGroupOther: 'その他' })[key],
+    t: (key) => ({ kindPost: 'SNS投稿', kindImage: '画像', qfPost: '投稿', qfReply: 'リプライ', qfQuote: '引用', qfThread: 'スレッド', qfImage: '画像', qfVideo: '動画', qfGif: 'GIF', qfMultiImage: '複数画像', qfPlatformNone: 'なし' })[key],
     PF_NAME: { x: 'X', bluesky: 'Bluesky', misskey: 'Misskey', mastodon: 'Mastodon', pixiv: 'pixiv' },
     tagKindOf: (t) => KIND[t],
-    tagGroups: () => tagGroups,
     multiOnly: () => multiOnly,
     posterTagsOf: (key) => posterTags[key] || [],
     filteredPosters: () => posters,
@@ -116,22 +114,23 @@ async function main() {
     assert('media count', media[0].count === 2 && media[1].count === 1);
   }
 
-  // --- tag（グループ見出し・__other） ---
+  // --- tag（一般タグのみ・種別付き除外・present 先行） ---
   {
-    let rows = qfValues('tag');
-    // グループ未定義: 種別付き（作品A/キャラX）を除いた一般タグのみ・present 先行
+    const rows = qfValues('tag');
+    // 種別付き（作品A/キャラX）を除いた一般タグのフラット一覧・present 先行
     assert(
       'tag 一般タグのみ（種別付き除外）',
       rows.every((r) => r.v !== '作品A' && r.v !== 'キャラX'),
     );
+    assert(
+      'tag 見出し行なし（フラット）',
+      rows.every((r) => r.ghead == null),
+    );
     assert('tag present 先行（風景 count=2 が先頭）', rows[0].v === '風景' && rows[0].count === 2);
-
-    tagGroups = [{ id: 'g1', name: '雰囲気', tags: ['風景'] }];
-    rows = qfValues('tag');
-    assert('tag グループ見出し+その他見出し', rows[0].ghead === '雰囲気' && rows[1].v === '風景' && rows.some((r) => r.ghead === 'その他'));
-    const otherIdx = rows.findIndex((r) => r.ghead === 'その他');
-    assert('tag その他見出し下＝未所属のみ', rows[otherIdx + 1].v === '未分類タグ');
-    tagGroups = [];
+    assert(
+      'tag 未分類タグも一覧に含む',
+      rows.some((r) => r.v === '未分類タグ'),
+    );
   }
 
   // --- work / character（用語帳） ---

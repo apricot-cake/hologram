@@ -50,7 +50,7 @@ async function verifySidecar(file) {
   } catch {
     return null;
   }
-  if (!rec || !rec.captureId) return null; // tag-groups.json などの管理ファイル
+  if (!rec || !rec.captureId) return null; // tag-types.json などの管理ファイル
 
   const dir = path.dirname(file);
   const base = path.basename(file, '.json');

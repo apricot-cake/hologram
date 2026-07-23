@@ -28,21 +28,17 @@ async function main() {
   // --- Stub environment ---------------------------------------------------
   let tagTypes: Record<string, string> = { WorkA: 'work', WorkB: 'work', CharX: 'character' };
   let tagLabels: Record<string, any> = {};
-  let tagGroups = [
-    { id: 'g1', name: '構図', tags: ['俯瞰', 'あおり', 'CharX'] }, // CharX is kinded → pulled out of its group
-    { id: 'g2', name: '空グループ', tags: [] },
-  ];
   const posterTags = {
     'x:1': ['WorkA', '資料'],
     'x:2': ['CharX', 'あんず'],
     'x:3': 'not-an-array', // malformed entry — must not throw
   };
   let allPosts = [
-    { captureId: 'p1', tags: ['俯瞰', '自由帳'] }, // 自由帳 = ungrouped general
-    { captureId: 'p2', tags: ['WorkA'] }, // kinded → NOT in the ungrouped pool
+    { captureId: 'p1', tags: ['俯瞰', '自由帳'] }, // both general → the 未分類 pool
+    { captureId: 'p2', tags: ['WorkA'] }, // kinded → NOT in the 未分類 pool
     { captureId: 'p3' }, // no tags — must not throw
   ];
-  const STATIC_MSG = { kindWork: '作品', kindCharacter: 'キャラ', tagGroupOther: '未分類', editCoocChars: 'このキャラたち', editCoocRelated: 'よく一緒に付くタグ' };
+  const STATIC_MSG = { kindWork: '作品', kindCharacter: 'キャラ', tagUncategorized: '未分類', editCoocChars: 'このキャラたち', editCoocRelated: 'よく一緒に付くタグ' };
   const t = (key, subs) => {
     if (key === 'editCoocCharsOf') return `${subs[0]} のキャラ`;
     if (key === 'editCoocWhy') return `${subs[0]} と ${subs[1]} 回共起`;
@@ -54,7 +50,6 @@ async function main() {
   const api = T.makeTags({
     tagTypes: () => tagTypes,
     tagLabels: () => tagLabels,
-    tagGroups: () => tagGroups,
     posterTags: () => posterTags,
     allPosts: () => allPosts,
     t,
@@ -92,11 +87,9 @@ async function main() {
   {
     const out = api.groupedTagVocab('');
     const names = out.map((g) => g.name);
-    assert('vocab: kind sections first, then groups, then 未分類', names.join('|') === '作品|キャラ|構図|未分類');
+    assert('vocab: kind sections first, then 未分類', names.join('|') === '作品|キャラ|未分類');
     assert('vocab: work section lists all kinded works', out[0].tags.join(',') === ['WorkA', 'WorkB'].sort((a, b) => a.localeCompare(b, 'ja')).join(','));
-    assert('vocab: kinded tag pulled out of its freeform group', !out[2].tags.includes('CharX') && out[2].tags.length === 2);
-    assert('vocab: empty group omitted', !names.includes('空グループ'));
-    assert('vocab: ungrouped pool = applied general tags only', out[3].tags.join(',') === '自由帳');
+    assert('vocab: 未分類 pool = applied general tags only (kinded excluded)', out[2].tags.join(',') === ['俯瞰', '自由帳'].sort((a, b) => a.localeCompare(b, 'ja')).join(','));
   }
   {
     const out = api.groupedTagVocab('work');
@@ -115,9 +108,9 @@ async function main() {
     const names = out.map((g) => g.name);
     assert('poster vocab: kind sections shared', names[0] === '作品' && names[1] === 'キャラ');
     const general = out[names.indexOf('未分類')];
-    // General pool comes from posterTags (資料/あんず), NOT the post groups/pool.
+    // General pool comes from posterTags (資料/あんず), NOT the post pool.
     assert('poster vocab: separate general pool from posterTags', general && general.tags.join(',') === ['あんず', '資料'].sort((a, b) => a.localeCompare(b, 'ja')).join(','));
-    assert('poster vocab: no freeform post groups', !names.includes('構図'));
+    assert('poster vocab: sections are 作品|キャラ|未分類 only', names.join('|') === '作品|キャラ|未分類');
   }
 
   // --- inspectorTagPickerData --------------------------------------------------
@@ -179,7 +172,6 @@ async function main() {
 
   // --- live-getter behavior: store reassignment is picked up --------------------
   allPosts = [{ captureId: 'q1', tags: ['新規タグ'] }];
-  tagGroups = [];
   tagTypes = {};
   {
     const out = api.groupedTagVocab('');

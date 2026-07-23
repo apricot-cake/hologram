@@ -14,7 +14,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const JSZip = require('jszip');
-const { importCompleteZip, mergeFolders, mergePosterFolders, mergeManualGroups, mergeTagGroups } = require('../app/lib-archive.mts');
+const { importCompleteZip, mergeFolders, mergePosterFolders, mergeManualGroups } = require('../app/lib-archive.mts');
 
 (async () => {
   // --- mergeFolders (pure) ---
@@ -204,9 +204,6 @@ const { importCompleteZip, mergeFolders, mergePosterFolders, mergeManualGroups, 
     assert.strictEqual(f1.name, 'Local', 'poster folder name local-wins');
     assert.deepStrictEqual(f1.items.slice().sort(), ['a', 'b'], 'poster folder items union');
     assert.strictEqual(f.defaultId, 'f1', 'defaultId local-wins while alive');
-    const g = mergeTagGroups({ groups: [{ id: 'g1', name: 'L', tags: ['t1'] }] }, { groups: [{ id: 'g1', name: 'R', tags: ['t2'] }] });
-    assert.deepStrictEqual(g.groups[0].tags.slice().sort(), ['t1', 't2'], 'tag-group tags union');
-    assert.strictEqual(g.groups[0].name, 'L', 'tag-group name local-wins');
     console.log('PASS unionById mergers');
   }
 

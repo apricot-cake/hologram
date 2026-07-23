@@ -15,7 +15,7 @@ const path = require('node:path');
 const { createPostIndex, computeDelta } = require('../app/lib-index.mts');
 
 const dir = realFs.mkdtempSync(path.join(os.tmpdir(), 'hologram-index-'));
-const INTERNAL = new Set(['config.json', '.index.json', 'tabs.json', 'folders.json', 'tag-groups.json', 'ungrouped.json', 'manual-groups.json']);
+const INTERNAL = new Set(['config.json', '.index.json', 'tabs.json', 'folders.json', 'tag-types.json', 'ungrouped.json', 'manual-groups.json']);
 
 let sidecarReads = 0;
 const countingFs = {
