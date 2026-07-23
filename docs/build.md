@@ -13,7 +13,7 @@ cd app && npm install
 
 ## 開発ルール：コード変更の反映（確認なし再起動）
 
-> **npm スクリプトの置き場**: `build:islands`・`typecheck`・`dev:renderer`・`dist`・`start` は `app/package.json`＝**`app/` で実行する**。リポジトリ直下の package.json が持つのは `lint`・`test` だけ。以下の `npm run …` も `dist` の項以外はすべて `app/` で打つ（#156 でワークスペース化し直下へ集約する予定）。
+> **npm スクリプトの置き場**: `build:islands`・`typecheck`・`dev:renderer`・`dist`・`start` は `app/package.json`＝**`app/` で実行する**。リポジトリ直下の package.json が持つのは lint 系（`lint`・`lint:fix`・`format`）と `test` だけ。以下の `npm run …` も `dist` の項以外はすべて `app/` で打つ（#156 でワークスペース化し直下へ集約する予定）。
 
 main プロセス（`main.mts`/`ipc-*`/`lib-*`）の変更を反映するときは、確認を取らずに再起動する（renderer/islands は `npm run build:islands` で再ビルド→アプリのリロードで反映＝再起動不要。Vite dev サーバー `npm run dev:renderer`＋`HOLOGRAM_DEV_SERVER` 使用時のみ自動反映／native-host は `npm run build:islands` でバンドルを作り直し → `node native-host/install.cts` で `~/.hologram` へ再配備＝アプリ再起動不要。ビルドを飛ばすと配備は「バンドル未ビルド」で止まる）。preload の変更は `preload.cts` を編集 → `npm run build:islands` で `preload.js` を再生成してから再起動（preload だけビルドを経る＝docs/architecture.md 参照）。
 
