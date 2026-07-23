@@ -18,8 +18,6 @@ const api = {
   // Delta refresh: pass true once a full snapshot is held; main returns either a
   // full { full:true, posts:[] } or an incremental { full:false, added, removed }.
   listPostsDelta: (haveBaseline: boolean, changedNames?: string[] | null): Promise<any> => ipcRenderer.invoke('list-posts-delta', haveBaseline, changedNames),
-  getTagGroups: (): Promise<any> => ipcRenderer.invoke('get-tag-groups'),
-  setTagGroups: (groups: unknown): Promise<any> => ipcRenderer.invoke('set-tag-groups', groups),
   getTagTypes: (): Promise<any> => ipcRenderer.invoke('get-tag-types'),
   setTagTypes: (types: unknown, labels?: unknown): Promise<any> => ipcRenderer.invoke('set-tag-types', types, labels),
   getUngrouped: (): Promise<any> => ipcRenderer.invoke('get-ungrouped'),

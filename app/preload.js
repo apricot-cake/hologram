@@ -5,8 +5,6 @@ electron.contextBridge.exposeInMainWorld("hologram", {
 	setExtensionId: (id) => electron.ipcRenderer.invoke("set-extension-id", id),
 	listPosts: () => electron.ipcRenderer.invoke("list-posts"),
 	listPostsDelta: (haveBaseline, changedNames) => electron.ipcRenderer.invoke("list-posts-delta", haveBaseline, changedNames),
-	getTagGroups: () => electron.ipcRenderer.invoke("get-tag-groups"),
-	setTagGroups: (groups) => electron.ipcRenderer.invoke("set-tag-groups", groups),
 	getTagTypes: () => electron.ipcRenderer.invoke("get-tag-types"),
 	setTagTypes: (types, labels) => electron.ipcRenderer.invoke("set-tag-types", types, labels),
 	getUngrouped: () => electron.ipcRenderer.invoke("get-ungrouped"),

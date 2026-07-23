@@ -9,8 +9,8 @@
 // Node unit test stubs these directly), but the getters passed in by
 // viewer.js now point at THIS module's own state instead of viewer.js's own
 // `let`s (P4 "状態→store" tags slice, 2026-07-08): tagTypes/tagLabels/
-// tagGroups/posterTags moved here as the service's single source of truth,
-// with mutators (setTagKind/setKindLabel/setTagGroups/setPosterTags/
+// posterTags moved here as the service's single source of truth,
+// with mutators (setTagKind/setKindLabel/setPosterTags/
 // applyPosterTagRecords) that persist to disk and notify subscribers via
 // onChange, making this the "subscribable tags service".
 // viewer.js keeps the surrounding business logic (undo recording, inspector
@@ -26,7 +26,7 @@
 import { hologramIpc } from './ipc.ts';
 
 // deps contract:
-//   tagTypes() / tagLabels() / tagGroups() / posterTags() / allPosts() —
+//   tagTypes() / tagLabels() / posterTags() / allPosts() —
 //     getters (viewer reassigns these lets on load/import)
 //   t(key,subs?) — i18n message lookup (getMessage; aliased t18n internally —
 //     this file uses bare `t` pervasively as a tag-string loop variable)
@@ -35,14 +35,13 @@ import { hologramIpc } from './ipc.ts';
 export function makeTags(deps: {
   tagTypes(): Record<string, string>;
   tagLabels(): Record<string, string>;
-  tagGroups(): Array<{ id: string; name: string; tags?: string[] }>;
   posterTags(): Record<string, string[]>;
   allPosts(): HologramPost[];
   t(key: string, subs?: ReadonlyArray<string | number | null | undefined>): string;
   charCandidatesFor(workTags: string[]): Array<[string, number]>;
   relatedTagCandidates(selectedTags: string[], opts?: { exclude?: Set<string> | null }): Array<{ tag: string; withTag: string | null; count: number }>;
 }) {
-  const { tagTypes, tagLabels, tagGroups, posterTags, allPosts, t: t18n, charCandidatesFor, relatedTagCandidates } = deps;
+  const { tagTypes, tagLabels, posterTags, allPosts, t: t18n, charCandidatesFor, relatedTagCandidates } = deps;
   const KIND_LABEL: Record<string, string> = { work: t18n('kindWork'), character: t18n('kindCharacter') }; // resolved once at load
 
   function tagKindOf(tag: string): string | null {
@@ -70,20 +69,18 @@ export function makeTags(deps: {
     return [...set].sort((a, b) => rank(a) - rank(b) || a.localeCompare(b, 'ja'));
   }
 
-  // Tag vocabulary grouped by tag-group (defined groups in order, then 未分類 =
-  // ungrouped tags that exist on posts), each section filtered by `query`. Shared
-  // by the inspector's tag field and the bulk tag dialog (via inspectorTagPickerData).
+  // Tag vocabulary sectioned by 種別: the 作品/キャラ kind sections first, then 未分類
+  // (applied tags carrying no 種別), each section filtered by `query`. Shared by the
+  // inspector's tag field and the bulk tag dialog (via inspectorTagPickerData).
   function groupedTagVocab(query: string, opts?: { scope?: 'post' | 'poster' } | null): Array<{ name: string; tags: string[] }> {
     const scope = (opts && opts.scope) || 'post';
     const q = (query || '').toLowerCase();
     const ok = (t: string) => !q || t.toLowerCase().includes(q);
     const byJa = (a: string, b: string) => a.localeCompare(b, 'ja');
-    const groups = tagGroups();
-    const grouped = new Set(groups.flatMap((g) => g.tags || []));
     const out: Array<{ name: string; tags: string[] }> = [];
     // 用語帳: 作品/キャラ are first-class categories — surface them as their own
-    // sections ahead of the freeform groups, and pull kinded tags OUT of their
-    // group / 未分類 so each tag shows once (種別 takes precedence, danbooru-style).
+    // sections ahead of 未分類, and pull kinded tags OUT of 未分類 so each tag shows
+    // once (種別 takes precedence, danbooru-style).
     const kindSec: Record<string, string[]> = { work: [], character: [] };
     for (const [t, k] of Object.entries(tagTypes())) if (k === 'work' || k === 'character') kindSec[k].push(t);
     for (const [k, name] of [
@@ -94,28 +91,17 @@ export function makeTags(deps: {
       if (tags.length) out.push({ name, tags });
     }
     // Poster scope shares 作品/キャラ (a tag's 種別 is a global attribute of the
-    // string) but keeps a SEPARATE general pool: the freeform post groups
-    // (人物/角度/形式) and post-applied tags are post-content descriptors,
-    // meaningless for a person. The poster general pool grows from poster-applied
-    // tags instead (posterTags), so people get their own vocabulary.
-    if (scope === 'poster') {
-      const applied = new Set<string>();
-      for (const arr of Object.values(posterTags())) for (const t of Array.isArray(arr) ? arr : []) if (!tagKindOf(t)) applied.add(t);
-      const general = [...applied].filter(ok).sort(byJa);
-      if (general.length) out.push({ name: t18n('tagGroupOther'), tags: general });
-      return out;
-    }
-    for (const g of groups) {
-      const tags = (g.tags || [])
-        .filter((t) => !tagKindOf(t))
-        .filter(ok)
-        .sort(byJa);
-      if (tags.length) out.push({ name: g.name, tags });
-    }
+    // string) but keeps a SEPARATE general pool: post-applied tags are post-content
+    // descriptors, meaningless for a person. The poster general pool grows from
+    // poster-applied tags instead (posterTags), so people get their own vocabulary.
     const applied = new Set<string>();
-    for (const p of allPosts()) for (const t of Array.isArray(p.tags) ? p.tags : []) if (!grouped.has(t) && !tagKindOf(t)) applied.add(t);
-    const ungrouped = [...applied].filter(ok).sort(byJa);
-    if (ungrouped.length) out.push({ name: t18n('tagGroupOther'), tags: ungrouped });
+    if (scope === 'poster') {
+      for (const arr of Object.values(posterTags())) for (const t of Array.isArray(arr) ? arr : []) if (!tagKindOf(t)) applied.add(t);
+    } else {
+      for (const p of allPosts()) for (const t of Array.isArray(p.tags) ? p.tags : []) if (!tagKindOf(t)) applied.add(t);
+    }
+    const general = [...applied].filter(ok).sort(byJa);
+    if (general.length) out.push({ name: t18n('tagUncategorized'), tags: general });
     return out;
   }
 
@@ -194,11 +180,9 @@ export function bindPosterFilterVocab(fn: () => string[]): void {
 // --- state (the 4 maps, owned here now — see header comment) ---
 let tagTypes = {} as Record<string, string>;
 let tagLabels = {} as Record<string, string>;
-let tagGroups: any[] = [];
 let posterTags = {} as Record<string, string[]>;
 export const getTagTypes = () => tagTypes;
 export const getTagLabels = () => tagLabels;
-export const getTagGroups = () => tagGroups;
 export const getPosterTags = () => posterTags;
 
 // --- subscribers (notified after any mutator below runs; nobody listens
@@ -221,24 +205,9 @@ export function onChange(cb: (kind?: string) => void) {
   };
 }
 
-// tag-groups.json / tag-types.json / poster-tags.json disk round-trip.
+// tag-types.json / poster-tags.json disk round-trip.
 // Private — only load() and the mutators below call these. Only called
 // from the browser (viewer.js); never invoked by the Node unit test.
-async function readTagGroups() {
-  try {
-    const r = await hologramIpc.getTagGroups();
-    return (r && r.groups) || [];
-  } catch {
-    return [];
-  }
-}
-async function writeTagGroups() {
-  try {
-    await hologramIpc.setTagGroups(tagGroups);
-  } catch {
-    /* best-effort */
-  }
-}
 async function readTagTypes() {
   try {
     const r = await hologramIpc.getTagTypes();
@@ -276,9 +245,8 @@ async function writePosterTags() {
 // once from viewer.js's bootApp; a later call reuses the same promise).
 let loadPromise: Promise<void> | null = null;
 async function doLoad() {
-  const [pt, tg, tt] = await Promise.all([readPosterTags(), readTagGroups(), readTagTypes()]);
+  const [pt, tt] = await Promise.all([readPosterTags(), readTagTypes()]);
   posterTags = pt;
-  tagGroups = tg;
   tagTypes = tt.types;
   tagLabels = tt.labels;
 }
@@ -302,11 +270,6 @@ export async function setKindLabel(kind: string, label: string | null | undefine
   else delete tagLabels[kind];
   await writeTagTypes();
   notify('kind');
-}
-export async function setTagGroups(groups: unknown) {
-  tagGroups = Array.isArray(groups) ? groups : [];
-  await writeTagGroups();
-  notify('groups');
 }
 // Single poster's tag list (applyPosterTagChange in viewer.js); tags===null
 // clears the entry. Fire-and-forget persist, matching the pre-move behavior.

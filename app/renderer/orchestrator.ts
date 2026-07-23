@@ -20,7 +20,7 @@ import { makeQfPop } from './qf-pop-builder.ts';
 import { makeFacets } from './facets.ts';
 import { makeCooc } from './cooc.ts';
 import { mediaFilesOf, isScreenshot, artworkFile, densityImage, postIdKey, groupFilesOf, stampPost, percentileFn, makeGroupRecords, makeCardModel, makeGallery, loadUngrouped, loadManualGroups } from './records.ts';
-import { makeTags, bindTagKindOf, bindPosterFilterVocab, getTagTypes, getTagLabels, getTagGroups, getPosterTags, setPosterTags, load as loadTags } from './tags.ts';
+import { makeTags, bindTagKindOf, bindPosterFilterVocab, getTagTypes, getTagLabels, getPosterTags, setPosterTags, load as loadTags } from './tags.ts';
 import { makeTabLabels } from './tab-state.ts';
 import { getBackup, onBackupStart, onBackupDone } from './backup.ts';
 import { listPostsDelta, importComplete, importPosts } from './posts.ts';
@@ -393,8 +393,8 @@ export function endFilterEditSession(): void {
   // once postQB/posterQB/pfStore/buildUsers all exist (see near posterQB below).
   // Tag vocabulary / 種別 domain (tagKindOf/kindLabel/groupedTagVocab/
   // inspectorTagPickerData/posterTagsOf/posterFilterVocab) moved to tags.ts
-  // (imported) — 8th extraction slice. The 4 tag stores themselves
-  // (tagTypes/tagLabels/tagGroups/posterTags) also live in tags.ts now (P4
+  // (imported) — 8th extraction slice. The tag stores themselves
+  // (tagTypes/tagLabels/posterTags) also live in tags.ts now (P4
   // "状態→store" tags slice) — its own getters go in where viewer.js's local
   // `let`s used to. Wired BEFORE the facets/cooc wiring below, which passes
   // tagKindOf/posterTagsOf/posterFilterVocab as direct refs.
@@ -403,7 +403,6 @@ export function endFilterEditSession(): void {
   const { tagKindOf, kindLabel, groupedTagVocab, inspectorTagPickerData, posterTagsOf, posterFilterVocab } = makeTags({
     tagTypes: getTagTypes,
     tagLabels: getTagLabels,
-    tagGroups: getTagGroups,
     posterTags: getPosterTags,
     allPosts: () => postGrid.getAllPosts(),
     t: getMessage,
@@ -424,7 +423,7 @@ export function endFilterEditSession(): void {
   const { showKindMenu } = makeKindMenu({ tagKindOf, kindLabel, t: getMessage });
   // Facet aggregation (facetCounts) + value-flyout row models (qfValues) moved to
   // facets.ts — 3rd extraction slice. Runtime couplings are injected: reassigned
-  // lets (allPosts/multiOnly) + tags.ts's own getter (tagGroups) as getters, and
+  // lets (allPosts/multiOnly) as getters, and
   // consts declared after this point (posterQB / pfStore / the listing.ts
   // products) as deferred arrow wrappers — a direct ref here would hit TDZ at
   // wiring time; the wrappers only run when a flyout opens.
@@ -438,7 +437,6 @@ export function endFilterEditSession(): void {
     t: getMessage,
     PF_NAME,
     tagKindOf,
-    tagGroups: getTagGroups,
     posterTagsOf,
     filteredPosters: () => filteredPosters(),
     posterFilterVocab,
@@ -520,12 +518,10 @@ export function endFilterEditSession(): void {
     renderQueryChips(); // 検索/フォルダ等の変化を下部アクティブバーへ即時反映
   }
 
-  // --- Tag area: the タグ row opens ONE flyout listing every general tag,
-  // sectioned by tag group (facets.js emits the ghead rows). Groups are
-  // user-created and unbounded, so they live INSIDE the scrollable flyout —
-  // permanent sidebar rows for them stretched the column without bound
-  // (sub-rows removed 2026-07-03).
-  // tagGroups/tagTypes/tagLabels (種別・グループ語彙) + tagKindOf/kindLabel moved
+  // --- Tag area: the タグ row opens ONE flyout listing every general tag
+  // (種別なし). The 作品/キャラ kinded tags get their own rows; general tags stay a
+  // flat, count-ordered list inside the scrollable flyout.
+  // tagTypes/tagLabels (種別語彙) + tagKindOf/kindLabel moved
   // to tags.js (hologramTags wiring above) — the P4 "状態→store" tags slice.
   // (Possibly custom) 作品/キャラ names + which tags carry a 種別 are read live by
   // renderer/sidebar.ts's sources now (hologramTags.onChange / posts-data.ts's
@@ -1486,16 +1482,16 @@ export function endFilterEditSession(): void {
           manage: extra?.manage,
         };
       };
-    // The combined タグ editor values: general tags (already grouped by 用語帳 vocab)
+    // The combined タグ editor values: general tags (種別なし, count-ordered)
     // followed by 作品/キャラ groups — all one 'tag' facet, so one chip + one op.
     const combinedTagValues = (tagCat: string, workCat: string, charCat: string) => (): FilterRow[] => {
       const general = (qfValues(tagCat) as FilterRow[]).map(dot);
       const work = (qfValues(workCat) as FilterRow[]).map(dot);
       const char = (qfValues(charCat) as FilterRow[]).map(dot);
       const out: FilterRow[] = [];
-      // If general is flat (no vocab groups) but kinded groups follow, wrap it under its
+      // General tags are flat; when kinded groups follow, wrap the general list under its
       // own head so the two-pane doesn't orphan it (buildGroups drops pre-first-ghead rows).
-      if ((work.length || char.length) && general.length && !general.some((it) => it.ghead != null)) out.push({ ghead: getMessage('tagGroupOther') });
+      if ((work.length || char.length) && general.length && !general.some((it) => it.ghead != null)) out.push({ ghead: getMessage('tagUncategorized') });
       out.push(...general);
       if (work.length) out.push({ ghead: kindLabel('work') }, ...work);
       if (char.length) out.push({ ghead: kindLabel('character') }, ...char);

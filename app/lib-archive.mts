@@ -9,7 +9,7 @@
 //   library/<captureId>.json           sidecar (verbatim)
 //   library/<captureId>-media-N.<ext>  original media
 //   library/avatars/<urlhash>.<ext>    shared avatar store (one file per avatar URL)
-//   library/folders.json|tag-groups.json|tag-types.json|ungrouped.json|manual-groups.json
+//   library/folders.json|tag-types.json|ungrouped.json|manual-groups.json
 //   hologram-export.json                 manifest { app, kind:'complete', version, exportedAt, fileCount }
 //
 // Excluded from the snapshot: config.json (machine-specific: paths, extension id)
@@ -24,7 +24,7 @@ import { ZipFile } from 'yazl';
 import { parseJsonLoose } from './lib-json.mts';
 
 const EXPORT_SKIP = new Set(['config.json', '.index.json']);
-const ORG_MERGE = ['folders.json', 'tag-groups.json', 'tag-types.json', 'ungrouped.json', 'manual-groups.json', 'poster-favorites.json', 'poster-folders.json', 'poster-tags.json'];
+const ORG_MERGE = ['folders.json', 'tag-types.json', 'ungrouped.json', 'manual-groups.json', 'poster-favorites.json', 'poster-folders.json', 'poster-tags.json'];
 
 function isVolatile(name) {
   return /\.tmp(-|$)/i.test(name) || /\.bak$/i.test(name);
@@ -81,8 +81,8 @@ function isWithin(parentDir, target) {
 }
 
 // --- Organization merges (union) ---------------------------------------------
-// Shared id-union for the {id, name, <members>} list shape (folders' items,
-// tag-groups' tags): first occurrence wins the name (cur is passed before inc =
+// Shared id-union for the {id, name, <members>} list shape (poster folders'
+// items): first occurrence wins the name (cur is passed before inc =
 // local wins), duplicate ids set-union their members.
 function unionById(curList, incList, memberKey) {
   const byId = new Map();
@@ -132,9 +132,6 @@ function mergeFolders(cur, inc) {
   const clip = [...new Set([...((cur && cur.clip) || []), ...((inc && inc.clip) || [])].map(String))];
   const posterWorkspace = [...new Set([...((cur && cur.posterWorkspace) || []), ...((inc && inc.posterWorkspace) || [])].map(String))];
   return { folders, activeId, clip, posterWorkspace };
-}
-function mergeTagGroups(cur, inc) {
-  return { groups: unionById(cur.groups, inc.groups, 'tags') };
 }
 function mergeUngrouped(cur, inc) {
   return { keys: [...new Set([...(cur.keys || []), ...(inc.keys || [])].map(String))] };
@@ -208,7 +205,6 @@ function mergePosterTags(cur, inc) {
 }
 const MERGERS = {
   'folders.json': mergeFolders, // the library folder store
-  'tag-groups.json': mergeTagGroups,
   'tag-types.json': mergeTagTypes,
   'ungrouped.json': mergeUngrouped,
   'manual-groups.json': mergeManualGroups,
@@ -533,24 +529,4 @@ async function importCompleteZip(JSZip, destFolder, buffer) {
   return { ok: true, imported, skipped };
 }
 
-export {
-  EXPORT_SKIP,
-  ORG_MERGE,
-  MAX_ZIP_ENTRIES,
-  MAX_ZIP_ENTRY_BYTES,
-  MAX_ZIP_TOTAL_BYTES,
-  ZipLimitError,
-  writeEntryStreamed,
-  buildCompleteZip,
-  buildImagesZip,
-  writeCompleteZip,
-  writeImagesZip,
-  hasExportableFiles,
-  importCompleteZip,
-  mergeFolders,
-  mergePosterFolders,
-  mergeTagGroups,
-  mergeTagTypes,
-  mergeUngrouped,
-  mergeManualGroups,
-};
+export { EXPORT_SKIP, ORG_MERGE, MAX_ZIP_ENTRIES, MAX_ZIP_ENTRY_BYTES, MAX_ZIP_TOTAL_BYTES, ZipLimitError, writeEntryStreamed, buildCompleteZip, buildImagesZip, writeCompleteZip, writeImagesZip, hasExportableFiles, importCompleteZip, mergeFolders, mergePosterFolders, mergeTagTypes, mergeUngrouped, mergeManualGroups };

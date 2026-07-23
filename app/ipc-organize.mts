@@ -1,9 +1,9 @@
 'use strict';
 
 // Organization-layer IPC handlers, extracted from main.js (mechanical move — logic
-// unchanged). These 14 get/set channels persist the per-library organization JSON
-// files (tag groups, tag 種別, ungrouped set, manual groups, folders,
-// poster folders/tags) alongside the sidecars. Every handler needs only the same
+// unchanged). These get/set channels persist the per-library organization JSON
+// files (tag 種別, ungrouped set, manual groups, folders, poster folders/tags)
+// alongside the sidecars. Every handler needs only the same
 // three core helpers — getSaveFolder + readOrgJsonSync + writeOrgJsonSync — which
 // stay in main.js and arrive via ctx. See main.js for the org-JSON degraded-guard
 // (readOrgJsonSync/writeOrgJsonSync refuse to clobber a present-but-corrupt file).
@@ -13,27 +13,6 @@ import path from 'node:path';
 
 function register(ctx) {
   const { getSaveFolder, readOrgJsonSync, writeOrgJsonSync } = ctx;
-
-  // Tag groups (migrated from the imported library's metadata) live alongside the
-  // sidecars as <saveFolder>/tag-groups.json: { groups: [{id,name,tags[]}] }.
-  ipcMain.handle('get-tag-groups', () => {
-    const folder = getSaveFolder();
-    if (!folder) return { groups: [] };
-    const { value: j } = readOrgJsonSync(path.join(folder, 'tag-groups.json'));
-    return { groups: j && Array.isArray(j.groups) ? j.groups : [] };
-  });
-
-  ipcMain.handle('set-tag-groups', (_e, groups) => {
-    const folder = getSaveFolder();
-    if (!folder || !Array.isArray(groups)) return { ok: false };
-    try {
-      fs.mkdirSync(folder, { recursive: true });
-      writeOrgJsonSync(path.join(folder, 'tag-groups.json'), { groups });
-      return { ok: true };
-    } catch {
-      return { ok: false };
-    }
-  });
 
   // Tag "vocabulary book" (用語帳): a tag's 種別 (kind) is an attribute of the TAG,
   // not of any post — so classifying a few hundred distinct tags needs zero post
@@ -108,7 +87,7 @@ function register(ctx) {
 
   // Per-poster tags (poster view). { tags: { "<posterKey>": ["tag", …] } } — the
   // poster-level peer of poster-folders. Shares the post tag
-  // vocabulary (tag-groups/tag-types) but is keyed by poster, NOT stored on posts.
+  // vocabulary (tag-types) but is keyed by poster, NOT stored on posts.
   ipcMain.handle('get-poster-tags', () => {
     const folder = getSaveFolder();
     if (!folder) return { tags: {} };

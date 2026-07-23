@@ -1661,10 +1661,10 @@
     .qf-pop .fm-row.off { color: var(--text-muted); }
     .qf-pop .fm-row.off .fm-count { color: var(--text-subtle); }
     .qf-pop .qf-div { height: 1px; background: var(--border); margin: 5px 6px; }
-    /* Two-pane mode (the タグ flyout with user tag-groups): group list on the LEFT,
-       the selected group's tags as rows on the RIGHT — Eagle's tag panel (groups you
-       click to scope the tags beside them). Replaces the wrapped-chip single flyout
-       (2026-07-04): a grouped vocabulary reads faster as pick-a-group → see-its-tags
+    /* Two-pane mode (the タグ flyout when 種別 sections are present): section list on
+       the LEFT (すべて + 作品/キャラ/未分類), the selected section's tags as rows on the
+       RIGHT. Replaces the wrapped-chip single flyout
+       (2026-07-04): a sectioned vocabulary reads faster as pick-a-section → see-its-tags
        than as one long chip-wrapped scroll. The flyout widens to hold both columns. */
     /* width:max-content = the flyout sizes to its content (both columns), capped at
        520px / viewport — NOT a fixed 560 slab (user 2026-07-04: 横長すぎ). The panes'
@@ -1672,8 +1672,8 @@
        gives a narrow flyout and a long one grows to the cap. */
     .fold-menu.qf-pop--twopane { width: max-content; max-width: min(520px, calc(100vw - 24px)); }
     .qf-pop .qf-panes { flex: 1; display: flex; min-height: 0; }
-    /* Left column: the tag-groups (全て + each group), hugs its content (min 110px).
-       Active group = the app's monotone-contrast active fill (not accent — DESIGN). */
+    /* Left column: the 種別 sections (全て + each section), hugs its content (min 110px).
+       Active section = the app's monotone-contrast active fill (not accent — DESIGN). */
     .qf-pop .qf-groups { flex: 0 0 auto; min-width: 110px; max-width: 190px; overflow-y: auto; padding: 4px 4px 4px 2px; border-right: 1px solid var(--border); scrollbar-gutter: stable; }
     .qf-pop .qf-group-row {
       display: flex; align-items: center; gap: 6px; width: 100%; padding: 5px 8px;
