@@ -2,7 +2,7 @@
 
 // Watch the Hologram save folder and AUTO-VERIFY every new capture against the
 // platform's public API (re-fetched via extension/metadata.js). Per capture it
-// prints PASS/FAIL with the reasons and a ready-to-paste test-progress row —
+// prints PASS/FAIL with the reasons and a one-line summary of the cell —
 // the human only opens pages and clicks/drags; selection criteria come from
 // scripts/test-select-posts.cts.
 //
