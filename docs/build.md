@@ -53,6 +53,8 @@ cd app && npm run dist
 electron-builder, win/nsis。
 
 - 出力 `app/dist/win-unpacked/` — スタンドアロン。`Hologram.exe` を直接実行可。ASCIIパスへ置けば native-host のランチャもASCIIになり日本語パス問題が解消。
+- **`npmRebuild: false` を設定してある**（`app/package.json` の `build`）。electron-builder は既定でネイティブモジュールを Electron 向けに再ビルドするが、唯一のネイティブ依存 `better-sqlite3` は N-API（`binding.gyp` の `NAPI_VERSION=10`）でビルド済みバイナリを同梱しており、同じ `.node` が Node と Electron の両方で動く＝再ビルドは不要。既定のままだと node-gyp が走り、C++ ビルドツールが要求される（2026-07-24 実測: 同一バイナリが Node 24 と Electron 43＝`NODE_MODULE_VERSION` 137 と 148 の双方でロード・WAL・FTS5 trigram の日本語部分一致まで動作）。**N-API でないネイティブ依存を足すときはこの設定を見直すこと**（黙って再ビルドが飛ぶ）。better-sqlite3 公式の troubleshooting は今も electron-rebuild を案内しているが、N-API 化前の記述。
+- **`asarUnpack` に `better-sqlite3` を入れてある**。`.node` は asar 内から読めないため、これが無いと配布ビルドでのみ DB が開けない。将来コード署名を入れる際は、asar の外に出たこのバイナリも署名対象に含める。
 - **NSIS ワンクリックインストーラ** は winCodeSign 展開時に **symlink 作成権限** が要る。**Windows 設定 → 開発者向け → 開発者モード を ON**（または管理者で実行）してから `npm run dist` で `Hologram Setup x.x.x.exe` が生成される。OFF だと winCodeSign 展開が失敗し `win-unpacked` のみになる（macOS用 dylib symlink でこける／コードの問題ではない）。
 - `native-host/` は `extraResources` で `resources/native-host` に同梱。`app/main.mts` が `app.isPackaged` でパス解決（dev=`../native-host`）。
 

@@ -28,6 +28,7 @@ execFileSync(process.execPath, [path.join(__dirname, '..', 'extension', 'build.m
 const TESTS = [
   'test-typecheck',
   'test-index',
+  'test-db-unit',
   'test-imgsize',
   'test-search-unit',
   'test-query-unit',
