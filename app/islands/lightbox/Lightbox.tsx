@@ -42,11 +42,13 @@ export function Lightbox({ state }: { state: LightboxState }) {
   return createPortal(
     <div
       data-slot="lightbox"
-      // Quick Look-style: lighter dim + blur so the grid ghosts behind the image
-      // instead of vanishing — keeps spatial context, image still pops. z-11000 sits
-      // over the content but under the shadcn Dialog/AlertDialog layers (13000+), which
-      // is the order the Esc cascade assumes.
-      className="fixed inset-0 z-[11000] flex cursor-zoom-out items-center justify-center bg-black/70 backdrop-blur-lg duration-[var(--motion-duration-base)] ease-[var(--motion-ease-out)] animate-in fade-in reduced-transparency:bg-black/85 reduced-transparency:backdrop-blur-none"
+      // Flat scrim, no backdrop blur (#240): the modals dropped theirs in the shadcn
+      // pass and design-tokens.css bans backdrop-filter on floating surfaces. Denser
+      // than a modal's bg-black/50 because nothing opaque sits on top of it — Bluesky's
+      // lightbox settles on the same 0.8. z-11000 sits over the content but under the
+      // shadcn Dialog/AlertDialog layers (13000+), which is the order the Esc cascade
+      // assumes.
+      className="fixed inset-0 z-[11000] flex cursor-zoom-out items-center justify-center bg-black/80 duration-[var(--motion-duration-base)] ease-[var(--motion-ease-out)] animate-in fade-in"
       // The backdrop AND the image close; video controls don't (a click on the
       // scrubber must not dismiss the thing being scrubbed).
       onClick={(e) => {
