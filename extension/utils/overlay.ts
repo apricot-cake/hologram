@@ -81,6 +81,9 @@ export async function startOverlay(): Promise<void> {
   // This remains visually close to the 22px saved mark, while the actual
   // pointer target meets WCAG's 24px minimum for an icon-only control.
   const SAVE_SIZE = 28;
+  // Let the hover-only action show a little more of the media beneath it
+  // without changing the shared glass treatment used by other controls.
+  const SAVE_BUTTON_BG = 'rgba(20, 22, 26, 0.76)';
   const CONTROL_INSET = 6;
   const FLASH_MS = 1400; // "saved" confirmation after a press
   const ERROR_MS = 2500; // failure shown, then back to a button to retry
@@ -618,7 +621,7 @@ export async function startOverlay(): Promise<void> {
         // the action without adding permanent text or state color.
         el.style.width = `${SAVE_SIZE}px`;
         el.style.height = `${SAVE_SIZE}px`;
-        el.style.background = G.CARD_BG;
+        el.style.background = SAVE_BUTTON_BG;
         el.style.color = G.TEXT;
         el.style.cursor = 'pointer';
         el.appendChild(G.makeIcon(G.ICONS.drop, 14));
@@ -635,7 +638,7 @@ export async function startOverlay(): Promise<void> {
           el.style.transform = 'scale(1.04)';
         };
         el.onpointerleave = () => {
-          el.style.background = G.CARD_BG;
+          el.style.background = SAVE_BUTTON_BG;
           el.style.borderColor = G.CARD_BORDER;
           el.style.boxShadow = G.CARD_SHADOW;
           el.style.transform = '';
