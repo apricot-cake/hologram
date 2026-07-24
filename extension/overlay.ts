@@ -685,10 +685,20 @@
     }
     if (hostnameMatches('pixiv.net')) {
       return {
-        // pixiv's feed unit IS the thumbnail link; a card also carries a title
-        // link to the same artwork, so require the image to keep one control per
-        // card (getPermalink resolves both to the same URL either way).
-        unitSelector: 'a[href*="/artworks/"]',
+        // Two shapes, both anchors:
+        //  - FEED thumbnail: a[href*="/artworks/"] — the card's own link (a card
+        //    also carries a title link to the same artwork, so requiring the
+        //    image keeps one control per card).
+        //  - ARTWORK PAGE main illustration: a[href*="i.pximg.net"] — the
+        //    full-size viewer link that wraps each page image. This is the ONE
+        //    surface X and Bluesky cover for free (their post container appears on
+        //    the detail page too) but pixiv did not, so the button never reached
+        //    the illustration you actually came to save (#340). It reads apart
+        //    from related-works thumbnails cleanly: those use /artworks/ links,
+        //    the main image uses an i.pximg.net link. Manga pages are one such
+        //    anchor each → one button per page; ugoira is a <canvas>, not a
+        //    _p image, so isPostMedia rejects it and no button appears.
+        unitSelector: 'a[href*="/artworks/"], a[href*="i.pximg.net"]',
         mediaIn: (unit) => [...unit.querySelectorAll('img')],
       };
     }
