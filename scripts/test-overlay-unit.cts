@@ -179,8 +179,26 @@ const controls = (): any[] => Array.from(window.document.querySelectorAll('#__ho
 const marks = () => controls().filter((el) => el.title === 'badgeSaved');
 const saveButtons = () => controls().filter((el) => el.title === 'hoverSaveImage');
 const settle = () => new Promise((r) => setTimeout(r, 400)); // past the 300ms query debounce and the 100ms button delay
-const hover = (id) => window.document.querySelector(`#${id} img`).dispatchEvent(new window.Event('pointerover', { bubbles: true }));
-const hoverAway = () => window.document.getElementById('feed').dispatchEvent(new window.Event('pointerover', { bubbles: true }));
+// overlay.js decides what the pointer is over by COORDINATES (a real
+// pointerover always carries clientX/clientY), not by which element the event
+// fired on — so a mark/button shows even when the site stacks its own control
+// over the picture. The harness mirrors that: aim at the media box's center.
+const boxOf = (id) => {
+  const el = window.document.getElementById(id);
+  return el.matches('[data-testid="tweetPhoto"]') ? el : el.querySelector('[data-testid="tweetPhoto"]');
+};
+const pointerOver = (target, x, y) => {
+  const e: any = new window.Event('pointerover', { bubbles: true });
+  e.clientX = x;
+  e.clientY = y;
+  target.dispatchEvent(e);
+};
+const hover = (id) => {
+  const box = boxOf(id);
+  const r = box.getBoundingClientRect();
+  pointerOver(box, r.left + r.width / 2, r.top + r.height / 2);
+};
+const hoverAway = () => pointerOver(window.document.getElementById('feed'), 900, 50); // right of every box → over nothing
 const click = (el) => el.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
 
 (async () => {
@@ -207,6 +225,16 @@ const click = (el) => el.dispatchEvent(new window.MouseEvent('click', { bubbles:
   check('the control itself is not inert', marks()[0].style.pointerEvents === 'auto');
   hoverAway();
   check('the mark goes away with the pointer', controls().length === 0);
+
+  // --- the regression this file exists to guard: a pointer that physically
+  //     lands on a FOREIGN element stacked over the picture (Bluesky's ALT/overlay
+  //     div, pixiv's bookmark heart) still counts as hovering the picture, because
+  //     detection is by coordinates, not by walking up from what was hit. Fire the
+  //     event on #feed (neither the box nor a descendant) with coords inside p1's box.
+  const p1box = boxOf('p1').getBoundingClientRect();
+  pointerOver(window.document.getElementById('feed'), p1box.left + p1box.width / 2, p1box.top + p1box.height / 2);
+  check('a pointer over a foreign overlay on the picture still hovers it', marks().length === 1);
+  hoverAway();
 
   // --- "always" puts it on screen unconditionally; "off" means off ---
   setSetting('savedBadgeMode', 'always');

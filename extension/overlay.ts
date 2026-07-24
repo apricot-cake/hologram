@@ -310,12 +310,8 @@
   document.addEventListener(
     'pointerover',
     (e) => {
-      const target = e.target as Element | null;
-      // The pointer moved onto our own control. It sits ON the picture, so
-      // treating it as "left the picture" would make the button vanish as the
-      // user reaches for it.
-      if (target && layer?.contains(target as Node)) return;
-      setHovered(anchorAt(target));
+      const pe = e as PointerEvent;
+      setHovered(anchorAtPoint(pe.clientX, pe.clientY));
     },
     true,
   );
@@ -327,12 +323,35 @@
     true,
   );
 
-  function anchorAt(target: Element | null): Anchor | null {
-    for (let el: Element | null = target; el && el !== document.body; el = el.parentElement) {
-      const found = anchorOf.get(el);
-      if (found) return found.anchor;
+  // Which media box the pointer is inside — by GEOMETRY, not the DOM tree. The
+  // earlier ancestor-walk ("which tracked box is an ancestor of what the pointer
+  // physically landed on") breaks on any site that lays its OWN control over the
+  // picture as a SIBLING of it: on Bluesky the pointer lands on the ALT/overlay
+  // div that sits on top of the <img>, and the <img> — the box — is that div's
+  // sibling, never its ancestor, so the walk finds nothing (pixiv's bookmark
+  // heart is the same shape). A rect test doesn't care what is stacked on top,
+  // and it also keeps the control shown while the pointer is on it (the control
+  // sits inside the box's own rect). Only the ON-SCREEN units are scanned (not
+  // every box ever tracked), so a crossing reads a handful of rects at most.
+  function anchorAtPoint(x: number, y: number): Anchor | null {
+    let hit: Anchor | null = null;
+    let hitArea = Number.POSITIVE_INFINITY;
+    for (const unit of visible) {
+      const state = tracked.get(unit);
+      if (!state) continue;
+      for (const [box, anchor] of state.anchors) {
+        const r = box.getBoundingClientRect();
+        if (x < r.left || x > r.right || y < r.top || y > r.bottom) continue;
+        // Smallest box wins where they overlap, so a picture inside a quoted
+        // post is preferred over the outer post's own picture behind it.
+        const area = r.width * r.height;
+        if (area < hitArea) {
+          hitArea = area;
+          hit = anchor;
+        }
+      }
     }
-    return null;
+    return hit;
   }
 
   function setHovered(next: Anchor | null) {
