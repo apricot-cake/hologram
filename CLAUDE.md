@@ -2,7 +2,7 @@
 Hologram = ウェブのコンテンツ（現対応はSNS投稿）を出自・エンゲージメントごとローカル保存し検索・整理できる「自分だけのコンテンツライブラリ」（X/Bluesky/Misskey/Mastodon/pixiv対応、Chrome拡張→Native Messaging→Electronアプリの3構成、サーバー送信なし。射程の正＝GOALS.md）。
 
 # ドキュメント
-射程・機能の採否＝GOALS.md／詳細=docs/architecture.md／ビルド・実機検証=docs/build.md／テスト一覧=docs/testing.md／機能説明=README.md／残タスク=GitHub Issues＋Project「Hologram Backlog」（apricot-cake/hologram）。実装のhow・私的文脈はメモリ`hologram-backlog`、訴求の物差し（文言を書く前に読む）はメモリ`hologram-positioning`（ともにrepo外）
+射程・機能の採否＝GOALS.md／詳細=docs/architecture.md／**設計判断とその理由＝docs/decisions/（ADR・1決定1ファイル・実装まで進んだ設計はIssueからここへ昇格）**／ビルド・実機検証=docs/build.md／テスト一覧=docs/testing.md／機能説明=README.md／残タスク=GitHub Issues＋Project「Hologram Backlog」（apricot-cake/hologram）。実装のhow・私的文脈はメモリ`hologram-backlog`、訴求の物差し（文言を書く前に読む）はメモリ`hologram-positioning`（ともにrepo外）
 
 # ストレージと実行環境
 - 配置は`~/.hologram`(config/ログ)と`saveFolder`(既定`~/Hologram/library`)＝**AppData外必須**（MSIX仮想化でのライブラリ消失事故対策・2026-06-23）
