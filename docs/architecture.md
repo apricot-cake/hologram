@@ -22,13 +22,14 @@
 
 TypeScript ソース（`.ts`）。ブラウザは TypeScript を直接実行できない唯一のレイヤーなので、`npm run build`（`extension/build.mjs`＝tsc コンパイル＋静的資産コピー）で `extension/dist/` へビルドし、**`extension/dist/` を Load unpacked する**（`extension/` 直下ではない）。`manifest.json` に固定 `key` があるため拡張機能IDはロード元フォルダに依存しない（メモリ `ext-signing-key`）。
 
-- `manifest.json` — 権限（`activeTab`/`scripting`/`nativeMessaging`/`storage` / host_permissions: `cdn.syndication.twimg.com` ＋ pixiv）、content_scripts（`i18n.js`/`glass-ui.js`/`site-detect.js`/`badge.js`/`drag.js`＝X/Bluesky/pixiv・document_idle）、`options_ui`（タブで開く）、ショートカット `Alt+S`、`default_locale`/`_locales`
+- `manifest.json` — 権限（`activeTab`/`scripting`/`nativeMessaging`/`storage` / host_permissions: `cdn.syndication.twimg.com` ＋ pixiv）、content_scripts（`i18n.js`/`glass-ui.js`/`site-detect.js`/`media-identity.js`/`overlay.js`/`drag.js`＝X/Bluesky/pixiv・document_idle）、`options_ui`（タブで開く）、ショートカット `Alt+S`、`default_locale`/`_locales`
 - `background.ts` — Service Worker。タブキャプチャ → クロップ → `metadata.ts` でAPI取得 → Native Messaging 送信。**クリック保存** と **画像ドラッグ保存**(`drag.ts`) の2経路（`pickPrimaryImage` で原寸を選択）。
 - `content.ts` — 投稿選択UI・クロップ（キャプチャセッションの IIFE）
 - `site-detect.ts` — プラットフォーム検出・投稿要素特定・permalink/rect 抽出（content.ts から分離した副作用なし関数群＝Node+jsdom で単体テスト可・`test-content-fixtures.cts`）
 - `drag.ts` — 画像のドラッグ保存（投稿の原寸画像を直接保存）
-- `badge.ts` — TL上の「保存済み」マーク（#54）。可視投稿の permalink を `site-detect.ts` で拾い、300msバッチで background → ブリッジへ照会。マークは body 直下の1枚のオーバーレイ層に置き、投稿のDOMには触れない（ホスト側フレームワークの再描画と衝突させないため）。設定ページでOFF可（既定ON）
-- `glass-ui.ts` — ページ内UI（キャプチャバナー・ドラッグのドロップゾーン）共通の見た目基盤＝アプリのフローティング面マテリアル/モーション語彙をホストページ用に再構築
+- `media-identity.ts` — 画像→投稿の帰属（`extractIdentity`）と取得候補URL（`collectImageUrls`）。ドラッグ保存とホバー保存ボタンの**共有**＝同じ画像を2経路で保存したとき別の投稿として記録されうる状態を作らないため。アバター・リンクカード等は帰属が付いても `isPostMedia` が false＝保存ボタンを出さない
+- `overlay.ts` — TL上のオーバーレイ（#54/#94/#309）。1つの角が状態で顔を変える＝保存済みなら「保存済み」マーク、未保存ならホバーで**画像の保存ボタン**（押すと `drag.ts` と同じ `imageDragged` を送る＝ページ内ボタンのクリックには activeTab が付かず要素キャプチャ経路を呼べないため、これが唯一の保存経路）。可視投稿の permalink を `site-detect.ts` で拾い、300msバッチで background → ブリッジへ照会。控えは body 直下の1枚のオーバーレイ層に置き、投稿のDOMには触れない（ホスト側フレームワークの再描画と衝突させないため）。マークは投稿単位で1つ、ボタンは画像単位。設定ページで「マークの出し方」3値（ホバー時のみ＝既定／常時／非表示）と保存ボタンのON/OFF
+- `glass-ui.ts` — ページ内UI（キャプチャバナー・ドラッグのドロップゾーン・オーバーレイ）共通の見た目基盤＝アプリのフローティング面マテリアル/モーション語彙をホストページ用に再構築
 - `metadata.ts` — 投稿URLから X（syndication JSON・非公式）/ Bluesky（`public.api.bsky.app`）/ Misskey（`/api/notes/show`）/ Mastodon（`/api/v1/statuses/:id`）/ **pixiv** でメタ取得・正規化。**失敗時は空レコードを返す（throwしない）**。dual export（`module.exports`）＝ビルド後の `dist/metadata.js` を node からも require 可（`scripts/backfill-metadata.cts` 等）。Xはリポスト/ブックマーク/閲覧数を含まない。`fetchPostMetadata(url, {expectedHost})` で Misskey/Mastodon（hostが投稿URL由来＝任意）の API fetch を sender tab の host に固定（SSRF防御。X/Bluesky/pixiv は固定hostなので無関係）
 - `i18n.ts` — content.ts のバナー用 i18n（拡張側のみ。アプリは `app/renderer/i18n.ts`）
 - `options.ts`/`options.html` — 設定ページ（manifest `options_ui`・タブで開く＝拡張設定の一本化先）

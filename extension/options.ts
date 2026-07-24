@@ -4,16 +4,19 @@
 // the future toolbar popup deliberately links here instead of hosting its
 // own). The theme pref was removed (extension pages follow the browser via
 // prefers-color-scheme; the on-page capture UI is a theme-independent scrim
-// solid), so what lives here is the saved-post badge switch plus the
+// solid), so what lives here is the timeline overlay's two settings plus the
 // diagnostics link.
 //
 // Wrapped in an IIFE for the same reason as diag.ts: tsc compiles every
 // extension file as one program, so top-level names must stay unique.
 (() => {
-  // Read by badge.js (content script) and written only here. Absent = ON: the
-  // badge ships enabled, and the check is local-only, so there is nothing to
-  // opt into (#54).
-  const SAVED_BADGE_KEY = 'savedBadge';
+  // Both read by overlay.js (content script) and written only here.
+  // Absent = the defaults overlay.js ships with: the mark appears on hover
+  // (#309) and the save button is on (#94). The check is local-only, so there
+  // is nothing to opt into.
+  const MARK_MODE_KEY = 'savedBadgeMode';
+  const HOVER_SAVE_KEY = 'hoverSaveButton';
+  const MARK_MODES = ['hover', 'always', 'off'];
 
   // Strings come from _locales via chrome.i18n (the standard channel for
   // extension pages); the static HTML text is the Japanese fallback for a
@@ -31,20 +34,40 @@
     setText('diagLink', 'optionsOpenDiag');
     setText('savedBadgeLabel', 'optionsSavedBadge');
     setText('savedBadgeDesc', 'optionsSavedBadgeDesc');
+    setText('savedBadgeModeHoverLabel', 'optionsSavedBadgeHover');
+    setText('savedBadgeModeAlwaysLabel', 'optionsSavedBadgeAlways');
+    setText('savedBadgeModeOffLabel', 'optionsSavedBadgeOff');
+    setText('hoverSaveLabel', 'optionsHoverSave');
+    setText('hoverSaveDesc', 'optionsHoverSaveDesc');
   } catch {
     /* not running as an extension page — static fallback text stays */
   }
 
-  const box = document.getElementById(SAVED_BADGE_KEY);
-  if (box instanceof HTMLInputElement) {
-    chrome.storage.local.get(SAVED_BADGE_KEY, (got) => {
+  // overlay.js listens on chrome.storage.onChanged, so open timelines follow
+  // both of these without a reload.
+  const radios = MARK_MODES.map((mode) => document.getElementById(`savedBadgeMode${mode[0].toUpperCase()}${mode.slice(1)}`)).filter((el): el is HTMLInputElement => el instanceof HTMLInputElement);
+  if (radios.length === MARK_MODES.length) {
+    chrome.storage.local.get(MARK_MODE_KEY, (got) => {
       if (chrome.runtime.lastError) return;
-      box.checked = got[SAVED_BADGE_KEY] !== false;
+      const stored = got[MARK_MODE_KEY];
+      const current = typeof stored === 'string' && MARK_MODES.includes(stored) ? stored : 'hover';
+      for (const radio of radios) radio.checked = radio.value === current;
+    });
+    for (const radio of radios) {
+      radio.addEventListener('change', () => {
+        if (radio.checked) chrome.storage.local.set({ [MARK_MODE_KEY]: radio.value });
+      });
+    }
+  }
+
+  const box = document.getElementById(HOVER_SAVE_KEY);
+  if (box instanceof HTMLInputElement) {
+    chrome.storage.local.get(HOVER_SAVE_KEY, (got) => {
+      if (chrome.runtime.lastError) return;
+      box.checked = got[HOVER_SAVE_KEY] !== false;
     });
     box.addEventListener('change', () => {
-      // badge.js listens on chrome.storage.onChanged, so open timelines follow
-      // this without a reload.
-      chrome.storage.local.set({ [SAVED_BADGE_KEY]: box.checked });
+      chrome.storage.local.set({ [HOVER_SAVE_KEY]: box.checked });
     });
   }
 })();

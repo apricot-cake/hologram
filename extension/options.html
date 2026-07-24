@@ -56,6 +56,27 @@
     color: var(--text-muted);
     font-size: 12px;
   }
+  /* A setting with three mutually exclusive values is a radio group, not a
+     switch plus a modifier: "off" and "when does it show" in separate controls
+     would let the page display a combination that means nothing. */
+  fieldset {
+    margin: 0 0 32px;
+    padding: 0;
+    border: 0;
+  }
+  legend { padding: 0; }
+  fieldset .desc {
+    margin: 4px 0 10px;
+    color: var(--text-muted);
+    font-size: 12px;
+  }
+  fieldset .choice {
+    display: flex;
+    gap: 10px;
+    align-items: baseline;
+    margin: 0 0 6px;
+  }
+  fieldset .choice input { margin: 0; }
   /* The diagnostics link keeps its footnote-quiet styling: normal users never
      need diag, so it shouldn't read as a call to action. */
   .foot {
@@ -71,11 +92,27 @@
   .foot a:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--focus-ring); border-radius: 4px; }
 </style>
 <body>
+  <fieldset>
+    <legend id="savedBadgeLabel">保存済みの投稿につける印</legend>
+    <p class="desc" id="savedBadgeDesc">タイムライン上で、すでに Hologram に保存した投稿の画像に小さな印を表示します。判定はこのPCの中だけで行われます。</p>
+    <div class="choice">
+      <input type="radio" name="savedBadgeMode" id="savedBadgeModeHover" value="hover" checked>
+      <label for="savedBadgeModeHover" id="savedBadgeModeHoverLabel">マウスを載せたときだけ表示</label>
+    </div>
+    <div class="choice">
+      <input type="radio" name="savedBadgeMode" id="savedBadgeModeAlways" value="always">
+      <label for="savedBadgeModeAlways" id="savedBadgeModeAlwaysLabel">常に表示</label>
+    </div>
+    <div class="choice">
+      <input type="radio" name="savedBadgeMode" id="savedBadgeModeOff" value="off">
+      <label for="savedBadgeModeOff" id="savedBadgeModeOffLabel">表示しない</label>
+    </div>
+  </fieldset>
   <div class="row">
-    <input type="checkbox" id="savedBadge" checked>
+    <input type="checkbox" id="hoverSaveButton" checked>
     <div>
-      <label for="savedBadge" id="savedBadgeLabel">保存済みの投稿に印をつける</label>
-      <p class="desc" id="savedBadgeDesc">タイムライン上で、すでに Hologram に保存した投稿の画像に小さな印を表示します。判定はこのPCの中だけで行われます。</p>
+      <label for="hoverSaveButton" id="hoverSaveLabel">画像にマウスを載せたら保存ボタンを出す</label>
+      <p class="desc" id="hoverSaveDesc">まだ保存していない投稿の画像に、その場で保存できるボタンを表示します。保存されるのは画像そのものと投稿の情報（本文・作者・元URL）です。投稿の見た目のスクリーンショットが要るときは Alt+S の投稿キャプチャを使ってください。</p>
     </div>
   </div>
   <p class="foot"><a href="diag.html" target="_blank" id="diagLink">診断ページを開く</a></p>

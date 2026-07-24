@@ -24,11 +24,31 @@
     "description": "Link to the diagnostics page"
   },
   "optionsSavedBadge": {
-    "message": "Mark posts you've already saved",
-    "description": "Options label for the timeline saved-post badge"
+    "message": "Mark on posts you've already saved",
+    "description": "Options group label for the timeline saved-post mark"
   },
   "optionsSavedBadgeDesc": {
     "message": "Shows a small mark on timeline images that are already in your Hologram library. The check happens entirely on this computer.",
-    "description": "Options description for the timeline saved-post badge"
+    "description": "Options description for the timeline saved-post mark"
+  },
+  "optionsSavedBadgeHover": {
+    "message": "Only while pointing at the post",
+    "description": "Options choice: show the saved mark only while pointing at the post"
+  },
+  "optionsSavedBadgeAlways": {
+    "message": "Always",
+    "description": "Options choice: show the saved mark whenever the post is on screen"
+  },
+  "optionsSavedBadgeOff": {
+    "message": "Never",
+    "description": "Options choice: never show the saved mark"
+  },
+  "optionsHoverSave": {
+    "message": "Show a save button when you point at an image",
+    "description": "Options label for the hover save button"
+  },
+  "optionsHoverSaveDesc": {
+    "message": "Puts a save button on images you haven't saved yet. It saves the image itself plus the post's text, creator and source URL. For a screenshot of how the post looks, use the Alt+S post capture instead.",
+    "description": "Options description for the hover save button, including what it does NOT save"
   }
 }

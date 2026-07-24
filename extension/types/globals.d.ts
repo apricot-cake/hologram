@@ -56,8 +56,8 @@ interface Window {
   __snsPostSaveCleanup?: () => void;
   // Re-injection guard (drag.js).
   __hologramDragActive?: boolean;
-  // Re-injection guard (badge.js).
-  __hologramSavedBadgeActive?: boolean;
+  // Re-injection guard (overlay.js).
+  __hologramOverlayActive?: boolean;
   // Set by diag.js — readable via the diagnostics page's own console.
   __hologramDiag?: Record<string, unknown>;
 }

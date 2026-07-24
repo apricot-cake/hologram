@@ -33,12 +33,13 @@ X (Twitter) ・ Bluesky ・ Misskey ・ Mastodon ・ pixiv
 
 When you find a post you like —
 
-- **Press `Alt+S` and click the post** — saves a screenshot plus the text, author, date, engagement, and other details.
+- **Point at an image and press the save button** in its corner — saves the picture along with the post's text, author and source. One click, without leaving the timeline.
+- **Press `Alt+S` and click the post** — saves a screenshot plus the text, author, date, engagement, and other details. This is the one that captures how the post *looks*; the corner button does not.
 - **Drag an image** — save pixiv illustrations and the like as the image itself.
 
 What you save gathers automatically in the desktop app (it watches the save folder, so new captures show up in the list right away).
 
-While you scroll a timeline, images you've already saved carry a small mark — no more stopping to wonder whether you saved that one. The check happens entirely on your computer, and works with the app closed. Turn it off on the extension's options page if you'd rather not see it.
+Point at an image you've already saved and the same corner shows a small mark instead — no more stopping to wonder whether you saved that one. The check happens entirely on your computer, and works with the app closed. On the extension's options page you can have the mark show all the time instead of only on hover, or not at all, and turn the save button off.
 
 ### 2. Browse & read
 
