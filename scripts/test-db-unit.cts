@@ -28,7 +28,7 @@ function ok(cond, msg) {
 
 // Records every statement so ordering and transaction framing are assertable.
 function fakeDb(startVersion = 0) {
-  const log = [];
+  const log: string[] = [];
   let version = startVersion;
   return {
     log,
@@ -47,7 +47,7 @@ function fakeDb(startVersion = 0) {
   };
 }
 
-const dirs = [];
+const dirs: string[] = [];
 function mkdb(name = 'test.db') {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-db-'));
   dirs.push(dir);
@@ -72,7 +72,7 @@ function mkdb(name = 'test.db') {
   // A database already at version 1 must skip the first migration entirely —
   // re-running it would fail on the existing table.
   const db = fakeDb(1);
-  const ran = [];
+  const ran: string[] = [];
   runMigrations(db, [
     { name: 'first', up: () => ran.push('first') },
     { name: 'second', up: () => ran.push('second') },

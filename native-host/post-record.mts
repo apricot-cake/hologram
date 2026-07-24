@@ -1,0 +1,159 @@
+// The shared post-record shape (#5 St2 / #295) and its normalization builder:
+// the single place that fills every missing field with its documented default,
+// so a record built by ANY producer ends up with the exact same keys.
+//
+// Today three places independently assemble what is supposed to be the same
+// "illustration record" (bridge.cts's comment name for it):
+//   - native-host/bridge.cts's handleSave/handleSaveDragged (captures)
+//   - app/ipc-transfer.mts's import-posts (ZIP import) — its own hand-listed
+//     ~30 fields, found (2026-07-18 codebase pass, #5 comment) to already be
+//     missing media[] and replyToId that the other two producers carry
+//   - the Eagle-migration converter (external tool, not in this repo) that
+//     originates eagleName/description
+// A field added to one and not the others silently drops on whichever path
+// didn't get the memo. normalizePostRecord is that memo, machine-enforced.
+//
+// #5's confirmed schema (2026-07-18 comment) is the source of truth for the
+// field set — this shape is that schema's row shape, not the DB's: tags stay
+// plain name strings here (ID-entity resolution — name to tagId, with dedup —
+// is a database-write-time concern for whoever wires this into the DB in
+// St5/St6, not a capture-time normalization concern).
+//
+// Kept Electron-free (no imports beyond this file) so it unit-tests in plain
+// node under both the native-host CJS runtime (via require, like bridge.cts
+// requires media-download.cts) and the app's ESM runtime — the same
+// cross-boundary role native-host/post-key.mts already plays, and the same
+// reason this is .mts while its native-host siblings are .cts (see that
+// file's comment for the mechanics).
+//
+// St2 creates the type + builder only. Rewiring bridge.cts and ipc-transfer.mts
+// to build records THROUGH this (instead of their own ad hoc field lists) is
+// St5/St6's job (#295) — this file is inert until then.
+
+export interface MediaItemShape {
+  url: string;
+  alt: string | null;
+  width: number | null;
+  height: number | null;
+  file: string;
+}
+
+export interface PostRecordShape {
+  captureId: string;
+  assetClass: string;
+  mediaType: string | null;
+  image: string | null;
+  url: string | null;
+  platform: string | null;
+  text: string | null;
+  title: string | null;
+  displayName: string | null;
+  screenName: string | null;
+  userId: string | null;
+  avatar: string | null;
+  avatarFile: string | null;
+  followers: number | null;
+  authorCreatedAt: string | null;
+  likes: number | null;
+  reposts: number | null;
+  replies: number | null;
+  bookmarks: number | null;
+  views: number | null;
+  date: string | null;
+  capturedAt: string;
+  updatedAt: string;
+  lang: string | null;
+  isReply: boolean | null;
+  isQuote: boolean | null;
+  isThread: boolean | null;
+  quotedUrl: string | null;
+  replyToId: string | null;
+  hashtags: string[];
+  tags: string[];
+  media: MediaItemShape[];
+  eagleName: string | null;
+  description: string | null;
+  source: string | null;
+  shotW: number | null;
+  shotH: number | null;
+  trashedAt: string | null;
+}
+
+// Every field a producer may hand in, all optional — the builder supplies
+// whatever is missing. captureId is the one field every producer computes
+// itself (uniqueBase-derived in bridge.cts, stamp+seq-derived in
+// ipc-transfer.mts) and is required here for the same reason.
+export type PostRecordInput = Partial<Omit<PostRecordShape, 'captureId'>> & { captureId: string };
+
+function normStr(v: unknown): string | null {
+  return typeof v === 'string' && v ? v : null;
+}
+function normNum(v: unknown): number | null {
+  return typeof v === 'number' && Number.isFinite(v) ? v : null;
+}
+function normBool(v: unknown): boolean | null {
+  return typeof v === 'boolean' ? v : null;
+}
+function normStrArray(v: unknown): string[] {
+  return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [];
+}
+function normMedia(v: unknown): MediaItemShape[] {
+  if (!Array.isArray(v)) return [];
+  return v
+    .filter((m): m is Record<string, unknown> => !!m && typeof m === 'object')
+    .map((m) => ({
+      url: typeof m.url === 'string' ? m.url : '',
+      alt: normStr(m.alt),
+      width: normNum(m.width),
+      height: normNum(m.height),
+      file: typeof m.file === 'string' ? m.file : '',
+    }));
+}
+
+// Fills every field of `input` with its documented default. now is injectable
+// (tests pass a fixed instant); production callers omit it and get the real
+// clock, same as extension/metadata.ts's toIso() callers and ipc-transfer.mts's
+// `|| new Date().toISOString()` fallback it replaces.
+export function normalizePostRecord(input: PostRecordInput, now: () => string = () => new Date().toISOString()): PostRecordShape {
+  const capturedAt = normStr(input.capturedAt) || now();
+  return {
+    captureId: input.captureId,
+    assetClass: normStr(input.assetClass) || 'media',
+    mediaType: normStr(input.mediaType),
+    image: normStr(input.image),
+    url: normStr(input.url),
+    platform: normStr(input.platform),
+    text: normStr(input.text),
+    title: normStr(input.title),
+    displayName: normStr(input.displayName),
+    screenName: normStr(input.screenName),
+    userId: normStr(input.userId),
+    avatar: normStr(input.avatar),
+    avatarFile: normStr(input.avatarFile),
+    followers: normNum(input.followers),
+    authorCreatedAt: normStr(input.authorCreatedAt),
+    likes: normNum(input.likes),
+    reposts: normNum(input.reposts),
+    replies: normNum(input.replies),
+    bookmarks: normNum(input.bookmarks),
+    views: normNum(input.views),
+    date: normStr(input.date),
+    capturedAt,
+    updatedAt: normStr(input.updatedAt) || capturedAt,
+    lang: normStr(input.lang),
+    isReply: normBool(input.isReply),
+    isQuote: normBool(input.isQuote),
+    isThread: normBool(input.isThread),
+    quotedUrl: normStr(input.quotedUrl),
+    replyToId: normStr(input.replyToId),
+    hashtags: normStrArray(input.hashtags),
+    tags: normStrArray(input.tags),
+    media: normMedia(input.media),
+    eagleName: normStr(input.eagleName),
+    description: normStr(input.description),
+    source: normStr(input.source),
+    shotW: normNum(input.shotW),
+    shotH: normNum(input.shotH),
+    trashedAt: normStr(input.trashedAt),
+  };
+}
