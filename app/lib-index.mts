@@ -158,19 +158,28 @@ function createPostIndex(opts) {
 
   // Scan the folder, reusing cached records whose mtime is unchanged. Returns
   // { posts, changed } — `changed` is true if anything was added/updated/removed
-  // (the caller persists the snapshot when so).
+  // (the caller persists the snapshot when so). `skipped` is a report-only list
+  // of sidecar-candidate filenames that did NOT become a post this call (parse
+  // error or a valid-but-non-post JSON) — added for #296 (DB importer's
+  // reconciliation report), populated at zero extra I/O cost since these files
+  // are already being read/classified here either way. `error` is only filled
+  // for files actually parsed THIS call (fresh read or first-time cache
+  // build); a file that was already cached as skipped in an earlier call (and
+  // whose mtime hasn't moved since) reports with `error: null` — the snapshot
+  // does not carry a reason across restarts, only the record-or-null verdict.
   async function list(folder) {
     let files: string[];
     try {
       files = await fs.promises.readdir(folder);
     } catch {
-      return { posts: [], changed: false };
+      return { posts: [], changed: false, skipped: [] };
     }
     await loadSnapshot(folder);
 
     const sidecars = files.filter((f) => f.toLowerCase().endsWith('.json') && !internal.has(f));
     const present = new Set(sidecars);
     let changed = false;
+    const reasons = new Map<string, string>(); // filename -> error, freshly-parsed-this-call only
 
     for (let i = 0; i < sidecars.length; i += BATCH) {
       const slice = sidecars.slice(i, i + BATCH);
@@ -195,8 +204,10 @@ function createPostIndex(opts) {
             const rec = parseJsonLoose(await fs.promises.readFile(path.join(folder, f), 'utf8'));
             const record = isPostRecord(rec) ? rec : null;
             if (record) await augmentDims(folder, record);
+            else reasons.set(f, 'not a post record (no image/video/media)');
             map.set(f, { mtimeMs: st.mtimeMs, record });
-          } catch {
+          } catch (err: any) {
+            reasons.set(f, err.message);
             map.set(f, { mtimeMs: st.mtimeMs, record: null }); // corrupt/partial -> remember as non-post
           }
         }),
@@ -212,15 +223,18 @@ function createPostIndex(opts) {
 
     const posts: any[] = [];
     const stamps = new Map<any, any>(); // captureId -> mtimeMs, for the main process's delta IPC
+    const skipped: Array<{ file: string; error: string | null }> = [];
     for (const f of sidecars) {
       const e = map.get(f);
       if (e && e.record) {
         posts.push(e.record);
         stamps.set(e.record.captureId, e.mtimeMs);
+      } else {
+        skipped.push({ file: f, error: reasons.get(f) || null });
       }
     }
     posts.sort((a, b) => new Date(b.capturedAt || 0).getTime() - new Date(a.capturedAt || 0).getTime());
-    return { posts, changed, stamps };
+    return { posts, changed, stamps, skipped };
   }
 
   // Targeted update: re-stat/read ONLY the named sidecars (from fs.watch's
@@ -234,6 +248,7 @@ function createPostIndex(opts) {
     await loadSnapshot(folder);
     const added: any[] = [];
     const removed: any[] = [];
+    const skipped: Array<{ file: string; error: string | null }> = []; // #296: named files that parsed but aren't a post, or failed to parse
     for (const f of names) {
       if (typeof f !== 'string' || internal.has(f) || !f.toLowerCase().endsWith('.json')) continue;
       const full = path.join(folder, f);
@@ -254,13 +269,16 @@ function createPostIndex(opts) {
       }
       if (prev && prev.mtimeMs === st.mtimeMs) continue; // spurious event, nothing moved
       let rec: any = null;
+      let parseError: string | null = null;
       try {
         rec = parseJsonLoose(await fs.promises.readFile(full, 'utf8'));
-      } catch {
+      } catch (err: any) {
         rec = null;
+        parseError = err.message;
       }
       const record = isPostRecord(rec) ? rec : null;
       if (record) await augmentDims(folder, record);
+      else skipped.push({ file: f, error: parseError });
       // Previous post vanished (became a non-post, or — defensively — its id moved).
       if (prev && prev.record && (!record || record.captureId !== prev.record.captureId)) {
         removed.push(prev.record.captureId);
@@ -268,7 +286,7 @@ function createPostIndex(opts) {
       map.set(f, { mtimeMs: st.mtimeMs, record });
       if (record) added.push({ id: record.captureId, mtimeMs: st.mtimeMs, record });
     }
-    return { added, removed };
+    return { added, removed, skipped };
   }
 
   // Persist the current map to <folder>/.index.json atomically (tmp + rename).
