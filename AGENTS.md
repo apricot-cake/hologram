@@ -4,6 +4,13 @@ Hologram = ウェブのコンテンツ（現対応はSNS投稿）を出自・エ
 # ドキュメント
 射程・機能の採否＝GOALS.md／詳細=docs/architecture.md／**設計判断とその理由＝docs/decisions/（ADR・1決定1ファイル・実装まで進んだ設計はIssueからここへ昇格）**／ビルド・実機検証=docs/build.md／テスト一覧=docs/testing.md／機能説明=README.md／残タスク=GitHub Issues＋Project「Hologram Backlog」（apricot-cake/hologram）。実装のhow・私的文脈はメモリ`hologram-backlog`、訴求の物差し（文言を書く前に読む）はメモリ`hologram-positioning`（ともにrepo外）
 
+# メモリ
+Hologram リポジトリまたはその worktree を対象に作業するときは、開始時に `C:\Users\apricot\.claude\projects\C--Users-apricot-local-dev-hologram\memory\MEMORY.md` を索引として読み、依頼に関係するメモリ本体を読む。
+
+作業の途中でも、対象が新しい機能領域・ビルド方式・実機検証・設計判断へ移ったら、`MEMORY.md` を再照合する。Issue、コード、ドキュメント、ユーザー指示から新しい論点が現れた場合も同じとする。
+
+再照合で関係する項目があれば、その本体を読んでから、当該論点の設計判断・編集・検証方針の決定へ進む。索引だけで「読んだ」とは扱わない。
+
 # ストレージと実行環境
 - 配置は`~/.hologram`(config/ログ)と`saveFolder`(既定`~/Hologram/library`)＝**AppData外必須**（MSIX仮想化でのライブラリ消失事故対策・2026-06-23）
 - この開発機（MSIXコンテナ内）固有の作法＝アプリ起動は`HologramLaunch`タスク経由・レジストリ確認は自分で実行せずユーザーに依頼・テストは`HOLOGRAM_CONFIG_DIR`でサンドボックス化。手順と理由はdocs/build.md「コード変更の反映」「検証ルール」
