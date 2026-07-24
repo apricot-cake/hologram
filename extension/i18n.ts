@@ -45,6 +45,7 @@
       // this route saves the picture plus the post's text/author, never a
       // screenshot of how the post looks (that is Alt+S element capture).
       hoverSaveImage: '画像を保存',
+      hoverSave: '保存',
     },
 
     en: {
@@ -68,6 +69,7 @@
       badgeSaved: 'Saved in Hologram',
       // overlay.js: tooltip on the hover save button (see the ja note).
       hoverSaveImage: 'Save image',
+      hoverSave: 'Save',
     },
   };
 

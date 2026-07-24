@@ -263,6 +263,7 @@ const click = (el) => el.dispatchEvent(new window.MouseEvent('click', { bubbles:
   check('the button waits out a pass-through instead of flashing', controls().length === 0);
   await settle();
   check('pointing at an unsaved picture offers to save it', saveButtons().length === 1);
+  check('the save action is a labeled button, distinct from the saved mark', saveButtons()[0].style.width === '68px' && saveButtons()[0].getAttribute('role') === 'button' && saveButtons()[0].textContent === 'hoverSave');
 
   // --- pressing it sends the message drag-and-drop sends, not a new one ---
   click(saveButtons()[0]);

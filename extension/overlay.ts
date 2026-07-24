@@ -71,6 +71,8 @@
   const QUERY_DEBOUNCE_MS = 300; // one batch per scroll burst, not per post
   const SCAN_DEBOUNCE_MS = 250; // feed mutations arrive in floods
   const CONTROL_SIZE = 22;
+  const SAVE_WIDTH = 68;
+  const SAVE_HEIGHT = 28;
   const CONTROL_INSET = 6;
   // The save button waits out a pass-through, so scrolling with the pointer
   // over the feed doesn't strobe buttons. The mark does NOT wait: it answers a
@@ -528,7 +530,20 @@
       const born = !el;
       if (!el) {
         el = document.createElement('div');
-        el.style.cssText = ['position:absolute', `width:${CONTROL_SIZE}px`, `height:${CONTROL_SIZE}px`, 'border-radius:50%', 'display:flex', 'align-items:center', 'justify-content:center', 'box-sizing:border-box', `border:1px solid ${G.CARD_BORDER}`, `box-shadow:${G.CARD_SHADOW}`, 'pointer-events:auto'].join(';');
+        el.style.cssText = [
+          'position:absolute',
+          `width:${CONTROL_SIZE}px`,
+          `height:${CONTROL_SIZE}px`,
+          'border-radius:50%',
+          'display:flex',
+          'align-items:center',
+          'justify-content:center',
+          'box-sizing:border-box',
+          `border:1px solid ${G.CARD_BORDER}`,
+          `box-shadow:${G.CARD_SHADOW}`,
+          `transition:width ${G.DUR_HOVER}ms ${G.EASE_OUT},height ${G.DUR_HOVER}ms ${G.EASE_OUT},border-radius ${G.DUR_HOVER}ms ${G.EASE_OUT},background ${G.DUR_HOVER}ms,color ${G.DUR_HOVER}ms,box-shadow ${G.DUR_HOVER}ms`,
+          'pointer-events:auto',
+        ].join(';');
         anchor.el = el;
         ensureLayer().appendChild(el);
       }
@@ -557,9 +572,20 @@
     el.replaceChildren();
     el.onclick = null;
     el.onpointerdown = null;
+    el.onkeydown = null;
+    el.removeAttribute('role');
+    el.removeAttribute('aria-label');
+    el.tabIndex = -1;
     el.style.cursor = '';
     el.style.background = G.CARD_BG;
     el.style.color = G.TEXT;
+    el.style.width = `${CONTROL_SIZE}px`;
+    el.style.height = `${CONTROL_SIZE}px`;
+    el.style.padding = '0';
+    el.style.gap = '0';
+    el.style.borderRadius = '50%';
+    el.style.borderColor = G.CARD_BORDER;
+    el.style.boxShadow = G.CARD_SHADOW;
     switch (face) {
       case 'mark':
         // Monotone check (not the accent): the mark states a fact about the
@@ -569,21 +595,43 @@
         el.title = anchor.note || t('badgeSaved');
         el.appendChild(G.makeIcon(G.ICONS.check, 14));
         break;
-      case 'save':
+      case 'save': {
         el.title = t('hoverSaveImage');
-        el.style.background = G.ACCENT_SOFT;
-        el.style.color = G.ACCENT_TEXT;
+        // A text-bearing button makes the one action here unambiguous. The
+        // saved mark stays a small circle; only the actionable state expands.
+        el.style.width = `${SAVE_WIDTH}px`;
+        el.style.height = `${SAVE_HEIGHT}px`;
+        el.style.padding = '0 9px';
+        el.style.gap = '5px';
+        el.style.borderRadius = '8px';
+        el.style.background = G.ACCENT_FILL;
+        el.style.borderColor = 'rgba(255,255,255,0.56)';
+        el.style.boxShadow = '0 7px 18px -6px rgba(0,0,0,0.68), inset 0 1px 0 rgba(255,255,255,0.20)';
+        el.style.color = '#fff';
         el.style.cursor = 'pointer';
         el.appendChild(G.makeIcon(G.ICONS.drop, 14));
+        const label = document.createElement('span');
+        label.textContent = t('hoverSave');
+        label.style.cssText = `font:600 12px/1 ${G.FONT_SANS};letter-spacing:0;white-space:nowrap;pointer-events:none;`;
+        el.appendChild(label);
         // Both handlers stop the event: the control is outside the post's
         // subtree, but x.com and bsky.app listen on the document, and a press
         // that reached them would open the lightbox behind the save.
+        el.setAttribute('role', 'button');
+        el.setAttribute('aria-label', t('hoverSaveImage'));
+        el.tabIndex = 0;
         el.onpointerdown = stopPress;
         el.onclick = (e) => {
           stopPress(e);
           startSave(unit, state, anchor);
         };
+        el.onkeydown = (e) => {
+          if (e.key !== 'Enter' && e.key !== ' ') return;
+          stopPress(e);
+          startSave(unit, state, anchor);
+        };
         break;
+      }
       case 'busy':
         el.title = t('bannerSaving');
         el.appendChild(G.makeSpinner(14));
