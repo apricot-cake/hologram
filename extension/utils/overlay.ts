@@ -129,6 +129,7 @@ export async function startOverlay(): Promise<void> {
   let repositionQueued = false;
   let repositionFull = false;
   let hovered: Anchor | null = null;
+  let pointerPosition: { x: number; y: number } | null = null;
   let saveArmed = false; // the hovered anchor has outlived SAVE_ARM_MS
   let armTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -189,6 +190,7 @@ export async function startOverlay(): Promise<void> {
           if (state) clearControls(state);
         }
       }
+      updateHoveredAtPointer();
       scheduleQuery();
     },
     { rootMargin: OBSERVER_MARGIN },
@@ -311,14 +313,18 @@ export async function startOverlay(): Promise<void> {
     'pointerover',
     (e) => {
       const pe = e as PointerEvent;
-      setHovered(anchorAtPoint(pe.clientX, pe.clientY));
+      pointerPosition = { x: pe.clientX, y: pe.clientY };
+      updateHoveredAtPointer();
     },
     true,
   );
   document.addEventListener(
     'pointerout',
     (e) => {
-      if (!(e as PointerEvent).relatedTarget) setHovered(null); // pointer left the document
+      if (!(e as PointerEvent).relatedTarget) {
+        pointerPosition = null;
+        setHovered(null); // pointer left the document
+      }
     },
     true,
   );
@@ -370,6 +376,13 @@ export async function startOverlay(): Promise<void> {
     }
     if (previous) repaintAnchor(previous);
     if (next) repaintAnchor(next);
+  }
+
+  // A scroll changes what sits below a stationary pointer without dispatching a
+  // pointer event. Re-read the geometry whenever visible media changes too.
+  function updateHoveredAtPointer() {
+    if (!pointerPosition) return;
+    setHovered(anchorAtPoint(pointerPosition.x, pointerPosition.y));
   }
 
   function repaintAnchor(anchor: Anchor) {
@@ -682,6 +695,7 @@ export async function startOverlay(): Promise<void> {
     repositionQueued = false;
     const full = repositionFull;
     repositionFull = false;
+    updateHoveredAtPointer();
     let detached = false;
     for (const unit of visible) {
       const state = tracked.get(unit);
