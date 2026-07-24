@@ -7,6 +7,9 @@ import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 
 import { createPostIndex, computeDelta } from './lib-index.mts';
+import { openDatabase, DatabaseCorruptError } from './lib-db.mts';
+import { createDbImporter } from './lib-db-import.mts';
+import { postsFromDb, postsByIds } from './lib-db-query.mts';
 import { pruneDecision, nextBaseline } from './backup-guard.mts';
 import { parseJsonLoose } from './lib-json.mts';
 // Save-folder relocation engine (copy+catch-up → flip → verified cleanup → sweep).
@@ -244,11 +247,50 @@ function watchSaveFolder() {
   }
 }
 
-// --- Posts (scan sidecars, via the on-disk + in-memory index) ---
-// listPosts is now async and O(changed): the index re-reads only sidecars whose
-// mtime moved and restores the rest from .index.json / memory, so a post-capture
-// refresh no longer freezes the main process (was ~900ms full re-scan on ~9k).
+// --- Posts (DB-backed read path — #5 St4 / #297) ---
+// The renderer's post array now comes from SQLite (lib-db-query.mts), not a
+// sidecar scan: a cold launch is a SELECT instead of tens of thousands of
+// readFileSync+JSON.parse calls. Sidecars remain the truth (write path is
+// still St5/#298) — postIndex's filename+mtimeMs scan is kept AS the change
+// detector (fs.watch has no cheaper signal than "these files' mtimes moved"),
+// and dbImporter (#296) re-derives the DB from exactly what it finds changed,
+// sharing this ONE postIndex instance so the DB sync and the change-detection
+// scan never duplicate a cold or warm folder scan.
 const postIndex = createPostIndex({ internalFiles: INTERNAL_FILES });
+const dbImporter = createDbImporter({ internalFiles: INTERNAL_FILES, postIndex });
+
+// hologram.db lives in configDir, NOT the save folder: #5's design comments
+// (2026-07-17 orphan-recovery comment, 2026-07-21 cloud-sync-unfriendly note)
+// already assume the live DB is never naively copied by a folder-level sync —
+// putting the single-writer file inside a save folder a user points at a
+// cloud-synced directory (exactly what #95/#101 warn about) would defeat that
+// assumption on day one. thumb-cache sits in configDir for the same "local,
+// not portable with the library" reason.
+// A corrupt hologram.db self-heals by deletion at this stage: the DB is still
+// a DERIVED index (sidecars remain the truth until #298/St5), same recovery
+// story lib-index.mts already gives a corrupt .index.json ("no/invalid
+// snapshot -> cold scan will populate it") — dbImporter.importAll rebuilds it
+// whole from the sidecars on the very next call.
+let dbHandle: { db: any; sqlite: any } | null = null;
+function ensureDb() {
+  if (dbHandle) return dbHandle;
+  const file = path.join(configDir(), 'hologram.db');
+  try {
+    dbHandle = openDatabase(file);
+  } catch (err) {
+    if (!(err instanceof DatabaseCorruptError)) throw err;
+    for (const suffix of ['', '-wal', '-shm']) {
+      try {
+        fs.rmSync(file + suffix, { force: true });
+      } catch {
+        /* best-effort */
+      }
+    }
+    dbHandle = openDatabase(file);
+  }
+  return dbHandle;
+}
+
 let snapshotTimer: any = null;
 function scheduleSnapshot(folder) {
   // Debounced + best-effort. .index.json is in INTERNAL_FILES, so this write does
@@ -263,8 +305,12 @@ function scheduleSnapshot(folder) {
 async function listPosts() {
   const folder = getSaveFolder();
   if (!folder) return { saveFolder: null, posts: [] };
-  const { posts, changed } = await postIndex.list(folder);
-  if (changed) scheduleSnapshot(folder);
+  const handle = ensureDb();
+  const report = await dbImporter.importAll(folder, handle);
+  // addedIds (not postsWritten, which counts every reconciled post — see
+  // lib-db-import.mts) reflects what actually changed this call.
+  if (report.addedIds.length || report.postsRemoved) scheduleSnapshot(folder);
+  const posts = await postsFromDb(handle.sqlite);
   return { saveFolder: folder, posts };
 }
 
@@ -279,6 +325,11 @@ async function listPosts() {
 //   undefined/null -> reliable hint unavailable: full folder re-scan
 //   []             -> files changed but no sidecar among them: nothing to ship
 //   [names…]       -> re-stat ONLY these sidecars (the O(changed) fast path)
+//
+// The change-detection STAMP stays sidecar mtimeMs (postIndex.list()'s own
+// bookkeeping) even though the POSTS themselves now come from the DB — mtimeMs
+// is still the cheapest true signal for "did this file change", and reusing it
+// means computeDelta (lib-index.mts, unchanged) needs no DB-awareness at all.
 let _deltaFolder = null;
 let _lastSent = new Map(); // captureId -> mtimeMs last delivered to the renderer
 async function listPostsDelta(haveBaseline, changedNames) {
@@ -288,32 +339,32 @@ async function listPostsDelta(haveBaseline, changedNames) {
     _lastSent = new Map();
     return { saveFolder: null, full: true, posts: [] };
   }
+  const handle = ensureDb();
 
   // Full (re)sync or hint-less refresh: scan the whole folder (the reliable path).
   if (!haveBaseline || _deltaFolder !== folder || changedNames == null) {
-    const { posts, changed, stamps } = await postIndex.list(folder);
-    if (changed) scheduleSnapshot(folder);
+    const report = await dbImporter.importAll(folder, handle);
+    if (report.addedIds.length || report.postsRemoved) scheduleSnapshot(folder);
+    const posts = await postsFromDb(handle.sqlite);
+    const stamps = new Map(posts.map((p: any) => [p.captureId, p.updatedAt]));
     if (!haveBaseline || _deltaFolder !== folder) {
       _deltaFolder = folder;
-      _lastSent = new Map(stamps);
+      _lastSent = stamps;
       return { saveFolder: folder, full: true, posts };
     }
     const { added, removed } = computeDelta(_lastSent, posts, stamps); // hint-less delta vs baseline
-    _lastSent = new Map(stamps);
+    _lastSent = stamps;
     return { saveFolder: folder, full: false, added, removed };
   }
 
   // Targeted: only the named sidecars moved — no folder-wide stat.
   if (changedNames.length === 0) return { saveFolder: folder, full: false, added: [], removed: [] };
-  const r: any = await postIndex.applyChanges(folder, changedNames);
-  const added: any[] = [];
-  for (const t of r.added) {
-    _lastSent.set(t.id, t.mtimeMs);
-    added.push(t.record);
-  }
-  for (const id of r.removed) _lastSent.delete(id);
-  if (r.added.length || r.removed.length) scheduleSnapshot(folder);
-  return { saveFolder: folder, full: false, added, removed: r.removed };
+  const report = await dbImporter.importChanged(folder, handle, changedNames);
+  const added = report.addedIds.length ? await postsByIds(handle.sqlite, report.addedIds) : [];
+  for (const p of added) _lastSent.set(p.captureId, p.updatedAt);
+  for (const id of report.removedIds) _lastSent.delete(id);
+  if (report.postsWritten || report.postsRemoved) scheduleSnapshot(folder);
+  return { saveFolder: folder, full: false, added, removed: report.removedIds };
 }
 
 // --- Native host registration (idempotent, on each launch) ---
@@ -1292,4 +1343,12 @@ if (!gotSingleInstanceLock) {
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
+});
+
+app.on('before-quit', () => {
+  try {
+    dbHandle?.sqlite.close();
+  } catch {
+    /* already closed, or never opened this run */
+  }
 });

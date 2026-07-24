@@ -59,6 +59,7 @@ export interface PostQueryBuilderDeps {
   openLeafEditor: (n: HologramQueryLeaf) => void;
   onLeafMutated: (n: HologramQueryLeaf) => void;
   isEditingLeaf: (n: HologramQueryLeaf) => boolean;
+  tagIdOf?: (name: string) => number | undefined;
 }
 
 // The post-side builder instance. predOf is also returned — viewer.ts's
@@ -69,6 +70,7 @@ export function makePostQueryBuilder(deps: PostQueryBuilderDeps) {
     isClipped: (cap) => folders.isClipped(cap),
     fuzzyCompile: (q) => searchCompile(q),
     postKeyOf,
+    tagIdOf: deps.tagIdOf,
   });
   const qb = createQueryBuilder({
     t: deps.t,

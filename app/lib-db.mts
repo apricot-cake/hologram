@@ -26,7 +26,18 @@ import { SCHEMA_V1_SQL } from './lib-db-schema.mts';
 // One entry per schema change, applied in array order and never reordered or
 // edited once shipped — `user_version` records how many have run, so rewriting
 // an applied entry leaves existing databases silently inconsistent. Append only.
-const MIGRATIONS: Migration[] = [{ name: 'schema-v1', up: (db) => db.exec(SCHEMA_V1_SQL) }];
+//
+// add-source-mtime (#297): posts.sourceMtimeMs lets the importer (lib-db-import.mts's
+// importAll) tell "this post's sidecar hasn't changed since the last import"
+// apart from "this post's content changed" — updatedAt is producer-controlled
+// and NOT bumped on every edit (proven by scripts/test-db-import.cts's edit
+// case), so it can't be trusted as a change signal; the sidecar's own mtimeMs
+// (already tracked by lib-index.mts's postIndex) can. Nullable: pre-migration
+// rows just re-sync once on the next importAll (self-heals, no backfill needed).
+const MIGRATIONS: Migration[] = [
+  { name: 'schema-v1', up: (db) => db.exec(SCHEMA_V1_SQL) },
+  { name: 'add-source-mtime', up: (db) => db.exec('ALTER TABLE posts ADD COLUMN sourceMtimeMs INTEGER') },
+];
 
 interface Migration {
   name: string;
@@ -154,6 +165,7 @@ interface PostsTable {
   shotW: number | null;
   shotH: number | null;
   trashedAt: string | null;
+  sourceMtimeMs: number | null; // add-source-mtime migration (#297) — see MIGRATIONS comment
 }
 interface MediaTable {
   id: Generated<number>;

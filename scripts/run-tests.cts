@@ -31,6 +31,7 @@ const TESTS = [
   'test-db-unit',
   'test-db-schema',
   'test-db-import',
+  'test-db-query',
   'test-post-record',
   'test-imgsize',
   'test-search-unit',
