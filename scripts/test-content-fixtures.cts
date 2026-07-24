@@ -9,7 +9,7 @@
 // suite deliberately avoids) — they're minimal reproductions of the real
 // selector/testid shape the code targets, built to cover the audit-fixed edge
 // cases (quote-vs-quoted, reply-vs-parent, grid-neighbor, avatar-vs-artwork;
-// see the "(audit 2026-06-11)" comments in extension/site-detect.ts). This
+// see the "(audit 2026-06-11)" comments in extension/utils/site-detect.ts). This
 // catches "my code change broke the parsing logic" regressions; it can't
 // catch "the site changed its DOM" — that's what the live e2e suite
 // (scripts/e2e-capture-test.cts) is for. See BACKLOG "拡張キャプチャの fixture
@@ -24,7 +24,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { JSDOM } = require('jsdom');
-const siteDetect = require('../extension/dist/site-detect.js');
+const siteDetect = require('../extension/utils/site-detect.ts');
 
 const FIXTURES_DIR = path.join(__dirname, 'fixtures', 'content');
 

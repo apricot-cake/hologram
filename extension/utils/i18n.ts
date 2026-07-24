@@ -4,13 +4,16 @@
 // strings below are embedded here so content scripts (which cannot fetch
 // _locales/ files reliably) get them without extra network round-trips.
 //
-// Consumers do: const { getMessage, lang, resolved } = await window.hologramI18n;
-// then call getMessage('key', [sub1, sub2]).
-// Note: this file may be re-executed by chrome.scripting.executeScript on every
-// Alt+S press, so window.hologramI18n is reassigned each time. The banner language
-// follows the browser locale (navigator.language); the desktop app (the former
-// in-extension viewer) now owns all viewer/settings strings in app/renderer/i18n.ts.
-(function () {
+// The banner language follows the browser locale; the desktop app owns all
+// viewer/settings strings in app/renderer/i18n.ts.
+export interface HologramI18nApi {
+  lang: string;
+  resolved: string;
+  getMessage: (key: string, subs?: ReadonlyArray<unknown>) => string;
+  partialSaveText: (reason?: string | null) => string;
+}
+
+export function createI18n(): Promise<HologramI18nApi> {
   const MESSAGES = {
     ja: {
       // content.js capture banner
@@ -71,7 +74,7 @@
     },
   };
 
-  window.hologramI18n = (async () => {
+  return (async () => {
     // The banner follows the browser locale. The extension no longer stores a
     // language preference (the viewer moved to the desktop app, which keeps its
     // own setting in config.json that a content script cannot read).
@@ -96,4 +99,4 @@
 
     return { lang: resolved, resolved, getMessage, partialSaveText };
   })();
-})();
+}

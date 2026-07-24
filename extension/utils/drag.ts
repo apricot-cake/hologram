@@ -6,7 +6,11 @@
 // illustration itself (no screenshot) via the native host. Which post an image
 // belongs to comes from media-identity.js, shared with overlay.js's hover save
 // button so the two paths can never disagree about what a save records.
-(() => {
+import { glassUi } from './glass-ui';
+import { createI18n } from './i18n';
+import { collectImageUrls, getMediaIdentitySite } from './media-identity';
+
+export async function startDrag(): Promise<void> {
   interface PendingDrag {
     type: string;
     platform: string;
@@ -16,8 +20,6 @@
 
   const siteConfig = getMediaIdentitySite();
   if (!siteConfig) return;
-  if (window.__hologramDragActive) return; // avoid double-binding on re-injection
-  window.__hologramDragActive = true;
 
   interface DropZone {
     el: HTMLDivElement;
@@ -32,29 +34,15 @@
   let hideAnim: Animation | null = null; // in-flight exit fade, cancelled if the zone re-shows
   let savingViaDrop = false; // true between a drop-in-zone and its result, so dragend doesn't hide early
 
-  // i18n: drag toasts share the banner strings. window.hologramI18n is set by the
-  // i18n.js content script declared BEFORE this one in the same manifest entry
-  // (same isolated world, runs first). Resolve once; until then t() echoes the
-  // key — overlay text is only set at drag time, long after page load, so the
-  // table is populated by the time it's read in practice.
-  let t: (key: string, subs?: ReadonlyArray<unknown>) => string = (key) => key;
-  let partialSaveText: (reason?: string | null) => string = () => t('bannerSavedNoMeta');
-  if (window.hologramI18n && typeof window.hologramI18n.then === 'function') {
-    window.hologramI18n.then((api) => {
-      if (api && api.getMessage) t = api.getMessage;
-      if (api && api.partialSaveText) partialSaveText = api.partialSaveText;
-    });
-  }
+  const { getMessage: t, partialSaveText } = await createI18n();
 
-  // Visual language: the shared scrim-solid vocabulary (glass-ui.js, declared
-  // before this file in the same manifest entry — same isolated world, runs
-  // first, synchronous global). The palette is theme-independent (#136:
+  // Visual language is shared with the other content-script entrypoints. The palette is theme-independent (#136:
   // near-opaque dark scrim + white ink). The zone element persists across
   // saves; setState re-applies the surface properties before each show so a
   // state-tinted border/shadow from the previous save is never baked in.
   // See glass-ui.ts for the CSP/Trusted Types constraints that shape how
   // everything is styled and built.
-  const G = window.hologramGlassUi;
+  const G = glassUi;
 
   function ensureOverlay(): DropZone {
     if (zone) return zone;
@@ -274,4 +262,4 @@
       );
     });
   }
-})();
+}

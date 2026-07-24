@@ -1,11 +1,10 @@
-// Platform detection (getSiteConfig) and the PostRect/SiteConfig types it
-// returns live in site-detect.ts (loaded before this file — see background.ts's
-// executeScript files list and tsconfig.json's global-script header comment).
+import { glassUi } from './glass-ui';
+import { createI18n } from './i18n';
+import { getSiteConfig, normalizeRect, type PostRect, type SiteConfig } from './site-detect';
 
-(async () => {
+export async function startCapture(): Promise<void> {
   // --- i18n ---
-  // i18n.js is injected alongside this script (see background.js → executeScript).
-  const { getMessage, partialSaveText } = await window.hologramI18n;
+  const { getMessage, partialSaveText } = await createI18n();
   const MSG = {
     select: getMessage('bannerSelect'),
     saving: getMessage('bannerSaving'),
@@ -39,13 +38,12 @@
 
   // === UI elements ===
 
-  // Visual language: the shared scrim-solid vocabulary (glass-ui.js, injected
-  // before this file — same isolated world, runs first, synchronous global).
+  // Visual language shared with the resident content script.
   // The palette is theme-independent (#136: near-opaque dark scrim + white
   // ink), so there is no async pref read to wait for. State is carried by the
   // badge fill + a tinted pill border; see glass-ui.ts for the CSP/Trusted
   // Types constraints that shape how everything is built.
-  const G = window.hologramGlassUi;
+  const G = glassUi;
 
   // Top banner — scrim-solid pill: leading icon badge + label.
   const banner = document.createElement('div');
@@ -435,4 +433,4 @@
   document.addEventListener('click', onClick, true);
   document.addEventListener('contextmenu', onContextMenu, true);
   document.addEventListener('keydown', onKeyDown, true);
-})();
+}

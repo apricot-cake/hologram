@@ -26,18 +26,14 @@ const os = require('node:os');
 const { spawnSync, execFileSync } = require('node:child_process');
 const puppeteer = require('puppeteer');
 const { configDir, defaultLibraryDir } = require('../native-host/paths.cts');
-const { fetchXTweet } = require('../extension/dist/metadata');
+const { fetchXTweet } = require('../extension/utils/metadata.ts');
 
 // sw.evaluate()/page.evaluate() callback bodies below run inside the extension's
 // service-worker / page context (a real browser, via CDP) — `chrome` is the
 // extension API global there, not visible to this file's own Node/DOM lib.
 declare const chrome: any;
 
-// extension/ is now TypeScript source; `npm run build` (extension/) compiles
-// it to extension/dist/, which is what Chrome actually loads (see
-// extension/tsconfig.json's header comment for why the browser layer needs a
-// real build step unlike main/native-host).
-const SRC_EXT_DIR = path.join(__dirname, '..', 'extension', 'dist');
+const SRC_EXT_DIR = path.join(__dirname, '..', 'extension', '.output', 'chrome-mv3');
 const EXPECTED_ID = 'keggmjkemfcekcffohnpaojacdakpejh'; // fixed by manifest.json's key — allowed_origins of com.hologram.host
 
 // Stage a copy of the extension with <all_urls> host permission added, so
@@ -261,9 +257,8 @@ async function waitForNewSidecar(dir, before, timeoutMs = 25000) {
 }
 
 (async () => {
-  // Always rebuild first so dist/ (SRC_EXT_DIR, staged below) reflects the
-  // current .ts sources — a stale dist/ would silently test yesterday's code.
-  execFileSync(process.execPath, [path.join(__dirname, '..', 'extension', 'build.mjs')], { stdio: 'inherit', cwd: path.join(__dirname, '..', 'extension') });
+  // Always rebuild first so the staged WXT output reflects the current source.
+  execFileSync(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['run', 'build:ext'], { stdio: 'inherit', cwd: path.join(__dirname, '..', 'extension') });
 
   const dir = saveFolder();
   console.log(`保存先: ${dir}`);

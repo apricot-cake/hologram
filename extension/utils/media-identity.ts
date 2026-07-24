@@ -7,10 +7,7 @@
 // this file answers: "would saving here produce an honest record?". No identity,
 // no button.
 //
-// Declared BEFORE overlay.js / drag.js in the manifest entry and evaluated into
-// the same isolated world, so these are plain globals by the time those files
-// run (the arrangement site-detect.js already uses; hostnameMatches comes from
-// there).
+import { hostnameMatches } from './site-detect';
 
 interface MediaIdentity {
   postId: string;
@@ -226,3 +223,6 @@ function parseMediaUrlPath(href: string, pathRegex: RegExp): ParsedMediaPath | n
     return null;
   }
 }
+
+export { collectImageUrls, getMediaIdentitySite };
+export type { MediaIdentity, MediaIdentitySite };

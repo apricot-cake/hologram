@@ -8,7 +8,7 @@
 //
 //   node scripts/test-pixiv.cts
 
-const { parsePostUrl, fetchPixivIllust, pixivMedia } = require('../extension/dist/metadata');
+const { parsePostUrl, fetchPixivIllust, pixivMedia } = require('../extension/utils/metadata.ts');
 
 let pass = 0,
   fail = 0;

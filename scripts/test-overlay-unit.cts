@@ -1,6 +1,6 @@
 'use strict';
 
-// Offline pure-unit test for extension/overlay.js — the timeline overlay: the
+// Offline pure-unit test for extension/utils/overlay.ts — the timeline overlay: the
 // "saved" mark (#54, shown per the three-value setting of #309) and the hover
 // save button (#94). Runs the BUILT content scripts inside jsdom with the same
 // globals a real injection gives them (glass-ui.js, site-detect.js and
@@ -23,7 +23,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { JSDOM } = require('jsdom');
 
-const DIST = path.join(__dirname, '..', 'extension', 'dist');
+const DIST = path.join(__dirname, '..', 'extension', '.output', 'chrome-mv3');
 
 let pass = 0;
 let fail = 0;
@@ -166,18 +166,14 @@ const setSetting = (key, value) => {
   for (const fn of storageListeners) fn({ [key]: { newValue: value } }, 'local');
 };
 
-// --- inject, in manifest order. Evaluated as ONE program because that is what
-// the isolated world gives them: separate files sharing a single scope, which is
-// how overlay.js reaches site-detect.js's getSiteConfig and media-identity.js's
-// getMediaIdentitySite at all.
-window.eval(['glass-ui.js', 'site-detect.js', 'media-identity.js', 'overlay.js'].map((f) => fs.readFileSync(path.join(DIST, f), 'utf8')).join('\n;\n'));
+// The resident content-script bundle is the exact WXT output Chrome loads.
+const residentReady = Promise.resolve(window.eval(fs.readFileSync(path.join(DIST, 'content-scripts', 'resident.js'), 'utf8')));
 
 const controls = (): any[] => Array.from(window.document.querySelectorAll('#__hologramSavedLayer > *'));
-// t() echoes its key until i18n.js resolves, and i18n.js is not part of this
-// harness — so the key IS the tooltip here, which tells the two faces apart
-// without depending on wording.
-const marks = () => controls().filter((el) => el.title === 'badgeSaved');
-const saveButtons = () => controls().filter((el) => el.title === 'hoverSaveImage');
+// The resident bundle carries its own localized strings. jsdom defaults to an
+// English locale, so these are the browser-visible labels rather than source keys.
+const marks = () => controls().filter((el) => el.title === 'Saved in Hologram');
+const saveButtons = () => controls().filter((el) => el.title === 'Save image');
 const settle = () => new Promise((r) => setTimeout(r, 400)); // past the 300ms query debounce and the 100ms button delay
 // overlay.js decides what the pointer is over by COORDINATES (a real
 // pointerover always carries clientX/clientY), not by which element the event
@@ -202,6 +198,7 @@ const hoverAway = () => pointerOver(window.document.getElementById('feed'), 900,
 const click = (el) => el.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
 
 (async () => {
+  await residentReady;
   check('every post is observed after the initial scan', observed.size === 6);
 
   // --- only the visible posts are asked about, and in one batch ---
@@ -265,7 +262,7 @@ const click = (el) => el.dispatchEvent(new window.MouseEvent('click', { bubbles:
   check('pointing at an unsaved picture offers to save it', saveButtons().length === 1);
   check(
     'the save action is a monochrome glyph-only native button with an accessible name',
-    saveButtons()[0].tagName === 'BUTTON' && saveButtons()[0].style.width === '28px' && saveButtons()[0].style.background === 'rgba(20, 22, 26, 0.86)' && saveButtons()[0].getAttribute('aria-label') === 'hoverSaveImage' && saveButtons()[0].textContent === '',
+    saveButtons()[0].tagName === 'BUTTON' && saveButtons()[0].style.width === '28px' && saveButtons()[0].style.background === 'rgba(20, 22, 26, 0.86)' && saveButtons()[0].getAttribute('aria-label') === 'Save image' && saveButtons()[0].textContent === '',
   );
   saveButtons()[0].dispatchEvent(new window.Event('pointerenter'));
   check('hover distinguishes the monochrome save action without adding a state color', saveButtons()[0].style.background === 'rgba(255, 255, 255, 0.1)' && saveButtons()[0].style.transform === 'scale(1.04)');
@@ -291,7 +288,7 @@ const click = (el) => el.dispatchEvent(new window.MouseEvent('click', { bubbles:
   await settle();
   click(saveButtons()[0]);
   const failed = controls().filter((el) => el.style.top === '1206px');
-  check('a failed save is reported in place, saying why', failed.length === 1 && failed[0].title === 'bannerHostMissing');
+  check('a failed save is reported in place, saying why', failed.length === 1 && failed[0].title === "Can't reach Hologram's saver. Please restart Chrome.");
   const before = sent.length;
   click(failed[0]);
   check('pressing the failure retries instead of doing nothing', sent.length === before + 1 && sent[sent.length - 1].type === 'imageDragged');
@@ -314,7 +311,7 @@ const click = (el) => el.dispatchEvent(new window.MouseEvent('click', { bubbles:
   const p4Controls = controls().filter((el) => el.style.top === '1206px' || el.style.top === '1606px');
   check('a saved multi-image post is marked once, on its first picture', p4Controls.length === 1 && p4Controls[0].style.top === '1206px');
   // The corner that failed earlier now says "saved", not what went wrong then.
-  check('the old failure text does not outlive the failure', p4Controls[0]?.title === 'badgeSaved');
+  check('the old failure text does not outlive the failure', p4Controls[0]?.title === 'Saved in Hologram');
   setSetting('savedBadgeMode', 'hover');
 
   // --- the gates: an honest save, or no button ---

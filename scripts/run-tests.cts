@@ -12,10 +12,8 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-// test-parse-url and the other extension/metadata.ts-touching suites require
-// extension/dist/ directly — build it first so a stale/missing dist/ can't
-// silently fail them.
-execFileSync(process.execPath, [path.join(__dirname, '..', 'extension', 'build.mjs')], { stdio: 'inherit', cwd: path.join(__dirname, '..', 'extension') });
+// The extension suites import their TypeScript source directly. WXT's build is
+// exercised separately by the typecheck suite and the browser e2e test.
 
 // Every network-/Electron-free scripts/test-*.cts belongs here — the list was
 // seeded (2026-07-02) from the suites that were red at the time, so the ones

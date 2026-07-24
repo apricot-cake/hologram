@@ -15,6 +15,9 @@
       "app/renderer/islands/**",
       // 同上（theme.ts の Vite lib IIFE ビルド出力・renderer/theme.ts が手書きソース）
       "app/renderer/theme.js",
+      // WXT の拡張機能ビルド出力
+      "extension/.output/**",
+      "extension/.wxt/**",
       // 同上（preload.cts の Vite lib CJS ビルド出力・app/preload.cts が手書きソース）
       "app/preload.js",
       // ベンダー同梱・ロックファイル・package.json（npm が所有＝再インストールの

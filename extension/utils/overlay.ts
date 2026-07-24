@@ -24,7 +24,14 @@
 // reconciliation) and mutating its layout; an overlay costs one rect read per
 // visible control per scroll frame instead, and touches nothing. A control in
 // the layer can still be clicked: the layer is inert, each control is not.
-(() => {
+import { glassUi } from './glass-ui';
+import { createI18n } from './i18n';
+import { collectImageUrls, getMediaIdentitySite } from './media-identity';
+import { getSiteConfig, hostnameMatches } from './site-detect';
+
+let overlayActive = false;
+
+export async function startOverlay(): Promise<void> {
   interface OverlaySite {
     // Every post-shaped element in the feed. Matched elements are candidates —
     // getPermalink decides whether one really identifies a post.
@@ -105,12 +112,10 @@
   // May be null on a page media-identity has no rules for: marks still work
   // (they only need a permalink), the save button simply never appears.
   const media = getMediaIdentitySite();
-  if (window.__hologramOverlayActive) return; // avoid double-binding on re-injection
-  window.__hologramOverlayActive = true;
+  if (overlayActive) return;
+  overlayActive = true;
 
-  // Shared scrim-solid vocabulary (glass-ui.js — declared before this file in the
-  // same manifest entry, so it is a synchronous global by now).
-  const G = window.hologramGlassUi;
+  const G = glassUi;
 
   let markMode: MarkMode = 'hover';
   let hoverSave = true;
@@ -127,15 +132,7 @@
   let saveArmed = false; // the hovered anchor has outlived SAVE_ARM_MS
   let armTimer: ReturnType<typeof setTimeout> | null = null;
 
-  let t: (key: string, subs?: ReadonlyArray<unknown>) => string = (key) => key;
-  let partialSaveText: (reason?: string | null) => string = () => t('bannerSavedNoMeta');
-  if (window.hologramI18n && typeof window.hologramI18n.then === 'function') {
-    window.hologramI18n.then((api) => {
-      if (api && api.getMessage) t = api.getMessage;
-      if (api && api.partialSaveText) partialSaveText = api.partialSaveText;
-      paintAll(); // re-title controls already on screen
-    });
-  }
+  const { getMessage: t, partialSaveText } = await createI18n();
 
   // === settings ===
 
@@ -763,4 +760,4 @@
     }
     return null;
   }
-})();
+}

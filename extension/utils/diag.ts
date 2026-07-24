@@ -15,7 +15,7 @@
 // (this is a regular page script, background.ts is the service worker), but
 // tsc compiles every extension file as one program, so top-level names must
 // stay unique across it. drag.ts/i18n.ts use the same IIFE convention.
-(() => {
+export function startDiagnostics(): void {
   const DIAG_PREFIX = 'diaglog_';
 
   function testNative(): Promise<Record<string, unknown>> {
@@ -95,4 +95,4 @@
     });
   });
   run();
-})();
+}

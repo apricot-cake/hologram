@@ -1,7 +1,7 @@
 'use strict';
 
 // Watch the Hologram save folder and AUTO-VERIFY every new capture against the
-// platform's public API (re-fetched via extension/metadata.js). Per capture it
+// platform's public API (re-fetched via extension/utils/metadata.ts). Per capture it
 // prints PASS/FAIL with the reasons and a one-line summary of the cell —
 // the human only opens pages and clicks/drags; selection criteria come from
 // scripts/test-select-posts.cts.
@@ -18,9 +18,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
-// extension/ is TypeScript source; `npm run build` (extension/) compiles it to
-// extension/dist/, which this requires directly.
-const { fetchPostMetadata } = require('../extension/dist/metadata');
+const { fetchPostMetadata } = require('../extension/utils/metadata.ts');
 const { configDir, defaultLibraryDir } = require('../native-host/paths.cts');
 
 function saveFolder() {

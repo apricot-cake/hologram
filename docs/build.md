@@ -8,6 +8,12 @@
 cd app && npm install
 ```
 
+## 拡張機能の開発・配布
+
+初回は `cd extension && npm install`。リポジトリ直下で `npm run dev:ext` を動かしている間は、WXT がソース変更を反映して拡張を再読み込みする。通常ビルドは `npm run build:ext`、Load unpacked とE2Eの入力先は `extension/.output/chrome-mv3/`、ストア提出用zipは `npm run zip:ext`。
+
+固定IDを保つ `key` は `extension/wxt.config.ts` にある。移行後もID・Native Messaging 保存・5プラットフォームのクリック/ドラッグ保存は実機確認の対象である。
+
 - 手元の実ターミナルから動かすだけなら `npm start`、ワンクリック起動は `restart-app.ps1` を右クリック →「PowerShell で実行」でよい。
 - **Claude（MSIX コンテナ内）や CDP 検証を伴う起動は `HologramLaunch` タスク経由**（下記「コード変更の反映」）。初回／タスク削除後は `restart-app.ps1` を一度実行するとタスクが自己作成される（以後は最小形で再起動可）。
 
@@ -68,7 +74,7 @@ electron-builder, win/nsis。
 これで以下が一括更新される（`scripts/make-icons.cjs` の `TARGETS`/`BANNERS` が配置先の単一真実源＝増えたらここに足す）:
 
 - `app/assets/icon.png`（512）＝Electron ウィンドウ/タスクバーアイコン。`app/package.json` の `build.win.icon` がこれを指し、electron-builder が配布時に `.ico` 化（PNG→ICO 自動変換）。dev では `main.mts` の `BrowserWindow({icon})`＋`app.setAppUserModelId` で反映。
-- `extension/icons/icon{16,32,48,128,256}.png`＝Chrome 拡張（manifest の `icons`/`action.default_icon`）。差し替え後は拡張の再読み込みでツールバーに反映。
+- `extension/public/icons/icon{16,32,48,128,256}.png`＝Chrome 拡張（生成manifest の `icons`/`action.default_icon`）。開発中は WXT が再読み込みしてツールバーへ反映。
 - `assets/icon.png`（256）＝汎用ブランドラスター/ファビコン。
 - `assets/banner-{light,dark,en-light,en-dark}.svg`＝README バナー。ワードマーク `hologram`＋タグラインは保持し、先頭マークだけ虹色スクエアの埋め込み画像（base64）に差し替え。
 

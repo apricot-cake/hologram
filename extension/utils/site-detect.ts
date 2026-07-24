@@ -1,10 +1,6 @@
 // Platform detection, post-element location, and permalink/rect extraction for
-// the capture content script. Split out of content.ts (which keeps only the
-// capture-session IIFE) so these DOM-reading, side-effect-free functions can be
-// required directly under plain Node + jsdom in scripts/test-content-fixtures.js
-// — the same dual browser-global / Node module.exports shape as metadata.ts
-// (see dist/metadata.js and its tsconfig.json header comment for why this
-// stays global-script, not import/export).
+// the capture and resident content-script entrypoints. These side-effect-free
+// functions are imported by WXT and directly by the Node/jsdom fixtures.
 
 interface PostRect {
   x: number;
@@ -585,28 +581,24 @@ function prepareScopedCaptureState(className: string, elements: ReadonlyArray<El
   };
 }
 
-// Node-only export for scripts/test-content-fixtures.js (see file header). No-op
-// in the browser, exactly like metadata.ts's dist/metadata.js export guard.
-if (typeof module !== 'undefined' && module.exports) {
-  module.exports = {
-    getSiteConfig,
-    hostnameMatches,
-    looksLikeMisskey,
-    looksLikeMastodon,
-    findPixivPostElement,
-    getPixivPermalink,
-    getPixivCaptureRect,
-    resolvePixivTarget,
-    getXPostLink,
-    parseXPostLink,
-    getBlueskyPostLink,
-    parseBlueskyPostLink,
-    findMisskeyPostElement,
-    getMisskeyPermalink,
-    getMisskeyCaptureRect,
-    findMastodonPostElement,
-    getMastodonStatusLink,
-    parseMastodonStatusLink,
-    normalizeRect,
-  };
-}
+export {
+  getSiteConfig,
+  hostnameMatches,
+  looksLikeMisskey,
+  looksLikeMastodon,
+  findPixivPostElement,
+  getPixivPermalink,
+  getPixivCaptureRect,
+  resolvePixivTarget,
+  getXPostLink,
+  parseXPostLink,
+  getBlueskyPostLink,
+  parseBlueskyPostLink,
+  findMisskeyPostElement,
+  findMastodonPostElement,
+  getMastodonStatusLink,
+  parseMastodonStatusLink,
+  normalizeRect,
+  prepareScopedCaptureState,
+};
+export type { PostRect, SiteConfig };

@@ -9,7 +9,7 @@
 //
 // Wrapped in an IIFE for the same reason as diag.ts: tsc compiles every
 // extension file as one program, so top-level names must stay unique.
-(() => {
+export function startOptions(): void {
   // Both read by overlay.js (content script) and written only here.
   // Absent = the defaults overlay.js ships with: the mark appears on hover
   // (#309) and the save button is on (#94). The check is local-only, so there
@@ -70,4 +70,4 @@
       chrome.storage.local.set({ [HOVER_SAVE_KEY]: box.checked });
     });
   }
-})();
+}

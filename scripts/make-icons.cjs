@@ -34,11 +34,11 @@ const MASTER = path.join(ROOT, 'assets', 'icon-master.png');
 const TARGETS = [
   { file: 'app/assets/icon.png', size: 512 }, // Electron window/taskbar + electron-builder source (->.ico)
   { file: 'assets/icon.png', size: 256 }, // general brand raster / favicon
-  { file: 'extension/icons/icon256.png', size: 256 },
-  { file: 'extension/icons/icon128.png', size: 128 },
-  { file: 'extension/icons/icon48.png', size: 48 },
-  { file: 'extension/icons/icon32.png', size: 32 },
-  { file: 'extension/icons/icon16.png', size: 16 },
+  { file: 'extension/public/icons/icon256.png', size: 256 },
+  { file: 'extension/public/icons/icon128.png', size: 128 },
+  { file: 'extension/public/icons/icon48.png', size: 48 },
+  { file: 'extension/public/icons/icon32.png', size: 32 },
+  { file: 'extension/public/icons/icon16.png', size: 16 },
 ];
 
 // README banners: the wordmark + tagline are kept verbatim; only the leading mark

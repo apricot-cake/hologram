@@ -2,8 +2,8 @@
 
 // Stable metadata acquisition from official / public APIs (no DOM scraping).
 // Given a post URL, fetch the post's metadata from the platform API and return
-// a normalized record (sidecar field names). Used by background.js via
-// importScripts; also requirable in Node for tests.
+// a normalized record (sidecar field names). Imported by the WXT background
+// entrypoint and directly by Node tests.
 //
 //   X (Twitter): cdn.syndication.twimg.com (unofficial embed JSON; needs
 //                host_permissions because its CORS is restricted). No public
@@ -708,27 +708,4 @@ async function fetchPostMetadata(url, opts) {
   return emptyRecord(url, parsed.platform);
 }
 
-// Dual browser-global / Node module: background.ts loads this file via
-// importScripts (plain global, no `module`); scripts/backfill-metadata.js and
-// friends require() the compiled dist/metadata.js directly as a Node module.
-// `module` isn't declared anywhere in this browser-lib project (deliberately
-// no @types/node here — see tsconfig.json), so declare it minimally ourselves.
-declare const module: { exports: any } | undefined;
-
-if (typeof module !== 'undefined' && module.exports) {
-  module.exports = {
-    parsePostUrl,
-    fetchPostMetadata,
-    fetchXTweet,
-    fetchBlueskyPost,
-    fetchMisskeyNote,
-    fetchPixivIllust,
-    xToken,
-    xSnowflakeDate,
-    xMedia,
-    bskyMedia,
-    misskeyMedia,
-    mastodonMedia,
-    pixivMedia,
-  };
-}
+export { parsePostUrl, fetchPostMetadata, fetchXTweet, fetchBlueskyPost, fetchMisskeyNote, fetchPixivIllust, xToken, xSnowflakeDate, xMedia, bskyMedia, misskeyMedia, mastodonMedia, pixivMedia };
