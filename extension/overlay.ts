@@ -49,7 +49,7 @@
 
   interface Anchor {
     box: Element; // the media box whose corner this control sits on
-    el: HTMLDivElement | null;
+    el: HTMLDivElement | HTMLButtonElement | null;
     face: Face | null; // what el currently draws (so a re-render can skip)
     phase: Phase;
     timer: ReturnType<typeof setTimeout> | null; // clears phase back to idle
@@ -71,8 +71,9 @@
   const QUERY_DEBOUNCE_MS = 300; // one batch per scroll burst, not per post
   const SCAN_DEBOUNCE_MS = 250; // feed mutations arrive in floods
   const CONTROL_SIZE = 22;
-  const SAVE_WIDTH = 68;
-  const SAVE_HEIGHT = 28;
+  // This remains visually close to the 22px saved mark, while the actual
+  // pointer target meets WCAG's 24px minimum for an icon-only control.
+  const SAVE_SIZE = 28;
   const CONTROL_INSET = 6;
   // The save button waits out a pass-through, so scrolling with the pointer
   // over the feed doesn't strobe buttons. The mark does NOT wait: it answers a
@@ -527,9 +528,18 @@
         continue;
       }
       let el = anchor.el;
+      const interactive = face === 'save' || face === 'failed';
+      // The saved/busy faces are status indicators, whereas save/retry are
+      // actual actions. Recreate on that boundary so an icon-only action keeps
+      // the browser's native button semantics instead of imitating them.
+      if (el && el instanceof HTMLButtonElement !== interactive) {
+        el.remove();
+        el = null;
+      }
       const born = !el;
       if (!el) {
-        el = document.createElement('div');
+        el = document.createElement(interactive ? 'button' : 'div');
+        if (el instanceof HTMLButtonElement) el.type = 'button';
         el.style.cssText = [
           'position:absolute',
           `width:${CONTROL_SIZE}px`,
@@ -542,12 +552,14 @@
           `border:1px solid ${G.CARD_BORDER}`,
           `box-shadow:${G.CARD_SHADOW}`,
           `transition:width ${G.DUR_HOVER}ms ${G.EASE_OUT},height ${G.DUR_HOVER}ms ${G.EASE_OUT},border-radius ${G.DUR_HOVER}ms ${G.EASE_OUT},background ${G.DUR_HOVER}ms,color ${G.DUR_HOVER}ms,box-shadow ${G.DUR_HOVER}ms`,
+          'appearance:none',
+          'font:inherit',
           'pointer-events:auto',
         ].join(';');
         anchor.el = el;
         ensureLayer().appendChild(el);
       }
-      if (anchor.face !== face) {
+      if (born || anchor.face !== face) {
         drawFace(el, face, anchor, unit, state);
         anchor.face = face;
       }
@@ -568,12 +580,10 @@
     }
   }
 
-  function drawFace(el: HTMLDivElement, face: Face, anchor: Anchor, unit: Element, state: UnitState) {
+  function drawFace(el: HTMLDivElement | HTMLButtonElement, face: Face, anchor: Anchor, unit: Element, state: UnitState) {
     el.replaceChildren();
     el.onclick = null;
     el.onpointerdown = null;
-    el.onkeydown = null;
-    el.removeAttribute('role');
     el.removeAttribute('aria-label');
     el.tabIndex = -1;
     el.style.cursor = '';
@@ -597,36 +607,24 @@
         break;
       case 'save': {
         el.title = t('hoverSaveImage');
-        // A text-bearing button makes the one action here unambiguous. The
-        // saved mark stays a small circle; only the actionable state expands.
-        el.style.width = `${SAVE_WIDTH}px`;
-        el.style.height = `${SAVE_HEIGHT}px`;
-        el.style.padding = '0 9px';
-        el.style.gap = '5px';
-        el.style.borderRadius = '8px';
-        el.style.background = G.ACCENT_FILL;
-        el.style.borderColor = 'rgba(255,255,255,0.56)';
-        el.style.boxShadow = '0 7px 18px -6px rgba(0,0,0,0.68), inset 0 1px 0 rgba(255,255,255,0.20)';
-        el.style.color = '#fff';
+        // Keep the same compact, glyph-only language as the saved mark. The
+        // blue tint says this is the action; a native label and tooltip say
+        // what the unfamiliar glyph does without adding permanent text.
+        el.style.width = `${SAVE_SIZE}px`;
+        el.style.height = `${SAVE_SIZE}px`;
+        el.style.background = G.ACCENT_SOFT;
+        el.style.borderColor = 'rgba(40,168,219,0.72)';
+        el.style.boxShadow = `${G.CARD_SHADOW}, 0 0 0 1px rgba(40,168,219,0.12)`;
+        el.style.color = G.ACCENT_TEXT;
         el.style.cursor = 'pointer';
         el.appendChild(G.makeIcon(G.ICONS.drop, 14));
-        const label = document.createElement('span');
-        label.textContent = t('hoverSave');
-        label.style.cssText = `font:600 12px/1 ${G.FONT_SANS};letter-spacing:0;white-space:nowrap;pointer-events:none;`;
-        el.appendChild(label);
         // Both handlers stop the event: the control is outside the post's
         // subtree, but x.com and bsky.app listen on the document, and a press
         // that reached them would open the lightbox behind the save.
-        el.setAttribute('role', 'button');
         el.setAttribute('aria-label', t('hoverSaveImage'));
         el.tabIndex = 0;
         el.onpointerdown = stopPress;
         el.onclick = (e) => {
-          stopPress(e);
-          startSave(unit, state, anchor);
-        };
-        el.onkeydown = (e) => {
-          if (e.key !== 'Enter' && e.key !== ' ') return;
           stopPress(e);
           startSave(unit, state, anchor);
         };

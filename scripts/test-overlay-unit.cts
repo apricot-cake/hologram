@@ -172,7 +172,7 @@ const setSetting = (key, value) => {
 // getMediaIdentitySite at all.
 window.eval(['glass-ui.js', 'site-detect.js', 'media-identity.js', 'overlay.js'].map((f) => fs.readFileSync(path.join(DIST, f), 'utf8')).join('\n;\n'));
 
-const controls = (): any[] => Array.from(window.document.querySelectorAll('#__hologramSavedLayer > div'));
+const controls = (): any[] => Array.from(window.document.querySelectorAll('#__hologramSavedLayer > *'));
 // t() echoes its key until i18n.js resolves, and i18n.js is not part of this
 // harness — so the key IS the tooltip here, which tells the two faces apart
 // without depending on wording.
@@ -263,7 +263,7 @@ const click = (el) => el.dispatchEvent(new window.MouseEvent('click', { bubbles:
   check('the button waits out a pass-through instead of flashing', controls().length === 0);
   await settle();
   check('pointing at an unsaved picture offers to save it', saveButtons().length === 1);
-  check('the save action is a labeled button, distinct from the saved mark', saveButtons()[0].style.width === '68px' && saveButtons()[0].getAttribute('role') === 'button' && saveButtons()[0].textContent === 'hoverSave');
+  check('the save action is a glyph-only native button with an accessible name', saveButtons()[0].tagName === 'BUTTON' && saveButtons()[0].style.width === '28px' && saveButtons()[0].getAttribute('aria-label') === 'hoverSaveImage' && saveButtons()[0].textContent === '');
 
   // --- pressing it sends the message drag-and-drop sends, not a new one ---
   click(saveButtons()[0]);
