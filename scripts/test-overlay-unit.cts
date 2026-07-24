@@ -263,7 +263,13 @@ const click = (el) => el.dispatchEvent(new window.MouseEvent('click', { bubbles:
   check('the button waits out a pass-through instead of flashing', controls().length === 0);
   await settle();
   check('pointing at an unsaved picture offers to save it', saveButtons().length === 1);
-  check('the save action is a glyph-only native button with an accessible name', saveButtons()[0].tagName === 'BUTTON' && saveButtons()[0].style.width === '28px' && saveButtons()[0].getAttribute('aria-label') === 'hoverSaveImage' && saveButtons()[0].textContent === '');
+  check(
+    'the save action is a monochrome glyph-only native button with an accessible name',
+    saveButtons()[0].tagName === 'BUTTON' && saveButtons()[0].style.width === '28px' && saveButtons()[0].style.background === 'rgba(20, 22, 26, 0.86)' && saveButtons()[0].getAttribute('aria-label') === 'hoverSaveImage' && saveButtons()[0].textContent === '',
+  );
+  saveButtons()[0].dispatchEvent(new window.Event('pointerenter'));
+  check('hover distinguishes the monochrome save action without adding a state color', saveButtons()[0].style.background === 'rgba(255, 255, 255, 0.1)' && saveButtons()[0].style.transform === 'scale(1.04)');
+  saveButtons()[0].dispatchEvent(new window.Event('pointerleave'));
 
   // --- pressing it sends the message drag-and-drop sends, not a new one ---
   click(saveButtons()[0]);

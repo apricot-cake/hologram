@@ -551,7 +551,7 @@
           'box-sizing:border-box',
           `border:1px solid ${G.CARD_BORDER}`,
           `box-shadow:${G.CARD_SHADOW}`,
-          `transition:width ${G.DUR_HOVER}ms ${G.EASE_OUT},height ${G.DUR_HOVER}ms ${G.EASE_OUT},border-radius ${G.DUR_HOVER}ms ${G.EASE_OUT},background ${G.DUR_HOVER}ms,color ${G.DUR_HOVER}ms,box-shadow ${G.DUR_HOVER}ms`,
+          `transition:width ${G.DUR_HOVER}ms ${G.EASE_OUT},height ${G.DUR_HOVER}ms ${G.EASE_OUT},border-radius ${G.DUR_HOVER}ms ${G.EASE_OUT},background ${G.DUR_HOVER}ms,color ${G.DUR_HOVER}ms,border-color ${G.DUR_HOVER}ms,box-shadow ${G.DUR_HOVER}ms,transform ${G.DUR_HOVER}ms ${G.EASE_OUT}`,
           'appearance:none',
           'font:inherit',
           'pointer-events:auto',
@@ -584,6 +584,8 @@
     el.replaceChildren();
     el.onclick = null;
     el.onpointerdown = null;
+    el.onpointerenter = null;
+    el.onpointerleave = null;
     el.removeAttribute('aria-label');
     el.tabIndex = -1;
     el.style.cursor = '';
@@ -596,6 +598,7 @@
     el.style.borderRadius = '50%';
     el.style.borderColor = G.CARD_BORDER;
     el.style.boxShadow = G.CARD_SHADOW;
+    el.style.transform = '';
     switch (face) {
       case 'mark':
         // Monotone check (not the accent): the mark states a fact about the
@@ -607,15 +610,13 @@
         break;
       case 'save': {
         el.title = t('hoverSaveImage');
-        // Keep the same compact, glyph-only language as the saved mark. The
-        // blue tint says this is the action; a native label and tooltip say
-        // what the unfamiliar glyph does without adding permanent text.
+        // Keep the same compact, glyph-only monochrome language as the saved
+        // mark. A slightly larger circle and a neutral hover lift distinguish
+        // the action without adding permanent text or state color.
         el.style.width = `${SAVE_SIZE}px`;
         el.style.height = `${SAVE_SIZE}px`;
-        el.style.background = G.ACCENT_SOFT;
-        el.style.borderColor = 'rgba(40,168,219,0.72)';
-        el.style.boxShadow = `${G.CARD_SHADOW}, 0 0 0 1px rgba(40,168,219,0.12)`;
-        el.style.color = G.ACCENT_TEXT;
+        el.style.background = G.CARD_BG;
+        el.style.color = G.TEXT;
         el.style.cursor = 'pointer';
         el.appendChild(G.makeIcon(G.ICONS.drop, 14));
         // Both handlers stop the event: the control is outside the post's
@@ -624,6 +625,18 @@
         el.setAttribute('aria-label', t('hoverSaveImage'));
         el.tabIndex = 0;
         el.onpointerdown = stopPress;
+        el.onpointerenter = () => {
+          el.style.background = G.BADGE_NEUTRAL;
+          el.style.borderColor = 'rgba(255,255,255,0.68)';
+          el.style.boxShadow = `${G.CARD_SHADOW}, 0 0 0 2px rgba(255,255,255,0.14)`;
+          el.style.transform = 'scale(1.04)';
+        };
+        el.onpointerleave = () => {
+          el.style.background = G.CARD_BG;
+          el.style.borderColor = G.CARD_BORDER;
+          el.style.boxShadow = G.CARD_SHADOW;
+          el.style.transform = '';
+        };
         el.onclick = (e) => {
           stopPress(e);
           startSave(unit, state, anchor);
