@@ -77,7 +77,7 @@
     "test-avatar-fill.cts",
     "test-backfill-metadata.cts",
     "test-backup-guard.cts",
-    "test-badge-unit.cts",
+    "test-overlay-unit.cts",
     "test-bridge.cts",
     "test-bridge-query.cts",
     "test-bridge-ssrf.cts",

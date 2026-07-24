@@ -24,11 +24,31 @@
     "description": "Link to the diagnostics page"
   },
   "optionsSavedBadge": {
-    "message": "保存済みの投稿に印をつける",
-    "description": "Options label for the timeline saved-post badge"
+    "message": "保存済みの投稿につける印",
+    "description": "Options group label for the timeline saved-post mark"
   },
   "optionsSavedBadgeDesc": {
     "message": "タイムライン上で、すでに Hologram に保存した投稿の画像に小さな印を表示します。判定はこのPCの中だけで行われます。",
-    "description": "Options description for the timeline saved-post badge"
+    "description": "Options description for the timeline saved-post mark"
+  },
+  "optionsSavedBadgeHover": {
+    "message": "マウスを載せたときだけ表示",
+    "description": "Options choice: show the saved mark only while pointing at the post"
+  },
+  "optionsSavedBadgeAlways": {
+    "message": "常に表示",
+    "description": "Options choice: show the saved mark whenever the post is on screen"
+  },
+  "optionsSavedBadgeOff": {
+    "message": "表示しない",
+    "description": "Options choice: never show the saved mark"
+  },
+  "optionsHoverSave": {
+    "message": "画像にマウスを載せたら保存ボタンを出す",
+    "description": "Options label for the hover save button"
+  },
+  "optionsHoverSaveDesc": {
+    "message": "まだ保存していない投稿の画像に、その場で保存できるボタンを表示します。保存されるのは画像そのものと投稿の情報（本文・作者・元URL）です。投稿の見た目のスクリーンショットが要るときは Alt+S の投稿キャプチャを使ってください。",
+    "description": "Options description for the hover save button, including what it does NOT save"
   }
 }

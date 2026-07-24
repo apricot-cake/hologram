@@ -10,7 +10,7 @@
   "content_scripts": [
     {
       "matches": ["https://x.com/*", "https://twitter.com/*", "https://bsky.app/*", "https://www.pixiv.net/*", "https://pixiv.net/*"],
-      "js": ["i18n.js", "glass-ui.js", "site-detect.js", "badge.js", "drag.js"],
+      "js": ["i18n.js", "glass-ui.js", "site-detect.js", "media-identity.js", "overlay.js", "drag.js"],
       "run_at": "document_idle"
     }
   ],

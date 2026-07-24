@@ -39,8 +39,12 @@
       // drag.js: drop-zone hint (the toasts reuse the banner* keys above)
       dragDropHint: 'ここにドロップで Hologram に保存',
 
-      // badge.js: tooltip on the timeline's "already saved" mark
+      // overlay.js: tooltip on the timeline's "already saved" mark
       badgeSaved: 'Hologram に保存済み',
+      // overlay.js: tooltip on the hover save button. It says IMAGE, not post:
+      // this route saves the picture plus the post's text/author, never a
+      // screenshot of how the post looks (that is Alt+S element capture).
+      hoverSaveImage: '画像を保存',
     },
 
     en: {
@@ -60,8 +64,10 @@
       // drag.js: drop-zone hint (the toasts reuse the banner* keys above)
       dragDropHint: 'Drop here to save to Hologram',
 
-      // badge.js: tooltip on the timeline's "already saved" mark
+      // overlay.js: tooltip on the timeline's "already saved" mark
       badgeSaved: 'Saved in Hologram',
+      // overlay.js: tooltip on the hover save button (see the ja note).
+      hoverSaveImage: 'Save image',
     },
   };
 
