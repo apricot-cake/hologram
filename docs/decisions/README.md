@@ -32,3 +32,6 @@
 | [0004](0004-own-styling-headless-behaviour.md) | 見た目は自前・挙動はヘッドレス | 置き換え（0006 へ） |
 | [0005](0005-no-visual-change-during-migration.md) | 移行作業では見た目を意図的に変えない | 採用 |
 | [0006](0006-plain-shadcn-look.md) | 素の shadcn ルックを採る | 採用 |
+| [0007](0007-horizontal-tabs-not-vertical.md) | タブは上部水平に置く（縦タブを採らない） | 採用 |
+| [0008](0008-single-smart-search.md) | 検索モードの切替を廃し単一のスマート検索にする | 採用 |
+| [0009](0009-bottom-floating-selection-bar.md) | 選択中の操作は底部中央のフローティングバーに置く | 採用 |
