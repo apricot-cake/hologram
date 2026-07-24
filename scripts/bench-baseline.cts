@@ -65,11 +65,14 @@ const v8 = require('node:v8');
 const { execFileSync } = require('node:child_process');
 const { pathToFileURL } = require('node:url');
 const { createPostIndex } = require('../app/lib-index.mts');
+const { openDatabase } = require('../app/lib-db.mts');
+const { createDbImporter } = require('../app/lib-db-import.mts');
+const { postsFromDb, searchPostsFts } = require('../app/lib-db-query.mts');
 
 const INTERNAL_FILES = new Set(['config.json', '.index.json', 'tag-types.json', 'ungrouped.json', 'manual-groups.json', 'folders.json', 'tabs.json', 'poster-favorites.json', 'poster-folders.json', 'poster-tags.json']);
 
 function parseArgs(argv) {
-  const opts = { warmup: 2, iterations: 5, incrementalPct: 1, out: null, generatorHash: null, libraryDir: null };
+  const opts = { warmup: 2, iterations: 5, incrementalPct: 1, out: null, generatorHash: null, libraryDir: null, adapter: 'sidecar' };
   const rest = argv.slice(2);
   for (let i = 0; i < rest.length; i++) {
     const a = rest[i];
@@ -78,13 +81,15 @@ function parseArgs(argv) {
     else if (a === '--incremental-pct') opts.incrementalPct = Number(rest[++i]);
     else if (a === '--out') opts.out = rest[++i];
     else if (a === '--generator-hash') opts.generatorHash = rest[++i];
+    else if (a === '--adapter') opts.adapter = rest[++i];
     else if (a.startsWith('--')) throw new Error(`Unknown option: ${a}`);
     else if (!opts.libraryDir) opts.libraryDir = a;
     else throw new Error(`Unexpected argument: ${a}`);
   }
-  if (!opts.libraryDir) throw new Error('Missing <libraryDir>. Usage: node scripts/bench-baseline.cts <libraryDir> [--warmup N] [--iterations N] [--incremental-pct N] [--out FILE] [--generator-hash HASH]');
+  if (!opts.libraryDir) throw new Error('Missing <libraryDir>. Usage: node scripts/bench-baseline.cts <libraryDir> [--warmup N] [--iterations N] [--incremental-pct N] [--out FILE] [--generator-hash HASH] [--adapter sidecar|db]');
   if (!Number.isFinite(opts.warmup) || opts.warmup < 0) throw new Error('--warmup must be >= 0');
   if (!Number.isFinite(opts.iterations) || opts.iterations < 1) throw new Error('--iterations must be >= 1');
+  if (!['sidecar', 'db'].includes(opts.adapter)) throw new Error("--adapter must be 'sidecar' or 'db'");
   return opts;
 }
 
@@ -133,6 +138,62 @@ const sidecarAdapter = {
   async incrementalUpdate(idx, dir, changedNames) {
     const t0 = nowMs();
     await idx.applyChanges(dir, changedNames);
+    const ms = nowMs() - t0;
+    return { ms };
+  },
+};
+
+// --- DB (#5 St4 / #297) adapter — the pluggable target #293 built this
+// harness for. coldScan/warmScan both go through dbImporter.importAll
+// (sidecar scan + DB upsert) then postsFromDb, same as main.mts's
+// listPosts()/listPostsDelta() full-resync path: the DB is a derived index
+// during this stage, so even a "warm" read re-syncs from the sidecars first —
+// there is no read-only-DB fast path yet (that would require trusting the DB
+// is current without checking, which St4 does not do). "cold" additionally
+// drops any existing bench DB file first, so both scenarios keep the same
+// sidecar-scan cost as the sidecar adapter's own cold/warm split; the DB
+// column isolates the DB WRITE + reconstruction-SELECT cost on top of that,
+// not a claim that DB reads skip the sidecar scan at this stage.
+function freshBenchDbFile(dir) {
+  const file = path.join(dir, '.bench.db');
+  for (const suffix of ['', '-wal', '-shm']) {
+    try {
+      fs.rmSync(file + suffix, { force: true });
+    } catch {
+      /* not present */
+    }
+  }
+  return file;
+}
+let _dbBenchHandle = null;
+function closeDbBenchHandle() {
+  if (_dbBenchHandle) {
+    try {
+      _dbBenchHandle.sqlite.close();
+    } catch {
+      /* already closed */
+    }
+    _dbBenchHandle = null;
+  }
+}
+async function dbScan(dir, file) {
+  closeDbBenchHandle();
+  _dbBenchHandle = openDatabase(file);
+  const idx = createPostIndex({ internalFiles: INTERNAL_FILES });
+  const importer = createDbImporter({ internalFiles: INTERNAL_FILES, postIndex: idx });
+  const t0 = nowMs();
+  await importer.importAll(dir, _dbBenchHandle);
+  const posts = await postsFromDb(_dbBenchHandle.sqlite);
+  const ms = nowMs() - t0;
+  return { posts, ms, idx: { handle: _dbBenchHandle, importer } };
+}
+const dbAdapter = {
+  name: 'sqlite (lib-db-query, #297)',
+  coldScan: (dir) => dbScan(dir, freshBenchDbFile(dir)),
+  warmScan: (dir) => dbScan(dir, path.join(dir, '.bench.db')), // reuses whatever coldScan last built
+  async incrementalUpdate(state, dir, changedNames) {
+    const t0 = nowMs();
+    await state.importer.importChanged(dir, state.handle, changedNames);
     const ms = nowMs() - t0;
     return { ms };
   },
@@ -329,35 +390,37 @@ async function main() {
   const dir = path.resolve(opts.libraryDir);
   if (!fs.existsSync(dir)) throw new Error(`libraryDir not found: ${dir}`);
 
-  console.log(`bench-baseline: ${dir}  warmup=${opts.warmup} iterations=${opts.iterations}`);
+  const adapter = opts.adapter === 'db' ? dbAdapter : sidecarAdapter;
+  console.log(`bench-baseline: ${dir}  adapter=${adapter.name}  warmup=${opts.warmup} iterations=${opts.iterations}`);
 
   const report = {
     environment: environmentInfo(),
     generator: { hashArg: opts.generatorHash, library: libraryContentHash(dir), generatorScriptCommit: gitRevOf('scripts/gen-dummy-library.cts') },
     params: { warmup: opts.warmup, iterations: opts.iterations, incrementalPct: opts.incrementalPct },
-    adapter: sidecarAdapter.name,
+    adapter: adapter.name,
     scenarios: {},
   };
 
-  // cold — each measured iteration is a genuinely fresh index + no snapshot.
+  // cold — each measured iteration is a genuinely fresh index + no snapshot
+  // (sidecar adapter) / no bench DB file (db adapter).
   let lastColdPosts = null;
   report.scenarios.cold = await measure(
     'cold',
     async () => {
-      const r = await sidecarAdapter.coldScan(dir);
+      const r = await adapter.coldScan(dir);
       lastColdPosts = r.posts;
       return { ms: r.ms, extra: { postCount: r.posts.length } };
     },
     opts,
   );
 
-  // warm — snapshot from the last cold run is on disk; each iteration is a fresh
-  // index instance (a real relaunch), reusing the persisted snapshot.
+  // warm — snapshot/DB from the last cold run is on disk; each iteration is a
+  // fresh index/DB-handle instance (a real relaunch), reusing what's persisted.
   let lastWarmIdx = null;
   report.scenarios.warm = await measure(
     'warm',
     async () => {
-      const r = await sidecarAdapter.warmScan(dir);
+      const r = await adapter.warmScan(dir);
       lastWarmIdx = r.idx;
       return { ms: r.ms, extra: { postCount: r.posts.length } };
     },
@@ -365,12 +428,12 @@ async function main() {
   );
 
   // incremental — touch a fresh set of sidecars per iteration (so later iterations
-  // don't just re-see already-applied changes) against the warm index.
+  // don't just re-see already-applied changes) against the warm index/DB handle.
   report.scenarios.incremental = await measure(
     'incremental',
     async () => {
       const touched = touchSidecars(dir, opts.incrementalPct);
-      const r = await sidecarAdapter.incrementalUpdate(lastWarmIdx, dir, touched);
+      const r = await adapter.incrementalUpdate(lastWarmIdx, dir, touched);
       return { ms: r.ms, extra: { touchedCount: touched.length } };
     },
     opts,
@@ -381,10 +444,28 @@ async function main() {
   report.scenarios = { ...report.scenarios, ...searchResults };
   report.scenarios.ipc = await runIpcScenario(lastColdPosts, opts);
 
+  // FTS5 rank contract (#297's query contract) — db adapter only, no sidecar
+  // equivalent to compare against directly (the "search:*" scenarios above are
+  // the in-memory-fuzzy-matcher comparison point for both adapters).
+  if (opts.adapter === 'db' && representative.textTerm) {
+    const sqlite = lastWarmIdx.handle.sqlite;
+    report.scenarios['fts:' + representative.textTerm] = await measure(
+      'fts:' + representative.textTerm,
+      async () => {
+        const t0 = nowMs();
+        const hits = searchPostsFts(sqlite, representative.textTerm);
+        return { ms: nowMs() - t0, extra: { hits: hits.length } };
+      },
+      opts,
+    );
+  }
+
   for (const [name, s] of Object.entries(report.scenarios)) {
     const w = s.warning ? `  ⚠ ${s.warning}` : '';
     console.log(`  ${name.padEnd(22)} min=${s.min.toFixed(1)}ms mean=${s.mean.toFixed(1)}ms max=${s.max.toFixed(1)}ms${w}`);
   }
+
+  closeDbBenchHandle();
 
   const json = JSON.stringify(report, null, 2);
   if (opts.out) {

@@ -657,6 +657,18 @@ export function endFilterEditSession(): void {
     container: document.getElementById('queryChips') as HTMLElement,
     barEl: document.getElementById('postActiveBar'), // reveal + --activebar-h measure (empty/reset are the island's)
     labelOf: filterLabel,
+    // A saved tag leaf from before the DB migration (#297) carries only a name;
+    // query.ts's tag case resolves and caches its tagId on first evaluation via
+    // this. Scans the loaded posts' parallel tags/tagIds arrays rather than a
+    // separate vocabulary fetch — only runs once per legacy leaf (the leaf
+    // caches its own resolved tagId), not once per post.
+    tagIdOf: (name) => {
+      for (const p of postGrid.getAllPosts()) {
+        const i = (p.tags || []).indexOf(name);
+        if (i >= 0 && p.tagIds) return p.tagIds[i];
+      }
+      return undefined;
+    },
     getSearchVal: () => searchQuery(),
     onClearSearch: () => {
       setSearchBoxValue('');

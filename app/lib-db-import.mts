@@ -64,6 +64,8 @@ export interface ImportReport {
   postsWritten: number; // post rows inserted/updated this run
   postsRemoved: number; // post rows deleted because their sidecar is gone
   dbPostCount: number; // SELECT COUNT(*) FROM posts after this run — the reconciliation number against sidecarCount
+  addedIds: string[]; // captureIds upserted this run (#297: lets a caller re-SELECT just these instead of the whole table)
+  removedIds: string[]; // captureIds deleted this run
 }
 
 function toDbBool(v: boolean | null): number | null {
@@ -107,6 +109,7 @@ const POST_COLUMNS = [
   'shotW',
   'shotH',
   'trashedAt',
+  'sourceMtimeMs',
 ] as const;
 
 const UPSERT_POST_SQL = `INSERT INTO posts (${POST_COLUMNS.join(',')}) VALUES (${POST_COLUMNS.map(() => '?').join(',')})
@@ -117,7 +120,7 @@ const UPSERT_POST_SQL = `INSERT INTO posts (${POST_COLUMNS.join(',')}) VALUES ($
 // Built from named fields (not a positional literal) so a column added to
 // POST_COLUMNS and forgotten here fails at the .map(...) below (undefined
 // bound param -> better-sqlite3 throws) instead of silently misaligning.
-function postParams(n: PostRecordShape): unknown[] {
+function postParams(n: PostRecordShape, sourceMtimeMs: number | null): unknown[] {
   const byName: Record<string, unknown> = {
     captureId: n.captureId,
     assetClass: n.assetClass,
@@ -155,6 +158,7 @@ function postParams(n: PostRecordShape): unknown[] {
     shotW: n.shotW,
     shotH: n.shotH,
     trashedAt: n.trashedAt,
+    sourceMtimeMs,
   };
   return POST_COLUMNS.map((c) => byName[c]);
 }
@@ -221,10 +225,14 @@ function preparePostStmts(sqlite: Database.Database): PostStmts {
 // Writes (or overwrites) everything derived from ONE sidecar record: the posts
 // row, its media rows, its tag junction rows, and its FTS row. Tag NAMES are
 // resolved to ids via resolveTagId (get-or-create — see the module comment on
-// why tags are never wiped).
-function writePost(stmts: PostStmts, resolveTagId: (name: string) => number, rec: PostRecordInput): PostRecordShape {
+// why tags are never wiped). sourceMtimeMs (#297) records the sidecar file's
+// mtime this write was derived from, so a later importAll can tell "unchanged"
+// apart from "actually edited" without redoing the FTS5 rewrite — null from a
+// caller that doesn't track it (e.g. a future write path once #298 flips the
+// truth source) just means the next importAll can't skip that post's rewrite.
+function writePost(stmts: PostStmts, resolveTagId: (name: string) => number, rec: PostRecordInput, sourceMtimeMs: number | null = null): PostRecordShape {
   const n = normalizePostRecord(rec);
-  stmts.upsertPost.run(...postParams(n));
+  stmts.upsertPost.run(...postParams(n, sourceMtimeMs));
   stmts.deleteMedia.run(n.captureId);
   n.media.forEach((m, seq) => stmts.insertMedia.run(n.captureId, seq, m.url, m.alt, m.width, m.height, m.file));
   stmts.deletePostTags.run(n.captureId);
@@ -390,23 +398,48 @@ export function createDbImporter(opts: { internalFiles?: Set<string>; postIndex?
   async function importAll(folder: string, handle: DbHandle): Promise<ImportReport> {
     const { sqlite } = handle;
     const failures: Array<{ file: string; error: string }> = [];
-    const { posts, skipped } = await index.list(folder);
+    const { posts, skipped, stamps } = await index.list(folder);
     for (const s of skipped) if (s.error) failures.push({ file: s.file, error: s.error });
 
     const validIds = new Set(posts.map((p: any) => p.captureId));
     const stmts = preparePostStmts(sqlite);
 
+    // #297: a repeat importAll (every app relaunch/refresh now calls this —
+    // it's main.mts's DB-backed listPosts()/listPostsDelta() full-resync path)
+    // must not redo the expensive half of writePost — delete+reinsert media/
+    // post_tags/posts_fts, the FTS5 trigram rewrite in particular — for a post
+    // that hasn't actually changed since the last import. Measured at 12s ->
+    // 23s cold->warm for a 10k-post library before this guard (bench-baseline.cts
+    // --adapter db) — a relaunch with nothing new would otherwise cost MORE
+    // than the cold import that just populated the DB. The sidecar's own
+    // mtimeMs (`stamps`, from the shared postIndex — the same signal
+    // lib-index.mts's own applyChanges uses) is the comparison, NOT
+    // updatedAt: updatedAt is producer-controlled and not guaranteed to move
+    // on every edit (an editor that changes text without bumping it would
+    // silently go unsynced), where mtimeMs is the filesystem's own truth.
+    const existingStamps = new Map<string, number | null>();
+    for (const row of sqlite.prepare('SELECT captureId, sourceMtimeMs FROM posts').all() as Array<{ captureId: string; sourceMtimeMs: number | null }>) {
+      existingStamps.set(row.captureId, row.sourceMtimeMs);
+    }
+
     sqlite.exec('BEGIN');
     try {
       const resolveTagId = makeTagResolver(sqlite);
-      for (const rec of posts) writePost(stmts, resolveTagId, rec);
+      const addedIds: string[] = [];
+      for (const rec of posts) {
+        const captureId = rec && rec.captureId;
+        const mtimeMs = stamps?.get(captureId) ?? null;
+        if (mtimeMs != null && existingStamps.get(captureId) === mtimeMs) continue; // unchanged since last import -- skip the rewrite
+        writePost(stmts, resolveTagId, rec, mtimeMs);
+        addedIds.push(captureId);
+      }
 
       const existing = sqlite.prepare('SELECT captureId FROM posts').all() as Array<{ captureId: string }>;
-      let postsRemoved = 0;
+      const removedIds: string[] = [];
       for (const row of existing) {
         if (!validIds.has(row.captureId)) {
           stmts.deletePost.run(row.captureId);
-          postsRemoved++;
+          removedIds.push(row.captureId);
         }
       }
 
@@ -414,7 +447,12 @@ export function createDbImporter(opts: { internalFiles?: Set<string>; postIndex?
 
       sqlite.exec('COMMIT');
       const dbPostCount = (sqlite.prepare('SELECT COUNT(*) AS n FROM posts').get() as { n: number }).n;
-      return { sidecarCount: posts.length, parseFailures: failures, postsWritten: posts.length, postsRemoved, dbPostCount };
+      // postsWritten stays "every post reconciled this call" (idempotency
+      // contract scripts/test-db-import.cts pins: an unchanged re-run still
+      // reports the full count) -- addedIds is the finer-grained "actually
+      // rewrote these" list the skip-guard above produces, for callers (the
+      // #297 read path) that want to know what really changed.
+      return { sidecarCount: posts.length, parseFailures: failures, postsWritten: posts.length, postsRemoved: removedIds.length, dbPostCount, addedIds, removedIds };
     } catch (err) {
       sqlite.exec('ROLLBACK');
       throw err;
@@ -437,7 +475,7 @@ export function createDbImporter(opts: { internalFiles?: Set<string>; postIndex?
     sqlite.exec('BEGIN');
     try {
       const resolveTagId = makeTagResolver(sqlite);
-      for (const entry of added) writePost(stmts, resolveTagId, entry.record);
+      for (const entry of added) writePost(stmts, resolveTagId, entry.record, entry.mtimeMs);
       for (const captureId of removed) stmts.deletePost.run(captureId);
       sqlite.exec('COMMIT');
     } catch (err) {
@@ -445,7 +483,7 @@ export function createDbImporter(opts: { internalFiles?: Set<string>; postIndex?
       throw err;
     }
     const dbPostCount = (sqlite.prepare('SELECT COUNT(*) AS n FROM posts').get() as { n: number }).n;
-    return { sidecarCount: added.length, parseFailures: failures, postsWritten: added.length, postsRemoved: removed.length, dbPostCount };
+    return { sidecarCount: added.length, parseFailures: failures, postsWritten: added.length, postsRemoved: removed.length, dbPostCount, addedIds: added.map((a: any) => a.record.captureId), removedIds: removed };
   }
 
   return { importAll, importChanged };
