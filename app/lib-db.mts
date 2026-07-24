@@ -1,8 +1,9 @@
 'use strict';
 
-// SQLite engine layer for the metadata store (#5 / #294 St1): opens the database,
-// applies pending migrations, and hands back a typed Kysely instance. The schema
-// itself lands in St2 — MIGRATIONS is empty here on purpose.
+// SQLite engine layer for the metadata store (#5 / #294 St1, schema from #295
+// St2): opens the database, applies pending migrations, and hands back a typed
+// Kysely instance. The DDL itself lives in lib-db-schema.mts — this file stays
+// the engine (open/migrate), that one the shape (what "current" means).
 //
 // Kept Electron-free (better-sqlite3 and node builtins only) so the migration
 // runner unit-tests in plain node, mirroring lib-index/lib-archive.
@@ -19,11 +20,13 @@
 
 import Database from 'better-sqlite3';
 import { Kysely, SqliteDialect } from 'kysely';
+import type { Generated } from 'kysely';
+import { SCHEMA_V1_SQL } from './lib-db-schema.mts';
 
 // One entry per schema change, applied in array order and never reordered or
 // edited once shipped — `user_version` records how many have run, so rewriting
 // an applied entry leaves existing databases silently inconsistent. Append only.
-const MIGRATIONS: Migration[] = [];
+const MIGRATIONS: Migration[] = [{ name: 'schema-v1', up: (db) => db.exec(SCHEMA_V1_SQL) }];
 
 interface Migration {
   name: string;
@@ -107,9 +110,172 @@ function openDatabase(file: string, opts: { readonly?: boolean } = {}) {
   return { db, sqlite };
 }
 
-// St2 fills this in. Empty until then: an interface with no tables makes every
-// query a type error, which is the correct state while no schema exists.
-type Schema = Record<never, never>;
+// The typed mirror of SCHEMA_V1_SQL (#295 St2). Column names are camelCase to
+// match the sidecar JSON they replace (#5 2026-07-18 comment) — SQLite itself
+// is case-insensitive on identifiers, so this is a naming convention, not an
+// engine requirement. Kept in lockstep with lib-db-schema.mts by hand: Kysely
+// has no DDL-to-type codegen for a hand-rolled migration string, so a column
+// added there and not here just fails to type-check at the first query that
+// uses it — no runtime drift is possible.
+interface PostsTable {
+  captureId: string;
+  assetClass: string;
+  mediaType: string | null;
+  image: string | null;
+  url: string | null;
+  platform: string | null;
+  text: string | null;
+  title: string | null;
+  displayName: string | null;
+  screenName: string | null;
+  userId: string | null;
+  avatar: string | null;
+  avatarFile: string | null;
+  followers: number | null;
+  authorCreatedAt: string | null;
+  likes: number | null;
+  reposts: number | null;
+  replies: number | null;
+  bookmarks: number | null;
+  views: number | null;
+  date: string | null;
+  capturedAt: string;
+  updatedAt: string;
+  lang: string | null;
+  isReply: number | null;
+  isQuote: number | null;
+  isThread: number | null;
+  quotedUrl: string | null;
+  replyToId: string | null;
+  hashtags: string; // JSON string[] — non-tag leaves stay plain text (#5 2026-07-18 comment)
+  eagleName: string | null;
+  description: string | null;
+  source: string | null;
+  shotW: number | null;
+  shotH: number | null;
+  trashedAt: string | null;
+}
+interface MediaTable {
+  id: Generated<number>;
+  postId: string;
+  seq: number;
+  url: string | null;
+  alt: string | null;
+  width: number | null;
+  height: number | null;
+  file: string;
+}
+interface TagsTable {
+  id: Generated<number>;
+  name: string;
+  kind: string | null; // free text on purpose — #157 has the fixed 3-value enum under redesign
+  reading: string | null; // #164 backfills this; empty at every row until then
+}
+interface TagParentsTable {
+  tagId: number;
+  parentTagId: number;
+  isDisplay: number;
+}
+interface TagAliasesTable {
+  id: Generated<number>;
+  alias: string;
+  tagId: number;
+}
+interface PostTagsTable {
+  postId: string;
+  tagId: number;
+}
+interface FoldersTable {
+  id: string;
+  name: string;
+  kind: string;
+  created: number | null;
+  tree: string | null; // JSON saved-search tree, dynamic folders only
+}
+interface FolderItemsTable {
+  folderId: string;
+  postId: string;
+}
+interface ClipItemsTable {
+  postId: string;
+}
+interface PosterWorkspaceItemsTable {
+  posterKey: string;
+}
+interface PosterFoldersTable {
+  id: string;
+  name: string;
+}
+interface PosterFolderItemsTable {
+  folderId: string;
+  posterKey: string;
+}
+interface PosterTagsTable {
+  posterKey: string;
+  tagId: number;
+}
+interface ManualGroupsTable {
+  id: Generated<number>;
+}
+interface ManualGroupItemsTable {
+  groupId: number;
+  postId: string;
+  seq: number;
+}
+interface UngroupedKeysTable {
+  postKey: string;
+}
+interface TabsTable {
+  id: string;
+  windowId: string;
+  position: number;
+  pinned: number;
+  title: string | null;
+  state: string; // JSON — nav history + query tree, opaque replay state (not queried by column)
+}
+interface TabWindowsTable {
+  windowId: string;
+  activeTabId: string | null;
+}
+// postsFts is FTS5 (posts_fts): a virtual table, not a normal one, so Kysely's
+// typed insert/select work but its DDL helpers do not apply — it is created as
+// raw SQL in lib-db-schema.mts. postId is UNINDEXED (match results carry it
+// back to `posts`; MATCH never searches it). rank is a query-time bm25()
+// expression, not a stored column, so it has no field here.
+interface PostsFtsTable {
+  postId: string;
+  text: string | null;
+  title: string | null;
+  displayName: string | null;
+  screenName: string | null;
+  eagleName: string | null;
+  description: string | null;
+  hashtags: string | null; // space-joined tokens, NOT the posts.hashtags JSON
+  tagsText: string | null; // resolved tag names, space-joined (post_tags has no text to index directly)
+  reading: string | null; // #164 backfills this; empty at every row until then
+}
+
+interface Schema {
+  posts: PostsTable;
+  media: MediaTable;
+  tags: TagsTable;
+  tag_parents: TagParentsTable;
+  tag_aliases: TagAliasesTable;
+  post_tags: PostTagsTable;
+  folders: FoldersTable;
+  folder_items: FolderItemsTable;
+  clip_items: ClipItemsTable;
+  poster_workspace_items: PosterWorkspaceItemsTable;
+  poster_folders: PosterFoldersTable;
+  poster_folder_items: PosterFolderItemsTable;
+  poster_tags: PosterTagsTable;
+  manual_groups: ManualGroupsTable;
+  manual_group_items: ManualGroupItemsTable;
+  ungrouped_keys: UngroupedKeysTable;
+  tabs: TabsTable;
+  tab_windows: TabWindowsTable;
+  posts_fts: PostsFtsTable;
+}
 
 export { openDatabase, runMigrations, DatabaseCorruptError, MIGRATIONS };
 export type { Migration, MigrationDb, Schema };

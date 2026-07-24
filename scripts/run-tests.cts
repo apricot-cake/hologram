@@ -29,6 +29,8 @@ const TESTS = [
   'test-typecheck',
   'test-index',
   'test-db-unit',
+  'test-db-schema',
+  'test-post-record',
   'test-imgsize',
   'test-search-unit',
   'test-query-unit',
