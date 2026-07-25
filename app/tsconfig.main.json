@@ -55,5 +55,25 @@
     "skipLibCheck": true,
     "types": ["node"]
   },
-  "files": ["main.mts", "preload.cts", "backup-guard.mts", "ipc-backup.mts", "ipc-config.mts", "ipc-organize.mts", "ipc-posts.mts", "ipc-transfer.mts", "ipc-trash.mts", "ipc-window.mts", "lib-archive.mts", "lib-db.mts", "lib-db-import.mts", "lib-db-query.mts", "lib-db-schema.mts", "lib-imgsize.mts", "lib-index.mts", "lib-json.mts", "lib-migrate.mts"]
+  "files": [
+    "main.mts",
+    "preload.cts",
+    "backup-guard.mts",
+    "ipc-backup.mts",
+    "ipc-config.mts",
+    "ipc-organize.mts",
+    "ipc-posts.mts",
+    "ipc-transfer.mts",
+    "ipc-trash.mts",
+    "ipc-window.mts",
+    "lib-archive.mts",
+    "lib-db.mts",
+    "lib-db-import.mts",
+    "lib-db-query.mts",
+    "lib-db-schema.mts",
+    "lib-imgsize.mts",
+    "lib-index.mts",
+    "lib-json.mts",
+    "lib-migrate.mts"
+  ]
 }

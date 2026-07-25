@@ -120,6 +120,16 @@ function mkdb(name = 'test.db') {
   ok(typeof db.selectFrom === 'function', 'returns a Kysely instance');
   passed += 2;
 
+  // St5 persists the source-of-truth switch in the database itself. The
+  // marker must be available on a fresh database before IPC writers rely on
+  // it, and the edit-only fields must survive the direct DB write path.
+  sqlite.prepare("INSERT INTO store_state (key, value) VALUES ('truthSource', 'db')").run();
+  assert.strictEqual(sqlite.prepare("SELECT value FROM store_state WHERE key = 'truthSource'").get().value, 'db', 'store-state marker persists');
+  sqlite.prepare("INSERT INTO posts (captureId, capturedAt, updatedAt, userKind, tagReviewed) VALUES ('st5-post', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z', 'media', 1)").run();
+  const st5Post = sqlite.prepare("SELECT userKind, tagReviewed FROM posts WHERE captureId = 'st5-post'").get();
+  assert.deepStrictEqual(st5Post, { userKind: 'media', tagReviewed: 1 }, 'tagging-only fields are representable in the DB');
+  passed += 2;
+
   // The St1 acceptance criterion, as a test: FTS5 compiled in, trigram tokenizer
   // available, and a Japanese substring that starts mid-token still matches.
   sqlite.exec("CREATE VIRTUAL TABLE fts USING fts5(body, tokenize='trigram')");

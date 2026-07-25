@@ -8,11 +8,9 @@
 // stay in main.js and arrive via ctx. See main.js for the org-JSON degraded-guard
 // (readOrgJsonSync/writeOrgJsonSync refuse to clobber a present-but-corrupt file).
 import { ipcMain } from 'electron';
-import fs from 'node:fs';
-import path from 'node:path';
 
 function register(ctx) {
-  const { getSaveFolder, readOrgJsonSync, writeOrgJsonSync } = ctx;
+  const { getSaveFolder, getDbWriter } = ctx;
 
   // Tag "vocabulary book" (用語帳): a tag's 種別 (kind) is an attribute of the TAG,
   // not of any post — so classifying a few hundred distinct tags needs zero post
@@ -21,22 +19,14 @@ function register(ctx) {
   // renamable work⊃character pair powers the (later) copyright/character sections;
   // `labels` is reserved/pass-through for that phase.
   ipcMain.handle('get-tag-types', () => {
-    const folder = getSaveFolder();
-    if (!folder) return { types: {}, labels: null };
-    const { value: j } = readOrgJsonSync(path.join(folder, 'tag-types.json'));
-    const types = j && j.types && typeof j.types === 'object' ? j.types : {};
-    const labels = j && j.labels && typeof j.labels === 'object' ? j.labels : null;
-    return { types, labels };
+    return getSaveFolder() ? getDbWriter().getTagTypes() : { types: {}, labels: null };
   });
 
   ipcMain.handle('set-tag-types', (_e, types, labels) => {
     const folder = getSaveFolder();
     if (!folder || !types || typeof types !== 'object') return { ok: false };
     try {
-      fs.mkdirSync(folder, { recursive: true });
-      const out = { types };
-      if (labels && typeof labels === 'object') (out as any).labels = labels;
-      writeOrgJsonSync(path.join(folder, 'tag-types.json'), out);
+      getDbWriter().setTagTypes(types, labels);
       return { ok: true };
     } catch {
       return { ok: false };
@@ -47,16 +37,13 @@ function register(ctx) {
   // should stay individual tiles (e.g. several pics from one post that aren't a
   // multi-page work). Lives as <saveFolder>/ungrouped.json: { keys: [...] }.
   ipcMain.handle('get-ungrouped', () => {
-    const folder = getSaveFolder();
-    if (!folder) return { keys: [] };
-    const { value: j } = readOrgJsonSync(path.join(folder, 'ungrouped.json'));
-    return { keys: j && Array.isArray(j.keys) ? j.keys : [] };
+    return getSaveFolder() ? getDbWriter().getUngrouped() : { keys: [] };
   });
   ipcMain.handle('set-ungrouped', (_e, keys) => {
     const folder = getSaveFolder();
     if (!folder) return { ok: false };
     try {
-      writeOrgJsonSync(path.join(folder, 'ungrouped.json'), { keys: Array.isArray(keys) ? keys.map(String) : [] });
+      getDbWriter().setUngrouped(keys);
       return { ok: true };
     } catch {
       return { ok: false };
@@ -69,16 +56,13 @@ function register(ctx) {
   // Named poster folders (poster view). { folders: [{ id, name, items:[posterKey] }] }
   // — a plain { folders } shape, so ZIP import reuses mergePosterFolders.
   ipcMain.handle('get-poster-folders', () => {
-    const folder = getSaveFolder();
-    if (!folder) return { folders: [] };
-    const { value: j } = readOrgJsonSync(path.join(folder, 'poster-folders.json'));
-    return { folders: j && Array.isArray(j.folders) ? j.folders : [] };
+    return getSaveFolder() ? getDbWriter().getPosterFolders() : { folders: [] };
   });
   ipcMain.handle('set-poster-folders', (_e, data) => {
     const folder = getSaveFolder();
     if (!folder || !data || !Array.isArray(data.folders)) return { ok: false };
     try {
-      writeOrgJsonSync(path.join(folder, 'poster-folders.json'), { folders: data.folders });
+      getDbWriter().setPosterFolders(data);
       return { ok: true };
     } catch {
       return { ok: false };
@@ -89,16 +73,13 @@ function register(ctx) {
   // poster-level peer of poster-folders. Shares the post tag
   // vocabulary (tag-types) but is keyed by poster, NOT stored on posts.
   ipcMain.handle('get-poster-tags', () => {
-    const folder = getSaveFolder();
-    if (!folder) return { tags: {} };
-    const { value: j } = readOrgJsonSync(path.join(folder, 'poster-tags.json'));
-    return { tags: j && typeof j.tags === 'object' && j.tags ? j.tags : {} };
+    return getSaveFolder() ? getDbWriter().getPosterTags() : { tags: {} };
   });
   ipcMain.handle('set-poster-tags', (_e, data) => {
     const folder = getSaveFolder();
     if (!folder || !data || typeof data.tags !== 'object' || !data.tags) return { ok: false };
     try {
-      writeOrgJsonSync(path.join(folder, 'poster-tags.json'), { tags: data.tags });
+      getDbWriter().setPosterTags(data);
       return { ok: true };
     } catch {
       return { ok: false };
@@ -109,17 +90,13 @@ function register(ctx) {
   // collapse into one tile (for images not auto-grouped by post URL). Lives as
   // <saveFolder>/manual-groups.json: { groups: [ [captureId, …], … ] }.
   ipcMain.handle('get-manual-groups', () => {
-    const folder = getSaveFolder();
-    if (!folder) return { groups: [] };
-    const { value: j } = readOrgJsonSync(path.join(folder, 'manual-groups.json'));
-    return { groups: j && Array.isArray(j.groups) ? j.groups : [] };
+    return getSaveFolder() ? getDbWriter().getManualGroups() : { groups: [] };
   });
   ipcMain.handle('set-manual-groups', (_e, groups) => {
     const folder = getSaveFolder();
     if (!folder) return { ok: false };
     try {
-      const clean = Array.isArray(groups) ? groups.filter((g) => Array.isArray(g) && g.length > 1).map((g) => g.map(String)) : [];
-      writeOrgJsonSync(path.join(folder, 'manual-groups.json'), { groups: clean });
+      getDbWriter().setManualGroups(groups);
       return { ok: true };
     } catch {
       return { ok: false };
@@ -129,74 +106,16 @@ function register(ctx) {
   // `folders` — the unified container of named folders (formerly "collections").
   // Each folder is { id, name, kind:'static'|'dynamic', created, items:[captureId] };
   // a dynamic folder additionally carries a saved search (`tree`), and holds no items.
-  // <saveFolder>/folders.json:
-  //   { folders:[…] }
   // `activeId` is legacy (the old 🔖 one-click target); the renderer no longer
   // writes it, so it settles to null.
-  function normFolders(arr) {
-    return Array.isArray(arr)
-      ? arr
-          .filter((c) => c && typeof c.id === 'string' && typeof c.name === 'string')
-          .map((c) => {
-            const out = {
-              id: c.id,
-              name: c.name,
-              kind: c.kind === 'dynamic' ? 'dynamic' : 'static',
-              created: typeof c.created === 'number' ? c.created : null,
-              items: Array.isArray(c.items) ? [...new Set(c.items.map(String))] : [],
-            };
-            if (c.kind === 'dynamic' && c.tree && typeof c.tree === 'object') (out as any).tree = c.tree; // the saved search
-            return out;
-          })
-      : [];
-  }
   ipcMain.handle('get-folders', () => {
-    const folder = getSaveFolder();
     const empty = { folders: [], activeId: null };
-    if (!folder) return empty;
-    const foldersPath = path.join(folder, 'folders.json');
-    // One-time pre-release migration: the store file went from collections.json →
-    // folders.json AND its retired top-level key `collections` → `folders` (#42).
-    // Two old shapes exist in the wild (dev): collections.json still on disk, and a
-    // folders.json that was renamed but kept the `collections` key. Either way rewrite
-    // once under folders.json with `folders` — a plain rename would leave `collections`
-    // inside, which the reader below no longer sees → the store loads empty and the
-    // next save wipes it. Scaffolding — remove before release (no third-party data).
-    try {
-      const rekey = (o: Record<string, unknown>) => {
-        const { collections, ...rest } = o;
-        return { ...rest, folders: collections || [] }; // fields normalized on the read below
-      };
-      if (!fs.existsSync(foldersPath)) {
-        const { value: legacy } = readOrgJsonSync(path.join(folder, 'collections.json'));
-        if (legacy && typeof legacy === 'object') {
-          writeOrgJsonSync(foldersPath, rekey(legacy as Record<string, unknown>));
-          fs.unlinkSync(path.join(folder, 'collections.json'));
-        }
-      } else {
-        const { value: cur } = readOrgJsonSync(foldersPath);
-        if (cur && typeof cur === 'object' && 'collections' in cur && !('folders' in cur)) writeOrgJsonSync(foldersPath, rekey(cur as Record<string, unknown>));
-      }
-    } catch {
-      /* best-effort */
-    }
-    // A present-but-corrupt folders.json returns empty (the UI still loads) but stays
-    // flagged degraded inside readOrgJsonSync, so set-folders won't purge it.
-    const { value: j } = readOrgJsonSync(foldersPath);
-    if (!j) return empty;
-    const folders = normFolders(j.folders);
-    const ids = new Set(folders.map((c) => c.id));
-    const activeId = typeof j.activeId === 'string' && ids.has(j.activeId) ? j.activeId : null;
-    return { folders, activeId };
+    return getSaveFolder() ? getDbWriter().getFolders() : empty;
   });
   ipcMain.handle('set-folders', (_e, data) => {
-    const folder = getSaveFolder();
-    if (!folder) return { ok: false };
+    if (!getSaveFolder()) return { ok: false };
     try {
-      const folders = normFolders(data && data.folders);
-      const ids = new Set(folders.map((c) => c.id));
-      const activeId = data && typeof data.activeId === 'string' && ids.has(data.activeId) ? data.activeId : null;
-      writeOrgJsonSync(path.join(folder, 'folders.json'), { folders, activeId });
+      getDbWriter().setFolders(data);
       return { ok: true };
     } catch {
       return { ok: false };

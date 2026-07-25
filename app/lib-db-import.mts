@@ -433,7 +433,12 @@ export function createDbImporter(opts: { internalFiles?: Set<string>; postIndex?
         }
       }
 
-      importOrgLayer(folder, sqlite, resolveTagId, validIds, failures);
+      // Once St5 has flipped the truth source, sidecars remain only as the
+      // native-host intake format until #299. Re-reading their organization
+      // JSON here would overwrite DB edits on every launch, so only post
+      // sidecars continue through the incremental compatibility path.
+      const truthSource = sqlite.prepare("SELECT value FROM store_state WHERE key = 'truthSource'").get() as { value: string } | undefined;
+      if (truthSource?.value !== 'db') importOrgLayer(folder, sqlite, resolveTagId, validIds, failures);
 
       sqlite.exec('COMMIT');
       const dbPostCount = (sqlite.prepare('SELECT COUNT(*) AS n FROM posts').get() as { n: number }).n;
