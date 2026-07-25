@@ -51,7 +51,7 @@ async function pickPixiv(cells) {
   try {
     const r = await j('https://www.pixiv.net/ranking.php?mode=daily&format=json&p=1', { headers: { Referer: 'https://www.pixiv.net/' } });
     const items = Array.isArray(r.contents) ? r.contents : [];
-    const ok = (c) => c && c.illust_id && String(c.illust_type) !== '2';
+    const ok = (c) => c && c.illust_id && String(c.illust_type) !== '2' && !c.is_masked && !String(c.url || '').includes('limit_unviewable');
     const single = items.find((c) => ok(c) && Number(c.illust_page_count) === 1);
     const multi = items.find((c) => ok(c) && Number(c.illust_page_count) > 1);
     const url = (c) => `https://www.pixiv.net/artworks/${c.illust_id}`;
@@ -234,10 +234,12 @@ async function waitForNewSidecar(dir, before, timeoutMs = 25000) {
   console.log(`保存先: ${dir}`);
 
   // Optional platform filter: node e2e-capture-test.cts bluesky misskey
+  // Headless isolation: node e2e-capture-test.cts bluesky --headless
   // Auth: node e2e-capture-test.cts x --user-data-dir="C:\Users\…\Chrome\User Data"
   //       --profile-dir=Default  (optional, defaults to "Default")
   //       Chrome must be closed before running — Chromium needs exclusive profile lock.
   const rawArgs = process.argv.slice(2);
+  const headless = rawArgs.includes('--headless');
   const only = rawArgs.filter((a) => !a.startsWith('--')).map((s) => s.toLowerCase());
   const argVal = (name) => {
     const a = rawArgs.find((a) => a.startsWith(`--${name}=`));
@@ -274,7 +276,7 @@ async function waitForNewSidecar(dir, before, timeoutMs = 25000) {
   });
   const session = await launchExtensionBrowser({
     extensionDir: EXT_DIR,
-    headless: false,
+    headless,
     userDataDir,
     viewport: null,
     args: ['--window-size=1360,960', '--hide-crash-restore-bubble', '--lang=ja', ...(userDataDir ? [`--profile-directory=${profileDirArg}`] : [])],
@@ -305,7 +307,7 @@ async function waitForNewSidecar(dir, before, timeoutMs = 25000) {
         // NOT pop the drop zone and must NOT save a record.
         if (cell.kind === 'drag-none') {
           const zoneShown = await page.evaluate(
-            async (sel, notWithin) => {
+            async ({ sel, notWithin }) => {
               const img = [...document.querySelectorAll(sel)].find((el) => !notWithin || !el.closest(notWithin));
               if (!img) return 'no-img';
               img.scrollIntoView({ block: 'center' });
@@ -314,8 +316,7 @@ async function waitForNewSidecar(dir, before, timeoutMs = 25000) {
               const z = document.getElementById('__hologramDropZone');
               return !!(z && z.style.display !== 'none');
             },
-            cell.dragSel,
-            cell.notWithin,
+            { sel: cell.dragSel, notWithin: cell.notWithin },
           );
           if (zoneShown === 'no-img') throw new Error('avatar img not found');
           await sleep(2500);
@@ -422,6 +423,18 @@ async function waitForNewSidecar(dir, before, timeoutMs = 25000) {
               }, id)
             ).asElement();
             if (!h) throw new Error('main note element not found for id ' + id);
+          } else if (cell.platform === 'mastodon') {
+            const id = (cell.url.match(/\/(\d+)\/?$/) || [])[1];
+            h = (
+              await page.evaluateHandle((statusId) => {
+                for (const link of document.querySelectorAll(`a[href*="/${statusId}"]`)) {
+                  const root = link.closest('.detailed-status, .status');
+                  if (root) return root;
+                }
+                return null;
+              }, id)
+            ).asElement();
+            if (!h) throw new Error('main status element not found for id ' + id);
           } else {
             h = await page.$(cell.clickSel);
             if (!h) throw new Error(`click target not found: ${cell.clickSel}`);
