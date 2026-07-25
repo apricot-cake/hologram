@@ -10,6 +10,7 @@ import { createPostIndex, computeDelta } from './lib-index.mts';
 import { openDatabase, DatabaseCorruptError } from './lib-db.mts';
 import { createDbImporter } from './lib-db-import.mts';
 import { postsFromDb, postsByIds } from './lib-db-query.mts';
+import { createDbWriter } from './lib-db-write.mts';
 import { pruneDecision, nextBaseline } from './backup-guard.mts';
 import { parseJsonLoose } from './lib-json.mts';
 // Save-folder relocation engine (copy+catch-up → flip → verified cleanup → sweep).
@@ -291,6 +292,42 @@ function ensureDb() {
   return dbHandle;
 }
 
+function getDbWriter() {
+  return createDbWriter(ensureDb().sqlite);
+}
+
+// Preserve the legacy metadata before marking the database authoritative. The
+// media files stay in the library; this snapshot is specifically the complete
+// sidecar and organization-JSON source that St5 stops mutating. Keep it next
+// to the DB, not inside the library, so it cannot be mistaken for a new post.
+async function backupLegacyMetadata(folder: string) {
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const destination = path.join(configDir(), 'db-migration-backups', stamp);
+  await fs.promises.mkdir(destination, { recursive: true });
+  for (const name of await fs.promises.readdir(folder)) {
+    if (!name.toLowerCase().endsWith('.json')) continue;
+    await fs.promises.copyFile(path.join(folder, name), path.join(destination, name));
+  }
+  const trash = path.join(folder, TRASH_SUBDIR);
+  try {
+    const trashDestination = path.join(destination, TRASH_SUBDIR);
+    await fs.promises.mkdir(trashDestination, { recursive: true });
+    for (const name of await fs.promises.readdir(trash)) {
+      if (name.toLowerCase().endsWith('.json')) await fs.promises.copyFile(path.join(trash, name), path.join(trashDestination, name));
+    }
+  } catch {
+    // A library without a trash directory is the ordinary case.
+  }
+  return destination;
+}
+
+async function ensureDbTruthSource(folder: string, handle: { db: any; sqlite: any }) {
+  if (getDbWriter().stateGet('truthSource') === 'db') return;
+  await backupLegacyMetadata(folder);
+  await dbImporter.importAll(folder, handle);
+  getDbWriter().stateSet('truthSource', 'db');
+}
+
 let snapshotTimer: any = null;
 function scheduleSnapshot(folder) {
   // Debounced + best-effort. .index.json is in INTERNAL_FILES, so this write does
@@ -306,6 +343,7 @@ async function listPosts() {
   const folder = getSaveFolder();
   if (!folder) return { saveFolder: null, posts: [] };
   const handle = ensureDb();
+  await ensureDbTruthSource(folder, handle);
   const report = await dbImporter.importAll(folder, handle);
   // addedIds (not postsWritten, which counts every reconciled post — see
   // lib-db-import.mts) reflects what actually changed this call.
@@ -340,6 +378,7 @@ async function listPostsDelta(haveBaseline, changedNames) {
     return { saveFolder: null, full: true, posts: [] };
   }
   const handle = ensureDb();
+  await ensureDbTruthSource(folder, handle);
 
   // Full (re)sync or hint-less refresh: scan the whole folder (the reliable path).
   if (!haveBaseline || _deltaFolder !== folder || changedNames == null) {
@@ -1082,6 +1121,7 @@ function installNavigationGuards() {
 function registerExtractedIpc() {
   const ctx = {
     getSaveFolder,
+    getDbWriter,
     readOrgJsonSync,
     writeOrgJsonSync,
     listPosts,
