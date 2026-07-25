@@ -7,20 +7,26 @@
 //     are refused BEFORE any fetch is issued,
 //   - a redirect from a public host to a private one is refused at the next hop
 //     (manual redirect re-validation), and that private hop is never fetched,
+//   - DNS resolution refuses private-only and mixed public/private answers while
+//     returning the exact verified public A/AAAA set to the connector,
 //   - a body exceeding the size cap (no content-length) is aborted mid-stream,
 //   - legitimate public https images still download.
 //
 //   node scripts/test-bridge-ssrf.cts
 
 const assert = require('node:assert');
+const { Agent } = require('undici');
 const { fetchStillImage } = require('../native-host/bridge.cts');
+const { createGuardedLookup } = require('../native-host/media-download.cts');
 
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64');
 
+const realFetch = global.fetch;
 const fetched: any[] = []; // every URL actually passed to fetch
-global.fetch = async (url) => {
+global.fetch = async (url, options) => {
   const u = String(url);
   fetched.push(u);
+  assert.ok(options?.dispatcher, 'public fetches must use the DNS-guarded dispatcher');
   if (u === 'https://evil.test/redir') {
     return new Response('', { status: 302, headers: { location: 'https://127.0.0.1/secret.png' } });
   }
@@ -48,6 +54,18 @@ global.fetch = async (url) => {
   }
   return new Response('nope', { status: 404 });
 };
+
+function runLookup(lookup, hostname = 'cdn.test') {
+  return new Promise((resolve, reject) => {
+    lookup(hostname, { family: 0, hints: 0 }, (err, addresses) => {
+      if (err) {
+        reject(err);
+        return;
+      }
+      resolve(addresses);
+    });
+  });
+}
 
 (async () => {
   // 1. Direct IP-literal private/reserved targets are refused before any fetch.
@@ -100,7 +118,60 @@ global.fetch = async (url) => {
   const okMapped = await fetchStillImage('https://[::ffff:808:808]/ok.png');
   assert.ok(okMapped && okMapped.ext === 'png' && okMapped.buf.length === PNG.length, 'public IPv4-mapped IPv6 literal should download');
 
-  console.log('PASS test-bridge-ssrf: private/redirect/over-cap refused, public ok');
+  // 6. The guarded lookup asks for every A/AAAA record and returns that exact
+  //    verified set to net.connect, which pins Happy Eyeballs to checked IPs.
+  const publicRecords = [
+    { address: '8.8.8.8', family: 4 },
+    { address: '2606:4700:4700::1111', family: 6 },
+  ];
+  let lookupOptions: { all?: boolean } = {};
+  const publicLookup = createGuardedLookup((_hostname, options, callback) => {
+    lookupOptions = options;
+    callback(null, publicRecords);
+  });
+  assert.deepStrictEqual(await runLookup(publicLookup), publicRecords, 'verified A/AAAA records must be returned unchanged');
+  assert.strictEqual(lookupOptions.all, true, 'underlying DNS lookup must request every address');
+
+  // 7. One private result poisons the whole set (strict any-private policy).
+  for (const records of [
+    [{ address: '127.0.0.1', family: 4 }],
+    [
+      { address: '8.8.8.8', family: 4 },
+      { address: '::1', family: 6 },
+    ],
+  ]) {
+    const guarded = createGuardedLookup((_hostname, _options, callback) => callback(null, records));
+    await assert.rejects(runLookup(guarded), (err) => err?.code === 'EHOSTUNREACH', 'private DNS answers must be refused');
+  }
+
+  // 8. Resolver failures are passed through unchanged; fetch still handles them
+  //    via its existing best-effort null result.
+  const dnsError = Object.assign(new Error('lookup failed'), { code: 'ENOTFOUND' });
+  const failingLookup = createGuardedLookup((_hostname, _options, callback) => callback(dnsError));
+  await assert.rejects(runLookup(failingLookup), (err) => err === dnsError, 'DNS errors must preserve their existing identity');
+
+  // 9. Node's real fetch invokes the guarded lookup through an Undici Agent.
+  //    The stub resolves a public-looking hostname to loopback, so the request
+  //    must fail before any socket or external network access is attempted.
+  let dispatcherLookupCalled = false;
+  const blockedDispatcher = new Agent({
+    connect: {
+      autoSelectFamily: true,
+      lookup: createGuardedLookup((_hostname, _options, callback) => {
+        dispatcherLookupCalled = true;
+        callback(null, [{ address: '127.0.0.1', family: 4 }]);
+      }),
+    },
+  });
+  try {
+    const request = { redirect: 'manual' as const, dispatcher: blockedDispatcher };
+    await assert.rejects(realFetch('https://public-name.test/image.png', request), 'real fetch must honor the guarded dispatcher');
+    assert.strictEqual(dispatcherLookupCalled, true, 'real fetch must invoke the guarded lookup');
+  } finally {
+    await blockedDispatcher.close();
+  }
+
+  console.log('PASS test-bridge-ssrf: literal/DNS/redirect/over-cap refused, public A/AAAA pinned');
 })().catch((e) => {
   console.error('FAIL test-bridge-ssrf:', e && e.message ? e.message : e);
   process.exit(1);

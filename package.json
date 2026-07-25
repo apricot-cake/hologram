@@ -3,6 +3,9 @@
   "private": true,
   "version": "0.0.0",
   "description": "dev tooling deps (e2e capture tests)",
+  "dependencies": {
+    "undici": "^7.28.0"
+  },
   "devDependencies": {
     "@biomejs/biome": "1.9.4",
     "jsdom": "^29.1.1",
