@@ -71,6 +71,22 @@ const X_HTML = `<!doctype html><html><body>
       <a href="/frank/status/666"><time datetime="2026-07-01T00:00:00Z">6h</time></a>
       <div data-testid="tweetPhoto" data-rect-top="2400" data-rect-size="60" id="p6a"><img src="https://pbs.twimg.com/media/GGG.jpg"></div>
     </article>
+    <!-- Media-tab tile (/<user>/media grid): no article/testid wrapper at
+         all — a bare <li> several ancestors above its own /status/ anchor,
+         which itself wraps the <img> directly (#349). -->
+    <li id="p7">
+      <div><div><div>
+        <a href="/gina/status/777/photo/1"><img data-rect-top="2800" src="https://pbs.twimg.com/media/HHH.jpg"></a>
+      </div></div></div>
+    </li>
+    <!-- A video tile of the SAME post (777): its thumbnail lives on a
+         different CDN path, so the current post-image judgment must keep it
+         silent even once the post reads as saved via its photo tile above. -->
+    <li id="p8">
+      <div><div><div>
+        <a href="/gina/status/777/video/2"><img data-rect-top="3200" src="https://pbs.twimg.com/amplify_video_thumb/III.jpg"></a>
+      </div></div></div>
+    </li>
   </div>
 </body></html>`;
 
@@ -189,7 +205,10 @@ const settle = () => new Promise((r) => setTimeout(r, 400)); // past the 300ms q
 // over the picture. The harness mirrors that: aim at the media box's center.
 const boxOf = (id) => {
   const el = window.document.getElementById(id);
-  return el.matches('[data-testid="tweetPhoto"]') ? el : el.querySelector('[data-testid="tweetPhoto"]');
+  if (el.matches('[data-testid="tweetPhoto"]')) return el;
+  const testIdBox = el.querySelector('[data-testid="tweetPhoto"]');
+  if (testIdBox) return testIdBox;
+  return el.querySelector('img'); // media-tab li: the <img> itself is the box
 };
 const controlOf = (id) => controls().filter((el) => el.parentElement === boxOf(id));
 const pointerMove = (target, x, y) => {
@@ -208,7 +227,7 @@ const click = (el) => el.dispatchEvent(new window.MouseEvent('click', { bubbles:
 
 (async () => {
   await residentReady;
-  check('every post is observed after the initial scan', observed.size === 6);
+  check('every post is observed after the initial scan', observed.size === 8);
 
   // --- only the visible posts are asked about, and in one batch ---
   savedAnswer = { 'https://x.com/alice/status/111': '1780000000000-aa' };
@@ -377,6 +396,36 @@ const click = (el) => el.dispatchEvent(new window.MouseEvent('click', { bubbles:
   hoverAway();
   hover('p1');
   check('the mark still works with the button off', marks().length === 1);
+  hoverAway();
+  setSetting('hoverSaveButton', true);
+
+  // --- media-tab grid tiles (#349): a bare <li>, no article/testid wrapper.
+  //     For an <img> box the control mounts on its immediate parent (the
+  //     <a> that wraps it here), same as every other <img>-boxed platform. ---
+  intersect(['p7', 'p8'], true);
+  await settle();
+  hover('p7');
+  await settle();
+  check('an unsaved media-tab image tile offers to save it', saveButtons().length === 1 && saveButtons()[0].parentElement === boxOf('p7').parentElement);
+  hoverAway();
+  hover('p8');
+  await settle();
+  const p8Controls = controls().filter((el) => el.parentElement === boxOf('p8') || el.parentElement === boxOf('p8').parentElement);
+  check('a video tile (different CDN path) gets no control at all', p8Controls.length === 0);
+  hoverAway();
+  hover('p7');
+  await settle();
+  click(saveButtons()[0]);
+  const gridSave = sent[sent.length - 1];
+  check('pressing a grid tile’s save reused the drag save path', gridSave.type === 'imageDragged' && gridSave.platform === 'x');
+  check('the photo/N suffix was normalized off the permalink', gridSave.postUrl === 'https://x.com/gina/status/777');
+  check('the grid tile now reads as saved', marks().length === 1 && marks()[0].parentElement === boxOf('p7').parentElement);
+  hoverAway();
+  // p8 is the SAME post's video tile (777) — now that the post is saved via
+  // its photo tile, p8 must still stay silent rather than inherit the mark.
+  hover('p8');
+  const p8ControlsAfterSave = controls().filter((el) => el.parentElement === boxOf('p8') || el.parentElement === boxOf('p8').parentElement);
+  check('a saved sibling image does not paint a mark onto the video tile', p8ControlsAfterSave.length === 0);
   hoverAway();
 
   console.log(fail === 0 ? `PASS test-overlay-unit: ${pass} checks` : `FAIL test-overlay-unit: ${fail} of ${pass + fail} checks failed`);
