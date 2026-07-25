@@ -77,6 +77,38 @@ function manifestPath(): string {
   return path.join(configDir(), `${HOST_NAME}.json`);
 }
 
+// A linked Git worktree has a .git FILE (pointing into the main repository),
+// whereas the main working tree has a .git DIRECTORY. Electron lives several
+// levels below that marker, so walk upward from the runtime rather than relying
+// on a worktree naming convention.
+function isLinkedWorktreeRuntime(exe: string): boolean {
+  let dir = path.dirname(path.resolve(exe));
+  while (true) {
+    try {
+      if (fs.statSync(path.join(dir, '.git')).isFile()) return true;
+    } catch {
+      /* keep walking */
+    }
+    const parent = path.dirname(dir);
+    if (parent === dir) return false;
+    dir = parent;
+  }
+}
+
+interface PreserveSharedRegistrationArgs {
+  exe: string;
+  runAsNode: boolean;
+  configDirOverride?: string;
+}
+
+// A development worktree is intentionally disposable. Persisting its Electron
+// path into the user's real launcher makes every browser save fail as soon as
+// that worktree is removed. An explicit config override is an isolated test
+// environment, so registration there remains allowed.
+function shouldPreserveSharedRegistration({ exe, runAsNode, configDirOverride = process.env.HOLOGRAM_CONFIG_DIR }: PreserveSharedRegistrationArgs): boolean {
+  return runAsNode && !configDirOverride && isLinkedWorktreeRuntime(exe);
+}
+
 // biome-ignore lint/suspicious/noControlCharactersInRegex: \x00-\x7F is the deliberate full-ASCII range check
 const isAscii = (s: string): boolean => /^[\x00-\x7F]*$/.test(s);
 
@@ -214,6 +246,15 @@ interface InstallOptions {
 }
 
 function install({ exe = process.execPath, runAsNode = false, extensionId }: InstallOptions = {}) {
+  if (shouldPreserveSharedRegistration({ exe, runAsNode })) {
+    const launcher = launcherPath();
+    const manifest = manifestPath();
+    if (!fs.existsSync(launcher) || !fs.existsSync(manifest)) {
+      throw new Error('Refusing to register the real native messaging host with a disposable Git worktree runtime. Run "node native-host/install.cts" from the main working tree first.');
+    }
+    return { launcher, manifest, configDir: configDir(), extensionId: readExtensionId(), preserved: true };
+  }
+
   const extId = sanitizeExtensionId(extensionId);
   if (extId) persistExtensionId(extId); // explicit id (CLI/app) → make it durable
   const id = extId || readExtensionId();
@@ -296,7 +337,19 @@ function deployedBridgePath(): string {
   return path.join(configDir(), DEPLOYED_BRIDGE);
 }
 
-module.exports = { install, uninstall, updateAllowedOrigin, readExtensionId, HOST_NAME, BRIDGE_PATH, deployedBridgePath, launcherPath, manifestPath };
+module.exports = {
+  install,
+  uninstall,
+  updateAllowedOrigin,
+  readExtensionId,
+  HOST_NAME,
+  BRIDGE_PATH,
+  deployedBridgePath,
+  launcherPath,
+  manifestPath,
+  isLinkedWorktreeRuntime,
+  shouldPreserveSharedRegistration,
+};
 
 if (require.main === module) {
   if (process.argv[2] === 'uninstall') {
