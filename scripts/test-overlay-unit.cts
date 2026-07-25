@@ -240,8 +240,10 @@ const click = (el) => el.dispatchEvent(new window.MouseEvent('click', { bubbles:
     sent[0].urls.every((u) => u.startsWith('https://x.com/')),
   );
 
-  // --- the default is hover: nothing is added to the page until asked ---
-  check('no mark on a saved post before the pointer arrives', controls().length === 0);
+  // --- the default is always: the saved answer is on screen unasked ---
+  check('a saved post is marked with no pointer anywhere near it', marks().length === 1 && marks()[0].parentElement === boxOf('p1'));
+  setSetting('savedBadgeMode', 'hover');
+  check('switching to hover clears the resting mark', controls().length === 0);
   hover('p1');
   check('hovering the saved post shows its mark', marks().length === 1);
   check('the mark is positioned inside the saved post’s photo', marks()[0].parentElement === boxOf('p1') && marks()[0].style.left === '6px' && marks()[0].style.top === '6px');

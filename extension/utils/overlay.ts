@@ -56,10 +56,10 @@ export async function startOverlay(): Promise<void> {
   type Phase = 'idle' | 'saving' | 'flash' | 'error';
   // What the corner is drawing. null = nothing there.
   type Face = 'mark' | 'save' | 'busy' | 'failed';
-  // How the "saved" mark is shown (options page). Default `hover`: a mark on
-  // every saved post at all times is a permanent addition to someone else's
-  // page, and every route to a save passes over the picture anyway, so the
-  // answer is there at the moment it is needed (#309).
+  // How the "saved" mark is shown (options page). Default `always`: the mark
+  // is a status indicator, and part of its job is sparing the user the
+  // "did I save this?" question before it is consciously asked — which only
+  // a resting mark can do. Hover remains for anyone who finds that noisy (#309).
   type MarkMode = 'always' | 'hover' | 'off';
 
   interface Anchor {
@@ -129,7 +129,7 @@ export async function startOverlay(): Promise<void> {
 
   const G = glassUi;
 
-  let markMode: MarkMode = 'hover';
+  let markMode: MarkMode = 'always';
   let hoverSave = true;
   const tracked = new Map<Element, UnitState>();
   const anchorOf = new Map<Element, { unit: Element; anchor: Anchor }>(); // media box -> its anchor
@@ -164,7 +164,7 @@ export async function startOverlay(): Promise<void> {
   });
 
   function applySettings(mode: unknown, save: unknown) {
-    const wantedMode: MarkMode = mode === 'always' || mode === 'off' ? mode : 'hover';
+    const wantedMode: MarkMode = mode === 'hover' || mode === 'off' ? mode : 'always';
     const wantedSave = save !== false;
     if (wantedMode === markMode && wantedSave === hoverSave) return;
     const wasAsking = queriesWanted();
