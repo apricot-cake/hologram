@@ -14,38 +14,13 @@
 // (the same host gaining and losing its control repeatedly), which a single
 // before/after assertion can never see.
 //
-// Scheduled to move to Playwright together with the other puppeteer assets
-// when #131 lands. Page-side code (fixtures, recorder source) is
-// framework-neutral on purpose so only the launcher needs porting.
-
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
-const puppeteer = require('puppeteer');
+const { launchExtensionBrowser, stageExtension } = require('./lib-extension-e2e.cts');
 
-const ROOT = path.join(__dirname, '..');
-const SOURCE_EXTENSION = path.join(ROOT, 'extension', '.output', 'chrome-mv3');
 const FIXTURES = path.join(__dirname, 'fixtures', 'overlay');
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-
-// Chrome refuses to load an unpacked extension from some temp-cleaner-managed
-// paths, and a test must never mutate the real build output; stage a copy.
-function stageExtension(): string {
-  if (!fs.existsSync(path.join(SOURCE_EXTENSION, 'manifest.json'))) throw new Error(`extension build missing at ${SOURCE_EXTENSION} — run \`npm run build:ext\` first`);
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-overlay-e2e-ext-'));
-  const copy = (from: string, to: string) => {
-    fs.mkdirSync(to, { recursive: true });
-    for (const entry of fs.readdirSync(from, { withFileTypes: true })) {
-      const source = path.join(from, entry.name);
-      const target = path.join(to, entry.name);
-      if (entry.isDirectory()) copy(source, target);
-      else fs.copyFileSync(source, target);
-    }
-  };
-  copy(SOURCE_EXTENSION, dir);
-  return dir;
-}
 
 interface OverlayBrowser {
   browser: any;
@@ -53,20 +28,18 @@ interface OverlayBrowser {
 }
 
 async function launchOverlayBrowser(): Promise<OverlayBrowser> {
-  const extensionDir = stageExtension();
-  const profileDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-overlay-e2e-profile-'));
-  const browser = await puppeteer.launch({
+  const extensionDir = stageExtension({ tempPrefix: 'hologram-overlay-e2e-ext-' });
+  const session = await launchExtensionBrowser({
+    extensionDir,
     headless: true,
-    userDataDir: profileDir,
-    args: [`--disable-extensions-except=${extensionDir}`, `--load-extension=${extensionDir}`, '--window-size=1280,960', '--no-first-run', '--no-default-browser-check'],
-    defaultViewport: { width: 1280, height: 960 },
+    viewport: { width: 1280, height: 960 },
+    args: ['--window-size=1280,960'],
   });
   return {
-    browser,
+    browser: session.context,
     async close() {
-      await browser.close();
+      await session.close();
       fs.rmSync(extensionDir, { recursive: true, force: true });
-      fs.rmSync(profileDir, { recursive: true, force: true });
     },
   };
 }
@@ -81,7 +54,7 @@ interface OverlayEvent {
   label?: string;
 }
 
-// Runs in the page before any extension code (evaluateOnNewDocument). Kept as
+// Runs in the page before any extension code (addInitScript). Kept as
 // a source string: it must survive the trip into the page verbatim, with no
 // tooling between this file and what executes there.
 const RECORDER_SOURCE = `(() => {
@@ -120,11 +93,14 @@ const RECORDER_SOURCE = `(() => {
 // and waits out the content script's document_idle startup and first scan.
 async function openFixture(overlay: OverlayBrowser, url: string, html: string): Promise<any> {
   const page = await overlay.browser.newPage();
-  await page.evaluateOnNewDocument(RECORDER_SOURCE);
-  await page.setRequestInterception(true);
-  page.on('request', (request) => {
-    if (request.isNavigationRequest() && request.url() === url) request.respond({ status: 200, contentType: 'text/html', body: html });
-    else request.abort();
+  await page.addInitScript({ content: RECORDER_SOURCE });
+  await page.route('**/*', async (route: any) => {
+    const request = route.request();
+    if (request.isNavigationRequest() && request.url() === url) {
+      await route.fulfill({ status: 200, contentType: 'text/html', body: html });
+    } else {
+      await route.abort();
+    }
   });
   await page.goto(url, { waitUntil: 'domcontentloaded' });
   // Self-check: a recorder that failed to install would make every timeline
@@ -164,7 +140,7 @@ async function wheelScroll(page: any, options: { from: { x: number; y: number };
       x += i % 2 ? jitterPx : -jitterPx;
       await page.mouse.move(x, from.y);
     }
-    await page.mouse.wheel({ deltaY });
+    await page.mouse.wheel(0, deltaY);
     await wait(stepMs);
   }
 }

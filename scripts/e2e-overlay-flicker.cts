@@ -123,7 +123,7 @@ async function runPlatform(overlay: any, name: string): Promise<void> {
     // the settle timer clearing the hover on the mere fact of a scroll (#347).
     await takeLog(page);
     for (let i = 0; i < 8; i++) {
-      await page.mouse.wheel({ deltaY: i % 2 ? -40 : 40 });
+      await page.mouse.wheel(0, i % 2 ? -40 : 40);
       await wait(60);
     }
     await wait(SETTLE_MS + 250);
@@ -158,7 +158,7 @@ async function runPlatform(overlay: any, name: string): Promise<void> {
     const rehomed = await overlayCount(page);
     report(name, 're-render', rehomed === 1 && rerender.flapping.length === 0, `controls=${rehomed} adds=${rerender.adds} flapping=[${rerender.flapping.join(', ')}] (want controls=1, no flapping)`, formatTimeline(rerenderEvents));
     // Re-establish the hover on the new element for the phases below (the
-    // pointer has not moved, so puppeteer's own state is already there).
+    // pointer has not moved, so Playwright's own state is already there).
     await page.mouse.move(target.x + 2, target.y);
     await page.mouse.move(target.x, target.y);
     await wait(200);
