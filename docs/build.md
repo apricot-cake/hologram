@@ -10,7 +10,14 @@ cd app && npm install
 
 ## 拡張機能の開発・配布
 
-初回は `cd extension && npm install`。リポジトリ直下で `npm run dev:ext` を動かしている間は、WXT がソース変更を反映して拡張を再読み込みする。通常ビルドは `npm run build:ext`、Load unpacked とE2Eの入力先は `extension/.output/chrome-mv3/`、ストア提出用zipは `npm run zip:ext`。
+初回は `cd extension && npm install`。ビルド出力は2つあり、**Chrome がどちらを読み込んでいるかでソース変更の反映経路が変わる**。
+
+| 出力 | 作るコマンド | 使う場面 |
+| --- | --- | --- |
+| `extension/.output/chrome-mv3-dev/` | `npm run dev:ext`（常駐） | 開発中。WXT がソース変更を検知して拡張を自動で再読み込みする |
+| `extension/.output/chrome-mv3/` | `npm run build:ext` | E2E・配布の入力。ストア提出用zipは `npm run zip:ext` |
+
+**罠**: `dev:ext` のホットリロードが届くのは `chrome-mv3-dev` だけ。Chrome に `chrome-mv3` を Load unpacked したまま開発すると、`dev:ext` が動いていてもブラウザ側は古いバンドルのままで、直したはずの挙動を検証してしまう（2026-07-25 に実際に踏んだ＝ホバー保存ボタンの修正が1時間反映されていなかった）。`chrome-mv3` を読み込んでいる間にソースを直したら、`npm run build:ext` ＋ `chrome://extensions` の再読み込みまでやって初めて反映される。開発中は `chrome-mv3-dev` を読み込んでおく（`key` 固定でIDは共通なので、Native Messaging の登録はどちらでも生きる。同じIDなので同時に2つは読み込めない）。
 
 固定IDを保つ `key` は `extension/wxt.config.ts` にある。移行後もID・Native Messaging 保存・5プラットフォームのクリック/ドラッグ保存は実機確認の対象である。
 
