@@ -1,0 +1,34 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>bluesky overlay fixture</title><style>
+  /* Bluesky-shaped feed: [data-testid="feedItem-by-…"] units whose thumbnail
+     <img> (the media box overlay.ts tracks) sits UNDER a sibling overlay div —
+     the #338 shape, where the pointer physically lands on the sibling and
+     never on the image. The permalink is a timestamp anchor elsewhere in the
+     unit, which is what media-identity's bounded ancestor walk relies on. */
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #fff; font-family: Arial, sans-serif; }
+  header { position: fixed; inset: 0 0 auto; height: 56px; z-index: 100; background: #fff; border-bottom: 1px solid #d4dbe2; padding: 16px 32px; }
+  main { width: 600px; margin: 0 auto; padding: 80px 0 400px; }
+  .post { border: 1px solid #d4dbe2; border-radius: 10px; padding: 16px; margin-bottom: 12px; }
+  .thumbwrap { position: relative; width: 540px; height: 360px; margin-top: 12px; border-radius: 10px; overflow: hidden; background: linear-gradient(135deg, #d7ecff, #cfd9ff); }
+  .thumbwrap img { display: block; width: 540px; height: 360px; object-fit: cover; }
+  .thumbwrap .occluder { position: absolute; inset: 0; }
+</style></head><body>
+  <header>Following</header>
+  <main id="feed"></main>
+  <script>
+    const feed = document.getElementById('feed');
+    for (let i = 1; i <= 8; i++) {
+      const post = document.createElement('div');
+      post.className = 'post';
+      post.setAttribute('data-testid', 'feedItem-by-alice.bsky.social');
+      post.innerHTML = `
+        <a href="/profile/alice.bsky.social/post/3kabc${i}">2h</a>
+        <div class="thumbwrap">
+          <img src="https://cdn.bsky.app/img/feed_thumbnail/plain/did:plc:aaa/bafyimg${i}@jpeg" alt="post ${i}">
+          <div class="occluder"></div>
+        </div>`;
+      feed.appendChild(post);
+    }
+  </script>
+</body></html>

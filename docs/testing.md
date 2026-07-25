@@ -23,6 +23,7 @@
 - **復旧系は 2026-06-23 ライブラリ消失対策の多重防御**＝`test-app-recovery`（冗長ポインタ→config 復元）・`test-backup-guard`（prune 安全弁）・`test-config-recovery`（degraded 時の clear-all 拒否）。安全弁の意図はこの3本を正本とする。
 - **一括実行**: `npm test`（`run-tests.cts`）＝Electron 不要の純ユニットのみ（TS 型検査 `test-typecheck`＝app(islands+renderer)・main・native-host・extension・scripts の5プロジェクトの `tsc --noEmit` を含む）。アプリ実起動系（`test-app-*.cts`）は含まれないので `node scripts/run-app-tests.cts` で一括実行する（1本≈10秒と重い＝節目で回す。renderer 再構築後の「npm test では見えない無音の赤」をここで検出する。引数でサフィックス指定のサブセット実行可）。
 - **ホバー保存の描画回帰**: `npm run test:overlay-visual`＝使い捨てChromeへ本番ビルドの拡張を読み込み、X形式の画面でボタンと画像のスクロール位置・固定ヘッダー・モーダルの重なりを実ブラウザで検査する。ホバー配置や重なりを変えたら必ず実行する。
+- **ホバー保存のちらつき回帰**: `npm run test:overlay-flicker`＝X/Bluesky/pixiv 形状の fixture（`scripts/fixtures/overlay/`・#338 の「画像を覆う兄弟オーバーレイ」込み）上で、ホバー表示・静止ポインタのホイールスクロール・ポインタ微動つきスクロールを駆動し、オーバーレイの付け外しと ページ要素への style 書き込みをタイムライン記録（`lib-overlay-e2e.cts` のレコーダー）で閾値判定する。ちらつき＝時間軸上の再マウント反復なので before/after 検査（overlay-visual）では見えない領域を受け持つ。オーバーレイのホバー・スクロール挙動を触ったら必ず実行。修正ループ中は `node scripts/e2e-overlay-flicker.cts x --verbose` のように単一PF指定＋タイムライン出力で回すと速い（ビルド済み拡張が前提）。両 e2e は起動・fixture 配信・レコーダーを `lib-overlay-e2e.cts` で共有し、#131（Playwright 化）の移植対象。
 
 ## キャプチャテスト手順（半自動フロー）
 

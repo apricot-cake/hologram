@@ -1,0 +1,27 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>x overlay fixture</title><style>
+  /* X-shaped feed: article[data-testid="tweet"] units with tweetPhoto media
+     boxes and a fixed header, matching the selectors overlay.ts binds to.
+     Images are CSS-sized because the harness aborts every subresource. */
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #fff; font-family: Arial, sans-serif; }
+  header { position: fixed; inset: 0 0 auto; height: 56px; z-index: 100; background: #fff; border-bottom: 1px solid #cfd9de; padding: 16px 32px; }
+  main { width: 620px; margin: 0 auto; padding: 80px 0 400px; }
+  article { border: 1px solid #cfd9de; border-radius: 14px; padding: 18px; margin-bottom: 12px; }
+  [data-testid="tweetPhoto"] { position: relative; width: 560px; height: 400px; margin-top: 14px; overflow: hidden; border-radius: 14px; background: linear-gradient(135deg, #cde9ff, #ebd2ff); }
+  [data-testid="tweetPhoto"] img { display: block; width: 560px; height: 400px; object-fit: cover; }
+</style></head><body>
+  <header>Home</header>
+  <main id="feed"></main>
+  <script>
+    const feed = document.getElementById('feed');
+    for (let i = 1; i <= 8; i++) {
+      const article = document.createElement('article');
+      article.setAttribute('data-testid', 'tweet');
+      article.innerHTML = `
+        <a href="/alice/status/11${i}"><time datetime="2026-07-01T00:00:00Z">now</time></a>
+        <div data-testid="tweetPhoto"><img src="https://pbs.twimg.com/media/AAA${i}.jpg" alt="post ${i}"></div>`;
+      feed.appendChild(article);
+    }
+  </script>
+</body></html>

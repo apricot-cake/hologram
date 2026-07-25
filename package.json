@@ -13,6 +13,7 @@
     "build:ext": "npm --prefix extension run build:ext",
     "dev:ext": "npm --prefix extension run dev:ext",
     "test:overlay-visual": "npm run build:ext && node scripts/e2e-overlay-visual.cts",
+    "test:overlay-flicker": "npm run build:ext && node scripts/e2e-overlay-flicker.cts",
     "zip:ext": "npm --prefix extension run zip",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",

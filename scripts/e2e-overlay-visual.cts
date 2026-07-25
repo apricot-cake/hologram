@@ -7,13 +7,7 @@
 //
 //   node scripts/e2e-overlay-visual.cts
 
-const fs = require('node:fs');
-const os = require('node:os');
-const path = require('node:path');
-const puppeteer = require('puppeteer');
-
-const ROOT = path.join(__dirname, '..');
-const SOURCE_EXTENSION = path.join(ROOT, 'extension', '.output', 'chrome-mv3');
+const { launchOverlayBrowser, openFixture, wait } = require('./lib-overlay-e2e.cts');
 
 const HTML = `<!doctype html>
 <html><head><meta charset="utf-8"><style>
@@ -38,43 +32,11 @@ const HTML = `<!doctype html>
   <script>document.querySelector('#compose').addEventListener('click', () => document.querySelector('#composeDialog').hidden = false);</script>
 </body></html>`;
 
-function stageExtension() {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-overlay-e2e-ext-'));
-  const copy = (from, to) => {
-    fs.mkdirSync(to, { recursive: true });
-    for (const entry of fs.readdirSync(from, { withFileTypes: true })) {
-      const source = path.join(from, entry.name);
-      const target = path.join(to, entry.name);
-      if (entry.isDirectory()) copy(source, target);
-      else fs.copyFileSync(source, target);
-    }
-  };
-  copy(SOURCE_EXTENSION, dir);
-  return dir;
-}
-
-const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
 (async () => {
-  const extensionDir = stageExtension();
-  const profileDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-overlay-e2e-profile-'));
-  let browser: any = null;
+  const overlay = await launchOverlayBrowser();
   try {
-    browser = await puppeteer.launch({
-      headless: true,
-      userDataDir: profileDir,
-      args: [`--disable-extensions-except=${extensionDir}`, `--load-extension=${extensionDir}`, '--window-size=1280,960', '--no-first-run', '--no-default-browser-check'],
-      defaultViewport: { width: 1280, height: 960 },
-    });
-    const page = await browser.newPage();
-    await page.setRequestInterception(true);
-    page.on('request', (request) => {
-      if (request.isNavigationRequest() && request.url() === 'https://x.com/home') request.respond({ status: 200, contentType: 'text/html', body: HTML });
-      else request.abort();
-    });
-    await page.goto('https://x.com/home', { waitUntil: 'domcontentloaded' });
+    const page = await openFixture(overlay, 'https://x.com/home', HTML);
     await page.waitForSelector('[data-testid="tweetPhoto"]');
-    await wait(700); // content script's document_idle startup and first scan
 
     const photo = await page.$('[data-testid="tweetPhoto"]');
     const photoBox = await photo.boundingBox();
@@ -128,9 +90,7 @@ const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
     console.log('PASS e2e-overlay-visual: scroll tracking, modal occlusion, fixed-header occlusion');
   } finally {
-    await browser?.close();
-    fs.rmSync(extensionDir, { recursive: true, force: true });
-    fs.rmSync(profileDir, { recursive: true, force: true });
+    await overlay.close();
   }
 })().catch((error) => {
   console.error(error.stack || error);
