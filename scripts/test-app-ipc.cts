@@ -1,7 +1,10 @@
 'use strict';
 
 // Exercises the mutation IPC handlers (update-tags, delete-post) headlessly by
-// asking the renderer to call them, then checks the resulting files on disk.
+// asking the renderer to call them, then checks the result: delete-post still
+// moves sidecar+media into .trash/ (checked on disk), but update-tags is a
+// #298/St5 DB-only write (app/ipc-trash.mts) — its sidecar is asserted
+// UNCHANGED, and the tag itself is read back from hologram.db.
 //
 //   node scripts/test-app-ipc.cts
 
@@ -12,6 +15,7 @@ const path = require('node:path');
 
 const appDir = path.join(__dirname, '..', 'app');
 const electronPath = require(path.join(appDir, 'node_modules', 'electron'));
+const { openDatabase } = require(path.join(appDir, 'lib-db.mts'));
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-ipc-'));
 const configDir = path.join(tmp, 'Hologram');
@@ -68,11 +72,21 @@ child.stdout.on('data', (d) => {
 
 child.on('close', () => {
   const rec1 = JSON.parse(fs.readFileSync(path.join(saveFolder, 'dummy-0001.json'), 'utf8'));
-  const tagOk = JSON.stringify(rec1.tags) === JSON.stringify(['tagX']);
+  const sidecarUntouchedOk = JSON.stringify(rec1.tags) === JSON.stringify([]);
+
+  const { sqlite } = openDatabase(path.join(configDir, 'hologram.db'), { readonly: true });
+  const dbTags = sqlite
+    .prepare("SELECT t.name FROM post_tags pt JOIN tags t ON t.id = pt.tagId WHERE pt.postId = 'dummy-0001' ORDER BY pt.rowid")
+    .all()
+    .map((r) => r.name);
+  sqlite.close();
+  const tagOk = JSON.stringify(dbTags) === JSON.stringify(['tagX']);
+
   const delOk = !fs.existsSync(path.join(saveFolder, 'dummy-0002.jpg')) && !fs.existsSync(path.join(saveFolder, 'dummy-0002.json'));
   const countOk = /EVAL_RESULT 1\b/.test(out);
   fs.rmSync(tmp, { recursive: true, force: true });
-  console.log(`updateTags=${tagOk} delete=${delOk} listCount=${countOk}`);
-  console.log(tagOk && delOk && countOk ? 'IPC_TEST_PASS' : 'IPC_TEST_FAIL');
-  process.exit(tagOk && delOk && countOk ? 0 : 1);
+  console.log(`updateTags(db)=${tagOk} sidecarUntouched=${sidecarUntouchedOk} delete=${delOk} listCount=${countOk}`);
+  const pass = tagOk && sidecarUntouchedOk && delOk && countOk;
+  console.log(pass ? 'IPC_TEST_PASS' : 'IPC_TEST_FAIL');
+  process.exit(pass ? 0 : 1);
 });

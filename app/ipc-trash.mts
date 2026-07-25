@@ -12,7 +12,7 @@ import path from 'node:path';
 import { parseJsonLoose } from './lib-json.mts';
 
 function register(ctx) {
-  const { getSaveFolder, getTrashDir, baseOf, VIEWABLE_EXTS, resolveInFolder, writeSidecarAtomic } = ctx;
+  const { getSaveFolder, getTrashDir, baseOf, VIEWABLE_EXTS, resolveInFolder, writeSidecarAtomic, getDbWriter, ensurePostsSynced } = ctx;
 
   ipcMain.handle('delete-post', async (_e, image) => {
     const folder = getSaveFolder();
@@ -153,26 +153,19 @@ function register(ctx) {
     return { ok: true };
   });
 
+  // #298/St5: tag edits are an in-app write, so they go straight to the DB
+  // (post_tags + posts.userKind/tagReviewed) instead of the sidecar — see
+  // lib-db-write.mts's replacePostTags. The sidecar is left untouched, which
+  // is what protects this edit from the next importAll: its mtime doesn't
+  // move, so lib-db-import.mts's unchanged-since-last-import guard (#297)
+  // skips re-deriving this post from disk and the DB edit sticks.
   ipcMain.handle('update-tags', async (_e, image, tags, patch) => {
-    const base = baseOf(image);
-    const jsonPath = resolveInFolder(`${base}.json`);
-    if (!jsonPath) return { ok: false };
+    const captureId = baseOf(image);
+    if (!captureId) return { ok: false };
     try {
-      const rec = parseJsonLoose(await fs.promises.readFile(jsonPath, 'utf8'));
-      rec.tags = Array.isArray(tags) ? tags.map(String) : [];
-      // Optional extra fields (e.g. the tagging wizard's plain/media flag). Only
-      // an allow-listed set is honored so the renderer can't write arbitrary keys.
-      if (patch && typeof patch === 'object') {
-        if ('userKind' in patch) {
-          rec.userKind = patch.userKind === 'plain' || patch.userKind === 'media' ? patch.userKind : null;
-        }
-        // Tagging "session" marks a post reviewed even when it gets no tags, so
-        // it leaves the untagged queue instead of resurfacing every session.
-        if ('tagReviewed' in patch) rec.tagReviewed = !!patch.tagReviewed;
-      }
-      rec.updatedAt = new Date().toISOString(); // record was modified in Hologram
-      await writeSidecarAtomic(jsonPath, rec); // tmp+rename: never expose a half-written sidecar to the watcher
-      return { ok: true };
+      await ensurePostsSynced(); // the captureId needs a posts row before this edit can attach to it
+      const ok = getDbWriter().setPostTags(captureId, tags, patch && typeof patch === 'object' ? patch : null);
+      return { ok };
     } catch {
       return { ok: false };
     }

@@ -189,6 +189,44 @@ function readPosterTags(sqlite: Sqlite) {
   return { tags };
 }
 
+// Post-level edit: tag assignment (post_tags) + the tagging-wizard's userKind/
+// tagReviewed flags. These two columns were added by the add-store-state
+// migration specifically because they had no St2 home (lib-db.mts's migration
+// comment) — normalizePostRecord's PostRecordShape deliberately excludes them
+// (native-host/post-record.mts), so they are DB-only and never round-trip
+// through a sidecar. Returns false without writing if postId isn't a known
+// post, mirroring the old sidecar handler's "jsonPath missing -> ok:false".
+function replacePostTags(sqlite: Sqlite, postId: string, tags: unknown, patch: unknown): boolean {
+  if (!sqlite.prepare('SELECT 1 FROM posts WHERE captureId = ?').get(postId)) return false;
+
+  const names = strings(tags);
+  sqlite.prepare('DELETE FROM post_tags WHERE postId = ?').run(postId);
+  const resolve = tagResolver(sqlite);
+  const insertTag = sqlite.prepare('INSERT OR IGNORE INTO post_tags (postId, tagId) VALUES (?, ?)');
+  for (const tagId of names.map(resolve)) insertTag.run(postId, tagId);
+
+  const sets = ['updatedAt = ?'];
+  const params: unknown[] = [new Date().toISOString()];
+  if (patch && typeof patch === 'object') {
+    if ('userKind' in (patch as Record<string, unknown>)) {
+      sets.push('userKind = ?');
+      const userKind = (patch as Record<string, unknown>).userKind;
+      params.push(userKind === 'plain' || userKind === 'media' ? userKind : null);
+    }
+    if ('tagReviewed' in (patch as Record<string, unknown>)) {
+      sets.push('tagReviewed = ?');
+      params.push((patch as Record<string, unknown>).tagReviewed ? 1 : 0);
+    }
+  }
+  sqlite.prepare(`UPDATE posts SET ${sets.join(', ')} WHERE captureId = ?`).run(...params, postId);
+
+  // posts_fts is standalone (no content= link, lib-db-schema.mts's schema
+  // comment), so a plain column UPDATE is valid FTS5 SQL — no delete+reinsert
+  // needed to keep the other indexed columns intact.
+  sqlite.prepare('UPDATE posts_fts SET tagsText = ? WHERE postId = ?').run(names.join(' '), postId);
+  return true;
+}
+
 function replaceTabs(sqlite: Sqlite, data: any) {
   sqlite.prepare('DELETE FROM tab_windows').run();
   sqlite.prepare('DELETE FROM tabs').run();
@@ -229,6 +267,7 @@ function createDbWriter(sqlite: Sqlite) {
     setPosterTags: (data: unknown) => transaction(() => replacePosterTags(sqlite, data)),
     getTabs: () => readTabs(sqlite),
     setTabs: (data: unknown) => transaction(() => replaceTabs(sqlite, data)),
+    setPostTags: (postId: string, tags: unknown, patch: unknown) => transaction(() => replacePostTags(sqlite, postId, tags, patch)),
   };
 }
 

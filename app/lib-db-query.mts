@@ -59,6 +59,8 @@ const POST_COLUMNS = [
   'shotW',
   'shotH',
   'trashedAt',
+  'userKind',
+  'tagReviewed',
 ] as const;
 
 function fromDbBool(v: unknown): boolean | null {
@@ -150,6 +152,8 @@ function assemble(sqlite: Database.Database, postRows: any[]): any[] {
       shotW: r.shotW,
       shotH: r.shotH,
       trashedAt: r.trashedAt,
+      userKind: r.userKind,
+      tagReviewed: fromDbBool(r.tagReviewed),
     };
   });
 }
