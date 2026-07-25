@@ -83,10 +83,25 @@ const HTML = `<!doctype html>
     if (!photoBeforeHeader) throw new Error('test photo disappeared before header check');
     await page.mouse.move(photoBeforeHeader.x + photoBeforeHeader.width / 2, photoBeforeHeader.y + photoBeforeHeader.height / 2);
     await page.waitForSelector('[data-hologram-overlay]', { timeout: 3000 });
+    // The picture's top — the corner the control sits in — scrolls under the
+    // fixed header while the pointer stays on the middle of it. The pointer is
+    // still on the picture, so the hover is still on: occlusion is asked about
+    // the POINTER, and asking it about the control's corner instead is what
+    // took the button away mid-scroll on x.com (#347).
     await page.evaluate(() => window.scrollTo(0, 190));
-    await wait(25);
+    await wait(250);
+    const headerHold = await page.evaluate(() => !!document.querySelector('[data-hologram-overlay]'));
+    if (!headerHold) throw new Error('OVERLAY_HEADER_HOVER_LOST_FAIL: control vanished while the pointer was still on the picture');
+
+    // Same picture, same scroll position: the pointer itself moves onto the
+    // header covering the picture's top. Now something IS between the pointer
+    // and the picture, and the hover ends.
+    const photoUnderHeader = await photo.boundingBox();
+    if (!photoUnderHeader) throw new Error('test photo disappeared during the header check');
+    await page.mouse.move(photoUnderHeader.x + photoUnderHeader.width / 2, 40);
+    await wait(250);
     const headerClear = await page.evaluate(() => !document.querySelector('[data-hologram-overlay]'));
-    if (!headerClear) throw new Error('OVERLAY_HEADER_OCCLUSION_FAIL: control remained beneath the fixed header');
+    if (!headerClear) throw new Error('OVERLAY_HEADER_OCCLUSION_FAIL: control remained while the pointer was on the fixed header');
 
     console.log('PASS e2e-overlay-visual: scroll tracking, modal occlusion, fixed-header occlusion');
   } finally {

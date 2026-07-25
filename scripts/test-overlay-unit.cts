@@ -229,8 +229,18 @@ const click = (el) => el.dispatchEvent(new window.MouseEvent('click', { bubbles:
   check('the media box becomes the control’s positioning parent', (boxOf('p1') as any).style.position === 'relative');
   check('the control is interactive', (marks()[0] as any).style.pointerEvents !== 'none');
   // The control is in the media box, so scrolling moves them in the same
-  // composited operation. A stationary pointer must not select p2 merely
-  // because p2 scrolls underneath it; no new coordinate write is needed.
+  // composited operation: no new coordinate write is needed. And scrolling
+  // WITHIN the picture — the wheel rocked back and forth while reading — is
+  // not the picture leaving the pointer, so the control may not go away (#347).
+  window.document.querySelector('#p1 [data-testid="tweetPhoto"]').setAttribute('data-rect-top', '40');
+  window.dispatchEvent(new window.Event('scroll'));
+  check('a visible control stays attached to its media while scrolling', marks()[0]?.parentElement === boxOf('p1') && marks()[0].style.top === '6px' && animationFrames.size === 0);
+  await new Promise((r) => setTimeout(r, 120)); // past the scroll settle
+  check('scrolling within the hovered picture keeps its control', marks()[0]?.parentElement === boxOf('p1'));
+
+  // Scrolled far enough that p1 leaves the pointer and p2 arrives under it.
+  // The control goes with p1; a stationary pointer must not select p2 merely
+  // because p2 scrolled underneath it.
   window.document.querySelector('#p1 [data-testid="tweetPhoto"]').setAttribute('data-rect-top', '-300');
   window.document.querySelector('#p2 [data-testid="tweetPhoto"]').setAttribute('data-rect-top', '100');
   window.dispatchEvent(new window.Event('scroll'));
@@ -240,10 +250,9 @@ const click = (el) => el.dispatchEvent(new window.MouseEvent('click', { bubbles:
   layoutBoundary.clientX = 200;
   layoutBoundary.clientY = 250;
   boxOf('p2').dispatchEvent(layoutBoundary);
-  check('a visible control stays attached to its media while scrolling', marks()[0].parentElement === boxOf('p1') && marks()[0].style.top === '6px' && animationFrames.size === 0);
-  check('a stationary pointer does not immediately select the next picture after scroll', controlOf('p2').length === 0);
+  check('a stationary pointer does not select the next picture after scroll', controlOf('p2').length === 0);
   await new Promise((r) => setTimeout(r, 120));
-  check('the old hover control clears after scrolling settles', controls().length === 0);
+  check('the control of a picture scrolled off the pointer clears', controls().length === 0);
   window.document.querySelector('#p1 [data-testid="tweetPhoto"]').setAttribute('data-rect-top', '100');
   window.document.querySelector('#p2 [data-testid="tweetPhoto"]').setAttribute('data-rect-top', '400');
   hoverAway();
