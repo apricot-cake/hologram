@@ -1,18 +1,18 @@
 'use strict';
 
-// E2E capture test: launches Chrome for Testing (puppeteer) with the extension
+// E2E capture test: launches Playwright Chromium with the extension
 // loaded UNPACKED from this repo, triggers capture programmatically (no Alt+S,
-// no human), clicks/drags inside real pages, waits for the bridge to land
-// jpg+sidecar in the save folder, verifies each record against the live API,
-// then deletes the test records it created.
+// no human), clicks/drags inside real pages, waits for a disposable native
+// host to land jpg+sidecar in a temporary library, verifies each record against
+// the live API, then deletes the test records it created.
 //
 //   node scripts/e2e-capture-test.cts              # pixiv cells (MVP)
 //
 // Why this works without touching the user's Chrome:
 //   - manifest.json carries a fixed `key` (see memory ext-signing-key), so the
 //     extension ID is pinned to that key regardless of which folder it's
-//     loaded from → same extension ID → the registered native-messaging host
-//     (com.hologram.host) accepts the connection
+//     loaded from → a uniquely named test host can allow that exact origin
+//     without changing the user's com.hologram.host registration
 //   - Alt+S (chrome.commands) can't be synthesized via CDP, but activateOnTab()
 //     is a top-level function in the service worker — we attach to the SW
 //     target and call it directly
@@ -22,10 +22,9 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
-const os = require('node:os');
 const { spawnSync, execFileSync } = require('node:child_process');
-const puppeteer = require('puppeteer');
-const { configDir, defaultLibraryDir } = require('../native-host/paths.cts');
+const { launchExtensionBrowser, stageExtension } = require('./lib-extension-e2e.cts');
+const { createNativeHostSandbox } = require('./lib-native-host-e2e.cts');
 const { fetchXTweet } = require('../extension/utils/metadata.ts');
 
 // sw.evaluate()/page.evaluate() callback bodies below run inside the extension's
@@ -33,41 +32,7 @@ const { fetchXTweet } = require('../extension/utils/metadata.ts');
 // extension API global there, not visible to this file's own Node/DOM lib.
 declare const chrome: any;
 
-const SRC_EXT_DIR = path.join(__dirname, '..', 'extension', '.output', 'chrome-mv3');
-const EXPECTED_ID = 'keggmjkemfcekcffohnpaojacdakpejh'; // fixed by manifest.json's key — allowed_origins of com.hologram.host
-
-// Stage a copy of the extension with <all_urls> host permission added, so
-// captureVisibleTab works WITHOUT a user gesture (in production the Alt+S
-// chrome.commands gesture grants activeTab; a headless test can't synthesize
-// that trusted gesture). Everything else — the code under test — is identical.
-function stageExtension() {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-ext-'));
-  const copyDir = (src, dst) => {
-    fs.mkdirSync(dst, { recursive: true });
-    for (const e of fs.readdirSync(src, { withFileTypes: true })) {
-      const s = path.join(src, e.name);
-      const d = path.join(dst, e.name);
-      if (e.isDirectory()) copyDir(s, d);
-      else fs.copyFileSync(s, d);
-    }
-  };
-  copyDir(SRC_EXT_DIR, dir);
-  const mf = path.join(dir, 'manifest.json');
-  const m = JSON.parse(fs.readFileSync(mf, 'utf8').replace(/^﻿/, ''));
-  m.host_permissions = Array.from(new Set([...(m.host_permissions || []), '<all_urls>']));
-  fs.writeFileSync(mf, JSON.stringify(m, null, 2));
-  return dir;
-}
-
-function saveFolder() {
-  try {
-    const cfg = JSON.parse(fs.readFileSync(path.join(configDir(), 'config.json'), 'utf8'));
-    if (cfg.saveFolder) return cfg.saveFolder;
-  } catch {
-    /* default */
-  }
-  return defaultLibraryDir();
-}
+const EXPECTED_ID = 'keggmjkemfcekcffohnpaojacdakpejh'; // fixed by manifest.json's key
 
 async function j(url, opts?) {
   const r = await fetch(url, opts);
@@ -258,15 +223,20 @@ async function waitForNewSidecar(dir, before, timeoutMs = 25000) {
 
 (async () => {
   // Always rebuild first so the staged WXT output reflects the current source.
-  execFileSync(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['run', 'build:ext'], { stdio: 'inherit', cwd: path.join(__dirname, '..', 'extension') });
+  const extensionDir = path.join(__dirname, '..', 'extension');
+  execFileSync(process.execPath, [path.join(extensionDir, 'node_modules', 'wxt', 'bin', 'wxt.mjs'), 'build'], {
+    stdio: 'inherit',
+    cwd: extensionDir,
+  });
 
-  const dir = saveFolder();
+  const nativeHost = createNativeHostSandbox(EXPECTED_ID);
+  const dir = nativeHost.libraryDir;
   console.log(`保存先: ${dir}`);
 
   // Optional platform filter: node e2e-capture-test.cts bluesky misskey
   // Auth: node e2e-capture-test.cts x --user-data-dir="C:\Users\…\Chrome\User Data"
   //       --profile-dir=Default  (optional, defaults to "Default")
-  //       Chrome must be closed before running — puppeteer needs exclusive profile lock.
+  //       Chrome must be closed before running — Chromium needs exclusive profile lock.
   const rawArgs = process.argv.slice(2);
   const only = rawArgs.filter((a) => !a.startsWith('--')).map((s) => s.toLowerCase());
   const argVal = (name) => {
@@ -297,44 +267,27 @@ async function waitForNewSidecar(dir, before, timeoutMs = 25000) {
   }
   console.log(`対象セル: ${active.map((c) => c.id + '(' + c.kind + ')').join(' ')}`);
 
-  const profile = userDataDir || fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-e2e-'));
-  const EXT_DIR = stageExtension();
-  const hostManifestPath = path.join(configDir(), 'com.hologram.host.json');
-  const originalHostManifest = fs.existsSync(hostManifestPath) ? fs.readFileSync(hostManifestPath, 'utf8') : null;
-  const browser = await puppeteer.launch({
-    headless: false,
-    userDataDir: profile,
-    args: [`--disable-extensions-except=${EXT_DIR}`, `--load-extension=${EXT_DIR}`, '--window-size=1360,960', '--no-first-run', '--no-default-browser-check', '--hide-crash-restore-bubble', '--lang=ja', ...(userDataDir ? [`--profile-directory=${profileDirArg}`] : [])],
-    defaultViewport: null,
+  const EXT_DIR = stageExtension({
+    allUrls: true,
+    nativeHostName: nativeHost.hostName,
+    tempPrefix: 'hologram-capture-e2e-ext-',
   });
+  const session = await launchExtensionBrowser({
+    extensionDir: EXT_DIR,
+    headless: false,
+    userDataDir,
+    viewport: null,
+    args: ['--window-size=1360,960', '--hide-crash-restore-bubble', '--lang=ja', ...(userDataDir ? [`--profile-directory=${profileDirArg}`] : [])],
+  });
+  const browser = session.context;
 
   const results: any[] = [];
   const created: any[] = [];
   try {
-    // attach to the extension service worker
-    const swTarget = await browser.waitForTarget((t) => t.type() === 'service_worker' && t.url().startsWith('chrome-extension://'), { timeout: 20000 });
-    const extId = new URL(swTarget.url()).host;
-    if (extId === EXPECTED_ID) {
-      console.log(`拡張ID: ${extId} (NMホスト許可と一致 ✓)`);
-    } else {
-      // The unpacked test instance gets a path-derived ID — allow it on the
-      // native host so the bridge accepts the connection. Idempotent add; the
-      // extra origin is a local unpacked extension only we control.
-      const hostManifest = path.join(configDir(), 'com.hologram.host.json');
-      const hm = JSON.parse(fs.readFileSync(hostManifest, 'utf8'));
-      const origin = `chrome-extension://${extId}/`;
-      if (!hm.allowed_origins.includes(origin)) {
-        hm.allowed_origins.push(origin);
-        fs.writeFileSync(hostManifest, JSON.stringify(hm, null, 2));
-        console.log(`拡張ID: ${extId} — NMホスト allowed_origins に追加しました (${hostManifest})`);
-      } else {
-        console.log(`拡張ID: ${extId} (allowed_origins 追加済み)`);
-      }
-      // NOTE: if Chrome for Testing looks the host up under its own registry
-      // branch (Google\Chrome for Testing\NativeMessagingHosts), registering
-      // there needs explicit user approval — ask before adding.
-    }
-    const sw = await swTarget.worker();
+    const extId = session.extensionId;
+    if (extId !== EXPECTED_ID) throw new Error(`staged extension id ${extId} does not match native-host allow-list ${EXPECTED_ID}`);
+    console.log(`拡張ID: ${extId} (一時NMホスト許可と一致 ✓)`);
+    const sw = session.serviceWorker;
 
     const page = await browser.newPage();
 
@@ -436,7 +389,7 @@ async function waitForNewSidecar(dir, before, timeoutMs = 25000) {
             const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
             if (!tab) return { ok: false, err: 'no active tab' };
             try {
-              await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['i18n.js', 'glass-ui.js', 'site-detect.js', 'content.js'] });
+              await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['capture.js'] });
               return { ok: true, url: tab.url };
             } catch (e) {
               return { ok: false, url: tab.url, err: String(e) };
@@ -449,6 +402,7 @@ async function waitForNewSidecar(dir, before, timeoutMs = 25000) {
             () => {
               return [...document.querySelectorAll('div')].some((d) => d.style.zIndex === '2147483647');
             },
+            null,
             { timeout: 8000 },
           );
           // Trusted click on a stable in-post element; capturePost resolves the
@@ -534,17 +488,17 @@ async function waitForNewSidecar(dir, before, timeoutMs = 25000) {
       }
     }
   } finally {
-    await browser.close().catch(() => {});
-    if (!userDataDir) fs.rmSync(profile, { recursive: true, force: true });
+    await session.close().catch(() => {});
     fs.rmSync(EXT_DIR, { recursive: true, force: true });
-    // restore the host manifest's allowed_origins (we added the test ext's ID)
-    if (originalHostManifest != null) fs.writeFileSync(hostManifestPath, originalHostManifest);
   }
 
   // verify the captures against the live API (same checker as the manual flow)
   if (created.length) {
     console.log('\n=== API照合 (test-watch-verify --recent) ===');
-    const v = spawnSync(process.execPath, [path.join(__dirname, 'test-watch-verify.cts'), '--recent', String(created.length)], { encoding: 'utf8' });
+    const v = spawnSync(process.execPath, [path.join(__dirname, 'test-watch-verify.cts'), '--recent', String(created.length)], {
+      encoding: 'utf8',
+      env: { ...process.env, HOLOGRAM_CONFIG_DIR: nativeHost.configDir },
+    });
     process.stdout.write(v.stdout || '');
 
     // clean up: delete the records this test created (jpg/json/media files)
@@ -562,5 +516,6 @@ async function waitForNewSidecar(dir, before, timeoutMs = 25000) {
   const okN = results.filter((r) => r.ok).length;
   console.log(`\n${okN}/${results.length} セル成功`);
   console.log(okN === results.length ? 'E2E_CAPTURE_PASS' : 'E2E_CAPTURE_FAIL');
+  nativeHost.close();
   process.exit(okN === results.length ? 0 : 1);
 })();
