@@ -17,6 +17,16 @@
 // what a save would record; the save button goes through media-identity.js, the
 // same module drag.js saves with, for the same reason.
 //
+// Hover is DERIVED, never accumulated: the control is shown on the picture the
+// pointer is geometrically inside, and the only thing that may take it away is
+// that same geometry saying the pointer is no longer on it (or something
+// fixed/sticky being layered over the pointer). Scrolling, an intersection
+// change, a re-render of the page's own markup — none of those decide anything
+// by themselves; they only move pictures, after which geometry is asked again.
+// Every path goes through pointerStillOn(), so "the button stays while the
+// cursor is on the picture" holds by construction rather than by each path
+// remembering to check (#347).
+//
 // Each control is an absolutely-positioned child of its media box (or, for an
 // <img>, its immediate parent). That makes the browser move it in the same
 // composited scroll as the picture. A fixed layer that copies viewport
@@ -132,12 +142,11 @@ export async function startOverlay(): Promise<void> {
   let repositionFull = false;
   let hovered: Anchor | null = null;
   let pointerPosition: { x: number; y: number } | null = null;
-  let pointerRevision = 0;
   let scrollHoverTimer: ReturnType<typeof setTimeout> | null = null;
-  let saveArmed = false;
-  // True from the first scroll event of a burst until it settles (or hover is
-  // occluded). Suppresses hover updates from IO intersection churn below, so a
-  // stationary pointer does not pick up every image that scrolls beneath it.
+  // True from the first scroll event of a burst until it settles. While it is
+  // set, layout moving under a resting pointer may CLEAR a hover but never
+  // hand it to another picture, so a stationary pointer does not pick up every
+  // image that scrolls beneath it (#347).
   let inScrollBurst = false;
 
   const { getMessage: t, partialSaveText } = await createI18n();
@@ -197,10 +206,10 @@ export async function startOverlay(): Promise<void> {
           if (state) clearControls(state);
         }
       }
-      // Skipped mid-scroll: an intersection change is layout, not pointer
-      // input, and re-hitting it here is what made a stationary pointer pick
-      // up every image passing beneath it (#347).
-      if (!inScrollBurst) updateHoveredAtPointer();
+      // An intersection change is layout, not pointer input: mid-scroll it may
+      // not hand the hover to another picture, which is what made a stationary
+      // pointer pick up every image passing beneath it (#347).
+      updateHoveredAtPointer(!inScrollBurst);
       scheduleQuery();
     },
     { rootMargin: OBSERVER_MARGIN },
@@ -243,7 +252,10 @@ export async function startOverlay(): Promise<void> {
   new MutationObserver((records) => {
     const childrenChanged = records.some((record) => record.type === 'childList');
     const modalChanged = records.some((record) => record.type === 'attributes' && record.target instanceof Element && record.target.matches('dialog, [role="dialog"], [aria-modal]'));
-    if (hovered && (childrenChanged || modalChanged) && hoveredIsOccluded()) setHovered(null);
+    if (hovered && (childrenChanged || modalChanged)) {
+      if (!hovered.box.isConnected) rehomeHover(hovered);
+      else if (!pointerStillOn(hovered)) setHovered(null);
+    }
     if (childrenChanged) scheduleScan();
   }).observe(document.documentElement, {
     childList: true,
@@ -339,8 +351,7 @@ export async function startOverlay(): Promise<void> {
     (e) => {
       const pe = e as PointerEvent;
       pointerPosition = { x: pe.clientX, y: pe.clientY };
-      pointerRevision += 1;
-      updateHoveredAtPointer();
+      updateHoveredAtPointer(true);
     },
     true,
   );
@@ -349,7 +360,6 @@ export async function startOverlay(): Promise<void> {
     (e) => {
       if (!(e as PointerEvent).relatedTarget) {
         pointerPosition = null;
-        pointerRevision += 1;
         setHovered(null); // pointer left the document
       }
     },
@@ -374,7 +384,7 @@ export async function startOverlay(): Promise<void> {
       if (!state) continue;
       for (const [box, anchor] of state.anchors) {
         const r = box.getBoundingClientRect();
-        if (x < r.left || x > r.right || y < r.top || y > r.bottom) continue;
+        if (!rectHoldsPointer(r, x, y)) continue;
         // Smallest box wins where they overlap, so a picture inside a quoted
         // post is preferred over the outer post's own picture behind it.
         const area = r.width * r.height;
@@ -391,20 +401,62 @@ export async function startOverlay(): Promise<void> {
     if (next === hovered) return;
     const previous = hovered;
     hovered = next;
-    // A pointer event is deliberate input, so its save action is ready at once.
-    saveArmed = next !== null;
     if (previous) repaintAnchor(previous);
     if (next) repaintAnchor(next);
   }
 
-  // Re-read geometry only for actual pointer movement and layout changes.
-  function updateHoveredAtPointer() {
+  function rectHoldsPointer(r: DOMRect, x: number, y: number): boolean {
+    return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+  }
+
+  // THE question every clear path has to ask, and the only reason any of them
+  // may drop a hover: is the pointer still on this picture? Everything that can
+  // hide the control goes through here, so "the button stays while the cursor
+  // is on the picture" is a property of the code rather than something each
+  // path has to remember (#347).
+  function pointerStillOn(anchor: Anchor | null): boolean {
+    if (!anchor || !pointerPosition) return false;
+    if (!anchor.box.isConnected || modalIsOpen()) return false;
+    if (!rectHoldsPointer(anchor.box.getBoundingClientRect(), pointerPosition.x, pointerPosition.y)) return false;
+    return !pointerIsOccluded(anchor);
+  }
+
+  // `adopt` false = the picture under the pointer changed because LAYOUT moved
+  // (a scroll, an intersection, a late image load), not because the user did.
+  // Then the picture already hovered keeps its control for as long as the
+  // pointer is on it, and a different one may not take it over.
+  function updateHoveredAtPointer(adopt: boolean) {
     if (!pointerPosition || modalIsOpen()) {
       setHovered(null);
       return;
     }
-    setHovered(anchorAtPoint(pointerPosition.x, pointerPosition.y));
-    if (hoveredIsOccluded()) setHovered(null);
+    const next = anchorAtPoint(pointerPosition.x, pointerPosition.y);
+    if (!adopt && next !== hovered) {
+      if (!pointerStillOn(hovered)) setHovered(null);
+      return;
+    }
+    setHovered(next);
+    if (hovered && pointerIsOccluded(hovered)) setHovered(null);
+  }
+
+  // The page REPLACED the hovered picture's element instead of moving it — a
+  // virtualized timeline re-renders its posts as you scroll, and x.com does
+  // this under a resting pointer. The picture is still on screen, still under
+  // the pointer; only the node is new. Re-read the unit's media boxes and take
+  // the hover straight to the new element, because dropping it here left the
+  // pointer sitting on a picture with no button until the user jiggled the
+  // mouse (#347).
+  function rehomeHover(anchor: Anchor) {
+    const found = anchorOf.get(anchor.box);
+    setHovered(null);
+    // The POST went away too (the feed recycled it, not re-rendered it): what
+    // is under the pointer now is a different post's picture, and handing the
+    // button to that would be the very thing the scroll rule forbids. Leave it
+    // to the next pointer move.
+    if (!found || !found.unit.isConnected) return;
+    const state = tracked.get(found.unit);
+    if (state) paint(found.unit, state); // syncAnchors picks up the new box
+    updateHoveredAtPointer(true);
   }
 
   function modalIsOpen(): boolean {
@@ -415,15 +467,23 @@ export async function startOverlay(): Promise<void> {
     });
   }
 
-  function hoveredIsOccluded(): boolean {
-    if (modalIsOpen()) return true;
-    if (!hovered?.el || !hovered.host) return false;
+  // Is something LAYERED OVER the picture where the pointer is — a lightbox, a
+  // page's own fixed header? Probed at the POINTER, not at the control: the
+  // control sits in the picture's top-left corner, so probing there answered
+  // "is that corner under the header", and scrolling a picture's top edge past
+  // x.com's header took the button away from a pointer resting on the middle
+  // of a fully visible picture (#347).
+  //
+  // Layers are only counted until the picture itself is reached, and only
+  // fixed/sticky ones: a site's OWN control drawn over the media (Bluesky's ALT
+  // badge, pixiv's bookmark heart) is an absolutely-positioned sibling inside
+  // the same stack, and hovering it is still hovering the picture (#338).
+  function pointerIsOccluded(anchor: Anchor): boolean {
+    if (!pointerPosition) return false;
     if (typeof document.elementsFromPoint !== 'function') return false;
-    const rect = hovered.el.getBoundingClientRect();
-    const x = rect.left + rect.width / 2;
-    const y = rect.top + rect.height / 2;
-    for (const el of document.elementsFromPoint(x, y)) {
-      if (el === hovered.el || hovered.el.contains(el) || hovered.host.contains(el)) continue;
+    for (const el of document.elementsFromPoint(pointerPosition.x, pointerPosition.y)) {
+      if (el === anchor.box || anchor.box.contains(el) || el.contains(anchor.box)) return false;
+      if (anchor.el && (el === anchor.el || anchor.el.contains(el))) return false;
       const position = getComputedStyle(el).position;
       if (position === 'fixed' || position === 'sticky') return true;
     }
@@ -598,7 +658,7 @@ export async function startOverlay(): Promise<void> {
       if (markMode === 'always') return isFirst ? 'mark' : null;
       return hovered === anchor ? 'mark' : null;
     }
-    if (!hoverSave || hovered !== anchor || !saveArmed) return null;
+    if (!hoverSave || hovered !== anchor) return null;
     return savable(anchor, rect) ? 'save' : null;
   }
 
@@ -785,7 +845,7 @@ export async function startOverlay(): Promise<void> {
     repositionQueued = false;
     const full = repositionFull;
     repositionFull = false;
-    updateHoveredAtPointer();
+    updateHoveredAtPointer(!inScrollBurst);
     if (!full) return;
     let detached = false;
     for (const unit of visible) {
@@ -808,21 +868,24 @@ export async function startOverlay(): Promise<void> {
     repositionFrame = requestAnimationFrame(reposition);
   }
 
+  // Ends the burst — the point from which layout may hand the hover to another
+  // picture again. The last scroll event is not that point: momentum and
+  // smooth scrolling keep moving the page after it, so the geometry is asked
+  // once more here.
   function settleHoverAfterScroll() {
     if (scrollHoverTimer !== null) clearTimeout(scrollHoverTimer);
-    const revisionWhenScrollStopped = pointerRevision;
     scrollHoverTimer = setTimeout(() => {
       scrollHoverTimer = null;
       inScrollBurst = false;
-      // A pointer event during the scroll is a deliberate new hover. Otherwise
-      // the old control merely passed under the pointer, so remove it quietly.
-      if (pointerRevision === revisionWhenScrollStopped) setHovered(null);
+      if (hovered && !pointerStillOn(hovered)) setHovered(null);
     }, SCROLL_HOVER_SETTLE_MS);
   }
 
   // Controls are children of their media and therefore scroll with it without
-  // JavaScript. A stationary pointer must not select every image that passes
-  // beneath it; after scrolling stops, clear only the old hover control.
+  // JavaScript. Scrolling itself decides nothing about hover: it only moves the
+  // picture, and geometry says whether the pointer is still on it. Scrolling a
+  // picture OUT from under the pointer clears the control here; scrolling
+  // WITHIN one (the wheel jiggle that reads a long post) leaves it alone.
   addEventListener(
     'scroll',
     () => {
@@ -830,13 +893,7 @@ export async function startOverlay(): Promise<void> {
       if (repositionFrame !== null) cancelAnimationFrame(repositionFrame);
       repositionFrame = null;
       repositionQueued = false;
-      if (hoveredIsOccluded()) {
-        if (scrollHoverTimer !== null) clearTimeout(scrollHoverTimer);
-        scrollHoverTimer = null;
-        setHovered(null);
-        inScrollBurst = false;
-        return;
-      }
+      if (hovered && !pointerStillOn(hovered)) setHovered(null);
       settleHoverAfterScroll();
     },
     { capture: true, passive: true },

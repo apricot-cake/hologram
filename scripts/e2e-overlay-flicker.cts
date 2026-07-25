@@ -14,6 +14,13 @@
 //                  overlay.ts borrowed position:relative on the <img>'s bare,
 //                  unsized parent, which silently became its containing
 //                  block and collapsed it to 0 height).
+//   jiggle-scroll — the wheel rocked back and forth over one picture (reading
+//                  a long post) never takes the button away: the picture stays
+//                  under the pointer the whole time, and hover is decided by
+//                  that geometry, not by the fact that a scroll happened.
+//   re-render    — the feed swapping the hovered picture's element for a fresh
+//                  one (a virtualized timeline re-rendering as you scroll) hands
+//                  the button to the new element, it does not drop it.
 //   still-scroll — wheel scrolling with a STATIONARY pointer mounts nothing:
 //                  pointermove is the only hover input, so pictures passing
 //                  under a resting pointer must not grow controls.
@@ -109,6 +116,52 @@ async function runPlatform(overlay: any, name: string): Promise<void> {
     const hoveredRect = await imageRect(page, spec.image, 1);
     const collapsed = hoveredRect.width < restRect.width * 0.9 || hoveredRect.height < restRect.height * 0.9;
     report(name, 'no-collapse', !collapsed, `picture rect at rest ${restRect.width}x${restRect.height}, while hovered ${hoveredRect.width}x${hoveredRect.height} (want unchanged)`);
+
+    // --- jiggle-scroll: stationary pointer, wheel rocked down/up in small
+    // notches so the picture ends where it started and never leaves the
+    // pointer. Nothing may unmount — the removal that used to happen here was
+    // the settle timer clearing the hover on the mere fact of a scroll (#347).
+    await takeLog(page);
+    for (let i = 0; i < 8; i++) {
+      await page.mouse.wheel({ deltaY: i % 2 ? -40 : 40 });
+      await wait(60);
+    }
+    await wait(SETTLE_MS + 250);
+    const jiggleEvents = await takeLog(page);
+    const jiggle = summarize(jiggleEvents);
+    const jiggleRect = await imageRect(page, spec.image, 1);
+    const onPicture = target.x >= jiggleRect.x && target.x <= jiggleRect.x + jiggleRect.width && target.y >= jiggleRect.y && target.y <= jiggleRect.y + jiggleRect.height;
+    const kept = await overlayCount(page);
+    // onPicture is a precondition, not a result: a fixture whose picture drifts
+    // out from under the pointer would make the rest of the check vacuous.
+    report(name, 'jiggle-scroll', onPicture && jiggle.removes === 0 && kept === 1, `pointerOnPicture=${onPicture} adds=${jiggle.adds} removes=${jiggle.removes} controls=${kept} (want pointerOnPicture=true removes=0 controls=1)`, formatTimeline(jiggleEvents));
+
+    // --- re-render: the feed swaps the hovered picture's element for an
+    // identical fresh one (what a virtualized timeline does while you scroll)
+    // without the pointer moving. The picture never left the pointer, so the
+    // button must end up on the new element instead of waiting for a mouse
+    // jiggle.
+    await takeLog(page);
+    await page.evaluate((selector: string) => {
+      const box = document.querySelectorAll(selector)[1];
+      if (!box) return;
+      const fresh = box.cloneNode(true) as Element;
+      // The page's own re-render produces its own markup; it does not carry
+      // the overlay's control over, and a clone that did would leave a second
+      // control behind and make this check measure the fixture, not the code.
+      for (const stale of fresh.querySelectorAll('[data-hologram-overlay]')) stale.remove();
+      box.replaceWith(fresh);
+    }, spec.image);
+    await wait(SETTLE_MS + 400);
+    const rerenderEvents = await takeLog(page);
+    const rerender = summarize(rerenderEvents);
+    const rehomed = await overlayCount(page);
+    report(name, 're-render', rehomed === 1 && rerender.flapping.length === 0, `controls=${rehomed} adds=${rerender.adds} flapping=[${rerender.flapping.join(', ')}] (want controls=1, no flapping)`, formatTimeline(rerenderEvents));
+    // Re-establish the hover on the new element for the phases below (the
+    // pointer has not moved, so puppeteer's own state is already there).
+    await page.mouse.move(target.x + 2, target.y);
+    await page.mouse.move(target.x, target.y);
+    await wait(200);
 
     // --- still-scroll: stationary pointer, 12 wheel notches. pointermove is
     // the overlay's only hover input, so nothing may mount; the one hovered
