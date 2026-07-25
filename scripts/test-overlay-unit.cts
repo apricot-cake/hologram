@@ -184,7 +184,7 @@ const marks = () => controls().filter((el) => el.title === 'Saved in Hologram');
 const saveButtons = () => controls().filter((el) => el.title === 'Save image');
 const settle = () => new Promise((r) => setTimeout(r, 400)); // past the 300ms query debounce
 // overlay.js decides what the pointer is over by COORDINATES (a real
-// pointerover always carries clientX/clientY), not by which element the event
+// pointermove always carries clientX/clientY), not by which element the event
 // fired on — so a mark/button shows even when the site stacks its own control
 // over the picture. The harness mirrors that: aim at the media box's center.
 const boxOf = (id) => {
@@ -192,8 +192,8 @@ const boxOf = (id) => {
   return el.matches('[data-testid="tweetPhoto"]') ? el : el.querySelector('[data-testid="tweetPhoto"]');
 };
 const controlOf = (id) => controls().filter((el) => el.parentElement === boxOf(id));
-const pointerOver = (target, x, y) => {
-  const e: any = new window.Event('pointerover', { bubbles: true });
+const pointerMove = (target, x, y) => {
+  const e: any = new window.Event('pointermove', { bubbles: true });
   e.clientX = x;
   e.clientY = y;
   target.dispatchEvent(e);
@@ -201,9 +201,9 @@ const pointerOver = (target, x, y) => {
 const hover = (id) => {
   const box = boxOf(id);
   const r = box.getBoundingClientRect();
-  pointerOver(box, r.left + r.width / 2, r.top + r.height / 2);
+  pointerMove(box, r.left + r.width / 2, r.top + r.height / 2);
 };
-const hoverAway = () => pointerOver(window.document.getElementById('feed'), 900, 50); // right of every box → over nothing
+const hoverAway = () => pointerMove(window.document.getElementById('feed'), 900, 50); // right of every box → over nothing
 const click = (el) => el.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
 
 (async () => {
@@ -234,6 +234,12 @@ const click = (el) => el.dispatchEvent(new window.MouseEvent('click', { bubbles:
   window.document.querySelector('#p1 [data-testid="tweetPhoto"]').setAttribute('data-rect-top', '-300');
   window.document.querySelector('#p2 [data-testid="tweetPhoto"]').setAttribute('data-rect-top', '100');
   window.dispatchEvent(new window.Event('scroll'));
+  // Pointer Events requires this boundary event when layout moves p2 under a
+  // stationary pointer. It must not count as a deliberate hover movement.
+  const layoutBoundary: any = new window.Event('pointerover', { bubbles: true });
+  layoutBoundary.clientX = 200;
+  layoutBoundary.clientY = 250;
+  boxOf('p2').dispatchEvent(layoutBoundary);
   check('a visible control stays attached to its media while scrolling', marks()[0].parentElement === boxOf('p1') && marks()[0].style.top === '6px' && animationFrames.size === 0);
   check('a stationary pointer does not immediately select the next picture after scroll', controlOf('p2').length === 0);
   await new Promise((r) => setTimeout(r, 120));
@@ -249,7 +255,7 @@ const click = (el) => el.dispatchEvent(new window.MouseEvent('click', { bubbles:
   //     detection is by coordinates, not by walking up from what was hit. Fire the
   //     event on #feed (neither the box nor a descendant) with coords inside p1's box.
   const p1box = boxOf('p1').getBoundingClientRect();
-  pointerOver(window.document.getElementById('feed'), p1box.left + p1box.width / 2, p1box.top + p1box.height / 2);
+  pointerMove(window.document.getElementById('feed'), p1box.left + p1box.width / 2, p1box.top + p1box.height / 2);
   check('a pointer over a foreign overlay on the picture still hovers it', marks().length === 1);
   hoverAway();
 

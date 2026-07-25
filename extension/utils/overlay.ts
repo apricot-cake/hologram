@@ -312,8 +312,13 @@ export async function startOverlay(): Promise<void> {
   // One delegated listener rather than per-image handlers: the feed replaces its
   // nodes constantly, and a listener attached to an image would have to be
   // re-attached on every re-render (and would be a change to the host's DOM).
+  // `pointerover` is not user input: the browser also emits it when layout
+  // moves a new element under a stationary pointer (including while scrolling),
+  // and may delay that boundary event. `pointermove` fires only when the user
+  // actually moves the pointing device, so it cannot make the control trail a
+  // scrolling picture.
   document.addEventListener(
-    'pointerover',
+    'pointermove',
     (e) => {
       const pe = e as PointerEvent;
       pointerPosition = { x: pe.clientX, y: pe.clientY };
