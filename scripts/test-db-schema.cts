@@ -30,13 +30,13 @@ function mkdb() {
   return path.join(dir, 'test.db');
 }
 
-const EXPECTED_TABLES = ['posts', 'media', 'tags', 'tag_parents', 'tag_aliases', 'post_tags', 'folders', 'folder_items', 'poster_workspace_items', 'poster_folders', 'poster_folder_items', 'poster_tags', 'manual_groups', 'manual_group_items', 'ungrouped_keys', 'tabs', 'tab_windows'];
+const EXPECTED_TABLES = ['posts', 'media', 'tags', 'tag_parents', 'tag_aliases', 'post_tags', 'folders', 'folder_items', 'poster_folders', 'poster_folder_items', 'poster_tags', 'manual_groups', 'manual_group_items', 'ungrouped_keys', 'tabs', 'tab_windows'];
 
 // --- migration applies + every table lands -----------------------------
 
 {
   const { db, sqlite } = openDatabase(mkdb());
-  assert.strictEqual(sqlite.pragma('user_version', { simple: true }), 3, 'v1 DDL plus the #297 add-source-mtime and #135 drop-clip-items migrations');
+  assert.strictEqual(sqlite.pragma('user_version', { simple: true }), 4, 'v1 DDL plus the #297 add-source-mtime, #135 drop-clip-items, and drop-poster-workspace-items migrations');
 
   const names = new Set(
     sqlite
@@ -48,6 +48,7 @@ const EXPECTED_TABLES = ['posts', 'media', 'tags', 'tag_parents', 'tag_aliases',
   // FTS5 registers itself plus shadow tables (posts_fts_data, _idx, _docsize, _config).
   ok(names.has('posts_fts'), 'posts_fts virtual table exists');
   ok(!names.has('clip_items'), 'clip_items is dropped by the #135 migration');
+  ok(!names.has('poster_workspace_items'), 'poster_workspace_items is dropped by the drop-poster-workspace-items migration');
   passed += 3;
 
   sqlite.close();
@@ -166,7 +167,7 @@ const EXPECTED_TABLES = ['posts', 'media', 'tags', 'tag_parents', 'tag_aliases',
   first.sqlite.close();
 
   const second = openDatabase(file);
-  assert.strictEqual(second.sqlite.pragma('user_version', { simple: true }), 3, 'reopen does not re-run the migrations');
+  assert.strictEqual(second.sqlite.pragma('user_version', { simple: true }), 4, 'reopen does not re-run the migrations');
   ok(second.sqlite.prepare("SELECT name FROM tags WHERE name = 'x'").get(), 'data from the first session survives reopen');
   passed += 2;
   second.sqlite.close();

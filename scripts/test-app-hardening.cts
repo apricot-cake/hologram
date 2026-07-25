@@ -86,7 +86,7 @@ const evalJs = `(async () => {
   const tgEmpty = tt && tt.types && typeof tt.types === 'object' && Object.keys(tt.types).length === 0;
   // ... but a follow-up set-* (e.g. the renderer auto-persisting that empty) is
   // REFUSED, so nothing overwrites the corrupt-but-recoverable file on disk.
-  const setColl = await window.hologram.setFolders({ folders: [], posterWorkspace: [] });
+  const setColl = await window.hologram.setFolders({ folders: [] });
   const setTg = await window.hologram.setTagTypes({}, {});
   const setCollRefused = !!(setColl && setColl.ok === false);
   const setTgRefused = !!(setTg && setTg.ok === false);

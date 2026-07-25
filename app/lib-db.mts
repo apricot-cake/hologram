@@ -39,6 +39,10 @@ const MIGRATIONS: Migration[] = [
   { name: 'add-source-mtime', up: (db) => db.exec('ALTER TABLE posts ADD COLUMN sourceMtimeMs INTEGER') },
   // #135: the clip feature is retired (folders/favorites/pin boards took over its roles).
   { name: 'drop-clip-items', up: (db) => db.exec('DROP TABLE clip_items') },
+  // The poster-side workspace UI was retired 2026-06-27 (poster organization
+  // consolidated into poster-folder) but this persistence layer was left behind —
+  // no renderer code has read or written it since.
+  { name: 'drop-poster-workspace-items', up: (db) => db.exec('DROP TABLE poster_workspace_items') },
 ];
 
 interface Migration {
@@ -210,9 +214,6 @@ interface FolderItemsTable {
   folderId: string;
   postId: string;
 }
-interface PosterWorkspaceItemsTable {
-  posterKey: string;
-}
 interface PosterFoldersTable {
   id: string;
   name: string;
@@ -275,7 +276,6 @@ interface Schema {
   post_tags: PostTagsTable;
   folders: FoldersTable;
   folder_items: FolderItemsTable;
-  poster_workspace_items: PosterWorkspaceItemsTable;
   poster_folders: PosterFoldersTable;
   poster_folder_items: PosterFolderItemsTable;
   poster_tags: PosterTagsTable;
