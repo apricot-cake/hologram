@@ -37,6 +37,22 @@ import { SCHEMA_V1_SQL } from './lib-db-schema.mts';
 const MIGRATIONS: Migration[] = [
   { name: 'schema-v1', up: (db) => db.exec(SCHEMA_V1_SQL) },
   { name: 'add-source-mtime', up: (db) => db.exec('ALTER TABLE posts ADD COLUMN sourceMtimeMs INTEGER') },
+  // St5 (#298) needs a durable, transactional switch between the temporary
+  // sidecar-derived index and the DB-owned write path. Keeping it in SQLite
+  // (rather than config.json) means a copied/restored database carries its
+  // own interpretation and cannot silently be re-imported from stale JSON.
+  {
+    name: 'add-store-state',
+    up: (db) =>
+      db.exec(`
+        CREATE TABLE store_state (
+          key TEXT PRIMARY KEY,
+          value TEXT NOT NULL
+        );
+        ALTER TABLE posts ADD COLUMN userKind TEXT;
+        ALTER TABLE posts ADD COLUMN tagReviewed INTEGER;
+      `),
+  },
 ];
 
 interface Migration {
@@ -166,6 +182,8 @@ interface PostsTable {
   shotH: number | null;
   trashedAt: string | null;
   sourceMtimeMs: number | null; // add-source-mtime migration (#297) — see MIGRATIONS comment
+  userKind: string | null;
+  tagReviewed: number | null;
 }
 interface MediaTable {
   id: Generated<number>;
@@ -249,6 +267,10 @@ interface TabWindowsTable {
   windowId: string;
   activeTabId: string | null;
 }
+interface StoreStateTable {
+  key: string;
+  value: string;
+}
 // postsFts is FTS5 (posts_fts): a virtual table, not a normal one, so Kysely's
 // typed insert/select work but its DDL helpers do not apply — it is created as
 // raw SQL in lib-db-schema.mts. postId is UNINDEXED (match results carry it
@@ -286,6 +308,7 @@ interface Schema {
   ungrouped_keys: UngroupedKeysTable;
   tabs: TabsTable;
   tab_windows: TabWindowsTable;
+  store_state: StoreStateTable;
   posts_fts: PostsFtsTable;
 }
 
