@@ -11,12 +11,12 @@
 // extension file as one program, so top-level names must stay unique.
 export function startOptions(): void {
   // Both read by overlay.js (content script) and written only here.
-  // Absent = the defaults overlay.js ships with: the mark appears on hover
+  // Absent = the defaults overlay.js ships with: the mark is always shown
   // (#309) and the save button is on (#94). The check is local-only, so there
   // is nothing to opt into.
   const MARK_MODE_KEY = 'savedBadgeMode';
   const HOVER_SAVE_KEY = 'hoverSaveButton';
-  const MARK_MODES = ['hover', 'always', 'off'];
+  const MARK_MODES = ['always', 'hover', 'off'];
 
   // Strings come from _locales via chrome.i18n (the standard channel for
   // extension pages); the static HTML text is the Japanese fallback for a
@@ -50,7 +50,7 @@ export function startOptions(): void {
     chrome.storage.local.get(MARK_MODE_KEY, (got) => {
       if (chrome.runtime.lastError) return;
       const stored = got[MARK_MODE_KEY];
-      const current = typeof stored === 'string' && MARK_MODES.includes(stored) ? stored : 'hover';
+      const current = typeof stored === 'string' && MARK_MODES.includes(stored) ? stored : 'always';
       for (const radio of radios) radio.checked = radio.value === current;
     });
     for (const radio of radios) {
