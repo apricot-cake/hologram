@@ -44,6 +44,36 @@ const HTML = `<!doctype html>
     await page.mouse.move(photoBox.x + photoBox.width / 2, photoBox.y + photoBox.height / 2);
     await page.waitForSelector('[data-hologram-overlay]', { timeout: 3000 });
 
+    // This disposable browser has no production Native Messaging host. Pressing
+    // the hover control therefore exercises the real background failure path:
+    // the retry chip stays on the image, and the readable alert appears at the
+    // same top-center position as the Alt+S banner (#357).
+    await page.click('[data-hologram-overlay]');
+    await page.waitForSelector('[data-hologram-save-banner]', { timeout: 5000 });
+    const failureUi = await page.evaluate(() => {
+      const banner = document.querySelector('[data-hologram-save-banner]');
+      const retry = document.querySelector('[data-hologram-overlay]');
+      if (!banner || !retry) return null;
+      const r = banner.getBoundingClientRect();
+      return {
+        role: banner.getAttribute('role'),
+        text: banner.textContent,
+        top: r.top,
+        centerX: r.left + r.width / 2,
+        width: r.width,
+        retryTitle: retry.getAttribute('title'),
+      };
+    });
+    if (!failureUi || failureUi.role !== 'alert' || !failureUi.text || failureUi.width < 200 || Math.abs(failureUi.top - 12) > 0.5 || Math.abs(failureUi.centerX - 640) > 0.5 || !failureUi.retryTitle) {
+      throw new Error(`OVERLAY_FAILURE_BANNER_LAYOUT_FAIL: ${JSON.stringify(failureUi)}`);
+    }
+    if (process.env.HOLOGRAM_OVERLAY_SCREENSHOT) {
+      await page.screenshot({ path: process.env.HOLOGRAM_OVERLAY_SCREENSHOT });
+    }
+    await wait(3000); // banner + retry dwell end before the scroll checks
+    const failureCleared = await page.evaluate(() => !document.querySelector('[data-hologram-save-banner]'));
+    if (!failureCleared) throw new Error('OVERLAY_FAILURE_BANNER_DISMISS_FAIL: failure banner did not leave');
+
     const before = await page.evaluate(() => {
       const button = document.querySelector('[data-hologram-overlay]');
       const media = document.querySelector('[data-testid="tweetPhoto"]');
@@ -103,7 +133,7 @@ const HTML = `<!doctype html>
     const headerClear = await page.evaluate(() => !document.querySelector('[data-hologram-overlay]'));
     if (!headerClear) throw new Error('OVERLAY_HEADER_OCCLUSION_FAIL: control remained while the pointer was on the fixed header');
 
-    console.log('PASS e2e-overlay-visual: scroll tracking, modal occlusion, fixed-header occlusion');
+    console.log('PASS e2e-overlay-visual: failure banner layout, scroll tracking, modal occlusion, fixed-header occlusion');
   } finally {
     await overlay.close();
   }

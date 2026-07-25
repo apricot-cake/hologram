@@ -329,6 +329,7 @@ const click = (el) => el.dispatchEvent(new window.MouseEvent('click', { bubbles:
   check('it saved the post the picture belongs to', save.postUrl === 'https://x.com/bob/status/222');
   check('it offered the original-size URL as well as the thumbnail', save.imageUrls.includes('https://pbs.twimg.com/media/BBB.jpg') && save.imageUrls.some((u) => u.includes('name=orig')));
   check('the corner answers the press with the saved mark', marks().length === 1 && saveButtons().length === 0);
+  check('a successful hover save does not add a top banner', window.document.querySelectorAll('[data-hologram-save-banner]').length === 0);
   hoverAway();
   hover('p2');
   check('the post now reads as saved, so it is no longer offered', saveButtons().length === 0 && marks().length === 1);
@@ -343,6 +344,8 @@ const click = (el) => el.dispatchEvent(new window.MouseEvent('click', { bubbles:
   click(saveButtons()[0]);
   const failed = controlOf('p4a');
   check('a failed save is reported in place, saying why', failed.length === 1 && failed[0].title === "Can't reach Hologram's saver. Please restart Chrome.");
+  const failureBanners: any[] = Array.from(window.document.querySelectorAll('[data-hologram-save-banner]'));
+  check('a failed hover save also uses a readable top banner', failureBanners.length === 1 && failureBanners[0].getAttribute('role') === 'alert' && failureBanners[0].textContent === "Can't reach Hologram's saver. Please restart Chrome.");
   const before = sent.length;
   click(failed[0]);
   check('pressing the failure retries instead of doing nothing', sent.length === before + 1 && sent[sent.length - 1].type === 'imageDragged');

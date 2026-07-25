@@ -100,6 +100,7 @@ export async function startOverlay(): Promise<void> {
   const CONTROL_INSET = 6;
   const FLASH_MS = 1400; // "saved" confirmation after a press
   const ERROR_MS = 2500; // failure shown, then back to a button to retry
+  const ERROR_BANNER_MS = 2800; // same readable dwell as the Alt+S failure banner
   // A picture too small to be the point of the post: a quote-preview thumbnail,
   // an avatar-sized decoration. Saving those is almost never meant.
   const MIN_SAVE_PX = 100;
@@ -131,6 +132,8 @@ export async function startOverlay(): Promise<void> {
 
   let markMode: MarkMode = 'always';
   let hoverSave = true;
+  let failureBanner: HTMLDivElement | null = null;
+  let failureBannerTimer: ReturnType<typeof setTimeout> | null = null;
   const tracked = new Map<Element, UnitState>();
   const anchorOf = new Map<Element, { unit: Element; anchor: Anchor }>(); // media box -> its anchor
   const visible = new Set<Element>();
@@ -499,6 +502,71 @@ export async function startOverlay(): Promise<void> {
 
   // === saving ===
 
+  function showFailureBanner(text: string) {
+    if (failureBannerTimer) clearTimeout(failureBannerTimer);
+    failureBannerTimer = null;
+    failureBanner?.remove();
+
+    // #226 deliberately leaves the legacy inline presenters separate until
+    // #44 replaces them with one Shadow DOM + CSS component. Mirror the Alt+S
+    // banner here without introducing another legacy abstraction just before
+    // that migration.
+    const banner = document.createElement('div');
+    banner.setAttribute('data-hologram-save-banner', '');
+    banner.setAttribute('role', 'alert');
+    banner.style.cssText = [
+      'position:fixed',
+      'top:12px',
+      'left:50%',
+      'transform:translateX(-50%)',
+      'z-index:2147483647',
+      'display:flex',
+      'align-items:center',
+      'gap:9px',
+      'padding:6px 16px 6px 7px',
+      'max-width:calc(100vw - 48px)',
+      'box-sizing:border-box',
+      'border-radius:999px',
+      'border:1px solid rgba(229,72,77,0.65)',
+      `background:${G.CARD_BG}`,
+      `color:${G.TEXT}`,
+      `font:600 13px/1.4 ${G.FONT_SANS}`,
+      `box-shadow:${G.CARD_SHADOW}`,
+      'pointer-events:none',
+    ].join(';');
+    const badge = document.createElement('div');
+    badge.style.cssText = `width:26px;height:26px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;background:${G.FAIL_RED};color:#fff;`;
+    badge.appendChild(G.makeIcon(G.ICONS.cross, 15));
+    banner.appendChild(badge);
+    const label = document.createElement('div');
+    label.textContent = text;
+    banner.appendChild(label);
+    document.body.appendChild(banner);
+    failureBanner = banner;
+
+    if (!G.REDUCED_MOTION) {
+      banner.animate(
+        [
+          { opacity: 0, transform: 'translateX(-50%) translateY(-14px) scale(0.96)' },
+          { opacity: 1, transform: 'translateX(-50%)' },
+        ],
+        { duration: G.DUR_POP, easing: G.EASE_OUT },
+      );
+    }
+
+    failureBannerTimer = setTimeout(() => {
+      failureBannerTimer = null;
+      if (failureBanner === banner) failureBanner = null;
+      if (G.REDUCED_MOTION) {
+        banner.remove();
+        return;
+      }
+      const anim = banner.animate([{ opacity: 1 }, { opacity: 0, transform: 'translateX(-50%) translateY(-14px) scale(0.96)' }], { duration: G.DUR_POP, easing: G.EASE_OUT });
+      anim.onfinish = () => banner.remove();
+      anim.oncancel = () => banner.remove();
+    }, ERROR_BANNER_MS);
+  }
+
   function startSave(unit: Element, state: UnitState, anchor: Anchor) {
     if (anchor.phase !== 'idle' || !media) return; // already in flight — one press, one save
     // Identity is read HERE, never cached on the anchor: a virtualized feed
@@ -518,7 +586,9 @@ export async function startOverlay(): Promise<void> {
     chrome.runtime.sendMessage({ type: 'imageDragged', platform: media.platform, postUrl: identity.link, imageUrls: collectImageUrls(img, media.platform) }, (res: any) => {
       if (chrome.runtime.lastError || !res || !res.ok) {
         setPhase(anchor, 'error', ERROR_MS);
-        anchor.note = res?.hostMissing ? t('bannerHostMissing') : t('bannerFailed') + (res?.error ? `: ${res.error}` : '');
+        const failureText = res?.hostMissing ? t('bannerHostMissing') : t('bannerFailed') + (res?.error ? `: ${res.error}` : '');
+        anchor.note = failureText;
+        showFailureBanner(failureText);
         paint(unit, state);
         return;
       }
