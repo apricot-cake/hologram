@@ -76,6 +76,9 @@ export async function startOverlay(): Promise<void> {
   const MARK_MODE_KEY = 'savedBadgeMode'; // chrome.storage.local, 'always' | 'hover' | 'off'
   const HOVER_SAVE_KEY = 'hoverSaveButton'; // chrome.storage.local, boolean
   const QUERY_DEBOUNCE_MS = 300; // one batch per scroll burst, not per post
+  // Ends a scroll burst before clearing the control that scrolled out from
+  // under a stationary pointer. This never delays a real pointer hover.
+  const SCROLL_HOVER_SETTLE_MS = 100;
   const SCAN_DEBOUNCE_MS = 250; // feed mutations arrive in floods
   const CONTROL_SIZE = 22;
   // This remains visually close to the 22px saved mark, while the actual
@@ -129,6 +132,8 @@ export async function startOverlay(): Promise<void> {
   let repositionFull = false;
   let hovered: Anchor | null = null;
   let pointerPosition: { x: number; y: number } | null = null;
+  let pointerRevision = 0;
+  let scrollHoverTimer: ReturnType<typeof setTimeout> | null = null;
   let saveArmed = false;
 
   const { getMessage: t, partialSaveText } = await createI18n();
@@ -312,6 +317,7 @@ export async function startOverlay(): Promise<void> {
     (e) => {
       const pe = e as PointerEvent;
       pointerPosition = { x: pe.clientX, y: pe.clientY };
+      pointerRevision += 1;
       updateHoveredAtPointer();
     },
     true,
@@ -321,6 +327,7 @@ export async function startOverlay(): Promise<void> {
     (e) => {
       if (!(e as PointerEvent).relatedTarget) {
         pointerPosition = null;
+        pointerRevision += 1;
         setHovered(null); // pointer left the document
       }
     },
@@ -362,16 +369,13 @@ export async function startOverlay(): Promise<void> {
     if (next === hovered) return;
     const previous = hovered;
     hovered = next;
-    // A scroll can move a different picture under a stationary pointer. The
-    // save action must be ready as soon as that happens; delaying each new
-    // target makes the button visibly trail the image on every scroll.
+    // A pointer event is deliberate input, so its save action is ready at once.
     saveArmed = next !== null;
     if (previous) repaintAnchor(previous);
     if (next) repaintAnchor(next);
   }
 
-  // A scroll changes what sits below a stationary pointer without dispatching a
-  // pointer event. Re-read the geometry whenever visible media changes too.
+  // Re-read geometry only for actual pointer movement and layout changes.
   function updateHoveredAtPointer() {
     if (!pointerPosition) return;
     setHovered(anchorAtPoint(pointerPosition.x, pointerPosition.y));
@@ -739,15 +743,27 @@ export async function startOverlay(): Promise<void> {
     repositionFrame = requestAnimationFrame(reposition);
   }
 
-  // Existing controls scroll with their host media. This only re-evaluates which
-  // image is under a stationary pointer, so a newly hovered control can appear.
+  function settleHoverAfterScroll() {
+    if (scrollHoverTimer !== null) clearTimeout(scrollHoverTimer);
+    const revisionWhenScrollStopped = pointerRevision;
+    scrollHoverTimer = setTimeout(() => {
+      scrollHoverTimer = null;
+      // A pointer event during the scroll is a deliberate new hover. Otherwise
+      // the old control merely passed under the pointer, so remove it quietly.
+      if (pointerRevision === revisionWhenScrollStopped) setHovered(null);
+    }, SCROLL_HOVER_SETTLE_MS);
+  }
+
+  // Controls are children of their media and therefore scroll with it without
+  // JavaScript. A stationary pointer must not select every image that passes
+  // beneath it; after scrolling stops, clear only the old hover control.
   addEventListener(
     'scroll',
     () => {
       if (repositionFrame !== null) cancelAnimationFrame(repositionFrame);
       repositionFrame = null;
       repositionQueued = false;
-      reposition();
+      settleHoverAfterScroll();
     },
     { capture: true, passive: true },
   );

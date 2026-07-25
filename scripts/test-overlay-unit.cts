@@ -182,7 +182,7 @@ const controls = (): any[] => Array.from(window.document.querySelectorAll('[data
 // English locale, so these are the browser-visible labels rather than source keys.
 const marks = () => controls().filter((el) => el.title === 'Saved in Hologram');
 const saveButtons = () => controls().filter((el) => el.title === 'Save image');
-const settle = () => new Promise((r) => setTimeout(r, 400)); // past the 300ms query debounce and the 100ms button delay
+const settle = () => new Promise((r) => setTimeout(r, 400)); // past the 300ms query debounce
 // overlay.js decides what the pointer is over by COORDINATES (a real
 // pointerover always carries clientX/clientY), not by which element the event
 // fired on — so a mark/button shows even when the site stacks its own control
@@ -229,10 +229,17 @@ const click = (el) => el.dispatchEvent(new window.MouseEvent('click', { bubbles:
   check('the media box becomes the control’s positioning parent', (boxOf('p1') as any).style.position === 'relative');
   check('the control is interactive', (marks()[0] as any).style.pointerEvents !== 'none');
   // The control is in the media box, so scrolling moves them in the same
-  // composited operation. No new coordinate write or animation frame is needed.
-  window.document.querySelector('#p1 [data-testid="tweetPhoto"]').setAttribute('data-rect-top', '180');
+  // composited operation. A stationary pointer must not select p2 merely
+  // because p2 scrolls underneath it; no new coordinate write is needed.
+  window.document.querySelector('#p1 [data-testid="tweetPhoto"]').setAttribute('data-rect-top', '-300');
+  window.document.querySelector('#p2 [data-testid="tweetPhoto"]').setAttribute('data-rect-top', '100');
   window.dispatchEvent(new window.Event('scroll'));
   check('a visible control stays attached to its media while scrolling', marks()[0].parentElement === boxOf('p1') && marks()[0].style.top === '6px' && animationFrames.size === 0);
+  check('a stationary pointer does not immediately select the next picture after scroll', controlOf('p2').length === 0);
+  await new Promise((r) => setTimeout(r, 120));
+  check('the old hover control clears after scrolling settles', controls().length === 0);
+  window.document.querySelector('#p1 [data-testid="tweetPhoto"]').setAttribute('data-rect-top', '100');
+  window.document.querySelector('#p2 [data-testid="tweetPhoto"]').setAttribute('data-rect-top', '400');
   hoverAway();
   check('the mark goes away with the pointer', controls().length === 0);
 
