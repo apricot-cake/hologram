@@ -130,7 +130,7 @@ function register(ctx) {
   // Each folder is { id, name, kind:'static'|'dynamic', created, items:[captureId] };
   // a dynamic folder additionally carries a saved search (`tree`), and holds no items.
   // <saveFolder>/folders.json:
-  //   { folders:[…], posterWorkspace:[posterKey] }
+  //   { folders:[…] }
   // `activeId` is legacy (the old 🔖 one-click target); the renderer no longer
   // writes it, so it settles to null.
   function normFolders(arr) {
@@ -152,7 +152,7 @@ function register(ctx) {
   }
   ipcMain.handle('get-folders', () => {
     const folder = getSaveFolder();
-    const empty = { folders: [], activeId: null, posterWorkspace: [] };
+    const empty = { folders: [], activeId: null };
     if (!folder) return empty;
     const foldersPath = path.join(folder, 'folders.json');
     // One-time pre-release migration: the store file went from collections.json →
@@ -187,8 +187,7 @@ function register(ctx) {
     const folders = normFolders(j.folders);
     const ids = new Set(folders.map((c) => c.id));
     const activeId = typeof j.activeId === 'string' && ids.has(j.activeId) ? j.activeId : null;
-    const posterWorkspace = Array.isArray(j.posterWorkspace) ? [...new Set(j.posterWorkspace.map(String))] : [];
-    return { folders, activeId, posterWorkspace };
+    return { folders, activeId };
   });
   ipcMain.handle('set-folders', (_e, data) => {
     const folder = getSaveFolder();
@@ -197,8 +196,7 @@ function register(ctx) {
       const folders = normFolders(data && data.folders);
       const ids = new Set(folders.map((c) => c.id));
       const activeId = data && typeof data.activeId === 'string' && ids.has(data.activeId) ? data.activeId : null;
-      const posterWorkspace = data && Array.isArray(data.posterWorkspace) ? [...new Set(data.posterWorkspace.map(String))] : [];
-      writeOrgJsonSync(path.join(folder, 'folders.json'), { folders, activeId, posterWorkspace });
+      writeOrgJsonSync(path.join(folder, 'folders.json'), { folders, activeId });
       return { ok: true };
     } catch {
       return { ok: false };

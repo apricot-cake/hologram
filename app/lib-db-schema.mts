@@ -151,9 +151,10 @@ CREATE TABLE folder_items (
 );
 CREATE INDEX idx_folder_items_postId ON folder_items(postId);
 
--- clip_items shipped here as part of v1 (this string is historical and must not
--- change) but the clip feature is retired — the 'drop-clip-items' migration in
--- lib-db.mts DROPs this table. posterWorkspace is unrelated and stays.
+-- clip_items and poster_workspace_items shipped here as part of v1 (this string
+-- is historical and must not change) but both features are retired — the
+-- 'drop-clip-items' and 'drop-poster-workspace-items' migrations in lib-db.mts
+-- DROP these tables.
 CREATE TABLE clip_items (
   postId TEXT PRIMARY KEY REFERENCES posts(captureId) ON DELETE CASCADE
 );

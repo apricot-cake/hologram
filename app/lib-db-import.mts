@@ -244,8 +244,8 @@ function writePost(stmts: PostStmts, resolveTagId: (name: string) => number, rec
 }
 
 // Re-derives the organization-layer tables (tags' kind, ungrouped_keys,
-// folders/folder_items/poster_workspace_items, manual_groups/items,
-// poster_folders/items, poster_tags, tabs/tab_windows) from their JSON files.
+// folders/folder_items, manual_groups/items, poster_folders/items,
+// poster_tags, tabs/tab_windows) from their JSON files.
 // Wholesale wipe-then-reinsert for every table EXCEPT tags (get-or-create,
 // per the module comment) — these files are small, so re-reading and
 // rewriting them in full on every run is simpler than diffing and costs
@@ -277,11 +277,10 @@ function importOrgLayer(folder: string, sqlite: Database.Database, resolveTagId:
     for (const k of ungrouped.keys) if (typeof k === 'string' && k) ins.run(k);
   }
 
-  // folders.json: { folders: [{id,name,kind,created,items,tree?}], posterWorkspace }
+  // folders.json: { folders: [{id,name,kind,created,items,tree?}] }
   const foldersJson = readJsonFile(folder, 'folders.json', failures);
   sqlite.prepare('DELETE FROM folder_items').run();
   sqlite.prepare('DELETE FROM folders').run();
-  sqlite.prepare('DELETE FROM poster_workspace_items').run();
   if (foldersJson && Array.isArray(foldersJson.folders)) {
     const insFolder = sqlite.prepare('INSERT INTO folders (id, name, kind, created, tree) VALUES (?,?,?,?,?)');
     const insItem = sqlite.prepare('INSERT OR IGNORE INTO folder_items (folderId, postId) VALUES (?,?)');
@@ -293,10 +292,6 @@ function importOrgLayer(folder: string, sqlite: Database.Database, resolveTagId:
       if (Array.isArray(f.items)) {
         for (const postId of f.items) if (typeof postId === 'string' && validPostIds.has(postId)) insItem.run(f.id, postId);
       }
-    }
-    if (Array.isArray(foldersJson.posterWorkspace)) {
-      const insPw = sqlite.prepare('INSERT OR IGNORE INTO poster_workspace_items (posterKey) VALUES (?)');
-      for (const posterKey of foldersJson.posterWorkspace) if (typeof posterKey === 'string' && posterKey) insPw.run(posterKey);
     }
   }
 

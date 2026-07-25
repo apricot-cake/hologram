@@ -70,7 +70,6 @@ function writeJson(folder: string, name: string, data: unknown) {
   writeJson(folder, 'tag-types.json', { types: { 'character:alice': 'character', 'style:sketch': 'work' } });
   writeJson(folder, 'folders.json', {
     folders: [{ id: 'f1', name: 'F1', kind: 'static', created: 123, items: ['cap-1', 'cap-2', 'cap-3'] }],
-    posterWorkspace: ['poster-key-1'],
   });
   writeJson(folder, 'manual-groups.json', { groups: [['cap-1', 'cap-2']] });
   writeJson(folder, 'poster-folders.json', { folders: [{ id: 'pf1', name: 'PF1', items: ['poster-key-1'] }] });
@@ -135,8 +134,7 @@ function writeJson(folder: string, name: string, data: unknown) {
 
   const folderItems = (sqlite.prepare('SELECT postId FROM folder_items WHERE folderId = ? ORDER BY postId').all('f1') as any[]).map((r) => r.postId);
   assert.deepStrictEqual(folderItems, ['cap-1', 'cap-2', 'cap-3'], 'folder_items reflects folders.json (all 3 posts exist at this point)');
-  ok(sqlite.prepare('SELECT 1 FROM poster_workspace_items WHERE posterKey = ?').get('poster-key-1'), "poster_workspace_items carries folders.json's posterWorkspace set");
-  passed += 2;
+  passed += 1;
 
   const groupRows = sqlite.prepare('SELECT g.id AS groupId, gi.postId, gi.seq FROM manual_groups g JOIN manual_group_items gi ON gi.groupId = g.id ORDER BY gi.seq').all() as any[];
   assert.strictEqual(groupRows.length, 2, "manual-groups.json's one group of 2 becomes 2 manual_group_items rows");
