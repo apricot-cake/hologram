@@ -59,7 +59,7 @@ Active filters gather at the top of the screen; **Reset** clears them all at onc
 
 ### 4. Organize
 
-- **Tags** — right-click a card → "Edit tags." There's also a "tagging session" to tag untagged posts one after another.
+- **Tags** — right-click a card → "Edit tags." To tag a batch of untagged posts, filter to "no tags," save that search, then step through with the arrow keys and type into the tag field as you go.
 - **Folders** — right-click → "Add to a folder…" to group by theme or favorites.
 - **Bulk actions** — select multiple posts with the ○ at the top-left of each card, then tag, add to a folder, group, or delete them all at once.
 
