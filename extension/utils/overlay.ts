@@ -135,6 +135,10 @@ export async function startOverlay(): Promise<void> {
   let pointerRevision = 0;
   let scrollHoverTimer: ReturnType<typeof setTimeout> | null = null;
   let saveArmed = false;
+  // True from the first scroll event of a burst until it settles (or hover is
+  // occluded). Suppresses hover updates from IO intersection churn below, so a
+  // stationary pointer does not pick up every image that scrolls beneath it.
+  let inScrollBurst = false;
 
   const { getMessage: t, partialSaveText } = await createI18n();
 
@@ -193,7 +197,10 @@ export async function startOverlay(): Promise<void> {
           if (state) clearControls(state);
         }
       }
-      updateHoveredAtPointer();
+      // Skipped mid-scroll: an intersection change is layout, not pointer
+      // input, and re-hitting it here is what made a stationary pointer pick
+      // up every image passing beneath it (#347).
+      if (!inScrollBurst) updateHoveredAtPointer();
       scheduleQuery();
     },
     { rootMargin: OBSERVER_MARGIN },
@@ -790,6 +797,7 @@ export async function startOverlay(): Promise<void> {
     const revisionWhenScrollStopped = pointerRevision;
     scrollHoverTimer = setTimeout(() => {
       scrollHoverTimer = null;
+      inScrollBurst = false;
       // A pointer event during the scroll is a deliberate new hover. Otherwise
       // the old control merely passed under the pointer, so remove it quietly.
       if (pointerRevision === revisionWhenScrollStopped) setHovered(null);
@@ -802,6 +810,7 @@ export async function startOverlay(): Promise<void> {
   addEventListener(
     'scroll',
     () => {
+      inScrollBurst = true;
       if (repositionFrame !== null) cancelAnimationFrame(repositionFrame);
       repositionFrame = null;
       repositionQueued = false;
@@ -809,6 +818,7 @@ export async function startOverlay(): Promise<void> {
         if (scrollHoverTimer !== null) clearTimeout(scrollHoverTimer);
         scrollHoverTimer = null;
         setHovered(null);
+        inScrollBurst = false;
         return;
       }
       settleHoverAfterScroll();
