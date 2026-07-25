@@ -520,6 +520,22 @@ export async function startOverlay(): Promise<void> {
   }
 
   function controlHost(box: Element): HTMLElement | null {
+    // A box that is itself absolutely/fixed positioned (Bluesky's image-fill
+    // pattern: an <img style="position:absolute;inset:0"> inside a plain,
+    // unsized wrapper) is already out of flow and has a containing block
+    // further up the tree. Borrowing position:relative on its immediate
+    // parent — the general case below — would silently replace that
+    // containing block: the wrapper has no height of its own (its only
+    // child is out of flow), so the picture collapses to 0 height for as
+    // long as the control is mounted — the "image blinks" half of #347,
+    // confirmed live on bsky.app. Walk up to the ancestor that already
+    // defines it instead of creating a new one.
+    const boxPosition = box instanceof HTMLElement ? getComputedStyle(box).position : null;
+    if (boxPosition === 'absolute' || boxPosition === 'fixed') {
+      let node = box.parentElement;
+      while (node && getComputedStyle(node).position === 'static') node = node.parentElement;
+      return node;
+    }
     // <img> cannot contain children. Its immediate parent shares its scroll
     // transform, while the platform-specific media boxes are their own hosts.
     return box instanceof HTMLImageElement ? box.parentElement : box instanceof HTMLElement ? box : null;

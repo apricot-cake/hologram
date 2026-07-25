@@ -8,7 +8,12 @@
 //
 //   hover        — the save button appears on hover, including through the
 //                  sibling overlay that covers the picture on Bluesky/pixiv
-//                  (the #338 regression shape).
+//                  (the #338 regression shape); the hovered picture's own
+//                  rect must not collapse while the control is mounted (the
+//                  "image blinks" half of #347 — confirmed live on bsky.app:
+//                  overlay.ts borrowed position:relative on the <img>'s bare,
+//                  unsized parent, which silently became its containing
+//                  block and collapsed it to 0 height).
 //   still-scroll — wheel scrolling with a STATIONARY pointer mounts nothing:
 //                  pointermove is the only hover input, so pictures passing
 //                  under a resting pointer must not grow controls.
@@ -63,11 +68,16 @@ async function overlayCount(page: any): Promise<number> {
 // Center of the Nth fixture image — the hover target. Re-read after every
 // layout change; boxes move when the page scrolls.
 async function imageCenter(page: any, selector: string, index: number): Promise<{ x: number; y: number }> {
+  const box = await imageRect(page, selector, index);
+  return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+}
+
+async function imageRect(page: any, selector: string, index: number): Promise<{ x: number; y: number; width: number; height: number }> {
   const handles = await page.$$(selector);
   if (handles.length <= index) throw new Error(`fixture has no ${selector} #${index}`);
   const box = await handles[index].boundingBox();
   if (!box) throw new Error(`${selector} #${index} has no layout box`);
-  return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+  return box;
 }
 
 async function runPlatform(overlay: any, name: string): Promise<void> {
@@ -76,6 +86,7 @@ async function runPlatform(overlay: any, name: string): Promise<void> {
   try {
     // --- hover: the save button appears (through the sibling overlay on
     // bluesky/pixiv — the pointer physically lands on that sibling there).
+    const restRect = await imageRect(page, spec.image, 1);
     const target = await imageCenter(page, spec.image, 1);
     await page.mouse.move(target.x, target.y);
     let hoverOk = true;
@@ -88,6 +99,16 @@ async function runPlatform(overlay: any, name: string): Promise<void> {
     }
     report(name, 'hover', hoverOk, hoverDetail, formatTimeline(await takeLog(page)));
     if (!hoverOk) return; // scroll phases would only repeat the same failure
+
+    // --- no-collapse: the picture's own box must be unchanged while the
+    // control is mounted. overlay.ts borrows position:relative on the box's
+    // host to place the control; if that host turns out to already be the
+    // box's containing block source point (an absolutely-positioned <img>
+    // whose real containing block sits further up, past a bare, unsized
+    // parent), the borrow silently redefines it and the picture collapses.
+    const hoveredRect = await imageRect(page, spec.image, 1);
+    const collapsed = hoveredRect.width < restRect.width * 0.9 || hoveredRect.height < restRect.height * 0.9;
+    report(name, 'no-collapse', !collapsed, `picture rect at rest ${restRect.width}x${restRect.height}, while hovered ${hoveredRect.width}x${hoveredRect.height} (want unchanged)`);
 
     // --- still-scroll: stationary pointer, 12 wheel notches. pointermove is
     // the overlay's only hover input, so nothing may mount; the one hovered
