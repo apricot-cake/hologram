@@ -4,13 +4,11 @@ import { getSiteConfig, normalizeRect, type PostRect, type SiteConfig } from './
 
 export async function startCapture(): Promise<void> {
   // --- i18n ---
-  const { getMessage, partialSaveText } = await createI18n();
+  const { getMessage, partialSaveText, saveFailureText } = await createI18n();
   const MSG = {
     select: getMessage('bannerSelect'),
     saving: getMessage('bannerSaving'),
     saved: getMessage('bannerSaved'),
-    savedNoMeta: getMessage('bannerSavedNoMeta'),
-    failed: getMessage('bannerFailed'),
   };
 
   const siteConfig = getSiteConfig();
@@ -404,10 +402,9 @@ export async function startCapture(): Promise<void> {
       const partial = msg.success && msg.metaOk === false;
       let text: string;
       if (!msg.success) {
-        // Show WHY it failed (the background passes the stage error), so a broken
-        // save is actionable instead of a bare "failed". A missing native host gets
-        // a specific "restart Chrome" hint (the registry is read at startup).
-        text = msg.hostMissing ? getMessage('bannerHostMissing') : msg.error ? getMessage('bannerFailedReason', [msg.error]) : MSG.failed;
+        // The background keeps the raw diagnostic detail out of the page and
+        // passes only a classified reason suitable for localized recovery advice.
+        text = saveFailureText(msg.errorKind);
       } else {
         // grouped > 0: this post was already saved this session — the app folds
         // same-post saves into one stacked card, so say so instead of a plain

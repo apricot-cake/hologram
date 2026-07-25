@@ -75,6 +75,7 @@ interface LaunchExtensionOptions {
   userDataDir?: string | null;
   headless?: boolean;
   viewport?: { width: number; height: number } | null;
+  locale?: string;
   args?: string[];
 }
 
@@ -95,6 +96,7 @@ async function launchExtensionBrowser(options: LaunchExtensionOptions): Promise<
       channel: 'chromium',
       headless: options.headless ?? true,
       viewport: options.viewport === undefined ? { width: 1280, height: 960 } : options.viewport,
+      locale: options.locale,
       args: [`--disable-extensions-except=${options.extensionDir}`, `--load-extension=${options.extensionDir}`, '--no-first-run', '--no-default-browser-check', ...(options.args || [])],
     });
     let serviceWorker = context.serviceWorkers().find((worker: any) => worker.url().startsWith('chrome-extension://'));

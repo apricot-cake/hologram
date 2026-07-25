@@ -152,7 +152,7 @@ export async function startOverlay(): Promise<void> {
   // image that scrolls beneath it (#347).
   let inScrollBurst = false;
 
-  const { getMessage: t, partialSaveText } = await createI18n();
+  const { getMessage: t, partialSaveText, saveFailureText } = await createI18n();
 
   // === settings ===
 
@@ -586,7 +586,7 @@ export async function startOverlay(): Promise<void> {
     chrome.runtime.sendMessage({ type: 'imageDragged', platform: media.platform, postUrl: identity.link, imageUrls: collectImageUrls(img, media.platform) }, (res: any) => {
       if (chrome.runtime.lastError || !res || !res.ok) {
         setPhase(anchor, 'error', ERROR_MS);
-        const failureText = res?.hostMissing ? t('bannerHostMissing') : t('bannerFailed') + (res?.error ? `: ${res.error}` : '');
+        const failureText = saveFailureText(res?.errorKind);
         anchor.note = failureText;
         showFailureBanner(failureText);
         paint(unit, state);

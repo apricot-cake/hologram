@@ -27,12 +27,13 @@ interface OverlayBrowser {
   close(): Promise<void>;
 }
 
-async function launchOverlayBrowser(): Promise<OverlayBrowser> {
+async function launchOverlayBrowser(options: { locale?: string } = {}): Promise<OverlayBrowser> {
   const extensionDir = stageExtension({ tempPrefix: 'hologram-overlay-e2e-ext-' });
   const session = await launchExtensionBrowser({
     extensionDir,
     headless: true,
     viewport: { width: 1280, height: 960 },
+    locale: options.locale,
     args: ['--window-size=1280,960'],
   });
   return {

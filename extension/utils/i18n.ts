@@ -6,11 +6,14 @@
 //
 // The banner language follows the browser locale; the desktop app owns all
 // viewer/settings strings in app/renderer/i18n.ts.
+import type { SaveFailureKind } from './native-error';
+
 export interface HologramI18nApi {
   lang: string;
   resolved: string;
   getMessage: (key: string, subs?: ReadonlyArray<unknown>) => string;
   partialSaveText: (reason?: string | null) => string;
+  saveFailureText: (kind?: SaveFailureKind | null) => string;
 }
 
 export function createI18n(): Promise<HologramI18nApi> {
@@ -38,6 +41,9 @@ export function createI18n(): Promise<HologramI18nApi> {
       // restarted). Chrome reads native-host registrations at startup, so the
       // first suggestion is a restart.
       bannerHostMissing: 'Hologram の保存先に接続できません。Chrome を再起動してください',
+      bannerHostUnavailable: 'Hologram の保存プログラムを起動できませんでした。拡張機能の設定から診断ページを確認してください',
+      bannerOriginRejected: 'Hologram の保存設定が一致していません。Hologram を再インストールしてください',
+      bannerFailedUnknown: '保存に失敗しました。拡張機能の設定から診断ページを確認してください',
 
       // drag.js: drop-zone hint (the toasts reuse the banner* keys above)
       dragDropHint: 'ここにドロップで Hologram に保存',
@@ -63,6 +69,9 @@ export function createI18n(): Promise<HologramI18nApi> {
       reasonNoPermalink: 'could not find the post link',
       reasonNoPost: 'could not identify a post here',
       bannerHostMissing: "Can't reach Hologram's saver. Please restart Chrome.",
+      bannerHostUnavailable: "Hologram's saver could not start. Open the diagnostics page from the extension settings.",
+      bannerOriginRejected: "Hologram's save configuration does not match. Reinstall Hologram.",
+      bannerFailedUnknown: 'Save failed. Open the diagnostics page from the extension settings.',
 
       // drag.js: drop-zone hint (the toasts reuse the banner* keys above)
       dragDropHint: 'Drop here to save to Hologram',
@@ -97,6 +106,8 @@ export function createI18n(): Promise<HologramI18nApi> {
     // back to the generic one for unclassified failures.
     const partialSaveText = (reason) => getMessage(reason === 'protected' ? 'bannerSavedNoMetaProtected' : reason === 'ageRestricted' ? 'bannerSavedNoMetaAgeRestricted' : 'bannerSavedNoMeta');
 
-    return { lang: resolved, resolved, getMessage, partialSaveText };
+    const saveFailureText = (kind) => getMessage(kind === 'host-missing' ? 'bannerHostMissing' : kind === 'host-unavailable' ? 'bannerHostUnavailable' : kind === 'origin-rejected' ? 'bannerOriginRejected' : 'bannerFailedUnknown');
+
+    return { lang: resolved, resolved, getMessage, partialSaveText, saveFailureText };
   })();
 }
