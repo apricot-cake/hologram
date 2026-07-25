@@ -912,10 +912,24 @@ export async function startOverlay(): Promise<void> {
   function getOverlaySite(): OverlaySite | null {
     if (hostnameMatches('x.com') || hostnameMatches('twitter.com')) {
       return {
-        unitSelector: 'article[data-testid="tweet"]',
+        // Two shapes: a timeline `article` (permalink anchor and media both
+        // live somewhere inside it) and a media-tab grid tile — a bare `<li>`
+        // several ancestors above its own `/status/` anchor, with no
+        // `article`/testid wrapper at all (#349). `:has()` reaches the anchor
+        // regardless of the div nesting in between.
+        unitSelector: 'article[data-testid="tweet"], li:has(a[href*="/status/"])',
         // querySelectorAll returns document order, so the first entry is the
         // first picture of a multi-image post — where the "saved" mark belongs.
-        mediaIn: (unit) => [...unit.querySelectorAll('[data-testid="tweetPhoto"], [data-testid="videoPlayer"]')],
+        // A grid tile has no tweetPhoto/videoPlayer testid to key on — its
+        // <img> IS the media box — so isPostMedia (the same CDN-host check the
+        // save button already gates on) filters it directly here instead.
+        // Without that, a video/gif tile's thumbnail (a different CDN path)
+        // would get its own tracked unit and inherit its post's "saved" mark
+        // even though the corner is answering about a video, not the picture.
+        mediaIn: (unit) => {
+          if (unit.tagName === 'LI') return [...unit.querySelectorAll('img')].filter((img) => media?.isPostMedia(img as HTMLImageElement));
+          return [...unit.querySelectorAll('[data-testid="tweetPhoto"], [data-testid="videoPlayer"]')];
+        },
       };
     }
     if (hostnameMatches('bsky.app')) {
