@@ -34,7 +34,7 @@ export async function startDrag(): Promise<void> {
   let hideAnim: Animation | null = null; // in-flight exit fade, cancelled if the zone re-shows
   let savingViaDrop = false; // true between a drop-in-zone and its result, so dragend doesn't hide early
 
-  const { getMessage: t, partialSaveText } = await createI18n();
+  const { getMessage: t, partialSaveText, saveFailureText } = await createI18n();
 
   // Visual language is shared with the other content-script entrypoints. The palette is theme-independent (#136:
   // near-opaque dark scrim + white ink). The zone element persists across
@@ -237,15 +237,7 @@ export async function startDrag(): Promise<void> {
       const ok = res && res.ok;
       const partial = ok && res.metaOk === false; // saved, but no post metadata
       const grouped = ok && !partial && res.grouped > 0; // same post saved earlier → merges into one card in the app
-      const text = partial
-        ? partialSaveText(res.metaReason)
-        : grouped
-          ? t('bannerSavedGrouped', [res.grouped + 1])
-          : ok
-            ? t('bannerSaved')
-            : res && res.hostMissing
-              ? t('bannerHostMissing') // missing native host → "restart Chrome"
-              : t('bannerFailed') + (res && res.error ? `: ${res.error}` : '');
+      const text = partial ? partialSaveText(res.metaReason) : grouped ? t('bannerSavedGrouped', [res.grouped + 1]) : ok ? t('bannerSaved') : saveFailureText(res?.errorKind);
       setState(z, partial ? 'partial' : ok ? 'ok' : 'fail', text);
       if (ok && !G.REDUCED_MOTION) {
         // Small badge pop so the state flip reads even in peripheral vision

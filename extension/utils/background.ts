@@ -1,4 +1,5 @@
 import { fetchPostMetadata } from './metadata';
+import { classifySaveFailure } from './native-error';
 
 export function startBackground(): void {
   const NATIVE_HOST = 'com.hologram.host';
@@ -37,14 +38,6 @@ export function startBackground(): void {
     const err = new Error(message) as StageError;
     err.stage = stage;
     return err;
-  }
-
-  // Chrome reports an unregistered native host as "Specified native messaging host
-  // not found." A freshly-registered host reads the same way until Chrome restarts
-  // (the registry is read at startup), so the right first hint is "restart Chrome"
-  // — distinct from a host that launched and then errored (timeout / returned error).
-  function isHostMissing(message) {
-    return /host not found|host unavailable|is it installed/i.test(String(message || ''));
   }
 
   function isAllowedSender(tabUrl, platformId) {
@@ -110,9 +103,10 @@ export function startBackground(): void {
       .then(() => sendResponse({ ok: true }))
       .catch((error) => {
         console.error(error);
-        void logCapture({ stage: error?.stage || 'unknown', phase: 'fail', platform: message.platform, host: senderHost, url: message.postUrl, error: error?.message });
-        notify(tabId, false, { error: error?.message, hostMissing: isHostMissing(error?.message) });
-        sendResponse({ ok: false, error: error?.message });
+        const errorKind = classifySaveFailure(error?.message);
+        void logCapture({ stage: error?.stage || 'unknown', phase: 'fail', platform: message.platform, host: senderHost, url: message.postUrl, error: error?.message }, true);
+        notify(tabId, false, { errorKind });
+        sendResponse({ ok: false, errorKind });
       });
 
     return true;
@@ -464,8 +458,9 @@ export function startBackground(): void {
   // at all. NEVER throws and never blocks the save: if the host can't be reached
   // (e.g. it isn't registered — itself worth recording) the entry falls back to a
   // chrome.storage ring buffer that {type:'dumpLogs'} can read back.
-  function logCapture(entry: unknown): Promise<void> {
+  function logCapture(entry: unknown, keepLocal = false): Promise<void> {
     const full = Object.assign({ ts: new Date().toISOString() }, entry);
+    if (keepLocal) stashLogLocally(full);
     return new Promise((resolve) => {
       let settled = false;
       let port: chrome.runtime.Port | null = null;
@@ -479,7 +474,7 @@ export function startBackground(): void {
         } catch {
           /* already gone */
         }
-        if (!viaHost) stashLogLocally(full);
+        if (!viaHost && !keepLocal) stashLogLocally(full);
         resolve();
       };
       timer = setTimeout(() => done(false), 4000);
@@ -559,8 +554,9 @@ export function startBackground(): void {
       .then((result) => sendResponse({ ok: true, ...result }))
       .catch((error) => {
         console.error(error);
-        void logCapture({ stage: error?.stage || 'unknown', phase: 'fail', platform: message.platform, host: senderHost, url: message.postUrl, error: error?.message });
-        sendResponse({ ok: false, error: error?.message, hostMissing: isHostMissing(error?.message) });
+        const errorKind = classifySaveFailure(error?.message);
+        void logCapture({ stage: error?.stage || 'unknown', phase: 'fail', platform: message.platform, host: senderHost, url: message.postUrl, error: error?.message }, true);
+        sendResponse({ ok: false, errorKind });
       });
     return true; // async response
   });
@@ -570,7 +566,8 @@ export function startBackground(): void {
   // (entries that never reached the host's capture.log).
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === 'logCapture') {
-      void logCapture(Object.assign({ host: getHostname(sender.tab?.url) }, message.entry || {}));
+      const entry = Object.assign({ host: getHostname(sender.tab?.url) }, message.entry || {});
+      void logCapture(entry, entry.phase === 'fail');
       sendResponse({ ok: true });
       return false;
     }

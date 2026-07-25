@@ -336,16 +336,19 @@ const click = (el) => el.dispatchEvent(new window.MouseEvent('click', { bubbles:
   hoverAway();
 
   // --- a failed save says so and returns to a button, so it can be retried ---
-  saveReply = { ok: false, hostMissing: true };
+  saveReply = { ok: false, errorKind: 'host-unavailable', error: 'Error when communicating with the native messaging host.' };
   intersect(['p4'], true);
   await settle();
   hover('p4a');
   await settle();
   click(saveButtons()[0]);
   const failed = controlOf('p4a');
-  check('a failed save is reported in place, saying why', failed.length === 1 && failed[0].title === "Can't reach Hologram's saver. Please restart Chrome.");
+  check('a failed save is reported in place with localized recovery advice', failed.length === 1 && failed[0].title === "Hologram's saver could not start. Open the diagnostics page from the extension settings.");
   const failureBanners: any[] = Array.from(window.document.querySelectorAll('[data-hologram-save-banner]'));
-  check('a failed hover save also uses a readable top banner', failureBanners.length === 1 && failureBanners[0].getAttribute('role') === 'alert' && failureBanners[0].textContent === "Can't reach Hologram's saver. Please restart Chrome.");
+  check(
+    'a failed hover save also uses a readable top banner without leaking the raw error',
+    failureBanners.length === 1 && failureBanners[0].getAttribute('role') === 'alert' && failureBanners[0].textContent === "Hologram's saver could not start. Open the diagnostics page from the extension settings." && !failureBanners[0].textContent.includes('Error when communicating'),
+  );
   const before = sent.length;
   click(failed[0]);
   check('pressing the failure retries instead of doing nothing', sent.length === before + 1 && sent[sent.length - 1].type === 'imageDragged');

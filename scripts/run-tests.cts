@@ -57,6 +57,7 @@ const TESTS = [
   'test-token-parity',
   'test-contrast-parity',
   'test-i18n-parity',
+  'test-save-error-i18n',
   'test-parse-url',
   'test-pixiv',
   'test-mastodon-url',

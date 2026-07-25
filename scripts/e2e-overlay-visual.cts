@@ -33,7 +33,7 @@ const HTML = `<!doctype html>
 </body></html>`;
 
 (async () => {
-  const overlay = await launchOverlayBrowser();
+  const overlay = await launchOverlayBrowser({ locale: 'ja-JP' });
   try {
     const page = await openFixture(overlay, 'https://x.com/home', HTML);
     await page.waitForSelector('[data-testid="tweetPhoto"]');
@@ -50,6 +50,13 @@ const HTML = `<!doctype html>
     // same top-center position as the Alt+S banner (#357).
     await page.click('[data-hologram-overlay]');
     await page.waitForSelector('[data-hologram-save-banner]', { timeout: 5000 });
+    await wait(100); // chrome.storage.local logging is best-effort and asynchronous
+    const diagnosticEntries = await overlay.browser.serviceWorkers()[0].evaluate(async () => {
+      const all = await (globalThis as any).chrome.storage.local.get(null);
+      return Object.entries(all)
+        .filter(([key]) => key.startsWith('diaglog_'))
+        .map(([, value]) => value);
+    });
     const failureUi = await page.evaluate(() => {
       const banner = document.querySelector('[data-hologram-save-banner]');
       const retry = document.querySelector('[data-hologram-overlay]');
@@ -66,6 +73,13 @@ const HTML = `<!doctype html>
     });
     if (!failureUi || failureUi.role !== 'alert' || !failureUi.text || failureUi.width < 200 || Math.abs(failureUi.top - 12) > 0.5 || Math.abs(failureUi.centerX - 640) > 0.5 || !failureUi.retryTitle) {
       throw new Error(`OVERLAY_FAILURE_BANNER_LAYOUT_FAIL: ${JSON.stringify(failureUi)}`);
+    }
+    if (failureUi.text !== '保存に失敗しました。拡張機能の設定から診断ページを確認してください' || failureUi.retryTitle !== failureUi.text) {
+      throw new Error(`OVERLAY_FAILURE_BANNER_LOCALE_FAIL: ${JSON.stringify({ failureUi, diagnosticEntries })}`);
+    }
+    const rawFailure = diagnosticEntries.find((entry) => entry?.phase === 'fail' && typeof entry?.error === 'string');
+    if (!rawFailure) {
+      throw new Error(`OVERLAY_FAILURE_DIAGNOSTIC_FAIL: ${JSON.stringify(diagnosticEntries)}`);
     }
     if (process.env.HOLOGRAM_OVERLAY_SCREENSHOT) {
       await page.screenshot({ path: process.env.HOLOGRAM_OVERLAY_SCREENSHOT });
