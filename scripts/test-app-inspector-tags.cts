@@ -4,7 +4,8 @@
 //
 //   - selecting a card shows its tags as chips in the inspector's tag field
 //   - typing a new tag + Enter adds it (free text — not in the vocabulary yet)
-//     and PERSISTS it to the record's sidecar json
+//     and PERSISTS it to the record's tags (post_tags in the DB — #298/St5 made
+//     tag edits a DB-only write, no longer a sidecar rewrite)
 //   - the chip's × removes the tag again, and that persists too
 //   - a source hashtag can be adopted by picking it from the field's popup
 //   - the vocabulary popup offers tags already used elsewhere in the library
@@ -26,6 +27,7 @@ const path = require('node:path');
 
 const appDir = path.join(__dirname, '..', 'app');
 const electronPath = require(path.join(appDir, 'node_modules', 'electron'));
+const { openDatabase } = require(path.join(appDir, 'lib-db.mts'));
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-insptags-'));
 const configDir = path.join(tmp, 'Hologram');
@@ -210,11 +212,17 @@ child.stdout.on('data', (d) => {
 });
 
 child.on('close', () => {
-  // Persistence is the point of the feature, so read the sidecar back from disk
-  // rather than trusting the in-page chips.
+  // Persistence is the point of the feature, so read it back from the DB
+  // rather than trusting the in-page chips — #298/St5 made tag edits DB-only
+  // (app/ipc-trash.mts's update-tags no longer rewrites the sidecar).
   let persisted: string[] = [];
   try {
-    persisted = JSON.parse(fs.readFileSync(path.join(saveFolder, 'tag-a.json'), 'utf8')).tags || [];
+    const { sqlite } = openDatabase(path.join(configDir, 'hologram.db'), { readonly: true });
+    persisted = sqlite
+      .prepare('SELECT t.name FROM post_tags pt JOIN tags t ON t.id = pt.tagId WHERE pt.postId = ? ORDER BY pt.rowid')
+      .all('tag-a')
+      .map((r: any) => r.name);
+    sqlite.close();
   } catch {
     /* reported as a failed check below */
   }
@@ -244,8 +252,8 @@ child.on('close', () => {
     ['タグを編集 opens the panel for that card with the caret in the field', r.menuOpenedPanel === true && r.tagInputFocused === true],
     ["the chip's × removes the tag", r.hasRemoveBtn === true && r.chipRemoved === true],
     ['arrows while typing a tag move the caret, not the selection', r.selectionHeldWhileTyping === true],
-    ['the surviving tag was persisted to the sidecar', persisted.includes('ソースタグ')],
-    ['the removed tag is gone from the sidecar', !persisted.includes('新規タグ')],
+    ['the surviving tag was persisted to the DB', persisted.includes('ソースタグ')],
+    ['the removed tag is gone from the DB', !persisted.includes('新規タグ')],
     ['no handler threw', Array.isArray(r.errors) && r.errors.length === 0],
   ];
   let failed = 0;
