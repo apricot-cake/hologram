@@ -227,6 +227,35 @@ function replacePostTags(sqlite: Sqlite, postId: string, tags: unknown, patch: u
   return true;
 }
 
+// Current tags + userKind/tagReviewed for one post — ipc-trash.mts's
+// delete-post reads this before a post's row disappears (trashing moves the
+// sidecar out of the watched folder, and the next importAll cascade-deletes
+// post_tags along with the row) so it can carry the DB state into the
+// trashed sidecar copy restore-post already re-derives from.
+function readPostFlags(sqlite: Sqlite, postId: string): { tags: string[]; userKind: string | null; tagReviewed: boolean | null } | null {
+  const row = sqlite.prepare('SELECT userKind, tagReviewed FROM posts WHERE captureId = ?').get(postId) as { userKind: string | null; tagReviewed: number | null } | undefined;
+  if (!row) return null;
+  const tags = (sqlite.prepare('SELECT t.name FROM post_tags pt JOIN tags t ON t.id = pt.tagId WHERE pt.postId = ? ORDER BY pt.rowid').all(postId) as Array<{ name: string }>).map((r) => r.name);
+  return { tags, userKind: row.userKind, tagReviewed: row.tagReviewed == null ? null : !!row.tagReviewed };
+}
+
+// Re-applies userKind/tagReviewed from a sidecar-shaped record onto an
+// existing posts row. Shared by two callers that both need it because these
+// two columns never round-trip through normalizePostRecord/lib-db-import.mts
+// (module comment above): main.mts's one-time flip backfill (reading the
+// original sidecars) and ipc-trash.mts's restore-post (reading the trashed
+// sidecar copy delete-post stamped with the pre-trash DB values) — a plain
+// importAll after either recreates the posts row with tags intact but these
+// two columns NULL, since nothing else ever writes them from a sidecar.
+// COALESCE keeps the existing column when the record doesn't carry the field
+// (undefined -> null param), rather than clobbering it to NULL.
+function applyPostFlagsFromRecord(sqlite: Sqlite, postId: string, rec: { userKind?: unknown; tagReviewed?: unknown }) {
+  const userKind = rec.userKind === 'plain' || rec.userKind === 'media' ? rec.userKind : null;
+  const tagReviewed = rec.tagReviewed == null ? null : rec.tagReviewed ? 1 : 0;
+  if (userKind == null && tagReviewed == null) return;
+  sqlite.prepare('UPDATE posts SET userKind = COALESCE(?, userKind), tagReviewed = COALESCE(?, tagReviewed) WHERE captureId = ?').run(userKind, tagReviewed, postId);
+}
+
 function replaceTabs(sqlite: Sqlite, data: any) {
   sqlite.prepare('DELETE FROM tab_windows').run();
   sqlite.prepare('DELETE FROM tabs').run();
@@ -268,6 +297,8 @@ function createDbWriter(sqlite: Sqlite) {
     getTabs: () => readTabs(sqlite),
     setTabs: (data: unknown) => transaction(() => replaceTabs(sqlite, data)),
     setPostTags: (postId: string, tags: unknown, patch: unknown) => transaction(() => replacePostTags(sqlite, postId, tags, patch)),
+    getPostFlags: (postId: string) => readPostFlags(sqlite, postId),
+    restorePostFlags: (postId: string, rec: { userKind?: unknown; tagReviewed?: unknown }) => transaction(() => applyPostFlagsFromRecord(sqlite, postId, rec)),
   };
 }
 

@@ -1,10 +1,14 @@
 'use strict';
 
-// Exercises the mutation IPC handlers (update-tags, delete-post) headlessly by
-// asking the renderer to call them, then checks the result: delete-post still
-// moves sidecar+media into .trash/ (checked on disk), but update-tags is a
-// #298/St5 DB-only write (app/ipc-trash.mts) — its sidecar is asserted
-// UNCHANGED, and the tag itself is read back from hologram.db.
+// Exercises the mutation IPC handlers (update-tags, delete-post, restore-post)
+// headlessly by asking the renderer to call them, then checks the result:
+// delete-post still moves sidecar+media into .trash/ (checked on disk), but
+// update-tags is a #298/St5 DB-only write (app/ipc-trash.mts) — its sidecar is
+// asserted UNCHANGED, and the tag itself is read back from hologram.db. A
+// third post is tagged, trashed, and restored to prove that round trip
+// doesn't lose the DB-only tag/userKind/tagReviewed state (trashing cascade-
+// deletes the posts row via FK; delete-post/restore-post carry it through the
+// trashed sidecar copy instead — see ipc-trash.mts).
 //
 //   node scripts/test-app-ipc.cts
 
@@ -48,10 +52,14 @@ function writePost(id, tags) {
 }
 writePost('dummy-0001', []);
 writePost('dummy-0002', []);
+writePost('dummy-0003', []);
 
 const evalJs = `(async () => {
   await window.hologram.updateTags('dummy-0001.jpg', ['tagX']);
   await window.hologram.deletePost('dummy-0002.jpg');
+  await window.hologram.updateTags('dummy-0003.jpg', ['tagY'], { userKind: 'plain', tagReviewed: true });
+  await window.hologram.deletePost('dummy-0003.jpg');
+  await window.hologram.restorePost('dummy-0003.jpg');
   const { posts } = await window.hologram.listPosts();
   return posts.length;
 })()`;
@@ -75,18 +83,23 @@ child.on('close', () => {
   const sidecarUntouchedOk = JSON.stringify(rec1.tags) === JSON.stringify([]);
 
   const { sqlite } = openDatabase(path.join(configDir, 'hologram.db'), { readonly: true });
-  const dbTags = sqlite
-    .prepare("SELECT t.name FROM post_tags pt JOIN tags t ON t.id = pt.tagId WHERE pt.postId = 'dummy-0001' ORDER BY pt.rowid")
-    .all()
-    .map((r) => r.name);
+  const tagsOf = (id) =>
+    sqlite
+      .prepare('SELECT t.name FROM post_tags pt JOIN tags t ON t.id = pt.tagId WHERE pt.postId = ? ORDER BY pt.rowid')
+      .all(id)
+      .map((r) => r.name);
+  const dbTags = tagsOf('dummy-0001');
+  const restoredRow = sqlite.prepare("SELECT userKind, tagReviewed FROM posts WHERE captureId = 'dummy-0003'").get();
+  const restoredTags = tagsOf('dummy-0003');
   sqlite.close();
   const tagOk = JSON.stringify(dbTags) === JSON.stringify(['tagX']);
+  const restoreOk = JSON.stringify(restoredTags) === JSON.stringify(['tagY']) && !!restoredRow && restoredRow.userKind === 'plain' && restoredRow.tagReviewed === 1;
 
   const delOk = !fs.existsSync(path.join(saveFolder, 'dummy-0002.jpg')) && !fs.existsSync(path.join(saveFolder, 'dummy-0002.json'));
-  const countOk = /EVAL_RESULT 1\b/.test(out);
+  const countOk = /EVAL_RESULT 2\b/.test(out);
   fs.rmSync(tmp, { recursive: true, force: true });
-  console.log(`updateTags(db)=${tagOk} sidecarUntouched=${sidecarUntouchedOk} delete=${delOk} listCount=${countOk}`);
-  const pass = tagOk && sidecarUntouchedOk && delOk && countOk;
+  console.log(`updateTags(db)=${tagOk} sidecarUntouched=${sidecarUntouchedOk} delete=${delOk} restoreKeepsDbFlags=${restoreOk} listCount=${countOk}`);
+  const pass = tagOk && sidecarUntouchedOk && delOk && restoreOk && countOk;
   console.log(pass ? 'IPC_TEST_PASS' : 'IPC_TEST_FAIL');
   process.exit(pass ? 0 : 1);
 });

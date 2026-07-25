@@ -19,6 +19,15 @@ function register(ctx) {
     if (!folder || !image) return { ok: false };
     // Soft-delete: move all files for this captureId into .trash/ (instead of unlinking).
     const base = baseOf(image);
+    // Trashing moves the sidecar out of the watched folder, so the next
+    // importAll finds captureId missing and cascade-deletes its posts row
+    // (post_tags included, FK ON DELETE CASCADE). Read the DB-only state
+    // (#298/St5's tags/userKind/tagReviewed) before that happens, so it can
+    // be stamped into the trashed sidecar copy below — restore-post already
+    // re-derives from that copy, this just gives it accurate values to
+    // re-derive FROM instead of whatever the sidecar last had pre-flip.
+    await ensurePostsSynced();
+    const flags = getDbWriter().getPostFlags(base);
     const targets = new Set([`${base}.json`]);
     for (const e of VIEWABLE_EXTS) targets.add(`${base}.${e}`);
     const jsonPath = resolveInFolder(`${base}.json`);
@@ -58,11 +67,17 @@ function register(ctx) {
         }
       }
     }
-    // Stamp trashedAt in the trash sidecar so auto-purge knows when to expire it.
+    // Stamp trashedAt in the trash sidecar so auto-purge knows when to expire it,
+    // and carry the DB-only state (flags, read above) into it too.
     const trashJson = path.join(trashDir, `${base}.json`);
     try {
       const r = parseJsonLoose(await fs.promises.readFile(trashJson, 'utf8'));
       r.trashedAt = new Date().toISOString();
+      if (flags) {
+        r.tags = flags.tags;
+        if (flags.userKind != null) r.userKind = flags.userKind;
+        if (flags.tagReviewed != null) r.tagReviewed = flags.tagReviewed;
+      }
       await fs.promises.writeFile(trashJson, JSON.stringify(r, null, 2), 'utf8');
     } catch {
       /* sidecar may not exist — trash still works but won't auto-purge */
@@ -116,11 +131,22 @@ function register(ctx) {
     // could be caught mid-write by the watcher and cost this post its collection/
     // clip membership (see writeSidecarAtomic).
     const jsonPath = path.join(folder, `${base}.json`);
+    let restored: any = null;
     try {
       const r = parseJsonLoose(await fs.promises.readFile(jsonPath, 'utf8'));
       delete r.trashedAt;
+      restored = r;
       await writeSidecarAtomic(jsonPath, r);
     } catch {}
+    if (restored) {
+      // The reimport below recreates the posts row with tags intact (tags DO
+      // round-trip through the sidecar), but userKind/tagReviewed never do
+      // (#298/St5's applyPostFlagsFromRecord doc comment) — re-apply them
+      // from the restored sidecar, which delete-post stamped with the
+      // pre-trash DB values.
+      await ensurePostsSynced();
+      getDbWriter().restorePostFlags(base, restored);
+    }
     return { ok: true };
   });
 

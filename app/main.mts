@@ -336,7 +336,7 @@ async function backfillPostFlags(folder: string, sqlite: any) {
   } catch {
     return;
   }
-  const setFlags = sqlite.prepare('UPDATE posts SET userKind = COALESCE(?, userKind), tagReviewed = COALESCE(?, tagReviewed) WHERE captureId = ?');
+  const writer = createDbWriter(sqlite);
   for (const name of names) {
     if (!name.toLowerCase().endsWith('.json') || INTERNAL_FILES.has(name)) continue;
     const captureId = name.slice(0, -5);
@@ -346,10 +346,7 @@ async function backfillPostFlags(folder: string, sqlite: any) {
     } catch {
       continue;
     }
-    if (!rec || (rec.userKind == null && rec.tagReviewed == null)) continue;
-    const userKind = rec.userKind === 'plain' || rec.userKind === 'media' ? rec.userKind : null;
-    const tagReviewed = rec.tagReviewed == null ? null : rec.tagReviewed ? 1 : 0;
-    setFlags.run(userKind, tagReviewed, captureId);
+    if (rec) writer.restorePostFlags(captureId, rec);
   }
 }
 
