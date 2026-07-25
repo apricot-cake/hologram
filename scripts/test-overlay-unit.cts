@@ -177,7 +177,7 @@ const setSetting = (key, value) => {
 // The resident content-script bundle is the exact WXT output Chrome loads.
 const residentReady = Promise.resolve(window.eval(fs.readFileSync(path.join(DIST, 'content-scripts', 'resident.js'), 'utf8')));
 
-const controls = (): any[] => Array.from(window.document.querySelectorAll('#__hologramSavedLayer > *'));
+const controls = (): any[] => Array.from(window.document.querySelectorAll('[data-hologram-overlay]'));
 // The resident bundle carries its own localized strings. jsdom defaults to an
 // English locale, so these are the browser-visible labels rather than source keys.
 const marks = () => controls().filter((el) => el.title === 'Saved in Hologram');
@@ -191,6 +191,7 @@ const boxOf = (id) => {
   const el = window.document.getElementById(id);
   return el.matches('[data-testid="tweetPhoto"]') ? el : el.querySelector('[data-testid="tweetPhoto"]');
 };
+const controlOf = (id) => controls().filter((el) => el.parentElement === boxOf(id));
 const pointerOver = (target, x, y) => {
   const e: any = new window.Event('pointerover', { bubbles: true });
   e.clientX = x;
@@ -224,16 +225,14 @@ const click = (el) => el.dispatchEvent(new window.MouseEvent('click', { bubbles:
   check('no mark on a saved post before the pointer arrives', controls().length === 0);
   hover('p1');
   check('hovering the saved post shows its mark', marks().length === 1);
-  check('the mark sits on the saved post’s photo', marks()[0].style.left === '56px' && marks()[0].style.top === '106px');
-  check('the post’s own subtree is untouched', window.document.getElementById('p1').querySelectorAll('div').length === 1);
-  check('the overlay layer is inert to pointers', (window.document.getElementById('__hologramSavedLayer') as any).style.pointerEvents === 'none');
-  check('the control itself is not inert', marks()[0].style.pointerEvents === 'auto');
-  // Scrolling can be composited before the next animation frame. A control that
-  // already exists must move in the scroll event, rather than visually trailing
-  // its media until the queued frame runs.
+  check('the mark is positioned inside the saved post’s photo', marks()[0].parentElement === boxOf('p1') && marks()[0].style.left === '6px' && marks()[0].style.top === '6px');
+  check('the media box becomes the control’s positioning parent', (boxOf('p1') as any).style.position === 'relative');
+  check('the control is interactive', (marks()[0] as any).style.pointerEvents !== 'none');
+  // The control is in the media box, so scrolling moves them in the same
+  // composited operation. No new coordinate write or animation frame is needed.
   window.document.querySelector('#p1 [data-testid="tweetPhoto"]').setAttribute('data-rect-top', '180');
   window.dispatchEvent(new window.Event('scroll'));
-  check('a visible control follows its media in the scroll event', marks()[0].style.top === '186px' && animationFrames.size === 0);
+  check('a visible control stays attached to its media while scrolling', marks()[0].parentElement === boxOf('p1') && marks()[0].style.top === '6px' && animationFrames.size === 0);
   hoverAway();
   check('the mark goes away with the pointer', controls().length === 0);
 
@@ -299,7 +298,7 @@ const click = (el) => el.dispatchEvent(new window.MouseEvent('click', { bubbles:
   hover('p4a');
   await settle();
   click(saveButtons()[0]);
-  const failed = controls().filter((el) => el.style.top === '1206px');
+  const failed = controlOf('p4a');
   check('a failed save is reported in place, saying why', failed.length === 1 && failed[0].title === "Can't reach Hologram's saver. Please restart Chrome.");
   const before = sent.length;
   click(failed[0]);
@@ -312,7 +311,7 @@ const click = (el) => el.dispatchEvent(new window.MouseEvent('click', { bubbles:
   // --- one button per picture, and one mark per post ---
   hover('p4b');
   await settle();
-  check('the post’s second picture offers its own button', saveButtons().length === 1 && saveButtons()[0].style.top === '1606px');
+  check('the post’s second picture offers its own button', saveButtons().length === 1 && saveButtons()[0].parentElement === boxOf('p4b'));
   hoverAway();
   savedAnswer['https://x.com/dave/status/444'] = '1780000000004-dd';
   intersect(['p4'], false);
@@ -320,8 +319,8 @@ const click = (el) => el.dispatchEvent(new window.MouseEvent('click', { bubbles:
   intersect(['p4'], true);
   await settle();
   setSetting('savedBadgeMode', 'always');
-  const p4Controls = controls().filter((el) => el.style.top === '1206px' || el.style.top === '1606px');
-  check('a saved multi-image post is marked once, on its first picture', p4Controls.length === 1 && p4Controls[0].style.top === '1206px');
+  const p4Controls = [...controlOf('p4a'), ...controlOf('p4b')];
+  check('a saved multi-image post is marked once, on its first picture', p4Controls.length === 1 && p4Controls[0].parentElement === boxOf('p4a'));
   // The corner that failed earlier now says "saved", not what went wrong then.
   check('the old failure text does not outlive the failure', p4Controls[0]?.title === 'Saved in Hologram');
   setSetting('savedBadgeMode', 'hover');
@@ -345,7 +344,7 @@ const click = (el) => el.dispatchEvent(new window.MouseEvent('click', { bubbles:
   for (const fn of runtimeListeners) fn({ type: 'savedUpdate', url: 'https://x.com/carol/status/333' });
   window.document.querySelector('#p3 [data-testid="tweetPhoto"]').setAttribute('data-rect-top', '800');
   hover('p3');
-  check('a savedUpdate push marks the post immediately', marks().length === 1 && marks()[0].style.top === '806px');
+  check('a savedUpdate push marks the post immediately', marks().length === 1 && marks()[0].parentElement === boxOf('p3') && marks()[0].style.top === '6px');
   hoverAway();
 
   // --- turning the button off leaves the mark alone ---

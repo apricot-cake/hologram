@@ -17,13 +17,11 @@
 // what a save would record; the save button goes through media-identity.js, the
 // same module drag.js saves with, for the same reason.
 //
-// The controls live in ONE fixed-position overlay layer appended to <body>, not
-// inside the posts. Injecting nodes into the host page's own subtree means
-// fighting its framework (x.com and bsky.app both re-render their feed
-// constantly, and an unexpected child is a real crash risk for React's DOM
-// reconciliation) and mutating its layout; an overlay costs one rect read per
-// visible control per scroll frame instead, and touches nothing. A control in
-// the layer can still be clicked: the layer is inert, each control is not.
+// Each control is an absolutely-positioned child of its media box (or, for an
+// <img>, its immediate parent). That makes the browser move it in the same
+// composited scroll as the picture. A fixed layer that copies viewport
+// coordinates has to wait for JavaScript on every scroll frame and visibly
+// trails smooth scrolling.
 import { glassUi } from './glass-ui';
 import { createI18n } from './i18n';
 import { collectImageUrls, getMediaIdentitySite } from './media-identity';
@@ -57,6 +55,8 @@ export async function startOverlay(): Promise<void> {
   interface Anchor {
     box: Element; // the media box whose corner this control sits on
     el: HTMLDivElement | HTMLButtonElement | null;
+    host: HTMLElement | null; // positioned parent that scrolls with the media
+    hostInlinePosition: string | null; // restores an inline position we added
     face: Face | null; // what el currently draws (so a re-render can skip)
     phase: Phase;
     timer: ReturnType<typeof setTimeout> | null; // clears phase back to idle
@@ -118,7 +118,6 @@ export async function startOverlay(): Promise<void> {
 
   let markMode: MarkMode = 'hover';
   let hoverSave = true;
-  let layer: HTMLDivElement | null = null;
   const tracked = new Map<Element, UnitState>();
   const anchorOf = new Map<Element, { unit: Element; anchor: Anchor }>(); // media box -> its anchor
   const visible = new Set<Element>();
@@ -440,19 +439,6 @@ export async function startOverlay(): Promise<void> {
 
   // === drawing ===
 
-  function ensureLayer(): HTMLDivElement {
-    if (layer?.isConnected) return layer;
-    const el = document.createElement('div');
-    el.id = '__hologramSavedLayer';
-    // Fixed and viewport-sized, so a control's absolute coordinates ARE its
-    // anchor's getBoundingClientRect() — no scroll offset math, and no
-    // dependence on the host page's positioning context.
-    el.style.cssText = 'position:fixed;inset:0;z-index:2147483646;pointer-events:none;';
-    document.body.appendChild(el);
-    layer = el;
-    return el;
-  }
-
   // Which media boxes this unit currently has. Re-read rather than remembered:
   // a feed adds pictures to a post after it first renders (lazy images, quote
   // previews resolving), and the same unit element gets recycled for another
@@ -469,7 +455,7 @@ export async function startOverlay(): Promise<void> {
     }
     for (const box of boxes) {
       if (state.anchors.has(box)) continue;
-      const anchor: Anchor = { box, el: null, face: null, phase: 'idle', timer: null, note: null };
+      const anchor: Anchor = { box, el: null, host: null, hostInlinePosition: null, face: null, phase: 'idle', timer: null, note: null };
       state.anchors.set(box, anchor);
       anchorOf.set(box, { unit, anchor });
     }
@@ -478,6 +464,46 @@ export async function startOverlay(): Promise<void> {
   function imgIn(box: Element): HTMLImageElement | null {
     if (box.tagName === 'IMG') return box as HTMLImageElement;
     return box.querySelector('img');
+  }
+
+  function controlHost(box: Element): HTMLElement | null {
+    // <img> cannot contain children. Its immediate parent shares its scroll
+    // transform, while the platform-specific media boxes are their own hosts.
+    return box instanceof HTMLImageElement ? box.parentElement : box instanceof HTMLElement ? box : null;
+  }
+
+  function mountControl(anchor: Anchor, el: HTMLDivElement | HTMLButtonElement): boolean {
+    const host = controlHost(anchor.box);
+    if (!host) return false;
+    if (anchor.host !== host) {
+      restoreControlHost(anchor);
+      anchor.host = host;
+      if (getComputedStyle(host).position === 'static') {
+        anchor.hostInlinePosition = host.style.position;
+        host.style.position = 'relative';
+      }
+    }
+    host.appendChild(el);
+    return true;
+  }
+
+  function positionControl(anchor: Anchor, el: HTMLDivElement | HTMLButtonElement): void {
+    const host = anchor.host;
+    if (!host || host === anchor.box) {
+      el.style.left = `${CONTROL_INSET}px`;
+      el.style.top = `${CONTROL_INSET}px`;
+      return;
+    }
+    const hostRect = host.getBoundingClientRect();
+    const boxRect = anchor.box.getBoundingClientRect();
+    el.style.left = `${boxRect.left - hostRect.left + CONTROL_INSET}px`;
+    el.style.top = `${boxRect.top - hostRect.top + CONTROL_INSET}px`;
+  }
+
+  function restoreControlHost(anchor: Anchor): void {
+    if (anchor.host && anchor.hostInlinePosition !== null && anchor.host.style.position === 'relative') anchor.host.style.position = anchor.hostInlinePosition;
+    anchor.host = null;
+    anchor.hostInlinePosition = null;
   }
 
   // Would a save here produce an honest record? Src pattern (media-identity's
@@ -537,6 +563,7 @@ export async function startOverlay(): Promise<void> {
       // the browser's native button semantics instead of imitating them.
       if (el && el instanceof HTMLButtonElement !== interactive) {
         el.remove();
+        anchor.el = null;
         el = null;
       }
       const born = !el;
@@ -557,20 +584,16 @@ export async function startOverlay(): Promise<void> {
           `transition:width ${G.DUR_HOVER}ms ${G.EASE_OUT},height ${G.DUR_HOVER}ms ${G.EASE_OUT},border-radius ${G.DUR_HOVER}ms ${G.EASE_OUT},background ${G.DUR_HOVER}ms,color ${G.DUR_HOVER}ms,border-color ${G.DUR_HOVER}ms,box-shadow ${G.DUR_HOVER}ms,transform ${G.DUR_HOVER}ms ${G.EASE_OUT}`,
           'appearance:none',
           'font:inherit',
-          'pointer-events:auto',
         ].join(';');
+        el.setAttribute('data-hologram-overlay', '');
+        if (!mountControl(anchor, el)) continue;
         anchor.el = el;
-        ensureLayer().appendChild(el);
       }
       if (born || anchor.face !== face) {
         drawFace(el, face, anchor, unit, state);
         anchor.face = face;
       }
-      el.style.left = `${rect.left + CONTROL_INSET}px`;
-      el.style.top = `${rect.top + CONTROL_INSET}px`;
-      // Media scrolled out from under a still-visible unit (tall posts): hide
-      // rather than park the control at the viewport edge.
-      el.style.display = rect.bottom < 0 || rect.top > window.innerHeight ? 'none' : 'flex';
+      positionControl(anchor, el);
       // A hover save control is routinely created for the image newly under the
       // pointer while scrolling. Keep it still so that normal scrolling does
       // not turn into a repeated pop animation.
@@ -681,6 +704,7 @@ export async function startOverlay(): Promise<void> {
     anchor.el?.remove();
     anchor.el = null;
     anchor.face = null;
+    restoreControlHost(anchor);
   }
 
   function clearControls(state: UnitState) {
@@ -693,6 +717,7 @@ export async function startOverlay(): Promise<void> {
     const full = repositionFull;
     repositionFull = false;
     updateHoveredAtPointer();
+    if (!full) return;
     let detached = false;
     for (const unit of visible) {
       const state = tracked.get(unit);
@@ -701,21 +726,12 @@ export async function startOverlay(): Promise<void> {
         detached = true;
         continue;
       }
-      // Scrolling only moves what is already drawn. Re-deciding every visible
-      // post would mean a querySelectorAll and a forced layout per post per
-      // frame, most of them for posts showing nothing at all.
-      if (!full && !showing(state)) continue;
       paint(unit, state);
     }
     if (detached) forgetDetached();
   }
 
-  function showing(state: UnitState): boolean {
-    for (const [, anchor] of state.anchors) if (anchor.el) return true;
-    return false;
-  }
-
-  // full = re-decide what every visible post shows, not just move what's drawn.
+  // Full repainting is for layout changes such as resize and image load.
   function scheduleReposition(full: boolean) {
     if (full) repositionFull = true;
     if (repositionQueued) return;
@@ -723,9 +739,8 @@ export async function startOverlay(): Promise<void> {
     repositionFrame = requestAnimationFrame(reposition);
   }
 
-  // Browser scrolling can be composited before the next animation frame. Move
-  // controls that are already visible in this event so they do not visibly
-  // trail their media; full repainting remains frame-batched below.
+  // Existing controls scroll with their host media. This only re-evaluates which
+  // image is under a stationary pointer, so a newly hovered control can appear.
   addEventListener(
     'scroll',
     () => {
