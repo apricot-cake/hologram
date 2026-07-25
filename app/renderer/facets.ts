@@ -203,11 +203,45 @@ export function makeFacets(deps: {
         return allTags.map(item).sort(byCount);
       }
       case 'folder': {
-        // Library folders (folders.json). Each row toggles a 'folder' leaf
-        // (folder membership, CF().has). Count = current-query posts in that folder.
+        // Library folders (folders.json). Each row toggles a 'folder' leaf.
+        // Rows are labelled by path and counted over the SUBTREE, because that is
+        // what picking the row does (#41): a parent stands for everything under it.
+        // Counting only direct members would put a 0 next to a row that then shows
+        // twelve posts — the number has to mean the same thing as the click.
         const folders = postFolders();
-        const cnt = facetCounts((p) => folders.filter((f) => (f.items || []).includes(p.captureId)).map((f) => f.id));
-        return folders.map((f) => ({ v: f.id, l: f.name, on: act('folder', f.id), count: cnt.get(f.id) || 0 }));
+        const byId = new Map(folders.map((f) => [f.id, f]));
+        const kidsOf = new Map<string | null, HologramFolder[]>();
+        for (const f of folders) {
+          const p = f.parentId || null;
+          const arr = kidsOf.get(p);
+          if (arr) arr.push(f);
+          else kidsOf.set(p, [f]);
+        }
+        // Memoized bottom-up union. The set is registered before recursing, so even a
+        // file that somehow kept a cycle terminates (with a partial answer) instead of
+        // hanging the render.
+        const deep = new Map<string, Set<string>>();
+        const itemsDeep = (f: HologramFolder): Set<string> => {
+          const hit = deep.get(f.id);
+          if (hit) return hit;
+          const s = new Set<string>(f.items || []);
+          deep.set(f.id, s);
+          for (const k of kidsOf.get(f.id) || []) for (const c of itemsDeep(k)) s.add(c);
+          return s;
+        };
+        const pathOf = (f: HologramFolder) => {
+          const parts: string[] = [];
+          const seen = new Set<string>();
+          let cur: HologramFolder | undefined = f;
+          while (cur && !seen.has(cur.id)) {
+            seen.add(cur.id);
+            parts.unshift(cur.name);
+            cur = cur.parentId ? byId.get(cur.parentId) : undefined;
+          }
+          return parts.join(' / ');
+        };
+        const cnt = facetCounts((p) => folders.filter((f) => itemsDeep(f).has(p.captureId)).map((f) => f.id));
+        return folders.map((f) => ({ v: f.id, l: pathOf(f), on: act('folder', f.id), count: cnt.get(f.id) || 0 }));
       }
       case 'hashtag': {
         const cnt = facetCounts((p) => p.hashtags);

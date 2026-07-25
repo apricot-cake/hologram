@@ -6,6 +6,7 @@
 // transaction boundary instead of each rebuilding a different subset of tables.
 
 import type Database from 'better-sqlite3';
+import { normFolders } from './lib-folder-tree.mts';
 
 type Sqlite = Database.Database;
 
@@ -73,12 +74,13 @@ function readUngrouped(sqlite: Sqlite) {
 }
 
 function replaceFolders(sqlite: Sqlite, data: any) {
-  const folders = Array.isArray(data?.folders) ? data.folders : [];
+  const folders = normFolders(data?.folders);
   const validPosts = existingPostIds(sqlite);
   sqlite.prepare('DELETE FROM folder_items').run();
   sqlite.prepare('DELETE FROM folders').run();
 
   const insertFolder = sqlite.prepare('INSERT INTO folders (id, name, kind, created, tree) VALUES (?, ?, ?, ?, ?)');
+  const setParent = sqlite.prepare('UPDATE folders SET parentId = ? WHERE id = ?');
   const insertItem = sqlite.prepare('INSERT OR IGNORE INTO folder_items (folderId, postId) VALUES (?, ?)');
   const ids = new Set<string>();
   for (const folder of folders) {
@@ -89,6 +91,9 @@ function replaceFolders(sqlite: Sqlite, data: any) {
     ids.add(folder.id);
     for (const postId of strings(folder.items)) if (validPosts.has(postId)) insertItem.run(folder.id, postId);
   }
+  // Insert every id before applying edges: sibling order is array order, so a
+  // valid child may legitimately precede its parent in the flat list.
+  for (const folder of folders) if (folder.parentId) setParent.run(folder.parentId, folder.id);
   stateSet(sqlite, 'activeFolderId', typeof data?.activeId === 'string' && ids.has(data.activeId) ? data.activeId : '');
 }
 
@@ -100,14 +105,17 @@ function readFolders(sqlite: Sqlite) {
     if (!values) items.set(row.folderId, (values = []));
     values.push(row.postId);
   }
-  const folders = (sqlite.prepare('SELECT id, name, kind, created, tree FROM folders ORDER BY rowid').all() as any[]).map((row) => ({
-    id: row.id,
-    name: row.name,
-    kind: row.kind,
-    created: row.created,
-    items: items.get(row.id) || [],
-    ...(row.kind === 'dynamic' && row.tree ? { tree: JSON.parse(row.tree) } : {}),
-  }));
+  const folders = normFolders(
+    (sqlite.prepare('SELECT id, name, kind, created, parentId, tree FROM folders ORDER BY rowid').all() as any[]).map((row) => ({
+      id: row.id,
+      name: row.name,
+      kind: row.kind,
+      created: row.created,
+      parentId: row.parentId,
+      items: items.get(row.id) || [],
+      ...(row.kind === 'dynamic' && row.tree ? { tree: JSON.parse(row.tree) } : {}),
+    })),
+  );
   const ids = new Set(folders.map((folder) => folder.id));
   const activeId = stateGet(sqlite, 'activeFolderId');
   return {

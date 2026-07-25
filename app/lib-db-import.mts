@@ -39,6 +39,7 @@
 
 import nodeFs from 'node:fs';
 import path from 'node:path';
+import { normFolders } from './lib-folder-tree.mts';
 import { createPostIndex } from './lib-index.mts';
 import { parseJsonLoose } from './lib-json.mts';
 import { normalizePostRecord } from '../native-host/post-record.mts';
@@ -277,22 +278,23 @@ function importOrgLayer(folder: string, sqlite: Database.Database, resolveTagId:
     for (const k of ungrouped.keys) if (typeof k === 'string' && k) ins.run(k);
   }
 
-  // folders.json: { folders: [{id,name,kind,created,items,tree?}] }
+  // folders.json: { folders: [{id,name,kind,created,parentId,items,tree?}] }
   const foldersJson = readJsonFile(folder, 'folders.json', failures);
   sqlite.prepare('DELETE FROM folder_items').run();
   sqlite.prepare('DELETE FROM folders').run();
-  if (foldersJson && Array.isArray(foldersJson.folders)) {
+  if (foldersJson) {
+    const folders = normFolders(foldersJson.folders);
     const insFolder = sqlite.prepare('INSERT INTO folders (id, name, kind, created, tree) VALUES (?,?,?,?,?)');
+    const setParent = sqlite.prepare('UPDATE folders SET parentId = ? WHERE id = ?');
     const insItem = sqlite.prepare('INSERT OR IGNORE INTO folder_items (folderId, postId) VALUES (?,?)');
-    for (const f of foldersJson.folders) {
-      if (!f || typeof f.id !== 'string' || typeof f.name !== 'string') continue;
-      const kind = f.kind === 'dynamic' ? 'dynamic' : 'static';
-      const tree = kind === 'dynamic' && f.tree && typeof f.tree === 'object' ? JSON.stringify(f.tree) : null;
-      insFolder.run(f.id, f.name, kind, typeof f.created === 'number' ? f.created : null, tree);
-      if (Array.isArray(f.items)) {
-        for (const postId of f.items) if (typeof postId === 'string' && validPostIds.has(postId)) insItem.run(f.id, postId);
-      }
+    for (const f of folders) {
+      const tree = f.kind === 'dynamic' && f.tree && typeof f.tree === 'object' ? JSON.stringify(f.tree) : null;
+      insFolder.run(f.id, f.name, f.kind, f.created, tree);
+      for (const postId of f.items) if (validPostIds.has(postId)) insItem.run(f.id, postId);
     }
+    // A flat folder list can put a child before its parent. Create every row
+    // first, then apply the repaired edges so the self-FK never depends on order.
+    for (const f of folders) if (f.parentId) setParent.run(f.parentId, f.id);
   }
 
   // manual-groups.json: { groups: [[captureId,...],...] } — same length>1

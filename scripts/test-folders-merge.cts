@@ -21,7 +21,7 @@ const { importCompleteZip, mergeFolders, mergePosterFolders, mergeManualGroups }
   {
     const cur = {
       folders: [
-        { id: 'f-1', name: 'Local', kind: 'static', created: null, items: ['a', 'b'] },
+        { id: 'f-1', name: 'Local', kind: 'static', created: null, parentId: 'c-x', items: ['a', 'b'] },
         { id: 'c-x', name: 'WS', kind: 'static', created: 1, items: ['z'] },
         { id: 'd-1', name: 'Saved', kind: 'dynamic', created: 2, items: [], tree: { kind: 'group', op: 'and', children: [] } },
       ],
@@ -29,7 +29,7 @@ const { importCompleteZip, mergeFolders, mergePosterFolders, mergeManualGroups }
     };
     const inc = {
       folders: [
-        { id: 'f-1', name: 'Remote', kind: 'static', created: null, items: ['b', 'c'] },
+        { id: 'f-1', name: 'Remote', kind: 'static', created: null, parentId: 'f-2', items: ['b', 'c'] },
         { id: 'f-2', name: 'New', kind: 'static', created: null, items: ['d'] },
       ],
       activeId: 'f-2',
@@ -43,6 +43,10 @@ const { importCompleteZip, mergeFolders, mergePosterFolders, mergeManualGroups }
       'new incoming id added',
     );
     assert.strictEqual(m.activeId, 'c-x', 'activeId stays local when still valid');
+    // Where a folder sits in the tree is local arrangement, so parentId does not
+    // move when a ZIP from another machine names a different parent (#41).
+    assert.strictEqual(f1.parentId, 'c-x', 'parentId local-wins on same id');
+    assert.strictEqual(m.folders.find((c) => c.id === 'f-2').parentId, null, 'incoming root folder stays at the root');
     const d1 = m.folders.find((c) => c.id === 'd-1');
     assert.ok(d1 && d1.kind === 'dynamic' && d1.tree, 'dynamic kind + tree passthrough');
     // invalid activeId on both → null

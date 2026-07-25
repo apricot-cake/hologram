@@ -30,25 +30,143 @@ function createFolderStore({ idPrefix, persist, isLibrary }: { idPrefix: string;
   const genId = () => idPrefix + '-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7);
   const allRaw = () => folders;
   const all = () => folders;
+  // Nesting (#41): the store stays a FLAT array and `parentId` is the only edge —
+  // the tree is derived on demand below. parentId has to be listed here as well as
+  // in the main-side normalizer, or a field that survives the file is dropped on
+  // its way into the store and the next save writes the folder back to the root.
   function setAll(list: unknown) {
     folders = Array.isArray(list) ? (list as HologramFolder[]) : [];
-    if (isLibrary) folders = folders.map((f) => ({ ...f, kind: f.kind || 'static', created: typeof f.created === 'number' ? f.created : null, items: Array.isArray(f.items) ? f.items : [] }));
+    if (isLibrary)
+      folders = folders.map((f) => ({
+        ...f,
+        kind: f.kind || 'static',
+        created: typeof f.created === 'number' ? f.created : null,
+        parentId: f.kind !== 'dynamic' && typeof f.parentId === 'string' ? f.parentId : null,
+        items: Array.isArray(f.items) ? f.items : [],
+      }));
+    invalidateTree();
+  }
+  // Parent → children index, rebuilt lazily and thrown away on any structural
+  // change. Sibling order is array order (no `order` field), so the index just
+  // preserves the order it walks in and the existing reorder machinery keeps
+  // working untouched.
+  let kids: Map<string | null, HologramFolder[]> | null = null;
+  function invalidateTree() {
+    kids = null;
+  }
+  function childIndex() {
+    if (!kids) {
+      kids = new Map();
+      for (const f of folders) {
+        const p = f.parentId || null;
+        const arr = kids.get(p);
+        if (arr) arr.push(f);
+        else kids.set(p, [f]);
+      }
+    }
+    return kids;
+  }
+  const childrenOf = (id: string | null) => childIndex().get(id || null) || [];
+  // The folder itself plus everything under it. Callers use it for the two places
+  // where a parent stands for its subtree: matching posts (aggregation is the
+  // default — a parent shows what its children hold) and cascade delete.
+  function subtreeIds(id: string | null | undefined) {
+    const out = new Set<string>();
+    if (!id) return out;
+    const stack = [id];
+    while (stack.length) {
+      const cur = stack.pop() as string;
+      if (out.has(cur)) continue; // a repaired file cannot contain a cycle, but never spin on one either
+      out.add(cur);
+      for (const c of childrenOf(cur)) stack.push(c.id);
+    }
+    return out;
+  }
+  // Membership including descendants (`only` asks for the folder's own items).
+  // Nesting without aggregation would leave a flat list plus tags doing the same
+  // job, so aggregation is what the default query means; 「このフォルダのみ」 opts out.
+  function hasDeep(id: string | null | undefined, key: string, only?: boolean) {
+    if (only) return has(id, key);
+    for (const fid of subtreeIds(id)) {
+      const f = byId(fid);
+      if (f && f.items.includes(key)) return true;
+    }
+    return false;
+  }
+  // "親 / 子 / 孫" — for the surfaces that show a folder OUT of the tree, where the
+  // name alone stopped being an identifier the moment folders could nest (two
+  // 「資料」 under different parents are a normal thing to have).
+  function pathOf(id: string | null | undefined) {
+    const parts: string[] = [];
+    const seen = new Set<string>();
+    let cur = byId(id);
+    while (cur && !seen.has(cur.id)) {
+      seen.add(cur.id);
+      parts.unshift(cur.name);
+      cur = byId(cur.parentId);
+    }
+    return parts.join(' / ');
+  }
+  // Reparenting refuses to move a folder into itself or into its own subtree —
+  // the one write that could turn the array into something that is not a tree.
+  // The sidebar disables those drop targets while dragging; this is the guard
+  // behind that, so the two can never disagree about what is legal.
+  function reparent(id: string | null | undefined, parentId: string | null) {
+    const f = byId(id);
+    if (!f || !id) return false;
+    if (parentId && subtreeIds(id).has(parentId)) return false;
+    if ((f.parentId || null) === (parentId || null)) return false;
+    f.parentId = parentId || null;
+    invalidateTree();
+    persist();
+    return true;
+  }
+  // One drop = one write. A tree drag can change BOTH the parent and the position
+  // among siblings ("put it under 資料, third from the top"), and doing that as a
+  // reparent followed by a reorder would persist twice and let subscribers see the
+  // folder in a place the user never dropped it.
+  //   into   — make it a child of targetId (null = the root)
+  //   before / after — put it beside targetId, adopting that row's parent
+  function place(draggedId: string | null | undefined, targetId: string | null, mode: 'into' | 'before' | 'after') {
+    const f = byId(draggedId);
+    if (!f || !draggedId || draggedId === targetId) return false;
+    const target = byId(targetId);
+    if (mode !== 'into' && !target) return false; // "beside" needs a row to be beside
+    const newParent = mode === 'into' ? (target ? target.id : null) : (target as HologramFolder).parentId || null;
+    // Same refusal as reparent: a folder cannot land inside its own subtree.
+    if (newParent && subtreeIds(draggedId).has(newParent)) return false;
+    const parentChanged = (f.parentId || null) !== newParent;
+    if (mode === 'into' && !parentChanged) return false; // already there
+    f.parentId = newParent;
+    if (target && mode !== 'into') {
+      folders.splice(folders.indexOf(f), 1);
+      const to = folders.indexOf(target);
+      folders.splice(mode === 'before' ? to : to + 1, 0, f);
+    }
+    invalidateTree();
+    persist();
+    return true;
   }
   const byId = (id: string | null | undefined) => folders.find((f) => f.id === id) || null;
   const has = (id: string | null | undefined, key: string) => {
     const f = byId(id);
     return !!(f && f.items.includes(key));
   };
-  function create(name: string | null | undefined, opts?: { kind?: string; tree?: unknown } | null) {
+  function create(name: string | null | undefined, opts?: { kind?: string; tree?: unknown; parentId?: string | null } | null) {
     const nm = (name || '').trim();
     if (!nm) return null;
     const f: HologramFolder = { id: genId(), name: nm, items: [] };
     if (isLibrary) {
       f.kind = opts && opts.kind === 'dynamic' ? 'dynamic' : 'static';
       f.created = Date.now();
+      // A subfolder is created from its parent's context menu, so the parent comes
+      // in with the name. An id nobody owns would be repaired away on the next read
+      // anyway; refusing it here keeps that from looking like a lost folder.
+      f.parentId = f.kind === 'dynamic' || !opts || !opts.parentId || !byId(opts.parentId) ? null : opts.parentId;
       if (f.kind === 'dynamic') setQuery(f, opts); // saved-search payload (the condition tree)
     }
     folders.push(f);
+    invalidateTree();
     persist();
     return f;
   }
@@ -81,10 +199,19 @@ function createFolderStore({ idPrefix, persist, isLibrary }: { idPrefix: string;
     }
     return changed;
   }
+  // Deleting a folder takes its subtree with it (Explorer / Finder / Eagle all do;
+  // the alternative — silently promoting the children — moves folders the user
+  // never asked to move). The posts themselves stay in the library. Every removed
+  // id has to reach pruneFolderLeaves, not just the one that was clicked, or a
+  // saved search keeps a leaf pointing at a folder that no longer exists and
+  // quietly answers zero forever.
   function remove(id: string | null | undefined) {
-    folders = folders.filter((f) => f.id !== id);
-    if (isLibrary && id) pruneFolderLeaves(new Set([id]));
+    const gone = isLibrary ? subtreeIds(id) : new Set(id ? [id] : []);
+    folders = folders.filter((f) => !gone.has(f.id));
+    invalidateTree();
+    if (isLibrary && gone.size) pruneFolderLeaves(gone);
     persist();
+    return gone;
   }
   function rename(id: string | null | undefined, name: string | null | undefined) {
     const f = byId(id);
@@ -132,6 +259,7 @@ function createFolderStore({ idPrefix, persist, isLibrary }: { idPrefix: string;
     const to = folders.findIndex((f) => f.id === targetId);
     if (to < 0) folders.push(item);
     else folders.splice(before ? to : to + 1, 0, item);
+    invalidateTree(); // sibling order IS array order, so the child index is stale now
     persist();
     return true;
   }
@@ -141,6 +269,12 @@ function createFolderStore({ idPrefix, persist, isLibrary }: { idPrefix: string;
     setAll,
     byId,
     has,
+    hasDeep,
+    childrenOf,
+    pathOf,
+    subtreeIds,
+    reparent,
+    place,
     create,
     remove,
     rename,
@@ -270,6 +404,23 @@ export function load() {
 
 export const byId = store.byId;
 export const has = store.has;
+// Nesting (#41). hasDeep is what the query engine asks (a parent stands for its
+// subtree); plain `has` stays for the surfaces that mean this folder literally —
+// the per-post 「フォルダに追加」 checkmarks, which answer "is it in THIS one".
+export const hasDeep = store.hasDeep;
+export const childrenOf = store.childrenOf;
+export const pathOf = store.pathOf;
+export const subtreeIds = store.subtreeIds;
+export function placeFolder(id: string | null | undefined, targetId: string | null, mode: 'into' | 'before' | 'after') {
+  const ok = store.place(id, targetId, mode);
+  if (ok) notify('list');
+  return ok;
+}
+export function reparentFolder(id: string | null | undefined, parentId: string | null) {
+  const ok = store.reparent(id, parentId);
+  if (ok) notify('list');
+  return ok;
+}
 
 // Drop captureIds no longer present (deleted items), persisting + notifying once.
 export function reconcile(existing: Set<string>) {
@@ -385,7 +536,7 @@ export function dynamicFolders() {
 export function allFolders() {
   return store.allRaw();
 }
-export function createFolder(name: string | null | undefined, opts?: { kind?: string; tree?: unknown; q?: string } | null) {
+export function createFolder(name: string | null | undefined, opts?: { kind?: string; tree?: unknown; q?: string; parentId?: string | null } | null) {
   const f = store.create(name, opts);
   if (f) notify('list');
   return f;
@@ -400,9 +551,14 @@ export function renameFolder(id: string | null | undefined, name: string | null 
   if (ok) notify('list');
   return ok;
 }
+// Returns every id that went away (the folder plus its subtree) so the caller can
+// sweep the live query tree and the saved tabs with the same set the store used on
+// the saved searches. Three places hold folder leaves; a set that reaches two of
+// them leaves the third pointing at nothing.
 export function removeFolder(id: string | null | undefined) {
-  store.remove(id);
+  const gone = store.remove(id);
   notify('list');
+  return gone;
 }
 export function onChange(cb: (kind?: string) => void) {
   subs.push(cb);

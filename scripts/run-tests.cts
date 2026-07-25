@@ -53,6 +53,7 @@ const TESTS = [
   'test-config-recovery',
   'test-native-host-install',
   'test-folders-merge',
+  'test-folder-nesting',
   'test-tag-types',
   'test-token-parity',
   'test-contrast-parity',

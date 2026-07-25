@@ -133,10 +133,9 @@ CREATE INDEX idx_post_tags_tagId ON post_tags(tagId);
 -- ternary has treated it as a closed static/dynamic pair since before this
 -- migration existed — nothing in #5's confirmed scope opens a third kind.
 -- tree is the saved-search query tree for a dynamic folder (JSON, opaque here
--- — the query-tree shape is query.ts's concern, not the DB's). Folder nesting
--- (#41, in flight on a separate branch as of this migration) is not yet
--- reflected: it lands as its own migration once #41 merges, same as any other
--- post-#295 schema change.
+-- — the query-tree shape is query.ts's concern, not the DB's). This historical
+-- v1 string stays immutable; folder nesting's parentId column (#41) is appended
+-- by the add-folder-parent migration in lib-db.mts.
 CREATE TABLE folders (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,

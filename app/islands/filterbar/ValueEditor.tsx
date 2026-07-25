@@ -15,6 +15,7 @@ import { beginFilterEditSession, endFilterEditSession, type FacetMode, type Filt
 import { t } from '../_shared/i18n.ts';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
 
 // The facet's operator/exclusion mode (redesign §4-2 B, Linear「is any of / all of /
@@ -113,6 +114,14 @@ export function ValueEditor({ cat, onManage }: { cat: FilterCatValues; onManage:
     if (mode === 'exclude') cat.setMode('exclude');
     setItems(cat.values());
   };
+  // Seeded from the live tree at mount, same as the mode above (the editor is keyed
+  // per category, so a fresh mount is a fresh read).
+  const [only, setOnly] = useState(() => !!cat.only?.get());
+  const applyOnly = (v: boolean) => {
+    cat.only?.set(v);
+    setOnly(v);
+    setItems(cat.values());
+  };
   const applyMode = (m: FacetMode) => {
     cat.setMode(m);
     setMode(m);
@@ -149,6 +158,16 @@ export function ValueEditor({ cat, onManage }: { cat: FilterCatValues; onManage:
   return (
     <div className={cn('flex max-h-(--available-height) flex-col gap-2 p-2', twoPane ? 'w-max max-w-[min(520px,calc(100vw-24px))]' : 'w-64')}>
       <ModeSeg cat={cat} mode={mode} onPick={applyMode} />
+      {/* Folder facet only (#41). It sits with the mode segment because it shapes what
+          the condition MEANS, not which values are in it — a folder covers its
+          subfolders unless this says otherwise. A switch rather than a fourth segment:
+          it is orthogonal to どれか/すべて/〜以外, and combines with all three. */}
+      {cat.only ? (
+        <label className="flex cursor-default items-center justify-between gap-2 px-1 text-xs select-none">
+          <span>{t('foldOnly')}</span>
+          <Switch checked={only} onCheckedChange={applyOnly} />
+        </label>
+      ) : null}
       {cat.showFind ? <Input ref={inputRef} type="text" className="h-7 text-xs" placeholder={t('qfFindPh')} autoComplete="off" value={query} onChange={(e) => setQuery(e.target.value)} /> : null}
       {twoPane ? (
         <div className="flex min-h-0 flex-1">

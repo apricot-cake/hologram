@@ -8,7 +8,7 @@
 // one wave at a time; the ones imported below are converted, the rest are still
 // read via that bridge at call time.
 import JSZip from 'jszip';
-import { treeLeaves, evalNode, hostOf, userKey, textHaystackOf, facetViewOf, facetSetOp, facetSetNeg, facetDefaultOp } from './query.ts';
+import { treeLeaves, evalNode, hostOf, userKey, textHaystackOf, facetViewOf, facetSetOp, facetSetNeg, facetDefaultOp, removeCondsMatching as removeCondsMatchingIn } from './query.ts';
 import { makeListing, bindNamedPosters } from './listing.ts';
 import { newShuffleSeed } from './shuffle.ts';
 import { formatCount, formatShortDate, compactDate, formatDate } from './format.ts';
@@ -171,6 +171,11 @@ export interface FilterCatValues extends FilterCatBase {
   mode(): FacetMode;
   setMode(m: FacetMode): void;
   manage?: () => void;
+  // Folder facet only (#41): 「このフォルダのみ」. A folder condition covers the
+  // subtree by default, and this narrows it to the folder's own posts. It is a
+  // property of the condition, not a mode — hence its own switch rather than a
+  // fourth segment next to どれか/すべて/〜以外.
+  only?: { get(): boolean; set(v: boolean): void };
 }
 // A category whose editor is the date-range form (post date or the 3-dim poster date).
 export interface FilterCatDate extends FilterCatBase {
@@ -1439,7 +1444,7 @@ export function endFilterEditSession(): void {
     // 作品/キャラ kin — they share the one 'tag' leaf type and its single op, so one chip).
     const valuesCat =
       (qb: typeof postQB, opts: typeof POST_FACET_OPTS) =>
-      (cat: string, label: string, type: string, showFind: boolean, extra?: { manage?: () => void; valuesFn?: () => FilterRow[] }): FilterCatValues => {
+      (cat: string, label: string, type: string, showFind: boolean, extra?: { manage?: () => void; valuesFn?: () => FilterRow[]; only?: FilterCatValues['only'] }): FilterCatValues => {
         const mo = modeFor(qb, opts)(type);
         return {
           cat,
@@ -1452,6 +1457,7 @@ export function endFilterEditSession(): void {
           mode: mo.mode,
           setMode: mo.setMode,
           manage: extra?.manage,
+          only: extra?.only,
         };
       };
     // The combined タグ editor values: general tags (種別なし, count-ordered)
@@ -1511,7 +1517,24 @@ export function endFilterEditSession(): void {
       vc('tag', getMessage('qfTag'), 'tag', true, { valuesFn: combinedTagValues('tag', 'work', 'character') }),
       vc('hashtag', getMessage('tabTags'), 'hashtag', true),
       vc('user', getMessage('sidebarAuthors'), 'user', true),
-      vc('folder', getMessage('qfCatFolder'), 'folder', false, { manage: () => folders.openManager() }),
+      // No 「フォルダを管理…」 here: the sidebar tree IS the manager now (#41 / 確定D).
+      // The poster-side row below still opens the modal — poster folders have no tree
+      // of their own yet, and taking their only management surface away to keep this
+      // one symmetric would just delete the feature.
+      vc('folder', getMessage('qfCatFolder'), 'folder', false, {
+        // 「このフォルダのみ」 is one switch for the whole facet, not one per value:
+        // the chip is per-facet, so a per-value flag could not be read back off it.
+        only: {
+          get: () => treeLeaves(postQB.getTree()).some((c) => c.type === 'folder' && c.only),
+          set: (v) => {
+            for (const l of treeLeaves(postQB.getTree()).filter((c) => c.type === 'folder')) {
+              if (v) l.only = true;
+              else delete l.only;
+            }
+            postQB.refresh();
+          },
+        },
+      }),
     ];
     cats.push({
       cat: 'date',
@@ -1807,9 +1830,34 @@ export function endFilterEditSession(): void {
   // stays the guard + action logic.
   handleFolderChange = function (kind?: string) {
     // 絞り込み中のフォルダが削除されたらそのフィルタを除去（一覧が原因不明に空になるのを防ぐ）。
-    if (postQB.removeCondsMatching((c: HologramQueryLeaf) => c.type === 'folder' && !CF().byId(c.value))) {
+    const dangling = (c: HologramQueryLeaf) => c.type === 'folder' && !CF().byId(c.value);
+    if (postQB.removeCondsMatching(dangling)) {
       postQB.syncShadow();
       postQB.render();
+    }
+    // Folder leaves live in three places, and a delete that reaches only some of
+    // them is invisible until the day it isn't: the live tree (above), the saved
+    // searches (folders.ts sweeps its own on delete) and the OTHER tabs' saved
+    // state (here). A tab nobody has switched to yet keeps its tree in memory, so
+    // a leaf naming a deleted folder would sit there until the tab is opened and
+    // then answer zero — with nothing on screen to say why. Cascade delete (#41)
+    // makes that likelier, since one click can retire a whole subtree.
+    if (kind === 'list') {
+      const activeId = tabsCtl.getActiveTabId();
+      let swept = false;
+      for (const t of tabsCtl.getTabs()) {
+        if (t.id === activeId) continue; // the live tree above IS this tab's state
+        const st = t.state as { tree?: HologramQueryGroup; f?: HologramQueryLeaf[] } | undefined;
+        if (!st) continue;
+        if (st.tree && removeCondsMatchingIn(st.tree, dangling)) swept = true;
+        // The title shadow is a separate copy of the leaves — left alone, the tab
+        // keeps its name from a folder that is gone.
+        if (Array.isArray(st.f) && st.f.some(dangling)) {
+          st.f = st.f.filter((c) => !dangling(c));
+          swept = true;
+        }
+      }
+      if (swept) tabsCtl.persistTabsNow();
     }
     // The sidebar collection state (counts/active) self-derives from the
     // hologramFolders.onChange subscription in renderer/sidebar.ts.

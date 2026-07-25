@@ -21,11 +21,17 @@ try {
   assert.deepStrictEqual(writer.getTagTypes(), { types: { alice: 'character' }, labels: { character: 'Character' } });
 
   writer.setFolders({
-    folders: [{ id: 'folder-1', name: 'Favorites', kind: 'static', created: 1, items: ['post-1', 'missing'] }],
+    folders: [
+      { id: 'folder-2', name: 'Child', kind: 'static', created: 2, parentId: 'folder-1', items: ['post-2'] },
+      { id: 'folder-1', name: 'Favorites', kind: 'static', created: 1, items: ['post-1', 'missing'] },
+    ],
     activeId: 'folder-1',
   });
   assert.deepStrictEqual(writer.getFolders(), {
-    folders: [{ id: 'folder-1', name: 'Favorites', kind: 'static', created: 1, items: ['post-1'] }],
+    folders: [
+      { id: 'folder-2', name: 'Child', kind: 'static', created: 2, parentId: 'folder-1', items: ['post-2'] },
+      { id: 'folder-1', name: 'Favorites', kind: 'static', created: 1, parentId: null, items: ['post-1'] },
+    ],
     activeId: 'folder-1',
   });
 

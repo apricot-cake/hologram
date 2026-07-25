@@ -375,7 +375,8 @@ export function normalizeTree(node: any): any {
 //     are an ID entity; a saved leaf that only has a name lazily resolves and
 //     caches its id the first time it's evaluated post-DB-migration, below)
 export function makePostPredOf(deps: {
-  isInFolder(id: string, captureId: string): boolean;
+  /** `only` = the leaf's 「このフォルダのみ」 flag; without it a folder stands for its subtree (#41). */
+  isInFolder(id: string, captureId: string, only?: boolean): boolean;
   fuzzyCompile?(q: string): ((hay: string) => boolean) | null;
   postKeyOf?(url: string | null | undefined): string | null;
   tagIdOf?(name: string): number | undefined;
@@ -410,8 +411,12 @@ export function makePostPredOf(deps: {
       }
       case 'hashtag':
         return (p) => (p.hashtags || []).includes(f.value);
+      // A folder leaf means the folder AND everything nested under it; `only`
+      // narrows it to the folder's own posts (#41). The flag is absent by
+      // default, so every tree written before nesting keeps meaning what it
+      // meant when nothing had children.
       case 'folder':
-        return (p) => deps.isInFolder(f.value, p.captureId);
+        return (p) => deps.isInFolder(f.value, p.captureId, f.only);
       case 'date': {
         const field = f.dateField || 'date';
         const { from, to } = localDayRange(f.from, f.to); // local-day bounds (see localDayRange)

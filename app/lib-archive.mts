@@ -114,7 +114,12 @@ function mergeFolders(cur, inc) {
       for (const it of c.items || []) e.items.add(String(it));
       return;
     }
-    const e: any = { id: c.id, name: String(c.name || c.id), kind: c.kind === 'dynamic' ? 'dynamic' : 'static', created: typeof c.created === 'number' ? c.created : null, items: new Set((c.items || []).map(String)) };
+    // parentId rides along LOCAL-wins with name/kind (#41): where a folder sits in
+    // YOUR tree is your arrangement, not the exporting machine's. A parent that
+    // only exists in the incoming half lands as a dangling id, which the reader's
+    // repair turns into a root folder — visible and fixable, unlike a folder that
+    // silently moved.
+    const e: any = { id: c.id, name: String(c.name || c.id), kind: c.kind === 'dynamic' ? 'dynamic' : 'static', created: typeof c.created === 'number' ? c.created : null, parentId: c.kind !== 'dynamic' && typeof c.parentId === 'string' ? c.parentId : null, items: new Set((c.items || []).map(String)) };
     // The saved search rides along LOCAL-wins (like name/kind), so importing a ZIP
     // from another machine never overwrites the condition you edited here.
     if (c.kind === 'dynamic' && c.tree && typeof c.tree === 'object') e.tree = c.tree;
@@ -123,7 +128,7 @@ function mergeFolders(cur, inc) {
   for (const c of (cur && cur.folders) || []) put(c);
   for (const c of (inc && inc.folders) || []) put(c);
   const folders = [...byId.values()].map((c) => {
-    const o: any = { id: c.id, name: c.name, kind: c.kind, created: c.created, items: [...c.items] };
+    const o: any = { id: c.id, name: c.name, kind: c.kind, created: c.created, parentId: c.parentId, items: [...c.items] };
     if (c.tree) o.tree = c.tree;
     return o;
   });

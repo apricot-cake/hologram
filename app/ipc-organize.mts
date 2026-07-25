@@ -104,7 +104,7 @@ function register(ctx) {
   });
 
   // `folders` — the unified container of named folders (formerly "collections").
-  // Each folder is { id, name, kind:'static'|'dynamic', created, items:[captureId] };
+  // Each folder is { id, name, kind:'static'|'dynamic', created, parentId, items:[captureId] };
   // a dynamic folder additionally carries a saved search (`tree`), and holds no items.
   // `activeId` is legacy (the old 🔖 one-click target); the renderer no longer
   // writes it, so it settles to null.

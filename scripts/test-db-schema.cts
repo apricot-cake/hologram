@@ -36,7 +36,7 @@ const EXPECTED_TABLES = ['posts', 'media', 'tags', 'tag_parents', 'tag_aliases',
 
 {
   const { db, sqlite } = openDatabase(mkdb());
-  assert.strictEqual(sqlite.pragma('user_version', { simple: true }), 5, 'v1 DDL plus the #297 add-source-mtime, #135 drop-clip-items, drop-poster-workspace-items, and #298 add-store-state migrations');
+  assert.strictEqual(sqlite.pragma('user_version', { simple: true }), 6, 'v1 DDL plus the five appended migrations through #41 add-folder-parent');
 
   const names = new Set(
     sqlite
@@ -133,12 +133,17 @@ const EXPECTED_TABLES = ['posts', 'media', 'tags', 'tag_parents', 'tag_aliases',
   sqlite.close();
 }
 
-// --- folders.kind stays a closed pair (normFolders' own ternary, unlike assetClass) --
+// --- folders: kind stays a closed pair; parentId is the nesting edge (#41) ---
 
 {
   const { sqlite } = openDatabase(mkdb());
-  assert.throws(() => sqlite.prepare("INSERT INTO folders (id, name, kind) VALUES ('f1', 'x', 'nested')").run(), /CHECK constraint failed/, 'kind is constrained to static/dynamic — folder nesting (#41) is a future migration, not this one');
-  passed++;
+  assert.throws(() => sqlite.prepare("INSERT INTO folders (id, name, kind) VALUES ('f1', 'x', 'nested')").run(), /CHECK constraint failed/, 'kind is constrained to static/dynamic — nesting is parentId, not another kind');
+  sqlite.prepare("INSERT INTO folders (id, name) VALUES ('parent', 'Parent')").run();
+  sqlite.prepare("INSERT INTO folders (id, name, parentId) VALUES ('child', 'Child', 'parent')").run();
+  assert.strictEqual(sqlite.prepare("SELECT parentId FROM folders WHERE id = 'child'").get().parentId, 'parent', 'parentId persists the flat tree edge');
+  sqlite.prepare("DELETE FROM folders WHERE id = 'parent'").run();
+  assert.strictEqual(sqlite.prepare("SELECT COUNT(*) AS n FROM folders WHERE id = 'child'").get().n, 0, 'deleting a parent cascades to its subtree');
+  passed += 3;
   sqlite.close();
 }
 
@@ -167,7 +172,7 @@ const EXPECTED_TABLES = ['posts', 'media', 'tags', 'tag_parents', 'tag_aliases',
   first.sqlite.close();
 
   const second = openDatabase(file);
-  assert.strictEqual(second.sqlite.pragma('user_version', { simple: true }), 5, 'reopen does not re-run the migrations');
+  assert.strictEqual(second.sqlite.pragma('user_version', { simple: true }), 6, 'reopen does not re-run the migrations');
   ok(second.sqlite.prepare("SELECT name FROM tags WHERE name = 'x'").get(), 'data from the first session survives reopen');
   passed += 2;
   second.sqlite.close();

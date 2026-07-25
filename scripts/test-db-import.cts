@@ -69,7 +69,10 @@ function writeJson(folder: string, name: string, data: unknown) {
 
   writeJson(folder, 'tag-types.json', { types: { 'character:alice': 'character', 'style:sketch': 'work' } });
   writeJson(folder, 'folders.json', {
-    folders: [{ id: 'f1', name: 'F1', kind: 'static', created: 123, items: ['cap-1', 'cap-2', 'cap-3'] }],
+    folders: [
+      { id: 'f-root', name: 'Root', kind: 'static', created: 122, items: [] },
+      { id: 'f1', name: 'F1', kind: 'static', created: 123, parentId: 'f-root', items: ['cap-1', 'cap-2', 'cap-3'] },
+    ],
   });
   writeJson(folder, 'manual-groups.json', { groups: [['cap-1', 'cap-2']] });
   writeJson(folder, 'poster-folders.json', { folders: [{ id: 'pf1', name: 'PF1', items: ['poster-key-1'] }] });
@@ -134,7 +137,8 @@ function writeJson(folder: string, name: string, data: unknown) {
 
   const folderItems = (sqlite.prepare('SELECT postId FROM folder_items WHERE folderId = ? ORDER BY postId').all('f1') as any[]).map((r) => r.postId);
   assert.deepStrictEqual(folderItems, ['cap-1', 'cap-2', 'cap-3'], 'folder_items reflects folders.json (all 3 posts exist at this point)');
-  passed += 1;
+  assert.strictEqual(sqlite.prepare('SELECT parentId FROM folders WHERE id = ?').get('f1').parentId, 'f-root', 'folders.json parentId survives the one-time DB import');
+  passed += 2;
 
   const groupRows = sqlite.prepare('SELECT g.id AS groupId, gi.postId, gi.seq FROM manual_groups g JOIN manual_group_items gi ON gi.groupId = g.id ORDER BY gi.seq').all() as any[];
   assert.strictEqual(groupRows.length, 2, "manual-groups.json's one group of 2 becomes 2 manual_group_items rows");

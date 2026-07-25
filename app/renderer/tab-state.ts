@@ -59,8 +59,10 @@ export function makeTabLabels(deps: {
         return f.value;
       case 'hashtag':
         return `#${f.value}`;
+      // A folder chip stands for the folder AND its subfolders (#41), so the one that
+      // does NOT has to say so — otherwise two different queries wear the same chip.
       case 'folder':
-        return folderName(f.value) || f.value;
+        return (folderName(f.value) || f.value) + (f.only ? t('foldOnlySuffix') : '');
       case 'media':
         return f.value === 'image' ? t('qfImage') : f.value === 'video' ? t('qfVideo') : t('qfGif');
       case 'instance':

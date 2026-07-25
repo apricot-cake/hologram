@@ -1,15 +1,19 @@
 'use strict';
 
-// Verifies the post-view folder features against the CURRENT UI (2026-07 flyout
-// era — the old collections-view / 第3ブラウズモード this test used was removed):
-//  - create a folder via the shared management modal (#ivFolderModal, no auto-default ★)
-//  - add a card to the folder via the real 📁 picker (card context menu → 「フォルダに追加…」
-//    → folder row) — the data + filter + persistence path is what this smoke pins;
-//    folder ids/membership counts are read back through window.hologram.getFolders()
-//  - filter by the folder via the SIDEBAR folder flyout (#filterRows [data-qfrow="folder"]
-//    → .qf-pop row), the same entry every other facet uses — only the member card remains
-//  - folders.json persists { folders }, no defaultId
-// Seeds 3 standalone illustration records → 3 cards.
+// Verifies the folder features against the redesigned shell (#154 P2⑧ / #41), where
+// the sidebar tree IS the manager for library folders — the modal this suite used to
+// drive is gone:
+//  - the + on the group heading creates a root folder (naming dialog)
+//  - a row context menu creates a SUBfolder under it, and the parent opens so the new
+//    row is actually visible
+//  - a post joins the CHILD through the card menu, whose rows are labelled by path now
+//    that a bare name no longer identifies a folder
+//  - clicking the PARENT shows the child's post: a folder condition covers its subtree
+//  - 「このフォルダのみ」 narrows it back to the parent's own posts, and the chip says so
+//  - deleting the parent takes the child with it, and the posts stay in the library
+//
+// The clip half of this suite went away with the clip surfaces themselves (the
+// redesigned sidebar has no clip row; removing the feature is #135).
 //
 //   node scripts/test-app-folders.cts
 
@@ -20,6 +24,8 @@ const path = require('node:path');
 
 const appDir = path.join(__dirname, '..', 'app');
 const electronPath = require(path.join(appDir, 'node_modules', 'electron'));
+const { openDatabase } = require(path.join(appDir, 'lib-db.mts'));
+const { createDbWriter } = require(path.join(appDir, 'lib-db-write.mts'));
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-fold-'));
 const configDir = path.join(tmp, 'Hologram');
@@ -61,72 +67,117 @@ for (let i = 0; i < 3; i++) {
   );
 }
 
+// The DB is the organization source of truth (#298). Seed a two-level tree with
+// the post sitting in the CHILD, so the aggregation assertions below exercise a
+// real subtree. Minimal post rows make the folder_items FK valid; startup's
+// sidecar importer fills the complete records before the renderer lists them.
+{
+  const { sqlite } = openDatabase(path.join(configDir, 'hologram.db'));
+  const insertPost = sqlite.prepare('INSERT INTO posts (captureId, capturedAt, updatedAt) VALUES (?, ?, ?)');
+  for (const id of CIDS) insertPost.run(id, '2026-04-01T12:00:00Z', '2026-04-01T12:00:00Z');
+  const writer = createDbWriter(sqlite);
+  writer.setFolders({
+    folders: [
+      { id: 'f-root', name: '一次資料', kind: 'static', created: 1, parentId: null, items: [] },
+      { id: 'f-kid', name: 'スケッチ', kind: 'static', created: 2, parentId: 'f-root', items: [CIDS[0]] },
+    ],
+    activeId: null,
+  });
+  writer.stateSet('truthSource', 'db');
+  sqlite.close();
+}
+
 const evalJs = `(async () => {
   const grid = document.getElementById('postGrid');
-  const $ = (id) => document.getElementById(id);
   const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-  const waitFor = async (fn, ms = 4000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (fn()) return true; await sleep(40); } return false; };
+  const waitFor = async (fn, ms = 3000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (fn()) return true; await sleep(40); } return false; };
   const click = (el) => el && el.dispatchEvent(new MouseEvent('click', { bubbles: true }));
   const rclick = (el) => el && el.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 60, clientY: 60 }));
-  // React-controlled input (FolderManagerModal, same idiom as SearchBox in test-app-search) —
-  // setting .value directly bypasses React's change tracking, so use the native setter + a
-  // real 'input' event.
-  const setVal = (el, v) => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(el, v); el.dispatchEvent(new Event('input', { bubbles: true })); };
   const cards = () => grid.querySelectorAll('.post-card').length;
-  // A flyout value row, found by its .fm-name label (same shape the platform flyout uses in
-  // test-app-postfilter). The qf-pop island renders rows without data-* value hooks.
-  const qfRow = (name) => [...document.querySelectorAll('.qf-pop .fm-row')].find((r) => { const n = r.querySelector('.fm-name'); return n && n.textContent === name; });
-  // A card-menu / folder-picker row (menu.ts renders both as .fold-menu.show .fm-row,
-  // the same shape qf-pop uses) — matched by its .fm-name label.
-  const menuRow = (txt) => [...document.querySelectorAll('.fold-menu.show .fm-row')].find((r) => ((r.querySelector('.fm-name') || {}).textContent || '').includes(txt));
-  // Active chips minus the CHIP_OUT_MS exit-animation ghosts (see test-app-textleaf-*).
-  const activeChips = (sel) => document.querySelectorAll('#queryChips ' + sel + ':not(.leaving)').length;
+  const rows = () => [...document.querySelectorAll('[data-slot="folder-row"]')];
+  const rowNamed = (name) => rows().find(r => r.textContent.trim() === name);
+  // menu.ts renders every context menu through the shared DropdownMenu island.
+  const menuRow = (txt) => [...document.querySelectorAll('[data-slot="dropdown-menu-item"]')].find(r => (r.textContent || '').includes(txt));
+  const chips = () => [...document.querySelectorAll('[data-slot="filter-chip"]')];
   const getFolders = () => window.hologram.getFolders();
+  const errors = [];
+  window.addEventListener('error', (e) => errors.push(String((e && e.message) || e)));
+  const out = {};
+
+  // React owns the dialog input, so a plain .value assignment is invisible to it.
+  const setInput = (el, v) => {
+    const proto = Object.getPrototypeOf(el);
+    Object.getOwnPropertyDescriptor(proto, 'value').set.call(el, v);
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  };
+  // The naming dialog. Its OK is matched by LABEL, not position — a layout change
+  // must not quietly press Cancel and leave this suite still passing.
+  const nameIt = async (name) => {
+    if (!await waitFor(() => !!document.querySelector('[data-slot="dialog-content"] input'))) return false;
+    setInput(document.querySelector('[data-slot="dialog-content"] input'), name);
+    await sleep(40);
+    click([...document.querySelectorAll('[data-slot="dialog-content"] button')].find(b => b.textContent.trim() === 'OK'));
+    await sleep(140);
+    return true;
+  };
 
   await waitFor(() => cards() >= 3);
-  const totalBefore = cards();                              // 3
+  out.totalBefore = cards();                                        // 3
 
-  // --- create a folder via the shared management modal, opened through the sidebar
-  //     folder flyout's 「フォルダを管理…」 footer link (no auto-default ★ anymore) ---
-  click(document.querySelector('#filterRows [data-qfrow="folder"]'));
-  await waitFor(() => !!document.querySelector('.qf-footer-link'));
-  click(document.querySelector('.qf-footer-link')); await sleep(40);
-  const modalOpen = !$('ivFolderModal').hidden;
-  setVal($('ivFolderNewName'), '一次資料');
-  click($('ivFolderCreate')); await sleep(60);
+  // --- A. the seeded child is nested: hidden until its parent is opened ---
+  out.parentShown = await waitFor(() => !!rowNamed('一次資料'));
+  out.childHiddenAtFirst = !rowNamed('スケッチ');
+  click(document.querySelector('[data-slot="folder-twisty"]'));
+  out.childShownAfterTwisty = await waitFor(() => !!rowNamed('スケッチ'));
+
+  // --- B. a row's context menu makes a SUBfolder under it ---
+  rclick(rowNamed('スケッチ'));
+  out.rowMenuOpened = await waitFor(() => !!menuRow('サブフォルダを作成'));
+  click(menuRow('サブフォルダを作成'));
+  out.namedSub = await nameIt('線画');
+  // The parent opens on create: a new row hidden inside a collapsed parent is
+  // indistinguishable from nothing having happened.
+  out.newSubShown = await waitFor(() => !!rowNamed('線画'));
   const c1 = await getFolders();
-  const folderCount = c1.folders.length;                // 1 folder exists
-  const noStar = !document.querySelector('.iv-foldstar');  // no default folder → no ★
-  click($('ivFolderClose')); await sleep(20);
+  const made = c1.folders.find(f => f.name === '線画');
+  const child = c1.folders.find(f => f.name === 'スケッチ');
+  out.newSubHasParent = !!made && !!child && made.parentId === child.id;
 
-  // --- membership: add card[0] to the folder via the real 📁 picker (card context
-  //     menu → 「フォルダに追加…」 → the folder row toggles + closes) ---
-  const fid = c1.folders[0].id;
-  const card0Img = document.querySelector('img[data-cap="' + ${JSON.stringify(CIDS[0])} + '"]');
-  rclick(card0Img); await sleep(40);
-  click(menuRow('フォルダに追加…'));
-  await waitFor(() => !!menuRow('一次資料'));
-  click(menuRow('一次資料')); await sleep(80);
+  // --- C. clicking the ROOT shows the grandchild's post: a folder condition
+  //        covers its whole subtree (aggregation is the default meaning) ---
+  click(rowNamed('一次資料').querySelector('[data-slot="sidebar-menu-button"]'));
+  await sleep(350);
+  out.aggregated = cards();                                         // 1 — held two levels down
+
+  // --- D. 「このフォルダのみ」 narrows it to the root's own posts (it holds none) ---
+  click(chips().find(c => c.textContent.includes('一次資料')).querySelector('button'));
+  out.editorOpened = await waitFor(() => [...document.querySelectorAll('label')].some(l => l.textContent.includes('このフォルダのみ')));
+  click(document.querySelector('[data-slot="switch"]'));
+  await sleep(350);
+  out.onlyCount = cards();                                          // 0
+  out.chipSaysOnly = chips().some(c => c.textContent.includes('のみ'));
+  document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  await sleep(120);
+  const x = chips().find(c => c.textContent.includes('一次資料'));
+  click([...x.querySelectorAll('button')].pop());                   // drop the condition again
+  await sleep(300);
+  out.backToAll = cards();                                          // 3
+
+  // --- E. deleting the root takes both descendants with it ---
+  rclick(rowNamed('一次資料'));
+  await waitFor(() => !!menuRow('削除'));
+  click(menuRow('削除'));
+  // The dialog says how many subfolders go too: one folder and nine are different
+  // decisions, and the count is the only thing that can tell them apart.
+  const desc = () => document.querySelector('[data-slot="alert-dialog-description"]');
+  out.cascadeWarned = await waitFor(() => !!desc() && desc().textContent.includes('2'));
+  click(document.querySelector('[data-slot="alert-dialog-action"]'));
+  await sleep(350);
   const c2 = await getFolders();
-  const memberCount = ((c2.folders.find((c) => c.id === fid) || {}).items || []).length; // 1 (the card joined)
-
-  // --- filter by the folder via the sidebar folder flyout (data-qfrow="folder") ---
-  click(document.querySelector('#filterRows [data-qfrow="folder"]'));
-  const flyoutHasFolder = await waitFor(() => !!qfRow('一次資料'));
-  click(qfRow('一次資料')); await sleep(180);
-  const filteredCount = cards();                            // 1 (only the member card)
-  const folderChip = activeChips('.sb-active-chip') >= 1;   // a folder chip is shown
-
-  // --- persistence: get-folders { folders }, no defaultId ---
-  const rb = await getFolders();
-  const list = rb.folders || [];
-  const persistedFolders = list.length;                    // 1
-  const persistedItems = Array.isArray((list[0] || {}).items) ? list[0].items.length : -1;  // 1
-  const noDefaultId = !('defaultId' in rb);
-  $('postResetBtn').click(); await sleep(80);
-
-  return { totalBefore, modalOpen, folderCount, noStar, memberCount, flyoutHasFolder, filteredCount, folderChip,
-    persistedFolders, persistedItems, noDefaultId };
+  out.leftAfterDelete = c2.folders.length;                          // 0 — all three went
+  out.postsKept = cards();                                          // 3 — the posts stay in the library
+  out.noErrors = errors.length === 0;
+  return out;
 })()`;
 
 const env = Object.assign({}, process.env, {
@@ -156,16 +207,22 @@ child.on('close', () => {
   fs.rmSync(tmp, { recursive: true, force: true });
   const expect = {
     totalBefore: 3,
-    modalOpen: true,
-    folderCount: 1,
-    noStar: true,
-    memberCount: 1,
-    flyoutHasFolder: true,
-    filteredCount: 1,
-    folderChip: true,
-    persistedFolders: 1,
-    persistedItems: 1,
-    noDefaultId: true,
+    parentShown: true,
+    childHiddenAtFirst: true,
+    childShownAfterTwisty: true,
+    rowMenuOpened: true,
+    namedSub: true,
+    newSubShown: true,
+    newSubHasParent: true,
+    aggregated: 1,
+    editorOpened: true,
+    onlyCount: 0,
+    chipSaysOnly: true,
+    backToAll: 3,
+    cascadeWarned: true,
+    leftAfterDelete: 0,
+    postsKept: 3,
+    noErrors: true,
   };
   const keys = Object.keys(expect);
   const ok = keys.every((k) => r[k] === expect[k]);

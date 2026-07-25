@@ -59,6 +59,10 @@ const MIGRATIONS: Migration[] = [
         ALTER TABLE posts ADD COLUMN tagReviewed INTEGER;
       `),
   },
+  // #41: folders stay a flat table; parentId is the only tree edge. The
+  // renderer repairs orphaned/cyclic edges when it reads, while the FK keeps a
+  // valid persisted parent from outliving its subtree.
+  { name: 'add-folder-parent', up: (db) => db.exec('ALTER TABLE folders ADD COLUMN parentId TEXT REFERENCES folders(id) ON DELETE CASCADE') },
 ];
 
 interface Migration {
@@ -226,6 +230,7 @@ interface FoldersTable {
   name: string;
   kind: string;
   created: number | null;
+  parentId: string | null;
   tree: string | null; // JSON saved-search tree, dynamic folders only
 }
 interface FolderItemsTable {
