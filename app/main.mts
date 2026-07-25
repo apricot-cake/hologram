@@ -1,6 +1,7 @@
 'use strict';
 
 import { app, BrowserWindow, ipcMain, dialog, shell, protocol, nativeImage, nativeTheme, screen } from 'electron';
+import log from 'electron-log/main';
 import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
@@ -53,6 +54,15 @@ const APP_ICON = path.join(__dirname, 'assets', 'icon.png');
 app.setPath('userData', configDir());
 
 const CONFIG_PATH = path.join(configDir(), 'config.json');
+
+// Keep diagnostics next to the configuration shared with the native host, rather
+// than Electron's AppData default. MSIX storage virtualization can otherwise make
+// the log appear in a different location from the configuration it describes.
+log.transports.file.resolvePathFn = () => path.join(configDir(), 'logs', 'main.log');
+// We own the preload bridge, so electron-log must not register a second preload
+// script for every session. app/preload.cts imports electron-log/preload instead.
+log.initialize({ preload: false });
+log.errorHandler.startCatching({ showDialog: false });
 
 // Custom scheme to serve images from the (arbitrary) save folder. Lets the
 // renderer lazy-load images by filename without disabling webSecurity or
@@ -1317,6 +1327,8 @@ if (!gotSingleInstanceLock) {
     // icon (not electron.exe's) in dev too. electron-builder sets this for the
     // installed exe; setting it here covers the HologramLaunch dev run.
     app.setAppUserModelId('com.hologram.app');
+    log.eventLogger.startLogging();
+    log.info('Starting Hologram', { packaged: app.isPackaged, version: app.getVersion() });
     // Recover/refresh the redundant save-folder pointer FIRST, so the rest of startup
     // (watcher, listPosts, native host) sees a config repaired from the pointer rather
     // than the empty default when config was truncated. (2026-06-23 incident.)
