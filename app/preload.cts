@@ -10,6 +10,7 @@
 // actually exposes. This file itself is type-checked against the REAL electron
 // types by tsconfig.main.json.
 import { contextBridge, ipcRenderer } from 'electron';
+import 'electron-log/preload';
 
 const api = {
   getConfig: (): Promise<any> => ipcRenderer.invoke('get-config'),
