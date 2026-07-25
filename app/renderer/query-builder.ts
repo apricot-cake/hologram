@@ -31,7 +31,6 @@ const QC_GLYPH: Record<string, string> = {
   hashtag: '<path d="M4 9h16"/><path d="M4 15h16"/><path d="M10 3 8 21"/><path d="M16 3l-2 18"/>',
   folder: '<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>',
   instance: '<rect x="3" y="4" width="18" height="8" rx="2"/><rect x="3" y="12" width="18" height="8" rx="2"/><line x1="7" y1="8" x2="7.01" y2="8"/><line x1="7" y1="16" x2="7.01" y2="16"/>',
-  clip: '<path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/>',
   search: '<circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>',
 };
 export const qcGlyph = (type: string) => {
@@ -43,8 +42,8 @@ export const qcGlyph = (type: string) => {
 // standalone (never-clustered) types, per view. Exported so the redesign filter bar
 // (orchestrator's activeFilters / filterCategories mode logic) reads the SAME schema
 // facetViewOf is built with here, rather than re-declaring it and drifting.
-export const POST_FACET_OPTS = { multiValueTypes: ['tag', 'hashtag', 'folder'], standaloneTypes: ['date', 'engagement', 'clip', 'workspace', 'text'] };
-export const POSTER_FACET_OPTS = { multiValueTypes: ['tag'], standaloneTypes: ['date', 'workspace'] };
+export const POST_FACET_OPTS = { multiValueTypes: ['tag', 'hashtag', 'folder'], standaloneTypes: ['date', 'engagement', 'text'] };
+export const POSTER_FACET_OPTS = { multiValueTypes: ['tag'], standaloneTypes: ['date'] };
 
 // Callbacks/state still owned by viewer.ts (searchbox, render, popovers, tab
 // restore) — injected the same way createQueryBuilder's own ctx is.
@@ -67,7 +66,6 @@ export interface PostQueryBuilderDeps {
 export function makePostQueryBuilder(deps: PostQueryBuilderDeps) {
   const predOf = makePostPredOf({
     isInFolder: (id, cap) => folders.has(id, cap),
-    isClipped: (cap) => folders.isClipped(cap),
     fuzzyCompile: (q) => searchCompile(q),
     postKeyOf,
     tagIdOf: deps.tagIdOf,
@@ -91,8 +89,8 @@ export function makePostQueryBuilder(deps: PostQueryBuilderDeps) {
     singleValueTypes: ['date', 'kind'],
     noDupTypes: ['engagement', 'text'],
     // Facet schema (改訂④): tags/hashtags/collections are multi-value per post
-    // (both すべて/どれか meaningful, default すべて); date/engagement/clip/text
-    // (+ the legacy 'workspace' alias) stay standalone chips. Everything else
+    // (both すべて/どれか meaningful, default すべて); date/engagement/text
+    // stay standalone chips. Everything else
     // (platform/user/instance/kind/media/postType) clusters as a silent どれか.
     multiValueTypes: POST_FACET_OPTS.multiValueTypes,
     standaloneTypes: POST_FACET_OPTS.standaloneTypes,
@@ -141,7 +139,7 @@ export function makePosterQueryBuilder(deps: PosterQueryBuilderDeps) {
     singleValueTypes: ['date', 'folder'], // 択一: 1つ選ぶと既存を置換
     noDupTypes: [],
     // Poster facet schema: a poster aggregates many tags (すべて/どれか both
-    // meaningful); date + the workspace toggle stay standalone chips.
+    // meaningful); date stays a standalone chip.
     multiValueTypes: POSTER_FACET_OPTS.multiValueTypes,
     standaloneTypes: POSTER_FACET_OPTS.standaloneTypes,
   });

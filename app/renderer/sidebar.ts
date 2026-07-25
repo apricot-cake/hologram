@@ -1,6 +1,6 @@
 // Sidebar model sources — the two filter-row columns: the POST column
-// (#filterRows: クリップ / フォルダ / プラットフォーム / … / タグ rows, their badges, the
-// 作品/キャラ progressive-disclosure rows, and the クリップ/複数画像 toggle states) and the
+// (#filterRows: フォルダ / プラットフォーム / … / タグ rows, their badges, the
+// 作品/キャラ progressive-disclosure rows, and the 複数画像 toggle state) and the
 // POSTER column (#posterFilterRows: プラットフォーム / 作品 / キャラ / タグ / サーバー / 日付
 // / フォルダ rows + badges + progressive disclosure). viewer.ts keeps EVERY business rule
 // (which filter a click opens, the vocab-driven disclosure math, kind labels) and its
@@ -38,7 +38,6 @@ import { buildShadow } from './query.ts';
 import { namedPosters } from './listing.ts';
 import { get as getPostsData, subscribe as subscribePostsData } from './posts-data.ts';
 import { tagKindOf, posterFilterVocab, onChange } from './tags.ts';
-import { clipCount as foldersClipCount, onChange as foldersOnChange } from './folders.ts';
 import { get as storeGet, subscribe as storeSubscribe } from './store.ts';
 
 type SidebarSource<T> = { get(): T | null; subscribe(cb: () => void): HologramUnsubscribe };
@@ -78,18 +77,10 @@ function computePostModel(): HologramSidebarModel {
       if (hasWork && hasChar) break;
     }
   }
-  // クリップ: count library-wide clipped posts; the row is active when its filter is on.
-  const existing = new Set<string>(posts.map((p) => p.captureId));
-  const clipCount = foldersClipCount(existing);
   const qfCat = storeGet('qfCat');
   return {
     // Only post-side flyout rows carry .qf-open (poster rows read their own half below).
     openCat: qfCat && !String(qfCat).startsWith('poster-') ? qfCat : null,
-    clip: {
-      active: activeFilters.some((f) => f.type === 'clip'),
-      count: clipCount,
-      clearVisible: clipCount > 0,
-    },
     multi: { active: !!storeGet('multiOnly') },
     badges,
     visible: { work: hasWork, character: hasChar },
@@ -156,19 +147,11 @@ function makeSource<T>(compute: () => T, wire: Array<(cb: () => void) => void>):
 
 const byKey = (k: string) => (cb: () => void) => storeSubscribe(k, cb);
 
-export const hologramPostSidebarSource = makeSource(computePostModel, [
-  byKey('postQueryTree'),
-  byKey('multiOnly'),
-  byKey('qfCat'),
-  (cb) => onChange(cb),
-  subscribePostsData,
-  (cb) => foldersOnChange(cb), // clip state (count/active) is folders-owned
-]);
+export const hologramPostSidebarSource = makeSource(computePostModel, [byKey('postQueryTree'), byKey('multiOnly'), byKey('qfCat'), (cb) => onChange(cb), subscribePostsData]);
 
 export const hologramPosterSidebarSource = makeSource(computePosterModel, [
   byKey('posterQueryTree'),
   byKey('qfCat'),
   (cb) => onChange(cb),
   subscribePostsData, // namedPosters()/buildUsers() read allPosts
-  // No hologramFolders subscription — poster badges/visible never depend on clip state.
 ]);

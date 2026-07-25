@@ -531,29 +531,10 @@
        content-pad (12px) inside it — so headers read as one step out, content
        one step in. No magic per-element numbers. */
     #sidebar .sb-chips { padding-left: 12px; }
-    .clip-row-wrap { position: relative; }
-    /* Clip count: same plain-number treatment as the filter badges, parked at
-       the right edge (where the × clear button takes over on hover). */
-    #clipBadge.sb-row-badge {
-      display: none; position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
-      color: var(--text); font-size: 11px; font-weight: 600;
-      font-variant-numeric: tabular-nums; transition: opacity .12s;
-    }
-    #clipBadge.sb-row-badge.on { display: inline-block; }
-    /* Active clip filter: accent INK on the icon only — no fill (motion-study
+    /* Active filter row: accent INK on the icon only — no fill (motion-study
        canvas 2026-07-05; the grey slab read as a heavier state than it is).
        Hover keeps the plain .sb-row treatment. */
-    .clip-row.active .sb-row-ic, .multi-row.active .sb-row-ic { color: var(--accent-text); }
-    .clip-clear-btn {
-      position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
-      background: transparent; border: none; padding: 3px; border-radius: 4px;
-      cursor: pointer; color: var(--text-muted);
-      display: flex; align-items: center;
-      opacity: 0; transition: opacity .12s;
-    }
-    .clip-row-wrap:hover .clip-clear-btn { opacity: 1; }
-    .clip-row-wrap:hover .sb-row-badge { opacity: 0; }
-    .clip-clear-btn:hover { color: var(--text); }
+    .multi-row.active .sb-row-ic { color: var(--accent-text); }
     /* checkbox rows: the BOX aligns with the control edge (same x as the pill
        chips above), like any other control in the column */
     .engagement-select {
@@ -1015,7 +996,7 @@
     /* Selection mode (≥1 selected): clicking anywhere on a card toggles it, so
        every ring stays visible and the per-card hover actions step aside. */
     .post-grid.selecting .select-check { opacity: 1; }
-    .post-grid.selecting .info-btn, .post-grid.selecting .clip-btn, .post-grid.selecting .act-pill { display: none; }
+    .post-grid.selecting .info-btn, .post-grid.selecting .act-pill { display: none; }
     .post-grid.selecting:not(.tile-view) .card-ntag { opacity: 0; }
     /* every click selects now — plain pointer everywhere (no zoom-in over images,
        no "click to expand" hint on the text) */
@@ -1080,16 +1061,13 @@
        180×0.13=23.4px) rounds width and height differently at fractional
        display scaling and the circles render as slight ellipses */
     .post-grid.tile-view { --act: round(nearest, clamp(18px, calc(var(--tile-size, 180px) * 0.13), 26px), 1px); }
-    .post-grid.tile-view .info-btn, .post-grid.tile-view .clip-btn {
+    .post-grid.tile-view .info-btn {
       width: var(--act); height: var(--act); top: 6px; font-size: calc(var(--act) * 0.55);
+      right: 6px;
     }
-    /* Same relative order as card/list (🔖 → ℹ, left to right) */
-    .post-grid.tile-view .info-btn { right: 6px; }
-    .post-grid.tile-view .clip-btn { right: calc(6px + var(--act) + 4px); }
     .post-grid.tile-view .act-pill { width: var(--act); height: var(--act); top: 6px; right: 6px; }
-    .post-grid.tile-view .post-card:has(.clip-btn:hover) .act-pill { right: calc(6px + var(--act) + 4px); }
     .post-grid.tile-view .post-card:has(.info-btn:hover) .act-pill { right: 6px; }
-    .post-grid.tile-view .info-btn svg, .post-grid.tile-view .clip-btn svg { width: 60%; height: 60%; }
+    .post-grid.tile-view .info-btn svg { width: 60%; height: 60%; }
     .post-grid.tile-view .post-card:hover { box-shadow: var(--shadow-md); }
     .post-grid.tile-view .card-img { width: 100%; height: 100%; max-height: none; object-fit: cover; }
     .post-grid.tile-view .post-meta { display: none; }
@@ -1267,31 +1245,12 @@
     .post-flags { display: flex; flex-wrap: wrap; gap: 2px 8px; margin: 0 0 3px; }
     .post-flag { font-size: 10px; color: var(--text-muted); line-height: 1.6; }
     .post-grid.list-view .post-meta .post-flags { order: 1; margin: 0; }
-    /* 📎 clip button: like the other hover actions, but its 'in' state IS
-       meaningful (a library-wide flag, so a persistent filled state is correct). */
-    .clip-btn {
-      position: absolute; top: 8px; right: 40px;
-      width: 28px; height: 28px; border-radius: 50%;
-      background: var(--chrome-glass-bg); color: #fff; border: none;
-      box-shadow: inset 0 1px 0 rgba(255,255,255,0.18);
-      display: flex; align-items: center; justify-content: center;
-      cursor: pointer; opacity: 0; transition: opacity 0.15s, background 0.15s;
-      z-index: 1;
-    }
     /* Hover buttons are glass-chrome (icon-only, floating OVER the thumbnail).
        The blur layer is enabled only on the hovered card so 150
        offscreen-invisible buttons don't each cost a backdrop pass. */
-    .post-card:hover .clip-btn, .post-card:hover .info-btn {
+    .post-card:hover .info-btn {
       backdrop-filter: var(--chrome-glass-blur); -webkit-backdrop-filter: var(--chrome-glass-blur);
     }
-    .post-card:hover .clip-btn { opacity: 1; }
-    /* Clipped = active: the button fills with the accent (the "on" toggle idiom,
-       like a filled bookmark/like — the fill itself is the state cue, replacing the
-       old membership dot). No red-for-remove: clip is a light, frequent toggle and
-       the red read as too alarming (user 2026-06-27). */
-    .clip-btn.in { background: var(--accent); color: #fff; }
-    .clip-btn.in:hover { background: color-mix(in srgb, var(--accent) 82%, black); }
-    .post-grid.list-view .clip-btn { top: 50%; right: 40px; transform: translateY(-50%); }
     /* Flyout menus: the card context menu (full action list) and the folder
        picker it opens share one look. */
     .fold-menu {
@@ -1365,7 +1324,6 @@
       background: rgba(255,255,255,0.25);
       transition: opacity .12s;
     }
-    .post-card:has(.clip-btn:hover) .act-pill { right: 40px; opacity: 1; }
     .post-card:has(.info-btn:hover) .act-pill { right: 8px; opacity: 1; }
     .post-grid.list-view .act-pill { top: 50%; transform: translateY(-50%); }
 
@@ -1394,7 +1352,7 @@
     /* Rhythm: generous space BETWEEN sections, tight spacing inside them
        (title→content 6px, rows 4-8px) — Linear-style grouping. */
     .sb-section { padding: 0; margin-bottom: 18px; }
-    /* Lower column: separate the big groups (filters / tags / clip /
+    /* Lower column: separate the big groups (filters / tags /
        folders) by generous WHITESPACE rather than divider lines (user: no
        rules). The extra air carries the structure. */
     .sb-scroll > .sb-section { margin-bottom: 18px; }
@@ -1728,7 +1686,7 @@
   .sb-row .sb-row-ic svg { width: 14px; height: 14px; display: block; }
   .sb-row:hover .sb-row-ic { color: var(--text); }
   .sb-row .sb-row-name { flex: 1; }
-  /* Active-filter count (AND clip count — same part). The old filled grey
+  /* Active-filter count. The old filled grey
      pill read as a clunky notification badge against the flat sidebar (user: ダサい);
      replaced by a PLAIN right-aligned number. It marks an ACTIVE category, so it
      carries a touch more weight + the full --text ink — "active = grey
@@ -1930,7 +1888,7 @@
     }
     .ui-tip.show { opacity: 1; visibility: visible; translate: 0 0; transition-delay: 0s; }
     @media (prefers-reduced-motion: reduce) { .ui-tip { transition: none; translate: 0 0; } }
-    /* Rich variant: a multi-line explanatory hint (clip row etc.) — wraps, wider,
+    /* Rich variant: a multi-line explanatory hint — wraps, wider,
        left-aligned, roomier corners/padding. Material = the same .pop-solid as
        the single-line tip (#136: the whole hover-hint family is solid now;
        no per-host fill bumps). */
@@ -1943,8 +1901,8 @@
     /* a11y escape hatch: text faces are already solid (#136), so only the two
        remaining backdrop-filter users need a fallback here. */
     @media (prefers-reduced-transparency: reduce) {
-      .glass-chrome, .clip-btn, .info-btn, #sidebar #sbTop { background: rgba(20,22,26,0.86); }
-      .post-card:hover .clip-btn, .post-card:hover .info-btn,
+      .glass-chrome, .info-btn, #sidebar #sbTop { background: rgba(20,22,26,0.86); }
+      .post-card:hover .info-btn,
       .glass-chrome, #sidebar #sbTop { backdrop-filter: none; -webkit-backdrop-filter: none; }
     }
     } /* @layer legacy */
@@ -1965,8 +1923,8 @@
        after the run (see query-chips AnimatedChips). */
     @keyframes hologramPillOut { to { opacity: 0; transform: scale(.55); } }
     /* Badge pop on activation. Uses the independent `scale` property, NOT
-       transform: #clipBadge carries transform: translateY(-50%) — a transform
-       keyframe would yank it off its vertical axis mid-pop. */
+       transform: a badge positioned via transform (e.g. translateY(-50%))
+       would get yanked off its axis mid-pop by a transform keyframe. */
     @keyframes hologramBadgePop { 0% { scale: 1; } 50% { scale: 1.5; } 100% { scale: 1; } }
     /* Selection check draw: overshoot then settle. rotate(45deg) rides along in
        every frame — it's what shapes the border-drawn checkmark. */

@@ -61,8 +61,6 @@ export function makeTabLabels(deps: {
         return `#${f.value}`;
       case 'folder':
         return folderName(f.value) || f.value;
-      case 'clip':
-        return t('clipTitle');
       case 'media':
         return f.value === 'image' ? t('qfImage') : f.value === 'video' ? t('qfVideo') : t('qfGif');
       case 'instance':
@@ -115,7 +113,7 @@ export function makeTabLabels(deps: {
     if (byType.date) byType.date.forEach((f) => add(filterLabel(f), 'date'));
     if (byType.engagement) byType.engagement.forEach((f) => add(filterLabel(f), 'engagement'));
     if (byType.kind) byType.kind.forEach((f) => add(filterLabel(f), 'kind'));
-    filters.filter((f) => f.type === 'clip' || f.type === 'folder').forEach((f) => add(filterLabel(f), f.type));
+    filters.filter((f) => f.type === 'folder').forEach((f) => add(filterLabel(f), f.type));
 
     return { text: parts.join('・'), iconType: primaryIconType || 'all' };
   }

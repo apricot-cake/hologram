@@ -251,7 +251,7 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
   }
 
   // Resolve ONE group into a plain, fully-formatted card model: image src,
-  // formatted counts/dates, selection, clip, aspect — everything the markup
+  // formatted counts/dates, selection, aspect — everything the markup
   // needs as primitives. The grid island renders it with the shared PostCard
   // component (live React cells via hologramPostGridSource). Selection is NOT
   // injected — the grid island's Cell derives .selected from hologramStore's
@@ -262,7 +262,6 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
     formatDate,
     compactDate,
     fileSrc: deps.fileSrc,
-    isClipped: (id) => !!(CF() && CF().isClipped(id)),
     smokeCapture: deps.smokeCapture,
     currentView: () => deps.currentView(),
     imgAspect: () => imgAspect,
@@ -274,7 +273,6 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
   // after a language change, which always full-reloads the app).
   const cardLabels = {
     tipSelect: deps.t('tipSelect'),
-    tipClip: deps.t('tipClip'),
     tipInfo: deps.t('tipInfo'),
     clickToExpand: deps.t('clickToExpand'),
   };
@@ -418,12 +416,11 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
   }
 
   // --- Card context menu: the labeled table of contents of per-card actions.
-  // Hover keeps the rapid-fire buttons (📎 clip / ℹ info / 🏷 tag);
+  // Hover keeps the rapid-fire buttons (ℹ info / 🏷 tag);
   // everything else (open, folder, poster, delete) lives here.
   const CM_IC = {
     open: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>',
     folder: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>',
-    clip: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>',
     info: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><line x1="12" y1="11" x2="12" y2="16"/><line x1="12" y1="7.6" x2="12" y2="7.7"/></svg>',
     del: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>',
     sauce: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>',
@@ -437,7 +434,6 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
   // items + actions. 'folder' opens the folder picker (a DIFFERENT menu) at the same
   // spot; the bridge's transition guard keeps that open instead of closing it.
   function cardMenuItems(g: HologramPostGroup) {
-    const inClip = !!(CF() && CF().isClipped(g.rep.captureId));
     // SNS posts have a poster in the poster view (buildUsers skips url-less migrations).
     const canPoster = !!(g.rep.url && deps.buildUsers().some((u) => u.key === userKey(g.rep)));
     const srcUrl = (g.records.flatMap((r) => (Array.isArray(r.media) ? r.media : [])).find((m: { url?: string }) => m && m.url) || {}).url || '';
@@ -445,7 +441,6 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
     if (g.rep.url) items.push({ label: deps.t('tipOpen'), act: 'open', icon: CM_IC.open });
     items.push({ label: deps.t('ctxOpenNewTab'), act: 'newtab', icon: CM_IC.newtab });
     items.push({ label: deps.t('tipFolder'), act: 'folder', icon: CM_IC.folder });
-    if (CF()) items.push({ label: inClip ? deps.t('ctxClipRemove') : deps.t('ctxClipAdd'), act: 'clip', icon: CM_IC.clip });
     items.push({ label: deps.t('tipInfo'), act: 'info', icon: CM_IC.info });
     // タグを編集 is the card's route into tagging since the hover 🏷 (and the popover it
     // opened) went away in P2⑦ — it opens the inspector with the caret in the tag field.
@@ -476,10 +471,7 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
       showFoldMenu(g, x, y);
       return;
     } // opens the folder picker (bridge keeps it open)
-    else if (act === 'clip') {
-      const b = document.querySelector(`.clip-btn[data-clip="${viewGroups.indexOf(g)}"]`) as HTMLElement | null;
-      if (b) b.click();
-    } else if (act === 'info') deps.showDetail(g);
+    else if (act === 'info') deps.showDetail(g);
     else if (act === 'tags') deps.showDetail(g, { focusTags: true });
     else if (act === 'poster') deps.jumpToPoster(g.rep);
     else if (act === 'sauce') hologramIpc.openExternal('https://saucenao.com/search.php?url=' + encodeURIComponent(srcUrl));

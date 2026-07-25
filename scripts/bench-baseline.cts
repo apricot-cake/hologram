@@ -291,7 +291,7 @@ async function runSearchAndFacets(posts, opts) {
   const F = await import(pathToFileURL(path.join(__dirname, '..', 'app', 'renderer', 'facets.ts')).href);
 
   const rep = pickRepresentative(posts);
-  const predOf = Q.makePostPredOf({ isInFolder: () => false, isClipped: () => false, fuzzyCompile: (q) => S.compile(q) });
+  const predOf = Q.makePostPredOf({ isInFolder: () => false, fuzzyCompile: (q) => S.compile(q) });
 
   const results = {};
   const scenarios = [];

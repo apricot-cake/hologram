@@ -151,8 +151,9 @@ CREATE TABLE folder_items (
 );
 CREATE INDEX idx_folder_items_postId ON folder_items(postId);
 
--- clip / posterWorkspace: the two library-wide ephemeral flag sets that used to
--- live as bare id arrays on folders.json. One row per flagged item, no payload.
+-- clip_items shipped here as part of v1 (this string is historical and must not
+-- change) but the clip feature is retired — the 'drop-clip-items' migration in
+-- lib-db.mts DROPs this table. posterWorkspace is unrelated and stays.
 CREATE TABLE clip_items (
   postId TEXT PRIMARY KEY REFERENCES posts(captureId) ON DELETE CASCADE
 );

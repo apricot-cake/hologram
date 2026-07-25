@@ -1,6 +1,6 @@
 'use strict';
 
-// Verifies the post-view folder + clip features against the CURRENT UI (2026-07 flyout
+// Verifies the post-view folder features against the CURRENT UI (2026-07 flyout
 // era — the old collections-view / 第3ブラウズモード this test used was removed):
 //  - create a folder via the shared management modal (#ivFolderModal, no auto-default ★)
 //  - add a card to the folder via the real 📁 picker (card context menu → 「フォルダに追加…」
@@ -8,9 +8,7 @@
 //    folder ids/membership counts are read back through window.hologram.getFolders()
 //  - filter by the folder via the SIDEBAR folder flyout (#filterRows [data-qfrow="folder"]
 //    → .qf-pop row), the same entry every other facet uses — only the member card remains
-//  - folders.json persists { folders, clip }, no defaultId
-//  - 📎 clip one-click flags the card (library-wide ephemeral set), sidebar count + filter,
-//    空にする clears all flags; clip is NOT a folder (the manager lists only real folders)
+//  - folders.json persists { folders }, no defaultId
 // Seeds 3 standalone illustration records → 3 cards.
 //
 //   node scripts/test-app-folders.cts
@@ -119,7 +117,7 @@ const evalJs = `(async () => {
   const filteredCount = cards();                            // 1 (only the member card)
   const folderChip = activeChips('.sb-active-chip') >= 1;   // a folder chip is shown
 
-  // --- persistence: get-folders { folders, clip }, no defaultId ---
+  // --- persistence: get-folders { folders }, no defaultId ---
   const rb = await getFolders();
   const list = rb.folders || [];
   const persistedFolders = list.length;                    // 1
@@ -127,35 +125,8 @@ const evalJs = `(async () => {
   const noDefaultId = !('defaultId' in rb);
   $('postResetBtn').click(); await sleep(80);
 
-  // === Clip (library-wide ephemeral flag set — the 📎 tray) ===
-  const clipBtn1 = grid.querySelector('.post-card[data-index="1"] .clip-btn');
-  click(clipBtn1); await sleep(60);
-  const clipIn = clipBtn1.classList.contains('in');
-  const clipCount = (await getFolders()).clip.length; // 1
-  // filter to clipped → only that card
-  click($('clipRow')); await sleep(80);
-  const clipFiltered = cards();                            // 1
-  const clipPill = activeChips('.sb-active-chip.qc-clip') === 1;
-  // persisted to folders.json as the clip array (1 id), NOT a folder
-  const rb2 = await getFolders();
-  const clipPersist = Array.isArray(rb2.clip) && rb2.clip.length === 1;
-  // clip is NOT a folder: the manager still lists only the real folder
-  click(document.querySelector('#filterRows [data-qfrow="folder"]'));
-  await waitFor(() => !!document.querySelector('.qf-footer-link'));
-  click(document.querySelector('.qf-footer-link')); await sleep(50);
-  const mgrRows = document.querySelectorAll('#ivFolderList .iv-folder-row').length;
-  const rb2b = await getFolders();
-  const clipNotFolder = mgrRows === rb2b.folders.length && rb2b.folders.length === 1;
-  click($('ivFolderClose')); await sleep(20);
-  // 空にする clears all flags (the posts themselves are kept; stub the dialog here)
-  $('postResetBtn').click(); await sleep(40);
-  window.confirm = () => true;
-  click($('clipClear')); await sleep(80);
-  const rb3 = await getFolders();
-  const clipCleared = (rb3.clip || []).length === 0;
-
   return { totalBefore, modalOpen, folderCount, noStar, memberCount, flyoutHasFolder, filteredCount, folderChip,
-    persistedFolders, persistedItems, noDefaultId, clipIn, clipCount, clipFiltered, clipPill, clipPersist, clipNotFolder, clipCleared };
+    persistedFolders, persistedItems, noDefaultId };
 })()`;
 
 const env = Object.assign({}, process.env, {
@@ -195,13 +166,6 @@ child.on('close', () => {
     persistedFolders: 1,
     persistedItems: 1,
     noDefaultId: true,
-    clipIn: true,
-    clipCount: 1,
-    clipFiltered: 1,
-    clipPill: true,
-    clipPersist: true,
-    clipNotFolder: true,
-    clipCleared: true,
   };
   const keys = Object.keys(expect);
   const ok = keys.every((k) => r[k] === expect[k]);

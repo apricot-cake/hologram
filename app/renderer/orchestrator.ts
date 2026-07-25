@@ -476,23 +476,6 @@ export function endFilterEditSession(): void {
   // Filter rows: click a row → flyout with that category's values beside it.
   // 日付/エンゲージはパラメータ入力付きの専用ポップオーバーへ委譲。
   document.getElementById('filterRows')?.addEventListener('click', (e) => {
-    // クリップ: 空にする clears every flag (kept before the row check so it doesn't also
-    // toggle the filter — was e.stopPropagation() on the old direct listener).
-    if (closestOf(e, '#clipClear')) {
-      if (!CF()) return;
-      if (!window.confirm(getMessage('clipEmptyConfirm'))) return;
-      keepCurrentVisible();
-      CF().clearClips();
-      renderPosts(true);
-      return;
-    }
-    // クリップ row: toggle the "show only clipped" filter.
-    if (closestOf(e, '#clipRow')) {
-      const idx = postQB.shadow().findIndex((f: { type: string }) => f.type === 'clip');
-      if (idx < 0) addFilter({ type: 'clip', value: '*' });
-      else removeFilter(idx);
-      return;
-    }
     // 複数画像: a direct 2-state toggle (no data-qfrow, no flyout). Handled via this
     // delegated listener rather than its own — the row can be (re)built after wiring
     // time, so a listener bound at load could miss it. Flips the group-level flag.
@@ -631,7 +614,7 @@ export function endFilterEditSession(): void {
   // syncShadow comment below).
   // The tree machinery + post-side predicates live in query.ts (imported above)
   // — the first "pure logic → service" extraction of the viewer decomposition.
-  // Runtime couplings are injected here: collections/clips resolve through CF()
+  // Runtime couplings are injected here: collections resolve through CF()
   // lazily (folders.js registers after this closure is built, and predicates only
   // run post-init), fuzzy text matching through search.ts's compile.
   // The shared facet-chip builder (改訂④) lives in
@@ -1044,18 +1027,18 @@ export function endFilterEditSession(): void {
   // shows it in the inspector (Eagle/Explorer 型「シングル＝選択して詳細」); Ctrl
   // adds/removes, Shift range-selects — neither touches the inspector (確定 未決
   //事項2). Double-click opens the image view as an in-tab history destination
-  // (#144). The card's own 📎 button and the expandable post text keep their
-  // dedicated handlers, so those regions are skipped here. selectionCtl/showDetail
+  // (#144). The expandable post text keeps its
+  // dedicated handler, so that region is skipped here. selectionCtl/showDetail
   // are declared below — safe closure forward-refs (they run only on a real click).
   byId('postGrid').addEventListener('click', (e) => {
-    if (closestOf(e, '.clip-btn, .text')) return;
+    if (closestOf(e, '.text')) return;
     const card = closestOf(e, '.post-card');
     if (!card) return;
     const g = postGrid.getViewGroups()[Number.parseInt(card.dataset.index ?? '', 10)];
     if (selectionCtl.clickSelect(card, e) && g) showDetail(g);
   });
   byId('postGrid').addEventListener('dblclick', (e) => {
-    if (closestOf(e, '.clip-btn, .text')) return;
+    if (closestOf(e, '.text')) return;
     const card = closestOf(e, '.post-card');
     if (!card) return;
     const g = postGrid.getViewGroups()[Number.parseInt(card.dataset.index ?? '', 10)];
@@ -1082,26 +1065,6 @@ export function endFilterEditSession(): void {
   // dragstart past its own drag threshold, and a completed drag suppresses click.
   byId('postGrid').addEventListener('dragstart', (e) => postGrid.handleCardDragStart(e as DragEvent));
 
-  // Clip button: one-click flag/unflag this post (no picking). Mutations never replay
-  // the entrance animation: re-render (keepLimit) only when a clip filter could change
-  // the visible set.
-  byId('postGrid').addEventListener('click', (e) => {
-    const btn = closestOf(e, '.clip-btn');
-    if (!btn) return;
-    e.stopPropagation();
-    if (!CF()) return;
-    const g = postGrid.getViewGroups()[Number.parseInt(btn.dataset.clip ?? '', 10)];
-    if (!g || !g.rep.captureId) return;
-    keepCurrentVisible(); // removal can un-match an active clip filter
-    const res = CF().toggleClip(
-      g.records.map((r) => r.captureId),
-      g.rep.captureId,
-    );
-    if (!res) return;
-    btn.classList.toggle('in', res === 'added');
-    if (postQB.shadow().some((f: { type: string }) => f.type === 'clip')) renderPosts(true);
-  });
-
   // foldMenuItems/onFoldMenuPick/showFoldMenu and cardMenuItems/onCardMenuPick/
   // showCardMenu moved to post-grid-builder.ts (postGrid above).
   byId('postGrid').addEventListener('contextmenu', (e) => {
@@ -1116,15 +1079,12 @@ export function endFilterEditSession(): void {
   // Sidebar folder chips (shared folders.json): count + ★default. Like tag chips
   // they cycle 解除→いずれか(OR)→＋すべて含む(AND)→解除 and join the same
   // かつ/または expression as the tags.
-  // postFolderChips was retired (collections moved to the collections view); the クリップ
-  // + 複数画像 row entries (active state, clip count) are self-derived now by
+  // postFolderChips was retired (collections moved to the collections view); the
+  // 複数画像 row entry (active state) is self-derived now by
   // renderer/sidebar.ts's hologramPostSidebarSource — no orchestrator-side
-  // re-render call needed after a clip/multi/folder mutation.
+  // re-render call needed after a multi/folder mutation.
   // フォルダ管理の起動口はフライアウト下部の qf-pop フッターボタン（onManage→CF().openManager()）に統一。
   // 旧 #postFolderManage ボタンは HTML から撤去済み（デッドリスナーを削除）。
-  // The クリップ row toggle + 空にする clear are handled by the delegated #filterRows
-  // listener now (the rows are React-owned, so a setup-time addEventListener on a
-  // specific node would miss the island's re-renders).
 
   // 複数画像 sidebar row: reflects the group-level multiOnly flag as the row's active
   // state (accent icon) via the model. The click that flips it is handled by the
@@ -1622,7 +1582,7 @@ export function endFilterEditSession(): void {
     const out: ActiveFilter[] = [];
     const emit = (type: string, mode: FacetMode, leaves: HologramQueryLeaf[]) => {
       const m = map[type];
-      if (!m) return; // legacy standalone types (clip/workspace) carry no chip
+      if (!m) return; // an unmapped type carries no chip
       out.push({ cat: m.cat, type, label: m.label, editor: m.editor, mode, values: leaves.map((l) => labelOf(l)), remove: () => qb.removeByType(type) });
     };
     for (const cl of view.clusters) emit(cl.type, cl.op === 'and' ? 'and' : 'or', cl.leaves);
@@ -1851,7 +1811,7 @@ export function endFilterEditSession(): void {
       postQB.syncShadow();
       postQB.render();
     }
-    // The clip row / sidebar collection state (counts/active) self-derives from the
+    // The sidebar collection state (counts/active) self-derives from the
     // hologramFolders.onChange subscription in renderer/sidebar.ts.
     if (kind === 'list') renderPosts(true); // folder created/deleted — refresh without anim
   };

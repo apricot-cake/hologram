@@ -189,7 +189,7 @@ function initSaveFolderRedundancy() {
 const INTERNAL_FILES = new Set(['config.json', '.index.json', 'tag-types.json', 'ungrouped.json', 'manual-groups.json', 'folders.json', 'tabs.json', 'poster-favorites.json', 'poster-folders.json', 'poster-tags.json']);
 
 // The subset of INTERNAL_FILES that the renderer REWRITES in place on every edit
-// (organization layer: tags / groups / folders / clip / poster-* / open tabs).
+// (organization layer: tags / groups / folders / poster-* / open tabs).
 // Unlike write-once captures (.jpg + .json sidecar), these mutate, so
 // a backup that only copies "files not yet present at dest" freezes them at their
 // first-ever contents — restoring from that mirror would silently discard every
@@ -566,8 +566,8 @@ function resolveInFolder(name) {
 // fs.watch event): JSON.parse throws, the record reads as null, and the prior
 // record's captureId is pushed to `removed`. The renderer then drops it from
 // _postsById and reconcileFolders() PERMANENTLY purges that captureId from
-// folders.json membership and the clip set. The card reappears on the next
-// watch event but its folder/clip membership is gone for good. The .tmp
+// folders.json membership. The card reappears on the next
+// watch event but its folder membership is gone for good. The .tmp
 // suffix is invisible to the watcher (its regex only matches jpe?g|jfif|png|
 // webp|gif|json). Mirrors lib-index's writeSnapshot.
 async function writeSidecarAtomic(jsonPath, rec) {
@@ -850,7 +850,7 @@ async function runBackup(reason) {
     // Decide whether a destination copy is stale and must be refreshed. Write-once
     // captures (.jpg + .json sidecar) never change, so their presence at dest is
     // proof enough — re-copying would only waste I/O. Mutable internal files
-    // (organization JSON: tags / folders / collections / clip / tabs / poster-*)
+    // (organization JSON: tags / folders / collections / tabs / poster-*)
     // are rewritten on every edit, so compare size+mtime and re-copy on drift;
     // otherwise the mirror freezes at the first backup and a restore loses edits.
     // mtime is compared at whole-millisecond granularity: stat().mtimeMs carries

@@ -113,8 +113,8 @@ function register(ctx) {
     }
     // Remove trashedAt from the restored sidecar. The file is already back in the
     // watched folder, so rewrite it atomically (tmp+rename) — an in-place write
-    // could be caught mid-write by the watcher and cost this post its collection/
-    // clip membership (see writeSidecarAtomic).
+    // could be caught mid-write by the watcher and cost this post its collection
+    // membership (see writeSidecarAtomic).
     const jsonPath = path.join(folder, `${base}.json`);
     try {
       const r = parseJsonLoose(await fs.promises.readFile(jsonPath, 'utf8'));

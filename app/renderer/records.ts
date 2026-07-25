@@ -300,14 +300,14 @@ export function makeGallery(deps: { fileSrc(file: string): string }) {
 // --- Card view model (per-card presentation derivation) ---------------------
 // The model PostCard.tsx renders (grid modelOf). Pure field-mapping over a
 // group + the live view density; every runtime coupling (current density,
-// learned-aspect cache, selection set, clip flag, thumb widths, i18n messages,
+// learned-aspect cache, thumb widths, i18n messages,
 // asset URLs) is INJECTED so this stays DOM-free and Node-testable. The subtle
 // rules that used to live inside renderPosts are locked here: engagement
 // zero-suppression, both-date same-day dedup, body-text dedup vs the author
 // line, GIF full-size (no thumb) in card/list, card-masonry height reservation
 // (shotW/H → learned cache), and the multi-image back-stack sheets.
 //   deps.currentView() / imgAspect() are getters (viewer reassigns the lets);
-//   isClipped/fileSrc keep folder + asset knowledge viewer-owned. Selection is
+//   fileSrc keeps folder + asset knowledge viewer-owned. Selection is
 //   NOT here — the grid island derives .selected straight from hologramStore's
 //   'selectedSet' (same pattern as inspectedKey), so this stays selection-free.
 export function makeCardModel(deps: {
@@ -316,7 +316,6 @@ export function makeCardModel(deps: {
   formatDate(d: string): string;
   compactDate(d: string): string;
   fileSrc(file: string, w?: number): string;
-  isClipped(captureId: string): boolean;
   smokeCapture: boolean;
   currentView(): string;
   imgAspect(): Record<string, string>;
@@ -324,7 +323,7 @@ export function makeCardModel(deps: {
   cardThumbW(): number;
   listThumbW(): number;
 }) {
-  const { t, formatCount, formatDate, compactDate, fileSrc, isClipped, smokeCapture, currentView, imgAspect, tileThumbW, cardThumbW, listThumbW } = deps;
+  const { t, formatCount, formatDate, compactDate, fileSrc, smokeCapture, currentView, imgAspect, tileThumbW, cardThumbW, listThumbW } = deps;
   return function cardModel(g: HologramPostGroup, i: number): Record<string, any> {
     const p = g.rep;
     const view = currentView();
@@ -379,7 +378,6 @@ export function makeCardModel(deps: {
       url: p.url || '',
       postKey,
       noUrl: !p.url,
-      clipped: isClipped(p.captureId),
       hasThumb: !!(imgFile || p.video),
       imgSrc: imgFile ? fileSrc(imgFile, imgW) : '',
       captureId: p.captureId || '',

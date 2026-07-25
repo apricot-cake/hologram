@@ -244,7 +244,7 @@ function writePost(stmts: PostStmts, resolveTagId: (name: string) => number, rec
 }
 
 // Re-derives the organization-layer tables (tags' kind, ungrouped_keys,
-// folders/folder_items/clip_items/poster_workspace_items, manual_groups/items,
+// folders/folder_items/poster_workspace_items, manual_groups/items,
 // poster_folders/items, poster_tags, tabs/tab_windows) from their JSON files.
 // Wholesale wipe-then-reinsert for every table EXCEPT tags (get-or-create,
 // per the module comment) — these files are small, so re-reading and
@@ -253,7 +253,7 @@ function writePost(stmts: PostStmts, resolveTagId: (name: string) => number, rec
 //
 // validPostIds scopes out stale references (a captureId an org file still
 // lists after its sidecar was deleted) — posts.captureId is a foreign key
-// target from folder_items/clip_items/manual_group_items, so an unfiltered
+// target from folder_items/manual_group_items, so an unfiltered
 // insert would throw with foreign_keys=ON.
 function importOrgLayer(folder: string, sqlite: Database.Database, resolveTagId: (name: string) => number, validPostIds: Set<string>, failures: Array<{ file: string; error: string }>) {
   // tag-types.json: { types: { "<tagName>": "<kind>" }, labels? }. A tag named
@@ -277,11 +277,10 @@ function importOrgLayer(folder: string, sqlite: Database.Database, resolveTagId:
     for (const k of ungrouped.keys) if (typeof k === 'string' && k) ins.run(k);
   }
 
-  // folders.json: { folders: [{id,name,kind,created,items,tree?}], clip, posterWorkspace }
+  // folders.json: { folders: [{id,name,kind,created,items,tree?}], posterWorkspace }
   const foldersJson = readJsonFile(folder, 'folders.json', failures);
   sqlite.prepare('DELETE FROM folder_items').run();
   sqlite.prepare('DELETE FROM folders').run();
-  sqlite.prepare('DELETE FROM clip_items').run();
   sqlite.prepare('DELETE FROM poster_workspace_items').run();
   if (foldersJson && Array.isArray(foldersJson.folders)) {
     const insFolder = sqlite.prepare('INSERT INTO folders (id, name, kind, created, tree) VALUES (?,?,?,?,?)');
@@ -294,10 +293,6 @@ function importOrgLayer(folder: string, sqlite: Database.Database, resolveTagId:
       if (Array.isArray(f.items)) {
         for (const postId of f.items) if (typeof postId === 'string' && validPostIds.has(postId)) insItem.run(f.id, postId);
       }
-    }
-    if (Array.isArray(foldersJson.clip)) {
-      const insClip = sqlite.prepare('INSERT OR IGNORE INTO clip_items (postId) VALUES (?)');
-      for (const postId of foldersJson.clip) if (typeof postId === 'string' && validPostIds.has(postId)) insClip.run(postId);
     }
     if (Array.isArray(foldersJson.posterWorkspace)) {
       const insPw = sqlite.prepare('INSERT OR IGNORE INTO poster_workspace_items (posterKey) VALUES (?)');

@@ -130,9 +130,9 @@ function register(ctx) {
   // Each folder is { id, name, kind:'static'|'dynamic', created, items:[captureId] };
   // a dynamic folder additionally carries a saved search (`tree`), and holds no items.
   // <saveFolder>/folders.json:
-  //   { folders:[…], clip:[captureId], posterWorkspace:[posterKey] }
-  // `clip` is the library-wide ephemeral flag set (the 📎 tray). `activeId` is legacy
-  // (the old 🔖 one-click target); the renderer no longer writes it, so it settles to null.
+  //   { folders:[…], posterWorkspace:[posterKey] }
+  // `activeId` is legacy (the old 🔖 one-click target); the renderer no longer
+  // writes it, so it settles to null.
   function normFolders(arr) {
     return Array.isArray(arr)
       ? arr
@@ -152,7 +152,7 @@ function register(ctx) {
   }
   ipcMain.handle('get-folders', () => {
     const folder = getSaveFolder();
-    const empty = { folders: [], activeId: null, clip: [], posterWorkspace: [] };
+    const empty = { folders: [], activeId: null, posterWorkspace: [] };
     if (!folder) return empty;
     const foldersPath = path.join(folder, 'folders.json');
     // One-time pre-release migration: the store file went from collections.json →
@@ -187,9 +187,8 @@ function register(ctx) {
     const folders = normFolders(j.folders);
     const ids = new Set(folders.map((c) => c.id));
     const activeId = typeof j.activeId === 'string' && ids.has(j.activeId) ? j.activeId : null;
-    const clip = Array.isArray(j.clip) ? [...new Set(j.clip.map(String))] : [];
     const posterWorkspace = Array.isArray(j.posterWorkspace) ? [...new Set(j.posterWorkspace.map(String))] : [];
-    return { folders, activeId, clip, posterWorkspace };
+    return { folders, activeId, posterWorkspace };
   });
   ipcMain.handle('set-folders', (_e, data) => {
     const folder = getSaveFolder();
@@ -198,9 +197,8 @@ function register(ctx) {
       const folders = normFolders(data && data.folders);
       const ids = new Set(folders.map((c) => c.id));
       const activeId = data && typeof data.activeId === 'string' && ids.has(data.activeId) ? data.activeId : null;
-      const clip = data && Array.isArray(data.clip) ? [...new Set(data.clip.map(String))] : [];
       const posterWorkspace = data && Array.isArray(data.posterWorkspace) ? [...new Set(data.posterWorkspace.map(String))] : [];
-      writeOrgJsonSync(path.join(folder, 'folders.json'), { folders, activeId, clip, posterWorkspace });
+      writeOrgJsonSync(path.join(folder, 'folders.json'), { folders, activeId, posterWorkspace });
       return { ok: true };
     } catch {
       return { ok: false };

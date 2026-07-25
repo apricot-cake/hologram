@@ -25,13 +25,11 @@ async function main() {
     }
   }
 
-  // --- 述語ファクトリ: 依存はスタブ注入（コレクション/クリップ/スマート照合）---
-  const clipped = new Set(['cap-clip']);
+  // --- 述語ファクトリ: 依存はスタブ注入（コレクション/スマート照合）---
   const collections = new Map([['col-1', new Set(['cap-in'])]]);
   const fuzzyCalls: any[] = []; // 注入された compile が「いつ・何で」呼ばれたかの記録
   const predOf = Q.makePostPredOf({
     isInFolder: (id, cap) => !!collections.get(id)?.has(cap),
-    isClipped: (cap) => clipped.has(cap),
     // 簡易スマートマッチのスタブ: 'ﾈｺ' だけ 'ネコ' へ正規化する部分一致＝素の
     // includes では当たらないクエリで、経路が本当に注入側を通った証明に使う。
     fuzzyCompile: (q) => {
@@ -81,8 +79,6 @@ async function main() {
   assert('hashtag: 含む', predOf({ type: 'hashtag', value: 'drawing' })(post()));
   assert('folder: 注入依存で判定', predOf({ type: 'folder', value: 'col-1' })(post({ captureId: 'cap-in' })));
   assert('folder: 非所属', !predOf({ type: 'folder', value: 'col-1' })(post()));
-  assert('clip: 注入依存で判定', predOf({ type: 'clip' })(post({ captureId: 'cap-clip' })));
-  assert('workspace: clip の legacy 別名', predOf({ type: 'workspace' })(post({ captureId: 'cap-clip' })));
 
   // --- normalizeLeaf / normalizeTree: retired leaf-type self-heal (#42) ---
   assert('normalizeLeaf: collection→folder', Q.normalizeLeaf({ kind: 'cond', type: 'collection', value: 'x' }).type === 'folder');
@@ -146,7 +142,6 @@ async function main() {
   const R = await import(pathToFileURL(path.join(__dirname, '..', 'app', 'renderer', 'records.ts')).href);
   const predOfU = Q.makePostPredOf({
     isInFolder: () => false,
-    isClipped: () => false,
     // 絶対に当たらない matcher スタブ＝URL ヒットが（本文照合でなく）OR 経路である証明に使う
     fuzzyCompile: () => () => false,
     postKeyOf: R.postKeyOf,
@@ -215,7 +210,7 @@ async function main() {
   assert('treeLeaves: null 安全', Q.treeLeaves(null).length === 0);
 
   // --- facetTreeFrom: 旧 faceted state からの移行 ---
-  const mig = Q.facetTreeFrom([{ type: 'platform', value: 'x' }, { type: 'platform', value: 'misskey' }, { type: 'tag', value: '作画' }, { type: 'clip' }], { platform: 'or', tag: 'not' });
+  const mig = Q.facetTreeFrom([{ type: 'platform', value: 'x' }, { type: 'platform', value: 'misskey' }, { type: 'tag', value: '作画' }, { type: 'engagement' }], { platform: 'or', tag: 'not' });
   assert(
     'facetTreeFrom: 型ごとにグループ化(platform=or 2葉)',
     mig.children.some((c) => c.kind === 'group' && c.op === 'or' && !c.neg && c.children.length === 2),
@@ -225,8 +220,8 @@ async function main() {
     mig.children.some((c) => c.kind === 'group' && c.neg && c.children[0].type === 'tag'),
   );
   assert(
-    'facetTreeFrom: NO_OP 型(clip)は直下リーフ',
-    mig.children.some((c) => c.kind === 'cond' && c.type === 'clip'),
+    'facetTreeFrom: NO_OP 型(engagement)は直下リーフ',
+    mig.children.some((c) => c.kind === 'cond' && c.type === 'engagement'),
   );
 
   // --- 純ヘルパ ---
@@ -327,7 +322,7 @@ async function main() {
   }
 
   // --- ファセット・ドメイン（改訂④: UI が作る形をファセットCNFに固定する純ロジック）---
-  const OPTS = { multiValueTypes: ['tag'], standaloneTypes: ['date', 'clip', 'text'] };
+  const OPTS = { multiValueTypes: ['tag'], standaloneTypes: ['date', 'text'] };
   assert('facetDefaultOp: 多値=and / 他=or', Q.facetDefaultOp('tag', OPTS) === 'and' && Q.facetDefaultOp('platform', OPTS) === 'or');
 
   // facetViewOf: 正準形をクラスタ/単独/除外へ分解

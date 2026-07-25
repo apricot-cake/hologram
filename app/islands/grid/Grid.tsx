@@ -12,7 +12,7 @@ import { useGridModel, VirtualGridHost } from '../_shared/VirtualGrid.tsx';
 import type { GridCellProps } from '../_shared/VirtualGrid.tsx';
 import { get as storeGet, subscribe as storeSubscribe } from '../../renderer/store.ts';
 
-// One grid cell. modelOf() re-reads live viewer state (clip flag) on every
+// One grid cell. modelOf() re-reads live viewer state on every
 // render, so a bridge repaint() refreshes visible cells. The inspected ring
 // and the selection checkmark are NOT part of that closure-read model —
 // both are derived straight from hologramStore ('inspectedKey' / 'selectedSet',

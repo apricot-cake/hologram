@@ -279,7 +279,7 @@ declare global {
   // tabs sources. Labels are NOT in the model: the islands resolve their own static
   // row names via t() and the 作品/キャラ custom label via hologramTags.getTagLabels(),
   // the same "island resolves its own i18n" pattern every other island uses.
-  // Everything else (badges/visible/clip/multi/openCat) is derived from hologramStore
+  // Everything else (badges/visible/multi/openCat) is derived from hologramStore
   // keys (postQueryTree/posterQueryTree/multiOnly/qfCat) + hologramTags/hologramFolders/
   // posts-data.ts/hologramListing — no viewer push needed, so viewer's mutation call
   // sites (addFilter/removeFilter/setTagKind/markPostsMutated/…) no longer need a
@@ -287,12 +287,11 @@ declare global {
   // sources (post / poster) so a change in one column never re-renders the other. ----
   interface HologramSidebarModel {
     openCat: string | null; // the flyout cat with .qf-open (null = none)
-    clip: { active: boolean; count: number; clearVisible: boolean };
     multi: { active: boolean };
     badges: Record<string, number>; // per-row active-filter count
     visible: { work: boolean; character: boolean }; // 種別 progressive disclosure
   }
-  // Poster column (#posterFilterRows): a leaner twin — no clip/multi toggles, and the
+  // Poster column (#posterFilterRows): a leaner twin — no multi toggle, and the
   // rows are keyed by their full poster-* cat (data-qfrow === data-badge). work / character
   // / tag / instance are progressively disclosed once posters actually carry such values.
   interface HologramPosterSidebarModel {

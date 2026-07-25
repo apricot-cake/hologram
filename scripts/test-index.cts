@@ -153,7 +153,7 @@ const writeSidecarIn = (d, name, rec) => realFs.writeFileSync(path.join(d, name)
 
   // --- BOM tolerance (BACKLOG L3): a hand-edited sidecar saved with a UTF-8 BOM
   //     must still parse — a throw here reads as record:null and the post silently
-  //     vanishes (worst case: reconcile purges it from collections/clip). Same for
+  //     vanishes (worst case: reconcile purges it from collections). Same for
   //     a BOM'd .index.json snapshot (cold restore must not fall back to a rescan).
   const BOM = String.fromCharCode(0xfeff);
   const dir3 = realFs.mkdtempSync(path.join(os.tmpdir(), 'hologram-index3-'));

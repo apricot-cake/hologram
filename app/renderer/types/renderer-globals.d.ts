@@ -176,8 +176,8 @@ interface HologramUndoRecord {
 // exports) now — SearchEditingDeps is exported directly from search-editing.ts,
 // no ambient Window-shaped interface needed.
 
-// ---- renderer/folders.ts — library folders store + management modal +
-// library-wide clip set. A real ES module (named exports) now — no ambient
+// ---- renderer/folders.ts — library folders store + management modal.
+// A real ES module (named exports) now — no ambient
 // HologramFoldersApi/Window-shaped interface needed. The raw createFolderStore factory is
 // shared internally by the library folders store (isLibrary) and, via
 // createPersistedFolderStore's persist/load wiring, the hologramPosterFolderStore()

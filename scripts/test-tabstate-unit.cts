@@ -34,7 +34,6 @@ async function main() {
     qfThread: 'スレッド',
     qfDateCaptured: '取得日',
     qfDatePost: '投稿日',
-    clipTitle: 'クリップ',
     qfImage: '画像のみ',
     qfVideo: '動画',
     qfGif: 'GIF',
@@ -68,7 +67,6 @@ async function main() {
   assert('tag は値そのまま・hashtag は # 付与', filterLabel({ type: 'tag', value: '風景' }) === '風景' && filterLabel({ type: 'hashtag', value: 'art' }) === '#art');
   assert('folder 解決', filterLabel({ type: 'folder', value: 'c1' }) === 'お気に入り');
   assert('folder 未知は id フォールバック', filterLabel({ type: 'folder', value: 'c9' }) === 'c9');
-  assert('clip', filterLabel({ type: 'clip' }) === 'クリップ');
   assert('media 3分岐', filterLabel({ type: 'media', value: 'image' }) === '画像のみ' && filterLabel({ type: 'media', value: 'video' }) === '動画' && filterLabel({ type: 'media', value: 'gif' }) === 'GIF');
   assert('instance は値・user は label 優先', filterLabel({ type: 'instance', value: 'misskey.io' }) === 'misskey.io' && filterLabel({ type: 'user', value: 'x:u1', label: 'アリス' }) === 'アリス');
   assert('user label 無しは value', filterLabel({ type: 'user', value: 'x:u1' }) === 'x:u1');

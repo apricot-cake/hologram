@@ -104,7 +104,7 @@ function mergePosterFolders(cur, inc) {
 }
 // The library folder store (folders.json). id-union on items; name/kind/created/tree
 // are LOCAL-wins (cur put first, dup only unions items). activeId is legacy and stays
-// local if it still points at a live folder; clip + posterWorkspace union.
+// local if it still points at a live folder; posterWorkspace unions.
 function mergeFolders(cur, inc) {
   const byId = new Map();
   const put = (c) => {
@@ -129,9 +129,8 @@ function mergeFolders(cur, inc) {
   });
   const valid = new Set(folders.map((c) => c.id));
   const activeId = cur && valid.has(cur.activeId) ? cur.activeId : inc && valid.has(inc.activeId) ? inc.activeId : null;
-  const clip = [...new Set([...((cur && cur.clip) || []), ...((inc && inc.clip) || [])].map(String))];
   const posterWorkspace = [...new Set([...((cur && cur.posterWorkspace) || []), ...((inc && inc.posterWorkspace) || [])].map(String))];
-  return { folders, activeId, clip, posterWorkspace };
+  return { folders, activeId, posterWorkspace };
 }
 function mergeUngrouped(cur, inc) {
   return { keys: [...new Set([...(cur.keys || []), ...(inc.keys || [])].map(String))] };

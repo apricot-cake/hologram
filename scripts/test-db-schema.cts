@@ -30,13 +30,13 @@ function mkdb() {
   return path.join(dir, 'test.db');
 }
 
-const EXPECTED_TABLES = ['posts', 'media', 'tags', 'tag_parents', 'tag_aliases', 'post_tags', 'folders', 'folder_items', 'clip_items', 'poster_workspace_items', 'poster_folders', 'poster_folder_items', 'poster_tags', 'manual_groups', 'manual_group_items', 'ungrouped_keys', 'tabs', 'tab_windows'];
+const EXPECTED_TABLES = ['posts', 'media', 'tags', 'tag_parents', 'tag_aliases', 'post_tags', 'folders', 'folder_items', 'poster_workspace_items', 'poster_folders', 'poster_folder_items', 'poster_tags', 'manual_groups', 'manual_group_items', 'ungrouped_keys', 'tabs', 'tab_windows'];
 
 // --- migration applies + every table lands -----------------------------
 
 {
   const { db, sqlite } = openDatabase(mkdb());
-  assert.strictEqual(sqlite.pragma('user_version', { simple: true }), 2, 'v1 DDL plus the #297 add-source-mtime migration');
+  assert.strictEqual(sqlite.pragma('user_version', { simple: true }), 3, 'v1 DDL plus the #297 add-source-mtime and #135 drop-clip-items migrations');
 
   const names = new Set(
     sqlite
@@ -47,7 +47,8 @@ const EXPECTED_TABLES = ['posts', 'media', 'tags', 'tag_parents', 'tag_aliases',
   for (const t of EXPECTED_TABLES) ok(names.has(t), `table ${t} exists`);
   // FTS5 registers itself plus shadow tables (posts_fts_data, _idx, _docsize, _config).
   ok(names.has('posts_fts'), 'posts_fts virtual table exists');
-  passed += 2;
+  ok(!names.has('clip_items'), 'clip_items is dropped by the #135 migration');
+  passed += 3;
 
   sqlite.close();
 }
@@ -118,17 +119,15 @@ const EXPECTED_TABLES = ['posts', 'media', 'tags', 'tag_parents', 'tag_aliases',
   sqlite.prepare('INSERT INTO post_tags (postId, tagId) VALUES (?,?)').run('cap-1', tagId);
   sqlite.prepare("INSERT INTO folders (id, name) VALUES ('f1', 'フォルダ')").run();
   sqlite.prepare("INSERT INTO folder_items (folderId, postId) VALUES ('f1', 'cap-1')").run();
-  sqlite.prepare("INSERT INTO clip_items (postId) VALUES ('cap-1')").run();
 
   sqlite.prepare("DELETE FROM posts WHERE captureId = 'cap-1'").run();
 
   assert.strictEqual(sqlite.prepare('SELECT COUNT(*) AS n FROM media').get().n, 0, 'media cascades on post delete');
   assert.strictEqual(sqlite.prepare('SELECT COUNT(*) AS n FROM post_tags').get().n, 0, 'post_tags cascades on post delete');
   assert.strictEqual(sqlite.prepare('SELECT COUNT(*) AS n FROM folder_items').get().n, 0, 'folder_items cascades on post delete');
-  assert.strictEqual(sqlite.prepare('SELECT COUNT(*) AS n FROM clip_items').get().n, 0, 'clip_items cascades on post delete');
   // The tag itself is untouched — only the junction row referencing the deleted post is gone.
   assert.strictEqual(sqlite.prepare('SELECT COUNT(*) AS n FROM tags').get().n, 1, 'the tag survives (only membership is scoped to the post)');
-  passed += 5;
+  passed += 4;
 
   sqlite.close();
 }
@@ -167,7 +166,7 @@ const EXPECTED_TABLES = ['posts', 'media', 'tags', 'tag_parents', 'tag_aliases',
   first.sqlite.close();
 
   const second = openDatabase(file);
-  assert.strictEqual(second.sqlite.pragma('user_version', { simple: true }), 2, 'reopen does not re-run the migrations');
+  assert.strictEqual(second.sqlite.pragma('user_version', { simple: true }), 3, 'reopen does not re-run the migrations');
   ok(second.sqlite.prepare("SELECT name FROM tags WHERE name = 'x'").get(), 'data from the first session survives reopen');
   passed += 2;
   second.sqlite.close();

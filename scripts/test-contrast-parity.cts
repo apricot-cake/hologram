@@ -56,8 +56,8 @@ const FILL_CHECKS = [
   { fg: '--accent-fg', fill: '--accent', floor: 3.0, what: 'white text on accent button' },
   { fg: '--accent-subtle-fg', fill: '--accent-subtle', floor: 4.5, what: 'active ink on active pill' },
   // White ICONS on status fills (.ws-btn remove). Icon tier = 3:1, not 4.5.
-  // (The --success token and its "added" check died with 7481710 — the clip
-  // button is色反転 now, and nothing defines or uses --success anymore.)
+  // (The --success token and its "added" check died with 7481710 — nothing
+  // defines or uses --success anymore.)
   { fg: '--text-on-accent', fill: '--danger', floor: 3.0, what: 'white icon on danger (remove) button' },
 ];
 

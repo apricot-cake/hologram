@@ -37,6 +37,8 @@ import { SCHEMA_V1_SQL } from './lib-db-schema.mts';
 const MIGRATIONS: Migration[] = [
   { name: 'schema-v1', up: (db) => db.exec(SCHEMA_V1_SQL) },
   { name: 'add-source-mtime', up: (db) => db.exec('ALTER TABLE posts ADD COLUMN sourceMtimeMs INTEGER') },
+  // #135: the clip feature is retired (folders/favorites/pin boards took over its roles).
+  { name: 'drop-clip-items', up: (db) => db.exec('DROP TABLE clip_items') },
 ];
 
 interface Migration {
@@ -208,9 +210,6 @@ interface FolderItemsTable {
   folderId: string;
   postId: string;
 }
-interface ClipItemsTable {
-  postId: string;
-}
 interface PosterWorkspaceItemsTable {
   posterKey: string;
 }
@@ -276,7 +275,6 @@ interface Schema {
   post_tags: PostTagsTable;
   folders: FoldersTable;
   folder_items: FolderItemsTable;
-  clip_items: ClipItemsTable;
   poster_workspace_items: PosterWorkspaceItemsTable;
   poster_folders: PosterFoldersTable;
   poster_folder_items: PosterFolderItemsTable;

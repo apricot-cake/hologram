@@ -25,7 +25,7 @@ export interface GridCellProps {
 
 const ModelCtx = createContext<HologramGridModel | null>(null);
 // Cells read the live model through context so a bridge render()/patch() (paint
-// bump → re-render) lets modelOf re-derive clip state (selection/inspected are
+// bump → re-render) lets modelOf re-derive card state (selection/inspected are
 // hologramStore subscriptions inside Cell, not part of this closure-read model).
 // Cells mount only inside the provider, so the null default never escapes.
 export const useGridModel = () => useContext(ModelCtx) as HologramGridModel;
@@ -169,7 +169,7 @@ export function VirtualGridHost({ model, cell, nav }: { model: HologramGridModel
 // after a push). flushSync is legal because every bridge push originates outside React.
 // The bridge returns a FRESH model ref on each render/patch ({...model, paint:++}),
 // so setModel always re-renders — paint bumps make visible cells re-read live viewer state
-// (clip via modelOf; selection/inspected are separate hologramStore subscriptions inside
+// via modelOf (selection/inspected are separate hologramStore subscriptions inside
 // Cell); itemsKey changes reset the positioner.
 // bridge only needs get()/subscribe() (HologramGridSource) — both the post source
 // and the poster source satisfy it, plus their own configure()/etc. that GridMount
