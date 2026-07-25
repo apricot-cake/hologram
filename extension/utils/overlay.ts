@@ -127,6 +127,7 @@ export async function startOverlay(): Promise<void> {
   let queryTimer: ReturnType<typeof setTimeout> | null = null;
   let scanTimer: ReturnType<typeof setTimeout> | null = null;
   let repositionQueued = false;
+  let repositionFrame: number | null = null;
   let repositionFull = false;
   let hovered: Anchor | null = null;
   let pointerPosition: { x: number; y: number } | null = null;
@@ -692,6 +693,7 @@ export async function startOverlay(): Promise<void> {
   }
 
   function reposition() {
+    repositionFrame = null;
     repositionQueued = false;
     const full = repositionFull;
     repositionFull = false;
@@ -723,10 +725,22 @@ export async function startOverlay(): Promise<void> {
     if (full) repositionFull = true;
     if (repositionQueued) return;
     repositionQueued = true;
-    requestAnimationFrame(reposition);
+    repositionFrame = requestAnimationFrame(reposition);
   }
 
-  addEventListener('scroll', () => scheduleReposition(false), { capture: true, passive: true });
+  // Browser scrolling can be composited before the next animation frame. Move
+  // controls that are already visible in this event so they do not visibly
+  // trail their media; full repainting remains frame-batched below.
+  addEventListener(
+    'scroll',
+    () => {
+      if (repositionFrame !== null) cancelAnimationFrame(repositionFrame);
+      repositionFrame = null;
+      repositionQueued = false;
+      reposition();
+    },
+    { capture: true, passive: true },
+  );
   addEventListener('resize', () => scheduleReposition(true), { passive: true });
   // A post can be answered BEFORE its picture has a size: the observer's margin
   // deliberately reaches past the viewport, and a feed's images are lazy. Such a

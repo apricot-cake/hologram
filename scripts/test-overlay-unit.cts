@@ -91,10 +91,14 @@ window.Element.prototype.getBoundingClientRect = function () {
   const size = Number(this.getAttribute('data-rect-size') || 300);
   return { left: 50, top, right: 50 + size, bottom: top + size, width: size, height: size, x: 50, y: top };
 };
+const animationFrames = new Map<number, any>();
+let nextAnimationFrame = 1;
 window.requestAnimationFrame = (fn) => {
-  fn(0);
-  return 0;
+  const id = nextAnimationFrame++;
+  animationFrames.set(id, fn);
+  return id;
 };
+window.cancelAnimationFrame = (id) => animationFrames.delete(id);
 
 // Worth knowing before adding a listener assertion here: jsdom does NOT put the
 // Window in the propagation path of an event dispatched on an element, so a
@@ -220,6 +224,12 @@ const click = (el) => el.dispatchEvent(new window.MouseEvent('click', { bubbles:
   check('the post’s own subtree is untouched', window.document.getElementById('p1').querySelectorAll('div').length === 1);
   check('the overlay layer is inert to pointers', (window.document.getElementById('__hologramSavedLayer') as any).style.pointerEvents === 'none');
   check('the control itself is not inert', marks()[0].style.pointerEvents === 'auto');
+  // Scrolling can be composited before the next animation frame. A control that
+  // already exists must move in the scroll event, rather than visually trailing
+  // its media until the queued frame runs.
+  window.document.querySelector('#p1 [data-testid="tweetPhoto"]').setAttribute('data-rect-top', '180');
+  window.dispatchEvent(new window.Event('scroll'));
+  check('a visible control follows its media in the scroll event', marks()[0].style.top === '186px' && animationFrames.size === 0);
   hoverAway();
   check('the mark goes away with the pointer', controls().length === 0);
 
