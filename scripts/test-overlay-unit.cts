@@ -83,7 +83,11 @@ const { window } = dom;
 // jsdom lays nothing out (every rect is zero, which overlay.js correctly reads as
 // "too small to mark"), so the fixture declares its own geometry: an element with
 // data-rect-top is a square media box at that offset, everything else is zero.
-window.Element.prototype.animate = () => ({ cancel() {}, finish() {} });
+const animatedElements = new Set<any>();
+window.Element.prototype.animate = function () {
+  animatedElements.add(this);
+  return { cancel() {}, finish() {} };
+};
 window.Element.prototype.getBoundingClientRect = function () {
   const declared = this.getAttribute?.('data-rect-top');
   if (declared === null || declared === undefined) return { left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0, x: 0, y: 0 };
@@ -263,16 +267,14 @@ const click = (el) => el.dispatchEvent(new window.MouseEvent('click', { bubbles:
   check('the mark comes back from the cached answer', marks().length === 1);
   hoverAway();
 
-  // --- the save button: only on an unsaved post, only after the delay ---
+  // --- the save button: immediate on an unsaved post ---
   intersect(['p2'], true);
   await settle();
   hover('p2');
-  check('the button waits out a pass-through instead of flashing', controls().length === 0);
-  await settle();
-  check('pointing at an unsaved picture offers to save it', saveButtons().length === 1);
+  check('pointing at an unsaved picture immediately offers to save it', saveButtons().length === 1);
   check(
-    'the save action is a monochrome glyph-only native button with an accessible name',
-    saveButtons()[0].tagName === 'BUTTON' && saveButtons()[0].style.width === '28px' && saveButtons()[0].style.background === 'rgba(20, 22, 26, 0.86)' && saveButtons()[0].getAttribute('aria-label') === 'Save image' && saveButtons()[0].textContent === '',
+    'the save action is a still monochrome glyph-only native button with an accessible name',
+    saveButtons()[0].tagName === 'BUTTON' && saveButtons()[0].style.width === '28px' && saveButtons()[0].style.background === 'rgba(20, 22, 26, 0.86)' && saveButtons()[0].getAttribute('aria-label') === 'Save image' && saveButtons()[0].textContent === '' && !animatedElements.has(saveButtons()[0]),
   );
   saveButtons()[0].dispatchEvent(new window.Event('pointerenter'));
   check('hover distinguishes the monochrome save action without adding a state color', saveButtons()[0].style.background === 'rgba(255, 255, 255, 0.1)' && saveButtons()[0].style.transform === 'scale(1.04)');

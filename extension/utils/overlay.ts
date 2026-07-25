@@ -82,10 +82,6 @@ export async function startOverlay(): Promise<void> {
   // pointer target meets WCAG's 24px minimum for an icon-only control.
   const SAVE_SIZE = 28;
   const CONTROL_INSET = 6;
-  // The save button waits out a pass-through, so scrolling with the pointer
-  // over the feed doesn't strobe buttons. The mark does NOT wait: it answers a
-  // question the user already has, and a delay reads as lag.
-  const SAVE_ARM_MS = 100;
   const FLASH_MS = 1400; // "saved" confirmation after a press
   const ERROR_MS = 2500; // failure shown, then back to a button to retry
   // A picture too small to be the point of the post: a quote-preview thumbnail,
@@ -131,8 +127,7 @@ export async function startOverlay(): Promise<void> {
   let repositionFull = false;
   let hovered: Anchor | null = null;
   let pointerPosition: { x: number; y: number } | null = null;
-  let saveArmed = false; // the hovered anchor has outlived SAVE_ARM_MS
-  let armTimer: ReturnType<typeof setTimeout> | null = null;
+  let saveArmed = false;
 
   const { getMessage: t, partialSaveText } = await createI18n();
 
@@ -365,16 +360,10 @@ export async function startOverlay(): Promise<void> {
     if (next === hovered) return;
     const previous = hovered;
     hovered = next;
-    saveArmed = false;
-    if (armTimer) clearTimeout(armTimer);
-    armTimer = null;
-    if (next) {
-      armTimer = setTimeout(() => {
-        armTimer = null;
-        saveArmed = true;
-        repaintAnchor(next);
-      }, SAVE_ARM_MS);
-    }
+    // A scroll can move a different picture under a stationary pointer. The
+    // save action must be ready as soon as that happens; delaying each new
+    // target makes the button visibly trail the image on every scroll.
+    saveArmed = next !== null;
     if (previous) repaintAnchor(previous);
     if (next) repaintAnchor(next);
   }
@@ -579,7 +568,10 @@ export async function startOverlay(): Promise<void> {
       // Media scrolled out from under a still-visible unit (tall posts): hide
       // rather than park the control at the viewport edge.
       el.style.display = rect.bottom < 0 || rect.top > window.innerHeight ? 'none' : 'flex';
-      if (born && !G.REDUCED_MOTION)
+      // A hover save control is routinely created for the image newly under the
+      // pointer while scrolling. Keep it still so that normal scrolling does
+      // not turn into a repeated pop animation.
+      if (born && face !== 'save' && !G.REDUCED_MOTION)
         el.animate(
           [
             { opacity: 0, transform: 'scale(0.6)' },
