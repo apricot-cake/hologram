@@ -233,7 +233,17 @@ export async function startOverlay(): Promise<void> {
     }, SCAN_DEBOUNCE_MS);
   }
 
-  new MutationObserver(scheduleScan).observe(document.documentElement, { childList: true, subtree: true });
+  new MutationObserver((records) => {
+    const childrenChanged = records.some((record) => record.type === 'childList');
+    const modalChanged = records.some((record) => record.type === 'attributes' && record.target instanceof Element && record.target.matches('dialog, [role="dialog"], [aria-modal]'));
+    if (hovered && (childrenChanged || modalChanged) && hoveredIsOccluded()) setHovered(null);
+    if (childrenChanged) scheduleScan();
+  }).observe(document.documentElement, {
+    childList: true,
+    attributes: true,
+    attributeFilter: ['aria-modal', 'class', 'hidden', 'open', 'style'],
+    subtree: true,
+  });
   scan();
 
   // === asking ===
@@ -382,8 +392,35 @@ export async function startOverlay(): Promise<void> {
 
   // Re-read geometry only for actual pointer movement and layout changes.
   function updateHoveredAtPointer() {
-    if (!pointerPosition) return;
+    if (!pointerPosition || modalIsOpen()) {
+      setHovered(null);
+      return;
+    }
     setHovered(anchorAtPoint(pointerPosition.x, pointerPosition.y));
+    if (hoveredIsOccluded()) setHovered(null);
+  }
+
+  function modalIsOpen(): boolean {
+    return [...document.querySelectorAll<HTMLElement>('dialog[open], [role="dialog"], [aria-modal="true"]')].some((el) => {
+      const style = getComputedStyle(el);
+      const rect = el.getBoundingClientRect();
+      return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
+    });
+  }
+
+  function hoveredIsOccluded(): boolean {
+    if (modalIsOpen()) return true;
+    if (!hovered?.el || !hovered.host) return false;
+    if (typeof document.elementsFromPoint !== 'function') return false;
+    const rect = hovered.el.getBoundingClientRect();
+    const x = rect.left + rect.width / 2;
+    const y = rect.top + rect.height / 2;
+    for (const el of document.elementsFromPoint(x, y)) {
+      if (el === hovered.el || hovered.el.contains(el) || hovered.host.contains(el)) continue;
+      const position = getComputedStyle(el).position;
+      if (position === 'fixed' || position === 'sticky') return true;
+    }
+    return false;
   }
 
   function repaintAnchor(anchor: Anchor) {
@@ -768,6 +805,12 @@ export async function startOverlay(): Promise<void> {
       if (repositionFrame !== null) cancelAnimationFrame(repositionFrame);
       repositionFrame = null;
       repositionQueued = false;
+      if (hoveredIsOccluded()) {
+        if (scrollHoverTimer !== null) clearTimeout(scrollHoverTimer);
+        scrollHoverTimer = null;
+        setHovered(null);
+        return;
+      }
       settleHoverAfterScroll();
     },
     { capture: true, passive: true },
