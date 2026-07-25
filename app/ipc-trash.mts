@@ -12,13 +12,22 @@ import path from 'node:path';
 import { parseJsonLoose } from './lib-json.mts';
 
 function register(ctx) {
-  const { getSaveFolder, getTrashDir, baseOf, VIEWABLE_EXTS, resolveInFolder, writeSidecarAtomic } = ctx;
+  const { getSaveFolder, getTrashDir, baseOf, VIEWABLE_EXTS, resolveInFolder, writeSidecarAtomic, getDbWriter, ensurePostsSynced } = ctx;
 
   ipcMain.handle('delete-post', async (_e, image) => {
     const folder = getSaveFolder();
     if (!folder || !image) return { ok: false };
     // Soft-delete: move all files for this captureId into .trash/ (instead of unlinking).
     const base = baseOf(image);
+    // Trashing moves the sidecar out of the watched folder, so the next
+    // importAll finds captureId missing and cascade-deletes its posts row
+    // (post_tags included, FK ON DELETE CASCADE). Read the DB-only state
+    // (#298/St5's tags/userKind/tagReviewed) before that happens, so it can
+    // be stamped into the trashed sidecar copy below — restore-post already
+    // re-derives from that copy, this just gives it accurate values to
+    // re-derive FROM instead of whatever the sidecar last had pre-flip.
+    await ensurePostsSynced();
+    const flags = getDbWriter().getPostFlags(base);
     const targets = new Set([`${base}.json`]);
     for (const e of VIEWABLE_EXTS) targets.add(`${base}.${e}`);
     const jsonPath = resolveInFolder(`${base}.json`);
@@ -58,11 +67,17 @@ function register(ctx) {
         }
       }
     }
-    // Stamp trashedAt in the trash sidecar so auto-purge knows when to expire it.
+    // Stamp trashedAt in the trash sidecar so auto-purge knows when to expire it,
+    // and carry the DB-only state (flags, read above) into it too.
     const trashJson = path.join(trashDir, `${base}.json`);
     try {
       const r = parseJsonLoose(await fs.promises.readFile(trashJson, 'utf8'));
       r.trashedAt = new Date().toISOString();
+      if (flags) {
+        r.tags = flags.tags;
+        if (flags.userKind != null) r.userKind = flags.userKind;
+        if (flags.tagReviewed != null) r.tagReviewed = flags.tagReviewed;
+      }
       await fs.promises.writeFile(trashJson, JSON.stringify(r, null, 2), 'utf8');
     } catch {
       /* sidecar may not exist — trash still works but won't auto-purge */
@@ -113,14 +128,25 @@ function register(ctx) {
     }
     // Remove trashedAt from the restored sidecar. The file is already back in the
     // watched folder, so rewrite it atomically (tmp+rename) — an in-place write
-    // could be caught mid-write by the watcher and cost this post its collection/
-    // clip membership (see writeSidecarAtomic).
+    // could be caught mid-write by the watcher and cost this post its collection
+    // membership (see writeSidecarAtomic).
     const jsonPath = path.join(folder, `${base}.json`);
+    let restored: any = null;
     try {
       const r = parseJsonLoose(await fs.promises.readFile(jsonPath, 'utf8'));
       delete r.trashedAt;
+      restored = r;
       await writeSidecarAtomic(jsonPath, r);
     } catch {}
+    if (restored) {
+      // The reimport below recreates the posts row with tags intact (tags DO
+      // round-trip through the sidecar), but userKind/tagReviewed never do
+      // (#298/St5's applyPostFlagsFromRecord doc comment) — re-apply them
+      // from the restored sidecar, which delete-post stamped with the
+      // pre-trash DB values.
+      await ensurePostsSynced();
+      getDbWriter().restorePostFlags(base, restored);
+    }
     return { ok: true };
   });
 
@@ -153,26 +179,19 @@ function register(ctx) {
     return { ok: true };
   });
 
+  // #298/St5: tag edits are an in-app write, so they go straight to the DB
+  // (post_tags + posts.userKind/tagReviewed) instead of the sidecar — see
+  // lib-db-write.mts's replacePostTags. The sidecar is left untouched, which
+  // is what protects this edit from the next importAll: its mtime doesn't
+  // move, so lib-db-import.mts's unchanged-since-last-import guard (#297)
+  // skips re-deriving this post from disk and the DB edit sticks.
   ipcMain.handle('update-tags', async (_e, image, tags, patch) => {
-    const base = baseOf(image);
-    const jsonPath = resolveInFolder(`${base}.json`);
-    if (!jsonPath) return { ok: false };
+    const captureId = baseOf(image);
+    if (!captureId) return { ok: false };
     try {
-      const rec = parseJsonLoose(await fs.promises.readFile(jsonPath, 'utf8'));
-      rec.tags = Array.isArray(tags) ? tags.map(String) : [];
-      // Optional extra fields (e.g. the tagging wizard's plain/media flag). Only
-      // an allow-listed set is honored so the renderer can't write arbitrary keys.
-      if (patch && typeof patch === 'object') {
-        if ('userKind' in patch) {
-          rec.userKind = patch.userKind === 'plain' || patch.userKind === 'media' ? patch.userKind : null;
-        }
-        // Tagging "session" marks a post reviewed even when it gets no tags, so
-        // it leaves the untagged queue instead of resurfacing every session.
-        if ('tagReviewed' in patch) rec.tagReviewed = !!patch.tagReviewed;
-      }
-      rec.updatedAt = new Date().toISOString(); // record was modified in Hologram
-      await writeSidecarAtomic(jsonPath, rec); // tmp+rename: never expose a half-written sidecar to the watcher
-      return { ok: true };
+      await ensurePostsSynced(); // the captureId needs a posts row before this edit can attach to it
+      const ok = getDbWriter().setPostTags(captureId, tags, patch && typeof patch === 'object' ? patch : null);
+      return { ok };
     } catch {
       return { ok: false };
     }

@@ -15,7 +15,9 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const net = require('node:net');
+const dns = require('node:dns');
 const crypto = require('node:crypto');
+const { Agent } = require('undici');
 
 // --- Original-media download (best-effort, still images only) ---
 // Supported still-image content types -> file extension. Anything else (video,
@@ -57,12 +59,10 @@ interface StillImage {
 // (cloud metadata 169.254.169.254, loopback, RFC1918). This is BLIND SSRF (the
 // fetched bytes are written to the user's disk, never returned to the attacker)
 // and we already require https, but we still refuse private/reserved targets and
-// re-check every redirect hop. We block IP-LITERAL targets by range (the direct
-// and realistic vector — an attacker reaches metadata/loopback by its IP) plus
-// obvious local hostnames. We deliberately do NOT resolve hostnames here: it
-// would add per-fetch DNS latency and a rebinding TOCTOU gap (fetch re-resolves)
-// without closing it, and the residual "attacker domain → private IP" path is a
-// far higher bar for a blind, best-effort downloader.
+// re-check every redirect hop. IP literals and obvious local hostnames are
+// rejected before fetch. Hostnames are resolved by the guarded dispatcher below:
+// every A/AAAA result must be public, then Node connects only to that verified
+// result set. This closes DNS rebinding without a check-then-resolve gap.
 function isPrivateIPv4(ip: string): boolean {
   const parts = ip.split('.');
   if (parts.length !== 4) return false;
@@ -105,6 +105,35 @@ function isPrivateIp(ip: string): boolean {
   }
   return false; // not an IP literal
 }
+
+// Replace the connector's normal DNS lookup with an all-address guard. Returning
+// the verified records to net.connect (with autoSelectFamily enabled below)
+// preserves A/AAAA fallback while pinning the connection to this exact set.
+function createGuardedLookup(resolveAll = dns.lookup) {
+  return (hostname, options, callback) => {
+    resolveAll(hostname, { ...options, all: true }, (err, addresses) => {
+      if (err) {
+        callback(err);
+        return;
+      }
+      if (!Array.isArray(addresses) || addresses.length === 0 || addresses.some(({ address }) => !net.isIP(address) || isPrivateIp(address))) {
+        const refused = new Error(`DNS resolution refused for ${hostname}`) as NodeJS.ErrnoException;
+        refused.code = 'EHOSTUNREACH';
+        callback(refused);
+        return;
+      }
+      callback(null, addresses);
+    });
+  };
+}
+
+const MEDIA_DISPATCHER = new Agent({
+  connect: {
+    lookup: createGuardedLookup(),
+    autoSelectFamily: true,
+  },
+});
+
 // Validate one URL: https + (if an IP literal) a public range + not an obvious
 // local hostname. Returns the parsed URL on success, or null.
 function checkMediaUrl(urlStr: string): URL | null {
@@ -171,7 +200,8 @@ async function fetchStillImage(url: unknown, referer?: unknown): Promise<StillIm
     let res: Response | null = null;
     for (let hop = 0; hop <= MAX_MEDIA_REDIRECTS; hop++) {
       if (!checkMediaUrl(current)) return null; // SSRF guard, every hop
-      res = await fetch(current, { signal: ctrl.signal, redirect: 'manual', headers });
+      const request = { signal: ctrl.signal, redirect: 'manual' as const, headers, dispatcher: MEDIA_DISPATCHER };
+      res = await fetch(current, request);
       if (res.status >= 300 && res.status < 400) {
         const loc = res.headers.get('location');
         if (!loc) return null;
@@ -276,6 +306,7 @@ module.exports = {
   pixivRefererFor,
   checkMediaUrl,
   isPrivateIp,
+  createGuardedLookup,
   MEDIA_MIME_EXT,
   MAX_MEDIA,
   MAX_MEDIA_BYTES,

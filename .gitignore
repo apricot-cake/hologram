@@ -3,7 +3,8 @@ node_modules/
 app/node_modules/
 app/dist/
 extension/node_modules/
-extension/dist/
+extension/.output/
+extension/.wxt/
 native-host/dist/
 app/.smoke-shot*.png
 app/.theme-*.png
@@ -16,6 +17,8 @@ __pycache__/
 scripts/_*.js
 scripts/_*.jpg
 scripts/_*.png
+# Per-tree sandbox verify instance (scripts/sandbox-app.cts): config + seeded library
+.sandbox/
 # 公開前の内部監査メモ（取得方針の棚卸し等）＝公開リポに出さない（gitignore＝ファイルはローカルに保持）
 docs/acquisition-audit-*.md
 # 秘密ファイルのトリップワイヤ（現状コミット済み秘密は無い・鍵/config はリポ外 ~/.hologram）。

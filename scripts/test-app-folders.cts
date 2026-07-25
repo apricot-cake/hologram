@@ -24,6 +24,8 @@ const path = require('node:path');
 
 const appDir = path.join(__dirname, '..', 'app');
 const electronPath = require(path.join(appDir, 'node_modules', 'electron'));
+const { openDatabase } = require(path.join(appDir, 'lib-db.mts'));
+const { createDbWriter } = require(path.join(appDir, 'lib-db-write.mts'));
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-fold-'));
 const configDir = path.join(tmp, 'Hologram');
@@ -65,20 +67,25 @@ for (let i = 0; i < 3; i++) {
   );
 }
 
-// Seed a two-level tree with the post sitting in the GRANDCHILD, so the aggregation
-// assertions below are about a real subtree rather than one level of nesting.
-fs.writeFileSync(
-  path.join(saveFolder, 'folders.json'),
-  JSON.stringify({
+// The DB is the organization source of truth (#298). Seed a two-level tree with
+// the post sitting in the CHILD, so the aggregation assertions below exercise a
+// real subtree. Minimal post rows make the folder_items FK valid; startup's
+// sidecar importer fills the complete records before the renderer lists them.
+{
+  const { sqlite } = openDatabase(path.join(configDir, 'hologram.db'));
+  const insertPost = sqlite.prepare('INSERT INTO posts (captureId, capturedAt, updatedAt) VALUES (?, ?, ?)');
+  for (const id of CIDS) insertPost.run(id, '2026-04-01T12:00:00Z', '2026-04-01T12:00:00Z');
+  const writer = createDbWriter(sqlite);
+  writer.setFolders({
     folders: [
       { id: 'f-root', name: '一次資料', kind: 'static', created: 1, parentId: null, items: [] },
       { id: 'f-kid', name: 'スケッチ', kind: 'static', created: 2, parentId: 'f-root', items: [CIDS[0]] },
     ],
     activeId: null,
-    clip: [],
-    posterWorkspace: [],
-  }),
-);
+  });
+  writer.stateSet('truthSource', 'db');
+  sqlite.close();
+}
 
 const evalJs = `(async () => {
   const grid = document.getElementById('postGrid');

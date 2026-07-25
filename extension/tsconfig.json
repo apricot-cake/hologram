@@ -1,30 +1,6 @@
 {
-  // Extension TS layer (BACKLOG 採用#1「残り」= P3 続き). Unlike main/native-host,
-  // Chrome cannot execute TypeScript at runtime (no type-stripping in a browser
-  // JS engine), so this is the one layer with a REAL build step: tsc compiles
-  // .ts -> dist/*.js, and `dist/` (not this source directory) is what gets
-  // loaded as the unpacked extension. See build.mjs.
-  //
-  // No `module` option set, and no file uses import/export — these files stay
-  // plain global scripts, exactly like the .js they replace: background.ts
-  // still importScripts()'s metadata.ts's compiled output, content_scripts
-  // still loads i18n.js/drag.js as separate globally-scoped files, and
-  // metadata.ts keeps its dual browser-global / Node module.exports shape
-  // (required directly by scripts/backfill-metadata.cts etc. — see
-  // dist/metadata.js). TS only emits CommonJS boilerplate (`exports`/`require`)
-  // for files it detects as modules (via import/export); with none present
-  // here, tsc auto-detects "script" and emits plain global code — using TS's
-  // own import/export syntax would force that boilerplate, which throws in a
-  // browser with no bundler to shim it. (`module:"none"` would say this
-  // explicitly but is deprecated as of TS 6.x.)
-  //
-  // noImplicitAny stays OFF (same rationale as main/renderer/native-host):
-  // plain JS-shaped code where internal DOM-traversal params would each need
-  // annotation noise for no real safety gain.
+  "extends": "./.wxt/tsconfig.json",
   "compilerOptions": {
-    "target": "ES2022",
-    "lib": ["ES2022", "DOM"],
-    "noEmit": true,
     "strict": true,
     "noImplicitAny": false,
     "useUnknownInCatchVariables": false,
@@ -32,5 +8,5 @@
     "skipLibCheck": true,
     "types": ["chrome"]
   },
-  "files": ["background.ts", "content.ts", "diag.ts", "drag.ts", "glass-ui.ts", "i18n.ts", "metadata.ts", "options.ts", "site-detect.ts", "types/globals.d.ts"]
+  "include": [".wxt/wxt.d.ts", "entrypoints/**/*.ts", "pages/**/*.ts", "utils/**/*.ts", "types/globals.d.ts", "wxt.config.ts"]
 }

@@ -1,8 +1,8 @@
 // Value editor for the "+ フィルタ" flow (redesign §3-2 / P2③) — the checklist /
-// grouped-tag two-pane picker for one facet category. Adapted from the retired qf-pop
-// island's body: same buildRows/buildGroups/ValueRow rendering and the Eagle-style
-// two-pane for grouped tags, but driven by a FilterCatValues entry (orchestrator's
-// filterCategories) instead of the qf-pop bridge. The picker stays open so several
+// sectioned-tag two-pane picker for one facet category. Adapted from the retired qf-pop
+// island's body: same buildRows/buildGroups/ValueRow rendering and the two-pane for
+// sectioned tags (種別: 作品/キャラ/未分類), but driven by a FilterCatValues entry
+// (orchestrator's filterCategories) instead of the qf-pop bridge. The picker stays open so several
 // values can be toggled in a row; each pick re-reads values() so on/count refresh.
 //
 // The old ぴったり/おおまか search-mode segment is gone (要決4再改訂 = single smart
@@ -66,7 +66,7 @@ function buildRows(items: FilterRow[]): Row[] {
   return out;
 }
 
-// Split the flat items into tag groups (a ghead opens a group; the rows until the next
+// Split the flat items into sections (a ghead opens a section; the rows until the next
 // ghead are its members). Returns [] when there are no gheads (→ flat layout).
 function buildGroups(items: FilterRow[]): Group[] {
   const groups: Group[] = [];

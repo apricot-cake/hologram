@@ -1,14 +1,14 @@
 // Presentational post card — the one cell component of the virtualized grid
 // island (islands/grid). Emits the same DOM contract the old string-template
 // path did — `.post-card[data-url/data-index/data-key]` with the
-// `.act-pill`, the `.clip-btn[data-clip]` hover button,
+// `.act-pill`,
 // `.card-thumb > .card-img`,
 // `.card-ntag`, `.card-overlay`, and the `.post-meta` block.
 // That contract is LOAD-BEARING: every delegated click/contextmenu/dblclick
 // handler on #postGrid and all grid CSS key off these class names + data attrs.
 //
 // viewer.js resolves all the data (image src, formatted counts/dates, selection,
-// clip, aspect, inspected) into a plain model; this component only lays it out.
+// aspect, inspected) into a plain model; this component only lays it out.
 // Raw strings (text, names) are passed unescaped — JSX escapes them.
 
 import type { CSSProperties, ReactEventHandler, Ref } from 'react';
@@ -26,7 +26,6 @@ export interface PostCardModel {
   selected?: boolean;
   noUrl?: boolean;
   inspected?: boolean;
-  clipped?: boolean;
   hasThumb?: boolean;
   imgSrc?: string | null;
   captureId?: string;
@@ -56,14 +55,6 @@ const STAT_GLYPH = {
   bookmarks: '\ud83d\udd16\ufe0e', // bookmark (text presentation)
 };
 const STAT_ORDER = ['likes', 'reposts', 'replies', 'bookmarks'] as const;
-
-function ClipIcon() {
-  return (
-    <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48" />
-    </svg>
-  );
-}
 
 function TagIcon() {
   return (
@@ -111,9 +102,6 @@ export function PostCard({ m, L, cellRef, onImgLoad }: { m: PostCardModel; L: Re
           </span>
         ))}
       <div className="act-pill" aria-hidden="true" />
-      <button className={'clip-btn' + (m.clipped ? ' in' : '')} data-clip={m.index} data-tip={L.tipClip} aria-label={L.tipClip}>
-        <ClipIcon />
-      </button>
       {/* draggable on the video placeholder only — an <img> already is by default.
           Both hand the gesture to the #postGrid dragstart delegate, which cancels
           the HTML5 drag (it would carry the asset:// URL) and starts an OS drag of

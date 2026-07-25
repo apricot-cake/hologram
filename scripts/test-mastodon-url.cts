@@ -7,7 +7,7 @@
 //
 //   node scripts/test-mastodon-url.cts
 
-const { fetchPostMetadata } = require('../extension/dist/metadata');
+const { fetchPostMetadata } = require('../extension/utils/metadata.ts');
 
 function mockStatus(statusUrl) {
   (global as any).fetch = async (u) => {

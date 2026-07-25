@@ -1,4 +1,5 @@
 import { createRoot } from 'react-dom/client';
+import './log.ts';
 import { initI18n } from '../_shared/i18n.ts';
 import { App } from './App.tsx';
 

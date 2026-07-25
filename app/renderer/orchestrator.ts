@@ -20,7 +20,7 @@ import { makeQfPop } from './qf-pop-builder.ts';
 import { makeFacets } from './facets.ts';
 import { makeCooc } from './cooc.ts';
 import { mediaFilesOf, isScreenshot, artworkFile, densityImage, postIdKey, groupFilesOf, stampPost, percentileFn, makeGroupRecords, makeCardModel, makeGallery, loadUngrouped, loadManualGroups } from './records.ts';
-import { makeTags, bindTagKindOf, bindPosterFilterVocab, getTagTypes, getTagLabels, getTagGroups, getPosterTags, setPosterTags, load as loadTags } from './tags.ts';
+import { makeTags, bindTagKindOf, bindPosterFilterVocab, getTagTypes, getTagLabels, getPosterTags, setPosterTags, load as loadTags } from './tags.ts';
 import { makeTabLabels } from './tab-state.ts';
 import { getBackup, onBackupStart, onBackupDone } from './backup.ts';
 import { listPostsDelta, importComplete, importPosts } from './posts.ts';
@@ -115,6 +115,14 @@ export let applyPosterSize: (value: number, min: number, max: number) => void;
 // popover's re-roll button calls it; picking 'random' seeds itself (see the
 // sortSelect change listener).
 export let rerollShuffle: () => void;
+// Go to a browse destination (投稿グリッド / 投稿者グリッド) from the left sidebar.
+// The sidebar is the "go to another place" axis (browser address bar / bookmarks),
+// so choosing a destination while the image view is up LEAVES it and lands on that
+// grid — even when the mode is unchanged (#312). Off the image view it is the plain
+// mode switch, so the active destination stays a no-op. Called by LeftSidebar's two
+// mode buttons; the folder / saved-search rows leave via applyFolderFilter /
+// applySavedSearch below, which do the same before mutating the query.
+export let browseTo: (mode: string) => void;
 // Apply a library folder as a place filter (redesign §3-1): replace the post query's
 // folder facet with the clicked folder, then re-render. The new left sidebar's
 // folder rows call this directly (no qf-pop flyout).
@@ -390,8 +398,8 @@ export function endFilterEditSession(): void {
   // once postQB/posterQB/pfStore/buildUsers all exist (see near posterQB below).
   // Tag vocabulary / 種別 domain (tagKindOf/kindLabel/groupedTagVocab/
   // inspectorTagPickerData/posterTagsOf/posterFilterVocab) moved to tags.ts
-  // (imported) — 8th extraction slice. The 4 tag stores themselves
-  // (tagTypes/tagLabels/tagGroups/posterTags) also live in tags.ts now (P4
+  // (imported) — 8th extraction slice. The tag stores themselves
+  // (tagTypes/tagLabels/posterTags) also live in tags.ts now (P4
   // "状態→store" tags slice) — its own getters go in where viewer.js's local
   // `let`s used to. Wired BEFORE the facets/cooc wiring below, which passes
   // tagKindOf/posterTagsOf/posterFilterVocab as direct refs.
@@ -400,7 +408,6 @@ export function endFilterEditSession(): void {
   const { tagKindOf, kindLabel, groupedTagVocab, inspectorTagPickerData, posterTagsOf, posterFilterVocab } = makeTags({
     tagTypes: getTagTypes,
     tagLabels: getTagLabels,
-    tagGroups: getTagGroups,
     posterTags: getPosterTags,
     allPosts: () => postGrid.getAllPosts(),
     t: getMessage,
@@ -421,7 +428,7 @@ export function endFilterEditSession(): void {
   const { showKindMenu } = makeKindMenu({ tagKindOf, kindLabel, t: getMessage });
   // Facet aggregation (facetCounts) + value-flyout row models (qfValues) moved to
   // facets.ts — 3rd extraction slice. Runtime couplings are injected: reassigned
-  // lets (allPosts/multiOnly) + tags.ts's own getter (tagGroups) as getters, and
+  // lets (allPosts/multiOnly) as getters, and
   // consts declared after this point (posterQB / pfStore / the listing.ts
   // products) as deferred arrow wrappers — a direct ref here would hit TDZ at
   // wiring time; the wrappers only run when a flyout opens.
@@ -435,7 +442,6 @@ export function endFilterEditSession(): void {
     t: getMessage,
     PF_NAME,
     tagKindOf,
-    tagGroups: getTagGroups,
     posterTagsOf,
     filteredPosters: () => filteredPosters(),
     posterFilterVocab,
@@ -475,23 +481,6 @@ export function endFilterEditSession(): void {
   // Filter rows: click a row → flyout with that category's values beside it.
   // 日付/エンゲージはパラメータ入力付きの専用ポップオーバーへ委譲。
   document.getElementById('filterRows')?.addEventListener('click', (e) => {
-    // クリップ: 空にする clears every flag (kept before the row check so it doesn't also
-    // toggle the filter — was e.stopPropagation() on the old direct listener).
-    if (closestOf(e, '#clipClear')) {
-      if (!CF()) return;
-      if (!window.confirm(getMessage('clipEmptyConfirm'))) return;
-      keepCurrentVisible();
-      CF().clearClips();
-      renderPosts(true);
-      return;
-    }
-    // クリップ row: toggle the "show only clipped" filter.
-    if (closestOf(e, '#clipRow')) {
-      const idx = postQB.shadow().findIndex((f: { type: string }) => f.type === 'clip');
-      if (idx < 0) addFilter({ type: 'clip', value: '*' });
-      else removeFilter(idx);
-      return;
-    }
     // 複数画像: a direct 2-state toggle (no data-qfrow, no flyout). Handled via this
     // delegated listener rather than its own — the row can be (re)built after wiring
     // time, so a listener bound at load could miss it. Flips the group-level flag.
@@ -517,12 +506,10 @@ export function endFilterEditSession(): void {
     renderQueryChips(); // 検索/フォルダ等の変化を下部アクティブバーへ即時反映
   }
 
-  // --- Tag area: the タグ row opens ONE flyout listing every general tag,
-  // sectioned by tag group (facets.js emits the ghead rows). Groups are
-  // user-created and unbounded, so they live INSIDE the scrollable flyout —
-  // permanent sidebar rows for them stretched the column without bound
-  // (sub-rows removed 2026-07-03).
-  // tagGroups/tagTypes/tagLabels (種別・グループ語彙) + tagKindOf/kindLabel moved
+  // --- Tag area: the タグ row opens ONE flyout listing every general tag
+  // (種別なし). The 作品/キャラ kinded tags get their own rows; general tags stay a
+  // flat, count-ordered list inside the scrollable flyout.
+  // tagTypes/tagLabels (種別語彙) + tagKindOf/kindLabel moved
   // to tags.js (hologramTags wiring above) — the P4 "状態→store" tags slice.
   // (Possibly custom) 作品/キャラ names + which tags carry a 種別 are read live by
   // renderer/sidebar.ts's sources now (hologramTags.onChange / posts-data.ts's
@@ -611,7 +598,7 @@ export function endFilterEditSession(): void {
   const gridDensity = makeGridDensity({
     hologramIpc,
     hologramPostGridSource,
-    renderPosts: () => renderPosts(),
+    renderPosts: (inPlace) => renderPosts(inPlace),
     renderPosters: () => renderPosters(),
     getBrowseMode: () => browseMode,
   });
@@ -632,7 +619,7 @@ export function endFilterEditSession(): void {
   // syncShadow comment below).
   // The tree machinery + post-side predicates live in query.ts (imported above)
   // — the first "pure logic → service" extraction of the viewer decomposition.
-  // Runtime couplings are injected here: collections/clips resolve through CF()
+  // Runtime couplings are injected here: collections resolve through CF()
   // lazily (folders.js registers after this closure is built, and predicates only
   // run post-init), fuzzy text matching through search.ts's compile.
   // The shared facet-chip builder (改訂④) lives in
@@ -658,6 +645,18 @@ export function endFilterEditSession(): void {
     container: document.getElementById('queryChips') as HTMLElement,
     barEl: document.getElementById('postActiveBar'), // reveal + --activebar-h measure (empty/reset are the island's)
     labelOf: filterLabel,
+    // A saved tag leaf from before the DB migration (#297) carries only a name;
+    // query.ts's tag case resolves and caches its tagId on first evaluation via
+    // this. Scans the loaded posts' parallel tags/tagIds arrays rather than a
+    // separate vocabulary fetch — only runs once per legacy leaf (the leaf
+    // caches its own resolved tagId), not once per post.
+    tagIdOf: (name) => {
+      for (const p of postGrid.getAllPosts()) {
+        const i = (p.tags || []).indexOf(name);
+        if (i >= 0 && p.tagIds) return p.tagIds[i];
+      }
+      return undefined;
+    },
     getSearchVal: () => searchQuery(),
     onClearSearch: () => {
       setSearchBoxValue('');
@@ -705,9 +704,21 @@ export function endFilterEditSession(): void {
   function afterQueryChange() {
     postQB.refresh();
   }
+  // A post-side sidebar destination (folder / saved search) is a navigation to
+  // another place, not just a query edit (#312). If the image view is up, leave it
+  // and make sure we are on the posts grid first — WITHOUT a render of its own: the
+  // query mutation that follows renders exactly once and records the single grid
+  // entry (activeImageTab is cleared by then, so that render is no longer swallowed
+  // as a background refresh). setBrowseModeLite is the render-free mode flip; both
+  // calls are no-ops when the view is hidden and we are already browsing posts.
+  function enterPostsForSidebar() {
+    imageTabCtl.hideImageView();
+    setBrowseModeLite('posts');
+  }
   // Folder-as-place: clear any existing folder leaves, then add the clicked
   // one. addFilter goes through facetAdd + the qb's re-render, so the grid + chips refresh.
   applyFolderFilter = (id) => {
+    enterPostsForSidebar();
     removeCondsMatching((c) => c.type === 'folder');
     addFilter({ type: 'folder', value: id });
   };
@@ -717,6 +728,7 @@ export function endFilterEditSession(): void {
   applySavedSearch = (id) => {
     const f = CF() && CF().byId(id);
     if (!f || f.kind !== 'dynamic') return;
+    enterPostsForSidebar();
     postQB.setTree(f.tree || null);
     searchEditing.clear();
     setSearchBoxValue('');
@@ -1020,18 +1032,18 @@ export function endFilterEditSession(): void {
   // shows it in the inspector (Eagle/Explorer 型「シングル＝選択して詳細」); Ctrl
   // adds/removes, Shift range-selects — neither touches the inspector (確定 未決
   //事項2). Double-click opens the image view as an in-tab history destination
-  // (#144). The card's own 📎 button and the expandable post text keep their
-  // dedicated handlers, so those regions are skipped here. selectionCtl/showDetail
+  // (#144). The expandable post text keeps its
+  // dedicated handler, so that region is skipped here. selectionCtl/showDetail
   // are declared below — safe closure forward-refs (they run only on a real click).
   byId('postGrid').addEventListener('click', (e) => {
-    if (closestOf(e, '.clip-btn, .text')) return;
+    if (closestOf(e, '.text')) return;
     const card = closestOf(e, '.post-card');
     if (!card) return;
     const g = postGrid.getViewGroups()[Number.parseInt(card.dataset.index ?? '', 10)];
     if (selectionCtl.clickSelect(card, e) && g) showDetail(g);
   });
   byId('postGrid').addEventListener('dblclick', (e) => {
-    if (closestOf(e, '.clip-btn, .text')) return;
+    if (closestOf(e, '.text')) return;
     const card = closestOf(e, '.post-card');
     if (!card) return;
     const g = postGrid.getViewGroups()[Number.parseInt(card.dataset.index ?? '', 10)];
@@ -1058,26 +1070,6 @@ export function endFilterEditSession(): void {
   // dragstart past its own drag threshold, and a completed drag suppresses click.
   byId('postGrid').addEventListener('dragstart', (e) => postGrid.handleCardDragStart(e as DragEvent));
 
-  // Clip button: one-click flag/unflag this post (no picking). Mutations never replay
-  // the entrance animation: re-render (keepLimit) only when a clip filter could change
-  // the visible set.
-  byId('postGrid').addEventListener('click', (e) => {
-    const btn = closestOf(e, '.clip-btn');
-    if (!btn) return;
-    e.stopPropagation();
-    if (!CF()) return;
-    const g = postGrid.getViewGroups()[Number.parseInt(btn.dataset.clip ?? '', 10)];
-    if (!g || !g.rep.captureId) return;
-    keepCurrentVisible(); // removal can un-match an active clip filter
-    const res = CF().toggleClip(
-      g.records.map((r) => r.captureId),
-      g.rep.captureId,
-    );
-    if (!res) return;
-    btn.classList.toggle('in', res === 'added');
-    if (postQB.shadow().some((f: { type: string }) => f.type === 'clip')) renderPosts(true);
-  });
-
   // foldMenuItems/onFoldMenuPick/showFoldMenu and cardMenuItems/onCardMenuPick/
   // showCardMenu moved to post-grid-builder.ts (postGrid above).
   byId('postGrid').addEventListener('contextmenu', (e) => {
@@ -1092,15 +1084,12 @@ export function endFilterEditSession(): void {
   // Sidebar folder chips (shared folders.json): count + ★default. Like tag chips
   // they cycle 解除→いずれか(OR)→＋すべて含む(AND)→解除 and join the same
   // かつ/または expression as the tags.
-  // postFolderChips was retired (collections moved to the collections view); the クリップ
-  // + 複数画像 row entries (active state, clip count) are self-derived now by
+  // postFolderChips was retired (collections moved to the collections view); the
+  // 複数画像 row entry (active state) is self-derived now by
   // renderer/sidebar.ts's hologramPostSidebarSource — no orchestrator-side
-  // re-render call needed after a clip/multi/folder mutation.
+  // re-render call needed after a multi/folder mutation.
   // フォルダ管理の起動口はフライアウト下部の qf-pop フッターボタン（onManage→CF().openManager()）に統一。
   // 旧 #postFolderManage ボタンは HTML から撤去済み（デッドリスナーを削除）。
-  // The クリップ row toggle + 空にする clear are handled by the delegated #filterRows
-  // listener now (the rows are React-owned, so a setup-time addEventListener on a
-  // specific node would miss the island's re-renders).
 
   // 複数画像 sidebar row: reflects the group-level multiOnly flag as the row's active
   // state (accent icon) via the model. The click that flips it is handled by the
@@ -1267,6 +1256,23 @@ export function endFilterEditSession(): void {
     clearTimeout(_browseRenderT);
     _browseRenderT = setTimeout(render, 0);
   }
+  // Sidebar mode button → browse destination (#312). While the image view is up,
+  // the destination is a place to move TO: hide the view, then let setBrowseMode
+  // render and record the grid entry — even for the current mode (setBrowseMode
+  // still renders, and with activeImageTab cleared that render records the entry
+  // the store's same-value guard would otherwise swallow, stranding the view on the
+  // image). Off the image view the store stays the interface, so its same-value
+  // guard keeps pressing the active destination a genuine no-op (no re-render, no
+  // stray history entry).
+  browseTo = (mode) => {
+    mode = mode === 'posters' ? 'posters' : 'posts';
+    if (imageTabCtl.isShowing()) {
+      imageTabCtl.hideImageView();
+      setBrowseMode(mode);
+    } else {
+      storeSet('browseMode', mode);
+    }
+  };
   // Browse mode is the left sidebar's (hologramStore 'browseMode').
   // React owns the active state + glass thumb; orchestrator reacts to a mode change by running
   // the heavy switch. The idempotent guard skips the no-op set from the pref restore
@@ -1454,16 +1460,16 @@ export function endFilterEditSession(): void {
           only: extra?.only,
         };
       };
-    // The combined タグ editor values: general tags (already grouped by 用語帳 vocab)
+    // The combined タグ editor values: general tags (種別なし, count-ordered)
     // followed by 作品/キャラ groups — all one 'tag' facet, so one chip + one op.
     const combinedTagValues = (tagCat: string, workCat: string, charCat: string) => (): FilterRow[] => {
       const general = (qfValues(tagCat) as FilterRow[]).map(dot);
       const work = (qfValues(workCat) as FilterRow[]).map(dot);
       const char = (qfValues(charCat) as FilterRow[]).map(dot);
       const out: FilterRow[] = [];
-      // If general is flat (no vocab groups) but kinded groups follow, wrap it under its
+      // General tags are flat; when kinded groups follow, wrap the general list under its
       // own head so the two-pane doesn't orphan it (buildGroups drops pre-first-ghead rows).
-      if ((work.length || char.length) && general.length && !general.some((it) => it.ghead != null)) out.push({ ghead: getMessage('tagGroupOther') });
+      if ((work.length || char.length) && general.length && !general.some((it) => it.ghead != null)) out.push({ ghead: getMessage('tagUncategorized') });
       out.push(...general);
       if (work.length) out.push({ ghead: kindLabel('work') }, ...work);
       if (char.length) out.push({ ghead: kindLabel('character') }, ...char);
@@ -1599,7 +1605,7 @@ export function endFilterEditSession(): void {
     const out: ActiveFilter[] = [];
     const emit = (type: string, mode: FacetMode, leaves: HologramQueryLeaf[]) => {
       const m = map[type];
-      if (!m) return; // legacy standalone types (clip/workspace) carry no chip
+      if (!m) return; // an unmapped type carries no chip
       out.push({ cat: m.cat, type, label: m.label, editor: m.editor, mode, values: leaves.map((l) => labelOf(l)), remove: () => qb.removeByType(type) });
     };
     for (const cl of view.clusters) emit(cl.type, cl.op === 'and' ? 'and' : 'or', cl.leaves);
@@ -1853,7 +1859,7 @@ export function endFilterEditSession(): void {
       }
       if (swept) tabsCtl.persistTabsNow();
     }
-    // The clip row / sidebar collection state (counts/active) self-derives from the
+    // The sidebar collection state (counts/active) self-derives from the
     // hologramFolders.onChange subscription in renderer/sidebar.ts.
     if (kind === 'list') renderPosts(true); // folder created/deleted — refresh without anim
   };

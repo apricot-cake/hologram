@@ -2,13 +2,18 @@
   "name": "hologram-extension",
   "private": true,
   "version": "1.1.0",
-  "description": "Hologram Chrome extension (MV3) — TypeScript source, built to dist/ for Load unpacked",
+  "description": "Hologram Chrome extension (MV3), built by WXT",
   "scripts": {
-    "build": "node build.mjs",
-    "typecheck": "tsc --noEmit"
+    "build": "wxt build",
+    "build:ext": "wxt build",
+    "dev": "wxt",
+    "dev:ext": "wxt",
+    "zip": "wxt zip",
+    "typecheck": "wxt prepare && tsc --noEmit"
   },
   "devDependencies": {
     "@types/chrome": "^0.2.2",
-    "typescript": "^6.0.3"
+    "typescript": "^6.0.3",
+    "wxt": "^0.20.26"
   }
 }

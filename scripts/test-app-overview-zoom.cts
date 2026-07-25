@@ -64,11 +64,18 @@ const evalJs = `(async () => {
   const small = size();
   const overviewOn = grid.classList.contains('overview');
   const prefs = await window.hologram.getPrefs();
+  // 端に張り付いた状態でさらに回してもサイズは動かない。**確定を走らせないこと**は
+  // ここでは検証できない＝この規模（12件）だと確定がほぼ無コストで、DOM ノードの
+  // 張り替えもサムネの再要求も起きないため、通っても意味のない assertion になる
+  // （両方の実装で緑になることを確認済み）。実ライブラリ規模での目視・計測が正。
+  for (let i = 0; i < 10; i++) fire(120);
+  await sleep(400);
+  const stableAtLimit = size() === small;
   // 戻す（ズームインは deltaY<0）
   for (let i = 0; i < 3; i++) fire(-120);
   await sleep(300);
   const back = size();
-  return [start, small, overviewOn, prefs.imageTileSize, prefs.tileOverlay, back, grid.classList.contains('overview')].join(',');
+  return [start, small, overviewOn, prefs.imageTileSize, prefs.tileOverlay, back, grid.classList.contains('overview'), stableAtLimit].join(',');
 })()`;
 
 const env = Object.assign({}, process.env, {
@@ -92,7 +99,7 @@ child.on('close', () => {
     console.log('OVERVIEW_ZOOM_TEST_FAIL (no EVAL_RESULT)');
     process.exit(1);
   }
-  const [start, small, overviewOn, persisted, overlayPref, back, overviewAfter] = m[1].split(',');
+  const [start, small, overviewOn, persisted, overlayPref, back, overviewAfter, stableAtLimit] = m[1].split(',');
   const checks = [
     ['開始サイズは復元された180', Number(start) === 180],
     ['Ctrl+ホイール下でタイルが縮む', Number(small) < Number(start)],
@@ -100,6 +107,7 @@ child.on('close', () => {
     ['俯瞰サイズ(<96)で .overview が付く', Number(small) < 96 && overviewOn === 'true'],
     ['停止後に imageTileSize が確定・永続化', Number(persisted) === Number(small)],
     ['タイル情報表示の pref は書き換えない', overlayPref === 'true'],
+    ['端で回し続けてもサイズが動かない', stableAtLimit === 'true'],
     ['Ctrl+ホイール上でズームインして戻る', Number(back) > Number(small)],
     ['96px を越えたら .overview が外れる', Number(back) < 96 || overviewAfter === 'false'],
   ];

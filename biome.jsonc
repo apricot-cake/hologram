@@ -1,13 +1,10 @@
-// Biome 設定（lint+format の単一ツール・BACKLOG「技術スタック候補」採用#1）
+// Biome 設定（lint+format の単一ツール）
 //
-// ⚠️ バージョンは 1.9.4 に完全固定: 2.x への移行はユーザー判断待ちのため固定を
-// 維持する。固定の元理由だった「開発機のアプリ制御ポリシーが 2.x の未署名
-// バイナリをブロックする」件は 2026-07-11 の再検証で解消を確認済み（2.5.3 が
-// 実行可）。上げる時は biome.exe --version が通ることを先に確認すること。
+// バージョンは 1.9.4 に固定: 2.x は設定書式が変わるうえ新ルールの指摘が多数出る
+// ため、移行は単独の作業として #18 で扱う。
 //
 // 方針: Biome を既存コードのスタイルに合わせる（逆ではない）。lineWidth を
-// 大きく取り再折返しチャーンを避ける＝BACKLOG/メモリ内の file:line 参照と
-// git blame を守る。
+// 大きく取り再折返しチャーンを避ける＝既存のコード参照と git blame を守る。
 {
   "$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
   "vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
@@ -18,6 +15,9 @@
       "app/renderer/islands/**",
       // 同上（theme.ts の Vite lib IIFE ビルド出力・renderer/theme.ts が手書きソース）
       "app/renderer/theme.js",
+      // WXT の拡張機能ビルド出力
+      "extension/.output/**",
+      "extension/.wxt/**",
       // 同上（preload.cts の Vite lib CJS ビルド出力・app/preload.cts が手書きソース）
       "app/preload.js",
       // ベンダー同梱・ロックファイル・package.json（npm が所有＝再インストールの
@@ -44,7 +44,7 @@
       // useState の安定 setter を dep 配列へ防御的に含める書き方で、Biome は
       // useExhaustiveDependencies で「余分」と赤にする。無害な余剰 dep のために
       // 再生成のたび upstream から fork するのは保守負債＝この規則だけこの配下で
-      // 無効化する（他の正しさ系は有効のまま）。§8-2 手当ての対象ディレクトリと同じ。
+      // 無効化する（他の正しさ系は有効のまま）。
       "include": ["app/islands/components/ui/**"],
       "linter": {
         "rules": {
@@ -84,8 +84,9 @@
       "recommended": true,
       // 無効化はすべて「リポの意図的イディオム/方針との衝突」。正しさ系は全て有効のまま。
       "a11y": {
-        // デスクトップ Electron アプリで a11y/キーボード操作は目的に掲げない方針
-        // （メモリ hologram-react-settings-pilot「挙動の堅牢性は目的でない」）。
+        // デスクトップアプリとして a11y/キーボード操作を目標に掲げていないため
+        // 一括で無効化している。指摘は 21 件（2026-07-22 実測）で、方針を変える
+        // 場合は全体を戻すのでなくルール単位で有効化する。
         "recommended": false
       },
       "style": {
@@ -94,7 +95,7 @@
         "noParameterAssign": "off" // 引数の正規化再代入（v = coerce(v)）は常用パターン
       },
       "complexity": {
-        "useOptionalChain": "off", // a && a.b イディオム（259件）＝viewer.js は React 化で解体予定・今の一括書換はblame汚しだけ
+        "useOptionalChain": "off", // a && a.b イディオムが 245 箇所（2026-07-22 実測）＝一括書換は blame を汚すだけで得るものがない
         "noForEach": "off", // forEach は許容
         "useArrowFunction": "off" // function 式は hoisting/this 都合で意図的な箇所あり
       },
@@ -102,9 +103,9 @@
         "noAssignInExpressions": "off", // while ((m = re.exec())) 等のイディオム
         "noArrayIndexKey": "off", // 島はモデル丸ごと再pushで index key が正（部分並べ替えをしない）
         "noRedundantUseStrict": "off", // Biome は .js を ESM 扱い＝CJS/plain-script の 'use strict' は本物。削ると sloppy 化の実害
-        // TS 段階導入（BACKLOG 採用#1）の方針: 素JS層（viewer.js/ブリッジ実装）が
-        // 未型付けの間、境界を越えるモデル/ペイロードの明示 any は「意図的な契約」
-        // （globals.d.ts に集約）。素JS層が TS 化される単一バンドル化以降に再訪。
+        // 明示 any が 380 箇所（2026-07-22 実測）。境界を越えるペイロード（IPC・
+        // 拡張⇄ホスト間のメッセージ）の契約として意図的に置いたものを含むため、
+        // 有効化するなら段階的な型付けとセットで行う。
         "noExplicitAny": "off"
       },
       "performance": {

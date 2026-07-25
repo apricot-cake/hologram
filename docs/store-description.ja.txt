@@ -1,5 +1,5 @@
 Chrome Web Store 掲載文（日本語）。英語版: store-description.txt
-SUMMARY は extension/_locales/ja/messages.json の extDesc と一致させること
+SUMMARY は extension/public/_locales/ja/messages.json の extDesc と一致させること
 （ストアの要約欄はマニフェストの description から取られる・最大132文字）。
 申請直前に、全機能の記述を実際に出荷される UI と照合し直すこと
 （リリースまでに機能・用語が変わり得る）。

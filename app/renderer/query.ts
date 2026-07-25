@@ -3,7 +3,7 @@
 // first "pure logic → service" slice of the viewer decomposition (最終形B).
 // A real ES module (named exports) — imported directly by its consumers
 // (viewer.ts / query-chips.ts / sidebar.ts / tabs.ts) via a relative path;
-// touches no DOM. Runtime couplings (collections / clips / fuzzy matcher) are
+// touches no DOM. Runtime couplings (collections / fuzzy matcher) are
 // INJECTED via makePostPredOf(deps), so this file can be exercised standalone
 // (scripts/test-query-unit.cts loads it via a dynamic import()).
 
@@ -31,7 +31,7 @@ export const cloneTree = (tree: HologramQueryNode) => JSON.parse(JSON.stringify(
 // Migration only: rebuild a tree from an old persisted faceted state (f + typeOps).
 export function facetTreeFrom(f: ReadonlyArray<{ type: string; [k: string]: any }>, ops?: Record<string, string> | null): HologramQueryGroup {
   const root = emptyTree();
-  const NO_OP = new Set(['date', 'engagement', 'clip', 'workspace']);
+  const NO_OP = new Set(['date', 'engagement']);
   const byType = new Map<string, { type: string; [k: string]: any }[]>();
   for (const x of f) {
     let list = byType.get(x.type);
@@ -369,14 +369,17 @@ export function normalizeTree(node: any): any {
 
 // --- Post-side leaf predicate factory: a leaf condition → (post)=>bool. ---
 // deps carry the runtime couplings the engine must not own:
-//   isInFolder(id, captureId) / isClipped(captureId) — folders.ts state
+//   isInFolder(id, captureId) — folders.ts state
 //   fuzzyCompile(q) → matcher(string)=>bool, or null to fall back to exact
+//   tagIdOf(name) → the DB tag id for a tag name (#5 2026-07-18 comment — tags
+//     are an ID entity; a saved leaf that only has a name lazily resolves and
+//     caches its id the first time it's evaluated post-DB-migration, below)
 export function makePostPredOf(deps: {
   /** `only` = the leaf's 「このフォルダのみ」 flag; without it a folder stands for its subtree (#41). */
   isInFolder(id: string, captureId: string, only?: boolean): boolean;
-  isClipped(captureId: string): boolean;
   fuzzyCompile?(q: string): ((hay: string) => boolean) | null;
   postKeyOf?(url: string | null | undefined): string | null;
+  tagIdOf?(name: string): number | undefined;
 }): (f: HologramQueryLeaf) => (p: HologramPost) => boolean {
   return function postPredOf(f) {
     switch (f.type) {
@@ -393,8 +396,19 @@ export function makePostPredOf(deps: {
         return (p) => (f.value === 'post' ? !p.isReply && !p.isQuote && !p.isThread : f.value === 'reply' ? !!p.isReply : f.value === 'quote' ? !!p.isQuote : !!p.isThread);
       case 'media':
         return (p) => p.mediaType === f.value;
-      case 'tag':
-        return (p) => (p.tags || []).includes(f.value);
+      // Tag leaves match by tagId when one is available — a rename changes
+      // posts[].tags (the display name) but never the id, so a leaf pinned to
+      // an id survives it (#5 2026-07-18 comment). A leaf saved before the DB
+      // migration carries only `value` (name); it resolves and caches its
+      // tagId here on first evaluation (mirrors the 'text' leaf's _compiled
+      // memo below) rather than needing a separate migration pass over
+      // tabs.json. Falls back to name matching when no id is resolvable
+      // (deps.tagIdOf absent, or the name no longer exists) — never a hard
+      // failure for an old or since-deleted tag.
+      case 'tag': {
+        if (f.tagId == null && deps.tagIdOf) f.tagId = deps.tagIdOf(f.value);
+        return (p) => (f.tagId != null ? (p.tagIds || []).includes(f.tagId) : (p.tags || []).includes(f.value));
+      }
       case 'hashtag':
         return (p) => (p.hashtags || []).includes(f.value);
       // A folder leaf means the folder AND everything nested under it; `only`
@@ -403,10 +417,6 @@ export function makePostPredOf(deps: {
       // meant when nothing had children.
       case 'folder':
         return (p) => deps.isInFolder(f.value, p.captureId, f.only);
-      case 'clip':
-        return (p) => deps.isClipped(p.captureId);
-      case 'workspace':
-        return (p) => deps.isClipped(p.captureId); // legacy alias for any old persisted ws leaf (tabs.json)
       case 'date': {
         const field = f.dateField || 'date';
         const { from, to } = localDayRange(f.from, f.to); // local-day bounds (see localDayRange)

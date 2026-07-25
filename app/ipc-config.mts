@@ -7,7 +7,6 @@
 // allow-lists live here (used only by these handlers).
 import { ipcMain, app } from 'electron';
 import fs from 'node:fs';
-import path from 'node:path';
 
 // --- Preferences (language / viewMode / skipDeleteConfirm / sortBy) ---
 const PREF_KEYS = ['language', 'viewMode', 'skipDeleteConfirm', 'sortBy', 'imageTileSize', 'cardSize', 'listThumb', 'theme', 'tileOverlay', 'browseMode', 'posterViewMode', 'posterTileSize', 'posterCardSize', 'sidebarOpen', 'sidebarWidth', 'inspectorWidth'];
@@ -19,7 +18,7 @@ const VALID_SORTS = ['date-desc', 'date-asc', 'likes-desc', 'reposts-desc', 'rep
 const VALID_EXT_ID = /^[a-p]{32}$/;
 
 function register(ctx) {
-  const { readConfig, writeConfig, getSaveFolder, readOrgJsonSync, writeOrgJsonSync, installer, getWin } = ctx;
+  const { readConfig, writeConfig, getSaveFolder, getDbWriter, installer, getWin } = ctx;
 
   ipcMain.handle('get-config', () => {
     const cfg = readConfig();
@@ -67,16 +66,12 @@ function register(ctx) {
   });
 
   ipcMain.handle('get-tabs', () => {
-    const folder = getSaveFolder();
-    if (!folder) return null;
-    const { value: raw } = readOrgJsonSync(path.join(folder, 'tabs.json'));
-    return raw && Array.isArray(raw.tabs) ? raw : null;
+    return getSaveFolder() ? getDbWriter().getTabs() : null;
   });
   ipcMain.handle('set-tabs', (_e, data) => {
-    const folder = getSaveFolder();
-    if (!folder) return { ok: false };
+    if (!getSaveFolder()) return { ok: false };
     try {
-      writeOrgJsonSync(path.join(folder, 'tabs.json'), data);
+      getDbWriter().setTabs(data);
       return { ok: true };
     } catch {
       return { ok: false };

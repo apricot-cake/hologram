@@ -2,10 +2,10 @@ import { useEffect, useState } from 'react';
 import { hologramPostSidebarSource } from '../../renderer/sidebar.ts';
 import { t } from '../_shared/i18n.ts';
 import { getTagLabels } from '../../renderer/tags.ts';
-import { Glyph, ICON, ICON_TRASH, Row } from './parts.tsx';
+import { Glyph, ICON, Row } from './parts.tsx';
 
 // Post-mode filter-row column (#filterRows). Pure presentation, PULLING its own model
-// from renderer/sidebar.ts's hologramPostSidebarSource (badges/visible/clip/multi/openCat
+// from renderer/sidebar.ts's hologramPostSidebarSource (badges/visible/multi/openCat
 // derived from hologramStore + the tags/folders/posts-data services — see that file). Row
 // NAMES are resolved here via t() (static i18n keys) or kindLabel() (the user-renamable
 // 作品/キャラ label), not carried in the model — the same "island resolves its own i18n"
@@ -65,21 +65,6 @@ export function Sidebar() {
     <>
       <div className="sb-title" id="sbFilterTitle">
         {t('sbFilterTitle')}
-      </div>
-      {/* Clip: library-wide ephemeral flag, a 2-state toggle with an inline clear button.
-          Badge + clear are SIBLINGS of the button (not inside it) — same as the old HTML. */}
-      <div className="clip-row-wrap">
-        <button className={m.clip.active ? 'sb-row clip-row active' : 'sb-row clip-row'} id="clipRow" type="button" data-tip={t('clipRowTip')} data-tip-rich="">
-          <Glyph className="sb-row-ic" svg={ICON.clip} />
-          <span className="sb-row-name" id="sbClipTitle">
-            {t('clipTitle')}
-          </span>
-        </button>
-        <span className={m.clip.count > 0 ? 'sb-row-badge on' : 'sb-row-badge'} id="clipBadge">
-          {m.clip.count > 0 ? m.clip.count : ''}
-        </span>
-        {/* biome-ignore lint/security/noDangerouslySetInnerHtml: SVG-glyph pattern — the trash icon is an app-defined constant. Kept as button>svg (not button>span>svg) to match the old innerHTML DOM. */}
-        <button className="clip-clear-btn" id="clipClear" type="button" aria-label={t('clipEmpty')} data-tip={t('clipEmptyTip')} style={{ display: m.clip.clearVisible ? '' : 'none' }} dangerouslySetInnerHTML={{ __html: ICON_TRASH }} />
       </div>
       {FLYOUT_ROWS.map(row)}
       {/* 複数画像 (grouped): a direct 2-state toggle (no data-qfrow, no flyout). */}

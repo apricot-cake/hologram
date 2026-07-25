@@ -12,6 +12,13 @@
 // plain named export now (the planned duplicate-save detection can import the same
 // URL→key normalization when it lands).
 import { hologramIpc } from './ipc.ts';
+// URL→identity-key normalization lives in native-host/ because the bridge owns it
+// too (the TL "saved" badge asks it whether a permalink is already in the library,
+// #54) and a second copy here would let the badge and the grid disagree about
+// which posts are the same post. Re-exported so every renderer importer keeps
+// reaching it through this service, unchanged.
+import { postKeyOf } from '../../native-host/post-key.mts';
+export { postKeyOf };
 
 // Per-density image source. A post may carry both a capture (screenshot) and
 // real media/artwork; the density decides which leads:
@@ -43,25 +50,6 @@ export function densityImage(p: HologramPost, density: string): string {
 // one post) collapse into one card. Manual groups (manual-groups.json) win
 // over auto. ungrouped.json opts individual post keys out.
 export const postIdKey = (p: HologramPost): string => p.captureId || (p.url || '') + '|' + (p.capturedAt || '');
-// Same URL patterns as metadata.js parsePostUrl (renderer-side copy). null = don't group.
-export function postKeyOf(url: string | null | undefined): string | null {
-  if (!url) return null;
-  let u: any;
-  try {
-    u = new URL(url);
-  } catch {
-    return null;
-  }
-  const host = u.hostname,
-    pa = u.pathname;
-  let m: any;
-  if (host === 'bsky.app' && (m = pa.match(/^\/profile\/([^/]+)\/post\/([^/?#]+)/))) return 'bluesky:' + m[1] + '/' + m[2];
-  if ((host === 'x.com' || host === 'twitter.com') && (m = pa.match(/\/status\/(\d+)/))) return 'x:' + m[1];
-  if ((m = pa.match(/^\/@[^/]+\/(\d[\w-]*)\/?$/))) return 'mastodon:' + host + ':' + m[1];
-  if ((m = pa.match(/^\/notes\/([^/?#]+)/))) return 'misskey:' + host + ':' + m[1];
-  if ((host === 'www.pixiv.net' || host === 'pixiv.net') && (m = pa.match(/^(?:\/[a-z]{2})?\/artworks\/(\d+)/))) return 'pixiv:' + m[1];
-  return null;
-}
 // The "artwork pages" of one record: original media, else the dragged/migrated image.
 export const groupFilesOf = (p: HologramPost): string[] => {
   const m = mediaFilesOf(p);
@@ -312,14 +300,14 @@ export function makeGallery(deps: { fileSrc(file: string): string }) {
 // --- Card view model (per-card presentation derivation) ---------------------
 // The model PostCard.tsx renders (grid modelOf). Pure field-mapping over a
 // group + the live view density; every runtime coupling (current density,
-// learned-aspect cache, selection set, clip flag, thumb widths, i18n messages,
+// learned-aspect cache, thumb widths, i18n messages,
 // asset URLs) is INJECTED so this stays DOM-free and Node-testable. The subtle
 // rules that used to live inside renderPosts are locked here: engagement
 // zero-suppression, both-date same-day dedup, body-text dedup vs the author
 // line, GIF full-size (no thumb) in card/list, card-masonry height reservation
 // (shotW/H → learned cache), and the multi-image back-stack sheets.
 //   deps.currentView() / imgAspect() are getters (viewer reassigns the lets);
-//   isClipped/fileSrc keep folder + asset knowledge viewer-owned. Selection is
+//   fileSrc keeps folder + asset knowledge viewer-owned. Selection is
 //   NOT here — the grid island derives .selected straight from hologramStore's
 //   'selectedSet' (same pattern as inspectedKey), so this stays selection-free.
 export function makeCardModel(deps: {
@@ -328,7 +316,6 @@ export function makeCardModel(deps: {
   formatDate(d: string): string;
   compactDate(d: string): string;
   fileSrc(file: string, w?: number): string;
-  isClipped(captureId: string): boolean;
   smokeCapture: boolean;
   currentView(): string;
   imgAspect(): Record<string, string>;
@@ -336,7 +323,7 @@ export function makeCardModel(deps: {
   cardThumbW(): number;
   listThumbW(): number;
 }) {
-  const { t, formatCount, formatDate, compactDate, fileSrc, isClipped, smokeCapture, currentView, imgAspect, tileThumbW, cardThumbW, listThumbW } = deps;
+  const { t, formatCount, formatDate, compactDate, fileSrc, smokeCapture, currentView, imgAspect, tileThumbW, cardThumbW, listThumbW } = deps;
   return function cardModel(g: HologramPostGroup, i: number): Record<string, any> {
     const p = g.rep;
     const view = currentView();
@@ -391,7 +378,6 @@ export function makeCardModel(deps: {
       url: p.url || '',
       postKey,
       noUrl: !p.url,
-      clipped: isClipped(p.captureId),
       hasThumb: !!(imgFile || p.video),
       imgSrc: imgFile ? fileSrc(imgFile, imgW) : '',
       captureId: p.captureId || '',

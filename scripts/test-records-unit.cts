@@ -224,7 +224,7 @@ async function main() {
     assert('group 複数＝src 去重・元画像先頭キャプチャ末尾', gi.map((i) => i.src).join() === 'stub://c.png,stub://shot.jpg');
   }
 
-  // --- makeCardModel: per-card view model（濃度/学習アスペクト/選択/クリップ/フラグ/両日付） ---
+  // --- makeCardModel: per-card view model（濃度/学習アスペクト/選択/フラグ/両日付） ---
   {
     const STATIC_MSG = { qfThread: 'THREAD', qfReply: 'REPLY', qfQuote: 'QUOTE', qfImage: 'IMG', qfVideo: 'VID', qfGif: 'GIF' };
     const t = (key, subs) => {
@@ -240,7 +240,6 @@ async function main() {
       formatDate: (d) => 'D' + d,
       compactDate: (d) => d.slice(0, 10),
       fileSrc: (f, w) => f + '@' + (w || 0),
-      isClipped: (id) => id === 'clip-cap',
       smokeCapture: false,
       currentView: () => view,
       imgAspect: () => aspect,
@@ -304,11 +303,10 @@ async function main() {
     const pnoshot = { ...p, shotW: 0, shotH: 0 };
     assert('cardModel aspRatio 学習キャッシュ fallback（capX→4/3）', cardModel({ rep: pnoshot, records: [pnoshot], files: ['a.jpg'] }, 0).aspRatio === '4/3');
 
-    // Tile density: no aspect reservation; clip reflected from deps.
+    // Tile density: no aspect reservation.
     view = 'tile';
-    const pclip = { ...p, captureId: 'clip-cap' };
-    const mt = cardModel({ rep: pclip, records: [pclip], files: ['a.jpg'] }, 0);
-    assert('cardModel tile は aspRatio 空・clip 反映（isClipped）', mt.aspRatio === '' && mt.clipped === true);
+    const mt = cardModel({ rep: p, records: [p], files: ['a.jpg'] }, 0);
+    assert('cardModel tile は aspRatio 空', mt.aspRatio === '');
   }
 
   // --- dragFilesOf: ドラッグアウトが何を渡すか（#132） ---

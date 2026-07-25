@@ -6,8 +6,9 @@
 //   - Apply is inert until something is staged
 //   - staged tags are NOT written until Apply — cancelling discards them
 //   - a reopened dialog starts empty (staging is per-open, not sticky)
-//   - Apply merges the staged tags into every selected record's sidecar json,
-//     keeping the tags each record already had (additive is the only mode)
+//   - Apply merges the staged tags into every selected record's tags (post_tags
+//     in the DB — #298/St5 made tag edits a DB-only write), keeping the tags
+//     each record already had (additive is the only mode)
 //
 // This replaces tag-pop's mode:'bulk', where the staging lived in a renderer
 // module (bulk-edit.ts); it now lives in the dialog's React state. The "discard"
@@ -26,6 +27,7 @@ const path = require('node:path');
 
 const appDir = path.join(__dirname, '..', 'app');
 const electronPath = require(path.join(appDir, 'node_modules', 'electron'));
+const { openDatabase } = require(path.join(appDir, 'lib-db.mts'));
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-bulktag-'));
 const configDir = path.join(tmp, 'Hologram');
@@ -152,15 +154,23 @@ child.stdout.on('data', (d) => {
 });
 
 child.on('close', () => {
-  const tagsOf = (id: string): string[] => {
-    try {
-      return JSON.parse(fs.readFileSync(path.join(saveFolder, `${id}.json`), 'utf8')).tags || [];
-    } catch {
-      return [];
-    }
-  };
-  const a = tagsOf('bulk-a');
-  const b = tagsOf('bulk-b');
+  // #298/St5: tag edits are DB-only (app/ipc-trash.mts's update-tags no longer
+  // touches the sidecar), so persistence is asserted against post_tags, not disk.
+  let a: string[] = [];
+  let b: string[] = [];
+  try {
+    const { sqlite } = openDatabase(path.join(configDir, 'hologram.db'), { readonly: true });
+    const tagsOf = (id: string) =>
+      sqlite
+        .prepare('SELECT t.name FROM post_tags pt JOIN tags t ON t.id = pt.tagId WHERE pt.postId = ? ORDER BY pt.rowid')
+        .all(id)
+        .map((r: any) => r.name);
+    a = tagsOf('bulk-a');
+    b = tagsOf('bulk-b');
+    sqlite.close();
+  } catch {
+    /* reported as failed checks below */
+  }
   fs.rmSync(tmp, { recursive: true, force: true });
   const m = /EVAL_RESULT "(.+?)"\s*$/m.exec(out);
   let r = null;

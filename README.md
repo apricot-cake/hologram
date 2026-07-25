@@ -33,10 +33,13 @@ X (Twitter) ・ Bluesky ・ Misskey ・ Mastodon ・ pixiv
 
 When you find a post you like —
 
-- **Press `Alt+S` and click the post** — saves a screenshot plus the text, author, date, engagement, and other details.
+- **Point at an image and press the save button** in its corner — saves the picture along with the post's text, author and source. One click, without leaving the timeline.
+- **Press `Alt+S` and click the post** — saves a screenshot plus the text, author, date, engagement, and other details. This is the one that captures how the post *looks*; the corner button does not.
 - **Drag an image** — save pixiv illustrations and the like as the image itself.
 
 What you save gathers automatically in the desktop app (it watches the save folder, so new captures show up in the list right away).
+
+Point at an image you've already saved and the same corner shows a small mark instead — no more stopping to wonder whether you saved that one. The check happens entirely on your computer, and works with the app closed. On the extension's options page you can have the mark show all the time instead of only on hover, or not at all, and turn the save button off.
 
 ### 2. Browse & read
 
@@ -56,9 +59,8 @@ Active filters gather at the top of the screen; **Reset** clears them all at onc
 
 ### 4. Organize
 
-- **Tags** — right-click a card → "Edit tags." There's also a "tagging session" to tag untagged posts one after another.
+- **Tags** — right-click a card → "Edit tags." To tag a batch of untagged posts, filter to "no tags," save that search, then step through with the arrow keys and type into the tag field as you go.
 - **Folders** — right-click → "Add to a folder…" to group by theme or favorites.
-- **Clip** — hover a card and hit 📎 to collect items into a temporary tray for comparison.
 - **Bulk actions** — select multiple posts with the ○ at the top-left of each card, then tag, add to a folder, group, or delete them all at once.
 
 ### 5. Backup & portability

@@ -1,12 +1,17 @@
 'use strict';
 
 import { app, BrowserWindow, ipcMain, dialog, shell, protocol, nativeImage, nativeTheme, screen } from 'electron';
+import log from 'electron-log/main';
 import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 
 import { createPostIndex, computeDelta } from './lib-index.mts';
+import { openDatabase, DatabaseCorruptError } from './lib-db.mts';
+import { createDbImporter } from './lib-db-import.mts';
+import { postsFromDb, postsByIds } from './lib-db-query.mts';
+import { createDbWriter } from './lib-db-write.mts';
 import { pruneDecision, nextBaseline } from './backup-guard.mts';
 import { parseJsonLoose } from './lib-json.mts';
 // Save-folder relocation engine (copy+catch-up → flip → verified cleanup → sweep).
@@ -49,6 +54,15 @@ const APP_ICON = path.join(__dirname, 'assets', 'icon.png');
 app.setPath('userData', configDir());
 
 const CONFIG_PATH = path.join(configDir(), 'config.json');
+
+// Keep diagnostics next to the configuration shared with the native host, rather
+// than Electron's AppData default. MSIX storage virtualization can otherwise make
+// the log appear in a different location from the configuration it describes.
+log.transports.file.resolvePathFn = () => path.join(configDir(), 'logs', 'main.log');
+// We own the preload bridge, so electron-log must not register a second preload
+// script for every session. app/preload.cts imports electron-log/preload instead.
+log.initialize({ preload: false });
+log.errorHandler.startCatching({ showDialog: false });
 
 // Custom scheme to serve images from the (arbitrary) save folder. Lets the
 // renderer lazy-load images by filename without disabling webSecurity or
@@ -178,41 +192,15 @@ function initSaveFolderRedundancy() {
   }
 }
 
-// One-time migration (2026-06-25): configDir moved OUT of %APPDATA% to a
-// non-virtualized home dir (~/.hologram — see native-host/paths.js). Carry the user's
-// existing config.json (+ redundant pointer) over from the old %APPDATA%\Hologram
-// location so settings (saveFolder, extensionId, backup) survive the move. Must run
-// before the first config read. Best-effort + idempotent: skips once the new config
-// exists, and never deletes the old copy (left as a fallback/forensic trail).
-function migrateConfigDirFromAppData() {
-  if (process.platform !== 'win32') return;
-  const oldBase = process.env.APPDATA;
-  if (!oldBase) return;
-  const oldDir = path.join(oldBase, 'Hologram');
-  const newDir = configDir();
-  try {
-    if (path.resolve(oldDir) === path.resolve(newDir)) return; // override points back at old (e.g. tests)
-    if (fs.existsSync(path.join(newDir, 'config.json'))) return; // already migrated / fresh on new
-    if (!fs.existsSync(path.join(oldDir, 'config.json'))) return; // nothing to carry over
-    fs.mkdirSync(newDir, { recursive: true });
-    fs.copyFileSync(path.join(oldDir, 'config.json'), path.join(newDir, 'config.json'));
-    const oldPtr = path.join(oldDir, 'saveFolder.path');
-    if (fs.existsSync(oldPtr)) fs.copyFileSync(oldPtr, path.join(newDir, 'saveFolder.path'));
-    console.log(`Migrated config ${oldDir} -> ${newDir}`);
-  } catch (err) {
-    console.error('Config-dir migration failed (continuing):', err);
-  }
-}
-
 // App-internal metadata files that live in the save folder but are NOT posts.
 // The renderer writes these constantly (tabs.json on every tab switch via
 // persistTabsDebounced, folders/groups/ungrouped on edits), so the watcher must
 // IGNORE them — otherwise each write self-triggers a full library reload
 // (listPosts re-reads all sidecars, ~1s on a 9k-post folder) and the UI stalls.
-const INTERNAL_FILES = new Set(['config.json', '.index.json', 'tag-groups.json', 'tag-types.json', 'ungrouped.json', 'manual-groups.json', 'folders.json', 'tabs.json', 'poster-favorites.json', 'poster-folders.json', 'poster-tags.json']);
+const INTERNAL_FILES = new Set(['config.json', '.index.json', 'tag-types.json', 'ungrouped.json', 'manual-groups.json', 'folders.json', 'tabs.json', 'poster-favorites.json', 'poster-folders.json', 'poster-tags.json']);
 
 // The subset of INTERNAL_FILES that the renderer REWRITES in place on every edit
-// (organization layer: tags / groups / folders / clip / poster-* / open tabs).
+// (organization layer: tags / groups / folders / poster-* / open tabs).
 // Unlike write-once captures (.jpg + .json sidecar), these mutate, so
 // a backup that only copies "files not yet present at dest" freezes them at their
 // first-ever contents — restoring from that mirror would silently discard every
@@ -220,7 +208,7 @@ const INTERNAL_FILES = new Set(['config.json', '.index.json', 'tag-groups.json',
 // these whenever the source changed (size or mtime). config.json lives in
 // configDir (never in the save folder) and .index.json is a rebuildable snapshot
 // already skipped by the backup, so neither belongs here.
-const MUTABLE_INTERNAL = new Set(['tag-groups.json', 'tag-types.json', 'ungrouped.json', 'manual-groups.json', 'folders.json', 'tabs.json', 'poster-favorites.json', 'poster-folders.json', 'poster-tags.json']);
+const MUTABLE_INTERNAL = new Set(['tag-types.json', 'ungrouped.json', 'manual-groups.json', 'folders.json', 'tabs.json', 'poster-favorites.json', 'poster-folders.json', 'poster-tags.json']);
 
 // Watch the save folder and tell the renderer to refresh when files change
 // (e.g. a new capture arrives, or dummy data is injected). Debounced because a
@@ -270,11 +258,116 @@ function watchSaveFolder() {
   }
 }
 
-// --- Posts (scan sidecars, via the on-disk + in-memory index) ---
-// listPosts is now async and O(changed): the index re-reads only sidecars whose
-// mtime moved and restores the rest from .index.json / memory, so a post-capture
-// refresh no longer freezes the main process (was ~900ms full re-scan on ~9k).
+// --- Posts (DB-backed read path — #5 St4 / #297) ---
+// The renderer's post array now comes from SQLite (lib-db-query.mts), not a
+// sidecar scan: a cold launch is a SELECT instead of tens of thousands of
+// readFileSync+JSON.parse calls. Sidecars remain the truth (write path is
+// still St5/#298) — postIndex's filename+mtimeMs scan is kept AS the change
+// detector (fs.watch has no cheaper signal than "these files' mtimes moved"),
+// and dbImporter (#296) re-derives the DB from exactly what it finds changed,
+// sharing this ONE postIndex instance so the DB sync and the change-detection
+// scan never duplicate a cold or warm folder scan.
 const postIndex = createPostIndex({ internalFiles: INTERNAL_FILES });
+const dbImporter = createDbImporter({ internalFiles: INTERNAL_FILES, postIndex });
+
+// hologram.db lives in configDir, NOT the save folder: #5's design comments
+// (2026-07-17 orphan-recovery comment, 2026-07-21 cloud-sync-unfriendly note)
+// already assume the live DB is never naively copied by a folder-level sync —
+// putting the single-writer file inside a save folder a user points at a
+// cloud-synced directory (exactly what #95/#101 warn about) would defeat that
+// assumption on day one. thumb-cache sits in configDir for the same "local,
+// not portable with the library" reason.
+// A corrupt hologram.db self-heals by deletion at this stage: the DB is still
+// a DERIVED index (sidecars remain the truth until #298/St5), same recovery
+// story lib-index.mts already gives a corrupt .index.json ("no/invalid
+// snapshot -> cold scan will populate it") — dbImporter.importAll rebuilds it
+// whole from the sidecars on the very next call.
+let dbHandle: { db: any; sqlite: any } | null = null;
+function ensureDb() {
+  if (dbHandle) return dbHandle;
+  const file = path.join(configDir(), 'hologram.db');
+  try {
+    dbHandle = openDatabase(file);
+  } catch (err) {
+    if (!(err instanceof DatabaseCorruptError)) throw err;
+    for (const suffix of ['', '-wal', '-shm']) {
+      try {
+        fs.rmSync(file + suffix, { force: true });
+      } catch {
+        /* best-effort */
+      }
+    }
+    dbHandle = openDatabase(file);
+  }
+  return dbHandle;
+}
+
+function getDbWriter() {
+  return createDbWriter(ensureDb().sqlite);
+}
+
+// Preserve the legacy metadata before marking the database authoritative. The
+// media files stay in the library; this snapshot is specifically the complete
+// sidecar and organization-JSON source that St5 stops mutating. Keep it next
+// to the DB, not inside the library, so it cannot be mistaken for a new post.
+async function backupLegacyMetadata(folder: string) {
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const destination = path.join(configDir(), 'db-migration-backups', stamp);
+  await fs.promises.mkdir(destination, { recursive: true });
+  for (const name of await fs.promises.readdir(folder)) {
+    if (!name.toLowerCase().endsWith('.json')) continue;
+    await fs.promises.copyFile(path.join(folder, name), path.join(destination, name));
+  }
+  const trash = path.join(folder, TRASH_SUBDIR);
+  try {
+    const trashDestination = path.join(destination, TRASH_SUBDIR);
+    await fs.promises.mkdir(trashDestination, { recursive: true });
+    for (const name of await fs.promises.readdir(trash)) {
+      if (name.toLowerCase().endsWith('.json')) await fs.promises.copyFile(path.join(trash, name), path.join(trashDestination, name));
+    }
+  } catch {
+    // A library without a trash directory is the ordinary case.
+  }
+  return destination;
+}
+
+// One-time flip-time backfill: userKind/tagReviewed (the tagging wizard's
+// plain/media + reviewed flags) were sidecar-only fields written by the old
+// update-tags handler — never part of PostRecordShape (native-host/post-record.mts
+// excludes them on purpose), so lib-db-import.mts's importer has never carried
+// them into the DB. Once update-tags stops touching the sidecar (#298/St5),
+// this is the only remaining chance to pull an existing library's review state
+// in before the sidecar values become unreachable. Runs after importAll so
+// every captureId already has a posts row to update.
+async function backfillPostFlags(folder: string, sqlite: any) {
+  let names: string[];
+  try {
+    names = await fs.promises.readdir(folder);
+  } catch {
+    return;
+  }
+  const writer = createDbWriter(sqlite);
+  for (const name of names) {
+    if (!name.toLowerCase().endsWith('.json') || INTERNAL_FILES.has(name)) continue;
+    const captureId = name.slice(0, -5);
+    let rec: any;
+    try {
+      rec = parseJsonLoose(await fs.promises.readFile(path.join(folder, name), 'utf8'));
+    } catch {
+      continue;
+    }
+    if (rec) writer.restorePostFlags(captureId, rec);
+  }
+}
+
+async function ensureDbTruthSource(folder: string, handle: { db: any; sqlite: any }) {
+  if (getDbWriter().stateGet('truthSource') === 'db') return;
+  await backupLegacyMetadata(folder);
+  await dbImporter.importAll(folder, handle);
+  await backfillPostFlags(folder, handle.sqlite);
+  getDbWriter().stateSet('truthSource', 'db');
+}
+
 let snapshotTimer: any = null;
 function scheduleSnapshot(folder) {
   // Debounced + best-effort. .index.json is in INTERNAL_FILES, so this write does
@@ -286,12 +379,29 @@ function scheduleSnapshot(folder) {
     });
   }, 1500);
 }
-async function listPosts() {
+// Brings the DB fully up to date with whatever is on disk and returns the open
+// handle (null if no save folder is set yet) — the same steps listPosts()
+// already ran before reading. #298/St5 write handlers (update-tags today)
+// share this: a post-level DB write assumes its captureId already has a posts
+// row, which is only guaranteed once an import has run at least once this
+// session — an IPC call is not guaranteed to arrive after the renderer's own
+// first listPosts().
+async function ensurePostsSynced() {
   const folder = getSaveFolder();
-  if (!folder) return { saveFolder: null, posts: [] };
-  const { posts, changed } = await postIndex.list(folder);
-  if (changed) scheduleSnapshot(folder);
-  return { saveFolder: folder, posts };
+  if (!folder) return null;
+  const handle = ensureDb();
+  await ensureDbTruthSource(folder, handle);
+  const report = await dbImporter.importAll(folder, handle);
+  // addedIds (not postsWritten, which counts every reconciled post — see
+  // lib-db-import.mts) reflects what actually changed this call.
+  if (report.addedIds.length || report.postsRemoved) scheduleSnapshot(folder);
+  return handle;
+}
+async function listPosts() {
+  const handle = await ensurePostsSynced();
+  if (!handle) return { saveFolder: null, posts: [] };
+  const posts = await postsFromDb(handle.sqlite);
+  return { saveFolder: getSaveFolder(), posts };
 }
 
 // Delta variant for the renderer. Serializing all ~9k records over IPC on every
@@ -305,6 +415,11 @@ async function listPosts() {
 //   undefined/null -> reliable hint unavailable: full folder re-scan
 //   []             -> files changed but no sidecar among them: nothing to ship
 //   [names…]       -> re-stat ONLY these sidecars (the O(changed) fast path)
+//
+// The change-detection STAMP stays sidecar mtimeMs (postIndex.list()'s own
+// bookkeeping) even though the POSTS themselves now come from the DB — mtimeMs
+// is still the cheapest true signal for "did this file change", and reusing it
+// means computeDelta (lib-index.mts, unchanged) needs no DB-awareness at all.
 let _deltaFolder = null;
 let _lastSent = new Map(); // captureId -> mtimeMs last delivered to the renderer
 async function listPostsDelta(haveBaseline, changedNames) {
@@ -314,32 +429,33 @@ async function listPostsDelta(haveBaseline, changedNames) {
     _lastSent = new Map();
     return { saveFolder: null, full: true, posts: [] };
   }
+  const handle = ensureDb();
+  await ensureDbTruthSource(folder, handle);
 
   // Full (re)sync or hint-less refresh: scan the whole folder (the reliable path).
   if (!haveBaseline || _deltaFolder !== folder || changedNames == null) {
-    const { posts, changed, stamps } = await postIndex.list(folder);
-    if (changed) scheduleSnapshot(folder);
+    const report = await dbImporter.importAll(folder, handle);
+    if (report.addedIds.length || report.postsRemoved) scheduleSnapshot(folder);
+    const posts = await postsFromDb(handle.sqlite);
+    const stamps = new Map(posts.map((p: any) => [p.captureId, p.updatedAt]));
     if (!haveBaseline || _deltaFolder !== folder) {
       _deltaFolder = folder;
-      _lastSent = new Map(stamps);
+      _lastSent = stamps;
       return { saveFolder: folder, full: true, posts };
     }
     const { added, removed } = computeDelta(_lastSent, posts, stamps); // hint-less delta vs baseline
-    _lastSent = new Map(stamps);
+    _lastSent = stamps;
     return { saveFolder: folder, full: false, added, removed };
   }
 
   // Targeted: only the named sidecars moved — no folder-wide stat.
   if (changedNames.length === 0) return { saveFolder: folder, full: false, added: [], removed: [] };
-  const r: any = await postIndex.applyChanges(folder, changedNames);
-  const added: any[] = [];
-  for (const t of r.added) {
-    _lastSent.set(t.id, t.mtimeMs);
-    added.push(t.record);
-  }
-  for (const id of r.removed) _lastSent.delete(id);
-  if (r.added.length || r.removed.length) scheduleSnapshot(folder);
-  return { saveFolder: folder, full: false, added, removed: r.removed };
+  const report = await dbImporter.importChanged(folder, handle, changedNames);
+  const added = report.addedIds.length ? await postsByIds(handle.sqlite, report.addedIds) : [];
+  for (const p of added) _lastSent.set(p.captureId, p.updatedAt);
+  for (const id of report.removedIds) _lastSent.delete(id);
+  if (report.postsWritten || report.postsRemoved) scheduleSnapshot(folder);
+  return { saveFolder: folder, full: false, added, removed: report.removedIds };
 }
 
 // --- Native host registration (idempotent, on each launch) ---
@@ -511,7 +627,7 @@ function registerImageProtocol() {
 // Posts handlers (list-posts / list-posts-delta / image-data-url) were extracted to
 // ./ipc-posts.js (registered via ipcPosts.register below).
 
-// Organization-layer handlers (tag-groups / tag-types / ungrouped / manual-groups /
+// Organization-layer handlers (tag-types / ungrouped / manual-groups /
 // folders / collections / poster-folders / poster-tags) were extracted to
 // ./ipc-organize.js (registered via registerOrganize(ipcCtx) below).
 
@@ -541,8 +657,8 @@ function resolveInFolder(name) {
 // fs.watch event): JSON.parse throws, the record reads as null, and the prior
 // record's captureId is pushed to `removed`. The renderer then drops it from
 // _postsById and reconcileFolders() PERMANENTLY purges that captureId from
-// folders.json membership and the clip set. The card reappears on the next
-// watch event but its folder/clip membership is gone for good. The .tmp
+// folders.json membership. The card reappears on the next
+// watch event but its folder membership is gone for good. The .tmp
 // suffix is invisible to the watcher (its regex only matches jpe?g|jfif|png|
 // webp|gif|json). Mirrors lib-index's writeSnapshot.
 async function writeSidecarAtomic(jsonPath, rec) {
@@ -825,7 +941,7 @@ async function runBackup(reason) {
     // Decide whether a destination copy is stale and must be refreshed. Write-once
     // captures (.jpg + .json sidecar) never change, so their presence at dest is
     // proof enough — re-copying would only waste I/O. Mutable internal files
-    // (organization JSON: tags / folders / collections / clip / tabs / poster-*)
+    // (organization JSON: tags / folders / collections / tabs / poster-*)
     // are rewritten on every edit, so compare size+mtime and re-copy on drift;
     // otherwise the mirror freezes at the first backup and a restore loses edits.
     // mtime is compared at whole-millisecond granularity: stat().mtimeMs carries
@@ -1057,6 +1173,8 @@ function installNavigationGuards() {
 function registerExtractedIpc() {
   const ctx = {
     getSaveFolder,
+    getDbWriter,
+    ensurePostsSynced,
     readOrgJsonSync,
     writeOrgJsonSync,
     listPosts,
@@ -1180,6 +1298,13 @@ function createWindow(show = true) {
 // and quits once the renderer has loaded. Run with HOLOGRAM_SMOKE=1.
 const SMOKE = process.env.HOLOGRAM_SMOKE === '1';
 
+// Sandbox verify instance (scripts/sandbox-app.cts): a visible, persistent
+// second instance on an isolated HOLOGRAM_CONFIG_DIR. Unlike SMOKE it stays
+// interactive, but like SMOKE it must never touch machine-shared state — host
+// registration would point the real Chrome's HKCU manifest entry at the
+// sandbox config dir and break real captures.
+const SANDBOX = process.env.HOLOGRAM_SANDBOX === '1';
+
 // Single instance: a second launch focuses the existing window instead of
 // opening a duplicate (which would fight over the shared userData/cache).
 // Skipped under SMOKE so isolated headless test runs never block each other.
@@ -1202,9 +1327,8 @@ if (!gotSingleInstanceLock) {
     // icon (not electron.exe's) in dev too. electron-builder sets this for the
     // installed exe; setting it here covers the HologramLaunch dev run.
     app.setAppUserModelId('com.hologram.app');
-    // Carry config over from the old %APPDATA% location now that configDir moved out
-    // of AppData (must run before any config read). 2026-06-25.
-    migrateConfigDirFromAppData();
+    log.eventLogger.startLogging();
+    log.info('Starting Hologram', { packaged: app.isPackaged, version: app.getVersion() });
     // Recover/refresh the redundant save-folder pointer FIRST, so the rest of startup
     // (watcher, listPosts, native host) sees a config repaired from the pointer rather
     // than the empty default when config was truncated. (2026-06-23 incident.)
@@ -1217,9 +1341,9 @@ if (!gotSingleInstanceLock) {
     } catch {
       /* ignore */
     }
-    // Dev server runs (HOLOGRAM_DEV_SERVER) never capture, so skip host registration —
+    // Dev server and sandbox runs never capture, so skip host registration —
     // no HKCU writes and no native-host copy into the shared ~/.hologram.
-    if (!SMOKE && !DEV_SERVER_URL) ensureHostRegistered();
+    if (!SMOKE && !SANDBOX && !DEV_SERVER_URL) ensureHostRegistered();
     registerImageProtocol();
     installNavigationGuards();
     const startMin = !SMOKE && process.env.HOLOGRAM_START_MINIMIZED === '1';
@@ -1314,4 +1438,12 @@ if (!gotSingleInstanceLock) {
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
+});
+
+app.on('before-quit', () => {
+  try {
+    dbHandle?.sqlite.close();
+  } catch {
+    /* already closed, or never opened this run */
+  }
 });

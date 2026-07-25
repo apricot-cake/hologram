@@ -5,8 +5,8 @@
 // Each export just forwards to window.hologram, so this slice was a pure rename with zero
 // behavior change. Grouping the calls by domain into the sibling services that already
 // own that logic is the follow-up slice — done so far for tabs (tab-state.js:
-// loadTabs/persistTabs), tags/tag-types/poster-tags (tags.js: loadTagGroups/
-// persistTagGroups, loadTagTypes/persistTagTypes, loadPosterTags/persistPosterTags), and
+// loadTabs/persistTabs), tags/tag-types/poster-tags (tags.js: loadTagTypes/
+// persistTagTypes, loadPosterTags/persistPosterTags), and
 // grouping opt-outs (records.js: loadManualGroups/persistManualGroups, loadUngrouped/
 // persistUngrouped), poster-folders (folders.js: createPersistedFolderStore), trash
 // (trash.ts: listTrash/restorePost/deleteFromTrash/emptyTrash), backup (backup.ts:
@@ -29,8 +29,6 @@ export const hologramIpc: HologramPreload = {
   setExtensionId: (id) => bridge().setExtensionId(id),
   listPosts: () => bridge().listPosts(),
   listPostsDelta: (haveBaseline, changedNames) => bridge().listPostsDelta(haveBaseline, changedNames),
-  getTagGroups: () => bridge().getTagGroups(),
-  setTagGroups: (groups) => bridge().setTagGroups(groups),
   getTagTypes: () => bridge().getTagTypes(),
   setTagTypes: (types, labels) => bridge().setTagTypes(types, labels),
   getUngrouped: () => bridge().getUngrouped(),

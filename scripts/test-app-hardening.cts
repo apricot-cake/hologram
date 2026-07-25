@@ -61,7 +61,7 @@ fs.writeFileSync(
 // read them as empty (so the UI loads) but refuse to overwrite them.
 const CORRUPT = '{ "folders": [ { "id": "c1", "nam'; // truncated mid-object
 fs.writeFileSync(path.join(saveFolder, 'folders.json'), CORRUPT);
-fs.writeFileSync(path.join(saveFolder, 'tag-groups.json'), CORRUPT);
+fs.writeFileSync(path.join(saveFolder, 'tag-types.json'), CORRUPT);
 
 const evalJs = `(async () => {
   // 件2: window.open must be denied by setWindowOpenHandler (returns null when blocked).
@@ -82,12 +82,12 @@ const evalJs = `(async () => {
   // 件3: corrupt org files read back as empty (UI keeps working) ...
   const coll = await window.hologram.getFolders();
   const collEmpty = Array.isArray(coll.folders) && coll.folders.length === 0;
-  const tg = await window.hologram.getTagGroups();
-  const tgEmpty = Array.isArray(tg.groups) && tg.groups.length === 0;
+  const tt = await window.hologram.getTagTypes();
+  const tgEmpty = tt && tt.types && typeof tt.types === 'object' && Object.keys(tt.types).length === 0;
   // ... but a follow-up set-* (e.g. the renderer auto-persisting that empty) is
   // REFUSED, so nothing overwrites the corrupt-but-recoverable file on disk.
-  const setColl = await window.hologram.setFolders({ folders: [], clip: [], posterWorkspace: [] });
-  const setTg = await window.hologram.setTagGroups([]);
+  const setColl = await window.hologram.setFolders({ folders: [] });
+  const setTg = await window.hologram.setTagTypes({}, {});
   const setCollRefused = !!(setColl && setColl.ok === false);
   const setTgRefused = !!(setTg && setTg.ok === false);
 
@@ -136,7 +136,7 @@ child.on('close', () => {
     /* missing = fail */
   }
   try {
-    tgPreserved = fs.readFileSync(path.join(saveFolder, 'tag-groups.json'), 'utf8') === CORRUPT;
+    tgPreserved = fs.readFileSync(path.join(saveFolder, 'tag-types.json'), 'utf8') === CORRUPT;
   } catch {
     /* missing = fail */
   }
@@ -161,11 +161,11 @@ child.on('close', () => {
   check('件2 window dragover が preventDefault された', r.dragPrevented === true);
   // 件3
   check('件3 壊れた folders.json は空として読まれる', r.collEmpty === true);
-  check('件3 壊れた tag-groups.json は空として読まれる', r.tgEmpty === true);
+  check('件3 壊れた tag-types.json は空として読まれる', r.tgEmpty === true);
   check('件3 空での folders 上書きが拒否された', r.setCollRefused === true);
-  check('件3 空での tag-groups 上書きが拒否された', r.setTgRefused === true);
+  check('件3 空での tag-types 上書きが拒否された', r.setTgRefused === true);
   check('件3 壊れた folders.json が温存された', collPreserved);
-  check('件3 壊れた tag-groups.json が温存された', tgPreserved);
+  check('件3 壊れた tag-types.json が温存された', tgPreserved);
 
   console.log('\n' + (ok ? 'HARDENING_TEST_PASS' : 'HARDENING_TEST_FAIL'));
   process.exit(ok ? 0 : 1);

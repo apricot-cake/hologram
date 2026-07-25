@@ -3,7 +3,7 @@
 // "pure logic → service" slice of the viewer decomposition (最終形B). A real ES
 // module (named exports), imported directly by viewer.ts; touches no DOM. Every
 // runtime coupling is INJECTED via makeFacets(deps) — reassigned viewer lets
-// (allPosts / tagGroups) come in as getter functions, and consts declared after
+// (allPosts) come in as getter functions, and consts declared after
 // the wiring point (posterQB / pfStore / the hologramQuery destructure) as deferred
 // wrappers — so this file loads under Node too (scripts/test-facets-unit.cts).
 
@@ -18,7 +18,6 @@ export const PF_ORDER = ['x', 'bluesky', 'misskey', 'mastodon', 'pixiv'];
 //   hostOf(url) / userKey(p) — from query.js (wrapped: destructured after wiring)
 //   t(key,subs?) — message lookup / PF_NAME (value) — label table (const by the wiring point)
 //   tagKindOf(tag) — 用語帳 kind ('work'/'character'/undefined)
-//   tagGroups() — live viewer state getter
 //   posterTagsOf(key) / filteredPosters() / posterFilterVocab() / namedPosters()
 //   posterFolders() — pfStore.all() (wrapped: pfStore is declared later)
 //   buildUsers() — user facet source (cached in viewer)
@@ -32,7 +31,6 @@ export function makeFacets(deps: {
   t(key: string, subs?: ReadonlyArray<string | number | null | undefined>): string;
   PF_NAME: Record<string, string>;
   tagKindOf(tag: string): string | null | undefined;
-  tagGroups(): Array<{ id: string; name: string; tags?: string[] }>;
   posterTagsOf(key: string): string[];
   filteredPosters(): HologramUserAgg[];
   posterFilterVocab(): string[];
@@ -41,7 +39,7 @@ export function makeFacets(deps: {
   postFolders(): HologramFolder[];
   buildUsers(): HologramUserAgg[];
 }) {
-  const { getFilteredPosts, qHasValue, posterQHasValue, allPosts, hostOf, userKey, t, PF_NAME, tagKindOf, tagGroups, posterTagsOf, filteredPosters, posterFilterVocab, namedPosters, posterFolders, postFolders, buildUsers } = deps;
+  const { getFilteredPosts, qHasValue, posterQHasValue, allPosts, hostOf, userKey, t, PF_NAME, tagKindOf, posterTagsOf, filteredPosters, posterFilterVocab, namedPosters, posterFolders, postFolders, buildUsers } = deps;
 
   // Facet counts: how many CURRENT-QUERY matches fall under each value of a facet.
   // Population = getFilteredPosts() (every active condition incl. the search term),
@@ -199,32 +197,10 @@ export function makeFacets(deps: {
         // 用語帳: kinded tags live in the 作品/キャラ rows — the タグ flyout is general-only.
         const cnt = facetCounts((p) => p.tags);
         const item = (t: string) => ({ v: t, l: t, on: act('tag', t), count: cnt.get(t) || 0, facetDim: true });
-        // Within a list/group, present values (count desc) precede absent ones.
+        // Present values (count desc) precede absent ones.
         const byCount = (a: { count: number; l: string }, b: { count: number; l: string }) => b.count - a.count || a.l.localeCompare(b.l, 'ja');
         const allTags = [...new Set<string>(allPosts().flatMap((p) => p.tags || []))].filter((t) => !tagKindOf(t)).sort();
-        const groups = tagGroups();
-        if (!groups.length) return allTags.map(item).sort(byCount);
-        const grouped = new Set<string>();
-        const out: HologramQfRow[] = [];
-        for (const g of groups) {
-          const own = (g.tags || []).filter((t) => allTags.includes(t));
-          if (!own.length) continue;
-          own.forEach((t) => grouped.add(t));
-          out.push({ ghead: g.name || '' });
-          own
-            .map(item)
-            .sort(byCount)
-            .forEach((it) => out.push(it));
-        }
-        const rest = allTags.filter((t) => !grouped.has(t));
-        if (rest.length) {
-          out.push({ ghead: t('tagGroupOther') });
-          rest
-            .map(item)
-            .sort(byCount)
-            .forEach((it) => out.push(it));
-        }
-        return out;
+        return allTags.map(item).sort(byCount);
       }
       case 'folder': {
         // Library folders (folders.json). Each row toggles a 'folder' leaf.

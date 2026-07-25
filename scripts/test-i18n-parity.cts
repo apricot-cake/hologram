@@ -1,7 +1,7 @@
 'use strict';
 // Parity guard for the app's TWO i18n string tables:
 //   1) app/renderer/i18n.ts — MESSAGES.ja / MESSAGES.en (viewer strings)
-//   2) extension/_locales/{ja,en}/messages.json — Chrome i18n (extension strings)
+//   2) extension/public/_locales/{ja,en}/messages.json — Chrome i18n (extension strings)
 // A key added to one language and forgotten in the other fails SILENTLY at
 // runtime (the lookup falls back or shows the raw key), so drift ships unnoticed —
 // this test fails instead. Also checks that per-key value SHAPES agree: string vs
@@ -88,7 +88,7 @@ function diffValues(name, a, b) {
 
 // ---- 2) extension _locales (plain Chrome i18n JSON)
 {
-  const read = (lang) => JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'extension', '_locales', lang, 'messages.json'), 'utf8'));
+  const read = (lang) => JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'extension', 'public', '_locales', lang, 'messages.json'), 'utf8'));
   const ja = read('ja');
   const en = read('en');
   diffKeys('extension', ja, en);

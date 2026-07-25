@@ -15,6 +15,12 @@
   // (app/islands/build.mjs → dist/bridge.js, CJS output) and the BUNDLE is what
   // lands in ~/.hologram — but the sources keep the CJS shape the bundler reads.
   //
+  // post-key.mts is the one ESM file here, because it is the one module a layer
+  // OUTSIDE this directory ES-imports (app/renderer/records.ts re-exports it —
+  // the URL→identity-key rule has to have a single implementation). A .cts
+  // could not play that role: tsc reads no exports off `module.exports`, and
+  // giving a .cts real `export` statements breaks the raw-source loads below.
+  //
   // Sibling requires use the explicit .cts extension (require('./paths.cts'),
   // not require('./paths')) because that is what the source-loading paths
   // (Electron require of install.cts, the tests) resolve at runtime; the bundler
@@ -51,5 +57,5 @@
     "typeRoots": ["../app/node_modules/@types"],
     "types": ["node"]
   },
-  "files": ["bridge.cts", "install.cts", "paths.cts", "media-download.cts", "config-recovery.cts"]
+  "files": ["bridge.cts", "install.cts", "paths.cts", "media-download.cts", "config-recovery.cts", "post-key.mts", "post-record.mts"]
 }

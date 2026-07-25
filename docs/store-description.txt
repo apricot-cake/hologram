@@ -1,5 +1,5 @@
 Chrome Web Store listing (English). Japanese version: store-description.ja.txt
-The SUMMARY must match extension/_locales/en/messages.json extDesc (the store
+The SUMMARY must match extension/public/_locales/en/messages.json extDesc (the store
 summary is taken from the manifest description; max 132 characters).
 Before submission, re-verify every feature claim against the shipped UI
 (features and terminology may change before release).
