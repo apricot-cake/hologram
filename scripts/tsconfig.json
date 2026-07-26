@@ -45,6 +45,7 @@
   // (not .cts) so Electron's require('electron') injection works — see their headers.
   // Being plain JS with no type annotations, they lose no coverage by sitting outside tsc.
   "files": [
+    "audit-stale-branches.cts",
     "backfill-metadata.cts",
     "cdp-verify.cts",
     "e2e-capture-test.cts",
