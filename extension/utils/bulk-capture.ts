@@ -213,10 +213,12 @@ export function startBulkCapture(site: SiteConfig, i18n: HologramI18nApi): void 
         continue;
       }
       entry.el = el; // the row may have been re-rendered into a new element
-      // Came back into view after being scrolled past: recover it.
+      // Came back into view after being scrolled past: recover it. Back to
+      // 'unknown', not 'queued' — a post can be missed BEFORE its saved-check
+      // answered, and skipping the re-ask would capture an already-saved post.
       if (entry.state === 'missed') {
         missedCount--;
-        entry.state = 'queued';
+        entry.state = 'unknown';
       }
     }
 

@@ -59,13 +59,16 @@ export function createI18n(): Promise<HologramI18nApi> {
       bulkStop: '中断',
       // $1 = saved count, $2 = already-saved (skipped) count
       bulkProgress: '保存 $1件・保存済みスキップ $2件',
-      // $1 = saved, $2 = skipped, $3 = missed (scrolled past before capture — scroll back to recover)
-      bulkProgressMissed: '保存 $1件・スキップ $2件・見送り $3件（少し戻ってください）',
+      // $1 = saved, $2 = skipped, $3 = missed. Misses recover only when their
+      // rows re-render, i.e. when the user passes them again SLOWLY — say so
+      // (just "scroll back" sent users to the top of the list, where mid-list
+      // misses never re-render; observed 2026-07-26).
+      bulkProgressMissed: '保存 $1件・スキップ $2件・見送り $3件（通り過ぎた分＝ゆっくり戻ると保存されます）',
       bulkStopped: '取込を中断しました',
       bulkFinished: '取込が完了しました',
       bulkSummarySaved: '保存 $1件',
       bulkSummarySkipped: '保存済み $1件',
-      bulkSummaryMissed: '見送り $1件（スクロールが速すぎて撮り逃しました。戻ってやり直せます）',
+      bulkSummaryMissed: '見送り $1件（もう一度実行すると未保存の分だけ保存されます）',
       bulkSummaryFailed: '失敗 $1件',
     },
 
@@ -97,12 +100,12 @@ export function createI18n(): Promise<HologramI18nApi> {
       // bulk-capture.ts: X bookmarks chase-mode intake banner (#362)
       bulkStop: 'Stop',
       bulkProgress: 'Saved $1 · already saved $2',
-      bulkProgressMissed: 'Saved $1 · skipped $2 · missed $3 (scroll back a little)',
+      bulkProgressMissed: 'Saved $1 · skipped $2 · missed $3 (passed too fast — scroll back slowly and they save)',
       bulkStopped: 'Import stopped',
       bulkFinished: 'Import finished',
       bulkSummarySaved: '$1 saved',
       bulkSummarySkipped: '$1 already saved',
-      bulkSummaryMissed: '$1 missed (scrolled past too fast to capture — scroll back to retry)',
+      bulkSummaryMissed: '$1 missed (run again to save just what is still unsaved)',
       bulkSummaryFailed: '$1 failed',
     },
   };
