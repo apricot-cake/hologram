@@ -17,7 +17,7 @@ cd app && npm install
 | **開発用**（`npm run dev:ext` が起動・管理） | `extension/.output/chrome-mv3-dev/` | `npm run dev:ext`（開発中だけ常駐） | WXT のホットリロード＝保存すれば勝手に反映 |
 | **日常の Chrome**（普段 Hologram を使う方） | `extension/.output/chrome-mv3/` | `npm run build:ext` | `chrome://extensions` で再読み込み1回 |
 
-開発用ブラウザは `extension/web-ext.config.ts` の設定で**永続プロファイル**（`~/.hologram-ext-profile`）を使う＝X などへ一度サインインすれば以降も保持される。`--remote-debugging-port=9223` を付けてあるので CDP で接続でき、拡張自身のコンソールも読める（アプリ本体は :9222）。
+開発用ブラウザは `extension/web-ext.config.ts` の設定で**永続プロファイル**（`~/.hologram-ext-profile`）を使う＝X などへ一度サインインすれば以降も保持される。**デバッグポートは開けない**＝TCP のデバッグポートは無認証で、ローカルの任意プロセスがブラウザを乗っ取りサインイン中のセッションを抜けられる（Chrome 136 が既定プロファイルで同スイッチを拒否するのも同じ理由）。自動で中を読む必要がある時は Playwright（`scripts/lib-extension-e2e.cts`）で起動する＝パイプ経由でどこにも listen しない。同じプロファイルを2つのブラウザで同時に開くことはできない。
 
 **なぜ分けるか**: 開発モードの拡張は manifest に `content_scripts` を持たず、常駐スクリプトを **dev サーバー接続経由で実行時登録**する。だから dev 出力を日常のブラウザへ読み込むと、サーバーが落ちる・繋がらない（Node ≥17 は `::1` のみに bind することがあり Chrome は IPv4 で来る）だけで**普段使いの拡張が丸ごと沈黙**し、原因は `chrome://extensions` を開かない限り見えない（2026-07-26 被弾＝#362）。日常側をサーバー非依存の production に固定すれば、この事故は起こりえない。
 

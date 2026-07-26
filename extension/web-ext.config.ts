@@ -26,15 +26,17 @@ mkdirSync(PROFILE, { recursive: true });
 // depends on a dev server, and the window only appears when someone
 // deliberately starts extension development.
 //
-// The remote-debugging port lets Claude attach to THIS browser (9222 belongs to
-// the Hologram app itself), which is the other half — it can then read the
-// extension's own console instead of asking for screenshots of a page it cannot
-// open. See the verify-extension skill.
+// No --remote-debugging-port here on purpose. A TCP debugging port has no
+// authentication, so any local process could drive this browser and lift the
+// signed-in session out of it — which is why Chrome 136 refuses the switch on
+// the default profile at all. Automation that needs to read this browser goes
+// through Playwright instead (scripts/lib-extension-e2e.cts), whose transport
+// is a pipe inherited by the launching process: nothing is listening anywhere.
+// See the verify-extension skill.
 export default defineWebExtConfig({
   // Outside AppData, like every other path this project persists (MSIX
   // virtualisation ate a library once — docs/build.md).
   chromiumProfile: PROFILE,
   keepProfileChanges: true,
-  chromiumArgs: ['--remote-debugging-port=9223'],
   startUrls: ['https://x.com/i/bookmarks'],
 });
