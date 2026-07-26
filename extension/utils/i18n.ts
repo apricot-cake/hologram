@@ -54,6 +54,19 @@ export function createI18n(): Promise<HologramI18nApi> {
       // this route saves the picture plus the post's text/author, never a
       // screenshot of how the post looks (that is Alt+S element capture).
       hoverSaveImage: '画像を保存',
+
+      // bulk-capture.ts: X bookmarks chase-mode intake banner (#362)
+      bulkStop: '中断',
+      // $1 = saved count, $2 = already-saved (skipped) count
+      bulkProgress: '保存 $1件・保存済みスキップ $2件',
+      // $1 = saved, $2 = skipped, $3 = missed (scrolled past before capture — scroll back to recover)
+      bulkProgressMissed: '保存 $1件・スキップ $2件・見送り $3件（少し戻ってください）',
+      bulkStopped: '取込を中断しました',
+      bulkFinished: '取込が完了しました',
+      bulkSummarySaved: '保存 $1件',
+      bulkSummarySkipped: '保存済み $1件',
+      bulkSummaryMissed: '見送り $1件（スクロールが速すぎて撮り逃しました。戻ってやり直せます）',
+      bulkSummaryFailed: '失敗 $1件',
     },
 
     en: {
@@ -80,6 +93,17 @@ export function createI18n(): Promise<HologramI18nApi> {
       badgeSaved: 'Saved in Hologram',
       // overlay.js: tooltip on the hover save button (see the ja note).
       hoverSaveImage: 'Save image',
+
+      // bulk-capture.ts: X bookmarks chase-mode intake banner (#362)
+      bulkStop: 'Stop',
+      bulkProgress: 'Saved $1 · already saved $2',
+      bulkProgressMissed: 'Saved $1 · skipped $2 · missed $3 (scroll back a little)',
+      bulkStopped: 'Import stopped',
+      bulkFinished: 'Import finished',
+      bulkSummarySaved: '$1 saved',
+      bulkSummarySkipped: '$1 already saved',
+      bulkSummaryMissed: '$1 missed (scrolled past too fast to capture — scroll back to retry)',
+      bulkSummaryFailed: '$1 failed',
     },
   };
 

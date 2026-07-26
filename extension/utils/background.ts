@@ -96,7 +96,7 @@ export function startBackground(): void {
 
     const tabId = sender.tab.id;
     const senderHost = getHostname(sender.tab.url);
-    captureAndSave(sender.tab, message.rect, message.postUrl, message.platform)
+    captureAndSave(sender.tab, message.rect, message.postUrl, message.platform, message.capturedVia || null)
       // captureAndSave has no return value (it notifies the content script
       // directly via notify() instead) — content.js's capturePost() never reads
       // this sendResponse either, so `ok:true` is the whole payload.
@@ -112,7 +112,7 @@ export function startBackground(): void {
     return true;
   });
 
-  async function captureAndSave(tab, rect, postUrl, sendPlatform) {
+  async function captureAndSave(tab, rect, postUrl, sendPlatform, capturedVia: string | null = null) {
     const captureId = generateCaptureId();
     const capturedAt = new Date().toISOString();
 
@@ -151,7 +151,7 @@ export function startBackground(): void {
       sendPlatform,
       // The screenshot is the primary image; media[] (API original URLs) is what the
       // bridge downloads, then overwrites with the saved filenames.
-      extra: { image: `${captureId}.jpg`, mediaType: meta.mediaType, media: meta.media || [] },
+      extra: { image: `${captureId}.jpg`, mediaType: meta.mediaType, media: meta.media || [], capturedVia },
     });
 
     const metaOk = metaFetched(meta);
