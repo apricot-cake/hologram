@@ -14,10 +14,20 @@ cd app && npm install
 
 | ブラウザ | 読み込む出力 | 作るコマンド | 反映のしかた |
 | --- | --- | --- | --- |
-| **開発用**（`npm run dev:ext` が起動・管理） | `extension/.output/chrome-mv3-dev/` | `npm run dev:ext`（開発中だけ常駐） | WXT のホットリロード＝保存すれば勝手に反映 |
+| **開発用**（専用プロファイルの Chrome を自分で起動） | `extension/.output/chrome-mv3-dev/` | `npm run dev:ext`（開発中だけ常駐） | WXT のホットリロード＝保存すれば勝手に反映 |
 | **日常の Chrome**（普段 Hologram を使う方） | `extension/.output/chrome-mv3/` | `npm run build:ext` | `chrome://extensions` で再読み込み1回 |
 
-開発用ブラウザは `extension/web-ext.config.ts` の設定で**永続プロファイル**（`~/.hologram-ext-profile`）を使う＝X などへ一度サインインすれば以降も保持される。**デバッグポートは開けない**＝TCP のデバッグポートは無認証で、ローカルの任意プロセスがブラウザを乗っ取りサインイン中のセッションを抜けられる（Chrome 136 が既定プロファイルで同スイッチを拒否するのも同じ理由）。自動で中を読む必要がある時は Playwright（`scripts/lib-extension-e2e.cts`）で起動する＝パイプ経由でどこにも listen しない。同じプロファイルを2つのブラウザで同時に開くことはできない。
+**開発用ブラウザは自分で起動する**（WXT には起動させない＝`web-ext.config.ts` で無効化）:
+
+```powershell
+& "C:\Program Files\Google\Chrome\Application\chrome.exe" --user-data-dir="$env:USERPROFILE\.hologram-ext-profile"
+```
+
+初回だけ: `chrome://extensions` → デベロッパーモード ON →「パッケージ化されていない拡張機能を読み込む」で `chrome-mv3-dev` を読み込み、X 等へサインイン。プロファイルは永続なので以降は不要。
+
+- **なぜ WXT に起動させないか**: 自動化スタック（web-ext-run → chrome-launcher）経由の起動は大量の `--disable-*` フラグ＝自動化ツールの指紋が付き、X も Google もボット判定してサインインを弾く（2026-07-26 実測）。人が起動した Chrome は普通の Chrome と区別が付かない。ホットリロード自体は拡張⇔dev サーバー間の機構なので、起動方法と無関係に効く。
+- **デバッグポートは開けない**: TCP のデバッグポートは無認証で、ローカルの任意プロセスがブラウザを乗っ取りサインイン中のセッションを抜けられる（Chrome 136 が既定プロファイルで同スイッチを拒否するのも同じ理由）。
+- 開発モードの拡張は dev サーバーが生命線＝**開発用ブラウザを開く前に `npm run dev:ext` を立てる**（止まっていると拡張は何も注入しない）。
 
 **なぜ分けるか**: 開発モードの拡張は manifest に `content_scripts` を持たず、常駐スクリプトを **dev サーバー接続経由で実行時登録**する。だから dev 出力を日常のブラウザへ読み込むと、サーバーが落ちる・繋がらない（Node ≥17 は `::1` のみに bind することがあり Chrome は IPv4 で来る）だけで**普段使いの拡張が丸ごと沈黙**し、原因は `chrome://extensions` を開かない限り見えない（2026-07-26 被弾＝#362）。日常側をサーバー非依存の production に固定すれば、この事故は起こりえない。
 
