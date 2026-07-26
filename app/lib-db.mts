@@ -75,6 +75,11 @@ const MIGRATIONS: Migration[] = [
         ALTER TABLE media ADD COLUMN posterFile TEXT;
       `),
   },
+  // #362: which intake route produced the record ('x-bookmarks' bulk intake;
+  // later bulk adapters add their own values). A capture-time fact, not
+  // organization — recorded because it cannot be reconstructed after intake
+  // (X has no bookmark export). Nullable: every ordinary save leaves it null.
+  { name: 'add-captured-via', up: (db) => db.exec('ALTER TABLE posts ADD COLUMN capturedVia TEXT') },
 ];
 
 interface Migration {
@@ -206,6 +211,7 @@ interface PostsTable {
   sourceMtimeMs: number | null; // add-source-mtime migration (#297) — see MIGRATIONS comment
   userKind: string | null;
   tagReviewed: number | null;
+  capturedVia: string | null; // add-captured-via migration (#362) — intake route, null = ordinary save
 }
 interface MediaTable {
   id: Generated<number>;

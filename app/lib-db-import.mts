@@ -110,6 +110,7 @@ const POST_COLUMNS = [
   'shotW',
   'shotH',
   'trashedAt',
+  'capturedVia',
   'sourceMtimeMs',
 ] as const;
 
@@ -159,6 +160,7 @@ function postParams(n: PostRecordShape, sourceMtimeMs: number | null): unknown[]
     shotW: n.shotW,
     shotH: n.shotH,
     trashedAt: n.trashedAt,
+    capturedVia: n.capturedVia,
     sourceMtimeMs,
   };
   return POST_COLUMNS.map((c) => byName[c]);
