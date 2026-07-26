@@ -419,9 +419,12 @@ async function handleSave(msg: any) {
 // save keeps is still kept: the originals were always downloaded from the
 // platform API alongside it, so only the "how the page looked" layer is gone.
 //
-// The FIRST original becomes the record's primary image and the rest stay in
-// media[], for the reason handleSaveDragged leaves media[] empty: an entry that
-// is also the primary image would show twice in the viewer's lightbox.
+// media[] holds EVERY original and image stays null — the same shape the
+// screenshot path produces, minus the screenshot. The card face comes from
+// media[0] either way (lib-index's cardImageFile and the renderer's
+// artworkFile both lead with media), so nothing is lost by leaving image
+// empty, while the viewer's multi-image stack counts media[] and would
+// undercount by one if the first picture were moved out of it.
 //
 // A post with NO media still gets its sidecar written. It cannot be displayed
 // yet — the library's isPostRecord requires an image/video/media, so both the
@@ -461,18 +464,17 @@ async function handleSavePost(msg: any) {
     avatarFile = null;
   }
 
-  const [primary, ...rest] = savedMedia;
   const record = Object.assign({}, meta, {
     captureId: base,
-    image: primary ? primary.file : null,
-    media: primary ? rest : [],
+    image: null,
+    media: savedMedia,
     avatarFile,
   });
   fs.writeFileSync(jsonPath, JSON.stringify(record, null, 2), 'utf8');
   noteSaved(record.url, base); // see handleSave
 
   // deferred = written but not displayable yet (no media at all → #365).
-  return { ok: true, file: primary ? primary.file : `${base}.json`, saveFolder, mediaCount: savedMedia.length, deferred: !primary };
+  return { ok: true, file: savedMedia.length ? savedMedia[0].file : `${base}.json`, saveFolder, mediaCount: savedMedia.length, deferred: !savedMedia.length };
 }
 
 // Image-drag save: no screenshot. The bridge downloads the dragged illustration
