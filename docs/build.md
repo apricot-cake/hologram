@@ -23,7 +23,14 @@ cd app && npm install
 & "C:\Program Files\Google\Chrome\Application\chrome.exe" --user-data-dir="$env:USERPROFILE\.hologram-ext-profile"
 ```
 
-初回だけ: `chrome://extensions` → デベロッパーモード ON →「パッケージ化されていない拡張機能を読み込む」で `chrome-mv3-dev` を読み込み、X 等へサインイン。プロファイルは永続なので以降は不要。
+初回だけ: `chrome://extensions` → デベロッパーモード ON →「パッケージ化されていない拡張機能を読み込む」で `chrome-mv3-dev` を読み込み、X 等へサインイン。プロファイルは永続なので以降は不要。Chrome 自体へのログインは求められても**しない**（開発用プロファイルへ本来の同期データが流れ込む）。
+
+**読み込むのは本体ツリーのパスに限る。**worktree の `.output` を読み込むと、その worktree を撤去した時点で拡張が壊れる。
+
+dev サーバーは**自分が起動されたツリーの `.output` だけ**を更新する。つまり worktree で拡張を直している間、開発用ブラウザ（本体ツリーの出力を読んでいる）にホットリロードは届かない。worktree の変更を実ブラウザで見る手段は2つ:
+
+- マージしてから本体ツリーで `npm run dev:ext` を回す（以後はホットリロードが効く）
+- 急ぐなら worktree で `npm run build:ext` し、日常の Chrome 側の `chrome-mv3` へ配備してリロード1回（手順は skill `verify-extension`）
 
 - **なぜ WXT に起動させないか**: 自動化スタック（web-ext-run → chrome-launcher）経由の起動は大量の `--disable-*` フラグ＝自動化ツールの指紋が付き、X も Google もボット判定してサインインを弾く（2026-07-26 実測）。人が起動した Chrome は普通の Chrome と区別が付かない。ホットリロード自体は拡張⇔dev サーバー間の機構なので、起動方法と無関係に効く。
 - **デバッグポートは開けない**: TCP のデバッグポートは無認証で、ローカルの任意プロセスがブラウザを乗っ取りサインイン中のセッションを抜けられる（Chrome 136 が既定プロファイルで同スイッチを拒否するのも同じ理由）。
