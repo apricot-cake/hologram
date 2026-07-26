@@ -144,6 +144,7 @@ function register(ctx) {
         date: p.date || null,
         capturedAt: p.capturedAt || new Date().toISOString(),
         updatedAt: p.updatedAt || p.capturedAt || new Date().toISOString(),
+        capturedVia: p.capturedVia || null,
         eagleName: p.eagleName || null,
         mediaType: p.mediaType || null,
         lang: p.lang || null,

@@ -54,6 +54,19 @@ export function createI18n(): Promise<HologramI18nApi> {
       // this route saves the picture plus the post's text/author, never a
       // screenshot of how the post looks (that is Alt+S element capture).
       hoverSaveImage: '画像を保存',
+
+      // bulk-capture.ts: X bookmarks chase-mode intake banner (#362)
+      bulkStop: '中断',
+      // $1 = saved count, $2 = already-saved (skipped) count
+      bulkProgress: '保存 $1件・保存済みスキップ $2件',
+      bulkStopped: '取込を中断しました',
+      bulkFinished: '取込が完了しました',
+      bulkSummarySaved: '保存 $1件',
+      bulkSummarySkipped: '保存済み $1件',
+      // Saved to disk but not yet displayable (#365 gives image-less records a
+      // home). Never say "skipped" — the post IS in the library.
+      bulkSummaryDeferred: '画像なし $1件も保存済み（一覧への表示は準備中）',
+      bulkSummaryFailed: '失敗 $1件',
     },
 
     en: {
@@ -80,6 +93,16 @@ export function createI18n(): Promise<HologramI18nApi> {
       badgeSaved: 'Saved in Hologram',
       // overlay.js: tooltip on the hover save button (see the ja note).
       hoverSaveImage: 'Save image',
+
+      // bulk-capture.ts: X bookmarks chase-mode intake banner (#362)
+      bulkStop: 'Stop',
+      bulkProgress: 'Saved $1 · already saved $2',
+      bulkStopped: 'Import stopped',
+      bulkFinished: 'Import finished',
+      bulkSummarySaved: '$1 saved',
+      bulkSummarySkipped: '$1 already saved',
+      bulkSummaryDeferred: '$1 image-less saved (not shown in the library yet)',
+      bulkSummaryFailed: '$1 failed',
     },
   };
 

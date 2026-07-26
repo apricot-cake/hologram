@@ -26,6 +26,15 @@ export default defineConfig({
         suggested_key: { default: 'Alt+S' },
         description: '__MSG_cmdActivate__',
       },
+      // #362: its own gesture rather than a mode Alt+S switches into on certain
+      // pages — Alt+S must keep meaning "save the post I am about to click"
+      // everywhere, including the bookmarks list. A command (not just a
+      // page-side button) because the auto capture needs activeTab, which only
+      // a toolbar/command/context-menu gesture grants.
+      'activate-auto': {
+        suggested_key: { default: 'Alt+Shift+S' },
+        description: '__MSG_cmdActivateAuto__',
+      },
     },
   },
 });

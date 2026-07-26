@@ -1,10 +1,13 @@
+import { isXBookmarksPage, startBulkCapture } from './bulk-capture';
+import { cropScreenshot } from './crop';
 import { glassUi } from './glass-ui';
 import { createI18n } from './i18n';
 import { getSiteConfig, normalizeRect, type PostRect, type SiteConfig } from './site-detect';
 
 export async function startCapture(): Promise<void> {
   // --- i18n ---
-  const { getMessage, partialSaveText, saveFailureText } = await createI18n();
+  const i18n = await createI18n();
+  const { getMessage, partialSaveText, saveFailureText } = i18n;
   const MSG = {
     select: getMessage('bannerSelect'),
     saving: getMessage('bannerSaving'),
@@ -22,11 +25,30 @@ export async function startCapture(): Promise<void> {
   // narrowed (non-null) type into every one of them.
   const site: SiteConfig = siteConfig;
 
-  // Prevent double injection
+  // Read and clear the auto-capture request before anything can return early,
+  // so a flag left over from a cancelled activation can never turn a later
+  // plain Alt+S into auto mode.
+  const wantsAuto = window.__hologramAutoCapture === true;
+  window.__hologramAutoCapture = undefined;
+
+  // Prevent double injection — shared toggle between this single-shot mode and
+  // the auto capture mode below (whichever is running, the next activation of
+  // either ends it).
   if (typeof window.__snsPostSaveCleanup === 'function') {
     window.__snsPostSaveCleanup();
     return;
   }
+
+  // #362: auto capture is a DIFFERENT gesture (Alt+Shift+S), not a mode that
+  // Alt+S turns into on certain pages — Alt+S keeps meaning "save the post I
+  // am about to click" everywhere, the bookmarks list included. Scoped to the
+  // bookmarks list for now; anywhere else the request is simply ignored and
+  // the single-shot flow below runs.
+  if (wantsAuto && site.platform === 'x' && isXBookmarksPage()) {
+    startBulkCapture(site, i18n);
+    return;
+  }
+
   window.__snsPostSaveActive = true;
 
   let isCleanedUp = false;
@@ -355,43 +377,10 @@ export async function startCapture(): Promise<void> {
   function onRuntimeMessage(msg: any, _sender: chrome.runtime.MessageSender, sendResponse: (response?: any) => void) {
     // Crop request
     if (msg.type === 'cropImage') {
-      const { dataUrl } = msg;
-      const dpr = window.devicePixelRatio || 1;
-
-      // Re-measure the post NOW (the screenshot was taken moments ago, not at
-      // click time — inertial scroll / lazy-image relayout can shift it), then
-      // clamp to the viewport: captureVisibleTab only has visible pixels, and
-      // an overflowing rect would encode the missing area as black bands.
-      let rect = msg.rect;
-      if (lastCapturedPost && lastCapturedPost.isConnected) {
-        try {
-          rect = getPostRect(lastCapturedPost);
-        } catch {
-          rect = msg.rect;
-        }
-      }
-      const cx = Math.max(0, rect.x);
-      const cy = Math.max(0, rect.y);
-      const cw = Math.max(1, Math.min(rect.x + rect.width, window.innerWidth) - cx);
-      const ch = Math.max(1, Math.min(rect.y + rect.height, window.innerHeight) - cy);
-
-      const img = new Image();
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        const w = Math.round(cw * dpr);
-        const h = Math.round(ch * dpr);
-        canvas.width = w;
-        canvas.height = h;
-        const ctx = canvas.getContext('2d') as CanvasRenderingContext2D;
-        ctx.drawImage(img, Math.round(cx * dpr), Math.round(cy * dpr), w, h, 0, 0, w, h);
-        sendResponse({ croppedDataUrl: canvas.toDataURL('image/jpeg', 0.92) });
+      void cropScreenshot(msg.dataUrl, msg.rect, () => (lastCapturedPost?.isConnected ? getPostRect(lastCapturedPost) : null)).then((croppedDataUrl) => {
         restoreScroll();
-      };
-      img.onerror = () => {
-        restoreScroll();
-        sendResponse(null);
-      };
-      img.src = dataUrl;
+        sendResponse(croppedDataUrl ? { croppedDataUrl } : null);
+      });
       return true; // async response
     }
 

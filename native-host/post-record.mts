@@ -66,6 +66,11 @@ export interface PostRecordShape {
   date: string | null;
   capturedAt: string;
   updatedAt: string;
+  // Intake route that produced this record ('x-bookmarks' = bulk bookmark
+  // intake, #362; future bulk adapters add their own values). null = ordinary
+  // one-at-a-time save. A fact about how the record entered the library, not
+  // an organization structure — folders/tags stay user-created (#362 decision).
+  capturedVia: string | null;
   lang: string | null;
   isReply: boolean | null;
   isQuote: boolean | null;
@@ -146,6 +151,7 @@ export function normalizePostRecord(input: PostRecordInput, now: () => string = 
     date: normStr(input.date),
     capturedAt,
     updatedAt: normStr(input.updatedAt) || capturedAt,
+    capturedVia: normStr(input.capturedVia),
     lang: normStr(input.lang),
     isReply: normBool(input.isReply),
     isQuote: normBool(input.isQuote),

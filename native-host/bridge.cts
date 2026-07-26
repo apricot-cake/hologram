@@ -412,6 +412,69 @@ async function handleSave(msg: any) {
   return { ok: true, file: `${base}.jpg`, saveFolder, mediaCount: savedMedia.length };
 }
 
+// Bulk-intake save (#362): metadata plus the post's own media, and no
+// screenshot at all. The auto capture mode stopped shooting the viewport
+// because a virtual list re-lays out between measuring, shooting and cropping,
+// so the crop slipped off the post — see that Issue. Everything a screenshot
+// save keeps is still kept: the originals were always downloaded from the
+// platform API alongside it, so only the "how the page looked" layer is gone.
+//
+// The FIRST original becomes the record's primary image and the rest stay in
+// media[], for the reason handleSaveDragged leaves media[] empty: an entry that
+// is also the primary image would show twice in the viewer's lightbox.
+//
+// A post with NO media still gets its sidecar written. It cannot be displayed
+// yet — the library's isPostRecord requires an image/video/media, so both the
+// index and the DB importer skip it — but skipping is all they do, and the
+// record sits on disk until #365 relaxes that gate, at which point it simply
+// appears. Refusing to write it would instead lose the post for good: X has no
+// bookmark export, so a bookmark not taken during the import is unrecoverable
+// once the account is gone. Preserve now, display later.
+async function handleSavePost(msg: any) {
+  const captureId = sanitizeCaptureId(msg.captureId);
+  if (!captureId) throw new Error('Invalid captureId');
+
+  const saveFolder = readSaveFolder();
+  fs.mkdirSync(saveFolder, { recursive: true });
+
+  const base = uniqueBase(saveFolder, captureId);
+  const jsonPath = path.join(saveFolder, `${base}.json`);
+  const meta = msg.metadata || {};
+
+  // Stricter than the screenshot path: with no screenshot the media IS the
+  // record's face, so a download that FAILS must not be papered over as a
+  // text-only post. Announced media that could not be fetched fails the save so
+  // the post stays unsaved and the next run retries it.
+  let savedMedia: any[] = [];
+  const announced = Array.isArray(meta.media) ? meta.media.length : 0;
+  try {
+    savedMedia = await downloadMedia(meta.media, saveFolder, base);
+  } catch (error: any) {
+    throw new Error(`Media download failed: ${error?.message || error}`);
+  }
+  if (announced && !savedMedia.length) throw new Error('Media download produced no files');
+
+  let avatarFile = null;
+  try {
+    avatarFile = await downloadAvatar(meta.avatar, meta.avatarReferer, saveFolder);
+  } catch {
+    avatarFile = null;
+  }
+
+  const [primary, ...rest] = savedMedia;
+  const record = Object.assign({}, meta, {
+    captureId: base,
+    image: primary ? primary.file : null,
+    media: primary ? rest : [],
+    avatarFile,
+  });
+  fs.writeFileSync(jsonPath, JSON.stringify(record, null, 2), 'utf8');
+  noteSaved(record.url, base); // see handleSave
+
+  // deferred = written but not displayable yet (no media at all → #365).
+  return { ok: true, file: primary ? primary.file : `${base}.json`, saveFolder, mediaCount: savedMedia.length, deferred: !primary };
+}
+
 // Image-drag save: no screenshot. The bridge downloads the dragged illustration
 // itself (any supported still type, with an optional pixiv Referer) and that file
 // IS the record's primary image. media[] is left empty (the image is the content;
@@ -496,6 +559,16 @@ if (require.main === module) {
               logSaveOutcome('save', msg, null, err);
               reply({ ok: false, error: err.message });
             });
+        } else if (msg.type === 'savePost') {
+          handleSavePost(msg)
+            .then((res) => {
+              logSaveOutcome('savePost', msg, res, null);
+              reply(res);
+            })
+            .catch((err) => {
+              logSaveOutcome('savePost', msg, null, err);
+              reply({ ok: false, error: err.message });
+            });
         } else if (msg.type === 'saveDragged') {
           handleSaveDragged(msg)
             .then((res) => {
@@ -532,4 +605,4 @@ if (require.main === module) {
 // _resetSavedIndex is a test seam: the index caches for the life of the process,
 // which is right for a real host (one process per port) and wrong for a test file
 // that walks several save folders in a row.
-module.exports = { handleSave, handleSaveDragged, downloadMedia, downloadAvatar, fetchStillImage, appendLog, handleQuery, noteSaved, _resetSavedIndex: () => (savedIndexCache = null) };
+module.exports = { handleSave, handleSavePost, handleSaveDragged, downloadMedia, downloadAvatar, fetchStillImage, appendLog, handleQuery, noteSaved, _resetSavedIndex: () => (savedIndexCache = null) };

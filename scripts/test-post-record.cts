@@ -30,7 +30,7 @@ const fixedNow = () => FIXED_NOW;
   ok(Array.isArray(rec.hashtags) && rec.hashtags.length === 0, 'hashtags defaults to []');
   ok(Array.isArray(rec.tags) && rec.tags.length === 0, 'tags defaults to []');
   ok(Array.isArray(rec.media) && rec.media.length === 0, 'media defaults to []');
-  for (const k of ['mediaType', 'image', 'url', 'platform', 'text', 'title', 'displayName', 'screenName', 'userId', 'avatar', 'avatarFile', 'authorCreatedAt', 'date', 'lang', 'quotedUrl', 'replyToId', 'eagleName', 'description', 'source', 'trashedAt']) {
+  for (const k of ['mediaType', 'image', 'url', 'platform', 'text', 'title', 'displayName', 'screenName', 'userId', 'avatar', 'avatarFile', 'authorCreatedAt', 'date', 'capturedVia', 'lang', 'quotedUrl', 'replyToId', 'eagleName', 'description', 'source', 'trashedAt']) {
     assert.strictEqual(rec[k], null, `${k} defaults to null`);
   }
   for (const k of ['followers', 'likes', 'reposts', 'replies', 'bookmarks', 'views', 'shotW', 'shotH']) {
@@ -54,6 +54,7 @@ const fixedNow = () => FIXED_NOW;
       hashtags: ['a', 'b', 3, null],
       media: [{ url: 'https://x/1.jpg', width: 10, height: 20, file: '1.jpg' }, { file: '2.jpg' }, null, { url: 'https://x/2.mp4', file: '2.mp4', type: 'video', posterFile: 'poster.jpg' }],
       capturedAt: '2026-01-01T00:00:00.000Z',
+      capturedVia: 'x-bookmarks',
     },
     fixedNow,
   );
@@ -67,7 +68,8 @@ const fixedNow = () => FIXED_NOW;
   assert.deepStrictEqual(rec.media[2], { url: 'https://x/2.mp4', alt: null, width: null, height: null, file: '2.mp4', type: 'video', posterFile: 'poster.jpg' }, 'a video media item carries type + posterFile through (#119 St1)');
   assert.strictEqual(rec.capturedAt, '2026-01-01T00:00:00.000Z', 'an explicit capturedAt is kept, not overwritten by now()');
   assert.strictEqual(rec.updatedAt, '2026-01-01T00:00:00.000Z', 'updatedAt falls back to the explicit capturedAt, not now()');
-  passed += 9;
+  assert.strictEqual(rec.capturedVia, 'x-bookmarks', 'capturedVia passes through (#362 bulk-intake route marker)');
+  passed += 10;
 }
 
 // --- the exact bug this builder exists to prevent (#5 2026-07-18 comment) --

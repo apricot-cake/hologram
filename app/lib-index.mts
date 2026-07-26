@@ -28,9 +28,19 @@ const HEADER_BYTES = 65536; // covers a JPEG SOF past JFIF/short EXIF, plus PNG/
 const HEADER_BYTES_2 = 262144; // retry window for big-EXIF JPEGs (eagle migrations)
 
 function isPostRecord(rec) {
-  // Keep records with an image, a (poster-less) video, or downloaded media —
-  // identical to the legacy listPosts() filter.
-  return !!(rec && (rec.image || rec.video || (Array.isArray(rec.media) && rec.media.length)));
+  // Something to show (an image, a poster-less video, downloaded media) OR a
+  // post identity with no media at all — a text-only post (#365). The identity
+  // clause is what keeps this a POST filter rather than "any JSON": a sidecar
+  // carries the permalink it was saved from and the id it was saved under, and
+  // the app's own files (config.json, folders.json, …) carry neither.
+  //
+  // Text-only records used to be dropped here, which silently discarded every
+  // text bookmark a bulk import wrote (#362) — and X has no bookmark export to
+  // recover them from. The card already degrades correctly without a thumb, so
+  // admitting them is all that was needed.
+  if (!rec) return false;
+  if (rec.image || rec.video || (Array.isArray(rec.media) && rec.media.length)) return true;
+  return !!(rec.url && rec.captureId);
 }
 
 // The file shown in CARD view — mirrors the renderer's densityImage('card'): the
@@ -213,7 +223,7 @@ function createPostIndex(opts) {
             const rec = parseJsonLoose(await fs.promises.readFile(path.join(folder, f), 'utf8'));
             const record = isPostRecord(rec) ? rec : null;
             if (record) await augmentDims(folder, record);
-            else reasons.set(f, 'not a post record (no image/video/media)');
+            else reasons.set(f, 'not a post record (no media, and no url+captureId)');
             map.set(f, { mtimeMs: st.mtimeMs, record });
           } catch (err: any) {
             reasons.set(f, err.message);

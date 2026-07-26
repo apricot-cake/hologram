@@ -10,14 +10,35 @@ cd app && npm install
 
 ## 拡張機能の開発・配布
 
-初回は `cd extension && npm install`。ビルド出力は2つあり、**Chrome がどちらを読み込んでいるかでソース変更の反映経路が変わる**。
+初回は `cd extension && npm install`。**開発用ブラウザと日常のブラウザを分ける**のが土台（2026-07-26 にこの形へ寄せた）。
 
-| 出力 | 作るコマンド | 使う場面 |
-| --- | --- | --- |
-| `extension/.output/chrome-mv3-dev/` | `npm run dev:ext`（常駐） | 開発中。WXT がソース変更を検知して拡張を自動で再読み込みする |
-| `extension/.output/chrome-mv3/` | `npm run build:ext` | E2E・配布の入力。ストア提出用zipは `npm run zip:ext` |
+| ブラウザ | 読み込む出力 | 作るコマンド | 反映のしかた |
+| --- | --- | --- | --- |
+| **開発用**（専用プロファイルの Chrome を自分で起動） | `extension/.output/chrome-mv3-dev/` | `npm run dev:ext`（開発中だけ常駐） | WXT のホットリロード＝保存すれば勝手に反映 |
+| **日常の Chrome**（普段 Hologram を使う方） | `extension/.output/chrome-mv3/` | `npm run build:ext` | `chrome://extensions` で再読み込み1回 |
 
-**罠**: `dev:ext` のホットリロードが届くのは `chrome-mv3-dev` だけ。Chrome に `chrome-mv3` を Load unpacked したまま開発すると、`dev:ext` が動いていてもブラウザ側は古いバンドルのままで、直したはずの挙動を検証してしまう（2026-07-25 に実際に踏んだ＝ホバー保存ボタンの修正が1時間反映されていなかった）。`chrome-mv3` を読み込んでいる間にソースを直したら、`npm run build:ext` ＋ `chrome://extensions` の再読み込みまでやって初めて反映される。開発中は `chrome-mv3-dev` を読み込んでおく（`key` 固定でIDは共通なので、Native Messaging の登録はどちらでも生きる。同じIDなので同時に2つは読み込めない）。
+**開発用ブラウザは自分で起動する**（WXT には起動させない＝`web-ext.config.ts` で無効化）:
+
+```powershell
+& "C:\Program Files\Google\Chrome\Application\chrome.exe" --user-data-dir="$env:USERPROFILE\.hologram-ext-profile"
+```
+
+初回だけ: `chrome://extensions` → デベロッパーモード ON →「パッケージ化されていない拡張機能を読み込む」で `chrome-mv3-dev` を読み込み、X 等へサインイン。プロファイルは永続なので以降は不要。Chrome 自体へのログインは求められても**しない**（開発用プロファイルへ本来の同期データが流れ込む）。
+
+**読み込むのは本体ツリーのパスに限る。**worktree の `.output` を読み込むと、その worktree を撤去した時点で拡張が壊れる。
+
+dev サーバーは**自分が起動されたツリーの `.output` だけ**を更新する。つまり worktree で拡張を直している間、開発用ブラウザ（本体ツリーの出力を読んでいる）にホットリロードは届かない。worktree の変更を実ブラウザで見る手段は2つ:
+
+- マージしてから本体ツリーで `npm run dev:ext` を回す（以後はホットリロードが効く）
+- 急ぐなら worktree で `npm run build:ext` し、日常の Chrome 側の `chrome-mv3` へ配備してリロード1回（手順は skill `verify-extension`）
+
+- **なぜ WXT に起動させないか**: 自動化スタック（web-ext-run → chrome-launcher）経由の起動は大量の `--disable-*` フラグ＝自動化ツールの指紋が付き、X も Google もボット判定してサインインを弾く（2026-07-26 実測）。人が起動した Chrome は普通の Chrome と区別が付かない。ホットリロード自体は拡張⇔dev サーバー間の機構なので、起動方法と無関係に効く。
+- **デバッグポートは開けない**: TCP のデバッグポートは無認証で、ローカルの任意プロセスがブラウザを乗っ取りサインイン中のセッションを抜けられる（Chrome 136 が既定プロファイルで同スイッチを拒否するのも同じ理由）。
+- 開発モードの拡張は dev サーバーが生命線＝**開発用ブラウザを開く前に `npm run dev:ext` を立てる**（止まっていると拡張は何も注入しない）。
+
+**なぜ分けるか**: 開発モードの拡張は manifest に `content_scripts` を持たず、常駐スクリプトを **dev サーバー接続経由で実行時登録**する。だから dev 出力を日常のブラウザへ読み込むと、サーバーが落ちる・繋がらない（Node ≥17 は `::1` のみに bind することがあり Chrome は IPv4 で来る）だけで**普段使いの拡張が丸ごと沈黙**し、原因は `chrome://extensions` を開かない限り見えない（2026-07-26 被弾＝#362）。日常側をサーバー非依存の production に固定すれば、この事故は起こりえない。
+
+**罠**: ホットリロードが届くのは `chrome-mv3-dev` を読み込んでいるブラウザだけ。`chrome-mv3` を読み込んだまま `dev:ext` を走らせても反映されない（2026-07-25 被弾＝修正が1時間空振り）。逆も然り。`key` 固定で ID は共通なので Native Messaging はどちらでも生きるが、**同じ ID なので1つのブラウザに2つは読み込めない**＝分けたブラウザそれぞれが別の出力を持つ、が正しい形。
 
 固定IDを保つ `key` は `extension/wxt.config.ts` にある。移行後もID・Native Messaging 保存・5プラットフォームのクリック/ドラッグ保存は実機確認の対象である。
 

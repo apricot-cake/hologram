@@ -15,6 +15,10 @@
     "message": "投稿の保存を開始",
     "description": "Keyboard command description (Alt+S)"
   },
+  "cmdActivateAuto": {
+    "message": "自動保存モードを開始（Xのブックマーク一覧）",
+    "description": "Keyboard command description (Alt+Shift+S) for the auto capture mode"
+  },
   "optionsTitle": {
     "message": "Hologram 設定",
     "description": "Options page document title"

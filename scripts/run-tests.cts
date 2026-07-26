@@ -66,6 +66,8 @@ const TESTS = [
   'test-metadata-origin',
   'test-content-fixtures',
   'test-overlay-unit',
+  'test-capture-mode-select',
+  'test-bulk-capture-unit',
   'test-bridge',
   'test-bridge-query',
   'test-bridge-ssrf',
