@@ -427,12 +427,16 @@ export function startBackground(): void {
   }
 
   // Answers already known, so scrolling back over a post costs nothing.
-  // A "saved" answer can only be invalidated by a delete in the desktop app, which
-  // this side never sees — so positives are kept for the life of the worker and a
-  // deleted post keeps its badge until the SW restarts. A "not saved" answer goes
-  // stale the moment the user saves that post, so negatives expire quickly (a save
-  // made HERE updates the entry directly — see markSaved).
-  const SAVED_TTL_MS = 60_000; // negatives only
+  // BOTH answers expire. A "not saved" goes stale the moment the user saves that
+  // post (a save made HERE updates the entry directly — see markSaved), and a
+  // "saved" goes stale when they delete it in the desktop app, which this side
+  // never sees. Positives used to be kept for the life of the worker, so a
+  // deleted post kept its badge until the service worker restarted — and worse,
+  // the bulk intake asks through this same cache, so it would SKIP a post the
+  // user had just deleted and meant to take again. Re-asking is cheap: the host
+  // answers from an index it keeps in memory, invalidated by the save folder's
+  // own mtimes, so it already sees the delete.
+  const SAVED_TTL_MS = 60_000;
   const SAVED_CACHE_MAX = 2000;
   const savedCache = new Map<string, { id: string | null; until: number }>();
 
@@ -448,7 +452,7 @@ export function startBackground(): void {
 
   function cacheSet(url: string, id: string | null) {
     savedCache.delete(url); // re-insert so Map iteration order is LRU-ish
-    savedCache.set(url, { id, until: id === null ? Date.now() + SAVED_TTL_MS : 0 });
+    savedCache.set(url, { id, until: Date.now() + SAVED_TTL_MS });
     if (savedCache.size > SAVED_CACHE_MAX) {
       for (const k of [...savedCache.keys()].slice(0, savedCache.size - SAVED_CACHE_MAX)) savedCache.delete(k);
     }
