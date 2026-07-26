@@ -160,6 +160,25 @@ export function startBulkCapture(site: SiteConfig, i18n: HologramI18nApi): void 
     shotStyle.remove();
   }
 
+  // The banner sits at the top of the viewport and the capture rect has to
+  // clear the site's sticky header, so the two normally do not overlap at all
+  // — in which case the banner can stay put and the run looks continuous. Only
+  // an actual overlap (a taller banner after wrapping, a post positioned
+  // unusually high) is worth blanking for one shot.
+  let bannerHiddenForShot = false;
+  function hideBannerIfInShot(rect: PostRect) {
+    const b = banner.getBoundingClientRect();
+    const overlaps = rect.left < b.right && rect.right > b.left && rect.top < b.bottom && rect.bottom > b.top;
+    if (!overlaps) return;
+    banner.style.display = 'none';
+    bannerHiddenForShot = true;
+  }
+  function showBannerAfterShot() {
+    if (!bannerHiddenForShot) return;
+    banner.style.display = 'flex';
+    bannerHiddenForShot = false;
+  }
+
   function paint() {
     if (stopped) return;
     label.textContent = missedCount > 0 ? t('bulkProgressMissed', [savedCount, skippedCount, missedCount]) : t('bulkProgress', [savedCount, skippedCount]);
@@ -322,7 +341,7 @@ export function startBulkCapture(site: SiteConfig, i18n: HologramI18nApi): void 
       restoreCaptureState?.();
       restoreCaptureState = null;
       showOverlaysAfterShot();
-      banner.style.display = 'flex';
+      showBannerAfterShot();
       paint();
       schedulePump();
     });
@@ -333,9 +352,12 @@ export function startBulkCapture(site: SiteConfig, i18n: HologramI18nApi): void 
     if (!post?.isConnected) return;
     entry.state = 'saving';
 
-    // Hide our own chrome, and neutralise the post's hover styling, so the
-    // screenshot is of the post as it rests.
-    banner.style.display = 'none';
+    // Neutralise the post's hover styling so the screenshot is of the post as
+    // it rests, and take our own chrome out of the frame — but only what is
+    // actually IN the frame. Blanking the banner on every shot made it blink
+    // about once a second for the whole run, which reads as the mode failing
+    // and restarting.
+    hideBannerIfInShot(rectOf(post));
     hideOverlaysForShot();
     restoreCaptureState = site.prepareForCapture?.(post) || null;
     inFlight = entry;
