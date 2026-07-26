@@ -28,6 +28,9 @@ export interface PostCardModel {
   inspected?: boolean;
   hasThumb?: boolean;
   imgSrc?: string | null;
+  /** Video/gif(mp4) lead media: overlay a ▶ badge on the poster thumbnail
+      (#119 St1). Not set for a real .gif — it already reads as animated. */
+  videoBadge?: boolean;
   captureId?: string;
   aspRatio?: string | null;
   eager?: boolean;
@@ -109,7 +112,14 @@ export function PostCard({ m, L, cellRef, onImgLoad }: { m: PostCardModel; L: Re
       {m.hasThumb && (
         <div className="card-thumb">
           {m.imgSrc ? (
-            <img className="card-img" src={m.imgSrc} alt="" data-cap={m.captureId} style={m.aspRatio ? { aspectRatio: m.aspRatio } : undefined} loading={m.eager ? 'eager' : 'lazy'} decoding="async" onLoad={onImgLoad} />
+            <>
+              <img className="card-img" src={m.imgSrc} alt="" data-cap={m.captureId} style={m.aspRatio ? { aspectRatio: m.aspRatio } : undefined} loading={m.eager ? 'eager' : 'lazy'} decoding="async" onLoad={onImgLoad} />
+              {m.videoBadge && (
+                <span className="card-play-badge" aria-hidden="true">
+                  {'▶'}
+                </span>
+              )}
+            </>
           ) : (
             <div className="card-img card-video" draggable>
               {'▶'}

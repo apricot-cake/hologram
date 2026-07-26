@@ -52,6 +52,11 @@ interface MediaItem {
   width: number | null;
   height: number | null;
   referer?: string;
+  // 'image' (default, omitted on the older still-image-only platforms below) |
+  // 'video' | 'gif'. video/gif entries additionally carry `poster` — a still
+  // frame URL the native host downloads as <base>-poster.<ext> (#119 St1).
+  type?: 'image' | 'video' | 'gif';
+  poster?: string | null;
 }
 
 // The normalized sidecar record shape. Declared here (not just inferred from
@@ -176,19 +181,47 @@ function xMediaType(details) {
   return null;
 }
 
-// Original-resolution still images only (skip video/animated_gif).
+// video_info.variants holds several bitrates of the same clip (mp4) plus an
+// HLS playlist (application/x-mpegURL) for `video` type — animated_gif has a
+// single mp4 variant. Pick the highest-bitrate mp4 (#119 St1: no per-tweet
+// quality choice, no HLS support here).
+function xVideoVariantUrl(info) {
+  const variants = (info && info.variants) || [];
+  let best: { bitrate?: number; url: string } | null = null;
+  for (const v of variants) {
+    if (!v || v.content_type !== 'video/mp4' || !v.url) continue;
+    if (!best || (v.bitrate || 0) > (best.bitrate || 0)) best = v;
+  }
+  return best ? best.url : null;
+}
+
 // The bare pbs.twimg.com URL serves the MEDIUM variant; ?name=orig is required
-// for the actual original (verified empirically — audit 2026-06-11).
+// for the actual original (verified empirically — audit 2026-06-11). Used for
+// photo originals AND as the poster frame for video/animated_gif (same still
+// image X already serves for both).
+function xOrigUrl(url) {
+  return url + (url.includes('?') ? '' : '?name=orig');
+}
+
 function xMedia(details) {
   if (!Array.isArray(details)) return [];
-  return details
-    .filter((m) => m && m.type === 'photo' && m.media_url_https)
-    .map((m) => ({
-      url: m.media_url_https + (m.media_url_https.includes('?') ? '' : '?name=orig'),
-      alt: m.ext_alt_text || null,
-      width: (m.original_info && m.original_info.width) || null,
-      height: (m.original_info && m.original_info.height) || null,
-    }));
+  const out: MediaItem[] = [];
+  for (const m of details) {
+    if (!m || !m.media_url_https) continue;
+    const alt = m.ext_alt_text || null;
+    const width = (m.original_info && m.original_info.width) || null;
+    const height = (m.original_info && m.original_info.height) || null;
+    if (m.type === 'photo') {
+      out.push({ url: xOrigUrl(m.media_url_https), alt, width, height, type: 'image' });
+      continue;
+    }
+    if (m.type === 'video' || m.type === 'animated_gif') {
+      const videoUrl = xVideoVariantUrl(m.video_info);
+      if (!videoUrl) continue; // no usable mp4 variant — drop, same as an unfetchable photo
+      out.push({ url: videoUrl, alt, width, height, type: m.type === 'animated_gif' ? 'gif' : 'video', poster: xOrigUrl(m.media_url_https) });
+    }
+  }
+  return out;
 }
 
 async function fetchXTweet(parsed, url) {
@@ -388,26 +421,47 @@ async function fetchBlueskyPost(parsed, url) {
 }
 
 // --- Misskey (instance API) ---
-function misskeyMediaType(files) {
-  const f = files && files[0];
+function misskeyItemType(f) {
   const t = f && f.type ? f.type : '';
   if (t.startsWith('video/')) return /gif/i.test(t) ? 'gif' : 'video';
   if (t === 'image/gif') return 'gif';
   if (t.startsWith('image/')) return 'image';
   return null;
 }
+function misskeyMediaType(files) {
+  return misskeyItemType(files && files[0]);
+}
 
-// Original-resolution still images (skip gifs and non-image files).
+// Download/display type — distinct from misskeyItemType above (which also
+// UI-labels a real image/gif as 'gif'): a genuine image/gif is a still,
+// transferred and thumbnailed exactly like a jpg/png (MEDIA_MIME_EXT on the
+// native host already handles image/gif) — undefined here means "treat as a
+// still", same as an unset type on a photo entry. Only an actual video/*
+// transport needs the video download path + poster (#119 St1).
+function misskeyDownloadType(f): 'video' | 'gif' | undefined {
+  const t = f && f.type ? f.type : '';
+  if (t.startsWith('video/')) return /gif/i.test(t) ? 'gif' : 'video';
+  return undefined;
+}
+
+// DriveFile exposes a direct `url` for every attachment type (image or video) —
+// no variant selection needed, unlike X. `thumbnailUrl` is the poster frame for
+// entries that DO need the video path.
 function misskeyMedia(files) {
   if (!Array.isArray(files)) return [];
   return files
-    .filter((f) => f && typeof f.type === 'string' && f.type.startsWith('image/') && f.type !== 'image/gif' && f.url)
-    .map((f) => ({
-      url: f.url,
-      alt: f.comment || null,
-      width: (f.properties && f.properties.width) || null,
-      height: (f.properties && f.properties.height) || null,
-    }));
+    .filter((f) => f && f.url && misskeyItemType(f))
+    .map((f) => {
+      const type = misskeyDownloadType(f);
+      return {
+        url: f.url,
+        alt: f.comment || null,
+        width: (f.properties && f.properties.width) || null,
+        height: (f.properties && f.properties.height) || null,
+        type,
+        poster: type ? f.thumbnailUrl || null : undefined,
+      };
+    });
 }
 
 async function fetchMisskeyNote(parsed, url) {
@@ -509,25 +563,36 @@ function htmlToText(html) {
   return s.trim() || null;
 }
 
-function mastodonMediaType(atts) {
-  const t = atts && atts[0] && atts[0].type;
+function mastodonItemType(a): 'video' | 'gif' | 'image' | null {
+  const t = a && a.type;
   if (t === 'video') return 'video';
-  if (t === 'gifv') return 'gif';
+  if (t === 'gifv') return 'gif'; // gifv is an mp4 loop, not a real .gif
   if (t === 'image') return 'image';
   return null;
 }
+function mastodonMediaType(atts) {
+  return mastodonItemType(atts && atts[0]);
+}
 
-// Original-resolution still images only.
+// `a.url` is the full-resolution attachment for every type (image or
+// video/gifv) — `preview_url` is the poster frame for the latter two (#119 St1).
 function mastodonMedia(atts) {
   if (!Array.isArray(atts)) return [];
   return atts
-    .filter((a) => a && a.type === 'image' && a.url)
-    .map((a) => ({
-      url: a.url,
-      alt: a.description || null,
-      width: (a.meta && a.meta.original && a.meta.original.width) || null,
-      height: (a.meta && a.meta.original && a.meta.original.height) || null,
-    }));
+    .filter((a) => a && a.url && mastodonItemType(a))
+    .map((a) => {
+      // mastodonItemType is never null here (the filter above excludes it) —
+      // `|| undefined` just satisfies MediaItem.type (no null variant).
+      const type = mastodonItemType(a) || undefined;
+      return {
+        url: a.url,
+        alt: a.description || null,
+        width: (a.meta && a.meta.original && a.meta.original.width) || null,
+        height: (a.meta && a.meta.original && a.meta.original.height) || null,
+        type,
+        poster: type !== 'image' ? a.preview_url || null : undefined,
+      };
+    });
 }
 
 // A Mastodon status permalink looks like /@user/<numericId>. Posts that federated

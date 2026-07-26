@@ -19,9 +19,11 @@ const dns = require('node:dns');
 const crypto = require('node:crypto');
 const { Agent } = require('undici');
 
-// --- Original-media download (best-effort, still images only) ---
-// Supported still-image content types -> file extension. Anything else (video,
-// svg, avif, html error pages, ...) is skipped rather than saved.
+// --- Original-media download (best-effort) ---
+// Supported still-image content types -> file extension. Anything else (svg,
+// avif, html error pages, ...) is skipped rather than saved. Kept separate from
+// VIDEO_MIME_EXT below (also used for the avatar-extension probe, which is
+// never a video).
 const MEDIA_MIME_EXT: Record<string, string> = {
   'image/jpeg': 'jpg',
   'image/jpg': 'jpg',
@@ -29,9 +31,17 @@ const MEDIA_MIME_EXT: Record<string, string> = {
   'image/webp': 'webp',
   'image/gif': 'gif',
 };
+// Supported video content types (#119 St1: X / Misskey / Mastodon direct URLs).
+const VIDEO_MIME_EXT: Record<string, string> = {
+  'video/mp4': 'mp4',
+  'video/webm': 'webm',
+  'video/quicktime': 'mov',
+};
 const MAX_MEDIA = 12; // cap attachments per post
-const MAX_MEDIA_BYTES = 25 * 1024 * 1024; // skip anything larger
+const MAX_MEDIA_BYTES = 25 * 1024 * 1024; // skip anything larger (still images)
+const MAX_VIDEO_BYTES = 200 * 1024 * 1024; // videos run far bigger than photos
 const MEDIA_TIMEOUT_MS = 12000; // per-image abort
+const VIDEO_TIMEOUT_MS = 60000; // videos take longer to pull down than a still
 const MAX_MEDIA_REDIRECTS = 4; // bound redirect chains
 
 interface MediaEntry {
@@ -40,6 +50,10 @@ interface MediaEntry {
   alt?: string | null;
   width?: number | null;
   height?: number | null;
+  // Omitted (legacy shape / Bluesky / pixiv, all still-image-only today) means
+  // 'image'. video/gif entries additionally carry `poster` (#119 St1).
+  type?: 'image' | 'video' | 'gif';
+  poster?: string | null;
 }
 interface MediaDescriptor {
   url: string;
@@ -47,6 +61,8 @@ interface MediaDescriptor {
   width: number | null;
   height: number | null;
   file: string;
+  type?: string;
+  posterFile?: string;
 }
 interface StillImage {
   buf: Buffer;
@@ -185,15 +201,18 @@ async function readCappedBody(res: Response, cap: number, ctrl: AbortController)
   return buf.length > cap ? null : buf;
 }
 
-// Fetch one still image and return { buf, ext } on success, or null on any
+// Fetch one media file and return { buf, ext } on success, or null on any
 // failure. pixiv originals on i.pximg.net 403 without a pixiv Referer; callers
 // pass a referer for those. Other hosts omit it. Redirects are followed manually
-// so every hop is re-validated against the SSRF guard.
-async function fetchStillImage(url: unknown, referer?: unknown): Promise<StillImage | null> {
+// so every hop is re-validated against the SSRF guard. mimeExt/maxBytes/timeoutMs
+// are parameterized so the same guarded fetch serves both still images
+// (fetchStillImage below) and video (downloadOneMedia, #119 St1) without
+// duplicating the SSRF/redirect/cap logic.
+async function fetchMediaFile(url: unknown, referer: unknown, mimeExt: Record<string, string>, maxBytes: number, timeoutMs: number): Promise<StillImage | null> {
   if (typeof url !== 'string' || !/^https:\/\//i.test(url)) return null;
   if (typeof fetch !== 'function' || typeof AbortController !== 'function') return null;
   const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), MEDIA_TIMEOUT_MS);
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
     const headers = typeof referer === 'string' && /^https:\/\//i.test(referer) ? { Referer: referer } : undefined;
     let current = url;
@@ -216,11 +235,11 @@ async function fetchStillImage(url: unknown, referer?: unknown): Promise<StillIm
     }
     if (!res || !res.ok) return null;
     const ct = (res.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
-    const ext = MEDIA_MIME_EXT[ct];
-    if (!ext) return null; // not a supported still image
+    const ext = mimeExt[ct];
+    if (!ext) return null; // not a supported type
     const declared = Number(res.headers.get('content-length'));
-    if (Number.isFinite(declared) && declared > MAX_MEDIA_BYTES) return null;
-    const buf = await readCappedBody(res, MAX_MEDIA_BYTES, ctrl);
+    if (Number.isFinite(declared) && declared > maxBytes) return null;
+    const buf = await readCappedBody(res, maxBytes, ctrl);
     if (!buf || !buf.length) return null;
     return { buf, ext };
   } catch {
@@ -230,14 +249,11 @@ async function fetchStillImage(url: unknown, referer?: unknown): Promise<StillIm
   }
 }
 
-// Download one still image to <base>-media-<i>.<ext>. Returns the post-download
-// descriptor (with `file`) on success, or null on any failure (caller drops it).
-async function downloadOneMedia(entry: MediaEntry | null | undefined, dir: string, base: string, i: number): Promise<MediaDescriptor | null> {
-  if (!entry) return null;
-  const got = await fetchStillImage(entry.url, entry.referer);
-  if (!got) return null;
-  const file = `${base}-media-${i}.${got.ext}`;
-  fs.writeFileSync(path.join(dir, file), got.buf);
+async function fetchStillImage(url: unknown, referer?: unknown): Promise<StillImage | null> {
+  return fetchMediaFile(url, referer, MEDIA_MIME_EXT, MAX_MEDIA_BYTES, MEDIA_TIMEOUT_MS);
+}
+
+function descriptorOf(entry: MediaEntry, file: string): MediaDescriptor {
   return {
     url: entry.url,
     alt: entry.alt != null ? String(entry.alt) : null,
@@ -245,6 +261,45 @@ async function downloadOneMedia(entry: MediaEntry | null | undefined, dir: strin
     height: typeof entry.height === 'number' && Number.isFinite(entry.height) ? entry.height : null,
     file,
   };
+}
+
+// Download one media item. Still images go to <base>-media-<i>.<ext> as
+// before. video/gif entries ALSO fetch the poster frame (if the platform gave
+// one) to <base>-poster.<ext> — unindexed, because X/Misskey/Mastodon carry at
+// most one video per post — before attempting the video itself, so a poster
+// lands even if the video download fails. If the video is unsupported/too
+// large/network-fails, the item downgrades to a still (posterFile becomes its
+// `file`, `type` stays unset) instead of vanishing entirely — only a true
+// double failure (no poster AND no video) drops the item, same as an
+// unfetchable photo. Returns null on that full failure (caller drops it).
+async function downloadOneMedia(entry: MediaEntry | null | undefined, dir: string, base: string, i: number): Promise<MediaDescriptor | null> {
+  if (!entry) return null;
+  const isVideo = entry.type === 'video' || entry.type === 'gif';
+  if (!isVideo) {
+    const got = await fetchStillImage(entry.url, entry.referer);
+    if (!got) return null;
+    const file = `${base}-media-${i}.${got.ext}`;
+    fs.writeFileSync(path.join(dir, file), got.buf);
+    return descriptorOf(entry, file);
+  }
+
+  let posterFile: string | undefined;
+  if (typeof entry.poster === 'string' && entry.poster) {
+    const posterGot = await fetchStillImage(entry.poster, entry.referer);
+    if (posterGot) {
+      posterFile = `${base}-poster.${posterGot.ext}`;
+      fs.writeFileSync(path.join(dir, posterFile), posterGot.buf);
+    }
+  }
+
+  const got = await fetchMediaFile(entry.url, entry.referer, VIDEO_MIME_EXT, MAX_VIDEO_BYTES, VIDEO_TIMEOUT_MS);
+  if (got) {
+    const file = `${base}-media-${i}.${got.ext}`;
+    fs.writeFileSync(path.join(dir, file), got.buf);
+    return { ...descriptorOf(entry, file), type: entry.type, posterFile };
+  }
+  if (posterFile) return descriptorOf(entry, posterFile); // downgrade to a still
+  return null;
 }
 
 async function downloadMedia(mediaList: unknown, dir: string, base: string): Promise<MediaDescriptor[]> {
@@ -308,7 +363,10 @@ module.exports = {
   isPrivateIp,
   createGuardedLookup,
   MEDIA_MIME_EXT,
+  VIDEO_MIME_EXT,
   MAX_MEDIA,
   MAX_MEDIA_BYTES,
+  MAX_VIDEO_BYTES,
   MEDIA_TIMEOUT_MS,
+  VIDEO_TIMEOUT_MS,
 };

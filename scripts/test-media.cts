@@ -34,6 +34,9 @@ let lastFetch: any = null;
   if (u.endsWith('/photo.jpg')) return new Response(PNG, { status: 200, headers: { 'content-type': 'image/jpeg' } });
   if (u.endsWith('/page.html')) return new Response('<html>no</html>', { status: 200, headers: { 'content-type': 'text/html' } });
   if (u.endsWith('/big.png')) return new Response(PNG, { status: 200, headers: { 'content-type': 'image/png', 'content-length': String(99 * 1024 * 1024) } });
+  if (u.endsWith('/clip.mp4')) return new Response(Buffer.from('fake-mp4-bytes'), { status: 200, headers: { 'content-type': 'video/mp4' } });
+  if (u.endsWith('/huge.mp4')) return new Response(Buffer.from('fake-mp4-bytes'), { status: 200, headers: { 'content-type': 'video/mp4', 'content-length': String(300 * 1024 * 1024) } });
+  if (u.endsWith('/poster.jpg')) return new Response(PNG, { status: 200, headers: { 'content-type': 'image/jpeg' } }); // bytes don't matter, only content-type
   if (u.endsWith('/missing')) return new Response('nope', { status: 404 });
   return new Response('nope', { status: 500 });
 };
@@ -70,6 +73,28 @@ const check = (label, cond) => {
       !fs.existsSync(path.join(saveFolder, base + '-media-5.png')),
   );
   check('descriptor carries file + alt + dims', saved[0].file === base + '-media-0.png' && saved[0].alt === 'pic' && saved[0].width === 1);
+
+  // --- video/gif entries (#119 St1): success, size-cap downgrade, double failure ---
+  // At most one video item per post on X/Misskey/Mastodon → each case gets its
+  // own base (a shared base would collide on the unindexed <base>-poster.<ext>).
+  const vbase1 = '1717500000000-vid1';
+  const savedVideo = await downloadMedia([{ url: 'https://h/clip.mp4', alt: 'clip', width: 100, height: 200, type: 'video', poster: 'https://h/poster.jpg' }], saveFolder, vbase1);
+  check(
+    'video: media file + poster both written, type/posterFile recorded',
+    savedVideo.length === 1 && savedVideo[0].file === vbase1 + '-media-0.mp4' && savedVideo[0].type === 'video' && savedVideo[0].posterFile === vbase1 + '-poster.jpg' && fs.existsSync(path.join(saveFolder, savedVideo[0].file)) && fs.existsSync(path.join(saveFolder, savedVideo[0].posterFile)),
+  );
+
+  const vbase2 = '1717500000000-vid2';
+  const savedOversized = await downloadMedia([{ url: 'https://h/huge.mp4', alt: null, type: 'video', poster: 'https://h/poster.jpg' }], saveFolder, vbase2);
+  check('oversized video downgrades to a still (poster becomes `file`, type unset)', savedOversized.length === 1 && savedOversized[0].file === vbase2 + '-poster.jpg' && savedOversized[0].type === undefined && fs.existsSync(path.join(saveFolder, savedOversized[0].file)));
+
+  const vbase3 = '1717500000000-vid3';
+  const savedNoPoster = await downloadMedia([{ url: 'https://h/clip.mp4', alt: null, type: 'gif' }], saveFolder, vbase3);
+  check('gif without a poster URL: video saved, posterFile stays unset', savedNoPoster.length === 1 && savedNoPoster[0].file === vbase3 + '-media-0.mp4' && savedNoPoster[0].type === 'gif' && savedNoPoster[0].posterFile === undefined);
+
+  const vbase4 = '1717500000000-vid4';
+  const savedDoubleFail = await downloadMedia([{ url: 'https://h/missing', alt: null, type: 'video', poster: 'https://h/missing' }], saveFolder, vbase4);
+  check('video+poster both failing drops the item entirely', savedDoubleFail.length === 0);
 
   // --- downloadAvatar: shared store avatars/<urlhash>.<ext>; bad/empty → null;
   //     same URL reuses the existing file WITHOUT a fetch; Referer forwarded ---

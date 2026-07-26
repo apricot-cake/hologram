@@ -63,6 +63,18 @@ const MIGRATIONS: Migration[] = [
   // renderer repairs orphaned/cyclic edges when it reads, while the FK keeps a
   // valid persisted parent from outliving its subtree.
   { name: 'add-folder-parent', up: (db) => db.exec('ALTER TABLE folders ADD COLUMN parentId TEXT REFERENCES folders(id) ON DELETE CASCADE') },
+  // #119 St1: video/gif media items carry their kind + downloaded poster-frame
+  // filename (a still image can't be measured/thumbnailed from the video file
+  // itself). Both nullable — pre-migration rows and every still-image entry
+  // (the vast majority) leave them null.
+  {
+    name: 'add-media-video-fields',
+    up: (db) =>
+      db.exec(`
+        ALTER TABLE media ADD COLUMN type TEXT;
+        ALTER TABLE media ADD COLUMN posterFile TEXT;
+      `),
+  },
 ];
 
 interface Migration {
@@ -204,6 +216,8 @@ interface MediaTable {
   width: number | null;
   height: number | null;
   file: string;
+  type: string | null; // add-media-video-fields migration (#119 St1)
+  posterFile: string | null; // add-media-video-fields migration (#119 St1)
 }
 interface TagsTable {
   id: Generated<number>;

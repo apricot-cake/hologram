@@ -43,6 +43,7 @@ function register(ctx) {
         if (rec.avatarFile && !/^avatars[\\/]/.test(rec.avatarFile)) targets.add(path.basename(rec.avatarFile));
         for (const m of rec.media || []) {
           if (m && m.file) targets.add(path.basename(m.file));
+          if (m && m.posterFile) targets.add(path.basename(m.posterFile)); // #119 St1
         }
       } catch {
         /* sidecar missing/corrupt — fall back to the disk sweep */

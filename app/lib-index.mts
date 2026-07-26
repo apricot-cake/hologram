@@ -23,6 +23,7 @@ const BATCH = 64; // stat/read this many sidecars concurrently, then yield
 
 const SS_EXT = /\.jpe?g$/i;
 const IMG_EXT = /\.(jpe?g|png|gif|webp)$/i;
+const VIDEO_EXT = /\.(mp4|webm|mov|m4v)$/i;
 const HEADER_BYTES = 65536; // covers a JPEG SOF past JFIF/short EXIF, plus PNG/GIF/WebP
 const HEADER_BYTES_2 = 262144; // retry window for big-EXIF JPEGs (eagle migrations)
 
@@ -35,11 +36,19 @@ function isPostRecord(rec) {
 // The file shown in CARD view — mirrors the renderer's densityImage('card'): the
 // downloaded original (first media file) leads, else a dragged/migrated artwork,
 // else the capture screenshot (posts whose original didn't download). Keep this in
-// lockstep with viewer.js densityImage() so the masonry height reservation
-// (shotW/shotH) sizes the SAME image the card actually shows.
+// lockstep with viewer.js densityImage()/artworkFile() so the masonry height
+// reservation (shotW/shotH) sizes the SAME image the card actually shows.
+// A video's poster substitutes for its (unmeasurable) file (#119 St1); with
+// no poster, fall through to the capture screenshot like a still that failed
+// to download.
 function cardImageFile(rec) {
-  const media = Array.isArray(rec.media) ? rec.media.filter((m) => m && m.file).map((m) => m.file) : [];
-  if (media.length) return media[0];
+  const media = Array.isArray(rec.media) ? rec.media.filter((m) => m && m.file) : [];
+  if (media.length) {
+    const first = media[0];
+    if (first.posterFile) return first.posterFile;
+    if (VIDEO_EXT.test(first.file)) return rec.image || '';
+    return first.file;
+  }
   return rec.image || '';
 }
 // A capture whose card image just changed from the screenshot to its downloaded

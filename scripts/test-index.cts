@@ -214,6 +214,29 @@ const writeSidecarIn = (d, name, rec) => realFs.writeFileSync(path.join(d, name)
   realFs.rmSync(dir4, { recursive: true, force: true });
   realFs.rmSync(outside, { recursive: true, force: true });
 
+  // --- cardImageFile / augmentDims: a video's poster substitutes for its
+  //     (unmeasurable) file (#119 St1); with no poster, falls through to the
+  //     capture screenshot, and the raw video file itself is never opened.
+  const dir5 = realFs.mkdtempSync(path.join(os.tmpdir(), 'hologram-index-video-'));
+  realFs.writeFileSync(path.join(dir5, 'v1-poster.png'), png1x1);
+  realFs.writeFileSync(path.join(dir5, 'v1-media-0.mp4'), Buffer.from('fake-mp4'));
+  writeSidecarIn(dir5, 'v1.json', { captureId: 'v1', media: [{ file: 'v1-media-0.mp4', type: 'video', posterFile: 'v1-poster.png' }], capturedAt: '2026-05-01T00:00:00Z' });
+  // No poster AND no capture screenshot (rec.image absent) — the true
+  // double-miss case: cardImageFile has nothing to fall back to but ''.
+  realFs.writeFileSync(path.join(dir5, 'v2-media-0.mp4'), Buffer.from('fake-mp4'));
+  writeSidecarIn(dir5, 'v2.json', { captureId: 'v2', media: [{ file: 'v2-media-0.mp4', type: 'video' }], capturedAt: '2026-05-02T00:00:00Z' });
+
+  opened.length = 0;
+  const idxF = createPostIndex({ fs: dimsFs, internalFiles: INTERNAL });
+  const rf = await idxF.list(dir5);
+  const v1 = rf.posts.find((p) => p.captureId === 'v1');
+  const v2 = rf.posts.find((p) => p.captureId === 'v2');
+  assert.strictEqual(v1.shotW, 1, "#119 St1: video's poster is measured for the masonry reservation");
+  assert.ok(!opened.some((p) => p.endsWith('v1-media-0.mp4')), '#119 St1: the raw video file is never opened for dims');
+  assert.strictEqual(v2.shotW, 0, '#119 St1: a poster-less, screenshot-less video has nothing to size -> unsizable sentinel, NOT the video file');
+  assert.ok(!opened.some((p) => p.endsWith('v2-media-0.mp4')), '#119 St1: poster-less video never opens the video file either');
+  realFs.rmSync(dir5, { recursive: true, force: true });
+
   realFs.rmSync(dir, { recursive: true, force: true });
   console.log('PASS test-index: reuse, prune, snapshot cold-restore, computeDelta, targeted applyChanges, BOM tolerance, and #216 folder clamp verified');
 })().catch((e) => {

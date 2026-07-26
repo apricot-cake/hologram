@@ -36,6 +36,10 @@ export interface MediaItemShape {
   width: number | null;
   height: number | null;
   file: string;
+  // 'video' | 'gif' | null (null/absent = a still image). posterFile is the
+  // downloaded poster-frame filename for a video/gif entry (#119 St1).
+  type: string | null;
+  posterFile: string | null;
 }
 
 export interface PostRecordShape {
@@ -107,6 +111,8 @@ function normMedia(v: unknown): MediaItemShape[] {
       width: normNum(m.width),
       height: normNum(m.height),
       file: typeof m.file === 'string' ? m.file : '',
+      type: normStr(m.type),
+      posterFile: normStr(m.posterFile),
     }));
 }
 

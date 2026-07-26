@@ -75,6 +75,8 @@ interface MediaRow {
   width: number | null;
   height: number | null;
   file: string;
+  type: string | null;
+  posterFile: string | null;
 }
 interface TagRow {
   postId: string;
@@ -91,7 +93,7 @@ function assemble(sqlite: Database.Database, postRows: any[]): any[] {
   const placeholders = ids.map(() => '?').join(',');
 
   const mediaByPost = new Map<string, MediaRow[]>();
-  const mediaRows = sqlite.prepare(`SELECT postId, seq, url, alt, width, height, file FROM media WHERE postId IN (${placeholders}) ORDER BY postId, seq`).all(...ids) as MediaRow[];
+  const mediaRows = sqlite.prepare(`SELECT postId, seq, url, alt, width, height, file, type, posterFile FROM media WHERE postId IN (${placeholders}) ORDER BY postId, seq`).all(...ids) as MediaRow[];
   for (const m of mediaRows) {
     let list = mediaByPost.get(m.postId);
     if (!list) mediaByPost.set(m.postId, (list = []));
@@ -110,7 +112,7 @@ function assemble(sqlite: Database.Database, postRows: any[]): any[] {
   }
 
   return postRows.map((r) => {
-    const media = (mediaByPost.get(r.captureId) || []).map((m) => ({ url: m.url, alt: m.alt, width: m.width, height: m.height, file: m.file }));
+    const media = (mediaByPost.get(r.captureId) || []).map((m) => ({ url: m.url, alt: m.alt, width: m.width, height: m.height, file: m.file, type: m.type, posterFile: m.posterFile }));
     const tags = tagsByPost.get(r.captureId) || [];
     return {
       captureId: r.captureId,
