@@ -95,6 +95,67 @@ export function startBackground(): void {
     if (tab) activateOnTab(tab, command === 'activate-auto');
   });
 
+  // Bulk intake (#362): save a post from its permalink alone — no screenshot,
+  // no DOM image needed. The platform API already carries the originals, so the
+  // page only has to say WHICH post; the host downloads the media and makes the
+  // first one the record's image. Answers with the outcome (the caller paces
+  // itself on it) rather than pushing a notify like the capture path does.
+  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message.type !== 'savePost') return false;
+    if (!sender.tab?.id) {
+      sendResponse({ ok: false, error: 'Missing tab context' });
+      return false;
+    }
+    if (!isAllowedSender(sender.tab.url, message.platform)) {
+      sendResponse({ ok: false, error: 'Sender origin does not match platform' });
+      return false;
+    }
+    const senderHost = getHostname(sender.tab.url);
+    savePostByUrl(sender.tab, message.platform, message.postUrl, message.capturedVia || null)
+      .then((result) => sendResponse({ ok: true, ...result }))
+      .catch((error) => {
+        console.error(error);
+        const errorKind = classifySaveFailure(error?.message);
+        void logCapture({ stage: error?.stage || 'unknown', phase: 'fail', platform: message.platform, host: senderHost, url: message.postUrl, error: error?.message }, true);
+        sendResponse({ ok: false, errorKind, error: error?.message });
+      });
+    return true; // async response
+  });
+
+  async function savePostByUrl(tab, sendPlatform, postUrl, capturedVia) {
+    const captureId = generateCaptureId();
+    const capturedAt = new Date().toISOString();
+
+    let meta: any;
+    try {
+      meta = await fetchPostMetadata(postUrl, { expectedHost: getHostname(tab.url) });
+    } catch (err) {
+      throw stageError('metadata', err?.message || 'metadata fetch threw');
+    }
+
+    // A post with no media is still saved — the host writes its sidecar and the
+    // library shows it once #365 lands (see handleSavePost). Losing it instead
+    // would be permanent: X has no bookmark export to go back to.
+    const record = buildRecord(meta, {
+      captureId,
+      capturedAt,
+      postUrl,
+      sendPlatform,
+      extra: { mediaType: meta.mediaType, media: meta.media, capturedVia },
+    });
+
+    const metaOk = metaFetched(meta);
+    let ack: any;
+    try {
+      ack = await sendPostToBridge(captureId, record, metaOk);
+    } catch (err) {
+      throw stageError('bridge', err?.message || 'bridge save failed');
+    }
+    markSaved([record.url, postUrl], ack?.file || captureId, tab.id);
+    const grouped = await bumpRecentSave(record.url);
+    return { ...ack, metaOk, metaReason: meta.metaError || null, grouped };
+  }
+
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type !== 'captureAndSend') return false;
 
@@ -278,6 +339,12 @@ export function startBackground(): void {
   // API returned info) rides along so the host's capture.log records partial saves.
   function sendToBridge(captureId, jpegBase64, record, metaOk) {
     return bridgeSend({ type: 'save', captureId, image: jpegBase64, metadata: record, metaOk });
+  }
+
+  // Bulk-intake save (#362): metadata only, no screenshot — the host downloads
+  // the post's own media and the first one becomes the record's image.
+  function sendPostToBridge(captureId, record, metaOk) {
+    return bridgeSend({ type: 'savePost', captureId, metadata: record, metaOk });
   }
 
   // Image-drag save: the host downloads the dragged image itself (no screenshot).

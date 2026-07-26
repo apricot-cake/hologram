@@ -9,17 +9,14 @@
 // capture even here. background.ts sets that flag just before injecting.
 //
 // What this covers: the model has no auto-scroll (nothing here ever changes
-// window.scrollY or dispatches wheel/scroll itself — the test drives "the user
-// scrolled" by hand), a post is only captured once it clears the sticky header
-// and fits the viewport, the already-saved check goes out in a batch and a
-// "saved" answer skips a post without a captureAndSend, a post the fixture
-// removes while queued becomes a miss and recovers by URL when the fixture adds
-// it back, and the summary text names saved/skipped/missed counts. What this
+// window.scrollY or dispatches wheel/scroll itself), permalinks are read as
+// rows MOUNT so nothing is lost to fast scrolling, the already-saved check goes
+// out in a batch and a "saved" answer skips a post without a savePost, saves
+// carry the bulk-intake marker, an image-less post is SAVED but reported
+// apart (displayable only once #365 lands), and stopping reports a summary. What this
 // CANNOT cover: whether X's own bookmarks page still renders the shapes the
 // fixture assumes (same limit as test-overlay-unit.cts / test-content-fixtures;
-// the live canary is scripts/e2e-capture-test.cts) and real scroll-cadence
-// timing (jsdom has no layout, so "capturable" is entirely decided by the
-// data-rect-top/data-rect-size the fixture declares).
+// the live canary is scripts/e2e-capture-test.cts).
 //
 //   node scripts/test-bulk-capture-unit.cts
 
@@ -86,7 +83,7 @@ window.cancelAnimationFrame = () => {};
 // --- chrome API stub ---
 const sent: any[] = [];
 let savedAnswer: Record<string, string | null> = {};
-const saveOutcome: 'success' | 'fail' = 'success';
+const noMediaUrls = new Set<string>();
 const runtimeListeners: any[] = [];
 window.chrome = {
   runtime: {
@@ -100,12 +97,14 @@ window.chrome = {
         cb?.({ ok: true, results });
         return;
       }
-      if (msg.type === 'captureAndSend') {
-        // The real background asks the content script to crop, THEN notifies
-        // success/failure. Drive both through the listeners bulk-capture.ts
-        // registered, exactly as background.ts would.
-        for (const fn of runtimeListeners) fn({ type: 'cropImage', dataUrl: 'data:image/jpeg;base64,AAAA', rect: msg.rect }, {}, () => {});
-        for (const fn of runtimeListeners) fn({ type: 'notify', success: saveOutcome === 'success' }, {}, () => {});
+      if (msg.type === 'savePost') {
+        // The real background answers the caller directly (no notify push).
+        // A post the fixture marks image-less answers the way background.ts
+        // does for that case, so the counter split can be asserted.
+        // An image-less post is still SAVED — the host writes its sidecar and
+        // flags it deferred (not displayable until #365).
+        if (noMediaUrls.has(msg.postUrl)) cb?.({ ok: true, file: 'x.json', deferred: true });
+        else cb?.({ ok: true, file: 'x.jpg' });
       }
     },
     onMessage: {
@@ -162,59 +161,63 @@ const captureReady = Promise.resolve(window.eval(fs.readFileSync(path.join(DIST,
 
 (async () => {
   await captureReady;
-  await settle(1300); // past the harvest debounce, i18n's async wrapper, and MIN_CAPTURE_PERIOD_MS so p2's capture completes
+  await settle(1300); // past i18n's async wrapper and MIN_SAVE_PERIOD_MS so p2's save completes
 
   check('the mode banner mounts on the bookmarks page', banner() !== null);
-  check('p1/p2 are asked about in one batch (p3 has no rect yet, so it is not counted as a post to ask about via captureAndSend, but IS harvested)', sent.filter((m) => m.type === 'checkSaved').length >= 1);
   const firstAsk = sent.find((m) => m.type === 'checkSaved');
-  check('the batch asked about both capturable posts', firstAsk && firstAsk.urls.includes('https://x.com/alice/status/111') && firstAsk.urls.includes('https://x.com/bob/status/222'));
+  check('the already-saved question goes out as one batch', sent.filter((m) => m.type === 'checkSaved').length >= 1);
+  check('every post in the DOM is asked about, layout or not — a permalink is all a save needs now', firstAsk && ['111', '222', '333'].every((id) => firstAsk.urls.some((u) => u.endsWith(`/status/${id}`))));
 
   check(
-    'a saved post never triggers a screenshot',
-    sent.every((m) => !(m.type === 'captureAndSend' && m.postUrl === 'https://x.com/alice/status/111')),
+    'a post already in the library is never sent for saving',
+    sent.every((m) => !(m.type === 'savePost' && m.postUrl === 'https://x.com/alice/status/111')),
   );
   check(
-    'the unsaved post was captured',
-    sent.some((m) => m.type === 'captureAndSend' && m.postUrl === 'https://x.com/bob/status/222'),
+    'an unsaved post is sent by permalink alone',
+    sent.some((m) => m.type === 'savePost' && m.postUrl === 'https://x.com/bob/status/222'),
   );
-  check('the capture carries the bulk-intake marker (#362 capturedVia)', sent.find((m) => m.type === 'captureAndSend' && m.postUrl === 'https://x.com/bob/status/222')?.capturedVia === 'x-bookmarks');
-  check('progress banner shows 1 saved, 1 skipped', bannerText().includes('1') && (bannerText().includes('保存') || bannerText().toLowerCase().includes('saved')));
+  check('the save carries the bulk-intake marker (#362 capturedVia)', sent.find((m) => m.type === 'savePost' && m.postUrl === 'https://x.com/bob/status/222')?.capturedVia === 'x-bookmarks');
+  check(
+    'nothing asks for a screenshot any more',
+    sent.every((m) => m.type !== 'captureAndSend'),
+  );
+  check('progress banner counts saved and skipped', bannerText().includes('1') && (bannerText().includes('保存') || bannerText().toLowerCase().includes('saved')));
 
-  // --- miss + recovery ---
+  // --- a row that mounts and is discarded before its turn is still saved ---
+  // This is what the screenshot version could not do: it needed the post to be
+  // ON SCREEN when its turn came, so a fast scroll lost it. Reading the
+  // permalink on arrival makes the row's later removal irrelevant.
   addPost('p4', 'dave', '444', 900);
-  scroll();
-  await settle(300);
-  // Scrolled past before its turn came up: the virtual list drops it.
+  await settle(120);
   removePost('p4');
-  scroll();
-  await settle(300);
-  check('a post dropped from the DOM before capture counts as missed', bannerText().includes('見送り') || bannerText().toLowerCase().includes('missed'));
-
-  // Scrolling back re-adds the same URL: it recovers, not double-counts.
-  addPost('p4', 'dave', '444', 200);
-  scroll();
-  await settle(1300);
+  await settle(1400);
   check(
-    'scrolling back over a missed post recovers and captures it',
-    sent.some((m) => m.type === 'captureAndSend' && m.postUrl === 'https://x.com/dave/status/444'),
+    'a post whose row was dropped right after mounting is still saved',
+    sent.some((m) => m.type === 'savePost' && m.postUrl === 'https://x.com/dave/status/444'),
   );
-  check('a recovered post is no longer counted as missed', !bannerText().includes('見送り') && !bannerText().toLowerCase().includes('missed'));
 
-  // --- the resident overlay's controls must survive the mode ---
-  // The rule that hides them belongs to the screenshot only. Left mounted for
-  // the whole mode it outlived the mode itself (x.com is an SPA, so leaving the
-  // list runs no teardown) and the saved marks stayed gone for the rest of the
-  // tab's life — reported from real use, 2026-07-26.
+  // --- an image-less post is SAVED, just not displayable yet (#365) ---
+  // Losing it instead would be permanent: X has no bookmark export to go back
+  // to, which is the whole reason this feature exists.
+  noMediaUrls.add('https://x.com/erin/status/555');
+  addPost('p5', 'erin', '555', 300);
+  await settle(1400);
+  check(
+    'an image-less post is still sent for saving, not skipped',
+    sent.some((m) => m.type === 'savePost' && m.postUrl === 'https://x.com/erin/status/555'),
+  );
+
+  // --- the resident overlay's controls are never touched now ---
   const hidingRules = () => Array.from(window.document.querySelectorAll('style')).filter((s) => (s.textContent || '').includes('data-hologram-overlay'));
-  check('no rule is hiding the overlay controls between captures', hidingRules().length === 0);
+  check('no rule ever hides the overlay controls', hidingRules().length === 0);
 
   // --- stop ---
   const stopBtn = Array.from(banner()?.querySelectorAll('button') || [])[0] as HTMLButtonElement;
   stopBtn.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
   await settle();
-  check('stopping shows a finished/stopped summary rather than the live counter', bannerText().includes('中断') || bannerText().toLowerCase().includes('stop'));
-  check('a second Alt+S toggle target is cleared on stop', typeof (window as any).__snsPostSaveActive === 'undefined' || (window as any).__snsPostSaveActive === false);
-  check('stopping leaves no overlay-hiding rule behind', hidingRules().length === 0);
+  check('stopping shows a summary rather than the live counter', bannerText().includes('中断') || bannerText().toLowerCase().includes('stop'));
+  check('the summary counts image-less posts as saved, never as skipped', bannerText().includes('画像なし') || bannerText().toLowerCase().includes('image-less'));
+  check('the activation toggle is cleared on stop', typeof (window as any).__snsPostSaveActive === 'undefined' || (window as any).__snsPostSaveActive === false);
 
   console.log(`${fail === 0 ? 'PASS' : 'FAIL'} test-bulk-capture-unit: ${pass} checks passed, ${fail} failed`);
   process.exit(fail === 0 ? 0 : 1);

@@ -237,8 +237,29 @@ const writeSidecarIn = (d, name, rec) => realFs.writeFileSync(path.join(d, name)
   assert.ok(!opened.some((p) => p.endsWith('v2-media-0.mp4')), '#119 St1: poster-less video never opens the video file either');
   realFs.rmSync(dir5, { recursive: true, force: true });
 
+  // --- text-only posts are records too (#365) ---
+  // A post with no image, video or media used to be dropped as "not a post
+  // record", which silently discarded every text bookmark a bulk import wrote
+  // (#362) — unrecoverable, since X has no bookmark export. A post identity
+  // (permalink + captureId) now admits it; app-owned JSON still has neither and
+  // stays out.
+  const dir6 = realFs.mkdtempSync(path.join(os.tmpdir(), 'hologram-index-textonly-'));
+  writeSidecarIn(dir6, 't1.json', { captureId: 't1', url: 'https://x.com/alice/status/1', text: 'no pictures here', capturedAt: '2026-06-01T00:00:00Z' });
+  writeSidecarIn(dir6, 'folders.json', { folders: [{ id: 'f1', name: 'Nope' }] });
+  writeSidecarIn(dir6, 'stray.json', { hello: 'not a post' });
+
+  const idxG = createPostIndex({ fs: countingFs, internalFiles: INTERNAL });
+  const rg = await idxG.list(dir6);
+  const t1 = rg.posts.find((p) => p.captureId === 't1');
+  assert.ok(t1, '#365: a text-only post is indexed');
+  assert.strictEqual(t1.text, 'no pictures here', '#365: its text survives into the index');
+  assert.ok(!t1.shotW, '#365: nothing to measure, so no masonry reservation is claimed');
+  assert.ok(!rg.posts.some((p) => p.hello === 'not a post'), '#365: JSON without a post identity is still not a post record');
+  assert.strictEqual(rg.posts.length, 1, '#365: only the post is admitted (folders.json is internal, stray.json has no identity)');
+  realFs.rmSync(dir6, { recursive: true, force: true });
+
   realFs.rmSync(dir, { recursive: true, force: true });
-  console.log('PASS test-index: reuse, prune, snapshot cold-restore, computeDelta, targeted applyChanges, BOM tolerance, and #216 folder clamp verified');
+  console.log('PASS test-index: reuse, prune, snapshot cold-restore, computeDelta, targeted applyChanges, BOM tolerance, #216 folder clamp, and #365 text-only records verified');
 })().catch((e) => {
   try {
     realFs.rmSync(dir, { recursive: true, force: true });
