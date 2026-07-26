@@ -7,6 +7,8 @@ description: Hologram アプリを起動して動きを確かめる時の経路�
 
 正本は `docs/build.md`（「コード変更の反映」「検証ルール（隔離3段構え）」）。ここはその選択部分だけを抜いたもので、矛盾があれば `docs/build.md` が勝つ。
 
+**起動した先で CDP を叩くなら skill `verify-with-cdp` を先に読む**（合成マウスでレンダラを固める・スクショが固着/白紙/ハングする・拡張の診断は観測点を間違えると全部 false に見える、といった罠がまとまっている）。worktree からテストや拡張検証を回すなら skill `test-in-worktree`。
+
 ## 絶対の制約: Claude のシェルから electron を直接起動しない
 
 Claude のシェルは MSIX パッケージ内で動く。そこから起動した electron はコンテナの子になり、HKCU とファイルシステムが仮想化される＝ネイティブホストの登録が実 Chrome から見えない私的ハイブへ入り、**キャプチャが壊れる**。`Start-Process electron.exe` も `npm start` も使わない。
