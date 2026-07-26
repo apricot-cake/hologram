@@ -49,7 +49,7 @@ export function startBackground(): void {
     return false;
   }
 
-  async function activateOnTab(tab) {
+  async function activateOnTab(tab, auto = false) {
     // Log the attempt (and the silent non-http bail) to capture.log: an icon
     // click that "does nothing" is otherwise diagnosable only from the SW
     // DevTools console, which nobody has open when it happens.
@@ -57,8 +57,22 @@ export function startBackground(): void {
       void logCapture({ stage: 'activate', phase: 'skip', url: tab.url || '(no url)' });
       return;
     }
-    void logCapture({ stage: 'activate', phase: 'click', host: getHostname(tab.url), url: tab.url });
+    void logCapture({ stage: 'activate', phase: 'click', host: getHostname(tab.url), url: tab.url, auto });
     try {
+      // Auto capture (#362) is asked for by its OWN gesture, so the choice
+      // rides in as a page-side flag rather than being inferred from the URL —
+      // Alt+S has to keep meaning single-shot capture on every page, the
+      // bookmarks list included. Set in a separate injection because the
+      // unlisted capture entrypoint is a file, not a function: both run under
+      // the same activeTab grant, in order.
+      if (auto) {
+        await chrome.scripting.executeScript({
+          target: { tabId: tab.id },
+          func: () => {
+            window.__hologramAutoCapture = true;
+          },
+        });
+      }
       await chrome.scripting.executeScript({
         target: { tabId: tab.id },
         // WXT emits the unlisted capture entrypoint with this stable filename.
@@ -72,13 +86,13 @@ export function startBackground(): void {
     }
   }
 
-  chrome.action.onClicked.addListener(activateOnTab);
+  chrome.action.onClicked.addListener((tab) => activateOnTab(tab));
 
   chrome.commands.onCommand.addListener(async (command) => {
-    if (command !== 'activate') return;
+    if (command !== 'activate' && command !== 'activate-auto') return;
 
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (tab) activateOnTab(tab);
+    if (tab) activateOnTab(tab, command === 'activate-auto');
   });
 
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {

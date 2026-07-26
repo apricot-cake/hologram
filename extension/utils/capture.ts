@@ -25,19 +25,26 @@ export async function startCapture(): Promise<void> {
   // narrowed (non-null) type into every one of them.
   const site: SiteConfig = siteConfig;
 
+  // Read and clear the auto-capture request before anything can return early,
+  // so a flag left over from a cancelled activation can never turn a later
+  // plain Alt+S into auto mode.
+  const wantsAuto = window.__hologramAutoCapture === true;
+  window.__hologramAutoCapture = undefined;
+
   // Prevent double injection — shared toggle between this single-shot mode and
-  // the bulk-intake mode below (both bind the same Alt+S command; the second
-  // press of either one ends whichever is running).
+  // the auto capture mode below (whichever is running, the next activation of
+  // either ends it).
   if (typeof window.__snsPostSaveCleanup === 'function') {
     window.__snsPostSaveCleanup();
     return;
   }
 
-  // #362: the bookmarks list gets the bulk chase-mode intake instead of the
-  // single-shot click-to-save flow below — see bulk-capture.ts for why (the
-  // Issue's decision comment covers the "why not auto-scroll" reasoning this
-  // depends on).
-  if (site.platform === 'x' && isXBookmarksPage()) {
+  // #362: auto capture is a DIFFERENT gesture (Alt+Shift+S), not a mode that
+  // Alt+S turns into on certain pages — Alt+S keeps meaning "save the post I
+  // am about to click" everywhere, the bookmarks list included. Scoped to the
+  // bookmarks list for now; anywhere else the request is simply ignored and
+  // the single-shot flow below runs.
+  if (wantsAuto && site.platform === 'x' && isXBookmarksPage()) {
     startBulkCapture(site, i18n);
     return;
   }

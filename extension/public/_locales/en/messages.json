@@ -15,6 +15,10 @@
     "message": "Start capturing a post",
     "description": "Keyboard command description (Alt+S)"
   },
+  "cmdActivateAuto": {
+    "message": "Start auto capture (X bookmarks list)",
+    "description": "Keyboard command description (Alt+Shift+S) for the auto capture mode"
+  },
   "optionsTitle": {
     "message": "Hologram Settings",
     "description": "Options page document title"

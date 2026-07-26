@@ -143,13 +143,22 @@ export function startBulkCapture(site: SiteConfig, i18n: HologramI18nApi): void 
     );
   }
 
-  // The resident overlay's hover controls sit ON TOP of post media, so they
-  // would be baked into a screenshot taken while the pointer rests on a post.
-  // Suppressed for the whole mode — during a bulk intake the per-picture save
-  // button has nothing to offer anyway.
-  const modeStyle = document.createElement('style');
-  modeStyle.textContent = '[data-hologram-overlay]{display:none !important}';
-  document.head.appendChild(modeStyle);
+  // The resident overlay's hover controls (the saved mark, the hover save
+  // button) sit ON TOP of post media, so one resting under the pointer would be
+  // baked into the screenshot. Hidden ONLY for the frames the shot spans, the
+  // same way the banner above hides itself — an earlier version left this
+  // mounted for the whole mode, and because x.com is an SPA (leaving
+  // /i/bookmarks runs no teardown) the rule outlived the mode and the marks
+  // stayed gone for the rest of the tab's life.
+  const shotStyle = document.createElement('style');
+  shotStyle.textContent = '[data-hologram-overlay]{display:none !important}';
+
+  function hideOverlaysForShot() {
+    if (!shotStyle.isConnected) document.head.appendChild(shotStyle);
+  }
+  function showOverlaysAfterShot() {
+    shotStyle.remove();
+  }
 
   function paint() {
     if (stopped) return;
@@ -310,6 +319,7 @@ export function startBulkCapture(site: SiteConfig, i18n: HologramI18nApi): void 
       settleInFlight = null;
       restoreCaptureState?.();
       restoreCaptureState = null;
+      showOverlaysAfterShot();
       banner.style.display = 'flex';
       paint();
       schedulePump();
@@ -324,6 +334,7 @@ export function startBulkCapture(site: SiteConfig, i18n: HologramI18nApi): void 
     // Hide our own chrome, and neutralise the post's hover styling, so the
     // screenshot is of the post as it rests.
     banner.style.display = 'none';
+    hideOverlaysForShot();
     restoreCaptureState = site.prepareForCapture?.(post) || null;
     inFlight = entry;
     inFlightRect = () => (post.isConnected ? rectOf(post) : null);
@@ -407,7 +418,7 @@ export function startBulkCapture(site: SiteConfig, i18n: HologramI18nApi): void 
     if (harvestTimer) clearTimeout(harvestTimer);
     if (pumpTimer) clearTimeout(pumpTimer);
     restoreCaptureState?.();
-    modeStyle.remove();
+    showOverlaysAfterShot();
     if (window.__snsPostSaveCleanup === stop) delete window.__snsPostSaveCleanup;
     window.__snsPostSaveActive = false;
 
@@ -458,7 +469,17 @@ export function startBulkCapture(site: SiteConfig, i18n: HologramI18nApi): void 
     if (e.key === 'Escape') finish(true);
   }
 
-  const observer = new MutationObserver(scheduleHarvest);
+  const observer = new MutationObserver(() => {
+    // x.com is an SPA: leaving the bookmarks list swaps the feed in place and
+    // fires no unload, so nothing else would ever tear this mode down. Without
+    // this the mode kept running (and kept its listeners) over an unrelated
+    // timeline for the rest of the tab's life.
+    if (!isXBookmarksPage()) {
+      finish(true);
+      return;
+    }
+    scheduleHarvest();
+  });
   observer.observe(document.documentElement, { childList: true, subtree: true });
   addEventListener('scroll', onScroll, { capture: true, passive: true });
   document.addEventListener('keydown', onKeyDown, true);

@@ -1,11 +1,12 @@
 'use strict';
 
 // Offline pure-unit test for extension/utils/bulk-capture.ts — the X bookmarks
-// chase-mode intake (#362). Runs the BUILT unlisted capture script (capture.js,
-// which bundles capture.ts + bulk-capture.ts + site-detect.ts + glass-ui.ts)
-// inside jsdom, on a fixture whose URL is /i/bookmarks so capture.ts's branch
-// dispatches to startBulkCapture instead of the single-shot click-to-save flow
-// (see capture.ts's isXBookmarksPage() check).
+// chase-mode auto capture (#362). Runs the BUILT unlisted capture script
+// (capture.js, which bundles capture.ts + bulk-capture.ts + site-detect.ts +
+// glass-ui.ts) inside jsdom, on a fixture whose URL is /i/bookmarks AND with
+// window.__hologramAutoCapture set — BOTH are required, because auto capture
+// has its own gesture (Alt+Shift+S) and Alt+S must keep meaning single-shot
+// capture even here. background.ts sets that flag just before injecting.
 //
 // What this covers: the model has no auto-scroll (nothing here ever changes
 // window.scrollY or dispatches wheel/scroll itself — the test drives "the user
@@ -152,6 +153,11 @@ const settle = (ms = 250) => new Promise((r) => setTimeout(r, ms));
 // route — no request to X at all for ground already covered).
 savedAnswer = { 'https://x.com/alice/status/111': '1780000000000-aa' };
 
+// What background.ts does right before injecting when the user pressed the auto
+// capture command. Without it the same bundle on the same page runs the
+// single-shot flow instead — asserted below.
+(window as any).__hologramAutoCapture = true;
+
 const captureReady = Promise.resolve(window.eval(fs.readFileSync(path.join(DIST, 'capture.js'), 'utf8')));
 
 (async () => {
@@ -194,12 +200,21 @@ const captureReady = Promise.resolve(window.eval(fs.readFileSync(path.join(DIST,
   );
   check('a recovered post is no longer counted as missed', !bannerText().includes('見送り') && !bannerText().toLowerCase().includes('missed'));
 
+  // --- the resident overlay's controls must survive the mode ---
+  // The rule that hides them belongs to the screenshot only. Left mounted for
+  // the whole mode it outlived the mode itself (x.com is an SPA, so leaving the
+  // list runs no teardown) and the saved marks stayed gone for the rest of the
+  // tab's life — reported from real use, 2026-07-26.
+  const hidingRules = () => Array.from(window.document.querySelectorAll('style')).filter((s) => (s.textContent || '').includes('data-hologram-overlay'));
+  check('no rule is hiding the overlay controls between captures', hidingRules().length === 0);
+
   // --- stop ---
   const stopBtn = Array.from(banner()?.querySelectorAll('button') || [])[0] as HTMLButtonElement;
   stopBtn.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
   await settle();
   check('stopping shows a finished/stopped summary rather than the live counter', bannerText().includes('中断') || bannerText().toLowerCase().includes('stop'));
   check('a second Alt+S toggle target is cleared on stop', typeof (window as any).__snsPostSaveActive === 'undefined' || (window as any).__snsPostSaveActive === false);
+  check('stopping leaves no overlay-hiding rule behind', hidingRules().length === 0);
 
   console.log(`${fail === 0 ? 'PASS' : 'FAIL'} test-bulk-capture-unit: ${pass} checks passed, ${fail} failed`);
   process.exit(fail === 0 ? 0 : 1);
