@@ -18,7 +18,13 @@ description: 拡張機能（extension/）の変更を実ブラウザで確かめ
 
 ## 手順（既定）
 
-1. 作業ツリーの `extension/` で `npm run dev:ext`（fresh worktree は先に `npm install`）。**worktree からそのまま起動してよい**＝本体ツリーを経由する必要はない（開発用ブラウザは dev サーバーが指す出力を読むだけ）。
+1. 作業ツリーの `extension/` で dev サーバーを起動（fresh worktree は先に `npm install`）。**worktree からそのまま起動してよい**＝本体ツリーを経由する必要はない（開発用ブラウザは dev サーバーが指す出力を読むだけ）。
+
+   **Claude が起動する時は標準入力を開いたまま**にする＝WXT は起動後に「Press o + enter」で stdin を待つ対話モードに入り、`npm run dev:ext` を素で背景実行すると **EOF を読んで即終了し、開いたブラウザごと落ちる**（2026-07-26 実測）。
+
+   ```
+   tail -f /dev/null | npm run dev:ext
+   ```
 2. WXT が開発用ブラウザを起動する。プロファイルは永続（`~/.hologram-ext-profile`）＝ログインは初回だけ。`startUrls` で `x.com/i/bookmarks` が開く。
 3. **ソースを直したらホットリロードに任せる**。手動で拡張もページも再読み込みしない。
 4. **確認は自分で CDP から行う**（`--remote-debugging-port=9223`。アプリ本体の :9222 と別）。ページの DOM、コンソール、拡張自身のサービスワーカーのログまで読める＝スクショを頼まない。CDP の作法は skill `verify-with-cdp`。

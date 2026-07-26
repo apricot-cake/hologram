@@ -1,4 +1,13 @@
+import { mkdirSync } from 'node:fs';
 import { defineWebExtConfig } from 'wxt';
+
+const PROFILE = 'C:/Users/apricot/.hologram-ext-profile';
+
+// chrome-launcher opens its log inside the profile directory before Chrome
+// creates it, so a path that does not exist yet fails the whole dev command
+// with a bare ENOENT on chrome-out.log. Creating it here keeps `npm run dev:ext`
+// working on a fresh clone.
+mkdirSync(PROFILE, { recursive: true });
 
 // Development happens in a browser WXT owns, not in the everyday one.
 //
@@ -24,7 +33,7 @@ import { defineWebExtConfig } from 'wxt';
 export default defineWebExtConfig({
   // Outside AppData, like every other path this project persists (MSIX
   // virtualisation ate a library once — docs/build.md).
-  chromiumProfile: 'C:/Users/apricot/.hologram-ext-profile',
+  chromiumProfile: PROFILE,
   keepProfileChanges: true,
   chromiumArgs: ['--remote-debugging-port=9223'],
   startUrls: ['https://x.com/i/bookmarks'],
