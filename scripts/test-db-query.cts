@@ -42,7 +42,7 @@ function writeJson(folder: string, name: string, data: unknown) {
     image: 'cap-1.jpg',
     media: [
       { url: 'https://x.example/1.jpg', alt: 'alt1', width: 100, height: 200, file: 'cap-1-media-0.jpg' },
-      { url: 'https://x.example/2.jpg', alt: 'alt2', width: 50, height: 60, file: 'cap-1-media-1.jpg' },
+      { url: 'https://x.example/2.mp4', alt: 'alt2', width: 50, height: 60, file: 'cap-1-media-1.mp4', type: 'video', posterFile: 'cap-1-poster.jpg' },
     ],
     text: 'a beautiful sunset over the mountains',
     hashtags: ['nature', 'photo'],
@@ -79,9 +79,13 @@ function writeJson(folder: string, name: string, data: unknown) {
   assert.deepStrictEqual(cap1.hashtags, ['nature', 'photo'], 'hashtags JSON column parses back to an array');
   assert.deepStrictEqual(
     cap1.media.map((m: any) => m.file),
-    ['cap-1-media-0.jpg', 'cap-1-media-1.jpg'],
+    ['cap-1-media-0.jpg', 'cap-1-media-1.mp4'],
     'media rows come back in seq order',
   );
+  assert.strictEqual(cap1.media[0].type, null, 'a still-image entry has no type (#119 St1)');
+  assert.strictEqual(cap1.media[1].type, 'video', 'a video entry carries its type (#119 St1)');
+  assert.strictEqual(cap1.media[1].posterFile, 'cap-1-poster.jpg', 'a video entry carries its posterFile (#119 St1)');
+  passed += 3;
   ok(cap1.isReply === true && cap1.isQuote === false, 'INTEGER 0/1 booleans coerce back to true/false, not 0/1');
   const cap2 = all.find((p: any) => p.captureId === 'cap-2');
   ok(cap2.isReply === null, 'an unset boolean column stays null, not false');

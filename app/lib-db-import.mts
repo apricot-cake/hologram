@@ -214,7 +214,7 @@ function preparePostStmts(sqlite: Database.Database): PostStmts {
   return {
     upsertPost: sqlite.prepare(UPSERT_POST_SQL),
     deleteMedia: sqlite.prepare('DELETE FROM media WHERE postId = ?'),
-    insertMedia: sqlite.prepare('INSERT INTO media (postId, seq, url, alt, width, height, file) VALUES (?,?,?,?,?,?,?)'),
+    insertMedia: sqlite.prepare('INSERT INTO media (postId, seq, url, alt, width, height, file, type, posterFile) VALUES (?,?,?,?,?,?,?,?,?)'),
     deletePostTags: sqlite.prepare('DELETE FROM post_tags WHERE postId = ?'),
     insertPostTag: sqlite.prepare('INSERT INTO post_tags (postId, tagId) VALUES (?,?)'),
     deleteFts: sqlite.prepare('DELETE FROM posts_fts WHERE postId = ?'),
@@ -235,7 +235,7 @@ function writePost(stmts: PostStmts, resolveTagId: (name: string) => number, rec
   const n = normalizePostRecord(rec);
   stmts.upsertPost.run(...postParams(n, sourceMtimeMs));
   stmts.deleteMedia.run(n.captureId);
-  n.media.forEach((m, seq) => stmts.insertMedia.run(n.captureId, seq, m.url, m.alt, m.width, m.height, m.file));
+  n.media.forEach((m, seq) => stmts.insertMedia.run(n.captureId, seq, m.url, m.alt, m.width, m.height, m.file, m.type, m.posterFile));
   stmts.deletePostTags.run(n.captureId);
   const tagIds = n.tags.map(resolveTagId);
   for (const tagId of tagIds) stmts.insertPostTag.run(n.captureId, tagId);

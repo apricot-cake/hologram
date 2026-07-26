@@ -30,7 +30,7 @@ fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolde
 
 const jpeg = Buffer.from('/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACP/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AfwH/2Q==', 'base64');
 
-function writePost(id, tags) {
+function writePost(id, tags, media: any[] = []) {
   fs.writeFileSync(path.join(saveFolder, `${id}.jpg`), jpeg);
   fs.writeFileSync(
     path.join(saveFolder, `${id}.json`),
@@ -42,6 +42,7 @@ function writePost(id, tags) {
         platform: 'x',
         text: 't',
         tags,
+        media: media || [],
         capturedAt: '2026-01-01T00:00:00.000Z',
         date: '2026-01-01T00:00:00.000Z',
       },
@@ -53,6 +54,10 @@ function writePost(id, tags) {
 writePost('dummy-0001', []);
 writePost('dummy-0002', []);
 writePost('dummy-0003', []);
+// #119 St1 acceptance: deleting a video post recovers its -media-/-poster. files too.
+writePost('dummy-0004', [], [{ url: 'https://x/clip.mp4', alt: null, width: null, height: null, file: 'dummy-0004-media-0.mp4', type: 'video', posterFile: 'dummy-0004-poster.jpg' }]);
+fs.writeFileSync(path.join(saveFolder, 'dummy-0004-media-0.mp4'), Buffer.from('fake-mp4'));
+fs.writeFileSync(path.join(saveFolder, 'dummy-0004-poster.jpg'), jpeg);
 
 const evalJs = `(async () => {
   await window.hologram.updateTags('dummy-0001.jpg', ['tagX']);
@@ -60,6 +65,7 @@ const evalJs = `(async () => {
   await window.hologram.updateTags('dummy-0003.jpg', ['tagY'], { userKind: 'plain', tagReviewed: true });
   await window.hologram.deletePost('dummy-0003.jpg');
   await window.hologram.restorePost('dummy-0003.jpg');
+  await window.hologram.deletePost('dummy-0004.jpg');
   const { posts } = await window.hologram.listPosts();
   return posts.length;
 })()`;
@@ -96,10 +102,12 @@ child.on('close', () => {
   const restoreOk = JSON.stringify(restoredTags) === JSON.stringify(['tagY']) && !!restoredRow && restoredRow.userKind === 'plain' && restoredRow.tagReviewed === 1;
 
   const delOk = !fs.existsSync(path.join(saveFolder, 'dummy-0002.jpg')) && !fs.existsSync(path.join(saveFolder, 'dummy-0002.json'));
+  // #119 St1: delete-post sweeps -media-/-poster. files, not just the sidecar+image.
+  const videoDelOk = !fs.existsSync(path.join(saveFolder, 'dummy-0004-media-0.mp4')) && !fs.existsSync(path.join(saveFolder, 'dummy-0004-poster.jpg')) && fs.existsSync(path.join(tmp, 'saves', '.trash', 'dummy-0004-media-0.mp4')) && fs.existsSync(path.join(tmp, 'saves', '.trash', 'dummy-0004-poster.jpg'));
   const countOk = /EVAL_RESULT 2\b/.test(out);
   fs.rmSync(tmp, { recursive: true, force: true });
-  console.log(`updateTags(db)=${tagOk} sidecarUntouched=${sidecarUntouchedOk} delete=${delOk} restoreKeepsDbFlags=${restoreOk} listCount=${countOk}`);
-  const pass = tagOk && sidecarUntouchedOk && delOk && restoreOk && countOk;
+  console.log(`updateTags(db)=${tagOk} sidecarUntouched=${sidecarUntouchedOk} delete=${delOk} videoDelete=${videoDelOk} restoreKeepsDbFlags=${restoreOk} listCount=${countOk}`);
+  const pass = tagOk && sidecarUntouchedOk && delOk && videoDelOk && restoreOk && countOk;
   console.log(pass ? 'IPC_TEST_PASS' : 'IPC_TEST_FAIL');
   process.exit(pass ? 0 : 1);
 });

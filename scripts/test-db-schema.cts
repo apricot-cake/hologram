@@ -36,7 +36,7 @@ const EXPECTED_TABLES = ['posts', 'media', 'tags', 'tag_parents', 'tag_aliases',
 
 {
   const { db, sqlite } = openDatabase(mkdb());
-  assert.strictEqual(sqlite.pragma('user_version', { simple: true }), 6, 'v1 DDL plus the five appended migrations through #41 add-folder-parent');
+  assert.strictEqual(sqlite.pragma('user_version', { simple: true }), 7, 'v1 DDL plus the six appended migrations through #119 add-media-video-fields');
 
   const names = new Set(
     sqlite
@@ -172,7 +172,7 @@ const EXPECTED_TABLES = ['posts', 'media', 'tags', 'tag_parents', 'tag_aliases',
   first.sqlite.close();
 
   const second = openDatabase(file);
-  assert.strictEqual(second.sqlite.pragma('user_version', { simple: true }), 6, 'reopen does not re-run the migrations');
+  assert.strictEqual(second.sqlite.pragma('user_version', { simple: true }), 7, 'reopen does not re-run the migrations');
   ok(second.sqlite.prepare("SELECT name FROM tags WHERE name = 'x'").get(), 'data from the first session survives reopen');
   passed += 2;
   second.sqlite.close();

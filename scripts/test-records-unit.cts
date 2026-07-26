@@ -64,6 +64,16 @@ async function main() {
     assert('densityImage list=キャプチャ優先', R.densityImage(withMedia, 'list') === 'd.jpg');
     assert('densityImage card=アートワーク優先', R.densityImage(withMedia, 'card') === 'm1.png');
     assert('groupFilesOf media なければ artwork', R.groupFilesOf(eagle).join(',') === 'c.png');
+
+    // #119 St1: a video-led media[] uses its poster as the still thumbnail (a
+    // raw video can't be an <img src>); with no poster, falls through to the
+    // capture screenshot via densityImage's cap||art ordering.
+    const withVideoPoster = { image: 'shot.jpg', media: [{ file: 'clip.mp4', type: 'video', posterFile: 'clip-poster.jpg' }] };
+    const withVideoNoPoster = { image: 'shot.jpg', media: [{ file: 'clip.mp4', type: 'video' }] };
+    assert('artworkFile video: poster があればそれを採用', R.artworkFile(withVideoPoster) === 'clip-poster.jpg');
+    assert('artworkFile video: poster が無ければ空（生の動画ファイルを<img>に渡さない）', R.artworkFile(withVideoNoPoster) === '');
+    assert('densityImage card: poster 無し video はスクショへフォールバック', R.densityImage(withVideoNoPoster, 'card') === 'shot.jpg');
+    assert('mediaFilesOf は type に関わらず実ファイルを返す（ギャラリー用）', R.mediaFilesOf(withVideoPoster).join(',') === 'clip.mp4');
     assert('postIdKey captureId 優先＋フォールバック', R.postIdKey({ captureId: 'c1' }) === 'c1' && R.postIdKey({ url: 'u', capturedAt: 't' }) === 'u|t');
   }
 
@@ -289,7 +299,18 @@ async function main() {
     assert('cardModel aspRatio=shotW/shotH（card・masonry 高さ予約）', m.aspRatio === '800/600');
     assert('cardModel nImg=4 / stackSrcs は2・3枚目のみ（幅=cardThumbW）', m.nImg === 4 && m.stackSrcs.join() === 'b.jpg@200,c.jpg@200');
     assert('cardModel imgSrc=fileSrc(shot.jpg, cardThumbW) / hasThumb', m.imgSrc === 'shot.jpg@200' && m.hasThumb === true);
+    assert('cardModel videoBadge: 画像投稿では false', m.videoBadge === false);
     assert('cardModel tags 引き継ぎ', m.tags.join() === 't1');
+
+    // #119 St1: videoBadge — mp4-backed lead media (video/gif type) shows the
+    // badge; a real .gif (no per-item type) does not, since it already reads
+    // as animated once loaded.
+    const pVideoMedia = { ...p, mediaType: 'video', media: [{ file: 'clip.mp4', type: 'video', posterFile: 'clip-poster.jpg' }] };
+    const mVideo = cardModel({ rep: pVideoMedia, records: [pVideoMedia], files: ['clip.mp4'] }, 0);
+    assert('cardModel videoBadge: video media で true / imgSrc は poster', mVideo.videoBadge === true && mVideo.imgSrc === 'clip-poster.jpg@200');
+    const pRealGif = { ...p, mediaType: 'gif', media: [{ file: 'anim.gif' }] };
+    const mRealGif = cardModel({ rep: pRealGif, records: [pRealGif], files: ['anim.gif'] }, 0);
+    assert('cardModel videoBadge: 実 gif ファイルでは false（type 無し）', mRealGif.videoBadge === false);
 
     // Body text that equals the author line is dropped (library-image dedup).
     const p2 = { ...p, text: 'Alice' };

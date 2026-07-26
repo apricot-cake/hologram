@@ -44,7 +44,7 @@ function writeJson(folder: string, name: string, data: unknown) {
   writeJson(folder, 'cap-1.json', {
     captureId: 'cap-1',
     image: 'cap-1.jpg',
-    media: [{ url: 'https://x.example/1.jpg', alt: 'alt1', width: 100, height: 200, file: 'cap-1-media-0.jpg' }],
+    media: [{ url: 'https://x.example/1.mp4', alt: 'alt1', width: 100, height: 200, file: 'cap-1-media-0.mp4', type: 'video', posterFile: 'cap-1-poster.jpg' }],
     text: 'a beautiful sunset today',
     hashtags: ['nature', 'photo'],
     tags: ['character:alice', 'style:sketch'],
@@ -113,8 +113,10 @@ function writeJson(folder: string, name: string, data: unknown) {
 
   const media1 = sqlite.prepare('SELECT * FROM media WHERE postId = ?').all('cap-1') as any[];
   assert.strictEqual(media1.length, 1, 'cap-1 has one media row');
-  assert.strictEqual(media1[0].file, 'cap-1-media-0.jpg', 'media row carries the sidecar file name');
-  passed += 2;
+  assert.strictEqual(media1[0].file, 'cap-1-media-0.mp4', 'media row carries the sidecar file name');
+  assert.strictEqual(media1[0].type, 'video', 'media row carries type (#119 St1)');
+  assert.strictEqual(media1[0].posterFile, 'cap-1-poster.jpg', 'media row carries posterFile (#119 St1)');
+  passed += 4;
 
   const tags = sqlite.prepare('SELECT id, name, kind FROM tags ORDER BY name').all() as any[];
   assert.strictEqual(tags.length, 2, 'exactly 2 distinct tag names resolved (character:alice, style:sketch)');

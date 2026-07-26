@@ -181,7 +181,112 @@ function mockFetch(routes) {
   assert.strictEqual(r.followers, null, 'pixiv: followers null (not exposed)');
   assert.strictEqual(r.authorCreatedAt, null, 'pixiv: account created date null (not exposed)');
 
-  console.log('PASS test-metadata-correctness: X undefined-guard, Bluesky quote gating, Misskey permalink, author profile (avatar/followers/createdAt)');
+  // === #119 St1: video/gif direct-URL extraction (X / Misskey / Mastodon) ===
+
+  // X: animated_gif picks its sole mp4 variant; video picks the HIGHEST-bitrate
+  // mp4 variant (ignoring the non-mp4 HLS playlist entry); poster is the same
+  // still-image URL a photo would use (?name=orig appended).
+  mockFetch([
+    [
+      'cdn.syndication.twimg.com',
+      {
+        text: 'hi',
+        user: { screen_name: 'alice', id_str: '1' },
+        mediaDetails: [
+          {
+            type: 'video',
+            media_url_https: 'https://pbs.twimg.com/tweet_video_thumb/abc.jpg',
+            video_info: {
+              variants: [
+                { content_type: 'application/x-mpegURL', url: 'https://video.twimg.com/x.m3u8' },
+                { content_type: 'video/mp4', bitrate: 832000, url: 'https://video.twimg.com/low.mp4' },
+                { content_type: 'video/mp4', bitrate: 2176000, url: 'https://video.twimg.com/high.mp4' },
+              ],
+            },
+          },
+        ],
+      },
+    ],
+  ]);
+  r = await fetchXTweet({ platform: 'x', id: '1', screenName: 'alice' }, 'https://x.com/alice/status/1');
+  assert.strictEqual(r.media.length, 1, 'X: video tweet yields one media entry');
+  assert.strictEqual(r.media[0].type, 'video', 'X: entry type is video');
+  assert.strictEqual(r.media[0].url, 'https://video.twimg.com/high.mp4', 'X: highest-bitrate mp4 variant chosen');
+  assert.strictEqual(r.media[0].poster, 'https://pbs.twimg.com/tweet_video_thumb/abc.jpg?name=orig', 'X: poster is the still image at ?name=orig');
+
+  mockFetch([
+    [
+      'cdn.syndication.twimg.com',
+      {
+        text: 'hi',
+        user: { screen_name: 'alice', id_str: '1' },
+        mediaDetails: [{ type: 'animated_gif', media_url_https: 'https://pbs.twimg.com/tweet_video_thumb/g.jpg', video_info: { variants: [{ content_type: 'video/mp4', url: 'https://video.twimg.com/g.mp4' }] } }],
+      },
+    ],
+  ]);
+  r = await fetchXTweet({ platform: 'x', id: '2', screenName: 'alice' }, 'https://x.com/alice/status/2');
+  assert.strictEqual(r.media[0].type, 'gif', 'X: animated_gif maps to type gif');
+  assert.strictEqual(r.media[0].url, 'https://video.twimg.com/g.mp4', 'X: animated_gif uses its sole mp4 variant');
+
+  // Misskey: DriveFile exposes a direct url for video files; thumbnailUrl is the poster.
+  mockFetch([
+    [
+      '/api/notes/show',
+      {
+        text: 'hi',
+        user: { username: 'alice' },
+        createdAt: '2026-01-01T00:00:00Z',
+        files: [{ type: 'video/mp4', url: 'https://mi/clip.mp4', thumbnailUrl: 'https://mi/clip-thumb.jpg', comment: null }],
+      },
+    ],
+  ]);
+  r = await fetchMisskeyNote({ platform: 'misskey', host: 'misskey.io', noteId: 'v1' }, 'https://misskey.io/notes/v1');
+  assert.strictEqual(r.media.length, 1, 'Misskey: video note yields one media entry');
+  assert.strictEqual(r.media[0].type, 'video', 'Misskey: entry type is video');
+  assert.strictEqual(r.media[0].url, 'https://mi/clip.mp4', 'Misskey: url is the DriveFile direct url');
+  assert.strictEqual(r.media[0].poster, 'https://mi/clip-thumb.jpg', 'Misskey: poster is thumbnailUrl');
+
+  // Misskey: a REAL image/gif is a still transport (unlike X/Mastodon's mp4-
+  // backed "gif" types) — its per-item download `type` must stay undefined so
+  // the native host fetches it as a still (MEDIA_MIME_EXT already handles
+  // image/gif), not the video path.
+  mockFetch([
+    [
+      '/api/notes/show',
+      {
+        text: 'hi',
+        user: { username: 'alice' },
+        createdAt: '2026-01-01T00:00:00Z',
+        files: [{ type: 'image/gif', url: 'https://mi/anim.gif', thumbnailUrl: 'https://mi/anim-thumb.jpg', comment: null }],
+      },
+    ],
+  ]);
+  r = await fetchMisskeyNote({ platform: 'misskey', host: 'misskey.io', noteId: 'v2' }, 'https://misskey.io/notes/v2');
+  assert.strictEqual(r.mediaType, 'gif', 'Misskey: note-level mediaType is still gif (UI label unaffected)');
+  assert.strictEqual(r.media.length, 1, 'Misskey: real gif note yields one media entry');
+  assert.strictEqual(r.media[0].url, 'https://mi/anim.gif', 'Misskey: url is the real gif file');
+  assert.strictEqual(r.media[0].type, undefined, 'Misskey: real image/gif has no download type (still-image path)');
+  assert.strictEqual(r.media[0].poster, undefined, 'Misskey: real image/gif carries no poster (not needed for a still)');
+
+  // Mastodon: gifv is an mp4 loop (type 'gif'); preview_url is the poster.
+  mockFetch([
+    [
+      '/api/v1/statuses/',
+      {
+        content: '<p>hi</p>',
+        created_at: '2026-01-01T00:00:00Z',
+        account: { acct: 'alice', username: 'alice' },
+        media_attachments: [{ type: 'gifv', url: 'https://m/loop.mp4', preview_url: 'https://m/loop-preview.jpg', description: null }],
+      },
+    ],
+  ]);
+  r = await fetchPostMetadata('https://mastodon.social/@alice/456');
+  assert.strictEqual(r.media.length, 1, 'Mastodon: gifv status yields one media entry');
+  assert.strictEqual(r.media[0].type, 'gif', 'Mastodon: gifv maps to type gif');
+  assert.strictEqual(r.media[0].url, 'https://m/loop.mp4', 'Mastodon: url is the attachment url (the mp4 itself)');
+  assert.strictEqual(r.media[0].poster, 'https://m/loop-preview.jpg', 'Mastodon: poster is preview_url');
+
+  console.log('PASS test-metadata-correctness: X undefined-guard, Bluesky quote gating, Misskey permalink, author profile (avatar/followers/createdAt), #119 video/gif extraction');
 })().catch((e) => {
   console.error('FAIL test-metadata-correctness:', e && e.message ? e.message : e);
   process.exit(1);

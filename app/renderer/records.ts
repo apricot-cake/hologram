@@ -28,15 +28,30 @@ export { postKeyOf };
 // NOTE: lib-index's cardImageFile() MUST mirror the card branch so the masonry
 // height reservation (shotW/shotH) sizes the same image the card shows.
 const SS_EXT = /\.jpe?g$/i;
+// A downloaded media file is a video/animated-loop, not a still — used both to
+// pick the gallery's <video> vs Zoomable branch (below) and, here, to keep a
+// raw video file out of an <img src> (artworkFile prefers its poster instead).
+const isVideoFile = (f: string | null | undefined) => /\.(mp4|webm|mov|m4v)$/i.test(f || '');
 // p.media entries are a loose JSON shape (same pragmatics as HologramPost itself).
-type HologramMediaItem = { file?: string; alt?: string; [k: string]: any };
-export const mediaFilesOf = (p: HologramPost): string[] => (Array.isArray(p.media) ? (p.media as HologramMediaItem[]).filter((m) => m && m.file).map((m) => m.file as string) : []);
+// type/posterFile: video/gif entries only (#119 St1) — posterFile is the
+// downloaded still frame; type distinguishes an mp4-backed 'gif' (X
+// animated_gif / Mastodon gifv) from a real .gif file (which has no type).
+type HologramMediaItem = { file?: string; alt?: string; type?: string; posterFile?: string; [k: string]: any };
+const mediaItemsOf = (p: HologramPost): HologramMediaItem[] => (Array.isArray(p.media) ? (p.media as HologramMediaItem[]).filter((m) => m && m.file) : []);
+export const mediaFilesOf = (p: HologramPost): string[] => mediaItemsOf(p).map((m) => m.file as string);
 // p.image is a screenshot unless it's a dragged/migrated artwork or a non-JPEG original.
 export const isScreenshot = (p: HologramPost): boolean => !!p.image && SS_EXT.test(p.image) && p.source !== 'drag' && p.source !== 'eagle-migration';
 export const captureFile = (p: HologramPost): string => (isScreenshot(p) ? p.image : '');
+// The leading media item's THUMBNAIL file — its poster when it's a video/gif
+// (a raw video can't be an <img src>), else the file itself. Falls back to the
+// capture screenshot (via densityImage) when a video has no poster.
 export const artworkFile = (p: HologramPost): string => {
-  const m = mediaFilesOf(p);
-  if (m.length) return m[0];
+  const items = mediaItemsOf(p);
+  if (items.length) {
+    const first = items[0];
+    if (first.posterFile) return first.posterFile;
+    return isVideoFile(first.file) ? '' : (first.file as string);
+  }
   return p.image && !isScreenshot(p) ? p.image : '';
 };
 export function densityImage(p: HologramPost, density: string): string {
@@ -251,7 +266,6 @@ export function percentileFn(list: HologramPost[]): (p: HologramPost) => number 
 // --- Lightbox gallery items (twelfth extraction slice) ----------------------
 // The URL scheme (asset://) stays viewer-owned: fileSrc is injected so the
 // protocol knowledge isn't duplicated here.
-const isVideoFile = (f: string | null | undefined) => /\.(mp4|webm|mov|m4v)$/i.test(f || '');
 export type GalleryItem = { src: string; alt: string; video: boolean; capture?: boolean };
 // deps: fileSrc(file) — renderer media URL builder (viewer.js).
 export function makeGallery(deps: { fileSrc(file: string): string }) {
@@ -367,6 +381,12 @@ export function makeCardModel(deps: {
     // 'image' is the default media type for the vast majority of cards — an
     // always-on "画像" label is pure noise there (#110: mark exceptions only).
     const mediaLabel = p.mediaType === 'video' ? t('qfVideo') : p.mediaType === 'gif' ? t('qfGif') : '';
+    // ▶ badge over the thumb: only when the leading media item's downloaded
+    // TRANSPORT is a video (type 'video'/'gif' — an mp4-backed X animated_gif
+    // / Mastodon gifv). A real .gif file has no per-item type (still-image
+    // transport, #119 St1) and already reads as animated once loaded — no badge.
+    const leadMedia = mediaItemsOf(p)[0];
+    const videoBadge = !!leadMedia && (leadMedia.type === 'video' || leadMedia.type === 'gif');
     const postKey = postIdKey(p);
     // Multi-image stack: the 2nd/3rd images ride the back sheets (real
     // thumbnails — motion-study canvas 2026-07-05). Downscaled like the front
@@ -380,6 +400,7 @@ export function makeCardModel(deps: {
       noUrl: !p.url,
       hasThumb: !!(imgFile || p.video),
       imgSrc: imgFile ? fileSrc(imgFile, imgW) : '',
+      videoBadge,
       captureId: p.captureId || '',
       aspRatio,
       eager: !!smokeCapture,

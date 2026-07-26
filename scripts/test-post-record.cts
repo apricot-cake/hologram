@@ -52,7 +52,7 @@ const fixedNow = () => FIXED_NOW;
       likes: 42,
       isReply: true,
       hashtags: ['a', 'b', 3, null],
-      media: [{ url: 'https://x/1.jpg', width: 10, height: 20, file: '1.jpg' }, { file: '2.jpg' }, null],
+      media: [{ url: 'https://x/1.jpg', width: 10, height: 20, file: '1.jpg' }, { file: '2.jpg' }, null, { url: 'https://x/2.mp4', file: '2.mp4', type: 'video', posterFile: 'poster.jpg' }],
       capturedAt: '2026-01-01T00:00:00.000Z',
     },
     fixedNow,
@@ -61,12 +61,13 @@ const fixedNow = () => FIXED_NOW;
   assert.strictEqual(rec.likes, 42, 'numeric fields pass through');
   assert.strictEqual(rec.isReply, true, 'boolean fields pass through');
   assert.deepStrictEqual(rec.hashtags, ['a', 'b'], 'non-string hashtag entries are dropped, not coerced');
-  assert.strictEqual(rec.media.length, 2, 'a null media entry is dropped, not kept as a hole');
-  assert.deepStrictEqual(rec.media[0], { url: 'https://x/1.jpg', alt: null, width: 10, height: 20, file: '1.jpg' }, 'media items are normalized field-by-field, not passed through raw');
-  assert.deepStrictEqual(rec.media[1], { url: '', alt: null, width: null, height: null, file: '2.jpg' }, 'a media item missing url still gets every field');
+  assert.strictEqual(rec.media.length, 3, 'a null media entry is dropped, not kept as a hole');
+  assert.deepStrictEqual(rec.media[0], { url: 'https://x/1.jpg', alt: null, width: 10, height: 20, file: '1.jpg', type: null, posterFile: null }, 'media items are normalized field-by-field, not passed through raw');
+  assert.deepStrictEqual(rec.media[1], { url: '', alt: null, width: null, height: null, file: '2.jpg', type: null, posterFile: null }, 'a media item missing url still gets every field');
+  assert.deepStrictEqual(rec.media[2], { url: 'https://x/2.mp4', alt: null, width: null, height: null, file: '2.mp4', type: 'video', posterFile: 'poster.jpg' }, 'a video media item carries type + posterFile through (#119 St1)');
   assert.strictEqual(rec.capturedAt, '2026-01-01T00:00:00.000Z', 'an explicit capturedAt is kept, not overwritten by now()');
   assert.strictEqual(rec.updatedAt, '2026-01-01T00:00:00.000Z', 'updatedAt falls back to the explicit capturedAt, not now()');
-  passed += 8;
+  passed += 9;
 }
 
 // --- the exact bug this builder exists to prevent (#5 2026-07-18 comment) --
