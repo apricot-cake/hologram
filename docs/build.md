@@ -10,14 +10,18 @@ cd app && npm install
 
 ## 拡張機能の開発・配布
 
-初回は `cd extension && npm install`。ビルド出力は2つあり、**Chrome がどちらを読み込んでいるかでソース変更の反映経路が変わる**。
+初回は `cd extension && npm install`。ビルド出力は2つある。
 
 | 出力 | 作るコマンド | 使う場面 |
 | --- | --- | --- |
-| `extension/.output/chrome-mv3-dev/` | `npm run dev:ext`（常駐） | 開発中。WXT がソース変更を検知して拡張を自動で再読み込みする |
-| `extension/.output/chrome-mv3/` | `npm run build:ext` | E2E・配布の入力。ストア提出用zipは `npm run zip:ext` |
+| `extension/.output/chrome-mv3/` | `npm run build:ext` | **Chrome に常時読み込む正**。E2E・配布の入力。ストア提出用zipは `npm run zip:ext` |
+| `extension/.output/chrome-mv3-dev/` | `npm run dev:ext`（常駐） | 拡張の UI を対話的に触る間だけ。WXT が変更を検知して自動再読み込みする |
 
-**罠**: `dev:ext` のホットリロードが届くのは `chrome-mv3-dev` だけ。Chrome に `chrome-mv3` を Load unpacked したまま開発すると、`dev:ext` が動いていてもブラウザ側は古いバンドルのままで、直したはずの挙動を検証してしまう（2026-07-25 に実際に踏んだ＝ホバー保存ボタンの修正が1時間反映されていなかった）。`chrome-mv3` を読み込んでいる間にソースを直したら、`npm run build:ext` ＋ `chrome://extensions` の再読み込みまでやって初めて反映される。開発中は `chrome-mv3-dev` を読み込んでおく（`key` 固定でIDは共通なので、Native Messaging の登録はどちらでも生きる。同じIDなので同時に2つは読み込めない）。
+**Chrome が常時読み込むのは production 側（`chrome-mv3`）**。ソースを直したら `npm run build:ext` → `chrome://extensions` で再読み込み1回、が反映経路（worktree からの届け方は skill `verify-extension`）。
+
+2026-07-26 に既定を dev 読み込みから入れ替えた。理由＝開発モードの拡張は manifest に `content_scripts` を持たず、常駐スクリプトを **dev サーバー接続経由で実行時登録**する。サーバーが落ちる・繋がらない（Node ≥17 は `::1` のみに bind することがあり、Chrome は IPv4 で来る）だけで日常のブラウザごと拡張が機能停止し、その原因は `chrome://extensions` を開かない限り見えない。日常利用と検証はサーバー非依存のビルド成果物に載せ、ホットリロードは対話開発の間だけ `chrome-mv3-dev` へ読み込み替えて使う（`key` 固定で ID は共通＝Native Messaging の登録はどちらでも生きる。同じ ID なので同時に2つは読み込めない）。
+
+**罠**: ホットリロードが届くのは `chrome-mv3-dev` を読み込んでいる間だけ。`chrome-mv3` を読み込んだまま `dev:ext` を走らせても反映されない（2026-07-25 被弾＝修正が1時間空振り）。逆も然り＝`chrome-mv3-dev` を読み込んだまま `build:ext` だけ打っても反映されない。**今どちらを読み込んでいるか**が反映経路の全てを決める。
 
 固定IDを保つ `key` は `extension/wxt.config.ts` にある。移行後もID・Native Messaging 保存・5プラットフォームのクリック/ドラッグ保存は実機確認の対象である。
 
