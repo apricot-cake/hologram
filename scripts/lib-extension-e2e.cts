@@ -77,6 +77,12 @@ interface LaunchExtensionOptions {
   viewport?: { width: number; height: number } | null;
   locale?: string;
   args?: string[];
+  // Which binary to drive. Tests keep the default bundled Chromium so a run is
+  // reproducible. Pass 'chrome' when the point is a profile a HUMAN signed into
+  // (the dev browser's, which WXT opens in real Chrome): a profile directory
+  // belongs to one Chromium build, so borrowing it from the other one risks
+  // both the session and the profile itself.
+  channel?: string;
 }
 
 interface ExtensionBrowser {
@@ -93,7 +99,7 @@ async function launchExtensionBrowser(options: LaunchExtensionOptions): Promise<
   let context: any;
   try {
     context = await chromium.launchPersistentContext(profileDir, {
-      channel: 'chromium',
+      channel: options.channel || 'chromium',
       headless: options.headless ?? true,
       viewport: options.viewport === undefined ? { width: 1280, height: 960 } : options.viewport,
       locale: options.locale,
