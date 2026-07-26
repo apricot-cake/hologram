@@ -55,7 +55,7 @@ description: Hologram を CDP（Chrome DevTools Protocol）で計測・撮影・
 
 ## 拡張を診断する
 
-- **実機の Chrome が読んでいるのは `extension/.output/chrome-mv3-dev`**（2026-07-26 に `chrome://extensions` のロード元を実測して確定）＝`npm run dev:ext` のホットリロードが実機に届く。**`build:ext` は配布ビルド専用で、実機反映の手段ではない**。挙動を検証する前に `dev:ext` の常駐と対象バンドルのビルド時刻を確認する（確認を怠って1時間、旧バンドルの挙動を「修正後のコード」として推測し外した）。
+- **実機の Chrome が読んでいるのは本体ツリーの `extension/.output/chrome-mv3`**＝dev ビルドと production ビルドが同じフォルダに書かれる（`outDirTemplate`＝docs/build.md）。挙動を検証する前に**今どちらのビルドが載っているか**を確認する＝`dev:ext` の常駐の有無と対象バンドルのビルド時刻（確認を怠って1時間、旧バンドルの挙動を「修正後のコード」として推測し外した・2026-07-26）。
 - dev と prod は manifest の `key` が同じ＝**拡張 ID が同一**で、resident.js も両方が自己完結バンドル＝**ページ側からどちらが載っているかは判別できない**。判別できるのは `chrome://extensions` のロード元だけ。
 - **拡張側のグローバルは isolated world**＝ページの JS コンソール（`javascript_tool`／DevTools）からは常に `undefined`/`false` に見える。`false` を「拡張が動いていない」根拠にしない。正しい観測点は**共有 DOM の副作用**＝合成 `dragstart` で `#__hologramDropZone`（`z-index:2147483647` の body 直下 div）が出れば注入は生きている。
 - **アイコン無反応の一次診断は `~/.hologram/capture.log`**: click 行なし＝クリックが SW に届いていない（別ウィンドウ/別アイコンの疑い）／`phase:"skip"`＝非 http タブ／`phase:"fail"`＝executeScript のエラー内容つき。

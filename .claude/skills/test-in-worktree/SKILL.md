@@ -28,7 +28,7 @@ description: 隔離 worktree で Hologram のテスト・型検査を回し、�
 
 ## worktree から拡張機能を実機検証する
 
-**ホットリロードは worktree に届かない。** `npm run dev:ext` が監視しているのは**本体ツリーの `extension/`** で、Chrome に読み込まれているのも**本体ツリーの `.output/chrome-mv3-dev`**。worktree でいくら直しても反映されない。ここで「手で読み込み直してもらおう」はグローバル CLAUDE.md が名指しで禁じている（渡す手順は人でないと不可能な部分まで切り詰める）。
+**ホットリロードは worktree に届かない。** `npm run dev:ext` が監視しているのは**本体ツリーの `extension/`** で、日常の Chrome に読み込まれているのも**本体ツリーの `.output/chrome-mv3`**（dev/production 共用＝docs/build.md）。worktree でいくら直しても反映されない。ここで「手で読み込み直してもらおう」はグローバル CLAUDE.md が名指しで禁じている（渡す手順は人でないと不可能な部分まで切り詰める）。
 
 **正しい手順＝`dev:ext` が見ているツリーへコードを持っていく**（ユーザーの手作業は Alt+S だけになる）:
 
@@ -37,7 +37,7 @@ description: 隔離 worktree で Hologram のテスト・型検査を回し、�
 3. `git -C <本体> checkout --detach <対象コミット>`。**ブランチ名では checkout できない**＝worktree が掴んでいるので必ずコミット SHA を指定する。
 4. 本体ツリーで `dev:ext` を起動。
 5. dev バンドルに変更が入ったことを確認してからユーザーへ渡す。
-6. 検証後は同じ順（停止 → `checkout main` → 起動）で戻す。掴んだままにしない。
+6. 検証後は同じ順で戻す（停止 → `checkout main` → 開発を続けるなら `dev:ext` 再起動、終わりなら `build:ext`＋リロード1回で production へ＝skill `verify-extension`）。掴んだままにしない。
 
 **なぜ先に止めるか**＝`git checkout` は監視下のファイルを一斉に書き換えるので watcher が壊れる。2026-07-26 の実測では checkout 直後に **wxt のプロセスごと消えていた**（症状＝`.output` の mtime が据え置き・ソースを touch しても再ビルドが起きない）。crash の因果は再現で確かめていないが、**止めてから切り替えれば因果がどちらでも成立する**＝「落ちたか」を毎回判定する手間ごと消える。起動し直した後は安定（20分以上生存を確認）。
 

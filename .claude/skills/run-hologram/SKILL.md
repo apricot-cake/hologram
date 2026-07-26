@@ -32,7 +32,7 @@ Start-ScheduledTask -TaskName 'HologramLaunch'
 | `preload.cts` | `npm run build:islands` で `preload.js` を再生成 → **再起動** |
 | `native-host/` | `npm run build:islands` → `node native-host/install.cts` で再配備（アプリ再起動は不要。ビルドを飛ばすと配備は「バンドル未ビルド」で止まる） |
 | main プロセス（`main.mts`・`ipc-*`・`lib-*`） | 再起動 |
-| 拡張機能 | `npm run dev:ext` 常駐に任せる。Chrome には `chrome-mv3-dev` を読み込んでおく |
+| 拡張機能 | 開発中は本体で `npm run dev:ext` 常駐＋開始時リロード1回。終わったら `build:ext`＋リロード1回で production へ戻す（skill `verify-extension`） |
 
 ## どのインスタンスで検証するか（既定＝隔離）
 
