@@ -140,7 +140,7 @@ const addPost = (id: string, handle: string, statusId: string, top: number) => {
   feed().appendChild(el);
 };
 const removePost = (id: string) => window.document.getElementById(id)?.remove();
-const scroll = () => window.dispatchEvent(new window.Event('scroll', { bubbles: true }));
+const _scroll = () => window.dispatchEvent(new window.Event('scroll', { bubbles: true }));
 
 const banner = () => window.document.querySelector('[data-hologram-bulk-banner]');
 const bannerText = () => window.document.querySelector('[data-hologram-bulk-label]')?.textContent || '';

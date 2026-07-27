@@ -1,6 +1,6 @@
 'use strict';
 
-import { app, BrowserWindow, ipcMain, dialog, shell, protocol, nativeImage, nativeTheme, screen } from 'electron';
+import { app, BrowserWindow, protocol, nativeImage, nativeTheme, screen } from 'electron';
 import log from 'electron-log/main';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -552,7 +552,7 @@ async function getThumbnail(resolved, name, w) {
   // q3: resize by the SHORT edge (not width). Tiles are square + object-fit:cover, so the
   // short edge is what maps to the tile. Resizing by width made wide images (e.g. 1920x1080)
   // become 180x101, which then got upscaled vertically into the square tile → heavy blur.
-  const key = `${name}.${Math.round(st.mtimeMs)}.w${w}.q3.jpg`.replace(/[^\w.\-]/g, '_');
+  const key = `${name}.${Math.round(st.mtimeMs)}.w${w}.q3.jpg`.replace(/[^\w.-]/g, '_');
   const cachePath = path.join(thumbCacheDir(), key);
   try {
     return await fs.promises.readFile(cachePath);

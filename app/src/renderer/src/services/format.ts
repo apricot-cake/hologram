@@ -20,7 +20,7 @@ export function formatShortDate(dateStr: string): string {
   if (!dateStr) return '';
   const [y, m, d] = dateStr.split('-');
   const thisYear = new Date().getFullYear().toString();
-  return y === thisYear ? `${Number.parseInt(m)}/${Number.parseInt(d)}` : `${y}/${Number.parseInt(m)}/${Number.parseInt(d)}`;
+  return y === thisYear ? `${Number.parseInt(m, 10)}/${Number.parseInt(d, 10)}` : `${y}/${Number.parseInt(m, 10)}/${Number.parseInt(d, 10)}`;
 }
 
 // Card footer date: ONE compact month-name date (e.g. "Jun 13" / "6月13日") — a

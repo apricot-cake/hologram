@@ -1,7 +1,6 @@
 // Biome 設定（lint+format の単一ツール）
 //
-// バージョンは 1.9.4 に固定: 2.x は設定書式が変わるうえ新ルールの指摘が多数出る
-// ため、移行は単独の作業として #18 で扱う。
+// バージョンは 2.5.5（#18 で 1.9.4 から移行済み）。
 //
 // 方針: Biome を既存コードのスタイルに合わせる（逆ではない）。lineWidth を
 // 大きく取り再折返しチャーンを避ける＝既存のコード参照と git blame を守る。
@@ -10,29 +9,15 @@
   "vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
   "files": {
     "ignoreUnknown": true,
-    "ignore": [
-      // electron-vite のビルド出力（gitignore 済み・useIgnoreFile で自動対象外だが明示）
-      "app/out/**",
-      // WXT の拡張機能ビルド出力
-      "extension/.output/**",
-      "extension/.wxt/**",
-      // ベンダー同梱・ロックファイル・package.json（npm が所有＝再インストールの
-      // たびに npm 形式へ書き戻され Biome と書式ピンポンになるため対象外）
-      "app/src/renderer/public/vendor/**",
-      "**/package-lock.json",
-      "**/package.json",
-      // 並行エージェントセッションの worktree（別チェックアウト＝そちらの
-      // ワーキングツリーをこちらの lint が赤にしない）
-      ".claude/**"
-    ]
+    "includes": ["**", "!**/app/out/**", "!**/extension/.output/**", "!**/extension/.wxt/**", "!**/app/src/renderer/public/vendor/**", "!**/package-lock.json", "!**/package.json", "!**/.claude/**"]
   },
   // import 並べ替えは今はしない（チャーン優先度が低い・必要なら別途）
-  "organizeImports": { "enabled": false },
+  "assist": { "actions": { "source": { "organizeImports": "off" } } },
   "overrides": [
     {
       // tsconfig.json は Biome が既知名として JSONC 扱いするが、プロジェクト分割の
       // tsconfig.*.json（main プロセス用等）は名前で認識されない＝コメント可を明示。
-      "include": ["**/tsconfig.*.json"],
+      "includes": ["**/tsconfig.*.json"],
       "json": { "parser": { "allowComments": true, "allowTrailingCommas": true } }
     },
     {
@@ -41,7 +26,7 @@
       // useExhaustiveDependencies で「余分」と赤にする。無害な余剰 dep のために
       // 再生成のたび upstream から fork するのは保守負債＝この規則だけこの配下で
       // 無効化する（他の正しさ系は有効のまま）。
-      "include": ["app/src/renderer/src/components/ui/**"],
+      "includes": ["**/app/src/renderer/src/components/ui/**"],
       "linter": {
         "rules": {
           "correctness": { "useExhaustiveDependencies": "off" }
@@ -63,7 +48,11 @@
   // 解析する（＝整形はテストの前提を壊す）。CSS の大半は index.html 内で元々対象外。
   "css": {
     "formatter": { "enabled": false },
-    "linter": { "enabled": false }
+    "linter": { "enabled": false },
+    // lint/format は無効でも CSS パーサー自体は常に走る（2.x 新規）。globals.css は
+    // Tailwind v4 の @apply / @theme / @custom-variant を使うため、パーサーオプ
+    // ションだけ有効化してパースエラーを止める（lint/format は上のとおり無効のまま）。
+    "parser": { "tailwindDirectives": true }
   },
   "javascript": {
     "formatter": {
@@ -77,23 +66,28 @@
   "linter": {
     "enabled": true,
     "rules": {
-      "recommended": true,
+      "preset": "recommended",
       // 無効化はすべて「リポの意図的イディオム/方針との衝突」。正しさ系は全て有効のまま。
       "a11y": {
         // デスクトップアプリとして a11y/キーボード操作を目標に掲げていないため
         // 一括で無効化している。指摘は 21 件（2026-07-22 実測）で、方針を変える
         // 場合は全体を戻すのでなくルール単位で有効化する。
-        "recommended": false
+        "preset": "none"
       },
       "style": {
         "useTemplate": "off", // 文字列連結が主流イディオム（360件）＝置換は無価値なチャーン
         "useSingleVarDeclarator": "off", // let a, b; スタイルを許容
-        "noParameterAssign": "off" // 引数の正規化再代入（v = coerce(v)）は常用パターン
+        "noParameterAssign": "off", // 引数の正規化再代入（v = coerce(v)）は常用パターン
+        // index.html 内 <style> の CSS 検査（2.x の HTML サポートで新規に発火）。
+        // css.linter.enabled: false と同じ「CSS は対象外」方針の対象（このファイルの
+        // CSS 冒頭コメント参照）＝埋め込み <style> にも同じ理由で及ぼす。
+        "noDescendingSpecificity": "off"
       },
       "complexity": {
         "useOptionalChain": "off", // a && a.b イディオムが 245 箇所（2026-07-22 実測）＝一括書換は blame を汚すだけで得るものがない
         "noForEach": "off", // forEach は許容
-        "useArrowFunction": "off" // function 式は hoisting/this 都合で意図的な箇所あり
+        "useArrowFunction": "off", // function 式は hoisting/this 都合で意図的な箇所あり
+        "noImportantStyles": "off" // 上の noDescendingSpecificity と同じ「CSS は対象外」方針
       },
       "suspicious": {
         "noAssignInExpressions": "off", // while ((m = re.exec())) 等のイディオム
@@ -102,7 +96,11 @@
         // 明示 any が 380 箇所（2026-07-22 実測）。境界を越えるペイロード（IPC・
         // 拡張⇄ホスト間のメッセージ）の契約として意図的に置いたものを含むため、
         // 有効化するなら段階的な型付けとセットで行う。
-        "noExplicitAny": "off"
+        "noExplicitAny": "off",
+        // forEach コールバックが値を返すのを禁じる新ルール（2.x 新規）。noForEach
+        // で許容した簡潔アロー body の forEach（f => add(f)）が軒並み該当する＝同一
+        // イディオムへの追加規制であって別問題ではない。
+        "useIterableCallbackReturn": "off"
       },
       "performance": {
         "noDelete": "off" // delete はサイドカー/JSON のキー除去の正道（性能文脈でない）

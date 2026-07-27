@@ -230,14 +230,14 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
   let imgAspect: Record<string, string> = {};
   try {
     imgAspect = JSON.parse(localStorage.getItem('hologram.imgAspect') || '{}') || {};
-  } catch (e) {}
+  } catch (_e) {}
   let _aspectT: any = null;
   function persistAspect() {
     clearTimeout(_aspectT);
     _aspectT = setTimeout(() => {
       try {
         localStorage.setItem('hologram.imgAspect', JSON.stringify(imgAspect));
-      } catch (e) {}
+      } catch (_e) {}
     }, 1000);
   }
   // Cards whose image has NO reserved height (no shotW/H in the index, no cached

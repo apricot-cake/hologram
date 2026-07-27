@@ -116,6 +116,7 @@ export function mount(canvas: HTMLCanvasElement | null): { destroy(): void } {
     gl.attachShader(prog, compile(gl.VERTEX_SHADER, VS));
     gl.attachShader(prog, compile(gl.FRAGMENT_SHADER, FS));
     gl.linkProgram(prog);
+    // biome-ignore lint/correctness/useHookAtTopLevel: gl.useProgram is the WebGL API method, not a React hook — name coincidence
     gl.useProgram(prog);
     const buf = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, buf);
@@ -132,6 +133,7 @@ export function mount(canvas: HTMLCanvasElement | null): { destroy(): void } {
       grain: gl.getUniformLocation(prog, 'u_grain'),
       disp: gl.getUniformLocation(prog, 'u_disp'),
     };
+    // biome-ignore lint/correctness/useHookAtTopLevel: gl.useProgram is the WebGL API method, not a React hook — name coincidence
     gl.useProgram(prog);
     gl.uniform1f(uniforms.hue, P.hue);
     gl.uniform1f(uniforms.sat, P.sat);

@@ -10,11 +10,11 @@
 
 const { parsePostUrl, fetchPixivIllust, pixivMedia } = require('../extension/utils/metadata.ts');
 
-let pass = 0,
+let _pass = 0,
   fail = 0;
 function ok(cond, msg) {
   if (cond) {
-    pass++;
+    _pass++;
     console.log('PASS', msg);
   } else {
     fail++;

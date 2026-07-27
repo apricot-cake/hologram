@@ -477,10 +477,7 @@ export function makePostPredOf(deps: {
 // couplings the engine must not own:
 //   posterTagsOf(key) → string[]           — tags.ts (作品/キャラ share 'tag')
 //   folderById(id) → {items:string[]}|null — poster-folders.js state
-export function makePosterPredOf(deps: {
-  posterTagsOf(key: string): string[];
-  folderById(id: string): { items: string[] } | null | undefined;
-}): (f: HologramQueryLeaf) => (u: HologramUserAgg) => boolean {
+export function makePosterPredOf(deps: { posterTagsOf(key: string): string[]; folderById(id: string): { items: string[] } | null | undefined }): (f: HologramQueryLeaf) => (u: HologramUserAgg) => boolean {
   return function posterPredOf(f) {
     switch (f.type) {
       case 'platform':
