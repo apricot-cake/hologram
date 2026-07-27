@@ -39,9 +39,9 @@
 
 import nodeFs from 'node:fs';
 import path from 'node:path';
-import { normFolders } from './lib-folder-tree';
-import { createPostIndex } from './lib-index';
-import { parseJsonLoose } from './lib-json';
+import { normFolders } from './lib-folder-tree.ts';
+import { createPostIndex } from './lib-index.ts';
+import { parseJsonLoose } from './lib-json.ts';
 import { normalizePostRecord } from '../../../native-host/post-record.mts';
 import type Database from 'better-sqlite3';
 import type { PostRecordInput, PostRecordShape } from '../../../native-host/post-record.mts';

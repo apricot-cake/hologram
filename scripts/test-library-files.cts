@@ -11,7 +11,7 @@
 
 const assert = require('node:assert');
 const path = require('node:path');
-const { isLibraryFileName, libraryFilePaths } = require('../app/library-files.mts');
+const { isLibraryFileName, libraryFilePaths } = require('../app/src/main/library-files.ts');
 
 let pass = 0;
 function check(name, fn) {

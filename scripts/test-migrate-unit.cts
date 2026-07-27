@@ -13,7 +13,7 @@ const assert = require('node:assert');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { copyLibraryInto, verifyAndCleanup, sweepStragglers, relocateLibrary } = require('../app/lib-migrate.mts');
+const { copyLibraryInto, verifyAndCleanup, sweepStragglers, relocateLibrary } = require('../app/src/main/lib-migrate.ts');
 
 let passed = 0;
 function ok(cond, msg) {

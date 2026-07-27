@@ -7,25 +7,25 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 
-import { createPostIndex, computeDelta } from './lib-index';
-import { openDatabase, DatabaseCorruptError } from './lib-db';
-import { createDbImporter } from './lib-db-import';
-import { postsFromDb, postsByIds } from './lib-db-query';
-import { createDbWriter } from './lib-db-write';
-import { pruneDecision, nextBaseline } from './backup-guard';
-import { parseJsonLoose } from './lib-json';
+import { createPostIndex, computeDelta } from './lib-index.ts';
+import { openDatabase, DatabaseCorruptError } from './lib-db.ts';
+import { createDbImporter } from './lib-db-import.ts';
+import { postsFromDb, postsByIds } from './lib-db-query.ts';
+import { createDbWriter } from './lib-db-write.ts';
+import { pruneDecision, nextBaseline } from './backup-guard.ts';
+import { parseJsonLoose } from './lib-json.ts';
 // Save-folder relocation engine (copy+catch-up → flip → verified cleanup → sweep).
-import { relocateLibrary } from './lib-migrate';
+import { relocateLibrary } from './lib-migrate.ts';
 // IPC handler modules, extracted from this file (mechanical move — logic unchanged).
 // Each exposes register(ctx); ctx is built after the core functions below and passed
 // in at the top-level registration site (see registerExtractedIpc, before whenReady).
-import * as ipcOrganize from './ipc-organize';
-import * as ipcPosts from './ipc-posts';
-import * as ipcConfig from './ipc-config';
-import * as ipcWindow from './ipc-window';
-import * as ipcTrash from './ipc-trash';
-import * as ipcBackup from './ipc-backup';
-import * as ipcTransfer from './ipc-transfer';
+import * as ipcOrganize from './ipc-organize.ts';
+import * as ipcPosts from './ipc-posts.ts';
+import * as ipcConfig from './ipc-config.ts';
+import * as ipcWindow from './ipc-window.ts';
+import * as ipcTrash from './ipc-trash.ts';
+import * as ipcBackup from './ipc-backup.ts';
+import * as ipcTransfer from './ipc-transfer.ts';
 
 // CJS require + __dirname reconstructed for ESM. native-host/ modules are loaded by
 // computed path (dev sibling vs packaged resource), so they stay dynamic CJS requires.

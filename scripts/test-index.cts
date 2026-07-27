@@ -12,7 +12,7 @@ const assert = require('node:assert');
 const realFs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { createPostIndex, computeDelta } = require('../app/lib-index.mts');
+const { createPostIndex, computeDelta } = require('../app/src/main/lib-index.ts');
 
 const dir = realFs.mkdtempSync(path.join(os.tmpdir(), 'hologram-index-'));
 const INTERNAL = new Set(['config.json', '.index.json', 'tabs.json', 'folders.json', 'tag-types.json', 'ungrouped.json', 'manual-groups.json']);

@@ -8,7 +8,7 @@
 
 const assert = require('node:assert');
 const path = require('node:path');
-const { cloudSyncProviderOf } = require('../app/save-folder-guard.mts');
+const { cloudSyncProviderOf } = require('../app/src/main/save-folder-guard.ts');
 
 let pass = 0;
 function check(name, fn) {

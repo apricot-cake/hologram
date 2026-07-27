@@ -17,8 +17,8 @@ const assert = require('node:assert');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { openDatabase } = require('../app/lib-db.mts');
-const { createDbImporter } = require('../app/lib-db-import.mts');
+const { openDatabase } = require('../app/src/main/lib-db.ts');
+const { createDbImporter } = require('../app/src/main/lib-db-import.ts');
 
 let passed = 0;
 function ok(cond, msg) {

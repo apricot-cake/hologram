@@ -21,7 +21,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { Transform } from 'node:stream';
 import { ZipFile } from 'yazl';
-import { parseJsonLoose } from './lib-json';
+import { parseJsonLoose } from './lib-json.ts';
 
 const EXPORT_SKIP = new Set(['config.json', '.index.json']);
 const ORG_MERGE = ['folders.json', 'tag-types.json', 'ungrouped.json', 'manual-groups.json', 'poster-favorites.json', 'poster-folders.json', 'poster-tags.json'];

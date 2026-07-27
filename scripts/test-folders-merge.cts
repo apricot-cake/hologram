@@ -14,7 +14,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const JSZip = require('jszip');
-const { importCompleteZip, mergeFolders, mergePosterFolders, mergeManualGroups } = require('../app/lib-archive.mts');
+const { importCompleteZip, mergeFolders, mergePosterFolders, mergeManualGroups } = require('../app/src/main/lib-archive.ts');
 
 (async () => {
   // --- mergeFolders (pure) ---

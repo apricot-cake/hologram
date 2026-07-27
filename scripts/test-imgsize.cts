@@ -7,7 +7,7 @@
 //   node scripts/test-imgsize.cts
 
 const assert = require('node:assert');
-const { imageSize } = require('../app/lib-imgsize.mts');
+const { imageSize } = require('../app/src/main/lib-imgsize.ts');
 
 // JPEG: SOI + SOF0 (precision, height, width, ...).
 function jpeg(w, h) {

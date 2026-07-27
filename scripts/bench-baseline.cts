@@ -64,10 +64,10 @@ const crypto = require('node:crypto');
 const v8 = require('node:v8');
 const { execFileSync } = require('node:child_process');
 const { pathToFileURL } = require('node:url');
-const { createPostIndex } = require('../app/lib-index.mts');
-const { openDatabase } = require('../app/lib-db.mts');
-const { createDbImporter } = require('../app/lib-db-import.mts');
-const { postsFromDb, searchPostsFts } = require('../app/lib-db-query.mts');
+const { createPostIndex } = require('../app/src/main/lib-index.ts');
+const { openDatabase } = require('../app/src/main/lib-db.ts');
+const { createDbImporter } = require('../app/src/main/lib-db-import.ts');
+const { postsFromDb, searchPostsFts } = require('../app/src/main/lib-db-query.ts');
 
 const INTERNAL_FILES = new Set(['config.json', '.index.json', 'tag-types.json', 'ungrouped.json', 'manual-groups.json', 'folders.json', 'tabs.json', 'poster-favorites.json', 'poster-folders.json', 'poster-tags.json']);
 

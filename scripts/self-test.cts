@@ -181,7 +181,7 @@ function checkDeployedBridge() {
     return { name: 'deployed bridge', ok: false, detail: `missing (${deployed}) — run: node native-host/install.cts` };
   }
   if (!fs.existsSync(REPO_BRIDGE)) {
-    return { name: 'deployed bridge', ok: false, detail: `no bundle to compare against (${REPO_BRIDGE}) — run "npm run build:islands" in app/` };
+    return { name: 'deployed bridge', ok: false, detail: `no bundle to compare against (${REPO_BRIDGE}) — run "npm run build:native-host-bridge" in app/` };
   }
   const same = fs.readFileSync(deployed, 'utf8') === fs.readFileSync(REPO_BRIDGE, 'utf8');
   return same ? { name: 'deployed bridge', ok: true, detail: 'matches the built bundle' } : { name: 'deployed bridge', ok: false, detail: 'STALE — differs from native-host/dist/bridge.js. Re-build, then re-run: node native-host/install.cts' };

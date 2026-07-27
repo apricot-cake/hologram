@@ -19,7 +19,7 @@ const path = require('node:path');
 
 const appDir = path.join(__dirname, '..', 'app');
 const electronPath = require(path.join(appDir, 'node_modules', 'electron'));
-const { openDatabase } = require(path.join(appDir, 'lib-db.mts'));
+const { openDatabase } = require(path.join(appDir, 'src', 'main', 'lib-db.ts'));
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-ipc-'));
 const configDir = path.join(tmp, 'Hologram');

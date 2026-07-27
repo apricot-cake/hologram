@@ -15,7 +15,7 @@ const { pathToFileURL } = require('node:url');
 
 async function main() {
   const load = (rel: string) => import(pathToFileURL(path.join(__dirname, '..', 'app', rel)).href);
-  const T = await load('lib-folder-tree.mts');
+  const T = await load('src/main/lib-folder-tree.ts');
   // folders.ts persists through the preload bridge on every mutation. A stub sink
   // stands in for it — and doubles as the check that what the store writes out
   // still carries parentId (the field has to be listed in three places to survive
@@ -29,7 +29,7 @@ async function main() {
       },
     },
   };
-  const F = await load('renderer/folders.ts');
+  const F = await load('src/renderer/src/services/folders.ts');
 
   let failed = 0;
   function assert(name: string, cond: unknown) {

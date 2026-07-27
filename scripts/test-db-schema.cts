@@ -15,7 +15,7 @@ const assert = require('node:assert');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { openDatabase } = require('../app/lib-db.mts');
+const { openDatabase } = require('../app/src/main/lib-db.ts');
 
 let passed = 0;
 function ok(cond, msg) {
