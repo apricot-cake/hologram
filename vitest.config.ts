@@ -1,5 +1,21 @@
 import path from 'node:path';
+import { type Plugin, transformWithOxc } from 'vite';
 import { defineConfig } from 'vitest/config';
+
+// Vite's "this is a JS/TS source" test covers .ts/.mts but not .cts, so a .cts
+// import reaches the parser with its type annotations intact and dies on the
+// first `interface`. native-host/ is written in .cts on purpose (CommonJS, run
+// un-built by Node's type stripping — see native-host/tsconfig.json), and the
+// suites for it import those modules directly, so teach the transform about the
+// extension instead of renaming the runtime's files.
+const ctsAsTypeScript = (): Plugin => ({
+  name: 'hologram:cts-as-typescript',
+  async transform(code, id) {
+    if (!id.endsWith('.cts')) return null;
+    const { code: js, map } = await transformWithOxc(code, id, { lang: 'ts' });
+    return { code: js, map };
+  },
+});
 
 // Pure-unit test runner. Registration is glob-based: any scripts/*.test.ts is
 // picked up automatically — there is no hand-maintained list of suites to keep
@@ -19,6 +35,7 @@ import { defineConfig } from 'vitest/config';
 // Both groups keep the old `test-*.cts` name, so the include glob below cannot
 // reach them by accident.
 export default defineConfig({
+  plugins: [ctsAsTypeScript()],
   test: {
     include: ['scripts/**/*.test.ts'],
     // Node is the default; the four suites that exercise browser-side extension
