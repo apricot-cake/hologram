@@ -43,6 +43,30 @@ describe('copyLibraryInto', () => {
     expect(fs.existsSync(path.join(src, 'a.jpg'))).toBe(true);
   });
 
+  // #299 (St6): .hologram-inbox is just one more nested top-level entry —
+  // the same "one opaque dir, copied+verified+deleted as a unit" treatment
+  // .trash already gets above. No lib-migrate.ts change was needed; this
+  // pins that a nested inbox/new/segments tree survives a save-folder move.
+  test('.hologram-inbox ツリーも1エントリとして丸ごとコピーされる', async () => {
+    const { src, dest } = mkroot();
+    seed(src, {
+      'a.jpg': 'AAA',
+      '.hologram-inbox/new/111-aaaa.json': '{"eventId":"111-aaaa"}',
+      '.hologram-inbox/segments/deadbeef.jsonl': '{"eventId":"000-1111"}\n',
+    });
+
+    const cp = await copyLibraryInto(src, dest, null);
+
+    expect(cp.ok).toBe(true);
+    expect(cp.entries).toEqual(expect.arrayContaining(['a.jpg', '.hologram-inbox']));
+    expect(read(dest, '.hologram-inbox', 'new', '111-aaaa.json')).toBe('{"eventId":"111-aaaa"}');
+    expect(read(dest, '.hologram-inbox', 'segments', 'deadbeef.jsonl')).toBe('{"eventId":"000-1111"}\n');
+
+    const cl = await verifyAndCleanup(src, dest, cp.entries);
+    expect(cl).toMatchObject({ removed: 2, leftover: [], emptied: true });
+    expect(fs.existsSync(src)).toBe(false);
+  });
+
   test('同名衝突はコピー前に中止し、既存の宛先ファイルを潰さない', async () => {
     const { src, dest } = mkroot();
     seed(src, { 'a.jpg': 'AAA' });

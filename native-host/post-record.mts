@@ -47,6 +47,15 @@ export interface PostRecordShape {
   assetClass: string;
   mediaType: string | null;
   image: string | null;
+  // Downloaded video filename for an image-view video import/drag-save (#299:
+  // added alongside the shared DB writer extraction — the app-internal video
+  // import path already produced this field ad hoc via an `as any` escape
+  // hatch; the DB round-trip silently dropped it because neither the shared
+  // type nor the posts table had a column for it). Distinct from media[].file
+  // (a post's ATTACHED media) — this is the record's own primary video, the
+  // video-equivalent of `image`. The renderer's `image || video` UI contract
+  // (records.ts et al.) predates this field; this is that contract's other half.
+  video: string | null;
   url: string | null;
   platform: string | null;
   text: string | null;
@@ -132,6 +141,7 @@ export function normalizePostRecord(input: PostRecordInput, now: () => string = 
     assetClass: normStr(input.assetClass) || 'media',
     mediaType: normStr(input.mediaType),
     image: normStr(input.image),
+    video: normStr(input.video),
     url: normStr(input.url),
     platform: normStr(input.platform),
     text: normStr(input.text),

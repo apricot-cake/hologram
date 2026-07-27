@@ -29,7 +29,7 @@ afterAll(() => {
   }
 });
 
-const EXPECTED_TABLES = ['posts', 'media', 'tags', 'tag_parents', 'tag_aliases', 'post_tags', 'folders', 'folder_items', 'poster_folders', 'poster_folder_items', 'poster_tags', 'manual_groups', 'manual_group_items', 'ungrouped_keys', 'tabs', 'tab_windows', 'store_state'];
+const EXPECTED_TABLES = ['posts', 'media', 'tags', 'tag_parents', 'tag_aliases', 'post_tags', 'folders', 'folder_items', 'poster_folders', 'poster_folder_items', 'poster_tags', 'manual_groups', 'manual_group_items', 'ungrouped_keys', 'tabs', 'tab_windows', 'store_state', 'inbox_events', 'inbox_segments'];
 
 describe('マイグレーションが通り、テーブルが揃う', () => {
   const { sqlite } = openDatabase(mkdb());
@@ -41,9 +41,9 @@ describe('マイグレーションが通り、テーブルが揃う', () => {
   );
   sqlite.close();
 
-  test('user_version は 8（v1 DDL ＋ #362 add-captured-via までの追加7本）', () => {
+  test('user_version は 10（v1 DDL ＋ #299 add-inbox-tables までの追加9本）', () => {
     const { sqlite } = openDatabase(mkdb());
-    expect(sqlite.pragma('user_version', { simple: true })).toBe(8);
+    expect(sqlite.pragma('user_version', { simple: true })).toBe(10);
     sqlite.close();
   });
 
@@ -184,7 +184,7 @@ describe('既存 v1 データベースの開き直しは no-op', () => {
   const second = openDatabase(file);
 
   test('マイグレーションを再実行しない', () => {
-    expect(second.sqlite.pragma('user_version', { simple: true })).toBe(8);
+    expect(second.sqlite.pragma('user_version', { simple: true })).toBe(10);
   });
 
   test('前回のデータが残る', () => {

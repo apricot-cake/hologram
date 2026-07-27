@@ -42,9 +42,8 @@ import path from 'node:path';
 import { normFolders } from './lib-folder-tree.ts';
 import { createPostIndex } from './lib-index.ts';
 import { parseJsonLoose } from './lib-json.ts';
-import { normalizePostRecord } from '../../../native-host/post-record.mts';
+import { makeTagResolver, preparePostStmts, writePost } from './lib-db-record-writer.ts';
 import type Database from 'better-sqlite3';
-import type { PostRecordInput, PostRecordShape } from '../../../native-host/post-record.mts';
 
 // Mirrors index.ts's INTERNAL_FILES (not exported there — index.ts is the
 // Electron entry point, not an importable engine module). Kept in lockstep by
@@ -69,103 +68,6 @@ export interface ImportReport {
   removedIds: string[]; // captureIds deleted this run
 }
 
-function toDbBool(v: boolean | null): number | null {
-  return v == null ? null : v ? 1 : 0;
-}
-
-const POST_COLUMNS = [
-  'captureId',
-  'assetClass',
-  'mediaType',
-  'image',
-  'url',
-  'platform',
-  'text',
-  'title',
-  'displayName',
-  'screenName',
-  'userId',
-  'avatar',
-  'avatarFile',
-  'followers',
-  'authorCreatedAt',
-  'likes',
-  'reposts',
-  'replies',
-  'bookmarks',
-  'views',
-  'date',
-  'capturedAt',
-  'updatedAt',
-  'lang',
-  'isReply',
-  'isQuote',
-  'isThread',
-  'quotedUrl',
-  'replyToId',
-  'hashtags',
-  'eagleName',
-  'description',
-  'source',
-  'shotW',
-  'shotH',
-  'trashedAt',
-  'capturedVia',
-  'sourceMtimeMs',
-] as const;
-
-const UPSERT_POST_SQL = `INSERT INTO posts (${POST_COLUMNS.join(',')}) VALUES (${POST_COLUMNS.map(() => '?').join(',')})
-  ON CONFLICT(captureId) DO UPDATE SET ${POST_COLUMNS.filter((c) => c !== 'captureId')
-    .map((c) => `${c}=excluded.${c}`)
-    .join(',')}`;
-
-// Built from named fields (not a positional literal) so a column added to
-// POST_COLUMNS and forgotten here fails at the .map(...) below (undefined
-// bound param -> better-sqlite3 throws) instead of silently misaligning.
-function postParams(n: PostRecordShape, sourceMtimeMs: number | null): unknown[] {
-  const byName: Record<string, unknown> = {
-    captureId: n.captureId,
-    assetClass: n.assetClass,
-    mediaType: n.mediaType,
-    image: n.image,
-    url: n.url,
-    platform: n.platform,
-    text: n.text,
-    title: n.title,
-    displayName: n.displayName,
-    screenName: n.screenName,
-    userId: n.userId,
-    avatar: n.avatar,
-    avatarFile: n.avatarFile,
-    followers: n.followers,
-    authorCreatedAt: n.authorCreatedAt,
-    likes: n.likes,
-    reposts: n.reposts,
-    replies: n.replies,
-    bookmarks: n.bookmarks,
-    views: n.views,
-    date: n.date,
-    capturedAt: n.capturedAt,
-    updatedAt: n.updatedAt,
-    lang: n.lang,
-    isReply: toDbBool(n.isReply),
-    isQuote: toDbBool(n.isQuote),
-    isThread: toDbBool(n.isThread),
-    quotedUrl: n.quotedUrl,
-    replyToId: n.replyToId,
-    hashtags: JSON.stringify(n.hashtags),
-    eagleName: n.eagleName,
-    description: n.description,
-    source: n.source,
-    shotW: n.shotW,
-    shotH: n.shotH,
-    trashedAt: n.trashedAt,
-    capturedVia: n.capturedVia,
-    sourceMtimeMs,
-  };
-  return POST_COLUMNS.map((c) => byName[c]);
-}
-
 // Reads an org-layer JSON file. Returns null (never throws) — a missing file
 // means "nothing set yet" (same as the get-* IPC handlers' empty defaults);
 // a present-but-corrupt file is reported as a parse failure so the caller can
@@ -184,66 +86,6 @@ function readJsonFile(folder: string, name: string, failures: Array<{ file: stri
     failures.push({ file: name, error: err.message });
     return null;
   }
-}
-
-function makeTagResolver(sqlite: Database.Database) {
-  const cache = new Map<string, number>();
-  for (const row of sqlite.prepare('SELECT id, name FROM tags').all() as Array<{ id: number; name: string }>) {
-    if (!cache.has(row.name)) cache.set(row.name, row.id);
-  }
-  const insertTag = sqlite.prepare('INSERT INTO tags (name) VALUES (?)');
-  return function resolveTagId(name: string): number {
-    const existing = cache.get(name);
-    if (existing != null) return existing;
-    const id = Number(insertTag.run(name).lastInsertRowid);
-    cache.set(name, id);
-    return id;
-  };
-}
-
-interface PostStmts {
-  upsertPost: Database.Statement;
-  deleteMedia: Database.Statement;
-  insertMedia: Database.Statement;
-  deletePostTags: Database.Statement;
-  insertPostTag: Database.Statement;
-  deleteFts: Database.Statement;
-  insertFts: Database.Statement;
-  deletePost: Database.Statement;
-}
-
-function preparePostStmts(sqlite: Database.Database): PostStmts {
-  return {
-    upsertPost: sqlite.prepare(UPSERT_POST_SQL),
-    deleteMedia: sqlite.prepare('DELETE FROM media WHERE postId = ?'),
-    insertMedia: sqlite.prepare('INSERT INTO media (postId, seq, url, alt, width, height, file, type, posterFile) VALUES (?,?,?,?,?,?,?,?,?)'),
-    deletePostTags: sqlite.prepare('DELETE FROM post_tags WHERE postId = ?'),
-    insertPostTag: sqlite.prepare('INSERT INTO post_tags (postId, tagId) VALUES (?,?)'),
-    deleteFts: sqlite.prepare('DELETE FROM posts_fts WHERE postId = ?'),
-    insertFts: sqlite.prepare('INSERT INTO posts_fts (postId, text, title, displayName, screenName, eagleName, description, hashtags, tagsText, reading) VALUES (?,?,?,?,?,?,?,?,?,?)'),
-    deletePost: sqlite.prepare('DELETE FROM posts WHERE captureId = ?'),
-  };
-}
-
-// Writes (or overwrites) everything derived from ONE sidecar record: the posts
-// row, its media rows, its tag junction rows, and its FTS row. Tag NAMES are
-// resolved to ids via resolveTagId (get-or-create — see the module comment on
-// why tags are never wiped). sourceMtimeMs (#297) records the sidecar file's
-// mtime this write was derived from, so a later importAll can tell "unchanged"
-// apart from "actually edited" without redoing the FTS5 rewrite — null from a
-// caller that doesn't track it (e.g. a future write path once #298 flips the
-// truth source) just means the next importAll can't skip that post's rewrite.
-function writePost(stmts: PostStmts, resolveTagId: (name: string) => number, rec: PostRecordInput, sourceMtimeMs: number | null = null): PostRecordShape {
-  const n = normalizePostRecord(rec);
-  stmts.upsertPost.run(...postParams(n, sourceMtimeMs));
-  stmts.deleteMedia.run(n.captureId);
-  n.media.forEach((m, seq) => stmts.insertMedia.run(n.captureId, seq, m.url, m.alt, m.width, m.height, m.file, m.type, m.posterFile));
-  stmts.deletePostTags.run(n.captureId);
-  const tagIds = n.tags.map(resolveTagId);
-  for (const tagId of tagIds) stmts.insertPostTag.run(n.captureId, tagId);
-  stmts.deleteFts.run(n.captureId);
-  stmts.insertFts.run(n.captureId, n.text, n.title, n.displayName, n.screenName, n.eagleName, n.description, n.hashtags.join(' '), n.tags.join(' '), null);
-  return n;
 }
 
 // Re-derives the organization-layer tables (tags' kind, ungrouped_keys,
@@ -428,21 +270,30 @@ export function createDbImporter(opts: { internalFiles?: Set<string>; postIndex?
         addedIds.push(captureId);
       }
 
-      const existing = sqlite.prepare('SELECT captureId FROM posts').all() as Array<{ captureId: string }>;
+      // Once St5 has flipped the truth source, sidecars are no longer the
+      // write path at all: #299 (St6) moved native-host saves to the inbox
+      // queue, so a post can legitimately exist in the DB with NO sidecar on
+      // disk. Both org-layer re-derivation AND "sidecar absent -> delete this
+      // post" are therefore sidecar-authority behaviors that must stop the
+      // moment the DB is authoritative — deletion becomes a DB-only operation
+      // (trash/restore, #301's orphan handling), never inferred from a scan.
+      // Pre-flip (a library mid-migration, or a test exercising St3 in
+      // isolation) keeps the original "disk is truth" behavior on both counts.
+      const truthSource = sqlite.prepare("SELECT value FROM store_state WHERE key = 'truthSource'").get() as { value: string } | undefined;
+      const dbIsTruth = truthSource?.value === 'db';
+
       const removedIds: string[] = [];
-      for (const row of existing) {
-        if (!validIds.has(row.captureId)) {
-          stmts.deletePost.run(row.captureId);
-          removedIds.push(row.captureId);
+      if (!dbIsTruth) {
+        const existing = sqlite.prepare('SELECT captureId FROM posts').all() as Array<{ captureId: string }>;
+        for (const row of existing) {
+          if (!validIds.has(row.captureId)) {
+            stmts.deletePost.run(row.captureId);
+            removedIds.push(row.captureId);
+          }
         }
       }
 
-      // Once St5 has flipped the truth source, sidecars remain only as the
-      // native-host intake format until #299. Re-reading their organization
-      // JSON here would overwrite DB edits on every launch, so only post
-      // sidecars continue through the incremental compatibility path.
-      const truthSource = sqlite.prepare("SELECT value FROM store_state WHERE key = 'truthSource'").get() as { value: string } | undefined;
-      if (truthSource?.value !== 'db') importOrgLayer(folder, sqlite, resolveTagId, validIds, failures);
+      if (!dbIsTruth) importOrgLayer(folder, sqlite, resolveTagId, validIds, failures);
 
       sqlite.exec('COMMIT');
       const dbPostCount = (sqlite.prepare('SELECT COUNT(*) AS n FROM posts').get() as { n: number }).n;

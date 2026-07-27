@@ -3,14 +3,21 @@
 // Hologram native messaging host.
 //
 // Chrome spawns this process per connection (chrome.runtime.connectNative).
-// It receives a captured post over stdin and writes two files into the user's
-// save folder:
-//   <captureId>.jpg   the cropped JPEG (no EXIF)
-//   <captureId>.json  the sidecar metadata
+// It receives a captured post over stdin and writes into the user's save
+// folder:
+//   <captureId>.jpg          the cropped JPEG (no EXIF) — media stays a plain file
+//   .hologram-inbox/new/<captureId>.json   the durable intake envelope (#5 St6 / #299)
 //
-// Files are write-once: the bridge never mutates existing files, so concurrent
-// captures cannot corrupt a shared file. The desktop app is the sole owner of
-// deletes/edits/index. The bridge works even when the app is not running.
+// The bridge no longer writes a per-post sidecar JSON directly into the save
+// folder — that write path belonged to the "expand" phase of #5's migration
+// (sidecars were the truth). Now that the desktop app owns hologram.db as the
+// SOLE writer (lib-db.ts's single-writer invariant), a second process writing
+// straight into the DB's derived state would violate that boundary. Instead
+// the bridge appends an envelope to the inbox queue (native-host/inbox.mts);
+// the app drains it into the DB at startup and on change. Files (screenshot/
+// media/avatar) are still write-once, still safe for concurrent captures, and
+// the bridge still works even when the app is not running — an inbox envelope
+// on disk is exactly as durable as the old sidecar was, just not a DB row yet.
 //
 // It also answers ONE read: {type:'query'} tells the extension which permalinks
 // are already in the library, so the timeline can mark saved posts (#54). That
@@ -31,6 +38,11 @@ const { resolveSaveFolder } = require('./config-recovery.cts');
 // The ONE URL→identity-key rule, shared with the renderer's grouping. See
 // post-key.mts and the saved-post index below.
 const { postKeyOf } = require('./post-key.mts');
+// The shared record shape + normalization builder (#5 St2 / #295), so a
+// bridge-built record carries the exact same fields the DB writer expects.
+const { normalizePostRecord } = require('./post-record.mts');
+// The durable intake queue's envelope format + atomic writer (#5 St6 / #299).
+const { buildEnvelope, writeInboxEvent, inboxNewDir, parseInboxEnvelope } = require('./inbox.mts');
 
 // --- Diagnostic log -----------------------------------------------------------
 // Chrome spawns this process once per native-messaging connection, so a line
@@ -151,14 +163,18 @@ function sanitizeCaptureId(id: unknown): string | null {
   return typeof id === 'string' && SAFE_ID.test(id) ? id : null;
 }
 
+// Collision-avoidance for the captureId-derived base name. Checks the media
+// file at the save-folder root (.jpg) and the inbox envelope (new/<id>.json)
+// — the same two artifacts a save now produces — plus the legacy root .json
+// sidecar so a pre-#299 library (or an old bridge still writing one, see the
+// eventId shape note in inbox.mts) can't collide with a fresh capture either.
 function uniqueBase(dir: string, captureId: string): string {
-  if (!fs.existsSync(path.join(dir, `${captureId}.jpg`)) && !fs.existsSync(path.join(dir, `${captureId}.json`))) {
-    return captureId;
-  }
+  const taken = (base: string) => fs.existsSync(path.join(dir, `${base}.jpg`)) || fs.existsSync(path.join(dir, `${base}.json`)) || fs.existsSync(path.join(inboxNewDir(dir), `${base}.json`));
+  if (!taken(captureId)) return captureId;
   let n = 1;
   // Extremely unlikely (captureId already carries a timestamp + random), but
   // guarantee uniqueness rather than overwrite.
-  while (fs.existsSync(path.join(dir, `${captureId}-${n}.jpg`)) || fs.existsSync(path.join(dir, `${captureId}-${n}.json`))) {
+  while (taken(`${captureId}-${n}`)) {
     n += 1;
   }
   return `${captureId}-${n}`;
@@ -169,39 +185,49 @@ function uniqueBase(dir: string, captureId: string): string {
 // ({type:'query'}), and the answer has to be right even with the desktop app
 // closed — that is the whole point of asking the bridge rather than the app.
 //
-// The app's .index.json (a rebuildable snapshot of every sidecar, written
-// debounced) is the cheap bulk source: one read instead of tens of thousands.
-// It is also the STALE one — anything saved while the app was closed is missing
-// from it — so two independent patches cover the gap:
+// #299 replaced the old .index.json-derived snapshot (a rebuild of every
+// SIDECAR, which the bridge no longer writes) with bridge-saved-index.json: a
+// small postKey->captureId map the app rebuilds straight from hologram.db
+// (lib-saved-index.ts) and rewrites debounced, atomically, whenever posts
+// change. It is the cheap bulk source — one read instead of scanning the
+// library — and it is also the STALE one: anything saved (or imported/
+// deleted) since the app's last write is missing from it. Two independent
+// patches cover the gap:
 //
 //   1. bridge-journal.jsonl (configDir): every bridge-side save appends its
 //      postKey here. This is exactly the app-was-closed case, recorded by the
 //      only process that was awake for it.
-//   2. a bounded rescan of sidecars NEWER than the snapshot. captureId is
-//      "<epochMillis>-<hex>" and the sidecar is named after it, so "newer than
-//      the snapshot" is readable from the filename — no stat() per file. This
-//      is the belt to the journal's braces: it also catches saves made by a
-//      second browser profile (a different bridge process, a different journal).
+//   2. a bounded rescan of loose inbox envelopes (.hologram-inbox/new) NEWER
+//      than the saved-index snapshot. eventId is "<epochMillis>-<hex>" and the
+//      envelope is named after it, so "newer than the snapshot" is readable
+//      from the filename — no stat() per file. This is the belt to the
+//      journal's braces: it also catches saves made by a second browser
+//      profile (a different bridge process, a different journal).
 //
 // Both are merged into one postKey→captureId map, cached for the life of the
 // process (the extension keeps ONE port open across a timeline's worth of
 // queries — see background.ts) and invalidated when either source's mtime moves.
+const SAVED_INDEX_FILE = 'bridge-saved-index.json';
 const JOURNAL_FILE = 'bridge-journal.jsonl';
 const QUERY_URL_CAP = 300; // one viewport's worth of posts, with room to spare
-const RECENT_SCAN_CAP = 500; // sidecars re-read per rebuild, newest first
+const RECENT_SCAN_CAP = 500; // loose inbox envelopes re-read per rebuild, newest first
 const JOURNAL_COMPACT_BYTES = 64 * 1024; // compact only once it's worth the rewrite
-// Sidecar basename written by a save: "<epochMillis>-<hex>.json", plus the
-// "-<n>" uniqueBase() suffix. Group 1 is the save time.
-const SIDECAR_NAME = /^(\d{10,})-[0-9a-f]{1,8}(?:-\d+)?\.json$/i;
+// Inbox envelope basename (native-host/inbox.mts's writeInboxEvent): eventId
+// IS the captureId, "<epochMillis>-<hex>", plus the "-<n>" uniqueBase()
+// suffix. Group 1 is the save time.
+const INBOX_ENVELOPE_NAME = /^(\d{10,})-[0-9a-f]{1,8}(?:-\d+)?\.json$/i;
 
 interface SavedIndex {
   folder: string;
-  indexMtimeMs: number;
+  savedIndexMtimeMs: number;
   journalMtimeMs: number;
   keys: Map<string, string>; // postKey -> captureId
 }
 let savedIndexCache: SavedIndex | null = null;
 
+function savedIndexPath(): string {
+  return path.join(configDir(), SAVED_INDEX_FILE);
+}
 function journalPath(): string {
   return path.join(configDir(), JOURNAL_FILE);
 }
@@ -215,9 +241,10 @@ function statMtimeMs(p: string): number {
 }
 
 // Record a just-completed save so a query answers "saved" immediately, even
-// though .index.json will not know about it until the app next runs. Updates the
-// live map too: within one port's lifetime the badge must light on the post the
-// user just saved without waiting for any file to settle.
+// though bridge-saved-index.json will not know about it until the app next
+// drains the inbox. Updates the live map too: within one port's lifetime the
+// badge must light on the post the user just saved without waiting for any
+// file to settle.
 function noteSaved(url: unknown, captureId: string): void {
   const key = postKeyOf(typeof url === 'string' ? url : null);
   if (!key) return;
@@ -233,11 +260,11 @@ function noteSaved(url: unknown, captureId: string): void {
   }
 }
 
-// Journal lines still worth keeping: those recorded AFTER the snapshot was
-// written (older ones are already in .index.json). Compacts the file once it
-// grows past the threshold, with a check-and-swap on its size so a concurrent
-// bridge's append is not silently dropped by the rewrite.
-function readJournal(indexMtimeMs: number): Array<{ k: string; id: string }> {
+// Journal lines still worth keeping: those recorded AFTER the saved-index
+// snapshot was written (older ones are already in it). Compacts the file once
+// it grows past the threshold, with a check-and-swap on its size so a
+// concurrent bridge's append is not silently dropped by the rewrite.
+function readJournal(savedIndexMtimeMs: number): Array<{ k: string; id: string }> {
   const p = journalPath();
   let sizeBefore: number;
   let raw: string;
@@ -258,7 +285,7 @@ function readJournal(indexMtimeMs: number): Array<{ k: string; id: string }> {
       continue; // torn line (a crashed append) — drop it
     }
     if (!e || typeof e.k !== 'string') continue;
-    if (typeof e.t === 'number' && e.t <= indexMtimeMs) continue; // the snapshot has it
+    if (typeof e.t === 'number' && e.t <= savedIndexMtimeMs) continue; // the snapshot has it
     entries.push({ k: e.k, id: typeof e.id === 'string' ? e.id : '' });
     kept.push(line);
   }
@@ -276,61 +303,62 @@ function readJournal(indexMtimeMs: number): Array<{ k: string; id: string }> {
   return entries;
 }
 
-// Sidecars saved after the snapshot, read newest-first and capped. Reads the
-// save time out of the FILENAME (see SIDECAR_NAME) rather than stat-ing every
-// file: on a 9k-post folder that is one readdir instead of 9k stats.
-function scanRecentSidecars(folder: string, sinceMs: number, keys: Map<string, string>): void {
+// Loose inbox envelopes newer than the saved-index snapshot, read newest-first
+// and capped. Reads the save time out of the FILENAME (see INBOX_ENVELOPE_NAME)
+// rather than stat-ing every file — same trick scanRecentSidecars used pre-#299.
+function scanRecentInbox(folder: string, sinceMs: number, keys: Map<string, string>): void {
   let files: string[];
   try {
-    files = fs.readdirSync(folder);
+    files = fs.readdirSync(inboxNewDir(folder));
   } catch {
-    return;
+    return; // no inbox yet (fresh library, or nothing saved through this bridge)
   }
   const fresh: string[] = [];
   for (const f of files) {
-    const m = f.match(SIDECAR_NAME);
+    const m = f.match(INBOX_ENVELOPE_NAME);
     if (m && Number(m[1]) >= sinceMs) fresh.push(f);
   }
   fresh.sort().reverse();
   for (const f of fresh.slice(0, RECENT_SCAN_CAP)) {
     try {
-      const rec = JSON.parse(fs.readFileSync(path.join(folder, f), 'utf8').replace(/^\uFEFF/, ''));
-      const key = postKeyOf(rec && rec.url);
-      if (key && !keys.has(key)) keys.set(key, (rec && rec.captureId) || '');
+      const raw = fs.readFileSync(path.join(inboxNewDir(folder), f), 'utf8');
+      const parsed = parseInboxEnvelope(raw);
+      if (!parsed.ok) continue; // corrupt/mid-write/unknown-version -- skip, don't crash the query
+      const key = postKeyOf(parsed.envelope.record.url);
+      if (key && !keys.has(key)) keys.set(key, parsed.envelope.eventId);
     } catch {
-      /* unreadable/partial sidecar — skip it */
+      /* unreadable/partial envelope — skip it */
     }
   }
 }
 
 function buildSavedIndex(folder: string): SavedIndex {
-  const indexFile = path.join(folder, '.index.json');
-  const indexMtimeMs = statMtimeMs(indexFile);
+  const indexFile = savedIndexPath();
+  const savedIndexMtimeMs = statMtimeMs(indexFile);
   const keys = new Map<string, string>();
   try {
-    const idx = JSON.parse(fs.readFileSync(indexFile, 'utf8').replace(/^\uFEFF/, ''));
+    const idx = JSON.parse(fs.readFileSync(indexFile, 'utf8'));
     const entries = idx && idx.entries;
     if (entries && typeof entries === 'object') {
-      for (const name of Object.keys(entries)) {
-        const rec = entries[name] && entries[name].record;
-        const key = postKeyOf(rec && rec.url);
-        if (key && !keys.has(key)) keys.set(key, (rec && rec.captureId) || '');
+      for (const [key, captureId] of Object.entries(entries)) {
+        if (typeof key === 'string' && key && typeof captureId === 'string' && !keys.has(key)) keys.set(key, captureId);
       }
     }
   } catch {
-    // No snapshot (fresh library, or the app has never run here) — indexMtimeMs
-    // stays -1, so the rescan below covers the whole folder up to its cap.
+    // No snapshot yet (fresh library, or the app has never run here) —
+    // savedIndexMtimeMs stays -1, so the rescan below covers the whole loose
+    // inbox up to its cap.
   }
-  scanRecentSidecars(folder, indexMtimeMs, keys);
-  for (const e of readJournal(indexMtimeMs)) if (!keys.has(e.k)) keys.set(e.k, e.id);
-  return { folder, indexMtimeMs, journalMtimeMs: statMtimeMs(journalPath()), keys };
+  scanRecentInbox(folder, savedIndexMtimeMs, keys);
+  for (const e of readJournal(savedIndexMtimeMs)) if (!keys.has(e.k)) keys.set(e.k, e.id);
+  return { folder, savedIndexMtimeMs, journalMtimeMs: statMtimeMs(journalPath()), keys };
 }
 
 // Cached map, rebuilt when the save folder changed or either source moved. The
 // two stats are the whole cost of a warm query.
 function savedIndex(folder: string): Map<string, string> {
   const c = savedIndexCache;
-  if (c && c.folder === folder && c.indexMtimeMs === statMtimeMs(path.join(folder, '.index.json')) && c.journalMtimeMs === statMtimeMs(journalPath())) {
+  if (c && c.folder === folder && c.savedIndexMtimeMs === statMtimeMs(savedIndexPath()) && c.journalMtimeMs === statMtimeMs(journalPath())) {
     return c.keys;
   }
   savedIndexCache = buildSavedIndex(folder);
@@ -363,13 +391,12 @@ async function handleSave(msg: any) {
 
   const base = uniqueBase(saveFolder, captureId);
   const jpgPath = path.join(saveFolder, `${base}.jpg`);
-  const jsonPath = path.join(saveFolder, `${base}.json`);
 
   // base64 decoding is lenient (it silently drops invalid chars), so a corrupt
   // payload would otherwise be written as a broken .jpg with ok:true. Validate
   // the JPEG SOI marker (FF D8 FF) and fail loudly before writing anything; the
   // throw is caught upstream and returned as { ok:false, error }, leaving no
-  // orphaned files (the sidecar .json is written only after the image).
+  // orphaned files (the inbox envelope is written only after the image).
   const img = Buffer.from(msg.image, 'base64');
   if (img.length < 3 || img[0] !== 0xff || img[1] !== 0xd8 || img[2] !== 0xff) {
     throw new Error('Invalid image data (not a JPEG)');
@@ -378,8 +405,8 @@ async function handleSave(msg: any) {
 
   const meta = msg.metadata || {};
   // Best-effort original-media download. A failure here must NEVER fail the save:
-  // the screenshot + sidecar are the primary artifacts. The sidecar is written
-  // LAST so media[].file reflects exactly what landed on disk.
+  // the screenshot + inbox envelope are the primary artifacts. The envelope is
+  // written LAST so media[].file reflects exactly what landed on disk.
   let savedMedia = [];
   try {
     savedMedia = await downloadMedia(meta.media, saveFolder, base);
@@ -398,15 +425,20 @@ async function handleSave(msg: any) {
     avatarFile = null;
   }
 
-  const record = Object.assign({}, meta, {
-    captureId: base,
-    image: `${base}.jpg`,
-    media: savedMedia,
-    avatarFile,
-  });
-  fs.writeFileSync(jsonPath, JSON.stringify(record, null, 2), 'utf8');
-  // The sidecar is on disk = this post IS saved. Tell the badge index now: the
-  // app's .index.json won't know until the app next runs (see noteSaved).
+  const record = normalizePostRecord(
+    Object.assign({}, meta, {
+      captureId: base,
+      image: `${base}.jpg`,
+      media: savedMedia,
+      avatarFile,
+    }),
+  );
+  // Commit point: the rename into new/ inside writeInboxEvent is what makes
+  // this capture durable (#299 design comment). A throw here (disk full, tmp
+  // create collision) is caught upstream and returned as { ok:false, error }.
+  await writeInboxEvent(saveFolder, buildEnvelope(record));
+  // The envelope is on disk = this post IS saved. Tell the badge index now:
+  // the app won't know until it next drains the inbox (see noteSaved).
   noteSaved(record.url, base);
 
   return { ok: true, file: `${base}.jpg`, saveFolder, mediaCount: savedMedia.length };
@@ -426,13 +458,13 @@ async function handleSave(msg: any) {
 // empty, while the viewer's multi-image stack counts media[] and would
 // undercount by one if the first picture were moved out of it.
 //
-// A post with NO media still gets its sidecar written. It cannot be displayed
-// yet — the library's isPostRecord requires an image/video/media, so both the
-// index and the DB importer skip it — but skipping is all they do, and the
-// record sits on disk until #365 relaxes that gate, at which point it simply
-// appears. Refusing to write it would instead lose the post for good: X has no
-// bookmark export, so a bookmark not taken during the import is unrecoverable
-// once the account is gone. Preserve now, display later.
+// A post with NO media still gets its inbox envelope written. It cannot be
+// displayed yet — the library's isPostRecord requires an image/video/media,
+// so both the index and the DB importer skip it — but skipping is all they
+// do, and the record sits in the inbox until #365 relaxes that gate, at which
+// point it simply appears. Refusing to write it would instead lose the post
+// for good: X has no bookmark export, so a bookmark not taken during the
+// import is unrecoverable once the account is gone. Preserve now, display later.
 async function handleSavePost(msg: any) {
   const captureId = sanitizeCaptureId(msg.captureId);
   if (!captureId) throw new Error('Invalid captureId');
@@ -441,7 +473,6 @@ async function handleSavePost(msg: any) {
   fs.mkdirSync(saveFolder, { recursive: true });
 
   const base = uniqueBase(saveFolder, captureId);
-  const jsonPath = path.join(saveFolder, `${base}.json`);
   const meta = msg.metadata || {};
 
   // Stricter than the screenshot path: with no screenshot the media IS the
@@ -464,17 +495,19 @@ async function handleSavePost(msg: any) {
     avatarFile = null;
   }
 
-  const record = Object.assign({}, meta, {
-    captureId: base,
-    image: null,
-    media: savedMedia,
-    avatarFile,
-  });
-  fs.writeFileSync(jsonPath, JSON.stringify(record, null, 2), 'utf8');
+  const record = normalizePostRecord(
+    Object.assign({}, meta, {
+      captureId: base,
+      image: null,
+      media: savedMedia,
+      avatarFile,
+    }),
+  );
+  await writeInboxEvent(saveFolder, buildEnvelope(record));
   noteSaved(record.url, base); // see handleSave
 
   // deferred = written but not displayable yet (no media at all → #365).
-  return { ok: true, file: savedMedia.length ? savedMedia[0].file : `${base}.json`, saveFolder, mediaCount: savedMedia.length, deferred: !savedMedia.length };
+  return { ok: true, file: savedMedia.length ? savedMedia[0].file : base, saveFolder, mediaCount: savedMedia.length, deferred: !savedMedia.length };
 }
 
 // Image-drag save: no screenshot. The bridge downloads the dragged illustration
@@ -506,8 +539,8 @@ async function handleSaveDragged(msg: any) {
   }
   // source:'drag' marks the image as the artwork itself (not a post screenshot),
   // so the image-view shows it. Mirrors the migrated records' source marker.
-  const record = Object.assign({}, meta, { captureId: base, image: imageFile, media: [], source: 'drag', avatarFile });
-  fs.writeFileSync(path.join(saveFolder, `${base}.json`), JSON.stringify(record, null, 2), 'utf8');
+  const record = normalizePostRecord(Object.assign({}, meta, { captureId: base, image: imageFile, media: [], source: 'drag', avatarFile }));
+  await writeInboxEvent(saveFolder, buildEnvelope(record));
   noteSaved(record.url, base); // see handleSave
 
   return { ok: true, file: imageFile, saveFolder };

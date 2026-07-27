@@ -1,6 +1,7 @@
 // Native Messaging ブリッジのスモークテスト。'save' メッセージをフレーミングして
 // bridge.cts へ流し込み（設定ディレクトリを差し替えて一時保存フォルダを使わせる）、
-// JPEG と sidecar が書かれ、ack の形が正しいことを見る。
+// JPEG と inbox エンベロープ（#5 St6 / #299 — sidecar 直書きの後継）が書かれ、
+// ack の形が正しいことを見る。
 
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
@@ -63,13 +64,15 @@ test('ack が ok で返る', () => {
 });
 
 describe('保存されたもの', () => {
-  test('JPEG と sidecar JSON が書かれる', () => {
+  test('JPEG と inbox エンベロープが書かれる（sidecar は書かれない）', () => {
     expect(fs.existsSync(path.join(saveFolder, `${captureId}.jpg`))).toBe(true);
-    expect(fs.existsSync(path.join(saveFolder, `${captureId}.json`))).toBe(true);
+    expect(fs.existsSync(path.join(saveFolder, `${captureId}.json`))).toBe(false);
+    expect(fs.existsSync(path.join(saveFolder, '.hologram-inbox', 'new', `${captureId}.json`))).toBe(true);
   });
 
-  test('sidecar が captureId / image / url を持つ', () => {
-    const rec = JSON.parse(fs.readFileSync(path.join(saveFolder, `${captureId}.json`), 'utf8'));
-    expect(rec).toMatchObject({ captureId, image: `${captureId}.jpg`, url: 'https://x.com/u/status/1' });
+  test('エンベロープの record が captureId / image / url を持つ', () => {
+    const envelope = JSON.parse(fs.readFileSync(path.join(saveFolder, '.hologram-inbox', 'new', `${captureId}.json`), 'utf8'));
+    expect(envelope).toMatchObject({ format: 'hologram-inbox', version: 1, eventId: captureId, kind: 'post.capture' });
+    expect(envelope.record).toMatchObject({ captureId, image: `${captureId}.jpg`, url: 'https://x.com/u/status/1' });
   });
 });
