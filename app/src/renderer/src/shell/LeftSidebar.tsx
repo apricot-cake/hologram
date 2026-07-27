@@ -107,15 +107,23 @@ function FolderNode({ f, ctx }: { f: HologramFolder; ctx: FolderTreeCtx }) {
       >
         {hint === 'before' && <span className="pointer-events-none absolute inset-x-0 top-0 h-0.5 rounded-full bg-sidebar-ring" />}
         {hint === 'after' && <span className="pointer-events-none absolute inset-x-0 bottom-0 h-0.5 rounded-full bg-sidebar-ring" />}
+        {/* Both the twisty and the leaf's placeholder go away in the icon rail: at
+            48px there is only room for the folder icon itself, and 20px of indent
+            pushed that icon past the rail's edge, where it was clipped into a
+            sliver. Nothing is lost by hiding them — the subtree they expand is
+            already hidden in this mode (SidebarMenuSub), so the twisty has
+            nothing to reveal and the leaf has no label column to line up with. */}
         {kids.length ? (
-          <CollapsibleTrigger data-slot="folder-twisty" aria-label={t('foldToggleSubs')} className="flex size-5 shrink-0 items-center justify-center rounded-sm text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground">
+          <CollapsibleTrigger data-slot="folder-twisty" aria-label={t('foldToggleSubs')} className="flex size-5 shrink-0 items-center justify-center rounded-sm text-sidebar-foreground/60 group-data-[collapsible=icon]:hidden hover:bg-sidebar-accent hover:text-sidebar-accent-foreground">
             <ChevronRight className={`size-3.5 transition-transform ${isOpen ? 'rotate-90' : ''}`} />
           </CollapsibleTrigger>
         ) : (
           // A leaf keeps the twisty's width so labels line up down the column.
-          <span className="size-5 shrink-0" />
+          <span className="size-5 shrink-0 group-data-[collapsible=icon]:hidden" />
         )}
-        <SidebarMenuButton className="min-w-0 flex-1" tooltip={f.name} onClick={() => ctx.apply(f.id)}>
+        {/* flex-1 would beat the rail's size-8! sizing on its own (flex-basis wins
+            over width in a flex row), so the grow is dropped in icon mode too. */}
+        <SidebarMenuButton className="min-w-0 flex-1 group-data-[collapsible=icon]:flex-none" tooltip={f.name} onClick={() => ctx.apply(f.id)}>
           <Folder />
           <span className="truncate">{f.name}</span>
         </SidebarMenuButton>

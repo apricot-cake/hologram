@@ -32,7 +32,9 @@ const zlib = require('node:zlib');
 
 const repoRoot = path.join(__dirname, '..');
 const appDir = path.join(repoRoot, 'app');
-const electronPath = require(path.join(appDir, 'node_modules', 'electron'));
+const { electronPath: resolveElectron } = require('./lib-electron-path.cts');
+
+const electronPath = resolveElectron();
 
 const sandboxRoot = path.join(repoRoot, '.sandbox');
 const configDir = path.join(sandboxRoot, 'config');
