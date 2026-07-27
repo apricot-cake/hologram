@@ -51,7 +51,7 @@ description: Hologram を CDP（Chrome DevTools Protocol）で計測・撮影・
 - `setPosterTags(data)` = `{tags:{...}}` **ラップが正しい**（main が `data.tags` を取り出す）。
 - 鉄則: ①set 前にディスクのファイルをバックアップ ②set 後に get で読み返して shape と件数を確認 ③検証後はダミーを除去して再 get で 0 件＋ディスク diff が IDENTICAL であることを確認。ダミーには識別プレフィックス（例 `__vt_`）を付ける。
 - renderer の関数スコープ変数（`posterTags`/`tagTypes`）は set 後に `location.reload()` しないと反映されない（起動時ロードでしか読まれない）。
-- **Node が読む JSON を PowerShell で書かない**（実害 2026-06-13）。`Set-Content`/`Out-File -Encoding utf8` は Windows PowerShell 5.1 で UTF-8 BOM を付け、`JSON.parse` が throw → `~/.hologram/config.json` なら次回起動で**デフォルト上書き**され `extensionId` まで消える。Node の `fs.writeFileSync(p, JSON.stringify(x,null,2),'utf8')` か、CDP 越しの `window.hologram.setPref` を使う。
+- **Node が読む JSON を PowerShell で書かない**（機序と正しい書き方は skill `windows-scripting`）。ここでの帰結が重い＝`~/.hologram/config.json` が BOM 付きになると次回起動で**デフォルト上書き**され `extensionId` まで消える（実害 2026-06-13）。CDP 越しの `window.hologram.setPref` でも書ける。
 
 ## 拡張を診断する
 
