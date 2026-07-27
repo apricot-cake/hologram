@@ -1,0 +1,27 @@
+<!--
+  Hand-authored Bluesky DOM shapes for media-identity.ts's Bluesky branch.
+  See media-x.html for why this is a separate fixture from
+  fixtures/content/bluesky.html (site-detect.ts's own fixture has no <img>s).
+-->
+<!DOCTYPE html>
+<html>
+<head></head>
+<body>
+
+  <!-- normal post: image is a sibling of the post's own permalink anchor,
+       both inside the feedItem-by- container (media-identity's POST_CONTAINER) -->
+  <div data-testid="feedItem-by-alice.bsky.social" id="post1">
+    <a href="/profile/alice.bsky.social/post/3kabc"><time datetime="2026-01-01T00:00:00Z">1h</time></a>
+    <img id="imgPost1" src="https://cdn.bsky.app/img/feed_thumbnail/plain/xyz@jpeg">
+  </div>
+
+  <!-- avatar living in the same post container: identity still resolves (any
+       image in the container attributes to that post) but isPostMedia must
+       reject it — it is not on the feed_ CDN path -->
+  <div data-testid="feedItem-by-carol.bsky.social" id="post2">
+    <a href="/profile/carol.bsky.social/post/9zzz"><time datetime="2026-01-01T00:00:00Z">2h</time></a>
+    <img id="imgAvatar" src="https://cdn.bsky.app/img/avatar/plain/abc@jpeg">
+  </div>
+
+</body>
+</html>

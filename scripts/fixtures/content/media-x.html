@@ -1,0 +1,32 @@
+<!--
+  Hand-authored X/Twitter DOM shapes for extension/utils/media-identity.ts's
+  extractIdentity/isPostMedia (which post does a dragged/hovered <img> belong
+  to, and is it the post's own picture). Distinct from fixtures/content/x.html
+  (site-detect.ts's permalink/post-element logic) — this one needs <img>
+  elements in the exact position real markup puts them (a sibling of the
+  status anchor, not inside it), since extractIdentity's ancestor-container
+  fallback is what's under test.
+-->
+<!DOCTYPE html>
+<html>
+<head></head>
+<body>
+
+  <!-- normal post: the image sits in a sibling div, not inside the anchor
+       itself, so extractIdentity must fall back to findAncestorContainerLink
+       bounded by <article> -->
+  <article data-testid="tweet" id="post1">
+    <a href="/alice/status/111"><time datetime="2026-01-01T00:00:00Z">1h</time></a>
+    <div data-testid="tweetPhoto"><img id="imgPost1" src="https://pbs.twimg.com/media/AAA.jpg"></div>
+  </article>
+
+  <!-- avatar: outside any /status/ anchor and outside any article, so no
+       container link can ever be found -->
+  <img id="imgAvatar" src="https://pbs.twimg.com/profile_images/BBB.jpg">
+
+  <!-- lightbox/photo-viewer image: anchor-less and outside <article>, so
+       identity comes from the URL bar instead (only valid on a /status/ page) -->
+  <img id="imgViewer" src="https://pbs.twimg.com/media/CCC.jpg">
+
+</body>
+</html>
