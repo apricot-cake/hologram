@@ -278,7 +278,7 @@ function readTabs(sqlite: Sqlite) {
 }
 
 function createDbWriter(sqlite: Sqlite) {
-  const transaction = <T,>(fn: () => T) => sqlite.transaction(fn)();
+  const transaction = <T>(fn: () => T) => sqlite.transaction(fn)();
   return {
     stateGet: (key: string) => stateGet(sqlite, key),
     stateSet: (key: string, value: string) => transaction(() => stateSet(sqlite, key, value)),

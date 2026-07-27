@@ -11,6 +11,10 @@
     "moduleResolution": "bundler",
     "jsx": "react-jsx",
     "noEmit": true,
+    // This codebase's local imports conventionally name an explicit .ts/.tsx
+    // extension (e.g. `from '../services/store.ts'`) — bundler resolution
+    // requires this flag whenever any specifier names a real TS extension.
+    "allowImportingTsExtensions": true,
     "isolatedModules": true,
     "strict": true,
     // Side-effect CSS imports (settings' './styles.css') are Vite assets, not

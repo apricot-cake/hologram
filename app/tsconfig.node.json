@@ -18,6 +18,10 @@
     "module": "ESNext",
     "moduleResolution": "bundler",
     "noEmit": true,
+    // native-host/post-record.mts (a separate deliverable, out of this migration's
+    // scope) is imported by explicit .mts specifier from lib-db-import.ts — bundler
+    // resolution requires this flag whenever a specifier names a real TS extension.
+    "allowImportingTsExtensions": true,
     "esModuleInterop": true,
     "isolatedModules": true,
     "strict": true,

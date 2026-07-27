@@ -7,9 +7,10 @@
   "license": "MIT",
   "scripts": {
     "start": "electron .",
-    "dev": "electron-vite dev",
-    "build": "electron-vite build",
-    "dist": "electron-vite build && electron-builder",
+    "build:theme-boot": "node build-theme-boot.mjs",
+    "dev": "npm run build:theme-boot && electron-vite dev",
+    "build": "npm run build:theme-boot && electron-vite build",
+    "dist": "npm run build && electron-builder",
     "register-host": "node ../native-host/install.cts",
     "unregister-host": "node ../native-host/install.cts uninstall",
     "typecheck": "npm run typecheck:node && npm run typecheck:web",

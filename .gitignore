@@ -3,6 +3,9 @@ node_modules/
 app/node_modules/
 app/dist/
 app/out/
+# Rebuilt from src/renderer/src/services/theme.ts by `npm run build:theme-boot`
+# (part of app's build/dev scripts) — no longer hand-committed (was, pre-#156).
+app/src/renderer/public/theme.js
 extension/node_modules/
 extension/.output/
 extension/.wxt/
