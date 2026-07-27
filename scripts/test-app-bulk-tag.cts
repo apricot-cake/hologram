@@ -26,7 +26,9 @@ const os = require('node:os');
 const path = require('node:path');
 
 const appDir = path.join(__dirname, '..', 'app');
-const electronPath = require(path.join(appDir, 'node_modules', 'electron'));
+const { electronPath: resolveElectron } = require('./lib-electron-path.cts');
+
+const electronPath = resolveElectron();
 const { openDatabase } = require(path.join(appDir, 'src', 'main', 'lib-db.ts'));
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-bulktag-'));
