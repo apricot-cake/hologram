@@ -10,7 +10,11 @@ npm run setup
 
 **⚠️素の `npm install` は現在このリポジトリでは通らない**（C++ ビルドツールを入れている環境を除く）。`better-sqlite3` v13 は N-API 化でビルド済みバイナリを同梱し、読み込み側もそれを優先するのに、`binding.gyp` を同梱したまま install スクリプトを宣言していない。npm はこの組み合わせを「node-gyp でコンパイルせよ」と解釈する既定を持つ（[npm docs](https://docs.npmjs.com/cli/v11/using-npm/scripts)）ため、**不要なコンパイルが走り、失敗すると install 全体が途中で止まる**（無関係なパッケージが入らないまま終わる）。
 
-`npm run setup` は `--ignore-scripts` で入れ、それが巻き添えで止める Electron 本体の取得だけを戻す。`npm rebuild electron` は成功と表示して**何もダウンロードしない**ので使わない。
+`npm run setup` は `--ignore-scripts` で入れ、それが巻き添えで止める Electron 本体の取得と WXT の `wxt prepare`（`extension/.wxt/tsconfig.json` の生成）だけを戻す。`npm rebuild electron` は成功と表示して**何もダウンロードしない**ので使わない。
+
+**`--legacy-peer-deps` も付く（別件の回避）**: `electron-vite@5` は `peer vite: ^5 || ^6 || ^7` を宣言しているのに `app/` は vite 8 で組んでいるため、npm の解決器がツリーごと拒否する。vite 8 を受ける安定版の electron-vite はまだ無く（6.0.0 は beta のみ・2026-07-27 確認）、`overrides` では peer の範囲を広げられないので、npm 公式の逃げ道がこれしかない。**この不整合は前からある**＝lockfile 無しの `npm install` は vite 8 を入れた時点で通らなくなっていて、コミット済みの lockfile が支えていただけ。何かが再解決を促した瞬間に落ちる。
+
+**⚠️Hologram（開発版）を起動したまま install しない**: 実行中の Electron が `node_modules/electron/dist/**` と `better-sqlite3` の `.node` を掴んでいるため、npm がファイルを置き換えられず EBUSY / EPERM で止まる。`npm ci` は先に node_modules を消しにいくので、途中まで消したところで失敗して**依存が欠けたツリーが残る**（2026-07-27 実地被弾）。先にアプリを閉じること。
 
 **これは上流 [WiseLibs/better-sqlite3#1503](https://github.com/WiseLibs/better-sqlite3/issues/1503) が直るまでの暫定措置。** setup は毎回、インストール済み `better-sqlite3` の `package.json` を読んで条件がまだ成立するか確かめ、解消していれば「回避策を外せる」と表示する。Dependabot（#395）の更新 PR で新バージョンが来たときも、同じ条件（`gypfile: false` か install スクリプトの有無）で判定する。**解消したら `scripts/setup.cts`・`package.json` の `setup`・本節をまとめて消すこと。**
 
