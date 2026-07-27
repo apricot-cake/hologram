@@ -11,12 +11,10 @@ description: 隔離 worktree で Hologram のテスト・型検査を回し、�
 
 `npm test` は Vitest＝root の devDependency なので、**install 無しで走るテストはもう無い**。
 
-1. root で `npm install --ignore-scripts` — biome・vitest・jsdom と、ワークスペースの `app/` の依存をまとめて入れる。**`--ignore-scripts` は必須**＝素の `npm install` は better-sqlite3 の node-gyp で落ちる（2026-07-24／2026-07-27 実測）。better-sqlite3 は `prebuilds/win32-x64.node` を同梱しているので、ビルドを飛ばしても SQLite 系のテストは通る
-2. `extension/` で `npm install` — postinstall の `wxt prepare` が `.wxt/tsconfig.json` を生成する。**これが無いと Vite が `extension/tsconfig.json` を読めず、拡張のコードを import するスイートが "Tsconfig not found" で落ちる**（コード起因ではない）
-3. `npm run build:ext` — `overlay.test.ts`／`bulk-capture.test.ts`／`capture-mode-select.test.ts` はビルド済みバンドル（`extension/.output/chrome-mv3`）を jsdom で評価するので、これが無いと ENOENT で落ちる
-4. `app/` で `node node_modules/electron/install.js` — **npm install は electron バイナリを落とさない**（`--ignore-scripts` なら尚更）。`app/node_modules/electron/dist/electron.exe` の実在を確認してから起動系を回す
+1. `npm run setup` — root と `extension/` の依存・`wxt prepare`・Electron 本体の取得をまとめて面倒を見る（**素の `npm install` は better-sqlite3 の node-gyp で落ちる**＝理由と回避の寿命は `scripts/setup.cts` 冒頭が正本）
+2. `npm run build:ext` — `overlay.test.ts`／`bulk-capture.test.ts`／`capture-mode-select.test.ts` はビルド済みバンドル（`extension/.output/chrome-mv3`）を jsdom で評価するので、これが無いと ENOENT で落ちる
 
-3 まで済ませれば `npm test`（52スイート）と `npm run typecheck` が全緑になる。4 まで済ませればアプリ起動ハーネス（`test-app-*.cts`）も worktree でそのまま緑になる。各自 `HOLOGRAM_CONFIG_DIR` の mkdtemp サンドボックスで実 Electron を起動するので、本体アプリにも実ライブラリにも触らない＝**実機 CDP(:9222) を奪わずに実経路を検証したい時の既定手段**（並行セッションが居る時は特に）。部分実行は `node scripts/run-app-tests.cts <suffix>`。
+2 まで済ませれば `npm test`（52スイート）・`npm run typecheck`・アプリ起動ハーネス（`test-app-*.cts`）がすべて worktree で緑になる。各自 `HOLOGRAM_CONFIG_DIR` の mkdtemp サンドボックスで実 Electron を起動するので、本体アプリにも実ライブラリにも触らない＝**実機 CDP(:9222) を奪わずに実経路を検証したい時の既定手段**（並行セッションが居る時は特に）。部分実行は `node scripts/run-app-tests.cts <suffix>`。
 
 ## 効かない手（罠）
 
