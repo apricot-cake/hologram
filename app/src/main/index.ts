@@ -197,21 +197,23 @@ function initSaveFolderRedundancy() {
 }
 
 // App-internal metadata files that live in the save folder but are NOT posts.
-// The renderer writes these constantly (tabs.json on every tab switch via
-// persistTabsDebounced, folders/groups/ungrouped on edits), so the watcher must
-// IGNORE them — otherwise each write self-triggers a full library reload
-// (listPosts re-reads all sidecars, ~1s on a 9k-post folder) and the UI stalls.
+// Organization layer (tags / groups / folders / poster-* / tabs) is DB-backed
+// since the #298/St5 truth-source flip — the app itself no longer writes any
+// of these to disk — but the names stay listed so the watcher still IGNOREs
+// them if present (a pre-flip library can still have them on disk), instead of
+// each one self-triggering a full library reload (listPosts re-reads all
+// sidecars, ~1s on a 9k-post folder) were they ever to change.
 const INTERNAL_FILES = new Set(['config.json', '.index.json', 'tag-types.json', 'ungrouped.json', 'manual-groups.json', 'folders.json', 'tabs.json', 'poster-favorites.json', 'poster-folders.json', 'poster-tags.json']);
 
-// The subset of INTERNAL_FILES that the renderer REWRITES in place on every edit
-// (organization layer: tags / groups / folders / poster-* / open tabs).
-// Unlike write-once captures (.jpg + .json sidecar), these mutate, so
-// a backup that only copies "files not yet present at dest" freezes them at their
-// first-ever contents — restoring from that mirror would silently discard every
-// tagging / foldering edit made since the first backup. The backup must re-copy
-// these whenever the source changed (size or mtime). config.json lives in
-// configDir (never in the save folder) and .index.json is a rebuildable snapshot
-// already skipped by the backup, so neither belongs here.
+// The subset of INTERNAL_FILES that used to be REWRITTEN in place on every edit
+// (organization layer: tags / groups / folders / poster-* / open tabs), back
+// when they were the write path (pre-#298/St5). The app no longer edits any of
+// these — they only still exist on disk for a pre-flip library imported once
+// (lib-db-import.ts) and never written again — but a backup mirror can still
+// encounter one that a user hand-edited or restored, so re-copy on drift (size
+// or mtime) remains the safe behavior rather than assuming write-once. config.json
+// lives in configDir (never in the save folder) and .index.json is a rebuildable
+// snapshot already skipped by the backup, so neither belongs here.
 const MUTABLE_INTERNAL = new Set(['tag-types.json', 'ungrouped.json', 'manual-groups.json', 'folders.json', 'tabs.json', 'poster-favorites.json', 'poster-folders.json', 'poster-tags.json']);
 
 // Watch the save folder and tell the renderer to refresh when files change
@@ -671,75 +673,6 @@ async function writeSidecarAtomic(jsonPath, rec) {
   await fs.promises.rename(tmp, jsonPath);
 }
 
-// Synchronous sibling of writeSidecarAtomic for the app-internal organization
-// JSON (collections / tags / groups / folders / …). Same crash-safety reason: a
-// non-atomic in-place writeFileSync caught mid-write by a crash/power loss leaves
-// a torn or zero-byte file, whose next get-* read JSON.parse-throws and returns an
-// empty default. The renderer adopts that empty as authoritative and the next edit
-// persist()s it back — permanently losing the organization layer (re-created from
-// nothing, unlike write-once images/sidecars). tmp+rename means a reader only ever
-// sees the complete old or complete new file. The .tmp suffix is invisible to the
-// watcher (its regex matches only image/json, not .tmp).
-function writeJsonAtomicSync(filePath, value) {
-  const tmp = `${filePath}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify(value, null, 2), 'utf8');
-  fs.renameSync(tmp, filePath);
-}
-
-// --- Organization-JSON degraded guard --------------------------------------
-// The atomic writes above stop US from tearing these files, but a file can still
-// be present-but-unparseable from an external edit, a pre-atomic-write torn file,
-// or disk corruption. The get-* handlers can't tell that apart from "file absent"
-// (both JSON.parse-throw paths), so they'd return the empty default; the renderer
-// adopts it and the next set-* persists {} back — permanently purging the layer.
-// Same failure mode (and the same defense) as readConfig()/clear-all: when a read
-// finds a file present-but-corrupt we (1) keep a forensic copy, (2) flag the file
-// degraded, and (3) refuse the next write to it, so the corrupt-but-recoverable
-// file is preserved instead of overwritten with an empty default. A clean read
-// (e.g. after the user restores/removes the bad file and restarts) clears the flag.
-const degradedOrgFiles = new Set();
-
-// Read an org JSON. Returns { value, degraded }:
-//   - absent (ENOENT)        → { value: null, degraded: false }  (legitimately empty)
-//   - present but unparseable → { value: null, degraded: true }  (preserve, don't purge)
-//   - parsed                  → { value: <obj>, degraded: false }
-function readOrgJsonSync(filePath) {
-  let raw: string;
-  try {
-    raw = fs.readFileSync(filePath, 'utf8');
-  } catch {
-    degradedOrgFiles.delete(filePath); // truly absent — not corruption
-    return { value: null, degraded: false };
-  }
-  try {
-    const value = parseJsonLoose(raw);
-    degradedOrgFiles.delete(filePath); // clean read clears any prior degraded flag
-    return { value, degraded: false };
-  } catch {
-    if (!degradedOrgFiles.has(filePath)) {
-      // Keep one forensic copy the first time we notice this corruption.
-      try {
-        if (raw && raw.length) fs.copyFileSync(filePath, `${filePath}.corrupt-${Date.now()}`);
-      } catch {
-        /* best-effort */
-      }
-    }
-    degradedOrgFiles.add(filePath);
-    return { value: null, degraded: true };
-  }
-}
-
-// Atomic write that refuses to clobber a file currently flagged degraded. Throws
-// so the caller's existing try/catch returns { ok: false } and the corrupt file
-// is left intact (the in-memory data isn't lost — the renderer keeps it and can
-// retry once the underlying file is fixed and re-read cleanly).
-function writeOrgJsonSync(filePath, value) {
-  if (degradedOrgFiles.has(filePath)) {
-    throw new Error('refusing to overwrite degraded org file: ' + path.basename(filePath));
-  }
-  writeJsonAtomicSync(filePath, value);
-}
-
 // Recover the captureId base from a filename. The argument may be the primary
 // image (<base>.<ext>, any viewable ext), a video poster (<base>-poster.<ext>),
 // or the video itself. Strip the -poster marker first, then any extension.
@@ -1180,8 +1113,6 @@ function registerExtractedIpc() {
     getSaveFolder,
     getDbWriter,
     ensurePostsSynced,
-    readOrgJsonSync,
-    writeOrgJsonSync,
     listPosts,
     listPostsDelta,
     resolveInFolder,

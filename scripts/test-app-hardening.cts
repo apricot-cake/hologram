@@ -8,9 +8,14 @@
 //   件2 navigation lockdown: renderer-initiated window.open is denied
 //        (setWindowOpenHandler), and the renderer's global drop guard
 //        preventDefault()s a file dropped onto the window.
-//   件3 organization-JSON degraded guard: a present-but-corrupt org file is NOT
-//        purged by the empty default it reads back as — get-* returns empty but
-//        set-* refuses to overwrite, preserving the file on disk.
+//   件3 legacy org-JSON files (pre-#298/St5 truth-source flip) are read-only
+//        residue now: a present-but-corrupt folders.json/tag-types.json is
+//        skipped (not imported) rather than crashing the one-time legacy
+//        import, get-* still returns empty (DB has nothing for them), set-*
+//        is an ordinary DB write and SUCCEEDS (there is no file to clobber —
+//        organization state no longer round-trips through these files at
+//        all), and the corrupt file itself is left untouched on disk because
+//        nothing in the current write path ever touches it.
 //
 //   node scripts/test-app-hardening.cts
 
@@ -59,8 +64,10 @@ fs.writeFileSync(
   ),
 );
 
-// 件3: two org files that are present-but-corrupt (torn JSON). The handlers should
-// read them as empty (so the UI loads) but refuse to overwrite them.
+// 件3: two legacy org files that are present-but-corrupt (torn JSON). The
+// one-time legacy import (lib-db-import.ts, runs while truthSource !== 'db')
+// must skip them without crashing — get-* then reads empty from the DB, and
+// a live set-* afterward is an unrelated ordinary DB write.
 const CORRUPT = '{ "folders": [ { "id": "c1", "nam'; // truncated mid-object
 fs.writeFileSync(path.join(saveFolder, 'folders.json'), CORRUPT);
 fs.writeFileSync(path.join(saveFolder, 'tag-types.json'), CORRUPT);
@@ -81,22 +88,23 @@ const evalJs = `(async () => {
   window.dispatchEvent(dragEvt);
   const dragPrevented = dragEvt.defaultPrevented;
 
-  // 件3: corrupt org files read back as empty (UI keeps working) ...
+  // 件3: the corrupt legacy files failed to import, so the DB has nothing for
+  // them — get-* reads back empty (UI keeps working) ...
   const coll = await window.hologram.getFolders();
   const collEmpty = Array.isArray(coll.folders) && coll.folders.length === 0;
   const tt = await window.hologram.getTagTypes();
   const tgEmpty = tt && tt.types && typeof tt.types === 'object' && Object.keys(tt.types).length === 0;
-  // ... but a follow-up set-* (e.g. the renderer auto-persisting that empty) is
-  // REFUSED, so nothing overwrites the corrupt-but-recoverable file on disk.
+  // ... and a follow-up set-* (the renderer persisting that empty) SUCCEEDS —
+  // it's an ordinary DB write, unrelated to the untouched file on disk.
   const setColl = await window.hologram.setFolders({ folders: [] });
   const setTg = await window.hologram.setTagTypes({}, {});
-  const setCollRefused = !!(setColl && setColl.ok === false);
-  const setTgRefused = !!(setTg && setTg.ok === false);
+  const setCollOk = !!(setColl && setColl.ok === true);
+  const setTgOk = !!(setTg && setTg.ok === true);
 
   // 件1: delete the post → its files move to .trash/.
   await window.hologram.deletePost('${POST}.jpg');
 
-  return { openDenied, dropPrevented, dragPrevented, collEmpty, tgEmpty, setCollRefused, setTgRefused };
+  return { openDenied, dropPrevented, dragPrevented, collEmpty, tgEmpty, setCollOk, setTgOk };
 })()`;
 
 const env = Object.assign({}, process.env, {
@@ -129,7 +137,8 @@ child.on('close', () => {
   const primaryGone = !fs.existsSync(path.join(saveFolder, `${POST}.jpg`));
   const primaryInTrash = fs.existsSync(path.join(trashDir, `${POST}.jpg`));
 
-  // 件3 assertions (disk state): the corrupt org files are PRESERVED byte-for-byte.
+  // 件3 assertions (disk state): the corrupt legacy files are PRESERVED
+  // byte-for-byte — nothing in the current write path ever touches them.
   let collPreserved = false;
   let tgPreserved = false;
   try {
@@ -164,8 +173,8 @@ child.on('close', () => {
   // 件3
   check('件3 壊れた folders.json は空として読まれる', r.collEmpty === true);
   check('件3 壊れた tag-types.json は空として読まれる', r.tgEmpty === true);
-  check('件3 空での folders 上書きが拒否された', r.setCollRefused === true);
-  check('件3 空での tag-types 上書きが拒否された', r.setTgRefused === true);
+  check('件3 空での folders 上書きが成功する(DB書き込みでファイルと無関係)', r.setCollOk === true);
+  check('件3 空での tag-types 上書きが成功する(DB書き込みでファイルと無関係)', r.setTgOk === true);
   check('件3 壊れた folders.json が温存された', collPreserved);
   check('件3 壊れた tag-types.json が温存された', tgPreserved);
 
