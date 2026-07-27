@@ -52,9 +52,14 @@
     "forceConsistentCasingInFileNames": true,
     "skipLibCheck": true,
     // native-host/ has no node_modules of its own (it's a plain deployed dir,
-    // not an npm package) — point at the app/ install (shared with
-    // tsconfig.node.json) instead of duplicating an @types/node install here.
-    "typeRoots": ["../app/node_modules/@types"],
+    // not an npm package) — borrow an existing @types install instead of
+    // duplicating one here. BOTH candidates are listed because @types/node
+    // arrives transitively, so npm is free to place it at the repo root (the
+    // usual outcome, since app/ is a workspace and nothing pins a conflicting
+    // version) or nested under app/. A missing typeRoots entry is ignored, so
+    // listing both is stable across either layout; naming only the app/ path
+    // made this project fail with TS2688 after a plain root `npm install`.
+    "typeRoots": ["../node_modules/@types", "../app/node_modules/@types"],
     "types": ["node"]
   },
   "files": ["bridge.cts", "install.cts", "paths.cts", "media-download.cts", "config-recovery.cts", "post-key.mts", "post-record.mts"]

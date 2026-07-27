@@ -22,13 +22,31 @@
 //      original TS-scope declaration never named (2026-07-09 audit).
 
 const { spawnSync } = require('node:child_process');
+const fs = require('node:fs');
 const path = require('node:path');
 
 const appDir = path.join(__dirname, '..', 'app');
-const appTsc = path.join(appDir, 'node_modules', 'typescript', 'bin', 'tsc');
 const extDir = path.join(__dirname, '..', 'extension');
-const extTsc = path.join(extDir, 'node_modules', 'typescript', 'bin', 'tsc');
-const extWxt = path.join(extDir, 'node_modules', 'wxt', 'bin', 'wxt.mjs');
+
+// Find <pkg>/<subPath> by walking the node_modules chain up from fromDir,
+// instead of hardcoding <workspace>/node_modules/<pkg>. npm hoists a
+// dependency to the repo root whenever no workspace pins a conflicting
+// version, so whether typescript lands in app/node_modules or the root is an
+// install-order detail the repo doesn't control — the hardcoded nested path
+// made `npm test` red on a plain root `npm install` while every other check
+// stayed green. require.resolve is not usable here: wxt's package.json is
+// walled off by its "exports" map, and a bin path is not an export either.
+function resolveBin(pkg: string, subPath: string, fromDir: string): string {
+  for (let dir = fromDir; ; dir = path.dirname(dir)) {
+    const candidate = path.join(dir, 'node_modules', pkg, subPath);
+    if (fs.existsSync(candidate)) return candidate;
+    if (path.dirname(dir) === dir) throw new Error(`test-typecheck: cannot find ${pkg}/${subPath} from ${fromDir} — run npm install`);
+  }
+}
+
+const appTsc = resolveBin('typescript', path.join('bin', 'tsc'), appDir);
+const extTsc = resolveBin('typescript', path.join('bin', 'tsc'), extDir);
+const extWxt = resolveBin('wxt', path.join('bin', 'wxt.mjs'), extDir);
 
 const PROJECTS = [
   { p: path.join(appDir, 'tsconfig.web.json'), label: 'renderer (components + services)', tsc: appTsc, cwd: appDir },

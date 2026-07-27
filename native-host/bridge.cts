@@ -520,7 +520,10 @@ if (require.main === module) {
   logLine(`launched argv=${JSON.stringify(process.argv.slice(2))} saveFolder=${readSaveFolder()}`);
   let buffer = Buffer.alloc(0);
 
-  process.stdin.on('data', (chunk) => {
+  // chunk is annotated because the 'data' signature is string | Buffer: stdin
+  // only yields strings once an encoding is set, and this host never sets one
+  // (native messaging frames are length-prefixed binary).
+  process.stdin.on('data', (chunk: Buffer) => {
     buffer = Buffer.concat([buffer, chunk]);
     while (buffer.length >= 4) {
       const len = buffer.readUInt32LE(0);
