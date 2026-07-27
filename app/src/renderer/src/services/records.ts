@@ -17,7 +17,7 @@ import { hologramIpc } from './ipc.ts';
 // #54) and a second copy here would let the badge and the grid disagree about
 // which posts are the same post. Re-exported so every renderer importer keeps
 // reaching it through this service, unchanged.
-import { postKeyOf } from '../../native-host/post-key.mts';
+import { postKeyOf } from '../../../../../native-host/post-key.mts';
 export { postKeyOf };
 
 // Per-density image source. A post may carry both a capture (screenshot) and

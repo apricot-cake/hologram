@@ -5,10 +5,10 @@ import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { cn } from '@/lib/utils';
 import { t } from '../_shared/i18n.ts';
-import { postIdKey } from '../../renderer/records.ts';
-import { isAllSelected, selectedGroups } from '../../renderer/selection.ts';
-import { get as storeGet, subscribe as storeSubscribe } from '../../renderer/store.ts';
-import { selectionClear, selectionDelete, selectionFolder, selectionGroup, selectionSelectAll, selectionTag } from '../../renderer/orchestrator.ts';
+import { postIdKey } from '../services/records.ts';
+import { isAllSelected, selectedGroups } from '../services/selection.ts';
+import { get as storeGet, subscribe as storeSubscribe } from '../services/store.ts';
+import { selectionClear, selectionDelete, selectionFolder, selectionGroup, selectionSelectAll, selectionTag } from '../services/orchestrator.ts';
 
 // Bottom floating selection bar (redesign §3-4 / P2⑥) — a Google-Photos / Linear-type
 // capsule pinned bottom-center, shown whenever 1+ post cards are selected. It replaces

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { hologramTabsSource } from '../../renderer/tabs.ts';
+import { hologramTabsSource } from '../services/tabs.ts';
 import { Tabs } from './Tabs.tsx';
 
 // Presentational island for the tab strip (#tabBarInner) — lives under the single App

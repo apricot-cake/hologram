@@ -2008,21 +2008,19 @@
   <!-- The entire renderer SERVICE layer (i18n/ui/folders/store/bridge/menu/kind-menu/
        filter-popover/qf-pop/inspector/edit-overlay/searchbox/grid/sidebar/confirm/
        about-icon/shell, plus the logic-service wave — search/query/records/facets/cooc/
-       tags/users/tab-state/listing/geometry/format/undo) is folded into the app.js bundle
-       (P2): each service is a real ES module imported directly by its consumers
-       (shell.ts last via app/islands/app/index.tsx, mirroring the old script
-       order). theme.js stays its own pre-paint <script> (head,
-       above) — it must run before first paint, which app.js (loaded at the end of body)
-       cannot guarantee. -->
-  <!-- All React islands, React itself, the renderer service layer, AND the boot
-       orchestrator in ONE IIFE bundle: islands/build.mjs builds the app/index.tsx
-       barrel, which side-effect-imports every service, every island, then (last)
-       renderer/orchestrator.ts + shell.ts. orchestrator.ts owns data/state/event-
-       delegation + the remaining window.hologram* bridges; each island subscribes
-       and renders. Ordering is robust — orchestrator's body awaits hologramI18n so it
-       stays deferred behind the synchronous island mounts, and islands pull current
-       state on mount. Shared code (React / masonic / react-aria / _shared/*) is
-       bundled once. -->
-  <script src="islands/app.js"></script>
+       tags/users/tab-state/listing/geometry/format/undo) is folded into this entry's
+       bundle: each service is a real ES module imported directly by its consumers
+       (shell.ts last via src/app/index.tsx, mirroring the old script order). theme.js
+       stays its own pre-paint <script> (head, above) — it must run before first paint,
+       which this module script (deferred by spec) cannot guarantee. -->
+  <!-- All React components, React itself, the renderer service layer, AND the boot
+       orchestrator in electron-vite's renderer bundle: src/app/index.tsx is the entry,
+       which side-effect-imports every service, every component, then (last)
+       services/orchestrator.ts + services/shell-ready.ts. orchestrator.ts owns
+       data/state/event-delegation + the remaining window.hologram* bridges; each
+       component subscribes and renders. Ordering is robust — orchestrator's body awaits
+       hologramI18n so it stays deferred behind the synchronous component mounts, and
+       components pull current state on mount. -->
+  <script type="module" src="./src/app/index.tsx"></script>
 </body>
 </html>

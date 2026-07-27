@@ -15,8 +15,8 @@
 
 import nodeFs from 'node:fs';
 import path from 'node:path';
-import { imageSize } from './lib-imgsize.mts';
-import { parseJsonLoose } from './lib-json.mts';
+import { imageSize } from './lib-imgsize';
+import { parseJsonLoose } from './lib-json';
 
 const INDEX_FILE = '.index.json';
 const BATCH = 64; // stat/read this many sidecars concurrently, then yield

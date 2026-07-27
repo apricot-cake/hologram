@@ -7,34 +7,35 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 
-import { createPostIndex, computeDelta } from './lib-index.mts';
-import { openDatabase, DatabaseCorruptError } from './lib-db.mts';
-import { createDbImporter } from './lib-db-import.mts';
-import { postsFromDb, postsByIds } from './lib-db-query.mts';
-import { createDbWriter } from './lib-db-write.mts';
-import { pruneDecision, nextBaseline } from './backup-guard.mts';
-import { parseJsonLoose } from './lib-json.mts';
+import { createPostIndex, computeDelta } from './lib-index';
+import { openDatabase, DatabaseCorruptError } from './lib-db';
+import { createDbImporter } from './lib-db-import';
+import { postsFromDb, postsByIds } from './lib-db-query';
+import { createDbWriter } from './lib-db-write';
+import { pruneDecision, nextBaseline } from './backup-guard';
+import { parseJsonLoose } from './lib-json';
 // Save-folder relocation engine (copy+catch-up → flip → verified cleanup → sweep).
-import { relocateLibrary } from './lib-migrate.mts';
+import { relocateLibrary } from './lib-migrate';
 // IPC handler modules, extracted from this file (mechanical move — logic unchanged).
 // Each exposes register(ctx); ctx is built after the core functions below and passed
 // in at the top-level registration site (see registerExtractedIpc, before whenReady).
-import * as ipcOrganize from './ipc-organize.mts';
-import * as ipcPosts from './ipc-posts.mts';
-import * as ipcConfig from './ipc-config.mts';
-import * as ipcWindow from './ipc-window.mts';
-import * as ipcTrash from './ipc-trash.mts';
-import * as ipcBackup from './ipc-backup.mts';
-import * as ipcTransfer from './ipc-transfer.mts';
+import * as ipcOrganize from './ipc-organize';
+import * as ipcPosts from './ipc-posts';
+import * as ipcConfig from './ipc-config';
+import * as ipcWindow from './ipc-window';
+import * as ipcTrash from './ipc-trash';
+import * as ipcBackup from './ipc-backup';
+import * as ipcTransfer from './ipc-transfer';
 
 // CJS require + __dirname reconstructed for ESM. native-host/ modules are loaded by
 // computed path (dev sibling vs packaged resource), so they stay dynamic CJS requires.
 const require = createRequire(import.meta.url);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-// native-host/ lives outside app/. In dev it's a sibling dir; when packaged it
-// is bundled as an extraResource under resources/native-host.
-const nativeHostDir = app.isPackaged ? path.join(process.resourcesPath, 'native-host') : path.join(__dirname, '..', 'native-host');
+// native-host/ lives outside app/. In dev, electron-vite emits this file to
+// app/out/main/index.js, so native-host (a repo-root sibling of app/) is three
+// levels up. When packaged it is bundled as an extraResource under resources/native-host.
+const nativeHostDir = app.isPackaged ? path.join(process.resourcesPath, 'native-host') : path.join(__dirname, '..', '..', '..', 'native-host');
 const { configDir, defaultLibraryDir } = require(path.join(nativeHostDir, 'paths.cts'));
 const installer = require(path.join(nativeHostDir, 'install.cts'));
 // Best-effort avatar download for import-posts (same SSRF guard/caps as capture,
@@ -46,7 +47,10 @@ const { resolveSaveFolder, clearAllBlockReason } = require(path.join(nativeHostD
 
 // Holographic app icon (iridescent square). Used for the taskbar/window icon at
 // runtime; electron-builder converts the same PNG to .ico for the installed exe.
-const APP_ICON = path.join(__dirname, 'assets', 'icon.png');
+// out/main/index.js -> out -> app/, where assets/ sits alongside out/ (both dev
+// and packaged: electron-builder's `files` ships out/** and assets/** at the same
+// relative depth from the package root).
+const APP_ICON = path.join(__dirname, '..', '..', 'assets', 'icon.png');
 
 // Pin userData to the SAME directory the native host reads its config from, so
 // the bridge (plain Node, spawned by Chrome) and this app always agree.
@@ -1111,11 +1115,12 @@ function savedWindowBounds() {
   return { x: b.x, y: b.y, width: b.width, height: b.height, isMaximized: !!b.isMaximized };
 }
 
-// Vite dev server base — honored ONLY when HOLOGRAM_DEV_SERVER is set (island HMR /
-// React Fast Refresh while developing). '1' resolves to the strictPort default;
-// any other value is used as the base URL verbatim (trailing slashes trimmed).
-// null in prod, so loadFile + the file:// navigation guard stand unchanged.
-const DEV_SERVER_URL = process.env.HOLOGRAM_DEV_SERVER ? (process.env.HOLOGRAM_DEV_SERVER === '1' ? 'http://localhost:5173' : process.env.HOLOGRAM_DEV_SERVER.replace(/\/+$/, '')) : null;
+// electron-vite's dev server (HMR + React Fast Refresh for the renderer). Set
+// automatically by `electron-vite dev`; absent under `electron-vite build` (and
+// under Claude's own build→relaunch verification loop, which never runs
+// `electron-vite dev` — see docs/build.md). null in prod, so loadFile + the
+// file:// navigation guard stand unchanged.
+const DEV_SERVER_URL = process.env.ELECTRON_RENDERER_URL || null;
 
 // Navigation lockdown for every web-contents the app creates. Without it, a file
 // (e.g. a local .html) dropped onto a window would make the top frame navigate to
@@ -1127,7 +1132,7 @@ const DEV_SERVER_URL = process.env.HOLOGRAM_DEV_SERVER ? (process.env.HOLOGRAM_D
 //   - deny window.open / target=_blank entirely; external links are funneled
 //     through the open-external IPC (shell.openExternal), which this leaves intact.
 function installNavigationGuards() {
-  const indexFile = path.resolve(__dirname, 'renderer', 'index.html');
+  const indexFile = path.resolve(__dirname, '..', 'renderer', 'index.html');
   const devOrigin = DEV_SERVER_URL ? new URL(DEV_SERVER_URL).origin : null;
   const isAllowedNavigation = (rawUrl) => {
     let u: URL;
@@ -1256,7 +1261,7 @@ function createWindow(show = true) {
     // works everywhere else: Win+arrow, drag-to-edge, Win+Z.
     titleBarStyle: 'hidden',
     webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
+      preload: path.join(__dirname, '..', 'preload', 'index.js'),
       contextIsolation: true,
       nodeIntegration: false,
       backgroundThrottling: false,
@@ -1284,13 +1289,11 @@ function createWindow(show = true) {
   // Pass smoke=1 so the renderer disables the offscreen render optimizations
   // (content-visibility / lazy images) that leave the hidden capture window blank.
   if (DEV_SERVER_URL) {
-    // Dev: load the renderer from Vite (HMR + Fast Refresh for the islands). Vite's
-    // root is app/, so index.html is served at /renderer/index.html and the island
-    // <script> tags are rewritten to their .tsx module sources (see vite.config.mjs).
+    // Dev: load the renderer from electron-vite's Vite dev server (HMR + Fast Refresh).
     const q = new URLSearchParams({ theme, ...(smoke ? { smoke: '1' } : {}) }).toString();
-    win.loadURL(`${DEV_SERVER_URL}/renderer/index.html?${q}`);
+    win.loadURL(`${DEV_SERVER_URL}?${q}`);
   } else {
-    win.loadFile(path.join(__dirname, 'renderer', 'index.html'), { query: { theme, ...(smoke ? { smoke: '1' } : {}) } });
+    win.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'), { query: { theme, ...(smoke ? { smoke: '1' } : {}) } });
   }
 }
 
@@ -1349,23 +1352,6 @@ if (!gotSingleInstanceLock) {
     const startMin = !SMOKE && process.env.HOLOGRAM_START_MINIMIZED === '1';
     createWindow(!SMOKE && !startMin); // start-minimized → create hidden, then show inactive below
     watchSaveFolder();
-    // Dev-only: hot-reload the renderer when its source (js/html/css) changes, so
-    // iterating on UI/CSS needs no manual reload — and no terminal-spawning reload
-    // command from outside. Packaged builds never watch.
-    if (!SMOKE && !app.isPackaged) {
-      try {
-        let _rendererReloadT: any = null;
-        fs.watch(path.join(__dirname, 'renderer'), { recursive: true }, (_e, fn) => {
-          if (!fn || !/\.(js|html|css)$/i.test(String(fn))) return;
-          clearTimeout(_rendererReloadT);
-          _rendererReloadT = setTimeout(() => {
-            if (win && !win.isDestroyed()) win.webContents.reloadIgnoringCache();
-          }, 180);
-        });
-      } catch {
-        /* dev watcher is best-effort */
-      }
-    }
     if (!SMOKE) {
       armBackupSchedule(); // interval スケジュールを起動
       // 起動時の取り戻し: 前回から間隔以上空いていれば1回だけ実行（閉じている間に逃した分）。

@@ -21,7 +21,7 @@
 import Database from 'better-sqlite3';
 import { Kysely, SqliteDialect } from 'kysely';
 import type { Generated } from 'kysely';
-import { SCHEMA_V1_SQL } from './lib-db-schema.mts';
+import { SCHEMA_V1_SQL } from './lib-db-schema';
 
 // One entry per schema change, applied in array order and never reordered or
 // edited once shipped — `user_version` records how many have run, so rewriting

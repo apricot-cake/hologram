@@ -39,12 +39,12 @@
 
 import nodeFs from 'node:fs';
 import path from 'node:path';
-import { normFolders } from './lib-folder-tree.mts';
-import { createPostIndex } from './lib-index.mts';
-import { parseJsonLoose } from './lib-json.mts';
-import { normalizePostRecord } from '../native-host/post-record.mts';
+import { normFolders } from './lib-folder-tree';
+import { createPostIndex } from './lib-index';
+import { parseJsonLoose } from './lib-json';
+import { normalizePostRecord } from '../../../native-host/post-record.mts';
 import type Database from 'better-sqlite3';
-import type { PostRecordInput, PostRecordShape } from '../native-host/post-record.mts';
+import type { PostRecordInput, PostRecordShape } from '../../../native-host/post-record.mts';
 
 // Mirrors main.mts's INTERNAL_FILES (not exported there — main.mts is the
 // Electron entry point, not an importable engine module). Kept in lockstep by

@@ -9,7 +9,7 @@
 import { ipcMain } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
-import { parseJsonLoose } from './lib-json.mts';
+import { parseJsonLoose } from './lib-json';
 
 function register(ctx) {
   const { getSaveFolder, getTrashDir, baseOf, VIEWABLE_EXTS, resolveInFolder, writeSidecarAtomic, getDbWriter, ensurePostsSynced } = ctx;

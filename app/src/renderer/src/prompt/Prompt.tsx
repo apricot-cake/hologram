@@ -2,7 +2,7 @@ import { useRef, useState, useSyncExternalStore } from 'react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
-import { close, get, open as openPrompt, subscribe as subscribePrompt } from '../../renderer/prompt.ts';
+import { close, get, open as openPrompt, subscribe as subscribePrompt } from '../services/prompt.ts';
 import { t } from '../_shared/i18n.ts';
 
 // Shared naming dialog — shadcn Dialog + Input. Callers push a config via prompt.ts's

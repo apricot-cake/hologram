@@ -18,7 +18,7 @@ import { useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
 import { PanelRight } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { isOpen, subscribe, toggle } from '../../renderer/inspector-panel.ts';
+import { isOpen, subscribe, toggle } from '../services/inspector-panel.ts';
 import { t } from '../_shared/i18n.ts';
 
 export function InspectorToggle() {

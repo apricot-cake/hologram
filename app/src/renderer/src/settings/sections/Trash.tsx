@@ -3,7 +3,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Button } from '@/components/ui/button';
 import { Highlight } from '../components/Highlight.tsx';
 import { t } from '../../_shared/i18n.ts';
-import { listTrash, restorePost, deleteFromTrash, emptyTrash } from '../../../renderer/trash.ts';
+import { listTrash, restorePost, deleteFromTrash, emptyTrash } from '../../services/trash.ts';
 
 // Soft-deleted record as returned by the list-trash IPC — only the fields used here.
 interface TrashRecord {

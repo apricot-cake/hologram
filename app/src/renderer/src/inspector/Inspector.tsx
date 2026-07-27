@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from 'react';
 import { ArrowUpRight, PanelRight, Plus, X } from 'lucide-react';
-import { get, subscribe } from '../../renderer/inspector.ts';
+import { get, subscribe } from '../services/inspector.ts';
 import { t } from '../_shared/i18n.ts';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';

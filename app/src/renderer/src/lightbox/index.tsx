@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react';
-import { getSnapshot, subscribe } from '../../renderer/lightbox.ts';
+import { getSnapshot, subscribe } from '../services/lightbox.ts';
 import { Lightbox } from './Lightbox.tsx';
 
 // React-owned single-image quick-view (peek) overlay — lives under the single App

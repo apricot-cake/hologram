@@ -8,7 +8,7 @@
 // not pushed — see renderer/grid.ts.
 import { GridMount } from '../_shared/VirtualGrid.tsx';
 import { PostersHost } from './Posters.tsx';
-import { hologramPosterGridSource } from '../../renderer/grid.ts';
+import { hologramPosterGridSource } from '../services/grid.ts';
 
 export function PosterGrid() {
   return <GridMount bridge={hologramPosterGridSource} containerId="posterGrid" hostId="posterGridReact" renderHost={(model) => <PostersHost model={model} />} />;

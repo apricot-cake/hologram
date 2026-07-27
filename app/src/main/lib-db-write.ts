@@ -6,7 +6,7 @@
 // transaction boundary instead of each rebuilding a different subset of tables.
 
 import type Database from 'better-sqlite3';
-import { normFolders } from './lib-folder-tree.mts';
+import { normFolders } from './lib-folder-tree';
 
 type Sqlite = Database.Database;
 

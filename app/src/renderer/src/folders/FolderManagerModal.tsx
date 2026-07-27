@@ -2,7 +2,7 @@ import type { DragEvent } from 'react';
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
 import { t } from '../_shared/i18n.ts';
-import { closeManager, getManager, managerCreate, managerMove, managerRemove, managerRename, subscribeManager } from '../../renderer/folders.ts';
+import { closeManager, getManager, managerCreate, managerMove, managerRemove, managerRename, subscribeManager } from '../services/folders.ts';
 
 // Shared folder management modal (#ivFolderModal) — React-owned. Lists whichever
 // store folders.ts's openManager() currently targets (the library collections store by

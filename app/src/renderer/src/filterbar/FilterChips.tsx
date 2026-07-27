@@ -14,8 +14,8 @@
 // filterCategories() by the chip's `cat` (a fresh read, like the "+ フィルタ" menu).
 import { Bookmark, X } from 'lucide-react';
 import { useState, useSyncExternalStore } from 'react';
-import { type ActiveFilter, activeFilters, type FilterCat, filterCategories, saveCurrentSearch } from '../../renderer/orchestrator.ts';
-import { get as storeGet, subscribe as storeSubscribe } from '../../renderer/store.ts';
+import { type ActiveFilter, activeFilters, type FilterCat, filterCategories, saveCurrentSearch } from '../services/orchestrator.ts';
+import { get as storeGet, subscribe as storeSubscribe } from '../services/store.ts';
 import { CatIcon } from './index.tsx';
 import { promptName } from '../prompt/Prompt.tsx';
 import { FormEditor } from './FormEditor.tsx';

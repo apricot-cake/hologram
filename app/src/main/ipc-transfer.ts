@@ -14,9 +14,9 @@ import { ipcMain, dialog } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
 
-import * as archive from './lib-archive.mts';
-import { parseJsonLoose } from './lib-json.mts';
-import { cloudSyncProviderOf } from './save-folder-guard.mts';
+import * as archive from './lib-archive';
+import { parseJsonLoose } from './lib-json';
+import { cloudSyncProviderOf } from './save-folder-guard';
 
 let _JSZip: any = null;
 async function getJSZip() {

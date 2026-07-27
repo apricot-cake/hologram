@@ -7,7 +7,7 @@
 // island only renders + navigates the two steps.
 import { ArrowLeft, BookMarked, Calendar, Drama, Folder, Globe, Hash, Heart, Image, Link2, ListFilter, type LucideIcon, MessageSquare, Search, Server, Tag, User } from 'lucide-react';
 import { useState } from 'react';
-import { type FilterCat, filterCategories } from '../../renderer/orchestrator.ts';
+import { type FilterCat, filterCategories } from '../services/orchestrator.ts';
 import { FormEditor } from './FormEditor.tsx';
 import { ValueEditor } from './ValueEditor.tsx';
 import { t } from '../_shared/i18n.ts';

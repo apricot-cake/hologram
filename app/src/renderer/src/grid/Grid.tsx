@@ -10,7 +10,7 @@ import type { SyntheticEvent } from 'react';
 import { PostCard } from '../_shared/PostCard.tsx';
 import { useGridModel, VirtualGridHost } from '../_shared/VirtualGrid.tsx';
 import type { GridCellProps } from '../_shared/VirtualGrid.tsx';
-import { get as storeGet, subscribe as storeSubscribe } from '../../renderer/store.ts';
+import { get as storeGet, subscribe as storeSubscribe } from '../services/store.ts';
 
 // One grid cell. modelOf() re-reads live viewer state on every
 // render, so a bridge repaint() refreshes visible cells. The inspected ring

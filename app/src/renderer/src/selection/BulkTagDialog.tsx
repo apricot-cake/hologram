@@ -1,7 +1,7 @@
 import { useReducer, useRef, useState, useSyncExternalStore } from 'react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { close, get, subscribe } from '../../renderer/bulk-tag.ts';
+import { close, get, subscribe } from '../services/bulk-tag.ts';
 import { TagField } from '../inspector/TagField.tsx';
 
 // Bulk tagging for the current selection (P2⑦) — the selection bar's "タグを追加".

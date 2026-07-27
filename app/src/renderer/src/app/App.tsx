@@ -2,8 +2,8 @@ import type { ReactNode } from 'react';
 import { useEffect, useLayoutEffect, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
 import { AppShell } from '../shell/AppShell.tsx';
-import { get as confirmGet, subscribe as confirmSubscribe } from '../../renderer/confirm.ts';
-import { isOpen as lightboxIsOpen, subscribe as lightboxSubscribe } from '../../renderer/lightbox.ts';
+import { get as confirmGet, subscribe as confirmSubscribe } from '../services/confirm.ts';
+import { isOpen as lightboxIsOpen, subscribe as lightboxSubscribe } from '../services/lightbox.ts';
 import { ConfirmHost } from '../confirm/Confirm.tsx';
 import { PromptHost } from '../prompt/Prompt.tsx';
 import { ContextMenuHost } from '../context-menu/ContextMenu.tsx';
@@ -14,9 +14,9 @@ import { SettingsHost } from '../settings/index.tsx';
 import { BulkTagDialogHost } from '../selection/BulkTagDialog.tsx';
 import { Toaster } from '@/components/ui/sonner';
 import { TooltipHost } from '../tooltip/TooltipHost.tsx';
-import { onPostsChanged } from '../../renderer/posts.ts';
-import { onChange as foldersOnChange } from '../../renderer/folders.ts';
-import { get as storeGet, subscribe as storeSubscribe } from '../../renderer/store.ts';
+import { onPostsChanged } from '../services/posts.ts';
+import { onChange as foldersOnChange } from '../services/folders.ts';
+import { get as storeGet, subscribe as storeSubscribe } from '../services/store.ts';
 import {
   viewerReady,
   bootApp,
@@ -46,7 +46,7 @@ import {
   handleBrowseModeStoreChange,
   handlePosterViewStoreChange,
   handleSearchQueryStoreChange,
-} from '../../renderer/orchestrator.ts';
+} from '../services/orchestrator.ts';
 
 // The single React root for the whole renderer — the 最終形B DoD: 島 root 群の1本統合.
 // Islands migrate here from their own createRoot() calls in verifiable batches; each still

@@ -8,7 +8,7 @@
 import { ipcMain, shell, BrowserWindow, clipboard, nativeImage, screen } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
-import { isLibraryFileName, libraryFilePaths } from './library-files.mts';
+import { isLibraryFileName, libraryFilePaths } from './library-files';
 
 function register(ctx) {
   const { getSaveFolder, APP_ICON } = ctx;

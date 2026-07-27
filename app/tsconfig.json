@@ -1,50 +1,8 @@
 {
-  // Single strict TS project for the renderer half of the app (2026-07-09 merge):
-  // React islands (.tsx) + the renderer service layer (app/renderer/**/*.ts,
-  // formerly the separate tsconfig.renderer.json). Both are already strict and
-  // both fold into the same Vite bundle (islands/app.js) — the two-tsconfig split
-  // was a staging device for gradual TS adoption, not a real architectural
-  // boundary. No allowJs/checkJs: no hand-written .js source remains under
-  // either directory (the .js files present — renderer/theme.js,
-  // renderer/islands/*.js — are Vite build OUTPUT, not source, and untouched by
-  // this glob since it only matches .ts/.tsx).
-  // Type-check only (noEmit) — Vite strips types at build; tsc never emits.
-  "compilerOptions": {
-    "target": "ES2022",
-    "lib": ["ES2022", "DOM", "DOM.Iterable"],
-    "module": "ESNext",
-    "moduleResolution": "bundler",
-    "jsx": "react-jsx",
-    "noEmit": true,
-    "allowImportingTsExtensions": true,
-    "isolatedModules": true,
-    "strict": true,
-    // Side-effect CSS imports (settings' './styles.css') are Vite assets, not
-    // modules to resolve — relative imports can't be covered by a wildcard
-    // ambient module, so unchecked is the correct Vite-project setting.
-    "noUncheckedSideEffectImports": false,
-    "forceConsistentCasingInFileNames": true,
-    "skipLibCheck": true,
-    // Redirect the 'jszip' type import to a minimal local shim (2026-07-11, V18 §7):
-    // jszip's bundled DefinitelyTyped .d.ts carries `/// <reference types="node" />`,
-    // which — once anything in this browser-only program imports jszip — pulls Node's
-    // globals in and shadows the DOM lib's setTimeout/setInterval (number) with
-    // NodeJS.Timeout, breaking unrelated renderer code. `paths` is TypeScript-only;
-    // the runtime import still resolves to the real npm package via Vite/Node.
-    // 'electron' gets the same treatment (same node-globals hazard) for preload.cts,
-    // which this program pulls in via globals.d.ts's HologramPreload import type —
-    // see islands/types/electron-shim.d.ts.
-    // '@/*' → islands/* : shadcn/ui standard import alias; islands/ is this
-    // project's equivalent of a conventional src/ (components/ui, lib/utils live
-    // under it). Mirrored in vite.config.mjs and islands/build.mjs resolve.alias.
-    // NOTE: '@/*' must stay FIRST — the shadcn CLI treats the first paths entry
-    // as the project's import alias when (re)generating components.json.
-    // (No baseUrl — deprecated in TS6; these paths resolve relative to this file.)
-    "paths": {
-      "@/*": ["./islands/*"],
-      "jszip": ["./islands/types/jszip-shim.d.ts"],
-      "electron": ["./islands/types/electron-shim.d.ts"]
-    }
-  },
-  "include": ["islands/**/*", "renderer/**/*"]
+  // electron-vite convention: this root file only wires the two real programs
+  // together for editors/IDEs. `tsc` itself is invoked per-project (see
+  // package.json's typecheck script) — noEmit + references, no compilerOptions here.
+  "files": [],
+  "references": [{ "path": "./tsconfig.node.json" }, { "path": "./tsconfig.web.json" }]
 }
+

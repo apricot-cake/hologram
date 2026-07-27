@@ -14,7 +14,7 @@ import { createPortal, flushSync } from 'react-dom';
 import { useMasonry, usePositioner, useResizeObserver } from 'masonic';
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { ComponentType, ReactNode } from 'react';
-import { registerGridNav } from '../../renderer/grid-nav.ts';
+import { registerGridNav } from '../services/grid-nav.ts';
 
 // The cell component each grid island supplies (masonic's render component).
 export interface GridCellProps {

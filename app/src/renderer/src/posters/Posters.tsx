@@ -10,7 +10,7 @@ import type { CSSProperties } from 'react';
 import { useSyncExternalStore } from 'react';
 import { useGridModel, VirtualGridHost } from '../_shared/VirtualGrid.tsx';
 import type { GridCellProps } from '../_shared/VirtualGrid.tsx';
-import { get as storeGet, subscribe as storeSubscribe } from '../../renderer/store.ts';
+import { get as storeGet, subscribe as storeSubscribe } from '../services/store.ts';
 
 // The inspected ring is derived straight from hologramStore's 'inspectedKey'
 // (a real subscription) rather than riding on modelOf's closure-read model —

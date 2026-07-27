@@ -18,8 +18,8 @@
 // close button's red hover (#c42b1c, the system's own value — Windows Terminal uses it too).
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
-import { hologramIpc } from '../../renderer/ipc.ts';
-import { isOpen as inspectorIsOpen, subscribe as inspectorSubscribe } from '../../renderer/inspector-panel.ts';
+import { hologramIpc } from '../services/ipc.ts';
+import { isOpen as inspectorIsOpen, subscribe as inspectorSubscribe } from '../services/inspector-panel.ts';
 
 function useMaximized(): boolean {
   const [maximized, setMaximized] = useState(false);

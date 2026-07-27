@@ -5,7 +5,7 @@
 // (hologramStore-derived), not pushed — see renderer/grid.ts.
 import { GridMount } from '../_shared/VirtualGrid.tsx';
 import { GridHost } from './Grid.tsx';
-import { hologramPostGridSource } from '../../renderer/grid.ts';
+import { hologramPostGridSource } from '../services/grid.ts';
 
 export function PostGrid() {
   return <GridMount bridge={hologramPostGridSource} containerId="postGrid" hostId="postGridReact" renderHost={(model) => <GridHost model={model} />} />;

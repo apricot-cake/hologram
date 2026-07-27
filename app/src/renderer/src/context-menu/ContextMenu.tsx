@@ -1,5 +1,5 @@
 import { useMemo, useSyncExternalStore } from 'react';
-import { close, get, pick, subscribe } from '../../renderer/menu.ts';
+import { close, get, pick, subscribe } from '../services/menu.ts';
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
 
 // Context-menu host — ONE always-mounted instance that renders whatever menu.ts

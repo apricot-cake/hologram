@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from 'react';
 import { t } from '../_shared/i18n.ts';
-import { get as storeGet, subscribe as storeSubscribe } from '../../renderer/store.ts';
+import { get as storeGet, subscribe as storeSubscribe } from '../services/store.ts';
 
 // Empty-state placeholder (#emptyState): the "no posts yet" first-run message, the "no
 // results" filtered-empty message, or the poster first-run message. Pure presentation —

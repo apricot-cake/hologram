@@ -2,17 +2,19 @@
   "name": "hologram-app",
   "version": "1.1.0",
   "description": "Hologram desktop viewer",
-  "main": "main.mts",
+  "main": "./out/main/index.js",
   "author": "apricot-cake",
   "license": "MIT",
   "scripts": {
     "start": "electron .",
-    "dist": "npm run build:islands && electron-builder",
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "dist": "electron-vite build && electron-builder",
     "register-host": "node ../native-host/install.cts",
     "unregister-host": "node ../native-host/install.cts uninstall",
-    "build:islands": "node islands/build.mjs",
-    "dev:renderer": "vite",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "npm run typecheck:node && npm run typecheck:web",
+    "typecheck:node": "tsc --noEmit -p tsconfig.node.json",
+    "typecheck:web": "tsc --noEmit -p tsconfig.web.json"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.2",
@@ -24,6 +26,7 @@
     "@vitejs/plugin-react": "^6.0.3",
     "electron": "^43.0.0",
     "electron-builder": "^25.1.8",
+    "electron-vite": "^5.0.0",
     "react": "^19.1.0",
     "react-aria-components": "^1.19.0",
     "react-dom": "^19.1.0",
@@ -39,24 +42,7 @@
       "output": "dist"
     },
     "files": [
-      "main.mts",
-      "preload.js",
-      "ipc-backup.mts",
-      "ipc-config.mts",
-      "ipc-organize.mts",
-      "ipc-posts.mts",
-      "ipc-transfer.mts",
-      "ipc-trash.mts",
-      "ipc-window.mts",
-      "backup-guard.mts",
-      "lib-archive.mts",
-      "lib-db.mts",
-      "lib-imgsize.mts",
-      "lib-index.mts",
-      "lib-json.mts",
-      "lib-migrate.mts",
-      "renderer/**/*",
-      "vendor/**/*",
+      "out/**/*",
       "assets/**/*"
     ],
     "asarUnpack": [

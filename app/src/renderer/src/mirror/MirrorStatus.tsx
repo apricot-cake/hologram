@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useReducer, useRef } from 'react';
 import { t } from '../_shared/i18n.ts';
-import { fmtBackupTime, fmtTime } from '../../renderer/format.ts';
-import { getBackup, onBackupStart, onBackupDone } from '../../renderer/backup.ts';
+import { fmtBackupTime, fmtTime } from '../services/format.ts';
+import { getBackup, onBackupStart, onBackupDone } from '../services/backup.ts';
 
 // Backup status rail (#mirrorStatus) — the always-visible sidebar footer showing the
 // auto-backup state. This island OWNS the state machine (backup config + last result +

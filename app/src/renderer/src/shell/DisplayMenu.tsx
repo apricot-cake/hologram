@@ -23,9 +23,9 @@ import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { t } from '../_shared/i18n.ts';
-import type { HologramSizeTrack } from '../../renderer/grid-density-builder.ts';
-import { applyPostSize, applyPosterSize, getPostSizeTrack, getPosterSizeTrack, rerollShuffle } from '../../renderer/orchestrator.ts';
-import { get as storeGet, set as storeSet, subscribe as storeSubscribe } from '../../renderer/store.ts';
+import type { HologramSizeTrack } from '../services/grid-density-builder.ts';
+import { applyPostSize, applyPosterSize, getPostSizeTrack, getPosterSizeTrack, rerollShuffle } from '../services/orchestrator.ts';
+import { get as storeGet, set as storeSet, subscribe as storeSubscribe } from '../services/store.ts';
 
 const subKey = (key: string) => (cb: () => void) => storeSubscribe(key, cb);
 

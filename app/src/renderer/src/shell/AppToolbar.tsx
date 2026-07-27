@@ -17,9 +17,9 @@ import { FilterChips } from '../filterbar/FilterChips.tsx';
 import { DisplayMenu } from './DisplayMenu.tsx';
 import { SearchBox } from '../searchbox/SearchBox.tsx';
 import { t } from '../_shared/i18n.ts';
-import { get as storeGet, subscribe as storeSubscribe } from '../../renderer/store.ts';
-import { navBack, navForward } from '../../renderer/orchestrator.ts';
-import { notify } from '../../renderer/ui.ts';
+import { get as storeGet, subscribe as storeSubscribe } from '../services/store.ts';
+import { navBack, navForward } from '../services/orchestrator.ts';
+import { notify } from '../services/ui.ts';
 
 const subKey = (key: string) => (cb: () => void) => storeSubscribe(key, cb);
 const subBack = subKey('navCanBack');

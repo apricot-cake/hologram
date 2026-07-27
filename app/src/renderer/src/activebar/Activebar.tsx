@@ -2,8 +2,8 @@ import type { ReactNode } from 'react';
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
 import { t } from '../_shared/i18n.ts';
-import { get as storeGet, subscribe as storeSubscribe } from '../../renderer/store.ts';
-import { navBack, navForward, resetAllFilters, resetPosterFilters } from '../../renderer/orchestrator.ts';
+import { get as storeGet, subscribe as storeSubscribe } from '../services/store.ts';
+import { navBack, navForward, resetAllFilters, resetPosterFilters } from '../services/orchestrator.ts';
 
 // The query-builder FRAME islands for #postActiveBar / #posterActiveBar — the chrome
 // AROUND the chips: nav 戻る/進む, the フィルター title, the empty-bar hint, the result

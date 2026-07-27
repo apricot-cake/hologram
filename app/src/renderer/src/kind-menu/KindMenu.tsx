@@ -1,6 +1,6 @@
 import { PencilIcon } from 'lucide-react';
 import { useMemo, useSyncExternalStore } from 'react';
-import { close, get, subscribe } from '../../renderer/kind-menu.ts';
+import { close, get, subscribe } from '../services/kind-menu.ts';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuLabel, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
 
 // 種別 (tag-kind) menu — ONE always-mounted instance that renders whatever

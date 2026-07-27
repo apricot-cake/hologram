@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { close, type LightboxState } from '../../renderer/lightbox.ts';
+import { close, type LightboxState } from '../services/lightbox.ts';
 
 // Single-image quick-view (peek) overlay. #143 reduced the lightbox to one item —
 // full gallery paging lives in the image view now — so this renders just the item

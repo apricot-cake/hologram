@@ -1,8 +1,8 @@
 import { useEffect, useLayoutEffect, useState } from 'react';
-import { hologramImageTabSource } from '../../renderer/image-tab.ts';
-import { get as confirmGet } from '../../renderer/confirm.ts';
-import { isOpen as lightboxIsOpen } from '../../renderer/lightbox.ts';
-import { isOpen as settingsIsOpen } from '../../renderer/settings.ts';
+import { hologramImageTabSource } from '../services/image-tab.ts';
+import { get as confirmGet } from '../services/confirm.ts';
+import { isOpen as lightboxIsOpen } from '../services/lightbox.ts';
+import { isOpen as settingsIsOpen } from '../services/settings.ts';
 import { ImageTab } from './ImageTab.tsx';
 
 // React-owned image-tab detail view (#imageTabView). viewer.js owns the tab object

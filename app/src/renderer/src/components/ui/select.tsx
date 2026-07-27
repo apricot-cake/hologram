@@ -2,7 +2,7 @@ import * as React from 'react';
 import { Select as SelectPrimitive } from '@base-ui/react/select';
 
 import { cn } from '@/lib/utils';
-import { setSelectOpen } from '../../../renderer/open-select-registry.ts';
+import { setSelectOpen } from '../../services/open-select-registry.ts';
 import { ChevronDownIcon, CheckIcon, ChevronUpIcon } from 'lucide-react';
 
 // Root wrapper: mirror each instance's open/close into open-select-registry so

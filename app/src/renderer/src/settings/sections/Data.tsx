@@ -13,11 +13,11 @@ import { Hint } from '../components/Hint.tsx';
 import { Highlight } from '../components/Highlight.tsx';
 import { toast } from 'sonner';
 import { t } from '../../_shared/i18n.ts';
-import { notify } from '../../../renderer/ui.ts';
-import { getBackup, setBackup as setBackupConfig, pickBackupDir, onBackupDone } from '../../../renderer/backup.ts';
-import { onExportProgress, onSaveFolderProgress, pickSaveFolder, moveSaveFolder, exportComplete, importComplete, importPosts, importImages } from '../../../renderer/posts.ts';
-import { open as confirmOpen } from '../../../renderer/confirm.ts';
-import { loadPosts } from '../../../renderer/post-grid-builder.ts';
+import { notify } from '../../services/ui.ts';
+import { getBackup, setBackup as setBackupConfig, pickBackupDir, onBackupDone } from '../../services/backup.ts';
+import { onExportProgress, onSaveFolderProgress, pickSaveFolder, moveSaveFolder, exportComplete, importComplete, importPosts, importImages } from '../../services/posts.ts';
+import { open as confirmOpen } from '../../services/confirm.ts';
+import { loadPosts } from '../../services/post-grid-builder.ts';
 
 // Missing-bridge calls throw and land in the callers' try/catch, same as the
 // untyped original — the {} fallback only exists for the bare dev server.

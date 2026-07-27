@@ -4,7 +4,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { close, get, subscribe as subscribeConfirm } from '../../renderer/confirm.ts';
+import { close, get, subscribe as subscribeConfirm } from '../services/confirm.ts';
 
 // Shared confirm modal — shadcn AlertDialog. Callers push a config via confirm.ts's
 // open({message, description?, okLabel, cancelLabel, skipLabel?, keyword?, onOk,

@@ -12,8 +12,8 @@ import { Autocomplete } from '@base-ui/react/autocomplete';
 import { Folder, Tag, User } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from 'react';
 import type { ComponentType, KeyboardEvent } from 'react';
-import { handlers as sbHandlers, registerFocus } from '../../renderer/searchbox.ts';
-import { get as storeGet, set as storeSet, subscribe as storeSubscribe } from '../../renderer/store.ts';
+import { handlers as sbHandlers, registerFocus } from '../services/searchbox.ts';
+import { get as storeGet, set as storeSet, subscribe as storeSubscribe } from '../services/store.ts';
 
 // Suggestion rows from the orchestrator's buildSuggest (via the searchbox
 // bridge), plus the id the list keys on.

@@ -11,7 +11,7 @@
 // shared search module's mode as a side effect.
 import { CheckIcon } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { beginFilterEditSession, endFilterEditSession, type FacetMode, type FilterCatValues, type FilterRow } from '../../renderer/orchestrator.ts';
+import { beginFilterEditSession, endFilterEditSession, type FacetMode, type FilterCatValues, type FilterRow } from '../services/orchestrator.ts';
 import { t } from '../_shared/i18n.ts';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';

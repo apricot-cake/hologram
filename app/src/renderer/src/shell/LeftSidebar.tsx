@@ -16,14 +16,14 @@ import { Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupActio
 import type { PanelResize } from './use-panel-resize.ts';
 import { MirrorStatus } from '../mirror/MirrorStatus.tsx';
 import { t } from '../_shared/i18n.ts';
-import { get as storeGet, subscribe as storeSubscribe } from '../../renderer/store.ts';
-import { open as openSettings } from '../../renderer/settings.ts';
-import { all as folderAll, createFolder, placeFolder, isSavedSearch, load as folderLoad, onChange as folderOnChange, removeFolder, renameFolder, toast, updateFolder } from '../../renderer/folders.ts';
-import { open as confirmOpen } from '../../renderer/confirm.ts';
-import { cloneTree } from '../../renderer/query.ts';
-import { open as menuOpen } from '../../renderer/menu.ts';
+import { get as storeGet, subscribe as storeSubscribe } from '../services/store.ts';
+import { open as openSettings } from '../services/settings.ts';
+import { all as folderAll, createFolder, placeFolder, isSavedSearch, load as folderLoad, onChange as folderOnChange, removeFolder, renameFolder, toast, updateFolder } from '../services/folders.ts';
+import { open as confirmOpen } from '../services/confirm.ts';
+import { cloneTree } from '../services/query.ts';
+import { open as menuOpen } from '../services/menu.ts';
 import { promptName } from '../prompt/Prompt.tsx';
-import { applyFolderFilter, applySavedSearch, browseTo } from '../../renderer/orchestrator.ts';
+import { applyFolderFilter, applySavedSearch, browseTo } from '../services/orchestrator.ts';
 
 // browseMode is the single source of truth for the active destination. Writing
 // the store IS the interface — orchestrator.ts subscribes and runs the heavy

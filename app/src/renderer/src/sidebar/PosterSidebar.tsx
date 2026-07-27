@@ -1,8 +1,8 @@
 import type { CSSProperties } from 'react';
 import { useEffect, useState } from 'react';
-import { hologramPosterSidebarSource } from '../../renderer/sidebar.ts';
+import { hologramPosterSidebarSource } from '../services/sidebar.ts';
 import { t } from '../_shared/i18n.ts';
-import { getTagLabels } from '../../renderer/tags.ts';
+import { getTagLabels } from '../services/tags.ts';
 import { Row } from './parts.tsx';
 
 // Poster-mode filter-row column (#posterFilterRows) — twin of Sidebar (post side).

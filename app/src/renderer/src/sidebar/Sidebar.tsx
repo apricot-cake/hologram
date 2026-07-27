@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { hologramPostSidebarSource } from '../../renderer/sidebar.ts';
+import { hologramPostSidebarSource } from '../services/sidebar.ts';
 import { t } from '../_shared/i18n.ts';
-import { getTagLabels } from '../../renderer/tags.ts';
+import { getTagLabels } from '../services/tags.ts';
 import { Glyph, ICON, Row } from './parts.tsx';
 
 // Post-mode filter-row column (#filterRows). Pure presentation, PULLING its own model

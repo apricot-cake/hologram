@@ -72,7 +72,7 @@ declare global {
   // 'electron' resolves to islands/types/electron-shim.d.ts (tsconfig paths; see
   // the shim's comment); tsconfig.main.json checks the same file against the real
   // electron types. ----
-  type HologramPreload = import('../../preload.cts').HologramPreload;
+  type HologramPreload = import('../../../preload/index').HologramPreload;
 
   // ---- renderer/grid.ts — a PULLED model source per virtualized grid (post and
   // poster were both converted off the old push bridge; nothing instantiates a

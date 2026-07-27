@@ -7,7 +7,7 @@ import { Hint } from '../components/Hint.tsx';
 import { Highlight } from '../components/Highlight.tsx';
 import { t } from '../../_shared/i18n.ts';
 import { getPrefs } from '../ipc.ts';
-import { setSkipDeleteConfirm, confirmClearAll } from '../../../renderer/post-grid-builder.ts';
+import { setSkipDeleteConfirm, confirmClearAll } from '../../services/post-grid-builder.ts';
 
 // 危険な操作: re-enable the delete confirmation + wipe the whole library.
 // The wipe is NOT reimplemented here — the button only triggers the shared

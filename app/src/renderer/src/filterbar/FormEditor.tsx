@@ -7,7 +7,7 @@
 // Add-only here (the "+ フィルタ" flow never edits an existing leaf — that's the
 // chip-click path, P2③ 後半), so there is no remove button.
 import { useEffect, useMemo, useState } from 'react';
-import { beginFilterEditSession, endFilterEditSession, type FilterCatDate, type FilterCatEng } from '../../renderer/orchestrator.ts';
+import { beginFilterEditSession, endFilterEditSession, type FilterCatDate, type FilterCatEng } from '../services/orchestrator.ts';
 import { t } from '../_shared/i18n.ts';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';

@@ -1,5 +1,5 @@
 import { App as SettingsApp } from './App.tsx';
-import { close as settingsClose, isOpen as settingsIsOpen, open as settingsOpen, subscribe as settingsSubscribe } from '../../renderer/settings.ts';
+import { close as settingsClose, isOpen as settingsIsOpen, open as settingsOpen, subscribe as settingsSubscribe } from '../services/settings.ts';
 
 // Settings modal — lives under the single App root now (SettingsHost is portaled into
 // #settingsRoot by app/App.tsx; the actual dialog renders through a Radix portal onto

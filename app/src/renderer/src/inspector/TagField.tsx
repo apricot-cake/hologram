@@ -2,7 +2,7 @@ import { Combobox } from '@base-ui/react/combobox';
 import { X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { KeyboardEvent } from 'react';
-import { setSelectOpen } from '../../renderer/open-select-registry.ts';
+import { setSelectOpen } from '../services/open-select-registry.ts';
 
 // Inline tag editing, in the inspector (P2⑦). Editing used to live in a popover
 // anchored to a ✎ / 🏷 button (Issue #22); it is now part of the panel that
