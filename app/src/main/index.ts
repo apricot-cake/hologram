@@ -40,7 +40,17 @@ const { configDir, defaultLibraryDir } = require(path.join(nativeHostDir, 'paths
 const installer = require(path.join(nativeHostDir, 'install.cts'));
 // Best-effort avatar download for import-posts (same SSRF guard/caps as capture,
 // same shared avatars/ store — downloadAvatar dedupes by avatar URL).
-const { pixivRefererFor, downloadAvatar } = require(path.join(nativeHostDir, 'media-download.cts'));
+//
+// media-download.cts requires the npm package undici. In dev, requiring the raw
+// source resolves it fine (repo-root node_modules), so dev keeps requiring the
+// source directly — edit-and-restart needs no rebuild. But electron-builder
+// copies native-host/ as a raw extraResource with no node_modules, so a packaged
+// build must require the pre-bundled copy (undici inlined) that
+// app/build-native-host-bridge.mjs produces at native-host/dist/media-download.js
+// — requiring the raw source there crashed on startup with "Cannot find module
+// 'undici'".
+const mediaDownloadPath = app.isPackaged ? path.join(nativeHostDir, 'dist', 'media-download.js') : path.join(nativeHostDir, 'media-download.cts');
+const { pixivRefererFor, downloadAvatar } = require(mediaDownloadPath);
 // Save-folder resolution + clear-all gating. Shared with the native host (which
 // must resolve the SAME save folder), so it lives alongside paths.cts in native-host/.
 const { resolveSaveFolder, clearAllBlockReason } = require(path.join(nativeHostDir, 'config-recovery.cts'));
