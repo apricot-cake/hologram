@@ -65,6 +65,7 @@
     "run-app-tests.cts",
     "run-tests.cts",
     "self-test.cts",
+    "setup.cts",
     "strip-ts.cts",
     "test-app-backup.cts",
     "test-app-cardfoot.cts",
