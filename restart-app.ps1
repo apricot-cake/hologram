@@ -19,10 +19,21 @@
 # success; on a manual launch it stays open on failure). Claude also runs it headlessly.
 
 $app      = Join-Path $PSScriptRoot 'app'
-$electron = Join-Path $app 'node_modules\electron\dist\electron.exe'
 $taskName = 'HologramLaunch'
 $logFile  = Join-Path $HOME '.hologram\restart-app.log'
 $desiredArgs = "`"$app`" --remote-debugging-port=9222"
+
+# electron lives under app/node_modules or the repo root, depending on how npm
+# felt like hoisting: app/ is a workspace, so npm lifts its dependencies to the
+# root whenever nothing pins a conflicting version. Both are normal, so probe
+# both rather than baking one in — the hardcoded app/ path made the task launch
+# a file that wasn't there, and Start-ScheduledTask reports SUCCESS for that
+# (the failure only shows up as LastTaskResult 0x80070002 afterwards), so this
+# script printed 完了 while nothing started.
+$electron = @(
+  (Join-Path $app 'node_modules\electron\dist\electron.exe'),
+  (Join-Path $PSScriptRoot 'node_modules\electron\dist\electron.exe')
+) | Where-Object { Test-Path $_ } | Select-Object -First 1
 
 # Label the window so a right-click launch is self-explanatory (guarded: some hosts lack RawUI).
 try { $Host.UI.RawUI.WindowTitle = 'Hologram 再起動' } catch {}
@@ -41,6 +52,16 @@ function Stop-WithError($message) {
     try { [void](Read-Host) } catch { }
   }
   exit 1
+}
+
+# A missing binary has to be caught HERE. Registering the task with an empty
+# Execute throws something unrelated, and launching a task whose Execute does
+# not exist looks like success from PowerShell's side.
+if (-not $electron) {
+  Stop-WithError("electron.exe が見つかりません（app/node_modules と リポジトリ直下の node_modules の両方を確認しました）。`n" +
+    "npm install --ignore-scripts の後は electron 本体が未取得のままです。次を実行してください:`n" +
+    "  node node_modules/electron/install.js`n" +
+    "（npm rebuild electron は成功と表示しますがダウンロードしません）")
 }
 
 # Self-heal: (re)register the task when it is MISSING or when its stored action has DRIFTED
