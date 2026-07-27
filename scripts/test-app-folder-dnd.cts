@@ -14,8 +14,8 @@ const { _electron } = require('playwright');
 
 const appDir = path.join(__dirname, '..', 'app');
 const electronPath = require(path.join(appDir, 'node_modules', 'electron'));
-const { openDatabase } = require(path.join(appDir, 'lib-db.mts'));
-const { createDbWriter } = require(path.join(appDir, 'lib-db-write.mts'));
+const { openDatabase } = require(path.join(appDir, 'src', 'main', 'lib-db.ts'));
+const { createDbWriter } = require(path.join(appDir, 'src', 'main', 'lib-db-write.ts'));
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-folder-dnd-'));
 const configDir = path.join(tmp, 'Hologram');

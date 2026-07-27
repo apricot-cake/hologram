@@ -14,7 +14,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const JSZip = require('jszip');
-const { importCompleteZip, buildCompleteZip } = require('../app/lib-archive.mts');
+const { importCompleteZip, buildCompleteZip } = require('../app/src/main/lib-archive.ts');
 
 (async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-zipslip-'));

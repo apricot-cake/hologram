@@ -13,7 +13,7 @@ const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 
 async function main() {
-  const Q = await import(pathToFileURL(path.join(__dirname, '..', 'app', 'renderer', 'query.ts')).href);
+  const Q = await import(pathToFileURL(path.join(__dirname, '..', 'app', 'src', 'renderer', 'src', 'services', 'query.ts')).href);
 
   let failed = 0;
   function assert(name, cond) {
@@ -139,7 +139,7 @@ async function main() {
   assert('text: _compiledKey が残っても _compiled 欠落なら再コンパイル', predOf(tKana)(post({ text: 'ネコ' })) && fuzzyCalls.length === callsBefore + 2);
 
   // --- text: URL 照合（URL 形クエリのみ・postKeyOf 正規化・quotedUrl・smart matcher 不適用）---
-  const R = await import(pathToFileURL(path.join(__dirname, '..', 'app', 'renderer', 'records.ts')).href);
+  const R = await import(pathToFileURL(path.join(__dirname, '..', 'app', 'src', 'renderer', 'src', 'services', 'records.ts')).href);
   const predOfU = Q.makePostPredOf({
     isInFolder: () => false,
     // 絶対に当たらない matcher スタブ＝URL ヒットが（本文照合でなく）OR 経路である証明に使う

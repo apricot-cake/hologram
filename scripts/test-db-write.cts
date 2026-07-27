@@ -7,8 +7,8 @@ const assert = require('node:assert');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { openDatabase } = require('../app/lib-db.mts');
-const { createDbWriter } = require('../app/lib-db-write.mts');
+const { openDatabase } = require('../app/src/main/lib-db.ts');
+const { createDbWriter } = require('../app/src/main/lib-db-write.ts');
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-db-write-'));
 const { sqlite } = openDatabase(path.join(dir, 'test.db'));

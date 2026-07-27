@@ -1,6 +1,6 @@
 'use strict';
 
-// Unit tests for the folder-store merge layer in app/lib-archive.mts:
+// Unit tests for the folder-store merge layer in app/src/main/lib-archive.ts:
 //  - mergeFolders: id-union on items; name/kind/created/tree local-wins;
 //    activeId stays local-if-valid
 //  - mergePosterFolders: plain { folders:[{id,name,items}] } id-union (poster folders)
@@ -14,7 +14,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const JSZip = require('jszip');
-const { importCompleteZip, mergeFolders, mergePosterFolders, mergeManualGroups } = require('../app/lib-archive.mts');
+const { importCompleteZip, mergeFolders, mergePosterFolders, mergeManualGroups } = require('../app/src/main/lib-archive.ts');
 
 (async () => {
   // --- mergeFolders (pure) ---

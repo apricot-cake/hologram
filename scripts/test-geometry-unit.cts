@@ -12,7 +12,7 @@ const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 
 async function main() {
-  const G = await import(pathToFileURL(path.join(__dirname, '..', 'app', 'renderer', 'geometry.ts')).href);
+  const G = await import(pathToFileURL(path.join(__dirname, '..', 'app', 'src', 'renderer', 'src', 'services', 'geometry.ts')).href);
 
   let failed = 0;
   function assert(name, cond) {

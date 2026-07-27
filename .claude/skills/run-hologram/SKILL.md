@@ -24,14 +24,12 @@ Start-ScheduledTask -TaskName 'HologramLaunch'
 
 ## 起動の前に: 変更が反映される状態か
 
-`build:islands` は `app/` で打つ（`build:islands`・`typecheck`・`dev:renderer`・`dist`・`start` は `app/package.json` にある）。
+`app/` は npm ワークスペース＝リポジトリ直下から `npm run build --workspace=app`（`typecheck`・`dist`・`start` も同様）。
 
 | 直した場所 | 必要な操作 |
 | --- | --- |
-| `renderer/`・`islands/` | `npm run build:islands` → アプリをリロード（再起動不要） |
-| `preload.cts` | `npm run build:islands` で `preload.js` を再生成 → **再起動** |
-| `native-host/` | `npm run build:islands` → `node native-host/install.cts` で再配備（アプリ再起動は不要。ビルドを飛ばすと配備は「バンドル未ビルド」で止まる） |
-| main プロセス（`main.mts`・`ipc-*`・`lib-*`） | 再起動 |
+| main・preload・renderer のいずれか | `npm run build --workspace=app` → **再起動**（electron-vite が3面を`app/out/`へ一括ビルド。`electron-vite dev`を使わない限り「renderer だけは再起動不要」の特例は無い） |
+| `native-host/` のブリッジ本体 | `npm run build:native-host-bridge --workspace=app` → `node native-host/install.cts` で再配備（アプリ再起動は不要。ビルドを飛ばすと配備は「バンドル未ビルド」で止まる） |
 | 拡張機能 | 開発中は本体で `npm run dev:ext` 常駐＋開始時リロード1回。終わったら `build:ext`＋リロード1回で production へ戻す（skill `verify-extension`） |
 
 ## どのインスタンスで検証するか（既定＝隔離）

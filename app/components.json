@@ -5,7 +5,7 @@
   "tsx": true,
   "tailwind": {
     "config": "",
-    "css": "islands/globals.css",
+    "css": "src/renderer/src/globals.css",
     "baseColor": "neutral",
     "cssVariables": true,
     "prefix": ""

@@ -19,7 +19,7 @@ const { configDir } = require('./paths.cts');
 
 const HOST_NAME = 'com.hologram.host';
 // The bundle (bridge.cts + its local modules in one file), not the sources —
-// built by app/islands/build.mjs. See deployBridge().
+// built by app/build-native-host-bridge.mjs. See deployBridge().
 const BRIDGE_PATH = path.join(__dirname, 'dist', 'bridge.js');
 const DEPLOYED_BRIDGE = 'bridge.js';
 
@@ -39,7 +39,7 @@ function deployBridge(): string {
   if (!fs.existsSync(BRIDGE_PATH)) {
     // Loud and actionable: a missing bundle otherwise surfaces much later as the
     // same opaque Chrome-side error this bundling was meant to retire.
-    throw new Error(`native-host bundle not built: ${BRIDGE_PATH}\nRun "npm run build:islands" in app/ first.`);
+    throw new Error(`native-host bundle not built: ${BRIDGE_PATH}\nRun "npm run build:native-host-bridge" in app/ first.`);
   }
   fs.mkdirSync(configDir(), { recursive: true });
   const destBridge = path.join(configDir(), DEPLOYED_BRIDGE);
@@ -318,7 +318,7 @@ function uninstall(): void {
 
   // Remove the deployed bridge, the launcher, and the generated host manifest.
   // Leave config.json (extensionId / saveFolder) so user settings survive an
-  // uninstall. Clearing the stale manifest also matters because app/main.mts
+  // uninstall. Clearing the stale manifest also matters because app/src/main/index.ts
   // gates registration on existsSync(manifestPath()); a leftover manifest would
   // make a later launch skip re-registering with stale allowed_origins.
   const leftovers = [path.join(configDir(), DEPLOYED_BRIDGE), launcherPath(), manifestPath()];

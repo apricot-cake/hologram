@@ -16,7 +16,7 @@ const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 
 async function main() {
-  const P = await import(pathToFileURL(path.join(__dirname, '..', 'app', 'renderer', 'panel-width-pref.ts')).href);
+  const P = await import(pathToFileURL(path.join(__dirname, '..', 'app', 'src', 'renderer', 'src', 'services', 'panel-width-pref.ts')).href);
   const { clampWidth, LIMITS } = P;
 
   let failed = 0;

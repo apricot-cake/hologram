@@ -1,0 +1,47 @@
+{
+  // Single strict TS project for the renderer half of the app (2026-07-09 merge,
+  // 2026-07 electron-vite re-home): React components (formerly islands/) + the
+  // renderer service layer (src/renderer/src/services/**, formerly app/renderer/**)
+  // are one source tree now — both fold into the same electron-vite renderer
+  // build. Type-check only (noEmit) — Vite strips types at build; tsc never emits.
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "noEmit": true,
+    // This codebase's local imports conventionally name an explicit .ts/.tsx
+    // extension (e.g. `from '../services/store.ts'`) — bundler resolution
+    // requires this flag whenever any specifier names a real TS extension.
+    "allowImportingTsExtensions": true,
+    "isolatedModules": true,
+    "strict": true,
+    // Side-effect CSS imports (settings' './styles.css') are Vite assets, not
+    // modules to resolve — relative imports can't be covered by a wildcard
+    // ambient module, so unchecked is the correct Vite-project setting.
+    "noUncheckedSideEffectImports": false,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
+    // Redirect the 'jszip' type import to a minimal local shim (2026-07-11, V18 §7):
+    // jszip's bundled DefinitelyTyped .d.ts carries `/// <reference types="node" />`,
+    // which — once anything in this browser-only program imports jszip — pulls Node's
+    // globals in and shadows the DOM lib's setTimeout/setInterval (number) with
+    // NodeJS.Timeout, breaking unrelated renderer code. `paths` is TypeScript-only;
+    // the runtime import still resolves to the real npm package via Vite/Node.
+    // 'electron' gets the same treatment (same node-globals hazard) for src/preload,
+    // which this program pulls in via types/globals.d.ts's HologramPreload import type —
+    // see src/renderer/src/types/electron-shim.d.ts.
+    // '@/*' → src/renderer/src/* : shadcn/ui standard import alias.
+    // Mirrored in electron.vite.config.ts's renderer resolve.alias.
+    // NOTE: '@/*' must stay FIRST — the shadcn CLI treats the first paths entry
+    // as the project's import alias when (re)generating components.json.
+    // (No baseUrl — deprecated in TS6; these paths resolve relative to this file.)
+    "paths": {
+      "@/*": ["./src/renderer/src/*"],
+      "jszip": ["./src/renderer/src/types/jszip-shim.d.ts"],
+      "electron": ["./src/renderer/src/types/electron-shim.d.ts"]
+    }
+  },
+  "include": ["src/renderer/src/**/*"]
+}

@@ -3,20 +3,20 @@
   // native-messaging-host layer (bridge.cts + install.cts + paths.cts +
   // media-download.cts + config-recovery.cts).
   //
-  // Separate project from tsconfig.main.json / tsconfig.renderer.json because
+  // Separate project from tsconfig.node.json / tsconfig.web.json because
   // this is a THIRD runtime: a standalone Node process (spawned by Chrome via
   // native messaging, or via the Electron binary in ELECTRON_RUN_AS_NODE mode),
   // never imported by ESM import — only by CommonJS require() (computed-path
-  // from app/main.mts, or a relative require() between these files themselves).
+  // from app/src/main/index.ts, or a relative require() between these files themselves).
   // These files stay .cts (not .mts) and CommonJS for two reasons that outlived
   // the deploy change: install.cts is require()d as raw source by the Electron
   // app (type-stripped, no build), and the tests require the bridge sources
   // directly. bridge.cts is no longer deployed as raw source — it is bundled
-  // (app/islands/build.mjs → dist/bridge.js, CJS output) and the BUNDLE is what
+  // (app/build-native-host-bridge.mjs → dist/bridge.js, CJS output) and the BUNDLE is what
   // lands in ~/.hologram — but the sources keep the CJS shape the bundler reads.
   //
   // post-key.mts is the one ESM file here, because it is the one module a layer
-  // OUTSIDE this directory ES-imports (app/renderer/records.ts re-exports it —
+  // OUTSIDE this directory ES-imports (app/src/renderer/src/services/records.ts re-exports it —
   // the URL→identity-key rule has to have a single implementation). A .cts
   // could not play that role: tsc reads no exports off `module.exports`, and
   // giving a .cts real `export` statements breaks the raw-source loads below.
@@ -26,8 +26,8 @@
   // (Electron require of install.cts, the tests) resolve at runtime; the bundler
   // follows the same specifiers. Plain require() calls aren't
   // cross-file type-checked by tsc (require() types as NodeRequire → any);
-  // that already matches how app/main.mts's own dynamic computed-path
-  // require() of this directory works (see tsconfig.main.json) — each file's
+  // that already matches how app/src/main/index.ts's own dynamic computed-path
+  // require() of this directory works (see tsconfig.node.json) — each file's
   // OWN logic is still checked, just not the require() contract between them.
   //
   // noImplicitAny stays OFF (same rationale as main/renderer): plain JS-shaped
@@ -53,7 +53,7 @@
     "skipLibCheck": true,
     // native-host/ has no node_modules of its own (it's a plain deployed dir,
     // not an npm package) — point at the app/ install (shared with
-    // tsconfig.main.json) instead of duplicating an @types/node install here.
+    // tsconfig.node.json) instead of duplicating an @types/node install here.
     "typeRoots": ["../app/node_modules/@types"],
     "types": ["node"]
   },

@@ -1,6 +1,6 @@
 // Canonical post URL → identity-key normalization, shared by every layer that has
 // to decide "are these two URLs the same post":
-//   - the renderer's grouping (app/renderer/records.ts re-exports postKeyOf from
+//   - the renderer's grouping (app/src/renderer/src/services/records.ts re-exports postKeyOf from
 //     here — same-post records collapse into one card),
 //   - the bridge's saved-post index (the TL "saved" badge asks it whether a
 //     permalink is already in the library, #54; a key computed differently there
@@ -17,7 +17,7 @@
 // off a .cts file's `module.exports` assignment, and giving a .cts real `export`
 // statements would break the raw-source loads this directory depends on (Node's
 // type stripping erases types, it cannot transform ESM syntax into CJS). The
-// bridge's require() of it resolves at bundle time (app/islands/build.mjs) for the
+// bridge's require() of it resolves at bundle time (app/build-native-host-bridge.mjs) for the
 // deployed host, and through Node's require(esm) for the source-level tests.
 
 // Returns null when the URL isn't a recognized post permalink (unparseable, or a

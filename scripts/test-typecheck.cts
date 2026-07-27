@@ -1,16 +1,13 @@
 'use strict';
 // TypeScript contract checks. Five projects (all no-emit) so type rot
 // can't accumulate silently between sessions:
-//   1. app/tsconfig.json          — single strict project for React islands
-//      (.tsx) + the renderer service layer (app/renderer/**/*.ts). Merged
-//      2026-07-09 (formerly two separate configs, islands strict / renderer
-//      checkJs+noImplicitAny:false — that split was a staging device for
-//      gradual TS adoption, not a real boundary; both are strict now and both
-//      fold into the same Vite bundle, islands/app.js).
-//   2. app/tsconfig.main.json     — the Electron main-process ESM layer
-//      (main.mts + ipc-*.mts + lib-*.mts + backup-guard.mts + preload.cts, stage
-//      2/3; Node ESM via .mts, no DOM; runs un-built under Electron 43 (type
-//      strip) except preload.cts, the one Vite-built file — see tsconfig.main.json)
+//   1. app/tsconfig.web.json      — single strict project for the renderer
+//      (React components under src/renderer/src/* + the service layer under
+//      src/renderer/src/services/*), bundled by electron-vite's renderer target.
+//   2. app/tsconfig.node.json     — the Electron main-process + preload layer
+//      (src/main/*.ts + src/preload/*.ts, stage 2/3; bundled by electron-vite's
+//      main/preload targets — #156 retired the former un-built .mts type-strip
+//      execution these files used to run under).
 //   3. native-host/tsconfig.json  — the native-messaging-host CJS layer
 //      (bridge.cts + install.cts + paths.cts + media-download.cts +
 //      config-recovery.cts, stage 2/3; a THIRD standalone-Node runtime, .cts,
@@ -34,8 +31,8 @@ const extTsc = path.join(extDir, 'node_modules', 'typescript', 'bin', 'tsc');
 const extWxt = path.join(extDir, 'node_modules', 'wxt', 'bin', 'wxt.mjs');
 
 const PROJECTS = [
-  { p: appDir, label: 'islands + renderer services', tsc: appTsc, cwd: appDir },
-  { p: path.join(appDir, 'tsconfig.main.json'), label: 'main process + preload', tsc: appTsc, cwd: appDir },
+  { p: path.join(appDir, 'tsconfig.web.json'), label: 'renderer (components + services)', tsc: appTsc, cwd: appDir },
+  { p: path.join(appDir, 'tsconfig.node.json'), label: 'main process + preload', tsc: appTsc, cwd: appDir },
   { p: path.join(__dirname, '..', 'native-host', 'tsconfig.json'), label: 'native-host', tsc: appTsc, cwd: appDir },
   { p: path.join(extDir, 'tsconfig.json'), label: 'extension', tsc: extTsc, prepare: extWxt, cwd: extDir },
   { p: path.join(__dirname, 'tsconfig.json'), label: 'scripts', tsc: appTsc, cwd: appDir },
@@ -52,4 +49,4 @@ for (const project of PROJECTS) {
   }
 }
 if (failed) process.exit(1);
-console.log('PASS test-typecheck: islands+renderer + main process + native-host + extension + scripts type-check clean');
+console.log('PASS test-typecheck: renderer + main process + native-host + extension + scripts type-check clean');

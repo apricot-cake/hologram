@@ -10,7 +10,7 @@ Hologram = ウェブのコンテンツ（現対応はSNS投稿）を出自・エ
 
 # ルール
 - lint/format＝Biome（`npm run lint`／1.9.4完全固定・設定と固定理由は biome.jsonc）
-- **renderer/islands・native-hostを直したら`app/`で`npm run build:islands`**（走らせないと古いバンドルのまま動き、直っていないものを検証してしまう）。npmスクリプトの置き場と反映手順の全体はdocs/build.md「コード変更の反映」
+- **main/preload/renderer・native-hostを直したら`npm run build --workspace=app`**（native-hostのブリッジ本体を直した時は`npm run build:native-host-bridge --workspace=app`も。走らせないと古いバンドルのまま動き、直っていないものを検証してしまう）。npmスクリプトの置き場と反映手順の全体はdocs/build.md「コード変更の反映」
 - **本体作業ツリーの同期と拡張機能の反映は確認なしで行う**: 共有`main`の更新を本体へ取り込む前に未コミット変更と差分を確認し、安全に統合できると分かれば同期する。**拡張は日常のChromeが本体の`extension/.output/chrome-mv3`を読む1本構成**＝devビルドもproductionも同じフォルダに書かれる（`outDirTemplate`）。開発中は本体で`npm run dev:ext`＋リロード1回でホットリロードが効き、**devサーバーを止めたら`build:ext`＋リロード1回でproductionへ戻すまでが1セット**（devビルドのまま放置するとサーバー不在時に普段使いの拡張が沈黙する・2026-07-26 #362）。リロードはユーザーに依頼（`chrome://`はClaude不可）。手順はskill `verify-extension`、理由はdocs/build.md「拡張機能の開発・配布」。並行作業との衝突確認は維持するが、ユーザーへの可否確認は不要（2026-07-25）。
 - **個人ライブラリと後方互換を製品判断のゲートにしない**（2026-07-11 統合改訂）:
   - 私個人ライブラリの事情（規模・件数・利用実態）に合わせた機能開発・採否・優先度・**据置の発火条件**・性能目標の判断をしない。一般ユーザーにも有用な機能、もしくは単なるライブラリの整理や修正ならOK。

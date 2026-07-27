@@ -1,7 +1,7 @@
 'use strict';
 
-// Unit tests for the v1 DDL (#5 St2 / #295, app/lib-db-schema.mts) applied
-// through app/lib-db.mts's real migration runner — not the fake db test-db-unit.cts
+// Unit tests for the v1 DDL (#5 St2 / #295, app/src/main/lib-db-schema.ts) applied
+// through app/src/main/lib-db.ts's real migration runner — not the fake db test-db-unit.cts
 // uses for ordering/transaction checks, because what matters here is whether the
 // SQL actually parses and the constraints actually hold in real SQLite.
 //
@@ -15,7 +15,7 @@ const assert = require('node:assert');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { openDatabase } = require('../app/lib-db.mts');
+const { openDatabase } = require('../app/src/main/lib-db.ts');
 
 let passed = 0;
 function ok(cond, msg) {

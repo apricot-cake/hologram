@@ -1,0 +1,41 @@
+// native-host/bridge.cts (+ its local modules) → native-host/dist/bridge.js. The
+// bridge is the process Chrome spawns per native-messaging connection; it runs
+// from the ASCII config dir (see native-host/install.cts's deployBridge), so
+// bundling it makes the deployed artifact ONE file with no runtime module
+// resolution left (a missed file used to crash the host with no hint beyond
+// "Error when communicating with the native messaging host").
+//
+// native-host/ is a separate deliverable (out of #156's scope — its .cts source
+// is untouched), but this build step previously lived in app/islands/build.mjs
+// (retired with the rest of the old build-less renderer pipeline), so it moves
+// here rather than disappearing. Unminified because a silent host crash is
+// diagnosed by reading bridge.log against this file.
+//
+//   node build-native-host-bridge.mjs
+import { build } from 'vite';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const here = path.dirname(fileURLToPath(import.meta.url)); // app/
+const repoRoot = path.join(here, '..');
+
+await build({
+  root: repoRoot,
+  configFile: false,
+  logLevel: 'warn',
+  build: {
+    outDir: path.join(repoRoot, 'native-host', 'dist'),
+    emptyOutDir: true, // a dedicated build dir — nothing hand-written lives here
+    target: 'node20', // Electron 43 runs Node 20 in ELECTRON_RUN_AS_NODE; system Node ≥ 20 for the dev CLI
+    minify: false,
+    sourcemap: false,
+    lib: {
+      entry: path.join(repoRoot, 'native-host', 'bridge.cts'),
+      formats: ['cjs'],
+      fileName: () => 'bridge.js',
+    },
+    rollupOptions: { external: [/^node:/] },
+  },
+});
+
+console.log('[build-native-host-bridge] built native-host/dist/bridge.js from native-host/bridge.cts');

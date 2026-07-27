@@ -1,8 +1,8 @@
 'use strict';
 
-// Unit tests for app/lib-db-import.mts (#5 St3 / #296 — the sidecar -> DB sync
+// Unit tests for app/src/main/lib-db-import.ts (#5 St3 / #296 — the sidecar -> DB sync
 // importer). Builds a small synthetic save folder (sidecars + every org-layer
-// JSON file + tabs.json), imports it into a real SQLite DB via lib-db.mts, and
+// JSON file + tabs.json), imports it into a real SQLite DB via app/src/main/lib-db.ts, and
 // checks the three acceptance criteria directly:
 //   - full import -> re-run is idempotent (same rows, same tag/post ids, no
 //     duplicates) and picks up edits/adds/removes on a third run
@@ -17,8 +17,8 @@ const assert = require('node:assert');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { openDatabase } = require('../app/lib-db.mts');
-const { createDbImporter } = require('../app/lib-db-import.mts');
+const { openDatabase } = require('../app/src/main/lib-db.ts');
+const { createDbImporter } = require('../app/src/main/lib-db-import.ts');
 
 let passed = 0;
 function ok(cond, msg) {

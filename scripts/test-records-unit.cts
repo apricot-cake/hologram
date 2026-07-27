@@ -11,7 +11,7 @@ const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 
 async function main() {
-  const R = await import(pathToFileURL(path.join(__dirname, '..', 'app', 'renderer', 'records.ts')).href);
+  const R = await import(pathToFileURL(path.join(__dirname, '..', 'app', 'src', 'renderer', 'src', 'services', 'records.ts')).href);
 
   let failed = 0;
   function assert(name, cond) {

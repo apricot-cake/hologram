@@ -60,14 +60,14 @@ for (let i = 0; i < texts.length; i++) {
 const evalJs = `(async () => {
   const wait = (ms) => new Promise(r => setTimeout(r, ms));
   const cards = () => document.querySelectorAll('#postGrid .post-card').length;
-  // Filter chips live in the FilterChips island ([data-slot=filter-chips]); each chip
+  // Filter chips live in the FilterChips component ([data-slot=filter-chips]); each chip
   // is a direct span child. Only text terms are active in this test, so counting all
   // chips counts the text chips.
   const chipRow = () => document.querySelector('[data-slot="filter-chips"]');
   const textChips = () => (chipRow() ? chipRow().querySelectorAll(':scope > span').length : 0);
   const waitFor = async (fn, ms = 4000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (fn()) return true; await wait(40); } return false; };
   await waitFor(() => cards() >= 3);
-  // The searchbox island's Autocomplete input (no #searchBox id since P2④; the ja
+  // The searchbox component's Autocomplete input (no #searchBox id since P2④; the ja
   // placeholder is the stable accessible handle).
   const sb = document.querySelector('input[placeholder="テキスト・ユーザー名で検索"]');
   // React controlled input: write via the prototype setter + 'input'

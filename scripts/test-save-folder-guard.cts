@@ -1,6 +1,6 @@
 'use strict';
 
-// Unit tests for the save-folder cloud-sync detection (app/save-folder-guard.mts, #95).
+// Unit tests for the save-folder cloud-sync detection (app/src/main/save-folder-guard.ts, #95).
 // Pure logic → no Electron needed. The detection only drives a WARNING, so the bar is:
 // catch the default install layouts, and stay quiet on ordinary folders.
 //
@@ -8,7 +8,7 @@
 
 const assert = require('node:assert');
 const path = require('node:path');
-const { cloudSyncProviderOf } = require('../app/save-folder-guard.mts');
+const { cloudSyncProviderOf } = require('../app/src/main/save-folder-guard.ts');
 
 let pass = 0;
 function check(name, fn) {

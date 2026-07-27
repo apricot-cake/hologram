@@ -60,7 +60,7 @@ function diffValues(name, a, b) {
 // dead weight in this slice anyway (MESSAGES never references hologramIpc), so strip
 // any import lines before eval rather than widen the cut point.
 {
-  const fullSrc = stripTS(fs.readFileSync(path.join(__dirname, '..', 'app', 'renderer', 'i18n.ts'), 'utf8'));
+  const fullSrc = stripTS(fs.readFileSync(path.join(__dirname, '..', 'app', 'src', 'renderer', 'src', 'services', 'i18n.ts'), 'utf8'));
   const EXPORT_LINE = /^export const hologramI18n = /m;
   const cut = fullSrc.search(EXPORT_LINE);
   if (cut === -1) {

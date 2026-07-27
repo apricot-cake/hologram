@@ -14,8 +14,8 @@
 //   warm      — full scan restoring from an existing .index.json (a normal relaunch)
 //   incremental — applyChanges() on a small % of touched sidecars (a capture landing)
 //   search    — representative free-text / tag / platform-facet / combined-AND
-//               queries via the real query engine (app/renderer/query.ts + search.ts)
-//   facets    — facetCounts() bucket aggregation (app/renderer/facets.ts)
+//               queries via the real query engine (app/src/renderer/src/services/query.ts + search.ts)
+//   facets    — facetCounts() bucket aggregation (app/src/renderer/src/services/facets.ts)
 //   ipc       — v8.serialize()/deserialize() of the full posts array (Electron's
 //               contextBridge/ipcRenderer use the V8 structured-clone algorithm,
 //               NOT JSON — v8.serialize gives the same wire format and its real
@@ -64,10 +64,10 @@ const crypto = require('node:crypto');
 const v8 = require('node:v8');
 const { execFileSync } = require('node:child_process');
 const { pathToFileURL } = require('node:url');
-const { createPostIndex } = require('../app/lib-index.mts');
-const { openDatabase } = require('../app/lib-db.mts');
-const { createDbImporter } = require('../app/lib-db-import.mts');
-const { postsFromDb, searchPostsFts } = require('../app/lib-db-query.mts');
+const { createPostIndex } = require('../app/src/main/lib-index.ts');
+const { openDatabase } = require('../app/src/main/lib-db.ts');
+const { createDbImporter } = require('../app/src/main/lib-db-import.ts');
+const { postsFromDb, searchPostsFts } = require('../app/src/main/lib-db-query.ts');
 
 const INTERNAL_FILES = new Set(['config.json', '.index.json', 'tag-types.json', 'ungrouped.json', 'manual-groups.json', 'folders.json', 'tabs.json', 'poster-favorites.json', 'poster-folders.json', 'poster-tags.json']);
 
@@ -145,7 +145,7 @@ const sidecarAdapter = {
 
 // --- DB (#5 St4 / #297) adapter — the pluggable target #293 built this
 // harness for. coldScan/warmScan both go through dbImporter.importAll
-// (sidecar scan + DB upsert) then postsFromDb, same as main.mts's
+// (sidecar scan + DB upsert) then postsFromDb, same as app/src/main/index.ts's
 // listPosts()/listPostsDelta() full-resync path: the DB is a derived index
 // during this stage, so even a "warm" read re-syncs from the sidecars first —
 // there is no read-only-DB fast path yet (that would require trusting the DB
@@ -286,9 +286,9 @@ function pickRepresentative(posts) {
 }
 
 async function runSearchAndFacets(posts, opts) {
-  const Q = await import(pathToFileURL(path.join(__dirname, '..', 'app', 'renderer', 'query.ts')).href);
-  const S = await import(pathToFileURL(path.join(__dirname, '..', 'app', 'renderer', 'search.ts')).href);
-  const F = await import(pathToFileURL(path.join(__dirname, '..', 'app', 'renderer', 'facets.ts')).href);
+  const Q = await import(pathToFileURL(path.join(__dirname, '..', 'app', 'src', 'renderer', 'src', 'services', 'query.ts')).href);
+  const S = await import(pathToFileURL(path.join(__dirname, '..', 'app', 'src', 'renderer', 'src', 'services', 'search.ts')).href);
+  const F = await import(pathToFileURL(path.join(__dirname, '..', 'app', 'src', 'renderer', 'src', 'services', 'facets.ts')).href);
 
   const rep = pickRepresentative(posts);
   const predOf = Q.makePostPredOf({ isInFolder: () => false, fuzzyCompile: (q) => S.compile(q) });

@@ -16,7 +16,7 @@
 ## 影響
 
 - [0004](0004-own-styling-headless-behaviour.md)「見た目は自前」は前提ごと失効。
-- 旧 `app/renderer/` にはガラス質感由来の記述が残っているが、この層は #3（`window.corpusXxx` 全廃・`viewer.ts` 解体）で解体される。新層 `app/islands/` には無い。
+- 旧 `app/renderer/` にはガラス質感由来の記述が残っているが、この層は #3（`window.corpusXxx` 全廃・`viewer.ts` 解体）で解体される。新層 `app/islands/` には無い。（`app/renderer/`・`app/islands/` とも #156 で `app/src/renderer/src/services/`・`app/src/renderer/src/` へ移設済み＝当時のパスの記録として残す）
 
 ## 却下した案
 

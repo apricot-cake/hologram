@@ -15,7 +15,7 @@
 // and "reopened dialog is empty" checks are what that move has to keep true.
 // Assertions are on chips and on disk, not on the Base UI internals.
 //
-// The eval must stay well inside the smoke harness's 9s hard cap (main.mts), which
+// The eval must stay well inside the smoke harness's 9s hard cap (app/src/main/index.ts), which
 // is why the waits here are trimmed to the minimum each step actually needs.
 //
 //   node scripts/test-app-bulk-tag.cts
@@ -27,7 +27,7 @@ const path = require('node:path');
 
 const appDir = path.join(__dirname, '..', 'app');
 const electronPath = require(path.join(appDir, 'node_modules', 'electron'));
-const { openDatabase } = require(path.join(appDir, 'lib-db.mts'));
+const { openDatabase } = require(path.join(appDir, 'src', 'main', 'lib-db.ts'));
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-bulktag-'));
 const configDir = path.join(tmp, 'Hologram');
@@ -154,7 +154,7 @@ child.stdout.on('data', (d) => {
 });
 
 child.on('close', () => {
-  // #298/St5: tag edits are DB-only (app/ipc-trash.mts's update-tags no longer
+  // #298/St5: tag edits are DB-only (app/src/main/ipc-trash.ts's update-tags no longer
   // touches the sidecar), so persistence is asserted against post_tags, not disk.
   let a: string[] = [];
   let b: string[] = [];

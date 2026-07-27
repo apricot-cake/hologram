@@ -1,6 +1,6 @@
 'use strict';
 
-// Verifies facet counts across the "+ フィルタ" value editors (filterbar island —
+// Verifies facet counts across the "+ フィルタ" value editors (filterbar component —
 // the qf-pop flyouts are gone since P2③). Two behaviours are asserted:
 //   fixed lists (platform): every value carries a count, counts reflect the
 //     CURRENT query, and a 0 keeps its place (no greying — order is stable).

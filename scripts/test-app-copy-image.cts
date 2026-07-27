@@ -26,7 +26,7 @@ fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolde
 
 const jpeg = Buffer.from('/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACP/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AfwH/2Q==', 'base64');
 fs.writeFileSync(path.join(saveFolder, 'dummy-0001.jpg'), jpeg);
-// A real library can hold svg (ipc-transfer.mts accepts it) — the format nativeImage won't decode.
+// A real library can hold svg (app/src/main/ipc-transfer.ts accepts it) — the format nativeImage won't decode.
 fs.writeFileSync(path.join(saveFolder, 'dummy-0002.svg'), '<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"><rect width="8" height="8" fill="red"/></svg>');
 
 // true only for the decodable image; every other case must report failure so the

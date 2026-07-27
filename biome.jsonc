@@ -11,18 +11,14 @@
   "files": {
     "ignoreUnknown": true,
     "ignore": [
-      // 生成物（ビルド出力＝コミットされているが手書きでない）
-      "app/renderer/islands/**",
-      // 同上（theme.ts の Vite lib IIFE ビルド出力・renderer/theme.ts が手書きソース）
-      "app/renderer/theme.js",
+      // electron-vite のビルド出力（gitignore 済み・useIgnoreFile で自動対象外だが明示）
+      "app/out/**",
       // WXT の拡張機能ビルド出力
       "extension/.output/**",
       "extension/.wxt/**",
-      // 同上（preload.cts の Vite lib CJS ビルド出力・app/preload.cts が手書きソース）
-      "app/preload.js",
       // ベンダー同梱・ロックファイル・package.json（npm が所有＝再インストールの
       // たびに npm 形式へ書き戻され Biome と書式ピンポンになるため対象外）
-      "app/vendor/**",
+      "app/src/renderer/public/vendor/**",
       "**/package-lock.json",
       "**/package.json",
       // 並行エージェントセッションの worktree（別チェックアウト＝そちらの
@@ -45,7 +41,7 @@
       // useExhaustiveDependencies で「余分」と赤にする。無害な余剰 dep のために
       // 再生成のたび upstream から fork するのは保守負債＝この規則だけこの配下で
       // 無効化する（他の正しさ系は有効のまま）。
-      "include": ["app/islands/components/ui/**"],
+      "include": ["app/src/renderer/src/components/ui/**"],
       "linter": {
         "rules": {
           "correctness": { "useExhaustiveDependencies": "off" }

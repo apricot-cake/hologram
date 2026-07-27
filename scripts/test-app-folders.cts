@@ -24,8 +24,8 @@ const path = require('node:path');
 
 const appDir = path.join(__dirname, '..', 'app');
 const electronPath = require(path.join(appDir, 'node_modules', 'electron'));
-const { openDatabase } = require(path.join(appDir, 'lib-db.mts'));
-const { createDbWriter } = require(path.join(appDir, 'lib-db-write.mts'));
+const { openDatabase } = require(path.join(appDir, 'src', 'main', 'lib-db.ts'));
+const { createDbWriter } = require(path.join(appDir, 'src', 'main', 'lib-db-write.ts'));
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-fold-'));
 const configDir = path.join(tmp, 'Hologram');
@@ -96,7 +96,7 @@ const evalJs = `(async () => {
   const cards = () => grid.querySelectorAll('.post-card').length;
   const rows = () => [...document.querySelectorAll('[data-slot="folder-row"]')];
   const rowNamed = (name) => rows().find(r => r.textContent.trim() === name);
-  // menu.ts renders every context menu through the shared DropdownMenu island.
+  // menu.ts renders every context menu through the shared DropdownMenu component.
   const menuRow = (txt) => [...document.querySelectorAll('[data-slot="dropdown-menu-item"]')].find(r => (r.textContent || '').includes(txt));
   const chips = () => [...document.querySelectorAll('[data-slot="filter-chip"]')];
   const getFolders = () => window.hologram.getFolders();

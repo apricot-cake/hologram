@@ -1,0 +1,40 @@
+{
+  // Main-process + preload half of the app: src/main/**/* (formerly the
+  // build-less .mts layer, now bundled by electron-vite) and src/preload/**/*
+  // (formerly the one built file, preload.cts — same bundler now, no longer
+  // the odd one out). Both run in the Electron/Node context, so they share one
+  // strict TS project (electron-vite convention: tsconfig.node.json).
+  //
+  // moduleResolution is "bundler" (not "nodenext"): electron-vite bundles this
+  // layer into one out/main/index.js and one out/preload/index.js, so imports
+  // are resolved the way Vite/rollup resolves them, not the way Node's own
+  // ESM loader would resolve unbundled source — matches the renderer project's
+  // setting for the same reason. This is the retirement of the previous
+  // "type-strip 直実行" arrangement, where main.mts ran unbundled under Electron's
+  // native type stripping and needed Node's own nodenext resolution.
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "noEmit": true,
+    // native-host/post-record.mts (a separate deliverable, out of this migration's
+    // scope) is imported by explicit .mts specifier from lib-db-import.ts — bundler
+    // resolution requires this flag whenever a specifier names a real TS extension.
+    "allowImportingTsExtensions": true,
+    "esModuleInterop": true,
+    "isolatedModules": true,
+    "strict": true,
+    // noImplicitAny stays OFF (same rationale as the renderer project): plain JS-
+    // shaped code where internal lambda params would each need annotation noise.
+    "noImplicitAny": false,
+    // Caught errors stay `any` (pre-4.4 behavior). The main layer reports errors
+    // to the renderer via `err.message` at ~9 sites; leaving these `any` keeps
+    // behavior byte-identical instead of forcing instanceof Error guards.
+    "useUnknownInCatchVariables": false,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
+    "types": ["node"]
+  },
+  "include": ["src/main/**/*", "src/preload/**/*"]
+}

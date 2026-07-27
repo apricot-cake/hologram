@@ -1,6 +1,6 @@
 'use strict';
 
-// Unit tests for app/lib-db.mts — the SQLite engine layer (#294 / #5 St1).
+// Unit tests for app/src/main/lib-db.ts — the SQLite engine layer (#294 / #5 St1).
 // Two halves:
 //   1. runMigrations against a fake db, so ordering, the user_version bookkeeping,
 //      resume-from-partial and rollback-on-failure are checkable without a file.
@@ -10,7 +10,7 @@
 //      trigram tokenizer, this suite goes red instead of St2 discovering it.
 //
 // Plain node, no Electron: better-sqlite3 ships an N-API prebuilt binary that
-// loads under both runtimes (see lib-db.mts).
+// loads under both runtimes (see app/src/main/lib-db.ts).
 //
 //   node scripts/test-db-unit.cts
 
@@ -18,7 +18,7 @@ const assert = require('node:assert');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { openDatabase, runMigrations, DatabaseCorruptError } = require('../app/lib-db.mts');
+const { openDatabase, runMigrations, DatabaseCorruptError } = require('../app/src/main/lib-db.ts');
 
 let passed = 0;
 function ok(cond, msg) {

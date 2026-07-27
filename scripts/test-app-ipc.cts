@@ -3,12 +3,12 @@
 // Exercises the mutation IPC handlers (update-tags, delete-post, restore-post)
 // headlessly by asking the renderer to call them, then checks the result:
 // delete-post still moves sidecar+media into .trash/ (checked on disk), but
-// update-tags is a #298/St5 DB-only write (app/ipc-trash.mts) — its sidecar is
+// update-tags is a #298/St5 DB-only write (app/src/main/ipc-trash.ts) — its sidecar is
 // asserted UNCHANGED, and the tag itself is read back from hologram.db. A
 // third post is tagged, trashed, and restored to prove that round trip
 // doesn't lose the DB-only tag/userKind/tagReviewed state (trashing cascade-
 // deletes the posts row via FK; delete-post/restore-post carry it through the
-// trashed sidecar copy instead — see ipc-trash.mts).
+// trashed sidecar copy instead — see app/src/main/ipc-trash.ts).
 //
 //   node scripts/test-app-ipc.cts
 
@@ -19,7 +19,7 @@ const path = require('node:path');
 
 const appDir = path.join(__dirname, '..', 'app');
 const electronPath = require(path.join(appDir, 'node_modules', 'electron'));
-const { openDatabase } = require(path.join(appDir, 'lib-db.mts'));
+const { openDatabase } = require(path.join(appDir, 'src', 'main', 'lib-db.ts'));
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-ipc-'));
 const configDir = path.join(tmp, 'Hologram');
