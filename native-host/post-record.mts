@@ -5,7 +5,7 @@
 // Today three places independently assemble what is supposed to be the same
 // "illustration record" (bridge.cts's comment name for it):
 //   - native-host/bridge.cts's handleSave/handleSaveDragged (captures)
-//   - app/ipc-transfer.mts's import-posts (ZIP import) — its own hand-listed
+//   - app/src/main/ipc-transfer.ts's import-posts (ZIP import) — its own hand-listed
 //     ~30 fields, found (2026-07-18 codebase pass, #5 comment) to already be
 //     missing media[] and replyToId that the other two producers carry
 //   - the Eagle-migration converter (external tool, not in this repo) that
@@ -26,7 +26,7 @@
 // reason this is .mts while its native-host siblings are .cts (see that
 // file's comment for the mechanics).
 //
-// St2 creates the type + builder only. Rewiring bridge.cts and ipc-transfer.mts
+// St2 creates the type + builder only. Rewiring bridge.cts and app/src/main/ipc-transfer.ts
 // to build records THROUGH this (instead of their own ad hoc field lists) is
 // St5/St6's job (#295) — this file is inert until then.
 
@@ -91,7 +91,7 @@ export interface PostRecordShape {
 // Every field a producer may hand in, all optional — the builder supplies
 // whatever is missing. captureId is the one field every producer computes
 // itself (uniqueBase-derived in bridge.cts, stamp+seq-derived in
-// ipc-transfer.mts) and is required here for the same reason.
+// app/src/main/ipc-transfer.ts) and is required here for the same reason.
 export type PostRecordInput = Partial<Omit<PostRecordShape, 'captureId'>> & { captureId: string };
 
 function normStr(v: unknown): string | null {
@@ -123,7 +123,7 @@ function normMedia(v: unknown): MediaItemShape[] {
 
 // Fills every field of `input` with its documented default. now is injectable
 // (tests pass a fixed instant); production callers omit it and get the real
-// clock, same as extension/metadata.ts's toIso() callers and ipc-transfer.mts's
+// clock, same as extension/metadata.ts's toIso() callers and app/src/main/ipc-transfer.ts's
 // `|| new Date().toISOString()` fallback it replaces.
 export function normalizePostRecord(input: PostRecordInput, now: () => string = () => new Date().toISOString()): PostRecordShape {
   const capturedAt = normStr(input.capturedAt) || now();

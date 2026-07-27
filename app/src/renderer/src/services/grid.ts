@@ -103,7 +103,7 @@ export const hologramPostGridSource = makePostGridSource();
 // Poster grid model source: same shape as the post source, minus
 // onAspect (poster avatars don't report a learned aspect ratio) and minus a
 // live-drag override — the poster size slider already commits hologramIpc.setPref
-// on every 'input' tick (renderer/orchestrator.ts's setupPosterSizeSlider has no
+// on every 'input' tick (services/orchestrator.ts's setupPosterSizeSlider has no
 // separate mid-drag/commit split like the post slider), so writing hologramStore
 // on every tick too is no NEW cost; get() just reads the settled value straight
 // from the store like every other layout input.

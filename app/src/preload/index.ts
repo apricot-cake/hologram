@@ -8,7 +8,7 @@
 // program aliases it in types/globals.d.ts (via the electron-shim paths
 // mapping — see that file), so the type can never drift from what the bridge
 // actually exposes. This file itself is type-checked against the REAL electron
-// types by tsconfig.main.json.
+// types by tsconfig.node.json.
 import { contextBridge, ipcRenderer } from 'electron';
 import 'electron-log/preload';
 

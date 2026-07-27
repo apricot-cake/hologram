@@ -41,7 +41,7 @@
 // generated stylesheet precedes any component-level CSS in cascade order.
 import '../globals.css';
 import './root.tsx';
-// The boot orchestrator (renderer/orchestrator.ts, renamed from viewer.ts on 2026-07-11)
+// The boot orchestrator (services/orchestrator.ts, renamed from viewer.ts on 2026-07-11)
 // no longer needs a side-effect-only import here: App.tsx (rendered via
 // root.tsx above) already imports its exports (bootApp etc.) directly by relative path,
 // which is enough to trigger ES module evaluation — the former bare-specifier

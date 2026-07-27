@@ -43,7 +43,7 @@ export function makeImageTabController(deps: ImageTabBuilderDeps) {
 
   const imageEntry = (recs: string[], idx: number): HologramNavEntry => ({ u: navEntryUrl('image', { recs, idx }), kind: 'image', state: { recs, idx } });
 
-  // Publish the view identity to hologramStore — renderer/image-tab.ts derives
+  // Publish the view identity to hologramStore — services/image-tab.ts derives
   // the whole React model from this (crossed with posts-data.ts for library
   // changes, and 'inspectedKey' for the inspector state).
   function publish(recs: string[], idx: number) {

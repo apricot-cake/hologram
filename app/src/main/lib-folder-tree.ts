@@ -2,7 +2,7 @@
 
 // The on-disk shape of the folder store (folders.json), and the repair pass that
 // makes a file safe to hand to the rest of the app. Pure data — no Electron, no
-// fs — so ipc-organize.mts can register the IPC around it and the unit tests can
+// fs — so ipc-organize.ts can register the IPC around it and the unit tests can
 // call it directly.
 //
 // Nesting (#41) is a FLAT array plus `parentId`; the tree exists only as a derived

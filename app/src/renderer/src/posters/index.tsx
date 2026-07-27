@@ -5,7 +5,7 @@
 // contextmenu → menu). Host attach/detach + flushSync semantics live in the
 // shared GridMount (_shared/VirtualGrid.tsx). Rendered under the single App root
 // (app/App.tsx renders <PosterGrid/>). The source is PULLED (hologramStore-derived),
-// not pushed — see renderer/grid.ts.
+// not pushed — see services/grid.ts.
 import { GridMount } from '../_shared/VirtualGrid.tsx';
 import { PostersHost } from './Posters.tsx';
 import { hologramPosterGridSource } from '../services/grid.ts';

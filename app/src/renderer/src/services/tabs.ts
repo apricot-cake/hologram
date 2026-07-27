@@ -1,8 +1,8 @@
 // Tab-strip model source — converts #tabBarInner off the old push
 // (viewer.js built a full TabsModel via renderTabs() and pushed it to a shared
 // render bridge from ~15 call sites) to a PULLED source, the
-// same shape as the grid sources (renderer/grid.ts) and the image-tab source
-// (renderer/image-tab.ts). viewer.js no longer holds tabs/activeTabId/
+// same shape as the grid sources (services/grid.ts) and the image-tab source
+// (services/image-tab.ts). viewer.js no longer holds tabs/activeTabId/
 // tabEditingId as closure state — hologramStore's 'tabs'/'activeTabId'/
 // 'tabEditingId' keys ARE the state now (the SAME "single source of truth" move
 // selection.ts made for selectedSet); every renderTabs() call site is gone, its

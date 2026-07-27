@@ -64,7 +64,7 @@ function register(ctx) {
   ipcMain.on('drag-out', (event, files) => {
     // Always the ORIGINALS: the renderer only ever sees asset:// thumbnail URLs,
     // so the names it sends are the sidecar's, and this is where they become real
-    // paths (missing files drop out — see library-files.mts).
+    // paths (missing files drop out — see library-files.ts).
     const paths = libraryFilePaths(files, getSaveFolder(), fs.existsSync);
     if (!paths.length) return;
     try {

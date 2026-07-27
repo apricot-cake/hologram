@@ -415,7 +415,7 @@ export function endFilterEditSession(): void {
     charCandidatesFor: (w) => charCandidatesFor(w),
     relatedTagCandidates: (sel, opts) => relatedTagCandidates(sel, opts),
   });
-  // Bound onto tags.ts's live bindings so renderer/sidebar.ts's pull sources can read
+  // Bound onto tags.ts's live bindings so services/sidebar.ts's pull sources can read
   // the SAME tagKindOf/posterFilterVocab this orchestrator instance uses —
   // both close over tags.ts's own getTagTypes()/getPosterTags(), so there's no second
   // implementation to drift.
@@ -500,7 +500,7 @@ export function endFilterEditSession(): void {
 
   // Update sidebar state — kept as a thin alias to renderQueryChips (its many call
   // sites keep their name) now that badges/tag-visibility are self-derived by
-  // renderer/sidebar.ts's hologramPostSidebarSource/hologramPosterSidebarSource
+  // services/sidebar.ts's hologramPostSidebarSource/hologramPosterSidebarSource
   // (see that file for how postQueryTree/tags/folders/posts-data feed it).
   function updateSidebarState() {
     // (#searchBox's has-value accent is owned by the searchbox component)
@@ -513,7 +513,7 @@ export function endFilterEditSession(): void {
   // tagTypes/tagLabels (種別語彙) + tagKindOf/kindLabel moved
   // to tags.js (hologramTags wiring above) — the P4 "状態→store" tags slice.
   // (Possibly custom) 作品/キャラ names + which tags carry a 種別 are read live by
-  // renderer/sidebar.ts's sources now (hologramTags.onChange / posts-data.ts's
+  // services/sidebar.ts's sources now (hologramTags.onChange / posts-data.ts's
   // subscribe), so a 種別 rename or classification no longer needs an explicit
   // re-derive here; the rest (palette section headers, kind menu, dot tooltips) already
   // read kindLabel() live too. Mutation + persistence for the kind menu itself
@@ -606,7 +606,7 @@ export function endFilterEditSession(): void {
   const { tileThumbW, cardThumbW, listThumbW } = gridDensity;
   bindApplyTileOverlay(gridDensity.applyTileOverlay);
   // Post-grid selection state (Set + shift-range anchor) lives in
-  // renderer/selection.ts — hologramStore's
+  // services/selection.ts — hologramStore's
   // 'selectedSet' key IS the state; the grid component's cells read it reactively.
   // --- Query builder: a boolean condition tree is the single source of truth ---
   // (改訂③: flat conditions you drag into parenthesised
@@ -830,7 +830,7 @@ export function endFilterEditSession(): void {
     getBrowseMode: () => browseMode,
     renderPosters: (keepLimit) => renderPosters(keepLimit),
     onPostsLoaded: () => {
-      // The open image view re-derives live via renderer/image-tab.ts's
+      // The open image view re-derives live via services/image-tab.ts's
       // posts-data.ts subscription, and the inspector toggle resolves its group
       // fresh from the current history entry — no cached group to refresh (#144).
     },
@@ -886,7 +886,7 @@ export function endFilterEditSession(): void {
     allFolders: () => (CF() ? CF().allFolders() : []) as HologramFolder[],
     filterLabel,
   });
-  // Bound onto listing.ts's namedPosters live binding so renderer/sidebar.ts's poster
+  // Bound onto listing.ts's namedPosters live binding so services/sidebar.ts's poster
   // source can read the same namedPosters() this orchestrator instance uses
   // (poster-instance row disclosure) — see the hologramTags.tagKindOf note above for why
   // this is a bind, not a reimplementation.
@@ -1017,7 +1017,7 @@ export function endFilterEditSession(): void {
   // Lightbox gallery items — built by records.js (makeGallery); the asset URL
   // scheme stays orchestrator-owned via the injected fileSrc.
   const { buildGroupGalleryItems } = makeGallery({ fileSrc });
-  // renderer/image-tab.ts's pull source reuses the SAME gallery instance —
+  // services/image-tab.ts's pull source reuses the SAME gallery instance —
   // configure() sets it once, same "invariant callbacks set once" shape as the grid sources.
   // onIndexChange/onToggleInspector/onCloseTab are the DI callbacks that replaced
   // image-tab.ts's former dispatch through the old shared bridge.
@@ -1087,7 +1087,7 @@ export function endFilterEditSession(): void {
   // かつ/または expression as the tags.
   // postFolderChips was retired (collections moved to the collections view); the
   // 複数画像 row entry (active state) is self-derived now by
-  // renderer/sidebar.ts's hologramPostSidebarSource — no orchestrator-side
+  // services/sidebar.ts's hologramPostSidebarSource — no orchestrator-side
   // re-render call needed after a multi/folder mutation.
   // フォルダ管理の起動口はフライアウト下部の qf-pop フッターボタン（onManage→CF().openManager()）に統一。
   // 旧 #postFolderManage ボタンは HTML から撤去済み（デッドリスナーを削除）。
@@ -1363,7 +1363,7 @@ export function endFilterEditSession(): void {
   // (which redraws the rows + bar + grid). This used to also mirror
   // the tree shadow into a module-level `posterShadow` global via onShadow — that
   // global had zero readers (the poster sidebar model read posterQB.shadow()
-  // directly, and now renderer/sidebar.ts's source reads the mirrored
+  // directly, and now services/sidebar.ts's source reads the mirrored
   // 'posterQueryTree' store key via query.ts's buildShadow instead), so it's
   // removed outright rather than converted to a read site.
   const { qb: posterQB } = makePosterQueryBuilder({
@@ -1861,7 +1861,7 @@ export function endFilterEditSession(): void {
       if (swept) tabsCtl.persistTabsNow();
     }
     // The sidebar collection state (counts/active) self-derives from the
-    // hologramFolders.onChange subscription in renderer/sidebar.ts.
+    // hologramFolders.onChange subscription in services/sidebar.ts.
     if (kind === 'list') renderPosts(true); // folder created/deleted — refresh without anim
   };
   // Background fs-watch refresh (targeted via the changed-file hint). Registration
@@ -1885,7 +1885,7 @@ export function endFilterEditSession(): void {
     await pfStore.load();
     postGrid.setManualGroups(await loadManualGroups());
     await loadTags();
-    // No sidebar seeding call needed here — renderer/sidebar.ts's sources compute their
+    // No sidebar seeding call needed here — services/sidebar.ts's sources compute their
     // model on first get(), so both columns paint immediately with
     // whatever's already loaded and pick up badges/disclosure as data streams in.
     // initTabs adopts the persisted per-tab history and restores the active tab's

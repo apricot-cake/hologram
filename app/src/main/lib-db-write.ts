@@ -191,7 +191,7 @@ function readPosterTags(sqlite: Sqlite) {
 
 // Post-level edit: tag assignment (post_tags) + the tagging-wizard's userKind/
 // tagReviewed flags. These two columns were added by the add-store-state
-// migration specifically because they had no St2 home (lib-db.mts's migration
+// migration specifically because they had no St2 home (lib-db.ts's migration
 // comment) — normalizePostRecord's PostRecordShape deliberately excludes them
 // (native-host/post-record.mts), so they are DB-only and never round-trip
 // through a sidecar. Returns false without writing if postId isn't a known
@@ -220,14 +220,14 @@ function replacePostTags(sqlite: Sqlite, postId: string, tags: unknown, patch: u
   }
   sqlite.prepare(`UPDATE posts SET ${sets.join(', ')} WHERE captureId = ?`).run(...params, postId);
 
-  // posts_fts is standalone (no content= link, lib-db-schema.mts's schema
+  // posts_fts is standalone (no content= link, lib-db-schema.ts's schema
   // comment), so a plain column UPDATE is valid FTS5 SQL — no delete+reinsert
   // needed to keep the other indexed columns intact.
   sqlite.prepare('UPDATE posts_fts SET tagsText = ? WHERE postId = ?').run(names.join(' '), postId);
   return true;
 }
 
-// Current tags + userKind/tagReviewed for one post — ipc-trash.mts's
+// Current tags + userKind/tagReviewed for one post — ipc-trash.ts's
 // delete-post reads this before a post's row disappears (trashing moves the
 // sidecar out of the watched folder, and the next importAll cascade-deletes
 // post_tags along with the row) so it can carry the DB state into the
@@ -241,9 +241,9 @@ function readPostFlags(sqlite: Sqlite, postId: string): { tags: string[]; userKi
 
 // Re-applies userKind/tagReviewed from a sidecar-shaped record onto an
 // existing posts row. Shared by two callers that both need it because these
-// two columns never round-trip through normalizePostRecord/lib-db-import.mts
-// (module comment above): main.mts's one-time flip backfill (reading the
-// original sidecars) and ipc-trash.mts's restore-post (reading the trashed
+// two columns never round-trip through normalizePostRecord/lib-db-import.ts
+// (module comment above): index.ts's one-time flip backfill (reading the
+// original sidecars) and ipc-trash.ts's restore-post (reading the trashed
 // sidecar copy delete-post stamped with the pre-trash DB values) — a plain
 // importAll after either recreates the posts row with tags intact but these
 // two columns NULL, since nothing else ever writes them from a sidecar.

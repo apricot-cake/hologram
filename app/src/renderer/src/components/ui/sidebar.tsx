@@ -19,7 +19,7 @@ import type { PanelResize } from '@/shell/use-panel-resize.ts';
 // Upstream persists `open` to a sidebar_state cookie for Next.js to read back during SSR.
 // Dropped here (#149): there is no server, and the renderer is a file:// document, where
 // Chromium refuses cookie writes outright. AppShell owns the state and persists it to
-// config.json instead — see renderer/sidebar-pref.ts.
+// config.json instead — see services/sidebar-pref.ts.
 const SIDEBAR_WIDTH = '16rem';
 const SIDEBAR_WIDTH_MOBILE = '18rem';
 const SIDEBAR_WIDTH_ICON = '3rem';

@@ -5,7 +5,7 @@ import { getTagLabels } from '../services/tags.ts';
 import { Glyph, ICON, Row } from './parts.tsx';
 
 // Post-mode filter-row column (#filterRows). Pure presentation, PULLING its own model
-// from renderer/sidebar.ts's hologramPostSidebarSource (badges/visible/multi/openCat
+// from services/sidebar.ts's hologramPostSidebarSource (badges/visible/multi/openCat
 // derived from hologramStore + the tags/folders/posts-data services — see that file). Row
 // NAMES are resolved here via t() (static i18n keys) or kindLabel() (the user-renamable
 // 作品/キャラ label), not carried in the model — the same "component resolves its own i18n"

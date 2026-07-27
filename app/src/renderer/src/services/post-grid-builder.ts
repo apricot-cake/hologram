@@ -91,7 +91,7 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
   // instance lingers) even though renderPosts redraws the grid and flyouts.
   // The SAME choke point also mirrors allPosts.length into hologramStore (the
   // post-empty-state selector's input) and syncs the subscribable posts-data
-  // service (renderer/posts-data.ts) — every allPosts mutation (replace OR
+  // service (services/posts-data.ts) — every allPosts mutation (replace OR
   // in-place edit) is reachable from ONE place instead of scattered pushes.
   function markPostsMutated() {
     _allPostsGeneration++;
@@ -148,7 +148,7 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
       if (deps.getBrowseMode() === 'posters') deps.renderPosters(keepLimit);
       else renderPosts(keepLimit);
       reconcileFolders();
-      // The open image view re-derives live via renderer/image-tab.ts's
+      // The open image view re-derives live via services/image-tab.ts's
       // posts-data.ts subscription — the hook stays for orchestration-side effects.
       deps.onPostsLoaded();
     } finally {
@@ -319,7 +319,7 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
     }
 
     if (viewGroups.length === 0) {
-      // pushing 'postGroups'=null (not just an empty array — see renderer/grid.ts's
+      // pushing 'postGroups'=null (not just an empty array — see services/grid.ts's
       // computeModel) unmounts the grid component's cells SYNCHRONOUSLY (hologramStore.set's
       // notify loop is synchronous, and the component's subscriber flushSync's the unmount,
       // removing its own host div — same guarantee the old pushed render(null) call gave).

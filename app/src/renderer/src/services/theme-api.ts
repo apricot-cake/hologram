@@ -4,7 +4,7 @@
 // changes while in 'auto' and reconciles once with config.json over IPC.
 //
 // The pre-paint FOUC pass — set [data-theme] before first paint — is a separate tiny
-// standalone script (renderer/theme.ts → theme.js, loaded in <head>; see the load-order
+// standalone script (services/theme.ts → theme.js, loaded in <head>; see the load-order
 // comment in index.html). That must run before app.js can, so it stays its own build;
 // this module re-derives the same initial pref on load, so the two agree.
 //

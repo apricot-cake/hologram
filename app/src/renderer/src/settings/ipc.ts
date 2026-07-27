@@ -1,5 +1,5 @@
-// Thin wrappers over hologramIpc (renderer/ipc.ts, the P4 IPC→service seam over the
-// preload bridge) and the theme runtime (renderer/theme-api.ts). main.mts / preload.cts
+// Thin wrappers over hologramIpc (services/ipc.ts, the P4 IPC→service seam over the
+// preload bridge) and the theme runtime (services/theme-api.ts). app/src/main/index.ts / app/src/preload/index.ts
 // stay untouched — the component talks to the exact same IPC the vanilla settings did,
 // just routed through the same seam every other renderer service uses now.
 
@@ -12,7 +12,7 @@ export const setPref = (key: string, value: unknown) => (hologramIpc.setPref ? h
 export const getAppInfo = () => (hologramIpc.getAppInfo ? hologramIpc.getAppInfo() : Promise.resolve(null));
 export const openExternal = (url: string) => hologramIpc.openExternal(url);
 
-// Theme runtime lives in renderer/theme-api.ts (applies [data-theme], persists via
+// Theme runtime lives in services/theme-api.ts (applies [data-theme], persists via
 // setPref, caches to localStorage, follows the OS). We read/drive it through that module
 // so the whole app stays in sync.
 export const theme = {

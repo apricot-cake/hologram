@@ -6,7 +6,7 @@ import { getTagLabels } from '../services/tags.ts';
 import { Row } from './parts.tsx';
 
 // Poster-mode filter-row column (#posterFilterRows) — twin of Sidebar (post side).
-// Pure presentation, PULLING its own model from renderer/sidebar.ts's
+// Pure presentation, PULLING its own model from services/sidebar.ts's
 // hologramPosterSidebarSource (badges/visible/openCat derived from hologramStore + the
 // tags/posts-data/listing services — see that file). Row NAMES are resolved here via
 // t() or kindLabel(), same as the post column. Same DOM contract as the old static

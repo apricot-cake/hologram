@@ -3,7 +3,7 @@
 @import "shadcn/tailwind.css";
 @import "@fontsource-variable/geist";
 
-/* This app signals dark mode via [data-theme=dark] on <html> (renderer/theme.ts
+/* This app signals dark mode via [data-theme=dark] on <html> (services/theme.ts
    pre-paint boot), not the shadcn default .dark class — match both. */
 @custom-variant dark (&:is(.dark *, [data-theme=dark] *));
 

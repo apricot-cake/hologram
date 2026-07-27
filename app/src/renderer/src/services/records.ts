@@ -8,7 +8,7 @@
 // (postIdKey); touches no DOM. Runtime couplings (manual groups / ungrouped opt-outs
 // — live viewer state) are INJECTED via makeGroupRecords(deps), so this file loads
 // under Node too (scripts/test-records-unit.cts drives it via dynamic import); the
-// load/persist pair below goes through hologramIpc (renderer/ipc.ts). postKeyOf is a
+// load/persist pair below goes through hologramIpc (services/ipc.ts). postKeyOf is a
 // plain named export now (the planned duplicate-save detection can import the same
 // URL→key normalization when it lands).
 import { hologramIpc } from './ipc.ts';

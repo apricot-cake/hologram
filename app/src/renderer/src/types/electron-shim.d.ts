@@ -4,10 +4,10 @@
 // which would pull Node's globals into this browser-only program and shadow the
 // DOM lib's setTimeout/setInterval (number) with NodeJS.Timeout.
 //
-// The only file that resolves 'electron' from this program is app/preload.cts,
+// The only file that resolves 'electron' from this program is app/src/preload/index.ts,
 // pulled in via the HologramPreload import type in globals.d.ts. Weak types here
-// cannot hide a real contract break: tsconfig.main.json type-checks the same
-// preload.cts against the REAL electron types, and preload.cts annotates every
+// cannot hide a real contract break: tsconfig.node.json type-checks the same
+// app/src/preload/index.ts against the REAL electron types, and app/src/preload/index.ts annotates every
 // api method explicitly, so the HologramPreload shape does not depend on the shim.
 export const ipcRenderer: {
   invoke(channel: string, ...args: any[]): Promise<any>;

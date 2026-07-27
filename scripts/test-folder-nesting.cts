@@ -1,9 +1,9 @@
 'use strict';
 
 // フォルダ階層（#41）のロジック単体テスト。二層を直接検証する:
-//  - app/lib-folder-tree.mts     … 読み込み時の形正規化と親エッジの修復
+//  - app/src/main/lib-folder-tree.ts     … 読み込み時の形正規化と親エッジの修復
 //    （孤児の昇格・自己親・循環の切断・保存した検索は入れ子にしない）
-//  - app/renderer/folders.ts     … 派生ツリーの意味論
+//  - app/src/renderer/src/services/folders.ts     … 派生ツリーの意味論
 //    （子孫を含む所属判定・「このフォルダのみ」・連鎖削除と葉掃除・移動ガード）
 // どちらも DOM も Electron も要らない純ロジック層。UI（サイドバーのツリーと DnD）は
 // 実機スイート test-app-folders 側で見る。

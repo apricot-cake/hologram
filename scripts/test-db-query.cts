@@ -1,11 +1,11 @@
 'use strict';
 
-// Unit tests for app/lib-db-query.mts (#5 St4 / #297 — the DB-backed read
-// path). Builds a small DB via the real importer (lib-db-import.mts, #296)
+// Unit tests for app/src/main/lib-db-query.ts (#5 St4 / #297 — the DB-backed read
+// path). Builds a small DB via the real importer (app/src/main/lib-db-import.ts, #296)
 // and checks postsFromDb/postsByIds reconstruct the exact sidecar-record
 // shape (including the tags/tagIds parallel-array contract query.ts's tag
 // leaf needs) and that the FTS5 rank contract documented in
-// lib-db-schema.mts actually returns ranked hits.
+// app/src/main/lib-db-schema.ts actually returns ranked hits.
 //
 //   node scripts/test-db-query.cts
 
@@ -72,7 +72,7 @@ function writeJson(folder: string, name: string, data: unknown) {
   // --- postsFromDb: shape + ordering (newest capturedAt first) ---
   const all = await postsFromDb(handle.sqlite);
   ok(all.length === 2, 'postsFromDb returns every post');
-  ok(all[0].captureId === 'cap-2' && all[1].captureId === 'cap-1', 'newest capturedAt first, same ordering as lib-index.mts');
+  ok(all[0].captureId === 'cap-2' && all[1].captureId === 'cap-1', 'newest capturedAt first, same ordering as lib-index.ts');
 
   const cap1 = all.find((p: any) => p.captureId === 'cap-1');
   ok(cap1.text === 'a beautiful sunset over the mountains', 'text column round-trips');
@@ -112,7 +112,7 @@ function writeJson(folder: string, name: string, data: unknown) {
   ok(subset.length === 1 && subset[0].captureId === 'cap-2', 'postsByIds returns exactly the requested subset');
   ok((await postsByIds(handle.sqlite, [])).length === 0, 'postsByIds([]) short-circuits to empty, no query with an empty IN()');
 
-  // --- FTS5 rank contract (lib-db-schema.mts's documented query shape) ---
+  // --- FTS5 rank contract (lib-db-schema.ts's documented query shape) ---
   const hits = searchPostsFts(handle.sqlite, 'mountains');
   ok(hits.length === 1 && hits[0].postId === 'cap-1', 'FTS5 MATCH finds the post containing the term');
   ok(typeof hits[0].rank === 'number', 'rank is exposed as a number (bm25 — more negative is more relevant)');

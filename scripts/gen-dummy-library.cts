@@ -32,7 +32,7 @@
 // if it drifts (this is a dev tool, expected to age with schema changes).
 //
 // KNOWN LIMITATION 1: every placeholder image is a PNG, so no record is classified
-// as a screenshot (isScreenshot in app/renderer/records.ts keys off a .jpg/.jpeg
+// as a screenshot (isScreenshot in app/src/renderer/src/services/records.ts keys off a .jpg/.jpeg
 // extension). Card/tile/gallery for media-bearing posts are unaffected (the card
 // image is media[0] regardless), but the list-density "capture leads" and the
 // gallery "screenshot rides the tail" branches are not exercised by this data.

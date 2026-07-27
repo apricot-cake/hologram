@@ -59,7 +59,7 @@ interface HologramFacetView {
 // ES module now — its named exports carry their own types, so no ambient
 // Window-shaped interface is declared for it here anymore.
 
-// ---- renderer/records.ts — record shape helpers + grouping. A real ES module
+// ---- services/records.ts — record shape helpers + grouping. A real ES module
 // (named exports) now; only the HologramPostGroup data shape stays here (shared
 // with viewer.ts / selection.ts / image-tab.ts). ----
 interface HologramPostGroup {
@@ -70,13 +70,13 @@ interface HologramPostGroup {
   [k: string]: any;
 }
 
-// ---- renderer/selection.ts — the post-grid multi-select Set + shift-range
+// ---- services/selection.ts — the post-grid multi-select Set + shift-range
 // anchor. hologramStore's 'selectedSet' key IS the state (no
 // closure copy); the anchor is a private module variable (no subscribers). A
 // real ES module (named exports) now — no ambient Window-shaped interface
 // needed. ----
 
-// ---- renderer/facets.ts — facet counts + value-flyout row models. makeFacets
+// ---- services/facets.ts — facet counts + value-flyout row models. makeFacets
 // (facets.ts) and makeCooc (cooc.ts) are real ES modules (named exports) now; only
 // HologramQfRow stays here as a cross-module value-flyout row shape. ----
 interface HologramQfRow {
@@ -87,11 +87,11 @@ interface HologramQfRow {
   [k: string]: any;
 }
 
-// ---- renderer/tags.ts — tag vocabulary / 種別 (kind) domain. A real ES module
+// ---- services/tags.ts — tag vocabulary / 種別 (kind) domain. A real ES module
 // (named exports) now; the read-side derivations + disk round-trip carry their own
 // types, so no ambient Window-shaped interface is declared here anymore. ----
 
-// ---- renderer/users.ts — poster roll-up + search-box suggestions. A real ES
+// ---- services/users.ts — poster roll-up + search-box suggestions. A real ES
 // module (named exports) now — no ambient Window-shaped interface needed, but
 // HologramUserAgg stays (a data shape shared with listing.ts/sidebar.ts). ----
 interface HologramUserAgg {
@@ -109,7 +109,7 @@ interface HologramUserAgg {
   firstCapture: string;
   count: number;
 }
-// ---- renderer/tab-state.ts — tab titles + nav history + tabs.json shape. A real
+// ---- services/tab-state.ts — tab titles + nav history + tabs.json shape. A real
 // ES module (named exports) now; only the HologramTabSnapshot / HologramTab data shapes
 // stay here (shared with viewer.ts / tabs.ts / image-tab.ts). ----
 interface HologramTabSnapshot {
@@ -149,7 +149,7 @@ interface HologramTab {
 // interface) carry their own types, so no ambient Window-shaped interface is
 // declared for it here anymore.
 
-// ---- renderer/geometry.ts — pure column / slider-track / thumbnail math. A
+// ---- services/geometry.ts — pure column / slider-track / thumbnail math. A
 // real ES module (named exports) now — no ambient Window-shaped interface
 // needed, but HologramGridMetrics stays (a data shape shared with viewer.ts). ----
 // Metrics: W = floored fractional container width, g = gutter px.
@@ -158,10 +158,10 @@ interface HologramGridMetrics {
   g: number;
 }
 
-// ---- renderer/format.ts — pure count/date display formatters. A real ES
+// ---- services/format.ts — pure count/date display formatters. A real ES
 // module (named exports) now — no ambient Window-shaped interface needed. ----
 
-// ---- renderer/undo.ts — linear tag-edit undo/redo stack. A real ES module
+// ---- services/undo.ts — linear tag-edit undo/redo stack. A real ES module
 // (named exports) now — no ambient Window-shaped interface needed, but
 // HologramUndoRecord stays (a data shape shared with viewer.ts). ----
 interface HologramUndoRecord {
@@ -172,12 +172,12 @@ interface HologramUndoRecord {
   newTags: string[];
 }
 
-// ---- renderer/search-editing.ts — search box ↔ query-tree text-leaf state
+// ---- services/search-editing.ts — search box ↔ query-tree text-leaf state
 // machine + suggestion-pick handling. A real ES module (named
 // exports) now — SearchEditingDeps is exported directly from search-editing.ts,
 // no ambient Window-shaped interface needed.
 
-// ---- renderer/folders.ts — library folders store + management modal.
+// ---- services/folders.ts — library folders store + management modal.
 // A real ES module (named exports) now — no ambient
 // HologramFoldersApi/Window-shaped interface needed. The raw createFolderStore factory is
 // shared internally by the library folders store (isLibrary) and, via
@@ -236,11 +236,11 @@ interface HologramFolderManagerModel {
   list: HologramFolder[];
 }
 
-// renderer/bridge.ts's makeCallbackBridge factory (shared by the callback-carrying
+// services/bridge.ts's makeCallbackBridge factory (shared by the callback-carrying
 // popover bridges qf-pop / filter-popover) is a real ES module (named export) now —
 // its return type is inferred, so no ambient HologramCallbackBridge/HologramMakeBridge type.
 
-// renderer/store.ts is a real ES module now — get/set/subscribe are
+// services/store.ts is a real ES module now — get/set/subscribe are
 // imported directly by every consumer; no ambient HologramStore/Window merge
 // exists anywhere anymore. The old duplicated `interface Window { hologramSelection }`
 // (once the only Window-merge in this file) is gone too — selection.ts is a real

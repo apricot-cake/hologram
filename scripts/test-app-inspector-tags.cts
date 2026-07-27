@@ -214,7 +214,7 @@ child.stdout.on('data', (d) => {
 child.on('close', () => {
   // Persistence is the point of the feature, so read it back from the DB
   // rather than trusting the in-page chips — #298/St5 made tag edits DB-only
-  // (app/ipc-trash.mts's update-tags no longer rewrites the sidecar).
+  // (app/src/main/ipc-trash.ts's update-tags no longer rewrites the sidecar).
   let persisted: string[] = [];
   try {
     const { sqlite } = openDatabase(path.join(configDir, 'hologram.db'), { readonly: true });

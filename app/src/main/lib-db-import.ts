@@ -3,17 +3,17 @@
 // Sidecar -> DB sync importer (#5 St3 / #296): reads the save folder's sidecar
 // JSON (posts) + organization-layer JSON (tag-types / ungrouped / folders /
 // manual-groups / poster-folders / poster-tags) + tabs.json, and writes them
-// into the SQLite database opened by lib-db.mts (schema from #295 St2).
+// into the SQLite database opened by lib-db.ts (schema from #295 St2).
 //
 // The DB at this stage is a DERIVED index (#5 2026-07-22 stage-split comment,
 // "expand" phase of parallel-change): sidecars remain the truth. A failed or
 // stale import never loses data — importAll() re-derives the whole DB from
 // whatever is on disk right now, so the worst case is a re-run.
 //
-// Reuses lib-index.mts's filename+mtimeMs diff engine for the incremental path
+// Reuses lib-index.ts's filename+mtimeMs diff engine for the incremental path
 // (#296 issue body: "lib-index の filename+mtimeMs 差分機構を流用") — both the
 // full and incremental entry points share ONE createPostIndex() instance (same
-// role, same .index.json snapshot the renderer's own postIndex in main.mts
+// role, same .index.json snapshot the renderer's own postIndex in index.ts
 // reads/writes: "what does sidecar X currently look like", not a DB-specific
 // concern, so there is nothing DB-specific to keep separate).
 //
@@ -35,7 +35,7 @@
 // happens later, directly against the DB, once something wires up write access.
 //
 // Electron-free (better-sqlite3 + node builtins only) so it unit-tests in plain
-// node, mirroring lib-db.mts / lib-index.mts.
+// node, mirroring lib-db.ts / lib-index.ts.
 
 import nodeFs from 'node:fs';
 import path from 'node:path';
@@ -46,7 +46,7 @@ import { normalizePostRecord } from '../../../native-host/post-record.mts';
 import type Database from 'better-sqlite3';
 import type { PostRecordInput, PostRecordShape } from '../../../native-host/post-record.mts';
 
-// Mirrors main.mts's INTERNAL_FILES (not exported there — main.mts is the
+// Mirrors index.ts's INTERNAL_FILES (not exported there — index.ts is the
 // Electron entry point, not an importable engine module). Kept in lockstep by
 // hand; a name this importer doesn't yet know about just gets scanned as a
 // (likely non-post) sidecar and dropped by isPostRecord — not silently wrong.
@@ -376,7 +376,7 @@ export interface DbImporter {
 }
 
 // opts.postIndex lets a caller that already owns a createPostIndex() instance
-// (main.mts's renderer-facing postIndex, once a later stage wires this in)
+// (index.ts's renderer-facing postIndex, once a later stage wires this in)
 // share it instead of standing up a second one — both read/write the same
 // .index.json snapshot regardless, so sharing only saves the duplicate cold
 // scan. Standalone callers (tests, a rebuild script) get their own.
@@ -399,7 +399,7 @@ export function createDbImporter(opts: { internalFiles?: Set<string>; postIndex?
     const stmts = preparePostStmts(sqlite);
 
     // #297: a repeat importAll (every app relaunch/refresh now calls this —
-    // it's main.mts's DB-backed listPosts()/listPostsDelta() full-resync path)
+    // it's index.ts's DB-backed listPosts()/listPostsDelta() full-resync path)
     // must not redo the expensive half of writePost — delete+reinsert media/
     // post_tags/posts_fts, the FTS5 trigram rewrite in particular — for a post
     // that hasn't actually changed since the last import. Measured at 12s ->
@@ -407,7 +407,7 @@ export function createDbImporter(opts: { internalFiles?: Set<string>; postIndex?
     // --adapter db) — a relaunch with nothing new would otherwise cost MORE
     // than the cold import that just populated the DB. The sidecar's own
     // mtimeMs (`stamps`, from the shared postIndex — the same signal
-    // lib-index.mts's own applyChanges uses) is the comparison, NOT
+    // lib-index.ts's own applyChanges uses) is the comparison, NOT
     // updatedAt: updatedAt is producer-controlled and not guaranteed to move
     // on every edit (an editor that changes text without bumping it would
     // silently go unsynced), where mtimeMs is the filesystem's own truth.
@@ -459,10 +459,10 @@ export function createDbImporter(opts: { internalFiles?: Set<string>; postIndex?
   }
 
   // Incremental sync: applies exactly the sidecars named by an fs.watch hint
-  // (main.mts's watchChanged batch — see lib-index.mts's applyChanges doc).
+  // (index.ts's watchChanged batch — see lib-index.ts's applyChanges doc).
   // Only touches posts/media/post_tags/posts_fts for the named files; the
   // organization layer is not part of this path (its own writes never appear
-  // in the watch hint — main.mts's watcher explicitly skips INTERNAL_FILES,
+  // in the watch hint — index.ts's watcher explicitly skips INTERNAL_FILES,
   // so an org edit has nothing here to react to. importAll re-derives it).
   async function importChanged(folder: string, handle: DbHandle, names: string[]): Promise<ImportReport> {
     const { sqlite } = handle;

@@ -205,7 +205,7 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
   // tag field — the same loop Lightroom and Eagle give you without a tagging screen.
   //
   // Left/Right step one card; Up/Down step one ROW, which is why the column count has
-  // to come from the live layout (renderer/grid-nav.ts) rather than the model — masonic
+  // to come from the live layout (services/grid-nav.ts) rather than the model — masonic
   // derives it from the container width. Movement clamps at both ends (no wrap): in a
   // grid, wrapping from the last card to the first is disorienting and no file manager
   // or photo library does it.

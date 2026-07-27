@@ -22,7 +22,7 @@
 // imported directly by viewer.ts / sidebar.ts and the Sidebar components; touches
 // no DOM. The read-side tagKindOf/posterFilterVocab are also exposed as live
 // bindings (below) that viewer.ts binds at boot, so sidebar.ts reads the same
-// closures. Disk round-trips go through hologramIpc (renderer/ipc.ts).
+// closures. Disk round-trips go through hologramIpc (services/ipc.ts).
 import { hologramIpc } from './ipc.ts';
 
 // deps contract:
@@ -163,7 +163,7 @@ export function sameTags(a: string[], b: string[]): boolean {
 
 // tagKindOf / posterFilterVocab live bindings — bound once at boot by viewer.ts
 // (right after its own makeTags() call) via bindTagKindOf / bindPosterFilterVocab,
-// so renderer/sidebar.ts's pull sources read the SAME closures this viewer instance
+// so services/sidebar.ts's pull sources read the SAME closures this viewer instance
 // builds (both close over this module's own getTagTypes()/getPosterTags(), so there's
 // no second implementation to drift). null until viewer's binding call runs — a pull
 // that lands before then just sees "no data yet" and recomputes on the next notify.

@@ -104,7 +104,7 @@ export function VirtualGridHost({ model, cell, nav }: { model: HologramGridModel
   // so an estimated scroll lands where the grid will actually put the item.
   const heightEstimate = model.square ? positioner.columnWidth : model.itemHeightEstimate || 120;
 
-  // Publish the geometry keyboard selection movement needs (renderer/grid-nav.ts).
+  // Publish the geometry keyboard selection movement needs (services/grid-nav.ts).
   // Re-registers whenever the positioner is recreated (itemsKey / width change) so the
   // handle never closes over a stale position cache.
   useEffect(() => {

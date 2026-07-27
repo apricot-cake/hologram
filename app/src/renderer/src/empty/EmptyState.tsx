@@ -36,14 +36,14 @@ export function EmptyState() {
     // postGroups is undefined before the first renderPosts() ever ran (nothing to
     // show yet), an array while the grid has content (nothing to show), or
     // explicitly null when renderPosts() found the filtered/grouped set empty
-    // (orchestrator distinguishes these on purpose — see renderer/orchestrator.ts's
-    // renderPosts and renderer/grid.ts's computeModel).
+    // (orchestrator distinguishes these on purpose — see services/orchestrator.ts's
+    // renderPosts and services/grid.ts's computeModel).
     if (postGroups === null) variant = allPostsCount === 0 && !query.trim() ? 'firstRun' : 'filtered';
   } else {
     // posterGroups has no such null sentinel — viewer always pushes an array
     // (possibly empty) once renderPosters() has run at all, undefined before that
     // (the poster grid never needed the post grid's unmount-before-innerHTML-clear
-    // ordering, so there was nothing forcing a null push — see renderer/grid.ts's
+    // ordering, so there was nothing forcing a null push — see services/grid.ts's
     // makePosterGridSource doc comment).
     if (posterGroups !== undefined && posterGroups.length === 0) variant = allUsersCount === 0 && !query.trim() ? 'posterFirstRun' : 'filtered';
   }

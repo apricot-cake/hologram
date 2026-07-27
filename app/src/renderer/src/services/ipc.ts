@@ -20,7 +20,7 @@
 
 const bridge = () => window.hologram;
 
-// Annotated against the shared HologramPreload contract (exported by preload.cts
+// Annotated against the shared HologramPreload contract (exported by app/src/preload/index.ts
 // itself — typeof the exposed api — and aliased in types/globals.d.ts) so
 // every forwarding arrow below is contextually typed from the implementation —
 // no per-parameter annotations needed for a pure pass-through layer.

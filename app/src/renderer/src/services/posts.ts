@@ -6,7 +6,7 @@
 // (list/delete/tags/import/clearAll/change-watch), App.tsx (onPostsChanged) and the
 // Settings > データ component (save-folder move + export/import ZIP + import media) —
 // pure 1:1 forwarding, no wrapping logic (same as trash/backup; distinct from
-// renderer/records.ts, which owns the record-shape/grouping PURE LOGIC, not the IPC
+// services/records.ts, which owns the record-shape/grouping PURE LOGIC, not the IPC
 // calls).
 import { hologramIpc } from './ipc.ts';
 

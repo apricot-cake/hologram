@@ -1,6 +1,6 @@
 'use strict';
 
-// Unit tests for the folder-store merge layer in app/lib-archive.mts:
+// Unit tests for the folder-store merge layer in app/src/main/lib-archive.ts:
 //  - mergeFolders: id-union on items; name/kind/created/tree local-wins;
 //    activeId stays local-if-valid
 //  - mergePosterFolders: plain { folders:[{id,name,items}] } id-union (poster folders)

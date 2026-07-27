@@ -1,6 +1,6 @@
 'use strict';
 
-// Unit tests for the shared library-file boundary (app/library-files.mts, #132):
+// Unit tests for the shared library-file boundary (app/src/main/library-files.ts, #132):
 // the bare-basename gate every window/shell IPC handler runs its input through,
 // and the batch path resolution behind drag-out. Pure logic → no Electron needed.
 // The stakes are the two failure modes the design called out: a name that escapes

@@ -182,9 +182,9 @@ function register(ctx) {
 
   // #298/St5: tag edits are an in-app write, so they go straight to the DB
   // (post_tags + posts.userKind/tagReviewed) instead of the sidecar — see
-  // lib-db-write.mts's replacePostTags. The sidecar is left untouched, which
+  // lib-db-write.ts's replacePostTags. The sidecar is left untouched, which
   // is what protects this edit from the next importAll: its mtime doesn't
-  // move, so lib-db-import.mts's unchanged-since-last-import guard (#297)
+  // move, so lib-db-import.ts's unchanged-since-last-import guard (#297)
   // skips re-deriving this post from disk and the DB edit sticks.
   ipcMain.handle('update-tags', async (_e, image, tags, patch) => {
     const captureId = baseOf(image);

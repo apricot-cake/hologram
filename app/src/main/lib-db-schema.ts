@@ -2,9 +2,9 @@
 
 // The v1 DDL for the metadata store (#5 St2 / #295): every table the sidecar →
 // DB migration needs, confirmed across #5's design comments (2026-07-12 through
-// 2026-07-22) and this issue's own scope note. Split out of lib-db.mts so the
+// 2026-07-22) and this issue's own scope note. Split out of lib-db.ts so the
 // engine (open/migrate) and the shape (what "current" means) aren't one file —
-// lib-db.mts's typed Schema interface is the hand-kept mirror of this string.
+// lib-db.ts's typed Schema interface is the hand-kept mirror of this string.
 //
 // St2 is schema-only: nothing populates these tables yet (St3 is the sidecar
 // importer). A fresh v1 database is therefore all empty tables — the acceptance
@@ -137,7 +137,7 @@ CREATE INDEX idx_post_tags_tagId ON post_tags(tagId);
 -- tree is the saved-search query tree for a dynamic folder (JSON, opaque here
 -- — the query-tree shape is query.ts's concern, not the DB's). This historical
 -- v1 string stays immutable; folder nesting's parentId column (#41) is appended
--- by the add-folder-parent migration in lib-db.mts.
+-- by the add-folder-parent migration in lib-db.ts.
 CREATE TABLE folders (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
@@ -154,7 +154,7 @@ CREATE INDEX idx_folder_items_postId ON folder_items(postId);
 
 -- clip_items and poster_workspace_items shipped here as part of v1 (this string
 -- is historical and must not change) but both features are retired — the
--- 'drop-clip-items' and 'drop-poster-workspace-items' migrations in lib-db.mts
+-- 'drop-clip-items' and 'drop-poster-workspace-items' migrations in lib-db.ts
 -- DROP these tables.
 CREATE TABLE clip_items (
   postId TEXT PRIMARY KEY REFERENCES posts(captureId) ON DELETE CASCADE

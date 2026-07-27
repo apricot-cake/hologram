@@ -4,7 +4,7 @@
 // The renderer never handles real paths — it sees asset:// URLs and the bare
 // sidecar names inside them — so a name carrying a separator or a traversal
 // segment did not come from the library and is refused here. Pulled out as pure
-// functions (like save-folder-guard.mts / backup-guard.mts) so the boundary the
+// functions (like save-folder-guard.ts / backup-guard.ts) so the boundary the
 // window/shell IPC handlers share (show-in-folder, open-image-window, drag-out,
 // copy-image) has one owner and unit-tests without spinning up Electron.
 

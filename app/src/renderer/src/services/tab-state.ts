@@ -8,7 +8,7 @@
 // DOM. Runtime couplings are injected — reassigned viewer lets (appBooted) come
 // in as getter functions and later-declared consts (PF_NAME / CF) as deferred
 // arrows — so this file loads under Node (scripts/test-tabstate-unit.cts drives
-// it via dynamic import): loadTabs/persistTabs call hologramIpc (renderer/ipc.ts),
+// it via dynamic import): loadTabs/persistTabs call hologramIpc (services/ipc.ts),
 // which touches window.hologram lazily inside its arrow functions — the import
 // itself is side-effect free, so it stays harmless under Node.
 import { hologramIpc } from './ipc.ts';

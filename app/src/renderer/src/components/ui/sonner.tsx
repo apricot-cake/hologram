@@ -3,7 +3,7 @@ import type * as React from 'react';
 import { useSyncExternalStore } from 'react';
 import { Toaster as Sonner, type ToasterProps } from 'sonner';
 
-// This app signals dark mode via [data-theme=dark] on <html> (renderer/theme-api.ts),
+// This app signals dark mode via [data-theme=dark] on <html> (services/theme-api.ts),
 // not next-themes — subscribe to the attribute directly instead of useTheme().
 function subscribeTheme(cb: () => void) {
   const obs = new MutationObserver(cb);

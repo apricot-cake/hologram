@@ -64,7 +64,7 @@ const CONFIG_PATH = path.join(configDir(), 'config.json');
 // the log appear in a different location from the configuration it describes.
 log.transports.file.resolvePathFn = () => path.join(configDir(), 'logs', 'main.log');
 // We own the preload bridge, so electron-log must not register a second preload
-// script for every session. app/preload.cts imports electron-log/preload instead.
+// script for every session. app/src/preload/index.ts imports electron-log/preload instead.
 log.initialize({ preload: false });
 log.errorHandler.startCatching({ showDialog: false });
 
@@ -263,7 +263,7 @@ function watchSaveFolder() {
 }
 
 // --- Posts (DB-backed read path — #5 St4 / #297) ---
-// The renderer's post array now comes from SQLite (lib-db-query.mts), not a
+// The renderer's post array now comes from SQLite (lib-db-query.ts), not a
 // sidecar scan: a cold launch is a SELECT instead of tens of thousands of
 // readFileSync+JSON.parse calls. Sidecars remain the truth (write path is
 // still St5/#298) — postIndex's filename+mtimeMs scan is kept AS the change
@@ -283,7 +283,7 @@ const dbImporter = createDbImporter({ internalFiles: INTERNAL_FILES, postIndex }
 // not portable with the library" reason.
 // A corrupt hologram.db self-heals by deletion at this stage: the DB is still
 // a DERIVED index (sidecars remain the truth until #298/St5), same recovery
-// story lib-index.mts already gives a corrupt .index.json ("no/invalid
+// story lib-index.ts already gives a corrupt .index.json ("no/invalid
 // snapshot -> cold scan will populate it") — dbImporter.importAll rebuilds it
 // whole from the sidecars on the very next call.
 let dbHandle: { db: any; sqlite: any } | null = null;
@@ -338,7 +338,7 @@ async function backupLegacyMetadata(folder: string) {
 // One-time flip-time backfill: userKind/tagReviewed (the tagging wizard's
 // plain/media + reviewed flags) were sidecar-only fields written by the old
 // update-tags handler — never part of PostRecordShape (native-host/post-record.mts
-// excludes them on purpose), so lib-db-import.mts's importer has never carried
+// excludes them on purpose), so lib-db-import.ts's importer has never carried
 // them into the DB. Once update-tags stops touching the sidecar (#298/St5),
 // this is the only remaining chance to pull an existing library's review state
 // in before the sidecar values become unreachable. Runs after importAll so
@@ -397,7 +397,7 @@ async function ensurePostsSynced() {
   await ensureDbTruthSource(folder, handle);
   const report = await dbImporter.importAll(folder, handle);
   // addedIds (not postsWritten, which counts every reconciled post — see
-  // lib-db-import.mts) reflects what actually changed this call.
+  // lib-db-import.ts) reflects what actually changed this call.
   if (report.addedIds.length || report.postsRemoved) scheduleSnapshot(folder);
   return handle;
 }
@@ -423,7 +423,7 @@ async function listPosts() {
 // The change-detection STAMP stays sidecar mtimeMs (postIndex.list()'s own
 // bookkeeping) even though the POSTS themselves now come from the DB — mtimeMs
 // is still the cheapest true signal for "did this file change", and reusing it
-// means computeDelta (lib-index.mts, unchanged) needs no DB-awareness at all.
+// means computeDelta (lib-index.ts, unchanged) needs no DB-awareness at all.
 let _deltaFolder = null;
 let _lastSent = new Map(); // captureId -> mtimeMs last delivered to the renderer
 async function listPostsDelta(haveBaseline, changedNames) {

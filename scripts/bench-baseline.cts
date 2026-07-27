@@ -14,8 +14,8 @@
 //   warm      — full scan restoring from an existing .index.json (a normal relaunch)
 //   incremental — applyChanges() on a small % of touched sidecars (a capture landing)
 //   search    — representative free-text / tag / platform-facet / combined-AND
-//               queries via the real query engine (app/renderer/query.ts + search.ts)
-//   facets    — facetCounts() bucket aggregation (app/renderer/facets.ts)
+//               queries via the real query engine (app/src/renderer/src/services/query.ts + search.ts)
+//   facets    — facetCounts() bucket aggregation (app/src/renderer/src/services/facets.ts)
 //   ipc       — v8.serialize()/deserialize() of the full posts array (Electron's
 //               contextBridge/ipcRenderer use the V8 structured-clone algorithm,
 //               NOT JSON — v8.serialize gives the same wire format and its real
@@ -145,7 +145,7 @@ const sidecarAdapter = {
 
 // --- DB (#5 St4 / #297) adapter — the pluggable target #293 built this
 // harness for. coldScan/warmScan both go through dbImporter.importAll
-// (sidecar scan + DB upsert) then postsFromDb, same as main.mts's
+// (sidecar scan + DB upsert) then postsFromDb, same as app/src/main/index.ts's
 // listPosts()/listPostsDelta() full-resync path: the DB is a derived index
 // during this stage, so even a "warm" read re-syncs from the sidecars first —
 // there is no read-only-DB fast path yet (that would require trusting the DB

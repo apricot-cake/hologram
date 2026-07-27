@@ -1,13 +1,13 @@
 'use strict';
 
 // DB-backed read path (#5 St4 / #297): reconstructs the sidecar-shaped post
-// record array from the tables lib-db-import.mts (#296) writes, and exposes
-// the FTS5 free-text search contract lib-db-schema.mts's schema comment
+// record array from the tables lib-db-import.ts (#296) writes, and exposes
+// the FTS5 free-text search contract lib-db-schema.ts's schema comment
 // documents (SELECT postId, bm25(posts_fts) AS rank FROM posts_fts WHERE
 // posts_fts MATCH ? ORDER BY rank).
 //
 // Read-only: this module never writes. postsFromDb()/postsByIds() are the
-// mirror image of lib-db-import.mts's writePost() — same column list, same
+// mirror image of lib-db-import.ts's writePost() — same column list, same
 // media ordering (seq), same tag resolution (post_tags -> tags.name), just
 // SELECT instead of INSERT. tagIds accompanies tags as a PARALLEL array
 // (same index = same tag) so query.ts's tag leaf can match by id (#5
@@ -15,9 +15,9 @@
 // back to name matching for not-yet-migrated saved leaves.
 //
 // Electron-free (better-sqlite3 + node builtins only), mirroring
-// lib-db.mts/lib-db-import.mts, so it unit-tests in plain node. Uses the raw
+// lib-db.ts/lib-db-import.ts, so it unit-tests in plain node. Uses the raw
 // sqlite handle (not the Kysely builder) throughout, same as
-// lib-db-import.mts's writes — bm25() has no typed Kysely helper, and a
+// lib-db-import.ts's writes — bm25() has no typed Kysely helper, and a
 // second query style for the other reads would just be inconsistency.
 
 import type Database from 'better-sqlite3';
@@ -160,7 +160,7 @@ function assemble(sqlite: Database.Database, postRows: any[]): any[] {
   });
 }
 
-// Every post, newest capturedAt first — the same ordering lib-index.mts's
+// Every post, newest capturedAt first — the same ordering lib-index.ts's
 // list() returns, so nothing downstream (masonry order, delta bookkeeping)
 // needs to know the source moved.
 async function postsFromDb(sqlite: Database.Database): Promise<any[]> {
@@ -180,7 +180,7 @@ async function postsByIds(sqlite: Database.Database, captureIds: string[]): Prom
 
 // FTS5 free-text search (#5 St4 / #297's query contract): rank is bm25() —
 // more negative is more relevant, so plain ascending ORDER BY rank puts the
-// best match first (schema comment in lib-db-schema.mts). Not wired into the
+// best match first (schema comment in lib-db-schema.ts). Not wired into the
 // live search UX by this stage (renderer keeps its in-memory fuzzy matcher —
 // #29 is the dedicated full-text search UX and is the eventual consumer);
 // this is the contract itself, exercised by scripts/test-db-query.cts and the

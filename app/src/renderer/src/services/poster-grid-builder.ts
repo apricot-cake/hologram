@@ -116,7 +116,7 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
 
   // The poster-mode filter-row model (#posterFilterRows: row labels, per-row active-leaf
   // badge counts, 作品/キャラ/タグ/サーバー progressive-disclosure visibility, which flyout
-  // row wears .qf-open) is self-derived by renderer/sidebar.ts's
+  // row wears .qf-open) is self-derived by services/sidebar.ts's
   // hologramPosterSidebarSource — no viewer-side build+push.
   // Poster sidebar filter rows: prune tag selections that no longer have a backing value
   // (poster removed/edited). The rows are React-owned; this is the ONE remaining side

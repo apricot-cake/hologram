@@ -13,7 +13,7 @@ import { t } from '../_shared/i18n.ts';
 // section to show as a page; with a query, every matching section is stacked
 // and matches are highlighted. Esc / backdrop-close / focus trapping are
 // Radix Dialog built-ins now (the hand-rolled handlers are gone).
-// The open/closed store lives in renderer/settings.ts; index.tsx wires it into this shape.
+// The open/closed store lives in services/settings.ts; index.tsx wires it into this shape.
 export interface OpenStore {
   isOpen(): boolean;
   set(v: boolean): void;

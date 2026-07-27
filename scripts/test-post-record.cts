@@ -75,7 +75,7 @@ const fixedNow = () => FIXED_NOW;
 // --- the exact bug this builder exists to prevent (#5 2026-07-18 comment) --
 
 {
-  // ipc-transfer.mts's import-posts hand-lists ~30 fields and was found to
+  // app/src/main/ipc-transfer.ts's import-posts hand-lists ~30 fields and was found to
   // silently drop media[] and replyToId. A shared builder cannot drop a field
   // any producer supplies — it can only default one a producer omits.
   const rec = normalizePostRecord(

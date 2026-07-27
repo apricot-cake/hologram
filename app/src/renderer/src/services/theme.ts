@@ -4,15 +4,15 @@
    Built standalone (build-theme-boot.mjs, Vite lib IIFE → public/theme.js) and loaded in
    <head>, BEFORE the app's module entry (which loads at the end of <body> and so can't run pre-paint —
    see the load-order comment in index.html). External file because the page CSP is
-   `script-src 'self'`; a browser can't type-strip .ts at runtime the way Node's main/
-   native-host layers do, so this one file needs its own tiny build step (same reason
-   preload.cts is built to preload.js — see tsconfig.main.json).
+   `script-src 'self'`; a browser can't type-strip .ts at runtime, so this one file
+   needs its own tiny build step outside electron-vite's normal renderer bundling
+   (build-theme-boot.mjs).
 
    FOUC-only: it resolves the pref (main passes config's theme as ?theme=; else the
    localStorage cache; else 'auto') and sets the attribute, nothing more. It publishes no
    window global. The LIVE theme runtime — the apply/get/set/resolve API the
    React Appearance section drives, OS-change following, and the config.json reconcile —
-   lives in renderer/theme-api.ts, bundled into app.js. */
+   lives in services/theme-api.ts, part of the normal renderer bundle. */
 (function () {
   const KEY = 'hologram-theme';
   function cleanPref(t: string): string {

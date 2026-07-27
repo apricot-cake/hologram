@@ -316,7 +316,7 @@ export function App() {
       <Portal id="settingsRoot">
         <SettingsHost />
       </Portal>
-      {/* Toast outlet (sonner) — renderer/ui.ts notify() feeds it. */}
+      {/* Toast outlet (sonner) — services/ui.ts notify() feeds it. */}
       <Toaster />
       {/* Legacy [data-tip] glass tooltip singleton (retired with the Tip overhaul, P3). */}
       <TooltipHost />

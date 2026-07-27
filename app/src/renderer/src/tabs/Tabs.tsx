@@ -7,7 +7,7 @@
 // old "a <button> can't contain the .tab-close button" HTML-parser hazard — it
 // builds the DOM via createElement.)
 
-// The strip model TabsHost pulls from renderer/tabs.ts's hologramTabsSource.
+// The strip model TabsHost pulls from services/tabs.ts's hologramTabsSource.
 export interface TabModel {
   id: string;
   title: string;

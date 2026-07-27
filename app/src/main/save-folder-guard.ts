@@ -5,7 +5,7 @@
 // racing those writes can corrupt or resurrect files — the mirror destination is
 // the one place cloud storage is supported by design. Nothing here BLOCKS: the
 // detection is a name/env heuristic and false positives are expected, so the
-// caller only warns. Pulled out as a pure function (like backup-guard.mts) so it
+// caller only warns. Pulled out as a pure function (like backup-guard.ts) so it
 // unit-tests without spinning up Electron.
 
 import path from 'node:path';

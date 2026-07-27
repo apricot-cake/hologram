@@ -2,7 +2,7 @@
 
 // SQLite engine layer for the metadata store (#5 / #294 St1, schema from #295
 // St2): opens the database, applies pending migrations, and hands back a typed
-// Kysely instance. The DDL itself lives in lib-db-schema.mts — this file stays
+// Kysely instance. The DDL itself lives in lib-db-schema.ts — this file stays
 // the engine (open/migrate), that one the shape (what "current" means).
 //
 // Kept Electron-free (better-sqlite3 and node builtins only) so the migration
@@ -27,12 +27,12 @@ import { SCHEMA_V1_SQL } from './lib-db-schema.ts';
 // edited once shipped — `user_version` records how many have run, so rewriting
 // an applied entry leaves existing databases silently inconsistent. Append only.
 //
-// add-source-mtime (#297): posts.sourceMtimeMs lets the importer (lib-db-import.mts's
+// add-source-mtime (#297): posts.sourceMtimeMs lets the importer (lib-db-import.ts's
 // importAll) tell "this post's sidecar hasn't changed since the last import"
 // apart from "this post's content changed" — updatedAt is producer-controlled
 // and NOT bumped on every edit (proven by scripts/test-db-import.cts's edit
 // case), so it can't be trusted as a change signal; the sidecar's own mtimeMs
-// (already tracked by lib-index.mts's postIndex) can. Nullable: pre-migration
+// (already tracked by lib-index.ts's postIndex) can. Nullable: pre-migration
 // rows just re-sync once on the next importAll (self-heals, no backfill needed).
 const MIGRATIONS: Migration[] = [
   { name: 'schema-v1', up: (db) => db.exec(SCHEMA_V1_SQL) },
@@ -167,7 +167,7 @@ function openDatabase(file: string, opts: { readonly?: boolean } = {}) {
 // The typed mirror of SCHEMA_V1_SQL (#295 St2). Column names are camelCase to
 // match the sidecar JSON they replace (#5 2026-07-18 comment) — SQLite itself
 // is case-insensitive on identifiers, so this is a naming convention, not an
-// engine requirement. Kept in lockstep with lib-db-schema.mts by hand: Kysely
+// engine requirement. Kept in lockstep with lib-db-schema.ts by hand: Kysely
 // has no DDL-to-type codegen for a hand-rolled migration string, so a column
 // added there and not here just fails to type-check at the first query that
 // uses it — no runtime drift is possible.
@@ -298,7 +298,7 @@ interface StoreStateTable {
 }
 // postsFts is FTS5 (posts_fts): a virtual table, not a normal one, so Kysely's
 // typed insert/select work but its DDL helpers do not apply — it is created as
-// raw SQL in lib-db-schema.mts. postId is UNINDEXED (match results carry it
+// raw SQL in lib-db-schema.ts. postId is UNINDEXED (match results carry it
 // back to `posts`; MATCH never searches it). rank is a query-time bm25()
 // expression, not a stored column, so it has no field here.
 interface PostsFtsTable {

@@ -2,7 +2,7 @@
 // (viewer.js built the React model and called render(model) on it from ~8 call
 // sites: showImageTab / hideImageTabView / index step / inspector toggle /
 // library refresh) to a PULLED source, the same shape as the grid sources
-// (renderer/grid.ts). viewer.js writes only the tab IDENTITY into hologramStore's
+// (services/grid.ts). viewer.js writes only the tab IDENTITY into hologramStore's
 // 'activeImageTab' (id/recs/idx — the one piece of tab state migrated ahead of the
 // full tabs→store move); get() derives everything else: the gallery items (via
 // hologramRecords.imageTabGroup, crossed with posts-data.ts so a deleted post

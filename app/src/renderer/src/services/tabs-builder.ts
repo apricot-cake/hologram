@@ -324,7 +324,7 @@ export function makeTabsController(deps: TabsBuilderDeps) {
     const y = typeof t._scrollTop === 'number' ? t._scrollTop : 0;
     requestAnimationFrame(() => requestAnimationFrame(() => deps.scrollContentTo(y)));
   }
-  // Model derivation (title/icon/editing state) lives in renderer/tabs.ts's
+  // Model derivation (title/icon/editing state) lives in services/tabs.ts's
   // hologramTabsSource — it pulls from the SAME hologramStore keys
   // every mutation below writes (tabs/activeTabId/tabEditingId, plus
   // postQueryTree/searchQuery/sortPost/multiOnly/allPostsCount for the active
