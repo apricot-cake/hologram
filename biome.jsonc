@@ -9,7 +9,14 @@
   "vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
   "files": {
     "ignoreUnknown": true,
-    "includes": ["**", "!**/app/out/**", "!**/extension/.output/**", "!**/extension/.wxt/**", "!**/app/src/renderer/public/vendor/**", "!**/package-lock.json", "!**/package.json", "!**/.claude/**"]
+    // .claude is anchored (no leading **/) on purpose. Task worktrees live in
+    // .claude/worktrees/<name>/, so a `**/.claude/**` exclusion swallows the
+    // ENTIRE checkout when biome runs inside one — `npm run lint` then reports
+    // "Checked 0 files" and exits green, which reads exactly like a clean repo.
+    // Anchoring keeps the repo-root .claude (skills, hooks, settings) excluded
+    // while leaving a worktree's own files linted. The other entries keep **/
+    // because they name build output that only ever appears at those paths.
+    "includes": ["**", "!**/app/out", "!**/extension/.output", "!**/extension/.wxt", "!**/app/src/renderer/public/vendor", "!**/package-lock.json", "!**/package.json", "!.claude"]
   },
   // import 並べ替えは今はしない（チャーン優先度が低い・必要なら別途）
   "assist": { "actions": { "source": { "organizeImports": "off" } } },
