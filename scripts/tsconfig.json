@@ -36,7 +36,7 @@
     "forceConsistentCasingInFileNames": true,
     "skipLibCheck": true,
     // scripts/ (and the repo root) has no @types/node of its own — point at the
-    // app/ install (shared with tsconfig.main.json / native-host/tsconfig.json)
+    // app/ install (shared with tsconfig.node.json / native-host/tsconfig.json)
     // instead of duplicating an @types/node install here.
     "typeRoots": ["../app/node_modules/@types"],
     "types": ["node"]

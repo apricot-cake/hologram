@@ -3,7 +3,7 @@
   // native-messaging-host layer (bridge.cts + install.cts + paths.cts +
   // media-download.cts + config-recovery.cts).
   //
-  // Separate project from tsconfig.main.json / tsconfig.renderer.json because
+  // Separate project from tsconfig.node.json / tsconfig.web.json because
   // this is a THIRD runtime: a standalone Node process (spawned by Chrome via
   // native messaging, or via the Electron binary in ELECTRON_RUN_AS_NODE mode),
   // never imported by ESM import — only by CommonJS require() (computed-path
@@ -27,7 +27,7 @@
   // follows the same specifiers. Plain require() calls aren't
   // cross-file type-checked by tsc (require() types as NodeRequire → any);
   // that already matches how app/src/main/index.ts's own dynamic computed-path
-  // require() of this directory works (see tsconfig.main.json) — each file's
+  // require() of this directory works (see tsconfig.node.json) — each file's
   // OWN logic is still checked, just not the require() contract between them.
   //
   // noImplicitAny stays OFF (same rationale as main/renderer): plain JS-shaped
@@ -53,7 +53,7 @@
     "skipLibCheck": true,
     // native-host/ has no node_modules of its own (it's a plain deployed dir,
     // not an npm package) — point at the app/ install (shared with
-    // tsconfig.main.json) instead of duplicating an @types/node install here.
+    // tsconfig.node.json) instead of duplicating an @types/node install here.
     "typeRoots": ["../app/node_modules/@types"],
     "types": ["node"]
   },

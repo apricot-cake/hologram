@@ -2,10 +2,10 @@
 
 ## 開発実行
 
-初回の依存導入:
+初回の依存導入（`app/` は npm ワークスペース＝リポジトリ直下からまとめて入る）:
 
 ```
-cd app && npm install
+npm install
 ```
 
 ## 拡張機能の開発・配布
@@ -34,9 +34,9 @@ cd app && npm install
 
 ## 開発ルール：コード変更の反映（確認なし再起動）
 
-> **npm スクリプトの置き場**: `build:islands`・`typecheck`・`dev:renderer`・`dist`・`start` は `app/package.json`＝**`app/` で実行する**。リポジトリ直下の package.json が持つのは lint 系（`lint`・`lint:fix`・`format`）と `test` だけ。以下の `npm run …` も `dist` の項以外はすべて `app/` で打つ（#156 でワークスペース化し直下へ集約する予定）。
+> **npm スクリプトの置き場**: `build`・`dev`・`typecheck`・`dist`・`start` は `app/package.json`。`app/` は npm ワークスペースなので**リポジトリ直下から** `npm run build --workspace=app`（`-w app` でも可）で実行できる。もちろん `cd app && npm run build` でもよい。リポジトリ直下の package.json が持つ固有のスクリプトは lint 系（`lint`・`lint:fix`・`format`）と `test`・拡張機能の `*:ext` だけ。
 
-main プロセス（`main.mts`/`ipc-*`/`lib-*`）の変更を反映するときは、確認を取らずに再起動する（renderer/islands は `npm run build:islands` で再ビルド→アプリのリロードで反映＝再起動不要。Vite dev サーバー `npm run dev:renderer`＋`HOLOGRAM_DEV_SERVER` 使用時のみ自動反映／native-host は `npm run build:islands` でバンドルを作り直し → `node native-host/install.cts` で `~/.hologram` へ再配備＝アプリ再起動不要。ビルドを飛ばすと配備は「バンドル未ビルド」で止まる）。preload の変更は `preload.cts` を編集 → `npm run build:islands` で `preload.js` を再生成してから再起動（preload だけビルドを経る＝docs/architecture.md 参照）。
+main・preload・renderer のどれを変更した場合も、**`npm run build --workspace=app` でビルド → 確認を取らずに再起動**（electron-vite が3面（`src/main`・`src/preload`・`src/renderer`）を `app/out/` へ一括ビルドする。旧来あった「renderer だけは再起動不要」の特例は無い＝`electron-vite dev`（HMR・main 自動再起動）を使わない限り、ビルド出力を読み直すには再起動が要る。Claude 自身の検証は次節のとおり常にビルド→タスク再起動で行い、`electron-vite dev` は使わない）。native-host のブリッジ（Chrome が起動する常駐プロセス）を変更した場合は `npm run build:native-host-bridge --workspace=app` でバンドルを作り直してから `node native-host/install.cts` で `~/.hologram` へ再配備（アプリ再起動は不要）。
 
 **再起動は「停止 ＋ タスクスケジューラ経由の起動」で行う**。Claude が実行する最小形:
 
@@ -68,7 +68,7 @@ Start-ScheduledTask -TaskName 'HologramLaunch'
 ## 配布物生成
 
 ```
-cd app && npm run dist
+npm run dist --workspace=app
 ```
 
 electron-builder, win/nsis。
@@ -77,7 +77,7 @@ electron-builder, win/nsis。
 - **`npmRebuild: false` を設定してある**（`app/package.json` の `build`）。electron-builder は既定でネイティブモジュールを Electron 向けに再ビルドするが、唯一のネイティブ依存 `better-sqlite3` は N-API（`binding.gyp` の `NAPI_VERSION=10`）でビルド済みバイナリを同梱しており、同じ `.node` が Node と Electron の両方で動く＝再ビルドは不要。既定のままだと node-gyp が走り、C++ ビルドツールが要求される（2026-07-24 実測: 同一バイナリが Node 24 と Electron 43＝`NODE_MODULE_VERSION` 137 と 148 の双方でロード・WAL・FTS5 trigram の日本語部分一致まで動作）。**N-API でないネイティブ依存を足すときはこの設定を見直すこと**（黙って再ビルドが飛ぶ）。better-sqlite3 公式の troubleshooting は今も electron-rebuild を案内しているが、N-API 化前の記述。
 - **`asarUnpack` に `better-sqlite3` を入れてある**。`.node` は asar 内から読めないため、これが無いと配布ビルドでのみ DB が開けない。将来コード署名を入れる際は、asar の外に出たこのバイナリも署名対象に含める。
 - **NSIS ワンクリックインストーラ** は winCodeSign 展開時に **symlink 作成権限** が要る。**Windows 設定 → 開発者向け → 開発者モード を ON**（または管理者で実行）してから `npm run dist` で `Hologram Setup x.x.x.exe` が生成される。OFF だと winCodeSign 展開が失敗し `win-unpacked` のみになる（macOS用 dylib symlink でこける／コードの問題ではない）。
-- `native-host/` は `extraResources` で `resources/native-host` に同梱。`app/main.mts` が `app.isPackaged` でパス解決（dev=`../native-host`）。
+- `native-host/` は `extraResources` で `resources/native-host` に同梱。`app/src/main/index.ts` が `app.isPackaged` でパス解決（dev=`../../../native-host`＝electron-vite の `out/main/` からの相対）。
 
 ## アイコン（全再生成の単一導線）
 
@@ -88,7 +88,7 @@ electron-builder, win/nsis。
 
 これで以下が一括更新される（`scripts/make-icons.cjs` の `TARGETS`/`BANNERS` が配置先の単一真実源＝増えたらここに足す）:
 
-- `app/assets/icon.png`（512）＝Electron ウィンドウ/タスクバーアイコン。`app/package.json` の `build.win.icon` がこれを指し、electron-builder が配布時に `.ico` 化（PNG→ICO 自動変換）。dev では `main.mts` の `BrowserWindow({icon})`＋`app.setAppUserModelId` で反映。
+- `app/assets/icon.png`（512）＝Electron ウィンドウ/タスクバーアイコン。`app/package.json` の `build.win.icon` がこれを指し、electron-builder が配布時に `.ico` 化（PNG→ICO 自動変換）。dev では `src/main/index.ts` の `BrowserWindow({icon})`＋`app.setAppUserModelId` で反映。
 - `extension/public/icons/icon{16,32,48,128,256}.png`＝Chrome 拡張（生成manifest の `icons`/`action.default_icon`）。開発中は WXT が再読み込みしてツールバーへ反映。
 - `assets/icon.png`（256）＝汎用ブランドラスター/ファビコン。
 - `assets/banner-{light,dark,en-light,en-dark}.svg`＝README バナー。ワードマーク `hologram`＋タグラインは保持し、先頭マークだけ虹色スクエアの埋め込み画像（base64）に差し替え。
