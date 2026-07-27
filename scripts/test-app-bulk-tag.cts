@@ -27,6 +27,7 @@ const path = require('node:path');
 
 const appDir = path.join(__dirname, '..', 'app');
 const { electronPath: resolveElectron } = require('./lib-electron-path.cts');
+const { readEvalResult } = require('./lib-eval-result.cts');
 
 const electronPath = resolveElectron();
 const { openDatabase } = require(path.join(appDir, 'src', 'main', 'lib-db.ts'));
@@ -174,13 +175,7 @@ child.on('close', () => {
     /* reported as failed checks below */
   }
   fs.rmSync(tmp, { recursive: true, force: true });
-  const m = /EVAL_RESULT "(.+?)"\s*$/m.exec(out);
-  let r = null;
-  try {
-    r = JSON.parse(JSON.parse('"' + (m ? m[1] : '') + '"'));
-  } catch {
-    /* fall through to the null report below */
-  }
+  const r = readEvalResult(out);
   if (!r) {
     console.log('BULK_TAG_TEST_FAIL (no eval result)');
     process.exit(1);

@@ -94,9 +94,9 @@ function parseArgs(argv) {
 }
 
 // --- measurement primitive: warmup discarded, N measured, report stats + outlier warning.
-async function measure(name, fn, { warmup, iterations }) {
+async function measure(name: string, fn: () => Promise<{ ms: number; extra?: any }>, { warmup, iterations }: { warmup: number; iterations: number }) {
   for (let i = 0; i < warmup; i++) await fn();
-  const values = [];
+  const values: { ms: number; extra?: any }[] = [];
   for (let i = 0; i < iterations; i++) values.push(await fn());
   const ms = values.map((v) => v.ms);
   const min = Math.min(...ms);
@@ -165,7 +165,7 @@ function freshBenchDbFile(dir) {
   }
   return file;
 }
-let _dbBenchHandle = null;
+let _dbBenchHandle: any = null;
 function closeDbBenchHandle() {
   if (_dbBenchHandle) {
     try {
@@ -201,14 +201,14 @@ const dbAdapter = {
 
 // Touch `pct`% of the sidecar json files (rewrite same content, bump mtime) so the
 // incremental scenario has real fs-watch-shaped work to do. Returns the touched names.
-function touchSidecars(dir, pct) {
+function touchSidecars(dir: string, pct: number) {
   const names = fs
     .readdirSync(dir)
     .filter((f) => f.toLowerCase().endsWith('.json') && !INTERNAL_FILES.has(f))
     .sort();
   const n = Math.max(1, Math.round((names.length * pct) / 100));
   const step = Math.max(1, Math.floor(names.length / n));
-  const touched = [];
+  const touched: string[] = [];
   for (let i = 0; i < names.length && touched.length < n; i += step) {
     const f = names[i];
     const full = path.join(dir, f);
@@ -265,10 +265,10 @@ function libraryContentHash(dir) {
 
 // --- search / facets scenarios: pick representative queries FROM the actual data
 // (not hand-picked constants) so the harness stays meaningful at any scale/seed. ---
-function pickRepresentative(posts) {
+function pickRepresentative(posts: any[]) {
   const tagFreq = new Map();
   const platFreq = new Map();
-  const words = [];
+  const words: string[] = [];
   for (const p of posts) {
     for (const t of p.tags || []) tagFreq.set(t, (tagFreq.get(t) || 0) + 1);
     platFreq.set(p.platform || '__none', (platFreq.get(p.platform || '__none') || 0) + 1);
@@ -285,7 +285,7 @@ function pickRepresentative(posts) {
   return { tag: topTag ? topTag[0] : null, platform: topPlat ? topPlat[0] : null, textTerm: word };
 }
 
-async function runSearchAndFacets(posts, opts) {
+async function runSearchAndFacets(posts: any[], opts: { warmup: number; iterations: number }) {
   const Q = await import(pathToFileURL(path.join(__dirname, '..', 'app', 'src', 'renderer', 'src', 'services', 'query.ts')).href);
   const S = await import(pathToFileURL(path.join(__dirname, '..', 'app', 'src', 'renderer', 'src', 'services', 'search.ts')).href);
   const F = await import(pathToFileURL(path.join(__dirname, '..', 'app', 'src', 'renderer', 'src', 'services', 'facets.ts')).href);
@@ -293,8 +293,8 @@ async function runSearchAndFacets(posts, opts) {
   const rep = pickRepresentative(posts);
   const predOf = Q.makePostPredOf({ isInFolder: () => false, fuzzyCompile: (q) => S.compile(q) });
 
-  const results = {};
-  const scenarios = [];
+  const results: Record<string, any> = {};
+  const scenarios: [string, any][] = [];
   if (rep.textTerm) scenarios.push(['text:' + rep.textTerm, { kind: 'cond', type: 'text', value: rep.textTerm }]);
   if (rep.tag) scenarios.push(['tag:' + rep.tag, { kind: 'cond', type: 'tag', value: rep.tag }]);
   if (rep.platform) scenarios.push(['platform:' + rep.platform, { kind: 'cond', type: 'platform', value: rep.platform }]);
@@ -371,7 +371,7 @@ async function runSearchAndFacets(posts, opts) {
 // the same algorithm Electron's contextBridge/ipcRenderer use, so byte length and
 // timing here approximate the real IPC cost (JSON.stringify().length would not:
 // different wire format, different size). ---
-function runIpcScenario(posts, opts) {
+function runIpcScenario(posts: any[], opts: { warmup: number; iterations: number }) {
   return measure(
     'ipc:v8-serialize-roundtrip',
     async () => {
@@ -393,7 +393,7 @@ async function main() {
   const adapter = opts.adapter === 'db' ? dbAdapter : sidecarAdapter;
   console.log(`bench-baseline: ${dir}  adapter=${adapter.name}  warmup=${opts.warmup} iterations=${opts.iterations}`);
 
-  const report = {
+  const report: Record<string, any> = {
     environment: environmentInfo(),
     generator: { hashArg: opts.generatorHash, library: libraryContentHash(dir), generatorScriptCommit: gitRevOf('scripts/gen-dummy-library.cts') },
     params: { warmup: opts.warmup, iterations: opts.iterations, incrementalPct: opts.incrementalPct },
@@ -403,7 +403,7 @@ async function main() {
 
   // cold — each measured iteration is a genuinely fresh index + no snapshot
   // (sidecar adapter) / no bench DB file (db adapter).
-  let lastColdPosts = null;
+  let lastColdPosts: any = null;
   report.scenarios.cold = await measure(
     'cold',
     async () => {
@@ -416,7 +416,7 @@ async function main() {
 
   // warm — snapshot/DB from the last cold run is on disk; each iteration is a
   // fresh index/DB-handle instance (a real relaunch), reusing what's persisted.
-  let lastWarmIdx = null;
+  let lastWarmIdx: any = null;
   report.scenarios.warm = await measure(
     'warm',
     async () => {
@@ -460,7 +460,7 @@ async function main() {
     );
   }
 
-  for (const [name, s] of Object.entries(report.scenarios)) {
+  for (const [name, s] of Object.entries(report.scenarios as Record<string, any>)) {
     const w = s.warning ? `  ⚠ ${s.warning}` : '';
     console.log(`  ${name.padEnd(22)} min=${s.min.toFixed(1)}ms mean=${s.mean.toFixed(1)}ms max=${s.max.toFixed(1)}ms${w}`);
   }

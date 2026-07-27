@@ -65,7 +65,7 @@ async function dragToEdge(page, sourceId, targetId, edge) {
 
 async function folderOrder(page) {
   return page.evaluate(async () => {
-    const data = await window.hologram.getFolders();
+    const data = await (window as any).hologram.getFolders();
     return data.folders.filter((folder) => folder.parentId == null).map((folder) => folder.id);
   });
 }
@@ -86,7 +86,7 @@ async function folderOrder(page) {
 
     await dragToEdge(page, 'f-b', 'f-a', 'before');
     await page.waitForFunction(async () => {
-      const data = await window.hologram.getFolders();
+      const data = await (window as any).hologram.getFolders();
       return (
         data.folders
           .filter((folder) => folder.parentId == null)
@@ -98,7 +98,7 @@ async function folderOrder(page) {
 
     await dragToEdge(page, 'f-b', 'f-a', 'after');
     await page.waitForFunction(async () => {
-      const data = await window.hologram.getFolders();
+      const data = await (window as any).hologram.getFolders();
       return (
         data.folders
           .filter((folder) => folder.parentId == null)
