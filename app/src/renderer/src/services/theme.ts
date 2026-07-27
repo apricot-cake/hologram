@@ -21,7 +21,7 @@
   function systemDark(): boolean {
     try {
       return !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
-    } catch (e) {
+    } catch (_e) {
       return false;
     }
   }
@@ -30,13 +30,13 @@
   let initial: string | null = null;
   try {
     initial = new URLSearchParams(location.search).get('theme');
-  } catch (e) {
+  } catch (_e) {
     /* ignore */
   }
   if (!initial) {
     try {
       initial = localStorage.getItem(KEY);
-    } catch (e) {
+    } catch (_e) {
       /* ignore */
     }
   }
@@ -46,7 +46,7 @@
   else document.documentElement.removeAttribute('data-theme');
   try {
     localStorage.setItem(KEY, pref);
-  } catch (e) {
+  } catch (_e) {
     /* ignore */
   }
 })();

@@ -72,7 +72,7 @@ function diffValues(name, a, b) {
       fail("renderer/i18n.ts: expected `const MESSAGES = {` not found — update this test's HOOK");
     } else {
       // biome-ignore lint/security/noGlobalEval: intentional indirect eval to read the module-private MESSAGES table (same pattern as test-search-unit used before its own conversion)
-      // biome-ignore lint/style/noCommaOperator: (0, eval) IS the indirect-eval idiom
+      // biome-ignore lint/complexity/noCommaOperator: (0, eval) IS the indirect-eval idiom (rule moved from style to complexity in Biome 2.x)
       (0, eval)(src.replace(HOOK, 'const MESSAGES = globalThis.__hologramMessages = {'));
       const M = (globalThis as any).__hologramMessages;
       if (!M || !M.ja || !M.en) {

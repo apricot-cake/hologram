@@ -167,7 +167,7 @@ function mkdb(name = 'test.db') {
 for (const d of dirs) {
   try {
     fs.rmSync(d, { recursive: true, force: true });
-  } catch (e) {
+  } catch (_e) {
     /* best-effort cleanup */
   }
 }

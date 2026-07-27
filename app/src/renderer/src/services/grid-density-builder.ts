@@ -8,7 +8,7 @@
 // computeSizeTrack/computePosterSizeTrack as data and calls the setters back, so
 // nothing here touches a slider element. Density (card/tile/list) likewise comes
 // in through the hologramStore 'view'/'posterView' keys.
-import { colsFor, sizeFor, sliderTrack, trackCols, thumbW } from './geometry.ts';
+import { sizeFor, sliderTrack, trackCols, thumbW } from './geometry.ts';
 import { get as storeGet, set as storeSet } from './store.ts';
 
 export interface GridDensityDeps {

@@ -15,7 +15,7 @@ const KEY = 'hologram-theme';
 let mql: MediaQueryList | null = null;
 try {
   mql = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)');
-} catch (e) {
+} catch (_e) {
   mql = null;
 }
 let pref = 'auto'; // auto | light | dark
@@ -49,13 +49,13 @@ export function set(p: string, persist?: boolean): string {
   apply(p);
   try {
     localStorage.setItem(KEY, pref);
-  } catch (e) {
+  } catch (_e) {
     /* ignore */
   }
   if (persist !== false && window.hologram && window.hologram.setPref) {
     try {
       window.hologram.setPref('theme', pref);
-    } catch (e) {
+    } catch (_e) {
       /* ignore */
     }
   }
@@ -74,20 +74,20 @@ export function resolve(): string {
 let initial: string | null = null;
 try {
   initial = new URLSearchParams(location.search).get('theme');
-} catch (e) {
+} catch (_e) {
   /* ignore */
 }
 if (!initial) {
   try {
     initial = localStorage.getItem(KEY);
-  } catch (e) {
+  } catch (_e) {
     /* ignore */
   }
 }
 apply(initial || 'auto');
 try {
   localStorage.setItem(KEY, pref);
-} catch (e) {
+} catch (_e) {
   /* ignore */
 }
 
@@ -110,7 +110,7 @@ if (window.hologram && window.hologram.getPrefs) {
       if (cleanPref(p.theme) !== pref) set(p.theme, false);
       try {
         localStorage.setItem(KEY, cleanPref(p.theme));
-      } catch (e) {
+      } catch (_e) {
         /* ignore */
       }
     })

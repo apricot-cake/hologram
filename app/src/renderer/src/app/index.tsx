@@ -45,6 +45,6 @@ import './root.tsx';
 // no longer needs a side-effect-only import here: App.tsx (rendered via
 // root.tsx above) already imports its exports (bootApp etc.) directly by relative path,
 // which is enough to trigger ES module evaluation — the former bare-specifier
-// 'hologram-viewer-bundle' alias + @ts-ignore was a leftover from when this file was a
+// 'hologram-viewer-bundle' alias + a TS-ignore directive was a leftover from when this file was a
 // plain window-IIFE with no imports/exports of its own (removed together with the
 // viewer.ts→orchestrator.ts rename).

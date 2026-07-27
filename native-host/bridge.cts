@@ -18,7 +18,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
-const os = require('node:os');
+const _os = require('node:os');
 
 const { configDir, defaultLibraryDir } = require('./paths.cts');
 // Best-effort remote-image download (original media + avatars) lives in a shared

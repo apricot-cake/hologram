@@ -135,7 +135,7 @@ async function expectReject(promise, label) {
     // Forge only the first entry oversize; the guard must reject on it.
     await expectReject(
       importCompleteZip(
-        ForgingJSZip((rel, i) => (i === 0 ? oversize : 4)),
+        ForgingJSZip((_rel, i) => (i === 0 ? oversize : 4)),
         dest,
         small.buf,
       ),

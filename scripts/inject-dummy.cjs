@@ -18,7 +18,7 @@
 
 const { app, BrowserWindow } = require('electron');
 const fs = require('node:fs');
-const os = require('node:os');
+const _os = require('node:os');
 const path = require('node:path');
 const { configDir, defaultLibraryDir } = require('../native-host/paths.cts');
 

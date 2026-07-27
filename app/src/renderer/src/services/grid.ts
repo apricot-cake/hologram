@@ -37,7 +37,7 @@ type PosterGridConfig = { modelOf(item: any, i: number): any; keyOf(item: any, i
 function makePostGridSource() {
   let config: PostGridConfig | null = null;
   let liveColumnWidth: number | null = null; // mid-drag override; deliberately not in hologramStore (see the type's doc comment)
-  let lastItems: any = undefined;
+  let lastItems: any;
   let itemsKeySeq = 0; // bumps only when the items reference actually changes — mirrors the old push-time itemsKey bump
   let paintSeq = 0;
   const subs = new Set<() => void>();
@@ -109,7 +109,7 @@ export const hologramPostGridSource = makePostGridSource();
 // from the store like every other layout input.
 function makePosterGridSource() {
   let config: PosterGridConfig | null = null;
-  let lastItems: any = undefined;
+  let lastItems: any;
   let itemsKeySeq = 0;
   let paintSeq = 0;
   const subs = new Set<() => void>();

@@ -43,7 +43,7 @@ if($p){[void][W]::ShowWindowAsync($p.MainWindowHandle, ${cmd}); if(${cmd} -eq 9)
   fs.writeFileSync(f, ps1, 'utf8');
   try {
     cp.execFileSync('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', f], { stdio: 'ignore' });
-  } catch (e) {
+  } catch (_e) {
     /* best-effort */
   }
 }
@@ -139,7 +139,7 @@ async function main() {
     if (process.env.CDP_FOCUS !== '1') {
       try {
         data = (await withTimeout(capSurface(), 1500)).data;
-      } catch (e) {
+      } catch (_e) {
         data = null; // timed out (occluded/throttled) or errored → fall back
       }
     }
@@ -148,7 +148,7 @@ async function main() {
       try {
         const r = await send('Runtime.evaluate', { expression: 'window.screenX <= -30000', returnByValue: true });
         wasMin = !!(r && r.result && r.result.value);
-      } catch (e) {
+      } catch (_e) {
         /* ignore */
       }
       if (wasMin) {
@@ -157,7 +157,7 @@ async function main() {
       } // SW_RESTORE + repaint
       try {
         await send('Page.bringToFront', {});
-      } catch (e) {
+      } catch (_e) {
         /* ignore */
       }
       // Window is painting now → a plain (non-surface) capture is safe and won't hang.

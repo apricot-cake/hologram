@@ -35,7 +35,7 @@ const EXPECTED_TABLES = ['posts', 'media', 'tags', 'tag_parents', 'tag_aliases',
 // --- migration applies + every table lands -----------------------------
 
 {
-  const { db, sqlite } = openDatabase(mkdb());
+  const { sqlite } = openDatabase(mkdb());
   assert.strictEqual(sqlite.pragma('user_version', { simple: true }), 8, 'v1 DDL plus the seven appended migrations through #362 add-captured-via');
 
   const names = new Set(
@@ -192,7 +192,7 @@ const EXPECTED_TABLES = ['posts', 'media', 'tags', 'tag_parents', 'tag_aliases',
     for (const d of dirs) {
       try {
         fs.rmSync(d, { recursive: true, force: true });
-      } catch (e) {
+      } catch (_e) {
         /* best-effort cleanup */
       }
     }

@@ -24,11 +24,11 @@ const { handleSaveDragged } = require('../native-host/bridge.cts');
 const png = Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex');
 let sentHeaders: any = null;
 
-let pass = 0,
+let _pass = 0,
   fail = 0;
 const ok = (c, m) => {
   if (c) {
-    pass++;
+    _pass++;
     console.log('PASS', m);
   } else {
     fail++;

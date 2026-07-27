@@ -8,30 +8,27 @@
 // one wave at a time; the ones imported below are converted, the rest are still
 // read via that bridge at call time.
 import JSZip from 'jszip';
-import { treeLeaves, evalNode, hostOf, userKey, textHaystackOf, facetViewOf, facetSetOp, facetSetNeg, facetDefaultOp, removeCondsMatching as removeCondsMatchingIn } from './query.ts';
+import { treeLeaves, evalNode, hostOf, userKey, facetViewOf, facetSetOp, facetSetNeg, facetDefaultOp, removeCondsMatching as removeCondsMatchingIn } from './query.ts';
 import { makeListing, bindNamedPosters } from './listing.ts';
 import { newShuffleSeed } from './shuffle.ts';
-import { formatCount, formatShortDate, compactDate, formatDate } from './format.ts';
-import { sync as syncPostsData } from './posts-data.ts';
+import { formatCount, formatShortDate } from './format.ts';
 import { makeUndoController } from './undo-builder.ts';
 import { makeUsers } from './users.ts';
 import { notify } from './ui.ts';
 import { makeQfPop } from './qf-pop-builder.ts';
 import { makeFacets } from './facets.ts';
 import { makeCooc } from './cooc.ts';
-import { mediaFilesOf, isScreenshot, artworkFile, densityImage, postIdKey, groupFilesOf, stampPost, percentileFn, makeGroupRecords, makeCardModel, makeGallery, loadUngrouped, loadManualGroups } from './records.ts';
-import { makeTags, bindTagKindOf, bindPosterFilterVocab, getTagTypes, getTagLabels, getPosterTags, setPosterTags, load as loadTags } from './tags.ts';
+import { mediaFilesOf, densityImage, percentileFn, makeGallery, loadUngrouped, loadManualGroups } from './records.ts';
+import { makeTags, bindTagKindOf, bindPosterFilterVocab, getTagTypes, getTagLabels, getPosterTags, load as loadTags } from './tags.ts';
 import { makeTabLabels } from './tab-state.ts';
-import { getBackup, onBackupStart, onBackupDone } from './backup.ts';
-import { listPostsDelta, importComplete, importPosts } from './posts.ts';
+import { importComplete, importPosts } from './posts.ts';
 import { compile as searchCompile } from './search.ts';
 import { hologramI18n } from './i18n.ts';
 import * as folders from './folders.ts';
 import { open as lightboxOpen } from './lightbox.ts';
-import * as selection from './selection.ts';
 import { shellReady } from './shell-ready.ts';
-import { hologramPostGridSource, hologramPosterGridSource } from './grid.ts';
-import { qcGlyph, makePostQueryBuilder, makePosterQueryBuilder, POST_FACET_OPTS, POSTER_FACET_OPTS } from './query-builder.ts';
+import { hologramPostGridSource } from './grid.ts';
+import { makePostQueryBuilder, makePosterQueryBuilder, POST_FACET_OPTS, POSTER_FACET_OPTS } from './query-builder.ts';
 import { makeKindMenu } from './kind-menu-builder.ts';
 import { makeSearchBox } from './search-box-builder.ts';
 import { makePostGridBuilder, bindLoadPosts, bindConfirmClearAll, bindGetSkipDeleteConfirm, bindSetSkipDeleteConfirm } from './post-grid-builder.ts';
@@ -235,7 +232,7 @@ export function endFilterEditSession(): void {
   // --- i18n ---
   // Messages live in i18n.js (loaded before this script via index.html).
   // Manifest-level strings come from _locales/*/messages.json via Chrome.
-  const { lang, getMessage } = await hologramI18n;
+  const { getMessage } = await hologramI18n;
   // The shell is React-owned now (AppShell.tsx): its DOM (#postGrid / #posterGrid /
   // #emptyState / #importZipInput / #searchBox / #sortSelect …) is rendered on mount,
   // not present as static index.html markup. Wait for that mount before any of the
@@ -250,7 +247,7 @@ export function endFilterEditSession(): void {
   // margin). Shared by the cursor-placed context menus (query-builder / folder /
   // card / 種別) so the clamp formula stays in one place instead of drifting between
   // copies. Anchored flyouts (cs/qf/tab) keep their own placement strategy.
-  function clampIntoView(el: HTMLElement) {
+  function _clampIntoView(el: HTMLElement) {
     const r = el.getBoundingClientRect();
     if (r.right > innerWidth - 8) el.style.left = Math.max(8, innerWidth - r.width - 8) + 'px';
     if (r.bottom > innerHeight - 8) el.style.top = Math.max(8, innerHeight - r.height - 8) + 'px';
@@ -262,7 +259,7 @@ export function endFilterEditSession(): void {
   // element subtype so .value/.options/.min/.disabled type-check. closestOf mirrors
   // folders.js: casts an event target to the nearest matching element (or null). ---
   const byId = (id: string) => document.getElementById(id) as HTMLElement;
-  const inputById = (id: string) => document.getElementById(id) as HTMLInputElement;
+  const _inputById = (id: string) => document.getElementById(id) as HTMLInputElement;
   const selectById = (id: string) => document.getElementById(id) as HTMLSelectElement;
   const closestOf = (e: Event, sel: string) => {
     const t = e.target as HTMLElement | null;
@@ -406,7 +403,7 @@ export function endFilterEditSession(): void {
   // tagKindOf/posterTagsOf/posterFilterVocab as direct refs.
   // charCandidatesFor/relatedTagCandidates are consts from the cooc
   // destructure below, so they enter as deferred arrows.
-  const { tagKindOf, kindLabel, groupedTagVocab, inspectorTagPickerData, posterTagsOf, posterFilterVocab } = makeTags({
+  const { tagKindOf, kindLabel, inspectorTagPickerData, posterTagsOf, posterFilterVocab } = makeTags({
     tagTypes: getTagTypes,
     tagLabels: getTagLabels,
     posterTags: getPosterTags,
@@ -540,7 +537,7 @@ export function endFilterEditSession(): void {
     showDetail: (g) => showDetail(g), // showDetail (inspector) is declared far below — deferred
     refreshPosterTagFields: (key) => refreshPosterTagFields(key), // refreshPosterTagFields (posterGrid) is declared far below — deferred
   });
-  const { pushUndo, doUndo, doRedo } = undoCtl;
+  const { pushUndo } = undoCtl;
   handleShortcutUndoKey = undoCtl.handleShortcutUndoKey;
 
   // --- State ---
@@ -577,7 +574,7 @@ export function endFilterEditSession(): void {
   // share this constant). Must outlive the LAST staggered card or its
   // backwards-fill entrance gets cancelled mid-run: 15 (CSS min() cap) × 34ms
   // (--stagger) + 360ms (--dur-entrance) + buffer.
-  const GRID_ANIM_MS = 950;
+  const _GRID_ANIM_MS = 950;
   // Grouping state (manualGroups/ungrouped/stickyRecs, persisted via main:
   // manual-groups.json / ungrouped.json) moved to post-grid-builder.ts along with
   // viewGroups — see postGrid below.
@@ -693,7 +690,7 @@ export function endFilterEditSession(): void {
   function removeFilter(index: number) {
     postQB.removeFilter(index);
   }
-  function removeNode(node: HologramQueryLeaf) {
+  function _removeNode(node: HologramQueryLeaf) {
     postQB.removeNode(node);
   }
   function removeCondsMatching(pred: (c: HologramQueryLeaf) => boolean) {
@@ -843,7 +840,7 @@ export function endFilterEditSession(): void {
     jumpToPoster: (post) => jumpToPoster(post),
     addImageTab: (g) => imageTabCtl.addImageTab(g),
   });
-  const { loadPosts, renderPosts, markPostsMutated, reconcileFolders, keepCurrentVisible, showFoldMenu, showCardMenu, requestDeleteGroup } = postGrid;
+  const { loadPosts, renderPosts, markPostsMutated, keepCurrentVisible, showFoldMenu, showCardMenu } = postGrid;
   bindLoadPosts(postGrid.loadPosts);
   bindConfirmClearAll(postGrid.confirmClearAll);
   bindGetSkipDeleteConfirm(postGrid.getSkipDeleteConfirm);
@@ -996,7 +993,7 @@ export function endFilterEditSession(): void {
 
   // keepCurrentVisible/imgAspect/cardModel/hologramPostGridSource.configure/
   // renderPosts all moved to post-grid-builder.ts (postGrid above).
-  const prefersReducedMotion = () => !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+  const _prefersReducedMotion = () => !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
 
   // Text expand/collapse on click
   byId('postGrid').addEventListener('click', (e) => {
@@ -1354,8 +1351,7 @@ export function endFilterEditSession(): void {
     posterView: gridDensity.getPosterView,
     onPosterRendered: () => tabsCtl.syncPosterTitleAndPersist(),
   });
-  const { getPosterList, pfStore, posterFolderById, posterFolderHas, createPosterFolder, deletePosterFolder, togglePosterFolderMember, renderPosterFilterRows, renderPosters, openPosterPosts, jumpToPoster, refreshPosterTagFields, refreshPosterFolderFields, applyPosterTagChange, showPosterDetail, showPosterMenu } =
-    posterGrid;
+  const { getPosterList, pfStore, posterFolderById, renderPosterFilterRows, renderPosters, openPosterPosts, jumpToPoster, refreshPosterTagFields, showPosterDetail, showPosterMenu } = posterGrid;
   // --- Poster query builder: the SAME drag builder (createQueryBuilder), evaluated
   // against poster (user) objects instead of posts. Leaf types: platform / instance /
   // tag(作品/キャラ含む) / folder / date(範囲). The bar lives in

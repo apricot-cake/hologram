@@ -290,15 +290,7 @@ function createFolderStore({ idPrefix, persist, isLibrary }: { idPrefix: string;
 // store's own load()/persist() below, generalized). Currently used for the poster
 // folder store (viewer.js pfStore used to hand-assemble this: its own persist()
 // closure + a manual getPosterFolders/setAll block in boot — both now live here).
-function createPersistedFolderStore({
-  idPrefix,
-  get,
-  set,
-}: {
-  idPrefix: string;
-  get: () => Promise<{ folders?: unknown[] } | null>;
-  set: (data: { folders: HologramFolder[] }) => Promise<unknown>;
-}): HologramFolderStore & { load: () => Promise<void> } {
+function createPersistedFolderStore({ idPrefix, get, set }: { idPrefix: string; get: () => Promise<{ folders?: unknown[] } | null>; set: (data: { folders: HologramFolder[] }) => Promise<unknown> }): HologramFolderStore & { load: () => Promise<void> } {
   let loadPromise: Promise<void> | null = null;
   function doPersist() {
     loadPromise = null; // invalidate the load cache so a later load() re-reads disk

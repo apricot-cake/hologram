@@ -7,7 +7,7 @@
 //
 // Run: npm test   (= node scripts/run-tests.cts)
 
-const { spawnSync, execFileSync } = require('node:child_process');
+const { spawnSync } = require('node:child_process');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
@@ -100,7 +100,7 @@ for (const t of TESTS) {
 
 try {
   fs.rmSync(sandbox, { recursive: true, force: true });
-} catch (e) {
+} catch (_e) {
   /* best-effort cleanup */
 }
 
