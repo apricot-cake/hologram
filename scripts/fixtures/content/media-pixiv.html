@@ -1,0 +1,27 @@
+<!--
+  Hand-authored pixiv DOM shapes for media-identity.ts's pixiv branch: id
+  resolution has three fallbacks in priority order (pximg filename -> nearest
+  /artworks/ link -> location.pathname), and this fixture gives each its own
+  element so a broken priority order shows up as a wrong postId, not just a
+  null.
+-->
+<!DOCTYPE html>
+<html>
+<head></head>
+<body>
+
+  <!-- filename carries the id directly (grid thumbnail): no ancestor link needed -->
+  <img id="imgFilename" src="https://i.pximg.net/c/250x250/img-master/img/2020/01/01/1001_p0_master1200.jpg">
+
+  <!-- filename has no _p<N> id (a resized crop URL some pixiv surfaces use),
+       so extractIdentity must fall back to the nearest /artworks/ link -->
+  <li>
+    <a href="/artworks/1002"><img id="imgLinkFallback" src="https://i.pximg.net/c/250x250/custom-thumb.jpg"></a>
+  </li>
+
+  <!-- neither a matching filename nor an /artworks/ ancestor: on an artwork
+       page this falls back to location.pathname (id 2001, set by the test) -->
+  <img id="imgLocationFallback" src="https://i.pximg.net/c/48x48/user-profile-icons/some-icon.jpg">
+
+</body>
+</html>
