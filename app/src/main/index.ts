@@ -48,7 +48,7 @@ const installer = require(path.join(nativeHostDir, 'install.cts'));
 // build must require the pre-bundled copy (undici inlined) that
 // app/build-native-host-bridge.mjs produces at native-host/dist/media-download.js
 // — requiring the raw source there crashed on startup with "Cannot find module
-// 'undici'" (#397).
+// 'undici'".
 const mediaDownloadPath = app.isPackaged ? path.join(nativeHostDir, 'dist', 'media-download.js') : path.join(nativeHostDir, 'media-download.cts');
 const { pixivRefererFor, downloadAvatar } = require(mediaDownloadPath);
 // Save-folder resolution + clear-all gating. Shared with the native host (which

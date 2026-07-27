@@ -10,7 +10,7 @@
 //   - media-download.cts: required directly by the PACKAGED Electron main
 //     process (app/src/main/index.ts). electron-builder copies native-host/ as
 //     a raw extraResource — no node_modules — so a require() of the raw source
-//     crashed on startup with "Cannot find module 'undici'" (#397). In dev, main
+//     crashed on startup with "Cannot find module 'undici'". In dev, main
 //     still requires the raw source (repo-root node_modules resolves undici
 //     fine there and this keeps edit-and-restart working with no rebuild step);
 //     only the packaged path uses this bundle.

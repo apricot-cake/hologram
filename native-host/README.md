@@ -46,7 +46,7 @@ Electron main process, which requires it directly (avatar download on
 import-posts) but — unlike dev — has no node_modules next to it (electron-builder
 copies `native-host/` as a raw `extraResource`). A raw-source require there
 crashed on startup the first time this module gained an npm dependency
-(`undici`, #397); the bundle inlines it. Dev keeps requiring the raw source
+(`undici`); the bundle inlines it. Dev keeps requiring the raw source
 directly (see `app/src/main/index.ts`), so no rebuild is needed there.
 
 ## Config
