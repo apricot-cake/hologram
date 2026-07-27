@@ -79,7 +79,15 @@ function main() {
   const before = workaroundNeeded();
   const useWorkaround = before === null || before.needed;
 
-  run(useWorkaround ? 'npm install --ignore-scripts' : 'npm install', repoRoot);
+  // --legacy-peer-deps is a SECOND, unrelated workaround: electron-vite@5 declares
+  // `peer vite: ^5 || ^6 || ^7` while app/ builds on vite 8, so npm's resolver
+  // refuses the tree outright. There is no stable electron-vite that accepts vite 8
+  // (6.0.0 is beta-only, checked 2026-07-27), and `overrides` does not widen a peer
+  // range, so npm's documented escape hatch is the only lever. The violation is not
+  // new — a lockfile-less `npm install` has failed on it since vite 8 landed; the
+  // committed lockfile was carrying the tree, and it stops carrying it the moment
+  // anything makes npm re-resolve.
+  run(useWorkaround ? 'npm install --ignore-scripts --legacy-peer-deps' : 'npm install --legacy-peer-deps', repoRoot);
 
   // extension/ is a separate npm project with its own lockfile (deliberately —
   // it is a standalone WXT build), so a root install does not cover it. Fresh
