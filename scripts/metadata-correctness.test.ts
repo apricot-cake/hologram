@@ -1,0 +1,259 @@
+// metadata.ts のきわどい3ケースの正しさ（fetch は差し替え・ネットワーク不要）:
+//   - X: quoted_tweet のユーザーに screen_name が無い時、.../undefined/status/<id> という
+//     quotedUrl を組み立ててはいけない
+//   - Bluesky: embed.record はリスト・フィード・スターターパックも包む＝引用と言えるのは
+//     投稿（feed.post の uri）だけ
+//   - Misskey: rec.url は素の https://<instance>/notes/<id> で、保存元 URL のクエリ・
+//     ハッシュは落とす
+// あわせて、投稿者プロフィール（アバター／フォロワー／アカウント作成日）と
+// #119 St1 の動画・GIF の直リンク抽出も見る。
+
+import { afterEach, describe, expect, test, vi } from 'vitest';
+import { fetchBlueskyPost, fetchMisskeyNote, fetchPixivIllust, fetchPostMetadata, fetchXTweet } from '../extension/utils/metadata';
+
+function mockFetch(routes: [string, unknown][]) {
+  vi.stubGlobal('fetch', async (url: unknown) => {
+    const u = String(url);
+    for (const [frag, body] of routes) {
+      if (u.includes(frag)) return new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
+    }
+    return new Response('{}', { status: 404 });
+  });
+}
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
+const X_ID = { platform: 'x', id: '123', screenName: 'alice' };
+const X_URL = 'https://x.com/alice/status/123';
+const DID = 'did:plc:abc';
+const BSKY_ID = { platform: 'bluesky', handle: 'alice.bsky.social', rkey: 'rk' };
+const BSKY_URL = 'https://bsky.app/profile/alice.bsky.social/post/rk';
+
+describe('X: screen_name の無い引用', () => {
+  test('引用のフラグは立つが quotedUrl は組み立てない', async () => {
+    mockFetch([
+      [
+        'cdn.syndication.twimg.com',
+        {
+          text: 'hi',
+          mediaDetails: [],
+          user: { name: 'Alice', screen_name: 'alice', id_str: '1' },
+          quoted_tweet: { id_str: '999', user: { name: 'NoHandle' } }, // user はあるが screen_name が無い
+        },
+      ],
+    ]);
+
+    const r = await fetchXTweet(X_ID, X_URL);
+    expect(r.isQuote).toBe(true);
+    expect(r.quotedUrl).toBeNull();
+  });
+
+  test('screen_name があれば quotedUrl を組む', async () => {
+    mockFetch([['cdn.syndication.twimg.com', { text: 'hi', mediaDetails: [], user: { screen_name: 'alice', id_str: '1' }, quoted_tweet: { id_str: '999', user: { screen_name: 'bob' } } }]]);
+
+    expect((await fetchXTweet(X_ID, X_URL)).quotedUrl).toBe('https://x.com/bob/status/999');
+  });
+});
+
+describe('Bluesky: 引用と言えるのは投稿の埋め込みだけ', () => {
+  const post = (embedRecord: unknown) => ({
+    author: { handle: 'alice.bsky.social', did: DID, displayName: 'Alice' },
+    record: { text: 'hi', createdAt: '2026-01-01T00:00:00Z' },
+    embed: { $type: 'app.bsky.embed.record#view', record: embedRecord },
+  });
+
+  test('リストの埋め込みは引用ではない', async () => {
+    mockFetch([
+      ['resolveHandle', { did: DID }],
+      ['getPostThread', { thread: { post: post({ uri: `at://${DID}/app.bsky.graph.list/xyz` }) } }],
+    ]);
+
+    const r = await fetchBlueskyPost(BSKY_ID, BSKY_URL);
+    expect(r.isQuote).toBeFalsy();
+    expect(r.quotedUrl).toBeNull();
+  });
+
+  test('投稿の埋め込みは引用で、quotedUrl も組む', async () => {
+    mockFetch([
+      ['resolveHandle', { did: DID }],
+      ['getPostThread', { thread: { post: post({ uri: 'at://did:plc:zzz/app.bsky.feed.post/qpost', author: { handle: 'quoted.bsky.social' } }) } }],
+    ]);
+
+    const r = await fetchBlueskyPost(BSKY_ID, BSKY_URL);
+    expect(r.isQuote).toBe(true);
+    expect(r.quotedUrl).toBe('https://bsky.app/profile/quoted.bsky.social/post/qpost');
+  });
+});
+
+test('Misskey: rec.url は素のパーマリンク（クエリ・ハッシュを落とす）', async () => {
+  mockFetch([['/api/notes/show', { text: 'hi', user: { username: 'alice' }, createdAt: '2026-01-01T00:00:00Z' }]]);
+
+  const r = await fetchMisskeyNote({ platform: 'misskey', host: 'misskey.io', noteId: 'abc123' }, 'https://misskey.io/notes/abc123?foo=bar#frag');
+  expect(r.url).toBe('https://misskey.io/notes/abc123');
+});
+
+describe('投稿者プロフィール（アバター・フォロワー・アカウント作成日）', () => {
+  // X: アバターは syndication の user 由来で _normal を _400x400 へ上げる。公開の
+  // フォロワー数もアカウント作成日も無いので、どちらも null のまま（黙って隠す）
+  test('X: アバターは _400x400 へ、フォロワーと作成日は null', async () => {
+    mockFetch([['cdn.syndication.twimg.com', { text: 'hi', mediaDetails: [], user: { name: 'Alice', screen_name: 'alice', id_str: '1', profile_image_url_https: 'https://pbs.twimg.com/profile_images/9/abc_normal.jpg' } }]]);
+
+    const r = await fetchXTweet(X_ID, X_URL);
+    expect(r.avatar).toBe('https://pbs.twimg.com/profile_images/9/abc_400x400.jpg');
+    expect(r.followers).toBeNull();
+    expect(r.authorCreatedAt).toBeNull();
+  });
+
+  test('Bluesky: getProfile がアバターを上書きし、フォロワーと作成日を運ぶ', async () => {
+    mockFetch([
+      ['resolveHandle', { did: DID }],
+      ['getPostThread', { thread: { post: { author: { handle: 'alice.bsky.social', did: DID, displayName: 'Alice', avatar: 'https://cdn.bsky/basic.jpg' }, record: { text: 'hi', createdAt: '2026-01-01T00:00:00Z' } } } }],
+      ['getProfile', { followersCount: 4242, createdAt: '2023-05-06T07:08:09.000Z', avatar: 'https://cdn.bsky/full.jpg' }],
+    ]);
+
+    const r = await fetchBlueskyPost(BSKY_ID, BSKY_URL);
+    expect(r).toMatchObject({ avatar: 'https://cdn.bsky/full.jpg', followers: 4242, authorCreatedAt: '2023-05-06T07:08:09.000Z' });
+  });
+
+  test('Bluesky: getProfile が落ちたら投稿側のアバターを保ち、残りは null', async () => {
+    mockFetch([
+      ['resolveHandle', { did: DID }],
+      ['getPostThread', { thread: { post: { author: { handle: 'alice.bsky.social', did: DID, avatar: 'https://cdn.bsky/basic.jpg' }, record: { text: 'hi', createdAt: '2026-01-01T00:00:00Z' } } } }],
+      // getProfile の経路を用意しない → 404
+    ]);
+
+    const r = await fetchBlueskyPost(BSKY_ID, BSKY_URL);
+    expect(r.avatar).toBe('https://cdn.bsky/basic.jpg');
+    expect(r.followers).toBeNull();
+  });
+
+  test('Misskey: users/show からアバター・フォロワー・作成日', async () => {
+    mockFetch([
+      ['/api/notes/show', { text: 'hi', user: { id: 'u1', username: 'alice', avatarUrl: 'https://mi/lite.png' }, createdAt: '2026-01-01T00:00:00Z' }],
+      ['/api/users/show', { followersCount: 99, createdAt: '2022-02-02T00:00:00.000Z', avatarUrl: 'https://mi/full.png' }],
+    ]);
+
+    const r = await fetchMisskeyNote({ platform: 'misskey', host: 'misskey.io', noteId: 'abc' }, 'https://misskey.io/notes/abc');
+    expect(r).toMatchObject({ avatar: 'https://mi/full.png', followers: 99, authorCreatedAt: '2022-02-02T00:00:00.000Z' });
+  });
+
+  test('Mastodon: status の account に全部そのまま載っている', async () => {
+    mockFetch([
+      [
+        '/api/v1/statuses/',
+        {
+          content: '<p>hi</p>',
+          created_at: '2026-01-01T00:00:00Z',
+          account: { id: '7', acct: 'alice', username: 'alice', display_name: 'Alice', avatar: 'https://m/av.png', followers_count: 1234, created_at: '2021-03-04T05:06:07.000Z' },
+        },
+      ],
+    ]);
+
+    const r = await fetchPostMetadata('https://mastodon.social/@alice/123');
+    expect(r).toMatchObject({ avatar: 'https://m/av.png', followers: 1234, authorCreatedAt: '2021-03-04T05:06:07.000Z' });
+  });
+
+  // pixiv: アバターは /ajax/user の imageBig。公開のフォロワー数も作成日も無い（X と同じ）
+  test('pixiv: アバターは imageBig、フォロワーと作成日は null', async () => {
+    mockFetch([
+      ['/ajax/illust/', { error: false, body: { illustTitle: 'T', userName: 'P', userId: '42', pageCount: 1, urls: { original: 'https://i.pximg/p0.jpg' }, tags: { tags: [] } } }],
+      ['/ajax/user/', { error: false, body: { userId: '42', name: 'P', image: 'https://i.pximg/small.jpg', imageBig: 'https://i.pximg/big.jpg' } }],
+    ]);
+
+    const r = await fetchPixivIllust({ platform: 'pixiv', id: '555' }, 'https://www.pixiv.net/artworks/555');
+    expect(r.avatar).toBe('https://i.pximg/big.jpg');
+    expect(r.followers).toBeNull();
+    expect(r.authorCreatedAt).toBeNull();
+  });
+});
+
+describe('#119 St1: 動画・GIF の直リンク抽出', () => {
+  // X: video は mp4 バリアントの最高ビットレートを選ぶ（mp4 でない HLS プレイリストは無視）。
+  // poster は写真と同じ静止画 URL（?name=orig を付ける）。
+  test('X: video は最高ビットレートの mp4＋?name=orig のポスター', async () => {
+    mockFetch([
+      [
+        'cdn.syndication.twimg.com',
+        {
+          text: 'hi',
+          user: { screen_name: 'alice', id_str: '1' },
+          mediaDetails: [
+            {
+              type: 'video',
+              media_url_https: 'https://pbs.twimg.com/tweet_video_thumb/abc.jpg',
+              video_info: {
+                variants: [
+                  { content_type: 'application/x-mpegURL', url: 'https://video.twimg.com/x.m3u8' },
+                  { content_type: 'video/mp4', bitrate: 832000, url: 'https://video.twimg.com/low.mp4' },
+                  { content_type: 'video/mp4', bitrate: 2176000, url: 'https://video.twimg.com/high.mp4' },
+                ],
+              },
+            },
+          ],
+        },
+      ],
+    ]);
+
+    const r = await fetchXTweet({ platform: 'x', id: '1', screenName: 'alice' }, 'https://x.com/alice/status/1');
+    expect(r.media).toHaveLength(1);
+    expect(r.media[0]).toMatchObject({ type: 'video', url: 'https://video.twimg.com/high.mp4', poster: 'https://pbs.twimg.com/tweet_video_thumb/abc.jpg?name=orig' });
+  });
+
+  test('X: animated_gif は type gif で、唯一の mp4 バリアントを使う', async () => {
+    mockFetch([
+      [
+        'cdn.syndication.twimg.com',
+        {
+          text: 'hi',
+          user: { screen_name: 'alice', id_str: '1' },
+          mediaDetails: [{ type: 'animated_gif', media_url_https: 'https://pbs.twimg.com/tweet_video_thumb/g.jpg', video_info: { variants: [{ content_type: 'video/mp4', url: 'https://video.twimg.com/g.mp4' }] } }],
+        },
+      ],
+    ]);
+
+    const r = await fetchXTweet({ platform: 'x', id: '2', screenName: 'alice' }, 'https://x.com/alice/status/2');
+    expect(r.media[0]).toMatchObject({ type: 'gif', url: 'https://video.twimg.com/g.mp4' });
+  });
+
+  test('Misskey: DriveFile の直 url と thumbnailUrl のポスター', async () => {
+    mockFetch([['/api/notes/show', { text: 'hi', user: { username: 'alice' }, createdAt: '2026-01-01T00:00:00Z', files: [{ type: 'video/mp4', url: 'https://mi/clip.mp4', thumbnailUrl: 'https://mi/clip-thumb.jpg', comment: null }] }]]);
+
+    const r = await fetchMisskeyNote({ platform: 'misskey', host: 'misskey.io', noteId: 'v1' }, 'https://misskey.io/notes/v1');
+    expect(r.media).toHaveLength(1);
+    expect(r.media[0]).toMatchObject({ type: 'video', url: 'https://mi/clip.mp4', poster: 'https://mi/clip-thumb.jpg' });
+  });
+
+  // Misskey の本物の image/gif は静止画の運び方（X/Mastodon の mp4 backed な "gif" とは違う）＝
+  // ダウンロード用の type は undefined のままにして、ネイティブホストに静止画として取らせる
+  // （MEDIA_MIME_EXT が image/gif を扱える）。動画の経路へ流してはいけない。
+  test('Misskey: 本物の image/gif は静止画の経路（type も poster も付かない）', async () => {
+    mockFetch([['/api/notes/show', { text: 'hi', user: { username: 'alice' }, createdAt: '2026-01-01T00:00:00Z', files: [{ type: 'image/gif', url: 'https://mi/anim.gif', thumbnailUrl: 'https://mi/anim-thumb.jpg', comment: null }] }]]);
+
+    const r = await fetchMisskeyNote({ platform: 'misskey', host: 'misskey.io', noteId: 'v2' }, 'https://misskey.io/notes/v2');
+    expect(r.mediaType).toBe('gif'); // ノート単位の表示ラベルは gif のまま
+    expect(r.media).toHaveLength(1);
+    expect(r.media[0].url).toBe('https://mi/anim.gif');
+    expect(r.media[0].type).toBeUndefined();
+    expect(r.media[0].poster).toBeUndefined();
+  });
+
+  test('Mastodon: gifv は mp4 のループ（type gif）で、poster は preview_url', async () => {
+    mockFetch([
+      [
+        '/api/v1/statuses/',
+        {
+          content: '<p>hi</p>',
+          created_at: '2026-01-01T00:00:00Z',
+          account: { acct: 'alice', username: 'alice' },
+          media_attachments: [{ type: 'gifv', url: 'https://m/loop.mp4', preview_url: 'https://m/loop-preview.jpg', description: null }],
+        },
+      ],
+    ]);
+
+    const r = await fetchPostMetadata('https://mastodon.social/@alice/456');
+    expect(r.media).toHaveLength(1);
+    expect(r.media[0]).toMatchObject({ type: 'gif', url: 'https://m/loop.mp4', poster: 'https://m/loop-preview.jpg' });
+  });
+});
