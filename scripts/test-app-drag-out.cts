@@ -26,6 +26,7 @@ const path = require('node:path');
 
 const appDir = path.join(__dirname, '..', 'app');
 const { electronPath: resolveElectron } = require('./lib-electron-path.cts');
+const { readEvalResult } = require('./lib-eval-result.cts');
 
 const electronPath = resolveElectron();
 
@@ -134,13 +135,7 @@ child.stdout.on('data', (d) => {
 
 child.on('close', () => {
   fs.rmSync(tmp, { recursive: true, force: true });
-  const m = /EVAL_RESULT "(.+?)"\s*$/m.exec(out);
-  let r = null;
-  try {
-    r = JSON.parse(JSON.parse('"' + (m ? m[1] : '') + '"'));
-  } catch {
-    /* fall through to the null report below */
-  }
+  const r = readEvalResult(out);
   if (!r) {
     console.log('DRAG_OUT_TEST_FAIL (no eval result)');
     process.exit(1);
