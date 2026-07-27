@@ -1,0 +1,45 @@
+name: CI
+
+# Stage 1 (#15): the pure-unit / typecheck / lint layer, which needs nothing but
+# Node and runs on any OS. The Electron-launch harness and Playwright e2e layers
+# land in a later stage alongside #14, on a Windows runner.
+#
+# push only, no `pull_request` trigger yet: branch protection (required for a PR
+# check to mean anything) needs GitHub Pro or a public repo, and this repo is
+# still private (see #15 for the branch-protection follow-up, gated on #75).
+on:
+  push
+
+# Default token to read-only; no job in this workflow needs to write anything.
+permissions:
+  contents: read
+
+# A superseded push cancels its predecessor's run instead of letting both finish
+# — same signal, half the minutes, which matters on the private-repo free tier.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: lint / typecheck / test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: package.json
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            extension/package-lock.json
+      # Not `npm ci`: two upstream problems (better-sqlite3, electron-vite/vite peer
+      # range) make a plain install fail without extra flags, and this repo's own
+      # entry point for installing already knows which flags are still needed and
+      # covers extension/'s separate lockfile too. See scripts/setup.cts.
+      - name: Install dependencies
+        run: npm run setup
+      - name: Lint, typecheck, test
+        run: npm run check

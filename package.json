@@ -6,6 +6,9 @@
   "workspaces": [
     "app"
   ],
+  "engines": {
+    "node": ">=22.18.0"
+  },
   "dependencies": {
     "undici": "^7.28.0"
   },
