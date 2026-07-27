@@ -3,16 +3,20 @@
   "private": true,
   "version": "0.0.0",
   "description": "dev tooling deps (e2e capture tests)",
-  "workspaces": ["app"],
+  "workspaces": [
+    "app"
+  ],
   "dependencies": {
     "undici": "^7.28.0"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.5",
     "@types/ws": "^8.18.1",
+    "@vitest/coverage-v8": "^4.1.10",
     "jsdom": "^29.1.1",
     "jszip": "3.10.1",
     "playwright": "^1.62.0",
+    "vitest": "^4.1.10",
     "ws": "^8.18.3"
   },
   "scripts": {
@@ -25,6 +29,7 @@
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
     "format": "biome format --write .",
-    "test": "node scripts/run-tests.cts"
+    "test": "node scripts/run-tests.cts",
+    "test:unit": "vitest run"
   }
 }

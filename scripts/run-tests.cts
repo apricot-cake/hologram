@@ -23,6 +23,9 @@ const path = require('node:path');
 //   - needs network: test-metadata, test-select-posts, test-watch-verify
 //     (capture-flow CLIs; see docs/testing.md)
 //   - needs Electron: test-app-*.cts → run-app-tests.cts globs them
+// MIGRATION IN PROGRESS (#4): entries disappear from this list as they become
+// scripts/*.test.ts under Vitest (`npm run test:unit`). This file goes away with
+// the last one.
 const TESTS = [
   'test-typecheck',
   'test-index',
@@ -32,20 +35,11 @@ const TESTS = [
   'test-db-query',
   'test-db-write',
   'test-post-record',
-  'test-imgsize',
-  'test-search-unit',
   'test-query-unit',
   'test-records-unit',
   'test-facets-unit',
-  'test-cooc-unit',
-  'test-tags-unit',
-  'test-users-unit',
   'test-tabstate-unit',
   'test-listing-unit',
-  'test-geometry-unit',
-  'test-panelwidth-unit',
-  'test-format-unit',
-  'test-undo-unit',
   'test-migrate-unit',
   'test-save-folder-guard',
   'test-library-files',
@@ -54,14 +48,10 @@ const TESTS = [
   'test-native-host-install',
   'test-folders-merge',
   'test-folder-nesting',
-  'test-tag-types',
   'test-token-parity',
   'test-contrast-parity',
   'test-i18n-parity',
   'test-save-error-i18n',
-  'test-parse-url',
-  'test-pixiv',
-  'test-mastodon-url',
   'test-metadata-correctness',
   'test-metadata-origin',
   'test-content-fixtures',
