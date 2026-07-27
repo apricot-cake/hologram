@@ -83,6 +83,10 @@ export function makeInspector(deps: InspectorBuilderDeps) {
   // rather than in a `hidden` poke from here. Closing means asking the store; everything
   // that has to happen ALONGSIDE a visibility change is done by the subscriber below, so
   // the shell toggle and the panel's own × produce identical results.
+  //
+  // This is the STORED preference — "I don't want this panel", surviving restarts. Only
+  // two things may say that: the shell toggle, and the × of a DOCKED column, where there
+  // is no other way to get the column off the screen.
   function closeDetail() {
     panelSetOpen(false);
   }
@@ -95,6 +99,18 @@ export function makeInspector(deps: InspectorBuilderDeps) {
   function dismissDetail() {
     inspectorClose();
     deps.setInspectedKey(null);
+  }
+
+  // The panel's own × takes whichever meaning its CURRENT form gives it. Docked, × is the
+  // only way off the screen, so it stores the preference. As an overlay it sits beside Esc
+  // and the outside-click, which both already dismiss without storing anything — and the ×
+  // is the most obvious of the three, so having it alone disable the panel for good was
+  // exactly the trap dismissDetail's comment describes. Reported from use (2026-07-27):
+  // after one × on a narrow window, clicking cards stopped opening the inspector at all
+  // and only the tab-band toggle brought it back.
+  function closeOrDismissDetail() {
+    if (isWideLayout()) closeDetail();
+    else dismissDetail();
   }
   // Outside-click dismissal for the narrow overlay. Restored from the pre-#243 handler,
   // with one change: the width test asks layout-mode instead of carrying its own
@@ -134,7 +150,7 @@ export function makeInspector(deps: InspectorBuilderDeps) {
     if (ungroup) ungrouped.add(key);
     else ungrouped.delete(key);
     persistUngrouped(ungrouped);
-    closeDetail();
+    dismissDetail(); // the inspected group stops existing here; that is not 'panel off'
     deps.renderPosts(true);
     if (ungroup) deps.showToast(deps.t('ungroupDone'));
   }
@@ -144,7 +160,7 @@ export function makeInspector(deps: InspectorBuilderDeps) {
     deps.keepCurrentVisible();
     manualGroups.splice(idx, 1);
     persistManual();
-    closeDetail();
+    dismissDetail(); // as above — regrouping loses the subject, not the panel
     deps.renderPosts(true);
     deps.showToast(deps.t('ungroupDone'));
   }
@@ -333,7 +349,7 @@ export function makeInspector(deps: InspectorBuilderDeps) {
         sauce: deps.t('detailSauce'),
         ascii: deps.t('detailAscii'),
       },
-      onClose: closeDetail,
+      onClose: closeOrDismissDetail,
       onOpenExternal: p.url ? () => hologramIpc.openExternal(p.url) : null,
       onSauce: srcImageUrl ? () => hologramIpc.openExternal('https://saucenao.com/search.php?url=' + encodeURIComponent(srcImageUrl)) : null,
       onAscii: srcImageUrl ? () => hologramIpc.openExternal('https://ascii2d.net/search/url/' + encodeURIComponent(srcImageUrl)) : null,
@@ -389,6 +405,8 @@ export function makeInspector(deps: InspectorBuilderDeps) {
 
   return {
     closeDetail,
+    dismissDetail,
+    closeOrDismissDetail,
     showDetail,
     persistManual,
     handleEscDismissDetail,

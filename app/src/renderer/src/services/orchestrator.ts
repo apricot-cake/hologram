@@ -835,7 +835,10 @@ export function endFilterEditSession(): void {
       // fresh from the current history entry — no cached group to refresh (#144).
     },
     getInspectedKey: () => inspectedKey,
-    closeDetail: () => closeDetail(),
+    // The grid calls this when the INSPECTED post leaves the view, which is a
+    // loss of subject, not the user asking for the panel to go away — so it must
+    // not touch the stored preference (see inspector-builder's closeDetail).
+    dismissDetail: () => dismissDetail(),
     showDetail: (g, opts) => showDetail(g, opts),
     jumpToPoster: (post) => jumpToPoster(post),
     addImageTab: (g) => imageTabCtl.addImageTab(g),
@@ -972,7 +975,9 @@ export function endFilterEditSession(): void {
     t: getMessage,
     getPostById: postGrid.getPostById,
     showDetail: (g) => showDetail(g),
-    closeDetail: () => closeDetail(),
+    // Same reason as postGrid's: the image view hands the detail back when a tab
+    // stops owning it. Losing the subject is not "I don't want this panel".
+    dismissDetail: () => dismissDetail(),
     closeTab,
     getActiveTabId,
     setActiveTabId,
@@ -1137,7 +1142,10 @@ export function endFilterEditSession(): void {
     closeTab,
     imageTabShowing: () => imageTabCtl.isShowing(), // primitive read — live, not a snapshot
   });
-  const { closeDetail, showDetail, persistManual } = inspector;
+  // closeDetail (the one that STORES "panel off") is deliberately not pulled in here:
+  // outside the panel's own ×, nothing in the orchestrator should be able to disable
+  // the inspector as a side effect. The shell toggle owns that, via inspector-panel.
+  const { dismissDetail, closeOrDismissDetail, showDetail, persistManual } = inspector;
   handleEscDismissDetail = inspector.handleEscDismissDetail;
   handleOutsideClickDismissDetail = inspector.handleOutsideClickDismissDetail;
 
@@ -1237,7 +1245,7 @@ export function endFilterEditSession(): void {
     // store's set is value-guarded, and browseMode === mode by now so the
     // subscribe handler's guard skips.
     storeSet('browseMode', mode);
-    closeDetail(); // a stale post/poster detail shouldn't survive the switch
+    dismissDetail(); // a stale post/poster detail shouldn't survive the switch — but the panel itself should
   }
   // Switches the content area between the post grid and the poster grid (same tab).
   // A semantic "what am I browsing" switch — distinct from the card/tile/list density.
@@ -1338,7 +1346,10 @@ export function endFilterEditSession(): void {
     addFilter,
     setSearchBoxValue: (v) => setSearchBoxValue(v), // makeSearchBox() is wired far below — deferred
     setBrowseMode,
-    closeDetail,
+    // posterGrid uses this for the poster inspector's ×, so it follows the same
+    // rule as the post panel's: store the preference only where × is the docked
+    // column's one way off the screen.
+    closeDetail: closeOrDismissDetail,
     setInspectedKey,
     posterView: gridDensity.getPosterView,
     onPosterRendered: () => tabsCtl.syncPosterTitleAndPersist(),
