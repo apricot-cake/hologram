@@ -16,7 +16,7 @@
     "@biomejs/biome": "2.5.5",
     "@types/ws": "^8.18.1",
     "@vitest/coverage-v8": "^4.1.10",
-    "jsdom": "^29.1.1",
+    "jsdom": "^30.0.0",
     "jszip": "3.10.1",
     "playwright": "^1.62.0",
     "vitest": "^4.1.10",
