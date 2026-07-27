@@ -2,15 +2,21 @@
 
 ## 開発実行
 
-初回の依存導入（`app/` は npm ワークスペース＝リポジトリ直下からまとめて入る）:
+初回の依存導入（`app/` は npm ワークスペース、`extension/` は別プロジェクト＝両方まとめて入る）:
 
 ```
-npm install
+npm run setup
 ```
+
+**⚠️素の `npm install` は現在このリポジトリでは通らない**（C++ ビルドツールを入れている環境を除く）。`better-sqlite3` v13 は N-API 化でビルド済みバイナリを同梱し、読み込み側もそれを優先するのに、`binding.gyp` を同梱したまま install スクリプトを宣言していない。npm はこの組み合わせを「node-gyp でコンパイルせよ」と解釈する既定を持つ（[npm docs](https://docs.npmjs.com/cli/v11/using-npm/scripts)）ため、**不要なコンパイルが走り、失敗すると install 全体が途中で止まる**（無関係なパッケージが入らないまま終わる）。
+
+`npm run setup` は `--ignore-scripts` で入れ、それが巻き添えで止める Electron 本体の取得だけを戻す。`npm rebuild electron` は成功と表示して**何もダウンロードしない**ので使わない。
+
+**これは上流 [WiseLibs/better-sqlite3#1503](https://github.com/WiseLibs/better-sqlite3/issues/1503) が直るまでの暫定措置。** setup は毎回、インストール済み `better-sqlite3` の `package.json` を読んで条件がまだ成立するか確かめ、解消していれば「回避策を外せる」と表示する。Dependabot（#395）の更新 PR で新バージョンが来たときも、同じ条件（`gypfile: false` か install スクリプトの有無）で判定する。**解消したら `scripts/setup.cts`・`package.json` の `setup`・本節をまとめて消すこと。**
 
 ## 拡張機能の開発・配布
 
-初回は `cd extension && npm install`。**ブラウザは日常の Chrome 1本、読み込む出力も本体ツリーの `extension/.output/chrome-mv3/` 1箇所**（2026-07-26 にこの形へ寄せた＝ホットリロードを普段使いのブラウザで効かせるのが狙い）。dev ビルドも production ビルドも同じフォルダへ書く＝`wxt.config.ts` の `outDirTemplate` で WXT 既定の `-dev` サフィックスを外してある。モードの切り替えはビルド＋リロード1回で済み、**拡張の削除→再追加は発生しない**（削除→再追加は `chrome.storage.local` の設定とショートカット割当を消す）。
+依存は `npm run setup` が `extension/` の分もまとめて入れる（`extension/` は独立した npm プロジェクト＝ルートの install では入らない）。**ブラウザは日常の Chrome 1本、読み込む出力も本体ツリーの `extension/.output/chrome-mv3/` 1箇所**（2026-07-26 にこの形へ寄せた＝ホットリロードを普段使いのブラウザで効かせるのが狙い）。dev ビルドも production ビルドも同じフォルダへ書く＝`wxt.config.ts` の `outDirTemplate` で WXT 既定の `-dev` サフィックスを外してある。モードの切り替えはビルド＋リロード1回で済み、**拡張の削除→再追加は発生しない**（削除→再追加は `chrome.storage.local` の設定とショートカット割当を消す）。
 
 | 状態 | 作るコマンド | 入るとき / 出るとき |
 | --- | --- | --- |
