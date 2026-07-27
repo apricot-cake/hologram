@@ -84,7 +84,15 @@ function main() {
   // extension/ is a separate npm project with its own lockfile (deliberately —
   // it is a standalone WXT build), so a root install does not cover it. Fresh
   // worktrees need this or the extension build and its type check both fail.
-  run('npm install --ignore-scripts', path.join(repoRoot, 'extension'));
+  const extDir = path.join(repoRoot, 'extension');
+  run('npm install --ignore-scripts', extDir);
+
+  // The other thing --ignore-scripts skips: WXT's own postinstall, which writes
+  // extension/.wxt/tsconfig.json. extension/tsconfig.json extends that file, so
+  // without it BOTH the extension type check and every Vitest suite that imports
+  // extension code fail — the latter with "Tsconfig not found", because Vite reads
+  // the nearest tsconfig when transforming a file.
+  run('npx wxt prepare', extDir);
 
   // Put back the one thing --ignore-scripts broke. Skipped when scripts ran
   // normally, since Electron will have downloaded itself.

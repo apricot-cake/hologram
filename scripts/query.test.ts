@@ -1,0 +1,646 @@
+// query.ts のロジック単体テスト。条件ツリーの評価（evalNode）・各葉の述語
+// （makePostPredOf / makePosterPredOf）・日付のローカル日境界（localDayRange）・
+// 移行用 facetTreeFrom・木の変異ドメイン・ファセットのドメインを直接検証する。
+
+import { beforeEach, describe, expect, test } from 'vitest';
+import * as Q from '../app/src/renderer/src/services/query';
+import * as R from '../app/src/renderer/src/services/records';
+
+const leaf = (type: string, value?: unknown, extra?: object) => Object.assign({ kind: 'cond', type, value }, extra);
+const group = (op: string, children: any[], neg?: boolean) => ({ kind: 'group', op, neg: !!neg, children });
+const dLocal = (s: string) => new Date(s); // ローカル解釈の Date で投稿を作る
+
+const post = (over?: object) =>
+  Object.assign(
+    {
+      captureId: 'cap-1',
+      url: 'https://misskey.io/notes/abc',
+      platform: 'misskey',
+      userId: 'u123',
+      screenName: 'neko',
+      displayName: '猫の人',
+      text: 'こんにちは世界',
+      title: '',
+      tags: ['作画'],
+      hashtags: ['drawing'],
+      mediaType: 'image',
+      likes: 12,
+      isReply: false,
+      isQuote: false,
+      isThread: false,
+      date: '2026-05-10T12:34:00Z',
+    },
+    over || {},
+  );
+
+// 依存はスタブ注入（フォルダ所属／スマート照合）
+const folders = new Map([['col-1', new Set(['cap-in'])]]);
+let fuzzyCalls: string[];
+let predOf: (leaf: any) => (p: any) => boolean;
+
+beforeEach(() => {
+  fuzzyCalls = [];
+  predOf = Q.makePostPredOf({
+    isInFolder: (id: string, cap: string) => !!folders.get(id)?.has(cap),
+    // 簡易スマートマッチのスタブ: 'ﾈｺ' だけ 'ネコ' へ正規化する部分一致＝素の includes では
+    // 当たらないクエリで、経路が本当に注入側を通った証明に使う
+    fuzzyCompile: (q: string) => {
+      fuzzyCalls.push(q);
+      const nq = q === 'ﾈｺ' ? 'ネコ' : q;
+      return (s: string) => s.includes(nq);
+    },
+  });
+});
+
+describe('葉の述語', () => {
+  test.each([
+    ['kind: post は url あり', { type: 'kind', value: 'post' }, {}],
+    ['platform: 一致', { type: 'platform', value: 'misskey' }, {}],
+    ['user: userId 優先キー', { type: 'user', value: 'misskey:u123' }, {}],
+    ['instance: misskey/mastodon は host 照合', { type: 'instance', value: 'misskey.io' }, {}],
+    ['postType: 素の投稿', { type: 'postType', value: 'post' }, {}],
+    ['media: 一致', { type: 'media', value: 'image' }, {}],
+    ['tag: 含む', { type: 'tag', value: '作画' }, {}],
+    ['hashtag: 含む', { type: 'hashtag', value: 'drawing' }, {}],
+  ])('%s', (_name, cond, over) => {
+    expect(predOf(cond)(post(over))).toBe(true);
+  });
+
+  test('kind: image は url なし', () => {
+    expect(predOf({ type: 'kind', value: 'image' })(post({ url: '' }))).toBe(true);
+  });
+
+  test('platform: __none はプラットフォーム無し', () => {
+    expect(predOf({ type: 'platform', value: '__none' })(post({ platform: '' }))).toBe(true);
+  });
+
+  test('user: userId が無ければ @handle へフォールバック', () => {
+    expect(predOf({ type: 'user', value: 'x:@neko' })(post({ platform: 'x', userId: '' }))).toBe(true);
+  });
+
+  test('instance: 他のプラットフォームには当たらない', () => {
+    expect(predOf({ type: 'instance', value: 'x.com' })(post({ platform: 'x', url: 'https://x.com/a/1' }))).toBe(false);
+  });
+
+  test('postType: reply', () => {
+    expect(predOf({ type: 'postType', value: 'reply' })(post({ isReply: true }))).toBe(true);
+  });
+
+  test('tag: tags が欠けていても落ちずに不一致', () => {
+    expect(predOf({ type: 'tag', value: '作画' })(post({ tags: undefined }))).toBe(false);
+  });
+
+  test('folder: 注入した依存で判定する', () => {
+    expect(predOf({ type: 'folder', value: 'col-1' })(post({ captureId: 'cap-in' }))).toBe(true);
+    expect(predOf({ type: 'folder', value: 'col-1' })(post())).toBe(false);
+  });
+});
+
+// #42: 廃止した葉の型を読み込み時に直す
+describe('normalizeLeaf / normalizeTree', () => {
+  test('collection→folder、未知の型は素通し', () => {
+    expect(Q.normalizeLeaf({ kind: 'cond', type: 'collection', value: 'x' }).type).toBe('folder');
+    expect(Q.normalizeLeaf({ kind: 'cond', type: 'tag', value: 'x' }).type).toBe('tag');
+  });
+
+  test('normalizeTree は全ての深さで直す', () => {
+    const tree = group('and', [leaf('collection', 'a'), group('or', [leaf('collection', 'b'), leaf('tag', 't')])]);
+    Q.normalizeTree(tree);
+
+    const types: string[] = [];
+    (function walk(n: any) {
+      if (n.kind === 'group') n.children.forEach(walk);
+      else types.push(n.type);
+    })(tree);
+
+    expect(types.sort()).toEqual(['folder', 'folder', 'tag']);
+  });
+});
+
+// to は翌日0時「未満」＝単日レンジがその日全体を覆う
+describe('date: ローカル日境界', () => {
+  const may10 = { type: 'date', from: '2026-05-10', to: '2026-05-10' };
+
+  test('単日レンジがその日のローカル 23:59 を含む', () => {
+    expect(predOf(may10)({ date: dLocal('2026-05-10T23:59:00').toISOString() })).toBe(true);
+  });
+
+  test('翌日のローカル 00:00 は含まない', () => {
+    expect(predOf(may10)({ date: dLocal('2026-05-11T00:00:00').toISOString() })).toBe(false);
+  });
+
+  test('フィールドが欠けていれば不一致', () => {
+    expect(predOf(may10)({ date: '' })).toBe(false);
+  });
+
+  test('dateField=capturedAt を参照できる', () => {
+    expect(predOf({ type: 'date', dateField: 'capturedAt', from: '2026-05-10', to: '2026-05-10' })({ capturedAt: dLocal('2026-05-10T10:00:00').toISOString() })).toBe(true);
+  });
+});
+
+describe('engagement', () => {
+  test('既定は gte', () => {
+    expect(predOf({ type: 'engagement', engType: 'likes', min: 10 })(post())).toBe(true);
+  });
+
+  test('lte', () => {
+    expect(predOf({ type: 'engagement', engType: 'likes', op: 'lte', min: 20 })(post())).toBe(true);
+  });
+
+  test('min<=0 は素通し', () => {
+    expect(predOf({ type: 'engagement', engType: 'likes', min: 0 })(post({ likes: 0 }))).toBe(true);
+  });
+});
+
+// P2④: mode は撤去され、常に注入された compile を通る
+describe('text: 単一スマートマッチとメモ化', () => {
+  test('本文に当たり、注入した matcher が呼ばれる', () => {
+    expect(predOf({ type: 'text', value: 'こんにちは' })(post())).toBe(true);
+    expect(fuzzyCalls).toContain('こんにちは');
+  });
+
+  test('タグにも当たる', () => {
+    expect(predOf({ type: 'text', value: '作画' })(post({ text: '' }))).toBe(true);
+  });
+
+  test('不一致', () => {
+    expect(predOf({ type: 'text', value: '存在しない語' })(post())).toBe(false);
+  });
+
+  test('空値は素通し（compile も呼ばない）', () => {
+    expect(predOf({ type: 'text', value: '  ' })(post())).toBe(true);
+    expect(fuzzyCalls).toHaveLength(0);
+  });
+
+  test('description（Eagle 注釈）にも当たる', () => {
+    expect(predOf({ type: 'text', value: '注釈テキスト' })(post({ description: 'ここに注釈テキストがある' }))).toBe(true);
+  });
+
+  test('半角カナが matcher の正規化で当たる（注入経路の証明）', () => {
+    expect(predOf({ type: 'text', value: 'ﾈｺ' })(post({ text: 'ネコ' }))).toBe(true);
+    expect(fuzzyCalls).toEqual(['ﾈｺ']);
+  });
+
+  test('_compiled はノードにメモ化され、再 compile されない', () => {
+    const node: any = { type: 'text', value: 'ﾈｺ' };
+    predOf(node)(post({ text: 'ネコ' }));
+    const memo = node._compiled;
+
+    predOf(node)(post());
+
+    expect(node._compiled).toBe(memo);
+    expect(typeof memo).toBe('function');
+    expect(fuzzyCalls).toHaveLength(1);
+  });
+
+  test('_compiledKey が残っていても _compiled が欠けていれば再コンパイルする', () => {
+    const node: any = { type: 'text', value: 'ﾈｺ' };
+    predOf(node)(post({ text: 'ネコ' }));
+    node._compiled = null; // JSON 往復（保存/タブ復元）で関数だけ落ちた状態
+
+    expect(predOf(node)(post({ text: 'ネコ' }))).toBe(true);
+    expect(fuzzyCalls).toHaveLength(2);
+  });
+});
+
+// URL 形のクエリだけ・postKeyOf 正規化・quotedUrl・smart matcher は通さない
+describe('text: URL 照合', () => {
+  // 絶対に当たらない matcher スタブ＝URL ヒットが（本文照合でなく）OR 経路である証明
+  const predOfU = Q.makePostPredOf({ isInFolder: () => false, fuzzyCompile: () => () => false, postKeyOf: R.postKeyOf });
+  const xPost = R.stampPost(post({ url: 'https://x.com/foo/status/123', platform: 'x' }));
+  const misskeyPost = R.stampPost(post());
+
+  test('フル URL の貼り付けが当たる', () => {
+    expect(predOfU({ type: 'text', value: 'https://x.com/foo/status/123' })(xPost)).toBe(true);
+  });
+
+  test('twitter.com の貼り付けが x.com 保存分に postKey で当たる', () => {
+    expect(predOfU({ type: 'text', value: 'https://twitter.com/foo/status/123' })(xPost)).toBe(true);
+  });
+
+  test('ドメイン断片も URL に当たる', () => {
+    expect(predOfU({ type: 'text', value: 'misskey.io' })(misskeyPost)).toBe(true);
+  });
+
+  test('引用元 URL の貼り付けが、引用した投稿に当たる', () => {
+    const quoter = R.stampPost(post({ quotedUrl: 'https://x.com/bar/status/999' }));
+    expect(predOfU({ type: 'text', value: 'https://twitter.com/bar/status/999' })(quoter)).toBe(true);
+  });
+
+  test('URL 形でない語は URL 一致では当たらない', () => {
+    expect(predOfU({ type: 'text', value: 'notes' })(misskeyPost)).toBe(false);
+  });
+
+  test('URL の貼り付けは smart matcher を経由せず exact 経路で当たる', () => {
+    expect(predOfU({ type: 'text', value: 'https://misskey.io/notes/abc' })(misskeyPost)).toBe(true);
+  });
+});
+
+// post 側 makePostPredOf の対称。deps＝posterTagsOf（key→タグ配列）/ folderById（id→{items}）
+describe('makePosterPredOf', () => {
+  const posterTags = new Map([['x:@aaa', ['作画', 'Ave Mujica']]]);
+  const posterFolders = new Map([['fo-1', { items: ['x:@aaa', 'x:@bbb'] }]]);
+  const posterPredOf = Q.makePosterPredOf({
+    posterTagsOf: (key: string) => posterTags.get(key) || [],
+    folderById: (id: string) => posterFolders.get(id) || null,
+  });
+  const poster = (over?: object) => Object.assign({ key: 'x:@aaa', platform: 'x', instance: '', latest: '2026-05-10T12:00:00Z', lastCapture: '2026-06-01T00:00:00Z', authorCreatedAt: '2020-01-01T00:00:00Z' }, over || {});
+
+  test('platform の一致・不一致', () => {
+    expect(posterPredOf({ type: 'platform', value: 'x' })(poster())).toBe(true);
+    expect(posterPredOf({ type: 'platform', value: 'misskey' })(poster())).toBe(false);
+  });
+
+  test('instance の一致', () => {
+    expect(posterPredOf({ type: 'instance', value: 'misskey.io' })(poster({ instance: 'misskey.io' }))).toBe(true);
+  });
+
+  test('tag は注入した posterTagsOf 経由（タグ無しでも落ちない）', () => {
+    expect(posterPredOf({ type: 'tag', value: 'Ave Mujica' })(poster())).toBe(true);
+    expect(posterPredOf({ type: 'tag', value: '作画' })(poster({ key: 'x:@none' }))).toBe(false);
+  });
+
+  test('folder はメンバーだけ一致し、未知フォルダは空集合', () => {
+    expect(posterPredOf({ type: 'folder', value: 'fo-1' })(poster())).toBe(true);
+    expect(posterPredOf({ type: 'folder', value: 'fo-1' })(poster({ key: 'x:@zzz' }))).toBe(false);
+    expect(posterPredOf({ type: 'folder', value: 'fo-none' })(poster())).toBe(false);
+  });
+
+  // 既定フィールドは latest、to は翌日0時未満（post 側と同じ localDayRange 規約）
+  describe('date', () => {
+    const pMay10 = { type: 'date', from: '2026-05-10', to: '2026-05-10' };
+
+    test('既定の latest がその日のローカル 23:59 を含む', () => {
+      expect(posterPredOf(pMay10)(poster({ latest: dLocal('2026-05-10T23:59:00').toISOString() }))).toBe(true);
+    });
+
+    test('翌日のローカル 00:00 は含まない', () => {
+      expect(posterPredOf(pMay10)(poster({ latest: dLocal('2026-05-11T00:00:00').toISOString() }))).toBe(false);
+    });
+
+    test('dateField=lastCapture を参照できる', () => {
+      expect(posterPredOf({ type: 'date', dateField: 'lastCapture', from: '2026-06-01', to: '2026-06-01' })(poster({ lastCapture: dLocal('2026-06-01T10:00:00').toISOString() }))).toBe(true);
+    });
+
+    test('フィールドが欠けていれば不一致', () => {
+      expect(posterPredOf(pMay10)(poster({ latest: '' }))).toBe(false);
+    });
+  });
+
+  test('未知の型は素通し（true）', () => {
+    expect(posterPredOf({ type: 'workspace' })(poster())).toBe(true);
+  });
+});
+
+describe('evalNode: AND / OR / 否定 / 入れ子', () => {
+  const p1 = post();
+
+  test('AND は全一致で true、1つ外れれば false', () => {
+    expect(Q.evalNode(group('and', [leaf('platform', 'misskey'), leaf('media', 'image')]), p1, predOf)).toBe(true);
+    expect(Q.evalNode(group('and', [leaf('platform', 'misskey'), leaf('media', 'video')]), p1, predOf)).toBe(false);
+  });
+
+  test('OR はどれか一致で true', () => {
+    expect(Q.evalNode(group('or', [leaf('platform', 'x'), leaf('media', 'image')]), p1, predOf)).toBe(true);
+  });
+
+  test('葉の否定・グループの否定', () => {
+    expect(Q.evalNode(group('and', [leaf('platform', 'x', { neg: true })]), p1, predOf)).toBe(true);
+    expect(Q.evalNode(group('and', [leaf('platform', 'misskey')], true), p1, predOf)).toBe(false);
+  });
+
+  test('入れ子（misskey AND (x OR image)）', () => {
+    expect(Q.evalNode(group('and', [leaf('platform', 'misskey'), group('or', [leaf('platform', 'x'), leaf('media', 'image')])]), p1, predOf)).toBe(true);
+  });
+});
+
+describe('ツリーの基本機構', () => {
+  test('emptyTree は and ルートで子なし', () => {
+    expect(Q.emptyTree()).toMatchObject({ kind: 'group', op: 'and', children: [] });
+  });
+
+  test('opposite は and⇄or', () => {
+    expect(Q.opposite('and')).toBe('or');
+    expect(Q.opposite('or')).toBe('and');
+  });
+
+  test('treeLeaves は入れ子を平坦化し、null にも安全', () => {
+    const nested = group('and', [leaf('tag', 'a'), group('or', [leaf('tag', 'b'), leaf('tag', 'c')])]);
+    expect(Q.treeLeaves(nested).map((l: any) => l.value)).toEqual(['a', 'b', 'c']);
+    expect(Q.treeLeaves(null)).toEqual([]);
+  });
+});
+
+describe('facetTreeFrom（旧 faceted state からの移行）', () => {
+  const mig = Q.facetTreeFrom([{ type: 'platform', value: 'x' }, { type: 'platform', value: 'misskey' }, { type: 'tag', value: '作画' }, { type: 'engagement' }], { platform: 'or', tag: 'not' });
+
+  test('型ごとにグループ化する（platform=or の2葉）', () => {
+    expect(mig.children.some((c: any) => c.kind === 'group' && c.op === 'or' && !c.neg && c.children.length === 2)).toBe(true);
+  });
+
+  test('not は neg グループになる', () => {
+    expect(mig.children.some((c: any) => c.kind === 'group' && c.neg && c.children[0].type === 'tag')).toBe(true);
+  });
+
+  test('グループ化しない型（engagement）は直下の葉のまま', () => {
+    expect(mig.children.some((c: any) => c.kind === 'cond' && c.type === 'engagement')).toBe(true);
+  });
+});
+
+describe('純ヘルパ', () => {
+  test('hostOf', () => {
+    expect(Q.hostOf('https://misskey.io/notes/x')).toBe('misskey.io');
+    expect(Q.hostOf('not a url')).toBe('');
+  });
+
+  test('userKey は userId 優先で handle へフォールバック', () => {
+    expect(Q.userKey({ platform: 'x', userId: 'u1', screenName: 's' })).toBe('x:u1');
+    expect(Q.userKey({ platform: 'x', screenName: 's' })).toBe('x:@s');
+  });
+
+  test('textHaystackOf は null 安全に文字列化する', () => {
+    expect(Q.textHaystackOf({ text: null, tags: ['t'] }).every((s: unknown) => typeof s === 'string')).toBe(true);
+  });
+
+  test('localDayRange の to は翌日ローカル0時（排他）で、空は null', () => {
+    const ldr = Q.localDayRange('2026-05-10', '2026-05-10');
+    expect(ldr.to.getTime() - ldr.from.getTime()).toBe(24 * 3600 * 1000);
+
+    expect(Q.localDayRange('', '')).toMatchObject({ from: null, to: null });
+  });
+});
+
+// 第9スライス: createQueryBuilder から抽出した純ロジック
+describe('木の変異ドメイン', () => {
+  test('treeParentMap / nodeContains / detachNode', () => {
+    const a = leaf('tag', 'a');
+    const b = leaf('tag', 'b');
+    const inner = group('or', [a, b]);
+    const t = group('and', [inner]);
+    const pmap = Q.treeParentMap(t);
+
+    expect(pmap.get(a)).toBe(inner);
+    expect(pmap.get(inner)).toBe(t);
+    expect(Q.nodeContains(t, a)).toBe(true);
+    expect(Q.nodeContains(inner, inner)).toBe(true);
+    expect(Q.nodeContains(a, b)).toBe(false);
+
+    Q.detachNode(a, pmap);
+    expect(inner.children).toEqual([b]);
+
+    Q.detachNode(t, pmap); // 親なし（root）は no-op
+    expect(t.children).toHaveLength(1);
+  });
+
+  test('cleanupTree は空グループを除き、単独グループを折り畳む（neg は生存者へ合流）', () => {
+    const only = leaf('tag', 'x', { neg: false });
+    const t = group('and', [group('or', [], false), group('or', [only], true)]);
+
+    Q.cleanupTree(t);
+
+    expect(t.children).toEqual([only]);
+    expect(only.neg).toBe(true);
+  });
+
+  describe('hasLeafValue / removeCondsMatching', () => {
+    const t = group('and', [leaf('tag', 'a'), group('or', [leaf('tag', 'b'), leaf('platform', 'x')])]);
+
+    test('hasLeafValue は入れ子も探す', () => {
+      expect(Q.hasLeafValue(t, 'tag', 'b')).toBe(true);
+      expect(Q.hasLeafValue(t, 'tag', 'zzz')).toBe(false);
+    });
+
+    test('removeCondsMatching は全段から削り、残り1葉のグループは折り畳む', () => {
+      expect(Q.removeCondsMatching(t, (c: any) => c.type === 'tag')).toBe(true);
+      expect(Q.treeLeaves(t)).toHaveLength(1);
+      expect(t.children[0]).toMatchObject({ kind: 'cond', type: 'platform' });
+    });
+
+    test('一致が無ければ false', () => {
+      expect(Q.removeCondsMatching(t, (c: any) => c.type === 'nope')).toBe(false);
+    });
+  });
+
+  test('sameLeaf: date は型一致のみ・engagement は engType・他は value', () => {
+    expect(Q.sameLeaf(leaf('date', undefined, { from: '2026-01-01' }), { type: 'date' })).toBe(true);
+    expect(Q.sameLeaf(leaf('engagement', undefined, { engType: 'likes' }), { type: 'engagement', engType: 'likes' })).toBe(true);
+    expect(Q.sameLeaf(leaf('engagement', undefined, { engType: 'likes' }), { type: 'engagement', engType: 'reposts' })).toBe(false);
+    expect(Q.sameLeaf(leaf('tag', 'a'), { type: 'tag', value: 'a' })).toBe(true);
+    expect(Q.sameLeaf(leaf('tag', 'a'), { type: 'tag', value: 'b' })).toBe(false);
+  });
+
+  describe('buildShadow', () => {
+    const t = group('and', [leaf('tag', 'a', { label: 'ラベル' }), group('or', [leaf('tag', 'a'), leaf('date', undefined, { neg: true, from: '2026-01-01', to: '2026-01-02' })]), leaf('engagement', undefined, { engType: 'likes', min: 5 })]);
+    const sh = Q.buildShadow(t);
+
+    test('type+value で重複排除し、label は保つ', () => {
+      expect(sh.filter((f: any) => f.type === 'tag')).toHaveLength(1);
+      expect(sh.find((f: any) => f.type === 'tag').label).toBe('ラベル');
+    });
+
+    test('date / engagement は kind・neg を落として素通し', () => {
+      const dt = sh.find((f: any) => f.type === 'date');
+      expect(dt.from).toBe('2026-01-01');
+      expect(dt.kind).toBeUndefined();
+      expect(dt.neg).toBeUndefined();
+      expect(sh.some((f: any) => f.type === 'engagement' && f.min === 5)).toBe(true);
+    });
+  });
+
+  describe('dropNode', () => {
+    const a = leaf('tag', 'a');
+    const b = leaf('tag', 'b');
+    const c = leaf('tag', 'c');
+    const t = group('and', [a, b, c]);
+
+    test('pair はターゲット位置に逆 op のペアグループを作る', () => {
+      expect(Q.dropNode(t, c, a, 'pair')).toBe(true);
+      expect(t.children[0]).toMatchObject({ kind: 'group', op: 'or' });
+      expect(t.children[0].children).toEqual([a, c]);
+    });
+
+    test('inside はグループの末尾へ足す', () => {
+      const pairGrp = t.children[0];
+      expect(Q.dropNode(t, b, pairGrp, 'inside')).toBe(true);
+      expect(pairGrp.children[2]).toBe(b);
+    });
+
+    test('root へ移すと、2人残った元グループは折り畳まれず存続する', () => {
+      const pairGrp = t.children[0];
+      expect(Q.dropNode(t, b, t, 'root')).toBe(true);
+      expect(t.children.at(-1)).toBe(b);
+      expect(pairGrp.children).toHaveLength(2);
+    });
+
+    test('自分自身・自分の子孫・null は拒否する', () => {
+      const pairGrp = t.children[0];
+      expect(Q.dropNode(t, a, a, 'pair')).toBe(false);
+      expect(Q.dropNode(t, pairGrp, a, 'inside')).toBe(false);
+      expect(Q.dropNode(t, a, null, 'pair')).toBe(false);
+    });
+  });
+
+  describe('wrapAllInGroup', () => {
+    test('旧 root が op ごと1グループに包まれ、新しい root は and', () => {
+      const w = Q.wrapAllInGroup(group('or', [leaf('tag', 'a'), leaf('tag', 'b')]));
+
+      expect(w.op).toBe('and');
+      expect(w.children).toHaveLength(1);
+      expect(w.children[0]).toMatchObject({ kind: 'group', op: 'or' });
+      expect(w.children[0].children).toHaveLength(2);
+    });
+
+    test('単独条件を括ると折り畳みで実質 no-op', () => {
+      const ws = Q.wrapAllInGroup(group('and', [leaf('tag', 'a')]));
+      expect(ws.children).toHaveLength(1);
+      expect(ws.children[0].kind).toBe('cond');
+    });
+
+    test('空の木は null', () => {
+      expect(Q.wrapAllInGroup(Q.emptyTree())).toBeNull();
+    });
+  });
+
+  test('cloneTree は深くコピーし、_ で始まる一時フィールドを全階層で落とす', () => {
+    const dirty = { kind: 'group', op: 'and', neg: false, _compiled: () => 1, children: [{ kind: 'cond', type: 'text', value: 'q', _memo: { big: true } }] };
+    const clean = Q.cloneTree(dirty);
+
+    expect(clean).not.toBe(dirty);
+    expect(clean.children[0]).not.toBe(dirty.children[0]);
+    expect(clean.children[0].value).toBe('q');
+    expect(clean).not.toHaveProperty('_compiled');
+    expect(clean.children[0]).not.toHaveProperty('_memo');
+  });
+});
+
+// 改訂④: UI が作る形をファセット CNF に固定する純ロジック
+describe('ファセットのドメイン', () => {
+  const OPTS = { multiValueTypes: ['tag'], standaloneTypes: ['date', 'text'] };
+
+  test('facetDefaultOp は多値=and・他=or', () => {
+    expect(Q.facetDefaultOp('tag', OPTS)).toBe('and');
+    expect(Q.facetDefaultOp('platform', OPTS)).toBe('or');
+  });
+
+  describe('facetViewOf', () => {
+    test('正準形をクラスタ/単独/除外へ分解する', () => {
+      const t = group('and', [group('or', [leaf('platform', 'x'), leaf('platform', 'misskey')]), leaf('tag', 'a'), leaf('date', undefined, { from: '2026-01-01' }), leaf('tag', 'b', { neg: true })]);
+      const v = Q.facetViewOf(t, OPTS);
+
+      expect(v.clusters).toHaveLength(2);
+      expect(v.singles).toHaveLength(1);
+      expect(v.excl).toHaveLength(1);
+      expect(v.clusters[0]).toMatchObject({ type: 'platform', op: 'or' });
+    });
+
+    test('単一値型の裸2葉（恒偽 AND）は or に修復する', () => {
+      const v = Q.facetViewOf(group('and', [leaf('platform', 'x'), leaf('platform', 'misskey')]), OPTS);
+      expect(v.clusters[0].op).toBe('or');
+      expect(v.clusters[0].leaves).toHaveLength(2);
+    });
+
+    test('多値型の裸2葉は and のまま（root AND の意味を保つ）', () => {
+      expect(Q.facetViewOf(group('and', [leaf('tag', 'a'), leaf('tag', 'b')]), OPTS).clusters[0].op).toBe('and');
+    });
+
+    test.each([
+      ['OR ルート', group('or', [leaf('tag', 'a'), leaf('tag', 'b')])],
+      ['入れ子グループ', group('and', [group('or', [leaf('tag', 'a'), group('and', [leaf('tag', 'b'), leaf('tag', 'c')])])])],
+      ['neg グループ', group('and', [group('or', [leaf('tag', 'a'), leaf('tag', 'b')], true)])],
+      ['型混在グループ', group('and', [group('or', [leaf('tag', 'a'), leaf('platform', 'x')])])],
+      ['グループ＋同型の裸葉（クラスタ∧葉は別物）', group('and', [group('or', [leaf('tag', 'a'), leaf('tag', 'b')]), leaf('tag', 'c')])],
+      ['単独型(text)のグループ', group('and', [group('or', [leaf('text', 'a'), leaf('text', 'b')])])],
+    ])('ファセット形でないものは null: %s', (_name, tree) => {
+      expect(Q.facetViewOf(tree, OPTS)).toBeNull();
+    });
+  });
+
+  describe('canonicalizeFacet', () => {
+    test('裸2葉を実グループにし、クラスタ→単独→除外の順へ並べ替える', () => {
+      const t = group('and', [leaf('tag', 'x', { neg: true }), leaf('date', undefined, { from: '2026-01-01' }), leaf('tag', 'a'), leaf('tag', 'b')]);
+
+      expect(Q.canonicalizeFacet(t, OPTS)).toBe(true);
+      expect(t.children[0]).toMatchObject({ kind: 'group', op: 'and' });
+      expect(t.children[0].children).toHaveLength(2);
+      expect(t.children[1].type).toBe('date');
+      expect(t.children[2].neg).toBe(true);
+    });
+
+    test('ファセット形でなければ false を返し、木を壊さない', () => {
+      const t = group('or', [leaf('tag', 'a'), leaf('tag', 'b')]);
+      const before = JSON.stringify(t);
+
+      expect(Q.canonicalizeFacet(t, OPTS)).toBe(false);
+      expect(JSON.stringify(t)).toBe(before);
+    });
+  });
+
+  test('facetAdd: 裸葉→2値目でグループ化（既定 op）→以降は合流・単独型はトップへ', () => {
+    const t = group('and', []);
+
+    Q.facetAdd(t, leaf('tag', 'a'), OPTS);
+    expect(t.children).toHaveLength(1);
+    expect(t.children[0].kind).toBe('cond');
+
+    Q.facetAdd(t, leaf('tag', 'b'), OPTS);
+    expect(t.children[0]).toMatchObject({ kind: 'group', op: 'and' }); // tag の既定は and
+    expect(t.children[0].children).toHaveLength(2);
+
+    t.children[0].op = 'or'; // ユーザーが「どれか」へ切り替え
+    Q.facetAdd(t, leaf('tag', 'c'), OPTS);
+    expect(t.children[0].children).toHaveLength(3);
+    expect(t.children[0].op).toBe('or'); // 合流しても op は維持
+
+    Q.facetAdd(t, leaf('platform', 'x'), OPTS);
+    Q.facetAdd(t, leaf('platform', 'misskey'), OPTS);
+    expect(t.children[1]).toMatchObject({ kind: 'group', op: 'or' }); // platform の既定は or
+
+    Q.facetAdd(t, leaf('text', 'hey'), OPTS);
+    Q.facetAdd(t, leaf('text', 'yo'), OPTS);
+    expect(t.children.filter((c: any) => c.kind === 'cond' && c.type === 'text')).toHaveLength(2); // 単独型はグループ化しない
+  });
+
+  test('facetSetOp は該当グループの op を書き換え、無ければ false', () => {
+    const t = group('and', [group('and', [leaf('tag', 'a'), leaf('tag', 'b')])]);
+
+    expect(Q.facetSetOp(t, 'tag', 'or')).toBe(true);
+    expect(t.children[0].op).toBe('or');
+    expect(Q.facetSetOp(t, 'platform', 'or')).toBe(false);
+  });
+
+  describe('facetSetNeg（除くへ移動⇄クラスタへ復帰）', () => {
+    test('移動・復帰で op を維持し、1値になったクラスタは折り畳む', () => {
+      const a = leaf('tag', 'a');
+      const b = leaf('tag', 'b');
+      const c = leaf('tag', 'c');
+      const t = group('and', [group('or', [a, b, c])]);
+
+      expect(Q.facetSetNeg(t, c, true, OPTS)).toBe(true);
+      expect(c.neg).toBe(true);
+      expect(t.children.at(-1)).toBe(c);
+      expect(t.children[0].children).toHaveLength(2);
+
+      expect(Q.facetSetNeg(t, c, false, OPTS)).toBe(true);
+      expect(c.neg).toBe(false);
+      expect(t.children[0].children).toHaveLength(3);
+      expect(t.children[0].op).toBe('or');
+
+      Q.facetSetNeg(t, b, true, OPTS);
+      Q.facetSetNeg(t, a, true, OPTS);
+      expect(t.children[0]).toBe(c);
+
+      expect(Q.facetSetNeg(t, a, true, OPTS)).toBe(false); // neg 不変
+    });
+
+    test('戻し先に同値の陽性があれば、冗長な葉は消える', () => {
+      const d1 = leaf('tag', 'd');
+      const d2 = leaf('tag', 'd', { neg: true });
+      const t = group('and', [d1, d2]);
+
+      Q.facetSetNeg(t, d2, false, OPTS);
+
+      expect(Q.treeLeaves(t)).toHaveLength(1);
+      expect(t.children[0]).toBe(d1);
+    });
+  });
+});

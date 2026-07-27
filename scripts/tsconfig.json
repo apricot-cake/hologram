@@ -1,17 +1,15 @@
 {
   // TypeScript stage 2/3 (BACKLOG 採用#1「残り②」棚卸し 2026-07-09): the
-  // build-less dev-tooling / test-harness layer (pure-unit suites, app-harness
-  // Electron smoke tests, capture/verify CLIs) — the one runtime the earlier
-  // TS-scope declaration (renderer/main/native-host/extension) never named.
+  // build-less dev-tooling layer (app-harness Electron smoke tests,
+  // capture/verify CLIs) — the one runtime the earlier TS-scope declaration
+  // (renderer/main/native-host/extension) never named.
   //
   // A SIXTH standalone Node runtime, same recipe as native-host/tsconfig.json:
   // plain `node scripts/foo.cts` (no bundler, no build step), CommonJS
   // (require/module.exports), Node's native type-stripping erases the
   // annotations at runtime. .cts (not .mts) because these already are, and
   // stay, CommonJS — repo root package.json has no "type": "module", and
-  // several of these require() each other and app/renderer/*.ts by relative
-  // path (test-query-unit.cts's require('./strip-ts.cts'), the *-unit.cts
-  // suites' require(path.join(__dirname, '..', 'app', 'renderer', 'X.ts'))).
+  // several of these require() each other and app/src/**/*.ts by relative path.
   //
   // noImplicitAny stays OFF (same rationale as main/renderer/native-host):
   // plain JS-shaped code where internal lambda params would each need
@@ -46,90 +44,19 @@
     "typeRoots": ["../node_modules/@types", "../app/node_modules/@types"],
     "types": ["node"]
   },
+  // Every .cts under scripts/ — a new CLI or app harness is covered the moment it
+  // lands, the same way the Vitest suites are picked up by an include glob rather
+  // than a hand-written list (#4).
+  //
   // make-icons and inject-dummy are the two ELECTRON-entry scripts; they are .cjs
   // (not .cts) so Electron's require('electron') injection works — see their headers.
   // Being plain JS with no type annotations, they lose no coverage by sitting outside tsc.
-  "files": [
-    "audit-stale-branches.cts",
-    "backfill-metadata.cts",
-    "cdp-verify.cts",
-    "e2e-capture-test.cts",
-    "e2e-extension-offline.cts",
-    "e2e-overlay-flicker.cts",
-    "e2e-overlay-visual.cts",
-    "lib-electron-path.cts",
-    "lib-extension-e2e.cts",
-    "lib-native-host-e2e.cts",
-    "lib-overlay-e2e.cts",
-    "gen-dummy-library.cts",
-    "run-app-tests.cts",
-    "run-tests.cts",
-    "self-test.cts",
-    "setup.cts",
-    "strip-ts.cts",
-    "test-app-backup.cts",
-    "test-app-cardfoot.cts",
-    "test-app-facetcounts.cts",
-    "test-app-folders.cts",
-    "test-app-hardening.cts",
-    "test-app-hashtags.cts",
-    "test-app-import-dedup.cts",
-    "test-app-instances.cts",
-    "test-app-ipc.cts",
-    "test-app-postfilter.cts",
-    "test-app-recovery.cts",
-    "test-app-render.cts",
-    "test-app-search.cts",
-    "test-app-tabs.cts",
-    "test-app-tagtypes.cts",
-    "test-app-textleaf.cts",
-    "test-app-textleaf-stable.cts",
-    "test-app-users.cts",
-    "test-app-watch.cts",
-    "test-archive-zipbomb.cts",
-    "test-archive-zipslip.cts",
-    "test-avatar-fill.cts",
-    "test-backfill-metadata.cts",
-    "test-backup-guard.cts",
-    "test-overlay-unit.cts",
-    "test-bridge.cts",
-    "test-bridge-query.cts",
-    "test-bridge-ssrf.cts",
-    "test-config-recovery.cts",
-    "test-content-fixtures.cts",
-    "test-contrast-parity.cts",
-    "test-cooc-unit.cts",
-    "test-db-schema.cts",
-    "test-db-unit.cts",
-    "test-drag.cts",
-    "test-facets-unit.cts",
-    "test-folders-merge.cts",
-    "test-format-unit.cts",
-    "test-geometry-unit.cts",
-    "test-i18n-parity.cts",
-    "test-imgsize.cts",
-    "test-index.cts",
-    "test-listing-unit.cts",
-    "test-mastodon-url.cts",
-    "test-media.cts",
-    "test-metadata.cts",
-    "test-metadata-correctness.cts",
-    "test-metadata-origin.cts",
-    "test-migrate-unit.cts",
-    "test-parse-url.cts",
-    "test-pixiv.cts",
-    "test-post-record.cts",
-    "test-query-unit.cts",
-    "test-records-unit.cts",
-    "test-search-unit.cts",
-    "test-select-posts.cts",
-    "test-tabstate-unit.cts",
-    "test-tag-types.cts",
-    "test-tags-unit.cts",
-    "test-token-parity.cts",
-    "test-typecheck.cts",
-    "test-undo-unit.cts",
-    "test-users-unit.cts",
-    "test-watch-verify.cts"
-  ]
+  // The Vitest suites (*.test.ts) sit outside on purpose — see typecheck.cts's header.
+  "include": ["**/*.cts"],
+  // These six were never in the hand-written list this glob replaced, so they
+  // have never been type-checked; switching to a glob surfaced that. Their errors
+  // are all the same shape (a CDP evaluate() result inferred as `never`), which is
+  // a fix of its own — excluding them keeps that separable while every OTHER .cts,
+  // including any added from here on, is covered by default.
+  "exclude": ["bench-baseline.cts", "test-app-bulk-tag.cts", "test-app-click-model.cts", "test-app-drag-out.cts", "test-app-folder-dnd.cts", "test-app-inspector-tags.cts"]
 }

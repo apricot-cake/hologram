@@ -5,22 +5,16 @@ description: 隔離 worktree で Hologram のテスト・型検査を回し、�
 
 # test-in-worktree — 隔離ツリーで検証を回す
 
-`EnterWorktree` / `git worktree add` で作った fresh worktree には **node_modules が無い**（`worktree.baseRef: fresh`＝origin/main のチェックアウトのみ）。Hologram は node_modules を**3層**に持つ: リポジトリ root ／ `app/` ／ `extension/`（typecheck は各層の `node_modules/typescript/bin/tsc` を使う＝`scripts/test-typecheck.cts`）。**まず「install 無しで済むか」を判定する**のが速い。
+`EnterWorktree` / `git worktree add` で作った fresh worktree には **node_modules が無い**（`worktree.baseRef: fresh`＝origin/main のチェックアウトのみ）。Hologram は node_modules を**2層**に持つ: リポジトリ root（`app/` は npm ワークスペースなので root の install に相乗り）／ `extension/`。typecheck は各層の `node_modules/typescript/bin/tsc` を使う（`scripts/typecheck.cts`）。
 
-## install 無しで走るもの
+## install（この順に1回ずつ）
 
-- **pure-unit テストは node_modules 無しで直接走る**: `node --experimental-strip-types scripts/test-records-unit.cts`（renderer サービス系＝records / query / tabstate / listing 等。外部 dep を import せず `.ts` を dynamic import で読むだけ）。記録層だけの変更ならこれで完結する。
+`npm test` は Vitest＝root の devDependency なので、**install 無しで走るテストはもう無い**。
 
-## install が要るもの（この順に1回ずつ）
+1. `npm run setup` — root と `extension/` の依存・`wxt prepare`・Electron 本体の取得をまとめて面倒を見る（**素の `npm install` は better-sqlite3 の node-gyp で落ちる**＝理由と回避の寿命は `scripts/setup.cts` 冒頭が正本）
+2. `npm run build:ext` — `overlay.test.ts`／`bulk-capture.test.ts`／`capture-mode-select.test.ts` はビルド済みバンドル（`extension/.output/chrome-mv3`）を jsdom で評価するので、これが無いと ENOENT で落ちる
 
-全スイート `npm test`（`run-tests.cts`）は**先頭で `extension/build.mjs` を実行する**＝extension の tsc が要る。root だけでは足りない。
-
-1. root で `npm install`（biome・puppeteer 等）
-2. `extension/` で `npm install` — **これが無いと `npm test` は1行目の extension build が `Cannot find module .../typescript/bin/tsc` で落ちる**（コード起因ではない）
-3. `app/` で `npm install --ignore-scripts` — **素の `npm install` は node-gyp（ネイティブモジュールのビルド）で落ちる**（2026-07-24 実測）。`--ignore-scripts` なら通り、`npm test` 45スイートが全緑になる
-4. `app/` で `node node_modules/electron/install.js` — **npm install は electron バイナリを落とさない**。`app/node_modules/electron/dist/electron.exe` の実在を確認してから起動系を回す
-
-4 まで済ませればアプリ起動ハーネス（`test-app-*.cts`）も worktree でそのまま緑になる。各自 `HOLOGRAM_CONFIG_DIR` の mkdtemp サンドボックスで実 Electron を起動するので、本体アプリにも実ライブラリにも触らない＝**実機 CDP(:9222) を奪わずに実経路を検証したい時の既定手段**（並行セッションが居る時は特に）。部分実行は `node scripts/run-app-tests.cts <suffix>`。
+2 まで済ませれば `npm test`（52スイート）・`npm run typecheck`・アプリ起動ハーネス（`test-app-*.cts`）がすべて worktree で緑になる。各自 `HOLOGRAM_CONFIG_DIR` の mkdtemp サンドボックスで実 Electron を起動するので、本体アプリにも実ライブラリにも触らない＝**実機 CDP(:9222) を奪わずに実経路を検証したい時の既定手段**（並行セッションが居る時は特に）。部分実行は `node scripts/run-app-tests.cts <suffix>`。
 
 ## 効かない手（罠）
 
