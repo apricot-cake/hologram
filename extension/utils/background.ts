@@ -1,24 +1,33 @@
 import { fetchPostMetadata } from './metadata';
 import { classifySaveFailure } from './native-error';
 
+// Allowed capture origins per platform (used to validate the sender tab).
+const PLATFORM_HOSTS = {
+  x: ['x.com', 'twitter.com'],
+  bluesky: ['bsky.app'],
+  pixiv: ['www.pixiv.net', 'pixiv.net'],
+  // misskey / mastodon: any https origin (instances are arbitrary hosts)
+};
+
+function getHostname(url) {
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return '';
+  }
+}
+
+function isAllowedSender(tabUrl, platformId) {
+  const hostname = getHostname(tabUrl);
+  if (!hostname) return false;
+  const hosts = PLATFORM_HOSTS[platformId];
+  if (hosts) return hosts.some((h) => hostname === h || hostname.endsWith(`.${h}`));
+  if (platformId === 'misskey' || platformId === 'mastodon') return /^https:/i.test(tabUrl || '');
+  return false;
+}
+
 export function startBackground(): void {
   const NATIVE_HOST = 'com.hologram.host';
-
-  // Allowed capture origins per platform (used to validate the sender tab).
-  const PLATFORM_HOSTS = {
-    x: ['x.com', 'twitter.com'],
-    bluesky: ['bsky.app'],
-    pixiv: ['www.pixiv.net', 'pixiv.net'],
-    // misskey / mastodon: any https origin (instances are arbitrary hosts)
-  };
-
-  function getHostname(url) {
-    try {
-      return new URL(url).hostname;
-    } catch {
-      return '';
-    }
-  }
 
   // --- Capture diagnostics ------------------------------------------------------
   // Fallback ring buffer for log entries that couldn't reach the native host's
@@ -38,15 +47,6 @@ export function startBackground(): void {
     const err = new Error(message) as StageError;
     err.stage = stage;
     return err;
-  }
-
-  function isAllowedSender(tabUrl, platformId) {
-    const hostname = getHostname(tabUrl);
-    if (!hostname) return false;
-    const hosts = PLATFORM_HOSTS[platformId];
-    if (hosts) return hosts.some((h) => hostname === h || hostname.endsWith(`.${h}`));
-    if (platformId === 'misskey' || platformId === 'mastodon') return /^https:/i.test(tabUrl || '');
-    return false;
   }
 
   async function activateOnTab(tab, auto = false) {
@@ -241,53 +241,6 @@ export function startBackground(): void {
     // merged with them (the app folds same-URL records into one card).
     const grouped = await bumpRecentSave(record.url);
     notify(tab.id, true, { metaOk, metaReason: meta.metaError || null, grouped });
-  }
-
-  // Build the sidecar record shared by both save paths. The click path adds image +
-  // media (the screenshot is the content; media[] carries the API originals the
-  // bridge downloads). The drag path leaves image/media to the bridge (the
-  // downloaded illustration becomes image, media stays []) and instead records
-  // which image of a multi-image post it was. Single source of truth so a new field
-  // can't drift between the two paths.
-  function buildRecord(meta, { captureId, capturedAt, postUrl, sendPlatform, extra }) {
-    return Object.assign(
-      {
-        captureId,
-        url: meta.url || postUrl || null,
-        // meta.platform is null only when the URL didn't parse; fall back to the
-        // sender-reported platform (already origin-validated) so the record stays
-        // visible in the viewer's platform filter rather than becoming platform:null.
-        platform: meta.platform || sendPlatform || null,
-        text: meta.text,
-        title: meta.title || null,
-        displayName: meta.displayName,
-        screenName: meta.screenName,
-        userId: meta.userId,
-        avatar: meta.avatar,
-        avatarReferer: meta.avatarReferer,
-        followers: meta.followers,
-        authorCreatedAt: meta.authorCreatedAt,
-        likes: meta.likes,
-        reposts: meta.reposts,
-        replies: meta.replies,
-        bookmarks: meta.bookmarks,
-        views: meta.views,
-        // No silent fallback to capture time: a fabricated "post date" pollutes the
-        // viewer's date sort/filter. The viewer handles null dates.
-        date: meta.date || null,
-        capturedAt,
-        updatedAt: capturedAt, // last modified in Hologram (bumped on tag edits etc.)
-        lang: meta.lang,
-        isReply: meta.isReply,
-        isQuote: meta.isQuote,
-        isThread: meta.isThread,
-        quotedUrl: meta.quotedUrl,
-        replyToId: meta.replyToId,
-        hashtags: meta.hashtags || [],
-        tags: meta.tags || [],
-      },
-      extra,
-    );
   }
 
   // Send a message to the native messaging host (which writes the sidecar + image
@@ -613,13 +566,6 @@ export function startBackground(): void {
     return !!(meta.displayName || meta.userId || meta.text || meta.date || (Array.isArray(meta.media) && meta.media.length));
   }
 
-  function generateCaptureId() {
-    const hex = Math.floor(Math.random() * 0xffff)
-      .toString(16)
-      .padStart(4, '0');
-    return `${Date.now()}-${hex}`;
-  }
-
   // --- Image-drag save (drag.js → here) ---
   // Same metadata as a post-click save, but no screenshot: the dragged image
   // itself becomes the record's primary image (the bridge downloads it). Produces
@@ -714,72 +660,131 @@ export function startBackground(): void {
     const grouped = await bumpRecentSave(record.url);
     return { ...ack, metaOk, metaReason: meta.metaError || null, grouped };
   }
-
-  // Choose which original to save for a dragged image, preferring the platform
-  // API's original (matched to the dragged image) so we store full resolution.
-  // Returns { url, referer, index } where index = the 0-based position of the
-  // chosen image within the post's media[] (-1 if we couldn't determine it).
-  function pickPrimaryImage(platform, imageUrls, meta) {
-    const media = (meta && meta.media) || [];
-    if (platform === 'pixiv') {
-      let pidx = -1;
-      for (const u of imageUrls) {
-        const m = u && u.match(/\/\d+_p(\d+)[._]/);
-        if (m) {
-          pidx = Number.parseInt(m[1], 10);
-          break;
-        }
-      }
-      const i = pidx >= 0 && pidx < media.length ? pidx : media.length === 1 ? 0 : -1;
-      // Only substitute the API original when the dragged page was actually
-      // matched — silently saving p0 for an unmatched drag asserted an image the
-      // user never dragged. Unmatched → keep the dragged URL (like X/Bluesky).
-      const pick = i >= 0 ? media[i] : null;
-      if (pick && pick.url) return { url: pick.url, referer: pick.referer || 'https://www.pixiv.net/', index: i };
-      return { url: imageUrls[0], referer: 'https://www.pixiv.net/', index: -1 };
-    }
-    const i = matchMediaIndex(platform, imageUrls, media);
-    if (i >= 0 && media[i] && media[i].url) return { url: media[i].url, referer: media[i].referer, index: i };
-    return { url: hiRes(platform, imageUrls[0]), referer: undefined, index: media.length === 1 ? 0 : -1 };
-  }
-
-  function mediaKey(platform, url) {
-    if (!url) return null;
-    if (platform === 'x') return (url.match(/pbs\.twimg\.com\/media\/([^.?]+)/) || [])[1] || null;
-    if (platform === 'bluesky') return (url.match(/\/([a-z0-9]{50,})(?:@|\b)/i) || [])[1] || null;
-    if (platform === 'misskey' || platform === 'mastodon') {
-      // Misskey/Mastodon serve direct file URLs; a thumbnail and its original share
-      // the file id / hash (the URL basename, minus query and extension). Match on that.
-      const base = (url.split(/[?#]/)[0].match(/([^/]+)$/) || [])[1] || '';
-      return base.replace(/\.[a-z0-9]+$/i, '') || null;
-    }
-    return null;
-  }
-
-  // Index (0-based) of the post's media[] entry that the dragged image came from,
-  // matched by mediaKey. -1 if none matched (or the platform has no key scheme).
-  function matchMediaIndex(platform, imageUrls, media) {
-    const keys = imageUrls.map((u) => mediaKey(platform, u)).filter(Boolean);
-    if (!keys.length) return -1;
-    for (let i = 0; i < media.length; i++) {
-      const k = mediaKey(platform, media[i].url);
-      if (k && keys.includes(k)) return i;
-    }
-    return -1;
-  }
-
-  function hiRes(platform, url) {
-    if (!url) return url;
-    if (platform === 'x' && url.includes('pbs.twimg.com/media/')) {
-      try {
-        const u = new URL(url);
-        u.searchParams.set('name', 'orig');
-        return u.href;
-      } catch {
-        /* ignore */
-      }
-    }
-    if (platform === 'bluesky' && url.includes('cdn.bsky.app')) return url.replace(/@jpeg$/, '');
-    return url;
-  }
 }
+
+// Build the sidecar record shared by both save paths. The click path adds image +
+// media (the screenshot is the content; media[] carries the API originals the
+// bridge downloads). The drag path leaves image/media to the bridge (the
+// downloaded illustration becomes image, media stays []) and instead records
+// which image of a multi-image post it was. Single source of truth so a new field
+// can't drift between the two paths.
+function buildRecord(meta, { captureId, capturedAt, postUrl, sendPlatform, extra }) {
+  return Object.assign(
+    {
+      captureId,
+      url: meta.url || postUrl || null,
+      // meta.platform is null only when the URL didn't parse; fall back to the
+      // sender-reported platform (already origin-validated) so the record stays
+      // visible in the viewer's platform filter rather than becoming platform:null.
+      platform: meta.platform || sendPlatform || null,
+      text: meta.text,
+      title: meta.title || null,
+      displayName: meta.displayName,
+      screenName: meta.screenName,
+      userId: meta.userId,
+      avatar: meta.avatar,
+      avatarReferer: meta.avatarReferer,
+      followers: meta.followers,
+      authorCreatedAt: meta.authorCreatedAt,
+      likes: meta.likes,
+      reposts: meta.reposts,
+      replies: meta.replies,
+      bookmarks: meta.bookmarks,
+      views: meta.views,
+      // No silent fallback to capture time: a fabricated "post date" pollutes the
+      // viewer's date sort/filter. The viewer handles null dates.
+      date: meta.date || null,
+      capturedAt,
+      updatedAt: capturedAt, // last modified in Hologram (bumped on tag edits etc.)
+      lang: meta.lang,
+      isReply: meta.isReply,
+      isQuote: meta.isQuote,
+      isThread: meta.isThread,
+      quotedUrl: meta.quotedUrl,
+      replyToId: meta.replyToId,
+      hashtags: meta.hashtags || [],
+      tags: meta.tags || [],
+    },
+    extra,
+  );
+}
+
+function generateCaptureId() {
+  const hex = Math.floor(Math.random() * 0xffff)
+    .toString(16)
+    .padStart(4, '0');
+  return `${Date.now()}-${hex}`;
+}
+
+// Choose which original to save for a dragged image, preferring the platform
+// API's original (matched to the dragged image) so we store full resolution.
+// Returns { url, referer, index } where index = the 0-based position of the
+// chosen image within the post's media[] (-1 if we couldn't determine it).
+function pickPrimaryImage(platform, imageUrls, meta) {
+  const media = (meta && meta.media) || [];
+  if (platform === 'pixiv') {
+    let pidx = -1;
+    for (const u of imageUrls) {
+      const m = u && u.match(/\/\d+_p(\d+)[._]/);
+      if (m) {
+        pidx = Number.parseInt(m[1], 10);
+        break;
+      }
+    }
+    const i = pidx >= 0 && pidx < media.length ? pidx : media.length === 1 ? 0 : -1;
+    // Only substitute the API original when the dragged page was actually
+    // matched — silently saving p0 for an unmatched drag asserted an image the
+    // user never dragged. Unmatched → keep the dragged URL (like X/Bluesky).
+    const pick = i >= 0 ? media[i] : null;
+    if (pick && pick.url) return { url: pick.url, referer: pick.referer || 'https://www.pixiv.net/', index: i };
+    return { url: imageUrls[0], referer: 'https://www.pixiv.net/', index: -1 };
+  }
+  const i = matchMediaIndex(platform, imageUrls, media);
+  if (i >= 0 && media[i] && media[i].url) return { url: media[i].url, referer: media[i].referer, index: i };
+  return { url: hiRes(platform, imageUrls[0]), referer: undefined, index: media.length === 1 ? 0 : -1 };
+}
+
+function mediaKey(platform, url) {
+  if (!url) return null;
+  if (platform === 'x') return (url.match(/pbs\.twimg\.com\/media\/([^.?]+)/) || [])[1] || null;
+  if (platform === 'bluesky') return (url.match(/\/([a-z0-9]{50,})(?:@|\b)/i) || [])[1] || null;
+  if (platform === 'misskey' || platform === 'mastodon') {
+    // Misskey/Mastodon serve direct file URLs; a thumbnail and its original share
+    // the file id / hash (the URL basename, minus query and extension). Match on that.
+    const base = (url.split(/[?#]/)[0].match(/([^/]+)$/) || [])[1] || '';
+    return base.replace(/\.[a-z0-9]+$/i, '') || null;
+  }
+  return null;
+}
+
+// Index (0-based) of the post's media[] entry that the dragged image came from,
+// matched by mediaKey. -1 if none matched (or the platform has no key scheme).
+function matchMediaIndex(platform, imageUrls, media) {
+  const keys = imageUrls.map((u) => mediaKey(platform, u)).filter(Boolean);
+  if (!keys.length) return -1;
+  for (let i = 0; i < media.length; i++) {
+    const k = mediaKey(platform, media[i].url);
+    if (k && keys.includes(k)) return i;
+  }
+  return -1;
+}
+
+function hiRes(platform, url) {
+  if (!url) return url;
+  if (platform === 'x' && url.includes('pbs.twimg.com/media/')) {
+    try {
+      const u = new URL(url);
+      u.searchParams.set('name', 'orig');
+      return u.href;
+    } catch {
+      /* ignore */
+    }
+  }
+  if (platform === 'bluesky' && url.includes('cdn.bsky.app')) return url.replace(/@jpeg$/, '');
+  return url;
+}
+
+// Pure helpers with no chrome.* / DOM dependency, exported for direct unit
+// testing (scripts/background-unit.test.ts) — the rest of this file only
+// runs inside the extension service worker via startBackground().
+export { isAllowedSender, pickPrimaryImage, mediaKey, matchMediaIndex, hiRes, buildRecord, generateCaptureId };
