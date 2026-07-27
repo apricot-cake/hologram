@@ -8,8 +8,9 @@
   "scripts": {
     "start": "electron .",
     "build:theme-boot": "node build-theme-boot.mjs",
-    "dev": "npm run build:theme-boot && electron-vite dev",
-    "build": "npm run build:theme-boot && electron-vite build",
+    "build:native-host-bridge": "node build-native-host-bridge.mjs",
+    "dev": "npm run build:theme-boot && npm run build:native-host-bridge && electron-vite dev",
+    "build": "npm run build:theme-boot && npm run build:native-host-bridge && electron-vite build",
     "dist": "npm run build && electron-builder",
     "register-host": "node ../native-host/install.cts",
     "unregister-host": "node ../native-host/install.cts uninstall",

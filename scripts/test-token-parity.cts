@@ -15,7 +15,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 
-const CSS = path.join(__dirname, '..', 'app', 'renderer', 'design-tokens.css');
+const CSS = path.join(__dirname, '..', 'app', 'src', 'renderer', 'design-tokens.css');
 
 // Tokens that legitimately live in :root only (not per-theme):
 //  - primitive ramps (gray/blue/indigo/red/green/amber) + platform brand

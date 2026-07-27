@@ -6,7 +6,7 @@
 // redirect handling are reused by every path that pulls remote images into the
 // library:
 //   - native-host/bridge.cts          (capture / drag save)
-//   - app/main.mts                    (import-posts)
+//   - app/src/main/index.ts                    (import-posts)
 //   - scripts/backfill-metadata.cts   (backfill + existing-data avatar fill)
 // Keeping it in ONE place means the security-sensitive guard never drifts apart
 // between callers. Every function here is best-effort: a failure returns null and

@@ -286,9 +286,9 @@ function pickRepresentative(posts) {
 }
 
 async function runSearchAndFacets(posts, opts) {
-  const Q = await import(pathToFileURL(path.join(__dirname, '..', 'app', 'renderer', 'query.ts')).href);
-  const S = await import(pathToFileURL(path.join(__dirname, '..', 'app', 'renderer', 'search.ts')).href);
-  const F = await import(pathToFileURL(path.join(__dirname, '..', 'app', 'renderer', 'facets.ts')).href);
+  const Q = await import(pathToFileURL(path.join(__dirname, '..', 'app', 'src', 'renderer', 'src', 'services', 'query.ts')).href);
+  const S = await import(pathToFileURL(path.join(__dirname, '..', 'app', 'src', 'renderer', 'src', 'services', 'search.ts')).href);
+  const F = await import(pathToFileURL(path.join(__dirname, '..', 'app', 'src', 'renderer', 'src', 'services', 'facets.ts')).href);
 
   const rep = pickRepresentative(posts);
   const predOf = Q.makePostPredOf({ isInFolder: () => false, fuzzyCompile: (q) => S.compile(q) });

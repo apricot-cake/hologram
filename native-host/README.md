@@ -34,7 +34,7 @@ rationale. `install.cts` is loaded as-is by the Electron app.
 
 `bridge.cts` and the modules it requires are **bundled** into
 `native-host/dist/bridge.js` (one file, node builtins external) by
-`app/islands/build.mjs`, and it is that bundle — not the sources — that
+`app/build-native-host-bridge.mjs`, and it is that bundle — not the sources — that
 `install.cts` deploys into `~/.hologram` for the generated launcher to run. The
 deployed host therefore resolves no modules at runtime: it can use npm deps, and
 no host source can be left behind on deploy. Edit a host source → re-build →
@@ -57,7 +57,7 @@ Requires Node on PATH. The launcher will run the bridge with this Node binary.
 Build the bundle first — install refuses to deploy without it.
 
 ```
-npm run build:islands --prefix app            # → native-host/dist/bridge.js
+npm run build:native-host-bridge --prefix app            # → native-host/dist/bridge.js
 node native-host/install.cts <extensionId>    # register, allowing this extension
 node native-host/install.cts uninstall        # remove
 ```

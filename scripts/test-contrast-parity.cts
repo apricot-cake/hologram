@@ -25,7 +25,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 
-const CSS = path.join(__dirname, '..', 'app', 'renderer', 'design-tokens.css');
+const CSS = path.join(__dirname, '..', 'app', 'src', 'renderer', 'design-tokens.css');
 
 // 1. role = text token; ref = the background it predominantly sits on.
 const CHECKS = [
