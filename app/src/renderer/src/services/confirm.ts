@@ -1,6 +1,6 @@
 // Confirm bridge — the imperative→declarative bridge for the shared confirm modal
 // (a shadcn AlertDialog). Callers pass open(config) a message + optional skip checkbox
-// or keyword gate + onOk/onCancel callbacks; the React island (ConfirmHost) renders the
+// or keyword gate + onOk/onCancel callbacks; the React component (ConfirmHost) renders the
 // dialog, owns the keyword/skip local state, and calls the callbacks. The destructive
 // LOGIC stays in the caller's onOk closures — this only moves WHEN it runs. Callbacks
 // aren't serializable, so this is a dedicated bridge (like menu.ts / kind-menu.ts), NOT

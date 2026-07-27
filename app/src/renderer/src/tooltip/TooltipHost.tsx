@@ -5,7 +5,7 @@ import { getTip, getTipShown, hideTip, showTip, subscribeTip } from '../_shared/
 // TooltipHost — React owns the singleton .ui-tip div (portaled onto
 // document.body, replacing tip.ts's hand-rolled createElement/appendChild host)
 // plus the document-level [data-tip] delegation that used to be wired at module
-// load. tip.ts keeps the store + tipProps(); this island renders whatever it holds.
+// load. tip.ts keeps the store + tipProps(); this component renders whatever it holds.
 //
 // Placement: centered above the target, flipped below when there's no room,
 // clamped into the viewport. Measured with offsetWidth/Height (NOT

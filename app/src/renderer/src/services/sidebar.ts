@@ -4,17 +4,17 @@
 // POSTER column (#posterFilterRows: プラットフォーム / 作品 / キャラ / タグ / サーバー / 日付
 // / フォルダ rows + badges + progressive disclosure). viewer.ts keeps EVERY business rule
 // (which filter a click opens, the vocab-driven disclosure math, kind labels) and its
-// delegated click handlers on each container; the React islands own rendering the rows.
+// delegated click handlers on each container; the React components own rendering the rows.
 //
 // Converted from a PUSHED bridge (viewer built a full model incl. labels and called
 // render()/renderPoster()) to a PULLED source, the same shape as the grid /
 // image-tab / tabs sources: viewer no longer re-derives+pushes a model after
 // every filter/tag/library mutation — this module derives it fresh on get(), reading
 // hologramStore keys (postQueryTree/posterQueryTree/multiOnly/qfCat) + the tags/folders/
-// posts-data/listing services directly. Labels are NOT part of the model — the islands
+// posts-data/listing services directly. Labels are NOT part of the model — the components
 // resolve their own row names via t() and the 作品/キャラ custom label via
-// hologramTags.getTagLabels(), the same "island resolves its own i18n" pattern every
-// other island uses (buildSidebarModel used to carry MSG-resolved strings
+// hologramTags.getTagLabels(), the same "component resolves its own i18n" pattern every
+// other component uses (buildSidebarModel used to carry MSG-resolved strings
 // because it ran inside viewer.ts; that reason is gone once the derivation moves here).
 //
 // tagKindOf/posterFilterVocab/namedPosters are NOT reimplemented here — they're the
@@ -121,7 +121,7 @@ function computePosterModel(): HologramPosterSidebarModel {
 
 // Each source wires its own upstream subscriptions ONCE at module load (mirrors
 // grid.ts) rather than per subscribe() caller — there's a single consumer (the
-// island) in practice, but this avoids stacking duplicates if that changes. `wire`
+// component) in practice, but this avoids stacking duplicates if that changes. `wire`
 // is the list of "register this notify callback" calls the source's own compute()
 // depends on — store keys plus whichever services it reads.
 function makeSource<T>(compute: () => T, wire: Array<(cb: () => void) => void>): SidebarSource<T> {

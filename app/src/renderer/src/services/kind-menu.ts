@@ -1,7 +1,7 @@
 // 種別 (tag-kind) menu bridge — the imperative→declarative bridge for the work/
 // character/general classification menu (right-click a tag chip in the edit picker /
 // inspector / poster picker). viewer.ts builds the row model (current kind, already-
-// localized labels) and owns the pick/rename actions; the kind-menu React island
+// localized labels) and owns the pick/rename actions; the kind-menu React component
 // subscribes and renders the glass popup. Kept SEPARATE from hologramStore for the
 // same reason as menu.ts: onPick/onRename carry CALLBACKS, which don't belong in the
 // serializable reactive store. A real ES module (named exports), imported directly

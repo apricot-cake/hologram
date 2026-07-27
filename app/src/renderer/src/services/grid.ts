@@ -1,12 +1,12 @@
 // Grid model sources — the imperative→declarative bridge for every VIRTUALIZED
 // grid (#postGrid / #posterGrid). viewer.js owns the data pipeline, the
 // container's classes/CSS vars, and every delegated container event handler;
-// the grid islands own cell rendering + windowing (masonic). Kept SEPARATE from
+// the grid components own cell rendering + windowing (masonic). Kept SEPARATE from
 // hologramStore for modelOf/keyOf specifically, which carry CALLBACKS (same
 // reason as menu.js/qf-pop.js) — everything else (items, layout inputs) DOES live
 // in hologramStore; these sources derive the rest of the model from it. A real ES
 // module now — its exports are imported directly by viewer.ts and the grid
-// islands; hologramStore itself is a real ES module too (store.ts).
+// components; hologramStore itself is a real ES module too (store.ts).
 
 import { get as storeGet, subscribe as storeSubscribe } from './store.ts';
 //
@@ -20,9 +20,9 @@ import { get as storeGet, subscribe as storeSubscribe } from './store.ts';
 // model shape: { items, itemsKey, modelOf(item,i)→cell model, keyOf(item,i)→
 // stable key, columnCount?, columnWidth?, rowGutter, itemHeightEstimate, … }.
 //  - itemsKey bumps ONLY when the items array reference actually changed (filter /
-//    sort / search / data change). The island resets its positioner (cached cell
+//    sort / search / data change). The component resets its positioner (cached cell
 //    heights) on it — and re-syncs scrollTop, per the PoC blank-grid trap.
-//  - paint (internal, bumped on every get()) makes the island re-render even when
+//  - paint (internal, bumped on every get()) makes the component re-render even when
 //    field VALUES repeat, since a fresh object ref is what React's bridge-driven
 //    setState in GridMount keys off.
 

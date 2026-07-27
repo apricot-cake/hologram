@@ -45,7 +45,7 @@ function register(ctx) {
 
   // Window controls. The min/max/close buttons are drawn by the app (renderer DOM), not by
   // the OS overlay, so the window commands they used to carry natively come over IPC now.
-  // See the AppShell WindowControls island for why they are app-drawn.
+  // See the AppShell WindowControls component for why they are app-drawn.
   ipcMain.handle('window-control', (_e, action) => {
     const win = getWin();
     if (!win) return null;

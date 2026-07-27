@@ -14,7 +14,7 @@
 // onToggleInspector/onCloseTab), mirroring the query-chips / TabBarEvents
 // event-half pattern — this file only computes, it never mutates tab state.
 // Real ES module (named export `hologramImageTabSource`) — imported directly by
-// image-tab/index.tsx (islands) and viewer.ts (configure). The former dispatch
+// image-tab/index.tsx (components) and viewer.ts (configure). The former dispatch
 // through viewer.ts's old shared bridge was DI'd away when image-tab-builder.ts
 // took over supplying the callbacks.
 import { get as getPostsData, subscribe as subscribePostsData } from './posts-data.ts';

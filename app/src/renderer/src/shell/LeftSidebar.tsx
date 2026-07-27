@@ -36,7 +36,7 @@ const getBrowse = (): string => (storeGet('browseMode') as string) || 'posts';
 // channel (onChange); load() resolves once the file is read. React mounts before
 // bootApp calls load(), so an initial list read can be empty — kick load() and
 // re-read on both its resolve and any later mutation. (No unsubscribe from onChange,
-// same as MirrorStatus: this island never unmounts in the single-page app.)
+// same as MirrorStatus: this component never unmounts in the single-page app.)
 function useFolders(): HologramFolder[] {
   const [list, setList] = useState<HologramFolder[]>(() => folderAll());
   useEffect(() => {

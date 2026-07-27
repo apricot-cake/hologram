@@ -4,7 +4,7 @@
 // two steps: a Command list of the current mode's facet categories, then that
 // category's editor (value checklist / grouped-tag two-pane, or a date/engagement
 // form). All the data + routing is reused from orchestrator.filterCategories(); this
-// island only renders + navigates the two steps.
+// component only renders + navigates the two steps.
 import { ArrowLeft, BookMarked, Calendar, Drama, Folder, Globe, Hash, Heart, Image, Link2, ListFilter, type LucideIcon, MessageSquare, Search, Server, Tag, User } from 'lucide-react';
 import { useState } from 'react';
 import { type FilterCat, filterCategories } from '../services/orchestrator.ts';

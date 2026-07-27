@@ -1,4 +1,4 @@
-// Virtualized post-grid island (renderer/grid.ts's hologramPostGridSource) — owns cell rendering
+// Virtualized post-grid component (services/grid.ts's hologramPostGridSource) — owns cell rendering
 // + windowing for ALL grid views (card / tile / list). Host attach/detach + flushSync
 // semantics live in the shared GridMount (_shared/VirtualGrid.tsx). Rendered under the
 // single App root (app/App.tsx renders <PostGrid/>). The source is PULLED

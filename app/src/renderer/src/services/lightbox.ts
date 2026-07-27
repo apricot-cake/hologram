@@ -1,7 +1,7 @@
-// Single-image quick-view (peek) state — extracted out of islands/lightbox/index.tsx
-// (one of the two "true island-pinned globals", alongside settings.ts) so
+// Single-image quick-view (peek) state — extracted out of lightbox/index.tsx
+// (one of the two "true component-pinned globals", alongside settings.ts) so
 // orchestrator.ts and the *-builder.ts modules can import it directly instead of
-// reading a global bridge. A real ES module, imported by islands/lightbox/index.tsx
+// reading a global bridge. A real ES module, imported by lightbox/index.tsx
 // (QuickViewHost renders whatever this holds) and by orchestrator.ts / the builders
 // that open it or guard on isOpen().
 //
@@ -10,7 +10,7 @@
 // paging lives in the image view).
 //
 // P2⑦ made this a PURE store: the overlay element, its visibility, the backdrop click
-// and the Esc key are all React's now (islands/lightbox). Nothing here touches the DOM,
+// and the Esc key are all React's now (lightbox/). Nothing here touches the DOM,
 // so opening the peek is one state write plus a notify — no getElementById, no class
 // toggle, no module-load-time listeners.
 

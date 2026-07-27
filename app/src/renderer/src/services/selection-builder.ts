@@ -4,7 +4,7 @@
 // #postGrid/#selectionBar) stays in viewer.ts, which just wires the returned
 // functions in. selection.ts (the hologramStore-backed selectedSet/anchor
 // bridge) stays untouched — this module is one of its consumers (the
-// selection-bar island's own model derivation is the other, unaffected here).
+// FloatingBar component's own model derivation is the other, unaffected here).
 // タグを追加 (openBulkTagDialog) is bulk-edit-builder.ts territory
 // (re-targeted at a Dialog in P2⑦). It's constructed right after this module
 // in viewer.ts (needs this module's own selectedRecords), so this module only
@@ -84,7 +84,7 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
   }
 
   // Toggle .selecting on the grid container (viewer-owned, static). Per-card
-  // .selected is no longer pushed through here — the grid island's Cell reads
+  // .selected is no longer pushed through here — the grid component's Cell reads
   // hologramStore's 'selectedSet' directly (selection.toggle already
   // wrote the fresh snapshot), so it re-renders on its own the moment the store changes.
   function syncSelectionClasses() {
@@ -102,8 +102,8 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
   }
 
   // updateSelectionBar() lived here: it drove #selectionBar's container show/hide
-  // while the island owned only the children. Both are gone — the redesign removed
-  // the container from the shell AND unmounted the island (its replacement is the
+  // while the component owned only the children. Both are gone — the redesign removed
+  // the container from the shell AND unmounted the component (its replacement is the
   // bottom floating bar), so every call was `null.style` = a thrown TypeError on
   // EVERY selection change. It read as harmless (the store write happens first, so
   // the rings still updated), until it took out drag-out: the throw escaped
@@ -141,7 +141,7 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
 
   // Ctrl/Cmd+A selects every visible (filtered) card. Left to the browser when
   // typing in a field or when a modal/overlay is open (native select-all there).
-  // Registration lives in the GlobalShortcuts component (app/islands/app/App.tsx).
+  // Registration lives in the GlobalShortcuts component (app/App.tsx).
   function handleShortcutSelectAllKey(e: KeyboardEvent) {
     if (!(e.ctrlKey || e.metaKey) || (e.key || '').toLowerCase() !== 'a') return;
     const t = e.target as HTMLElement | null;
@@ -161,7 +161,7 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
   // Same guard shape as select-all above, plus two of its own: a real text
   // selection stays the browser's to copy, and the image tab / quick view own
   // their copy gesture (v1 = the grid only). Registration lives in the
-  // GlobalShortcuts component (app/islands/app/App.tsx).
+  // GlobalShortcuts component (app/App.tsx).
   function handleShortcutCopyKey(e: KeyboardEvent) {
     if (!(e.ctrlKey || e.metaKey) || (e.key || '').toLowerCase() !== 'c') return;
     const t = e.target as HTMLElement | null;
@@ -182,7 +182,7 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
   // Quick Look / Eagle と同型). Single selection only (peek is one card); same
   // guard shape as the copy key above, plus: a lightbox already open owns Space
   // (its own paging), and a text field / the image view keep the key. Registration
-  // lives in the GlobalShortcuts component (app/islands/app/App.tsx).
+  // lives in the GlobalShortcuts component (app/App.tsx).
   function handleShortcutQuickView(e: KeyboardEvent) {
     if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return;
     if (e.key !== ' ' && e.code !== 'Space') return;
@@ -219,7 +219,7 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
   // Same guard shape as the Space peek below it, plus one of its own: with no anchor
   // and no single selection there is nothing to move FROM, so the first press selects
   // the first card rather than guessing. Registration lives in the GlobalShortcuts
-  // component (app/islands/app/App.tsx).
+  // component (app/App.tsx).
   function handleShortcutArrowNav(e: KeyboardEvent) {
     if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return;
     const step = e.key === 'ArrowLeft' ? -1 : e.key === 'ArrowRight' ? 1 : e.key === 'ArrowUp' ? -gridColumnCount() : e.key === 'ArrowDown' ? gridColumnCount() : 0;
@@ -269,7 +269,7 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
     });
   }
 
-  // The bulk-action buttons are the bottom floating bar's now (islands/selection/
+  // The bulk-action buttons are the bottom floating bar's now (selection/
   // FloatingBar.tsx) — it calls these named actions straight through orchestrator's
   // exports (onClick → function), so there's no #selectionBar container, no data-act
   // DOM contract, and no delegated dispatcher anymore (redesign §8-1 ゼロ許容). The

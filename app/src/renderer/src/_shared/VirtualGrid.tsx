@@ -2,8 +2,8 @@
 // useResizeObserver wired to the app's OWN scroll container #mode-post —
 // masonic's <Masonry> is window-scroll only, so the scroller wiring here is
 // hand-rolled, exactly as validated in the runtime PoC). Extracted 1:1 from the
-// post-grid island when the poster/collection grids joined the same foundation:
-// each grid island supplies its cell component; this host owns windowing.
+// post-grid component when the poster/collection grids joined the same foundation:
+// each grid module supplies its own cell component; this host owns windowing.
 //
 // PoC trap, honored here: whenever the positioner is recreated (itemsKey change,
 // container width change) its position cache resets — if the scrollTop STATE is
@@ -16,7 +16,7 @@ import { createContext, useCallback, useContext, useEffect, useLayoutEffect, use
 import type { ComponentType, ReactNode } from 'react';
 import { registerGridNav } from '../services/grid-nav.ts';
 
-// The cell component each grid island supplies (masonic's render component).
+// The cell component each grid module supplies (masonic's render component).
 export interface GridCellProps {
   index: number;
   data: any;

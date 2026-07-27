@@ -75,7 +75,7 @@ const evalJs = `(async () => {
   const initTabCount  = tabCount();
   const initTitle     = activeTitle();
 
-  // ② Add alpha filter via the "+ フィルタ" flow (filterbar island — the qf-pop
+  // ② Add alpha filter via the "+ フィルタ" flow (filterbar component — the qf-pop
   //    flyout is gone since P2③): open the popover, pick タグ, click the alpha row.
   const byText = (sel, text) => [...document.querySelectorAll(sel)].find((el) => (el.textContent || '').trim() === text) || null;
   byText('button', 'フィルタ').click();

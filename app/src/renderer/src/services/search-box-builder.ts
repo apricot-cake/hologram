@@ -1,6 +1,6 @@
 // Search box wiring — extracted from the old viewer.ts monolith. The query-tree
 // text-leaf state machine (search-editing.ts) and the suggestion-pick bridge to
-// the searchbox React island (searchbox.ts) already exist as real ES modules —
+// the searchbox React component (searchbox.ts) already exist as real ES modules —
 // this module is the view-specific glue that used to live inline in viewer.ts:
 // the hologramStore 'searchQuery' getter/setter (with the echo guard that tells
 // typing apart from programmatic writes) and the debounced re-render on typing.
@@ -31,11 +31,11 @@ export interface SearchBoxDeps {
 export function makeSearchBox(deps: SearchBoxDeps) {
   const byId = (id: string) => document.getElementById(id) as HTMLElement;
 
-  // hologramStore 'searchQuery' IS the search value; the searchbox island renders it
-  // as a controlled Base UI Autocomplete input. Typing: island → store → the
+  // hologramStore 'searchQuery' IS the search value; the searchbox component renders it
+  // as a controlled Base UI Autocomplete input. Typing: component → store → the
   // subscriber below runs the debounced heavy side effects. Programmatic writes
   // (resets / tab & history restore / leaf confirm): viewer → setSearchBoxValue →
-  // store → island re-renders the input. _searchEcho tells the two apart — every
+  // store → component re-renders the input. _searchEcho tells the two apart — every
   // setSearchBoxValue caller triggers its own re-render, so feeding the echo into
   // the typing pipeline would double-render and churn the editing text leaf.
   function searchQuery() {
@@ -62,7 +62,7 @@ export function makeSearchBox(deps: SearchBoxDeps) {
     searchEditing.rebind();
   }
 
-  // Typing arrives via the store (the searchbox island pushes every keystroke).
+  // Typing arrives via the store (the searchbox component pushes every keystroke).
   // Debounced 150ms: filtering + re-rendering ~9k records on every keystroke
   // stutters; coalesce to the pause after typing. NOTE: renderPosts is called with
   // no args — a truthy arg would be taken as keepLimit and skip the history record.
@@ -105,11 +105,11 @@ export function makeSearchBox(deps: SearchBoxDeps) {
   // --- リアルタイム検索サジェスト -------------------------------------------
   // タイプのたびに、本文検索と並行してタグ/作者の候補を検索ボックス直下に表示。
   // クリック/Enter でそのままフィルタ化（タイプした文字は消す）。
-  // The searchbox island (react-aria ComboBox) owns the input + dropdown UI:
+  // The searchbox component (react-aria ComboBox) owns the input + dropdown UI:
   // rendering, keyboard nav, open/close, positioning. The suggestion DATA comes
   // from buildSuggest (users.ts); what a pick DOES is searchEditing.pick,
   // wired through the searchbox bridge registered below.
-  // Register the island's data callbacks. onConfirmText replicates the old bare-
+  // Register the component's data callbacks. onConfirmText replicates the old bare-
   // Enter behavior: only posts mode confirms a text leaf (posters/collections
   // filter live off the box value, Enter is a no-op there).
   initSearchBox({
@@ -132,7 +132,7 @@ export function makeSearchBox(deps: SearchBoxDeps) {
   // 5 global shortcut handlers (nav/mouse-nav/undo/select-all/size) had already
   // been absorbed into their natural domain clusters, leaving only this
   // searchbox-focus handler unmoved. Registration lives in the GlobalShortcuts
-  // component (app/islands/app/App.tsx).
+  // component (app/App.tsx).
   function handleShortcutSearchFocusKey(e: KeyboardEvent) {
     const slash = e.key === '/' && !e.ctrlKey && !e.metaKey && !e.altKey;
     const ctrlK = (e.ctrlKey || e.metaKey) && !e.altKey && (e.key || '').toLowerCase() === 'k';
@@ -143,7 +143,7 @@ export function makeSearchBox(deps: SearchBoxDeps) {
     if (settingsIsOpen()) return;
     if (!byId('ivFolderModal').hidden) return;
     e.preventDefault();
-    focusSearchBox(); // the island's registered focus callback (no-op until it mounts) — the #searchBox id contract is gone (P2④)
+    focusSearchBox(); // the component's registered focus callback (no-op until it mounts) — the #searchBox id contract is gone (P2④)
   }
 
   return {

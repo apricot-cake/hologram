@@ -1,4 +1,4 @@
-// Virtualized poster-grid island (renderer/grid.ts's hologramPosterGridSource). React owns
+// Virtualized poster-grid component (services/grid.ts's hologramPosterGridSource). React owns
 // cell rendering + windowing; viewer.js keeps owning posterList, the count
 // badge, the grid density classes, the inspected highlight (model-driven via
 // modelOf), and ALL event delegation on #posterGrid (click → info/tag/open,

@@ -1,6 +1,6 @@
 // Bulk tag dialog bridge — the imperative→declarative bridge for "タグを追加"
 // on the selection bar (P2⑦). Same shape as prompt.ts/confirm.ts: the renderer
-// side pushes a config, the React island (BulkTagDialog) draws it.
+// side pushes a config, the React component (BulkTagDialog) draws it.
 //
 // Unlike the tag-pop it replaces, this bridge carries NO staged tag list. The
 // staging is the dialog's own React state, so there is no module-level mirror to

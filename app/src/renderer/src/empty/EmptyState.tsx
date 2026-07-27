@@ -5,7 +5,7 @@ import { get as storeGet, subscribe as storeSubscribe } from '../services/store.
 // Empty-state placeholder (#emptyState): the "no posts yet" first-run message, the "no
 // results" filtered-empty message, or the poster first-run message. Pure presentation —
 // viewer keeps the container's show/hide + the delegated CTA click handler. Labels come
-// from i18n keys here (the island owns them), so no static text set-up in viewer races
+// from i18n keys here (the component owns them), so no static text set-up in viewer races
 // us on a language reload.
 //
 // BOTH variants (post and poster) are folded into self-derived selectors —

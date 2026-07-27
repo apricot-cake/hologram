@@ -1,8 +1,8 @@
 // Value-pick routing for the redesign filter bar — the headless remnant of the
 // retired qf-pop value flyout. The flyout UI (open/close/render/anchor highlight)
-// was removed with its island (P2③ タスク3); what survives is onQfPick, the
+// was removed with its component (P2③ タスク3); what survives is onQfPick, the
 // add/remove routing that maps a picked value to the right query-builder mutation.
-// The filterbar island (islands/filterbar/ValueEditor) calls pickValue() from its
+// The filterbar component (filterbar/ValueEditor) calls pickValue() from its
 // own Popover, so this stays the single source of the "a value was picked → mutate
 // the tree" logic for BOTH the post and poster trees. Extracted from viewer.ts
 // during its decomposition; the flyout half retired 2026-07-18.
@@ -62,7 +62,7 @@ export function makeQfPop(deps: QfPopDeps) {
     deps.updateSidebarState();
   }
 
-  // pickValue = onQfPick exposed for the redesign filter bar (islands/filterbar):
+  // pickValue = onQfPick exposed for the redesign filter bar (filterbar/):
   // it drives the SAME add/remove routing from its Popover value editor, with no
   // flyout involved.
   return { pickValue: onQfPick };

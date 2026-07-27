@@ -5,7 +5,7 @@ import { t } from '../_shared/i18n.ts';
 import { get as storeGet, subscribe as storeSubscribe } from '../services/store.ts';
 import { navBack, navForward, resetAllFilters, resetPosterFilters } from '../services/orchestrator.ts';
 
-// The query-builder FRAME islands for #postActiveBar / #posterActiveBar — the chrome
+// The query-builder FRAME components for #postActiveBar / #posterActiveBar — the chrome
 // AROUND the chips: nav 戻る/進む, the フィルター title, the empty-bar hint, the result
 // count, the リセット button, and the ⓘ help popover. Self-derived: every
 // read-only field comes straight from hologramStore ('postQueryTree'/'posterQueryTree'/
@@ -15,7 +15,7 @@ import { navBack, navForward, resetAllFilters, resetPosterFilters } from '../ser
 // the old orchestrator bridge for these is gone. No more pushed model (the old
 // renderer/activebar.ts bridge is gone too).
 //
-// The chips (#queryChips / #posterQueryChips) are their OWN island (query-chips) and keep
+// The chips (#queryChips / #posterQueryChips) are their OWN component (query-chips) and keep
 // orchestrator's delegated click/contextmenu handlers. So the frame is NOT a single portal into
 // the bar (that would replace the chips container and detach those handlers). Instead each
 // dynamic piece portals into a static sub-mount that sits BESIDE the chips container

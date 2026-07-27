@@ -1,11 +1,11 @@
 // Preload bridge — the TypeScript SOURCE of the committed app/preload.js build
 // output. The sandbox preload loader does NOT type-strip, so unlike the .mts
-// main-process layer this one file is built (islands/build.mjs → Vite lib CJS,
-// electron external). .cts because the runtime module format is CJS (same
-// convention as the native-host layer).
+// main-process layer this one file is built (electron-vite's preload build →
+// Vite lib CJS, electron external). .cts because the runtime module format is
+// CJS (same convention as the native-host layer).
 //
 // The exported HologramPreload type IS the window.hologram contract: the renderer
-// program aliases it in islands/types/globals.d.ts (via the electron-shim paths
+// program aliases it in types/globals.d.ts (via the electron-shim paths
 // mapping — see that file), so the type can never drift from what the bridge
 // actually exposes. This file itself is type-checked against the REAL electron
 // types by tsconfig.main.json.
@@ -84,7 +84,7 @@ const api = {
   onPostsChanged: (cb: (names: string[] | null) => void): void => {
     ipcRenderer.on('posts-changed', (_e, names) => cb(names));
   },
-  // Window controls (min/max/close are app-drawn — see the WindowControls island).
+  // Window controls (min/max/close are app-drawn — see the WindowControls component).
   windowControl: (action: 'minimize' | 'toggle-maximize' | 'close'): Promise<boolean | null> => ipcRenderer.invoke('window-control', action),
   windowIsMaximized: (): Promise<boolean> => ipcRenderer.invoke('window-is-maximized'),
   // cb receives the new maximized state; the raw IPC event is not forwarded.

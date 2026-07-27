@@ -1,6 +1,6 @@
 // Context-menu controller — the imperative→declarative bridge for the right-click
 // menus. viewer.ts calls open({ items, x, y }, onPick) to show a
-// glass menu; the context-menu React island subscribes and renders it. Kept SEPARATE
+// glass menu; the context-menu React component subscribes and renders it. Kept SEPARATE
 // from hologramStore because the menu carries an onPick CALLBACK (a function),
 // which doesn't belong in the serializable reactive store. A real ES module (named
 // exports), imported directly by its consumers (viewer.ts / query-chips.ts / ContextMenu.tsx).

@@ -126,7 +126,7 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
     if (deps.posterQBRemoveCondsMatching((c) => c.type === 'tag' && !present.has(c.value))) deps.posterQBSyncShadow();
   }
 
-  // Poster query reset — the activebar island's #posterResetBtn calls this directly by
+  // Poster query reset — the activebar component's #posterResetBtn calls this directly by
   // importing the resetPosterFilters live binding from viewer.ts.
   function resetPosterFilters() {
     deps.posterQBResetTree();
@@ -150,7 +150,7 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
     grid.classList.toggle('list-view', deps.posterView() === 'list');
     if (posterList.length === 0) {
       empty.style.display = 'block';
-      // allUsersCount feeds the EmptyState island's self-derived 'posterFirstRun'
+      // allUsersCount feeds the EmptyState component's self-derived 'posterFirstRun'
       // vs 'filtered' choice (mirrors the post grid's allPostsCount). Only
       // computed here (buildUsers() is the generation-cached poster roll-up — the
       // OLD code only ever called it in this branch too, so this preserves the
@@ -174,7 +174,7 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
   // React owns the poster cells (virtualized — hologramPosterGridSource);
   // viewer.js keeps posterList, the count badge, the density
   // classes, and #posterGrid's click/contextmenu delegation. The inspected
-  // highlight is NOT part of this model — the island derives its own ring from
+  // highlight is NOT part of this model — the component derives its own ring from
   // hologramStore's 'inspectedKey' (useSyncExternalStore), keyed off the raw
   // item's `.key`. modelOf/keyOf never change identity
   // meaningfully between renders, so they're configured ONCE (mirrors the post

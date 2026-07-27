@@ -48,17 +48,18 @@ import {
   handleSearchQueryStoreChange,
 } from '../services/orchestrator.ts';
 
-// The single React root for the whole renderer — the 最終形B DoD: 島 root 群の1本統合.
-// Islands migrate here from their own createRoot() calls in verifiable batches; each still
+// The single React root for the whole renderer — the 最終形B DoD: 島 root 群の1本統合
+// (consolidation of the former independent island roots into one). Components used to be
+// their own createRoot() calls; they were migrated here in verifiable batches, and each still
 // owns only RENDERING and reads its state from a window.hologram* bridge (orchestrator.ts keeps
-// the logic/state). Container-mounted islands portal into their existing orchestrator-owned
+// the logic/state). Container-mounted components portal into their existing orchestrator-owned
 // static container (unchanged DOM/CSS contract); body-level overlays render as fixed-
 // positioned children of this root. This component is the source of truth for which
-// islands live under the unified root. root.tsx gates the mount on initI18n() so t() is
+// components live under the unified root. root.tsx gates the mount on initI18n() so t() is
 // synchronous here.
 //
 // Batch 1 (overlays): the four body-level popup hosts.
-// Batch 2 (container islands): the sidebar filter-row columns, selection bar, inspector,
+// Batch 2 (container components): the sidebar filter-row columns, selection bar, inspector,
 //   bulk-edit overlay, and the search box — each portaled into its static container.
 
 // Portal a subtree into an existing orchestrator-owned container by id. The containers are
@@ -292,7 +293,7 @@ export function App() {
           folder changes, posts-changed fs-watch hint). */}
       <StoreSubscriptions />
       {/* The React-owned app shell: tab bar + left nav + content inset + right inspector,
-          with the shell-embedded islands (tabs / grids / inspector / image-tab / search /
+          with the shell-embedded components (tabs / grids / inspector / image-tab / search /
           chips / empty / mirror) rendered in place (redesign §3, P1-2..P1-5). */}
       <AppShell />
       {/* Body-level overlays. Menus / confirm / dialogs / toaster / tooltip / quick-view peek

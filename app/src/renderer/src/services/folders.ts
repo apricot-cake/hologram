@@ -2,7 +2,7 @@
 // (orchestrator.ts). The library data lives in folders.json (keyed by captureId) —
 // the unified container for folders (folders). This
 // module owns the data, the management-modal state (rendering is the FolderManagerModal
-// island, #ivFolderModal), membership toggling, and the toast (sonner via ui.ts); the "which
+// component, #ivFolderModal), membership toggling, and the toast (sonner via ui.ts); the "which
 // folder is filtered" state stays per-view. Subscribers (onChange) are notified after
 // any mutation so each view refreshes its own chips.
 //
@@ -332,7 +332,7 @@ export function hologramPosterFolderStore(): HologramPersistedFolderStore {
 // Library folders [{ id, name, kind, created, items:[captureId] }] — the unified
 // folders container. isLibrary enables kind/created + dynamic saved-search.
 const store = createFolderStore({ idPrefix: 'f', persist: () => persist(), isLibrary: true });
-// The management modal (FolderManagerModal island, #ivFolderModal) is shared: by
+// The management modal (FolderManagerModal component, #ivFolderModal) is shared: by
 // default it edits the library store, but openManager({store,onChange}) re-points it at
 // the poster folder store (orchestrator.ts pfStore) so both views get the same CRUD +
 // drag-reorder UI. Each store owns its own persist (folders.json vs poster-folders.json);
@@ -362,8 +362,8 @@ const subs: Array<(kind?: string) => void> = [];
 // fired from business logic below, outside any component render) reuse the
 // renderer's i18n — hologramI18n is a promise from i18n.ts; resolve once and cache
 // getMessage as t(), until then t() echoes the key. The modal's own labels (title,
-// placeholder, rename/delete prompts) are the island's concern — FolderManagerModal.tsx
-// uses the shared islands/_shared/i18n.ts t() directly in JSX.
+// placeholder, rename/delete prompts) are the component's concern — FolderManagerModal.tsx
+// uses the shared _shared/i18n.ts t() directly in JSX.
 let t: (key: string, subs2?: ReadonlyArray<string | number | null | undefined>) => string = (key) => key;
 hologramI18n.then((api) => {
   if (api && api.getMessage) t = api.getMessage;

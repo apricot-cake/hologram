@@ -1,6 +1,6 @@
 // Naming-prompt bridge — the imperative→declarative bridge for the shared naming
 // dialog (a shadcn Dialog + Input). Callers pass open(config) a label + an initial
-// value + onOk(value); the React island (PromptHost) renders the dialog, owns the
+// value + onOk(value); the React component (PromptHost) renders the dialog, owns the
 // input state, and calls back with the trimmed value.
 //
 // This exists because window.prompt() does not work here: Electron's renderer

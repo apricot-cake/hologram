@@ -59,13 +59,13 @@ for (let i = 0; i < texts.length; i++) {
 const evalJs = `(async () => {
   const wait = (ms) => new Promise(r => setTimeout(r, ms));
   const cards = () => document.querySelectorAll('#postGrid .post-card').length;
-  // Filter chips = the FilterChips island ([data-slot=filter-chips], one span per chip).
+  // Filter chips = the FilterChips component ([data-slot=filter-chips], one span per chip).
   // Only text terms are active in this test, so counting all chips counts text chips.
   const chipRow = () => document.querySelector('[data-slot="filter-chips"]');
   const textChips = () => (chipRow() ? chipRow().querySelectorAll(':scope > span').length : 0);
   const waitFor = async (fn, ms = 4000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (fn()) return true; await wait(40); } return false; };
   await waitFor(() => cards() >= 3);
-  // The searchbox island's Autocomplete input (no #searchBox id since P2④).
+  // The searchbox component's Autocomplete input (no #searchBox id since P2④).
   const sb = document.querySelector('input[placeholder="テキスト・ユーザー名で検索"]');
   // React controlled input: write via the prototype setter + 'input'
   const setVal = (v) => {

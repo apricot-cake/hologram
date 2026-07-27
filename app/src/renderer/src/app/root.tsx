@@ -5,10 +5,11 @@ import { App } from './App.tsx';
 
 // Mounts the single unified React root (最終形B DoD). A body-appended host div holds the
 // App; the App's children portal into their viewer-owned containers or render as fixed
-// overlays. One createRoot() for the whole renderer — islands are migrated under it in
-// batches (see App.tsx). The mount is gated on initI18n() so t() is synchronous inside the
-// App (the searchbox placeholder, and future toolbar/settings text, need it). Overlays and
-// model-push islands are unaffected by the tiny gate delay — they render only once their
+// overlays. One createRoot() for the whole renderer — components used to be their own
+// createRoot() calls and were migrated under this one in batches (see App.tsx). The mount
+// is gated on initI18n() so t() is synchronous inside the App (the searchbox placeholder,
+// and future toolbar/settings text, need it). Overlays and model-push components are
+// unaffected by the tiny gate delay — they render only once their
 // bridge holds content and pull the current model via useSyncExternalStore on mount.
 // Idempotent (mounted guard) so re-import is safe.
 let mounted = false;

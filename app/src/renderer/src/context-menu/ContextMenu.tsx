@@ -4,7 +4,7 @@ import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMe
 
 // Context-menu host — ONE always-mounted instance that renders whatever menu.ts
 // currently holds (or nothing). The orchestrator side owns the menu's data +
-// actions; this island only draws a shadcn DropdownMenu anchored at the click
+// actions; this component only draws a shadcn DropdownMenu anchored at the click
 // point and dispatches clicks back through menu.ts's pick().
 //
 // The menu opens programmatically at (x, y) — there is no trigger element — so

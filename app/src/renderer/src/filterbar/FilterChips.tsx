@@ -3,13 +3,13 @@
 // an optional mode word (すべて/どれか/〜以外), the value list, and a trailing ✕ that
 // clears the whole facet. Clicking the chip body reopens THAT facet's editor — the very
 // same ValueEditor / FormEditor the "+ フィルタ" flow uses — in a Popover anchored to the
-// chip. This replaces the retired query-chips island's cluster pills (改訂④ の
+// chip. This replaces the retired query-chips component's cluster pills (改訂④ の
 // クラスタ枠＋すべて/どれか seg＋値ごと✕); すべて/どれか and 除外 now live inside the editor.
 // Free-text terms (the search box's confirmed leaves) are the one exception: one chip
 // per term, ✕ only (no editor) — P2④.
 //
 // Data: orchestrator.activeFilters() derives the chips from the active query tree; the
-// island subscribes to the postQueryTree/posterQueryTree store keys (written on every
+// component subscribes to the postQueryTree/posterQueryTree store keys (written on every
 // tree mutation) and recomputes. The editor for a click is looked up from
 // filterCategories() by the chip's `cat` (a fresh read, like the "+ フィルタ" menu).
 import { Bookmark, X } from 'lucide-react';

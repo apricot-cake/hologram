@@ -1,5 +1,5 @@
 // Subscribable posts data service — the "allPosts changed" choke
-// point other services/islands can subscribe to, instead of only reaching allPosts
+// point other services/components can subscribe to, instead of only reaching allPosts
 // via a viewer.js push. allPosts ITSELF stays a viewer.js `let` (44 read sites
 // across the listing/grouping/filter pipeline — a full ownership move is out of
 // scope and unnecessary risk here); this mirrors the same shape users.js/tags.js

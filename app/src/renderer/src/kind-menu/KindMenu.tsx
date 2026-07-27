@@ -6,7 +6,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuLabel, DropdownMenuRadio
 // 種別 (tag-kind) menu — ONE always-mounted instance that renders whatever
 // kind-menu.ts currently holds (or nothing). The orchestrator side builds the
 // row model (current kind, already-localized labels) and owns the pick/rename
-// actions; this island draws a shadcn DropdownMenu anchored at the click point.
+// actions; this component draws a shadcn DropdownMenu anchored at the click point.
 // A DEDICATED component (not the generic ContextMenu) because each row carries
 // TWO independent click targets — the row itself (pick a kind) and a nested
 // rename button (relabel that kind) — plus a header, none of which fit

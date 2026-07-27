@@ -10,11 +10,11 @@
        still beat the preflight reset (legacy screens keep their look), while
        shadcn component utilities beat the legacy universal reset. This first
        declaration pins the relative order; the Tailwind sheet injected by
-       islands/app.js declares the same names minus `legacy` and merges in. -->
+       src/app/index.tsx declares the same names minus `legacy` and merges in. -->
   <style>@layer theme, base, legacy, components, utilities;</style>
   <link rel="stylesheet" href="design-tokens.css">
-  <!-- Island CSS (settings layout) is bundled into islands/app.js and injected at
-       runtime as a <style> (CSP style-src allows unsafe-inline) — no <link> needed. -->
+  <!-- Component CSS (settings layout) is bundled via src/app/index.tsx's globals.css import
+       and injected at runtime as a <style> (CSP style-src allows unsafe-inline) — no <link> needed. -->
   <script src="theme.js"></script>
   <style>
     @layer legacy {
@@ -398,7 +398,7 @@
     /* Full-width = the control spans the same width as the input bar directly above
        it (the search box in the sidebar, the 絞り込み find box in the flyout) so they
        line up as one block (user 2026-07-04). The thumb slide is an inline transform
-       set by the island (fuzzy=left / exact=right). Each option names itself via a
+       set by the component (fuzzy=left / exact=right). Each option names itself via a
        .ui-tip tooltip on hover. */
     .seg-control {
       position: relative; display: grid; grid-template-columns: 1fr 1fr;
@@ -719,10 +719,10 @@
       gap: 16px;
       view-transition-name: post-grid;
     }
-    /* Masonry (card view only): the virtualized grid island (masonic) measures
+    /* Masonry (card view only): the virtualized grid component (masonic) measures
        each card to pack Eagle-style waterfall columns — content-visibility must
        be ON (visible) so offscreen-but-mounted cards report real heights, and
-       width:100% fills the island's positioned cell wrapper. (The old JS
+       width:100% fills the component's positioned cell wrapper. (The old JS
        .mcols/.mcol column DOM is gone.) */
     .post-grid.masonry { display: block; }
     .post-grid.masonry .post-card { content-visibility: visible; contain-intrinsic-size: auto; width: 100%; }
@@ -1189,7 +1189,7 @@
       background: rgba(0,0,0,0.72); color: #fff; font-size: 10px;
       pointer-events: none;
     }
-    /* The quick-view peek overlay is Tailwind in islands/lightbox now (P2⑦) — it was
+    /* The quick-view peek overlay is Tailwind in lightbox/ now (P2⑦) — it was
        .lightbox-overlay here while #lightbox was a static container. */
 
     /* --- Image tab (type:'image') — fit-to-screen detail view --- */
@@ -1526,7 +1526,7 @@
     .sb-active-chip:hover { opacity: 0.7; }
     .sb-active-chip .qc-ic { width: 12px; height: 12px; flex-shrink: 0; opacity: .72; }
     .sb-active-chip.chip-new, .qb-val.chip-new { animation: hologramPillIn var(--dur-pop) var(--ease-out) both; }
-    /* Chip exit: the query-chips island keeps removed values as .leaving ghosts
+    /* Chip exit: the query-chips component keeps removed values as .leaving ghosts
        for the animation's length, then prunes them (pointer-events off so the
        stale data-nid can't reach the delegated handlers). */
     .qb-val.leaving { animation: hologramPillOut var(--dur-pop) var(--ease-out) forwards; pointer-events: none; }
@@ -1731,21 +1731,22 @@
 </head>
 <body>
   <!-- Legacy shell markup removed (redesign P1 cutover): the React AppShell
-       (islands/shell/AppShell.tsx) now owns the tab bar, sidebar, toolbar, grid host
+       (shell/AppShell.tsx) now owns the tab bar, sidebar, toolbar, grid host
        and inspector. The two overlay containers below (#ivFolderModal / #settingsRoot)
        stay static until their surfaces are reworked (P2 ⑧/⑩). -->
 
-  <!-- Folder management modal (shared by both modes) — React island (FolderManagerModal,
-       app/islands/folders) owns the content + [hidden] visibility; folders.ts's
+  <!-- Folder management modal (shared by both modes) — React component (FolderManagerModal,
+       folders/) owns the content + [hidden] visibility; folders.ts's
        openManager()/closeManager() drive it. -->
   <div id="ivFolderModal" class="iv-detail-overlay" hidden></div>
 
   <!-- Bulk "add tags to selection" is a React Dialog now (P2⑦,
-       app/islands/selection/BulkTagDialog.tsx) — no static markup here (it portals
+       selection/BulkTagDialog.tsx) — no static markup here (it portals
        onto document.body like qf-pop/context-menu). -->
 
-  <!-- Date / engagement / poster-date-range popovers are the filter-popover React
-       island now (app/islands/filter-popover) — no static markup here. -->
+  <!-- Date / engagement / poster-date-range popovers are the filterbar React
+       component now (filterbar/FormEditor.tsx, filterbar/ValueEditor.tsx — replacing the
+       retired filter-popover) — no static markup here. -->
 
   <!-- Styles that began life in the (now-removed) image-view but are reused by the
        unified post-view: ℹ detail popup, AND/OR tag toggle, folder chips +
@@ -1879,8 +1880,8 @@
     .glass-chrome:hover { background: rgba(20,22,26,0.6); color: #fff; }
 
     /* The single shared hover-hint surface (.ui-tip + .pop-solid, singleton div
-       owned by islands/tooltip/TooltipHost.tsx, portaled onto document.body; the
-       store + tipProps() live in islands/_shared/tip.ts). EVERY hover hint drives
+       owned by tooltip/TooltipHost.tsx, portaled onto document.body; the
+       store + tipProps() live in _shared/tip.ts). EVERY hover hint drives
        it — React tipProps() and the [data-tip] delegation — so tooltips
        can't drift apart. Replaces native `title` on custom controls (the OS
        tooltip is ~1s delayed and OS-styled = チープ). Shows immediately on
@@ -1928,7 +1929,7 @@
     @keyframes hologramPopIn { from { opacity: 0; transform: scale(.96); } to { opacity: 1; transform: none; } }
     @keyframes hologramPanelIn { from { opacity: 0; transform: translateX(18px); } to { opacity: 1; transform: none; } }
     @keyframes hologramPillIn { from { opacity: 0; transform: scale(.6); } to { opacity: 1; transform: scale(1); } }
-    /* Chip exit — the island marks removed values .leaving and prunes them
+    /* Chip exit — the component marks removed values .leaving and prunes them
        after the run (see query-chips AnimatedChips). */
     @keyframes hologramPillOut { to { opacity: 0; transform: scale(.55); } }
     /* Badge pop on activation. Uses the independent `scale` property, NOT
@@ -1949,7 +1950,7 @@
        hover-scale lift. `backwards` still holds the hidden pre-start state but stops
        contributing a transform once the run ends, so :hover scale works again.
        Staggered: each card delays by its model index (--card-i, inline from the
-       island), capped at 15 steps so the grid's .anim-in removal window
+       component), capped at 15 steps so the grid's .anim-in removal window
        (GRID_ANIM_MS in viewer.js) can cover the last card. */
     .post-grid.anim-in .post-card {
       animation: hologramCardIn var(--dur-entrance) var(--ease-out) backwards;
@@ -2001,7 +2002,7 @@
     } /* @layer legacy */
   </style>
 
-  <!-- Settings modal is a React island (app/islands/settings); it renders the
+  <!-- Settings modal is a React component (settings/); it renders the
        whole overlay into this mount point. The gear (#settingsBtn) opens it. -->
   <div id="settingsRoot"></div>
 

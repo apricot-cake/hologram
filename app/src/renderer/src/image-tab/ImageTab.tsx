@@ -14,7 +14,7 @@ const WHEEL_ZOOM_MS = 200;
 
 // Model built by viewer.js (renderImageTabView): the gallery items of ONE post
 // group, the controlled index, and the tab-level actions. Zoom/pan state stays
-// inside this island (ephemeral — each slide remounts fresh at fit via key).
+// inside this component (ephemeral — each slide remounts fresh at fit via key).
 export interface ImageTabItem {
   src: string;
   video?: boolean;

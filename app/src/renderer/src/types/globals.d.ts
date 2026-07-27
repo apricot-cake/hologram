@@ -1,9 +1,9 @@
 // Window-global contracts between the build-less renderer (viewer.js and the
-// plain-IIFE bridge files in app/renderer/) and the React islands — TypeScript
+// plain-IIFE bridge files, now under services/) and the React components — TypeScript
 // stage 1 (BACKLOG 採用#1). The bridges are IMPLEMENTED in plain JS that tsc
 // does not check yet; this file is where those cross-boundary contracts become
-// visible to the islands. Model payloads built by viewer.js are typed to the
-// fields the islands actually consume; an index signature keeps pass-through
+// visible to the components. Model payloads built by viewer.js are typed to the
+// fields the components actually consume; an index signature keeps pass-through
 // fields legal until the plain-JS side converts (単一バンドル化 or later).
 
 export {};
@@ -21,7 +21,7 @@ declare module '*.css' {}
 declare global {
   type HologramUnsubscribe = () => void;
 
-  // ---- renderer/store.ts — key-addressed external store (viewer ⇄ islands). A
+  // ---- renderer/store.ts — key-addressed external store (viewer ⇄ components). A
   // real ES module now — get/set/subscribe are imported directly by
   // every consumer; no ambient Window-shaped interface needed here. ----
 
@@ -69,7 +69,7 @@ declare global {
   // type is exported by the implementation itself (typeof the exposed api object,
   // Issue #17), so this alias can never drift from what the bridge actually
   // exposes — the old hand-maintained interface mirror is gone. In THIS program
-  // 'electron' resolves to islands/types/electron-shim.d.ts (tsconfig paths; see
+  // 'electron' resolves to types/electron-shim.d.ts (tsconfig paths; see
   // the shim's comment); tsconfig.main.json checks the same file against the real
   // electron types. ----
   type HologramPreload = import('../../../preload/index').HologramPreload;
@@ -125,7 +125,7 @@ declare global {
   // extracted) — this file only computes, it never mutates tab state. A real ES module
   // (named export `hologramImageTabSource`) now — no ambient Window-shaped
   // interface needed for it (HologramImageTabModel stays: the shared data shape
-  // between image-tab.ts and this island).
+  // between image-tab.ts and this component).
   interface HologramImageTabModel {
     items: { src: string; alt?: string; video?: boolean }[];
     idx: number;
@@ -276,9 +276,9 @@ declare global {
   // ---- renderer/sidebar.ts — the two filter-row columns (converted
   // from a PUSHED bridge — viewer built a full model incl. labels and called
   // render()/renderPoster() — to a PULLED source, same shape as the grid/image-tab/
-  // tabs sources. Labels are NOT in the model: the islands resolve their own static
+  // tabs sources. Labels are NOT in the model: the components resolve their own static
   // row names via t() and the 作品/キャラ custom label via hologramTags.getTagLabels(),
-  // the same "island resolves its own i18n" pattern every other island uses.
+  // the same "component resolves its own i18n" pattern every other component uses.
   // Everything else (badges/visible/multi/openCat) is derived from hologramStore
   // keys (postQueryTree/posterQueryTree/multiOnly/qfCat) + hologramTags/hologramFolders/
   // posts-data.ts/hologramListing — no viewer push needed, so viewer's mutation call
@@ -302,8 +302,8 @@ declare global {
   // renderer/sidebar.ts — a real ES module (named exports: hologramPostSidebarSource/
   // hologramPosterSidebarSource) now, imported directly by Sidebar.tsx/PosterSidebar.tsx.
 
-  // ---- Bulk-action selection bar. Now the bottom floating FloatingBar island
-  // (islands/selection, redesign P2⑥): no #selectionBar container and no delegated
+  // ---- Bulk-action selection bar. Now the bottom floating FloatingBar component
+  // (selection/, redesign P2⑥): no #selectionBar container and no delegated
   // data-act handler — each button calls an orchestrator-exported selection action
   // directly. It derives count/allSelected/groupDisabled itself from hologramStore's
   // 'selectedSet' + 'postGroups' (the old renderer/selection-bar.ts push bridge was
@@ -323,10 +323,10 @@ declare global {
   // 'navCanForward') + t(), and imports navBack/navForward/resetAllFilters/
   // resetPosterFilters directly for the actions (the old renderer/activebar.ts push
   // bridge was deleted — no callers left). Portaled into sub-mounts BESIDE the chips
-  // containers, which stay their own island. ----
+  // containers, which stay their own component. ----
 
   // ---- renderer/confirm.ts — shared confirm modal (shadcn AlertDialog). Callers open it
-  // with a message + optional skip/keyword gate + callbacks; the island renders it. ----
+  // with a message + optional skip/keyword gate + callbacks; the component renders it. ----
   interface HologramConfirmConfig {
     message: string;
     description?: string; // present → secondary line under the title (AlertDialogDescription)
@@ -400,7 +400,7 @@ declare global {
 
   // ---- renderer/searchbox.ts — a real ES module (named exports: init/handlers/
   // registerFocus/focusSearchBox) now. Only the handlers payload contract stays here
-  // as a cross-module data shape (viewer produces it, the searchbox island pulls it). ----
+  // as a cross-module data shape (viewer produces it, the searchbox component pulls it). ----
   interface HologramSearchBoxHandlers {
     getSuggestions(q: string): any[];
     onPick(item: any): void;
@@ -408,23 +408,23 @@ declare global {
   }
 
   // ---- renderer/settings.ts / renderer/lightbox.ts — real ES modules now,
-  // imported directly by their islands and by orchestrator.ts / the *-builder.ts
+  // imported directly by their components and by orchestrator.ts / the *-builder.ts
   // modules — no ambient Window-shaped interface needed.
 
   // renderer/query-chips.ts — a real ES module (named exports: createQueryBuilder/
   // getModel/subscribe/dispatch) now, imported directly by query-chips/index.tsx.
 
   // ---- renderer/trash.ts — trash domain. A real ES module now; the Settings > Trash
-  // island imports its commands directly, so no ambient interface is needed here. ----
+  // component imports its commands directly, so no ambient interface is needed here. ----
 
   // ---- renderer/backup.ts — auto-backup domain, read by both viewer.ts's project
-  // (the #mirrorStatus rail) and this strict islands project (the Settings > データ
-  // island calls it directly). A real ES module (named exports) now — no ambient
+  // (the #mirrorStatus rail) and this strict renderer project (the Settings > データ
+  // component calls it directly). A real ES module (named exports) now — no ambient
   // Window-shaped interface needed.
 
   // ---- renderer/posts.ts — post-record CRUD/import/export + save-folder move
   // domain, read by both viewer.ts's project (list/delete/tags/import/clearAll/
-  // change-watch) and this strict islands project (the Settings > データ island
+  // change-watch) and this strict renderer project (the Settings > データ component
   // calls the save-folder/export/import/import-media methods directly). A real ES
   // module (named exports) now — no ambient Window-shaped interface needed.
 

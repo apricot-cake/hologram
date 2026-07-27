@@ -1,5 +1,5 @@
 // Presentational post card — the one cell component of the virtualized grid
-// island (islands/grid). Emits the same DOM contract the old string-template
+// component (grid/). Emits the same DOM contract the old string-template
 // path did — `.post-card[data-url/data-index/data-key]` with the
 // `.act-pill`,
 // `.card-thumb > .card-img`,

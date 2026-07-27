@@ -65,7 +65,7 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
 
   // Delete-confirmation skip pref — was injected from viewer.ts as a dep; now
   // owned here since this module is the only reader (requestDeleteGroup below)
-  // and the settings island (Danger.tsx) wants a direct live binding instead of
+  // and the settings component (Danger.tsx) wants a direct live binding instead of
   // going through the old shared bridge.
   let skipDeleteConfirm = false;
   function getSkipDeleteConfirm() {
@@ -252,9 +252,9 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
 
   // Resolve ONE group into a plain, fully-formatted card model: image src,
   // formatted counts/dates, selection, aspect — everything the markup
-  // needs as primitives. The grid island renders it with the shared PostCard
+  // needs as primitives. The grid component renders it with the shared PostCard
   // component (live React cells via hologramPostGridSource). Selection is NOT
-  // injected — the grid island's Cell derives .selected from hologramStore's
+  // injected — the grid component's Cell derives .selected from hologramStore's
   // 'selectedSet'.
   const cardModel = makeCardModel({
     t: deps.t,
@@ -320,10 +320,10 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
 
     if (viewGroups.length === 0) {
       // pushing 'postGroups'=null (not just an empty array — see renderer/grid.ts's
-      // computeModel) unmounts the grid island's cells SYNCHRONOUSLY (hologramStore.set's
-      // notify loop is synchronous, and the island's subscriber flushSync's the unmount,
+      // computeModel) unmounts the grid component's cells SYNCHRONOUSLY (hologramStore.set's
+      // notify loop is synchronous, and the component's subscriber flushSync's the unmount,
       // removing its own host div — same guarantee the old pushed render(null) call gave).
-      // The EmptyState island derives 'firstRun'/'filtered' itself from this same key +
+      // The EmptyState component derives 'firstRun'/'filtered' itself from this same key +
       // 'allPostsCount' + 'searchQuery' — one less push.
       storeSet('postGroups', null);
       grid.style.display = 'none';
@@ -360,7 +360,7 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
     grid.classList.toggle('show-eng', ['likes-desc', 'reposts-desc', 'replies-desc', 'likes-pct'].includes(deps.sortValue()) || deps.postShadow().some((f: { type: string }) => f.type === 'engagement'));
     grid.classList.toggle('show-cap', deps.sortValue() === 'captured-desc' || deps.postShadow().some((f: { type: string; dateField?: string }) => f.type === 'date' && f.dateField === 'capturedAt'));
 
-    // THE GRID — fully React-owned (grid island via hologramPostGridSource):
+    // THE GRID — fully React-owned (grid component via hologramPostGridSource):
     // masonic windowing + live cell rendering for all three views. viewer.js keeps
     // the data pipeline (viewGroups above), the container's classes/CSS vars, and
     // every delegated #postGrid handler. Layout (view/columnWidth/rowGutter/
@@ -532,7 +532,7 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
 
   // Destroying the whole library requires typing the keyword (t('deleteKeyword')) to
   // enable the OK button — a stray click can't wipe everything. The confirm modal is
-  // React-owned (confirm.ts / the confirm island); this just opens it with the keyword
+  // React-owned (confirm.ts / the confirm component); this just opens it with the keyword
   // gate + the wipe as its onOk. Was reached through the old shared bridge — the React
   // Danger section now imports the confirmClearAll live binding below directly.
   function confirmClearAll() {
@@ -612,7 +612,7 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
 
 // loadPosts/confirmClearAll/getSkipDeleteConfirm/setSkipDeleteConfirm are bound
 // once at boot (viewer.ts, right after constructing postGrid) so the settings
-// island (Danger.tsx/Data.tsx) can reach them directly — no shared-bridge
+// component (Danger.tsx/Data.tsx) can reach them directly — no shared-bridge
 // detour.
 export let loadPosts: ((keepLimit?: boolean, changedNames?: string[] | null) => Promise<void>) | null = null;
 export function bindLoadPosts(fn: (keepLimit?: boolean, changedNames?: string[] | null) => Promise<void>): void {

@@ -7,7 +7,7 @@ import type { CSSProperties } from 'react';
 // skeleton duplicated by hand, which is exactly the kind of copy that drifts. Both
 // columns now render from ONE Row component, so the markup can't diverge.
 
-// Full <svg> strings, byte-identical to the pre-island static HTML so the rendered
+// Full <svg> strings, byte-identical to the pre-React static HTML so the rendered
 // glyphs match exactly (CSS sizes .sb-row-ic > svg). Kept as whole <svg> (not just
 // paths) to preserve per-icon attrs (the 複数画像 icon carries width/height).
 export const ICON: Record<string, string> = {
@@ -43,7 +43,7 @@ Object.assign(ICON, {
 export const ARROW = '<svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 1.5l4 4-4 4"/></svg>';
 
 // Single sanctioned SVG-glyph site: the icon strings are app-defined constants (never
-// user content), same established island pattern as ContextMenu/Tabs/Chips.
+// user content), same established component pattern as ContextMenu/Tabs/Chips.
 export function Glyph({ className, svg }: { className: string; svg: string }) {
   // biome-ignore lint/security/noDangerouslySetInnerHtml: established SVG-glyph pattern — app-defined constants, never user content
   return <span className={className} dangerouslySetInnerHTML={{ __html: svg }} />;

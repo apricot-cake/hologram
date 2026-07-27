@@ -4,11 +4,11 @@ import { close, type LightboxState } from '../services/lightbox.ts';
 
 // Single-image quick-view (peek) overlay. #143 reduced the lightbox to one item —
 // full gallery paging lives in the image view now — so this renders just the item
-// renderer/lightbox.ts holds (the thumbnail, zoomed) plus video playback; no prev/
+// services/lightbox.ts holds (the thumbnail, zoomed) plus video playback; no prev/
 // next nav or counter.
 //
 // P2⑦: the overlay itself is React's now. It used to be a static #lightbox div in
-// index.html that this island portaled INTO, with renderer/lightbox.ts toggling a
+// index.html that this component portaled INTO, with services/lightbox.ts toggling a
 // `.show` class on it imperatively and registering the backdrop-click and Esc
 // listeners at module load. All of that is here: the element exists only while the
 // peek is open (visibility IS the conditional render), and both listeners live and

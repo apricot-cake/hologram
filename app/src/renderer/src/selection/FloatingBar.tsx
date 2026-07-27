@@ -15,8 +15,8 @@ import { selectionClear, selectionDelete, selectionFolder, selectionGroup, selec
 // the old top #selectionBar: the container + delegated data-act dispatcher are gone, and
 // each button calls an orchestrator-exported selection action directly (onClick →
 // function). The model is self-derived from hologramStore — count/allSelected/groupDisabled
-// come straight from 'selectedSet' + 'postGroups' (reusing renderer/selection.ts's own
-// isAllSelected/selectedGroups), same derivation the retired SelectionBar island used.
+// come straight from 'selectedSet' + 'postGroups' (reusing services/selection.ts's own
+// isAllSelected/selectedGroups), same derivation the retired SelectionBar component used.
 //
 // Each action shows an icon + a text label (the old inventory: select-all / tag / folder
 // / group / delete / clear). The labels are RESPONSIVE to available width: the full

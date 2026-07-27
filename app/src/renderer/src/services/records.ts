@@ -4,7 +4,7 @@
 // slice of the viewer decomposition (最終形B), plus (P4 "IPC→service" domain-grouping
 // follow-up) the manual-groups.json / ungrouped.json load/persist pairs for the two
 // stores makeGroupRecords already consumes. A real ES module (named exports)
-// imported directly by viewer.ts / image-tab.ts and the FloatingBar island
+// imported directly by viewer.ts / image-tab.ts and the FloatingBar component
 // (postIdKey); touches no DOM. Runtime couplings (manual groups / ungrouped opt-outs
 // — live viewer state) are INJECTED via makeGroupRecords(deps), so this file loads
 // under Node too (scripts/test-records-unit.cts drives it via dynamic import); the
@@ -322,7 +322,7 @@ export function makeGallery(deps: { fileSrc(file: string): string }) {
 // (shotW/H → learned cache), and the multi-image back-stack sheets.
 //   deps.currentView() / imgAspect() are getters (viewer reassigns the lets);
 //   fileSrc keeps folder + asset knowledge viewer-owned. Selection is
-//   NOT here — the grid island derives .selected straight from hologramStore's
+//   NOT here — the grid component derives .selected straight from hologramStore's
 //   'selectedSet' (same pattern as inspectedKey), so this stays selection-free.
 export function makeCardModel(deps: {
   t(key: string, subs?: ReadonlyArray<string | number | null | undefined>): string;
@@ -342,7 +342,7 @@ export function makeCardModel(deps: {
     const p = g.rep;
     const view = currentView();
     const aspectCache = imgAspect();
-    // Engagement: nonzero only (zeros are noise). Formatted here; the island
+    // Engagement: nonzero only (zeros are noise). Formatted here; the component
     // owns the outline TEXT glyphs (♡ ⇄ 🗨 🔖).
     const stats = {
       likes: p.likes > 0 ? formatCount(p.likes) : null,

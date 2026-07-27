@@ -2,9 +2,9 @@
 // extracted from viewer.js's inline createQueryBuilder (the event half).
 // One instance per bar (posts / posters). Owns the tree state, the cluster
 // view-model derivation, the mutation helpers, AND (since that extraction) the
-// qbNodeMap + click/contextmenu DISPATCH — the query-chips island (React) now
+// qbNodeMap + click/contextmenu DISPATCH — the query-chips component (React) now
 // derives its display purely by reading a cached model + calling dispatch(),
-// instead of viewer.js pushing a model into the island and delegating raw DOM
+// instead of viewer.js pushing a model into the component and delegating raw DOM
 // events. viewer.js still owns orchestration around a change (ctx.onChange,
 // openLeafEditor popovers, onClearSearch) — only the tree/model/event-routing
 // domain itself moved.
@@ -13,14 +13,14 @@
 //        getSearchVal?, onClearSearch?, onChange, openLeafEditor?,
 //        editableLeafTypes?, singleValueTypes?, noDupTypes?, multiValueTypes?,
 //        standaloneTypes? }  (barEl = the bar's static container: reveal +
-//        --activebar-h measure; the reset/empty/count chrome is the activebar island)
+//        --activebar-h measure; the reset/empty/count chrome is the activebar component)
 import { emptyTree, hasLeafValue, removeCondsMatching as removeCondsMatchingQ, buildShadow, canonicalizeFacet, facetViewOf, facetAdd, cleanupTree, sameLeaf, detachNode, treeParentMap, facetSetNeg, evalNode } from './query.ts';
 import { open as menuOpen } from './menu.ts';
 import { set as storeSet } from './store.ts';
 
 const prefersReducedMotion = () => !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
 
-// ── per-container cached model + subscribers (the island's useSyncExternalStore
+// ── per-container cached model + subscribers (the component's useSyncExternalStore
 // reads through getModel/subscribe; dispatch routes a click/contextmenu action
 // back to the owning instance). Keyed by container.id ('queryChips' /
 // 'posterQueryChips'), so both bars share this one registry. ──
@@ -57,10 +57,10 @@ function pushModel(id: string, model: any) {
   channel(id).notify();
 }
 
-// Local shape for the ctx contract documented in the file-top comment (the
-// exported HologramQueryChipsIsland.create(ctx: any) stays loose — the islands
-// project doesn't see HologramQueryLeaf/HologramQueryGroup — so this is typed only
-// for this module's own body).
+// Local shape for the ctx contract documented in the file-top comment
+// (createQueryBuilder's ctx: any stays loose — the renderer project doesn't see
+// HologramQueryLeaf/HologramQueryGroup — so this is typed only for this module's
+// own body).
 interface QbCtx {
   container: HTMLElement;
   storeKey?: string;
@@ -131,7 +131,7 @@ export function createQueryBuilder(ctx: QbCtx) {
   }
 
   // --- Render: recompute the tree as attribute clusters (facet chips), cache
-  // the model, and notify the island's subscribers. The island (React) reads
+  // the model, and notify the component's subscribers. The component (React) reads
   // the cached model + qbNodeMap-backed dispatch(); no DOM delegation lives
   // here anymore. ---
   function render() {
@@ -149,7 +149,7 @@ export function createQueryBuilder(ctx: QbCtx) {
         if (h) document.documentElement.style.setProperty('--activebar-h', h + 'px');
       });
     const hasQuery = tree.children.length > 0;
-    // The リセット button + empty-bar hint visibility is the activebar island now (from
+    // The リセット button + empty-bar hint visibility is the activebar component now (from
     // buildActivebarModel, pushed by renderPosts/renderPosters after this render). This
     // render only owns the bar reveal + --activebar-h measurement above (side effects on
     // viewer's static container) and the chips model below.
@@ -159,7 +159,7 @@ export function createQueryBuilder(ctx: QbCtx) {
     const isFacet = canonicalizeFacet(tree, facetOpts);
     const view = isFacet ? facetViewOf(tree, facetOpts) : null;
     // Rebuild qbNodeMap (data-nid → node) in the same pre-order the model
-    // carries, so dispatch()'s nodeById() keeps resolving. The island only
+    // carries, so dispatch()'s nodeById() keeps resolving. The component only
     // RENDERS this model and calls dispatch(); this module keeps the ids,
     // the state, and the event routing.
     qbNodeMap = new Map();
@@ -266,7 +266,7 @@ export function createQueryBuilder(ctx: QbCtx) {
     });
   }
 
-  // Bar interaction, routed from the island's onClick/onContextMenu handlers
+  // Bar interaction, routed from the component's onClick/onContextMenu handlers
   // (no DOM delegation — React owns the elements directly now). Mirrors the
   // former delegated click/contextmenu listeners 1:1: すべて/どれか segment,
   // delete a value (✕), clear the search echo, open a leaf editor (date/

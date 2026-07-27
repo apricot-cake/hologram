@@ -108,13 +108,13 @@ const evalJs = `(async () => {
   const wait = (ms) => new Promise(r => setTimeout(r, ms));
   const cards = () => document.querySelectorAll('#postGrid .post-card').length;
   const waitFor = async (fn, ms = 4000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (fn()) return true; await wait(40); } return false; };
-  // React controlled inputs (searchbox island / date form): a bare .value write is
+  // React controlled inputs (searchbox component / date form): a bare .value write is
   // invisible to React's value tracker — go through the prototype setter, then 'input'.
   const setInput = (el, text) => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(el, text);
     el.dispatchEvent(new Event('input', { bubbles: true }));
   };
-  // The searchbox island's Autocomplete input (no #searchBox id since P2④).
+  // The searchbox component's Autocomplete input (no #searchBox id since P2④).
   const searchInput = document.querySelector('input[placeholder="テキスト・ユーザー名で検索"]');
   const typeSearch = (text) => setInput(searchInput, text);
   await waitFor(() => cards() >= 7);   // 3 search posts + 4 date-boundary posts; post view loads async
@@ -135,7 +135,7 @@ const evalJs = `(async () => {
 
   // --- Date filter: local-day boundary (TZ=Asia/Tokyo, see fixtures) ---
   // Clear the search term so it does not co-filter the grid, then drive the real
-  // "+ フィルタ" flow (filterbar island): open the popover, pick 日付, fill the
+  // "+ フィルタ" flow (filterbar component): open the popover, pick 日付, fill the
   // from/to date inputs, click 適用.
   typeSearch('');
   await wait(240);

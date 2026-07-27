@@ -1,5 +1,5 @@
 // Form editor for the "+ フィルタ" flow (redesign §3-2 / P2③) — the date-range and
-// engagement forms, adapted from the retired filter-popover island. Driven by a
+// engagement forms, adapted from the retired filter-popover component. Driven by a
 // FilterCatDate / FilterCatEng entry (orchestrator's filterCategories): the entry
 // carries the localized dim/type options + the apply action; this component only
 // collects the raw field values and hands them off, then closes the popover.

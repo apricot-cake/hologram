@@ -1,6 +1,6 @@
 // Value editor for the "+ フィルタ" flow (redesign §3-2 / P2③) — the checklist /
 // sectioned-tag two-pane picker for one facet category. Adapted from the retired qf-pop
-// island's body: same buildRows/buildGroups/ValueRow rendering and the two-pane for
+// component's body: same buildRows/buildGroups/ValueRow rendering and the two-pane for
 // sectioned tags (種別: 作品/キャラ/未分類), but driven by a FilterCatValues entry
 // (orchestrator's filterCategories) instead of the qf-pop bridge. The picker stays open so several
 // values can be toggled in a row; each pick re-reads values() so on/count refresh.

@@ -74,7 +74,7 @@ export function makePostQueryBuilder(deps: PostQueryBuilderDeps) {
     t: deps.t,
     container: deps.container,
     storeKey: 'postQueryTree',
-    barEl: deps.barEl, // reveal + --activebar-h measure (empty/reset are the island's)
+    barEl: deps.barEl, // reveal + --activebar-h measure (empty/reset are the component's)
     predOf,
     labelOf: deps.labelOf,
     glyphOf: qcGlyph,
@@ -127,7 +127,7 @@ export function makePosterQueryBuilder(deps: PosterQueryBuilderDeps) {
     t: deps.t,
     container: deps.container,
     storeKey: 'posterQueryTree',
-    barEl: deps.barEl, // reveal + --activebar-h measure (empty/reset are the island's)
+    barEl: deps.barEl, // reveal + --activebar-h measure (empty/reset are the component's)
     predOf,
     labelOf: deps.labelOf,
     glyphOf: qcGlyph,

@@ -1,9 +1,9 @@
 // ESM stand-in for 'use-sync-external-store/shim/with-selector' (a @base-ui/utils
 // transitive dep), same motivation as use-sync-external-store-shim.ts: the CJS
-// package's literal require("react") survives into the lib-IIFE island bundles and
+// package's literal require("react") survives into the bundled renderer output and
 // throws at load under file://. React exports useSyncExternalStore natively but NOT
 // the with-selector variant, so this is a faithful port of the upstream memoizing
-// wrapper. Aliased in islands/build.mjs (prod) + vite.config.mjs (dev).
+// wrapper. Aliased in electron.vite.config.ts's RESOLVE_ALIAS.
 import { useDebugValue, useEffect, useMemo, useRef, useSyncExternalStore } from 'react';
 
 export function useSyncExternalStoreWithSelector<Snapshot, Selection>(subscribe: (onStoreChange: () => void) => () => void, getSnapshot: () => Snapshot, getServerSnapshot: undefined | null | (() => Snapshot), selector: (snapshot: Snapshot) => Selection, isEqual?: (a: Selection, b: Selection) => boolean): Selection {

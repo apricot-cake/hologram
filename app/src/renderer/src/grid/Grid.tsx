@@ -1,7 +1,7 @@
 // Virtualized post grid — the post-specific cell on the shared VirtualGridHost
 // (_shared/VirtualGrid.tsx owns the masonic + scroller plumbing; it was extracted
 // 1:1 from here when the poster/collection grids joined the same foundation).
-// The island owns cell rendering + windowing; viewer.js owns the data
+// The component owns cell rendering + windowing; viewer.js owns the data
 // (model.items = viewGroups), the container classes, and every delegated
 // #postGrid handler. Cells emit the long-standing .post-card DOM contract
 // (shared PostCard component), so delegation + CSS work unchanged.

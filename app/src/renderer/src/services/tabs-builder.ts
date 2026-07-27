@@ -231,7 +231,7 @@ export function makeTabsController(deps: TabsBuilderDeps) {
     onChange: updateNavButtons,
   });
   // The nav 戻る/進む disabled state used to be part of a pushed activebar model; the
-  // activebar island now self-derives everything else from hologramStore, but
+  // activebar component now self-derives everything else from hologramStore, but
   // nav's canBack/canForward live in a closure (the history stack), not the store — so this
   // is the one remaining mirror-on-change (same shape as multiOnly/qfCat elsewhere).
   function updateNavButtons() {
@@ -253,9 +253,9 @@ export function makeTabsController(deps: TabsBuilderDeps) {
     return true;
   }
   // Back/forward through the per-tab view history: Alt+←/→ + mouse side buttons (the bar
-  // buttons themselves route through the island callbacks). Guarded so they never fire
+  // buttons themselves route through the component callbacks). Guarded so they never fire
   // while typing, with an overlay open, or in poster mode (mirrors the Ctrl+A guard convention).
-  // Registration lives in the GlobalShortcuts component (app/islands/app/App.tsx); this
+  // Registration lives in the GlobalShortcuts component (app/App.tsx); this
   // stays the handler + guard logic (viewer keeps the orchestration, React owns the wiring).
   function handleShortcutNavKey(e: KeyboardEvent) {
     if (!e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
@@ -499,7 +499,7 @@ export function makeTabsController(deps: TabsBuilderDeps) {
   // Tab bar: rename-input commit/cancel, close/new/switch clicks, middle-click close,
   // autoscroll suppression, right-click context menu, double-click rename, and the
   // Ctrl+T/W/Tab document shortcuts. React owns the registration (TabBarEvents,
-  // app/islands/app/App.tsx), importing these handlers' live bindings from viewer.ts
+  // app/App.tsx), importing these handlers' live bindings from viewer.ts
   // directly (assigned at this controller's construction site); this stays the guard
   // + action logic (viewer keeps the orchestration, React owns the wiring) — same
   // "cut out and rewire" as the global shortcuts / detail-dismiss slices.
@@ -539,8 +539,8 @@ export function makeTabsController(deps: TabsBuilderDeps) {
   // place of its title span (it survives re-renders, unlike the old imperative
   // replaceWith on React-owned DOM). Commit/cancel are delegated on the bar below.
   // The store notify that follows setTabEditingId() may land the re-render either
-  // synchronously or on the next frame (renderer/tabs.ts's pull source isn't
-  // useSyncExternalStore-backed — see its island's comment) — rAF is the same
+  // synchronously or on the next frame (services/tabs.ts's pull source isn't
+  // useSyncExternalStore-backed — see its own comment) — rAF is the same
   // "wait for React to have painted" trick restoreTabView already relies on.
   function startTabRename(id: string) {
     if (!getTabs().find((t) => t.id === id)) return;

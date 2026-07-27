@@ -2,7 +2,7 @@
 // inspector panel (#postDetail/#postDetailBox: post detail + poster detail, including the
 // always-live inline tag editor). viewer.ts keeps every business rule (persistence, undo,
 // homonym detection, grouping, poster folders) and the panel's own hidden/insp-open
-// chrome; the React island owns rendering #postDetailBox's content.
+// chrome; the React component owns rendering #postDetailBox's content.
 // Kept SEPARATE from hologramStore for the same reason as menu.ts/kind-menu.ts/
 // filter-popover.ts/qf-pop.ts: the model carries CALLBACKS. A real ES module (named
 // exports), imported directly by its consumers (viewer.ts / Inspector.tsx).

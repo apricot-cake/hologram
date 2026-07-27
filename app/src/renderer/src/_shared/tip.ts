@@ -1,6 +1,6 @@
 // The single shared hover-hint surface (.ui-tip) — one tooltip that EVERY
 // hover hint drives, so tooltips can't drift apart in material/timing/placement.
-// Two ways to trigger it, both feeding the same TooltipHost island:
+// Two ways to trigger it, both feeding the same TooltipHost component:
 //   1. React:      spread tipProps(text) onto a trigger (hover + keyboard focus).
 //   2. Any markup: put data-tip="…" on an element (TooltipHost's document-level
 //      delegation shows it) — lets static HTML / orchestrator-set attributes opt

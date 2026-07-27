@@ -94,7 +94,7 @@ export let navForward: () => void;
 export let resetAllFilters: () => void;
 export let resetPosterFilters: () => void;
 // Bulk-selection actions for the bottom floating bar (redesign §3-4 / P2⑥). The
-// FloatingBar island calls these directly (onClick → function), so the old data-act
+// FloatingBar component calls these directly (onClick → function), so the old data-act
 // #selectionBar delegation is gone. folder takes the clicked button's rect to anchor its
 // menu against the bar; tag opens a centered Dialog and needs none.
 export let selectionSelectAll: () => void;
@@ -139,7 +139,7 @@ export let saveCurrentSearch: (name: string) => HologramFolder | null;
 
 // --- Filter bar (redesign §3-2 / P2③) -------------------------------------
 // One value-flyout row (from facets.ts's qfValues) — the structural shape the
-// filterbar island renders. Kept loose ([k]:any) like HologramQfPopItem: qfValues
+// filterbar component renders. Kept loose ([k]:any) like HologramQfPopItem: qfValues
 // tacks on per-category extras (type/kind/sub/sn/facetDim/ghead/dotTitle).
 export interface FilterRow {
   v?: string;
@@ -193,7 +193,7 @@ export interface FilterCatEng extends FilterCatBase {
 }
 export type FilterCat = FilterCatValues | FilterCatDate | FilterCatEng;
 // The "+ フィルタ" menu: the facet categories the current browse mode offers,
-// each carrying its own live value/apply closures (the island only renders +
+// each carrying its own live value/apply closures (the component only renders +
 // routes). Recomputed per open so counts/labels/vocab are fresh.
 export let filterCategories: () => FilterCat[];
 
@@ -244,7 +244,7 @@ export function endFilterEditSession(): void {
   await shellReady;
   // Count / date display formatters live in format.ts now (imported above).
   // (The backup-rail time formatters fmtTime/fmtBackupTime are used only by the
-  // MirrorStatus island now, which imports format.ts directly.)
+  // MirrorStatus component now, which imports format.ts directly.)
 
   // Nudge an already-shown, cursor-positioned popup back inside the viewport (8px
   // margin). Shared by the cursor-placed context menus (query-builder / folder /
@@ -275,32 +275,33 @@ export function endFilterEditSession(): void {
     if (el) el.setAttribute(attr, val);
   };
 
-  // #settingsBtn is the sidebar island's gear now (LeftSidebar): it carries the
+  // #settingsBtn is the sidebar component's gear now (LeftSidebar): it carries the
   // Sidebar tooltip + its own <span> label, so the legacy [data-tip]/aria-label
   // written here stacked a SECOND .ui-tip chip on top of it on hover.
   // #filterRows row labels + the クリップ row / 空にする button (icon, tip, aria) are
-  // rendered by the sidebar island, self-deriving from hologramPostSidebarSource
-  // (renderer/sidebar.ts) — no static setText here.
+  // rendered by the sidebar component, self-deriving from hologramPostSidebarSource
+  // (services/sidebar.ts) — no static setText here.
   setAttr('contentTop', 'aria-label', getMessage('sbTopTip'));
   // #postResetBtn label + the activebar frame (nav / title / empty hint / count / reset /
-  // ⓘ help) are the activebar island now, self-deriving from hologramStore
+  // ⓘ help) are the activebar component now, self-deriving from hologramStore
   // (renderer/activebar.ts is gone — no bridge left) — no static setText here.
   // Density (post + poster) and the sort labels live in the display popover
-  // (islands/shell/DisplayMenu.tsx); browse mode is the left sidebar's. All three
+  // (shell/DisplayMenu.tsx); browse mode is the left sidebar's. All three
   // render from i18n themselves — no static setText here.
-  // #posterFilterRows title + row labels are rendered by the poster sidebar island,
-  // self-deriving from hologramPosterSidebarSource (renderer/sidebar.ts). No
+  // #posterFilterRows title + row labels are rendered by the poster sidebar component,
+  // self-deriving from hologramPosterSidebarSource (services/sidebar.ts). No
   // static setText here (mirror of the post-side #filterRows note above).
   // posterDateDim options / posterDateDimLabel / posterDateRangeLabel / posterDateApply /
-  // posterDateClear are the filter-popover React island now — no static labels here.
+  // posterDateClear are the filterbar React component now (replacing the retired
+  // filter-popover) — no static labels here.
   // Settings-modal labels (theme/lang/data/backup/trash/danger/about) live in the React
-  // settings island; the confirm modal is the React confirm island (labels come through
+  // settings component; the confirm modal is the React confirm component (labels come through
   // confirmOpen's config), so no static confirm setText here either.
 
-  // #activebarLabel / #qbEmptyHint / #posterQbEmptyHint are the activebar island now,
+  // #activebarLabel / #qbEmptyHint / #posterQbEmptyHint are the activebar component now,
   // self-deriving from hologramStore + t() — no static setText here.
   // #filterRows titles/row names (フィルタ / 作品 / キャラ / タグ / ハッシュタグ …) are
-  // rendered by the sidebar island, self-deriving from hologramPostSidebarSource — no
+  // rendered by the sidebar component, self-deriving from hologramPostSidebarSource — no
   // static setText here.
   setAttr('sbTop', 'data-tip', getMessage('sbTopTip')); // #sbTop back-to-top retired in the shell cutover; setAttr no-ops if absent
 
@@ -369,7 +370,7 @@ export function endFilterEditSession(): void {
     set('sbEngMin', '');
     afterQueryChange();
   };
-  // #postResetBtn / #navBackBtn / #navFwdBtn clicks are wired by the activebar island,
+  // #postResetBtn / #navBackBtn / #navFwdBtn clicks are wired by the activebar component,
   // which imports resetAllFilters/navBack/navForward directly (no more pushed model
   // callbacks) — the buttons are React-owned.
   //
@@ -459,13 +460,13 @@ export function endFilterEditSession(): void {
   const { charCandidatesFor, worksCooccurringWith, relatedTagCandidates } = makeCooc({ allPosts: () => postGrid.getAllPosts(), tagKindOf });
   // onQfPick (value-pick → tree mutation) lives in qf-pop-builder.ts,
   // exposed as qfPop.pickValue for the filter bar — see the makeQfPop() call near
-  // posterQB below (the flyout render/anchor half retired with its island, P2③).
+  // posterQB below (the flyout render/anchor half retired with its component, P2③).
 
-  // The ⓘ クエリビルダの使い方 hover popover is the activebar island now (HelpPop) — its
+  // The ⓘ クエリビルダの使い方 hover popover is the activebar component now (HelpPop) — its
   // content (title + 5 rows) rides the model's `help` field; hover/positioning live there.
 
   // The date/engagement/poster-date-range popovers (the retired filter-popover flyout)
-  // were removed with their island (P2③ タスク3); adding a date/engagement filter is the
+  // were removed with their component (P2③ タスク3); adding a date/engagement filter is the
   // "+ フィルタ" bar's FormEditor now, and editing a chip re-opens it (P2③).
   // The single 'text' leaf bound to the search box (post mode only) is owned by
   // search-editing.ts, wired together with the rest of the search-box plumbing
@@ -473,7 +474,7 @@ export function endFilterEditSession(): void {
   // see the makeSearchBox() call below.
 
   // --- Sidebar filter controls ---
-  // (#filterRows row labels are rendered by the sidebar island, self-deriving from
+  // (#filterRows row labels are rendered by the sidebar component, self-deriving from
   // hologramPostSidebarSource. No static setText for プラットフォーム / 投稿 /
   // メディア / 日付 / エンゲージメント here.)
 
@@ -502,7 +503,7 @@ export function endFilterEditSession(): void {
   // renderer/sidebar.ts's hologramPostSidebarSource/hologramPosterSidebarSource
   // (see that file for how postQueryTree/tags/folders/posts-data feed it).
   function updateSidebarState() {
-    // (#searchBox's has-value accent is owned by the searchbox island)
+    // (#searchBox's has-value accent is owned by the searchbox component)
     renderQueryChips(); // 検索/フォルダ等の変化を下部アクティブバーへ即時反映
   }
 
@@ -606,7 +607,7 @@ export function endFilterEditSession(): void {
   bindApplyTileOverlay(gridDensity.applyTileOverlay);
   // Post-grid selection state (Set + shift-range anchor) lives in
   // renderer/selection.ts — hologramStore's
-  // 'selectedSet' key IS the state; the grid island's cells read it reactively.
+  // 'selectedSet' key IS the state; the grid component's cells read it reactively.
   // --- Query builder: a boolean condition tree is the single source of truth ---
   // (改訂③: flat conditions you drag into parenthesised
   // groups; no auto type-grouping). BOTH views (posts / posters) share ONE builder
@@ -625,7 +626,7 @@ export function endFilterEditSession(): void {
   // The shared facet-chip builder (改訂④) lives in
   // query-chips.ts (the event half): tree state, cluster view-model
   // derivation, qbNodeMap, and click/contextmenu dispatch all moved there — the
-  // query-chips island reads a cached model + calls dispatch() directly instead
+  // query-chips component reads a cached model + calls dispatch() directly instead
   // of viewer.js pushing a model and delegating raw DOM events. The postQB/
   // posterQB instance construction (predOf/glyph/createQueryBuilder ctx) itself
   // moved to query-builder.ts; orchestrator.ts keeps the orchestration
@@ -643,7 +644,7 @@ export function endFilterEditSession(): void {
   const { qb: postQB, predOf: postPredOf } = makePostQueryBuilder({
     t: getMessage,
     container: document.getElementById('queryChips') as HTMLElement,
-    barEl: document.getElementById('postActiveBar'), // reveal + --activebar-h measure (empty/reset are the island's)
+    barEl: document.getElementById('postActiveBar'), // reveal + --activebar-h measure (empty/reset are the component's)
     labelOf: filterLabel,
     // A saved tag leaf from before the DB migration (#297) carries only a name;
     // query.ts's tag case resolves and caches its tagId on first evaluation via
@@ -738,8 +739,8 @@ export function endFilterEditSession(): void {
 
   const CF = () => folders; // shared folder module
 
-  // --- Settings: fully island-owned now (app/islands/settings for the modal,
-  // LeftSidebar's gear for the open call; Esc / backdrop close live in the island).
+  // --- Settings: fully component-owned now (settings/ for the modal,
+  // LeftSidebar's gear for the open call; Esc / backdrop close live in the component).
   // The old wireSettingsGear() listener on #settingsBtn duplicated that onClick.
 
   // Hashtag browsing is now covered by the sidebar タグ section + the search box
@@ -1009,7 +1010,7 @@ export function endFilterEditSession(): void {
   });
 
   // Image lightbox / quick-view peek (a single image — #143). The overlay UI lives
-  // in the React island (renderer/lightbox.ts + islands/lightbox); orchestrator.ts
+  // in the React component (services/lightbox.ts + lightbox/); orchestrator.ts
   // only resolves a post's gallery items below and hands the FIRST (the thumbnail)
   // to open(). Full paging over every page moved to the image view.
 
@@ -1175,7 +1176,7 @@ export function endFilterEditSession(): void {
   handleShortcutQuickView = selectionCtl.handleShortcutQuickView;
   handleShortcutArrowNav = selectionCtl.handleShortcutArrowNav;
   // Bulk-action bindings for the bottom floating bar (P2⑥) — called straight from the
-  // FloatingBar island (no #selectionBar container, no data-act dispatch anymore).
+  // FloatingBar component (no #selectionBar container, no data-act dispatch anymore).
   selectionSelectAll = selectionCtl.toggleSelectAll;
   selectionTag = selectionCtl.tagSelection;
   selectionFolder = selectionCtl.folderSelection;
@@ -1230,7 +1231,7 @@ export function endFilterEditSession(): void {
     mode = mode === 'posters' ? 'posters' : 'posts'; // collections retired (now a sidebar folder list)
     if (browseMode === mode) return;
     browseMode = mode;
-    // Mirror into the store so the React islands (LeftSidebar active state, App's
+    // Mirror into the store so the React components (LeftSidebar active state, App's
     // ShellClasses body.browse-posters — CSS hides the inactive grid) reflect the
     // mode even when an INTERNAL setter drove us. Safe against recursion: the
     // store's set is value-guarded, and browseMode === mode by now so the
@@ -1276,7 +1277,7 @@ export function endFilterEditSession(): void {
   // Browse mode is the left sidebar's (hologramStore 'browseMode').
   // React owns the active state + glass thumb; orchestrator reacts to a mode change by running
   // the heavy switch. The idempotent guard skips the no-op set from the pref restore
-  // below, so the loop stays one-way (island → store → orchestrator, never back). React owns
+  // below, so the loop stays one-way (component → store → orchestrator, never back). React owns
   // the subscribe() registration (StoreSubscriptions, App.tsx), importing this directly;
   // this stays the guard + action logic. Assigned (not a hoisted declaration) so the
   // module-scope `export let` above is what gets set.
@@ -1354,7 +1355,7 @@ export function endFilterEditSession(): void {
   // both declared above so a direct ref is TDZ-safe. posterFilterLabel lives in
   // tab-state.js's makeTabLabels (destructured near filterLabel).
   // The poster date-range popover (and its editingPosterDateNode state) retired with
-  // the filter-popover island (P2③ タスク3); a poster date chip re-opens the filterbar
+  // the filter-popover component (P2③ タスク3); a poster date chip re-opens the filterbar
   // FormEditor now.
   // The poster-side builder instance (predOf/glyph/instance construction moved to
   // query-builder.ts — see that file's makePosterQueryBuilder).
@@ -1368,7 +1369,7 @@ export function endFilterEditSession(): void {
   const { qb: posterQB } = makePosterQueryBuilder({
     t: getMessage,
     container: document.getElementById('posterQueryChips') as HTMLElement,
-    barEl: document.getElementById('posterActiveBar'), // reveal + --activebar-h measure (empty/reset are the island's)
+    barEl: document.getElementById('posterActiveBar'), // reveal + --activebar-h measure (empty/reset are the component's)
     labelOf: posterFilterLabel,
     getSearchVal: () => searchQuery(),
     onClearSearch: () => {
@@ -1390,7 +1391,7 @@ export function endFilterEditSession(): void {
 
   // qf-pop value-pick routing — a viewer.ts decomposition slice, now just
   // the headless pick router for the filter bar (the value flyout + date/eng popover
-  // retired with their islands, P2③ タスク3). Wired here (not where first used) so
+  // retired with their components, P2③ タスク3). Wired here (not where first used) so
   // postQB/posterQB/buildUsers are already real consts — no deferred-getter indirection,
   // same reasoning as makeSearchBox() being wired late (search-box-builder.ts).
   const qfPop = makeQfPop({
@@ -1408,12 +1409,12 @@ export function endFilterEditSession(): void {
   // current browse mode offers, each carrying its own live value/apply closures. The
   // routing is REUSED — value picks go through qfPop.pickValue (= onQfPick, run headless
   // with no open flyout), date/engagement writes go straight to the QB (mirroring the
-  // retired filter-popover's onApply logic). The filterbar island only renders + routes; it
+  // retired filter-popover's onApply logic). The filterbar component only renders + routes; it
   // never rebuilds this logic. Recomputed per open so counts/vocab/labels stay fresh.
   filterCategories = function (): FilterCat[] {
     const pick = (cat: string) => (it: FilterRow) => qfPop.pickValue(cat, it as HologramQfPopItem);
     // 種別 dot: a tag row carrying it.kind ('work'/'character') wears the shared category
-    // dot — resolve its (possibly custom) label here so the island only draws (this is
+    // dot — resolve its (possibly custom) label here so the component only draws (this is
     // exactly what renderQfPop did before the flyout was retired).
     const dot = (it: FilterRow) => (it.kind ? { ...it, dotTitle: kindLabel(it.kind as string) } : it);
     // Mode accessors (redesign §4-2 B) bound to one view's QB + facet schema: read /
@@ -1570,7 +1571,7 @@ export function endFilterEditSession(): void {
   // chip per facet (Linear型), derived from facetViewOf. `cat` matches a
   // filterCategories() entry so a chip click reopens that facet's editor; negated
   // leaves collect per type into a 「〜以外」 chip (要決 A案). Recomputed on every tree
-  // change — the island subscribes to the postQueryTree/posterQueryTree store keys.
+  // change — the component subscribes to the postQueryTree/posterQueryTree store keys.
   activeFilters = function (): ActiveFilter[] {
     const posters = browseMode === 'posters';
     const qb = posters ? posterQB : postQB;
@@ -1673,7 +1674,7 @@ export function endFilterEditSession(): void {
     renderPosters();
   });
   // Poster query reset (bar右の「リセット」): empty the poster tree + the shared search box.
-  // Wired to the activebar island's #posterResetBtn via onPosterReset (React-owned button).
+  // Wired to the activebar component's #posterResetBtn via onPosterReset (React-owned button).
   // The poster [data-qfrow] flyout rows were removed with the poster sidebar facet
   // rows (P1); poster filters are added via the "+ フィルタ" bar now (P2③).
 
@@ -1682,7 +1683,7 @@ export function endFilterEditSession(): void {
   // (saved searches) were removed 2026-07-04 — see the collection sidebar above.
 
   // Ctrl+- / Ctrl+= step the content size one notch (post densities or the poster grid).
-  // Registration lives in the GlobalShortcuts component (app/islands/app/App.tsx), which
+  // Registration lives in the GlobalShortcuts component (app/App.tsx), which
   // imports this directly.
   handleShortcutSizeKey = gridDensity.handleShortcutSizeKey;
   handleZoomWheel = gridDensity.handleZoomWheel;
@@ -1693,7 +1694,7 @@ export function endFilterEditSession(): void {
   applyPosterSize = gridDensity.setPosterSizeFromSlider;
 
   // Tile overlay/reloadPosts/setSkipDeleteConfirm/confirmClearAll used to bridge
-  // through the old shared bridge for the React settings island (Danger.tsx/Data.tsx/
+  // through the old shared bridge for the React settings component (Danger.tsx/Data.tsx/
   // settings/ipc.ts) to reach; those now import the live bindings above directly.
 
   // Load saved view mode and skipDeleteConfirm
@@ -1707,10 +1708,10 @@ export function endFilterEditSession(): void {
   });
 
   // --- Search value source -----------------------------------------------------
-  // hologramStore 'searchQuery' IS the search value; the searchbox island renders it
+  // hologramStore 'searchQuery' IS the search value; the searchbox component renders it
   // as a controlled Base UI Autocomplete input. The query-tree text-leaf state
   // machine (search-editing.ts), the suggestion-pick bridge to the
-  // searchbox island (searchbox.ts), and the store plumbing/debounced
+  // searchbox component (searchbox.ts), and the store plumbing/debounced
   // re-render around them are wired together in search-box-builder.ts now
   // (a viewer.ts decomposition slice). searchEditing itself stays a
   // local const here — resetAllFilters (above) and postQB's onLeafMutated/
@@ -1803,7 +1804,7 @@ export function endFilterEditSession(): void {
     }
   });
 
-  // Backup status rail (#mirrorStatus) is fully owned by the MirrorStatus island now — it
+  // Backup status rail (#mirrorStatus) is fully owned by the MirrorStatus component now — it
   // imports backup.ts (getBackup + onBackupStart/Done) directly and derives the rail model
   // itself. orchestrator no longer holds any of that state (the old setupMirrorStatusRail +
   // shared push bridge are gone).

@@ -1,8 +1,8 @@
 'use strict';
 
 /* Pre-paint theme boot: set [data-theme] before first paint so there's no flash.
-   Built standalone (islands/build.mjs, Vite lib IIFE → renderer/theme.js) and loaded in
-   <head>, BEFORE app.js (which loads at the end of <body> and so can't run pre-paint —
+   Built standalone (build-theme-boot.mjs, Vite lib IIFE → public/theme.js) and loaded in
+   <head>, BEFORE the app's module entry (which loads at the end of <body> and so can't run pre-paint —
    see the load-order comment in index.html). External file because the page CSP is
    `script-src 'self'`; a browser can't type-strip .ts at runtime the way Node's main/
    native-host layers do, so this one file needs its own tiny build step (same reason

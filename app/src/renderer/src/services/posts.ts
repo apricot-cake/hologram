@@ -4,7 +4,7 @@
 // onSaveFolderProgress), wrapping the flat hologramIpc calls. A real ES module (named
 // exports) now — imported directly by the consumers that share this domain: viewer.ts
 // (list/delete/tags/import/clearAll/change-watch), App.tsx (onPostsChanged) and the
-// Settings > データ island (save-folder move + export/import ZIP + import media) —
+// Settings > データ component (save-folder move + export/import ZIP + import media) —
 // pure 1:1 forwarding, no wrapping logic (same as trash/backup; distinct from
 // renderer/records.ts, which owns the record-shape/grouping PURE LOGIC, not the IPC
 // calls).

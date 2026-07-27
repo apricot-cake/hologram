@@ -3,7 +3,7 @@
 // open/close chrome, the always-live inline tag editor (add/toggle/adopt-source-tag
 // + the 同名キャラ homonym check), the group dissolve/regroup buttons shown in the
 // panel, and the Esc/outside-click dismiss guards all move here. inspector.ts (the
-// open/refresh/close/get/subscribe bridge to the React island) stays untouched —
+// open/refresh/close/get/subscribe bridge to the React component) stays untouched —
 // this module is one of its two consumers (Inspector.tsx is the other).
 // inspectedKey/setInspectedKey stay viewer.ts-owned (many not-yet-extracted
 // clusters — poster card clicks, undo, browse-mode switch — read/write it too;
@@ -364,7 +364,7 @@ export function makeInspector(deps: InspectorBuilderDeps) {
   // transient form too, and in that form the rule it was exempted from applies.
   //
   // Still registered in CAPTURE phase (from the DetailDismiss component in
-  // app/islands/app/App.tsx) so it can check what else is open BEFORE those handlers
+  // app/App.tsx) so it can check what else is open BEFORE those handlers
   // dismiss themselves on the same press — the transient surfaces win this Esc, and only
   // once nothing is left does the detail view close.
   function handleEscDismissDetail(e: KeyboardEvent) {

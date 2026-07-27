@@ -1,8 +1,8 @@
-// Settings modal open/closed state — extracted out of islands/settings/index.tsx
-// (the other "true island-pinned global", alongside lightbox.ts) so
+// Settings modal open/closed state — extracted out of settings/index.tsx
+// (the other "true component-pinned global", alongside lightbox.ts) so
 // orchestrator.ts and the *-builder.ts modules can import it directly
 // instead of reading a global bridge. A real ES module: React stays the source of
-// truth through useSyncExternalStore (islands/settings/index.tsx wires isOpen/subscribe
+// truth through useSyncExternalStore (settings/index.tsx wires isOpen/subscribe
 // into the OpenStore the settings App.tsx expects); the brand-bar gear (orchestrator.ts)
 // and the various Esc/shortcut guards (*-builder.ts, image-tab/index.tsx) call open()/
 // close()/isOpen() directly.

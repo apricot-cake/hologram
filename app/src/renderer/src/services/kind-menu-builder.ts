@@ -21,7 +21,7 @@ export function makeKindMenu(deps: KindMenuDeps) {
   // Right-click a tag chip (edit picker / inspector / poster) to classify it
   // 作品/キャラ/一般. A tag's 種別 is the TAG's own attribute (no post is
   // touched), surfaced as a quiet 段階的開示 entry inside tag editing.
-  // Rendering lives in the kind-menu React island (dedicated component — a
+  // Rendering lives in the dedicated kind-menu React component (a
   // row's pick target and its rename button are two independent click
   // targets, which the generic ContextMenu item shape has no room for); this
   // only builds the row model and runs the pick/rename actions via

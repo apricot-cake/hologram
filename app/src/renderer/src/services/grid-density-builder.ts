@@ -192,7 +192,7 @@ export function makeGridDensity(deps: GridDensityDeps) {
   // Ctrl+- / Ctrl+= step the content size one notch, on whichever grid is showing
   // (post densities card/tile/list, or the poster grid). It steps the same track the
   // display popover's Slider reads — there is no slider element to poke anymore.
-  // Registration lives in the GlobalShortcuts component (app/islands/app/App.tsx).
+  // Registration lives in the GlobalShortcuts component (app/App.tsx).
   function handleShortcutSizeKey(e: KeyboardEvent) {
     if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
     if (e.key !== '-' && e.key !== '=' && e.key !== '+') return;
@@ -245,7 +245,7 @@ export function makeGridDensity(deps: GridDensityDeps) {
   }
 
   // Restore the anchor, coarse first then exact. Not before the next frame: the size
-  // change re-flows through the store → grid island → masonic positioner, so the new
+  // change re-flows through the store → grid component → masonic positioner, so the new
   // geometry only exists after that paints.
   //
   // The fraction MUST come first. The grid is virtualized, so a card that is now far
@@ -350,8 +350,8 @@ export function makeGridDensity(deps: GridDensityDeps) {
     }, 150);
   }
 
-  // Tile overlay lives in the React settings island; this is the apply-and-persist
-  // function it calls (islands/settings/ipc.ts's setTileOverlay imports the
+  // Tile overlay lives in the React settings component; this is the apply-and-persist
+  // function it calls (settings/ipc.ts's setTileOverlay imports the
   // `applyTileOverlay` live binding below directly — no shared-bridge detour) so
   // the post grid updates immediately.
   function applyTileOverlay(v: boolean) {
@@ -542,7 +542,7 @@ export function makeGridDensity(deps: GridDensityDeps) {
 }
 
 // applyTileOverlay is bound once at boot (viewer.ts, right after constructing
-// gridDensity) so the settings island (islands/settings/ipc.ts) can flip the
+// gridDensity) so the settings component (settings/ipc.ts) can flip the
 // tile-overlay pref directly — no shared-bridge detour.
 export let applyTileOverlay: ((v: boolean) => void) | null = null;
 export function bindApplyTileOverlay(fn: (v: boolean) => void): void {

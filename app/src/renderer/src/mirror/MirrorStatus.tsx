@@ -4,7 +4,7 @@ import { fmtBackupTime, fmtTime } from '../services/format.ts';
 import { getBackup, onBackupStart, onBackupDone } from '../services/backup.ts';
 
 // Backup status rail (#mirrorStatus) — the always-visible sidebar footer showing the
-// auto-backup state. This island OWNS the state machine (backup config + last result +
+// auto-backup state. This component OWNS the state machine (backup config + last result +
 // syncing flag), reading it straight from backup.ts (getBackup + onBackupStart/
 // Done) and deriving the model (kind/text/title/time) with its own t() + format.ts's
 // fmtBackupTime/fmtTime — there is no viewer push (the old shared push bridge +
@@ -92,7 +92,7 @@ export function MirrorStatus() {
     // A run started: show the spinner. Pull cfg first so a backup configured mid-session
     // still lights the rail (cfg may have been null at boot). onBackupStart/Done register
     // once for the app's lifetime (no unsubscribe, like the other App-level IPC effects) —
-    // this island never actually unmounts in the single-page app.
+    // this component never actually unmounts in the single-page app.
     onBackupStart(async () => {
       syncingRef.current = true;
       if (!cfgRef.current || !cfgRef.current.dir) {
@@ -118,7 +118,7 @@ export function MirrorStatus() {
       if (cfgRef.current && r) cfgRef.current.lastResult = r;
       if (alive) tick();
     });
-    // Refresh when the settings modal opens — the Data.tsx island may have changed the
+    // Refresh when the settings modal opens — the Data.tsx component may have changed the
     // backup folder.
     const settingsBtn = document.getElementById('settingsBtn');
     settingsBtn?.addEventListener('click', load);

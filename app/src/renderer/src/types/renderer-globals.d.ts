@@ -2,13 +2,14 @@
 // cooc/users/tab-state/viewer + store, all .ts, strict-checked).
 // This is a GLOBAL script d.ts (no import/export) so the interfaces merge into
 // Window for every file that includes it. As of 2026-07-09 this project is
-// merged into app/tsconfig.json — the same single strict TS program as the
-// islands (formerly a separate, looser tsconfig.renderer.json).
+// merged into the single strict renderer TS program (app/tsconfig.web.json) —
+// the same program that type-checks the React components (formerly a separate,
+// looser tsconfig.renderer.json).
 //
 // Typing altitude: function surfaces are typed; domain payloads (sidecar post
 // records, aggregate rows) stay open objects (`HologramPost` = index signature)
-// until the JSON layer itself is typed — same pragmatics as the islands'
-// globals.d.ts.
+// until the JSON layer itself is typed — same pragmatics as this directory's
+// other globals.d.ts.
 
 // The dual-export services (records/tags/users/tab-state/undo/…) also expose their api
 // via CommonJS — `if (typeof module !== 'undefined' && module.exports) module.exports =

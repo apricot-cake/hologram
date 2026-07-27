@@ -7,7 +7,7 @@ import { toast } from 'sonner';
 // hand-rolling their own.
 
 // Transient toast via sonner (the shadcn/ui standard toaster). The <Toaster /> outlet is
-// mounted once in App.tsx (islands/components/ui/sonner.tsx); sonner's toast() is callable
+// mounted once in App.tsx (components/ui/sonner.tsx); sonner's toast() is callable
 // from anywhere — vanilla service modules included — through its own external store, so
 // this keeps the same one-liner contract the old #ivToast bridge had.
 export function notify(msg: unknown) {

@@ -2,10 +2,10 @@ import { useEffect, useState } from 'react';
 import { hologramTabsSource } from '../services/tabs.ts';
 import { Tabs } from './Tabs.tsx';
 
-// Presentational island for the tab strip (#tabBarInner) — lives under the single App
+// Presentational component for the tab strip (#tabBarInner) — lives under the single App
 // root. This was converted off the old push (viewer.js built a TabsModel via
 // renderTabs() and pushed it to a shared render bridge from ~15 call sites) to a
-// PULLED source (renderer/tabs.ts's hologramTabsSource), the same shape as the
+// PULLED source (services/tabs.ts's hologramTabsSource), the same shape as the
 // grid/image-tab sources. viewer.js no longer owns the tabs array/activeTabId/
 // editingId as closure state — hologramStore's keys of the same names ARE the state;
 // it keeps only the mutation functions (switchTab/addTab/…) and ALL event

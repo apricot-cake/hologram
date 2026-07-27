@@ -4,7 +4,7 @@
 // current tab (leaving is nav-back), middle-click opens a background tab whose
 // history is a single image entry (back stays disabled — 確定未決1). This module
 // owns the view show/hide (hologramStore 'activeImageTab' → the ImageTabHost
-// island derives the whole React model), the gallery index (replace, not push —
+// component derives the whole React model), the gallery index (replace, not push —
 // 確定未決2), and the tab-title stamping (_autoTitle). The stack itself lives in
 // tabs-builder.ts's nav (handed in as deps).
 import { imageTabGroup, imageTabTitleOf } from './records.ts';

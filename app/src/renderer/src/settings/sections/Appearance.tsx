@@ -14,7 +14,7 @@ export function Appearance() {
   const [tileOverlay, setTileOverlay] = useState(true);
 
   // Reconcile with persisted prefs once they resolve — theme.js may still be
-  // syncing config from IPC when the island first mounts.
+  // syncing config from IPC when the component first mounts.
   useEffect(() => {
     ipc
       .getPrefs()

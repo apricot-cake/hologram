@@ -1,5 +1,5 @@
 // Bulk "add tags to selection" — the write side of the selection bar's タグを追加.
-// The surface is a Dialog now (islands/selection/BulkTagDialog, P2⑦); before that
+// The surface is a Dialog now (selection/BulkTagDialog, P2⑦); before that
 // it was tag-pop's mode:'bulk', and before that the edit-overlay modal. What moved
 // each time is only where the tags are staged — this module has always owned the
 // commit: persistence, undo capture, re-render, toast.

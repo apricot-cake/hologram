@@ -1,8 +1,8 @@
 // Bridge to the renderer's existing i18n. `hologramI18n` (from renderer/i18n.ts)
-// resolves to { lang, resolved, getMessage }. Islands reuse the SAME message
+// resolves to { lang, resolved, getMessage }. Components reuse the SAME message
 // keys as the rest of the app — no duplicated strings. Call initI18n() once before
 // rendering so t() is synchronous inside components.
-// Shared by settings / toolbar / searchbox (was duplicated per-island until the
+// Shared by settings / toolbar / searchbox (was duplicated per-component until the
 // third consumer arrived — BACKLOG「i18n.js 共有化」).
 import { hologramI18n } from '../services/i18n.ts';
 

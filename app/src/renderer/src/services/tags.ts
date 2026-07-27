@@ -19,7 +19,7 @@
 // (viewer.js still re-pushes the sidebar models explicitly after each
 // mutation) — it exists so a later slice (sidebar self-deriving from
 // services) has something to subscribe to. A real ES module (named exports)
-// imported directly by viewer.ts / sidebar.ts and the Sidebar islands; touches
+// imported directly by viewer.ts / sidebar.ts and the Sidebar components; touches
 // no DOM. The read-side tagKindOf/posterFilterVocab are also exposed as live
 // bindings (below) that viewer.ts binds at boot, so sidebar.ts reads the same
 // closures. Disk round-trips go through hologramIpc (renderer/ipc.ts).

@@ -4,9 +4,9 @@
 // active-filter chips sit in a row just below. Anchors: Linear's filter bar /
 // VS Code's toolbar.
 //
-// P1 scope: the FRAME. Search hosts the existing SearchBox island (rewired to
+// P1 scope: the FRAME. Search hosts the existing SearchBox component (rewired to
 // Autocomplete in P2④). The "+ フィルタ" add-filter flow (P2③) and the 表示 Display
-// popover (P2②) are both live now. The chip row below renders the filterbar island's
+// popover (P2②) are both live now. The chip row below renders the filterbar component's
 // Linear-style FilterChips; the hidden #queryChips / #posterQueryChips divs remain only
 // as the container ids the legacy query builders resolve at boot (removed in タスク3).
 import { ChevronLeft, ChevronRight } from 'lucide-react';
@@ -76,10 +76,10 @@ export function AppToolbar() {
         </div>
       </div>
       {/* Active-filter chips (redesign §3-2 / P2③) — Linear型 chips rendered by the
-          filterbar island from activeFilters(); a chip click reopens its editor. The
+          filterbar component from activeFilters(); a chip click reopens its editor. The
           hidden #queryChips / #posterQueryChips divs remain only as the container ids the
           legacy post/poster query builders resolve at boot — removed in タスク3 with the
-          query-chips island. px-8 = #mode-post's 32px content padding, so the chip row sits
+          query-chips component. px-8 = #mode-post's 32px content padding, so the chip row sits
           on the same left axis as the cards it filters (Linear's filter row ↔ list gutter). */}
       <div className="px-8">
         <FilterChips />

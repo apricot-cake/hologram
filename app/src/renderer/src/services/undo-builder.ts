@@ -79,7 +79,7 @@ export function makeUndoController(deps: UndoBuilderDeps) {
     if (await _undo.redo()) deps.showToast('Redo');
   }
 
-  // Registration lives in the GlobalShortcuts component (app/islands/app/App.tsx).
+  // Registration lives in the GlobalShortcuts component (app/App.tsx).
   function handleShortcutUndoKey(e: KeyboardEvent) {
     if (!((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z')) return;
     if (document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA')) return;

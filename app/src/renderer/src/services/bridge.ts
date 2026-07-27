@@ -2,9 +2,9 @@
 // the popover models whose payloads carry CALLBACKS (onPick/onApply/onManage/…),
 // which is why they can't live in the serializable hologramStore. Each bridge holds the
 // CURRENT rendered model + a subscriber set; open() replaces the model and stamps a
-// monotonic openId (the island keys its React root on it, so re-opening — even onto the
+// monotonic openId (the consuming component keys its subtree on it, so re-opening — even onto the
 // same node, or after a pick — remounts and resets local input state); close() clears;
-// get()/subscribe() drive the island's useSyncExternalStore.
+// get()/subscribe() drive the component's useSyncExternalStore.
 //
 // Consolidates the byte-identical subscribe/notify/openId boilerplate that qf-pop.ts
 // and filter-popover.ts each hand-rolled. menu.ts/kind-menu.ts are intentionally NOT

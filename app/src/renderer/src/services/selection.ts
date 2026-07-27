@@ -2,7 +2,7 @@
 // as the single owner. hologramStore's 'selectedSet' key IS the
 // state (no separate closure Set to keep in sync): every mutation reads the
 // current Set via store.get('selectedSet'), builds a fresh Set (the
-// store's set() no-ops on === identity, and the grid island's Cell — see
+// store's set() no-ops on === identity, and the grid component's Cell — see
 // Grid.tsx — subscribes to this key directly, so a fresh reference is required
 // to notify), and writes it back. The shift-range anchor stays a private module
 // variable, same as before (no subscribers — viewer-internal only, per the
@@ -10,7 +10,7 @@
 // viewer.js keeps every side effect around a mutation (the #postGrid 'selecting'
 // class, bulk IPC/confirm/render orchestration) and calls only this module's
 // query/mutate API. A real ES module now — its exports are imported directly by
-// the orchestrator and the bottom FloatingBar island (islands/selection).
+// the orchestrator and the bottom FloatingBar component (selection/).
 
 import { get as storeGet, set as storeSet } from './store.ts';
 
