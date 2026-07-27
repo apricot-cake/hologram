@@ -249,6 +249,20 @@ function readPostFlags(sqlite: Sqlite, postId: string): { tags: string[]; userKi
 // two columns NULL, since nothing else ever writes them from a sidecar.
 // COALESCE keeps the existing column when the record doesn't carry the field
 // (undefined -> null param), rather than clobbering it to NULL.
+// Direct DB-side removal for a user-initiated delete (ipc-trash.ts's
+// delete-post). #299 (St6): once the DB is authoritative, "the sidecar is
+// gone from the watched folder" is no longer a signal importAll acts on
+// (lib-db-import.ts's dbIsTruth gate — a post can legitimately have no
+// sidecar at all once native saves flow through the inbox instead), so a
+// trash move can no longer rely on the NEXT importAll noticing the file's
+// absence and cascade-deleting the row. This is that deletion, made explicit.
+// Same statement importAll's own deletePost used (FK ON DELETE CASCADE takes
+// media/post_tags with it) — this does not newly clean up posts_fts, matching
+// prior behavior exactly rather than folding in an unrelated fix.
+function deletePost(sqlite: Sqlite, postId: string): boolean {
+  return sqlite.prepare('DELETE FROM posts WHERE captureId = ?').run(postId).changes > 0;
+}
+
 function applyPostFlagsFromRecord(sqlite: Sqlite, postId: string, rec: { userKind?: unknown; tagReviewed?: unknown }) {
   const userKind = rec.userKind === 'plain' || rec.userKind === 'media' ? rec.userKind : null;
   const tagReviewed = rec.tagReviewed == null ? null : rec.tagReviewed ? 1 : 0;
@@ -299,6 +313,7 @@ function createDbWriter(sqlite: Sqlite) {
     setPostTags: (postId: string, tags: unknown, patch: unknown) => transaction(() => replacePostTags(sqlite, postId, tags, patch)),
     getPostFlags: (postId: string) => readPostFlags(sqlite, postId),
     restorePostFlags: (postId: string, rec: { userKind?: unknown; tagReviewed?: unknown }) => transaction(() => applyPostFlagsFromRecord(sqlite, postId, rec)),
+    deletePost: (postId: string) => transaction(() => deletePost(sqlite, postId)),
   };
 }
 

@@ -6,7 +6,8 @@
 // Hologram config/library. The exercised path is the production path:
 //
 //   capture content script -> extension service worker -> native messaging
-//   bridge -> JPEG + sidecar on disk
+//   bridge -> JPEG + inbox envelope on disk (#5 St6 / #299 — sidecar direct
+//   writes were replaced by the durable .hologram-inbox/new queue)
 //
 // No user browser profile, real native-host registration, or library is read
 // or modified.
@@ -57,16 +58,21 @@ const POST_METADATA = {
   mediaDetails: [],
 };
 
-async function waitForCapture(libraryDir: string, timeoutMs = 20_000): Promise<{ jpg: string; sidecar: string }> {
+async function waitForCapture(libraryDir: string, timeoutMs = 20_000): Promise<{ jpg: string; envelope: string }> {
+  const inboxNewDir = path.join(libraryDir, '.hologram-inbox', 'new');
   const started = Date.now();
   while (Date.now() - started < timeoutMs) {
-    const files = fs.readdirSync(libraryDir);
-    const jpg = files.find((file) => file.endsWith('.jpg'));
-    const sidecar = files.find((file) => file.endsWith('.json'));
-    if (jpg && sidecar) return { jpg, sidecar };
+    const jpg = fs.readdirSync(libraryDir).find((file) => file.endsWith('.jpg'));
+    let envelope: string | undefined;
+    try {
+      envelope = fs.readdirSync(inboxNewDir).find((file) => file.endsWith('.json'));
+    } catch {
+      envelope = undefined; // inbox dir not created yet
+    }
+    if (jpg && envelope) return { jpg, envelope };
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
-  throw new Error('native host did not land a JPEG and sidecar within 20 seconds');
+  throw new Error('native host did not land a JPEG and inbox envelope within 20 seconds');
 }
 
 (async () => {
@@ -117,12 +123,14 @@ async function waitForCapture(libraryDir: string, timeoutMs = 20_000): Promise<{
 
     await page.locator('#capture-target').click({ position: { x: 100, y: 100 } });
     const landed = await waitForCapture(nativeHost.libraryDir);
-    const sidecar = JSON.parse(fs.readFileSync(path.join(nativeHost.libraryDir, landed.sidecar), 'utf8'));
+    const envelope = JSON.parse(fs.readFileSync(path.join(nativeHost.libraryDir, '.hologram-inbox', 'new', landed.envelope), 'utf8'));
     const jpeg = fs.readFileSync(path.join(nativeHost.libraryDir, landed.jpg));
-    if (sidecar.url !== POST_URL) throw new Error(`saved URL mismatch: ${sidecar.url}`);
-    if (sidecar.platform !== 'x') throw new Error(`saved platform mismatch: ${sidecar.platform}`);
-    if (sidecar.text !== POST_METADATA.text) throw new Error(`mocked metadata did not cross the service worker: ${sidecar.text}`);
-    if (sidecar.image !== landed.jpg) throw new Error(`sidecar image mismatch: ${sidecar.image} / ${landed.jpg}`);
+    if (envelope.format !== 'hologram-inbox' || envelope.version !== 1) throw new Error(`unexpected envelope shape: ${JSON.stringify(envelope)}`);
+    const record = envelope.record;
+    if (record.url !== POST_URL) throw new Error(`saved URL mismatch: ${record.url}`);
+    if (record.platform !== 'x') throw new Error(`saved platform mismatch: ${record.platform}`);
+    if (record.text !== POST_METADATA.text) throw new Error(`mocked metadata did not cross the service worker: ${record.text}`);
+    if (record.image !== landed.jpg) throw new Error(`envelope image mismatch: ${record.image} / ${landed.jpg}`);
     if (jpeg[0] !== 0xff || jpeg[1] !== 0xd8) throw new Error('landed image is not a JPEG');
 
     const bridgeLog = fs.readFileSync(path.join(nativeHost.configDir, 'bridge.log'), 'utf8');
@@ -132,7 +140,7 @@ async function waitForCapture(libraryDir: string, timeoutMs = 20_000): Promise<{
       throw new Error('capture log has no successful bridge outcome');
     }
 
-    console.log(`PASS e2e-extension-offline: ${landed.jpg} + ${landed.sidecar}`);
+    console.log(`PASS e2e-extension-offline: ${landed.jpg} + .hologram-inbox/new/${landed.envelope}`);
   } finally {
     if (browser) await browser.close().catch(() => {});
     fs.rmSync(extensionDir, { recursive: true, force: true });

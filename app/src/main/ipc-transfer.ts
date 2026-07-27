@@ -17,6 +17,8 @@ import path from 'node:path';
 import * as archive from './lib-archive.ts';
 import { parseJsonLoose } from './lib-json.ts';
 import { cloudSyncProviderOf } from './save-folder-guard.ts';
+import { makeTagResolver, preparePostStmts, writePost } from './lib-db-record-writer.ts';
+import type { PostRecordInput } from '../../../native-host/post-record.mts';
 
 let _JSZip: any = null;
 async function getJSZip() {
@@ -40,12 +42,42 @@ const IMPORTABLE_VID = ['mp4', 'webm', 'mov', 'm4v'];
 const IMPORTABLE_MEDIA = IMPORTABLE_IMG.concat(IMPORTABLE_VID);
 
 function register(ctx) {
-  const { getSaveFolder, getTrashDir, readConfig, writeConfig, readSavePointer, getConfigLastCorrupt, clearAllBlockReason, VIEWABLE_EXTS, INTERNAL_FILES, pixivRefererFor, downloadAvatar, getWin, send, validateSaveFolder, relocateLibrary, watchSaveFolder, resetDelta } = ctx;
+  const {
+    getSaveFolder,
+    getTrashDir,
+    readConfig,
+    writeConfig,
+    readSavePointer,
+    getConfigLastCorrupt,
+    clearAllBlockReason,
+    VIEWABLE_EXTS,
+    INTERNAL_FILES,
+    pixivRefererFor,
+    downloadAvatar,
+    getWin,
+    send,
+    validateSaveFolder,
+    relocateLibrary,
+    watchSaveFolder,
+    watchInboxFolder,
+    resetDelta,
+    ensurePostsSynced,
+    scheduleSavedIndexWrite,
+  } = ctx;
 
+  // #299: the app itself is the DB's one writer, so import-posts writes
+  // straight into the DB via the shared record writer (lib-db-record-writer.ts
+  // — the same writer the sidecar importer and the inbox consumer use) instead
+  // of producing a sidecar the DB would have to re-derive from later. Dedup
+  // checks the DB (URL-based) instead of scanning sidecars — there are none
+  // left to scan for a post that comes in this way.
   ipcMain.handle('import-posts', async (_e, posts) => {
     const folder = getSaveFolder();
     if (!folder || !Array.isArray(posts)) return { imported: 0, skipped: 0 };
     fs.mkdirSync(folder, { recursive: true });
+    const handle = await ensurePostsSynced();
+    if (!handle) return { imported: 0, skipped: 0 };
+    const { sqlite } = handle;
 
     // Duplicate detection. url is the primary identity; URL-less posts (file/
     // Eagle migrations — the dominant legacy case) would otherwise duplicate
@@ -54,36 +86,49 @@ function register(ctx) {
     // must agree: eagleName alone is NOT unique (it's a user-visible title —
     // real Eagle libraries carry many duplicate names), and a converter may
     // stamp one capturedAt across a whole batch, so neither field alone is
-    // trustworthy. .trash is scanned too: a deliberately deleted post must not
-    // resurrect through a re-import while it still sits in trash.
-    const existingUrls = new Set();
-    const existingLegacy = new Set();
+    // trustworthy.
+    const existingUrls = new Set<string>();
+    const existingLegacy = new Set<string>();
     const legacyKeyOf = (name, at, bytes) => `${name}\u0000${at}\u0000${bytes}`;
-    const scanExisting = (dir) => {
+    for (const row of sqlite.prepare('SELECT url, eagleName, capturedAt, image FROM posts').all() as Array<{ url: string | null; eagleName: string | null; capturedAt: string; image: string | null }>) {
+      if (row.url) {
+        existingUrls.add(row.url);
+        continue;
+      }
+      if (row.eagleName && row.capturedAt && typeof row.image === 'string') {
+        try {
+          // statSync throw (image file missing) skips the key — that record
+          // just can't dedup, the import stays conservative.
+          existingLegacy.add(legacyKeyOf(row.eagleName, row.capturedAt, fs.statSync(path.join(folder, row.image)).size));
+        } catch {
+          /* skip */
+        }
+      }
+    }
+    // .trash/ still holds sidecar JSON (trash is out of this Issue's scope —
+    // #301) — a deliberately deleted post must not resurrect through a
+    // re-import while it still sits there.
+    const trashDir = getTrashDir();
+    if (trashDir) {
       let names: string[] = [];
       try {
-        names = fs.readdirSync(dir);
+        names = fs.readdirSync(trashDir);
       } catch {
-        return; // absent (e.g. no .trash yet)
+        names = [];
       }
       for (const f of names) {
-        if (!f.toLowerCase().endsWith('.json') || f === 'config.json' || f === '.index.json') continue;
+        if (!f.toLowerCase().endsWith('.json')) continue;
         try {
-          const r = parseJsonLoose(fs.readFileSync(path.join(dir, f), 'utf8'));
+          const r = parseJsonLoose(fs.readFileSync(path.join(trashDir, f), 'utf8'));
           if (r.url) existingUrls.add(r.url);
           else if (r.eagleName && r.capturedAt && typeof r.image === 'string') {
-            // statSync throw (image file missing) skips the key via the outer
-            // catch — that record just can't dedup, the import stays conservative.
-            existingLegacy.add(legacyKeyOf(r.eagleName, r.capturedAt, fs.statSync(path.join(dir, r.image)).size));
+            existingLegacy.add(legacyKeyOf(r.eagleName, r.capturedAt, fs.statSync(path.join(trashDir, r.image)).size));
           }
         } catch {
           /* skip unreadable */
         }
       }
-    };
-    scanExisting(folder);
-    const trashDir = getTrashDir();
-    if (trashDir) scanExisting(trashDir);
+    }
 
     // Avatars land in the shared avatars/ store (one file per avatar URL) — the
     // store itself dedupes successful downloads by existence, so only FAILED URLs
@@ -106,6 +151,7 @@ function register(ctx) {
     let imported = 0,
       skipped = 0,
       seq = 0;
+    const toWrite: PostRecordInput[] = [];
     for (const p of posts) {
       if (!p || typeof p.image !== 'string' || !/^data:image\//.test(p.image)) {
         skipped++;
@@ -122,7 +168,7 @@ function register(ctx) {
         continue;
       }
       const captureId = `import-${stamp}-${String(seq++).padStart(4, '0')}`;
-      const rec = {
+      const rec: PostRecordInput = {
         captureId,
         image: `${captureId}.jpg`,
         url: p.url || null,
@@ -133,7 +179,7 @@ function register(ctx) {
         screenName: p.screenName || null,
         userId: p.userId || null,
         avatar: p.avatar || null,
-        avatarFile: /** @type {string | null} */ (null),
+        avatarFile: null,
         followers: p.followers ?? null,
         authorCreatedAt: p.authorCreatedAt || null,
         likes: p.likes ?? null,
@@ -152,14 +198,16 @@ function register(ctx) {
         isQuote: p.isQuote || null,
         isThread: p.isThread || null,
         quotedUrl: p.quotedUrl || null,
+        replyToId: p.replyToId || null,
+        media: Array.isArray(p.media) ? p.media : [],
         hashtags: Array.isArray(p.hashtags) ? p.hashtags : [],
         tags: Array.isArray(p.tags) ? p.tags : [],
       };
       try {
         fs.writeFileSync(path.join(folder, `${captureId}.jpg`), imgBuf);
-        // Best-effort avatar before the sidecar so avatarFile reflects what landed
-        // on disk. Wrapped on its own so an avatar failure leaves avatarFile null
-        // (the viewer hides it) and NEVER fails the import.
+        // Best-effort avatar before the DB write so avatarFile reflects what
+        // landed on disk. Wrapped on its own so an avatar failure leaves
+        // avatarFile null (the viewer hides it) and NEVER fails the import.
         if (rec.avatar) {
           try {
             const af = await fetchAvatarShared(rec.avatar);
@@ -168,13 +216,29 @@ function register(ctx) {
             /* avatar is best-effort */
           }
         }
-        fs.writeFileSync(path.join(folder, `${captureId}.json`), JSON.stringify(rec, null, 2), 'utf8');
+        toWrite.push(rec);
         if (p.url) existingUrls.add(p.url);
         else if (legacyKey) existingLegacy.add(legacyKey);
         imported++;
       } catch {
         skipped++;
       }
+    }
+
+    if (toWrite.length) {
+      const stmts = preparePostStmts(sqlite);
+      const resolveTagId = makeTagResolver(sqlite);
+      sqlite.exec('BEGIN');
+      try {
+        for (const rec of toWrite) writePost(stmts, resolveTagId, rec, null);
+        sqlite.exec('COMMIT');
+      } catch (err) {
+        sqlite.exec('ROLLBACK');
+        throw err;
+      }
+      // The bridge's saved-badge snapshot has no other way to learn about
+      // these URLs (there's no sidecar/inbox event for it to notice).
+      scheduleSavedIndexWrite(handle);
     }
     return { imported, skipped };
   });
@@ -330,9 +394,10 @@ function register(ctx) {
       readConfig,
       writeConfig,
       emit: (payload) => send('save-folder-progress', payload),
-      // Re-point the watcher and drop the delta baseline so the renderer full-resyncs.
+      // Re-point the watchers and drop the delta baseline so the renderer full-resyncs.
       afterFlip: () => {
         watchSaveFolder();
+        watchInboxFolder();
         resetDelta();
       },
       // The sweep fires a minute later — skip it if the library moved yet again.
@@ -368,6 +433,9 @@ function register(ctx) {
     return moveLibraryTo(dest);
   });
 
+  // #299: same rationale as import-posts — write straight into the DB (a real
+  // video field now, not the `(rec as any).video` escape hatch this used pre-
+  // #299) instead of a sidecar the DB would have to re-derive from later.
   ipcMain.handle('import-images', async () => {
     const folder = getSaveFolder();
     if (!folder) return { imported: 0, skipped: 0, error: 'no-folder' };
@@ -377,10 +445,14 @@ function register(ctx) {
     });
     if (res.canceled || !res.filePaths || !res.filePaths.length) return { imported: 0, skipped: 0, canceled: true };
     fs.mkdirSync(folder, { recursive: true });
+    const handle = await ensurePostsSynced();
+    if (!handle) return { imported: 0, skipped: 0, error: 'no-folder' };
+    const { sqlite } = handle;
     let imported = 0,
       skipped = 0,
       seq = 0;
     const stamp = Date.now();
+    const toWrite: PostRecordInput[] = [];
     for (const fp of res.filePaths) {
       try {
         const ext = (path.extname(fp).slice(1) || 'png').toLowerCase();
@@ -398,7 +470,7 @@ function register(ctx) {
         const file = `${captureId}.${ext}`;
         const nowIso = new Date().toISOString();
         const mtimeIso = st.mtime && !Number.isNaN(st.mtime.getTime()) ? st.mtime.toISOString() : nowIso;
-        const rec = {
+        const rec: PostRecordInput = {
           captureId,
           source: 'drag',
           url: null,
@@ -414,14 +486,27 @@ function register(ctx) {
           media: [],
           tags: [],
           hashtags: [],
+          image: isVid ? null : file,
+          video: isVid ? file : null,
         };
-        if (isVid) (rec as any).video = file;
-        else (rec as any).image = file;
         await fs.promises.copyFile(fp, path.join(folder, file));
-        await fs.promises.writeFile(path.join(folder, `${captureId}.json`), JSON.stringify(rec, null, 2), 'utf8');
+        toWrite.push(rec);
         imported++;
       } catch {
         skipped++;
+      }
+    }
+
+    if (toWrite.length) {
+      const stmts = preparePostStmts(sqlite);
+      const resolveTagId = makeTagResolver(sqlite);
+      sqlite.exec('BEGIN');
+      try {
+        for (const rec of toWrite) writePost(stmts, resolveTagId, rec, null);
+        sqlite.exec('COMMIT');
+      } catch (err) {
+        sqlite.exec('ROLLBACK');
+        throw err;
       }
     }
     return { imported, skipped };

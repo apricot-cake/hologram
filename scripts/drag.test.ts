@@ -62,20 +62,21 @@ describe('成功時', () => {
     expect(res.file).toBe('1717500000000-ab01.png');
   });
 
-  test('png と sidecar json がディスクに書かれる', () => {
+  test('png と inbox エンベロープがディスクに書かれる（sidecar は書かれない）', () => {
     expect(fs.existsSync(path.join(saveFolder, '1717500000000-ab01.png'))).toBe(true);
-    expect(fs.existsSync(path.join(saveFolder, '1717500000000-ab01.json'))).toBe(true);
+    expect(fs.existsSync(path.join(saveFolder, '1717500000000-ab01.json'))).toBe(false);
+    expect(fs.existsSync(path.join(saveFolder, '.hologram-inbox', 'new', '1717500000000-ab01.json'))).toBe(true);
   });
 
   test('レコードは image を持ち、media は空（ライトボックスの重複を作らない）', () => {
-    const rec = JSON.parse(fs.readFileSync(path.join(saveFolder, '1717500000000-ab01.json'), 'utf8'));
-    expect(rec.image).toBe('1717500000000-ab01.png');
-    expect(rec.media).toEqual([]);
+    const envelope = JSON.parse(fs.readFileSync(path.join(saveFolder, '.hologram-inbox', 'new', '1717500000000-ab01.json'), 'utf8'));
+    expect(envelope.record.image).toBe('1717500000000-ab01.png');
+    expect(envelope.record.media).toEqual([]);
   });
 
   test('API 由来のメタデータが保たれる', () => {
-    const rec = JSON.parse(fs.readFileSync(path.join(saveFolder, '1717500000000-ab01.json'), 'utf8'));
-    expect(rec).toMatchObject({ platform: 'pixiv', title: 'T', screenName: '77', likes: 5 });
+    const envelope = JSON.parse(fs.readFileSync(path.join(saveFolder, '.hologram-inbox', 'new', '1717500000000-ab01.json'), 'utf8'));
+    expect(envelope.record).toMatchObject({ platform: 'pixiv', title: 'T', screenName: '77', likes: 5 });
   });
 
   test('主画像のダウンロードに pixiv の Referer を付ける', () => {
@@ -84,10 +85,11 @@ describe('成功時', () => {
 });
 
 describe('失敗時', () => {
-  test('未対応の content-type は throw し、孤児 sidecar を残さない', async () => {
+  test('未対応の content-type は throw し、孤児 inbox エンベロープを残さない', async () => {
     vi.stubGlobal('fetch', async () => ({ ok: true, headers: new Map([['content-type', 'text/html']]), arrayBuffer: async () => Buffer.from('x') }));
 
     await expect(handleSaveDragged({ captureId: '1717500000001-ab02', imageUrl: 'https://x/y', metadata: {} })).rejects.toThrow();
     expect(fs.existsSync(path.join(saveFolder, '1717500000001-ab02.json'))).toBe(false);
+    expect(fs.existsSync(path.join(saveFolder, '.hologram-inbox', 'new', '1717500000001-ab02.json'))).toBe(false);
   });
 });

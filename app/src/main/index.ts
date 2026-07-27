@@ -12,6 +12,10 @@ import { openDatabase, DatabaseCorruptError } from './lib-db.ts';
 import { createDbImporter } from './lib-db-import.ts';
 import { postsFromDb, postsByIds } from './lib-db-query.ts';
 import { createDbWriter } from './lib-db-write.ts';
+import { buildSavedIndex, SAVED_INDEX_FILE } from './lib-saved-index.ts';
+import { drainInbox } from './lib-db-inbox.ts';
+import { compactInbox } from './lib-db-inbox-compact.ts';
+import { inboxNewDir, ensureInboxDirs, INBOX_DIRNAME } from '../../../native-host/inbox.mts';
 import { pruneDecision, nextBaseline } from './backup-guard.ts';
 import { parseJsonLoose } from './lib-json.ts';
 // Save-folder relocation engine (copy+catch-up → flip → verified cleanup → sweep).
@@ -249,6 +253,11 @@ function watchSaveFolder() {
       if (!filename) {
         watchUnknown = true; // platform didn't tell us which file -> renderer will full-reconcile
       } else {
+        // Windows' fs.watch has been known to report nested-directory events
+        // even without {recursive:true}; INBOX_DIRNAME has its own dedicated
+        // watcher (watchInboxFolder), so anything under it here is a spurious
+        // duplicate to ignore, not a targetable sidecar hint.
+        if (filename.replace(/\\/g, '/').startsWith(`${INBOX_DIRNAME}/`)) return;
         const base = path.basename(filename);
         if (!/\.(jpe?g|jfif|png|webp|gif|json)$/i.test(base)) return;
         // App-internal metadata churns constantly; only real captures should refresh.
@@ -271,6 +280,43 @@ function watchSaveFolder() {
     });
   } catch (err) {
     console.error('Failed to watch save folder:', err);
+  }
+}
+
+// Watch .hologram-inbox/new (#5 St6 / #299) — a SEPARATE watcher because
+// fs.watch(folder) above is non-recursive and never sees inside this nested
+// directory. Any change here is worth a full reconcile rather than a targeted
+// one: drainInbox is cheap to re-run (already-applied events cost one indexed
+// SELECT each — lib-db-inbox.ts's module comment), and an inbox filename
+// isn't a safe per-event hint the way a sidecar basename is (a rename FROM
+// tmp/, a mid-write partial, or a segment-compaction removal could all fire
+// here). Directory created first (design comment: "起動時にinboxディレクトリ
+// を作ってから watcher を張り") so the watch target always exists.
+let inboxWatcher: import('node:fs').FSWatcher | null = null;
+let inboxWatchDebounce: any = null;
+function watchInboxFolder() {
+  if (inboxWatcher) {
+    try {
+      inboxWatcher.close();
+    } catch {
+      /* already closed */
+    }
+    inboxWatcher = null;
+  }
+  const folder = getSaveFolder();
+  if (!folder) return;
+  try {
+    ensureInboxDirs(folder);
+    inboxWatcher = fs.watch(inboxNewDir(folder), () => {
+      clearTimeout(inboxWatchDebounce);
+      inboxWatchDebounce = setTimeout(() => {
+        // null = full reconcile — see the function comment for why this
+        // watcher never tries to ship a targeted hint.
+        if (win && !win.isDestroyed()) win.webContents.send('posts-changed', null);
+      }, 400);
+    });
+  } catch (err) {
+    console.error('Failed to watch inbox folder:', err);
   }
 }
 
@@ -395,6 +441,71 @@ function scheduleSnapshot(folder) {
     });
   }, 1500);
 }
+
+// The bridge's other half of the "saved" badge (#5 St6 / #299 — see
+// bridge.cts's "Saved-post index" comment): a small postKey->captureId map
+// rebuilt from the DB and written to configDir, NOT the save folder (so it
+// never touches the folder watcher). Debounced + atomic (tmp + rename) same as
+// scheduleSnapshot; best-effort because a stale/missing file just makes the
+// bridge fall back further to its journal + loose-inbox rescan, never wrong,
+// only slower to reflect an app-side change.
+let savedIndexTimer: any = null;
+function scheduleSavedIndexWrite(handle: { sqlite: any }) {
+  clearTimeout(savedIndexTimer);
+  savedIndexTimer = setTimeout(() => {
+    try {
+      const data = buildSavedIndex(handle.sqlite);
+      const dir = configDir();
+      fs.mkdirSync(dir, { recursive: true });
+      const file = path.join(dir, SAVED_INDEX_FILE);
+      const tmp = `${file}.tmp`;
+      fs.writeFileSync(tmp, JSON.stringify(data), 'utf8');
+      fs.renameSync(tmp, file);
+    } catch {
+      /* best-effort — the bridge falls back to journal + loose-inbox scanning */
+    }
+  }, 1500);
+}
+
+// Drains .hologram-inbox/new into the DB (#5 St6 / #299) — one receipted,
+// transactional apply per envelope, loose files kept afterward (see
+// lib-db-inbox.ts). Logs whatever it skipped (missing media, a hash/post
+// conflict, a corrupt or unknown-version envelope) so a stuck capture is
+// diagnosable; never throws — drainInbox itself never lets one bad file stop
+// the rest, and a synchronous fs error here (folder briefly unavailable) just
+// means this pass found nothing, not a reason to fail the caller's sync.
+function drainInboxLogged(folder: string, sqlite: any) {
+  try {
+    const report = drainInbox(folder, sqlite);
+    for (const s of report.skipped) log.warn(`inbox drain skipped ${s.file}: ${s.reason}${s.detail ? ` (${s.detail})` : ''}`);
+    if (report.segmentsReplayed.length) log.info(`inbox replayed ${report.segmentsReplayed.length} segment(s) with no DB receipt yet (DB-loss recovery path)`);
+    scheduleInboxCompaction(folder, sqlite);
+    return report;
+  } catch (err) {
+    log.error('inbox drain failed:', err);
+    return { scanned: 0, applied: [], receiptOnly: [], noop: 0, skipped: [], segmentsReplayed: [] };
+  }
+}
+
+// Idle-time compaction (#5 St6 / #299 design comment, "保持量とコンパクショ
+// ン"): debounced like scheduleSnapshot/scheduleSavedIndexWrite so a burst of
+// saves triggers it once, after things settle, rather than on every single
+// drain. compactInbox itself no-ops below its 1,000-loose-event threshold, so
+// calling this after every drain costs one COUNT-equivalent query in the
+// common case.
+let compactionTimer: any = null;
+function scheduleInboxCompaction(folder: string, sqlite: any) {
+  clearTimeout(compactionTimer);
+  compactionTimer = setTimeout(() => {
+    try {
+      const report = compactInbox(folder, sqlite);
+      if (report.compacted) log.info(`inbox compacted ${report.eventCount} event(s) into segment ${report.segmentId}`);
+    } catch (err) {
+      log.error('inbox compaction failed:', err);
+    }
+  }, 1500);
+}
+
 // Brings the DB fully up to date with whatever is on disk and returns the open
 // handle (null if no save folder is set yet) — the same steps listPosts()
 // already ran before reading. #298/St5 write handlers (update-tags today)
@@ -407,10 +518,14 @@ async function ensurePostsSynced() {
   if (!folder) return null;
   const handle = ensureDb();
   await ensureDbTruthSource(folder, handle);
+  const inboxReport = drainInboxLogged(folder, handle.sqlite);
   const report = await dbImporter.importAll(folder, handle);
   // addedIds (not postsWritten, which counts every reconciled post — see
   // lib-db-import.ts) reflects what actually changed this call.
-  if (report.addedIds.length || report.postsRemoved) scheduleSnapshot(folder);
+  if (report.addedIds.length || report.postsRemoved || inboxReport.applied.length) {
+    scheduleSnapshot(folder);
+    scheduleSavedIndexWrite(handle);
+  }
   return handle;
 }
 async function listPosts() {
@@ -447,11 +562,15 @@ async function listPostsDelta(haveBaseline, changedNames) {
   }
   const handle = ensureDb();
   await ensureDbTruthSource(folder, handle);
+  const inboxReport = drainInboxLogged(folder, handle.sqlite);
 
   // Full (re)sync or hint-less refresh: scan the whole folder (the reliable path).
   if (!haveBaseline || _deltaFolder !== folder || changedNames == null) {
     const report = await dbImporter.importAll(folder, handle);
-    if (report.addedIds.length || report.postsRemoved) scheduleSnapshot(folder);
+    if (report.addedIds.length || report.postsRemoved || inboxReport.applied.length) {
+      scheduleSnapshot(folder);
+      scheduleSavedIndexWrite(handle);
+    }
     const posts = await postsFromDb(handle.sqlite);
     const stamps = new Map(posts.map((p: any) => [p.captureId, p.updatedAt]));
     if (!haveBaseline || _deltaFolder !== folder) {
@@ -470,7 +589,10 @@ async function listPostsDelta(haveBaseline, changedNames) {
   const added = report.addedIds.length ? await postsByIds(handle.sqlite, report.addedIds) : [];
   for (const p of added) _lastSent.set(p.captureId, p.updatedAt);
   for (const id of report.removedIds) _lastSent.delete(id);
-  if (report.postsWritten || report.postsRemoved) scheduleSnapshot(folder);
+  if (report.postsWritten || report.postsRemoved) {
+    scheduleSnapshot(folder);
+    scheduleSavedIndexWrite(handle);
+  }
   return { saveFolder: folder, full: false, added, removed: report.removedIds };
 }
 
@@ -876,6 +998,8 @@ async function runBackup(reason) {
     result.fileCount = srcSet.size;
 
     // Collect destination files
+    // (.hologram-inbox mirroring happens further below, deliberately OUTSIDE
+    // srcSet/destSet — see the comment there for why.)
     let destFiles: string[];
     try {
       destFiles = await fs.promises.readdir(dest);
@@ -884,6 +1008,66 @@ async function runBackup(reason) {
     }
     const destSet = new Set<string>(destFiles.filter((f) => !/\.tmp(-\d+)?$/i.test(f)));
     await collectSubdir(dest, 'avatars', destSet, null);
+
+    // .hologram-inbox/{new,segments} (#5 St6 / #299): mirrored separately from
+    // srcSet/destSet, NOT folded into the general file-count pruneDecision()
+    // guard above — compaction can legitimately shrink the loose event count
+    // by >50% in one run (1,000 loose -> 1 segment), which must never look
+    // like the "src collapsed" signal that guard exists to catch
+    // (backup-guard.ts's module comment, the 2026-06-23 library-loss
+    // incident). tmp/ is excluded; both new/ and segments/ entries are
+    // immutable (write-once, like avatars/) so "present at dest" is proof
+    // enough — no drift-refresh needed.
+    const srcInboxNew = new Set<string>();
+    const destInboxNew = new Set<string>();
+    const srcInboxSegments = new Set<string>();
+    const destInboxSegments = new Set<string>();
+    const collectInboxSubdir = async (root: string, sub: string, into: Set<string>) => {
+      let names: string[] = [];
+      try {
+        names = await fs.promises.readdir(path.join(root, INBOX_DIRNAME, sub));
+      } catch {
+        return; // no inbox (or that subdir) yet
+      }
+      for (const f of names) {
+        if (/\.tmp(-\d+)?$/i.test(f)) continue;
+        try {
+          const st = await fs.promises.stat(path.join(root, INBOX_DIRNAME, sub, f));
+          if (st.isFile()) into.add(f);
+        } catch {
+          /* skip inaccessible entries */
+        }
+      }
+    };
+    await collectInboxSubdir(src, 'new', srcInboxNew);
+    await collectInboxSubdir(src, 'segments', srcInboxSegments);
+    await collectInboxSubdir(dest, 'new', destInboxNew);
+    await collectInboxSubdir(dest, 'segments', destInboxSegments);
+
+    const copyInboxMissing = async (sub: string, srcNames: Set<string>, destNames: Set<string>) => {
+      if (!srcNames.size) return;
+      await fs.promises.mkdir(path.join(dest, INBOX_DIRNAME, sub), { recursive: true });
+      for (const f of srcNames) {
+        if (destNames.has(f)) continue;
+        const destFile = path.join(dest, INBOX_DIRNAME, sub, f);
+        const tmp = `${destFile}.tmp-${Date.now()}`;
+        try {
+          await fs.promises.copyFile(path.join(src, INBOX_DIRNAME, sub, f), tmp);
+          await fs.promises.rename(tmp, destFile);
+          destNames.add(f);
+          result.written++;
+        } catch (e: any) {
+          try {
+            await fs.promises.unlink(tmp);
+          } catch {}
+          if (!result.firstError) result.firstError = e.message;
+        }
+      }
+    };
+    // segments first: the loose prune below depends on knowing which segments
+    // already landed at dest THIS run.
+    await copyInboxMissing('segments', srcInboxSegments, destInboxSegments);
+    await copyInboxMissing('new', srcInboxNew, destInboxNew);
 
     // Decide whether a destination copy is stale and must be refreshed. Write-once
     // captures (.jpg + .json sidecar) never change, so their presence at dest is
@@ -960,6 +1144,26 @@ async function runBackup(reason) {
       }
     }
     result.lastGoodCount = nextBaseline(decision.skip, srcSet.size, baseline);
+
+    // Inbox loose prune: only once every currently-known src segment is ALSO
+    // at dest this run — independent of the general pruneDecision() guard
+    // above (which is scoped to srcSet/destSet and never sees inbox entries).
+    // Local compaction only deletes a loose file after its segment is
+    // verified + renamed + receipted (lib-db-inbox-compact.ts); mirroring
+    // that same ordering here means a loose file's mirror copy is never
+    // pruned before the segment that supersedes it is safely at dest too —
+    // design comment: "対応する event を含む検証済み segment が同じミラーに
+    // コピー済みの場合だけ許可する".
+    if ([...srcInboxSegments].every((f) => destInboxSegments.has(f))) {
+      for (const f of destInboxNew) {
+        if (!srcInboxNew.has(f)) {
+          try {
+            await fs.promises.unlink(path.join(dest, INBOX_DIRNAME, 'new', f));
+            result.pruned++;
+          } catch {}
+        }
+      }
+    }
   } catch (err) {
     result.ok = false;
     result.error = err.message;
@@ -1123,6 +1327,7 @@ function registerExtractedIpc() {
     getSaveFolder,
     getDbWriter,
     ensurePostsSynced,
+    scheduleSavedIndexWrite,
     listPosts,
     listPostsDelta,
     resolveInFolder,
@@ -1148,6 +1353,7 @@ function registerExtractedIpc() {
     validateSaveFolder,
     relocateLibrary,
     watchSaveFolder,
+    watchInboxFolder,
     getWin: () => win,
     getConfigLastCorrupt: () => configLastCorrupt,
     resetDelta: () => {
@@ -1293,6 +1499,7 @@ if (!gotSingleInstanceLock) {
     const startMin = !SMOKE && process.env.HOLOGRAM_START_MINIMIZED === '1';
     createWindow(!SMOKE && !startMin); // start-minimized → create hidden, then show inactive below
     watchSaveFolder();
+    watchInboxFolder();
     if (!SMOKE) {
       armBackupSchedule(); // interval スケジュールを起動
       // 起動時の取り戻し: 前回から間隔以上空いていれば1回だけ実行（閉じている間に逃した分）。

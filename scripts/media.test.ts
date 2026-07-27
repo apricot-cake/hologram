@@ -161,7 +161,7 @@ describe('downloadAvatar（共有ストア avatars/<urlhash>.<ext>）', () => {
   });
 });
 
-describe('handleSave（end-to-end）: sidecar は実際に落ちたものを映す', () => {
+describe('handleSave（end-to-end）: inbox エンベロープは実際に落ちたものを映す', () => {
   let ack: any;
   let rec: any;
 
@@ -181,14 +181,15 @@ describe('handleSave（end-to-end）: sidecar は実際に落ちたものを映�
         ],
       },
     });
-    rec = JSON.parse(fs.readFileSync(path.join(saveFolder, ack.file.replace(/\.jpg$/, '.json')), 'utf8'));
+    const envelope = JSON.parse(fs.readFileSync(path.join(saveFolder, '.hologram-inbox', 'new', ack.file.replace(/\.jpg$/, '.json')), 'utf8'));
+    rec = envelope.record;
   });
 
   test('メディア1件が失敗しても ack は ok・mediaCount は 1', () => {
     expect(ack).toMatchObject({ ok: true, mediaCount: 1 });
   });
 
-  test('sidecar の media は1件で、そのファイルが実在する', () => {
+  test('エンベロープの media は1件で、そのファイルが実在する', () => {
     expect(rec.media).toHaveLength(1);
     expect(onDisk(rec.media[0].file)).toBe(true);
   });
@@ -197,7 +198,7 @@ describe('handleSave（end-to-end）: sidecar は実際に落ちたものを映�
     expect(onDisk(ack.file)).toBe(true);
   });
 
-  test('sidecar の avatarFile が実在する', () => {
+  test('エンベロープの avatarFile が実在する', () => {
     expect(onDisk(rec.avatarFile)).toBe(true);
   });
 });

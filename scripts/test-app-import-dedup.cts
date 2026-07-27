@@ -10,6 +10,11 @@
 //  - identical pair within ONE batch dedups to a single import
 //  - a deleted (trashed) post does not resurrect through a re-import
 //
+// #299: import-posts writes straight into the DB (no sidecar), so "landed"
+// is asserted against hologram.db (readonly open) instead of counting
+// import-*.json sidecar files, and "trashed" is asserted against the media
+// file moved into .trash/ (there is no sidecar to move — see ipc-trash.ts).
+//
 //   node scripts/test-app-import-dedup.cts
 
 const { spawn } = require('node:child_process');
@@ -19,6 +24,7 @@ const path = require('node:path');
 
 const appDir = path.join(__dirname, '..', 'app');
 const { electronPath: resolveElectron } = require('./lib-electron-path.cts');
+const { openDatabase } = require(path.join(appDir, 'src', 'main', 'lib-db.ts'));
 
 const electronPath = resolveElectron();
 
@@ -77,13 +83,22 @@ child.on('close', () => {
   // fresh 3 | exact re-import all skip | new bytes import | already-present pair
   // skips | in-batch identical pair dedups | trashed stays dead
   const seqOk = out.includes('EVAL_RESULT "3/0 0/3 1/0 0/2 1/1 0/1"');
-  // Count only imported sidecars — the app also writes org JSON (tabs.json etc.)
-  // into the save folder on quit.
-  const sidecars = fs.readdirSync(saveFolder).filter((f) => /^import-.*\.json$/.test(f));
-  const diskOk = sidecars.length === 4; // A, B, D, E remain (C sits in .trash)
+
+  // #299: no sidecar to count — A, B, D, E must have landed as DB rows (C was
+  // trashed, so its row was deleted by ipc-trash.ts's explicit deletePost).
+  let diskOk = false;
+  try {
+    const { sqlite } = openDatabase(path.join(configDir, 'hologram.db'), { readonly: true });
+    diskOk = sqlite.prepare("SELECT COUNT(*) AS n FROM posts WHERE captureId LIKE 'import-%'").get().n === 4;
+    sqlite.close();
+  } catch {
+    diskOk = false;
+  }
+  // C's media file (no sidecar exists for an import-posts record) moved into
+  // .trash/ — that's what proves delete-post still works for a sidecar-less post.
   let trashOk = false;
   try {
-    trashOk = fs.readdirSync(path.join(saveFolder, '.trash')).filter((f) => /^import-.*\.json$/.test(f)).length === 1;
+    trashOk = fs.readdirSync(path.join(saveFolder, '.trash')).filter((f) => /^import-.*\.jpg$/.test(f)).length === 1;
   } catch {
     trashOk = false;
   }

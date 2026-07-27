@@ -80,6 +80,42 @@ const MIGRATIONS: Migration[] = [
   // organization — recorded because it cannot be reconstructed after intake
   // (X has no bookmark export). Nullable: every ordinary save leaves it null.
   { name: 'add-captured-via', up: (db) => db.exec('ALTER TABLE posts ADD COLUMN capturedVia TEXT') },
+  // #299: the app-internal video import path (ipc-transfer.ts's import-images)
+  // has produced a sidecar `video` field since before this column existed —
+  // normalizePostRecord/PostRecordShape gained it alongside this migration.
+  // The `image`/`video` split mirrors the renderer's own `image || video` UI
+  // contract (a post has at most one of the two as its primary artifact).
+  { name: 'add-post-video', up: (db) => db.exec('ALTER TABLE posts ADD COLUMN video TEXT') },
+  // #299 (St6): the durable native-host intake queue's apply-once receipts.
+  // inbox_events records one row per envelope (eventId = captureId) actually
+  // applied to `posts` — the idempotency ledger a re-scan or a replayed
+  // segment checks before writing anything (design comment's "apply rules").
+  // sourceSegment is NULL for a still-loose event and the segment's id once
+  // compaction folds it in (#299 design comment, "保持量とコンパクション") —
+  // recorded so a segment can be proven fully-applied without re-reading it.
+  // inbox_segments records one row per compacted segment file actually
+  // replayed, so a normal restart can skip re-opening a segment whose events
+  // are all already accounted for (only a DB-loss recovery, where these rows
+  // are gone too, replays segment contents again).
+  {
+    name: 'add-inbox-tables',
+    up: (db) =>
+      db.exec(`
+        CREATE TABLE inbox_events (
+          eventId TEXT PRIMARY KEY,
+          captureId TEXT NOT NULL,
+          payloadSha256 TEXT NOT NULL,
+          importedAt TEXT NOT NULL,
+          sourceSegment TEXT
+        );
+        CREATE INDEX idx_inbox_events_captureId ON inbox_events(captureId);
+        CREATE TABLE inbox_segments (
+          segmentId TEXT PRIMARY KEY,
+          payloadSha256 TEXT NOT NULL,
+          importedAt TEXT NOT NULL
+        );
+      `),
+  },
 ];
 
 interface Migration {
@@ -176,6 +212,7 @@ interface PostsTable {
   assetClass: string;
   mediaType: string | null;
   image: string | null;
+  video: string | null; // add-post-video migration (#299) — see PostRecordShape.video
   url: string | null;
   platform: string | null;
   text: string | null;
@@ -296,6 +333,19 @@ interface StoreStateTable {
   key: string;
   value: string;
 }
+// add-inbox-tables migration (#299 St6) — see MIGRATIONS comment.
+interface InboxEventsTable {
+  eventId: string;
+  captureId: string;
+  payloadSha256: string;
+  importedAt: string;
+  sourceSegment: string | null;
+}
+interface InboxSegmentsTable {
+  segmentId: string;
+  payloadSha256: string;
+  importedAt: string;
+}
 // postsFts is FTS5 (posts_fts): a virtual table, not a normal one, so Kysely's
 // typed insert/select work but its DDL helpers do not apply — it is created as
 // raw SQL in lib-db-schema.ts. postId is UNINDEXED (match results carry it
@@ -333,6 +383,8 @@ interface Schema {
   tab_windows: TabWindowsTable;
   store_state: StoreStateTable;
   posts_fts: PostsFtsTable;
+  inbox_events: InboxEventsTable;
+  inbox_segments: InboxSegmentsTable;
 }
 
 export { openDatabase, runMigrations, DatabaseCorruptError, MIGRATIONS };

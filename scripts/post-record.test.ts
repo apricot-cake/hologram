@@ -34,6 +34,7 @@ describe('既定値', () => {
   test.each([
     'mediaType',
     'image',
+    'video',
     'url',
     'platform',
     'text',

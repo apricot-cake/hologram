@@ -10,6 +10,7 @@ import { ipcMain } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
 import { parseJsonLoose } from './lib-json.ts';
+import { postsByIds } from './lib-db-query.ts';
 
 function register(ctx) {
   const { getSaveFolder, getTrashDir, baseOf, VIEWABLE_EXTS, resolveInFolder, writeSidecarAtomic, getDbWriter, ensurePostsSynced } = ctx;
@@ -19,15 +20,23 @@ function register(ctx) {
     if (!folder || !image) return { ok: false };
     // Soft-delete: move all files for this captureId into .trash/ (instead of unlinking).
     const base = baseOf(image);
-    // Trashing moves the sidecar out of the watched folder, so the next
-    // importAll finds captureId missing and cascade-deletes its posts row
-    // (post_tags included, FK ON DELETE CASCADE). Read the DB-only state
-    // (#298/St5's tags/userKind/tagReviewed) before that happens, so it can
-    // be stamped into the trashed sidecar copy below — restore-post already
-    // re-derives from that copy, this just gives it accurate values to
-    // re-derive FROM instead of whatever the sidecar last had pre-flip.
-    await ensurePostsSynced();
+    // Read the DB-only state (#298/St5's tags/userKind/tagReviewed) before the
+    // row disappears, so it can be stamped into the trashed sidecar copy below
+    // — restore-post already re-derives from that copy, this just gives it
+    // accurate values to re-derive FROM instead of whatever the sidecar last
+    // had pre-flip.
+    const handle = await ensurePostsSynced();
     const flags = getDbWriter().getPostFlags(base);
+    // #299: some captures have NO sidecar at all (inbox/import-posts/import-images
+    // producers write straight into the DB) — read the full row before it's gone
+    // so a trash-side record can still be reconstructed below for restore-post
+    // AND for import-posts' dedup scan (ipc-transfer.ts reads .trash/*.json to
+    // stop a deliberately-deleted post from resurrecting on re-import).
+    const dbRecord = handle ? (await postsByIds(handle.sqlite, [base]))[0] || null : null;
+    // Explicit DB delete — do not rely on the next importAll noticing the
+    // sidecar's absence (it may never notice: #299 stopped treating "missing
+    // from the watched folder" as a delete signal once the DB is authoritative).
+    getDbWriter().deletePost(base);
     const targets = new Set([`${base}.json`]);
     for (const e of VIEWABLE_EXTS) targets.add(`${base}.${e}`);
     const jsonPath = resolveInFolder(`${base}.json`);
@@ -35,18 +44,21 @@ function register(ctx) {
     if (jsonPath) {
       try {
         rec = parseJsonLoose(await fs.promises.readFile(jsonPath, 'utf8'));
-        if (rec.image) targets.add(path.basename(rec.image));
-        if (rec.video) targets.add(path.basename(rec.video));
-        // Shared-store avatars (avatars/<urlhash>.<ext>) are referenced by every
-        // capture of that author — deleting one post must not trash the icon.
-        // Only legacy per-capture files (<captureId>-avatar.<ext>) are swept.
-        if (rec.avatarFile && !/^avatars[\\/]/.test(rec.avatarFile)) targets.add(path.basename(rec.avatarFile));
-        for (const m of rec.media || []) {
-          if (m && m.file) targets.add(path.basename(m.file));
-          if (m && m.posterFile) targets.add(path.basename(m.posterFile)); // #119 St1
-        }
       } catch {
-        /* sidecar missing/corrupt — fall back to the disk sweep */
+        /* sidecar missing/corrupt — fall back to the DB record below */
+      }
+    }
+    if (!rec && dbRecord) rec = dbRecord; // no sidecar ever existed for this capture (#299)
+    if (rec) {
+      if (rec.image) targets.add(path.basename(rec.image));
+      if (rec.video) targets.add(path.basename(rec.video));
+      // Shared-store avatars (avatars/<urlhash>.<ext>) are referenced by every
+      // capture of that author — deleting one post must not trash the icon.
+      // Only legacy per-capture files (<captureId>-avatar.<ext>) are swept.
+      if (rec.avatarFile && !/^avatars[\\/]/.test(rec.avatarFile)) targets.add(path.basename(rec.avatarFile));
+      for (const m of rec.media || []) {
+        if (m && m.file) targets.add(path.basename(m.file));
+        if (m && m.posterFile) targets.add(path.basename(m.posterFile)); // #119 St1
       }
     }
     try {
@@ -81,7 +93,23 @@ function register(ctx) {
       }
       await fs.promises.writeFile(trashJson, JSON.stringify(r, null, 2), 'utf8');
     } catch {
-      /* sidecar may not exist — trash still works but won't auto-purge */
+      // No sidecar moved into .trash — this capture never had one (#299:
+      // inbox/import-posts/import-images write straight into the DB). Write a
+      // fresh record from the DB row read above, so restore-post and
+      // import-posts' dedup scan still work for a sidecar-less capture.
+      if (dbRecord) {
+        const r = { ...dbRecord, trashedAt: new Date().toISOString() };
+        if (flags) {
+          r.tags = flags.tags;
+          if (flags.userKind != null) r.userKind = flags.userKind;
+          if (flags.tagReviewed != null) r.tagReviewed = flags.tagReviewed;
+        }
+        try {
+          await fs.promises.writeFile(trashJson, JSON.stringify(r, null, 2), 'utf8');
+        } catch {
+          /* best-effort — trash still works but won't auto-purge/dedup */
+        }
+      }
     }
     return { ok: true };
   });
