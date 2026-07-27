@@ -5,7 +5,7 @@ description: Hologram を CDP（Chrome DevTools Protocol）で計測・撮影・
 
 # verify-with-cdp — CDP で確かめる時の作法
 
-前提は2つとも別の場所が正本。**変更が反映される状態か**（`build:islands` 等）と**どのインスタンスを使うか**（隔離3段構え）は skill `run-hologram` と `docs/build.md`「検証ルール（隔離3段構え）」。ここはその上で踏む罠だけを持つ。
+前提は2つとも別の場所が正本。**変更が反映される状態か**（`npm run build --workspace=app` 等）と**どのインスタンスを使うか**（隔離3段構え）は skill `run-hologram` と `docs/build.md`「検証ルール（隔離3段構え）」。ここはその上で踏む罠だけを持つ。
 
 ## 駆動する
 
@@ -45,7 +45,7 @@ description: Hologram を CDP（Chrome DevTools Protocol）で計測・撮影・
 
 ### IPC を直叩きして検証データを仕込む
 
-`window.hologram.set*` を CDP eval から呼べば検証データを素早く置けるが、**preload の引数規約がメソッドごとに非対称**で、間違えると壊す。叩く前に `app/preload.cts`（`HologramPreload`）でシグネチャを確認する（preload のメソッド名は camelCase で IPC チャンネル名と違う＝`app-info`→`getAppInfo`）。
+`window.hologram.set*` を CDP eval から呼べば検証データを素早く置けるが、**preload の引数規約がメソッドごとに非対称**で、間違えると壊す。叩く前に `app/src/preload/index.ts`（`HologramPreload`）でシグネチャを確認する（preload のメソッド名は camelCase で IPC チャンネル名と違う＝`app-info`→`getAppInfo`）。
 
 - `setTagTypes(types, labels)` = **素の types オブジェクト**。`{types:{...}}` でラップすると main が `{types: 受け取った引数}` として保存して**二重ネスト**になり、`tagKindOf` が全タグ null＝種別ドット消失として表面化する（実装バグに見えるが呼び出しミス。本物データは内側に温存＝可逆）。
 - `setPosterTags(data)` = `{tags:{...}}` **ラップが正しい**（main が `data.tags` を取り出す）。
