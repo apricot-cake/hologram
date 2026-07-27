@@ -1,9 +1,14 @@
 'use strict';
 
-// Installs this repo's dependencies, working around an upstream packaging bug
-// that makes a plain `npm install` fail on machines without a C++ toolchain.
+// Installs this repo's dependencies. Two upstream problems currently stop a plain
+// `npm install` from producing a working tree, and each is worked around with one
+// npm flag. Both flags are temporary, so neither is hardcoded: before installing,
+// this script reads the condition that makes each necessary straight off disk, and
+// afterwards it reports which ones still hold. The day an upstream fixes theirs,
+// the flag stops being passed and the script says so — a workaround nobody
+// re-checks is a workaround that becomes permanent.
 //
-// THE BUG (WiseLibs/better-sqlite3#1503, filed 2026-07-24, open):
+// (1) --ignore-scripts — WiseLibs/better-sqlite3#1503 (filed 2026-07-24, open)
 //   better-sqlite3 v13 is the first release built on N-API, so it ships ready-made
 //   binaries inside the package (prebuilds/<platform>-<arch>.node) and its loader
 //   prefers them over anything compiled locally. But the package still carries
@@ -14,22 +19,20 @@
 //      install command to compile using node-gyp via node-gyp rebuild"
 //   So npm compiles from source on every install, needs Visual Studio to do it,
 //   and aborts the WHOLE install partway when it isn't there — leaving a tree
-//   that is missing unrelated packages. The compile was never needed: the bundled
-//   binary is what gets loaded either way.
+//   missing unrelated packages. The compile was never needed.
 //
-// THE WORKAROUND: install with --ignore-scripts. That is a blunt instrument (it
-// disables EVERY package's install scripts), and Electron is collateral damage —
-// its own install script is what downloads the ~225MB runtime, so skipping it
-// leaves node_modules/electron without an executable and nothing can launch.
-// This script puts that one piece back.
+//   The flag is blunt: it disables EVERY package's install scripts. Electron and
+//   WXT are collateral damage (Electron's downloads the ~225MB runtime, WXT's
+//   generates .wxt/tsconfig.json), so this script puts those two back by hand.
 //
-// WHY THIS FILE EXISTS AT ALL: a workaround nobody re-checks becomes permanent.
-// So the strategy is not hardcoded — it is decided by reading the installed
-// better-sqlite3's own package.json for the condition that triggers npm's
-// default. The day upstream sets gypfile:false (or declares an install script),
-// this script installs normally and says the workaround can be deleted. No
-// network call, no deliberately-failed install, no wall of red output to get
-// used to ignoring.
+// (2) --legacy-peer-deps — electron-vite's peer range vs vite 8
+//   electron-vite@5 declares `peer vite: ^5 || ^6 || ^7` while app/ builds on
+//   vite 8, so npm's resolver refuses the tree outright. No stable electron-vite
+//   accepts vite 8 yet (6.0.0 is beta-only), and `overrides` cannot widen a peer
+//   range, so npm's documented escape hatch is the only lever. The violation is
+//   not new — a lockfile-less install has failed since vite 8 landed; the
+//   committed lockfile was carrying the tree, and stops the moment anything makes
+//   npm re-resolve.
 //
 //   node scripts/setup.cts
 
@@ -38,27 +41,81 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const repoRoot = path.join(__dirname, '..');
-const UPSTREAM = 'https://github.com/WiseLibs/better-sqlite3/issues/1503';
 
-type Verdict = { needed: boolean; reason: string };
+type Verdict = {
+  needed: boolean;
+  // Why it is (or is no longer) needed, in the words the final report prints.
+  reason: string;
+};
 
-// Reads the condition off disk. Note this is the PUBLISHED package.json, not the
-// registry metadata: `npm view better-sqlite3 gypfile` answers true even today,
-// because npm injects that field itself when it spots a binding.gyp. The author's
-// own opt-out is what we are waiting for, and that only shows up here.
-function workaroundNeeded(): Verdict | null {
-  const dir = path.join(repoRoot, 'node_modules', 'better-sqlite3');
-  if (!fs.existsSync(dir)) return null; // nothing installed yet — nothing to read
-  let pkg: { gypfile?: boolean; scripts?: Record<string, string> };
+type Workaround = {
+  flag: string;
+  label: string;
+  upstream: string;
+  // null = cannot tell yet (nothing installed to read). Callers treat that as
+  // "assume still needed": guessing wrong that way costs an unused flag, guessing
+  // wrong the other way costs a failed or half-installed tree.
+  check: () => Verdict | null;
+};
+
+function readJson(file: string): Record<string, any> | null {
   try {
-    pkg = JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf8'));
+    return JSON.parse(fs.readFileSync(file, 'utf8'));
   } catch {
     return null;
   }
+}
+
+// Reads the PUBLISHED package.json, not the registry metadata: `npm view
+// better-sqlite3 gypfile` answers true even today, because npm injects that field
+// itself when it spots a binding.gyp. The author's own opt-out only shows up here.
+function sqliteCheck(root: string = repoRoot): Verdict | null {
+  const dir = path.join(root, 'node_modules', 'better-sqlite3');
+  const pkg = readJson(path.join(dir, 'package.json'));
+  if (!pkg) return null;
   if (pkg.gypfile === false) return { needed: false, reason: 'better-sqlite3 が gypfile:false を指定するようになりました' };
   if (pkg.scripts?.install) return { needed: false, reason: `better-sqlite3 が install スクリプト（${pkg.scripts.install}）を持つようになりました` };
   if (!fs.existsSync(path.join(dir, 'binding.gyp'))) return { needed: false, reason: 'better-sqlite3 が binding.gyp を同梱しなくなりました' };
-  return { needed: true, reason: 'better-sqlite3 は binding.gyp を同梱したまま install スクリプトを持たない＝npm が既定でコンパイルを試みます' };
+  return { needed: true, reason: 'better-sqlite3 が binding.gyp を同梱したまま install スクリプトを持たない＝npm が既定でコンパイルを試みます' };
+}
+
+// Compares electron-vite's declared peer range against the vite actually installed.
+// Only the major numbers matter here: the range is a list of caret terms, and the
+// conflict is strictly "vite 8 is not among the allowed majors". An unrecognised
+// range shape is reported as undecidable rather than guessed at — a wrong "no
+// longer needed" here would break the next install.
+function peerCheck(root: string = repoRoot): Verdict | null {
+  const ev = readJson(path.join(root, 'node_modules', 'electron-vite', 'package.json'));
+  const vite = readJson(path.join(root, 'node_modules', 'vite', 'package.json'));
+  if (!ev || !vite) return null;
+  const range: string | undefined = ev.peerDependencies?.vite;
+  const installedMajor = Number(String(vite.version).split('.')[0]);
+  if (!range || !Number.isFinite(installedMajor)) return null;
+  const allowed = [...range.matchAll(/\^(\d+)/g)].map((m) => Number(m[1]));
+  if (!allowed.length) return { needed: true, reason: `electron-vite の peer 範囲（${range}）を判定できません＝安全側に倒して回避策を維持します` };
+  if (allowed.includes(installedMajor)) {
+    return { needed: false, reason: `electron-vite@${ev.version} の peer（${range}）が、使用中の vite ${vite.version} を受け入れます` };
+  }
+  return { needed: true, reason: `electron-vite@${ev.version} の peer は ${range}＝使用中の vite ${vite.version} を受け入れません` };
+}
+
+const WORKAROUNDS: Workaround[] = [
+  { flag: '--ignore-scripts', label: 'better-sqlite3 の不要な node-gyp ビルド', upstream: 'https://github.com/WiseLibs/better-sqlite3/issues/1503', check: sqliteCheck },
+  { flag: '--legacy-peer-deps', label: 'electron-vite の peer 範囲と vite 8 の衝突', upstream: 'https://github.com/alex8088/electron-vite/releases', check: peerCheck },
+];
+
+// Same shape as bridge.cts: installing only happens when this file is RUN (see the
+// require.main guard at the bottom), so a test can require() it and exercise the
+// probes against fixture trees. `module.exports` rather than `export` because this
+// is a .cts run by Node's type stripping, which only erases types — real export
+// statements would be a syntax error at runtime (see scripts/tsconfig.json's
+// erasableSyntaxOnly).
+module.exports = { sqliteCheck, peerCheck, WORKAROUNDS, decideFlags };
+
+// Split out so a test can check the FLAGS a set of verdicts produces, not just the
+// verdicts themselves — "cannot tell" has to behave like "still needed" here.
+function decideFlags(verdicts: (Verdict | null)[]): string[] {
+  return WORKAROUNDS.filter((_w, i) => verdicts[i] === null || verdicts[i]?.needed).map((w) => w.flag);
 }
 
 // npm has to go through a shell on Windows (its entry point is npm.cmd, and Node
@@ -72,26 +129,15 @@ function run(command: string, cwd: string) {
 }
 
 function main() {
-  // The verdict from the PREVIOUS install picks this install's strategy. On a
-  // fresh clone there is nothing to read, so assume the workaround is still
-  // needed — guessing wrong that way costs an unused flag, guessing wrong the
-  // other way costs a half-installed tree.
-  const before = workaroundNeeded();
-  const useWorkaround = before === null || before.needed;
+  // The verdicts from the PREVIOUS install pick this install's flags.
+  const flags = decideFlags(WORKAROUNDS.map((w) => w.check()));
 
-  // --legacy-peer-deps is a SECOND, unrelated workaround: electron-vite@5 declares
-  // `peer vite: ^5 || ^6 || ^7` while app/ builds on vite 8, so npm's resolver
-  // refuses the tree outright. There is no stable electron-vite that accepts vite 8
-  // (6.0.0 is beta-only, checked 2026-07-27), and `overrides` does not widen a peer
-  // range, so npm's documented escape hatch is the only lever. The violation is not
-  // new — a lockfile-less `npm install` has failed on it since vite 8 landed; the
-  // committed lockfile was carrying the tree, and it stops carrying it the moment
-  // anything makes npm re-resolve.
-  run(useWorkaround ? 'npm install --ignore-scripts --legacy-peer-deps' : 'npm install --legacy-peer-deps', repoRoot);
+  run(['npm install', ...flags].join(' '), repoRoot);
 
   // extension/ is a separate npm project with its own lockfile (deliberately —
   // it is a standalone WXT build), so a root install does not cover it. Fresh
   // worktrees need this or the extension build and its type check both fail.
+  // Its own tree has no peer conflict, so only the scripts flag applies.
   const extDir = path.join(repoRoot, 'extension');
   run('npm install --ignore-scripts', extDir);
 
@@ -102,8 +148,14 @@ function main() {
   // the nearest tsconfig when transforming a file.
   run('npx wxt prepare', extDir);
 
-  // Put back the one thing --ignore-scripts broke. Skipped when scripts ran
-  // normally, since Electron will have downloaded itself.
+  // Three suites read the built extension bundles straight off disk (capture.js,
+  // resident.js), so a freshly installed tree fails `npm test` until this runs.
+  // Building here rather than teaching those suites to build themselves keeps the
+  // cost at one build per setup instead of one per suite.
+  run('npm run build:ext', repoRoot);
+
+  // Put back the other casualty. Skipped when scripts ran normally, since Electron
+  // will have downloaded itself.
   const electronExe = path.join(repoRoot, 'node_modules', 'electron', 'dist', 'electron.exe');
   const electronInstaller = path.join(repoRoot, 'node_modules', 'electron', 'install.js');
   if (!fs.existsSync(electronExe) && fs.existsSync(electronInstaller)) {
@@ -113,22 +165,35 @@ function main() {
     execFileSync(process.execPath, [electronInstaller], { cwd: repoRoot, stdio: 'inherit' });
   }
 
-  const after = workaroundNeeded();
+  // Re-read after installing, so the report describes the tree that now exists.
   console.log('');
-  if (after && !after.needed) {
-    console.log('='.repeat(72));
-    console.log('上流が修正されました。この回避策はもう要りません。');
-    console.log(`  ${after.reason}`);
-    console.log(`  ${UPSTREAM}`);
+  const resolved: Workaround[] = [];
+  const remaining: string[] = [];
+  for (const w of WORKAROUNDS) {
+    const v = w.check();
+    if (v && !v.needed) {
+      resolved.push(w);
+      console.log('='.repeat(72));
+      console.log(`上流が修正されました。${w.flag} はもう要りません。`);
+      console.log(`  ${v.reason}`);
+      console.log(`  ${w.upstream}`);
+      console.log('='.repeat(72));
+    } else if (v) {
+      remaining.push(`${w.flag}（${w.label}）`);
+    } else {
+      remaining.push(`${w.flag}（${w.label}・判定不能のため維持）`);
+    }
+  }
+  if (resolved.length === WORKAROUNDS.length) {
     console.log('');
-    console.log('  scripts/setup.cts と package.json の "setup" を削除し、');
-    console.log('  docs/build.md の該当節も消して、素の npm install へ戻してください。');
-    console.log('='.repeat(72));
-  } else if (after) {
-    console.log(`完了。回避策（--ignore-scripts）は今回も必要でした: ${UPSTREAM}`);
+    console.log('回避策は全て不要になりました。scripts/setup.cts と package.json の "setup"、');
+    console.log('docs/build.md の該当節を削除し、素の npm install へ戻してください。');
+  } else if (resolved.length) {
+    console.log('');
+    console.log(`該当のフラグを scripts/setup.cts と docs/build.md から外してください。残りは ${remaining.join(' / ')}。`);
   } else {
-    console.log('完了。');
+    console.log(`完了。今回も必要だった回避策: ${remaining.join(' / ')}`);
   }
 }
 
-main();
+if (require.main === module) main();

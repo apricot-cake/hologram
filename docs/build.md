@@ -10,13 +10,22 @@ npm run setup
 
 **⚠️素の `npm install` は現在このリポジトリでは通らない**（C++ ビルドツールを入れている環境を除く）。`better-sqlite3` v13 は N-API 化でビルド済みバイナリを同梱し、読み込み側もそれを優先するのに、`binding.gyp` を同梱したまま install スクリプトを宣言していない。npm はこの組み合わせを「node-gyp でコンパイルせよ」と解釈する既定を持つ（[npm docs](https://docs.npmjs.com/cli/v11/using-npm/scripts)）ため、**不要なコンパイルが走り、失敗すると install 全体が途中で止まる**（無関係なパッケージが入らないまま終わる）。
 
-`npm run setup` は `--ignore-scripts` で入れ、それが巻き添えで止める Electron 本体の取得と WXT の `wxt prepare`（`extension/.wxt/tsconfig.json` の生成）だけを戻す。`npm rebuild electron` は成功と表示して**何もダウンロードしない**ので使わない。
+`npm run setup` は `--ignore-scripts` で入れ、それが巻き添えで止める Electron 本体の取得と WXT の `wxt prepare`（`extension/.wxt/tsconfig.json` の生成）だけを戻す。`npm rebuild electron` は成功と表示して**何もダウンロードしない**ので使わない。あわせて `build:ext` も走らせる＝3本のテストが拡張のビルド出力（`capture.js`・`resident.js`）を直接読むため、これが無いと入れたてのツリーで `npm test` が落ちる。
 
 **`--legacy-peer-deps` も付く（別件の回避）**: `electron-vite@5` は `peer vite: ^5 || ^6 || ^7` を宣言しているのに `app/` は vite 8 で組んでいるため、npm の解決器がツリーごと拒否する。vite 8 を受ける安定版の electron-vite はまだ無く（6.0.0 は beta のみ・2026-07-27 確認）、`overrides` では peer の範囲を広げられないので、npm 公式の逃げ道がこれしかない。**この不整合は前からある**＝lockfile 無しの `npm install` は vite 8 を入れた時点で通らなくなっていて、コミット済みの lockfile が支えていただけ。何かが再解決を促した瞬間に落ちる。
 
 **⚠️Hologram（開発版）を起動したまま install しない**: 実行中の Electron が `node_modules/electron/dist/**` と `better-sqlite3` の `.node` を掴んでいるため、npm がファイルを置き換えられず EBUSY / EPERM で止まる。`npm ci` は先に node_modules を消しにいくので、途中まで消したところで失敗して**依存が欠けたツリーが残る**（2026-07-27 実地被弾）。先にアプリを閉じること。
 
-**これは上流 [WiseLibs/better-sqlite3#1503](https://github.com/WiseLibs/better-sqlite3/issues/1503) が直るまでの暫定措置。** setup は毎回、インストール済み `better-sqlite3` の `package.json` を読んで条件がまだ成立するか確かめ、解消していれば「回避策を外せる」と表示する。Dependabot（#395）の更新 PR で新バージョンが来たときも、同じ条件（`gypfile: false` か install スクリプトの有無）で判定する。**解消したら `scripts/setup.cts`・`package.json` の `setup`・本節をまとめて消すこと。**
+**2つとも上流待ちの暫定措置で、どちらも setup が毎回自分で判定する。**フラグはハードコードしておらず、install の前にディスク上の `package.json` から条件を読み、必要なものだけ渡す。上流が直れば**そのフラグは自動的に付かなくなり、外してよい旨を表示する**。
+
+| フラグ | 解消の条件 | 待っている先 |
+| --- | --- | --- |
+| `--ignore-scripts` | `better-sqlite3` が `gypfile: false` か install スクリプトを持つ（または `binding.gyp` を同梱しなくなる） | [WiseLibs/better-sqlite3#1503](https://github.com/WiseLibs/better-sqlite3/issues/1503) |
+| `--legacy-peer-deps` | `electron-vite` の `peerDependencies.vite` が、使用中の vite のメジャーを受け入れる | [electron-vite releases](https://github.com/alex8088/electron-vite/releases) |
+
+判定そのものは `scripts/setup-probes.test.ts` が守る（誤って「もう不要」と答えると次の install が落ち、誤って「まだ必要」と答え続けると回避策が恒久化するため）。範囲の書式を読めない場合は**安全側＝維持**に倒す。
+
+Dependabot（#395）の更新 PR で新バージョンが来たときも、確認すべき条件は上表と同じ。**両方とも解消したら `scripts/setup.cts`・`scripts/setup-probes.test.ts`・`package.json` の `setup`・本節をまとめて消すこと。**
 
 ## 拡張機能の開発・配布
 
