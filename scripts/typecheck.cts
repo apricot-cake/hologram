@@ -1,6 +1,15 @@
 'use strict';
-// TypeScript contract checks. Five projects (all no-emit) so type rot
-// can't accumulate silently between sessions:
+// TypeScript contract checks (`npm run typecheck`). NOT a Vitest suite: it runs
+// tsc over whole projects rather than asserting anything, so it stays a plain
+// script — `npm run check` is what runs it alongside the tests.
+//
+// Five projects (all no-emit) so type rot can't accumulate silently between
+// sessions. The Vitest suites (scripts/*.test.ts) are deliberately NOT a sixth:
+// a single suite imports across the renderer, main-process, native-host and
+// extension layers, and those are separate projects precisely because their
+// compiler settings conflict (DOM vs Node globals, bundler vs nodenext). They
+// were unchecked before this migration too — require() typed every import as
+// any — so this is the status quo, not a loss.
 //   1. app/tsconfig.web.json      — single strict project for the renderer
 //      (React components under src/renderer/src/* + the service layer under
 //      src/renderer/src/services/*), bundled by electron-vite's renderer target.
@@ -16,10 +25,10 @@
 //      stage 2/3; a FOURTH runtime (real browser, no type-stripping) — the one
 //      layer is built by WXT. Its type check runs `wxt prepare` first so the
 //      generated entrypoint declarations are present.
-//   5. scripts/tsconfig.json      — the dev-tooling / test-harness layer (pure
-//      units + app-harness Electron smoke + capture/verify CLIs), stage 2/3;
-//      a FIFTH standalone-Node runtime, .cts, no build step — the runtime the
-//      original TS-scope declaration never named (2026-07-09 audit).
+//   5. scripts/tsconfig.json      — the dev-tooling / CLI layer (app-harness
+//      Electron smoke + capture/verify CLIs), stage 2/3; a FIFTH standalone-Node
+//      runtime, .cts, no build step — the runtime the original TS-scope
+//      declaration never named (2026-07-09 audit).
 
 const { spawnSync } = require('node:child_process');
 const fs = require('node:fs');
@@ -40,7 +49,7 @@ function resolveBin(pkg: string, subPath: string, fromDir: string): string {
   for (let dir = fromDir; ; dir = path.dirname(dir)) {
     const candidate = path.join(dir, 'node_modules', pkg, subPath);
     if (fs.existsSync(candidate)) return candidate;
-    if (path.dirname(dir) === dir) throw new Error(`test-typecheck: cannot find ${pkg}/${subPath} from ${fromDir} — run npm install`);
+    if (path.dirname(dir) === dir) throw new Error(`typecheck: cannot find ${pkg}/${subPath} from ${fromDir} — run npm install`);
   }
 }
 
@@ -62,9 +71,9 @@ for (const project of PROJECTS) {
   const prepared = project.prepare ? spawnSync(process.execPath, [project.prepare, 'prepare'], { stdio: 'inherit', cwd }) : null;
   const r = project.prepare ? (prepared?.status === 0 ? spawnSync(process.execPath, [tsc, '--noEmit', '-p', p], { stdio: 'inherit', cwd }) : prepared) : spawnSync(process.execPath, [tsc, '--noEmit', '-p', p], { stdio: 'inherit', cwd });
   if (r.status !== 0) {
-    console.error(`FAIL test-typecheck: ${label} reported errors`);
+    console.error(`FAIL typecheck: ${label} reported errors`);
     failed++;
   }
 }
 if (failed) process.exit(1);
-console.log('PASS test-typecheck: renderer + main process + native-host + extension + scripts type-check clean');
+console.log('PASS typecheck: renderer + main process + native-host + extension + scripts type-check clean');

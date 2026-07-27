@@ -29,7 +29,8 @@
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
     "format": "biome format --write .",
-    "test": "node scripts/run-tests.cts",
-    "test:unit": "vitest run"
+    "test": "vitest run",
+    "typecheck": "node scripts/typecheck.cts",
+    "check": "npm run lint && npm run typecheck && npm test"
   }
 }

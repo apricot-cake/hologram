@@ -1,0 +1,618 @@
+// extension/utils/overlay.ts＝タイムライン上のオーバーレイ（#54 の「保存済み」印を #309 の
+// 三値設定で出し分け、#94 のホバー保存ボタンを出す）のオフライン純ユニットテスト。
+// ビルド済みのコンテンツスクリプトを jsdom の中で、実際の注入と同じグローバル
+// （glass-ui.js / site-detect.js / media-identity.js をマニフェスト順に同じ window で評価）と
+// スタブした chrome API のもとで走らせる。
+//
+// 見るのはスクリプト自身の配線＝どの投稿を問い合わせるか・それが1バッチか・答えと設定が
+// 角の表示を決めるか・保存ボタンが「正直に保存できる」場所にだけ出るか・押したときに
+// ドラッグ&ドロップと同じメッセージを送るか・投稿自身の部分木を触らないか。
+// 見られないのは、プラットフォームごとのセレクタが実際の X / Bluesky / pixiv の DOM に
+// まだ当たるか（フィクスチャは自前のマークアップなので、自分が書いたものを読めることしか
+// 証明しない。content-fixtures.test.ts と同じ限界で、生きたカナリアは
+// scripts/e2e-capture-test.cts）。
+//
+// このスイートは1つのページを順に動かすので、テストの宣言順に意味がある。
+//
+// 前提: extension のビルド成果物（extension/.output/chrome-mv3/…）が要る。
+
+import fs from 'node:fs';
+import path from 'node:path';
+import { JSDOM } from 'jsdom';
+import { beforeAll, describe, expect, test } from 'vitest';
+
+// overlay.ts の x 分岐が狙う形の投稿。data-rect-top がメディア枠の幾何を宣言し
+// （jsdom は何もレイアウトしない）、data-rect-size で大きさを絞る。
+const X_HTML = `<!doctype html><html><body>
+  <div id="feed">
+    <article data-testid="tweet" id="p1">
+      <a href="/alice/status/111"><time datetime="2026-07-01T00:00:00Z">1h</time></a>
+      <div data-testid="tweetPhoto" data-rect-top="100"><img src="https://pbs.twimg.com/media/AAA.jpg"></div>
+    </article>
+    <article data-testid="tweet" id="p2">
+      <a href="/bob/status/222"><time datetime="2026-07-01T00:00:00Z">2h</time></a>
+      <div data-testid="tweetPhoto" data-rect-top="400"><img src="https://pbs.twimg.com/media/BBB.jpg"></div>
+    </article>
+    <!-- p3 の写真はまだ大きさを持たない（data-rect-top 無し）＝折り返しの下の遅延読み込み画像。
+         実際のタイムラインが、絵がレイアウトされる前に投稿へ答えるのと同じ状況。 -->
+    <article data-testid="tweet" id="p3">
+      <a href="/carol/status/333"><time datetime="2026-07-01T00:00:00Z">3h</time></a>
+      <div data-testid="tweetPhoto"><img id="lazy" src="https://pbs.twimg.com/media/CCC.jpg"></div>
+    </article>
+    <!-- 1投稿に2枚: 保存ボタンは1枚に対して働くので、枠ごとに自分のアンカーを持つ -->
+    <article data-testid="tweet" id="p4">
+      <a href="/dave/status/444"><time datetime="2026-07-01T00:00:00Z">4h</time></a>
+      <div data-testid="tweetPhoto" data-rect-top="1200" id="p4a"><img src="https://pbs.twimg.com/media/DDD.jpg"></div>
+      <div data-testid="tweetPhoto" data-rect-top="1600" id="p4b"><img src="https://pbs.twimg.com/media/EEE.jpg"></div>
+    </article>
+    <!-- 投稿の絵ではないもの（profile_images＝アバター）と、投稿の主題と言うには小さすぎる枠。
+         どちらも保存を申し出てはいけない。 -->
+    <article data-testid="tweet" id="p5">
+      <a href="/erin/status/555"><time datetime="2026-07-01T00:00:00Z">5h</time></a>
+      <div data-testid="tweetPhoto" data-rect-top="2000" id="p5a"><img src="https://pbs.twimg.com/profile_images/FFF.jpg"></div>
+    </article>
+    <article data-testid="tweet" id="p6">
+      <a href="/frank/status/666"><time datetime="2026-07-01T00:00:00Z">6h</time></a>
+      <div data-testid="tweetPhoto" data-rect-top="2400" data-rect-size="60" id="p6a"><img src="https://pbs.twimg.com/media/GGG.jpg"></div>
+    </article>
+    <!-- メディアタブのタイル（/<user>/media のグリッド）: article も testid も無く、
+         自分の /status/ アンカーの数段上に素の <li> があるだけ。アンカーが <img> を直に包む（#349）。 -->
+    <li id="p7">
+      <div><div><div>
+        <a href="/gina/status/777/photo/1"><img data-rect-top="2800" src="https://pbs.twimg.com/media/HHH.jpg"></a>
+      </div></div></div>
+    </li>
+    <!-- 同じ投稿(777)の動画タイル: サムネが別の CDN パスにあるので、上の写真タイル経由で
+         投稿が保存済みになっても、こちらは黙ったままでなければならない。 -->
+    <li id="p8">
+      <div><div><div>
+        <a href="/gina/status/777/video/2"><img data-rect-top="3200" src="https://pbs.twimg.com/amplify_video_thumb/III.jpg"></a>
+      </div></div></div>
+    </li>
+  </div>
+</body></html>`;
+
+// runScripts:'outside-only' で下の window.eval に本物のスクリプト文脈を与える
+// （ページ自身の <script> は不活性のまま。フィクスチャには無い）
+const dom = new JSDOM(X_HTML, { url: 'https://x.com/home', runScripts: 'outside-only' });
+const { window } = dom;
+
+const animatedElements = new Set<any>();
+const animationFrames = new Map<number, any>();
+const observed = new Set<any>();
+const sent: any[] = [];
+const storage: Record<string, unknown> = {};
+const storageListeners: any[] = [];
+const runtimeListeners: any[] = [];
+let ioCallback: any = null;
+let savedAnswer: Record<string, string | null> = {};
+let saveReply: any = { ok: true, metaOk: true };
+
+const intersect = (ids: string[], isIntersecting: boolean) => ioCallback(ids.map((id) => ({ target: window.document.getElementById(id), isIntersecting })));
+const setSetting = (key: string, value: unknown) => {
+  storage[key] = value;
+  for (const fn of storageListeners) fn({ [key]: { newValue: value } }, 'local');
+};
+
+const controls = (): any[] => Array.from(window.document.querySelectorAll('[data-hologram-overlay]'));
+// 常駐バンドルは自前のローカライズ文字列を持つ。jsdom は英語ロケールが既定なので、
+// ソースのキーではなくブラウザに見えるラベルで拾う。
+const marks = () => controls().filter((el) => el.title === 'Saved in Hologram');
+const saveButtons = () => controls().filter((el) => el.title === 'Save image');
+const settle = () => new Promise((r) => setTimeout(r, 400)); // 300ms の問い合わせデバウンスを越える
+
+// overlay.ts はポインタが何の上にあるかを「座標」で決める（実際の pointermove は必ず
+// clientX/clientY を運ぶ）。イベントがどの要素で起きたかでは決めない＝サイト自身のコントロールが
+// 絵の上に重なっていても印やボタンが出る。ハーネスもそれに合わせ、メディア枠の中心を狙う。
+const boxOf = (id: string) => {
+  const el = window.document.getElementById(id);
+  if (el.matches('[data-testid="tweetPhoto"]')) return el;
+  return el.querySelector('[data-testid="tweetPhoto"]') || el.querySelector('img'); // メディアタブの li は <img> 自体が枠
+};
+const controlOf = (id: string) => controls().filter((el) => el.parentElement === boxOf(id));
+const pointerMove = (target: any, x: number, y: number) => {
+  const e: any = new window.Event('pointermove', { bubbles: true });
+  e.clientX = x;
+  e.clientY = y;
+  target.dispatchEvent(e);
+};
+const hover = (id: string) => {
+  const box = boxOf(id);
+  const r = box.getBoundingClientRect();
+  pointerMove(box, r.left + r.width / 2, r.top + r.height / 2);
+};
+const hoverAway = () => pointerMove(window.document.getElementById('feed'), 900, 50); // どの枠よりも右＝何の上でもない
+const click = (el: any) => el.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+const rectTop = (sel: string, top: string) => window.document.querySelector(sel)?.setAttribute('data-rect-top', top);
+
+beforeAll(async () => {
+  // jsdom が実装しないブラウザ側の部品を、overlay.ts が使う最小限だけ埋める。
+  // レイアウトが無く全ての矩形がゼロ（overlay.ts はそれを「小さすぎて印を出せない」と正しく読む）
+  // ので、フィクスチャが自分で幾何を宣言する＝data-rect-top を持つ要素はその位置の正方形。
+  window.Element.prototype.animate = function () {
+    animatedElements.add(this);
+    return { cancel() {}, finish() {} };
+  };
+  window.Element.prototype.getBoundingClientRect = function () {
+    const declared = this.getAttribute?.('data-rect-top');
+    if (declared === null || declared === undefined) return { left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0, x: 0, y: 0 };
+    const top = Number(declared);
+    const size = Number(this.getAttribute('data-rect-size') || 300);
+    return { left: 50, top, right: 50 + size, bottom: top + size, width: size, height: size, x: 50, y: top };
+  };
+  let nextAnimationFrame = 1;
+  window.requestAnimationFrame = (fn) => {
+    const id = nextAnimationFrame++;
+    animationFrames.set(id, fn);
+    return id;
+  };
+  window.cancelAnimationFrame = (id) => animationFrames.delete(id);
+
+  // 注意: jsdom は要素で発火したイベントの伝播経路に Window を入れない＝`window` に
+  // 登録した capture フェーズのリスナはこのハーネスでは決して呼ばれない（ブラウザでは呼ばれる）。
+  // overlay.ts の load / pointer ハンドラと同じく `document` で聞くこと。
+
+  // IntersectionObserver: 可視状態はテストが手で動かす
+  window.IntersectionObserver = class {
+    constructor(cb: any) {
+      ioCallback = cb;
+    }
+    observe(el: any) {
+      observed.add(el);
+    }
+    unobserve(el: any) {
+      observed.delete(el);
+    }
+    disconnect() {
+      observed.clear();
+    }
+  } as any;
+
+  // chrome API のスタブ。`sent` に全メッセージを記録して、checkSaved が投稿ごとでなく
+  // バッチで出ていること、保存ボタンがドラッグ経路の imageDragged を再利用していることを見る。
+  window.chrome = {
+    runtime: {
+      id: 'test-extension-id',
+      lastError: undefined,
+      sendMessage: (msg: any, cb: any) => {
+        sent.push(msg);
+        if (msg.type === 'imageDragged') {
+          cb?.(saveReply);
+          return;
+        }
+        const results: Record<string, string | null> = {};
+        for (const u of msg.urls || []) results[u] = Object.hasOwn(savedAnswer, u) ? savedAnswer[u] : null;
+        cb?.({ ok: true, results });
+      },
+      onMessage: { addListener: (fn: any) => runtimeListeners.push(fn) },
+    },
+    storage: {
+      local: {
+        // 本物の chrome.storage.local.get はキー1つでもリストでも取る＝overlay.ts は
+        // 2つの設定を1回で読む
+        get: (keys: any, cb: any) => {
+          const list = Array.isArray(keys) ? keys : [keys];
+          const out: Record<string, unknown> = {};
+          for (const k of list) out[k] = storage[k];
+          cb(out);
+        },
+        set: (obj: object) => Object.assign(storage, obj),
+      },
+      onChanged: { addListener: (fn: any) => storageListeners.push(fn) },
+    },
+  } as any;
+
+  // 常駐コンテンツスクリプトのバンドルは、Chrome が読むのと同じ WXT の出力そのもの
+  window.eval(fs.readFileSync(path.join(import.meta.dirname, '..', 'extension', '.output', 'chrome-mv3', 'content-scripts', 'resident.js'), 'utf8'));
+}, 30000);
+
+test('初回走査で全ての投稿が観測される', () => {
+  expect(observed.size).toBe(8);
+});
+
+describe('問い合わせは見えている投稿だけ・1バッチで', () => {
+  beforeAll(async () => {
+    savedAnswer = { 'https://x.com/alice/status/111': '1780000000000-aa' };
+    intersect(['p1', 'p2'], true);
+    await settle();
+  });
+
+  test('投稿ごとではなく1回のバッチ', () => {
+    expect(sent).toHaveLength(1);
+  });
+
+  test('バッチが両方のパーマリンクを運ぶ', () => {
+    expect(sent[0].urls.sort()).toEqual(['https://x.com/alice/status/111', 'https://x.com/bob/status/222']);
+  });
+
+  test('送るのはパーマリンクであって正規化済みキーではない', () => {
+    expect(sent[0].urls.every((u: string) => u.startsWith('https://x.com/'))).toBe(true);
+  });
+});
+
+describe('savedBadgeMode の三値', () => {
+  test('既定の always は、ポインタがどこにも無くても保存済みを印す', () => {
+    expect(marks()).toHaveLength(1);
+    expect(marks()[0].parentElement).toBe(boxOf('p1'));
+  });
+
+  test('hover へ切り替えると常時の印は消える', () => {
+    setSetting('savedBadgeMode', 'hover');
+    expect(controls()).toHaveLength(0);
+  });
+
+  test('保存済みの投稿にポインタを乗せると印が出る', () => {
+    hover('p1');
+    expect(marks()).toHaveLength(1);
+  });
+
+  test('印は写真の内側に置かれ、メディア枠が位置決めの親になる', () => {
+    expect(marks()[0].parentElement).toBe(boxOf('p1'));
+    expect(marks()[0].style.left).toBe('6px');
+    expect(marks()[0].style.top).toBe('6px');
+    expect((boxOf('p1') as any).style.position).toBe('relative');
+  });
+
+  test('コントロールは操作可能（pointer-events を殺していない）', () => {
+    expect((marks()[0] as any).style.pointerEvents).not.toBe('none');
+  });
+});
+
+// コントロールはメディア枠の中にあるのでスクロールでは同じ合成操作の中で一緒に動く＝
+// 座標を書き直す必要が無い。そして「絵の中でスクロールした」（読みながらホイールを前後に振った）
+// のは絵がポインタから離れたことではないので、コントロールを消してはいけない（#347）
+describe('スクロール中の追従（#347）', () => {
+  test('見えているコントロールはスクロール中もメディアに付いたまま', () => {
+    rectTop('#p1 [data-testid="tweetPhoto"]', '40');
+    window.dispatchEvent(new window.Event('scroll'));
+
+    expect(marks()[0]?.parentElement).toBe(boxOf('p1'));
+    expect(marks()[0].style.top).toBe('6px');
+    expect(animationFrames.size).toBe(0);
+  });
+
+  test('ホバー中の絵の中でスクロールしてもコントロールは残る', async () => {
+    await new Promise((r) => setTimeout(r, 120)); // スクロールの落ち着きを越える
+    expect(marks()[0]?.parentElement).toBe(boxOf('p1'));
+  });
+
+  // p1 がポインタから外れ、p2 がその下へ来るところまでスクロールした状態。
+  // コントロールは p1 と一緒に去り、動いていないポインタが「p2 が下に来ただけ」で
+  // p2 を選んではいけない。
+  test('動いていないポインタは、スクロールで下に来た次の絵を選ばない', () => {
+    rectTop('#p1 [data-testid="tweetPhoto"]', '-300');
+    rectTop('#p2 [data-testid="tweetPhoto"]', '100');
+    window.dispatchEvent(new window.Event('scroll'));
+
+    // レイアウトが動いてポインタの下に p2 が来た時、Pointer Events はこの境界イベントを
+    // 要求する。これを「意図的なホバー移動」と数えてはいけない。
+    const layoutBoundary: any = new window.Event('pointerover', { bubbles: true });
+    layoutBoundary.clientX = 200;
+    layoutBoundary.clientY = 250;
+    boxOf('p2').dispatchEvent(layoutBoundary);
+
+    expect(controlOf('p2')).toHaveLength(0);
+  });
+
+  test('ポインタから外れて行った絵のコントロールは消える', async () => {
+    await new Promise((r) => setTimeout(r, 120));
+    expect(controls()).toHaveLength(0);
+
+    rectTop('#p1 [data-testid="tweetPhoto"]', '100');
+    rectTop('#p2 [data-testid="tweetPhoto"]', '400');
+    hoverAway();
+  });
+});
+
+// このファイルが存在する理由そのもの: 絵の上に重なった「別の要素」（Bluesky の ALT/オーバーレイ
+// div、pixiv のブックマークのハート）に物理的に当たったポインタも、絵をホバーしていると
+// 数えなければならない＝判定は座標であって、当たった要素から親を辿ることではない。
+test('絵の上に重なった別要素の上でも、絵をホバーしていると数える', () => {
+  const p1box = boxOf('p1').getBoundingClientRect();
+  // #feed（枠でもその子孫でもない）で発火させ、座標だけ p1 の枠内にする
+  pointerMove(window.document.getElementById('feed'), p1box.left + p1box.width / 2, p1box.top + p1box.height / 2);
+
+  expect(marks()).toHaveLength(1);
+  hoverAway();
+});
+
+describe('always / off', () => {
+  test('always はポインタ無しで印す', () => {
+    setSetting('savedBadgeMode', 'always');
+    expect(marks()).toHaveLength(1);
+  });
+
+  test('off は何も出さず、ホバーでも覆らない', () => {
+    setSetting('savedBadgeMode', 'off');
+    expect(controls()).toHaveLength(0);
+
+    hover('p1');
+    expect(marks()).toHaveLength(0);
+
+    hoverAway();
+    setSetting('savedBadgeMode', 'hover');
+  });
+});
+
+describe('答えのキャッシュ', () => {
+  test('一度答えた投稿は、戻ってきても再問い合わせしない', async () => {
+    intersect(['p1', 'p2'], false);
+    await settle();
+    intersect(['p1'], true);
+    await settle();
+
+    expect(sent).toHaveLength(1);
+  });
+
+  test('印はキャッシュした答えから戻る', () => {
+    hover('p1');
+    expect(marks()).toHaveLength(1);
+    hoverAway();
+  });
+});
+
+describe('保存ボタン', () => {
+  beforeAll(async () => {
+    intersect(['p2'], true);
+    await settle();
+    hover('p2');
+  });
+
+  test('未保存の絵を指すと即座に保存を申し出る', () => {
+    expect(saveButtons()).toHaveLength(1);
+  });
+
+  test('静止した単色グリフだけの native button で、読み上げ名を持つ', () => {
+    const b = saveButtons()[0];
+
+    expect(b.tagName).toBe('BUTTON');
+    expect(b.style.width).toBe('28px');
+    expect(b.style.background).toBe('rgba(20, 22, 26, 0.76)');
+    expect(b.getAttribute('aria-label')).toBe('Save image');
+    expect(b.textContent).toBe('');
+    expect(animatedElements.has(b)).toBe(false);
+  });
+
+  test('ホバーは状態色を足さずに見分けをつける', () => {
+    const b = saveButtons()[0];
+    b.dispatchEvent(new window.Event('pointerenter'));
+
+    expect(b.style.background).toBe('rgba(255, 255, 255, 0.1)');
+    expect(b.style.transform).toBe('scale(1.04)');
+
+    b.dispatchEvent(new window.Event('pointerleave'));
+  });
+
+  describe('押したとき', () => {
+    let save: any;
+
+    beforeAll(() => {
+      click(saveButtons()[0]);
+      save = sent.at(-1);
+    });
+
+    test('ドラッグ保存の経路を再利用する（新しいメッセージを作らない）', () => {
+      expect(save).toMatchObject({ type: 'imageDragged', platform: 'x' });
+    });
+
+    test('絵が属する投稿を保存する', () => {
+      expect(save.postUrl).toBe('https://x.com/bob/status/222');
+    });
+
+    test('サムネだけでなく原寸の URL も渡す', () => {
+      expect(save.imageUrls).toContain('https://pbs.twimg.com/media/BBB.jpg');
+      expect(save.imageUrls.some((u: string) => u.includes('name=orig'))).toBe(true);
+    });
+
+    test('角は押下に保存済みの印で答える', () => {
+      expect(marks()).toHaveLength(1);
+      expect(saveButtons()).toHaveLength(0);
+    });
+
+    test('成功したホバー保存は上部バナーを出さない', () => {
+      expect(window.document.querySelectorAll('[data-hologram-save-banner]')).toHaveLength(0);
+    });
+
+    test('保存済みになったので、もう申し出ない', () => {
+      hoverAway();
+      hover('p2');
+
+      expect(saveButtons()).toHaveLength(0);
+      expect(marks()).toHaveLength(1);
+      hoverAway();
+    });
+  });
+});
+
+describe('保存に失敗したとき', () => {
+  let failed: any[];
+
+  beforeAll(async () => {
+    saveReply = { ok: false, errorKind: 'host-unavailable', error: 'Error when communicating with the native messaging host.' };
+    intersect(['p4'], true);
+    await settle();
+    hover('p4a');
+    await settle();
+    click(saveButtons()[0]);
+    failed = controlOf('p4a');
+  });
+
+  test('その場でローカライズされた復旧案内を出す', () => {
+    expect(failed).toHaveLength(1);
+    expect(failed[0].title).toBe("Hologram's saver could not start. Open the diagnostics page from the extension settings.");
+  });
+
+  test('上部バナーも読める文面で、生のエラーを漏らさない', () => {
+    const banners: any[] = Array.from(window.document.querySelectorAll('[data-hologram-save-banner]'));
+
+    expect(banners).toHaveLength(1);
+    expect(banners[0].getAttribute('role')).toBe('alert');
+    expect(banners[0].textContent).toBe("Hologram's saver could not start. Open the diagnostics page from the extension settings.");
+    expect(banners[0].textContent).not.toContain('Error when communicating');
+  });
+
+  test('失敗表示を押すと何も起きないのではなく再試行する', () => {
+    const before = sent.length;
+    click(failed[0]);
+
+    expect(sent).toHaveLength(before + 1);
+    expect(sent.at(-1).type).toBe('imageDragged');
+  });
+
+  test('しばらくするとボタンへ戻り、やり直せる', async () => {
+    await new Promise((r) => setTimeout(r, 2700)); // 失敗表示の滞留時間を越える
+
+    expect(saveButtons()).toHaveLength(1);
+    saveReply = { ok: true, metaOk: true };
+    hoverAway();
+  });
+});
+
+describe('絵ごとに1ボタン・投稿ごとに1印', () => {
+  test('同じ投稿の2枚目も自分のボタンを持つ', async () => {
+    hover('p4b');
+    await settle();
+
+    expect(saveButtons()).toHaveLength(1);
+    expect(saveButtons()[0].parentElement).toBe(boxOf('p4b'));
+    hoverAway();
+  });
+
+  test('保存済みの複数画像投稿は、1枚目にだけ印が付く', async () => {
+    savedAnswer['https://x.com/dave/status/444'] = '1780000000004-dd';
+    intersect(['p4'], false);
+    await settle();
+    intersect(['p4'], true);
+    await settle();
+    setSetting('savedBadgeMode', 'always');
+
+    const p4Controls = [...controlOf('p4a'), ...controlOf('p4b')];
+    expect(p4Controls).toHaveLength(1);
+    expect(p4Controls[0].parentElement).toBe(boxOf('p4a'));
+  });
+
+  test('さっきの失敗の文面は失敗より長生きしない', () => {
+    expect(controlOf('p4a')[0]?.title).toBe('Saved in Hologram');
+    setSetting('savedBadgeMode', 'hover');
+  });
+});
+
+describe('申し出るかどうかの関門', () => {
+  beforeAll(async () => {
+    intersect(['p5', 'p6'], true);
+    await settle();
+  });
+
+  test('アバターを投稿の絵として申し出ない', async () => {
+    hover('p5');
+    await settle();
+
+    expect(controls()).toHaveLength(0);
+    hoverAway();
+  });
+
+  test('投稿の主題と言うには小さすぎる絵は申し出ない', async () => {
+    hover('p6');
+    await settle();
+
+    expect(controls()).toHaveLength(0);
+    hoverAway();
+  });
+});
+
+test('同じタブの別経路で保存されたら、スクロールを待たずに印が点く', async () => {
+  savedAnswer['https://x.com/carol/status/333'] = '1780000000002-cc';
+  intersect(['p3'], true);
+  await settle();
+
+  for (const fn of runtimeListeners) fn({ type: 'savedUpdate', url: 'https://x.com/carol/status/333' });
+  rectTop('#p3 [data-testid="tweetPhoto"]', '800');
+  hover('p3');
+
+  expect(marks()).toHaveLength(1);
+  expect(marks()[0].parentElement).toBe(boxOf('p3'));
+  expect(marks()[0].style.top).toBe('6px');
+  hoverAway();
+});
+
+describe('ボタンを切っても印は残る', () => {
+  beforeAll(() => setSetting('hoverSaveButton', false));
+
+  test('ボタン off では未保存の絵に何も出さない', async () => {
+    hover('p6');
+    await settle();
+
+    expect(controls()).toHaveLength(0);
+    hoverAway();
+  });
+
+  test('印はボタン off でも働く', () => {
+    hover('p1');
+    expect(marks()).toHaveLength(1);
+
+    hoverAway();
+    setSetting('hoverSaveButton', true);
+  });
+});
+
+// #349: article も testid も無い素の <li>。<img> が枠の場合、コントロールは直近の親
+// （ここでは <img> を包む <a>）へ載る＝他の <img> 枠のプラットフォームと同じ。
+describe('メディアタブのグリッドタイル（#349）', () => {
+  beforeAll(async () => {
+    intersect(['p7', 'p8'], true);
+    await settle();
+  });
+
+  test('未保存の画像タイルは保存を申し出る', async () => {
+    hover('p7');
+    await settle();
+
+    expect(saveButtons()).toHaveLength(1);
+    expect(saveButtons()[0].parentElement).toBe(boxOf('p7').parentElement);
+    hoverAway();
+  });
+
+  test('動画タイル（別の CDN パス）にはコントロールを出さない', async () => {
+    hover('p8');
+    await settle();
+
+    const p8Controls = controls().filter((el) => el.parentElement === boxOf('p8') || el.parentElement === boxOf('p8').parentElement);
+    expect(p8Controls).toHaveLength(0);
+    hoverAway();
+  });
+
+  describe('グリッドタイルから保存する', () => {
+    let gridSave: any;
+
+    beforeAll(async () => {
+      hover('p7');
+      await settle();
+      click(saveButtons()[0]);
+      gridSave = sent.at(-1);
+    });
+
+    test('ドラッグ保存の経路を再利用する', () => {
+      expect(gridSave).toMatchObject({ type: 'imageDragged', platform: 'x' });
+    });
+
+    test('パーマリンクから photo/N の接尾辞を落とす', () => {
+      expect(gridSave.postUrl).toBe('https://x.com/gina/status/777');
+    });
+
+    test('タイルが保存済みとして読めるようになる', () => {
+      expect(marks()).toHaveLength(1);
+      expect(marks()[0].parentElement).toBe(boxOf('p7').parentElement);
+      hoverAway();
+    });
+
+    // p8 は同じ投稿(777)の動画タイル。写真タイル経由で投稿が保存済みになった今も、
+    // 印を受け継がず黙ったままでなければならない。
+    test('保存済みの兄弟画像があっても、動画タイルに印を描かない', () => {
+      hover('p8');
+
+      const p8Controls = controls().filter((el) => el.parentElement === boxOf('p8') || el.parentElement === boxOf('p8').parentElement);
+      expect(p8Controls).toHaveLength(0);
+      hoverAway();
+    });
+  });
+});

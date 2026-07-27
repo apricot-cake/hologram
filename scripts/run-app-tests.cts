@@ -2,7 +2,7 @@
 // App-harness aggregator: runs every scripts/test-app-*.cts in sequence and exits
 // non-zero if ANY fails. Each harness boots its own sandboxed Electron (HOLOGRAM_SMOKE
 // + a mkdtemp config dir), so this is HEAVY (~10s per harness, a window flashes per
-// boot) — it is deliberately NOT part of npm test (run-tests.cts = pure units). Run it
+// boot) — it is deliberately NOT part of npm test (Vitest = pure units). Run it
 // at milestones (feedback-verify-batch-at-milestones), e.g. after a renderer
 // restructure, to catch the silent rot npm test can't see (the 2026-07-02 React-island
 // migration had left 5 of these red unnoticed).
