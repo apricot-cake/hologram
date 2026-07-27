@@ -1,12 +1,11 @@
 'use strict';
 
-// Organization-layer IPC handlers, extracted from main.js (mechanical move — logic
-// unchanged). These get/set channels persist the per-library organization JSON
-// files (tag 種別, ungrouped set, manual groups, folders, poster folders/tags)
-// alongside the sidecars. Every handler needs only the same
-// three core helpers — getSaveFolder + readOrgJsonSync + writeOrgJsonSync — which
-// stay in main.js and arrive via ctx. See main.js for the org-JSON degraded-guard
-// (readOrgJsonSync/writeOrgJsonSync refuse to clobber a present-but-corrupt file).
+// Organization-layer IPC handlers. These get/set channels persist the
+// per-library organization state (tag 種別, ungrouped set, manual groups,
+// folders, poster folders/tags) — all DB-backed via getDbWriter (#298/St5
+// truth-source flip moved these off the org-JSON files they used to live in;
+// see lib-db-write.ts). Every handler needs only getSaveFolder + getDbWriter,
+// both arriving via ctx.
 import { ipcMain } from 'electron';
 
 function register(ctx) {
