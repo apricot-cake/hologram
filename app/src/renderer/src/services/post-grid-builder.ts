@@ -47,7 +47,7 @@ export interface PostGridBuilderDeps {
   renderPosters(keepLimit?: boolean): void;
   onPostsLoaded(): void;
   getInspectedKey(): string | null;
-  closeDetail(): void;
+  dismissDetail(): void;
   showDetail(g: HologramPostGroup, opts?: { focusTags?: boolean }): void;
   jumpToPoster(post: HologramPost): void;
   addImageTab(g: HologramPostGroup): void;
@@ -563,7 +563,7 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
   // Delete every record of the group (a group IS one post in the UI).
   async function executeDeleteGroup(g: HologramPostGroup) {
     const inspectedKey = deps.getInspectedKey();
-    if (inspectedKey && g.records.some((r) => postIdKey(r) === inspectedKey)) deps.closeDetail();
+    if (inspectedKey && g.records.some((r) => postIdKey(r) === inspectedKey)) deps.dismissDetail();
     for (const r of g.records) {
       try {
         await deletePost(r.image || r.video);

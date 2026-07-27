@@ -15,7 +15,7 @@ export interface ImageTabBuilderDeps {
   t(key: string, subs?: ReadonlyArray<string | number | null | undefined>): string;
   getPostById(id: string): HologramPost | undefined;
   showDetail(g: HologramPostGroup): void;
-  closeDetail(): void;
+  dismissDetail(): void;
   closeTab(id: string | null | undefined): void;
   getActiveTabId(): string | null;
   setActiveTabId(id: string | null): void;
@@ -73,7 +73,7 @@ export function makeImageTabController(deps: ImageTabBuilderDeps) {
     const g = resolveGroup(recs);
     // The inspector opens with the view (Eagle-style detail screen).
     if (g) deps.showDetail(g);
-    else deps.closeDetail();
+    else deps.dismissDetail();
     const title = g ? imageTabTitleOf(g, deps.t('imgTabFallback')) : deps.t('imgTabFallback');
     stampTabTitle(title);
     document.title = title + ' — Hologram';
@@ -82,7 +82,7 @@ export function makeImageTabController(deps: ImageTabBuilderDeps) {
     if (!imageViewShowing) return;
     imageViewShowing = false;
     storeSet('activeImageTab', null); // → ImageTabHost removes the class
-    deps.closeDetail(); // the open detail belonged to the image view; grid tabs reopen it per card
+    deps.dismissDetail(); // the open detail belonged to the image view; grid tabs reopen it per card
   }
 
   // Double-click a card (#143 確定): the image view is a history DESTINATION in
@@ -112,7 +112,7 @@ export function makeImageTabController(deps: ImageTabBuilderDeps) {
     if (byId('postDetail').hidden) {
       const g = resolveGroup((cur.state as { recs: string[] }).recs);
       if (g) deps.showDetail(g);
-    } else deps.closeDetail();
+    } else deps.dismissDetail();
     // inspectorOpen derives from hologramStore's 'inspectedKey' reactively — no repaint call needed.
   }
   // The view's close command: browser semantics — an image entry reached from a
