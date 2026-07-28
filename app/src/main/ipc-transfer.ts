@@ -368,14 +368,19 @@ function register(ctx) {
   });
 
   // --- Complete import (restore a complete-export ZIP) --------------------------
-  // Captures (jpg/json/media) are copied into the save folder, SKIPPING any that
+  // Captures (jpg/media) are copied into the save folder, SKIPPING any that
   // already exist (by filename) — so re-importing is idempotent and importing into
-  // a non-empty library merges rather than clobbers. The organization JSONs are
-  // MERGED (union) so existing folders/tags are never wiped. (Legacy exports —
-  // metadata.json + images/ — keep using the renderer's importPosts path.)
+  // a non-empty library merges rather than clobbers. Per-post .json sidecars go to
+  // the DB instead of disk, and the organization JSONs are DB-read, MERGED
+  // (union, same as before), and written back — see lib-archive.ts's
+  // importCompleteZipToDb module comment (#300/St7) for why this replaces the
+  // disk-only importCompleteZip here. (Legacy exports — metadata.json + images/ —
+  // keep using the renderer's importPosts path.)
   ipcMain.handle('import-complete', async (_e, bytes) => {
     try {
-      return await archive.importCompleteZip(await getJSZip(), getSaveFolder(), Buffer.from(bytes));
+      const handle = await ensurePostsSynced();
+      if (!handle) return { ok: false, error: 'no-folder' };
+      return await archive.importCompleteZipToDb(handle.sqlite, await getJSZip(), getSaveFolder(), Buffer.from(bytes));
     } catch (err) {
       return { ok: false, error: err.message };
     }

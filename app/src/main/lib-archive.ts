@@ -38,6 +38,8 @@ import type Database from 'better-sqlite3';
 import { parseJsonLoose } from './lib-json.ts';
 import { postCapturedVia, postsFromDb, tagParentsFromDb, tagsFromDb } from './lib-db-query.ts';
 import { createDbWriter } from './lib-db-write.ts';
+import { makeTagResolver, preparePostStmts, writePost } from './lib-db-record-writer.ts';
+import { importTagParents } from './lib-db-import.ts';
 
 const EXPORT_SKIP = new Set(['config.json', '.index.json']);
 const ORG_MERGE = ['folders.json', 'tag-types.json', 'ungrouped.json', 'manual-groups.json', 'poster-favorites.json', 'poster-folders.json', 'poster-tags.json'];
@@ -88,6 +90,12 @@ function isSafeLibraryPath(name) {
   if (isSafeEntryName(name)) return true;
   const m = /^avatars\/(.+)$/.exec(name);
   return !!(m && isSafeEntryName(m[1]));
+}
+// .trash/<name> (#300/St7): same single-segment rule as a plain library entry —
+// the export side only ever writes flat filenames under .trash/ (mirrors how
+// trashDir itself has no subfolders), so this rejects nothing real.
+function isSafeTrashPath(name) {
+  return isSafeEntryName(name);
 }
 // Belt-and-suspenders: the resolved destination must stay inside destFolder.
 function isWithin(parentDir, target) {
@@ -521,17 +529,20 @@ function writeEntryStreamed(entry, tmpPath, maxBytes) {
 }
 
 // --- Import / restore ----------------------------------------------------------
-async function importCompleteZip(JSZip, destFolder, buffer) {
-  try {
-    await fs.promises.mkdir(destFolder, { recursive: true });
-  } catch {
-    /* ignore */
-  }
+// Shared, security-critical classification: zip-bomb + zip-slip pre-checks, then
+// sorts every library/ entry into the organization-JSON bucket (MERGERS-keyed),
+// the new tag-parents.json bucket (#300/St7 — not a MERGERS key, has its own
+// resolution logic, see importTagParents), or the capture bucket (screenshots/
+// media/avatars/per-post sidecars), plus a .trash/ bucket (#300/St7). Pure
+// classification only — no disk/DB writes — so both importCompleteZip (disk-only,
+// unchanged behavior) and importCompleteZipToDb (#300/St7) share one set of
+// pre-extraction guards instead of drifting copies.
+async function extractLibraryEntries(JSZip, buffer) {
   const zip = await JSZip.loadAsync(buffer);
-  let imported = 0,
-    skipped = 0;
   const orgEntries: any = {};
-  const captures: any[] = [];
+  let tagParentsEntry: any = null;
+  const captureEntries: any[] = [];
+  const trashEntries: any[] = [];
   // Zip-bomb pre-checks: tally entry count + declared uncompressed bytes across the
   // whole archive (not just library/ entries — a bomb can hide anywhere) and reject
   // up front, before extracting anything.
@@ -545,48 +556,77 @@ async function importCompleteZip(JSZip, destFolder, buffer) {
     totalBytes += size;
     if (entryCount > MAX_ZIP_ENTRIES) throw new ZipLimitError('archive has > ' + MAX_ZIP_ENTRIES + ' entries');
     if (totalBytes > MAX_ZIP_TOTAL_BYTES) throw new ZipLimitError('archive declares > ' + MAX_ZIP_TOTAL_BYTES + ' total uncompressed bytes');
-    const m = /^library\/(.+)$/.exec(relPath);
-    if (!m) return;
-    const name = m[1];
-    if (!isSafeLibraryPath(name)) return; // Zip-Slip: reject separators / traversal / absolute (avatars/<name> allowed)
-    if (EXPORT_SKIP.has(name)) return;
-    if (MERGERS[name]) orgEntries[name] = entry;
-    else captures.push({ name, entry });
-  });
-  for (const c of captures) {
-    const dest = path.join(destFolder, c.name);
-    try {
-      if (!isWithin(destFolder, dest)) {
-        skipped++;
-        continue;
-      } // defensive Zip-Slip guard
-      if (fs.existsSync(dest)) {
-        skipped++;
-        continue;
-      }
-      if (c.name.startsWith('avatars/')) await fs.promises.mkdir(path.join(destFolder, 'avatars'), { recursive: true });
-      const tmp = dest + '.tmp-import';
-      // Streamed write with a per-entry byte cap: caps even an entry whose declared
-      // size lied past the pre-check above. On abort, drop the partial tmp file.
-      try {
-        await writeEntryStreamed(c.entry, tmp, MAX_ZIP_ENTRY_BYTES);
-      } catch (e) {
-        try {
-          await fs.promises.unlink(tmp);
-        } catch {
-          /* ignore */
-        }
-        if (e instanceof ZipLimitError) {
-          skipped++;
-          continue;
-        }
-        throw e;
-      }
-      await fs.promises.rename(tmp, dest);
-      imported++;
-    } catch {
-      skipped++;
+
+    const libMatch = /^library\/(.+)$/.exec(relPath);
+    if (libMatch) {
+      const name = libMatch[1];
+      if (!isSafeLibraryPath(name)) return; // Zip-Slip: reject separators / traversal / absolute (avatars/<name> allowed)
+      if (EXPORT_SKIP.has(name)) return;
+      if (name === 'tag-parents.json') tagParentsEntry = entry;
+      else if (MERGERS[name]) orgEntries[name] = entry;
+      else captureEntries.push({ name, entry });
+      return;
     }
+    const trashMatch = /^\.trash\/(.+)$/.exec(relPath);
+    if (trashMatch) {
+      const name = trashMatch[1];
+      if (!isSafeTrashPath(name)) return;
+      trashEntries.push({ name, entry });
+    }
+  });
+  return { orgEntries, tagParentsEntry, captureEntries, trashEntries };
+}
+
+// Streamed write with a per-entry byte cap, skip-if-exists (idempotent / never
+// clobbers), atomic tmp+rename. Shared by every capture-file writer below (the
+// legacy disk-merge importer, the DB-routing importer's binaries, and .trash/
+// restore) — the only thing that varies is which directory it lands in.
+async function writeCaptureFile(entry, destDir, name): Promise<'imported' | 'skipped'> {
+  const dest = path.join(destDir, name);
+  try {
+    if (!isWithin(destDir, dest)) return 'skipped'; // defensive Zip-Slip guard
+    if (fs.existsSync(dest)) return 'skipped';
+    if (name.startsWith('avatars/')) await fs.promises.mkdir(path.join(destDir, 'avatars'), { recursive: true });
+    const tmp = dest + '.tmp-import';
+    // Streamed write with a per-entry byte cap: caps even an entry whose declared
+    // size lied past the pre-check above. On abort, drop the partial tmp file.
+    try {
+      await writeEntryStreamed(entry, tmp, MAX_ZIP_ENTRY_BYTES);
+    } catch (e) {
+      try {
+        await fs.promises.unlink(tmp);
+      } catch {
+        /* ignore */
+      }
+      if (e instanceof ZipLimitError) return 'skipped';
+      throw e;
+    }
+    await fs.promises.rename(tmp, dest);
+    return 'imported';
+  } catch {
+    return 'skipped';
+  }
+}
+
+// Legacy signature and behavior, UNCHANGED (archive-zipbomb/archive-zipslip/
+// folders-merge/tag-types tests exercise this exact signature+behavior directly):
+// every library/ entry (including per-post .json sidecars) is copied to disk
+// skip-if-exists, and the organization JSONs are MERGED (union) into their disk
+// files. .trash/ entries and tag-parents.json are classified but never written —
+// legacy exports never contain either, so this is unreachable in practice, not an
+// intentional new feature of this signature (see importCompleteZipToDb for those).
+async function importCompleteZip(JSZip, destFolder, buffer) {
+  try {
+    await fs.promises.mkdir(destFolder, { recursive: true });
+  } catch {
+    /* ignore */
+  }
+  const { orgEntries, captureEntries } = await extractLibraryEntries(JSZip, buffer);
+  let imported = 0,
+    skipped = 0;
+  for (const c of captureEntries) {
+    if ((await writeCaptureFile(c.entry, destFolder, c.name)) === 'imported') imported++;
+    else skipped++;
   }
   const readCur = (file) => {
     try {
@@ -623,6 +663,129 @@ async function importCompleteZip(JSZip, destFolder, buffer) {
   return { ok: true, imported, skipped };
 }
 
+// DB-routing import (#300/St7): the replacement for importCompleteZip once posts
+// live in the DB. Binaries stay a disk copy (same skip-if-exists contract); .json
+// capture entries (per-post sidecars) go to the DB instead of disk; the
+// organization layer is read from the DB via createDbWriter, merged with the
+// same pure MERGERS functions importCompleteZip uses, and written back —
+// preserving "importing into a non-empty library never wipes current
+// folders/tags" without any new merge logic. tag-parents.json goes through
+// importTagParents (lib-db-import.ts). .trash/ entries restore to
+// <destFolder>/.trash/ on disk, untouched by the DB (a trashed post doesn't
+// have a posts row at all — ipc-trash.ts's delete-post fully removes it).
+//
+// Deliberately does NOT use lib-db-import.ts's createDbImporter()/importAll(): that
+// importer's org-layer import is gated behind dbIsTruth (skipped once the DB is
+// truth, which it always is here) and its own org-layer writer wholesale
+// replaces rather than merges — either would be a silent behavior change from
+// what's documented above. This instead writes posts directly via writePost, the
+// same shared writer import-posts/import-images (ipc-transfer.ts) already use.
+async function importCompleteZipToDb(sqlite: Database.Database, JSZip, destFolder: string, buffer) {
+  try {
+    await fs.promises.mkdir(destFolder, { recursive: true });
+  } catch {
+    /* ignore */
+  }
+  const { orgEntries, tagParentsEntry, captureEntries, trashEntries } = await extractLibraryEntries(JSZip, buffer);
+  let imported = 0,
+    skipped = 0;
+
+  const jsonCaptures = captureEntries.filter((c) => c.name.toLowerCase().endsWith('.json'));
+  const binaryCaptures = captureEntries.filter((c) => !c.name.toLowerCase().endsWith('.json'));
+
+  for (const c of binaryCaptures) {
+    if ((await writeCaptureFile(c.entry, destFolder, c.name)) === 'imported') imported++;
+    else skipped++;
+  }
+
+  if (trashEntries.length) {
+    const trashDest = path.join(destFolder, '.trash');
+    try {
+      await fs.promises.mkdir(trashDest, { recursive: true });
+    } catch {
+      /* ignore */
+    }
+    for (const t of trashEntries) {
+      if ((await writeCaptureFile(t.entry, trashDest, t.name)) === 'imported') imported++;
+      else skipped++;
+    }
+  }
+
+  const parseEntry = async (entry): Promise<any> => {
+    try {
+      return parseJsonLoose(await entry.async('string'));
+    } catch {
+      return null;
+    }
+  };
+
+  const stmts = preparePostStmts(sqlite);
+  const resolveTagId = makeTagResolver(sqlite);
+  const dbWriter = createDbWriter(sqlite);
+  const existingIds = new Set((sqlite.prepare('SELECT captureId FROM posts').all() as Array<{ captureId: string }>).map((r) => r.captureId));
+
+  sqlite.exec('BEGIN');
+  try {
+    // Posts: same "never clobber what's already there" contract as the binary
+    // capture writes above (skip-if-exists), not an upsert -- an import never
+    // silently overwrites something you already have.
+    for (const c of jsonCaptures) {
+      const rec = await parseEntry(c.entry);
+      if (!rec || typeof rec.captureId !== 'string' || !rec.captureId || existingIds.has(rec.captureId)) {
+        skipped++;
+        continue;
+      }
+      writePost(stmts, resolveTagId, rec, null);
+      dbWriter.restorePostFlags(rec.captureId, rec); // userKind/tagReviewed: writePost doesn't carry these (lib-db-write.ts's module comment)
+      existingIds.add(rec.captureId);
+      imported++;
+    }
+
+    // Organization layer: read current DB state -> merge with the incoming JSON
+    // (the same pure MERGERS functions importCompleteZip uses) -> write back.
+    if (orgEntries['folders.json']) {
+      const inc = (await parseEntry(orgEntries['folders.json'])) ?? {};
+      dbWriter.setFolders(mergeFolders(dbWriter.getFolders(), inc));
+    }
+    if (orgEntries['ungrouped.json']) {
+      const inc = (await parseEntry(orgEntries['ungrouped.json'])) ?? {};
+      dbWriter.setUngrouped(mergeUngrouped(dbWriter.getUngrouped(), inc).keys);
+    }
+    if (orgEntries['manual-groups.json']) {
+      const inc = (await parseEntry(orgEntries['manual-groups.json'])) ?? {};
+      dbWriter.setManualGroups(mergeManualGroups(dbWriter.getManualGroups(), inc).groups);
+    }
+    if (orgEntries['poster-folders.json']) {
+      const inc = (await parseEntry(orgEntries['poster-folders.json'])) ?? {};
+      dbWriter.setPosterFolders(mergePosterFolders(dbWriter.getPosterFolders(), inc));
+    }
+    if (orgEntries['poster-tags.json']) {
+      const inc = (await parseEntry(orgEntries['poster-tags.json'])) ?? {};
+      dbWriter.setPosterTags(mergePosterTags(dbWriter.getPosterTags(), inc));
+    }
+    if (orgEntries['tag-types.json']) {
+      const inc = (await parseEntry(orgEntries['tag-types.json'])) ?? {};
+      const merged = mergeTagTypes(dbWriter.getTagTypes(), inc);
+      dbWriter.setTagTypes(merged.types, merged.labels ?? null);
+    }
+    // poster-favorites.json (legacy MERGERS/ORG_MERGE key, from an old export):
+    // no DB table backs the retired feature -- silently dropped if present.
+
+    if (tagParentsEntry) importTagParents(sqlite, resolveTagId, await parseEntry(tagParentsEntry));
+
+    // tabs.json: deliberately NOT imported here -- restoring another device's
+    // open tabs into the live session is a confusing default (plan §2c). Kept in
+    // the export for completeness/debugging only.
+
+    sqlite.exec('COMMIT');
+  } catch (err) {
+    sqlite.exec('ROLLBACK');
+    throw err;
+  }
+
+  return { ok: true, imported, skipped };
+}
+
 export {
   EXPORT_SKIP,
   ORG_MERGE,
@@ -637,6 +800,7 @@ export {
   writeImagesZip,
   hasExportableFiles,
   importCompleteZip,
+  importCompleteZipToDb,
   mergeFolders,
   mergePosterFolders,
   mergeTagTypes,
