@@ -8,6 +8,20 @@
 //   node scripts/sandbox-app.cts          start (idempotent — prints the port if already up)
 //   node scripts/sandbox-app.cts stop     stop this tree's sandbox instance only
 //
+// Seeding (#286). The default is the generated fixture library below. Pass --real
+// to seed from the REAL library instead — a backup-API snapshot of its database
+// plus generated stand-in media, for the two things fixtures cannot reproduce
+// (real diversity/scale, and one specific post). It only runs on a machine that
+// holds a real library, never writes to it, and refuses to launch if the seeded
+// sandbox still knows a real path (scripts/lib-sandbox-real-seed.cts):
+//
+//   node scripts/sandbox-app.cts start --real
+//   node scripts/sandbox-app.cts start --real --capture 1784937641978-06cd   (real files for that post)
+//   node scripts/sandbox-app.cts start --real --reseed --max-dim 1024
+//
+// A real-data instance shows a permanent on-screen notice: its window carries
+// personal data, so its screenshots must not go into anything public (PR/Issue).
+//
 // Isolation model (see issue #283):
 //   - HOLOGRAM_CONFIG_DIR → <tree>/.sandbox/config: userData is pinned to the
 //     config dir, and Electron's single-instance lock is keyed on userData, so
@@ -28,11 +42,12 @@ const fs = require('node:fs');
 const http = require('node:http');
 const net = require('node:net');
 const path = require('node:path');
-const zlib = require('node:zlib');
 
 const repoRoot = path.join(__dirname, '..');
 const appDir = path.join(repoRoot, 'app');
 const { electronPath: resolveElectron } = require('./lib-electron-path.cts');
+const { makePng, seedRealSandbox, DEFAULT_MAX_DIM } = require('./lib-sandbox-real-seed.cts');
+const { configDir: realConfigDir, defaultLibraryDir } = require('../native-host/paths.cts');
 
 const electronPath = resolveElectron();
 
@@ -41,52 +56,13 @@ const configDir = path.join(sandboxRoot, 'config');
 const saveFolder = path.join(sandboxRoot, 'library');
 const appData = path.join(sandboxRoot, 'appdata'); // keep any %APPDATA% fallback reads/writes out of the real one (same practice as the test-app-* harnesses)
 const instanceFile = path.join(sandboxRoot, 'instance.json');
-
-// ---- fixture images: solid-color PNGs, no deps -----------------------------
-
-let crcTable: number[] | null = null;
-function crc32(buf: Buffer): number {
-  if (!crcTable) {
-    crcTable = [];
-    for (let n = 0; n < 256; n++) {
-      let c = n;
-      for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
-      crcTable[n] = c >>> 0;
-    }
-  }
-  let c = 0xffffffff;
-  for (const b of buf) c = crcTable[(c ^ b) & 0xff] ^ (c >>> 8);
-  return (c ^ 0xffffffff) >>> 0;
-}
-
-function pngChunk(type: string, data: Buffer): Buffer {
-  const len = Buffer.alloc(4);
-  len.writeUInt32BE(data.length);
-  const body = Buffer.concat([Buffer.from(type, 'ascii'), data]);
-  const crc = Buffer.alloc(4);
-  crc.writeUInt32BE(crc32(body));
-  return Buffer.concat([len, body, crc]);
-}
-
-function makePng(w: number, h: number, rgb: [number, number, number]): Buffer {
-  const ihdr = Buffer.alloc(13);
-  ihdr.writeUInt32BE(w, 0);
-  ihdr.writeUInt32BE(h, 4);
-  ihdr[8] = 8; // bit depth
-  ihdr[9] = 2; // color type: truecolor
-  const row = Buffer.alloc(1 + w * 3); // filter byte 0 + RGB pixels
-  for (let x = 0; x < w; x++) {
-    // Subtle horizontal gradient so cards are visibly images, not flat swatches.
-    const f = 0.75 + (0.25 * x) / w;
-    row[1 + x * 3] = Math.round(rgb[0] * f);
-    row[2 + x * 3] = Math.round(rgb[1] * f);
-    row[3 + x * 3] = Math.round(rgb[2] * f);
-  }
-  const raw = Buffer.concat(Array.from({ length: h }, () => row));
-  return Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), pngChunk('IHDR', ihdr), pngChunk('IDAT', zlib.deflateSync(raw)), pngChunk('IEND', Buffer.alloc(0))]);
-}
+// What the current library was seeded from — read on every start, because the
+// real-data notice has to be re-applied to an instance that is merely restarted.
+const seedFile = path.join(sandboxRoot, 'seed.json');
 
 // ---- fixture posts ---------------------------------------------------------
+// Images are the same solid-color gradient PNGs the real-data seed generates its
+// stand-ins with (one encoder, shared).
 
 const PLATFORMS = ['x', 'bluesky', 'misskey', 'mastodon', 'pixiv'];
 const SIZES: Array<[number, number]> = [
@@ -113,7 +89,7 @@ const COLORS: Array<[number, number, number]> = [
 const TAGS = [['test'], ['test', '構図'], ['test', '配色'], ['test', '構図', 'ポーズ'], []];
 const TEXTS = ['サンドボックス検証用のダミー投稿です。', '短文。', 'モーション・レイアウト検証のためのフィクスチャ投稿。カードの高さが揃わないよう、本文の長さは投稿ごとに変えてあります。グリッドの詰め方や省略記号の出方はこの投稿で確認できます。', '改行を含む投稿。\n二行目。\n三行目はすこし長めにしてあります。'];
 
-function seedLibrary() {
+function seedFixtureLibrary() {
   fs.mkdirSync(saveFolder, { recursive: true });
   if (fs.readdirSync(saveFolder).some((f) => f.endsWith('.json'))) return false;
   const base = Date.UTC(2026, 0, 15, 12, 0, 0);
@@ -147,6 +123,80 @@ function seedLibrary() {
     );
   }
   return true;
+}
+
+// ---- real-data seed (#286) --------------------------------------------------
+
+function readSeed(): any | null {
+  try {
+    return JSON.parse(fs.readFileSync(seedFile, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+function libraryIsSeeded(): boolean {
+  if (fs.existsSync(path.join(configDir, 'hologram.db'))) return true;
+  try {
+    return fs.readdirSync(saveFolder).length > 0;
+  } catch {
+    return false;
+  }
+}
+
+// --reseed: the sandbox is disposable by design, so this drops the whole seeded
+// state (library, database, config) rather than trying to merge two seeds.
+function wipeSeed() {
+  fs.rmSync(saveFolder, { recursive: true, force: true });
+  fs.rmSync(seedFile, { force: true });
+  for (const suffix of ['', '-wal', '-shm']) fs.rmSync(path.join(configDir, 'hologram.db') + suffix, { force: true });
+  fs.rmSync(path.join(configDir, 'config.json'), { force: true });
+}
+
+// The real library only exists on the machine that captures into it. Everywhere
+// else (a fresh clone, a cloud runner) this has to fail with the reason, not with
+// a stack trace from a missing file — #175's generated dummy library is the
+// substitute there.
+function resolveRealLibrary(): { configDir: string; saveFolder: string } {
+  if (process.env.HOLOGRAM_CONFIG_DIR) throw new Error('HOLOGRAM_CONFIG_DIR is set — refusing to treat an already-isolated config dir as the real library');
+  const dir = realConfigDir();
+  const configPath = path.join(dir, 'config.json');
+  if (!fs.existsSync(path.join(dir, 'hologram.db'))) throw new Error(`no real library on this machine (${path.join(dir, 'hologram.db')} not found). Use the fixture seed, or generate one with scripts/gen-dummy-library.cts`);
+  let folder = '';
+  try {
+    folder = JSON.parse(fs.readFileSync(configPath, 'utf8')).saveFolder || '';
+  } catch {
+    /* fall through to the default */
+  }
+  if (!folder) folder = defaultLibraryDir();
+  return { configDir: dir, saveFolder: folder };
+}
+
+async function seedReal(opts: { captureIds: string[]; maxDim: number }) {
+  const real = resolveRealLibrary();
+  console.log(`seeding from the real library: ${real.configDir} (media: ${real.saveFolder})`);
+  const report = await seedRealSandbox({
+    realConfigDir: real.configDir,
+    realSaveFolder: real.saveFolder,
+    sandboxConfigDir: configDir,
+    sandboxLibrary: saveFolder,
+    captureIds: opts.captureIds,
+    maxDim: opts.maxDim,
+    log: (msg: string) => console.log(`  ${msg}`),
+  });
+  fs.writeFileSync(seedFile, JSON.stringify(report, null, 2));
+  return report;
+}
+
+// The on-screen notice a real-data instance carries for as long as it runs, so a
+// screenshot of it can never look like a fixture screenshot (#286: real media
+// must not reach anything public; the real database's post text is personal for
+// the same reason).
+function noticeFor(seed: any | null): string | null {
+  if (!seed || seed.mode !== 'real') return null;
+  const ids = (seed.realMedia && seed.realMedia.captureIds) || [];
+  if (ids.length) return `実データ検証インスタンス（実メディア入り: ${ids.join(', ')}）— このウィンドウのスクリーンショットを公開物へ貼らないこと`;
+  return '実データ検証インスタンス（実DBスナップショット）— このウィンドウのスクリーンショットを公開物へ貼らないこと';
 }
 
 // ---- instance management ---------------------------------------------------
@@ -203,20 +253,40 @@ function printConnectHint(port: number) {
   console.log('  stop:    node scripts/sandbox-app.cts stop');
 }
 
-async function start() {
+async function start(opts: StartOptions) {
   const existing = readInstance();
   if (existing && isAlive(existing.pid)) {
+    // Seeding swaps the database out from under the app, so it cannot happen
+    // while the instance holds it open.
+    if (opts.reseed || (opts.real && (readSeed() || {}).mode !== 'real')) {
+      console.error('FAIL sandbox instance is running — stop it first: node scripts/sandbox-app.cts stop');
+      process.exit(1);
+    }
     printConnectHint(existing.port);
     return;
   }
 
   fs.mkdirSync(configDir, { recursive: true });
   fs.mkdirSync(appData, { recursive: true });
-  const configPath = path.join(configDir, 'config.json');
-  if (!fs.existsSync(configPath)) {
-    fs.writeFileSync(configPath, JSON.stringify({ saveFolder, extensionId: 'testextensionidabcdefghijklmnop' }, null, 2));
+  if (opts.reseed) wipeSeed();
+  let seeded = false;
+  if (opts.real) {
+    if (libraryIsSeeded() && (readSeed() || {}).mode !== 'real') {
+      console.error('FAIL this sandbox already holds a fixture library — re-seed explicitly: node scripts/sandbox-app.cts start --real --reseed');
+      process.exit(1);
+    }
+    if (!libraryIsSeeded()) {
+      await seedReal(opts);
+      seeded = true;
+    }
+  } else {
+    const configPath = path.join(configDir, 'config.json');
+    if (!fs.existsSync(configPath)) {
+      fs.writeFileSync(configPath, JSON.stringify({ saveFolder, extensionId: 'testextensionidabcdefghijklmnop' }, null, 2));
+    }
+    seeded = seedFixtureLibrary();
   }
-  const seeded = seedLibrary();
+  const notice = noticeFor(readSeed());
 
   const port = await findFreePort(9333);
   const env = Object.assign({}, process.env, {
@@ -227,6 +297,7 @@ async function start() {
     // it must not pull the foreground away from what they are doing. Set
     // HOLOGRAM_START_INACTIVE=0 for the rare run you want to drive by hand.
     HOLOGRAM_START_INACTIVE: process.env.HOLOGRAM_START_INACTIVE || '1',
+    ...(notice ? { HOLOGRAM_SANDBOX_NOTICE: notice } : {}),
   });
   const child = spawn(electronPath, ['.', `--remote-debugging-port=${port}`], {
     cwd: appDir,
@@ -239,7 +310,8 @@ async function start() {
   for (let i = 0; i < 66; i++) {
     if (await cdpReady(port)) {
       fs.writeFileSync(instanceFile, JSON.stringify({ pid: child.pid, port }, null, 2));
-      if (seeded) console.log(`seeded 12 fixture posts into ${saveFolder}`);
+      if (seeded && !opts.real) console.log(`seeded 12 fixture posts into ${saveFolder}`);
+      if (notice) console.log(`⚠ ${notice}`);
       printConnectHint(port);
       return;
     }
@@ -271,10 +343,50 @@ async function stop() {
   console.log(`stopped sandbox instance (pid ${inst.pid}, port ${inst.port})`);
 }
 
-const cmd = process.argv[2] || 'start';
-if (cmd === 'start') start();
-else if (cmd === 'stop') stop();
+interface StartOptions {
+  real: boolean;
+  reseed: boolean;
+  captureIds: string[];
+  maxDim: number;
+}
+
+function parseStartOptions(argv: string[]): StartOptions {
+  const opts: StartOptions = { real: false, reseed: false, captureIds: [], maxDim: DEFAULT_MAX_DIM };
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (a === '--real') opts.real = true;
+    else if (a === '--reseed') opts.reseed = true;
+    else if (a === '--capture')
+      opts.captureIds.push(
+        ...String(argv[++i] || '')
+          .split(',')
+          .filter(Boolean),
+      );
+    else if (a === '--max-dim') opts.maxDim = Number(argv[++i]);
+    else throw new Error(`unknown option: ${a}`);
+  }
+  if (!Number.isFinite(opts.maxDim) || opts.maxDim < 16) throw new Error('--max-dim must be >= 16');
+  if (opts.captureIds.length && !opts.real) throw new Error('--capture only applies to --real (the fixture seed has no real posts to pin)');
+  return opts;
+}
+
+const cmd = process.argv[2] && !process.argv[2].startsWith('--') ? process.argv[2] : 'start';
+const rest = process.argv.slice(process.argv[2] === cmd ? 3 : 2);
+if (cmd === 'start') {
+  let opts: StartOptions;
+  try {
+    opts = parseStartOptions(rest);
+  } catch (err) {
+    console.error(`FAIL ${(err as Error).message}`);
+    console.error('usage: node scripts/sandbox-app.cts [start [--real [--capture <id>[,<id>]] [--max-dim N] [--reseed]] | stop]');
+    process.exit(2);
+  }
+  start(opts).catch((err) => {
+    console.error(`FAIL ${err.stack || err.message}`);
+    process.exit(1);
+  });
+} else if (cmd === 'stop') stop();
 else {
-  console.error('usage: node scripts/sandbox-app.cts [start|stop]');
+  console.error('usage: node scripts/sandbox-app.cts [start [--real [--capture <id>[,<id>]] [--max-dim N] [--reseed]] | stop]');
   process.exit(2);
 }
