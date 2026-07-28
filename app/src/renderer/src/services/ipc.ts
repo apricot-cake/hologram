@@ -10,7 +10,8 @@
 // grouping opt-outs (records.js: loadManualGroups/persistManualGroups, loadUngrouped/
 // persistUngrouped), poster-folders (folders.js: createPersistedFolderStore), trash
 // (trash.ts: listTrash/restorePost/deleteFromTrash/emptyTrash), backup (backup.ts:
-// getBackup/setBackup/pickBackupDir/runBackup/onBackupStart/onBackupDone), and posts
+// getBackup/setBackup/pickBackupDir/runBackup/onBackupStart/onBackupDone/
+// getIntegrityStatus/runOrphanRecovery/onIntegrityCheckDone), and posts
 // (posts.ts: listPosts/listPostsDelta/imageDataUrl/deletePost/updateTags/importPosts/
 // importImages/clearAll/exportSave/exportComplete/importComplete/pickSaveFolder/
 // onSaveFolderProgress/onPostsChanged) — those domain services call this module
@@ -70,6 +71,9 @@ export const hologramIpc: HologramPreload = {
   importImages: () => bridge().importImages(),
   onBackupStart: (cb) => bridge().onBackupStart(cb),
   onBackupDone: (cb) => bridge().onBackupDone(cb),
+  getIntegrityStatus: () => bridge().getIntegrityStatus(),
+  runOrphanRecovery: () => bridge().runOrphanRecovery(),
+  onIntegrityCheckDone: (cb) => bridge().onIntegrityCheckDone(cb),
   listTrash: () => bridge().listTrash(),
   restorePost: (image) => bridge().restorePost(image),
   emptyTrash: () => bridge().emptyTrash(),

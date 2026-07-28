@@ -24,3 +24,12 @@ export function onBackupStart(cb: (...args: any[]) => void) {
 export function onBackupDone(cb: (...args: any[]) => void) {
   return hologramIpc.onBackupDone(cb);
 }
+export function getIntegrityStatus() {
+  return hologramIpc.getIntegrityStatus();
+}
+export function runOrphanRecovery() {
+  return hologramIpc.runOrphanRecovery();
+}
+export function onIntegrityCheckDone(cb: (...args: any[]) => void) {
+  return hologramIpc.onIntegrityCheckDone(cb);
+}

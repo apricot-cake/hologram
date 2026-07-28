@@ -14,7 +14,7 @@ import { Highlight } from '../components/Highlight.tsx';
 import { toast } from 'sonner';
 import { t } from '../../_shared/i18n.ts';
 import { notify } from '../../services/ui.ts';
-import { getBackup, setBackup as setBackupConfig, pickBackupDir, onBackupDone } from '../../services/backup.ts';
+import { getBackup, setBackup as setBackupConfig, pickBackupDir, onBackupDone, getIntegrityStatus, runOrphanRecovery, onIntegrityCheckDone } from '../../services/backup.ts';
 import { onExportProgress, onSaveFolderProgress, pickSaveFolder, moveSaveFolder, exportComplete, importComplete, importPosts, importImages } from '../../services/posts.ts';
 import { open as confirmOpen } from '../../services/confirm.ts';
 import { loadPosts } from '../../services/post-grid-builder.ts';
@@ -52,6 +52,13 @@ interface BackupState {
   intervalUnit?: string;
   lastResult?: BackupResult | null;
 }
+// get-integrity-status / integrity-check-done IPC payload (#301).
+interface IntegrityStatus {
+  lastCheckAt?: string | null;
+  dbOk?: boolean | null;
+  orphanCount?: number;
+  missingCount?: number;
+}
 
 // The preload's on* bridges attach a new ipcRenderer listener on every call with
 // no remover, and this component remounts on each modal open. So register the
@@ -59,6 +66,7 @@ interface BackupState {
 // set — effects only add/remove themselves, never re-subscribe to IPC.
 const progressSubs = new Set<(p: SaveFolderProgress) => void>();
 const backupSubs = new Set<(r: BackupResult) => void>();
+const integritySubs = new Set<(s: IntegrityStatus) => void>();
 let ipcWired = false;
 function wireIpcOnce() {
   if (ipcWired) return;
@@ -70,6 +78,11 @@ function wireIpcOnce() {
   }
   try {
     onBackupDone((_e: unknown, r: BackupResult) => backupSubs.forEach((cb) => cb(r)));
+  } catch {
+    /* bare dev server: no preload bridge behind hologramBackup */
+  }
+  try {
+    onIntegrityCheckDone((_e: unknown, s: IntegrityStatus) => integritySubs.forEach((cb) => cb(s)));
   } catch {
     /* bare dev server: no preload bridge behind hologramBackup */
   }
@@ -121,6 +134,10 @@ export function Data() {
   // --- backup ---
   const [backup, setBackup] = useState<BackupState | null>(null);
 
+  // --- integrity (#301) ---
+  const [integrity, setIntegrity] = useState<IntegrityStatus | null>(null);
+  const [recovering, setRecovering] = useState(false);
+
   // file input for the legacy ZIP path
   const zipInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -132,6 +149,9 @@ export function Data() {
       .catch(() => {});
     Promise.resolve(getBackup())
       .then((b) => setBackup(b || null))
+      .catch(() => {});
+    Promise.resolve(getIntegrityStatus())
+      .then((s) => setIntegrity(s || null))
       .catch(() => {});
   }, []);
 
@@ -320,6 +340,37 @@ export function Data() {
     };
   }, []);
 
+  // --- integrity events: refresh when the startup check or a backup-run's
+  // piggybacked check finishes (#301) ---
+  useEffect(() => {
+    wireIpcOnce();
+    const onDone = (s: IntegrityStatus) => setIntegrity(s || null);
+    integritySubs.add(onDone);
+    return () => {
+      integritySubs.delete(onDone);
+    };
+  }, []);
+
+  const recoverOrphans = async () => {
+    setRecovering(true);
+    try {
+      const res = await runOrphanRecovery();
+      if (res && res.ok) {
+        notify(t('integrityRecovered', [res.recovered]));
+        reloadPosts();
+      }
+      try {
+        setIntegrity((await getIntegrityStatus()) || null);
+      } catch {
+        /* ignore */
+      }
+    } catch {
+      /* ignore */
+    } finally {
+      setRecovering(false);
+    }
+  };
+
   const saveBackup = async (patch: Partial<BackupState>) => {
     try {
       const res = await setBackupConfig(patch);
@@ -483,6 +534,33 @@ export function Data() {
           {renderBackupStatus()}
         </CardContent>
       </Card>
+
+      {/* 整合性チェック（#301） — 何も問題が無ければ progressive disclosure で非表示 */}
+      {integrity && (integrity.dbOk === false || (integrity.orphanCount ?? 0) > 0 || (integrity.missingCount ?? 0) > 0) && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-sm">
+              <Highlight text={t('integritySubTitle')} />
+            </CardTitle>
+            <CardDescription>
+              <Highlight text={t('hintIntegrity')} />
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {integrity.dbOk === false && <div className="text-destructive text-[0.8rem]">{`⚠ ${t('integrityDbBad')}`}</div>}
+            {(integrity.orphanCount ?? 0) > 0 && (
+              <div className="text-destructive flex flex-wrap items-center gap-2.5 text-[0.8rem]">
+                <span>{`⚠ ${t('integrityOrphanLine', [integrity.orphanCount])}`}</span>
+                <Button variant="outline" size="sm" onClick={recoverOrphans} disabled={recovering}>
+                  {t('integrityRecoverBtn')}
+                </Button>
+              </div>
+            )}
+            {(integrity.missingCount ?? 0) > 0 && <div className="text-destructive text-[0.8rem]">{`⚠ ${t('integrityMissingLine', [integrity.missingCount])}`}</div>}
+            {integrity.lastCheckAt && <div className="text-muted-foreground text-[0.8rem]">{t('integrityLastChecked', [fmtTime(integrity.lastCheckAt)])}</div>}
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

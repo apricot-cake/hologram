@@ -5,10 +5,15 @@
 // validateBackupDir / armBackupSchedule / runBackup), which all stay in main.js and
 // arrive via ctx. pick-backup-dir opens a directory dialog parented to the main window
 // (ctx.getWin()).
+//
+// get-integrity-status / run-orphan-recovery (#301) are a separate concern
+// (DB<->media reconciliation, not the file mirror) that happens to share this
+// module because the rail that displays both lives in the same renderer
+// component (MirrorStatus.tsx).
 import { ipcMain, dialog } from 'electron';
 
 function register(ctx) {
-  const { readBackupConfig, writeBackupConfig, validateBackupDir, armBackupSchedule, runBackup, getWin } = ctx;
+  const { readBackupConfig, writeBackupConfig, validateBackupDir, armBackupSchedule, runBackup, getWin, readIntegrityStatus, runOrphanRecovery } = ctx;
 
   ipcMain.handle('get-backup', () => readBackupConfig());
   ipcMain.handle('set-backup', (_e, patch) => {
@@ -32,6 +37,8 @@ function register(ctx) {
     return { ok: true, backup };
   });
   ipcMain.handle('run-backup', () => runBackup('manual'));
+  ipcMain.handle('get-integrity-status', () => readIntegrityStatus());
+  ipcMain.handle('run-orphan-recovery', () => runOrphanRecovery());
 }
 
 export { register };
