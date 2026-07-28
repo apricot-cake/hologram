@@ -13,6 +13,9 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
+import { openDatabase } from '../app/src/main/lib-db';
+import { postsByIds } from '../app/src/main/lib-db-query';
+import { makeTagResolver, preparePostStmts, writePost } from '../app/src/main/lib-db-record-writer';
 
 const F = '100-fail';
 const S = '200-ok';
@@ -21,6 +24,7 @@ const BF = '400-bskyfail';
 
 let tmp: string;
 let saveFolder: string;
+let dbFile: string;
 let res: ReturnType<typeof spawnSync>;
 
 // 失敗した再取得で潰されてはいけない、フル装備の保存済みレコード
@@ -46,7 +50,12 @@ beforeAll(() => {
   fs.mkdirSync(saveFolder, { recursive: true });
   fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolder }));
 
-  const write = (id: string, rec: unknown) => fs.writeFileSync(path.join(saveFolder, `${id}.json`), JSON.stringify(rec));
+  // レコードはライブラリのDBに置く（#302 以降、保存フォルダにサイドカーは無い）。
+  dbFile = path.join(configDir, 'hologram.db');
+  const seed = openDatabase(dbFile);
+  const stmts = preparePostStmts(seed.sqlite);
+  const resolveTagId = makeTagResolver(seed.sqlite);
+  const write = (id: string, rec: any) => writePost(stmts, resolveTagId, { ...rec, captureId: id });
   write(F, storedX('100', 'failuser'));
   write(S, storedX('200', 'okuser'));
   write(P, storedX('300', 'partialuser'));
@@ -96,6 +105,8 @@ beforeAll(() => {
     ].join('\n'),
   );
 
+  seed.sqlite.close();
+
   res = spawnSync(process.execPath, ['-r', stub, path.join(import.meta.dirname, 'backfill-metadata.cts'), '--all'], {
     env: { ...process.env, APPDATA: tmp, HOLOGRAM_CONFIG_DIR: configDir },
     encoding: 'utf8',
@@ -106,15 +117,22 @@ afterAll(() => {
   fs.rmSync(tmp, { recursive: true, force: true });
 });
 
-const read = (id: string) => JSON.parse(fs.readFileSync(path.join(saveFolder, `${id}.json`), 'utf8'));
+async function read(id: string) {
+  const handle = openDatabase(dbFile);
+  try {
+    return (await postsByIds(handle.sqlite, [id]))[0];
+  } finally {
+    handle.sqlite.close();
+  }
+}
 
 test('スクリプトが 0 で終了する', () => {
   expect(res.status).toBe(0);
 });
 
 describe('F: X の取得失敗＝保存済みメタを潰さない', () => {
-  test('全フィールドがそのまま残る', () => {
-    expect(read(F)).toMatchObject({
+  test('全フィールドがそのまま残る', async () => {
+    expect(await read(F)).toMatchObject({
       text: 'stored body text',
       displayName: 'Stored Name',
       userId: '999',
@@ -126,8 +144,8 @@ describe('F: X の取得失敗＝保存済みメタを潰さない', () => {
 });
 
 describe('S: X の取得成功＝新しいメタで更新', () => {
-  test('新しい値へ入れ替わる', () => {
-    expect(read(S)).toMatchObject({
+  test('新しい値へ入れ替わる', async () => {
+    expect(await read(S)).toMatchObject({
       text: 'fresh tweet body',
       displayName: 'Fresh Name',
       userId: '555',
@@ -140,14 +158,14 @@ describe('S: X の取得成功＝新しいメタで更新', () => {
 // 応答に favorite_count が無い＝新しい項目は反映しつつ、欠けた likes は
 // `m.likes ?? rec.likes` で保存済みの値へ落ちる
 describe('P: X の部分的な応答', () => {
-  test('来た項目は更新され、欠けた likes は保存済みの値が残る', () => {
-    expect(read(P)).toMatchObject({ text: 'partial body', userId: '777', likes: 42 });
+  test('来た項目は更新され、欠けた likes は保存済みの値が残る', async () => {
+    expect(await read(P)).toMatchObject({ text: 'partial body', userId: '777', likes: 42 });
   });
 });
 
 describe('BF: Bluesky のスレッド取得失敗', () => {
-  test('保存済みメタが保たれる', () => {
-    expect(read(BF)).toMatchObject({
+  test('保存済みメタが保たれる', async () => {
+    expect(await read(BF)).toMatchObject({
       text: 'bsky stored text',
       displayName: 'Bsky Stored',
       likes: 7,

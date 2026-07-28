@@ -1,16 +1,21 @@
 'use strict';
 
-// Watch the Hologram save folder and AUTO-VERIFY every new capture against the
-// platform's public API (re-fetched via extension/utils/metadata.ts). Per capture it
-// prints PASS/FAIL with the reasons and a one-line summary of the cell —
-// the human only opens pages and clicks/drags; selection criteria come from
+// Watch the library for new captures and AUTO-VERIFY each against the platform's
+// public API (re-fetched via extension/utils/metadata.ts). Per capture it prints
+// PASS/FAIL with the reasons and a one-line summary of the cell — the human only
+// opens pages and clicks/drags; selection criteria come from
 // scripts/test-select-posts.cts.
 //
 //   node scripts/test-watch-verify.cts              # watch until Ctrl+C
-//   node scripts/test-watch-verify.cts --recent 5   # one-shot: latest N sidecars
+//   node scripts/test-watch-verify.cts --recent 5   # one-shot: latest N records
 //
-// Checks per sidecar:
-//   - the paired image file exists
+// Records come from the library database, opened read-only so this can run while
+// the app has it open (the app is the single writer). Watch mode polls: a capture
+// lands as a DB row now, and SQLite has no filesystem event to hook — the inbox
+// file appearing is not the same instant as the app applying it.
+//
+// Checks per record:
+//   - the image file it points at exists
 //   - url is the platform's CANONICAL permalink form (no /photo/N, /liked-by …)
 //   - identity fields match a live API re-fetch (screenName/displayName/userId/
 //     text-prefix/date) — engagement counts drift and are reported as info
@@ -18,8 +23,30 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
+const Database = require('better-sqlite3');
 const { fetchPostMetadata } = require('../extension/utils/metadata.ts');
 const { configDir, defaultLibraryDir } = require('../native-host/paths.cts');
+
+const POLL_MS = 2000;
+
+// Read-only handle: never take the writer role away from the running app.
+function openReadOnly() {
+  const file = path.join(configDir(), 'hologram.db');
+  if (!fs.existsSync(file)) {
+    console.error('ライブラリのデータベースが見つかりません: ' + file);
+    process.exit(1);
+  }
+  return new Database(file, { readonly: true, fileMustExist: true });
+}
+
+// The fields this tool compares, plus the media rows and tag names the record
+// shape carries. Newest capture first, matching the app's own ordering.
+function readRecords(db, limit) {
+  const rows = db.prepare('SELECT captureId, image, video, url, platform, text, displayName, screenName, userId, likes, reposts, replies, date, capturedAt FROM posts ORDER BY capturedAt DESC LIMIT ?').all(limit);
+  const media = db.prepare('SELECT url, alt, width, height, file FROM media WHERE postId = ? ORDER BY seq');
+  for (const rec of rows) rec.media = media.all(rec.captureId);
+  return rows;
+}
 
 function saveFolder() {
   try {
@@ -41,17 +68,9 @@ const CANON = {
 
 const norm = (s) => (s || '').replace(/\s+/g, ' ').trim();
 
-async function verifySidecar(file) {
-  let rec: any;
-  try {
-    rec = JSON.parse(fs.readFileSync(file, 'utf8'));
-  } catch {
-    return null;
-  }
-  if (!rec || !rec.captureId) return null; // tag-types.json などの管理ファイル
-
-  const dir = path.dirname(file);
-  const base = path.basename(file, '.json');
+async function verifyRecord(rec: any, dir: string) {
+  if (!rec || !rec.captureId) return null;
+  const base = rec.captureId;
   const issues: any[] = [];
   const info: any[] = [];
 
@@ -113,53 +132,44 @@ async function verifySidecar(file) {
   return ok;
 }
 
-function sidecars(dir) {
-  return fs
-    .readdirSync(dir)
-    .filter((f) => f.endsWith('.json'))
-    .map((f) => path.join(dir, f))
-    .map((p) => ({ p, m: fs.statSync(p).mtimeMs }))
-    .sort((a, b) => b.m - a.m)
-    .map((e) => e.p);
-}
-
 (async () => {
   const dir = saveFolder();
   if (!fs.existsSync(dir)) {
     console.error('保存先フォルダが見つかりません: ' + dir);
     process.exit(1);
   }
+  const db = openReadOnly();
 
   const recentIdx = process.argv.indexOf('--recent');
   if (recentIdx >= 0) {
     const n = Number.parseInt(process.argv[recentIdx + 1], 10) || 1;
     let okAll = true;
     let checked = 0;
-    for (const f of sidecars(dir)) {
-      if (checked >= n) break;
-      const r = await verifySidecar(f);
-      if (r === null) continue; // management json — doesn't count
+    for (const rec of readRecords(db, n)) {
+      const r = await verifyRecord(rec, dir);
+      if (r === null) continue;
       checked++;
       if (!r) okAll = false;
     }
     console.log(`\n${checked} 件検証 → ${okAll ? 'ALL PASS' : 'FAIL あり'}`);
+    db.close();
     process.exit(okAll ? 0 : 1);
   }
 
-  console.log(`監視中: ${dir}`);
+  console.log(`監視中: ${path.join(configDir(), 'hologram.db')}`);
   console.log('キャプチャすると自動で検証します（Ctrl+C で終了）\n');
-  const seen = new Set(fs.readdirSync(dir));
-  const timers = new Map();
-  fs.watch(dir, (_event, fname) => {
-    if (!fname || !fname.endsWith('.json') || seen.has(fname)) return;
-    // bridge は画像/メディアDL後にサイドカーを書く — 書き込み完了を少し待つ
-    clearTimeout(timers.get(fname));
-    timers.set(
-      fname,
-      setTimeout(() => {
-        seen.add(fname);
-        verifySidecar(path.join(dir, fname)).catch((e) => console.error('verify error:', e.message));
-      }, 1200),
-    );
-  });
+  const seen = new Set(readRecords(db, 1000).map((r: any) => r.captureId));
+  setInterval(async () => {
+    let fresh: any[] = [];
+    try {
+      fresh = readRecords(db, 20).filter((r: any) => !seen.has(r.captureId));
+    } catch (e: any) {
+      console.error('read error:', e.message);
+      return;
+    }
+    for (const rec of fresh.reverse()) {
+      seen.add(rec.captureId);
+      await verifyRecord(rec, dir).catch((e: any) => console.error('verify error:', e.message));
+    }
+  }, POLL_MS);
 })();

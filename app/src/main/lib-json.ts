@@ -1,7 +1,8 @@
 'use strict';
 
-// BOM-tolerant JSON.parse for file-read parses of library JSON (sidecars,
-// organization JSON, .index.json, config, zip org entries). Sidecars and config
+// BOM-tolerant JSON.parse for file-read parses of library JSON (trash records,
+// intake envelopes, config, zip entries, and the pre-#5 on-disk format the legacy
+// migration still reads). Those files and config
 // are plain files users may hand-edit, and Windows editors love to prepend a
 // UTF-8 BOM — which survives utf8 decoding as a leading U+FEFF and makes bare
 // JSON.parse throw. Every such throw path reads as "corrupt/absent": a sidecar

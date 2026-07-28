@@ -11,7 +11,7 @@ import { openDatabase, DatabaseCorruptError } from './lib-db.ts';
 import { computeDelta } from './lib-post-delta.ts';
 import { postsFromDb } from './lib-db-query.ts';
 import { createDbWriter } from './lib-db-write.ts';
-// ⚠️ Scaffolding — the one-time pre-#5 library migration (#TBD_SCAFFOLD).
+// ⚠️ Scaffolding — the one-time pre-#5 library migration (#441).
 import { LEGACY_INTERNAL_FILES, migrateLegacyLibrary } from './lib-legacy-import.ts';
 import { buildSavedIndex, SAVED_INDEX_FILE } from './lib-saved-index.ts';
 import { drainInbox } from './lib-db-inbox.ts';
@@ -328,7 +328,7 @@ function getDbWriter() {
 }
 
 // ⚠️ Scaffolding — remove before release together with lib-legacy-import.ts
-// (#TBD_SCAFFOLD). Runs at most once per database: a library predating #5 still
+// (#441). Runs at most once per database: a library predating #5 still
 // has its metadata as per-post sidecar + organization JSON on disk, and this is
 // the only thing left that reads that format. A release-time install finds
 // nothing and stamps truthSource straight away.
@@ -1272,7 +1272,7 @@ function registerExtractedIpc() {
     baseOf,
     VIEWABLE_EXTS,
     // ⚠️ Scaffolding — clear-all's "don't delete these" list is only about JSON a
-    // pre-#5 library can still have lying around; it goes with #TBD_SCAFFOLD.
+    // pre-#5 library can still have lying around; it goes with #441.
     LEGACY_INTERNAL_FILES,
     readBackupConfig,
     writeBackupConfig,

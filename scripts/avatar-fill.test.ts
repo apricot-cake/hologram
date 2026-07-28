@@ -1,4 +1,4 @@
-// backfill --avatars: アバター URL はあるがローカルファイルが無い sidecar について、
+// backfill --avatars: アバター URL はあるがローカルファイルが無いレコードについて、
 // 共有ストア（avatars/<urlhash>.<ext>）へ落として avatarFile を立てる。すでに埋まっている
 // ものとアバターが無いものは飛ばす。実スクリプトを本当に spawn し、fetch スタブを
 // `node -r` で先読みさせる（SSRF ガードが localhost を拒むのでローカルサーバでは代用
@@ -11,6 +11,9 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { pixivRefererFor } from '../native-host/media-download.cts';
+import { openDatabase } from '../app/src/main/lib-db';
+import { postsByIds } from '../app/src/main/lib-db-query';
+import { makeTagResolver, preparePostStmts, writePost } from '../app/src/main/lib-db-record-writer';
 
 describe('pixivRefererFor（純関数）', () => {
   test.each(['https://i.pximg.net/img/x.jpg', 'https://s.pximg.net/x.png', 'https://pximg.net/x.png'])('pximg 系は pixiv の Referer: %s', (url) => {
@@ -33,6 +36,7 @@ describe('backfill --avatars（実スクリプトを spawn）', () => {
   let tmp: string;
   let saveFolder: string;
   let res: ReturnType<typeof spawnSync>;
+  let dbFile: string;
 
   beforeAll(() => {
     tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-avfill-'));
@@ -42,9 +46,15 @@ describe('backfill --avatars（実スクリプトを spawn）', () => {
     fs.mkdirSync(saveFolder, { recursive: true });
     fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolder }));
 
-    fs.writeFileSync(path.join(saveFolder, `${A}.json`), JSON.stringify({ captureId: A, url: 'https://x/1', avatar: 'https://h/photo.jpg' }));
-    fs.writeFileSync(path.join(saveFolder, `${B}.json`), JSON.stringify({ captureId: B, avatar: 'https://h/photo.jpg', avatarFile: `${B}-avatar.jpg` }));
-    fs.writeFileSync(path.join(saveFolder, `${C}.json`), JSON.stringify({ captureId: C, url: 'https://x/3' }));
+    // レコードはライブラリのDBに置く（#302 以降、保存フォルダにサイドカーは無い）。
+    dbFile = path.join(configDir, 'hologram.db');
+    const seed = openDatabase(dbFile);
+    const stmts = preparePostStmts(seed.sqlite);
+    const resolveTagId = makeTagResolver(seed.sqlite);
+    writePost(stmts, resolveTagId, { captureId: A, url: 'https://x/1', avatar: 'https://h/photo.jpg' } as any);
+    writePost(stmts, resolveTagId, { captureId: B, avatar: 'https://h/photo.jpg', avatarFile: `${B}-avatar.jpg` } as any);
+    writePost(stmts, resolveTagId, { captureId: C, url: 'https://x/3' } as any);
+    seed.sqlite.close();
 
     // スクリプトが動き出す前に global.fetch を差し替える preload（ネットワークも TLS も無し）
     const stub = path.join(tmp, 'stub-fetch.js');
@@ -70,7 +80,14 @@ describe('backfill --avatars（実スクリプトを spawn）', () => {
     fs.rmSync(tmp, { recursive: true, force: true });
   });
 
-  const sidecar = (id: string) => JSON.parse(fs.readFileSync(path.join(saveFolder, `${id}.json`), 'utf8'));
+  async function record(id: string) {
+    const handle = openDatabase(dbFile);
+    try {
+      return (await postsByIds(handle.sqlite, [id]))[0];
+    } finally {
+      handle.sqlite.close();
+    }
+  }
 
   test('スクリプトが 0 で終了する', () => {
     expect(res.status).toBe(0);
@@ -80,20 +97,20 @@ describe('backfill --avatars（実スクリプトを spawn）', () => {
     expect(res.stdout).toMatch(/filled 1\b/);
   });
 
-  test('A: avatarFile が avatars/<urlhash>.png になる', () => {
-    expect(sidecar(A).avatarFile).toBe(`avatars/${avHash}.png`);
+  test('A: avatarFile が avatars/<urlhash>.png になる', async () => {
+    expect((await record(A)).avatarFile).toBe(`avatars/${avHash}.png`);
   });
 
   test('A: 画像がディスクに置かれる', () => {
     expect(fs.existsSync(path.join(saveFolder, 'avatars', `${avHash}.png`))).toBe(true);
   });
 
-  test('B: すでに avatarFile がある sidecar は触らない', () => {
-    expect(sidecar(B).avatarFile).toBe(`${B}-avatar.jpg`);
+  test('B: すでに avatarFile があるレコードは触らない', async () => {
+    expect((await record(B)).avatarFile).toBe(`${B}-avatar.jpg`);
     expect(fs.existsSync(path.join(saveFolder, `${B}-avatar.png`))).toBe(false);
   });
 
-  test('C: アバター URL が無ければ avatarFile も付かない', () => {
-    expect(sidecar(C).avatarFile).toBeUndefined();
+  test('C: アバター URL が無ければ avatarFile も付かない', async () => {
+    expect((await record(C)).avatarFile).toBeNull();
   });
 });

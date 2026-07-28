@@ -64,7 +64,7 @@ function listRootFiles(saveFolder: string): string[] {
   const out: string[] = [];
   for (const name of names) {
     if (name === TRASH_SUBDIR || name === AVATAR_SUBDIR) continue;
-    if (name.startsWith('.')) continue; // .hologram-inbox, .index.json, dotfiles
+    if (name.startsWith('.')) continue; // .hologram-inbox, .trash, dotfiles
     if (/\.tmp(-\d+)?$/i.test(name)) continue;
     try {
       if (fs.statSync(path.join(saveFolder, name)).isFile()) out.push(name);

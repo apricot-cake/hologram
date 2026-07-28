@@ -277,7 +277,7 @@ function register(ctx) {
   // One ZIP that mirrors the whole library under library/: every capture file
   // (jpg/media) PLUS DB-regenerated sidecars and the organization layer (#300/St7 —
   // lib-archive.ts's module comment explains why these can't be a disk copy
-  // anymore). Excludes config.json (machine-specific) and .index.json (cache).
+  // anymore). Excludes config.json (machine-specific).
   // Manual-only: the scheduled path is the incremental mirror (runBackup), which
   // replaced the old scheduled-ZIP idea — ZIP stays as the hand-carried snapshot.
   ipcMain.handle('export-complete', async (_e, mode, includeTrash) => {

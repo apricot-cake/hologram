@@ -8,7 +8,7 @@
 // one place that still knows every post's URL. See bridge.cts's
 // "Saved-post index" comment for the read side (this module only builds the
 // map; index.ts owns writing it to configDir/bridge-saved-index.json,
-// debounced + atomic, same as it does for .index.json).
+// debounced + atomic).
 //
 // Electron-free (better-sqlite3 + node builtins only) so it unit-tests in
 // plain node, mirroring lib-db-query.ts.

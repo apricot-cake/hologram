@@ -1,6 +1,6 @@
 'use strict';
 
-// ⚠️ Scaffolding — remove before release (#TBD_SCAFFOLD tracks the removal).
+// ⚠️ Scaffolding — remove before release (#441 tracks the removal).
 //
 // One-time migration of a pre-#5 library: reads a save folder's per-post sidecar
 // JSON plus the organization-layer JSON (tag-types / ungrouped / folders /

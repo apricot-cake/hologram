@@ -1,12 +1,15 @@
 'use strict';
 
-// Re-fetch metadata for sidecars that are missing it (e.g. captured while the
-// extension's service worker was stale), using the stored post URL. Rewrites
-// each sidecar in place, preserving captureId/image/capturedAt/tags.
+// Re-fetch metadata for records that are missing it (e.g. captured while the
+// extension's service worker was stale), using the stored post URL. Rewrites each
+// record in the library database, preserving captureId/image/capturedAt/tags.
 //
-//   node scripts/backfill-metadata.cts          # only sidecars missing metadata
-//   node scripts/backfill-metadata.cts --all     # re-fetch every sidecar
+//   node scripts/backfill-metadata.cts          # only records missing metadata
+//   node scripts/backfill-metadata.cts --all     # re-fetch every record
 //   node scripts/backfill-metadata.cts --avatars # no API: just DL missing avatars
+//
+// Run with the app CLOSED: the database has a single writer (the main process), and
+// this tool takes that role for the duration.
 //
 // Avatars: a re-fetch (or --all) downloads the author avatar to <base>-avatar.<ext>
 // when the record has an avatar URL but no local file yet — mirroring what the
@@ -20,16 +23,9 @@ const path = require('node:path');
 const { configDir } = require('../native-host/paths.cts');
 const { fetchPostMetadata } = require('../extension/utils/metadata.ts');
 const { downloadAvatar, pixivRefererFor } = require('../native-host/media-download.cts');
-
-// Crash-safe sidecar write: tmp + rename, so a reader (or the app's fs.watch in
-// the save folder) only ever sees the complete old or complete new file, never a
-// torn/zero-byte one. The .tmp suffix is invisible to the watcher's image/json
-// regex. Mirrors app/main.js writeSidecarAtomic.
-function writeJsonAtomicSync(filePath, value) {
-  const tmp = `${filePath}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify(value, null, 2), 'utf8');
-  fs.renameSync(tmp, filePath);
-}
+const { openDatabase } = require('../app/src/main/lib-db.ts');
+const { postsFromDb } = require('../app/src/main/lib-db-query.ts');
+const { makeTagResolver, preparePostStmts, writePost } = require('../app/src/main/lib-db-record-writer.ts');
 
 function saveFolder() {
   try {
@@ -55,35 +51,27 @@ async function ensureAvatarFile(folder, avatarUrl, referer) {
   }
 }
 
-function listSidecars(folder) {
-  return fs.readdirSync(folder).filter((f) => f.toLowerCase().endsWith('.json') && f !== 'config.json' && f !== '.index.json');
-}
-
 (async () => {
   const folder = saveFolder();
   const all = process.argv.includes('--all');
   const avatarsOnly = process.argv.includes('--avatars');
-  let files: any;
-  try {
-    files = listSidecars(folder);
-  } catch {
-    console.log('No save folder:', folder);
+  const dbFile = path.join(configDir(), 'hologram.db');
+  if (!fs.existsSync(dbFile)) {
+    console.log('No database:', dbFile);
     return;
   }
+  const handle = openDatabase(dbFile);
+  const stmts = preparePostStmts(handle.sqlite);
+  const resolveTagId = makeTagResolver(handle.sqlite);
+  const save = (rec: any) => writePost(stmts, resolveTagId, rec);
+  const records = await postsFromDb(handle.sqlite);
 
   // --avatars: no metadata fetch, just fill in missing avatar images.
   if (avatarsOnly) {
     let filled = 0,
       skipped = 0,
       failed = 0;
-    for (const f of files) {
-      const p = path.join(folder, f);
-      let rec: any;
-      try {
-        rec = JSON.parse(fs.readFileSync(p, 'utf8'));
-      } catch {
-        continue;
-      }
+    for (const rec of records) {
       if (!rec.avatar || rec.avatarFile) {
         skipped++;
         continue;
@@ -91,29 +79,23 @@ function listSidecars(folder) {
       const af = await ensureAvatarFile(folder, rec.avatar, rec.avatarReferer);
       if (!af) {
         failed++;
-        console.log('  no avatar:', f, rec.avatar);
+        console.log('  no avatar:', rec.captureId, rec.avatar);
         continue;
       }
       rec.avatarFile = af;
-      writeJsonAtomicSync(p, rec);
+      save(rec);
       filled++;
-      console.log('  avatar:', f, '->', af);
+      console.log('  avatar:', rec.captureId, '->', af);
     }
     console.log(`\navatars: filled ${filled}, skipped ${skipped}, no-data ${failed}  (folder: ${folder})`);
+    handle.sqlite.close();
     return;
   }
 
   let updated = 0,
     skipped = 0,
     failed = 0;
-  for (const f of files) {
-    const p = path.join(folder, f);
-    let rec: any;
-    try {
-      rec = JSON.parse(fs.readFileSync(p, 'utf8'));
-    } catch {
-      continue;
-    }
+  for (const rec of records) {
     if (!rec.url) {
       skipped++;
       continue;
@@ -134,7 +116,7 @@ function listSidecars(folder) {
     // intact (don't null-destroy text/author/userId/stats/lang). (audit #2)
     if (m.text == null && m.likes == null && m.date == null) {
       failed++;
-      console.log('  no data:', f, rec.url);
+      console.log('  no data:', rec.captureId, rec.url);
       continue;
     }
 
@@ -176,10 +158,11 @@ function listSidecars(folder) {
       if (af) merged.avatarFile = af;
     }
 
-    writeJsonAtomicSync(p, merged);
+    save(merged);
     updated++;
-    console.log('  updated:', f, '->', m.screenName, JSON.stringify((m.text || '').slice(0, 30)));
+    console.log('  updated:', rec.captureId, '->', m.screenName, JSON.stringify((m.text || '').slice(0, 30)));
   }
 
   console.log(`\nbackfilled ${updated}, skipped ${skipped}, no-data ${failed}  (folder: ${folder})`);
+  handle.sqlite.close();
 })();
