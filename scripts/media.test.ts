@@ -10,6 +10,8 @@ import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 // 有効な 1x1 PNG（ブリッジが見るのは content-type だけ）
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64');
 const jpegB64 = '/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACP/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AfwH/2Q==';
+// ISO base media の先頭（サイズ4バイト＋'ftyp'＋ブランド）＝mp4 と判別できる最小形
+const MP4_HEAD = Buffer.concat([Buffer.from([0, 0, 0, 0x20]), Buffer.from('ftypisom'), Buffer.alloc(8)]);
 
 const realFetch = global.fetch;
 // 直近のリクエストを覚えておき、Referer（pixiv）を転送したかを見られるようにする
@@ -38,6 +40,10 @@ beforeAll(async () => {
     if (u.endsWith('/clip.mp4')) return new Response(Buffer.from('fake-mp4-bytes'), { status: 200, headers: { 'content-type': 'video/mp4' } });
     if (u.endsWith('/huge.mp4')) return new Response(Buffer.from('fake-mp4-bytes'), { status: 200, headers: { 'content-type': 'video/mp4', 'content-length': String(300 * 1024 * 1024) } });
     if (u.endsWith('/poster.jpg')) return new Response(PNG, { status: 200, headers: { 'content-type': 'image/jpeg' } }); // 中身は問わない
+    // 型を名乗らない CDN（Bluesky の動画サムネイルが実際にこれ・#119 St2）
+    if (u.endsWith('/opaque-thumb')) return new Response(PNG, { status: 200, headers: { 'content-type': 'application/octet-stream' } });
+    if (u.endsWith('/opaque-mp4')) return new Response(MP4_HEAD, { status: 200, headers: { 'content-type': 'application/octet-stream' } });
+    if (u.endsWith('/opaque-junk')) return new Response(Buffer.from('not a picture at all'), { status: 200, headers: { 'content-type': 'application/octet-stream' } });
     if (u.endsWith('/missing')) return new Response('nope', { status: 404 });
     return new Response('nope', { status: 500 });
   }) as typeof fetch;
@@ -125,6 +131,43 @@ describe('動画・GIF エントリ（#119 St1）', () => {
     const saved = await downloadMedia([{ url: 'https://h/missing', alt: null, type: 'video', poster: 'https://h/missing' }], saveFolder, '1717500000000-vid4');
 
     expect(saved).toHaveLength(0);
+  });
+});
+
+// content-type が application/octet-stream＝「何か分からない」であって「対象外」ではない。
+// この時だけ実バイトの magic を見て決める（許可リスト自体は広がらない）。
+describe('型を名乗らない応答のマジックバイト判別（#119 St2）', () => {
+  test('octet-stream でも中身が PNG なら .png として残る', async () => {
+    const base = '1717500000000-sniff1';
+    const saved = await downloadMedia([{ url: 'https://h/opaque-thumb', alt: null }], saveFolder, base);
+
+    expect(saved).toHaveLength(1);
+    expect(saved[0].file).toBe(`${base}-media-0.png`);
+    expect(onDisk(saved[0].file)).toBe(true);
+  });
+
+  test('静止画として要求した先が mp4 だったら落とす（許可リストは広がらない）', async () => {
+    const base = '1717500000000-sniff2';
+    const saved = await downloadMedia([{ url: 'https://h/opaque-mp4', alt: null }], saveFolder, base);
+
+    expect(saved).toHaveLength(0);
+    expect(fs.readdirSync(saveFolder).filter((f) => f.includes('sniff2'))).toEqual([]);
+  });
+
+  test('どの形式でもないバイト列は落とし、一時ファイルも残さない', async () => {
+    const base = '1717500000000-sniff3';
+    const saved = await downloadMedia([{ url: 'https://h/opaque-junk', alt: null }], saveFolder, base);
+
+    expect(saved).toHaveLength(0);
+    expect(fs.readdirSync(saveFolder).filter((f) => f.includes('sniff3'))).toEqual([]);
+  });
+
+  test('動画の入り口では octet-stream の mp4 を受け取れる', async () => {
+    const base = '1717500000000-sniff4';
+    const saved = await downloadMedia([{ url: 'https://h/opaque-mp4', alt: null, type: 'video' }], saveFolder, base);
+
+    expect(saved).toHaveLength(1);
+    expect(saved[0]).toMatchObject({ file: `${base}-media-0.mp4`, type: 'video' });
   });
 });
 

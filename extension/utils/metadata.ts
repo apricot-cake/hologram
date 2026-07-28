@@ -9,7 +9,10 @@
 //                host_permissions because its CORS is restricted). No public
 //                official API — likes/replies/text/author/date/media only
 //                (no reposts/bookmarks/views).
-//   Bluesky    : public.api.bsky.app (official public API, CORS *).
+//   Bluesky    : public.api.bsky.app (official public API, CORS *), plus
+//                plc.directory for the author's DID document when a post
+//                carries video (that document names the PDS holding the
+//                original blob — see bskyMedia).
 //   Misskey    : <instance>/api/notes/show (official API, CORS * by default).
 
 function parsePostUrl(url) {
@@ -344,6 +347,47 @@ async function resolveBlueskyDid(rec: PostRecord, handle) {
   }
 }
 
+// The PDS that hosts an account's repository — and therefore its blobs — is
+// named only in the account's DID document, so a video save needs one
+// resolution step beyond the AppView (#119 St2). did:plc lives in the PLC
+// directory (CORS *), did:web at a well-known path on the domain the DID names.
+function blueskyDidDocUrl(did) {
+  if (typeof did !== 'string') return null;
+  if (did.startsWith('did:plc:')) return `https://plc.directory/${encodeURIComponent(did)}`;
+  if (did.startsWith('did:web:')) {
+    // did:web:<host>[:<path>…] — the host is percent-decoded (a port arrives as
+    // %3A) and any further colon-separated segments are a path, which replaces
+    // the .well-known prefix.
+    const parts = did.slice('did:web:'.length).split(':').map(decodeURIComponent);
+    const host = parts.shift();
+    if (!host || host.includes('/')) return null;
+    return `https://${host}/${parts.length ? `${parts.join('/')}/` : '.well-known/'}did.json`;
+  }
+  return null; // an unknown DID method has no resolution rule we can follow
+}
+
+async function resolveBlueskyPds(rec: PostRecord, did): Promise<string | null> {
+  const docUrl = blueskyDidDocUrl(did);
+  if (!docUrl) return null;
+  try {
+    const res = await fetch(docUrl);
+    if (!res.ok) return null;
+    const doc = await readJsonKeepingRaw(rec, 'api:bluesky/didDocument', res);
+    const services = Array.isArray(doc && doc.service) ? doc.service : [];
+    // The service id is relative ('#atproto_pds') in the PLC directory's output
+    // and may be absolute ('<did>#atproto_pds') in a hand-written did:web doc.
+    const svc = services.find((s) => s && (s.id === '#atproto_pds' || s.id === `${did}#atproto_pds`));
+    const ep = svc && svc.serviceEndpoint;
+    // The endpoint is chosen by the account holder, so it is an arbitrary host
+    // exactly like a Misskey/Mastodon instance: require https here, and let the
+    // native host's SSRF guard re-check the resolved address at download time.
+    if (typeof ep !== 'string' || !/^https:\/\//i.test(ep)) return null;
+    return ep.replace(/\/+$/, '');
+  } catch {
+    return null;
+  }
+}
+
 function bskyMediaType(post) {
   const e = post.embed || (post.record && post.record.embed);
   const type = e && e.$type ? e.$type : '';
@@ -357,8 +401,48 @@ function bskyMediaType(post) {
   return null;
 }
 
-// Original-resolution still images from an images embed (or recordWithMedia).
-function bskyMedia(post) {
+// The video embed itself (the view, or the record's own embed), unwrapping the
+// recordWithMedia envelope. Null when the post has no video.
+function bskyVideoEmbed(post) {
+  const e = post.embed || (post.record && post.record.embed);
+  if (!e) return null;
+  const type = e.$type || '';
+  if (type.includes('app.bsky.embed.video')) return e;
+  if (type.includes('recordWithMedia') && e.media && (e.media.$type || '').includes('app.bsky.embed.video')) return e.media;
+  return null;
+}
+
+// Original-resolution media from an images or video embed (or recordWithMedia).
+//
+// Video (#119 St2): the embed view offers an HLS playlist, which is a
+// TRANSCODE. The author's original upload is still a blob in their repo and
+// any client may read it unauthenticated at
+// <pds>/xrpc/com.atproto.sync.getBlob?did=…&cid=… — so Bluesky saves the same
+// way as the St1 platforms: one request, one file, no segment stitching and no
+// remuxer. `pds` is the endpoint resolveBlueskyPds found; without it the video
+// is unreachable and the thumbnail is kept as a plain still instead, so the
+// save still holds a picture of the post (the record-level mediaType stays
+// 'video' either way).
+//
+// Do NOT swap the DID-document lookup for bsky.social's getBlob redirect: it
+// answers for accounts it does not host by pointing at one of its own servers,
+// which does not have the blob (measured 2026-07-29 —
+// did:plc:44ybard66vv44zksje25o7dz lives on pds.robocracy.org and bsky.social
+// sent the request to morel.us-east.host.bsky.network).
+function bskyMedia(post, pds?: string | null) {
+  const video = bskyVideoEmbed(post);
+  if (video) {
+    const did = (post.author && post.author.did) || null;
+    const common = {
+      alt: video.alt || null,
+      width: (video.aspectRatio && video.aspectRatio.width) || null,
+      height: (video.aspectRatio && video.aspectRatio.height) || null,
+    };
+    if (pds && did && video.cid) {
+      return [{ ...common, url: `${pds}/xrpc/com.atproto.sync.getBlob?did=${encodeURIComponent(did)}&cid=${encodeURIComponent(video.cid)}`, type: 'video' as const, poster: video.thumbnail || null }];
+    }
+    return video.thumbnail ? [{ ...common, url: video.thumbnail }] : [];
+  }
   const e = post.embed || (post.record && post.record.embed);
   if (!e) return [];
   const type = e.$type || '';
@@ -426,7 +510,10 @@ async function fetchBlueskyPost(parsed, url) {
     }
     if (record.langs && record.langs.length) rec.lang = record.langs[0];
     rec.mediaType = bskyMediaType(post);
-    rec.media = bskyMedia(post);
+    // Only a video post pays for the DID-document round trip; an images post
+    // already has its fullsize URLs from the AppView.
+    const pds = bskyVideoEmbed(post) ? await resolveBlueskyPds(rec, (post.author && post.author.did) || did) : null;
+    rec.media = bskyMedia(post, pds);
     if (record.reply) {
       rec.isReply = true;
       // self-reply (thread): parent author DID matches this author

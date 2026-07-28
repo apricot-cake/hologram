@@ -258,6 +258,118 @@ describe('#119 St1: 動画・GIF の直リンク抽出', () => {
   });
 });
 
+// Bluesky の動画は HLS プレイリストで配られるが、投稿者が上げた原本は repo の blob として
+// 残っていて誰でも取れる＝PDS を1回引くだけで St1 と同じ「直URL組」に降りる。
+describe('#119 St2: Bluesky の動画は原本 blob を直接取る', () => {
+  const VIDEO_CID = 'bafkreivideo';
+  const videoView = {
+    $type: 'app.bsky.embed.video#view',
+    cid: VIDEO_CID,
+    playlist: 'https://video.bsky.app/watch/did/cid/playlist.m3u8',
+    thumbnail: 'https://video.bsky.app/watch/did/cid/thumbnail.jpg',
+    alt: 'a clip',
+    aspectRatio: { width: 1280, height: 720 },
+  };
+  const videoPost = (embed: unknown) => ({
+    author: { handle: 'alice.bsky.social', did: DID, displayName: 'Alice' },
+    record: { text: 'hi', createdAt: '2026-01-01T00:00:00Z' },
+    embed,
+  });
+  const DID_DOC = { service: [{ id: '#atproto_pds', type: 'AtprotoPersonalDataServer', serviceEndpoint: 'https://enoki.example.host/' }] };
+
+  test('DID ドキュメントの PDS から getBlob の URL を組み、poster はサムネイル', async () => {
+    mockFetch([
+      ['resolveHandle', { did: DID }],
+      ['getPostThread', { thread: { post: videoPost(videoView) } }],
+      ['plc.directory', DID_DOC],
+    ]);
+
+    const r = await fetchBlueskyPost(BSKY_ID, BSKY_URL);
+    expect(r.mediaType).toBe('video');
+    expect(r.media).toHaveLength(1);
+    expect(r.media[0]).toMatchObject({
+      type: 'video',
+      url: `https://enoki.example.host/xrpc/com.atproto.sync.getBlob?did=${encodeURIComponent(DID)}&cid=${VIDEO_CID}`,
+      poster: videoView.thumbnail,
+      alt: 'a clip',
+      width: 1280,
+      height: 720,
+    });
+  });
+
+  test('recordWithMedia の中の動画も同じ扱い', async () => {
+    mockFetch([
+      ['resolveHandle', { did: DID }],
+      ['getPostThread', { thread: { post: videoPost({ $type: 'app.bsky.embed.recordWithMedia#view', record: {}, media: videoView }) } }],
+      ['plc.directory', DID_DOC],
+    ]);
+
+    expect((await fetchBlueskyPost(BSKY_ID, BSKY_URL)).media[0]).toMatchObject({ type: 'video', url: expect.stringContaining('com.atproto.sync.getBlob') });
+  });
+
+  // PDS が引けない＝原本の在り処が分からない。動画は諦めるが、サムネイルは普通の静止画
+  // として残す（投稿が何だったかの絵は手元に残る／ノート単位のラベルは video のまま）
+  test('PDS が引けなければサムネイルを静止画として残す', async () => {
+    mockFetch([
+      ['resolveHandle', { did: DID }],
+      ['getPostThread', { thread: { post: videoPost(videoView) } }],
+      // plc.directory の経路を用意しない → 404
+    ]);
+
+    const r = await fetchBlueskyPost(BSKY_ID, BSKY_URL);
+    expect(r.mediaType).toBe('video');
+    expect(r.media).toHaveLength(1);
+    expect(r.media[0].url).toBe(videoView.thumbnail);
+    expect(r.media[0].type).toBeUndefined();
+  });
+
+  test('画像だけの投稿は DID ドキュメントを引かない', async () => {
+    const seen: string[] = [];
+    vi.stubGlobal('fetch', async (url: unknown) => {
+      const u = String(url);
+      seen.push(u);
+      if (u.includes('resolveHandle')) return Response.json({ did: DID });
+      if (u.includes('getPostThread')) {
+        return Response.json({ thread: { post: videoPost({ $type: 'app.bsky.embed.images#view', images: [{ fullsize: 'https://cdn.bsky/full.jpg', alt: null }] }) } });
+      }
+      return new Response('{}', { status: 404 });
+    });
+
+    const r = await fetchBlueskyPost(BSKY_ID, BSKY_URL);
+    expect(r.media[0].url).toBe('https://cdn.bsky/full.jpg');
+    expect(seen.some((u) => u.includes('plc.directory'))).toBe(false);
+  });
+
+  test('did:web は .well-known/did.json から引く', async () => {
+    const webDid = 'did:web:pds.example.com';
+    const seen: string[] = [];
+    vi.stubGlobal('fetch', async (url: unknown) => {
+      const u = String(url);
+      seen.push(u);
+      if (u.includes('resolveHandle')) return Response.json({ did: webDid });
+      if (u.includes('getPostThread')) return Response.json({ thread: { post: { ...videoPost(videoView), author: { handle: 'alice.example.com', did: webDid } } } });
+      if (u.includes('did.json')) return Response.json(DID_DOC);
+      return new Response('{}', { status: 404 });
+    });
+
+    const r = await fetchBlueskyPost(BSKY_ID, BSKY_URL);
+    expect(seen).toContain('https://pds.example.com/.well-known/did.json');
+    expect(r.media[0].url).toBe(`https://enoki.example.host/xrpc/com.atproto.sync.getBlob?did=${encodeURIComponent(webDid)}&cid=${VIDEO_CID}`);
+  });
+
+  test('DID ドキュメントも取得原本として積む（#292）', async () => {
+    mockFetch([
+      ['resolveHandle', { did: DID }],
+      ['getPostThread', { thread: { post: videoPost(videoView) } }],
+      ['getProfile', { followersCount: 1 }],
+      ['plc.directory', DID_DOC],
+    ]);
+
+    const r = await fetchBlueskyPost(BSKY_ID, BSKY_URL);
+    expect(r.raw.map((x: any) => x.sourceKind)).toEqual(['api:bluesky/resolveHandle', 'api:bluesky/getPostThread', 'api:bluesky/getProfile', 'api:bluesky/didDocument']);
+  });
+});
+
 // #292 取得の原則: 手元に来た応答は、正規化フィールドへ昇格したかどうかに関係なく
 // そのまま残す（投稿は消えるがライブラリは残る＝取り直しは効かない）。ここで見るのは
 // 「受け取った本文が一字一句そのまま raw に積まれるか」だけで、DB へ入れる圧縮・
