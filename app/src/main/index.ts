@@ -20,6 +20,7 @@ import { snapshotDatabase } from './lib-db-snapshot.ts';
 import { checkOrphans, synthesizeOrphanRecords } from './lib-db-integrity.ts';
 import { inboxNewDir, ensureInboxDirs, INBOX_DIRNAME } from '../../../native-host/inbox.mts';
 import { pruneDecision, nextBaseline } from './backup-guard.ts';
+import { resolveDevServerUrl } from './dev-server-guard.ts';
 import { parseJsonLoose } from './lib-json.ts';
 // Save-folder relocation engine (copy+catch-up → flip → verified cleanup → sweep).
 import { relocateLibrary } from './lib-migrate.ts';
@@ -1199,7 +1200,16 @@ function savedWindowBounds() {
 // under Claude's own build→relaunch verification loop, which never runs
 // `electron-vite dev` — see docs/build.md). null in prod, so loadFile + the
 // file:// navigation guard stand unchanged.
-const DEV_SERVER_URL = process.env.ELECTRON_RENDERER_URL || null;
+//
+// The value is an environment variable and this window's preload hands out
+// destructive IPC, so it goes through dev-server-guard rather than straight into
+// loadURL: a packaged build ignores it outright, and in dev only an http: loopback
+// address survives. Everything the guard rejects loads the bundled renderer (#381).
+const devServer = resolveDevServerUrl(process.env.ELECTRON_RENDERER_URL, app.isPackaged);
+const DEV_SERVER_URL = devServer.url;
+if (process.env.ELECTRON_RENDERER_URL && devServer.rejected) {
+  log.warn('Ignoring ELECTRON_RENDERER_URL, loading the bundled renderer', { reason: devServer.rejected });
+}
 
 // Navigation lockdown for every web-contents the app creates. Without it, a file
 // (e.g. a local .html) dropped onto a window would make the top frame navigate to
@@ -1212,6 +1222,8 @@ const DEV_SERVER_URL = process.env.ELECTRON_RENDERER_URL || null;
 //     through the open-external IPC (shell.openExternal), which this leaves intact.
 function installNavigationGuards() {
   const indexFile = path.resolve(__dirname, '..', 'renderer', 'index.html');
+  // Derived from the guard's output, never from the raw environment variable, so a
+  // rejected value cannot widen what will-navigate accepts (#381).
   const devOrigin = DEV_SERVER_URL ? new URL(DEV_SERVER_URL).origin : null;
   const isAllowedNavigation = (rawUrl) => {
     let u: URL;
@@ -1371,8 +1383,11 @@ function createWindow(show = true) {
   // (content-visibility / lazy images) that leave the hidden capture window blank.
   if (DEV_SERVER_URL) {
     // Dev: load the renderer from electron-vite's Vite dev server (HMR + Fast Refresh).
-    const q = new URLSearchParams({ theme, ...(smoke ? { smoke: '1' } : {}) }).toString();
-    win.loadURL(`${DEV_SERVER_URL}?${q}`);
+    // Built through URL rather than string concatenation so the query lands in the
+    // query slot whatever shape the (already validated) dev URL has.
+    const devUrl = new URL(DEV_SERVER_URL);
+    devUrl.search = new URLSearchParams({ theme, ...(smoke ? { smoke: '1' } : {}) }).toString();
+    win.loadURL(devUrl.href);
   } else {
     win.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'), { query: { theme, ...(smoke ? { smoke: '1' } : {}) } });
   }
@@ -1472,6 +1487,25 @@ if (!gotSingleInstanceLock) {
     // a window instead of using the SMOKE hidden one.
     const startInactive = !SMOKE && !startMin && process.env.HOLOGRAM_START_INACTIVE === '1';
     createWindow(!SMOKE && !startMin && !startInactive); // both → create hidden, then show without activating below
+    // A sandbox seeded from the real library (#286) holds a snapshot of real post
+    // text and, when a capture was pinpointed, real media — so anything captured
+    // from this window is personal data. The notice is drawn INSIDE the page
+    // rather than printed to the console, because a screenshot has to carry it;
+    // re-applied on every load so a renderer reload cannot drop it.
+    if (SANDBOX && process.env.HOLOGRAM_SANDBOX_NOTICE && win) {
+      const notice = process.env.HOLOGRAM_SANDBOX_NOTICE;
+      win.webContents.on('did-finish-load', () => {
+        if (!win || win.isDestroyed()) return;
+        win.webContents
+          .executeJavaScript(
+            `(() => { const id = 'hologram-sandbox-notice'; const old = document.getElementById(id); if (old) old.remove();
+               const el = document.createElement('div'); el.id = id; el.textContent = ${JSON.stringify(notice)};
+               el.style.cssText = 'position:fixed;left:0;right:0;bottom:0;z-index:2147483647;pointer-events:none;background:#b3261e;color:#fff;font:12px/1.7 system-ui,sans-serif;text-align:center';
+               document.body.appendChild(el); })()`,
+          )
+          .catch((err) => log.warn('could not install the sandbox notice', { error: err.message }));
+      });
+    }
     watchInboxFolder();
     if (!SMOKE) {
       armBackupSchedule(); // interval スケジュールを起動

@@ -257,3 +257,64 @@ describe('#119 St1: 動画・GIF の直リンク抽出', () => {
     expect(r.media[0]).toMatchObject({ type: 'gif', url: 'https://m/loop.mp4', poster: 'https://m/loop-preview.jpg' });
   });
 });
+
+// #292 取得の原則: 手元に来た応答は、正規化フィールドへ昇格したかどうかに関係なく
+// そのまま残す（投稿は消えるがライブラリは残る＝取り直しは効かない）。ここで見るのは
+// 「受け取った本文が一字一句そのまま raw に積まれるか」だけで、DB へ入れる圧縮・
+// ハッシュ・上限は native-host 側（raw-payload.test.ts）の担当。
+describe('取得原本（#292）', () => {
+  test('応答本文が一字一句そのまま積まれる（正規化が読まないフィールドごと）', async () => {
+    const body = { text: 'hi', mediaDetails: [], user: { name: 'Alice', screen_name: 'alice', id_str: '1' }, unknown_future_field: { nested: [1, 2] } };
+    mockFetch([['cdn.syndication.twimg.com', body]]);
+
+    const r = await fetchXTweet(X_ID, X_URL);
+
+    expect(r.raw).toHaveLength(1);
+    expect(r.raw[0].sourceKind).toBe('api:x/tweet-result');
+    expect(r.raw[0].contentType).toBe('application/json');
+    expect(JSON.parse(r.raw[0].body).unknown_future_field).toEqual({ nested: [1, 2] });
+  });
+
+  // 1レコードにつき複数の取得がある（投稿本体＋投稿者プロフィール）＝原本も取得ごと
+  test('投稿者プロフィールなど付随の取得も別の原本として積む', async () => {
+    mockFetch([
+      ['resolveHandle', { did: DID }],
+      ['getPostThread', { thread: { post: { record: { text: 'hi' }, author: { did: DID, handle: 'alice.bsky.social' } } } }],
+      ['getProfile', { followersCount: 5, createdAt: '2020-01-01T00:00:00Z' }],
+    ]);
+
+    const r = await fetchBlueskyPost(BSKY_ID, BSKY_URL);
+
+    expect(r.raw.map((x: any) => x.sourceKind)).toEqual(['api:bluesky/resolveHandle', 'api:bluesky/getPostThread', 'api:bluesky/getProfile']);
+  });
+
+  // メタが取れなかった保存こそ原本が要る＝あとから中身を読み直せる唯一の手がかり
+  test('壊れて解釈できない応答でも本文は残る（metaError になっても捨てない）', async () => {
+    vi.stubGlobal('fetch', async () => new Response('<html>rate limited</html>', { status: 200, headers: { 'content-type': 'text/html' } }));
+
+    const r = await fetchXTweet(X_ID, X_URL);
+
+    expect(r.metaError).toBe('fetchFailed');
+    expect(r.raw[0].body).toBe('<html>rate limited</html>');
+    expect(r.raw[0].contentType).toBe('text/html');
+  });
+
+  test('そもそも取得しなかった経路の原本は空（対応外プラットフォーム）', async () => {
+    mockFetch([]);
+    expect((await fetchPostMetadata('https://example.com/whatever')).raw).toEqual([]);
+  });
+
+  // 境界は「そのレコードのために届いたペイロード」＝隣接投稿は原本に含めない。
+  // 応答を削るのではなく、そもそも要求しない側で守る。
+  test('Bluesky は先祖投稿を要求しない（応答に混ざりようがない）', async () => {
+    const calls: string[] = [];
+    vi.stubGlobal('fetch', async (url: unknown) => {
+      calls.push(String(url));
+      return new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } });
+    });
+
+    await fetchBlueskyPost({ platform: 'bluesky', handle: DID, rkey: 'rk' }, BSKY_URL);
+
+    expect(calls.find((u) => u.includes('getPostThread'))).toContain('parentHeight=0');
+  });
+});

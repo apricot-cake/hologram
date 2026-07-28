@@ -6,21 +6,24 @@
 import { afterEach, expect, test, vi } from 'vitest';
 import { fetchPostMetadata } from '../extension/utils/metadata';
 
+// 本物の Response を返す＝metadata.ts は応答を1度だけ本文として読み、原本層（#292）へ
+// 積んでから JSON.parse する。json() だけを持つ手作りのモックではその経路を通らない。
+function jsonRes(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+}
+
 function mockStatus(statusUrl: string) {
   vi.stubGlobal('fetch', async (u: unknown) => {
     if (String(u).includes('/api/v1/statuses/')) {
-      return {
-        ok: true,
-        json: async () => ({
-          url: statusUrl,
-          content: '<p>hi</p>',
-          created_at: '2026-01-01T00:00:00Z',
-          account: { acct: 'a', username: 'a', id: '1' },
-          media_attachments: [],
-        }),
-      };
+      return jsonRes({
+        url: statusUrl,
+        content: '<p>hi</p>',
+        created_at: '2026-01-01T00:00:00Z',
+        account: { acct: 'a', username: 'a', id: '1' },
+        media_attachments: [],
+      });
     }
-    return { ok: false, json: async () => ({}) };
+    return jsonRes({}, 404);
   });
 }
 

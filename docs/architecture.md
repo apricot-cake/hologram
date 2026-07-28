@@ -12,6 +12,7 @@
 - [0005](decisions/0005-no-visual-change-during-migration.md) 移行作業では見た目を意図的に変えない
 - [0006](decisions/0006-plain-shadcn-look.md) 素の shadcn ルックを採る（[0004](decisions/0004-own-styling-headless-behaviour.md)「見た目は自前」を置き換え）
 - [0010](decisions/0010-sqlite-as-the-metadata-truth-source.md) メタデータの正本を SQLite に置き、ファイルは実体だけを持つ
+- [0011](decisions/0011-preserve-acquisition-payloads.md) 取得したペイロードを原本として残し、正規化フィールドへの昇格だけを実需で絞る
 
 ## 全体フロー
 
@@ -29,7 +30,7 @@ WXT（Vite ベース）でビルドする TypeScript ソース。`npm run build:
 - `entrypoints/background.ts` — Service Worker。タブキャプチャ → クロップ → `utils/metadata.ts` でAPI取得 → Native Messaging 送信。動的なクリック保存は固定名の `capture.js` を `scripting.executeScript` で注入し、`activeTab` のモデルを維持する
 - `entrypoints/resident.content.ts` — X/Bluesky/pixiv に常駐する統合コンテンツスクリプト（ドラッグ保存とTLオーバーレイ）
 - `entrypoints/options.html` / `diag.html` — 設定・内部診断ページ。`options.html` はタブで開く
-- `utils/` — 通常の ESM 共有モジュール。`site-detect.ts`（投稿要素・permalink/rect抽出）、`media-identity.ts`（画像→投稿の帰属と取得候補URL）、`drag.ts`、`overlay.ts`、`glass-ui.ts`、`i18n.ts`、`metadata.ts` を置く。`metadata.ts` は失敗時に空レコードを返し、Misskey/Mastodon のAPI取得は sender tab のhostに固定する
+- `utils/` — 通常の ESM 共有モジュール。`site-detect.ts`（投稿要素・permalink/rect抽出）、`media-identity.ts`（画像→投稿の帰属と取得候補URL）、`drag.ts`、`overlay.ts`、`glass-ui.ts`、`i18n.ts`、`metadata.ts` を置く。`metadata.ts` は失敗時に空レコードを返し、Misskey/Mastodon のAPI取得は sender tab のhostに固定する。応答は**本文として1度だけ読んでから解析**し、受け取ったままの本文をレコードに添えてブリッジへ渡す（[ADR 0011](decisions/0011-preserve-acquisition-payloads.md) の原本層。圧縮・ハッシュ・上限はブリッジ側の担当＝ブラウザ側は「何を残す価値があるか」を決めない）
 - `public/` — `_locales/` と `icons/`
 
 ### `native-host/` — Native Messaging ブリッジ
@@ -37,8 +38,9 @@ WXT（Vite ベース）でビルドする TypeScript ソース。`npm run build:
 `post-key.mts` を除き全ファイル `.cts`（CJS維持）。`install.cts` はアプリが生ソースのまま require（Node 型消去）。`bridge.cts` とその依存は **`dist/bridge.js` へバンドル**され（`app/build-native-host-bridge.mjs`・node 組み込みのみ external）、`install.cts` が `~/.hologram` へ配備するのはこのバンドル1ファイル＝配備物に実行時のモジュール解決が残らない（配備漏れが起きえない・host 側で npm 依存を使える）。
 
 - `bridge.cts` — 保存先に jpg と原寸メディアを書き込み専用で生成し、レコードは取込キュー（`.hologram-inbox/new`）へ追記する（#299）。`media[]`（API由来の原寸URL）と著者アバターを**ベストエフォートでDL**し `<id>-media-N.<ext>` / `<id>-avatar.<ext>` に保存。加えて「保存済みか」の照会（`{type:'query'}`）に答える＝アプリが DB から書き出す `~/.hologram/bridge-saved-index.json`（postKey→captureId の表）を常駐させ、**スナップショットが取りこぼす分を2枚で補う**（①自分が保存した分を `~/.hologram/bridge-journal.jsonl` に追記＝アプリ未起動中の保存をカバー ②まだ取り込まれていないキューの分を見る）
+- `raw-payload.mts` — 取得原本の詰め込みと検証（[ADR 0011](decisions/0011-preserve-acquisition-payloads.md)）。拡張が渡した応答本文を gzip・sha256 し、レコード単位の上限を当てて封筒へ載せる。`post-key.mts` と同じくアプリ側も ES import する共有モジュール
 - `post-key.mts` — URL→投稿の同一性キー（`postKeyOf`）の**唯一の実装**。レンダラのグループ化（`app/src/renderer/src/services/records.ts` が再exportして使用）とバッジ判定が同じ規則でなければ、アプリが同一視する投稿をバッジが取りこぼす。拡張側は正規化せず permalink を渡すだけ。ここだけ ESM（`.mts`）＝レンダラが ES import する唯一のファイルで、`.cts` では tsc から export が見えないため（理由は `tsconfig.json` 冒頭）
-- `media-download.cts` — **静止画DLの共有モジュール**（SSRFガード・25MB/12s/12件上限・https限定・手動リダイレクト・失敗時dropで保存を失敗させない）。`fetchStillImage`/`downloadMedia`/`downloadAvatar`/`pixivRefererFor` を export し、bridge・app(`import-posts`)・`backfill-metadata.cts` で同一ロジックを共有（ガードが経路ごとにズレないように一箇所へ集約）
+- `media-download.cts` — **メディアDLの共有モジュール**（SSRFガード・静止画25MB/12s・動画200MB/60s・12件上限・https限定・手動リダイレクト・失敗時dropで保存を失敗させない）。応答本文は**同じフォルダの一時ファイルへストリームしてから rename で確定**＝上限は `Content-Length` の申告でなく**実受信バイト**で強制し、失敗した取得は完成扱いのファイルも一時ファイルも残さない。加えて**1回の保存全体で 512MB の合計バイト予算**を持ち（`createByteBudget` を保存操作ごとに1つ作り、その保存の全DLへ渡す）、**同時取得は2件まで**＝メモリ・ソケット・ディスクのどれも添付点数に比例しない（#389）。`saveStillImage`/`downloadMedia`/`downloadAvatar`/`createByteBudget`/`pixivRefererFor` を export し、bridge・app(`import-posts`)・`backfill-metadata.cts` で同一ロジックを共有（ガードが経路ごとにズレないように一箇所へ集約）
 - `install.cts` — ホスト登録
 - `paths.cts` — 共有configパス
 - `config-recovery.cts` — 保存先復旧・破壊操作ゲート判定（純関数）
@@ -49,7 +51,7 @@ electron-vite で main・preload・renderer の3面をバンドルする標準�
 
 - `src/main/index.ts` — メインプロセス（ウィンドウ生成・取込キューの `fs.watch`・IPC登録）
 - `src/main/lib-archive.ts` — ZIP入出力
-- `src/main/lib-db*.ts` — SQLite 層（エンジン/スキーマ/クエリ/書き込み/取込キュー/整合チェック）。いずれも Electron 非依存＝node でテスト可。`listPosts` は DB への1クエリで、更新は差分IPC（list-posts-delta）＝`lib-post-delta.ts` が「前回配った分」と突き合わせて追加/削除だけ返す（#302 でファイル走査は消え、ヒントの受け渡しも不要になった）
+- `src/main/lib-db*.ts` — SQLite 層（エンジン/スキーマ/クエリ/書き込み/取込キュー/整合チェック）。取得原本（`raw_payloads`・[ADR 0011](decisions/0011-preserve-acquisition-payloads.md)）は共有 writer が投稿と同じトランザクションで書き、追記のみで消さない。いずれも Electron 非依存＝node でテスト可。`listPosts` は DB への1クエリで、更新は差分IPC（list-posts-delta）＝`lib-post-delta.ts` が「前回配った分」と突き合わせて追加/削除だけ返す（#302 でファイル走査は消え、ヒントの受け渡しも不要になった）
 - `src/main/lib-card-dims.ts` — カード画像の実寸（`shotW`/`shotH`）をヘッダだけ読んで測る。masonry のカード高さを画像ロード前に確保するため、**レコードを書く時に**測って DB に入れる
 - `src/main/lib-legacy-import.ts` — **リリース前に撤去する仮設コード**（#441）＝#5 以前のライブラリに残る投稿ごと JSON と整理層 JSON を1回だけ DB へ移す
 - `src/preload/index.ts` — contextBridge の実装。公開APIの型は実装から`HologramPreload`としてexportし、rendererはそれを型エイリアスで参照（手書き型ミラーなし・Issue #17）

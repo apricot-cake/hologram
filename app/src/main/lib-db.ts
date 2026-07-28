@@ -118,6 +118,41 @@ const MIGRATIONS: Migration[] = [
   // #302: the sidecar scan is gone, so nothing derives a post from a file whose
   // mtime could be compared — see the add-source-mtime note above.
   { name: 'drop-source-mtime', up: (db) => db.exec('ALTER TABLE posts DROP COLUMN sourceMtimeMs') },
+  // #292: the acquisition-original layer. One row per payload that arrived FOR
+  // a post — several per post is normal (a platform's post endpoint plus its
+  // author-profile endpoint), which is why sourceKind is a column and not a
+  // single blob on `posts`. payload is gzip of the received bytes; sha256 is
+  // over the UNCOMPRESSED bytes so it identifies the payload rather than one
+  // compression of it, and byteLength records the uncompressed size even when
+  // the per-record cap left the bytes out (encoding = 'omitted:oversize',
+  // payload NULL). See native-host/raw-payload.mts for the shape and the cap,
+  // docs/decisions/0011 for why the layer exists.
+  //
+  // UNIQUE(postId, sourceKind, sha256) makes re-applying the same write
+  // idempotent (a replayed inbox segment, a re-imported ZIP) without ever
+  // deleting an earlier acquisition — this table is append-only, unlike the
+  // media/post_tags/FTS rows writePost rewrites wholesale. Identical bytes from
+  // the same route ARE the same original, so collapsing them is not the
+  // cross-record dedup #292 defers out of v1.
+  {
+    name: 'add-raw-payloads',
+    up: (db) =>
+      db.exec(`
+        CREATE TABLE raw_payloads (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          postId TEXT NOT NULL REFERENCES posts(captureId) ON DELETE CASCADE,
+          sourceKind TEXT NOT NULL,
+          acquiredAt TEXT NOT NULL,
+          contentType TEXT,
+          encoding TEXT NOT NULL,
+          sha256 TEXT NOT NULL,
+          byteLength INTEGER NOT NULL,
+          payload BLOB
+        );
+        CREATE INDEX idx_raw_payloads_postId ON raw_payloads(postId);
+        CREATE UNIQUE INDEX idx_raw_payloads_identity ON raw_payloads(postId, sourceKind, sha256);
+      `),
+  },
 ];
 
 interface Migration {
@@ -347,6 +382,20 @@ interface InboxSegmentsTable {
   payloadSha256: string;
   importedAt: string;
 }
+// add-raw-payloads migration (#292) — see the MIGRATIONS entry. payload is a
+// BLOB: better-sqlite3 binds a Buffer and reads one back, so the type is the
+// node buffer type rather than a string.
+interface RawPayloadsTable {
+  id: Generated<number>;
+  postId: string;
+  sourceKind: string;
+  acquiredAt: string;
+  contentType: string | null;
+  encoding: string;
+  sha256: string;
+  byteLength: number;
+  payload: Buffer | null;
+}
 // postsFts is FTS5 (posts_fts): a virtual table, not a normal one, so Kysely's
 // typed insert/select work but its DDL helpers do not apply — it is created as
 // raw SQL in lib-db-schema.ts. postId is UNINDEXED (match results carry it
@@ -386,6 +435,7 @@ interface Schema {
   posts_fts: PostsFtsTable;
   inbox_events: InboxEventsTable;
   inbox_segments: InboxSegmentsTable;
+  raw_payloads: RawPayloadsTable;
 }
 
 export { openDatabase, runMigrations, DatabaseCorruptError, MIGRATIONS };

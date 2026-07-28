@@ -28,6 +28,8 @@ Except for the pixiv requests described above, no authentication tokens, cookies
 
 Captured posts are **not** stored in the browser. A local companion app on your device writes the image (`<id>.jpg`) to your chosen folder and records its metadata in a local database on the same device. The browser's extension storage holds only the diagnostics and session counters described under Permissions. Nothing is stored in sync storage or sent to any external server.
 
+The platform responses listed under **External API Requests** are also kept, compressed and unaltered, in that same local database, so that details a future version of Hologram learns to read are not lost when a post is deleted. Only the response bodies for the post you are saving are kept — never your cookies, credentials, request headers, or the page itself. Because a response is stored as the platform sent it, it can include third-party fragments Hologram does not display (a quoted post's author, a reply's parent, profile details). This matters when you **export** your library: a complete-library ZIP includes these stored responses, and its manifest says so. An images-only export does not include them.
+
 ## Contact
 
 For questions or concerns, please open an issue at https://github.com/apricot-cake/hologram/issues.

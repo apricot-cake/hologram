@@ -31,7 +31,7 @@ const { configDir, defaultLibraryDir } = require('./paths.cts');
 // Best-effort remote-image download (original media + avatars) lives in a shared
 // module so the SSRF guard / size caps are identical across capture, import and
 // backfill. See media-download.cts.
-const { downloadMedia, downloadAvatar, fetchStillImage } = require('./media-download.cts');
+const { downloadMedia, downloadAvatar, saveStillImage, createByteBudget } = require('./media-download.cts');
 // Same pure resolver the desktop app uses, so the bridge and app pick the SAME
 // save folder — including recovering from the redundant pointer. See readSaveFolder.
 const { resolveSaveFolder } = require('./config-recovery.cts');
@@ -43,6 +43,11 @@ const { postKeyOf } = require('./post-key.mts');
 const { normalizePostRecord } = require('./post-record.mts');
 // The durable intake queue's envelope format + atomic writer (#5 St6 / #299).
 const { buildEnvelope, writeInboxEvent, inboxNewDir, parseInboxEnvelope } = require('./inbox.mts');
+// The acquisition originals (#292): the extension hands over response bodies as
+// received; compressing, hashing and capping them happens HERE, on the trusted
+// side of the native-messaging boundary, so the browser never decides how much
+// of an original is worth keeping.
+const { packRawPayloads } = require('./raw-payload.mts');
 
 // --- Diagnostic log -----------------------------------------------------------
 // Chrome spawns this process once per native-messaging connection, so a line
@@ -402,12 +407,15 @@ async function handleSave(msg: any) {
   fs.writeFileSync(jpgPath, img);
 
   const meta = msg.metadata || {};
+  // ONE byte budget for this save, shared by the attachments and the avatar
+  // below, so a hostile post cannot spend it twice (#389).
+  const budget = createByteBudget();
   // Best-effort original-media download. A failure here must NEVER fail the save:
   // the screenshot + inbox envelope are the primary artifacts. The envelope is
   // written LAST so media[].file reflects exactly what landed on disk.
   let savedMedia = [];
   try {
-    savedMedia = await downloadMedia(meta.media, saveFolder, base);
+    savedMedia = await downloadMedia(meta.media, saveFolder, base, budget);
   } catch {
     savedMedia = [];
   }
@@ -418,7 +426,7 @@ async function handleSave(msg: any) {
   // existing file instead of writing another copy.
   let avatarFile = null;
   try {
-    avatarFile = await downloadAvatar(meta.avatar, meta.avatarReferer, saveFolder);
+    avatarFile = await downloadAvatar(meta.avatar, meta.avatarReferer, saveFolder, budget);
   } catch {
     avatarFile = null;
   }
@@ -429,6 +437,7 @@ async function handleSave(msg: any) {
       image: `${base}.jpg`,
       media: savedMedia,
       avatarFile,
+      raw: packRawPayloads(meta.rawPayloads),
     }),
   );
   // Commit point: the rename into new/ inside writeInboxEvent is what makes
@@ -479,8 +488,9 @@ async function handleSavePost(msg: any) {
   // the post stays unsaved and the next run retries it.
   let savedMedia: any[] = [];
   const announced = Array.isArray(meta.media) ? meta.media.length : 0;
+  const budget = createByteBudget(); // see handleSave: one per save operation
   try {
-    savedMedia = await downloadMedia(meta.media, saveFolder, base);
+    savedMedia = await downloadMedia(meta.media, saveFolder, base, budget);
   } catch (error: any) {
     throw new Error(`Media download failed: ${error?.message || error}`);
   }
@@ -488,7 +498,7 @@ async function handleSavePost(msg: any) {
 
   let avatarFile = null;
   try {
-    avatarFile = await downloadAvatar(meta.avatar, meta.avatarReferer, saveFolder);
+    avatarFile = await downloadAvatar(meta.avatar, meta.avatarReferer, saveFolder, budget);
   } catch {
     avatarFile = null;
   }
@@ -499,6 +509,7 @@ async function handleSavePost(msg: any) {
       image: null,
       media: savedMedia,
       avatarFile,
+      raw: packRawPayloads(meta.rawPayloads),
     }),
   );
   await writeInboxEvent(saveFolder, buildEnvelope(record));
@@ -523,21 +534,21 @@ async function handleSaveDragged(msg: any) {
   fs.mkdirSync(saveFolder, { recursive: true });
   const base = uniqueBase(saveFolder, captureId);
 
-  const got = await fetchStillImage(msg.imageUrl, msg.imageReferer);
+  const budget = createByteBudget(); // see handleSave: one per save operation
+  const got = await saveStillImage(msg.imageUrl, msg.imageReferer, saveFolder, base, budget);
   if (!got) throw new Error('Image download failed (unsupported type, too large, or network error)');
-  const imageFile = `${base}.${got.ext}`;
-  fs.writeFileSync(path.join(saveFolder, imageFile), got.buf);
+  const imageFile = got.file;
 
   const meta = msg.metadata || {};
   let avatarFile = null;
   try {
-    avatarFile = await downloadAvatar(meta.avatar, meta.avatarReferer, saveFolder);
+    avatarFile = await downloadAvatar(meta.avatar, meta.avatarReferer, saveFolder, budget);
   } catch {
     avatarFile = null;
   }
   // source:'drag' marks the image as the artwork itself (not a post screenshot),
   // so the image-view shows it. Mirrors the migrated records' source marker.
-  const record = normalizePostRecord(Object.assign({}, meta, { captureId: base, image: imageFile, media: [], source: 'drag', avatarFile }));
+  const record = normalizePostRecord(Object.assign({}, meta, { captureId: base, image: imageFile, media: [], source: 'drag', avatarFile, raw: packRawPayloads(meta.rawPayloads) }));
   await writeInboxEvent(saveFolder, buildEnvelope(record));
   noteSaved(record.url, base); // see handleSave
 
@@ -641,4 +652,4 @@ if (require.main === module) {
 // _resetSavedIndex is a test seam: the index caches for the life of the process,
 // which is right for a real host (one process per port) and wrong for a test file
 // that walks several save folders in a row.
-module.exports = { handleSave, handleSavePost, handleSaveDragged, downloadMedia, downloadAvatar, fetchStillImage, appendLog, handleQuery, noteSaved, _resetSavedIndex: () => (savedIndexCache = null) };
+module.exports = { handleSave, handleSavePost, handleSaveDragged, downloadMedia, downloadAvatar, saveStillImage, createByteBudget, appendLog, handleQuery, noteSaved, _resetSavedIndex: () => (savedIndexCache = null) };

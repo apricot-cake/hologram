@@ -19,16 +19,19 @@
 // is a database-write-time concern for whoever wires this into the DB in
 // St5/St6, not a capture-time normalization concern).
 //
-// Kept Electron-free (no imports beyond this file) so it unit-tests in plain
-// node under both the native-host CJS runtime (via require, like bridge.cts
-// requires media-download.cts) and the app's ESM runtime — the same
-// cross-boundary role native-host/post-key.mts already plays, and the same
+// Kept Electron-free (node builtins and its .mts siblings only) so it
+// unit-tests in plain node under both the native-host CJS runtime (via require,
+// like bridge.cts requires media-download.cts) and the app's ESM runtime — the
+// same cross-boundary role native-host/post-key.mts already plays, and the same
 // reason this is .mts while its native-host siblings are .cts (see that
 // file's comment for the mechanics).
 //
 // St2 creates the type + builder only. Rewiring bridge.cts and app/src/main/ipc-transfer.ts
 // to build records THROUGH this (instead of their own ad hoc field lists) is
 // St5/St6's job (#295) — this file is inert until then.
+
+import { normalizeRawPayloads } from './raw-payload.mts';
+import type { RawPayloadShape } from './raw-payload.mts';
 
 export interface MediaItemShape {
   url: string;
@@ -89,6 +92,12 @@ export interface PostRecordShape {
   hashtags: string[];
   tags: string[];
   media: MediaItemShape[];
+  // The acquisition originals (#292): the payloads that arrived FOR this record,
+  // kept unmodified and compressed. Not a post column — like media[] and tags[]
+  // it fans out into its own table (raw_payloads) on write. Empty for every
+  // producer that has no acquisition of its own to preserve (ZIP import,
+  // app-internal image import, the one-time legacy migration).
+  raw: RawPayloadShape[];
   eagleName: string | null;
   description: string | null;
   source: string | null;
@@ -171,6 +180,7 @@ export function normalizePostRecord(input: PostRecordInput, now: () => string = 
     hashtags: normStrArray(input.hashtags),
     tags: normStrArray(input.tags),
     media: normMedia(input.media),
+    raw: normalizeRawPayloads(input.raw),
     eagleName: normStr(input.eagleName),
     description: normStr(input.description),
     source: normStr(input.source),

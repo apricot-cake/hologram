@@ -13,6 +13,7 @@ UI に出さない開発用語は日本語の欄を `—` にする。
 | UI の日本語 | コード・文書の英語 | 意味 | 決定記録 |
 | --- | --- | --- | --- |
 | ライブラリ | library | 保存先フォルダ1つ分の保存物の全体（既定 `~/Hologram/library`）。固有語（Obsidian の vault のようなメタファー）は立てず、一般語のまま用語として使う | [#176](https://github.com/apricot-cake/hologram/issues/176#issuecomment-5020571660) |
+| — | 原本 / raw payload | 取得の過程で手元に来た応答を、加工せずそのまま保存したもの（DB の `raw_payloads`）。「元データ」「生 JSON」等では呼ばず、UI に出す面はまだ持たない | [ADR 0011](decisions/0011-preserve-acquisition-payloads.md) |
 | — | extractor | サイト別のメタデータ抽出モジュールの総称。和訳語（「抽出器」等）は立てず英語のまま書き、和文では初出でだけ「サイト別のメタデータ抽出モジュール」と補う。ユーザーが読む面には出さず「対応サイト」で表す | [#212](https://github.com/apricot-cake/hologram/issues/212#issuecomment-5020507758) |
 
 ## 固有名を付けない領域

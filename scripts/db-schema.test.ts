@@ -29,7 +29,28 @@ afterAll(() => {
   }
 });
 
-const EXPECTED_TABLES = ['posts', 'media', 'tags', 'tag_parents', 'tag_aliases', 'post_tags', 'folders', 'folder_items', 'poster_folders', 'poster_folder_items', 'poster_tags', 'manual_groups', 'manual_group_items', 'ungrouped_keys', 'tabs', 'tab_windows', 'store_state', 'inbox_events', 'inbox_segments'];
+const EXPECTED_TABLES = [
+  'posts',
+  'media',
+  'tags',
+  'tag_parents',
+  'tag_aliases',
+  'post_tags',
+  'folders',
+  'folder_items',
+  'poster_folders',
+  'poster_folder_items',
+  'poster_tags',
+  'manual_groups',
+  'manual_group_items',
+  'ungrouped_keys',
+  'tabs',
+  'tab_windows',
+  'store_state',
+  'inbox_events',
+  'inbox_segments',
+  'raw_payloads',
+];
 
 describe('マイグレーションが通り、テーブルが揃う', () => {
   const { sqlite } = openDatabase(mkdb());
@@ -41,9 +62,9 @@ describe('マイグレーションが通り、テーブルが揃う', () => {
   );
   sqlite.close();
 
-  test('user_version は 11（v1 DDL ＋ #302 drop-source-mtime までの追加10本）', () => {
+  test('user_version は 12（v1 DDL ＋ #292 add-raw-payloads までの追加11本）', () => {
     const { sqlite } = openDatabase(mkdb());
-    expect(sqlite.pragma('user_version', { simple: true })).toBe(11);
+    expect(sqlite.pragma('user_version', { simple: true })).toBe(12);
     sqlite.close();
   });
 
@@ -122,7 +143,7 @@ describe('tags: id が実体・名前は一意でない・多親＋表示用の�
   });
 });
 
-describe('FK カスケード: 投稿を消すと media/post_tags/folder_items も消える', () => {
+describe('FK カスケード: 投稿を消すと media/post_tags/folder_items/raw_payloads も消える', () => {
   const { sqlite } = openDatabase(mkdb());
   sqlite.prepare("INSERT INTO posts (captureId, capturedAt, updatedAt) VALUES ('cap-1', '2026-01-01', '2026-01-01')").run();
   sqlite.prepare("INSERT INTO media (postId, seq, file) VALUES ('cap-1', 0, 'cap-1-media-0.jpg')").run();
@@ -130,11 +151,12 @@ describe('FK カスケード: 投稿を消すと media/post_tags/folder_items �
   sqlite.prepare('INSERT INTO post_tags (postId, tagId) VALUES (?,?)').run('cap-1', tagId);
   sqlite.prepare("INSERT INTO folders (id, name) VALUES ('f1', 'フォルダ')").run();
   sqlite.prepare("INSERT INTO folder_items (folderId, postId) VALUES ('f1', 'cap-1')").run();
+  sqlite.prepare("INSERT INTO raw_payloads (postId, sourceKind, acquiredAt, encoding, sha256, byteLength) VALUES ('cap-1', 'api:x/tweet-result', '2026-01-01', 'gzip', 'abc', 3)").run();
   sqlite.prepare("DELETE FROM posts WHERE captureId = 'cap-1'").run();
 
   const count = (table: string) => sqlite.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get().n;
 
-  test.each(['media', 'post_tags', 'folder_items'])('%s がカスケードで消える', (table) => {
+  test.each(['media', 'post_tags', 'folder_items', 'raw_payloads'])('%s がカスケードで消える', (table) => {
     expect(count(table)).toBe(0);
   });
 
@@ -161,6 +183,44 @@ describe('folders: kind は閉じた2値・入れ子は parentId（#41）', () =
   });
 });
 
+// #292: 原本は1取得1行＝1投稿に複数行が普通（投稿の endpoint ＋ 投稿者プロフィールの
+// endpoint）。同じ取得を二度書いても増えない（＝再適用が冪等）ことだけを一意制約が保証し、
+// 別の取得は消さずに積む。
+describe('raw_payloads: 1取得1行・同一取得は積み直しても増えない', () => {
+  const { sqlite } = openDatabase(mkdb());
+  sqlite.prepare("INSERT INTO posts (captureId, capturedAt, updatedAt) VALUES ('cap-1', '2026-01-01', '2026-01-01')").run();
+  const ins = sqlite.prepare('INSERT OR IGNORE INTO raw_payloads (postId, sourceKind, acquiredAt, contentType, encoding, sha256, byteLength, payload) VALUES (?,?,?,?,?,?,?,?)');
+  ins.run('cap-1', 'api:bluesky/getPostThread', '2026-01-01', 'application/json', 'gzip', 'hash-a', 100, Buffer.from([1, 2, 3]));
+  ins.run('cap-1', 'api:bluesky/getProfile', '2026-01-01', 'application/json', 'gzip', 'hash-b', 50, Buffer.from([4, 5]));
+
+  const count = () => sqlite.prepare("SELECT COUNT(*) AS n FROM raw_payloads WHERE postId = 'cap-1'").get().n;
+
+  test('同じ投稿に取得ごとの行が並ぶ', () => {
+    expect(count()).toBe(2);
+  });
+
+  test('同じ (postId, sourceKind, sha256) の再挿入は増えない', () => {
+    ins.run('cap-1', 'api:bluesky/getPostThread', '2026-02-02', 'application/json', 'gzip', 'hash-a', 100, Buffer.from([1, 2, 3]));
+    expect(count()).toBe(2);
+  });
+
+  test('同じ endpoint でも中身が違えば別の取得として積まれる', () => {
+    ins.run('cap-1', 'api:bluesky/getPostThread', '2026-02-02', 'application/json', 'gzip', 'hash-c', 120, Buffer.from([9]));
+    expect(count()).toBe(3);
+  });
+
+  test('payload は BLOB として往復する', () => {
+    const row = sqlite.prepare("SELECT payload FROM raw_payloads WHERE sha256 = 'hash-b'").get();
+    expect([...row.payload]).toEqual([4, 5]);
+  });
+
+  // 上限超過は保存失敗にせず、取得があった事実と同一性だけを残す（#292）
+  test('本文を持たない行（omitted:oversize）も書ける', () => {
+    ins.run('cap-1', 'api:x/tweet-result', '2026-01-01', 'application/json', 'omitted:oversize', 'hash-big', 9_000_000, null);
+    expect(sqlite.prepare("SELECT payload, byteLength FROM raw_payloads WHERE sha256 = 'hash-big'").get()).toEqual({ payload: null, byteLength: 9_000_000 });
+  });
+});
+
 // #5 2026-07-19: 拡張性のため意図的に制約を置いていない
 describe('posts.assetClass は意図的に無制約', () => {
   const { sqlite } = openDatabase(mkdb());
@@ -184,7 +244,7 @@ describe('既存 v1 データベースの開き直しは no-op', () => {
   const second = openDatabase(file);
 
   test('マイグレーションを再実行しない', () => {
-    expect(second.sqlite.pragma('user_version', { simple: true })).toBe(11);
+    expect(second.sqlite.pragma('user_version', { simple: true })).toBe(12);
   });
 
   test('前回のデータが残る', () => {
