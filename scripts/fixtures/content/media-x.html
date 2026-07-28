@@ -28,5 +28,28 @@
        identity comes from the URL bar instead (only valid on a /status/ page) -->
   <img id="imgViewer" src="https://pbs.twimg.com/media/CCC.jpg">
 
+  <!-- video / GIF posts: the poster frame is served from a *_video_thumb path
+       rather than media/, which is what used to hide the save button (#372).
+       Paths counted on live X, 2026-07-28. -->
+  <article data-testid="tweet" id="post2">
+    <a href="/bob/status/222"><time datetime="2026-01-01T00:00:00Z">2h</time></a>
+    <div data-testid="videoPlayer"><img id="imgAmplify" src="https://pbs.twimg.com/amplify_video_thumb/222/img/DDD.jpg"></div>
+  </article>
+  <article data-testid="tweet" id="post3">
+    <a href="/carol/status/333"><time datetime="2026-01-01T00:00:00Z">3h</time></a>
+    <div data-testid="videoPlayer"><img id="imgExtTw" src="https://pbs.twimg.com/ext_tw_video_thumb/333/pu/img/EEE.jpg"></div>
+  </article>
+  <article data-testid="tweet" id="post4">
+    <a href="/dave/status/444"><time datetime="2026-01-01T00:00:00Z">4h</time></a>
+    <div data-testid="videoPlayer"><img id="imgGif" src="https://pbs.twimg.com/tweet_video_thumb/FFF.jpg"></div>
+  </article>
+
+  <!-- link-card preview: shares the host with post media and resolves to its
+       post perfectly well, so only the path keeps it out of the save button -->
+  <article data-testid="tweet" id="post5">
+    <a href="/erin/status/555"><time datetime="2026-01-01T00:00:00Z">5h</time></a>
+    <div data-testid="card.wrapper"><img id="imgCard" src="https://pbs.twimg.com/card_img/999/GGG.jpg"></div>
+  </article>
+
 </body>
 </html>

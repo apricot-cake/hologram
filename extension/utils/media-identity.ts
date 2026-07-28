@@ -60,6 +60,12 @@ function collectImageUrls(img: HTMLImageElement, platform: string): string[] {
 
 function getHighResImageUrl(img: HTMLImageElement, platform: string): string | null {
   const src = img.src || '';
+  // Only media/ is rewritten: X serves those with a ?name=<size> variant, so
+  // name=orig is what upgrades a thumbnail to the full picture. The video/GIF
+  // poster paths (see X_POST_MEDIA_PREFIXES) carry no name= parameter and are
+  // already the original — name=orig on them answers 200 with byte-identical
+  // content (measured on live X, 2026-07-28), so rewriting would only add a
+  // duplicate candidate URL.
   if (platform === 'x' && src.includes('pbs.twimg.com/media/')) {
     try {
       const u = new URL(src);
@@ -78,6 +84,16 @@ function anySrc(img: HTMLImageElement, test: (src: string) => boolean): boolean 
 }
 
 function xMediaConfig(): MediaIdentitySite {
+  // An allowlist of post-media paths, never the host alone: pbs.twimg.com also
+  // serves avatars (profile_images/) and link-card previews (card_img/), and a
+  // save button on an avatar is exactly what #94 must not do. Video and GIF
+  // posts put their poster frame on a *_video_thumb/ path instead of media/,
+  // which is why the button was missing from most video posts (#372). Every
+  // entry below was counted on live X before being listed (2026-07-28):
+  // amplify_video_thumb/ and ext_tw_video_thumb/ on `filter:videos`,
+  // tweet_video_thumb/ on GIF posts — all three inside the post's own
+  // videoPlayer box, never on an avatar or a card.
+  const X_POST_MEDIA_PREFIXES = ['media', 'amplify_video_thumb', 'ext_tw_video_thumb', 'tweet_video_thumb'].map((p) => `pbs.twimg.com/${p}/`);
   return {
     platform: 'x',
     extractIdentity(img: HTMLImageElement): MediaIdentity | null {
@@ -101,8 +117,7 @@ function xMediaConfig(): MediaIdentitySite {
       const pid = decodeURIComponent(postId);
       return { postId: pid, link: `https://x.com/${sn}/status/${pid}` };
     },
-    // profile_images/ (avatars) and card_img/ (link previews) share the host.
-    isPostMedia: (img) => anySrc(img, (src) => src.includes('pbs.twimg.com/media/')),
+    isPostMedia: (img) => anySrc(img, (src) => X_POST_MEDIA_PREFIXES.some((prefix) => src.includes(prefix))),
   };
 }
 
