@@ -68,6 +68,25 @@ describe('X (Twitter)', () => {
     expect(config.isPostMedia(ctx.document.getElementById('imgAvatar'))).toBe(false);
   });
 
+  // #372: 動画・GIF 投稿のサムネは media/ ではなく *_video_thumb/ で配られる。
+  // 3本とも実測で確認済みのパス（推測で許可集合へ足さない＝#372 の受け入れ条件）。
+  test.each([
+    ['動画（amplify_video_thumb/）', 'imgAmplify'],
+    ['動画（ext_tw_video_thumb/）', 'imgExtTw'],
+    ['GIF（tweet_video_thumb/）', 'imgGif'],
+  ])('%s も投稿メディアとして isPostMedia が真', (_label, id) => {
+    expect(config.isPostMedia(ctx.document.getElementById(id))).toBe(true);
+  });
+
+  // 許可集合をホスト一致へ緩めると真になってしまうもの＝緩めていないことの証拠。
+  test('リンクカードの絵は card_img/ パスで isPostMedia が偽', () => {
+    expect(config.isPostMedia(ctx.document.getElementById('imgCard'))).toBe(false);
+  });
+
+  test('リンクカードの絵も投稿へは同定される（identity と isPostMedia は別のゲート）', () => {
+    expect(config.extractIdentity(ctx.document.getElementById('imgCard'))).toEqual({ postId: '555', link: 'https://x.com/erin/status/555' });
+  });
+
   test('写真ビューアの絵（アンカー無し・article の外）は URL バーへ落ちる', () => {
     setLocation(ctx.dom, 'https://x.com/frank/status/555/photo/1');
     const img = ctx.document.getElementById('imgViewer');

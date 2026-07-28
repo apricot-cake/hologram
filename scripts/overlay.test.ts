@@ -572,12 +572,15 @@ describe('メディアタブのグリッドタイル（#349）', () => {
     hoverAway();
   });
 
-  test('動画タイル（別の CDN パス）にはコントロールを出さない', async () => {
+  // #372 まで、動画・GIF タイルのサムネは投稿メディア判定を通らず、格子の中でここだけが
+  // 無反応だった。判定が *_video_thumb を含むようになった今は、写真タイルと同じに答える。
+  test('動画タイルも保存を申し出る', async () => {
     hover('p8');
     await settle();
 
     const p8Controls = controls().filter((el) => el.parentElement === boxOf('p8') || el.parentElement === boxOf('p8').parentElement);
-    expect(p8Controls).toHaveLength(0);
+    expect(p8Controls).toHaveLength(1);
+    expect(p8Controls[0].title).toBe('Save image');
     hoverAway();
   });
 
@@ -605,13 +608,26 @@ describe('メディアタブのグリッドタイル（#349）', () => {
       hoverAway();
     });
 
-    // p8 は同じ投稿(777)の動画タイル。写真タイル経由で投稿が保存済みになった今も、
-    // 印を受け継がず黙ったままでなければならない。
-    test('保存済みの兄弟画像があっても、動画タイルに印を描かない', () => {
+    // p8 は同じ投稿(777)の動画タイル。押下でその場に印が点くのは押した枠だけ（他の枠は
+    // background からの savedUpdate で追随する）＝押した直後はまだ申し出たままで正しい。
+    const p8Controls = () => controls().filter((el) => el.parentElement === boxOf('p8') || el.parentElement === boxOf('p8').parentElement);
+
+    test('別の枠の押下だけでは、動画タイルの申し出は変わらない', () => {
       hover('p8');
 
-      const p8Controls = controls().filter((el) => el.parentElement === boxOf('p8') || el.parentElement === boxOf('p8').parentElement);
-      expect(p8Controls).toHaveLength(0);
+      expect(p8Controls()).toHaveLength(1);
+      expect(p8Controls()[0].title).toBe('Save image');
+      hoverAway();
+    });
+
+    // 印が答えるのは投稿単位の「持っているか」なので、保存が通知された時点で
+    // 同じ投稿の動画タイルも同じ答えを返す。
+    test('保存が通知されたら、同じ投稿の動画タイルも保存済みとして読める', () => {
+      for (const fn of runtimeListeners) fn({ type: 'savedUpdate', url: 'https://x.com/gina/status/777' });
+      hover('p8');
+
+      expect(p8Controls()).toHaveLength(1);
+      expect(p8Controls()[0].title).toBe('Saved in Hologram');
       hoverAway();
     });
   });
