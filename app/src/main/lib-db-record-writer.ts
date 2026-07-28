@@ -127,6 +127,7 @@ interface PostStmts {
   deleteFts: Database.Statement;
   insertFts: Database.Statement;
   deletePost: Database.Statement;
+  insertRawPayload: Database.Statement;
 }
 
 function preparePostStmts(sqlite: Database.Database): PostStmts {
@@ -139,6 +140,11 @@ function preparePostStmts(sqlite: Database.Database): PostStmts {
     deleteFts: sqlite.prepare('DELETE FROM posts_fts WHERE postId = ?'),
     insertFts: sqlite.prepare('INSERT INTO posts_fts (postId, text, title, displayName, screenName, eagleName, description, hashtags, tagsText, reading) VALUES (?,?,?,?,?,?,?,?,?,?)'),
     deletePost: sqlite.prepare('DELETE FROM posts WHERE captureId = ?'),
+    // OR IGNORE, and no matching DELETE: raw_payloads is append-only (#292 —
+    // an original that was preserved once is never dropped by a later write of
+    // the same post), and idx_raw_payloads_identity turns a replayed write of
+    // the same acquisition into a no-op instead of a duplicate row.
+    insertRawPayload: sqlite.prepare('INSERT OR IGNORE INTO raw_payloads (postId, sourceKind, acquiredAt, contentType, encoding, sha256, byteLength, payload) VALUES (?,?,?,?,?,?,?,?)'),
   };
 }
 
@@ -155,6 +161,16 @@ function writePost(stmts: PostStmts, resolveTagId: (name: string) => number, rec
   for (const tagId of tagIds) stmts.insertPostTag.run(n.captureId, tagId);
   stmts.deleteFts.run(n.captureId);
   stmts.insertFts.run(n.captureId, n.text, n.title, n.displayName, n.screenName, n.eagleName, n.description, n.hashtags.join(' '), n.tags.join(' '), null);
+  // Acquisition originals (#292), in the SAME transaction the caller opened for
+  // the post — the design's "投稿保存と同じ transaction で参照を確定する". A
+  // post committed without its originals would be a post whose unrecoverable
+  // half was silently discarded.
+  for (const r of n.raw) {
+    // base64 on the wire (envelopes and export sidecars are JSON), BLOB in the
+    // database — this is the one place the two representations meet.
+    const payload = r.payloadBase64 ? Buffer.from(r.payloadBase64, 'base64') : null;
+    stmts.insertRawPayload.run(n.captureId, r.sourceKind, r.acquiredAt, r.contentType, r.encoding, r.sha256, r.byteLength, payload);
+  }
   return n;
 }
 

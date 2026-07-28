@@ -10,6 +10,7 @@
 //   - captureId は既にあり URL/media が一致すれば receipt だけ足す（上書きしない）
 //   - 必須メディアが無ければ receipt を付けず次回に持ち越す。他 event は塞がない
 //   - 上記いずれの skip でも DB に行が増えない（トランザクション境界の間接的な証拠）
+//   - 封筒に載った取得原本（#292）が posts と同じトランザクションで raw_payloads へ着く
 
 import fs from 'node:fs';
 import os from 'node:os';
@@ -17,6 +18,7 @@ import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { buildEnvelope, inboxNewDir, writeInboxEvent } from '../native-host/inbox.mts';
 import { normalizePostRecord } from '../native-host/post-record.mts';
+import { packRawPayloads, unpackRawPayload } from '../native-host/raw-payload.mts';
 import { openDatabase } from '../app/src/main/lib-db';
 import { drainInbox } from '../app/src/main/lib-db-inbox';
 
@@ -168,6 +170,38 @@ describe('drainInbox', () => {
 
       expect(report.skipped.find((s: any) => s.file === `${captureId}.json`)).toMatchObject({ reason: 'post-conflict' });
       expect(one('SELECT url FROM posts WHERE captureId = ?', captureId).url).toBe('https://x.com/u/status/OLD');
+    });
+  });
+
+  // #292: 取得原本は投稿と同じトランザクションで確定する＝封筒に載って来た原本が
+  // posts 行と一緒に着く（片方だけ着く状態を作らない）。
+  describe('取得原本（raw_payloads）', () => {
+    const captureId = '1700000000500-ff01';
+    const body = '{"text":"hello","unknown_future_field":42}';
+
+    test('封筒の原本が posts と同時に raw_payloads へ着く', async () => {
+      const envelope = await seedEnvelope({ captureId, url: 'https://x.com/u/status/11', image: `${captureId}.jpg`, raw: packRawPayloads([{ sourceKind: 'api:x/tweet-result', contentType: 'application/json', body }]) }, [`${captureId}.jpg`]);
+
+      const report = drainInbox(saveFolder, handle.sqlite);
+
+      expect(report.applied).toContain(envelope.eventId);
+      const row = one('SELECT sourceKind, encoding, sha256, byteLength, payload FROM raw_payloads WHERE postId = ?', captureId);
+      expect({ sourceKind: row.sourceKind, encoding: row.encoding, byteLength: row.byteLength }).toEqual({ sourceKind: 'api:x/tweet-result', encoding: 'gzip', byteLength: Buffer.byteLength(body, 'utf8') });
+    });
+
+    test('保存された原本は受け取った本文へそのまま戻る', () => {
+      const row = one('SELECT encoding, sha256, payload FROM raw_payloads WHERE postId = ?', captureId);
+      expect(unpackRawPayload(row)).toBe(body);
+    });
+
+    // 原本を持たない生成側（ZIP 取込・アプリ内取込・旧レコード）は行を作らないだけ
+    test('原本の無いレコードは行を作らない', async () => {
+      const other = '1700000000600-ff02';
+      await seedEnvelope({ captureId: other, url: 'https://x.com/u/status/12', image: `${other}.jpg` }, [`${other}.jpg`]);
+
+      drainInbox(saveFolder, handle.sqlite);
+
+      expect(one('SELECT COUNT(*) AS n FROM raw_payloads WHERE postId = ?', other).n).toBe(0);
     });
   });
 });

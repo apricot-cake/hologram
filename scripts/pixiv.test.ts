@@ -6,6 +6,12 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { fetchPixivIllust, parsePostUrl, pixivMedia } from '../extension/utils/metadata';
 
+// 本物の Response を返す＝metadata.ts は応答を1度だけ本文として読み、原本層（#292）へ
+// 積んでから JSON.parse する。json() だけを持つ手作りのモックではその経路を通らない。
+function jsonRes(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+}
+
 afterEach(() => {
   vi.unstubAllGlobals();
 });
@@ -69,7 +75,7 @@ describe('fetchPixivIllust', () => {
   };
 
   test('成功応答のフィールド対応', async () => {
-    vi.stubGlobal('fetch', async () => ({ ok: true, json: async () => ({ error: false, body }) }));
+    vi.stubGlobal('fetch', async () => jsonRes({ error: false, body }));
     const rec = await fetchPixivIllust({ id: '555' }, 'https://www.pixiv.net/artworks/555');
 
     expect(rec.platform).toBe('pixiv');
@@ -85,7 +91,7 @@ describe('fetchPixivIllust', () => {
 
   // 削除済み・非公開・R-18 のログアウト時は 200 + {error:true} で返る
   test('エラー body は空レコード（throw しない）', async () => {
-    vi.stubGlobal('fetch', async () => ({ ok: true, json: async () => ({ error: true, message: 'not found' }) }));
+    vi.stubGlobal('fetch', async () => jsonRes({ error: true, message: 'not found' }));
     const rec = await fetchPixivIllust({ id: '1' }, 'https://www.pixiv.net/artworks/1');
 
     expect(rec.platform).toBe('pixiv');
@@ -94,7 +100,7 @@ describe('fetchPixivIllust', () => {
   });
 
   test('HTTP エラーは空レコード', async () => {
-    vi.stubGlobal('fetch', async () => ({ ok: false, status: 404, json: async () => ({}) }));
+    vi.stubGlobal('fetch', async () => jsonRes({}, 404));
     const rec = await fetchPixivIllust({ id: '2' }, 'u');
 
     expect(rec.media).toHaveLength(0);

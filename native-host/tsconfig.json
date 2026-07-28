@@ -42,6 +42,12 @@
     // Enforce the runtime constraint: Node's type stripping only ERASES types,
     // it cannot transform enums/namespaces/parameter-properties.
     "erasableSyntaxOnly": true,
+    // post-record.mts VALUE-imports raw-payload.mts by explicit .mts specifier
+    // (#292). The ESM files here name real TS extensions, which both consumers
+    // resolve as written — the bridge bundler and Node's type stripping — so tsc
+    // has to accept the same specifier. Matches app/tsconfig.node.json, whose
+    // main-process files import these very modules the same way.
+    "allowImportingTsExtensions": true,
     "isolatedModules": true,
     "strict": true,
     "noImplicitAny": false,
@@ -62,5 +68,5 @@
     "typeRoots": ["../node_modules/@types", "../app/node_modules/@types"],
     "types": ["node"]
   },
-  "files": ["bridge.cts", "install.cts", "paths.cts", "media-download.cts", "config-recovery.cts", "post-key.mts", "post-record.mts", "inbox.mts"]
+  "files": ["bridge.cts", "install.cts", "paths.cts", "media-download.cts", "config-recovery.cts", "post-key.mts", "post-record.mts", "inbox.mts", "raw-payload.mts"]
 }

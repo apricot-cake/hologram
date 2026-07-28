@@ -43,6 +43,11 @@ const { postKeyOf } = require('./post-key.mts');
 const { normalizePostRecord } = require('./post-record.mts');
 // The durable intake queue's envelope format + atomic writer (#5 St6 / #299).
 const { buildEnvelope, writeInboxEvent, inboxNewDir, parseInboxEnvelope } = require('./inbox.mts');
+// The acquisition originals (#292): the extension hands over response bodies as
+// received; compressing, hashing and capping them happens HERE, on the trusted
+// side of the native-messaging boundary, so the browser never decides how much
+// of an original is worth keeping.
+const { packRawPayloads } = require('./raw-payload.mts');
 
 // --- Diagnostic log -----------------------------------------------------------
 // Chrome spawns this process once per native-messaging connection, so a line
@@ -429,6 +434,7 @@ async function handleSave(msg: any) {
       image: `${base}.jpg`,
       media: savedMedia,
       avatarFile,
+      raw: packRawPayloads(meta.rawPayloads),
     }),
   );
   // Commit point: the rename into new/ inside writeInboxEvent is what makes
@@ -499,6 +505,7 @@ async function handleSavePost(msg: any) {
       image: null,
       media: savedMedia,
       avatarFile,
+      raw: packRawPayloads(meta.rawPayloads),
     }),
   );
   await writeInboxEvent(saveFolder, buildEnvelope(record));
@@ -537,7 +544,7 @@ async function handleSaveDragged(msg: any) {
   }
   // source:'drag' marks the image as the artwork itself (not a post screenshot),
   // so the image-view shows it. Mirrors the migrated records' source marker.
-  const record = normalizePostRecord(Object.assign({}, meta, { captureId: base, image: imageFile, media: [], source: 'drag', avatarFile }));
+  const record = normalizePostRecord(Object.assign({}, meta, { captureId: base, image: imageFile, media: [], source: 'drag', avatarFile, raw: packRawPayloads(meta.rawPayloads) }));
   await writeInboxEvent(saveFolder, buildEnvelope(record));
   noteSaved(record.url, base); // see handleSave
 

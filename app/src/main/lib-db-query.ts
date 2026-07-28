@@ -21,6 +21,7 @@
 // second query style for the other reads would just be inconsistency.
 
 import type Database from 'better-sqlite3';
+import type { RawPayloadShape } from '../../../native-host/raw-payload.mts';
 
 const POST_COLUMNS = [
   'captureId',
@@ -251,4 +252,44 @@ function postCapturedVia(sqlite: Database.Database, captureIds: string[]): Map<s
   return out;
 }
 
-export { tagsFromDb, tagParentsFromDb, postCapturedVia };
+// The acquisition originals for a set of posts (#292), keyed by postId and back
+// in their wire shape (base64 rather than BLOB) — the export sidecar and the
+// inbox envelope are both JSON, so base64 is what crosses any boundary out of
+// this database. Ordered by id so an export lists a post's acquisitions in the
+// order they were preserved.
+//
+// Separate from postsFromDb's column list for the same reason postCapturedVia
+// is: this is a per-post COLLECTION, not a post column, and the read path that
+// feeds the viewer has no use for it (nothing displays originals — #292 leaves
+// a disclosure surface out of scope).
+function postRawPayloads(sqlite: Database.Database, captureIds: string[]): Map<string, RawPayloadShape[]> {
+  const out = new Map<string, RawPayloadShape[]>();
+  if (!captureIds.length) return out;
+  const placeholders = captureIds.map(() => '?').join(',');
+  const rows = sqlite.prepare(`SELECT postId, sourceKind, acquiredAt, contentType, encoding, sha256, byteLength, payload FROM raw_payloads WHERE postId IN (${placeholders}) ORDER BY id`).all(...captureIds) as Array<{
+    postId: string;
+    sourceKind: string;
+    acquiredAt: string;
+    contentType: string | null;
+    encoding: string;
+    sha256: string;
+    byteLength: number;
+    payload: Buffer | null;
+  }>;
+  for (const row of rows) {
+    const list = out.get(row.postId) || [];
+    list.push({
+      sourceKind: row.sourceKind,
+      acquiredAt: row.acquiredAt,
+      contentType: row.contentType,
+      encoding: row.encoding,
+      sha256: row.sha256,
+      byteLength: row.byteLength,
+      payloadBase64: row.payload ? Buffer.from(row.payload).toString('base64') : null,
+    });
+    out.set(row.postId, list);
+  }
+  return out;
+}
+
+export { tagsFromDb, tagParentsFromDb, postCapturedVia, postRawPayloads };

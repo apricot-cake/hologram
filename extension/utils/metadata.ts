@@ -48,6 +48,24 @@ function parsePostUrl(url) {
   return null;
 }
 
+// One acquisition original (#292): a response body exactly as it arrived, with
+// enough context to say what produced it. The extension only ever produces this
+// plain-text form — compression, hashing and the per-record size cap belong to
+// the native host (native-host/raw-payload.mts's packRawPayloads), because the
+// browser side has no business deciding what is worth keeping.
+//
+// Only RESPONSE BODIES for the post being saved get here. Request headers,
+// cookies and credentials are never copied in — the boundary #292 draws is "the
+// payload that arrived for this record", and that is all this shape can hold.
+interface RawAcquisition {
+  // 'api:<platform>/<endpoint>' — the endpoint segment is the API's own name for
+  // it, so a future reader can tell which schema the body follows.
+  sourceKind: string;
+  acquiredAt: string;
+  contentType: string | null;
+  body: string;
+}
+
 interface MediaItem {
   url: string;
   alt: string | null;
@@ -96,6 +114,10 @@ interface PostRecord {
   replyToId: string | null;
   hashtags: string[];
   tags: string[];
+  // Every response body this record's acquisition received, in the order it
+  // arrived. Grows as the fetch chain runs; buildRecord() forwards it to the
+  // native host, which packs it into the record's raw_payloads rows (#292).
+  raw: RawAcquisition[];
   // WHY the platform API returned no post info ('protected' | 'ageRestricted'
   // | 'unavailable' | 'fetchFailed'), or null when the fetch succeeded.
   // Transient: read by background.js to pick the partial-save banner wording
@@ -141,8 +163,20 @@ function emptyRecord(url: string | null | undefined, platform: string | null | u
     replyToId: null,
     hashtags: [],
     tags: [],
+    raw: [],
     metaError: null,
   };
+}
+
+// Reads a response body ONCE and keeps the received text verbatim before
+// parsing it. The push happens BEFORE JSON.parse on purpose: a body that no
+// longer parses is exactly the one worth preserving — it is the evidence a
+// platform changed its schema (#191's canary reads the same signal), and every
+// caller here already runs inside a try/catch that degrades to a partial record.
+async function readJsonKeepingRaw(rec: PostRecord, sourceKind: string, res: Response) {
+  const body = await res.text();
+  rec.raw.push({ sourceKind, acquiredAt: new Date().toISOString(), contentType: res.headers.get('content-type'), body });
+  return JSON.parse(body);
 }
 
 function toIso(s) {
@@ -241,7 +275,7 @@ async function fetchXTweet(parsed, url) {
       rec.date = xSnowflakeDate(parsed.id);
       return rec;
     }
-    const j = await res.json();
+    const j = await readJsonKeepingRaw(rec, 'api:x/tweet-result', res);
     // A tombstone means the post exists but the public API won't serve it
     // (protected account / age-restricted). Classify from the tombstone text so
     // the partial-save banner can say WHY the post info is missing.
@@ -298,12 +332,12 @@ async function fetchXTweet(parsed, url) {
 }
 
 // --- Bluesky (public API) ---
-async function resolveBlueskyDid(handle) {
+async function resolveBlueskyDid(rec: PostRecord, handle) {
   if (!handle || handle.startsWith('did:')) return handle || null;
   try {
     const res = await fetch(`https://public.api.bsky.app/xrpc/com.atproto.identity.resolveHandle?handle=${encodeURIComponent(handle)}`);
     if (!res.ok) return null;
-    const data = await res.json();
+    const data = await readJsonKeepingRaw(rec, 'api:bluesky/resolveHandle', res);
     return data.did && /^did:[a-z]+:.+/.test(data.did) ? data.did : null;
   } catch {
     return null;
@@ -345,14 +379,14 @@ function bskyMedia(post) {
 async function fetchBlueskyPost(parsed, url) {
   const rec = emptyRecord(url, 'bluesky');
   rec.screenName = parsed.handle;
-  const did = await resolveBlueskyDid(parsed.handle);
+  const did = await resolveBlueskyDid(rec, parsed.handle);
   if (did) rec.userId = did;
   if (!did) return rec;
   try {
     const uri = `at://${did}/app.bsky.feed.post/${parsed.rkey}`;
     const res = await fetch(`https://public.api.bsky.app/xrpc/app.bsky.feed.getPostThread?uri=${encodeURIComponent(uri)}&depth=0&parentHeight=1`);
     if (!res.ok) return rec;
-    const data = await res.json();
+    const data = await readJsonKeepingRaw(rec, 'api:bluesky/getPostThread', res);
     const thread = data && data.thread;
     const post = thread && thread.post;
     if (!post) return rec;
@@ -376,7 +410,7 @@ async function fetchBlueskyPost(parsed, url) {
       try {
         const pres = await fetch(`https://public.api.bsky.app/xrpc/app.bsky.actor.getProfile?actor=${encodeURIComponent(actor)}`);
         if (pres.ok) {
-          const prof = await pres.json();
+          const prof = await readJsonKeepingRaw(rec, 'api:bluesky/getProfile', pres);
           rec.avatar = prof.avatar || rec.avatar;
           rec.followers = prof.followersCount ?? null;
           rec.authorCreatedAt = toIso(prof.createdAt);
@@ -478,7 +512,7 @@ async function fetchMisskeyNote(parsed, url) {
       body: JSON.stringify({ noteId: parsed.noteId }),
     });
     if (!res.ok) return rec;
-    const note = await res.json();
+    const note = await readJsonKeepingRaw(rec, 'api:misskey/notes-show', res);
     rec.text = note.text || null;
     rec.date = toIso(note.createdAt);
     if (note.user) {
@@ -502,7 +536,7 @@ async function fetchMisskeyNote(parsed, url) {
           body: JSON.stringify({ userId: note.user.id }),
         });
         if (ures.ok) {
-          const u = await ures.json();
+          const u = await readJsonKeepingRaw(rec, 'api:misskey/users-show', ures);
           rec.avatar = u.avatarUrl || rec.avatar;
           rec.followers = u.followersCount ?? null;
           rec.authorCreatedAt = toIso(u.createdAt);
@@ -613,7 +647,7 @@ async function fetchMastodonStatus(parsed, url) {
   try {
     const res = await fetch(`https://${parsed.host}/api/v1/statuses/${parsed.id}`, { headers: { Accept: 'application/json' } });
     if (!res.ok) return rec;
-    const s = await res.json();
+    const s = await readJsonKeepingRaw(rec, 'api:mastodon/status', res);
     // Keep the canonical permalink only when it's a real Mastodon status URL;
     // otherwise fall back to the instance URL we captured (always opens in the
     // Mastodon UI), so federated Lemmy/PieFed posts don't become dead links.
@@ -687,7 +721,7 @@ async function fetchPixivIllust(parsed, url) {
     // credentials:include so logged-in users can read R-18 / follower-only works.
     const res = await fetch(`https://www.pixiv.net/ajax/illust/${encodeURIComponent(parsed.id)}`, { credentials: 'include' });
     if (!res.ok) return rec;
-    const data = await res.json();
+    const data = await readJsonKeepingRaw(rec, 'api:pixiv/illust', res);
     // pixiv returns 200 + { error:true } for deleted / private / R-18-logged-out.
     if (data.error) return rec;
     const il = data.body || {};
@@ -712,7 +746,7 @@ async function fetchPixivIllust(parsed, url) {
       try {
         const pres = await fetch(`https://www.pixiv.net/ajax/illust/${encodeURIComponent(parsed.id)}/pages`, { credentials: 'include' });
         if (pres.ok) {
-          const pdata = await pres.json();
+          const pdata = await readJsonKeepingRaw(rec, 'api:pixiv/illust-pages', pres);
           if (!pdata.error && Array.isArray(pdata.body) && pdata.body.length) {
             rec.media = pdata.body
               .map((p) => ({
@@ -736,7 +770,7 @@ async function fetchPixivIllust(parsed, url) {
       try {
         const ures = await fetch(`https://www.pixiv.net/ajax/user/${encodeURIComponent(il.userId)}?full=1`, { credentials: 'include' });
         if (ures.ok) {
-          const udata = await ures.json();
+          const udata = await readJsonKeepingRaw(rec, 'api:pixiv/user', ures);
           if (!udata.error && udata.body) {
             rec.avatar = udata.body.imageBig || udata.body.image || null;
             // i.pximg.net 403s without a pixiv Referer — tell the bridge to send one.
