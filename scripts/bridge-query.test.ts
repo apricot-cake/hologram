@@ -21,12 +21,16 @@ let noteSaved: any;
 let _resetSavedIndex: any;
 
 const ask = (...urls: unknown[]) => handleQuery({ type: 'query', urls }).results;
+// 応答は投稿ごとに {id, media}（#334）。captureId だけを見たい節はこちらで読む。
+const askId = (url: string) => ask(url)[url]?.id ?? null;
+// その投稿の保存済みの絵＝ライブラリが記録した URL の並び（位置が media 行の seq）。
+const askMedia = (url: string) => ask(url)[url]?.media ?? null;
 
 // ブリッジが書くのと同じ形の inbox エンベロープ（native-host/inbox.mts の
 // writeInboxEvent 相当）。eventId（先頭の epoch）が scanRecentInbox の読む
 // 保存時刻になる。
-function writeInboxEnvelope(id: string, url: string) {
-  const record = normalizePostRecord({ captureId: id, url, image: `${id}.jpg` });
+function writeInboxEnvelope(id: string, url: string, media: Array<{ url: string; file: string }> = []) {
+  const record = normalizePostRecord({ captureId: id, url, image: `${id}.jpg`, media });
   const envelope = buildEnvelope(record);
   const dir = path.join(saveFolder, '.hologram-inbox', 'new');
   fs.mkdirSync(dir, { recursive: true });
@@ -37,15 +41,15 @@ function writeInboxEnvelope(id: string, url: string) {
 // が DB から再構築するのと同じ postKey -> captureId 形）。mtime は明示的に置く＝
 // インデックスの陳腐化判定は全てこの時刻との比較なので、ファイルシステムの時計と
 // 競争させずテスト側が持つ。
-function writeSavedIndex(records: Array<{ captureId: string; url: string }>, mtimeMs: number) {
-  const entries: Record<string, string> = {};
+function writeSavedIndex(records: Array<{ captureId: string; url: string; media?: Array<string | null> }>, mtimeMs: number) {
+  const entries: Record<string, { id: string; media: Array<string | null> }> = {};
   for (const rec of records) {
     const key = postKeyOf(rec.url);
-    if (key) entries[key] = rec.captureId;
+    if (key) entries[key] = { id: rec.captureId, media: rec.media || [] };
   }
   fs.mkdirSync(configDir, { recursive: true });
   const p = path.join(configDir, 'bridge-saved-index.json');
-  fs.writeFileSync(p, JSON.stringify({ format: 'hologram-bridge-saved-index', version: 1, generatedAt: new Date(mtimeMs).toISOString(), entries }), 'utf8');
+  fs.writeFileSync(p, JSON.stringify({ format: 'hologram-bridge-saved-index', version: 2, generatedAt: new Date(mtimeMs).toISOString(), entries }), 'utf8');
   fs.utimesSync(p, new Date(mtimeMs), new Date(mtimeMs));
 }
 
@@ -66,11 +70,11 @@ beforeAll(async () => {
 
 describe('1. スナップショットが答える（持っている投稿だけ）', () => {
   test('ヒットしたら captureId を返す', () => {
-    expect(ask('https://x.com/someone/status/111')['https://x.com/someone/status/111']).toBe('1700000000000-aa');
+    expect(askId('https://x.com/someone/status/111')).toBe('1700000000000-aa');
   });
 
   test('未保存の投稿は null', () => {
-    expect(ask('https://x.com/someone/status/999')['https://x.com/someone/status/999']).toBeNull();
+    expect(askId('https://x.com/someone/status/999')).toBeNull();
   });
 });
 
@@ -78,20 +82,20 @@ describe('1. スナップショットが答える（持っている投稿だけ�
 describe('2. URL の表記ゆれを正規化する', () => {
   test('twitter.com＋クエリ文字列でも同じ投稿', () => {
     const u = 'https://twitter.com/other_handle/status/111?s=20';
-    expect(ask(u)[u]).toBe('1700000000000-aa');
+    expect(askId(u)).toBe('1700000000000-aa');
   });
 
   test('/photo/N のパーマリンクも同じ投稿', () => {
     const u = 'https://x.com/someone/status/111/photo/1';
-    expect(ask(u)[u]).toBe('1700000000000-aa');
+    expect(askId(u)).toBe('1700000000000-aa');
   });
 
   test('プロフィール URL は投稿ではない', () => {
-    expect(ask('https://x.com/someone')['https://x.com/someone']).toBeNull();
+    expect(askId('https://x.com/someone')).toBeNull();
   });
 
   test('解釈できない URL は投稿ではない', () => {
-    expect(ask('not a url')['not a url']).toBeNull();
+    expect(askId('not a url')).toBeNull();
   });
 });
 
@@ -102,7 +106,7 @@ describe('3. スナップショットより新しい loose inbox エンベロー
     writeInboxEnvelope(`${SNAP_MS + 5000}-bb`, 'https://www.pixiv.net/artworks/4242');
     _resetSavedIndex();
 
-    expect(ask('https://www.pixiv.net/en/artworks/4242')['https://www.pixiv.net/en/artworks/4242']).toBe(`${SNAP_MS + 5000}-bb`);
+    expect(askId('https://www.pixiv.net/en/artworks/4242')).toBe(`${SNAP_MS + 5000}-bb`);
   });
 });
 
@@ -113,13 +117,13 @@ describe('4. ジャーナル＝このプロセスが保存した直後', () => {
   test('保存直後から即答できる（メモリ上の対応表）', () => {
     noteSaved(url, '1700000009999-cc');
 
-    expect(ask(url)[url]).toBe('1700000009999-cc');
+    expect(askId(url)).toBe('1700000009999-cc');
   });
 
   test('再起動後も bridge-journal.jsonl 経由で同じ答えに届く', () => {
     _resetSavedIndex(); // 新しいプロセス（新しいポート）に相当
 
-    expect(ask(url)[url]).toBe('1700000009999-cc');
+    expect(askId(url)).toBe('1700000009999-cc');
   });
 
   test('ジャーナルは configDir に書かれる', () => {
@@ -141,7 +145,7 @@ describe('5. スナップショットが追いついたジャーナル行は捨�
     );
     _resetSavedIndex();
 
-    expect(ask(url)[url]).toBe('1700000009999-cc');
+    expect(askId(url)).toBe('1700000009999-cc');
   });
 });
 
@@ -151,7 +155,7 @@ describe('6. キャッシュはスナップショットの mtime に追従する
   const url = 'https://misskey.io/notes/9newnote';
 
   test('アプリが書く前は未知', () => {
-    expect(ask(url)[url]).toBeNull();
+    expect(askId(url)).toBeNull();
   });
 
   test('スナップショットを書き直すとキャッシュが無効になる', () => {
@@ -163,7 +167,7 @@ describe('6. キャッシュはスナップショットの mtime に追従する
       Date.now() + 120_000,
     );
 
-    expect(ask(url)[url]).toBe('1700000011111-dd');
+    expect(askId(url)).toBe('1700000011111-dd');
   });
 });
 
@@ -191,7 +195,7 @@ describe('8. 保存フォルダ・スナップショットが無い', () => {
     fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolder: path.join(configDir, 'gone') }));
     _resetSavedIndex();
 
-    expect(ask('https://x.com/someone/status/111')['https://x.com/someone/status/111']).toBe('1700000000000-aa');
+    expect(askId('https://x.com/someone/status/111')).toBe('1700000000000-aa');
   });
 
   test('スナップショット自体が無ければ throw せず「保存されていない」と答える', () => {
@@ -199,6 +203,83 @@ describe('8. 保存フォルダ・スナップショットが無い', () => {
     fs.rmSync(path.join(configDir, 'bridge-journal.jsonl'), { force: true });
     _resetSavedIndex();
 
-    expect(ask('https://x.com/someone/status/111')['https://x.com/someone/status/111']).toBeNull();
+    expect(askId('https://x.com/someone/status/111')).toBeNull();
+  });
+});
+
+// #334: バッジの問いは投稿単位ではなく画像単位＝「この絵はもうライブラリに在るか」。
+// 複数枚投稿の1枚だけを保存した状態が普通に起こるので、応答はその投稿のレコードが
+// 持っている絵まで答えられなければならない。
+describe('9. 保存済みの絵を投稿ごとに答える', () => {
+  const url = 'https://x.com/multi/status/1234';
+  const A = 'https://pbs.twimg.com/media/AAA?format=jpg&name=orig';
+  const B = 'https://pbs.twimg.com/media/BBB?format=jpg&name=orig';
+
+  beforeAll(() => {
+    // 8 で saveFolder を消した状態のままなので戻す（inbox の読み出しが要る）
+    fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolder }));
+  });
+
+  test('スナップショットが持つ絵をそのまま返す', () => {
+    // スナップショットは「今より前」に置く＝この後の noteSaved のジャーナル行が
+    // 「スナップショットに畳み込み済み」として捨てられないようにする（節5の規則）。
+    writeSavedIndex([{ captureId: '1700000020000-e1', url, media: [A] }], Date.now() - 60_000);
+    _resetSavedIndex();
+
+    expect(askId(url)).toBe('1700000020000-e1');
+    expect(askMedia(url)).toEqual([A]);
+  });
+
+  // 2枚目の保存は別レコードになる（1件目を書き足すのではない）ので、投稿の絵は
+  // レコードをまたいで散らばる。片方だけ読むと、保存済みの絵に保存ボタンが出る。
+  test('同じ投稿の2つ目のレコードの絵が合流する', () => {
+    noteSaved(url, '1700000021000-e2', [{ url: B, file: 'x.jpg' }]);
+
+    expect(askMedia(url)).toEqual([A, B]);
+  });
+
+  test('同じ絵を2度保存しても並びは増えない', () => {
+    noteSaved(url, '1700000022000-e3', [{ url: A, file: 'y.jpg' }]);
+
+    expect(askMedia(url)).toEqual([A, B]);
+  });
+
+  test('再構築後も（ジャーナル経由で）同じ答えに届く', () => {
+    _resetSavedIndex();
+
+    expect(askMedia(url)).toEqual([A, B]);
+  });
+
+  test('アプリを閉じている間に保存した投稿は inbox エンベロープが絵を運ぶ', () => {
+    const other = 'https://x.com/multi/status/5678';
+    writeInboxEnvelope(`${Date.now() + 240_000}-e4`, other, [{ url: B, file: 'z.jpg' }]);
+    _resetSavedIndex();
+
+    expect(askMedia(other)).toEqual([B]);
+  });
+
+  // 絵が分からないこと（テキストのみの投稿・ダウンロードが全て失敗した取り込み・
+  // #334 より前に書かれたスナップショット）は「絵が保存されていない」ではない。
+  // 空の一覧＝「保存済み・粒度は不明」で、問う側は投稿まるごととして扱う。
+  test('絵を持たないレコードは空の一覧（未保存ではない）', () => {
+    const textOnly = 'https://x.com/plain/status/77';
+    writeSavedIndex([{ captureId: '1700000023000-e5', url: textOnly }], Date.now() + 300_000);
+    _resetSavedIndex();
+
+    expect(askId(textOnly)).toBe('1700000023000-e5');
+    expect(askMedia(textOnly)).toEqual([]);
+  });
+
+  test('v1 のスナップショット（captureId だけの文字列）も読める', () => {
+    const legacy = 'https://x.com/legacy/status/88';
+    const key = postKeyOf(legacy) as string;
+    const p = path.join(configDir, 'bridge-saved-index.json');
+    const mtime = new Date(Date.now() + 360_000);
+    fs.writeFileSync(p, JSON.stringify({ format: 'hologram-bridge-saved-index', version: 1, generatedAt: mtime.toISOString(), entries: { [key]: '1700000024000-e6' } }), 'utf8');
+    fs.utimesSync(p, mtime, mtime);
+    _resetSavedIndex();
+
+    expect(askId(legacy)).toBe('1700000024000-e6');
+    expect(askMedia(legacy)).toEqual([]);
   });
 });

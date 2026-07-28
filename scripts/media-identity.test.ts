@@ -13,7 +13,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { JSDOM } from 'jsdom';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
-import { getMediaIdentitySite } from '../extension/utils/media-identity';
+import { getMediaIdentitySite, mediaKeyOf } from '../extension/utils/media-identity';
 
 const FIXTURES_DIR = path.join(import.meta.dirname, 'fixtures', 'content');
 
@@ -176,5 +176,66 @@ describe('pixiv', () => {
     setLocation(ctx.dom, 'https://www.pixiv.net/artworks/2001');
     const img = ctx.document.getElementById('imgLocationFallback');
     expect(config.extractIdentity(img)).toEqual({ postId: '2001', link: 'https://www.pixiv.net/artworks/2001' });
+  });
+});
+
+// mediaKeyOf＝「この2つの URL は同じ絵か」の、プラットフォームごとにただ1つの規則。
+// ページが見せるサムネイル・API が announce する原寸・保存が実際に落とした URL は
+// どれも同じ絵の別表記なので、文字列比較では毎回「別物」と答えてしまう。
+//
+// 読み手は2箇所あり、両方が同じ関数でなければならない（#334）＝ドラッグ／ホバー保存が
+// 「指された絵は announce された何枚目か」を決める経路（background.ts の
+// pickPrimaryImage）と、タイムラインが「この投稿のどの絵がもうライブラリに在るか」を
+// 決める経路（overlay.ts）。規則がずれると、保存済みの絵に保存ボタンを出す。
+describe('mediaKeyOf — 表記ゆれを越えた画像の同一性', () => {
+  test('x: name= のサイズ指定が違っても同じ絵', () => {
+    const key = mediaKeyOf('x', 'https://pbs.twimg.com/media/ABC123?format=jpg&name=orig');
+    expect(key).toBe('media/ABC123');
+    expect(mediaKeyOf('x', 'https://pbs.twimg.com/media/ABC123?format=jpg&name=small')).toBe(key);
+    expect(mediaKeyOf('x', 'https://pbs.twimg.com/media/ABC123.jpg')).toBe(key);
+  });
+
+  test('x: 同じ投稿の写真と動画サムネは別の絵', () => {
+    expect(mediaKeyOf('x', 'https://pbs.twimg.com/amplify_video_thumb/999/img/JJJ.jpg')).toBe('amplify_video_thumb/999');
+    expect(mediaKeyOf('x', 'https://pbs.twimg.com/media/999?name=orig')).toBe('media/999');
+  });
+
+  test('x: アバター・カード画像は同定しない（保存の対象ではない）', () => {
+    expect(mediaKeyOf('x', 'https://pbs.twimg.com/profile_images/FFF.jpg')).toBeNull();
+    expect(mediaKeyOf('x', 'https://pbs.twimg.com/card_img/1/CCC?format=jpg')).toBeNull();
+  });
+
+  test('bluesky: @jpeg の有無・サムネと原寸で同じ blob CID', () => {
+    const cid = `bafkrei${'a'.repeat(52)}`;
+    const key = mediaKeyOf('bluesky', `https://cdn.bsky.app/img/feed_thumbnail/plain/did:plc:xyz/${cid}@jpeg`);
+    expect(key).toBe(cid);
+    expect(mediaKeyOf('bluesky', `https://cdn.bsky.app/img/feed_fullsize/plain/did:plc:xyz/${cid}@jpeg`)).toBe(key);
+    expect(mediaKeyOf('bluesky', `https://cdn.bsky.app/img/feed_fullsize/plain/did:plc:xyz/${cid}`)).toBe(key);
+  });
+
+  test('pixiv: サムネイル表記と原寸で同じ <id>_p<N>', () => {
+    const key = mediaKeyOf('pixiv', 'https://i.pximg.net/img-original/img/2026/01/01/00/00/00/1001_p1.png');
+    expect(key).toBe('1001_p1');
+    expect(mediaKeyOf('pixiv', 'https://i.pximg.net/c/250x250_80_a2/img-master/img/2026/01/01/00/00/00/1001_p1_square1200.jpg')).toBe(key);
+    expect(mediaKeyOf('pixiv', 'https://i.pximg.net/c/600x1200_90/img-master/img/2026/01/01/00/00/00/1001_p1_master1200.jpg')).toBe(key);
+  });
+
+  test('pixiv: 同じ作品でもページが違えば別の絵', () => {
+    expect(mediaKeyOf('pixiv', 'https://i.pximg.net/img-original/img/x/1001_p0.png')).toBe('1001_p0');
+    expect(mediaKeyOf('pixiv', 'https://i.pximg.net/img-original/img/x/1001_p2.png')).toBe('1001_p2');
+  });
+
+  test('misskey/mastodon: 拡張子とクエリを落としたファイル名', () => {
+    expect(mediaKeyOf('misskey', 'https://misskey.io/files/abcDEF123.webp?thumbnail')).toBe('abcDEF123');
+    expect(mediaKeyOf('mastodon', 'https://mastodon.social/media/xyz.png')).toBe('xyz');
+  });
+
+  // null は「一致しない」ではなく「比べられない」＝呼び手はそこで断定してはいけない。
+  // 動画本体（X は .mp4 を保存し、ページ側にはポスターしか無い）がこれに当たる。
+  test('比べられない URL は null', () => {
+    expect(mediaKeyOf('x', 'https://video.twimg.com/ext_tw_video/999/pu/vid/720x1280/abc.mp4')).toBeNull();
+    expect(mediaKeyOf('unknown-platform', 'https://example.com/a.jpg')).toBeNull();
+    expect(mediaKeyOf('x', '')).toBeNull();
+    expect(mediaKeyOf('x', null)).toBeNull();
   });
 });

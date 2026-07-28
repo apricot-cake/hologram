@@ -4,7 +4,7 @@
 // startBackground() の外へ出してここから検証する。
 
 import { describe, expect, test } from 'vitest';
-import { buildRecord, generateCaptureId, hiRes, isAllowedSender, matchMediaIndex, mediaKey, pickPrimaryImage } from '../extension/utils/background';
+import { buildRecord, generateCaptureId, hiRes, isAllowedSender, matchMediaIndex, pickPrimaryImage } from '../extension/utils/background';
 
 describe('isAllowedSender — 送信元タブの origin 検証', () => {
   test.each([
@@ -40,28 +40,9 @@ describe('isAllowedSender — 送信元タブの origin 検証', () => {
   });
 });
 
-describe('mediaKey — プラットフォーム別の画像 URL 同一性キー', () => {
-  test('x: pbs.twimg.com のメディア id', () => {
-    expect(mediaKey('x', 'https://pbs.twimg.com/media/ABC123?format=jpg&name=small')).toBe('ABC123');
-  });
-
-  test('bluesky: 50文字以上の英数字キー', () => {
-    const url = `https://cdn.bsky.app/img/feed_thumbnail/plain/${'a'.repeat(52)}@jpeg`;
-    expect(mediaKey('bluesky', url)).toBe('a'.repeat(52));
-  });
-
-  test('misskey/mastodon: 拡張子抜きのファイル basename', () => {
-    expect(mediaKey('misskey', 'https://misskey.io/files/abcDEF123.webp?thumbnail')).toBe('abcDEF123');
-    expect(mediaKey('mastodon', 'https://mastodon.social/media/xyz.png')).toBe('xyz');
-  });
-
-  test('未対応プラットフォーム・url なしは null', () => {
-    expect(mediaKey('pixiv', 'https://i.pximg.net/img-original/x/1_p0.png')).toBeNull();
-    expect(mediaKey('x', '')).toBeNull();
-    expect(mediaKey('x', null as unknown as string)).toBeNull();
-  });
-});
-
+// 画像 URL の同一性キー（mediaKeyOf）そのものは media-identity.test.ts が見る＝
+// 保存済み判定（#334）と共有する1つの規則なので、家はそちら。ここが見るのはその
+// 使い手であるドラッグ経路の突き合わせ。
 describe('matchMediaIndex — ドラッグ画像が post.media[] の何番目か', () => {
   test('鍵が一致するインデックスを返す', () => {
     const media = [{ url: 'https://pbs.twimg.com/media/AAA?format=jpg' }, { url: 'https://pbs.twimg.com/media/BBB?format=jpg' }];

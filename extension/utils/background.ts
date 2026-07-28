@@ -1,3 +1,4 @@
+import { mediaKeyOf } from './media-identity';
 import { fetchPostMetadata } from './metadata';
 import { classifySaveFailure } from './native-error';
 
@@ -151,7 +152,7 @@ export function startBackground(): void {
     } catch (err) {
       throw stageError('bridge', err?.message || 'bridge save failed');
     }
-    markSaved([record.url, postUrl], ack?.file || captureId, tab.id);
+    markSaved([record.url, postUrl], ack?.file || captureId, savedMediaUrls(ack), tab.id);
     const grouped = await bumpRecentSave(record.url);
     return { ...ack, metaOk, metaReason: meta.metaError || null, grouped };
   }
@@ -236,7 +237,7 @@ export function startBackground(): void {
     } catch (err) {
       throw stageError('bridge', err?.message || 'bridge save failed');
     }
-    markSaved([record.url, postUrl], ack?.file || captureId, tab.id); // light this post's TL badge now
+    markSaved([record.url, postUrl], ack?.file || captureId, savedMediaUrls(ack), tab.id); // light this post's TL badge now
     // grouped = prior saves of this post this session → the banner says the save
     // merged with them (the app folds same-URL records into one card).
     const grouped = await bumpRecentSave(record.url);
@@ -305,6 +306,14 @@ export function startBackground(): void {
     return bridgeSend({ type: 'saveDragged', captureId, imageUrl, imageReferer, metadata: record, metaOk });
   }
 
+  // The pictures the host says it actually recorded for a save (positional, see
+  // markSaved). Announced-but-undownloaded media is deliberately NOT counted:
+  // the badge must agree with what a later query will answer, and the host
+  // answers from what it wrote.
+  function savedMediaUrls(ack: any): Array<string | null> {
+    return Array.isArray(ack?.media) ? ack.media.map((u: unknown) => (typeof u === 'string' && u ? u : null)) : [];
+  }
+
   function notify(tabId, success, extra = {}) {
     chrome.tabs.sendMessage(tabId, { type: 'notify', success, ...extra }).catch(() => {});
   }
@@ -350,10 +359,21 @@ export function startBackground(): void {
     return port;
   }
 
+  // What the host says about one permalink: the captureId of a record that
+  // holds it, plus WHICH of the post's pictures are in the library (#334) —
+  // positional, so the index is the picture's number in the record and null
+  // marks one the library kept no URL for. An empty list means the post is
+  // saved but its pictures are not known apart; the overlay reads that as the
+  // whole post, exactly as it behaved before per-picture answers existed.
+  interface SavedEntry {
+    id: string;
+    media: Array<string | null>;
+  }
+
   // Ask the host about a batch of URLs. Rejects (rather than answering "not
   // saved") when the host can't be reached, so a missing host shows NO badges
   // instead of asserting that a saved post isn't saved.
-  function queryBridge(urls: string[]): Promise<Record<string, string | null>> {
+  function queryBridge(urls: string[]): Promise<Record<string, SavedEntry | null>> {
     return new Promise((resolve, reject) => {
       let port: chrome.runtime.Port;
       try {
@@ -391,9 +411,9 @@ export function startBackground(): void {
   // own mtimes, so it already sees the delete.
   const SAVED_TTL_MS = 60_000;
   const SAVED_CACHE_MAX = 2000;
-  const savedCache = new Map<string, { id: string | null; until: number }>();
+  const savedCache = new Map<string, { entry: SavedEntry | null; until: number }>();
 
-  function cacheGet(url: string): { id: string | null } | undefined {
+  function cacheGet(url: string): { entry: SavedEntry | null } | undefined {
     const hit = savedCache.get(url);
     if (!hit) return undefined;
     if (hit.until && hit.until < Date.now()) {
@@ -403,9 +423,9 @@ export function startBackground(): void {
     return hit;
   }
 
-  function cacheSet(url: string, id: string | null) {
+  function cacheSet(url: string, entry: SavedEntry | null) {
     savedCache.delete(url); // re-insert so Map iteration order is LRU-ish
-    savedCache.set(url, { id, until: Date.now() + SAVED_TTL_MS });
+    savedCache.set(url, { entry, until: Date.now() + SAVED_TTL_MS });
     if (savedCache.size > SAVED_CACHE_MAX) {
       for (const k of [...savedCache.keys()].slice(0, savedCache.size - SAVED_CACHE_MAX)) savedCache.delete(k);
     }
@@ -415,30 +435,44 @@ export function startBackground(): void {
   // negative entry expires. Told to the saving tab directly — other tabs pick it
   // up when their own negatives expire.
   //
+  // `media` is what the host REPORTS it recorded, not what was announced: after
+  // saving one picture of a multi-image post, the other pictures must keep
+  // offering their save button (#334). Cached as "the whole post" — the shape
+  // that hides every button — would undo that for a minute. Merged with any
+  // entry already cached, because the earlier save of the same post recorded a
+  // different picture.
+  //
   // BOTH url forms are marked: the record's url comes from the platform API and
   // the page's permalink from the DOM, and the two can differ in spelling for the
   // same post (the host normalizes them to one key, this side deliberately does
   // not — see native-host/post-key.mts). Caching only one form would leave the
   // other's negative entry to expire on its own, and the badge would lag a minute
   // behind the save that just happened in front of the user.
-  function markSaved(urls: Array<string | null | undefined>, captureId: string | null, tabId?: number) {
+  function markSaved(urls: Array<string | null | undefined>, captureId: string | null, media: Array<string | null>, tabId?: number) {
     const seen = new Set<string>();
     for (const url of urls) {
       if (!url || seen.has(url)) continue;
       seen.add(url);
-      cacheSet(url, captureId || '');
-      if (tabId != null) chrome.tabs.sendMessage(tabId, { type: 'savedUpdate', url }).catch(() => {});
+      const known = cacheGet(url)?.entry;
+      const merged = known ? { id: known.id || captureId || '', media: known.media.slice() } : { id: captureId || '', media: [] as Array<string | null> };
+      // An entry that already answered "whole post" stays that way: adding one
+      // picture to an empty list would claim the rest are NOT saved.
+      if (!known || known.media.length) {
+        for (const u of media) if (u && !merged.media.includes(u)) merged.media.push(u);
+      }
+      cacheSet(url, merged);
+      if (tabId != null) chrome.tabs.sendMessage(tabId, { type: 'savedUpdate', url, media }).catch(() => {});
     }
   }
 
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (message.type !== 'checkSaved') return false;
     const urls: string[] = Array.isArray(message.urls) ? message.urls.filter((u) => typeof u === 'string' && u) : [];
-    const results: Record<string, string | null> = {};
+    const results: Record<string, SavedEntry | null> = {};
     const ask: string[] = [];
     for (const u of urls) {
       const hit = cacheGet(u);
-      if (hit) results[u] = hit.id;
+      if (hit) results[u] = hit.entry;
       else ask.push(u);
     }
     if (!ask.length) {
@@ -448,9 +482,9 @@ export function startBackground(): void {
     queryBridge(ask)
       .then((fresh) => {
         for (const u of ask) {
-          const id = Object.hasOwn(fresh, u) ? (fresh[u] ?? null) : null;
-          cacheSet(u, id);
-          results[u] = id;
+          const entry = (Object.hasOwn(fresh, u) ? fresh[u] : null) || null;
+          cacheSet(u, entry);
+          results[u] = entry;
         }
         sendResponse({ ok: true, results });
       })
@@ -675,7 +709,7 @@ export function startBackground(): void {
     } catch (err) {
       throw stageError('bridge', err?.message || 'bridge save failed');
     }
-    markSaved([record.url, postUrl], ack?.file || captureId, tab.id); // light this post's TL badge now
+    markSaved([record.url, postUrl], ack?.file || captureId, savedMediaUrls(ack), tab.id); // light this post's TL badge now
     // Surface metadata-fetch failure to the drop overlay (same partial-success
     // signal as the click-save banner) so a screenshot-less illustration that
     // saved without post info isn't shown as a plain success. grouped = prior
@@ -772,26 +806,15 @@ function pickPrimaryImage(platform, imageUrls, meta) {
   return { url: hiRes(platform, imageUrls[0]), referer: undefined, index: media.length === 1 ? 0 : -1 };
 }
 
-function mediaKey(platform, url) {
-  if (!url) return null;
-  if (platform === 'x') return (url.match(/pbs\.twimg\.com\/media\/([^.?]+)/) || [])[1] || null;
-  if (platform === 'bluesky') return (url.match(/\/([a-z0-9]{50,})(?:@|\b)/i) || [])[1] || null;
-  if (platform === 'misskey' || platform === 'mastodon') {
-    // Misskey/Mastodon serve direct file URLs; a thumbnail and its original share
-    // the file id / hash (the URL basename, minus query and extension). Match on that.
-    const base = (url.split(/[?#]/)[0].match(/([^/]+)$/) || [])[1] || '';
-    return base.replace(/\.[a-z0-9]+$/i, '') || null;
-  }
-  return null;
-}
-
 // Index (0-based) of the post's media[] entry that the dragged image came from,
-// matched by mediaKey. -1 if none matched (or the platform has no key scheme).
+// matched by mediaKeyOf (media-identity.ts owns the per-platform rule — the
+// overlay compares the library's saved pictures with the same one, #334).
+// -1 if none matched (or the platform has no key scheme).
 function matchMediaIndex(platform, imageUrls, media) {
-  const keys = imageUrls.map((u) => mediaKey(platform, u)).filter(Boolean);
+  const keys = imageUrls.map((u) => mediaKeyOf(platform, u)).filter(Boolean);
   if (!keys.length) return -1;
   for (let i = 0; i < media.length; i++) {
-    const k = mediaKey(platform, media[i].url);
+    const k = mediaKeyOf(platform, media[i].url);
     if (k && keys.includes(k)) return i;
   }
   return -1;
@@ -815,4 +838,4 @@ function hiRes(platform, url) {
 // Pure helpers with no chrome.* / DOM dependency, exported for direct unit
 // testing (scripts/background-unit.test.ts) — the rest of this file only
 // runs inside the extension service worker via startBackground().
-export { isAllowedSender, pickPrimaryImage, mediaKey, matchMediaIndex, hiRes, buildRecord, generateCaptureId };
+export { isAllowedSender, pickPrimaryImage, matchMediaIndex, hiRes, buildRecord, generateCaptureId };

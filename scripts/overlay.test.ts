@@ -19,7 +19,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { JSDOM } from 'jsdom';
-import { beforeAll, describe, expect, test } from 'vitest';
+import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 
 // overlay.ts の x 分岐が狙う形の投稿。data-rect-top がメディア枠の幾何を宣言し
 // （jsdom は何もレイアウトしない）、data-rect-size で大きさを絞る。
@@ -75,6 +75,14 @@ const X_HTML = `<!doctype html><html><body>
       <a href="/heidi/status/999"><time datetime="2026-07-01T00:00:00Z">9h</time></a>
       <div data-testid="videoPlayer" data-rect-top="3600" id="p9a"><video poster="https://pbs.twimg.com/amplify_video_thumb/999/img/JJJ.jpg"></video></div>
     </article>
+    <!-- もう1つの2枚投稿。ライブラリが「どの絵を持っているか」まで答えられる場合を見る（#334）＝
+         p4 は「投稿は保存済み・絵は不明」の側なので、答えの出た投稿へは二度と問い合わせない
+         （スクロールで戻るのをタダにする設計）以上、別の投稿でなければ試せない。 -->
+    <article data-testid="tweet" id="p10">
+      <a href="/ivan/status/1010"><time datetime="2026-07-01T00:00:00Z">10h</time></a>
+      <div data-testid="tweetPhoto" data-rect-top="4000" id="p10a"><img src="https://pbs.twimg.com/media/KKK.jpg"></div>
+      <div data-testid="tweetPhoto" data-rect-top="4400" id="p10b"><img src="https://pbs.twimg.com/media/LLL.jpg"></div>
+    </article>
   </div>
 </body></html>`;
 
@@ -91,7 +99,10 @@ const storage: Record<string, unknown> = {};
 const storageListeners: any[] = [];
 const runtimeListeners: any[] = [];
 let ioCallback: any = null;
-let savedAnswer: Record<string, string | null> = {};
+// ホストの応答と同じ形（#334）＝投稿ごとに captureId ＋その投稿の保存済みの絵。
+// media が空＝「保存済み・絵は分からない」で、オーバーレイは投稿まるごととして扱う。
+type SavedEntry = { id: string; media: Array<string | null> };
+let savedAnswer: Record<string, SavedEntry | null> = {};
 let saveReply: any = { ok: true, metaOk: true };
 
 const intersect = (ids: string[], isIntersecting: boolean) => ioCallback(ids.map((id) => ({ target: window.document.getElementById(id), isIntersecting })));
@@ -187,7 +198,7 @@ beforeAll(async () => {
           cb?.(saveReply);
           return;
         }
-        const results: Record<string, string | null> = {};
+        const results: Record<string, SavedEntry | null> = {};
         for (const u of msg.urls || []) results[u] = Object.hasOwn(savedAnswer, u) ? savedAnswer[u] : null;
         cb?.({ ok: true, results });
       },
@@ -214,12 +225,12 @@ beforeAll(async () => {
 }, 30000);
 
 test('初回走査で全ての投稿が観測される', () => {
-  expect(observed.size).toBe(9);
+  expect(observed.size).toBe(10);
 });
 
 describe('問い合わせは見えている投稿だけ・1バッチで', () => {
   beforeAll(async () => {
-    savedAnswer = { 'https://x.com/alice/status/111': '1780000000000-aa' };
+    savedAnswer = { 'https://x.com/alice/status/111': { id: '1780000000000-aa', media: [] } };
     intersect(['p1', 'p2'], true);
     await settle();
   });
@@ -485,8 +496,10 @@ describe('絵ごとに1ボタン・投稿ごとに1印', () => {
     hoverAway();
   });
 
-  test('保存済みの複数画像投稿は、1枚目にだけ印が付く', async () => {
-    savedAnswer['https://x.com/dave/status/444'] = '1780000000004-dd';
+  // 絵が分からない答え（テキストのみ・取り込みの失敗・#334 より前のレコード）は
+  // 投稿についてしか語れない＝印は1つ、ボタンは出さない。
+  test('絵の分からない保存済み投稿は、1枚目にだけ印が付く', async () => {
+    savedAnswer['https://x.com/dave/status/444'] = { id: '1780000000004-dd', media: [] };
     intersect(['p4'], false);
     await settle();
     intersect(['p4'], true);
@@ -501,6 +514,59 @@ describe('絵ごとに1ボタン・投稿ごとに1印', () => {
   test('さっきの失敗の文面は失敗より長生きしない', () => {
     expect(controlOf('p4a')[0]?.title).toBe('Saved in Hologram');
     setSetting('savedBadgeMode', 'hover');
+  });
+});
+
+// #334: 複数枚投稿の1枚だけを保存した状態が普通に起こる。答えが絵まで届いている限り、
+// 角は絵ごとに違う顔を見せる＝保存済みには印、まだの絵には保存ボタン。
+describe('1枚だけ保存された投稿', () => {
+  beforeAll(async () => {
+    // ライブラリが持っているのは2枚目（LLL）だけ。URL の表記は保存時のもの（name=orig）で、
+    // ページ側の src（拡張子つき）とは文字列として一致しない＝正規化された同一性で照合する。
+    savedAnswer['https://x.com/ivan/status/1010'] = { id: '1780000000010-jj', media: ['https://pbs.twimg.com/media/LLL?format=jpg&name=orig'] };
+    intersect(['p10'], true);
+    await settle();
+    setSetting('savedBadgeMode', 'always');
+  });
+
+  afterAll(async () => {
+    setSetting('savedBadgeMode', 'hover');
+    intersect(['p10'], false);
+    await settle();
+  });
+
+  test('保存済みの絵にだけ印が付く（1枚目ではなく、その絵に）', () => {
+    expect(controlOf('p10a')).toHaveLength(0);
+    expect(controlOf('p10b')).toHaveLength(1);
+    expect(controlOf('p10b')[0].title).toBe('Saved in Hologram');
+  });
+
+  test('まだの絵にはホバーで保存ボタンが出る', async () => {
+    hover('p10a');
+    await settle();
+
+    expect(saveButtons()).toHaveLength(1);
+    expect(saveButtons()[0].parentElement).toBe(boxOf('p10a'));
+    hoverAway();
+  });
+
+  test('保存済みの絵にホバーしてもボタンにはならない', async () => {
+    hover('p10b');
+    await settle();
+
+    expect(saveButtons()).toHaveLength(0);
+    expect(controlOf('p10b')[0].title).toBe('Saved in Hologram');
+    hoverAway();
+  });
+
+  // 同じタブの別経路（ドラッグ保存）で1枚増えた通知。投稿まるごと保存済みとして読むと、
+  // 残りの絵のボタンが次の問い合わせまで消える。
+  test('savedUpdate が運ぶ絵だけが追加される', () => {
+    for (const fn of runtimeListeners) fn({ type: 'savedUpdate', url: 'https://x.com/ivan/status/1010', media: ['https://pbs.twimg.com/media/KKK?format=jpg&name=orig'] });
+
+    expect(controlOf('p10a')).toHaveLength(1);
+    expect(controlOf('p10a')[0].title).toBe('Saved in Hologram');
+    expect(controlOf('p10b')).toHaveLength(1);
   });
 });
 
@@ -528,7 +594,7 @@ describe('申し出るかどうかの関門', () => {
 });
 
 test('同じタブの別経路で保存されたら、スクロールを待たずに印が点く', async () => {
-  savedAnswer['https://x.com/carol/status/333'] = '1780000000002-cc';
+  savedAnswer['https://x.com/carol/status/333'] = { id: '1780000000002-cc', media: [] };
   intersect(['p3'], true);
   await settle();
 
