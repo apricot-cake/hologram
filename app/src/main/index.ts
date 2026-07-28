@@ -1463,6 +1463,25 @@ if (!gotSingleInstanceLock) {
     // a window instead of using the SMOKE hidden one.
     const startInactive = !SMOKE && !startMin && process.env.HOLOGRAM_START_INACTIVE === '1';
     createWindow(!SMOKE && !startMin && !startInactive); // both → create hidden, then show without activating below
+    // A sandbox seeded from the real library (#286) holds a snapshot of real post
+    // text and, when a capture was pinpointed, real media — so anything captured
+    // from this window is personal data. The notice is drawn INSIDE the page
+    // rather than printed to the console, because a screenshot has to carry it;
+    // re-applied on every load so a renderer reload cannot drop it.
+    if (SANDBOX && process.env.HOLOGRAM_SANDBOX_NOTICE && win) {
+      const notice = process.env.HOLOGRAM_SANDBOX_NOTICE;
+      win.webContents.on('did-finish-load', () => {
+        if (!win || win.isDestroyed()) return;
+        win.webContents
+          .executeJavaScript(
+            `(() => { const id = 'hologram-sandbox-notice'; const old = document.getElementById(id); if (old) old.remove();
+               const el = document.createElement('div'); el.id = id; el.textContent = ${JSON.stringify(notice)};
+               el.style.cssText = 'position:fixed;left:0;right:0;bottom:0;z-index:2147483647;pointer-events:none;background:#b3261e;color:#fff;font:12px/1.7 system-ui,sans-serif;text-align:center';
+               document.body.appendChild(el); })()`,
+          )
+          .catch((err) => log.warn('could not install the sandbox notice', { error: err.message }));
+      });
+    }
     watchInboxFolder();
     if (!SMOKE) {
       armBackupSchedule(); // interval スケジュールを起動
