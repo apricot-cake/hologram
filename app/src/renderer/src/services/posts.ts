@@ -37,8 +37,8 @@ export function clearAll() {
 export function exportSave(filename: string, bytes: Uint8Array | ArrayBuffer) {
   return hologramIpc.exportSave(filename, bytes);
 }
-export function exportComplete(mode?: string) {
-  return hologramIpc.exportComplete(mode);
+export function exportComplete(mode?: string, includeTrash?: boolean) {
+  return hologramIpc.exportComplete(mode, includeTrash);
 }
 export function importComplete(bytes: Uint8Array | ArrayBuffer) {
   return hologramIpc.importComplete(bytes);
