@@ -349,6 +349,12 @@ function ensureDbTruthSource(folder: string, handle: { db: any; sqlite: any }) {
 // further to its journal + loose-inbox rescan, never wrong, only slower to
 // reflect an app-side change.
 let savedIndexTimer: any = null;
+// Set once ensurePostsSynced has primed the snapshot for this process (#466):
+// without it, a launch that drains nothing from the inbox and recovers no
+// orphans never calls scheduleSavedIndexWrite at all, so the bridge answers
+// saved-status queries from its journal + loose-inbox fallback indefinitely
+// even though the DB itself has the record.
+let savedIndexPrimed = false;
 function scheduleSavedIndexWrite(handle: { sqlite: any }) {
   clearTimeout(savedIndexTimer);
   savedIndexTimer = setTimeout(() => {
@@ -416,6 +422,14 @@ function ensurePostsSynced() {
   if (!folder) return null;
   const handle = ensureDb();
   ensureDbTruthSource(folder, handle);
+  // Prime the snapshot once truthSource is confirmed 'db', regardless of
+  // whether this pass finds anything to drain — buildSavedIndex is two
+  // indexed SELECTs, cheap enough to run unconditionally on every launch
+  // rather than tracking file freshness against the DB's last write.
+  if (!savedIndexPrimed) {
+    savedIndexPrimed = true;
+    scheduleSavedIndexWrite(handle);
+  }
   const inboxReport = drainInboxLogged(folder, handle.sqlite);
   if (inboxReport.applied.length) scheduleSavedIndexWrite(handle);
   return handle;
