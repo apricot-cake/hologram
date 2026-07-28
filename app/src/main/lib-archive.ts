@@ -1,16 +1,29 @@
 'use strict';
 
 // Complete library archive: build a directly-re-importable ZIP snapshot of the
-// save folder, and restore one. Kept dependency-free (fs/path + a JSZip ctor
-// passed in) so it can be unit-tested without spinning up Electron.
+// library, and restore one. Kept dependency-free (fs/path + a JSZip ctor passed
+// in) so it can be unit-tested without spinning up Electron.
 //
 // ZIP layout:
-//   library/<captureId>.jpg            screenshot
-//   library/<captureId>.json           sidecar (verbatim)
-//   library/<captureId>-media-N.<ext>  original media
+//   library/<captureId>.jpg            screenshot (disk-truth, copied as-is)
+//   library/<captureId>.json           sidecar, REGENERATED FROM THE DB (#300/St7)
+//   library/<captureId>-media-N.<ext>  original media (disk-truth, copied as-is)
 //   library/avatars/<urlhash>.<ext>    shared avatar store (one file per avatar URL)
-//   library/folders.json|tag-types.json|ungrouped.json|manual-groups.json
-//   hologram-export.json                 manifest { app, kind:'complete', version, exportedAt, fileCount }
+//   library/folders.json|tag-types.json|ungrouped.json|manual-groups.json|
+//           poster-folders.json|poster-tags.json|tabs.json|tag-parents.json
+//                                       organization layer, all DB-regenerated;
+//                                       tag-parents.json/tabs.json omitted when empty
+//   .trash/<name>                      trashed captures, opt-in (opts.includeTrash),
+//                                       filesystem-only snapshot (trash isn't in the DB)
+//   hologram-export.json               manifest { app, kind:'complete', version,
+//                                       source, includesTrash, exportedAt, fileCount }
+//
+// Why DB-regenerated, not disk-copied: since #298 (St5) flipped the DB to be the
+// write truth, in-app edits (post tags, folders, ...) never touch the on-disk
+// sidecar/organization JSON again -- those files are frozen or entirely absent for
+// anything captured/imported/edited since the flip. A disk copy would silently
+// omit or stale-date most of a live library. Binaries (screenshots/media/avatars)
+// stay disk-truth: the DB never held their bytes.
 //
 // Excluded from the snapshot: config.json (machine-specific: paths, extension id)
 // and .index.json (cache). On import, captures are copied SKIPPING existing files
@@ -21,7 +34,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { Transform } from 'node:stream';
 import { ZipFile } from 'yazl';
+import type Database from 'better-sqlite3';
 import { parseJsonLoose } from './lib-json.ts';
+import { postCapturedVia, postsFromDb, tagParentsFromDb, tagsFromDb } from './lib-db-query.ts';
+import { createDbWriter } from './lib-db-write.ts';
 
 const EXPORT_SKIP = new Set(['config.json', '.index.json']);
 const ORG_MERGE = ['folders.json', 'tag-types.json', 'ungrouped.json', 'manual-groups.json', 'poster-favorites.json', 'poster-folders.json', 'poster-tags.json'];
@@ -331,13 +347,46 @@ function streamZipToFile(zip: ZipFile, outPath: string, onBytes?: (written: numb
   });
 }
 
-// Complete, directly-re-importable snapshot: every top-level library file under
-// library/, the shared avatar store under library/avatars/, plus a hologram-export.json
-// manifest. Returns the file count (excludes the manifest), matching the old builder.
-// onProgress(writtenBytes, totalBytes) fires as the archive streams out — totalBytes is
-// the summed input size (STORED, so output ≈ input + small headers), good enough to drive
-// a taskbar / % progress bar.
-async function writeCompleteZip(srcFolder, outPath, nowIso, onProgress?: (written: number, total: number) => void) {
+// tag-parents.json shape (#300/St7 — invented for this issue, tag_parents never
+// had a sidecar format before: see lib-db-import.ts's importTagParents doc comment
+// for the read side and the "why `ref` is the DB's own tags.id" rationale). Only
+// tags that participate in at least one parent edge are listed (a tag with no
+// hierarchy is already fully represented by its plain name elsewhere).
+function buildTagParentsJson(sqlite: Database.Database) {
+  const parentRows = tagParentsFromDb(sqlite);
+  if (!parentRows.length) return null;
+  const refs = new Set<number>();
+  for (const p of parentRows) {
+    refs.add(p.tagId);
+    refs.add(p.parentTagId);
+  }
+  const tagById = new Map(tagsFromDb(sqlite).map((t) => [t.id, t]));
+  const tags = [...refs].map((ref) => {
+    const t = tagById.get(ref);
+    return { ref, name: t?.name ?? '', kind: t?.kind ?? null, reading: t?.reading ?? null };
+  });
+  const parents = parentRows.map((p) => ({ tagRef: p.tagId, parentRef: p.parentTagId, isDisplay: p.isDisplay }));
+  return { tags, parents };
+}
+
+// A DB post record (lib-db-query.ts's postsFromDb/postsByIds shape) -> the sidecar
+// JSON shape a ZIP's library/<captureId>.json has always had. tagIds is a
+// DB-internal parallel array (query.ts's tag-leaf id matching) with no meaning
+// outside this one database, so it's dropped; capturedVia is merged in separately
+// because postsFromDb's column list doesn't select it (lib-db-query.ts comment).
+function toSidecarJson(rec: any, capturedVia: string | null) {
+  const { tagIds, ...rest } = rec;
+  return { ...rest, capturedVia };
+}
+
+// Complete, directly-re-importable snapshot. Binaries (screenshots/media/avatars)
+// are still disk-truth and copied as-is; everything else (per-post sidecars, the
+// organization layer, tag-parents.json) is regenerated from the DB (module comment
+// at the top of this file explains why). Returns the file count (excludes the
+// manifest), matching the old builder. onProgress(writtenBytes, totalBytes) fires
+// as the archive streams out — totalBytes is the summed input size (STORED, so
+// output ≈ input + small headers), good enough to drive a taskbar / % progress bar.
+async function writeCompleteZip(sqlite: Database.Database, srcFolder: string, trashDir: string | null, outPath: string, opts: { includeTrash?: boolean } = {}, nowIso?: string, onProgress?: (written: number, total: number) => void) {
   const zip = new ZipFile();
   let fileCount = 0;
   let totalBytes = 0;
@@ -350,9 +399,51 @@ async function writeCompleteZip(srcFolder, outPath, nowIso, onProgress?: (writte
     zip.addFile(fullPath, entryName, { compress: false });
     fileCount++;
   };
-  for (const name of await collectFiles(srcFolder)) await addFile(path.join(srcFolder, name), `library/${name}`);
+  const addJson = (value: unknown, entryName: string) => {
+    const buf = Buffer.from(JSON.stringify(value, null, 2));
+    totalBytes += buf.length;
+    zip.addBuffer(buf, entryName);
+    fileCount++;
+  };
+
+  // Binaries: unchanged disk-copy, EXCEPT sidecars (.json) are excluded here —
+  // they're regenerated from the DB below instead.
+  for (const name of await collectFiles(srcFolder, (n) => !n.toLowerCase().endsWith('.json'))) await addFile(path.join(srcFolder, name), `library/${name}`);
   for (const name of await collectFiles(path.join(srcFolder, 'avatars'))) await addFile(path.join(srcFolder, 'avatars', name), `library/avatars/${name}`);
-  zip.addBuffer(Buffer.from(JSON.stringify({ app: 'Hologram', kind: 'complete', version: 1, exportedAt: nowIso || new Date().toISOString(), fileCount }, null, 2)), 'hologram-export.json');
+
+  // Per-post sidecars, regenerated from the DB.
+  const posts = await postsFromDb(sqlite);
+  const capturedVia = postCapturedVia(
+    sqlite,
+    posts.map((p: any) => p.captureId),
+  );
+  for (const rec of posts) addJson(toSidecarJson(rec, capturedVia.get(rec.captureId) ?? null), `library/${rec.captureId}.json`);
+
+  // Organization layer, regenerated from the DB via the same getters
+  // ipc-organize.ts/ipc-config.ts already use as the live read path.
+  const dbw = createDbWriter(sqlite);
+  addJson(dbw.getFolders(), 'library/folders.json');
+  addJson(dbw.getTagTypes(), 'library/tag-types.json');
+  addJson(dbw.getUngrouped(), 'library/ungrouped.json');
+  addJson(dbw.getManualGroups(), 'library/manual-groups.json');
+  addJson(dbw.getPosterFolders(), 'library/poster-folders.json');
+  addJson(dbw.getPosterTags(), 'library/poster-tags.json');
+  const tabs = dbw.getTabs();
+  if (tabs) addJson(tabs, 'library/tabs.json');
+  // poster-favorites.json: feature retired, no DB table backs it — dropped from
+  // export. (ORG_MERGE/MERGERS keep it for importing an old ZIP that still has one.)
+
+  const tagParents = buildTagParentsJson(sqlite);
+  if (tagParents) addJson(tagParents, 'library/tag-parents.json');
+
+  // Trash: opt-in (default off), filesystem-only (a trashed post doesn't exist in
+  // the DB — ipc-trash.ts's delete-post fully removes the row), so this is a plain
+  // disk copy under a sibling prefix, not merged into library/.
+  if (opts.includeTrash && trashDir) {
+    for (const name of await collectFiles(trashDir)) await addFile(path.join(trashDir, name), `.trash/${name}`);
+  }
+
+  zip.addBuffer(Buffer.from(JSON.stringify({ app: 'Hologram', kind: 'complete', version: 2, source: 'db', includesTrash: !!opts.includeTrash, exportedAt: nowIso || new Date().toISOString(), fileCount }, null, 2)), 'hologram-export.json');
   zip.end();
   await streamZipToFile(zip, outPath, onProgress ? (written) => onProgress(written, totalBytes) : undefined);
   return { fileCount };
@@ -532,4 +623,26 @@ async function importCompleteZip(JSZip, destFolder, buffer) {
   return { ok: true, imported, skipped };
 }
 
-export { EXPORT_SKIP, ORG_MERGE, MAX_ZIP_ENTRIES, MAX_ZIP_ENTRY_BYTES, MAX_ZIP_TOTAL_BYTES, ZipLimitError, writeEntryStreamed, buildCompleteZip, buildImagesZip, writeCompleteZip, writeImagesZip, hasExportableFiles, importCompleteZip, mergeFolders, mergePosterFolders, mergeTagTypes, mergeUngrouped, mergeManualGroups };
+export {
+  EXPORT_SKIP,
+  ORG_MERGE,
+  MAX_ZIP_ENTRIES,
+  MAX_ZIP_ENTRY_BYTES,
+  MAX_ZIP_TOTAL_BYTES,
+  ZipLimitError,
+  writeEntryStreamed,
+  buildCompleteZip,
+  buildImagesZip,
+  writeCompleteZip,
+  writeImagesZip,
+  hasExportableFiles,
+  importCompleteZip,
+  mergeFolders,
+  mergePosterFolders,
+  mergeTagTypes,
+  mergeUngrouped,
+  mergeManualGroups,
+  mergePosterTags,
+  buildTagParentsJson,
+  toSidecarJson,
+};
