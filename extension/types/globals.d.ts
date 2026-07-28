@@ -9,4 +9,9 @@ interface Window {
   // Alt+S into auto mode.
   __hologramAutoCapture?: boolean;
   __hologramDiag?: Record<string, unknown>;
+  // #311: set by overlay.ts (the persistent resident content script) so
+  // capture.ts can hide the saved-mark/save-button overlay before shooting the
+  // screen. Returns a restore function. Undefined if overlay.ts hasn't run on
+  // this page (its matches list is narrower than capture.ts's).
+  __hologramPrepareOverlayForCapture?: () => () => void;
 }
