@@ -2,11 +2,10 @@
 
 // Generate a throwaway dummy library for testing/verification (#175).
 //
-// Writes a full library of synthetic sidecar JSONs + placeholder images to an
-// arbitrary folder (OUTSIDE the repo, separate from the real library), so features,
-// design, search/collation calibration (#164/#165) and the #5 SQLite migration's
-// before/after performance baseline (#293) can be exercised on volume/variety
-// WITHOUT touching real data.
+// Writes placeholder media to an arbitrary folder (OUTSIDE the repo, separate from
+// the real library) plus a hologram.db holding the synthetic records, so features,
+// design, search/collation calibration (#164/#165) and #5's performance measurements
+// can be exercised on volume/variety WITHOUT touching real data.
 //
 //   node scripts/gen-dummy-library.cts <outDir> [options]
 //
@@ -16,7 +15,14 @@
 //   --years N       spread post dates over the last N years (default 4)
 //   --seed N        PRNG seed (default 1) — output is byte-deterministic per (seed,count,args)
 //   --corpus FILE   draw post text from FILE (one fragment per line) instead of the built-in pool
+//   --db FILE       where to write the database (default <outDir>/hologram.db)
 //   --force         overwrite even if <outDir> is non-empty (default: abort to protect existing data)
+//
+// To point the app at what this produces: set HOLOGRAM_CONFIG_DIR to a scratch dir,
+// drop the generated hologram.db in it, and set that config's saveFolder to <outDir>.
+// The records go straight into the database because that is where the library keeps
+// them (#302) — writing per-post JSON next to the media would produce files nothing
+// reads.
 //
 // Why a new script (vs scripts/inject-dummy.cjs): inject-dummy writes ~36 fixed
 // condition-covering posts to the REAL save folder via Electron (canvas images).
@@ -27,9 +33,10 @@
 // Determinism: all randomness comes from the seeded PRNG below and a FIXED base
 // date (no Date.now()), so a given (seed, count, options) reproduces the same bytes.
 //
-// Schema: mirrors the real sidecar = extension metadata + { captureId, image,
-// media[], avatarFile } (native-host/bridge.cts). Re-derive from the real schema
-// if it drifts (this is a dev tool, expected to age with schema changes).
+// Schema: records go through the same writePost (app/src/main/lib-db-record-writer.ts)
+// every real producer uses, so the generated rows cannot drift from the app's own
+// shape — only the FIELDS chosen here can go stale (this is a dev tool, expected to
+// age with schema changes).
 //
 // KNOWN LIMITATION 1: every placeholder image is a PNG, so no record is classified
 // as a screenshot (isScreenshot in app/src/renderer/src/services/records.ts keys off a .jpg/.jpeg
@@ -49,6 +56,8 @@ const path = require('node:path');
 const zlib = require('node:zlib');
 const crypto = require('node:crypto');
 const { configDir, defaultLibraryDir } = require('../native-host/paths.cts');
+const { openDatabase } = require('../app/src/main/lib-db.ts');
+const { makeTagResolver, preparePostStmts, writePost } = require('../app/src/main/lib-db-record-writer.ts');
 
 // --- Seeded PRNG (mulberry32) — small, fast, deterministic --------------------
 function makeRng(seed: number) {
@@ -203,7 +212,7 @@ const TAG_CHARACTER = ['リィン', 'アオイ', 'セラフィナ', 'ノクト',
 
 // --- Argument parsing ---------------------------------------------------------
 function parseArgs(argv: string[]) {
-  const opts: any = { count: 3000, authors: 0, years: 4, seed: 1, corpus: null, force: false, outDir: null };
+  const opts: any = { count: 3000, authors: 0, years: 4, seed: 1, corpus: null, db: null, force: false, outDir: null };
   const rest = argv.slice(2);
   for (let i = 0; i < rest.length; i++) {
     const a = rest[i];
@@ -213,11 +222,12 @@ function parseArgs(argv: string[]) {
     else if (a === '--years') opts.years = Number(rest[++i]);
     else if (a === '--seed') opts.seed = Number(rest[++i]);
     else if (a === '--corpus') opts.corpus = rest[++i];
+    else if (a === '--db') opts.db = rest[++i];
     else if (a.startsWith('--')) throw new Error(`Unknown option: ${a}`);
     else if (!opts.outDir) opts.outDir = a;
     else throw new Error(`Unexpected argument: ${a}`);
   }
-  if (!opts.outDir) throw new Error('Missing <outDir>. Usage: node scripts/gen-dummy-library.cts <outDir> [--count N] [--seed N] [--years N] [--corpus FILE] [--force]');
+  if (!opts.outDir) throw new Error('Missing <outDir>. Usage: node scripts/gen-dummy-library.cts <outDir> [--count N] [--seed N] [--years N] [--corpus FILE] [--db FILE] [--force]');
   if (!Number.isFinite(opts.count) || opts.count < 1) throw new Error('--count must be a positive number');
   if (!opts.authors) opts.authors = Math.max(8, Math.floor(opts.count / 4));
   return opts;
@@ -372,6 +382,13 @@ function main() {
   const avatarDir = path.join(outDir, 'avatars');
   fs.mkdirSync(avatarDir, { recursive: true });
 
+  // One database per run: the records land here, the media stays in outDir.
+  const dbFile = path.resolve(opts.db || path.join(outDir, 'hologram.db'));
+  for (const suffix of ['', '-wal', '-shm']) fs.rmSync(dbFile + suffix, { force: true });
+  const handle = openDatabase(dbFile);
+  const stmts = preparePostStmts(handle.sqlite);
+  const resolveTagId = makeTagResolver(handle.sqlite);
+
   const rng = makeRng(opts.seed);
   const corpus: string[] | null = opts.corpus
     ? fs
@@ -431,6 +448,7 @@ function main() {
 
     // Primary image (screenshot placeholder for posts, the artwork itself otherwise).
     const [iw, ih] = DIMS[rng.skew(DIMS.length, 1)];
+    let cardDims: [number, number] = [iw, ih]; // what the CARD shows — media[0] takes over below
     const tint: [number, number, number] = plat.id === 'x' ? [30, 40, 55] : plat.id === 'bluesky' ? [0, 90, 180] : plat.id === 'misskey' ? [120, 160, 40] : [95, 95, 200];
     const imageName = `${id}.png`;
     write(path.join(outDir, imageName), makePng(iw, ih, tint));
@@ -451,6 +469,7 @@ function main() {
           const [mw, mh] = DIMS[rng.skew(DIMS.length, 1)];
           const mfile = `${id}-media-${m}.png`;
           write(path.join(outDir, mfile), makePng(mw, mh, [tint[0] + 20, tint[1] + 20, tint[2] - 10]));
+          if (m === 0) cardDims = [mw, mh];
           media.push({ url: `https://example.com/orig/${id}/${m}.png`, alt: rng.chance(0.3) ? 'alt text' : null, width: mw, height: mh, file: mfile });
         }
       }
@@ -490,6 +509,11 @@ function main() {
       tags: synthTags(rng, ja),
       media,
       avatarFile,
+      // Set here rather than measured from the files: the generator already knows
+      // the card image's size, and lib-card-dims.ts would only re-read what we just
+      // wrote (30k header reads at scale, for the same numbers).
+      shotW: cardDims[0],
+      shotH: cardDims[1],
     };
     if (author.host) rec.host = author.host;
     if (isArtwork) {
@@ -498,7 +522,7 @@ function main() {
       if (rng.chance(0.3)) rec.url = ''; // some imported artwork has no source URL
     }
 
-    write(path.join(outDir, `${id}.json`), JSON.stringify(rec, null, 2));
+    writePost(stmts, resolveTagId, rec);
     author.lastLocalId = lid;
 
     // Tally.
@@ -511,9 +535,11 @@ function main() {
     if (isArtwork) stats.artwork++;
   }
 
+  handle.sqlite.close();
+
   // Summary.
   const mb = (stats.bytes / 1048576).toFixed(1);
-  console.log(`Generated ${opts.count} posts → ${outDir}`);
+  console.log(`Generated ${opts.count} posts → ${outDir} (records in ${dbFile})`);
   console.log(`  seed=${opts.seed}  authors=${opts.authors}  years=${opts.years}  size=${mb} MB`);
   console.log(
     `  platform: ${Object.entries(stats.platform)

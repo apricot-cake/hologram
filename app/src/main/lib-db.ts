@@ -27,13 +27,12 @@ import { SCHEMA_V1_SQL } from './lib-db-schema.ts';
 // edited once shipped — `user_version` records how many have run, so rewriting
 // an applied entry leaves existing databases silently inconsistent. Append only.
 //
-// add-source-mtime (#297): posts.sourceMtimeMs lets the importer (lib-db-import.ts's
-// importAll) tell "this post's sidecar hasn't changed since the last import"
-// apart from "this post's content changed" — updatedAt is producer-controlled
-// and NOT bumped on every edit (proven by scripts/test-db-import.cts's edit
-// case), so it can't be trusted as a change signal; the sidecar's own mtimeMs
-// (already tracked by lib-index.ts's postIndex) can. Nullable: pre-migration
-// rows just re-sync once on the next importAll (self-heals, no backfill needed).
+// add-source-mtime / drop-source-mtime (#297, retired by #302): posts.sourceMtimeMs
+// let the repeating sidecar->DB sync skip re-deriving a post whose file hadn't
+// moved. There is no repeating sync any more — the DB is written directly and the
+// one-time legacy migration runs once against a folder nothing is writing — so the
+// column has no reader left. Both entries stay because the list is append-only; a
+// fresh database runs them back to back and ends up in the right shape.
 const MIGRATIONS: Migration[] = [
   { name: 'schema-v1', up: (db) => db.exec(SCHEMA_V1_SQL) },
   { name: 'add-source-mtime', up: (db) => db.exec('ALTER TABLE posts ADD COLUMN sourceMtimeMs INTEGER') },
@@ -116,6 +115,9 @@ const MIGRATIONS: Migration[] = [
         );
       `),
   },
+  // #302: the sidecar scan is gone, so nothing derives a post from a file whose
+  // mtime could be compared — see the add-source-mtime note above.
+  { name: 'drop-source-mtime', up: (db) => db.exec('ALTER TABLE posts DROP COLUMN sourceMtimeMs') },
 ];
 
 interface Migration {
@@ -245,7 +247,6 @@ interface PostsTable {
   shotW: number | null;
   shotH: number | null;
   trashedAt: string | null;
-  sourceMtimeMs: number | null; // add-source-mtime migration (#297) — see MIGRATIONS comment
   userKind: string | null;
   tagReviewed: number | null;
   capturedVia: string | null; // add-captured-via migration (#362) — intake route, null = ordinary save

@@ -46,6 +46,7 @@ import type Database from 'better-sqlite3';
 import { inboxNewDir, inboxSegmentsDir, parseInboxEnvelope } from '../../../native-host/inbox.mts';
 import type { InboxEnvelope } from '../../../native-host/inbox.mts';
 import type { PostRecordShape } from '../../../native-host/post-record.mts';
+import { fillCardDims } from './lib-card-dims.ts';
 import { makeTagResolver, preparePostStmts, writePost } from './lib-db-record-writer.ts';
 
 export interface InboxDrainReport {
@@ -184,7 +185,7 @@ function applyEnvelope(ctx: InboxApplyCtx, envelope: InboxEnvelope, sourceSegmen
 
   ctx.sqlite.exec('BEGIN');
   try {
-    writePost(ctx.stmts, ctx.resolveTagId, envelope.record, null);
+    writePost(ctx.stmts, ctx.resolveTagId, fillCardDims(ctx.saveFolder, envelope.record));
     ctx.insertReceipt.run(envelope.eventId, envelope.record.captureId, envelope.payloadSha256, now, sourceSegment);
     ctx.sqlite.exec('COMMIT');
   } catch (err) {

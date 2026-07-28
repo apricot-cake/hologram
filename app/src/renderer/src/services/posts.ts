@@ -13,8 +13,8 @@ import { hologramIpc } from './ipc.ts';
 export function listPosts() {
   return hologramIpc.listPosts();
 }
-export function listPostsDelta(haveBaseline: boolean, changedNames?: string[] | null) {
-  return hologramIpc.listPostsDelta(haveBaseline, changedNames);
+export function listPostsDelta(haveBaseline: boolean) {
+  return hologramIpc.listPostsDelta(haveBaseline);
 }
 export function imageDataUrl(image: string) {
   return hologramIpc.imageDataUrl(image);
@@ -59,6 +59,6 @@ export function onSaveFolderProgress(cb: (p: any) => void) {
 export function onExportProgress(cb: (p: any) => void): () => void {
   return hologramIpc.onExportProgress(cb);
 }
-export function onPostsChanged(cb: (names: string[] | null) => void) {
+export function onPostsChanged(cb: () => void) {
   return hologramIpc.onPostsChanged(cb);
 }

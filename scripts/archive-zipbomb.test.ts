@@ -1,4 +1,4 @@
-// app/src/main/lib-archive.ts#importCompleteZip の zip 爆弾／無制限展開の回帰テスト。
+// app/src/main/lib-archive.ts#importCompleteZipToDb の zip 爆弾／無制限展開の回帰テスト。
 //   (a) 普通の完全書き出し ZIP（capture + folders.json）は取り込める
 //   (b) 展開後サイズの申告合計が上限を超える書庫は拒否する
 //   (c) エントリ数が多すぎる書庫は拒否する
@@ -17,7 +17,9 @@ import os from 'node:os';
 import path from 'node:path';
 import JSZip from 'jszip';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
-import { MAX_ZIP_ENTRIES, MAX_ZIP_ENTRY_BYTES, MAX_ZIP_TOTAL_BYTES, ZipLimitError, importCompleteZip, writeEntryStreamed } from '../app/src/main/lib-archive';
+import { MAX_ZIP_ENTRIES, MAX_ZIP_ENTRY_BYTES, MAX_ZIP_TOTAL_BYTES, ZipLimitError, importCompleteZipToDb, writeEntryStreamed } from '../app/src/main/lib-archive';
+import { openDatabase } from '../app/src/main/lib-db';
+import { createDbWriter } from '../app/src/main/lib-db-write';
 
 // loadAsync が各非ディレクトリエントリの申告サイズを上書きする JSZip コンストラクタの
 // ラッパ。GiB のデータを実体化せずに爆弾を模せる。sizeFor(relPath, index) が偽装値を返す。
@@ -37,10 +39,16 @@ function ForgingJSZip(sizeFor: (rel: string, i: number) => number) {
 }
 
 let root: string;
+const handles: any[] = [];
 const freshDest = (tag: string) => {
   const dest = path.join(root, tag);
   fs.mkdirSync(dest, { recursive: true });
   return dest;
+};
+const freshDb = (tag: string) => {
+  const handle = openDatabase(path.join(root, `${tag}.db`));
+  handles.push(handle);
+  return handle;
 };
 
 // 下の偽装ケースが使い回す小さな実 ZIP。
@@ -57,11 +65,13 @@ beforeAll(async () => {
 });
 
 afterAll(() => {
+  for (const h of handles) h.sqlite.close();
   fs.rmSync(root, { recursive: true, force: true });
 });
 
 describe('(a) 普通の書き出しは従来どおり取り込める', () => {
   let dest: string;
+  let handle: any;
   let res: { imported: number };
 
   beforeAll(async () => {
@@ -71,7 +81,8 @@ describe('(a) 普通の書き出しは従来どおり取り込める', () => {
     zip.file('library/cap2.jpg', Buffer.from('JPEGDATA2'));
     zip.file('library/folders.json', JSON.stringify({ folders: [{ id: 'f1', name: 'X', items: ['cap1'] }] }));
 
-    res = await importCompleteZip(JSZip, dest, await zip.generateAsync({ type: 'nodebuffer' }));
+    handle = freshDb('normal');
+    res = await importCompleteZipToDb(handle.sqlite, JSZip, dest, await zip.generateAsync({ type: 'nodebuffer' }));
   });
 
   test('capture が2件取り込まれる', () => {
@@ -79,8 +90,12 @@ describe('(a) 普通の書き出しは従来どおり取り込める', () => {
     expect(fs.existsSync(path.join(dest, 'cap1.jpg'))).toBe(true);
   });
 
-  test('folders.json も取り込まれて合流する', () => {
-    expect(fs.existsSync(path.join(dest, 'folders.json'))).toBe(true);
+  test('folders.json も取り込まれて合流する（合流先はDB）', () => {
+    expect(
+      createDbWriter(handle.sqlite)
+        .getFolders()
+        .folders.map((f: any) => f.id),
+    ).toEqual(['f1']);
   });
 });
 
@@ -93,9 +108,11 @@ describe('(b) 申告合計が上限超え', () => {
 
   test('ZipLimitError で拒否し、何も書かない', async () => {
     const dest = freshDest('total-bomb');
+    const { sqlite } = freshDb('total-bomb');
 
     await expect(
-      importCompleteZip(
+      importCompleteZipToDb(
+        sqlite,
         ForgingJSZip(() => each),
         dest,
         small.buf,
@@ -107,10 +124,11 @@ describe('(b) 申告合計が上限超え', () => {
 
 // MAX_ZIP_ENTRIES 個の実エントリを generateAsync で作ると分単位かかるので、forEach が
 // MAX_ZIP_ENTRIES+5 個の極小エントリを流す合成 loadAsync を使う＝本物の爆弾と同じように
-// importCompleteZip の件数集計を駆動できる。
+// importCompleteZipToDb の件数集計を駆動できる。
 describe('(c) エントリ数が多すぎる', () => {
   test('ZipLimitError で拒否し、何も書かない', async () => {
     const dest = freshDest('count-bomb');
+    const { sqlite } = freshDb('count-bomb');
     const count = MAX_ZIP_ENTRIES + 5;
     const SyntheticJSZip = function () {
       return new JSZip();
@@ -122,7 +140,7 @@ describe('(c) エントリ数が多すぎる', () => {
       file: () => null,
     });
 
-    await expect(importCompleteZip(SyntheticJSZip, dest, Buffer.alloc(0))).rejects.toThrow(ZipLimitError);
+    await expect(importCompleteZipToDb(sqlite, SyntheticJSZip, dest, Buffer.alloc(0))).rejects.toThrow(ZipLimitError);
     expect(fs.readdirSync(dest)).toEqual([]);
   });
 });
@@ -130,10 +148,12 @@ describe('(c) エントリ数が多すぎる', () => {
 describe('(d) 単一エントリが1エントリ上限超え', () => {
   test('先頭1件だけ偽装しても ZipLimitError で拒否し、何も書かない', async () => {
     const dest = freshDest('entry-bomb');
+    const { sqlite } = freshDb('entry-bomb');
     const oversize = MAX_ZIP_ENTRY_BYTES + 1;
 
     await expect(
-      importCompleteZip(
+      importCompleteZipToDb(
+        sqlite,
         ForgingJSZip((_rel, i) => (i === 0 ? oversize : 4)),
         dest,
         small.buf,

@@ -3,7 +3,7 @@
 //    activeId は有効な限りローカルのまま
 //  - mergePosterFolders: 素の { folders:[{id,name,items}] } の id 和集合（投稿者フォルダ）
 //  - mergeManualGroups: メンバーの union-find
-//  - importCompleteZip: folders.json 入り ZIP がローカルの folders.json へ合流する
+//  - 完全ZIPの取り込み: folders.json 入り ZIP がライブラリのフォルダ層（DB）へ合流する
 //    （項目を落とさず、名前はローカル優先）
 
 import fs from 'node:fs';
@@ -11,19 +11,32 @@ import os from 'node:os';
 import path from 'node:path';
 import JSZip from 'jszip';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
-import { importCompleteZip, mergeFolders, mergeManualGroups, mergePosterFolders } from '../app/src/main/lib-archive';
+import { importCompleteZipToDb, mergeFolders, mergeManualGroups, mergePosterFolders } from '../app/src/main/lib-archive';
+import { openDatabase } from '../app/src/main/lib-db';
+import { createDbWriter } from '../app/src/main/lib-db-write';
+import { makeTagResolver, preparePostStmts, writePost } from '../app/src/main/lib-db-record-writer';
 
 const roots: string[] = [];
-function freshLib(prefix: string, folders: unknown) {
+const handles: any[] = [];
+// ライブラリの「現在のフォルダ層」は DB 側にある（#302 以降ディスクに folders.json は無い）。
+function freshLib(prefix: string, folders: unknown, memberIds: string[] = []) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
   roots.push(root);
   const dest = path.join(root, 'lib');
   fs.mkdirSync(dest, { recursive: true });
-  fs.writeFileSync(path.join(dest, 'folders.json'), JSON.stringify(folders));
-  return dest;
+  const handle = openDatabase(path.join(root, 'test.db'));
+  handles.push(handle);
+  // folder_items は posts への外部キー＝行の無い captureId は落ちる。フォルダ membership の
+  // 和集合を見たいので、テストが使う投稿はあらかじめ実在させておく。
+  const stmts = preparePostStmts(handle.sqlite);
+  const resolveTagId = makeTagResolver(handle.sqlite);
+  for (const captureId of memberIds) writePost(stmts, resolveTagId, { captureId, capturedAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z' } as any);
+  createDbWriter(handle.sqlite).setFolders(folders);
+  return { dest, sqlite: handle.sqlite };
 }
 
 afterAll(() => {
+  for (const h of handles) h.sqlite.close();
   for (const r of roots) fs.rmSync(r, { recursive: true, force: true });
 });
 
@@ -83,11 +96,11 @@ describe('mergeFolders（純関数）', () => {
   });
 });
 
-describe('importCompleteZip: folders.json の合流', () => {
+describe('完全ZIPの取り込み: folders.json の合流', () => {
   let col: any;
 
   beforeAll(async () => {
-    const dest = freshLib('hologram-foldmerge-', {
+    const { dest, sqlite } = freshLib('hologram-foldmerge-', {
       folders: [{ id: 'c-local', name: 'Local', kind: 'static', created: null, items: ['x'] }],
       activeId: 'c-local',
     });
@@ -96,9 +109,9 @@ describe('importCompleteZip: folders.json の合流', () => {
     zip.file('library/capY.jpg', Buffer.from('JPEGY'));
     // ZIP 側は kind を持たない素のフォルダ＝ストア側の合流が static を補う
     zip.file('library/folders.json', JSON.stringify({ folders: [{ id: 'f-imp', name: 'Imported', items: ['y'] }] }));
-    await importCompleteZip(JSZip, dest, await zip.generateAsync({ type: 'nodebuffer' }));
+    await importCompleteZipToDb(sqlite, JSZip, dest, await zip.generateAsync({ type: 'nodebuffer' }));
 
-    col = JSON.parse(fs.readFileSync(path.join(dest, 'folders.json'), 'utf8'));
+    col = createDbWriter(sqlite).getFolders();
   });
 
   test('ローカルのフォルダが残る', () => {
@@ -114,14 +127,18 @@ describe('importCompleteZip: folders.json の合流', () => {
   });
 });
 
-describe('importCompleteZip: 同じ id での名前ローカル優先・items 和集合', () => {
+describe('完全ZIPの取り込み: 同じ id での名前ローカル優先・items 和集合', () => {
   let col: any;
 
   beforeAll(async () => {
-    const dest = freshLib('hologram-foldmerge2-', {
-      folders: [{ id: 'c1', name: 'L', kind: 'static', created: null, items: ['a'] }],
-      activeId: null,
-    });
+    const { dest, sqlite } = freshLib(
+      'hologram-foldmerge2-',
+      {
+        folders: [{ id: 'c1', name: 'L', kind: 'static', created: null, items: ['a'] }],
+        activeId: null,
+      },
+      ['a', 'b', 'c'],
+    );
 
     const zip = new JSZip();
     zip.file(
@@ -134,9 +151,9 @@ describe('importCompleteZip: 同じ id での名前ローカル優先・items �
         activeId: 'c2',
       }),
     );
-    await importCompleteZip(JSZip, dest, await zip.generateAsync({ type: 'nodebuffer' }));
+    await importCompleteZipToDb(sqlite, JSZip, dest, await zip.generateAsync({ type: 'nodebuffer' }));
 
-    col = JSON.parse(fs.readFileSync(path.join(dest, 'folders.json'), 'utf8'));
+    col = createDbWriter(sqlite).getFolders();
   });
 
   test('名前はローカルが勝ち、items は和集合', () => {

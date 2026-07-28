@@ -18,7 +18,7 @@ const api = {
   listPosts: (): Promise<any[]> => ipcRenderer.invoke('list-posts'),
   // Delta refresh: pass true once a full snapshot is held; main returns either a
   // full { full:true, posts:[] } or an incremental { full:false, added, removed }.
-  listPostsDelta: (haveBaseline: boolean, changedNames?: string[] | null): Promise<any> => ipcRenderer.invoke('list-posts-delta', haveBaseline, changedNames),
+  listPostsDelta: (haveBaseline: boolean): Promise<any> => ipcRenderer.invoke('list-posts-delta', haveBaseline),
   getTagTypes: (): Promise<any> => ipcRenderer.invoke('get-tag-types'),
   setTagTypes: (types: unknown, labels?: unknown): Promise<any> => ipcRenderer.invoke('set-tag-types', types, labels),
   getUngrouped: (): Promise<any> => ipcRenderer.invoke('get-ungrouped'),
@@ -84,10 +84,9 @@ const api = {
   restorePost: (image: string): Promise<any> => ipcRenderer.invoke('restore-post', image),
   emptyTrash: (): Promise<any> => ipcRenderer.invoke('empty-trash'),
   deleteFromTrash: (image: string): Promise<any> => ipcRenderer.invoke('delete-from-trash', image),
-  // cb receives the changed-sidecar hint (null | [] | [names…]); the raw IPC
-  // event is not forwarded.
-  onPostsChanged: (cb: (names: string[] | null) => void): void => {
-    ipcRenderer.on('posts-changed', (_e, names) => cb(names));
+  // Fired when the intake queue changes; the raw IPC event is not forwarded.
+  onPostsChanged: (cb: () => void): void => {
+    ipcRenderer.on('posts-changed', () => cb());
   },
   // Window controls (min/max/close are app-drawn — see the WindowControls component).
   windowControl: (action: 'minimize' | 'toggle-maximize' | 'close'): Promise<boolean | null> => ipcRenderer.invoke('window-control', action),

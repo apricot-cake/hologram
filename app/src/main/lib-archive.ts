@@ -18,30 +18,31 @@
 //   hologram-export.json               manifest { app, kind:'complete', version,
 //                                       source, includesTrash, exportedAt, fileCount }
 //
-// Why DB-regenerated, not disk-copied: since #298 (St5) flipped the DB to be the
-// write truth, in-app edits (post tags, folders, ...) never touch the on-disk
-// sidecar/organization JSON again -- those files are frozen or entirely absent for
-// anything captured/imported/edited since the flip. A disk copy would silently
-// omit or stale-date most of a live library. Binaries (screenshots/media/avatars)
-// stay disk-truth: the DB never held their bytes.
+// The sidecar-shaped JSON is a BOUNDARY FORMAT, not storage: the library folder
+// itself holds no per-post JSON (#302), so the export regenerates it from the DB
+// on the way out and the import routes it back into the DB on the way in. That is
+// what makes a ZIP human-readable and portable without giving the on-disk library
+// a second truth source. Binaries (screenshots/media/avatars) stay disk-truth: the
+// DB never held their bytes.
 //
-// Excluded from the snapshot: config.json (machine-specific: paths, extension id)
-// and .index.json (cache). On import, captures are copied SKIPPING existing files
-// (idempotent / non-clobbering) and the organization JSONs are MERGED (union) so
-// importing into a non-empty library never wipes current folders/tags.
+// On import, captures are copied SKIPPING existing files (idempotent /
+// non-clobbering) and the organization layer is MERGED (union) so importing into a
+// non-empty library never wipes current folders/tags.
 
 import fs from 'node:fs';
 import path from 'node:path';
 import { Transform } from 'node:stream';
 import { ZipFile } from 'yazl';
 import type Database from 'better-sqlite3';
+import { fillCardDims } from './lib-card-dims.ts';
 import { parseJsonLoose } from './lib-json.ts';
 import { postCapturedVia, postsFromDb, tagParentsFromDb, tagsFromDb } from './lib-db-query.ts';
 import { createDbWriter } from './lib-db-write.ts';
-import { makeTagResolver, preparePostStmts, writePost } from './lib-db-record-writer.ts';
-import { importTagParents } from './lib-db-import.ts';
+import { importTagParents, makeTagResolver, preparePostStmts, writePost } from './lib-db-record-writer.ts';
 
-const EXPORT_SKIP = new Set(['config.json', '.index.json']);
+// config.json is machine-specific (paths, extension id) and lives in configDir
+// anyway; a pre-#5 library can still have a stale copy sitting in the folder.
+const EXPORT_SKIP = new Set(['config.json']);
 const ORG_MERGE = ['folders.json', 'tag-types.json', 'ungrouped.json', 'manual-groups.json', 'poster-favorites.json', 'poster-folders.json', 'poster-tags.json'];
 
 function isVolatile(name) {
@@ -414,12 +415,13 @@ async function writeCompleteZip(sqlite: Database.Database, srcFolder: string, tr
     fileCount++;
   };
 
-  // Binaries: unchanged disk-copy, EXCEPT sidecars (.json) are excluded here —
-  // they're regenerated from the DB below instead.
+  // Binaries: a plain disk copy. The .json filter is belt-and-braces — the library
+  // folder holds no per-post JSON since #302, but a pre-migration leftover must not
+  // shadow the record regenerated from the DB below.
   for (const name of await collectFiles(srcFolder, (n) => !n.toLowerCase().endsWith('.json'))) await addFile(path.join(srcFolder, name), `library/${name}`);
   for (const name of await collectFiles(path.join(srcFolder, 'avatars'))) await addFile(path.join(srcFolder, 'avatars', name), `library/avatars/${name}`);
 
-  // Per-post sidecars, regenerated from the DB.
+  // Per-post records in sidecar shape, regenerated from the DB.
   const posts = await postsFromDb(sqlite);
   const capturedVia = postCapturedVia(
     sqlite,
@@ -534,9 +536,8 @@ function writeEntryStreamed(entry, tmpPath, maxBytes) {
 // the new tag-parents.json bucket (#300/St7 — not a MERGERS key, has its own
 // resolution logic, see importTagParents), or the capture bucket (screenshots/
 // media/avatars/per-post sidecars), plus a .trash/ bucket (#300/St7). Pure
-// classification only — no disk/DB writes — so both importCompleteZip (disk-only,
-// unchanged behavior) and importCompleteZipToDb (#300/St7) share one set of
-// pre-extraction guards instead of drifting copies.
+// classification only — no disk/DB writes, so the guards stay in one place ahead of
+// the writer.
 async function extractLibraryEntries(JSZip, buffer) {
   const zip = await JSZip.loadAsync(buffer);
   const orgEntries: any = {};
@@ -578,9 +579,8 @@ async function extractLibraryEntries(JSZip, buffer) {
 }
 
 // Streamed write with a per-entry byte cap, skip-if-exists (idempotent / never
-// clobbers), atomic tmp+rename. Shared by every capture-file writer below (the
-// legacy disk-merge importer, the DB-routing importer's binaries, and .trash/
-// restore) — the only thing that varies is which directory it lands in.
+// clobbers), atomic tmp+rename. Shared by the importer's binaries and .trash/
+// restore — the only thing that varies is which directory it lands in.
 async function writeCaptureFile(entry, destDir, name): Promise<'imported' | 'skipped'> {
   const dest = path.join(destDir, name);
   try {
@@ -608,78 +608,16 @@ async function writeCaptureFile(entry, destDir, name): Promise<'imported' | 'ski
   }
 }
 
-// Legacy signature and behavior, UNCHANGED (archive-zipbomb/archive-zipslip/
-// folders-merge/tag-types tests exercise this exact signature+behavior directly):
-// every library/ entry (including per-post .json sidecars) is copied to disk
-// skip-if-exists, and the organization JSONs are MERGED (union) into their disk
-// files. .trash/ entries and tag-parents.json are classified but never written —
-// legacy exports never contain either, so this is unreachable in practice, not an
-// intentional new feature of this signature (see importCompleteZipToDb for those).
-async function importCompleteZip(JSZip, destFolder, buffer) {
-  try {
-    await fs.promises.mkdir(destFolder, { recursive: true });
-  } catch {
-    /* ignore */
-  }
-  const { orgEntries, captureEntries } = await extractLibraryEntries(JSZip, buffer);
-  let imported = 0,
-    skipped = 0;
-  for (const c of captureEntries) {
-    if ((await writeCaptureFile(c.entry, destFolder, c.name)) === 'imported') imported++;
-    else skipped++;
-  }
-  const readCur = (file) => {
-    try {
-      return parseJsonLoose(fs.readFileSync(path.join(destFolder, file), 'utf8'));
-    } catch {
-      return {};
-    }
-  };
-  // Atomic tmp+rename for the merged organization JSON: a crash mid-merge must not
-  // leave a torn/zero-byte folders.json (etc.) that the app then reads as empty
-  // and persists over — losing the live organization layer. Mirrors the capture
-  // write above; the .tmp-import suffix is invisible to the folder watcher.
-  const writeOrgAtomic = async (file, value) => {
-    const target = path.join(destFolder, file);
-    const tmp = target + '.tmp-import';
-    await fs.promises.writeFile(tmp, JSON.stringify(value, null, 2), 'utf8');
-    await fs.promises.rename(tmp, target);
-  };
-  for (const name of ORG_MERGE) {
-    if (!orgEntries[name]) continue;
-    let inc = {};
-    try {
-      inc = parseJsonLoose(await orgEntries[name].async('string'));
-    } catch {
-      inc = {};
-    }
-    const merged = MERGERS[name](readCur(name), inc);
-    try {
-      await writeOrgAtomic(name, merged);
-    } catch {
-      /* ignore */
-    }
-  }
-  return { ok: true, imported, skipped };
-}
-
-// DB-routing import (#300/St7): the replacement for importCompleteZip once posts
-// live in the DB. Binaries stay a disk copy (same skip-if-exists contract); .json
-// capture entries (per-post sidecars) go to the DB instead of disk; the
-// organization layer is read from the DB via createDbWriter, merged with the
-// same pure MERGERS functions importCompleteZip uses, and written back —
-// preserving "importing into a non-empty library never wipes current
-// folders/tags" without any new merge logic. tag-parents.json goes through
-// importTagParents (lib-db-import.ts). .trash/ entries restore to
-// <destFolder>/.trash/ on disk, untouched by the DB (a trashed post doesn't
-// have a posts row at all — ipc-trash.ts's delete-post fully removes it).
+// The one complete-ZIP importer (#300/St7). Binaries are a disk copy
+// (skip-if-exists); .json capture entries go to the DB, never to disk; the
+// organization layer is read from the DB via createDbWriter, merged with the pure
+// MERGERS functions, and written back — so importing into a non-empty library never
+// wipes current folders/tags. tag-parents.json goes through importTagParents.
+// .trash/ entries restore to <destFolder>/.trash/ on disk, untouched by the DB (a
+// trashed post has no posts row at all — ipc-trash.ts's delete-post removes it).
 //
-// Deliberately does NOT use lib-db-import.ts's createDbImporter()/importAll(): that
-// importer's org-layer import is gated behind dbIsTruth (skipped once the DB is
-// truth, which it always is here) and its own org-layer writer wholesale
-// replaces rather than merges — either would be a silent behavior change from
-// what's documented above. This instead writes posts directly via writePost, the
-// same shared writer import-posts/import-images (ipc-transfer.ts) already use.
+// Posts are written with the shared writePost (lib-db-record-writer.ts), the same
+// producer import-posts/import-images and the inbox consumer use.
 async function importCompleteZipToDb(sqlite: Database.Database, JSZip, destFolder: string, buffer) {
   try {
     await fs.promises.mkdir(destFolder, { recursive: true });
@@ -735,14 +673,14 @@ async function importCompleteZipToDb(sqlite: Database.Database, JSZip, destFolde
         skipped++;
         continue;
       }
-      writePost(stmts, resolveTagId, rec, null);
+      writePost(stmts, resolveTagId, fillCardDims(destFolder, rec));
       dbWriter.restorePostFlags(rec.captureId, rec); // userKind/tagReviewed: writePost doesn't carry these (lib-db-write.ts's module comment)
       existingIds.add(rec.captureId);
       imported++;
     }
 
     // Organization layer: read current DB state -> merge with the incoming JSON
-    // (the same pure MERGERS functions importCompleteZip uses) -> write back.
+    // (the same pure MERGERS functions) -> write back.
     if (orgEntries['folders.json']) {
       const inc = (await parseEntry(orgEntries['folders.json'])) ?? {};
       dbWriter.setFolders(mergeFolders(dbWriter.getFolders(), inc));
@@ -799,7 +737,6 @@ export {
   writeCompleteZip,
   writeImagesZip,
   hasExportableFiles,
-  importCompleteZip,
   importCompleteZipToDb,
   mergeFolders,
   mergePosterFolders,

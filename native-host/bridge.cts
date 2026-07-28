@@ -163,11 +163,10 @@ function sanitizeCaptureId(id: unknown): string | null {
   return typeof id === 'string' && SAFE_ID.test(id) ? id : null;
 }
 
-// Collision-avoidance for the captureId-derived base name. Checks the media
-// file at the save-folder root (.jpg) and the inbox envelope (new/<id>.json)
-// — the same two artifacts a save now produces — plus the legacy root .json
-// sidecar so a pre-#299 library (or an old bridge still writing one, see the
-// eventId shape note in inbox.mts) can't collide with a fresh capture either.
+// Collision-avoidance for the captureId-derived base name. Checks the media file at
+// the save-folder root (.jpg) and the inbox envelope (new/<id>.json) — the two
+// artifacts a save produces — plus a root .json, which only a pre-#5 library can
+// still have lying around (nothing writes one since #302).
 function uniqueBase(dir: string, captureId: string): string {
   const taken = (base: string) => fs.existsSync(path.join(dir, `${base}.jpg`)) || fs.existsSync(path.join(dir, `${base}.json`)) || fs.existsSync(path.join(inboxNewDir(dir), `${base}.json`));
   if (!taken(captureId)) return captureId;
@@ -185,8 +184,7 @@ function uniqueBase(dir: string, captureId: string): string {
 // ({type:'query'}), and the answer has to be right even with the desktop app
 // closed — that is the whole point of asking the bridge rather than the app.
 //
-// #299 replaced the old .index.json-derived snapshot (a rebuild of every
-// SIDECAR, which the bridge no longer writes) with bridge-saved-index.json: a
+// #299 replaced the old scan-derived snapshot with bridge-saved-index.json: a
 // small postKey->captureId map the app rebuilds straight from hologram.db
 // (lib-saved-index.ts) and rewrites debounced, atomically, whenever posts
 // change. It is the cheap bulk source — one read instead of scanning the

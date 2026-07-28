@@ -991,11 +991,12 @@ export async function startOverlay(): Promise<void> {
         // querySelectorAll returns document order, so the first entry is the
         // first picture of a multi-image post — where the "saved" mark belongs.
         // A grid tile has no tweetPhoto/videoPlayer testid to key on — its
-        // <img> IS the media box — so isPostMedia (the same CDN-host check the
-        // save button already gates on) filters it directly here instead.
-        // Without that, a video/gif tile's thumbnail (a different CDN path)
-        // would get its own tracked unit and inherit its post's "saved" mark
-        // even though the corner is answering about a video, not the picture.
+        // <img> IS the media box — so isPostMedia (the same CDN-path check the
+        // save button already gates on) filters it directly here instead, and
+        // keeps decorations off images that are not the post's own media.
+        // Video and GIF tiles pass that check as of #372, so they are tracked
+        // like picture tiles: the media tab must answer the same question the
+        // timeline does, which is the inconsistency #349 existed to remove.
         mediaIn: (unit) => {
           if (unit.tagName === 'LI') return [...unit.querySelectorAll('img')].filter((img) => media?.isPostMedia(img as HTMLImageElement));
           return [...unit.querySelectorAll('[data-testid="tweetPhoto"], [data-testid="videoPlayer"]')];

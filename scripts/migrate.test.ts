@@ -143,18 +143,16 @@ describe('verifyAndCleanup', () => {
     expect(read(dest, 'tags.json')).toBe('{"v":2,"edited":true}'); // コピー後の編集が勝つ（最新が正）
   });
 
-  test('.index.json は検証を免除、未知の着地は leftover として残す', async () => {
+  test('未知の着地は leftover として残す', async () => {
     const { src, dest } = mkroot();
-    seed(src, { 'a.jpg': 'AAA', '.index.json': '{"posts":[]}' });
+    seed(src, { 'a.jpg': 'AAA' });
     const cp = await copyLibraryInto(src, dest, null);
-    // 宛先の古い派生インデックスが掃除を止めてはいけない（作り直せる設計）
-    fs.writeFileSync(path.join(dest, '.index.json'), '{"posts":[],"stale":1}');
     // 最後の追いかけ周回の後に着地した capture（すき間の窓）
     fs.writeFileSync(path.join(src, 'straggler.jpg'), 'SSS');
 
     const cl = await verifyAndCleanup(src, dest, cp.entries);
 
-    expect(fs.existsSync(path.join(src, '.index.json'))).toBe(false);
+    expect(fs.existsSync(path.join(src, 'a.jpg'))).toBe(false);
     expect(cl.leftover).toEqual(['straggler.jpg']);
     expect(cl.emptied).toBe(false);
     expect(fs.existsSync(src)).toBe(true);

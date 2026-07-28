@@ -26,7 +26,7 @@ Except for the pixiv requests described above, no authentication tokens, cookies
 
 ## Data Storage
 
-Captured posts are **not** stored in the browser. Each capture is written to your chosen folder as an image (`<id>.jpg`) plus a metadata sidecar (`<id>.json`) by a local companion app on your device. The browser's extension storage holds only the diagnostics and session counters described under Permissions. Nothing is stored in sync storage or sent to any external server.
+Captured posts are **not** stored in the browser. A local companion app on your device writes the image (`<id>.jpg`) to your chosen folder and records its metadata in a local database on the same device. The browser's extension storage holds only the diagnostics and session counters described under Permissions. Nothing is stored in sync storage or sent to any external server.
 
 ## Contact
 
