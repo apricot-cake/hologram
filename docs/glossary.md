@@ -21,7 +21,7 @@ UI に出さない開発用語は日本語の欄を `—` にする。
 
 | 領域 | 使う一般語 | 付けない理由 | 決定記録 |
 | --- | --- | --- | --- |
-| 保存物に添えるメタデータ JSON | サイドカー / sidecar（`<captureId>.json`） | yt-dlp も `.info.json` と機能語だけで形式名を持たない。名前の付いた交換形式が要る役は XMP 書き出し（#57）が担う | [#264](https://github.com/apricot-cake/hologram/issues/264) |
+| 保存物に添えるメタデータ JSON | サイドカー / sidecar（`<captureId>.json`） | yt-dlp も `.info.json` と機能語だけで形式名を持たない。名前の付いた交換形式が要る役は XMP 書き出し（#57）が担う。**ライブラリ内の置き場としては #302 で退役**＝メタデータの正本は DB で、この語が指すのは完全ZIP が DB から再生成する `library/<captureId>.json` とゴミ箱の per-item レコードだけ | [#264](https://github.com/apricot-cake/hologram/issues/264) |
 | 拡張と保存先をつなぐ常駐プログラム | Native Messaging ブリッジ / bridge（`native-host/`） | Chrome 公式ドキュメントの "native messaging host" が既に総称になっている。その上に固有名を重ねない | [#264](https://github.com/apricot-cake/hologram/issues/264) |
 | 検索とファセットの機構 | 検索 / search・ファセット / facet | 機構そのものに固有名を持つ同種製品が見当たらない（照合結果は #264）。将来ユーザー向けの検索構文へ名前を付ける場合の器は、#260 の却下案（LoQL の保留）にある | [#264](https://github.com/apricot-cake/hologram/issues/264) |
 | デザイン語彙（面の質感・部品の呼び名） | shadcn / Base UI の語をそのまま | デザイン語彙の公開命名例はプラットフォームや組織の規模のもので、単一アプリの例が見当たらない（照合結果は #264）。素の shadcn ルックを採る決定と揃える | [ADR 0006](decisions/0006-plain-shadcn-look.md) |
