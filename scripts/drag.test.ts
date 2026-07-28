@@ -69,10 +69,20 @@ describe('成功時', () => {
     expect(fs.existsSync(path.join(saveFolder, '.hologram-inbox', 'new', '1717500000000-ab01.json'))).toBe(true);
   });
 
-  test('レコードは image を持ち、media は空（ライトボックスの重複を作らない）', () => {
+  // media は「落とした絵1件」＝どの絵を持っているレコードなのかの記録（#334）。
+  // 呼び出し側が announce した media[] は上書きする＝この保存が実際に持っているのは
+  // 指された1枚だけで、投稿の全部ではない。ライトボックスは media が在ればそれを、
+  // 無ければ image を読む（records.ts の artworkFile/groupFilesOf）ので、同じ1枚を
+  // 指す両者が重複を作ることはない。
+  test('レコードは image と、落とした1枚だけの media を持つ', () => {
     const envelope = JSON.parse(fs.readFileSync(path.join(saveFolder, '.hologram-inbox', 'new', '1717500000000-ab01.json'), 'utf8'));
     expect(envelope.record.image).toBe('1717500000000-ab01.png');
-    expect(envelope.record.media).toEqual([]);
+    expect(envelope.record.media).toHaveLength(1);
+    expect(envelope.record.media[0]).toMatchObject({ url: 'https://i.pximg.net/img-original/x/555_p0.png', file: '1717500000000-ab01.png' });
+  });
+
+  test('ack はその絵の URL を返す（保存直後のバッジが絵単位で答えられる）', () => {
+    expect(res.media).toEqual(['https://i.pximg.net/img-original/x/555_p0.png']);
   });
 
   test('API 由来のメタデータが保たれる', () => {

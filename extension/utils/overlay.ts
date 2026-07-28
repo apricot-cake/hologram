@@ -34,7 +34,7 @@
 // trails smooth scrolling.
 import { glassUi } from './glass-ui';
 import { createI18n } from './i18n';
-import { collectImageUrls, getMediaIdentitySite } from './media-identity';
+import { collectImageUrls, getMediaIdentitySite, mediaKeyOf, mediaKeysOf } from './media-identity';
 import type { PostMediaElement } from './media-identity';
 import { getSiteConfig, hostnameMatches } from './site-detect';
 
@@ -78,9 +78,23 @@ export async function startOverlay(): Promise<void> {
     note: string | null;
   }
 
+  // What the library holds for one post, as far as this side can compare it
+  // (#334). The bridge answers with the post's saved pictures; `keys` are the
+  // ones whose URL can be matched against the page's, `seqs` the positions of
+  // those the library kept no URL for. `whole` is the honest fallback — the
+  // post is in the library but its pictures cannot be told apart (a text-only
+  // post, a record saved before per-picture answers, a video whose page-side
+  // counterpart is only a poster frame) — and it marks the post exactly the way
+  // this overlay did before per-picture answers existed.
+  interface SavedPictures {
+    whole: boolean;
+    keys: Set<string>;
+    seqs: Set<number>;
+  }
+
   interface UnitState {
     url: string | null;
-    saved: boolean; // the bridge answers per POST, not per picture
+    saved: SavedPictures | null; // null = not in the library (or not asked yet)
     anchors: Map<Element, Anchor>;
   }
 
@@ -224,7 +238,7 @@ export async function startOverlay(): Promise<void> {
     for (const unit of Array.from(document.querySelectorAll(site.unitSelector))) {
       if (tracked.has(unit)) continue;
       if (tracked.size >= MAX_TRACKED) break;
-      tracked.set(unit, { url: null, saved: false, anchors: new Map() });
+      tracked.set(unit, { url: null, saved: null, anchors: new Map() });
       io.observe(unit);
     }
   }
@@ -307,7 +321,7 @@ export async function startOverlay(): Promise<void> {
       // claiming "not saved" would not be.
       if (chrome.runtime.lastError || !res?.ok || !res.results) return;
       for (const [url, units] of byUrl) {
-        const saved = res.results[url] != null;
+        const saved = readSavedPictures(res.results[url]);
         for (const unit of units) {
           const state = tracked.get(unit);
           if (!state) continue;
@@ -318,13 +332,67 @@ export async function startOverlay(): Promise<void> {
     });
   }
 
+  // The host's answer for one post, turned into what this side can compare.
+  // A saved picture whose URL yields no identity key drops the WHOLE post back
+  // to `whole`: leaving it out would put a save button on a picture that is
+  // already in the library, and saving it again is the one outcome the badge
+  // exists to prevent.
+  function readSavedPictures(entry: any): SavedPictures | null {
+    if (!entry) return null;
+    const urls: Array<string | null> = Array.isArray(entry.media) ? entry.media : [];
+    const saved: SavedPictures = { whole: !urls.length, keys: new Set(), seqs: new Set() };
+    urls.forEach((url, seq) => {
+      if (typeof url !== 'string' || !url) {
+        saved.seqs.add(seq); // recorded without a URL — its place in the post is all there is
+        return;
+      }
+      const key = media ? mediaKeyOf(media.platform, url) : null;
+      if (key) saved.keys.add(key);
+      else saved.whole = true;
+    });
+    return saved;
+  }
+
+  // Fold a just-completed save into what is known about the post. An empty list
+  // means the save reported no pictures of its own, which is the same "saved,
+  // pictures unknown" the host answers with.
+  function addSavedPictures(prev: SavedPictures | null, urls: Array<string | null>): SavedPictures {
+    const next: SavedPictures = prev || { whole: false, keys: new Set(), seqs: new Set() };
+    if (!urls.length) {
+      next.whole = true;
+      return next;
+    }
+    for (const url of urls) {
+      const key = typeof url === 'string' && url && media ? mediaKeyOf(media.platform, url) : null;
+      if (key) next.keys.add(key);
+      else next.whole = true;
+    }
+    return next;
+  }
+
+  // Is THIS picture one of the post's saved ones? The mark and the save button
+  // are two faces of this single question (#334): a multi-image post whose
+  // second picture was saved must keep offering the button on the first.
+  function anchorSaved(state: UnitState, anchor: Anchor, index: number): boolean {
+    const saved = state.saved;
+    if (!saved) return false;
+    if (saved.whole) return true;
+    const el = media ? postMediaIn(anchor.box) : null;
+    const keys = el && media ? mediaKeysOf(el, media.platform) : [];
+    if (keys.some((key) => saved.keys.has(key))) return true;
+    // No comparable URL on the page either — then position is the only handle
+    // left, and it only answers for pictures the library recorded without one.
+    return !keys.length && saved.seqs.has(index);
+  }
+
   // A save made in this tab: re-mark that post without waiting for the next
   // scroll (background.js pushes this the moment the host acknowledges).
   chrome.runtime.onMessage.addListener((message) => {
     if (message?.type !== 'savedUpdate' || !message.url) return;
+    const urls: Array<string | null> = Array.isArray(message.media) ? message.media : [];
     for (const [unit, state] of tracked) {
       if (state.url !== message.url) continue;
-      state.saved = true;
+      state.saved = addSavedPictures(state.saved, urls);
       if (visible.has(unit)) paint(unit, state);
     }
   });
@@ -593,11 +661,14 @@ export async function startOverlay(): Promise<void> {
         paint(unit, state);
         return;
       }
-      // Mark the post here rather than waiting for background.js's savedUpdate
-      // push: the push is correct but arrives after the host has written its
-      // journal, and the corner the user just pressed should not sit blank in
-      // the meantime.
-      state.saved = true;
+      // Mark the PICTURE here rather than waiting for background.js's
+      // savedUpdate push: the push is correct but arrives after the host has
+      // written its journal, and the corner the user just pressed should not
+      // sit blank in the meantime. Only this picture — the post's others are
+      // still unsaved, and that is the whole point of #334. The host reports
+      // what it recorded; the page's own URLs for this picture are the fallback
+      // (they key to the same picture, which is what mediaKeyOf guarantees).
+      state.saved = addSavedPictures(state.saved, Array.isArray(res.media) && res.media.length ? res.media : collectImageUrls(el, media.platform));
       setPhase(anchor, 'flash', FLASH_MS);
       // A partial save stays worth saying for as long as the mark is there: the
       // picture is in the library but the post's text and author are not.
@@ -722,16 +793,19 @@ export async function startOverlay(): Promise<void> {
     return media.extractIdentity(el) != null;
   }
 
-  function faceFor(state: UnitState, anchor: Anchor, isFirst: boolean, rect: DOMRect): Face | null {
+  function faceFor(state: UnitState, anchor: Anchor, index: number, rect: DOMRect): Face | null {
     if (anchor.phase === 'saving') return 'busy';
     if (anchor.phase === 'error') return 'failed';
     if (anchor.phase === 'flash') return 'mark';
-    if (state.saved) {
+    if (anchorSaved(state, anchor, index)) {
       if (markMode === 'off') return null;
-      // The mark answers a question about the POST, so one is enough. Shown at
-      // all times it goes on the first picture; shown on hover it goes on the
-      // picture being asked about.
-      if (markMode === 'always') return isFirst ? 'mark' : null;
+      // Shown at all times, the mark goes on every picture it can answer for:
+      // that is what tells a partly-saved post apart from a fully-saved one
+      // (#334). When all that is known is that the POST is saved, one mark on
+      // the first picture is the whole of the answer, and claiming more would
+      // say something about pictures nobody asked the library about.
+      if (markMode === 'always') return !state.saved?.whole || index === 0 ? 'mark' : null;
+      // Shown on hover it goes on the picture being asked about.
       return hovered === anchor ? 'mark' : null;
     }
     if (!hoverSave || hovered !== anchor) return null;
@@ -748,15 +822,16 @@ export async function startOverlay(): Promise<void> {
   function paint(unit: Element, state: UnitState) {
     if (!unit.isConnected) return;
     syncAnchors(unit, state);
-    let first = true;
+    // The box's position in the unit, which is the media row's seq the library
+    // recorded for it — the fallback identity for a picture no URL can name.
+    let index = -1;
     for (const [, anchor] of state.anchors) {
-      const isFirst = first;
-      first = false;
+      index += 1;
       const rect = anchor.box.getBoundingClientRect() as DOMRect;
       // A media box with no size is a collapsed placeholder or an image that
       // has not laid out yet; there is nowhere to put a control on it.
       const tooSmall = rect.width < CONTROL_SIZE * 2 || rect.height < CONTROL_SIZE * 2;
-      const face = tooSmall ? null : faceFor(state, anchor, isFirst, rect);
+      const face = tooSmall ? null : faceFor(state, anchor, index, rect);
       if (!face) {
         removeControl(anchor);
         continue;

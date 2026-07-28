@@ -17,26 +17,72 @@ import type Database from 'better-sqlite3';
 import { postKeyOf } from '../../../native-host/post-key.mts';
 
 const SAVED_INDEX_FORMAT = 'hologram-bridge-saved-index';
-const SAVED_INDEX_VERSION = 1;
+// v2 (#334): an entry is an object carrying the post's saved media URLs, not a
+// bare captureId string. The bridge still reads v1 entries (as "saved, pictures
+// unknown"), so an app that has not rewritten the file yet keeps answering.
+const SAVED_INDEX_VERSION = 2;
 const SAVED_INDEX_FILE = 'bridge-saved-index.json';
+
+// media is positional: the array index IS the media row's seq, and a row whose
+// url the library never recorded holds its place as null. That is what lets the
+// badge fall back to "which picture of the post" when the URL cannot be
+// compared (a video, whose page-side counterpart is only a poster frame).
+interface SavedIndexEntry {
+  id: string; // captureId
+  media: Array<string | null>;
+}
 
 interface SavedIndexFile {
   format: typeof SAVED_INDEX_FORMAT;
   version: typeof SAVED_INDEX_VERSION;
   generatedAt: string;
-  entries: Record<string, string>; // postKey -> captureId
+  entries: Record<string, SavedIndexEntry>; // postKey -> entry
 }
 
-// First post to claim a postKey wins the entry (same "informational, not
-// authoritative" tolerance bridge.cts's old sidecar rescan already had for
-// two posts that collapse to the same key) — the badge only needs SOME
-// captureId to answer "yes, saved".
+// First post to claim a postKey wins the entry's captureId (same
+// "informational, not authoritative" tolerance bridge.cts's old sidecar rescan
+// already had for two posts that collapse to the same key) — the badge only
+// needs SOME captureId to answer "yes, saved".
+//
+// Its MEDIA, though, is the union across every record sharing the key (#334):
+// saving a second picture of a multi-image post writes a second record, so the
+// pictures of that post that are in the library are spread across records. Read
+// per record, the badge would offer to save a picture already saved.
 function buildSavedIndex(sqlite: Database.Database, now: () => string = () => new Date().toISOString()): SavedIndexFile {
-  const entries: Record<string, string> = {};
+  const entries: Record<string, SavedIndexEntry> = {};
   const rows = sqlite.prepare('SELECT captureId, url FROM posts WHERE url IS NOT NULL AND trashedAt IS NULL').all() as Array<{ captureId: string; url: string }>;
+  // One pass over the media of every live post, grouped by its owner. Cheaper
+  // than a per-post query (a library's worth of prepared-statement round trips)
+  // and the JOIN keeps trashed posts out.
+  const mediaByPost = new Map<string, Array<string | null>>();
+  const mediaRows = sqlite.prepare('SELECT m.postId, m.seq, m.url FROM media m JOIN posts p ON p.captureId = m.postId WHERE p.trashedAt IS NULL ORDER BY m.postId, m.seq').all() as Array<{
+    postId: string;
+    seq: number;
+    url: string | null;
+  }>;
+  for (const row of mediaRows) {
+    const list = mediaByPost.get(row.postId) || [];
+    // Positional by seq, not by arrival: a gap (a media row deleted from the
+    // middle) must not shift the pictures after it onto the wrong seq.
+    list[row.seq] = row.url || null;
+    mediaByPost.set(row.postId, list);
+  }
   for (const row of rows) {
     const key = postKeyOf(row.url);
-    if (key && !(key in entries)) entries[key] = row.captureId;
+    if (!key) continue;
+    const media = mediaByPost.get(row.captureId) || [];
+    const entry = entries[key];
+    if (!entry) {
+      entries[key] = { id: row.captureId, media: Array.from(media, (url) => url ?? null) };
+      continue;
+    }
+    // A url-less picture is kept only from the FIRST record to claim the key
+    // (bridge.cts's mergeSavedEntry says the same for its own two sources): its
+    // position means something inside its own record and nowhere else.
+    for (const url of media) {
+      if (!url || entry.media.includes(url)) continue;
+      entry.media.push(url);
+    }
   }
   return { format: SAVED_INDEX_FORMAT, version: SAVED_INDEX_VERSION, generatedAt: now(), entries };
 }

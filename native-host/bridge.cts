@@ -207,9 +207,22 @@ function uniqueBase(dir: string, captureId: string): string {
 //      journal's braces: it also catches saves made by a second browser
 //      profile (a different bridge process, a different journal).
 //
-// Both are merged into one postKey→captureId map, cached for the life of the
+// Both are merged into one postKey→entry map, cached for the life of the
 // process (the extension keeps ONE port open across a timeline's worth of
 // queries — see background.ts) and invalidated when either source's mtime moves.
+//
+// An entry is a captureId plus the post's SAVED PICTURES (#334): the media
+// items the record holds, in the record's own order. The badge's question is
+// per picture, not per post — one picture of a multi-image post may be in the
+// library while the rest are not — and only the record knows which. Media from
+// EVERY record sharing a postKey is merged, because saving a second picture of
+// a post writes a second record rather than extending the first.
+//
+// A record whose media is unknown (an entry with no items at all: a text-only
+// post, a capture whose downloads failed, a snapshot written by an older app)
+// answers with an empty list, which the extension reads as "saved, granularity
+// unknown" and treats exactly as it did before #334 — the whole post marked.
+// Absence of detail must not read as "that picture is not saved".
 const SAVED_INDEX_FILE = 'bridge-saved-index.json';
 const JOURNAL_FILE = 'bridge-journal.jsonl';
 const QUERY_URL_CAP = 300; // one viewport's worth of posts, with room to spare
@@ -220,13 +233,53 @@ const JOURNAL_COMPACT_BYTES = 64 * 1024; // compact only once it's worth the rew
 // suffix. Group 1 is the save time.
 const INBOX_ENVELOPE_NAME = /^(\d{10,})-[0-9a-f]{1,8}(?:-\d+)?\.json$/i;
 
+// The saved pictures of one post: positional, so the array index IS the media
+// row's seq and a picture the library recorded no URL for holds its place as
+// null. url leads; seq is only the fallback for those nulls (a post's media can
+// change, so a position is no durable id).
+interface SavedEntry {
+  id: string; // captureId ('' when the source could not report one)
+  media: Array<string | null>;
+}
 interface SavedIndex {
   folder: string;
   savedIndexMtimeMs: number;
   journalMtimeMs: number;
-  keys: Map<string, string>; // postKey -> captureId
+  keys: Map<string, SavedEntry>; // postKey -> entry
 }
 let savedIndexCache: SavedIndex | null = null;
+
+// media[] as the saved-index carries it: positional, so the index IS the seq
+// and an item the record has no URL for still occupies its place. Takes either
+// shape a source offers — a record's media objects ({url,file,…}) or the
+// already-flattened list the snapshot and the journal store.
+function mediaUrlsOf(source: any): Array<string | null> {
+  const media = source && Array.isArray(source.media) ? source.media : [];
+  return media.map((m: any) => {
+    if (typeof m === 'string') return m || null;
+    return m && typeof m.url === 'string' && m.url ? m.url : null;
+  });
+}
+
+// Fold one record's pictures into the entry for its postKey. Two records of the
+// same post (the second picture of a multi-image post is its own save) both
+// contribute; a picture already listed is not listed twice.
+//
+// A url-less picture is kept only from the FIRST record to claim the key: its
+// position is meaningful inside its own record and nowhere else, so appending
+// one from a later record would put a "picture number" at a number that is not
+// its own. Dropping it costs nothing the badge can use.
+function mergeSavedEntry(keys: Map<string, SavedEntry>, key: string, id: string, urls: Array<string | null>): void {
+  const entry = keys.get(key);
+  if (!entry) {
+    keys.set(key, { id, media: urls.slice() });
+    return;
+  }
+  for (const url of urls) {
+    if (!url || entry.media.includes(url)) continue;
+    entry.media.push(url);
+  }
+}
 
 function savedIndexPath(): string {
   return path.join(configDir(), SAVED_INDEX_FILE);
@@ -248,13 +301,14 @@ function statMtimeMs(p: string): number {
 // drains the inbox. Updates the live map too: within one port's lifetime the
 // badge must light on the post the user just saved without waiting for any
 // file to settle.
-function noteSaved(url: unknown, captureId: string): void {
+function noteSaved(url: unknown, captureId: string, media?: unknown): void {
   const key = postKeyOf(typeof url === 'string' ? url : null);
   if (!key) return;
-  if (savedIndexCache && !savedIndexCache.keys.has(key)) savedIndexCache.keys.set(key, captureId);
+  const urls = mediaUrlsOf({ media });
+  if (savedIndexCache) mergeSavedEntry(savedIndexCache.keys, key, captureId, urls);
   try {
     fs.mkdirSync(configDir(), { recursive: true });
-    fs.appendFileSync(journalPath(), JSON.stringify({ k: key, id: captureId, t: Date.now() }) + '\n', 'utf8');
+    fs.appendFileSync(journalPath(), JSON.stringify({ k: key, id: captureId, m: urls, t: Date.now() }) + '\n', 'utf8');
     // The append moved the journal's mtime; adopt it so the next query doesn't
     // read our own write as "someone else changed this" and rebuild.
     if (savedIndexCache) savedIndexCache.journalMtimeMs = statMtimeMs(journalPath());
@@ -267,7 +321,7 @@ function noteSaved(url: unknown, captureId: string): void {
 // snapshot was written (older ones are already in it). Compacts the file once
 // it grows past the threshold, with a check-and-swap on its size so a
 // concurrent bridge's append is not silently dropped by the rewrite.
-function readJournal(savedIndexMtimeMs: number): Array<{ k: string; id: string }> {
+function readJournal(savedIndexMtimeMs: number): Array<{ k: string; id: string; m: Array<string | null> }> {
   const p = journalPath();
   let sizeBefore: number;
   let raw: string;
@@ -278,7 +332,7 @@ function readJournal(savedIndexMtimeMs: number): Array<{ k: string; id: string }
     return []; // no journal yet — nothing was saved app-closed
   }
   const kept: string[] = [];
-  const entries: Array<{ k: string; id: string }> = [];
+  const entries: Array<{ k: string; id: string; m: Array<string | null> }> = [];
   for (const line of raw.split('\n')) {
     if (!line) continue;
     let e: any;
@@ -289,7 +343,9 @@ function readJournal(savedIndexMtimeMs: number): Array<{ k: string; id: string }
     }
     if (!e || typeof e.k !== 'string') continue;
     if (typeof e.t === 'number' && e.t <= savedIndexMtimeMs) continue; // the snapshot has it
-    entries.push({ k: e.k, id: typeof e.id === 'string' ? e.id : '' });
+    // m is positional (see mediaUrlsOf); a line written before #334 has none,
+    // which reads as "saved, pictures unknown" rather than "no pictures saved".
+    entries.push({ k: e.k, id: typeof e.id === 'string' ? e.id : '', m: Array.isArray(e.m) ? e.m.map((u: unknown) => (typeof u === 'string' && u ? u : null)) : [] });
     kept.push(line);
   }
   if (sizeBefore >= JOURNAL_COMPACT_BYTES && kept.length * 120 < sizeBefore) {
@@ -309,7 +365,7 @@ function readJournal(savedIndexMtimeMs: number): Array<{ k: string; id: string }
 // Loose inbox envelopes newer than the saved-index snapshot, read newest-first
 // and capped. Reads the save time out of the FILENAME (see INBOX_ENVELOPE_NAME)
 // rather than stat-ing every file — same trick scanRecentSidecars used pre-#299.
-function scanRecentInbox(folder: string, sinceMs: number, keys: Map<string, string>): void {
+function scanRecentInbox(folder: string, sinceMs: number, keys: Map<string, SavedEntry>): void {
   let files: string[];
   try {
     files = fs.readdirSync(inboxNewDir(folder));
@@ -328,7 +384,7 @@ function scanRecentInbox(folder: string, sinceMs: number, keys: Map<string, stri
       const parsed = parseInboxEnvelope(raw);
       if (!parsed.ok) continue; // corrupt/mid-write/unknown-version -- skip, don't crash the query
       const key = postKeyOf(parsed.envelope.record.url);
-      if (key && !keys.has(key)) keys.set(key, parsed.envelope.eventId);
+      if (key) mergeSavedEntry(keys, key, parsed.envelope.eventId, mediaUrlsOf(parsed.envelope.record));
     } catch {
       /* unreadable/partial envelope — skip it */
     }
@@ -338,13 +394,16 @@ function scanRecentInbox(folder: string, sinceMs: number, keys: Map<string, stri
 function buildSavedIndex(folder: string): SavedIndex {
   const indexFile = savedIndexPath();
   const savedIndexMtimeMs = statMtimeMs(indexFile);
-  const keys = new Map<string, string>();
+  const keys = new Map<string, SavedEntry>();
   try {
     const idx = JSON.parse(fs.readFileSync(indexFile, 'utf8'));
     const entries = idx && idx.entries;
     if (entries && typeof entries === 'object') {
-      for (const [key, captureId] of Object.entries(entries)) {
-        if (typeof key === 'string' && key && typeof captureId === 'string' && !keys.has(key)) keys.set(key, captureId);
+      for (const [key, value] of Object.entries(entries)) {
+        if (typeof key !== 'string' || !key || keys.has(key)) continue;
+        // v1 wrote a bare captureId string (pre-#334): saved, pictures unknown.
+        if (typeof value === 'string') keys.set(key, { id: value, media: [] });
+        else if (value && typeof value === 'object') mergeSavedEntry(keys, key, typeof (value as any).id === 'string' ? (value as any).id : '', mediaUrlsOf(value));
       }
     }
   } catch {
@@ -353,13 +412,13 @@ function buildSavedIndex(folder: string): SavedIndex {
     // inbox up to its cap.
   }
   scanRecentInbox(folder, savedIndexMtimeMs, keys);
-  for (const e of readJournal(savedIndexMtimeMs)) if (!keys.has(e.k)) keys.set(e.k, e.id);
+  for (const e of readJournal(savedIndexMtimeMs)) mergeSavedEntry(keys, e.k, e.id, e.m);
   return { folder, savedIndexMtimeMs, journalMtimeMs: statMtimeMs(journalPath()), keys };
 }
 
 // Cached map, rebuilt when the save folder changed or either source moved. The
 // two stats are the whole cost of a warm query.
-function savedIndex(folder: string): Map<string, string> {
+function savedIndex(folder: string): Map<string, SavedEntry> {
   const c = savedIndexCache;
   if (c && c.folder === folder && c.savedIndexMtimeMs === statMtimeMs(savedIndexPath()) && c.journalMtimeMs === statMtimeMs(journalPath())) {
     return c.keys;
@@ -368,18 +427,21 @@ function savedIndex(folder: string): Map<string, string> {
   return savedIndexCache.keys;
 }
 
-// {type:'query', urls:[…]} → {ok:true, results:{[url]: captureId|null}}.
-// null means "not in the library"; anything else means saved (the captureId is
-// informational — a record whose id we could not read answers with '').
+// {type:'query', urls:[…]} → {ok:true, results:{[url]: {id, media}|null}}.
+// null means "not in the library". An entry means saved, and its media list
+// says WHICH of the post's pictures are (#334) — empty when the library knows
+// the post but not its pictures, which the asker treats as the whole post.
+// The captureId is informational (a record whose id we could not read answers
+// with '').
 function handleQuery(msg: any) {
   const urls: unknown[] = Array.isArray(msg.urls) ? msg.urls.slice(0, QUERY_URL_CAP) : [];
-  const results: Record<string, string | null> = {};
+  const results: Record<string, SavedEntry | null> = {};
   if (!urls.length) return { ok: true, results };
   const keys = savedIndex(readSaveFolder());
   for (const u of urls) {
     if (typeof u !== 'string' || !u) continue;
     const key = postKeyOf(u);
-    results[u] = key && keys.has(key) ? (keys.get(key) as string) : null;
+    results[u] = (key && keys.get(key)) || null;
   }
   return { ok: true, results };
 }
@@ -446,9 +508,9 @@ async function handleSave(msg: any) {
   await writeInboxEvent(saveFolder, buildEnvelope(record));
   // The envelope is on disk = this post IS saved. Tell the badge index now:
   // the app won't know until it next drains the inbox (see noteSaved).
-  noteSaved(record.url, base);
+  noteSaved(record.url, base, record.media);
 
-  return { ok: true, file: `${base}.jpg`, saveFolder, mediaCount: savedMedia.length };
+  return { ok: true, file: `${base}.jpg`, saveFolder, mediaCount: savedMedia.length, media: mediaUrlsOf(record) };
 }
 
 // Bulk-intake save (#362): metadata plus the post's own media, and no
@@ -513,18 +575,23 @@ async function handleSavePost(msg: any) {
     }),
   );
   await writeInboxEvent(saveFolder, buildEnvelope(record));
-  noteSaved(record.url, base); // see handleSave
+  noteSaved(record.url, base, record.media); // see handleSave
 
   // deferred = written but not displayable yet (no media at all → #365).
-  return { ok: true, file: savedMedia.length ? savedMedia[0].file : base, saveFolder, mediaCount: savedMedia.length, deferred: !savedMedia.length };
+  return { ok: true, file: savedMedia.length ? savedMedia[0].file : base, saveFolder, mediaCount: savedMedia.length, deferred: !savedMedia.length, media: mediaUrlsOf(record) };
 }
 
 // Image-drag save: no screenshot. The bridge downloads the dragged illustration
 // itself (any supported still type, with an optional pixiv Referer) and that file
-// IS the record's primary image. media[] is left empty (the image is the content;
-// duplicating it in media[] would double it in the viewer's lightbox). This is the
-// same "illustration record" shape an imported library item produces. captureId is the
-// normal epochMillis-hex form, so it passes SAFE_ID.
+// IS the record's primary image. It is ALSO the record's single media[] entry —
+// the row that says WHICH picture of the post this record holds (#334). Nothing
+// is doubled by that: the viewer's artwork/group helpers read media[] *instead
+// of* image (records.ts's artworkFile/groupFilesOf), and both point at the one
+// file this save wrote. Before #334 the record kept the downloaded file but not
+// where it came from, so a multi-image post could not be asked which of its
+// pictures were already in the library. This is the same "illustration record"
+// shape an imported library item produces. captureId is the normal
+// epochMillis-hex form, so it passes SAFE_ID.
 async function handleSaveDragged(msg: any) {
   const captureId = sanitizeCaptureId(msg.captureId);
   if (!captureId) throw new Error('Invalid captureId');
@@ -548,11 +615,12 @@ async function handleSaveDragged(msg: any) {
   }
   // source:'drag' marks the image as the artwork itself (not a post screenshot),
   // so the image-view shows it. Mirrors the migrated records' source marker.
-  const record = normalizePostRecord(Object.assign({}, meta, { captureId: base, image: imageFile, media: [], source: 'drag', avatarFile, raw: packRawPayloads(meta.rawPayloads) }));
+  const media = [{ url: msg.imageUrl, file: imageFile }];
+  const record = normalizePostRecord(Object.assign({}, meta, { captureId: base, image: imageFile, media, source: 'drag', avatarFile, raw: packRawPayloads(meta.rawPayloads) }));
   await writeInboxEvent(saveFolder, buildEnvelope(record));
-  noteSaved(record.url, base); // see handleSave
+  noteSaved(record.url, base, record.media); // see handleSave
 
-  return { ok: true, file: imageFile, saveFolder };
+  return { ok: true, file: imageFile, saveFolder, media: mediaUrlsOf(record) };
 }
 
 // --- stdin reader: buffer bytes and process complete messages ---

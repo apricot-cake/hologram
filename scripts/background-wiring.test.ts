@@ -190,14 +190,15 @@ describe('chrome.runtime.onMessage ルーティング', () => {
     // まず savePost を1件成功させ、markSaved 経由でキャッシュへ載せる。
     const save = env.dispatch({ type: 'savePost', platform: 'misskey', postUrl: UNPARSEABLE_POST_URL }, MISSKEY_SENDER);
     await vi.waitFor(() => expect(createdPorts.length).toBe(1));
-    createdPorts[0].emitMessage({ ok: true, file: 'saved-file-id' });
+    createdPorts[0].emitMessage({ ok: true, file: 'saved-file-id', media: ['https://misskey.example/files/aaa.png'] });
     const saveResult = await save.responseP;
     expect(saveResult.ok).toBe(true);
 
     // 次に checkSaved で同じ URL を尋ねる — キャッシュヒットなので新しい Port は作られない。
     const { returns, responseP } = env.dispatch({ type: 'checkSaved', urls: [UNPARSEABLE_POST_URL] }, {});
     expect(returns).not.toContain(true); // 同期応答
-    await expect(responseP).resolves.toEqual({ ok: true, results: { [UNPARSEABLE_POST_URL]: 'saved-file-id' } });
+    // 応答は投稿ごとに captureId ＋その投稿の保存済みの絵（#334）。
+    await expect(responseP).resolves.toEqual({ ok: true, results: { [UNPARSEABLE_POST_URL]: { id: 'saved-file-id', media: ['https://misskey.example/files/aaa.png'] } } });
     expect(createdPorts.length).toBe(1); // queryBridge は呼ばれていない
   });
 });
@@ -275,6 +276,22 @@ describe('bridgeSend — 保存経路のネイティブホスト Port 配線', (
     // markSaved がこの送信元タブへ savedUpdate を通知している。
     expect(env.tabsSent.some((s) => s.tabId === MISSKEY_SENDER.tab.id && s.message.type === 'savedUpdate')).toBe(true);
   });
+
+  // #334: 通知が運ぶのは「保存された」だけでなく「どの絵が」＝ホストが実際に記録した
+  // ものをそのまま渡す。これが欠けると、複数枚投稿の1枚を保存した直後だけ残りの絵の
+  // 保存ボタンが消える（オーバーレイが投稿まるごと保存済みと読むため）。
+  test('savedUpdate はホストが記録した絵の URL を運ぶ', async () => {
+    const env = setupBackground();
+    const createdPorts = env.connectAsControllablePort();
+
+    const { responseP } = env.dispatch({ type: 'savePost', platform: 'misskey', postUrl: UNPARSEABLE_POST_URL }, MISSKEY_SENDER);
+    await vi.waitFor(() => expect(createdPorts.length).toBe(1));
+    createdPorts[0].emitMessage({ ok: true, file: 'saved-file-id', media: ['https://misskey.example/files/one.png'] });
+    await responseP;
+
+    const update = env.tabsSent.find((s) => s.message.type === 'savedUpdate');
+    expect(update?.message.media).toEqual(['https://misskey.example/files/one.png']);
+  });
 });
 
 describe('queryBridge — checkSaved の常駐 Port 配線', () => {
@@ -316,8 +333,8 @@ describe('queryBridge — checkSaved の常駐 Port 配線', () => {
     // nextQueryId は張り直しても引き継がれる（1件目の失敗リクエストが使った id を再利用しない）ので、
     // 実際に送られた id を読み取って返す。
     const sentId = createdPorts[1].sent[0].id;
-    createdPorts[1].emitMessage({ id: sentId, results: { 'https://x.com/a/status/1': 'file-1' } });
-    await expect(second.responseP).resolves.toEqual({ ok: true, results: { 'https://x.com/a/status/1': 'file-1' } });
+    createdPorts[1].emitMessage({ id: sentId, results: { 'https://x.com/a/status/1': { id: 'file-1', media: [] } } });
+    await expect(second.responseP).resolves.toEqual({ ok: true, results: { 'https://x.com/a/status/1': { id: 'file-1', media: [] } } });
   });
 
   test('1本のポートで複数の問い合わせを id 突き合わせでさばく', async () => {
@@ -332,11 +349,11 @@ describe('queryBridge — checkSaved の常駐 Port 配線', () => {
 
     // 応答順を入れ替えて返す — id で正しい呼び出し元へ届くことを確認する。
     const [reqA, reqB] = createdPorts[0].sent;
-    createdPorts[0].emitMessage({ id: reqB.id, results: { 'https://x.com/b/status/2': 'file-b' } });
-    createdPorts[0].emitMessage({ id: reqA.id, results: { 'https://x.com/a/status/1': 'file-a' } });
+    createdPorts[0].emitMessage({ id: reqB.id, results: { 'https://x.com/b/status/2': { id: 'file-b', media: [] } } });
+    createdPorts[0].emitMessage({ id: reqA.id, results: { 'https://x.com/a/status/1': { id: 'file-a', media: [] } } });
 
-    await expect(first.responseP).resolves.toEqual({ ok: true, results: { 'https://x.com/a/status/1': 'file-a' } });
-    await expect(second.responseP).resolves.toEqual({ ok: true, results: { 'https://x.com/b/status/2': 'file-b' } });
+    await expect(first.responseP).resolves.toEqual({ ok: true, results: { 'https://x.com/a/status/1': { id: 'file-a', media: [] } } });
+    await expect(second.responseP).resolves.toEqual({ ok: true, results: { 'https://x.com/b/status/2': { id: 'file-b', media: [] } } });
   });
 });
 

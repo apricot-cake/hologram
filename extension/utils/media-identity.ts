@@ -46,6 +46,63 @@ function getMediaIdentitySite(): MediaIdentitySite | null {
   return null;
 }
 
+// --- Picture identity across URL spellings ------------------------------------
+// "Are these two URLs the same picture?" — the one rule, per platform. The same
+// picture reaches us in several spellings: the page shows a thumbnail, the
+// platform API announces the original, and a save records whichever it
+// downloaded. Comparing the strings would answer "different" every time.
+//
+// Two callers depend on this being ONE function (#334): the drag/hover save
+// picks which announced original the pointed-at picture is (pickPrimaryImage in
+// background.ts), and the timeline overlay decides which of a post's pictures
+// are already in the library, by comparing the page's URLs against the ones the
+// library recorded. A rule that drifted between them would offer a save button
+// on a picture that is already saved, or hide one that is not.
+//
+// Returns null when the URL carries no identity the platform guarantees — an
+// unknown CDN path, a blob:, a video file (X hands over an .mp4 whose page-side
+// counterpart is only a poster frame). Callers treat null as "cannot compare",
+// never as "no match": the saved-picture lookup falls back to the media item's
+// position in the post, which is what the record's seq preserves.
+function mediaKeyOf(platform: string, url: string | null | undefined): string | null {
+  if (typeof url !== 'string' || !url) return null;
+  if (platform === 'x') {
+    // Both halves of the path: the id alone would let a photo and a video
+    // poster of the same post collide on a shared id space we do not control.
+    const m = url.match(/pbs\.twimg\.com\/(media|amplify_video_thumb|ext_tw_video_thumb|tweet_video_thumb)\/([^/.?:]+)/);
+    return m ? `${m[1]}/${m[2]}` : null;
+  }
+  if (platform === 'bluesky') {
+    // The blob CID, shared by feed_thumbnail and feed_fullsize, with or without
+    // the @jpeg format suffix.
+    return (url.match(/\/([a-z0-9]{50,})(?:@|\b)/i) || [])[1] || null;
+  }
+  if (platform === 'pixiv') {
+    // <artworkId>_p<page> survives every pximg rewrite: the square/master
+    // thumbnails carry a size suffix after it, the original carries none.
+    return (url.match(/\/(\d+_p\d+)(?:[._]|$)/) || [])[1] || null;
+  }
+  if (platform === 'misskey' || platform === 'mastodon') {
+    // Direct file URLs: a thumbnail and its original share the file id / hash,
+    // which is the URL basename minus query and extension.
+    const base = (url.split(/[?#]/)[0]?.match(/([^/]+)$/) || [])[1] || '';
+    return base.replace(/\.[a-z0-9]+$/i, '') || null;
+  }
+  return null;
+}
+
+// Every identity the page offers for one picture. An <img> is routinely
+// swapped between spellings (src, currentSrc, a srcset entry) while the user
+// looks at it, so all of them are collected and any one matching is a match.
+function mediaKeysOf(el: PostMediaElement, platform: string): string[] {
+  const keys = new Set<string>();
+  for (const url of collectImageUrls(el, platform)) {
+    const key = mediaKeyOf(platform, url);
+    if (key) keys.add(key);
+  }
+  return [...keys];
+}
+
 // Every URL worth trying for one image, best first-class candidate included: the
 // bridge downloads the first that works, so a thumbnail src is a usable fallback
 // when the high-resolution rewrite 404s.
@@ -258,5 +315,5 @@ function parseMediaUrlPath(href: string, pathRegex: RegExp): ParsedMediaPath | n
   }
 }
 
-export { collectImageUrls, getMediaIdentitySite };
+export { collectImageUrls, getMediaIdentitySite, mediaKeyOf, mediaKeysOf };
 export type { MediaIdentity, MediaIdentitySite, PostMediaElement };
