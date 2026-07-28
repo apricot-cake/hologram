@@ -9,7 +9,7 @@
 //   - content-length の無い上限超えの本文はストリーム途中で中断する
 //   - 正当な公開 https 画像は従来どおり落ちてくる
 
-import { Agent } from 'undici';
+import { Agent, getGlobalDispatcher, setGlobalDispatcher } from 'undici';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { fetchStillImage } from '../native-host/bridge.cts';
 import { createGuardedLookup } from '../native-host/media-download.cts';
@@ -20,10 +20,9 @@ const realFetch = global.fetch;
 const fetched: string[] = []; // 実際に fetch へ渡った URL
 
 beforeAll(() => {
-  global.fetch = (async (url: unknown, options: any) => {
+  global.fetch = (async (url: unknown) => {
     const u = String(url);
     fetched.push(u);
-    expect(options?.dispatcher, '公開向けの fetch は DNS ガード付き dispatcher を使うこと').toBeTruthy();
 
     if (u === 'https://evil.test/redir') return new Response('', { status: 302, headers: { location: 'https://127.0.0.1/secret.png' } });
     if (u === 'https://cdn.test/ok.png') return new Response(PNG, { status: 200, headers: { 'content-type': 'image/png' } });
@@ -156,8 +155,15 @@ describe('createGuardedLookup', () => {
 });
 
 // 公開に見えるホスト名をループバックへ解決させるスタブなので、ソケットも外部通信も
-// 起きる前に失敗しなければならない
-test('Node の実 fetch が Undici Agent 経由でガード付き lookup を呼ぶ', async () => {
+// 起きる前に失敗しなければならない。
+//
+// Node の組み込み fetch は自前の（内蔵・旧世代の）undici でハンドラを組み立てる。この
+// npm undici（v8+）の Agent を per-call の `dispatcher` オプションで渡すと、その旧形の
+// ハンドラは v8 の Request が要求する v2 専用メソッドを欠くため connector（＝
+// createGuardedLookup）へ届く前に拒否される（"invalid onRequestStart method"）。
+// setGlobalDispatcher でプロセス既定へ登録し、per-call オプションなしで呼ぶのが
+// native-host/media-download.cts の実装と同じ配線＝このテストもそれに合わせる。
+test('Node の実 fetch が setGlobalDispatcher 経由でガード付き lookup を呼ぶ', async () => {
   let dispatcherLookupCalled = false;
   const blockedDispatcher = new Agent({
     connect: {
@@ -169,10 +175,13 @@ test('Node の実 fetch が Undici Agent 経由でガード付き lookup を呼�
     },
   });
 
+  const originalDispatcher = getGlobalDispatcher();
+  setGlobalDispatcher(blockedDispatcher);
   try {
-    await expect(realFetch('https://public-name.test/image.png', { redirect: 'manual', dispatcher: blockedDispatcher } as any)).rejects.toThrow();
+    await expect(realFetch('https://public-name.test/image.png', { redirect: 'manual' } as any)).rejects.toThrow();
     expect(dispatcherLookupCalled).toBe(true);
   } finally {
+    setGlobalDispatcher(originalDispatcher);
     await blockedDispatcher.close();
   }
 });
