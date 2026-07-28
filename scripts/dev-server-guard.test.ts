@@ -46,13 +46,15 @@ describe('開発時でも拒否するもの', () => {
 
   // URL でない値。`HOLOGRAM_DEV_SERVER=1` のような真偽値のつもりの指定もここ＝
   // 「値が入っている＝開発サーバーがある」とは解釈しない
-  test.each(['1', 'true', 'localhost:5173', 'まだ URL ではない'])('URL として壊れている %j', (raw) => {
+  test.each(['1', 'true', 'まだ URL ではない'])('URL として壊れている %j', (raw) => {
     expect(dev(raw)).toEqual({ url: null, rejected: 'malformed' });
   });
 
   // http: 以外は、ループバックであっても通さない（fail-closed の境界を
-  // スキームで先に閉じる）
-  test.each(['https://localhost:5173/', 'file:///C:/tmp/evil.html', 'data:text/html,<h1>x', 'ws://localhost:5173/'])('http: ではない %j', (raw) => {
+  // スキームで先に閉じる）。最後の `localhost:5173` はスキームを省いた書き方で、
+  // WHATWG URL は「localhost: というスキームの URL」として解釈する＝ホスト名が
+  // 空になるので、http: の判定で先に落ちる
+  test.each(['https://localhost:5173/', 'file:///C:/tmp/evil.html', 'data:text/html,<h1>x', 'ws://localhost:5173/', 'localhost:5173'])('http: ではない %j', (raw) => {
     expect(dev(raw)).toEqual({ url: null, rejected: 'not-http' });
   });
 
