@@ -205,3 +205,50 @@ function searchPostsFts(sqlite: Database.Database, query: string, limit = 200): 
 }
 
 export { postsFromDb, postsByIds, searchPostsFts, POST_COLUMNS };
+
+// --- #300 (St7) additions: exports these tables have never had a reader for ---
+// (tag_parents is dormant schema for #86/#157; capturedVia was added to the
+// writer's POST_COLUMNS — lib-db-record-writer.ts — after this file's list was
+// last touched, and was never backfilled here.) Kept as a separate export
+// statement so the pre-existing four-name export above never needs editing.
+
+interface TagRow2 {
+  id: number;
+  name: string;
+  kind: string | null;
+  reading: string | null;
+}
+// Every tag row, unfiltered (tag-types.json only round-trips tags that have a
+// kind; tag-parents.json needs every tag that participates in a parent edge
+// regardless of kind).
+function tagsFromDb(sqlite: Database.Database): TagRow2[] {
+  return sqlite.prepare('SELECT id, name, kind, reading FROM tags ORDER BY id').all() as TagRow2[];
+}
+
+interface TagParentRow {
+  tagId: number;
+  parentTagId: number;
+  isDisplay: boolean;
+}
+function tagParentsFromDb(sqlite: Database.Database): TagParentRow[] {
+  return (sqlite.prepare('SELECT tagId, parentTagId, isDisplay FROM tag_parents ORDER BY tagId, parentTagId').all() as Array<{ tagId: number; parentTagId: number; isDisplay: number }>).map((r) => ({
+    tagId: r.tagId,
+    parentTagId: r.parentTagId,
+    isDisplay: !!r.isDisplay,
+  }));
+}
+
+// Supplemental lookup for the one POST_COLUMNS gap (see module comment above)
+// rather than editing POST_COLUMNS/assemble() in place — keeps this file's
+// existing read path byte-for-byte unchanged for every other caller.
+function postCapturedVia(sqlite: Database.Database, captureIds: string[]): Map<string, string | null> {
+  const out = new Map<string, string | null>();
+  if (!captureIds.length) return out;
+  const placeholders = captureIds.map(() => '?').join(',');
+  for (const row of sqlite.prepare(`SELECT captureId, capturedVia FROM posts WHERE captureId IN (${placeholders})`).all(...captureIds) as Array<{ captureId: string; capturedVia: string | null }>) {
+    out.set(row.captureId, row.capturedVia);
+  }
+  return out;
+}
+
+export { tagsFromDb, tagParentsFromDb, postCapturedVia };
