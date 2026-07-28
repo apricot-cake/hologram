@@ -18,7 +18,7 @@
 // postUrl にはどのプラットフォームの URL パターンにも一致しない文字列を使う
 // （parsePostUrl が null を返し、fetchPostMetadata は fetch を呼ばず空レコードで即解決する）。
 
-import { beforeEach, describe, expect, test, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { startBackground } from '../extension/utils/background';
 
 // --- 自前 chrome スタブ ---------------------------------------------------------
@@ -397,5 +397,73 @@ describe('診断ログのフォールバック（stashLogLocally のリングバ
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+// #450: ページが動画投稿について渡せるのはポスターだけで、それ1枚を作品として保存しても
+// ライブラリに置く意味が無い。動画・GIF 投稿は、プラットフォームが申告した原本を落とす
+// 投稿保存の経路（#119 段1 で動画本体に対応済み）へ回す＝ここで見るのはその振り分け。
+describe('imageDragged の振り分け（#450）', () => {
+  const X_SENDER = { tab: { id: 3, url: 'https://x.com/alice/status/1' } };
+  const X_POST_URL = 'https://x.com/alice/status/1';
+  const POSTER = 'https://pbs.twimg.com/amplify_video_thumb/1/img/abc.jpg';
+
+  function mockSyndication(mediaDetails: unknown[]) {
+    vi.stubGlobal('fetch', async (url: unknown) => (String(url).includes('cdn.syndication.twimg.com') ? new Response(JSON.stringify({ text: 'hi', user: { screen_name: 'alice', id_str: '1' }, mediaDetails }), { status: 200, headers: { 'content-type': 'application/json' } }) : new Response('{}', { status: 404 })));
+  }
+
+  afterEach(() => vi.unstubAllGlobals());
+
+  async function dispatchDrag(mediaDetails: unknown[]) {
+    const env = setupBackground();
+    const createdPorts = env.connectAsControllablePort();
+    mockSyndication(mediaDetails);
+
+    const drag = env.dispatch({ type: 'imageDragged', platform: 'x', postUrl: X_POST_URL, imageUrls: [POSTER] }, X_SENDER);
+    await vi.waitFor(() => expect(createdPorts.length).toBe(1));
+    const sentToHost = createdPorts[0].sent[0];
+    createdPorts[0].emitMessage({ ok: true, file: 'saved-file-id' });
+    await drag.responseP;
+    return sentToHost;
+  }
+
+  test('動画投稿は投稿保存へ回り、動画の直リンクを記録に載せる', async () => {
+    const sent = await dispatchDrag([
+      {
+        type: 'video',
+        media_url_https: POSTER,
+        video_info: { variants: [{ content_type: 'video/mp4', bitrate: 2176000, url: 'https://video.twimg.com/high.mp4' }] },
+      },
+    ]);
+
+    expect(sent.type).toBe('savePost');
+    expect(sent.metadata.mediaType).toBe('video');
+    expect(sent.metadata.media).toHaveLength(1);
+    expect(sent.metadata.media[0]).toMatchObject({ type: 'video', url: 'https://video.twimg.com/high.mp4' });
+  });
+
+  test('GIF 投稿も同じ経路へ回る', async () => {
+    const sent = await dispatchDrag([{ type: 'animated_gif', media_url_https: POSTER, video_info: { variants: [{ content_type: 'video/mp4', url: 'https://video.twimg.com/g.mp4' }] } }]);
+
+    expect(sent.type).toBe('savePost');
+    expect(sent.metadata.mediaType).toBe('gif');
+    expect(sent.metadata.media[0]).toMatchObject({ type: 'gif', url: 'https://video.twimg.com/g.mp4' });
+  });
+
+  // 静止画は従来どおり＝指した絵そのものが記録の主画像になる作品記録の形を崩さない。
+  test('静止画の投稿は従来のドラッグ保存のまま', async () => {
+    const stillUrl = 'https://pbs.twimg.com/media/AAA.jpg';
+    const env = setupBackground();
+    const createdPorts = env.connectAsControllablePort();
+    mockSyndication([{ type: 'photo', media_url_https: stillUrl }]);
+
+    const drag = env.dispatch({ type: 'imageDragged', platform: 'x', postUrl: X_POST_URL, imageUrls: [stillUrl] }, X_SENDER);
+    await vi.waitFor(() => expect(createdPorts.length).toBe(1));
+    const sent = createdPorts[0].sent[0];
+    createdPorts[0].emitMessage({ ok: true, file: 'saved-file-id' });
+    await drag.responseP;
+
+    expect(sent.type).toBe('saveDragged');
+    expect(sent.metadata.mediaType).toBe('image');
   });
 });

@@ -87,6 +87,22 @@ describe('X (Twitter)', () => {
     expect(config.extractIdentity(ctx.document.getElementById('imgCard'))).toEqual({ postId: '555', link: 'https://x.com/erin/status/555' });
   });
 
+  // #450: 再生が始まった動画投稿には <img> が無く、ポスターだけが手掛かりとして残る。
+  // ホバーできる状態の動画投稿は必ずこの形なので、ここが通らないとボタンは出ない。
+  test('再生中の動画投稿は <video> の poster で isPostMedia が真', () => {
+    expect(config.isPostMedia(ctx.document.getElementById('videoPlaying'))).toBe(true);
+  });
+
+  test('再生中の動画投稿も投稿へ同定される', () => {
+    expect(config.extractIdentity(ctx.document.getElementById('videoPlaying'))).toEqual({ postId: '666', link: 'https://x.com/frank/status/666' });
+  });
+
+  // 判定の根拠はあくまでパスであって要素の種類ではない＝<video> でも投稿メディアの
+  // パスでなければ偽。
+  test('poster が投稿メディアのパスでない <video> は isPostMedia が偽', () => {
+    expect(config.isPostMedia(ctx.document.getElementById('videoNotPostMedia'))).toBe(false);
+  });
+
   test('写真ビューアの絵（アンカー無し・article の外）は URL バーへ落ちる', () => {
     setLocation(ctx.dom, 'https://x.com/frank/status/555/photo/1');
     const img = ctx.document.getElementById('imgViewer');
