@@ -1,0 +1,55 @@
+{
+  "$comment": [
+    "API スキーマカナリア（#191）の観測対象。node scripts/schema-canary.cts が読む。",
+    "label は投稿の種別。同じ platform の中で一意にする（スナップショットのキーになる）。",
+    "他人の公開投稿なので消えることがある。消えたサンプルは『不通』として報告され、",
+    "スキーマ変化とは区別される＝報告に出たらここを差し替える。堅牢化の最終形は各PFに",
+    "観測用の自前投稿を種別ごと用意して置き換えること（一度きりの準備作業）。",
+    "差し替えたら該当 label の基準は snapshots/<platform>.json から自動で作り直される",
+    "（古い label の行は手で消す）。"
+  ],
+  "$gaps": [
+    "X の GIF（animated_gif）: 公式系アカウントに見つからず未登録。",
+    "X の tombstone（鍵付き・年齢制限）: 2026-07-26 に tombstone.text の消失を実地確認した種別だが、",
+    "  他人の非公開投稿を観測対象として公開リポジトリに置くのは避けた。存在しない ID は 404 で、",
+    "  tombstone 応答そのものを安定して引ける公開サンプルが無い。自前投稿を用意する時に足す。",
+    "Mastodon の投票: mastodon.social の公式系アカウントに現存せず未登録（Misskey 側で投票を観測している）。",
+    "Misskey の動画: misskey.io の公式系アカウントとグローバル TL に見つからず未登録。"
+  ],
+  "platforms": {
+    "x": [
+      { "label": "text", "url": "https://x.com/jack/status/20", "note": "2006年・最古の投稿＝消えない" },
+      { "label": "image", "url": "https://x.com/BarackObama/status/266031293945503744", "note": "2012年・写真1枚" },
+      { "label": "multiImage", "url": "https://x.com/NASASpox/status/2080777261897175496", "note": "写真4枚" },
+      { "label": "video", "url": "https://x.com/NASA/status/2080330036607893817" },
+      { "label": "quote", "url": "https://x.com/X/status/2074264959219896698" },
+      { "label": "reply", "url": "https://x.com/X/status/2079275370742677949" },
+      { "label": "card", "url": "https://x.com/NASA/status/2081307441594331350", "note": "リンクカード（metadata.ts は未読取）" }
+    ],
+    "bluesky": [
+      { "label": "text", "url": "https://bsky.app/profile/bsky.app/post/3mp54n7zccc2j" },
+      { "label": "image", "url": "https://bsky.app/profile/bsky.app/post/3moipb3xbg226" },
+      { "label": "video", "url": "https://bsky.app/profile/bsky.app/post/3mk4lzkrnk22d" },
+      { "label": "quote", "url": "https://bsky.app/profile/bsky.app/post/3mpoezgevvc23" },
+      { "label": "reply", "url": "https://bsky.app/profile/bsky.app/post/3mpohxl64mk2z" },
+      { "label": "external", "url": "https://bsky.app/profile/atproto.com/post/3mnkles3mh22l", "note": "外部リンク埋め込み" }
+    ],
+    "mastodon": [
+      { "label": "text", "url": "https://mastodon.social/@Mastodon/116967892835165166" },
+      { "label": "image", "url": "https://mastodon.social/@Mastodon/116877164722118013" },
+      { "label": "multiImage", "url": "https://mastodon.social/@Mastodon/114584709515916614" },
+      { "label": "video", "url": "https://mastodon.social/@Mastodon/116839714185151652" },
+      { "label": "cw", "url": "https://mastodon.social/@Gargron/116988836378462541", "note": "閲覧注意（spoiler_text）" },
+      { "label": "reply", "url": "https://mastodon.social/@Mastodon/116880274053020002" }
+    ],
+    "misskey": [
+      { "label": "text", "url": "https://misskey.io/notes/ap81757sr0bp0bxo" },
+      { "label": "image", "url": "https://misskey.io/notes/ap7c5zlxyyzf03ng" },
+      { "label": "poll", "url": "https://misskey.io/notes/ap7dmcut8yp700al" },
+      { "label": "cw", "url": "https://misskey.io/notes/ap7e5qdqy8se08pv" },
+      { "label": "reply", "url": "https://misskey.io/notes/ap7jh6mtcd7t02nn" },
+      { "label": "quote", "url": "https://misskey.io/notes/ap7jlc4y7kvv066m", "note": "引用リノート" }
+    ],
+    "pixiv": [{ "label": "single", "url": "https://www.pixiv.net/artworks/1580459", "note": "pixiv 事務局・2010年・1ページ" }, { "label": "multiPage", "url": "https://www.pixiv.net/artworks/146691579", "note": "複数ページ＝/pages エンドポイントも通る" }]
+  }
+}
