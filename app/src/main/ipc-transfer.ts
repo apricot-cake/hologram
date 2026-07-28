@@ -295,11 +295,12 @@ function register(ctx) {
 
   // --- Complete export (directly re-importable snapshot) ------------------------
   // One ZIP that mirrors the whole library under library/: every capture file
-  // (jpg/json/media) PLUS the organization JSONs (folders/tag-types/ungrouped/
-  // manual-groups). Excludes config.json (machine-specific) and .index.json
-  // (cache). Manual-only: the scheduled path is the incremental mirror (runBackup),
-  // which replaced the old scheduled-ZIP idea — ZIP stays as the hand-carried snapshot.
-  ipcMain.handle('export-complete', async (_e, mode) => {
+  // (jpg/media) PLUS DB-regenerated sidecars and the organization layer (#300/St7 —
+  // lib-archive.ts's module comment explains why these can't be a disk copy
+  // anymore). Excludes config.json (machine-specific) and .index.json (cache).
+  // Manual-only: the scheduled path is the incremental mirror (runBackup), which
+  // replaced the old scheduled-ZIP idea — ZIP stays as the hand-carried snapshot.
+  ipcMain.handle('export-complete', async (_e, mode, includeTrash) => {
     const imagesOnly = mode === 'images';
     const src = getSaveFolder();
     // Emptiness is a cheap readdir — check it BEFORE the dialog so an empty library
@@ -311,6 +312,13 @@ function register(ctx) {
       return { saved: false, error: err.message };
     }
     if (!hasAny) return { saved: false, empty: true };
+    // The complete-format export reads posts from the DB (imagesOnly stays a plain
+    // disk copy, same as before — it never carried sidecars/organization data).
+    let handle: any = null;
+    if (!imagesOnly) {
+      handle = await ensurePostsSynced();
+      if (!handle) return { saved: false, error: 'no-folder' };
+    }
     const res = await dialog.showSaveDialog(getWin(), { defaultPath: `hologram-${imagesOnly ? 'images' : 'export'}-${exportStamp()}.zip` });
     if (res.canceled || !res.filePath) return { saved: false };
     // Stream the archive straight to the chosen path (yazl: bounded memory + ZIP64) —
@@ -335,7 +343,7 @@ function register(ctx) {
     try {
       win?.setProgressBar(0);
       send('export-progress', { written: 0, total: 0, pct: 0 });
-      const built = imagesOnly ? await archive.writeImagesZip(src, res.filePath, onProgress) : await archive.writeCompleteZip(src, res.filePath, undefined, onProgress);
+      const built = imagesOnly ? await archive.writeImagesZip(src, res.filePath, onProgress) : await archive.writeCompleteZip(handle.sqlite, src, getTrashDir(), res.filePath, { includeTrash: !!includeTrash }, undefined, onProgress);
       try {
         win?.setProgressBar(-1);
       } catch {
@@ -360,14 +368,19 @@ function register(ctx) {
   });
 
   // --- Complete import (restore a complete-export ZIP) --------------------------
-  // Captures (jpg/json/media) are copied into the save folder, SKIPPING any that
+  // Captures (jpg/media) are copied into the save folder, SKIPPING any that
   // already exist (by filename) — so re-importing is idempotent and importing into
-  // a non-empty library merges rather than clobbers. The organization JSONs are
-  // MERGED (union) so existing folders/tags are never wiped. (Legacy exports —
-  // metadata.json + images/ — keep using the renderer's importPosts path.)
+  // a non-empty library merges rather than clobbers. Per-post .json sidecars go to
+  // the DB instead of disk, and the organization JSONs are DB-read, MERGED
+  // (union, same as before), and written back — see lib-archive.ts's
+  // importCompleteZipToDb module comment (#300/St7) for why this replaces the
+  // disk-only importCompleteZip here. (Legacy exports — metadata.json + images/ —
+  // keep using the renderer's importPosts path.)
   ipcMain.handle('import-complete', async (_e, bytes) => {
     try {
-      return await archive.importCompleteZip(await getJSZip(), getSaveFolder(), Buffer.from(bytes));
+      const handle = await ensurePostsSynced();
+      if (!handle) return { ok: false, error: 'no-folder' };
+      return await archive.importCompleteZipToDb(handle.sqlite, await getJSZip(), getSaveFolder(), Buffer.from(bytes));
     } catch (err) {
       return { ok: false, error: err.message };
     }

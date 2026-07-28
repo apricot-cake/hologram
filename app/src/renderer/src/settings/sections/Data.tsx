@@ -242,6 +242,7 @@ export function Data() {
 
   // --- export ---
   const [exportMode, setExportMode] = useState('full');
+  const [exportIncludeTrash, setExportIncludeTrash] = useState(false); // #300/St7: opt-in, default off
   const exportZip = async () => {
     // A sticky loading toast shows the live % streamed to disk (fed by main's
     // 'export-progress' via onExportProgress); it also covers the save-dialog wait.
@@ -252,7 +253,7 @@ export function Data() {
       toast.loading(t('exporting'), { id, description: `${p.pct ?? 0}%` });
     });
     try {
-      const res = await exportComplete(exportMode);
+      const res = await exportComplete(exportMode, exportMode === 'full' && exportIncludeTrash);
       off();
       toast.dismiss(id);
       if (res && res.saved) notify(t('exported'));
@@ -469,6 +470,14 @@ export function Data() {
               <Button variant="outline" onClick={() => zipInputRef.current && zipInputRef.current.click()}>
                 {t('importZip')}
               </Button>
+              {exportMode === 'full' && (
+                <div className="flex items-center gap-1.5">
+                  <Checkbox id="export-include-trash" checked={exportIncludeTrash} onCheckedChange={(v) => setExportIncludeTrash(v === true)} />
+                  <Label htmlFor="export-include-trash" className="font-normal">
+                    {t('exportIncludeTrash')}
+                  </Label>
+                </div>
+              )}
             </div>
             <Hint text={t('hintZip')} />
             <input type="file" ref={zipInputRef} hidden accept=".zip" onChange={onZipPicked} />

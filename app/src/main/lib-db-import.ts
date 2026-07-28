@@ -339,4 +339,61 @@ export function createDbImporter(opts: { internalFiles?: Set<string>; postIndex?
   return { importAll, importChanged };
 }
 
-export { INTERNAL_FILES as DB_IMPORT_INTERNAL_FILES };
+// --- #300 (St7): tag_parents write path ----------------------------------------
+// tag_parents (a tag's parent edges + at-most-one display-parent flag, DDL comment
+// in lib-db-schema.ts) has never had a write path anywhere in the app — it's
+// dormant schema for #86/#157. There is correspondingly no prior sidecar/org-JSON
+// format for it; library/tag-parents.json (lib-archive.ts, #300 export side) is a
+// new format invented for this issue. Shape: { tags: [{ref,name,kind,reading}],
+// parents: [{tagRef,parentRef,isDisplay}] } — `ref` is the EXPORTING database's own
+// tags.id, meaningful only within this one export (a ZIP is a point-in-time
+// snapshot; no cross-export id space exists or is needed).
+export interface TagParentsJson {
+  tags: Array<{ ref: number; name: string; kind?: string | null; reading?: string | null }>;
+  parents: Array<{ tagRef: number; parentRef: number; isDisplay?: boolean }>;
+}
+
+// Resolves each exported tag by NAME (resolveTagId — get-or-create, same resolver
+// posts/poster_tags/tag-types already use) and writes the parent edges.
+//
+// Known limitation, accepted for v1: resolveTagId cannot distinguish two tags that
+// share a name but are different entities (exactly the case tag_parents/isDisplay
+// exists to disambiguate) — importing into a library that already has a
+// same-named-but-different tag will resolve both to the same row. This matches
+// the resolver's own documented contract (module comment above: "this importer
+// resolves tag NAMES only; it cannot express 'two tags share a name but are
+// different entities' ... that curation happens later, directly against the DB").
+// Importing into an EMPTY database is unaffected (nothing to collide with).
+//
+// isDisplay is written respecting the "at most one display parent per tag" partial
+// unique index (idx_tag_parents_display): if the landing database already has a
+// DIFFERENT display parent for a tag, the incoming edge is still inserted (so the
+// parent/child relationship itself round-trips) but with isDisplay downgraded to
+// false — LOCAL wins, the same convention every other merge in lib-archive.ts uses.
+function importTagParents(sqlite: Database.Database, resolveTagId: (name: string) => number, data: TagParentsJson | null | undefined): void {
+  if (!data || !Array.isArray(data.tags) || !Array.isArray(data.parents)) return;
+
+  const refToId = new Map<number, number>();
+  for (const t of data.tags) {
+    if (!t || typeof t.ref !== 'number' || typeof t.name !== 'string' || !t.name) continue;
+    refToId.set(t.ref, resolveTagId(t.name));
+  }
+
+  const existingDisplay = new Map<number, number>();
+  for (const row of sqlite.prepare('SELECT tagId, parentTagId FROM tag_parents WHERE isDisplay = 1').all() as Array<{ tagId: number; parentTagId: number }>) {
+    existingDisplay.set(row.tagId, row.parentTagId);
+  }
+  const insertEdge = sqlite.prepare('INSERT OR IGNORE INTO tag_parents (tagId, parentTagId, isDisplay) VALUES (?, ?, ?)');
+  for (const p of data.parents) {
+    if (!p || typeof p.tagRef !== 'number' || typeof p.parentRef !== 'number') continue;
+    const tagId = refToId.get(p.tagRef);
+    const parentTagId = refToId.get(p.parentRef);
+    if (tagId == null || parentTagId == null || tagId === parentTagId) continue; // unresolved ref, or a tag listed as its own parent
+    const currentDisplay = existingDisplay.get(tagId);
+    const setDisplay = !!p.isDisplay && (currentDisplay == null || currentDisplay === parentTagId);
+    insertEdge.run(tagId, parentTagId, setDisplay ? 1 : 0);
+    if (setDisplay) existingDisplay.set(tagId, parentTagId);
+  }
+}
+
+export { INTERNAL_FILES as DB_IMPORT_INTERNAL_FILES, importTagParents };
