@@ -73,7 +73,11 @@ for (let i = 0; i < 4; i++) {
 const mirror = path.join(outDir, 'Hologram-mirror');
 const countMirror = () => {
   try {
-    return fs.readdirSync(mirror).filter((n) => !/\.tmp(-\d+)?$/i.test(n)).length;
+    // hologram-db/ (#301's DB snapshot) is a standing subfolder unrelated to
+    // post-asset pruning — exclude it so the prune-intact assertions below
+    // keep comparing like with like (post files only), same reasoning that
+    // already applies to .hologram-inbox in runBackup itself.
+    return fs.readdirSync(mirror).filter((n) => !/\.tmp(-\d+)?$/i.test(n) && n !== 'hologram-db').length;
   } catch {
     return -1;
   }
@@ -126,7 +130,17 @@ const foldersJsonPath = path.join(saveFolder, 'folders.json');
 
     return { overlapRejected, dirSet, run1, run2 };
   })()`;
+  const dbSnapshotFile = path.join(outDir, 'Hologram-mirror', 'hologram-db', 'hologram.db');
   const rA = await launch(evalA);
+
+  // DB snapshot (#301): run1 must have produced a hologram-db/hologram.db via
+  // the backup API, not a raw copy of the live (and here, out-of-tree) DB file.
+  let dbSnapshotWritten = false;
+  try {
+    dbSnapshotWritten = fs.statSync(dbSnapshotFile).size > 0;
+  } catch {
+    /* missing → stays false */
+  }
 
   // A mutable organization JSON must NOT freeze at its first backup. Organization
   // writes are DB-backed since #298, so nothing in the running app ever touches
@@ -214,8 +228,10 @@ const foldersJsonPath = path.join(saveFolder, 'folders.json');
     /* unreadable → stays false */
   }
   fs.rmSync(tmp, { recursive: true, force: true });
-  const ok = r.overlapRejected && r.dirSet && r.run1 && r.run2 && r.edit1 && r.edit2 && r.editIdempotent && mutableFresh && r.pruneWorks && r.guardHeld && mirrorIntact && clearKeptOrg;
-  console.log(`overlap=${r.overlapRejected} dirSet=${r.dirSet} run1=${r.run1} run2=${r.run2} edit1=${r.edit1} edit2=${r.edit2} editIdem=${r.editIdempotent} mutableFresh=${mutableFresh} prune=${r.pruneWorks} guard=${r.guardHeld} mirror=${mirrorAfter}/${mirrorIntact} clearKeptOrg=${clearKeptOrg}`);
+  const ok = r.overlapRejected && r.dirSet && r.run1 && r.run2 && r.edit1 && r.edit2 && r.editIdempotent && mutableFresh && r.pruneWorks && r.guardHeld && mirrorIntact && clearKeptOrg && dbSnapshotWritten;
+  console.log(
+    `overlap=${r.overlapRejected} dirSet=${r.dirSet} run1=${r.run1} run2=${r.run2} edit1=${r.edit1} edit2=${r.edit2} editIdem=${r.editIdempotent} mutableFresh=${mutableFresh} prune=${r.pruneWorks} guard=${r.guardHeld} mirror=${mirrorAfter}/${mirrorIntact} clearKeptOrg=${clearKeptOrg} dbSnapshot=${dbSnapshotWritten}`,
+  );
   console.log(ok ? 'BACKUP_TEST_PASS' : 'BACKUP_TEST_FAIL');
   process.exit(ok ? 0 : 1);
 })();

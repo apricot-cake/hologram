@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useReducer, useRef } from 'react';
 import { t } from '../_shared/i18n.ts';
 import { fmtBackupTime, fmtTime } from '../services/format.ts';
-import { getBackup, onBackupStart, onBackupDone } from '../services/backup.ts';
+import { getBackup, onBackupStart, onBackupDone, getIntegrityStatus, onIntegrityCheckDone } from '../services/backup.ts';
 
 // Backup status rail (#mirrorStatus) — the always-visible sidebar footer showing the
 // auto-backup state. This component OWNS the state machine (backup config + last result +
@@ -70,12 +70,25 @@ function deriveModel(cfg: any, syncing: boolean): MirrorModel {
   return { kind: 'done', text: t('mirrorDone'), time: ts, title: tip };
 }
 
+// DB<->media integrity model (#301) — independent of backup config (the
+// startup check runs with no mirror `dir` set), so it is derived separately
+// from deriveModel and takes priority over it (same precedence the existing
+// pruneSkipped warning already gets over a plain 'done' state) whenever
+// there is something to report. null = nothing wrong (or never checked yet).
+function deriveIntegrityModel(integrity: any): MirrorModel {
+  if (!integrity) return null;
+  if (integrity.dbOk === false) return { kind: 'error', text: t('mirrorDbCorrupt'), title: t('integrityDbBad') };
+  if (integrity.orphanCount > 0) return { kind: 'error', text: t('mirrorOrphanFound'), title: t('mirrorOrphanTip', [integrity.orphanCount]) };
+  return null;
+}
+
 export function MirrorStatus() {
   // cfgRef / syncingRef mirror the old viewer closure vars (cfg / mirrorSyncing) 1:1 — the
   // config object is mutated in place (cfg.lastResult = r), so a ref (not a store key) is the
   // faithful home; tick() forces the re-render the old updateMirrorStatus() push used to.
   const cfgRef = useRef<any>(null);
   const syncingRef = useRef(false);
+  const integrityRef = useRef<any>(null);
   const [, tick] = useReducer((n: number) => n + 1, 0);
 
   useEffect(() => {
@@ -86,9 +99,18 @@ export function MirrorStatus() {
       } catch {
         cfgRef.current = null;
       }
+      try {
+        integrityRef.current = await getIntegrityStatus();
+      } catch {
+        integrityRef.current = null;
+      }
       if (alive) tick();
     };
     load();
+    onIntegrityCheckDone((_e: unknown, status: any) => {
+      integrityRef.current = status;
+      if (alive) tick();
+    });
     // A run started: show the spinner. Pull cfg first so a backup configured mid-session
     // still lights the rail (cfg may have been null at boot). onBackupStart/Done register
     // once for the app's lifetime (no unsubscribe, like the other App-level IPC effects) —
@@ -128,7 +150,9 @@ export function MirrorStatus() {
     };
   }, []);
 
-  const m = deriveModel(cfgRef.current, syncingRef.current);
+  // An orphan/DB-integrity warning wins over the ordinary mirror state (and shows even
+  // with no mirror `dir` configured — the startup check runs independent of backup config).
+  const m = deriveIntegrityModel(integrityRef.current) || deriveModel(cfgRef.current, syncingRef.current);
   // className / title live on the host <span> (portal target), not a React element. m is a
   // fresh object each render, but a re-render only happens on tick() (an actual backup-state
   // change), so re-running this idempotent host write on [m] is correct, not wasteful.

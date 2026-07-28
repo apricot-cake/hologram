@@ -75,6 +75,11 @@ const api = {
   onBackupDone: (cb: (...args: any[]) => void): void => {
     ipcRenderer.on('backup-done', cb);
   },
+  getIntegrityStatus: (): Promise<any> => ipcRenderer.invoke('get-integrity-status'),
+  runOrphanRecovery: (): Promise<any> => ipcRenderer.invoke('run-orphan-recovery'),
+  onIntegrityCheckDone: (cb: (...args: any[]) => void): void => {
+    ipcRenderer.on('integrity-check-done', cb);
+  },
   listTrash: (): Promise<any[]> => ipcRenderer.invoke('list-trash'),
   restorePost: (image: string): Promise<any> => ipcRenderer.invoke('restore-post', image),
   emptyTrash: (): Promise<any> => ipcRenderer.invoke('empty-trash'),

@@ -15,6 +15,8 @@ import { createDbWriter } from './lib-db-write.ts';
 import { buildSavedIndex, SAVED_INDEX_FILE } from './lib-saved-index.ts';
 import { drainInbox } from './lib-db-inbox.ts';
 import { compactInbox } from './lib-db-inbox-compact.ts';
+import { snapshotDatabase } from './lib-db-snapshot.ts';
+import { checkOrphans, synthesizeOrphanRecords } from './lib-db-integrity.ts';
 import { inboxNewDir, ensureInboxDirs, INBOX_DIRNAME } from '../../../native-host/inbox.mts';
 import { pruneDecision, nextBaseline } from './backup-guard.ts';
 import { parseJsonLoose } from './lib-json.ts';
@@ -344,10 +346,43 @@ const dbImporter = createDbImporter({ internalFiles: INTERNAL_FILES, postIndex }
 // story lib-index.ts already gives a corrupt .index.json ("no/invalid
 // snapshot -> cold scan will populate it") — dbImporter.importAll rebuilds it
 // whole from the sidecars on the very next call.
+// Where runBackup's DB snapshot lands (#301) — a dedicated subfolder under the
+// mirror root, same "don't dump into dest's top level" convention INBOX_DIRNAME
+// already follows there. Read here (restore) and written in runBackup
+// (snapshot); kept as one function so the two never drift apart.
+function dbSnapshotPath(backupDir: string) {
+  return path.join(backupDest(backupDir), 'hologram-db', 'hologram.db');
+}
+
+// Copies the latest DB snapshot over `file` if one exists — called only when
+// `file` is about to be created fresh (missing, or corrupt-and-just-deleted)
+// so a real restore point wins over an empty database. Before #298, sidecars
+// were a fallback truth source and "start empty" was harmless (the next
+// importAll would re-derive everything); that is no longer guaranteed, so a
+// snapshot — when one exists — is strictly better than empty. #299's inbox
+// replay (ensurePostsSynced's drainInboxLogged, unchanged) then catches up
+// whatever happened after the snapshot, and #301's orphan synthesis
+// (run-orphan-recovery) can recover what neither the snapshot nor inbox saw.
+function restoreFromSnapshotIfAvailable(file: string): boolean {
+  const b = readBackupConfig();
+  if (!b.dir) return false;
+  const snapshot = dbSnapshotPath(b.dir);
+  if (!fs.existsSync(snapshot)) return false;
+  try {
+    fs.copyFileSync(snapshot, file);
+    log.warn(`restored hologram.db from mirror snapshot: ${snapshot}`);
+    return true;
+  } catch (err) {
+    log.error('failed to restore DB snapshot:', err);
+    return false;
+  }
+}
+
 let dbHandle: { db: any; sqlite: any } | null = null;
 function ensureDb() {
   if (dbHandle) return dbHandle;
   const file = path.join(configDir(), 'hologram.db');
+  if (!fs.existsSync(file)) restoreFromSnapshotIfAvailable(file);
   try {
     dbHandle = openDatabase(file);
   } catch (err) {
@@ -359,6 +394,7 @@ function ensureDb() {
         /* best-effort */
       }
     }
+    restoreFromSnapshotIfAvailable(file);
     dbHandle = openDatabase(file);
   }
   return dbHandle;
@@ -897,6 +933,86 @@ function writeBackupConfig(patch) {
   writeConfig(cfg);
   return cfg.backup;
 }
+
+// Integrity-check status (#301) — kept OUT of BACKUP_DEFAULTS/backup config on
+// purpose: the startup orphan/integrity_check pass must run and be visible
+// even when no mirror `dir` is configured (that's the whole point of it being
+// separate from the "daily reconciliation" pass that piggybacks on runBackup),
+// so it cannot live inside a config object whose UI treats `dir` as the
+// feature's on/off switch.
+const INTEGRITY_DEFAULTS = {
+  lastCheckAt: null,
+  dbOk: null, // null = never checked yet
+  orphanCount: 0,
+  missingCount: 0,
+};
+function readIntegrityStatus() {
+  return Object.assign({}, INTEGRITY_DEFAULTS, readConfig().integrity || {});
+}
+function writeIntegrityStatus(patch) {
+  const cfg = readConfig();
+  cfg.integrity = Object.assign({}, INTEGRITY_DEFAULTS, cfg.integrity || {}, patch || {});
+  writeConfig(cfg);
+  return cfg.integrity;
+}
+
+// The one shared DB<->media reconciliation pass (#301 design: "検出機構は
+// #100の品目1と共用し二重実装しない") — called both at startup (independent
+// of any backup config) and from runBackup (piggybacking the interval run as
+// the "daily照合"). `knownFiles`, when passed, is runBackup's already-scanned
+// srcSet — skips a second readdir of the save folder.
+function runIntegrityPass(folder: string, sqlite: any, knownFiles?: Set<string>) {
+  let dbOk = true;
+  try {
+    const check = sqlite.pragma('integrity_check', { simple: true });
+    dbOk = check === 'ok';
+    if (!dbOk) log.error(`integrity_check failed: ${check}`);
+  } catch (err) {
+    dbOk = false;
+    log.error('integrity_check threw:', err);
+  }
+  const { orphanMedia, missingMedia } = checkOrphans(folder, sqlite, knownFiles);
+  const status = writeIntegrityStatus({ lastCheckAt: new Date().toISOString(), dbOk, orphanCount: orphanMedia.length, missingCount: missingMedia.length });
+  if (win && !win.isDestroyed()) win.webContents.send('integrity-check-done', status);
+  return { dbOk, orphanMedia, missingMedia };
+}
+
+// Standalone startup check (armBackupSchedule() call site) — must work with no
+// backup mirror configured, so it opens the DB itself rather than piggybacking
+// on runBackup (which early-returns before opening anything when `!b.dir`).
+async function runStartupIntegrityCheck() {
+  const folder = getSaveFolder();
+  if (!folder) return;
+  try {
+    // ensurePostsSynced (not raw ensureDb) — see runBackup's identical
+    // reasoning: the DB must reflect disk state before orphans are computed,
+    // and this timer can fire before the renderer's first listPosts() call.
+    const handle = await ensurePostsSynced();
+    if (!handle) return;
+    runIntegrityPass(folder, handle.sqlite);
+  } catch (err) {
+    log.error('startup integrity check failed:', err);
+  }
+}
+
+// Manual-trigger orphan recovery (#301 design: never automatic — see
+// lib-db-integrity.ts's synthesizeOrphanRecords comment for why a save still
+// mid-flight must never be misread as a permanent loss). Re-runs the
+// integrity pass afterward so the visible orphanCount drops immediately.
+async function runOrphanRecovery() {
+  const folder = getSaveFolder();
+  if (!folder) return { ok: false, error: 'not-configured' };
+  const handle = await ensurePostsSynced();
+  if (!handle) return { ok: false, error: 'not-configured' };
+  const written = synthesizeOrphanRecords(folder, handle.sqlite);
+  if (written.length) {
+    scheduleSnapshot(folder);
+    scheduleSavedIndexWrite(handle);
+  }
+  runIntegrityPass(folder, handle.sqlite);
+  return { ok: true, recovered: written.length };
+}
+
 function pathIsInside(child, parent) {
   const c = path.resolve(child),
     p = path.resolve(parent);
@@ -1164,6 +1280,27 @@ async function runBackup(reason) {
         }
       }
     }
+
+    // DB snapshot (#301): the ONLY sanctioned way to mirror the live
+    // hologram.db — #97 forbids a raw file copy of a live .db (see
+    // lib-db-snapshot.ts's module comment). Piggybacks the daily
+    // reconciliation onto this same run (#301 design: "日次照合に
+    // integrity_checkを相乗り"), reusing srcSet this run already
+    // enumerated so the orphan/missing scan costs no extra readdir.
+    try {
+      // ensurePostsSynced (not raw ensureDb) so the DB reflects whatever is
+      // actually on disk right now before orphans are computed against it —
+      // otherwise a backup firing before the renderer's first listPosts() ever
+      // ran could see an empty posts table and flag every file as orphaned.
+      const handle = await ensurePostsSynced();
+      if (!handle) throw new Error('save folder unavailable');
+      await snapshotDatabase(handle.sqlite, dbSnapshotPath(b.dir));
+      const pass = runIntegrityPass(src, handle.sqlite, srcSet);
+      result.orphanCount = pass.orphanMedia.length;
+      result.missingCount = pass.missingMedia.length;
+    } catch (e: any) {
+      if (!result.firstError) result.firstError = e.message;
+    }
   } catch (err) {
     result.ok = false;
     result.error = err.message;
@@ -1182,6 +1319,8 @@ async function runBackup(reason) {
     pruneSkipped: result.pruneSkipped || null,
     baselineCount: result.baselineCount || 0,
     lastGoodCount: typeof result.lastGoodCount === 'number' ? result.lastGoodCount : 0,
+    orphanCount: result.orphanCount || 0,
+    missingCount: result.missingCount || 0,
   };
   try {
     writeBackupConfig({ lastRunAt: at, lastResult: summary });
@@ -1346,6 +1485,8 @@ function registerExtractedIpc() {
     validateBackupDir,
     armBackupSchedule,
     runBackup,
+    readIntegrityStatus,
+    runOrphanRecovery,
     readSavePointer,
     clearAllBlockReason,
     pixivRefererFor,
@@ -1509,6 +1650,10 @@ if (!gotSingleInstanceLock) {
         if (!last || Date.now() - last >= backupIntervalMs(bk)) setTimeout(() => runBackup('startup-overdue'), 4000);
       }
       setTimeout(() => purgeOldTrash(), 6000); // expire old trash entries on startup
+      // 起動時整合チェック（#301）: バックアップ未設定でも動く必要があるため
+      // runBackup とは独立に自分でDBを開く（runBackupは!b.dirで早期return
+      // してDBを開かない）。
+      setTimeout(() => runStartupIntegrityCheck(), 5000);
     }
 
     if (SMOKE) {
