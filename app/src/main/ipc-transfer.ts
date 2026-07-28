@@ -17,6 +17,7 @@ import path from 'node:path';
 import * as archive from './lib-archive.ts';
 import { parseJsonLoose } from './lib-json.ts';
 import { cloudSyncProviderOf } from './save-folder-guard.ts';
+import { fillCardDims } from './lib-card-dims.ts';
 import { makeTagResolver, preparePostStmts, writePost } from './lib-db-record-writer.ts';
 import type { PostRecordInput } from '../../../native-host/post-record.mts';
 
@@ -42,28 +43,7 @@ const IMPORTABLE_VID = ['mp4', 'webm', 'mov', 'm4v'];
 const IMPORTABLE_MEDIA = IMPORTABLE_IMG.concat(IMPORTABLE_VID);
 
 function register(ctx) {
-  const {
-    getSaveFolder,
-    getTrashDir,
-    readConfig,
-    writeConfig,
-    readSavePointer,
-    getConfigLastCorrupt,
-    clearAllBlockReason,
-    VIEWABLE_EXTS,
-    INTERNAL_FILES,
-    pixivRefererFor,
-    downloadAvatar,
-    getWin,
-    send,
-    validateSaveFolder,
-    relocateLibrary,
-    watchSaveFolder,
-    watchInboxFolder,
-    resetDelta,
-    ensurePostsSynced,
-    scheduleSavedIndexWrite,
-  } = ctx;
+  const { getSaveFolder, getTrashDir, readConfig, writeConfig, readSavePointer, getConfigLastCorrupt, clearAllBlockReason, VIEWABLE_EXTS, INTERNAL_FILES, pixivRefererFor, downloadAvatar, getWin, send, validateSaveFolder, relocateLibrary, watchInboxFolder, resetDelta, ensurePostsSynced, scheduleSavedIndexWrite } = ctx;
 
   // #299: the app itself is the DB's one writer, so import-posts writes
   // straight into the DB via the shared record writer (lib-db-record-writer.ts
@@ -230,7 +210,7 @@ function register(ctx) {
       const resolveTagId = makeTagResolver(sqlite);
       sqlite.exec('BEGIN');
       try {
-        for (const rec of toWrite) writePost(stmts, resolveTagId, rec, null);
+        for (const rec of toWrite) writePost(stmts, resolveTagId, fillCardDims(folder, rec));
         sqlite.exec('COMMIT');
       } catch (err) {
         sqlite.exec('ROLLBACK');
@@ -407,9 +387,8 @@ function register(ctx) {
       readConfig,
       writeConfig,
       emit: (payload) => send('save-folder-progress', payload),
-      // Re-point the watchers and drop the delta baseline so the renderer full-resyncs.
+      // Re-point the inbox watcher and drop the delta baseline so the renderer full-resyncs.
       afterFlip: () => {
-        watchSaveFolder();
         watchInboxFolder();
         resetDelta();
       },
@@ -515,7 +494,7 @@ function register(ctx) {
       const resolveTagId = makeTagResolver(sqlite);
       sqlite.exec('BEGIN');
       try {
-        for (const rec of toWrite) writePost(stmts, resolveTagId, rec, null);
+        for (const rec of toWrite) writePost(stmts, resolveTagId, fillCardDims(folder, rec));
         sqlite.exec('COMMIT');
       } catch (err) {
         sqlite.exec('ROLLBACK');

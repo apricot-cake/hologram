@@ -29,6 +29,7 @@ import path from 'node:path';
 import type Database from 'better-sqlite3';
 import { normalizePostRecord } from '../../../native-host/post-record.mts';
 import { resolveMediaPath } from './lib-db-inbox.ts';
+import { fillCardDims } from './lib-card-dims.ts';
 import { makeTagResolver, preparePostStmts, writePost } from './lib-db-record-writer.ts';
 
 // Mirrors native-host/bridge.cts's SAFE_ID — the captureId shape every
@@ -152,7 +153,7 @@ function synthesizeOrphanRecords(saveFolder: string, sqlite: Database.Database):
         capturedAt: capturedAtFromId(o.captureId),
         source: 'orphan-recovery',
       });
-      writePost(stmts, resolveTagId, rec, null);
+      writePost(stmts, resolveTagId, fillCardDims(saveFolder, rec));
       written.push(o);
     }
     sqlite.exec('COMMIT');
