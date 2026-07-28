@@ -8,17 +8,14 @@ name: App tests
 #     to a throwaway Native Messaging host whose registration is an HKCU write
 #
 # Deliberately NOT on `push`, unlike ci.yml, and the reason is arithmetic. A Windows
-# minute bills at twice a Linux one, this job runs roughly ten minutes against
-# ci.yml's two, and this repository saw 63 pushes in one day (2026-07-28). Running
-# it per push would need well over a thousand minutes a day out of a 2,000
-# minutes/month free allowance — so the split is the standard two-speed one: the
+# minute bills at twice a Linux one and this job measures under six against ci.yml's
+# two, so one run costs about twelve billed minutes; this repository saw 63 pushes in
+# a single day (2026-07-28), which per push would be some 750 minutes a day out of a
+# 2,000 minutes/month free allowance. So the split is the standard two-speed one: the
 # fast layer answers every push, the slow layer runs once a day and on demand.
 # When #75 makes the repository public, standard runners stop being metered at all;
 # adding `push:` here is the whole change at that point.
 on:
-  # TEMPORARY (remove before merge): proves this job actually works on a runner.
-  push:
-    branches: ['claude/stoic-gauss-1bf6d1']
   schedule:
     # 18:37 UTC = 03:37 JST. Off the hour and outside 22:00-02:00 UTC on purpose:
     # scheduled runs queue behind everyone else's, and those are the peaks.
