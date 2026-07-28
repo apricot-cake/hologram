@@ -154,6 +154,27 @@ describe('createGuardedLookup', () => {
   });
 });
 
+// 実装側の「配線」そのものの退行ガード。上の createGuardedLookup のテストはガードの
+// ロジックだけを見ており、下の setGlobalDispatcher のテストはテスト自前の Agent を
+// 登録して undici の経路を見ている＝どちらも「media-download.cts が実際にガードを
+// プロセス既定として登録しているか」は見ていない。#431 で per-call の dispatcher
+// アサーションが不要になって外れた結果、実装から setGlobalDispatcher を丸ごと消しても
+// このファイルは全部緑のままだった（＝ガードが素通しでも気付けない）ので、ここで塞ぐ。
+//
+// 判定は実 fetch の failure cause で行う（localhost は必ずループバックへ解決するので
+// ネットワーク不要）:
+//   EHOSTUNREACH = ガードが名前解決の時点で拒んだ＝配線が生きている
+//   ECONNREFUSED = ガード不在のままループバックへ実際に接続しにいった＝素通し
+test('media-download.cts を読み込むとガード付き dispatcher がプロセス既定になる', async () => {
+  const err: any = await realFetch('https://localhost:59237/x.png', { redirect: 'manual' } as any).then(
+    () => null,
+    (e: unknown) => e,
+  );
+
+  expect(err, 'ループバック宛ての fetch は成功してはならない').not.toBeNull();
+  expect(err.cause?.code, 'ガードは名前解決の時点で拒むこと（ECONNREFUSED＝実際に接続した＝配線が外れている）').toBe('EHOSTUNREACH');
+});
+
 // 公開に見えるホスト名をループバックへ解決させるスタブなので、ソケットも外部通信も
 // 起きる前に失敗しなければならない。
 //
