@@ -256,11 +256,21 @@ function readPostFlags(sqlite: Sqlite, postId: string): { tags: string[]; userKi
 // sidecar at all once native saves flow through the inbox instead), so a
 // trash move can no longer rely on the NEXT importAll noticing the file's
 // absence and cascade-deleting the row. This is that deletion, made explicit.
-// Same statement importAll's own deletePost used (FK ON DELETE CASCADE takes
-// media/post_tags with it) — this does not newly clean up posts_fts, matching
-// prior behavior exactly rather than folding in an unrelated fix.
+// FK ON DELETE CASCADE takes media/post_tags with it; posts_fts is standalone
+// (schema comment) so its row is removed explicitly.
 function deletePost(sqlite: Sqlite, postId: string): boolean {
+  sqlite.prepare('DELETE FROM posts_fts WHERE postId = ?').run(postId);
   return sqlite.prepare('DELETE FROM posts WHERE captureId = ?').run(postId).changes > 0;
+}
+
+// Clear-all's DB half. Wiping the media files used to be enough because the next
+// folder scan noticed the records had lost their files and dropped the rows; with
+// the scan gone (#302), the wipe has to say so. Organization (folders, tags,
+// poster-*) is deliberately kept — clear-all has always been "remove the posts",
+// and the surviving structure is what the user rebuilds into.
+function deleteAllPosts(sqlite: Sqlite): number {
+  sqlite.prepare('DELETE FROM posts_fts').run();
+  return sqlite.prepare('DELETE FROM posts').run().changes;
 }
 
 function applyPostFlagsFromRecord(sqlite: Sqlite, postId: string, rec: { userKind?: unknown; tagReviewed?: unknown }) {
@@ -314,6 +324,7 @@ function createDbWriter(sqlite: Sqlite) {
     getPostFlags: (postId: string) => readPostFlags(sqlite, postId),
     restorePostFlags: (postId: string, rec: { userKind?: unknown; tagReviewed?: unknown }) => transaction(() => applyPostFlagsFromRecord(sqlite, postId, rec)),
     deletePost: (postId: string) => transaction(() => deletePost(sqlite, postId)),
+    deleteAllPosts: () => transaction(() => deleteAllPosts(sqlite)),
   };
 }
 

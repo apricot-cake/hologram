@@ -43,7 +43,28 @@ const IMPORTABLE_VID = ['mp4', 'webm', 'mov', 'm4v'];
 const IMPORTABLE_MEDIA = IMPORTABLE_IMG.concat(IMPORTABLE_VID);
 
 function register(ctx) {
-  const { getSaveFolder, getTrashDir, readConfig, writeConfig, readSavePointer, getConfigLastCorrupt, clearAllBlockReason, VIEWABLE_EXTS, INTERNAL_FILES, pixivRefererFor, downloadAvatar, getWin, send, validateSaveFolder, relocateLibrary, watchInboxFolder, resetDelta, ensurePostsSynced, scheduleSavedIndexWrite } = ctx;
+  const {
+    getSaveFolder,
+    getTrashDir,
+    readConfig,
+    writeConfig,
+    readSavePointer,
+    getConfigLastCorrupt,
+    clearAllBlockReason,
+    VIEWABLE_EXTS,
+    LEGACY_INTERNAL_FILES,
+    getDbWriter,
+    pixivRefererFor,
+    downloadAvatar,
+    getWin,
+    send,
+    validateSaveFolder,
+    relocateLibrary,
+    watchInboxFolder,
+    resetDelta,
+    ensurePostsSynced,
+    scheduleSavedIndexWrite,
+  } = ctx;
 
   // #299: the app itself is the DB's one writer, so import-posts writes
   // straight into the DB via the shared record writer (lib-db-record-writer.ts
@@ -238,15 +259,19 @@ function register(ctx) {
     });
     if (blocked) return { ok: false, blocked, count: 0 };
     let count = 0;
-    // Keep app metadata (the shared INTERNAL_FILES set — config, index snapshot,
-    // organization JSON); wipe sidecars + every viewable media type (incl.
-    // jfif/avif/svg/video/-poster), mirroring delete-post. Using the same set as
-    // the watcher/index means a newly added internal file is skipped here too,
-    // instead of silently falling through to the wipe.
+    // Drop the records first: the media files are what the user sees, but the posts
+    // themselves live in the DB, and since #302 nothing re-derives "this record lost
+    // its file" from a scan. Organization is kept (see deleteAllPosts).
+    ensurePostsSynced();
+    getDbWriter().deleteAllPosts();
+    // Then the media — every viewable type (incl. jfif/avif/svg/video/-poster),
+    // mirroring delete-post. Leftover JSON from a pre-#5 library is skipped rather
+    // than swept, so a wipe never destroys metadata the legacy migration might still
+    // want; that skip list goes with the scaffolding (#441).
     const CLEAR_RE = new RegExp('\\.(' + VIEWABLE_EXTS.join('|') + '|json)$', 'i');
     try {
       for (const f of fs.readdirSync(folder)) {
-        if (INTERNAL_FILES.has(f)) continue;
+        if (LEGACY_INTERNAL_FILES.has(f)) continue;
         if (CLEAR_RE.test(f)) {
           try {
             fs.unlinkSync(path.join(folder, f));

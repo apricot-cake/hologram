@@ -4,14 +4,12 @@
 //  - set-backup rejects an output dir that overlaps the save folder
 //  - run-backup mirrors the library into <dir>/Hologram-mirror/ (individual files)
 //  - a second run is idempotent (immutable assets → nothing new copied)
-//  - a MUTABLE organization JSON (folders.json) re-copies when it drifts on disk →
-//    the mirror reflects the LATEST contents, not the first backup's (regression:
-//    existence-check skip used to freeze internal JSON forever, so a restore
-//    silently lost all tagging/foldering done after the first backup).
-//    Organization writes moved to SQLite in #298/St5 (the app itself no longer
-//    touches folders.json), so the drift here is simulated with a direct fs write
-//    between launches — a pre-flip library can still have one of these files on
-//    disk, and the mirror must still track it if it ever changes.
+//  - a file that APPEARS in the library after the first backup is picked up by the
+//    next run (the mirror is not frozen at its first snapshot)
+//  - everything the mirror carries from the library is write-once since #302, so a
+//    file already at the destination is never re-copied. What used to change in
+//    place — the organization JSON — lives in the DB now and reaches the mirror as
+//    the snapshot below, not as a tracked file.
 //  - deleting a post propagates: the file is pruned from the mirror
 //  - the prune-safety guard holds the prune when src collapses (clear-all → empty),
 //    leaving the mirror intact (regression for the 2026-06-23 library-loss incident)
@@ -27,6 +25,7 @@ const appDir = path.join(__dirname, '..', 'app');
 const { electronPath: resolveElectron } = require('./lib-electron-path.cts');
 
 const electronPath = resolveElectron();
+const { seedLibrary } = require('./lib-seed-library.cts');
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-bk-'));
 const configDir = path.join(tmp, 'Hologram');
@@ -39,36 +38,30 @@ fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolde
 
 const jpeg = Buffer.from('/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACP/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AfwH/2Q==', 'base64');
 const ids: any[] = [];
-// 4 posts: enough that the clear-all collapse (only metadata json survives) drops
-// src well below the prune-guard's 50% shrink ratio even after folders.json is
-// added, so the guard-held assertion stays unambiguous.
+const records: any[] = [];
+// 4 posts: enough that the clear-all collapse drops src well below the prune-guard's
+// 50% shrink ratio, so the guard-held assertion stays unambiguous.
 for (let i = 0; i < 4; i++) {
   const id = '170000000000' + i + '-bk' + i;
   ids.push(id);
   fs.writeFileSync(path.join(saveFolder, id + '.jpg'), jpeg);
-  fs.writeFileSync(
-    path.join(saveFolder, id + '.json'),
-    JSON.stringify(
-      {
-        captureId: id,
-        image: id + '.jpg',
-        url: 'https://x.com/u/status/' + (800 + i),
-        platform: 'x',
-        text: '本文' + i,
-        displayName: '人' + i,
-        screenName: 'u' + i,
-        likes: 1 + i,
-        capturedAt: '2026-04-0' + (i + 1) + 'T12:00:00Z',
-        date: '2026-04-0' + (i + 1) + 'T10:00:00Z',
-        media: [],
-        tags: [],
-        hashtags: [],
-      },
-      null,
-      2,
-    ),
-  );
+  records.push({
+    captureId: id,
+    image: id + '.jpg',
+    url: 'https://x.com/u/status/' + (800 + i),
+    platform: 'x',
+    text: '本文' + i,
+    displayName: '人' + i,
+    screenName: 'u' + i,
+    likes: 1 + i,
+    capturedAt: '2026-04-0' + (i + 1) + 'T12:00:00Z',
+    date: '2026-04-0' + (i + 1) + 'T10:00:00Z',
+    media: [],
+    tags: [],
+    hashtags: [],
+  });
 }
+seedLibrary(configDir, records);
 
 const mirror = path.join(outDir, 'Hologram-mirror');
 const countMirror = () => {
@@ -107,7 +100,9 @@ function launch(evalJs): Promise<Record<string, any>> {
   });
 }
 
-const foldersJsonPath = path.join(saveFolder, 'folders.json');
+// A file that turns up in the library after the first backup. Any name would do —
+// this one doubles as the clear-all skip-list check below.
+const lateFilePath = path.join(saveFolder, 'folders.json');
 
 (async () => {
   // launch A: output dir nested inside the save folder must be rejected (overlap);
@@ -142,12 +137,9 @@ const foldersJsonPath = path.join(saveFolder, 'folders.json');
     /* missing → stays false */
   }
 
-  // A mutable organization JSON must NOT freeze at its first backup. Organization
-  // writes are DB-backed since #298, so nothing in the running app ever touches
-  // folders.json anymore — simulate a pre-flip library's file appearing/drifting
-  // with a direct fs write between launches (mtime/size drift is what runBackup's
-  // needsRefresh actually keys on, regardless of who wrote the file).
-  fs.writeFileSync(foldersJsonPath, JSON.stringify({ folders: [{ id: 'f1', name: 'A', kind: 'static', created: 1, items: [] }] }, null, 2));
+  // The mirror must not freeze at its first snapshot: a file that appears later is
+  // still picked up by the next run.
+  fs.writeFileSync(lateFilePath, JSON.stringify({ folders: [{ id: 'f1', name: 'A', kind: 'static', created: 1, items: [] }] }, null, 2));
 
   const evalB = `(async () => {
     const e1 = await window.hologram.runBackup();
@@ -156,9 +148,11 @@ const foldersJsonPath = path.join(saveFolder, 'folders.json');
   })()`;
   const rB = await launch(evalB);
 
-  // Different size so drift is unambiguous.
+  // Change it in place. Nothing the mirror carries changes after it is written, so
+  // a run after this must copy nothing — write-once is the contract, not an
+  // oversight (see runBackup's comment).
   fs.writeFileSync(
-    foldersJsonPath,
+    lateFilePath,
     JSON.stringify(
       {
         folders: [
@@ -172,22 +166,19 @@ const foldersJsonPath = path.join(saveFolder, 'folders.json');
   );
 
   const evalC = `(async () => {
-    // every edited run must re-copy the file (written >= 1) so the mirror tracks
-    // the latest contents. The on-disk mirror content is checked in the close handler.
     const e2 = await window.hologram.runBackup();
-    const edit2 = !!(e2 && e2.ok && e2.written >= 1 && !e2.pruneSkipped);
-    // an UNEDITED follow-up run must be idempotent again (mtime+size preserved →
-    // no re-copy), proving the refresh is drift-gated, not unconditional churn.
+    const writeOnce = !!(e2 && e2.ok && e2.written === 0 && !e2.pruneSkipped);
     const e3 = await window.hologram.runBackup();
     const editIdempotent = !!(e3 && e3.ok && e3.written === 0 && !e3.pruneSkipped);
 
-    // delete one post → next run prunes BOTH its files (jpg+json) from the mirror.
-    // Baseline is e3.fileCount (after folders.json was added), not r2.
+    // delete one post → next run prunes its file from the mirror. Since #302 a post
+    // is one file in the library (its record is in the DB), so exactly one goes.
+    // Baseline is e3.fileCount (after the late file was added), not r2.
     await window.hologram.deletePost(${JSON.stringify(ids[0] + '.jpg')});
     const r3 = await window.hologram.runBackup();
-    const pruneWorks = !!(r3 && r3.ok && r3.pruned === 2 && r3.fileCount === e3.fileCount - 2 && !r3.pruneSkipped);
+    const pruneWorks = !!(r3 && r3.ok && r3.pruned === 1 && r3.fileCount === e3.fileCount - 1 && !r3.pruneSkipped);
 
-    // collapse src (clear-all wipes posts, keeps org JSON) → guard MUST hold the
+    // collapse src (clear-all wipes posts, keeps the legacy JSON) → guard MUST hold the
     // prune and leave the mirror untouched. Reason is shrink/empty depending on how
     // much metadata survives; either is a valid trip.
     await window.hologram.clearAll();
@@ -195,7 +186,7 @@ const foldersJsonPath = path.join(saveFolder, 'folders.json');
     const guardHeld = !!(r4 && r4.ok && r4.pruned === 0 && (r4.pruneSkipped === 'empty' || r4.pruneSkipped === 'shrink'));
 
     // mirror should still hold exactly what r3 left (guard prevented any deletion)
-    return { edit2, editIdempotent, pruneWorks, guardHeld, expectMirror: r3.fileCount };
+    return { writeOnce, editIdempotent, pruneWorks, guardHeld, expectMirror: r3.fileCount };
   })()`;
   const rC = await launch(evalC);
 
@@ -205,21 +196,19 @@ const foldersJsonPath = path.join(saveFolder, 'folders.json');
   // as r3 did (no files deleted) — proof the prune was truly held back on disk.
   const mirrorAfter = countMirror();
   const mirrorIntact = typeof r.expectMirror === 'number' && mirrorAfter === r.expectMirror;
-  // filesystem-side verification of the mutable-JSON refresh: the mirrored
-  // folders.json must hold the SECOND drift (2 folders incl. f2), not the
-  // first — proof the backup re-copied the drifted internal file rather than
-  // freezing it at its initial contents.
-  let mutableFresh = false;
+  // filesystem-side verification of write-once: the mirrored copy holds the file as
+  // it was when it was first copied (1 folder), NOT the later in-place edit.
+  let writeOnceOnDisk = false;
   try {
     const mj = JSON.parse(fs.readFileSync(path.join(mirror, 'folders.json'), 'utf8'));
-    mutableFresh = Array.isArray(mj.folders) && mj.folders.length === 2 && mj.folders[1].id === 'f2';
+    writeOnceOnDisk = Array.isArray(mj.folders) && mj.folders.length === 1;
   } catch {
     /* missing/unreadable → stays false */
   }
-  // filesystem-side verification of the clear-all skip list: the wipe must keep
-  // app-internal organization JSON (the shared INTERNAL_FILES set) while removing
-  // every post asset — a regression here means an internal file fell out of the
-  // skip set and got wiped along with the posts.
+  // filesystem-side verification of the clear-all skip list: the wipe must keep the
+  // legacy JSON a pre-#5 library can still have (LEGACY_INTERNAL_FILES) while
+  // removing every post asset — a regression here means a name fell out of the skip
+  // set and got wiped along with the posts.
   let clearKeptOrg = false;
   try {
     const left = fs.readdirSync(saveFolder);
@@ -228,9 +217,9 @@ const foldersJsonPath = path.join(saveFolder, 'folders.json');
     /* unreadable → stays false */
   }
   fs.rmSync(tmp, { recursive: true, force: true });
-  const ok = r.overlapRejected && r.dirSet && r.run1 && r.run2 && r.edit1 && r.edit2 && r.editIdempotent && mutableFresh && r.pruneWorks && r.guardHeld && mirrorIntact && clearKeptOrg && dbSnapshotWritten;
+  const ok = r.overlapRejected && r.dirSet && r.run1 && r.run2 && r.edit1 && r.writeOnce && r.editIdempotent && writeOnceOnDisk && r.pruneWorks && r.guardHeld && mirrorIntact && clearKeptOrg && dbSnapshotWritten;
   console.log(
-    `overlap=${r.overlapRejected} dirSet=${r.dirSet} run1=${r.run1} run2=${r.run2} edit1=${r.edit1} edit2=${r.edit2} editIdem=${r.editIdempotent} mutableFresh=${mutableFresh} prune=${r.pruneWorks} guard=${r.guardHeld} mirror=${mirrorAfter}/${mirrorIntact} clearKeptOrg=${clearKeptOrg} dbSnapshot=${dbSnapshotWritten}`,
+    `overlap=${r.overlapRejected} dirSet=${r.dirSet} run1=${r.run1} run2=${r.run2} lateFile=${r.edit1} writeOnce=${r.writeOnce} idem=${r.editIdempotent} writeOnceOnDisk=${writeOnceOnDisk} prune=${r.pruneWorks} guard=${r.guardHeld} mirror=${mirrorAfter}/${mirrorIntact} clearKeptOrg=${clearKeptOrg} dbSnapshot=${dbSnapshotWritten}`,
   );
   console.log(ok ? 'BACKUP_TEST_PASS' : 'BACKUP_TEST_FAIL');
   process.exit(ok ? 0 : 1);
