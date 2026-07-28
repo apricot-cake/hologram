@@ -1,5 +1,5 @@
-// app/src/main/lib-db-import.ts の #300 (St7) 追加分＝importTagParents のユニット
-// テスト。get-or-create by name・isDisplay の「1タグ最大1つ」制約・冪等 re-run・
+// app/src/main/lib-db-record-writer.ts の importTagParents（#300 St7＝完全 ZIP の
+// library/tag-parents.json を取り込む）のユニットテスト。get-or-create by name・isDisplay の「1タグ最大1つ」制約・冪等 re-run・
 // 同名別実体タグの既知の衝突ケースを見る。
 
 import fs from 'node:fs';
@@ -7,8 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterAll, afterEach, beforeEach, describe, expect, test } from 'vitest';
 import { openDatabase } from '../app/src/main/lib-db';
-import { importTagParents } from '../app/src/main/lib-db-import';
-import { makeTagResolver } from '../app/src/main/lib-db-record-writer';
+import { importTagParents, makeTagResolver } from '../app/src/main/lib-db-record-writer';
 
 const dirs: string[] = [];
 function mkTempDir(prefix: string) {

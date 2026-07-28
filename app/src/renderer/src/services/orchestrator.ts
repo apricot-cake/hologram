@@ -54,7 +54,7 @@ import { hologramIpc } from './ipc.ts';
 export let viewerReady: Promise<void>;
 export let bootApp: () => Promise<void>;
 export let handleFolderChange: (kind?: string) => void;
-export let handlePostsChanged: (names: string[] | null) => Promise<void>;
+export let handlePostsChanged: () => Promise<void>;
 
 // Global keyboard/mouse shortcuts, tab-bar events, inspector-dismiss, and store/IPC
 // subscription handlers: the rest of the old shared bridge, converted to real
@@ -1871,11 +1871,11 @@ export function endFilterEditSession(): void {
     // hologramFolders.onChange subscription in services/sidebar.ts.
     if (kind === 'list') renderPosts(true); // folder created/deleted — refresh without anim
   };
-  // Background fs-watch refresh (targeted via the changed-file hint). Registration
-  // lives in React (StoreSubscriptions, App.tsx), imported directly (posts.ts's
-  // onPostsChanged has no unsubscribe either — same reasoning).
-  handlePostsChanged = async function (names: string[] | null) {
-    await loadPosts(true, names);
+  // Background refresh when the intake queue changes. Registration lives in React
+  // (StoreSubscriptions, App.tsx), imported directly (posts.ts's onPostsChanged has
+  // no unsubscribe either — same reasoning).
+  handlePostsChanged = async function () {
+    await loadPosts(true);
   };
 
   // --- Boot: the app's initial data load + first render. Defined here (needs every

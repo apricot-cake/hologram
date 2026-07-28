@@ -11,7 +11,7 @@ function register(ctx) {
   const { listPosts, listPostsDelta, resolveInFolder, mimeForFile } = ctx;
 
   ipcMain.handle('list-posts', () => listPosts());
-  ipcMain.handle('list-posts-delta', (_e, haveBaseline, changedNames) => listPostsDelta(!!haveBaseline, changedNames));
+  ipcMain.handle('list-posts-delta', (_e, haveBaseline) => listPostsDelta(!!haveBaseline));
 
   ipcMain.handle('image-data-url', async (_e, image) => {
     const p = resolveInFolder(image);

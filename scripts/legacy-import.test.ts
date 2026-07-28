@@ -1,12 +1,12 @@
-// app/src/main/lib-db-import.ts のユニットテスト（#5 St3 / #296＝sidecar → DB 同期の
-// 取り込み器）。小さな合成の保存フォルダ（sidecar ＋ 整理層の JSON 全種 ＋ tabs.json）を作り、
-// app/src/main/lib-db.ts 経由で本物の SQLite へ取り込んで、受け入れ条件を直接見る:
-//   - 全取り込み → 再実行が冪等（同じ行・同じタグ/投稿 id・重複なし）で、3回目は編集・追加・
-//     削除を拾う
-//   - 増分同期（importChanged）は監視由来のファイル名バッチをちょうど適用し、
-//     空振りの再発火に対しても冪等
-//   - レポートが sidecar 数と DB 行数を突き合わせ、解釈できなかったもの（壊れた JSON・
-//     投稿レコードでない正しい JSON）を並べる
+// app/src/main/lib-legacy-import.ts のユニットテスト（#5 以前のライブラリを DB へ移す
+// 一回きりの移行＝リリース前に撤去する仮設コード）。小さな合成の保存フォルダ（サイドカー
+// ＋ 整理層の JSON 全種 ＋ tabs.json）を作り、app/src/main/lib-db.ts 経由で本物の SQLite
+// へ取り込んで受け入れ条件を直接見る:
+//   - 投稿・メディア・タグ・FTS・整理層が1回の移行で揃う
+//   - レポートが件数を突き合わせ、解釈できなかったもの（壊れた JSON・投稿レコードでない
+//     正しい JSON）を並べる
+//   - 同じフォルダへの再実行が upsert であって追記ではない（移行は1DBにつき1回だが、
+//     中断からの再試行が重複を作らないこと）
 //
 // 1つのフォルダと DB を順に育てるので、宣言順に意味がある。
 
@@ -14,7 +14,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
-import { createDbImporter } from '../app/src/main/lib-db-import';
+import { importLegacyLibrary } from '../app/src/main/lib-legacy-import';
 import { openDatabase } from '../app/src/main/lib-db';
 
 const dirs: string[] = [];
@@ -26,7 +26,6 @@ function mkTempDir(prefix: string) {
 
 let folder: string;
 let handle: { db: any; sqlite: any };
-let importer: ReturnType<typeof createDbImporter>;
 
 const writeJson = (name: string, data: unknown) => fs.writeFileSync(path.join(folder, name), JSON.stringify(data));
 const one = (sql: string, ...args: any[]) => handle.sqlite.prepare(sql).get(...args);
@@ -71,7 +70,6 @@ beforeAll(() => {
   });
 
   handle = openDatabase(path.join(mkTempDir('hologram-db-import-db-'), 'test.db'));
-  importer = createDbImporter();
 });
 
 afterAll(() => {
@@ -85,19 +83,19 @@ afterAll(() => {
   }
 });
 
-describe('1回目の全取り込み', () => {
+describe('1回目の移行', () => {
   let r1: any;
   let aliceTag: any;
   let sketchTag: any;
 
   beforeAll(async () => {
-    r1 = await importer.importAll(folder, handle);
+    r1 = importLegacyLibrary(folder, handle);
     aliceTag = one('SELECT id, name, kind FROM tags WHERE name = ?', 'character:alice');
     sketchTag = one('SELECT id, name, kind FROM tags WHERE name = ?', 'style:sketch');
   });
 
-  test('レポートが sidecar 数と DB 行数を突き合わせる', () => {
-    expect(r1).toMatchObject({ sidecarCount: 3, postsWritten: 3, postsRemoved: 0, dbPostCount: 3 });
+  test('レポートがサイドカー数と DB 行数を突き合わせる', () => {
+    expect(r1).toMatchObject({ sidecarCount: 3, postsWritten: 3, dbPostCount: 3 });
   });
 
   test('解釈できなかった2件を並べる（壊れた JSON はエラー文つき）', () => {
@@ -106,7 +104,7 @@ describe('1回目の全取り込み', () => {
     expect(r1.parseFailures.map((f: any) => f.file)).toContain('notapost.json');
   });
 
-  test('投稿行が sidecar の text と hashtags を運ぶ', () => {
+  test('投稿行がサイドカーの text と hashtags を運ぶ', () => {
     const post1 = one('SELECT * FROM posts WHERE captureId = ?', 'cap-1');
     expect(post1.text).toBe('a beautiful sunset today');
     expect(JSON.parse(post1.hashtags)).toEqual(['nature', 'photo']);
@@ -162,17 +160,17 @@ describe('1回目の全取り込み', () => {
   });
 });
 
-describe('2回目の全取り込み（フォルダは無変化）＝冪等', () => {
+describe('2回目の移行（中断からの再試行）＝冪等', () => {
   let aliceIdBefore: number;
   let r2: any;
 
   beforeAll(async () => {
     aliceIdBefore = one('SELECT id FROM tags WHERE name = ?', 'character:alice').id;
-    r2 = await importer.importAll(folder, handle);
+    r2 = importLegacyLibrary(folder, handle);
   });
 
   test('書き込みは upsert であって追記ではない', () => {
-    expect(r2).toMatchObject({ postsWritten: 3, postsRemoved: 0, dbPostCount: 3 });
+    expect(r2).toMatchObject({ postsWritten: 3, dbPostCount: 3 });
   });
 
   test('タグ・media・手動グループが重複しない', () => {
@@ -186,68 +184,5 @@ describe('2回目の全取り込み（フォルダは無変化）＝冪等', () 
   });
 });
 
-describe('3回目の全取り込み: cap-1 を編集・cap-3 を削除・cap-4 を追加', () => {
-  let r3: any;
-
-  beforeAll(async () => {
-    writeJson('cap-1.json', {
-      captureId: 'cap-1',
-      image: 'cap-1.jpg',
-      media: [{ url: 'https://x.example/1.jpg', alt: 'alt1', width: 100, height: 200, file: 'cap-1-media-0.jpg' }],
-      text: 'an edited sunrise instead',
-      hashtags: ['nature'],
-      tags: ['character:alice'],
-      capturedAt: '2026-01-01T00:00:00Z',
-    });
-    fs.rmSync(path.join(folder, 'cap-3.json'));
-    writeJson('cap-4.json', { captureId: 'cap-4', image: 'cap-4.jpg', capturedAt: '2026-01-04T00:00:00Z' });
-
-    r3 = await importer.importAll(folder, handle);
-  });
-
-  test('レポートが 3件書き込み・1件削除', () => {
-    expect(r3).toMatchObject({ postsWritten: 3, postsRemoved: 1, dbPostCount: 3 });
-  });
-
-  test('編集が反映され、消えた投稿の行も消える', () => {
-    expect(one('SELECT text FROM posts WHERE captureId = ?', 'cap-1').text).toBe('an edited sunrise instead');
-    expect(one('SELECT 1 FROM posts WHERE captureId = ?', 'cap-3')).toBeUndefined();
-    expect(one('SELECT 1 FROM posts WHERE captureId = ?', 'cap-4')).toBeTruthy();
-  });
-
-  test('folders.json は cap-3 を挙げたままだが、投稿として無効なので落ちる', () => {
-    expect(all('SELECT postId FROM folder_items WHERE folderId = ? ORDER BY postId', 'f1').map((r: any) => r.postId)).toEqual(['cap-1', 'cap-2']);
-  });
-
-  test('posts_fts が編集後の本文を映す（古い行が残らない）', () => {
-    expect(all('SELECT postId FROM posts_fts WHERE posts_fts MATCH ?', '"sunrise"')).toHaveLength(1);
-  });
-});
-
-describe('増分同期（importChanged）', () => {
-  let rc1: any;
-
-  beforeAll(async () => {
-    writeJson('cap-5.json', { captureId: 'cap-5', image: 'cap-5.jpg', capturedAt: '2026-01-05T00:00:00Z' });
-    writeJson('cap-1.json', { captureId: 'cap-1', image: 'cap-1.jpg', media: [], text: 'a third revision', capturedAt: '2026-01-01T00:00:00Z' });
-    fs.rmSync(path.join(folder, 'cap-2.json'));
-
-    rc1 = await importer.importChanged(folder, handle, ['cap-5.json', 'cap-1.json', 'cap-2.json']);
-  });
-
-  test('名指しされたバッチちょうどを適用する', () => {
-    expect(rc1).toMatchObject({ postsWritten: 2, postsRemoved: 1 });
-    expect(one('SELECT 1 FROM posts WHERE captureId = ?', 'cap-5')).toBeTruthy();
-    expect(one('SELECT text FROM posts WHERE captureId = ?', 'cap-1').text).toBe('a third revision');
-    expect(one('SELECT 1 FROM posts WHERE captureId = ?', 'cap-2')).toBeUndefined();
-  });
-
-  test('バッチに含まれない投稿は触らない', () => {
-    expect(one('SELECT 1 FROM posts WHERE captureId = ?', 'cap-4')).toBeTruthy();
-  });
-
-  test('同じ名前での空振りの再発火は何も書かない（削除の再報告もしない）', async () => {
-    const rc2 = await importer.importChanged(folder, handle, ['cap-5.json', 'cap-1.json', 'cap-2.json']);
-    expect(rc2).toMatchObject({ postsWritten: 0, postsRemoved: 0 });
-  });
-});
+// 3回目以降の「サイドカーが消えたら行も消す」「監視ヒントで増分同期」は #302 で撤去した。
+// 移行は何も書き込んでいないフォルダに対して1回走るだけで、差分を追う相手が居ない。

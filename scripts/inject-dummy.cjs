@@ -1,13 +1,15 @@
 'use strict';
 
-// Populate the save folder with condition-covering dummy posts for testing the
-// viewer (platforms, post types, media, engagement ranges, dates, languages,
-// hashtags, tags). Runs via Electron because it renders placeholder images with
-// a canvas.
+// Populate the library with condition-covering dummy posts for testing the viewer
+// (platforms, post types, media, engagement ranges, dates, languages, hashtags,
+// tags). Runs via Electron because it renders placeholder images with a canvas.
 //
 //   (from repo root) node_modules/.bin/electron scripts/inject-dummy.cjs  [saveFolder]
 //
-// With no folder argument it writes to the configured save folder.
+// With no folder argument it writes to the configured save folder. Images go to the
+// save folder, records go into the library database (~/.hologram/hologram.db) —
+// **CLOSE THE APP FIRST**: the database has a single writer and this tool takes
+// that role for the duration.
 //
 // Why .cjs (not .cts): as the ELECTRON entry it must load via the classic CommonJS
 // loader so Electron's require('electron') injection applies — a .ts/.cts entry goes
@@ -112,6 +114,15 @@ app.whenReady().then(async () => {
   fs.mkdirSync(folder, { recursive: true });
   const base = Date.parse('2026-06-05T12:00:00Z');
 
+  // The app's own DB modules are ESM — dynamic import (not require) so this classic
+  // CommonJS Electron entry can still load them. Using the shared writePost keeps
+  // the dummy rows from drifting away from the shape real producers write.
+  const { openDatabase } = await import('../app/src/main/lib-db.ts');
+  const { makeTagResolver, preparePostStmts, writePost } = await import('../app/src/main/lib-db-record-writer.ts');
+  const handle = openDatabase(path.join(configDir(), 'hologram.db'));
+  const stmts = preparePostStmts(handle.sqlite);
+  const resolveTagId = makeTagResolver(handle.sqlite);
+
   for (let i = 0; i < POSTS.length; i++) {
     const p = POSTS[i];
     const id = `dummy-${String(i + 1).padStart(4, '0')}`;
@@ -169,9 +180,10 @@ app.whenReady().then(async () => {
     };
     fs.writeFileSync(path.join(folder, `${id}.jpg`), Buffer.from(dataUrl.split(',')[1], 'base64'));
     fs.writeFileSync(path.join(folder, `${id}-avatar.jpg`), Buffer.from(avDataUrl.split(',')[1], 'base64'));
-    fs.writeFileSync(path.join(folder, `${id}.json`), JSON.stringify(rec, null, 2), 'utf8');
+    writePost(stmts, resolveTagId, rec);
   }
 
-  console.log(`Wrote ${POSTS.length} dummy posts to ${folder}`);
+  handle.sqlite.close();
+  console.log(`Wrote ${POSTS.length} dummy posts (images in ${folder}, records in the library database)`);
   app.quit();
 });

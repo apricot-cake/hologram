@@ -7,11 +7,12 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 
-import { createPostIndex, computeDelta } from './lib-index.ts';
 import { openDatabase, DatabaseCorruptError } from './lib-db.ts';
-import { createDbImporter } from './lib-db-import.ts';
-import { postsFromDb, postsByIds } from './lib-db-query.ts';
+import { computeDelta } from './lib-post-delta.ts';
+import { postsFromDb } from './lib-db-query.ts';
 import { createDbWriter } from './lib-db-write.ts';
+// ⚠️ Scaffolding — the one-time pre-#5 library migration (#441).
+import { LEGACY_INTERNAL_FILES, migrateLegacyLibrary } from './lib-legacy-import.ts';
 import { buildSavedIndex, SAVED_INDEX_FILE } from './lib-saved-index.ts';
 import { drainInbox } from './lib-db-inbox.ts';
 import { compactInbox } from './lib-db-inbox-compact.ts';
@@ -212,88 +213,20 @@ function initSaveFolderRedundancy() {
   }
 }
 
-// App-internal metadata files that live in the save folder but are NOT posts.
-// Organization layer (tags / groups / folders / poster-* / tabs) is DB-backed
-// since the #298/St5 truth-source flip — the app itself no longer writes any
-// of these to disk — but the names stay listed so the watcher still IGNOREs
-// them if present (a pre-flip library can still have them on disk), instead of
-// each one self-triggering a full library reload (listPosts re-reads all
-// sidecars, ~1s on a 9k-post folder) were they ever to change.
-const INTERNAL_FILES = new Set(['config.json', '.index.json', 'tag-types.json', 'ungrouped.json', 'manual-groups.json', 'folders.json', 'tabs.json', 'poster-favorites.json', 'poster-folders.json', 'poster-tags.json']);
-
-// The subset of INTERNAL_FILES that used to be REWRITTEN in place on every edit
-// (organization layer: tags / groups / folders / poster-* / open tabs), back
-// when they were the write path (pre-#298/St5). The app no longer edits any of
-// these — they only still exist on disk for a pre-flip library imported once
-// (lib-db-import.ts) and never written again — but a backup mirror can still
-// encounter one that a user hand-edited or restored, so re-copy on drift (size
-// or mtime) remains the safe behavior rather than assuming write-once. config.json
-// lives in configDir (never in the save folder) and .index.json is a rebuildable
-// snapshot already skipped by the backup, so neither belongs here.
-const MUTABLE_INTERNAL = new Set(['tag-types.json', 'ungrouped.json', 'manual-groups.json', 'folders.json', 'tabs.json', 'poster-favorites.json', 'poster-folders.json', 'poster-tags.json']);
-
-// Watch the save folder and tell the renderer to refresh when files change
-// (e.g. a new capture arrives, or dummy data is injected). Debounced because a
-// single capture writes both a .jpg and a .json.
-let folderWatcher: import('node:fs').FSWatcher | null = null;
-let watchDebounce: any = null;
-let watchChanged = new Set<string>(); // changed sidecar (.json) basenames within the debounce window
-let watchUnknown = false; // a watch event lacked a filename -> can't target, force a full reconcile
-function watchSaveFolder() {
-  if (folderWatcher) {
-    try {
-      folderWatcher.close();
-    } catch {
-      /* already closed */
-    }
-    folderWatcher = null;
-  }
-  const folder = getSaveFolder();
-  if (!folder) return;
-  try {
-    folderWatcher = fs.watch(folder, (_event, filename) => {
-      if (!filename) {
-        watchUnknown = true; // platform didn't tell us which file -> renderer will full-reconcile
-      } else {
-        // Windows' fs.watch has been known to report nested-directory events
-        // even without {recursive:true}; INBOX_DIRNAME has its own dedicated
-        // watcher (watchInboxFolder), so anything under it here is a spurious
-        // duplicate to ignore, not a targetable sidecar hint.
-        if (filename.replace(/\\/g, '/').startsWith(`${INBOX_DIRNAME}/`)) return;
-        const base = path.basename(filename);
-        if (!/\.(jpe?g|jfif|png|webp|gif|json)$/i.test(base)) return;
-        // App-internal metadata churns constantly; only real captures should refresh.
-        if (INTERNAL_FILES.has(base)) return;
-        // Only the .json sidecar carries a record; collect those as the targeted
-        // hint. An image-only event has no record change to ship yet (its .json
-        // lands separately and re-triggers).
-        if (base.toLowerCase().endsWith('.json')) watchChanged.add(base);
-        else return;
-      }
-      clearTimeout(watchDebounce);
-      watchDebounce = setTimeout(() => {
-        // names: null = full reconcile (unusable hint); [] = no sidecar changed;
-        // [..] = re-scan only these. The renderer relays it back to listPostsDelta.
-        const names = watchUnknown ? null : [...watchChanged];
-        watchChanged = new Set();
-        watchUnknown = false;
-        if (win && !win.isDestroyed()) win.webContents.send('posts-changed', names);
-      }, 400);
-    });
-  } catch (err) {
-    console.error('Failed to watch save folder:', err);
-  }
-}
-
-// Watch .hologram-inbox/new (#5 St6 / #299) — a SEPARATE watcher because
-// fs.watch(folder) above is non-recursive and never sees inside this nested
-// directory. Any change here is worth a full reconcile rather than a targeted
-// one: drainInbox is cheap to re-run (already-applied events cost one indexed
-// SELECT each — lib-db-inbox.ts's module comment), and an inbox filename
-// isn't a safe per-event hint the way a sidecar basename is (a rename FROM
-// tmp/, a mid-write partial, or a segment-compaction removal could all fire
-// here). Directory created first (design comment: "起動時にinboxディレクトリ
-// を作ってから watcher を張り") so the watch target always exists.
+// Watch .hologram-inbox/new (#5 St6 / #299) — the ONE thing that writes into the
+// library from outside the app. Since #302 there is no second watcher on the save
+// folder itself: nothing writes per-post JSON there any more (#298 moved in-app
+// edits to the DB, #299 routed native-host saves through this queue), so watching
+// the folder for record changes would be watching for something that can no longer
+// happen. Media files DO still land there, but they arrive as part of an inbox
+// envelope and are visible through it.
+//
+// Any change here is worth a full reconcile rather than a targeted one: drainInbox
+// is cheap to re-run (already-applied events cost one indexed SELECT each —
+// lib-db-inbox.ts's module comment), and an inbox filename isn't a safe per-event
+// hint (a rename FROM tmp/, a mid-write partial, or a segment-compaction removal
+// could all fire here). Directory created first (design comment: "起動時にinbox
+// ディレクトリを作ってから watcher を張り") so the watch target always exists.
 let inboxWatcher: import('node:fs').FSWatcher | null = null;
 let inboxWatchDebounce: any = null;
 function watchInboxFolder() {
@@ -322,18 +255,14 @@ function watchInboxFolder() {
   }
 }
 
-// --- Posts (DB-backed read path — #5 St4 / #297) ---
-// The renderer's post array now comes from SQLite (lib-db-query.ts), not a
-// sidecar scan: a cold launch is a SELECT instead of tens of thousands of
-// readFileSync+JSON.parse calls. Sidecars remain the truth (write path is
-// still St5/#298) — postIndex's filename+mtimeMs scan is kept AS the change
-// detector (fs.watch has no cheaper signal than "these files' mtimes moved"),
-// and dbImporter (#296) re-derives the DB from exactly what it finds changed,
-// sharing this ONE postIndex instance so the DB sync and the change-detection
-// scan never duplicate a cold or warm folder scan.
-const postIndex = createPostIndex({ internalFiles: INTERNAL_FILES });
-const dbImporter = createDbImporter({ internalFiles: INTERNAL_FILES, postIndex });
-
+// --- Posts (DB-backed, #5) ---
+// The renderer's post array comes from SQLite (lib-db-query.ts): a cold launch is
+// a SELECT, not tens of thousands of readFileSync+JSON.parse calls. Since #302
+// there is no folder scan left at all — the DB is the truth source, so reading it
+// needs no reconciliation against disk first, and the only intake that has to be
+// picked up is the inbox queue (drainInbox, one indexed SELECT per already-applied
+// event).
+//
 // hologram.db lives in configDir, NOT the save folder: #5's design comments
 // (2026-07-17 orphan-recovery comment, 2026-07-21 cloud-sync-unfriendly note)
 // already assume the live DB is never naively copied by a folder-level sync —
@@ -341,11 +270,6 @@ const dbImporter = createDbImporter({ internalFiles: INTERNAL_FILES, postIndex }
 // cloud-synced directory (exactly what #95/#101 warn about) would defeat that
 // assumption on day one. thumb-cache sits in configDir for the same "local,
 // not portable with the library" reason.
-// A corrupt hologram.db self-heals by deletion at this stage: the DB is still
-// a DERIVED index (sidecars remain the truth until #298/St5), same recovery
-// story lib-index.ts already gives a corrupt .index.json ("no/invalid
-// snapshot -> cold scan will populate it") — dbImporter.importAll rebuilds it
-// whole from the sidecars on the very next call.
 // Where runBackup's DB snapshot lands (#301) — a dedicated subfolder under the
 // mirror root, same "don't dump into dest's top level" convention INBOX_DIRNAME
 // already follows there. Read here (restore) and written in runBackup
@@ -355,14 +279,13 @@ function dbSnapshotPath(backupDir: string) {
 }
 
 // Copies the latest DB snapshot over `file` if one exists — called only when
-// `file` is about to be created fresh (missing, or corrupt-and-just-deleted)
-// so a real restore point wins over an empty database. Before #298, sidecars
-// were a fallback truth source and "start empty" was harmless (the next
-// importAll would re-derive everything); that is no longer guaranteed, so a
-// snapshot — when one exists — is strictly better than empty. #299's inbox
-// replay (ensurePostsSynced's drainInboxLogged, unchanged) then catches up
-// whatever happened after the snapshot, and #301's orphan synthesis
-// (run-orphan-recovery) can recover what neither the snapshot nor inbox saw.
+// `file` is about to be created fresh (missing, or corrupt-and-just-deleted) so a
+// real restore point wins over an empty database. There is no on-disk fallback
+// truth source to re-derive from any more, so a snapshot — when one exists — is
+// strictly better than empty. #299's inbox replay (ensurePostsSynced's
+// drainInboxLogged) then catches up whatever happened after the snapshot, and
+// #301's orphan synthesis (run-orphan-recovery) can recover what neither the
+// snapshot nor the inbox saw.
 function restoreFromSnapshotIfAvailable(file: string): boolean {
   const b = readBackupConfig();
   if (!b.dir) return false;
@@ -404,87 +327,26 @@ function getDbWriter() {
   return createDbWriter(ensureDb().sqlite);
 }
 
-// Preserve the legacy metadata before marking the database authoritative. The
-// media files stay in the library; this snapshot is specifically the complete
-// sidecar and organization-JSON source that St5 stops mutating. Keep it next
-// to the DB, not inside the library, so it cannot be mistaken for a new post.
-async function backupLegacyMetadata(folder: string) {
-  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const destination = path.join(configDir(), 'db-migration-backups', stamp);
-  await fs.promises.mkdir(destination, { recursive: true });
-  for (const name of await fs.promises.readdir(folder)) {
-    if (!name.toLowerCase().endsWith('.json')) continue;
-    await fs.promises.copyFile(path.join(folder, name), path.join(destination, name));
-  }
-  const trash = path.join(folder, TRASH_SUBDIR);
-  try {
-    const trashDestination = path.join(destination, TRASH_SUBDIR);
-    await fs.promises.mkdir(trashDestination, { recursive: true });
-    for (const name of await fs.promises.readdir(trash)) {
-      if (name.toLowerCase().endsWith('.json')) await fs.promises.copyFile(path.join(trash, name), path.join(trashDestination, name));
-    }
-  } catch {
-    // A library without a trash directory is the ordinary case.
-  }
-  return destination;
-}
-
-// One-time flip-time backfill: userKind/tagReviewed (the tagging wizard's
-// plain/media + reviewed flags) were sidecar-only fields written by the old
-// update-tags handler — never part of PostRecordShape (native-host/post-record.mts
-// excludes them on purpose), so lib-db-import.ts's importer has never carried
-// them into the DB. Once update-tags stops touching the sidecar (#298/St5),
-// this is the only remaining chance to pull an existing library's review state
-// in before the sidecar values become unreachable. Runs after importAll so
-// every captureId already has a posts row to update.
-async function backfillPostFlags(folder: string, sqlite: any) {
-  let names: string[];
-  try {
-    names = await fs.promises.readdir(folder);
-  } catch {
-    return;
-  }
-  const writer = createDbWriter(sqlite);
-  for (const name of names) {
-    if (!name.toLowerCase().endsWith('.json') || INTERNAL_FILES.has(name)) continue;
-    const captureId = name.slice(0, -5);
-    let rec: any;
-    try {
-      rec = parseJsonLoose(await fs.promises.readFile(path.join(folder, name), 'utf8'));
-    } catch {
-      continue;
-    }
-    if (rec) writer.restorePostFlags(captureId, rec);
-  }
-}
-
-async function ensureDbTruthSource(folder: string, handle: { db: any; sqlite: any }) {
+// ⚠️ Scaffolding — remove before release together with lib-legacy-import.ts
+// (#441). Runs at most once per database: a library predating #5 still
+// has its metadata as per-post sidecar + organization JSON on disk, and this is
+// the only thing left that reads that format. A release-time install finds
+// nothing and stamps truthSource straight away.
+function ensureDbTruthSource(folder: string, handle: { db: any; sqlite: any }) {
   if (getDbWriter().stateGet('truthSource') === 'db') return;
-  await backupLegacyMetadata(folder);
-  await dbImporter.importAll(folder, handle);
-  await backfillPostFlags(folder, handle.sqlite);
+  const report = migrateLegacyLibrary({ folder, sqlite: handle.sqlite, backupRoot: path.join(configDir(), 'db-migration-backups'), trashSubdir: TRASH_SUBDIR });
+  if (report.sidecarCount) log.info(`legacy library migrated: ${report.sidecarCount} sidecar(s) -> ${report.dbPostCount} post row(s); old JSON preserved at ${report.backupPath}`);
+  for (const f of report.parseFailures) log.warn(`legacy migration skipped ${f.file}: ${f.error}`);
   getDbWriter().stateSet('truthSource', 'db');
-}
-
-let snapshotTimer: any = null;
-function scheduleSnapshot(folder) {
-  // Debounced + best-effort. .index.json is in INTERNAL_FILES, so this write does
-  // not self-trigger the folder watcher. Atomic (tmp + rename) inside writeSnapshot.
-  clearTimeout(snapshotTimer);
-  snapshotTimer = setTimeout(() => {
-    postIndex.writeSnapshot(folder).catch(() => {
-      /* re-scan next cold start */
-    });
-  }, 1500);
 }
 
 // The bridge's other half of the "saved" badge (#5 St6 / #299 — see
 // bridge.cts's "Saved-post index" comment): a small postKey->captureId map
-// rebuilt from the DB and written to configDir, NOT the save folder (so it
-// never touches the folder watcher). Debounced + atomic (tmp + rename) same as
-// scheduleSnapshot; best-effort because a stale/missing file just makes the
-// bridge fall back further to its journal + loose-inbox rescan, never wrong,
-// only slower to reflect an app-side change.
+// rebuilt from the DB and written to configDir, NOT the save folder (so it never
+// lands next to the library's media). Debounced + atomic (tmp + rename);
+// best-effort because a stale/missing file just makes the bridge fall back
+// further to its journal + loose-inbox rescan, never wrong, only slower to
+// reflect an app-side change.
 let savedIndexTimer: any = null;
 function scheduleSavedIndexWrite(handle: { sqlite: any }) {
   clearTimeout(savedIndexTimer);
@@ -542,94 +404,62 @@ function scheduleInboxCompaction(folder: string, sqlite: any) {
   }, 1500);
 }
 
-// Brings the DB fully up to date with whatever is on disk and returns the open
-// handle (null if no save folder is set yet) — the same steps listPosts()
-// already ran before reading. #298/St5 write handlers (update-tags today)
-// share this: a post-level DB write assumes its captureId already has a posts
-// row, which is only guaranteed once an import has run at least once this
-// session — an IPC call is not guaranteed to arrive after the renderer's own
-// first listPosts().
-async function ensurePostsSynced() {
+// Opens the DB, applies the one-time legacy migration if this database has never
+// seen it, and drains the intake queue — everything that has to happen before the
+// posts table can be considered current. Returns the open handle (null if no save
+// folder is set yet). Write handlers share this because a post-level DB write
+// assumes its captureId already has a posts row, and an IPC call is not
+// guaranteed to arrive after the renderer's own first listPosts().
+function ensurePostsSynced() {
   const folder = getSaveFolder();
   if (!folder) return null;
   const handle = ensureDb();
-  await ensureDbTruthSource(folder, handle);
+  ensureDbTruthSource(folder, handle);
   const inboxReport = drainInboxLogged(folder, handle.sqlite);
-  const report = await dbImporter.importAll(folder, handle);
-  // addedIds (not postsWritten, which counts every reconciled post — see
-  // lib-db-import.ts) reflects what actually changed this call.
-  if (report.addedIds.length || report.postsRemoved || inboxReport.applied.length) {
-    scheduleSnapshot(folder);
-    scheduleSavedIndexWrite(handle);
-  }
+  if (inboxReport.applied.length) scheduleSavedIndexWrite(handle);
   return handle;
 }
 async function listPosts() {
-  const handle = await ensurePostsSynced();
+  const handle = ensurePostsSynced();
   if (!handle) return { saveFolder: null, posts: [] };
   const posts = await postsFromDb(handle.sqlite);
   return { saveFolder: getSaveFolder(), posts };
 }
 
 // Delta variant for the renderer. Serializing all ~9k records over IPC on every
-// refresh costs ~450ms (the new bottleneck once the scan is indexed). The window
-// is a single client, so main tracks what it last delivered and ships only
-// added/updated/removed records — a post-capture refresh becomes O(changed).
-// `haveBaseline` is the renderer asserting it still holds the last full set; when
-// either side lacks a baseline (cold main, folder switch, or a renderer that
-// reloaded and lost its cache) we resend a full snapshot and both sides re-sync.
-// changedNames (the fs-watch hint relayed by the renderer):
-//   undefined/null -> reliable hint unavailable: full folder re-scan
-//   []             -> files changed but no sidecar among them: nothing to ship
-//   [names…]       -> re-stat ONLY these sidecars (the O(changed) fast path)
+// refresh costs ~450ms, so the window holds the full set and main ships only
+// added/updated/removed records. `haveBaseline` is the renderer asserting it still
+// holds the last full set; when either side lacks one (cold main, folder switch, or
+// a renderer that reloaded and lost its cache) we resend a full snapshot and both
+// sides re-sync.
 //
-// The change-detection STAMP stays sidecar mtimeMs (postIndex.list()'s own
-// bookkeeping) even though the POSTS themselves now come from the DB — mtimeMs
-// is still the cheapest true signal for "did this file change", and reusing it
-// means computeDelta (lib-index.ts, unchanged) needs no DB-awareness at all.
-let _deltaFolder = null;
-let _lastSent = new Map(); // captureId -> mtimeMs last delivered to the renderer
-async function listPostsDelta(haveBaseline, changedNames) {
+// One shape, no hints: reading every post is a single SELECT now, so the delta is
+// always computed against a fresh full read and is always reliable. Before #302
+// this branched on an fs-watch filename hint, because the alternative was
+// re-reading tens of thousands of sidecars to find out what moved — the hint
+// existed to avoid a cost the DB doesn't have.
+let _deltaFolder: string | null = null;
+let _lastSent = new Map<string, unknown>(); // captureId -> updatedAt last delivered to the renderer
+async function listPostsDelta(haveBaseline: boolean) {
   const folder = getSaveFolder();
   if (!folder) {
     _deltaFolder = null;
     _lastSent = new Map();
     return { saveFolder: null, full: true, posts: [] };
   }
-  const handle = ensureDb();
-  await ensureDbTruthSource(folder, handle);
-  const inboxReport = drainInboxLogged(folder, handle.sqlite);
+  const handle = ensurePostsSynced();
+  if (!handle) return { saveFolder: null, full: true, posts: [] };
 
-  // Full (re)sync or hint-less refresh: scan the whole folder (the reliable path).
-  if (!haveBaseline || _deltaFolder !== folder || changedNames == null) {
-    const report = await dbImporter.importAll(folder, handle);
-    if (report.addedIds.length || report.postsRemoved || inboxReport.applied.length) {
-      scheduleSnapshot(folder);
-      scheduleSavedIndexWrite(handle);
-    }
-    const posts = await postsFromDb(handle.sqlite);
-    const stamps = new Map(posts.map((p: any) => [p.captureId, p.updatedAt]));
-    if (!haveBaseline || _deltaFolder !== folder) {
-      _deltaFolder = folder;
-      _lastSent = stamps;
-      return { saveFolder: folder, full: true, posts };
-    }
-    const { added, removed } = computeDelta(_lastSent, posts, stamps); // hint-less delta vs baseline
+  const posts = await postsFromDb(handle.sqlite);
+  const stamps = new Map<string, unknown>(posts.map((p: any) => [p.captureId, p.updatedAt]));
+  if (!haveBaseline || _deltaFolder !== folder) {
+    _deltaFolder = folder;
     _lastSent = stamps;
-    return { saveFolder: folder, full: false, added, removed };
+    return { saveFolder: folder, full: true, posts };
   }
-
-  // Targeted: only the named sidecars moved — no folder-wide stat.
-  if (changedNames.length === 0) return { saveFolder: folder, full: false, added: [], removed: [] };
-  const report = await dbImporter.importChanged(folder, handle, changedNames);
-  const added = report.addedIds.length ? await postsByIds(handle.sqlite, report.addedIds) : [];
-  for (const p of added) _lastSent.set(p.captureId, p.updatedAt);
-  for (const id of report.removedIds) _lastSent.delete(id);
-  if (report.postsWritten || report.postsRemoved) {
-    scheduleSnapshot(folder);
-    scheduleSavedIndexWrite(handle);
-  }
-  return { saveFolder: folder, full: false, added, removed: report.removedIds };
+  const { added, removed } = computeDelta(_lastSent, posts, stamps);
+  _lastSent = stamps;
+  return { saveFolder: folder, full: false, added, removed };
 }
 
 // --- Native host registration (idempotent, on each launch) ---
@@ -824,23 +654,6 @@ function resolveInFolder(name) {
   return resolved.startsWith(path.resolve(folder) + path.sep) ? resolved : null;
 }
 
-// Atomically rewrite a sidecar the watcher tracks: write a sibling .tmp, then
-// rename over the target so a reader only ever sees the complete old or complete
-// new file — never a half-written one. A non-atomic in-place writeFile can be
-// caught mid-write by listPostsDelta -> postIndex.applyChanges (fired by the
-// fs.watch event): JSON.parse throws, the record reads as null, and the prior
-// record's captureId is pushed to `removed`. The renderer then drops it from
-// _postsById and reconcileFolders() PERMANENTLY purges that captureId from
-// folders.json membership. The card reappears on the next
-// watch event but its folder membership is gone for good. The .tmp
-// suffix is invisible to the watcher (its regex only matches jpe?g|jfif|png|
-// webp|gif|json). Mirrors lib-index's writeSnapshot.
-async function writeSidecarAtomic(jsonPath, rec) {
-  const tmp = `${jsonPath}.tmp`;
-  await fs.promises.writeFile(tmp, JSON.stringify(rec, null, 2), 'utf8');
-  await fs.promises.rename(tmp, jsonPath);
-}
-
 // Recover the captureId base from a filename. The argument may be the primary
 // image (<base>.<ext>, any viewable ext), a video poster (<base>-poster.<ext>),
 // or the video itself. Strip the -poster marker first, then any extension.
@@ -1005,10 +818,7 @@ async function runOrphanRecovery() {
   const handle = await ensurePostsSynced();
   if (!handle) return { ok: false, error: 'not-configured' };
   const written = synthesizeOrphanRecords(folder, handle.sqlite);
-  if (written.length) {
-    scheduleSnapshot(folder);
-    scheduleSavedIndexWrite(handle);
-  }
+  if (written.length) scheduleSavedIndexWrite(handle);
   runIntegrityPass(folder, handle.sqlite);
   return { ok: true, recovered: written.length };
 }
@@ -1064,8 +874,8 @@ async function runBackup(reason) {
     const dest = backupDest(b.dir);
     await fs.promises.mkdir(dest, { recursive: true });
 
-    // Collect source files, skipping app-internal and transient entries. Keep each
-    // file's size/mtime so mutable internal files can be re-copied only when changed.
+    // Collect source files, skipping the trash bucket and transient write artifacts.
+    // Keep each file's mtime so the mirror copy can carry it over.
     let srcFiles: string[];
     try {
       srcFiles = await fs.promises.readdir(src);
@@ -1075,7 +885,7 @@ async function runBackup(reason) {
     const srcSet = new Set<string>();
     const srcStat = new Map<string, any>(); // name -> { size, mtimeMs }
     for (const f of srcFiles) {
-      if (f === '.index.json' || f === TRASH_SUBDIR) continue;
+      if (f === TRASH_SUBDIR) continue;
       if (/\.tmp(-\d+)?$/i.test(f)) continue;
       try {
         const st = await fs.promises.stat(path.join(src, f));
@@ -1185,40 +995,23 @@ async function runBackup(reason) {
     await copyInboxMissing('segments', srcInboxSegments, destInboxSegments);
     await copyInboxMissing('new', srcInboxNew, destInboxNew);
 
-    // Decide whether a destination copy is stale and must be refreshed. Write-once
-    // captures (.jpg + .json sidecar) never change, so their presence at dest is
-    // proof enough — re-copying would only waste I/O. Mutable internal files
-    // (organization JSON: tags / folders / collections / tabs / poster-*)
-    // are rewritten on every edit, so compare size+mtime and re-copy on drift;
-    // otherwise the mirror freezes at the first backup and a restore loses edits.
-    // mtime is compared at whole-millisecond granularity: stat().mtimeMs carries
-    // sub-ms (ns) precision but utimes() can only set ms, so the preserved dest
-    // mtime never equals the float src value — flooring both avoids re-copying an
-    // unchanged file forever.
-    const needsRefresh = async (f) => {
-      if (!MUTABLE_INTERNAL.has(f)) return false;
-      const s = srcStat.get(f);
-      if (!s) return false;
-      try {
-        const d = await fs.promises.stat(path.join(dest, f));
-        return d.size !== s.size || Math.floor(d.mtimeMs) !== Math.floor(s.mtimeMs);
-      } catch {
-        return true;
-      } // unreadable dest copy -> re-copy to be safe
-    };
-
-    // Copy files missing at dest, and re-copy mutable internal files that drifted.
+    // Copy files missing at dest; presence is proof enough. Everything the mirror
+    // carries from the library is write-once — media, screenshots, avatars, inbox
+    // segments — so a file that exists at dest can never have a newer version at
+    // src. Until #302 this also had to re-copy the organization JSON on size/mtime
+    // drift, because that layer was rewritten in place on every edit; it lives in
+    // the DB now and reaches the mirror as the snapshot runBackup takes below.
     // The copy is atomic (tmp + rename) so a reader never sees a half-written file.
     if ([...srcSet].some((f) => f.startsWith('avatars/'))) {
       await fs.promises.mkdir(path.join(dest, 'avatars'), { recursive: true });
     }
     for (const f of srcSet) {
-      if (destSet.has(f) && !(await needsRefresh(f))) continue;
+      if (destSet.has(f)) continue;
       const tmp = path.join(dest, f + '.tmp-' + Date.now());
       try {
         await fs.promises.copyFile(path.join(src, f), tmp);
-        // Preserve mtime (floored to ms) so the next run's drift check compares
-        // like with like and an unchanged mutable file is not re-copied.
+        // Preserve mtime (floored to ms, the granularity utimes can set) so a
+        // mirror restored back into place keeps the library's own timestamps.
         try {
           const s = srcStat.get(f);
           if (s) {
@@ -1478,8 +1271,9 @@ function registerExtractedIpc() {
     getTrashDir,
     baseOf,
     VIEWABLE_EXTS,
-    INTERNAL_FILES,
-    writeSidecarAtomic,
+    // ⚠️ Scaffolding — clear-all's "don't delete these" list is only about JSON a
+    // pre-#5 library can still have lying around; it goes with #441.
+    LEGACY_INTERNAL_FILES,
     readBackupConfig,
     writeBackupConfig,
     validateBackupDir,
@@ -1493,7 +1287,6 @@ function registerExtractedIpc() {
     downloadAvatar,
     validateSaveFolder,
     relocateLibrary,
-    watchSaveFolder,
     watchInboxFolder,
     getWin: () => win,
     getConfigLastCorrupt: () => configLastCorrupt,
@@ -1639,7 +1432,6 @@ if (!gotSingleInstanceLock) {
     installNavigationGuards();
     const startMin = !SMOKE && process.env.HOLOGRAM_START_MINIMIZED === '1';
     createWindow(!SMOKE && !startMin); // start-minimized → create hidden, then show inactive below
-    watchSaveFolder();
     watchInboxFolder();
     if (!SMOKE) {
       armBackupSchedule(); // interval スケジュールを起動

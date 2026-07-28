@@ -26,8 +26,8 @@ const appDir = path.join(__dirname, '..', 'app');
 const { electronPath: resolveElectron } = require('./lib-electron-path.cts');
 
 const electronPath = resolveElectron();
-const { openDatabase } = require(path.join(appDir, 'src', 'main', 'lib-db.ts'));
 const { createDbWriter } = require(path.join(appDir, 'src', 'main', 'lib-db-write.ts'));
+const { seedLibrary } = require('./lib-seed-library.cts');
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-fold-'));
 const configDir = path.join(tmp, 'Hologram');
@@ -39,54 +39,43 @@ fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolde
 const jpeg = Buffer.from('/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACP/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AfwH/2Q==', 'base64');
 
 // Known captureIds so the test can drive membership by id without scraping the DOM.
+// The DB is the truth source (#298/#302): media goes to the save folder, records go
+// straight into the database. Seed a two-level tree with the post sitting in the
+// CHILD, so the aggregation assertions below exercise a real subtree.
 const CIDS: any[] = [];
+const records: any[] = [];
 for (let i = 0; i < 3; i++) {
   const id = '170000000000' + i + '-f0' + i;
   CIDS.push(id);
   fs.writeFileSync(path.join(saveFolder, id + '.jpg'), jpeg);
-  fs.writeFileSync(
-    path.join(saveFolder, id + '.json'),
-    JSON.stringify(
-      {
-        captureId: id,
-        image: id + '.jpg',
-        url: 'https://www.pixiv.net/artworks/' + (200 + i),
-        platform: 'pixiv',
-        title: '作品' + i,
-        displayName: '絵師' + i,
-        screenName: '80000' + i,
-        likes: 1000 + i,
-        capturedAt: '2026-04-0' + (i + 1) + 'T12:00:00Z',
-        date: '2026-04-0' + (i + 1) + 'T10:00:00Z',
-        media: [],
-        tags: [],
-        hashtags: [],
-        source: 'eagle-migration',
-      },
-      null,
-      2,
-    ),
-  );
+  records.push({
+    captureId: id,
+    image: id + '.jpg',
+    url: 'https://www.pixiv.net/artworks/' + (200 + i),
+    platform: 'pixiv',
+    title: '作品' + i,
+    displayName: '絵師' + i,
+    screenName: '80000' + i,
+    likes: 1000 + i,
+    capturedAt: '2026-04-0' + (i + 1) + 'T12:00:00Z',
+    date: '2026-04-0' + (i + 1) + 'T10:00:00Z',
+    media: [],
+    tags: [],
+    hashtags: [],
+    source: 'eagle-migration',
+  });
 }
 
-// The DB is the organization source of truth (#298). Seed a two-level tree with
-// the post sitting in the CHILD, so the aggregation assertions below exercise a
-// real subtree. Minimal post rows make the folder_items FK valid; startup's
-// sidecar importer fills the complete records before the renderer lists them.
 {
-  const { sqlite } = openDatabase(path.join(configDir, 'hologram.db'));
-  const insertPost = sqlite.prepare('INSERT INTO posts (captureId, capturedAt, updatedAt) VALUES (?, ?, ?)');
-  for (const id of CIDS) insertPost.run(id, '2026-04-01T12:00:00Z', '2026-04-01T12:00:00Z');
-  const writer = createDbWriter(sqlite);
-  writer.setFolders({
+  const handle = seedLibrary(configDir, records, { close: false });
+  createDbWriter(handle.sqlite).setFolders({
     folders: [
       { id: 'f-root', name: '一次資料', kind: 'static', created: 1, parentId: null, items: [] },
       { id: 'f-kid', name: 'スケッチ', kind: 'static', created: 2, parentId: 'f-root', items: [CIDS[0]] },
     ],
     activeId: null,
   });
-  writer.stateSet('truthSource', 'db');
-  sqlite.close();
+  handle.sqlite.close();
 }
 
 const evalJs = `(async () => {

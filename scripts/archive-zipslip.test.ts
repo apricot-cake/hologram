@@ -1,4 +1,4 @@
-// app/src/main/lib-archive.ts#importCompleteZip の Zip-Slip 回帰テスト。
+// app/src/main/lib-archive.ts#importCompleteZipToDb の Zip-Slip 回帰テスト。
 // エントリ名で保存フォルダの外へ出ようとする悪意ある library ZIP を作る＝(a) Windows の
 // バックスラッシュ区切り (b) POSIX の `../` (c) 絶対パス／ドライブレター。正当な capture と
 // folders.json も同梱し、「宛先の外に何も書かれない」「宛先の中にも evil が落ちない」
@@ -9,22 +9,25 @@ import os from 'node:os';
 import path from 'node:path';
 import JSZip from 'jszip';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
-import { buildCompleteZip, importCompleteZip } from '../app/src/main/lib-archive';
+import { buildCompleteZip, importCompleteZipToDb } from '../app/src/main/lib-archive';
+import { openDatabase } from '../app/src/main/lib-db';
+import { createDbWriter } from '../app/src/main/lib-db-write';
 
-// BOM 耐性（BACKLOG L3）をこの取り込みに相乗りさせる: org-JSON の読み口は2つ＝zip の
-// エントリ（他ツールの書き出しは BOM 付き）と宛先の既存ファイル（手編集）。どちらも
-// 解釈できないと、合流で片側が黙って落ちる。
+// BOM 耐性（BACKLOG L3）をこの取り込みに相乗りさせる: 他ツールが書き出した zip の
+// org-JSON エントリは BOM 付きで来る。解釈できないと合流で着信側が黙って落ちる。
 const BOM = String.fromCharCode(0xfeff);
 
 let root: string;
 let dest: string;
+let handle: any;
 let res: { imported: number; skipped: number };
 
 beforeAll(async () => {
   root = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-zipslip-'));
   dest = path.join(root, 'lib');
   fs.mkdirSync(dest, { recursive: true });
-  fs.writeFileSync(path.join(dest, 'folders.json'), BOM + JSON.stringify({ folders: [{ id: 'pre', name: 'P', items: [] }] }));
+  handle = openDatabase(path.join(root, 'test.db'));
+  createDbWriter(handle.sqlite).setFolders({ folders: [{ id: 'pre', name: 'P', kind: 'static', items: [] }] });
 
   const zip = new JSZip();
   // 正当なエントリ
@@ -42,10 +45,11 @@ beforeAll(async () => {
   zip.file('library/avatars\\..\\evil-av.txt', 'PWNED-AV');
   zip.file('library/avatars/deep/evil-deep.txt', 'PWNED-DEEP'); // より深い入れ子は許可対象でない
 
-  res = await importCompleteZip(JSZip, dest, await zip.generateAsync({ type: 'nodebuffer' }));
+  res = await importCompleteZipToDb(handle.sqlite, JSZip, dest, await zip.generateAsync({ type: 'nodebuffer' }));
 });
 
 afterAll(() => {
+  handle.sqlite.close();
   fs.rmSync(root, { recursive: true, force: true });
 });
 
@@ -63,9 +67,13 @@ describe('正当なエントリ', () => {
     expect(res.imported).toBe(3);
   });
 
-  test('folders.json が合流する（zip 側の BOM も既存ファイルの BOM も許容）', () => {
-    const merged = JSON.parse(fs.readFileSync(path.join(dest, 'folders.json'), 'utf8'));
-    expect(merged.folders.map((c: any) => c.id).sort()).toEqual(['f1', 'pre']);
+  test('folders.json が合流する（zip 側の BOM を許容）', () => {
+    expect(
+      createDbWriter(handle.sqlite)
+        .getFolders()
+        .folders.map((c: any) => c.id)
+        .sort(),
+    ).toEqual(['f1', 'pre']);
   });
 });
 
@@ -87,6 +95,7 @@ describe('悪意あるエントリ', () => {
 describe('往復: buildCompleteZip が avatars/ を運び、import が戻す', () => {
   let built: { buffer: Buffer; fileCount: number };
   let dest2: string;
+  let handle2: any;
   let res2: { imported: number };
 
   beforeAll(async () => {
@@ -98,8 +107,11 @@ describe('往復: buildCompleteZip が avatars/ を運び、import が戻す', (
     built = await buildCompleteZip(JSZip, srcLib);
     dest2 = path.join(root, 'lib2');
     fs.mkdirSync(dest2, { recursive: true });
-    res2 = await importCompleteZip(JSZip, dest2, built.buffer);
+    handle2 = openDatabase(path.join(root, 'test2.db'));
+    res2 = await importCompleteZipToDb(handle2.sqlite, JSZip, dest2, built.buffer);
   });
+
+  afterAll(() => handle2.sqlite.close());
 
   test('書き出しはアバターファイルも数える', () => {
     expect(built.fileCount).toBe(2);

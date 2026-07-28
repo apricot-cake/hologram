@@ -2,13 +2,13 @@
 
 // Exercises the mutation IPC handlers (update-tags, delete-post, restore-post)
 // headlessly by asking the renderer to call them, then checks the result:
-// delete-post still moves sidecar+media into .trash/ (checked on disk), but
-// update-tags is a #298/St5 DB-only write (app/src/main/ipc-trash.ts) — its sidecar is
-// asserted UNCHANGED, and the tag itself is read back from hologram.db. A
-// third post is tagged, trashed, and restored to prove that round trip
-// doesn't lose the DB-only tag/userKind/tagReviewed state (trashing cascade-
-// deletes the posts row via FK; delete-post/restore-post carry it through the
-// trashed sidecar copy instead — see app/src/main/ipc-trash.ts).
+// - update-tags is a DB-only write; the tag is read back from hologram.db
+// - delete-post moves the media into .trash/ and writes the record there as JSON
+//   (the trash is self-describing — ipc-trash.ts's module comment), while the
+//   library folder keeps no per-post JSON at all (#302)
+// - a third post is tagged, trashed, and restored to prove that round trip does not
+//   lose the DB-only tag/userKind/tagReviewed state (trashing deletes the posts row;
+//   restore rebuilds it from the trash-side record)
 //
 //   node scripts/test-app-ipc.cts
 
@@ -22,6 +22,7 @@ const { electronPath: resolveElectron } = require('./lib-electron-path.cts');
 
 const electronPath = resolveElectron();
 const { openDatabase } = require(path.join(appDir, 'src', 'main', 'lib-db.ts'));
+const { seedLibrary } = require('./lib-seed-library.cts');
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-ipc-'));
 const configDir = path.join(tmp, 'Hologram');
@@ -32,34 +33,29 @@ fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolde
 
 const jpeg = Buffer.from('/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACP/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AfwH/2Q==', 'base64');
 
-function writePost(id, tags, media: any[] = []) {
+const records: any[] = [];
+function addPost(id, tags, media: any[] = []) {
   fs.writeFileSync(path.join(saveFolder, `${id}.jpg`), jpeg);
-  fs.writeFileSync(
-    path.join(saveFolder, `${id}.json`),
-    JSON.stringify(
-      {
-        captureId: id,
-        image: `${id}.jpg`,
-        url: `https://x.com/u/status/${id}`,
-        platform: 'x',
-        text: 't',
-        tags,
-        media: media || [],
-        capturedAt: '2026-01-01T00:00:00.000Z',
-        date: '2026-01-01T00:00:00.000Z',
-      },
-      null,
-      2,
-    ),
-  );
+  records.push({
+    captureId: id,
+    image: `${id}.jpg`,
+    url: `https://x.com/u/status/${id}`,
+    platform: 'x',
+    text: 't',
+    tags,
+    media: media || [],
+    capturedAt: '2026-01-01T00:00:00.000Z',
+    date: '2026-01-01T00:00:00.000Z',
+  });
 }
-writePost('dummy-0001', []);
-writePost('dummy-0002', []);
-writePost('dummy-0003', []);
+addPost('dummy-0001', []);
+addPost('dummy-0002', []);
+addPost('dummy-0003', []);
 // #119 St1 acceptance: deleting a video post recovers its -media-/-poster. files too.
-writePost('dummy-0004', [], [{ url: 'https://x/clip.mp4', alt: null, width: null, height: null, file: 'dummy-0004-media-0.mp4', type: 'video', posterFile: 'dummy-0004-poster.jpg' }]);
+addPost('dummy-0004', [], [{ url: 'https://x/clip.mp4', alt: null, width: null, height: null, file: 'dummy-0004-media-0.mp4', type: 'video', posterFile: 'dummy-0004-poster.jpg' }]);
 fs.writeFileSync(path.join(saveFolder, 'dummy-0004-media-0.mp4'), Buffer.from('fake-mp4'));
 fs.writeFileSync(path.join(saveFolder, 'dummy-0004-poster.jpg'), jpeg);
+seedLibrary(configDir, records);
 
 const evalJs = `(async () => {
   await window.hologram.updateTags('dummy-0001.jpg', ['tagX']);
@@ -87,8 +83,8 @@ child.stdout.on('data', (d) => {
 });
 
 child.on('close', () => {
-  const rec1 = JSON.parse(fs.readFileSync(path.join(saveFolder, 'dummy-0001.json'), 'utf8'));
-  const sidecarUntouchedOk = JSON.stringify(rec1.tags) === JSON.stringify([]);
+  // #302: the library folder holds media only — an edit must not put a record there.
+  const noLibraryJsonOk = fs.readdirSync(saveFolder).filter((f) => f.toLowerCase().endsWith('.json')).length === 0;
 
   const { sqlite } = openDatabase(path.join(configDir, 'hologram.db'), { readonly: true });
   const tagsOf = (id) =>
@@ -103,13 +99,14 @@ child.on('close', () => {
   const tagOk = JSON.stringify(dbTags) === JSON.stringify(['tagX']);
   const restoreOk = JSON.stringify(restoredTags) === JSON.stringify(['tagY']) && !!restoredRow && restoredRow.userKind === 'plain' && restoredRow.tagReviewed === 1;
 
-  const delOk = !fs.existsSync(path.join(saveFolder, 'dummy-0002.jpg')) && !fs.existsSync(path.join(saveFolder, 'dummy-0002.json'));
-  // #119 St1: delete-post sweeps -media-/-poster. files, not just the sidecar+image.
+  // The media leaves the library and the record lands in the trash, describing it.
+  const delOk = !fs.existsSync(path.join(saveFolder, 'dummy-0002.jpg')) && fs.existsSync(path.join(saveFolder, '.trash', 'dummy-0002.jpg')) && fs.existsSync(path.join(saveFolder, '.trash', 'dummy-0002.json'));
+  // #119 St1: delete-post sweeps -media-/-poster. files, not just the image.
   const videoDelOk = !fs.existsSync(path.join(saveFolder, 'dummy-0004-media-0.mp4')) && !fs.existsSync(path.join(saveFolder, 'dummy-0004-poster.jpg')) && fs.existsSync(path.join(tmp, 'saves', '.trash', 'dummy-0004-media-0.mp4')) && fs.existsSync(path.join(tmp, 'saves', '.trash', 'dummy-0004-poster.jpg'));
   const countOk = /EVAL_RESULT 2\b/.test(out);
   fs.rmSync(tmp, { recursive: true, force: true });
-  console.log(`updateTags(db)=${tagOk} sidecarUntouched=${sidecarUntouchedOk} delete=${delOk} videoDelete=${videoDelOk} restoreKeepsDbFlags=${restoreOk} listCount=${countOk}`);
-  const pass = tagOk && sidecarUntouchedOk && delOk && videoDelOk && restoreOk && countOk;
+  console.log(`updateTags(db)=${tagOk} noLibraryJson=${noLibraryJsonOk} delete=${delOk} videoDelete=${videoDelOk} restoreKeepsDbFlags=${restoreOk} listCount=${countOk}`);
+  const pass = tagOk && noLibraryJsonOk && delOk && videoDelOk && restoreOk && countOk;
   console.log(pass ? 'IPC_TEST_PASS' : 'IPC_TEST_FAIL');
   process.exit(pass ? 0 : 1);
 });

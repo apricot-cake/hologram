@@ -11,7 +11,7 @@ The bridge writes two **write-once** files into the user's save folder:
 
 ```
 <captureId>.jpg     cropped JPEG (no EXIF)
-<captureId>.json    sidecar metadata
+.hologram-inbox/    intake queue the app drains into its database
 ```
 
 It never mutates existing files, so concurrent captures can't corrupt a shared
