@@ -1,0 +1,36 @@
+{
+  // The Playwright E2E layer. A SIXTH standalone runtime beside the five in
+  // scripts/typecheck.cts: the specs are compiled by Playwright's own loader, not
+  // by a bundler and not by Node's type-stripping, so they get ESM import syntax
+  // and .ts (not the .cts the scripts/ layer uses).
+  //
+  // They still require() the CommonJS helpers under scripts/ and the main-process
+  // modules those pull in — the repo root has no "type": "module", so Playwright
+  // emits CJS and `require` is really there at runtime.
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM"],
+    "module": "preserve",
+    "moduleResolution": "bundler",
+    // The specs import sibling modules with an explicit .ts extension (Playwright
+    // resolves them as written), which plain bundler resolution rejects.
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "isolatedModules": true,
+    "strict": true,
+    // Same reason as the other five projects: plain JS-shaped code where internal
+    // lambda params would each need annotation noise.
+    "noImplicitAny": false,
+    "useUnknownInCatchVariables": false,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
+    // e2e/ has no @types install of its own — borrow whichever layout npm produced
+    // (a missing typeRoots entry is ignored, so listing both is stable).
+    "typeRoots": ["../node_modules/@types", "../app/node_modules/@types"],
+    "types": ["node"]
+  },
+  // The renderer globals the specs read through page.evaluate (window.hologram)
+  // come from the app's own declaration file rather than being re-declared here.
+  "include": ["**/*.ts", "../playwright.config.ts", "../app/src/renderer/src/types/globals.d.ts"]
+}

@@ -23,6 +23,10 @@ scripts/_*.jpg
 scripts/_*.png
 # Per-tree sandbox verify instance (scripts/sandbox-app.cts): config + seeded library
 .sandbox/
+# Playwright の実行成果物（失敗時のトレース・レポート）。ベースライン画像
+# (e2e/**/*-snapshots/) はコミット対象なので除外しない。
+test-results/
+playwright-report/
 # 公開前の内部監査メモ（取得方針の棚卸し等）＝公開リポに出さない（gitignore＝ファイルはローカルに保持）
 docs/acquisition-audit-*.md
 # 秘密ファイルのトリップワイヤ（現状コミット済み秘密は無い・鍵/config はリポ外 ~/.hologram）。

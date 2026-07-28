@@ -5,7 +5,7 @@ description: Hologram を CDP（Chrome DevTools Protocol）で計測・撮影・
 
 # verify-with-cdp — CDP で確かめる時の作法
 
-前提は2つとも別の場所が正本。**変更が反映される状態か**（`npm run build --workspace=app` 等）と**どのインスタンスを使うか**（隔離3段構え）は skill `run-hologram` と `docs/build.md`「検証ルール（隔離3段構え）」。ここはその上で踏む罠だけを持つ。
+前提は2つとも別の場所が正本。**変更が反映される状態か**（`npm run build --workspace=app` 等）と**どのインスタンスを使うか**（隔離4段構え）は skill `run-hologram` と `docs/build.md`「検証ルール（隔離4段構え）」。ここはその上で踏む罠だけを持つ。
 
 ## 駆動する
 
