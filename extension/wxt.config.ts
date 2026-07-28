@@ -7,6 +7,13 @@ export default defineConfig({
   // never a remove/re-add, which wipes chrome.storage.local and shortcut
   // assignments (docs/build.md「拡張機能の開発・配布」).
   outDirTemplate: '{{browser}}-mv{{manifestVersion}}',
+  // Never let WXT auto-launch a browser via web-ext-run: that dependency
+  // carries known-vulnerable transitives (shell-quote, tmp, adm-zip). Our
+  // only runner is the user's daily Chrome loading .output/chrome-mv3 (#378);
+  // the dev server's file watch and hot-reload keep working without it (#398).
+  webExt: {
+    disabled: true,
+  },
   manifest: {
     key: 'MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAzBGm/kCBitgpMoAkBDv5YrWwfAf74U8Uiy/rEuZgwFP703HT2EIhASBHEfVX7MSBF1a5V3D5IwZzu9mRFQmTzXtjyli8wdvxIjXVy3fqXXCRSmPMfCklL5nZ56ncx2LATi40kP8IiP36b40ZhPCVsq/NExT9gO0TNFpyJchDuAGgefqSBSS/xwp6c25vozxjbSfD3vcD2ohfSqpa75mui4XGwwouvbHl+69I7zXpeM5yYxmU+tTqWSUEblFGM67BsYSaPXGxcP9izInSB8JQ6WbmOyjCd/6az1RbKz9Yud2Yc4cX4z9+qWAx/ldn6vmQ6cjpvEAWTQdngSyHpawP5QIDAQAB',
     name: '__MSG_extName__',
