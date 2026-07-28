@@ -14,6 +14,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.5",
+    "@playwright/test": "^1.62.0",
     "@types/ws": "^8.18.1",
     "@vitest/coverage-v8": "^4.1.10",
     "jsdom": "^30.0.0",
@@ -34,6 +35,9 @@
     "lint:fix": "biome check --write .",
     "format": "biome format --write .",
     "test": "vitest run",
+    "test:e2e": "playwright test",
+    "test:e2e:flow": "playwright test --project=flow",
+    "test:e2e:update": "playwright test --project=visual --update-snapshots",
     "typecheck": "node scripts/typecheck.cts",
     "check": "npm run lint && npm run typecheck && npm test"
   }

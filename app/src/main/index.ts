@@ -1429,7 +1429,12 @@ const SMOKE = process.env.HOLOGRAM_SMOKE === '1';
 // English UI reads as missing controls rather than as a different language. Pin it
 // for harness runs; HOLOGRAM_LANG overrides for a run that wants the other one.
 // Must be set before the app is ready, which is why it lives here.
-if (SMOKE) app.commandLine.appendSwitch('lang', process.env.HOLOGRAM_LANG || 'ja');
+//
+// HOLOGRAM_LANG is honored on its own, not only under SMOKE, because the Playwright
+// suite (e2e/) reads the same labels off a VISIBLE window — it launches through the
+// sandbox path, not the smoke one, and would otherwise get the runner's language.
+const HARNESS_LANG = process.env.HOLOGRAM_LANG || (SMOKE ? 'ja' : '');
+if (HARNESS_LANG) app.commandLine.appendSwitch('lang', HARNESS_LANG);
 
 // Sandbox verify instance (scripts/sandbox-app.cts): a visible, persistent
 // second instance on an isolated HOLOGRAM_CONFIG_DIR. Unlike SMOKE it stays
