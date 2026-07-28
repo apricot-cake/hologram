@@ -2,6 +2,7 @@ import type { DragEvent } from 'react';
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
 import { t } from '../_shared/i18n.ts';
+import { promptName } from '../prompt/Prompt.tsx';
 import { closeManager, getManager, managerCreate, managerMove, managerRemove, managerRename, subscribeManager } from '../services/folders.ts';
 
 // Shared folder management modal (#ivFolderModal) — React-owned. Lists whichever
@@ -43,8 +44,7 @@ function FolderManagerBox({ model }: { model: HologramFolderManagerModel }) {
     if (managerCreate(name)) setName('');
   };
   const doRename = (f: HologramFolder) => {
-    const nm = window.prompt(t('foldRenamePrompt'), f.name);
-    if (nm != null) managerRename(f.id, nm);
+    promptName(t('foldRenamePrompt'), f.name, (nm) => managerRename(f.id, nm));
   };
   const doRemove = (f: HologramFolder) => {
     if (window.confirm(t('foldDeleteConfirm', [f.name]))) managerRemove(f.id);
