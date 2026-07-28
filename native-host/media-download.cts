@@ -17,7 +17,7 @@ const path = require('node:path');
 const net = require('node:net');
 const dns = require('node:dns');
 const crypto = require('node:crypto');
-const { Agent } = require('undici');
+const { Agent, setGlobalDispatcher } = require('undici');
 
 // --- Original-media download (best-effort) ---
 // Supported still-image content types -> file extension. Anything else (svg,
@@ -149,6 +149,15 @@ const MEDIA_DISPATCHER = new Agent({
     autoSelectFamily: true,
   },
 });
+// Node's global fetch dispatches through its own internally-bundled (older)
+// undici. Passing MEDIA_DISPATCHER as a per-request `dispatcher` option makes
+// that internal fetch build a Request with this (newer, v8+) undici's Request
+// class, which rejects the handler as missing v2-only methods ("invalid
+// onRequestStart method") before the connector — and createGuardedLookup —
+// ever run. Registering it as the process-wide default instead sidesteps
+// that handler-shape check entirely, so it must stay off the per-call
+// `request` options below.
+setGlobalDispatcher(MEDIA_DISPATCHER);
 
 // Validate one URL: https + (if an IP literal) a public range + not an obvious
 // local hostname. Returns the parsed URL on success, or null.
@@ -219,7 +228,7 @@ async function fetchMediaFile(url: unknown, referer: unknown, mimeExt: Record<st
     let res: Response | null = null;
     for (let hop = 0; hop <= MAX_MEDIA_REDIRECTS; hop++) {
       if (!checkMediaUrl(current)) return null; // SSRF guard, every hop
-      const request = { signal: ctrl.signal, redirect: 'manual' as const, headers, dispatcher: MEDIA_DISPATCHER };
+      const request = { signal: ctrl.signal, redirect: 'manual' as const, headers };
       res = await fetch(current, request);
       if (res.status >= 300 && res.status < 400) {
         const loc = res.headers.get('location');
