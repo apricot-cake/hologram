@@ -1,10 +1,10 @@
 'use strict';
 
-// Shared best-effort still-image downloader (original media + author avatars).
+// Shared best-effort media downloader (original media + author avatars).
 //
-// Extracted from the bridge so the SAME SSRF guard, size/time caps, and manual
-// redirect handling are reused by every path that pulls remote images into the
-// library:
+// Extracted from the bridge so the SAME SSRF guard, size/time caps, save-wide
+// byte budget, and manual redirect handling are reused by every path that pulls
+// remote images into the library:
 //   - native-host/bridge.cts          (capture / drag save)
 //   - app/src/main/index.ts                    (import-posts)
 //   - scripts/backfill-metadata.cts   (backfill + existing-data avatar fill)
@@ -17,6 +17,7 @@ const path = require('node:path');
 const net = require('node:net');
 const dns = require('node:dns');
 const crypto = require('node:crypto');
+const { once } = require('node:events');
 const { Agent, setGlobalDispatcher } = require('undici');
 
 // --- Original-media download (best-effort) ---
@@ -40,6 +41,17 @@ const VIDEO_MIME_EXT: Record<string, string> = {
 const MAX_MEDIA = 12; // cap attachments per post
 const MAX_MEDIA_BYTES = 25 * 1024 * 1024; // skip anything larger (still images)
 const MAX_VIDEO_BYTES = 200 * 1024 * 1024; // videos run far bigger than photos
+// Byte budget for ONE save operation, on top of the per-file caps (#389). Those
+// caps bound a single response, not the click: 12 attachments at the video cap
+// is ~2.4GB of network and disk driven by one save. 512MB clears every shape our
+// own caps allow (12 stills = 300MB; video + poster = 225MB), so no legitimate
+// post is refused, and matches the largest single file any supported platform
+// accepts (X video, 512MB) — a save that wants more is not a real post.
+const MAX_SAVE_BYTES = 512 * 1024 * 1024;
+// Attachments in flight at once. Bodies stream to disk, so memory no longer
+// scales with this number; 2 keeps a multi-image post from serializing into a
+// wait as long as the sum of its downloads.
+const MEDIA_CONCURRENCY = 2;
 const MEDIA_TIMEOUT_MS = 12000; // per-image abort
 const VIDEO_TIMEOUT_MS = 60000; // videos take longer to pull down than a still
 const MAX_MEDIA_REDIRECTS = 4; // bound redirect chains
@@ -64,9 +76,54 @@ interface MediaDescriptor {
   type?: string;
   posterFile?: string;
 }
-interface StillImage {
-  buf: Buffer;
+// What a download leaves behind: the folder-relative file name it committed and
+// the extension the response's content-type resolved to.
+interface SavedFile {
+  file: string;
   ext: string;
+}
+// Per-response caps. Bundled so the shared fetch serves stills and video without
+// each call site restating three arguments in the right order.
+interface FetchLimits {
+  mimeExt: Record<string, string>;
+  maxBytes: number;
+  timeoutMs: number;
+}
+const STILL_LIMITS: FetchLimits = { mimeExt: MEDIA_MIME_EXT, maxBytes: MAX_MEDIA_BYTES, timeoutMs: MEDIA_TIMEOUT_MS };
+const VIDEO_LIMITS: FetchLimits = { mimeExt: VIDEO_MIME_EXT, maxBytes: MAX_VIDEO_BYTES, timeoutMs: VIDEO_TIMEOUT_MS };
+
+// --- Whole-save byte budget (#389) ---------------------------------------------
+// One budget per save operation, shared by every download it makes (media,
+// poster frames, avatar). Bytes are counted as they ARRIVE — including the bytes
+// of a transfer that later fails — because those were already paid for in
+// network and disk. Blowing the budget aborts the in-flight fetches through
+// `signal` and stops any further one from starting.
+interface ByteBudget {
+  readonly signal: AbortSignal;
+  readonly blown: boolean;
+  remaining(): number;
+  take(bytes: number): boolean;
+}
+function createByteBudget(total: number = MAX_SAVE_BYTES): ByteBudget {
+  const ctrl = new AbortController();
+  let spent = 0;
+  return {
+    get signal() {
+      return ctrl.signal;
+    },
+    get blown() {
+      return spent >= total;
+    },
+    remaining: () => Math.max(0, total - spent),
+    take(bytes: number) {
+      spent += bytes;
+      if (spent > total) {
+        ctrl.abort();
+        return false;
+      }
+      return true;
+    },
+  };
 }
 
 // --- SSRF guard ----------------------------------------------------------------
@@ -176,59 +233,76 @@ function checkMediaUrl(urlStr: string): URL | null {
   return u;
 }
 
-// Read a response body with a hard byte cap, streaming so an over-cap or
-// content-length-lying body is aborted mid-flight instead of buffered whole.
-async function readCappedBody(res: Response, cap: number, ctrl: AbortController): Promise<Buffer | null> {
+// Write a response body into `tmpPath`, enforcing the per-file cap AND the save
+// budget on the bytes that ACTUALLY arrive. Content-Length already gave us an
+// early exit, but it is attacker-controlled: a chunked body, an under-declared
+// one, or one that simply never stops is cut here, mid-flight, with only the
+// current chunk in memory. Returns the byte count written, or null if a cap was
+// hit or the transfer broke — the caller removes the temp file either way.
+async function streamToFile(res: Response, cap: number, budget: ByteBudget, tmpPath: string): Promise<number | null> {
   const body = res.body;
-  if (body && typeof body.getReader === 'function') {
-    const reader = body.getReader();
-    const chunks: Buffer[] = [];
-    let total = 0;
+  if (!body || typeof body.getReader !== 'function') return null;
+  const reader = body.getReader();
+  // 'wx' so a name collision fails instead of overwriting another save's
+  // in-progress file. The error listener is attached in the same tick as the
+  // stream: an open failure ('EEXIST', a read-only folder) is emitted
+  // asynchronously and would otherwise be an unhandled 'error' event.
+  const out = fs.createWriteStream(tmpPath, { flags: 'wx' });
+  const failed = new Promise<never>((_, reject) => out.once('error', reject));
+  failed.catch(() => {}); // nobody may end up awaiting it
+  let total = 0;
+  try {
     for (;;) {
       const { done, value } = await reader.read();
       if (done) break;
       total += value.length;
-      if (total > cap) {
-        try {
-          ctrl.abort();
-        } catch {
-          /* ignore */
-        }
-        try {
-          await reader.cancel();
-        } catch {
-          /* ignore */
-        }
-        return null;
-      }
-      chunks.push(Buffer.from(value));
+      if (total > cap || !budget.take(value.length)) return null;
+      if (!out.write(Buffer.from(value))) await Promise.race([once(out, 'drain'), failed]);
     }
-    return Buffer.concat(chunks);
+    out.end();
+    // 'close', not 'finish': Windows refuses to rename or delete a file whose
+    // handle is still open, and the caller does exactly that next.
+    await Promise.race([once(out, 'close'), failed]);
+    return total;
+  } catch {
+    return null; // disconnect mid-body / abort / write failure
+  } finally {
+    reader.cancel().catch(() => {}); // no-op once the body is drained
+    if (!out.destroyed) out.destroy();
+    if (!out.closed) await once(out, 'close').catch(() => {}); // see above
   }
-  // Fallback (no streamable body): buffer whole, then enforce the cap.
-  const buf = Buffer.from(await res.arrayBuffer());
-  return buf.length > cap ? null : buf;
 }
 
-// Fetch one media file and return { buf, ext } on success, or null on any
-// failure. pixiv originals on i.pximg.net 403 without a pixiv Referer; callers
-// pass a referer for those. Other hosts omit it. Redirects are followed manually
-// so every hop is re-validated against the SSRF guard. mimeExt/maxBytes/timeoutMs
-// are parameterized so the same guarded fetch serves both still images
-// (fetchStillImage below) and video (downloadOneMedia, #119 St1) without
-// duplicating the SSRF/redirect/cap logic.
-async function fetchMediaFile(url: unknown, referer: unknown, mimeExt: Record<string, string>, maxBytes: number, timeoutMs: number): Promise<StillImage | null> {
+// Fetch one media file straight to disk and return its folder-relative name, or
+// null on any failure. `stem` is that name WITHOUT the extension, which is only
+// known once the response's content-type arrives. pixiv originals on i.pximg.net
+// 403 without a pixiv Referer; callers pass a referer for those. Other hosts omit
+// it. Redirects are followed manually so every hop is re-validated against the
+// SSRF guard.
+//
+// The body streams into a sibling temp file and is committed with a rename, so a
+// download that fails at ANY point (unsupported type, per-file cap, save budget,
+// redirect, disconnect, timeout) leaves behind neither a finished-looking file
+// nor a temp one. Same directory as the target on purpose: a rename is only
+// atomic within one filesystem.
+async function downloadToFile(url: unknown, referer: unknown, limits: FetchLimits, dir: string, stem: string, budget: ByteBudget): Promise<SavedFile | null> {
   if (typeof url !== 'string' || !/^https:\/\//i.test(url)) return null;
   if (typeof fetch !== 'function' || typeof AbortController !== 'function') return null;
+  if (budget.blown) return null;
   const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  const timer = setTimeout(() => ctrl.abort(), limits.timeoutMs);
+  let tmpPath = ''; // set once we have a name to clean up
+  let committed = false;
   try {
     const headers = typeof referer === 'string' && /^https:\/\//i.test(referer) ? { Referer: referer } : undefined;
+    // Blowing the budget aborts every download of this save, not just the one
+    // that overran it.
+    const signal = AbortSignal.any([ctrl.signal, budget.signal]);
     let current = url;
     let res: Response | null = null;
     for (let hop = 0; hop <= MAX_MEDIA_REDIRECTS; hop++) {
       if (!checkMediaUrl(current)) return null; // SSRF guard, every hop
-      const request = { signal: ctrl.signal, redirect: 'manual' as const, headers };
+      const request = { signal, redirect: 'manual' as const, headers };
       res = await fetch(current, request);
       if (res.status >= 300 && res.status < 400) {
         const loc = res.headers.get('location');
@@ -244,22 +318,42 @@ async function fetchMediaFile(url: unknown, referer: unknown, mimeExt: Record<st
     }
     if (!res || !res.ok) return null;
     const ct = (res.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
-    const ext = mimeExt[ct];
+    const ext = limits.mimeExt[ct];
     if (!ext) return null; // not a supported type
+    // Content-Length is a hint, never a guarantee: an honest server saves us the
+    // whole transfer here, a lying one is stopped by the byte counter above.
     const declared = Number(res.headers.get('content-length'));
-    if (Number.isFinite(declared) && declared > maxBytes) return null;
-    const buf = await readCappedBody(res, maxBytes, ctrl);
-    if (!buf || !buf.length) return null;
-    return { buf, ext };
+    if (Number.isFinite(declared) && (declared > limits.maxBytes || declared > budget.remaining())) return null;
+    const file = `${stem}.${ext}`;
+    const target = path.join(dir, file);
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    tmpPath = path.join(path.dirname(target), `.${path.basename(target)}.${process.pid}.${crypto.randomBytes(4).toString('hex')}.tmp`);
+    const bytes = await streamToFile(res, limits.maxBytes, budget, tmpPath);
+    if (!bytes) return null; // capped, broken, or an empty body
+    fs.renameSync(tmpPath, target); // commit point
+    committed = true;
+    return { file, ext };
   } catch {
     return null; // network/abort/parse failure
   } finally {
     clearTimeout(timer);
+    if (!committed) {
+      ctrl.abort(); // release the socket of a body we are walking away from
+      if (tmpPath) {
+        try {
+          fs.rmSync(tmpPath, { force: true });
+        } catch {
+          /* best-effort cleanup of the orphaned temp file */
+        }
+      }
+    }
   }
 }
 
-async function fetchStillImage(url: unknown, referer?: unknown): Promise<StillImage | null> {
-  return fetchMediaFile(url, referer, MEDIA_MIME_EXT, MAX_MEDIA_BYTES, MEDIA_TIMEOUT_MS);
+// Download one still image to <dir>/<stem>.<ext> (the drag-save's own artwork,
+// avatars). Callers that save a whole post go through downloadMedia instead.
+async function saveStillImage(url: unknown, referer: unknown, dir: string, stem: string, budget: ByteBudget = createByteBudget()): Promise<SavedFile | null> {
+  return downloadToFile(url, referer, STILL_LIMITS, dir, stem, budget);
 }
 
 function descriptorOf(entry: MediaEntry, file: string): MediaDescriptor {
@@ -281,41 +375,53 @@ function descriptorOf(entry: MediaEntry, file: string): MediaDescriptor {
 // `file`, `type` stays unset) instead of vanishing entirely — only a true
 // double failure (no poster AND no video) drops the item, same as an
 // unfetchable photo. Returns null on that full failure (caller drops it).
-async function downloadOneMedia(entry: MediaEntry | null | undefined, dir: string, base: string, i: number): Promise<MediaDescriptor | null> {
+async function downloadOneMedia(entry: MediaEntry | null | undefined, dir: string, base: string, i: number, budget: ByteBudget = createByteBudget()): Promise<MediaDescriptor | null> {
   if (!entry) return null;
   const isVideo = entry.type === 'video' || entry.type === 'gif';
   if (!isVideo) {
-    const got = await fetchStillImage(entry.url, entry.referer);
-    if (!got) return null;
-    const file = `${base}-media-${i}.${got.ext}`;
-    fs.writeFileSync(path.join(dir, file), got.buf);
-    return descriptorOf(entry, file);
+    const got = await downloadToFile(entry.url, entry.referer, STILL_LIMITS, dir, `${base}-media-${i}`, budget);
+    return got ? descriptorOf(entry, got.file) : null;
   }
 
   let posterFile: string | undefined;
   if (typeof entry.poster === 'string' && entry.poster) {
-    const posterGot = await fetchStillImage(entry.poster, entry.referer);
-    if (posterGot) {
-      posterFile = `${base}-poster.${posterGot.ext}`;
-      fs.writeFileSync(path.join(dir, posterFile), posterGot.buf);
-    }
+    const posterGot = await downloadToFile(entry.poster, entry.referer, STILL_LIMITS, dir, `${base}-poster`, budget);
+    if (posterGot) posterFile = posterGot.file;
   }
 
-  const got = await fetchMediaFile(entry.url, entry.referer, VIDEO_MIME_EXT, MAX_VIDEO_BYTES, VIDEO_TIMEOUT_MS);
-  if (got) {
-    const file = `${base}-media-${i}.${got.ext}`;
-    fs.writeFileSync(path.join(dir, file), got.buf);
-    return { ...descriptorOf(entry, file), type: entry.type, posterFile };
-  }
+  const got = await downloadToFile(entry.url, entry.referer, VIDEO_LIMITS, dir, `${base}-media-${i}`, budget);
+  if (got) return { ...descriptorOf(entry, got.file), type: entry.type, posterFile };
   if (posterFile) return descriptorOf(entry, posterFile); // downgrade to a still
   return null;
 }
 
-async function downloadMedia(mediaList: unknown, dir: string, base: string): Promise<MediaDescriptor[]> {
+// Download a post's attachments. `budget` is the save's shared byte budget —
+// pass the SAME one to every download of that save (the avatar too) so the cap
+// covers the operation and not each call.
+//
+// A fixed-size worker pool rather than one Promise per attachment: at most
+// MEDIA_CONCURRENCY transfers are open at a time, so neither sockets, disk
+// writes, nor buffered chunks scale with the attachment count (#389). Ordering
+// survives because each worker writes to its own index.
+async function downloadMedia(mediaList: unknown, dir: string, base: string, budget: ByteBudget = createByteBudget()): Promise<MediaDescriptor[]> {
   if (!Array.isArray(mediaList) || !mediaList.length) return [];
   const list: MediaEntry[] = mediaList.slice(0, MAX_MEDIA);
-  const settled = await Promise.allSettled(list.map((m, i) => downloadOneMedia(m, dir, base, i)));
-  return settled.map((r) => (r.status === 'fulfilled' ? r.value : null)).filter((v): v is MediaDescriptor => Boolean(v));
+  const saved: (MediaDescriptor | null)[] = new Array(list.length).fill(null);
+  let next = 0;
+  const worker = async () => {
+    for (;;) {
+      const i = next++;
+      // A blown budget stops the queue: whatever already landed is kept.
+      if (i >= list.length || budget.blown) return;
+      try {
+        saved[i] = await downloadOneMedia(list[i], dir, base, i, budget);
+      } catch {
+        saved[i] = null; // one bad attachment never fails the save
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(MEDIA_CONCURRENCY, list.length) }, worker));
+  return saved.filter((v): v is MediaDescriptor => Boolean(v));
 }
 
 // Download the author avatar into the shared store <dir>/avatars/ so the viewer
@@ -332,7 +438,7 @@ async function downloadMedia(mediaList: unknown, dir: string, base: string): Pro
 // canonical sidecar form) or null; like media, a failure never fails the save.
 // Legacy sidecars keep their <captureId>-avatar.<ext> files untouched.
 const AVATAR_SUBDIR = 'avatars';
-async function downloadAvatar(avatar: unknown, referer: unknown, dir: string): Promise<string | null> {
+async function downloadAvatar(avatar: unknown, referer: unknown, dir: string, budget: ByteBudget = createByteBudget()): Promise<string | null> {
   if (typeof avatar !== 'string' || !avatar) return null;
   const hash = crypto.createHash('sha1').update(avatar).digest('hex').slice(0, 16);
   const sub = path.join(dir, AVATAR_SUBDIR);
@@ -341,11 +447,9 @@ async function downloadAvatar(avatar: unknown, referer: unknown, dir: string): P
   for (const ext of new Set(Object.values(MEDIA_MIME_EXT))) {
     if (fs.existsSync(path.join(sub, `${hash}.${ext}`))) return `${AVATAR_SUBDIR}/${hash}.${ext}`;
   }
-  const got = await fetchStillImage(avatar, referer);
-  if (!got) return null;
-  fs.mkdirSync(sub, { recursive: true });
-  fs.writeFileSync(path.join(sub, `${hash}.${got.ext}`), got.buf);
-  return `${AVATAR_SUBDIR}/${hash}.${got.ext}`;
+  // Forward-slash stem = the canonical sidecar form comes straight back out.
+  const got = await saveStillImage(avatar, referer, dir, `${AVATAR_SUBDIR}/${hash}`, budget);
+  return got ? got.file : null;
 }
 
 // pixiv avatars on i.pximg.net 403 without a pixiv Referer. When a caller has an
@@ -362,10 +466,11 @@ function pixivRefererFor(url: unknown): string | undefined {
 }
 
 module.exports = {
-  fetchStillImage,
+  saveStillImage,
   downloadOneMedia,
   downloadMedia,
   downloadAvatar,
+  createByteBudget,
   AVATAR_SUBDIR,
   pixivRefererFor,
   checkMediaUrl,
@@ -376,6 +481,8 @@ module.exports = {
   MAX_MEDIA,
   MAX_MEDIA_BYTES,
   MAX_VIDEO_BYTES,
+  MAX_SAVE_BYTES,
+  MEDIA_CONCURRENCY,
   MEDIA_TIMEOUT_MS,
   VIDEO_TIMEOUT_MS,
 };

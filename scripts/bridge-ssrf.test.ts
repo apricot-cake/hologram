@@ -1,4 +1,4 @@
-// native-host/bridge.cts#fetchStillImage の SSRF／サイズ上限ガードのテスト。
+// native-host/bridge.cts#saveStillImage の SSRF／サイズ上限ガードのテスト。
 // global.fetch を差し替えてプロセス内で走る（ネットワーク不要）。見るのは:
 //   - IP リテラルの私設/予約アドレス（ループバック・リンクローカル/クラウドメタデータ・
 //     RFC1918・ULA・IPv6 ::1・IPv4 射影 IPv6 のドット表記と16進表記）は fetch を出す前に拒む
@@ -9,9 +9,11 @@
 //   - content-length の無い上限超えの本文はストリーム途中で中断する
 //   - 正当な公開 https 画像は従来どおり落ちてくる
 
+import fs from 'node:fs';
+import path from 'node:path';
 import { Agent, getGlobalDispatcher, setGlobalDispatcher } from 'undici';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
-import { fetchStillImage } from '../native-host/bridge.cts';
+import { saveStillImage } from '../native-host/bridge.cts';
 import { createGuardedLookup } from '../native-host/media-download.cts';
 
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64');
@@ -19,7 +21,14 @@ const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR
 const realFetch = global.fetch;
 const fetched: string[] = []; // 実際に fetch へ渡った URL
 
+// 取得はディスクへのストリームなので、落とし先の砂場を1つ用意する（#389）。
+// stem はケースごとに変えて、書かれた／書かれなかったを取り違えないようにする。
+const dir = path.join(process.env.HOLOGRAM_CONFIG_DIR as string, 'ssrf');
+let stemSeq = 0;
+const fetchStill = (url: string, referer?: unknown) => saveStillImage(url, referer, dir, `img-${stemSeq++}`);
+
 beforeAll(() => {
+  fs.mkdirSync(dir, { recursive: true });
   global.fetch = (async (url: unknown) => {
     const u = String(url);
     fetched.push(u);
@@ -79,35 +88,38 @@ describe('IP リテラルの私設/予約宛先は fetch する前に拒む', ()
     'https://svc.internal/x.png',
     'http://cdn.test/ok.png', // https でなければホストを問わず拒む
   ])('%s', async (url) => {
-    expect(await fetchStillImage(url)).toBeNull();
+    expect(await fetchStill(url)).toBeNull();
     expect(fetched).not.toContain(url);
   });
 });
 
 describe('公開ホスト → 私設アドレスのリダイレクト', () => {
   test('拒否され、私設ホップは fetch されない', async () => {
-    expect(await fetchStillImage('https://evil.test/redir')).toBeNull();
+    expect(await fetchStill('https://evil.test/redir')).toBeNull();
     expect(fetched).toContain('https://evil.test/redir'); // 1ホップ目（公開）は取りに行く
     expect(fetched).not.toContain('https://127.0.0.1/secret.png');
   });
 });
 
 test('content-length の無い上限超えの本文はストリーム途中で中断する', async () => {
-  expect(await fetchStillImage('https://cdn.test/huge.png')).toBeNull();
+  const before = fs.readdirSync(dir);
+
+  expect(await fetchStill('https://cdn.test/huge.png')).toBeNull();
+  // 打ち切った分の一時ファイルも「完成扱い」のファイルも残さない（#389）
+  expect(fs.readdirSync(dir)).toEqual(before);
 });
 
 describe('正当な公開 https 画像', () => {
   test('通常のホストから落ちてくる', async () => {
-    const ok = await fetchStillImage('https://cdn.test/ok.png');
+    const ok = await fetchStill('https://cdn.test/ok.png');
     expect(ok.ext).toBe('png');
-    expect(Buffer.isBuffer(ok.buf)).toBe(true);
-    expect(ok.buf).toHaveLength(PNG.length);
+    expect(fs.readFileSync(path.join(dir, ok.file))).toHaveLength(PNG.length);
   });
 
   test('公開の IPv4 射影 IPv6 リテラル（16進表記）を塞ぎすぎない', async () => {
-    const ok = await fetchStillImage('https://[::ffff:808:808]/ok.png');
+    const ok = await fetchStill('https://[::ffff:808:808]/ok.png');
     expect(ok.ext).toBe('png');
-    expect(ok.buf).toHaveLength(PNG.length);
+    expect(fs.readFileSync(path.join(dir, ok.file))).toHaveLength(PNG.length);
   });
 });
 
