@@ -1638,7 +1638,13 @@ if (!gotSingleInstanceLock) {
     registerImageProtocol();
     installNavigationGuards();
     const startMin = !SMOKE && process.env.HOLOGRAM_START_MINIMIZED === '1';
-    createWindow(!SMOKE && !startMin); // start-minimized → create hidden, then show inactive below
+    // Verification launches (the sandbox second instance, a restart driven from a
+    // session) must not interrupt whatever the user is doing on screen. Minimizing
+    // is not an option here: the window has to keep compositing so CSS transitions
+    // and real layout are observable, which is the whole reason a verify run opens
+    // a window instead of using the SMOKE hidden one.
+    const startInactive = !SMOKE && !startMin && process.env.HOLOGRAM_START_INACTIVE === '1';
+    createWindow(!SMOKE && !startMin && !startInactive); // both → create hidden, then show without activating below
     watchSaveFolder();
     watchInboxFolder();
     if (!SMOKE) {
@@ -1705,6 +1711,17 @@ if (!gotSingleInstanceLock) {
       win.once('ready-to-show', () => {
         (win as BrowserWindow).showInactive();
         (win as BrowserWindow).minimize();
+        (win as BrowserWindow).flashFrame(false);
+      });
+    }
+
+    // Start visible but without taking the foreground away from whatever the user
+    // is doing. showInactive() is Electron's own "show, don't focus"; flashFrame(false)
+    // clears the taskbar attention flash that a background window would otherwise
+    // leave behind.
+    if (startInactive && win) {
+      win.once('ready-to-show', () => {
+        (win as BrowserWindow).showInactive();
         (win as BrowserWindow).flashFrame(false);
       });
     }
