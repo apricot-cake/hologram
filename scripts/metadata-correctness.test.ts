@@ -303,4 +303,18 @@ describe('取得原本（#292）', () => {
     mockFetch([]);
     expect((await fetchPostMetadata('https://example.com/whatever')).raw).toEqual([]);
   });
+
+  // 境界は「そのレコードのために届いたペイロード」＝隣接投稿は原本に含めない。
+  // 応答を削るのではなく、そもそも要求しない側で守る。
+  test('Bluesky は先祖投稿を要求しない（応答に混ざりようがない）', async () => {
+    const calls: string[] = [];
+    vi.stubGlobal('fetch', async (url: unknown) => {
+      calls.push(String(url));
+      return new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } });
+    });
+
+    await fetchBlueskyPost({ platform: 'bluesky', handle: DID, rkey: 'rk' }, BSKY_URL);
+
+    expect(calls.find((u) => u.includes('getPostThread'))).toContain('parentHeight=0');
+  });
 });

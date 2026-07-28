@@ -384,7 +384,12 @@ async function fetchBlueskyPost(parsed, url) {
   if (!did) return rec;
   try {
     const uri = `at://${did}/app.bsky.feed.post/${parsed.rkey}`;
-    const res = await fetch(`https://public.api.bsky.app/xrpc/app.bsky.feed.getPostThread?uri=${encodeURIComponent(uri)}&depth=0&parentHeight=1`);
+    // parentHeight=0: the reply parent's id comes from the post's OWN record
+    // (record.reply.parent.uri, below), so an ancestor post was already unused
+    // here. It has to stay unrequested now that the response body is preserved
+    // verbatim (#292) — the originals layer's boundary is the payload for THIS
+    // record, and a neighbouring post nobody reads must not ride in with it.
+    const res = await fetch(`https://public.api.bsky.app/xrpc/app.bsky.feed.getPostThread?uri=${encodeURIComponent(uri)}&depth=0&parentHeight=0`);
     if (!res.ok) return rec;
     const data = await readJsonKeepingRaw(rec, 'api:bluesky/getPostThread', res);
     const thread = data && data.thread;
