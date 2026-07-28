@@ -35,3 +35,4 @@
 | [0007](0007-horizontal-tabs-not-vertical.md) | タブは上部水平に置く（縦タブを採らない） | 採用 |
 | [0008](0008-single-smart-search.md) | 検索モードの切替を廃し単一のスマート検索にする | 採用 |
 | [0009](0009-bottom-floating-selection-bar.md) | 選択中の操作は底部中央のフローティングバーに置く | 採用 |
+| [0010](0010-sqlite-as-the-metadata-truth-source.md) | メタデータの正本を SQLite に置き、ファイルは実体だけを持つ | 採用 |
