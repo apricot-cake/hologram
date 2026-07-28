@@ -193,7 +193,7 @@ function pixivIdFromImg(img: Element | null): string | null {
   const PXIMG_FILENAME = /\/(\d+)_p\d+(?:_|\.)/;
   for (const src of [img.src, img.currentSrc]) {
     const m = src && src.match(PXIMG_FILENAME);
-    if (m) return m[1];
+    if (m) return m[1] ?? null;
   }
   return null;
 }
@@ -201,7 +201,7 @@ function pixivIdFromImg(img: Element | null): string | null {
 function pixivIdFromArtworkLink(link: Element | null): string | null {
   if (!(link instanceof Element)) return null;
   const m = (link.getAttribute('href') || '').match(/\/artworks\/(\d+)/);
-  return m ? m[1] : null;
+  return m ? (m[1] ?? null) : null;
 }
 
 // Resolve { id, el } anchored at the click/hover TARGET, walking UP via closest()
@@ -289,12 +289,15 @@ function parseXPostLink(href: string): XPostLink | null {
     const url = new URL(href, location.origin);
     let match = url.pathname.match(/^\/([^/]+)\/status\/([^/?#]+)/);
     if (match) {
+      const screenName = match[1];
+      const postId = match[2];
+      if (screenName === undefined || postId === undefined) return null;
       return {
         // Canonical permalink: strip /photo/N, /analytics, query and hash —
         // the raw href is whatever anchor happened to be picked.
-        url: `${url.origin}/${match[1]}/status/${match[2]}`,
-        screenName: decodeURIComponent(match[1]),
-        postId: decodeURIComponent(match[2]),
+        url: `${url.origin}/${screenName}/status/${postId}`,
+        screenName: decodeURIComponent(screenName),
+        postId: decodeURIComponent(postId),
       };
     }
 
@@ -302,11 +305,13 @@ function parseXPostLink(href: string): XPostLink | null {
     if (!match) {
       return null;
     }
+    const postId = match[1];
+    if (postId === undefined) return null;
 
     return {
-      url: `${url.origin}/i/web/status/${match[1]}`,
+      url: `${url.origin}/i/web/status/${postId}`,
       screenName: null,
-      postId: decodeURIComponent(match[1]),
+      postId: decodeURIComponent(postId),
     };
   } catch {
     return null;
@@ -356,7 +361,7 @@ function getBlueskyPostLink(post: Element): BlueskyPostLink | null {
     return null;
   }
 
-  return links.find((link) => !authorHandle || link.handle === authorHandle) || links[0];
+  return links.find((link) => !authorHandle || link.handle === authorHandle) || links[0] || null;
 }
 
 function parseBlueskyPostLink(href: string): BlueskyPostLink | null {
@@ -366,11 +371,14 @@ function parseBlueskyPostLink(href: string): BlueskyPostLink | null {
     if (!match) {
       return null;
     }
+    const handle = match[1];
+    const postId = match[2];
+    if (handle === undefined || postId === undefined) return null;
 
     return {
-      url: `${url.origin}/profile/${match[1]}/post/${match[2]}`,
-      handle: decodeURIComponent(match[1]),
-      postId: decodeURIComponent(match[2]),
+      url: `${url.origin}/profile/${handle}/post/${postId}`,
+      handle: decodeURIComponent(handle),
+      postId: decodeURIComponent(postId),
     };
   } catch {
     return null;
@@ -489,9 +497,11 @@ function parseMisskeyNoteLink(href: string): MisskeyNoteLink | null {
     if (!match) {
       return null;
     }
+    const id = match[1];
+    if (id === undefined) return null;
 
     return {
-      id: decodeURIComponent(match[1]),
+      id: decodeURIComponent(id),
       url: url.href,
     };
   } catch {
@@ -532,7 +542,9 @@ function parseMastodonStatusLink(href: string): MastodonStatusLink | null {
     if (url.hostname !== location.hostname) return null; // only this instance's statuses
     const match = url.pathname.match(/^\/@[^/]+\/(\d[\w-]*)\/?$/);
     if (!match) return null;
-    return { id: decodeURIComponent(match[1]), url: `${url.origin}${url.pathname}` };
+    const id = match[1];
+    if (id === undefined) return null;
+    return { id: decodeURIComponent(id), url: `${url.origin}${url.pathname}` };
   } catch {
     return null;
   }
