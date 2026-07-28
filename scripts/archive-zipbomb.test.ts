@@ -5,19 +5,22 @@
 //   (d) 単一エントリの申告サイズが上限を超えるものは拒否する
 //   (e) ストリーム書き込みは、実際の出力バイト数が1エントリ分の予算を超えたら中断する
 //       （中央ディレクトリが過少申告してくる攻撃への防御）
+//   (f) 整理用 JSON（folders.json 等）専用の上限（#382）: 申告サイズが専用上限を超える
+//       ものは展開前に拒否し、上限内なら従来どおりマージできる
+//   (g) 整理用 JSON 専用上限は、実際の出力バイト数でも打ち切る（申告値の偽装への防御）
 // どの拒否でも、悪意あるペイロードや .tmp-import をディスクに残してはいけない。
 //
-// 補足: 実際の上限は GiB 級で、ユニットテストで本物の圧縮から作るのは非現実的。(b)-(d) は
+// 補足: 実際の上限は GiB 級で、ユニットテストで本物の圧縮から作るのは非現実的。(b)-(d),(f) は
 // 読み込んだエントリの申告 `uncompressedSize`（展開前ガードが ZIP 中央ディレクトリから読む値）
 // を偽装して、解凍前にガードが発火する経路＝巨大サイズを申告する爆弾の本番経路そのものを踏む。
-// (e) だけは小さい予算と本物の複数チャンクのデータでストリーム側の上限を直接踏む。
+// (e),(g) だけは小さい予算と本物の複数チャンクのデータでストリーム側の上限を直接踏む。
 
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import JSZip from 'jszip';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
-import { MAX_ZIP_ENTRIES, MAX_ZIP_ENTRY_BYTES, MAX_ZIP_TOTAL_BYTES, ZipLimitError, importCompleteZipToDb, writeEntryStreamed } from '../app/src/main/lib-archive';
+import { MAX_ZIP_ENTRIES, MAX_ZIP_ENTRY_BYTES, MAX_ZIP_ORG_BYTES, MAX_ZIP_TOTAL_BYTES, ZipLimitError, importCompleteZipToDb, readEntryCapped, writeEntryStreamed } from '../app/src/main/lib-archive';
 import { openDatabase } from '../app/src/main/lib-db';
 import { createDbWriter } from '../app/src/main/lib-db-write';
 
@@ -185,5 +188,66 @@ describe('(e) ストリーム書き込みの予算', () => {
     await writeEntryStreamed(entry, tmp, 1024 * 1024);
 
     expect(fs.statSync(tmp).size).toBe(payload.length);
+  });
+});
+
+describe('(f) 整理用JSONの専用上限（#382）', () => {
+  const buildNormalZip = async () => {
+    const zip = new JSZip();
+    zip.file('library/cap1.jpg', Buffer.from('JPEGDATA1'));
+    zip.file('library/folders.json', JSON.stringify({ folders: [{ id: 'f1', name: 'X', items: ['cap1'] }] }));
+    return zip.generateAsync({ type: 'nodebuffer' });
+  };
+
+  test('folders.json の申告サイズが専用上限（16 MiB）超え → ZipLimitError で拒否し、何も書かない', async () => {
+    const dest = freshDest('org-declared-bomb');
+    const { sqlite } = freshDb('org-declared-bomb');
+    const buf = await buildNormalZip();
+    const oversize = MAX_ZIP_ORG_BYTES + 1; // still well under MAX_ZIP_ENTRY_BYTES — only the org-specific guard should fire
+
+    await expect(
+      importCompleteZipToDb(
+        sqlite,
+        ForgingJSZip((rel) => (rel === 'library/folders.json' ? oversize : 4)),
+        dest,
+        buf,
+      ),
+    ).rejects.toThrow(ZipLimitError);
+    expect(fs.readdirSync(dest)).toEqual([]);
+  });
+
+  test('folders.json が専用上限内なら従来どおりマージできる（回帰）', async () => {
+    const dest = freshDest('org-normal');
+    const { sqlite } = freshDb('org-normal');
+    const buf = await buildNormalZip();
+
+    const res = await importCompleteZipToDb(sqlite, JSZip, dest, buf);
+    expect(res.imported).toBeGreaterThan(0);
+    expect(
+      createDbWriter(sqlite)
+        .getFolders()
+        .folders.map((f: any) => f.id),
+    ).toEqual(['f1']);
+  });
+});
+
+describe('(g) 整理用JSON専用上限は実際の出力バイト数でも打ち切る（申告値偽装への防御）', () => {
+  let entry: any;
+  const payload = Buffer.alloc(256 * 1024, 7); // 256 KiB＝ストリームを複数チャンクで通る
+
+  beforeAll(async () => {
+    const zip = new JSZip();
+    zip.file('library/folders.json', payload);
+    const z = await JSZip.loadAsync(await zip.generateAsync({ type: 'nodebuffer' }));
+    entry = z.file('library/folders.json');
+  });
+
+  test('予算超過（64 KiB 予算 < 256 KiB 実データ）で中断する', async () => {
+    await expect(readEntryCapped(entry, 64 * 1024)).rejects.toThrow(ZipLimitError);
+  });
+
+  test('予算内（1 MiB 予算）なら最後まで読み切る', async () => {
+    const buf = await readEntryCapped(entry, 1024 * 1024);
+    expect(buf.length).toBe(payload.length);
   });
 });

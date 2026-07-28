@@ -66,6 +66,13 @@ function isVolatile(name) {
 const MAX_ZIP_ENTRIES = 200000; // ~25k captures × a handful of files each, w/ headroom
 const MAX_ZIP_ENTRY_BYTES = 1024 * 1024 * 1024; // 1 GiB: no single screenshot/sidecar/media is this big
 const MAX_ZIP_TOTAL_BYTES = 64 * 1024 * 1024 * 1024; // 64 GiB total uncompressed across the whole archive
+// Organization-layer JSON (ORG_MERGE below) gets its own, much smaller budget
+// (#382): MAX_ZIP_ENTRY_BYTES exists to fit multi-GB media, but folders.json/
+// tag-types.json/etc. are config-shaped and never legitimately approach that —
+// letting one ride the 1 GiB media cap meant a crafted entry could still expand
+// to hundreds of MB of string + parsed JSON in the main process before the
+// generic guard ever triggers.
+const MAX_ZIP_ORG_BYTES = 16 * 1024 * 1024; // 16 MiB
 class ZipLimitError extends Error {}
 function entryUncompressedSize(entry) {
   const n = entry && entry._data ? entry._data.uncompressedSize : undefined;
@@ -565,6 +572,44 @@ function writeEntryStreamed(entry, tmpPath, maxBytes) {
   });
 }
 
+// Read a ZIP entry fully into memory, aborting once the actual decompressed
+// bytes cross maxBytes (#382). Unlike writeEntryStreamed (which streams to
+// disk), organization-layer JSON is small enough to hold in memory once
+// capped — but the cap has to be enforced against bytes actually read, not the
+// declared size, so a lying central-directory header can't slip a >cap entry
+// past the declared-size check in extractLibraryEntries.
+function readEntryCapped(entry, maxBytes): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const src = entry.nodeStream('nodebuffer');
+    const chunks: Buffer[] = [];
+    let total = 0;
+    let aborted = false;
+    const fail = (err) => {
+      if (aborted) return;
+      aborted = true;
+      try {
+        src.pause();
+      } catch {
+        /* ignore */
+      }
+      reject(err);
+    };
+    src.on('data', (chunk) => {
+      if (aborted) return;
+      total += chunk.length;
+      if (total > maxBytes) {
+        fail(new ZipLimitError('organization entry exceeds byte cap'));
+        return;
+      }
+      chunks.push(chunk);
+    });
+    src.on('error', fail);
+    src.on('end', () => {
+      if (!aborted) resolve(Buffer.concat(chunks));
+    });
+  });
+}
+
 // --- Import / restore ----------------------------------------------------------
 // Shared, security-critical classification: zip-bomb + zip-slip pre-checks, then
 // sorts every library/ entry into the organization-JSON bucket (MERGERS-keyed),
@@ -599,8 +644,12 @@ async function extractLibraryEntries(JSZip, buffer) {
       if (!isSafeLibraryPath(name)) return; // Zip-Slip: reject separators / traversal / absolute (avatars/<name> allowed)
       if (EXPORT_SKIP.has(name)) return;
       if (name === 'tag-parents.json') tagParentsEntry = entry;
-      else if (MERGERS[name]) orgEntries[name] = entry;
-      else captureEntries.push({ name, entry });
+      else if (MERGERS[name]) {
+        // Declared-size half of the org-JSON budget (#382): reject before any
+        // extraction happens, same as the generic per-entry check above.
+        if (size > MAX_ZIP_ORG_BYTES) throw new ZipLimitError('organization entry "' + relPath + '" declares ' + size + ' bytes (> org cap ' + MAX_ZIP_ORG_BYTES + ')');
+        orgEntries[name] = entry;
+      } else captureEntries.push({ name, entry });
       return;
     }
     const trashMatch = /^\.trash\/(.+)$/.exec(relPath);
@@ -691,6 +740,18 @@ async function importCompleteZipToDb(sqlite: Database.Database, JSZip, destFolde
       return null;
     }
   };
+  // Organization-layer JSON goes through the #382 byte cap instead of a bare
+  // entry.async('string'): a ZipLimitError here is NOT swallowed — it propagates
+  // out of the transaction below so the whole import rejects as malformed,
+  // rather than silently merging in a truncated organization state.
+  const parseOrgEntry = async (entry): Promise<any> => {
+    const buf = await readEntryCapped(entry, MAX_ZIP_ORG_BYTES);
+    try {
+      return parseJsonLoose(buf.toString('utf8'));
+    } catch {
+      return null;
+    }
+  };
 
   const stmts = preparePostStmts(sqlite);
   const resolveTagId = makeTagResolver(sqlite);
@@ -717,27 +778,27 @@ async function importCompleteZipToDb(sqlite: Database.Database, JSZip, destFolde
     // Organization layer: read current DB state -> merge with the incoming JSON
     // (the same pure MERGERS functions) -> write back.
     if (orgEntries['folders.json']) {
-      const inc = (await parseEntry(orgEntries['folders.json'])) ?? {};
+      const inc = (await parseOrgEntry(orgEntries['folders.json'])) ?? {};
       dbWriter.setFolders(mergeFolders(dbWriter.getFolders(), inc));
     }
     if (orgEntries['ungrouped.json']) {
-      const inc = (await parseEntry(orgEntries['ungrouped.json'])) ?? {};
+      const inc = (await parseOrgEntry(orgEntries['ungrouped.json'])) ?? {};
       dbWriter.setUngrouped(mergeUngrouped(dbWriter.getUngrouped(), inc).keys);
     }
     if (orgEntries['manual-groups.json']) {
-      const inc = (await parseEntry(orgEntries['manual-groups.json'])) ?? {};
+      const inc = (await parseOrgEntry(orgEntries['manual-groups.json'])) ?? {};
       dbWriter.setManualGroups(mergeManualGroups(dbWriter.getManualGroups(), inc).groups);
     }
     if (orgEntries['poster-folders.json']) {
-      const inc = (await parseEntry(orgEntries['poster-folders.json'])) ?? {};
+      const inc = (await parseOrgEntry(orgEntries['poster-folders.json'])) ?? {};
       dbWriter.setPosterFolders(mergePosterFolders(dbWriter.getPosterFolders(), inc));
     }
     if (orgEntries['poster-tags.json']) {
-      const inc = (await parseEntry(orgEntries['poster-tags.json'])) ?? {};
+      const inc = (await parseOrgEntry(orgEntries['poster-tags.json'])) ?? {};
       dbWriter.setPosterTags(mergePosterTags(dbWriter.getPosterTags(), inc));
     }
     if (orgEntries['tag-types.json']) {
-      const inc = (await parseEntry(orgEntries['tag-types.json'])) ?? {};
+      const inc = (await parseOrgEntry(orgEntries['tag-types.json'])) ?? {};
       const merged = mergeTagTypes(dbWriter.getTagTypes(), inc);
       dbWriter.setTagTypes(merged.types, merged.labels ?? null);
     }
@@ -765,8 +826,10 @@ export {
   MAX_ZIP_ENTRIES,
   MAX_ZIP_ENTRY_BYTES,
   MAX_ZIP_TOTAL_BYTES,
+  MAX_ZIP_ORG_BYTES,
   ZipLimitError,
   writeEntryStreamed,
+  readEntryCapped,
   buildCompleteZip,
   buildImagesZip,
   writeCompleteZip,
