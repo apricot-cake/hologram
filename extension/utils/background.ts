@@ -561,6 +561,13 @@ export function startBackground(): void {
   // date can be decoded from an X snowflake id, so both can be present on a
   // record whose API fetch returned nothing (a protected X account looked like
   // a full success via its URL-derived screenName — 2026-07-12).
+  // Media a platform serves as a file the page can only preview. The still frame
+  // shown in its place is never the record's content, so these posts are saved
+  // by downloading what the platform announces rather than what the page shows.
+  function isPlayableMedia(mediaType) {
+    return mediaType === 'video' || mediaType === 'gif';
+  }
+
   function metaFetched(meta) {
     if (!meta || meta.metaError) return false;
     return !!(meta.displayName || meta.userId || meta.text || meta.date || (Array.isArray(meta.media) && meta.media.length));
@@ -627,28 +634,44 @@ export function startBackground(): void {
     } catch (err) {
       throw stageError('metadata', err?.message || 'metadata fetch threw');
     }
-    const primary = pickPrimaryImage(meta.platform || sendPlatform, imageUrls, meta);
-    if (!primary || !primary.url) throw stageError('image', 'Could not resolve a dragged image URL');
-
-    const record = buildRecord(meta, {
-      captureId,
-      capturedAt,
-      postUrl,
-      sendPlatform,
-      extra: {
-        mediaType: 'image',
-        // Which image of a multi-image post this is (1-based) + the total. Only
-        // recorded for multi-image posts; imageIndex is null when undeterminable.
-        imageCount: (meta.media || []).length > 1 ? meta.media.length : null,
-        imageIndex: (meta.media || []).length > 1 && primary.index >= 0 ? primary.index + 1 : null,
-        // image + media[] are set by the bridge (image = downloaded original, media = [])
-      },
-    });
-
     const metaOk = metaFetched(meta);
+
+    // What the page can hand over for a video or GIF post is the poster frame,
+    // and a poster on its own is not worth a library entry — the content is the
+    // video file (#450). The post-save path already downloads the originals a
+    // platform announces, video bodies included since #119 stage 1, so send
+    // those posts down it rather than teaching this path to fetch video too.
+    // Everything else keeps the illustration-record shape, where the picture
+    // that was pointed at IS what the user asked to save.
+    let record: any;
+    let send: () => Promise<any>;
+    if (isPlayableMedia(meta.mediaType)) {
+      // capturedVia stays null — an ordinary save, not an intake route (#362).
+      record = buildRecord(meta, { captureId, capturedAt, postUrl, sendPlatform, extra: { mediaType: meta.mediaType, media: meta.media, capturedVia: null } });
+      send = () => sendPostToBridge(captureId, record, metaOk);
+    } else {
+      const primary = pickPrimaryImage(meta.platform || sendPlatform, imageUrls, meta);
+      if (!primary || !primary.url) throw stageError('image', 'Could not resolve a dragged image URL');
+      record = buildRecord(meta, {
+        captureId,
+        capturedAt,
+        postUrl,
+        sendPlatform,
+        extra: {
+          mediaType: 'image',
+          // Which image of a multi-image post this is (1-based) + the total. Only
+          // recorded for multi-image posts; imageIndex is null when undeterminable.
+          imageCount: (meta.media || []).length > 1 ? meta.media.length : null,
+          imageIndex: (meta.media || []).length > 1 && primary.index >= 0 ? primary.index + 1 : null,
+          // image + media[] are set by the bridge (image = downloaded original, media = [])
+        },
+      });
+      send = () => sendDraggedToBridge(captureId, primary.url, primary.referer, record, metaOk);
+    }
+
     let ack: any;
     try {
-      ack = await sendDraggedToBridge(captureId, primary.url, primary.referer, record, metaOk);
+      ack = await send();
     } catch (err) {
       throw stageError('bridge', err?.message || 'bridge save failed');
     }

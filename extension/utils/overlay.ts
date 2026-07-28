@@ -35,6 +35,7 @@
 import { glassUi } from './glass-ui';
 import { createI18n } from './i18n';
 import { collectImageUrls, getMediaIdentitySite } from './media-identity';
+import type { PostMediaElement } from './media-identity';
 import { getSiteConfig, hostnameMatches } from './site-detect';
 
 let overlayActive = false;
@@ -572,9 +573,9 @@ export async function startOverlay(): Promise<void> {
     // Identity is read HERE, never cached on the anchor: a virtualized feed
     // reuses the same box element for a different post as you scroll, and a
     // cached postUrl would file the new picture under the old post.
-    const img = imgIn(anchor.box);
-    const identity = img && media.extractIdentity(img);
-    if (!img || !identity) return;
+    const el = postMediaIn(anchor.box);
+    const identity = el && media.extractIdentity(el);
+    if (!el || !identity) return;
     setPhase(anchor, 'saving', 0);
     anchor.note = null;
     paint(unit, state);
@@ -583,7 +584,7 @@ export async function startOverlay(): Promise<void> {
     // is only granted by a toolbar or command gesture), so this is not a
     // preference — it is the one save route available here, and reusing it means
     // there is no second code path that could record something different.
-    chrome.runtime.sendMessage({ type: 'imageDragged', platform: media.platform, postUrl: identity.link, imageUrls: collectImageUrls(img, media.platform) }, (res: any) => {
+    chrome.runtime.sendMessage({ type: 'imageDragged', platform: media.platform, postUrl: identity.link, imageUrls: collectImageUrls(el, media.platform) }, (res: any) => {
       if (chrome.runtime.lastError || !res || !res.ok) {
         setPhase(anchor, 'error', ERROR_MS);
         const failureText = saveFailureText(res?.errorKind);
@@ -644,9 +645,14 @@ export async function startOverlay(): Promise<void> {
     }
   }
 
-  function imgIn(box: Element): HTMLImageElement | null {
-    if (box.tagName === 'IMG') return box as HTMLImageElement;
-    return box.querySelector('img');
+  // A media box holds an <img> until the platform's own player takes over: X
+  // swaps a video or GIF post's poster <img> for a <video poster="…"> as soon as
+  // the player initialises, and never puts the <img> back (#450). Looking for
+  // the <img> alone therefore found nothing on exactly the posts that were on
+  // screen, which is why the button never appeared on a playing video.
+  function postMediaIn(box: Element): PostMediaElement | null {
+    if (box.tagName === 'IMG' || box.tagName === 'VIDEO') return box as PostMediaElement;
+    return box.querySelector('img, video');
   }
 
   function controlHost(box: Element): HTMLElement | null {
@@ -711,9 +717,9 @@ export async function startOverlay(): Promise<void> {
   function savable(anchor: Anchor, rect: DOMRect): boolean {
     if (!media) return false;
     if (rect.width < MIN_SAVE_PX || rect.height < MIN_SAVE_PX) return false;
-    const img = imgIn(anchor.box);
-    if (!img || !media.isPostMedia(img)) return false;
-    return media.extractIdentity(img) != null;
+    const el = postMediaIn(anchor.box);
+    if (!el || !media.isPostMedia(el)) return false;
+    return media.extractIdentity(el) != null;
   }
 
   function faceFor(state: UnitState, anchor: Anchor, isFirst: boolean, rect: DOMRect): Face | null {

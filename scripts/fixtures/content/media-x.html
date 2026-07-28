@@ -51,5 +51,20 @@
     <div data-testid="card.wrapper"><img id="imgCard" src="https://pbs.twimg.com/card_img/999/GGG.jpg"></div>
   </article>
 
+  <!-- the same video post once its player has initialised: X replaces the
+       poster <img> with a <video poster>, and never puts the <img> back, so
+       this is the shape every hoverable video post actually has (#450) -->
+  <article data-testid="tweet" id="post6">
+    <a href="/frank/status/666"><time datetime="2026-01-01T00:00:00Z">6h</time></a>
+    <div data-testid="videoPlayer"><video id="videoPlaying" poster="https://pbs.twimg.com/amplify_video_thumb/666/img/HHH.jpg"></video></div>
+  </article>
+
+  <!-- a <video> whose poster is not post media: the element type must not be
+       what grants the button -->
+  <article data-testid="tweet" id="post7">
+    <a href="/grace/status/777"><time datetime="2026-01-01T00:00:00Z">7h</time></a>
+    <div data-testid="videoPlayer"><video id="videoNotPostMedia" poster="https://pbs.twimg.com/profile_images/III.jpg"></video></div>
+  </article>
+
 </body>
 </html>

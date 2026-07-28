@@ -69,6 +69,12 @@ const X_HTML = `<!doctype html><html><body>
         <a href="/gina/status/777/video/2"><img data-rect-top="3200" src="https://pbs.twimg.com/amplify_video_thumb/III.jpg"></a>
       </div></div></div>
     </li>
+    <!-- 再生が始まった動画投稿（#450）: X は poster の <img> を <video poster> に
+         差し替えたきり戻さないので、ホバーできる状態の動画投稿は必ずこの形。 -->
+    <article data-testid="tweet" id="p9">
+      <a href="/heidi/status/999"><time datetime="2026-07-01T00:00:00Z">9h</time></a>
+      <div data-testid="videoPlayer" data-rect-top="3600" id="p9a"><video poster="https://pbs.twimg.com/amplify_video_thumb/999/img/JJJ.jpg"></video></div>
+    </article>
   </div>
 </body></html>`;
 
@@ -104,10 +110,11 @@ const settle = () => new Promise((r) => setTimeout(r, 400)); // 300ms の問い�
 // overlay.ts はポインタが何の上にあるかを「座標」で決める（実際の pointermove は必ず
 // clientX/clientY を運ぶ）。イベントがどの要素で起きたかでは決めない＝サイト自身のコントロールが
 // 絵の上に重なっていても印やボタンが出る。ハーネスもそれに合わせ、メディア枠の中心を狙う。
+const MEDIA_BOX = '[data-testid="tweetPhoto"], [data-testid="videoPlayer"]';
 const boxOf = (id: string) => {
   const el = window.document.getElementById(id);
-  if (el.matches('[data-testid="tweetPhoto"]')) return el;
-  return el.querySelector('[data-testid="tweetPhoto"]') || el.querySelector('img'); // メディアタブの li は <img> 自体が枠
+  if (el.matches(MEDIA_BOX)) return el;
+  return el.querySelector(MEDIA_BOX) || el.querySelector('img'); // メディアタブの li は <img> 自体が枠
 };
 const controlOf = (id: string) => controls().filter((el) => el.parentElement === boxOf(id));
 const pointerMove = (target: any, x: number, y: number) => {
@@ -207,7 +214,7 @@ beforeAll(async () => {
 }, 30000);
 
 test('初回走査で全ての投稿が観測される', () => {
-  expect(observed.size).toBe(8);
+  expect(observed.size).toBe(9);
 });
 
 describe('問い合わせは見えている投稿だけ・1バッチで', () => {
@@ -630,5 +637,31 @@ describe('メディアタブのグリッドタイル（#349）', () => {
       expect(p8Controls()[0].title).toBe('Saved in Hologram');
       hoverAway();
     });
+  });
+});
+
+// #450: タイムラインの動画投稿は、プレイヤーが動き出した時点で <img> を失う。
+// 枠の中に <video> しか無くても、ポスターを手掛かりに同じ答えを返さなければ
+// 「ホバーできる動画には必ずボタンが出ない」になる。
+describe('再生中の動画投稿（#450）', () => {
+  beforeAll(async () => {
+    intersect(['p9'], true);
+    await settle();
+    hover('p9a');
+    await settle();
+  });
+
+  test('<img> が無くても保存を申し出る', () => {
+    expect(saveButtons()).toHaveLength(1);
+    expect(saveButtons()[0].parentElement).toBe(boxOf('p9a'));
+  });
+
+  test('押すと poster の URL を、その投稿のものとして渡す', () => {
+    click(saveButtons()[0]);
+    const save = sent.at(-1);
+
+    expect(save).toMatchObject({ type: 'imageDragged', platform: 'x', postUrl: 'https://x.com/heidi/status/999' });
+    expect(save.imageUrls).toContain('https://pbs.twimg.com/amplify_video_thumb/999/img/JJJ.jpg');
+    hoverAway();
   });
 });

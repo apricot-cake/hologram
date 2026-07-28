@@ -1,4 +1,4 @@
-// Which post does this <img> belong to, and what can be fetched for it.
+// Which post does this picture or video belong to, and what can be fetched for it.
 //
 // Both on-page save paths read this: drag.js (drag an image into the drop zone)
 // and overlay.js's hover save button (#94). They have to agree — a button that
@@ -14,17 +14,24 @@ interface MediaIdentity {
   link: string;
 }
 
+// A post's media as it exists in the page. Usually an <img>, but a video or GIF
+// post is a <video>: X replaces the poster <img> with a <video poster="…"> the
+// moment the player initialises and never puts the <img> back, even after the
+// post scrolls away — so on anything currently hoverable, the poster attribute
+// is the only handle the page still offers (#450).
+type PostMediaElement = HTMLImageElement | HTMLVideoElement;
+
 interface MediaIdentitySite {
   platform: string;
-  // null whenever the image cannot be attributed with certainty — an avatar, a
+  // null whenever the media cannot be attributed with certainty — an avatar, a
   // banner, a neighboring post's picture on a grid. Callers treat null as "do
   // nothing", never as "guess".
-  extractIdentity(img: HTMLImageElement): MediaIdentity | null;
-  // The image is a post's OWN media, judged by the CDN path the platform uses
-  // for post pictures. Identity alone is not enough for the hover button: an
+  extractIdentity(el: PostMediaElement): MediaIdentity | null;
+  // The element is a post's OWN media, judged by the CDN path the platform uses
+  // for post media. Identity alone is not enough for the hover button: an
   // avatar inside a post resolves to that post's permalink perfectly well, and
   // saving it would file the author's icon as the artwork.
-  isPostMedia(img: HTMLImageElement): boolean;
+  isPostMedia(el: PostMediaElement): boolean;
 }
 
 interface ParsedMediaPath {
@@ -42,13 +49,12 @@ function getMediaIdentitySite(): MediaIdentitySite | null {
 // Every URL worth trying for one image, best first-class candidate included: the
 // bridge downloads the first that works, so a thumbnail src is a usable fallback
 // when the high-resolution rewrite 404s.
-function collectImageUrls(img: HTMLImageElement, platform: string): string[] {
+function collectImageUrls(el: PostMediaElement, platform: string): string[] {
   const urls = new Set<string>();
-  if (img.src) urls.add(img.src);
-  if (img.currentSrc) urls.add(img.currentSrc);
-  const highRes = getHighResImageUrl(img, platform);
+  for (const src of mediaSrcs(el)) urls.add(src);
+  const highRes = getHighResImageUrl(el, platform);
   if (highRes) urls.add(highRes);
-  const srcset = img.getAttribute('srcset');
+  const srcset = el.getAttribute('srcset');
   if (srcset) {
     for (const entry of srcset.split(',')) {
       const url = entry.trim().split(/\s+/)[0];
@@ -58,8 +64,8 @@ function collectImageUrls(img: HTMLImageElement, platform: string): string[] {
   return [...urls];
 }
 
-function getHighResImageUrl(img: HTMLImageElement, platform: string): string | null {
-  const src = img.src || '';
+function getHighResImageUrl(el: PostMediaElement, platform: string): string | null {
+  const src = mediaSrcs(el)[0] || '';
   // Only media/ is rewritten: X serves those with a ?name=<size> variant, so
   // name=orig is what upgrades a thumbnail to the full picture. The video/GIF
   // poster paths (see X_POST_MEDIA_PREFIXES) carry no name= parameter and are
@@ -79,8 +85,20 @@ function getHighResImageUrl(img: HTMLImageElement, platform: string): string | n
   return null;
 }
 
-function anySrc(img: HTMLImageElement, test: (src: string) => boolean): boolean {
-  return [img.src, img.currentSrc].some((src) => !!src && test(src));
+// The URLs an element can be recognised by. Tag name rather than instanceof:
+// the fixture tests run these against a jsdom realm whose constructors are not
+// the ones this module closed over.
+function mediaSrcs(el: PostMediaElement): string[] {
+  if (el.tagName === 'VIDEO') {
+    const poster = (el as HTMLVideoElement).poster;
+    return poster ? [poster] : [];
+  }
+  const img = el as HTMLImageElement;
+  return [img.src, img.currentSrc].filter((src) => !!src);
+}
+
+function anySrc(el: PostMediaElement, test: (src: string) => boolean): boolean {
+  return mediaSrcs(el).some(test);
 }
 
 function xMediaConfig(): MediaIdentitySite {
@@ -96,20 +114,20 @@ function xMediaConfig(): MediaIdentitySite {
   const X_POST_MEDIA_PREFIXES = ['media', 'amplify_video_thumb', 'ext_tw_video_thumb', 'tweet_video_thumb'].map((p) => `pbs.twimg.com/${p}/`);
   return {
     platform: 'x',
-    extractIdentity(img: HTMLImageElement): MediaIdentity | null {
+    extractIdentity(el: PostMediaElement): MediaIdentity | null {
       // The image's own enclosing /status/ anchor is ground truth. The URL
       // bar (photo viewer / detail page) only identifies anchor-less images
       // OUTSIDE any post container — with the lightbox open, every image on
       // the page (replies, recommendations) would otherwise be attributed
       // to the lightbox post. (audit 2026-06-11)
-      const link = (img.closest('a[href*="/status/"]') as HTMLAnchorElement | null) || (findAncestorContainerLink(img, 'a[href*="/status/"]', 'article') as HTMLAnchorElement | null);
+      const link = (el.closest('a[href*="/status/"]') as HTMLAnchorElement | null) || (findAncestorContainerLink(el, 'a[href*="/status/"]', 'article') as HTMLAnchorElement | null);
       const parsedAnchor = link ? parseMediaUrlPath(link.href, /^\/([^/]+)\/status\/([^/?#]+)/) : null;
       const viewer = location.pathname.match(/^\/([^/]+)\/status\/(\d+)\/photo\/\d+/);
       const parsedLoc = location.pathname.match(/^\/([^/]+)\/status\/(\d+)/);
       let screenName: string | undefined, postId: string | undefined;
       if (parsedAnchor) {
         [, screenName, postId] = parsedAnchor.match;
-      } else if ((viewer || parsedLoc) && !img.closest('article')) {
+      } else if ((viewer || parsedLoc) && !el.closest('article')) {
         [, screenName, postId] = (viewer || parsedLoc) as RegExpMatchArray;
       } else return null;
       if (!screenName || !postId) return null;
@@ -117,7 +135,7 @@ function xMediaConfig(): MediaIdentitySite {
       const pid = decodeURIComponent(postId);
       return { postId: pid, link: `https://x.com/${sn}/status/${pid}` };
     },
-    isPostMedia: (img) => anySrc(img, (src) => X_POST_MEDIA_PREFIXES.some((prefix) => src.includes(prefix))),
+    isPostMedia: (el) => anySrc(el, (src) => X_POST_MEDIA_PREFIXES.some((prefix) => src.includes(prefix))),
   };
 }
 
@@ -125,8 +143,8 @@ function blueskyMediaConfig(): MediaIdentitySite {
   const POST_CONTAINER = '[data-testid^="feedItem-by-"], [data-testid^="postThreadItem-by-"]';
   return {
     platform: 'bluesky',
-    extractIdentity(img: HTMLImageElement): MediaIdentity | null {
-      const link = (img.closest('a[href*="/post/"]') as HTMLAnchorElement | null) || (findAncestorContainerLink(img, 'a[href*="/post/"]', POST_CONTAINER) as HTMLAnchorElement | null);
+    extractIdentity(el: PostMediaElement): MediaIdentity | null {
+      const link = (el.closest('a[href*="/post/"]') as HTMLAnchorElement | null) || (findAncestorContainerLink(el, 'a[href*="/post/"]', POST_CONTAINER) as HTMLAnchorElement | null);
       const parsed = link ? parseMediaUrlPath(link.href, /^\/profile\/([^/]+)\/post\/([^/?#]+)/) : null;
       let handle: string | undefined, postId: string | undefined;
       if (parsed) {
@@ -135,7 +153,7 @@ function blueskyMediaConfig(): MediaIdentitySite {
         // Anchor-less image outside any post container (e.g. the image
         // viewer) on a post detail page — the URL bar identifies it.
         const loc = location.pathname.match(/^\/profile\/([^/]+)\/post\/([^/?#]+)/);
-        if (!loc || img.closest(POST_CONTAINER)) return null;
+        if (!loc || el.closest(POST_CONTAINER)) return null;
         [, handle, postId] = loc;
       }
       if (!handle || !postId) return null;
@@ -145,7 +163,7 @@ function blueskyMediaConfig(): MediaIdentitySite {
     },
     // feed_thumbnail / feed_fullsize are post pictures; avatar/banner sit under
     // /img/avatar/ and /img/banner/ on the same CDN.
-    isPostMedia: (img) => anySrc(img, (src) => src.includes('cdn.bsky.app/img/feed_')),
+    isPostMedia: (el) => anySrc(el, (src) => src.includes('cdn.bsky.app/img/feed_')),
   };
 }
 
@@ -154,10 +172,9 @@ function pixivMediaConfig(): MediaIdentitySite {
   const PXIMG_FILENAME = /\/(\d+)_p\d+(?:_|\.)/;
   return {
     platform: 'pixiv',
-    extractIdentity(img: HTMLImageElement): MediaIdentity | null {
+    extractIdentity(el: PostMediaElement): MediaIdentity | null {
       let postId: string | null = null;
-      for (const src of [img.src, img.currentSrc]) {
-        if (!src) continue;
+      for (const src of mediaSrcs(el)) {
         const m = src.match(PXIMG_FILENAME);
         if (m) {
           postId = m[1] ?? null;
@@ -165,7 +182,7 @@ function pixivMediaConfig(): MediaIdentitySite {
         }
       }
       if (!postId) {
-        const link = (img.closest('a[href*="/artworks/"]') as HTMLAnchorElement | null) || (findAncestorContainerLink(img, 'a[href*="/artworks/"]', 'li, figure') as HTMLAnchorElement | null);
+        const link = (el.closest('a[href*="/artworks/"]') as HTMLAnchorElement | null) || (findAncestorContainerLink(el, 'a[href*="/artworks/"]', 'li, figure') as HTMLAnchorElement | null);
         if (link) {
           const parsed = parseMediaUrlPath(link.href, ARTWORK_PATH);
           if (parsed) postId = parsed.match[1] ?? null;
@@ -180,7 +197,7 @@ function pixivMediaConfig(): MediaIdentitySite {
     },
     // The <id>_p<N> filename is what makes a pximg URL an artwork page rather
     // than a novel cover or a user icon (both live on i.pximg.net too).
-    isPostMedia: (img) => anySrc(img, (src) => src.includes('i.pximg.net') && PXIMG_FILENAME.test(src)),
+    isPostMedia: (el) => anySrc(el, (src) => src.includes('i.pximg.net') && PXIMG_FILENAME.test(src)),
   };
 }
 
@@ -242,4 +259,4 @@ function parseMediaUrlPath(href: string, pathRegex: RegExp): ParsedMediaPath | n
 }
 
 export { collectImageUrls, getMediaIdentitySite };
-export type { MediaIdentity, MediaIdentitySite };
+export type { MediaIdentity, MediaIdentitySite, PostMediaElement };
