@@ -262,7 +262,7 @@ function StoreSubscriptions() {
     const unsubPosterView = storeSubscribe('posterView', () => handlePosterViewStoreChange());
     const unsubSearchQuery = storeSubscribe('searchQuery', () => handleSearchQueryStoreChange());
     foldersOnChange((kind) => handleFolderChange(kind));
-    onPostsChanged((names) => handlePostsChanged(names));
+    onPostsChanged(() => handlePostsChanged());
     return () => {
       unsubView();
       unsubBrowseMode();

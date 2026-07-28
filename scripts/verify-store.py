@@ -1,21 +1,24 @@
-"""Verify sidecar metadata against actual post data via public APIs.
+"""Verify stored post metadata against actual post data via public APIs.
 
-Reads <id>.json sidecars from the Hologram save folder (configured by the
-desktop app) and compares them with live data from the Bluesky / Misskey public
-APIs. Also checks each sidecar has its paired <id>.jpg.
+Reads records from the Hologram library database (hologram.db in the config dir)
+and compares them with live data from the Bluesky / Misskey public APIs. Also
+checks each record's image file is present in the save folder.
+
+Read-only: opens the database in SQLite read-only mode, so it is safe to run
+while the app is open (the app is the single writer).
 
 Usage:
-  python verify-store.py                    # Check latest file
-  python verify-store.py path/to/file.json  # Check specific sidecar
-  python verify-store.py --recent N         # Check latest N files
+  python verify-store.py                # Check the most recent capture
+  python verify-store.py <captureId>    # Check one specific record
+  python verify-store.py --recent N     # Check the N most recent captures
 """
 
 import sys
 import os
 import io
-import glob
 import json
 import re
+import sqlite3
 import urllib.request
 import urllib.parse
 from datetime import datetime
@@ -157,20 +160,13 @@ def compare_datetime(label, api_dt, sidecar_dt):
         return compare(label, api_dt, sidecar_dt)
 
 
-def check_file(path):
-    filename = os.path.basename(path)
-    print(f"\n{'=' * 60}\n  {filename}\n{'=' * 60}")
+def check_record(meta, folder):
+    capture_id = meta.get("captureId")
+    print(f"\n{'=' * 60}\n  {capture_id}\n{'=' * 60}")
 
-    try:
-        with open(path, encoding="utf-8") as f:
-            meta = json.load(f)
-    except Exception as e:
-        print(f"  [SKIP] Cannot read sidecar: {e}")
-        return None
-
-    # Paired image must exist.
-    image = meta.get("image") or (os.path.splitext(filename)[0] + ".jpg")
-    img_path = os.path.join(os.path.dirname(path), image)
+    # The image the record points at must be present in the save folder.
+    image = meta.get("image") or (str(capture_id) + ".jpg")
+    img_path = os.path.join(folder, image)
     if os.path.exists(img_path):
         print(f"  [OK] image                 {image}")
     else:
@@ -220,11 +216,8 @@ def check_file(path):
         if not ok:
             all_ok = False
 
-    print("\n  Sidecar metadata:")
-    for key in ["captureId", "image", "url", "platform", "text", "displayName", "screenName",
-                "userId", "likes", "reposts", "replies", "bookmarks", "views", "date",
-                "capturedAt", "mediaType", "lang", "isReply", "isQuote", "isThread",
-                "quotedUrl", "tags"]:
+    print("\n  Stored metadata:")
+    for key in COLUMNS + ["tags"]:
         val = meta.get(key)
         if val is not None:
             print(f"    {key:16s} {str(val)[:70]}")
@@ -233,26 +226,61 @@ def check_file(path):
     return all_ok
 
 
+# The columns this tool compares. Selected explicitly (not SELECT *) so a schema
+# change surfaces as a missing column here rather than as a silently absent check.
+COLUMNS = ["captureId", "image", "url", "platform", "text", "displayName", "screenName",
+           "userId", "likes", "reposts", "replies", "bookmarks", "views", "date",
+           "capturedAt", "mediaType", "lang", "isReply", "isQuote", "isThread",
+           "quotedUrl"]
+
+
+def read_records(limit=None, capture_id=None):
+    db = os.path.join(config_dir(), "hologram.db")
+    if not os.path.exists(db):
+        return None
+    uri = "file:" + urllib.request.pathname2url(db) + "?mode=ro"
+    conn = sqlite3.connect(uri, uri=True)
+    conn.row_factory = sqlite3.Row
+    try:
+        cols = ", ".join(COLUMNS)
+        if capture_id:
+            rows = conn.execute(f"SELECT {cols} FROM posts WHERE captureId = ?", (capture_id,)).fetchall()
+        else:
+            rows = conn.execute(f"SELECT {cols} FROM posts ORDER BY capturedAt DESC LIMIT ?", (limit,)).fetchall()
+        out = []
+        for r in rows:
+            rec = dict(r)
+            rec["tags"] = [t[0] for t in conn.execute(
+                "SELECT t.name FROM post_tags pt JOIN tags t ON t.id = pt.tagId WHERE pt.postId = ?",
+                (rec["captureId"],)).fetchall()]
+            out.append(rec)
+        return out
+    finally:
+        conn.close()
+
+
 def main():
     folder = save_folder()
     if len(sys.argv) > 1 and sys.argv[1] == "--recent":
         n = int(sys.argv[2]) if len(sys.argv) > 2 else 5
-        files = sorted(glob.glob(os.path.join(folder, "*.json")), key=os.path.getmtime, reverse=True)[:n]
-        files.reverse()
+        records = read_records(limit=n)
+        if records:
+            records.reverse()
     elif len(sys.argv) > 1:
-        files = [sys.argv[1]]
+        records = read_records(capture_id=sys.argv[1])
     else:
-        files = sorted(glob.glob(os.path.join(folder, "*.json")), key=os.path.getmtime, reverse=True)[:1]
+        records = read_records(limit=1)
 
-    files = [f for f in files if os.path.basename(f) not in ("config.json", ".index.json")]
-
-    if not files:
-        print(f"No sidecar (.json) files found in {folder}")
+    if records is None:
+        print(f"No library database in {config_dir()}")
+        return
+    if not records:
+        print("No matching records in the library database")
         return
 
     results = []
-    for f in files:
-        results.append((os.path.basename(f), check_file(f)))
+    for rec in records:
+        results.append((rec["captureId"], check_record(rec, folder)))
 
     if len(results) > 1:
         passed = sum(1 for _, ok in results if ok is True)

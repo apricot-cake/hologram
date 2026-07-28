@@ -1,54 +1,44 @@
 'use strict';
 
-// Trash (soft-delete) + tag-mutation IPC handlers, extracted from main.js (mechanical
-// move — logic unchanged). delete-post moves a capture's files into .trash/; list/
-// restore/empty/delete-from-trash manage that folder; update-tags rewrites a sidecar's
-// tags. restore-post/update-tags use writeSidecarAtomic (tmp+rename) so the watcher
-// never sees a half-written sidecar — the crash-safety primitive stays in main.js and
-// arrives via ctx along with the other core helpers.
+// Trash (soft-delete) + tag-mutation IPC handlers. delete-post moves a capture's
+// files into .trash/ and drops its DB row; list/restore/empty/delete-from-trash
+// manage that folder; update-tags writes straight to the DB.
+//
+// Why the trash keeps a per-item JSON while the library itself does not: a trashed
+// post has no posts row at all, so its record has to live somewhere, and next to
+// the files it describes is where the platform conventions put it — the
+// freedesktop.org trash spec pairs every trashed file with a `.trashinfo`, and
+// digiKam's collection trash pairs one with a `.dtrashinfo`. That also makes the
+// trash self-describing: it survives DB loss and travels with a copied library,
+// which is what #5's scope means by keeping `.trash/` on the filesystem. The
+// record is regenerated FROM the DB when a capture never had a sidecar (#299),
+// the same direction as #300's export.
 import { ipcMain } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
+import { fillCardDims } from './lib-card-dims.ts';
 import { parseJsonLoose } from './lib-json.ts';
 import { postsByIds } from './lib-db-query.ts';
+import { makeTagResolver, preparePostStmts, writePost } from './lib-db-record-writer.ts';
 
 function register(ctx) {
-  const { getSaveFolder, getTrashDir, baseOf, VIEWABLE_EXTS, resolveInFolder, writeSidecarAtomic, getDbWriter, ensurePostsSynced } = ctx;
+  const { getSaveFolder, getTrashDir, baseOf, VIEWABLE_EXTS, resolveInFolder, getDbWriter, ensurePostsSynced } = ctx;
 
   ipcMain.handle('delete-post', async (_e, image) => {
     const folder = getSaveFolder();
     if (!folder || !image) return { ok: false };
     // Soft-delete: move all files for this captureId into .trash/ (instead of unlinking).
     const base = baseOf(image);
-    // Read the DB-only state (#298/St5's tags/userKind/tagReviewed) before the
-    // row disappears, so it can be stamped into the trashed sidecar copy below
-    // — restore-post already re-derives from that copy, this just gives it
-    // accurate values to re-derive FROM instead of whatever the sidecar last
-    // had pre-flip.
-    const handle = await ensurePostsSynced();
+    // Read the record and its DB-only state (tags/userKind/tagReviewed) BEFORE the
+    // row disappears: it is the whole content of the trash-side record, which
+    // restore-post reads back and import-posts' dedup scan consults to stop a
+    // deliberately-deleted post from resurrecting on re-import.
+    const handle = ensurePostsSynced();
     const flags = getDbWriter().getPostFlags(base);
-    // #299: some captures have NO sidecar at all (inbox/import-posts/import-images
-    // producers write straight into the DB) — read the full row before it's gone
-    // so a trash-side record can still be reconstructed below for restore-post
-    // AND for import-posts' dedup scan (ipc-transfer.ts reads .trash/*.json to
-    // stop a deliberately-deleted post from resurrecting on re-import).
-    const dbRecord = handle ? (await postsByIds(handle.sqlite, [base]))[0] || null : null;
-    // Explicit DB delete — do not rely on the next importAll noticing the
-    // sidecar's absence (it may never notice: #299 stopped treating "missing
-    // from the watched folder" as a delete signal once the DB is authoritative).
+    const rec: any = handle ? (await postsByIds(handle.sqlite, [base]))[0] || null : null;
     getDbWriter().deletePost(base);
-    const targets = new Set([`${base}.json`]);
+    const targets = new Set<string>();
     for (const e of VIEWABLE_EXTS) targets.add(`${base}.${e}`);
-    const jsonPath = resolveInFolder(`${base}.json`);
-    let rec: any = null;
-    if (jsonPath) {
-      try {
-        rec = parseJsonLoose(await fs.promises.readFile(jsonPath, 'utf8'));
-      } catch {
-        /* sidecar missing/corrupt — fall back to the DB record below */
-      }
-    }
-    if (!rec && dbRecord) rec = dbRecord; // no sidecar ever existed for this capture (#299)
     if (rec) {
       if (rec.image) targets.add(path.basename(rec.image));
       if (rec.video) targets.add(path.basename(rec.video));
@@ -80,35 +70,20 @@ function register(ctx) {
         }
       }
     }
-    // Stamp trashedAt in the trash sidecar so auto-purge knows when to expire it,
-    // and carry the DB-only state (flags, read above) into it too.
-    const trashJson = path.join(trashDir, `${base}.json`);
-    try {
-      const r = parseJsonLoose(await fs.promises.readFile(trashJson, 'utf8'));
-      r.trashedAt = new Date().toISOString();
+    // Write the trash-side record from the DB row read above, stamped with
+    // trashedAt so auto-purge knows when to expire it and carrying the DB-only
+    // state (flags) restore-post cannot get from anywhere else.
+    if (rec) {
+      const r: any = { ...rec, trashedAt: new Date().toISOString() };
       if (flags) {
         r.tags = flags.tags;
         if (flags.userKind != null) r.userKind = flags.userKind;
         if (flags.tagReviewed != null) r.tagReviewed = flags.tagReviewed;
       }
-      await fs.promises.writeFile(trashJson, JSON.stringify(r, null, 2), 'utf8');
-    } catch {
-      // No sidecar moved into .trash — this capture never had one (#299:
-      // inbox/import-posts/import-images write straight into the DB). Write a
-      // fresh record from the DB row read above, so restore-post and
-      // import-posts' dedup scan still work for a sidecar-less capture.
-      if (dbRecord) {
-        const r = { ...dbRecord, trashedAt: new Date().toISOString() };
-        if (flags) {
-          r.tags = flags.tags;
-          if (flags.userKind != null) r.userKind = flags.userKind;
-          if (flags.tagReviewed != null) r.tagReviewed = flags.tagReviewed;
-        }
-        try {
-          await fs.promises.writeFile(trashJson, JSON.stringify(r, null, 2), 'utf8');
-        } catch {
-          /* best-effort — trash still works but won't auto-purge/dedup */
-        }
+      try {
+        await fs.promises.writeFile(path.join(trashDir, `${base}.json`), JSON.stringify(r, null, 2), 'utf8');
+      } catch {
+        /* best-effort — trash still works but won't auto-purge/dedup */
       }
     }
     return { ok: true };
@@ -130,7 +105,7 @@ function register(ctx) {
         const rec = parseJsonLoose(await fs.promises.readFile(path.join(trashDir, f), 'utf8'));
         if (rec) records.push(rec);
       } catch {
-        /* skip corrupt sidecar */
+        /* skip corrupt record */
       }
     }
     records.sort((a, b) => new Date(b.trashedAt || 0).getTime() - new Date(a.trashedAt || 0).getTime());
@@ -148,33 +123,49 @@ function register(ctx) {
     } catch {
       return { ok: false };
     }
+    // Read the record BEFORE moving anything: it is what recreates the posts row.
+    const trashJson = path.join(trashDir, `${base}.json`);
+    let restored: any = null;
+    try {
+      restored = parseJsonLoose(await fs.promises.readFile(trashJson, 'utf8'));
+      delete restored.trashedAt;
+    } catch {
+      /* no record in the trash — the media still moves back, as an orphan (#301) */
+    }
+    // Media files go back to the library; the record does NOT. Since #302 the
+    // library folder holds media only, and a post exists by having a posts row.
     for (const f of names) {
+      if (f === `${base}.json`) continue;
       if (f.startsWith(base + '.') || f.startsWith(base + '-')) {
         try {
           await fs.promises.rename(path.join(trashDir, f), path.join(folder, f));
         } catch {}
       }
     }
-    // Remove trashedAt from the restored sidecar. The file is already back in the
-    // watched folder, so rewrite it atomically (tmp+rename) — an in-place write
-    // could be caught mid-write by the watcher and cost this post its collection
-    // membership (see writeSidecarAtomic).
-    const jsonPath = path.join(folder, `${base}.json`);
-    let restored: any = null;
-    try {
-      const r = parseJsonLoose(await fs.promises.readFile(jsonPath, 'utf8'));
-      delete r.trashedAt;
-      restored = r;
-      await writeSidecarAtomic(jsonPath, r);
-    } catch {}
     if (restored) {
-      // The reimport below recreates the posts row with tags intact (tags DO
-      // round-trip through the sidecar), but userKind/tagReviewed never do
-      // (#298/St5's applyPostFlagsFromRecord doc comment) — re-apply them
-      // from the restored sidecar, which delete-post stamped with the
-      // pre-trash DB values.
-      await ensurePostsSynced();
-      getDbWriter().restorePostFlags(base, restored);
+      const handle = ensurePostsSynced();
+      if (handle) {
+        const sqlite = handle.sqlite;
+        const stmts = preparePostStmts(sqlite);
+        const resolveTagId = makeTagResolver(sqlite);
+        sqlite.exec('BEGIN');
+        try {
+          writePost(stmts, resolveTagId, fillCardDims(folder, restored));
+          sqlite.exec('COMMIT');
+        } catch (err) {
+          sqlite.exec('ROLLBACK');
+          throw err;
+        }
+        // userKind/tagReviewed are not part of PostRecordShape, so writePost does
+        // not carry them — re-apply from the record delete-post stamped with the
+        // pre-trash DB values.
+        getDbWriter().restorePostFlags(base, restored);
+      }
+      try {
+        await fs.promises.unlink(trashJson);
+      } catch {
+        /* best-effort: a leftover record would make list-trash show a ghost */
+      }
     }
     return { ok: true };
   });
@@ -209,16 +200,13 @@ function register(ctx) {
   });
 
   // #298/St5: tag edits are an in-app write, so they go straight to the DB
-  // (post_tags + posts.userKind/tagReviewed) instead of the sidecar — see
-  // lib-db-write.ts's replacePostTags. The sidecar is left untouched, which
-  // is what protects this edit from the next importAll: its mtime doesn't
-  // move, so lib-db-import.ts's unchanged-since-last-import guard (#297)
-  // skips re-deriving this post from disk and the DB edit sticks.
+  // (post_tags + posts.userKind/tagReviewed) — see lib-db-write.ts's
+  // replacePostTags.
   ipcMain.handle('update-tags', async (_e, image, tags, patch) => {
     const captureId = baseOf(image);
     if (!captureId) return { ok: false };
     try {
-      await ensurePostsSynced(); // the captureId needs a posts row before this edit can attach to it
+      ensurePostsSynced(); // the captureId needs a posts row before this edit can attach to it
       const ok = getDbWriter().setPostTags(captureId, tags, patch && typeof patch === 'object' ? patch : null);
       return { ok };
     } catch {

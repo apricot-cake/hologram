@@ -122,18 +122,18 @@ async function verifyEntry(srcPath, destPath) {
 
 // Post-flip cleanup: for each copied entry, verify it at dest and only then delete
 // it from src ("整合チェック" — never remove what isn't proven to exist elsewhere).
-// A mismatch means src changed after its copy (org-JSON edit mid-move) or the copy
-// is bad — re-copy with force (dest content is our own copy, so overwriting it
+// A mismatch means src changed after its copy (a capture landing mid-move) or the
+// copy is bad — re-copy with force (dest content is our own copy, so overwriting it
 // converges to the newest src state, never clobbers user data) and re-verify; if it
-// still fails, the entry stays in src and is reported. Derived, rebuildable files
-// (.index.json) are exempt from verification — a stale copy self-heals at the next
-// reconcile and can never represent data loss.
+// still fails, the entry stays in src and is reported. Everything in the save folder
+// is verified: since #302 the folder holds media and the intake queue only, and
+// there is no derived, rebuildable file left to exempt.
 async function verifyAndCleanup(src, dest, entries) {
   let removed = 0;
   for (const f of entries) {
     const s = path.join(src, f);
     const d = path.join(dest, f);
-    let ok = f === '.index.json' || (await verifyEntry(s, d));
+    let ok = await verifyEntry(s, d);
     if (!ok) {
       try {
         await fs.promises.cp(s, d, { recursive: true, force: true, preserveTimestamps: true });

@@ -17,6 +17,7 @@ import path from 'node:path';
 import * as archive from './lib-archive.ts';
 import { parseJsonLoose } from './lib-json.ts';
 import { cloudSyncProviderOf } from './save-folder-guard.ts';
+import { fillCardDims } from './lib-card-dims.ts';
 import { makeTagResolver, preparePostStmts, writePost } from './lib-db-record-writer.ts';
 import type { PostRecordInput } from '../../../native-host/post-record.mts';
 
@@ -51,14 +52,14 @@ function register(ctx) {
     getConfigLastCorrupt,
     clearAllBlockReason,
     VIEWABLE_EXTS,
-    INTERNAL_FILES,
+    LEGACY_INTERNAL_FILES,
+    getDbWriter,
     pixivRefererFor,
     downloadAvatar,
     getWin,
     send,
     validateSaveFolder,
     relocateLibrary,
-    watchSaveFolder,
     watchInboxFolder,
     resetDelta,
     ensurePostsSynced,
@@ -230,7 +231,7 @@ function register(ctx) {
       const resolveTagId = makeTagResolver(sqlite);
       sqlite.exec('BEGIN');
       try {
-        for (const rec of toWrite) writePost(stmts, resolveTagId, rec, null);
+        for (const rec of toWrite) writePost(stmts, resolveTagId, fillCardDims(folder, rec));
         sqlite.exec('COMMIT');
       } catch (err) {
         sqlite.exec('ROLLBACK');
@@ -258,15 +259,19 @@ function register(ctx) {
     });
     if (blocked) return { ok: false, blocked, count: 0 };
     let count = 0;
-    // Keep app metadata (the shared INTERNAL_FILES set — config, index snapshot,
-    // organization JSON); wipe sidecars + every viewable media type (incl.
-    // jfif/avif/svg/video/-poster), mirroring delete-post. Using the same set as
-    // the watcher/index means a newly added internal file is skipped here too,
-    // instead of silently falling through to the wipe.
+    // Drop the records first: the media files are what the user sees, but the posts
+    // themselves live in the DB, and since #302 nothing re-derives "this record lost
+    // its file" from a scan. Organization is kept (see deleteAllPosts).
+    ensurePostsSynced();
+    getDbWriter().deleteAllPosts();
+    // Then the media — every viewable type (incl. jfif/avif/svg/video/-poster),
+    // mirroring delete-post. Leftover JSON from a pre-#5 library is skipped rather
+    // than swept, so a wipe never destroys metadata the legacy migration might still
+    // want; that skip list goes with the scaffolding (#441).
     const CLEAR_RE = new RegExp('\\.(' + VIEWABLE_EXTS.join('|') + '|json)$', 'i');
     try {
       for (const f of fs.readdirSync(folder)) {
-        if (INTERNAL_FILES.has(f)) continue;
+        if (LEGACY_INTERNAL_FILES.has(f)) continue;
         if (CLEAR_RE.test(f)) {
           try {
             fs.unlinkSync(path.join(folder, f));
@@ -297,7 +302,7 @@ function register(ctx) {
   // One ZIP that mirrors the whole library under library/: every capture file
   // (jpg/media) PLUS DB-regenerated sidecars and the organization layer (#300/St7 —
   // lib-archive.ts's module comment explains why these can't be a disk copy
-  // anymore). Excludes config.json (machine-specific) and .index.json (cache).
+  // anymore). Excludes config.json (machine-specific).
   // Manual-only: the scheduled path is the incremental mirror (runBackup), which
   // replaced the old scheduled-ZIP idea — ZIP stays as the hand-carried snapshot.
   ipcMain.handle('export-complete', async (_e, mode, includeTrash) => {
@@ -407,9 +412,8 @@ function register(ctx) {
       readConfig,
       writeConfig,
       emit: (payload) => send('save-folder-progress', payload),
-      // Re-point the watchers and drop the delta baseline so the renderer full-resyncs.
+      // Re-point the inbox watcher and drop the delta baseline so the renderer full-resyncs.
       afterFlip: () => {
-        watchSaveFolder();
         watchInboxFolder();
         resetDelta();
       },
@@ -515,7 +519,7 @@ function register(ctx) {
       const resolveTagId = makeTagResolver(sqlite);
       sqlite.exec('BEGIN');
       try {
-        for (const rec of toWrite) writePost(stmts, resolveTagId, rec, null);
+        for (const rec of toWrite) writePost(stmts, resolveTagId, fillCardDims(folder, rec));
         sqlite.exec('COMMIT');
       } catch (err) {
         sqlite.exec('ROLLBACK');

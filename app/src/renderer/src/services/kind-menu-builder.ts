@@ -6,6 +6,7 @@
 // tagKindOf/kindLabel/t are still owned by viewer.ts's own makeTags()/i18n
 // wiring, so they're injected as deps — same ctx pattern as query-builder.ts.
 import { open as kindMenuOpen } from './kind-menu.ts';
+import { promptName } from '../prompt/Prompt.tsx';
 import { setTagKind, setKindLabel } from './tags.ts';
 import { notify } from './ui.ts';
 
@@ -43,12 +44,12 @@ export function makeKindMenu(deps: KindMenuDeps) {
         if (onChanged) onChanged();
         notify(kind ? t('tagKindSet', [kindLabel(kind)]) : t('tagKindCleared'));
       },
-      async onRename(kind) {
-        const next = window.prompt(t('tagKindRenamePrompt'), kindLabel(kind));
-        if (next === null) return; // cancelled (empty string = reset to default)
-        await setKindLabel(kind, next);
-        if (onChanged) onChanged();
-        notify(t('tagKindRenamed'));
+      onRename(kind) {
+        promptName(t('tagKindRenamePrompt'), kindLabel(kind), async (next) => {
+          await setKindLabel(kind, next);
+          if (onChanged) onChanged();
+          notify(t('tagKindRenamed'));
+        });
       },
     });
   }

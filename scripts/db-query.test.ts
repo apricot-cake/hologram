@@ -1,14 +1,15 @@
-// app/src/main/lib-db-query.ts のユニットテスト（#5 St4 / #297＝DB 読み出し経路）。
-// 本物の取り込み器（app/src/main/lib-db-import.ts, #296）で小さな DB を作り、
-// postsFromDb/postsByIds が sidecar レコードの形をそのまま復元すること（query.ts の
-// タグ葉が必要とする tags/tagIds の並行配列の契約を含む）と、
-// app/src/main/lib-db-schema.ts に書かれている FTS5 の rank 契約が実際に効くことを見る。
+// app/src/main/lib-db-query.ts のユニットテスト（DB 読み出し経路）。
+// 本物の書き込み器（app/src/main/lib-db-record-writer.ts の writePost＝取込・インポート・
+// ZIP 取り込みが共有する唯一の producer）で小さな DB を作り、postsFromDb/postsByIds が
+// レコードの形をそのまま復元すること（query.ts のタグ葉が必要とする tags/tagIds の並行
+// 配列の契約を含む）と、app/src/main/lib-db-schema.ts に書かれている FTS5 の rank 契約が
+// 実際に効くことを見る。
 
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
-import { createDbImporter } from '../app/src/main/lib-db-import';
+import { makeTagResolver, preparePostStmts, writePost } from '../app/src/main/lib-db-record-writer';
 import { postsByIds, postsFromDb, searchPostsFts } from '../app/src/main/lib-db-query';
 import { openDatabase } from '../app/src/main/lib-db';
 
@@ -20,13 +21,13 @@ function mkTempDir(prefix: string) {
 }
 
 let handle: any;
-let report: any;
+let postCount = 0;
 
 beforeAll(async () => {
-  const folder = mkTempDir('hologram-db-query-lib-');
-  const writeJson = (name: string, data: unknown) => fs.writeFileSync(path.join(folder, name), JSON.stringify(data));
+  const records: any[] = [];
+  const add = (rec: any) => records.push(rec);
 
-  writeJson('cap-1.json', {
+  add({
     captureId: 'cap-1',
     image: 'cap-1.jpg',
     media: [
@@ -42,7 +43,7 @@ beforeAll(async () => {
     capturedAt: '2026-01-01T00:00:00Z',
     updatedAt: '2026-01-01T00:00:00Z',
   });
-  writeJson('cap-2.json', {
+  add({
     captureId: 'cap-2',
     image: 'cap-2.jpg',
     media: [],
@@ -54,7 +55,10 @@ beforeAll(async () => {
   });
 
   handle = openDatabase(path.join(mkTempDir('hologram-db-query-db-'), 'test.db'));
-  report = await createDbImporter().importAll(folder, handle);
+  const stmts = preparePostStmts(handle.sqlite);
+  const resolveTagId = makeTagResolver(handle.sqlite);
+  for (const rec of records) writePost(stmts, resolveTagId, rec);
+  postCount = (handle.sqlite.prepare('SELECT COUNT(*) AS n FROM posts').get() as { n: number }).n;
 });
 
 afterAll(() => {
@@ -62,8 +66,8 @@ afterAll(() => {
   for (const d of dirs) fs.rmSync(d, { recursive: true, force: true });
 });
 
-test('importAll が2件を投入する（前提）', () => {
-  expect(report.dbPostCount).toBe(2);
+test('writePost が2件を投入する（前提）', () => {
+  expect(postCount).toBe(2);
 });
 
 describe('postsFromDb: 形と並び', () => {
@@ -71,7 +75,7 @@ describe('postsFromDb: 形と並び', () => {
     expect(await postsFromDb(handle.sqlite)).toHaveLength(2);
   });
 
-  test('capturedAt の新しい順（lib-index.ts と同じ並び）', async () => {
+  test('capturedAt の新しい順', async () => {
     expect((await postsFromDb(handle.sqlite)).map((p: any) => p.captureId)).toEqual(['cap-2', 'cap-1']);
   });
 

@@ -1,14 +1,14 @@
 'use strict';
 
-// The shared single-post DB writer (#299 St6): posts + media + post_tags +
-// posts_fts for ONE record, extracted out of lib-db-import.ts so every
-// producer that turns a PostRecordInput into DB rows — the legacy sidecar
-// importer (lib-db-import.ts), the inbox consumer (lib-db-inbox.ts), and the
-// app-internal import-posts/import-images handlers (ipc-transfer.ts) — shares
-// one column list and one write order instead of three drifting copies.
+// The shared single-post DB writer: posts + media + post_tags + posts_fts for
+// ONE record, so every producer that turns a PostRecordInput into DB rows — the
+// inbox consumer (lib-db-inbox.ts), the app-internal import-posts/import-images
+// handlers (ipc-transfer.ts), the ZIP importer (lib-archive.ts), orphan recovery
+// (lib-db-integrity.ts) and the one-time legacy migration (lib-legacy-import.ts)
+// — shares one column list and one write order instead of five drifting copies.
 //
-// Electron-free (better-sqlite3 + node builtins only), mirroring lib-db.ts /
-// lib-db-import.ts, so it unit-tests in plain node.
+// Electron-free (better-sqlite3 + node builtins only), mirroring lib-db.ts, so
+// it unit-tests in plain node.
 //
 // This module writes ONLY the post-record tables. It does not open a
 // transaction itself — callers that need post+media+post_tags+FTS (+ an
@@ -23,10 +23,8 @@ function toDbBool(v: boolean | null): number | null {
   return v == null ? null : v ? 1 : 0;
 }
 
-// captureId first, sourceMtimeMs last: both are handled outside normalizePostRecord
-// (captureId is the one field every producer supplies itself; sourceMtimeMs is a
-// sidecar-file-scan bookkeeping value the inbox/import-posts/import-images
-// producers don't have — they pass null, same as any post-#298 write path).
+// captureId leads because it is the one field every producer supplies itself,
+// outside normalizePostRecord.
 const POST_COLUMNS = [
   'captureId',
   'assetClass',
@@ -66,7 +64,6 @@ const POST_COLUMNS = [
   'shotH',
   'trashedAt',
   'capturedVia',
-  'sourceMtimeMs',
 ] as const;
 
 const UPSERT_POST_SQL = `INSERT INTO posts (${POST_COLUMNS.join(',')}) VALUES (${POST_COLUMNS.map(() => '?').join(',')})
@@ -77,7 +74,7 @@ const UPSERT_POST_SQL = `INSERT INTO posts (${POST_COLUMNS.join(',')}) VALUES ($
 // Built from named fields (not a positional literal) so a column added to
 // POST_COLUMNS and forgotten here fails at the .map(...) below (undefined
 // bound param -> better-sqlite3 throws) instead of silently misaligning.
-function postParams(n: PostRecordShape, sourceMtimeMs: number | null): unknown[] {
+function postParams(n: PostRecordShape): unknown[] {
   const byName: Record<string, unknown> = {
     captureId: n.captureId,
     assetClass: n.assetClass,
@@ -117,7 +114,6 @@ function postParams(n: PostRecordShape, sourceMtimeMs: number | null): unknown[]
     shotH: n.shotH,
     trashedAt: n.trashedAt,
     capturedVia: n.capturedVia,
-    sourceMtimeMs,
   };
   return POST_COLUMNS.map((c) => byName[c]);
 }
@@ -148,13 +144,10 @@ function preparePostStmts(sqlite: Database.Database): PostStmts {
 
 // Writes (or overwrites) everything derived from ONE record: the posts row,
 // its media rows, its tag junction rows, and its FTS row. Tag NAMES are
-// resolved to ids via resolveTagId (get-or-create — tags are never wiped, see
-// lib-db-import.ts's module comment for why). sourceMtimeMs (#297) records
-// the sidecar file's mtime this write was derived from, for callers that
-// track it (the legacy sidecar importer); every other producer passes null.
-function writePost(stmts: PostStmts, resolveTagId: (name: string) => number, rec: PostRecordInput, sourceMtimeMs: number | null = null): PostRecordShape {
+// resolved to ids via resolveTagId (get-or-create — see makeTagResolver).
+function writePost(stmts: PostStmts, resolveTagId: (name: string) => number, rec: PostRecordInput): PostRecordShape {
   const n = normalizePostRecord(rec);
-  stmts.upsertPost.run(...postParams(n, sourceMtimeMs));
+  stmts.upsertPost.run(...postParams(n));
   stmts.deleteMedia.run(n.captureId);
   n.media.forEach((m, seq) => stmts.insertMedia.run(n.captureId, seq, m.url, m.alt, m.width, m.height, m.file, m.type, m.posterFile));
   stmts.deletePostTags.run(n.captureId);
@@ -165,6 +158,10 @@ function writePost(stmts: PostStmts, resolveTagId: (name: string) => number, rec
   return n;
 }
 
+// Tags are get-or-create BY NAME, never wiped. Deleting and reinserting a tag
+// would mint a new AUTOINCREMENT id and cascade away any tag_parents/tag_aliases
+// rows curated against the old one (#86/#157 territory), so once a name has a
+// row, that row's id is permanent as far as any producer here is concerned.
 function makeTagResolver(sqlite: Database.Database) {
   const cache = new Map<string, number>();
   for (const row of sqlite.prepare('SELECT id, name FROM tags').all() as Array<{ id: number; name: string }>) {
@@ -180,5 +177,59 @@ function makeTagResolver(sqlite: Database.Database) {
   };
 }
 
-export { POST_COLUMNS, UPSERT_POST_SQL, postParams, preparePostStmts, writePost, makeTagResolver, toDbBool };
+// --- tag_parents write path (#300/St7) -----------------------------------------
+// tag_parents (a tag's parent edges + at-most-one display-parent flag, DDL comment
+// in lib-db-schema.ts) has no in-app write path yet — it's dormant schema for
+// #86/#157. Its only producer today is a complete-export ZIP's library/tag-parents.json
+// (lib-archive.ts), a format invented for #300 with no sidecar-era predecessor.
+// Shape: { tags: [{ref,name,kind,reading}], parents: [{tagRef,parentRef,isDisplay}] }
+// — `ref` is the EXPORTING database's own tags.id, meaningful only within that one
+// export (a ZIP is a point-in-time snapshot; no cross-export id space exists).
+export interface TagParentsJson {
+  tags: Array<{ ref: number; name: string; kind?: string | null; reading?: string | null }>;
+  parents: Array<{ tagRef: number; parentRef: number; isDisplay?: boolean }>;
+}
+
+// Resolves each exported tag by NAME (resolveTagId — get-or-create, the same resolver
+// posts/poster_tags use) and writes the parent edges.
+//
+// Known limitation, accepted for v1: resolveTagId cannot distinguish two tags that
+// share a name but are different entities (exactly the case tag_parents/isDisplay
+// exists to disambiguate) — importing into a library that already has a
+// same-named-but-different tag will resolve both to the same row. Importing into an
+// EMPTY database is unaffected (nothing to collide with), and curating same-name
+// entities apart happens directly against the DB (#21 territory), not here.
+//
+// isDisplay is written respecting the "at most one display parent per tag" partial
+// unique index (idx_tag_parents_display): if the landing database already has a
+// DIFFERENT display parent for a tag, the incoming edge is still inserted (so the
+// parent/child relationship itself round-trips) but with isDisplay downgraded to
+// false — LOCAL wins, the same convention every other merge in lib-archive.ts uses.
+function importTagParents(sqlite: Database.Database, resolveTagId: (name: string) => number, data: TagParentsJson | null | undefined): void {
+  if (!data || !Array.isArray(data.tags) || !Array.isArray(data.parents)) return;
+
+  const refToId = new Map<number, number>();
+  for (const t of data.tags) {
+    if (!t || typeof t.ref !== 'number' || typeof t.name !== 'string' || !t.name) continue;
+    refToId.set(t.ref, resolveTagId(t.name));
+  }
+
+  const existingDisplay = new Map<number, number>();
+  for (const row of sqlite.prepare('SELECT tagId, parentTagId FROM tag_parents WHERE isDisplay = 1').all() as Array<{ tagId: number; parentTagId: number }>) {
+    existingDisplay.set(row.tagId, row.parentTagId);
+  }
+  const insertEdge = sqlite.prepare('INSERT OR IGNORE INTO tag_parents (tagId, parentTagId, isDisplay) VALUES (?, ?, ?)');
+  for (const p of data.parents) {
+    if (!p || typeof p.tagRef !== 'number' || typeof p.parentRef !== 'number') continue;
+    const tagId = refToId.get(p.tagRef);
+    const parentTagId = refToId.get(p.parentRef);
+    if (tagId == null || parentTagId == null || tagId === parentTagId) continue; // unresolved ref, or a tag listed as its own parent
+    const currentDisplay = existingDisplay.get(tagId);
+    const setDisplay = !!p.isDisplay && (currentDisplay == null || currentDisplay === parentTagId);
+    insertEdge.run(tagId, parentTagId, setDisplay ? 1 : 0);
+    if (setDisplay) existingDisplay.set(tagId, parentTagId);
+  }
+}
+
+export { POST_COLUMNS, UPSERT_POST_SQL, postParams, preparePostStmts, writePost, makeTagResolver, toDbBool, importTagParents };
 export type { PostStmts };

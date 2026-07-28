@@ -1,13 +1,15 @@
 // タグ用語帳（Phase 2 ①）tag-types.json のユニット＋取り込みテスト。
 // mergeTagTypes（和集合・すでに分類済みのタグは現ライブラリが勝つ・labels も合流）と、
-// importCompleteZip 経由で tag-types.json が実際に合流するところまで見る。
+// 完全ZIPの取り込み経由で tag-types.json が実際に合流するところまで見る（合流先はDB）。
 
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import JSZip from 'jszip';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
-import { ORG_MERGE, importCompleteZip, mergeTagTypes } from '../app/src/main/lib-archive';
+import { ORG_MERGE, importCompleteZipToDb, mergeTagTypes } from '../app/src/main/lib-archive';
+import { openDatabase } from '../app/src/main/lib-db';
+import { createDbWriter } from '../app/src/main/lib-db-write';
 
 describe('mergeTagTypes（純関数）', () => {
   test('互いに素なマップは和集合', () => {
@@ -38,32 +40,33 @@ test('tag-types.json は取り込みマージ対象に登録されている', ()
   expect(ORG_MERGE).toContain('tag-types.json');
 });
 
-describe('importCompleteZip が tag-types.json を合流させる', () => {
+describe('完全ZIPの取り込みが tag-types.json を合流させる', () => {
   let root: string;
-  let dest: string;
+  let handle: any;
 
   beforeAll(async () => {
     root = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-tagtypes-'));
-    dest = path.join(root, 'lib');
+    const dest = path.join(root, 'lib');
     fs.mkdirSync(dest, { recursive: true });
+    handle = openDatabase(path.join(root, 'test.db'));
 
     // 既存ライブラリは アリス=character・ブルアカ=work を分類済み
-    fs.writeFileSync(path.join(dest, 'tag-types.json'), JSON.stringify({ types: { アリス: 'character', ブルアカ: 'work' } }), 'utf8');
+    createDbWriter(handle.sqlite).setTagTypes({ アリス: 'character', ブルアカ: 'work' }, null);
 
     // 取り込む ZIP: アロナ=character を足し、アリス→work へ倒そうとする（負けるべき）
     const zip = new JSZip();
     zip.file('library/cap1.jpg', Buffer.from('JPEGDATA1'));
     zip.file('library/tag-types.json', JSON.stringify({ types: { アロナ: 'character', アリス: 'work' } }));
 
-    await importCompleteZip(JSZip, dest, await zip.generateAsync({ type: 'nodebuffer' }));
+    await importCompleteZipToDb(handle.sqlite, JSZip, dest, await zip.generateAsync({ type: 'nodebuffer' }));
   });
 
   afterAll(() => {
+    handle.sqlite.close();
     fs.rmSync(root, { recursive: true, force: true });
   });
 
   test('ローカルの分類が保たれ、取り込み分が足される', () => {
-    const merged = JSON.parse(fs.readFileSync(path.join(dest, 'tag-types.json'), 'utf8'));
-    expect(merged.types).toEqual({ アリス: 'character', ブルアカ: 'work', アロナ: 'character' });
+    expect(createDbWriter(handle.sqlite).getTagTypes().types).toEqual({ アリス: 'character', ブルアカ: 'work', アロナ: 'character' });
   });
 });

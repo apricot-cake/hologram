@@ -123,17 +123,14 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
   let _haveBaseline = false; // false until we hold a full snapshot (also reset on reload = fresh module state)
   let _loadPostsInFlight = false;
   let _loadPostsPending = false;
-  // changedNames is the fs-watch hint relayed from main (null | [] | [names…]);
-  // it lets the refresh re-stat only the changed sidecars instead of the whole
-  // folder. Absent (explicit reloads: sort change, import) -> full reconcile.
-  async function loadPosts(keepLimit?: boolean, changedNames?: string[] | null) {
+  async function loadPosts(keepLimit?: boolean) {
     if (_loadPostsInFlight) {
       _loadPostsPending = true;
       return;
     }
     _loadPostsInFlight = true;
     try {
-      const res = await listPostsDelta(_haveBaseline, changedNames);
+      const res = await listPostsDelta(_haveBaseline);
       if (!res || res.full) {
         _postsById = new Map();
         for (const p of (res && res.posts) || []) _postsById.set(p.captureId, stampPost(p));
@@ -614,8 +611,8 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
 // once at boot (viewer.ts, right after constructing postGrid) so the settings
 // component (Danger.tsx/Data.tsx) can reach them directly — no shared-bridge
 // detour.
-export let loadPosts: ((keepLimit?: boolean, changedNames?: string[] | null) => Promise<void>) | null = null;
-export function bindLoadPosts(fn: (keepLimit?: boolean, changedNames?: string[] | null) => Promise<void>): void {
+export let loadPosts: ((keepLimit?: boolean) => Promise<void>) | null = null;
+export function bindLoadPosts(fn: (keepLimit?: boolean) => Promise<void>): void {
   loadPosts = fn;
 }
 export let confirmClearAll: (() => void) | null = null;
