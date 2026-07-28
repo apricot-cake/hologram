@@ -44,10 +44,10 @@ const HTML = `<!doctype html>
     await page.mouse.move(photoBox.x + photoBox.width / 2, photoBox.y + photoBox.height / 2);
     await page.waitForSelector('[data-hologram-overlay]', { timeout: 3000 });
 
-    // This disposable browser has no production Native Messaging host. Pressing
-    // the hover control therefore exercises the real background failure path:
-    // the retry chip stays on the image, and the readable alert appears at the
-    // same top-center position as the Alt+S banner (#357).
+    // The staged extension points at a host name nobody registered
+    // (lib-overlay-e2e.cts), so pressing the hover control exercises the real
+    // background failure path: the retry chip stays on the image, and the readable
+    // alert appears at the same top-center position as the Alt+S banner (#357).
     await page.click('[data-hologram-overlay]');
     await page.waitForSelector('[data-hologram-save-banner]', { timeout: 5000 });
     await wait(100); // chrome.storage.local logging is best-effort and asynchronous
@@ -74,7 +74,9 @@ const HTML = `<!doctype html>
     if (!failureUi || failureUi.role !== 'alert' || !failureUi.text || failureUi.width < 200 || Math.abs(failureUi.top - 12) > 0.5 || Math.abs(failureUi.centerX - 640) > 0.5 || !failureUi.retryTitle) {
       throw new Error(`OVERLAY_FAILURE_BANNER_LAYOUT_FAIL: ${JSON.stringify(failureUi)}`);
     }
-    if (failureUi.text !== '保存に失敗しました。拡張機能の設定から診断ページを確認してください' || failureUi.retryTitle !== failureUi.text) {
+    // bannerHostMissing (extension/utils/i18n.ts) — the message for an absent host,
+    // which is the failure this fixture provokes on any machine.
+    if (failureUi.text !== 'Hologram の保存先に接続できません。Chrome を再起動してください' || failureUi.retryTitle !== failureUi.text) {
       throw new Error(`OVERLAY_FAILURE_BANNER_LOCALE_FAIL: ${JSON.stringify({ failureUi, diagnosticEntries })}`);
     }
     const rawFailure = diagnosticEntries.find((entry) => entry?.phase === 'fail' && typeof entry?.error === 'string');

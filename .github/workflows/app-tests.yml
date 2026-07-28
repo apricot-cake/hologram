@@ -1,0 +1,86 @@
+name: App tests
+
+# Stage 2 (#15): the two test layers ci.yml cannot host, because both need Windows
+# and a real desktop session.
+#   - scripts/test-app-*.cts — each one boots a real Electron main process and
+#     drives the renderer that comes up
+#   - the extension e2e — a real Chromium with the built extension loaded, talking
+#     to a throwaway Native Messaging host whose registration is an HKCU write
+#
+# Deliberately NOT on `push`, unlike ci.yml, and the reason is arithmetic. A Windows
+# minute bills at twice a Linux one and this job measures under six against ci.yml's
+# two, so one run costs about twelve billed minutes; this repository saw 63 pushes in
+# a single day (2026-07-28), which per push would be some 750 minutes a day out of a
+# 2,000 minutes/month free allowance. So the split is the standard two-speed one: the
+# fast layer answers every push, the slow layer runs once a day and on demand.
+# When #75 makes the repository public, standard runners stop being metered at all;
+# adding `push:` here is the whole change at that point.
+on:
+  schedule:
+    # 18:37 UTC = 03:37 JST. Off the hour and outside 22:00-02:00 UTC on purpose:
+    # scheduled runs queue behind everyone else's, and those are the peaks.
+    - cron: '37 18 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: app-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    name: Electron harnesses / extension e2e
+    runs-on: windows-latest
+    # Locally the whole suite is ~2.5 minutes of tests; the ceiling is set well
+    # above the expected runner time only to stop a hung Electron from burning the
+    # 6-hour default.
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: package.json
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            extension/package-lock.json
+      # Same entry point as ci.yml — see scripts/setup.cts for why a plain
+      # `npm ci` does not produce a working tree. It also builds the extension,
+      # which every browser test below loads from extension/.output/chrome-mv3.
+      - name: Install dependencies
+        run: npm run setup
+      # The harnesses spawn `electron .` in app/, whose main field points at
+      # app/out. A fresh checkout has no build output and `npm run setup` does not
+      # produce any, so without this every harness dies on a missing entry point.
+      - name: Build app bundles
+        run: npm run build --workspace=app
+      # setup installs with --ignore-scripts, so Playwright's postinstall never
+      # runs and no browser is fetched. Chromium only: every browser test here
+      # loads an unpacked MV3 extension, which is Chromium-only anyway.
+      - name: Install Playwright Chromium
+        run: npx playwright install chromium
+      - name: Electron app harnesses
+        run: node scripts/run-app-tests.cts
+      # Each later layer runs even after an earlier one goes red (`!cancelled()`
+      # rather than `success()`): a nightly job that stops at the first failure
+      # costs a whole day to learn what else was broken. The scripts are invoked
+      # directly rather than through their npm scripts, which would each rebuild
+      # the extension that `npm run setup` already built.
+      - name: Extension capture e2e (offline fixture)
+        if: ${{ !cancelled() }}
+        run: node scripts/e2e-extension-offline.cts
+      - name: Overlay visual regression
+        if: ${{ !cancelled() }}
+        run: node scripts/e2e-overlay-visual.cts
+      - name: Overlay flicker regression
+        if: ${{ !cancelled() }}
+        run: node scripts/e2e-overlay-flicker.cts
+      # scripts/e2e-capture-test.cts — the live-site canary — is NOT here. It reads
+      # the real platforms, and X serves no post DOM to a signed-out browser, so on
+      # a runner it can only ever report a login wall (docs/testing.md). The site-DOM
+      # canary this workflow's schedule is meant to host still needs a way to be
+      # signed in from CI; #15 records that as open.
