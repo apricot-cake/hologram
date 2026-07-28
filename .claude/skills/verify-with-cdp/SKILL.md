@@ -12,6 +12,10 @@ description: Hologram を CDP（Chrome DevTools Protocol）で計測・撮影・
 - **⛔ 合成マウスで Base UI 部品を触らない**（実害 2026-07-18）。Base UI の Select / Popover トリガー / Slider は floating-ui の pointer 経路で動くため、`Input.dispatchMouseEvent` は発火しないだけでなく**それ自体がハングし、ポインタキャプチャが残ってレンダラごと固まる**（CDP 完全無応答＝curl が `http_code=000`／復帰は `restart-app.ps1`）。
   - 代わりに**キーボード**（トリガーへ focus → Enter で開く／スライダーは thumb へ focus → Arrow）か、プレーンな `<button>` なら evaluate 内 `el.click()`（React の onClick は発火する）。値の読み取りは `evaluate` のみ。
   - ポップオーバーをキーボードで開くのは**再起動直後だけフレークする**ので数回リトライ。
+- **ページへ合成ポインタを投げるなら `new PointerEvent`。`new Event('pointermove')` に座標を後付けした形は届かない**（実測 2026-07-28・bsky.app）。同じ要素・同じ座標・同じ瞬間で A/B すると、`new PointerEvent('pointermove',{clientX,clientY})` は拡張のホバーオーバーレイを動かし、`Object.assign(new Event('pointermove'),{clientX,clientY})` は何も起こさない。**`isTrusted` は無関係**＝構築した `PointerEvent` は `isTrusted:false` でも動くので、「本物のマウスでないと駄目」と誤診しない。理由は未特定だが、`clientX` はハンドラ側から読み戻せるので値の欠落ではない。
+  - **罠になるのは `scripts/overlay.test.ts`（jsdom）が後者の書き方で緑になること**＝ハーネスの癖をそのまま実機の検証へ持ち込むと、何も起きないのを「機能が壊れている」と読む。2026-07-28 に #372 の検証で実際にそう誤診し、拡張の設定・ビルド・保存済み照会を順に疑って往復した。
+  - 実マウスに近い経路が要るなら CDP の `Input.dispatchMouseEvent`（claude-in-chrome なら `computer` の `hover`）。こちらも同じ結果になる。
+- **ホバーを測る前にスクロールを終わらせる**。プログラム的なスクロールの直後はオーバーレイ側の追跡（IntersectionObserver → 描画 → ホバー対象の登録）が追いつかず、直前まで出ていたボタンが出なくなる。スクロールと計測は別の呼び出しに分け、計測中は一切スクロールしない。
 - **駆動は1フロー1起動**。多数のフローを1スクリプトに詰めると相互に絡んで解析不能になり、自分の駆動残留を「ユーザーが触った」と誤診する（docs/build.md「実機で異常を見たら、まず自分の駆動の残留を疑う」）。
 - **ユーザーデータをトグルする検証をしない**（実害 2026-07-13）。仮想グリッドの DOM 順は click 間で不定＝`querySelector('.clip-btn')` が別カードに当たり往復が成立しない。さらに掃除のつもりで `.in` を外して回ると**実ライブラリのクリップまで巻き込む**。ミューテーションが要る検証は `HOLOGRAM_CONFIG_DIR=<tmp>` のサンドボックスで行うか、表示だけで確かめられる経路を選ぶ。
 - **起動中のアプリの JSON を外から書き換えない**。アプリの次回書き込みで消える＝停止 → 書き戻し → 再起動の順で。
