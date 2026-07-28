@@ -4,7 +4,7 @@
 // (platforms, post types, media, engagement ranges, dates, languages, hashtags,
 // tags). Runs via Electron because it renders placeholder images with a canvas.
 //
-//   app/node_modules/.bin/electron scripts/inject-dummy.cjs  [saveFolder]
+//   (from repo root) node_modules/.bin/electron scripts/inject-dummy.cjs  [saveFolder]
 //
 // With no folder argument it writes to the configured save folder. Images go to the
 // save folder, records go into the library database (~/.hologram/hologram.db) —

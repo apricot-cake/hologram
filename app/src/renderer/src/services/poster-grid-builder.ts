@@ -17,6 +17,7 @@ import { formatCount, localeDate } from './format.ts';
 import { open as inspectorOpen, refresh as inspectorRefresh } from './inspector.ts';
 import { open as lightboxOpen } from './lightbox.ts';
 import { open as menuOpen } from './menu.ts';
+import { promptName } from '../prompt/Prompt.tsx';
 import { captureFile } from './records.ts';
 import { setPosterTags } from './tags.ts';
 import { hologramPosterGridSource } from './grid.ts';
@@ -328,14 +329,13 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
         refreshPosterFolderFields(u.key);
       },
       onFolderCreate: () => {
-        const name = window.prompt(deps.t('posterFolderRenamePrompt'), '');
-        if (name && name.trim()) {
+        promptName(deps.t('posterFolderRenamePrompt'), '', (name) => {
           const nf = createPosterFolder(name);
           if (nf) {
             togglePosterFolderMember(nf.id, u.key);
             showPosterDetail(u);
           }
-        }
+        });
       },
       onTagContextMenu: (tag: string, x: number, y: number) => {
         deps.showKindMenu(tag, x, y, () => refreshPosterTagFields(u.key));
@@ -366,11 +366,10 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
       return;
     } // close
     if (item.act === 'newfolder') {
-      const name = window.prompt(deps.t('posterFolderRenamePrompt'), '');
-      if (name && name.trim()) {
+      promptName(deps.t('posterFolderRenamePrompt'), '', (name) => {
         const nf = createPosterFolder(name);
         if (nf) togglePosterFolderMember(nf.id, u.key);
-      }
+      });
       return; // close
     }
     if (item.act === 'folder') {
