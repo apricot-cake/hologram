@@ -32,9 +32,10 @@ describe('成功時', () => {
   let res: any;
 
   beforeAll(async () => {
+    // 本物の Response を返す＝取得は本文をストリームで受けてディスクへ流す（#389）
     vi.stubGlobal('fetch', async (_url: string, opts: any) => {
       sentHeaders = opts?.headers;
-      return { ok: true, headers: new Map([['content-type', 'image/png']]), arrayBuffer: async () => png };
+      return new Response(png, { status: 200, headers: { 'content-type': 'image/png' } });
     });
 
     res = await handleSaveDragged({
@@ -86,10 +87,12 @@ describe('成功時', () => {
 
 describe('失敗時', () => {
   test('未対応の content-type は throw し、孤児 inbox エンベロープを残さない', async () => {
-    vi.stubGlobal('fetch', async () => ({ ok: true, headers: new Map([['content-type', 'text/html']]), arrayBuffer: async () => Buffer.from('x') }));
+    vi.stubGlobal('fetch', async () => new Response(Buffer.from('x'), { status: 200, headers: { 'content-type': 'text/html' } }));
 
     await expect(handleSaveDragged({ captureId: '1717500000001-ab02', imageUrl: 'https://x/y', metadata: {} })).rejects.toThrow();
     expect(fs.existsSync(path.join(saveFolder, '1717500000001-ab02.json'))).toBe(false);
     expect(fs.existsSync(path.join(saveFolder, '.hologram-inbox', 'new', '1717500000001-ab02.json'))).toBe(false);
+    // 一時ファイルも残らない（本文を1バイトも書く前に落ちる経路）
+    expect(fs.readdirSync(saveFolder).filter((f) => f.endsWith('.tmp'))).toEqual([]);
   });
 });
