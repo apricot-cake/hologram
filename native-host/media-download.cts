@@ -38,6 +38,13 @@ const VIDEO_MIME_EXT: Record<string, string> = {
   'video/webm': 'webm',
   'video/quicktime': 'mov',
 };
+// Content types that mean "I don't know what this is" rather than naming a
+// format. A CDN that answers this is not claiming the bytes are unsupported —
+// it is declining to claim anything (Bluesky's video thumbnails do exactly
+// that, #119 St2), so the format is read from the bytes instead (sniffMagic
+// below). Every other unlisted type is still refused unread.
+const SNIFFABLE_TYPES = new Set(['application/octet-stream']);
+const SNIFF_BYTES = 16; // enough for every signature below
 const MAX_MEDIA = 12; // cap attachments per post
 const MAX_MEDIA_BYTES = 25 * 1024 * 1024; // skip anything larger (still images)
 const MAX_VIDEO_BYTES = 200 * 1024 * 1024; // videos run far bigger than photos
@@ -233,13 +240,36 @@ function checkMediaUrl(urlStr: string): URL | null {
   return u;
 }
 
+// Name a format from its leading bytes. Only the formats the two allow lists
+// already carry are recognised, and the answer is a MIME string that the
+// caller still looks up in its own `mimeExt` — sniffing therefore picks AMONG
+// the types a call site accepts and can never widen them (a still-image
+// download that sniffs an mp4 is refused, as it would be by content-type).
+// This mirrors what every browser does with a supplied
+// application/octet-stream (WHATWG mimesniff), and it is a stricter check than
+// the header path: here the bytes themselves have to agree.
+function sniffMagic(head: Buffer): string | null {
+  if (head.length >= 3 && head[0] === 0xff && head[1] === 0xd8 && head[2] === 0xff) return 'image/jpeg';
+  if (head.length >= 8 && head.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return 'image/png';
+  if (head.length >= 12 && head.subarray(0, 4).toString('latin1') === 'RIFF' && head.subarray(8, 12).toString('latin1') === 'WEBP') return 'image/webp';
+  if (head.length >= 6 && /^GIF8[79]a$/.test(head.subarray(0, 6).toString('latin1'))) return 'image/gif';
+  if (head.length >= 4 && head.subarray(0, 4).equals(Buffer.from([0x1a, 0x45, 0xdf, 0xa3]))) return 'video/webm'; // EBML (also .mkv, which we don't accept)
+  // ISO base media: a size-prefixed 'ftyp' box, whose brand separates QuickTime
+  // from everything else in the mp4 family.
+  if (head.length >= 12 && head.subarray(4, 8).toString('latin1') === 'ftyp') {
+    return head.subarray(8, 10).toString('latin1') === 'qt' ? 'video/quicktime' : 'video/mp4';
+  }
+  return null;
+}
+
 // Write a response body into `tmpPath`, enforcing the per-file cap AND the save
 // budget on the bytes that ACTUALLY arrive. Content-Length already gave us an
 // early exit, but it is attacker-controlled: a chunked body, an under-declared
 // one, or one that simply never stops is cut here, mid-flight, with only the
-// current chunk in memory. Returns the byte count written, or null if a cap was
-// hit or the transfer broke — the caller removes the temp file either way.
-async function streamToFile(res: Response, cap: number, budget: ByteBudget, tmpPath: string): Promise<number | null> {
+// current chunk in memory. Returns the byte count written plus the leading
+// bytes (for sniffMagic), or null if a cap was hit or the transfer broke — the
+// caller removes the temp file either way.
+async function streamToFile(res: Response, cap: number, budget: ByteBudget, tmpPath: string): Promise<{ bytes: number; head: Buffer } | null> {
   const body = res.body;
   if (!body || typeof body.getReader !== 'function') return null;
   const reader = body.getReader();
@@ -251,19 +281,26 @@ async function streamToFile(res: Response, cap: number, budget: ByteBudget, tmpP
   const failed = new Promise<never>((_, reject) => out.once('error', reject));
   failed.catch(() => {}); // nobody may end up awaiting it
   let total = 0;
+  const head: Buffer[] = []; // leading chunks, kept only until SNIFF_BYTES is covered
+  let headLen = 0;
   try {
     for (;;) {
       const { done, value } = await reader.read();
       if (done) break;
       total += value.length;
       if (total > cap || !budget.take(value.length)) return null;
-      if (!out.write(Buffer.from(value))) await Promise.race([once(out, 'drain'), failed]);
+      const chunk = Buffer.from(value);
+      if (headLen < SNIFF_BYTES) {
+        head.push(chunk.subarray(0, SNIFF_BYTES - headLen));
+        headLen += head[head.length - 1].length;
+      }
+      if (!out.write(chunk)) await Promise.race([once(out, 'drain'), failed]);
     }
     out.end();
     // 'close', not 'finish': Windows refuses to rename or delete a file whose
     // handle is still open, and the caller does exactly that next.
     await Promise.race([once(out, 'close'), failed]);
-    return total;
+    return { bytes: total, head: Buffer.concat(head) };
   } catch {
     return null; // disconnect mid-body / abort / write failure
   } finally {
@@ -318,19 +355,27 @@ async function downloadToFile(url: unknown, referer: unknown, limits: FetchLimit
     }
     if (!res || !res.ok) return null;
     const ct = (res.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
-    const ext = limits.mimeExt[ct];
-    if (!ext) return null; // not a supported type
+    let ext = limits.mimeExt[ct];
+    // An unlisted type is refused before a single body byte is read — unless it
+    // is the "I don't know" type, which is settled from the magic bytes after
+    // the transfer instead (SNIFFABLE_TYPES).
+    if (!ext && !SNIFFABLE_TYPES.has(ct)) return null;
     // Content-Length is a hint, never a guarantee: an honest server saves us the
     // whole transfer here, a lying one is stopped by the byte counter above.
     const declared = Number(res.headers.get('content-length'));
     if (Number.isFinite(declared) && (declared > limits.maxBytes || declared > budget.remaining())) return null;
+    // The final name needs the extension, which a sniffed download only learns
+    // after the body — so the temp file is named from the stem alone and the
+    // rename below is what picks the extension.
+    const stemPath = path.join(dir, stem);
+    fs.mkdirSync(path.dirname(stemPath), { recursive: true });
+    tmpPath = path.join(path.dirname(stemPath), `.${path.basename(stemPath)}.${process.pid}.${crypto.randomBytes(4).toString('hex')}.tmp`);
+    const got = await streamToFile(res, limits.maxBytes, budget, tmpPath);
+    if (!got || !got.bytes) return null; // capped, broken, or an empty body
+    if (!ext) ext = limits.mimeExt[sniffMagic(got.head) || ''];
+    if (!ext) return null; // the bytes are not one of the types this caller takes
     const file = `${stem}.${ext}`;
-    const target = path.join(dir, file);
-    fs.mkdirSync(path.dirname(target), { recursive: true });
-    tmpPath = path.join(path.dirname(target), `.${path.basename(target)}.${process.pid}.${crypto.randomBytes(4).toString('hex')}.tmp`);
-    const bytes = await streamToFile(res, limits.maxBytes, budget, tmpPath);
-    if (!bytes) return null; // capped, broken, or an empty body
-    fs.renameSync(tmpPath, target); // commit point
+    fs.renameSync(tmpPath, path.join(dir, file)); // commit point
     committed = true;
     return { file, ext };
   } catch {
@@ -474,6 +519,7 @@ module.exports = {
   AVATAR_SUBDIR,
   pixivRefererFor,
   checkMediaUrl,
+  sniffMagic,
   isPrivateIp,
   createGuardedLookup,
   MEDIA_MIME_EXT,
