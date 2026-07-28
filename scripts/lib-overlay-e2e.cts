@@ -28,7 +28,17 @@ interface OverlayBrowser {
 }
 
 async function launchOverlayBrowser(options: { locale?: string } = {}): Promise<OverlayBrowser> {
-  const extensionDir = stageExtension({ tempPrefix: 'hologram-overlay-e2e-ext-' });
+  // A host name that is deliberately never registered, and unique per run. Without
+  // it the staged extension keeps talking to `com.hologram.host`, which on a
+  // development machine IS installed — the installer registers it for Chromium as
+  // well as Chrome (native-host/install.cts) — so pressing save reached the real
+  // host while the same run on a clean machine could not, and the two disagreed
+  // about which failure the overlay should report. Failing at "host not found" is
+  // the same on every machine, and the user's installed host is left alone.
+  const extensionDir = stageExtension({
+    tempPrefix: 'hologram-overlay-e2e-ext-',
+    nativeHostName: `com.hologram.host.overlay_e2e_${process.pid}`,
+  });
   const session = await launchExtensionBrowser({
     extensionDir,
     headless: true,

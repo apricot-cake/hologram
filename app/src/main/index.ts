@@ -1407,6 +1407,15 @@ function sendWindowToBack(w: BrowserWindow): void {
 // and quits once the renderer has loaded. Run with HOLOGRAM_SMOKE=1.
 const SMOKE = process.env.HOLOGRAM_SMOKE === '1';
 
+// The harnesses look up controls by their Japanese labels, and the language they
+// get is normally the machine's: the 'auto' language pref resolves through
+// navigator.language (src/renderer/src/services/i18n.ts). So the same suite that
+// passes on a Japanese development machine went red on an en-US CI runner, and the
+// English UI reads as missing controls rather than as a different language. Pin it
+// for harness runs; HOLOGRAM_LANG overrides for a run that wants the other one.
+// Must be set before the app is ready, which is why it lives here.
+if (SMOKE) app.commandLine.appendSwitch('lang', process.env.HOLOGRAM_LANG || 'ja');
+
 // Sandbox verify instance (scripts/sandbox-app.cts): a visible, persistent
 // second instance on an isolated HOLOGRAM_CONFIG_DIR. Unlike SMOKE it stays
 // interactive, but like SMOKE it must never touch machine-shared state — host
