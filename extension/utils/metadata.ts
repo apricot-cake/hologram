@@ -34,7 +34,9 @@ function parsePostUrl(url) {
   // Mastodon web URL: /@user/<numericId> (id starts with a digit; excludes
   // profile sub-pages like /@user/media). Must come before the Misskey /notes/.
   if ((m = u.pathname.match(/^\/@[^/]+\/(\d[\w-]*)\/?$/))) {
-    return { platform: 'mastodon', host, id: decodeURIComponent(m[1]) };
+    const id = m[1];
+    if (id === undefined) return null;
+    return { platform: 'mastodon', host, id: decodeURIComponent(id) };
   }
   if ((m = u.pathname.match(/^\/notes\/([^/?#]+)/))) {
     return { platform: 'misskey', host, noteId: m[1] };

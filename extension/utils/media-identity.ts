@@ -90,12 +90,13 @@ function xMediaConfig(): MediaIdentitySite {
       const parsedAnchor = link ? parseMediaUrlPath(link.href, /^\/([^/]+)\/status\/([^/?#]+)/) : null;
       const viewer = location.pathname.match(/^\/([^/]+)\/status\/(\d+)\/photo\/\d+/);
       const parsedLoc = location.pathname.match(/^\/([^/]+)\/status\/(\d+)/);
-      let screenName: string, postId: string;
+      let screenName: string | undefined, postId: string | undefined;
       if (parsedAnchor) {
         [, screenName, postId] = parsedAnchor.match;
       } else if ((viewer || parsedLoc) && !img.closest('article')) {
         [, screenName, postId] = (viewer || parsedLoc) as RegExpMatchArray;
       } else return null;
+      if (!screenName || !postId) return null;
       const sn = decodeURIComponent(screenName);
       const pid = decodeURIComponent(postId);
       return { postId: pid, link: `https://x.com/${sn}/status/${pid}` };
@@ -112,7 +113,7 @@ function blueskyMediaConfig(): MediaIdentitySite {
     extractIdentity(img: HTMLImageElement): MediaIdentity | null {
       const link = (img.closest('a[href*="/post/"]') as HTMLAnchorElement | null) || (findAncestorContainerLink(img, 'a[href*="/post/"]', POST_CONTAINER) as HTMLAnchorElement | null);
       const parsed = link ? parseMediaUrlPath(link.href, /^\/profile\/([^/]+)\/post\/([^/?#]+)/) : null;
-      let handle: string, postId: string;
+      let handle: string | undefined, postId: string | undefined;
       if (parsed) {
         [, handle, postId] = parsed.match;
       } else {
@@ -122,6 +123,7 @@ function blueskyMediaConfig(): MediaIdentitySite {
         if (!loc || img.closest(POST_CONTAINER)) return null;
         [, handle, postId] = loc;
       }
+      if (!handle || !postId) return null;
       // Canonical permalink — anchors can carry /liked-by, /reposted-by,
       // /quotes suffixes (engagement-count links on the thread anchor post).
       return { postId: decodeURIComponent(postId), link: `https://bsky.app/profile/${handle}/post/${postId}` };
@@ -143,7 +145,7 @@ function pixivMediaConfig(): MediaIdentitySite {
         if (!src) continue;
         const m = src.match(PXIMG_FILENAME);
         if (m) {
-          postId = m[1];
+          postId = m[1] ?? null;
           break;
         }
       }
@@ -151,12 +153,12 @@ function pixivMediaConfig(): MediaIdentitySite {
         const link = (img.closest('a[href*="/artworks/"]') as HTMLAnchorElement | null) || (findAncestorContainerLink(img, 'a[href*="/artworks/"]', 'li, figure') as HTMLAnchorElement | null);
         if (link) {
           const parsed = parseMediaUrlPath(link.href, ARTWORK_PATH);
-          if (parsed) postId = parsed.match[1];
+          if (parsed) postId = parsed.match[1] ?? null;
         }
       }
       if (!postId) {
         const m = location.pathname.match(ARTWORK_PATH);
-        if (m) postId = m[1];
+        if (m) postId = m[1] ?? null;
       }
       if (!postId) return null;
       return { postId: decodeURIComponent(postId), link: `https://www.pixiv.net/artworks/${postId}` };
@@ -182,7 +184,7 @@ function findAncestorContainerLink(img: Element, selector: string, boundarySel: 
       // Once the widening search escapes it (avatar/banner/sidebar images),
       // the nearest match belongs to some unrelated post — give up instead.
       if (boundarySel && !el.closest(boundarySel)) return null;
-      if (candidates.length === 1) return candidates[0];
+      if (candidates.length === 1) return candidates[0] ?? null;
       let best: Element | null = null;
       let bestDist = Number.POSITIVE_INFINITY;
       for (const link of candidates) {

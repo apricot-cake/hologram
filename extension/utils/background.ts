@@ -448,7 +448,7 @@ export function startBackground(): void {
     queryBridge(ask)
       .then((fresh) => {
         for (const u of ask) {
-          const id = Object.hasOwn(fresh, u) ? fresh[u] : null;
+          const id = Object.hasOwn(fresh, u) ? (fresh[u] ?? null) : null;
           cacheSet(u, id);
           results[u] = id;
         }

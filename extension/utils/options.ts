@@ -45,7 +45,7 @@ export function startOptions(): void {
 
   // overlay.js listens on chrome.storage.onChanged, so open timelines follow
   // both of these without a reload.
-  const radios = MARK_MODES.map((mode) => document.getElementById(`savedBadgeMode${mode[0].toUpperCase()}${mode.slice(1)}`)).filter((el): el is HTMLInputElement => el instanceof HTMLInputElement);
+  const radios = MARK_MODES.map((mode) => document.getElementById(`savedBadgeMode${mode.charAt(0).toUpperCase()}${mode.slice(1)}`)).filter((el): el is HTMLInputElement => el instanceof HTMLInputElement);
   if (radios.length === MARK_MODES.length) {
     chrome.storage.local.get(MARK_MODE_KEY, (got) => {
       if (chrome.runtime.lastError) return;
