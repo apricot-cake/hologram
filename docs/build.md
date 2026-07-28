@@ -94,6 +94,7 @@ electron-builder, win/nsis。
 
 - 出力 `app/dist/win-unpacked/` — スタンドアロン。`Hologram.exe` を直接実行可。ASCIIパスへ置けば native-host のランチャもASCIIになり日本語パス問題が解消。
 - **`npmRebuild: false` を設定してある**（`app/package.json` の `build`）。electron-builder は既定でネイティブモジュールを Electron 向けに再ビルドするが、唯一のネイティブ依存 `better-sqlite3` は N-API（`binding.gyp` の `NAPI_VERSION=10`）でビルド済みバイナリを同梱しており、同じ `.node` が Node と Electron の両方で動く＝再ビルドは不要。既定のままだと node-gyp が走り、C++ ビルドツールが要求される（2026-07-24 実測: 同一バイナリが Node 24 と Electron 43＝`NODE_MODULE_VERSION` 137 と 148 の双方でロード・WAL・FTS5 trigram の日本語部分一致まで動作）。**N-API でないネイティブ依存を足すときはこの設定を見直すこと**（黙って再ビルドが飛ぶ）。better-sqlite3 公式の troubleshooting は今も electron-rebuild を案内しているが、N-API 化前の記述。
+- **`app/package.json` の `electron` は範囲指定でなく固定版**（`43.2.0`。`^43.0.0` に戻さないこと）。electron-builder は配布するランタイムの実バージョンを知る必要があり、まず `<projectDir>/node_modules/electron` を読む。`app/` は npm ワークスペースなので electron はリポジトリ直下へ巻き上げられて `app/node_modules` には存在せず、electron-builder は `app/package.json` の指定へフォールバックする＝そこが範囲だと解決できず `Cannot compute electron version from installed node modules` で停止する（2026-07-28 実測。25系でも同じ＝バージョン退行ではなく #156 のワークスペース化の影響）。electron-builder 自身が案内する回避は「package.json で固定版にする」か「設定に `electronVersion` を書く」の2つで、後者は同じ版を2箇所に書くことになるため前者を採用（VS Code など実運用の Electron アプリも固定版が通例）。
 - **`asarUnpack` に `better-sqlite3` を入れてある**。`.node` は asar 内から読めないため、これが無いと配布ビルドでのみ DB が開けない。将来コード署名を入れる際は、asar の外に出たこのバイナリも署名対象に含める。
 - **NSIS ワンクリックインストーラ** は winCodeSign 展開時に **symlink 作成権限** が要る。**Windows 設定 → 開発者向け → 開発者モード を ON**（または管理者で実行）してから `npm run dist` で `Hologram Setup x.x.x.exe` が生成される。OFF だと winCodeSign 展開が失敗し `win-unpacked` のみになる（macOS用 dylib symlink でこける／コードの問題ではない）。
 - `native-host/` は `extraResources` で `resources/native-host` に同梱。`app/src/main/index.ts` が `app.isPackaged` でパス解決（dev=`../../../native-host`＝electron-vite の `out/main/` からの相対）。
@@ -103,7 +104,7 @@ electron-builder, win/nsis。
 ブランドの実体はホログラフィック虹色スクエア（ラスター）。**マスター 1 枚から全アイコンを再生成**する＝差し替えが半端にならない仕組み:
 
 1. `assets/icon-master.png` を差し替える（正方・512px 以上推奨）
-2. `app/node_modules/.bin/electron scripts/make-icons.cjs` を実行
+2. リポジトリ直下で `node_modules/.bin/electron scripts/make-icons.cjs` を実行
 
 これで以下が一括更新される（`scripts/make-icons.cjs` の `TARGETS`/`BANNERS` が配置先の単一真実源＝増えたらここに足す）:
 

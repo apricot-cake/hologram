@@ -5,7 +5,7 @@
 // hashtags, tags). Runs via Electron because it renders placeholder images with
 // a canvas.
 //
-//   app/node_modules/.bin/electron scripts/inject-dummy.cjs  [saveFolder]
+//   (from repo root) node_modules/.bin/electron scripts/inject-dummy.cjs  [saveFolder]
 //
 // With no folder argument it writes to the configured save folder.
 //

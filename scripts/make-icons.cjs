@@ -3,7 +3,7 @@
 // Regenerate EVERY brand icon from one master image.
 //
 //   1. Replace the master:  assets/icon-master.png   (square, >=512px)
-//   2. Run:                 app/node_modules/.bin/electron scripts/make-icons.cjs
+//   2. Run (from repo root): node_modules/.bin/electron scripts/make-icons.cjs
 //
 // That single run rewrites every derived icon listed in TARGETS below, so an icon
 // swap can never go half-done (the recurring pain before this script existed). It
