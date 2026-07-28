@@ -36,3 +36,4 @@
 | [0008](0008-single-smart-search.md) | 検索モードの切替を廃し単一のスマート検索にする | 採用 |
 | [0009](0009-bottom-floating-selection-bar.md) | 選択中の操作は底部中央のフローティングバーに置く | 採用 |
 | [0010](0010-sqlite-as-the-metadata-truth-source.md) | メタデータの正本を SQLite に置き、ファイルは実体だけを持つ | 採用 |
+| [0011](0011-preserve-acquisition-payloads.md) | 取得したペイロードを原本として残し、正規化フィールドへの昇格だけを実需で絞る | 採用 |

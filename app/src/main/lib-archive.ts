@@ -16,7 +16,8 @@
 //   .trash/<name>                      trashed captures, opt-in (opts.includeTrash),
 //                                       filesystem-only snapshot (trash isn't in the DB)
 //   hologram-export.json               manifest { app, kind:'complete', version,
-//                                       source, includesTrash, exportedAt, fileCount }
+//                                       source, includesTrash, exportedAt, fileCount,
+//                                       rawPayloads: format + privacy note (#292) }
 //
 // The sidecar-shaped JSON is a BOUNDARY FORMAT, not storage: the library folder
 // itself holds no per-post JSON (#302), so the export regenerates it from the DB
@@ -34,9 +35,10 @@ import path from 'node:path';
 import { Transform } from 'node:stream';
 import { ZipFile } from 'yazl';
 import type Database from 'better-sqlite3';
+import type { RawPayloadShape } from '../../../native-host/raw-payload.mts';
 import { fillCardDims } from './lib-card-dims.ts';
 import { parseJsonLoose } from './lib-json.ts';
-import { postCapturedVia, postsFromDb, tagParentsFromDb, tagsFromDb } from './lib-db-query.ts';
+import { postCapturedVia, postRawPayloads, postsFromDb, tagParentsFromDb, tagsFromDb } from './lib-db-query.ts';
 import { createDbWriter } from './lib-db-write.ts';
 import { importTagParents, makeTagResolver, preparePostStmts, writePost } from './lib-db-record-writer.ts';
 
@@ -383,9 +385,14 @@ function buildTagParentsJson(sqlite: Database.Database) {
 // DB-internal parallel array (query.ts's tag-leaf id matching) with no meaning
 // outside this one database, so it's dropped; capturedVia is merged in separately
 // because postsFromDb's column list doesn't select it (lib-db-query.ts comment).
-function toSidecarJson(rec: any, capturedVia: string | null) {
+function toSidecarJson(rec: any, capturedVia: string | null, raw: RawPayloadShape[]) {
   const { tagIds, ...rest } = rec;
-  return { ...rest, capturedVia };
+  // raw: the post's acquisition originals (#292), included by default because a
+  // complete export that dropped them would not be complete — the originals are
+  // the one part of a record that cannot be re-fetched once a post is deleted.
+  // Omitted from the JSON entirely when a post has none, so records saved before
+  // this layer existed keep exactly the sidecar shape they had.
+  return raw.length ? { ...rest, capturedVia, raw } : { ...rest, capturedVia };
 }
 
 // Complete, directly-re-importable snapshot. Binaries (screenshots/media/avatars)
@@ -423,11 +430,15 @@ async function writeCompleteZip(sqlite: Database.Database, srcFolder: string, tr
 
   // Per-post records in sidecar shape, regenerated from the DB.
   const posts = await postsFromDb(sqlite);
-  const capturedVia = postCapturedVia(
-    sqlite,
-    posts.map((p: any) => p.captureId),
-  );
-  for (const rec of posts) addJson(toSidecarJson(rec, capturedVia.get(rec.captureId) ?? null), `library/${rec.captureId}.json`);
+  const captureIds = posts.map((p: any) => p.captureId);
+  const capturedVia = postCapturedVia(sqlite, captureIds);
+  const rawPayloads = postRawPayloads(sqlite, captureIds);
+  let rawPayloadCount = 0;
+  for (const rec of posts) {
+    const raw = rawPayloads.get(rec.captureId) ?? [];
+    rawPayloadCount += raw.length;
+    addJson(toSidecarJson(rec, capturedVia.get(rec.captureId) ?? null, raw), `library/${rec.captureId}.json`);
+  }
 
   // Organization layer, regenerated from the DB via the same getters
   // ipc-organize.ts/ipc-config.ts already use as the live read path.
@@ -453,14 +464,38 @@ async function writeCompleteZip(sqlite: Database.Database, srcFolder: string, tr
     for (const name of await collectFiles(trashDir)) await addFile(path.join(trashDir, name), `.trash/${name}`);
   }
 
-  zip.addBuffer(Buffer.from(JSON.stringify({ app: 'Hologram', kind: 'complete', version: 2, source: 'db', includesTrash: !!opts.includeTrash, exportedAt: nowIso || new Date().toISOString(), fileCount }, null, 2)), 'hologram-export.json');
+  // rawPayloads: the manifest states the format and the privacy caveat #292
+  // requires, because this is the point where the originals leave the machine.
+  // An original is the platform's response as received, so it routinely carries
+  // third-party fragments (quoted authors, a reply parent, profile details) that
+  // the normalized record dropped — someone handed this ZIP is receiving more
+  // than the library's visible contents.
+  const manifest = {
+    app: 'Hologram',
+    kind: 'complete',
+    version: 2,
+    source: 'db',
+    includesTrash: !!opts.includeTrash,
+    exportedAt: nowIso || new Date().toISOString(),
+    fileCount,
+    rawPayloads: {
+      count: rawPayloadCount,
+      location: 'library/<captureId>.json の raw[]',
+      format: 'payloadBase64 = gzip されたバイト列の base64。sha256 は圧縮前バイト列に対する値。encoding が omitted:oversize の項目は上限超過で本文を持たない',
+      privacy: '取得時に受け取った応答そのもの。引用元・返信先・プロフィールなど、ライブラリの表示には出ない第三者の情報を含みうる',
+    },
+  };
+  zip.addBuffer(Buffer.from(JSON.stringify(manifest, null, 2)), 'hologram-export.json');
   zip.end();
   await streamZipToFile(zip, outPath, onProgress ? (written) => onProgress(written, totalBytes) : undefined);
   return { fileCount };
 }
 
 // Images-only: the media files flat at the ZIP root (no sidecars/org JSONs), NOT
-// re-importable as a library.
+// re-importable as a library. Carries no acquisition originals either (#292
+// names this export explicitly): this is the "hand someone the pictures" shape,
+// and the originals are the part of a record most likely to hold third-party
+// fragments the recipient was never meant to receive.
 async function writeImagesZip(srcFolder, outPath, onProgress?: (written: number, total: number) => void) {
   const zip = new ZipFile();
   let fileCount = 0;

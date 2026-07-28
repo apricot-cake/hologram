@@ -8,11 +8,13 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
+import { unpackRawPayload } from '../native-host/raw-payload.mts';
 
 // 最小の 1x1 JPEG
 const jpegB64 = '/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACP/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AfwH/2Q==';
 
 const captureId = '1717500000000-abcd';
+const RAW_BODY = '{"text":"hi","unknown_future_field":42}';
 
 let tmp: string;
 let saveFolder: string;
@@ -30,7 +32,14 @@ beforeAll(async () => {
       type: 'save',
       captureId,
       image: jpegB64,
-      metadata: { url: 'https://x.com/u/status/1', platform: 'x', text: 'hi', tags: ['t'] },
+      metadata: {
+        url: 'https://x.com/u/status/1',
+        platform: 'x',
+        text: 'hi',
+        tags: ['t'],
+        // 拡張は受け取った本文をそのまま渡すだけ＝圧縮・ハッシュ・上限はブリッジ側（#292）
+        rawPayloads: [{ sourceKind: 'api:x/tweet-result', acquiredAt: '2026-07-28T00:00:00.000Z', contentType: 'application/json', body: RAW_BODY }],
+      },
     }),
     'utf8',
   );
@@ -74,5 +83,14 @@ describe('保存されたもの', () => {
     const envelope = JSON.parse(fs.readFileSync(path.join(saveFolder, '.hologram-inbox', 'new', `${captureId}.json`), 'utf8'));
     expect(envelope).toMatchObject({ format: 'hologram-inbox', version: 1, eventId: captureId, kind: 'post.capture' });
     expect(envelope.record).toMatchObject({ captureId, image: `${captureId}.jpg`, url: 'https://x.com/u/status/1' });
+  });
+
+  // #292: 拡張が渡した応答本文は、ブリッジで圧縮・ハッシュされて封筒に載る＝
+  // アプリが後で drain した時に raw_payloads へそのまま着く形になっている。
+  test('取得原本が畳まれて封筒に載る（本文へ復元できる）', () => {
+    const envelope = JSON.parse(fs.readFileSync(path.join(saveFolder, '.hologram-inbox', 'new', `${captureId}.json`), 'utf8'));
+    expect(envelope.record.raw).toHaveLength(1);
+    expect(envelope.record.raw[0]).toMatchObject({ sourceKind: 'api:x/tweet-result', acquiredAt: '2026-07-28T00:00:00.000Z', contentType: 'application/json', encoding: 'gzip', byteLength: Buffer.byteLength(RAW_BODY, 'utf8') });
+    expect(unpackRawPayload({ encoding: 'gzip', sha256: envelope.record.raw[0].sha256, payload: Buffer.from(envelope.record.raw[0].payloadBase64, 'base64') })).toBe(RAW_BODY);
   });
 });

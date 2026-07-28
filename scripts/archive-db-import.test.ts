@@ -11,6 +11,7 @@ import { openDatabase } from '../app/src/main/lib-db';
 import { importCompleteZipToDb, writeCompleteZip } from '../app/src/main/lib-archive';
 import { createDbWriter } from '../app/src/main/lib-db-write';
 import { makeTagResolver, preparePostStmts, writePost } from '../app/src/main/lib-db-record-writer';
+import { packRawPayloads, unpackRawPayload } from '../native-host/raw-payload.mts';
 
 const dirs: string[] = [];
 function mkTempDir(prefix: string) {
@@ -167,5 +168,53 @@ describe('importCompleteZipToDb: 旧形式（#300以前）ZIPとの互換', () =
     const res = await importCompleteZipToDb(handle.sqlite, JSZip, destFolder, buf);
     expect(res.ok).toBe(true);
     expect(handle.sqlite.prepare('SELECT text FROM posts WHERE captureId = ?').get('legacy-1').text).toBe('from an older export');
+  });
+});
+
+// #292: 原本が ZIP を跨いで往復すること＝別のマシンへライブラリを移しても、
+// 取り直せない側（原本）が置き去りにならない。
+describe('importCompleteZipToDb: 取得原本（#292）の往復', () => {
+  const body = '{"text":"hello","unknown_future_field":42}';
+
+  test('書き出した原本がそのまま取り込まれ、本文まで復元できる', async () => {
+    const srcHandle = openDatabase(path.join(mkTempDir('hologram-archive-raw-src-db-'), 'test.db'));
+    const srcLib = mkTempDir('hologram-archive-raw-src-lib-');
+    const out = path.join(mkTempDir('hologram-archive-raw-out-'), 'export.zip');
+    writePost(preparePostStmts(srcHandle.sqlite), makeTagResolver(srcHandle.sqlite), {
+      captureId: 'cap-raw',
+      capturedAt: '2026-01-01T00:00:00Z',
+      updatedAt: '2026-01-01T00:00:00Z',
+      raw: packRawPayloads([{ sourceKind: 'api:x/tweet-result', contentType: 'application/json', body }]),
+    } as any);
+    await writeCompleteZip(srcHandle.sqlite, srcLib, null, out, {});
+    srcHandle.sqlite.close();
+
+    await importCompleteZipToDb(handle.sqlite, JSZip, destFolder, await fs.promises.readFile(out));
+
+    const row = handle.sqlite.prepare('SELECT sourceKind, contentType, encoding, sha256, byteLength, payload FROM raw_payloads WHERE postId = ?').get('cap-raw');
+    expect({ sourceKind: row.sourceKind, contentType: row.contentType, byteLength: row.byteLength }).toEqual({ sourceKind: 'api:x/tweet-result', contentType: 'application/json', byteLength: Buffer.byteLength(body, 'utf8') });
+    expect(unpackRawPayload(row)).toBe(body);
+  });
+
+  // 原本は追記のみ＝同じ ZIP を二度取り込んでも増えない（投稿側の skip-if-exists と
+  // 一意制約の両方が効いているかを見る）
+  test('同じ ZIP の二度目のインポートで原本が二重にならない', async () => {
+    const srcHandle = openDatabase(path.join(mkTempDir('hologram-archive-raw2-src-db-'), 'test.db'));
+    const srcLib = mkTempDir('hologram-archive-raw2-src-lib-');
+    const out = path.join(mkTempDir('hologram-archive-raw2-out-'), 'export.zip');
+    writePost(preparePostStmts(srcHandle.sqlite), makeTagResolver(srcHandle.sqlite), {
+      captureId: 'cap-raw2',
+      capturedAt: '2026-01-01T00:00:00Z',
+      updatedAt: '2026-01-01T00:00:00Z',
+      raw: packRawPayloads([{ sourceKind: 'api:x/tweet-result', body }]),
+    } as any);
+    await writeCompleteZip(srcHandle.sqlite, srcLib, null, out, {});
+    srcHandle.sqlite.close();
+
+    const buf = await fs.promises.readFile(out);
+    await importCompleteZipToDb(handle.sqlite, JSZip, destFolder, buf);
+    await importCompleteZipToDb(handle.sqlite, JSZip, destFolder, buf);
+
+    expect(handle.sqlite.prepare('SELECT COUNT(*) AS n FROM raw_payloads WHERE postId = ?').get('cap-raw2').n).toBe(1);
   });
 });

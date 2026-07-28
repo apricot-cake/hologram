@@ -727,6 +727,11 @@ function buildRecord(meta, { captureId, capturedAt, postUrl, sendPlatform, extra
       replyToId: meta.replyToId,
       hashtags: meta.hashtags || [],
       tags: meta.tags || [],
+      // The acquisition originals (#292), still as received text — the native
+      // host compresses, hashes and caps them (native-host/raw-payload.mts).
+      // Carried on every save path, including a partial one: a response that
+      // yielded no usable fields is precisely the one whose body has to survive.
+      rawPayloads: meta.raw || [],
     },
     extra,
   );

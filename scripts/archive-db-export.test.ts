@@ -11,6 +11,7 @@ import { openDatabase } from '../app/src/main/lib-db';
 import { writeCompleteZip } from '../app/src/main/lib-archive';
 import { createDbWriter } from '../app/src/main/lib-db-write';
 import { makeTagResolver, preparePostStmts, writePost } from '../app/src/main/lib-db-record-writer';
+import { packRawPayloads, unpackRawPayload } from '../native-host/raw-payload.mts';
 
 const dirs: string[] = [];
 function mkTempDir(prefix: string) {
@@ -127,6 +128,50 @@ describe('writeCompleteZip: tag-parents.json', () => {
     await writeCompleteZip(sqlite, srcFolder, trashDir, outPath, {});
     const zip = await loadZip(outPath);
     expect(zip.file('library/tag-parents.json')).toBeNull();
+  });
+});
+
+// #292: 完全 ZIP は取得原本を既定で同梱する（原本は投稿が消えたら二度と取り直せない＝
+// 落とした ZIP は「完全」ではない）。マニフェストは形式とプライバシー注意を書く。
+describe('writeCompleteZip: 取得原本（#292）', () => {
+  const body = '{"text":"hello","unknown_future_field":42}';
+
+  function seedRaw() {
+    const { sqlite } = handle;
+    writePost(preparePostStmts(sqlite), makeTagResolver(sqlite), {
+      captureId: 'cap-raw',
+      image: 'cap-raw.jpg',
+      capturedAt: '2026-01-01T00:00:00Z',
+      updatedAt: '2026-01-01T00:00:00Z',
+      raw: packRawPayloads([{ sourceKind: 'api:x/tweet-result', contentType: 'application/json', body }]),
+    } as any);
+  }
+
+  test('サイドカーの raw[] に原本が入り、本文がそのまま取り出せる', async () => {
+    seedRaw();
+    await writeCompleteZip(handle.sqlite, srcFolder, trashDir, outPath, {});
+    const zip = await loadZip(outPath);
+    const rec = JSON.parse(await zip.file('library/cap-raw.json')?.async('string'));
+    expect(rec.raw).toHaveLength(1);
+    expect(rec.raw[0].sourceKind).toBe('api:x/tweet-result');
+    expect(unpackRawPayload({ encoding: rec.raw[0].encoding, sha256: rec.raw[0].sha256, payload: Buffer.from(rec.raw[0].payloadBase64, 'base64') })).toBe(body);
+  });
+
+  // 原本を持たないレコード（この層より前の保存分）はサイドカーの形を変えない
+  test('原本の無い投稿のサイドカーには raw を足さない', async () => {
+    await writeCompleteZip(handle.sqlite, srcFolder, trashDir, outPath, {});
+    const zip = await loadZip(outPath);
+    expect(JSON.parse(await zip.file('library/cap-1.json')?.async('string')).raw).toBeUndefined();
+  });
+
+  test('マニフェストが件数・形式・プライバシー注意を書く', async () => {
+    seedRaw();
+    await writeCompleteZip(handle.sqlite, srcFolder, trashDir, outPath, {});
+    const zip = await loadZip(outPath);
+    const manifest = JSON.parse(await zip.file('hologram-export.json')?.async('string'));
+    expect(manifest.rawPayloads.count).toBe(1);
+    expect(manifest.rawPayloads.format).toContain('gzip');
+    expect(manifest.rawPayloads.privacy).toContain('第三者');
   });
 });
 
