@@ -24,7 +24,13 @@ export default defineConfig({
     // better-sqlite3 (native addon), kysely, electron-log, jszip, yauzl, yazl
     // etc. stay external (required from node_modules at runtime) rather than
     // bundled — required for the native addon, kept for the rest for parity.
-    plugins: [externalizeDepsPlugin()],
+    //
+    // koffi is named explicitly because externalizeDepsPlugin only externalizes
+    // `dependencies`, and koffi is a devDependency on purpose: it is loaded only
+    // by the HOLOGRAM_START_INACTIVE verify path, so it must stay out of the
+    // shipped app. Bundling it would both break (it is a native addon) and drag
+    // a dev-only dependency into dist.
+    plugins: [externalizeDepsPlugin({ include: ['koffi'] })],
   },
   preload: {
     // electron-log must be BUNDLED into the preload output (not required at

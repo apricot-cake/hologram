@@ -1378,6 +1378,31 @@ function createWindow(show = true) {
   }
 }
 
+// Move a window to the bottom of the z-order without activating it. Only used by
+// the HOLOGRAM_START_INACTIVE verify path below, so koffi is a devDependency and
+// the require is deliberately lazy: a packaged build never reaches this line, and
+// if it somehow does, the window just stays where it is instead of the app dying.
+// HWND is passed as uintptr_t rather than void* — getNativeWindowHandle() returns
+// a Buffer HOLDING the handle, and a void* parameter would pass the address of
+// that buffer instead of the handle itself.
+function sendWindowToBack(w: BrowserWindow): void {
+  if (process.platform !== 'win32') return;
+  const HWND_BOTTOM = 1;
+  const SWP_NOSIZE = 0x0001;
+  const SWP_NOMOVE = 0x0002;
+  const SWP_NOACTIVATE = 0x0010;
+  try {
+    const koffi = require('koffi');
+    const user32 = koffi.load('user32.dll');
+    const SetWindowPos = user32.func('__stdcall', 'SetWindowPos', 'bool', ['uintptr_t', 'uintptr_t', 'int', 'int', 'int', 'int', 'uint']);
+    const hwnd = w.getNativeWindowHandle().readBigUInt64LE(0);
+    const ok = SetWindowPos(hwnd, HWND_BOTTOM, 0, 0, 0, 0, SWP_NOSIZE | SWP_NOMOVE | SWP_NOACTIVATE);
+    if (!ok) log.warn('SetWindowPos(HWND_BOTTOM) returned false');
+  } catch (err) {
+    log.warn('could not send window to back', { error: (err as Error).message });
+  }
+}
+
 // Side-effect-free launch check: skips host registration, hides the window,
 // and quits once the renderer has loaded. Run with HOLOGRAM_SMOKE=1.
 const SMOKE = process.env.HOLOGRAM_SMOKE === '1';
@@ -1431,7 +1456,13 @@ if (!gotSingleInstanceLock) {
     registerImageProtocol();
     installNavigationGuards();
     const startMin = !SMOKE && process.env.HOLOGRAM_START_MINIMIZED === '1';
-    createWindow(!SMOKE && !startMin); // start-minimized → create hidden, then show inactive below
+    // Verification launches (the sandbox second instance, a restart driven from a
+    // session) must not interrupt whatever the user is doing on screen. Minimizing
+    // is not an option here: the window has to keep compositing so CSS transitions
+    // and real layout are observable, which is the whole reason a verify run opens
+    // a window instead of using the SMOKE hidden one.
+    const startInactive = !SMOKE && !startMin && process.env.HOLOGRAM_START_INACTIVE === '1';
+    createWindow(!SMOKE && !startMin && !startInactive); // both → create hidden, then show without activating below
     watchInboxFolder();
     if (!SMOKE) {
       armBackupSchedule(); // interval スケジュールを起動
@@ -1498,6 +1529,20 @@ if (!gotSingleInstanceLock) {
         (win as BrowserWindow).showInactive();
         (win as BrowserWindow).minimize();
         (win as BrowserWindow).flashFrame(false);
+      });
+    }
+
+    // Start visible but behind whatever the user already has open. showInactive()
+    // covers only half of that — it skips activation, but the window still lands on
+    // top of the z-order, measured on Windows 11. That is upstream's settled
+    // position, not a bug: "showInactive() should maintain the Z order" was closed
+    // as wontfix (electron#9941), and Electron exposes moveTop() with no counterpart.
+    // So the window is pushed down through the Win32 call Windows provides for it.
+    if (startInactive && win) {
+      win.once('ready-to-show', () => {
+        (win as BrowserWindow).showInactive();
+        (win as BrowserWindow).flashFrame(false);
+        sendWindowToBack(win as BrowserWindow);
       });
     }
 

@@ -223,6 +223,10 @@ async function start() {
     APPDATA: appData,
     HOLOGRAM_CONFIG_DIR: configDir,
     HOLOGRAM_SANDBOX: '1',
+    // A verify instance is started by a session, not by the person at the keyboard:
+    // it must not pull the foreground away from what they are doing. Set
+    // HOLOGRAM_START_INACTIVE=0 for the rare run you want to drive by hand.
+    HOLOGRAM_START_INACTIVE: process.env.HOLOGRAM_START_INACTIVE || '1',
   });
   const child = spawn(electronPath, ['.', `--remote-debugging-port=${port}`], {
     cwd: appDir,
