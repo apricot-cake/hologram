@@ -59,9 +59,7 @@ function Stop-WithError($message) {
 # not exist looks like success from PowerShell's side.
 if (-not $electron) {
   Stop-WithError("electron.exe が見つかりません（app/node_modules と リポジトリ直下の node_modules の両方を確認しました）。`n" +
-    "npm install --ignore-scripts の後は electron 本体が未取得のままです。次を実行してください:`n" +
-    "  node node_modules/electron/install.js`n" +
-    "（npm rebuild electron は成功と表示しますがダウンロードしません）")
+    "npm run setup を実行してください（npm rebuild electron は成功と表示しますがダウンロードしません）")
 }
 
 # Self-heal: (re)register the task when it is MISSING or when its stored action has DRIFTED

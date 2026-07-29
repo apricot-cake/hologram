@@ -1,19 +1,19 @@
-// setup.cts が持つ2つの「回避策はまだ必要か」判定のテスト。
+// setup.cts が持つ「回避策はまだ必要か」判定のテスト。
 //
 // ここを守る理由は、判定が installer の挙動を直接動かすため。誤って「もう不要」と
 // 答えると次の install がそのまま失敗し、誤って「まだ必要」と答え続けると回避策が
 // 恒久化する。どちらの向きの誤りも、判定を目視で確かめるまで表に出ない。
 //
 // 実物の node_modules ではなく fixture のツリーを読ませる（本物は上流の更新で
-// 中身が変わる＝テストが勝手に赤くなる）。判定はどちらも「ディスクの
-// package.json を読むだけ」なので、fixture で十分に再現できる。
+// 中身が変わる＝テストが勝手に赤くなる）。判定は「ディスクの package.json を
+// 読むだけ」なので、fixture で十分に再現できる。
 
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 
-const { sqliteCheck, peerCheck, decideFlags, WORKAROUNDS } = require('./setup.cts');
+const { peerCheck, decideFlags, WORKAROUNDS } = require('./setup.cts');
 
 let tmp: string;
 
@@ -38,15 +38,14 @@ describe('decideFlags', () => {
   test('必要な回避策のフラグだけを並べる', () => {
     const needed = { needed: true, reason: '' };
     const done = { needed: false, reason: '' };
-    expect(decideFlags([needed, needed])).toEqual(WORKAROUNDS.map((w: { flag: string }) => w.flag));
-    expect(decideFlags([done, done])).toEqual([]);
-    expect(decideFlags([done, needed])).toEqual([WORKAROUNDS[1].flag]);
+    expect(decideFlags([needed])).toEqual(WORKAROUNDS.map((w: { flag: string }) => w.flag));
+    expect(decideFlags([done])).toEqual([]);
   });
 
   test('判定不能（null）は「まだ必要」と同じに倒す', () => {
     // まっさらな clone では読むものが無い。ここで「不要」に倒すと、その install が
     // 失敗するか半端なツリーを残す＝安全側は必ず「必要」。
-    expect(decideFlags([null, null])).toEqual(WORKAROUNDS.map((w: { flag: string }) => w.flag));
+    expect(decideFlags([null])).toEqual(WORKAROUNDS.map((w: { flag: string }) => w.flag));
   });
 });
 
@@ -72,31 +71,5 @@ describe('peerCheck', () => {
 
   test('読むものが無ければ判定不能（null）', () => {
     expect(peerCheck(tmp)).toBeNull();
-  });
-});
-
-describe('sqliteCheck', () => {
-  test('binding.gyp があり install スクリプトが無ければ必要', () => {
-    const dir = writePkg('better-sqlite3', { version: '13.0.1', scripts: { test: 'mocha' } });
-    fs.writeFileSync(path.join(dir, 'binding.gyp'), '{}');
-    expect(sqliteCheck(tmp)?.needed).toBe(true);
-  });
-
-  test.each([
-    ['gypfile:false を宣言した', { version: '13.0.2', gypfile: false }],
-    ['install スクリプトを持った', { version: '13.0.2', scripts: { install: 'prebuild-install || node-gyp rebuild' } }],
-  ])('上流が%s → 不要', (_label, pkg) => {
-    const dir = writePkg('better-sqlite3', pkg);
-    fs.writeFileSync(path.join(dir, 'binding.gyp'), '{}');
-    expect(sqliteCheck(tmp)?.needed).toBe(false);
-  });
-
-  test('binding.gyp を同梱しなくなれば不要', () => {
-    writePkg('better-sqlite3', { version: '14.0.0' });
-    expect(sqliteCheck(tmp)?.needed).toBe(false);
-  });
-
-  test('読むものが無ければ判定不能（null）', () => {
-    expect(sqliteCheck(tmp)).toBeNull();
   });
 });
