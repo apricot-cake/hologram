@@ -97,6 +97,8 @@ Start-ScheduledTask -TaskName 'HologramLaunch'
 
 **`capture.log` が保存イベントの正本**＝1保存1行の JSON で、`stage`（どの段か）・`phase`（`ok` / `fail`）・`url`・`metaOk`（投稿情報が取れたか）・`metaReason`（取れなかった理由）・`mediaCount` が入る。拡張は自分の段（select / permalink / capture / crop / metadata）を、ブリッジは最終結果をここへ足す。**保存の可否を知りたければここを読む。**
 
+`metaReason` の値は4つ。`fetchFailed`（こちらの取得が壊れた＝**再試行で直りうる唯一の値**）／`unavailable`（投稿が無い＝削除・アカウント消滅・存在しない id）／`protected`（鍵付き）／`ageRestricted`（年齢制限）。**後ろの3つは何度やり直しても同じ結果になる。** とくに `ageRestricted` は**投稿が生きているのに取れない**状態＝X の埋め込み用 API（`cdn.syndication.twimg.com`）は常に匿名で、X は生年月日を持たない閲覧者に成人向けコンテンツを出さない。ブラウザで開けるのに保存できない、が正常な挙動として起きるのはこの値のときだけ（#505）。
+
 ⚠️ **`bridge.log` は「どの投稿の話か」を一切書かない**＝書かれるのは `launched …`（Chrome がホストを見つけて起動できた証拠）と `recv type=…` だけ。**ここに投稿の URL が無いことは、その保存が失敗した証拠にも、ホストへ届かなかった証拠にもならない**（2026-07-29・#492 の調査で2セッションが続けてこれを誤読した。実際はその保存は `capture.log` に記録されており、しかも `phase:"ok"` だったことが不具合の本体だった）。ホストが起動したかを見るのがこのログの唯一の役割。
 
 ホストまで届かなかった分は拡張側の chrome.storage リングバッファにも積まれ、`chrome-extension://<id>/diag.html` で読める。

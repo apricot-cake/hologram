@@ -116,6 +116,11 @@ interface ErrorResponse {
   ok: false;
   error?: string;
   errorKind?: SaveFailureKind;
+  // Only set alongside errorKind 'post-unavailable': WHY the post info could
+  // not be obtained ('ageRestricted' | 'protected' | 'unavailable' |
+  // 'fetchFailed'), so the banner can name the cause instead of the family
+  // (#505). Absent for every other failure, which is about our own plumbing.
+  metaReason?: string | null;
 }
 
 // captureAndSend's outcome rides back to the tab on a separate {type:'notify'}

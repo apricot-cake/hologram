@@ -7,7 +7,6 @@
 // Renderer services are migrating off a shared global bridge to real ES modules
 // one wave at a time; the ones imported below are converted, the rest are still
 // read via that bridge at call time.
-import JSZip from 'jszip';
 import { treeLeaves, evalNode, hostOf, userKey, facetViewOf, facetSetOp, facetSetNeg, facetDefaultOp, removeCondsMatching as removeCondsMatchingIn } from './query.ts';
 import { makeListing, bindNamedPosters } from './listing.ts';
 import { newShuffleSeed } from './shuffle.ts';
@@ -22,6 +21,7 @@ import { mediaFilesOf, densityImage, percentileFn, makeGallery, loadUngrouped, l
 import { makeTags, bindTagKindOf, bindPosterFilterVocab, getTagTypes, getTagLabels, getPosterTags, load as loadTags } from './tags.ts';
 import { makeTabLabels } from './tab-state.ts';
 import { importComplete, importPosts } from './posts.ts';
+import { readLegacyZipPosts } from './legacy-zip-import.ts';
 import { open as confirmOpen } from './confirm.ts';
 import { compile as searchCompile } from './search.ts';
 import { hologramI18n } from './i18n.ts';
@@ -243,7 +243,7 @@ export function endFilterEditSession(): void {
   // Manifest-level strings come from _locales/*/messages.json via Chrome.
   const { getMessage } = await hologramI18n;
   // The shell is React-owned now (AppShell.tsx): its DOM (#postGrid / #posterGrid /
-  // #emptyState / #importZipInput / #searchBox / #sortSelect …) is rendered on mount,
+  // #emptyState / #searchBox / #sortSelect …) is rendered on mount,
   // not present as static index.html markup. Wait for that mount before any of the
   // shell-DOM setup below runs, so getElementById/byId resolve. (viewerReady still
   // resolves at the end of this IIFE → AppBoot's bootApp fires after, unchanged.)
@@ -395,7 +395,7 @@ export function endFilterEditSession(): void {
         setSearchBoxValue('');
         renderPosters();
       } else resetAllFilters();
-    } else if (btn.id === 'emptyImportBtn') byId('importZipInput').click();
+    } else if (btn.id === 'emptyImportBtn') void runZipImport();
   });
 
   // --- カテゴリ値フライアウト: サイドバーの行/タググループボタンの横に開く。
@@ -1778,77 +1778,62 @@ export function endFilterEditSession(): void {
   };
 
   // --- Import from ZIP ---
-  // 新形式（完全エクスポート: library/ + hologram-export.json）は main 側で展開して
-  // ライブラリへ復元（整理情報もマージ）。旧形式（metadata.json + images/）は従来どおり
-  // レンダラで読んで importPosts。
-  byId('importZipInput').addEventListener('change', async (e) => {
-    const file = (e.target as HTMLInputElement).files?.[0];
-    if (!file) return;
-    notify(getMessage('importing'));
+  // 完全エクスポート（library/ + hologram-export.json）は main がファイル選択から
+  // 展開まで担当する（#485）。旧形式（metadata.json + images/）だけがバイト列付きで
+  // 返り、レンダラ側の legacy-zip-import へ回る（その去就は #322）。設定画面の
+  // 取り込みボタンと空状態の CTA の両方がここを通る。
+  async function runZipImport() {
     try {
-      const buf = new Uint8Array(await file.arrayBuffer());
-      const zip = await JSZip.loadAsync(buf);
-      const isComplete = !!zip.file('hologram-export.json') || Object.keys(zip.files).some((p) => p.indexOf('library/') === 0);
-      if (isComplete) {
-        const res = await importComplete(buf);
+      const res = await importComplete();
+      if (res && res.canceled) return;
+      notify(getMessage('importing'));
+      const done = async (imported: number, skipped: number) => {
         await loadPosts();
-        (e.target as HTMLInputElement).value = '';
-        if (!res || !res.ok) {
+        if (skipped > 0) notify(getMessage('importSkipped', [imported, skipped]));
+        else notify(getMessage('imported', [imported]));
+      };
+      if (res && res.legacy && res.bytes) {
+        const posts = await readLegacyZipPosts(new Uint8Array(res.bytes));
+        if (!posts) {
           notify(getMessage('importFailed'));
           return;
         }
-        if (res.skipped > 0) notify(getMessage('importSkipped', [res.imported, res.skipped]));
-        else notify(getMessage('imported', [res.imported]));
+        // #34: 取り込む投稿が既にライブラリにあるとき、コピー／置換／スキップを
+        // 1回だけ聞く（1件ずつ聞くと数百回になるため、バッチ単位）。重複が無ければ
+        // main 側が即座に取り込むので、この確認は出ない。
+        const first = await importPosts(posts);
+        if (first?.needsChoice) {
+          const finish = async (mode: string) => {
+            const r = await importPosts(posts, mode);
+            await done(r.imported, r.skipped);
+          };
+          confirmOpen({
+            message: getMessage('importDuplicate', [first.duplicates]),
+            description: getMessage('importDuplicateDesc'),
+            okLabel: getMessage('importDuplicateReplace'),
+            altLabel: getMessage('importDuplicateCopy'),
+            cancelLabel: getMessage('importDuplicateSkip'),
+            onOk: () => void finish('replace'),
+            onAlt: () => void finish('copy'),
+            // Esc lands here too, and skipping is the answer that changes the
+            // least — the library keeps what it has.
+            onCancel: () => void finish('skip'),
+          });
+          return;
+        }
+        await done(first.imported, first.skipped);
         return;
       }
-      const metaEntry = zip.file('metadata.json');
-      if (!metaEntry) {
+      if (!res || !res.ok) {
+        await loadPosts();
         notify(getMessage('importFailed'));
-        (e.target as HTMLInputElement).value = '';
         return;
       }
-      const meta = JSON.parse(await metaEntry.async('string'));
-      const posts: HologramPost[] = [];
-      for (const m of Array.isArray(meta) ? meta : []) {
-        const f = m.imageFile && zip.file(m.imageFile);
-        if (!f) continue;
-        const b64 = await f.async('base64');
-        posts.push(Object.assign({}, m, { image: 'data:image/jpeg;base64,' + b64 }));
-      }
-      (e.target as HTMLInputElement).value = '';
-      // #34: 取り込む投稿が既にライブラリにあるとき、コピー／置換／スキップを
-      // 1回だけ聞く（1件ずつ聞くと数百回になるため、バッチ単位）。重複が無ければ
-      // main 側が即座に取り込むので、この確認は出ない。
-      const first = await importPosts(posts);
-      if (first?.needsChoice) {
-        const finish = async (mode: string) => {
-          const res = await importPosts(posts, mode);
-          await loadPosts();
-          if (res.skipped > 0) notify(getMessage('importSkipped', [res.imported, res.skipped]));
-          else notify(getMessage('imported', [res.imported]));
-        };
-        confirmOpen({
-          message: getMessage('importDuplicate', [first.duplicates]),
-          description: getMessage('importDuplicateDesc'),
-          okLabel: getMessage('importDuplicateReplace'),
-          altLabel: getMessage('importDuplicateCopy'),
-          cancelLabel: getMessage('importDuplicateSkip'),
-          onOk: () => void finish('replace'),
-          onAlt: () => void finish('copy'),
-          // Esc lands here too, and skipping is the answer that changes the
-          // least — the library keeps what it has.
-          onCancel: () => void finish('skip'),
-        });
-        return;
-      }
-      await loadPosts();
-      if (first.skipped > 0) notify(getMessage('importSkipped', [first.imported, first.skipped]));
-      else notify(getMessage('imported', [first.imported]));
+      await done(res.imported, res.skipped);
     } catch {
       notify(getMessage('importFailed'));
-      (e.target as HTMLInputElement).value = '';
     }
-  });
+  }
 
   // Backup status rail (#mirrorStatus) is fully owned by the MirrorStatus component now — it
   // imports backup.ts (getBackup + onBackupStart/Done) directly and derives the rail model

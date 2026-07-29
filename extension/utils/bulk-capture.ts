@@ -26,6 +26,7 @@
 // The bookmarks-list check lives with the rest of X's page knowledge (#212);
 // this module is the intake FLOW, which is X-specific only because X is the
 // one site with such a list so far.
+import { SAVE_WATCHDOG_MS, SAVED_QUERY_TIMEOUT_MS } from './deadline.ts';
 import type { CaptureSite } from './extractor/types.ts';
 import { isXBookmarksPage } from './extractor/x.ts';
 import { ICONS, makeIcon, makeSpinner } from './icons.ts';
@@ -33,7 +34,7 @@ import { ensureTokens, motion, prefersReducedMotion, token } from './tokens.ts';
 import type { HologramI18nApi } from './i18n.ts';
 import type { CheckSavedMessage, CheckSavedResponse, SavePostMessage, SaveResponse } from './messages.ts';
 
-type EntryState = 'unknown' | 'queued' | 'saving' | 'saved' | 'skipped' | 'deferred' | 'unavailable' | 'failed';
+type EntryState = 'unknown' | 'queued' | 'saving' | 'saved' | 'skipped' | 'deferred' | 'unavailable' | 'ageRestricted' | 'failed';
 
 // One save at a time, and no faster than this. The metadata fetch and the media
 // download are the only things X sees, and this keeps them at a human cadence.
@@ -52,6 +53,7 @@ export function startBulkCapture(site: CaptureSite, i18n: HologramI18nApi): void
   let skippedCount = 0;
   let deferredCount = 0;
   let unavailableCount = 0;
+  let ageRestrictedCount = 0;
   let failedCount = 0;
 
   let stopped = false;
@@ -168,7 +170,20 @@ export function startBulkCapture(site: CaptureSite, i18n: HologramI18nApi): void
     const urls = [...entries].filter(([, state]) => state === 'unknown').map(([url]) => url);
     if (!urls.length) return;
     asking = true;
+    // A question that is never answered would leave `asking` stuck true and no
+    // further batch would ever be sent — the run would look alive and take
+    // nothing (#507). Timing out just clears the flag: the next mounted row
+    // brings us back here and asks again.
+    let answered = false;
+    const askTimer = setTimeout(() => {
+      if (answered) return;
+      answered = true;
+      asking = false;
+    }, SAVED_QUERY_TIMEOUT_MS);
     chrome.runtime.sendMessage({ type: 'checkSaved', urls } satisfies CheckSavedMessage, (res?: CheckSavedResponse) => {
+      if (answered) return;
+      answered = true;
+      clearTimeout(askTimer);
       asking = false;
       if (chrome.runtime.lastError || !res?.ok || !res.results) return; // host unreachable: ask again next pass
       for (const url of urls) {
@@ -212,6 +227,22 @@ export function startBulkCapture(site: CaptureSite, i18n: HologramI18nApi): void
     busy = true;
     lastSaveStartedAt = Date.now();
     entries.set(url, 'saving');
+    // The queue is serial, so one unanswered save stops the whole intake: `busy`
+    // never clears and every remaining bookmark waits behind it, under a banner
+    // that keeps saying the run is in progress (#507). The deadline gives up on
+    // that ONE post — counted as failed, which is what the summary is for — and
+    // lets the queue move on.
+    let settled = false;
+    const watchdog = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      if (stopped) return; // the run already ended and printed its summary
+      busy = false;
+      entries.set(url, 'failed');
+      failedCount++;
+      paint();
+      schedulePump();
+    }, SAVE_WATCHDOG_MS);
     chrome.runtime.sendMessage(
       {
         type: 'savePost',
@@ -222,6 +253,9 @@ export function startBulkCapture(site: CaptureSite, i18n: HologramI18nApi): void
         capturedVia: 'x-bookmarks',
       } satisfies SavePostMessage,
       (res?: SaveResponse) => {
+        if (settled) return; // a late answer to a post already given up on
+        settled = true;
+        clearTimeout(watchdog);
         busy = false;
         // Narrowed here rather than inside the branch below: that condition is
         // a disjunction (the port itself may have failed), so it tells TypeScript
@@ -235,7 +269,16 @@ export function startBulkCapture(site: CaptureSite, i18n: HologramI18nApi): void
           // it is counted apart from real failures: a bookmark list can hold a
           // handful of dead posts forever, and every run would otherwise report
           // them as breakage the user is meant to go and fix.
-          if (failure?.errorKind === 'post-unavailable') {
+          //
+          // Age-restricted posts are split off again (#505): those are ALIVE —
+          // X simply serves no post info to an anonymous embed request, which is
+          // the only kind we can make. Folding them into "deleted or private"
+          // would tell the user the post is gone when it is still there, and
+          // would hide that re-running the intake can never change the outcome.
+          if (failure?.errorKind === 'post-unavailable' && failure.metaReason === 'ageRestricted') {
+            entries.set(url, 'ageRestricted');
+            ageRestrictedCount++;
+          } else if (failure?.errorKind === 'post-unavailable') {
             entries.set(url, 'unavailable');
             unavailableCount++;
           } else {
@@ -287,7 +330,7 @@ export function startBulkCapture(site: CaptureSite, i18n: HologramI18nApi): void
     banner.style.borderColor = bad ? token.warning : token.success;
     label.textContent = summaryText(byUser);
     stopButton.remove();
-    setTimeout(dismiss, bad || deferredCount || unavailableCount ? 6000 : 3500);
+    setTimeout(dismiss, bad || deferredCount || unavailableCount || ageRestrictedCount ? 6000 : 3500);
   }
 
   function summaryText(byUser: boolean): string {
@@ -295,6 +338,7 @@ export function startBulkCapture(site: CaptureSite, i18n: HologramI18nApi): void
     const parts = [t('bulkSummarySaved', [savedCount]), t('bulkSummarySkipped', [skippedCount])];
     if (deferredCount > 0) parts.push(t('bulkSummaryDeferred', [deferredCount]));
     if (unavailableCount > 0) parts.push(t('bulkSummaryUnavailable', [unavailableCount]));
+    if (ageRestrictedCount > 0) parts.push(t('bulkSummaryAgeRestricted', [ageRestrictedCount]));
     if (failedCount > 0) parts.push(t('bulkSummaryFailed', [failedCount]));
     return `${head} — ${parts.join(' / ')}`;
   }

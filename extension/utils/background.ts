@@ -1,6 +1,7 @@
 // Which sites exist, and everything platform-specific about them, comes from
 // the extractor registry (utils/extractor/) — this file holds no per-platform
 // branch of its own (#212).
+import { CROP_TIMEOUT_MS, NATIVE_HOST_TIMEOUT_MS, SAVED_QUERY_TIMEOUT_MS, withDeadline } from './deadline.ts';
 import { extractorFor, fetchPostMetadata, getHostname, highResUrlOf, isAllowedSender, mediaKeyOf } from './extractor/index.ts';
 import type { PostRecord } from './extractor/types.ts';
 import type { BridgeAck, CaptureAndSendResponse, CheckSavedResponse, ContentToBackgroundMessage, CropImageMessage, CropImageResponse, DumpLogsResponse, LogCaptureResponse, NotifyMessage, SavedEntry, SavedResults, SavedUpdateMessage, SaveResponse } from './messages.ts';
@@ -18,14 +19,22 @@ export function startBackground(): void {
 
   interface StageError extends Error {
     stage: string;
+    metaReason?: string | null;
   }
 
   // Tag an error with the pipeline stage it failed at, so the single catch in the
   // message handler can log WHICH stage broke. select/permalink are reported by
   // content.js; capture/crop/metadata/bridge are tagged here.
-  function stageError(stage: string, message: string): StageError {
+  //
+  // metaReason rides along for the one failure the user is not meant to repair:
+  // the host refuses a save that obtained nothing (#492), and WHY the post info
+  // was missing is the difference between "deleted, gone for good" and
+  // "age-restricted, alive but out of this route's reach" (#505). Without it
+  // the banner can only name the whole family.
+  function stageError(stage: string, message: string, metaReason: string | null = null): StageError {
     const err = new Error(message) as StageError;
     err.stage = stage;
+    err.metaReason = metaReason;
     return err;
   }
 
@@ -97,7 +106,7 @@ export function startBackground(): void {
         console.error(error);
         const errorKind = classifySaveFailure(error?.message);
         void logCapture({ stage: error?.stage || 'unknown', phase: 'fail', platform: message.platform, host: senderHost, url: message.postUrl, error: error?.message }, true);
-        sendResponse({ ok: false, errorKind, error: error?.message } satisfies SaveResponse);
+        sendResponse({ ok: false, errorKind, metaReason: error?.metaReason || null, error: error?.message } satisfies SaveResponse);
       });
     return true; // async response
   });
@@ -129,7 +138,7 @@ export function startBackground(): void {
     try {
       ack = await sendPostToBridge(captureId, record, metaOk, meta.metaError || null);
     } catch (err) {
-      throw stageError('bridge', err?.message || 'bridge save failed');
+      throw stageError('bridge', err?.message || 'bridge save failed', meta.metaError || null);
     }
     markSaved([record.url, postUrl], ack?.captureId || captureId, savedMediaUrls(ack), tab.id);
     const grouped = await bumpRecentSave(record.url);
@@ -186,7 +195,15 @@ export function startBackground(): void {
       throw stageError('capture', err?.message || 'captureVisibleTab failed');
     }
 
-    const response: CropImageResponse = await chrome.tabs.sendMessage(tab.id, { type: 'cropImage', dataUrl, rect } satisfies CropImageMessage);
+    // Bounded (#507): the answer comes from the page, and a page that navigated
+    // away, froze, or tore its listener down mid-capture never sends one — this
+    // await had no end, and neither did the banner still spinning over there.
+    let response: CropImageResponse;
+    try {
+      response = await withDeadline<CropImageResponse>(chrome.tabs.sendMessage(tab.id, { type: 'cropImage', dataUrl, rect } satisfies CropImageMessage), CROP_TIMEOUT_MS, 'crop');
+    } catch (err) {
+      throw stageError('crop', err?.message || 'cropImage failed');
+    }
     if (!response?.croppedDataUrl) throw stageError('crop', 'Cropping failed');
     const jpegBase64 = response.croppedDataUrl.split(',')[1];
 
@@ -256,7 +273,7 @@ export function startBackground(): void {
         return;
       }
 
-      timer = setTimeout(() => finish(new Error('Native host timed out')), 30000);
+      timer = setTimeout(() => finish(new Error('Native host timed out')), NATIVE_HOST_TIMEOUT_MS);
 
       port.onMessage.addListener((msg) => {
         if (msg?.ok) finish(null, msg);
@@ -355,7 +372,7 @@ export function startBackground(): void {
       const timer = setTimeout(() => {
         pendingQueries.delete(id);
         reject(new Error('Native host timed out'));
-      }, 8000);
+      }, SAVED_QUERY_TIMEOUT_MS);
       pendingQueries.set(id, { resolve: (msg) => resolve((msg && msg.results) || {}), reject, timer });
       try {
         port.postMessage({ type: 'query', id, urls });
@@ -658,7 +675,7 @@ export function startBackground(): void {
         console.error(error);
         const errorKind = classifySaveFailure(error?.message);
         void logCapture({ stage: error?.stage || 'unknown', phase: 'fail', platform: message.platform, host: senderHost, url: message.postUrl, error: error?.message }, true);
-        sendResponse({ ok: false, errorKind } satisfies SaveResponse);
+        sendResponse({ ok: false, errorKind, metaReason: error?.metaReason || null } satisfies SaveResponse);
       });
     return true; // async response
   });
@@ -738,7 +755,7 @@ export function startBackground(): void {
     try {
       ack = await send();
     } catch (err) {
-      throw stageError('bridge', err?.message || 'bridge save failed');
+      throw stageError('bridge', err?.message || 'bridge save failed', meta.metaError || null);
     }
     markSaved([record.url, postUrl], ack?.captureId || captureId, savedMediaUrls(ack), tab.id); // light this post's TL badge now
     // Surface metadata-fetch failure to the drop overlay (same partial-success
