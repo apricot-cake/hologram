@@ -385,7 +385,7 @@ describe('保存ボタン', () => {
 
     expect(b.tagName).toBe('BUTTON');
     expect(b.style.width).toBe('28px');
-    expect(b.style.background).toBe('rgba(20, 22, 26, 0.76)');
+    expect(b.style.background).toBe('var(--hologram-surface)');
     expect(b.getAttribute('aria-label')).toBe('Save image');
     expect(b.textContent).toBe('');
     expect(animatedElements.has(b)).toBe(false);
@@ -395,7 +395,8 @@ describe('保存ボタン', () => {
     const b = saveButtons()[0];
     b.dispatchEvent(new window.Event('pointerenter'));
 
-    expect(b.style.background).toBe('rgba(255, 255, 255, 0.1)');
+    // 状態色ではなく汎用のホバー面＋拡大だけ（#270 でアプリの hover トークンへ）
+    expect(b.style.background).toBe('var(--hologram-hover)');
     expect(b.style.transform).toBe('scale(1.04)');
 
     b.dispatchEvent(new window.Event('pointerleave'));

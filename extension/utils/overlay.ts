@@ -34,7 +34,8 @@
 // trails smooth scrolling.
 import { collectImageUrls, getCaptureSite, getMediaIdentitySite, getOverlaySite, mediaKeyOf, mediaKeysOf } from './extractor/index.ts';
 import type { CaptureSite, OverlaySite, PostMediaElement } from './extractor/types.ts';
-import { glassUi } from './glass-ui.ts';
+import { ICONS, makeIcon, makeSpinner } from './icons.ts';
+import { ensureTokens, motion, prefersReducedMotion, token } from './tokens.ts';
 import { createI18n } from './i18n.ts';
 
 let overlayActive = false;
@@ -98,9 +99,6 @@ export async function startOverlay(): Promise<void> {
   // This remains visually close to the 22px saved mark, while the actual
   // pointer target meets WCAG's 24px minimum for an icon-only control.
   const SAVE_SIZE = 28;
-  // Let the hover-only action show a little more of the media beneath it
-  // without changing the shared glass treatment used by other controls.
-  const SAVE_BUTTON_BG = 'rgba(20, 22, 26, 0.76)';
   const CONTROL_INSET = 6;
   const FLASH_MS = 1400; // "saved" confirmation after a press
   const ERROR_MS = 2500; // failure shown, then back to a button to retry
@@ -154,7 +152,9 @@ export async function startOverlay(): Promise<void> {
     };
   };
 
-  const G = glassUi;
+  // The palette is generated from the app's design tokens and follows the
+  // browser's light/dark setting (#270 — see tokens.ts).
+  ensureTokens();
 
   let markMode: MarkMode = 'always';
   let hoverSave = true;
@@ -607,16 +607,16 @@ export async function startOverlay(): Promise<void> {
       'max-width:calc(100vw - 48px)',
       'box-sizing:border-box',
       'border-radius:999px',
-      'border:1px solid rgba(229,72,77,0.65)',
-      `background:${G.CARD_BG}`,
-      `color:${G.TEXT}`,
-      `font:600 13px/1.4 ${G.FONT_SANS}`,
-      `box-shadow:${G.CARD_SHADOW}`,
+      `border:1px solid ${token.danger}`,
+      `background:${token.surface}`,
+      `color:${token.ink}`,
+      `font:600 13px/1.4 ${token.fontSans}`,
+      `box-shadow:${token.overlayShadow}`,
       'pointer-events:none',
     ].join(';');
     const badge = document.createElement('div');
-    badge.style.cssText = `width:26px;height:26px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;background:${G.FAIL_RED};color:#fff;`;
-    badge.appendChild(G.makeIcon(G.ICONS.cross, 15));
+    badge.style.cssText = `width:26px;height:26px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;background:${token.danger};color:${token.onDanger};`;
+    badge.appendChild(makeIcon(ICONS.cross, 15));
     banner.appendChild(badge);
     const label = document.createElement('div');
     label.textContent = text;
@@ -624,24 +624,24 @@ export async function startOverlay(): Promise<void> {
     document.body.appendChild(banner);
     failureBanner = banner;
 
-    if (!G.REDUCED_MOTION) {
+    if (!prefersReducedMotion()) {
       banner.animate(
         [
           { opacity: 0, transform: 'translateX(-50%) translateY(-14px) scale(0.96)' },
           { opacity: 1, transform: 'translateX(-50%)' },
         ],
-        { duration: G.DUR_POP, easing: G.EASE_OUT },
+        { duration: motion.durationBase, easing: motion.easeOut },
       );
     }
 
     failureBannerTimer = setTimeout(() => {
       failureBannerTimer = null;
       if (failureBanner === banner) failureBanner = null;
-      if (G.REDUCED_MOTION) {
+      if (prefersReducedMotion()) {
         banner.remove();
         return;
       }
-      const anim = banner.animate([{ opacity: 1 }, { opacity: 0, transform: 'translateX(-50%) translateY(-14px) scale(0.96)' }], { duration: G.DUR_POP, easing: G.EASE_OUT });
+      const anim = banner.animate([{ opacity: 1 }, { opacity: 0, transform: 'translateX(-50%) translateY(-14px) scale(0.96)' }], { duration: motion.durationFast, easing: motion.easeIn });
       anim.onfinish = () => banner.remove();
       anim.oncancel = () => banner.remove();
     }, ERROR_BANNER_MS);
@@ -870,9 +870,9 @@ export async function startOverlay(): Promise<void> {
           'align-items:center',
           'justify-content:center',
           'box-sizing:border-box',
-          `border:1px solid ${G.CARD_BORDER}`,
-          `box-shadow:${G.CARD_SHADOW}`,
-          `transition:width ${G.DUR_HOVER}ms ${G.EASE_OUT},height ${G.DUR_HOVER}ms ${G.EASE_OUT},border-radius ${G.DUR_HOVER}ms ${G.EASE_OUT},background ${G.DUR_HOVER}ms,color ${G.DUR_HOVER}ms,border-color ${G.DUR_HOVER}ms,box-shadow ${G.DUR_HOVER}ms,transform ${G.DUR_HOVER}ms ${G.EASE_OUT}`,
+          `border:1px solid ${token.overlayBorder}`,
+          `box-shadow:${token.overlayShadow}`,
+          `transition:width ${token.durationBase} ${token.easeOut},height ${token.durationBase} ${token.easeOut},border-radius ${token.durationBase} ${token.easeOut},background ${token.durationBase},color ${token.durationBase},border-color ${token.durationBase},box-shadow ${token.durationBase},transform ${token.durationBase} ${token.easeOut}`,
           'appearance:none',
           'font:inherit',
         ].join(';');
@@ -888,14 +888,14 @@ export async function startOverlay(): Promise<void> {
       // A hover save control is routinely created for the image newly under the
       // pointer while scrolling. Keep it still so that normal scrolling does
       // not turn into a repeated pop animation.
-      if (born && face !== 'save' && !G.REDUCED_MOTION)
+      if (born && face !== 'save' && !prefersReducedMotion())
         el.animate(
           [
             { opacity: 0, transform: 'scale(0.6)' },
             { opacity: 1, transform: 'scale(1.08)', offset: 0.6 },
             { opacity: 1, transform: 'scale(1)' },
           ],
-          { duration: G.DUR_POP, easing: G.EASE_OUT },
+          { duration: motion.durationBase, easing: motion.easeOut },
         );
     }
   }
@@ -909,15 +909,15 @@ export async function startOverlay(): Promise<void> {
     el.removeAttribute('aria-label');
     el.tabIndex = -1;
     el.style.cursor = '';
-    el.style.background = G.CARD_BG;
-    el.style.color = G.TEXT;
+    el.style.background = token.surface;
+    el.style.color = token.ink;
     el.style.width = `${CONTROL_SIZE}px`;
     el.style.height = `${CONTROL_SIZE}px`;
     el.style.padding = '0';
     el.style.gap = '0';
     el.style.borderRadius = '50%';
-    el.style.borderColor = G.CARD_BORDER;
-    el.style.boxShadow = G.CARD_SHADOW;
+    el.style.borderColor = token.overlayBorder;
+    el.style.boxShadow = token.overlayShadow;
     el.style.transform = '';
     switch (face) {
       case 'mark':
@@ -926,7 +926,7 @@ export async function startOverlay(): Promise<void> {
         // vocabulary — which is exactly what tells it apart from the button
         // that shares this corner.
         el.title = anchor.note || t('badgeSaved');
-        el.appendChild(G.makeIcon(G.ICONS.check, 14));
+        el.appendChild(makeIcon(ICONS.check, 14));
         break;
       case 'save': {
         el.title = t('hoverSaveImage');
@@ -935,10 +935,10 @@ export async function startOverlay(): Promise<void> {
         // the action without adding permanent text or state color.
         el.style.width = `${SAVE_SIZE}px`;
         el.style.height = `${SAVE_SIZE}px`;
-        el.style.background = SAVE_BUTTON_BG;
-        el.style.color = G.TEXT;
+        el.style.background = token.surface;
+        el.style.color = token.ink;
         el.style.cursor = 'pointer';
-        el.appendChild(G.makeIcon(G.ICONS.drop, 14));
+        el.appendChild(makeIcon(ICONS.drop, 14));
         // Both handlers stop the event: the control is outside the post's
         // subtree, but x.com and bsky.app listen on the document, and a press
         // that reached them would open the lightbox behind the save.
@@ -946,15 +946,14 @@ export async function startOverlay(): Promise<void> {
         el.tabIndex = 0;
         el.onpointerdown = stopPress;
         el.onpointerenter = () => {
-          el.style.background = G.BADGE_NEUTRAL;
-          el.style.borderColor = 'rgba(255,255,255,0.68)';
-          el.style.boxShadow = `${G.CARD_SHADOW}, 0 0 0 2px rgba(255,255,255,0.14)`;
+          el.style.background = token.hover;
+          el.style.boxShadow = `${token.overlayShadow}, 0 0 0 2px ${token.controlHoverGlow}`;
           el.style.transform = 'scale(1.04)';
         };
         el.onpointerleave = () => {
-          el.style.background = SAVE_BUTTON_BG;
-          el.style.borderColor = G.CARD_BORDER;
-          el.style.boxShadow = G.CARD_SHADOW;
+          el.style.background = token.surface;
+          el.style.borderColor = token.overlayBorder;
+          el.style.boxShadow = token.overlayShadow;
           el.style.transform = '';
         };
         el.onclick = (e) => {
@@ -965,7 +964,7 @@ export async function startOverlay(): Promise<void> {
       }
       case 'busy':
         el.title = t('bannerSaving');
-        el.appendChild(G.makeSpinner(14));
+        el.appendChild(makeSpinner(14));
         break;
       case 'failed':
         // The note says WHY. A failure is not a dead end: pressing it again
@@ -979,9 +978,9 @@ export async function startOverlay(): Promise<void> {
           anchor.note = null;
           startSave(unit, state, anchor);
         };
-        el.style.background = G.FAIL_RED;
-        el.style.color = '#fff';
-        el.appendChild(G.makeIcon(G.ICONS.cross, 14));
+        el.style.background = token.danger;
+        el.style.color = token.onDanger;
+        el.appendChild(makeIcon(ICONS.cross, 14));
         break;
     }
   }

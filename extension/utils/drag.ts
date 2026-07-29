@@ -7,7 +7,8 @@
 // belongs to comes from media-identity.js, shared with overlay.js's hover save
 // button so the two paths can never disagree about what a save records.
 import { collectImageUrls, getMediaIdentitySite } from './extractor/index.ts';
-import { glassUi } from './glass-ui.ts';
+import { ICONS, makeIcon, makeSpinner } from './icons.ts';
+import { ensureTokens, motion, prefersReducedMotion, token } from './tokens.ts';
 import { createI18n } from './i18n.ts';
 
 export async function startDrag(): Promise<void> {
@@ -36,13 +37,13 @@ export async function startDrag(): Promise<void> {
 
   const { getMessage: t, partialSaveText, saveFailureText } = await createI18n();
 
-  // Visual language is shared with the other content-script entrypoints. The palette is theme-independent (#136:
-  // near-opaque dark scrim + white ink). The zone element persists across
-  // saves; setState re-applies the surface properties before each show so a
-  // state-tinted border/shadow from the previous save is never baked in.
-  // See glass-ui.ts for the CSP/Trusted Types constraints that shape how
-  // everything is styled and built.
-  const G = glassUi;
+  // Visual language is shared with the other content-script entrypoints: a
+  // themed surface generated from the app's design tokens, following the
+  // browser's light/dark setting (#270 — see tokens.ts). The zone element
+  // persists across saves; setState re-applies the surface properties before
+  // each show so a state-tinted border/shadow from the previous save is never
+  // baked in.
+  ensureTokens();
 
   function ensureOverlay(): DropZone {
     if (zone) return zone;
@@ -66,20 +67,20 @@ export async function startDrag(): Promise<void> {
       'padding:32px 22px 28px',
       'border-radius:20px',
       'border:1px solid transparent', // themed surface props (border-color/background/…) land in setState
-      `font:600 14px/1.5 ${G.FONT_SANS}`,
+      `font:600 14px/1.5 ${token.fontSans}`,
       'text-align:center',
       'pointer-events:auto',
-      `transition:transform ${G.DUR_HOVER}ms ${G.EASE_OUT}, border-color ${G.DUR_HOVER}ms, box-shadow ${G.DUR_HOVER}ms`,
+      `transition:transform ${token.durationBase} ${token.easeOut}, border-color ${token.durationBase}, box-shadow ${token.durationBase}`,
     ].join(';');
 
     // Dashed inset ring = the "drop target" affordance; hidden on result states.
     // Children are pointer-events:none so dragenter/dragleave never flicker.
     const ring = document.createElement('div');
-    ring.style.cssText = `position:absolute;inset:7px;border-radius:14px;border:1.5px dashed transparent;pointer-events:none;transition:border-color ${G.DUR_HOVER}ms,opacity ${G.DUR_HOVER}ms;`;
+    ring.style.cssText = `position:absolute;inset:7px;border-radius:14px;border:1.5px dashed transparent;pointer-events:none;transition:border-color ${token.durationBase},opacity ${token.durationBase};`;
     el.appendChild(ring);
 
     const badge = document.createElement('div');
-    badge.style.cssText = `width:60px;height:60px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:${G.ACCENT_SOFT};color:${G.ACCENT_TEXT};pointer-events:none;transition:background ${G.DUR_HOVER}ms,color ${G.DUR_HOVER}ms;`;
+    badge.style.cssText = `width:60px;height:60px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:${token.accentSoft};color:${token.accent};pointer-events:none;transition:background ${token.durationBase},color ${token.durationBase};`;
     el.appendChild(badge);
 
     const label = document.createElement('div');
@@ -108,49 +109,52 @@ export async function startDrag(): Promise<void> {
     if (text !== undefined) z.label.textContent = text;
     z.badge.replaceChildren();
     z.el.style.transform = '';
-    z.el.style.background = G.CARD_BG;
-    z.el.style.color = G.TEXT;
-    z.el.style.borderColor = G.CARD_BORDER;
-    z.el.style.boxShadow = G.CARD_SHADOW;
+    z.el.style.background = token.surface;
+    z.el.style.color = token.ink;
+    z.el.style.borderColor = token.overlayBorder;
+    z.el.style.boxShadow = token.overlayShadow;
     z.ring.style.opacity = state === 'idle' || state === 'over' ? '1' : '0';
-    z.ring.style.borderColor = G.RING;
+    z.ring.style.borderColor = token.ring;
     switch (state) {
       case 'idle':
-        z.badge.style.background = G.ACCENT_SOFT;
-        z.badge.style.color = G.ACCENT_TEXT;
-        z.badge.appendChild(G.makeIcon(G.ICONS.drop));
+        z.badge.style.background = token.accentSoft;
+        z.badge.style.color = token.accent;
+        z.badge.appendChild(makeIcon(ICONS.drop));
         break;
       case 'over':
-        z.badge.style.background = G.ACCENT_FILL;
-        z.badge.style.color = '#fff';
-        z.badge.appendChild(G.makeIcon(G.ICONS.drop));
+        // Drag-over is an ACTIVE state, the other half of what ADR 0013 scopes
+        // the product accent to — so the whole zone takes the accent at once
+        // (badge fill, outline, glow, ring) rather than tinting one part of it.
+        z.badge.style.background = token.accent;
+        z.badge.style.color = token.onAccent;
+        z.badge.appendChild(makeIcon(ICONS.drop));
         z.el.style.transform = 'scale(1.04) translateY(-2px)';
-        z.el.style.borderColor = 'rgba(40,168,219,0.85)';
-        z.el.style.boxShadow = `${G.CARD_SHADOW}, 0 0 0 4px rgba(40,168,219,0.22)`;
-        z.ring.style.borderColor = G.RING_ACCENT;
+        z.el.style.borderColor = token.accent;
+        z.el.style.boxShadow = `${token.overlayShadow}, 0 0 0 4px ${token.accentSoft}`;
+        z.ring.style.borderColor = token.accent;
         break;
       case 'busy':
-        z.badge.style.background = G.BADGE_NEUTRAL;
-        z.badge.style.color = G.ACCENT_TEXT;
-        z.badge.appendChild(G.makeSpinner());
+        z.badge.style.background = token.badgeNeutral;
+        z.badge.style.color = token.accent;
+        z.badge.appendChild(makeSpinner());
         break;
       case 'ok':
-        z.badge.style.background = G.OK_GREEN;
-        z.badge.style.color = '#fff';
-        z.badge.appendChild(G.makeIcon(G.ICONS.check));
-        z.el.style.borderColor = 'rgba(48,164,108,0.65)';
+        z.badge.style.background = token.success;
+        z.badge.style.color = token.onSuccess;
+        z.badge.appendChild(makeIcon(ICONS.check));
+        z.el.style.borderColor = token.success;
         break;
       case 'partial':
-        z.badge.style.background = G.WARN_AMBER;
-        z.badge.style.color = '#fff';
-        z.badge.appendChild(G.makeIcon(G.ICONS.warn));
-        z.el.style.borderColor = 'rgba(232,161,58,0.65)';
+        z.badge.style.background = token.warning;
+        z.badge.style.color = token.onWarning;
+        z.badge.appendChild(makeIcon(ICONS.warn));
+        z.el.style.borderColor = token.warning;
         break;
       case 'fail':
-        z.badge.style.background = G.FAIL_RED;
-        z.badge.style.color = '#fff';
-        z.badge.appendChild(G.makeIcon(G.ICONS.cross));
-        z.el.style.borderColor = 'rgba(229,72,77,0.65)';
+        z.badge.style.background = token.danger;
+        z.badge.style.color = token.onDanger;
+        z.badge.appendChild(makeIcon(ICONS.cross));
+        z.el.style.borderColor = token.danger;
         break;
     }
   }
@@ -165,27 +169,27 @@ export async function startDrag(): Promise<void> {
     setState(z, 'idle', t('dragDropHint'));
     const wasHidden = z.el.style.display === 'none';
     z.el.style.display = 'flex';
-    if (wasHidden && !G.REDUCED_MOTION) {
+    if (wasHidden && !prefersReducedMotion()) {
       // App toast entrance: rise + slight scale settle at the pop tier.
       z.el.animate(
         [
           { opacity: 0, transform: 'translateY(14px) scale(0.96)' },
           { opacity: 1, transform: 'none' },
         ],
-        { duration: G.DUR_POP, easing: G.EASE_OUT },
+        { duration: motion.durationBase, easing: motion.easeOut },
       );
     }
   }
   function hideOverlay(fade = false) {
     const z = zone;
     if (!z || z.el.style.display === 'none') return;
-    if (!fade || G.REDUCED_MOTION) {
+    if (!fade || prefersReducedMotion()) {
       z.el.style.display = 'none';
       return;
     }
     // Exit = the entrance played back (app toast hides through the same
     // rise/settle transition), on the shared pop tier.
-    const anim = z.el.animate([{ opacity: 1 }, { opacity: 0, transform: 'translateY(14px) scale(0.96)' }], { duration: G.DUR_POP, easing: G.EASE_OUT });
+    const anim = z.el.animate([{ opacity: 1 }, { opacity: 0, transform: 'translateY(14px) scale(0.96)' }], { duration: motion.durationFast, easing: motion.easeIn });
     hideAnim = anim;
     anim.onfinish = () => {
       if (hideAnim === anim) {
@@ -239,10 +243,10 @@ export async function startDrag(): Promise<void> {
       const grouped = ok && !partial && res.grouped > 0; // same post saved earlier → merges into one card in the app
       const text = partial ? partialSaveText(res.metaReason) : grouped ? t('bannerSavedGrouped', [res.grouped + 1]) : ok ? t('bannerSaved') : saveFailureText(res?.errorKind);
       setState(z, partial ? 'partial' : ok ? 'ok' : 'fail', text);
-      if (ok && !G.REDUCED_MOTION) {
+      if (ok && !prefersReducedMotion()) {
         // Small badge pop so the state flip reads even in peripheral vision
         // (app hologramBadgePop: .3s on the shared ease-out curve).
-        z.badge.animate([{ transform: 'scale(0.6)' }, { transform: 'scale(1.12)', offset: 0.6 }, { transform: 'scale(1)' }], { duration: 300, easing: G.EASE_OUT });
+        z.badge.animate([{ transform: 'scale(0.6)' }, { transform: 'scale(1.12)', offset: 0.6 }, { transform: 'scale(1)' }], { duration: 300, easing: motion.easeOut });
       }
       setTimeout(
         () => {
