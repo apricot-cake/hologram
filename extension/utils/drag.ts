@@ -6,6 +6,7 @@
 // illustration itself (no screenshot) via the native host. Which post an image
 // belongs to comes from media-identity.js, shared with overlay.js's hover save
 // button so the two paths can never disagree about what a save records.
+import { reportSaveTimeout } from './capture-log.ts';
 import { SAVE_WATCHDOG_MS } from './deadline.ts';
 import { buildChoiceRow, checkDuplicate } from './duplicate-guard.ts';
 import { collectImageUrls, getMediaIdentitySite } from './extractor/index.ts';
@@ -148,6 +149,10 @@ export async function startDrag(): Promise<void> {
     const watchdog = setTimeout(() => {
       if (settled) return;
       settled = true;
+      // Recorded for the same reason as the hover button's: this surface has no
+      // service-worker line behind it either, so an unrecorded timeout here
+      // would leave capture.log unable to say a save was ever attempted (#507).
+      reportSaveTimeout('drop-zone', p.platform, p.postUrl, `save timed out — no result from the background within ${SAVE_WATCHDOG_MS}ms`);
       done(z, undefined, replaces, true);
     }, SAVE_WATCHDOG_MS);
     chrome.runtime.sendMessage({ ...p, replaces } satisfies ImageDraggedMessage, (res?: SaveResponse) => {

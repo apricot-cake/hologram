@@ -32,6 +32,7 @@
 // composited scroll as the picture. A fixed layer that copies viewport
 // coordinates has to wait for JavaScript on every scroll frame and visibly
 // trails smooth scrolling.
+import { reportSaveTimeout } from './capture-log.ts';
 import { SAVE_WATCHDOG_MS } from './deadline.ts';
 import { collectImageUrls, getCaptureSite, getMediaIdentitySite, getOverlaySite, mediaKeyOf, mediaKeysOf } from './extractor/index.ts';
 import type { CaptureSite, OverlaySite, PostMediaElement } from './extractor/types.ts';
@@ -642,6 +643,12 @@ export async function startOverlay(): Promise<void> {
     const watchdog = setTimeout(() => {
       if (settled) return;
       settled = true;
+      // Recorded, not just shown. This is the surface the hang in #507 was
+      // actually reported from, and it is the one with no service-worker line
+      // to fall back on: the resident script logs nothing on its own, so
+      // without this the timeout leaves capture.log exactly as empty as the
+      // silent spinner did.
+      reportSaveTimeout('hover-save', media.platform, identity.link, `save timed out — no result from the background within ${SAVE_WATCHDOG_MS}ms`);
       failSave(unit, state, anchor, saveFailureText('timeout'));
     }, SAVE_WATCHDOG_MS);
     chrome.runtime.sendMessage({ type: 'imageDragged', platform: media.platform, postUrl: identity.link, imageUrls: collectImageUrls(el, media.platform) } satisfies ImageDraggedMessage, (res?: SaveResponse) => {
