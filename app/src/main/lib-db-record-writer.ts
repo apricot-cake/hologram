@@ -16,6 +16,7 @@
 // together wrap writePost() in their own sqlite.exec('BEGIN')/COMMIT.
 
 import { normalizePostRecord } from '../../../native-host/post-record.mts';
+import { POSTS_FTS_COLUMNS } from './lib-db-schema.ts';
 import type Database from 'better-sqlite3';
 import type { PostRecordInput, PostRecordShape } from '../../../native-host/post-record.mts';
 
@@ -126,8 +127,10 @@ interface PostStmts {
   insertMedia: Database.Statement;
   deletePostTags: Database.Statement;
   insertPostTag: Database.Statement;
+  selectFtsRowid: Database.Statement;
   deleteFts: Database.Statement;
   insertFts: Database.Statement;
+  claimFtsRowid: Database.Statement;
   deletePost: Database.Statement;
   insertRawPayload: Database.Statement;
 }
@@ -139,8 +142,14 @@ function preparePostStmts(sqlite: Database.Database): PostStmts {
     insertMedia: sqlite.prepare('INSERT INTO media (postId, seq, url, alt, width, height, file, type, posterFile, frames) VALUES (?,?,?,?,?,?,?,?,?,?)'),
     deletePostTags: sqlite.prepare('DELETE FROM post_tags WHERE postId = ?'),
     insertPostTag: sqlite.prepare('INSERT INTO post_tags (postId, tagId) VALUES (?,?)'),
-    deleteFts: sqlite.prepare('DELETE FROM posts_fts WHERE postId = ?'),
-    insertFts: sqlite.prepare('INSERT INTO posts_fts (postId, text, title, displayName, screenName, eagleName, description, hashtags, tagsText, reading) VALUES (?,?,?,?,?,?,?,?,?,?)'),
+    // posts_fts rows are addressed by ROWID, never by the UNINDEXED postId column
+    // (#444): FTS5 offers no index but MATCH and rowid, so a WHERE on postId scans
+    // the whole index and makes the per-post write cost grow with the library.
+    // posts.ftsRowid is that key — see the fts-rowid-addressing migration.
+    selectFtsRowid: sqlite.prepare('SELECT ftsRowid FROM posts WHERE captureId = ?'),
+    deleteFts: sqlite.prepare('DELETE FROM posts_fts WHERE rowid = ?'),
+    insertFts: sqlite.prepare(`INSERT INTO posts_fts (rowid, ${POSTS_FTS_COLUMNS}) VALUES (?,?,?,?,?,?,?,?,?,?,?)`),
+    claimFtsRowid: sqlite.prepare('UPDATE posts SET ftsRowid = ? WHERE captureId = ?'),
     deletePost: sqlite.prepare('DELETE FROM posts WHERE captureId = ?'),
     // OR IGNORE, and no matching DELETE: raw_payloads is append-only (#292 —
     // an original that was preserved once is never dropped by a later write of
@@ -163,8 +172,14 @@ function writePost(stmts: PostStmts, resolveTagId: (name: string) => number, rec
   stmts.deletePostTags.run(n.captureId);
   const tagIds = n.tags.map(resolveTagId);
   for (const tagId of tagIds) stmts.insertPostTag.run(n.captureId, tagId);
-  stmts.deleteFts.run(n.captureId);
-  stmts.insertFts.run(n.captureId, n.text, n.title, n.displayName, n.screenName, n.eagleName, n.description, n.hashtags.join(' '), n.tags.join(' '), null);
+  // The FTS row is rewritten wholesale, keeping this post's existing key so
+  // posts.ftsRowid stays valid. A post that has none yet (its first write) lets
+  // FTS5 allocate one and records it — the upsert above cannot have cleared the
+  // column, since ftsRowid is deliberately not in POST_COLUMNS.
+  const ftsRowid = (stmts.selectFtsRowid.get(n.captureId) as { ftsRowid: number | null } | undefined)?.ftsRowid ?? null;
+  if (ftsRowid != null) stmts.deleteFts.run(ftsRowid);
+  const ftsInsert = stmts.insertFts.run(ftsRowid, n.captureId, n.text, n.title, n.displayName, n.screenName, n.eagleName, n.description, n.hashtags.join(' '), n.tags.join(' '), null);
+  if (ftsRowid == null) stmts.claimFtsRowid.run(Number(ftsInsert.lastInsertRowid), n.captureId);
   // Acquisition originals (#292), in the SAME transaction the caller opened for
   // the post — the design's "投稿保存と同じ transaction で参照を確定する". A
   // post committed without its originals would be a post whose unrecoverable

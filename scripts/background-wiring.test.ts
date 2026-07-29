@@ -14,7 +14,7 @@
 //
 // bridgeSend/queryBridge は startBackground() の閉包内にあり外から直接は呼べないため、
 // 実際に savePost / checkSaved メッセージを流して onMessage 経由で駆動する。fetchPostMetadata
-// は実装（extension/utils/metadata.ts）をそのまま使うが、ネットワークに触れないよう
+// は実装（extension/utils/extractor/）をそのまま使うが、ネットワークに触れないよう
 // postUrl にはどのプラットフォームの URL パターンにも一致しない文字列を使う
 // （parsePostUrl が null を返し、fetchPostMetadata は fetch を呼ばず空レコードで即解決する）。
 

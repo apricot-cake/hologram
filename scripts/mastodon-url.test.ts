@@ -4,7 +4,7 @@
 // インスタンス URL へフォールバックする。
 
 import { afterEach, expect, test, vi } from 'vitest';
-import { fetchPostMetadata } from '../extension/utils/metadata';
+import { fetchPostMetadata } from '../extension/utils/extractor/index.ts';
 
 // 本物の Response を返す＝metadata.ts は応答を1度だけ本文として読み、原本層（#292）へ
 // 積んでから JSON.parse する。json() だけを持つ手作りのモックではその経路を通らない。

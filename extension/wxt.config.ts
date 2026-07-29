@@ -1,4 +1,5 @@
 import { defineConfig } from 'wxt';
+import { API_HOST_PERMISSIONS } from './utils/extractor/index.ts';
 
 export default defineConfig({
   // Dev and production builds write to the same .output/chrome-mv3 (WXT's
@@ -20,7 +21,9 @@ export default defineConfig({
     description: '__MSG_extDesc__',
     default_locale: 'en',
     permissions: ['activeTab', 'scripting', 'nativeMessaging', 'storage'],
-    host_permissions: ['https://cdn.syndication.twimg.com/*', 'https://www.pixiv.net/*'],
+    // The API hosts whose CORS the background fetch needs, declared by the
+    // extractors that call them (#212) — adding a site does not touch this file.
+    host_permissions: API_HOST_PERMISSIONS,
     icons: {
       16: 'icons/icon16.png',
       32: 'icons/icon32.png',

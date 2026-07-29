@@ -19,9 +19,9 @@
 // storage read that errors — each answers "no warning" and the save proceeds
 // exactly as it did before this feature existed. The cost of a missed warning
 // is one extra record; the cost of a blocked save is the post.
-import { glassUi } from './glass-ui';
-import { collectImageUrls, getMediaIdentitySite } from './media-identity';
-import type { PostMediaElement } from './media-identity';
+import { collectImageUrls, getMediaIdentitySite } from './extractor/index.ts';
+import type { PostMediaElement } from './extractor/types.ts';
+import { glassUi } from './glass-ui.ts';
 
 // chrome.storage.local, boolean. Absent = on: the warning is the point of the
 // feature, and a user who finds it noisy turns it off (options page, or the
@@ -61,8 +61,8 @@ export function suppressWarning(): void {
 }
 
 // Every picture URL the page offers for one post, as picture-identity keys can
-// be derived from (media-identity.ts owns the per-platform rule — the same one
-// the timeline overlay compares the library's saved pictures with).
+// be derived from (the site's own extractor owns that rule — the same one the
+// timeline overlay compares the library's saved pictures with).
 //
 // Returns [] on a platform with no picture-identity rule (Misskey / Mastodon
 // instances). The check then rests on the post URL alone, which is #34's

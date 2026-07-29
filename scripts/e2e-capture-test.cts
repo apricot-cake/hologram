@@ -22,10 +22,12 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
-const { spawnSync, execFileSync } = require('node:child_process');
+const { execFileSync } = require('node:child_process');
 const { launchExtensionBrowser, stageExtension } = require('./lib-extension-e2e.cts');
 const { createNativeHostSandbox } = require('./lib-native-host-e2e.cts');
-const { fetchXTweet } = require('../extension/utils/metadata.ts');
+const { fetchXTweet } = require('../extension/utils/extractor/x.ts');
+const { inboxNewDir } = require('../native-host/inbox.mts');
+const { verifyRecord } = require('./test-watch-verify.cts');
 
 // sw.evaluate()/page.evaluate() callback bodies below run inside the extension's
 // service-worker / page context (a real browser, via CDP) — `chrome` is the
@@ -204,21 +206,37 @@ async function pickMastodon(cells) {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-function listSidecars(dir) {
-  return new Set(fs.readdirSync(dir).filter((f) => f.endsWith('.json')));
+// The real sidecar lives at <saveFolder>/.hologram-inbox/new/<captureId>.json
+// since #299's durable intake queue (lib-db-inbox.ts never deletes loose
+// files, so this directory only grows during a run). null means the
+// directory itself doesn't exist yet — distinct from "exists but empty",
+// since a canary watching the wrong path forever would otherwise look
+// identical to "nothing was ever saved".
+function listInboxNames(newDir) {
+  try {
+    return fs.readdirSync(newDir).filter((f) => f.endsWith('.json'));
+  } catch (err) {
+    if (err && err.code === 'ENOENT') return null;
+    throw err;
+  }
 }
 
-async function waitForNewSidecar(dir, before, timeoutMs = 25000) {
+async function waitForNewSidecar(newDir, before, timeoutMs = 25000) {
   const t0 = Date.now();
+  let dirSeen = false;
   while (Date.now() - t0 < timeoutMs) {
-    const now = fs.readdirSync(dir).filter((f) => f.endsWith('.json') && !before.has(f));
-    if (now.length) {
-      await sleep(1500); // bridge writes the sidecar after media downloads — settle
-      return now[0];
+    const names = listInboxNames(newDir);
+    if (names !== null) {
+      dirSeen = true;
+      const fresh = names.filter((f) => !before.has(f));
+      if (fresh.length) {
+        await sleep(1500); // bridge writes the envelope before media finishes downloading — settle
+        return { file: fresh[0], dirSeen };
+      }
     }
     await sleep(400);
   }
-  return null;
+  return { file: null, dirSeen };
 }
 
 (async () => {
@@ -231,7 +249,9 @@ async function waitForNewSidecar(dir, before, timeoutMs = 25000) {
 
   const nativeHost = createNativeHostSandbox(EXPECTED_ID);
   const dir = nativeHost.libraryDir;
+  const newDir = inboxNewDir(dir);
   console.log(`保存先: ${dir}`);
+  console.log(`inbox: ${newDir}`);
 
   // Optional platform filter: node e2e-capture-test.cts bluesky misskey
   // Headless isolation: node e2e-capture-test.cts bluesky --headless
@@ -285,6 +305,7 @@ async function waitForNewSidecar(dir, before, timeoutMs = 25000) {
 
   const results: any[] = [];
   const created: any[] = [];
+  const capturedRecords: any[] = [];
   try {
     const extId = session.extensionId;
     if (extId !== EXPECTED_ID) throw new Error(`staged extension id ${extId} does not match native-host allow-list ${EXPECTED_ID}`);
@@ -295,7 +316,7 @@ async function waitForNewSidecar(dir, before, timeoutMs = 25000) {
 
     for (const cell of active) {
       console.log(`\n--- ${cell.id} [${cell.platform}] ${cell.kind} ${cell.url}${cell.regression ? ' ★' + cell.regression : ''}`);
-      const before = listSidecars(dir);
+      const before = new Set(listInboxNames(newDir) || []);
       try {
         // SPAs (x/bsky/misskey/mastodon) and pixiv long-poll, so networkidle
         // never fires — wait for the post DOM instead.
@@ -320,11 +341,13 @@ async function waitForNewSidecar(dir, before, timeoutMs = 25000) {
           );
           if (zoneShown === 'no-img') throw new Error('avatar img not found');
           await sleep(2500);
-          const leaked = fs.readdirSync(dir).filter((f) => f.endsWith('.json') && !before.has(f));
+          const leaked = (listInboxNames(newDir) || []).filter((f) => !before.has(f));
           if (zoneShown) throw new Error('ドロップゾーンが表示された（捏造保存の恐れ）');
           if (leaked.length) {
             leaked.forEach((f) => {
-              for (const g of fs.readdirSync(dir)) if (g.startsWith(f.replace(/\.json$/, ''))) fs.unlinkSync(path.join(dir, g));
+              const base = f.replace(/\.json$/, '');
+              fs.unlinkSync(path.join(newDir, f));
+              for (const g of fs.readdirSync(dir)) if (g.startsWith(base)) fs.unlinkSync(path.join(dir, g));
             });
             throw new Error('非投稿画像が保存された');
           }
@@ -472,7 +495,7 @@ async function waitForNewSidecar(dir, before, timeoutMs = 25000) {
           if (ok !== 'ok') throw new Error('drag setup failed: ' + ok);
         }
 
-        const file = await waitForNewSidecar(dir, before);
+        const { file, dirSeen } = await waitForNewSidecar(newDir, before);
         if (!file) {
           // surface the in-page failure message (drop zone / banner text)
           const hint = await page
@@ -482,10 +505,16 @@ async function waitForNewSidecar(dir, before, timeoutMs = 25000) {
               return (z && z.style.display !== 'none' ? `zone="${z.textContent}" ` : '') + (banner ? `banner="${banner.textContent}"` : '');
             })
             .catch(() => '');
-          throw new Error(`サイドカーが保存されなかった ${hint}`);
+          const obsHint = dirSeen ? '' : ` （${newDir} が最後まで現れなかった＝観測点がずれている可能性）`;
+          throw new Error(`サイドカーが保存されなかった ${hint}${obsHint}`);
         }
         created.push(file.replace(/\.json$/, ''));
-        const rec = JSON.parse(fs.readFileSync(path.join(dir, file), 'utf8'));
+        const envelope = JSON.parse(fs.readFileSync(path.join(newDir, file), 'utf8'));
+        const rec = envelope && envelope.record;
+        if (!rec || typeof rec !== 'object' || !rec.url) {
+          throw new Error(`inboxエンベロープにレコードが無い: ${file}`);
+        }
+        capturedRecords.push(rec);
         console.log(`   保存: ${file} url=${rec.url} media=${(rec.media || []).length}${rec.imageCount ? ` imageIndex=${rec.imageIndex}/${rec.imageCount}` : ''}`);
         // Assert the saved record is the post we intended to capture — not just
         // a self-consistent record for some OTHER post (the API re-check alone
@@ -493,6 +522,15 @@ async function waitForNewSidecar(dir, before, timeoutMs = 25000) {
         const idOf = (u) => (String(u || '').match(/\/status\/(\d+)|\/post\/([^/?#]+)|\/notes\/([^/?#]+)|\/(\d[\w-]*)\/?$|\/artworks\/(\d+)/) || []).slice(1).find(Boolean) || u;
         if (idOf(rec.url) !== idOf(cell.url)) {
           throw new Error(`別投稿が保存された: 期待 ${cell.url} / 実際 ${rec.url}`);
+        }
+        // The envelope commits before media finishes landing (#299's design) —
+        // check the files it claims are actually on disk, so a bridge that
+        // wrote the sidecar but failed the download shows up distinctly from
+        // a genuinely missing sidecar.
+        const mediaFiles = [rec.image, rec.video, ...(rec.media || []).map((m) => m.file)].filter(Boolean);
+        const missingMedia = mediaFiles.filter((name) => !fs.existsSync(path.join(dir, name)));
+        if (missingMedia.length) {
+          throw new Error(`サイドカーは保存されたがメディア未着地: ${missingMedia.join(', ')}`);
         }
         results.push({ id: cell.id, ok: true, file });
       } catch (e) {
@@ -505,16 +543,24 @@ async function waitForNewSidecar(dir, before, timeoutMs = 25000) {
     fs.rmSync(EXT_DIR, { recursive: true, force: true });
   }
 
-  // verify the captures against the live API (same checker as the manual flow)
-  if (created.length) {
-    console.log('\n=== API照合 (test-watch-verify --recent) ===');
-    const v = spawnSync(process.execPath, [path.join(__dirname, 'test-watch-verify.cts'), '--recent', String(created.length)], {
-      encoding: 'utf8',
-      env: { ...process.env, HOLOGRAM_CONFIG_DIR: nativeHost.configDir },
-    });
-    process.stdout.write(v.stdout || '');
+  // Verify the captures against the live API (same checker as the manual flow).
+  // Reads envelope.record straight from the inbox files this run already parsed —
+  // NOT hologram.db, since draining inbox -> DB is the real Electron app's job
+  // and this sandbox never starts one (#486). A verify failure here must sink
+  // the whole canary, so it feeds verifyOk below rather than being logged and
+  // discarded.
+  let verifyOk = true;
+  if (capturedRecords.length) {
+    console.log('\n=== API照合 (inbox envelope 直接照合) ===');
+    for (const rec of capturedRecords) {
+      const ok = await verifyRecord(rec, dir);
+      if (ok === false) verifyOk = false;
+    }
+    console.log(`\n${capturedRecords.length} 件検証 → ${verifyOk ? 'ALL PASS' : 'FAIL あり'}`);
+  }
 
-    // clean up: delete the records this test created (jpg/json/media files)
+  if (created.length) {
+    // clean up: delete the records this test created (jpg/media files + inbox envelope)
     console.log('\nテストレコードを削除…');
     for (const id of created) {
       for (const f of fs.readdirSync(dir)) {
@@ -523,12 +569,18 @@ async function waitForNewSidecar(dir, before, timeoutMs = 25000) {
           console.log('  削除: ' + f);
         }
       }
+      const envelopePath = path.join(newDir, `${id}.json`);
+      if (fs.existsSync(envelopePath)) {
+        fs.unlinkSync(envelopePath);
+        console.log('  削除: ' + path.relative(dir, envelopePath));
+      }
     }
   }
 
   const okN = results.filter((r) => r.ok).length;
   console.log(`\n${okN}/${results.length} セル成功`);
-  console.log(okN === results.length ? 'E2E_CAPTURE_PASS' : 'E2E_CAPTURE_FAIL');
+  const allOk = okN === results.length && verifyOk;
+  console.log(allOk ? 'E2E_CAPTURE_PASS' : 'E2E_CAPTURE_FAIL');
   nativeHost.close();
-  process.exit(okN === results.length ? 0 : 1);
+  process.exit(allOk ? 0 : 1);
 })();

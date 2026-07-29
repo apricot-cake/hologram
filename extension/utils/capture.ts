@@ -1,9 +1,11 @@
-import { isXBookmarksPage, startBulkCapture } from './bulk-capture';
-import { cropScreenshot } from './crop';
-import { buildChoiceRow, checkDuplicate, pagePictureUrls } from './duplicate-guard';
-import { glassUi } from './glass-ui';
-import { createI18n } from './i18n';
-import { getSiteConfig, normalizeRect, type PostRect, type SiteConfig } from './site-detect';
+import { startBulkCapture } from './bulk-capture.ts';
+import { cropScreenshot } from './crop.ts';
+import { buildChoiceRow, checkDuplicate, pagePictureUrls } from './duplicate-guard.ts';
+import { normalizeRect } from './extractor/dom.ts';
+import { getCaptureSite } from './extractor/index.ts';
+import type { CaptureSite, PostRect } from './extractor/types.ts';
+import { glassUi } from './glass-ui.ts';
+import { createI18n } from './i18n.ts';
 
 export async function startCapture(): Promise<void> {
   // --- i18n ---
@@ -15,7 +17,7 @@ export async function startCapture(): Promise<void> {
     saved: getMessage('bannerSaved'),
   };
 
-  const siteConfig = getSiteConfig();
+  const siteConfig = getCaptureSite();
   if (!siteConfig) {
     return;
   }
@@ -24,7 +26,7 @@ export async function startCapture(): Promise<void> {
   // declarations below (findPostElement, capturePost, onMouseMove, …) — the
   // same pitfall as a closure reading an outer `let`. `site` carries the
   // narrowed (non-null) type into every one of them.
-  const site: SiteConfig = siteConfig;
+  const site: CaptureSite = siteConfig;
 
   // Read and clear the auto-capture request before anything can return early,
   // so a flag left over from a cancelled activation can never turn a later
@@ -45,7 +47,7 @@ export async function startCapture(): Promise<void> {
   // am about to click" everywhere, the bookmarks list included. Scoped to the
   // bookmarks list for now; anywhere else the request is simply ignored and
   // the single-shot flow below runs.
-  if (wantsAuto && site.platform === 'x' && isXBookmarksPage()) {
+  if (wantsAuto && site.isBulkCapturePage?.()) {
     startBulkCapture(site, i18n);
     return;
   }

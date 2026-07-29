@@ -197,7 +197,8 @@ function readPosterTags(sqlite: Sqlite) {
 // through a sidecar. Returns false without writing if postId isn't a known
 // post, mirroring the old sidecar handler's "jsonPath missing -> ok:false".
 function replacePostTags(sqlite: Sqlite, postId: string, tags: unknown, patch: unknown): boolean {
-  if (!sqlite.prepare('SELECT 1 FROM posts WHERE captureId = ?').get(postId)) return false;
+  const post = sqlite.prepare('SELECT ftsRowid FROM posts WHERE captureId = ?').get(postId) as { ftsRowid: number | null } | undefined;
+  if (!post) return false;
 
   const names = strings(tags);
   sqlite.prepare('DELETE FROM post_tags WHERE postId = ?').run(postId);
@@ -222,8 +223,10 @@ function replacePostTags(sqlite: Sqlite, postId: string, tags: unknown, patch: u
 
   // posts_fts is standalone (no content= link, lib-db-schema.ts's schema
   // comment), so a plain column UPDATE is valid FTS5 SQL — no delete+reinsert
-  // needed to keep the other indexed columns intact.
-  sqlite.prepare('UPDATE posts_fts SET tagsText = ? WHERE postId = ?').run(names.join(' '), postId);
+  // needed to keep the other indexed columns intact. Addressed by rowid, not by
+  // the UNINDEXED postId (#444) — see posts.ftsRowid. Null only for a posts row
+  // some other path inserted directly, which has no FTS row to update either.
+  if (post.ftsRowid != null) sqlite.prepare('UPDATE posts_fts SET tagsText = ? WHERE rowid = ?').run(names.join(' '), post.ftsRowid);
   return true;
 }
 
@@ -258,8 +261,11 @@ function readPostFlags(sqlite: Sqlite, postId: string): { tags: string[]; userKi
 // absence and cascade-deleting the row. This is that deletion, made explicit.
 // FK ON DELETE CASCADE takes media/post_tags with it; posts_fts is standalone
 // (schema comment) so its row is removed explicitly.
+// (addressed by rowid, not the UNINDEXED postId — #444; the lookup has to happen
+// before the posts row carrying the key is gone).
 function deletePost(sqlite: Sqlite, postId: string): boolean {
-  sqlite.prepare('DELETE FROM posts_fts WHERE postId = ?').run(postId);
+  const post = sqlite.prepare('SELECT ftsRowid FROM posts WHERE captureId = ?').get(postId) as { ftsRowid: number | null } | undefined;
+  if (post?.ftsRowid != null) sqlite.prepare('DELETE FROM posts_fts WHERE rowid = ?').run(post.ftsRowid);
   return sqlite.prepare('DELETE FROM posts WHERE captureId = ?').run(postId).changes > 0;
 }
 

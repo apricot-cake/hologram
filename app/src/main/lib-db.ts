@@ -21,7 +21,7 @@
 import Database from 'better-sqlite3';
 import { Kysely, SqliteDialect } from 'kysely';
 import type { Generated } from 'kysely';
-import { SCHEMA_V1_SQL } from './lib-db-schema.ts';
+import { POSTS_FTS_COLUMNS, POSTS_FTS_SQL, SCHEMA_V1_SQL } from './lib-db-schema.ts';
 
 // One entry per schema change, applied in array order and never reordered or
 // edited once shipped — `user_version` records how many have run, so rewriting
@@ -159,6 +159,47 @@ const MIGRATIONS: Migration[] = [
   // item, by the player — nothing queries or joins an individual frame. Null on
   // every other media row (i.e. almost all of them).
   { name: 'add-media-frames', up: (db) => db.exec('ALTER TABLE media ADD COLUMN frames TEXT') },
+  // #444: give every post a stable FTS row key so the write path stops addressing
+  // posts_fts by its UNINDEXED postId column. An FTS5 virtual table has no index
+  // but MATCH and rowid, so `WHERE postId = ?` is a full scan of the index — the
+  // per-post write cost therefore grew with the library (1万件 2.2ms -> 3万件 8.0ms
+  // measured on the pre-change tree) and every bulk operation was O(N²).
+  //
+  // ftsRowid rather than posts' own implicit rowid: an implicit rowid on a table
+  // whose primary key is TEXT is not stable across VACUUM (SQLite's own caveat),
+  // which would silently re-point every FTS row at the wrong post. Nothing in the
+  // app VACUUMs today; an explicit column means nothing has to keep not doing so.
+  //
+  // The seeding UPDATE reads that implicit rowid exactly once, while it is still
+  // the truth — after this migration the column is owned by the record writer
+  // (lib-db-record-writer.ts), which reuses a post's key on rewrite and lets FTS5
+  // allocate one for a post that has none.
+  //
+  // posts_fts is dropped and rebuilt from `posts` rather than copied across: a
+  // rebuild is FTS5's only way to re-key rows, re-deriving is what makes exactly
+  // one FTS row per post true afterwards (any orphan row left by an older write
+  // path disappears), and the two derived columns are cheap to recompute —
+  // hashtags is posts.hashtags' JSON array space-joined (the pre-tokenized copy,
+  // schema comment in lib-db-schema.ts) and tagsText is the post's tag names.
+  // reading stays NULL because nothing writes it yet (#164).
+  {
+    name: 'fts-rowid-addressing',
+    up: (db) =>
+      db.exec(`
+        ALTER TABLE posts ADD COLUMN ftsRowid INTEGER;
+        UPDATE posts SET ftsRowid = rowid;
+        CREATE UNIQUE INDEX idx_posts_ftsRowid ON posts(ftsRowid);
+        DROP TABLE posts_fts;
+        ${POSTS_FTS_SQL}
+        INSERT INTO posts_fts (rowid, ${POSTS_FTS_COLUMNS})
+          SELECT
+            p.ftsRowid, p.captureId, p.text, p.title, p.displayName, p.screenName, p.eagleName, p.description,
+            COALESCE(CASE WHEN json_valid(p.hashtags) THEN (SELECT group_concat(h.value, ' ' ORDER BY h.key) FROM json_each(p.hashtags) h) END, ''),
+            COALESCE((SELECT group_concat(t.name, ' ' ORDER BY pt.rowid) FROM post_tags pt JOIN tags t ON t.id = pt.tagId WHERE pt.postId = p.captureId), ''),
+            NULL
+          FROM posts p;
+      `),
+  },
   // #34: the captureId a record replaces, written by the duplicate-save
   // warning's "replace" answer. A PENDING marker, not a relation — the app
   // consumes it (trash the old capture, merge its tags, re-point its folder /
@@ -299,6 +340,10 @@ interface PostsTable {
   userKind: string | null;
   tagReviewed: number | null;
   capturedVia: string | null; // add-captured-via migration (#362) — intake route, null = ordinary save
+  // fts-rowid-addressing migration (#444) — this post's posts_fts rowid. An
+  // internal key, deliberately absent from POST_COLUMNS: it identifies a row in
+  // THIS database's FTS index and means nothing in an export or another library.
+  ftsRowid: number | null;
   replaces: string | null; // add-post-replaces migration (#34) — pending replacement marker, null once swept
 }
 interface MediaTable {

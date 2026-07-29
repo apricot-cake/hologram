@@ -9,8 +9,10 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import Database from 'better-sqlite3';
 import { afterAll, describe, expect, test } from 'vitest';
-import { openDatabase } from '../app/src/main/lib-db';
+import { MIGRATIONS, openDatabase, runMigrations } from '../app/src/main/lib-db';
+import { POST_COLUMNS } from '../app/src/main/lib-db-record-writer';
 
 const dirs: string[] = [];
 function mkdb() {
@@ -62,9 +64,9 @@ describe('マイグレーションが通り、テーブルが揃う', () => {
   );
   sqlite.close();
 
-  test('user_version は 14（v1 DDL ＋ #34 add-post-replaces までの追加13本）', () => {
+  test('user_version は 15（v1 DDL ＋ #34 add-post-replaces までの追加14本）', () => {
     const { sqlite } = openDatabase(mkdb());
-    expect(sqlite.pragma('user_version', { simple: true })).toBe(14);
+    expect(sqlite.pragma('user_version', { simple: true })).toBe(15);
     sqlite.close();
   });
 
@@ -110,6 +112,86 @@ describe('posts_fts のクエリ契約', () => {
   // #164 の仕事は reading を埋めること。St2 は列とクエリの形があることだけを示す。
   test('reading 列は単独で引ける（列スコープの MATCH）', () => {
     expect(sqlite.prepare('SELECT postId FROM posts_fts WHERE posts_fts MATCH ?').all('reading:"ねこである"')).toHaveLength(1);
+  });
+});
+
+// #444。FTS5 の仮想テーブルには MATCH と rowid 以外の索引が無い＝UNINDEXED 列を
+// 条件にすると毎回索引の全走査になる。EXPLAIN QUERY PLAN は仮想テーブルでは常に
+// "SCAN … VIRTUAL TABLE INDEX <番号>:<文字列>" と出て、区別が付くのは末尾の文字列
+// （FTS5 の xBestIndex が選んだ経路）だけ＝空文字は無制約の走査・"=" は rowid 一致。
+describe('posts_fts の行指定は rowid（#444）', () => {
+  const { sqlite } = openDatabase(mkdb());
+  const planOf = (sql: string, ...params: unknown[]) => (sqlite.prepare(`EXPLAIN QUERY PLAN ${sql}`).all(...params) as Array<{ detail: string }>)[0].detail;
+
+  test('postId を条件にすると無制約の走査と同じ経路になる', () => {
+    expect(planOf('DELETE FROM posts_fts WHERE postId = ?', 'cap-1')).toBe(planOf('SELECT postId FROM posts_fts'));
+  });
+
+  test('rowid を条件にすると一致検索の経路になる', () => {
+    expect(planOf('DELETE FROM posts_fts WHERE rowid = ?', 1)).toMatch(/:=$/);
+    expect(planOf('UPDATE posts_fts SET tagsText = ? WHERE rowid = ?', 't', 1)).toMatch(/:=$/);
+  });
+
+  test('posts.ftsRowid が FTS 行の鍵で、重複しない', () => {
+    const cols = (sqlite.prepare('PRAGMA table_info(posts)').all() as Array<{ name: string }>).map((c) => c.name);
+    expect(cols).toContain('ftsRowid');
+    const idx = (sqlite.prepare('PRAGMA index_list(posts)').all() as Array<{ name: string; unique: number }>).find((i) => i.name === 'idx_posts_ftsRowid');
+    expect(idx?.unique).toBe(1);
+  });
+
+  test('ftsRowid は POST_COLUMNS に入らない（この DB だけの内部鍵＝書き出しに乗らない）', () => {
+    expect(POST_COLUMNS as readonly string[]).not.toContain('ftsRowid');
+  });
+
+  afterAll(() => sqlite.close());
+});
+
+// 既存ライブラリを壊さないこと。#444 の1つ手前まで進めた本物の DB を作り、
+// 旧来の書き方（postId 指定・rowid は posts と無関係）で行を入れてから開き直す。
+describe('fts-rowid-addressing の移行（#444）', () => {
+  const file = mkdb();
+  const before = new Database(file);
+  runMigrations(
+    before,
+    MIGRATIONS.slice(
+      0,
+      MIGRATIONS.findIndex((m) => m.name === 'fts-rowid-addressing'),
+    ),
+  );
+  before.prepare('INSERT INTO posts (captureId, capturedAt, updatedAt, text, hashtags) VALUES (?,?,?,?,?)').run('cap-1', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z', '吾輩は猫である', JSON.stringify(['写真', '記録']));
+  before.prepare('INSERT INTO posts (captureId, capturedAt, updatedAt, text, hashtags) VALUES (?,?,?,?,?)').run('cap-2', '2026-01-02T00:00:00Z', '2026-01-02T00:00:00Z', '犬も歩けば棒に当たる', '[]');
+  const tagId = before.prepare('INSERT INTO tags (name) VALUES (?)').run('アリス').lastInsertRowid;
+  before.prepare('INSERT INTO post_tags (postId, tagId) VALUES (?,?)').run('cap-1', tagId);
+  const insFts = before.prepare('INSERT INTO posts_fts (postId, text, hashtags, tagsText) VALUES (?,?,?,?)');
+  insFts.run('cap-1', '吾輩は猫である', '写真 記録', 'アリス');
+  insFts.run('cap-2', '犬も歩けば棒に当たる', '', '');
+  insFts.run('cap-gone', '持ち主のいない索引行', '', ''); // 投稿が消えた後に残った孤児
+  before.close();
+
+  const { sqlite } = openDatabase(file); // ここで fts-rowid-addressing が走る
+  afterAll(() => sqlite.close());
+
+  test('すべての投稿が鍵を持ち、FTS 行と対応する', () => {
+    const rows = sqlite.prepare('SELECT captureId, ftsRowid FROM posts ORDER BY captureId').all() as Array<{ captureId: string; ftsRowid: number | null }>;
+    expect(rows.map((r) => r.captureId)).toEqual(['cap-1', 'cap-2']);
+    for (const r of rows) {
+      expect(r.ftsRowid).toBeTypeOf('number');
+      expect(sqlite.prepare('SELECT postId FROM posts_fts WHERE rowid = ?').get(r.ftsRowid)).toEqual({ postId: r.captureId });
+    }
+  });
+
+  test('孤児の索引行は再構築で落ちる', () => {
+    expect((sqlite.prepare('SELECT COUNT(*) AS n FROM posts_fts').get() as { n: number }).n).toBe(2);
+  });
+
+  test('MATCH が退行しない', () => {
+    expect(sqlite.prepare('SELECT postId, bm25(posts_fts) AS rank FROM posts_fts WHERE posts_fts MATCH ? ORDER BY rank').all('"猫である"')).toMatchObject([{ postId: 'cap-1' }]);
+  });
+
+  test('hashtags は posts の JSON から、tagsText は post_tags から作り直される', () => {
+    const row = sqlite.prepare('SELECT hashtags, tagsText, reading FROM posts_fts WHERE postId = ?').get('cap-1');
+    expect(row).toEqual({ hashtags: '写真 記録', tagsText: 'アリス', reading: null });
+    expect(sqlite.prepare('SELECT postId FROM posts_fts WHERE posts_fts MATCH ?').all('tagsText:"アリス"')).toHaveLength(1);
   });
 });
 
@@ -244,7 +326,7 @@ describe('既存 v1 データベースの開き直しは no-op', () => {
   const second = openDatabase(file);
 
   test('マイグレーションを再実行しない', () => {
-    expect(second.sqlite.pragma('user_version', { simple: true })).toBe(14);
+    expect(second.sqlite.pragma('user_version', { simple: true })).toBe(15);
   });
 
   test('前回のデータが残る', () => {

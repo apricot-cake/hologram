@@ -27,10 +27,11 @@
 WXT（Vite ベース）でビルドする TypeScript ソース。`npm run build:ext` は `extension/.output/chrome-mv3/` を生成し、**このディレクトリを Load unpacked する**。開発時は `npm run dev:ext` を常駐させ、WXT がビルドと拡張再読み込みを担う。`wxt.config.ts` の `key` が固定IDを保つため、Native Messaging の許可元は変わらない。
 
 - `wxt.config.ts` — 固定 `key`、権限、action、commands を含む生成 manifest の共通設定
-- `entrypoints/background.ts` — Service Worker。タブキャプチャ → クロップ → `utils/metadata.ts` でAPI取得 → Native Messaging 送信。動的なクリック保存は固定名の `capture.js` を `scripting.executeScript` で注入し、`activeTab` のモデルを維持する
+- `entrypoints/background.ts` — Service Worker。タブキャプチャ → クロップ → `utils/extractor/` でAPI取得 → Native Messaging 送信。動的なクリック保存は固定名の `capture.js` を `scripting.executeScript` で注入し、`activeTab` のモデルを維持する
 - `entrypoints/resident.content.ts` — X/Bluesky/pixiv に常駐する統合コンテンツスクリプト（ドラッグ保存とTLオーバーレイ）
 - `entrypoints/options.html` / `diag.html` — 設定・内部診断ページ。`options.html` はタブで開く
-- `utils/` — 通常の ESM 共有モジュール。`site-detect.ts`（投稿要素・permalink/rect抽出）、`media-identity.ts`（画像→投稿の帰属と取得候補URL）、`drag.ts`、`overlay.ts`、`glass-ui.ts`、`i18n.ts`、`metadata.ts` を置く。`metadata.ts` は失敗時に空レコードを返し、Misskey/Mastodon のAPI取得は sender tab のhostに固定する。応答は**本文として1度だけ読んでから解析**し、受け取ったままの本文をレコードに添えてブリッジへ渡す（[ADR 0011](decisions/0011-preserve-acquisition-payloads.md) の原本層。圧縮・ハッシュ・上限はブリッジ側の担当＝ブラウザ側は「何を残す価値があるか」を決めない）
+- `utils/` — 通常の ESM 共有モジュール。`drag.ts`、`overlay.ts`、`capture.ts`、`bulk-capture.ts`、`glass-ui.ts`、`i18n.ts` など**サイトに依らない**層を置く。
+- `utils/extractor/` — **サイト別の抽出（extractor）＝1サイト1モジュール**（`x.ts`／`bluesky.ts`／`misskey.ts`／`mastodon.ts`／`pixiv.ts`）。1つのモジュールが DOM 相（ページ判定・投稿要素・permalink・画像の帰属・オーバーレイの取り付け先）と API 相（投稿URLの解析・メタデータ取得）の両方を持ち、共通の `Extractor` 契約（`types.ts`）で束ねる。`index.ts` の登録簿（配列）が**サイトの唯一の真実源**で、manifest の match とhost_permissions もここから引く＝対応サイトを増やす編集は「モジュール1本＋登録簿1行」（#212）。取得は失敗時に空レコードを返し、Misskey/Mastodon のAPI取得は sender tab のhostに固定する。応答は**本文として1度だけ読んでから解析**し、受け取ったままの本文をレコードに添えてブリッジへ渡す（[ADR 0011](decisions/0011-preserve-acquisition-payloads.md) の原本層。圧縮・ハッシュ・上限はブリッジ側の担当＝ブラウザ側は「何を残す価値があるか」を決めない）
 - `public/` — `_locales/` と `icons/`
 
 ### `native-host/` — Native Messaging ブリッジ
@@ -58,7 +59,7 @@ electron-vite で main・preload・renderer の3面をバンドルする標準�
 - `src/renderer/index.html`＋`src/renderer/public/`（`theme.js`＝pre-paint、`<script>`で直読み。`app/build-theme-boot.mjs`が`theme.ts`から再生成＝バンドル外の同期スクリプトという制約は変わらない）
 - `src/renderer/src/services/`（旧 `renderer/*.ts`）＝`orchestrator.ts`（2026-07-11に`viewer.ts`から改名。boot orchestration層として意図的に独立モジュールのまま残す設計）が状態/オーケストレーション/IPC呼び出しの中核、`store.ts`ほか単機能サービス（`tags.ts`/`selection.ts`/`query.ts`/`records.ts`等）に段階抽出済み。`design-tokens.css`は`src/renderer/`直下（index.htmlの`<link>`が参照）
 - `src/renderer/src/`直下 — React（`.tsx`）コンポーネント群（旧 `islands/`）。`services/store.ts`をESM importで直接購読して連携（push型のモデル注入・`window.hologramXxx`ブリッジは全廃済み＝Window拡張はpreloadの`window.hologram`のみ）
-- 機能: DB クエリで閲覧、拡張ID設定・ホスト自動登録、指定フォルダへの定期バックアップ（増分ミラー・`Hologram-mirror`＋DBのスナップショット）。画像は `asset://` プロトコルで遅延読込。
+- 機能: DB クエリで閲覧、拡張ID設定・ホスト自動登録、指定フォルダへの定期バックアップ（増分ミラー・`Hologram-mirror`＋DBのスナップショット）。画像は `asset://` プロトコルで遅延読込＝応答は必ず CSP（`default-src 'none'` 基底）と `nosniff` を載せ、この スキームのトップレベル文書になれるのはラスタ画像だけ（窓を開く経路と `will-navigate` が `library-files.ts` の同じ述語を通る。理由は [ADR 0012](decisions/0012-asset-documents-are-raster-only.md)）。
 
 ## ビューア機能（内部実装メモ）
 

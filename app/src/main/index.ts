@@ -23,6 +23,8 @@ import { inboxNewDir, ensureInboxDirs, INBOX_DIRNAME } from '../../../native-hos
 import { pruneDecision, nextBaseline } from './backup-guard.ts';
 import { resolveDevServerUrl } from './dev-server-guard.ts';
 import { parseJsonLoose } from './lib-json.ts';
+import { assetSecurityHeaders } from './asset-headers.ts';
+import { isViewerImageName } from './library-files.ts';
 // Save-folder relocation engine (copy+catch-up → flip → verified cleanup → sweep).
 import { relocateLibrary } from './lib-migrate.ts';
 // IPC handler modules, extracted from this file (mechanical move — logic unchanged).
@@ -656,12 +658,12 @@ function registerImageProtocol() {
         // Cache-key includes mtime+width, and capture filenames are content-stable
         // (unique captureId, written once) → immutable lets Chromium keep the
         // decoded bitmap and skip re-reads/re-decodes on scroll-back.
-        if (thumb) return new Response(thumb, { headers: { 'content-type': 'image/jpeg', 'cache-control': 'public, max-age=31536000, immutable' } });
+        if (thumb) return new Response(thumb, { headers: { ...assetSecurityHeaders(), 'content-type': 'image/jpeg', 'cache-control': 'public, max-age=31536000, immutable' } });
         // fall through to the original if thumbnailing failed
       }
 
       const data = await fs.promises.readFile(resolved);
-      return new Response(data, { headers: { 'content-type': mimeForFile(name), 'cache-control': 'public, max-age=31536000, immutable' } });
+      return new Response(data, { headers: { ...assetSecurityHeaders(), 'content-type': mimeForFile(name), 'cache-control': 'public, max-age=31536000, immutable' } });
     } catch {
       return new Response('Error', { status: 500 });
     }
@@ -1265,8 +1267,9 @@ if (process.env.ELECTRON_RENDERER_URL && devServer.rejected) {
 // file://…, which inherits the same preload and could call destructive IPC
 // (clear-all / import-complete / …). We:
 //   - deny will-navigate to anything other than our own renderer (file://…/
-//     renderer/index.html) or the asset:// image-viewer scheme. The initial
-//     loadFile/loadURL does NOT fire will-navigate, so this never blocks startup.
+//     renderer/index.html) or a raster image on the asset:// viewer scheme. The
+//     initial loadFile/loadURL does NOT fire will-navigate, so this never blocks
+//     startup — a reload of the image window is what actually passes through here.
 //   - deny window.open / target=_blank entirely; external links are funneled
 //     through the open-external IPC (shell.openExternal), which this leaves intact.
 function installNavigationGuards() {
@@ -1281,8 +1284,18 @@ function installNavigationGuards() {
     } catch {
       return false;
     }
-    // The standalone image window lives on the app-controlled asset:// scheme.
-    if (u.protocol === 'asset:') return true;
+    // The standalone image window lives on the app-controlled asset:// scheme —
+    // but only for the raster formats it is meant to show (#215). A blanket
+    // asset: pass would let anything that can steer a top-level navigation put a
+    // scripted SVG on the library's own origin; the same allow-list gates
+    // open-image-window, so both ways in agree on what may become a document.
+    if (u.protocol === 'asset:') {
+      try {
+        return isViewerImageName(path.basename(decodeURIComponent(u.pathname)));
+      } catch {
+        return false;
+      }
+    }
     // Dev only: allow navigations within the Vite dev server — its HMR client does
     // a full location.reload() on non-Fast-Refreshable edits, which would otherwise
     // be blocked here. devOrigin is null in prod, so this is a no-op there.

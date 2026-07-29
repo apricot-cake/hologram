@@ -1,3 +1,3 @@
-import { startOptions } from '../utils/options';
+import { startOptions } from '../utils/options.ts';
 
 startOptions();

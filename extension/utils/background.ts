@@ -1,31 +1,8 @@
-import { mediaKeyOf } from './media-identity';
-import { fetchPostMetadata } from './metadata';
-import { classifySaveFailure } from './native-error';
-
-// Allowed capture origins per platform (used to validate the sender tab).
-const PLATFORM_HOSTS = {
-  x: ['x.com', 'twitter.com'],
-  bluesky: ['bsky.app'],
-  pixiv: ['www.pixiv.net', 'pixiv.net'],
-  // misskey / mastodon: any https origin (instances are arbitrary hosts)
-};
-
-function getHostname(url) {
-  try {
-    return new URL(url).hostname;
-  } catch {
-    return '';
-  }
-}
-
-function isAllowedSender(tabUrl, platformId) {
-  const hostname = getHostname(tabUrl);
-  if (!hostname) return false;
-  const hosts = PLATFORM_HOSTS[platformId];
-  if (hosts) return hosts.some((h) => hostname === h || hostname.endsWith(`.${h}`));
-  if (platformId === 'misskey' || platformId === 'mastodon') return /^https:/i.test(tabUrl || '');
-  return false;
-}
+// Which sites exist, and everything platform-specific about them, comes from
+// the extractor registry (utils/extractor/) — this file holds no per-platform
+// branch of its own (#212).
+import { extractorFor, fetchPostMetadata, getHostname, highResUrlOf, isAllowedSender, mediaKeyOf } from './extractor/index.ts';
+import { classifySaveFailure } from './native-error.ts';
 
 export function startBackground(): void {
   const NATIVE_HOST = 'com.hologram.host';
@@ -855,22 +832,19 @@ function generateCaptureId() {
 // chosen image within the post's media[] (-1 if we couldn't determine it).
 function pickPrimaryImage(platform, imageUrls, meta) {
   const media = (meta && meta.media) || [];
-  if (platform === 'pixiv') {
-    let pidx = -1;
-    for (const u of imageUrls) {
-      const m = u && u.match(/\/\d+_p(\d+)[._]/);
-      if (m) {
-        pidx = Number.parseInt(m[1], 10);
-        break;
-      }
-    }
-    const i = pidx >= 0 && pidx < media.length ? pidx : media.length === 1 ? 0 : -1;
+  const extractor = extractorFor(platform);
+  // A site whose media[] is indexed by a page number in the file name (pixiv)
+  // answers straight from the dragged URL, no key matching needed.
+  if (extractor?.mediaPageIndex) {
+    const page = extractor.mediaPageIndex(imageUrls);
+    const referer = extractor.mediaReferer;
+    const i = page !== null && page < media.length ? page : media.length === 1 ? 0 : -1;
     // Only substitute the API original when the dragged page was actually
     // matched — silently saving p0 for an unmatched drag asserted an image the
     // user never dragged. Unmatched → keep the dragged URL (like X/Bluesky).
     const pick = i >= 0 ? media[i] : null;
-    if (pick && pick.url) return { url: pick.url, referer: pick.referer || 'https://www.pixiv.net/', index: i };
-    return { url: imageUrls[0], referer: 'https://www.pixiv.net/', index: -1 };
+    if (pick && pick.url) return { url: pick.url, referer: pick.referer || referer, index: i };
+    return { url: imageUrls[0], referer, index: -1 };
   }
   const i = matchMediaIndex(platform, imageUrls, media);
   if (i >= 0 && media[i] && media[i].url) return { url: media[i].url, referer: media[i].referer, index: i };
@@ -878,8 +852,8 @@ function pickPrimaryImage(platform, imageUrls, meta) {
 }
 
 // Index (0-based) of the post's media[] entry that the dragged image came from,
-// matched by mediaKeyOf (media-identity.ts owns the per-platform rule — the
-// overlay compares the library's saved pictures with the same one, #334).
+// matched by mediaKeyOf (the extractor owns the per-site rule — the overlay
+// compares the library's saved pictures with the same one, #334).
 // -1 if none matched (or the platform has no key scheme).
 function matchMediaIndex(platform, imageUrls, media) {
   const keys = imageUrls.map((u) => mediaKeyOf(platform, u)).filter(Boolean);
@@ -891,19 +865,11 @@ function matchMediaIndex(platform, imageUrls, media) {
   return -1;
 }
 
+// The site's original-resolution rewrite, falling back to the URL as given —
+// a save has to send something even where no rewrite rule applies.
 function hiRes(platform, url) {
   if (!url) return url;
-  if (platform === 'x' && url.includes('pbs.twimg.com/media/')) {
-    try {
-      const u = new URL(url);
-      u.searchParams.set('name', 'orig');
-      return u.href;
-    } catch {
-      /* ignore */
-    }
-  }
-  if (platform === 'bluesky' && url.includes('cdn.bsky.app')) return url.replace(/@jpeg$/, '');
-  return url;
+  return highResUrlOf(platform, url) ?? url;
 }
 
 // Pure helpers with no chrome.* / DOM dependency, exported for direct unit

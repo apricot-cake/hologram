@@ -34,7 +34,9 @@ const api = {
   getTabs: (): Promise<any> => ipcRenderer.invoke('get-tabs'),
   setTabs: (data: unknown): Promise<any> => ipcRenderer.invoke('set-tabs', data),
   openExternal: (url: string): Promise<any> => ipcRenderer.invoke('open-external', url),
-  openImageWindow: (image: string): Promise<any> => ipcRenderer.invoke('open-image-window', image),
+  // false = refused. The standalone viewer shows raster images only (#215): an
+  // SVG there would be a scripted document on the library's own origin.
+  openImageWindow: (image: string): Promise<boolean> => ipcRenderer.invoke('open-image-window', image),
   showInFolder: (file: string): Promise<any> => ipcRenderer.invoke('show-in-folder', file),
   // send, not invoke: the OS drag has to start inside the dragstart the renderer
   // is still holding open — a promise round-trip lands after the gesture is over.
