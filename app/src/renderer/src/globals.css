@@ -168,6 +168,36 @@
   }
 }
 
+/* View Transitions (#252). The post grid's density switch is the only surface that starts
+   one (React island start point: grid/density-transition.ts). Left alone the API animates
+   for a flat 250ms on a curve of its own — slower and looser than everything else in the
+   redesign — so the pseudo tree reads the same motion tokens every other animated surface
+   does. `enter` timing on both halves: a density switch is a re-arrangement, not an
+   open/close, and no side of it reads as leaving.
+
+   In @layer base, BELOW the legacy sheet on purpose. index.html already names #postGrid,
+   #tabBar, #sidebar, .content-activebar and #contentTop and gives each an explicit rule
+   (a 120ms grid fade; `animation: none` to pin the chrome under the top-layer snapshot).
+   Those are tuned, and they use the `animation` shorthand — unlayered longhands here would
+   silently retime them. Layered, this is only the DEFAULT for names with no rule of their
+   own, which is exactly the per-card groups and root.
+
+   Not covered by the reduced-motion block above either: that block matches elements
+   (*, *::before, *::after) and never reaches the ::view-transition-* tree. Reduced motion is
+   handled where the transition STARTS (_shared/view-transition.ts), which skips the API
+   rather than running it at 0.01ms. */
+@layer base {
+  ::view-transition-group(*) {
+    animation-duration: var(--motion-duration-base);
+    animation-timing-function: var(--motion-ease-out);
+  }
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation-duration: var(--motion-duration-base);
+    animation-timing-function: var(--motion-ease-out);
+  }
+}
+
 /* App shell (AppShell.tsx): Obsidian-type shell (#154) — the sidebar spans the full
    window height and the tab bar lives INSIDE the content column, so the sidebar no
    longer needs the --tabbar-h offset (shadcn's fixed inset-y-0 default now applies).
