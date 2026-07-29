@@ -7,6 +7,7 @@ import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { openDatabase } from '../app/src/main/lib-db';
 import { createDbWriter } from '../app/src/main/lib-db-write';
+import { makeTagResolver, preparePostStmts, writePost } from '../app/src/main/lib-db-record-writer';
 
 let dir: string;
 let sqlite: any;
@@ -79,4 +80,63 @@ test('state の単純な key/value が往復する', () => {
   writer.stateSet('truthSource', 'db');
 
   expect(writer.stateGet('truthSource')).toBe('db');
+});
+
+// #444。投稿の書き込みとタグ編集と削除が、同じ1本の FTS 行（posts.ftsRowid）を
+// 指し続けること。ここが崩れると索引が実データから静かにずれる。
+describe('FTS 行の鍵の一生（#444）', () => {
+  let ownDir: string;
+  let db: any;
+  let ownWriter: ReturnType<typeof createDbWriter>;
+  const rec = (over: Record<string, unknown> = {}) => ({ captureId: 'cap-1', text: '吾輩は猫である', tags: ['アリス'], hashtags: ['写真'], capturedAt: '2026-01-01T00:00:00Z', ...over });
+  const ftsRowidOf = (id: string) => db.prepare('SELECT ftsRowid FROM posts WHERE captureId = ?').get(id)?.ftsRowid;
+  const write = (record: Record<string, unknown>) => writePost(preparePostStmts(db), makeTagResolver(db), record as any);
+
+  beforeAll(() => {
+    ownDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-db-write-fts-'));
+    ({ sqlite: db } = openDatabase(path.join(ownDir, 'test.db')));
+    ownWriter = createDbWriter(db);
+    write(rec());
+    write(rec({ captureId: 'cap-2', text: '犬も歩けば棒に当たる', tags: [] }));
+  });
+
+  afterAll(() => {
+    db.close();
+    fs.rmSync(ownDir, { recursive: true, force: true });
+  });
+
+  test('初回の書き込みで鍵が振られ、FTS 行と一致する', () => {
+    const key = ftsRowidOf('cap-1');
+    expect(key).toBeTypeOf('number');
+    expect(db.prepare('SELECT postId FROM posts_fts WHERE rowid = ?').get(key)).toEqual({ postId: 'cap-1' });
+  });
+
+  test('書き直しても鍵は変わらず、FTS 行は1本のまま', () => {
+    const before = ftsRowidOf('cap-1');
+    write(rec({ text: '名前はまだ無い' }));
+
+    expect(ftsRowidOf('cap-1')).toBe(before);
+    expect((db.prepare("SELECT COUNT(*) AS n FROM posts_fts WHERE postId = 'cap-1'").get() as { n: number }).n).toBe(1);
+    expect(db.prepare('SELECT postId FROM posts_fts WHERE posts_fts MATCH ?').all('"名前はまだ"')).toMatchObject([{ postId: 'cap-1' }]);
+  });
+
+  test('タグ編集は自分の FTS 行だけを書き換える', () => {
+    ownWriter.setPostTags('cap-1', ['ブルーアーカイブ'], null);
+
+    expect(db.prepare('SELECT tagsText FROM posts_fts WHERE rowid = ?').get(ftsRowidOf('cap-1'))).toEqual({ tagsText: 'ブルーアーカイブ' });
+    expect(db.prepare('SELECT tagsText FROM posts_fts WHERE rowid = ?').get(ftsRowidOf('cap-2'))).toEqual({ tagsText: '' });
+  });
+
+  test('削除は自分の FTS 行だけを落とす', () => {
+    ownWriter.deletePost('cap-1');
+
+    expect(db.prepare('SELECT postId FROM posts_fts').all()).toEqual([{ postId: 'cap-2' }]);
+  });
+
+  test('鍵の無い投稿行（別経路の直接 INSERT）でもタグ編集は落ちない', () => {
+    db.prepare("INSERT INTO posts (captureId, capturedAt, updatedAt) VALUES ('bare-1', '2026-01-01', '2026-01-01')").run();
+
+    expect(ownWriter.setPostTags('bare-1', ['アリス'], null)).toBe(true);
+    expect(db.prepare('SELECT postId FROM posts_fts').all()).toEqual([{ postId: 'cap-2' }]);
+  });
 });

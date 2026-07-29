@@ -226,7 +226,10 @@ CREATE TABLE tab_windows (
 -- posts_fts: FTS5 with the reading column included from the start (#5
 -- 2026-07-17 comment — FTS5 cannot add a column later without a full
 -- reindex, so the column + query contract land now even though nothing
--- populates it before #164). Standalone (no content= external-content link):
+-- populates it before #164). Rows are addressed by rowid from the
+-- fts-rowid-addressing migration (#444) onward — see POSTS_FTS_SQL below,
+-- which rebuilds this table with the identical column list.
+-- Standalone (no content= external-content link):
 -- St3 (the sidecar importer, "derived index stage") owns population, so this
 -- migration only needs the shape to exist. hashtags/tagsText are pre-tokenized
 -- (space-joined) copies for FTS, distinct from posts.hashtags' JSON — the
@@ -254,3 +257,39 @@ CREATE VIRTUAL TABLE posts_fts USING fts5(
   tokenize = 'trigram'
 );
 `;
+
+// The CURRENT posts_fts definition, as its own statement so a migration can drop
+// and recreate the table (FTS5 has no ALTER; a rebuild is the only way to change
+// anything about it). Deliberately a copy of the text inside SCHEMA_V1_SQL rather
+// than an interpolation: that string is historical and must not move when this one
+// does. The columns here are identical to v1's — the fts-rowid-addressing
+// migration (#444) rebuilds the table to re-key its rows, it does not reshape it,
+// so the MATCH/bm25 query contract is unchanged.
+//
+// Deliberately NOT an external-content table (content=posts), even though this
+// index therefore keeps its own copy of the text — considered and rejected in
+// #444. FTS5 reads an external content row as "SELECT <every fts column> FROM
+// <content>", so `posts` would have to grow same-named columns for the three
+// that do not exist on it: the pre-tokenized hashtags, tagsText and reading are
+// derived from post_tags/tags and belong to the index, not to a post. Storage is
+// all that pattern would buy here — row addressing, the actual defect #444 was
+// about, is what the rowid key (posts.ftsRowid) solves.
+export const POSTS_FTS_SQL = `
+CREATE VIRTUAL TABLE posts_fts USING fts5(
+  postId UNINDEXED,
+  text,
+  title,
+  displayName,
+  screenName,
+  eagleName,
+  description,
+  hashtags,
+  tagsText,
+  reading,
+  tokenize = 'trigram'
+);
+`;
+
+// The posts_fts column list in write order, shared by the migration's reindex and
+// the shared record writer's INSERT so the two cannot drift.
+export const POSTS_FTS_COLUMNS = 'postId, text, title, displayName, screenName, eagleName, description, hashtags, tagsText, reading';
