@@ -13,7 +13,7 @@ export interface HologramI18nApi {
   resolved: string;
   getMessage: (key: string, subs?: ReadonlyArray<unknown>) => string;
   partialSaveText: (reason?: string | null) => string;
-  saveFailureText: (kind?: SaveFailureKind | null) => string;
+  saveFailureText: (kind?: SaveFailureKind | null, reason?: string | null) => string;
 }
 
 export function createI18n(): Promise<HologramI18nApi> {
@@ -45,7 +45,11 @@ export function createI18n(): Promise<HologramI18nApi> {
       bannerOriginRejected: 'Hologram の保存設定が一致していません。Hologram を再インストールしてください',
       // 投稿そのものが取得できなかった（削除・凍結・鍵付き・年齢制限）＝壊れていない。
       // 直すものが無いので、診断ページへ誘導する bannerFailedUnknown とは別文言。
-      bannerPostUnavailable: '投稿を取得できないため保存できません（削除・非公開など）',
+      // ⚠️どれも「何も保存されていない」と読めること＝上の bannerSavedNoMeta* は
+      // 画像が保存できた上で投稿情報だけ欠けた場合で、意味が正反対（#505）。
+      bannerPostUnavailable: '投稿を取得できないため、何も保存できませんでした（削除・非公開・年齢制限など）',
+      bannerPostUnavailableProtected: '鍵付きアカウントのため、何も保存できませんでした',
+      bannerPostUnavailableAgeRestricted: '年齢制限付き投稿のため、何も保存できませんでした（X が投稿情報を返しません）',
       // 応答が返らないまま上限に達した（#507）。原因の多くは一過性（ネットワークの
       // 詰まり・サービスワーカーの停止）なので、最も安く効く再試行を先頭に置く。
       // 診断ページへの誘導は「繰り返す場合」の第2手＝bannerFailedUnknown が持つ。
@@ -76,6 +80,10 @@ export function createI18n(): Promise<HologramI18nApi> {
       // 取得できなかった投稿（#492）。「失敗」と分けて数える＝直すもののある不具合と、
       // 投稿が既に無いだけの正常な結果を、同じ言葉で並べない。
       bulkSummaryUnavailable: '取得できず $1件（削除・非公開など）',
+      // 年齢制限は上とさらに分ける（#505）＝投稿は生きていて、消えたわけではない。
+      // 何度取り込み直しても同じ結果になる（Xの埋め込み用APIは匿名なので届かない）
+      // ことが、削除との違いとして伝わる必要がある。
+      bulkSummaryAgeRestricted: '年齢制限のため保存できず $1件',
       bulkSummaryFailed: '失敗 $1件',
 
       // capture.ts / drag.ts: duplicate-save warning (#34). Asked BEFORE the
@@ -113,7 +121,9 @@ export function createI18n(): Promise<HologramI18nApi> {
       bannerHostMissing: "Can't reach Hologram's saver. Please restart Chrome.",
       bannerHostUnavailable: "Hologram's saver could not start. Open the diagnostics page from the extension settings.",
       bannerOriginRejected: "Hologram's save configuration does not match. Reinstall Hologram.",
-      bannerPostUnavailable: 'Cannot save: the post could not be fetched (deleted, private, …)',
+      bannerPostUnavailable: 'Nothing was saved: the post could not be fetched (deleted, private, age-restricted, …)',
+      bannerPostUnavailableProtected: 'Nothing was saved: this account limits who can view its posts',
+      bannerPostUnavailableAgeRestricted: 'Nothing was saved: age-restricted post (X serves no post info for it)',
       bannerTimedOut: 'Save timed out and was stopped. Try again (restart Chrome if it keeps happening).',
       bannerFailedUnknown: 'Save failed. Open the diagnostics page from the extension settings.',
 
@@ -134,6 +144,7 @@ export function createI18n(): Promise<HologramI18nApi> {
       bulkSummarySkipped: '$1 already saved',
       bulkSummaryDeferred: '$1 image-less saved (not shown in the library yet)',
       bulkSummaryUnavailable: '$1 unavailable (deleted or private)',
+      bulkSummaryAgeRestricted: '$1 not saved (age-restricted)',
       bulkSummaryFailed: '$1 failed',
 
       // capture.ts / drag.ts: duplicate-save warning (#34) — see the ja notes.
@@ -173,8 +184,13 @@ export function createI18n(): Promise<HologramI18nApi> {
     // back to the generic one for unclassified failures.
     const partialSaveText = (reason) => getMessage(reason === 'protected' ? 'bannerSavedNoMetaProtected' : reason === 'ageRestricted' ? 'bannerSavedNoMetaAgeRestricted' : 'bannerSavedNoMeta');
 
-    const saveFailureText = (kind) =>
-      getMessage(kind === 'host-missing' ? 'bannerHostMissing' : kind === 'host-unavailable' ? 'bannerHostUnavailable' : kind === 'origin-rejected' ? 'bannerOriginRejected' : kind === 'post-unavailable' ? 'bannerPostUnavailable' : kind === 'timeout' ? 'bannerTimedOut' : 'bannerFailedUnknown');
+    // Same shape as partialSaveText, but for the opposite outcome: nothing was
+    // written at all. Only 'post-unavailable' takes a reason — the other kinds
+    // are our own plumbing breaking, which the post has no say in (#505).
+    const postUnavailableText = (reason) => getMessage(reason === 'protected' ? 'bannerPostUnavailableProtected' : reason === 'ageRestricted' ? 'bannerPostUnavailableAgeRestricted' : 'bannerPostUnavailable');
+
+    const saveFailureText = (kind, reason?) =>
+      kind === 'post-unavailable' ? postUnavailableText(reason) : getMessage(kind === 'host-missing' ? 'bannerHostMissing' : kind === 'host-unavailable' ? 'bannerHostUnavailable' : kind === 'origin-rejected' ? 'bannerOriginRejected' : kind === 'timeout' ? 'bannerTimedOut' : 'bannerFailedUnknown');
 
     return { lang: resolved, resolved, getMessage, partialSaveText, saveFailureText };
   })();

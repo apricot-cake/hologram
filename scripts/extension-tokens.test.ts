@@ -180,10 +180,21 @@ describe.each(THEMES)('コントラスト（%s テーマ）', (_name, v) => {
     expect(ratio(fill, surface())).toBeGreaterThanOrEqual(3);
   });
 
-  // 小型コントロール（保存ボタン・保存済みマーク）のホバー時の塗り。カードと同じ面を
-  // 使うので、ホバーで面が変わってもインクが読めなくなってはいけない。
+  // 小型コントロール（保存ボタン）のホバー時の塗り。カードと同じ面を使うので、
+  // ホバーで面が変わってもインクが読めなくなってはいけない。
   test('ホバー時の面の上でもインクが 4.5:1 以上', () => {
     expect(ratio(rgb(v.get('--hologram-ink') as string), rgb(v.get('--hologram-hover') as string))).toBeGreaterThanOrEqual(4.5);
+  });
+
+  // 保存済みマークと保存中の面は半透明＝下地は「任意の写真」なので、最悪ケースの
+  // 両端（真っ黒な写真／真っ白な写真）で本文ティアを満たすこと。ここがアルファの
+  // 上限を決めている＝透かすほど下地が混ざり、いずれ字が読めなくなる。
+  test.each([
+    ['真っ黒な写真', { r: 0, g: 0, b: 0 }],
+    ['真っ白な写真', { r: 255, g: 255, b: 255 }],
+  ] as [string, Rgb][])('保存済みマークのグリフが %s の上で 4.5:1 以上', (_what, photo) => {
+    const disc = over(v.get('--hologram-control-surface') as string, photo);
+    expect(ratio(rgb(v.get('--hologram-ink') as string), disc)).toBeGreaterThanOrEqual(4.5);
   });
 
   // リングはカードの内側なので、下地はホストページではなくカードの塗り。

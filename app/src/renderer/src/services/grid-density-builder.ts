@@ -32,8 +32,6 @@ export interface HologramSizeTrack {
 }
 
 export function makeGridDensity(deps: GridDensityDeps) {
-  const prefersReducedMotion = () => !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
-
   // --- Post grid: density + size state ---
   let currentView = 'card'; // 'card' | 'tile' | 'list' (display density)
   let tileOverlay = true; // tile view: show the author/❤ info overlay (pref)
@@ -366,22 +364,23 @@ export function makeGridDensity(deps: GridDensityDeps) {
 
   // The density buttons live in the display popover (hologramStore 'view'). React
   // owns the active state + glass thumb; this reacts to a view change: mirror it
-  // into currentView, persist it, and re-render the grid (deferred past a paint
-  // with a view transition, like the old optimistic handler). The idempotent guard
+  // into currentView, persist it, and re-render the grid. The idempotent guard
   // skips the no-op set from restorePrefs, so the loop stays one-way. React owns the
   // subscribe() registration (StoreSubscriptions, App.tsx), importing this function
   // directly (viewer.ts wires it into the module-scope export).
-  let _densityRenderT: any = null;
+  //
+  // SYNCHRONOUS on purpose, and no view transition of its own (#252). The animation is
+  // started by the React side that writes the store key (grid/density-transition.ts) and
+  // captures only the DOM changes that land before its callback returns — so the regroup
+  // this triggers has to happen inside the same store write, not a paint later. The old
+  // setTimeout deferral existed to let the pressed button paint first; the transition
+  // freezes that frame anyway, so there is nothing left for it to buy.
   function handleViewStoreChange() {
     const v = storeGet('view');
     if (v === currentView) return;
     currentView = v;
     deps.hologramIpc.setPref('viewMode', currentView);
-    clearTimeout(_densityRenderT);
-    _densityRenderT = setTimeout(() => {
-      if (document.startViewTransition && !prefersReducedMotion()) document.startViewTransition(() => deps.renderPosts());
-      else deps.renderPosts();
-    }, 0);
+    deps.renderPosts();
   }
 
   // --- Poster grid: density + size state (kept SEPARATE from the post-side

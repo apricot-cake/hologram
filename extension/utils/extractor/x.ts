@@ -189,12 +189,24 @@ async function fetchXTweet(parsed, url): Promise<PostRecord> {
       return rec;
     }
     const j = await readJsonKeepingRaw(rec, 'api:x/tweet-result', res);
-    // A tombstone means the post exists but the public API won't serve it
-    // (protected account / age-restricted). Classify from the tombstone text so
-    // the partial-save banner can say WHY the post info is missing.
+    // A tombstone means the post exists but the public API won't serve it.
+    // X names the reason for a deleted post ("This Post was deleted by the Post
+    // author") and for a locked one ("limits who can view their Posts"), and
+    // names NOTHING for an age-restricted one — the whole tombstone comes back
+    // as {}. So the absence of a reason IS the reason (#505): measured over the
+    // 951 X posts in a real library on 2026-07-29, every empty tombstone was a
+    // post whose logged-out page reads "Age-restricted adult content … to view
+    // this media, you'll need to log in to X", and every non-empty one said
+    // which of the other causes it was.
+    //
+    // No login on our side can lift this: cdn.syndication.twimg.com is the
+    // anonymous embed API, and X's Adult Content Policy says viewers with no
+    // birth date on their profile cannot view marked content. Telling it apart
+    // from a deleted post is the whole point — one is gone for good, the other
+    // is alive and simply out of this route's reach.
     if (j && j.__typename === 'TweetTombstone') {
       const t = (j.tombstone && j.tombstone.text && j.tombstone.text.text) || '';
-      rec.metaError = /limits who can view/i.test(t) ? 'protected' : /age[ -]?restricted/i.test(t) ? 'ageRestricted' : 'unavailable';
+      rec.metaError = /limits who can view/i.test(t) ? 'protected' : !t || /age[ -]?restricted/i.test(t) ? 'ageRestricted' : 'unavailable';
       rec.date = xSnowflakeDate(parsed.id);
       return rec;
     }

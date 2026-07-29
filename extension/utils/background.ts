@@ -19,14 +19,22 @@ export function startBackground(): void {
 
   interface StageError extends Error {
     stage: string;
+    metaReason?: string | null;
   }
 
   // Tag an error with the pipeline stage it failed at, so the single catch in the
   // message handler can log WHICH stage broke. select/permalink are reported by
   // content.js; capture/crop/metadata/bridge are tagged here.
-  function stageError(stage: string, message: string): StageError {
+  //
+  // metaReason rides along for the one failure the user is not meant to repair:
+  // the host refuses a save that obtained nothing (#492), and WHY the post info
+  // was missing is the difference between "deleted, gone for good" and
+  // "age-restricted, alive but out of this route's reach" (#505). Without it
+  // the banner can only name the whole family.
+  function stageError(stage: string, message: string, metaReason: string | null = null): StageError {
     const err = new Error(message) as StageError;
     err.stage = stage;
+    err.metaReason = metaReason;
     return err;
   }
 
@@ -98,7 +106,7 @@ export function startBackground(): void {
         console.error(error);
         const errorKind = classifySaveFailure(error?.message);
         void logCapture({ stage: error?.stage || 'unknown', phase: 'fail', platform: message.platform, host: senderHost, url: message.postUrl, error: error?.message }, true);
-        sendResponse({ ok: false, errorKind, error: error?.message } satisfies SaveResponse);
+        sendResponse({ ok: false, errorKind, metaReason: error?.metaReason || null, error: error?.message } satisfies SaveResponse);
       });
     return true; // async response
   });
@@ -130,7 +138,7 @@ export function startBackground(): void {
     try {
       ack = await sendPostToBridge(captureId, record, metaOk, meta.metaError || null);
     } catch (err) {
-      throw stageError('bridge', err?.message || 'bridge save failed');
+      throw stageError('bridge', err?.message || 'bridge save failed', meta.metaError || null);
     }
     markSaved([record.url, postUrl], ack?.captureId || captureId, savedMediaUrls(ack), tab.id);
     const grouped = await bumpRecentSave(record.url);
@@ -667,7 +675,7 @@ export function startBackground(): void {
         console.error(error);
         const errorKind = classifySaveFailure(error?.message);
         void logCapture({ stage: error?.stage || 'unknown', phase: 'fail', platform: message.platform, host: senderHost, url: message.postUrl, error: error?.message }, true);
-        sendResponse({ ok: false, errorKind } satisfies SaveResponse);
+        sendResponse({ ok: false, errorKind, metaReason: error?.metaReason || null } satisfies SaveResponse);
       });
     return true; // async response
   });
@@ -747,7 +755,7 @@ export function startBackground(): void {
     try {
       ack = await send();
     } catch (err) {
-      throw stageError('bridge', err?.message || 'bridge save failed');
+      throw stageError('bridge', err?.message || 'bridge save failed', meta.metaError || null);
     }
     markSaved([record.url, postUrl], ack?.captureId || captureId, savedMediaUrls(ack), tab.id); // light this post's TL badge now
     // Surface metadata-fetch failure to the drop overlay (same partial-success

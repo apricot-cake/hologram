@@ -58,7 +58,10 @@ describe('完全ZIPの取り込みが tag-types.json を合流させる', () => 
     zip.file('library/cap1.jpg', Buffer.from('JPEGDATA1'));
     zip.file('library/tag-types.json', JSON.stringify({ types: { アロナ: 'character', アリス: 'work' } }));
 
-    await importCompleteZipToDb(handle.sqlite, JSZip, dest, await zip.generateAsync({ type: 'nodebuffer' }));
+    // importCompleteZipToDb は PATH を取る（#485 — main が yauzl で開く）。
+    const zipPath = path.join(root, 'fixture.zip');
+    fs.writeFileSync(zipPath, Buffer.from(await zip.generateAsync({ type: 'nodebuffer' })));
+    await importCompleteZipToDb(handle.sqlite, zipPath, dest);
   });
 
   afterAll(() => {

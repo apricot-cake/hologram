@@ -32,19 +32,28 @@ afterEach(() => {
   handle.sqlite.close();
 });
 
+// importCompleteZipToDb takes a PATH now (#485 — main opens it with yauzl), so the
+// fixtures are written to disk. JSZip stays on the WRITING side only: it is the
+// quickest way to assemble an arbitrary archive, and yauzl is what reads it back.
+let seq = 0;
+function zipFileOf(buf: Buffer) {
+  const p = path.join(mkTempDir('hologram-archive-import-zip-'), `fixture-${seq++}.zip`);
+  fs.writeFileSync(p, buf);
+  return p;
+}
 async function buildZip(entries: Record<string, string>) {
   const zip = new JSZip();
   for (const [name, content] of Object.entries(entries)) zip.file(name, content);
-  return Buffer.from(await zip.generateAsync({ type: 'nodebuffer' }));
+  return zipFileOf(Buffer.from(await zip.generateAsync({ type: 'nodebuffer' })));
 }
 
 describe('importCompleteZipToDb: 空DBへの完全インポート', () => {
   test('投稿サイドカーがDBへ書かれ、ディスクへは書かれない', async () => {
-    const buf = await buildZip({
+    const zipPath = await buildZip({
       'library/cap-1.json': JSON.stringify({ captureId: 'cap-1', text: 'hello', tags: ['a'], capturedAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z' }),
       'library/cap-1.jpg': 'JPEGDATA',
     });
-    const res = await importCompleteZipToDb(handle.sqlite, JSZip, destFolder, buf);
+    const res = await importCompleteZipToDb(handle.sqlite, zipPath, destFolder);
     expect(res.ok).toBe(true);
     expect(res.imported).toBe(2); // post + binary
     const row = handle.sqlite.prepare('SELECT text FROM posts WHERE captureId = ?').get('cap-1');
@@ -54,18 +63,18 @@ describe('importCompleteZipToDb: 空DBへの完全インポート', () => {
   });
 
   test('folders.json / tag-types.json がDBへ反映される', async () => {
-    const buf = await buildZip({
+    const zipPath = await buildZip({
       'library/folders.json': JSON.stringify({ folders: [{ id: 'f1', name: 'X', kind: 'static', items: [] }] }),
       'library/tag-types.json': JSON.stringify({ types: { a: 'character' } }),
     });
-    await importCompleteZipToDb(handle.sqlite, JSZip, destFolder, buf);
+    await importCompleteZipToDb(handle.sqlite, zipPath, destFolder);
     const dbw = createDbWriter(handle.sqlite);
     expect(dbw.getFolders().folders.map((f: any) => f.id)).toEqual(['f1']);
     expect(dbw.getTagTypes().types.a).toBe('character');
   });
 
   test('tag-parents.json がDBへ反映される（importTagParents経由）', async () => {
-    const buf = await buildZip({
+    const zipPath = await buildZip({
       'library/tag-parents.json': JSON.stringify({
         tags: [
           { ref: 1, name: 'character' },
@@ -74,7 +83,7 @@ describe('importCompleteZipToDb: 空DBへの完全インポート', () => {
         parents: [{ tagRef: 2, parentRef: 1, isDisplay: true }],
       }),
     });
-    await importCompleteZipToDb(handle.sqlite, JSZip, destFolder, buf);
+    await importCompleteZipToDb(handle.sqlite, zipPath, destFolder);
     const { sqlite } = handle;
     const aliceId = sqlite.prepare('SELECT id FROM tags WHERE name = ?').get('alice').id;
     const characterId = sqlite.prepare('SELECT id FROM tags WHERE name = ?').get('character').id;
@@ -84,14 +93,14 @@ describe('importCompleteZipToDb: 空DBへの完全インポート', () => {
   });
 
   test('tabs.json はインポートしない', async () => {
-    const buf = await buildZip({ 'library/tabs.json': JSON.stringify({ tabs: [{ id: 't1', pinned: false, title: 'x', state: {} }], activeTabId: 't1' }) });
-    await importCompleteZipToDb(handle.sqlite, JSZip, destFolder, buf);
+    const zipPath = await buildZip({ 'library/tabs.json': JSON.stringify({ tabs: [{ id: 't1', pinned: false, title: 'x', state: {} }], activeTabId: 't1' }) });
+    await importCompleteZipToDb(handle.sqlite, zipPath, destFolder);
     expect(createDbWriter(handle.sqlite).getTabs()).toBeNull();
   });
 
   test('poster-favorites.json（旧形式のみ）はDBテーブルが無いため無視される', async () => {
-    const buf = await buildZip({ 'library/poster-favorites.json': JSON.stringify({ keys: ['a'] }) });
-    const res = await importCompleteZipToDb(handle.sqlite, JSZip, destFolder, buf);
+    const zipPath = await buildZip({ 'library/poster-favorites.json': JSON.stringify({ keys: ['a'] }) });
+    const res = await importCompleteZipToDb(handle.sqlite, zipPath, destFolder);
     expect(res.ok).toBe(true); // エラーにならず単に無視される
   });
 });
@@ -103,8 +112,8 @@ describe('importCompleteZipToDb: 非空DBへはマージ（置換ではない）
     const resolveTagId = makeTagResolver(sqlite);
     writePost(stmts, resolveTagId, { captureId: 'cap-1', text: 'ORIGINAL', capturedAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z', media: [], tags: [], hashtags: [] } as any, null);
 
-    const buf = await buildZip({ 'library/cap-1.json': JSON.stringify({ captureId: 'cap-1', text: 'INCOMING', capturedAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z' }) });
-    const res = await importCompleteZipToDb(sqlite, JSZip, destFolder, buf);
+    const zipPath = await buildZip({ 'library/cap-1.json': JSON.stringify({ captureId: 'cap-1', text: 'INCOMING', capturedAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z' }) });
+    const res = await importCompleteZipToDb(sqlite, zipPath, destFolder);
     expect(res.skipped).toBe(1);
     expect(sqlite.prepare('SELECT text FROM posts WHERE captureId = ?').get('cap-1').text).toBe('ORIGINAL');
   });
@@ -113,8 +122,8 @@ describe('importCompleteZipToDb: 非空DBへはマージ（置換ではない）
     const dbw = createDbWriter(handle.sqlite);
     dbw.setFolders({ folders: [{ id: 'local', name: 'Local', kind: 'static', items: [] }] });
 
-    const buf = await buildZip({ 'library/folders.json': JSON.stringify({ folders: [{ id: 'incoming', name: 'Incoming', kind: 'static', items: [] }] }) });
-    await importCompleteZipToDb(handle.sqlite, JSZip, destFolder, buf);
+    const zipPath = await buildZip({ 'library/folders.json': JSON.stringify({ folders: [{ id: 'incoming', name: 'Incoming', kind: 'static', items: [] }] }) });
+    await importCompleteZipToDb(handle.sqlite, zipPath, destFolder);
 
     const ids = createDbWriter(handle.sqlite)
       .getFolders()
@@ -126,11 +135,11 @@ describe('importCompleteZipToDb: 非空DBへはマージ（置換ではない）
 
 describe('importCompleteZipToDb: 冪等性', () => {
   test('同じZIPを2回インポートしても重複しない', async () => {
-    const buf = await buildZip({
+    const zipPath = await buildZip({
       'library/cap-1.json': JSON.stringify({ captureId: 'cap-1', text: 'hello', tags: ['a'], capturedAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z' }),
     });
-    const first = await importCompleteZipToDb(handle.sqlite, JSZip, destFolder, buf);
-    const second = await importCompleteZipToDb(handle.sqlite, JSZip, destFolder, buf);
+    const first = await importCompleteZipToDb(handle.sqlite, zipPath, destFolder);
+    const second = await importCompleteZipToDb(handle.sqlite, zipPath, destFolder);
     expect(first.imported).toBe(1);
     expect(second.imported).toBe(0);
     expect(second.skipped).toBe(1);
@@ -140,8 +149,10 @@ describe('importCompleteZipToDb: 冪等性', () => {
 
 describe('importCompleteZipToDb: .trash/ の復元', () => {
   test('.trash/ 配下はファイルシステムへ復元され、DBのpostsには書かれない', async () => {
-    const buf = await buildZip({ '.trash/cap-9.json': JSON.stringify({ captureId: 'cap-9' }), '.trash/cap-9.jpg': 'TRASHED' });
-    const res = await importCompleteZipToDb(handle.sqlite, JSZip, destFolder, buf);
+    // The manifest is what marks this a complete export (#485 moved that test into
+    // main); a real includeTrash export always carries one alongside .trash/.
+    const zipPath = await buildZip({ 'hologram-export.json': '{"app":"Hologram","kind":"complete"}', '.trash/cap-9.json': JSON.stringify({ captureId: 'cap-9' }), '.trash/cap-9.jpg': 'TRASHED' });
+    const res = await importCompleteZipToDb(handle.sqlite, zipPath, destFolder);
     expect(res.imported).toBe(2);
     expect(fs.readFileSync(path.join(destFolder, '.trash', 'cap-9.json'), 'utf8')).toContain('cap-9');
     expect(fs.readFileSync(path.join(destFolder, '.trash', 'cap-9.jpg'), 'utf8')).toBe('TRASHED');
@@ -164,8 +175,7 @@ describe('importCompleteZipToDb: 旧形式（#300以前）ZIPとの互換', () =
     await writeCompleteZip(oldHandle.sqlite, oldSrc, oldTrash, oldOut, {});
     oldHandle.sqlite.close();
 
-    const buf = await fs.promises.readFile(oldOut);
-    const res = await importCompleteZipToDb(handle.sqlite, JSZip, destFolder, buf);
+    const res = await importCompleteZipToDb(handle.sqlite, oldOut, destFolder);
     expect(res.ok).toBe(true);
     expect(handle.sqlite.prepare('SELECT text FROM posts WHERE captureId = ?').get('legacy-1').text).toBe('from an older export');
   });
@@ -189,7 +199,7 @@ describe('importCompleteZipToDb: 取得原本（#292）の往復', () => {
     await writeCompleteZip(srcHandle.sqlite, srcLib, null, out, {});
     srcHandle.sqlite.close();
 
-    await importCompleteZipToDb(handle.sqlite, JSZip, destFolder, await fs.promises.readFile(out));
+    await importCompleteZipToDb(handle.sqlite, out, destFolder);
 
     const row = handle.sqlite.prepare('SELECT sourceKind, contentType, encoding, sha256, byteLength, payload FROM raw_payloads WHERE postId = ?').get('cap-raw');
     expect({ sourceKind: row.sourceKind, contentType: row.contentType, byteLength: row.byteLength }).toEqual({ sourceKind: 'api:x/tweet-result', contentType: 'application/json', byteLength: Buffer.byteLength(body, 'utf8') });
@@ -211,9 +221,8 @@ describe('importCompleteZipToDb: 取得原本（#292）の往復', () => {
     await writeCompleteZip(srcHandle.sqlite, srcLib, null, out, {});
     srcHandle.sqlite.close();
 
-    const buf = await fs.promises.readFile(out);
-    await importCompleteZipToDb(handle.sqlite, JSZip, destFolder, buf);
-    await importCompleteZipToDb(handle.sqlite, JSZip, destFolder, buf);
+    await importCompleteZipToDb(handle.sqlite, out, destFolder);
+    await importCompleteZipToDb(handle.sqlite, out, destFolder);
 
     expect(handle.sqlite.prepare('SELECT COUNT(*) AS n FROM raw_payloads WHERE postId = ?').get('cap-raw2').n).toBe(1);
   });

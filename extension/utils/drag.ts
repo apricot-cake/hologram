@@ -308,7 +308,7 @@ export async function startDrag(): Promise<void> {
       grouped = !partial && !replaced && res.grouped > 0; // same post saved earlier → merges into one card in the app
       text = partial ? partialSaveText(res.metaReason) : replaced ? t('dupReplaced') : grouped ? t('bannerSavedGrouped', [res.grouped + 1]) : t('bannerSaved');
     } else {
-      text = saveFailureText(timedOut ? 'timeout' : res?.errorKind);
+      text = timedOut ? saveFailureText('timeout') : saveFailureText(res?.errorKind, res?.metaReason);
     }
     setState(z, partial ? 'partial' : ok ? 'ok' : 'fail', text);
     if (ok && !prefersReducedMotion()) {

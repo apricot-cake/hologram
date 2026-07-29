@@ -16,10 +16,9 @@
 //
 // Geometry follows the Windows caption convention: 46x32 buttons, Segoe-style glyphs, and the
 // close button's red hover (#c42b1c, the system's own value — Windows Terminal uses it too).
-import { useEffect, useState, useSyncExternalStore } from 'react';
+import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { hologramIpc } from '../services/ipc.ts';
-import { isOpen as inspectorIsOpen, subscribe as inspectorSubscribe } from '../services/inspector-panel.ts';
 
 function useMaximized(): boolean {
   const [maximized, setMaximized] = useState(false);
@@ -68,12 +67,6 @@ function CloseGlyph() {
 
 export function WindowControls() {
   const maximized = useMaximized();
-  // The strip has to be opaque (it sits above the modal scrim — see below), which means
-  // it also has to match whatever it covers. Pinned to the window's top-right, that is
-  // the tab band normally, but the inspector's titlebar strip whenever the panel is open,
-  // and the two are different tones — hard-coding the band's color left a grey block
-  // floating on the white panel.
-  const overInspector = useSyncExternalStore(inspectorSubscribe, inspectorIsOpen);
   // app-no-drag: the strip overlaps the tab bar's drag region, which would otherwise swallow
   // the clicks. The tab bar reserves --window-controls-w of right padding so tabs never run
   // under it (index.html).
@@ -87,12 +80,14 @@ export function WindowControls() {
   // it replaces did. Inside the tab bar this was impossible — #tabBar is its own stacking
   // context at z-50, so no z-index on a child could clear the scrim. The dim that the scrim
   // would have applied is painted by .wc-dim instead (globals.css).
-  // The strip carries the tab bar's own background, opaque: it sits ABOVE the scrim, so
-  // without it the scrim would show through and .wc-dim would darken an already-darkened
-  // area — the strip came out visibly deeper than the page around it. Opaque + one dim of
-  // its own reproduces exactly what the page gets.
+  // The strip is opaque: it sits ABOVE the scrim, so without a background the scrim would
+  // show through and .wc-dim would darken an already-darkened area — the strip came out
+  // visibly deeper than the page around it. Opaque + one dim of its own reproduces exactly
+  // what the page gets. Which tone it carries is .wc-strip's job (globals.css): the surface
+  // under it is the tab band normally and the inspector's titlebar strip when the panel is
+  // docked, and the two are different colors.
   return createPortal(
-    <div className="app-no-drag fixed top-0 right-0 z-[13600] flex" style={{ background: overInspector ? 'var(--surface)' : 'var(--tabbar-bg)' }}>
+    <div className="wc-strip app-no-drag fixed top-0 right-0 z-[13600] flex">
       <button type="button" aria-label="最小化" className={`${base} hover:bg-foreground/8 active:bg-foreground/16`} onClick={() => hologramIpc.windowControl('minimize')}>
         <MinimizeGlyph />
       </button>
@@ -103,8 +98,10 @@ export function WindowControls() {
         <CloseGlyph />
       </button>
       {/* The scrim's dim, re-created over the buttons (they're above the scrim). pointer-events
-          off so it darkens without taking the clicks it exists to preserve. */}
-      <div className="wc-dim pointer-events-none absolute inset-0 bg-black/50" aria-hidden="true" />
+          off so it darkens without taking the clicks it exists to preserve. Opaque black with
+          the depth left to .wc-dim's opacity, because the scrims differ: a modal's is 50%
+          black, the lightbox's 80%. */}
+      <div className="wc-dim pointer-events-none absolute inset-0 bg-black" aria-hidden="true" />
     </div>,
     document.body,
   );

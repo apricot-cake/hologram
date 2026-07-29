@@ -1,6 +1,4 @@
-import JSZip from 'jszip';
-import { useState, useEffect, useRef } from 'react';
-import type { ChangeEvent } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -16,6 +14,7 @@ import { t } from '../../_shared/i18n.ts';
 import { notify } from '../../services/ui.ts';
 import { getBackup, setBackup as setBackupConfig, pickBackupDir, onBackupDone, getIntegrityStatus, runOrphanRecovery, onIntegrityCheckDone } from '../../services/backup.ts';
 import { onExportProgress, onSaveFolderProgress, pickSaveFolder, moveSaveFolder, exportComplete, importComplete, importPosts, importImages } from '../../services/posts.ts';
+import { readLegacyZipPosts } from '../../services/legacy-zip-import.ts';
 import { open as confirmOpen } from '../../services/confirm.ts';
 import { loadPosts } from '../../services/post-grid-builder.ts';
 
@@ -137,9 +136,6 @@ export function Data() {
   // --- integrity (#301) ---
   const [integrity, setIntegrity] = useState<IntegrityStatus | null>(null);
   const [recovering, setRecovering] = useState(false);
-
-  // file input for the legacy ZIP path
-  const zipInputRef = useRef<HTMLInputElement | null>(null);
 
   // Load both the config save folder and the backup config on mount (the modal
   // remounts each time it opens, so this matches the old "reload on open").
@@ -268,49 +264,58 @@ export function Data() {
   };
 
   // --- import ZIP --- (new complete format vs legacy metadata.json + images/)
-  const onZipPicked = async (e: ChangeEvent<HTMLInputElement>) => {
-    const file = (e.target.files as FileList)[0];
-    if (!file) return;
-    const input = e.target;
-    notify(t('importing'));
+  // main runs the picker and reads the archive (#485); the legacy branch is the
+  // only one that still comes back to the renderer, with its bytes attached.
+  const importZip = async () => {
     try {
-      const buf = new Uint8Array(await file.arrayBuffer());
-      const zip = await JSZip.loadAsync(buf);
-      const isComplete = !!zip.file('hologram-export.json') || Object.keys(zip.files).some((p) => p.indexOf('library/') === 0);
-      if (isComplete) {
-        const res = await importComplete(buf);
+      const res = await importComplete();
+      if (res && res.canceled) return;
+      notify(t('importing'));
+      const done = (imported: number, skipped: number) => {
         reloadPosts();
-        input.value = '';
-        if (!res || !res.ok) {
+        if (skipped > 0) notify(t('importSkipped', [imported, skipped]));
+        else notify(t('imported', [imported]));
+      };
+      if (res && res.legacy && res.bytes) {
+        const posts = await readLegacyZipPosts(new Uint8Array(res.bytes));
+        if (!posts) {
           notify(t('importFailed'));
           return;
         }
-        if (res.skipped > 0) notify(t('importSkipped', [res.imported, res.skipped]));
-        else notify(t('imported', [res.imported]));
+        // #34: 取り込む投稿が既にライブラリにあるとき、コピー／置換／スキップを
+        // 1回だけ聞く（1件ずつ聞くと数百回になるため、バッチ単位）。重複が無ければ
+        // main 側が即座に取り込むので、この確認は出ない。
+        const first = await importPosts(posts);
+        if (first?.needsChoice) {
+          const finish = async (mode: string) => {
+            const r = await importPosts(posts, mode);
+            done(r.imported, r.skipped);
+          };
+          confirmOpen({
+            message: t('importDuplicate', [first.duplicates]),
+            description: t('importDuplicateDesc'),
+            okLabel: t('importDuplicateReplace'),
+            altLabel: t('importDuplicateCopy'),
+            cancelLabel: t('importDuplicateSkip'),
+            onOk: () => void finish('replace'),
+            onAlt: () => void finish('copy'),
+            // Esc lands here too, and skipping is the answer that changes the
+            // least — the library keeps what it has.
+            onCancel: () => void finish('skip'),
+          });
+          return;
+        }
+        done(first.imported, first.skipped);
         return;
       }
-      const metaEntry = zip.file('metadata.json');
-      if (!metaEntry) {
+      if (!res || !res.ok) {
+        reloadPosts();
         notify(t('importFailed'));
-        input.value = '';
         return;
       }
-      const meta = JSON.parse(await metaEntry.async('string'));
-      const posts: any[] = [];
-      for (const m of Array.isArray(meta) ? meta : []) {
-        const f = m.imageFile && zip.file(m.imageFile);
-        if (!f) continue;
-        const b64 = await f.async('base64');
-        posts.push(Object.assign({}, m, { image: 'data:image/jpeg;base64,' + b64 }));
-      }
-      const { imported, skipped } = await importPosts(posts);
-      reloadPosts();
-      input.value = '';
-      if (skipped > 0) notify(t('importSkipped', [imported, skipped]));
-      else notify(t('imported', [imported]));
+      done(res.imported, res.skipped);
     } catch {
       notify(t('importFailed'));
-      input.value = '';
     }
   };
 
@@ -467,7 +472,7 @@ export function Data() {
               <Button variant="outline" onClick={exportZip}>
                 {t('exportZip')}
               </Button>
-              <Button variant="outline" onClick={() => zipInputRef.current && zipInputRef.current.click()}>
+              <Button variant="outline" onClick={importZip}>
                 {t('importZip')}
               </Button>
               {exportMode === 'full' && (
@@ -480,7 +485,6 @@ export function Data() {
               )}
             </div>
             <Hint text={t('hintZip')} />
-            <input type="file" ref={zipInputRef} hidden accept=".zip" onChange={onZipPicked} />
           </div>
           <Separator />
           <div>

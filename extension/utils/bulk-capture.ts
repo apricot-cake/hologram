@@ -34,7 +34,7 @@ import { ensureTokens, motion, prefersReducedMotion, token } from './tokens.ts';
 import type { HologramI18nApi } from './i18n.ts';
 import type { CheckSavedMessage, CheckSavedResponse, SavePostMessage, SaveResponse } from './messages.ts';
 
-type EntryState = 'unknown' | 'queued' | 'saving' | 'saved' | 'skipped' | 'deferred' | 'unavailable' | 'failed';
+type EntryState = 'unknown' | 'queued' | 'saving' | 'saved' | 'skipped' | 'deferred' | 'unavailable' | 'ageRestricted' | 'failed';
 
 // One save at a time, and no faster than this. The metadata fetch and the media
 // download are the only things X sees, and this keeps them at a human cadence.
@@ -53,6 +53,7 @@ export function startBulkCapture(site: CaptureSite, i18n: HologramI18nApi): void
   let skippedCount = 0;
   let deferredCount = 0;
   let unavailableCount = 0;
+  let ageRestrictedCount = 0;
   let failedCount = 0;
 
   let stopped = false;
@@ -268,7 +269,16 @@ export function startBulkCapture(site: CaptureSite, i18n: HologramI18nApi): void
           // it is counted apart from real failures: a bookmark list can hold a
           // handful of dead posts forever, and every run would otherwise report
           // them as breakage the user is meant to go and fix.
-          if (failure?.errorKind === 'post-unavailable') {
+          //
+          // Age-restricted posts are split off again (#505): those are ALIVE —
+          // X simply serves no post info to an anonymous embed request, which is
+          // the only kind we can make. Folding them into "deleted or private"
+          // would tell the user the post is gone when it is still there, and
+          // would hide that re-running the intake can never change the outcome.
+          if (failure?.errorKind === 'post-unavailable' && failure.metaReason === 'ageRestricted') {
+            entries.set(url, 'ageRestricted');
+            ageRestrictedCount++;
+          } else if (failure?.errorKind === 'post-unavailable') {
             entries.set(url, 'unavailable');
             unavailableCount++;
           } else {
@@ -320,7 +330,7 @@ export function startBulkCapture(site: CaptureSite, i18n: HologramI18nApi): void
     banner.style.borderColor = bad ? token.warning : token.success;
     label.textContent = summaryText(byUser);
     stopButton.remove();
-    setTimeout(dismiss, bad || deferredCount || unavailableCount ? 6000 : 3500);
+    setTimeout(dismiss, bad || deferredCount || unavailableCount || ageRestrictedCount ? 6000 : 3500);
   }
 
   function summaryText(byUser: boolean): string {
@@ -328,6 +338,7 @@ export function startBulkCapture(site: CaptureSite, i18n: HologramI18nApi): void
     const parts = [t('bulkSummarySaved', [savedCount]), t('bulkSummarySkipped', [skippedCount])];
     if (deferredCount > 0) parts.push(t('bulkSummaryDeferred', [deferredCount]));
     if (unavailableCount > 0) parts.push(t('bulkSummaryUnavailable', [unavailableCount]));
+    if (ageRestrictedCount > 0) parts.push(t('bulkSummaryAgeRestricted', [ageRestrictedCount]));
     if (failedCount > 0) parts.push(t('bulkSummaryFailed', [failedCount]));
     return `${head} — ${parts.join(' / ')}`;
   }
