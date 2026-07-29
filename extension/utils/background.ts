@@ -125,7 +125,7 @@ export function startBackground(): void {
     const metaOk = metaFetched(meta);
     let ack: any;
     try {
-      ack = await sendPostToBridge(captureId, record, metaOk);
+      ack = await sendPostToBridge(captureId, record, metaOk, meta.metaError || null);
     } catch (err) {
       throw stageError('bridge', err?.message || 'bridge save failed');
     }
@@ -210,7 +210,7 @@ export function startBackground(): void {
     const metaOk = metaFetched(meta);
     let ack: any;
     try {
-      ack = await sendToBridge(captureId, jpegBase64, record, metaOk);
+      ack = await sendToBridge(captureId, jpegBase64, record, metaOk, meta.metaError || null);
     } catch (err) {
       throw stageError('bridge', err?.message || 'bridge save failed');
     }
@@ -267,20 +267,22 @@ export function startBackground(): void {
   }
 
   // Post-click save: screenshot (base64 JPEG) + metadata. metaOk (whether the post
-  // API returned info) rides along so the host's capture.log records partial saves.
-  function sendToBridge(captureId, jpegBase64, record, metaOk) {
-    return bridgeSend({ type: 'save', captureId, image: jpegBase64, metadata: record, metaOk });
+  // API returned info) rides along so the host's capture.log records partial saves,
+  // and metaReason with it — WHY the info is missing is what tells a deleted or
+  // protected post apart from a broken fetch when reading the log afterwards.
+  function sendToBridge(captureId, jpegBase64, record, metaOk, metaReason) {
+    return bridgeSend({ type: 'save', captureId, image: jpegBase64, metadata: record, metaOk, metaReason });
   }
 
   // Bulk-intake save (#362): metadata only, no screenshot — the host downloads
   // the post's own media and the first one becomes the record's image.
-  function sendPostToBridge(captureId, record, metaOk) {
-    return bridgeSend({ type: 'savePost', captureId, metadata: record, metaOk });
+  function sendPostToBridge(captureId, record, metaOk, metaReason) {
+    return bridgeSend({ type: 'savePost', captureId, metadata: record, metaOk, metaReason });
   }
 
   // Image-drag save: the host downloads the dragged image itself (no screenshot).
-  function sendDraggedToBridge(captureId, imageUrl, imageReferer, record, metaOk) {
-    return bridgeSend({ type: 'saveDragged', captureId, imageUrl, imageReferer, metadata: record, metaOk });
+  function sendDraggedToBridge(captureId, imageUrl, imageReferer, record, metaOk, metaReason) {
+    return bridgeSend({ type: 'saveDragged', captureId, imageUrl, imageReferer, metadata: record, metaOk, metaReason });
   }
 
   // The pictures the host says it actually recorded for a save (positional, see
@@ -659,7 +661,7 @@ export function startBackground(): void {
     if (isPlayableMedia(meta.mediaType)) {
       // capturedVia stays null — an ordinary save, not an intake route (#362).
       record = buildRecord(meta, { captureId, capturedAt, postUrl, sendPlatform, extra: { mediaType: meta.mediaType, media: meta.media, capturedVia: null } });
-      send = () => sendPostToBridge(captureId, record, metaOk);
+      send = () => sendPostToBridge(captureId, record, metaOk, meta.metaError || null);
     } else {
       const primary = pickPrimaryImage(meta.platform || sendPlatform, imageUrls, meta);
       if (!primary || !primary.url) throw stageError('image', 'Could not resolve a dragged image URL');
@@ -677,7 +679,7 @@ export function startBackground(): void {
           // image + media[] are set by the bridge (image = downloaded original, media = [])
         },
       });
-      send = () => sendDraggedToBridge(captureId, primary.url, primary.referer, record, metaOk);
+      send = () => sendDraggedToBridge(captureId, primary.url, primary.referer, record, metaOk, meta.metaError || null);
     }
 
     let ack: any;
