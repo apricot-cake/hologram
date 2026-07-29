@@ -19,6 +19,7 @@ import { listPostsDelta, deletePost, clearAll } from './posts.ts';
 import { hologramIpc } from './ipc.ts';
 import { sync as syncPostsData } from './posts-data.ts';
 import { set as storeSet } from './store.ts';
+import { isViewTransitionRunning } from '../_shared/view-transition.ts';
 import { userKey } from './query.ts';
 import * as folders from './folders.ts';
 import * as selection from './selection.ts';
@@ -350,7 +351,10 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
 
     // Card entrance plays only on a fresh build (filter/sort/search), never on
     // an in-place mutation re-render. Skipped under prefers-reduced-motion.
-    grid.classList.toggle('anim-in', !inPlace && !prefersReducedMotion());
+    // Also skipped while a View Transition is carrying this rebuild (#252 — the density
+    // switch): the transition already slides each card to its new place, and fading them in
+    // from below on top of that reads as one unsettled motion rather than two.
+    grid.classList.toggle('anim-in', !inPlace && !prefersReducedMotion() && !isViewTransitionRunning());
     grid.classList.toggle('masonry', deps.currentView() === 'card');
     // Selection mode: rings stay visible on every card, hover actions hide (CSS).
     grid.classList.toggle('selecting', selection.size() > 0);
