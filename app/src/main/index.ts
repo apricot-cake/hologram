@@ -18,7 +18,7 @@ import { drainInbox } from './lib-db-inbox.ts';
 import { applyPendingReplacements } from './lib-db-replaces.ts';
 import { compactInbox } from './lib-db-inbox-compact.ts';
 import { snapshotDatabase } from './lib-db-snapshot.ts';
-import { checkOrphans, synthesizeOrphanRecords } from './lib-db-integrity.ts';
+import { checkOrphans, recoverOrphanRecords } from './lib-db-integrity.ts';
 import { inboxNewDir, ensureInboxDirs, INBOX_DIRNAME } from '../../../native-host/inbox.mts';
 import { pruneDecision, nextBaseline } from './backup-guard.ts';
 import { resolveDevServerUrl } from './dev-server-guard.ts';
@@ -861,18 +861,23 @@ async function runStartupIntegrityCheck() {
 }
 
 // Manual-trigger orphan recovery (#301 design: never automatic — see
-// lib-db-integrity.ts's synthesizeOrphanRecords comment for why a save still
+// lib-db-integrity.ts's recoverOrphanRecords comment for why a save still
 // mid-flight must never be misread as a permanent loss). Re-runs the
 // integrity pass afterward so the visible orphanCount drops immediately.
+// `adopted` counts the orphans whose own sidecar was read back rather than
+// summarized into a minimal record (#511) — worth logging, since the two
+// outcomes differ in everything but the count.
 async function runOrphanRecovery() {
   const folder = getSaveFolder();
   if (!folder) return { ok: false, error: 'not-configured' };
   const handle = await ensurePostsSynced();
   if (!handle) return { ok: false, error: 'not-configured' };
-  const written = synthesizeOrphanRecords(folder, handle.sqlite);
+  const written = recoverOrphanRecords(folder, handle.sqlite);
   if (written.length) scheduleSavedIndexWrite(handle);
   runIntegrityPass(folder, handle.sqlite);
-  return { ok: true, recovered: written.length };
+  const adopted = written.filter((w) => w.via === 'sidecar').length;
+  if (written.length) log.info(`orphan recovery: ${written.length} recovered (${adopted} from a sidecar, ${written.length - adopted} synthesized)`);
+  return { ok: true, recovered: written.length, adopted };
 }
 
 function pathIsInside(child, parent) {
