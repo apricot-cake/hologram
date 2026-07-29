@@ -52,6 +52,19 @@ const POSTER_FILE = /^(.+)-poster\.([a-z0-9]+)$/i;
 // A poster is the only thing beside an animated entry that an <img> can show.
 const ANIMATED_EXT = /\.(mp4|webm|mov|m4v|zip)$/i;
 
+// A surviving media row, read back so the rebuild can carry its metadata over.
+// frames stays the stored JSON TEXT — it goes straight back into the same column.
+interface MediaRow {
+  url: string | null;
+  alt: string | null;
+  width: number | null;
+  height: number | null;
+  file: string;
+  type: string | null;
+  posterFile: string | null;
+  frames: string | null;
+}
+
 function saveFolder(): string {
   try {
     const cfg = JSON.parse(fs.readFileSync(path.join(configDir(), 'config.json'), 'utf8').replace(/^\uFEFF/, ''));
@@ -105,10 +118,29 @@ function main(): void {
   const handle = openDatabase(dbFile, { readonly: !apply });
   const sqlite = handle.sqlite;
 
-  // Only posts the DB holds NO media rows for can be missing their media[] —
-  // a post whose rows survived is not one of these records.
-  const candidates = sqlite.prepare('SELECT captureId, image, video FROM posts p WHERE NOT EXISTS (SELECT 1 FROM media m WHERE m.postId = p.captureId)').all() as Array<{ captureId: string; image: string | null; video: string | null }>;
+  // Two ways the old shape shows up, and BOTH have to be caught:
+  //   - a single-media post kept no media rows at all (its one original went to
+  //     `image`), and
+  //   - a MULTI-media post kept rows for the rest, so only the first original is
+  //     missing. Asking for "no media rows" alone silently skips these — the
+  //     tell is `image` naming an attachment file (<captureId>-media-N.<ext>),
+  //     which no correct producer ever writes there: a screenshot save puts
+  //     <captureId>.jpg in that field and the bulk-intake save leaves it null.
+  // Trashed posts are excluded because their files have physically moved into
+  // .trash/ — there is nothing at the root to rebuild from.
+  const candidates = sqlite
+    .prepare(
+      `SELECT captureId, image, video FROM posts p WHERE trashedAt IS NULL
+         AND (NOT EXISTS (SELECT 1 FROM media m WHERE m.postId = p.captureId) OR p.image GLOB '*-media-[0-9]*.*')`,
+    )
+    .all() as Array<{ captureId: string; image: string | null; video: string | null }>;
   const onDisk = attachmentsByCapture(folder);
+  // What each post's surviving media rows already know. The rebuild orders and
+  // renumbers from the files on disk, but the rows that DID survive carry the
+  // announced source URL and dimensions — facts nothing on disk can re-derive —
+  // so they are carried over by filename rather than thrown away.
+  const keptRows = sqlite.prepare('SELECT postId, url, alt, width, height, file, type, posterFile, frames FROM media WHERE postId = ?');
+  const clearRows = apply ? sqlite.prepare('DELETE FROM media WHERE postId = ?') : null;
 
   // Prepared only for --apply: a readonly connection rejects a write statement.
   const write = apply
@@ -124,18 +156,31 @@ function main(): void {
     if (!found || !found.media.length) continue;
 
     const files = found.media.map((m) => m.file);
+    const kept = new Map((keptRows.all(post.captureId) as MediaRow[]).map((r) => [r.file, r]));
+    // Already whole: every file on disk has a row and `image` claims none of
+    // them. The candidate query casts wide on purpose, so say nothing here.
+    if (kept.size === files.length && !(post.image && files.includes(post.image))) continue;
+
     // Clear only what has just moved into media[]; a record whose image is an
     // unrelated screenshot keeps it (its media were simply never rowed).
     const image = post.image && !files.includes(post.image) && !isVideoFileName(post.image) ? post.image : null;
     const video = post.video && !files.includes(post.video) ? post.video : null;
-    const rows = found.media.map((m, seq) => ({
-      seq,
-      file: m.file,
-      // Only the leading entry can own the poster: one -poster.<ext> exists per
-      // post, and downloadMedia writes it beside the entry it belongs to.
-      posterFile: seq === 0 && found.poster && ANIMATED_EXT.test(m.file) ? found.poster : null,
-      type: isVideoFileName(m.file) ? 'video' : null,
-    }));
+    const rows = found.media.map((m, seq) => {
+      const had = kept.get(m.file);
+      return {
+        seq,
+        file: m.file,
+        url: had?.url ?? null,
+        alt: had?.alt ?? null,
+        width: had?.width ?? null,
+        height: had?.height ?? null,
+        frames: had?.frames ?? null,
+        // Only the leading entry can own the poster: one -poster.<ext> exists per
+        // post, and downloadMedia writes it beside the entry it belongs to.
+        posterFile: had?.posterFile ?? (seq === 0 && found.poster && ANIMATED_EXT.test(m.file) ? found.poster : null),
+        type: had?.type ?? (isVideoFileName(m.file) ? 'video' : null),
+      };
+    });
     // Re-measure from what the card will actually show now (the poster), replacing
     // the 0/0 "unsizable" sentinel that measuring an mp4 produced.
     const face = rows[0].posterFile || (ANIMATED_EXT.test(rows[0].file) ? image : rows[0].file);
@@ -143,14 +188,18 @@ function main(): void {
 
     console.log(`${apply ? 'repair' : 'would repair'} ${post.captureId}`);
     console.log(`  image: ${post.image || 'null'} -> ${image || 'null'}${post.video ? `  video: ${post.video} -> ${video || 'null'}` : ''}`);
-    for (const r of rows) console.log(`  media[${r.seq}]: ${r.file}${r.type ? ` (${r.type})` : ''}${r.posterFile ? ` poster=${r.posterFile}` : ''}`);
+    for (const r of rows) console.log(`  media[${r.seq}]: ${r.file}${r.type ? ` (${r.type})` : ''}${r.posterFile ? ` poster=${r.posterFile}` : ''}${kept.has(r.file) ? ' (kept its row)' : ''}`);
     console.log(`  card dims: ${dim ? `${dim.width}x${dim.height}` : 'unsizable'}`);
 
-    if (write) {
+    if (write && clearRows) {
       sqlite.exec('BEGIN');
       try {
         write.post.run(image, video, dim ? dim.width : 0, dim ? dim.height : 0, post.captureId);
-        for (const r of rows) write.media.run(post.captureId, r.seq, null, null, null, null, r.file, r.type, r.posterFile, null);
+        // Rewritten wholesale rather than patched: seq has to renumber when a
+        // file is inserted ahead of the survivors, and `rows` already carries
+        // everything those survivors knew.
+        clearRows.run(post.captureId);
+        for (const r of rows) write.media.run(post.captureId, r.seq, r.url, r.alt, r.width, r.height, r.file, r.type, r.posterFile, r.frames);
         sqlite.exec('COMMIT');
       } catch (err) {
         sqlite.exec('ROLLBACK');
@@ -165,7 +214,7 @@ function main(): void {
           const rec = JSON.parse(fs.readFileSync(sidecar, 'utf8').replace(/^\uFEFF/, ''));
           rec.image = image;
           rec.video = video;
-          rec.media = rows.map((r) => ({ url: null, alt: null, width: null, height: null, file: r.file, type: r.type, posterFile: r.posterFile }));
+          rec.media = rows.map((r) => ({ url: r.url, alt: r.alt, width: r.width, height: r.height, file: r.file, type: r.type, posterFile: r.posterFile, frames: r.frames ? JSON.parse(r.frames) : null }));
           fs.writeFileSync(sidecar, JSON.stringify(rec, null, 2), 'utf8');
           console.log('  sidecar rewritten');
         }
