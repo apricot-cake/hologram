@@ -918,11 +918,12 @@ export async function startOverlay(): Promise<void> {
       case 'save': {
         el.title = t('hoverSaveImage');
         // Keep the same compact, glyph-only monochrome language as the saved
-        // mark. A slightly larger circle and a neutral hover lift distinguish
-        // the action without adding permanent text or state color.
+        // mark — including its translucency: this control also sits on the
+        // user's picture, and the disc is the only thing between them and it
+        // (user, 2026-07-29). A slightly larger circle and a hover lift
+        // distinguish the action without adding permanent text or state colour.
         el.style.width = `${SAVE_SIZE}px`;
         el.style.height = `${SAVE_SIZE}px`;
-        el.style.background = token.surface;
         el.style.color = token.ink;
         el.style.cursor = 'pointer';
         el.appendChild(makeIcon(ICONS.drop, 14));
@@ -933,12 +934,15 @@ export async function startOverlay(): Promise<void> {
         el.tabIndex = 0;
         el.onpointerdown = stopPress;
         el.onpointerenter = () => {
-          el.style.background = token.hover;
+          // The hover lift changes the disc's COLOUR, not its opacity: going
+          // solid on hover would undo the translucency exactly where the
+          // pointer is, which is where the picture is being looked at.
+          el.style.background = token.controlSurfaceHover;
           el.style.boxShadow = `${token.overlayShadow}, 0 0 0 2px ${token.controlHoverGlow}`;
           el.style.transform = 'scale(1.04)';
         };
         el.onpointerleave = () => {
-          el.style.background = token.surface;
+          el.style.background = token.controlSurface;
           el.style.borderColor = token.overlayBorder;
           el.style.boxShadow = token.overlayShadow;
           el.style.transform = '';
