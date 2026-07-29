@@ -389,7 +389,7 @@ describe('保存ボタン', () => {
 
     expect(b.tagName).toBe('BUTTON');
     expect(b.style.width).toBe('28px');
-    expect(b.style.background).toBe('var(--hologram-surface)');
+    expect(b.style.background).toBe('var(--hologram-control-surface)');
     expect(b.getAttribute('aria-label')).toBe('Save image');
     expect(b.textContent).toBe('');
     expect(animatedElements.has(b)).toBe(false);
@@ -399,8 +399,10 @@ describe('保存ボタン', () => {
     const b = saveButtons()[0];
     b.dispatchEvent(new window.Event('pointerenter'));
 
-    // 状態色ではなく汎用のホバー面＋拡大だけ（#270 でアプリの hover トークンへ）
-    expect(b.style.background).toBe('var(--hologram-hover)');
+    // 状態色ではなく面の色＋ハロー＋拡大だけ。ホバーでも半透明のままである
+    // ことが要点＝保存済みマークと同じ透明度に揃えた（ユーザー判断・2026-07-29）
+    // ので、ホバーで不透明へ戻すと写真を透かす意味が消える。
+    expect(b.style.background).toBe('var(--hologram-control-surface-hover)');
     expect(b.style.transform).toBe('scale(1.04)');
 
     b.dispatchEvent(new window.Event('pointerleave'));
