@@ -422,8 +422,11 @@ declare global {
   // ---- services/searchbox.ts — a real ES module (named exports: init/handlers/
   // registerFocus/focusSearchBox) now. Only the handlers payload contract stays here
   // as a cross-module data shape (viewer produces it, the searchbox component pulls it). ----
+  // getSuggestions left with #28: the suggestion ROWS come from the command registry
+  // (services/command-registry.ts) now, which the component imports directly. What
+  // stays on the bridge is what a pick/confirm DOES — the registry's jump entries call
+  // onPick too, so both faces mean the same thing by "picked".
   interface HologramSearchBoxHandlers {
-    getSuggestions(q: string): any[];
     onPick(item: any): void;
     onConfirmText(): void;
   }

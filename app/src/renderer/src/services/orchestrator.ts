@@ -23,7 +23,6 @@ import { makeTabLabels } from './tab-state.ts';
 import { importComplete, importPosts } from './posts.ts';
 import { readLegacyZipPosts } from './legacy-zip-import.ts';
 import { open as confirmOpen } from './confirm.ts';
-import { compile as searchCompile } from './search.ts';
 import { hologramI18n } from './i18n.ts';
 import * as folders from './folders.ts';
 import { open as lightboxOpen } from './lightbox.ts';
@@ -32,6 +31,7 @@ import { hologramPostGridSource } from './grid.ts';
 import { makePostQueryBuilder, makePosterQueryBuilder, POST_FACET_OPTS, POSTER_FACET_OPTS } from './query-builder.ts';
 import { makeKindMenu } from './kind-menu-builder.ts';
 import { makeSearchBox } from './search-box-builder.ts';
+import { makeCommands } from './command-builder.ts';
 import { makePostGridBuilder, bindLoadPosts, bindConfirmClearAll, bindGetSkipDeleteConfirm, bindSetSkipDeleteConfirm } from './post-grid-builder.ts';
 import { makePosterGridBuilder } from './poster-grid-builder.ts';
 import { makeGridDensity, bindApplyTileOverlay, type HologramSizeTrack } from './grid-density-builder.ts';
@@ -783,17 +783,17 @@ export function endFilterEditSession(): void {
   })();
 
   // --- Authors (作者 row → flyout; derived from post author fields, no fetching) ---
-  // buildUsers (generation-cached poster roll-up) + buildSuggest (search-box
-  // suggestion items) moved to users.ts (imported above) — 5th extraction
-  // slice. Reassigned lets (allPosts / _allPostsGeneration) are injected as
-  // getters; userKey/hostOf are consts already initialized at this point (the
-  // query.ts import above), so they pass through directly.
-  const { buildUsers, buildSuggest } = makeUsers({
+  // buildUsers (generation-cached poster roll-up) moved to users.ts (imported
+  // above) — 5th extraction slice. Reassigned lets (allPosts / _allPostsGeneration)
+  // are injected as getters; userKey/hostOf are consts already initialized at this
+  // point (the query.ts import above), so they pass through directly.
+  // (buildSuggest came out of users.ts with #28 — the command registry's corpus
+  // provider owns the search box's suggestion rows now; see makeCommands below.)
+  const { buildUsers } = makeUsers({
     allPosts: () => postGrid.getAllPosts(),
     generation: () => postGrid.getGeneration(),
     userKey,
     hostOf,
-    compile: searchCompile,
   });
 
   // --- Image source (served from the save folder via the asset:// protocol) ---
@@ -1750,7 +1750,6 @@ export function endFilterEditSession(): void {
     renderPosts: () => renderPosts(),
     renderPosters: () => renderPosters(),
     updateSidebarState: () => updateSidebarState(),
-    buildSuggest: (q) => buildSuggest(q),
   });
   const { searchQuery, setSearchBoxValue, rebindEditingTextLeaf, searchEditing } = searchBox;
   // React owns the subscribe() registration (StoreSubscriptions, App.tsx), importing
@@ -1759,6 +1758,29 @@ export function endFilterEditSession(): void {
   // there since both come off the same makeSearchBox() construction site.
   handleSearchQueryStoreChange = searchBox.handleSearchQueryStoreChange;
   handleShortcutSearchFocusKey = searchBox.handleShortcutSearchFocusKey;
+
+  // --- Command palette (#28) -----------------------------------------------------
+  // Registers the palette's entries into the command registry. Placed after the
+  // searchbox wiring above because the corpus provider's picks ride the same bridge
+  // (one pick, both faces) — it pulls the handlers lazily, but registering the
+  // supplier after its consumer exists keeps the reading order honest. Everything
+  // the entries need is in scope here, so perform() is a closure over the real
+  // functions rather than another bridge.
+  makeCommands({
+    t: (key) => getMessage(key),
+    allPosts: () => postGrid.getAllPosts(),
+    buildUsers,
+    // 置き先になれるのは静的フォルダだけ（保存した検索はクエリの置き換え＝別の動作）。
+    listFolders: () => folders.staticFolders(),
+    folderPath: (id) => folders.pathOf(id),
+    getBrowseMode: () => browseMode,
+    addTab: () => tabsCtl.addTab(),
+    switchTab: (id) => tabsCtl.switchTab(id),
+    resetAllFilters: () => resetAllFilters(),
+    resetPosterFilters: () => resetPosterFilters(),
+    browseTo: (mode) => browseTo(mode),
+    applyFolderFilter: (id) => applyFolderFilter(id),
+  });
 
   sortSelect.addEventListener('change', () => {
     // Sort lives in the tab state (persisted per tab via renderPosts→persist), not a

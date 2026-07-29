@@ -5,6 +5,7 @@ import { AppShell } from '../shell/AppShell.tsx';
 import { get as confirmGet, subscribe as confirmSubscribe } from '../services/confirm.ts';
 import { isOpen as lightboxIsOpen, subscribe as lightboxSubscribe } from '../services/lightbox.ts';
 import { ConfirmHost } from '../confirm/Confirm.tsx';
+import { PaletteHost } from '../palette/CommandPalette.tsx';
 import { PromptHost } from '../prompt/Prompt.tsx';
 import { ContextMenuHost } from '../context-menu/ContextMenu.tsx';
 import { FolderManagerHost } from '../folders/FolderManagerModal.tsx';
@@ -14,6 +15,9 @@ import { SettingsHost } from '../settings/index.tsx';
 import { BulkTagDialogHost } from '../selection/BulkTagDialog.tsx';
 import { Toaster } from '@/components/ui/sonner';
 import { TooltipHost } from '../tooltip/TooltipHost.tsx';
+import { registerViewTransitionRunners } from '../services/command-builder.ts';
+import { handleShortcutPaletteKey } from '../services/command-registry.ts';
+import { runPostDensityViewTransition, runPosterDensityViewTransition } from '../_shared/density-transition.ts';
 import { onPostsChanged } from '../services/posts.ts';
 import { onChange as foldersOnChange } from '../services/folders.ts';
 import { get as storeGet, subscribe as storeSubscribe } from '../services/store.ts';
@@ -161,6 +165,11 @@ function GlobalShortcuts() {
       handleShortcutArrowNav(e);
       handleShortcutSearchFocusKey(e);
       handleShortcutSizeKey(e);
+      // Ctrl/Cmd+K = the command palette (#28). `/` keeps the search-box focus, and
+      // this one comes straight off the registry — no orchestrator binding, because
+      // opening the palette is pure UI state (guard + action live in
+      // services/command-registry.ts, next to the state they read).
+      handleShortcutPaletteKey(e);
     };
     const onMouseup = (e: MouseEvent) => handleShortcutMouseNav(e);
     // Ctrl+wheel = content size (#141). Non-passive on purpose: the handler
@@ -175,6 +184,18 @@ function GlobalShortcuts() {
       window.removeEventListener('wheel', onWheel);
     };
   }, []);
+  return null;
+}
+
+// The palette's ギャラリー/リスト commands re-lay a grid out, which is the one surface that
+// animates through a View Transition (#252). Its start point captures live card geometry, so
+// it lives island-side (_shared/density-transition.ts) and services cannot import it —
+// App.tsx is this codebase's wiring layer for exactly that shape of gap, the same way it
+// registers the orchestrator's shortcut handlers. Both runners go over because the two grids
+// name their cards in separate namespaces; command-builder picks by browseMode. Without this
+// the switch still happens; it just snaps instead of animating.
+function CommandWiring() {
+  useEffect(() => registerViewTransitionRunners({ posts: runPostDensityViewTransition, posters: runPosterDensityViewTransition }), []);
   return null;
 }
 
@@ -285,6 +306,8 @@ export function App() {
       <ModalChrome />
       {/* Global keyboard/mouse shortcuts — React owns the listener registration. */}
       <GlobalShortcuts />
+      {/* Hands the island-side View Transition runner to the command layer (#28). */}
+      <CommandWiring />
       {/* Esc-priority inspector close + outside-click dismiss — capture phase. */}
       <DetailDismiss />
       {/* Tab bar event wiring (click/keydown/contextmenu/etc + Ctrl+T/W/Tab). */}
@@ -303,6 +326,9 @@ export function App() {
       <ContextMenuHost />
       <KindMenuHost />
       <ConfirmHost />
+      {/* Command palette (#28) — Ctrl+K. A shadcn Dialog, so it locks its own scroll
+          and needs no ModalChrome entry, same as PromptHost. */}
+      <PaletteHost />
       {/* Shared naming dialog (prompt.ts bridge) — window.prompt is unavailable in
           the Electron renderer, so naming flows go through this instead. A shadcn
           Dialog, so it locks its own scroll and needs no ModalChrome entry. */}

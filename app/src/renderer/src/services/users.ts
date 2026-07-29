@@ -1,19 +1,23 @@
 // User aggregation service — buildUsers (per-poster roll-up over allPosts, cached
-// behind the library generation) + buildSuggest (search-box suggestion items:
-// top tags + matching posters), extracted 1:1 from viewer.js as the fifth
+// behind the library generation), extracted 1:1 from viewer.js as the fifth
 // "pure logic → service" slice of the viewer decomposition (最終形B). A real ES
 // module (named exports), imported directly by viewer.ts; touches no DOM.
 // Runtime couplings are injected via makeUsers(deps) — reassigned viewer lets
 // (allPosts / _allPostsGeneration) come in as getter functions.
+//
+// buildSuggest (the search box's tag/poster suggestion rows) used to live here too.
+// It moved into the command registry's corpus provider (services/command-builder.ts)
+// with #28: the palette and the search box are two faces over one candidate engine,
+// so there is exactly one place that decides what the rows are. buildUsers is still
+// the poster half of that generation — the provider calls it.
 
 // deps contract (all functions):
 //   allPosts() — full library (getter — viewer reassigns the array)
 //   generation() — _allPostsGeneration (bumped on every allPosts replacement;
 //                  invalidates the buildUsers cache)
 //   userKey(p) / hostOf(url) — from query.js
-//   compile(q) — search.ts's single smart matcher compiler
-export function makeUsers(deps: { allPosts(): HologramPost[]; generation(): number; userKey(p: HologramPost): string; hostOf(url: string | null | undefined): string; compile(q: string): (hay: string) => boolean }) {
-  const { allPosts, generation, userKey, hostOf, compile } = deps;
+export function makeUsers(deps: { allPosts(): HologramPost[]; generation(): number; userKey(p: HologramPost): string; hostOf(url: string | null | undefined): string }) {
+  const { allPosts, generation, userKey, hostOf } = deps;
 
   // Group posts by author. Posts arrive newest-first, so the first occurrence
   // carries the latest display name / handle for that user.
@@ -57,25 +61,5 @@ export function makeUsers(deps: { allPosts(): HologramPost[]; generation(): numb
     return _cachedUsers;
   }
 
-  // Search-box suggestion items: top-6 tags (by SNS-post usage count) + top-4
-  // posters whose display/screen name matches, through the single smart matcher.
-  function buildSuggest(q: string) {
-    const matcher = compile(q);
-    const hit = (s: string) => matcher(String(s || ''));
-    const items: any[] = [];
-    const counts = new Map<string, any>();
-    for (const p of allPosts()) if (p.url) for (const t of p.tags || []) counts.set(t, (counts.get(t) || 0) + 1);
-    [...counts.keys()]
-      .filter(hit)
-      .sort((a, b) => counts.get(b) - counts.get(a))
-      .slice(0, 6)
-      .forEach((t) => items.push({ kind: 'tag', value: t, label: t, note: counts.get(t) }));
-    buildUsers()
-      .filter((u) => hit(u.displayName) || hit(u.screenName))
-      .slice(0, 4)
-      .forEach((u) => items.push({ kind: 'user', value: u.key, label: u.displayName || u.screenName || '(unknown)', note: u.count }));
-    return items;
-  }
-
-  return { buildUsers, buildSuggest };
+  return { buildUsers };
 }

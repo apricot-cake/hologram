@@ -25,7 +25,6 @@ export interface SearchBoxDeps {
   renderPosts(): void;
   renderPosters(): void;
   updateSidebarState(): void;
-  buildSuggest(q: string): any[];
 }
 
 export function makeSearchBox(deps: SearchBoxDeps) {
@@ -105,15 +104,16 @@ export function makeSearchBox(deps: SearchBoxDeps) {
   // --- リアルタイム検索サジェスト -------------------------------------------
   // タイプのたびに、本文検索と並行してタグ/作者の候補を検索ボックス直下に表示。
   // クリック/Enter でそのままフィルタ化（タイプした文字は消す）。
-  // The searchbox component (react-aria ComboBox) owns the input + dropdown UI:
-  // rendering, keyboard nav, open/close, positioning. The suggestion DATA comes
-  // from buildSuggest (users.ts); what a pick DOES is searchEditing.pick,
-  // wired through the searchbox bridge registered below.
-  // Register the component's data callbacks. onConfirmText replicates the old bare-
-  // Enter behavior: only posts mode confirms a text leaf (posters/collections
-  // filter live off the box value, Enter is a no-op there).
+  // The searchbox component (Base UI Autocomplete) owns the input + dropdown UI:
+  // rendering, keyboard nav, open/close, positioning. The suggestion DATA is the
+  // command registry's now (#28) — the component reads queryEntries() directly, so
+  // the rows are the same ones the palette shows; the old buildSuggest is gone.
+  // What a pick DOES is still searchEditing.pick, and it stays on this bridge
+  // because the registry's jump entries call it too — one pick, both faces.
+  // onConfirmText replicates the old bare-Enter behavior: only posts mode confirms
+  // a text leaf (posters/collections filter live off the box value, Enter is a
+  // no-op there).
   initSearchBox({
-    getSuggestions: (q) => deps.buildSuggest(q),
     // pick/confirm run as live-search too: their renders REWRITE the typing
     // burst's history entry (the typed text was for finding the filter — the
     // confirmed/picked state is what the entry should hold), then END the burst.
@@ -126,17 +126,21 @@ export function makeSearchBox(deps: SearchBoxDeps) {
     },
   });
 
-  // `/` or Ctrl/Cmd+K focuses the search box (standard library-app shortcut).
+  // `/` focuses the search box (standard library-app shortcut).
   // Same guards as Ctrl+A (selection-builder.ts): never steal keys from fields
   // or open overlays. Extracted from the old viewer.ts monolith late — the other
   // 5 global shortcut handlers (nav/mouse-nav/undo/select-all/size) had already
   // been absorbed into their natural domain clusters, leaving only this
   // searchbox-focus handler unmoved. Registration lives in the GlobalShortcuts
   // component (app/App.tsx).
+  //
+  // Ctrl/Cmd+K used to land here too; it is the command palette's now (#28,
+  // services/command-registry.ts). The split is deliberate and fixed: `/` = focus
+  // this field, Ctrl+K = open the palette. The field's right-edge badge is what
+  // teaches it.
   function handleShortcutSearchFocusKey(e: KeyboardEvent) {
     const slash = e.key === '/' && !e.ctrlKey && !e.metaKey && !e.altKey;
-    const ctrlK = (e.ctrlKey || e.metaKey) && !e.altKey && (e.key || '').toLowerCase() === 'k';
-    if (!slash && !ctrlK) return;
+    if (!slash) return;
     const t = e.target as HTMLElement | null;
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
     if (confirmGet() || lightboxIsOpen()) return;

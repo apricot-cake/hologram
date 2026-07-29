@@ -17,6 +17,7 @@
 // that still-local code — and for bootApp/postGrid's own deps, both declared
 // elsewhere in viewer.ts — to keep calling into tab state.
 import { genTabId, makeNavHistory, navEntryUrl, sanitizeSavedTabs, loadTabs, persistTabs } from './tab-state.ts';
+import { isOpen as paletteIsOpen } from './command-registry.ts';
 import { get as confirmGet } from './confirm.ts';
 import { isOpen as lightboxIsOpen } from './lightbox.ts';
 import { cloneTree, facetTreeFrom } from './query.ts';
@@ -249,6 +250,7 @@ export function makeTabsController(deps: TabsBuilderDeps) {
   function navAllowed() {
     if (confirmGet() || lightboxIsOpen()) return false;
     if (settingsIsOpen()) return false;
+    if (paletteIsOpen()) return false;
     if (!byId('ivFolderModal').hidden) return false;
     return true;
   }
@@ -624,6 +626,10 @@ export function makeTabsController(deps: TabsBuilderDeps) {
   }
   function handleGlobalTabShortcut(e: KeyboardEvent) {
     if (!e.ctrlKey || e.altKey) return;
+    // パレット表示中は素通りさせない（#28 の受け入れ条件）。Ctrl+T/W/Tab は他の全域
+    // ショートカットと違って対象が入力欄かどうかを見ていない＝パレットの入力欄に
+    // 文字を打っている最中でも、そのままタブが増えたり閉じたりしてしまう。
+    if (paletteIsOpen()) return;
     if (e.key === 't') {
       e.preventDefault();
       addTab();

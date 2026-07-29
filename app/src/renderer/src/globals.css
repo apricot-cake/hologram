@@ -169,7 +169,7 @@
 }
 
 /* View Transitions (#252). The post grid's density switch is the only surface that starts
-   one (React island start point: grid/density-transition.ts). Left alone the API animates
+   one (React island start point: _shared/density-transition.ts). Left alone the API animates
    for a flat 250ms on a curve of its own — slower and looser than everything else in the
    redesign — so the pseudo tree reads the same motion tokens every other animated surface
    does. `enter` timing on both halves: a density switch is a re-arrangement, not an

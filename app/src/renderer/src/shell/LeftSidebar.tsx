@@ -8,7 +8,7 @@
 // the folder as a place filter), the 保存した検索 group (#40) and the footer (settings
 // gear + mirror rail). Still to come (P1-3 continuation): folder HIERARCHY +
 // create/rename/delete (#41).
-import { ChevronRight, Folder, LayoutGrid, Plus, Search, Settings, Users } from 'lucide-react';
+import { ChevronRight, Folder, LayoutGrid, Plus, Search, Settings, Terminal, Users } from 'lucide-react';
 import type { DragEvent, MouseEvent } from 'react';
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
@@ -18,6 +18,7 @@ import { MirrorStatus } from '../mirror/MirrorStatus.tsx';
 import { t } from '../_shared/i18n.ts';
 import { get as storeGet, subscribe as storeSubscribe } from '../services/store.ts';
 import { open as openSettings } from '../services/settings.ts';
+import { open as openPalette } from '../services/command-registry.ts';
 import { all as folderAll, createFolder, placeFolder, isSavedSearch, load as folderLoad, onChange as folderOnChange, removeFolder, renameFolder, toast, updateFolder } from '../services/folders.ts';
 import { open as confirmOpen } from '../services/confirm.ts';
 import { cloneTree } from '../services/query.ts';
@@ -382,6 +383,19 @@ export function LeftSidebar({ resize }: { resize?: PanelResize }) {
       </SidebarContent>
       <SidebarFooter>
         <SidebarMenu>
+          {/* コマンドパレット (#28) — 見える入口の1つ目（もう1つは検索ボックス右端の
+              バッジ）。⋮ メニュー案は #146 で却下され、「#28 の入口は実装時にサイドバー
+              へ足す」と決まっている＝左レールを持つアプリ（VS Code の Manage 歯車 /
+              Obsidian のリボン）は全域の入口をサイドバー側に置く、というのがその理由。
+              設定と同じフッターに並ぶのは、どちらも「今見ているもの」ではなくアプリ
+              そのものへの入口だから。畳んだ状態でもツールチップ付きで押せる。 */}
+          <SidebarMenuItem>
+            <SidebarMenuButton tooltip={`${t('paletteTitle')} (Ctrl+K)`} onClick={() => openPalette()}>
+              <Terminal />
+              <span>{t('paletteTitle')}</span>
+              <span className="ml-auto text-xs text-muted-foreground">Ctrl+K</span>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
           <SidebarMenuItem>
             {/* id="settingsBtn" is kept as a (b) contract: MirrorStatus refreshes
                 its rail on this button's click (folders/backup may have changed).
