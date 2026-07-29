@@ -22,6 +22,12 @@ describe('classifySaveFailure: Chrome の生エラー文の分類', () => {
     ['Native messaging host has exited.', 'host-unavailable'],
     ['Native host unavailable: Access is denied', 'host-unavailable'],
     ['Access to the specified native messaging host is forbidden.', 'origin-rejected'],
+    // 見捨てられた脚（#507）。ホストの「timed out」だけは host-unavailable のまま＝
+    // どちらもタイムアウトだが、保存プログラムが黙ったと分かる方が案内が具体的になる。
+    ['metadata fetch timed out after 20000ms', 'timeout'],
+    ['crop timed out after 10000ms', 'timeout'],
+    ['save timed out — no result from the background within 90000ms', 'timeout'],
+    ['Native host timed out', 'host-unavailable'],
     ['Image download failed: HTTP 403', 'unknown'],
   ])('"%s" → %s', (raw, expected) => {
     expect(classifySaveFailure(raw)).toBe(expected);
@@ -33,6 +39,7 @@ describe('日本語ロケールの文面', () => {
     'host-missing': 'Hologram の保存先に接続できません。Chrome を再起動してください',
     'host-unavailable': 'Hologram の保存プログラムを起動できませんでした。拡張機能の設定から診断ページを確認してください',
     'origin-rejected': 'Hologram の保存設定が一致していません。Hologram を再インストールしてください',
+    timeout: '保存が終わらないため中止しました。もう一度お試しください（繰り返す場合は Chrome を再起動）',
     unknown: '保存に失敗しました。拡張機能の設定から診断ページを確認してください',
   };
 
@@ -59,6 +66,21 @@ test('英語ロケールも生きている', async () => {
   setLanguage('en-US');
   const en = await createI18n();
   expect(en.saveFailureText('host-unavailable').startsWith("Hologram's saver could not start.")).toBe(true);
+});
+
+// #507: 打ち切りの文面は「失敗した」で終わらせず、次の一手が読めること。
+// 一過性の原因が多いので再試行が先頭で、診断ページは他の分類に譲る。
+describe('打ち切りの文面（timeout）', () => {
+  test.each([
+    ['ja-JP', 'もう一度お試しください'],
+    ['en-US', 'Try again'],
+  ])('%s は次の一手を書く', async (language, nextStep) => {
+    setLanguage(language);
+    const i18n = await createI18n();
+    const text = i18n.saveFailureText('timeout');
+    expect(text).toContain(nextStep);
+    expect(text).not.toBe(i18n.saveFailureText('unknown'));
+  });
 });
 
 // #505: 「保存できた上で投稿情報だけ欠けた」と「何も保存されなかった」は正反対の
