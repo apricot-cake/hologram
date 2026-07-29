@@ -3,115 +3,56 @@
 <meta charset="utf-8">
 <meta name="manifest.open_in_tab" content="true">
 <title>Hologram 設定</title>
-<style>
-  /* The app's design language, not a copy of it (#270): pages/options.ts imports
-     utils/tokens.generated.css, which is generated from the same sheet the
-     desktop app renders with. Light/dark follows the browser via
-     prefers-color-scheme alone — the extension has no theme pref of its own, and
-     a forced one is the only thing that could put this page out of step with the
-     browser chrome around it. Static text is Japanese fallback; options.js swaps
-     it for the browser-locale _locales strings (chrome.i18n). */
-  :root {
-    /* Both keywords: the form controls below are browser-drawn, and this is what
-       tells the browser which pair of native colours to draw them with. */
-    color-scheme: light dark;
-  }
-
-  body {
-    /* Opens as a full tab (manifest options_ui open_in_tab): a centered
-       column at the app Settings pane's scale keeps the sparse content from
-       stranding in the viewport. */
-    max-width: 560px;
-    margin: 0 auto;
-    padding: 48px 24px;
-    background: var(--hologram-page-bg);
-    color: var(--hologram-ink);
-    font: 400 13px/1.55 var(--hologram-font-sans);
-  }
-  /* The body background must still paint the whole viewport around the
-     centered column. */
-  html { background: var(--hologram-page-bg); }
-  /* One setting row: the control leads, its explanation sits under the label
-     in muted text (the app Settings pane's shape). */
-  .row {
-    display: flex;
-    gap: 10px;
-    align-items: flex-start;
-    margin: 0 0 32px;
-  }
-  .row input { margin: 2px 0 0; }
-  .row .desc {
-    margin: 4px 0 0;
-    color: var(--hologram-ink-muted);
-    font-size: 12px;
-  }
-  /* A setting with three mutually exclusive values is a radio group, not a
-     switch plus a modifier: "off" and "when does it show" in separate controls
-     would let the page display a combination that means nothing. */
-  fieldset {
-    margin: 0 0 32px;
-    padding: 0;
-    border: 0;
-  }
-  legend { padding: 0; }
-  fieldset .desc {
-    margin: 4px 0 10px;
-    color: var(--hologram-ink-muted);
-    font-size: 12px;
-  }
-  fieldset .choice {
-    display: flex;
-    gap: 10px;
-    align-items: baseline;
-    margin: 0 0 6px;
-  }
-  fieldset .choice input { margin: 0; }
-  /* The diagnostics link keeps its footnote-quiet styling: normal users never
-     need diag, so it shouldn't read as a call to action. */
-  .foot {
-    margin: 0;
-    font-size: 12px;
-  }
-  .foot a {
-    color: var(--hologram-ink-muted);
-    text-decoration: underline; /* the one link affordance kept, so it can't be read as body text */
-    text-underline-offset: 2px;
-  }
-  .foot a:hover { color: var(--hologram-ink); }
-  .foot a:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--hologram-focus-ring); border-radius: 4px; }
-</style>
+<!-- The look lives in utils/page.css, which pages/options.ts imports alongside
+     the generated token sheet (#44). Static text here is the Japanese fallback;
+     options.js swaps it for the browser-locale _locales strings (chrome.i18n). -->
 <body>
-  <fieldset>
-    <legend id="savedBadgeLabel">保存済みの投稿につける印</legend>
-    <p class="desc" id="savedBadgeDesc">タイムライン上で、すでに Hologram に保存した投稿の画像に小さな印を表示します。判定はこのPCの中だけで行われます。</p>
-    <div class="choice">
-      <input type="radio" name="savedBadgeMode" id="savedBadgeModeAlways" value="always" checked>
-      <label for="savedBadgeModeAlways" id="savedBadgeModeAlwaysLabel">常に表示</label>
+  <main class="page">
+    <div class="page-head">
+      <h1 id="pageTitle">Hologram 設定</h1>
+      <p class="lede" id="pageLede">保存の操作をタイムライン上でどう見せるかの設定です。保存したものの管理は Hologram アプリ側で行います。</p>
     </div>
-    <div class="choice">
-      <input type="radio" name="savedBadgeMode" id="savedBadgeModeHover" value="hover">
-      <label for="savedBadgeModeHover" id="savedBadgeModeHoverLabel">マウスを載せたときだけ表示</label>
-    </div>
-    <div class="choice">
-      <input type="radio" name="savedBadgeMode" id="savedBadgeModeOff" value="off">
-      <label for="savedBadgeModeOff" id="savedBadgeModeOffLabel">表示しない</label>
-    </div>
-  </fieldset>
-  <div class="row">
-    <input type="checkbox" id="hoverSaveButton" checked>
-    <div>
-      <label for="hoverSaveButton" id="hoverSaveLabel">画像にマウスを載せたら保存ボタンを出す</label>
-      <p class="desc" id="hoverSaveDesc">まだ保存していない投稿の画像に、その場で保存できるボタンを表示します。保存されるのは画像そのものと投稿の情報（本文・作者・元URL）です。投稿の見た目のスクリーンショットが要るときは Alt+S の投稿キャプチャを使ってください。</p>
-    </div>
-  </div>
-  <div class="row">
-    <input type="checkbox" id="duplicateWarning" checked>
-    <div>
-      <label for="duplicateWarning" id="duplicateWarningLabel">同じものを保存しようとしたら確認する</label>
-      <p class="desc" id="duplicateWarningDesc">すでに保存した画像をもう一度保存しようとしたときに、コピー・置換・スキップを選べる確認を出します。同じ投稿でも別の画像（漫画の次のページなど）なら確認は出ません。</p>
-    </div>
-  </div>
-  <p class="foot"><a href="diag.html" target="_blank" id="diagLink">診断ページを開く</a></p>
+
+    <section>
+      <h2 id="sectionTimeline">タイムライン上の表示</h2>
+      <fieldset>
+        <legend id="savedBadgeLabel">保存済みの投稿につける印</legend>
+        <p class="desc" id="savedBadgeDesc">タイムライン上で、すでに Hologram に保存した投稿の画像に小さな印を表示します。判定はこのPCの中だけで行われます。</p>
+        <div class="choice">
+          <input type="radio" name="savedBadgeMode" id="savedBadgeModeAlways" value="always" checked>
+          <label for="savedBadgeModeAlways" id="savedBadgeModeAlwaysLabel">常に表示</label>
+        </div>
+        <div class="choice">
+          <input type="radio" name="savedBadgeMode" id="savedBadgeModeHover" value="hover">
+          <label for="savedBadgeModeHover" id="savedBadgeModeHoverLabel">マウスを載せたときだけ表示</label>
+        </div>
+        <div class="choice">
+          <input type="radio" name="savedBadgeMode" id="savedBadgeModeOff" value="off">
+          <label for="savedBadgeModeOff" id="savedBadgeModeOffLabel">表示しない</label>
+        </div>
+      </fieldset>
+      <div class="row">
+        <input type="checkbox" id="hoverSaveButton" checked>
+        <div>
+          <label for="hoverSaveButton" id="hoverSaveLabel">画像にマウスを載せたら保存ボタンを出す</label>
+          <p class="desc" id="hoverSaveDesc">まだ保存していない投稿の画像に、その場で保存できるボタンを表示します。保存されるのは画像そのものと投稿の情報（本文・作者・元URL）です。投稿の見た目のスクリーンショットが要るときは Alt+S の投稿キャプチャを使ってください。</p>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2 id="sectionSaving">保存するとき</h2>
+      <div class="row">
+        <input type="checkbox" id="duplicateWarning" checked>
+        <div>
+          <label for="duplicateWarning" id="duplicateWarningLabel">同じものを保存しようとしたら確認する</label>
+          <p class="desc" id="duplicateWarningDesc">すでに保存した画像をもう一度保存しようとしたときに、コピー・置換・スキップを選べる確認を出します。同じ投稿でも別の画像（漫画の次のページなど）なら確認は出ません。</p>
+        </div>
+      </div>
+    </section>
+
+    <p class="foot"><a href="diag.html" target="_blank" id="diagLink">診断ページを開く</a></p>
+  </main>
   <script type="module" src="../pages/options.ts"></script>
 </body>
 </html>

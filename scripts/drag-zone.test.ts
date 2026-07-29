@@ -3,8 +3,8 @@
 // content script として同梱される）を jsdom の中で、実際の注入と同じグローバルのもとで
 // 走らせ、本物の dragstart/dragenter/dragover/dragleave/drop/dragend イベントで駆動する。
 //
-// 見るのは、ドロップゾーンの見た目の状態遷移（idle → over → busy → ok/partial/fail）が
-// setState の呼び出し内容と一致すること、投稿に同定できない画像（アバター等）はそもそも
+// 見るのは、ドロップゾーンの状態遷移（idle → active → busy → success/partial/error）が
+// 実際に起きること、投稿に同定できない画像（アバター等）はそもそも
 // ゾーンを出さないこと（media-identity.test.ts が見るのは extractIdentity 自体の正しさ、
 // ここが見るのはその結果を drag.ts がどう使うか）、送るメッセージがドラッグ経路
 // （imageDragged）であること。
@@ -81,12 +81,18 @@ window.chrome = {
   },
 } as any;
 
-const zone = () => window.document.getElementById('__hologramDropZone') as any;
-const ring = () => zone()?.firstElementChild as any;
-// zone.el の直接の子は常に [ring, badge, label] の3つ固定 — busy 状態では badge の中に
-// スピナー div がネストされるので querySelector('div:last-child') は誤ってそちらを拾う。
-// label は常に zone.el 自身の最後の子であることは変わらないので lastElementChild で拾う。
-const label = () => zone()?.lastElementChild as any;
+// #44: ページ内 UI は body 直下ではなく共有の ShadowRoot の中にいる（ui-root.ts）。
+// ホストページの CSS がこちらへ届かず、こちらの CSS も漏れないための境界なので、
+// テストも実物と同じく境界の内側を見る。
+const uiRoot = () => (window.document.querySelector('hologram-extension-ui') as any)?.shadowRoot;
+const zone = () => (uiRoot()?.getElementById('__hologramDropZone') ?? null) as any;
+const ring = () => zone()?.querySelector('.ring') as any;
+const label = () => zone()?.querySelector('.label') as any;
+// 見た目そのものではなく「どの状態か」を見る（#44）＝色・アイコン・アニメの対応は
+// components.css が1か所で持ち、drag.ts が決めるのは状態だけになった。
+const state = () => zone()?.dataset.state;
+// 要素の存在そのものが開閉状態（入場アニメ付きで mount、退場アニメの後に remove）。
+const shown = () => !!zone()?.isConnected;
 const dragEvent = (type: string) => new window.Event(type, { bubbles: true, cancelable: true });
 const settle = (ms = 20) => new Promise((r) => setTimeout(r, ms));
 
@@ -107,31 +113,30 @@ describe('投稿の絵をドラッグすると idle 状態でゾーンが出る'
   });
 
   test('表示される', () => {
-    expect(zone().style.display).toBe('flex');
+    expect(shown()).toBe(true);
   });
 
   test('ヒントテキストが出る', () => {
     expect(label().textContent).toBe('Drop here to save to Hologram');
   });
 
-  test('idle: 変形なし・リングが見える', () => {
-    expect(zone().style.transform).toBe('');
-    expect(ring().style.opacity).toBe('1');
+  test('idle: 待機状態でリングを持つ', () => {
+    expect(state()).toBe('idle');
+    expect(ring()).not.toBeNull();
   });
 });
 
 describe('ゾーンへの dragenter/dragleave で over ⇄ idle', () => {
-  test('dragenter で over（拡大・アクセント枠）', () => {
+  test('dragenter で active（＝作用中・アクセントを取る状態）', () => {
     zone().dispatchEvent(dragEvent('dragenter'));
 
-    expect(zone().style.transform).toBe('scale(1.04) translateY(-2px)');
+    expect(state()).toBe('active');
   });
 
   test('dragleave で idle に戻る', () => {
     zone().dispatchEvent(dragEvent('dragleave'));
 
-    expect(zone().style.transform).toBe('');
-    expect(ring().style.opacity).toBe('1');
+    expect(state()).toBe('idle');
   });
 });
 
@@ -149,11 +154,8 @@ describe('ドロップ: 成功', () => {
     expect(msg.imageUrls.some((u: string) => u.includes('name=orig'))).toBe(true);
   });
 
-  test('ok 状態: 成功の枠・リングは隠れる', () => {
-    // 色そのものではなくトークンで見る（#270）＝値はアプリ側で決まり、ここが縛るのは
-    // 「どの状態がどの意味のトークンを取るか」だけ。
-    expect(zone().style.borderColor).toBe('var(--hologram-success)');
-    expect(ring().style.opacity).toBe('0');
+  test('success 状態へ転ぶ', () => {
+    expect(state()).toBe('success');
   });
 
   test('保存済みテキストを出す', () => {
@@ -163,7 +165,7 @@ describe('ドロップ: 成功', () => {
   test('しばらくすると隠れる', async () => {
     await settle(1600); // 成功の滞留 1400ms を越える
 
-    expect(zone().style.display).toBe('none');
+    expect(shown()).toBe(false);
   });
 });
 
@@ -175,8 +177,8 @@ describe('ドロップ: 部分成功（メタデータ取得失敗）', () => {
     await settle();
   });
 
-  test('partial 状態: 警告の枠', () => {
-    expect(zone().style.borderColor).toBe('var(--hologram-warning)');
+  test('partial 状態へ転ぶ', () => {
+    expect(state()).toBe('partial');
   });
 
   test('理由付きの文面', () => {
@@ -205,8 +207,8 @@ describe('ドロップ: 失敗', () => {
     await settle();
   });
 
-  test('fail 状態: 失敗の枠', () => {
-    expect(zone().style.borderColor).toBe('var(--hologram-danger)');
+  test('error 状態へ転ぶ', () => {
+    expect(state()).toBe('error');
   });
 
   test('復旧案内の文面（生のエラーは出さない）', () => {
@@ -216,15 +218,13 @@ describe('ドロップ: 失敗', () => {
   test('失敗表示もしばらくすると隠れる', async () => {
     await settle(2900); // 失敗の滞留 2600ms を越える
 
-    expect(zone().style.display).toBe('none');
+    expect(shown()).toBe(false);
   });
 });
 
 // #34: すでに保存した絵をもう一度ドラッグしたときの3択。ドロップ経路は「ポインタが
 // 運んだ絵」がそのまま保存対象なので、その絵の URL 群が照合の第2軸になる。
 describe('重複保存の警告（ドロップ前の3択）', () => {
-  // ask 状態では選択肢が最後の子になるので、label は位置で拾う（[ring, badge, label]）。
-  const askLabel = () => zone()?.children[2] as any;
   const buttons = () => Array.from(zone()?.querySelectorAll('button') || []) as any[];
 
   beforeAll(async () => {
@@ -236,7 +236,8 @@ describe('重複保存の警告（ドロップ前の3択）', () => {
   });
 
   test('3択が出て、まだ保存メッセージは飛んでいない', () => {
-    expect(askLabel().textContent).toBe('This post is already saved');
+    expect(label().textContent).toBe('This post is already saved');
+    expect(state()).toBe('ask');
     expect(buttons().map((b) => b.textContent)).toEqual(['Copy', 'Replace', 'Skip']);
     expect(sent.at(-1).type).toBe('checkDuplicate');
   });
@@ -245,7 +246,7 @@ describe('重複保存の警告（ドロップ前の3択）', () => {
     buttons()[1].dispatchEvent(dragEvent('click'));
     await settle();
     expect(sent.at(-1)).toMatchObject({ type: 'imageDragged', replaces: 'cap-old' });
-    expect(zone().children[2].textContent).toBe('Replaced (the earlier save goes to the trash)');
+    expect(label().textContent).toBe('Replaced (the earlier save goes to the trash)');
   });
 
   test('スキップ: 保存せずに閉じる', async () => {
@@ -258,7 +259,7 @@ describe('重複保存の警告（ドロップ前の3択）', () => {
     buttons()[2].dispatchEvent(dragEvent('click'));
     await settle();
     expect(sent.length).toBe(before); // imageDragged は飛んでいない
-    expect(zone().children[2].textContent).toBe('Not saved');
+    expect(label().textContent).toBe('Not saved');
     duplicateAnswer = { ok: true, duplicate: false };
     await settle(1500);
   });
@@ -267,11 +268,11 @@ describe('重複保存の警告（ドロップ前の3択）', () => {
 test('ゾーンへ落とさず終わったドラッグ（dragend）は保存せず隠すだけ', async () => {
   const before = sent.length;
   window.document.getElementById('img1')?.dispatchEvent(dragEvent('dragstart'));
-  expect(zone().style.display).toBe('flex');
+  expect(shown()).toBe(true);
 
   window.document.dispatchEvent(dragEvent('dragend'));
   await settle(300); // フェードの onfinish（スタブは次ティックで呼ぶ）が飛ぶまで余裕を見る
 
-  expect(zone().style.display).toBe('none');
+  expect(shown()).toBe(false);
   expect(sent.length).toBe(before); // 新しいメッセージは送られていない
 });

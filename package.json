@@ -36,6 +36,7 @@
     "test:e2e-extension": "npm run build:ext && node scripts/e2e-extension-offline.cts",
     "test:e2e-duplicate": "npm run build:ext && node scripts/e2e-extension-duplicate.cts",
     "test:e2e-timeout": "npm run build:ext && node scripts/e2e-extension-timeout.cts",
+    "test:e2e-hostile-css": "npm run build:ext && node scripts/e2e-extension-hostile-css.cts",
     "zip:ext": "npm --prefix extension run zip",
     "setup": "node scripts/setup.cts",
     "lint": "biome check .",

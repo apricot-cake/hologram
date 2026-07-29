@@ -49,6 +49,8 @@ const HTML = `<!doctype html>
     // background failure path: the retry chip stays on the image, and the readable
     // alert appears at the same top-center position as the Alt+S banner (#357).
     await page.click('[data-hologram-overlay]');
+    // #44: the failure banner is in the shared ShadowRoot; Playwright's CSS
+    // selectors pierce open shadow roots, page.evaluate's querySelector does not.
     await page.waitForSelector('[data-hologram-save-banner]', { timeout: 5000 });
     await wait(100); // chrome.storage.local logging is best-effort and asynchronous
     const diagnosticEntries = await overlay.browser.serviceWorkers()[0].evaluate(async () => {
@@ -58,7 +60,7 @@ const HTML = `<!doctype html>
         .map(([, value]) => value);
     });
     const failureUi = await page.evaluate(() => {
-      const banner = document.querySelector('[data-hologram-save-banner]');
+      const banner = document.querySelector('hologram-extension-ui')?.shadowRoot?.querySelector('[data-hologram-save-banner]');
       const retry = document.querySelector('[data-hologram-overlay]');
       if (!banner || !retry) return null;
       const r = banner.getBoundingClientRect();
@@ -87,7 +89,7 @@ const HTML = `<!doctype html>
       await page.screenshot({ path: process.env.HOLOGRAM_OVERLAY_SCREENSHOT });
     }
     await wait(3000); // banner + retry dwell end before the scroll checks
-    const failureCleared = await page.evaluate(() => !document.querySelector('[data-hologram-save-banner]'));
+    const failureCleared = await page.evaluate(() => !document.querySelector('hologram-extension-ui')?.shadowRoot?.querySelector('[data-hologram-save-banner]'));
     if (!failureCleared) throw new Error('OVERLAY_FAILURE_BANNER_DISMISS_FAIL: failure banner did not leave');
 
     const before = await page.evaluate(() => {

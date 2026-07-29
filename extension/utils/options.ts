@@ -2,10 +2,10 @@
 
 // Options page (manifest options_ui — the single home for extension settings;
 // the future toolbar popup deliberately links here instead of hosting its
-// own). The theme pref was removed (extension pages follow the browser via
-// prefers-color-scheme; the on-page capture UI is a theme-independent scrim
-// solid), so what lives here is the timeline overlay's two settings plus the
-// diagnostics link.
+// own). The theme pref was removed because every extension surface follows the
+// browser through prefers-color-scheme (#270), so what lives here is the
+// timeline overlay's two settings, the duplicate warning, and the diagnostics
+// link. The look is utils/page.css, shared with the diagnostics page (#44).
 //
 // Wrapped in an IIFE for the same reason as diag.ts: tsc compiles every
 // extension file as one program, so top-level names must stay unique.
@@ -25,8 +25,10 @@ export function startOptions(): void {
   // extension pages); the static HTML text is the Japanese fallback for a
   // file:// preview where chrome.i18n is absent.
   try {
-    // No on-page heading — the page opens as a tab (manifest options_ui
-    // open_in_tab) and the localized document title set here carries the name.
+    // The page opens as a tab (manifest options_ui open_in_tab), so it carries
+    // its own name and a line saying what it is: it can be reached cold from
+    // chrome://extensions or a context menu, and a bare list of three
+    // checkboxes does not tell that reader whose settings they are (#44).
     const title = chrome.i18n && chrome.i18n.getMessage('optionsTitle');
     if (title) document.title = title;
     const setText = (id: string, key: string) => {
@@ -34,6 +36,10 @@ export function startOptions(): void {
       const text = chrome.i18n && chrome.i18n.getMessage(key);
       if (el && text) el.textContent = text;
     };
+    setText('pageTitle', 'optionsTitle');
+    setText('pageLede', 'optionsLede');
+    setText('sectionTimeline', 'optionsSectionTimeline');
+    setText('sectionSaving', 'optionsSectionSaving');
     setText('diagLink', 'optionsOpenDiag');
     setText('savedBadgeLabel', 'optionsSavedBadge');
     setText('savedBadgeDesc', 'optionsSavedBadgeDesc');

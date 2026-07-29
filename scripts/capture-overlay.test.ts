@@ -116,20 +116,19 @@ async function setup(): Promise<Ctx> {
   const settle = (ms = 300) => new Promise((r) => setTimeout(r, ms));
   await settle(); // createI18n() とリスナー登録が終わるまで
 
-  // capture.ts のバナー/ハイライトは data 属性を持たない（overlay.ts と違う）ので、
-  // border-radius の形（ピル状バナー vs 角丸ハイライト枠）で見分ける。
-  const findDiv = (pred: (el: any) => boolean) => Array.from(window.document.body.querySelectorAll('div')).find(pred);
-  const banner = () => findDiv((el) => el.style.borderRadius === '999px');
-  const highlight = () => findDiv((el) => el.style.borderRadius === 'var(--hologram-radius)');
+  // #44: ページ内 UI は共有の ShadowRoot の中（ui-root.ts）。見た目は components.css が
+  // 持つので、テストが見るのはクラスと data-state＝「どの状態か」だけになった。
+  const uiRoot = () => (window.document.querySelector('hologram-extension-ui') as any)?.shadowRoot;
+  const banner = () => uiRoot()?.querySelector('[data-hologram-capture-banner]');
+  const highlight = () => uiRoot()?.querySelector('.highlight');
 
   return {
     window,
     sent,
     notify: (msg: any) => listener?.(msg, {}, () => {}),
     banner,
-    // 子は [badge, label] 固定で、#34 の 3択だけが3つ目として後ろに付く — label は
-    // 常に2つ目なので、lastElementChild ではなく位置で拾う。
-    bannerLabel: () => banner()?.children[1],
+    bannerState: () => banner()?.dataset.state ?? null,
+    bannerLabel: () => banner()?.querySelector('.label'),
     bannerButtons: () => Array.from(banner()?.querySelectorAll('button') || []),
     highlight,
     settle,
@@ -182,7 +181,7 @@ describe('投稿をクリックすると busy バナーになり captureAndSend 
   });
 
   test('バナーは保存中の文面のまま出ている', () => {
-    expect(ctx.banner().style.display).toBe('flex');
+    expect(ctx.banner().style.display).not.toBe('none');
     expect(ctx.bannerLabel().textContent).toBe('Saving...');
   });
 
@@ -263,7 +262,7 @@ describe('notify: 成功', () => {
   test('しばらくすると片付く（バナーが消え、再開可能になる）', async () => {
     await ctx.settle(1700); // 成功の滞留 1500ms を越える
 
-    expect(ctx.window.document.body.contains(ctx.banner())).toBe(false);
+    expect(ctx.banner()?.isConnected ?? false).toBe(false);
     expect(ctx.window.__snsPostSaveActive).toBe(false);
   });
 });
@@ -300,7 +299,7 @@ describe('notify: 部分成功・グループ化・失敗', () => {
     ctx.notify({ type: 'notify', success: false, errorKind: 'host-unavailable' });
     await ctx.settle(1600); // 成功の滞留(1500ms)は越えたが失敗の滞留(2800ms)にはまだ届かない
 
-    expect(ctx.window.document.body.contains(ctx.banner())).toBe(true);
+    expect(ctx.banner()?.isConnected ?? false).toBe(true);
   });
 });
 
@@ -322,7 +321,7 @@ describe('Escape / 右クリックでキャンセル', () => {
     await ctx.settle(50);
 
     expect(ctx.sent).toHaveLength(0);
-    expect(ctx.window.document.body.contains(ctx.banner())).toBe(false);
+    expect(ctx.banner()?.isConnected ?? false).toBe(false);
     expect(ctx.window.__snsPostSaveActive).toBe(false);
   });
 
@@ -332,6 +331,6 @@ describe('Escape / 右クリックでキャンセル', () => {
     await ctx.settle(50);
 
     expect(ctx.sent).toHaveLength(0);
-    expect(ctx.window.document.body.contains(ctx.banner())).toBe(false);
+    expect(ctx.banner()?.isConnected ?? false).toBe(false);
   });
 });

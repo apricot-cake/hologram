@@ -1,0 +1,395 @@
+/* The page-level UI, as CSS (#44). Adopted into the ShadowRoot ui-root.ts owns,
+ * alongside the generated token sheet.
+ *
+ * ONE state table. Before this file, "what colour is `partial`" was answered
+ * separately by capture.ts, drag.ts, bulk-capture.ts and overlay.ts, in four
+ * hand-kept copies that had already drifted. Here a surface carries
+ * `data-state`, the selectors below decide what that means, and the difference
+ * between a banner and a drop zone is `data-variant` — placement and size only.
+ *
+ * State vocabulary (#154 §2, #44):
+ *   idle     neutral   nothing is happening yet
+ *   active   accent    the user is acting on it right now (aiming, dragging over)
+ *   busy     accent    work is in flight
+ *   success  green     saved
+ *   partial  amber     saved, but the post's own information is missing
+ *   ask      amber     a question is on screen and waiting
+ *   error    red       not saved
+ *
+ * No colour, font, shadow or duration literals: every value is a token, which
+ * scripts/extension-tokens.test.ts enforces across extension/.
+ */
+
+/* The layer. `all: initial` cuts every inherited property the host page would
+ * otherwise push in (font, line-height, colour, letter-spacing, direction of
+ * text rendering). It does NOT touch custom properties — that is what lets the
+ * adopted token sheet's own :host block survive this rule and reach the
+ * components below. */
+:host {
+  all: initial;
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  /* The extension follows the browser's theme, so the form controls and
+     scrollbars any surface may contain should be drawn from the same pair. */
+  color-scheme: light dark;
+  font-family: var(--hologram-font-sans);
+  /* px, never rem: rem is the HOST's root font size, and sites do change it. */
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--hologram-ink);
+}
+
+/* ============================================================ status surface */
+
+/* The shared floating surface. Both faces are the same component: an opaque,
+ * themed panel with an outline that has to separate from an unknown page
+ * (tokens.source.css explains why the outline sits where it does). */
+.surface {
+  position: fixed;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  background: var(--hologram-surface);
+  color: var(--hologram-ink);
+  border: 1px solid var(--hologram-overlay-border);
+  box-shadow: var(--hologram-overlay-shadow);
+  font: 600 13px/1.4 var(--hologram-font-sans);
+  /* A status readout must not intercept clicks meant for the page. Anything
+     that takes input turns this back on for itself. */
+  pointer-events: none;
+  transition:
+    border-color var(--hologram-duration-base),
+    box-shadow var(--hologram-duration-base),
+    transform var(--hologram-duration-base) var(--hologram-ease-out);
+}
+
+/* The banner: a compact pill at the top edge, centred. Same position for every
+ * state, so a save that goes select → busy → success does not move. */
+.surface[data-variant='banner'] {
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  gap: 9px;
+  padding: 6px 16px 6px 7px;
+  max-width: calc(100vw - 48px);
+  border-radius: 999px;
+}
+
+/* The drop zone: a target in the bottom-right corner. It is a DROP TARGET
+ * before it is a status readout, so it takes pointer events at all times —
+ * dragenter/dragover/drop are what it exists for. */
+.surface[data-variant='zone'] {
+  right: 24px;
+  bottom: 24px;
+  width: 248px;
+  flex-direction: column;
+  justify-content: center;
+  gap: 12px;
+  padding: 22px 20px 20px;
+  border-radius: 16px;
+  text-align: center;
+  pointer-events: auto;
+}
+
+/* State → the surface's own outline. idle/active/busy leave it neutral; the
+ * three outcomes tint it, which is what carries the result to peripheral
+ * vision when the label is too small to read at a glance. */
+.surface[data-state='success'] {
+  border-color: var(--hologram-success);
+}
+.surface[data-state='partial'],
+.surface[data-state='ask'] {
+  border-color: var(--hologram-warning);
+}
+.surface[data-state='error'] {
+  border-color: var(--hologram-danger);
+}
+
+/* Drag-over. The accent, used as ADR 0013 scopes it — "acting on this right
+ * now". The zone takes it as a whole (outline + halo + a slight lift) rather
+ * than tinting one part, because the whole rectangle is the target. */
+.surface[data-variant='zone'][data-state='active'] {
+  border-color: var(--hologram-accent);
+  box-shadow: var(--hologram-overlay-shadow), 0 0 0 4px var(--hologram-accent-soft);
+  transform: scale(1.03) translateY(-2px);
+}
+
+/* ====================================================================== badge */
+
+/* The leading glyph. Its fill is the state, in one place for every surface. */
+.badge {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  box-sizing: border-box;
+  background: var(--hologram-badge-neutral);
+  color: var(--hologram-ink-muted);
+  transition:
+    background var(--hologram-duration-base),
+    color var(--hologram-duration-base);
+}
+[data-variant='banner'] .badge {
+  width: 26px;
+  height: 26px;
+}
+/* #44: the old 60px circle was the loudest thing in the drop zone, which put
+ * the emphasis on a decoration rather than on the target. Shrunk to just above
+ * the banner's, leaving the panel and its dashed ring to say "drop here". */
+[data-variant='zone'] .badge {
+  width: 34px;
+  height: 34px;
+}
+
+[data-state='active'] .badge,
+[data-state='busy'] .badge {
+  background: var(--hologram-accent-soft);
+  color: var(--hologram-accent);
+}
+[data-state='success'] .badge {
+  background: var(--hologram-success);
+  color: var(--hologram-on-success);
+}
+[data-state='partial'] .badge,
+[data-state='ask'] .badge {
+  background: var(--hologram-warning);
+  color: var(--hologram-on-warning);
+}
+[data-state='error'] .badge {
+  background: var(--hologram-danger);
+  color: var(--hologram-on-danger);
+}
+
+/* The spinner is a badge whose ring is one arc of ink. Left turning under
+ * reduced motion (see the bottom of this file): it reports that work is in
+ * flight, and a frozen ring would say the save had stalled. */
+.spinner {
+  border-radius: 50%;
+  border: 2.5px solid var(--hologram-badge-neutral);
+  border-top-color: currentColor;
+  box-sizing: border-box;
+  animation: hologram-spin 0.9s linear infinite;
+}
+[data-variant='banner'] .spinner {
+  width: 15px;
+  height: 15px;
+}
+[data-variant='zone'] .spinner {
+  width: 20px;
+  height: 20px;
+}
+@keyframes hologram-spin {
+  to {
+    transform: rotate(1turn);
+  }
+}
+
+.label {
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* ======================================================================= ring */
+
+/* The dashed inset ring — the drop affordance itself, so it is a meaningful
+ * graphical object and owes the 3:1 tier against the panel (tokens.source.css).
+ * Shown while the zone is waiting or being dragged over; a result state has
+ * nothing left to offer, so it fades out. */
+.ring {
+  position: absolute;
+  inset: 6px;
+  border-radius: 11px;
+  border: 1.5px dashed var(--hologram-ring);
+  pointer-events: none;
+  opacity: 0;
+  transition:
+    border-color var(--hologram-duration-base),
+    opacity var(--hologram-duration-base);
+}
+[data-state='idle'] .ring,
+[data-state='active'] .ring {
+  opacity: 1;
+}
+[data-state='active'] .ring {
+  border-color: var(--hologram-accent);
+}
+
+/* ==================================================================== choices */
+
+/* The duplicate warning's three answers (#34), mounted inside whichever surface
+ * asked. The row takes input while the rest of the surface does not. */
+.choices {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  pointer-events: auto;
+}
+.choice-row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.choice {
+  appearance: none;
+  margin: 0;
+  padding: 4px 12px;
+  border-radius: 999px;
+  box-sizing: border-box;
+  cursor: pointer;
+  white-space: nowrap;
+  font: 600 12px/1.5 var(--hologram-font-sans);
+  border: 1px solid var(--hologram-overlay-border);
+  background: var(--hologram-badge-neutral);
+  color: var(--hologram-ink);
+  transition:
+    background var(--hologram-duration-base),
+    border-color var(--hologram-duration-base),
+    transform var(--hologram-duration-base) var(--hologram-ease-out);
+}
+/* "Copy" leads and carries the accent: it is what the save would have done
+ * without the warning, so the question adds choices rather than changing the
+ * default. */
+.choice[data-primary] {
+  border-color: var(--hologram-accent);
+  background: var(--hologram-accent-soft);
+  color: var(--hologram-accent);
+}
+.choice:hover {
+  background: var(--hologram-hover);
+  transform: translateY(-1px);
+}
+.choice[data-primary]:hover {
+  background: var(--hologram-accent-soft);
+}
+.opt-out {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  color: var(--hologram-ink-muted);
+  font: 400 11px/1.4 var(--hologram-font-sans);
+}
+.opt-out input {
+  margin: 0;
+  width: 12px;
+  height: 12px;
+  accent-color: var(--hologram-accent);
+  cursor: pointer;
+}
+
+/* ===================================================================== button */
+
+/* The bulk run's "stop". A real <button> so it keeps the browser's semantics. */
+.action {
+  flex: none;
+  appearance: none;
+  margin: 0;
+  padding: 7px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+  pointer-events: auto;
+  border: 1px solid var(--hologram-overlay-border);
+  background: var(--hologram-badge-neutral);
+  color: var(--hologram-ink);
+  font: 600 12px/1 var(--hologram-font-sans);
+  transition: background var(--hologram-duration-base);
+}
+.action:hover {
+  background: var(--hologram-hover);
+}
+
+/* ====================================================== selection highlight */
+
+/* Alt+S's aim: geometry over the post, never a surface. Only JS's job here is
+ * the rectangle — position, and nothing else, is written inline. */
+.highlight {
+  position: fixed;
+  pointer-events: none;
+  box-sizing: border-box;
+  border: 2px solid var(--hologram-accent);
+  border-radius: var(--hologram-radius);
+  background: var(--hologram-accent-soft);
+  box-shadow: 0 0 0 4px var(--hologram-accent-soft);
+  transition:
+    top 0.08s,
+    left 0.08s,
+    width 0.08s,
+    height 0.08s;
+}
+
+/* ====================================================================== focus */
+
+:where(button, input, [tabindex]):focus-visible {
+  outline: 2px solid var(--hologram-focus-ring);
+  outline-offset: 2px;
+}
+
+/* ============================================================= reduced motion */
+
+/* Live, because it is a media query rather than something JavaScript sampled
+ * once — a preference changed mid-session takes effect without a reload (the
+ * bug #270 fixed on the JS side). Pops and scales stop; state changes still
+ * happen, just instantly. */
+@media (prefers-reduced-motion: reduce) {
+  .surface,
+  .badge,
+  .ring,
+  .choice,
+  .action,
+  .highlight {
+    transition-duration: 0s;
+  }
+  .surface[data-variant='zone'][data-state='active'] {
+    transform: none;
+  }
+  .choice:hover {
+    transform: none;
+  }
+}
+
+/* ============================================================== forced colors */
+
+/* The browser substitutes its own palette; what it cannot do is guess which of
+ * our fills were carrying meaning. Everything collapses to the system pair and
+ * the state is left to the glyph and the text, both of which survive. */
+@media (forced-colors: active) {
+  .surface {
+    background: Canvas;
+    color: CanvasText;
+    border-color: CanvasText;
+    box-shadow: none;
+  }
+  .badge {
+    background: Canvas;
+    color: CanvasText;
+    border: 1px solid CanvasText;
+  }
+  .surface[data-variant='zone'][data-state='active'] {
+    border-color: Highlight;
+  }
+  .ring {
+    border-color: CanvasText;
+  }
+  [data-state='active'] .ring {
+    border-color: Highlight;
+  }
+  .highlight {
+    border-color: Highlight;
+    background: transparent;
+    box-shadow: none;
+  }
+  .choice,
+  .action {
+    border-color: ButtonBorder;
+    background: ButtonFace;
+    color: ButtonText;
+  }
+  .choice[data-primary] {
+    border-color: Highlight;
+    color: ButtonText;
+  }
+}

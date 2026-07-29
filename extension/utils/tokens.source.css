@@ -33,8 +33,19 @@
      dark fill stops separating too. A boundary needs 3:1 against BOTH sides, and
      "both sides" here spans pure black to pure white, which puts the only
      workable value in the middle of the grey ramp — a hairline near the surface
-     colour (what the app uses inside its own window) cannot do this job. */
-  --hologram-overlay-border: #757575;
+     colour (what the app uses inside its own window) cannot do this job.
+
+     The middle of the ramp is a BAND, not a point, and which end of it to sit on
+     is a visual choice rather than a contrast one. Solving the four reference
+     backdrops plus the surface gives relative luminance 0.141 … 0.30 (the floor
+     is pixiv's #1f1f1f, the ceiling is a white page), i.e. roughly #6a6a6a to
+     #949494 — the same band in both themes, because the binding constraint is
+     the host page rather than the fill. #270 shipped each theme near the end of
+     the band that maximises contrast with its own fill, which is what made the
+     rim read as heavy on a 22px control (user, 2026-07-29). Moving each theme
+     towards the fill instead — lighter on the white surface, darker on the dark
+     one — quiets the line without leaving the band. */
+  --hologram-overlay-border: #8f8f8f;
   --hologram-overlay-shadow: 0 12px 36px -8px rgba(0, 0, 0, 0.28), 0 0 0 0.5px rgba(0, 0, 0, 0.06);
 
   /* STATUS. Each fill carries its own ink instead of a shared white: the amber
@@ -91,10 +102,10 @@
 }
 
 [data-theme="dark"] {
-  /* One step lighter than the light theme's outline: the dark surface is very
-     dark (#171717), so the boundary has to climb to keep 3:1 against the fill
-     while staying under the ceiling white host pages impose. */
-  --hologram-overlay-border: #8a8a8a;
+  /* The dark end of the same band (see the light theme's note): moving TOWARDS
+     the dark fill is what quiets the line here, and 3:1 against the fill still
+     holds because the band's floor is set by the host page, not by #171717. */
+  --hologram-overlay-border: #707070;
   --hologram-overlay-shadow: 0 12px 36px -8px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.06);
 
   --hologram-success: #3ecf8e;

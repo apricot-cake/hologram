@@ -5,8 +5,8 @@ import { SAVE_WATCHDOG_MS } from './deadline.ts';
 import { normalizeRect } from './extractor/dom.ts';
 import { getCaptureSite } from './extractor/index.ts';
 import type { CaptureSite, PostRect } from './extractor/types.ts';
-import { ICONS, makeIcon, makeSpinner } from './icons.ts';
-import { ensureTokens, motion, prefersReducedMotion, token } from './tokens.ts';
+import { ICONS } from './icons.ts';
+import { StatusSurface } from './status-surface.ts';
 import { createI18n } from './i18n.ts';
 import type { BackgroundToContentMessage, CaptureAndSendMessage, CaptureAndSendResponse, CropImageResponse, LogCaptureMessage } from './messages.ts';
 
@@ -74,135 +74,33 @@ export async function startCapture(): Promise<void> {
 
   // === UI elements ===
 
-  // Visual language shared with the resident content script. The palette is
-  // generated from the app's design tokens and follows the BROWSER's light/dark
-  // setting (#270) — see tokens.ts, including why the values arrive as an
-  // adopted stylesheet and why everything below writes var() references rather
-  // than colours. State is carried by the badge fill + a tinted pill border.
-  ensureTokens();
-
-  // Top banner — themed pill: leading icon badge + label.
-  const banner = document.createElement('div');
+  // Top banner — the `banner` face of the surface every on-page save path draws
+  // with (#44 — status-surface.ts). This file used to own a private copy of the
+  // state→colour→glyph table; now it decides only WHICH state it is in.
+  const banner = new StatusSurface({ variant: 'banner', resting: ICONS.target });
   // Named for the test harnesses, which cannot read the localized label (the
   // banner follows the browser locale) — the same role data-hologram-choice
-  // plays for the duplicate warning's answers. The state rides along as an
-  // attribute so a test can assert "this save ended" without matching wording.
-  banner.setAttribute('data-hologram-capture-banner', '');
-  banner.style.cssText = [
-    'position:fixed',
-    'top:12px',
-    'left:50%',
-    'transform:translateX(-50%)',
-    'z-index:2147483647',
-    'display:flex',
-    'align-items:center',
-    'gap:9px',
-    'padding:6px 16px 6px 7px',
-    'max-width:calc(100vw - 48px)',
-    'box-sizing:border-box',
-    'border-radius:999px',
-    `border:1px solid ${token.overlayBorder}`,
-    `background:${token.surface}`,
-    `color:${token.ink}`,
-    `font:600 13px/1.4 ${token.fontSans}`,
-    `box-shadow:${token.overlayShadow}`,
-    'pointer-events:none',
-    `transition:border-color ${token.durationBase}`,
-  ].join(';');
-  const bannerBadge = document.createElement('div');
-  bannerBadge.style.cssText = `width:26px;height:26px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;background:${token.accentSoft};color:${token.accent};transition:background ${token.durationBase},color ${token.durationBase};`;
-  banner.appendChild(bannerBadge);
-  const bannerLabel = document.createElement('div');
-  banner.appendChild(bannerLabel);
-  // The duplicate warning's three answers (#34), mounted into the pill while
-  // the question is up and removed on every other state.
-  let bannerChoices: HTMLElement | null = null;
+  // plays for the duplicate warning's answers. The state rides along on the
+  // component's own data-state, so a test can assert "this save ended" without
+  // matching wording.
+  banner.el.setAttribute('data-hologram-capture-banner', '');
 
-  type BannerState = 'select' | 'busy' | 'ok' | 'partial' | 'fail' | 'ask';
-  function setBanner(state: BannerState, text: string) {
-    banner.setAttribute('data-hologram-capture-state', state);
-    bannerLabel.textContent = text;
-    bannerBadge.replaceChildren();
-    // Reset the state-tinted border (ok/partial/fail override it below).
-    banner.style.borderColor = token.overlayBorder;
-    // Only the question state takes input; every other state is a status
-    // readout that must not intercept clicks meant for the page.
-    banner.style.pointerEvents = state === 'ask' ? 'auto' : 'none';
-    // The choices belong to the question only — any other state drops them.
-    bannerChoices?.remove();
-    bannerChoices = null;
-    switch (state) {
-      case 'select':
-        bannerBadge.style.background = token.accentSoft;
-        bannerBadge.style.color = token.accent;
-        bannerBadge.appendChild(makeIcon(ICONS.target, 15));
-        break;
-      case 'busy':
-        bannerBadge.style.background = token.badgeNeutral;
-        bannerBadge.style.color = token.accent;
-        bannerBadge.appendChild(makeSpinner(15));
-        break;
-      case 'ok':
-        bannerBadge.style.background = token.success;
-        bannerBadge.style.color = token.onSuccess;
-        bannerBadge.appendChild(makeIcon(ICONS.check, 15));
-        banner.style.borderColor = token.success;
-        break;
-      case 'partial':
-        bannerBadge.style.background = token.warning;
-        bannerBadge.style.color = token.onWarning;
-        bannerBadge.appendChild(makeIcon(ICONS.warn, 15));
-        banner.style.borderColor = token.warning;
-        break;
-      case 'fail':
-        bannerBadge.style.background = token.danger;
-        bannerBadge.style.color = token.onDanger;
-        bannerBadge.appendChild(makeIcon(ICONS.cross, 15));
-        banner.style.borderColor = token.danger;
-        break;
-      case 'ask':
-        bannerBadge.style.background = token.warning;
-        bannerBadge.style.color = token.onWarning;
-        bannerBadge.appendChild(makeIcon(ICONS.warn, 15));
-        banner.style.borderColor = token.warning;
-        break;
-    }
-  }
+  banner.setState('active', MSG.select);
+  banner.mount();
+  banner.enter();
 
-  setBanner('select', MSG.select);
-  document.body.appendChild(banner);
-  if (!prefersReducedMotion()) {
-    // App toast entrance mirrored from the top edge: drop + slight scale settle
-    // at the pop tier. transform carries the permanent translateX(-50%) — the
-    // keyframes must too.
-    banner.animate(
-      [
-        { opacity: 0, transform: 'translateX(-50%) translateY(-14px) scale(0.96)' },
-        { opacity: 1, transform: 'translateX(-50%)' },
-      ],
-      { duration: motion.durationBase, easing: motion.easeOut },
-    );
-  }
-
-  // Highlight frame
+  // The selection frame: geometry over the post about to be captured, drawn in
+  // the same root as the banner. `position: fixed` inside that root means these
+  // are VIEWPORT coordinates — the old element lived in the page and carried
+  // the scroll offset itself.
   const highlight = document.createElement('div');
-  highlight.style.cssText = [
-    'position:absolute',
-    'pointer-events:none',
-    'z-index:2147483646',
-    'box-sizing:border-box',
-    // The accent, used as ADR 0013 scopes it: this frame is the selection
-    // indicator for the post about to be captured, which is the one job the
-    // product accent has. The tint doubles as the outer glow so the frame reads
-    // on a busy page without a second colour.
-    `border:2px solid ${token.accent}`,
-    `border-radius:${token.radius}`,
-    `background:${token.accentSoft}`,
-    `box-shadow:0 0 0 4px ${token.accentSoft}`,
-    'transition:top 0.08s, left 0.08s, width 0.08s, height 0.08s',
-    'display:none',
-  ].join(';');
-  document.body.appendChild(highlight);
+  highlight.className = 'highlight';
+  highlight.style.display = 'none';
+  (banner.el.parentNode || document.body).appendChild(highlight);
+  // Where the pointer last was, so a scroll can re-aim the frame. The frame no
+  // longer rides the document, so without this it would sit still while the
+  // post moved out from under it until the next mouse move.
+  let lastPointer: { x: number; y: number } | null = null;
 
   let captureStyle: HTMLStyleElement | null = null;
   if (site.captureStyleText) {
@@ -282,17 +180,32 @@ export async function startCapture(): Promise<void> {
   // === Event handlers ===
 
   function onMouseMove(e: MouseEvent) {
-    const post = findPostElement(e.target);
-    if (post) {
-      const rect = getPostRect(post);
-      highlight.style.display = 'block';
-      highlight.style.top = rect.top + window.scrollY - 4 + 'px';
-      highlight.style.left = rect.left + window.scrollX - 4 + 'px';
-      highlight.style.width = rect.width + 8 + 'px';
-      highlight.style.height = rect.height + 8 + 'px';
-    } else {
+    lastPointer = { x: e.clientX, y: e.clientY };
+    aimHighlight(findPostElement(e.target));
+  }
+
+  // Viewport coordinates: the frame lives in the fixed overlay root now, so the
+  // scroll offset it used to add would push it off by a screenful.
+  function aimHighlight(post: Element | null) {
+    if (!post) {
       highlight.style.display = 'none';
+      return;
     }
+    const rect = getPostRect(post);
+    highlight.style.display = 'block';
+    highlight.style.top = rect.top - 4 + 'px';
+    highlight.style.left = rect.left - 4 + 'px';
+    highlight.style.width = rect.width + 8 + 'px';
+    highlight.style.height = rect.height + 8 + 'px';
+  }
+
+  // A wheel or keyboard scroll moves the posts without moving the pointer, and
+  // no mousemove follows. Re-asking which post is under the pointer keeps the
+  // frame on the post the user is actually aiming at — the old document-bound
+  // frame got this for free by scrolling with the page.
+  function onScroll() {
+    if (!lastPointer) return;
+    aimHighlight(findPostElement(document.elementFromPoint(lastPointer.x, lastPointer.y)));
   }
 
   function capturePost(post: Element) {
@@ -306,7 +219,7 @@ export async function startCapture(): Promise<void> {
     // cause can be pinned down quickly.
     if (!postUrl) {
       logCaptureFailure('permalink', post);
-      setBanner('fail', getMessage('bannerFailedReason', [getMessage('reasonNoPermalink')]));
+      banner.setState('error', getMessage('bannerFailedReason', [getMessage('reasonNoPermalink')]));
       setTimeout(cleanup, 2800);
       return;
     }
@@ -317,6 +230,7 @@ export async function startCapture(): Promise<void> {
     document.removeEventListener('mousemove', onMouseMove, true);
     document.removeEventListener('click', onClick, true);
     document.removeEventListener('contextmenu', onContextMenu, true);
+    removeEventListener('scroll', onScroll, true);
     highlight.style.display = 'none';
 
     // #34: ask the library BEFORE shooting anything. checkDuplicate answers
@@ -330,18 +244,19 @@ export async function startCapture(): Promise<void> {
           shoot(post, postUrl, null);
           return;
         }
-        setBanner('ask', getMessage('dupTitle'));
-        bannerChoices = buildChoiceRow(getMessage, (choice) => {
-          if (isCleanedUp) return;
-          if (choice === 'skip') {
-            setBanner('ok', getMessage('dupSkipped'));
-            setTimeout(cleanup, 1500);
-            return;
-          }
-          replacing = choice === 'replace';
-          shoot(post, postUrl, replacing ? hit.captureId : null);
-        });
-        banner.appendChild(bannerChoices);
+        banner.setState('ask', getMessage('dupTitle'));
+        banner.slot(
+          buildChoiceRow(getMessage, (choice) => {
+            if (isCleanedUp) return;
+            if (choice === 'skip') {
+              banner.setState('success', getMessage('dupSkipped'));
+              setTimeout(cleanup, 1500);
+              return;
+            }
+            replacing = choice === 'replace';
+            shoot(post, postUrl, replacing ? hit.captureId : null);
+          }),
+        );
       });
   }
 
@@ -350,7 +265,7 @@ export async function startCapture(): Promise<void> {
   function shoot(post: Element, postUrl: string, replaces: string | null) {
     // Hide the highlight and banner before capturing
     highlight.style.display = 'none';
-    banner.style.display = 'none';
+    banner.hide();
     restoreCaptureState = site.prepareForCapture?.(post) || null;
     // #311: also hide the resident overlay's saved-mark / hover-save-button
     // controls — they draw over the post the same way the highlight does, and
@@ -373,11 +288,12 @@ export async function startCapture(): Promise<void> {
       requestAnimationFrame(() => {
         const rect = getPostRect(post);
 
-        // 'flex' explicitly — display lives only in the inline cssText, so
-        // resetting to '' after the display:none hide would fall back to block
-        // (badge and label would stack).
-        banner.style.display = 'flex';
-        setBanner('busy', MSG.saving);
+        // Back from the hide that kept it out of the screenshot. The display it
+        // returns to is the stylesheet's now, so this only has to clear the
+        // inline `none` — the old code had to name `flex` because that value
+        // lived in the element's own cssText.
+        banner.show();
+        banner.setState('busy', MSG.saving);
 
         // From here the banner is waiting on someone else, so from here it has
         // a deadline (#507). Two ways out, and the save is over on whichever
@@ -424,7 +340,7 @@ export async function startCapture(): Promise<void> {
     saveSettled = true;
     clearSaveWatchdog();
     logSaveTimeout(postUrl, error);
-    setBanner('fail', saveFailureText('timeout'));
+    banner.setState('error', saveFailureText('timeout'));
     setTimeout(cleanup, 2800);
   }
 
@@ -474,15 +390,11 @@ export async function startCapture(): Promise<void> {
 
   // The pill leaves the way it arrived (rise back + settle, pop tier) — an
   // abrupt remove() reads as a glitch next to the app's toast. The listeners
-  // are already gone when this runs, so the lingering element is inert.
+  // are already gone when this runs, so the lingering element is inert. A
+  // banner hidden for the screenshot has nothing to play, so it just goes.
   function dismissBanner() {
-    if (prefersReducedMotion() || !banner.isConnected || banner.style.display === 'none') {
-      banner.remove();
-      return;
-    }
-    const anim = banner.animate([{ opacity: 1 }, { opacity: 0, transform: 'translateX(-50%) translateY(-14px) scale(0.96)' }], { duration: motion.durationFast, easing: motion.easeIn });
-    anim.onfinish = () => banner.remove();
-    anim.oncancel = () => banner.remove();
+    if (banner.hidden) banner.remove();
+    else banner.exit();
   }
 
   function cleanup() {
@@ -494,6 +406,7 @@ export async function startCapture(): Promise<void> {
     document.removeEventListener('click', onClick, true);
     document.removeEventListener('contextmenu', onContextMenu, true);
     document.removeEventListener('keydown', onKeyDown, true);
+    removeEventListener('scroll', onScroll, true);
     chrome.runtime.onMessage.removeListener(onRuntimeMessage);
     restoreCaptureState?.();
     restoreCaptureState = null;
@@ -548,12 +461,10 @@ export async function startCapture(): Promise<void> {
         // its way to the trash, so calling it a merge would be wrong.
         text = partial ? partialSaveText(msg.metaReason) : replacing ? getMessage('dupReplaced') : msg.grouped > 0 ? getMessage('bannerSavedGrouped', [msg.grouped + 1]) : MSG.saved;
       }
-      setBanner(partial ? 'partial' : msg.success ? 'ok' : 'fail', text);
-      if (msg.success && !partial && !prefersReducedMotion()) {
-        // Small badge pop so the state flip reads even in peripheral vision
-        // (app hologramBadgePop: .3s on the shared ease-out curve).
-        bannerBadge.animate([{ transform: 'scale(0.6)' }, { transform: 'scale(1.12)', offset: 0.6 }, { transform: 'scale(1)' }], { duration: 300, easing: motion.easeOut });
-      }
+      banner.setState(partial ? 'partial' : msg.success ? 'success' : 'error', text);
+      // Small badge pop so the state flip reads even in peripheral vision
+      // (app hologramBadgePop: .3s on the shared ease-out curve).
+      if (msg.success && !partial) banner.pop();
       // Hold failures (and partials) longer so the reason is readable.
       setTimeout(cleanup, partial || !msg.success ? 2800 : 1500);
     }
@@ -567,4 +478,5 @@ export async function startCapture(): Promise<void> {
   document.addEventListener('click', onClick, true);
   document.addEventListener('contextmenu', onContextMenu, true);
   document.addEventListener('keydown', onKeyDown, true);
+  addEventListener('scroll', onScroll, { capture: true, passive: true });
 }

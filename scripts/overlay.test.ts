@@ -111,7 +111,11 @@ const setSetting = (key: string, value: unknown) => {
   for (const fn of storageListeners) fn({ [key]: { newValue: value } }, 'local');
 };
 
+// 小型コントロールは投稿の部分木に残る（#44 は固定レイヤーへ移していない＝スクロール
+// 追従とホストの重ね順を壊すため）ので、素の document から拾えるままでよい。
 const controls = (): any[] => Array.from(window.document.querySelectorAll('[data-hologram-overlay]'));
+// 一方で、失敗を伝える上部バナーは共有の ShadowRoot の中（ui-root.ts）。
+const saveBanners = (): any[] => Array.from((window.document.querySelector('hologram-extension-ui') as any)?.shadowRoot?.querySelectorAll('[data-hologram-save-banner]') || []);
 // 常駐バンドルは自前のローカライズ文字列を持つ。jsdom は英語ロケールが既定なので、
 // ソースのキーではなくブラウザに見えるラベルで拾う。
 const marks = () => controls().filter((el) => el.title === 'Saved in Hologram');
@@ -429,7 +433,7 @@ describe('保存ボタン', () => {
     });
 
     test('成功したホバー保存は上部バナーを出さない', () => {
-      expect(window.document.querySelectorAll('[data-hologram-save-banner]')).toHaveLength(0);
+      expect(saveBanners()).toHaveLength(0);
     });
 
     test('保存済みになったので、もう申し出ない', () => {
@@ -462,7 +466,7 @@ describe('保存に失敗したとき', () => {
   });
 
   test('上部バナーも読める文面で、生のエラーを漏らさない', () => {
-    const banners: any[] = Array.from(window.document.querySelectorAll('[data-hologram-save-banner]'));
+    const banners: any[] = saveBanners();
 
     expect(banners).toHaveLength(1);
     expect(banners[0].getAttribute('role')).toBe('alert');
