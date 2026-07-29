@@ -8,8 +8,7 @@
 // watcher + full-resync the renderer). The heavy engines (validateSaveFolder,
 // copyLibraryInto, watchSaveFolder, the config/pointer layer, clearAllBlockReason,
 // avatar fetch) stay in main.js and arrive via ctx; mutable state is reached through
-// getWin/send/getConfigLastCorrupt/resetDelta accessors. JSZip (npm dep) stays behind
-// a dynamic import in getJSZip so a normal launch never pulls it in.
+// getWin/send/getConfigLastCorrupt/resetDelta accessors.
 import { ipcMain, dialog } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -21,12 +20,6 @@ import { fillCardDims } from './lib-card-dims.ts';
 import { makeTagResolver, preparePostStmts, writePost } from './lib-db-record-writer.ts';
 import type { PostRecordInput } from '../../../native-host/post-record.mts';
 
-let _JSZip: any = null;
-async function getJSZip() {
-  if (_JSZip) return _JSZip;
-  const mod: any = await import('jszip');
-  return (_JSZip = mod.default ?? mod);
-}
 function exportStamp() {
   return new Date().toISOString().replace(/[:.]/g, '-').replace('T', '_').slice(0, 19);
 }
@@ -379,13 +372,35 @@ function register(ctx) {
   // the DB instead of disk, and the organization JSONs are DB-read, MERGED
   // (union, same as before), and written back — see lib-archive.ts's
   // importCompleteZipToDb module comment (#300/St7) for why this replaces the
-  // disk-only importCompleteZip here. (Legacy exports — metadata.json + images/ —
-  // keep using the renderer's importPosts path.)
-  ipcMain.handle('import-complete', async (_e, bytes) => {
+  // disk-only importCompleteZip here.
+  //
+  // The FILE PICKER lives here, not in the renderer (#485). The renderer used to
+  // read the whole archive with FileReader and hand the bytes over IPC, which is
+  // exactly what a 4 GiB+ export cannot survive — the renderer OOMs and the IPC
+  // message never lands. main picks the path and yauzl streams it off disk, so
+  // archive size stops mattering to everything above this handler.
+  //
+  // Legacy exports (metadata.json + images/) still belong to the renderer's
+  // importPosts path (#322 owns their future), so an archive that is not a
+  // complete export comes back as { legacy:true } WITH its bytes — the same bytes
+  // the renderer used to read for itself, only now it never touched the file.
+  ipcMain.handle('import-complete', async () => {
+    const res = await dialog.showOpenDialog(getWin(), {
+      properties: ['openFile'],
+      filters: [{ name: 'ZIP', extensions: ['zip'] }],
+    });
+    if (res.canceled || !res.filePaths || !res.filePaths[0]) return { ok: false, canceled: true };
+    const zipPath = res.filePaths[0];
     try {
       const handle = await ensurePostsSynced();
       if (!handle) return { ok: false, error: 'no-folder' };
-      return await archive.importCompleteZipToDb(handle.sqlite, await getJSZip(), getSaveFolder(), Buffer.from(bytes));
+      const out = await archive.importCompleteZipToDb(handle.sqlite, zipPath, getSaveFolder());
+      if (!out.notComplete) return out;
+      // readFile refuses anything over ~2 GiB (ERR_FS_FILE_TOO_LARGE), which lands
+      // in the catch below as a plain failed import — main never tries to hold a
+      // giant archive in one Buffer. The complete format is the one that has to
+      // scale, and it no longer comes through here at all.
+      return { ok: false, legacy: true, bytes: await fs.promises.readFile(zipPath) };
     } catch (err) {
       return { ok: false, error: err.message };
     }

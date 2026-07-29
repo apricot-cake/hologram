@@ -5,7 +5,6 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import JSZip from 'jszip';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { openDatabase } from '../app/src/main/lib-db';
 import { importCompleteZipToDb, writeCompleteZip } from '../app/src/main/lib-archive';
@@ -64,8 +63,7 @@ beforeAll(async () => {
 
   // --- Export DB A -> ZIP, import ZIP -> DB B -------------------------------
   await writeCompleteZip(sqliteA, srcA, trashA, zipPath, { includeTrash: true });
-  const buf = await fs.promises.readFile(zipPath);
-  await importCompleteZipToDb(dbB.sqlite, JSZip, destB, buf);
+  await importCompleteZipToDb(dbB.sqlite, zipPath, destB);
 });
 
 afterAll(() => {

@@ -40,8 +40,11 @@ export function exportSave(filename: string, bytes: Uint8Array | ArrayBuffer) {
 export function exportComplete(mode?: string, includeTrash?: boolean) {
   return hologramIpc.exportComplete(mode, includeTrash);
 }
-export function importComplete(bytes: Uint8Array | ArrayBuffer) {
-  return hologramIpc.importComplete(bytes);
+// main owns the file picker AND the read (#485) — this resolves to the import
+// result, to { canceled:true }, or to { legacy:true, bytes } for an archive that
+// isn't a complete export (see legacy-zip-import.ts).
+export function importComplete() {
+  return hologramIpc.importComplete();
 }
 export function pickSaveFolder() {
   return hologramIpc.pickSaveFolder();

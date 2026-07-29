@@ -53,7 +53,8 @@ const api = {
   clearAll: (): Promise<any> => ipcRenderer.invoke('clear-all'),
   exportSave: (filename: string, bytes: Uint8Array | ArrayBuffer): Promise<any> => ipcRenderer.invoke('export-save', filename, bytes),
   exportComplete: (mode?: string, includeTrash?: boolean): Promise<any> => ipcRenderer.invoke('export-complete', mode, includeTrash),
-  importComplete: (bytes: Uint8Array | ArrayBuffer): Promise<any> => ipcRenderer.invoke('import-complete', bytes),
+  // No argument: main runs the file picker and reads the archive off disk (#485).
+  importComplete: (): Promise<any> => ipcRenderer.invoke('import-complete'),
   pickSaveFolder: (): Promise<any> => ipcRenderer.invoke('pick-save-folder'),
   moveSaveFolder: (dest: string): Promise<any> => ipcRenderer.invoke('move-save-folder', dest),
   onSaveFolderProgress: (cb: (p: any) => void): void => {
