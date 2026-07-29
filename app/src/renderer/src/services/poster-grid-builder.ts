@@ -150,7 +150,10 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
     grid.classList.toggle('tile-view', deps.posterView() === 'tile');
     grid.classList.toggle('list-view', deps.posterView() === 'list');
     if (posterList.length === 0) {
-      empty.style.display = 'block';
+      // #470: drive visibility through the SAME `hidden` attribute the placeholder is
+      // mounted with (AppShell.tsx), not an inline style.display — Tailwind's preflight
+      // `[hidden]{display:none!important}` always outranks an inline style.
+      empty.hidden = false;
       // allUsersCount feeds the EmptyState component's self-derived 'posterFirstRun'
       // vs 'filtered' choice (mirrors the post grid's allPostsCount). Only
       // computed here (buildUsers() is the generation-cached poster roll-up — the
@@ -161,7 +164,7 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
       if (!keepLimit) deps.onPosterRendered(); // 0件 state also records/persists (mirrors the post grid)
       return;
     }
-    empty.style.display = 'none';
+    empty.hidden = true;
     grid.classList.toggle('anim-in', !keepLimit && !prefersReducedMotion());
     storeSet('posterGroups', posterList);
     // With windowing, cells keep MOUNTING while the user scrolls — drop the
