@@ -1,7 +1,7 @@
 'use strict';
 
 // Watch the library for new captures and AUTO-VERIFY each against the platform's
-// public API (re-fetched via extension/utils/metadata.ts). Per capture it prints
+// public API (re-fetched via extension/utils/extractor/index.ts). Per capture it prints
 // PASS/FAIL with the reasons and a one-line summary of the cell — the human only
 // opens pages and clicks/drags; selection criteria come from
 // scripts/test-select-posts.cts.
@@ -24,7 +24,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const Database = require('better-sqlite3');
-const { fetchPostMetadata } = require('../extension/utils/metadata.ts');
+const { fetchPostMetadata } = require('../extension/utils/extractor/index.ts');
 const { configDir, defaultLibraryDir } = require('../native-host/paths.cts');
 
 const POLL_MS = 2000;

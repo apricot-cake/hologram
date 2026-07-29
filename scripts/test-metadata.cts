@@ -3,7 +3,7 @@
 // Validates metadata.js against real public posts (X / Bluesky / Misskey).
 //   node scripts/test-metadata.cts   (needs network)
 
-const { fetchPostMetadata } = require('../extension/utils/metadata.ts');
+const { fetchPostMetadata } = require('../extension/utils/extractor/index.ts');
 
 function show(label, r) {
   console.log(`\n=== ${label} ===`);

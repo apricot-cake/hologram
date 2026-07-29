@@ -1,11 +1,11 @@
-// extension/utils/site-detect.ts の DOM 読み取り（プラットフォーム判定・投稿要素の特定・
+// extension/utils/extractor/ 各サイトモジュールの DOM 相（プラットフォーム判定・投稿要素の特定・
 // パーマリンク抽出）の、オフライン純ユニットテスト。jsdom 上で手書きの HTML フィクスチャ
 // （scripts/fixtures/content/*.html）に対して走らせる。
 //
 // フィクスチャは X/Bluesky/Misskey/Mastodon/pixiv の実採取物ではない（どれもログイン済みの
 // 生セッションが要り、このスイートは意図的にそれを避ける）。コードが狙っているセレクタ／
 // testid の形を最小限で再現し、監査で直したきわどいケース（引用 vs 被引用・返信 vs 親・
-// グリッドの隣・アバター vs 作品。site-detect.ts の "(audit 2026-06-11)" コメント参照）を
+// グリッドの隣・アバター vs 作品。サイトモジュールの "(audit 2026-06-11)" コメント参照）を
 // 覆うもの。ここで捕まるのは「自分のコード変更が解析ロジックを壊した」退行で、
 // 「サイト側が DOM を変えた」は捕まらない＝それは実サイト e2e（scripts/e2e-capture-test.cts）の担当。
 //
@@ -16,7 +16,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { JSDOM } from 'jsdom';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
-import * as siteDetect from '../extension/utils/site-detect';
+import { getCaptureSite } from '../extension/utils/extractor/index.ts';
+import { findMastodonPostElement } from '../extension/utils/extractor/mastodon.ts';
+import { findMisskeyPostElement } from '../extension/utils/extractor/misskey.ts';
 
 const FIXTURES_DIR = path.join(import.meta.dirname, 'fixtures', 'content');
 
@@ -51,7 +53,7 @@ describe('X (Twitter)', () => {
 
   beforeAll(() => {
     ctx = installFixture('x.html', 'https://x.com/home');
-    config = siteDetect.getSiteConfig();
+    config = getCaptureSite();
   });
   afterAll(() => ctx.restore());
 
@@ -83,7 +85,7 @@ describe('Bluesky', () => {
 
   beforeAll(() => {
     ctx = installFixture('bluesky.html', 'https://bsky.app/home');
-    config = siteDetect.getSiteConfig();
+    config = getCaptureSite();
   });
   afterAll(() => ctx.restore());
 
@@ -111,7 +113,7 @@ describe('Misskey', () => {
 
   beforeAll(() => {
     ctx = installFixture('misskey.html', 'https://misskey.io/');
-    config = siteDetect.getSiteConfig();
+    config = getCaptureSite();
   });
   afterAll(() => ctx.restore());
 
@@ -126,7 +128,7 @@ describe('Misskey', () => {
   test('親プレビュー内のクリックは返信ノートへ解決する（プレビューではない・A-3e）', () => {
     const replyNote = ctx.document.getElementById('noteReply');
     const parentPreviewLink = replyNote.querySelector('.reply-parent-preview a');
-    expect(siteDetect.findMisskeyPostElement(parentPreviewLink)).toBe(replyNote);
+    expect(findMisskeyPostElement(parentPreviewLink)).toBe(replyNote);
   });
 
   test('返信のパーマリンクは自分のもの（親のものではない・A-3e）', () => {
@@ -145,7 +147,7 @@ describe('Mastodon', () => {
 
   beforeAll(() => {
     ctx = installFixture('mastodon.html', 'https://mastodon.social/@alice');
-    config = siteDetect.getSiteConfig();
+    config = getCaptureSite();
   });
   afterAll(() => ctx.restore());
 
@@ -159,7 +161,7 @@ describe('Mastodon', () => {
 
   test('引用プレビュー内のクリックは引用した側の status へ解決する（A-4f）', () => {
     const quotedContent = ctx.document.querySelector('#statusQuoteInner .status__content');
-    expect(siteDetect.findMastodonPostElement(quotedContent)).toBe(ctx.document.getElementById('statusQuote'));
+    expect(findMastodonPostElement(quotedContent)).toBe(ctx.document.getElementById('statusQuote'));
   });
 
   test('引用した status のパーマリンクは自分のもの（A-4f）', () => {
@@ -173,7 +175,7 @@ describe('pixiv: 一覧グリッド', () => {
 
   beforeAll(() => {
     ctx = installFixture('pixiv.html', 'https://www.pixiv.net/tags/foo');
-    config = siteDetect.getSiteConfig();
+    config = getCaptureSite();
   });
   afterAll(() => ctx.restore());
 
@@ -196,7 +198,7 @@ describe('pixiv: 作品ページ', () => {
   afterAll(() => ctx.restore());
 
   test('figure のクリックは自分の画像へ落ちる（A-5a）', () => {
-    const config = siteDetect.getSiteConfig();
+    const config = getCaptureSite();
     const mainFigure = ctx.document.getElementById('mainFigure');
     expect(config.getPermalink(config.findPostElement(mainFigure))).toBe('https://www.pixiv.net/artworks/2001');
   });
@@ -211,7 +213,7 @@ describe('pixiv: 作品ページのコメント欄', () => {
   afterAll(() => ctx.restore());
 
   test('コメントのアバターをクリックしても作品の figure へ解決する（A-5e）', () => {
-    const config = siteDetect.getSiteConfig();
+    const config = getCaptureSite();
     const resolved = config.findPostElement(ctx.document.getElementById('avatarImg'));
 
     expect(resolved?.id).toBe('mainFigure2');

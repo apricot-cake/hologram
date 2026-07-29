@@ -28,7 +28,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
-const { fetchPostMetadata } = require('../extension/utils/metadata.ts');
+const { fetchPostMetadata } = require('../extension/utils/extractor/index.ts');
 const { advanceStreak, carryBaseline, diffShapes, endpointMissingDiff, labelPath, shapeOf, sortShape, MISSING_STREAK_ALARM } = require('./lib-schema-canary.cts');
 
 const CANARY_DIR = path.join(__dirname, 'canary');

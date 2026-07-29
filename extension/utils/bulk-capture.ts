@@ -23,15 +23,13 @@
 // save the rest one at a time. Because a permalink is read the instant a row
 // mounts, nothing is lost to fast scrolling: the row's own arrival is the
 // event, not its position.
-import { glassUi } from './glass-ui';
-import type { HologramI18nApi } from './i18n';
-import type { SiteConfig } from './site-detect';
-
-// /i/bookmarks and /i/bookmarks/<folderId>. Deliberately not the search or
-// "for you" timelines: the Issue's scope is the user's own curated list.
-export function isXBookmarksPage(): boolean {
-  return /^\/i\/bookmarks(\/|$)/.test(location.pathname);
-}
+// The bookmarks-list check lives with the rest of X's page knowledge (#212);
+// this module is the intake FLOW, which is X-specific only because X is the
+// one site with such a list so far.
+import type { CaptureSite } from './extractor/types.ts';
+import { isXBookmarksPage } from './extractor/x.ts';
+import { glassUi } from './glass-ui.ts';
+import type { HologramI18nApi } from './i18n.ts';
 
 type EntryState = 'unknown' | 'queued' | 'saving' | 'saved' | 'skipped' | 'deferred' | 'failed';
 
@@ -40,7 +38,7 @@ type EntryState = 'unknown' | 'queued' | 'saving' | 'saved' | 'skipped' | 'defer
 const MIN_SAVE_PERIOD_MS = 1000;
 const END_QUIET_MS = 4000;
 
-export function startBulkCapture(site: SiteConfig, i18n: HologramI18nApi): void {
+export function startBulkCapture(site: CaptureSite, i18n: HologramI18nApi): void {
   const G = glassUi;
   const t = i18n.getMessage;
 

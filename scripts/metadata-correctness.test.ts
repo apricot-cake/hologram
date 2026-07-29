@@ -9,7 +9,11 @@
 // #119 St1 の動画・GIF の直リンク抽出も見る。
 
 import { afterEach, describe, expect, test, vi } from 'vitest';
-import { fetchBlueskyPost, fetchMisskeyNote, fetchPixivIllust, fetchPostMetadata, fetchXTweet } from '../extension/utils/metadata';
+import { fetchBlueskyPost } from '../extension/utils/extractor/bluesky.ts';
+import { fetchPostMetadata } from '../extension/utils/extractor/index.ts';
+import { fetchMisskeyNote } from '../extension/utils/extractor/misskey.ts';
+import { fetchPixivIllust } from '../extension/utils/extractor/pixiv.ts';
+import { fetchXTweet } from '../extension/utils/extractor/x.ts';
 
 function mockFetch(routes: [string, unknown][]) {
   vi.stubGlobal('fetch', async (url: unknown) => {

@@ -10,7 +10,7 @@
 // Flow: run this → open each URL → Alt+S + click (or drag) → the watcher
 // (scripts/test-watch-verify.cts) auto-verifies every capture as it lands.
 
-const { fetchXTweet } = require('../extension/utils/metadata.ts');
+const { fetchXTweet } = require('../extension/utils/extractor/index.ts');
 
 const rows: any[] = [];
 function row(id, label, url, action, expect) {

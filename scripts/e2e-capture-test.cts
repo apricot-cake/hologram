@@ -25,7 +25,7 @@ const path = require('node:path');
 const { spawnSync, execFileSync } = require('node:child_process');
 const { launchExtensionBrowser, stageExtension } = require('./lib-extension-e2e.cts');
 const { createNativeHostSandbox } = require('./lib-native-host-e2e.cts');
-const { fetchXTweet } = require('../extension/utils/metadata.ts');
+const { fetchXTweet } = require('../extension/utils/extractor/index.ts');
 
 // sw.evaluate()/page.evaluate() callback bodies below run inside the extension's
 // service-worker / page context (a real browser, via CDP) — `chrome` is the
