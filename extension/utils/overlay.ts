@@ -910,7 +910,14 @@ export async function startOverlay(): Promise<void> {
     el.removeAttribute('aria-label');
     el.tabIndex = -1;
     el.style.cursor = '';
-    el.style.background = token.surface;
+    // The STATUS default. A face that merely reports something — the saved
+    // mark, the in-flight spinner — rides a translucent disc, because the mark
+    // is the one thing this extension puts on screen when nobody asked for
+    // anything: it sits on every saved picture, permanently, over the user's own
+    // content. The two ACTION faces below opt back into the opaque surface. The
+    // split is by what the face SAYS, not by how big it is; tokens.source.css
+    // carries the reasoning and the bound on the alpha.
+    el.style.background = token.controlSurface;
     el.style.color = token.ink;
     el.style.width = `${CONTROL_SIZE}px`;
     el.style.height = `${CONTROL_SIZE}px`;

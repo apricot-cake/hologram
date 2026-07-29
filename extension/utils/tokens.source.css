@@ -57,17 +57,28 @@
   --hologram-accent-soft: rgba(37, 99, 235, 0.14);
   --hologram-ring: rgba(0, 0, 0, 0.55);
 
-  /* COMPACT CONTROLS (the hover save button and the saved mark) sit on a PICTURE
-     rather than on the card, but they use the SAME opaque surface: letting the
-     photo show through was the pre-#270 treatment, and it only ever bought a
-     readability matrix of (theme × arbitrary image) in exchange for a hint of
-     what was already visible around the control. What they do own is the hover
-     step: the fill lifts to the app's generic hover surface and gains a soft
-     halo, with no hue change — the mark states a fact and the button offers an
-     action, and neither wants state colour. The RIM deliberately does NOT change
-     on hover: it already sits at the only lightness that clears 3:1 against
-     black and white at once, so "heavier" has nowhere to go without losing one
-     of the two. The halo is what carries the emphasis. */
+  /* COMPACT CONTROLS sit on a PICTURE rather than on the card, and they split by
+     what they are SAYING rather than by how big they are:
+
+       status  (saved mark, in-flight spinner) — translucent, the value below
+       action  (save button, retry)            — the card's opaque surface
+
+     The saved mark is the one piece of this extension that is on screen when
+     nobody asked for anything: it rides every saved picture, all the time, over
+     the user's own content. A fully opaque disc there reads as clutter, and the
+     one thing under it that the user actually wants to see is the picture. So
+     the translucency is not decoration — it is what keeps a permanent marker
+     from behaving like a permanent obstruction. An action is the opposite: it
+     appears only because the pointer asked for it, and it should look like
+     something you can press.
+
+     The alpha is bounded, not chosen freely. A picture can be any colour, so the
+     ink has to clear the body tier over BOTH a pure-black and a pure-white photo
+     in both themes; the binding case is dark theme over a white photo, which
+     runs out at roughly 0.60. 0.72 keeps a visible margin over that floor while
+     still letting the picture through. scripts/extension-tokens.test.ts composites
+     this over both extremes and fails if a future value stops reading. */
+  --hologram-control-surface: rgba(255, 255, 255, 0.72);
   --hologram-control-hover-glow: rgba(0, 0, 0, 0.14);
   --hologram-badge-neutral: rgba(0, 0, 0, 0.08);
 
@@ -95,6 +106,7 @@
   --hologram-accent-soft: rgba(37, 99, 235, 0.28);
   --hologram-ring: rgba(255, 255, 255, 0.38);
 
+  --hologram-control-surface: rgba(23, 23, 23, 0.72);
   --hologram-control-hover-glow: rgba(255, 255, 255, 0.16);
   --hologram-badge-neutral: rgba(255, 255, 255, 0.12);
 }
