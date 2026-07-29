@@ -23,6 +23,7 @@ import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { t } from '../_shared/i18n.ts';
+import { runDensityViewTransition } from '../grid/density-transition.ts';
 import type { HologramSizeTrack } from '../services/grid-density-builder.ts';
 import { applyPostSize, applyPosterSize, getPostSizeTrack, getPosterSizeTrack, rerollShuffle } from '../services/orchestrator.ts';
 import { get as storeGet, set as storeSet, subscribe as storeSubscribe } from '../services/store.ts';
@@ -173,13 +174,18 @@ function PostControls() {
     else if (view === 'tile') galleryInfo.current = false;
   }, [view]);
 
+  // Both writes go through the density View Transition (#252): the store write re-lays the
+  // whole grid out, and this is the start point for the animation that carries the cards
+  // from the old arrangement to the new one.
   const setLayout = useCallback((next: string) => {
-    if (next === 'list') storeSet('view', 'list');
-    else storeSet('view', galleryInfo.current ? 'card' : 'tile');
+    runDensityViewTransition(() => {
+      if (next === 'list') storeSet('view', 'list');
+      else storeSet('view', galleryInfo.current ? 'card' : 'tile');
+    });
   }, []);
   const setInfo = useCallback((on: boolean) => {
     galleryInfo.current = on;
-    storeSet('view', on ? 'card' : 'tile'); // only reachable while layout = gallery
+    runDensityViewTransition(() => storeSet('view', on ? 'card' : 'tile')); // only reachable while layout = gallery
   }, []);
 
   const sortSel = document.getElementById('sortSelect') as HTMLSelectElement | null;

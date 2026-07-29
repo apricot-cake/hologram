@@ -40,6 +40,7 @@
   --hologram-on-accent:          #ffffff;
   --hologram-accent-soft:        rgba(37, 99, 235, 0.14);
   --hologram-ring:               rgba(0, 0, 0, 0.55);
+  --hologram-control-surface:    rgba(255, 255, 255, 0.72);
   --hologram-control-hover-glow: rgba(0, 0, 0, 0.14);
   --hologram-badge-neutral:      rgba(0, 0, 0, 0.08);
   --hologram-font-sans:          -apple-system, 'Segoe UI', 'Hiragino Kaku Gothic ProN', 'Yu Gothic UI', 'Noto Sans JP', system-ui, sans-serif;
@@ -70,6 +71,7 @@
     --hologram-on-danger:          #45090c;
     --hologram-accent-soft:        rgba(37, 99, 235, 0.28);
     --hologram-ring:               rgba(255, 255, 255, 0.38);
+    --hologram-control-surface:    rgba(23, 23, 23, 0.72);
     --hologram-control-hover-glow: rgba(255, 255, 255, 0.16);
     --hologram-badge-neutral:      rgba(255, 255, 255, 0.12);
   }

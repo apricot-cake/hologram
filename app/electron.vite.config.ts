@@ -21,7 +21,7 @@ const RESOLVE_ALIAS = [
 
 export default defineConfig({
   main: {
-    // better-sqlite3 (native addon), kysely, electron-log, jszip, yauzl, yazl
+    // better-sqlite3 (native addon), kysely, electron-log, yauzl, yazl
     // etc. stay external (required from node_modules at runtime) rather than
     // bundled — required for the native addon, kept for the rest for parity.
     //

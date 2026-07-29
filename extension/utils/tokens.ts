@@ -57,8 +57,11 @@ export const token = {
   badgeNeutral: 'var(--hologram-badge-neutral)',
   ring: 'var(--hologram-ring)',
   hover: 'var(--hologram-hover)',
-  // compact controls that sit on a picture rather than on the card. They share
-  // the card's surface and rim (see tokens.source.css) and differ only on hover.
+  // compact controls that sit on a picture rather than on the card. The rim is
+  // the card's; the FILL splits by what the face says — status faces take the
+  // translucent disc below, action faces take the opaque `surface` (the split
+  // and the bound on the alpha are argued in tokens.source.css).
+  controlSurface: 'var(--hologram-control-surface)',
   controlHoverGlow: 'var(--hologram-control-hover-glow)',
   // type + motion
   fontSans: 'var(--hologram-font-sans)',

@@ -152,7 +152,7 @@ export async function startDrag(): Promise<void> {
         grouped = !partial && !replaced && res.grouped > 0; // same post saved earlier → merges into one card in the app
         text = partial ? partialSaveText(res.metaReason) : replaced ? t('dupReplaced') : grouped ? t('bannerSavedGrouped', [res.grouped + 1]) : t('bannerSaved');
       } else {
-        text = saveFailureText(res?.errorKind);
+        text = saveFailureText(res?.errorKind, res?.metaReason);
       }
       z.setState(partial ? 'partial' : ok ? 'success' : 'error', text);
       // Small badge pop so the state flip reads even in peripheral vision

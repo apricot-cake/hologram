@@ -765,7 +765,7 @@ async function purgeOldTrash() {
 
 // Transfer handlers (import-posts / clear-all / export-save / export-complete /
 // import-complete) were extracted to ./ipc-transfer.js (registered via ipcTransfer.register
-// below); the JSZip lazy-require + exportStamp moved there too.
+// below); exportStamp moved there too.
 
 // --- バックアップ / 増分ミラー --------------------------------------------------
 // 保存先フォルダ自体をクラウド同期フォルダに置くとライブ書き込み中の同期で壊れやすい。

@@ -434,3 +434,38 @@ describe('取得原本（#292）', () => {
     expect(calls.find((u) => u.includes('getPostThread'))).toContain('parentHeight=0');
   });
 });
+
+// #505: X の埋め込み用 API は、投稿情報を出せない理由を tombstone のテキストで
+// 名乗る — 年齢制限のときだけ何も名乗らず {} を返す。空であること自体が印なので、
+// 「テキストが読めなかった」で unavailable（＝消えた）へ倒してはいけない。
+// 実ライブラリの X 投稿951件で観測した4形を、そのまま並べて固定する（2026-07-29）。
+describe('X: 投稿情報が出せない理由の分類', () => {
+  const tombstone = (text?: string) => ({ __typename: 'TweetTombstone', tombstone: text ? { text: { text } } : {} });
+  // 実在した id（snowflake＝上位ビットに投稿時刻を持つ）。X_ID の '123' は
+  // snowflake 以前の形なので日時を復元できず、ここで見たい性質を測れない。
+  const RESTRICTED = { platform: 'x', id: '2069378728497746227', screenName: 'alice' };
+
+  test.each([
+    ['空の tombstone＝年齢制限（Xは理由を名乗らない）', undefined, 'ageRestricted'],
+    ['Age-restricted adult content. Learn more', 'Age-restricted adult content. Learn more', 'ageRestricted'],
+    ['投稿者が削除', 'This Post was deleted by the Post author. Learn more', 'unavailable'],
+    ['アカウント消滅', 'This Post is from an account that no longer exists. Learn more', 'unavailable'],
+    ['鍵付き', 'You’re unable to view this Post because this account owner limits who can view their Posts. Learn more', 'protected'],
+  ])('%s → %s', async (_name, text, expected) => {
+    mockFetch([['tweet-result', tombstone(text as string | undefined)]]);
+
+    const r = await fetchXTweet(RESTRICTED, X_URL);
+
+    expect(r.metaError).toBe(expected);
+    // 投稿 id は時刻を持っている＝本文が取れなくても日付は復元される
+    expect(r.date).toBeTruthy();
+  });
+
+  // HTTP 404 はその id の投稿が存在しないこと（削除ではなく、そもそも無い）。
+  // 200 + tombstone とは別の経路なので、年齢制限へ倒れないことを見る。
+  test('HTTP 404 は unavailable のまま', async () => {
+    vi.stubGlobal('fetch', async () => new Response('<html>not found</html>', { status: 404 }));
+
+    expect((await fetchXTweet(X_ID, X_URL)).metaError).toBe('unavailable');
+  });
+});

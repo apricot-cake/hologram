@@ -171,6 +171,16 @@ function normFrames(v: unknown): { file: string; delay: number }[] | null {
   return out;
 }
 
+// Filename extensions the library stores a MOVING picture in — a file no
+// <img src> can ever render. The renderer keeps its own copy of this list
+// (records.ts's isVideoFile) rather than importing it: this module reaches
+// node:crypto/node:zlib through raw-payload.mts and so cannot enter the
+// renderer bundle. Both lists must gain a format together.
+const VIDEO_FILE = /\.(mp4|webm|mov|m4v)$/i;
+export function isVideoFileName(name: string | null | undefined): boolean {
+  return typeof name === 'string' && VIDEO_FILE.test(name);
+}
+
 // Does the library hold anything OF this post, as opposed to what its permalink
 // already says? platform, screenName and (on X) the post date are all derivable
 // from the URL alone, so a record carrying nothing else is an empty shell: there
@@ -197,12 +207,29 @@ export function recordHoldsContent(record: Partial<PostRecordShape> | null | und
 // `|| new Date().toISOString()` fallback it replaces.
 export function normalizePostRecord(input: PostRecordInput, now: () => string = () => new Date().toISOString()): PostRecordShape {
   const capturedAt = normStr(input.capturedAt) || now();
+  // `image` is the STILL slot, and a video filename in it makes the record
+  // unshowable from end to end (#496): every reader treats image as a still, so
+  // the card and the detail view hand an mp4 to an <img> and draw nothing, while
+  // the post's poster frame — downloaded and sitting on disk — is left with no
+  // field pointing at it and shows up as orphaned media instead. The pre-#377
+  // bulk-intake save wrote exactly this shape.
+  //
+  // The relocation target is not a guess: `video` is `image`'s moving-picture
+  // half (see PostRecordShape.video) and every reader of it already expects a
+  // file no <img> can show, so the record stays displayable instead of losing
+  // its only pointer to the file. It lives HERE because writePost normalizes
+  // every record on its way into the DB — this is the one gate posts.image
+  // passes through, whichever producer built the record.
+  const rawImage = normStr(input.image);
+  const imageIsVideo = isVideoFileName(rawImage);
   return {
     captureId: input.captureId,
     assetClass: normStr(input.assetClass) || 'media',
     mediaType: normStr(input.mediaType),
-    image: normStr(input.image),
-    video: normStr(input.video),
+    image: imageIsVideo ? null : rawImage,
+    // An explicit `video` wins: a producer that filled both told us which file
+    // it means, and the misplaced one is not a still either way.
+    video: normStr(input.video) || (imageIsVideo ? rawImage : null),
     url: normStr(input.url),
     platform: normStr(input.platform),
     text: normStr(input.text),
