@@ -1562,6 +1562,12 @@ if (!gotSingleInstanceLock) {
       });
     }
     watchInboxFolder();
+    // #34: a "replace" answered while the app was closed is only a marker on the
+    // new record until now — this is where it becomes the replacement. Outside
+    // the SMOKE guard below and ahead of purgeOldTrash: the capture it retires
+    // should start its 30 trash days today, and the harness that proves the
+    // app-closed path works boots in exactly that mode.
+    setTimeout(() => void sweepReplacements(), 1500);
     if (!SMOKE) {
       armBackupSchedule(); // interval スケジュールを起動
       // 起動時の取り戻し: 前回から間隔以上空いていれば1回だけ実行（閉じている間に逃した分）。
@@ -1571,10 +1577,6 @@ if (!gotSingleInstanceLock) {
         if (!last || Date.now() - last >= backupIntervalMs(bk)) setTimeout(() => runBackup('startup-overdue'), 4000);
       }
       setTimeout(() => purgeOldTrash(), 6000); // expire old trash entries on startup
-      // #34: a "replace" answered while the app was closed is only a marker on
-      // the new record until now. Ahead of purgeOldTrash so the capture it
-      // retires starts its 30 days from today rather than being swept later.
-      setTimeout(() => void sweepReplacements(), 3000);
       // 起動時整合チェック（#301）: バックアップ未設定でも動く必要があるため
       // runBackup とは独立に自分でDBを開く（runBackupは!b.dirで早期return
       // してDBを開かない）。
