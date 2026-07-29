@@ -22,7 +22,7 @@ import { postsByIds } from './lib-db-query.ts';
 import { makeTagResolver, preparePostStmts, writePost } from './lib-db-record-writer.ts';
 
 function register(ctx) {
-  const { getSaveFolder, getTrashDir, baseOf, LIBRARY_MEDIA_EXTS, resolveInFolder, getDbWriter, ensurePostsSynced } = ctx;
+  const { getSaveFolder, getTrashDir, baseOf, LIBRARY_MEDIA_EXTS, resolveInFolder, getDbWriter, ensurePostsSynced, send } = ctx;
 
   ipcMain.handle('delete-post', async (_e, image) => {
     const folder = getSaveFolder();
@@ -166,6 +166,9 @@ function register(ctx) {
       } catch {
         /* best-effort: a leftover record would make list-trash show a ghost */
       }
+      // The grid only refetches on this event (see index.ts's inbox watcher) —
+      // without it a restored post stays missing until the next app launch.
+      send('posts-changed', null);
     }
     return { ok: true };
   });
