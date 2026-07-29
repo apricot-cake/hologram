@@ -54,5 +54,13 @@
   "optionsHoverSaveDesc": {
     "message": "Puts a save button on images you haven't saved yet. It saves the image itself plus the post's text, creator and source URL. For a screenshot of how the post looks, use the Alt+S post capture instead.",
     "description": "Options description for the hover save button, including what it does NOT save"
+  },
+  "optionsDuplicateWarning": {
+    "message": "Ask before saving something twice",
+    "description": "Options label for the duplicate-save warning"
+  },
+  "optionsDuplicateWarningDesc": {
+    "message": "When you save a picture that is already in your library, asks whether to copy, replace or skip. A different picture of the same post (the next page of a comic, say) is not a duplicate and never asks.",
+    "description": "Options description for the duplicate-save warning, including when it does NOT ask"
   }
 }

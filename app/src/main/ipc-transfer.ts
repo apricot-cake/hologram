@@ -64,6 +64,7 @@ function register(ctx) {
     resetDelta,
     ensurePostsSynced,
     scheduleSavedIndexWrite,
+    sweepReplacements,
   } = ctx;
 
   // #299: the app itself is the DB's one writer, so import-posts writes
@@ -72,7 +73,20 @@ function register(ctx) {
   // of producing a sidecar the DB would have to re-derive from later. Dedup
   // checks the DB (URL-based) instead of scanning sidecars — there are none
   // left to scan for a post that comes in this way.
-  ipcMain.handle('import-posts', async (_e, posts) => {
+  //
+  // #34 turned the URL duplicate from a fixed skip into the same three answers
+  // the extension's warning offers, asked ONCE for the batch rather than per
+  // post (an import is a hundred posts arriving at once; a per-post question
+  // would be a hundred questions). `duplicateMode` is the answer:
+  //   'skip'    — leave the library's copy alone, import the rest (the old,
+  //               and still the default, behaviour)
+  //   'copy'    — import the duplicates too, as additional records
+  //   'replace' — import them AND retire the record each one duplicates, via
+  //               the same `replaces` marker the extension writes
+  // Absent, with duplicates present, imports NOTHING and answers
+  // { needsChoice, duplicates } so the renderer can ask and call back.
+  ipcMain.handle('import-posts', async (_e, posts, duplicateMode) => {
+    const mode = duplicateMode === 'copy' || duplicateMode === 'replace' || duplicateMode === 'skip' ? duplicateMode : null;
     const folder = getSaveFolder();
     if (!folder || !Array.isArray(posts)) return { imported: 0, skipped: 0 };
     fs.mkdirSync(folder, { recursive: true });
@@ -88,12 +102,18 @@ function register(ctx) {
     // real Eagle libraries carry many duplicate names), and a converter may
     // stamp one capturedAt across a whole batch, so neither field alone is
     // trustworthy.
-    const existingUrls = new Set<string>();
+    //
+    // The live library is kept as url -> captureId rather than a bare set,
+    // because "replace" has to name the record it retires (#34). Trashed URLs
+    // stay a separate set: a deliberately deleted post must not resurrect
+    // through a re-import whatever the answer to the duplicate question is.
+    const existingByUrl = new Map<string, string>();
+    const trashedUrls = new Set<string>();
     const existingLegacy = new Set<string>();
     const legacyKeyOf = (name, at, bytes) => `${name}\u0000${at}\u0000${bytes}`;
-    for (const row of sqlite.prepare('SELECT url, eagleName, capturedAt, image FROM posts').all() as Array<{ url: string | null; eagleName: string | null; capturedAt: string; image: string | null }>) {
+    for (const row of sqlite.prepare('SELECT captureId, url, eagleName, capturedAt, image FROM posts').all() as Array<{ captureId: string; url: string | null; eagleName: string | null; capturedAt: string; image: string | null }>) {
       if (row.url) {
-        existingUrls.add(row.url);
+        if (!existingByUrl.has(row.url)) existingByUrl.set(row.url, row.captureId);
         continue;
       }
       if (row.eagleName && row.capturedAt && typeof row.image === 'string') {
@@ -121,7 +141,7 @@ function register(ctx) {
         if (!f.toLowerCase().endsWith('.json')) continue;
         try {
           const r = parseJsonLoose(fs.readFileSync(path.join(trashDir, f), 'utf8'));
-          if (r.url) existingUrls.add(r.url);
+          if (r.url) trashedUrls.add(r.url);
           else if (r.eagleName && r.capturedAt && typeof r.image === 'string') {
             existingLegacy.add(legacyKeyOf(r.eagleName, r.capturedAt, fs.statSync(path.join(trashDir, r.image)).size));
           }
@@ -148,6 +168,16 @@ function register(ctx) {
       return file;
     }
 
+    // Ask before importing anything (#34). Counted over the SAME predicate the
+    // loop below uses, so the number in the question is the number of posts the
+    // answer applies to. A batch with no duplicates never asks.
+    if (!mode) {
+      let duplicates = 0;
+      for (const p of posts) if (p?.url && existingByUrl.has(p.url)) duplicates++;
+      if (duplicates) return { imported: 0, skipped: 0, needsChoice: true, duplicates, total: posts.length };
+    }
+    const onDuplicate = mode || 'skip';
+
     const stamp = Date.now();
     let imported = 0,
       skipped = 0,
@@ -158,7 +188,12 @@ function register(ctx) {
         skipped++;
         continue;
       }
-      if (p.url && existingUrls.has(p.url)) {
+      if (p.url && trashedUrls.has(p.url)) {
+        skipped++;
+        continue;
+      }
+      const duplicateOf = p.url ? existingByUrl.get(p.url) : undefined;
+      if (duplicateOf !== undefined && onDuplicate === 'skip') {
         skipped++;
         continue;
       }
@@ -171,6 +206,10 @@ function register(ctx) {
       const captureId = `import-${stamp}-${String(seq++).padStart(4, '0')}`;
       const rec: PostRecordInput = {
         captureId,
+        // 'replace': the same marker the extension writes, consumed by the
+        // same sweep (lib-db-replaces.ts) — one definition of what replacing
+        // a record means, whichever door the record came in through.
+        replaces: duplicateOf !== undefined && onDuplicate === 'replace' ? duplicateOf : null,
         image: `${captureId}.jpg`,
         url: p.url || null,
         platform: p.platform || null,
@@ -218,7 +257,10 @@ function register(ctx) {
           }
         }
         toWrite.push(rec);
-        if (p.url) existingUrls.add(p.url);
+        // Within one batch the FIRST import of a URL claims it, so a second
+        // copy of the same post in the same ZIP is a duplicate of the record
+        // just written rather than of the library's original.
+        if (p.url) existingByUrl.set(p.url, captureId);
         else if (legacyKey) existingLegacy.add(legacyKey);
         imported++;
       } catch {
@@ -240,6 +282,9 @@ function register(ctx) {
       // The bridge's saved-badge snapshot has no other way to learn about
       // these URLs (there's no sidecar/inbox event for it to notice).
       scheduleSavedIndexWrite(handle);
+      // An in-app write leaves no inbox event, so the watcher that normally
+      // consumes `replaces` markers never fires for these — do it here (#34).
+      if (onDuplicate === 'replace') await sweepReplacements();
     }
     return { imported, skipped };
   });

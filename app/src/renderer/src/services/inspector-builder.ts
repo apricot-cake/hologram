@@ -115,6 +115,15 @@ export function makeInspector(deps: InspectorBuilderDeps) {
   // Outside-click dismissal for the narrow overlay. Restored from the pre-#243 handler,
   // with one change: the width test asks layout-mode instead of carrying its own
   // `max-width` media query, so there is a single place the breakpoint lives.
+  //
+  // This is NOT the background-click path of #242 — that one lives in the grid's own
+  // press recognizer (_shared/VirtualGrid.tsx), because only the recognizer knows
+  // whether a press became a drag, and it calls dismissDetail() at BOTH widths. The two
+  // overlap on a plain narrow background click and dismissDetail() is idempotent, so the
+  // result is the same either way. They deliberately part on the presses #242 excludes
+  // (a held Ctrl/Shift, a finished marquee): those still dismiss the narrow OVERLAY,
+  // which rides on nothing but "is something covering the grid" — waving an overlay away
+  // is not a selection act, and the docked column at wide width has nothing to wave away.
   function handleOutsideClickDismissDetail(e: MouseEvent) {
     if (isWideLayout()) return; // wide = a docked column; nothing to dismiss
     const insp = byId('postDetail');

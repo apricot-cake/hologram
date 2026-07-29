@@ -104,6 +104,13 @@
       <p class="desc" id="hoverSaveDesc">まだ保存していない投稿の画像に、その場で保存できるボタンを表示します。保存されるのは画像そのものと投稿の情報（本文・作者・元URL）です。投稿の見た目のスクリーンショットが要るときは Alt+S の投稿キャプチャを使ってください。</p>
     </div>
   </div>
+  <div class="row">
+    <input type="checkbox" id="duplicateWarning" checked>
+    <div>
+      <label for="duplicateWarning" id="duplicateWarningLabel">同じものを保存しようとしたら確認する</label>
+      <p class="desc" id="duplicateWarningDesc">すでに保存した画像をもう一度保存しようとしたときに、コピー・置換・スキップを選べる確認を出します。同じ投稿でも別の画像（漫画の次のページなど）なら確認は出ません。</p>
+    </div>
+  </div>
   <p class="foot"><a href="diag.html" target="_blank" id="diagLink">診断ページを開く</a></p>
   <script type="module" src="../pages/options.ts"></script>
 </body>

@@ -31,8 +31,9 @@ import { isXBookmarksPage } from './extractor/x.ts';
 import { ICONS, makeIcon, makeSpinner } from './icons.ts';
 import { ensureTokens, motion, prefersReducedMotion, token } from './tokens.ts';
 import type { HologramI18nApi } from './i18n.ts';
+import type { CheckSavedMessage, CheckSavedResponse, SavePostMessage, SaveResponse } from './messages.ts';
 
-type EntryState = 'unknown' | 'queued' | 'saving' | 'saved' | 'skipped' | 'deferred' | 'failed';
+type EntryState = 'unknown' | 'queued' | 'saving' | 'saved' | 'skipped' | 'deferred' | 'unavailable' | 'failed';
 
 // One save at a time, and no faster than this. The metadata fetch and the media
 // download are the only things X sees, and this keeps them at a human cadence.
@@ -50,6 +51,7 @@ export function startBulkCapture(site: CaptureSite, i18n: HologramI18nApi): void
   let savedCount = 0;
   let skippedCount = 0;
   let deferredCount = 0;
+  let unavailableCount = 0;
   let failedCount = 0;
 
   let stopped = false;
@@ -166,7 +168,7 @@ export function startBulkCapture(site: CaptureSite, i18n: HologramI18nApi): void
     const urls = [...entries].filter(([, state]) => state === 'unknown').map(([url]) => url);
     if (!urls.length) return;
     asking = true;
-    chrome.runtime.sendMessage({ type: 'checkSaved', urls }, (res: any) => {
+    chrome.runtime.sendMessage({ type: 'checkSaved', urls } satisfies CheckSavedMessage, (res?: CheckSavedResponse) => {
       asking = false;
       if (chrome.runtime.lastError || !res?.ok || !res.results) return; // host unreachable: ask again next pass
       for (const url of urls) {
@@ -218,12 +220,28 @@ export function startBulkCapture(site: CaptureSite, i18n: HologramI18nApi): void
         // Marks the record's intake route so a bulk-imported post can be told
         // apart from an ordinary one-at-a-time save (native-host/post-record).
         capturedVia: 'x-bookmarks',
-      },
-      (res: any) => {
+      } satisfies SavePostMessage,
+      (res?: SaveResponse) => {
         busy = false;
+        // Narrowed here rather than inside the branch below: that condition is
+        // a disjunction (the port itself may have failed), so it tells TypeScript
+        // nothing about `res` — and SaveResponse's success arm carries no
+        // errorKind to read. #492 and #225 landed within minutes of each other
+        // and neither PR's CI saw the combination, which is what left main red.
+        const failure = res && !res.ok ? res : null;
         if (chrome.runtime.lastError || !res?.ok) {
-          entries.set(url, 'failed');
-          failedCount++;
+          // The post itself could not be obtained (#492) — deleted, suspended,
+          // protected, age gated. Nothing was written and nothing is broken, so
+          // it is counted apart from real failures: a bookmark list can hold a
+          // handful of dead posts forever, and every run would otherwise report
+          // them as breakage the user is meant to go and fix.
+          if (failure?.errorKind === 'post-unavailable') {
+            entries.set(url, 'unavailable');
+            unavailableCount++;
+          } else {
+            entries.set(url, 'failed');
+            failedCount++;
+          }
         } else if (res.deferred) {
           // Written to disk, but the library cannot show it until #365 — count
           // it apart so the summary never claims it is visible.
@@ -269,13 +287,14 @@ export function startBulkCapture(site: CaptureSite, i18n: HologramI18nApi): void
     banner.style.borderColor = bad ? token.warning : token.success;
     label.textContent = summaryText(byUser);
     stopButton.remove();
-    setTimeout(dismiss, bad || deferredCount ? 6000 : 3500);
+    setTimeout(dismiss, bad || deferredCount || unavailableCount ? 6000 : 3500);
   }
 
   function summaryText(byUser: boolean): string {
     const head = byUser ? t('bulkStopped') : t('bulkFinished');
     const parts = [t('bulkSummarySaved', [savedCount]), t('bulkSummarySkipped', [skippedCount])];
     if (deferredCount > 0) parts.push(t('bulkSummaryDeferred', [deferredCount]));
+    if (unavailableCount > 0) parts.push(t('bulkSummaryUnavailable', [unavailableCount]));
     if (failedCount > 0) parts.push(t('bulkSummaryFailed', [failedCount]));
     return `${head} — ${parts.join(' / ')}`;
   }

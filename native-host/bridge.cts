@@ -40,7 +40,7 @@ const { resolveSaveFolder } = require('./config-recovery.cts');
 const { postKeyOf } = require('./post-key.mts');
 // The shared record shape + normalization builder (#5 St2 / #295), so a
 // bridge-built record carries the exact same fields the DB writer expects.
-const { normalizePostRecord } = require('./post-record.mts');
+const { normalizePostRecord, recordHoldsContent } = require('./post-record.mts');
 // The durable intake queue's envelope format + atomic writer (#5 St6 / #299).
 const { buildEnvelope, writeInboxEvent, inboxNewDir, parseInboxEnvelope } = require('./inbox.mts');
 // The acquisition originals (#292): the extension hands over response bodies as
@@ -99,7 +99,11 @@ function logSaveOutcome(type: string, msg: any, res: any, err: Error | null): vo
     url: meta.url || null,
     // metaOk is computed by the extension (whether the post API returned info);
     // pass-through so a partial save (image saved, post info missing) is visible.
+    // metaReason is its cause when the extension could classify one (protected /
+    // ageRestricted / unavailable / fetchFailed) — the difference between "the
+    // post is gone" and "our fetch broke", which the outcome alone cannot say.
     metaOk: msg ? msg.metaOk : undefined,
+    metaReason: msg ? msg.metaReason : undefined,
     mediaCount: res ? res.mediaCount : undefined,
     error: err ? err.message : undefined,
   });
@@ -162,6 +166,13 @@ function sendMessage(obj: unknown): void {
 
 // captureId is "<epochMillis>-<hex>". Reject anything else so it can never
 // escape the save folder via path separators or "..".
+//
+// Every save's ack carries `captureId` (the uniqueBase-resolved id, which may
+// differ from the one asked for) BESIDE `file`. They are not interchangeable:
+// `file` is a filename and, on the bulk-intake path, not even derived from the
+// id (it is the first downloaded media's name). The extension needs the id
+// itself to name a record — #34's "replace" answer says WHICH capture it
+// retires — and used to make do with `file`.
 const SAFE_ID = /^[0-9]{1,20}-[0-9a-f]{1,8}$/i;
 
 function sanitizeCaptureId(id: unknown): string | null {
@@ -237,9 +248,16 @@ const INBOX_ENVELOPE_NAME = /^(\d{10,})-[0-9a-f]{1,8}(?:-\d+)?\.json$/i;
 // row's seq and a picture the library recorded no URL for holds its place as
 // null. url leads; seq is only the fallback for those nulls (a post's media can
 // change, so a position is no durable id).
+//
+// owners is parallel to media: the captureId of the record that holds that
+// picture. `id` names only the FIRST record to claim the key, so it cannot
+// answer "which capture is this picture in" for a post whose pictures are
+// spread across several records — which is the question the duplicate-save
+// warning's "replace" answer has to get right (#34).
 interface SavedEntry {
   id: string; // captureId ('' when the source could not report one)
   media: Array<string | null>;
+  owners: Array<string | null>;
 }
 interface SavedIndex {
   folder: string;
@@ -269,16 +287,18 @@ function mediaUrlsOf(source: any): Array<string | null> {
 // position is meaningful inside its own record and nowhere else, so appending
 // one from a later record would put a "picture number" at a number that is not
 // its own. Dropping it costs nothing the badge can use.
-function mergeSavedEntry(keys: Map<string, SavedEntry>, key: string, id: string, urls: Array<string | null>): void {
+function mergeSavedEntry(keys: Map<string, SavedEntry>, key: string, id: string, urls: Array<string | null>, owners?: Array<string | null>): void {
+  const ownerOf = (i: number) => (owners && owners[i] ? owners[i] : id || null);
   const entry = keys.get(key);
   if (!entry) {
-    keys.set(key, { id, media: urls.slice() });
+    keys.set(key, { id, media: urls.slice(), owners: urls.map((_u, i) => ownerOf(i)) });
     return;
   }
-  for (const url of urls) {
-    if (!url || entry.media.includes(url)) continue;
+  urls.forEach((url, i) => {
+    if (!url || entry.media.includes(url)) return;
     entry.media.push(url);
-  }
+    entry.owners.push(ownerOf(i));
+  });
 }
 
 function savedIndexPath(): string {
@@ -383,6 +403,10 @@ function scanRecentInbox(folder: string, sinceMs: number, keys: Map<string, Save
       const raw = fs.readFileSync(path.join(inboxNewDir(folder), f), 'utf8');
       const parsed = parseInboxEnvelope(raw);
       if (!parsed.ok) continue; // corrupt/mid-write/unknown-version -- skip, don't crash the query
+      // Same rule the writer now applies (#492): an envelope holding nothing of
+      // its post must not answer "saved". handleSavePost stopped writing these,
+      // but envelopes left by an older bridge are still on disk.
+      if (!recordHoldsContent(parsed.envelope.record)) continue;
       const key = postKeyOf(parsed.envelope.record.url);
       if (key) mergeSavedEntry(keys, key, parsed.envelope.eventId, mediaUrlsOf(parsed.envelope.record));
     } catch {
@@ -402,8 +426,13 @@ function buildSavedIndex(folder: string): SavedIndex {
       for (const [key, value] of Object.entries(entries)) {
         if (typeof key !== 'string' || !key || keys.has(key)) continue;
         // v1 wrote a bare captureId string (pre-#334): saved, pictures unknown.
-        if (typeof value === 'string') keys.set(key, { id: value, media: [] });
-        else if (value && typeof value === 'object') mergeSavedEntry(keys, key, typeof (value as any).id === 'string' ? (value as any).id : '', mediaUrlsOf(value));
+        if (typeof value === 'string') keys.set(key, { id: value, media: [], owners: [] });
+        else if (value && typeof value === 'object') {
+          // owners is v3 (#34); a v2 file has none, and every picture then
+          // falls back to the entry's own id — the pre-#34 behaviour.
+          const owners = Array.isArray((value as any).owners) ? ((value as any).owners as unknown[]).map((o) => (typeof o === 'string' && o ? o : null)) : undefined;
+          mergeSavedEntry(keys, key, typeof (value as any).id === 'string' ? (value as any).id : '', mediaUrlsOf(value), owners);
+        }
       }
     }
   } catch {
@@ -510,7 +539,7 @@ async function handleSave(msg: any) {
   // the app won't know until it next drains the inbox (see noteSaved).
   noteSaved(record.url, base, record.media);
 
-  return { ok: true, file: `${base}.jpg`, saveFolder, mediaCount: savedMedia.length, media: mediaUrlsOf(record) };
+  return { ok: true, captureId: base, file: `${base}.jpg`, saveFolder, mediaCount: savedMedia.length, media: mediaUrlsOf(record) };
 }
 
 // Bulk-intake save (#362): metadata plus the post's own media, and no
@@ -527,13 +556,24 @@ async function handleSave(msg: any) {
 // empty, while the viewer's multi-image stack counts media[] and would
 // undercount by one if the first picture were moved out of it.
 //
-// A post with NO media still gets its inbox envelope written. It cannot be
-// displayed yet — the library's isPostRecord requires an image/video/media,
-// so both the index and the DB importer skip it — but skipping is all they
-// do, and the record sits in the inbox until #365 relaxes that gate, at which
-// point it simply appears. Refusing to write it would instead lose the post
-// for good: X has no bookmark export, so a bookmark not taken during the
-// import is unrecoverable once the account is gone. Preserve now, display later.
+// A post with NO media still gets its inbox envelope written, as long as
+// something of the post arrived (its text, at minimum). It cannot be displayed
+// until #365 gives image-less records a home, but the record sits in the inbox
+// and the DB meanwhile and simply appears when that lands. Refusing to write it
+// would instead lose the post for good: X has no bookmark export, so a bookmark
+// not taken during the import is unrecoverable once the account is gone.
+// Preserve now, display later.
+//
+// A post NOTHING arrived for is the opposite case and is refused (#492). When
+// the platform serves no post info at all — deleted, suspended, protected, age
+// gated, or a fetch that failed — the record would carry only what the URL
+// itself already says (platform, screenName, the date decoded from the id).
+// Writing it looked harmless and was not: noteSaved lights the post's badge,
+// every later intake reads that badge and skips the post, and the one thing
+// that could still have rescued it — trying again — is what the shell record
+// permanently prevents. Failing here costs a retry; succeeding here costs the
+// post. recordHoldsContent is the shared rule (post-record.mts), and the badge
+// index applies the SAME rule so shells written before this fix stop answering.
 async function handleSavePost(msg: any) {
   const captureId = sanitizeCaptureId(msg.captureId);
   if (!captureId) throw new Error('Invalid captureId');
@@ -574,11 +614,15 @@ async function handleSavePost(msg: any) {
       raw: packRawPayloads(meta.rawPayloads),
     }),
   );
+  // Nothing of the post arrived — see this function's comment. Thrown before
+  // the envelope is written AND before noteSaved, so the post stays unsaved and
+  // unbadged: the next intake run offers it again instead of skipping it.
+  if (!recordHoldsContent(record)) throw new Error(`Post unavailable: nothing was obtained for it (${msg.metaReason || 'no post info'}, no media)`);
   await writeInboxEvent(saveFolder, buildEnvelope(record));
   noteSaved(record.url, base, record.media); // see handleSave
 
   // deferred = written but not displayable yet (no media at all → #365).
-  return { ok: true, file: savedMedia.length ? savedMedia[0].file : base, saveFolder, mediaCount: savedMedia.length, deferred: !savedMedia.length, media: mediaUrlsOf(record) };
+  return { ok: true, captureId: base, file: savedMedia.length ? savedMedia[0].file : base, saveFolder, mediaCount: savedMedia.length, deferred: !savedMedia.length, media: mediaUrlsOf(record) };
 }
 
 // Image-drag save: no screenshot. The bridge downloads the dragged illustration
@@ -620,7 +664,7 @@ async function handleSaveDragged(msg: any) {
   await writeInboxEvent(saveFolder, buildEnvelope(record));
   noteSaved(record.url, base, record.media); // see handleSave
 
-  return { ok: true, file: imageFile, saveFolder, media: mediaUrlsOf(record) };
+  return { ok: true, captureId: base, file: imageFile, saveFolder, media: mediaUrlsOf(record) };
 }
 
 // --- stdin reader: buffer bytes and process complete messages ---

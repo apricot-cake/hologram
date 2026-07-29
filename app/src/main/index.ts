@@ -15,6 +15,7 @@ import { createDbWriter } from './lib-db-write.ts';
 import { LEGACY_INTERNAL_FILES, migrateLegacyLibrary } from './lib-legacy-import.ts';
 import { buildSavedIndex, SAVED_INDEX_FILE } from './lib-saved-index.ts';
 import { drainInbox } from './lib-db-inbox.ts';
+import { applyPendingReplacements } from './lib-db-replaces.ts';
 import { compactInbox } from './lib-db-inbox-compact.ts';
 import { snapshotDatabase } from './lib-db-snapshot.ts';
 import { checkOrphans, synthesizeOrphanRecords } from './lib-db-integrity.ts';
@@ -230,6 +231,29 @@ function initSaveFolderRedundancy() {
 // hint (a rename FROM tmp/, a mid-write partial, or a segment-compaction removal
 // could all fire here). Directory created first (design comment: "起動時にinbox
 // ディレクトリを作ってから watcher を張り") so the watch target always exists.
+// Consumes any pending `replaces` marker (#34) — the duplicate-save warning's
+// "replace" answer, which the native host can only write down (write-once) and
+// the app has to carry out. Drains the inbox first, because the record that
+// carries the marker is normally still sitting in it. Never throws: a
+// replacement that cannot be finished leaves its marker set and is retried on
+// the next pass, which is strictly better than failing whatever asked.
+async function sweepReplacements() {
+  const folder = getSaveFolder();
+  const trashDir = getTrashDir();
+  if (!folder || !trashDir) return;
+  const handle = ensurePostsSynced();
+  if (!handle) return;
+  try {
+    const report = await applyPendingReplacements({ sqlite: handle.sqlite, folder, trashDir, mediaExts: LIBRARY_MEDIA_EXTS });
+    for (const r of report.applied) log.info(`replaced capture ${r.oldId} with ${r.newId} (#34) — the old capture is in the trash`);
+    for (const f of report.failed) log.warn(`replacement ${f.oldId} -> ${f.newId} failed, will retry: ${f.error}`);
+    // The badge index still names the retired capture until it is rebuilt.
+    if (report.applied.length) scheduleSavedIndexWrite(handle);
+  } catch (err) {
+    log.error('replacement sweep failed:', err);
+  }
+}
+
 let inboxWatcher: import('node:fs').FSWatcher | null = null;
 let inboxWatchDebounce: any = null;
 function watchInboxFolder() {
@@ -248,9 +272,14 @@ function watchInboxFolder() {
     inboxWatcher = fs.watch(inboxNewDir(folder), () => {
       clearTimeout(inboxWatchDebounce);
       inboxWatchDebounce = setTimeout(() => {
-        // null = full reconcile — see the function comment for why this
-        // watcher never tries to ship a targeted hint.
-        if (win && !win.isDestroyed()) win.webContents.send('posts-changed', null);
+        // The sweep runs BEFORE the event so the renderer's refetch already
+        // sees the replacement settled — otherwise a "replace" save would show
+        // both records for one refresh cycle and then quietly lose one.
+        void sweepReplacements().finally(() => {
+          // null = full reconcile — see the function comment for why this
+          // watcher never tries to ship a targeted hint.
+          if (win && !win.isDestroyed()) win.webContents.send('posts-changed', null);
+        });
       }, 400);
     });
   } catch (err) {
@@ -1305,6 +1334,7 @@ function registerExtractedIpc() {
     getDbWriter,
     ensurePostsSynced,
     scheduleSavedIndexWrite,
+    sweepReplacements,
     listPosts,
     listPostsDelta,
     resolveInFolder,
@@ -1545,6 +1575,12 @@ if (!gotSingleInstanceLock) {
       });
     }
     watchInboxFolder();
+    // #34: a "replace" answered while the app was closed is only a marker on the
+    // new record until now — this is where it becomes the replacement. Outside
+    // the SMOKE guard below and ahead of purgeOldTrash: the capture it retires
+    // should start its 30 trash days today, and the harness that proves the
+    // app-closed path works boots in exactly that mode.
+    setTimeout(() => void sweepReplacements(), 1500);
     if (!SMOKE) {
       armBackupSchedule(); // interval スケジュールを起動
       // 起動時の取り戻し: 前回から間隔以上空いていれば1回だけ実行（閉じている間に逃した分）。

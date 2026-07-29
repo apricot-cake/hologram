@@ -37,6 +37,7 @@ import type { CaptureSite, OverlaySite, PostMediaElement } from './extractor/typ
 import { ICONS, makeIcon, makeSpinner } from './icons.ts';
 import { ensureTokens, motion, prefersReducedMotion, token } from './tokens.ts';
 import { createI18n } from './i18n.ts';
+import type { BackgroundToContentMessage, CheckSavedMessage, CheckSavedResponse, ImageDraggedMessage, SavedEntry, SaveResponse } from './messages.ts';
 
 let overlayActive = false;
 
@@ -324,7 +325,7 @@ export async function startOverlay(): Promise<void> {
     pending.clear();
     if (!byUrl.size) return;
 
-    chrome.runtime.sendMessage({ type: 'checkSaved', urls: [...byUrl.keys()] }, (res: any) => {
+    chrome.runtime.sendMessage({ type: 'checkSaved', urls: [...byUrl.keys()] } satisfies CheckSavedMessage, (res?: CheckSavedResponse) => {
       // A host that can't be reached answers nothing: leave the posts unmarked
       // rather than asserting "not saved". background.js already re-asks on the
       // next scroll (its negative cache never recorded these). The save button
@@ -348,7 +349,7 @@ export async function startOverlay(): Promise<void> {
   // to `whole`: leaving it out would put a save button on a picture that is
   // already in the library, and saving it again is the one outcome the badge
   // exists to prevent.
-  function readSavedPictures(entry: any): SavedPictures | null {
+  function readSavedPictures(entry: SavedEntry | null | undefined): SavedPictures | null {
     if (!entry) return null;
     const urls: Array<string | null> = Array.isArray(entry.media) ? entry.media : [];
     const saved: SavedPictures = { whole: !urls.length, keys: new Set(), seqs: new Set() };
@@ -398,7 +399,7 @@ export async function startOverlay(): Promise<void> {
 
   // A save made in this tab: re-mark that post without waiting for the next
   // scroll (background.js pushes this the moment the host acknowledges).
-  chrome.runtime.onMessage.addListener((message) => {
+  chrome.runtime.onMessage.addListener((message: BackgroundToContentMessage) => {
     if (message?.type !== 'savedUpdate' || !message.url) return;
     const urls: Array<string | null> = Array.isArray(message.media) ? message.media : [];
     for (const [unit, state] of tracked) {
@@ -663,10 +664,10 @@ export async function startOverlay(): Promise<void> {
     // is only granted by a toolbar or command gesture), so this is not a
     // preference — it is the one save route available here, and reusing it means
     // there is no second code path that could record something different.
-    chrome.runtime.sendMessage({ type: 'imageDragged', platform: media.platform, postUrl: identity.link, imageUrls: collectImageUrls(el, media.platform) }, (res: any) => {
+    chrome.runtime.sendMessage({ type: 'imageDragged', platform: media.platform, postUrl: identity.link, imageUrls: collectImageUrls(el, media.platform) } satisfies ImageDraggedMessage, (res?: SaveResponse) => {
       if (chrome.runtime.lastError || !res || !res.ok) {
         setPhase(anchor, 'error', ERROR_MS);
-        const failureText = saveFailureText(res?.errorKind);
+        const failureText = saveFailureText(res && !res.ok ? res.errorKind : undefined);
         anchor.note = failureText;
         showFailureBanner(failureText);
         paint(unit, state);

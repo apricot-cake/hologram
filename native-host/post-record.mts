@@ -109,6 +109,18 @@ export interface PostRecordShape {
   shotW: number | null;
   shotH: number | null;
   trashedAt: string | null;
+  // The captureId this record REPLACES (#34). Written when the user answers the
+  // duplicate-save warning with "replace"; null on every ordinary save.
+  //
+  // It is a marker, not an action: the native host is write-once (it never
+  // modifies or deletes an existing file), so a capture made with the desktop
+  // app closed cannot trash anything itself. The app consumes the marker —
+  // trashing the old capture, merging its tags and re-pointing its folder /
+  // manual-group memberships — and clears the field once done
+  // (app/src/main/lib-db-replaces.ts). Until then the two records simply
+  // coexist, which is the same state the library would be in without the
+  // feature at all.
+  replaces: string | null;
 }
 
 // Every field a producer may hand in, all optional — the builder supplies
@@ -159,6 +171,26 @@ function normFrames(v: unknown): { file: string; delay: number }[] | null {
   return out;
 }
 
+// Does the library hold anything OF this post, as opposed to what its permalink
+// already says? platform, screenName and (on X) the post date are all derivable
+// from the URL alone, so a record carrying nothing else is an empty shell: there
+// is nothing to show, and nothing a later re-save could not obtain just as well.
+//
+// This is ONE rule behind two decisions that have to agree (#492): the bridge
+// refuses to write such a record, and the "already saved" badge refuses to
+// answer for one. Let them drift and a post the library holds nothing of keeps
+// its badge, which makes every later intake skip it — the failure becomes
+// permanent precisely because it was recorded as a success.
+//
+// A text-only post is NOT empty (#365): its text is the content. Neither is a
+// post whose media all failed to download but whose author and text arrived —
+// what was obtained is still worth keeping and re-saving can add the rest.
+export function recordHoldsContent(record: Partial<PostRecordShape> | null | undefined): boolean {
+  if (!record) return false;
+  if (normStr(record.image) || normStr(record.video) || normStr(record.text) || normStr(record.title) || normStr(record.displayName)) return true;
+  return Array.isArray(record.media) && record.media.length > 0;
+}
+
 // Fills every field of `input` with its documented default. now is injectable
 // (tests pass a fixed instant); production callers omit it and get the real
 // clock, same as extension/metadata.ts's toIso() callers and app/src/main/ipc-transfer.ts's
@@ -207,5 +239,6 @@ export function normalizePostRecord(input: PostRecordInput, now: () => string = 
     shotW: normNum(input.shotW),
     shotH: normNum(input.shotH),
     trashedAt: normStr(input.trashedAt),
+    replaces: normStr(input.replaces),
   };
 }

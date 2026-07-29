@@ -34,6 +34,7 @@
     "test:overlay-visual": "npm run build:ext && node scripts/e2e-overlay-visual.cts",
     "test:overlay-flicker": "npm run build:ext && node scripts/e2e-overlay-flicker.cts",
     "test:e2e-extension": "npm run build:ext && node scripts/e2e-extension-offline.cts",
+    "test:e2e-duplicate": "npm run build:ext && node scripts/e2e-extension-duplicate.cts",
     "zip:ext": "npm --prefix extension run zip",
     "setup": "node scripts/setup.cts",
     "lint": "biome check .",
