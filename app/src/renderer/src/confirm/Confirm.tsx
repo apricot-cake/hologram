@@ -26,6 +26,10 @@ function ConfirmContent({ model }: { model: HologramConfirmModel }) {
     close();
     model.onOk({ skip });
   };
+  const doAlt = () => {
+    close();
+    model.onAlt?.({ skip });
+  };
   return (
     <AlertDialogContent>
       <AlertDialogHeader>
@@ -47,7 +51,12 @@ function ConfirmContent({ model }: { model: HologramConfirmModel }) {
       )}
       <AlertDialogFooter>
         <AlertDialogCancel>{model.cancelLabel}</AlertDialogCancel>
-        <AlertDialogAction variant="destructive" disabled={okDisabled} onClick={doOk}>
+        {model.altLabel != null && (
+          <AlertDialogAction variant="secondary" onClick={doAlt}>
+            {model.altLabel}
+          </AlertDialogAction>
+        )}
+        <AlertDialogAction variant={model.okDestructive === false ? 'default' : 'destructive'} disabled={okDisabled} onClick={doOk}>
           {model.okLabel}
         </AlertDialogAction>
       </AlertDialogFooter>

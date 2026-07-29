@@ -49,9 +49,9 @@ afterAll(() => {
 });
 
 describe('スナップショットの形', () => {
-  test('絵まで運ぶ v2', () => {
+  test('絵と、その絵を持つレコードまで運ぶ v3', () => {
     expect(index.version).toBe(SAVED_INDEX_VERSION);
-    expect(SAVED_INDEX_VERSION).toBe(2);
+    expect(SAVED_INDEX_VERSION).toBe(3);
   });
 
   test('鍵は postKey＝URL の表記ゆれを畳んだもの', () => {
@@ -68,8 +68,14 @@ describe('投稿の保存済みの絵', () => {
     expect(index.entries[postKeyOf(MULTI) as string].id).toBe('cap-a');
   });
 
+  // #34: 「置換」はどのレコードを引退させるか名指しできないといけない。エントリの id は
+  // 最初に鍵を取ったレコードでしかないので、絵ごとの持ち主を並べて持つ。
+  test('絵ごとに、その絵を持つレコードが分かる', () => {
+    expect(index.entries[postKeyOf(MULTI) as string].owners).toEqual(['cap-a', 'cap-b']);
+  });
+
   test('絵を持たない投稿は空の一覧＝保存済み・粒度は不明', () => {
-    expect(index.entries[postKeyOf('https://x.com/erin/status/555') as string]).toEqual({ id: 'cap-c', media: [] });
+    expect(index.entries[postKeyOf('https://x.com/erin/status/555') as string]).toEqual({ id: 'cap-c', media: [], owners: [] });
   });
 
   test('ゴミ箱の投稿は載らない', () => {
