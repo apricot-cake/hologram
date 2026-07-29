@@ -57,7 +57,7 @@ export function canViewTransition(): boolean {
 // The legacy sheet (index.html) also names five elements from CSS — post-grid,
 // hologram-tabbar / -sidebar / -activebar / -backtotop — which this scan does not see.
 // It does not have to: those are a fixed, hand-written set, and callers namespace their
-// dynamic names by prefix (grid/density-transition.ts uses `post-card-`), so the two sets
+// dynamic names by prefix (_shared/density-transition.ts uses `post-card-`), so the two sets
 // cannot meet. A new caller has to keep that true — pick a prefix no static name uses.
 function namesInDocument(except: ViewTransitionCapture): Set<string> {
   const names = new Set<string>();

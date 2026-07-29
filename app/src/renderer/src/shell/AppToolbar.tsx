@@ -17,6 +17,7 @@ import { FilterChips } from '../filterbar/FilterChips.tsx';
 import { DisplayMenu } from './DisplayMenu.tsx';
 import { SearchBox } from '../searchbox/SearchBox.tsx';
 import { t } from '../_shared/i18n.ts';
+import { open as openPalette } from '../services/command-registry.ts';
 import { get as storeGet, subscribe as storeSubscribe } from '../services/store.ts';
 import { navBack, navForward } from '../services/orchestrator.ts';
 
@@ -37,6 +38,29 @@ function SearchIcon() {
       <circle cx="11" cy="11" r="7" />
       <line x1="16.5" y1="16.5" x2="21" y2="21" />
     </svg>
+  );
+}
+
+// Ctrl+K badge at the search field's right edge — one of the palette's two visible
+// entry points (#28; the other is the sidebar footer). A palette reachable only by
+// shortcut is a palette nobody finds, and this spot does double duty: it is also
+// where the two keys explain themselves, since `/` focuses this field and Ctrl+K
+// opens the palette. The shortcut hint next to the field it is NOT for is the
+// arrangement Slack, Linear and GitHub all use.
+//
+// A plain button, not the Badge component: Badge is a status chip (non-interactive
+// by anatomy), and what this needs is a pressable kbd-looking control.
+function PaletteBadge() {
+  return (
+    <button
+      type="button"
+      aria-label={t('paletteTitle')}
+      title={t('paletteTitle')}
+      onClick={() => openPalette()}
+      className="absolute top-1/2 right-1.5 -translate-y-1/2 rounded border border-input bg-muted/60 px-1.5 py-0.5 font-sans text-[11px] leading-tight font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+    >
+      Ctrl+K
+    </button>
   );
 }
 
@@ -68,6 +92,7 @@ export function AppToolbar() {
         <div className="relative flex min-w-0 items-center">
           <SearchIcon />
           <SearchBox placeholder={t('searchPlaceholder')} />
+          <PaletteBadge />
         </div>
         <div className="flex items-center justify-end gap-1.5">
           <AddFilterButton />

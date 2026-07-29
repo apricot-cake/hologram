@@ -370,7 +370,7 @@ export function makeGridDensity(deps: GridDensityDeps) {
   // directly (viewer.ts wires it into the module-scope export).
   //
   // SYNCHRONOUS on purpose, and no view transition of its own (#252). The animation is
-  // started by the React side that writes the store key (grid/density-transition.ts) and
+  // started by the React side that writes the store key (_shared/density-transition.ts) and
   // captures only the DOM changes that land before its callback returns — so the regroup
   // this triggers has to happen inside the same store write, not a paint later. The old
   // setTimeout deferral existed to let the pressed button paint first; the transition

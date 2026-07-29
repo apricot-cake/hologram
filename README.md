@@ -54,6 +54,7 @@ Filter and sort from the left sidebar.
 - **Search** — by text or username, with smart matching that forgives typos and kana variants
 - **Filter** — by platform / author / tag / hashtag / date / engagement (likes, etc.) / folder (multi-select)
 - **Sort** — newest first, most likes, save date, and more
+- **Command palette (`Ctrl+K`)** — type to run a command or jump straight to a tag, author, folder or another tab. `/` puts the cursor in the search box instead.
 
 Active filters gather at the top of the screen; **Reset** clears them all at once.
 

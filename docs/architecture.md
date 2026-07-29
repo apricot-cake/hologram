@@ -77,6 +77,7 @@ electron-vite で main・preload・renderer の3面をバンドルする標準�
 - 投稿の個別削除・一括削除（確認スキップ可）
 - カード右クリックの操作メニュー（開く/新しいタブで開く/タグ編集/フォルダに追加/この投稿者を見る/画像をコピー/ファイルの場所を開く/詳細/削除）
 - **他アプリへの送り出し**（#132）＝カード画像のドラッグアウト（Explorer・PureRef 等へ**原本ファイル**をドロップ。選択中のカードを掴めば選択全体・選択外を掴めばそのカードだけ。複数画像投稿は `g.files` 全部。**ドラッグは選択を読むだけで書き換えない**＝Explorer の「ドラッグで選択が変わる」は mousedown の副産物でドラッグ側の設計ではなく、Hologram の選択はスクロールをまたいで手で作る作業セット＝アプリ外へ出る操作で壊さない。規則の実体は `records.ts` の `dragFilesOf`＝純関数）＋**画像をコピー**（右クリックメニュー／選択1件時の `Ctrl+C`＝クリップボードは1枚しか持てないため複数は不可）。実体＝`dragstart` を `preventDefault` して main の `webContents.startDrag`（`drag-out`＝invoke でなく send＝ドラッグは同期開始が必須）／`clipboard.writeImage`（`copy-image`）。ファイル名→実パスの解決とベースネーム検証は `app/src/main/library-files.ts` が単一所有（欠損ファイルは除外＝Windows は不在パスを1つ混ぜるとドラッグ全体が失敗する／svg 等 nativeImage が読めない形式は false を返し**クリップボードを空で上書きしない**）
+- **コマンドパレット `Ctrl/Cmd+K`**（#28・[ADR 0016](decisions/0016-one-candidate-engine-three-faces.md)）＝操作（設定・新規タブ・タブ切替・フィルタ全解除・表示切替）とジャンプ（タグ・投稿者・フォルダ）を1つの入力から引く。候補の供給源は `services/command-registry.ts` の1本で、検索ボックス直下のサジェストも同じレジストリから引く（面ごとに違うのは見せるセクションと件数、そして確定したときの動作だけ）。エントリの中身と perform クロージャは `services/command-builder.ts`、器は `palette/CommandPalette.tsx`（shadcn Dialog ＋ Base UI Autocomplete の `inline`）。`/` は検索ボックスへのフォーカスで、Ctrl+K とは役割が分かれている。見える入口はサイドバーのフッター項目と検索ボックス右端の `Ctrl+K` バッジの2つ
 - 言語切替（auto/ja/en）
 - エクスポート: ZIP（画像+JSON）／インポート: ZIP から復元
 - 指定フォルダへの定期バックアップ（増分ミラー・`Hologram-mirror`・間隔スケジュール可・起動時の遅れ取り戻し）
