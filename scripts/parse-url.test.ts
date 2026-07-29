@@ -1,9 +1,9 @@
-// parsePostUrl（extension/utils/metadata.ts）の回帰テスト: 投稿 URL → プラットフォーム
+// parsePostUrl（extension/utils/extractor/index.ts）の回帰テスト: 投稿 URL → プラットフォーム
 // 同定。取り込みのたび最初に走る関数であり、プラットフォーム側の URL 体系変更で最初に
 // 壊れる場所。純関数（DOM もネットワークも要らない）。
 
 import { describe, expect, test } from 'vitest';
-import { parsePostUrl } from '../extension/utils/metadata';
+import { parsePostUrl } from '../extension/utils/extractor/index.ts';
 
 describe('X / Twitter（content.js が受け付ける pro./mobile. サブドメイン込み）', () => {
   test.each([

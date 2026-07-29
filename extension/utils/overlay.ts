@@ -12,10 +12,10 @@
 // there): the host reads the library's own index, so this works with the desktop
 // app closed. Nothing about the page is sent anywhere — the only thing that
 // leaves the tab is a permalink the page itself published, and it goes to a local
-// process. Permalink extraction is site-detect.js's getSiteConfig().getPermalink,
-// the same function the capture path uses, so a mark can never disagree with
-// what a save would record; the save button goes through media-identity.js, the
-// same module drag.js saves with, for the same reason.
+// process. Permalink extraction is the extractor's capture phase, the same
+// function the Alt+S capture path uses, so a mark can never disagree with what
+// a save would record; the save button goes through the same extractor's media
+// identity, which is what drag.ts saves with, for the same reason.
 //
 // Hover is DERIVED, never accumulated: the control is shown on the picture the
 // pointer is geometrically inside, and the only thing that may take it away is
@@ -32,25 +32,14 @@
 // composited scroll as the picture. A fixed layer that copies viewport
 // coordinates has to wait for JavaScript on every scroll frame and visibly
 // trails smooth scrolling.
-import { glassUi } from './glass-ui';
-import { createI18n } from './i18n';
-import { collectImageUrls, getMediaIdentitySite, mediaKeyOf, mediaKeysOf } from './media-identity';
-import type { PostMediaElement } from './media-identity';
-import { getSiteConfig, hostnameMatches } from './site-detect';
+import { collectImageUrls, getCaptureSite, getMediaIdentitySite, getOverlaySite, mediaKeyOf, mediaKeysOf } from './extractor/index.ts';
+import type { CaptureSite, OverlaySite, PostMediaElement } from './extractor/types.ts';
+import { glassUi } from './glass-ui.ts';
+import { createI18n } from './i18n.ts';
 
 let overlayActive = false;
 
 export async function startOverlay(): Promise<void> {
-  interface OverlaySite {
-    // Every post-shaped element in the feed. Matched elements are candidates —
-    // getPermalink decides whether one really identifies a post.
-    unitSelector: string;
-    // Every media box in the unit, in document order. The mark states a fact
-    // about the POST, but the save button acts on ONE picture, so the overlay
-    // tracks each box rather than only the first.
-    mediaIn(unit: Element): Element[];
-  }
-
   // What the corner is doing right now. `flash` is the moment after a save the
   // user made here: the mark shows even when marks are set to "never", because
   // the button they just pressed has to answer them.
@@ -128,15 +117,15 @@ export async function startOverlay(): Promise<void> {
 
   const detected = getOverlaySite();
   if (!detected) return;
-  // getSiteConfig (site-detect.js) owns permalink extraction, getMediaIdentitySite
-  // (media-identity.js) owns "which post is this picture from"; both files are
-  // declared before this one in the same manifest entry. Resolved once, not per post.
-  const detectedCapture = getSiteConfig();
+  // The extractor's capture phase owns permalink extraction and its media
+  // identity owns "which post is this picture from"; both come from the same
+  // site module as the overlay shape above. Resolved once, not per post.
+  const detectedCapture = getCaptureSite();
   if (!detectedCapture) return;
   // Re-bound as already-narrowed consts: TS does not carry a null-narrowing
   // into the closures below (same constraint drag.ts's DropZone works around).
   const site: OverlaySite = detected;
-  const capture: NonNullable<ReturnType<typeof getSiteConfig>> = detectedCapture;
+  const capture: CaptureSite = detectedCapture;
   // May be null on a page media-identity has no rules for: marks still work
   // (they only need a permalink), the save button simply never appears.
   const media = getMediaIdentitySite();
@@ -1079,58 +1068,4 @@ export async function startOverlay(): Promise<void> {
   // event is exactly when the box gains its size — on `document` in the capture
   // phase, since load does not bubble.
   document.addEventListener('load', () => scheduleReposition(true), { capture: true, passive: true });
-
-  // === per-platform DOM ===
-
-  function getOverlaySite(): OverlaySite | null {
-    if (hostnameMatches('x.com') || hostnameMatches('twitter.com')) {
-      return {
-        // Two shapes: a timeline `article` (permalink anchor and media both
-        // live somewhere inside it) and a media-tab grid tile — a bare `<li>`
-        // several ancestors above its own `/status/` anchor, with no
-        // `article`/testid wrapper at all (#349). `:has()` reaches the anchor
-        // regardless of the div nesting in between.
-        unitSelector: 'article[data-testid="tweet"], li:has(a[href*="/status/"])',
-        // querySelectorAll returns document order, so the first entry is the
-        // first picture of a multi-image post — where the "saved" mark belongs.
-        // A grid tile has no tweetPhoto/videoPlayer testid to key on — its
-        // <img> IS the media box — so isPostMedia (the same CDN-path check the
-        // save button already gates on) filters it directly here instead, and
-        // keeps decorations off images that are not the post's own media.
-        // Video and GIF tiles pass that check as of #372, so they are tracked
-        // like picture tiles: the media tab must answer the same question the
-        // timeline does, which is the inconsistency #349 existed to remove.
-        mediaIn: (unit) => {
-          if (unit.tagName === 'LI') return [...unit.querySelectorAll('img')].filter((img) => media?.isPostMedia(img as HTMLImageElement));
-          return [...unit.querySelectorAll('[data-testid="tweetPhoto"], [data-testid="videoPlayer"]')];
-        },
-      };
-    }
-    if (hostnameMatches('bsky.app')) {
-      return {
-        unitSelector: '[data-testid^="feedItem-by-"], [data-testid^="postThreadItem-by-"]',
-        mediaIn: (unit) => [...unit.querySelectorAll('img[src*="/img/feed_thumbnail/"], img[src*="/img/feed_fullsize/"], video')],
-      };
-    }
-    if (hostnameMatches('pixiv.net')) {
-      return {
-        // Two shapes, both anchors:
-        //  - FEED thumbnail: a[href*="/artworks/"] — the card's own link (a card
-        //    also carries a title link to the same artwork, so requiring the
-        //    image keeps one control per card).
-        //  - ARTWORK PAGE main illustration: a[href*="i.pximg.net"] — the
-        //    full-size viewer link that wraps each page image. This is the ONE
-        //    surface X and Bluesky cover for free (their post container appears on
-        //    the detail page too) but pixiv did not, so the button never reached
-        //    the illustration you actually came to save (#340). It reads apart
-        //    from related-works thumbnails cleanly: those use /artworks/ links,
-        //    the main image uses an i.pximg.net link. Manga pages are one such
-        //    anchor each → one button per page; ugoira is a <canvas>, not a
-        //    _p image, so isPostMedia rejects it and no button appears.
-        unitSelector: 'a[href*="/artworks/"], a[href*="i.pximg.net"]',
-        mediaIn: (unit) => [...unit.querySelectorAll('img')],
-      };
-    }
-    return null;
-  }
 }

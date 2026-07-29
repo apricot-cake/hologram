@@ -1,3 +1,3 @@
-import { startDiagnostics } from '../utils/diag';
+import { startDiagnostics } from '../utils/diag.ts';
 
 startDiagnostics();

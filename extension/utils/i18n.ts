@@ -6,7 +6,7 @@
 //
 // The banner language follows the browser locale; the desktop app owns all
 // viewer/settings strings in app/renderer/i18n.ts.
-import type { SaveFailureKind } from './native-error';
+import type { SaveFailureKind } from './native-error.ts';
 
 export interface HologramI18nApi {
   lang: string;

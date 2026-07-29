@@ -5,7 +5,7 @@
 // X/Bluesky/pixiv）は進む。fetch は差し替え・ネットワーク不要。
 
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import { fetchPostMetadata } from '../extension/utils/metadata';
+import { fetchPostMetadata } from '../extension/utils/extractor/index.ts';
 
 let calls: string[];
 

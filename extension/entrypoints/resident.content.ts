@@ -1,8 +1,11 @@
-import { startDrag } from '../utils/drag';
-import { startOverlay } from '../utils/overlay';
+import { RESIDENT_MATCHES } from '../utils/extractor/index.ts';
+import { startDrag } from '../utils/drag.ts';
+import { startOverlay } from '../utils/overlay.ts';
 
 export default defineContentScript({
-  matches: ['https://x.com/*', 'https://twitter.com/*', 'https://bsky.app/*', 'https://www.pixiv.net/*', 'https://pixiv.net/*'],
+  // Every site whose extractor declares a resident surface (#212) — adding a
+  // site does not touch this file.
+  matches: RESIDENT_MATCHES,
   runAt: 'document_idle',
   async main() {
     await startOverlay();

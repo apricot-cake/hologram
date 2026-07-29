@@ -1,4 +1,4 @@
-import { startCapture } from '../utils/capture';
+import { startCapture } from '../utils/capture.ts';
 
 export default defineUnlistedScript({
   main() {

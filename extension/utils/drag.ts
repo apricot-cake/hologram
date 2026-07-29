@@ -6,9 +6,9 @@
 // illustration itself (no screenshot) via the native host. Which post an image
 // belongs to comes from media-identity.js, shared with overlay.js's hover save
 // button so the two paths can never disagree about what a save records.
-import { glassUi } from './glass-ui';
-import { createI18n } from './i18n';
-import { collectImageUrls, getMediaIdentitySite } from './media-identity';
+import { collectImageUrls, getMediaIdentitySite } from './extractor/index.ts';
+import { glassUi } from './glass-ui.ts';
+import { createI18n } from './i18n.ts';
 
 export async function startDrag(): Promise<void> {
   interface PendingDrag {

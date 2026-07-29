@@ -1,4 +1,4 @@
-// extension/utils/media-identity.ts の getMediaIdentitySite().extractIdentity/
+// extension/utils/extractor/ 各サイトモジュールの mediaIdentity（getMediaIdentitySite()）.extractIdentity/
 // isPostMedia の、オフライン純ユニットテスト。jsdom 上で手書きの HTML フィクスチャ
 // （scripts/fixtures/content/media-*.html）に対して走らせる。content-fixtures.test.ts
 // と同じ据え方（フィクスチャの DOM をコンテンツスクリプトの実行文脈と同じグローバルに
@@ -13,7 +13,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { JSDOM } from 'jsdom';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
-import { getMediaIdentitySite, mediaKeyOf } from '../extension/utils/media-identity';
+import { getMediaIdentitySite, mediaKeyOf } from '../extension/utils/extractor/index.ts';
 
 const FIXTURES_DIR = path.join(import.meta.dirname, 'fixtures', 'content');
 
