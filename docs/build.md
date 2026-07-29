@@ -38,6 +38,7 @@ Dependabot（#395）の更新 PR で新バージョンが来たときも、確�
 
 - **dev サーバーを止めたら production へ戻すまでが1セット**。開発モードの拡張は manifest に `content_scripts` を持たず、常駐スクリプトを **dev サーバー接続経由で実行時登録**する。dev ビルドを残したままサーバーが居なくなる・繋がらない（Node ≥17 は `::1` のみに bind することがあり Chrome は IPv4 で来る）と**普段使いの拡張が丸ごと沈黙**し、原因は `chrome://extensions` を開かない限り見えない（2026-07-26 被弾＝#362）。
 - **dev:ext 起動直後のリロード1回を忘れない**: リロードするまで Chrome に載っているのは前のビルドのまま＝直したはずの挙動が出ない（同型の被弾 2026-07-25＝修正が1時間空振り）。
+- **拡張の色はアプリのトークンから生成される**（#270）。`dev:ext` / `build:ext` は WXT の前に `scripts/gen-extension-tokens.cts` を走らせ、`app/src/renderer/src/globals.css` と `extension/utils/tokens.source.css` から `extension/utils/tokens.generated.{css,ts}` を書き直す。生成物はコミット対象で、古いまま残っていると `npm test` が落ちる（`scripts/extension-tokens.test.ts`）。**dev サーバーは globals.css の変更を監視しない**＝アプリ側のトークンを触ったら `npm run tokens:ext` を明示的に回す。
 - **なぜ WXT にブラウザを起動させないか**（`web-ext.config.ts` で無効化）: 自動化スタック（web-ext-run → chrome-launcher）経由の起動は大量の `--disable-*` フラグ＝自動化ツールの指紋が付き、X も Google もボット判定してサインインを弾く（2026-07-26 実測）。ホットリロード自体は拡張⇔dev サーバー間の WebSocket なので、普段どおり起動した Chrome でそのまま効く。
 - **デバッグポートは開けない**: TCP のデバッグポートは無認証で、ローカルの任意プロセスがブラウザを乗っ取りサインイン中のセッションを抜けられる（Chrome 136 が既定プロファイルで同スイッチを拒否するのも同じ理由）。
 
