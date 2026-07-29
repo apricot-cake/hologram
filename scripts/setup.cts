@@ -1,31 +1,14 @@
 'use strict';
 
-// Installs this repo's dependencies. Two upstream problems currently stop a plain
-// `npm install` from producing a working tree, and each is worked around with one
-// npm flag. Both flags are temporary, so neither is hardcoded: before installing,
-// this script reads the condition that makes each necessary straight off disk, and
-// afterwards it reports which ones still hold. The day an upstream fixes theirs,
-// the flag stops being passed and the script says so — a workaround nobody
-// re-checks is a workaround that becomes permanent.
+// Installs this repo's dependencies. One upstream problem currently stops a plain
+// `npm install` from producing a working tree, worked around with one npm flag.
+// The flag is temporary, so it isn't hardcoded: before installing, this script
+// reads the condition that makes it necessary straight off disk, and afterwards
+// it reports whether it still holds. The day upstream fixes theirs, the flag
+// stops being passed and the script says so — a workaround nobody re-checks is a
+// workaround that becomes permanent.
 //
-// (1) --ignore-scripts — WiseLibs/better-sqlite3#1503 (filed 2026-07-24, open)
-//   better-sqlite3 v13 is the first release built on N-API, so it ships ready-made
-//   binaries inside the package (prebuilds/<platform>-<arch>.node) and its loader
-//   prefers them over anything compiled locally. But the package still carries
-//   binding.gyp and declares no install script, and npm's documented default for
-//   that combination is to compile the addon with node-gyp:
-//     "If there is a binding.gyp file in the root of your package and you haven't
-//      defined your own install or preinstall scripts, npm will default the
-//      install command to compile using node-gyp via node-gyp rebuild"
-//   So npm compiles from source on every install, needs Visual Studio to do it,
-//   and aborts the WHOLE install partway when it isn't there — leaving a tree
-//   missing unrelated packages. The compile was never needed.
-//
-//   The flag is blunt: it disables EVERY package's install scripts. Electron and
-//   WXT are collateral damage (Electron's downloads the ~225MB runtime, WXT's
-//   generates .wxt/tsconfig.json), so this script puts those two back by hand.
-//
-// (2) --legacy-peer-deps — electron-vite's peer range vs vite 8
+// --legacy-peer-deps — electron-vite's peer range vs vite 8
 //   electron-vite@5 declares `peer vite: ^5 || ^6 || ^7` while app/ builds on
 //   vite 8, so npm's resolver refuses the tree outright. No stable electron-vite
 //   accepts vite 8 yet (6.0.0 is beta-only), and `overrides` cannot widen a peer
@@ -66,19 +49,6 @@ function readJson(file: string): Record<string, any> | null {
   }
 }
 
-// Reads the PUBLISHED package.json, not the registry metadata: `npm view
-// better-sqlite3 gypfile` answers true even today, because npm injects that field
-// itself when it spots a binding.gyp. The author's own opt-out only shows up here.
-function sqliteCheck(root: string = repoRoot): Verdict | null {
-  const dir = path.join(root, 'node_modules', 'better-sqlite3');
-  const pkg = readJson(path.join(dir, 'package.json'));
-  if (!pkg) return null;
-  if (pkg.gypfile === false) return { needed: false, reason: 'better-sqlite3 が gypfile:false を指定するようになりました' };
-  if (pkg.scripts?.install) return { needed: false, reason: `better-sqlite3 が install スクリプト（${pkg.scripts.install}）を持つようになりました` };
-  if (!fs.existsSync(path.join(dir, 'binding.gyp'))) return { needed: false, reason: 'better-sqlite3 が binding.gyp を同梱しなくなりました' };
-  return { needed: true, reason: 'better-sqlite3 が binding.gyp を同梱したまま install スクリプトを持たない＝npm が既定でコンパイルを試みます' };
-}
-
 // Compares electron-vite's declared peer range against the vite actually installed.
 // Only the major numbers matter here: the range is a list of caret terms, and the
 // conflict is strictly "vite 8 is not among the allowed majors". An unrecognised
@@ -99,10 +69,7 @@ function peerCheck(root: string = repoRoot): Verdict | null {
   return { needed: true, reason: `electron-vite@${ev.version} の peer は ${range}＝使用中の vite ${vite.version} を受け入れません` };
 }
 
-const WORKAROUNDS: Workaround[] = [
-  { flag: '--ignore-scripts', label: 'better-sqlite3 の不要な node-gyp ビルド', upstream: 'https://github.com/WiseLibs/better-sqlite3/issues/1503', check: sqliteCheck },
-  { flag: '--legacy-peer-deps', label: 'electron-vite の peer 範囲と vite 8 の衝突', upstream: 'https://github.com/alex8088/electron-vite/releases', check: peerCheck },
-];
+const WORKAROUNDS: Workaround[] = [{ flag: '--legacy-peer-deps', label: 'electron-vite の peer 範囲と vite 8 の衝突', upstream: 'https://github.com/alex8088/electron-vite/releases', check: peerCheck }];
 
 // Same shape as bridge.cts: installing only happens when this file is RUN (see the
 // require.main guard at the bottom), so a test can require() it and exercise the
@@ -110,7 +77,7 @@ const WORKAROUNDS: Workaround[] = [
 // is a .cts run by Node's type stripping, which only erases types — real export
 // statements would be a syntax error at runtime (see scripts/tsconfig.json's
 // erasableSyntaxOnly).
-module.exports = { sqliteCheck, peerCheck, WORKAROUNDS, decideFlags };
+module.exports = { peerCheck, WORKAROUNDS, decideFlags };
 
 // Split out so a test can check the FLAGS a set of verdicts produces, not just the
 // verdicts themselves — "cannot tell" has to behave like "still needed" here.
@@ -137,16 +104,14 @@ function main() {
   // extension/ is a separate npm project with its own lockfile (deliberately —
   // it is a standalone WXT build), so a root install does not cover it. Fresh
   // worktrees need this or the extension build and its type check both fail.
-  // Its own tree has no peer conflict, so only the scripts flag applies.
-  const extDir = path.join(repoRoot, 'extension');
-  run('npm install --ignore-scripts', extDir);
-
-  // The other thing --ignore-scripts skips: WXT's own postinstall, which writes
-  // extension/.wxt/tsconfig.json. extension/tsconfig.json extends that file, so
+  // Its own postinstall runs `wxt prepare`, which writes
+  // extension/.wxt/tsconfig.json; extension/tsconfig.json extends that file, so
   // without it BOTH the extension type check and every Vitest suite that imports
   // extension code fail — the latter with "Tsconfig not found", because Vite reads
-  // the nearest tsconfig when transforming a file.
-  run('npx wxt prepare', extDir);
+  // the nearest tsconfig when transforming a file. Its own tree has no peer
+  // conflict and no scripts to skip, so it takes no flags.
+  const extDir = path.join(repoRoot, 'extension');
+  run('npm install', extDir);
 
   // Three suites read the built extension bundles straight off disk (capture.js,
   // resident.js), so a freshly installed tree fails `npm test` until this runs.
@@ -154,14 +119,19 @@ function main() {
   // cost at one build per setup instead of one per suite.
   run('npm run build:ext', repoRoot);
 
-  // Put back the other casualty. Skipped when scripts ran normally, since Electron
-  // will have downloaded itself.
+  // electron's published package.json carries no postinstall script (checked on
+  // the exact pinned version, 43.2.0: neither the registry manifest nor the
+  // extracted tarball declares one), so nothing above ever downloads its ~225MB
+  // runtime — that has nothing to do with --ignore-scripts, which this script no
+  // longer passes to the root install. install.js is the same file electron
+  // itself would run if it had a postinstall; calling it directly is required
+  // every time, not a workaround for anything.
   const electronExe = path.join(repoRoot, 'node_modules', 'electron', 'dist', 'electron.exe');
   const electronInstaller = path.join(repoRoot, 'node_modules', 'electron', 'install.js');
   if (!fs.existsSync(electronExe) && fs.existsSync(electronInstaller)) {
     // NOT `npm rebuild electron`: that reports "rebuilt dependencies successfully"
     // and downloads nothing, which reads as success while leaving no executable.
-    console.log('\n$ node node_modules/electron/install.js   (--ignore-scripts skipped Electron の本体取得)');
+    console.log('\n$ node node_modules/electron/install.js');
     execFileSync(process.execPath, [electronInstaller], { cwd: repoRoot, stdio: 'inherit' });
   }
 
