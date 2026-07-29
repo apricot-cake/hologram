@@ -36,6 +36,7 @@ import { SAVE_WATCHDOG_MS } from './deadline.ts';
 import { collectImageUrls, getCaptureSite, getMediaIdentitySite, getOverlaySite, mediaKeyOf, mediaKeysOf } from './extractor/index.ts';
 import type { CaptureSite, OverlaySite, PostMediaElement } from './extractor/types.ts';
 import { ICONS, makeIcon, makeSpinner } from './icons.ts';
+import { StatusSurface } from './status-surface.ts';
 import { ensureTokens, motion, prefersReducedMotion, token } from './tokens.ts';
 import { createI18n } from './i18n.ts';
 import type { BackgroundToContentMessage, CheckSavedMessage, CheckSavedResponse, ImageDraggedMessage, SavedEntry, SaveResponse } from './messages.ts';
@@ -160,7 +161,7 @@ export async function startOverlay(): Promise<void> {
 
   let markMode: MarkMode = 'always';
   let hoverSave = true;
-  let failureBanner: HTMLDivElement | null = null;
+  let failureBanner: StatusSurface | null = null;
   let failureBannerTimer: ReturnType<typeof setTimeout> | null = null;
   const tracked = new Map<Element, UnitState>();
   const anchorOf = new Map<Element, { unit: Element; anchor: Anchor }>(); // media box -> its anchor
@@ -589,63 +590,21 @@ export async function startOverlay(): Promise<void> {
     failureBannerTimer = null;
     failureBanner?.remove();
 
-    // #226 deliberately leaves the legacy inline presenters separate until
-    // #44 replaces them with one Shadow DOM + CSS component. Mirror the Alt+S
-    // banner here without introducing another legacy abstraction just before
-    // that migration.
-    const banner = document.createElement('div');
-    banner.setAttribute('data-hologram-save-banner', '');
-    banner.setAttribute('role', 'alert');
-    banner.style.cssText = [
-      'position:fixed',
-      'top:12px',
-      'left:50%',
-      'transform:translateX(-50%)',
-      'z-index:2147483647',
-      'display:flex',
-      'align-items:center',
-      'gap:9px',
-      'padding:6px 16px 6px 7px',
-      'max-width:calc(100vw - 48px)',
-      'box-sizing:border-box',
-      'border-radius:999px',
-      `border:1px solid ${token.danger}`,
-      `background:${token.surface}`,
-      `color:${token.ink}`,
-      `font:600 13px/1.4 ${token.fontSans}`,
-      `box-shadow:${token.overlayShadow}`,
-      'pointer-events:none',
-    ].join(';');
-    const badge = document.createElement('div');
-    badge.style.cssText = `width:26px;height:26px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;background:${token.danger};color:${token.onDanger};`;
-    badge.appendChild(makeIcon(ICONS.cross, 15));
-    banner.appendChild(badge);
-    const label = document.createElement('div');
-    label.textContent = text;
-    banner.appendChild(label);
-    document.body.appendChild(banner);
+    // The same component the Alt+S banner is (#44 — status-surface.ts). This
+    // used to be a hand-copied pill kept "separate until #44 replaces them",
+    // which is what let it drift: it never grew the outline tint the other
+    // banners had. Now there is one banner and this is a state of it.
+    const banner = new StatusSurface({ variant: 'banner', resting: ICONS.cross, role: 'alert' });
+    banner.el.setAttribute('data-hologram-save-banner', '');
+    banner.setState('error', text);
+    banner.mount();
+    banner.enter();
     failureBanner = banner;
-
-    if (!prefersReducedMotion()) {
-      banner.animate(
-        [
-          { opacity: 0, transform: 'translateX(-50%) translateY(-14px) scale(0.96)' },
-          { opacity: 1, transform: 'translateX(-50%)' },
-        ],
-        { duration: motion.durationBase, easing: motion.easeOut },
-      );
-    }
 
     failureBannerTimer = setTimeout(() => {
       failureBannerTimer = null;
       if (failureBanner === banner) failureBanner = null;
-      if (prefersReducedMotion()) {
-        banner.remove();
-        return;
-      }
-      const anim = banner.animate([{ opacity: 1 }, { opacity: 0, transform: 'translateX(-50%) translateY(-14px) scale(0.96)' }], { duration: motion.durationFast, easing: motion.easeIn });
-      anim.onfinish = () => banner.remove();
-      anim.oncancel = () => banner.remove();
+      banner.exit();
     }, ERROR_BANNER_MS);
   }
 

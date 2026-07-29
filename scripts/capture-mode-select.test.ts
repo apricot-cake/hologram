@@ -59,7 +59,8 @@ async function runOn(url: string, auto: boolean): Promise<'single' | 'auto' | 'n
   window.eval(BUNDLE);
   await new Promise((r) => setTimeout(r, 300)); // createI18n() と最初の収集が終わるまで
 
-  if (window.document.querySelector('[data-hologram-bulk-banner]')) return 'auto';
+  const uiRoot = (window.document.querySelector('hologram-extension-ui') as any)?.shadowRoot;
+  if (uiRoot?.querySelector('[data-hologram-bulk-banner]')) return 'auto';
   // 単発の経路はこのグローバルで自分を印す（自前のバナーは data 属性を持たない）
   if ((window as any).__snsPostSaveActive === true) return 'single';
   return 'none';

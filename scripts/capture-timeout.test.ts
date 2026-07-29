@@ -100,12 +100,15 @@ function makeRig(reply: (msg: any) => any): Rig {
 
   window.eval(BUNDLE);
 
-  const banner = () => window.document.querySelector('[data-hologram-capture-banner]');
+  // #44: ページ内 UI は共有の ShadowRoot の中（ui-root.ts）。状態は共通部品の
+  // data-state に載る＝語彙は idle/active/busy/success/partial/ask/error。
+  const uiRoot = () => (window.document.querySelector('hologram-extension-ui') as any)?.shadowRoot;
+  const banner = () => uiRoot()?.querySelector('[data-hologram-capture-banner]');
   return {
     window,
     advance,
     sent,
-    state: () => banner()?.getAttribute('data-hologram-capture-state') ?? null,
+    state: () => banner()?.getAttribute('data-state') ?? null,
     text: () => banner()?.textContent ?? '',
   };
 }
@@ -134,7 +137,7 @@ test('保存要求に誰も答えなければ、上限で必ず終わる（永�
 
   rig.advance(31_000); // 90 秒の見張りを越える
   await settle();
-  expect(rig.state()).toBe('fail');
+  expect(rig.state()).toBe('error');
   // バナーはブラウザのロケールに従う＝jsdom は en。日本語版の同じ文言は
   // i18n-parity.test.ts が両言語に在ることを見る。ここは「次の一手が書いてある」
   // ことだけを確かめる＝「失敗しました」で終わらせないのが #507 の要求。
@@ -166,7 +169,7 @@ test('サービスワーカーが落ちてチャネルが閉じたら、見張�
   });
   await clickPost(rig);
   await settle();
-  expect(rig.state()).toBe('fail');
+  expect(rig.state()).toBe('error');
 });
 
 test('重複の問い合わせに誰も答えなければ、上限で普通に保存へ進む（fail open）', async () => {

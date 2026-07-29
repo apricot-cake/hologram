@@ -29,8 +29,8 @@
 import { SAVE_WATCHDOG_MS, SAVED_QUERY_TIMEOUT_MS } from './deadline.ts';
 import type { CaptureSite } from './extractor/types.ts';
 import { isXBookmarksPage } from './extractor/x.ts';
-import { ICONS, makeIcon, makeSpinner } from './icons.ts';
-import { ensureTokens, motion, prefersReducedMotion, token } from './tokens.ts';
+import { ICONS } from './icons.ts';
+import { StatusSurface } from './status-surface.ts';
 import type { HologramI18nApi } from './i18n.ts';
 import type { CheckSavedMessage, CheckSavedResponse, SavePostMessage, SaveResponse } from './messages.ts';
 
@@ -42,7 +42,6 @@ const MIN_SAVE_PERIOD_MS = 1000;
 const END_QUIET_MS = 4000;
 
 export function startBulkCapture(site: CaptureSite, i18n: HologramI18nApi): void {
-  ensureTokens();
   const t = i18n.getMessage;
 
   // url -> state. The element is never kept: once a permalink is read the post
@@ -64,67 +63,36 @@ export function startBulkCapture(site: CaptureSite, i18n: HologramI18nApi): void
 
   // === UI ===
   //
-  // The banner is mirrored from capture.ts rather than shared. overlay.ts made
-  // the same call and says why: #226 leaves the inline presenters separate
-  // until #44 replaces all of them with one Shadow DOM component.
-  const banner = document.createElement('div');
-  banner.setAttribute('data-hologram-bulk-banner', '');
-  banner.setAttribute('role', 'status');
-  banner.style.cssText = [
-    'position:fixed',
-    'top:12px',
-    'left:50%',
-    'transform:translateX(-50%)',
-    'z-index:2147483647',
-    'display:flex',
-    'align-items:center',
-    'gap:9px',
-    'padding:6px 8px 6px 7px',
-    'max-width:calc(100vw - 48px)',
-    'box-sizing:border-box',
-    'border-radius:999px',
-    `border:1px solid ${token.overlayBorder}`,
-    `background:${token.surface}`,
-    `color:${token.ink}`,
-    `font:600 13px/1.4 ${token.fontSans}`,
-    `box-shadow:${token.overlayShadow}`,
-  ].join(';');
+  // The same banner the Alt+S capture shows (#44 — status-surface.ts). This was
+  // the fourth hand-kept copy of that pill, and the one that had drifted
+  // furthest: it never tinted its outline on the way out, so a run that ended
+  // with failures looked the same as one that did not.
+  const banner = new StatusSurface({ variant: 'banner', resting: ICONS.drop });
+  banner.el.setAttribute('data-hologram-bulk-banner', '');
+  banner.label.setAttribute('data-hologram-bulk-label', '');
+  banner.setState('busy', '');
 
-  const badge = document.createElement('div');
-  badge.style.cssText = `width:26px;height:26px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;background:${token.badgeNeutral};color:${token.accent};`;
-  badge.appendChild(makeSpinner(15));
-  banner.appendChild(badge);
-
-  const label = document.createElement('div');
-  label.setAttribute('data-hologram-bulk-label', '');
-  label.style.cssText = 'padding-right:4px';
-  banner.appendChild(label);
-
+  // The one control on any of these surfaces: a run the user started needs a
+  // way to be stopped, so this banner alone takes input.
   const stopButton = document.createElement('button');
   stopButton.type = 'button';
+  stopButton.className = 'action';
   stopButton.textContent = t('bulkStop');
-  stopButton.style.cssText = ['flex:none', 'appearance:none', 'cursor:pointer', 'border-radius:999px', `border:1px solid ${token.overlayBorder}`, `background:${token.badgeNeutral}`, `color:${token.ink}`, `font:600 12px/1 ${token.fontSans}`, 'padding:7px 12px'].join(';');
   stopButton.onclick = (e) => {
     e.preventDefault();
     e.stopPropagation();
     finish(true);
   };
-  banner.appendChild(stopButton);
+  banner.el.style.pointerEvents = 'auto';
+  banner.slot(stopButton);
 
-  document.body.appendChild(banner);
-  if (!prefersReducedMotion()) {
-    banner.animate(
-      [
-        { opacity: 0, transform: 'translateX(-50%) translateY(-14px) scale(0.96)' },
-        { opacity: 1, transform: 'translateX(-50%)' },
-      ],
-      { duration: motion.durationBase, easing: motion.easeOut },
-    );
-  }
+  banner.mount();
+  banner.enter();
 
   function paint() {
     if (stopped) return;
-    label.textContent = t('bulkProgress', [savedCount, skippedCount]);
+    banner.setState('busy', t('bulkProgress', [savedCount, skippedCount]));
+    banner.slot(stopButton);
   }
   paint();
 
@@ -322,14 +290,12 @@ export function startBulkCapture(site: CaptureSite, i18n: HologramI18nApi): void
     if (window.__snsPostSaveCleanup === stop) delete window.__snsPostSaveCleanup;
     window.__snsPostSaveActive = false;
 
-    badge.replaceChildren();
+    // A run that hit real failures ends amber, not green — the summary says so
+    // in words, and the surface now says it in colour too (setState drops the
+    // stop button along with the state that owned it).
     const bad = failedCount > 0;
-    badge.style.background = bad ? token.warning : token.success;
-    badge.style.color = bad ? token.onWarning : token.onSuccess;
-    badge.appendChild(makeIcon(bad ? ICONS.warn : ICONS.check, 15));
-    banner.style.borderColor = bad ? token.warning : token.success;
-    label.textContent = summaryText(byUser);
-    stopButton.remove();
+    banner.setState(bad ? 'partial' : 'success', summaryText(byUser));
+    banner.el.style.pointerEvents = 'none';
     setTimeout(dismiss, bad || deferredCount || unavailableCount || ageRestrictedCount ? 6000 : 3500);
   }
 
@@ -344,13 +310,7 @@ export function startBulkCapture(site: CaptureSite, i18n: HologramI18nApi): void
   }
 
   function dismiss() {
-    if (prefersReducedMotion() || !banner.isConnected) {
-      banner.remove();
-      return;
-    }
-    const anim = banner.animate([{ opacity: 1 }, { opacity: 0, transform: 'translateX(-50%) translateY(-14px) scale(0.96)' }], { duration: motion.durationFast, easing: motion.easeIn });
-    anim.onfinish = () => banner.remove();
-    anim.oncancel = () => banner.remove();
+    banner.exit();
   }
 
   function stop() {

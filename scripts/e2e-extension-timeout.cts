@@ -109,17 +109,21 @@ function captureLogEntries(configDir: string): any[] {
     });
     if (!activated.ok) throw new Error(`capture activation failed: ${activated.error}`);
 
-    const bannerState = () => page.locator('[data-hologram-capture-banner]').getAttribute('data-hologram-capture-state');
+    // #44: the banner lives in the shared ShadowRoot. Playwright's CSS engine
+    // pierces open shadow roots, so a locator still finds it — but
+    // document.querySelector inside page.evaluate does not, which is why the
+    // waits below go through a locator too.
+    const bannerState = () => page.locator('[data-hologram-capture-banner]').getAttribute('data-state');
 
     await page.locator('#capture-target').click({ position: { x: 100, y: 100 } });
-    await page.waitForFunction(() => document.querySelector('[data-hologram-capture-banner]')?.getAttribute('data-hologram-capture-state') === 'busy', null, { timeout: 15_000 });
+    await page.locator('[data-hologram-capture-banner][data-state="busy"]').waitFor({ timeout: 15_000 });
 
     const startedAt = Date.now();
-    await page.waitForFunction(() => document.querySelector('[data-hologram-capture-banner]')?.getAttribute('data-hologram-capture-state') === 'fail', null, { timeout: WAIT_FOR_END_MS });
+    await page.locator('[data-hologram-capture-banner][data-state="error"]').waitFor({ timeout: WAIT_FOR_END_MS });
     const endedAfterMs = Date.now() - startedAt;
 
     const state = await bannerState();
-    if (state !== 'fail') throw new Error(`the save ended in state "${state}", wanted "fail"`);
+    if (state !== 'error') throw new Error(`the save ended in state "${state}", wanted "error"`);
 
     // 次の一手が読めること＝「保存に失敗しました」で終わらせない（#507 の要求）。
     const shown = (await page.locator('[data-hologram-capture-banner]').textContent()) || '';

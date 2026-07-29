@@ -22,7 +22,6 @@
 import { DUPLICATE_ASK_TIMEOUT_MS } from './deadline.ts';
 import { collectImageUrls, getMediaIdentitySite } from './extractor/index.ts';
 import type { PostMediaElement } from './extractor/types.ts';
-import { token } from './tokens.ts';
 
 // chrome.storage.local, boolean. Absent = on: the warning is the point of the
 // feature, and a user who finds it noisy turns it off (options page, or the
@@ -121,31 +120,11 @@ export async function checkDuplicate(platform: string, url: string | null, image
 function makeChoiceButton(label: string, title: string, primary: boolean): HTMLButtonElement {
   const b = document.createElement('button');
   b.type = 'button';
+  b.className = 'choice';
+  if (primary) b.dataset.primary = '';
   b.textContent = label;
   b.title = title;
   b.setAttribute('aria-label', `${label} — ${title}`);
-  b.style.cssText = [
-    'appearance:none',
-    'margin:0',
-    'padding:4px 12px',
-    'border-radius:999px',
-    'box-sizing:border-box',
-    'cursor:pointer',
-    'white-space:nowrap',
-    `font:600 12px/1.5 ${token.fontSans}`,
-    `border:1px solid ${primary ? token.accent : token.overlayBorder}`,
-    `background:${primary ? token.accentSoft : token.badgeNeutral}`,
-    `color:${primary ? token.accent : token.ink}`,
-    `transition:background ${token.durationBase},border-color ${token.durationBase},transform ${token.durationBase} ${token.easeOut}`,
-  ].join(';');
-  b.onpointerenter = () => {
-    b.style.background = primary ? token.accentSoft : token.hover;
-    b.style.transform = 'translateY(-1px)';
-  };
-  b.onpointerleave = () => {
-    b.style.background = primary ? token.accentSoft : token.badgeNeutral;
-    b.style.transform = '';
-  };
   // Both press phases are stopped: this control is layered over host pages that
   // listen on the document (x.com and bsky.app open a lightbox), and a press
   // that reached them would act on the post behind the question.
@@ -166,10 +145,10 @@ function makeChoiceButton(label: string, title: string, primary: boolean): HTMLB
 // choices, it does not change the default.
 export function buildChoiceRow(t: Messages, onChoose: (choice: DuplicateChoice) => void): HTMLDivElement {
   const wrap = document.createElement('div');
-  wrap.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:8px;pointer-events:auto;';
+  wrap.className = 'choices';
 
   const row = document.createElement('div');
-  row.style.cssText = 'display:flex;gap:6px;flex-wrap:wrap;justify-content:center;';
+  row.className = 'choice-row';
   let answered = false;
   const answer = (choice: DuplicateChoice) => {
     if (answered) return;
@@ -201,10 +180,9 @@ export function buildChoiceRow(t: Messages, onChoose: (choice: DuplicateChoice) 
   // question on screen still waits for an answer, because turning the warning
   // off is not itself a decision about THIS save.
   const optOut = document.createElement('label');
-  optOut.style.cssText = `display:flex;align-items:center;gap:6px;cursor:pointer;color:${token.inkMuted};font:400 11px/1.4 ${token.fontSans};`;
+  optOut.className = 'opt-out';
   const box = document.createElement('input');
   box.type = 'checkbox';
-  box.style.cssText = `margin:0;width:12px;height:12px;accent-color:${token.accent};cursor:pointer;`;
   box.onchange = () => {
     if (box.checked) suppressWarning();
   };

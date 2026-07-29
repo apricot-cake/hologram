@@ -51,8 +51,10 @@ const unavailableUrls = new Set<string>();
 // なければならない（#54 経路の存在理由＝踏破済みの土地について X へ一切問い合わせない）
 const savedAnswer: Record<string, string | null> = { 'https://x.com/alice/status/111': '1780000000000-aa' };
 
-const banner = () => window.document.querySelector('[data-hologram-bulk-banner]');
-const bannerText = () => window.document.querySelector('[data-hologram-bulk-label]')?.textContent || '';
+// #44: ページ内 UI は共有の ShadowRoot の中（ui-root.ts）。
+const uiRoot = () => (window.document.querySelector('hologram-extension-ui') as any)?.shadowRoot;
+const banner = () => uiRoot()?.querySelector('[data-hologram-bulk-banner]') ?? null;
+const bannerText = () => uiRoot()?.querySelector('[data-hologram-bulk-label]')?.textContent || '';
 const settle = (ms = 250) => new Promise((r) => setTimeout(r, ms));
 const savePostFor = (url: string) => sent.find((m) => m.type === 'savePost' && m.postUrl === url);
 
