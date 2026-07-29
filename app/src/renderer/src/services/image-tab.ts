@@ -21,7 +21,7 @@ import { get as getPostsData, subscribe as subscribePostsData } from './posts-da
 import { imageTabGroup } from './records.ts';
 import { get as storeGet, subscribe as storeSubscribe } from './store.ts';
 
-type Gallery = { buildGroupGalleryItems(g: any): { src: string; alt: string; video: boolean }[] };
+type Gallery = { buildGroupGalleryItems(g: any): { src: string; alt: string; video: boolean; ugoira?: { file: string; frames: { file: string; delay: number }[] }; poster?: string }[] };
 let gallery: Gallery | null = null;
 let labels: Record<string, string> | null = null;
 let onIndexChange: ((i: number) => void) | null = null;

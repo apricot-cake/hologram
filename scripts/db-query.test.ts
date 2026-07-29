@@ -33,6 +33,7 @@ beforeAll(async () => {
     media: [
       { url: 'https://x.example/1.jpg', alt: 'alt1', width: 100, height: 200, file: 'cap-1-media-0.jpg' },
       { url: 'https://x.example/2.mp4', alt: 'alt2', width: 50, height: 60, file: 'cap-1-media-1.mp4', type: 'video', posterFile: 'cap-1-poster.jpg' },
+      { url: 'https://i.pximg.net/u.zip', alt: null, width: 700, height: 700, file: 'cap-1-media-2.zip', type: 'ugoira', posterFile: 'cap-1-poster.jpg', frames: [{ file: '000000.jpg', delay: 60 }] },
     ],
     text: 'a beautiful sunset over the mountains',
     hashtags: ['nature', 'photo'],
@@ -91,13 +92,21 @@ describe('postsFromDb: 形と並び', () => {
 
   test('media 行は seq 順で戻る', async () => {
     const cap1 = (await postsFromDb(handle.sqlite)).find((p: any) => p.captureId === 'cap-1');
-    expect(cap1.media.map((m: any) => m.file)).toEqual(['cap-1-media-0.jpg', 'cap-1-media-1.mp4']);
+    expect(cap1.media.map((m: any) => m.file)).toEqual(['cap-1-media-0.jpg', 'cap-1-media-1.mp4', 'cap-1-media-2.zip']);
   });
 
   test('静止画は type を持たず、動画は type と posterFile を持つ（#119 St1）', async () => {
     const cap1 = (await postsFromDb(handle.sqlite)).find((p: any) => p.captureId === 'cap-1');
     expect(cap1.media[0].type).toBeNull();
     expect(cap1.media[1]).toMatchObject({ type: 'video', posterFile: 'cap-1-poster.jpg' });
+  });
+
+  // #119 St3: うごイラのコマ表は JSON 1列で往復する（コマ単位で引く用途が無い）
+  test('うごイラはコマ表が配列で戻り、他のメディアは null（#119 St3）', async () => {
+    const cap1 = (await postsFromDb(handle.sqlite)).find((p: any) => p.captureId === 'cap-1');
+    expect(cap1.media[2]).toMatchObject({ type: 'ugoira', frames: [{ file: '000000.jpg', delay: 60 }] });
+    expect(cap1.media[0].frames).toBeNull();
+    expect(cap1.media[1].frames).toBeNull();
   });
 
   test('INTEGER 0/1 の真偽値は true/false へ戻る（0/1 のままにしない）', async () => {

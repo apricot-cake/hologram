@@ -38,6 +38,13 @@ const VIDEO_MIME_EXT: Record<string, string> = {
   'video/webm': 'webm',
   'video/quicktime': 'mov',
 };
+// Archive content types (#119 St3: a pixiv うごイラ IS a zip of frame images —
+// the animation has no single-file form short of transcoding it, which would
+// mean carrying an encoder). Its own table so a zip can never land on a still
+// or video entry, where nothing could display it.
+const ARCHIVE_MIME_EXT: Record<string, string> = {
+  'application/zip': 'zip',
+};
 // Content types that mean "I don't know what this is" rather than naming a
 // format. A CDN that answers this is not claiming the bytes are unsupported —
 // it is declining to claim anything (Bluesky's video thumbnails do exactly
@@ -48,12 +55,16 @@ const SNIFF_BYTES = 16; // enough for every signature below
 const MAX_MEDIA = 12; // cap attachments per post
 const MAX_MEDIA_BYTES = 25 * 1024 * 1024; // skip anything larger (still images)
 const MAX_VIDEO_BYTES = 200 * 1024 * 1024; // videos run far bigger than photos
+// An original-size うごイラ archive is dozens of full-resolution frames, so it
+// sits with the videos rather than the stills.
+const MAX_ARCHIVE_BYTES = 200 * 1024 * 1024;
 // Byte budget for ONE save operation, on top of the per-file caps (#389). Those
 // caps bound a single response, not the click: 12 attachments at the video cap
 // is ~2.4GB of network and disk driven by one save. 512MB clears every shape our
-// own caps allow (12 stills = 300MB; video + poster = 225MB), so no legitimate
-// post is refused, and matches the largest single file any supported platform
-// accepts (X video, 512MB) — a save that wants more is not a real post.
+// own caps allow (12 stills = 300MB; video or ugoira archive + poster = 225MB),
+// so no legitimate post is refused, and matches the largest single file any
+// supported platform accepts (X video, 512MB) — a save that wants more is not a
+// real post.
 const MAX_SAVE_BYTES = 512 * 1024 * 1024;
 // Attachments in flight at once. Bodies stream to disk, so memory no longer
 // scales with this number; 2 keeps a multi-image post from serializing into a
@@ -63,16 +74,22 @@ const MEDIA_TIMEOUT_MS = 12000; // per-image abort
 const VIDEO_TIMEOUT_MS = 60000; // videos take longer to pull down than a still
 const MAX_MEDIA_REDIRECTS = 4; // bound redirect chains
 
+interface UgoiraFrame {
+  file: string;
+  delay: number;
+}
 interface MediaEntry {
   url: string;
   referer?: string;
   alt?: string | null;
   width?: number | null;
   height?: number | null;
-  // Omitted (legacy shape / Bluesky / pixiv, all still-image-only today) means
-  // 'image'. video/gif entries additionally carry `poster` (#119 St1).
-  type?: 'image' | 'video' | 'gif';
+  // Omitted (legacy shape / a still image) means 'image'. Every other value
+  // additionally carries `poster` (#119 St1); 'ugoira' also carries `frames`
+  // (#119 St3).
+  type?: 'image' | 'video' | 'gif' | 'ugoira';
   poster?: string | null;
+  frames?: UgoiraFrame[];
 }
 interface MediaDescriptor {
   url: string;
@@ -82,6 +99,7 @@ interface MediaDescriptor {
   file: string;
   type?: string;
   posterFile?: string;
+  frames?: UgoiraFrame[];
 }
 // What a download leaves behind: the folder-relative file name it committed and
 // the extension the response's content-type resolved to.
@@ -98,6 +116,7 @@ interface FetchLimits {
 }
 const STILL_LIMITS: FetchLimits = { mimeExt: MEDIA_MIME_EXT, maxBytes: MAX_MEDIA_BYTES, timeoutMs: MEDIA_TIMEOUT_MS };
 const VIDEO_LIMITS: FetchLimits = { mimeExt: VIDEO_MIME_EXT, maxBytes: MAX_VIDEO_BYTES, timeoutMs: VIDEO_TIMEOUT_MS };
+const ARCHIVE_LIMITS: FetchLimits = { mimeExt: ARCHIVE_MIME_EXT, maxBytes: MAX_ARCHIVE_BYTES, timeoutMs: VIDEO_TIMEOUT_MS };
 
 // --- Whole-save byte budget (#389) ---------------------------------------------
 // One budget per save operation, shared by every download it makes (media,
@@ -254,6 +273,7 @@ function sniffMagic(head: Buffer): string | null {
   if (head.length >= 12 && head.subarray(0, 4).toString('latin1') === 'RIFF' && head.subarray(8, 12).toString('latin1') === 'WEBP') return 'image/webp';
   if (head.length >= 6 && /^GIF8[79]a$/.test(head.subarray(0, 6).toString('latin1'))) return 'image/gif';
   if (head.length >= 4 && head.subarray(0, 4).equals(Buffer.from([0x1a, 0x45, 0xdf, 0xa3]))) return 'video/webm'; // EBML (also .mkv, which we don't accept)
+  if (head.length >= 4 && head.subarray(0, 2).toString('latin1') === 'PK' && head[2] <= 8 && head[3] <= 8) return 'application/zip';
   // ISO base media: a size-prefixed 'ftyp' box, whose brand separates QuickTime
   // from everything else in the mp4 family.
   if (head.length >= 12 && head.subarray(4, 8).toString('latin1') === 'ftyp') {
@@ -412,18 +432,19 @@ function descriptorOf(entry: MediaEntry, file: string): MediaDescriptor {
 }
 
 // Download one media item. Still images go to <base>-media-<i>.<ext> as
-// before. video/gif entries ALSO fetch the poster frame (if the platform gave
-// one) to <base>-poster.<ext> — unindexed, because X/Misskey/Mastodon carry at
-// most one video per post — before attempting the video itself, so a poster
-// lands even if the video download fails. If the video is unsupported/too
+// before. Animated entries (video/gif = a single video file, ugoira = a zip of
+// frames) ALSO fetch the poster frame (if the platform gave one) to
+// <base>-poster.<ext> — unindexed, because no supported platform carries more
+// than one animation per post — before attempting the animation itself, so a
+// poster lands even if that download fails. If the animation is unsupported/too
 // large/network-fails, the item downgrades to a still (posterFile becomes its
 // `file`, `type` stays unset) instead of vanishing entirely — only a true
-// double failure (no poster AND no video) drops the item, same as an
+// double failure (no poster AND no animation) drops the item, same as an
 // unfetchable photo. Returns null on that full failure (caller drops it).
 async function downloadOneMedia(entry: MediaEntry | null | undefined, dir: string, base: string, i: number, budget: ByteBudget = createByteBudget()): Promise<MediaDescriptor | null> {
   if (!entry) return null;
-  const isVideo = entry.type === 'video' || entry.type === 'gif';
-  if (!isVideo) {
+  const limits = entry.type === 'ugoira' ? ARCHIVE_LIMITS : entry.type === 'video' || entry.type === 'gif' ? VIDEO_LIMITS : null;
+  if (!limits) {
     const got = await downloadToFile(entry.url, entry.referer, STILL_LIMITS, dir, `${base}-media-${i}`, budget);
     return got ? descriptorOf(entry, got.file) : null;
   }
@@ -434,8 +455,11 @@ async function downloadOneMedia(entry: MediaEntry | null | undefined, dir: strin
     if (posterGot) posterFile = posterGot.file;
   }
 
-  const got = await downloadToFile(entry.url, entry.referer, VIDEO_LIMITS, dir, `${base}-media-${i}`, budget);
-  if (got) return { ...descriptorOf(entry, got.file), type: entry.type, posterFile };
+  const got = await downloadToFile(entry.url, entry.referer, limits, dir, `${base}-media-${i}`, budget);
+  // The frame table rides with the archive and only with it: without the zip
+  // there is nothing for the timings to describe, and the downgrade below is a
+  // plain still.
+  if (got) return { ...descriptorOf(entry, got.file), type: entry.type, posterFile, frames: entry.type === 'ugoira' ? entry.frames : undefined };
   if (posterFile) return descriptorOf(entry, posterFile); // downgrade to a still
   return null;
 }
@@ -524,9 +548,11 @@ module.exports = {
   createGuardedLookup,
   MEDIA_MIME_EXT,
   VIDEO_MIME_EXT,
+  ARCHIVE_MIME_EXT,
   MAX_MEDIA,
   MAX_MEDIA_BYTES,
   MAX_VIDEO_BYTES,
+  MAX_ARCHIVE_BYTES,
   MAX_SAVE_BYTES,
   MEDIA_CONCURRENCY,
   MEDIA_TIMEOUT_MS,

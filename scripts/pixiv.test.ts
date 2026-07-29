@@ -107,3 +107,117 @@ describe('fetchPixivIllust', () => {
     expect(rec.likes).toBeNull();
   });
 });
+
+// #119 St3: illustType 2 はうごイラ＝コマ画像の zip ＋ コマごとの表示時間。zip も
+// 表示時間も illust ペイロードには無く、/ugoira_meta が両方を持つ。保存するのは
+// pixiv が配る原本そのままで、変換（＝エンコーダの持ち込み）はしない。
+describe('うごイラ（#119 St3）', () => {
+  const UGOIRA_ILLUST = {
+    error: false,
+    body: {
+      illustTitle: 'Moving',
+      illustType: 2,
+      userId: '7',
+      userName: 'Artist',
+      pageCount: 1,
+      width: 700,
+      height: 700,
+      urls: { original: 'https://i.pximg.net/img-original/img/2026/07/26/1/147661146_ugoira0.jpg' },
+      tags: { tags: [] },
+    },
+  };
+  const UGOIRA_META = {
+    error: false,
+    body: {
+      src: 'https://i.pximg.net/img-zip-ugoira/img/2026/07/26/1/147661146_ugoira600x600.zip',
+      originalSrc: 'https://i.pximg.net/img-zip-ugoira/img/2026/07/26/1/147661146_ugoira1920x1080.zip',
+      mime_type: 'image/jpeg',
+      frames: [
+        { file: '000000.jpg', delay: 60 },
+        { file: '000001.jpg', delay: 30 },
+      ],
+    },
+  };
+
+  function stub(routes: [string, unknown, number?][]) {
+    vi.stubGlobal('fetch', async (url: unknown) => {
+      const u = String(url);
+      for (const [frag, body, status] of routes) if (u.includes(frag)) return jsonRes(body, status ?? 200);
+      return jsonRes({}, 404);
+    });
+  }
+
+  test('原本サイズの zip・コマ表・ポスター・Referer を1エントリに載せる', async () => {
+    stub([
+      ['/ugoira_meta', UGOIRA_META],
+      ['/ajax/illust/', UGOIRA_ILLUST],
+    ]);
+
+    const rec = await fetchPixivIllust({ id: '147661146' }, 'https://www.pixiv.net/artworks/147661146');
+    expect(rec.media).toHaveLength(1);
+    expect(rec.media[0]).toMatchObject({
+      url: UGOIRA_META.body.originalSrc,
+      type: 'ugoira',
+      poster: UGOIRA_ILLUST.body.urls.original,
+      referer: 'https://www.pixiv.net/',
+      width: 700,
+      height: 700,
+      frames: UGOIRA_META.body.frames,
+    });
+  });
+
+  // 表示ラベルは「短い無音のループ」＝X の animated_gif や Mastodon の gifv と同類。
+  // 取り込み経路（media[].type）とは意図的に食い違う（ファセットに新語を作らない）
+  test('mediaType は gif（media[].type は ugoira）', async () => {
+    stub([
+      ['/ugoira_meta', UGOIRA_META],
+      ['/ajax/illust/', UGOIRA_ILLUST],
+    ]);
+
+    const rec = await fetchPixivIllust({ id: '1' }, 'u');
+    expect(rec.mediaType).toBe('gif');
+    expect(rec.media[0].type).toBe('ugoira');
+  });
+
+  test('コマ表が取れなければ静止画（1コマ目）として保存する', async () => {
+    stub([
+      ['/ugoira_meta', { error: false, body: { originalSrc: 'https://i.pximg.net/x.zip', frames: [] } }],
+      ['/ajax/illust/', UGOIRA_ILLUST],
+    ]);
+
+    const rec = await fetchPixivIllust({ id: '1' }, 'u');
+    expect(rec.mediaType).toBe('image');
+    expect(rec.media).toHaveLength(1);
+    expect(rec.media[0].url).toBe(UGOIRA_ILLUST.body.urls.original);
+    expect(rec.media[0].type).toBeUndefined();
+  });
+
+  test('ugoira_meta が 404 でも保存は続く（静止画へ）', async () => {
+    stub([['/ajax/illust/', UGOIRA_ILLUST]]);
+
+    const rec = await fetchPixivIllust({ id: '1' }, 'u');
+    expect(rec.mediaType).toBe('image');
+    expect(rec.media[0].url).toBe(UGOIRA_ILLUST.body.urls.original);
+  });
+
+  test('取得原本（#292）に ugoira_meta の本文も積む', async () => {
+    stub([
+      ['/ugoira_meta', UGOIRA_META],
+      ['/ajax/illust/', UGOIRA_ILLUST],
+    ]);
+
+    const rec = await fetchPixivIllust({ id: '1' }, 'u');
+    expect(rec.raw.map((r: any) => r.sourceKind)).toContain('api:pixiv/ugoira-meta');
+  });
+
+  test('うごイラでない作品は ugoira_meta を引かない', async () => {
+    const seen: string[] = [];
+    vi.stubGlobal('fetch', async (url: unknown) => {
+      seen.push(String(url));
+      return jsonRes({ error: false, body: { illustType: 0, userId: '7', pageCount: 1, urls: { original: 'https://i.pximg.net/a_p0.jpg' }, tags: { tags: [] } } });
+    });
+
+    await fetchPixivIllust({ id: '1' }, 'u');
+    expect(seen.some((u) => u.includes('ugoira_meta'))).toBe(false);
+  });
+});

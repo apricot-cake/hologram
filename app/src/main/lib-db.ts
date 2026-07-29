@@ -153,6 +153,12 @@ const MIGRATIONS: Migration[] = [
         CREATE UNIQUE INDEX idx_raw_payloads_identity ON raw_payloads(postId, sourceKind, sha256);
       `),
   },
+  // #119 St3: a pixiv うごイラ is saved as pixiv's own zip of frame images, and
+  // the per-frame display times live nowhere inside it. JSON in one column
+  // rather than a frames table: the list is only ever read whole, for one media
+  // item, by the player — nothing queries or joins an individual frame. Null on
+  // every other media row (i.e. almost all of them).
+  { name: 'add-media-frames', up: (db) => db.exec('ALTER TABLE media ADD COLUMN frames TEXT') },
 ];
 
 interface Migration {
@@ -297,6 +303,7 @@ interface MediaTable {
   file: string;
   type: string | null; // add-media-video-fields migration (#119 St1)
   posterFile: string | null; // add-media-video-fields migration (#119 St1)
+  frames: string | null; // add-media-frames migration (#119 St3) — JSON [{file,delay}], ugoira only
 }
 interface TagsTable {
   id: Generated<number>;

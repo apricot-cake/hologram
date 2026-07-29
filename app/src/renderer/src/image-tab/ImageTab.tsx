@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import type { PointerEvent as ReactPointerEvent } from 'react';
+import { UgoiraPlayer } from './UgoiraPlayer.tsx';
 import { TransformComponent, TransformWrapper } from 'react-zoom-pan-pinch';
 import type { ReactZoomPanPinchRef } from 'react-zoom-pan-pinch';
 
@@ -19,6 +20,10 @@ export interface ImageTabItem {
   src: string;
   video?: boolean;
   alt?: string;
+  // A pixiv うごイラ archive: its library file name plus the frame table it
+  // plays from (#119 St3). `poster` stands in until the archive is open.
+  ugoira?: { file: string; frames: { file: string; delay: number }[] };
+  poster?: string;
 }
 export interface ImageTabModel {
   items: ImageTabItem[];
@@ -153,7 +158,13 @@ export function ImageTab({ model }: { model: ImageTabModel }) {
   const step = (d: number) => model.onIndexChange && model.onIndexChange((i + d + items.length) % items.length);
   return (
     <div className="itv-stage">
-      {item.video ? <video key={item.src} className="itv-media itv-video" src={item.src} controls playsInline preload="metadata" /> : <Zoomable key={item.src} src={item.src} alt={item.alt || ''} />}
+      {item.ugoira ? (
+        <UgoiraPlayer key={item.src} file={item.ugoira.file} frames={item.ugoira.frames} poster={item.poster} alt={item.alt} labels={labels} />
+      ) : item.video ? (
+        <video key={item.src} className="itv-media itv-video" src={item.src} controls playsInline preload="metadata" />
+      ) : (
+        <Zoomable key={item.src} src={item.src} alt={item.alt || ''} />
+      )}
       {multi && (
         <button type="button" className="itv-nav itv-prev" aria-label={labels.prev} onClick={() => step(-1)}>
           {'‹'}

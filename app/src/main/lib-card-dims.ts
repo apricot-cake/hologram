@@ -21,7 +21,9 @@ import path from 'node:path';
 import { imageSize } from './lib-imgsize.ts';
 
 const IMG_EXT = /\.(jpe?g|png|gif|webp)$/i;
-const VIDEO_EXT = /\.(mp4|webm|mov|m4v)$/i;
+// Media files that carry no measurable still: a video, and a pixiv うごイラ
+// archive (#119 St3). Mirrors records.ts's isVideoFile/isUgoiraFile.
+const UNMEASURABLE_EXT = /\.(mp4|webm|mov|m4v|zip)$/i;
 const HEADER_BYTES = 65536; // covers a JPEG SOF past JFIF/short EXIF, plus PNG/GIF/WebP
 const HEADER_BYTES_2 = 262144; // retry window for big-EXIF JPEGs (eagle migrations)
 
@@ -30,14 +32,14 @@ const HEADER_BYTES_2 = 262144; // retry window for big-EXIF JPEGs (eagle migrati
 // else the capture screenshot (posts whose original didn't download). Keep this in
 // lockstep with services/records.ts's densityImage()/artworkFile() so the height
 // reservation sizes the SAME image the card actually shows. A video's poster
-// substitutes for its (unmeasurable) file (#119 St1); with no poster, fall through
+// substitutes for its (unmeasurable) file (#119 St1/St3); with no poster, fall through
 // to the capture screenshot like a still that failed to download.
 function cardImageFile(rec: any): string {
   const media = Array.isArray(rec?.media) ? rec.media.filter((m: any) => m && m.file) : [];
   if (media.length) {
     const first = media[0];
     if (first.posterFile) return first.posterFile;
-    if (VIDEO_EXT.test(first.file)) return rec.image || '';
+    if (UNMEASURABLE_EXT.test(first.file)) return rec.image || '';
     return first.file;
   }
   return rec?.image || '';

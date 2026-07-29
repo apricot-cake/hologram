@@ -100,15 +100,43 @@ describe('素通しと変換', () => {
   });
 
   test('media はフィールド単位で正規化される（生のまま素通ししない）', () => {
-    expect(rec.media[0]).toEqual({ url: 'https://x/1.jpg', alt: null, width: 10, height: 20, file: '1.jpg', type: null, posterFile: null });
+    expect(rec.media[0]).toEqual({ url: 'https://x/1.jpg', alt: null, width: 10, height: 20, file: '1.jpg', type: null, posterFile: null, frames: null });
   });
 
   test('url を欠く media エントリにも全フィールドが入る', () => {
-    expect(rec.media[1]).toEqual({ url: '', alt: null, width: null, height: null, file: '2.jpg', type: null, posterFile: null });
+    expect(rec.media[1]).toEqual({ url: '', alt: null, width: null, height: null, file: '2.jpg', type: null, posterFile: null, frames: null });
   });
 
   test('動画の media は type と posterFile を運ぶ（#119 St1）', () => {
-    expect(rec.media[2]).toEqual({ url: 'https://x/2.mp4', alt: null, width: null, height: null, file: '2.mp4', type: 'video', posterFile: 'poster.jpg' });
+    expect(rec.media[2]).toEqual({ url: 'https://x/2.mp4', alt: null, width: null, height: null, file: '2.mp4', type: 'video', posterFile: 'poster.jpg', frames: null });
+  });
+
+  // #119 St3: コマ表は全か無か＝1件でも壊れていたら以降のコマが絵とずれる。
+  // 部分的に生き残らせるより、再生できない（＝ポスターを見せる）方が正しい。
+  describe('うごイラのコマ表（#119 St3）', () => {
+    const one = (frames: unknown) => normalizePostRecord({ captureId: 'c', media: [{ file: 'u.zip', type: 'ugoira', frames }] } as any).media[0];
+
+    test('正しい表はそのまま通る', () => {
+      const frames = [
+        { file: '000000.jpg', delay: 60 },
+        { file: '000001.jpg', delay: 30 },
+      ];
+      expect(one(frames).frames).toEqual(frames);
+    });
+
+    test('余計なフィールドは落とす（生のまま素通ししない）', () => {
+      expect(one([{ file: '0.jpg', delay: 60, extra: 'x' }]).frames).toEqual([{ file: '0.jpg', delay: 60 }]);
+    });
+
+    test.each([
+      ['空配列', []],
+      ['配列でない', { file: '0.jpg' }],
+      ['delay が数でない', [{ file: '0.jpg', delay: '60' }]],
+      ['file が空', [{ file: '', delay: 60 }]],
+      ['1件だけ壊れている', [{ file: '0.jpg', delay: 60 }, null]],
+    ])('%s なら null（部分的に残さない）', (_label, frames) => {
+      expect(one(frames).frames).toBeNull();
+    });
   });
 
   test('明示された capturedAt は now() で上書きされない', () => {

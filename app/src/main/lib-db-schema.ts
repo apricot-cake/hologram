@@ -68,8 +68,9 @@ CREATE INDEX idx_posts_trashedAt ON posts(trashedAt);
 -- media: one row per downloaded media item, dimensions included (#5 2026-07-21
 -- comment — the #286 standin-generation prerequisite). seq preserves the
 -- sidecar's media[] array order (card display order). type/posterFile land via
--- the add-media-video-fields migration (#119 St1) — kept out of this historical
--- v1 string like every other post-v1 column.
+-- the add-media-video-fields migration (#119 St1) and frames via
+-- add-media-frames (#119 St3) — kept out of this historical v1 string like
+-- every other post-v1 column.
 CREATE TABLE media (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   postId TEXT NOT NULL REFERENCES posts(captureId) ON DELETE CASCADE,

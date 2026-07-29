@@ -32,11 +32,15 @@ const SS_EXT = /\.jpe?g$/i;
 // pick the gallery's <video> vs Zoomable branch (below) and, here, to keep a
 // raw video file out of an <img src> (artworkFile prefers its poster instead).
 const isVideoFile = (f: string | null | undefined) => /\.(mp4|webm|mov|m4v)$/i.test(f || '');
+// A pixiv うごイラ archive (#119 St3). Like a video file it can never be an
+// <img src> — its poster stands in wherever a still is required.
+const isUgoiraFile = (f: string | null | undefined) => /\.zip$/i.test(f || '');
 // p.media entries are a loose JSON shape (same pragmatics as HologramPost itself).
-// type/posterFile: video/gif entries only (#119 St1) — posterFile is the
+// type/posterFile: animated entries only (#119 St1) — posterFile is the
 // downloaded still frame; type distinguishes an mp4-backed 'gif' (X
-// animated_gif / Mastodon gifv) from a real .gif file (which has no type).
-type HologramMediaItem = { file?: string; alt?: string; type?: string; posterFile?: string; [k: string]: any };
+// animated_gif / Mastodon gifv) from a real .gif file (which has no type), and
+// marks a pixiv 'ugoira' archive, whose frames table rides alongside (#119 St3).
+type HologramMediaItem = { file?: string; alt?: string; type?: string; posterFile?: string; frames?: { file: string; delay: number }[]; [k: string]: any };
 const mediaItemsOf = (p: HologramPost): HologramMediaItem[] => (Array.isArray(p.media) ? (p.media as HologramMediaItem[]).filter((m) => m && m.file) : []);
 export const mediaFilesOf = (p: HologramPost): string[] => mediaItemsOf(p).map((m) => m.file as string);
 // p.image is a screenshot unless it's a dragged/migrated artwork or a non-JPEG original.
@@ -50,7 +54,7 @@ export const artworkFile = (p: HologramPost): string => {
   if (items.length) {
     const first = items[0];
     if (first.posterFile) return first.posterFile;
-    return isVideoFile(first.file) ? '' : (first.file as string);
+    return isVideoFile(first.file) || isUgoiraFile(first.file) ? '' : (first.file as string);
   }
   return p.image && !isScreenshot(p) ? p.image : '';
 };
@@ -266,7 +270,11 @@ export function percentileFn(list: HologramPost[]): (p: HologramPost) => number 
 // --- Lightbox gallery items (twelfth extraction slice) ----------------------
 // The URL scheme (asset://) stays viewer-owned: fileSrc is injected so the
 // protocol knowledge isn't duplicated here.
-export type GalleryItem = { src: string; alt: string; video: boolean; capture?: boolean };
+// `ugoira` is the archive's library FILE NAME plus its frame table (#119 St3):
+// an archive can only be played with the table, and the player reads it over
+// IPC rather than from `src` (a file:// page cannot fetch the asset:// scheme).
+// `poster` is what stands in until the archive opens. Both absent otherwise.
+export type GalleryItem = { src: string; alt: string; video: boolean; capture?: boolean; ugoira?: { file: string; frames: { file: string; delay: number }[] }; poster?: string };
 // deps: fileSrc(file) — renderer media URL builder (viewer.js).
 export function makeGallery(deps: { fileSrc(file: string): string }) {
   const { fileSrc } = deps;
@@ -284,7 +292,15 @@ export function makeGallery(deps: { fileSrc(file: string): string }) {
     if (p.video) items.push({ src: fileSrc(p.video), alt: '', video: true });
     if (Array.isArray(p.media)) {
       for (const m of p.media as HologramMediaItem[]) {
-        if (m && m.file) items.push({ src: fileSrc(m.file), alt: m.alt || '', video: isVideoFile(m.file) });
+        if (!m || !m.file) continue;
+        const ugoira = m.type === 'ugoira' && Array.isArray(m.frames) && m.frames.length ? { file: m.file, frames: m.frames } : undefined;
+        // An うごイラ whose frame table didn't survive is not playable — fall
+        // back to its poster, the same still the card already shows.
+        if (isUgoiraFile(m.file) && !ugoira) {
+          if (m.posterFile) items.push({ src: fileSrc(m.posterFile), alt: m.alt || '', video: false });
+          continue;
+        }
+        items.push({ src: fileSrc(m.file), alt: m.alt || '', video: isVideoFile(m.file), ugoira, poster: ugoira && m.posterFile ? fileSrc(m.posterFile) : undefined });
       }
     }
     if (shot) items.push({ src: fileSrc(shot), alt: '', video: false, capture: true });
@@ -386,7 +402,7 @@ export function makeCardModel(deps: {
     // / Mastodon gifv). A real .gif file has no per-item type (still-image
     // transport, #119 St1) and already reads as animated once loaded — no badge.
     const leadMedia = mediaItemsOf(p)[0];
-    const videoBadge = !!leadMedia && (leadMedia.type === 'video' || leadMedia.type === 'gif');
+    const videoBadge = !!leadMedia && (leadMedia.type === 'video' || leadMedia.type === 'gif' || leadMedia.type === 'ugoira');
     const postKey = postIdKey(p);
     // Multi-image stack: the 2nd/3rd images ride the back sheets (real
     // thumbnails — motion-study canvas 2026-07-05). Downscaled like the front
