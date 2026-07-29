@@ -101,6 +101,9 @@ export let selectionFolder: (anchorRect: HologramAnchorRect) => void;
 export let selectionGroup: () => void;
 export let selectionDelete: () => void;
 export let selectionClear: () => void;
+// Drag range selection (#484): the virtualized grid host owns the rubber band and the
+// hit test (it holds masonic's positioner); these are the selection half it drives.
+export let selectionMarquee: HologramMarqueeSink;
 // Size-slider bindings for the display popover (P2②): read the current view's size track
 // (column-count or px) and apply a slider value. gridDensity owns the geometry math; the
 // popover imports these live bindings and calls them on open / drag / commit.
@@ -1189,6 +1192,7 @@ export function endFilterEditSession(): void {
   selectionGroup = selectionCtl.groupSelected;
   selectionDelete = selectionCtl.requestDeleteSelected;
   selectionClear = selectionCtl.clearSelection;
+  selectionMarquee = selectionCtl.marquee;
 
   // --- Bulk "add tags to selection" (Dialog — P2⑦) ---
   // The staged tags live in the dialog's own React state; nothing persists until

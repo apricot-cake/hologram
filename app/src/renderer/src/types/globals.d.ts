@@ -106,6 +106,17 @@ declare global {
     get(): HologramGridModel | null;
     subscribe(cb: () => void): HologramUnsubscribe;
   }
+  // Drag range selection (#484). The virtualized grid host owns the gesture and the
+  // hit test — it is the only place cell rectangles exist (masonic's positioner) —
+  // and drives selection through this sink. `additive` = Ctrl/Cmd or Shift was held
+  // when the band started; `update` receives the touched indices (ascending) on
+  // every frame the hit set changes, so it must be idempotent.
+  interface HologramMarqueeSink {
+    begin(additive: boolean): void;
+    update(indices: number[]): void;
+    end(): void;
+    cancel(): void;
+  }
 
   // ---- services/posts-data.ts — the "allPosts changed" choke point.
   // A real ES module (named exports) now — no ambient Window-shaped interface

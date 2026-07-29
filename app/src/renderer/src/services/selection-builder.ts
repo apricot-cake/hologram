@@ -83,6 +83,28 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
     return true;
   }
 
+  // Drag range selection (#484) — the geometry and the rubber band itself live in
+  // the virtualized grid host (it owns masonic's positioner, the only place cell
+  // rectangles exist); this is the selection half it calls into. Four calls so the
+  // "what was selected before the drag" snapshot has exactly one owner
+  // (selection.ts), the same as the shift-range anchor.
+  const marquee = {
+    begin(additive: boolean) {
+      selection.beginMarquee(additive);
+    },
+    update(indices: number[]) {
+      selection.updateMarquee(indices, deps.getViewGroups(), postIdKey);
+      syncSelectionClasses();
+    },
+    end() {
+      selection.endMarquee();
+    },
+    cancel() {
+      selection.cancelMarquee();
+      syncSelectionClasses();
+    },
+  };
+
   // Toggle .selecting on the grid container (viewer-owned, static). Per-card
   // .selected is no longer pushed through here — the grid component's Cell reads
   // hologramStore's 'selectedSet' directly (selection.toggle already
@@ -298,6 +320,7 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
   return {
     toggleCardSelection,
     clickSelect,
+    marquee,
     selectedRecords,
     clearSelection,
     handleShortcutSelectAllKey,
