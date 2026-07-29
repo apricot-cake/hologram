@@ -195,6 +195,22 @@
   ::view-transition-new(*) {
     animation-duration: var(--motion-duration-base);
     animation-timing-function: var(--motion-ease-out);
+    /* Never magnify. A card and a list row have wildly different aspect ratios, and the group
+       box spends the transition somewhere between the two — so whichever dimension a snapshot
+       is told to follow, it gets scaled up on one side of the swap. Measured, all four ways:
+         - default (width 100%, height auto) — follows the width, and the row is ~3.5x wider
+           than the card, so the OLD card's text is blown up across the whole grid.
+         - object-fit: cover — takes the LARGER scale factor of the two. Worst of the four.
+         - height 100% / width auto — fixes the old side, magnifies the NEW row the same way.
+         - contain — takes the SMALLER factor, so neither side is ever scaled past its natural
+           size. Both simply shrink a little mid-flight. This one.
+       The group clips so a letterboxed snapshot cannot paint outside the card's box. */
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+  }
+  ::view-transition-group(*) {
+    overflow: clip;
   }
 }
 
