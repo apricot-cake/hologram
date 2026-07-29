@@ -26,7 +26,7 @@
 // The bookmarks-list check lives with the rest of X's page knowledge (#212);
 // this module is the intake FLOW, which is X-specific only because X is the
 // one site with such a list so far.
-import { reportSaveTimeout } from './capture-log.ts';
+import { logSaveEvent, newSaveId, reportSaveTimeout } from './capture-log.ts';
 import { SAVE_WATCHDOG_MS, SAVED_QUERY_TIMEOUT_MS } from './deadline.ts';
 import type { CaptureSite } from './extractor/types.ts';
 import { isXBookmarksPage } from './extractor/x.ts';
@@ -196,6 +196,10 @@ export function startBulkCapture(site: CaptureSite, i18n: HologramI18nApi): void
     busy = true;
     lastSaveStartedAt = Date.now();
     entries.set(url, 'saving');
+    // Each post in a run is its own save attempt with its own id, so a run's
+    // lines can be read post by post rather than as one undifferentiated
+    // block (#519).
+    const saveId = newSaveId();
     // The queue is serial, so one unanswered save stops the whole intake: `busy`
     // never clears and every remaining bookmark waits behind it, under a banner
     // that keeps saying the run is in progress (#507). The deadline gives up on
@@ -208,7 +212,7 @@ export function startBulkCapture(site: CaptureSite, i18n: HologramI18nApi): void
       // Logged before the `stopped` bail: an abandoned post is worth a line
       // whether or not the run is still on screen to count it. The run's own
       // summary is transient; this is what a later reader has.
-      reportSaveTimeout('bulk-intake', site.platform, url, `save timed out — no result from the background within ${SAVE_WATCHDOG_MS}ms`);
+      reportSaveTimeout('bulk-intake', site.platform, url, `save timed out — no result from the background within ${SAVE_WATCHDOG_MS}ms`, saveId);
       if (stopped) return; // the run already ended and printed its summary
       busy = false;
       entries.set(url, 'failed');
@@ -221,6 +225,7 @@ export function startBulkCapture(site: CaptureSite, i18n: HologramI18nApi): void
         type: 'savePost',
         postUrl: url,
         platform: site.platform,
+        saveId,
         // Marks the record's intake route so a bulk-imported post can be told
         // apart from an ordinary one-at-a-time save (native-host/post-record).
         capturedVia: 'x-bookmarks',
@@ -288,6 +293,23 @@ export function startBulkCapture(site: CaptureSite, i18n: HologramI18nApi): void
   function finish(byUser: boolean) {
     if (stopped) return;
     stopped = true;
+    // How the run ended, and with what. `cancel` is the point: the stop button,
+    // Esc, and navigating away from the bookmarks list are all the user deciding
+    // to stop, and telling that apart from a run that died mid-way is what this
+    // log could not do (#519). No saveId — a run holds many saves, each with
+    // its own.
+    logSaveEvent({
+      stage: 'bulk',
+      phase: byUser ? 'cancel' : 'ok',
+      platform: site.platform,
+      seen: entries.size,
+      saved: savedCount,
+      skipped: skippedCount,
+      deferred: deferredCount,
+      unavailable: unavailableCount,
+      ageRestricted: ageRestrictedCount,
+      failed: failedCount,
+    });
     observer.disconnect();
     removeEventListener('scroll', onScroll, true);
     document.removeEventListener('keydown', onKeyDown, true);
@@ -351,6 +373,11 @@ export function startBulkCapture(site: CaptureSite, i18n: HologramI18nApi): void
   // A second activation ends the mode, matching the single-shot path's toggle.
   window.__snsPostSaveActive = true;
   window.__snsPostSaveCleanup = stop;
+
+  // A run has started. Paired with the `bulk` line finish() writes, so a run
+  // that is cut short by the page going away leaves a beginning with no end
+  // rather than nothing at all (#519).
+  logSaveEvent({ stage: 'bulk', phase: 'begin', platform: site.platform, url: location.href });
 
   harvestFrom(document);
 }

@@ -6,7 +6,7 @@
 // illustration itself (no screenshot) via the native host. Which post an image
 // belongs to comes from media-identity.js, shared with overlay.js's hover save
 // button so the two paths can never disagree about what a save records.
-import { reportSaveTimeout } from './capture-log.ts';
+import { logSaveEvent, newSaveId, reportSaveTimeout } from './capture-log.ts';
 import { SAVE_WATCHDOG_MS } from './deadline.ts';
 import { buildChoiceRow, checkDuplicate } from './duplicate-guard.ts';
 import { collectImageUrls, getMediaIdentitySite } from './extractor/index.ts';
@@ -82,7 +82,11 @@ export async function startDrag(): Promise<void> {
       if (!img) return;
       const identity = siteConfig.extractIdentity(img);
       if (!identity || !identity.link) return;
-      pending = { type: 'imageDragged', platform: siteConfig.platform, postUrl: identity.link, imageUrls: collectImageUrls(img, siteConfig.platform) };
+      // The id is minted with the pending drag rather than at drop: a drag that
+      // is never dropped writes no line at all (every image drag on the page
+      // would otherwise leave one), and a drag that IS dropped needs the id
+      // before it can ask about duplicates (#519).
+      pending = { type: 'imageDragged', platform: siteConfig.platform, postUrl: identity.link, imageUrls: collectImageUrls(img, siteConfig.platform), saveId: newSaveId() };
       showOverlay();
     },
     true,
@@ -126,6 +130,8 @@ export async function startDrag(): Promise<void> {
         z.slot(
           buildChoiceRow(t, (choice) => {
             if (choice === 'skip') {
+              // A decision, not a hang — see capture.ts's own skip line (#519).
+              logSaveEvent({ stage: 'duplicate', phase: 'skip', saveId: p.saveId, platform: p.platform, url: p.postUrl });
               z.setState('success', t('dupSkipped'));
               setTimeout(() => {
                 hideOverlay(true);
@@ -152,7 +158,7 @@ export async function startDrag(): Promise<void> {
       // Recorded for the same reason as the hover button's: this surface has no
       // service-worker line behind it either, so an unrecorded timeout here
       // would leave capture.log unable to say a save was ever attempted (#507).
-      reportSaveTimeout('drop-zone', p.platform, p.postUrl, `save timed out — no result from the background within ${SAVE_WATCHDOG_MS}ms`);
+      reportSaveTimeout('drop-zone', p.platform, p.postUrl, `save timed out — no result from the background within ${SAVE_WATCHDOG_MS}ms`, p.saveId);
       done(z, undefined, replaces, true);
     }, SAVE_WATCHDOG_MS);
     chrome.runtime.sendMessage({ ...p, replaces } satisfies ImageDraggedMessage, (res?: SaveResponse) => {

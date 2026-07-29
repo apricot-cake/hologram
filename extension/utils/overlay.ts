@@ -32,7 +32,7 @@
 // composited scroll as the picture. A fixed layer that copies viewport
 // coordinates has to wait for JavaScript on every scroll frame and visibly
 // trails smooth scrolling.
-import { reportSaveTimeout } from './capture-log.ts';
+import { newSaveId, reportSaveTimeout } from './capture-log.ts';
 import { SAVE_WATCHDOG_MS } from './deadline.ts';
 import { collectImageUrls, getCaptureSite, getMediaIdentitySite, getOverlaySite, mediaKeyOf, mediaKeysOf } from './extractor/index.ts';
 import type { CaptureSite, OverlaySite, PostMediaElement } from './extractor/types.ts';
@@ -645,6 +645,8 @@ export async function startOverlay(): Promise<void> {
     // so an answer that never comes would leave that picture unsaveable for as
     // long as the page lives (#507). The deadline releases the button and says
     // why, exactly like a reported failure.
+    // Groups this press's lines across the three processes (#519).
+    const saveId = newSaveId();
     let settled = false;
     const watchdog = setTimeout(() => {
       if (settled) return;
@@ -654,10 +656,10 @@ export async function startOverlay(): Promise<void> {
       // to fall back on: the resident script logs nothing on its own, so
       // without this the timeout leaves capture.log exactly as empty as the
       // silent spinner did.
-      reportSaveTimeout('hover-save', media.platform, identity.link, `save timed out — no result from the background within ${SAVE_WATCHDOG_MS}ms`);
+      reportSaveTimeout('hover-save', media.platform, identity.link, `save timed out — no result from the background within ${SAVE_WATCHDOG_MS}ms`, saveId);
       failSave(unit, state, anchor, saveFailureText('timeout'));
     }, SAVE_WATCHDOG_MS);
-    chrome.runtime.sendMessage({ type: 'imageDragged', platform: media.platform, postUrl: identity.link, imageUrls: collectImageUrls(el, media.platform) } satisfies ImageDraggedMessage, (res?: SaveResponse) => {
+    chrome.runtime.sendMessage({ type: 'imageDragged', platform: media.platform, postUrl: identity.link, imageUrls: collectImageUrls(el, media.platform), saveId } satisfies ImageDraggedMessage, (res?: SaveResponse) => {
       if (settled) return; // a late answer to a press already given up on
       settled = true;
       clearTimeout(watchdog);

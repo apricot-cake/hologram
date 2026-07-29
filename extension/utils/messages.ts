@@ -12,14 +12,20 @@
 // The native messaging protocol itself stays untyped on the host side.
 import type { CropRect } from './crop.ts';
 import type { SaveFailureKind } from './native-error.ts';
+import type { SaveLogEntry, SaveStage } from './capture-log.ts';
 
 // === content script -> background ===
 
+// Every save request carries the page-minted saveId that groups this attempt's
+// capture.log lines (#519 — see capture-log.ts). Required rather than optional on
+// all three routes: a route that forgot it would put its save back into the
+// undiagnosable state the id exists to end.
 interface CaptureAndSendMessage {
   type: 'captureAndSend';
   rect: CropRect;
   postUrl: string;
   platform: string;
+  saveId: string;
   // The captureId this save replaces, when the duplicate warning was answered
   // "replace" (#34). null/absent on every ordinary save.
   replaces?: string | null;
@@ -29,6 +35,7 @@ interface SavePostMessage {
   type: 'savePost';
   postUrl: string;
   platform: string;
+  saveId: string;
   capturedVia?: string | null;
 }
 
@@ -37,6 +44,7 @@ interface ImageDraggedMessage {
   platform: string;
   postUrl: string;
   imageUrls: string[];
+  saveId: string;
   replaces?: string | null; // see CaptureAndSendMessage
 }
 
@@ -58,11 +66,10 @@ interface CheckDuplicateMessage {
   imageUrls: string[];
 }
 
-// Diagnostic bag relayed to the native host's capture.log (or, failing that,
-// the local fallback ring buffer) essentially as-is — shape varies by
-// pipeline stage; see capture.ts's logCaptureFailure and background.ts's own
-// logCapture() callers for what actually lands in one.
-type LogEntry = Record<string, unknown>;
+// One capture.log line, relayed to the native host (or, failing that, the local
+// fallback ring buffer) essentially as-is. The stage/phase vocabulary and the
+// per-stage payload live in capture-log.ts.
+type LogEntry = SaveLogEntry;
 
 interface LogCaptureMessage {
   type: 'logCapture';
@@ -108,7 +115,20 @@ interface SavedUpdateMessage {
   media: Array<string | null>;
 }
 
-type BackgroundToContentMessage = CropImageMessage | NotifyMessage | SavedUpdateMessage;
+// How far this save has got, pushed as each stage completes (#519). Never
+// logged on arrival — its only job is to be REMEMBERED, so that if the service
+// worker then disappears, the line the page writes when nothing came back can
+// name the stage the worker was in. Without it, a worker killed during the
+// metadata fetch, one killed during the crop round trip, and one killed on the
+// host leave the same trace, which is exactly the ambiguity that left #507's
+// investigation unable to say which leg had stalled.
+interface SaveProgressMessage {
+  type: 'saveProgress';
+  saveId: string;
+  reached: SaveStage[];
+}
+
+type BackgroundToContentMessage = CropImageMessage | NotifyMessage | SavedUpdateMessage | SaveProgressMessage;
 
 // === responses ===
 
@@ -210,5 +230,6 @@ export type {
   SavedResults,
   SavedUpdateMessage,
   SavePostMessage,
+  SaveProgressMessage,
   SaveResponse,
 };

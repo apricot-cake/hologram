@@ -123,11 +123,16 @@ function setupBackground() {
   startBackground();
 
   function dispatch(message: any, sender: any = {}) {
+    // #519: 保存経路のメッセージは必ず saveId を運ぶ（ページが振る＝その保存の行を3つの
+    // プロセス横断で結ぶ識別子）。テストごとに書かずに済むよう、明示が無ければ固定値を
+    // 入れる — id が実際にホストまで渡ることを見る側はこの値で照合する。
+    const isSave = message?.type === 'savePost' || message?.type === 'captureAndSend' || message?.type === 'imageDragged';
+    const msg = isSave && message.saveId === undefined ? { ...message, saveId: 'trace-1' } : message;
     let respond!: (r: any) => void;
     const responseP = new Promise<any>((resolve) => {
       respond = resolve;
     });
-    const returns = messageListeners.map((fn) => fn(message, sender, respond));
+    const returns = messageListeners.map((fn) => fn(msg, sender, respond));
     return { returns, responseP };
   }
 
@@ -157,6 +162,21 @@ function setupBackground() {
 // （parsePostUrl → null → fetchPostMetadata は fetch を呼ばず空レコードで即解決する）。
 const UNPARSEABLE_POST_URL = 'https://misskey.example/not-a-known-post-shape';
 const MISSKEY_SENDER = { tab: { id: 7, url: 'https://misskey.example/notes/1' } };
+
+// #519 以降、保存は最初に「開始」の行を capture.log へ書く＝そのための接続が保存用の
+// Port より先に開く。テストが動かしたいのは保存そのものの Port なので、作られた順番では
+// なく**何を送ったか**で選ぶ（`createdPorts[0]` は今はログ用の接続）。
+async function portThatSent(createdPorts: any[], type: string) {
+  let found: any;
+  await vi.waitFor(() => {
+    found = createdPorts.find((p: any) => p.sent.some((m: any) => m.type === type));
+    expect(found).toBeTruthy();
+  });
+  return found;
+}
+
+// capture.log 用に開かれた接続の数（保存用の Port と数え分けるため）。
+const logPortCount = (createdPorts: any[]) => createdPorts.filter((p: any) => p.sent.some((m: any) => m.type === 'log')).length;
 
 describe('chrome.runtime.onMessage ルーティング', () => {
   let env: ReturnType<typeof setupBackground>;
@@ -189,8 +209,7 @@ describe('chrome.runtime.onMessage ルーティング', () => {
 
     // まず savePost を1件成功させ、markSaved 経由でキャッシュへ載せる。
     const save = env.dispatch({ type: 'savePost', platform: 'misskey', postUrl: UNPARSEABLE_POST_URL }, MISSKEY_SENDER);
-    await vi.waitFor(() => expect(createdPorts.length).toBe(1));
-    createdPorts[0].emitMessage({ ok: true, captureId: 'saved-capture-id', file: 'saved-file-id.jpg', media: ['https://misskey.example/files/aaa.png'] });
+    (await portThatSent(createdPorts, 'savePost')).emitMessage({ ok: true, captureId: 'saved-capture-id', file: 'saved-file-id.jpg', media: ['https://misskey.example/files/aaa.png'] });
     const saveResult = await save.responseP;
     expect(saveResult.ok).toBe(true);
 
@@ -201,7 +220,7 @@ describe('chrome.runtime.onMessage ルーティング', () => {
     // id is the ack's captureId, never its `file` — the badge only needs "some
     // id", but #34's "replace" reads it as the record to retire.
     await expect(responseP).resolves.toEqual({ ok: true, results: { [UNPARSEABLE_POST_URL]: { id: 'saved-capture-id', media: ['https://misskey.example/files/aaa.png'], owners: ['saved-capture-id'] } } });
-    expect(createdPorts.length).toBe(1); // queryBridge は呼ばれていない
+    expect(createdPorts.some((p: any) => p.sent.some((m: any) => m.type === 'query'))).toBe(false); // queryBridge は呼ばれていない
   });
 });
 
@@ -305,8 +324,7 @@ describe('bridgeSend — 保存経路のネイティブホスト Port 配線', (
     const createdPorts = env.connectAsControllablePort();
 
     const { responseP } = env.dispatch({ type: 'savePost', platform: 'misskey', postUrl: UNPARSEABLE_POST_URL }, MISSKEY_SENDER);
-    await vi.waitFor(() => expect(createdPorts.length).toBe(1));
-    createdPorts[0].emitDisconnect('Native host has exited.');
+    (await portThatSent(createdPorts, 'savePost')).emitDisconnect('Native host has exited.');
     const result = await responseP;
 
     expect(result).toEqual({ ok: false, errorKind: 'host-unavailable', metaReason: null, error: 'Native host has exited.' });
@@ -316,8 +334,7 @@ describe('bridgeSend — 保存経路のネイティブホスト Port 配線', (
     const createdPorts = env.connectAsControllablePort();
 
     const { responseP } = env.dispatch({ type: 'savePost', platform: 'misskey', postUrl: UNPARSEABLE_POST_URL }, MISSKEY_SENDER);
-    await vi.waitFor(() => expect(createdPorts.length).toBe(1));
-    createdPorts[0].emitMessage({ ok: false, error: 'Access to the specified native messaging host is forbidden by the manifest allowlist.' });
+    (await portThatSent(createdPorts, 'savePost')).emitMessage({ ok: false, error: 'Access to the specified native messaging host is forbidden by the manifest allowlist.' });
     const result = await responseP;
 
     expect(result.ok).toBe(false);
@@ -328,9 +345,9 @@ describe('bridgeSend — 保存経路のネイティブホスト Port 配線', (
     const createdPorts = env.connectAsControllablePort();
 
     const { responseP } = env.dispatch({ type: 'savePost', platform: 'misskey', postUrl: UNPARSEABLE_POST_URL }, MISSKEY_SENDER);
-    await vi.waitFor(() => expect(createdPorts.length).toBe(1));
-    const portCtl = createdPorts[0];
-    expect(portCtl.sent).toEqual([expect.objectContaining({ type: 'savePost', captureId: expect.any(String) })]);
+    const portCtl = await portThatSent(createdPorts, 'savePost');
+    // #519: saveId も一緒にホストへ渡る＝ホストが書く行を拡張側の行と結べる。
+    expect(portCtl.sent).toEqual([expect.objectContaining({ type: 'savePost', captureId: expect.any(String), saveId: 'trace-1' })]);
 
     portCtl.emitMessage({ ok: true, file: 'saved-file-id' });
     const result = await responseP;
@@ -350,8 +367,7 @@ describe('bridgeSend — 保存経路のネイティブホスト Port 配線', (
     const createdPorts = env.connectAsControllablePort();
 
     const { responseP } = env.dispatch({ type: 'savePost', platform: 'misskey', postUrl: UNPARSEABLE_POST_URL }, MISSKEY_SENDER);
-    await vi.waitFor(() => expect(createdPorts.length).toBe(1));
-    createdPorts[0].emitMessage({ ok: true, file: 'saved-file-id', media: ['https://misskey.example/files/one.png'] });
+    (await portThatSent(createdPorts, 'savePost')).emitMessage({ ok: true, file: 'saved-file-id', media: ['https://misskey.example/files/one.png'] });
     await responseP;
 
     const update = env.tabsSent.find((s) => s.message.type === 'savedUpdate');
@@ -419,6 +435,63 @@ describe('queryBridge — checkSaved の常駐 Port 配線', () => {
 
     await expect(first.responseP).resolves.toEqual({ ok: true, results: { 'https://x.com/a/status/1': { id: 'file-a', media: [] } } });
     await expect(second.responseP).resolves.toEqual({ ok: true, results: { 'https://x.com/b/status/2': { id: 'file-b', media: [] } } });
+  });
+});
+
+// #519: 保存の一生を capture.log に残す。ここで見るのはサービスワーカー側の3点＝
+// ①保存が**始まったことを名乗る**（これが無いと「起動しただけ」と区別できない）
+// ②失敗の行が saveId ＋ captureId ＋ 到達した段を運ぶ（時刻の近さで結ばずに済む）
+// ③段を通過するたびページへ報告する（ワーカーごと消えた時にページ側が名乗れる）。
+// ページ側の受け取りと cancel の行は scripts/save-log.test.ts。
+describe('保存の記録（#519）', () => {
+  let env: ReturnType<typeof setupBackground>;
+
+  beforeEach(() => {
+    env = setupBackground();
+  });
+
+  // 上限に達する前・プロセスごと消えた場合にも残る唯一の行なので、待つ脚より
+  // 先に出ていることが要件。ホストがまだ何も答えていない時点で見る。
+  test('保存を受け付けた時点で「開始」の行が出る（どの待ちより先）', async () => {
+    const createdPorts = env.connectAsControllablePort();
+
+    env.dispatch({ type: 'savePost', platform: 'misskey', postUrl: UNPARSEABLE_POST_URL }, MISSKEY_SENDER);
+
+    const logPort = await portThatSent(createdPorts, 'log');
+    expect(logPort.sent[0].entry).toMatchObject({ stage: 'save', phase: 'begin', type: 'savePost', saveId: 'trace-1', url: UNPARSEABLE_POST_URL, captureId: expect.any(String) });
+    // ログ用の接続は保存用とは別＝1保存につきホストのプロセスが1つ増える。
+    // 「開始」を上限より先にディスクへ置くための代償で、意図した設計。
+    expect(logPortCount(createdPorts)).toBe(1);
+  });
+
+  test('失敗の行は同じ保存の行として結べる（saveId・captureId・到達した段）', async () => {
+    const createdPorts = env.connectAsControllablePort();
+
+    const { responseP } = env.dispatch({ type: 'savePost', platform: 'misskey', postUrl: UNPARSEABLE_POST_URL }, MISSKEY_SENDER);
+    (await portThatSent(createdPorts, 'savePost')).emitDisconnect('Native host has exited.');
+    await responseP;
+
+    const failLine = [...env.localStore.values()].find((e: any) => e.phase === 'fail');
+    expect(failLine, `stashed: ${JSON.stringify([...env.localStore.values()])}`).toMatchObject({
+      stage: 'bridge',
+      phase: 'fail',
+      saveId: 'trace-1',
+      captureId: expect.any(String),
+      // メタデータは通過してブリッジで落ちた＝どこまで進んだかが行に載る。
+      reached: ['metadata'],
+    });
+  });
+
+  test('段を通過するたびページへ報告する（ワーカーが消えてもページが名乗れるように）', async () => {
+    const createdPorts = env.connectAsControllablePort();
+
+    const { responseP } = env.dispatch({ type: 'savePost', platform: 'misskey', postUrl: UNPARSEABLE_POST_URL }, MISSKEY_SENDER);
+    (await portThatSent(createdPorts, 'savePost')).emitMessage({ ok: true, file: 'saved-file-id' });
+    await responseP;
+
+    const progress = env.tabsSent.filter((s) => s.message.type === 'saveProgress').map((s) => s.message);
+    expect(progress.map((m) => m.reached)).toEqual([['metadata'], ['metadata', 'bridge']]);
+    expect(progress.every((m) => m.saveId === 'trace-1')).toBe(true);
   });
 });
 
@@ -502,9 +575,9 @@ describe('imageDragged の振り分け（#450）', () => {
     mockSyndication(mediaDetails);
 
     const drag = env.dispatch({ type: 'imageDragged', platform: 'x', postUrl: X_POST_URL, imageUrls: [POSTER] }, X_SENDER);
-    await vi.waitFor(() => expect(createdPorts.length).toBe(1));
-    const sentToHost = createdPorts[0].sent[0];
-    createdPorts[0].emitMessage({ ok: true, file: 'saved-file-id' });
+    const portCtl = await portThatSent(createdPorts, 'savePost');
+    const sentToHost = portCtl.sent[0];
+    portCtl.emitMessage({ ok: true, file: 'saved-file-id' });
     await drag.responseP;
     return sentToHost;
   }
@@ -540,9 +613,9 @@ describe('imageDragged の振り分け（#450）', () => {
     mockSyndication([{ type: 'photo', media_url_https: stillUrl }]);
 
     const drag = env.dispatch({ type: 'imageDragged', platform: 'x', postUrl: X_POST_URL, imageUrls: [stillUrl] }, X_SENDER);
-    await vi.waitFor(() => expect(createdPorts.length).toBe(1));
-    const sent = createdPorts[0].sent[0];
-    createdPorts[0].emitMessage({ ok: true, file: 'saved-file-id' });
+    const portCtl = await portThatSent(createdPorts, 'saveDragged');
+    const sent = portCtl.sent[0];
+    portCtl.emitMessage({ ok: true, file: 'saved-file-id' });
     await drag.responseP;
 
     expect(sent.type).toBe('saveDragged');
