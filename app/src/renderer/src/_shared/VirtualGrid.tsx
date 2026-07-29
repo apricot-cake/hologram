@@ -15,7 +15,7 @@ import { useMasonry, usePositioner, useResizeObserver } from 'masonic';
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { ComponentType, ReactNode } from 'react';
 import { registerGridNav } from '../services/grid-nav.ts';
-import { autoScrollStep, hitIndices, MARQUEE_THRESHOLD, rectFromPoints } from '../services/marquee.ts';
+import { autoScrollStep, clearsSelection, exceedsThreshold, hitIndices, rectFromPoints } from '../services/marquee.ts';
 import type { MarqueeCell } from '../services/marquee.ts';
 
 // The cell component each grid module supplies (masonic's render component).
@@ -32,7 +32,7 @@ const ModelCtx = createContext<HologramGridModel | null>(null);
 // Cells mount only inside the provider, so the null default never escapes.
 export const useGridModel = () => useContext(ModelCtx) as HologramGridModel;
 
-export function VirtualGridHost({ model, cell, nav, marquee }: { model: HologramGridModel; cell: ComponentType<GridCellProps>; nav?: boolean; marquee?: HologramMarqueeSink }) {
+export function VirtualGridHost({ model, cell, nav, marquee, onBackgroundClick }: { model: HologramGridModel; cell: ComponentType<GridCellProps>; nav?: boolean; marquee?: HologramMarqueeSink; onBackgroundClick?: () => void }) {
   const scroller = document.getElementById('mode-post') as HTMLElement; // the app's scroll container (never the window); static HTML, always present
   const containerRef = useRef<HTMLElement | null>(null);
   // offset of the masonry container's top inside the scroller's CONTENT (the
@@ -141,11 +141,20 @@ export function VirtualGridHost({ model, cell, nav, marquee }: { model: Hologram
   const positionerRef = useRef(positioner);
   positionerRef.current = positioner;
 
-  // --- Drag range selection (#484) -----------------------------------------
-  // Press on empty space and drag: a rubber band selects every card it touches
-  // (交差判定 — Explorer / Finder と同型), Ctrl/Shift adds to the existing
-  // selection instead of replacing it, and holding the pointer at an edge scrolls
-  // the grid so the band can reach past one screenful.
+  // --- The empty-space gesture (#484 drag, #242 click) ----------------------
+  // One press on the grid background, two outcomes, so one recognizer owns both:
+  //  - drag it → a rubber band selects every card it touches (交差判定 —
+  //    Explorer / Finder と同型), Ctrl/Shift adds to the existing selection
+  //    instead of replacing it, and holding the pointer at an edge scrolls the
+  //    grid so the band can reach past one screenful (#484).
+  //  - release without dragging → a plain click on the background, which clears
+  //    the selection and sends the inspector back to its placeholder (#242).
+  // Splitting these across two listeners is what a `click` handler would force,
+  // and a click fires after a drag too — only the recognizer that owns the
+  // movement threshold can tell the two apart.
+  //
+  // `marquee` is the drag half's sink; a grid without a selection (posters)
+  // passes only onBackgroundClick and gets the click half alone.
   //
   // Two things about this grid shape the implementation:
   //  - Cells are absolutely positioned AND recycled, so the hit test runs against
@@ -156,7 +165,7 @@ export function VirtualGridHost({ model, cell, nav, marquee }: { model: Hologram
   //    overlay, not React state) because a state write per frame would re-render
   //    the whole masonry for a rectangle that isn't part of it.
   useEffect(() => {
-    if (!marquee) return;
+    if (!marquee && !onBackgroundClick) return;
     // A fixed clip box the size of the scroller's viewport + the band inside it:
     // the band's origin is the press point, which scrolls away during a long drag,
     // so without the clip it would paint over the toolbar and the sidebar.
@@ -181,7 +190,7 @@ export function VirtualGridHost({ model, cell, nav, marquee }: { model: Hologram
 
     const step = (allowScroll: boolean) => {
       const el = containerRef.current;
-      if (!drag || !el) return;
+      if (!drag || !el || !marquee) return; // no band on a grid without a selection
       const sr = scroller.getBoundingClientRect();
       if (allowScroll) {
         const dy = autoScrollStep(drag.pointerY, sr.top, sr.bottom);
@@ -237,7 +246,10 @@ export function VirtualGridHost({ model, cell, nav, marquee }: { model: Hologram
       window.removeEventListener('blur', onBlur);
       const active = drag.active;
       drag = null;
-      if (!active) return; // never crossed the threshold: a plain click on empty space, selection untouched
+      // Never crossed the threshold: the press was a click, and onUp — the only
+      // place a click can be COMPLETED — owns what happens next (#242). Tearing
+      // down here for any other reason (unmount, Esc) must not act on it.
+      if (!active || !marquee) return;
       if (mode === 'cancel') marquee.cancel();
       else marquee.end();
     };
@@ -247,18 +259,23 @@ export function VirtualGridHost({ model, cell, nav, marquee }: { model: Hologram
       drag.pointerX = e.clientX;
       drag.pointerY = e.clientY;
       if (drag.active) return;
-      if (Math.abs(e.clientX - drag.startX) < MARQUEE_THRESHOLD && Math.abs(e.clientY - drag.startY) < MARQUEE_THRESHOLD) return;
-      drag.active = true;
+      if (!exceedsThreshold(e.clientX - drag.startX, e.clientY - drag.startY)) return;
+      drag.active = true; // the press is a drag now — no longer a click, band or not
+      if (!marquee) return;
       marquee.begin(drag.additive);
       document.body.appendChild(clip);
       drag.raf = requestAnimationFrame(frame);
     };
 
     // One last pass without auto-scroll: the final frame's scroll may have brought
-    // cells into the band that masonic only measured after it ran.
+    // cells into the band that masonic only measured after it ran. A release that
+    // never became a drag is the click half instead (#242) — read before finish()
+    // clears the gesture, applied after it, so the handler sees no drag in flight.
     const onUp = () => {
+      const clearing = !!drag && clearsSelection(drag.active, drag.additive);
       if (drag?.active) step(false);
       finish('end');
+      if (clearing) onBackgroundClick?.();
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
@@ -306,7 +323,7 @@ export function VirtualGridHost({ model, cell, nav, marquee }: { model: Hologram
       scroller.removeEventListener('mousedown', onDown);
       finish('end');
     };
-  }, [marquee, scroller]);
+  }, [marquee, onBackgroundClick, scroller]);
 
   const gridEl = useMasonry({
     positioner,
