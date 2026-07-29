@@ -19,11 +19,12 @@ function current(): Set<string> {
 }
 
 let anchor: number | null = null;
-// Marquee drag (#484): what the selection looked like when the band started.
-// null = a plain drag (the band REPLACES the selection); a Set = a Ctrl/Shift
-// drag (the band ADDS to what was already there). Non-null only while a band is
-// live, so it doubles as "a drag is in progress".
+// Marquee drag (#484). The snapshot is taken for EVERY drag, additive or not —
+// it is what Esc restores. Whether the band adds to it or replaces it is the
+// separate flag: conflating the two made Esc on a plain drag restore an empty
+// selection instead of the one the drag started from.
 let marqueeBase: ReadonlySet<string> | null = null;
+let marqueeAdditive = false;
 let marqueeAnchor: number | null = null;
 let marqueeActive = false;
 
@@ -97,14 +98,15 @@ export function clear() {
 // `additive` = Ctrl/Cmd or Shift was held when the drag began (Explorer/Finder
 // 型: the band extends the existing selection instead of replacing it).
 export function beginMarquee(additive: boolean) {
-  marqueeBase = additive ? current() : null;
+  marqueeBase = current();
+  marqueeAdditive = additive;
   marqueeAnchor = anchor;
   marqueeActive = true;
 }
 
 export function updateMarquee(indices: number[], groups: HologramPostGroup[], postIdKey: PostIdKey) {
   if (!marqueeActive) return;
-  const next = new Set<string>(marqueeBase ?? []);
+  const next = new Set<string>(marqueeAdditive ? (marqueeBase ?? []) : []);
   for (const i of indices) {
     const g = groups[i];
     if (g) next.add(postIdKey(g.rep));
@@ -118,6 +120,7 @@ export function updateMarquee(indices: number[], groups: HologramPostGroup[], po
 
 export function endMarquee() {
   marqueeBase = null;
+  marqueeAdditive = false;
   marqueeAnchor = null;
   marqueeActive = false;
 }
@@ -127,9 +130,7 @@ export function cancelMarquee() {
   if (!marqueeActive) return;
   const base = marqueeBase;
   anchor = marqueeAnchor;
-  marqueeBase = null;
-  marqueeAnchor = null;
-  marqueeActive = false;
+  endMarquee();
   storeSet('selectedSet', new Set<string>(base ?? []));
 }
 
