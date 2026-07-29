@@ -55,6 +55,7 @@ export async function startCapture(): Promise<void> {
 
   let isCleanedUp = false;
   let restoreCaptureState: (() => void) | null = null;
+  let restoreOverlayState: (() => void) | null = null;
   let savedScrollPosition: { x: number; y: number } | null = null;
   let lastCapturedPost: Element | null = null; // re-measured at crop time (scroll/layout drift)
 
@@ -266,6 +267,10 @@ export async function startCapture(): Promise<void> {
     highlight.style.display = 'none';
     banner.style.display = 'none';
     restoreCaptureState = site.prepareForCapture?.(post) || null;
+    // #311: also hide the resident overlay's saved-mark / hover-save-button
+    // controls — they draw over the post the same way the highlight does, and
+    // would otherwise end up baked into the saved screenshot.
+    restoreOverlayState = window.__hologramPrepareOverlayForCapture?.() || null;
 
     // If the post is cut off, scroll it fully into the viewport
     const preRect = getPostRect(post);
@@ -361,6 +366,8 @@ export async function startCapture(): Promise<void> {
     chrome.runtime.onMessage.removeListener(onRuntimeMessage);
     restoreCaptureState?.();
     restoreCaptureState = null;
+    restoreOverlayState?.();
+    restoreOverlayState = null;
     restoreScroll();
     dismissBanner();
     highlight.remove();

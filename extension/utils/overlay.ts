@@ -132,6 +132,28 @@ export async function startOverlay(): Promise<void> {
   if (overlayActive) return;
   overlayActive = true;
 
+  // #311: capture.ts (a separate, on-demand content script sharing this same
+  // isolated world — see __hologramAutoCapture/__snsPostSaveCleanup for the
+  // established pattern) screenshots the tab with chrome.tabs.captureVisibleTab,
+  // which shoots whatever is drawn on screen, this overlay's corner included.
+  // Every control carries the same data attribute, so one query finds them
+  // all — no per-control tracking needed. Only the pointer being still (which
+  // it is, mid-capture) keeps new ones from appearing in the couple of
+  // repaint frames this stays in effect, same as the highlight/banner hide
+  // right next to this call in capture.ts.
+  window.__hologramPrepareOverlayForCapture = () => {
+    const controls = Array.from(document.querySelectorAll<HTMLElement>('[data-hologram-overlay]'));
+    const previousDisplay = controls.map((el) => el.style.display);
+    controls.forEach((el) => {
+      el.style.display = 'none';
+    });
+    return () => {
+      controls.forEach((el, i) => {
+        el.style.display = previousDisplay[i] ?? '';
+      });
+    };
+  };
+
   const G = glassUi;
 
   let markMode: MarkMode = 'always';

@@ -3,6 +3,9 @@
   "private": true,
   "version": "1.1.0",
   "description": "Hologram Chrome extension (MV3), built by WXT",
+  "overrides": {
+    "brace-expansion": "^5.0.8"
+  },
   "scripts": {
     "build": "wxt build",
     "build:ext": "wxt build",
