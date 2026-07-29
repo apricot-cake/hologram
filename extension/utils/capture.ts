@@ -288,9 +288,10 @@ export async function startCapture(): Promise<void> {
       requestAnimationFrame(() => {
         const rect = getPostRect(post);
 
-        // 'flex' explicitly — display lives only in the inline cssText, so
-        // resetting to '' after the display:none hide would fall back to block
-        // (badge and label would stack).
+        // Back from the hide that kept it out of the screenshot. The display it
+        // returns to is the stylesheet's now, so this only has to clear the
+        // inline `none` — the old code had to name `flex` because that value
+        // lived in the element's own cssText.
         banner.show();
         banner.setState('busy', MSG.saving);
 
