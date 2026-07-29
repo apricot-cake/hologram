@@ -23,6 +23,7 @@ import { setPosterTags } from './tags.ts';
 import { hologramPosterGridSource } from './grid.ts';
 import * as folders from './folders.ts';
 import { set as storeSet } from './store.ts';
+import { isViewTransitionRunning } from '../_shared/view-transition.ts';
 
 export interface PosterGridBuilderDeps {
   t(key: string, subs?: ReadonlyArray<string | number | null | undefined>): string;
@@ -165,7 +166,10 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
       return;
     }
     empty.hidden = true;
-    grid.classList.toggle('anim-in', !keepLimit && !prefersReducedMotion());
+    // Entrance skipped while a View Transition is carrying this rebuild (#252 — the density
+    // switch): the transition already moves each card, and fading them in on top of that
+    // reads as one unsettled motion. Same rule as the post grid's renderPosts.
+    grid.classList.toggle('anim-in', !keepLimit && !prefersReducedMotion() && !isViewTransitionRunning());
     storeSet('posterGroups', posterList);
     // With windowing, cells keep MOUNTING while the user scrolls — drop the
     // entrance class once the initial animation has played, or every late
@@ -189,6 +193,9 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
       const s = (u.displayName || u.screenName || '').trim();
       return {
         index: i,
+        // Stable per-poster id on the card root, mirroring .post-card[data-key]. The density
+        // View Transition (#252) reads it to name each visible card; nothing else needs it.
+        posterKey: u.key ?? null,
         avatarSrc: u.avatarFile ? deps.fileSrc(u.avatarFile) : null,
         monogram: u.avatarFile ? null : s ? s[0].toUpperCase() : '?',
         monoHue: u.avatarFile ? null : monoHue(u.key || s),

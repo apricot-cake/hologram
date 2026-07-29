@@ -465,18 +465,20 @@ export function makeGridDensity(deps: GridDensityDeps) {
   // Poster grid density (card/tile/list) — rendered by the display popover
   // (hologramStore 'posterView'). React owns the active state + glass thumb; this
   // reacts to a change: mirror it into posterView, persist it, and re-render the
-  // poster grid (deferred past a paint, like the old optimistic handler). The
-  // idempotent guard skips the no-op set from restorePrefs. React owns the
-  // subscribe() registration (StoreSubscriptions, App.tsx), importing this
+  // poster grid. The idempotent guard skips the no-op set from restorePrefs. React owns
+  // the subscribe() registration (StoreSubscriptions, App.tsx), importing this
   // function directly.
-  let _posterDensityRenderT: any = null;
+  //
+  // SYNCHRONOUS, for the same reason as handleViewStoreChange above (#252): the animation is
+  // started by the React side that writes the store key and captures only the DOM changes
+  // that land before its callback returns, so this re-render has to happen inside the same
+  // store write rather than a paint later.
   function handlePosterViewStoreChange() {
     const v = storeGet('posterView');
     if (v === posterView) return;
     posterView = v;
     deps.hologramIpc.setPref('posterViewMode', posterView);
-    clearTimeout(_posterDensityRenderT);
-    _posterDensityRenderT = setTimeout(() => deps.renderPosters(), 0);
+    deps.renderPosters();
   }
 
   // Load saved view modes + sizes (called from viewer.ts's hologramIpc.getPrefs().then).

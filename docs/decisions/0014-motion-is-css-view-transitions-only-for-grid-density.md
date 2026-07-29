@@ -13,13 +13,14 @@
 
 ## 決定
 
-**既定は CSS。View Transitions を使うのは、要素の再配置の前後を補間する必要がある面だけ**とし、v1 ではそれをグリッド密度切替（ギャラリー ⇄ リスト、カード情報の on/off）に限る。
+**既定は CSS。View Transitions を使うのは、要素の再配置の前後を補間する必要がある面だけ**とし、v1 ではそれをグリッドの密度切替に限る。
 
 切り分けの物差しは「CSS で書けるか」。単なるフェード・スライド・幅の transition は CSS で足りる。CSS で書けないのは**レイアウトの前後の補間**だけで、密度切替がそれにあたる。
 
 | 面 | 手段 |
 | --- | --- |
-| グリッド密度切替 | View Transitions |
+| 投稿グリッドの密度切替（ギャラリー ⇄ リスト、カード情報の on/off） | View Transitions |
+| 投稿者グリッドの密度切替（カード／タイル／リスト） | View Transitions |
 | クイックビュー（旧ライトボックス）の開閉 | CSS |
 | タブ切替 | CSS |
 | インスペクタ／サイドバーの開閉 | CSS |
@@ -35,7 +36,8 @@
 
 ## 影響
 
-- `app/src/renderer/src/_shared/view-transition.ts`（新規）＝起動の唯一の入口。`app/src/renderer/src/grid/density-transition.ts`（新規）＝密度切替に固有の方針（どのカードに名前を付けるか）。
+- `app/src/renderer/src/_shared/view-transition.ts`（新規）＝起動の唯一の入口。`app/src/renderer/src/_shared/density-transition.ts`（新規）＝密度切替に固有の方針（どのカードに名前を付けるか）。両グリッドが同じヘルパを使い、名前の前置だけを分ける。
+- **投稿者グリッドも同じ扱いにする**（2026-07-30 ユーザー判断）。当初は「現行唯一の適用面＝維持対象」と読んで投稿グリッドだけに入れたが、**同じポップオーバーの同じコントロールで片方だけ動くのは不揃い**なので揃えた。`.poster-card` に `data-key`（ユーザー集約の key）を足して名前の素にしている。
 - `app/src/renderer/src/shell/DisplayMenu.tsx` の密度トグルが起動点になる。`services/grid-density-builder.ts` の `handleViewStoreChange` からは API 呼び出しと `setTimeout` の遅延がなくなり、再描画は同期になる（遅延したままだと再グルーピングがコールバックの外へ落ちる）。
 - カードへの名前付けは**遷移中だけ**。常時付けると要素がスタッキングコンテキストを作り、複数画像カードが `z-index:-1/-2` の子で描いている「重なり」がカード自身の背景の裏に沈む。
 - `globals.css` のトークン接続は `@layer base` に置く。`index.html` の legacy シートが `#postGrid`／`#tabBar`／`#sidebar`／`.content-activebar`／`#contentTop` を既に名前付けし、それぞれ調整済みの規則（120ms のグリッドフェード、トップレイヤーの下でクロームを固定する `animation: none`）を `animation` ショートハンドで持つ。層を下げないと、無層の longhand がそれらを黙って上書きする。
