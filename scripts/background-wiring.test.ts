@@ -452,13 +452,21 @@ describe('保存の記録（#519）', () => {
 
   // 上限に達する前・プロセスごと消えた場合にも残る唯一の行なので、待つ脚より
   // 先に出ていることが要件。ホストがまだ何も答えていない時点で見る。
-  test('保存を受け付けた時点で「開始」の行が出る（どの待ちより先）', async () => {
+  // 3経路すべてを見る。`imageDragged` は**常駐スクリプトの面**（ホバー保存ボタンと
+  // ドロップゾーン）が使う唯一の保存経路で、そこは `activate` の行を出さない＝
+  // 「開始」の行が無ければその面の保存は記録の上に一切現れない。ユーザーが実際に
+  // 固まりを踏んだのがこの面なので、ここが欠けると #519 は目的を果たさない。
+  test.each([
+    ['savePost', { type: 'savePost', platform: 'misskey', postUrl: UNPARSEABLE_POST_URL }],
+    ['save', { type: 'captureAndSend', platform: 'misskey', postUrl: UNPARSEABLE_POST_URL, rect: { x: 0, y: 0, width: 10, height: 10 } }],
+    ['saveDragged', { type: 'imageDragged', platform: 'misskey', postUrl: UNPARSEABLE_POST_URL, imageUrls: ['https://misskey.example/files/a.png'] }],
+  ])('%s: 保存を受け付けた時点で「開始」の行が出る（どの待ちより先）', async (type, message) => {
     const createdPorts = env.connectAsControllablePort();
 
-    env.dispatch({ type: 'savePost', platform: 'misskey', postUrl: UNPARSEABLE_POST_URL }, MISSKEY_SENDER);
+    env.dispatch(message, MISSKEY_SENDER);
 
     const logPort = await portThatSent(createdPorts, 'log');
-    expect(logPort.sent[0].entry).toMatchObject({ stage: 'save', phase: 'begin', type: 'savePost', saveId: 'trace-1', url: UNPARSEABLE_POST_URL, captureId: expect.any(String) });
+    expect(logPort.sent[0].entry).toMatchObject({ stage: 'save', phase: 'begin', type, saveId: 'trace-1', url: UNPARSEABLE_POST_URL, captureId: expect.any(String) });
     // ログ用の接続は保存用とは別＝1保存につきホストのプロセスが1つ増える。
     // 「開始」を上限より先にディスクへ置くための代償で、意図した設計。
     expect(logPortCount(createdPorts)).toBe(1);
