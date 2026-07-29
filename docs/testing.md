@@ -13,7 +13,7 @@
 - `inject-dummy.cjs` — `dummy-` 始まりの条件網羅フィクスチャ（jpg＋色付きアバター＋DBのレコード）を既定保存先に生成。常設の検証フィクスチャとして残してよい（下の「行動ルール」参照）。electron 直起動なので拡張子は `.cjs`（理由はファイル冒頭・下記 make-icons と同じ）
 - `gen-dummy-library.cts` — 規模を指定した合成ライブラリ（プレースホルダ画像＋`hologram.db`）を repo 外の任意フォルダへ生成（#175）。`bench-baseline.cts` の計測対象で、実データを使わずに件数・分布の偏りを再現できる
 - `bench-baseline.cts` — 性能計測ハーネス（#293）。`<libraryDir>` とその `hologram.db` に対して cold/warm/差分書き込み/検索/ファセット/FTS/IPC相当を測り、環境ブロックごと JSON で出す。**数値は1回の記録の中でだけ比較可能**（マシンと負荷状態が同じである必要があるため）。#5 の before/after は同 Issue の 2026-07-23（旧経路）と 2026-07-28（DB経路）のコメント
-- `verify-store.py`（DBのレコードをAPI照合・読み取り専用で開くのでアプリ起動中でも可）／`backfill-metadata.cts`（欠損メタを保存URLから再取得してDBへ書き戻す・`--all`＝アバターも・`--avatars`＝アバターのみ。**単一ライターなのでアプリを閉じて実行**）／`make-icons.cjs`（`assets/icon-master.png` から全アイコンを再生成・手順は docs/build.md。electron 直起動のため `.cjs`＝`.cts` だと `require('electron')` が壊れる）
+- `verify-store.py`（DBのレコードをAPI照合・読み取り専用で開くのでアプリ起動中でも可）／`backfill-metadata.cts`（欠損メタを保存URLから再取得してDBへ書き戻す・`--all`＝アバターも・`--avatars`＝アバターのみ。**単一ライターなのでアプリを閉じて実行**）／`make-icons.cjs`（`assets/icon-master.png` から全アイコンを再生成・手順は docs/build.md。electron 直起動のため `.cjs`＝`.cts` だと `require('electron')` が壊れる）／`repair-legacy-media-records.cts`（**リリース前の一回きり**＝#377 より前の一括取込が `media[]` の先頭を `image` へ移して書いたレコードを、ディスクのファイルから組み直す。既定はドライラン＝読み取り専用でアプリ起動中でも可、`--apply` は単一ライターなのでアプリを閉じて実行）
 
 ### キャプチャ／メタデータ検証
 

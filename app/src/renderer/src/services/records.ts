@@ -56,7 +56,12 @@ export const artworkFile = (p: HologramPost): string => {
     if (first.posterFile) return first.posterFile;
     return isVideoFile(first.file) || isUgoiraFile(first.file) ? '' : (first.file as string);
   }
-  return p.image && !isScreenshot(p) ? p.image : '';
+  // The `image` fallback is a still by contract (normalizePostRecord moves a
+  // video filename to `video`), but a row written before that rule existed can
+  // still name one (#496) — and handing it to an <img> draws a blank card
+  // rather than nothing, which reads as a broken record instead of a faceless
+  // one. No poster is reachable from here, so there is nothing to substitute.
+  return p.image && !isScreenshot(p) && !isVideoFile(p.image) ? p.image : '';
 };
 export function densityImage(p: HologramPost, density: string): string {
   const cap = captureFile(p),
@@ -288,7 +293,11 @@ export function makeGallery(deps: { fileSrc(file: string): string }) {
   function buildGalleryItems(p: HologramPost): GalleryItem[] {
     const items: GalleryItem[] = [];
     const shot = captureFile(p); // '' unless p.image is a screenshot
-    if (p.image && !shot) items.push({ src: fileSrc(p.image), alt: '', video: false });
+    // Same caveat as artworkFile's fallback: `image` should never name a video
+    // (normalizePostRecord relocates one), but a row written before that rule
+    // would otherwise open the detail view on an <img src="…mp4"> — a blank
+    // page over a file that plays perfectly (#496). Ask the filename.
+    if (p.image && !shot) items.push({ src: fileSrc(p.image), alt: '', video: isVideoFile(p.image) });
     if (p.video) items.push({ src: fileSrc(p.video), alt: '', video: true });
     if (Array.isArray(p.media)) {
       for (const m of p.media as HologramMediaItem[]) {
