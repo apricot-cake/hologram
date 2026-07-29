@@ -20,9 +20,10 @@ import { fillCardDims } from './lib-card-dims.ts';
 import { parseJsonLoose } from './lib-json.ts';
 import { postsByIds } from './lib-db-query.ts';
 import { makeTagResolver, preparePostStmts, writePost } from './lib-db-record-writer.ts';
+import { trashCapture } from './lib-trash-capture.ts';
 
 function register(ctx) {
-  const { getSaveFolder, getTrashDir, baseOf, LIBRARY_MEDIA_EXTS, resolveInFolder, getDbWriter, ensurePostsSynced, send } = ctx;
+  const { getSaveFolder, getTrashDir, baseOf, LIBRARY_MEDIA_EXTS, getDbWriter, ensurePostsSynced, send } = ctx;
 
   ipcMain.handle('delete-post', async (_e, image) => {
     const folder = getSaveFolder();
@@ -37,55 +38,9 @@ function register(ctx) {
     const flags = getDbWriter().getPostFlags(base);
     const rec: any = handle ? (await postsByIds(handle.sqlite, [base]))[0] || null : null;
     getDbWriter().deletePost(base);
-    const targets = new Set<string>();
-    for (const e of LIBRARY_MEDIA_EXTS) targets.add(`${base}.${e}`);
-    if (rec) {
-      if (rec.image) targets.add(path.basename(rec.image));
-      if (rec.video) targets.add(path.basename(rec.video));
-      // Shared-store avatars (avatars/<urlhash>.<ext>) are referenced by every
-      // capture of that author — deleting one post must not trash the icon.
-      // Only legacy per-capture files (<captureId>-avatar.<ext>) are swept.
-      if (rec.avatarFile && !/^avatars[\\/]/.test(rec.avatarFile)) targets.add(path.basename(rec.avatarFile));
-      for (const m of rec.media || []) {
-        if (m && m.file) targets.add(path.basename(m.file));
-        if (m && m.posterFile) targets.add(path.basename(m.posterFile)); // #119 St1
-      }
-    }
-    try {
-      for (const f of await fs.promises.readdir(folder)) {
-        if (f.startsWith(`${base}-media-`) || f.startsWith(`${base}-poster.`) || f.startsWith(`${base}-avatar.`)) targets.add(f);
-      }
-    } catch {
-      /* ignore */
-    }
-    const trashDir = getTrashDir();
-    await fs.promises.mkdir(trashDir, { recursive: true });
-    for (const name of targets) {
-      const src = resolveInFolder(name);
-      if (src) {
-        try {
-          await fs.promises.rename(src, path.join(trashDir, name));
-        } catch {
-          /* not found */
-        }
-      }
-    }
-    // Write the trash-side record from the DB row read above, stamped with
-    // trashedAt so auto-purge knows when to expire it and carrying the DB-only
-    // state (flags) restore-post cannot get from anywhere else.
-    if (rec) {
-      const r: any = { ...rec, trashedAt: new Date().toISOString() };
-      if (flags) {
-        r.tags = flags.tags;
-        if (flags.userKind != null) r.userKind = flags.userKind;
-        if (flags.tagReviewed != null) r.tagReviewed = flags.tagReviewed;
-      }
-      try {
-        await fs.promises.writeFile(path.join(trashDir, `${base}.json`), JSON.stringify(r, null, 2), 'utf8');
-      } catch {
-        /* best-effort — trash still works but won't auto-purge/dedup */
-      }
-    }
+    // The file half — shared with #34's replacement sweep so both retire a
+    // capture the same way (lib-trash-capture.ts).
+    await trashCapture({ folder, trashDir: getTrashDir(), mediaExts: LIBRARY_MEDIA_EXTS, captureId: base, record: rec, flags });
     return { ok: true };
   });
 

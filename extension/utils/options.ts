@@ -16,6 +16,9 @@ export function startOptions(): void {
   // is nothing to opt into.
   const MARK_MODE_KEY = 'savedBadgeMode';
   const HOVER_SAVE_KEY = 'hoverSaveButton';
+  // Read by capture.ts/drag.ts through duplicate-guard.ts (#34); the warning
+  // itself carries the same opt-out, so this row is the way back.
+  const DUPLICATE_WARNING_KEY = 'duplicateWarning';
   const MARK_MODES = ['always', 'hover', 'off'];
 
   // Strings come from _locales via chrome.i18n (the standard channel for
@@ -39,6 +42,8 @@ export function startOptions(): void {
     setText('savedBadgeModeOffLabel', 'optionsSavedBadgeOff');
     setText('hoverSaveLabel', 'optionsHoverSave');
     setText('hoverSaveDesc', 'optionsHoverSaveDesc');
+    setText('duplicateWarningLabel', 'optionsDuplicateWarning');
+    setText('duplicateWarningDesc', 'optionsDuplicateWarningDesc');
   } catch {
     /* not running as an extension page — static fallback text stays */
   }
@@ -60,14 +65,17 @@ export function startOptions(): void {
     }
   }
 
-  const box = document.getElementById(HOVER_SAVE_KEY);
-  if (box instanceof HTMLInputElement) {
-    chrome.storage.local.get(HOVER_SAVE_KEY, (got) => {
+  // Both remaining settings are the same shape: a checkbox whose absent value
+  // means "on", stored under the id it carries in the page.
+  for (const key of [HOVER_SAVE_KEY, DUPLICATE_WARNING_KEY]) {
+    const box = document.getElementById(key);
+    if (!(box instanceof HTMLInputElement)) continue;
+    chrome.storage.local.get(key, (got) => {
       if (chrome.runtime.lastError) return;
-      box.checked = got[HOVER_SAVE_KEY] !== false;
+      box.checked = got[key] !== false;
     });
     box.addEventListener('change', () => {
-      chrome.storage.local.set({ [HOVER_SAVE_KEY]: box.checked });
+      chrome.storage.local.set({ [key]: box.checked });
     });
   }
 }

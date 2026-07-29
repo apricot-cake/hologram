@@ -131,7 +131,7 @@ export function startBackground(): void {
     } catch (err) {
       throw stageError('bridge', err?.message || 'bridge save failed');
     }
-    markSaved([record.url, postUrl], ack?.file || captureId, savedMediaUrls(ack), tab.id);
+    markSaved([record.url, postUrl], ack?.captureId || captureId, savedMediaUrls(ack), tab.id);
     const grouped = await bumpRecentSave(record.url);
     return { ...ack, metaOk, metaReason: meta.metaError || null, grouped };
   }
@@ -153,7 +153,7 @@ export function startBackground(): void {
     const senderHost = getHostname(sender.tab.url);
     // captureAndSend never carries a capturedVia (only the intake routes —
     // savePost / imageDragged — do): captureAndSave keeps its default (null).
-    captureAndSave(sender.tab, message.rect, message.postUrl, message.platform)
+    captureAndSave(sender.tab, message.rect, message.postUrl, message.platform, null, message.replaces || null)
       // captureAndSave has no return value (it notifies the content script
       // directly via notify() instead) — content.js's capturePost() never reads
       // this sendResponse either, so `ok:true` is the whole payload.
@@ -169,7 +169,7 @@ export function startBackground(): void {
     return true;
   });
 
-  async function captureAndSave(tab, rect, postUrl, sendPlatform, capturedVia: string | null = null) {
+  async function captureAndSave(tab, rect, postUrl, sendPlatform, capturedVia: string | null = null, replaces: string | null = null) {
     const captureId = generateCaptureId();
     const capturedAt = new Date().toISOString();
 
@@ -206,6 +206,7 @@ export function startBackground(): void {
       capturedAt,
       postUrl,
       sendPlatform,
+      replaces,
       // The screenshot is the primary image; media[] (API original URLs) is what the
       // bridge downloads, then overwrites with the saved filenames.
       extra: { image: `${captureId}.jpg`, mediaType: meta.mediaType, media: meta.media || [], capturedVia },
@@ -218,7 +219,7 @@ export function startBackground(): void {
     } catch (err) {
       throw stageError('bridge', err?.message || 'bridge save failed');
     }
-    markSaved([record.url, postUrl], ack?.file || captureId, savedMediaUrls(ack), tab.id); // light this post's TL badge now
+    markSaved([record.url, postUrl], ack?.captureId || captureId, savedMediaUrls(ack), tab.id); // light this post's TL badge now
     // grouped = prior saves of this post this session → the banner says the save
     // merged with them (the app folds same-URL records into one card).
     const grouped = await bumpRecentSave(record.url);
@@ -416,17 +417,24 @@ export function startBackground(): void {
   // not — see native-host/post-key.mts). Caching only one form would leave the
   // other's negative entry to expire on its own, and the badge would lag a minute
   // behind the save that just happened in front of the user.
+  // captureId, NOT the ack's `file`: the two differ (the bulk-intake path's file
+  // is a media filename that carries no id at all), and since #34 this value is
+  // read as an identifier — a "replace" answer names the capture it retires.
   function markSaved(urls: Array<string | null | undefined>, captureId: string | null, media: Array<string | null>, tabId?: number) {
     const seen = new Set<string>();
     for (const url of urls) {
       if (!url || seen.has(url)) continue;
       seen.add(url);
       const known = cacheGet(url)?.entry;
-      const merged = known ? { id: known.id || captureId || '', media: known.media.slice() } : { id: captureId || '', media: [] as Array<string | null> };
+      const merged: SavedEntry = known ? { id: known.id || captureId || '', media: known.media.slice(), owners: (known.owners || known.media.map(() => known.id || null)).slice() } : { id: captureId || '', media: [] as Array<string | null>, owners: [] as Array<string | null> };
       // An entry that already answered "whole post" stays that way: adding one
       // picture to an empty list would claim the rest are NOT saved.
       if (!known || known.media.length) {
-        for (const u of media) if (u && !merged.media.includes(u)) merged.media.push(u);
+        for (const u of media) {
+          if (!u || merged.media.includes(u)) continue;
+          merged.media.push(u);
+          merged.owners?.push(captureId || null); // this save wrote this picture
+        }
       }
       cacheSet(url, merged);
       if (tabId != null) chrome.tabs.sendMessage(tabId, { type: 'savedUpdate', url, media } satisfies SavedUpdateMessage).catch(() => {});
@@ -461,6 +469,60 @@ export function startBackground(): void {
       .catch((error) => sendResponse({ ok: false, error: error?.message, results } satisfies CheckSavedResponse));
     return true; // async response
   });
+
+  // --- Duplicate-save warning (#34) ---------------------------------------------
+  // Asked by the content scripts BEFORE they start a save, so the answer can be
+  // a choice (copy / replace / skip) rather than an after-the-fact notice: the
+  // extension writes through the native host, so a save made with the desktop
+  // app closed has no in-app surface to resolve later.
+  //
+  // Read-only and fail-open. Anything that leaves the question unanswered — no
+  // permalink, an unreachable host, a thrown lookup — answers `ok:false`, and
+  // the caller saves as it always did. A missed warning costs one extra record;
+  // a blocked save costs the post.
+  chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+    if (message.type !== 'checkDuplicate') return false;
+    duplicateOf(message.url, message.platform, Array.isArray(message.imageUrls) ? message.imageUrls : [])
+      .then(sendResponse)
+      .catch(() => sendResponse({ ok: false }));
+    return true; // async response
+  });
+
+  interface DuplicateAnswer {
+    ok: boolean;
+    duplicate?: boolean;
+    captureId?: string | null;
+  }
+
+  // Two axes, in the order they can be decided (#34's confirmed design):
+  //   1. the post URL (postKeyOf, host-side) — is this post in the library at all?
+  //   2. the pictures — does what is about to be saved OVERLAP what is saved?
+  // Axis 2 is what keeps a manga's next page from being called a duplicate: same
+  // post URL, a picture the library does not have, so nothing is re-saved. When
+  // the pictures cannot be compared at all (a text-only post, a record saved
+  // before per-picture answers existed, a page whose platform has no picture
+  // identity rule) axis 1 stands alone and warns — a false warning is answered
+  // with "copy" and costs nothing, while a missed one is a silent duplicate.
+  async function duplicateOf(url: unknown, platform: string, imageUrls: string[]): Promise<DuplicateAnswer> {
+    if (typeof url !== 'string' || !url) return { ok: true, duplicate: false };
+    const hit = cacheGet(url);
+    let entry: SavedEntry | null;
+    if (hit) {
+      entry = hit.entry;
+    } else {
+      const fresh = await queryBridge([url]);
+      entry = (Object.hasOwn(fresh, url) ? fresh[url] : null) || null;
+      cacheSet(url, entry);
+    }
+    if (!entry) return { ok: true, duplicate: false };
+
+    const wanted = imageUrls.map((u) => mediaKeyOf(platform, u)).filter((k): k is string => !!k);
+    const saved = entry.media.map((u, i) => ({ key: u ? mediaKeyOf(platform, u) : null, owner: (entry?.owners && entry.owners[i]) || entry?.id || null }));
+    const comparable = saved.filter((s) => s.key);
+    if (!comparable.length || !wanted.length) return { ok: true, duplicate: true, captureId: entry.id || null };
+    const overlap = comparable.find((s) => s.key && wanted.includes(s.key));
+    return overlap ? { ok: true, duplicate: true, captureId: overlap.owner } : { ok: true, duplicate: false };
+  }
 
   // --- Recent-save memory (per post URL) ------------------------------------------
   // Consecutive saves of the SAME post (multi-page manga, re-grabs) merge into one
@@ -590,7 +652,7 @@ export function startBackground(): void {
       return false;
     }
     const senderHost = getHostname(sender.tab.url);
-    captureAndSaveDragged(sender.tab, message.platform, message.postUrl, message.imageUrls || [])
+    captureAndSaveDragged(sender.tab, message.platform, message.postUrl, message.imageUrls || [], message.replaces || null)
       .then((result) => sendResponse({ ok: true, ...result } satisfies SaveResponse))
       .catch((error) => {
         console.error(error);
@@ -624,7 +686,7 @@ export function startBackground(): void {
     return false;
   });
 
-  async function captureAndSaveDragged(tab, sendPlatform, postUrl, imageUrls) {
+  async function captureAndSaveDragged(tab, sendPlatform, postUrl, imageUrls, replaces: string | null = null) {
     const captureId = generateCaptureId();
     const capturedAt = new Date().toISOString();
 
@@ -649,7 +711,7 @@ export function startBackground(): void {
     let send: () => Promise<BridgeAck>;
     if (isPlayableMedia(meta.mediaType)) {
       // capturedVia stays null — an ordinary save, not an intake route (#362).
-      record = buildRecord(meta, { captureId, capturedAt, postUrl, sendPlatform, extra: { mediaType: meta.mediaType, media: meta.media, capturedVia: null } });
+      record = buildRecord(meta, { captureId, capturedAt, postUrl, sendPlatform, replaces, extra: { mediaType: meta.mediaType, media: meta.media, capturedVia: null } });
       send = () => sendPostToBridge(captureId, record, metaOk, meta.metaError || null);
     } else {
       const primary = pickPrimaryImage(meta.platform || sendPlatform, imageUrls, meta);
@@ -659,6 +721,7 @@ export function startBackground(): void {
         capturedAt,
         postUrl,
         sendPlatform,
+        replaces,
         extra: {
           mediaType: 'image',
           // Which image of a multi-image post this is (1-based) + the total. Only
@@ -677,7 +740,7 @@ export function startBackground(): void {
     } catch (err) {
       throw stageError('bridge', err?.message || 'bridge save failed');
     }
-    markSaved([record.url, postUrl], ack?.file || captureId, savedMediaUrls(ack), tab.id); // light this post's TL badge now
+    markSaved([record.url, postUrl], ack?.captureId || captureId, savedMediaUrls(ack), tab.id); // light this post's TL badge now
     // Surface metadata-fetch failure to the drop overlay (same partial-success
     // signal as the click-save banner) so a screenshot-less illustration that
     // saved without post info isn't shown as a plain success. grouped = prior
@@ -693,10 +756,14 @@ export function startBackground(): void {
 // downloaded illustration becomes image, media stays []) and instead records
 // which image of a multi-image post it was. Single source of truth so a new field
 // can't drift between the two paths.
-function buildRecord(meta, { captureId, capturedAt, postUrl, sendPlatform, extra }) {
+function buildRecord(meta, { captureId, capturedAt, postUrl, sendPlatform, replaces, extra }: { captureId: string; capturedAt: string; postUrl: string; sendPlatform: string; replaces?: string | null; extra: Record<string, unknown> }) {
   return Object.assign(
     {
       captureId,
+      // #34: the captureId this save replaces, when the user answered the
+      // duplicate warning with "replace". The host writes it through as a plain
+      // record field — trashing the old capture is the app's job (write-once).
+      replaces: replaces || null,
       url: meta.url || postUrl || null,
       // meta.platform is null only when the URL didn't parse; fall back to the
       // sender-reported platform (already origin-validated) so the record stays

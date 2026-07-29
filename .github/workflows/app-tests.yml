@@ -82,6 +82,9 @@ jobs:
       - name: Extension capture e2e (offline fixture)
         if: ${{ !cancelled() }}
         run: node scripts/e2e-extension-offline.cts
+      - name: Extension duplicate-warning e2e (offline fixture)
+        if: ${{ !cancelled() }}
+        run: node scripts/e2e-extension-duplicate.cts
       - name: Overlay visual regression
         if: ${{ !cancelled() }}
         run: node scripts/e2e-overlay-visual.cts

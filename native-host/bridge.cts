@@ -166,6 +166,13 @@ function sendMessage(obj: unknown): void {
 
 // captureId is "<epochMillis>-<hex>". Reject anything else so it can never
 // escape the save folder via path separators or "..".
+//
+// Every save's ack carries `captureId` (the uniqueBase-resolved id, which may
+// differ from the one asked for) BESIDE `file`. They are not interchangeable:
+// `file` is a filename and, on the bulk-intake path, not even derived from the
+// id (it is the first downloaded media's name). The extension needs the id
+// itself to name a record — #34's "replace" answer says WHICH capture it
+// retires — and used to make do with `file`.
 const SAFE_ID = /^[0-9]{1,20}-[0-9a-f]{1,8}$/i;
 
 function sanitizeCaptureId(id: unknown): string | null {
@@ -241,9 +248,16 @@ const INBOX_ENVELOPE_NAME = /^(\d{10,})-[0-9a-f]{1,8}(?:-\d+)?\.json$/i;
 // row's seq and a picture the library recorded no URL for holds its place as
 // null. url leads; seq is only the fallback for those nulls (a post's media can
 // change, so a position is no durable id).
+//
+// owners is parallel to media: the captureId of the record that holds that
+// picture. `id` names only the FIRST record to claim the key, so it cannot
+// answer "which capture is this picture in" for a post whose pictures are
+// spread across several records — which is the question the duplicate-save
+// warning's "replace" answer has to get right (#34).
 interface SavedEntry {
   id: string; // captureId ('' when the source could not report one)
   media: Array<string | null>;
+  owners: Array<string | null>;
 }
 interface SavedIndex {
   folder: string;
@@ -273,16 +287,18 @@ function mediaUrlsOf(source: any): Array<string | null> {
 // position is meaningful inside its own record and nowhere else, so appending
 // one from a later record would put a "picture number" at a number that is not
 // its own. Dropping it costs nothing the badge can use.
-function mergeSavedEntry(keys: Map<string, SavedEntry>, key: string, id: string, urls: Array<string | null>): void {
+function mergeSavedEntry(keys: Map<string, SavedEntry>, key: string, id: string, urls: Array<string | null>, owners?: Array<string | null>): void {
+  const ownerOf = (i: number) => (owners && owners[i] ? owners[i] : id || null);
   const entry = keys.get(key);
   if (!entry) {
-    keys.set(key, { id, media: urls.slice() });
+    keys.set(key, { id, media: urls.slice(), owners: urls.map((_u, i) => ownerOf(i)) });
     return;
   }
-  for (const url of urls) {
-    if (!url || entry.media.includes(url)) continue;
+  urls.forEach((url, i) => {
+    if (!url || entry.media.includes(url)) return;
     entry.media.push(url);
-  }
+    entry.owners.push(ownerOf(i));
+  });
 }
 
 function savedIndexPath(): string {
@@ -410,8 +426,13 @@ function buildSavedIndex(folder: string): SavedIndex {
       for (const [key, value] of Object.entries(entries)) {
         if (typeof key !== 'string' || !key || keys.has(key)) continue;
         // v1 wrote a bare captureId string (pre-#334): saved, pictures unknown.
-        if (typeof value === 'string') keys.set(key, { id: value, media: [] });
-        else if (value && typeof value === 'object') mergeSavedEntry(keys, key, typeof (value as any).id === 'string' ? (value as any).id : '', mediaUrlsOf(value));
+        if (typeof value === 'string') keys.set(key, { id: value, media: [], owners: [] });
+        else if (value && typeof value === 'object') {
+          // owners is v3 (#34); a v2 file has none, and every picture then
+          // falls back to the entry's own id — the pre-#34 behaviour.
+          const owners = Array.isArray((value as any).owners) ? ((value as any).owners as unknown[]).map((o) => (typeof o === 'string' && o ? o : null)) : undefined;
+          mergeSavedEntry(keys, key, typeof (value as any).id === 'string' ? (value as any).id : '', mediaUrlsOf(value), owners);
+        }
       }
     }
   } catch {
@@ -518,7 +539,7 @@ async function handleSave(msg: any) {
   // the app won't know until it next drains the inbox (see noteSaved).
   noteSaved(record.url, base, record.media);
 
-  return { ok: true, file: `${base}.jpg`, saveFolder, mediaCount: savedMedia.length, media: mediaUrlsOf(record) };
+  return { ok: true, captureId: base, file: `${base}.jpg`, saveFolder, mediaCount: savedMedia.length, media: mediaUrlsOf(record) };
 }
 
 // Bulk-intake save (#362): metadata plus the post's own media, and no
@@ -601,7 +622,7 @@ async function handleSavePost(msg: any) {
   noteSaved(record.url, base, record.media); // see handleSave
 
   // deferred = written but not displayable yet (no media at all → #365).
-  return { ok: true, file: savedMedia.length ? savedMedia[0].file : base, saveFolder, mediaCount: savedMedia.length, deferred: !savedMedia.length, media: mediaUrlsOf(record) };
+  return { ok: true, captureId: base, file: savedMedia.length ? savedMedia[0].file : base, saveFolder, mediaCount: savedMedia.length, deferred: !savedMedia.length, media: mediaUrlsOf(record) };
 }
 
 // Image-drag save: no screenshot. The bridge downloads the dragged illustration
@@ -643,7 +664,7 @@ async function handleSaveDragged(msg: any) {
   await writeInboxEvent(saveFolder, buildEnvelope(record));
   noteSaved(record.url, base, record.media); // see handleSave
 
-  return { ok: true, file: imageFile, saveFolder, media: mediaUrlsOf(record) };
+  return { ok: true, captureId: base, file: imageFile, saveFolder, media: mediaUrlsOf(record) };
 }
 
 // --- stdin reader: buffer bytes and process complete messages ---

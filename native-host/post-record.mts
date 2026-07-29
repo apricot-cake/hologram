@@ -109,6 +109,18 @@ export interface PostRecordShape {
   shotW: number | null;
   shotH: number | null;
   trashedAt: string | null;
+  // The captureId this record REPLACES (#34). Written when the user answers the
+  // duplicate-save warning with "replace"; null on every ordinary save.
+  //
+  // It is a marker, not an action: the native host is write-once (it never
+  // modifies or deletes an existing file), so a capture made with the desktop
+  // app closed cannot trash anything itself. The app consumes the marker —
+  // trashing the old capture, merging its tags and re-pointing its folder /
+  // manual-group memberships — and clears the field once done
+  // (app/src/main/lib-db-replaces.ts). Until then the two records simply
+  // coexist, which is the same state the library would be in without the
+  // feature at all.
+  replaces: string | null;
 }
 
 // Every field a producer may hand in, all optional — the builder supplies
@@ -227,5 +239,6 @@ export function normalizePostRecord(input: PostRecordInput, now: () => string = 
     shotW: normNum(input.shotW),
     shotH: normNum(input.shotH),
     trashedAt: normStr(input.trashedAt),
+    replaces: normStr(input.replaces),
   };
 }

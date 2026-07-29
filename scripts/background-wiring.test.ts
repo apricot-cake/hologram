@@ -190,16 +190,79 @@ describe('chrome.runtime.onMessage ルーティング', () => {
     // まず savePost を1件成功させ、markSaved 経由でキャッシュへ載せる。
     const save = env.dispatch({ type: 'savePost', platform: 'misskey', postUrl: UNPARSEABLE_POST_URL }, MISSKEY_SENDER);
     await vi.waitFor(() => expect(createdPorts.length).toBe(1));
-    createdPorts[0].emitMessage({ ok: true, file: 'saved-file-id', media: ['https://misskey.example/files/aaa.png'] });
+    createdPorts[0].emitMessage({ ok: true, captureId: 'saved-capture-id', file: 'saved-file-id.jpg', media: ['https://misskey.example/files/aaa.png'] });
     const saveResult = await save.responseP;
     expect(saveResult.ok).toBe(true);
 
     // 次に checkSaved で同じ URL を尋ねる — キャッシュヒットなので新しい Port は作られない。
     const { returns, responseP } = env.dispatch({ type: 'checkSaved', urls: [UNPARSEABLE_POST_URL] }, {});
     expect(returns).not.toContain(true); // 同期応答
-    // 応答は投稿ごとに captureId ＋その投稿の保存済みの絵（#334）。
-    await expect(responseP).resolves.toEqual({ ok: true, results: { [UNPARSEABLE_POST_URL]: { id: 'saved-file-id', media: ['https://misskey.example/files/aaa.png'] } } });
+    // 応答は投稿ごとに captureId ＋その投稿の保存済みの絵（#334）と、絵ごとの持ち主（#34）。
+    // id is the ack's captureId, never its `file` — the badge only needs "some
+    // id", but #34's "replace" reads it as the record to retire.
+    await expect(responseP).resolves.toEqual({ ok: true, results: { [UNPARSEABLE_POST_URL]: { id: 'saved-capture-id', media: ['https://misskey.example/files/aaa.png'], owners: ['saved-capture-id'] } } });
     expect(createdPorts.length).toBe(1); // queryBridge は呼ばれていない
+  });
+});
+
+// #34 の重複保存の警告が拠って立つ照会。ここで見るのは「警告を出すか」の判定そのもの
+// （2軸＝投稿 URL と絵の重なり）と、置換が名指しするレコード。UI（3択バナー）は
+// capture.ts / drag.ts 側で、この答えを受け取るだけ。
+describe('checkDuplicate — 重複保存の警告の判定', () => {
+  let env: ReturnType<typeof setupBackground>;
+  const X_SENDER = { tab: { id: 3, url: 'https://x.com/home' } };
+  const POST = 'https://x.com/dave/status/444';
+  const P0 = 'https://pbs.twimg.com/media/AAA?name=orig';
+  const P1 = 'https://pbs.twimg.com/media/BBB?name=orig';
+
+  beforeEach(() => {
+    env = setupBackground();
+  });
+
+  // ホストの答えを1回分だけ用意する。checkDuplicate は保存前に1往復するだけなので、
+  // Port を1つ作って results を返せばよい。
+  async function answerQueryWith(entry: any) {
+    const createdPorts = env.connectAsControllablePort();
+    const asked = env.dispatch({ type: 'checkDuplicate', platform: 'x', url: POST, imageUrls: [P0] }, X_SENDER);
+    await vi.waitFor(() => expect(createdPorts.length).toBe(1));
+    const sent = createdPorts[0].sent.find((m: any) => m.type === 'query');
+    createdPorts[0].emitMessage({ id: sent.id, ok: true, results: { [POST]: entry } });
+    return asked.responseP;
+  }
+
+  test('ライブラリに無い投稿は重複ではない', async () => {
+    await expect(answerQueryWith(null)).resolves.toEqual({ ok: true, duplicate: false });
+  });
+
+  test('同じ絵が保存済みなら重複＝置換はその絵を持つレコードを名指しする', async () => {
+    // 2枚目だけを別レコードで保存した状態。エントリの id（最初に鍵を取ったレコード）は
+    // cap-a だが、いま保存しようとしている絵 P0 を持つのは cap-b。
+    await expect(answerQueryWith({ id: 'cap-a', media: [P1, P0], owners: ['cap-a', 'cap-b'] })).resolves.toEqual({ ok: true, duplicate: true, captureId: 'cap-b' });
+  });
+
+  test('同じ投稿でも別の絵なら重複ではない（漫画の次のページ）', async () => {
+    await expect(answerQueryWith({ id: 'cap-a', media: [P1], owners: ['cap-a'] })).resolves.toEqual({ ok: true, duplicate: false });
+  });
+
+  test('絵の分からない保存済み投稿は投稿 URL だけで警告する', async () => {
+    await expect(answerQueryWith({ id: 'cap-a', media: [], owners: [] })).resolves.toEqual({ ok: true, duplicate: true, captureId: 'cap-a' });
+  });
+
+  test('owners を持たない古いスナップショット（v2）はエントリの id に落ちる', async () => {
+    await expect(answerQueryWith({ id: 'cap-a', media: [P0] })).resolves.toEqual({ ok: true, duplicate: true, captureId: 'cap-a' });
+  });
+
+  test('URL の無い保存は照会せず、重複でもない＝保存を止めない', async () => {
+    const createdPorts = env.connectAsControllablePort();
+    const { responseP } = env.dispatch({ type: 'checkDuplicate', platform: 'x', url: '', imageUrls: [] }, X_SENDER);
+    await expect(responseP).resolves.toEqual({ ok: true, duplicate: false });
+    expect(createdPorts.length).toBe(0);
+  });
+
+  test('ホストへ繋がらないときは ok:false ＝呼び出し側はそのまま保存する', async () => {
+    env.connectAsUnavailable('Specified native messaging host not found.');
+    const { responseP } = env.dispatch({ type: 'checkDuplicate', platform: 'x', url: POST, imageUrls: [P0] }, X_SENDER);
+    await expect(responseP).resolves.toEqual({ ok: false });
   });
 });
 

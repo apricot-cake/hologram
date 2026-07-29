@@ -18,18 +18,29 @@ import { postKeyOf } from '../../../native-host/post-key.mts';
 
 const SAVED_INDEX_FORMAT = 'hologram-bridge-saved-index';
 // v2 (#334): an entry is an object carrying the post's saved media URLs, not a
-// bare captureId string. The bridge still reads v1 entries (as "saved, pictures
-// unknown"), so an app that has not rewritten the file yet keeps answering.
-const SAVED_INDEX_VERSION = 2;
+// bare captureId string. v3 (#34) adds `owners`, parallel to media. The bridge
+// still reads v1 entries (as "saved, pictures unknown") and v2 entries (as
+// "saved pictures known, owners unknown"), so an app that has not rewritten the
+// file yet keeps answering.
+const SAVED_INDEX_VERSION = 3;
 const SAVED_INDEX_FILE = 'bridge-saved-index.json';
 
 // media is positional: the array index IS the media row's seq, and a row whose
 // url the library never recorded holds its place as null. That is what lets the
 // badge fall back to "which picture of the post" when the URL cannot be
 // compared (a video, whose page-side counterpart is only a poster frame).
+//
+// owners is parallel to media: which captureId holds that picture. An entry's
+// `id` is only the FIRST record to claim the postKey, and a post's pictures are
+// routinely spread across several records (saving a second picture writes a
+// second record), so `id` cannot name the record a given picture came from.
+// That is exactly what the duplicate-save warning's "replace" answer needs
+// (#34) — replacing the first record when the user re-saved a picture belonging
+// to the third would trash the wrong capture.
 interface SavedIndexEntry {
-  id: string; // captureId
+  id: string; // captureId — the first record to claim this postKey
   media: Array<string | null>;
+  owners: Array<string | null>;
 }
 
 interface SavedIndexFile {
@@ -92,7 +103,7 @@ function buildSavedIndex(sqlite: Database.Database, now: () => string = () => ne
     const media = mediaByPost.get(row.captureId) || [];
     const entry = entries[key];
     if (!entry) {
-      entries[key] = { id: row.captureId, media: Array.from(media, (url) => url ?? null) };
+      entries[key] = { id: row.captureId, media: Array.from(media, (url) => url ?? null), owners: Array.from(media, () => row.captureId) };
       continue;
     }
     // A url-less picture is kept only from the FIRST record to claim the key
@@ -101,6 +112,7 @@ function buildSavedIndex(sqlite: Database.Database, now: () => string = () => ne
     for (const url of media) {
       if (!url || entry.media.includes(url)) continue;
       entry.media.push(url);
+      entry.owners.push(row.captureId);
     }
   }
   return { format: SAVED_INDEX_FORMAT, version: SAVED_INDEX_VERSION, generatedAt: now(), entries };

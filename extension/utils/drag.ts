@@ -6,6 +6,7 @@
 // illustration itself (no screenshot) via the native host. Which post an image
 // belongs to comes from media-identity.js, shared with overlay.js's hover save
 // button so the two paths can never disagree about what a save records.
+import { buildChoiceRow, checkDuplicate } from './duplicate-guard.ts';
 import { collectImageUrls, getMediaIdentitySite } from './extractor/index.ts';
 import { glassUi } from './glass-ui.ts';
 import { createI18n } from './i18n.ts';
@@ -23,10 +24,12 @@ export async function startDrag(): Promise<void> {
     badge: HTMLDivElement;
     label: HTMLDivElement;
   }
-  type ZoneState = 'idle' | 'over' | 'busy' | 'ok' | 'partial' | 'fail';
+  type ZoneState = 'idle' | 'over' | 'busy' | 'ok' | 'partial' | 'fail' | 'ask';
 
   let pending: PendingDrag | null = null;
   let zone: DropZone | null = null;
+  // The duplicate warning's three answers (#34) while the question is up.
+  let choices: HTMLElement | null = null;
   let hideAnim: Animation | null = null; // in-flight exit fade, cancelled if the zone re-shows
   let savingViaDrop = false; // true between a drop-in-zone and its result, so dragend doesn't hide early
 
@@ -110,6 +113,9 @@ export async function startDrag(): Promise<void> {
     z.el.style.boxShadow = G.CARD_SHADOW;
     z.ring.style.opacity = state === 'idle' || state === 'over' ? '1' : '0';
     z.ring.style.borderColor = G.RING;
+    // The choices belong to the question only — every other state drops them.
+    choices?.remove();
+    choices = null;
     switch (state) {
       case 'idle':
         z.badge.style.background = G.ACCENT_SOFT;
@@ -147,6 +153,12 @@ export async function startDrag(): Promise<void> {
         z.badge.style.color = '#fff';
         z.badge.appendChild(G.makeIcon(G.ICONS.cross));
         z.el.style.borderColor = 'rgba(229,72,77,0.65)';
+        break;
+      case 'ask':
+        z.badge.style.background = G.WARN_AMBER;
+        z.badge.style.color = '#fff';
+        z.badge.appendChild(G.makeIcon(G.ICONS.warn));
+        z.el.style.borderColor = 'rgba(232,161,58,0.65)';
         break;
     }
   }
@@ -229,15 +241,47 @@ export async function startDrag(): Promise<void> {
     savingViaDrop = true;
     const z = ensureOverlay();
     setState(z, 'busy', t('bannerSaving'));
-    chrome.runtime.sendMessage(p, (res?: SaveResponse) => {
+    // #34: the picture the pointer carried is the whole of what this path
+    // saves, so its own URLs are the picture set to compare — which is what
+    // keeps a manga's next page (same post, a picture the library does not
+    // have) from being called a duplicate.
+    checkDuplicate(p.platform, p.postUrl, p.imageUrls)
+      .catch(() => null)
+      .then((hit) => {
+        if (!hit) {
+          send(z, p, null);
+          return;
+        }
+        setState(z, 'ask', t('dupTitle'));
+        choices = buildChoiceRow(t, (choice) => {
+          if (choice === 'skip') {
+            setState(z, 'ok', t('dupSkipped'));
+            setTimeout(() => {
+              hideOverlay(true);
+              savingViaDrop = false;
+            }, 1400);
+            return;
+          }
+          setState(z, 'busy', t('bannerSaving'));
+          send(z, p, choice === 'replace' ? hit.captureId : null);
+        });
+        z.el.appendChild(choices);
+      });
+  }
+
+  function send(z: DropZone, p: PendingDrag, replaces: string | null) {
+    chrome.runtime.sendMessage({ ...p, replaces } satisfies ImageDraggedMessage, (res?: SaveResponse) => {
       const ok = res?.ok === true;
       let partial = false;
       let grouped = false;
+      // The old capture is on its way to the trash, so this is not a merge —
+      // say so INSTEAD of "grouped" (#34).
+      const replaced = ok && !!replaces;
       let text: string;
       if (res?.ok) {
         partial = res.metaOk === false; // saved, but no post metadata
-        grouped = !partial && res.grouped > 0; // same post saved earlier → merges into one card in the app
-        text = partial ? partialSaveText(res.metaReason) : grouped ? t('bannerSavedGrouped', [res.grouped + 1]) : t('bannerSaved');
+        grouped = !partial && !replaced && res.grouped > 0; // same post saved earlier → merges into one card in the app
+        text = partial ? partialSaveText(res.metaReason) : replaced ? t('dupReplaced') : grouped ? t('bannerSavedGrouped', [res.grouped + 1]) : t('bannerSaved');
       } else {
         text = saveFailureText(res?.errorKind);
       }
@@ -252,8 +296,8 @@ export async function startDrag(): Promise<void> {
           hideOverlay(true);
           savingViaDrop = false;
         },
-        // grouped: hold a beat longer — it explains where the image "went"
-        partial ? 2600 : grouped ? 2200 : 1400,
+        // grouped/replaced: hold a beat longer — both explain where the image "went"
+        partial ? 2600 : grouped || replaced ? 2200 : 1400,
       );
     });
   }

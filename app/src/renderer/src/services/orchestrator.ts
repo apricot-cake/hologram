@@ -22,6 +22,7 @@ import { mediaFilesOf, densityImage, percentileFn, makeGallery, loadUngrouped, l
 import { makeTags, bindTagKindOf, bindPosterFilterVocab, getTagTypes, getTagLabels, getPosterTags, load as loadTags } from './tags.ts';
 import { makeTabLabels } from './tab-state.ts';
 import { importComplete, importPosts } from './posts.ts';
+import { open as confirmOpen } from './confirm.ts';
 import { compile as searchCompile } from './search.ts';
 import { hologramI18n } from './i18n.ts';
 import * as folders from './folders.ts';
@@ -1814,11 +1815,35 @@ export function endFilterEditSession(): void {
         const b64 = await f.async('base64');
         posts.push(Object.assign({}, m, { image: 'data:image/jpeg;base64,' + b64 }));
       }
-      const { imported, skipped } = await importPosts(posts);
-      await loadPosts();
       (e.target as HTMLInputElement).value = '';
-      if (skipped > 0) notify(getMessage('importSkipped', [imported, skipped]));
-      else notify(getMessage('imported', [imported]));
+      // #34: 取り込む投稿が既にライブラリにあるとき、コピー／置換／スキップを
+      // 1回だけ聞く（1件ずつ聞くと数百回になるため、バッチ単位）。重複が無ければ
+      // main 側が即座に取り込むので、この確認は出ない。
+      const first = await importPosts(posts);
+      if (first?.needsChoice) {
+        const finish = async (mode: string) => {
+          const res = await importPosts(posts, mode);
+          await loadPosts();
+          if (res.skipped > 0) notify(getMessage('importSkipped', [res.imported, res.skipped]));
+          else notify(getMessage('imported', [res.imported]));
+        };
+        confirmOpen({
+          message: getMessage('importDuplicate', [first.duplicates]),
+          description: getMessage('importDuplicateDesc'),
+          okLabel: getMessage('importDuplicateReplace'),
+          altLabel: getMessage('importDuplicateCopy'),
+          cancelLabel: getMessage('importDuplicateSkip'),
+          onOk: () => void finish('replace'),
+          onAlt: () => void finish('copy'),
+          // Esc lands here too, and skipping is the answer that changes the
+          // least — the library keeps what it has.
+          onCancel: () => void finish('skip'),
+        });
+        return;
+      }
+      await loadPosts();
+      if (first.skipped > 0) notify(getMessage('importSkipped', [first.imported, first.skipped]));
+      else notify(getMessage('imported', [first.imported]));
     } catch {
       notify(getMessage('importFailed'));
       (e.target as HTMLInputElement).value = '';

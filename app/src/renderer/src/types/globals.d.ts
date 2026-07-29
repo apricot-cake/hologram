@@ -346,6 +346,16 @@ declare global {
     skipLabel?: string; // present → show the "don't ask again" checkbox
     keywordPlaceholder?: string; // present → keyword-gated OK (destructive wipe)
     keywordRequired?: string;
+    // A THIRD answer beside OK and Cancel (#34's duplicate import: copy /
+    // replace / skip). Present → an extra action button, styled as the
+    // non-destructive alternative so the destructive OK stays the one that
+    // reads as destructive. Absent → the dialog is the two-button one it has
+    // always been.
+    altLabel?: string;
+    onAlt?(result: { skip: boolean }): void;
+    // OK is destructive by default (every caller before #34 was a delete or a
+    // wipe). false → a plain action button, for a question whose OK is not.
+    okDestructive?: boolean;
     onOk(result: { skip: boolean }): void;
     onCancel?(): void;
   }

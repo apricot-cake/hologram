@@ -20,6 +20,9 @@ interface CaptureAndSendMessage {
   rect: CropRect;
   postUrl: string;
   platform: string;
+  // The captureId this save replaces, when the duplicate warning was answered
+  // "replace" (#34). null/absent on every ordinary save.
+  replaces?: string | null;
 }
 
 interface SavePostMessage {
@@ -34,11 +37,25 @@ interface ImageDraggedMessage {
   platform: string;
   postUrl: string;
   imageUrls: string[];
+  replaces?: string | null; // see CaptureAndSendMessage
 }
 
 interface CheckSavedMessage {
   type: 'checkSaved';
   urls: string[];
+}
+
+// "Is saving this post a re-save of something already in the library?" (#34).
+// Deliberately a separate question from checkSaved even though both read the
+// same index: checkSaved answers per URL for a whole viewport of posts, this
+// answers one post and weighs its PICTURES too.
+interface CheckDuplicateMessage {
+  type: 'checkDuplicate';
+  platform: string;
+  url: string;
+  // The page's own URLs for the pictures about to be saved. Empty when the
+  // site has no picture-identity rule — the check then rests on the post URL.
+  imageUrls: string[];
 }
 
 // Diagnostic bag relayed to the native host's capture.log (or, failing that,
@@ -56,7 +73,7 @@ interface DumpLogsMessage {
   type: 'dumpLogs';
 }
 
-type ContentToBackgroundMessage = CaptureAndSendMessage | SavePostMessage | ImageDraggedMessage | CheckSavedMessage | LogCaptureMessage | DumpLogsMessage;
+type ContentToBackgroundMessage = CaptureAndSendMessage | SavePostMessage | ImageDraggedMessage | CheckSavedMessage | CheckDuplicateMessage | LogCaptureMessage | DumpLogsMessage;
 
 // === background -> content script ===
 
@@ -109,6 +126,9 @@ type CaptureAndSendResponse = { ok: true } | ErrorResponse;
 // What the native host's ack carries for a completed save (see the module
 // header for why this lives here despite being a different boundary).
 interface BridgeAck {
+  // The uniqueBase-resolved id of the record just written — NOT derivable from
+  // `file`, whose bulk-intake form is a media filename (#34).
+  captureId?: string;
   file?: string;
   saveFolder?: string;
   mediaCount?: number;
@@ -135,11 +155,19 @@ type SaveResponse =
 interface SavedEntry {
   id: string;
   media: Array<string | null>;
+  // Parallel to media: which captureId holds that picture (#34). `id` names
+  // only the FIRST record to claim the post's key, so it cannot answer that.
+  // Absent from a saved-index snapshot the app has not rewritten since #34.
+  owners?: Array<string | null>;
 }
 
 type SavedResults = Record<string, SavedEntry | null>;
 
 type CheckSavedResponse = { ok: true; results: SavedResults } | { ok: false; error?: string; results: SavedResults };
+
+// ok:false = the question could not be answered (no permalink, unreachable
+// host). The caller saves anyway — see duplicate-guard.ts on failing open.
+type CheckDuplicateResponse = { ok: true; duplicate: boolean; captureId?: string | null } | { ok: false };
 
 interface LogCaptureResponse {
   ok: true;
@@ -157,6 +185,8 @@ export type {
   BridgeAck,
   CaptureAndSendMessage,
   CaptureAndSendResponse,
+  CheckDuplicateMessage,
+  CheckDuplicateResponse,
   CheckSavedMessage,
   CheckSavedResponse,
   ContentToBackgroundMessage,

@@ -1,5 +1,6 @@
 import { startBulkCapture } from './bulk-capture.ts';
 import { cropScreenshot } from './crop.ts';
+import { buildChoiceRow, checkDuplicate, pagePictureUrls } from './duplicate-guard.ts';
 import { normalizeRect } from './extractor/dom.ts';
 import { getCaptureSite } from './extractor/index.ts';
 import type { CaptureSite, PostRect } from './extractor/types.ts';
@@ -59,6 +60,11 @@ export async function startCapture(): Promise<void> {
   let restoreOverlayState: (() => void) | null = null;
   let savedScrollPosition: { x: number; y: number } | null = null;
   let lastCapturedPost: Element | null = null; // re-measured at crop time (scroll/layout drift)
+  // The duplicate warning was answered "replace" (#34). Kept here rather than
+  // read back off the ack: the background reports what it SAVED, and the
+  // retirement of the old capture is the app's later job — so the only side
+  // that knows this save was a replacement is the one that asked.
+  let replacing = false;
 
   // === UI elements ===
 
@@ -97,13 +103,22 @@ export async function startCapture(): Promise<void> {
   banner.appendChild(bannerBadge);
   const bannerLabel = document.createElement('div');
   banner.appendChild(bannerLabel);
+  // The duplicate warning's three answers (#34), mounted into the pill while
+  // the question is up and removed on every other state.
+  let bannerChoices: HTMLElement | null = null;
 
-  type BannerState = 'select' | 'busy' | 'ok' | 'partial' | 'fail';
+  type BannerState = 'select' | 'busy' | 'ok' | 'partial' | 'fail' | 'ask';
   function setBanner(state: BannerState, text: string) {
     bannerLabel.textContent = text;
     bannerBadge.replaceChildren();
     // Reset the state-tinted border (ok/partial/fail override it below).
     banner.style.borderColor = G.CARD_BORDER;
+    // Only the question state takes input; every other state is a status
+    // readout that must not intercept clicks meant for the page.
+    banner.style.pointerEvents = state === 'ask' ? 'auto' : 'none';
+    // The choices belong to the question only — any other state drops them.
+    bannerChoices?.remove();
+    bannerChoices = null;
     switch (state) {
       case 'select':
         bannerBadge.style.background = G.ACCENT_SOFT;
@@ -132,6 +147,12 @@ export async function startCapture(): Promise<void> {
         bannerBadge.style.color = '#fff';
         bannerBadge.appendChild(G.makeIcon(G.ICONS.cross, 15));
         banner.style.borderColor = 'rgba(229,72,77,0.65)';
+        break;
+      case 'ask':
+        bannerBadge.style.background = G.WARN_AMBER;
+        bannerBadge.style.color = '#fff';
+        bannerBadge.appendChild(G.makeIcon(G.ICONS.warn, 15));
+        banner.style.borderColor = 'rgba(232,161,58,0.65)';
         break;
     }
   }
@@ -259,11 +280,43 @@ export async function startCapture(): Promise<void> {
       return;
     }
 
-    // Remove event listeners (capture is single-shot)
+    // Remove event listeners (capture is single-shot). Done BEFORE the
+    // duplicate check so a second click cannot pick another post while the
+    // question is on screen; Esc still cancels (onKeyDown stays registered).
     document.removeEventListener('mousemove', onMouseMove, true);
     document.removeEventListener('click', onClick, true);
     document.removeEventListener('contextmenu', onContextMenu, true);
+    highlight.style.display = 'none';
 
+    // #34: ask the library BEFORE shooting anything. checkDuplicate answers
+    // null for every case that leaves the question open (setting off, host
+    // unreachable, post not saved), and the capture then runs unchanged.
+    checkDuplicate(site.platform, postUrl, pagePictureUrls(post))
+      .catch(() => null)
+      .then((hit) => {
+        if (isCleanedUp) return; // Esc while we were asking
+        if (!hit) {
+          shoot(post, postUrl, null);
+          return;
+        }
+        setBanner('ask', getMessage('dupTitle'));
+        bannerChoices = buildChoiceRow(getMessage, (choice) => {
+          if (isCleanedUp) return;
+          if (choice === 'skip') {
+            setBanner('ok', getMessage('dupSkipped'));
+            setTimeout(cleanup, 1500);
+            return;
+          }
+          replacing = choice === 'replace';
+          shoot(post, postUrl, replacing ? hit.captureId : null);
+        });
+        banner.appendChild(bannerChoices);
+      });
+  }
+
+  // Everything from "the post is decided" onward: hide our own overlays, bring
+  // the post fully into view, shoot, and hand the crop rect to the background.
+  function shoot(post: Element, postUrl: string, replaces: string | null) {
     // Hide the highlight and banner before capturing
     highlight.style.display = 'none';
     banner.style.display = 'none';
@@ -300,6 +353,7 @@ export async function startCapture(): Promise<void> {
           rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
           postUrl,
           platform: site.platform,
+          replaces,
         } satisfies CaptureAndSendMessage);
       });
     });
@@ -408,7 +462,9 @@ export async function startCapture(): Promise<void> {
         // grouped > 0: this post was already saved this session — the app folds
         // same-post saves into one stacked card, so say so instead of a plain
         // success (otherwise the save looks like a silent no-op in the grid).
-        text = partial ? partialSaveText(msg.metaReason) : msg.grouped > 0 ? getMessage('bannerSavedGrouped', [msg.grouped + 1]) : MSG.saved;
+        // A replacement says so INSTEAD of "grouped": the earlier record is on
+        // its way to the trash, so calling it a merge would be wrong.
+        text = partial ? partialSaveText(msg.metaReason) : replacing ? getMessage('dupReplaced') : msg.grouped > 0 ? getMessage('bannerSavedGrouped', [msg.grouped + 1]) : MSG.saved;
       }
       setBanner(partial ? 'partial' : msg.success ? 'ok' : 'fail', text);
       if (msg.success && !partial && !G.REDUCED_MOTION) {

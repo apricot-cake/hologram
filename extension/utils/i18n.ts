@@ -73,6 +73,25 @@ export function createI18n(): Promise<HologramI18nApi> {
       // 投稿が既に無いだけの正常な結果を、同じ言葉で並べない。
       bulkSummaryUnavailable: '取得できず $1件（削除・非公開など）',
       bulkSummaryFailed: '失敗 $1件',
+
+      // capture.ts / drag.ts: duplicate-save warning (#34). Asked BEFORE the
+      // save, because the extension writes straight to disk — with the desktop
+      // app closed there is no later place to resolve it.
+      dupTitle: 'この投稿はもう保存されています',
+      // "Copy" = save anyway, as a second record. Named for what it leaves
+      // behind (two copies), not for the click ("保存") — the whole point of the
+      // warning is that the user did not know there would be two.
+      dupCopy: 'コピー',
+      dupCopyHint: 'もう1件として保存します',
+      dupReplace: '置換',
+      dupReplaceHint: '前の保存をゴミ箱へ移し、タグと入っているフォルダを引き継ぎます',
+      dupSkip: 'スキップ',
+      dupSkipHint: '保存しません',
+      dupSkipped: '保存しませんでした',
+      // Shown after a "replace" save. The old capture goes to the trash when the
+      // desktop app next runs, so the wording does not claim it is gone already.
+      dupReplaced: '置き換えました（前の保存はゴミ箱へ）',
+      dupSuppress: '今後この確認を出さない',
     },
 
     en: {
@@ -111,6 +130,18 @@ export function createI18n(): Promise<HologramI18nApi> {
       bulkSummaryDeferred: '$1 image-less saved (not shown in the library yet)',
       bulkSummaryUnavailable: '$1 unavailable (deleted or private)',
       bulkSummaryFailed: '$1 failed',
+
+      // capture.ts / drag.ts: duplicate-save warning (#34) — see the ja notes.
+      dupTitle: 'This post is already saved',
+      dupCopy: 'Copy',
+      dupCopyHint: 'Save it again as a second record',
+      dupReplace: 'Replace',
+      dupReplaceHint: 'Move the earlier save to the trash, keeping its tags and folders',
+      dupSkip: 'Skip',
+      dupSkipHint: "Don't save",
+      dupSkipped: 'Not saved',
+      dupReplaced: 'Replaced (the earlier save goes to the trash)',
+      dupSuppress: "Don't ask again",
     },
   };
 
