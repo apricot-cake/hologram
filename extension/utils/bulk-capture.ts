@@ -26,6 +26,7 @@
 // The bookmarks-list check lives with the rest of X's page knowledge (#212);
 // this module is the intake FLOW, which is X-specific only because X is the
 // one site with such a list so far.
+import { reportSaveTimeout } from './capture-log.ts';
 import { SAVE_WATCHDOG_MS, SAVED_QUERY_TIMEOUT_MS } from './deadline.ts';
 import type { CaptureSite } from './extractor/types.ts';
 import { isXBookmarksPage } from './extractor/x.ts';
@@ -204,6 +205,10 @@ export function startBulkCapture(site: CaptureSite, i18n: HologramI18nApi): void
     const watchdog = setTimeout(() => {
       if (settled) return;
       settled = true;
+      // Logged before the `stopped` bail: an abandoned post is worth a line
+      // whether or not the run is still on screen to count it. The run's own
+      // summary is transient; this is what a later reader has.
+      reportSaveTimeout('bulk-intake', site.platform, url, `save timed out — no result from the background within ${SAVE_WATCHDOG_MS}ms`);
       if (stopped) return; // the run already ended and printed its summary
       busy = false;
       entries.set(url, 'failed');

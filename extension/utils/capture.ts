@@ -1,6 +1,7 @@
 import { startBulkCapture } from './bulk-capture.ts';
 import { cropScreenshot } from './crop.ts';
 import { buildChoiceRow, checkDuplicate, pagePictureUrls } from './duplicate-guard.ts';
+import { reportSaveTimeout } from './capture-log.ts';
 import { SAVE_WATCHDOG_MS } from './deadline.ts';
 import { normalizeRect } from './extractor/dom.ts';
 import { getCaptureSite } from './extractor/index.ts';
@@ -156,21 +157,6 @@ export async function startCapture(): Promise<void> {
       chrome.runtime.sendMessage({
         type: 'logCapture',
         entry: { stage, phase: 'fail', platform: site.platform, locationHref: location.href, clickedSnap: snapEl(el) },
-      } satisfies LogCaptureMessage);
-    } catch {
-      /* ignore — diagnostics are non-essential */
-    }
-  }
-
-  // Same relay, for a failure that has no element to blame — the save was sent
-  // and nothing came back. Worth its own line in capture.log: the background
-  // writes one for every stage IT reached, so a run with neither an ok nor a
-  // fail is exactly the case this records (#507).
-  function logSaveTimeout(url: string, error: string) {
-    try {
-      chrome.runtime.sendMessage({
-        type: 'logCapture',
-        entry: { stage: 'result', phase: 'fail', platform: site.platform, url, error },
       } satisfies LogCaptureMessage);
     } catch {
       /* ignore — diagnostics are non-essential */
@@ -339,7 +325,7 @@ export async function startCapture(): Promise<void> {
     if (isCleanedUp || saveSettled) return;
     saveSettled = true;
     clearSaveWatchdog();
-    logSaveTimeout(postUrl, error);
+    reportSaveTimeout('capture', site.platform, postUrl, error);
     banner.setState('error', saveFailureText('timeout'));
     setTimeout(cleanup, 2800);
   }
