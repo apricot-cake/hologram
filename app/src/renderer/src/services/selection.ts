@@ -19,6 +19,13 @@ function current(): Set<string> {
 }
 
 let anchor: number | null = null;
+// Marquee drag (#484): what the selection looked like when the band started.
+// null = a plain drag (the band REPLACES the selection); a Set = a Ctrl/Shift
+// drag (the band ADDS to what was already there). Non-null only while a band is
+// live, so it doubles as "a drag is in progress".
+let marqueeBase: ReadonlySet<string> | null = null;
+let marqueeAnchor: number | null = null;
+let marqueeActive = false;
 
 export function has(key: string) {
   return current().has(key);
@@ -80,6 +87,50 @@ export function selectOnly(idx: number, key: string) {
 export function clear() {
   anchor = null;
   storeSet('selectedSet', new Set<string>());
+}
+
+// --- Marquee (drag range selection, #484) ---------------------------------
+// The band is live-previewed: updateMarquee() runs on every frame the hit set
+// changes, so it has to be idempotent for a given set of indices — it always
+// rebuilds from the snapshot below rather than accumulating.
+
+// `additive` = Ctrl/Cmd or Shift was held when the drag began (Explorer/Finder
+// 型: the band extends the existing selection instead of replacing it).
+export function beginMarquee(additive: boolean) {
+  marqueeBase = additive ? current() : null;
+  marqueeAnchor = anchor;
+  marqueeActive = true;
+}
+
+export function updateMarquee(indices: number[], groups: HologramPostGroup[], postIdKey: PostIdKey) {
+  if (!marqueeActive) return;
+  const next = new Set<string>(marqueeBase ?? []);
+  for (const i of indices) {
+    const g = groups[i];
+    if (g) next.add(postIdKey(g.rep));
+  }
+  // Arrow navigation moves from the anchor, so park it on the LOWEST index the
+  // band touched — the start of the run, which is where continuing with the
+  // keyboard reads right. (`indices` arrives ascending from marquee.hitIndices.)
+  anchor = indices.length ? indices[0] : marqueeAnchor;
+  storeSet('selectedSet', next);
+}
+
+export function endMarquee() {
+  marqueeBase = null;
+  marqueeAnchor = null;
+  marqueeActive = false;
+}
+
+// Esc during the drag: put back exactly what was selected before it started.
+export function cancelMarquee() {
+  if (!marqueeActive) return;
+  const base = marqueeBase;
+  anchor = marqueeAnchor;
+  marqueeBase = null;
+  marqueeAnchor = null;
+  marqueeActive = false;
+  storeSet('selectedSet', new Set<string>(base ?? []));
 }
 
 // Unconditional select-all (Ctrl/Cmd+A): every group in, regardless of the

@@ -15,6 +15,8 @@ import { useMasonry, usePositioner, useResizeObserver } from 'masonic';
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { ComponentType, ReactNode } from 'react';
 import { registerGridNav } from '../services/grid-nav.ts';
+import { autoScrollStep, hitIndices, MARQUEE_THRESHOLD, rectFromPoints } from '../services/marquee.ts';
+import type { MarqueeCell } from '../services/marquee.ts';
 
 // The cell component each grid module supplies (masonic's render component).
 export interface GridCellProps {
@@ -30,7 +32,7 @@ const ModelCtx = createContext<HologramGridModel | null>(null);
 // Cells mount only inside the provider, so the null default never escapes.
 export const useGridModel = () => useContext(ModelCtx) as HologramGridModel;
 
-export function VirtualGridHost({ model, cell, nav }: { model: HologramGridModel; cell: ComponentType<GridCellProps>; nav?: boolean }) {
+export function VirtualGridHost({ model, cell, nav, marquee }: { model: HologramGridModel; cell: ComponentType<GridCellProps>; nav?: boolean; marquee?: HologramMarqueeSink }) {
   const scroller = document.getElementById('mode-post') as HTMLElement; // the app's scroll container (never the window); static HTML, always present
   const containerRef = useRef<HTMLElement | null>(null);
   // offset of the masonry container's top inside the scroller's CONTENT (the
@@ -132,6 +134,179 @@ export function VirtualGridHost({ model, cell, nav }: { model: HologramGridModel
       },
     });
   }, [nav, positioner, scroller, heightEstimate, model.rowGutter]);
+
+  // The band's hit test reads the LIVE positioner, but re-running its effect
+  // mid-drag would tear the gesture down — so it reaches it through a ref instead
+  // of a dependency (the positioner is recreated on every itemsKey / width change).
+  const positionerRef = useRef(positioner);
+  positionerRef.current = positioner;
+
+  // --- Drag range selection (#484) -----------------------------------------
+  // Press on empty space and drag: a rubber band selects every card it touches
+  // (交差判定 — Explorer / Finder と同型), Ctrl/Shift adds to the existing
+  // selection instead of replacing it, and holding the pointer at an edge scrolls
+  // the grid so the band can reach past one screenful.
+  //
+  // Two things about this grid shape the implementation:
+  //  - Cells are absolutely positioned AND recycled, so the hit test runs against
+  //    masonic's positioner (the layout model), never against DOM rects. That is
+  //    also what lets a band reach cards that are scrolled out of view, and what
+  //    keeps the answer stable while auto-scroll changes what is mounted.
+  //  - The band moves every animation frame. It is drawn imperatively (a detached
+  //    overlay, not React state) because a state write per frame would re-render
+  //    the whole masonry for a rectangle that isn't part of it.
+  useEffect(() => {
+    if (!marquee) return;
+    // A fixed clip box the size of the scroller's viewport + the band inside it:
+    // the band's origin is the press point, which scrolls away during a long drag,
+    // so without the clip it would paint over the toolbar and the sidebar.
+    const clip = document.createElement('div');
+    clip.className = 'grid-marquee-clip';
+    const bandEl = document.createElement('div');
+    bandEl.className = 'grid-marquee';
+    clip.appendChild(bandEl);
+
+    let drag: {
+      anchorX: number; // press point, CONTAINER space — fixed for the whole drag
+      anchorY: number;
+      startX: number; // press point, client space — only for the movement threshold
+      startY: number;
+      pointerX: number; // latest pointer, client space
+      pointerY: number;
+      additive: boolean;
+      active: boolean; // threshold crossed = this is a marquee, not a click
+      lastHits: string;
+      raf: number;
+    } | null = null;
+
+    const step = (allowScroll: boolean) => {
+      const el = containerRef.current;
+      if (!drag || !el) return;
+      const sr = scroller.getBoundingClientRect();
+      if (allowScroll) {
+        const dy = autoScrollStep(drag.pointerY, sr.top, sr.bottom);
+        if (dy) scroller.scrollTop += dy;
+      }
+      const cr = el.getBoundingClientRect();
+      // Clamp the moving corner to the visible grid: the pointer can sit past the
+      // edge (that is what drives auto-scroll) or leave the window entirely, and
+      // neither should stretch the band over chrome that isn't the grid.
+      const viewRight = sr.left + scroller.clientWidth; // not sr.right — that includes the scrollbar gutter
+      const curX = Math.min(Math.max(drag.pointerX, sr.left), viewRight) - cr.left;
+      const curY = Math.min(Math.max(drag.pointerY, sr.top), sr.bottom) - cr.top;
+      const rect = rectFromPoints(drag.anchorX, drag.anchorY, curX, curY);
+
+      clip.style.left = `${sr.left}px`;
+      clip.style.top = `${sr.top}px`;
+      clip.style.width = `${scroller.clientWidth}px`;
+      clip.style.height = `${sr.height}px`;
+      bandEl.style.transform = `translate(${cr.left + rect.x - sr.left}px, ${cr.top + rect.y - sr.top}px)`;
+      bandEl.style.width = `${rect.width}px`;
+      bandEl.style.height = `${rect.height}px`;
+
+      // positioner.range() is masonic's own interval-tree lookup over the band's
+      // vertical span — O(log n + hits) across the whole library rather than a walk
+      // of anything — and it answers for every cell whose height has been measured,
+      // mounted or not. hitIndices() then applies the horizontal half.
+      const p = positionerRef.current;
+      const cells: MarqueeCell[] = [];
+      p.range(rect.y, rect.y + rect.height, (index: number) => {
+        const pos = p.get(index);
+        if (pos) cells.push({ index, left: pos.left, top: pos.top, width: p.columnWidth, height: pos.height });
+      });
+      const hits = hitIndices(rect, cells);
+      const sig = hits.join(',');
+      if (sig === drag.lastHits) return; // same cards as last frame — don't churn the store (every cell subscribes to it)
+      drag.lastHits = sig;
+      marquee.update(hits);
+    };
+
+    const frame = () => {
+      if (!drag?.active) return;
+      step(true);
+      drag.raf = requestAnimationFrame(frame);
+    };
+
+    const finish = (mode: 'end' | 'cancel') => {
+      if (!drag) return;
+      if (drag.raf) cancelAnimationFrame(drag.raf);
+      clip.remove();
+      window.removeEventListener('mousemove', onMove, true);
+      window.removeEventListener('mouseup', onUp, true);
+      window.removeEventListener('keydown', onKey, true);
+      window.removeEventListener('blur', onBlur);
+      const active = drag.active;
+      drag = null;
+      if (!active) return; // never crossed the threshold: a plain click on empty space, selection untouched
+      if (mode === 'cancel') marquee.cancel();
+      else marquee.end();
+    };
+
+    const onMove = (e: MouseEvent) => {
+      if (!drag) return;
+      drag.pointerX = e.clientX;
+      drag.pointerY = e.clientY;
+      if (drag.active) return;
+      if (Math.abs(e.clientX - drag.startX) < MARQUEE_THRESHOLD && Math.abs(e.clientY - drag.startY) < MARQUEE_THRESHOLD) return;
+      drag.active = true;
+      marquee.begin(drag.additive);
+      document.body.appendChild(clip);
+      drag.raf = requestAnimationFrame(frame);
+    };
+
+    // One last pass without auto-scroll: the final frame's scroll may have brought
+    // cells into the band that masonic only measured after it ran.
+    const onUp = () => {
+      if (drag?.active) step(false);
+      finish('end');
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      e.preventDefault();
+      finish('cancel');
+    };
+    // The window losing focus mid-drag means no mouseup is coming — keep what the
+    // band selected rather than leaving it painted forever.
+    const onBlur = () => finish('end');
+
+    const onDown = (e: MouseEvent) => {
+      if (drag || e.button !== 0) return;
+      const el = containerRef.current;
+      if (!el || !el.offsetWidth) return; // grid hidden (other browse mode)
+      const target = e.target as HTMLElement | null;
+      if (!target) return;
+      if (target.closest('.post-card')) return; // cards own the click and the OS drag-out (#132)
+      if (target.closest('a, button, input, textarea, select, [role="button"], [contenteditable="true"]')) return;
+      const sr = scroller.getBoundingClientRect();
+      if (e.clientX - sr.left >= scroller.clientWidth) return; // the scrollbar gutter, not the grid
+      const cr = el.getBoundingClientRect();
+      drag = {
+        anchorX: e.clientX - cr.left,
+        anchorY: e.clientY - cr.top,
+        startX: e.clientX,
+        startY: e.clientY,
+        // Read at press time, the way Explorer does — a modifier tapped mid-drag
+        // must not silently switch the band from replacing to extending.
+        additive: e.ctrlKey || e.metaKey || e.shiftKey,
+        pointerX: e.clientX,
+        pointerY: e.clientY,
+        active: false,
+        lastHits: ' ', // no real signature equals this, so the first frame always pushes
+        raf: 0,
+      };
+      e.preventDefault(); // otherwise the press starts a native text selection across the cards
+      window.addEventListener('mousemove', onMove, true);
+      window.addEventListener('mouseup', onUp, true);
+      window.addEventListener('keydown', onKey, true);
+      window.addEventListener('blur', onBlur);
+    };
+
+    scroller.addEventListener('mousedown', onDown);
+    return () => {
+      scroller.removeEventListener('mousedown', onDown);
+      finish('end');
+    };
+  }, [marquee, scroller]);
 
   const gridEl = useMasonry({
     positioner,

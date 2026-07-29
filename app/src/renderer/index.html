@@ -993,6 +993,21 @@
       border: solid #fff; border-width: 0 2px 2px 0; transform: rotate(45deg);
       animation: hologramCheckDraw .3s var(--ease-out) backwards;
     }
+    /* Drag range selection (#484). The band is an overlay owned imperatively by the
+       grid host (_shared/VirtualGrid.tsx) and attached to <body>, so it is placed in
+       viewport coordinates and clipped to the scroller's visible area — the press
+       point scrolls away during a long drag. Same --color-selected as the ring, at
+       the translucent-fill + hairline-border weight Explorer/Finder use. */
+    .grid-marquee-clip {
+      position: fixed; overflow: hidden; pointer-events: none; z-index: 45;
+      contain: strict;
+    }
+    .grid-marquee {
+      position: absolute; top: 0; left: 0; will-change: transform, width, height;
+      background: color-mix(in oklch, var(--color-selected) 16%, transparent);
+      border: 1px solid color-mix(in oklch, var(--color-selected) 70%, transparent);
+    }
+
     /* Selection mode (≥1 selected): clicking anywhere on a card toggles it, so
        every ring stays visible and the per-card hover actions step aside. */
     .post-grid.selecting .select-check { opacity: 1; }
