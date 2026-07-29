@@ -667,7 +667,7 @@ export async function startOverlay(): Promise<void> {
     chrome.runtime.sendMessage({ type: 'imageDragged', platform: media.platform, postUrl: identity.link, imageUrls: collectImageUrls(el, media.platform) } satisfies ImageDraggedMessage, (res?: SaveResponse) => {
       if (chrome.runtime.lastError || !res || !res.ok) {
         setPhase(anchor, 'error', ERROR_MS);
-        const failureText = saveFailureText(res && !res.ok ? res.errorKind : undefined);
+        const failureText = saveFailureText(res && !res.ok ? res.errorKind : undefined, res && !res.ok ? res.metaReason : undefined);
         anchor.note = failureText;
         showFailureBanner(failureText);
         paint(unit, state);
