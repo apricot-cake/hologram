@@ -50,7 +50,26 @@ interface SavedIndexFile {
 // per record, the badge would offer to save a picture already saved.
 function buildSavedIndex(sqlite: Database.Database, now: () => string = () => new Date().toISOString()): SavedIndexFile {
   const entries: Record<string, SavedIndexEntry> = {};
-  const rows = sqlite.prepare('SELECT captureId, url FROM posts WHERE url IS NOT NULL AND trashedAt IS NULL').all() as Array<{ captureId: string; url: string }>;
+  // A post the library holds NOTHING of answers nothing (#492): the badge would
+  // otherwise tell the user "already saved" about a record carrying only what
+  // the permalink itself says, and every later intake would skip the post on
+  // that word — the one case where the badge must stay dark so the post can be
+  // taken again. This is native-host/post-record.mts's recordHoldsContent
+  // expressed in SQL (the same rule the bridge applies when writing); the two
+  // are asserted equivalent in saved-index.test.ts. Kept as one query rather
+  // than a post-filter so a big library does not carry rows it will discard.
+  const rows = sqlite
+    .prepare(
+      `SELECT p.captureId, p.url FROM posts p
+        WHERE p.url IS NOT NULL AND p.trashedAt IS NULL
+          AND (IFNULL(p.image, '') <> ''
+            OR IFNULL(p.video, '') <> ''
+            OR IFNULL(p.text, '') <> ''
+            OR IFNULL(p.title, '') <> ''
+            OR IFNULL(p.displayName, '') <> ''
+            OR EXISTS (SELECT 1 FROM media m WHERE m.postId = p.captureId))`,
+    )
+    .all() as Array<{ captureId: string; url: string }>;
   // One pass over the media of every live post, grouped by its owner. Cheaper
   // than a per-post query (a library's worth of prepared-statement round trips)
   // and the JOIN keeps trashed posts out.
