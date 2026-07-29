@@ -8,25 +8,31 @@
 npm run setup
 ```
 
-**⚠️素の `npm install` はまだこのリポジトリでは通らない**: `electron-vite@5` は `peer vite: ^5 || ^6 || ^7` を宣言しているのに `app/` は vite 8 で組んでいるため、npm の解決器がツリーごと拒否する。vite 8 を受ける安定版の electron-vite はまだ無く（6.0.0 は beta のみ・2026-07-27 確認）、`overrides` では peer の範囲を広げられないので、npm 公式の逃げ道である `--legacy-peer-deps` しかない。**この不整合は前からある**＝lockfile 無しの `npm install` は vite 8 を入れた時点で通らなくなっていて、コミット済みの lockfile が支えていただけ。何かが再解決を促した瞬間に落ちる。
+**⚠️素の `npm install` はまだこのリポジトリでは通らない**: 2つの独立した事情でフラグが要る。
 
-`npm run setup` はこのフラグを付けて入れ、あわせて `build:ext` も走らせる＝3本のテストが拡張のビルド出力（`capture.js`・`resident.js`）を直接読むため、これが無いと入れたてのツリーで `npm test` が落ちる。
+1. `electron-vite@5` は `peer vite: ^5 || ^6 || ^7` を宣言しているのに `app/` は vite 8 で組んでいるため、npm の解決器がツリーごと拒否する。vite 8 を受ける安定版の electron-vite はまだ無く（6.0.0 は beta のみ・2026-07-27 確認）、`overrides` では peer の範囲を広げられないので、npm 公式の逃げ道である `--legacy-peer-deps` しかない。**この不整合は前からある**＝lockfile 無しの `npm install` は vite 8 を入れた時点で通らなくなっていて、コミット済みの lockfile が支えていただけ。何かが再解決を促した瞬間に落ちる。
+2. `better-sqlite3` は同梱の prebuilt バイナリ（`prebuilds/<platform>-<arch>.node`）を使わせるため `package.json` に `gypfile: false` を宣言しているが、**この宣言は package-lock.json 経由のインストールには一切届かない**。npm の arborist が lockfile へ書き出す package.json フィールドは固定の allowlist（`@npmcli/arborist/lib/shrinkwrap.js` の `pkgMetaKeys`）で、そこに `gypfile` は含まれない。このリポジトリは package-lock.json をコミットしている＝fresh checkout の `npm install` は常にロックファイル駆動になり、better-sqlite3 の解決結果は `gypfile` を持たないまま npm の既定動作（binding.gyp を同梱し install/preinstall スクリプトを持たないパッケージは node-gyp でコンパイルする）に落ちる。node-gyp は Visual Studio の C++ ツールチェインを要求し、無いインストール全体を巻き込んで失敗させる。コンパイル自体そもそも不要（同梱の prebuilt バイナリで動く）なので、`--ignore-scripts` で node-gyp 呼び出しごと止める。
 
-**あわせて Electron 本体も手動で取得する**（こちらは `--legacy-peer-deps` とは無関係の別の事情）: `app/` が固定しているバージョン（現在 43.2.0）の `electron` パッケージには postinstall スクリプトが無く、npm がスクリプトを実行できる状態で入れても `~225MB` の本体は自動では降ってこない。`npm run setup` は install 後に `node_modules/electron/dist/electron.exe` の有無を見て、無ければ `node node_modules/electron/install.js` を直接呼ぶ。`npm rebuild electron` は成功と表示して**何もダウンロードしない**ので使わない。
+`npm run setup` はこの2つのフラグを（要るものだけ）付けて入れ、あわせて `build:ext` も走らせる＝3本のテストが拡張のビルド出力（`capture.js`・`resident.js`）を直接読むため、これが無いと入れたてのツリーで `npm test` が落ちる。
+
+**あわせて Electron 本体も手動で取得する**（`--legacy-peer-deps` とも `--ignore-scripts` とも無関係の別の事情）: `app/` が固定しているバージョン（現在 43.2.0）の `electron` パッケージには postinstall スクリプトが元々無く、npm がスクリプトを実行できる状態で入れても `~225MB` の本体は自動では降ってこない。`npm run setup` は install 後に `node_modules/electron/dist/electron.exe` の有無を見て、無ければ `node node_modules/electron/install.js` を直接呼ぶ。`npm rebuild electron` は成功と表示して**何もダウンロードしない**ので使わない。
 
 **⚠️Hologram（開発版）を起動したまま install しない**: 実行中の Electron が `node_modules/electron/dist/**` と `better-sqlite3` の `.node` を掴んでいるため、npm がファイルを置き換えられず EBUSY / EPERM で止まる。`npm ci` は先に node_modules を消しにいくので、途中まで消したところで失敗して**依存が欠けたツリーが残る**（2026-07-27 実地被弾）。先にアプリを閉じること。
 
-**上流待ちの暫定措置で、setup が毎回自分で判定する。**フラグはハードコードしておらず、install の前にディスク上の `package.json` から条件を読み、必要なら渡す。上流が直れば**フラグが自動的に付かなくなり、外してよい旨を表示する**。
+**上流待ちの暫定措置で、setup が毎回自分で判定する。**フラグはハードコードしておらず、install の前にディスク上の状態から条件を読み、必要なら渡す。上流が直れば**フラグが自動的に付かなくなり、外してよい旨を表示する**。
 
 | フラグ | 解消の条件 | 待っている先 |
 | --- | --- | --- |
+| `--ignore-scripts`（better-sqlite3） | package-lock.json の better-sqlite3 エントリが `gypfile:false` を持つようになる（＝npm がロックファイルへこのフィールドを書くよう変わる） | [better-sqlite3 #1503](https://github.com/WiseLibs/better-sqlite3/issues/1503) |
 | `--legacy-peer-deps` | `electron-vite` の `peerDependencies.vite` が、使用中の vite のメジャーを受け入れる | [electron-vite releases](https://github.com/alex8088/electron-vite/releases) |
 
-判定そのものは `scripts/setup-probes.test.ts` が守る（誤って「もう不要」と答えると次の install が落ち、誤って「まだ必要」と答え続けると回避策が恒久化するため）。範囲の書式を読めない場合は**安全側＝維持**に倒す。
+判定そのものは `scripts/setup-probes.test.ts` が守る（誤って「もう不要」と答えると次の install が落ち、誤って「まだ必要」と答え続けると回避策が恒久化するため）。範囲の書式を読めない・package-lock.json が無い場合は**安全側＝維持**に倒す。
+
+**⚠️better-sqlite3 側の判定は `node_modules` の展開物でなく package-lock.json のエントリを読む**（`scripts/setup.cts` の `sqliteCheck`）: 展開物の `package.json` は `gypfile:false` を正しく持つが、それは**その展開自体が `--ignore-scripts` で作られたツリーかもしれない**＝プレーンな `npm install` が通る証拠にならない（2026-07-29 #510 の実測。以前の判定は展開物を読んでおり、そのせいで「もう不要」と誤判定して #493 が回避策を撤去し、fresh worktree で再発した）。package-lock.json 自体は npm が自分で書くファイルなので、そこに `gypfile:false` が現れて初めて「npm がロックファイル駆動のインストールでもこのフィールドを読むようになった」と言える。
 
 Dependabot（#395）の更新 PR で新バージョンが来たときも、確認すべき条件は上表と同じ。**解消したら `scripts/setup.cts`・`scripts/setup-probes.test.ts`・`package.json` の `setup`・本節をまとめて消すこと。**
 
-（`better-sqlite3` が `binding.gyp` を同梱したまま install スクリプトを宣言しない問題で `--ignore-scripts` を使っていたが、`gypfile: false` の宣言により解消済み＝#493 で撤去。`extension/` 側の `--ignore-scripts` も、その postinstall（`wxt prepare`）を手動で肩代わりするためだけの措置で本来不要だったと実機検証で確認し、同時に撤去した。**Electron 本体の手動取得はこの撤去と無関係に今も必要**＝旧コメントは「`--ignore-scripts` の巻き添えで止まる」としていたが、#493 の実機検証で、現在 pin している electron@43.2.0 自体に postinstall が無い（`--ignore-scripts` の有無に関わらず自動では降ってこない）ことが判明し、その旨へ書き換えた。）
+（`extension/` 側は `wxt prepare`（postinstall）以外に gyp 系の依存を持たないため `--ignore-scripts` は付けない＝プレーンな `npm install` で `wxt prepare` も自動で走る。**Electron 本体の手動取得は上記どちらのフラグとも無関係に今も必要**＝pin している electron@43.2.0 自体に postinstall が無い（`--ignore-scripts` の有無に関わらず自動では降ってこない）。）
 
 ## 拡張機能の開発・配布
 
