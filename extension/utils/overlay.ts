@@ -32,6 +32,7 @@
 // composited scroll as the picture. A fixed layer that copies viewport
 // coordinates has to wait for JavaScript on every scroll frame and visibly
 // trails smooth scrolling.
+import { SAVE_WATCHDOG_MS } from './deadline.ts';
 import { collectImageUrls, getCaptureSite, getMediaIdentitySite, getOverlaySite, mediaKeyOf, mediaKeysOf } from './extractor/index.ts';
 import type { CaptureSite, OverlaySite, PostMediaElement } from './extractor/types.ts';
 import { ICONS, makeIcon, makeSpinner } from './icons.ts';
@@ -648,6 +649,15 @@ export async function startOverlay(): Promise<void> {
     }, ERROR_BANNER_MS);
   }
 
+  // Put a save's failure on the button and in the page banner. Shared by the
+  // reported failures and the deadline, so the two cannot present differently.
+  function failSave(unit: Element, state: UnitState, anchor: Anchor, failureText: string) {
+    setPhase(anchor, 'error', ERROR_MS);
+    anchor.note = failureText;
+    showFailureBanner(failureText);
+    paint(unit, state);
+  }
+
   function startSave(unit: Element, state: UnitState, anchor: Anchor) {
     if (anchor.phase !== 'idle' || !media) return; // already in flight — one press, one save
     // Identity is read HERE, never cached on the anchor: a virtualized feed
@@ -664,13 +674,23 @@ export async function startOverlay(): Promise<void> {
     // is only granted by a toolbar or command gesture), so this is not a
     // preference — it is the one save route available here, and reusing it means
     // there is no second code path that could record something different.
+    // The button holds its "saving" spinner until this answers, and one press
+    // is all the user gets (startSave returns early while a save is in flight),
+    // so an answer that never comes would leave that picture unsaveable for as
+    // long as the page lives (#507). The deadline releases the button and says
+    // why, exactly like a reported failure.
+    let settled = false;
+    const watchdog = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      failSave(unit, state, anchor, saveFailureText('timeout'));
+    }, SAVE_WATCHDOG_MS);
     chrome.runtime.sendMessage({ type: 'imageDragged', platform: media.platform, postUrl: identity.link, imageUrls: collectImageUrls(el, media.platform) } satisfies ImageDraggedMessage, (res?: SaveResponse) => {
+      if (settled) return; // a late answer to a press already given up on
+      settled = true;
+      clearTimeout(watchdog);
       if (chrome.runtime.lastError || !res || !res.ok) {
-        setPhase(anchor, 'error', ERROR_MS);
-        const failureText = saveFailureText(res && !res.ok ? res.errorKind : undefined);
-        anchor.note = failureText;
-        showFailureBanner(failureText);
-        paint(unit, state);
+        failSave(unit, state, anchor, saveFailureText(res && !res.ok ? res.errorKind : undefined));
         return;
       }
       // Mark the PICTURE here rather than waiting for background.js's

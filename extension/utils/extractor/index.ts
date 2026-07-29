@@ -13,6 +13,7 @@
 // directly for the schema canary and the capture CLIs) and, unlike a bundler,
 // it does no extensionless resolution.
 
+import { METADATA_TIMEOUT_MS, withDeadline } from '../deadline.ts';
 import bluesky from './bluesky.ts';
 import { mediaSrcs } from './dom.ts';
 import mastodon from './mastodon.ts';
@@ -85,7 +86,10 @@ async function fetchPostMetadata(url, opts): Promise<PostRecord> {
   if (expectedHost && extractor.derivedApiHost && extractor.derivedApiHost(parsed) !== expectedHost) {
     return emptyRecord(url, parsed.platform);
   }
-  return extractor.fetchPost(parsed, url);
+  // Bounded (#507): every extractor reaches a platform API over the network,
+  // and a request that neither answers nor fails leaves the save with no end.
+  // The limit is the whole step's, not each request's — see utils/deadline.ts.
+  return withDeadline(extractor.fetchPost(parsed, url), METADATA_TIMEOUT_MS, 'metadata fetch');
 }
 
 // === Media URLs ===

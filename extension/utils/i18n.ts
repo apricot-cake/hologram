@@ -46,6 +46,10 @@ export function createI18n(): Promise<HologramI18nApi> {
       // 投稿そのものが取得できなかった（削除・凍結・鍵付き・年齢制限）＝壊れていない。
       // 直すものが無いので、診断ページへ誘導する bannerFailedUnknown とは別文言。
       bannerPostUnavailable: '投稿を取得できないため保存できません（削除・非公開など）',
+      // 応答が返らないまま上限に達した（#507）。原因の多くは一過性（ネットワークの
+      // 詰まり・サービスワーカーの停止）なので、最も安く効く再試行を先頭に置く。
+      // 診断ページへの誘導は「繰り返す場合」の第2手＝bannerFailedUnknown が持つ。
+      bannerTimedOut: '保存が終わらないため中止しました。もう一度お試しください（繰り返す場合は Chrome を再起動）',
       bannerFailedUnknown: '保存に失敗しました。拡張機能の設定から診断ページを確認してください',
 
       // drag.js: drop-zone hint (the toasts reuse the banner* keys above)
@@ -110,6 +114,7 @@ export function createI18n(): Promise<HologramI18nApi> {
       bannerHostUnavailable: "Hologram's saver could not start. Open the diagnostics page from the extension settings.",
       bannerOriginRejected: "Hologram's save configuration does not match. Reinstall Hologram.",
       bannerPostUnavailable: 'Cannot save: the post could not be fetched (deleted, private, …)',
+      bannerTimedOut: 'Save timed out and was stopped. Try again (restart Chrome if it keeps happening).',
       bannerFailedUnknown: 'Save failed. Open the diagnostics page from the extension settings.',
 
       // drag.js: drop-zone hint (the toasts reuse the banner* keys above)
@@ -168,7 +173,8 @@ export function createI18n(): Promise<HologramI18nApi> {
     // back to the generic one for unclassified failures.
     const partialSaveText = (reason) => getMessage(reason === 'protected' ? 'bannerSavedNoMetaProtected' : reason === 'ageRestricted' ? 'bannerSavedNoMetaAgeRestricted' : 'bannerSavedNoMeta');
 
-    const saveFailureText = (kind) => getMessage(kind === 'host-missing' ? 'bannerHostMissing' : kind === 'host-unavailable' ? 'bannerHostUnavailable' : kind === 'origin-rejected' ? 'bannerOriginRejected' : kind === 'post-unavailable' ? 'bannerPostUnavailable' : 'bannerFailedUnknown');
+    const saveFailureText = (kind) =>
+      getMessage(kind === 'host-missing' ? 'bannerHostMissing' : kind === 'host-unavailable' ? 'bannerHostUnavailable' : kind === 'origin-rejected' ? 'bannerOriginRejected' : kind === 'post-unavailable' ? 'bannerPostUnavailable' : kind === 'timeout' ? 'bannerTimedOut' : 'bannerFailedUnknown');
 
     return { lang: resolved, resolved, getMessage, partialSaveText, saveFailureText };
   })();

@@ -1,6 +1,7 @@
 // Which sites exist, and everything platform-specific about them, comes from
 // the extractor registry (utils/extractor/) — this file holds no per-platform
 // branch of its own (#212).
+import { CROP_TIMEOUT_MS, NATIVE_HOST_TIMEOUT_MS, SAVED_QUERY_TIMEOUT_MS, withDeadline } from './deadline.ts';
 import { extractorFor, fetchPostMetadata, getHostname, highResUrlOf, isAllowedSender, mediaKeyOf } from './extractor/index.ts';
 import type { PostRecord } from './extractor/types.ts';
 import type { BridgeAck, CaptureAndSendResponse, CheckSavedResponse, ContentToBackgroundMessage, CropImageMessage, CropImageResponse, DumpLogsResponse, LogCaptureResponse, NotifyMessage, SavedEntry, SavedResults, SavedUpdateMessage, SaveResponse } from './messages.ts';
@@ -186,7 +187,15 @@ export function startBackground(): void {
       throw stageError('capture', err?.message || 'captureVisibleTab failed');
     }
 
-    const response: CropImageResponse = await chrome.tabs.sendMessage(tab.id, { type: 'cropImage', dataUrl, rect } satisfies CropImageMessage);
+    // Bounded (#507): the answer comes from the page, and a page that navigated
+    // away, froze, or tore its listener down mid-capture never sends one — this
+    // await had no end, and neither did the banner still spinning over there.
+    let response: CropImageResponse;
+    try {
+      response = await withDeadline<CropImageResponse>(chrome.tabs.sendMessage(tab.id, { type: 'cropImage', dataUrl, rect } satisfies CropImageMessage), CROP_TIMEOUT_MS, 'crop');
+    } catch (err) {
+      throw stageError('crop', err?.message || 'cropImage failed');
+    }
     if (!response?.croppedDataUrl) throw stageError('crop', 'Cropping failed');
     const jpegBase64 = response.croppedDataUrl.split(',')[1];
 
@@ -256,7 +265,7 @@ export function startBackground(): void {
         return;
       }
 
-      timer = setTimeout(() => finish(new Error('Native host timed out')), 30000);
+      timer = setTimeout(() => finish(new Error('Native host timed out')), NATIVE_HOST_TIMEOUT_MS);
 
       port.onMessage.addListener((msg) => {
         if (msg?.ok) finish(null, msg);
@@ -355,7 +364,7 @@ export function startBackground(): void {
       const timer = setTimeout(() => {
         pendingQueries.delete(id);
         reject(new Error('Native host timed out'));
-      }, 8000);
+      }, SAVED_QUERY_TIMEOUT_MS);
       pendingQueries.set(id, { resolve: (msg) => resolve((msg && msg.results) || {}), reject, timer });
       try {
         port.postMessage({ type: 'query', id, urls });

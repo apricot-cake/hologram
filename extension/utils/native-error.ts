@@ -1,4 +1,4 @@
-export type SaveFailureKind = 'host-missing' | 'host-unavailable' | 'origin-rejected' | 'post-unavailable' | 'unknown';
+export type SaveFailureKind = 'host-missing' | 'host-unavailable' | 'origin-rejected' | 'post-unavailable' | 'timeout' | 'unknown';
 
 // Native Messaging exposes failures as human-readable runtime.lastError text,
 // not stable error codes. Keep the known matches deliberately narrow: a Chrome
@@ -25,6 +25,14 @@ export function classifySaveFailure(message: unknown): SaveFailureKind {
 
   if (/error (?:when|while) communicating with the native messaging host|native (?:messaging )?host (?:disconnected|exited|timed out)|host has exited|failed to start (?:the )?native messaging host|access is denied|permission denied/i.test(text)) {
     return 'host-unavailable';
+  }
+
+  // A leg that was abandoned rather than answered (#507 — utils/deadline.ts).
+  // Deliberately AFTER the host matches above: "Native host timed out" is a
+  // timeout too, but the user can act on knowing it was the saver that went
+  // quiet, and that advice is already written.
+  if (/timed out/i.test(text)) {
+    return 'timeout';
   }
 
   return 'unknown';
