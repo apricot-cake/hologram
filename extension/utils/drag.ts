@@ -6,6 +6,7 @@
 // illustration itself (no screenshot) via the native host. Which post an image
 // belongs to comes from media-identity.js, shared with overlay.js's hover save
 // button so the two paths can never disagree about what a save records.
+import { SAVE_WATCHDOG_MS } from './deadline.ts';
 import { buildChoiceRow, checkDuplicate } from './duplicate-guard.ts';
 import { collectImageUrls, getMediaIdentitySite } from './extractor/index.ts';
 import { ICONS, makeIcon, makeSpinner } from './icons.ts';
@@ -274,35 +275,54 @@ export async function startDrag(): Promise<void> {
   }
 
   function send(z: DropZone, p: PendingDrag, replaces: string | null) {
+    // The drop zone shows a spinner until this answers, so it needs an end the
+    // same way the capture banner does (#507). Longer than everything the
+    // background is itself allowed to spend, so only a background that has gone
+    // quiet reaches it — a slow save still gets to finish and say so.
+    let settled = false;
+    const watchdog = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      done(z, undefined, replaces, true);
+    }, SAVE_WATCHDOG_MS);
     chrome.runtime.sendMessage({ ...p, replaces } satisfies ImageDraggedMessage, (res?: SaveResponse) => {
-      const ok = res?.ok === true;
-      let partial = false;
-      let grouped = false;
-      // The old capture is on its way to the trash, so this is not a merge —
-      // say so INSTEAD of "grouped" (#34).
-      const replaced = ok && !!replaces;
-      let text: string;
-      if (res?.ok) {
-        partial = res.metaOk === false; // saved, but no post metadata
-        grouped = !partial && !replaced && res.grouped > 0; // same post saved earlier → merges into one card in the app
-        text = partial ? partialSaveText(res.metaReason) : replaced ? t('dupReplaced') : grouped ? t('bannerSavedGrouped', [res.grouped + 1]) : t('bannerSaved');
-      } else {
-        text = saveFailureText(res?.errorKind, res?.metaReason);
-      }
-      setState(z, partial ? 'partial' : ok ? 'ok' : 'fail', text);
-      if (ok && !prefersReducedMotion()) {
-        // Small badge pop so the state flip reads even in peripheral vision
-        // (app hologramBadgePop: .3s on the shared ease-out curve).
-        z.badge.animate([{ transform: 'scale(0.6)' }, { transform: 'scale(1.12)', offset: 0.6 }, { transform: 'scale(1)' }], { duration: 300, easing: motion.easeOut });
-      }
-      setTimeout(
-        () => {
-          hideOverlay(true);
-          savingViaDrop = false;
-        },
-        // grouped/replaced: hold a beat longer — both explain where the image "went"
-        partial ? 2600 : grouped || replaced ? 2200 : 1400,
-      );
+      if (settled) return; // a late answer to a drop already given up on
+      settled = true;
+      clearTimeout(watchdog);
+      done(z, res, replaces, false);
     });
+  }
+
+  // The one place a drop's outcome is put on screen, whether it came back from
+  // the background or ran out of time.
+  function done(z: DropZone, res: SaveResponse | undefined, replaces: string | null, timedOut: boolean) {
+    const ok = res?.ok === true;
+    let partial = false;
+    let grouped = false;
+    // The old capture is on its way to the trash, so this is not a merge —
+    // say so INSTEAD of "grouped" (#34).
+    const replaced = ok && !!replaces;
+    let text: string;
+    if (res?.ok) {
+      partial = res.metaOk === false; // saved, but no post metadata
+      grouped = !partial && !replaced && res.grouped > 0; // same post saved earlier → merges into one card in the app
+      text = partial ? partialSaveText(res.metaReason) : replaced ? t('dupReplaced') : grouped ? t('bannerSavedGrouped', [res.grouped + 1]) : t('bannerSaved');
+    } else {
+      text = timedOut ? saveFailureText('timeout') : saveFailureText(res?.errorKind, res?.metaReason);
+    }
+    setState(z, partial ? 'partial' : ok ? 'ok' : 'fail', text);
+    if (ok && !prefersReducedMotion()) {
+      // Small badge pop so the state flip reads even in peripheral vision
+      // (app hologramBadgePop: .3s on the shared ease-out curve).
+      z.badge.animate([{ transform: 'scale(0.6)' }, { transform: 'scale(1.12)', offset: 0.6 }, { transform: 'scale(1)' }], { duration: 300, easing: motion.easeOut });
+    }
+    setTimeout(
+      () => {
+        hideOverlay(true);
+        savingViaDrop = false;
+      },
+      // grouped/replaced: hold a beat longer — both explain where the image "went"
+      partial ? 2600 : grouped || replaced ? 2200 : 1400,
+    );
   }
 }
