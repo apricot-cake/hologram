@@ -14,6 +14,10 @@
 // lands as a DB row now, and SQLite has no filesystem event to hook — the inbox
 // file appearing is not the same instant as the app applying it.
 //
+// verifyRecord is also `require()`d directly by scripts/e2e-capture-test.cts,
+// which has no running Electron app to drain inbox -> DB and instead verifies
+// straight from the inbox envelope it already read (#486).
+//
 // Checks per record:
 //   - the image file it points at exists
 //   - url is the platform's CANONICAL permalink form (no /photo/N, /liked-by …)
@@ -132,44 +136,51 @@ async function verifyRecord(rec: any, dir: string) {
   return ok;
 }
 
-(async () => {
-  const dir = saveFolder();
-  if (!fs.existsSync(dir)) {
-    console.error('保存先フォルダが見つかりません: ' + dir);
-    process.exit(1);
-  }
-  const db = openReadOnly();
+// Guarded so scripts/e2e-capture-test.cts can `require()` this file for
+// verifyRecord alone (its records come from inbox envelopes, not hologram.db —
+// see #486) without also running the DB-backed CLI body below.
+if (require.main === module) {
+  (async () => {
+    const dir = saveFolder();
+    if (!fs.existsSync(dir)) {
+      console.error('保存先フォルダが見つかりません: ' + dir);
+      process.exit(1);
+    }
+    const db = openReadOnly();
 
-  const recentIdx = process.argv.indexOf('--recent');
-  if (recentIdx >= 0) {
-    const n = Number.parseInt(process.argv[recentIdx + 1], 10) || 1;
-    let okAll = true;
-    let checked = 0;
-    for (const rec of readRecords(db, n)) {
-      const r = await verifyRecord(rec, dir);
-      if (r === null) continue;
-      checked++;
-      if (!r) okAll = false;
+    const recentIdx = process.argv.indexOf('--recent');
+    if (recentIdx >= 0) {
+      const n = Number.parseInt(process.argv[recentIdx + 1], 10) || 1;
+      let okAll = true;
+      let checked = 0;
+      for (const rec of readRecords(db, n)) {
+        const r = await verifyRecord(rec, dir);
+        if (r === null) continue;
+        checked++;
+        if (!r) okAll = false;
+      }
+      console.log(`\n${checked} 件検証 → ${okAll ? 'ALL PASS' : 'FAIL あり'}`);
+      db.close();
+      process.exit(okAll ? 0 : 1);
     }
-    console.log(`\n${checked} 件検証 → ${okAll ? 'ALL PASS' : 'FAIL あり'}`);
-    db.close();
-    process.exit(okAll ? 0 : 1);
-  }
 
-  console.log(`監視中: ${path.join(configDir(), 'hologram.db')}`);
-  console.log('キャプチャすると自動で検証します（Ctrl+C で終了）\n');
-  const seen = new Set(readRecords(db, 1000).map((r: any) => r.captureId));
-  setInterval(async () => {
-    let fresh: any[] = [];
-    try {
-      fresh = readRecords(db, 20).filter((r: any) => !seen.has(r.captureId));
-    } catch (e: any) {
-      console.error('read error:', e.message);
-      return;
-    }
-    for (const rec of fresh.reverse()) {
-      seen.add(rec.captureId);
-      await verifyRecord(rec, dir).catch((e: any) => console.error('verify error:', e.message));
-    }
-  }, POLL_MS);
-})();
+    console.log(`監視中: ${path.join(configDir(), 'hologram.db')}`);
+    console.log('キャプチャすると自動で検証します（Ctrl+C で終了）\n');
+    const seen = new Set(readRecords(db, 1000).map((r: any) => r.captureId));
+    setInterval(async () => {
+      let fresh: any[] = [];
+      try {
+        fresh = readRecords(db, 20).filter((r: any) => !seen.has(r.captureId));
+      } catch (e: any) {
+        console.error('read error:', e.message);
+        return;
+      }
+      for (const rec of fresh.reverse()) {
+        seen.add(rec.captureId);
+        await verifyRecord(rec, dir).catch((e: any) => console.error('verify error:', e.message));
+      }
+    }, POLL_MS);
+  })();
+}
+
+module.exports.verifyRecord = verifyRecord;

@@ -22,11 +22,12 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
-const { spawnSync, execFileSync } = require('node:child_process');
+const { execFileSync } = require('node:child_process');
 const { launchExtensionBrowser, stageExtension } = require('./lib-extension-e2e.cts');
 const { createNativeHostSandbox } = require('./lib-native-host-e2e.cts');
 const { fetchXTweet } = require('../extension/utils/metadata.ts');
 const { inboxNewDir } = require('../native-host/inbox.mts');
+const { verifyRecord } = require('./test-watch-verify.cts');
 
 // sw.evaluate()/page.evaluate() callback bodies below run inside the extension's
 // service-worker / page context (a real browser, via CDP) — `chrome` is the
@@ -304,6 +305,7 @@ async function waitForNewSidecar(newDir, before, timeoutMs = 25000) {
 
   const results: any[] = [];
   const created: any[] = [];
+  const capturedRecords: any[] = [];
   try {
     const extId = session.extensionId;
     if (extId !== EXPECTED_ID) throw new Error(`staged extension id ${extId} does not match native-host allow-list ${EXPECTED_ID}`);
@@ -512,6 +514,7 @@ async function waitForNewSidecar(newDir, before, timeoutMs = 25000) {
         if (!rec || typeof rec !== 'object' || !rec.url) {
           throw new Error(`inboxエンベロープにレコードが無い: ${file}`);
         }
+        capturedRecords.push(rec);
         console.log(`   保存: ${file} url=${rec.url} media=${(rec.media || []).length}${rec.imageCount ? ` imageIndex=${rec.imageIndex}/${rec.imageCount}` : ''}`);
         // Assert the saved record is the post we intended to capture — not just
         // a self-consistent record for some OTHER post (the API re-check alone
@@ -540,15 +543,23 @@ async function waitForNewSidecar(newDir, before, timeoutMs = 25000) {
     fs.rmSync(EXT_DIR, { recursive: true, force: true });
   }
 
-  // verify the captures against the live API (same checker as the manual flow)
-  if (created.length) {
-    console.log('\n=== API照合 (test-watch-verify --recent) ===');
-    const v = spawnSync(process.execPath, [path.join(__dirname, 'test-watch-verify.cts'), '--recent', String(created.length)], {
-      encoding: 'utf8',
-      env: { ...process.env, HOLOGRAM_CONFIG_DIR: nativeHost.configDir },
-    });
-    process.stdout.write(v.stdout || '');
+  // Verify the captures against the live API (same checker as the manual flow).
+  // Reads envelope.record straight from the inbox files this run already parsed —
+  // NOT hologram.db, since draining inbox -> DB is the real Electron app's job
+  // and this sandbox never starts one (#486). A verify failure here must sink
+  // the whole canary, so it feeds verifyOk below rather than being logged and
+  // discarded.
+  let verifyOk = true;
+  if (capturedRecords.length) {
+    console.log('\n=== API照合 (inbox envelope 直接照合) ===');
+    for (const rec of capturedRecords) {
+      const ok = await verifyRecord(rec, dir);
+      if (ok === false) verifyOk = false;
+    }
+    console.log(`\n${capturedRecords.length} 件検証 → ${verifyOk ? 'ALL PASS' : 'FAIL あり'}`);
+  }
 
+  if (created.length) {
     // clean up: delete the records this test created (jpg/media files + inbox envelope)
     console.log('\nテストレコードを削除…');
     for (const id of created) {
@@ -568,7 +579,8 @@ async function waitForNewSidecar(newDir, before, timeoutMs = 25000) {
 
   const okN = results.filter((r) => r.ok).length;
   console.log(`\n${okN}/${results.length} セル成功`);
-  console.log(okN === results.length ? 'E2E_CAPTURE_PASS' : 'E2E_CAPTURE_FAIL');
+  const allOk = okN === results.length && verifyOk;
+  console.log(allOk ? 'E2E_CAPTURE_PASS' : 'E2E_CAPTURE_FAIL');
   nativeHost.close();
-  process.exit(okN === results.length ? 0 : 1);
+  process.exit(allOk ? 0 : 1);
 })();
