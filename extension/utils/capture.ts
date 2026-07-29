@@ -1,13 +1,14 @@
 import { startBulkCapture } from './bulk-capture.ts';
 import { cropScreenshot } from './crop.ts';
 import { buildChoiceRow, checkDuplicate, pagePictureUrls } from './duplicate-guard.ts';
+import { SAVE_WATCHDOG_MS } from './deadline.ts';
 import { normalizeRect } from './extractor/dom.ts';
 import { getCaptureSite } from './extractor/index.ts';
 import type { CaptureSite, PostRect } from './extractor/types.ts';
 import { ICONS, makeIcon, makeSpinner } from './icons.ts';
 import { ensureTokens, motion, prefersReducedMotion, token } from './tokens.ts';
 import { createI18n } from './i18n.ts';
-import type { BackgroundToContentMessage, CaptureAndSendMessage, CropImageResponse, LogCaptureMessage } from './messages.ts';
+import type { BackgroundToContentMessage, CaptureAndSendMessage, CaptureAndSendResponse, CropImageResponse, LogCaptureMessage } from './messages.ts';
 
 export async function startCapture(): Promise<void> {
   // --- i18n ---
@@ -66,6 +67,10 @@ export async function startCapture(): Promise<void> {
   // retirement of the old capture is the app's later job — so the only side
   // that knows this save was a replacement is the one that asked.
   let replacing = false;
+  // The deadline on waiting for the save's result, and the latch that keeps the
+  // banner from being written twice when a late answer follows a timeout (#507).
+  let saveWatchdog: ReturnType<typeof setTimeout> | null = null;
+  let saveSettled = false;
 
   // === UI elements ===
 
@@ -78,6 +83,11 @@ export async function startCapture(): Promise<void> {
 
   // Top banner — themed pill: leading icon badge + label.
   const banner = document.createElement('div');
+  // Named for the test harnesses, which cannot read the localized label (the
+  // banner follows the browser locale) — the same role data-hologram-choice
+  // plays for the duplicate warning's answers. The state rides along as an
+  // attribute so a test can assert "this save ended" without matching wording.
+  banner.setAttribute('data-hologram-capture-banner', '');
   banner.style.cssText = [
     'position:fixed',
     'top:12px',
@@ -110,6 +120,7 @@ export async function startCapture(): Promise<void> {
 
   type BannerState = 'select' | 'busy' | 'ok' | 'partial' | 'fail' | 'ask';
   function setBanner(state: BannerState, text: string) {
+    banner.setAttribute('data-hologram-capture-state', state);
     bannerLabel.textContent = text;
     bannerBadge.replaceChildren();
     // Reset the state-tinted border (ok/partial/fail override it below).
@@ -253,6 +264,21 @@ export async function startCapture(): Promise<void> {
     }
   }
 
+  // Same relay, for a failure that has no element to blame — the save was sent
+  // and nothing came back. Worth its own line in capture.log: the background
+  // writes one for every stage IT reached, so a run with neither an ok nor a
+  // fail is exactly the case this records (#507).
+  function logSaveTimeout(url: string, error: string) {
+    try {
+      chrome.runtime.sendMessage({
+        type: 'logCapture',
+        entry: { stage: 'result', phase: 'fail', platform: site.platform, url, error },
+      } satisfies LogCaptureMessage);
+    } catch {
+      /* ignore — diagnostics are non-essential */
+    }
+  }
+
   // === Event handlers ===
 
   function onMouseMove(e: MouseEvent) {
@@ -353,15 +379,59 @@ export async function startCapture(): Promise<void> {
         banner.style.display = 'flex';
         setBanner('busy', MSG.saving);
 
-        chrome.runtime.sendMessage({
-          type: 'captureAndSend',
-          rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
-          postUrl,
-          platform: site.platform,
-          replaces,
-        } satisfies CaptureAndSendMessage);
+        // From here the banner is waiting on someone else, so from here it has
+        // a deadline (#507). Two ways out, and the save is over on whichever
+        // arrives first:
+        //
+        //   the channel closes without a reply — Chrome's own signal that the
+        //     service worker went away mid-save (MV3 stops it at any idle
+        //     moment). Fast, and the common case.
+        //   nothing at all, for SAVE_WATCHDOG_MS — the backstop, longer than
+        //     everything the background is itself allowed to spend, so a slow
+        //     save is never called a failure and a stuck one still ends.
+        saveWatchdog = setTimeout(() => {
+          saveWatchdog = null;
+          endSaveUnanswered(postUrl, `save timed out — no result from the background within ${SAVE_WATCHDOG_MS}ms`);
+        }, SAVE_WATCHDOG_MS);
+
+        chrome.runtime.sendMessage(
+          {
+            type: 'captureAndSend',
+            rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+            postUrl,
+            platform: site.platform,
+            replaces,
+          } satisfies CaptureAndSendMessage,
+          (res?: CaptureAndSendResponse) => {
+            // The RESULT arrives separately, as a notify push — this callback
+            // is read only for the absence of one. A reply of either kind means
+            // the background is alive and has said its piece (a failure sends
+            // notify too), so the banner is left to that handler.
+            if (res) return;
+            const error = `save timed out — ${chrome.runtime.lastError?.message || 'the background closed the channel without answering'}`;
+            endSaveUnanswered(postUrl, error);
+          },
+        );
       });
     });
+  }
+
+  // No result is coming. Say so, say what to do next, and leave a line behind:
+  // this is the failure that used to be silent in every direction at once —
+  // banner spinning, capture.log empty.
+  function endSaveUnanswered(postUrl: string, error: string) {
+    if (isCleanedUp || saveSettled) return;
+    saveSettled = true;
+    clearSaveWatchdog();
+    logSaveTimeout(postUrl, error);
+    setBanner('fail', saveFailureText('timeout'));
+    setTimeout(cleanup, 2800);
+  }
+
+  function clearSaveWatchdog() {
+    if (saveWatchdog === null) return;
+    clearTimeout(saveWatchdog);
+    saveWatchdog = null;
   }
 
   function onClick(e: MouseEvent) {
@@ -418,6 +488,7 @@ export async function startCapture(): Promise<void> {
   function cleanup() {
     if (isCleanedUp) return;
     isCleanedUp = true;
+    clearSaveWatchdog(); // Esc during a save: the banner is going, the timer must too
 
     document.removeEventListener('mousemove', onMouseMove, true);
     document.removeEventListener('click', onClick, true);
@@ -455,6 +526,12 @@ export async function startCapture(): Promise<void> {
 
     // Result notification
     if (msg.type === 'notify') {
+      // The answer came: stand the watchdog down. A notify arriving AFTER the
+      // deadline is ignored — the user has already been told this save failed,
+      // and flipping the banner back would be worse than being late.
+      if (saveSettled) return undefined;
+      saveSettled = true;
+      clearSaveWatchdog();
       // Saved but the post-info API returned nothing → amber "partial" state so
       // the user notices (rather than a plain green success). Held longer.
       const partial = msg.success && msg.metaOk === false;

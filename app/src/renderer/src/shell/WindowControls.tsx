@@ -83,9 +83,9 @@ export function WindowControls() {
   // The strip is opaque: it sits ABOVE the scrim, so without a background the scrim would
   // show through and .wc-dim would darken an already-darkened area — the strip came out
   // visibly deeper than the page around it. Opaque + one dim of its own reproduces exactly
-  // what the page gets. Which tone it carries is .wc-strip's job (globals.css): the surface
-  // under it is the tab band normally and the inspector's titlebar strip when the panel is
-  // docked, and the two are different colors.
+  // what the page gets. The tone is .wc-strip's job (globals.css) and is now unconditional:
+  // since #518 the tab band runs the full width right of the sidebar, so it is the only
+  // surface that ever ends up under these buttons.
   return createPortal(
     <div className="wc-strip app-no-drag fixed top-0 right-0 z-[13600] flex">
       <button type="button" aria-label="最小化" className={`${base} hover:bg-foreground/8 active:bg-foreground/16`} onClick={() => hologramIpc.windowControl('minimize')}>

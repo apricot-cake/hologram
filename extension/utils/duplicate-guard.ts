@@ -19,6 +19,7 @@
 // storage read that errors — each answers "no warning" and the save proceeds
 // exactly as it did before this feature existed. The cost of a missed warning
 // is one extra record; the cost of a blocked save is the post.
+import { DUPLICATE_ASK_TIMEOUT_MS } from './deadline.ts';
 import { collectImageUrls, getMediaIdentitySite } from './extractor/index.ts';
 import type { PostMediaElement } from './extractor/types.ts';
 import { token } from './tokens.ts';
@@ -89,14 +90,28 @@ export function pagePictureUrls(post: Element | PostMediaElement | null): string
 export async function checkDuplicate(platform: string, url: string | null, imageUrls: string[]): Promise<DuplicateHit | null> {
   if (!url || !chrome.runtime?.id) return null;
   if (!(await readSetting())) return null;
+  // Fails open on a DEADLINE too, not just on an error (#507). This question is
+  // asked after the picker has already let go of its click listeners, so a
+  // silent background used to freeze the whole capture on "click a post to
+  // save" — a banner still inviting a click that nothing was listening for.
+  // Answering "no warning" late is exactly what the rest of this module does
+  // for every other unanswerable case.
   const res = await new Promise<any>((resolve) => {
+    let settled = false;
+    const answer = (r: any) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(r);
+    };
+    const timer = setTimeout(() => answer(null), DUPLICATE_ASK_TIMEOUT_MS);
     try {
       chrome.runtime.sendMessage({ type: 'checkDuplicate', platform, url, imageUrls }, (r: any) => {
         void chrome.runtime.lastError; // an unreachable background is "no answer", not an error to surface
-        resolve(r);
+        answer(r);
       });
     } catch {
-      resolve(null);
+      answer(null);
     }
   });
   if (!res || !res.ok || !res.duplicate) return null;

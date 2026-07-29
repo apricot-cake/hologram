@@ -11,7 +11,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
-import { buildEnvelope, inboxNewDir, inboxSegmentsDir, writeInboxEvent } from '../native-host/inbox.mts';
+import { buildEnvelope, inboxNewDir, inboxSegmentsDir } from '../native-host/inbox.mts';
 import { normalizePostRecord } from '../native-host/post-record.mts';
 import { openDatabase } from '../app/src/main/lib-db';
 import { drainInbox } from '../app/src/main/lib-db-inbox';
@@ -35,11 +35,19 @@ afterAll(() => {
 });
 
 const BASE_EPOCH = 1_700_000_000_000;
-async function seedEvents(saveFolder: string, count: number, startAt = 0) {
+// Writes fixture envelopes straight into new/ instead of going through
+// writeInboxEvent's tmp+fsync+rename durability dance: that dance is already
+// covered end-to-end by inbox.test.ts, and doing it per event here (up to
+// ~4,500 times across this file) makes this suite's runtime dominated by
+// real disk fsyncs — the actual cause of #514's flaky timeouts under
+// concurrent-session disk load, not the compaction logic under test.
+function seedEvents(saveFolder: string, count: number, startAt = 0) {
+  fs.mkdirSync(inboxNewDir(saveFolder), { recursive: true });
   for (let i = startAt; i < startAt + count; i++) {
     const captureId = `${BASE_EPOCH + i}-aaaa`;
     const rec = normalizePostRecord({ captureId, url: `https://x.com/u/status/${i}` });
-    await writeInboxEvent(saveFolder, buildEnvelope(rec));
+    const envelope = buildEnvelope(rec);
+    fs.writeFileSync(path.join(inboxNewDir(saveFolder), `${envelope.eventId}.json`), JSON.stringify(envelope, null, 2));
   }
 }
 function looseCount(saveFolder: string): number {
@@ -159,7 +167,7 @@ describe('1,500 event: コンパクション後の loose 上限と、空 DB へ�
     expect(sample.url).toBe('https://x.com/u/status/0');
 
     freshHandle.sqlite.close();
-  });
+  }, 20000);
 
   test('replay 済みの DB へ再度 drain しても増殖しない（segment receipt を見て中身を開かない）', () => {
     const handle = openDatabase(path.join(mkTempDir('hologram-inbox-1500-idempotent-db-'), 'test.db'));
@@ -172,5 +180,5 @@ describe('1,500 event: コンパクション後の loose 上限と、空 DB へ�
     const dbCount = (handle.sqlite.prepare('SELECT COUNT(*) AS n FROM posts').get() as any).n;
     expect(dbCount).toBe(1500);
     handle.sqlite.close();
-  });
+  }, 20000);
 });

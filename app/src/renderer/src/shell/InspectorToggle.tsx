@@ -6,16 +6,16 @@
 // it out of the toolbar also preserves the IA split this redesign is built on — the
 // toolbar holds PREDICATES (search / filter / display), and opening a panel is not one.
 //
-// Portaled and pinned to the window's top-right like WindowControls, NOT laid out inside
-// #tabBar: the inspector is a flex sibling of the whole content column, so the tab band
-// ends at the panel's left edge rather than at the window edge — a toggle placed in that
-// band would drift left by 320px whenever the panel it controls is open.
+// A plain child of #tabBar, laid out just left of the corner the window buttons reserve.
+// It used to be portaled and pinned to the window instead, because the band then ended at
+// the inspector's left edge and an in-band toggle would have drifted 320px whenever the
+// panel it controls was open; since #518 the band reaches the window edge, so the flow
+// position IS the corner and the portal has nothing left to solve.
 //
-// It differs from WindowControls in one way, deliberately: z-index below the modal scrim,
+// It differs from WindowControls in one way, deliberately: it stays below the modal scrim,
 // so a dialog covers it. There is nothing to toggle while a dialog is up, whereas the
 // window's min/max/close must stay reachable and sit above the scrim for that reason.
 import { useSyncExternalStore } from 'react';
-import { createPortal } from 'react-dom';
 import { PanelRight } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { isOpen, subscribe, toggle } from '../services/inspector-panel.ts';
@@ -24,11 +24,10 @@ import { t } from '../_shared/i18n.ts';
 export function InspectorToggle() {
   const open = useSyncExternalStore(subscribe, isOpen);
   const label = t('toggleInspector');
-  return createPortal(
-    // z-[60] clears the tab band's own stacking context (#tabBar is sticky at z-50) while
-    // staying far below the scrim (13000+). Offset by the window buttons' width so it sits
-    // just left of them, matching the sidebar trigger's inset from the opposite corner.
-    <div className="app-no-drag fixed top-0 right-[var(--window-controls-w,138px)] z-[60] grid h-8 place-items-center px-2">
+  return (
+    // px-2 matches the sidebar trigger's inset from the opposite corner. The band's own
+    // right padding (--window-controls-w) is what keeps this clear of the window buttons.
+    <div className="app-no-drag grid h-8 shrink-0 place-items-center px-2">
       <Tooltip>
         <TooltipTrigger
           render={
@@ -41,7 +40,6 @@ export function InspectorToggle() {
           {label}
         </TooltipContent>
       </Tooltip>
-    </div>,
-    document.body,
+    </div>
   );
 }

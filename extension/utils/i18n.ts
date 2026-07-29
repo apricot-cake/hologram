@@ -50,6 +50,10 @@ export function createI18n(): Promise<HologramI18nApi> {
       bannerPostUnavailable: '投稿を取得できないため、何も保存できませんでした（削除・非公開・年齢制限など）',
       bannerPostUnavailableProtected: '鍵付きアカウントのため、何も保存できませんでした',
       bannerPostUnavailableAgeRestricted: '年齢制限付き投稿のため、何も保存できませんでした（X が投稿情報を返しません）',
+      // 応答が返らないまま上限に達した（#507）。原因の多くは一過性（ネットワークの
+      // 詰まり・サービスワーカーの停止）なので、最も安く効く再試行を先頭に置く。
+      // 診断ページへの誘導は「繰り返す場合」の第2手＝bannerFailedUnknown が持つ。
+      bannerTimedOut: '保存が終わらないため中止しました。もう一度お試しください（繰り返す場合は Chrome を再起動）',
       bannerFailedUnknown: '保存に失敗しました。拡張機能の設定から診断ページを確認してください',
 
       // drag.js: drop-zone hint (the toasts reuse the banner* keys above)
@@ -120,6 +124,7 @@ export function createI18n(): Promise<HologramI18nApi> {
       bannerPostUnavailable: 'Nothing was saved: the post could not be fetched (deleted, private, age-restricted, …)',
       bannerPostUnavailableProtected: 'Nothing was saved: this account limits who can view its posts',
       bannerPostUnavailableAgeRestricted: 'Nothing was saved: age-restricted post (X serves no post info for it)',
+      bannerTimedOut: 'Save timed out and was stopped. Try again (restart Chrome if it keeps happening).',
       bannerFailedUnknown: 'Save failed. Open the diagnostics page from the extension settings.',
 
       // drag.js: drop-zone hint (the toasts reuse the banner* keys above)
@@ -184,7 +189,8 @@ export function createI18n(): Promise<HologramI18nApi> {
     // are our own plumbing breaking, which the post has no say in (#505).
     const postUnavailableText = (reason) => getMessage(reason === 'protected' ? 'bannerPostUnavailableProtected' : reason === 'ageRestricted' ? 'bannerPostUnavailableAgeRestricted' : 'bannerPostUnavailable');
 
-    const saveFailureText = (kind, reason?) => (kind === 'post-unavailable' ? postUnavailableText(reason) : getMessage(kind === 'host-missing' ? 'bannerHostMissing' : kind === 'host-unavailable' ? 'bannerHostUnavailable' : kind === 'origin-rejected' ? 'bannerOriginRejected' : 'bannerFailedUnknown'));
+    const saveFailureText = (kind, reason?) =>
+      kind === 'post-unavailable' ? postUnavailableText(reason) : getMessage(kind === 'host-missing' ? 'bannerHostMissing' : kind === 'host-unavailable' ? 'bannerHostUnavailable' : kind === 'origin-rejected' ? 'bannerOriginRejected' : kind === 'timeout' ? 'bannerTimedOut' : 'bannerFailedUnknown');
 
     return { lang: resolved, resolved, getMessage, partialSaveText, saveFailureText };
   })();
