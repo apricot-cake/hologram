@@ -3,8 +3,8 @@
 // tsc over whole projects rather than asserting anything, so it stays a plain
 // script — `npm run check` is what runs it alongside the tests.
 //
-// Five projects (all no-emit) so type rot can't accumulate silently between
-// sessions. The Vitest suites (scripts/*.test.ts) are deliberately NOT a sixth:
+// Six projects (all no-emit) so type rot can't accumulate silently between
+// sessions. The Vitest suites (scripts/*.test.ts) are deliberately NOT a seventh:
 // a single suite imports across the renderer, main-process, native-host and
 // extension layers, and those are separate projects precisely because their
 // compiler settings conflict (DOM vs Node globals, bundler vs nodenext). They
@@ -29,6 +29,9 @@
 //      Electron smoke + capture/verify CLIs), stage 2/3; a FIFTH standalone-Node
 //      runtime, .cts, no build step — the runtime the original TS-scope
 //      declaration never named (2026-07-09 audit).
+//   6. e2e/tsconfig.json          — the Playwright E2E layer (#14): the specs and
+//      their launch harness, compiled by Playwright's own loader. A SIXTH
+//      runtime, .ts with ESM import syntax, no build step.
 
 const { spawnSync } = require('node:child_process');
 const fs = require('node:fs');
@@ -63,6 +66,7 @@ const PROJECTS = [
   { p: path.join(__dirname, '..', 'native-host', 'tsconfig.json'), label: 'native-host', tsc: appTsc, cwd: appDir },
   { p: path.join(extDir, 'tsconfig.json'), label: 'extension', tsc: extTsc, prepare: extWxt, cwd: extDir },
   { p: path.join(__dirname, 'tsconfig.json'), label: 'scripts', tsc: appTsc, cwd: appDir },
+  { p: path.join(__dirname, '..', 'e2e', 'tsconfig.json'), label: 'e2e (Playwright)', tsc: appTsc, cwd: appDir },
 ];
 
 let failed = 0;
@@ -76,4 +80,4 @@ for (const project of PROJECTS) {
   }
 }
 if (failed) process.exit(1);
-console.log('PASS typecheck: renderer + main process + native-host + extension + scripts type-check clean');
+console.log('PASS typecheck: renderer + main process + native-host + extension + scripts + e2e type-check clean');

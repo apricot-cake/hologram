@@ -1,9 +1,10 @@
 name: App tests
 
-# Stage 2 (#15): the two test layers ci.yml cannot host, because both need Windows
-# and a real desktop session.
+# Stage 2 (#15): the test layers ci.yml cannot host, because they need Windows and
+# a real desktop session.
 #   - scripts/test-app-*.cts — each one boots a real Electron main process and
 #     drives the renderer that comes up
+#   - e2e/flows — the same, but with a VISIBLE window and real pointer input (#14)
 #   - the extension e2e — a real Chromium with the built extension loaded, talking
 #     to a throwaway Native Messaging host whose registration is an HKCU write
 #
@@ -65,6 +66,14 @@ jobs:
         run: npx playwright install chromium
       - name: Electron app harnesses
         run: node scripts/run-app-tests.cts
+      # The Playwright layer (#14). Only the `flow` project: the `visual` one
+      # compares committed baselines taken on the development machine, and a
+      # runner's fonts / GPU-less rendering / display settings do not reproduce
+      # them (#14's 2026-07-29 decision). Running it here would report differences
+      # that say nothing about the change under test.
+      - name: Electron E2E (user flows)
+        if: ${{ !cancelled() }}
+        run: npx playwright test --project=flow
       # Each later layer runs even after an earlier one goes red (`!cancelled()`
       # rather than `success()`): a nightly job that stops at the first failure
       # costs a whole day to learn what else was broken. The scripts are invoked
