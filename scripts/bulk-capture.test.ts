@@ -45,6 +45,8 @@ const { window } = dom;
 
 const sent: any[] = [];
 const noMediaUrls = new Set<string>();
+// 投稿そのものが取得できなかった＝ホストが何も書かずに断った答え（#492）
+const unavailableUrls = new Set<string>();
 // p1 は最初の収集の時点ですでにライブラリにある＝captureAndSend に一度も届かずに飛ばされ
 // なければならない（#54 経路の存在理由＝踏破済みの土地について X へ一切問い合わせない）
 const savedAnswer: Record<string, string | null> = { 'https://x.com/alice/status/111': '1780000000000-aa' };
@@ -104,7 +106,8 @@ beforeAll(async () => {
           // 本物の background は呼び出し元へ直接答える（notify は押さない）。フィクスチャが
           // 画像なしと印した投稿は background.ts のその場合の答え方を模す＝画像なしでも
           // 保存はされる（ホストが sidecar を書き、#365 まで表示できない印を付ける）。
-          if (noMediaUrls.has(msg.postUrl)) cb?.({ ok: true, file: 'x.json', deferred: true });
+          if (unavailableUrls.has(msg.postUrl)) cb?.({ ok: false, errorKind: 'post-unavailable', error: 'Post unavailable: nothing was obtained for it' });
+          else if (noMediaUrls.has(msg.postUrl)) cb?.({ ok: true, file: 'x.json', deferred: true });
           else cb?.({ ok: true, file: 'x.jpg' });
         }
       },
@@ -191,6 +194,19 @@ test('画像の無い投稿も飛ばさずに保存へ送る（#365）', async (
   expect(savePostFor('https://x.com/erin/status/555')).toBeTruthy();
 });
 
+// #492: 取得できなかった投稿は「保存済み」にも「不具合」にもしない。ライブラリに何も
+// 入っていないのだから次の走行でもう一度出会えなければならず（バッジが点かないのは
+// ホスト側の責務）、かつ削除済みの投稿が毎回「失敗」と出続けると、直すもののある故障と
+// 見分けが付かなくなる。
+test('取得できなかった投稿は「失敗」と別枠で数える（#492）', async () => {
+  unavailableUrls.add('https://x.com/frank/status/666');
+  addPost('p6', 'frank', '666', 300);
+  await settle(1400);
+
+  expect(savePostFor('https://x.com/frank/status/666')).toBeTruthy();
+  expect(bannerText().includes('保存') || bannerText().toLowerCase().includes('saved')).toBe(true);
+});
+
 test('常駐オーバーレイの操作部を隠す規則を1つも入れない', () => {
   const hidingRules = Array.from(window.document.querySelectorAll('style')).filter((s) => (s.textContent || '').includes('data-hologram-overlay'));
   expect(hidingRules).toHaveLength(0);
@@ -204,5 +220,8 @@ test('停止すると、生のカウンタではなく要約が出る', async ()
   expect(bannerText().includes('中断') || bannerText().toLowerCase().includes('stop')).toBe(true);
   // 画像なしは「保存済み」として数える（飛ばした扱いにしない）
   expect(bannerText().includes('画像なし') || bannerText().toLowerCase().includes('image-less')).toBe(true);
+  // 取得できなかった1件は要約に出るが、「失敗」ではない（#492）
+  expect(bannerText().includes('取得できず') || bannerText().toLowerCase().includes('unavailable')).toBe(true);
+  expect(bannerText().includes('失敗') || bannerText().toLowerCase().includes('failed')).toBe(false);
   expect((window as any).__snsPostSaveActive).toBeFalsy();
 });

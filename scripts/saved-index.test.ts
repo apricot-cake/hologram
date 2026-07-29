@@ -39,6 +39,12 @@ beforeAll(() => {
   writePost(stmts, resolveTagId, { ...base, captureId: 'cap-c', url: 'https://x.com/erin/status/555', image: 'cap-c.jpg', media: [] });
   // ゴミ箱の中身は「ライブラリに在る」ではない。
   writePost(stmts, resolveTagId, { ...base, captureId: 'cap-d', url: 'https://x.com/frank/status/666', image: 'cap-d.jpg', media: [{ url: 'https://pbs.twimg.com/media/CCC?name=orig', file: 'cap-d.jpg' }], trashedAt: '2026-01-02T00:00:00Z' });
+  // 殻レコード（#492）＝投稿が削除・非公開などで何も取れなかった保存。URL から復元できる
+  // screenName と日時しか持たない。ブリッジはもう書かないが、直る前に書かれたものが
+  // ライブラリに残っている。
+  writePost(stmts, resolveTagId, { ...base, captureId: 'cap-e', url: 'https://x.com/gina/status/777', screenName: 'gina', date: '2026-06-23T11:15:10.728Z', image: null, media: [] });
+  // テキストのみ投稿（#365）は殻ではない＝本文がライブラリに在る。
+  writePost(stmts, resolveTagId, { ...base, captureId: 'cap-f', url: 'https://x.com/hana/status/888', text: '本文だけの投稿', image: null, media: [] });
 
   index = buildSavedIndex(handle.sqlite, () => '2026-01-03T00:00:00Z');
 });
@@ -55,7 +61,21 @@ describe('スナップショットの形', () => {
   });
 
   test('鍵は postKey＝URL の表記ゆれを畳んだもの', () => {
-    expect(Object.keys(index.entries).sort()).toEqual([postKeyOf(MULTI), postKeyOf('https://x.com/erin/status/555')].sort());
+    expect(Object.keys(index.entries).sort()).toEqual([postKeyOf(MULTI), postKeyOf('https://x.com/erin/status/555'), postKeyOf('https://x.com/hana/status/888')].sort());
+  });
+});
+
+// #492: バッジは「取り直す必要が無い」の意味で読まれる＝中身を1つも持たない投稿に点くと、
+// 以後の取込がそれを飛ばし、取り直す機会が永久に失われる。判定規則は
+// native-host/post-record.mts の recordHoldsContent と同じもの（あちらはレコード、
+// ここは SQL）で、ずれると壊れるのはこの一致。
+describe('中身を持たない投稿は「保存済み」と答えない', () => {
+  test('殻レコードは載らない', () => {
+    expect(index.entries[postKeyOf('https://x.com/gina/status/777') as string]).toBeUndefined();
+  });
+
+  test('テキストのみ投稿は載る（本文がライブラリに在る＝殻ではない）', () => {
+    expect(index.entries[postKeyOf('https://x.com/hana/status/888') as string]).toEqual({ id: 'cap-f', media: [], owners: [] });
   });
 });
 
