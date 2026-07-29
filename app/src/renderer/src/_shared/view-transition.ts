@@ -22,6 +22,27 @@ import { flushSync } from 'react-dom';
 /** The elements to capture individually, each with the name it must carry. */
 export type ViewTransitionCapture = Map<HTMLElement, string>;
 
+// How many transitions are in flight. Read by anything that must stop animating what the
+// transition is already animating — the post grid's card entrance (.anim-in) would otherwise
+// fade cards in from below AT THE SAME TIME as the transition slides them to their new
+// positions, and the two read as one unsettled motion rather than two (#252).
+//
+// A COUNT, not a flag: a second transition can start while the first is still settling
+// (rapid density flips), and a plain boolean would be cleared by the first one finishing
+// while the second is still running.
+let running = 0;
+const enter = () => {
+  running++;
+};
+const leave = () => {
+  running = Math.max(0, running - 1);
+};
+
+/** True while a View Transition started through runViewTransition is in flight. */
+export function isViewTransitionRunning(): boolean {
+  return running > 0;
+}
+
 const prefersReducedMotion = () => !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 
 /** Whether a transition would actually play right now (API present, motion allowed). */
@@ -78,20 +99,25 @@ export function runViewTransition(update: () => void, capture?: () => ViewTransi
     return;
   }
   if (named) for (const [el, name] of named) el.style.viewTransitionName = name;
-  const unname = () => {
+  const settle = () => {
     if (named) for (const el of named.keys()) el.style.removeProperty('view-transition-name');
+    leave();
   };
+  // Before starting, so the update callback — which runs inside the transition and is where
+  // the grid rebuilds — already sees the flag.
+  enter();
   let transition: ViewTransition;
   try {
     // Not called synchronously: the browser captures the old state first, then runs this.
     transition = document.startViewTransition(() => flushSync(update));
   } catch (_e) {
-    unname();
+    settle();
     update();
     return;
   }
   // `finished` settles for a skipped transition too (a second one starting, the window
-  // hiding) and rejects when the update callback threw — every path must still un-name, or
-  // the leftovers become the duplicate that kills the NEXT transition.
-  transition.finished.then(unname, unname);
+  // hiding) and rejects when the update callback threw — every path must still un-name and
+  // release the flag, or the leftovers become the duplicate that kills the NEXT transition
+  // and the grid never animates an entrance again.
+  transition.finished.then(settle, settle);
 }
