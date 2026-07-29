@@ -107,6 +107,21 @@ Start-ScheduledTask -TaskName 'HologramLaunch'
 | `save/begin` があって、その `saveId` の終わりの行が**無い** | **保存が始まって終わらなかった＝不具合。** どこまで進んだかは終わりの行の `reached`、それも無ければ `save/begin` の時刻が最後の手がかり |
 | `phase` が `cancel` の行 | **ユーザーがやめた**（Esc・右クリック・2回目の起動でのトグル・一括取込の停止ボタン）。沈黙ではない |
 
+⚠️ **1行目は Alt+S の面にしか当てはまらない。** 下の「面ごとに何が出ないか」を先に見ること＝**`activate` が無いことは異常ではない面がある**ので、`activate` を探して見つからないことを手がかりにしてはいけない。**判定に使えるのは `save/begin` の有無**で、これは全4面で出る。
+
+#### 面ごとに何が出ないか
+
+`activate` を書くのは**拡張のアイコンとショートカットだけ**（`chrome.action.onClicked` / `chrome.commands.onCommand`）。画像の角のホバー保存ボタンとドロップゾーンは**常駐スクリプト**で、ユーザーの操作が拡張の起動を経由しない＝**この2面は成功しても失敗しても `activate` を書かない。**
+
+| 面（`via`） | 出る | 出ない |
+| --- | --- | --- |
+| `capture`（Alt+S） | `activate` → `select` / `permalink` / `duplicate` → `save` → `capture` / `crop` / `metadata` → `bridge`、返らなければ `result` | — |
+| `hover-save`（画像の角のボタン） | `save` → `metadata` / `image` → `bridge`、返らなければ `result` | **`activate`・`select`・`permalink`**（押した絵がそのまま対象なので選ぶ段が無い） |
+| `drop-zone`（ドラッグ） | `hover-save` と同じ＋`duplicate` | **`activate`・`select`・`permalink`** |
+| `bulk-intake`（一括取込） | `activate`（起動時1回）→ `bulk/begin` → 1件ごとに `save` → `metadata` → `bridge`、→ `bulk/ok` または `bulk/cancel` | `select`・`permalink`・`crop`・`capture`（画面を撮らない） |
+
+**この差が #507 の調査を1度外させた**＝ユーザーが実際に固まりを踏んだのは `hover-save` の面で、そこは `activate` も出さないので `capture.log` が完全に無音だった。最初の読みが Alt+S を疑ったのはそのため。今は全4面が `save/begin` と `result` を書くので、無音の面は無い。
+
 #### `stage`＝保存のどの段か
 
 保存が通る順。経路（クリック保存・一括取込・ドラッグ保存）によって通らない段がある。
