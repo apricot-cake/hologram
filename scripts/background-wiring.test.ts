@@ -438,6 +438,63 @@ describe('queryBridge — checkSaved の常駐 Port 配線', () => {
   });
 });
 
+// #519: 保存の一生を capture.log に残す。ここで見るのはサービスワーカー側の3点＝
+// ①保存が**始まったことを名乗る**（これが無いと「起動しただけ」と区別できない）
+// ②失敗の行が saveId ＋ captureId ＋ 到達した段を運ぶ（時刻の近さで結ばずに済む）
+// ③段を通過するたびページへ報告する（ワーカーごと消えた時にページ側が名乗れる）。
+// ページ側の受け取りと cancel の行は scripts/save-log.test.ts。
+describe('保存の記録（#519）', () => {
+  let env: ReturnType<typeof setupBackground>;
+
+  beforeEach(() => {
+    env = setupBackground();
+  });
+
+  // 上限に達する前・プロセスごと消えた場合にも残る唯一の行なので、待つ脚より
+  // 先に出ていることが要件。ホストがまだ何も答えていない時点で見る。
+  test('保存を受け付けた時点で「開始」の行が出る（どの待ちより先）', async () => {
+    const createdPorts = env.connectAsControllablePort();
+
+    env.dispatch({ type: 'savePost', platform: 'misskey', postUrl: UNPARSEABLE_POST_URL }, MISSKEY_SENDER);
+
+    const logPort = await portThatSent(createdPorts, 'log');
+    expect(logPort.sent[0].entry).toMatchObject({ stage: 'save', phase: 'begin', type: 'savePost', saveId: 'trace-1', url: UNPARSEABLE_POST_URL, captureId: expect.any(String) });
+    // ログ用の接続は保存用とは別＝1保存につきホストのプロセスが1つ増える。
+    // 「開始」を上限より先にディスクへ置くための代償で、意図した設計。
+    expect(logPortCount(createdPorts)).toBe(1);
+  });
+
+  test('失敗の行は同じ保存の行として結べる（saveId・captureId・到達した段）', async () => {
+    const createdPorts = env.connectAsControllablePort();
+
+    const { responseP } = env.dispatch({ type: 'savePost', platform: 'misskey', postUrl: UNPARSEABLE_POST_URL }, MISSKEY_SENDER);
+    (await portThatSent(createdPorts, 'savePost')).emitDisconnect('Native host has exited.');
+    await responseP;
+
+    const failLine = [...env.localStore.values()].find((e: any) => e.phase === 'fail');
+    expect(failLine, `stashed: ${JSON.stringify([...env.localStore.values()])}`).toMatchObject({
+      stage: 'bridge',
+      phase: 'fail',
+      saveId: 'trace-1',
+      captureId: expect.any(String),
+      // メタデータは通過してブリッジで落ちた＝どこまで進んだかが行に載る。
+      reached: ['metadata'],
+    });
+  });
+
+  test('段を通過するたびページへ報告する（ワーカーが消えてもページが名乗れるように）', async () => {
+    const createdPorts = env.connectAsControllablePort();
+
+    const { responseP } = env.dispatch({ type: 'savePost', platform: 'misskey', postUrl: UNPARSEABLE_POST_URL }, MISSKEY_SENDER);
+    (await portThatSent(createdPorts, 'savePost')).emitMessage({ ok: true, file: 'saved-file-id' });
+    await responseP;
+
+    const progress = env.tabsSent.filter((s) => s.message.type === 'saveProgress').map((s) => s.message);
+    expect(progress.map((m) => m.reached)).toEqual([['metadata'], ['metadata', 'bridge']]);
+    expect(progress.every((m) => m.saveId === 'trace-1')).toBe(true);
+  });
+});
+
 describe('診断ログのフォールバック（stashLogLocally のリングバッファと間引き）', () => {
   let env: ReturnType<typeof setupBackground>;
 

@@ -413,6 +413,14 @@ function scheduleSavedIndexWrite(handle: { sqlite: any }) {
 function drainInboxLogged(folder: string, sqlite: any) {
   try {
     const report = drainInbox(folder, sqlite);
+    // Names the captureIds that actually reached the library (#519). Only
+    // skips and failures were logged before, so "the save succeeded but the
+    // post is not in the library" had no record on this side at all — and the
+    // host's own `bridge/ok` line in capture.log stops at "written to disk".
+    // The captureId is what joins the two logs; a save's whole path is
+    // therefore readable across them, which is why this stays in main.log
+    // rather than being appended to a file another process owns.
+    if (report.applied.length) log.info(`inbox applied ${report.applied.length}: ${report.applied.join(' ')}`);
     for (const s of report.skipped) log.warn(`inbox drain skipped ${s.file}: ${s.reason}${s.detail ? ` (${s.detail})` : ''}`);
     if (report.segmentsReplayed.length) log.info(`inbox replayed ${report.segmentsReplayed.length} segment(s) with no DB receipt yet (DB-loss recovery path)`);
     scheduleInboxCompaction(folder, sqlite);

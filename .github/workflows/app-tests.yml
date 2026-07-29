@@ -88,6 +88,9 @@ jobs:
       - name: Extension save-timeout e2e (offline fixture)
         if: ${{ !cancelled() }}
         run: node scripts/e2e-extension-timeout.cts
+      - name: Extension save-log e2e (offline fixture)
+        if: ${{ !cancelled() }}
+        run: node scripts/e2e-extension-save-log.cts
       - name: Overlay visual regression
         if: ${{ !cancelled() }}
         run: node scripts/e2e-overlay-visual.cts
