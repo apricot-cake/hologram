@@ -388,7 +388,8 @@ describe('保存ボタン', () => {
     const b = saveButtons()[0];
 
     expect(b.tagName).toBe('BUTTON');
-    expect(b.style.width).toBe('28px');
+    // 4つの面（マーク・保存・進行中・再試行）は同じ寸法＝押した瞬間に角が縮まない。
+    expect(b.style.width).toBe('24px');
     expect(b.style.background).toBe('var(--hologram-control-surface)');
     expect(b.getAttribute('aria-label')).toBe('Save image');
     expect(b.textContent).toBe('');
