@@ -16,6 +16,15 @@ import { openDatabase } from '../app/src/main/lib-db';
 import { createDbWriter } from '../app/src/main/lib-db-write';
 import { makeTagResolver, preparePostStmts, writePost } from '../app/src/main/lib-db-record-writer';
 
+// importCompleteZipToDb は PATH を取る（#485 — main が yauzl で開く）。JSZip は fixture を
+// 組む側だけで使う。
+let zipSeq = 0;
+async function zipToFile(zip: JSZip, near: string) {
+  const p = path.join(path.dirname(near), `fixture-${zipSeq++}.zip`);
+  fs.writeFileSync(p, Buffer.from(await zip.generateAsync({ type: 'nodebuffer' })));
+  return p;
+}
+
 const roots: string[] = [];
 const handles: any[] = [];
 // ライブラリの「現在のフォルダ層」は DB 側にある（#302 以降ディスクに folders.json は無い）。
@@ -109,7 +118,7 @@ describe('完全ZIPの取り込み: folders.json の合流', () => {
     zip.file('library/capY.jpg', Buffer.from('JPEGY'));
     // ZIP 側は kind を持たない素のフォルダ＝ストア側の合流が static を補う
     zip.file('library/folders.json', JSON.stringify({ folders: [{ id: 'f-imp', name: 'Imported', items: ['y'] }] }));
-    await importCompleteZipToDb(sqlite, JSZip, dest, await zip.generateAsync({ type: 'nodebuffer' }));
+    await importCompleteZipToDb(sqlite, await zipToFile(zip, dest), dest);
 
     col = createDbWriter(sqlite).getFolders();
   });
@@ -151,7 +160,7 @@ describe('完全ZIPの取り込み: 同じ id での名前ローカル優先・i
         activeId: 'c2',
       }),
     );
-    await importCompleteZipToDb(sqlite, JSZip, dest, await zip.generateAsync({ type: 'nodebuffer' }));
+    await importCompleteZipToDb(sqlite, await zipToFile(zip, dest), dest);
 
     col = createDbWriter(sqlite).getFolders();
   });

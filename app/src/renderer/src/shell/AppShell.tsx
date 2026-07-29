@@ -249,8 +249,6 @@ export function AppShell() {
                 <div id="emptyState" className="empty-state" hidden>
                   <EmptyState />
                 </div>
-                {/* Hidden ZIP-import input (empty-state CTA + settings trigger it). */}
-                <input type="file" id="importZipInput" className="file-input-hidden" accept=".zip" />
               </div>
             </div>
             {/* Image-tab detail view (Eagle 風 fit-to-screen); body.image-tab-active swaps it in. */}

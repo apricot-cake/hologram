@@ -1,8 +1,8 @@
 'use strict';
 
 // Complete library archive: build a directly-re-importable ZIP snapshot of the
-// library, and restore one. Kept dependency-free (fs/path + a JSZip ctor passed
-// in) so it can be unit-tested without spinning up Electron.
+// library, and restore one. Kept free of Electron (fs/path + yazl/yauzl only) so
+// it can be unit-tested without spinning up a browser window.
 //
 // ZIP layout:
 //   library/<captureId>.jpg            screenshot (disk-truth, copied as-is)
@@ -32,7 +32,10 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import type { Readable } from 'node:stream';
 import { Transform } from 'node:stream';
+import { openPromise as openZipForRead } from 'yauzl';
+import type { Entry as ZipEntry, ZipFile as ZipReader } from 'yauzl';
 import { ZipFile } from 'yazl';
 import type Database from 'better-sqlite3';
 import type { RawPayloadShape } from '../../../native-host/raw-payload.mts';
@@ -74,8 +77,12 @@ const MAX_ZIP_TOTAL_BYTES = 64 * 1024 * 1024 * 1024; // 64 GiB total uncompresse
 // generic guard ever triggers.
 const MAX_ZIP_ORG_BYTES = 16 * 1024 * 1024; // 16 MiB
 class ZipLimitError extends Error {}
-function entryUncompressedSize(entry) {
-  const n = entry && entry._data ? entry._data.uncompressedSize : undefined;
+// yauzl reads uncompressedSize straight off the central directory (widened from
+// the ZIP64 extra field when present), so this is the declared size for archives
+// of any size. A malformed/absent value counts as 0 — the streamed caps below are
+// what actually bound an entry that lies here.
+function entryUncompressedSize(entry: ZipEntry) {
+  const n = entry?.uncompressedSize;
   return Number.isFinite(n) && n >= 0 ? n : 0;
 }
 
@@ -83,7 +90,17 @@ function entryUncompressedSize(entry) {
 // A malicious ZIP can carry entry names with traversal sequences (..) or
 // BACKSLASH separators (a path separator on Windows, NOT caught by a
 // forward-slash-only check) or absolute / drive-letter forms, landing writes
-// OUTSIDE the save folder. Accept a library entry name only if it is a single
+// OUTSIDE the save folder.
+//
+// yauzl runs its own validateFileName over every entry name (backslashes are
+// folded to '/' first, then absolute paths, drive letters and '..' segments are
+// rejected) and aborts the WHOLE archive rather than yielding such an entry — so
+// with the reader below an archive carrying any of those three shapes fails
+// closed, before a single byte is written. That is the outer layer, not a
+// replacement for the rules here: yauzl happily yields nested paths like
+// 'library/sub/dir/x.jpg', which a real export never emits.
+//
+// Accept a library entry name only if it is a single
 // path segment — its own basename, with no separator of either kind, not
 // '.'/'..', not absolute. Legitimate exports only ever emit single-segment
 // filenames (captureIds + `<id>-media-N.<ext>`), so this rejects nothing real.
@@ -108,6 +125,11 @@ function isSafeTrashPath(name) {
   return isSafeEntryName(name);
 }
 // Belt-and-suspenders: the resolved destination must stay inside destFolder.
+// Deliberately unreachable with the current reader — every name that could escape
+// is already refused by yauzl (layer 1) or by the single-segment rules (layer 2),
+// so no regression test can make this line fire. It stays because it is the last
+// check before a write, and it is the only one that would still hold if the reader
+// ever stopped validating names for us. Same for isSafeTrashPath's call site.
 function isWithin(parentDir, target) {
   const p = path.resolve(parentDir);
   const t = path.resolve(target);
@@ -274,70 +296,18 @@ async function collectFiles(srcFolder, nameFilter?) {
   return out;
 }
 
-async function buildCompleteZip(JSZip, srcFolder, nowIso) {
-  const zip = new JSZip();
-  const lib = zip.folder('library');
-  let fileCount = 0;
-  for (const name of await collectFiles(srcFolder)) {
-    try {
-      lib.file(name, await fs.promises.readFile(path.join(srcFolder, name)));
-      fileCount++;
-    } catch {
-      /* skip unreadable */
-    }
-  }
-  // Shared avatar store rides along as library/avatars/<name> so a restored
-  // library keeps author icons (new-style sidecars point at 'avatars/…').
-  for (const name of await collectFiles(path.join(srcFolder, 'avatars'))) {
-    try {
-      lib.file(`avatars/${name}`, await fs.promises.readFile(path.join(srcFolder, 'avatars', name)));
-      fileCount++;
-    } catch {
-      /* skip unreadable */
-    }
-  }
-  zip.file(
-    'hologram-export.json',
-    JSON.stringify(
-      {
-        app: 'Hologram',
-        kind: 'complete',
-        version: 1,
-        exportedAt: nowIso || new Date().toISOString(),
-        fileCount,
-      },
-      null,
-      2,
-    ),
-  );
-  return { buffer: await zip.generateAsync({ type: 'nodebuffer' }), fileCount };
-}
-
 // Images-only ZIP: just the media files (jpg/png/webp/gif + video), flat at the
 // ZIP root — no sidecars, no organization JSONs, NOT re-importable as a library.
 const IMAGE_EXT = /\.(jpe?g|png|webp|gif|avif|bmp|mp4|webm|mov|m4v)$/i;
-async function buildImagesZip(JSZip, srcFolder) {
-  const zip = new JSZip();
-  let fileCount = 0;
-  for (const name of await collectFiles(srcFolder, (n) => IMAGE_EXT.test(n))) {
-    try {
-      zip.file(name, await fs.promises.readFile(path.join(srcFolder, name)));
-      fileCount++;
-    } catch {
-      /* skip unreadable */
-    }
-  }
-  return { buffer: await zip.generateAsync({ type: 'nodebuffer' }), fileCount };
-}
 
 // --- Streaming ZIP writers (yazl) ----------------------------------------------
 // Stream a ZIP straight to disk with bounded memory AND ZIP64 (large-archive)
 // support. yazl reads each addFile source lazily as it writes that entry, so a
-// multi-GB library never sits in memory (peak ≈ one entry). This replaces the
-// buildCompleteZip/buildImagesZip path above, which materialised the whole archive
-// as one Buffer — that OOM'd past a few GB (measured 11.5 GiB peak on a ~7 GB
-// library) AND, worse, JSZip cannot emit ZIP64, so any >4 GiB archive got a
-// truncated central-directory offset = a corrupt, unopenable ZIP. Media/sidecars
+// multi-GB library never sits in memory (peak ≈ one entry). This replaced a JSZip
+// builder that materialised the whole archive as one Buffer — that OOM'd past a
+// few GB (measured 11.5 GiB peak on a ~7 GB library) AND, worse, JSZip cannot
+// emit ZIP64, so any >4 GiB archive got a truncated central-directory offset = a
+// corrupt, unopenable ZIP. Media/sidecars
 // are STORED (compress:false): the library is already-compressed media, so
 // deflating it burns CPU for ~no size win.
 // onBytes (optional) reports cumulative bytes written to the output file — a
@@ -534,18 +504,23 @@ async function hasExportableFiles(srcFolder, imagesOnly) {
 // maxBytes. Never buffers the whole entry in memory, so a bomb that under-declares
 // its size in the central directory is still capped at the byte budget (it just
 // pays decompression cost up to the cap, then the partial file is discarded).
+// Takes the read stream rather than the entry: yauzl hands out streams from the
+// ZipFile, not from the Entry, and keeping the cap stream-shaped is what lets the
+// regression tests drive it with a plain Readable.
 /** @returns {Promise<void>} — typed so resolve() takes no argument. */
-function writeEntryStreamed(entry, tmpPath, maxBytes) {
+function writeStreamCapped(src: Readable, tmpPath: string, maxBytes: number) {
   return new Promise<void>((resolve, reject) => {
     const out = fs.createWriteStream(tmpPath);
-    const src = entry.nodeStream('nodebuffer');
     let written = 0;
     let aborted = false;
     const fail = (err) => {
       if (aborted) return;
       aborted = true;
+      // destroy(), not pause(): yauzl holds an fd slice open behind the stream,
+      // and abandoning a paused one would keep the archive's fd pinned. Safe to
+      // call because nothing is pipe()d into it here (yauzl README).
       try {
-        src.pause();
+        src.destroy();
       } catch {
         /* ignore */
       }
@@ -573,14 +548,13 @@ function writeEntryStreamed(entry, tmpPath, maxBytes) {
 }
 
 // Read a ZIP entry fully into memory, aborting once the actual decompressed
-// bytes cross maxBytes (#382). Unlike writeEntryStreamed (which streams to
+// bytes cross maxBytes (#382). Unlike writeStreamCapped (which streams to
 // disk), organization-layer JSON is small enough to hold in memory once
 // capped — but the cap has to be enforced against bytes actually read, not the
 // declared size, so a lying central-directory header can't slip a >cap entry
 // past the declared-size check in extractLibraryEntries.
-function readEntryCapped(entry, maxBytes): Promise<Buffer> {
+function readStreamCapped(src: Readable, maxBytes: number): Promise<Buffer> {
   return new Promise((resolve, reject) => {
-    const src = entry.nodeStream('nodebuffer');
     const chunks: Buffer[] = [];
     let total = 0;
     let aborted = false;
@@ -588,7 +562,7 @@ function readEntryCapped(entry, maxBytes): Promise<Buffer> {
       if (aborted) return;
       aborted = true;
       try {
-        src.pause();
+        src.destroy();
       } catch {
         /* ignore */
       }
@@ -598,7 +572,7 @@ function readEntryCapped(entry, maxBytes): Promise<Buffer> {
       if (aborted) return;
       total += chunk.length;
       if (total > maxBytes) {
-        fail(new ZipLimitError('organization entry exceeds byte cap'));
+        fail(new ZipLimitError('entry exceeds byte cap'));
         return;
       }
       chunks.push(chunk);
@@ -618,31 +592,43 @@ function readEntryCapped(entry, maxBytes): Promise<Buffer> {
 // media/avatars/per-post sidecars), plus a .trash/ bucket (#300/St7). Pure
 // classification only — no disk/DB writes, so the guards stay in one place ahead of
 // the writer.
-async function extractLibraryEntries(JSZip, buffer) {
-  const zip = await JSZip.loadAsync(buffer);
-  const orgEntries: any = {};
-  let tagParentsEntry: any = null;
-  const captureEntries: any[] = [];
-  const trashEntries: any[] = [];
-  // Zip-bomb pre-checks: tally entry count + declared uncompressed bytes across the
-  // whole archive (not just library/ entries — a bomb can hide anywhere) and reject
-  // up front, before extracting anything.
-  let entryCount = 0;
+// Also reports whether this is a COMPLETE export at all (manifest present, or any
+// library/ entry) — same test the renderer used to run on its own JSZip copy of
+// the archive, moved here so the renderer never has to open the file (#485).
+async function extractLibraryEntries(zipfile: ZipReader) {
+  const orgEntries: Record<string, ZipEntry> = {};
+  let tagParentsEntry: ZipEntry | null = null;
+  const captureEntries: Array<{ name: string; entry: ZipEntry }> = [];
+  const trashEntries: Array<{ name: string; entry: ZipEntry }> = [];
+  let isComplete = false;
+  // Zip-bomb pre-checks, all against numbers the archive DECLARES — no decompression
+  // happens in this pass, and they cover the whole archive rather than just library/
+  // entries (a bomb can hide anywhere).
+  //
+  // Entry count comes from the end-of-central-directory record, which yauzl has
+  // already read at open() — so a 200k-entry bomb is refused without reading a single
+  // central-directory record, and yauzl yields exactly that many entries afterwards
+  // (a re-count while iterating could never reach the cap on its own).
+  if (zipfile.entryCount > MAX_ZIP_ENTRIES) throw new ZipLimitError('archive declares ' + zipfile.entryCount + ' entries (> cap ' + MAX_ZIP_ENTRIES + ')');
   let totalBytes = 0;
-  zip.forEach((relPath, entry) => {
-    if (entry.dir) return;
-    entryCount += 1;
+  for await (const entry of zipfile.eachEntry()) {
+    const relPath = entry.fileName;
+    if (relPath.endsWith('/')) continue; // directory entry (yauzl's only marker)
     const size = entryUncompressedSize(entry);
     if (size > MAX_ZIP_ENTRY_BYTES) throw new ZipLimitError('entry "' + relPath + '" declares ' + size + ' bytes (> per-entry cap ' + MAX_ZIP_ENTRY_BYTES + ')');
     totalBytes += size;
-    if (entryCount > MAX_ZIP_ENTRIES) throw new ZipLimitError('archive has > ' + MAX_ZIP_ENTRIES + ' entries');
     if (totalBytes > MAX_ZIP_TOTAL_BYTES) throw new ZipLimitError('archive declares > ' + MAX_ZIP_TOTAL_BYTES + ' total uncompressed bytes');
 
+    if (relPath === 'hologram-export.json') {
+      isComplete = true;
+      continue;
+    }
     const libMatch = /^library\/(.+)$/.exec(relPath);
     if (libMatch) {
+      isComplete = true; // set before the safety filter: a skipped entry still identifies the format
       const name = libMatch[1];
-      if (!isSafeLibraryPath(name)) return; // Zip-Slip: reject separators / traversal / absolute (avatars/<name> allowed)
-      if (EXPORT_SKIP.has(name)) return;
+      if (!isSafeLibraryPath(name)) continue; // Zip-Slip: reject separators / traversal / absolute (avatars/<name> allowed)
+      if (EXPORT_SKIP.has(name)) continue;
       if (name === 'tag-parents.json') tagParentsEntry = entry;
       else if (MERGERS[name]) {
         // Declared-size half of the org-JSON budget (#382): reject before any
@@ -650,22 +636,22 @@ async function extractLibraryEntries(JSZip, buffer) {
         if (size > MAX_ZIP_ORG_BYTES) throw new ZipLimitError('organization entry "' + relPath + '" declares ' + size + ' bytes (> org cap ' + MAX_ZIP_ORG_BYTES + ')');
         orgEntries[name] = entry;
       } else captureEntries.push({ name, entry });
-      return;
+      continue;
     }
     const trashMatch = /^\.trash\/(.+)$/.exec(relPath);
     if (trashMatch) {
       const name = trashMatch[1];
-      if (!isSafeTrashPath(name)) return;
+      if (!isSafeTrashPath(name)) continue;
       trashEntries.push({ name, entry });
     }
-  });
-  return { orgEntries, tagParentsEntry, captureEntries, trashEntries };
+  }
+  return { isComplete, orgEntries, tagParentsEntry, captureEntries, trashEntries };
 }
 
 // Streamed write with a per-entry byte cap, skip-if-exists (idempotent / never
 // clobbers), atomic tmp+rename. Shared by the importer's binaries and .trash/
 // restore — the only thing that varies is which directory it lands in.
-async function writeCaptureFile(entry, destDir, name): Promise<'imported' | 'skipped'> {
+async function writeCaptureFile(zipfile: ZipReader, entry: ZipEntry, destDir: string, name: string): Promise<'imported' | 'skipped'> {
   const dest = path.join(destDir, name);
   try {
     if (!isWithin(destDir, dest)) return 'skipped'; // defensive Zip-Slip guard
@@ -675,7 +661,7 @@ async function writeCaptureFile(entry, destDir, name): Promise<'imported' | 'ski
     // Streamed write with a per-entry byte cap: caps even an entry whose declared
     // size lied past the pre-check above. On abort, drop the partial tmp file.
     try {
-      await writeEntryStreamed(entry, tmp, MAX_ZIP_ENTRY_BYTES);
+      await writeStreamCapped(await zipfile.openReadStreamPromise(entry), tmp, MAX_ZIP_ENTRY_BYTES);
     } catch (e) {
       try {
         await fs.promises.unlink(tmp);
@@ -702,13 +688,39 @@ async function writeCaptureFile(entry, destDir, name): Promise<'imported' | 'ski
 //
 // Posts are written with the shared writePost (lib-db-record-writer.ts), the same
 // producer import-posts/import-images and the inbox consumer use.
-async function importCompleteZipToDb(sqlite: Database.Database, JSZip, destFolder: string, buffer) {
+//
+// Takes a PATH, not bytes (#485): yauzl reads the central directory off an fd and
+// streams one entry at a time, so a >4 GiB archive is both readable (ZIP64) and
+// bounded in memory. The caller is main — the renderer never opens the file, so
+// nothing has to survive a multi-GB round trip through IPC.
+//
+// Returns { ok:false, notComplete:true } for an archive that is not a complete
+// export (no manifest, no library/ entry). The zip-bomb tally has already run at
+// that point, so a malformed archive is rejected before anything downstream sees
+// it; what to DO with a legacy export is the caller's business (#322).
+async function importCompleteZipToDb(sqlite: Database.Database, zipPath: string, destFolder: string) {
+  // autoClose:false so entries stay readable after the enumeration pass below
+  // (openReadStream needs the fd); closed in the finally.
+  const zipfile = await openZipForRead(zipPath, { autoClose: false });
+  try {
+    return await importFromOpenZip(sqlite, zipfile, destFolder);
+  } finally {
+    try {
+      zipfile.close();
+    } catch {
+      /* already closed by an error path */
+    }
+  }
+}
+
+async function importFromOpenZip(sqlite: Database.Database, zipfile: ZipReader, destFolder: string) {
+  const { isComplete, orgEntries, tagParentsEntry, captureEntries, trashEntries } = await extractLibraryEntries(zipfile);
+  if (!isComplete) return { ok: false as const, notComplete: true as const, imported: 0, skipped: 0 };
   try {
     await fs.promises.mkdir(destFolder, { recursive: true });
   } catch {
     /* ignore */
   }
-  const { orgEntries, tagParentsEntry, captureEntries, trashEntries } = await extractLibraryEntries(JSZip, buffer);
   let imported = 0,
     skipped = 0;
 
@@ -716,7 +728,7 @@ async function importCompleteZipToDb(sqlite: Database.Database, JSZip, destFolde
   const binaryCaptures = captureEntries.filter((c) => !c.name.toLowerCase().endsWith('.json'));
 
   for (const c of binaryCaptures) {
-    if ((await writeCaptureFile(c.entry, destFolder, c.name)) === 'imported') imported++;
+    if ((await writeCaptureFile(zipfile, c.entry, destFolder, c.name)) === 'imported') imported++;
     else skipped++;
   }
 
@@ -728,24 +740,29 @@ async function importCompleteZipToDb(sqlite: Database.Database, JSZip, destFolde
       /* ignore */
     }
     for (const t of trashEntries) {
-      if ((await writeCaptureFile(t.entry, trashDest, t.name)) === 'imported') imported++;
+      if ((await writeCaptureFile(zipfile, t.entry, trashDest, t.name)) === 'imported') imported++;
       else skipped++;
     }
   }
 
-  const parseEntry = async (entry): Promise<any> => {
+  // Per-post sidecars and tag-parents.json are read into memory (they become DB
+  // rows, not files), so they get the generic per-entry cap enforced against
+  // bytes actually read — a truncated/garbage read just parses to null and the
+  // record is skipped, same as before.
+  const parseEntry = async (entry: ZipEntry): Promise<any> => {
     try {
-      return parseJsonLoose(await entry.async('string'));
+      const buf = await readStreamCapped(await zipfile.openReadStreamPromise(entry), MAX_ZIP_ENTRY_BYTES);
+      return parseJsonLoose(buf.toString('utf8'));
     } catch {
       return null;
     }
   };
-  // Organization-layer JSON goes through the #382 byte cap instead of a bare
-  // entry.async('string'): a ZipLimitError here is NOT swallowed — it propagates
-  // out of the transaction below so the whole import rejects as malformed,
-  // rather than silently merging in a truncated organization state.
-  const parseOrgEntry = async (entry): Promise<any> => {
-    const buf = await readEntryCapped(entry, MAX_ZIP_ORG_BYTES);
+  // Organization-layer JSON goes through the much smaller #382 byte cap: a
+  // ZipLimitError here is NOT swallowed — it propagates out of the transaction
+  // below so the whole import rejects as malformed, rather than silently merging
+  // in a truncated organization state.
+  const parseOrgEntry = async (entry: ZipEntry): Promise<any> => {
+    const buf = await readStreamCapped(await zipfile.openReadStreamPromise(entry), MAX_ZIP_ORG_BYTES);
     try {
       return parseJsonLoose(buf.toString('utf8'));
     } catch {
@@ -817,7 +834,7 @@ async function importCompleteZipToDb(sqlite: Database.Database, JSZip, destFolde
     throw err;
   }
 
-  return { ok: true, imported, skipped };
+  return { ok: true as const, notComplete: false as const, imported, skipped };
 }
 
 export {
@@ -828,10 +845,8 @@ export {
   MAX_ZIP_TOTAL_BYTES,
   MAX_ZIP_ORG_BYTES,
   ZipLimitError,
-  writeEntryStreamed,
-  readEntryCapped,
-  buildCompleteZip,
-  buildImagesZip,
+  writeStreamCapped,
+  readStreamCapped,
   writeCompleteZip,
   writeImagesZip,
   hasExportableFiles,

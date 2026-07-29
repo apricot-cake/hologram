@@ -1,5 +1,6 @@
-// Minimal type shim for the 'jszip' import in the browser bundle (orchestrator.ts /
-// Data.tsx's ZIP-import handlers), redirected here via tsconfig.json's `paths`
+// Minimal type shim for the 'jszip' import in the browser bundle (UgoiraPlayer.tsx's
+// うごイラ archive, legacy-zip-import.ts's pre-#300 export path — the complete-format
+// import moved to main/yauzl in #485), redirected here via tsconfig.json's `paths`
 // (2026-07-11). jszip's own DefinitelyTyped .d.ts carries `/// <reference types="node" />`,
 // which pulls Node's globals into this browser-only TS program and shadows the DOM lib's
 // setTimeout/setInterval (number) with NodeJS.Timeout — breaking unrelated renderer code
