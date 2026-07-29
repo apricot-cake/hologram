@@ -190,7 +190,7 @@ describe('chrome.runtime.onMessage ルーティング', () => {
     // まず savePost を1件成功させ、markSaved 経由でキャッシュへ載せる。
     const save = env.dispatch({ type: 'savePost', platform: 'misskey', postUrl: UNPARSEABLE_POST_URL }, MISSKEY_SENDER);
     await vi.waitFor(() => expect(createdPorts.length).toBe(1));
-    createdPorts[0].emitMessage({ ok: true, file: 'saved-file-id', media: ['https://misskey.example/files/aaa.png'] });
+    createdPorts[0].emitMessage({ ok: true, captureId: 'saved-capture-id', file: 'saved-file-id.jpg', media: ['https://misskey.example/files/aaa.png'] });
     const saveResult = await save.responseP;
     expect(saveResult.ok).toBe(true);
 
@@ -198,7 +198,9 @@ describe('chrome.runtime.onMessage ルーティング', () => {
     const { returns, responseP } = env.dispatch({ type: 'checkSaved', urls: [UNPARSEABLE_POST_URL] }, {});
     expect(returns).not.toContain(true); // 同期応答
     // 応答は投稿ごとに captureId ＋その投稿の保存済みの絵（#334）と、絵ごとの持ち主（#34）。
-    await expect(responseP).resolves.toEqual({ ok: true, results: { [UNPARSEABLE_POST_URL]: { id: 'saved-file-id', media: ['https://misskey.example/files/aaa.png'], owners: ['saved-file-id'] } } });
+    // id is the ack's captureId, never its `file` — the badge only needs "some
+    // id", but #34's "replace" reads it as the record to retire.
+    await expect(responseP).resolves.toEqual({ ok: true, results: { [UNPARSEABLE_POST_URL]: { id: 'saved-capture-id', media: ['https://misskey.example/files/aaa.png'], owners: ['saved-capture-id'] } } });
     expect(createdPorts.length).toBe(1); // queryBridge は呼ばれていない
   });
 });

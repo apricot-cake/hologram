@@ -170,6 +170,10 @@ export function buildChoiceRow(t: Messages, onChoose: (choice: DuplicateChoice) 
   ];
   for (const [choice, label, hint, primary] of buttons) {
     const b = makeChoiceButton(label, hint, primary);
+    // Named for the browser E2E harness, which cannot read the localized label
+    // (the banner follows the browser locale) — same role the overlay's
+    // data-hologram-overlay attribute plays for the capture-time hide.
+    b.setAttribute('data-hologram-choice', choice);
     b.onclick = (e) => {
       e.preventDefault();
       e.stopPropagation();

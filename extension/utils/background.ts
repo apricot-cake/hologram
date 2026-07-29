@@ -129,7 +129,7 @@ export function startBackground(): void {
     } catch (err) {
       throw stageError('bridge', err?.message || 'bridge save failed');
     }
-    markSaved([record.url, postUrl], ack?.file || captureId, savedMediaUrls(ack), tab.id);
+    markSaved([record.url, postUrl], ack?.captureId || captureId, savedMediaUrls(ack), tab.id);
     const grouped = await bumpRecentSave(record.url);
     return { ...ack, metaOk, metaReason: meta.metaError || null, grouped };
   }
@@ -215,7 +215,7 @@ export function startBackground(): void {
     } catch (err) {
       throw stageError('bridge', err?.message || 'bridge save failed');
     }
-    markSaved([record.url, postUrl], ack?.file || captureId, savedMediaUrls(ack), tab.id); // light this post's TL badge now
+    markSaved([record.url, postUrl], ack?.captureId || captureId, savedMediaUrls(ack), tab.id); // light this post's TL badge now
     // grouped = prior saves of this post this session → the banner says the save
     // merged with them (the app folds same-URL records into one card).
     const grouped = await bumpRecentSave(record.url);
@@ -433,6 +433,9 @@ export function startBackground(): void {
   // not — see native-host/post-key.mts). Caching only one form would leave the
   // other's negative entry to expire on its own, and the badge would lag a minute
   // behind the save that just happened in front of the user.
+  // captureId, NOT the ack's `file`: the two differ (the bulk-intake path's file
+  // is a media filename that carries no id at all), and since #34 this value is
+  // read as an identifier — a "replace" answer names the capture it retires.
   function markSaved(urls: Array<string | null | undefined>, captureId: string | null, media: Array<string | null>, tabId?: number) {
     const seen = new Set<string>();
     for (const url of urls) {
@@ -753,7 +756,7 @@ export function startBackground(): void {
     } catch (err) {
       throw stageError('bridge', err?.message || 'bridge save failed');
     }
-    markSaved([record.url, postUrl], ack?.file || captureId, savedMediaUrls(ack), tab.id); // light this post's TL badge now
+    markSaved([record.url, postUrl], ack?.captureId || captureId, savedMediaUrls(ack), tab.id); // light this post's TL badge now
     // Surface metadata-fetch failure to the drop overlay (same partial-success
     // signal as the click-save banner) so a screenshot-less illustration that
     // saved without post info isn't shown as a plain success. grouped = prior
