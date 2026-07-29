@@ -10,6 +10,7 @@ import type { SyntheticEvent } from 'react';
 import { PostCard } from '../_shared/PostCard.tsx';
 import { useGridModel, VirtualGridHost } from '../_shared/VirtualGrid.tsx';
 import type { GridCellProps } from '../_shared/VirtualGrid.tsx';
+import { selectionMarquee } from '../services/orchestrator.ts';
 import { get as storeGet, subscribe as storeSubscribe } from '../services/store.ts';
 
 // One grid cell. modelOf() re-reads live viewer state on every
@@ -56,8 +57,20 @@ function Cell({ index, data }: GridCellProps) {
   return <PostCard m={m} L={model.labels} cellRef={ref} onImgLoad={onImgLoad} />;
 }
 
+// Drag range selection (#484) — this grid is the only one with a selection, so it
+// is the only one that arms the rubber band. Late-bound the same way FloatingBar
+// calls its bulk actions: orchestrator assigns selectionMarquee during init, well
+// after this module is imported. A stable identity matters here — the host tears
+// its gesture down and re-arms whenever this prop changes.
+const marqueeSink: HologramMarqueeSink = {
+  begin: (additive) => selectionMarquee.begin(additive),
+  update: (indices) => selectionMarquee.update(indices),
+  end: () => selectionMarquee.end(),
+  cancel: () => selectionMarquee.cancel(),
+};
+
 export function GridHost({ model }: { model: HologramGridModel }) {
   // nav: this is the grid selection moves through, so it publishes its column count
   // and scroll geometry to services/grid-nav.ts (the poster grid has no selection).
-  return <VirtualGridHost model={model} cell={Cell} nav />;
+  return <VirtualGridHost model={model} cell={Cell} nav marquee={marqueeSink} />;
 }
