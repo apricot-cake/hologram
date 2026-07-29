@@ -1,10 +1,10 @@
-// marquee.ts のロジック単体テスト（#484 ドラッグ範囲選択）。
+// marquee.ts のロジック単体テスト（#484 ドラッグ範囲選択・#242 余白クリック）。
 // 矩形×セル配列 → 選択される index 集合、という判定部分だけを押さえる。
 // ジェスチャ本体（mousedown→drag→mouseup と自動スクロールの実挙動）は
 // 仮想グリッド上で合成マウスイベントが成立しないため自動テストの射程外＝
 // #484 本文の「実マウスでの確認が前提」。ここで守るのは交差判定の規約
 // （交差であって内包ではない／辺は排他／昇順で返す）と自動スクロールの
-// 速度カーブ。
+// 速度カーブ、そして同じ押下がドラッグとクリックのどちらになるかの境目。
 
 import { describe, expect, test } from 'vitest';
 import * as M from '../app/src/renderer/src/services/marquee';
@@ -97,6 +97,45 @@ describe('hitIndices: 矩形 × セル配列 → 選択される index', () => {
     expect(M.hitIndices(rect(100, 150, 200, 20), ragged)).toEqual([0, 2]);
     // 左列を外して右列の下段だけ
     expect(M.hitIndices(rect(250, 150, 100, 20), ragged)).toEqual([2]);
+  });
+});
+
+describe('exceedsThreshold: 押下がドラッグに変わる境目', () => {
+  const t = M.MARQUEE_THRESHOLD;
+
+  test('しきい値未満はドラッグではない（クリックのまま）', () => {
+    expect(M.exceedsThreshold(0, 0)).toBe(false);
+    expect(M.exceedsThreshold(t - 1, t - 1)).toBe(false);
+  });
+
+  test('しきい値ちょうどでドラッグ（境界は含む）', () => {
+    expect(M.exceedsThreshold(t, 0)).toBe(true);
+    expect(M.exceedsThreshold(0, t)).toBe(true);
+  });
+
+  test('片方の軸だけでも成立する', () => {
+    expect(M.exceedsThreshold(t + 20, 0)).toBe(true);
+    expect(M.exceedsThreshold(0, t + 20)).toBe(true);
+  });
+
+  test('向きは問わない（負の移動も同じ）', () => {
+    expect(M.exceedsThreshold(-t, 0)).toBe(true);
+    expect(M.exceedsThreshold(-(t - 1), -(t - 1))).toBe(false);
+  });
+});
+
+describe('clearsSelection: 余白クリックで選択を解除するか（#242）', () => {
+  test('ドラッグしていない素の押し離しなら解除する', () => {
+    expect(M.clearsSelection(false, false)).toBe(true);
+  });
+
+  test('Ctrl / Shift を押していたら解除しない（Nautilus・Dolphin と同型）', () => {
+    expect(M.clearsSelection(false, true)).toBe(false);
+  });
+
+  test('ドラッグになったら解除しない（帯が選択を決める）', () => {
+    expect(M.clearsSelection(true, false)).toBe(false);
+    expect(M.clearsSelection(true, true)).toBe(false);
   });
 });
 

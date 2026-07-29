@@ -8,24 +8,25 @@
 npm run setup
 ```
 
-**⚠️素の `npm install` は現在このリポジトリでは通らない**（C++ ビルドツールを入れている環境を除く）。`better-sqlite3` v13 は N-API 化でビルド済みバイナリを同梱し、読み込み側もそれを優先するのに、`binding.gyp` を同梱したまま install スクリプトを宣言していない。npm はこの組み合わせを「node-gyp でコンパイルせよ」と解釈する既定を持つ（[npm docs](https://docs.npmjs.com/cli/v11/using-npm/scripts)）ため、**不要なコンパイルが走り、失敗すると install 全体が途中で止まる**（無関係なパッケージが入らないまま終わる）。
+**⚠️素の `npm install` はまだこのリポジトリでは通らない**: `electron-vite@5` は `peer vite: ^5 || ^6 || ^7` を宣言しているのに `app/` は vite 8 で組んでいるため、npm の解決器がツリーごと拒否する。vite 8 を受ける安定版の electron-vite はまだ無く（6.0.0 は beta のみ・2026-07-27 確認）、`overrides` では peer の範囲を広げられないので、npm 公式の逃げ道である `--legacy-peer-deps` しかない。**この不整合は前からある**＝lockfile 無しの `npm install` は vite 8 を入れた時点で通らなくなっていて、コミット済みの lockfile が支えていただけ。何かが再解決を促した瞬間に落ちる。
 
-`npm run setup` は `--ignore-scripts` で入れ、それが巻き添えで止める Electron 本体の取得と WXT の `wxt prepare`（`extension/.wxt/tsconfig.json` の生成）だけを戻す。`npm rebuild electron` は成功と表示して**何もダウンロードしない**ので使わない。あわせて `build:ext` も走らせる＝3本のテストが拡張のビルド出力（`capture.js`・`resident.js`）を直接読むため、これが無いと入れたてのツリーで `npm test` が落ちる。
+`npm run setup` はこのフラグを付けて入れ、あわせて `build:ext` も走らせる＝3本のテストが拡張のビルド出力（`capture.js`・`resident.js`）を直接読むため、これが無いと入れたてのツリーで `npm test` が落ちる。
 
-**`--legacy-peer-deps` も付く（別件の回避）**: `electron-vite@5` は `peer vite: ^5 || ^6 || ^7` を宣言しているのに `app/` は vite 8 で組んでいるため、npm の解決器がツリーごと拒否する。vite 8 を受ける安定版の electron-vite はまだ無く（6.0.0 は beta のみ・2026-07-27 確認）、`overrides` では peer の範囲を広げられないので、npm 公式の逃げ道がこれしかない。**この不整合は前からある**＝lockfile 無しの `npm install` は vite 8 を入れた時点で通らなくなっていて、コミット済みの lockfile が支えていただけ。何かが再解決を促した瞬間に落ちる。
+**あわせて Electron 本体も手動で取得する**（こちらは `--legacy-peer-deps` とは無関係の別の事情）: `app/` が固定しているバージョン（現在 43.2.0）の `electron` パッケージには postinstall スクリプトが無く、npm がスクリプトを実行できる状態で入れても `~225MB` の本体は自動では降ってこない。`npm run setup` は install 後に `node_modules/electron/dist/electron.exe` の有無を見て、無ければ `node node_modules/electron/install.js` を直接呼ぶ。`npm rebuild electron` は成功と表示して**何もダウンロードしない**ので使わない。
 
 **⚠️Hologram（開発版）を起動したまま install しない**: 実行中の Electron が `node_modules/electron/dist/**` と `better-sqlite3` の `.node` を掴んでいるため、npm がファイルを置き換えられず EBUSY / EPERM で止まる。`npm ci` は先に node_modules を消しにいくので、途中まで消したところで失敗して**依存が欠けたツリーが残る**（2026-07-27 実地被弾）。先にアプリを閉じること。
 
-**2つとも上流待ちの暫定措置で、どちらも setup が毎回自分で判定する。**フラグはハードコードしておらず、install の前にディスク上の `package.json` から条件を読み、必要なものだけ渡す。上流が直れば**そのフラグは自動的に付かなくなり、外してよい旨を表示する**。
+**上流待ちの暫定措置で、setup が毎回自分で判定する。**フラグはハードコードしておらず、install の前にディスク上の `package.json` から条件を読み、必要なら渡す。上流が直れば**フラグが自動的に付かなくなり、外してよい旨を表示する**。
 
 | フラグ | 解消の条件 | 待っている先 |
 | --- | --- | --- |
-| `--ignore-scripts` | `better-sqlite3` が `gypfile: false` か install スクリプトを持つ（または `binding.gyp` を同梱しなくなる） | [WiseLibs/better-sqlite3#1503](https://github.com/WiseLibs/better-sqlite3/issues/1503) |
 | `--legacy-peer-deps` | `electron-vite` の `peerDependencies.vite` が、使用中の vite のメジャーを受け入れる | [electron-vite releases](https://github.com/alex8088/electron-vite/releases) |
 
 判定そのものは `scripts/setup-probes.test.ts` が守る（誤って「もう不要」と答えると次の install が落ち、誤って「まだ必要」と答え続けると回避策が恒久化するため）。範囲の書式を読めない場合は**安全側＝維持**に倒す。
 
-Dependabot（#395）の更新 PR で新バージョンが来たときも、確認すべき条件は上表と同じ。**両方とも解消したら `scripts/setup.cts`・`scripts/setup-probes.test.ts`・`package.json` の `setup`・本節をまとめて消すこと。**
+Dependabot（#395）の更新 PR で新バージョンが来たときも、確認すべき条件は上表と同じ。**解消したら `scripts/setup.cts`・`scripts/setup-probes.test.ts`・`package.json` の `setup`・本節をまとめて消すこと。**
+
+（`better-sqlite3` が `binding.gyp` を同梱したまま install スクリプトを宣言しない問題で `--ignore-scripts` を使っていたが、`gypfile: false` の宣言により解消済み＝#493 で撤去。`extension/` 側の `--ignore-scripts` も、その postinstall（`wxt prepare`）を手動で肩代わりするためだけの措置で本来不要だったと実機検証で確認し、同時に撤去した。**Electron 本体の手動取得はこの撤去と無関係に今も必要**＝旧コメントは「`--ignore-scripts` の巻き添えで止まる」としていたが、#493 の実機検証で、現在 pin している electron@43.2.0 自体に postinstall が無い（`--ignore-scripts` の有無に関わらず自動では降ってこない）ことが判明し、その旨へ書き換えた。）
 
 ## 拡張機能の開発・配布
 
@@ -38,6 +39,7 @@ Dependabot（#395）の更新 PR で新バージョンが来たときも、確�
 
 - **dev サーバーを止めたら production へ戻すまでが1セット**。開発モードの拡張は manifest に `content_scripts` を持たず、常駐スクリプトを **dev サーバー接続経由で実行時登録**する。dev ビルドを残したままサーバーが居なくなる・繋がらない（Node ≥17 は `::1` のみに bind することがあり Chrome は IPv4 で来る）と**普段使いの拡張が丸ごと沈黙**し、原因は `chrome://extensions` を開かない限り見えない（2026-07-26 被弾＝#362）。
 - **dev:ext 起動直後のリロード1回を忘れない**: リロードするまで Chrome に載っているのは前のビルドのまま＝直したはずの挙動が出ない（同型の被弾 2026-07-25＝修正が1時間空振り）。
+- **拡張の色はアプリのトークンから生成される**（#270）。`dev:ext` / `build:ext` は WXT の前に `scripts/gen-extension-tokens.cts` を走らせ、`app/src/renderer/src/globals.css` と `extension/utils/tokens.source.css` から `extension/utils/tokens.generated.{css,ts}` を書き直す。生成物はコミット対象で、古いまま残っていると `npm test` が落ちる（`scripts/extension-tokens.test.ts`）。**dev サーバーは globals.css の変更を監視しない**＝アプリ側のトークンを触ったら `npm run tokens:ext` を明示的に回す。
 - **なぜ WXT にブラウザを起動させないか**（`web-ext.config.ts` で無効化）: 自動化スタック（web-ext-run → chrome-launcher）経由の起動は大量の `--disable-*` フラグ＝自動化ツールの指紋が付き、X も Google もボット判定してサインインを弾く（2026-07-26 実測）。ホットリロード自体は拡張⇔dev サーバー間の WebSocket なので、普段どおり起動した Chrome でそのまま効く。
 - **デバッグポートは開けない**: TCP のデバッグポートは無認証で、ローカルの任意プロセスがブラウザを乗っ取りサインイン中のセッションを抜けられる（Chrome 136 が既定プロファイルで同スイッチを拒否するのも同じ理由）。
 
@@ -84,6 +86,14 @@ Start-ScheduledTask -TaskName 'HologramLaunch'
 - **稼働中の実機は確認なく駆動してよい**（リロード・カード選択・ビュー開閉・スクショまで一気に自律で）。ユーザーの作業状態を保存する義務も、事前に声をかける義務も無い（2026-07-19 にユーザーが明示。それ以前は「今は触らないでください」と伝える運用だったが、**チャットの声かけはユーザーが画面を見ている保証が無く警告として機能しない**＝2026-07-20 に撤去）。開いたオーバーレイを閉じる程度の後片付けはする。
 - **実機で異常を見たら、まず自分の駆動の残留を疑う**（ユーザー操作のせいにする誤帰属を先に潰す）。1スクリプトに多数のフローを詰めない＝駆動は目的1つに絞る（絡むと解析不能になる）。
 - スクショは画像トークンが重いので、数値で足りる検証（computed style / コントラスト比など）は画像を撮らず JS 計測で済ます。
+
+### 保存が失敗した時に見るログ（`~/.hologram/`）
+
+**`capture.log` が保存イベントの正本**＝1保存1行の JSON で、`stage`（どの段か）・`phase`（`ok` / `fail`）・`url`・`metaOk`（投稿情報が取れたか）・`metaReason`（取れなかった理由）・`mediaCount` が入る。拡張は自分の段（select / permalink / capture / crop / metadata）を、ブリッジは最終結果をここへ足す。**保存の可否を知りたければここを読む。**
+
+⚠️ **`bridge.log` は「どの投稿の話か」を一切書かない**＝書かれるのは `launched …`（Chrome がホストを見つけて起動できた証拠）と `recv type=…` だけ。**ここに投稿の URL が無いことは、その保存が失敗した証拠にも、ホストへ届かなかった証拠にもならない**（2026-07-29・#492 の調査で2セッションが続けてこれを誤読した。実際はその保存は `capture.log` に記録されており、しかも `phase:"ok"` だったことが不具合の本体だった）。ホストが起動したかを見るのがこのログの唯一の役割。
+
+ホストまで届かなかった分は拡張側の chrome.storage リングバッファにも積まれ、`chrome-extension://<id>/diag.html` で読める。
 
 ### サンドボックスへの実データシード（`--real`・#286）
 

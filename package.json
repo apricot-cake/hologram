@@ -20,6 +20,7 @@
     "jsdom": "^30.0.0",
     "jszip": "3.10.1",
     "playwright": "^1.62.0",
+    "postcss": "^8.5.24",
     "vitest": "^4.1.10",
     "ws": "^8.18.3"
   },
@@ -28,10 +29,12 @@
   },
   "scripts": {
     "build:ext": "npm --prefix extension run build:ext",
+    "tokens:ext": "node scripts/gen-extension-tokens.cts",
     "dev:ext": "npm --prefix extension run dev:ext",
     "test:overlay-visual": "npm run build:ext && node scripts/e2e-overlay-visual.cts",
     "test:overlay-flicker": "npm run build:ext && node scripts/e2e-overlay-flicker.cts",
     "test:e2e-extension": "npm run build:ext && node scripts/e2e-extension-offline.cts",
+    "test:e2e-duplicate": "npm run build:ext && node scripts/e2e-extension-duplicate.cts",
     "zip:ext": "npm --prefix extension run zip",
     "setup": "node scripts/setup.cts",
     "lint": "biome check .",

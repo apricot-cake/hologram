@@ -54,5 +54,13 @@
   "optionsHoverSaveDesc": {
     "message": "まだ保存していない投稿の画像に、その場で保存できるボタンを表示します。保存されるのは画像そのものと投稿の情報（本文・作者・元URL）です。投稿の見た目のスクリーンショットが要るときは Alt+S の投稿キャプチャを使ってください。",
     "description": "Options description for the hover save button, including what it does NOT save"
+  },
+  "optionsDuplicateWarning": {
+    "message": "同じものを保存しようとしたら確認する",
+    "description": "Options label for the duplicate-save warning"
+  },
+  "optionsDuplicateWarningDesc": {
+    "message": "すでに保存した画像をもう一度保存しようとしたときに、コピー・置換・スキップを選べる確認を出します。同じ投稿でも別の画像（漫画の次のページなど）なら確認は出ません。",
+    "description": "Options description for the duplicate-save warning, including when it does NOT ask"
   }
 }

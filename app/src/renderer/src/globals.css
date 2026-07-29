@@ -168,6 +168,36 @@
   }
 }
 
+/* View Transitions (#252). The post grid's density switch is the only surface that starts
+   one (React island start point: grid/density-transition.ts). Left alone the API animates
+   for a flat 250ms on a curve of its own — slower and looser than everything else in the
+   redesign — so the pseudo tree reads the same motion tokens every other animated surface
+   does. `enter` timing on both halves: a density switch is a re-arrangement, not an
+   open/close, and no side of it reads as leaving.
+
+   In @layer base, BELOW the legacy sheet on purpose. index.html already names #postGrid,
+   #tabBar, #sidebar, .content-activebar and #contentTop and gives each an explicit rule
+   (a 120ms grid fade; `animation: none` to pin the chrome under the top-layer snapshot).
+   Those are tuned, and they use the `animation` shorthand — unlayered longhands here would
+   silently retime them. Layered, this is only the DEFAULT for names with no rule of their
+   own, which is exactly the per-card groups and root.
+
+   Not covered by the reduced-motion block above either: that block matches elements
+   (*, *::before, *::after) and never reaches the ::view-transition-* tree. Reduced motion is
+   handled where the transition STARTS (_shared/view-transition.ts), which skips the API
+   rather than running it at 0.01ms. */
+@layer base {
+  ::view-transition-group(*) {
+    animation-duration: var(--motion-duration-base);
+    animation-timing-function: var(--motion-ease-out);
+  }
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation-duration: var(--motion-duration-base);
+    animation-timing-function: var(--motion-ease-out);
+  }
+}
+
 /* App shell (AppShell.tsx): Obsidian-type shell (#154) — the sidebar spans the full
    window height and the tab bar lives INSIDE the content column, so the sidebar no
    longer needs the --tabbar-h offset (shadcn's fixed inset-y-0 default now applies).
@@ -176,12 +206,41 @@
 .app-drag { -webkit-app-region: drag; }
 .app-no-drag { -webkit-app-region: no-drag; }
 
+/* The window-control strip is opaque (WindowControls.tsx says why), so it has to carry the
+   color of whatever it covers. Pinned to the window's top-right, that is the tab band —
+   except while the inspector is a docked column, which reaches the window top and hands its
+   own top row (.inspector-titlebar) to the window chrome.
+
+   Keyed off the same two conditions that decide whether .inspector-titlebar is displayed at
+   all (index.html): the panel is showing, and it is not the narrow overlay form — that one
+   starts below the toolbar at --content-top, so the strip is back over the tab band. The
+   image tab is the exception the titlebar rule also makes: the panel goes back in flow there
+   even when narrow, so it reaches the top again.
+
+   Derived in CSS rather than in React (#504) because the JS store the strip used to read,
+   inspector-panel.ts, is the user's PREFERENCE — "the panel should be open" — not the form it
+   currently takes. It stays true while the narrow overlay is closed or waiting on a selection,
+   which is how the strip came to paint --surface over the tab band. Reading the classes React
+   already writes keeps one source of truth instead of a second copy of inspectorVisible. */
+.wc-strip {
+  background: var(--tabbar-bg);
+}
+body:has(#postDetail:not([hidden]):not(.inspector--overlay)) .wc-strip,
+body.image-tab-active:has(#postDetail:not([hidden])) .wc-strip {
+  background: var(--surface);
+}
+
 /* Window controls (WindowControls.tsx) sit ABOVE the modal scrim, because window management
    must keep working while a modal is up — same as the OS-drawn buttons they replaced. Being
-   above the scrim they aren't dimmed by it, so they carry their own dim layer: the same 50%
-   black, switched by the same data-open/data-closed attributes Base UI puts on the scrim, over
-   the same duration. Both are CSS in one frame, so they cannot drift the way the OS strip did.
-   :has() keeps this stateless — nothing in JS has to track which modals are open.
+   above the scrim they aren't dimmed by it, so they carry their own dim layer: black at the
+   depth of the scrim being covered, switched by the same data-open/data-closed attributes Base
+   UI puts on the scrim, over the same duration. Both are CSS in one frame, so they cannot drift
+   the way the OS strip did. :has() keeps this stateless — nothing in JS has to track which
+   modals are open.
+
+   The depth has to equal the scrim's own alpha, not a fixed 50%: the strip is opaque, so the
+   only way it lands on the same color as the band beside it is to composite the same black
+   over the same base. Modals are bg-black/50, the lightbox bg-black/80 (#328).
 
    It runs the scrim's OWN animation (tw-animate's `enter`/`exit` keyframes, same duration and
    easing) rather than a transition of its own: a transition starts at the style change, an
@@ -194,19 +253,30 @@
 :root:has([data-slot='alert-dialog-overlay'][data-open]) .wc-dim,
 :root:has([data-slot='sheet-overlay'][data-open]) .wc-dim {
   --tw-enter-opacity: 0;
-  opacity: 1;
+  opacity: 0.5;
   animation: enter 100ms ease;
+}
+/* The lightbox (#328) — a full-screen scrim like the modals, but it was never in this list, so
+   the strip stayed bright inside it. Matched to ITS scrim on both counts: 0.8 black, and the
+   enter animation Lightbox.tsx runs on the overlay (--motion-duration-base / --motion-ease-out),
+   for the same one-frame reason the modal branch borrows the modals'.
+   No data-closed twin: the lightbox has no exit animation — it unmounts on close, so the base
+   rule takes the dim off in the same frame the scrim disappears. */
+:root:has([data-slot='lightbox']) .wc-dim {
+  --tw-enter-opacity: 0;
+  opacity: 0.8;
+  animation: enter var(--motion-duration-base) var(--motion-ease-out);
 }
 /* The exit: the overlay stays mounted with data-closed while it animates out. Scoped to that
    attribute so nothing animates at startup, when no overlay exists at all. */
-/* opacity stays 1 here on purpose: `exit` only declares its 100% frame, so the implicit 0% is
-   whatever the element's own style says. Setting it to 0 made the keyframes run 0 -> 0 and the
-   dim snapped off instantly while the page was still fading. `forwards` then holds the faded-out
-   value until the overlay unmounts and the base rule takes over. */
+/* opacity stays at the open depth here on purpose: `exit` only declares its 100% frame, so the
+   implicit 0% is whatever the element's own style says. Setting it to 0 made the keyframes run
+   0 -> 0 and the dim snapped off instantly while the page was still fading. `forwards` then
+   holds the faded-out value until the overlay unmounts and the base rule takes over. */
 :root:has([data-slot='dialog-overlay'][data-closed]) .wc-dim,
 :root:has([data-slot='alert-dialog-overlay'][data-closed]) .wc-dim,
 :root:has([data-slot='sheet-overlay'][data-closed]) .wc-dim {
   --tw-exit-opacity: 0;
-  opacity: 1;
+  opacity: 0.5;
   animation: exit 100ms ease forwards;
 }

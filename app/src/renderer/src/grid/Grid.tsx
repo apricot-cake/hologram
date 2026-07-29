@@ -10,7 +10,7 @@ import type { SyntheticEvent } from 'react';
 import { PostCard } from '../_shared/PostCard.tsx';
 import { useGridModel, VirtualGridHost } from '../_shared/VirtualGrid.tsx';
 import type { GridCellProps } from '../_shared/VirtualGrid.tsx';
-import { selectionMarquee } from '../services/orchestrator.ts';
+import { selectionClickBackground, selectionMarquee } from '../services/orchestrator.ts';
 import { get as storeGet, subscribe as storeSubscribe } from '../services/store.ts';
 
 // One grid cell. modelOf() re-reads live viewer state on every
@@ -69,8 +69,12 @@ const marqueeSink: HologramMarqueeSink = {
   cancel: () => selectionMarquee.cancel(),
 };
 
+// The click half of the same press (#242) — background click clears the selection.
+// Late-bound and hoisted out of the render for the same reason as the sink above.
+const onBackgroundClick = () => selectionClickBackground();
+
 export function GridHost({ model }: { model: HologramGridModel }) {
   // nav: this is the grid selection moves through, so it publishes its column count
   // and scroll geometry to services/grid-nav.ts (the poster grid has no selection).
-  return <VirtualGridHost model={model} cell={Cell} nav marquee={marqueeSink} />;
+  return <VirtualGridHost model={model} cell={Cell} nav marquee={marqueeSink} onBackgroundClick={onBackgroundClick} />;
 }

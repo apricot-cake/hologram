@@ -25,8 +25,8 @@ export function deletePost(image: string) {
 export function updateTags(image: string, tags: unknown, patch?: unknown) {
   return hologramIpc.updateTags(image, tags, patch);
 }
-export function importPosts(posts: unknown) {
-  return hologramIpc.importPosts(posts);
+export function importPosts(posts: unknown, duplicateMode?: string) {
+  return hologramIpc.importPosts(posts, duplicateMode);
 }
 export function importImages() {
   return hologramIpc.importImages();

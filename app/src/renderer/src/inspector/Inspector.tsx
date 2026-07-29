@@ -248,7 +248,7 @@ function PosterInspector({ m }: { m: HologramInspectorModel }) {
 // as the detail OF a selection (#143), and the counts it would show are already on the tab.
 function InspectorEmpty() {
   return (
-    <div className="flex h-full flex-col items-center justify-center gap-2 px-4 text-center text-muted-foreground">
+    <div data-slot="inspector-empty" className="flex h-full flex-col items-center justify-center gap-2 px-4 text-center text-muted-foreground">
       <PanelRight className="size-6 opacity-40" aria-hidden="true" />
       <span className="text-xs">{t('inspectorEmpty')}</span>
     </div>

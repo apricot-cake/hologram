@@ -13,8 +13,8 @@ import { toast } from 'sonner';
 import { t } from '../../_shared/i18n.ts';
 import { notify } from '../../services/ui.ts';
 import { getBackup, setBackup as setBackupConfig, pickBackupDir, onBackupDone, getIntegrityStatus, runOrphanRecovery, onIntegrityCheckDone } from '../../services/backup.ts';
-import { onExportProgress, onSaveFolderProgress, pickSaveFolder, moveSaveFolder, exportComplete, importComplete, importImages } from '../../services/posts.ts';
-import { importLegacyZip } from '../../services/legacy-zip-import.ts';
+import { onExportProgress, onSaveFolderProgress, pickSaveFolder, moveSaveFolder, exportComplete, importComplete, importPosts, importImages } from '../../services/posts.ts';
+import { readLegacyZipPosts } from '../../services/legacy-zip-import.ts';
 import { open as confirmOpen } from '../../services/confirm.ts';
 import { loadPosts } from '../../services/post-grid-builder.ts';
 
@@ -277,12 +277,35 @@ export function Data() {
         else notify(t('imported', [imported]));
       };
       if (res && res.legacy && res.bytes) {
-        const legacy = await importLegacyZip(new Uint8Array(res.bytes));
-        if (!legacy) {
+        const posts = await readLegacyZipPosts(new Uint8Array(res.bytes));
+        if (!posts) {
           notify(t('importFailed'));
           return;
         }
-        done(legacy.imported, legacy.skipped);
+        // #34: 取り込む投稿が既にライブラリにあるとき、コピー／置換／スキップを
+        // 1回だけ聞く（1件ずつ聞くと数百回になるため、バッチ単位）。重複が無ければ
+        // main 側が即座に取り込むので、この確認は出ない。
+        const first = await importPosts(posts);
+        if (first?.needsChoice) {
+          const finish = async (mode: string) => {
+            const r = await importPosts(posts, mode);
+            done(r.imported, r.skipped);
+          };
+          confirmOpen({
+            message: t('importDuplicate', [first.duplicates]),
+            description: t('importDuplicateDesc'),
+            okLabel: t('importDuplicateReplace'),
+            altLabel: t('importDuplicateCopy'),
+            cancelLabel: t('importDuplicateSkip'),
+            onOk: () => void finish('replace'),
+            onAlt: () => void finish('copy'),
+            // Esc lands here too, and skipping is the answer that changes the
+            // least — the library keeps what it has.
+            onCancel: () => void finish('skip'),
+          });
+          return;
+        }
+        done(first.imported, first.skipped);
         return;
       }
       if (!res || !res.ok) {

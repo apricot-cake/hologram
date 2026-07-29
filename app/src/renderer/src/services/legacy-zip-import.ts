@@ -11,13 +11,17 @@
 // tally while deciding the archive wasn't a complete export), so the renderer no
 // longer reads the file. It still expands every referenced image into a data: URL
 // in memory, which is the unbounded part #322 names.
+//
+// Reading only — what to do with the records (the #34 duplicate question, the
+// notices, the reload) stays with each shell, because that is UI policy and the
+// two shells word it with their own i18n handle.
 import JSZip from 'jszip';
-import { importPosts } from './posts.ts';
 
-export async function importLegacyZip(bytes: Uint8Array): Promise<{ imported: number; skipped: number } | null> {
+/** @returns the records the archive describes, or null if it isn't a legacy export either. */
+export async function readLegacyZipPosts(bytes: Uint8Array): Promise<any[] | null> {
   const zip = await JSZip.loadAsync(bytes);
   const metaEntry = zip.file('metadata.json');
-  if (!metaEntry) return null; // not a legacy export either — the caller reports a failed import
+  if (!metaEntry) return null;
   const meta = JSON.parse(await metaEntry.async('string'));
   const posts: any[] = [];
   for (const m of Array.isArray(meta) ? meta : []) {
@@ -26,5 +30,5 @@ export async function importLegacyZip(bytes: Uint8Array): Promise<{ imported: nu
     const b64 = await f.async('base64');
     posts.push(Object.assign({}, m, { image: 'data:image/jpeg;base64,' + b64 }));
   }
-  return importPosts(posts);
+  return posts;
 }

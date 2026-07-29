@@ -31,6 +31,9 @@ const { window } = dom;
 
 const sent: any[] = [];
 let sendReply: any = { ok: true, metaOk: true };
+// #34: onDrop は保存の前に checkDuplicate を1往復する。既定は「重複なし」で、
+// 3択のシナリオだけ差し替える。
+let duplicateAnswer: any = { ok: true, duplicate: false };
 
 // animate() の呼び出し自体は無視してよいが、hideOverlay は onfinish の中でしか display を
 // 戻さない（実ブラウザではアニメ終了イベント）。onfinish はここでは代入された次のティックで
@@ -68,7 +71,7 @@ window.chrome = {
     lastError: undefined,
     sendMessage: (msg: any, cb: any) => {
       sent.push(msg);
-      cb?.(sendReply);
+      cb?.(msg.type === 'checkDuplicate' ? duplicateAnswer : sendReply);
     },
     onMessage: { addListener: () => {} },
   },
@@ -146,8 +149,10 @@ describe('ドロップ: 成功', () => {
     expect(msg.imageUrls.some((u: string) => u.includes('name=orig'))).toBe(true);
   });
 
-  test('ok 状態: 緑の枠・リングは隠れる', () => {
-    expect(zone().style.borderColor).toBe('rgba(48, 164, 108, 0.65)');
+  test('ok 状態: 成功の枠・リングは隠れる', () => {
+    // 色そのものではなくトークンで見る（#270）＝値はアプリ側で決まり、ここが縛るのは
+    // 「どの状態がどの意味のトークンを取るか」だけ。
+    expect(zone().style.borderColor).toBe('var(--hologram-success)');
     expect(ring().style.opacity).toBe('0');
   });
 
@@ -170,8 +175,8 @@ describe('ドロップ: 部分成功（メタデータ取得失敗）', () => {
     await settle();
   });
 
-  test('partial 状態: 琥珀の枠', () => {
-    expect(zone().style.borderColor).toBe('rgba(232, 161, 58, 0.65)');
+  test('partial 状態: 警告の枠', () => {
+    expect(zone().style.borderColor).toBe('var(--hologram-warning)');
   });
 
   test('理由付きの文面', () => {
@@ -200,8 +205,8 @@ describe('ドロップ: 失敗', () => {
     await settle();
   });
 
-  test('fail 状態: 赤の枠', () => {
-    expect(zone().style.borderColor).toBe('rgba(229, 72, 77, 0.65)');
+  test('fail 状態: 失敗の枠', () => {
+    expect(zone().style.borderColor).toBe('var(--hologram-danger)');
   });
 
   test('復旧案内の文面（生のエラーは出さない）', () => {
@@ -212,6 +217,50 @@ describe('ドロップ: 失敗', () => {
     await settle(2900); // 失敗の滞留 2600ms を越える
 
     expect(zone().style.display).toBe('none');
+  });
+});
+
+// #34: すでに保存した絵をもう一度ドラッグしたときの3択。ドロップ経路は「ポインタが
+// 運んだ絵」がそのまま保存対象なので、その絵の URL 群が照合の第2軸になる。
+describe('重複保存の警告（ドロップ前の3択）', () => {
+  // ask 状態では選択肢が最後の子になるので、label は位置で拾う（[ring, badge, label]）。
+  const askLabel = () => zone()?.children[2] as any;
+  const buttons = () => Array.from(zone()?.querySelectorAll('button') || []) as any[];
+
+  beforeAll(async () => {
+    duplicateAnswer = { ok: true, duplicate: true, captureId: 'cap-old' };
+    sendReply = { ok: true, metaOk: true };
+    window.document.getElementById('img1')?.dispatchEvent(dragEvent('dragstart'));
+    zone().dispatchEvent(dragEvent('drop'));
+    await settle();
+  });
+
+  test('3択が出て、まだ保存メッセージは飛んでいない', () => {
+    expect(askLabel().textContent).toBe('This post is already saved');
+    expect(buttons().map((b) => b.textContent)).toEqual(['Copy', 'Replace', 'Skip']);
+    expect(sent.at(-1).type).toBe('checkDuplicate');
+  });
+
+  test('置換: 置き換える相手の captureId を載せて保存する', async () => {
+    buttons()[1].dispatchEvent(dragEvent('click'));
+    await settle();
+    expect(sent.at(-1)).toMatchObject({ type: 'imageDragged', replaces: 'cap-old' });
+    expect(zone().children[2].textContent).toBe('Replaced (the earlier save goes to the trash)');
+  });
+
+  test('スキップ: 保存せずに閉じる', async () => {
+    await settle(2300); // 直前のシナリオの滞留を越えてゾーンを閉じきる
+    duplicateAnswer = { ok: true, duplicate: true, captureId: 'cap-old' };
+    window.document.getElementById('img1')?.dispatchEvent(dragEvent('dragstart'));
+    zone().dispatchEvent(dragEvent('drop'));
+    await settle();
+    const before = sent.length;
+    buttons()[2].dispatchEvent(dragEvent('click'));
+    await settle();
+    expect(sent.length).toBe(before); // imageDragged は飛んでいない
+    expect(zone().children[2].textContent).toBe('Not saved');
+    duplicateAnswer = { ok: true, duplicate: false };
+    await settle(1500);
   });
 });
 

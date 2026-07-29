@@ -34,8 +34,11 @@ interface Ctx {
   notify: (msg: any) => void;
   banner: () => any;
   bannerLabel: () => any;
+  bannerButtons: () => any[];
   highlight: () => any;
   settle: (ms?: number) => Promise<void>;
+  // #34 の重複照会にホストが何と答えるか。setup() 直後は「重複なし」＝従来どおり撮る。
+  setDuplicate: (answer: any) => void;
 }
 
 // 新しい jsdom + バンドルを毎回作り直す（capture-mode-select.test.ts の runOn と同じ理由:
@@ -86,11 +89,18 @@ async function setup(): Promise<Ctx> {
 
   const sent: any[] = [];
   let listener: any = null;
+  // #34: capturePost は撮る前に checkDuplicate を1往復する。既定は「重複なし」で、
+  // 3択バナーのシナリオだけ setDuplicate() で答えを差し替える。
+  let duplicateAnswer: any = { ok: true, duplicate: false };
   window.chrome = {
+    storage: { local: { get: (_keys: any, cb: any) => cb({}) } },
     runtime: {
       id: 'test-extension-id',
       lastError: undefined,
-      sendMessage: (msg: any) => sent.push(msg),
+      sendMessage: (msg: any, cb?: any) => {
+        sent.push(msg);
+        if (msg.type === 'checkDuplicate') cb?.(duplicateAnswer);
+      },
       onMessage: {
         addListener: (fn: any) => {
           listener = fn;
@@ -110,16 +120,22 @@ async function setup(): Promise<Ctx> {
   // border-radius の形（ピル状バナー vs 角丸ハイライト枠）で見分ける。
   const findDiv = (pred: (el: any) => boolean) => Array.from(window.document.body.querySelectorAll('div')).find(pred);
   const banner = () => findDiv((el) => el.style.borderRadius === '999px');
-  const highlight = () => findDiv((el) => el.style.borderRadius === '10px');
+  const highlight = () => findDiv((el) => el.style.borderRadius === 'var(--hologram-radius)');
 
   return {
     window,
     sent,
     notify: (msg: any) => listener?.(msg, {}, () => {}),
     banner,
-    bannerLabel: () => banner()?.lastElementChild,
+    // 子は [badge, label] 固定で、#34 の 3択だけが3つ目として後ろに付く — label は
+    // 常に2つ目なので、lastElementChild ではなく位置で拾う。
+    bannerLabel: () => banner()?.children[1],
+    bannerButtons: () => Array.from(banner()?.querySelectorAll('button') || []),
     highlight,
     settle,
+    setDuplicate: (answer: any) => {
+      duplicateAnswer = answer;
+    },
   };
 }
 
@@ -172,6 +188,61 @@ describe('投稿をクリックすると busy バナーになり captureAndSend 
 
   test('選び終えたのでハイライト枠は隠れる', () => {
     expect(ctx.highlight().style.display).toBe('none');
+  });
+});
+
+// #34: 保存済みの投稿を Alt+S で撮ろうとすると、撮る前に3択を出す。撮影そのものを
+// 止めるのが要点＝スキップを選んだら captureAndSend は一度も飛ばない。
+describe('重複保存の警告（保存前の3択）', () => {
+  let ctx: Ctx;
+
+  async function clickPostWithDuplicate(answer: any = { ok: true, duplicate: true, captureId: 'cap-old' }) {
+    ctx = await setup();
+    ctx.setDuplicate(answer);
+    ctx.window.document.querySelector('#post1 time').dispatchEvent(new ctx.window.Event('click', { bubbles: true, cancelable: true }));
+    await ctx.settle(100);
+  }
+
+  test('重複なら3択バナーになり、まだ撮っていない', async () => {
+    await clickPostWithDuplicate();
+    expect(ctx.bannerLabel().textContent).toBe('This post is already saved');
+    expect(ctx.bannerButtons().map((b: any) => b.textContent)).toEqual(['Copy', 'Replace', 'Skip']);
+    expect(ctx.sent.some((m) => m.type === 'captureAndSend')).toBe(false);
+  });
+
+  test('スキップ: 保存せずに片付く', async () => {
+    await clickPostWithDuplicate();
+    ctx.bannerButtons()[2].dispatchEvent(new ctx.window.Event('click', { bubbles: true, cancelable: true }));
+    await ctx.settle(100);
+    expect(ctx.sent.some((m) => m.type === 'captureAndSend')).toBe(false);
+    expect(ctx.bannerLabel().textContent).toBe('Not saved');
+  });
+
+  test('コピー: 置換の印なしで撮る', async () => {
+    await clickPostWithDuplicate();
+    ctx.bannerButtons()[0].dispatchEvent(new ctx.window.Event('click', { bubbles: true, cancelable: true }));
+    await ctx.settle(100);
+    expect(ctx.sent.at(-1)).toMatchObject({ type: 'captureAndSend', replaces: null });
+  });
+
+  test('置換: 置き換える相手の captureId を載せて撮る', async () => {
+    await clickPostWithDuplicate();
+    ctx.bannerButtons()[1].dispatchEvent(new ctx.window.Event('click', { bubbles: true, cancelable: true }));
+    await ctx.settle(100);
+    expect(ctx.sent.at(-1)).toMatchObject({ type: 'captureAndSend', replaces: 'cap-old' });
+  });
+
+  test('置換のあとの成功表示は「置き換えました」', async () => {
+    await clickPostWithDuplicate();
+    ctx.bannerButtons()[1].dispatchEvent(new ctx.window.Event('click', { bubbles: true, cancelable: true }));
+    await ctx.settle(100);
+    ctx.notify({ type: 'notify', success: true, metaOk: true, grouped: 1 });
+    expect(ctx.bannerLabel().textContent).toBe('Replaced (the earlier save goes to the trash)');
+  });
+
+  test('ホストが答えられない（ok:false）ときは聞かずに撮る＝保存を止めない', async () => {
+    await clickPostWithDuplicate({ ok: false });
+    expect(ctx.sent.some((m) => m.type === 'captureAndSend')).toBe(true);
   });
 });
 

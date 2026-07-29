@@ -28,10 +28,12 @@
 // one site with such a list so far.
 import type { CaptureSite } from './extractor/types.ts';
 import { isXBookmarksPage } from './extractor/x.ts';
-import { glassUi } from './glass-ui.ts';
+import { ICONS, makeIcon, makeSpinner } from './icons.ts';
+import { ensureTokens, motion, prefersReducedMotion, token } from './tokens.ts';
 import type { HologramI18nApi } from './i18n.ts';
+import type { CheckSavedMessage, CheckSavedResponse, SavePostMessage, SaveResponse } from './messages.ts';
 
-type EntryState = 'unknown' | 'queued' | 'saving' | 'saved' | 'skipped' | 'deferred' | 'failed';
+type EntryState = 'unknown' | 'queued' | 'saving' | 'saved' | 'skipped' | 'deferred' | 'unavailable' | 'failed';
 
 // One save at a time, and no faster than this. The metadata fetch and the media
 // download are the only things X sees, and this keeps them at a human cadence.
@@ -39,7 +41,7 @@ const MIN_SAVE_PERIOD_MS = 1000;
 const END_QUIET_MS = 4000;
 
 export function startBulkCapture(site: CaptureSite, i18n: HologramI18nApi): void {
-  const G = glassUi;
+  ensureTokens();
   const t = i18n.getMessage;
 
   // url -> state. The element is never kept: once a permalink is read the post
@@ -49,6 +51,7 @@ export function startBulkCapture(site: CaptureSite, i18n: HologramI18nApi): void
   let savedCount = 0;
   let skippedCount = 0;
   let deferredCount = 0;
+  let unavailableCount = 0;
   let failedCount = 0;
 
   let stopped = false;
@@ -78,16 +81,16 @@ export function startBulkCapture(site: CaptureSite, i18n: HologramI18nApi): void
     'max-width:calc(100vw - 48px)',
     'box-sizing:border-box',
     'border-radius:999px',
-    `border:1px solid ${G.CARD_BORDER}`,
-    `background:${G.CARD_BG}`,
-    `color:${G.TEXT}`,
-    `font:600 13px/1.4 ${G.FONT_SANS}`,
-    `box-shadow:${G.CARD_SHADOW}`,
+    `border:1px solid ${token.overlayBorder}`,
+    `background:${token.surface}`,
+    `color:${token.ink}`,
+    `font:600 13px/1.4 ${token.fontSans}`,
+    `box-shadow:${token.overlayShadow}`,
   ].join(';');
 
   const badge = document.createElement('div');
-  badge.style.cssText = `width:26px;height:26px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;background:${G.BADGE_NEUTRAL};color:${G.ACCENT_TEXT};`;
-  badge.appendChild(G.makeSpinner(15));
+  badge.style.cssText = `width:26px;height:26px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;background:${token.badgeNeutral};color:${token.accent};`;
+  badge.appendChild(makeSpinner(15));
   banner.appendChild(badge);
 
   const label = document.createElement('div');
@@ -98,7 +101,7 @@ export function startBulkCapture(site: CaptureSite, i18n: HologramI18nApi): void
   const stopButton = document.createElement('button');
   stopButton.type = 'button';
   stopButton.textContent = t('bulkStop');
-  stopButton.style.cssText = ['flex:none', 'appearance:none', 'cursor:pointer', 'border-radius:999px', `border:1px solid ${G.CARD_BORDER}`, 'background:rgba(255,255,255,0.10)', `color:${G.TEXT}`, `font:600 12px/1 ${G.FONT_SANS}`, 'padding:7px 12px'].join(';');
+  stopButton.style.cssText = ['flex:none', 'appearance:none', 'cursor:pointer', 'border-radius:999px', `border:1px solid ${token.overlayBorder}`, `background:${token.badgeNeutral}`, `color:${token.ink}`, `font:600 12px/1 ${token.fontSans}`, 'padding:7px 12px'].join(';');
   stopButton.onclick = (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -107,13 +110,13 @@ export function startBulkCapture(site: CaptureSite, i18n: HologramI18nApi): void
   banner.appendChild(stopButton);
 
   document.body.appendChild(banner);
-  if (!G.REDUCED_MOTION) {
+  if (!prefersReducedMotion()) {
     banner.animate(
       [
         { opacity: 0, transform: 'translateX(-50%) translateY(-14px) scale(0.96)' },
         { opacity: 1, transform: 'translateX(-50%)' },
       ],
-      { duration: G.DUR_POP, easing: G.EASE_OUT },
+      { duration: motion.durationBase, easing: motion.easeOut },
     );
   }
 
@@ -165,7 +168,7 @@ export function startBulkCapture(site: CaptureSite, i18n: HologramI18nApi): void
     const urls = [...entries].filter(([, state]) => state === 'unknown').map(([url]) => url);
     if (!urls.length) return;
     asking = true;
-    chrome.runtime.sendMessage({ type: 'checkSaved', urls }, (res: any) => {
+    chrome.runtime.sendMessage({ type: 'checkSaved', urls } satisfies CheckSavedMessage, (res?: CheckSavedResponse) => {
       asking = false;
       if (chrome.runtime.lastError || !res?.ok || !res.results) return; // host unreachable: ask again next pass
       for (const url of urls) {
@@ -217,12 +220,28 @@ export function startBulkCapture(site: CaptureSite, i18n: HologramI18nApi): void
         // Marks the record's intake route so a bulk-imported post can be told
         // apart from an ordinary one-at-a-time save (native-host/post-record).
         capturedVia: 'x-bookmarks',
-      },
-      (res: any) => {
+      } satisfies SavePostMessage,
+      (res?: SaveResponse) => {
         busy = false;
+        // Narrowed here rather than inside the branch below: that condition is
+        // a disjunction (the port itself may have failed), so it tells TypeScript
+        // nothing about `res` — and SaveResponse's success arm carries no
+        // errorKind to read. #492 and #225 landed within minutes of each other
+        // and neither PR's CI saw the combination, which is what left main red.
+        const failure = res && !res.ok ? res : null;
         if (chrome.runtime.lastError || !res?.ok) {
-          entries.set(url, 'failed');
-          failedCount++;
+          // The post itself could not be obtained (#492) — deleted, suspended,
+          // protected, age gated. Nothing was written and nothing is broken, so
+          // it is counted apart from real failures: a bookmark list can hold a
+          // handful of dead posts forever, and every run would otherwise report
+          // them as breakage the user is meant to go and fix.
+          if (failure?.errorKind === 'post-unavailable') {
+            entries.set(url, 'unavailable');
+            unavailableCount++;
+          } else {
+            entries.set(url, 'failed');
+            failedCount++;
+          }
         } else if (res.deferred) {
           // Written to disk, but the library cannot show it until #365 — count
           // it apart so the summary never claims it is visible.
@@ -262,29 +281,30 @@ export function startBulkCapture(site: CaptureSite, i18n: HologramI18nApi): void
 
     badge.replaceChildren();
     const bad = failedCount > 0;
-    badge.style.background = bad ? G.WARN_AMBER : G.OK_GREEN;
-    badge.style.color = '#fff';
-    badge.appendChild(G.makeIcon(bad ? G.ICONS.warn : G.ICONS.check, 15));
-    banner.style.borderColor = bad ? 'rgba(232,161,58,0.65)' : 'rgba(48,164,108,0.65)';
+    badge.style.background = bad ? token.warning : token.success;
+    badge.style.color = bad ? token.onWarning : token.onSuccess;
+    badge.appendChild(makeIcon(bad ? ICONS.warn : ICONS.check, 15));
+    banner.style.borderColor = bad ? token.warning : token.success;
     label.textContent = summaryText(byUser);
     stopButton.remove();
-    setTimeout(dismiss, bad || deferredCount ? 6000 : 3500);
+    setTimeout(dismiss, bad || deferredCount || unavailableCount ? 6000 : 3500);
   }
 
   function summaryText(byUser: boolean): string {
     const head = byUser ? t('bulkStopped') : t('bulkFinished');
     const parts = [t('bulkSummarySaved', [savedCount]), t('bulkSummarySkipped', [skippedCount])];
     if (deferredCount > 0) parts.push(t('bulkSummaryDeferred', [deferredCount]));
+    if (unavailableCount > 0) parts.push(t('bulkSummaryUnavailable', [unavailableCount]));
     if (failedCount > 0) parts.push(t('bulkSummaryFailed', [failedCount]));
     return `${head} — ${parts.join(' / ')}`;
   }
 
   function dismiss() {
-    if (G.REDUCED_MOTION || !banner.isConnected) {
+    if (prefersReducedMotion() || !banner.isConnected) {
       banner.remove();
       return;
     }
-    const anim = banner.animate([{ opacity: 1 }, { opacity: 0, transform: 'translateX(-50%) translateY(-14px) scale(0.96)' }], { duration: G.DUR_POP, easing: G.EASE_OUT });
+    const anim = banner.animate([{ opacity: 1 }, { opacity: 0, transform: 'translateX(-50%) translateY(-14px) scale(0.96)' }], { duration: motion.durationFast, easing: motion.easeIn });
     anim.onfinish = () => banner.remove();
     anim.oncancel = () => banner.remove();
   }

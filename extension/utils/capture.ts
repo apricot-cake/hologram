@@ -1,10 +1,13 @@
 import { startBulkCapture } from './bulk-capture.ts';
 import { cropScreenshot } from './crop.ts';
+import { buildChoiceRow, checkDuplicate, pagePictureUrls } from './duplicate-guard.ts';
 import { normalizeRect } from './extractor/dom.ts';
 import { getCaptureSite } from './extractor/index.ts';
 import type { CaptureSite, PostRect } from './extractor/types.ts';
-import { glassUi } from './glass-ui.ts';
+import { ICONS, makeIcon, makeSpinner } from './icons.ts';
+import { ensureTokens, motion, prefersReducedMotion, token } from './tokens.ts';
 import { createI18n } from './i18n.ts';
+import type { BackgroundToContentMessage, CaptureAndSendMessage, CropImageResponse, LogCaptureMessage } from './messages.ts';
 
 export async function startCapture(): Promise<void> {
   // --- i18n ---
@@ -58,17 +61,22 @@ export async function startCapture(): Promise<void> {
   let restoreOverlayState: (() => void) | null = null;
   let savedScrollPosition: { x: number; y: number } | null = null;
   let lastCapturedPost: Element | null = null; // re-measured at crop time (scroll/layout drift)
+  // The duplicate warning was answered "replace" (#34). Kept here rather than
+  // read back off the ack: the background reports what it SAVED, and the
+  // retirement of the old capture is the app's later job — so the only side
+  // that knows this save was a replacement is the one that asked.
+  let replacing = false;
 
   // === UI elements ===
 
-  // Visual language shared with the resident content script.
-  // The palette is theme-independent (#136: near-opaque dark scrim + white
-  // ink), so there is no async pref read to wait for. State is carried by the
-  // badge fill + a tinted pill border; see glass-ui.ts for the CSP/Trusted
-  // Types constraints that shape how everything is built.
-  const G = glassUi;
+  // Visual language shared with the resident content script. The palette is
+  // generated from the app's design tokens and follows the BROWSER's light/dark
+  // setting (#270) — see tokens.ts, including why the values arrive as an
+  // adopted stylesheet and why everything below writes var() references rather
+  // than colours. State is carried by the badge fill + a tinted pill border.
+  ensureTokens();
 
-  // Top banner — scrim-solid pill: leading icon badge + label.
+  // Top banner — themed pill: leading icon badge + label.
   const banner = document.createElement('div');
   banner.style.cssText = [
     'position:fixed',
@@ -83,61 +91,76 @@ export async function startCapture(): Promise<void> {
     'max-width:calc(100vw - 48px)',
     'box-sizing:border-box',
     'border-radius:999px',
-    `border:1px solid ${G.CARD_BORDER}`,
-    `background:${G.CARD_BG}`,
-    `color:${G.TEXT}`,
-    `font:600 13px/1.4 ${G.FONT_SANS}`,
-    `box-shadow:${G.CARD_SHADOW}`,
+    `border:1px solid ${token.overlayBorder}`,
+    `background:${token.surface}`,
+    `color:${token.ink}`,
+    `font:600 13px/1.4 ${token.fontSans}`,
+    `box-shadow:${token.overlayShadow}`,
     'pointer-events:none',
-    `transition:border-color ${G.DUR_HOVER}ms`,
+    `transition:border-color ${token.durationBase}`,
   ].join(';');
   const bannerBadge = document.createElement('div');
-  bannerBadge.style.cssText = `width:26px;height:26px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;background:${G.ACCENT_SOFT};color:${G.ACCENT_TEXT};transition:background ${G.DUR_HOVER}ms,color ${G.DUR_HOVER}ms;`;
+  bannerBadge.style.cssText = `width:26px;height:26px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;background:${token.accentSoft};color:${token.accent};transition:background ${token.durationBase},color ${token.durationBase};`;
   banner.appendChild(bannerBadge);
   const bannerLabel = document.createElement('div');
   banner.appendChild(bannerLabel);
+  // The duplicate warning's three answers (#34), mounted into the pill while
+  // the question is up and removed on every other state.
+  let bannerChoices: HTMLElement | null = null;
 
-  type BannerState = 'select' | 'busy' | 'ok' | 'partial' | 'fail';
+  type BannerState = 'select' | 'busy' | 'ok' | 'partial' | 'fail' | 'ask';
   function setBanner(state: BannerState, text: string) {
     bannerLabel.textContent = text;
     bannerBadge.replaceChildren();
     // Reset the state-tinted border (ok/partial/fail override it below).
-    banner.style.borderColor = G.CARD_BORDER;
+    banner.style.borderColor = token.overlayBorder;
+    // Only the question state takes input; every other state is a status
+    // readout that must not intercept clicks meant for the page.
+    banner.style.pointerEvents = state === 'ask' ? 'auto' : 'none';
+    // The choices belong to the question only — any other state drops them.
+    bannerChoices?.remove();
+    bannerChoices = null;
     switch (state) {
       case 'select':
-        bannerBadge.style.background = G.ACCENT_SOFT;
-        bannerBadge.style.color = G.ACCENT_TEXT;
-        bannerBadge.appendChild(G.makeIcon(G.ICONS.target, 15));
+        bannerBadge.style.background = token.accentSoft;
+        bannerBadge.style.color = token.accent;
+        bannerBadge.appendChild(makeIcon(ICONS.target, 15));
         break;
       case 'busy':
-        bannerBadge.style.background = G.BADGE_NEUTRAL;
-        bannerBadge.style.color = G.ACCENT_TEXT;
-        bannerBadge.appendChild(G.makeSpinner(15));
+        bannerBadge.style.background = token.badgeNeutral;
+        bannerBadge.style.color = token.accent;
+        bannerBadge.appendChild(makeSpinner(15));
         break;
       case 'ok':
-        bannerBadge.style.background = G.OK_GREEN;
-        bannerBadge.style.color = '#fff';
-        bannerBadge.appendChild(G.makeIcon(G.ICONS.check, 15));
-        banner.style.borderColor = 'rgba(48,164,108,0.65)';
+        bannerBadge.style.background = token.success;
+        bannerBadge.style.color = token.onSuccess;
+        bannerBadge.appendChild(makeIcon(ICONS.check, 15));
+        banner.style.borderColor = token.success;
         break;
       case 'partial':
-        bannerBadge.style.background = G.WARN_AMBER;
-        bannerBadge.style.color = '#fff';
-        bannerBadge.appendChild(G.makeIcon(G.ICONS.warn, 15));
-        banner.style.borderColor = 'rgba(232,161,58,0.65)';
+        bannerBadge.style.background = token.warning;
+        bannerBadge.style.color = token.onWarning;
+        bannerBadge.appendChild(makeIcon(ICONS.warn, 15));
+        banner.style.borderColor = token.warning;
         break;
       case 'fail':
-        bannerBadge.style.background = G.FAIL_RED;
-        bannerBadge.style.color = '#fff';
-        bannerBadge.appendChild(G.makeIcon(G.ICONS.cross, 15));
-        banner.style.borderColor = 'rgba(229,72,77,0.65)';
+        bannerBadge.style.background = token.danger;
+        bannerBadge.style.color = token.onDanger;
+        bannerBadge.appendChild(makeIcon(ICONS.cross, 15));
+        banner.style.borderColor = token.danger;
+        break;
+      case 'ask':
+        bannerBadge.style.background = token.warning;
+        bannerBadge.style.color = token.onWarning;
+        bannerBadge.appendChild(makeIcon(ICONS.warn, 15));
+        banner.style.borderColor = token.warning;
         break;
     }
   }
 
   setBanner('select', MSG.select);
   document.body.appendChild(banner);
-  if (!G.REDUCED_MOTION) {
+  if (!prefersReducedMotion()) {
     // App toast entrance mirrored from the top edge: drop + slight scale settle
     // at the pop tier. transform carries the permanent translateX(-50%) — the
     // keyframes must too.
@@ -146,7 +169,7 @@ export async function startCapture(): Promise<void> {
         { opacity: 0, transform: 'translateX(-50%) translateY(-14px) scale(0.96)' },
         { opacity: 1, transform: 'translateX(-50%)' },
       ],
-      { duration: G.DUR_POP, easing: G.EASE_OUT },
+      { duration: motion.durationBase, easing: motion.easeOut },
     );
   }
 
@@ -157,10 +180,14 @@ export async function startCapture(): Promise<void> {
     'pointer-events:none',
     'z-index:2147483646',
     'box-sizing:border-box',
-    `border:2px solid ${G.ACCENT}`,
-    'border-radius:10px',
-    'background:rgba(40,168,219,0.08)',
-    'box-shadow:0 0 0 4px rgba(40,168,219,0.18)',
+    // The accent, used as ADR 0013 scopes it: this frame is the selection
+    // indicator for the post about to be captured, which is the one job the
+    // product accent has. The tint doubles as the outer glow so the frame reads
+    // on a busy page without a second colour.
+    `border:2px solid ${token.accent}`,
+    `border-radius:${token.radius}`,
+    `background:${token.accentSoft}`,
+    `box-shadow:0 0 0 4px ${token.accentSoft}`,
     'transition:top 0.08s, left 0.08s, width 0.08s, height 0.08s',
     'display:none',
   ].join(';');
@@ -220,7 +247,7 @@ export async function startCapture(): Promise<void> {
       chrome.runtime.sendMessage({
         type: 'logCapture',
         entry: { stage, phase: 'fail', platform: site.platform, locationHref: location.href, clickedSnap: snapEl(el) },
-      });
+      } satisfies LogCaptureMessage);
     } catch {
       /* ignore — diagnostics are non-essential */
     }
@@ -258,11 +285,43 @@ export async function startCapture(): Promise<void> {
       return;
     }
 
-    // Remove event listeners (capture is single-shot)
+    // Remove event listeners (capture is single-shot). Done BEFORE the
+    // duplicate check so a second click cannot pick another post while the
+    // question is on screen; Esc still cancels (onKeyDown stays registered).
     document.removeEventListener('mousemove', onMouseMove, true);
     document.removeEventListener('click', onClick, true);
     document.removeEventListener('contextmenu', onContextMenu, true);
+    highlight.style.display = 'none';
 
+    // #34: ask the library BEFORE shooting anything. checkDuplicate answers
+    // null for every case that leaves the question open (setting off, host
+    // unreachable, post not saved), and the capture then runs unchanged.
+    checkDuplicate(site.platform, postUrl, pagePictureUrls(post))
+      .catch(() => null)
+      .then((hit) => {
+        if (isCleanedUp) return; // Esc while we were asking
+        if (!hit) {
+          shoot(post, postUrl, null);
+          return;
+        }
+        setBanner('ask', getMessage('dupTitle'));
+        bannerChoices = buildChoiceRow(getMessage, (choice) => {
+          if (isCleanedUp) return;
+          if (choice === 'skip') {
+            setBanner('ok', getMessage('dupSkipped'));
+            setTimeout(cleanup, 1500);
+            return;
+          }
+          replacing = choice === 'replace';
+          shoot(post, postUrl, replacing ? hit.captureId : null);
+        });
+        banner.appendChild(bannerChoices);
+      });
+  }
+
+  // Everything from "the post is decided" onward: hide our own overlays, bring
+  // the post fully into view, shoot, and hand the crop rect to the background.
+  function shoot(post: Element, postUrl: string, replaces: string | null) {
     // Hide the highlight and banner before capturing
     highlight.style.display = 'none';
     banner.style.display = 'none';
@@ -299,7 +358,8 @@ export async function startCapture(): Promise<void> {
           rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
           postUrl,
           platform: site.platform,
-        });
+          replaces,
+        } satisfies CaptureAndSendMessage);
       });
     });
   }
@@ -346,11 +406,11 @@ export async function startCapture(): Promise<void> {
   // abrupt remove() reads as a glitch next to the app's toast. The listeners
   // are already gone when this runs, so the lingering element is inert.
   function dismissBanner() {
-    if (G.REDUCED_MOTION || !banner.isConnected || banner.style.display === 'none') {
+    if (prefersReducedMotion() || !banner.isConnected || banner.style.display === 'none') {
       banner.remove();
       return;
     }
-    const anim = banner.animate([{ opacity: 1 }, { opacity: 0, transform: 'translateX(-50%) translateY(-14px) scale(0.96)' }], { duration: G.DUR_POP, easing: G.EASE_OUT });
+    const anim = banner.animate([{ opacity: 1 }, { opacity: 0, transform: 'translateX(-50%) translateY(-14px) scale(0.96)' }], { duration: motion.durationFast, easing: motion.easeIn });
     anim.onfinish = () => banner.remove();
     anim.oncancel = () => banner.remove();
   }
@@ -383,7 +443,7 @@ export async function startCapture(): Promise<void> {
 
   // === Message listener ===
 
-  function onRuntimeMessage(msg: any, _sender: chrome.runtime.MessageSender, sendResponse: (response?: any) => void) {
+  function onRuntimeMessage(msg: BackgroundToContentMessage, _sender: chrome.runtime.MessageSender, sendResponse: (response?: CropImageResponse) => void) {
     // Crop request
     if (msg.type === 'cropImage') {
       void cropScreenshot(msg.dataUrl, msg.rect, () => (lastCapturedPost?.isConnected ? getPostRect(lastCapturedPost) : null)).then((croppedDataUrl) => {
@@ -407,13 +467,15 @@ export async function startCapture(): Promise<void> {
         // grouped > 0: this post was already saved this session — the app folds
         // same-post saves into one stacked card, so say so instead of a plain
         // success (otherwise the save looks like a silent no-op in the grid).
-        text = partial ? partialSaveText(msg.metaReason) : msg.grouped > 0 ? getMessage('bannerSavedGrouped', [msg.grouped + 1]) : MSG.saved;
+        // A replacement says so INSTEAD of "grouped": the earlier record is on
+        // its way to the trash, so calling it a merge would be wrong.
+        text = partial ? partialSaveText(msg.metaReason) : replacing ? getMessage('dupReplaced') : msg.grouped > 0 ? getMessage('bannerSavedGrouped', [msg.grouped + 1]) : MSG.saved;
       }
       setBanner(partial ? 'partial' : msg.success ? 'ok' : 'fail', text);
-      if (msg.success && !partial && !G.REDUCED_MOTION) {
+      if (msg.success && !partial && !prefersReducedMotion()) {
         // Small badge pop so the state flip reads even in peripheral vision
         // (app hologramBadgePop: .3s on the shared ease-out curve).
-        bannerBadge.animate([{ transform: 'scale(0.6)' }, { transform: 'scale(1.12)', offset: 0.6 }, { transform: 'scale(1)' }], { duration: 300, easing: G.EASE_OUT });
+        bannerBadge.animate([{ transform: 'scale(0.6)' }, { transform: 'scale(1.12)', offset: 0.6 }, { transform: 'scale(1)' }], { duration: 300, easing: motion.easeOut });
       }
       // Hold failures (and partials) longer so the reason is readable.
       setTimeout(cleanup, partial || !msg.success ? 2800 : 1500);

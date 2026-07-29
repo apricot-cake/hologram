@@ -43,6 +43,9 @@ export function createI18n(): Promise<HologramI18nApi> {
       bannerHostMissing: 'Hologram の保存先に接続できません。Chrome を再起動してください',
       bannerHostUnavailable: 'Hologram の保存プログラムを起動できませんでした。拡張機能の設定から診断ページを確認してください',
       bannerOriginRejected: 'Hologram の保存設定が一致していません。Hologram を再インストールしてください',
+      // 投稿そのものが取得できなかった（削除・凍結・鍵付き・年齢制限）＝壊れていない。
+      // 直すものが無いので、診断ページへ誘導する bannerFailedUnknown とは別文言。
+      bannerPostUnavailable: '投稿を取得できないため保存できません（削除・非公開など）',
       bannerFailedUnknown: '保存に失敗しました。拡張機能の設定から診断ページを確認してください',
 
       // drag.js: drop-zone hint (the toasts reuse the banner* keys above)
@@ -66,7 +69,29 @@ export function createI18n(): Promise<HologramI18nApi> {
       // Saved to disk but not yet displayable (#365 gives image-less records a
       // home). Never say "skipped" — the post IS in the library.
       bulkSummaryDeferred: '画像なし $1件も保存済み（一覧への表示は準備中）',
+      // 取得できなかった投稿（#492）。「失敗」と分けて数える＝直すもののある不具合と、
+      // 投稿が既に無いだけの正常な結果を、同じ言葉で並べない。
+      bulkSummaryUnavailable: '取得できず $1件（削除・非公開など）',
       bulkSummaryFailed: '失敗 $1件',
+
+      // capture.ts / drag.ts: duplicate-save warning (#34). Asked BEFORE the
+      // save, because the extension writes straight to disk — with the desktop
+      // app closed there is no later place to resolve it.
+      dupTitle: 'この投稿はもう保存されています',
+      // "Copy" = save anyway, as a second record. Named for what it leaves
+      // behind (two copies), not for the click ("保存") — the whole point of the
+      // warning is that the user did not know there would be two.
+      dupCopy: 'コピー',
+      dupCopyHint: 'もう1件として保存します',
+      dupReplace: '置換',
+      dupReplaceHint: '前の保存をゴミ箱へ移し、タグと入っているフォルダを引き継ぎます',
+      dupSkip: 'スキップ',
+      dupSkipHint: '保存しません',
+      dupSkipped: '保存しませんでした',
+      // Shown after a "replace" save. The old capture goes to the trash when the
+      // desktop app next runs, so the wording does not claim it is gone already.
+      dupReplaced: '置き換えました（前の保存はゴミ箱へ）',
+      dupSuppress: '今後この確認を出さない',
     },
 
     en: {
@@ -84,6 +109,7 @@ export function createI18n(): Promise<HologramI18nApi> {
       bannerHostMissing: "Can't reach Hologram's saver. Please restart Chrome.",
       bannerHostUnavailable: "Hologram's saver could not start. Open the diagnostics page from the extension settings.",
       bannerOriginRejected: "Hologram's save configuration does not match. Reinstall Hologram.",
+      bannerPostUnavailable: 'Cannot save: the post could not be fetched (deleted, private, …)',
       bannerFailedUnknown: 'Save failed. Open the diagnostics page from the extension settings.',
 
       // drag.js: drop-zone hint (the toasts reuse the banner* keys above)
@@ -102,7 +128,20 @@ export function createI18n(): Promise<HologramI18nApi> {
       bulkSummarySaved: '$1 saved',
       bulkSummarySkipped: '$1 already saved',
       bulkSummaryDeferred: '$1 image-less saved (not shown in the library yet)',
+      bulkSummaryUnavailable: '$1 unavailable (deleted or private)',
       bulkSummaryFailed: '$1 failed',
+
+      // capture.ts / drag.ts: duplicate-save warning (#34) — see the ja notes.
+      dupTitle: 'This post is already saved',
+      dupCopy: 'Copy',
+      dupCopyHint: 'Save it again as a second record',
+      dupReplace: 'Replace',
+      dupReplaceHint: 'Move the earlier save to the trash, keeping its tags and folders',
+      dupSkip: 'Skip',
+      dupSkipHint: "Don't save",
+      dupSkipped: 'Not saved',
+      dupReplaced: 'Replaced (the earlier save goes to the trash)',
+      dupSuppress: "Don't ask again",
     },
   };
 
@@ -129,7 +168,7 @@ export function createI18n(): Promise<HologramI18nApi> {
     // back to the generic one for unclassified failures.
     const partialSaveText = (reason) => getMessage(reason === 'protected' ? 'bannerSavedNoMetaProtected' : reason === 'ageRestricted' ? 'bannerSavedNoMetaAgeRestricted' : 'bannerSavedNoMeta');
 
-    const saveFailureText = (kind) => getMessage(kind === 'host-missing' ? 'bannerHostMissing' : kind === 'host-unavailable' ? 'bannerHostUnavailable' : kind === 'origin-rejected' ? 'bannerOriginRejected' : 'bannerFailedUnknown');
+    const saveFailureText = (kind) => getMessage(kind === 'host-missing' ? 'bannerHostMissing' : kind === 'host-unavailable' ? 'bannerHostUnavailable' : kind === 'origin-rejected' ? 'bannerOriginRejected' : kind === 'post-unavailable' ? 'bannerPostUnavailable' : 'bannerFailedUnknown');
 
     return { lang: resolved, resolved, getMessage, partialSaveText, saveFailureText };
   })();

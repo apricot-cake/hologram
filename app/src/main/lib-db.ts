@@ -200,6 +200,14 @@ const MIGRATIONS: Migration[] = [
           FROM posts p;
       `),
   },
+  // #34: the captureId a record replaces, written by the duplicate-save
+  // warning's "replace" answer. A PENDING marker, not a relation — the app
+  // consumes it (trash the old capture, merge its tags, re-point its folder /
+  // manual-group rows) and sets it back to NULL, so a non-null value means
+  // "not swept yet". Deliberately NOT a foreign key: the old post is gone by
+  // the time the sweep finishes, and a replay may carry a marker naming a
+  // captureId this database never had.
+  { name: 'add-post-replaces', up: (db) => db.exec('ALTER TABLE posts ADD COLUMN replaces TEXT') },
 ];
 
 interface Migration {
@@ -336,6 +344,7 @@ interface PostsTable {
   // internal key, deliberately absent from POST_COLUMNS: it identifies a row in
   // THIS database's FTS index and means nothing in an export or another library.
   ftsRowid: number | null;
+  replaces: string | null; // add-post-replaces migration (#34) — pending replacement marker, null once swept
 }
 interface MediaTable {
   id: Generated<number>;

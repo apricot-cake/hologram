@@ -10,6 +10,7 @@ import type { CSSProperties } from 'react';
 import { useSyncExternalStore } from 'react';
 import { useGridModel, VirtualGridHost } from '../_shared/VirtualGrid.tsx';
 import type { GridCellProps } from '../_shared/VirtualGrid.tsx';
+import { posterClickBackground } from '../services/orchestrator.ts';
 import { get as storeGet, subscribe as storeSubscribe } from '../services/store.ts';
 
 // The inspected ring is derived straight from hologramStore's 'inspectedKey'
@@ -88,6 +89,12 @@ function PosterCell({ index, data }: GridCellProps) {
   return <PosterCard c={c} />;
 }
 
+// Background click (#242). No marquee sink: this grid has no selection, so the press
+// has only its click half — the inspector, which both grids share, drops back to its
+// placeholder. Late-bound (orchestrator assigns during init) and hoisted out of the
+// render, since the host re-arms its gesture whenever the prop identity changes.
+const onBackgroundClick = () => posterClickBackground();
+
 export function PostersHost({ model }: { model: HologramGridModel }) {
-  return <VirtualGridHost model={model} cell={PosterCell} />;
+  return <VirtualGridHost model={model} cell={PosterCell} onBackgroundClick={onBackgroundClick} />;
 }

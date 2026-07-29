@@ -26,10 +26,34 @@ export interface MarqueeCell {
 }
 
 // Pointer travel (px) before a press on empty space becomes a marquee. Below it
-// the gesture stays a plain click and the selection is left completely alone —
-// a stray click on the grid background must not wipe a selection the user built
-// up card by card.
+// the gesture stays a plain click, which is the OTHER half of the same press
+// (#242, clearsSelection below) rather than nothing at all — the threshold is
+// what keeps a hand tremor during a click from being read as a band.
 export const MARQUEE_THRESHOLD = 4;
+
+// Has the pointer travelled far enough for the press to be a drag? Either axis
+// alone counts, and the threshold is inclusive.
+export function exceedsThreshold(dx: number, dy: number, threshold: number = MARQUEE_THRESHOLD): boolean {
+  return Math.abs(dx) >= threshold || Math.abs(dy) >= threshold;
+}
+
+// The click half of the same gesture (#242): a press on empty space that never
+// became a drag clears the selection when it is released. Held Ctrl/Shift skips
+// the clear, which is the shared idiom of every rubber-band implementation
+// surveyed — Nautilus guards its unselect_all with
+// `!(modifiers & (GDK_CONTROL_MASK | GDK_SHIFT_MASK))`, Dolphin gates
+// clearSelection() on `!shiftOrControlPressed` — and it is the same flag the
+// band itself reads to extend instead of replace, so one press can never mean
+// "extend" and "wipe" at once.
+//
+// Deciding on RELEASE rather than on press is forced by the order of events: at
+// press time it is not yet known whether a band is coming. Qt (digiKam) resolves
+// it the same way; the GTK implementations clear on press because their band
+// replaces the selection anyway, which is not true here — an additive band has
+// to keep what it started from.
+export function clearsSelection(dragged: boolean, additive: boolean): boolean {
+  return !dragged && !additive;
+}
 
 // How close to the scroller's edge the pointer has to get before the grid starts
 // scrolling under the band, and the fastest it goes (px per animation frame, so

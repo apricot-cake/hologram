@@ -20,8 +20,9 @@ import { makeCooc } from './cooc.ts';
 import { mediaFilesOf, densityImage, percentileFn, makeGallery, loadUngrouped, loadManualGroups } from './records.ts';
 import { makeTags, bindTagKindOf, bindPosterFilterVocab, getTagTypes, getTagLabels, getPosterTags, load as loadTags } from './tags.ts';
 import { makeTabLabels } from './tab-state.ts';
-import { importComplete } from './posts.ts';
-import { importLegacyZip } from './legacy-zip-import.ts';
+import { importComplete, importPosts } from './posts.ts';
+import { readLegacyZipPosts } from './legacy-zip-import.ts';
+import { open as confirmOpen } from './confirm.ts';
 import { compile as searchCompile } from './search.ts';
 import { hologramI18n } from './i18n.ts';
 import * as folders from './folders.ts';
@@ -103,6 +104,11 @@ export let selectionClear: () => void;
 // Drag range selection (#484): the virtualized grid host owns the rubber band and the
 // hit test (it holds masonic's positioner); these are the selection half it drives.
 export let selectionMarquee: HologramMarqueeSink;
+// The click half of that same press, one binding per grid (#242). The post grid empties
+// the selection and the inspector with it; the poster grid has no selection, so it only
+// sends the inspector — the panel both grids share — back to its placeholder.
+export let selectionClickBackground: () => void;
+export let posterClickBackground: () => void;
 // Size-slider bindings for the display popover (P2②): read the current view's size track
 // (column-count or px) and apply a slider value. gridDensity owns the geometry math; the
 // popover imports these live bindings and calls them on open / drag / commit.
@@ -1170,6 +1176,7 @@ export function endFilterEditSession(): void {
     copyGroupImage: (g) => postGrid.copyGroupImage(g),
     openQuickView: (g) => lightboxOpen(buildGroupGalleryItems(g)[0]), // Space peek (single image, #143)
     showDetail: (g) => showDetail(g), // arrow movement swaps the inspector, same as a plain click
+    dismissDetail: () => dismissDetail(), // background click empties the panel with the selection (#242)
   });
   const { selectedRecords } = selectionCtl;
   // Selection is driven entirely by the unified card gesture above (plain =
@@ -1192,6 +1199,10 @@ export function endFilterEditSession(): void {
   selectionDelete = selectionCtl.requestDeleteSelected;
   selectionClear = selectionCtl.clearSelection;
   selectionMarquee = selectionCtl.marquee;
+  selectionClickBackground = selectionCtl.clickBackground;
+  // The poster grid's own background click (#242). Same panel, same placeholder, but
+  // nothing to deselect — poster cards are inspected, never selected (#143).
+  posterClickBackground = () => dismissDetail();
 
   // --- Bulk "add tags to selection" (Dialog — P2⑦) ---
   // The staged tags live in the dialog's own React state; nothing persists until
@@ -1782,12 +1793,35 @@ export function endFilterEditSession(): void {
         else notify(getMessage('imported', [imported]));
       };
       if (res && res.legacy && res.bytes) {
-        const legacy = await importLegacyZip(new Uint8Array(res.bytes));
-        if (!legacy) {
+        const posts = await readLegacyZipPosts(new Uint8Array(res.bytes));
+        if (!posts) {
           notify(getMessage('importFailed'));
           return;
         }
-        await done(legacy.imported, legacy.skipped);
+        // #34: 取り込む投稿が既にライブラリにあるとき、コピー／置換／スキップを
+        // 1回だけ聞く（1件ずつ聞くと数百回になるため、バッチ単位）。重複が無ければ
+        // main 側が即座に取り込むので、この確認は出ない。
+        const first = await importPosts(posts);
+        if (first?.needsChoice) {
+          const finish = async (mode: string) => {
+            const r = await importPosts(posts, mode);
+            await done(r.imported, r.skipped);
+          };
+          confirmOpen({
+            message: getMessage('importDuplicate', [first.duplicates]),
+            description: getMessage('importDuplicateDesc'),
+            okLabel: getMessage('importDuplicateReplace'),
+            altLabel: getMessage('importDuplicateCopy'),
+            cancelLabel: getMessage('importDuplicateSkip'),
+            onOk: () => void finish('replace'),
+            onAlt: () => void finish('copy'),
+            // Esc lands here too, and skipping is the answer that changes the
+            // least — the library keeps what it has.
+            onCancel: () => void finish('skip'),
+          });
+          return;
+        }
+        await done(first.imported, first.skipped);
         return;
       }
       if (!res || !res.ok) {

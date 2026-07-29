@@ -47,6 +47,10 @@ export interface SelectionBarDeps {
   // movement lands the same way a plain click does. A deferred dep for the same
   // reason as openBulkTagDialog: it is constructed after this module.
   showDetail(g: HologramPostGroup): void;
+  // Put the inspector back into its "nothing is selected" state — inspector-builder.ts's
+  // dismissDetail. NOT closeDetail: the panel's open/closed state is the user's (#243),
+  // and emptying the selection may only empty the panel's CONTENT.
+  dismissDetail(): void;
 }
 
 export function makeSelectionBar(deps: SelectionBarDeps) {
@@ -104,6 +108,23 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
       syncSelectionClasses();
     },
   };
+
+  // The click half of that same press (#242): background click = nothing is
+  // selected any more, and the inspector — which is a view OF the selection
+  // (#143) — goes back to its placeholder. The grid host has already ruled out
+  // cards, card buttons, the scrollbar gutter, a held Ctrl/Shift and anything
+  // that turned into a drag, so there is no guard left to repeat here.
+  //
+  // The selection is only rebuilt when there IS one: every visible cell
+  // subscribes to 'selectedSet', and a fresh empty Set is a new identity that
+  // would re-render all of them for no change.
+  function clickBackground() {
+    if (selection.size()) {
+      selection.clear();
+      syncSelectionClasses();
+    }
+    deps.dismissDetail();
+  }
 
   // Toggle .selecting on the grid container (viewer-owned, static). Per-card
   // .selected is no longer pushed through here — the grid component's Cell reads
@@ -321,6 +342,7 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
     toggleCardSelection,
     clickSelect,
     marquee,
+    clickBackground,
     selectedRecords,
     clearSelection,
     handleShortcutSelectAllKey,

@@ -1,14 +1,16 @@
 'use strict';
 
-// Verifies drag range selection (#484) in a real renderer: press on the grid's
-// empty margin, drag a band, and the cards it touches get selected.
+// Verifies the grid's empty-space gesture in a real renderer — both halves of the
+// same press: drag it and a band selects the cards it touches (#484), release it
+// without dragging and the selection clears (#242).
 //
 // What this covers that scripts/marquee.test.ts cannot: the gesture is wired to
 // the right element, the hit test reads masonic's positioner, and the answer it
 // produces matches where the cards actually ARE (the test derives its expectation
 // from live DOM rects and compares — model vs. reality, which is the whole risk in
-// a virtualized grid). Plus the guards: below-threshold press changes nothing,
-// Ctrl extends instead of replacing, Esc restores.
+// a virtualized grid). Plus the guards: Ctrl extends instead of replacing, Esc
+// restores, a held modifier makes a background click a no-op, and the inspector
+// follows the selection down to its placeholder.
 //
 // What it cannot cover: the feel of the real gesture and auto-scroll — synthetic
 // events step through the frames instantly. That needs a real pointer (#484 本文).
@@ -83,6 +85,16 @@ const evalJs = `(async () => {
   const move = (x, y) => window.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: x, clientY: y }));
   const up = () => window.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
   const esc = () => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  // Press and release with no movement at all: the click half of the gesture (#242).
+  // No 'click' event is synthesized, so the narrow overlay's outside-click dismiss
+  // (a separate listener) cannot be what any of this measures.
+  const click = (x, y, mods) => { down(x, y, mods); up(); };
+  const inspectedCards = () => document.querySelectorAll('#postGrid .post-card.inspected').length;
+  const panelFilled = () => !!document.querySelector('#postDetailBox [data-slot="inspector-tags"]');
+  // The panel's "nothing is selected" state (#244). Asserted on its own rather than
+  // as "not filled": the placeholder is what has to be THERE, and the panel renders
+  // it at both widths (only whether the column is on screen differs).
+  const panelPlaceholder = () => !!document.querySelector('#postDetailBox [data-slot="inspector-empty"]');
 
   // Cards the band would touch, computed from LIVE DOM rects — the independent
   // answer the app's positioner-based hit test has to agree with.
@@ -123,8 +135,9 @@ const evalJs = `(async () => {
   out.selectingClass = byId('postGrid').classList.contains('selecting');
   out.bandRemovedA = !band();
 
-  // B. a press that never crosses the threshold leaves the selection alone
-  down(x0, cy);
+  // B. a press that never crosses the threshold draws no band, and with Ctrl held
+  //    it leaves the selection completely alone (#242 skips the clear on a modifier)
+  down(x0, cy, { ctrlKey: true });
   move(x0 + 1, cy + 1);
   await sleep(60);
   out.bandDuringB = !!band();
@@ -175,6 +188,66 @@ const evalJs = `(async () => {
   up();
   await sleep(40);
 
+  // G. a plain click on empty space clears the selection AND sends the inspector
+  //    back to its placeholder (#242). The card click first is what fills the panel.
+  cardEl.dispatchEvent(new MouseEvent('click', { bubbles: true, button: 0, clientX: Math.round((only.r.left + only.r.right) / 2), clientY: cy }));
+  await sleep(120);
+  out.selectedBeforeG = selectedKeys();
+  out.inspectedBeforeG = inspectedCards();
+  out.panelFilledBeforeG = panelFilled();
+  click(x0, cy);
+  await sleep(120);
+  out.gotG = selectedKeys();
+  out.inspectedAfterG = inspectedCards();
+  out.panelFilledAfterG = panelFilled();
+  out.panelPlaceholderAfterG = panelPlaceholder();
+  out.bandDuringG = !!band(); // a click must not leave a rectangle behind
+
+  // H. the same click with a modifier held changes nothing (Nautilus / Dolphin
+  //    both gate their unselect_all on Ctrl/Shift being up)
+  await drag(x0, cy - 5, x1, cy + 5);
+  out.beforeH = selectedKeys();
+  click(x0, cy, { ctrlKey: true });
+  await sleep(80);
+  out.gotHCtrl = selectedKeys();
+  click(x0, cy, { shiftKey: true });
+  await sleep(80);
+  out.gotHShift = selectedKeys();
+
+  // I. the empty space BELOW the last row is background too (#242 確定した設計 3):
+  //    the grid is only as tall as its cards, so this is the biggest click target
+  //    of all and the one a rect-of-the-grid hit test would miss.
+  scroller.scrollTop = scroller.scrollHeight;
+  await sleep(200);
+  const lowest = Math.max(...cards().map(c => c.getBoundingClientRect().bottom));
+  const belowY = Math.round(lowest + 24);
+  const belowX = Math.round(sr.left + scroller.clientWidth / 2);
+  out.belowAvailable = belowY < sr.bottom - 4;
+  out.belowIsEmpty = out.belowAvailable && !(document.elementFromPoint(belowX, belowY) || {}).closest?.('.post-card');
+  out.beforeI = selectedKeys();
+  if (out.belowAvailable) {
+    click(belowX, belowY);
+    await sleep(120);
+  }
+  out.gotI = selectedKeys();
+
+  // J. the poster grid rides the same gesture (#242). It has no selection — poster
+  //    cards are inspected, never selected — so all its background click does is put
+  //    the panel both grids share back to the placeholder.
+  [...document.querySelectorAll('button')].find(b => (b.textContent || '').trim() === '投稿者')?.click();
+  out.posterCardsShown = await waitFor(() => document.querySelectorAll('#posterGrid .poster-card').length >= 1);
+  await sleep(250); // masonic lays the poster grid out from scratch
+  const posterCard = document.querySelector('#posterGrid .poster-card');
+  posterCard?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  await sleep(150);
+  out.posterFilledBeforeJ = !!document.querySelector('#postDetailBox [data-slot="inspector-poster"]');
+  const pr = posterCard.getBoundingClientRect();
+  const py = Math.round((pr.top + pr.bottom) / 2);
+  out.posterPressOnEmpty = !(document.elementFromPoint(x0, py) || {}).closest?.('.poster-card');
+  click(x0, py);
+  await sleep(150);
+  out.posterPlaceholderAfterJ = panelPlaceholder();
+
   out.errors = errors;
   return JSON.stringify(out);
 })()`;
@@ -209,7 +282,7 @@ child.on('close', () => {
     ['the grid enters selection mode', r.selectingClass === true],
     ['the band is removed on release', r.bandRemovedA === true],
     ['a press under the threshold draws no band', r.bandDuringB === false],
-    ['a press under the threshold leaves the selection alone', same(r.gotB, r.gotA)],
+    ['Ctrl + a background click leaves the selection alone', same(r.gotB, r.gotA)],
     ['Ctrl+drag extends the selection', same(r.gotC, r.expectC) && r.gotC.length > r.gotA.length],
     ['a plain drag replaces the selection', same(r.gotD, r.expectD) && r.gotD.length === 1],
     ['the band paints while dragging', r.bandVisibleE === true],
@@ -218,6 +291,15 @@ child.on('close', () => {
     ['Esc restores the pre-drag selection', same(r.gotE, r.expectE)],
     ['the release after Esc does not re-apply the band', same(r.gotEAfterUp, r.expectE)],
     ['a drag starting on a card is not a marquee', r.bandFromCard === false],
+    ['a card click fills the inspector and selects the card', r.selectedBeforeG.length === 1 && r.inspectedBeforeG === 1 && r.panelFilledBeforeG === true],
+    ['a background click empties the selection', same(r.gotG, [])],
+    ['a background click returns the inspector to its placeholder', r.inspectedAfterG === 0 && r.panelFilledAfterG === false && r.panelPlaceholderAfterG === true],
+    ['a background click leaves no band behind', r.bandDuringG === false],
+    ['Ctrl + a background click keeps the selection', same(r.gotHCtrl, r.beforeH) && r.beforeH.length >= 2],
+    ['Shift + a background click keeps the selection', same(r.gotHShift, r.beforeH)],
+    ['the space below the last row is background too', r.belowAvailable === true && r.belowIsEmpty === true && r.beforeI.length > 0 && same(r.gotI, [])],
+    ['a poster click fills the inspector', r.posterCardsShown === true && r.posterFilledBeforeJ === true],
+    ['the poster grid background returns the inspector too', r.posterPressOnEmpty === true && r.posterPlaceholderAfterJ === true],
     ['no handler threw', Array.isArray(r.errors) && r.errors.length === 0],
   ];
   let failed = 0;
