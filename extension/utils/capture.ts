@@ -5,6 +5,7 @@ import { getCaptureSite } from './extractor/index.ts';
 import type { CaptureSite, PostRect } from './extractor/types.ts';
 import { glassUi } from './glass-ui.ts';
 import { createI18n } from './i18n.ts';
+import type { BackgroundToContentMessage, CaptureAndSendMessage, CropImageResponse, LogCaptureMessage } from './messages.ts';
 
 export async function startCapture(): Promise<void> {
   // --- i18n ---
@@ -220,7 +221,7 @@ export async function startCapture(): Promise<void> {
       chrome.runtime.sendMessage({
         type: 'logCapture',
         entry: { stage, phase: 'fail', platform: site.platform, locationHref: location.href, clickedSnap: snapEl(el) },
-      });
+      } satisfies LogCaptureMessage);
     } catch {
       /* ignore — diagnostics are non-essential */
     }
@@ -299,7 +300,7 @@ export async function startCapture(): Promise<void> {
           rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
           postUrl,
           platform: site.platform,
-        });
+        } satisfies CaptureAndSendMessage);
       });
     });
   }
@@ -383,7 +384,7 @@ export async function startCapture(): Promise<void> {
 
   // === Message listener ===
 
-  function onRuntimeMessage(msg: any, _sender: chrome.runtime.MessageSender, sendResponse: (response?: any) => void) {
+  function onRuntimeMessage(msg: BackgroundToContentMessage, _sender: chrome.runtime.MessageSender, sendResponse: (response?: CropImageResponse) => void) {
     // Crop request
     if (msg.type === 'cropImage') {
       void cropScreenshot(msg.dataUrl, msg.rect, () => (lastCapturedPost?.isConnected ? getPostRect(lastCapturedPost) : null)).then((croppedDataUrl) => {

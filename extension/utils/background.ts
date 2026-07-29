@@ -2,6 +2,8 @@
 // the extractor registry (utils/extractor/) — this file holds no per-platform
 // branch of its own (#212).
 import { extractorFor, fetchPostMetadata, getHostname, highResUrlOf, isAllowedSender, mediaKeyOf } from './extractor/index.ts';
+import type { PostRecord } from './extractor/types.ts';
+import type { BridgeAck, CaptureAndSendResponse, CheckSavedResponse, ContentToBackgroundMessage, CropImageMessage, CropImageResponse, DumpLogsResponse, LogCaptureResponse, NotifyMessage, SavedEntry, SavedResults, SavedUpdateMessage, SaveResponse } from './messages.ts';
 import { classifySaveFailure } from './native-error.ts';
 
 export function startBackground(): void {
@@ -78,24 +80,24 @@ export function startBackground(): void {
   // page only has to say WHICH post; the host downloads the media and makes the
   // first one the record's image. Answers with the outcome (the caller paces
   // itself on it) rather than pushing a notify like the capture path does.
-  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  chrome.runtime.onMessage.addListener((message: ContentToBackgroundMessage, sender, sendResponse) => {
     if (message.type !== 'savePost') return false;
     if (!sender.tab?.id) {
-      sendResponse({ ok: false, error: 'Missing tab context' });
+      sendResponse({ ok: false, error: 'Missing tab context' } satisfies SaveResponse);
       return false;
     }
     if (!isAllowedSender(sender.tab.url, message.platform)) {
-      sendResponse({ ok: false, error: 'Sender origin does not match platform' });
+      sendResponse({ ok: false, error: 'Sender origin does not match platform' } satisfies SaveResponse);
       return false;
     }
     const senderHost = getHostname(sender.tab.url);
     savePostByUrl(sender.tab, message.platform, message.postUrl, message.capturedVia || null)
-      .then((result) => sendResponse({ ok: true, ...result }))
+      .then((result) => sendResponse({ ok: true, ...result } satisfies SaveResponse))
       .catch((error) => {
         console.error(error);
         const errorKind = classifySaveFailure(error?.message);
         void logCapture({ stage: error?.stage || 'unknown', phase: 'fail', platform: message.platform, host: senderHost, url: message.postUrl, error: error?.message }, true);
-        sendResponse({ ok: false, errorKind, error: error?.message });
+        sendResponse({ ok: false, errorKind, error: error?.message } satisfies SaveResponse);
       });
     return true; // async response
   });
@@ -104,7 +106,7 @@ export function startBackground(): void {
     const captureId = generateCaptureId();
     const capturedAt = new Date().toISOString();
 
-    let meta: any;
+    let meta: PostRecord;
     try {
       meta = await fetchPostMetadata(postUrl, { expectedHost: getHostname(tab.url) });
     } catch (err) {
@@ -123,7 +125,7 @@ export function startBackground(): void {
     });
 
     const metaOk = metaFetched(meta);
-    let ack: any;
+    let ack: BridgeAck;
     try {
       ack = await sendPostToBridge(captureId, record, metaOk);
     } catch (err) {
@@ -134,32 +136,34 @@ export function startBackground(): void {
     return { ...ack, metaOk, metaReason: meta.metaError || null, grouped };
   }
 
-  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  chrome.runtime.onMessage.addListener((message: ContentToBackgroundMessage, sender, sendResponse) => {
     if (message.type !== 'captureAndSend') return false;
 
     if (!sender.tab?.id) {
-      sendResponse({ ok: false, error: 'Missing tab context' });
+      sendResponse({ ok: false, error: 'Missing tab context' } satisfies CaptureAndSendResponse);
       return false;
     }
 
     if (!isAllowedSender(sender.tab.url, message.platform)) {
-      sendResponse({ ok: false, error: 'Sender origin does not match platform' });
+      sendResponse({ ok: false, error: 'Sender origin does not match platform' } satisfies CaptureAndSendResponse);
       return false;
     }
 
     const tabId = sender.tab.id;
     const senderHost = getHostname(sender.tab.url);
-    captureAndSave(sender.tab, message.rect, message.postUrl, message.platform, message.capturedVia || null)
+    // captureAndSend never carries a capturedVia (only the intake routes —
+    // savePost / imageDragged — do): captureAndSave keeps its default (null).
+    captureAndSave(sender.tab, message.rect, message.postUrl, message.platform)
       // captureAndSave has no return value (it notifies the content script
       // directly via notify() instead) — content.js's capturePost() never reads
       // this sendResponse either, so `ok:true` is the whole payload.
-      .then(() => sendResponse({ ok: true }))
+      .then(() => sendResponse({ ok: true } satisfies CaptureAndSendResponse))
       .catch((error) => {
         console.error(error);
         const errorKind = classifySaveFailure(error?.message);
         void logCapture({ stage: error?.stage || 'unknown', phase: 'fail', platform: message.platform, host: senderHost, url: message.postUrl, error: error?.message }, true);
-        notify(tabId, false, { errorKind });
-        sendResponse({ ok: false, errorKind });
+        chrome.tabs.sendMessage(tabId, { type: 'notify', success: false, errorKind } satisfies NotifyMessage).catch(() => {});
+        sendResponse({ ok: false, errorKind } satisfies CaptureAndSendResponse);
       });
 
     return true;
@@ -175,14 +179,14 @@ export function startBackground(): void {
     const [active] = await chrome.tabs.query({ active: true, windowId: tab.windowId });
     if (!active || active.id !== tab.id) throw stageError('capture', 'Tab changed before capture');
 
-    let dataUrl: any;
+    let dataUrl: string;
     try {
       dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'jpeg', quality: 92 });
     } catch (err) {
       throw stageError('capture', err?.message || 'captureVisibleTab failed');
     }
 
-    const response = await chrome.tabs.sendMessage(tab.id, { type: 'cropImage', dataUrl, rect });
+    const response: CropImageResponse = await chrome.tabs.sendMessage(tab.id, { type: 'cropImage', dataUrl, rect } satisfies CropImageMessage);
     if (!response?.croppedDataUrl) throw stageError('crop', 'Cropping failed');
     const jpegBase64 = response.croppedDataUrl.split(',')[1];
 
@@ -190,7 +194,7 @@ export function startBackground(): void {
     // fetchPostMetadata is defined in metadata.js (imported at the top).
     // expectedHost pins the Misskey/Mastodon instance fetch to the sender tab's
     // host (SSRF guard — a hostile page can't aim the fetch at another host).
-    let meta: any;
+    let meta: PostRecord;
     try {
       meta = await fetchPostMetadata(postUrl, { expectedHost: getHostname(tab.url) });
     } catch (err) {
@@ -208,7 +212,7 @@ export function startBackground(): void {
     });
 
     const metaOk = metaFetched(meta);
-    let ack: any;
+    let ack: BridgeAck;
     try {
       ack = await sendToBridge(captureId, jpegBase64, record, metaOk);
     } catch (err) {
@@ -218,14 +222,14 @@ export function startBackground(): void {
     // grouped = prior saves of this post this session → the banner says the save
     // merged with them (the app folds same-URL records into one card).
     const grouped = await bumpRecentSave(record.url);
-    notify(tab.id, true, { metaOk, metaReason: meta.metaError || null, grouped });
+    chrome.tabs.sendMessage(tab.id, { type: 'notify', success: true, metaOk, metaReason: meta.metaError || null, grouped } satisfies NotifyMessage).catch(() => {});
   }
 
   // Send a message to the native messaging host (which writes the sidecar + image
   // into the user's save folder) and resolve with its ack. The host is short-lived:
   // Chrome spawns it per connection, so this works even when the desktop app is not
   // running.
-  function bridgeSend(message: unknown): Promise<any> {
+  function bridgeSend(message: unknown): Promise<BridgeAck> {
     return new Promise((resolve, reject) => {
       let settled = false;
       let timer: ReturnType<typeof setTimeout> | null = null;
@@ -287,12 +291,8 @@ export function startBackground(): void {
   // markSaved). Announced-but-undownloaded media is deliberately NOT counted:
   // the badge must agree with what a later query will answer, and the host
   // answers from what it wrote.
-  function savedMediaUrls(ack: any): Array<string | null> {
+  function savedMediaUrls(ack: BridgeAck | undefined): Array<string | null> {
     return Array.isArray(ack?.media) ? ack.media.map((u: unknown) => (typeof u === 'string' && u ? u : null)) : [];
-  }
-
-  function notify(tabId, success, extra = {}) {
-    chrome.tabs.sendMessage(tabId, { type: 'notify', success, ...extra }).catch(() => {});
   }
 
   // --- "Already saved?" lookups (TL badge, #54) ---------------------------------
@@ -336,21 +336,10 @@ export function startBackground(): void {
     return port;
   }
 
-  // What the host says about one permalink: the captureId of a record that
-  // holds it, plus WHICH of the post's pictures are in the library (#334) —
-  // positional, so the index is the picture's number in the record and null
-  // marks one the library kept no URL for. An empty list means the post is
-  // saved but its pictures are not known apart; the overlay reads that as the
-  // whole post, exactly as it behaved before per-picture answers existed.
-  interface SavedEntry {
-    id: string;
-    media: Array<string | null>;
-  }
-
   // Ask the host about a batch of URLs. Rejects (rather than answering "not
   // saved") when the host can't be reached, so a missing host shows NO badges
   // instead of asserting that a saved post isn't saved.
-  function queryBridge(urls: string[]): Promise<Record<string, SavedEntry | null>> {
+  function queryBridge(urls: string[]): Promise<SavedResults> {
     return new Promise((resolve, reject) => {
       let port: chrome.runtime.Port;
       try {
@@ -438,14 +427,14 @@ export function startBackground(): void {
         for (const u of media) if (u && !merged.media.includes(u)) merged.media.push(u);
       }
       cacheSet(url, merged);
-      if (tabId != null) chrome.tabs.sendMessage(tabId, { type: 'savedUpdate', url, media }).catch(() => {});
+      if (tabId != null) chrome.tabs.sendMessage(tabId, { type: 'savedUpdate', url, media } satisfies SavedUpdateMessage).catch(() => {});
     }
   }
 
-  chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  chrome.runtime.onMessage.addListener((message: ContentToBackgroundMessage, _sender, sendResponse) => {
     if (message.type !== 'checkSaved') return false;
     const urls: string[] = Array.isArray(message.urls) ? message.urls.filter((u) => typeof u === 'string' && u) : [];
-    const results: Record<string, SavedEntry | null> = {};
+    const results: SavedResults = {};
     const ask: string[] = [];
     for (const u of urls) {
       const hit = cacheGet(u);
@@ -453,7 +442,7 @@ export function startBackground(): void {
       else ask.push(u);
     }
     if (!ask.length) {
-      sendResponse({ ok: true, results });
+      sendResponse({ ok: true, results } satisfies CheckSavedResponse);
       return false;
     }
     queryBridge(ask)
@@ -463,11 +452,11 @@ export function startBackground(): void {
           cacheSet(u, entry);
           results[u] = entry;
         }
-        sendResponse({ ok: true, results });
+        sendResponse({ ok: true, results } satisfies CheckSavedResponse);
       })
       // Unreachable host → report the failure instead of a page full of
       // "not saved": badge.js leaves those posts unmarked and retries later.
-      .catch((error) => sendResponse({ ok: false, error: error?.message, results }));
+      .catch((error) => sendResponse({ ok: false, error: error?.message, results } satisfies CheckSavedResponse));
     return true; // async response
   });
 
@@ -588,24 +577,24 @@ export function startBackground(): void {
   // Same metadata as a post-click save, but no screenshot: the dragged image
   // itself becomes the record's primary image (the bridge downloads it). Produces
   // the "illustration record" shape (image = the art, media: []).
-  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  chrome.runtime.onMessage.addListener((message: ContentToBackgroundMessage, sender, sendResponse) => {
     if (message.type !== 'imageDragged') return false;
     if (!sender.tab?.id) {
-      sendResponse({ ok: false, error: 'Missing tab context' });
+      sendResponse({ ok: false, error: 'Missing tab context' } satisfies SaveResponse);
       return false;
     }
     if (!isAllowedSender(sender.tab.url, message.platform)) {
-      sendResponse({ ok: false, error: 'Sender origin does not match platform' });
+      sendResponse({ ok: false, error: 'Sender origin does not match platform' } satisfies SaveResponse);
       return false;
     }
     const senderHost = getHostname(sender.tab.url);
     captureAndSaveDragged(sender.tab, message.platform, message.postUrl, message.imageUrls || [])
-      .then((result) => sendResponse({ ok: true, ...result }))
+      .then((result) => sendResponse({ ok: true, ...result } satisfies SaveResponse))
       .catch((error) => {
         console.error(error);
         const errorKind = classifySaveFailure(error?.message);
         void logCapture({ stage: error?.stage || 'unknown', phase: 'fail', platform: message.platform, host: senderHost, url: message.postUrl, error: error?.message }, true);
-        sendResponse({ ok: false, errorKind });
+        sendResponse({ ok: false, errorKind } satisfies SaveResponse);
       });
     return true; // async response
   });
@@ -613,11 +602,11 @@ export function startBackground(): void {
   // Diagnostics relays. content.js reports pre-bridge stage failures (select /
   // permalink) here; {type:'dumpLogs'} reads back the local fallback ring buffer
   // (entries that never reached the host's capture.log).
-  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  chrome.runtime.onMessage.addListener((message: ContentToBackgroundMessage, sender, sendResponse) => {
     if (message.type === 'logCapture') {
       const entry = Object.assign({ host: getHostname(sender.tab?.url) }, message.entry || {});
       void logCapture(entry, entry.phase === 'fail');
-      sendResponse({ ok: true });
+      sendResponse({ ok: true } satisfies LogCaptureResponse);
       return false;
     }
     if (message.type === 'dumpLogs') {
@@ -626,7 +615,7 @@ export function startBackground(): void {
           .filter((k) => k.startsWith(DIAG_PREFIX))
           .sort()
           .map((k) => all[k]);
-        sendResponse({ ok: true, entries });
+        sendResponse({ ok: true, entries } satisfies DumpLogsResponse);
       });
       return true; // async
     }
@@ -639,7 +628,7 @@ export function startBackground(): void {
 
     // expectedHost pins Misskey/Mastodon instance fetches to the sender tab's host
     // (SSRF guard). Drag is x/bsky/pixiv only today, but keep it consistent.
-    let meta: any;
+    let meta: PostRecord;
     try {
       meta = await fetchPostMetadata(postUrl, { expectedHost: getHostname(tab.url) });
     } catch (err) {
@@ -655,7 +644,7 @@ export function startBackground(): void {
     // Everything else keeps the illustration-record shape, where the picture
     // that was pointed at IS what the user asked to save.
     let record: any;
-    let send: () => Promise<any>;
+    let send: () => Promise<BridgeAck>;
     if (isPlayableMedia(meta.mediaType)) {
       // capturedVia stays null — an ordinary save, not an intake route (#362).
       record = buildRecord(meta, { captureId, capturedAt, postUrl, sendPlatform, extra: { mediaType: meta.mediaType, media: meta.media, capturedVia: null } });
@@ -680,7 +669,7 @@ export function startBackground(): void {
       send = () => sendDraggedToBridge(captureId, primary.url, primary.referer, record, metaOk);
     }
 
-    let ack: any;
+    let ack: BridgeAck;
     try {
       ack = await send();
     } catch (err) {
