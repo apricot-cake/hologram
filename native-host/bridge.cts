@@ -86,6 +86,26 @@ function appendLog(entry: Record<string, unknown>): void {
   }
 }
 
+// One capture.log line saying this host has RECEIVED a save and started on it
+// (#519). Free, unlike the extension's own lines: this process is already
+// running and already holds the log open, so the pair of lines around the work
+// costs nothing. What it buys is the difference between "the request never
+// reached the host" and "the host had it and did not finish" — a question
+// #507's investigation could not answer from this log, because the only host
+// line was written after the work was already done.
+function logSaveReceived(type: string, msg: any): void {
+  const meta = (msg && msg.metadata) || {};
+  appendLog({
+    stage: 'bridge',
+    phase: 'begin',
+    type,
+    saveId: (msg && msg.saveId) || null,
+    captureId: (msg && msg.captureId) || null,
+    platform: meta.platform || null,
+    url: meta.url || null,
+  });
+}
+
 // One capture.log line for a bridge-side save result (the final stage). The
 // extension logs the earlier stages; this ties the outcome to the same url.
 function logSaveOutcome(type: string, msg: any, res: any, err: Error | null): void {
@@ -94,6 +114,9 @@ function logSaveOutcome(type: string, msg: any, res: any, err: Error | null): vo
     stage: 'bridge',
     phase: err ? 'fail' : 'ok',
     type,
+    // Minted by the page and carried through both other processes, so this line
+    // can be read together with the extension's own (#519).
+    saveId: (msg && msg.saveId) || null,
     captureId: (res && res.file) || (msg && msg.captureId) || null,
     platform: meta.platform || null,
     url: meta.url || null,
@@ -707,6 +730,7 @@ if (require.main === module) {
       const reply = (res: Record<string, unknown>) => sendMessage(msg && msg.id != null ? Object.assign({ id: msg.id }, res) : res);
       try {
         if (msg.type === 'save') {
+          logSaveReceived('save', msg);
           // async (downloads original media) — ack is sent once it settles. The
           // process drains naturally so the pending fetch keeps it alive.
           handleSave(msg)
@@ -719,6 +743,7 @@ if (require.main === module) {
               reply({ ok: false, error: err.message });
             });
         } else if (msg.type === 'savePost') {
+          logSaveReceived('savePost', msg);
           handleSavePost(msg)
             .then((res) => {
               logSaveOutcome('savePost', msg, res, null);
@@ -729,6 +754,7 @@ if (require.main === module) {
               reply({ ok: false, error: err.message });
             });
         } else if (msg.type === 'saveDragged') {
+          logSaveReceived('saveDragged', msg);
           handleSaveDragged(msg)
             .then((res) => {
               logSaveOutcome('saveDragged', msg, res, null);

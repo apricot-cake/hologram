@@ -5,125 +5,16 @@
 // 黙った瞬間（MV3 のサービスワーカー停止・メッセージの取りこぼし・その先の
 // どこかの無期限待ち）、バナーを busy から動かす者が誰も居なくなる。
 //
-// ここはビルド済みの capture.js を jsdom で走らせ、バックグラウンドを
-// **一切答えない相手**として立てる＝実機を要さずに「応答が返らない」状況を
-// 決定的に作れる唯一の場所。時間はテストが持つ手動クロックで進める。
-//
-// 前提: extension のビルド成果物（extension/.output/chrome-mv3/capture.js）が要る。
+// ここが見るのは「必ず終わるか」。**終わったことが記録に残るか**は
+// scripts/save-log.test.ts（#519）で、装置（jsdom ＋ 手動クロック）は共通の
+// scripts/lib-capture-rig.ts。
 
-import fs from 'node:fs';
-import path from 'node:path';
-import { JSDOM } from 'jsdom';
 import { expect, test } from 'vitest';
-
-const BUNDLE = fs.readFileSync(path.join(import.meta.dirname, '..', 'extension', '.output', 'chrome-mv3', 'capture.js'), 'utf8');
-
-const HTML = `<!doctype html><html><body>
-  <div id="feed">
-    <article data-testid="tweet" id="p1" data-rect-top="100" data-rect-size="300">
-      <a href="/alice/status/111"><time datetime="2026-07-01T00:00:00Z">1h</time></a>
-    </article>
-  </div>
-</body></html>`;
-
-const realSetTimeout = setTimeout;
-// マイクロタスクと（テストの外に居る）本物のタイマを消化する。手動クロックは
-// setTimeout だけを乗っ取るので、await の連鎖はこちらで進める。
-const settle = () => new Promise((r) => realSetTimeout(r, 0));
-
-interface Rig {
-  window: any;
-  advance(ms: number): void;
-  sent: any[];
-  state(): string | null;
-  text(): string;
-}
-
-// 手動クロック付きの jsdom。sendMessage は `reply` が返した値だけを返し、
-// undefined を返した型は「答えない」＝コールバックを呼ばずに握り潰す。
-function makeRig(reply: (msg: any) => any): Rig {
-  const dom = new JSDOM(HTML, { url: 'https://x.com/home', runScripts: 'outside-only' });
-  const { window } = dom;
-
-  let now = 0;
-  let seq = 1;
-  const timers = new Map<number, { fn: () => void; at: number }>();
-  window.setTimeout = (fn: () => void, ms = 0) => {
-    const id = seq++;
-    timers.set(id, { fn, at: now + ms });
-    return id;
-  };
-  window.clearTimeout = (id: number) => {
-    timers.delete(id);
-  };
-  const advance = (ms: number) => {
-    now += ms;
-    for (const [id, timer] of [...timers].sort((a, b) => a[1].at - b[1].at)) {
-      if (timer.at > now) continue;
-      timers.delete(id);
-      timer.fn();
-    }
-  };
-
-  window.Element.prototype.animate = function () {
-    return { cancel() {}, finish() {}, set onfinish(_f) {}, set oncancel(_f) {} };
-  };
-  window.Element.prototype.getBoundingClientRect = function () {
-    const declared = this.getAttribute?.('data-rect-top');
-    if (declared === null || declared === undefined) return { left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0, x: 0, y: 0 };
-    const top = Number(declared);
-    const size = Number(this.getAttribute('data-rect-size') || 300);
-    return { left: 50, top, right: 50 + size, bottom: top + size, width: size, height: size, x: 50, y: top };
-  };
-  window.requestAnimationFrame = (fn: () => void) => {
-    Promise.resolve().then(fn);
-    return 1;
-  };
-  window.cancelAnimationFrame = () => {};
-  window.scrollTo = () => {};
-  window.scrollBy = () => {};
-
-  const sent: any[] = [];
-  window.chrome = {
-    runtime: {
-      id: 'test-extension-id',
-      lastError: undefined,
-      sendMessage: (msg: any, cb?: (r: any) => void) => {
-        sent.push(msg);
-        const answer = reply(msg);
-        if (answer !== undefined && cb) Promise.resolve().then(() => cb(answer));
-      },
-      onMessage: { addListener: () => {}, removeListener: () => {} },
-    },
-    storage: { local: { get: (_k: unknown, cb: (v: any) => void) => cb({}), set: () => {} } },
-  } as any;
-
-  window.eval(BUNDLE);
-
-  // #44: ページ内 UI は共有の ShadowRoot の中（ui-root.ts）。状態は共通部品の
-  // data-state に載る＝語彙は idle/active/busy/success/partial/ask/error。
-  const uiRoot = () => (window.document.querySelector('hologram-extension-ui') as any)?.shadowRoot;
-  const banner = () => uiRoot()?.querySelector('[data-hologram-capture-banner]');
-  return {
-    window,
-    advance,
-    sent,
-    state: () => banner()?.getAttribute('data-state') ?? null,
-    text: () => banner()?.textContent ?? '',
-  };
-}
-
-// バックグラウンドまで届いて busy に入るところまで進める。
-async function clickPost(rig: Rig): Promise<void> {
-  await settle();
-  const post = rig.window.document.getElementById('p1');
-  post.dispatchEvent(new rig.window.MouseEvent('click', { bubbles: true }));
-  for (let i = 0; i < 20; i++) await settle();
-}
+import { clickPost, makeRig, REPLY_UNTIL_SAVE, settle } from './lib-capture-rig.ts';
 
 test('保存要求に誰も答えなければ、上限で必ず終わる（永久に「保存中...」にしない）', async () => {
   // captureAndSend にだけ答えない＝バックグラウンドが黙った状態そのもの。
-  const rig = makeRig((msg) => (msg.type === 'checkDuplicate' ? { ok: true, duplicate: false } : msg.type === 'captureAndSend' ? undefined : { ok: true }));
+  const rig = makeRig(REPLY_UNTIL_SAVE);
   await clickPost(rig);
 
   expect(rig.sent.some((m) => m.type === 'captureAndSend')).toBe(true);
@@ -145,7 +36,7 @@ test('保存要求に誰も答えなければ、上限で必ず終わる（永�
 });
 
 test('タイムアウトは capture.log へ残す', async () => {
-  const rig = makeRig((msg) => (msg.type === 'checkDuplicate' ? { ok: true, duplicate: false } : msg.type === 'captureAndSend' ? undefined : { ok: true }));
+  const rig = makeRig(REPLY_UNTIL_SAVE);
   await clickPost(rig);
   rig.advance(91_000);
   await settle();

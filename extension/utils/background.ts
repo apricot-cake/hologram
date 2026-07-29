@@ -4,8 +4,9 @@
 import { CROP_TIMEOUT_MS, NATIVE_HOST_TIMEOUT_MS, SAVED_QUERY_TIMEOUT_MS, withDeadline } from './deadline.ts';
 import { extractorFor, fetchPostMetadata, getHostname, highResUrlOf, isAllowedSender, mediaKeyOf } from './extractor/index.ts';
 import type { PostRecord } from './extractor/types.ts';
-import type { BridgeAck, CaptureAndSendResponse, CheckSavedResponse, ContentToBackgroundMessage, CropImageMessage, CropImageResponse, DumpLogsResponse, LogCaptureResponse, NotifyMessage, SavedEntry, SavedResults, SavedUpdateMessage, SaveResponse } from './messages.ts';
+import type { BridgeAck, CaptureAndSendResponse, CheckSavedResponse, ContentToBackgroundMessage, CropImageMessage, CropImageResponse, DumpLogsResponse, LogCaptureResponse, NotifyMessage, SavedEntry, SavedResults, SavedUpdateMessage, SaveProgressMessage, SaveResponse } from './messages.ts';
 import { classifySaveFailure } from './native-error.ts';
+import type { SaveLogEntry, SaveStage } from './save-log.ts';
 
 export function startBackground(): void {
   const NATIVE_HOST = 'com.hologram.host';
@@ -18,8 +19,14 @@ export function startBackground(): void {
   const DIAG_KEEP = 50;
 
   interface StageError extends Error {
-    stage: string;
+    stage: SaveStage;
     metaReason?: string | null;
+    // Filled in by SaveTrace.fail so the single catch per route can write a
+    // line that ties the failure to the rest of the save and says how far it
+    // got, without knowing anything about the route (#519).
+    saveId?: string | null;
+    captureId?: string | null;
+    reached?: SaveStage[];
   }
 
   // Tag an error with the pipeline stage it failed at, so the single catch in the
@@ -31,22 +38,90 @@ export function startBackground(): void {
   // was missing is the difference between "deleted, gone for good" and
   // "age-restricted, alive but out of this route's reach" (#505). Without it
   // the banner can only name the whole family.
-  function stageError(stage: string, message: string, metaReason: string | null = null): StageError {
+  function stageError(stage: SaveStage, message: string, metaReason: string | null = null): StageError {
     const err = new Error(message) as StageError;
     err.stage = stage;
     err.metaReason = metaReason;
     return err;
   }
 
+  interface SaveTrace {
+    passed(stage: SaveStage): void;
+    fail(stage: SaveStage, message: string, metaReason?: string | null): StageError;
+  }
+
+  // Open one save's thread in capture.log and hand back the two ways to write on
+  // it (#519).
+  //
+  // The `save`/`begin` line is the point of this: it is on disk before any of
+  // the waits below it can stall, so a save that never finishes is no longer
+  // indistinguishable from one that never started. It costs one extra native
+  // connection — Chrome spawns a host process per connection — which during a
+  // bookmark-intake run means two per save instead of one. Deliberate: the
+  // intake is precisely where a single stuck save used to stop everything
+  // behind it (#507), so it is the last route that should keep the blind spot.
+  //
+  // Never awaited. The line is stamped with its own `ts` when it is created, so
+  // a slow host can land it after the save's own terminal line without making
+  // the order unreadable — sort by `ts`, not by position.
+  function beginSave(type: 'save' | 'savePost' | 'saveDragged', ctx: { saveId: string | null; captureId: string; platform: string | null; url: string | null; tabId: number | null }): SaveTrace {
+    const reached: SaveStage[] = [];
+    void logCapture({ stage: 'save', phase: 'begin', saveId: ctx.saveId, captureId: ctx.captureId, type, platform: ctx.platform, url: ctx.url });
+    return {
+      // A stage finished. Kept here for the terminal line, and pushed to the
+      // page because the page is the only side still able to write a line when
+      // this worker is what disappears (see SaveProgressMessage).
+      passed(stage: SaveStage) {
+        reached.push(stage);
+        if (ctx.tabId == null || !ctx.saveId) return;
+        chrome.tabs.sendMessage(ctx.tabId, { type: 'saveProgress', saveId: ctx.saveId, reached: [...reached] } satisfies SaveProgressMessage).catch(() => {});
+      },
+      fail(stage: SaveStage, message: string, metaReason: string | null = null) {
+        const err = stageError(stage, message, metaReason);
+        err.saveId = ctx.saveId;
+        err.captureId = ctx.captureId;
+        err.reached = [...reached];
+        return err;
+      },
+    };
+  }
+
+  // The capture.log line for a save that ended in a throw. Written from the one
+  // catch each route has, so every route reports the same fields: which stage
+  // broke, which save it was, and which stages it had already cleared (#519 —
+  // before this, a failure line named the stage and nothing else, so it could
+  // not be tied to the save's own `begin` line except by timestamp).
+  function logSaveFailure(error: StageError | undefined, ctx: { saveId: string | null; platform: string | null; host: string | null; url: string | null }) {
+    void logCapture(
+      {
+        stage: error?.stage || 'unknown',
+        phase: 'fail',
+        saveId: error?.saveId ?? ctx.saveId,
+        captureId: error?.captureId ?? null,
+        reached: error?.reached ?? [],
+        platform: ctx.platform,
+        host: ctx.host,
+        url: ctx.url,
+        error: error?.message,
+      },
+      true,
+    );
+  }
+
   async function activateOnTab(tab, auto = false) {
     // Log the attempt (and the silent non-http bail) to capture.log: an icon
     // click that "does nothing" is otherwise diagnosable only from the SW
     // DevTools console, which nobody has open when it happens.
+    //
+    // NO saveId, on purpose. Injecting the UI starts no save, and the two being
+    // separately identifiable is the whole distinction this log was missing: an
+    // `activate` line with no `save`/`begin` after it means the user opened the
+    // UI and stopped (#519).
     if (!tab.id || !/^https?:/i.test(tab.url || '')) {
       void logCapture({ stage: 'activate', phase: 'skip', url: tab.url || '(no url)' });
       return;
     }
-    void logCapture({ stage: 'activate', phase: 'click', host: getHostname(tab.url), url: tab.url, auto });
+    void logCapture({ stage: 'activate', phase: 'ok', host: getHostname(tab.url), url: tab.url, auto });
     try {
       // Auto capture (#362) is asked for by its OWN gesture, so the choice
       // rides in as a page-side flag rather than being inferred from the URL —
@@ -100,27 +175,29 @@ export function startBackground(): void {
       return false;
     }
     const senderHost = getHostname(sender.tab.url);
-    savePostByUrl(sender.tab, message.platform, message.postUrl, message.capturedVia || null)
+    savePostByUrl(sender.tab, message.platform, message.postUrl, message.capturedVia || null, message.saveId)
       .then((result) => sendResponse({ ok: true, ...result } satisfies SaveResponse))
       .catch((error) => {
         console.error(error);
         const errorKind = classifySaveFailure(error?.message);
-        void logCapture({ stage: error?.stage || 'unknown', phase: 'fail', platform: message.platform, host: senderHost, url: message.postUrl, error: error?.message }, true);
+        logSaveFailure(error, { saveId: message.saveId, platform: message.platform, host: senderHost, url: message.postUrl });
         sendResponse({ ok: false, errorKind, metaReason: error?.metaReason || null, error: error?.message } satisfies SaveResponse);
       });
     return true; // async response
   });
 
-  async function savePostByUrl(tab, sendPlatform, postUrl, capturedVia) {
+  async function savePostByUrl(tab, sendPlatform, postUrl, capturedVia, saveId: string | null = null) {
     const captureId = generateCaptureId();
     const capturedAt = new Date().toISOString();
+    const trace = beginSave('savePost', { saveId, captureId, platform: sendPlatform, url: postUrl, tabId: tab.id ?? null });
 
     let meta: PostRecord;
     try {
       meta = await fetchPostMetadata(postUrl, { expectedHost: getHostname(tab.url) });
     } catch (err) {
-      throw stageError('metadata', err?.message || 'metadata fetch threw');
+      throw trace.fail('metadata', err?.message || 'metadata fetch threw');
     }
+    trace.passed('metadata');
 
     // A post with no media is still saved — the host writes its sidecar and the
     // library shows it once #365 lands (see handleSavePost). Losing it instead
@@ -136,10 +213,11 @@ export function startBackground(): void {
     const metaOk = metaFetched(meta);
     let ack: BridgeAck;
     try {
-      ack = await sendPostToBridge(captureId, record, metaOk, meta.metaError || null);
+      ack = await sendPostToBridge(captureId, record, metaOk, meta.metaError || null, saveId);
     } catch (err) {
-      throw stageError('bridge', err?.message || 'bridge save failed', meta.metaError || null);
+      throw trace.fail('bridge', err?.message || 'bridge save failed', meta.metaError || null);
     }
+    trace.passed('bridge');
     markSaved([record.url, postUrl], ack?.captureId || captureId, savedMediaUrls(ack), tab.id);
     const grouped = await bumpRecentSave(record.url);
     return { ...ack, metaOk, metaReason: meta.metaError || null, grouped };
@@ -162,7 +240,7 @@ export function startBackground(): void {
     const senderHost = getHostname(sender.tab.url);
     // captureAndSend never carries a capturedVia (only the intake routes —
     // savePost / imageDragged — do): captureAndSave keeps its default (null).
-    captureAndSave(sender.tab, message.rect, message.postUrl, message.platform, null, message.replaces || null)
+    captureAndSave(sender.tab, message.rect, message.postUrl, message.platform, null, message.replaces || null, message.saveId)
       // captureAndSave has no return value (it notifies the content script
       // directly via notify() instead) — content.js's capturePost() never reads
       // this sendResponse either, so `ok:true` is the whole payload.
@@ -170,7 +248,7 @@ export function startBackground(): void {
       .catch((error) => {
         console.error(error);
         const errorKind = classifySaveFailure(error?.message);
-        void logCapture({ stage: error?.stage || 'unknown', phase: 'fail', platform: message.platform, host: senderHost, url: message.postUrl, error: error?.message }, true);
+        logSaveFailure(error, { saveId: message.saveId, platform: message.platform, host: senderHost, url: message.postUrl });
         chrome.tabs.sendMessage(tabId, { type: 'notify', success: false, errorKind } satisfies NotifyMessage).catch(() => {});
         sendResponse({ ok: false, errorKind } satisfies CaptureAndSendResponse);
       });
@@ -178,22 +256,24 @@ export function startBackground(): void {
     return true;
   });
 
-  async function captureAndSave(tab, rect, postUrl, sendPlatform, capturedVia: string | null = null, replaces: string | null = null) {
+  async function captureAndSave(tab, rect, postUrl, sendPlatform, capturedVia: string | null = null, replaces: string | null = null, saveId: string | null = null) {
     const captureId = generateCaptureId();
     const capturedAt = new Date().toISOString();
+    const trace = beginSave('save', { saveId, captureId, platform: sendPlatform, url: postUrl, tabId: tab.id ?? null });
 
     // captureVisibleTab shoots the window's ACTIVE tab, not the sender — if the
     // user switched tabs in the click→capture gap, a different page would be
     // saved under this post's metadata. Verify and bail instead.
     const [active] = await chrome.tabs.query({ active: true, windowId: tab.windowId });
-    if (!active || active.id !== tab.id) throw stageError('capture', 'Tab changed before capture');
+    if (!active || active.id !== tab.id) throw trace.fail('capture', 'Tab changed before capture');
 
     let dataUrl: string;
     try {
       dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'jpeg', quality: 92 });
     } catch (err) {
-      throw stageError('capture', err?.message || 'captureVisibleTab failed');
+      throw trace.fail('capture', err?.message || 'captureVisibleTab failed');
     }
+    trace.passed('capture');
 
     // Bounded (#507): the answer comes from the page, and a page that navigated
     // away, froze, or tore its listener down mid-capture never sends one — this
@@ -202,9 +282,10 @@ export function startBackground(): void {
     try {
       response = await withDeadline<CropImageResponse>(chrome.tabs.sendMessage(tab.id, { type: 'cropImage', dataUrl, rect } satisfies CropImageMessage), CROP_TIMEOUT_MS, 'crop');
     } catch (err) {
-      throw stageError('crop', err?.message || 'cropImage failed');
+      throw trace.fail('crop', err?.message || 'cropImage failed');
     }
-    if (!response?.croppedDataUrl) throw stageError('crop', 'Cropping failed');
+    if (!response?.croppedDataUrl) throw trace.fail('crop', 'Cropping failed');
+    trace.passed('crop');
     const jpegBase64 = response.croppedDataUrl.split(',')[1];
 
     // Metadata comes from the platform's API (no DOM scraping).
@@ -215,8 +296,9 @@ export function startBackground(): void {
     try {
       meta = await fetchPostMetadata(postUrl, { expectedHost: getHostname(tab.url) });
     } catch (err) {
-      throw stageError('metadata', err?.message || 'metadata fetch threw');
+      throw trace.fail('metadata', err?.message || 'metadata fetch threw');
     }
+    trace.passed('metadata');
 
     const record = buildRecord(meta, {
       captureId,
@@ -232,10 +314,11 @@ export function startBackground(): void {
     const metaOk = metaFetched(meta);
     let ack: BridgeAck;
     try {
-      ack = await sendToBridge(captureId, jpegBase64, record, metaOk, meta.metaError || null);
+      ack = await sendToBridge(captureId, jpegBase64, record, metaOk, meta.metaError || null, saveId);
     } catch (err) {
-      throw stageError('bridge', err?.message || 'bridge save failed');
+      throw trace.fail('bridge', err?.message || 'bridge save failed');
     }
+    trace.passed('bridge');
     markSaved([record.url, postUrl], ack?.captureId || captureId, savedMediaUrls(ack), tab.id); // light this post's TL badge now
     // grouped = prior saves of this post this session → the banner says the save
     // merged with them (the app folds same-URL records into one card).
@@ -292,19 +375,22 @@ export function startBackground(): void {
   // API returned info) rides along so the host's capture.log records partial saves,
   // and metaReason with it — WHY the info is missing is what tells a deleted or
   // protected post apart from a broken fetch when reading the log afterwards.
-  function sendToBridge(captureId, jpegBase64, record, metaOk, metaReason) {
-    return bridgeSend({ type: 'save', captureId, image: jpegBase64, metadata: record, metaOk, metaReason });
+  // saveId rides along too, on every route: the host writes its own capture.log
+  // lines, and without the id those lines could not be tied to the extension's
+  // (#519).
+  function sendToBridge(captureId, jpegBase64, record, metaOk, metaReason, saveId: string | null) {
+    return bridgeSend({ type: 'save', captureId, saveId, image: jpegBase64, metadata: record, metaOk, metaReason });
   }
 
   // Bulk-intake save (#362): metadata only, no screenshot — the host downloads
   // the post's own media and the first one becomes the record's image.
-  function sendPostToBridge(captureId, record, metaOk, metaReason) {
-    return bridgeSend({ type: 'savePost', captureId, metadata: record, metaOk, metaReason });
+  function sendPostToBridge(captureId, record, metaOk, metaReason, saveId: string | null) {
+    return bridgeSend({ type: 'savePost', captureId, saveId, metadata: record, metaOk, metaReason });
   }
 
   // Image-drag save: the host downloads the dragged image itself (no screenshot).
-  function sendDraggedToBridge(captureId, imageUrl, imageReferer, record, metaOk, metaReason) {
-    return bridgeSend({ type: 'saveDragged', captureId, imageUrl, imageReferer, metadata: record, metaOk, metaReason });
+  function sendDraggedToBridge(captureId, imageUrl, imageReferer, record, metaOk, metaReason, saveId: string | null) {
+    return bridgeSend({ type: 'saveDragged', captureId, saveId, imageUrl, imageReferer, metadata: record, metaOk, metaReason });
   }
 
   // The pictures the host says it actually recorded for a save (positional, see
@@ -577,7 +663,7 @@ export function startBackground(): void {
   // at all. NEVER throws and never blocks the save: if the host can't be reached
   // (e.g. it isn't registered — itself worth recording) the entry falls back to a
   // chrome.storage ring buffer that {type:'dumpLogs'} can read back.
-  function logCapture(entry: unknown, keepLocal = false): Promise<void> {
+  function logCapture(entry: SaveLogEntry, keepLocal = false): Promise<void> {
     const full = Object.assign({ ts: new Date().toISOString() }, entry);
     if (keepLocal) stashLogLocally(full);
     return new Promise((resolve) => {
@@ -669,12 +755,12 @@ export function startBackground(): void {
       return false;
     }
     const senderHost = getHostname(sender.tab.url);
-    captureAndSaveDragged(sender.tab, message.platform, message.postUrl, message.imageUrls || [], message.replaces || null)
+    captureAndSaveDragged(sender.tab, message.platform, message.postUrl, message.imageUrls || [], message.replaces || null, message.saveId)
       .then((result) => sendResponse({ ok: true, ...result } satisfies SaveResponse))
       .catch((error) => {
         console.error(error);
         const errorKind = classifySaveFailure(error?.message);
-        void logCapture({ stage: error?.stage || 'unknown', phase: 'fail', platform: message.platform, host: senderHost, url: message.postUrl, error: error?.message }, true);
+        logSaveFailure(error, { saveId: message.saveId, platform: message.platform, host: senderHost, url: message.postUrl });
         sendResponse({ ok: false, errorKind, metaReason: error?.metaReason || null } satisfies SaveResponse);
       });
     return true; // async response
@@ -703,9 +789,10 @@ export function startBackground(): void {
     return false;
   });
 
-  async function captureAndSaveDragged(tab, sendPlatform, postUrl, imageUrls, replaces: string | null = null) {
+  async function captureAndSaveDragged(tab, sendPlatform, postUrl, imageUrls, replaces: string | null = null, saveId: string | null = null) {
     const captureId = generateCaptureId();
     const capturedAt = new Date().toISOString();
+    const trace = beginSave('saveDragged', { saveId, captureId, platform: sendPlatform, url: postUrl, tabId: tab.id ?? null });
 
     // expectedHost pins Misskey/Mastodon instance fetches to the sender tab's host
     // (SSRF guard). Drag is x/bsky/pixiv only today, but keep it consistent.
@@ -713,8 +800,9 @@ export function startBackground(): void {
     try {
       meta = await fetchPostMetadata(postUrl, { expectedHost: getHostname(tab.url) });
     } catch (err) {
-      throw stageError('metadata', err?.message || 'metadata fetch threw');
+      throw trace.fail('metadata', err?.message || 'metadata fetch threw');
     }
+    trace.passed('metadata');
     const metaOk = metaFetched(meta);
 
     // What the page can hand over for a video or GIF post is the poster frame,
@@ -729,10 +817,11 @@ export function startBackground(): void {
     if (isPlayableMedia(meta.mediaType)) {
       // capturedVia stays null — an ordinary save, not an intake route (#362).
       record = buildRecord(meta, { captureId, capturedAt, postUrl, sendPlatform, replaces, extra: { mediaType: meta.mediaType, media: meta.media, capturedVia: null } });
-      send = () => sendPostToBridge(captureId, record, metaOk, meta.metaError || null);
+      send = () => sendPostToBridge(captureId, record, metaOk, meta.metaError || null, saveId);
     } else {
       const primary = pickPrimaryImage(meta.platform || sendPlatform, imageUrls, meta);
-      if (!primary || !primary.url) throw stageError('image', 'Could not resolve a dragged image URL');
+      if (!primary || !primary.url) throw trace.fail('image', 'Could not resolve a dragged image URL');
+      trace.passed('image');
       record = buildRecord(meta, {
         captureId,
         capturedAt,
@@ -748,15 +837,16 @@ export function startBackground(): void {
           // image + media[] are set by the bridge (image = downloaded original, media = [])
         },
       });
-      send = () => sendDraggedToBridge(captureId, primary.url, primary.referer, record, metaOk, meta.metaError || null);
+      send = () => sendDraggedToBridge(captureId, primary.url, primary.referer, record, metaOk, meta.metaError || null, saveId);
     }
 
     let ack: BridgeAck;
     try {
       ack = await send();
     } catch (err) {
-      throw stageError('bridge', err?.message || 'bridge save failed', meta.metaError || null);
+      throw trace.fail('bridge', err?.message || 'bridge save failed', meta.metaError || null);
     }
+    trace.passed('bridge');
     markSaved([record.url, postUrl], ack?.captureId || captureId, savedMediaUrls(ack), tab.id); // light this post's TL badge now
     // Surface metadata-fetch failure to the drop overlay (same partial-success
     // signal as the click-save banner) so a screenshot-less illustration that

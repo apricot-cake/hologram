@@ -8,7 +8,8 @@ import type { CaptureSite, PostRect } from './extractor/types.ts';
 import { ICONS } from './icons.ts';
 import { StatusSurface } from './status-surface.ts';
 import { createI18n } from './i18n.ts';
-import type { BackgroundToContentMessage, CaptureAndSendMessage, CaptureAndSendResponse, CropImageResponse, LogCaptureMessage } from './messages.ts';
+import type { BackgroundToContentMessage, CaptureAndSendMessage, CaptureAndSendResponse, CropImageResponse } from './messages.ts';
+import { logSaveEvent, newSaveId, type SaveStage } from './save-log.ts';
 
 export async function startCapture(): Promise<void> {
   // --- i18n ---
@@ -62,6 +63,7 @@ export async function startCapture(): Promise<void> {
   let restoreOverlayState: (() => void) | null = null;
   let savedScrollPosition: { x: number; y: number } | null = null;
   let lastCapturedPost: Element | null = null; // re-measured at crop time (scroll/layout drift)
+  let chosenUrl: string | null = null; // the post being saved, for the cancel line
   // The duplicate warning was answered "replace" (#34). Kept here rather than
   // read back off the ack: the background reports what it SAVED, and the
   // retirement of the old capture is the app's later job — so the only side
@@ -71,6 +73,23 @@ export async function startCapture(): Promise<void> {
   // banner from being written twice when a late answer follows a timeout (#507).
   let saveWatchdog: ReturnType<typeof setTimeout> | null = null;
   let saveSettled = false;
+
+  // --- What this activation has done so far, for capture.log (#519) ----------
+  //
+  // How far this session got, so that closing it can say WHAT was abandoned
+  // rather than just stopping. `null` means the session is over as far as the
+  // log is concerned (it has already written its own ending), which is what
+  // keeps cleanup() from adding a cancel line after a save that succeeded,
+  // failed, or was answered "don't save".
+  let openStage: Extract<SaveStage, 'select' | 'duplicate' | 'save'> | null = 'select';
+  // Minted when a post is chosen, and from then on carried by every line this
+  // save writes in any of the three processes.
+  let saveId: string | null = null;
+  // The stages the service worker has reported finishing (SaveProgressMessage).
+  // Held here for one reason: if the worker is then killed, this side is all
+  // that is left to write a line, and this is the only way that line can say
+  // where the save had got to.
+  let reached: SaveStage[] = [];
 
   // === UI elements ===
 
@@ -151,30 +170,28 @@ export async function startCapture(): Promise<void> {
 
   // Report a pre-bridge failure (no post element / no permalink) to the
   // background, which relays it to the host's capture.log. Best-effort.
-  function logCaptureFailure(stage: string, el: unknown) {
-    try {
-      chrome.runtime.sendMessage({
-        type: 'logCapture',
-        entry: { stage, phase: 'fail', platform: site.platform, locationHref: location.href, clickedSnap: snapEl(el) },
-      } satisfies LogCaptureMessage);
-    } catch {
-      /* ignore — diagnostics are non-essential */
-    }
+  function logCaptureFailure(stage: SaveStage, el: unknown) {
+    logSaveEvent({ stage, phase: 'fail', saveId, platform: site.platform, locationHref: location.href, clickedSnap: snapEl(el) });
   }
 
-  // Same relay, for a failure that has no element to blame — the save was sent
-  // and nothing came back. Worth its own line in capture.log: the background
-  // writes one for every stage IT reached, so a run with neither an ok nor a
-  // fail is exactly the case this records (#507).
+  // The save was sent and nothing came back. The background writes a line for
+  // every stage IT reached, so a save with neither an ok nor a fail from that
+  // side is exactly what this records (#507) — and `reached` is what turns it
+  // from "nothing came back" into "nothing came back after the crop", which is
+  // the question the log could not answer (#519).
   function logSaveTimeout(url: string, error: string) {
-    try {
-      chrome.runtime.sendMessage({
-        type: 'logCapture',
-        entry: { stage: 'result', phase: 'fail', platform: site.platform, url, error },
-      } satisfies LogCaptureMessage);
-    } catch {
-      /* ignore — diagnostics are non-essential */
-    }
+    logSaveEvent({ stage: 'result', phase: 'fail', saveId, reached, platform: site.platform, url, error });
+  }
+
+  // The user stopped: Esc, a right-click, or a second activation. Written so
+  // that abandoning a save is not the same silence as a save that hung — the
+  // confusion that had this log misread twice (#519). `openStage` says WHAT was
+  // abandoned, and clearing it makes this once per session at most.
+  function logCancel(url: string | null) {
+    if (!openStage) return;
+    const stage = openStage;
+    openStage = null;
+    logSaveEvent({ stage, phase: 'cancel', saveId, reached, platform: site.platform, url });
   }
 
   // === Event handlers ===
@@ -209,6 +226,11 @@ export async function startCapture(): Promise<void> {
   }
 
   function capturePost(post: Element) {
+    // A post has been chosen, so from here there is a save attempt to identify
+    // — every line written from now on, in any of the three processes, carries
+    // this id (#519).
+    saveId = newSaveId();
+
     // Metadata is fetched from the platform API in the background from this URL.
     // The page is only used to identify the clicked post and its permalink.
     const postUrl = site.getPermalink(post);
@@ -218,11 +240,13 @@ export async function startCapture(): Promise<void> {
     // surface the reason on the banner, and log the grabbed element so the
     // cause can be pinned down quickly.
     if (!postUrl) {
+      openStage = null; // this line IS the session's ending; no cancel after it
       logCaptureFailure('permalink', post);
       banner.setState('error', getMessage('bannerFailedReason', [getMessage('reasonNoPermalink')]));
       setTimeout(cleanup, 2800);
       return;
     }
+    chosenUrl = postUrl;
 
     // Remove event listeners (capture is single-shot). Done BEFORE the
     // duplicate check so a second click cannot pick another post while the
@@ -236,6 +260,7 @@ export async function startCapture(): Promise<void> {
     // #34: ask the library BEFORE shooting anything. checkDuplicate answers
     // null for every case that leaves the question open (setting off, host
     // unreachable, post not saved), and the capture then runs unchanged.
+    openStage = 'duplicate';
     checkDuplicate(site.platform, postUrl, pagePictureUrls(post))
       .catch(() => null)
       .then((hit) => {
@@ -249,6 +274,11 @@ export async function startCapture(): Promise<void> {
           buildChoiceRow(getMessage, (choice) => {
             if (isCleanedUp) return;
             if (choice === 'skip') {
+              // Answering "don't save" is a decision, not a hang. Recorded as
+              // `skip` rather than `cancel` because nothing was abandoned: the
+              // post is already in the library, which is why we asked (#519).
+              openStage = null;
+              logSaveEvent({ stage: 'duplicate', phase: 'skip', saveId, platform: site.platform, url: postUrl });
               banner.setState('success', getMessage('dupSkipped'));
               setTimeout(cleanup, 1500);
               return;
@@ -310,12 +340,17 @@ export async function startCapture(): Promise<void> {
           endSaveUnanswered(postUrl, `save timed out — no result from the background within ${SAVE_WATCHDOG_MS}ms`);
         }, SAVE_WATCHDOG_MS);
 
+        // A save is now in flight, so Esc from here abandons a save rather than
+        // a selection — and the log should say which (#519).
+        openStage = 'save';
+
         chrome.runtime.sendMessage(
           {
             type: 'captureAndSend',
             rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
             postUrl,
             platform: site.platform,
+            saveId: saveId as string,
             replaces,
           } satisfies CaptureAndSendMessage,
           (res?: CaptureAndSendResponse) => {
@@ -338,6 +373,7 @@ export async function startCapture(): Promise<void> {
   function endSaveUnanswered(postUrl: string, error: string) {
     if (isCleanedUp || saveSettled) return;
     saveSettled = true;
+    openStage = null; // the timeout line below is this session's ending
     clearSaveWatchdog();
     logSaveTimeout(postUrl, error);
     banner.setState('error', saveFailureText('timeout'));
@@ -400,6 +436,10 @@ export async function startCapture(): Promise<void> {
   function cleanup() {
     if (isCleanedUp) return;
     isCleanedUp = true;
+    // Before the listeners go: if this session still had something open, the
+    // user is what ended it. No-op when the session already wrote its own
+    // ending (saved, failed, timed out, answered "don't save").
+    logCancel(chosenUrl);
     clearSaveWatchdog(); // Esc during a save: the banner is going, the timer must too
 
     document.removeEventListener('mousemove', onMouseMove, true);
@@ -437,6 +477,14 @@ export async function startCapture(): Promise<void> {
       return true; // async response
     }
 
+    // How far the save has got. Remembered, never drawn and never logged on
+    // arrival: its only reader is the timeout line this side writes if the
+    // service worker then goes quiet (#519 — see SaveProgressMessage).
+    if (msg.type === 'saveProgress') {
+      if (msg.saveId === saveId) reached = msg.reached;
+      return undefined;
+    }
+
     // Result notification
     if (msg.type === 'notify') {
       // The answer came: stand the watchdog down. A notify arriving AFTER the
@@ -444,6 +492,7 @@ export async function startCapture(): Promise<void> {
       // and flipping the banner back would be worse than being late.
       if (saveSettled) return undefined;
       saveSettled = true;
+      openStage = null; // the background/host lines are this save's ending
       clearSaveWatchdog();
       // Saved but the post-info API returned nothing → amber "partial" state so
       // the user notices (rather than a plain green success). Held longer.

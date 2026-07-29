@@ -40,6 +40,7 @@ import { StatusSurface } from './status-surface.ts';
 import { ensureTokens, motion, prefersReducedMotion, token } from './tokens.ts';
 import { createI18n } from './i18n.ts';
 import type { BackgroundToContentMessage, CheckSavedMessage, CheckSavedResponse, ImageDraggedMessage, SavedEntry, SaveResponse } from './messages.ts';
+import { logSaveEvent, newSaveId } from './save-log.ts';
 
 let overlayActive = false;
 
@@ -638,13 +639,17 @@ export async function startOverlay(): Promise<void> {
     // so an answer that never comes would leave that picture unsaveable for as
     // long as the page lives (#507). The deadline releases the button and says
     // why, exactly like a reported failure.
+    const saveId = newSaveId();
     let settled = false;
     const watchdog = setTimeout(() => {
       if (settled) return;
       settled = true;
+      // #507 released the button but wrote nothing down, so a press that hung
+      // left no trace once the page was gone (#519).
+      logSaveEvent({ stage: 'result', phase: 'fail', saveId, platform: media.platform, url: identity.link, error: `save timed out — no result from the background within ${SAVE_WATCHDOG_MS}ms` });
       failSave(unit, state, anchor, saveFailureText('timeout'));
     }, SAVE_WATCHDOG_MS);
-    chrome.runtime.sendMessage({ type: 'imageDragged', platform: media.platform, postUrl: identity.link, imageUrls: collectImageUrls(el, media.platform) } satisfies ImageDraggedMessage, (res?: SaveResponse) => {
+    chrome.runtime.sendMessage({ type: 'imageDragged', platform: media.platform, postUrl: identity.link, imageUrls: collectImageUrls(el, media.platform), saveId } satisfies ImageDraggedMessage, (res?: SaveResponse) => {
       if (settled) return; // a late answer to a press already given up on
       settled = true;
       clearTimeout(watchdog);

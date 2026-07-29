@@ -13,6 +13,7 @@ import { ICONS } from './icons.ts';
 import { StatusSurface } from './status-surface.ts';
 import { createI18n } from './i18n.ts';
 import type { ImageDraggedMessage, SaveResponse } from './messages.ts';
+import { logSaveEvent, newSaveId } from './save-log.ts';
 
 export async function startDrag(): Promise<void> {
   type PendingDrag = ImageDraggedMessage;
@@ -81,7 +82,11 @@ export async function startDrag(): Promise<void> {
       if (!img) return;
       const identity = siteConfig.extractIdentity(img);
       if (!identity || !identity.link) return;
-      pending = { type: 'imageDragged', platform: siteConfig.platform, postUrl: identity.link, imageUrls: collectImageUrls(img, siteConfig.platform) };
+      // The id is minted with the pending drag rather than at drop: a drag that
+      // is never dropped writes no line at all (every image drag on the page
+      // would otherwise leave one), and a drag that IS dropped needs the id
+      // before it can ask about duplicates.
+      pending = { type: 'imageDragged', platform: siteConfig.platform, postUrl: identity.link, imageUrls: collectImageUrls(img, siteConfig.platform), saveId: newSaveId() };
       showOverlay();
     },
     true,
@@ -125,6 +130,8 @@ export async function startDrag(): Promise<void> {
         z.slot(
           buildChoiceRow(t, (choice) => {
             if (choice === 'skip') {
+              // A decision, not a hang — see capture.ts's own skip line (#519).
+              logSaveEvent({ stage: 'duplicate', phase: 'skip', saveId: p.saveId, platform: p.platform, url: p.postUrl });
               z.setState('success', t('dupSkipped'));
               setTimeout(() => {
                 hideOverlay(true);
@@ -148,6 +155,11 @@ export async function startDrag(): Promise<void> {
     const watchdog = setTimeout(() => {
       if (settled) return;
       settled = true;
+      // #507 gave this route an end but left it writing nothing, so a drop that
+      // hung was on screen only — gone the moment the page was closed. The
+      // background writes a line for every stage IT reached, so a save with
+      // neither an ok nor a fail from that side is what this records (#519).
+      logSaveEvent({ stage: 'result', phase: 'fail', saveId: p.saveId, platform: p.platform, url: p.postUrl, error: `save timed out — no result from the background within ${SAVE_WATCHDOG_MS}ms` });
       done(z, undefined, replaces, true);
     }, SAVE_WATCHDOG_MS);
     chrome.runtime.sendMessage({ ...p, replaces } satisfies ImageDraggedMessage, (res?: SaveResponse) => {

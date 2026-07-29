@@ -258,7 +258,9 @@ describe('重複保存の警告（ドロップ前の3択）', () => {
     const before = sent.length;
     buttons()[2].dispatchEvent(dragEvent('click'));
     await settle();
-    expect(sent.length).toBe(before); // imageDragged は飛んでいない
+    expect(sent.slice(before).map((m) => m.type)).not.toContain('imageDragged');
+    // #519: 「やめる」を選んだことが capture.log に残る＝沈黙と区別できる。
+    expect(sent.at(-1)).toMatchObject({ type: 'logCapture', entry: { stage: 'duplicate', phase: 'skip' } });
     expect(label().textContent).toBe('Not saved');
     duplicateAnswer = { ok: true, duplicate: false };
     await settle(1500);
