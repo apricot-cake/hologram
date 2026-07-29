@@ -68,22 +68,43 @@ export const token = {
 } as const;
 
 let sheet: CSSStyleSheet | null = null;
+let sheetFailed = false;
+
+// The constructed sheet itself, for callers that need to adopt it somewhere
+// other than the document — the page-level ShadowRoot (#44) adopts this exact
+// object, which is why the generated file targets `:root, :host` rather than
+// just `:root`. Built at most once per module instance; null where constructed
+// sheets do not exist (jsdom in the offline unit suites).
+export function tokensSheet(): CSSStyleSheet | null {
+  if (sheet || sheetFailed) return sheet;
+  try {
+    const created = new CSSStyleSheet();
+    created.replaceSync(tokensCss);
+    sheet = created;
+  } catch {
+    sheetFailed = true;
+  }
+  return sheet;
+}
 
 // Idempotent: every on-page entry point calls this before it builds anything.
 // The resident content script and the on-demand Alt+S script share one isolated
 // world per document, so the module state above is shared too and the second
 // caller is free.
 export function ensureTokens(): void {
-  if (sheet) return;
+  const created = tokensSheet();
+  if (!created) return;
   try {
-    const created = new CSSStyleSheet();
-    created.replaceSync(tokensCss);
-    document.adoptedStyleSheets = [...document.adoptedStyleSheets, created];
-    sheet = created;
+    // Guarded rather than assumed: a document without adoptedStyleSheets at all
+    // is the same "no styling here" case the constructor failure above is, and
+    // a throw on this line would kill every line after the call in the caller
+    // (memory: dead-dom-throw-kills-next-line). An unstyled control still saves
+    // the picture, which is the part that must not depend on any of this.
+    const current = document.adoptedStyleSheets;
+    if (!current || current.includes(created)) return;
+    document.adoptedStyleSheets = [...current, created];
   } catch {
-    // Never let a styling failure take the save path down with it: an
-    // unstyled control still saves the picture (memory: a throw here kills
-    // every line after it in the caller).
+    /* same reason */
   }
 }
 

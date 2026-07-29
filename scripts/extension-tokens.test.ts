@@ -92,14 +92,19 @@ describe('生成物', () => {
 
 // === ②③拡張コードとの噛み合わせ ==============================================
 
+// トークンの入力（拡張固有の定義）と生成物そのものは対象外＝ここに色リテラルが在るのが
+// 正しい2ファイル。それ以外の .css は #44 で入った部品シートで、状態→色の対応を持つのは
+// もうそこなので、スキャンから外すと「使われていないトークン」の判定が嘘になる。
+const TOKEN_FILES = new Set(['tokens.source.css', 'tokens.generated.css']);
+
 const SOURCES = [
   ...fs
     .readdirSync(path.join(EXT, 'utils'))
-    .filter((f) => f.endsWith('.ts'))
+    .filter((f) => (f.endsWith('.ts') || f.endsWith('.css')) && !TOKEN_FILES.has(f))
     .map((f) => path.join('utils', f)),
   ...fs.readdirSync(path.join(EXT, 'entrypoints')).map((f) => path.join('entrypoints', f)),
   ...fs.readdirSync(path.join(EXT, 'pages')).map((f) => path.join('pages', f)),
-].filter((f) => /\.(ts|html)$/.test(f));
+].filter((f) => /\.(ts|html|css)$/.test(f));
 
 const read = (rel: string) => fs.readFileSync(path.join(EXT, rel), 'utf8');
 
