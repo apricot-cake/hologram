@@ -120,7 +120,7 @@ async function setup(): Promise<Ctx> {
   // border-radius の形（ピル状バナー vs 角丸ハイライト枠）で見分ける。
   const findDiv = (pred: (el: any) => boolean) => Array.from(window.document.body.querySelectorAll('div')).find(pred);
   const banner = () => findDiv((el) => el.style.borderRadius === '999px');
-  const highlight = () => findDiv((el) => el.style.borderRadius === '10px');
+  const highlight = () => findDiv((el) => el.style.borderRadius === 'var(--hologram-radius)');
 
   return {
     window,

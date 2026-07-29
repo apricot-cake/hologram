@@ -370,8 +370,14 @@
                          ALL text-bearing floats on UI (menus, popovers, panels,
                          hints, settings). No backdrop-filter, ever.
        2. scrim solid  — --scrim-bg/--scrim-ink below: text-bearing floats over
-                         CONTENT (toast, thumbnail badges, extension cards).
-                         Near-opaque dark + white ink, no blur.
+                         CONTENT (toast, thumbnail badges). Near-opaque dark +
+                         white ink, no blur.
+                         The Chrome extension's on-page cards LEFT this material
+                         in #270: they float over the BROWSER rather than over
+                         the app's own image grid, so they follow the browser's
+                         light/dark setting instead of staying theme-independent.
+                         They are a fourth material owned by extension/ (its
+                         tokens.source.css) and generated from the app's tokens.
        3. glass-chrome — --chrome-glass-* below: the ONLY glass. Icon-only
                          chrome floating over content (hover save/info/tag
                          buttons, back-to-top). Never carries text.

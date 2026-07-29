@@ -149,8 +149,10 @@ describe('ドロップ: 成功', () => {
     expect(msg.imageUrls.some((u: string) => u.includes('name=orig'))).toBe(true);
   });
 
-  test('ok 状態: 緑の枠・リングは隠れる', () => {
-    expect(zone().style.borderColor).toBe('rgba(48, 164, 108, 0.65)');
+  test('ok 状態: 成功の枠・リングは隠れる', () => {
+    // 色そのものではなくトークンで見る（#270）＝値はアプリ側で決まり、ここが縛るのは
+    // 「どの状態がどの意味のトークンを取るか」だけ。
+    expect(zone().style.borderColor).toBe('var(--hologram-success)');
     expect(ring().style.opacity).toBe('0');
   });
 
@@ -173,8 +175,8 @@ describe('ドロップ: 部分成功（メタデータ取得失敗）', () => {
     await settle();
   });
 
-  test('partial 状態: 琥珀の枠', () => {
-    expect(zone().style.borderColor).toBe('rgba(232, 161, 58, 0.65)');
+  test('partial 状態: 警告の枠', () => {
+    expect(zone().style.borderColor).toBe('var(--hologram-warning)');
   });
 
   test('理由付きの文面', () => {
@@ -203,8 +205,8 @@ describe('ドロップ: 失敗', () => {
     await settle();
   });
 
-  test('fail 状態: 赤の枠', () => {
-    expect(zone().style.borderColor).toBe('rgba(229, 72, 77, 0.65)');
+  test('fail 状態: 失敗の枠', () => {
+    expect(zone().style.borderColor).toBe('var(--hologram-danger)');
   });
 
   test('復旧案内の文面（生のエラーは出さない）', () => {

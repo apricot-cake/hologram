@@ -7,13 +7,14 @@
     "brace-expansion": "^5.0.8"
   },
   "scripts": {
-    "build": "wxt build",
-    "build:ext": "wxt build",
-    "dev": "wxt",
-    "dev:ext": "wxt",
+    "build": "npm run tokens && wxt build",
+    "build:ext": "npm run tokens && wxt build",
+    "dev": "npm run tokens && wxt",
+    "dev:ext": "npm run tokens && wxt",
     "zip": "wxt zip",
     "typecheck": "wxt prepare && tsc --noEmit",
-    "postinstall": "wxt prepare"
+    "postinstall": "wxt prepare",
+    "tokens": "node ../scripts/gen-extension-tokens.cts"
   },
   "devDependencies": {
     "@types/chrome": "^0.2.2",

@@ -21,7 +21,7 @@
 // is one extra record; the cost of a blocked save is the post.
 import { collectImageUrls, getMediaIdentitySite } from './extractor/index.ts';
 import type { PostMediaElement } from './extractor/types.ts';
-import { glassUi } from './glass-ui.ts';
+import { token } from './tokens.ts';
 
 // chrome.storage.local, boolean. Absent = on: the warning is the point of the
 // feature, and a user who finds it noisy turns it off (options page, or the
@@ -103,8 +103,6 @@ export async function checkDuplicate(platform: string, url: string | null, image
   return { captureId: typeof res.captureId === 'string' && res.captureId ? res.captureId : null };
 }
 
-const G = glassUi;
-
 function makeChoiceButton(label: string, title: string, primary: boolean): HTMLButtonElement {
   const b = document.createElement('button');
   b.type = 'button';
@@ -119,18 +117,18 @@ function makeChoiceButton(label: string, title: string, primary: boolean): HTMLB
     'box-sizing:border-box',
     'cursor:pointer',
     'white-space:nowrap',
-    `font:600 12px/1.5 ${G.FONT_SANS}`,
-    `border:1px solid ${primary ? 'rgba(94,197,236,0.85)' : G.CARD_BORDER}`,
-    `background:${primary ? G.ACCENT_SOFT : 'rgba(255,255,255,0.06)'}`,
-    `color:${primary ? G.ACCENT_TEXT : G.TEXT}`,
-    `transition:background ${G.DUR_HOVER}ms,border-color ${G.DUR_HOVER}ms,transform ${G.DUR_HOVER}ms ${G.EASE_OUT}`,
+    `font:600 12px/1.5 ${token.fontSans}`,
+    `border:1px solid ${primary ? token.accent : token.overlayBorder}`,
+    `background:${primary ? token.accentSoft : token.badgeNeutral}`,
+    `color:${primary ? token.accent : token.ink}`,
+    `transition:background ${token.durationBase},border-color ${token.durationBase},transform ${token.durationBase} ${token.easeOut}`,
   ].join(';');
   b.onpointerenter = () => {
-    b.style.background = primary ? 'rgba(40,168,219,0.30)' : 'rgba(255,255,255,0.14)';
+    b.style.background = primary ? token.accentSoft : token.hover;
     b.style.transform = 'translateY(-1px)';
   };
   b.onpointerleave = () => {
-    b.style.background = primary ? G.ACCENT_SOFT : 'rgba(255,255,255,0.06)';
+    b.style.background = primary ? token.accentSoft : token.badgeNeutral;
     b.style.transform = '';
   };
   // Both press phases are stopped: this control is layered over host pages that
@@ -188,10 +186,10 @@ export function buildChoiceRow(t: Messages, onChoose: (choice: DuplicateChoice) 
   // question on screen still waits for an answer, because turning the warning
   // off is not itself a decision about THIS save.
   const optOut = document.createElement('label');
-  optOut.style.cssText = `display:flex;align-items:center;gap:6px;cursor:pointer;color:rgba(255,255,255,0.62);font:400 11px/1.4 ${G.FONT_SANS};`;
+  optOut.style.cssText = `display:flex;align-items:center;gap:6px;cursor:pointer;color:${token.inkMuted};font:400 11px/1.4 ${token.fontSans};`;
   const box = document.createElement('input');
   box.type = 'checkbox';
-  box.style.cssText = 'margin:0;width:12px;height:12px;accent-color:#28a8db;cursor:pointer;';
+  box.style.cssText = `margin:0;width:12px;height:12px;accent-color:${token.accent};cursor:pointer;`;
   box.onchange = () => {
     if (box.checked) suppressWarning();
   };
