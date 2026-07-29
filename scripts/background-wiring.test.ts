@@ -293,7 +293,9 @@ describe('bridgeSend — 保存経路のネイティブホスト Port 配線', (
       await vi.advanceTimersByTimeAsync(30_000);
       const result = await responseP;
 
-      expect(result).toEqual({ ok: false, errorKind: 'host-unavailable', error: 'Native host timed out' });
+      // metaReason は null＝ホストが落ちたのは投稿の事情ではない（#505）。
+      // ここに理由が乗ると、取れない投稿の文面へ誤って倒れる。
+      expect(result).toEqual({ ok: false, errorKind: 'host-unavailable', metaReason: null, error: 'Native host timed out' });
     } finally {
       vi.useRealTimers();
     }
@@ -307,7 +309,7 @@ describe('bridgeSend — 保存経路のネイティブホスト Port 配線', (
     createdPorts[0].emitDisconnect('Native host has exited.');
     const result = await responseP;
 
-    expect(result).toEqual({ ok: false, errorKind: 'host-unavailable', error: 'Native host has exited.' });
+    expect(result).toEqual({ ok: false, errorKind: 'host-unavailable', metaReason: null, error: 'Native host has exited.' });
   });
 
   test('ホストがエラー応答（{ok:false}）→ msg.error の文言で分類される', async () => {

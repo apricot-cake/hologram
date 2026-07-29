@@ -70,6 +70,13 @@ describe('何も取れなかった投稿', () => {
     await expect(handleSavePost({ captureId: '1717500000000-e002', metadata: emptyMeta })).rejects.toThrow(/^Post unavailable/);
     expect(envelopeExists('1717500000000-e002')).toBe(false);
   });
+
+  // #505: この投稿の実際の理由は年齢制限（削除ではない）。capture.log に残るのは
+  // この文なので、理由がそのまま乗ることが後からの診断の唯一の手がかりになる。
+  test('理由は断り文にそのまま乗る（capture.log から読めるのはこれだけ）', async () => {
+    await expect(handleSavePost({ captureId: '1717500000000-e003', metadata: emptyMeta, metaOk: false, metaReason: 'ageRestricted' })).rejects.toThrow(/^Post unavailable.*ageRestricted/);
+    expect(envelopeExists('1717500000000-e003')).toBe(false);
+  });
 });
 
 describe('中身のある投稿は通す', () => {
