@@ -38,23 +38,21 @@
          below (tabbar-bg vs sidebar-bg), and the active tab connects into it —
          Chrome draws no hard rule between the strip and the toolbar. */
       position: sticky; top: 0; z-index: 50;
+      /* The band reaches the window's right edge (#518) and the app-drawn window buttons
+         are portaled over that corner, so reserve their width here. The inspector toggle
+         is a normal child of this row and needs no reservation. */
+      padding-right: var(--window-controls-w, 138px);
     }
     #tabBarInner > * { -webkit-app-region: no-drag; }
     #tabBarInner {
       box-sizing: border-box;
       min-width: 0; flex: 1; display: flex; align-items: flex-end;
       align-self: stretch;
-      /* The window buttons and the inspector toggle are both pinned to the window's
-         top-right rather than sitting in this row's flow, so reserve their width to keep
-         tabs from running under them — plus the grab gutter that leaves a draggable patch
-         even when many tabs fill the row. */
-      padding: 0 calc(var(--window-controls-w, 138px) + var(--inspector-toggle-w, 48px) + var(--tabbar-drag-gutter, 88px)) 0 8px;
+      /* The grab gutter: a draggable patch between the last tab and the inspector toggle,
+         kept even when tabs fill the row. */
+      padding: 0 var(--tabbar-drag-gutter, 88px) 0 8px;
       gap: 0;
     }
-    /* …unless the inspector is open: the panel is wider than that chrome, so the band ends
-       well before it and only the grab gutter is still owed. Without this the reservation
-       would eat a third of the tab row for buttons that aren't over it. */
-    #tabBarInner.has-inspector { padding-right: var(--tabbar-drag-gutter, 88px); }
     /* Window tabs (Phase 2) — Chrome tab-strip anatomy: all tabs share one
        32px bottom-flush box (one text axis); inactive hover = floating pill
        inset within the box; active = connected to the band below with
@@ -1804,15 +1802,11 @@
       height: 100%; z-index: 25;
       background: var(--surface); border-left: 1px solid var(--border);
       font-size: 12px;
-      /* A column of [titlebar strip][scrolling body]: the panel spans the full window
-         height like the sidebar does, so like the sidebar it has to hand its top row
-         to the window chrome instead of scrolling content under it. */
+      /* The panel starts below the tab band (#518), which spans the window's full width
+         right of the sidebar — so unlike the sidebar it never reaches the window top and
+         has no titlebar row of its own to give up. */
       display: flex; flex-direction: column;
     }
-    /* The panel's share of the titlebar (mirrors the sidebar's header row). The
-       inspector toggle and the window buttons are pinned over it, so it stays empty —
-       what it contributes is the drag region and the reserved height. */
-    .inspector-titlebar { height: var(--tabbar-h); flex-shrink: 0; -webkit-app-region: drag; }
     .inspector-body { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 16px 18px; }
     /* Narrow widths (#259): the same panel floats over the grid instead of taking a
        column out of it. --content-top is measured by AppShell (the toolbar's height
@@ -1824,16 +1818,12 @@
       border-left: 1px solid var(--float-border); box-shadow: var(--shadow-lg);
       z-index: 9500;   /* over the content, under modals/lightbox (11000+) */
     }
-    /* The window chrome is pinned over the panel's top only while it reaches the window
-       top — as an overlay it starts below the toolbar, so it hands the strip back. */
-    .inspector--overlay .inspector-titlebar { display: none; }
     /* Image tab: the inspector is part of the detail view (Eagle-style), so it stays an
        inline column even when narrow — a slide-over would cover the very image being
-       inspected. Back in flow, it reaches the window top again and needs its strip. */
+       inspected. */
     body.image-tab-active .inspector--overlay {
       position: static; height: 100%; box-shadow: none; border-left: 1px solid var(--border);
     }
-    body.image-tab-active .inspector--overlay .inspector-titlebar { display: block; }
     .inspector[hidden] { display: none; }
     .inspector:not([hidden]) { animation: hologramPanelIn var(--dur-panel) var(--ease-out); }
     /* Inspector inline tag editor — always shown while the inspector is open: tag

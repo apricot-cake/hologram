@@ -3,13 +3,16 @@
 // [tab bar band] + [SidebarProvider: left nav | content inset | right inspector].
 //
 // Layout notes:
-// - Obsidian-type shell (#154, 2026-07-18): the sidebar spans the full window height
-//   and the tab bar is scoped INTO the content column (SidebarInset), not a full-width
-//   band above everything. That kills the seam where the sidebar's vertical edge met
-//   the tab strip and split the connected tab into two tones. The tab bar keeps the
-//   legacy #tabBar/#tabBarInner ids + titlebar CSS (drag region) + delegated handlers.
-//   TRANSIENT: TabsHost still emits legacy .tab-item DOM; the Tailwind rewrite +
-//   delegation teardown is the follow-up (P1-2 rest).
+// - Shell shape (#154, 2026-07-18; right half revised by #518, 2026-07-29): the sidebar
+//   spans the full window height and the tab bar starts at its edge rather than above it,
+//   which kills the seam where the sidebar's vertical edge met the tab strip and split
+//   the connected tab into two tones. From there the band runs to the window's RIGHT edge
+//   — over the inspector's column, Chrome-style — so the window buttons always sit on the
+//   tab strip. Before #518 the inspector was full-height too and had to hand its top row
+//   to the window chrome as an empty strip, which left the buttons floating on blank
+//   panel. The tab bar keeps the legacy #tabBar/#tabBarInner ids + titlebar CSS (drag
+//   region) + delegated handlers. TRANSIENT: TabsHost still emits legacy .tab-item DOM;
+//   the Tailwind rewrite + delegation teardown is the follow-up (P1-2 rest).
 // - The sidebar's own header row is the window's titlebar drag strip and holds the
 //   collapse trigger (moved out of the toolbar). shadcn's fixed sidebar-container now
 //   spans inset-y-0 as-is (the --tabbar-h offset hack is gone).
@@ -220,15 +223,15 @@ export function AppShell() {
               breakpoint it is a slide-over whose width is the window's, so there is
               nothing to drag (#30 v1) — and the rail would sit over the grid. */}
           <LeftSidebar resize={wide ? sidebar.resize : undefined} />
-          <SidebarInset className="min-w-0">
-            {/* Electron titlebar band, now scoped INTO the content column (Obsidian-type
-                shell, #154): the sidebar spans full height beside it, so the tab strip no
-                longer crosses the sidebar seam. Legacy #tabBar CSS styles it; TabsHost
-                fills #tabBarInner. */}
+          {/* Everything right of the sidebar: the tab band across the top, and a
+              [content | inspector] row beneath it (#518). */}
+          <div className="flex min-w-0 flex-1 flex-col">
+            {/* Electron titlebar band. It starts at the sidebar's edge — so the tab strip
+                never crosses that seam (#154) — and runs to the window's right edge, over
+                the inspector's column, so the window buttons always have the band under
+                them (#518). Legacy #tabBar CSS styles it; TabsHost fills #tabBarInner. */}
             <header id="tabBar" className="shrink-0">
-              {/* has-inspector: when the panel is open the band no longer reaches the window
-                  edge, so it stops reserving the width of the chrome pinned there. */}
-              <div id="tabBarInner" className={inspectorOpen ? 'has-inspector' : undefined}>
+              <div id="tabBarInner">
                 <TabsHost />
               </div>
               {/* Inspector toggle (#243) — mirrors the sidebar trigger at the band's left
@@ -237,51 +240,48 @@ export function AppShell() {
               <InspectorToggle />
               {/* The window buttons are ours now (see WindowControls). Mounted here for
                   ownership, but portaled to the window's top-right above the modal scrim —
-                  #tabBarInner reserves --window-controls-w so tabs stay clear of them. */}
+                  #tabBar reserves --window-controls-w so this row's flow stays clear. */}
               <WindowControls />
             </header>
-            <AppToolbar />
-            {/* Scroll root for the content area (the page itself never scrolls). */}
-            <div id="mode-post" ref={contentRef} className="relative min-h-0 flex-1 overflow-y-auto">
-              <div id="panelPosts" className="tab-panel active">
-                <div id="postGrid" className="post-grid" />
-                <div id="posterGrid" className="poster-grid" />
-                <div id="emptyState" className="empty-state" hidden>
-                  <EmptyState />
+            <div className="flex min-h-0 flex-1">
+              <SidebarInset className="min-w-0">
+                <AppToolbar />
+                {/* Scroll root for the content area (the page itself never scrolls). */}
+                <div id="mode-post" ref={contentRef} className="relative min-h-0 flex-1 overflow-y-auto">
+                  <div id="panelPosts" className="tab-panel active">
+                    <div id="postGrid" className="post-grid" />
+                    <div id="posterGrid" className="poster-grid" />
+                    <div id="emptyState" className="empty-state" hidden>
+                      <EmptyState />
+                    </div>
+                  </div>
                 </div>
-              </div>
+                {/* Image-tab detail view (Eagle 風 fit-to-screen); body.image-tab-active swaps it in. */}
+                <div id="imageTabView">
+                  <ImageTabHost />
+                </div>
+                {/* Bottom floating selection bar (redesign §3-4 / P2⑥). Inside the inset (not
+                    a body-level overlay) so it centers on the content column and stays clear of
+                    the right inspector, which is a flex sibling that narrows the inset when open. */}
+                <FloatingBar />
+              </SidebarInset>
+              {/* Right inspector — a column under the band, like Chrome's side panel (#518).
+                  Visibility is the user's own toggle (#243): it is no longer opened/closed as
+                  a side effect of selecting a card, and the content (Inspector) shows a
+                  placeholder while nothing is selected (#244). */}
+              <aside id="postDetail" className={wide ? 'inspector relative' : 'inspector inspector--overlay'} hidden={!inspectorVisible}>
+                {/* Drag edge (#30). Wide layout only, for the same reason the sidebar rail
+                    is: the narrow form is an overlay pinned to the window edge. */}
+                {wide && <InspectorRail resize={inspector.resize} />}
+                {/* flex:1 (in .inspector-body) gives this a definite height, so the
+                    empty-state placeholder can still center itself in the column; a filled
+                    panel just overflows it into the scroll, as before. */}
+                <div id="postDetailBox" className="inspector-body">
+                  <Inspector />
+                </div>
+              </aside>
             </div>
-            {/* Image-tab detail view (Eagle 風 fit-to-screen); body.image-tab-active swaps it in. */}
-            <div id="imageTabView">
-              <ImageTabHost />
-            </div>
-            {/* Bottom floating selection bar (redesign §3-4 / P2⑥). Inside the inset (not
-                a body-level overlay) so it centers on the content column and stays clear of
-                the right inspector, which is a flex sibling that narrows the inset when open. */}
-            <FloatingBar />
-          </SidebarInset>
-          {/* Right inspector. Visibility is the user's own toggle now (#243) — it is no
-              longer opened/closed as a side effect of selecting a card, and the content
-              (Inspector) shows a placeholder while nothing is selected (#244). */}
-          <aside id="postDetail" className={wide ? 'inspector relative' : 'inspector inspector--overlay'} hidden={!inspectorVisible}>
-            {/* Drag edge (#30). Wide layout only, for the same reason the sidebar rail
-                is: the narrow form is an overlay pinned to the window edge. */}
-            {wide && <InspectorRail resize={inspector.resize} />}
-            {/* The panel's share of the titlebar. It spans the full window height beside
-                the tab band, so its top row is where the pinned inspector toggle and
-                window buttons land — without this strip they sat on the panel's content,
-                which then scrolled underneath them, and the window had no drag region
-                there. Mirrors the sidebar's header row at the opposite corner. */}
-            <div className="inspector-titlebar" />
-            {/* flex:1 (in .inspector-body) gives this a definite height, so the
-                empty-state placeholder can still center itself in what is left of the
-                column; a filled panel just overflows it into the scroll, as before.
-                No h-full here — 100% would resolve against the whole aside and push the
-                body a titlebar's worth past the bottom. */}
-            <div id="postDetailBox" className="inspector-body">
-              <Inspector />
-            </div>
-          </aside>
+          </div>
         </SidebarProvider>
       </div>
       {/* Hidden sort value source — orchestrator/tabs read+write #sortSelect.value as the

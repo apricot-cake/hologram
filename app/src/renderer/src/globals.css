@@ -223,27 +223,20 @@
 .app-no-drag { -webkit-app-region: no-drag; }
 
 /* The window-control strip is opaque (WindowControls.tsx says why), so it has to carry the
-   color of whatever it covers. Pinned to the window's top-right, that is the tab band —
-   except while the inspector is a docked column, which reaches the window top and hands its
-   own top row (.inspector-titlebar) to the window chrome.
+   color of whatever it covers. That is always the tab band: since #518 the band spans from
+   the sidebar's edge to the window's right edge, and the inspector is a column beneath it
+   rather than a full-height panel reaching the window top.
 
-   Keyed off the same two conditions that decide whether .inspector-titlebar is displayed at
-   all (index.html): the panel is showing, and it is not the narrow overlay form — that one
-   starts below the toolbar at --content-top, so the strip is back over the tab band. The
-   image tab is the exception the titlebar rule also makes: the panel goes back in flow there
-   even when narrow, so it reaches the top again.
-
-   Derived in CSS rather than in React (#504) because the JS store the strip used to read,
-   inspector-panel.ts, is the user's PREFERENCE — "the panel should be open" — not the form it
-   currently takes. It stays true while the narrow overlay is closed or waiting on a selection,
-   which is how the strip came to paint --surface over the tab band. Reading the classes React
-   already writes keeps one source of truth instead of a second copy of inspectorVisible. */
+   This used to be two branches keyed off whether the docked inspector was under the strip
+   (#504). What made that fragile was picking the condition: the obvious input, the
+   inspector-panel.ts store, is the user's PREFERENCE — "the panel should be open" — and
+   stays true while the narrow overlay is closed or waiting on a selection, so the strip
+   painted --surface over the tab band. #513 fixed it by deriving the real form in CSS
+   instead; #518 removes the question, because nothing but the band is ever under the
+   strip. Keep it that way: if some future panel reaches the window top again, the honest
+   fix is the form, not a second color branch here. */
 .wc-strip {
   background: var(--tabbar-bg);
-}
-body:has(#postDetail:not([hidden]):not(.inspector--overlay)) .wc-strip,
-body.image-tab-active:has(#postDetail:not([hidden])) .wc-strip {
-  background: var(--surface);
 }
 
 /* Window controls (WindowControls.tsx) sit ABOVE the modal scrim, because window management
