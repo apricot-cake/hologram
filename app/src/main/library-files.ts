@@ -12,6 +12,20 @@ import path from 'node:path';
 
 export const isLibraryFileName = (f: unknown): f is string => typeof f === 'string' && !!f && !f.includes('..') && !f.includes('/') && !f.includes('\\');
 
+// Which library files may become a TOP-LEVEL asset:// document (#215). Raster
+// formats only: Chromium wraps those in its own passive image document, which
+// carries no author script. SVG is the odd one out — it is a full XML document
+// with <script> and event handlers, and asset://img/* is one origin, so a
+// scripted SVG opened top-level could read every other library file through
+// same-origin fetch and post it anywhere. Video/zip are excluded too: this
+// window is the still-image viewer, and nothing needs them here.
+//
+// This is the ENTRY gate. The asset handler's CSP (assetSecurityHeaders) is the
+// second layer that holds even when a future caller reaches past this list.
+const VIEWER_IMAGE_EXTS = new Set(['.jpg', '.jpeg', '.jfif', '.png', '.webp', '.gif', '.avif']);
+
+export const isViewerImageName = (f: unknown): f is string => isLibraryFileName(f) && VIEWER_IMAGE_EXTS.has(path.extname(f).toLowerCase());
+
 // Real paths for a batch of names: anything that isn't a library name, or isn't
 // on disk, drops out. Windows aborts the ENTIRE drag when startDrag is handed a
 // path that doesn't exist, so a file deleted behind the library's back has to

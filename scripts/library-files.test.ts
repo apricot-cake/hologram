@@ -7,7 +7,7 @@
 
 import path from 'node:path';
 import { describe, expect, test } from 'vitest';
-import { isLibraryFileName, libraryFilePaths } from '../app/src/main/library-files';
+import { isLibraryFileName, isViewerImageName, libraryFilePaths } from '../app/src/main/library-files';
 
 const save = path.resolve(path.sep === '\\' ? 'C:\\Hologram\\library' : '/home/alice/Hologram/library');
 const at = (f: string) => path.join(save, f);
@@ -29,6 +29,27 @@ describe('isLibraryFileName（ゲート）', () => {
 
   test.each([['', null, undefined, 0, 42, {}, [], true]].flat())('文字列でない・空を弾く: %s', (v) => {
     expect(isLibraryFileName(v)).toBe(false);
+  });
+});
+
+describe('isViewerImageName（単独ウィンドウで開いてよい形式・#215）', () => {
+  test.each(['a.jpg', 'a.JPEG', 'a.jfif', 'a.png', 'a.webp', 'a.gif', 'a.avif'])('ラスタ画像は通す（大文字拡張子も）: %s', (name) => {
+    expect(isViewerImageName(name)).toBe(true);
+  });
+
+  // 賭かっている失敗モード: SVG はスクリプトを持てる「文書」で、asset://img/* は
+  // ライブラリ全体で1オリジン＝トップレベルで開けば同一オリジン fetch で他の
+  // ファイルを読み出せてしまう。拡張子の大小・二重拡張子で抜けないこと。
+  test.each(['a.svg', 'a.SVG', 'a.png.svg'])('SVG は拒む: %s', (name) => {
+    expect(isViewerImageName(name)).toBe(false);
+  });
+
+  test.each(['a.mp4', 'a.webm', 'a.mov', 'a.m4v', 'a.zip', 'a.html', 'a.json', 'noext'])('静止画ビューアの守備範囲外は拒む: %s', (name) => {
+    expect(isViewerImageName(name)).toBe(false);
+  });
+
+  test.each(['../a.png', 'sub/a.png', 'sub\\a.png', '', null, undefined, 42])('素のライブラリ名でないものは拒む（ゲートを通してから拡張子を見る）: %s', (v) => {
+    expect(isViewerImageName(v)).toBe(false);
   });
 });
 

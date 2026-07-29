@@ -42,9 +42,13 @@ test('選択バーから削除するとグリッドから消えてごみ箱に�
   await expect(restoreButton).toHaveCount(0);
 
   // Restored means the row and the media are back where the library keeps them.
-  // NOTE: the grid behind the dialog does NOT come back on its own — restore-post
-  // writes the row but broadcasts no posts-changed, so the card only reappears on
-  // the next launch. Asserted at the storage layer until that gap is closed (#471).
   await expect.poll(() => hologram.readDb((sqlite) => sqlite.prepare('SELECT captureId FROM posts WHERE captureId = ?').get('e2e-0004'))).toEqual({ captureId: 'e2e-0004' });
   expect(fs.existsSync(path.join(hologram.saveFolder, 'e2e-0004.png'))).toBe(true);
+
+  // The grid behind the dialog comes back on its own (#471: restore-post now
+  // broadcasts posts-changed) — no relaunch required.
+  await page.keyboard.press('Escape');
+  await expect(dialog).toHaveCount(0);
+  await expect(cards).toHaveCount(4);
+  await expect(cards.filter({ hasText: '手描きのラフスケッチ' })).toHaveCount(1);
 });

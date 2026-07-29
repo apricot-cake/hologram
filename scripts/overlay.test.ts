@@ -731,3 +731,54 @@ describe('再生中の動画投稿（#450）', () => {
     hoverAway();
   });
 });
+
+// #311: Alt+S saves exactly what chrome.tabs.captureVisibleTab sees — a real
+// screenshot bakes in whatever is drawn on screen, this file's corner controls
+// included, unless something hides them first. capture.ts (a separate content
+// script sharing this same isolated world) does that through
+// window.__hologramPrepareOverlayForCapture — the same window-global signal
+// __hologramAutoCapture / __snsPostSaveCleanup already use to cross between
+// the two files.
+describe('撮影退避フック（#311）', () => {
+  // このスイートは1ページを通しで動かすため、この時点で保存ボタンが残っている
+  // 投稿はもう無い（どの投稿もどこかの describe で保存済みにされた）。フックが
+  // 見るのは「印」「保存ボタン」という区別ではなく共通の data-hologram-overlay
+  // 属性1本なので、印（p1）に加えて同じ属性を持つだけの素の要素で確かめれば、
+  // ボタン面も同じ経路で退避されることが分かる。
+  let synthetic: any;
+
+  beforeAll(() => {
+    setSetting('savedBadgeMode', 'always'); // p1 の印を確実に出す
+    synthetic = window.document.createElement('button');
+    synthetic.setAttribute('data-hologram-overlay', '');
+    synthetic.style.display = 'flex';
+    window.document.body.appendChild(synthetic);
+  });
+
+  afterAll(() => {
+    synthetic.remove();
+    setSetting('savedBadgeMode', 'hover');
+  });
+
+  test('印・ボタン面の両方が画面上にある', () => {
+    expect(controlOf('p1')).toHaveLength(1);
+    expect(controlOf('p1')[0].title).toBe('Saved in Hologram');
+    expect(synthetic.style.display).toBe('flex');
+  });
+
+  test('フックを呼ぶと両方 display:none になる', () => {
+    const restore = window.__hologramPrepareOverlayForCapture?.() as () => void;
+
+    expect(controlOf('p1')[0].style.display).toBe('none');
+    expect(synthetic.style.display).toBe('none');
+    restore();
+  });
+
+  test('返した復元関数で元の表示へ戻る', () => {
+    const restore = window.__hologramPrepareOverlayForCapture?.() as () => void;
+    restore();
+
+    expect(controlOf('p1')[0].style.display).not.toBe('none');
+    expect(synthetic.style.display).toBe('flex');
+  });
+});
