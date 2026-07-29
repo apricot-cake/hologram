@@ -1,0 +1,219 @@
+/* The shell both extension-owned pages are built on (#44): settings and
+ * diagnostics are the same page with different contents, so they share one
+ * sheet rather than two <style> blocks that drifted apart.
+ *
+ * These pages are NOT the on-page overlay: they live on the extension's own
+ * origin, there is no host CSS to defend against, and no shadow root. What they
+ * do share with the overlay is the token sheet — the same generated values the
+ * desktop app renders with (#270) — so a change to the app's tokens moves all
+ * three at once.
+ *
+ * Light/dark follows the browser through prefers-color-scheme alone. The
+ * extension has no theme preference of its own, and a forced one is the only
+ * thing that could put these pages out of step with the browser chrome around
+ * them (#270's own reason for removing the old setting).
+ */
+
+:root {
+  /* Both keywords: the radios, checkboxes and buttons below are browser-drawn,
+     and this is what tells the browser which pair of native colours to use. */
+  color-scheme: light dark;
+}
+
+/* The background has to paint the whole viewport, not just behind the column. */
+html {
+  background: var(--hologram-page-bg);
+}
+
+body {
+  margin: 0;
+  background: var(--hologram-page-bg);
+  color: var(--hologram-ink);
+  font: 400 13px/1.55 var(--hologram-font-sans);
+}
+
+/* Opens as a full tab (manifest options_ui open_in_tab), so the content needs a
+ * measure of its own: a single centred column at the app Settings pane's scale.
+ * One column, because there is no second axis of navigation here — a nav rail
+ * for three settings would be chrome about nothing. */
+.page {
+  max-width: 620px;
+  margin: 0 auto;
+  padding: 44px 24px 64px;
+}
+
+h1 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.014em;
+  color: var(--hologram-ink-strong);
+}
+
+/* One sentence under the name saying what this is. Both pages open cold — from
+ * a context menu, from chrome://extensions — so neither can assume the reader
+ * arrived knowing. */
+.lede {
+  margin: 8px 0 0;
+  color: var(--hologram-ink-muted);
+}
+
+.page-head {
+  margin: 0 0 36px;
+}
+
+/* A section is a MEANING, not a visual box: the heading names the situation the
+ * settings under it apply to, and a hairline separates it from the previous
+ * one. No cards — a card would imply the group is a thing you can act on. */
+section {
+  margin: 0;
+  padding: 24px 0 4px;
+  border-top: 1px solid var(--hologram-border);
+}
+section:first-of-type {
+  padding-top: 0;
+  border-top: 0;
+}
+
+h2 {
+  margin: 0 0 16px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--hologram-ink-strong);
+}
+
+/* One setting: the control leads, its explanation sits under the label in muted
+ * text (the app Settings pane's shape). */
+.row {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  margin: 0 0 20px;
+}
+.row input {
+  margin: 2px 0 0;
+}
+.desc {
+  margin: 4px 0 0;
+  color: var(--hologram-ink-muted);
+  font-size: 12px;
+}
+
+/* A setting with three mutually exclusive values is a radio group, not a switch
+ * plus a modifier: "off" and "when does it show" in separate controls would let
+ * the page display a combination that means nothing. */
+fieldset {
+  margin: 0 0 20px;
+  padding: 0;
+  border: 0;
+}
+/* A legend is a label for the group, so it takes the same weight and ink as the
+ * labels beside the checkboxes — the browser's default styling would otherwise
+ * make the one setting that happens to be a radio group look different from the
+ * two that are not. */
+legend {
+  padding: 0;
+  color: var(--hologram-ink);
+  font-weight: 400;
+}
+fieldset .desc {
+  margin: 4px 0 10px;
+}
+.choice {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  margin: 0 0 6px;
+}
+.choice input {
+  margin: 0;
+}
+
+/* Footnote-quiet: a normal user never needs diagnostics, so the way in must not
+ * read as a call to action. */
+.foot {
+  margin: 28px 0 0;
+  padding-top: 20px;
+  border-top: 1px solid var(--hologram-border);
+  font-size: 12px;
+}
+.foot a {
+  color: var(--hologram-ink-muted);
+  text-decoration: underline; /* the one link affordance kept, so it cannot be read as body text */
+  text-underline-offset: 2px;
+}
+.foot a:hover {
+  color: var(--hologram-ink);
+}
+
+button {
+  height: 28px; /* app --control-sm */
+  padding: 0 12px;
+  border: 1px solid var(--hologram-border-strong);
+  border-radius: 6px; /* app --radius-sm */
+  background: var(--hologram-page-surface);
+  color: var(--hologram-ink);
+  font: 600 12px/1 var(--hologram-font-sans);
+  cursor: pointer;
+  transition:
+    background var(--hologram-duration-base) var(--hologram-ease-out),
+    border-color var(--hologram-duration-base);
+}
+button:hover {
+  background: var(--hologram-hover);
+}
+button:active {
+  background: var(--hologram-active);
+}
+
+:where(a, button, input):focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--hologram-focus-ring);
+  border-radius: 4px;
+}
+
+/* ================================================================ diagnostics */
+
+.actions {
+  display: flex;
+  gap: 8px;
+  margin: 0 0 16px;
+}
+
+/* Diagnostics output. Monospace because it is a machine's answer being read by
+ * a person, not prose — line structure is the information. */
+.log {
+  margin: 0;
+  padding: 14px 16px;
+  background: var(--hologram-hover);
+  border: 1px solid var(--hologram-border);
+  border-radius: 12px; /* app --radius-lg */
+  font: 400 12px/1.55 var(--hologram-font-mono);
+  color: var(--hologram-ink);
+  white-space: pre-wrap;
+  word-break: break-all;
+  overflow: auto;
+}
+.log:empty::before {
+  content: '…';
+  color: var(--hologram-ink-muted);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  button {
+    transition-duration: 0s;
+  }
+}
+
+@media (forced-colors: active) {
+  button {
+    border-color: ButtonBorder;
+    background: ButtonFace;
+    color: ButtonText;
+  }
+  section,
+  .foot,
+  .log {
+    border-color: CanvasText;
+  }
+}

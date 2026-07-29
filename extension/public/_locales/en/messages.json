@@ -23,6 +23,15 @@
     "message": "Hologram Settings",
     "description": "Options page document title"
   },
+  "optionsLede": {
+    "message": "How saving shows up on the timelines you browse. Managing what you saved happens in the Hologram app."
+  },
+  "optionsSectionTimeline": {
+    "message": "On the timeline"
+  },
+  "optionsSectionSaving": {
+    "message": "When saving"
+  },
   "optionsOpenDiag": {
     "message": "Open diagnostics page",
     "description": "Link to the diagnostics page"

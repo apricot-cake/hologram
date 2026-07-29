@@ -82,7 +82,11 @@ export function ensureUiRoot(): ShadowRoot | null {
   const parent = document.body || document.documentElement;
   if (!parent) return null;
 
-  const existing = document.querySelector(HOST_TAG);
+  // Typed as HTMLElement rather than Element: the tag is unknown to the HTML
+  // parser but still an HTMLUnknownElement, so it has a style attribute — and
+  // an element by this name that somehow is not one would fail the attachShadow
+  // below anyway, which the try/catch already turns into "no root".
+  const existing = document.querySelector<HTMLElement>(HOST_TAG);
   if (existing?.shadowRoot) {
     // A single-page app can move or drop nodes wholesale; re-attach rather than
     // hand back a root that is no longer in the document.

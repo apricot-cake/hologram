@@ -23,6 +23,15 @@
     "message": "Hologram 設定",
     "description": "Options page document title"
   },
+  "optionsLede": {
+    "message": "保存の操作をタイムライン上でどう見せるかの設定です。保存したものの管理は Hologram アプリ側で行います。"
+  },
+  "optionsSectionTimeline": {
+    "message": "タイムライン上の表示"
+  },
+  "optionsSectionSaving": {
+    "message": "保存するとき"
+  },
   "optionsOpenDiag": {
     "message": "診断ページを開く",
     "description": "Link to the diagnostics page"

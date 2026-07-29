@@ -167,7 +167,10 @@ export class StatusSurface {
   // or the pop would fling it half a width sideways.
   private frames(): [Keyframe, Keyframe] {
     return this.variant === 'banner'
-      ? [{ opacity: 0, transform: 'translateX(-50%) translateY(-14px) scale(0.96)' }, { opacity: 1, transform: 'translateX(-50%)' }]
+      ? [
+          { opacity: 0, transform: 'translateX(-50%) translateY(-14px) scale(0.96)' },
+          { opacity: 1, transform: 'translateX(-50%)' },
+        ]
       : [
           { opacity: 0, transform: 'translateY(14px) scale(0.96)' },
           { opacity: 1, transform: 'none' },
