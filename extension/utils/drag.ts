@@ -10,14 +10,10 @@ import { buildChoiceRow, checkDuplicate } from './duplicate-guard.ts';
 import { collectImageUrls, getMediaIdentitySite } from './extractor/index.ts';
 import { glassUi } from './glass-ui.ts';
 import { createI18n } from './i18n.ts';
+import type { ImageDraggedMessage, SaveResponse } from './messages.ts';
 
 export async function startDrag(): Promise<void> {
-  interface PendingDrag {
-    type: string;
-    platform: string;
-    postUrl: string;
-    imageUrls: string[];
-  }
+  type PendingDrag = ImageDraggedMessage;
 
   const siteConfig = getMediaIdentitySite();
   if (!siteConfig) return;
@@ -274,12 +270,21 @@ export async function startDrag(): Promise<void> {
   }
 
   function send(z: DropZone, p: PendingDrag, replaces: string | null) {
-    chrome.runtime.sendMessage({ ...p, replaces }, (res: any) => {
-      const ok = res && res.ok;
-      const partial = ok && res.metaOk === false; // saved, but no post metadata
-      const replaced = ok && !partial && !!replaces; // the old capture is on its way to the trash
-      const grouped = ok && !partial && !replaced && res.grouped > 0; // same post saved earlier → merges into one card in the app
-      const text = partial ? partialSaveText(res.metaReason) : replaced ? t('dupReplaced') : grouped ? t('bannerSavedGrouped', [res.grouped + 1]) : ok ? t('bannerSaved') : saveFailureText(res?.errorKind);
+    chrome.runtime.sendMessage({ ...p, replaces } satisfies ImageDraggedMessage, (res?: SaveResponse) => {
+      const ok = res?.ok === true;
+      let partial = false;
+      let grouped = false;
+      // The old capture is on its way to the trash, so this is not a merge —
+      // say so INSTEAD of "grouped" (#34).
+      const replaced = ok && !!replaces;
+      let text: string;
+      if (res?.ok) {
+        partial = res.metaOk === false; // saved, but no post metadata
+        grouped = !partial && !replaced && res.grouped > 0; // same post saved earlier → merges into one card in the app
+        text = partial ? partialSaveText(res.metaReason) : replaced ? t('dupReplaced') : grouped ? t('bannerSavedGrouped', [res.grouped + 1]) : t('bannerSaved');
+      } else {
+        text = saveFailureText(res?.errorKind);
+      }
       setState(z, partial ? 'partial' : ok ? 'ok' : 'fail', text);
       if (ok && !G.REDUCED_MOTION) {
         // Small badge pop so the state flip reads even in peripheral vision
