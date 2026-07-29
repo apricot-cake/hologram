@@ -17,13 +17,7 @@ test('起動するとシードした投稿がグリッドに並ぶ', async ({ la
   await expect(page.locator('#postDetail')).toBeVisible();
 });
 
-// KNOWN RED (#470): the placeholder's markup carries a `hidden` attribute and the
-// grid builder shows it by setting an inline display — which Tailwind's preflight
-// `[hidden] { display: none !important }` overrides, so nothing is ever drawn.
-// Annotated rather than deleted: Playwright reports an unexpected PASS once #470
-// lands, which is what takes the annotation back off.
 test('投稿が無いライブラリでは初回の空状態が出る', async ({ launchHologram }) => {
-  test.fail();
   const { page } = await launchHologram({ posts: [] });
 
   await expect(page.locator('#emptyState')).toBeVisible({ timeout: 5000 });

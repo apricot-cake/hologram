@@ -324,7 +324,11 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
       // 'allPostsCount' + 'searchQuery' — one less push.
       storeSet('postGroups', null);
       grid.style.display = 'none';
-      empty.style.display = 'block';
+      // #470: the placeholder mount carries a `hidden` attribute (AppShell.tsx) — drive
+      // visibility through that SAME attribute, not an inline style.display. Tailwind's
+      // preflight emits `[hidden]{display:none!important}`, which always outranks an
+      // inline style, so setting style.display here never actually showed the element.
+      empty.hidden = false;
       if (!inPlace && !prefersReducedMotion()) {
         void empty.offsetWidth;
         empty.classList.add('anim-in');
@@ -342,7 +346,7 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
     grid.classList.toggle('list-view', deps.currentView() === 'list');
     grid.classList.toggle('tile-view', deps.currentView() === 'tile');
     deps.applyTileLayout();
-    empty.style.display = 'none';
+    empty.hidden = true;
 
     // Card entrance plays only on a fresh build (filter/sort/search), never on
     // an in-place mutation re-render. Skipped under prefers-reduced-motion.
