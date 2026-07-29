@@ -4,16 +4,16 @@
 // 答えると次の install がそのまま失敗し、誤って「まだ必要」と答え続けると回避策が
 // 恒久化する。どちらの向きの誤りも、判定を目視で確かめるまで表に出ない。
 //
-// 実物の node_modules ではなく fixture のツリーを読ませる（本物は上流の更新で
-// 中身が変わる＝テストが勝手に赤くなる）。判定は「ディスクの package.json を
-// 読むだけ」なので、fixture で十分に再現できる。
+// 実物の node_modules / package-lock.json ではなく fixture のツリーを読ませる
+// （本物は上流の更新で中身が変わる＝テストが勝手に赤くなる）。判定はどちらも
+// 「ディスクの JSON を読むだけ」なので、fixture で十分に再現できる。
 
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 
-const { peerCheck, decideFlags, WORKAROUNDS } = require('./setup.cts');
+const { sqliteCheck, peerCheck, decideFlags, WORKAROUNDS } = require('./setup.cts');
 
 let tmp: string;
 
@@ -24,6 +24,13 @@ function writePkg(rel: string, pkg: Record<string, unknown>) {
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify(pkg));
   return dir;
+}
+
+// sqliteCheck は package-lock.json 側を読む（why は setup.cts のコメント）ので、
+// node_modules の fixture でなく package-lock.json の fixture が要る。
+function writeLockEntry(entry: Record<string, unknown> | undefined) {
+  const packages = entry ? { 'node_modules/better-sqlite3': entry } : {};
+  fs.writeFileSync(path.join(tmp, 'package-lock.json'), JSON.stringify({ packages }));
 }
 
 beforeEach(() => {
@@ -38,14 +45,40 @@ describe('decideFlags', () => {
   test('必要な回避策のフラグだけを並べる', () => {
     const needed = { needed: true, reason: '' };
     const done = { needed: false, reason: '' };
-    expect(decideFlags([needed])).toEqual(WORKAROUNDS.map((w: { flag: string }) => w.flag));
-    expect(decideFlags([done])).toEqual([]);
+    expect(decideFlags([needed, needed])).toEqual(WORKAROUNDS.map((w: { flag: string }) => w.flag));
+    expect(decideFlags([done, done])).toEqual([]);
+    expect(decideFlags([done, needed])).toEqual([WORKAROUNDS[1].flag]);
   });
 
   test('判定不能（null）は「まだ必要」と同じに倒す', () => {
     // まっさらな clone では読むものが無い。ここで「不要」に倒すと、その install が
     // 失敗するか半端なツリーを残す＝安全側は必ず「必要」。
-    expect(decideFlags([null])).toEqual(WORKAROUNDS.map((w: { flag: string }) => w.flag));
+    expect(decideFlags([null, null])).toEqual(WORKAROUNDS.map((w: { flag: string }) => w.flag));
+  });
+});
+
+describe('sqliteCheck', () => {
+  test('package-lock.json のエントリに gypfile が無ければ必要（ロックファイル駆動のインストールが node-gyp へ落ちる既定の状態）', () => {
+    writeLockEntry({ version: '13.0.2', license: 'MIT' });
+    expect(sqliteCheck(tmp)?.needed).toBe(true);
+  });
+
+  test('package-lock.json のエントリが gypfile:false を持てば不要（npm がロックファイル駆動でもこの項を読むようになった）', () => {
+    writeLockEntry({ version: '13.0.2', license: 'MIT', gypfile: false });
+    expect(sqliteCheck(tmp)?.needed).toBe(false);
+  });
+
+  test('展開済み node_modules 側の package.json は見ない＝それは --ignore-scripts で作られた可能性がある', () => {
+    // 展開物には gypfile:false が正しく入っていても（現に better-sqlite3 は
+    // それを宣言している）、それはこのインストールが --ignore-scripts で作った
+    // ツリーかもしれない＝プレーンな install が通る証拠にはならない。
+    writePkg('better-sqlite3', { version: '13.0.2', gypfile: false });
+    writeLockEntry({ version: '13.0.2', license: 'MIT' });
+    expect(sqliteCheck(tmp)?.needed).toBe(true);
+  });
+
+  test('package-lock.json が読めなければ判定不能（null）', () => {
+    expect(sqliteCheck(tmp)).toBeNull();
   });
 });
 
