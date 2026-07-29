@@ -1,5 +1,5 @@
 // Virtualized poster grid — poster cells on the shared VirtualGridHost. Emits
-// the SAME DOM the old flow layout did — `.poster-card[data-index]` (+inspected)
+// the SAME DOM the old flow layout did — `.poster-card[data-index/data-key]` (+inspected)
 // with `.poster-av`, `.poster-meta` (.poster-name / .poster-handle /
 // .poster-foot) — so the
 // delegated click/dblclick/contextmenu on #posterGrid keeps
@@ -22,6 +22,8 @@ const getInspected = () => (storeGet('inspectedKey') as string | null | undefine
 // The poster cell model viewer.js resolves per card — only the fields laid out here.
 interface PosterCardModel {
   index: number;
+  /** Stable per-poster id (the user aggregate's key) — the density View Transition names cards by it. */
+  posterKey?: string | null;
   inspected?: boolean;
   avatarSrc?: string | null;
   monogram?: string;
@@ -48,6 +50,7 @@ function PosterCard({ c }: { c: PosterCardModel }) {
     <div
       className={'poster-card' + (c.inspected ? ' inspected' : '')}
       data-index={c.index}
+      data-key={c.posterKey}
       tabIndex={0}
       // --card-i drives the entrance stagger delay (CSS caps it via min()).
       style={{ '--card-i': c.index } as CSSProperties}

@@ -288,4 +288,4 @@ function drainInbox(saveFolder: string, sqlite: Database.Database): InboxDrainRe
   return report;
 }
 
-export { drainInbox, resolveMediaPath };
+export { drainInbox, resolveMediaPath, missingMediaReason };

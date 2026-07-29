@@ -6,7 +6,7 @@ import { extractorFor, fetchPostMetadata, getHostname, highResUrlOf, isAllowedSe
 import type { PostRecord } from './extractor/types.ts';
 import type { BridgeAck, CaptureAndSendResponse, CheckSavedResponse, ContentToBackgroundMessage, CropImageMessage, CropImageResponse, DumpLogsResponse, LogCaptureResponse, NotifyMessage, SavedEntry, SavedResults, SavedUpdateMessage, SaveProgressMessage, SaveResponse } from './messages.ts';
 import { classifySaveFailure } from './native-error.ts';
-import type { SaveLogEntry, SaveStage } from './save-log.ts';
+import type { SaveLogEntry, SaveStage } from './capture-log.ts';
 
 export function startBackground(): void {
   const NATIVE_HOST = 'com.hologram.host';

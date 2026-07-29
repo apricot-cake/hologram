@@ -1,6 +1,7 @@
 import { startBulkCapture } from './bulk-capture.ts';
 import { cropScreenshot } from './crop.ts';
 import { buildChoiceRow, checkDuplicate, pagePictureUrls } from './duplicate-guard.ts';
+import { logSaveEvent, newSaveId, reportSaveTimeout, type SaveStage } from './capture-log.ts';
 import { SAVE_WATCHDOG_MS } from './deadline.ts';
 import { normalizeRect } from './extractor/dom.ts';
 import { getCaptureSite } from './extractor/index.ts';
@@ -9,7 +10,6 @@ import { ICONS } from './icons.ts';
 import { StatusSurface } from './status-surface.ts';
 import { createI18n } from './i18n.ts';
 import type { BackgroundToContentMessage, CaptureAndSendMessage, CaptureAndSendResponse, CropImageResponse } from './messages.ts';
-import { logSaveEvent, newSaveId, type SaveStage } from './save-log.ts';
 
 export async function startCapture(): Promise<void> {
   // --- i18n ---
@@ -174,24 +174,15 @@ export async function startCapture(): Promise<void> {
     logSaveEvent({ stage, phase: 'fail', saveId, platform: site.platform, locationHref: location.href, clickedSnap: snapEl(el) });
   }
 
-  // The save was sent and nothing came back. The background writes a line for
-  // every stage IT reached, so a save with neither an ok nor a fail from that
-  // side is exactly what this records (#507) — and `reached` is what turns it
-  // from "nothing came back" into "nothing came back after the crop", which is
-  // the question the log could not answer (#519).
-  function logSaveTimeout(url: string, error: string) {
-    logSaveEvent({ stage: 'result', phase: 'fail', saveId, reached, platform: site.platform, url, error });
-  }
-
   // The user stopped: Esc, a right-click, or a second activation. Written so
   // that abandoning a save is not the same silence as a save that hung — the
   // confusion that had this log misread twice (#519). `openStage` says WHAT was
   // abandoned, and clearing it makes this once per session at most.
-  function logCancel(url: string | null) {
+  function logCancel() {
     if (!openStage) return;
     const stage = openStage;
     openStage = null;
-    logSaveEvent({ stage, phase: 'cancel', saveId, reached, platform: site.platform, url });
+    logSaveEvent({ stage, phase: 'cancel', saveId, reached, platform: site.platform, url: chosenUrl });
   }
 
   // === Event handlers ===
@@ -246,7 +237,6 @@ export async function startCapture(): Promise<void> {
       setTimeout(cleanup, 2800);
       return;
     }
-    chosenUrl = postUrl;
 
     // Remove event listeners (capture is single-shot). Done BEFORE the
     // duplicate check so a second click cannot pick another post while the
@@ -260,6 +250,7 @@ export async function startCapture(): Promise<void> {
     // #34: ask the library BEFORE shooting anything. checkDuplicate answers
     // null for every case that leaves the question open (setting off, host
     // unreachable, post not saved), and the capture then runs unchanged.
+    chosenUrl = postUrl;
     openStage = 'duplicate';
     checkDuplicate(site.platform, postUrl, pagePictureUrls(post))
       .catch(() => null)
@@ -375,7 +366,7 @@ export async function startCapture(): Promise<void> {
     saveSettled = true;
     openStage = null; // the timeout line below is this session's ending
     clearSaveWatchdog();
-    logSaveTimeout(postUrl, error);
+    reportSaveTimeout('capture', site.platform, postUrl, error, saveId, reached);
     banner.setState('error', saveFailureText('timeout'));
     setTimeout(cleanup, 2800);
   }
@@ -439,7 +430,7 @@ export async function startCapture(): Promise<void> {
     // Before the listeners go: if this session still had something open, the
     // user is what ended it. No-op when the session already wrote its own
     // ending (saved, failed, timed out, answered "don't save").
-    logCancel(chosenUrl);
+    logCancel();
     clearSaveWatchdog(); // Esc during a save: the banner is going, the timer must too
 
     document.removeEventListener('mousemove', onMouseMove, true);

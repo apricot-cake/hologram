@@ -26,6 +26,7 @@
 // The bookmarks-list check lives with the rest of X's page knowledge (#212);
 // this module is the intake FLOW, which is X-specific only because X is the
 // one site with such a list so far.
+import { logSaveEvent, newSaveId, reportSaveTimeout } from './capture-log.ts';
 import { SAVE_WATCHDOG_MS, SAVED_QUERY_TIMEOUT_MS } from './deadline.ts';
 import type { CaptureSite } from './extractor/types.ts';
 import { isXBookmarksPage } from './extractor/x.ts';
@@ -33,7 +34,6 @@ import { ICONS } from './icons.ts';
 import { StatusSurface } from './status-surface.ts';
 import type { HologramI18nApi } from './i18n.ts';
 import type { CheckSavedMessage, CheckSavedResponse, SavePostMessage, SaveResponse } from './messages.ts';
-import { logSaveEvent, newSaveId } from './save-log.ts';
 
 type EntryState = 'unknown' | 'queued' | 'saving' | 'saved' | 'skipped' | 'deferred' | 'unavailable' | 'ageRestricted' | 'failed';
 
@@ -197,8 +197,8 @@ export function startBulkCapture(site: CaptureSite, i18n: HologramI18nApi): void
     lastSaveStartedAt = Date.now();
     entries.set(url, 'saving');
     // Each post in a run is its own save attempt with its own id, so a run's
-    // lines can be read post by post rather than as one undifferentiated block
-    // (#519).
+    // lines can be read post by post rather than as one undifferentiated
+    // block (#519).
     const saveId = newSaveId();
     // The queue is serial, so one unanswered save stops the whole intake: `busy`
     // never clears and every remaining bookmark waits behind it, under a banner
@@ -209,10 +209,10 @@ export function startBulkCapture(site: CaptureSite, i18n: HologramI18nApi): void
     const watchdog = setTimeout(() => {
       if (settled) return;
       settled = true;
-      // On disk before the counter: a post given up on inside a run used to
-      // leave nothing at all in capture.log, so a run that reported failures
-      // could not be traced back to WHICH posts they were (#519).
-      logSaveEvent({ stage: 'result', phase: 'fail', saveId, platform: site.platform, url, error: `save timed out — no result from the background within ${SAVE_WATCHDOG_MS}ms` });
+      // Logged before the `stopped` bail: an abandoned post is worth a line
+      // whether or not the run is still on screen to count it. The run's own
+      // summary is transient; this is what a later reader has.
+      reportSaveTimeout('bulk-intake', site.platform, url, `save timed out — no result from the background within ${SAVE_WATCHDOG_MS}ms`, saveId);
       if (stopped) return; // the run already ended and printed its summary
       busy = false;
       entries.set(url, 'failed');

@@ -137,9 +137,20 @@ Start-ScheduledTask -TaskName 'HologramLaunch'
 | `cancel` | ユーザーがやめた |
 | `skip` | 何もせず抜けた（http(s) でないタブ／重複警告に「やめる」と答えた） |
 
+#### `via`＝どの面が待っていたか
+
+`stage=result`（ページが結果を待って返って来なかった）の行だけが持つ。**同じ「返って来ない」でも、どの面でスピナーが回っていたかは別の話**＝#507 の最初の読みが Alt+S を疑って外したのはこの欄が無かったため。
+
+| 値 | 面 |
+| --- | --- |
+| `capture` | Alt+S のキャプチャバナー |
+| `hover-save` | 画像の角のホバー保存ボタン |
+| `drop-zone` | ドラッグのドロップゾーン |
+| `bulk-intake` | 一括取込の1件 |
+
 #### そのほかの欄
 
-`saveId`（上記）・`captureId`（保存物のファイル名の元。ホストが決める）・`reached`（その保存が通過し終えた段の並び＝**どこまで進んで黙ったか**）・`url`・`metaOk`（投稿情報が取れたか）・`metaReason`（取れなかった理由）・`mediaCount`。
+`saveId`（上記）・`captureId`（保存物のファイル名の元。ホストが決める）・`reached`（その保存が通過し終えた段の並び＝**どこまで進んで黙ったか**）・`url`・`metaOk`（投稿情報が取れたか）・`metaReason`（取れなかった理由）・`mediaCount`。`bulk` の行は run の集計（`seen` / `saved` / `skipped` / `deferred` / `unavailable` / `ageRestricted` / `failed`）を持つ。
 
 ⚠️ **行の順番はイベントの順とは限らない＝`ts` で並べて読む。** 拡張が出す行はホストのプロセスが起きるのを待つので、同じ保存のあとの行に追い越されることがある（各行の `ts` は作られた時刻）。
 

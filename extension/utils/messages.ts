@@ -12,12 +12,12 @@
 // The native messaging protocol itself stays untyped on the host side.
 import type { CropRect } from './crop.ts';
 import type { SaveFailureKind } from './native-error.ts';
-import type { SaveLogEntry, SaveStage } from './save-log.ts';
+import type { SaveLogEntry, SaveStage } from './capture-log.ts';
 
 // === content script -> background ===
 
 // Every save request carries the page-minted saveId that groups this attempt's
-// capture.log lines (#519 — see save-log.ts). Required rather than optional on
+// capture.log lines (#519 — see capture-log.ts). Required rather than optional on
 // all three routes: a route that forgot it would put its save back into the
 // undiagnosable state the id exists to end.
 interface CaptureAndSendMessage {
@@ -68,7 +68,7 @@ interface CheckDuplicateMessage {
 
 // One capture.log line, relayed to the native host (or, failing that, the local
 // fallback ring buffer) essentially as-is. The stage/phase vocabulary and the
-// per-stage payload live in save-log.ts.
+// per-stage payload live in capture-log.ts.
 type LogEntry = SaveLogEntry;
 
 interface LogCaptureMessage {

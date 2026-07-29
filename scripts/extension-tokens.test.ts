@@ -202,6 +202,16 @@ describe.each(THEMES)('コントラスト（%s テーマ）', (_name, v) => {
     expect(ratio(rgb(v.get('--hologram-ink') as string), disc)).toBeGreaterThanOrEqual(4.5);
   });
 
+  // ホバー保存ボタンも同じ半透明のディスクに乗る（ユーザー判断・2026-07-29）。
+  // ホバーで色だけ持ち上げるので、持ち上げた先でもグリフが読めなければならない。
+  test.each([
+    ['真っ黒な写真', { r: 0, g: 0, b: 0 }],
+    ['真っ白な写真', { r: 255, g: 255, b: 255 }],
+  ] as [string, Rgb][])('ホバー中の保存ボタンのグリフが %s の上で 4.5:1 以上', (_what, photo) => {
+    const disc = over(v.get('--hologram-control-surface-hover') as string, photo);
+    expect(ratio(rgb(v.get('--hologram-ink') as string), disc)).toBeGreaterThanOrEqual(4.5);
+  });
+
   // リングはカードの内側なので、下地はホストページではなくカードの塗り。
   test('ドロップ先の破線リングがカードの上で 3:1 以上', () => {
     expect(ratio(over(v.get('--hologram-ring') as string, surface()), surface())).toBeGreaterThanOrEqual(3);

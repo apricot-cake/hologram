@@ -1,6 +1,7 @@
 // app/src/main/lib-db-integrity.ts のユニットテスト＝DB<->メディア相互照合と
-// orphan最小レコード合成（#5 St8 / #301）。db-inbox.test.ts と同じ流儀＝合成の
-// saveFolder + 本物の SQLite（lib-db.ts 経由）で確定済み設計を直接見る。
+// orphan回復（#5 St8 / #301・サイドカー採用は #511）。db-inbox.test.ts と同じ
+// 流儀＝合成の saveFolder + 本物の SQLite（lib-db.ts 経由）で確定済み設計を
+// 直接見る。
 //
 // 最後の describe（'復元リハーサル'）は #301 の受け入れ条件そのもの:
 // DB消失 → (a) inbox経由の投稿はリプレイで復活、(b) writePost直書き（ZIPイン
@@ -16,7 +17,7 @@ import { normalizePostRecord } from '../native-host/post-record.mts';
 import { openDatabase } from '../app/src/main/lib-db';
 import { drainInbox } from '../app/src/main/lib-db-inbox';
 import { makeTagResolver, preparePostStmts, writePost } from '../app/src/main/lib-db-record-writer';
-import { checkOrphans, findMissingMedia, findOrphanMedia, synthesizeOrphanRecords, capturedAtFromId } from '../app/src/main/lib-db-integrity';
+import { checkOrphans, findMissingMedia, findOrphanMedia, recoverOrphanRecords, capturedAtFromId } from '../app/src/main/lib-db-integrity';
 import { snapshotDatabase } from '../app/src/main/lib-db-snapshot';
 
 const dirs: string[] = [];
@@ -126,13 +127,112 @@ describe('findOrphanMedia / findMissingMedia', () => {
   });
 });
 
+// #511: 直下の <captureId>.json は「そのキャプチャのレコード」でメディアでは
+// ない。#302 以降これを書くものは無いが、#302 より前の保存は全部残しており、
+// #299 より前のバンドルが動けば今でも作られる（実際に2件作られた）。
+describe('直下サイドカーの扱い（#511）', () => {
+  let saveFolder: string;
+  let handle: { db: any; sqlite: any };
+
+  beforeAll(() => {
+    saveFolder = mkTempDir('hologram-integrity-sidecar-');
+    handle = openDatabase(path.join(mkTempDir('hologram-integrity-sidecar-db-'), 'test.db'));
+  });
+
+  test('メディアとサイドカーが揃っている孤児はメディア側のファイルで報告される（.jsonをimageに入れない）', () => {
+    fs.writeFileSync(path.join(saveFolder, '1700000002000-bb01.jpg'), 'x');
+    fs.writeFileSync(path.join(saveFolder, '1700000002000-bb01.json'), JSON.stringify({ captureId: '1700000002000-bb01', image: '1700000002000-bb01.jpg', url: 'https://x.com/u/status/1' }));
+
+    const orphans = findOrphanMedia(saveFolder, handle.sqlite);
+
+    expect(orphans).toEqual([{ captureId: '1700000002000-bb01', file: '1700000002000-bb01.jpg' }]);
+  });
+
+  test('サイドカーだけで直下にcaptureId名のメディアが無い動画の孤児も、レコードを読んで検出される', () => {
+    // 動画保存の形（#496）＝image は null で media[0] に本体とポスター。直下の
+    // ファイル名は -media-0 / -poster なので、レコードを読まないと孤児として
+    // 検出すらされない。
+    fs.writeFileSync(path.join(saveFolder, '1700000002001-bb02-media-0.mp4'), 'x');
+    fs.writeFileSync(path.join(saveFolder, '1700000002001-bb02-poster.jpg'), 'x');
+    fs.writeFileSync(
+      path.join(saveFolder, '1700000002001-bb02.json'),
+      JSON.stringify({ captureId: '1700000002001-bb02', image: null, mediaType: 'video', media: [{ url: 'https://video.example.invalid/v.mp4', file: '1700000002001-bb02-media-0.mp4', type: 'video', posterFile: '1700000002001-bb02-poster.jpg' }], url: 'https://x.com/u/status/2' }),
+    );
+
+    const orphans = findOrphanMedia(saveFolder, handle.sqlite);
+
+    expect(orphans).toEqual(expect.arrayContaining([{ captureId: '1700000002001-bb02', file: '1700000002001-bb02-media-0.mp4' }]));
+  });
+
+  test('サイドカーが名指すメディアが無ければ孤児として数えない（回復してもmissingになるだけ）', () => {
+    fs.writeFileSync(path.join(saveFolder, '1700000002002-bb03.json'), JSON.stringify({ captureId: '1700000002002-bb03', image: '1700000002002-bb03.jpg', url: 'https://x.com/u/status/3' }));
+
+    const orphans = findOrphanMedia(saveFolder, handle.sqlite);
+
+    expect(orphans.some((o) => o.captureId === '1700000002002-bb03')).toBe(false);
+  });
+
+  test('サイドカーの在る孤児を回復するとURL・本文・投稿者・media[]が失われない', () => {
+    const recovered = recoverOrphanRecords(saveFolder, handle.sqlite);
+
+    expect(recovered.find((r) => r.captureId === '1700000002000-bb01')).toMatchObject({ via: 'sidecar' });
+    expect(recovered.find((r) => r.captureId === '1700000002001-bb02')).toMatchObject({ via: 'sidecar' });
+
+    const video = handle.sqlite.prepare('SELECT image, video, url, source FROM posts WHERE captureId = ?').get('1700000002001-bb02');
+    expect(video).toMatchObject({ image: null, url: 'https://x.com/u/status/2', source: null });
+    const media = handle.sqlite.prepare('SELECT file, posterFile FROM media WHERE postId = ?').all('1700000002001-bb02');
+    expect(media).toEqual([{ file: '1700000002001-bb02-media-0.mp4', posterFile: '1700000002001-bb02-poster.jpg' }]);
+    // 回復後は posts 行があるので、もう孤児ではない＝警告が消える
+    expect(findOrphanMedia(saveFolder, handle.sqlite).some((o) => o.captureId.startsWith('1700000002000') || o.captureId.startsWith('1700000002001'))).toBe(false);
+  });
+
+  test('サイドカーがcaptureIdを偽っていてもファイル名側が勝つ', () => {
+    fs.writeFileSync(path.join(saveFolder, '1700000002003-bb04.jpg'), 'x');
+    fs.writeFileSync(path.join(saveFolder, '1700000002003-bb04.json'), JSON.stringify({ captureId: '9999999999999-dead', image: '1700000002003-bb04.jpg', text: 'claims a different id' }));
+
+    recoverOrphanRecords(saveFolder, handle.sqlite);
+
+    expect(handle.sqlite.prepare('SELECT text FROM posts WHERE captureId = ?').get('1700000002003-bb04')).toMatchObject({ text: 'claims a different id' });
+    expect(handle.sqlite.prepare('SELECT 1 FROM posts WHERE captureId = ?').get('9999999999999-dead')).toBeUndefined();
+  });
+
+  test('trashedAt付きのサイドカーは.trashではなく直下にメディアが在る＝ディスクが勝ち、生きた投稿として復活する', () => {
+    fs.writeFileSync(path.join(saveFolder, '1700000002004-bb05.jpg'), 'x');
+    fs.writeFileSync(path.join(saveFolder, '1700000002004-bb05.json'), JSON.stringify({ captureId: '1700000002004-bb05', image: '1700000002004-bb05.jpg', text: 'stale trash flag', trashedAt: '2020-01-01T00:00:00.000Z' }));
+
+    recoverOrphanRecords(saveFolder, handle.sqlite);
+
+    expect(handle.sqlite.prepare('SELECT trashedAt FROM posts WHERE captureId = ?').get('1700000002004-bb05')).toMatchObject({ trashedAt: null });
+  });
+
+  test('中身が空のサイドカー（投稿の中身が何も無い＝#492の殻）は採用せず合成に落ちる', () => {
+    fs.writeFileSync(path.join(saveFolder, '1700000002005-bb06.jpg'), 'x');
+    fs.writeFileSync(path.join(saveFolder, '1700000002005-bb06.json'), JSON.stringify({ captureId: '1700000002005-bb06', url: 'https://x.com/u/status/6' }));
+
+    const recovered = recoverOrphanRecords(saveFolder, handle.sqlite);
+
+    expect(recovered.find((r) => r.captureId === '1700000002005-bb06')).toMatchObject({ via: 'synthesized' });
+    expect(handle.sqlite.prepare('SELECT url, source FROM posts WHERE captureId = ?').get('1700000002005-bb06')).toMatchObject({ url: null, source: 'orphan-recovery' });
+  });
+
+  test('壊れたJSONのサイドカーは合成に落ちる（回復自体は止まらない）', () => {
+    fs.writeFileSync(path.join(saveFolder, '1700000002006-bb07.jpg'), 'x');
+    fs.writeFileSync(path.join(saveFolder, '1700000002006-bb07.json'), '{ not json');
+
+    const recovered = recoverOrphanRecords(saveFolder, handle.sqlite);
+
+    expect(recovered.find((r) => r.captureId === '1700000002006-bb07')).toMatchObject({ via: 'synthesized' });
+    expect(handle.sqlite.prepare('SELECT image FROM posts WHERE captureId = ?').get('1700000002006-bb07')).toMatchObject({ image: '1700000002006-bb07.jpg' });
+  });
+});
+
 describe('capturedAtFromId', () => {
   test('captureIdの先頭epochMillisをcapturedAtとして復元する', () => {
     expect(capturedAtFromId('1700000000000-aa01')).toBe(new Date(1700000000000).toISOString());
   });
 });
 
-describe('synthesizeOrphanRecords', () => {
+describe('recoverOrphanRecords', () => {
   let saveFolder: string;
   let handle: { db: any; sqlite: any };
   const one = (sql: string, ...args: any[]) => handle.sqlite.prepare(sql).get(...args);
@@ -145,9 +245,9 @@ describe('synthesizeOrphanRecords', () => {
   test('孤児メディアから最小postsレコードを書く（url null・source=orphan-recovery・capturedAtはID由来）', () => {
     fs.writeFileSync(path.join(saveFolder, '1700000000500-ee01.jpg'), 'x');
 
-    const written = synthesizeOrphanRecords(saveFolder, handle.sqlite);
+    const written = recoverOrphanRecords(saveFolder, handle.sqlite);
 
-    expect(written).toEqual([{ captureId: '1700000000500-ee01', file: '1700000000500-ee01.jpg' }]);
+    expect(written).toEqual([{ captureId: '1700000000500-ee01', file: '1700000000500-ee01.jpg', via: 'synthesized' }]);
     const row = one('SELECT image, video, url, source, capturedAt FROM posts WHERE captureId = ?', '1700000000500-ee01');
     expect(row).toMatchObject({ image: '1700000000500-ee01.jpg', video: null, url: null, source: 'orphan-recovery', capturedAt: new Date(1700000000500).toISOString() });
   });
@@ -155,7 +255,7 @@ describe('synthesizeOrphanRecords', () => {
   test('動画拡張子はimageでなくvideo列に入る', () => {
     fs.writeFileSync(path.join(saveFolder, '1700000000501-ee02.mp4'), 'x');
 
-    synthesizeOrphanRecords(saveFolder, handle.sqlite);
+    recoverOrphanRecords(saveFolder, handle.sqlite);
 
     const row = one('SELECT image, video FROM posts WHERE captureId = ?', '1700000000501-ee02');
     expect(row).toMatchObject({ image: null, video: '1700000000501-ee02.mp4' });
@@ -164,7 +264,7 @@ describe('synthesizeOrphanRecords', () => {
   test('再実行は冪等（既にposts行がある孤児は既にorphanでないので再合成されない）', () => {
     const before = handle.sqlite.prepare('SELECT COUNT(*) AS n FROM posts').get().n;
 
-    const written = synthesizeOrphanRecords(saveFolder, handle.sqlite);
+    const written = recoverOrphanRecords(saveFolder, handle.sqlite);
 
     expect(written).toEqual([]);
     expect(handle.sqlite.prepare('SELECT COUNT(*) AS n FROM posts').get().n).toBe(before);
@@ -216,7 +316,7 @@ describe('復元リハーサル（#301受け入れ条件: DB消失→スナッ�
     // 孤児検出 → 最小レコード合成で(b)も復活する
     const { orphanMedia } = checkOrphans(saveFolder, handle.sqlite);
     expect(orphanMedia).toEqual(expect.arrayContaining([{ captureId: '1700000001001-ff02', file: '1700000001001-ff02.jpg' }]));
-    const recovered = synthesizeOrphanRecords(saveFolder, handle.sqlite);
+    const recovered = recoverOrphanRecords(saveFolder, handle.sqlite);
     expect(recovered.map((r) => r.captureId)).toContain('1700000001001-ff02');
 
     const restoredB = handle.sqlite.prepare('SELECT image, source, url FROM posts WHERE captureId = ?').get('1700000001001-ff02');

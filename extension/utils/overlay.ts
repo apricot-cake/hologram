@@ -32,6 +32,7 @@
 // composited scroll as the picture. A fixed layer that copies viewport
 // coordinates has to wait for JavaScript on every scroll frame and visibly
 // trails smooth scrolling.
+import { newSaveId, reportSaveTimeout } from './capture-log.ts';
 import { SAVE_WATCHDOG_MS } from './deadline.ts';
 import { collectImageUrls, getCaptureSite, getMediaIdentitySite, getOverlaySite, mediaKeyOf, mediaKeysOf } from './extractor/index.ts';
 import type { CaptureSite, OverlaySite, PostMediaElement } from './extractor/types.ts';
@@ -40,7 +41,6 @@ import { StatusSurface } from './status-surface.ts';
 import { ensureTokens, motion, prefersReducedMotion, token } from './tokens.ts';
 import { createI18n } from './i18n.ts';
 import type { BackgroundToContentMessage, CheckSavedMessage, CheckSavedResponse, ImageDraggedMessage, SavedEntry, SaveResponse } from './messages.ts';
-import { logSaveEvent, newSaveId } from './save-log.ts';
 
 let overlayActive = false;
 
@@ -99,10 +99,16 @@ export async function startOverlay(): Promise<void> {
   // under a stationary pointer. This never delays a real pointer hover.
   const SCROLL_HOVER_SETTLE_MS = 100;
   const SCAN_DEBOUNCE_MS = 250; // feed mutations arrive in floods
-  const CONTROL_SIZE = 22;
-  // This remains visually close to the 22px saved mark, while the actual
-  // pointer target meets WCAG's 24px minimum for an icon-only control.
-  const SAVE_SIZE = 28;
+  // ONE size for every face this corner can wear. The faces used to differ (22px
+  // for the mark, the spinner and retry; 28px for the save button), which made
+  // the corner shrink at the exact moment it was reporting something: press the
+  // 28px button and the 22px spinner replaces it, then the 22px mark (user,
+  // 2026-07-29). 24px is the smallest that keeps the two PRESSABLE faces at
+  // WCAG 2.5.8's target minimum, and it is within 2px of the mark the design
+  // wanted to stay quiet — so nothing has to grow to hold the corner still.
+  // Retry was 22px before this, i.e. under that minimum: a real gap, not just a
+  // mismatch.
+  const CONTROL_SIZE = 24;
   const CONTROL_INSET = 6;
   const FLASH_MS = 1400; // "saved" confirmation after a press
   const ERROR_MS = 2500; // failure shown, then back to a button to retry
@@ -639,14 +645,18 @@ export async function startOverlay(): Promise<void> {
     // so an answer that never comes would leave that picture unsaveable for as
     // long as the page lives (#507). The deadline releases the button and says
     // why, exactly like a reported failure.
+    // Groups this press's lines across the three processes (#519).
     const saveId = newSaveId();
     let settled = false;
     const watchdog = setTimeout(() => {
       if (settled) return;
       settled = true;
-      // #507 released the button but wrote nothing down, so a press that hung
-      // left no trace once the page was gone (#519).
-      logSaveEvent({ stage: 'result', phase: 'fail', saveId, platform: media.platform, url: identity.link, error: `save timed out — no result from the background within ${SAVE_WATCHDOG_MS}ms` });
+      // Recorded, not just shown. This is the surface the hang in #507 was
+      // actually reported from, and it is the one with no service-worker line
+      // to fall back on: the resident script logs nothing on its own, so
+      // without this the timeout leaves capture.log exactly as empty as the
+      // silent spinner did.
+      reportSaveTimeout('hover-save', media.platform, identity.link, `save timed out — no result from the background within ${SAVE_WATCHDOG_MS}ms`, saveId);
       failSave(unit, state, anchor, saveFailureText('timeout'));
     }, SAVE_WATCHDOG_MS);
     chrome.runtime.sendMessage({ type: 'imageDragged', platform: media.platform, postUrl: identity.link, imageUrls: collectImageUrls(el, media.platform), saveId } satisfies ImageDraggedMessage, (res?: SaveResponse) => {
@@ -923,11 +933,11 @@ export async function startOverlay(): Promise<void> {
       case 'save': {
         el.title = t('hoverSaveImage');
         // Keep the same compact, glyph-only monochrome language as the saved
-        // mark. A slightly larger circle and a neutral hover lift distinguish
-        // the action without adding permanent text or state color.
-        el.style.width = `${SAVE_SIZE}px`;
-        el.style.height = `${SAVE_SIZE}px`;
-        el.style.background = token.surface;
+        // mark — same size, same translucency. This control also sits on the
+        // user's picture, and the disc is the only thing between them and it
+        // (user, 2026-07-29). What tells the action apart is the glyph and the
+        // hover lift, not a bigger circle or a state colour: it appears only
+        // where the pointer is, which is already the strongest signal there is.
         el.style.color = token.ink;
         el.style.cursor = 'pointer';
         el.appendChild(makeIcon(ICONS.drop, 14));
@@ -938,12 +948,15 @@ export async function startOverlay(): Promise<void> {
         el.tabIndex = 0;
         el.onpointerdown = stopPress;
         el.onpointerenter = () => {
-          el.style.background = token.hover;
+          // The hover lift changes the disc's COLOUR, not its opacity: going
+          // solid on hover would undo the translucency exactly where the
+          // pointer is, which is where the picture is being looked at.
+          el.style.background = token.controlSurfaceHover;
           el.style.boxShadow = `${token.overlayShadow}, 0 0 0 2px ${token.controlHoverGlow}`;
           el.style.transform = 'scale(1.04)';
         };
         el.onpointerleave = () => {
-          el.style.background = token.surface;
+          el.style.background = token.controlSurface;
           el.style.borderColor = token.overlayBorder;
           el.style.boxShadow = token.overlayShadow;
           el.style.transform = '';

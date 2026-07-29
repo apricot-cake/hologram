@@ -314,23 +314,30 @@ describe('パーマリンクが無い投稿は選ぶと即座に失敗する', (
   });
 });
 
+// #519 でここは1つだけ増えた＝**やめたことを記録する1行**。保存は当然送らないが、
+// 「何も送らない」だと沈黙になり、固まった保存と同じ記録になってしまう（それが3回の
+// 誤診の原因）。行の中身は save-log.test.ts が見る。
 describe('Escape / 右クリックでキャンセル', () => {
-  test('Escape は何も送らずに片付く', async () => {
+  const saveMessages = (ctx: any) => ctx.sent.filter((m: any) => m.type !== 'logCapture');
+
+  test('Escape は保存を送らずに片付き、やめたことだけ記録する', async () => {
     const ctx = await setup();
     ctx.window.document.dispatchEvent(new ctx.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     await ctx.settle(50);
 
-    expect(ctx.sent).toHaveLength(0);
+    expect(saveMessages(ctx)).toHaveLength(0);
+    expect(ctx.sent).toEqual([{ type: 'logCapture', entry: expect.objectContaining({ stage: 'select', phase: 'cancel' }) }]);
     expect(ctx.banner()?.isConnected ?? false).toBe(false);
     expect(ctx.window.__snsPostSaveActive).toBe(false);
   });
 
-  test('右クリックも何も送らずに片付く', async () => {
+  test('右クリックも同じ（保存は送らない・やめたことは残る）', async () => {
     const ctx = await setup();
     ctx.window.document.dispatchEvent(new ctx.window.Event('contextmenu', { bubbles: true, cancelable: true }));
     await ctx.settle(50);
 
-    expect(ctx.sent).toHaveLength(0);
+    expect(saveMessages(ctx)).toHaveLength(0);
+    expect(ctx.sent).toEqual([{ type: 'logCapture', entry: expect.objectContaining({ stage: 'select', phase: 'cancel' }) }]);
     expect(ctx.banner()?.isConnected ?? false).toBe(false);
   });
 });

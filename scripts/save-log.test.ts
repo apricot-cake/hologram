@@ -11,7 +11,8 @@
 // 記録されない**こと。ここが見るのはその3つ。
 //
 // バックグラウンド側（`save`/`begin` の行・失敗の行が運ぶ saveId と reached）は
-// scripts/background-wiring.test.ts。装置は scripts/lib-capture-rig.ts。
+// scripts/background-wiring.test.ts。打ち切りが4つの面すべてで記録されること（#507）は
+// scripts/capture-timeout.test.ts。装置は scripts/lib-capture-rig.ts。
 import { expect, test } from 'vitest';
 import { clickPost, makeRig, pressKey, REPLY_UNTIL_SAVE, settle } from './lib-capture-rig.ts';
 

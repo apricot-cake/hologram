@@ -1,4 +1,5 @@
-// The vocabulary of ~/.hologram/capture.log, in one place (#519).
+// The vocabulary of ~/.hologram/capture.log, and the page side's way of writing
+// to it (#507, #519).
 //
 // This log's job is to answer, from disk and long afterwards, "what happened to
 // that save?" — and three times running it could not, because it recorded only
@@ -8,34 +9,36 @@
 // back" left byte-identical records. Twice that silence was read as evidence of
 // a failure that had not happened, once reaching the user as a false warning.
 //
-// Three properties fix it, and keeping them consistent across the three
-// processes that write this log — the page's content scripts, the MV3 service
-// worker, and the native host — is what this module is for:
+// #507 gave every wait an end, and made a stall report the stage it stalled in.
+// Three things it could not add, because there was nothing to write them on:
 //
-//   1. A save ANNOUNCES ITSELF (`save`/`begin`) before it can possibly stall.
-//      A `save`/`begin` with no terminal line after it is a stalled save; an
-//      `activate` line with no `save`/`begin` after it is someone who opened
-//      the UI and stopped. That is the distinction the log could not draw.
-//   2. Every line of one save carries the same `saveId`, so they can be read
-//      as one story. Before this the only way to group them was proximity in
-//      time, which is what made a badge query look like a failed save.
+//   1. A save now ANNOUNCES ITSELF (`save`/`begin`) before it can possibly
+//      stall. A `save`/`begin` with no terminal line after it is a stalled
+//      save; an `activate` line with no `save`/`begin` after it is someone who
+//      opened the UI and stopped. That is the distinction the log lacked.
+//   2. Every line of one save carries the same `saveId`, so they can be read as
+//      one story. Before this the only way to group them was proximity in time,
+//      which is what made a badge query look like a failed save.
 //   3. Giving up is WRITTEN DOWN (`cancel`). Esc, a right-click, a second
-//      activation, the intake's stop button — all of them used to leave
-//      exactly the silence a hang leaves.
-//
-// #507 (every wait in the save path has an end) is the other half of this: it
-// made a stall report the stage it stalled in. What it could not add was a
-// record of a save that is still running, or of one abandoned on purpose —
-// there was nothing to write those on.
+//      activation, the intake's stop button — all of them used to leave exactly
+//      the silence a hang leaves.
 //
 // `stage` says WHERE in a save's life the line was written, `phase` what
-// happened there. Both are closed sets, defined below; docs/build.md carries
-// the same tables for whoever is reading a log rather than this file.
+// happened there, `via` which on-page surface was waiting. All three are closed
+// sets, defined below; docs/build.md carries the same tables for whoever is
+// reading a log rather than this file.
+//
+// Best-effort by construction: the page has no native connection of its own, so
+// its lines travel THROUGH the service worker — the worst version of the failure
+// (a worker that is gone rather than wedged) cannot be reported from here at
+// all. It still catches the worker that is alive but stuck, and it costs nothing
+// when it fails.
 import type { LogCaptureMessage } from './messages.ts';
 
 // Where in a save's life the line was written, in the order a save passes
-// through them. Not every save visits every stage: the three save routes
-// (click capture, bookmark intake, dragged picture) differ in which apply.
+// through them. Not every save visits every stage: the save routes (click
+// capture, bookmark intake, dragged picture, hover button) differ in which
+// apply.
 export type SaveStage =
   // The extension injected its in-page UI. NOT a save — nothing has been
   // written, nothing is in flight, and stopping here is perfectly normal. This
@@ -89,6 +92,12 @@ export type SavePhase =
   // answered "don't save".
   | 'skip';
 
+// Which on-page surface was waiting. `stage` says how far the save got; this
+// says who was showing a spinner while that happened, which is what tells an
+// Alt+S capture apart from a hover press when the log is read afterwards — a
+// distinction whose absence sent the first reading of #507 at the wrong surface.
+export type SaveSurface = 'capture' | 'hover-save' | 'drop-zone' | 'bulk-intake';
+
 // One line of capture.log. The per-stage detail (url, platform, error, counts)
 // varies by stage and stays open — this log is read by people, not parsed by a
 // program, and pinning every stage's payload here would buy nothing.
@@ -119,17 +128,29 @@ export function newSaveId(): string {
   return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-// Write one line from a content script. The page has no native connection of
-// its own, so the line travels through the service worker's logCapture relay.
-// Best-effort in every direction — diagnostics must never be able to break or
-// delay a save, so nothing here is awaited and nothing here throws.
+// Write one line from a content script. Nothing here is awaited and nothing here
+// throws: diagnostics must never be able to break or delay a save.
 export function logSaveEvent(entry: SaveLogEntry): void {
   try {
     // Callback form on purpose: the promise form rejects when no receiver is
-    // listening (a torn-down worker), and an unhandled rejection in the page
-    // is a worse outcome than a lost diagnostic line.
+    // listening (a torn-down worker), and an unhandled rejection in the page is
+    // a worse outcome than a lost diagnostic line.
     chrome.runtime.sendMessage({ type: 'logCapture', entry } satisfies LogCaptureMessage, () => void chrome.runtime.lastError);
   } catch {
     /* ignore — diagnostics are non-essential */
   }
+}
+
+// A page-side deadline gave up. The one way that gets written down, shared
+// rather than copied because the first version of the deadlines wrote this line
+// on the Alt+S path ONLY, and the surface the hang was actually reported from
+// turned out to be a different one (the hover save button).
+//
+// `reached` is what the service worker last reported finishing (#519). It turns
+// this line from "nothing came back" into "nothing came back after the crop",
+// which is the difference between naming the leg that stalled and guessing:
+// a worker killed during the metadata fetch, one killed during the crop round
+// trip and one killed on the host all left the same trace before it.
+export function reportSaveTimeout(surface: SaveSurface, platform: string, url: string | null, error: string, saveId: string | null = null, reached: SaveStage[] = []): void {
+  logSaveEvent({ stage: 'result', phase: 'fail', via: surface, saveId, reached, platform, url, error });
 }
