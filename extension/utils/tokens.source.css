@@ -90,6 +90,11 @@
      still letting the picture through. scripts/extension-tokens.test.ts composites
      this over both extremes and fails if a future value stops reading. */
   --hologram-control-surface: rgba(255, 255, 255, 0.72);
+  /* The hover lift, at the SAME alpha: the save button offers an action but it
+     still sits on the picture, so hovering must not trade the translucency back
+     for emphasis right where the user is looking (user, 2026-07-29). What lifts
+     is the colour — the app's own hover surface — plus the halo and the scale. */
+  --hologram-control-surface-hover: rgba(245, 245, 245, 0.72);
   --hologram-control-hover-glow: rgba(0, 0, 0, 0.14);
   --hologram-badge-neutral: rgba(0, 0, 0, 0.08);
 
@@ -118,6 +123,7 @@
   --hologram-ring: rgba(255, 255, 255, 0.38);
 
   --hologram-control-surface: rgba(23, 23, 23, 0.72);
+  --hologram-control-surface-hover: rgba(38, 38, 38, 0.72);
   --hologram-control-hover-glow: rgba(255, 255, 255, 0.16);
   --hologram-badge-neutral: rgba(255, 255, 255, 0.12);
 }
