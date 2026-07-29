@@ -75,11 +75,16 @@ interface MediaItem {
   width: number | null;
   height: number | null;
   referer?: string;
-  // 'image' (default, omitted on the older still-image-only platforms below) |
-  // 'video' | 'gif'. video/gif entries additionally carry `poster` — a still
-  // frame URL the native host downloads as <base>-poster.<ext> (#119 St1).
-  type?: 'image' | 'video' | 'gif';
+  // DOWNLOAD transport, not the display label: 'image' (default, omitted on the
+  // older still-image-only platforms below) | 'video' | 'gif' | 'ugoira'.
+  // Everything but 'image' additionally carries `poster` — a still frame URL the
+  // native host downloads as <base>-poster.<ext> (#119 St1).
+  type?: 'image' | 'video' | 'gif' | 'ugoira';
   poster?: string | null;
+  // 'ugoira' only (#119 St3): the frame order and per-frame display time inside
+  // the saved zip. Without it the archive is a bag of pictures — nothing else
+  // records how long each one is shown.
+  frames?: { file: string; delay: number }[];
 }
 
 // The normalized sidecar record shape. Declared here (not just inferred from
@@ -785,6 +790,38 @@ async function fetchMastodonStatus(parsed, url) {
 }
 
 // --- pixiv (undocumented ajax frontend API) ---
+const PIXIV_REFERER = 'https://www.pixiv.net/';
+
+// うごイラ (#119 St3): illustType 2 is an animation pixiv delivers as a ZIP of
+// frame images plus a separate table of per-frame display times. Neither is in
+// the illust payload — /ugoira_meta carries both — and the archive is saved
+// UNCHANGED (no transcode, so no encoder rides into the distribution and the
+// frames keep the quality pixiv served). `originalSrc` is the original-size
+// archive; `src` is the 600x600 preview archive and is only a fallback.
+// `urls.original` on the illust is frame 0 as a plain jpg, which serves as the
+// poster with no frame extraction of our own.
+function pixivUgoiraFrames(body) {
+  const frames = Array.isArray(body && body.frames) ? body.frames : [];
+  return frames.filter((f) => f && typeof f.file === 'string' && typeof f.delay === 'number' && Number.isFinite(f.delay)).map((f) => ({ file: f.file, delay: f.delay }));
+}
+
+async function pixivUgoiraMedia(rec: PostRecord, id, il): Promise<MediaItem[]> {
+  try {
+    const res = await fetch(`https://www.pixiv.net/ajax/illust/${encodeURIComponent(id)}/ugoira_meta`, { credentials: 'include' });
+    if (!res.ok) return [];
+    const data = await readJsonKeepingRaw(rec, 'api:pixiv/ugoira-meta', res);
+    if (data.error || !data.body) return [];
+    const url = data.body.originalSrc || data.body.src;
+    const frames = pixivUgoiraFrames(data.body);
+    // No frame table means nothing can play the archive back — treat it as a
+    // failed acquisition rather than saving an animation we cannot time.
+    if (typeof url !== 'string' || !url || !frames.length) return [];
+    return [{ url, alt: null, width: il.width || null, height: il.height || null, referer: PIXIV_REFERER, type: 'ugoira', poster: (il.urls && il.urls.original) || null, frames }];
+  } catch {
+    return [];
+  }
+}
+
 // Original-resolution still images. Multi-page works expose page 0 at
 // urls.original; the other pages share the same path with _p0 → _pN. Each entry
 // carries a Referer because i.pximg.net 403s downloads without it (the native
@@ -801,7 +838,7 @@ function pixivMedia(il) {
       alt: null,
       width: i === 0 ? il.width || null : null,
       height: i === 0 ? il.height || null : null,
-      referer: 'https://www.pixiv.net/',
+      referer: PIXIV_REFERER,
     });
   }
   return out;
@@ -829,12 +866,19 @@ async function fetchPixivIllust(parsed, url) {
     rec.replies = il.commentCount ?? null;
     rec.date = toIso(il.createDate || il.uploadDate);
     rec.hashtags = (il.tags && Array.isArray(il.tags.tags) ? il.tags.tags : []).map((t) => t.tag).filter(Boolean);
-    rec.mediaType = 'image'; // ugoira (animation) originals are zip — not handled here
-    rec.media = pixivMedia(il);
+    // うごイラ is a silent looping animation — to the person browsing their
+    // library that is the same kind of thing as an X animated_gif or a Mastodon
+    // gifv, which already label as 'gif'. mediaType is the DISPLAY label (what
+    // the post is), media[].type the transport (how it downloads), and the two
+    // deliberately disagree here, exactly as they do for a real image/gif on
+    // Misskey. No new facet value, and no invented word in the UI.
+    const ugoira = il.illustType === 2 ? await pixivUgoiraMedia(rec, parsed.id, il) : [];
+    rec.mediaType = ugoira.length ? 'gif' : 'image';
+    rec.media = ugoira.length ? ugoira : pixivMedia(il);
     // Multi-page works can MIX file formats per page (p0=.jpg, p2=.png …), so
     // the _p0→_pN substitution above can 404. Prefer the per-page originals
     // from /ajax/illust/<id>/pages; keep the substitution as the fallback.
-    if ((il.pageCount || 1) > 1) {
+    if (!ugoira.length && (il.pageCount || 1) > 1) {
       try {
         const pres = await fetch(`https://www.pixiv.net/ajax/illust/${encodeURIComponent(parsed.id)}/pages`, { credentials: 'include' });
         if (pres.ok) {
@@ -846,7 +890,7 @@ async function fetchPixivIllust(parsed, url) {
                 alt: null,
                 width: p.width || null,
                 height: p.height || null,
-                referer: 'https://www.pixiv.net/',
+                referer: PIXIV_REFERER,
               }))
               .filter((m) => m.url);
           }
@@ -866,7 +910,7 @@ async function fetchPixivIllust(parsed, url) {
           if (!udata.error && udata.body) {
             rec.avatar = udata.body.imageBig || udata.body.image || null;
             // i.pximg.net 403s without a pixiv Referer — tell the bridge to send one.
-            if (rec.avatar) rec.avatarReferer = 'https://www.pixiv.net/';
+            if (rec.avatar) rec.avatarReferer = PIXIV_REFERER;
           }
         }
       } catch {

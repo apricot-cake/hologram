@@ -492,6 +492,7 @@ const EXT_MIME = {
   '.webm': 'video/webm',
   '.mov': 'video/quicktime',
   '.m4v': 'video/x-m4v',
+  '.zip': 'application/zip', // pixiv うごイラ archive (#119 St3) — fetched by the player, never rendered
 };
 function mimeForFile(name) {
   return EXT_MIME[path.extname(name || '').toLowerCase()] || 'application/octet-stream';
@@ -655,10 +656,15 @@ function resolveInFolder(name) {
   return resolved.startsWith(path.resolve(folder) + path.sep) ? resolved : null;
 }
 
+// Every extension a downloaded library file can carry. NOT a "can the viewer
+// show it" list: a pixiv うごイラ archive is a .zip nothing displays directly
+// (#119 St3), and it belongs here because the sweeps below enumerate a
+// capture's files — one missed extension leaves an orphan behind.
+const LIBRARY_MEDIA_EXTS = ['jpg', 'jpeg', 'jfif', 'png', 'webp', 'gif', 'avif', 'svg', 'mp4', 'webm', 'mov', 'm4v', 'zip'];
+
 // Recover the captureId base from a filename. The argument may be the primary
-// image (<base>.<ext>, any viewable ext), a video poster (<base>-poster.<ext>),
-// or the video itself. Strip the -poster marker first, then any extension.
-const VIEWABLE_EXTS = ['jpg', 'jpeg', 'jfif', 'png', 'webp', 'gif', 'avif', 'svg', 'mp4', 'webm', 'mov', 'm4v'];
+// image (<base>.<ext>), a poster (<base>-poster.<ext>), or the media file
+// itself. Strip the -poster marker first, then any extension.
 function baseOf(name) {
   return path
     .basename(name || '')
@@ -1282,7 +1288,7 @@ function registerExtractedIpc() {
     APP_ICON,
     getTrashDir,
     baseOf,
-    VIEWABLE_EXTS,
+    LIBRARY_MEDIA_EXTS,
     // ⚠️ Scaffolding — clear-all's "don't delete these" list is only about JSON a
     // pre-#5 library can still have lying around; it goes with #441.
     LEGACY_INTERNAL_FILES,

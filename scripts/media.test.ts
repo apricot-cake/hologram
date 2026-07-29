@@ -10,6 +10,8 @@ import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 // 有効な 1x1 PNG（ブリッジが見るのは content-type だけ）
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64');
 const jpegB64 = '/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACP/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AfwH/2Q==';
+// ZIP の先頭（PK）＝うごイラのアーカイブと判別できる最小形
+const ZIP_BYTES = Buffer.concat([Buffer.from([0x50, 0x4b, 0x03, 0x04]), Buffer.alloc(20)]);
 // ISO base media の先頭（サイズ4バイト＋'ftyp'＋ブランド）＝mp4 と判別できる最小形
 const MP4_HEAD = Buffer.concat([Buffer.from([0, 0, 0, 0x20]), Buffer.from('ftypisom'), Buffer.alloc(8)]);
 
@@ -44,6 +46,8 @@ beforeAll(async () => {
     if (u.endsWith('/opaque-thumb')) return new Response(PNG, { status: 200, headers: { 'content-type': 'application/octet-stream' } });
     if (u.endsWith('/opaque-mp4')) return new Response(MP4_HEAD, { status: 200, headers: { 'content-type': 'application/octet-stream' } });
     if (u.endsWith('/opaque-junk')) return new Response(Buffer.from('not a picture at all'), { status: 200, headers: { 'content-type': 'application/octet-stream' } });
+    if (u.endsWith('/ugoira.zip')) return new Response(ZIP_BYTES, { status: 200, headers: { 'content-type': 'application/zip' } });
+    if (u.endsWith('/huge-ugoira.zip')) return new Response(ZIP_BYTES, { status: 200, headers: { 'content-type': 'application/zip', 'content-length': String(300 * 1024 * 1024) } });
     if (u.endsWith('/missing')) return new Response('nope', { status: 404 });
     return new Response('nope', { status: 500 });
   }) as typeof fetch;
@@ -129,6 +133,47 @@ describe('動画・GIF エントリ（#119 St1）', () => {
 
   test('動画もポスターも失敗したら項目ごと落とす', async () => {
     const saved = await downloadMedia([{ url: 'https://h/missing', alt: null, type: 'video', poster: 'https://h/missing' }], saveFolder, '1717500000000-vid4');
+
+    expect(saved).toHaveLength(0);
+  });
+});
+
+// pixiv のうごイラは zip のまま保存する（変換しない＝エンコーダを持ち込まない）。
+// 静止画・動画とは別の許可リストなので、zip がそれらのエントリに紛れ込むことはない。
+describe('うごイラのアーカイブ（#119 St3）', () => {
+  const FRAMES = [
+    { file: '000000.jpg', delay: 60 },
+    { file: '000001.jpg', delay: 30 },
+  ];
+
+  test('zip 本体・ポスター・コマ表が記述子に載る', async () => {
+    const base = '1717500000000-ugo1';
+    const saved = await downloadMedia([{ url: 'https://h/ugoira.zip', alt: null, width: 700, height: 700, type: 'ugoira', poster: 'https://h/poster.jpg', frames: FRAMES }], saveFolder, base);
+
+    expect(saved).toHaveLength(1);
+    expect(saved[0]).toMatchObject({ file: `${base}-media-0.zip`, type: 'ugoira', posterFile: `${base}-poster.jpg`, frames: FRAMES });
+    expect(onDisk(saved[0].file)).toBe(true);
+    expect(onDisk(saved[0].posterFile)).toBe(true);
+  });
+
+  test('サイズ超過ならポスターの静止画へ降格し、コマ表も落ちる（zip の無いコマ表は無意味）', async () => {
+    const base = '1717500000000-ugo2';
+    const saved = await downloadMedia([{ url: 'https://h/huge-ugoira.zip', alt: null, type: 'ugoira', poster: 'https://h/poster.jpg', frames: FRAMES }], saveFolder, base);
+
+    expect(saved).toHaveLength(1);
+    expect(saved[0].file).toBe(`${base}-poster.jpg`);
+    expect(saved[0].type).toBeUndefined();
+    expect(saved[0].frames).toBeUndefined();
+  });
+
+  test('静止画エントリに zip は入らない（許可リストが別）', async () => {
+    const saved = await downloadMedia([{ url: 'https://h/ugoira.zip', alt: null }], saveFolder, '1717500000000-ugo3');
+
+    expect(saved).toHaveLength(0);
+  });
+
+  test('動画エントリにも zip は入らない', async () => {
+    const saved = await downloadMedia([{ url: 'https://h/ugoira.zip', alt: null, type: 'video' }], saveFolder, '1717500000000-ugo4');
 
     expect(saved).toHaveLength(0);
   });

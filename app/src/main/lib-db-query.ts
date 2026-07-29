@@ -79,11 +79,26 @@ interface MediaRow {
   file: string;
   type: string | null;
   posterFile: string | null;
+  frames: string | null; // JSON [{file,delay}] (#119 St3), ugoira rows only
 }
 interface TagRow {
   postId: string;
   id: number;
   name: string;
+}
+
+// The うごイラ frame table comes back out as the array the sidecar carried
+// (#119 St3). A row written before the column existed, or one whose JSON no
+// longer parses, reads as null — the player then has no timings and falls back
+// to the poster, which is the same outcome as an archive that never downloaded.
+function parseFrames(raw: string | null): { file: string; delay: number }[] | null {
+  if (!raw) return null;
+  try {
+    const v = JSON.parse(raw);
+    return Array.isArray(v) && v.length ? v : null;
+  } catch {
+    return null;
+  }
 }
 
 // Assembles complete post records from already-fetched `posts` rows plus their
@@ -95,7 +110,7 @@ function assemble(sqlite: Database.Database, postRows: any[]): any[] {
   const placeholders = ids.map(() => '?').join(',');
 
   const mediaByPost = new Map<string, MediaRow[]>();
-  const mediaRows = sqlite.prepare(`SELECT postId, seq, url, alt, width, height, file, type, posterFile FROM media WHERE postId IN (${placeholders}) ORDER BY postId, seq`).all(...ids) as MediaRow[];
+  const mediaRows = sqlite.prepare(`SELECT postId, seq, url, alt, width, height, file, type, posterFile, frames FROM media WHERE postId IN (${placeholders}) ORDER BY postId, seq`).all(...ids) as MediaRow[];
   for (const m of mediaRows) {
     let list = mediaByPost.get(m.postId);
     if (!list) mediaByPost.set(m.postId, (list = []));
@@ -114,7 +129,7 @@ function assemble(sqlite: Database.Database, postRows: any[]): any[] {
   }
 
   return postRows.map((r) => {
-    const media = (mediaByPost.get(r.captureId) || []).map((m) => ({ url: m.url, alt: m.alt, width: m.width, height: m.height, file: m.file, type: m.type, posterFile: m.posterFile }));
+    const media = (mediaByPost.get(r.captureId) || []).map((m) => ({ url: m.url, alt: m.alt, width: m.width, height: m.height, file: m.file, type: m.type, posterFile: m.posterFile, frames: parseFrames(m.frames) }));
     const tags = tagsByPost.get(r.captureId) || [];
     return {
       captureId: r.captureId,

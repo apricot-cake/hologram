@@ -1025,7 +1025,7 @@ export function endFilterEditSession(): void {
   // image-tab.ts's former dispatch through the old shared bridge.
   hologramImageTabSource.configure({
     gallery: { buildGroupGalleryItems },
-    labels: { missing: getMessage('imgTabMissing'), closeTab: getMessage('imgTabCloseBtn'), prev: getMessage('lbPrev'), next: getMessage('lbNext'), info: getMessage('tipInfo') },
+    labels: { missing: getMessage('imgTabMissing'), closeTab: getMessage('imgTabCloseBtn'), prev: getMessage('lbPrev'), next: getMessage('lbNext'), info: getMessage('tipInfo'), play: getMessage('ugoiraPlay'), pause: getMessage('ugoiraPause'), ugoira: getMessage('ugoiraLabel') },
     onIndexChange: setImageTabIndex,
     onToggleInspector: toggleImageTabInspector,
     onCloseTab: closeImageTab,

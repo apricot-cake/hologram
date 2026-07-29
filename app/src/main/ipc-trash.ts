@@ -22,7 +22,7 @@ import { postsByIds } from './lib-db-query.ts';
 import { makeTagResolver, preparePostStmts, writePost } from './lib-db-record-writer.ts';
 
 function register(ctx) {
-  const { getSaveFolder, getTrashDir, baseOf, VIEWABLE_EXTS, resolveInFolder, getDbWriter, ensurePostsSynced } = ctx;
+  const { getSaveFolder, getTrashDir, baseOf, LIBRARY_MEDIA_EXTS, resolveInFolder, getDbWriter, ensurePostsSynced } = ctx;
 
   ipcMain.handle('delete-post', async (_e, image) => {
     const folder = getSaveFolder();
@@ -38,7 +38,7 @@ function register(ctx) {
     const rec: any = handle ? (await postsByIds(handle.sqlite, [base]))[0] || null : null;
     getDbWriter().deletePost(base);
     const targets = new Set<string>();
-    for (const e of VIEWABLE_EXTS) targets.add(`${base}.${e}`);
+    for (const e of LIBRARY_MEDIA_EXTS) targets.add(`${base}.${e}`);
     if (rec) {
       if (rec.image) targets.add(path.basename(rec.image));
       if (rec.video) targets.add(path.basename(rec.video));

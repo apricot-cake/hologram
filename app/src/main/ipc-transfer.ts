@@ -51,7 +51,7 @@ function register(ctx) {
     readSavePointer,
     getConfigLastCorrupt,
     clearAllBlockReason,
-    VIEWABLE_EXTS,
+    LIBRARY_MEDIA_EXTS,
     LEGACY_INTERNAL_FILES,
     getDbWriter,
     pixivRefererFor,
@@ -268,7 +268,7 @@ function register(ctx) {
     // mirroring delete-post. Leftover JSON from a pre-#5 library is skipped rather
     // than swept, so a wipe never destroys metadata the legacy migration might still
     // want; that skip list goes with the scaffolding (#441).
-    const CLEAR_RE = new RegExp('\\.(' + VIEWABLE_EXTS.join('|') + '|json)$', 'i');
+    const CLEAR_RE = new RegExp('\\.(' + LIBRARY_MEDIA_EXTS.join('|') + '|json)$', 'i');
     try {
       for (const f of fs.readdirSync(folder)) {
         if (LEGACY_INTERNAL_FILES.has(f)) continue;

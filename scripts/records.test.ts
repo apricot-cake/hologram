@@ -102,6 +102,17 @@ describe('レコード形状ヘルパ', () => {
       expect(R.mediaFilesOf(withVideoPoster)).toEqual(['clip.mp4']);
     });
   });
+
+  // #119 St3: うごイラの本体は zip＝動画と同じく <img src> にできない
+  describe('うごイラつき（#119 St3）', () => {
+    test('artworkFile はポスターを採る', () => {
+      expect(R.artworkFile({ image: 'shot.jpg', media: [{ file: 'u-media-0.zip', type: 'ugoira', posterFile: 'u-poster.jpg' }] })).toBe('u-poster.jpg');
+    });
+
+    test('ポスターが無ければ空（zip を <img> へ渡さない）', () => {
+      expect(R.artworkFile({ image: 'shot.jpg', media: [{ file: 'u-media-0.zip', type: 'ugoira' }] })).toBe('');
+    });
+  });
 });
 
 // #144: 引数は image エントリ由来の { id?, recs }（旧 { img:{recs} } タブ形は廃止）
@@ -311,6 +322,29 @@ describe('makeGallery（ライトボックスの項目）', () => {
     expect(textOnly[0].src).toBe('stub://shot.jpg');
   });
 
+  // #119 St3: zip はそれ自体では表示できない＝コマ表を一緒に渡して初めて項目になる
+  describe('うごイラの項目', () => {
+    const frames = [
+      { file: '000000.jpg', delay: 60 },
+      { file: '000001.jpg', delay: 30 },
+    ];
+
+    test('コマ表とポスターを項目に載せる', () => {
+      const [it] = buildGalleryItems({ media: [{ file: 'u-media-0.zip', type: 'ugoira', posterFile: 'u-poster.jpg', frames }] });
+      expect(it).toMatchObject({ src: 'stub://u-media-0.zip', video: false, ugoira: { file: 'u-media-0.zip', frames }, poster: 'stub://u-poster.jpg' });
+    });
+
+    test('コマ表が失われていたらポスターの静止画に落とす（再生できない zip を渡さない）', () => {
+      const [it] = buildGalleryItems({ media: [{ file: 'u-media-0.zip', type: 'ugoira', posterFile: 'u-poster.jpg' }] });
+      expect(it).toMatchObject({ src: 'stub://u-poster.jpg', video: false });
+      expect(it.ugoira).toBeUndefined();
+    });
+
+    test('コマ表もポスターも無ければ項目にしない', () => {
+      expect(buildGalleryItems({ media: [{ file: 'u-media-0.zip', type: 'ugoira' }] })).toHaveLength(0);
+    });
+  });
+
   test('グループが1件なら rep の項目をそのまま', () => {
     const r1 = { image: 'shot.jpg' };
     expect(buildGroupGalleryItems({ records: [r1], rep: r1 })).toHaveLength(1);
@@ -438,6 +472,13 @@ describe('makeCardModel（カード1枚のビューモデル）', () => {
 
     test('実 gif ファイル（per-item type 無し）では false', () => {
       expect(model({ ...p, mediaType: 'gif', media: [{ file: 'anim.gif' }] }, ['anim.gif']).videoBadge).toBe(false);
+    });
+
+    // #119 St3: うごイラも「クリックしないと動かない」側＝バッジを出す
+    test('うごイラでは true で、imgSrc はポスター', () => {
+      const mUgoira = model({ ...p, mediaType: 'gif', media: [{ file: 'u-media-0.zip', type: 'ugoira', posterFile: 'u-poster.jpg' }] }, ['u-media-0.zip']);
+      expect(mUgoira.videoBadge).toBe(true);
+      expect(mUgoira.imgSrc).toBe('u-poster.jpg@200');
     });
   });
 

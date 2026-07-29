@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="utf-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' asset: data: blob:; media-src 'self' asset: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; base-uri 'none'; form-action 'none';">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' data:; img-src 'self' asset: data: blob:; media-src 'self' asset: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; base-uri 'none'; form-action 'none';">
   <title>Hologram</title>
   <!-- Cascade-layer order for the shadcn/Tailwind coexistence (trial branch):
        every legacy <style> below is wrapped in @layer legacy, slotted BETWEEN
@@ -1221,6 +1221,11 @@
     img.itv-media { cursor: grab; }
     img.itv-media:active { cursor: grabbing; }
     .itv-video { margin: auto; }
+    /* うごイラ (#119 St3): a canvas plus its own play/pause, since a zip of
+       frames has no native controls the way <video> does. */
+    .itv-ugoira { flex: 1; position: relative; display: flex; min-width: 0; }
+    .itv-ugoira > .itv-media { margin: auto; }
+    .itv-ugoira-toggle { position: absolute; left: 12px; bottom: 12px; z-index: 2; }
     .itv-nav {
       position: absolute; top: 50%; transform: translateY(-50%);
       width: 40px; height: 56px; border: none; border-radius: 6px;

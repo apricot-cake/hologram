@@ -39,10 +39,15 @@ export interface MediaItemShape {
   width: number | null;
   height: number | null;
   file: string;
-  // 'video' | 'gif' | null (null/absent = a still image). posterFile is the
-  // downloaded poster-frame filename for a video/gif entry (#119 St1).
+  // 'video' | 'gif' | 'ugoira' | null (null/absent = a still image). posterFile
+  // is the downloaded poster-frame filename for any of those (#119 St1).
   type: string | null;
   posterFile: string | null;
+  // 'ugoira' only (#119 St3): frame order + per-frame display time inside the
+  // saved zip. Kept as structured data rather than a second file on disk —
+  // the archive alone cannot say how long each frame is shown, and nothing
+  // else in the library can re-derive it once pixiv's page is gone.
+  frames: { file: string; delay: number }[] | null;
 }
 
 export interface PostRecordShape {
@@ -136,7 +141,22 @@ function normMedia(v: unknown): MediaItemShape[] {
       file: typeof m.file === 'string' ? m.file : '',
       type: normStr(m.type),
       posterFile: normStr(m.posterFile),
+      frames: normFrames(m.frames),
     }));
+}
+// A frame table is all-or-nothing: one malformed entry would desynchronize
+// every later frame from its picture, so a bad list becomes null rather than a
+// filtered-down one.
+function normFrames(v: unknown): { file: string; delay: number }[] | null {
+  if (!Array.isArray(v) || !v.length) return null;
+  const out: { file: string; delay: number }[] = [];
+  for (const f of v) {
+    if (!f || typeof f !== 'object') return null;
+    const { file, delay } = f as Record<string, unknown>;
+    if (typeof file !== 'string' || !file || typeof delay !== 'number' || !Number.isFinite(delay)) return null;
+    out.push({ file, delay });
+  }
+  return out;
 }
 
 // Fills every field of `input` with its documented default. now is injectable
