@@ -19,7 +19,7 @@ export function Highlight({ text }: { text?: string | number | null }) {
   while ((idx = low.indexOf(q, i)) !== -1) {
     if (idx > i) out.push(s.slice(i, idx));
     out.push(
-      <mark className="bg-primary/20 text-foreground rounded-xs px-0.5" key={idx}>
+      <mark className="bg-selected/20 text-foreground rounded-xs px-0.5" key={idx}>
         {s.slice(idx, idx + q.length)}
       </mark>,
     );
