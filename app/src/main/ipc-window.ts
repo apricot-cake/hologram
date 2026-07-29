@@ -8,7 +8,7 @@
 import { ipcMain, shell, BrowserWindow, clipboard, nativeImage, screen } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
-import { isLibraryFileName, libraryFilePaths } from './library-files.ts';
+import { isLibraryFileName, isViewerImageName, libraryFilePaths } from './library-files.ts';
 
 function register(ctx) {
   const { getSaveFolder, APP_ICON } = ctx;
@@ -29,8 +29,13 @@ function register(ctx) {
   // Open one library image in its own frameless-ish window (middle-click on a
   // card). The asset:// protocol is registered app-wide, so a bare loadURL shows
   // Chromium's built-in image view (zoom/fit for free).
+  //
+  // Raster only (isViewerImageName, #215): what this window really does is turn
+  // a library file into a TOP-LEVEL document on the library's own origin, and
+  // for an SVG that document is a scripted one. Returns false when refused, the
+  // same shape copy-image already uses for "this file isn't showable".
   ipcMain.handle('open-image-window', (_event, image) => {
-    if (!isLibraryFileName(image)) return;
+    if (!isViewerImageName(image)) return false;
     // Size the window to the image's aspect ratio (fit within ~85% of the work area).
     let width = 1100;
     let height = 850;
@@ -48,6 +53,11 @@ function register(ctx) {
     const w = new BrowserWindow({
       width,
       height,
+      // Headless harness runs (HOLOGRAM_SMOKE=1) create every window hidden, the
+      // main one included — a verification run must never take over the screen
+      // the developer is using. The window still loads and runs its document, so
+      // the asset:// hardening above is testable end to end.
+      show: process.env.HOLOGRAM_SMOKE !== '1',
       useContentSize: true,
       autoHideMenuBar: true,
       backgroundColor: '#101113',
@@ -55,6 +65,7 @@ function register(ctx) {
       webPreferences: { sandbox: true },
     });
     w.loadURL('asset://img/' + encodeURIComponent(image));
+    return true;
   });
 
   // Drag cards out to another app (#132): Explorer, PureRef, a chat window —
