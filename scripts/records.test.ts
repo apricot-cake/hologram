@@ -103,6 +103,20 @@ describe('レコード形状ヘルパ', () => {
     });
   });
 
+  // #496: image は静止画の欄で、動画名が入っていたら <img> へ渡せない。今の
+  // normalizePostRecord はそれを video 欄へ移すが、その規則より前に書かれた行が
+  // DB に残っている＝読む側もファイル名を見て断る（顔が無いのと、真っ白なカードが
+  // 出るのとでは意味が違う）。ここで代わりに出せるポスターは無い＝空を返す。
+  describe('image が動画名だった古い行（#496）', () => {
+    test('artworkFile は空（生の動画を <img> へ渡さない）', () => {
+      expect(R.artworkFile({ image: 'cap-media-0.mp4' })).toBe('');
+    });
+
+    test('media[] が生きていればそちらのポスターが勝つ（image は見ない）', () => {
+      expect(R.artworkFile({ image: 'cap-media-0.mp4', media: [{ file: 'cap-media-0.mp4', type: 'video', posterFile: 'cap-poster.jpg' }] })).toBe('cap-poster.jpg');
+    });
+  });
+
   // #119 St3: うごイラの本体は zip＝動画と同じく <img src> にできない
   describe('うごイラつき（#119 St3）', () => {
     test('artworkFile はポスターを採る', () => {
@@ -320,6 +334,20 @@ describe('makeGallery（ライトボックスの項目）', () => {
     const textOnly = buildGalleryItems({ image: 'shot.jpg' });
     expect(textOnly).toHaveLength(1);
     expect(textOnly[0].src).toBe('stub://shot.jpg');
+  });
+
+  // #496: 動画投稿の詳細＝ポスターがカードの顔になり、開いた先では動画そのものが再生される。
+  // 保存側（handleSavePost）が書く形＝image は空・media[0] に本体と posterFile。
+  test('動画投稿は media[0] の動画1件になる（video フラグつき）', () => {
+    const items = buildGalleryItems({ media: [{ file: 'cap-media-0.mp4', type: 'video', posterFile: 'cap-poster.jpg' }] });
+    expect(items).toEqual([{ src: 'stub://cap-media-0.mp4', alt: '', video: true, ugoira: undefined, poster: undefined }]);
+  });
+
+  // 同じ投稿を image 欄に動画名で書いてしまった古い行＝<img> に mp4 を渡すと真っ白になる。
+  // 項目を落とすのではなく <video> として出す＝ファイルは再生できる状態でディスクにある。
+  test('image が動画名でも <video> として出す（真っ白にしない）', () => {
+    const [it] = buildGalleryItems({ image: 'cap-media-0.mp4' });
+    expect(it).toMatchObject({ src: 'stub://cap-media-0.mp4', video: true });
   });
 
   // #119 St3: zip はそれ自体では表示できない＝コマ表を一緒に渡して初めて項目になる
