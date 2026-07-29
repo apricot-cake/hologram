@@ -62,6 +62,7 @@ export const token = {
   // translucent disc below, action faces take the opaque `surface` (the split
   // and the bound on the alpha are argued in tokens.source.css).
   controlSurface: 'var(--hologram-control-surface)',
+  controlSurfaceHover: 'var(--hologram-control-surface-hover)',
   controlHoverGlow: 'var(--hologram-control-hover-glow)',
   // type + motion
   fontSans: 'var(--hologram-font-sans)',
