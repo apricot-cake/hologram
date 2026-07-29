@@ -2,7 +2,7 @@
 // ビルダー（#5 St2 / #295）。素の Node で動く（Electron 不要）。
 
 import { describe, expect, test } from 'vitest';
-import { normalizePostRecord, recordHoldsContent } from '../native-host/post-record.mts';
+import { isVideoFileName, normalizePostRecord, recordHoldsContent } from '../native-host/post-record.mts';
 
 const FIXED_NOW = '2026-07-24T00:00:00.000Z';
 const fixedNow = () => FIXED_NOW;
@@ -199,5 +199,46 @@ describe('recordHoldsContent — 投稿の中身を持っているか', () => {
     ['空文字だけ', { text: '', image: '', title: '', displayName: '', media: [] }],
   ])('%s は false（正規化前の生の形でも落ちない）', (_label, rec) => {
     expect(recordHoldsContent(rec as never)).toBe(false);
+  });
+});
+
+// #496: image は静止画の欄。動画ファイルがそこに入ったレコードは端から端まで表示できない
+// ＝読む側は image を静止画として扱うので <img> に mp4 が渡って何も描かれず、ディスクに
+// あるポスター画像を指す欄も残らない（孤児メディアとして計上されるだけになる）。
+// writePost は全レコードをここへ通すので、posts.image が動画名を持てない唯一の関門。
+describe('image に動画ファイルは置かせない（#496）', () => {
+  test.each([['mp4'], ['webm'], ['mov'], ['m4v']])('.%s は video 欄へ移す', (ext) => {
+    const rec = normalizePostRecord({ captureId: 'cap-v', image: `cap-v-media-0.${ext}` }, fixedNow);
+    expect(rec.image).toBeNull();
+    expect(rec.video).toBe(`cap-v-media-0.${ext}`);
+  });
+
+  test('静止画はそのまま image に残る', () => {
+    const rec = normalizePostRecord({ captureId: 'cap-s', image: 'cap-s.jpg' }, fixedNow);
+    expect(rec.image).toBe('cap-s.jpg');
+    expect(rec.video).toBeNull();
+  });
+
+  // 両方入っていたら video を書いた側の指定が正＝置き違えた方は静止画でもないので捨てる
+  test('video が既にあれば上書きしない', () => {
+    const rec = normalizePostRecord({ captureId: 'cap-b', image: 'wrong.mp4', video: 'right.mp4' }, fixedNow);
+    expect(rec.image).toBeNull();
+    expect(rec.video).toBe('right.mp4');
+  });
+
+  // #492 の規則との噛み合わせ＝欄を移しただけで「中身なし」に転落させない
+  test('移した後も recordHoldsContent は true', () => {
+    expect(recordHoldsContent(normalizePostRecord({ captureId: 'cap-h', image: 'cap-h-media-0.mp4' }, fixedNow))).toBe(true);
+  });
+
+  test.each([
+    ['mp4', 'a.mp4', true],
+    ['大文字', 'A.MP4', true],
+    ['jpg', 'a.jpg', false],
+    ['うごイラの zip（動画ではない）', 'u-media-0.zip', false],
+    ['拡張子なし', 'a', false],
+    ['null', null, false],
+  ])('isVideoFileName: %s', (_label, name, expected) => {
+    expect(isVideoFileName(name as string | null)).toBe(expected);
   });
 });

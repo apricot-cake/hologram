@@ -1,0 +1,100 @@
+/* Extension-owned design tokens (#270) — the input scripts/gen-extension-tokens.cts
+ * merges with the app's own tokens. Everything the app has an opinion about comes
+ * from app/src/renderer/src/globals.css and is NOT repeated here; what is left is
+ * the short list of values that only exist because the extension draws on someone
+ * else's page.
+ *
+ * That is the whole dividing line. An app surface sits on a background the app
+ * chose, so its outline can be a hairline and its status fills can assume a known
+ * backdrop. An extension surface sits on an ARBITRARY page, so:
+ *
+ *   - the outline has to separate from black AND white at the same time, which
+ *     lands it in the middle of the ramp instead of near the surface colour
+ *   - success / warning have no app counterpart at all: the redesigned sheet
+ *     carries only --destructive so far (a token nothing in the app renders yet
+ *     would be a token invented for another runtime's benefit, which #270
+ *     rules out). Revisit when the app grows its own status vocabulary — at that
+ *     point these move to globals.css and the generator picks them up there.
+ *
+ * Same theme convention as globals.css so one parser reads both: :root is light,
+ * [data-theme="dark"] is dark. The generated file re-expresses that as
+ * prefers-color-scheme, because the extension follows the browser, not the app.
+ *
+ * Contrast numbers below are WCAG ratios against the four reference host
+ * backgrounds (pure black / X dim #15202b / pixiv dark #1f1f1f / white) and
+ * against the surface the value sits on. scripts/extension-tokens.test.ts holds
+ * the same figures as assertions — edit a value here and it tells you which tier
+ * broke.
+ */
+
+:root {
+  /* THE OUTLINE. The extension card's only separation from an unknown page: the
+     drop shadow is black, so it disappears on exactly the dark pages where a
+     dark fill stops separating too. A boundary needs 3:1 against BOTH sides, and
+     "both sides" here spans pure black to pure white, which puts the only
+     workable value in the middle of the grey ramp — a hairline near the surface
+     colour (what the app uses inside its own window) cannot do this job. */
+  --hologram-overlay-border: #757575;
+  --hologram-overlay-shadow: 0 12px 36px -8px rgba(0, 0, 0, 0.28), 0 0 0 0.5px rgba(0, 0, 0, 0.06);
+
+  /* STATUS. Each fill carries its own ink instead of a shared white: the amber
+     that reads as a warning is too light to hold white at any tier, and the
+     dark theme's red is lighter still (the app's --destructive brightens on
+     dark, as shadcn's ramp does). Pairing them is what keeps the glyph legible
+     without dimming the fill until the state stops reading as that state. */
+  --hologram-success: #067647;
+  --hologram-on-success: #ffffff;
+  --hologram-warning: #b45309;
+  --hologram-on-warning: #ffffff;
+  --hologram-on-danger: #ffffff;
+  --hologram-on-accent: #ffffff;
+
+  /* ACCENT DERIVATIVES. A tint behind an accent-coloured glyph, and the resting
+     dashed drop ring. Alpha over the surface rather than a second hex, so both
+     themes stay one adjustment away from the surface itself. The ring is heavier
+     than a decorative hairline wants to be because it IS the drop affordance —
+     a meaningful graphical object, so it owes the 3:1 tier against the card. */
+  --hologram-accent-soft: rgba(37, 99, 235, 0.14);
+  --hologram-ring: rgba(0, 0, 0, 0.55);
+
+  /* COMPACT CONTROLS (the hover save button and the saved mark) sit on a PICTURE
+     rather than on the card, but they use the SAME opaque surface: letting the
+     photo show through was the pre-#270 treatment, and it only ever bought a
+     readability matrix of (theme × arbitrary image) in exchange for a hint of
+     what was already visible around the control. What they do own is the hover
+     step: the fill lifts to the app's generic hover surface and gains a soft
+     halo, with no hue change — the mark states a fact and the button offers an
+     action, and neither wants state colour. The RIM deliberately does NOT change
+     on hover: it already sits at the only lightness that clears 3:1 against
+     black and white at once, so "heavier" has nowhere to go without losing one
+     of the two. The halo is what carries the emphasis. */
+  --hologram-control-hover-glow: rgba(0, 0, 0, 0.14);
+  --hologram-badge-neutral: rgba(0, 0, 0, 0.08);
+
+  /* TYPE. Not taken from the app: its --font-sans is Geist Variable, a bundled
+     webfont with no Japanese coverage, and these strings are Japanese-primary.
+     Shipping it would mean a web_accessible_resource @font-face on every host
+     page in exchange for labels that mix two type designs mid-sentence. */
+  --hologram-font-sans: -apple-system, 'Segoe UI', 'Hiragino Kaku Gothic ProN', 'Yu Gothic UI', 'Noto Sans JP', system-ui, sans-serif;
+  --hologram-font-mono: ui-monospace, 'SF Mono', 'Roboto Mono', 'Cascadia Code', Consolas, monospace;
+}
+
+[data-theme="dark"] {
+  /* One step lighter than the light theme's outline: the dark surface is very
+     dark (#171717), so the boundary has to climb to keep 3:1 against the fill
+     while staying under the ceiling white host pages impose. */
+  --hologram-overlay-border: #8a8a8a;
+  --hologram-overlay-shadow: 0 12px 36px -8px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+
+  --hologram-success: #3ecf8e;
+  --hologram-on-success: #052e1b;
+  --hologram-warning: #f5b544;
+  --hologram-on-warning: #3d2606;
+  --hologram-on-danger: #45090c;
+
+  --hologram-accent-soft: rgba(37, 99, 235, 0.28);
+  --hologram-ring: rgba(255, 255, 255, 0.38);
+
+  --hologram-control-hover-glow: rgba(255, 255, 255, 0.16);
+  --hologram-badge-neutral: rgba(255, 255, 255, 0.12);
+}

@@ -3,51 +3,23 @@
 <meta charset="utf-8">
 <title>Hologram 診断</title>
 <style>
-  /* App design language (design-tokens.css), ported as literals: this page is
-     extension-origin so the app's custom properties don't exist here.
-     Light/dark follows the browser via prefers-color-scheme alone — the
-     extension has no theme pref of its own (see options.html). */
+  /* The app's design language, not a copy of it (#270): pages/diag.ts imports
+     utils/tokens.generated.css, which is generated from the same sheet the
+     desktop app renders with. Light/dark follows the browser via
+     prefers-color-scheme alone — the extension has no theme pref of its own
+     (see options.html). */
   :root {
-    --bg: #f6f7f9;            /* gray-50 */
-    --surface: #ffffff;       /* gray-0 */
-    --text: #24282f;          /* gray-800 */
-    --text-strong: #0c0e12;   /* gray-950 */
-    --text-muted: #606673;    /* gray-550 */
-    --border: #e4e7ec;        /* gray-150 */
-    --border-strong: #d8dce2; /* gray-200 */
-    --hover: #eceef2;         /* gray-100 */
-    --active: #e4e7ec;        /* gray-150 */
-    --field-bg: #eceef2;      /* gray-100 */
-    --focus-ring: rgba(40, 168, 219, 0.45); /* sky-500 @45% */
-    --font-sans: -apple-system, 'Segoe UI', 'Hiragino Kaku Gothic ProN', 'Yu Gothic UI', 'Noto Sans JP', system-ui, sans-serif;
-    --font-mono: ui-monospace, 'SF Mono', 'Roboto Mono', 'Cascadia Code', Consolas, monospace;
-    --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
-    --dur-hover: 0.18s;
-    color-scheme: light;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #0e0f11;
-      --surface: #16171a;
-      --text: #dadce0;
-      --text-strong: #f4f5f7;
-      --text-muted: #8e9298;
-      --border: #282a2e;
-      --border-strong: #36383d;
-      --hover: #2a2d33;
-      --active: #34373d;
-      --field-bg: #1a1c20;
-      --focus-ring: rgba(40, 168, 219, 0.55);
-      color-scheme: dark;
-    }
+    /* Both keywords: the buttons below are browser-drawn, and this is what tells
+       the browser which pair of native colours to draw them with. */
+    color-scheme: light dark;
   }
 
   body {
     margin: 0;
     padding: 24px;
-    background: var(--bg);
-    color: var(--text);
-    font: 400 13px/1.55 var(--font-sans);
+    background: var(--hologram-page-bg);
+    color: var(--hologram-ink);
+    font: 400 13px/1.55 var(--hologram-font-sans);
   }
   .diag-head {
     display: flex;
@@ -60,37 +32,37 @@
     margin-right: auto;
     font-size: 16px;
     font-weight: 600;
-    color: var(--text-strong);
+    color: var(--hologram-ink-strong);
     letter-spacing: -0.012em;
   }
   button {
     height: 28px; /* app --control-sm */
     padding: 0 12px;
-    border: 1px solid var(--border-strong);
+    border: 1px solid var(--hologram-border-strong);
     border-radius: 6px; /* app --radius-sm */
-    background: var(--surface);
-    color: var(--text);
-    font: 600 12px/1 var(--font-sans);
+    background: var(--hologram-page-surface);
+    color: var(--hologram-ink);
+    font: 600 12px/1 var(--hologram-font-sans);
     cursor: pointer;
-    transition: background var(--dur-hover) var(--ease-out), border-color var(--dur-hover);
+    transition: background var(--hologram-duration-base) var(--hologram-ease-out), border-color var(--hologram-duration-base);
   }
-  button:hover { background: var(--hover); }
-  button:active { background: var(--active); }
-  button:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--focus-ring); }
+  button:hover { background: var(--hologram-hover); }
+  button:active { background: var(--hologram-active); }
+  button:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--hologram-focus-ring); }
 
   pre {
     margin: 0;
     padding: 14px 16px;
-    background: var(--field-bg);
-    border: 1px solid var(--border);
+    background: var(--hologram-hover);
+    border: 1px solid var(--hologram-border);
     border-radius: 12px; /* app --radius-lg */
-    font: 400 12px/1.55 var(--font-mono);
-    color: var(--text);
+    font: 400 12px/1.55 var(--hologram-font-mono);
+    color: var(--hologram-ink);
     white-space: pre-wrap;
     word-break: break-all;
     overflow: auto;
   }
-  pre:empty::before { content: '…'; color: var(--text-muted); }
+  pre:empty::before { content: '…'; color: var(--hologram-ink-muted); }
 </style>
 <body>
   <div class="diag-head">

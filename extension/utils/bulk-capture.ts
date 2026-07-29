@@ -28,7 +28,8 @@
 // one site with such a list so far.
 import type { CaptureSite } from './extractor/types.ts';
 import { isXBookmarksPage } from './extractor/x.ts';
-import { glassUi } from './glass-ui.ts';
+import { ICONS, makeIcon, makeSpinner } from './icons.ts';
+import { ensureTokens, motion, prefersReducedMotion, token } from './tokens.ts';
 import type { HologramI18nApi } from './i18n.ts';
 import type { CheckSavedMessage, CheckSavedResponse, SavePostMessage, SaveResponse } from './messages.ts';
 
@@ -40,7 +41,7 @@ const MIN_SAVE_PERIOD_MS = 1000;
 const END_QUIET_MS = 4000;
 
 export function startBulkCapture(site: CaptureSite, i18n: HologramI18nApi): void {
-  const G = glassUi;
+  ensureTokens();
   const t = i18n.getMessage;
 
   // url -> state. The element is never kept: once a permalink is read the post
@@ -80,16 +81,16 @@ export function startBulkCapture(site: CaptureSite, i18n: HologramI18nApi): void
     'max-width:calc(100vw - 48px)',
     'box-sizing:border-box',
     'border-radius:999px',
-    `border:1px solid ${G.CARD_BORDER}`,
-    `background:${G.CARD_BG}`,
-    `color:${G.TEXT}`,
-    `font:600 13px/1.4 ${G.FONT_SANS}`,
-    `box-shadow:${G.CARD_SHADOW}`,
+    `border:1px solid ${token.overlayBorder}`,
+    `background:${token.surface}`,
+    `color:${token.ink}`,
+    `font:600 13px/1.4 ${token.fontSans}`,
+    `box-shadow:${token.overlayShadow}`,
   ].join(';');
 
   const badge = document.createElement('div');
-  badge.style.cssText = `width:26px;height:26px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;background:${G.BADGE_NEUTRAL};color:${G.ACCENT_TEXT};`;
-  badge.appendChild(G.makeSpinner(15));
+  badge.style.cssText = `width:26px;height:26px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;background:${token.badgeNeutral};color:${token.accent};`;
+  badge.appendChild(makeSpinner(15));
   banner.appendChild(badge);
 
   const label = document.createElement('div');
@@ -100,7 +101,7 @@ export function startBulkCapture(site: CaptureSite, i18n: HologramI18nApi): void
   const stopButton = document.createElement('button');
   stopButton.type = 'button';
   stopButton.textContent = t('bulkStop');
-  stopButton.style.cssText = ['flex:none', 'appearance:none', 'cursor:pointer', 'border-radius:999px', `border:1px solid ${G.CARD_BORDER}`, 'background:rgba(255,255,255,0.10)', `color:${G.TEXT}`, `font:600 12px/1 ${G.FONT_SANS}`, 'padding:7px 12px'].join(';');
+  stopButton.style.cssText = ['flex:none', 'appearance:none', 'cursor:pointer', 'border-radius:999px', `border:1px solid ${token.overlayBorder}`, `background:${token.badgeNeutral}`, `color:${token.ink}`, `font:600 12px/1 ${token.fontSans}`, 'padding:7px 12px'].join(';');
   stopButton.onclick = (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -109,13 +110,13 @@ export function startBulkCapture(site: CaptureSite, i18n: HologramI18nApi): void
   banner.appendChild(stopButton);
 
   document.body.appendChild(banner);
-  if (!G.REDUCED_MOTION) {
+  if (!prefersReducedMotion()) {
     banner.animate(
       [
         { opacity: 0, transform: 'translateX(-50%) translateY(-14px) scale(0.96)' },
         { opacity: 1, transform: 'translateX(-50%)' },
       ],
-      { duration: G.DUR_POP, easing: G.EASE_OUT },
+      { duration: motion.durationBase, easing: motion.easeOut },
     );
   }
 
@@ -280,10 +281,10 @@ export function startBulkCapture(site: CaptureSite, i18n: HologramI18nApi): void
 
     badge.replaceChildren();
     const bad = failedCount > 0;
-    badge.style.background = bad ? G.WARN_AMBER : G.OK_GREEN;
-    badge.style.color = '#fff';
-    badge.appendChild(G.makeIcon(bad ? G.ICONS.warn : G.ICONS.check, 15));
-    banner.style.borderColor = bad ? 'rgba(232,161,58,0.65)' : 'rgba(48,164,108,0.65)';
+    badge.style.background = bad ? token.warning : token.success;
+    badge.style.color = bad ? token.onWarning : token.onSuccess;
+    badge.appendChild(makeIcon(bad ? ICONS.warn : ICONS.check, 15));
+    banner.style.borderColor = bad ? token.warning : token.success;
     label.textContent = summaryText(byUser);
     stopButton.remove();
     setTimeout(dismiss, bad || deferredCount || unavailableCount ? 6000 : 3500);
@@ -299,11 +300,11 @@ export function startBulkCapture(site: CaptureSite, i18n: HologramI18nApi): void
   }
 
   function dismiss() {
-    if (G.REDUCED_MOTION || !banner.isConnected) {
+    if (prefersReducedMotion() || !banner.isConnected) {
       banner.remove();
       return;
     }
-    const anim = banner.animate([{ opacity: 1 }, { opacity: 0, transform: 'translateX(-50%) translateY(-14px) scale(0.96)' }], { duration: G.DUR_POP, easing: G.EASE_OUT });
+    const anim = banner.animate([{ opacity: 1 }, { opacity: 0, transform: 'translateX(-50%) translateY(-14px) scale(0.96)' }], { duration: motion.durationFast, easing: motion.easeIn });
     anim.onfinish = () => banner.remove();
     anim.oncancel = () => banner.remove();
   }
