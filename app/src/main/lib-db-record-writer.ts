@@ -66,6 +66,8 @@ const POST_COLUMNS = [
   'trashedAt',
   'capturedVia',
   'replaces',
+  'imageIndex',
+  'imageCount',
 ] as const;
 
 const UPSERT_POST_SQL = `INSERT INTO posts (${POST_COLUMNS.join(',')}) VALUES (${POST_COLUMNS.map(() => '?').join(',')})
@@ -117,6 +119,8 @@ function postParams(n: PostRecordShape): unknown[] {
     trashedAt: n.trashedAt,
     capturedVia: n.capturedVia,
     replaces: n.replaces,
+    imageIndex: n.imageIndex,
+    imageCount: n.imageCount,
   };
   return POST_COLUMNS.map((c) => byName[c]);
 }

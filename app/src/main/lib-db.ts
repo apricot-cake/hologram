@@ -207,6 +207,22 @@ const MIGRATIONS: Migration[] = [
   // the time the sweep finishes, and a replay may carry a marker naming a
   // captureId this database never had.
   { name: 'add-post-replaces', up: (db) => db.exec('ALTER TABLE posts ADD COLUMN replaces TEXT') },
+  // #560: which picture of a multi-image post a drag save took (1-based) and how
+  // many the post had. The extension has sent both since drag-save existed, but
+  // no column held them, so the inspector row reading them could never fill.
+  // Two plain nullable columns rather than a media-row position: the record's
+  // media[] holds only the ONE downloaded picture, so there is no row whose
+  // position could carry this — it is a fact about the post the picture came
+  // from, and the post row is where facts about that post live. Null on every
+  // other route (see PostRecordShape.imageIndex).
+  {
+    name: 'add-post-image-index',
+    up: (db) =>
+      db.exec(`
+        ALTER TABLE posts ADD COLUMN imageIndex INTEGER;
+        ALTER TABLE posts ADD COLUMN imageCount INTEGER;
+      `),
+  },
 ];
 
 interface Migration {
@@ -344,6 +360,9 @@ interface PostsTable {
   // THIS database's FTS index and means nothing in an export or another library.
   ftsRowid: number | null;
   replaces: string | null; // add-post-replaces migration (#34) — pending replacement marker, null once swept
+  // add-post-image-index migration (#560) — see PostRecordShape.imageIndex
+  imageIndex: number | null;
+  imageCount: number | null;
 }
 interface MediaTable {
   id: Generated<number>;

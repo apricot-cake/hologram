@@ -97,6 +97,15 @@ export interface PostRecordShape {
   hashtags: string[];
   tags: string[];
   media: MediaItemShape[];
+  // Which picture of a multi-image post this record holds, 1-based, and how many
+  // the post had (#560). Only a drag save can fill them: it takes ONE picture out
+  // of a post and its media[] then holds just that file, so the picture's place
+  // in the original post is not recoverable from the record afterwards. Every
+  // other route saves the post's pictures together, where media[] order already
+  // IS the original order and "which one" has no meaning — those leave both null,
+  // as do single-picture posts.
+  imageIndex: number | null;
+  imageCount: number | null;
   // The acquisition originals (#292): the payloads that arrived FOR this record,
   // kept unmodified and compressed. Not a post column — like media[] and tags[]
   // it fans out into its own table (raw_payloads) on write. Empty for every
@@ -259,6 +268,8 @@ export function normalizePostRecord(input: PostRecordInput, now: () => string = 
     hashtags: normStrArray(input.hashtags),
     tags: normStrArray(input.tags),
     media: normMedia(input.media),
+    imageIndex: normNum(input.imageIndex),
+    imageCount: normNum(input.imageCount),
     raw: normalizeRawPayloads(input.raw),
     eagleName: normStr(input.eagleName),
     description: normStr(input.description),
