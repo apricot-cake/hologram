@@ -76,12 +76,12 @@ function wireIpcOnce() {
     /* bare dev server: no preload bridge behind hologramPosts */
   }
   try {
-    onBackupDone((_e: unknown, r: BackupResult) => backupSubs.forEach((cb) => cb(r)));
+    onBackupDone((r: BackupResult) => backupSubs.forEach((cb) => cb(r)));
   } catch {
     /* bare dev server: no preload bridge behind hologramBackup */
   }
   try {
-    onIntegrityCheckDone((_e: unknown, s: IntegrityStatus) => integritySubs.forEach((cb) => cb(s)));
+    onIntegrityCheckDone((s: IntegrityStatus) => integritySubs.forEach((cb) => cb(s)));
   } catch {
     /* bare dev server: no preload bridge behind hologramBackup */
   }

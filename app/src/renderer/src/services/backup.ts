@@ -18,10 +18,12 @@ export function pickBackupDir() {
 export function runBackup() {
   return hologramIpc.runBackup();
 }
-export function onBackupStart(cb: (...args: any[]) => void) {
+// The preload bridge unwraps the IPC event (#383): a start notification carries
+// nothing, a done notification carries only the backup result.
+export function onBackupStart(cb: () => void) {
   return hologramIpc.onBackupStart(cb);
 }
-export function onBackupDone(cb: (...args: any[]) => void) {
+export function onBackupDone(cb: (result: any) => void) {
   return hologramIpc.onBackupDone(cb);
 }
 export function getIntegrityStatus() {
@@ -30,6 +32,6 @@ export function getIntegrityStatus() {
 export function runOrphanRecovery() {
   return hologramIpc.runOrphanRecovery();
 }
-export function onIntegrityCheckDone(cb: (...args: any[]) => void) {
+export function onIntegrityCheckDone(cb: (status: any) => void) {
   return hologramIpc.onIntegrityCheckDone(cb);
 }

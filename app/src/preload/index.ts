@@ -72,16 +72,22 @@ const api = {
   pickBackupDir: (): Promise<any> => ipcRenderer.invoke('pick-backup-dir'),
   runBackup: (): Promise<any> => ipcRenderer.invoke('run-backup'),
   importImages: (): Promise<any> => ipcRenderer.invoke('import-images'),
-  onBackupStart: (cb: (...args: any[]) => void): void => {
-    ipcRenderer.on('backup-start', cb);
+  // A run started — no payload at all, so cb takes no arguments; the raw IPC event
+  // is not forwarded (#383). Never hand a renderer callback straight to
+  // ipcRenderer.on: that lets Electron's IpcRendererEvent (and its `sender`)
+  // across the contextBridge.
+  onBackupStart: (cb: () => void): void => {
+    ipcRenderer.on('backup-start', () => cb());
   },
-  onBackupDone: (cb: (...args: any[]) => void): void => {
-    ipcRenderer.on('backup-done', cb);
+  // cb receives the backup result only; the raw IPC event is not forwarded.
+  onBackupDone: (cb: (result: any) => void): void => {
+    ipcRenderer.on('backup-done', (_e, result) => cb(result));
   },
   getIntegrityStatus: (): Promise<any> => ipcRenderer.invoke('get-integrity-status'),
   runOrphanRecovery: (): Promise<any> => ipcRenderer.invoke('run-orphan-recovery'),
-  onIntegrityCheckDone: (cb: (...args: any[]) => void): void => {
-    ipcRenderer.on('integrity-check-done', cb);
+  // cb receives the integrity status only; the raw IPC event is not forwarded.
+  onIntegrityCheckDone: (cb: (status: any) => void): void => {
+    ipcRenderer.on('integrity-check-done', (_e, status) => cb(status));
   },
   listTrash: (): Promise<any[]> => ipcRenderer.invoke('list-trash'),
   restorePost: (image: string): Promise<any> => ipcRenderer.invoke('restore-post', image),
