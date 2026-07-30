@@ -1,6 +1,6 @@
 {
   "platform": "x",
-  "updatedAt": "2026-07-30T09:05:53.325Z",
+  "updatedAt": "2026-07-30T10:10:38.409Z",
   "sources": {
     "card": "https://x.com/NASA/status/2081307441594331350",
     "hashtag": "https://x.com/JAXA_jp/status/1943219646368460881",
@@ -9,6 +9,7 @@
     "quote": "https://x.com/X/status/2074264959219896698",
     "reply": "https://x.com/X/status/2079275370742677949",
     "text": "https://x.com/jack/status/20",
+    "tombstone": "https://x.com/i/status/24",
     "video": "https://x.com/NASA/status/2080330036607893817"
   },
   "shapes": {
@@ -792,6 +793,24 @@
         "user.profile_image_url_https": "string",
         "user.screen_name": "string",
         "user.verified": "boolean"
+      }
+    },
+    "tombstone": {
+      "api:x/tweet-result": {
+        "": "object",
+        "__typename": "string",
+        "tombstone": "object",
+        "tombstone.text": "object",
+        "tombstone.text.entities": "array",
+        "tombstone.text.entities[]": "object",
+        "tombstone.text.entities[].from_index": "number",
+        "tombstone.text.entities[].ref": "object",
+        "tombstone.text.entities[].ref.__typename": "string",
+        "tombstone.text.entities[].ref.url": "string",
+        "tombstone.text.entities[].ref.url_type": "string",
+        "tombstone.text.entities[].to_index": "number",
+        "tombstone.text.rtl": "boolean",
+        "tombstone.text.text": "string"
       }
     },
     "video": {

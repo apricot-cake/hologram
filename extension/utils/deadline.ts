@@ -10,29 +10,50 @@
 // The budgets are layered so the INNERMOST leg always reports first. That
 // matters for what the user is told: the service worker can name the stage that
 // actually stalled (the platform API, the crop round trip, the host), while the
-// content script's watchdog knows only "nothing came back". The watchdog is
-// therefore a backstop for the one case the worker cannot report on — its own
+// page side knows only "nothing came back". The page's own deadline is therefore
+// a backstop for the one case the worker cannot report on — its own
 // disappearance, which MV3 may do at any idle moment, taking the pending save
 // with it.
 //
-//   crop round trip     10s ┐
-//   metadata fetch      20s ├─ the service worker's own budget: 60s
-//   native host         30s ┘
-//   content watchdog    90s  ─ only reached when the worker never answers
+//   capture (platform API)  — fast, unbounded ┐
+//   crop round trip         10s               ├─ one leg at a time, per route
+//   metadata fetch          20s               │
+//   native host             30s              ┘
+//
+// The page side bounds SILENCE, not total time (see save-deadline.ts). It used
+// to be one flat 90s watchdog, and 90s is what it had to be: the legs above run
+// in sequence, so a legitimately slow save can spend metadata + host — 50s — and
+// the capture route another 10s on the crop before that. A flat cap has to clear
+// the whole sum or it starts calling slow saves failures.
+//
+// Bounding silence removes the sum from the question. The worker pushes a line
+// to the page at every leg boundary (SaveProgressMessage), so the longest gap a
+// working save can leave is its longest SINGLE leg — the host's 30s. That buys
+// two much shorter numbers, and the one that matters is the first:
+//
+//   acknowledged?     10s  ─ the worker never took the save at all
+//   gone quiet?       40s  ─ took it, then stopped between legs
+//
+// 10s because a save is accepted the moment the worker's handler runs, so this
+// measures whether the worker is running AT ALL — the failure the author hit
+// after an extension reload, where nothing was written to capture.log because
+// nothing on the worker side ever ran. Nielsen's 10 seconds is the limit for
+// keeping attention on a dialogue, and there is nothing to keep it for here.
 //
 // Chosen against measured saves, not guesses. From the author's capture.log
 // (2026-07-26 – 2026-07-29, 20 consecutive bookmark-intake saves, each timed
 // from the previous ack): median 1.05s, a one-picture post 0.8–2.2s, a video
 // post 4.0s, and the heaviest post observed — four pictures — 12.4s. Those
 // figures cover metadata AND the host's download of every original, so the
-// worst real save measured is a fifth of the service worker's budget alone.
-// The point of the margin is that a slow save must never be called a failure;
-// a hung one just has to end.
+// worst real save measured clears the 10s acknowledgement bound within its
+// first fraction and never comes near 40s of silence. The point of the margin is
+// that a slow save must never be called a failure; a hung one just has to end.
 
 export const CROP_TIMEOUT_MS = 10_000;
 export const METADATA_TIMEOUT_MS = 20_000;
 export const NATIVE_HOST_TIMEOUT_MS = 30_000;
-export const SAVE_WATCHDOG_MS = 90_000;
+export const SAVE_ACK_MS = 10_000;
+export const SAVE_STALL_MS = 40_000;
 
 // The read-only "is this saved?" lookups. Far tighter than a save because
 // nothing is written and the answer is optional: the timeline badge simply

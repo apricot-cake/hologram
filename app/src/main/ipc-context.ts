@@ -87,8 +87,13 @@ export interface IpcContext {
   // --- Config ---
   readConfig(): HologramConfig;
   writeConfig(cfg: HologramConfig): void;
-  /** True iff the LAST readConfig() found config.json present-but-unparseable. */
-  getConfigLastCorrupt(): boolean;
+  /**
+   * Drops the config cache (#61). Only needed by a handler that lets something
+   * else write config.json — the installer persisting extensionId.
+   */
+  invalidateConfigCache(): void;
+  /** True iff config.json is present but unparseable, as of right now. */
+  isConfigCorrupt(): boolean;
   /** Why a wipe must be refused on a degraded config, or null. */
   clearAllBlockReason(args: { configCorrupt: boolean; hasExplicitSaveFolder: boolean; hasPointer: boolean }): string | null;
   installer: NativeHostInstaller;

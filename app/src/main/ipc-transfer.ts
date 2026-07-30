@@ -10,7 +10,7 @@
 // copyLibraryInto, watchSaveFolder, the config/pointer layer, clearAllBlockReason,
 // avatar fetch) live outside this module (#227: lib-backup.ts, lib-migrate.ts,
 // lib-config.ts, native-host.ts) and arrive via ctx; mutable state is reached through
-// getWin/send/getConfigLastCorrupt/resetDelta accessors.
+// getWin/send/isConfigCorrupt/resetDelta accessors.
 import { ipcMain, dialog, clipboard } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -45,7 +45,7 @@ function register(ctx: IpcContext) {
     readConfig,
     writeConfig,
     readSavePointer,
-    getConfigLastCorrupt,
+    isConfigCorrupt,
     clearAllBlockReason,
     LIBRARY_MEDIA_EXTS,
     getDbWriter,
@@ -302,7 +302,7 @@ function register(ctx: IpcContext) {
     // (the user should restart to let initSaveFolderRedundancy repair config first).
     const cfg = readConfig();
     const blocked = clearAllBlockReason({
-      configCorrupt: getConfigLastCorrupt(),
+      configCorrupt: isConfigCorrupt(),
       hasExplicitSaveFolder: typeof cfg.saveFolder === 'string' && !!cfg.saveFolder.trim(),
       hasPointer: !!readSavePointer(),
     });

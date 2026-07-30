@@ -2,7 +2,7 @@ import { startBulkCapture } from './bulk-capture.ts';
 import { cropScreenshot } from './crop.ts';
 import { buildChoiceRow, checkDuplicate, formatDeletedAt, pagePictureUrls } from './duplicate-guard.ts';
 import { logSaveEvent, newSaveId, reportSaveTimeout, type SaveStage } from './capture-log.ts';
-import { SAVE_WATCHDOG_MS } from './deadline.ts';
+import { type SaveDeadline, startSaveDeadline } from './save-deadline.ts';
 import { normalizeRect } from './extractor/dom.ts';
 import { readDomMeta } from './extractor/dom-meta.ts';
 import { getCaptureSite } from './extractor/index.ts';
@@ -79,7 +79,7 @@ export async function startCapture(): Promise<void> {
   let domMeta: DomMeta | null = null;
   // The deadline on waiting for the save's result, and the latch that keeps the
   // banner from being written twice when a late answer follows a timeout (#507).
-  let saveWatchdog: ReturnType<typeof setTimeout> | null = null;
+  let saveDeadline: SaveDeadline | null = null;
   let saveSettled = false;
 
   // --- What this activation has done so far, for capture.log (#519) ----------
@@ -353,13 +353,10 @@ export async function startCapture(): Promise<void> {
         //   the channel closes without a reply — Chrome's own signal that the
         //     service worker went away mid-save (MV3 stops it at any idle
         //     moment). Fast, and the common case.
-        //   nothing at all, for SAVE_WATCHDOG_MS — the backstop, longer than
-        //     everything the background is itself allowed to spend, so a slow
-        //     save is never called a failure and a stuck one still ends.
-        saveWatchdog = setTimeout(() => {
-          saveWatchdog = null;
-          endSaveUnanswered(postUrl, `save timed out — no result from the background within ${SAVE_WATCHDOG_MS}ms`);
-        }, SAVE_WATCHDOG_MS);
+        //   the worker stops saying anything — either it never took the save or
+        //     it stopped between legs (save-deadline.ts). A slow save keeps
+        //     reporting stages, so it is never called a failure.
+        saveDeadline = startSaveDeadline(saveId, (error) => endSaveUnanswered(postUrl, error));
 
         // A save is now in flight, so Esc from here abandons a save rather than
         // a selection — and the log should say which (#519).
@@ -396,16 +393,15 @@ export async function startCapture(): Promise<void> {
     if (isCleanedUp || saveSettled) return;
     saveSettled = true;
     openStage = null; // the timeout line below is this session's ending
-    clearSaveWatchdog();
+    clearSaveDeadline();
     reportSaveTimeout('capture', site.platform, postUrl, error, saveId, reached);
     banner.setState('error', saveFailureText('timeout'));
     setTimeout(cleanup, 2800);
   }
 
-  function clearSaveWatchdog() {
-    if (saveWatchdog === null) return;
-    clearTimeout(saveWatchdog);
-    saveWatchdog = null;
+  function clearSaveDeadline() {
+    saveDeadline?.settle();
+    saveDeadline = null;
   }
 
   function onClick(e: MouseEvent) {
@@ -462,7 +458,7 @@ export async function startCapture(): Promise<void> {
     // user is what ended it. No-op when the session already wrote its own
     // ending (saved, failed, timed out, answered "don't save").
     logCancel();
-    clearSaveWatchdog(); // Esc during a save: the banner is going, the timer must too
+    clearSaveDeadline(); // Esc during a save: the banner is going, the timer must too
 
     document.removeEventListener('mousemove', onMouseMove, true);
     document.removeEventListener('click', onUserClick, true);
@@ -515,7 +511,7 @@ export async function startCapture(): Promise<void> {
       if (saveSettled) return undefined;
       saveSettled = true;
       openStage = null; // the background/host lines are this save's ending
-      clearSaveWatchdog();
+      clearSaveDeadline();
       // Saved but the post-info API returned nothing → amber "partial" state so
       // the user notices (rather than a plain green success). Held longer.
       const partial = msg.success && msg.metaOk === false;

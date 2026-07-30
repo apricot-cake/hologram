@@ -30,7 +30,8 @@ import path from 'node:path';
 import type Database from 'better-sqlite3';
 import type { PostRecordShape } from '../../../native-host/post-record.mts';
 import { normalizePostRecord, recordHoldsContent } from '../../../native-host/post-record.mts';
-import { missingMediaReason, resolveMediaPath } from './lib-db-inbox.ts';
+import { missingMediaReason } from './lib-db-inbox.ts';
+import { resolveInSaveFolder } from './lib-save-folder-path.ts';
 import { fillCardDims } from './lib-card-dims.ts';
 import { makeTagResolver, preparePostStmts, writePost } from './lib-db-record-writer.ts';
 import { parseJsonLoose } from './lib-json.ts';
@@ -190,7 +191,7 @@ function findMissingMedia(saveFolder: string, sqlite: Database.Database): Missin
   for (const p of posts) {
     const files = [p.image, p.video, ...(mediaByPost.all(p.captureId) as Array<{ file: string }>).map((m) => m.file)].filter((f): f is string => !!f);
     for (const f of files) {
-      const resolved = resolveMediaPath(saveFolder, f);
+      const resolved = resolveInSaveFolder(saveFolder, f);
       if (!resolved || !fs.existsSync(resolved)) out.push({ captureId: p.captureId, file: f });
     }
   }

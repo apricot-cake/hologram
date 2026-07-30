@@ -8,7 +8,7 @@
 //     カナリアを読まれなくするので、消失を見落とすのと同じくらい致命的）
 
 import { describe, expect, test } from 'vitest';
-import { advanceStreak, candidateOrder, carryBaseline, diffShapes, endpointMissingDiff, MISSING_STREAK_ALARM, rebaseOnSourceChange, shapeOf } from './lib-schema-canary.cts';
+import { advanceStreak, candidateOrder, carryBaseline, diffShapes, endpointMissingDiff, judgeResponse, MISSING_STREAK_ALARM, rebaseOnSourceChange, shapeOf } from './lib-schema-canary.cts';
 
 describe('shapeOf（値を捨てて構造だけ取り出す）', () => {
   test('入れ子のオブジェクトはパスに展開され、値は残らない', () => {
@@ -179,6 +179,54 @@ describe('candidateOrder（どの候補から試すか）', () => {
     const input = [...urls];
     candidateOrder(input, 'https://c.test/3');
     expect(input).toEqual(urls);
+  });
+});
+
+describe('judgeResponse（応答が「不通」なのか「期待した応答」なのか・#588）', () => {
+  // 宣言の無いサンプル＝普通の投稿が返ってくるのが正解。ここは #588 の前からの
+  // 挙動で、tombstone の宣言を足したせいで緩まないことを固定する。
+  const post = { primaryParsed: true, metaError: '', alive: true };
+
+  test('宣言なし: 投稿が返れば通常どおり比較へ回す', () => {
+    expect(judgeResponse(undefined, post)).toEqual({ dead: false, reason: '', alarm: '' });
+  });
+
+  test('宣言なし: metaError が付いたら不通＝候補を差し替える話であって、スキーマ変化ではない', () => {
+    const v = judgeResponse(undefined, { primaryParsed: true, metaError: 'ageRestricted', alive: false });
+    expect(v.dead).toBe(true);
+    expect(v.reason).toContain('ageRestricted');
+    expect(v.alarm).toBe('');
+  });
+
+  test('宣言なし: 投稿本体の項目が何も無ければ不通', () => {
+    expect(judgeResponse(undefined, { primaryParsed: true, metaError: '', alive: false }).dead).toBe(true);
+  });
+
+  test('tombstone が期待値: 中身が配信されない応答は不通でなく観測対象＝形の比較へ回る', () => {
+    // ここが #588 の本体。以前は metaError だけで無条件に不通としていたので、
+    // 登録した瞬間に恒久的な不通になり、形は一度も記録されなかった。
+    for (const metaError of ['unavailable', 'protected', 'ageRestricted']) {
+      expect(judgeResponse('tombstone', { primaryParsed: true, metaError, alive: false })).toEqual({ dead: false, reason: '', alarm: '' });
+    }
+  });
+
+  test('tombstone が期待値: 普通の投稿が返ってきたら警報（不通ではない＝差し替えは要らない）', () => {
+    const v = judgeResponse('tombstone', post);
+    expect(v.dead).toBe(false);
+    expect(v.alarm).toContain('通常の投稿');
+  });
+
+  test('tombstone が期待値: 本体が読めないなら不通＝比べる形が無く、エンドポイント障害と区別できない', () => {
+    const v = judgeResponse('tombstone', { primaryParsed: false, metaError: 'fetchFailed', alive: false });
+    expect(v.dead).toBe(true);
+    expect(v.alarm).toBe('');
+  });
+
+  test('tombstone が期待値: 投稿でも tombstone でもない本体は黙って比較へ回す＝文言の消失はそこで鳴る', () => {
+    // #505 以降「文言が無いこと」自体が年齢制限の判定なので、tombstone.text が
+    // 消える変化も検知対象になる。それを拾うのは形の比較の側（下の carryBaseline
+    // の一巡テストが同じ欠けを2回で鳴らすところまで見ている）。
+    expect(judgeResponse('tombstone', { primaryParsed: true, metaError: '', alive: false })).toEqual({ dead: false, reason: '', alarm: '' });
   });
 });
 

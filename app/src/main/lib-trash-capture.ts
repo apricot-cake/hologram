@@ -18,7 +18,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { resolveMediaPath } from './lib-db-inbox.ts';
+import { TRASH_SUBDIR, resolveInSaveFolder } from './lib-save-folder-path.ts';
 import { parseJsonLoose } from './lib-json.ts';
 import { normalizePostRecord } from '../../../native-host/post-record.mts';
 import type { PostRecordShape } from '../../../native-host/post-record.mts';
@@ -71,7 +71,7 @@ export async function trashCapture(opts: { folder: string; trashDir: string; med
   const { folder, trashDir, mediaExts, captureId, record, flags } = opts;
   await fs.promises.mkdir(trashDir, { recursive: true });
   for (const name of await ownedFiles(folder, captureId, record, mediaExts)) {
-    const src = resolveMediaPath(folder, name);
+    const src = resolveInSaveFolder(folder, name);
     if (!src) continue;
     try {
       await fs.promises.rename(src, path.join(trashDir, name));
@@ -91,6 +91,33 @@ export async function trashCapture(opts: { folder: string; trashDir: string; med
   } catch {
     /* best-effort — trash still works but won't auto-purge/dedup */
   }
+}
+
+// Every filename that leaves the app is read as save-folder-relative: the
+// renderer turns it into `asset://img/<name>` and main resolves it back with the
+// one containment rule (lib-save-folder-path.ts). A trashed capture's record was
+// written while its files were still in the library, so the names inside it are
+// relative to the folder ROOT — but the files themselves have since moved into
+// `.trash/`. Rebase them as the listing is built, and the trash view can draw the
+// library's own cards without knowing where the trash is (#267); leave them bare
+// and every trash thumbnail points at a path where the file no longer is.
+//
+// The one name left alone is a shared-store avatar: trashCapture deliberately
+// does not move `avatars/<urlhash>.<ext>` (see ownedFiles), so it is still
+// exactly where the record says it is.
+//
+// This assumes trashDir is `<saveFolder>/<TRASH_SUBDIR>` — which is what makes it
+// resolvable at all, and is how the app builds it (index.ts's getTrashDir).
+function rebaseOntoTrash(rec: PostRecordShape): PostRecordShape {
+  const inTrash = (name: string) => `${TRASH_SUBDIR}/${path.basename(name)}`;
+  const sharedAvatar = !!rec.avatarFile && /^avatars[\\/]/.test(rec.avatarFile);
+  return {
+    ...rec,
+    image: rec.image ? inTrash(rec.image) : rec.image,
+    video: rec.video ? inTrash(rec.video) : rec.video,
+    avatarFile: rec.avatarFile && !sharedAvatar ? inTrash(rec.avatarFile) : rec.avatarFile,
+    media: rec.media.map((m) => ({ ...m, file: m.file ? inTrash(m.file) : m.file, posterFile: m.posterFile ? inTrash(m.posterFile) : m.posterFile })),
+  };
 }
 
 // The trash listing the renderer draws (ipc-trash.ts's list-trash), normalized.
@@ -113,7 +140,8 @@ export async function trashCapture(opts: { folder: string; trashDir: string; med
 // rather than in each consumer's own defensive check. The returned records are
 // PostRecordShape exactly: the DB-only flags a trash record also carries
 // (userKind / tagReviewed) are deliberately not in it — restore-post reads those
-// off the file itself, and no renderer surface shows them.
+// off the file itself, and no renderer surface shows them. The filenames are the
+// one thing rewritten on the way out (rebaseOntoTrash above).
 export async function listTrashRecords(trashDir: string): Promise<PostRecordShape[]> {
   let names: string[];
   try {
@@ -132,7 +160,7 @@ export async function listTrashRecords(trashDir: string): Promise<PostRecordShap
       // record whose own captureId field is missing or not a string is listed
       // under its filename rather than dropped.
       const captureId = typeof rec.captureId === 'string' && rec.captureId ? rec.captureId : f.replace(/\.json$/i, '');
-      records.push(normalizePostRecord({ ...rec, captureId }));
+      records.push(rebaseOntoTrash(normalizePostRecord({ ...rec, captureId })));
     } catch {
       /* skip corrupt record */
     }

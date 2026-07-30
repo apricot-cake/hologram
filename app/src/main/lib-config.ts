@@ -18,40 +18,111 @@ import { configDir, defaultLibraryDir, resolveSaveFolder } from './native-host.t
 
 const CONFIG_PATH = path.join(configDir(), 'config.json');
 
-// True iff the LAST readConfig() found config.json present-but-unparseable. Lets
-// destructive ops (clear-all) refuse to run on top of a degraded config.
-let configLastCorrupt = false;
+// --- In-memory cache (#61) ---
+//
+// getSaveFolder() sits on the asset:// path, so before this every image the grid
+// asked for re-opened and re-parsed config.json. Opening the file is what costs:
+// measured on this machine, readFileSync+parse of a ~900B config.json is ~230µs,
+// a statSync of the same file ~6µs.
+//
+// The cache is CHECKED AGAINST THE FILE on every read rather than only being
+// dropped by our own writes. That is deliberate, and it is the safety property
+// of this module rather than a nicety:
+//   - config.json is documented as hand-editable (native-host/README.md) and the
+//     installer CLI (native-host/install.cts persistExtensionId) writes into it
+//     from a SEPARATE process, so "every writer is in this process" is false.
+//   - every writer here is read-modify-write, so a stale read does not just
+//     return an old value — the next writeConfig persists it back and silently
+//     ERASES the outside edit. Losing saveFolder that way is the 2026-06-23
+//     incident's failure mode, which is why a hook-only invalidation scheme
+//     (one missed hook = a wiped setting) is not good enough here.
+//
+// The check is one statSync fingerprinted on (size, mtime, ino). Known limit:
+// NTFS stamps mtime at the ~15ms system-clock tick, so an out-of-process,
+// in-place rewrite of EXACTLY the same byte length landing inside the same tick
+// as our own write is indistinguishable from it. Anything that renames into
+// place — our writeFileAtomicSync, and every editor that saves atomically —
+// lands a new ino and is always caught.
+interface ConfigCacheEntry {
+  /** Identity of the bytes `data` was parsed from; null = file absent. */
+  fp: string | null;
+  data: Record<string, any>;
+  corrupt: boolean;
+}
+let cached: ConfigCacheEntry | null = null;
 
-/** True iff the LAST readConfig() found config.json present-but-unparseable. */
-function isConfigCorrupt() {
-  return configLastCorrupt;
+// null = no such file (a fresh install — absence is a valid state to cache).
+// undefined = the stat itself failed, so nothing about the file is known and the
+// cache must not be trusted or refreshed from this pass.
+function statFingerprint(): string | null | undefined {
+  try {
+    const st = fs.statSync(CONFIG_PATH, { bigint: true, throwIfNoEntry: false });
+    return st ? `${st.size}:${st.mtimeNs}:${st.ino}` : null;
+  } catch {
+    return undefined;
+  }
 }
 
-function readConfig() {
+function readConfigFromDisk(): Omit<ConfigCacheEntry, 'fp'> {
   let raw: string;
   try {
     raw = fs.readFileSync(CONFIG_PATH, 'utf8');
   } catch {
-    configLastCorrupt = false;
-    return {}; // no config yet (fresh install) — absence is not corruption
+    return { data: {}, corrupt: false }; // no config yet (fresh install) — absence is not corruption
   }
   try {
-    const cfg = parseJsonLoose(raw);
-    configLastCorrupt = false;
-    return cfg;
+    return { data: parseJsonLoose(raw), corrupt: false };
   } catch {
     // Corrupt config (e.g. a truncation from a pre-atomic-write forced kill).
     // PRESERVE it instead of letting the caller silently overwrite it with {} —
     // a truncated config that reads as {} and is then re-written loses
     // saveFolder/extensionId/backup at once. Keep a copy for recovery/forensics.
-    configLastCorrupt = true;
+    // Caching the outcome also means ONE copy per corruption rather than one per
+    // read, which used to litter the config dir while the app stayed open.
     try {
       if (raw && raw.length) fs.copyFileSync(CONFIG_PATH, `${CONFIG_PATH}.corrupt-${Date.now()}`);
     } catch {
       /* best-effort */
     }
-    return {};
+    return { data: {}, corrupt: true };
   }
+}
+
+// The SHARED entry — never handed to a caller (readConfig clones). Internal
+// readers that only take an immutable scalar out of it use this directly.
+function loadConfig(): ConfigCacheEntry {
+  const before = statFingerprint();
+  if (cached && before !== undefined && cached.fp === before) return cached;
+  const fresh = readConfigFromDisk();
+  const after = statFingerprint();
+  // Store the fingerprint only when the file held still ACROSS the read: if it
+  // changed under us, `after` describes bytes we did not parse, and pinning them
+  // to this parse would serve the stale copy until the file changed AGAIN.
+  cached = before !== undefined && after === before ? { ...fresh, fp: after } : null;
+  return cached ?? { ...fresh, fp: null };
+}
+
+/** True iff config.json is present but unparseable, as of right now. */
+function isConfigCorrupt() {
+  return loadConfig().corrupt;
+}
+
+/**
+ * config.json, as a private copy: callers read-modify-write it, and a mutation
+ * they never hand back to writeConfig (or one whose write throws) must not be
+ * visible to the next reader.
+ */
+function readConfig() {
+  return structuredClone(loadConfig().data);
+}
+
+/**
+ * Force the next read to go back to the file. For the one in-process writer that
+ * does NOT come through writeConfig: native-host's installer persists
+ * extensionId into config.json itself (install.cts persistExtensionId).
+ */
+function invalidateConfigCache() {
+  cached = null;
 }
 
 // Redundant save-folder pointer: a tiny file written ALONGSIDE config.json holding
@@ -94,7 +165,15 @@ function dirExists(p) {
 // save folder itself.
 function writeConfig(cfg) {
   fs.mkdirSync(configDir(), { recursive: true });
-  writeFileAtomicSync(CONFIG_PATH, JSON.stringify(cfg, null, 2), { fsync: true });
+  const json = JSON.stringify(cfg, null, 2);
+  writeFileAtomicSync(CONFIG_PATH, json, { fsync: true });
+  // Prime the cache from the bytes that just landed — JSON.parse(json) rather
+  // than `cfg` itself, so the cache holds what the FILE holds (the round trip
+  // drops undefined members) and the caller may keep mutating its own object.
+  // A throw above skips this: a write that failed must leave readConfig()
+  // agreeing with the disk, not reporting a value that never got there.
+  const fp = statFingerprint();
+  cached = typeof fp === 'string' ? { fp, data: JSON.parse(json), corrupt: false } : null;
   // Keep the redundant pointer in lockstep with whatever save folder we just wrote.
   if (cfg && typeof cfg.saveFolder === 'string' && cfg.saveFolder.trim()) writeSavePointer(cfg.saveFolder);
 }
@@ -105,7 +184,9 @@ function writeConfig(cfg) {
 // The pointer is only consulted when config has no saveFolder (degraded/fresh), so
 // the common path stays a single config read with no extra file I/O.
 function getSaveFolder() {
-  const folder = readConfig().saveFolder;
+  // The shared entry, not readConfig(): this is the hottest config read in the
+  // app (one per asset:// request) and it only takes a string out.
+  const folder = loadConfig().data.saveFolder;
   if (typeof folder === 'string' && folder.trim()) return folder;
   const ptr = readSavePointer();
   return resolveSaveFolder({
@@ -136,4 +217,4 @@ function initSaveFolderRedundancy() {
   }
 }
 
-export { readConfig, writeConfig, getSaveFolder, readSavePointer, initSaveFolderRedundancy, isConfigCorrupt };
+export { readConfig, writeConfig, getSaveFolder, readSavePointer, initSaveFolderRedundancy, isConfigCorrupt, invalidateConfigCache };

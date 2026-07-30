@@ -23,7 +23,7 @@ const PREF_KEYS = ['language', 'viewMode', 'skipDeleteConfirm', 'imageTileSize',
 const VALID_EXT_ID = /^[a-p]{32}$/;
 
 function register(ctx: IpcContext) {
-  const { readConfig, writeConfig, getSaveFolder, getDbWriter, installer, getWin } = ctx;
+  const { readConfig, writeConfig, invalidateConfigCache, getSaveFolder, getDbWriter, installer, getWin } = ctx;
 
   ipcMain.handle('get-config', (): ConfigSummary => {
     const cfg = readConfig();
@@ -44,6 +44,14 @@ function register(ctx: IpcContext) {
       }
     } catch (err) {
       console.error('Failed to update native host origin:', err);
+    } finally {
+      // install() persists extensionId into config.json ITSELF (install.cts
+      // persistExtensionId) instead of coming back through writeConfig, so the
+      // config cache cannot know the file moved. Today it writes the same id we
+      // just wrote and the file does not change — drop the cache anyway rather
+      // than let that coincidence be what keeps the cache honest. In `finally`
+      // because a throw partway through still leaves the file possibly rewritten.
+      invalidateConfigCache();
     }
     return { extensionId: cfg.extensionId };
   });

@@ -118,10 +118,11 @@ describe('drainInbox', () => {
       expect(report2.applied).toEqual([missing.eventId]);
     });
 
-    // A bare "../../evil.txt" can't escape at all: resolveMediaPath takes
-    // path.basename() of anything outside the sanctioned avatars/<file>
-    // shape, so it just becomes "evil.txt" (missing, not escaping). The
-    // avatars/ subpath is the one place ".." is meaningful to reject.
+    // A bare "../../evil.txt" can't escape at all: resolveInSaveFolder takes
+    // path.basename() of anything outside the sanctioned subpath shapes
+    // (avatars/<file> / .trash/<file>), so it just becomes "evil.txt" (missing,
+    // not escaping). Those subpaths are the one place ".." is meaningful to
+    // reject — the rule itself is covered by save-folder-path.test.ts.
     test('media[].file が avatars/.. で escape を試みても saveFolder の外は読まない', async () => {
       const rec = normalizePostRecord({ captureId: '1700000000200-cc01', url: 'https://x.com/u/status/9', media: [{ file: 'avatars/..', url: '', alt: null, width: null, height: null, type: null, posterFile: null }] });
       const envelope = buildEnvelope(rec);
