@@ -2,8 +2,8 @@
 
 // Backup IPC handlers, extracted from main.js (mechanical move — logic unchanged).
 // Thin handlers over the backup engine (readBackupConfig / writeBackupConfig /
-// validateBackupDir / armBackupSchedule / runBackup), which all stay in main.js and
-// arrive via ctx. pick-backup-dir opens a directory dialog parented to the main window
+// validateBackupDir / armBackupSchedule / runBackup), which all live in lib-backup.ts
+// (#227) and arrive via ctx. pick-backup-dir opens a directory dialog parented to the main window
 // (ctx.getWin()).
 //
 // get-integrity-status / run-orphan-recovery (#301) are a separate concern

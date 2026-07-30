@@ -8,7 +8,8 @@
 // (crash-safe library relocation: copy → flip config → delete old, then re-point the
 // watcher + full-resync the renderer). The heavy engines (validateSaveFolder,
 // copyLibraryInto, watchSaveFolder, the config/pointer layer, clearAllBlockReason,
-// avatar fetch) stay in main.js and arrive via ctx; mutable state is reached through
+// avatar fetch) live outside this module (#227: lib-backup.ts, lib-migrate.ts,
+// lib-config.ts, native-host.ts) and arrive via ctx; mutable state is reached through
 // getWin/send/getConfigLastCorrupt/resetDelta accessors.
 import { ipcMain, dialog } from 'electron';
 import fs from 'node:fs';

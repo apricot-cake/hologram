@@ -50,7 +50,12 @@ WXT（Vite ベース）でビルドする TypeScript ソース。`npm run build:
 
 electron-vite で main・preload・renderer の3面をバンドルする標準構成（#156・2026-07。それ以前は main プロセスを `.mts` 直実行する build-less 構成だった＝過去の設計判断は Issue #156 参照）。ソースは `src/main/`・`src/preload/`・`src/renderer/`、ビルド出力は `out/`（gitignore・`electron.vite.config.ts` が3面の設定を持つ）。
 
-- `src/main/index.ts` — メインプロセス（ウィンドウ生成・取込キューの `fs.watch`・IPC登録）
+- `src/main/index.ts` — メインプロセスの組み立て（起動シーケンス・レコード配給の中核＝DBを開いて取込キューを流し renderer へ配る・取込キューの `fs.watch`・IPC登録）。自己完結するサブシステムは `lib-*.ts` へ出してあり（#227）、境界は「機能が近いか」でなく**元ファイルのどのブロックに住んでいたか**で引いた
+- `src/main/native-host.ts` — `native-host/` の CJS モジュールを**実行時に組み立てたパス**で require する唯一の場所（dev は `out/main/` からの相対、配布時は `resources/native-host`）。バンドラが追えない＝追ってはいけない読み込みをここに閉じ込める
+- `src/main/lib-config.ts` — `config.json` の読み書きと保存先フォルダの解決。原子的書き込みと**冗長な保存先ポインタ**（`saveFolder.path`）を1か所に持つ＝2026-06-23 のライブラリ消失は config 1本に保存先が乗っていたことが原因で、復旧経路を書き込み規律と同じ場所に置くのが対策
+- `src/main/lib-backup.ts` — 増分ミラーのエンジンと定期実行、出力先の検証、#301 の整合チェック。整合チェックが同居するのは同じ走査結果を使い回すため（二重実装しない）。DBを同期してからでないと写しも孤児検出も成立しないので、その部分だけ index.ts から注入で受け取る
+- `src/main/lib-window.ts` — メインウィンドウ（生成・位置とサイズの永続化・ナビゲーション封じ）。`win` を所有するのはこのモジュールだけで、他は `getWin()` / `sendToWin()` 経由
+- `src/main/lib-thumbnails.ts` — `asset://` ハンドラと、その `?w=N` が使うサムネイル生成プール・ディスクキャッシュ
 - `src/main/ipc-*.ts` — チャンネル別のハンドラ群。IPC境界の型は2つに分かれる（#228）＝`ipc-context.ts` の `IpcContext` が index.ts から各 `register(ctx)` へ渡す依存の契約（main専用。BrowserWindow や DB writer を名前で持つ）、`ipc-payloads.ts` が**実際にIPCを渡るペイロードの形**。後者は import を1つも持たない＝renderer 側の DOM-only プログラムが `HologramPreload` 経由で辿り着くため。ハンドラ側の戻り値にも同じ型を注釈してあるので、片端だけの変更はビルドで落ちる（チャンネル名で両端を突き合わせる仕組みは #10 の集中ラッパーの担当で、まだ無い）
 - `src/main/lib-archive.ts` — ZIP入出力
 - `src/main/lib-db*.ts` — SQLite 層（エンジン/スキーマ/クエリ/書き込み/取込キュー/整合チェック）。取得原本（`raw_payloads`・[ADR 0011](decisions/0011-preserve-acquisition-payloads.md)）は共有 writer が投稿と同じトランザクションで書き、追記のみで消さない。いずれも Electron 非依存＝node でテスト可。`listPosts` は DB への1クエリで、更新は差分IPC（list-posts-delta）＝`lib-post-delta.ts` が「前回配った分」と突き合わせて追加/削除だけ返す（#302 でファイル走査は消え、ヒントの受け渡しも不要になった）
