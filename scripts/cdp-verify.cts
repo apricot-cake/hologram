@@ -14,8 +14,7 @@
 // shot takes a FULL-PAGE screenshot (no clip). NOTE: passing a `clip` to
 // Page.captureScreenshot resizes the visual viewport and it STICKS (a known trap
 // that left content rendered into the top-left until restart). So we never clip —
-// crop the saved jpg afterward, e.g. with Python PIL:
-//   python -c "from PIL import Image; Image.open('out.jpg').crop((x,y,x2,y2)).save('crop.jpg')"
+// crop the saved jpg afterward with whatever image tool is at hand.
 //
 // Port via $CDP_PORT (default 9222). Page target = the one loading index.html.
 const http = require('node:http');
