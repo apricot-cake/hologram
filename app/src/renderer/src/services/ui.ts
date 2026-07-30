@@ -6,12 +6,22 @@ import { toast } from 'sonner';
 // *-builder.ts modules, etc.) consumes the SAME toast + escape implementation instead of
 // hand-rolling their own.
 
+// An optional button on a toast. Today the only one is 「元に戻す」 (#235): a
+// completed bulk/destructive edit offers the way back right where it reported
+// itself, instead of making you remember Ctrl+Z.
+export type NotifyAction = { label: string; onClick: () => void };
+
 // Transient toast via sonner (the shadcn/ui standard toaster). The <Toaster /> outlet is
 // mounted once in App.tsx (components/ui/sonner.tsx); sonner's toast() is callable
 // from anywhere — vanilla service modules included — through its own external store, so
 // this keeps the same one-liner contract the old #ivToast bridge had.
-export function notify(msg: unknown) {
-  toast(msg == null ? '' : String(msg));
+export function notify(msg: unknown, action?: NotifyAction | null) {
+  const text = msg == null ? '' : String(msg);
+  if (!action) {
+    toast(text);
+    return;
+  }
+  toast(text, { action: { label: action.label, onClick: action.onClick } });
 }
 
 // Quote-safe HTML escape for text placed via innerHTML. Escapes " and ' too, so

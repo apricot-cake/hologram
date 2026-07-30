@@ -419,6 +419,11 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     confirmDeletePost: 'この投稿を削除しますか？',
     confirmSkip: '今後表示しない',
     deleted: '削除しました',
+    // viewer: セッション内の編集の取り消し（#235）。undoAction はトーストのボタン、
+    // 残り2つは Ctrl+Z / Ctrl+Shift+Z の結果。
+    undoAction: '元に戻す',
+    undoDone: '編集を元に戻しました',
+    redoDone: '編集をやり直しました',
 
     // viewer: post card
     clickToExpand: 'クリックで全文表示',
@@ -858,6 +863,9 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     confirmDeletePost: 'Delete this post?',
     confirmSkip: "Don't ask again",
     deleted: 'Deleted',
+    undoAction: 'Undo',
+    undoDone: 'Edit undone',
+    redoDone: 'Edit redone',
 
     clickToExpand: 'Click to expand',
     tipOpen: 'Open post',

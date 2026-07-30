@@ -12,7 +12,7 @@
 // managerRename, managerRemove, managerMove, toast, onChange, isLoaded, allFolders,
 // createFolder, updateFolder, renameFolder, removeFolder — plus the
 // hologramPosterFolderStore() factory (orchestrator.ts's poster-folder store).
-import { notify as uiNotify } from './ui.ts';
+import { notify as uiNotify, type NotifyAction } from './ui.ts';
 import { hologramI18n } from './i18n.ts';
 import { hologramIpc } from './ipc.ts';
 import { cloneTree, removeCondsMatching } from './query.ts';
@@ -221,23 +221,41 @@ function createFolderStore({ idPrefix, persist, isLibrary }: { idPrefix: string;
     persist();
     return true;
   }
+  // Add/remove an EXACT set of keys in folder id (no toggling), and report what
+  // actually moved — the diff undo records (#235). Persists only when something did.
+  function applyItems(id: string | null | undefined, add: readonly string[] | null | undefined, remove: readonly string[] | null | undefined) {
+    const f = byId(id);
+    const none = { added: [] as string[], removed: [] as string[] };
+    if (!f || f.kind === 'dynamic') return none; // a saved search has no membership — its contents are the query's answer
+    const dropping = new Set((remove || []).filter((k): k is string => k != null));
+    const removed = f.items.filter((c) => dropping.has(c));
+    if (removed.length) f.items = f.items.filter((c) => !dropping.has(c));
+    const added: string[] = [];
+    for (const c of add || []) {
+      if (c == null || f.items.includes(c)) continue;
+      f.items.push(c);
+      added.push(c);
+    }
+    if (!added.length && !removed.length) return none;
+    persist();
+    return { added, removed };
+  }
   // Toggle one key or a whole group of keys in folder id; anchorKey decides the
-  // resulting state (a tile's representative id). Returns 'added' | 'removed' | null.
-  function toggleIn(id: string | null | undefined, keys: string | string[] | null | undefined, anchorKey?: string | null) {
+  // resulting direction (a tile's representative id). Returns the direction plus the
+  // keys that actually moved — a bulk add over a selection that already sits in the
+  // folder moves fewer keys than it was handed, and undo must not remove the rest.
+  function toggleIn(id: string | null | undefined, keys: string | string[] | null | undefined, anchorKey?: string | null): { op: 'added' | 'removed'; keys: string[] } | null {
     const f = byId(id);
     if (!f) return null;
-    if (f.kind === 'dynamic') return null; // a saved search has no membership — its contents are the query's answer
+    if (f.kind === 'dynamic') return null;
     const ids = (Array.isArray(keys) ? keys : [keys]).filter((k): k is string => k != null);
     if (!ids.length) return null;
     const anchor = anchorKey != null ? anchorKey : ids[0];
     const wasIn = f.items.includes(anchor);
-    if (wasIn) f.items = f.items.filter((c) => !ids.includes(c));
-    else
-      ids.forEach((c) => {
-        if (!f.items.includes(c)) f.items.push(c);
-      });
-    persist();
-    return wasIn ? 'removed' : 'added';
+    const moved = wasIn ? applyItems(id, null, ids) : applyItems(id, ids, null);
+    const changed = wasIn ? moved.removed : moved.added;
+    if (!changed.length) return null;
+    return { op: wasIn ? 'removed' : 'added', keys: changed };
   }
   // Drop keys no longer present (deleted items). Returns true if anything changed.
   function reconcile(existing: Set<string>) {
@@ -279,6 +297,7 @@ function createFolderStore({ idPrefix, persist, isLibrary }: { idPrefix: string;
     remove,
     rename,
     toggleIn,
+    applyItems,
     reconcile,
     move,
     ...(isLibrary ? { update } : {}),
@@ -423,21 +442,48 @@ export function reconcile(existing: Set<string>) {
   }
 }
 
-// Toggle membership of captureIds[] in folder fid. anchorCid decides the
-// current state (the tile's representative id). Returns 'added' | 'removed' | null.
+// Membership changes go on the in-session undo stack (#235). The stack itself is
+// built by orchestrator.ts (undo-builder.ts), long after this leaf module loads, so
+// the recorder is injected rather than imported. It hands back the way to undo the
+// change it just recorded — that is what the toast's 「元に戻す」 runs — or null when
+// there is nothing to offer.
+export type FolderUndoRecorder = (folderId: string, added: string[], removed: string[]) => (() => void) | null;
+let undoRecorder: FolderUndoRecorder | null = null;
+let undoLabel = '';
+export function setUndoRecorder(fn: FolderUndoRecorder | null, label?: string) {
+  undoRecorder = fn;
+  undoLabel = label || '';
+}
+
+// Apply an exact add/remove set to folder fid without toggling — how undo/redo
+// re-applies a membership diff. Notifying is left to the caller so one undo entry
+// touching several folders still refreshes the views once (notifyChanged below).
+export function applyFolderItems(fid: string | null | undefined, add: readonly string[] | null | undefined, remove: readonly string[] | null | undefined) {
+  return store.applyItems(fid, add, remove);
+}
+
+/** Announce a change made through applyFolderItems — the subscriber channel every view's chips read. */
+export function notifyChanged(kind?: string) {
+  notify(kind);
+}
+
+// Toggle membership of captureIds[] in folder fid. anchorCid decides the direction
+// (the tile's representative id). Returns { op, keys } — the keys that actually
+// moved — or null when nothing did.
 export function toggleIn(fid: string | null | undefined, captureIds: string[] | null | undefined, anchorCid?: string | null) {
   const f = byId(fid);
   if (!f) return null; // capture the name before toggling for the toast
   const res = store.toggleIn(fid, captureIds, anchorCid);
   if (!res) return null;
-  toast(res === 'removed' ? t('foldRemoved', [f.name]) : t('foldAdded', [f.name]));
+  const undoFn = undoRecorder ? undoRecorder(f.id, res.op === 'added' ? res.keys : [], res.op === 'removed' ? res.keys : []) : null;
+  toast(res.op === 'removed' ? t('foldRemoved', [f.name]) : t('foldAdded', [f.name]), undoFn && undoLabel ? { label: undoLabel, onClick: undoFn } : null);
   notify('membership');
   return res;
 }
 
 // --- toast (shared — sonner via ui.ts notify()) ---
-export function toast(msg: unknown) {
-  return uiNotify(msg);
+export function toast(msg: unknown, action?: NotifyAction | null) {
+  return uiNotify(msg, action);
 }
 
 // --- management modal (state only — rendering is FolderManagerModal.tsx) ---

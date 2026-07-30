@@ -161,16 +161,9 @@ interface HologramGridMetrics {
 // ---- services/format.ts — pure count/date display formatters. A real ES
 // module (named exports) now — no ambient Window-shaped interface needed. ----
 
-// ---- services/undo.ts — linear tag-edit undo/redo stack. A real ES module
-// (named exports) now — no ambient Window-shaped interface needed, but
-// HologramUndoRecord stays (a data shape shared with viewer.ts). ----
-interface HologramUndoRecord {
-  captureId?: string;
-  image?: string;
-  key?: string;
-  prevTags: string[];
-  newTags: string[];
-}
+// ---- services/undo.ts — the in-session undo/redo stack (#235). A real ES module:
+// UndoChange/UndoEntry are exported from undo.ts and imported by name, so nothing
+// about it is ambient. ----
 
 // ---- services/search-editing.ts — search box ↔ query-tree text-leaf state
 // machine + suggestion-pick handling. A real ES module (named
@@ -219,8 +212,10 @@ interface HologramFolderStore {
   /** Tree drop in one write: into a folder (null = root), or beside one — adopting that row's parent. */
   place(draggedId: string | null | undefined, targetId: string | null, mode: 'into' | 'before' | 'after'): boolean;
   rename(id: string | null | undefined, name: string | null | undefined): boolean;
-  /** Toggle one key or a whole group in the folder; anchorKey decides the resulting state. Returns the action or null. */
-  toggleIn(id: string | null | undefined, keys: string | string[] | null | undefined, anchorKey?: string | null): 'added' | 'removed' | null;
+  /** Toggle one key or a whole group in the folder; anchorKey decides the direction. Returns the direction plus the keys that actually moved, or null when none did (#235). */
+  toggleIn(id: string | null | undefined, keys: string | string[] | null | undefined, anchorKey?: string | null): { op: 'added' | 'removed'; keys: string[] } | null;
+  /** Add/remove an exact key set (no toggling) and report what actually moved — how an undo re-applies a membership diff (#235). */
+  applyItems(id: string | null | undefined, add: readonly string[] | null | undefined, remove: readonly string[] | null | undefined): { added: string[]; removed: string[] };
   /** Drops keys no longer present (deleted items); true when anything changed. */
   reconcile(existing: Set<string>): boolean;
   /** Drag-reorder: place draggedId before/after targetId; true when the order changed. */

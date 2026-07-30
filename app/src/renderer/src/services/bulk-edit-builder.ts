@@ -10,13 +10,16 @@
 // after every add/remove.
 import { open as bulkTagOpen } from './bulk-tag.ts';
 import { updateTags as postsUpdateTags } from './posts.ts';
+import type { UndoChange } from './undo.ts';
+import type { NotifyAction } from './ui.ts';
 
 export interface BulkEditBuilderDeps {
   t(key: string, subs?: ReadonlyArray<string | number | null | undefined>): string;
-  showToast(msg: unknown): void;
+  showToast(msg: unknown, action?: NotifyAction | null): void;
   showKindMenu(tag: string, x: number, y: number, onChange: () => void): void;
   inspectorTagPickerData(tags: string[], recordsForSource: any[], kind: string): any;
-  pushUndo(kind: string, records: HologramUndoRecord[]): void;
+  pushUndo(changes: readonly UndoChange[]): (() => void) | null;
+  undoAction(undoFn: (() => void) | null): NotifyAction | null;
   markPostsMutated(): void;
   renderPosts(keepLimit?: boolean): void;
   keepCurrentVisible(): void;
@@ -30,26 +33,29 @@ export function makeBulkEdit(deps: BulkEditBuilderDeps) {
   // tags and gains these.
   async function applyTagsToSelection(records: HologramPost[], applyTags: string[]) {
     deps.keepCurrentVisible(); // a tag edit can move a card out of an active filter
-    const undoRecords = records.map((r) => ({
-      captureId: r.captureId,
-      image: r.image || r.video,
-      prevTags: (r.tags || []).slice(),
-      newTags: [...new Set([...(r.tags || []), ...applyTags])],
-    }));
-    for (const u of undoRecords) {
+    // Only the tags a record did NOT already carry are this record's share of the
+    // edit (#235). A selection that partly held a tag already must not lose it when
+    // the operation is undone — so the ones that were already there are not recorded.
+    const changes: UndoChange[] = [];
+    for (const r of records) {
+      const prev = r.tags || [];
+      const added = [...new Set(applyTags)].filter((tag) => !prev.includes(tag));
+      if (!added.length) continue;
+      const next = [...prev, ...added];
       try {
-        await postsUpdateTags(u.image, u.newTags);
+        await postsUpdateTags(r.image || r.video, next);
       } catch {
         /* keep going */
       }
-      const rec = deps.getPostById(u.captureId); // O(1) lookup; allPosts shares the same record refs
-      if (rec) rec.tags = u.newTags.slice();
+      const rec = deps.getPostById(r.captureId); // O(1) lookup; allPosts shares the same record refs
+      if (rec) rec.tags = next.slice();
+      changes.push({ kind: 'post-tags', target: r.captureId, image: r.image || r.video, added, removed: [] });
     }
-    deps.pushUndo('tags', undoRecords);
+    const undoFn = deps.pushUndo(changes);
     deps.markPostsMutated();
     deps.renderPosts(true); // keepLimit: selection stays put, no anim replay
     const n = records.length;
-    deps.showToast(n > 1 ? deps.t('tagsSavedN', [n]) : deps.t('tagsSaved'));
+    deps.showToast(n > 1 ? deps.t('tagsSavedN', [n]) : deps.t('tagsSaved'), deps.undoAction(undoFn));
   }
 
   function openBulkTagDialog() {
