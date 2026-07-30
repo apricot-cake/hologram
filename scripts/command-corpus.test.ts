@@ -13,7 +13,9 @@ import * as R from '../app/src/renderer/src/services/command-registry';
 
 // 検索ボックスの面（SearchBox.tsx と同じ指定）とパレットの面（CommandPalette.tsx と同じ）
 const SEARCHBOX: R.QueryOptions = { sections: ['tag', 'user'], limit: { tag: 6, user: 4 } };
-const PALETTE: R.QueryOptions = { limit: { tag: 8, user: 8, folder: 8 } };
+// パレットは上限を渡さない＝当たった分を全部出してスクロールさせる（アプリ内の候補一覧の
+// 作法に揃えた。「+ フィルタ」バーの一覧が上限なし・ファセット行が100件）。
+const PALETTE: R.QueryOptions | undefined = undefined;
 
 const BASE_POSTS = () => [
   { url: 'https://x.com/a/status/2', platform: 'x', userId: 'u1', screenName: 'alice', displayName: 'アリス', tags: ['風景'] },
@@ -124,8 +126,9 @@ describe('面ごとの顔ぶれ（同じ生成・別の見せ方）', () => {
     expect(tags.map((e) => e.weight)).toEqual([...tags.map((e) => e.weight as number)].sort((a, b) => b - a));
   });
 
-  test('パレットの面: 同じタグ列がより多く出る＝生成は1つで上限だけが違う', () => {
-    expect(titlesOf(R.queryEntries('共通', PALETTE), 'tag')).toHaveLength(8);
+  test('パレットの面: 当たった分を全部出す＝生成は1つで上限だけが違う', () => {
+    // 母集合は 共通0..共通9 の10件。パレットは上限を渡さないので全件出る。
+    expect(titlesOf(R.queryEntries('共通', PALETTE), 'tag')).toHaveLength(10);
     // 先頭の顔ぶれは検索ボックスの面と一致する（並びがズレない）
     expect(titlesOf(R.queryEntries('共通', PALETTE), 'tag').slice(0, 6)).toEqual(titlesOf(R.queryEntries('共通', SEARCHBOX), 'tag'));
   });

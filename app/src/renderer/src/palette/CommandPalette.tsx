@@ -16,7 +16,7 @@ import { useMemo, useState, useSyncExternalStore } from 'react';
 import type { ComponentType } from 'react';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { t } from '../_shared/i18n.ts';
-import { type CommandEntry, type CommandGroup, type CommandSection, close, isOpen, openId, type QueryOptions, queryEntries, runEntry, subscribe } from '../services/command-registry.ts';
+import { type CommandEntry, type CommandGroup, type CommandSection, close, isOpen, openId, queryEntries, runEntry, subscribe } from '../services/command-registry.ts';
 
 const SECTION_ICON: Record<CommandSection, ComponentType<{ className?: string }>> = {
   command: Terminal,
@@ -34,16 +34,17 @@ const SECTION_LABEL: Record<CommandSection, string> = {
   folder: 'paletteSecFolder',
 };
 
-// 面ごとの件数はレジストリではなく面が決める（同じ供給源から何件見せるかは器の判断）。
-// 操作系とタブは母数が小さいので出し切り、ジャンプ候補だけ8件で切る。
-const LIMIT: QueryOptions = { limit: { tag: 8, user: 8, folder: 8 } };
-
 function PaletteBody() {
   const [query, setQuery] = useState('');
   // 候補は値から同期的に導出する（SearchBox と同じ理由＝setState を挟むと一覧と入力が
   // 一瞬ずれる）。provider はその場で母集合を読むので、パレットを開いている間に
   // ライブラリが変わっても次のキーストロークで追いつく。
-  const groups = useMemo<CommandGroup[]>(() => queryEntries(query, LIMIT), [query]);
+  //
+  // 件数の上限は掛けない＝アプリ内の候補一覧の作法に揃える（「+ フィルタ」バーの一覧は
+  // 上限なしでスクロール、サイドバーのファセット行は100件）。当たった分は全部出して、
+  // 足りなければ打ち足して絞る／スクロールする。検索ボックスの面だけは従来どおり
+  // タグ6件・投稿者4件で、そちらは入力欄直下のドロップダウンで縦に伸ばせないため。
+  const groups = useMemo<CommandGroup[]>(() => queryEntries(query), [query]);
 
   return (
     // gap-0 / p-0 / 上寄せ: パレットは「入力欄＋一覧」の2段だけで、ダイアログの余白と
