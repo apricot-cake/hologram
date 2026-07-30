@@ -42,7 +42,6 @@ export interface PostGridBuilderDeps {
   buildUsers(): HologramUserAgg[];
   snapshotState(): unknown;
   syncTitleAndPersist(): void;
-  updateSidebarState(): void;
   applyTileLayout(): void;
   getBrowseMode(): string;
   renderPosters(keepLimit?: boolean): void;
@@ -297,7 +296,6 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
     if (!inPlace && stickyRecs.size && lastRenderedState !== null && stateSig !== lastRenderedState) {
       stickyRecs.clear();
     }
-    deps.updateSidebarState();
     const grid = byId('postGrid');
     const empty = byId('emptyState');
     // Group the filtered records (auto by post URL + manual groups); each group
