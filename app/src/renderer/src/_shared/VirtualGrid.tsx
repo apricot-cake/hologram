@@ -17,6 +17,8 @@ import type { ComponentType, ReactNode } from 'react';
 import { registerGridNav } from '../services/grid-nav.ts';
 import { autoScrollStep, clearsSelection, exceedsThreshold, hitIndices, rectFromPoints } from '../services/marquee.ts';
 import type { MarqueeCell } from '../services/marquee.ts';
+import { anchorScrollTop, anchorViewportOffset, pickAnchorIndex, registerZoomAnchorSource } from '../services/zoom-anchor.ts';
+import type { ZoomAnchor, ZoomAnchorCell } from '../services/zoom-anchor.ts';
 
 // The cell component each grid module supplies (masonic's render component).
 export interface GridCellProps {
@@ -32,7 +34,7 @@ const ModelCtx = createContext<HologramGridModel | null>(null);
 // Cells mount only inside the provider, so the null default never escapes.
 export const useGridModel = () => useContext(ModelCtx) as HologramGridModel;
 
-export function VirtualGridHost({ model, cell, nav, marquee, onBackgroundClick }: { model: HologramGridModel; cell: ComponentType<GridCellProps>; nav?: boolean; marquee?: HologramMarqueeSink; onBackgroundClick?: () => void }) {
+export function VirtualGridHost({ model, cell, nav, anchor, marquee, onBackgroundClick }: { model: HologramGridModel; cell: ComponentType<GridCellProps>; nav?: boolean; anchor?: boolean; marquee?: HologramMarqueeSink; onBackgroundClick?: () => void }) {
   const scroller = document.getElementById('mode-post') as HTMLElement; // the app's scroll container (never the window); static HTML, always present
   const containerRef = useRef<HTMLElement | null>(null);
   // offset of the masonry container's top inside the scroller's CONTENT (the
@@ -61,9 +63,22 @@ export function VirtualGridHost({ model, cell, nav, marquee, onBackgroundClick }
     return () => ro.disconnect();
   }, [measure, scroller]);
 
+  // A zoom's hold on the view (#282), while it is still being honored. Refs, not
+  // state: the alignment below runs in a layout effect and must not re-render to
+  // remember where it got to.
+  const heldAnchorRef = useRef<ZoomAnchor | null>(null); // what we are still aligning to
+  const seenAnchorRef = useRef<ZoomAnchor | null | undefined>(undefined); // last anchor read off a model (undefined = not mounted yet)
+  const anchorScrollRef = useRef(0); // the scrollTop WE last wrote for it
+  const anchorItemsKeyRef = useRef(model.itemsKey);
+
   useEffect(() => {
     let t: ReturnType<typeof setTimeout> | undefined;
     const onScroll = () => {
+      // Someone else moved the view, so the zoom's hold is over. Without this a
+      // hold would outlive its gesture and yank the user back on the next
+      // unrelated re-render. Our own writes land on anchorScrollRef first, so
+      // they never look like someone else's.
+      if (heldAnchorRef.current && Math.abs(scroller.scrollTop - anchorScrollRef.current) > 1) heldAnchorRef.current = null;
       setScrollY(scroller.scrollTop);
       setIsScrolling(true); // masonic: pointer-events off + will-change while moving
       clearTimeout(t);
@@ -134,6 +149,83 @@ export function VirtualGridHost({ model, cell, nav, marquee, onBackgroundClick }
       },
     });
   }, [nav, positioner, scroller, heightEstimate, model.rowGutter]);
+
+  // --- Zoom anchor (#282) --------------------------------------------------
+  // Sibling of the itemsKey re-sync above: both are "the layout underneath just
+  // changed, put the scroll position back where it belongs", and both can only
+  // be answered here because this is where the layout is.
+  //
+  // Ctrl+wheel zoom (#141) re-lays out the whole masonry. The zoom side names the
+  // item it wants held still (services/zoom-anchor.ts's registry, resolved from
+  // the layout model below — no card is looked up in the DOM), and this is the
+  // half that knows where that item ENDED UP.
+
+  // The zoom asks through the registry; answering means reading our positioner.
+  useEffect(() => {
+    if (!anchor) return;
+    return registerZoomAnchorSource({
+      resolve: (clientX: number, clientY: number) => {
+        const el = containerRef.current;
+        if (!el || !el.offsetWidth) return null; // hidden (other browse mode)
+        const cr = el.getBoundingClientRect();
+        // Candidates = the cells of the VISIBLE window, in container space. The
+        // pointer is inside that window by construction (a wheel event over the
+        // scroller), so the nearest of these is always something on screen.
+        const top = Math.max(0, scroller.scrollTop - offsetRef.current);
+        const cells: ZoomAnchorCell[] = [];
+        positioner.range(top, top + scroller.clientHeight, (index: number) => {
+          const pos = positioner.get(index);
+          if (pos) cells.push({ index, left: pos.left, top: pos.top, width: positioner.columnWidth, height: pos.height });
+        });
+        const index = pickAnchorIndex(cells, clientX - cr.left, clientY - cr.top);
+        if (index == null) return null;
+        const pos = positioner.get(index);
+        if (!pos) return null;
+        return { index, viewportOffset: anchorViewportOffset(pos.top, offsetRef.current, scroller.scrollTop) };
+      },
+    });
+  }, [anchor, positioner, scroller]);
+
+  // Honor a held anchor. No dependency array on purpose: the re-layout a zoom
+  // triggers lands over SEVERAL commits (the positioner is rebuilt first, then
+  // masonic's resize observer feeds it the real cell heights and forces another
+  // render), and the anchor has to be re-applied on each of them — that two-stage
+  // approximate→exact settle is what the old rAF/timeout guesswork outside this
+  // layer was standing in for. The work is a couple of number reads when no
+  // anchor is held, which is every ordinary commit.
+  useLayoutEffect(() => {
+    const incoming = (model.zoomAnchor as ZoomAnchor | null | undefined) ?? null;
+    // Identity, not value: the zoom hands over a fresh object every time it wants
+    // the hold (re-)armed, and the model carries the same one through the repeat
+    // gets in between. On mount we only take a baseline — a stale anchor left over
+    // from an earlier burst must not scroll a freshly mounted grid.
+    const fresh = seenAnchorRef.current !== undefined && incoming !== null && incoming !== seenAnchorRef.current;
+    if (fresh) heldAnchorRef.current = incoming;
+    seenAnchorRef.current = incoming;
+    // A different item SET is a different question — whatever the zoom was
+    // holding is gone (filter / sort / search), unless this very commit is the
+    // zoom's own re-render and brought a new anchor with it.
+    if (model.itemsKey !== anchorItemsKeyRef.current) {
+      anchorItemsKeyRef.current = model.itemsKey;
+      if (!fresh) heldAnchorRef.current = null;
+    }
+    const held = heldAnchorRef.current;
+    if (!held) return;
+    const pos = positioner.get(held.index);
+    // Not laid out yet — a fresh positioner has an empty cache, and masonic only
+    // measures what it has rendered. Aim at its own estimate for everything above
+    // the item (the same estimate the container height is built from, so the two
+    // agree), and let the exact position take over on the commit that measures it.
+    const top = pos ? pos.top : positioner.estimateHeight(held.index, heightEstimate);
+    const max = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
+    const target = anchorScrollTop(top, offsetRef.current, held.viewportOffset, max);
+    if (Math.abs(target - scroller.scrollTop) > 0.5) scroller.scrollTop = target;
+    // Read back rather than trusting the write: the browser clamps to the real
+    // content, and the scroll listener compares against this to tell our own
+    // move from the user's.
+    anchorScrollRef.current = scroller.scrollTop;
+    setScrollY(scroller.scrollTop);
+  });
 
   // The band's hit test reads the LIVE positioner, but re-running its effect
   // mid-drag would tear the gesture down — so it reaches it through a ref instead

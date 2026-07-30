@@ -10,11 +10,13 @@
 // in through the hologramStore 'view'/'posterView' keys.
 import { sizeFor, sliderTrack, trackCols, thumbW } from './geometry.ts';
 import { get as storeGet, set as storeSet } from './store.ts';
+import { resolveZoomAnchor } from './zoom-anchor.ts';
+import type { ZoomAnchor } from './zoom-anchor.ts';
 import type { AppPrefs } from '../../../main/ipc-payloads.ts';
 
 export interface GridDensityDeps {
   hologramIpc: { setPref(key: string, value: unknown): void };
-  hologramPostGridSource: { setLiveColumnWidth(px: number | null): void };
+  hologramPostGridSource: { setLiveColumnWidth(px: number | null): void; setZoomAnchor(anchor: ZoomAnchor | null): void };
   renderPosts(inPlace?: boolean): void;
   renderPosters(): void;
   getBrowseMode(): string;
@@ -214,65 +216,19 @@ export function makeGridDensity(deps: GridDensityDeps) {
   // zoom, and without it a pull back to overview sizes throws the user somewhere
   // else in the library. Registration is non-passive (GlobalShortcuts, App.tsx): the
   // preventDefault below is what stops Chromium's own page zoom.
-  interface ZoomAnchor {
-    key: string | null;
-    top: number;
-    scrollTop: number;
-    scrollHeight: number;
-  }
+  //
+  // Holding that position is NOT done here (#282). This module knows the size axis;
+  // it does not know where the new size puts any given post, and everything it used
+  // to do to find out — hunt the card in the DOM, wait a frame, push scrollTop back
+  // if it had drifted — was guesswork about a layout computed somewhere else. So the
+  // zoom only names the post to hold (services/zoom-anchor.ts asks the grid island,
+  // which answers from its own layout model) and hands that anchor over with the new
+  // size; the island aligns, in the same layer and the same commit as the re-layout.
   let _zoomCommitT: any = null;
-
-  // What the view should still be looking at after the size changes. Two things,
-  // because one is not enough at library scale:
-  //   - where in the LIBRARY we are (scroll position as a fraction of the content).
-  //     A pixel scrollTop means nothing across a size change: shrinking the tiles
-  //     shrinks the content, so the same pixel lands hundreds of posts further down
-  //     (measured on 9k posts: 97px→76px moved the view ~900 items away).
-  //   - which CARD the cursor is on, to land the zoom exactly. Over a gutter (or past
-  //     the last row) the row in the middle of the viewport stands in; if there is no
-  //     card at all, the fraction alone still keeps the place.
-  function zoomAnchorAt(scroller: HTMLElement, x: number, y: number): ZoomAnchor {
-    const pick = (px: number, py: number) => (document.elementFromPoint(px, py) as HTMLElement | null)?.closest('.post-card') as HTMLElement | null;
-    const r = scroller.getBoundingClientRect();
-    const card = pick(x, y) || pick(r.left + r.width / 2, r.top + r.height / 2);
-    return {
-      key: card?.dataset.key || null,
-      top: card ? card.getBoundingClientRect().top : 0,
-      scrollTop: scroller.scrollTop,
-      scrollHeight: scroller.scrollHeight,
-    };
-  }
-
-  // Restore the anchor, coarse first then exact. Not before the next frame: the size
-  // change re-flows through the store → grid component → masonic positioner, so the new
-  // geometry only exists after that paints.
-  //
-  // The fraction MUST come first. The grid is virtualized, so a card that is now far
-  // outside the window is not in the DOM at all — before the coarse step the exact one
-  // could not even find its card (it silently did nothing, and the view kept the old
-  // pixel offset = the ~900-item jump above). Landing in the right neighbourhood first
-  // puts the card back in the window, and only then can the cursor be honored.
-  //
-  // Two passes, because one is not enough at settle time: the commit re-renders the grid
-  // (renderPosts) and that lands a frame later still, shifting the card again — measured
-  // at 132px on a 9k-post library, i.e. the live correction held and the settle undid it.
-  // The target is always the ORIGINAL top, so a second pass is idempotent when the first
-  // already landed it.
-  function restoreZoomAnchor(scroller: HTMLElement, a: ZoomAnchor | null, passes = 2) {
-    if (!a) return;
-    requestAnimationFrame(() => {
-      const h = scroller.scrollHeight;
-      if (a.scrollHeight && h && h !== a.scrollHeight) scroller.scrollTop = (a.scrollTop * h) / a.scrollHeight;
-      if (a.key) {
-        const el = document.querySelector(`.post-card[data-key="${CSS.escape(a.key)}"]`) as HTMLElement | null;
-        if (el) {
-          const drift = el.getBoundingClientRect().top - a.top;
-          if (drift) scroller.scrollTop += drift;
-        }
-      }
-      if (passes > 1) restoreZoomAnchor(scroller, { ...a, scrollTop: scroller.scrollTop, scrollHeight: h }, passes - 1);
-    });
-  }
+  // Resolved ONCE per burst, at its first notch. Re-reading it per notch would let
+  // each re-layout's rounding compound; keeping the original means every notch of a
+  // long pull targets the same post at the same height on screen.
+  let _zoomAnchor: ZoomAnchor | null = null;
 
   // Applying a size is expensive at overview scale — masonic rebuilds its positioner
   // over the whole window, and the window is hundreds of cells once the tiles are
@@ -288,16 +244,19 @@ export function makeGridDensity(deps: GridDensityDeps) {
   // and re-requests every thumbnail. That is the visible "refresh" when you keep
   // scrolling past the limit, so the settle is skipped unless something changed.
   let _zoomChanged = false;
-  let _zoomCursorX = 0;
-  let _zoomCursorY = 0;
+
+  // A FRESH object every time, even when the values repeat: the grid island re-arms
+  // on the anchor's identity, and each apply below is a separate re-layout that has
+  // to be held through.
+  function pushZoomAnchor(a: ZoomAnchor | null) {
+    deps.hologramPostGridSource.setZoomAnchor(a && { ...a });
+  }
 
   function applyPendingZoom() {
     _zoomRaf = null;
     const notches = _zoomNotches;
     _zoomNotches = 0;
     if (!notches) return;
-    const scroller = document.getElementById('mode-post');
-    if (!scroller) return;
     const posters = deps.getBrowseMode() === 'posters';
     const tr = posters ? computePosterSizeTrack() : computeSizeTrack();
     if (!tr || tr.single) return;
@@ -307,9 +266,10 @@ export function makeGridDensity(deps: GridDensityDeps) {
       setPosterSizeFromSlider(next, tr.min, tr.max);
       return;
     }
-    const anchor = zoomAnchorAt(scroller, _zoomCursorX, _zoomCursorY);
+    // Anchor first: the size change is what triggers the re-layout, and the island
+    // reads the anchor off the very model that re-layout renders from.
+    pushZoomAnchor(_zoomAnchor);
     setSizeFromSlider(next, tr.min, tr.max, false);
-    restoreZoomAnchor(scroller, anchor);
     _zoomChanged = true;
   }
 
@@ -321,8 +281,9 @@ export function makeGridDensity(deps: GridDensityDeps) {
     // Wheel up = zoom in = larger tiles = fewer columns; the track is already
     // inverted that way, so a positive step is simply "bigger".
     _zoomNotches += e.deltaY < 0 ? 1 : -1;
-    _zoomCursorX = e.clientX;
-    _zoomCursorY = e.clientY;
+    // At event time whatever is under the cursor is on screen, so the grid island can
+    // always answer — no waiting, no re-reading it after the layout has moved.
+    if (!_zoomAnchor) _zoomAnchor = resolveZoomAnchor(e.clientX, e.clientY);
     if (_zoomRaf == null) _zoomRaf = requestAnimationFrame(applyPendingZoom);
     // The frames above stay live (CSS var + column width only); the size settles once,
     // after the wheel stops — committing per notch would re-request every thumbnail on
@@ -334,18 +295,21 @@ export function makeGridDensity(deps: GridDensityDeps) {
         cancelAnimationFrame(_zoomRaf);
         applyPendingZoom();
       }
-      if (deps.getBrowseMode() === 'posters') return; // the poster path commits on every tick
+      const posters = deps.getBrowseMode() === 'posters';
+      // Whatever happens below, the burst ends here: the next one resolves its own
+      // anchor from wherever the cursor is then.
+      const ending = _zoomAnchor;
+      _zoomAnchor = null;
+      if (posters) return; // the poster path commits on every tick
       if (!_zoomChanged) return; // stuck at an end of the track — nothing to persist or re-render
       _zoomChanged = false;
       const settled = computeSizeTrack();
       if (!settled) return;
-      // The commit re-renders the grid, which moves the anchor card again — so it needs
-      // the same treatment the live frames got, or the zoom lands somewhere else 150ms
-      // after the user stopped turning.
-      const scroller = document.getElementById('mode-post');
-      const anchor = scroller && zoomAnchorAt(scroller, _zoomCursorX, _zoomCursorY);
+      // The commit re-renders the grid (renderPosts), and a fresh item set resets the
+      // positioner — a second re-layout the hold has to survive, so the island is
+      // handed the same anchor again rather than being left to guess.
+      pushZoomAnchor(ending);
       setSizeFromSlider(settled.value, settled.min, settled.max, true);
-      if (scroller) restoreZoomAnchor(scroller, anchor || null);
     }, 150);
   }
 

@@ -9,6 +9,7 @@
 // components; hologramStore itself is a real ES module too (store.ts).
 
 import { get as storeGet, subscribe as storeSubscribe } from './store.ts';
+import type { ZoomAnchor } from './zoom-anchor.ts';
 //
 // Both grids (post and poster) were converted from a PUSHED
 // bridge (viewer calls render()/patch() with a full model) to a PULLED source
@@ -37,6 +38,7 @@ type PosterGridConfig = { modelOf(item: any, i: number): any; keyOf(item: any, i
 function makePostGridSource() {
   let config: PostGridConfig | null = null;
   let liveColumnWidth: number | null = null; // mid-drag override; deliberately not in hologramStore (see the type's doc comment)
+  let zoomAnchor: ZoomAnchor | null = null; // the position Ctrl+wheel zoom wants held (#282) — same side channel as the live column width
   let lastItems: any;
   let itemsKeySeq = 0; // bumps only when the items reference actually changes — mirrors the old push-time itemsKey bump
   let paintSeq = 0;
@@ -79,6 +81,7 @@ function makePostGridSource() {
       square: view === 'tile',
       rowGutter: view === 'list' ? 14 : view === 'tile' ? 8 : 16,
       itemHeightEstimate: view === 'list' ? Math.round(listThumb * 1.25) : view === 'tile' ? tileSize : Math.round(cardSize * 1.2),
+      zoomAnchor,
       onAspect: config.onAspect,
       paint: ++paintSeq,
     } as HologramGridModel;
@@ -90,6 +93,15 @@ function makePostGridSource() {
     setLiveColumnWidth(px: number | null) {
       liveColumnWidth = px;
       notify();
+    },
+    // Where the view should still be looking after the size change that is about
+    // to follow (#282). Deliberately does NOT notify: the size change is what
+    // makes the grid re-lay out, and the anchor has to be on the model it renders
+    // from — announcing it on its own would only cost a render that changes
+    // nothing. The component re-arms on the object's IDENTITY, so a repeat get()
+    // between size changes hands it the same anchor and is correctly a no-op.
+    setZoomAnchor(a: ZoomAnchor | null) {
+      zoomAnchor = a;
     },
     get: computeModel,
     subscribe(cb: () => void) {
