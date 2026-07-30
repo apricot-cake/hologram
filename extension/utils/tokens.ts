@@ -58,9 +58,9 @@ export const token = {
   ring: 'var(--hologram-ring)',
   hover: 'var(--hologram-hover)',
   // compact controls that sit on a picture rather than on the card. The rim is
-  // the card's; the FILL splits by what the face says — status faces take the
-  // translucent disc below, action faces take the opaque `surface` (the split
-  // and the bound on the alpha are argued in tokens.source.css).
+  // the card's; the FILL is the translucent disc below for every face except
+  // retry, which takes the opaque `danger` because its fill is its state (#526;
+  // the reasoning and the bound on the alpha are argued in tokens.source.css).
   controlSurface: 'var(--hologram-control-surface)',
   controlSurfaceHover: 'var(--hologram-control-surface-hover)',
   controlHoverGlow: 'var(--hologram-control-hover-glow)',
