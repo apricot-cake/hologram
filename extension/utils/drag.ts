@@ -26,7 +26,7 @@ export async function startDrag(): Promise<void> {
   let zone: StatusSurface | null = null;
   let savingViaDrop = false; // true between a drop-in-zone and its result, so dragend doesn't hide early
 
-  const { getMessage: t, partialSaveText, saveFailureText } = await createI18n();
+  const { getMessage: t, partialSaveText, saveFailureText, skewSaveText } = await createI18n();
 
   // The drop zone is the `zone` face of the surface every on-page save path
   // draws with (#44 — status-surface.ts). What used to live here was a private
@@ -187,15 +187,19 @@ export async function startDrag(): Promise<void> {
     // The old capture is on its way to the trash, so this is not a merge —
     // say so INSTEAD of "grouped" (#34).
     const replaced = ok && !!replaces;
+    // Half-updated installation (#205) — see capture.ts's note on why this wins
+    // over the other success wordings and shows amber rather than green.
+    const skewText = res?.ok ? skewSaveText(res.hostSkew) : null;
     let text: string;
     if (res?.ok) {
       partial = res.metaOk === false; // saved, but no post metadata
       grouped = !partial && !replaced && res.grouped > 0; // same post saved earlier → merges into one card in the app
-      text = partial ? partialSaveText(res.metaReason) : replaced ? t('dupReplaced') : grouped ? t('bannerSavedGrouped', [res.grouped + 1]) : t('bannerSaved');
+      text = skewText ?? (partial ? partialSaveText(res.metaReason) : replaced ? t('dupReplaced') : grouped ? t('bannerSavedGrouped', [res.grouped + 1]) : t('bannerSaved'));
     } else {
       text = timedOut ? saveFailureText('timeout') : saveFailureText(res?.errorKind, res?.metaReason);
     }
-    z.setState(partial ? 'partial' : ok ? 'success' : 'error', text);
+    const attention = partial || !!skewText;
+    z.setState(attention ? 'partial' : ok ? 'success' : 'error', text);
     // Small badge pop so the state flip reads even in peripheral vision
     // (app hologramBadgePop: .3s on the shared ease-out curve).
     if (ok) z.pop();
@@ -205,7 +209,7 @@ export async function startDrag(): Promise<void> {
         savingViaDrop = false;
       },
       // grouped/replaced: hold a beat longer — both explain where the image "went"
-      partial ? 2600 : grouped || replaced ? 2200 : 1400,
+      attention ? 2600 : grouped || replaced ? 2200 : 1400,
     );
   }
 }

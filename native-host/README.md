@@ -42,6 +42,15 @@ makes it the one module here that enters a browser bundle: it must stay free of
 node builtins, and its imports from `post-record.mts` / `raw-payload.mts` are
 type-only for exactly that reason.
 
+Every reply this host sends is stamped with that protocol version, and the
+extension compares it with the one its own bundle carries (#205). The two halves
+update through separate channels — the extension from the Chrome Web Store, this
+host from the desktop app's updater — so "one of them is behind" is a normal
+state after release, and a host left behind by an install that did not take is
+what #511 turned out to be. A mismatch only ever produces a message telling the
+user which side to update: nothing here branches on the number, and a save is
+never refused over it.
+
 `bridge.cts` and the modules it requires are **bundled** into
 `native-host/dist/bridge.js` (one file, node builtins external) by
 `app/build-native-host-bridge.mjs`, and it is that bundle — not the sources — that

@@ -28,10 +28,13 @@
 // pulls in node:zlib through raw-payload.mts, and a value import of either would
 // drag that into the service worker.
 //
-// #205 (the protocol-version handshake) is NOT implemented here: this module
-// only owns the number. Comparing it and telling the user which side to update
-// is that issue's work, and no version-conditional branch belongs in this file
-// (its own design says so).
+// #205 (the protocol-version handshake) owns the number, the wire field every
+// reply is stamped with, and the rule for reading a skew off it — all three are
+// things the two sides have to agree on, so they are the contract's. What is NOT
+// here, and must not be: any branch that behaves differently per version (#205's
+// own design forbids it — a handshake that starts adapting stops being a
+// handshake), and the wording/surfaces that tell the user which side to update,
+// which belong to the extension (utils/i18n.ts, utils/diag.ts).
 
 import type { PostRecordShape } from './post-record.mts';
 import type { RawPayloadInput } from './raw-payload.mts';
@@ -39,6 +42,12 @@ import type { RawPayloadInput } from './raw-payload.mts';
 // Bumped only when the message contract itself changes — never with the app
 // version, which moves for reasons the extension cannot see. One integer, so
 // #205's check is an integer comparison.
+//
+// WHEN TO BUMP: a change that an unchanged peer would get WRONG — a renamed or
+// newly required request field, a reply field whose meaning changed, a request
+// type the extension will now send unconditionally. Adding an OPTIONAL field
+// that an older peer simply ignores is not one of those; bumping for it would
+// spend the user's attention (a banner on every save) on nothing.
 export const PROTOCOL_VERSION = 1;
 
 // A capture id is "<epochMillis>-<hex>", minted by the extension
@@ -195,6 +204,20 @@ export interface CaptureMetadata extends Partial<Omit<PostRecordShape, 'captureI
 
 // --- responses (host -> extension) ----------------------------------------------
 
+// Stamped onto EVERY reply the host sends — acks, the pong, query answers and
+// failures alike (#205). Every reply and not just the ack, because the reply the
+// extension is most likely to be holding when something is wrong is a failure,
+// and a version that only rides on success would be missing exactly then.
+//
+// Optional on the wire, and never required by a reader: a host built before this
+// existed sends none, and absence is itself an answer (see protocolSkewOf) — not
+// a reason to call the reply malformed. The direction only ever travels one way
+// (host -> extension) because only the host answers; what the extension expects
+// is PROTOCOL_VERSION in its own bundle, which needs no wire field.
+export interface VersionStamp {
+  protocolVersion?: number;
+}
+
 // What the host says about one permalink: the captureId of a record holding it,
 // plus WHICH of the post's pictures are in the library (#334) — positional, so
 // the index is the picture's number in the record and null marks one the library
@@ -270,6 +293,41 @@ export interface HostFailure {
 
 export type HostResponse = SaveAck | QueryAck | LogAck | PongAck | HostFailure;
 
+// Stamp one outgoing reply. Lives here rather than in the host's send loop so
+// that "every reply says which contract wrote it" is a property of the contract
+// — a second producer (a test double, a future host) cannot forget it and leave
+// the extension reading its silence as an out-of-date host.
+export function stampProtocol<T extends HostResponse>(res: T): T & VersionStamp {
+  return Object.assign({ protocolVersion: PROTOCOL_VERSION }, res);
+}
+
+// Which side is behind, from one reply's stamp (#205). Integer comparison and
+// nothing else: no per-version table, no feature probing.
+//
+//   'host-old'  — the desktop app (which ships the host) needs updating.
+//   'host-new'  — the extension does.
+//
+// A MISSING stamp reads as 'host-old', deliberately. Every host that carries
+// this contract stamps its replies, so silence means a host from before the
+// stamp existed — which is precisely the case this check was added for: a
+// bridge.js left behind on disk by an install that did not take, still answering
+// saves with a contract nobody has looked at in months (#511).
+export type ProtocolSkew = 'match' | 'host-old' | 'host-new';
+
+export function protocolSkewOf(hostVersion: number | null): ProtocolSkew {
+  if (hostVersion === null || hostVersion < PROTOCOL_VERSION) return 'host-old';
+  if (hostVersion > PROTOCOL_VERSION) return 'host-new';
+  return 'match';
+}
+
+// The stamp on one received reply, or null when it carries none. Non-integers
+// and non-numbers are null too — a stamp that cannot be compared is no better
+// than an absent one, and treating it as absent keeps the failure on the "tell
+// the user to update" path instead of inventing a third one.
+export function hostProtocolVersion(raw: unknown): number | null {
+  return isObject(raw) && typeof raw.protocolVersion === 'number' && Number.isInteger(raw.protocolVersion) ? raw.protocolVersion : null;
+}
+
 // What a READER of a reply may assume. Everything optional on purpose: the two
 // sides update through completely separate channels (Chrome Web Store vs the
 // app's own updater), so an ack can arrive from a host that is older or newer
@@ -277,7 +335,7 @@ export type HostResponse = SaveAck | QueryAck | LogAck | PongAck | HostFailure;
 // skew into "the save failed", which is the opposite of true — the record is on
 // disk either way. Derived from the strict producer types, so it cannot drift
 // from them; #205 is where a skew becomes something the user is told about.
-export type HostAckView = { ok: true } & Partial<CaptureAck & BulkAck & QueryAck & PongAck>;
+export type HostAckView = { ok: true } & VersionStamp & Partial<CaptureAck & BulkAck & QueryAck & PongAck>;
 
 // --- parsing --------------------------------------------------------------------
 
@@ -378,7 +436,11 @@ export function responseId(raw: unknown): RequestId | null {
   return isObject(raw) && typeof raw.id === 'number' ? raw.id : null;
 }
 
-export type ReadResponse = { ok: true; ack: HostAckView } | { ok: false; error: string; code: HostErrorCode | null };
+// `protocolVersion` is on BOTH arms because the handshake is not a question the
+// host was asked — it rides on whatever reply happens to come back, and a host
+// far enough out of date to be failing saves is the one whose version matters
+// most. null = the reply carried no stamp (see protocolSkewOf).
+export type ReadResponse = { ok: true; ack: HostAckView; protocolVersion: number | null } | { ok: false; error: string; code: HostErrorCode | null; protocolVersion: number | null };
 
 // Read one reply off a port. `ok:true` is the host's own success marker and the
 // only thing this can go on — see HostAckView on why an ack is narrowed here and
@@ -386,8 +448,12 @@ export type ReadResponse = { ok: true; ack: HostAckView } | { ok: false; error: 
 // no caller invents its own "did that work?" rule: before #400 each of the three
 // save senders and the badge query answered that question in its own words.
 export function readHostResponse(raw: unknown): ReadResponse {
-  if (isObject(raw) && raw.ok === true) return { ok: true, ack: raw as HostAckView };
+  const protocolVersion = hostProtocolVersion(raw);
+  // Through `unknown`: the frame is a bag of `unknown` values and HostAckView
+  // declares types for some of them, so the two are not directly comparable.
+  // Narrowing rather than validating is the point — see HostAckView.
+  if (isObject(raw) && raw.ok === true) return { ok: true, ack: raw as unknown as HostAckView, protocolVersion };
   const error = isObject(raw) && typeof raw.error === 'string' && raw.error ? raw.error : 'Native host returned an error';
   const code = isObject(raw) && typeof raw.code === 'string' ? (raw.code as HostErrorCode) : null;
-  return { ok: false, error, code };
+  return { ok: false, error, code, protocolVersion };
 }
