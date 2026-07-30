@@ -61,8 +61,12 @@ const HTML = `<!doctype html>
     });
     const failureUi = await page.evaluate(() => {
       const banner = document.querySelector('hologram-extension-ui')?.shadowRoot?.querySelector('[data-hologram-save-banner]');
+      // The corner's own element is the shadow HOST since #310; the disc that
+      // carries the face is inside its root, and page.evaluate's querySelector
+      // does not pierce shadow roots, so it is reached explicitly.
       const retry = document.querySelector('[data-hologram-overlay]');
-      if (!banner || !retry) return null;
+      const disc = retry?.shadowRoot?.firstElementChild;
+      if (!banner || !retry || !disc) return null;
       const r = banner.getBoundingClientRect();
       return {
         role: banner.getAttribute('role'),
@@ -70,15 +74,22 @@ const HTML = `<!doctype html>
         top: r.top,
         centerX: r.left + r.width / 2,
         width: r.width,
-        retryTitle: retry.getAttribute('title'),
+        retryFace: retry.getAttribute('data-hologram-face'),
+        retryLabel: disc.getAttribute('aria-label'),
+        // #310: no browser tooltip anywhere on this control — not on the host,
+        // not on the disc. What the failure MEANS is the banner's job now.
+        retryTitled: retry.hasAttribute('title') || disc.hasAttribute('title'),
       };
     });
-    if (!failureUi || failureUi.role !== 'alert' || !failureUi.text || failureUi.width < 200 || Math.abs(failureUi.top - 12) > 0.5 || Math.abs(failureUi.centerX - 640) > 0.5 || !failureUi.retryTitle) {
+    if (!failureUi || failureUi.role !== 'alert' || !failureUi.text || failureUi.width < 200 || Math.abs(failureUi.top - 12) > 0.5 || Math.abs(failureUi.centerX - 640) > 0.5 || failureUi.retryFace !== 'failed') {
       throw new Error(`OVERLAY_FAILURE_BANNER_LAYOUT_FAIL: ${JSON.stringify(failureUi)}`);
     }
+    if (failureUi.retryTitled) throw new Error(`OVERLAY_RETRY_TOOLTIP_FAIL: the corner still carries a browser tooltip — ${JSON.stringify(failureUi)}`);
     // bannerHostMissing (extension/utils/i18n.ts) — the message for an absent host,
-    // which is the failure this fixture provokes on any machine.
-    if (failureUi.text !== 'Hologram の保存先に接続できません。Chrome を再起動してください' || failureUi.retryTitle !== failureUi.text) {
+    // which is the failure this fixture provokes on any machine. The corner says
+    // cornerRetry instead: the long recovery sentence belongs to the surface that
+    // has room for it (#310).
+    if (failureUi.text !== 'Hologram の保存先に接続できません。Chrome を再起動してください' || failureUi.retryLabel !== '保存に失敗しました。押すと再試行します') {
       throw new Error(`OVERLAY_FAILURE_BANNER_LOCALE_FAIL: ${JSON.stringify({ failureUi, diagnosticEntries })}`);
     }
     const rawFailure = diagnosticEntries.find((entry) => entry?.phase === 'fail' && typeof entry?.error === 'string');
@@ -151,7 +162,7 @@ const HTML = `<!doctype html>
     const headerClear = await page.evaluate(() => !document.querySelector('[data-hologram-overlay]'));
     if (!headerClear) throw new Error('OVERLAY_HEADER_OCCLUSION_FAIL: control remained while the pointer was on the fixed header');
 
-    console.log('PASS e2e-overlay-visual: failure banner layout, scroll tracking, modal occlusion, fixed-header occlusion');
+    console.log('PASS e2e-overlay-visual: failure banner layout, corner has no tooltip, scroll tracking, modal occlusion, fixed-header occlusion');
   } finally {
     await overlay.close();
   }
