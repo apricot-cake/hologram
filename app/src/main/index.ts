@@ -25,7 +25,7 @@ import { relocateLibrary } from './lib-migrate.ts';
 // what remains here is the assembly plus the record pipeline every part of it
 // shares (config → DB → inbox → renderer).
 import { configDir, defaultLibraryDir, installer, pixivRefererFor, downloadAvatar, clearAllBlockReason } from './native-host.ts';
-import { readConfig, writeConfig, getSaveFolder, readSavePointer, initSaveFolderRedundancy, isConfigCorrupt } from './lib-config.ts';
+import { readConfig, writeConfig, getSaveFolder, readSavePointer, initSaveFolderRedundancy, isConfigCorrupt, invalidateConfigCache } from './lib-config.ts';
 import { mimeForFile, registerImageProtocol } from './lib-thumbnails.ts';
 import { backupIntervalMs, createBackupEngine, dbSnapshotPath, readBackupConfig, readIntegrityStatus, validateBackupDir, validateSaveFolder, writeBackupConfig } from './lib-backup.ts';
 import { APP_ICON, DEV_SERVER_URL, createWindow, devServer, getWin, installNavigationGuards, sendToWin, sendWindowToBack } from './lib-window.ts';
@@ -365,6 +365,12 @@ function ensureHostRegistered() {
     installer.install({ exe: process.execPath, runAsNode: true });
   } catch (err) {
     console.error('Failed to register native messaging host:', err);
+  } finally {
+    // install() can write config.json without going through writeConfig (#61 —
+    // install.cts persistExtensionId). No id is passed here, so today it never
+    // does; drop the cache regardless, so the cache's correctness does not rest
+    // on an argument at a call site far from lib-config.ts.
+    invalidateConfigCache();
   }
 }
 
@@ -515,6 +521,7 @@ function registerExtractedIpc() {
     mimeForFile,
     readConfig,
     writeConfig,
+    invalidateConfigCache,
     installer,
     APP_ICON,
     getTrashDir,
@@ -535,7 +542,7 @@ function registerExtractedIpc() {
     relocateLibrary,
     watchInboxFolder,
     getWin,
-    getConfigLastCorrupt: isConfigCorrupt,
+    isConfigCorrupt,
     resetDelta: () => {
       _deltaFolder = null;
       _lastSent = new Map();
