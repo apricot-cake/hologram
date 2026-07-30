@@ -335,8 +335,68 @@ function rebaseOnSourceChange(snap: SourcedSnapshot, label: string, url: string)
   return true;
 }
 
+// --- what a sample declares it expects to see (#588) ----------------------
+//
+// Almost every sample expects a post. One kind does not: X answers a deleted,
+// locked or age-restricted post with a TOMBSTONE — the post exists, its body is
+// withheld, and the reason is carried as wording in tombstone.text.text.
+// Hologram reads that wording to tell the three causes apart, and since #505 the
+// ABSENCE of wording is itself the age-restricted verdict. So both the wording
+// and its absence are dependencies exactly like a field, and deserve the same
+// watch.
+//
+// They could not be watched before. A response the extractor refused to build a
+// record from was read, unconditionally, as "this sample is gone — a human must
+// find another one", which put a tombstone in the same box as a deleted sample:
+// registering one would have reported it as an outage on every run, forever,
+// while never once recording its shape.
+//
+// A sample that DECLARES a tombstone inverts that reading. The refusal is the
+// expected answer, so the body goes on to the shape comparison, and the
+// CONTRADICTION becomes the alarm instead: a normal post where a tombstone was
+// declared means the lock was lifted, the age gate removed, or the id no longer
+// means what the sample says it means.
+const EXPECT_TOMBSTONE = 'tombstone';
+
+interface ResponseFacts {
+  // The endpoint whose body IS the post answered with parseable JSON.
+  primaryParsed: boolean;
+  // Why the extractor refused to build a record from that body; '' when it did.
+  metaError: string;
+  // Something only a real post body can carry came back.
+  alive: boolean;
+}
+interface Verdict {
+  // Nothing can be observed from this candidate. Not a schema signal: the next
+  // candidate is tried, and if they all say this a human has to add one.
+  dead: boolean;
+  reason: string;
+  // The sample answered, but with something its declaration rules out. Not
+  // "dead" — nothing needs replacing, the answer itself is the news.
+  alarm: string;
+}
+
+function judgeResponse(expect: string | undefined, facts: ResponseFacts): Verdict {
+  if (expect === EXPECT_TOMBSTONE) {
+    if (facts.alive) {
+      return { dead: false, reason: '', alarm: 'tombstone が期待値のサンプルが通常の投稿として返ってきた（鍵が外れた・年齢制限が消えた・その id が別の投稿を指すようになった）' };
+    }
+    // Nothing readable came back, which is indistinguishable from the endpoint
+    // being down — and there is no shape to compare either way.
+    if (!facts.primaryParsed) return { dead: true, reason: 'tombstone が期待値だが応答の本体が読めない', alarm: '' };
+    // Either the expected tombstone, or a body that is neither a post nor a
+    // tombstone. Both go to the shape comparison — a tombstone that lost its
+    // wording IS the second case, and catching it is the whole point.
+    return { dead: false, reason: '', alarm: '' };
+  }
+  if (facts.metaError) return { dead: true, reason: `metaError=${facts.metaError}`, alarm: '' };
+  return facts.alive ? { dead: false, reason: '', alarm: '' } : { dead: true, reason: '投稿本体の項目が何も取れていない（削除・非公開・エラー応答）', alarm: '' };
+}
+
 module.exports = {
   MISSING_STREAK_ALARM,
+  EXPECT_TOMBSTONE,
+  judgeResponse,
   UNKNOWN,
   ENDPOINT_PATH,
   ENDPOINT_TYPE,

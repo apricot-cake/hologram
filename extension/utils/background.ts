@@ -134,7 +134,16 @@ export function startBackground(): void {
   // loop cannot turn the record of them back into a connection per line.
   function admitSave(message: { type: string; saveId?: string | null; platform: string; postUrl: string }, tabId: number, host: string | null, imageUrls: readonly string[], start: () => Promise<any>): Promise<any> | null {
     const admitted = saveGate.admit(saveRequestKey(tabId, message.type, message.postUrl, imageUrls), tabId, start);
-    if (admitted) return admitted;
+    if (admitted) {
+      // "Taken" — the page's deadline waits for this before it starts measuring
+      // silence instead of absence (save-deadline.ts). Pushed HERE rather than
+      // from beginSave because this is the one funnel every route passes through,
+      // and because it is the only place that can answer for a save that JOINED
+      // an identical one already running: a join never reaches beginSave, and the
+      // running save's stage lines carry the first press's saveId.
+      if (message.saveId) chrome.tabs.sendMessage(tabId, { type: 'saveProgress', saveId: message.saveId, reached: [] } satisfies SaveProgressMessage).catch(() => {});
+      return admitted;
+    }
     logCapture({ stage: 'save', phase: 'fail', saveId: message.saveId ?? null, type: message.type, platform: message.platform, host, url: message.postUrl, error: BUSY_ERROR, inFlight: saveGate.inFlight(tabId) }, true);
     return null;
   }

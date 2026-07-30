@@ -53,7 +53,7 @@
 // order are untouched: the host element is still an ordinary absolutely
 // positioned child of the picture.
 import { newSaveId, reportSaveTimeout } from './capture-log.ts';
-import { SAVE_WATCHDOG_MS } from './deadline.ts';
+import { startSaveDeadline } from './save-deadline.ts';
 import { collectImageUrls, getCaptureSite, getMediaIdentitySite, getOverlaySite, mediaKeyOf, mediaKeysOf } from './extractor/index.ts';
 import type { CaptureSite, OverlaySite, PostMediaElement } from './extractor/types.ts';
 import { ICONS, makeIcon, makeSpinner } from './icons.ts';
@@ -723,22 +723,17 @@ export async function startOverlay(): Promise<void> {
     // why, exactly like a reported failure.
     // Groups this press's lines across the three processes (#519).
     const saveId = newSaveId();
-    let settled = false;
-    const watchdog = setTimeout(() => {
-      if (settled) return;
-      settled = true;
+    const deadline = startSaveDeadline(saveId, (error) => {
       // Recorded, not just shown. This is the surface the hang in #507 was
       // actually reported from, and it is the one with no service-worker line
       // to fall back on: the resident script logs nothing on its own, so
       // without this the timeout leaves capture.log exactly as empty as the
       // silent spinner did.
-      reportSaveTimeout('hover-save', media.platform, identity.link, `save timed out — no result from the background within ${SAVE_WATCHDOG_MS}ms`, saveId);
+      reportSaveTimeout('hover-save', media.platform, identity.link, error, saveId);
       failSave(unit, state, anchor, saveFailureText('timeout'));
-    }, SAVE_WATCHDOG_MS);
+    });
     chrome.runtime.sendMessage({ type: 'imageDragged', platform: media.platform, postUrl: identity.link, imageUrls: collectImageUrls(el, media.platform), saveId } satisfies ImageDraggedMessage, (res?: SaveResponse) => {
-      if (settled) return; // a late answer to a press already given up on
-      settled = true;
-      clearTimeout(watchdog);
+      if (!deadline.settle()) return; // a late answer to a press already given up on
       if (chrome.runtime.lastError || !res || !res.ok) {
         failSave(unit, state, anchor, saveFailureText(res && !res.ok ? res.errorKind : undefined, res && !res.ok ? res.metaReason : undefined));
         return;
@@ -870,6 +865,11 @@ export async function startOverlay(): Promise<void> {
       anchor.host = host;
       if (getComputedStyle(host).position === 'static') borrowHostPosition(anchor, host);
     }
+    // A text anchor's mark lies over the avatar, which every platform makes a
+    // link to the author's profile. The mark is never pressable (savable() says
+    // so), so letting it swallow that corner of the link would take away one of
+    // the page's own controls to say something the user did not ask about.
+    if (anchor.kind === 'text') el.style.setProperty('pointer-events', 'none', 'important');
     host.appendChild(el);
     return true;
   }
@@ -896,24 +896,33 @@ export async function startOverlay(): Promise<void> {
     place(boxRect.left - hostRect.left + CONTROL_INSET, boxRect.top - hostRect.top + CONTROL_INSET);
   }
 
-  // A text-only post's corner (#575): the same top-left vocabulary a picture
-  // gets, moved down just far enough to clear the post's own avatar — X's ⋯
-  // menu sits in the opposite corner and the action row shares the text
-  // column's left edge, so the strip directly under the avatar is the one
-  // area no platform-drawn element already claims. Left-aligned with the
-  // avatar rather than the unit's own inset so the mark reads as tied to the
-  // same landmark a picture's mark would sit beside. Clamped to the unit's own
-  // height so a short post never pushes the control past its bottom edge —
-  // if that leaves no room at all, it lands snug under the avatar instead of
-  // overflowing (§positionControl's caller only ever sees a placed control,
-  // never a broken one).
+  // A text-only post's mark (#575) RIDES THE AVATAR, the way a picture's mark
+  // rides the picture: its centre sits on the avatar's edge at the bottom
+  // right, so half the disc covers the image and half hangs outside it. That is
+  // where a badge goes on an avatar, and it is what keeps the translucent disc
+  // meaning what it means — it is over a photo, same as always.
+  //
+  // The first attempt put the disc in the empty strip beside the avatar
+  // instead. That strip is geometrically free on every layout, but it read as
+  // floating loose in the margin rather than marking the post (user,
+  // 2026-07-30): a mark needs a surface to be ON, and the avatar is the only
+  // surface a post without pictures has.
+  //
+  // Measured against live x.com and bsky.app, this point clears the text
+  // column, the ⋯ menu and the thread connector line on all four shapes those
+  // two sites use (feed row and focused-post layouts, which differ in where the
+  // post's text starts).
   function positionTextControl(anchor: Anchor, host: HTMLElement, place: (left: number, top: number) => void): void {
     const hostRect = host.getBoundingClientRect();
-    const avatar = site.textAnchorIn?.(anchor.box)?.getBoundingClientRect() ?? null;
-    const left = avatar ? avatar.left - hostRect.left : CONTROL_INSET;
-    const desiredTop = avatar ? avatar.bottom - hostRect.top + CONTROL_INSET : CONTROL_INSET;
-    const maxTop = hostRect.height - CONTROL_SIZE - CONTROL_INSET;
-    place(left, Math.max(CONTROL_INSET, Math.min(desiredTop, maxTop)));
+    const avatar = site.textAnchorIn?.(anchor.box)?.getBoundingClientRect();
+    if (!avatar) return;
+    // The 45° point on the avatar's circle, as an offset from its top-left
+    // corner; then back off half the disc so that point is the disc's centre.
+    // Rounded because a disc has no detail that a subpixel offset could place
+    // more accurately, and whole numbers are what a reader can check by eye.
+    const radius = (avatar.width + avatar.height) / 4;
+    const offset = Math.round(radius + radius * Math.SQRT1_2 - CONTROL_SIZE / 2);
+    place(avatar.left - hostRect.left + offset, avatar.top - hostRect.top + offset);
   }
 
   function restoreControlHost(anchor: Anchor): void {
@@ -976,8 +985,12 @@ export async function startOverlay(): Promise<void> {
       index += 1;
       const rect = anchor.box.getBoundingClientRect() as DOMRect;
       // A media box with no size is a collapsed placeholder or an image that
-      // has not laid out yet; there is nowhere to put a control on it.
-      const tooSmall = rect.width < CONTROL_SIZE * 2 || rect.height < CONTROL_SIZE * 2;
+      // has not laid out yet; there is nowhere to put a control on it. For a
+      // text anchor the box is the whole post (always sized) and it is the
+      // AVATAR the mark is placed against, so that is what has to have laid out
+      // — a lazy avatar of 0×0 would otherwise put the disc outside the post.
+      const placedOn = anchor.kind === 'text' ? (site.textAnchorIn?.(anchor.box)?.getBoundingClientRect() ?? null) : rect;
+      const tooSmall = !placedOn || placedOn.width < CONTROL_SIZE || placedOn.height < CONTROL_SIZE || (anchor.kind === 'media' && (rect.width < CONTROL_SIZE * 2 || rect.height < CONTROL_SIZE * 2));
       const face = tooSmall ? null : faceFor(state, anchor, index, rect);
       if (!face) {
         removeControl(anchor);

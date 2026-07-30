@@ -7,7 +7,7 @@
 // belongs to comes from media-identity.js, shared with overlay.js's hover save
 // button so the two paths can never disagree about what a save records.
 import { logSaveEvent, newSaveId, reportSaveTimeout } from './capture-log.ts';
-import { SAVE_WATCHDOG_MS } from './deadline.ts';
+import { startSaveDeadline } from './save-deadline.ts';
 import { buildChoiceRow, checkDuplicate, formatDeletedAt } from './duplicate-guard.ts';
 import { collectImageUrls, getMediaIdentitySite } from './extractor/index.ts';
 import { ICONS } from './icons.ts';
@@ -163,23 +163,17 @@ export async function startDrag(): Promise<void> {
 
   function send(z: StatusSurface, p: PendingDrag, replaces: string | null) {
     // The drop zone shows a spinner until this answers, so it needs an end the
-    // same way the capture banner does (#507). Longer than everything the
-    // background is itself allowed to spend, so only a background that has gone
-    // quiet reaches it — a slow save still gets to finish and say so.
-    let settled = false;
-    const watchdog = setTimeout(() => {
-      if (settled) return;
-      settled = true;
+    // same way the capture banner does (#507) — and the same end, which is why
+    // the waiting itself lives in save-deadline.ts rather than here.
+    const deadline = startSaveDeadline(p.saveId, (error) => {
       // Recorded for the same reason as the hover button's: this surface has no
       // service-worker line behind it either, so an unrecorded timeout here
       // would leave capture.log unable to say a save was ever attempted (#507).
-      reportSaveTimeout('drop-zone', p.platform, p.postUrl, `save timed out — no result from the background within ${SAVE_WATCHDOG_MS}ms`, p.saveId);
+      reportSaveTimeout('drop-zone', p.platform, p.postUrl, error, p.saveId);
       done(z, undefined, replaces, true);
-    }, SAVE_WATCHDOG_MS);
+    });
     chrome.runtime.sendMessage({ ...p, replaces } satisfies ImageDraggedMessage, (res?: SaveResponse) => {
-      if (settled) return; // a late answer to a drop already given up on
-      settled = true;
-      clearTimeout(watchdog);
+      if (!deadline.settle()) return; // a late answer to a drop already given up on
       done(z, res, replaces, false);
     });
   }
