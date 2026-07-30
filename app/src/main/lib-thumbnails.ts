@@ -150,8 +150,10 @@ function registerImageProtocol({ resolveInFolder }: ImageProtocolDeps) {
       if (!rel || rel === '.' || rel === '..') return new Response('Not found', { status: 404 });
 
       // Same containment rule as every file handler: basenames only, plus the
-      // sanctioned 'avatars/<file>' subpath (shared avatar store). resolveInFolder
-      // asserts the resolved path lands strictly INSIDE the save folder.
+      // sanctioned single-level subpaths 'avatars/<file>' (shared avatar store)
+      // and '.trash/<file>' (soft-deleted captures the trash view still draws,
+      // #267). resolveInFolder asserts the resolved path lands strictly INSIDE
+      // the save folder and directly under the directory the name asked for.
       const resolved = resolveInFolder(rel);
       if (!resolved) return new Response('Forbidden', { status: 403 });
       const name = path.basename(resolved);

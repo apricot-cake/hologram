@@ -17,6 +17,7 @@ import { compactInbox } from './lib-db-inbox-compact.ts';
 import { inboxNewDir, ensureInboxDirs } from '../../../native-host/inbox.mts';
 import { parseJsonLoose } from './lib-json.ts';
 import { writeFileAtomicSync } from './lib-atomic.ts';
+import { TRASH_SUBDIR, resolveInSaveFolder } from './lib-save-folder-path.ts';
 // Save-folder relocation engine (copy+catch-up → flip → verified cleanup → sweep).
 import { relocateLibrary } from './lib-migrate.ts';
 // Subsystems extracted from this file (#227) — mechanical moves, logic unchanged.
@@ -388,23 +389,16 @@ function ensureHostRegistered() {
 // ./ipc-window.js (registered via ipcWindow.register below).
 
 // --- File helpers (all confined to the save folder) ---
-// Capture files live FLAT in the save folder (basename only). The one sanctioned
-// subfolder is the shared avatar store 'avatars/<file>' (single level, no deeper):
-// anything else is squashed to its basename, and the resolved path must still
-// land strictly inside the folder.
+// The rule itself (which shapes a name may take, and the containment check on
+// what it resolves to) lives in lib-save-folder-path.ts — Electron-free, so it is
+// unit-testable and so the inbox drain and the trash sweep share the SAME copy.
 //
-// Stays here rather than moving with the asset:// handler: this is the rule EVERY
-// file handler shares (image-data-url, the trash sweeps, drag-out), so it belongs
-// to the assembly that hands it to all of them, not to the first caller.
-function resolveInFolder(name) {
-  const folder = getSaveFolder();
-  if (!folder || !name) return null;
-  const rel = String(name).replace(/\\/g, '/');
-  const m = rel.match(/^avatars\/([^/]+)$/);
-  if (m && (m[1] === '.' || m[1] === '..')) return null;
-  const safe = m ? path.join('avatars', m[1]) : path.basename(rel);
-  const resolved = path.resolve(path.join(folder, safe));
-  return resolved.startsWith(path.resolve(folder) + path.sep) ? resolved : null;
+// What stays here is the binding to the live save folder: this is the rule EVERY
+// file handler shares (image-data-url, the trash sweeps, drag-out), so the
+// already-bound form belongs to the assembly that hands it to all of them rather
+// than to the first caller.
+function resolveInFolder(name: string): string | null {
+  return resolveInSaveFolder(getSaveFolder(), name);
 }
 
 // Every extension a downloaded library file can carry. NOT a "can the viewer
@@ -424,7 +418,8 @@ function baseOf(name) {
 }
 
 // --- Trash (soft delete) ---
-const TRASH_SUBDIR = '.trash';
+// TRASH_SUBDIR is imported, not declared here: the directory this writes into and
+// the directory resolveInFolder will serve out of have to be the same one (#267).
 const TRASH_DAYS = 30;
 function getTrashDir() {
   const folder = getSaveFolder();

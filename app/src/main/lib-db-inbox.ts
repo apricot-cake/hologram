@@ -48,6 +48,7 @@ import type { InboxEnvelope } from '../../../native-host/inbox.mts';
 import type { PostRecordShape } from '../../../native-host/post-record.mts';
 import { fillCardDims } from './lib-card-dims.ts';
 import { makeTagResolver, preparePostStmts, writePost } from './lib-db-record-writer.ts';
+import { resolveInSaveFolder } from './lib-save-folder-path.ts';
 
 export interface InboxDrainReport {
   scanned: number; // envelopes looked at this call (loose + replayed segment lines)
@@ -56,19 +57,6 @@ export interface InboxDrainReport {
   noop: number; // already-applied (matching receipt) — no DB write
   skipped: Array<{ file: string; reason: string; detail?: string }>;
   segmentsReplayed: string[]; // segmentIds opened this call (no receipt yet — the DB-loss path)
-}
-
-// Bare filename or the sanctioned avatars/<file> subpath, contained strictly
-// inside saveFolder — mirrors index.ts's resolveInFolder. Duplicated (not
-// imported) because this module is Electron-free and index.ts is not.
-function resolveMediaPath(saveFolder: string, name: string): string | null {
-  if (!name) return null;
-  const rel = String(name).replace(/\\/g, '/');
-  const m = rel.match(/^avatars\/([^/]+)$/);
-  if (m && (m[1] === '.' || m[1] === '..')) return null;
-  const safe = m ? path.join('avatars', m[1]) : path.basename(rel);
-  const resolved = path.resolve(path.join(saveFolder, safe));
-  return resolved.startsWith(path.resolve(saveFolder) + path.sep) ? resolved : null;
 }
 
 // The record's own display artifacts — what a viewer needs to show this post
@@ -87,7 +75,7 @@ function requiredMediaFiles(record: PostRecordShape): string[] {
 // null = every required file is present and contained; otherwise the reason.
 function missingMediaReason(saveFolder: string, record: PostRecordShape): string | null {
   for (const name of requiredMediaFiles(record)) {
-    const resolved = resolveMediaPath(saveFolder, name);
+    const resolved = resolveInSaveFolder(saveFolder, name);
     if (!resolved) return `media path escapes save folder: ${name}`;
     if (!fs.existsSync(resolved)) return `missing media: ${name}`;
   }
@@ -288,4 +276,4 @@ function drainInbox(saveFolder: string, sqlite: Database.Database): InboxDrainRe
   return report;
 }
 
-export { drainInbox, resolveMediaPath, missingMediaReason };
+export { drainInbox, missingMediaReason };
