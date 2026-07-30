@@ -25,7 +25,7 @@ import type { IpcContext } from './ipc-context.ts';
 import type { OkResult } from './ipc-payloads.ts';
 
 function register(ctx: IpcContext) {
-  const { getSaveFolder, getTrashDir, baseOf, LIBRARY_MEDIA_EXTS, getDbWriter, ensurePostsSynced, send } = ctx;
+  const { getSaveFolder, getTrashDir, baseOf, LIBRARY_MEDIA_EXTS, getDbWriter, ensurePostsSynced, scheduleSavedIndexWrite, send } = ctx;
 
   ipcMain.handle('delete-post', async (_e, image): Promise<OkResult> => {
     const folder = getSaveFolder();
@@ -46,6 +46,12 @@ function register(ctx: IpcContext) {
     // The file half — shared with #34's replacement sweep so both retire a
     // capture the same way (lib-trash-capture.ts).
     await trashCapture({ folder, trashDir, mediaExts: LIBRARY_MEDIA_EXTS, captureId: base, record: rec, flags });
+    // The bridge reads the saved-post index and nothing else, so a delete the
+    // index does not know about leaves the timeline badge lit and the
+    // duplicate-save warning naming a capture that is now in the trash. This
+    // rewrite is also what publishes the trash notice (#158) — the deleted post
+    // moves from the index's `entries` to its `trashed` map.
+    if (handle) scheduleSavedIndexWrite(handle);
     return { ok: true };
   });
 
@@ -121,6 +127,9 @@ function register(ctx: IpcContext) {
       // The grid only refetches on this event (see index.ts's inbox watcher) —
       // without it a restored post stays missing until the next app launch.
       send('posts-changed', null);
+      // Back in the library, so the index has to say "saved" again — and drop
+      // the trash notice this post had while it sat in `.trash/` (#158).
+      if (handle) scheduleSavedIndexWrite(handle);
     }
     return { ok: true };
   });
@@ -131,6 +140,10 @@ function register(ctx: IpcContext) {
     try {
       await fs.promises.rm(trashDir, { recursive: true, force: true });
     } catch {}
+    // Every trash notice this library had is now about a post that no longer
+    // exists anywhere (#158) — emptying the trash is the "forget it all" exit.
+    const handle = ensurePostsSynced();
+    if (handle) scheduleSavedIndexWrite(handle);
     return { ok: true };
   });
 
@@ -151,6 +164,9 @@ function register(ctx: IpcContext) {
         } catch {}
       }
     }
+    // Same as empty-trash, for one post: its notice has to go with its record (#158).
+    const handle = ensurePostsSynced();
+    if (handle) scheduleSavedIndexWrite(handle);
     return { ok: true };
   });
 

@@ -90,11 +90,24 @@ const X_HTML = `<!doctype html><html><body>
       <a href="/judy/status/1111"><time datetime="2026-07-01T00:00:00Z">11h</time></a>
       <div data-testid="tweetPhoto" data-rect-top="4800" id="p11a"><img src="https://pbs.twimg.com/media/MMM.jpg"></div>
     </article>
+    <!-- #576: ホバー保存だけホストの版ずれ案内（#205）が乗っていなかった配線漏れを試す
+         専用の投稿。p11 と同じ理由で、保存済みにしてしまうと保存ボタンが消えるので
+         このテストの最後まで他のどの describe も触らない。 -->
+    <article data-testid="tweet" id="p12">
+      <a href="/kevin/status/1212"><time datetime="2026-07-01T00:00:00Z">12h</time></a>
+      <div data-testid="tweetPhoto" data-rect-top="5200" id="p12a"><img src="https://pbs.twimg.com/media/NNN.jpg"></div>
+    </article>
+    <!-- 同じく#576: 版が一致している（hostSkew: null）ときに誤警報が出ないことは
+         p12 とは別の未保存の絵で見る＝p12 は上のテストで保存済みになってしまう。 -->
+    <article data-testid="tweet" id="p13">
+      <a href="/laura/status/1313"><time datetime="2026-07-01T00:00:00Z">13h</time></a>
+      <div data-testid="tweetPhoto" data-rect-top="5600" id="p13a"><img src="https://pbs.twimg.com/media/OOO.jpg"></div>
+    </article>
     <!-- テキストのみの投稿（#575）: mediaIn が何も返さない形。投稿要素自身とアバターが
          それぞれ自分の幾何を持つ＝印は投稿要素を足場に、アバターの左下へ置かれる。 -->
-    <article data-testid="tweet" id="p12" data-rect-top="5200" data-rect-size="120">
-      <div data-testid="Tweet-User-Avatar" data-rect-top="5212" data-rect-size="40" id="p12avatar"></div>
-      <a href="/kim/status/1212"><time datetime="2026-07-01T00:00:00Z">12h</time></a>
+    <article data-testid="tweet" id="p14" data-rect-top="6000" data-rect-size="120">
+      <div data-testid="Tweet-User-Avatar" data-rect-top="6012" data-rect-size="40" id="p14avatar"></div>
+      <a href="/kim/status/1414"><time datetime="2026-07-01T00:00:00Z">14h</time></a>
     </article>
   </div>
 </body></html>`;
@@ -252,7 +265,7 @@ beforeAll(async () => {
 }, 30000);
 
 test('初回走査で全ての投稿が観測される', () => {
-  expect(observed.size).toBe(12);
+  expect(observed.size).toBe(14); // p1〜p14（#576 で p12/p13、#575 で p14 を追加）
 });
 
 describe('問い合わせは見えている投稿だけ・1バッチで', () => {
@@ -859,6 +872,63 @@ describe('投稿情報が取れなかった保存（#310）', () => {
   });
 });
 
+// #576: #205 が用意した「ホストの版がずれている」案内は、Alt+S（capture-overlay.test.ts）と
+// ドロップゾーン（drag-zone.test.ts）には配線されていたが、保存の出口3本目であるホバー保存
+// （このファイル）だけが一度も showSaveBanner に渡していなかった。文言・緊急度（partial ＝
+// 琥珀、他の成功文面より前）は他の2経路と同じものを #205 からそのまま使う。
+describe('ホストの版がずれているときの案内（#205 の配線漏れ・#576）', () => {
+  beforeAll(async () => {
+    saveReply = { ok: true, metaOk: true, grouped: 0, hostSkew: 'host-old' };
+    intersect(['p12'], true);
+    await settle();
+    hover('p12a');
+    await settle();
+    click(saveButtons()[0]);
+  });
+
+  afterAll(() => {
+    saveReply = { ok: true, metaOk: true };
+    hoverAway();
+  });
+
+  test('保存できたことと更新の要求を同時に出す', () => {
+    const banner: any = saveBanners().at(-1);
+
+    expect(banner.dataset.state).toBe('partial');
+    expect(banner.textContent).toBe('Saved — please update the Hologram app (it no longer matches this extension)');
+  });
+
+  test('角そのものは印のまま＝長い文面を載せない', () => {
+    expect(labelOf(controlOf('p12a')[0])).toBe('Saved in Hologram');
+  });
+});
+
+// 誤警報が無いこと＝版が一致している（もしくはまだどのホストからも答えを聞いていない）
+// ときは、他の成功と同じく黙ったまま。バナー数を絶対値0で比べないのはこのハーネスの
+// 都合＝StatusSurface の退場は Web Animations の finish イベントで消えるが、この
+// スイートの animate() スタブは onfinish を呼ばない（drag-zone.test.ts と違い、この
+// ファイルは他の場面でアニメの発火自体を見る必要があるため）ので、直前の describe が
+// 出したバナーは実ブラウザと違って DOM に残ったまま。そのため「このアクションの前後で
+// バナーの個数が増えていないこと」を見る＝新しいバナーが1つも足されなければ、この
+// アクションは黙っていたと言える。
+describe('版が一致しているときは誤警報を出さない', () => {
+  let before: number;
+
+  beforeAll(async () => {
+    before = saveBanners().length;
+    saveReply = { ok: true, metaOk: true, grouped: 0, hostSkew: null };
+    intersect(['p13'], true);
+    await settle();
+    hover('p13a');
+    await settle();
+    click(saveButtons()[0]);
+  });
+
+  test('バナーが増えない（誤警報が出ない）', () => {
+    expect(saveBanners().length).toBe(before);
+  });
+});
+
 // #311: Alt+S saves exactly what chrome.tabs.captureVisibleTab sees — a real
 // screenshot bakes in whatever is drawn on screen, this file's corner controls
 // included, unless something hides them first. capture.ts (a separate content
@@ -915,36 +985,36 @@ describe('撮影退避フック（#311）', () => {
 // （右クリックメニュー）の担当のまま、本 Issue は「もう取り込んであるか」だけを答える。
 describe('テキストのみの投稿（#575）', () => {
   test('未保存の間はホバーしても何も出さない（ボタンにならない）', async () => {
-    intersect(['p12'], true);
+    intersect(['p14'], true);
     await settle();
-    hover('p12');
+    hover('p14');
     await settle();
 
-    // p12 自身の枠だけを見る（controls() は他の投稿の一時的な face='flash' も拾う）。
-    expect(controlOf('p12')).toHaveLength(0);
+    // p14 自身の枠だけを見る（controls() は他の投稿の一時的な face='flash' も拾う）。
+    expect(controlOf('p14')).toHaveLength(0);
     hoverAway();
   });
 
   test('保存済みになるとホバーで印が出る。ボタンにはならない', async () => {
-    savedAnswer['https://x.com/kim/status/1212'] = { id: '1780000000012-mm', media: [] };
-    intersect(['p12'], false);
+    savedAnswer['https://x.com/kim/status/1414'] = { id: '1780000000014-mm', media: [] };
+    intersect(['p14'], false);
     await settle();
-    intersect(['p12'], true);
+    intersect(['p14'], true);
     await settle();
-    hover('p12');
+    hover('p14');
     await settle();
 
-    const p12Controls = controlOf('p12');
-    expect(p12Controls).toHaveLength(1);
-    expect(p12Controls[0].getAttribute('data-hologram-face')).toBe('mark');
-    expect(labelOf(p12Controls[0])).toBe('Saved in Hologram');
+    const p14Controls = controlOf('p14');
+    expect(p14Controls).toHaveLength(1);
+    expect(p14Controls[0].getAttribute('data-hologram-face')).toBe('mark');
+    expect(labelOf(p14Controls[0])).toBe('Saved in Hologram');
   });
 
   // 投稿要素自身が足場（アバターの親をホストにできるほどアバターの箱が大きくない
   // ため）＝左端はアバターと揃え、上端はアバターの下端から少し離す。X の左上は
   // アバターそのもの、右上は⋯メニューが埋めているので、これが両方を避ける唯一の帯。
   test('位置は投稿要素を足場に、アバターの左端・下端のすぐ下', () => {
-    const [mark] = controlOf('p12');
+    const [mark] = controlOf('p14');
     expect(mark.style.left).toBe('0px');
     expect(mark.style.top).toBe('58px');
     hoverAway();

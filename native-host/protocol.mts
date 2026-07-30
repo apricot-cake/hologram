@@ -192,14 +192,6 @@ export interface CaptureMetadata extends Partial<Omit<PostRecordShape, 'captureI
   // Referer the avatar has to be fetched with (pixiv rejects fetches without
   // one). Not a stored field — it is fetch instructions, spent by the host.
   avatarReferer?: string | null;
-  // Which picture of a multi-image post a dragged save took, 1-based, and how
-  // many there are. NOTE: nothing consumes these today — normalizePostRecord has
-  // no such field, so they are dropped before the record is written, while
-  // app/src/renderer's inspector still reads `imageIndex`/`imageCount` off a
-  // post. Declared because they really are on the wire; the gap is #400's
-  // finding, not its fix.
-  imageCount?: number | null;
-  imageIndex?: number | null;
 }
 
 // --- responses (host -> extension) ----------------------------------------------
@@ -234,6 +226,30 @@ export interface SavedEntry {
 
 export type SavedResults = Record<string, SavedEntry | null>;
 
+// What the host says about a permalink whose post is in the library's TRASH
+// (#158): not saved, but its record and files are still there and a re-save
+// would quietly make a second copy of a post the user meant to be rid of.
+//
+// Deliberately a SEPARATE map from SavedResults rather than a flag on
+// SavedEntry: every reader treats "there is an entry" as "the library holds
+// this post" (the timeline badge lights, the hover save button hides), and a
+// trashed post is not held. Keeping the two answers apart is also what makes
+// this addition backward-compatible in both directions — an older extension
+// ignores the field, an older host never sends it.
+export interface TrashedEntry {
+  // The capture the trash record belongs to. Informational: restoring is an
+  // app-side operation (the host is read-only over the library), so nothing on
+  // the extension side can act on it — it is here so a surface can name the
+  // record it is talking about.
+  id: string;
+  // ISO time the post was moved to the trash, or null when the record carries
+  // no stamp (a trash record whose write was interrupted). The notice drops the
+  // date rather than inventing one.
+  deletedAt: string | null;
+}
+
+export type TrashedResults = Record<string, TrashedEntry>;
+
 interface AckCommon {
   ok: true;
   // The uniqueBase-resolved id of the record just written — NOT derivable from
@@ -262,6 +278,11 @@ export type SaveAck = CaptureAck | BulkAck | DraggedAck;
 export interface QueryAck {
   ok: true;
   results: SavedResults;
+  // Only the permalinks whose posts are in the trash (#158) — absent keys mean
+  // "not in the trash", so this is a sparse map, not a parallel one. Optional
+  // because a host built before #158 sends none, and every reader has to treat
+  // absence as "no notice" rather than as a malformed reply.
+  trashed?: TrashedResults;
 }
 
 export interface LogAck {

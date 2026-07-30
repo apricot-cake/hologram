@@ -1,6 +1,14 @@
 {
   "platform": "misskey",
-  "updatedAt": "2026-07-28T11:47:48.314Z",
+  "updatedAt": "2026-07-30T09:06:07.359Z",
+  "sources": {
+    "cw": "https://misskey.io/notes/ap7e5qdqy8se08pv",
+    "image": "https://misskey.io/notes/ap7c5zlxyyzf03ng",
+    "poll": "https://misskey.io/notes/ap7dmcut8yp700al",
+    "quote": "https://misskey.io/notes/ap7jlc4y7kvv066m",
+    "reply": "https://misskey.io/notes/ap7jh6mtcd7t02nn",
+    "text": "https://misskey.io/notes/ap81757sr0bp0bxo"
+  },
   "shapes": {
     "cw": {
       "api:misskey/notes-show": {

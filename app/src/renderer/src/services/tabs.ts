@@ -32,7 +32,7 @@ import { buildShadow } from './query.ts';
 import { get as storeGet, subscribe as storeSubscribe } from './store.ts';
 
 type TabTitleOf = (state: any, ctx: { allCount?: number | null }) => { text: string; iconType: string };
-type TabsConfig = { tabTitleOf: TabTitleOf; tabIcons: Record<string, string>; pinSvg: string; closeTitle?: string; newTitle?: string; postersTitle?: string; imageFallbackTitle?: string };
+type TabsConfig = { tabTitleOf: TabTitleOf; tabIcons: Record<string, string>; pinSvg: string; closeTitle?: string; newTitle?: string; postersTitle?: string; trashTitle?: string; imageFallbackTitle?: string };
 
 let tabTitleOf: TabTitleOf | null = null;
 let tabIcons: Record<string, string> | null = null;
@@ -40,6 +40,7 @@ let pinSvg = '';
 let closeTitle = '';
 let newTitle = '';
 let postersTitle = '';
+let trashTitle = '';
 let imageFallbackTitle = '';
 
 const subs = new Set<() => void>();
@@ -92,7 +93,13 @@ function get(): HologramTabsModel | null {
   const allCount = storeGet('allPostsCount') || 0;
   const tabs = rawTabs.map((t) => {
     const isActive = t.id === activeTabId;
-    const kind = isActive ? (storeGet('activeImageTab') ? 'image' : storeGet('browseMode') === 'posters' ? 'posters' : 'posts') : navKindOf(t);
+    const kind = isActive ? (storeGet('activeImageTab') ? 'image' : storeGet('browseMode') === 'posters' ? 'posters' : storeGet('browseMode') === 'trash' ? 'trash' : 'posts') : navKindOf(t);
+    // ゴミ箱 (#268) — only ever the ACTIVE tab, since the trash records no history
+    // entry (navKindOf can never answer 'trash'). The strip says where the tab is
+    // looking, and while it is looking at the trash the old grid title would lie.
+    if (kind === 'trash') {
+      return { id: t.id, title: trashTitle, icon: t.pinned ? pinSvg : icons.trash || icons.all, active: isActive, pinned: !!t.pinned, showClose: !t.pinned && rawTabs.length > 1 };
+    }
     if (kind === 'image') {
       // The image title is stamped on t.title (auto-title) by the image-view controller.
       return { id: t.id, title: t.title || imageFallbackTitle, icon: t.pinned ? pinSvg : icons.media, active: isActive, pinned: !!t.pinned, showClose: !t.pinned && rawTabs.length > 1 };
@@ -119,6 +126,7 @@ export const hologramTabsSource = {
     closeTitle = cfg.closeTitle || '';
     newTitle = cfg.newTitle || '';
     postersTitle = cfg.postersTitle || '';
+    trashTitle = cfg.trashTitle || '';
     imageFallbackTitle = cfg.imageFallbackTitle || '';
   },
   get,

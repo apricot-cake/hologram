@@ -3,16 +3,19 @@
 // Config / preferences / tabs IPC handlers, extracted from main.js (mechanical move —
 // logic unchanged). These touch config.json (get-config/set-extension-id/get-prefs/
 // set-pref), the tabs.json org file (get/set-tabs), the window title-bar overlay, and
-// static build info (app-info). Core helpers arrive via ctx; the pref key/sort
-// allow-lists live here (used only by these handlers).
+// static build info (app-info). Core helpers arrive via ctx; the pref key
+// allow-list lives here (used only by these handlers).
 import { ipcMain, app } from 'electron';
 import fs from 'node:fs';
 import type { IpcContext } from './ipc-context.ts';
 import type { AppInfo, AppPrefs, ConfigSummary, ExtensionIdResult, OkResult, TabsState } from './ipc-payloads.ts';
 
-// --- Preferences (language / viewMode / skipDeleteConfirm / sortBy) ---
-const PREF_KEYS = ['language', 'viewMode', 'skipDeleteConfirm', 'sortBy', 'imageTileSize', 'cardSize', 'listThumb', 'theme', 'tileOverlay', 'browseMode', 'posterViewMode', 'posterTileSize', 'posterCardSize', 'sidebarOpen', 'sidebarWidth', 'inspectorOpen', 'inspectorWidth', 'panelsHidden'];
-const VALID_SORTS = ['date-desc', 'date-asc', 'likes-desc', 'reposts-desc', 'replies-desc', 'captured-desc', 'likes-pct'];
+// --- Preferences (language / viewMode / skipDeleteConfirm / …) ---
+// Post sort is NOT here: it lives in the per-tab state (tabs-builder.ts's
+// snapshotState), which is where it is persisted and restored from. The old
+// 'sortBy' pref was the losing half of that double storage — the two raced on
+// load — and the renderer stopped reading it when the tab state took over.
+const PREF_KEYS = ['language', 'viewMode', 'skipDeleteConfirm', 'imageTileSize', 'cardSize', 'listThumb', 'theme', 'tileOverlay', 'browseMode', 'posterViewMode', 'posterTileSize', 'posterCardSize', 'sidebarOpen', 'sidebarWidth', 'inspectorOpen', 'inspectorWidth', 'panelsHidden'];
 
 // Chrome extension ids are exactly 32 chars of a–p. The id crosses a trust
 // boundary (IPC arg → native-messaging manifest allowed_origins), so anything
@@ -98,7 +101,6 @@ function register(ctx: IpcContext) {
       language: cfg.language || 'auto',
       viewMode: ['card', 'tile', 'list'].includes(cfg.viewMode) ? cfg.viewMode : 'card', // display density
       skipDeleteConfirm: !!cfg.skipDeleteConfirm,
-      sortBy: VALID_SORTS.includes(cfg.sortBy) ? cfg.sortBy : 'date-desc',
       imageTileSize: Number.isFinite(cfg.imageTileSize) ? cfg.imageTileSize : null, // tile view: edge px
       cardSize: Number.isFinite(cfg.cardSize) ? cfg.cardSize : null, // card view: min column px
       listThumb: Number.isFinite(cfg.listThumb) ? cfg.listThumb : null, // list view: thumbnail px

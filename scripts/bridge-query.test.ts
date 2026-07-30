@@ -283,3 +283,81 @@ describe('9. 保存済みの絵を投稿ごとに答える', () => {
     expect(askMedia(legacy)).toEqual([]);
   });
 });
+
+// #158: ゴミ箱に現物が残っている投稿の告知。保存済みの答えとは別のマップで返る＝
+// results 側は null のまま（バッジを点けてはいけない）で、trashed 側に載る。
+// ここまでの節が書いてきたスナップショットには trashed が無く、その状態が
+// 「#158 より前のアプリ」の再現になっている（最初のテストがそれを押さえる）。
+describe('10. ゴミ箱の告知', () => {
+  const TRASHED = 'https://x.com/gone/status/501';
+  const LIVE_AND_TRASHED = 'https://x.com/both/status/502';
+  const askTrashed = (url: string) => handleQuery({ type: 'query', urls: [url] }).trashed?.[url] ?? null;
+
+  // 明示的に書く＝スナップショットに trashed マップを足す。mtime は他の節と同じ方式で
+  // 未来に置き、キャッシュを確実に無効化する。
+  function writeIndexWithTrash(entries: Record<string, unknown>, trashed: Record<string, unknown>, offsetMs: number) {
+    const p = path.join(configDir, 'bridge-saved-index.json');
+    const mtime = new Date(Date.now() + offsetMs);
+    fs.writeFileSync(p, JSON.stringify({ format: 'hologram-bridge-saved-index', version: 4, generatedAt: mtime.toISOString(), entries, trashed }), 'utf8');
+    fs.utimesSync(p, mtime, mtime);
+    _resetSavedIndex();
+  }
+
+  test('trashed マップを持たないスナップショットは「ゴミ箱に何も無い」と読む', () => {
+    expect(handleQuery({ type: 'query', urls: ['https://x.com/legacy/status/88'] }).trashed).toEqual({});
+  });
+
+  test('ゴミ箱の投稿は results が null・trashed に削除日つきで載る', () => {
+    writeIndexWithTrash({}, { [postKeyOf(TRASHED) as string]: { id: 'cap-gone', deletedAt: '2026-07-01T09:00:00Z' } }, 420_000);
+
+    expect(askId(TRASHED)).toBeNull();
+    expect(askTrashed(TRASHED)).toEqual({ id: 'cap-gone', deletedAt: '2026-07-01T09:00:00Z' });
+  });
+
+  // ライブラリに生きているレコードがあるなら、それが答え。アプリ側のビルダも同じ規則で
+  // trashed から落とすが、ブリッジ側には**スナップショットが知りえない情報源**（ジャーナルと
+  // loose inbox の後追い）があるので、ここでも効かせないと取りこぼす。
+  test('保存済みが勝つ＝同じ投稿が両方に載っていても trashed には出さない', () => {
+    const key = postKeyOf(LIVE_AND_TRASHED) as string;
+    writeIndexWithTrash({ [key]: { id: 'cap-live', media: [] } }, { [key]: { id: 'cap-old', deletedAt: '2026-07-01T09:00:00Z' } }, 480_000);
+
+    expect(askId(LIVE_AND_TRASHED)).toBe('cap-live');
+    expect(askTrashed(LIVE_AND_TRASHED)).toBeNull();
+  });
+
+  // ジャーナル経由（アプリが閉じている間にブリッジ自身が保存した）＝スナップショットの
+  // trashed はその保存を知らない。保存済みの答えが後から足されても告知は消える。
+  test('スナップショット後にブリッジが保存した投稿の告知も消える', () => {
+    const url = 'https://x.com/resaved/status/503';
+    writeIndexWithTrash({}, { [postKeyOf(url) as string]: { id: 'cap-old', deletedAt: '2026-07-01T09:00:00Z' } }, 540_000);
+    expect(askTrashed(url)).toEqual({ id: 'cap-old', deletedAt: '2026-07-01T09:00:00Z' });
+
+    noteSaved(url, '1700000030000-f1', []);
+
+    expect(askId(url)).toBe('1700000030000-f1');
+    expect(askTrashed(url)).toBeNull();
+  });
+
+  // スナップショットはこのプロセスが書いたものではない＝壊れた値がそのまま応答に乗ると、
+  // 日付を描く拡張側で落ちる。読む時に型を通す。
+  test('壊れたゴミ箱エントリは型を通してから載る', () => {
+    const bad = 'https://x.com/bad/status/504';
+    const worse = 'https://x.com/worse/status/505';
+    writeIndexWithTrash(
+      {},
+      {
+        [postKeyOf(bad) as string]: { id: 42, deletedAt: { nope: true } },
+        [postKeyOf(worse) as string]: 'not an object',
+      },
+      600_000,
+    );
+
+    expect(askTrashed(bad)).toEqual({ id: '', deletedAt: null });
+    expect(askTrashed(worse)).toBeNull();
+  });
+
+  test('空のバッチ・壊れたメッセージでも trashed は空で返る', () => {
+    expect(handleQuery({ type: 'query', urls: [] }).trashed).toEqual({});
+    expect(handleQuery({ type: 'query' }).trashed).toEqual({});
+  });
+});

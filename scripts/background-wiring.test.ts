@@ -240,12 +240,13 @@ describe('checkDuplicate — 重複保存の警告の判定', () => {
 
   // ホストの答えを1回分だけ用意する。checkDuplicate は保存前に1往復するだけなので、
   // Port を1つ作って results を返せばよい。
-  async function answerQueryWith(entry: any) {
+  async function answerQueryWith(entry: any, trashed?: any) {
     const createdPorts = env.connectAsControllablePort();
     const asked = env.dispatch({ type: 'checkDuplicate', platform: 'x', url: POST, imageUrls: [P0] }, X_SENDER);
     await vi.waitFor(() => expect(createdPorts.length).toBe(1));
     const sent = createdPorts[0].sent.find((m: any) => m.type === 'query');
-    createdPorts[0].emitMessage({ id: sent.id, ok: true, results: { [POST]: entry } });
+    // trashed を渡さない呼び出し＝#158 より前のホスト（そのフィールドを送らない）。
+    createdPorts[0].emitMessage({ id: sent.id, ok: true, results: { [POST]: entry }, ...(trashed === undefined ? {} : { trashed: { [POST]: trashed } }) });
     return asked.responseP;
   }
 
@@ -282,6 +283,34 @@ describe('checkDuplicate — 重複保存の警告の判定', () => {
     env.connectAsUnavailable('Specified native messaging host not found.');
     const { responseP } = env.dispatch({ type: 'checkDuplicate', platform: 'x', url: POST, imageUrls: [P0] }, X_SENDER);
     await expect(responseP).resolves.toEqual({ ok: false });
+  });
+
+  // #158: ライブラリには無いが、ゴミ箱に現物が残っている投稿。重複ではない（置換する相手が
+  // 無い）ので duplicate は false のまま、告知だけを別のフィールドで返す。
+  test('ゴミ箱に在る投稿は duplicate:false のまま告知を返す', async () => {
+    await expect(answerQueryWith(null, { id: 'cap-gone', deletedAt: '2026-07-01T09:00:00Z' })).resolves.toEqual({
+      ok: true,
+      duplicate: false,
+      trashed: { id: 'cap-gone', deletedAt: '2026-07-01T09:00:00Z' },
+    });
+  });
+
+  // 保存済みが勝つのはホスト側で決まっている（両方には載らない）が、判定がその前提に
+  // 寄りかかっていないことを押さえる＝重複の答えに告知が混ざると、バナーが置換を隠す。
+  test('保存済みなら告知は返さない（重複の答えが勝つ）', async () => {
+    await expect(answerQueryWith({ id: 'cap-a', media: [P0], owners: ['cap-a'] }, { id: 'cap-gone', deletedAt: '2026-07-01T09:00:00Z' })).resolves.toEqual({
+      ok: true,
+      duplicate: true,
+      captureId: 'cap-a',
+    });
+  });
+
+  test('同じ投稿の別の絵なら、ゴミ箱の告知も出ない（漫画の次のページ）', async () => {
+    await expect(answerQueryWith({ id: 'cap-a', media: [P1], owners: ['cap-a'] }, { id: 'cap-gone', deletedAt: '2026-07-01T09:00:00Z' })).resolves.toEqual({ ok: true, duplicate: false });
+  });
+
+  test('trashed を送らないホスト（#158 より前）でも判定は変わらない', async () => {
+    await expect(answerQueryWith(null)).resolves.toEqual({ ok: true, duplicate: false });
   });
 });
 

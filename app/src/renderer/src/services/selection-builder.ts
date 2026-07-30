@@ -16,6 +16,7 @@ import { isOpen as lightboxIsOpen } from './lightbox.ts';
 import { gridColumnCount, scrollGridIndexIntoView } from './grid-nav.ts';
 import { postIdKey } from './records.ts';
 import { deletePost } from './posts.ts';
+import { refresh as trashRefresh } from './trash-view.ts';
 import { get as confirmGet, open as confirmOpen } from './confirm.ts';
 import { isOpen as settingsIsOpen } from './settings.ts';
 
@@ -307,6 +308,7 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
         for (const p of toDelete) await deletePost(p.image || p.video);
         selection.clear();
         await deps.loadPosts(true);
+        trashRefresh(); // the nav's ゴミ箱 badge counts what just landed there (#268)
         deps.showToast(deps.t('deletedN', [count]));
       },
     });

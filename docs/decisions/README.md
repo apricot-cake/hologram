@@ -39,6 +39,7 @@
 | [0011](0011-preserve-acquisition-payloads.md) | 取得したペイロードを原本として残し、正規化フィールドへの昇格だけを実需で絞る | 採用 |
 | [0012](0012-asset-documents-are-raster-only.md) | ライブラリのファイルを「文書」にしてよいのはラスタ画像だけにし、asset 応答自体にも CSP を載せる | 採用 |
 | [0013](0013-accent-color-scoped-to-selection-and-active-state.md) | アクセント色は選択・作用中の状態表示だけに使う | 採用 |
-| [0014](0014-motion-is-css-view-transitions-only-for-grid-density.md) | モーションは CSS を既定とし、View Transitions はグリッド密度切替だけに使う | 採用 |
+| [0014](0014-motion-is-css-view-transitions-only-for-grid-density.md) | モーションは CSS を既定とし、View Transitions はグリッド密度切替だけに使う | 置き換え（0017 へ） |
 | [0015](0015-archives-are-streamed-by-path.md) | アーカイブはバイト列でなくパスで受け渡し、main が fd からストリームする | 採用 |
 | [0016](0016-one-candidate-engine-three-faces.md) | 「タイプ→候補」のエンジンは1つ・面は3つにする | 採用 |
+| [0017](0017-no-grid-motion-view-transitions-retired.md) | グリッドの切替はすべて即時にし、View Transitions を使わない | 採用 |

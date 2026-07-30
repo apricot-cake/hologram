@@ -19,6 +19,7 @@ import type {
   BackupRunResult,
   BackupWriteResult,
   ClearAllResult,
+  ClipboardImportResult,
   CompleteImportResult,
   ConfigSummary,
   ExportCompleteResult,
@@ -118,6 +119,9 @@ const api = {
   pickBackupDir: (): Promise<BackupDirPickResult> => ipcRenderer.invoke('pick-backup-dir'),
   runBackup: (): Promise<BackupRunResult> => ipcRenderer.invoke('run-backup'),
   importImages: (): Promise<MediaImportResult> => ipcRenderer.invoke('import-images'),
+  // Ctrl+V in the app window (#85). `title` is built renderer-side because it is
+  // a localized, user-visible label and main holds no message table.
+  importClipboard: (title: string): Promise<ClipboardImportResult> => ipcRenderer.invoke('import-clipboard', title),
   // A run started — no payload at all, so cb takes no arguments; the raw IPC event
   // is not forwarded (#383). Never hand a renderer callback straight to
   // ipcRenderer.on: that lets Electron's IpcRendererEvent (and its `sender`)

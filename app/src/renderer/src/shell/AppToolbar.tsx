@@ -17,6 +17,7 @@ import { AddFilterButton } from '../filterbar/index.tsx';
 import { FilterChips } from '../filterbar/FilterChips.tsx';
 import { DisplayMenu } from './DisplayMenu.tsx';
 import { SearchBox } from '../searchbox/SearchBox.tsx';
+import { ViewerToolbar } from '../image-tab/ViewerToolbar.tsx';
 import { t } from '../_shared/i18n.ts';
 import { open as openPalette } from '../services/command-registry.ts';
 import { get as storeGet, subscribe as storeSubscribe } from '../services/store.ts';
@@ -27,6 +28,13 @@ const subBack = subKey('navCanBack');
 const getBack = (): boolean => !!storeGet('navCanBack');
 const subForward = subKey('navCanForward');
 const getForward = (): boolean => !!storeGet('navCanForward');
+// An image view is showing ⟺ the store holds its identity (services/image-tab.ts
+// derives the whole stage from this key). The band stays — every browser keeps its
+// toolbar row on every tab — but what it carries swaps: the predicate controls are
+// about the grid, which is not on screen, and the zoom controls are about the picture,
+// which is (#150).
+const subImageView = subKey('activeImageTab');
+const getImageView = (): boolean => storeGet('activeImageTab') != null;
 
 // Leading magnifier for the search field (SearchBox renders only the input; the
 // icon is the field's chrome, same split the old #searchWrap used).
@@ -68,6 +76,7 @@ function PaletteBadge() {
 export function AppToolbar() {
   const canBack = useSyncExternalStore(subBack, getBack);
   const canForward = useSyncExternalStore(subForward, getForward);
+  const imageView = useSyncExternalStore(subImageView, getImageView);
   return (
     // bg-sidebar, not bg-background: the toolbar and the left sidebar form ONE band
     // under the tab strip, and the active tab connects into that band (its legacy
@@ -90,21 +99,33 @@ export function AppToolbar() {
             <ChevronRight />
           </Button>
         </div>
-        <div className="relative flex min-w-0 items-center">
+        {/* Hidden rather than unmounted while an image view is up: the field keeps
+            typed-but-unapplied text and its Autocomplete state, and display:none
+            already takes it out of the tab order. */}
+        <div data-slot="toolbar-search" className={`relative flex min-w-0 items-center ${imageView ? 'hidden' : ''}`}>
           <SearchIcon />
           <SearchBox placeholder={t('searchPlaceholder')} />
           <PaletteBadge />
         </div>
         <div className="flex items-center justify-end gap-1.5">
-          <AddFilterButton />
-          <DisplayMenu />
+          {/* These two ARE unmounted, on purpose: both are popover triggers, and an
+              open popover about the grid has no business surviving into the image
+              view. */}
+          {imageView ? (
+            <ViewerToolbar />
+          ) : (
+            <>
+              <AddFilterButton />
+              <DisplayMenu />
+            </>
+          )}
         </div>
       </div>
       {/* Active-filter chips (redesign §3-2 / P2③) — Linear型 chips rendered by the
           filterbar component from activeFilters(); a chip click reopens its editor.
           px-8 = #mode-post's 32px content padding, so the chip row sits
           on the same left axis as the cards it filters (Linear's filter row ↔ list gutter). */}
-      <div className="px-8">
+      <div className={`px-8 ${imageView ? 'hidden' : ''}`}>
         <FilterChips />
       </div>
     </div>

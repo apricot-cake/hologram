@@ -253,6 +253,61 @@ describe('重複保存の警告（保存前の3択）', () => {
     await clickPostWithDuplicate({ ok: false });
     expect(ctx.sent.some((m) => m.type === 'captureAndSend')).toBe(true);
   });
+
+  // #158: ゴミ箱に現物が残っている投稿。同じ器（保存前に聞くバナー）だが選択肢は2つ＝
+  // 置換する相手のレコードがライブラリに無い。
+  describe('ゴミ箱にある投稿の告知', () => {
+    const TRASHED = { ok: true, duplicate: false, trashed: { id: 'cap-gone', deletedAt: '2026-07-01T09:00:00Z' } };
+
+    test('告知バナーになり、選択肢は2つ（置換を出さない）', async () => {
+      await clickPostWithDuplicate(TRASHED);
+      // 日付は環境のロケール・時間帯で表記が変わるので、前半だけを固定して見る。
+      // 日付は環境のロケール・時間帯で表記が変わるので前後を固定して見る。末尾の
+      // 「戻せる」は文言の要＝「どこにあるか」だけ言って戻し方を言わないと、復元は
+      // アプリ側の操作なので導線がどこにも出ない（バナーにボタンは置けない）。
+      expect(ctx.bannerLabel().textContent).toMatch(/^This post is in the trash \(deleted .+\)\. You can restore it in Hologram$/);
+      expect(ctx.bannerButtons().map((b: any) => b.textContent)).toEqual(['Copy', 'Skip']);
+      expect(ctx.sent.some((m) => m.type === 'captureAndSend')).toBe(false);
+    });
+
+    // ボタン名は重複の場面と同じ「Copy」なので、**補助文だけ**が場面を語る。ここが
+    // 取り違うと「ライブラリに在るものをもう1件」と読める文がゴミ箱の場面に出る＝
+    // ラベルを見ているテストでは絶対に落ちないので、補助文を直接見る。
+    test('「コピー」の補助文はゴミ箱用（ゴミ箱の分が残ることまで言う）', async () => {
+      await clickPostWithDuplicate(TRASHED);
+      expect(ctx.bannerButtons()[0].title).toBe('Save a new record, leaving the trashed one alone');
+    });
+
+    test('重複の場面の補助文はライブラリ用のまま', async () => {
+      await clickPostWithDuplicate();
+      expect(ctx.bannerButtons()[0].title).toBe('Save it again as a second record');
+    });
+
+    test('削除日時が無い記録なら日付を省いた文言', async () => {
+      await clickPostWithDuplicate({ ok: true, duplicate: false, trashed: { id: 'cap-gone', deletedAt: null } });
+      expect(ctx.bannerLabel().textContent).toBe('This post is in the trash. You can restore it in Hologram');
+    });
+
+    test('コピー: 置換の印なしで撮る（新しい1件になる）', async () => {
+      await clickPostWithDuplicate(TRASHED);
+      ctx.bannerButtons()[0].dispatchEvent(userEvent(ctx, 'click'));
+      await ctx.settle(100);
+      expect(ctx.sent.at(-1)).toMatchObject({ type: 'captureAndSend', replaces: null });
+    });
+
+    test('スキップ: 保存しない', async () => {
+      await clickPostWithDuplicate(TRASHED);
+      ctx.bannerButtons()[1].dispatchEvent(userEvent(ctx, 'click'));
+      await ctx.settle(100);
+      expect(ctx.sent.some((m) => m.type === 'captureAndSend')).toBe(false);
+      expect(ctx.bannerLabel().textContent).toBe('Not saved');
+    });
+
+    test('告知が無ければ何も聞かずに撮る', async () => {
+      await clickPostWithDuplicate({ ok: true, duplicate: false });
+      expect(ctx.sent.some((m) => m.type === 'captureAndSend')).toBe(true);
+    });
+  });
 });
 
 describe('notify: 成功', () => {
@@ -266,7 +321,7 @@ describe('notify: 成功', () => {
   });
 
   test('ok 状態の文面', () => {
-    expect(ctx.bannerLabel().textContent).toBe('Image saved');
+    expect(ctx.bannerLabel().textContent).toBe('Post saved');
   });
 
   test('しばらくすると片付く（バナーが消え、再開可能になる）', async () => {
@@ -331,7 +386,7 @@ describe('notify: 部分成功・グループ化・失敗', () => {
   test('ずれていなければ普段どおりの成功', () => {
     ctx.notify({ type: 'notify', success: true, metaOk: true, grouped: 0, hostSkew: null });
 
-    expect(ctx.bannerLabel().textContent).toBe('Image saved');
+    expect(ctx.bannerLabel().textContent).toBe('Post saved');
     expect(ctx.bannerState()).toBe('success');
   });
 });

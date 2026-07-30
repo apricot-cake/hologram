@@ -1,6 +1,6 @@
 # 0014. モーションは CSS を既定とし、View Transitions はグリッド密度切替だけに使う
 
-- 状態: 採用（2026-07-29）
+- 状態: 置き換え（[0017](0017-no-grid-motion-view-transitions-retired.md) へ・2026-07-30）
 - 関連: #252・#19（棄却リスト）・#154（全面再設計）・[0002](0002-dependency-adoption-criteria.md)・[0003](0003-build-vs-borrow-boundary.md)
 
 ## 背景

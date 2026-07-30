@@ -30,7 +30,10 @@ export const MESSAGES = {
     // content.js capture banner
     bannerSelect: '保存する投稿をクリック（Esc または右クリックでキャンセル）',
     bannerSaving: '保存中...',
-    bannerSaved: '画像を保存しました',
+    // The unit of a save is the POST, not the image file that was clicked: the
+    // app folds same-post records into ONE card, so wording this as "image"
+    // contradicted what the library shows right after the banner.
+    bannerSaved: '投稿を保存しました',
     // $1 = how many images of this post are saved now (2nd, 3rd, …). Shown when
     // a save hits a post already saved this session — the app folds same-post
     // records into ONE stacked card, so nothing "new" appears in the grid.
@@ -122,6 +125,10 @@ export const MESSAGES = {
     // warning is that the user did not know there would be two.
     dupCopy: 'コピー',
     dupCopyHint: 'もう1件として保存します',
+    // #158: ボタン名は同じ「コピー」だが、ゴミ箱の場面は相手が画面に無い＝何をコピー
+    // するのかが読み手に見えない。ゴミ箱の分がどうなるか（消えない）まで書くのは
+    // この文言だけの仕事＝重複の場面には言うことが無く、こちらには要る。
+    dupCopyHintTrashed: 'ゴミ箱の分はそのままにして、新しく保存します',
     dupReplace: '置換',
     dupReplaceHint: '前の保存をゴミ箱へ移し、タグと入っているフォルダを引き継ぎます',
     dupSkip: 'スキップ',
@@ -131,12 +138,22 @@ export const MESSAGES = {
     // desktop app next runs, so the wording does not claim it is gone already.
     dupReplaced: '置き換えました（前の保存はゴミ箱へ）',
     dupSuppress: '今後この確認を出さない',
+    // #158: ライブラリには無いが、ゴミ箱に現物が残っている投稿。ここで保存すると
+    // 気付かないまま同じ投稿を2つ持つことになる（後で復元すれば本当に2つになる）。
+    // ⚠️「復元」はボタンにできない＝保存プログラムはライブラリに対して読み取り専用
+    // で、復元はアプリ側の操作。だから**文言で行き先を教える**＝知らせるだけだと
+    // 「消えたものが出てきた」で終わり、戻す道があること自体が伝わらない。
+    // 選択肢は「コピー」と「スキップ」の2つ（置換は相手の現行レコードが無い）。
+    // $1 = 削除した日（時刻は出さない＝「いつ要らないと決めたか」は日単位の話）。
+    trashedTitleOn: 'この投稿はゴミ箱にあります（$1 に削除）。Hologram で元に戻せます',
+    // 削除日時が記録されていない場合（記録の書き込みが中断された等）。
+    trashedTitle: 'この投稿はゴミ箱にあります。Hologram で元に戻せます',
   },
 
   en: {
     bannerSelect: 'Click a post to save (Esc or right-click to cancel)',
     bannerSaving: 'Saving...',
-    bannerSaved: 'Image saved',
+    bannerSaved: 'Post saved',
     bannerSavedGrouped: 'Saved — grouped with your earlier image ($1 of this post)',
     bannerSavedNoMeta: 'Saved (post info unavailable)',
     bannerSavedNoMetaProtected: 'Saved (post info unavailable: private account)',
@@ -183,6 +200,9 @@ export const MESSAGES = {
     dupTitle: 'This post is already saved',
     dupCopy: 'Copy',
     dupCopyHint: 'Save it again as a second record',
+    // #158 — see the ja note. Same button name, different situation: nothing is
+    // on screen to copy, and what happens to the trashed one has to be said here.
+    dupCopyHintTrashed: 'Save a new record, leaving the trashed one alone',
     dupReplace: 'Replace',
     dupReplaceHint: 'Move the earlier save to the trash, keeping its tags and folders',
     dupSkip: 'Skip',
@@ -190,6 +210,10 @@ export const MESSAGES = {
     dupSkipped: 'Not saved',
     dupReplaced: 'Replaced (the earlier save goes to the trash)',
     dupSuppress: "Don't ask again",
+    // #158 — see the ja notes. Restoring is not offered: the host is read-only
+    // over the library, so putting the post back is done in the app.
+    trashedTitleOn: 'This post is in the trash (deleted $1). You can restore it in Hologram',
+    trashedTitle: 'This post is in the trash. You can restore it in Hologram',
   },
 };
 

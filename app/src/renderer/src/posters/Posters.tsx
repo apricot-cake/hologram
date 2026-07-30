@@ -1,5 +1,5 @@
 // Virtualized poster grid — poster cells on the shared VirtualGridHost. Emits
-// the SAME DOM the old flow layout did — `.poster-card[data-index/data-key]` (+inspected)
+// the SAME DOM the old flow layout did — `.poster-card[data-index]` (+inspected)
 // with `.poster-av`, `.poster-meta` (.poster-name / .poster-handle /
 // .poster-foot) — so the
 // delegated click/dblclick/contextmenu on #posterGrid keeps
@@ -22,8 +22,6 @@ const getInspected = () => (storeGet('inspectedKey') as string | null | undefine
 // The poster cell model viewer.js resolves per card — only the fields laid out here.
 interface PosterCardModel {
   index: number;
-  /** Stable per-poster id (the user aggregate's key) — the density View Transition names cards by it. */
-  posterKey?: string | null;
   inspected?: boolean;
   avatarSrc?: string | null;
   monogram?: string;
@@ -47,7 +45,7 @@ function _TagIcon() {
 
 function PosterCard({ c }: { c: PosterCardModel }) {
   return (
-    <div className={'poster-card' + (c.inspected ? ' inspected' : '')} data-index={c.index} data-key={c.posterKey} tabIndex={0}>
+    <div className={'poster-card' + (c.inspected ? ' inspected' : '')} data-index={c.index} tabIndex={0}>
       <div className="poster-av">
         {c.avatarSrc ? (
           // decoding="async" (#569): a virtualized grid can have many of these

@@ -8,7 +8,7 @@
 // button so the two paths can never disagree about what a save records.
 import { logSaveEvent, newSaveId, reportSaveTimeout } from './capture-log.ts';
 import { SAVE_WATCHDOG_MS } from './deadline.ts';
-import { buildChoiceRow, checkDuplicate } from './duplicate-guard.ts';
+import { buildChoiceRow, checkDuplicate, formatDeletedAt } from './duplicate-guard.ts';
 import { collectImageUrls, getMediaIdentitySite } from './extractor/index.ts';
 import { ICONS } from './icons.ts';
 import { StatusSurface } from './status-surface.ts';
@@ -135,22 +135,28 @@ export async function startDrag(): Promise<void> {
           send(z, p, null);
           return;
         }
-        z.setState('ask', t('dupTitle'));
+        // #158: same question, for a post in the trash instead of the library.
+        const deletedOn = hit.trashed ? formatDeletedAt(hit.trashed.deletedAt) : '';
+        z.setState('ask', hit.trashed ? (deletedOn ? t('trashedTitleOn', [deletedOn]) : t('trashedTitle')) : t('dupTitle'));
         z.slot(
-          buildChoiceRow(t, (choice) => {
-            if (choice === 'skip') {
-              // A decision, not a hang — see capture.ts's own skip line (#519).
-              logSaveEvent({ stage: 'duplicate', phase: 'skip', saveId: p.saveId, platform: p.platform, url: p.postUrl });
-              z.setState('success', t('dupSkipped'));
-              setTimeout(() => {
-                hideOverlay(true);
-                savingViaDrop = false;
-              }, 1400);
-              return;
-            }
-            z.setState('busy', t('bannerSaving'));
-            send(z, p, choice === 'replace' ? hit.captureId : null);
-          }),
+          buildChoiceRow(
+            t,
+            (choice) => {
+              if (choice === 'skip') {
+                // A decision, not a hang — see capture.ts's own skip line (#519).
+                logSaveEvent({ stage: 'duplicate', phase: 'skip', saveId: p.saveId, platform: p.platform, url: p.postUrl });
+                z.setState('success', t('dupSkipped'));
+                setTimeout(() => {
+                  hideOverlay(true);
+                  savingViaDrop = false;
+                }, 1400);
+                return;
+              }
+              z.setState('busy', t('bannerSaving'));
+              send(z, p, choice === 'replace' ? hit.captureId : null);
+            },
+            hit.trashed ? 'trashed' : 'duplicate',
+          ),
         );
       });
   }

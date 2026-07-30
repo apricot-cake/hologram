@@ -43,8 +43,13 @@ const isUgoiraFile = (f: string | null | undefined) => /\.zip$/i.test(f || '');
 type HologramMediaItem = { file?: string; alt?: string; type?: string; posterFile?: string; frames?: { file: string; delay: number }[]; [k: string]: any };
 const mediaItemsOf = (p: HologramPost): HologramMediaItem[] => (Array.isArray(p.media) ? (p.media as HologramMediaItem[]).filter((m) => m && m.file) : []);
 export const mediaFilesOf = (p: HologramPost): string[] => mediaItemsOf(p).map((m) => m.file as string);
-// p.image is a screenshot unless it's a dragged/migrated artwork or a non-JPEG original.
-export const isScreenshot = (p: HologramPost): boolean => !!p.image && SS_EXT.test(p.image) && p.source !== 'drag' && p.source !== 'eagle-migration';
+// p.image is a screenshot unless it's a locally-imported artwork or a non-JPEG
+// original. Every local-intake `source` belongs in this list (#84's design comment):
+// those records are the user's own pictures, not a capture of a post. 'clipboard'
+// (#85) writes PNG, so the extension test already excludes it — it is named anyway,
+// because "which sources are artwork" is the question this line answers, and leaving
+// one out silently changes how that door's items sort into the facets.
+export const isScreenshot = (p: HologramPost): boolean => !!p.image && SS_EXT.test(p.image) && p.source !== 'drag' && p.source !== 'clipboard' && p.source !== 'eagle-migration';
 export const captureFile = (p: HologramPost): string => (isScreenshot(p) ? p.image : '');
 // The leading media item's THUMBNAIL file — its poster when it's a video/gif
 // (a raw video can't be an <img src>), else the file itself. Falls back to the

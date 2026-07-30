@@ -247,7 +247,7 @@ export async function startOverlay(): Promise<void> {
   // image that scrolls beneath it (#347).
   let inScrollBurst = false;
 
-  const { getMessage: t, partialSaveText, saveFailureText } = await createI18n();
+  const { getMessage: t, partialSaveText, saveFailureText, skewSaveText } = await createI18n();
 
   // === settings ===
 
@@ -662,10 +662,14 @@ export async function startOverlay(): Promise<void> {
   // the sentence comes here, to the same banner Alt+S uses — which already has
   // the width, the state colours and the `alert` role for it.
   //
-  // Only the two outcomes the user could not have predicted get one. A plain
+  // Only the outcomes the user could not have predicted get one. A plain
   // success stays silent (the mark appearing IS the answer), whereas `partial`
   // — saved, but the post's own text and author are missing — is a fact about
-  // this save that nothing on screen would otherwise state.
+  // this save that nothing on screen would otherwise state. The same banner
+  // also carries the #205 protocol-skew notice (drag.ts and capture.ts already
+  // did; hover save was the one save route still silent about it, #576) — the
+  // save still succeeded, so it rides the amber `partial` state rather than a
+  // fourth face of its own.
   function showSaveBanner(state: 'error' | 'partial', text: string) {
     if (saveBannerTimer) clearTimeout(saveBannerTimer);
     saveBannerTimer = null;
@@ -752,7 +756,14 @@ export async function startOverlay(): Promise<void> {
       // and the corner has nowhere to put one. It used to live in the mark's
       // `title`, i.e. behind a one-second hover on a 24px circle; it is now the
       // banner's amber state, said once, at the moment it is true (#310).
-      if (res.metaOk === false) showSaveBanner('partial', partialSaveText(res.metaReason));
+      //
+      // Same priority as drag.ts's done(): the skew notice wins over the
+      // partial-save one when a save somehow manages to be both, because a skew
+      // is about the NEXT save (#205), which outranks a fact about this one.
+      // null when the two halves match or no host has answered yet (#576).
+      const skewText = skewSaveText(res.hostSkew);
+      if (skewText) showSaveBanner('partial', skewText);
+      else if (res.metaOk === false) showSaveBanner('partial', partialSaveText(res.metaReason));
       paint(unit, state);
     });
   }

@@ -34,6 +34,11 @@ export function importLegacyZip(zipPath: string, duplicateMode?: string) {
 export function importImages() {
   return hologramIpc.importImages();
 }
+// Ctrl+V (#85). `title` is the card label the record gets — built by the caller
+// because it is localized text and main has no message table.
+export function importClipboard(title: string) {
+  return hologramIpc.importClipboard(title);
+}
 export function clearAll() {
   return hologramIpc.clearAll();
 }

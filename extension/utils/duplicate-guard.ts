@@ -31,11 +31,38 @@ export const DUPLICATE_WARNING_KEY = 'duplicateWarning';
 
 export type DuplicateChoice = 'copy' | 'replace' | 'skip';
 
+// Which question the row is answering. 'duplicate' is #34's (the post is in the
+// library); 'trashed' is #158's (the post is in the library's trash).
+//
+// One parameter rather than two, because the variant decides BOTH the answers
+// offered and how `copy` describes itself, and those two must move together: a
+// shortened row with the library wording would say "save it again as a second
+// record" about a record the library does not have, and the full row with the
+// trash wording would offer a `replace` whose target is gone.
+export type ChoiceVariant = 'duplicate' | 'trashed';
+
+// Least to most destructive, with the reversible answer first. A trashed post
+// drops `replace`: it needs a live record to retire, and a trashed post has none.
+const CHOICES: Record<ChoiceVariant, readonly DuplicateChoice[]> = {
+  duplicate: ['copy', 'replace', 'skip'],
+  trashed: ['copy', 'skip'],
+};
+
 export interface DuplicateHit {
   // The record the re-saved picture is already in — what a "replace" answer
   // names as the record to retire. Null when the library could say "this post
   // is saved" but not which capture holds the picture.
   captureId: string | null;
+  // Set instead of a live match when the post is in the library's TRASH (#158):
+  // not saved, but its record and files are still there and still restorable, so
+  // saving again would quietly make a second copy of a post the user deleted.
+  // `deletedAt` is the ISO time it was trashed, or null when the record carries
+  // no stamp — the notice then drops the date rather than inventing one.
+  //
+  // Restoring is NOT offered here: the native host is read-only over the library
+  // (#34's design), so no on-page control can carry it out. The notice says where
+  // the post is; putting it back is done in the app.
+  trashed?: { deletedAt: string | null } | null;
 }
 
 type Messages = (key: string, subs?: ReadonlyArray<unknown>) => string;
@@ -114,8 +141,32 @@ export async function checkDuplicate(platform: string, url: string | null, image
       answer(null);
     }
   });
-  if (!res || !res.ok || !res.duplicate) return null;
+  if (!res || !res.ok) return null;
+  // A trash notice is the answer when nothing live matched (#158). Read before
+  // the `duplicate` gate because it is a hit in its own right: the background
+  // never sets both, and returning null here would drop the notice entirely.
+  if (!res.duplicate) {
+    const trashed = res.trashed;
+    if (!trashed || typeof trashed !== 'object') return null;
+    return { captureId: null, trashed: { deletedAt: typeof trashed.deletedAt === 'string' && trashed.deletedAt ? trashed.deletedAt : null } };
+  }
   return { captureId: typeof res.captureId === 'string' && res.captureId ? res.captureId : null };
+}
+
+// The deletion date as the notice shows it: the record's own calendar day in the
+// viewer's locale, or '' when the record carried no stamp (the caller then uses
+// the dateless wording). Time of day is deliberately dropped — "when did I decide
+// I didn't want this" is a day-scale question, and a timestamp reads as precision
+// the answer does not have.
+export function formatDeletedAt(deletedAt: string | null | undefined): string {
+  if (!deletedAt) return '';
+  const t = Date.parse(deletedAt);
+  if (!Number.isFinite(t)) return '';
+  try {
+    return new Date(t).toLocaleDateString();
+  } catch {
+    return '';
+  }
 }
 
 function makeChoiceButton(label: string, title: string, primary: boolean): HTMLButtonElement {
@@ -144,7 +195,14 @@ function makeChoiceButton(label: string, title: string, primary: boolean): HTMLB
 // reversible answer first. "Copy" leads and carries the accent because it is
 // what the save would have done without the warning: the question adds
 // choices, it does not change the default.
-export function buildChoiceRow(t: Messages, onChoose: (choice: DuplicateChoice) => void): HTMLDivElement {
+//
+// `variant` picks the question being answered (#158) — which answers appear and
+// how `copy` describes itself. Narrowing one row rather than building a second
+// keeps ONE definition of what each answer is called, how it is styled, and that
+// it must come from a real user gesture. The BUTTON NAMES are deliberately shared
+// across variants: a control that renames itself per situation has to be learned
+// twice, while the hint beneath it is read in the moment and can be situational.
+export function buildChoiceRow(t: Messages, onChoose: (choice: DuplicateChoice) => void, variant: ChoiceVariant = 'duplicate'): HTMLDivElement {
   const wrap = document.createElement('div');
   wrap.className = 'choices';
 
@@ -156,12 +214,16 @@ export function buildChoiceRow(t: Messages, onChoose: (choice: DuplicateChoice) 
     answered = true;
     onChoose(choice);
   };
+  const choices = CHOICES[variant];
   const buttons: Array<[DuplicateChoice, string, string, boolean]> = [
-    ['copy', t('dupCopy'), t('dupCopyHint'), true],
+    // The trash variant's hint says what happens to the copy in the trash, which
+    // the library wording has no reason to mention and this one must: the answer
+    // leaves TWO records behind, one of them still deleted.
+    ['copy', t('dupCopy'), t(variant === 'trashed' ? 'dupCopyHintTrashed' : 'dupCopyHint'), true],
     ['replace', t('dupReplace'), t('dupReplaceHint'), false],
     ['skip', t('dupSkip'), t('dupSkipHint'), false],
   ];
-  for (const [choice, label, hint, primary] of buttons) {
+  for (const [choice, label, hint, primary] of buttons.filter(([c]) => choices.includes(c))) {
     const b = makeChoiceButton(label, hint, primary);
     // Named for the browser E2E harness, which cannot read the localized label
     // (the banner follows the browser locale) — same role the overlay's

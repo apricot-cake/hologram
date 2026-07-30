@@ -8,12 +8,12 @@
 // the folder as a place filter), the 保存した検索 group (#40) and the footer (settings
 // gear + mirror rail). Still to come (P1-3 continuation): folder HIERARCHY +
 // create/rename/delete (#41).
-import { ChevronRight, Folder, LayoutGrid, Plus, Search, Settings, Terminal, Users } from 'lucide-react';
+import { ChevronRight, Folder, LayoutGrid, Plus, Search, Settings, Terminal, Trash2, Users } from 'lucide-react';
 import type { DragEvent, MouseEvent } from 'react';
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupAction, SidebarGroupContent, SidebarGroupLabel, SidebarHeader, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarMenuSub, SidebarRail, SidebarTrigger } from '@/components/ui/sidebar';
+import { Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupAction, SidebarGroupContent, SidebarGroupLabel, SidebarHeader, SidebarMenu, SidebarMenuBadge, SidebarMenuButton, SidebarMenuItem, SidebarMenuSub, SidebarRail, SidebarTrigger } from '@/components/ui/sidebar';
 import type { PanelResize } from './use-panel-resize.ts';
 import { MirrorStatus } from '../mirror/MirrorStatus.tsx';
 import { t } from '../_shared/i18n.ts';
@@ -27,6 +27,7 @@ import { open as menuOpen } from '../services/menu.ts';
 import { isHidden as panelsAreHidden, subscribe as panelsSubscribe } from '../services/panels.ts';
 import { promptName } from '../prompt/Prompt.tsx';
 import { applyFolderFilter, applySavedSearch, browseTo } from '../services/orchestrator.ts';
+import { getCount as trashCount, subscribe as trashSubscribe } from '../services/trash-view.ts';
 
 // browseMode is the single source of truth for the active destination. Writing
 // the store IS the interface — orchestrator.ts subscribes and runs the heavy
@@ -168,6 +169,8 @@ interface FolderTreeCtx {
 export function LeftSidebar({ resize }: { resize?: PanelResize }) {
   const mode = useSyncExternalStore(subBrowse, getBrowse);
   const isPosters = mode === 'posters';
+  const isTrash = mode === 'trash';
+  const trashN = useSyncExternalStore(trashSubscribe, trashCount);
   const panelsHidden = useSyncExternalStore(panelsSubscribe, panelsAreHidden);
   const allFolders = useFolders();
   const folders = allFolders.filter((f) => !isSavedSearch(f));
@@ -317,7 +320,7 @@ export function LeftSidebar({ resize }: { resize?: PanelResize }) {
           <SidebarGroupContent>
             <SidebarMenu>
               <SidebarMenuItem>
-                <SidebarMenuButton isActive={!isPosters} tooltip={t('browsePosts')} onClick={() => browseTo('posts')}>
+                <SidebarMenuButton isActive={!isPosters && !isTrash} tooltip={t('browsePosts')} onClick={() => browseTo('posts')}>
                   <LayoutGrid />
                   <span>{t('browsePosts')}</span>
                 </SidebarMenuButton>
@@ -398,6 +401,28 @@ export function LeftSidebar({ resize }: { resize?: PanelResize }) {
             </SidebarGroupContent>
           </SidebarGroup>
         )}
+        {/* ゴミ箱 (#268) — a library destination, so it lives here in the nav rather
+            than in the footer (which holds the app-level entries) or in 設定, where it
+            used to be. Last and always present: digiKam puts the trash as the final
+            entry of the album tree, Apple 写真 keeps 「最近削除した項目」 in a
+            ユーティリティ group at the bottom, and neither hides it when it is empty —
+            a row that disappears turns "where did my deleted post go" into a search.
+            mt-auto pins it under whatever the folder / saved-search groups grew to.
+            The badge is the count, shown only from 1 up: "0" is not information, and
+            unlike a saved search this count is cheap (one directory read). */}
+        <SidebarGroup className="mt-auto">
+          <SidebarGroupContent>
+            <SidebarMenu>
+              <SidebarMenuItem>
+                <SidebarMenuButton isActive={isTrash} tooltip={t('trashTitle')} onClick={() => browseTo('trash')}>
+                  <Trash2 />
+                  <span>{t('trashTitle')}</span>
+                </SidebarMenuButton>
+                {trashN > 0 && <SidebarMenuBadge>{trashN}</SidebarMenuBadge>}
+              </SidebarMenuItem>
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
       </SidebarContent>
       <SidebarFooter>
         <SidebarMenu>

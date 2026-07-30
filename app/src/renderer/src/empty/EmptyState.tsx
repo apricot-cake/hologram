@@ -32,6 +32,10 @@ export function EmptyState() {
   const allUsersCount = useSyncExternalStore(subAllUsersCount, getAllUsersCount);
   const query = useSyncExternalStore(subSearchQuery, getSearchQuery);
   let variant: HologramEmptyVariant | null = null;
+  // The trash has its own empty state, inside its own view (#268) — this
+  // placeholder belongs to the two library grids and would otherwise answer for a
+  // destination it knows nothing about.
+  if (mode === 'trash') return null;
   if (mode === 'posts') {
     // postGroups is undefined before the first renderPosts() ever ran (nothing to
     // show yet), an array while the grid has content (nothing to show), or

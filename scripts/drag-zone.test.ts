@@ -165,7 +165,7 @@ describe('ドロップ: 成功', () => {
   });
 
   test('保存済みテキストを出す', () => {
-    expect(label().textContent).toBe('Image saved');
+    expect(label().textContent).toBe('Post saved');
   });
 
   test('しばらくすると隠れる', async () => {
@@ -287,6 +287,30 @@ describe('重複保存の警告（ドロップ前の3択）', () => {
     // #519: 「やめる」を選んだことが capture.log に残る＝沈黙と区別できる。
     expect(sent.at(-1)).toMatchObject({ type: 'logCapture', entry: { stage: 'duplicate', phase: 'skip' } });
     expect(label().textContent).toBe('Not saved');
+    duplicateAnswer = { ok: true, duplicate: false };
+    await settle(1500);
+  });
+
+  // #158: ドラッグ保存もこの器に相乗りする＝文言と選択肢が capture.ts と揃っていること
+  // （揃わないと同じ判断を経路ごとに違う顔で聞くことになる）。
+  test('ゴミ箱に在る投稿は2択の告知（置換を出さない）', async () => {
+    await settle(2300); // 直前のシナリオの滞留を越えてゾーンを閉じきる
+    duplicateAnswer = { ok: true, duplicate: false, trashed: { id: 'cap-gone', deletedAt: '2026-07-01T09:00:00Z' } };
+    window.document.getElementById('img1')?.dispatchEvent(dragEvent('dragstart'));
+    zone().dispatchEvent(dragEvent('drop'));
+    await settle();
+
+    expect(label().textContent).toMatch(/^This post is in the trash \(deleted .+\)\. You can restore it in Hologram$/);
+    expect(state()).toBe('ask');
+    expect(buttons().map((b) => b.textContent)).toEqual(['Copy', 'Skip']);
+    // ボタン名は据え置きで補助文だけが場面を語る＝両経路で同じ文が出ること（capture.ts 側と対）。
+    expect(buttons()[0].title).toBe('Save a new record, leaving the trashed one alone');
+
+    const before = sent.length;
+    buttons()[0].dispatchEvent(dragEvent('click'));
+    await settle();
+    expect(sent.slice(before).find((m) => m.type === 'imageDragged')).toMatchObject({ replaces: null });
+
     duplicateAnswer = { ok: true, duplicate: false };
     await settle(1500);
   });
