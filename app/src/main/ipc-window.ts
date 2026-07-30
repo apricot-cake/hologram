@@ -7,13 +7,15 @@
 // re-required here; getSaveFolder + APP_ICON arrive via ctx.
 import { ipcMain, shell, BrowserWindow, clipboard, nativeImage, screen } from 'electron';
 import fs from 'node:fs';
-import path from 'node:path';
-import { isLibraryFileName, isViewerImageName, libraryFilePaths } from './library-files.ts';
+import { isViewerImageName, libraryFilePath, libraryFilePaths } from './library-files.ts';
 import type { IpcContext } from './ipc-context.ts';
 
 function register(ctx: IpcContext) {
   const { getSaveFolder, APP_ICON } = ctx;
-  const libraryPath = (file: string) => path.join(getSaveFolder(), file);
+  // Every handler below hands a library file to something OUTSIDE the app, so
+  // they all resolve through the one export gate (library-files.ts) rather than
+  // joining a path themselves.
+  const exportPath = (file: unknown) => libraryFilePath(file, getSaveFolder());
 
   ipcMain.handle('open-external', (_event, url) => {
     if (typeof url === 'string' && /^https?:\/\//i.test(url)) {
@@ -23,8 +25,8 @@ function register(ctx: IpcContext) {
 
   // Reveal one library file in the OS file manager (card context menu).
   ipcMain.handle('show-in-folder', (_event, file) => {
-    if (!isLibraryFileName(file)) return;
-    shell.showItemInFolder(libraryPath(file));
+    const p = exportPath(file);
+    if (p) shell.showItemInFolder(p);
   });
 
   // Open one library image in its own frameless-ish window (middle-click on a
@@ -37,11 +39,13 @@ function register(ctx: IpcContext) {
   // same shape copy-image already uses for "this file isn't showable".
   ipcMain.handle('open-image-window', (_event, image) => {
     if (!isViewerImageName(image)) return false;
+    const source = exportPath(image);
+    if (!source) return false;
     // Size the window to the image's aspect ratio (fit within ~85% of the work area).
     let width = 1100;
     let height = 850;
     try {
-      const sz = nativeImage.createFromPath(libraryPath(image)).getSize();
+      const sz = nativeImage.createFromPath(source).getSize();
       if (sz.width > 0 && sz.height > 0) {
         const wa = screen.getPrimaryDisplay().workAreaSize;
         const scale = Math.min(1, (wa.width * 0.85) / sz.width, (wa.height * 0.85) / sz.height);
@@ -102,8 +106,9 @@ function register(ctx: IpcContext) {
   // empty image would silently WIPE the clipboard, so the renderer reports the
   // failure instead.
   ipcMain.handle('copy-image', (_event, file) => {
-    if (!isLibraryFileName(file)) return false;
-    const img = nativeImage.createFromPath(libraryPath(file));
+    const p = exportPath(file);
+    if (!p) return false;
+    const img = nativeImage.createFromPath(p);
     if (img.isEmpty()) return false;
     clipboard.writeImage(img);
     return true;
