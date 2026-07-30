@@ -1,0 +1,48 @@
+<!--
+  Hand-authored reproduction of X's photo viewer ("lightbox", #325): the state
+  the page is in at /<user>/status/<id>/photo/<n>. Two things matter about the
+  shape, and both are reproduced here rather than scraped (X needs an
+  authenticated live session, which these offline fixtures deliberately avoid):
+
+    - the enlarged picture is drawn in a modal layer that is NOT a descendant of
+      any article[data-testid="tweet"], which is why the ordinary ancestor walk
+      found no post there;
+    - the post detail and its replies are still in the page BEHIND the viewer,
+      as ordinary articles with pictures of their own — those must keep
+      resolving to themselves and never to the post the URL bar names (A-1n).
+-->
+<!DOCTYPE html>
+<html>
+<head></head>
+<body>
+
+  <!-- Behind the viewer: the opened post, and a reply carrying its own picture. -->
+  <article data-testid="tweet" id="tweetDetail">
+    <a href="/alice/status/111"><time datetime="2026-01-01T00:00:00Z">1h</time></a>
+    <div data-testid="tweetPhoto"><img id="detailImg" src="https://pbs.twimg.com/media/AAA.jpg"></div>
+  </article>
+  <article data-testid="tweet" id="tweetReply">
+    <a href="/bob/status/222"><time datetime="2026-01-01T00:30:00Z">30m</time></a>
+    <div data-testid="tweetPhoto"><img id="replyImg" src="https://pbs.twimg.com/media/BBB.jpg"></div>
+  </article>
+
+  <!-- The viewer itself: its own layer, outside every article. Holds the
+       enlarged picture, the viewer's own controls, and the author's avatar. -->
+  <div id="layers">
+    <div role="dialog" aria-modal="true" id="viewer">
+      <div id="viewerBackdrop"></div>
+      <div id="viewerClose" role="button" aria-label="Close"></div>
+      <img id="viewerAvatar" src="https://pbs.twimg.com/profile_images/CCC.jpg">
+      <div id="viewerMediaBox">
+        <img id="viewerImg" src="https://pbs.twimg.com/media/AAA.jpg?format=jpg&amp;name=large">
+      </div>
+      <!-- A video post opened the same way: the poster frame is the handle the
+           page still offers once the player has initialised (#450). -->
+      <div id="viewerVideoBox">
+        <video id="viewerVideo" poster="https://pbs.twimg.com/amplify_video_thumb/111/img/DDD.jpg"></video>
+      </div>
+    </div>
+  </div>
+
+</body>
+</html>

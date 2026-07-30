@@ -85,6 +85,49 @@ function parseXPostLink(href: string): XPostLink | null {
   }
 }
 
+// The photo viewer ("lightbox"): clicking a picture pushes
+// /<user>/status/<id>/photo/<n> into the URL bar and draws that picture in a
+// modal layer of its own — a subtree that is NOT inside the timeline's
+// article[data-testid="tweet"]. That is the whole of #325: the ancestor walk
+// that finds every other X post walked from the picture straight past the
+// modal to <body> without meeting an article, so the highlight never appeared
+// and a click resolved to no post at all.
+//
+// The path is also where the post id comes from while the viewer is open, and
+// the viewer is the only thing that puts this shape in the URL bar.
+const X_PHOTO_VIEWER_PATH = /^\/[^/]+\/status\/\d+\/photo\/\d+/;
+
+function findXPostElement(target: EventTarget | null): Element | null {
+  const el = target instanceof Element ? target : ((target as Node | null)?.parentElement ?? null);
+  if (!el) return null;
+  // The ordinary shape first, unchanged: a post is its article, wherever
+  // inside it the pointer happens to be. This branch is also what keeps the
+  // replies rendered behind the open viewer attributed to THEMSELVES — they
+  // are ordinary articles, and the fallback below would hand them the post the
+  // URL bar names (the mis-attribution A-1n exists to catch).
+  const article = el.closest?.('article[data-testid="tweet"]') ?? null;
+  if (article) return article;
+  return findXViewerMedia(el);
+}
+
+// The picture the photo viewer is showing, when that is what the pointer is on.
+//
+// Returned as the post element itself, which is what makes the capture rect the
+// picture's own box: the modal spans the viewport, and the navigation arrows,
+// the reply column and the dimmed backdrop are not part of the post. The
+// permalink then comes from getPermalink's URL-bar fallback, which already
+// strips /photo/<n> down to the post.
+//
+// Nothing else in the viewer is capturable: the close button and the backdrop
+// are not media, and the author's avatar is media the URL bar would attribute
+// to the post perfectly well — so the same CDN-path allowlist the hover save
+// button gates on (#94) decides here too.
+function findXViewerMedia(el: Element): Element | null {
+  if (!X_PHOTO_VIEWER_PATH.test(location.pathname)) return null;
+  if (el.tagName !== 'IMG' && el.tagName !== 'VIDEO') return null;
+  return x.mediaIdentity?.isPostMedia(el as PostMediaElement) ? el : null;
+}
+
 // The bookmarks list, and only it: /i/bookmarks and /i/bookmarks/<folderId>.
 // Deliberately not the search or any other list page — chase-mode intake (#362)
 // walks a list the user curated, not one X assembled.
@@ -320,10 +363,15 @@ const x: Extractor = {
           background-color: transparent !important;
         }
       `,
+    findPostElement(target: EventTarget | null) {
+      return findXPostElement(target);
+    },
     getPermalink(post: Element): string {
       // Fall back to the URL bar on a single-status page (parity with Bluesky/
       // Mastodon/Misskey), so an article whose own permalink anchor isn't
-      // rendered still yields a usable URL.
+      // rendered still yields a usable URL. The photo viewer's picture (#325)
+      // reaches this fallback by the same route — it carries no anchor of its
+      // own, and parseXPostLink strips the /photo/<n> the URL bar shows.
       return getXPostLink(post)?.url || parseXPostLink(location.href)?.url || '';
     },
     prepareForCapture(post: Element) {
