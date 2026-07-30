@@ -11,7 +11,7 @@ import type { IpcContext } from './ipc-context.ts';
 import type { AppInfo, AppPrefs, ConfigSummary, ExtensionIdResult, OkResult, TabsState } from './ipc-payloads.ts';
 
 // --- Preferences (language / viewMode / skipDeleteConfirm / sortBy) ---
-const PREF_KEYS = ['language', 'viewMode', 'skipDeleteConfirm', 'sortBy', 'imageTileSize', 'cardSize', 'listThumb', 'theme', 'tileOverlay', 'browseMode', 'posterViewMode', 'posterTileSize', 'posterCardSize', 'sidebarOpen', 'sidebarWidth', 'inspectorWidth'];
+const PREF_KEYS = ['language', 'viewMode', 'skipDeleteConfirm', 'sortBy', 'imageTileSize', 'cardSize', 'listThumb', 'theme', 'tileOverlay', 'browseMode', 'posterViewMode', 'posterTileSize', 'posterCardSize', 'sidebarOpen', 'sidebarWidth', 'inspectorOpen', 'inspectorWidth'];
 const VALID_SORTS = ['date-desc', 'date-asc', 'likes-desc', 'reposts-desc', 'replies-desc', 'captured-desc', 'likes-pct'];
 
 // Chrome extension ids are exactly 32 chars of a–p. The id crosses a trust
@@ -110,12 +110,21 @@ function register(ctx: IpcContext) {
       posterCardSize: Number.isFinite(cfg.posterCardSize) ? cfg.posterCardSize : null, // 投稿者カードの最小列幅px
       sidebarOpen: typeof cfg.sidebarOpen === 'boolean' ? cfg.sidebarOpen : null, // sidebar expanded/collapsed; null = never toggled
       sidebarWidth: Number.isFinite(cfg.sidebarWidth) ? cfg.sidebarWidth : null, // dragged column width px; null = never resized
+      inspectorOpen: typeof cfg.inspectorOpen === 'boolean' ? cfg.inspectorOpen : null, // inspector panel shown/hidden; null = never toggled
       inspectorWidth: Number.isFinite(cfg.inspectorWidth) ? cfg.inspectorWidth : null,
     };
   });
 
   ipcMain.handle('set-pref', (_e, key, value): OkResult => {
-    if (!PREF_KEYS.includes(key)) return { ok: false };
+    if (!PREF_KEYS.includes(key)) {
+      // Refusing silently is how `inspectorOpen` stayed unwritten for months (#391):
+      // every renderer caller drops the `{ok:false}`, so a key missing from the
+      // allow-list looks exactly like a working pref until someone reads config.json.
+      // Logged here rather than at the call sites because this is the one choke point
+      // all of them pass through — a new caller is covered without remembering to.
+      console.warn(`set-pref refused an unknown key: ${String(key)}`);
+      return { ok: false };
+    }
     const cfg = readConfig();
     cfg[key] = value;
     writeConfig(cfg);
