@@ -267,6 +267,19 @@ describe('重複保存の警告（保存前の3択）', () => {
       expect(ctx.sent.some((m) => m.type === 'captureAndSend')).toBe(false);
     });
 
+    // ボタン名は重複の場面と同じ「Copy」なので、**補助文だけ**が場面を語る。ここが
+    // 取り違うと「ライブラリに在るものをもう1件」と読める文がゴミ箱の場面に出る＝
+    // ラベルを見ているテストでは絶対に落ちないので、補助文を直接見る。
+    test('「コピー」の補助文はゴミ箱用（ゴミ箱の分が残ることまで言う）', async () => {
+      await clickPostWithDuplicate(TRASHED);
+      expect(ctx.bannerButtons()[0].title).toBe('Save a new record, leaving the trashed one alone');
+    });
+
+    test('重複の場面の補助文はライブラリ用のまま', async () => {
+      await clickPostWithDuplicate();
+      expect(ctx.bannerButtons()[0].title).toBe('Save it again as a second record');
+    });
+
     test('削除日時が無い記録なら日付を省いた文言', async () => {
       await clickPostWithDuplicate({ ok: true, duplicate: false, trashed: { id: 'cap-gone', deletedAt: null } });
       expect(ctx.bannerLabel().textContent).toBe('This post is in the trash');

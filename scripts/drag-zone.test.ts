@@ -303,6 +303,8 @@ describe('重複保存の警告（ドロップ前の3択）', () => {
     expect(label().textContent).toMatch(/^This post is in the trash \(deleted .+\)$/);
     expect(state()).toBe('ask');
     expect(buttons().map((b) => b.textContent)).toEqual(['Copy', 'Skip']);
+    // ボタン名は据え置きで補助文だけが場面を語る＝両経路で同じ文が出ること（capture.ts 側と対）。
+    expect(buttons()[0].title).toBe('Save a new record, leaving the trashed one alone');
 
     const before = sent.length;
     buttons()[0].dispatchEvent(dragEvent('click'));
