@@ -1,6 +1,8 @@
-// アプリが持つ i18n 文字列テーブル2つのパリティガード:
+// アプリが持つ i18n 文字列テーブル3つのパリティガード:
 //   1) app/src/renderer/src/services/i18n.ts — MESSAGES.ja / MESSAGES.en（ビューアの文言）
 //   2) extension/public/_locales/{ja,en}/messages.json — Chrome i18n（拡張の文言）
+//   3) extension/utils/i18n.ts — MESSAGES.ja / MESSAGES.en（ページ内 UI の文言。
+//      コンテンツスクリプトは _locales を確実に読めないので埋め込んである）
 // 片方の言語にだけキーを足して忘れると実行時に「黙って」壊れる（引き当てがフォールバック
 // するか生キーが出る）ので、ずれたまま出荷される。ここで落として気付けるようにする。
 // キーだけでなく値の「形」（renderer は postCount(n) のような関数値もある）と、文字列値が
@@ -10,6 +12,7 @@ import fs from 'node:fs';
 import { stripTypeScriptTypes } from 'node:module';
 import path from 'node:path';
 import { describe, expect, test } from 'vitest';
+import { MESSAGES as extensionMessages } from '../extension/utils/i18n.ts';
 
 const repo = path.join(import.meta.dirname, '..');
 
@@ -67,6 +70,23 @@ describe('renderer の MESSAGES', () => {
 
   test('値の形（文字列 / 関数）が両言語で一致する', () => {
     expect(shapeDrift(ja, en)).toEqual([]);
+  });
+
+  test('置換スロットが両言語で一致する', () => {
+    expect(subsDrift(ja, en)).toEqual([]);
+  });
+});
+
+// --- 3) 拡張のページ内 UI の埋め込みテーブル（モジュールから素直に import できる）
+describe('拡張の埋め込み MESSAGES（utils/i18n.ts）', () => {
+  const { ja, en } = extensionMessages;
+
+  test('ja にあって en に無いキーは無い', () => {
+    expect(missingFrom(ja, en)).toEqual([]);
+  });
+
+  test('en にあって ja に無いキーは無い', () => {
+    expect(missingFrom(en, ja)).toEqual([]);
   });
 
   test('置換スロットが両言語で一致する', () => {
