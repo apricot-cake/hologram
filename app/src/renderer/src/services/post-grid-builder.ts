@@ -19,7 +19,6 @@ import { listPostsDelta, deletePost, clearAll } from './posts.ts';
 import { hologramIpc } from './ipc.ts';
 import { sync as syncPostsData } from './posts-data.ts';
 import { set as storeSet } from './store.ts';
-import { isViewTransitionRunning } from '../_shared/view-transition.ts';
 import { userKey } from './query.ts';
 import * as folders from './folders.ts';
 import * as selection from './selection.ts';
@@ -63,12 +62,6 @@ export interface PostGridBuilderDeps {
 export function makePostGridBuilder(deps: PostGridBuilderDeps) {
   const CF = () => folders; // shared folder module
   const byId = (id: string) => document.getElementById(id) as HTMLElement;
-  const prefersReducedMotion = () => !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
-  // How long .anim-in stays on a grid after a fresh build. Must outlive the
-  // LAST staggered card or its backwards-fill entrance gets cancelled mid-run:
-  // 15 (CSS min() cap) × 34ms (--stagger) + 360ms (--dur-entrance) + buffer.
-  const GRID_ANIM_MS = 950;
-  let _gridAnimT: any = null;
 
   // Delete-confirmation skip pref — was injected from viewer.ts as a dep; now
   // owned here since this module is the only reader (requestDeleteGroup below)
@@ -335,11 +328,6 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
       // preflight emits `[hidden]{display:none!important}`, which always outranks an
       // inline style, so setting style.display here never actually showed the element.
       empty.hidden = false;
-      if (!inPlace && !prefersReducedMotion()) {
-        void empty.offsetWidth;
-        empty.classList.add('anim-in');
-        setTimeout(() => empty.classList.remove('anim-in'), 400);
-      }
       if (!inPlace) deps.syncTitleAndPersist(); // 0件の状態もタイトル・永続化を同期
       return;
     }
@@ -354,12 +342,6 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
     deps.applyTileLayout();
     empty.hidden = true;
 
-    // Card entrance plays only on a fresh build (filter/sort/search), never on
-    // an in-place mutation re-render. Skipped under prefers-reduced-motion.
-    // Also skipped while a View Transition is carrying this rebuild (#252 — the density
-    // switch): the transition already slides each card to its new place, and fading them in
-    // from below on top of that reads as one unsettled motion rather than two.
-    grid.classList.toggle('anim-in', !inPlace && !prefersReducedMotion() && !isViewTransitionRunning());
     grid.classList.toggle('masonry', deps.currentView() === 'card');
     // Selection mode: rings stay visible on every card, hover actions hide (CSS).
     grid.classList.toggle('selecting', selection.size() > 0);
@@ -380,11 +362,6 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
     // reference (in-place reuse) is a no-op via the store's identity guard,
     // matching the old itemsKey-doesn't-bump behavior.
     storeSet('postGroups', viewGroups);
-    // With windowing, cells keep MOUNTING while the user scrolls — drop the
-    // entrance class once the initial animation has played, or every late
-    // cell would replay it mid-scroll.
-    clearTimeout(_gridAnimT);
-    if (grid.classList.contains('anim-in')) _gridAnimT = setTimeout(() => grid.classList.remove('anim-in'), GRID_ANIM_MS);
     _lastRenderGen = _allPostsGeneration; // mark the generation of this build
     _lastViewGroups = viewGroups;
     _lastStickySize = stickyRecs.size; // snapshot for in-place group reuse

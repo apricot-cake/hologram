@@ -126,3 +126,40 @@ describe('取得できなかった投稿の理由（post-unavailable）', () => 
     expect(en.saveFailureText('post-unavailable', 'ageRestricted')).toContain('age-restricted');
   });
 });
+
+// #205: 拡張とホストの版がずれた時の案内。⚠️これは「失敗」の一族ではない＝保存は
+// 済んでいる。上の bannerFailed* 系と取り違えると、保存できたのに何も残っていないと
+// 読める文になるので、区別が文面レベルで残っていることをここで固定する。
+describe('版のずれの案内（#205）', () => {
+  test('どちらを更新すればよいかまで言う', async () => {
+    setLanguage('ja-JP');
+    const ja = await createI18n();
+    expect(ja.skewSaveText('host-old')).toContain('Hologram アプリを更新');
+    expect(ja.skewSaveText('host-new')).toContain('拡張機能を更新');
+  });
+
+  test('保存できたことが先に立つ＝失敗とは読めない', async () => {
+    setLanguage('ja-JP');
+    const ja = await createI18n();
+    for (const skew of ['host-old', 'host-new'] as const) {
+      expect(ja.skewSaveText(skew)).toContain('保存しました');
+      expect(ja.skewSaveText(skew)).not.toContain('失敗');
+    }
+  });
+
+  test('ずれていなければ何も言わない＝呼び出し側が通常の文面へ落ちる', async () => {
+    setLanguage('ja-JP');
+    const ja = await createI18n();
+    expect(ja.skewSaveText('match')).toBeNull();
+    expect(ja.skewSaveText(null)).toBeNull();
+    expect(ja.skewSaveText()).toBeNull();
+  });
+
+  test('英語ロケールも同じ区別を持つ', async () => {
+    setLanguage('en-US');
+    const en = await createI18n();
+    expect(en.skewSaveText('host-old')).toContain('update the Hologram app');
+    expect(en.skewSaveText('host-new')).toContain('update the extension');
+    expect(en.skewSaveText('match')).toBeNull();
+  });
+});

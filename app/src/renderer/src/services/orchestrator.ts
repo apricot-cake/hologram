@@ -581,11 +581,6 @@ export function endFilterEditSession(): void {
     const el = contentScrollEl();
     if (el) el.scrollTop = y;
   };
-  // How long .anim-in stays on a grid after a fresh build (post AND poster grids
-  // share this constant). Must outlive the LAST staggered card or its
-  // backwards-fill entrance gets cancelled mid-run: 15 (CSS min() cap) × 34ms
-  // (--stagger) + 360ms (--dur-entrance) + buffer.
-  const _GRID_ANIM_MS = 950;
   // Grouping state (manualGroups/ungrouped/stickyRecs, persisted via main:
   // manual-groups.json / ungrouped.json) moved to post-grid-builder.ts along with
   // viewGroups — see postGrid below.

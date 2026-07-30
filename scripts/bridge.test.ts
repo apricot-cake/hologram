@@ -8,6 +8,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
+import { PROTOCOL_VERSION } from '../native-host/protocol.mts';
 import { unpackRawPayload } from '../native-host/raw-payload.mts';
 
 // 最小の 1x1 JPEG
@@ -71,6 +72,66 @@ afterAll(() => {
 test('ack が ok で返る', () => {
   expect(resp.ok).toBe(true);
 });
+
+// #205: 拡張はこの数字だけで「アプリと拡張の版が合っているか」を判断する。
+// 単体では stampProtocol を見れば済むが、それが**実際に線へ出ている**ことは
+// プロセスを起こしてみないと分からない（刻印はハンドラではなく返信の出口にある）。
+test('ack は自分のプロトコル版を名乗る（#205）', () => {
+  expect(resp.protocolVersion).toBe(PROTOCOL_VERSION);
+});
+
+// 成功だけでなく、失敗と ping の返信にも刻印が乗ること。保存を断るほど古い
+// ホストこそ版が知りたい相手なので、ここが抜けると検知が一番要る場面で効かない。
+describe('返信は種類を問わず版を名乗る（#205）', () => {
+  let replies: any[];
+
+  beforeAll(async () => {
+    replies = await askHost(tmp, [{ type: 'ping' }, { type: 'nonsense' }, { type: 'log', entry: { stage: 'select', phase: 'fail' } }]);
+  });
+
+  test('3件とも返り、すべてに版が乗る', () => {
+    expect(replies).toHaveLength(3);
+    for (const reply of replies) expect(reply.protocolVersion).toBe(PROTOCOL_VERSION);
+  });
+
+  test('未知の type は失敗として返る＝版だけ乗せて黙る形にはしない', () => {
+    expect(replies[1]).toMatchObject({ ok: false, code: 'unknown-type' });
+  });
+});
+
+// 1本のコネクションへ複数フレームを流し込み、返ってきたフレームを全部読む。
+// bridge.cts は stdin を読み切ると自然に終わるので、close を待てば取りこぼさない。
+async function askHost(configRoot: string, messages: unknown[]): Promise<any[]> {
+  const configDir = path.join(configRoot, 'Hologram');
+  const frames = messages.map((m) => {
+    const body = Buffer.from(JSON.stringify(m), 'utf8');
+    const header = Buffer.alloc(4);
+    header.writeUInt32LE(body.length, 0);
+    return Buffer.concat([header, body]);
+  });
+  const child = spawn(process.execPath, [path.join(import.meta.dirname, '..', 'native-host', 'bridge.cts')], {
+    env: { ...process.env, APPDATA: configRoot, HOLOGRAM_CONFIG_DIR: configDir },
+    stdio: ['pipe', 'pipe', 'inherit'],
+  });
+  let out = Buffer.alloc(0);
+  child.stdout.on('data', (d) => {
+    out = Buffer.concat([out, d]);
+  });
+  const closed = new Promise((r) => child.on('close', r));
+  child.stdin.write(Buffer.concat(frames));
+  child.stdin.end();
+  await closed;
+
+  const parsed: any[] = [];
+  let offset = 0;
+  while (offset + 4 <= out.length) {
+    const len = out.readUInt32LE(offset);
+    if (offset + 4 + len > out.length) break;
+    parsed.push(JSON.parse(out.subarray(offset + 4, offset + 4 + len).toString('utf8')));
+    offset += 4 + len;
+  }
+  return parsed;
+}
 
 describe('保存されたもの', () => {
   test('JPEG と inbox エンベロープが書かれる（sidecar は書かれない）', () => {
