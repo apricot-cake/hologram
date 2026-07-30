@@ -876,7 +876,10 @@ export async function startOverlay(): Promise<void> {
           'box-sizing:border-box',
           `border:1px solid ${token.overlayBorder}`,
           `box-shadow:${token.overlayShadow}`,
-          `transition:width ${token.durationBase} ${token.easeOut},height ${token.durationBase} ${token.easeOut},border-radius ${token.durationBase} ${token.easeOut},background ${token.durationBase},color ${token.durationBase},border-color ${token.durationBase},box-shadow ${token.durationBase},transform ${token.durationBase} ${token.easeOut}`,
+          // No width/height/border-radius here: #531 gave all four faces the
+          // same 24px circle, so those can no longer differ between faces and
+          // an animation on them has nothing left to animate.
+          `transition:background ${token.durationBase},color ${token.durationBase},border-color ${token.durationBase},box-shadow ${token.durationBase},transform ${token.durationBase} ${token.easeOut}`,
           'appearance:none',
           'font:inherit',
         ].join(';');
@@ -917,12 +920,12 @@ export async function startOverlay(): Promise<void> {
     const pressable = isPressable(face);
     el.tabIndex = pressable ? 0 : -1;
     el.style.cursor = pressable ? 'pointer' : '';
-    // The STATUS default. A face that merely reports something — the saved
-    // mark, the in-flight spinner — rides a translucent disc, because the mark
-    // is the one thing this extension puts on screen when nobody asked for
-    // anything: it sits on every saved picture, permanently, over the user's own
-    // content. The two ACTION faces below opt back into the opaque surface. The
-    // split is by what the face SAYS, not by how big it is; tokens.source.css
+    // The default fill for the corner, whatever it is saying: a translucent
+    // disc, because this thing sits on the user's own picture. The mark is the
+    // binding case — it rides every saved picture, permanently, when nobody
+    // asked for anything — and #526 put the save button on the same disc rather
+    // than an opaque one, since it appears exactly where the user is looking.
+    // Only `failed` below trades it away, for the danger fill. tokens.source.css
     // carries the reasoning and the bound on the alpha.
     el.style.background = token.controlSurface;
     el.style.color = token.ink;

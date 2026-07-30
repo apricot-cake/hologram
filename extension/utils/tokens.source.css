@@ -68,20 +68,24 @@
   --hologram-accent-soft: rgba(37, 99, 235, 0.14);
   --hologram-ring: rgba(0, 0, 0, 0.55);
 
-  /* COMPACT CONTROLS sit on a PICTURE rather than on the card, and they split by
-     what they are SAYING rather than by how big they are:
+  /* COMPACT CONTROLS sit on a PICTURE rather than on the card, so this disc is
+     what almost every face of that corner rides:
 
-       status  (saved mark, in-flight spinner) — translucent, the value below
-       action  (save button, retry)            — the card's opaque surface
+       saved mark, in-flight spinner, save button — translucent, the value below
+       retry                                      — the opaque danger fill
 
      The saved mark is the one piece of this extension that is on screen when
      nobody asked for anything: it rides every saved picture, all the time, over
      the user's own content. A fully opaque disc there reads as clutter, and the
      one thing under it that the user actually wants to see is the picture. So
      the translucency is not decoration — it is what keeps a permanent marker
-     from behaving like a permanent obstruction. An action is the opposite: it
-     appears only because the pointer asked for it, and it should look like
-     something you can press.
+     from behaving like a permanent obstruction. The save button was opaque
+     until #526 on the grounds that an action should look pressable, but it sits
+     on the same picture and appears exactly where the user is looking, so it
+     now shares the translucency (user, 2026-07-29): what says "press me" is the
+     glyph, the hover colour lift and the halo. The one face that goes opaque is
+     retry, and only because its fill IS its state — a failure has to be
+     unmistakable, and it is gone again in a couple of seconds.
 
      The alpha is bounded, not chosen freely. A picture can be any colour, so the
      ink has to clear the body tier over BOTH a pure-black and a pure-white photo
