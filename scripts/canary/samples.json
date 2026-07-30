@@ -7,14 +7,12 @@
     "前回使った候補はスナップショットの sources に記録され、次回も最優先で試される（往復を防ぐ",
     "ため＝観測対象が変わると基準は作り直しになり、その回は何とも比較できない）。",
     "候補は『消えにくいか』で選ぶ＝機関・公式アカウント、または長年残っている古い投稿。",
-    "label 自体を減らした時だけ snapshots/<platform>.json の古い行を手で消す。"
+    "label 自体を減らした時だけ snapshots/<platform>.json の古い行を手で消す。",
+    "expect: 'tombstone' を書いた label は『投稿は在るのに中身が配信されない応答』が正解（#588）。",
+    "  取得できないことを不通と読まず、その応答の形を監視する＝普通の投稿が返ってきたら警報。"
   ],
   "$gaps": [
     "X の GIF（animated_gif）: 機関・公式系アカウントに見つからず未登録。",
-    "X の tombstone（投稿が存在するのに中身が配信されない応答）: カナリア本体が『サンプルが消えた』と",
-    "  同じ箱に入れるため、登録すると恒久的に不通扱いになる＝samples.json だけでは足せない。",
-    "  観測対象そのものは公開のものが実在する（2006年の削除済み投稿は tombstone.text を持つ応答を返し続ける）。",
-    "  カナリア側に『tombstone が期待値』の概念を足す #588 で扱う。",
     "Misskey の動画: misskey.io の @ai（1200件超を走査）に現存せず未登録。",
     "Bluesky の record.tags[]（tag ファセットとは別のタグ欄・#177 はこことも合流する）: bsky.app と",
     "  atproto.com の公開投稿200件に1件も無く未登録。公式クライアントから設定できない欄のため。",
@@ -56,6 +54,19 @@
           { "url": "https://x.com/JAXA_jp/status/1943219646368460881", "note": "entities.hashtags の観測点（#177）＝4個・全角混じり" },
           { "url": "https://x.com/tnsc_JAXA/status/1885944672390168845", "note": "4個・全角混じり" },
           { "url": "https://x.com/TheEllenShow/status/440322224407314432", "note": "2014年・英字1個" }
+        ]
+      },
+      {
+        "label": "tombstone",
+        "expect": "tombstone",
+        "candidates": [
+          {
+            "url": "https://x.com/i/status/24",
+            "note": "2006年に削除された投稿＝tombstone.text の文言を持つ応答を返し続ける（#588・#505 の理由の出し分けが依存している文言）。投稿者が配信されないので /i/status/ 形式で書く"
+          },
+          { "url": "https://x.com/i/status/26" },
+          { "url": "https://x.com/i/status/28" },
+          { "url": "https://x.com/i/status/34" }
         ]
       }
     ],

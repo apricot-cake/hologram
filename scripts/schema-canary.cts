@@ -11,12 +11,18 @@
 //   node scripts/schema-canary.cts --dry-run       # report without rewriting snapshots
 //   node scripts/schema-canary.cts --payloads      # compare against SAVED originals (#292)
 //
-// Exit code: 0 = no change, 1 = a confirmed disappearance, 2 = no alarm but at
-// least one sample has no living candidate left (the canary is partly blind —
-// that sample needs another candidate in samples.json). A sample whose FIRST
-// candidate died but whose second answered is not an outage: it is reported and
-// keeps watching, because absorbing that death without a human is the point of
-// carrying candidates at all (#464).
+// Exit code: 0 = no change, 1 = a confirmed disappearance or a sample answering
+// something other than what it declared, 2 = no alarm but at least one sample
+// has no living candidate left (the canary is partly blind — that sample needs
+// another candidate in samples.json). A sample whose FIRST candidate died but
+// whose second answered is not an outage: it is reported and keeps watching,
+// because absorbing that death without a human is the point of carrying
+// candidates at all (#464).
+//
+// A sample may declare that a body withheld by the platform is what it EXPECTS
+// to see (`"expect": "tombstone"`), which is the only way such a response can be
+// watched instead of being read as a dead sample forever — see judgeResponse in
+// lib-schema-canary.cts (#588).
 //
 // The responses come from fetchPostMetadata() itself rather than a private set
 // of URL builders. That was not possible when this was designed: the fetch
@@ -32,7 +38,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { fetchPostMetadata } = require('../extension/utils/extractor/index.ts');
-const { advanceStreak, candidateOrder, carryBaseline, diffShapes, endpointMissingDiff, labelPath, rebaseOnSourceChange, shapeOf, sortShape, MISSING_STREAK_ALARM } = require('./lib-schema-canary.cts');
+const { advanceStreak, candidateOrder, carryBaseline, diffShapes, endpointMissingDiff, judgeResponse, labelPath, rebaseOnSourceChange, shapeOf, sortShape, MISSING_STREAK_ALARM } = require('./lib-schema-canary.cts');
 
 const CANARY_DIR = path.join(__dirname, 'canary');
 const SAMPLES_FILE = path.join(CANARY_DIR, 'samples.json');
@@ -60,6 +66,9 @@ interface Candidate {
 interface Sample {
   label: string;
   candidates: Candidate[];
+  // What this sample declares the response should be. Absent means "a post",
+  // which is every sample but the X tombstone one (#588 / judgeResponse).
+  expect?: string;
 }
 interface Snapshot {
   platform: string;
@@ -123,10 +132,12 @@ interface Observation {
   parseErrors: Record<string, string>;
   dead: boolean;
   reason: string;
+  // The response contradicts what the sample declared (#588). Empty otherwise.
+  alarm: string;
 }
 
-async function observe(platform: string, url: string): Promise<Observation> {
-  const out: Observation = { shapes: {}, parseErrors: {}, dead: false, reason: '' };
+async function observe(platform: string, url: string, expect?: string): Promise<Observation> {
+  const out: Observation = { shapes: {}, parseErrors: {}, dead: false, reason: '', alarm: '' };
   let rec: any;
   try {
     rec = await fetchPostMetadata(url);
@@ -142,14 +153,14 @@ async function observe(platform: string, url: string): Promise<Observation> {
   }
   const primary = PRIMARY_ENDPOINT[platform];
   if (primary && !(primary in out.shapes) && !(primary in out.parseErrors)) return { ...out, dead: true, reason: `${primary} の応答が無い（投稿が消えた/取得できない）` };
-  if (rec.metaError) return { ...out, dead: true, reason: `metaError=${rec.metaError}` };
-  // Nothing that only a real post body can carry came back (X tombstone bodies,
-  // pixiv's { error: true }, an instance serving an error document). Treated as
-  // the sample being gone rather than as a schema break — a dead sample must
-  // not read like one.
+  // Whether anything only a real post body can carry came back. Its absence
+  // normally means the sample is gone (X tombstone bodies, pixiv's
+  // { error: true }, an instance serving an error document) — but for a sample
+  // that declares a tombstone it is the expected answer, which is the whole of
+  // #588. judgeResponse owns that reading so it can be tested without network.
   const alive = rec.likes != null || rec.text != null || rec.title != null || (rec.media && rec.media.length > 0);
-  if (!alive) return { ...out, dead: true, reason: '投稿本体の項目が何も取れていない（削除・非公開・エラー応答）' };
-  return out;
+  const verdict = judgeResponse(expect, { primaryParsed: !primary || primary in out.shapes, metaError: rec.metaError || '', alive });
+  return { ...out, dead: verdict.dead, reason: verdict.reason, alarm: verdict.alarm };
 }
 
 interface Finding {
@@ -237,7 +248,7 @@ async function pickCandidate(platform: string, sample: Sample, previous: string 
     sample.candidates.map((c) => c.url),
     previous,
   )) {
-    const obs = await observe(platform, url);
+    const obs = await observe(platform, url, sample.expect);
     await sleep(REQUEST_GAP_MS);
     if (!obs.dead) return { url, obs, skipped };
     skipped.push({ url, reason: obs.reason });
@@ -276,6 +287,21 @@ async function runCanary(platforms: string[], dryRun: boolean): Promise<number> 
         continue;
       }
       for (const s of pick.skipped) stale.push(`${platform}/${sample.label}: ${s.reason} — ${s.url}`);
+      if (pick.obs.alarm) {
+        // The sample answered with something its declaration rules out, so the
+        // stored baseline does not describe this body at all. Comparing them
+        // would report two different things' differences as schema movement —
+        // the same category error rebaseOnSourceChange exists to prevent — and
+        // would then overwrite the baseline with the wrong body's shape. So the
+        // snapshot is left completely untouched: the alarm is the report, and
+        // the baseline is still there when the declared answer comes back.
+        const lines = [`  ⚠ ${pick.obs.alarm}`, `    ${pick.url}`];
+        findings.push({ platform, label: sample.label, kind: '', lines, alarms: 1 });
+        console.log(`  ⚠ ${sample.label}（期待した応答と違う＝基準は据え置き）`);
+        for (const line of lines) console.log(line);
+        alarms++;
+        continue;
+      }
       responses += Object.keys(pick.obs.shapes).length;
       const switched = rebaseOnSourceChange(snap, sample.label, pick.url);
       const hadBaseline = !!snap.shapes[sample.label];
