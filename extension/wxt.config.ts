@@ -15,6 +15,20 @@ export default defineConfig({
   webExt: {
     disabled: true,
   },
+  // Vite's default modulepreload <link> for entry chunks (options.html,
+  // diag.html) can't be used by Chrome extension pages — the browser loads
+  // extension resources in a different "world" than the preload targets, so
+  // it discards the tag as a "cross-world extension resource mismatch" and
+  // then warns a second time that the preload went unused. That's two
+  // warnings per chunk stacking in chrome://extensions every time a settings
+  // or diag page opens, burying real errors. These pages only ever fetch
+  // local extension files, so there's no meaningful load-time win to give up
+  // by disabling it (#595).
+  vite: () => ({
+    build: {
+      modulePreload: false,
+    },
+  }),
   manifest: {
     key: 'MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAzBGm/kCBitgpMoAkBDv5YrWwfAf74U8Uiy/rEuZgwFP703HT2EIhASBHEfVX7MSBF1a5V3D5IwZzu9mRFQmTzXtjyli8wdvxIjXVy3fqXXCRSmPMfCklL5nZ56ncx2LATi40kP8IiP36b40ZhPCVsq/NExT9gO0TNFpyJchDuAGgefqSBSS/xwp6c25vozxjbSfD3vcD2ohfSqpa75mui4XGwwouvbHl+69I7zXpeM5yYxmU+tTqWSUEblFGM67BsYSaPXGxcP9izInSB8JQ6WbmOyjCd/6az1RbKz9Yud2Yc4cX4z9+qWAx/ldn6vmQ6cjpvEAWTQdngSyHpawP5QIDAQAB',
     name: '__MSG_extName__',
