@@ -95,7 +95,6 @@ export interface AppPrefs {
   language: string;
   viewMode: string;
   skipDeleteConfirm: boolean;
-  sortBy: string;
   imageTileSize: number | null;
   cardSize: number | null;
   listThumb: number | null;
