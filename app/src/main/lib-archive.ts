@@ -29,6 +29,11 @@
 // On import, captures are copied SKIPPING existing files (idempotent /
 // non-clobbering) and the organization layer is MERGED (union) so importing into a
 // non-empty library never wipes current folders/tags.
+//
+// The pre-#300 export shape (metadata.json + images/) is still importable, and its
+// reader lives here too (readLegacyZipPosts, #322) — one module holds every path
+// that opens an untrusted archive, which is what keeps the guards from existing on
+// only some of them.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -76,6 +81,23 @@ const MAX_ZIP_TOTAL_BYTES = 64 * 1024 * 1024 * 1024; // 64 GiB total uncompresse
 // to hundreds of MB of string + parsed JSON in the main process before the
 // generic guard ever triggers.
 const MAX_ZIP_ORG_BYTES = 16 * 1024 * 1024; // 16 MiB
+// The LEGACY format (metadata.json + images/, the pre-#300 export) gets its own
+// pair of budgets for the same reason the organization JSON does: its entries are
+// materialized IN MEMORY as base64 data: URLs instead of being streamed to disk,
+// so the caps above — sized for a disk copy that never holds more than one entry —
+// bound nothing about this path's footprint (#322).
+//   per entry: 64 MiB. A legacy entry is one JPEG screenshot (the format has no
+//     original media) or metadata.json itself, both orders of magnitude smaller.
+//     It also has to stay clear of V8's ~512 MiB max string length, which the
+//     base64 form (×4/3) would hit long before the 1 GiB media cap.
+//   per archive: 1 GiB expanded. This is the first ceiling this path has ever had.
+//     Its old effective one was fs.readFile refusing the archive FILE past ~2 GiB;
+//     JPEG entries do not compress further, so expanded ≈ file size and the band
+//     this newly refuses (~1–2 GiB) is exactly where the old path OOM'd anyway —
+//     it base64'd the whole archive and shipped it through IPC. Moving a
+//     full-size library is the complete format's job, and that one streams.
+const MAX_LEGACY_ENTRY_BYTES = 64 * 1024 * 1024; // 64 MiB
+const MAX_LEGACY_TOTAL_BYTES = 1024 * 1024 * 1024; // 1 GiB expanded across the archive
 class ZipLimitError extends Error {}
 // yauzl reads uncompressedSize straight off the central directory (widened from
 // the ZIP64 extra field when present), so this is the declared size for archives
@@ -84,6 +106,29 @@ class ZipLimitError extends Error {}
 function entryUncompressedSize(entry: ZipEntry) {
   const n = entry?.uncompressedSize;
   return Number.isFinite(n) && n >= 0 ? n : 0;
+}
+
+// The declared-size pre-tally, as one factory both readers call (#322): whichever
+// format the archive turns out to be, it is measured by the SAME numbers and the
+// same limits before a byte is expanded. The complete importer used to own this
+// inline while the legacy path had no tally at all — one entrance guarded, one not.
+//
+// Entry count comes from the end-of-central-directory record, which yauzl has
+// already read at open() — so a 200k-entry bomb is refused without reading a single
+// central-directory record, and yauzl yields exactly that many entries afterwards
+// (a re-count while iterating could never reach the cap on its own).
+function declaredSizeTally(zipfile: ZipReader) {
+  if (zipfile.entryCount > MAX_ZIP_ENTRIES) throw new ZipLimitError('archive declares ' + zipfile.entryCount + ' entries (> cap ' + MAX_ZIP_ENTRIES + ')');
+  let totalBytes = 0;
+  // Call once per non-directory entry, in enumeration order. Returns the declared
+  // size so the caller can apply its own, tighter budget on top.
+  return (relPath: string, entry: ZipEntry) => {
+    const size = entryUncompressedSize(entry);
+    if (size > MAX_ZIP_ENTRY_BYTES) throw new ZipLimitError('entry "' + relPath + '" declares ' + size + ' bytes (> per-entry cap ' + MAX_ZIP_ENTRY_BYTES + ')');
+    totalBytes += size;
+    if (totalBytes > MAX_ZIP_TOTAL_BYTES) throw new ZipLimitError('archive declares > ' + MAX_ZIP_TOTAL_BYTES + ' total uncompressed bytes');
+    return size;
+  };
 }
 
 // --- Zip-Slip guard ------------------------------------------------------------
@@ -603,21 +648,12 @@ async function extractLibraryEntries(zipfile: ZipReader) {
   let isComplete = false;
   // Zip-bomb pre-checks, all against numbers the archive DECLARES — no decompression
   // happens in this pass, and they cover the whole archive rather than just library/
-  // entries (a bomb can hide anywhere).
-  //
-  // Entry count comes from the end-of-central-directory record, which yauzl has
-  // already read at open() — so a 200k-entry bomb is refused without reading a single
-  // central-directory record, and yauzl yields exactly that many entries afterwards
-  // (a re-count while iterating could never reach the cap on its own).
-  if (zipfile.entryCount > MAX_ZIP_ENTRIES) throw new ZipLimitError('archive declares ' + zipfile.entryCount + ' entries (> cap ' + MAX_ZIP_ENTRIES + ')');
-  let totalBytes = 0;
+  // entries (a bomb can hide anywhere). Shared with the legacy reader below (#322).
+  const tally = declaredSizeTally(zipfile);
   for await (const entry of zipfile.eachEntry()) {
     const relPath = entry.fileName;
     if (relPath.endsWith('/')) continue; // directory entry (yauzl's only marker)
-    const size = entryUncompressedSize(entry);
-    if (size > MAX_ZIP_ENTRY_BYTES) throw new ZipLimitError('entry "' + relPath + '" declares ' + size + ' bytes (> per-entry cap ' + MAX_ZIP_ENTRY_BYTES + ')');
-    totalBytes += size;
-    if (totalBytes > MAX_ZIP_TOTAL_BYTES) throw new ZipLimitError('archive declares > ' + MAX_ZIP_TOTAL_BYTES + ' total uncompressed bytes');
+    const size = tally(relPath, entry);
 
     if (relPath === 'hologram-export.json') {
       isComplete = true;
@@ -837,6 +873,83 @@ async function importFromOpenZip(sqlite: Database.Database, zipfile: ZipReader, 
   return { ok: true as const, notComplete: false as const, imported, skipped };
 }
 
+// --- Legacy import (metadata.json + images/, the pre-#300 export) --------------
+// Reading only: it turns the archive into the post records import-posts already
+// knows how to write, so what happens to those records (the #34 duplicate
+// question, the notices) stays with the caller.
+//
+// This used to be the renderer's own JSZip copy of the archive, reached with the
+// whole file handed over IPC as bytes — the one import entrance that had no
+// expansion guard at all (#322). It reads by PATH here for the same reason the
+// complete importer does (#485/ADR 0015), and runs the SAME declared-size tally,
+// plus the two legacy-only budgets above for the part that has no counterpart in
+// the complete format: every referenced image is expanded into memory as a base64
+// data: URL rather than streamed to a file.
+//
+// Both budgets are checked against DECLARED sizes first, over the entries
+// metadata.json actually references, so an oversized archive is refused without a
+// single entry being expanded; then again against the bytes that really arrive, so
+// a central directory that understates its sizes buys nothing.
+//
+// @returns the records the archive describes, or null if it isn't a legacy export
+// either (no metadata.json, or one that isn't a list of records).
+async function readLegacyZipPosts(zipPath: string): Promise<any[] | null> {
+  const zipfile = await openZipForRead(zipPath, { autoClose: false });
+  try {
+    return await readLegacyFromOpenZip(zipfile);
+  } finally {
+    try {
+      zipfile.close();
+    } catch {
+      /* already closed by an error path */
+    }
+  }
+}
+
+async function readLegacyFromOpenZip(zipfile: ZipReader): Promise<any[] | null> {
+  const tally = declaredSizeTally(zipfile);
+  const byName = new Map<string, ZipEntry>();
+  let metaEntry: ZipEntry | null = null;
+  for await (const entry of zipfile.eachEntry()) {
+    const relPath = entry.fileName;
+    if (relPath.endsWith('/')) continue; // directory entry (yauzl's only marker)
+    tally(relPath, entry);
+    if (relPath === 'metadata.json') metaEntry = entry;
+    else byName.set(relPath, entry);
+  }
+  if (!metaEntry) return null;
+
+  if (entryUncompressedSize(metaEntry) > MAX_LEGACY_ENTRY_BYTES) throw new ZipLimitError('metadata.json declares ' + entryUncompressedSize(metaEntry) + ' bytes (> legacy entry cap ' + MAX_LEGACY_ENTRY_BYTES + ')');
+  const metaBuf = await readStreamCapped(await zipfile.openReadStreamPromise(metaEntry), MAX_LEGACY_ENTRY_BYTES);
+  const meta = parseJsonLoose(metaBuf.toString('utf8'));
+  if (!Array.isArray(meta)) return null;
+
+  // Only names metadata.json points AT are looked up, and only in the entry map —
+  // no path is ever built from that string, so there is no Zip-Slip surface here
+  // (the archive's own entry names went through yauzl's validateFileName at open).
+  const referenced: Array<{ rec: any; entry: ZipEntry }> = [];
+  let declaredTotal = 0;
+  for (const rec of meta) {
+    const entry = rec && typeof rec.imageFile === 'string' ? byName.get(rec.imageFile) : undefined;
+    if (!entry) continue; // a record whose image is missing is dropped, as before
+    const size = entryUncompressedSize(entry);
+    if (size > MAX_LEGACY_ENTRY_BYTES) throw new ZipLimitError('legacy entry "' + entry.fileName + '" declares ' + size + ' bytes (> legacy entry cap ' + MAX_LEGACY_ENTRY_BYTES + ')');
+    declaredTotal += size;
+    if (declaredTotal > MAX_LEGACY_TOTAL_BYTES) throw new ZipLimitError('legacy archive declares > ' + MAX_LEGACY_TOTAL_BYTES + ' bytes to expand into memory');
+    referenced.push({ rec, entry });
+  }
+
+  const posts: any[] = [];
+  let expanded = 0;
+  for (const { rec, entry } of referenced) {
+    const buf = await readStreamCapped(await zipfile.openReadStreamPromise(entry), MAX_LEGACY_ENTRY_BYTES);
+    expanded += buf.length;
+    if (expanded > MAX_LEGACY_TOTAL_BYTES) throw new ZipLimitError('legacy archive expanded past ' + MAX_LEGACY_TOTAL_BYTES + ' bytes');
+    posts.push(Object.assign({}, rec, { image: 'data:image/jpeg;base64,' + buf.toString('base64') }));
+  }
+  return posts;
+}
+
 export {
   EXPORT_SKIP,
   ORG_MERGE,
@@ -844,6 +957,8 @@ export {
   MAX_ZIP_ENTRY_BYTES,
   MAX_ZIP_TOTAL_BYTES,
   MAX_ZIP_ORG_BYTES,
+  MAX_LEGACY_ENTRY_BYTES,
+  MAX_LEGACY_TOTAL_BYTES,
   ZipLimitError,
   writeStreamCapped,
   readStreamCapped,
@@ -851,6 +966,7 @@ export {
   writeImagesZip,
   hasExportableFiles,
   importCompleteZipToDb,
+  readLegacyZipPosts,
   mergeFolders,
   mergePosterFolders,
   mergeTagTypes,

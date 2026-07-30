@@ -32,7 +32,7 @@ function register(ctx) {
     const base = baseOf(image);
     // Read the record and its DB-only state (tags/userKind/tagReviewed) BEFORE the
     // row disappears: it is the whole content of the trash-side record, which
-    // restore-post reads back and import-posts' dedup scan consults to stop a
+    // restore-post reads back and the legacy import's dedup scan consults to stop a
     // deliberately-deleted post from resurrecting on re-import.
     const handle = ensurePostsSynced();
     const flags = getDbWriter().getPostFlags(base);

@@ -1,7 +1,8 @@
 'use strict';
 
 // Transfer IPC handlers, extracted from main.js (mechanical move — logic unchanged).
-// The highest-blast-radius group: import-posts (data: URLs + best-effort avatar fetch),
+// The highest-blast-radius group: import-legacy-zip (a pre-#300 export read in main,
+// expanded to data: URLs + best-effort avatar fetch),
 // import-images (local files), clear-all (destructive wipe, gated on config health),
 // export-save / export-complete / import-complete (ZIP round-trip), and pick-save-folder
 // (crash-safe library relocation: copy → flip config → delete old, then re-point the
@@ -60,12 +61,18 @@ function register(ctx) {
     sweepReplacements,
   } = ctx;
 
-  // #299: the app itself is the DB's one writer, so import-posts writes
+  // #299: the app itself is the DB's one writer, so importing posts writes
   // straight into the DB via the shared record writer (lib-db-record-writer.ts
   // — the same writer the sidecar importer and the inbox consumer use) instead
   // of producing a sidecar the DB would have to re-derive from later. Dedup
   // checks the DB (URL-based) instead of scanning sidecars — there are none
   // left to scan for a post that comes in this way.
+  //
+  // Not an IPC handler: the legacy ZIP import is the only producer of these
+  // records and it reads the archive in main now (#322), so the records — which
+  // carry a base64 data: URL per post — never cross the process boundary. It used
+  // to be `import-posts`, invoked by the renderer with the array it had built from
+  // its own copy of the archive.
   //
   // #34 turned the URL duplicate from a fixed skip into the same three answers
   // the extension's warning offers, asked ONCE for the batch rather than per
@@ -78,7 +85,7 @@ function register(ctx) {
   //               the same `replaces` marker the extension writes
   // Absent, with duplicates present, imports NOTHING and answers
   // { needsChoice, duplicates } so the renderer can ask and call back.
-  ipcMain.handle('import-posts', async (_e, posts, duplicateMode) => {
+  async function importPostRecords(posts, duplicateMode) {
     const mode = duplicateMode === 'copy' || duplicateMode === 'replace' || duplicateMode === 'skip' ? duplicateMode : null;
     const folder = getSaveFolder();
     if (!folder || !Array.isArray(posts)) return { imported: 0, skipped: 0 };
@@ -280,7 +287,7 @@ function register(ctx) {
       if (onDuplicate === 'replace') await sweepReplacements();
     }
     return { imported, skipped };
-  });
+  }
 
   ipcMain.handle('clear-all', async () => {
     const folder = getSaveFolder();
@@ -425,10 +432,13 @@ function register(ctx) {
   // message never lands. main picks the path and yauzl streams it off disk, so
   // archive size stops mattering to everything above this handler.
   //
-  // Legacy exports (metadata.json + images/) still belong to the renderer's
-  // importPosts path (#322 owns their future), so an archive that is not a
-  // complete export comes back as { legacy:true } WITH its bytes — the same bytes
-  // the renderer used to read for itself, only now it never touched the file.
+  // Legacy exports (metadata.json + images/) are still importable, and main reads
+  // those too (#322 — the decision was to keep the format and put it behind the
+  // same guards, not to drop it). An archive that is not a complete export comes
+  // back as { legacy:true, path } and the renderer asks for the import itself in a
+  // second call: the #34 duplicate question is UI policy and has to sit between
+  // reading and writing. What crosses IPC is the PATH main picked — never the
+  // archive's bytes, and never the expanded records.
   ipcMain.handle('import-complete', async () => {
     const res = await dialog.showOpenDialog(getWin(), {
       properties: ['openFile'],
@@ -441,13 +451,26 @@ function register(ctx) {
       if (!handle) return { ok: false, error: 'no-folder' };
       const out = await archive.importCompleteZipToDb(handle.sqlite, zipPath, getSaveFolder());
       if (!out.notComplete) return out;
-      // readFile refuses anything over ~2 GiB (ERR_FS_FILE_TOO_LARGE), which lands
-      // in the catch below as a plain failed import — main never tries to hold a
-      // giant archive in one Buffer. The complete format is the one that has to
-      // scale, and it no longer comes through here at all.
-      return { ok: false, legacy: true, bytes: await fs.promises.readFile(zipPath) };
+      return { ok: false, legacy: true, path: zipPath };
     } catch (err) {
       return { ok: false, error: err.message };
+    }
+  });
+
+  // Second half of a legacy import: read the archive at `zipPath` and write the
+  // records it describes. Called twice when the batch has duplicates — once to get
+  // the count for the question, once with the answer — so the archive is re-read
+  // rather than kept expanded in memory across a user prompt. Reading it is all
+  // this does with the path, and the guards in readLegacyZipPosts are what bound
+  // that; a ZipLimitError lands in the catch as a plain failed import.
+  ipcMain.handle('import-legacy-zip', async (_e, zipPath, duplicateMode) => {
+    if (!zipPath || typeof zipPath !== 'string') return { ok: false, error: 'invalid', imported: 0, skipped: 0 };
+    try {
+      const posts = await archive.readLegacyZipPosts(zipPath);
+      if (!posts) return { ok: false, error: 'not-an-export', imported: 0, skipped: 0 };
+      return Object.assign({ ok: true }, await importPostRecords(posts, duplicateMode));
+    } catch (err) {
+      return { ok: false, error: err.message, imported: 0, skipped: 0 };
     }
   });
 
@@ -510,7 +533,7 @@ function register(ctx) {
     return moveLibraryTo(dest);
   });
 
-  // #299: same rationale as import-posts — write straight into the DB (a real
+  // #299: same rationale as importPostRecords above — write straight into the DB (a real
   // video field now, not the `(rec as any).video` escape hatch this used pre-
   // #299) instead of a sidecar the DB would have to re-derive from later.
   ipcMain.handle('import-images', async () => {

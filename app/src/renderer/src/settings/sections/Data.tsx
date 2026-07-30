@@ -13,8 +13,7 @@ import { toast } from 'sonner';
 import { t } from '../../_shared/i18n.ts';
 import { notify } from '../../services/ui.ts';
 import { getBackup, setBackup as setBackupConfig, pickBackupDir, onBackupDone, getIntegrityStatus, runOrphanRecovery, onIntegrityCheckDone } from '../../services/backup.ts';
-import { onExportProgress, onSaveFolderProgress, pickSaveFolder, moveSaveFolder, exportComplete, importComplete, importPosts, importImages } from '../../services/posts.ts';
-import { readLegacyZipPosts } from '../../services/legacy-zip-import.ts';
+import { onExportProgress, onSaveFolderProgress, pickSaveFolder, moveSaveFolder, exportComplete, importComplete, importLegacyZip, importImages } from '../../services/posts.ts';
 import { open as confirmOpen } from '../../services/confirm.ts';
 import { loadPosts } from '../../services/post-grid-builder.ts';
 
@@ -264,8 +263,9 @@ export function Data() {
   };
 
   // --- import ZIP --- (new complete format vs legacy metadata.json + images/)
-  // main runs the picker and reads the archive (#485); the legacy branch is the
-  // only one that still comes back to the renderer, with its bytes attached.
+  // main runs the picker and reads the archive for BOTH formats (#485 / #322); the
+  // legacy branch comes back with the archive's path, not its bytes, and the
+  // renderer asks main to finish the import once it has the #34 answer.
   const importZip = async () => {
     try {
       const res = await importComplete();
@@ -276,19 +276,18 @@ export function Data() {
         if (skipped > 0) notify(t('importSkipped', [imported, skipped]));
         else notify(t('imported', [imported]));
       };
-      if (res && res.legacy && res.bytes) {
-        const posts = await readLegacyZipPosts(new Uint8Array(res.bytes));
-        if (!posts) {
-          notify(t('importFailed'));
-          return;
-        }
+      if (res && res.legacy && res.path) {
         // #34: 取り込む投稿が既にライブラリにあるとき、コピー／置換／スキップを
         // 1回だけ聞く（1件ずつ聞くと数百回になるため、バッチ単位）。重複が無ければ
         // main 側が即座に取り込むので、この確認は出ない。
-        const first = await importPosts(posts);
-        if (first?.needsChoice) {
+        const first = await importLegacyZip(res.path);
+        if (!first || first.error) {
+          notify(t('importFailed'));
+          return;
+        }
+        if (first.needsChoice) {
           const finish = async (mode: string) => {
-            const r = await importPosts(posts, mode);
+            const r = await importLegacyZip(res.path, mode);
             done(r.imported, r.skipped);
           };
           confirmOpen({

@@ -20,8 +20,7 @@ import { makeCooc } from './cooc.ts';
 import { mediaFilesOf, densityImage, percentileFn, makeGallery, loadUngrouped, loadManualGroups } from './records.ts';
 import { makeTags, bindTagKindOf, bindPosterFilterVocab, getTagTypes, getTagLabels, getPosterTags, load as loadTags } from './tags.ts';
 import { makeTabLabels } from './tab-state.ts';
-import { importComplete, importPosts } from './posts.ts';
-import { readLegacyZipPosts } from './legacy-zip-import.ts';
+import { importComplete, importLegacyZip } from './posts.ts';
 import { open as confirmOpen } from './confirm.ts';
 import { hologramI18n } from './i18n.ts';
 import * as folders from './folders.ts';
@@ -1800,9 +1799,9 @@ export function endFilterEditSession(): void {
   };
 
   // --- Import from ZIP ---
-  // 完全エクスポート（library/ + hologram-export.json）は main がファイル選択から
-  // 展開まで担当する（#485）。旧形式（metadata.json + images/）だけがバイト列付きで
-  // 返り、レンダラ側の legacy-zip-import へ回る（その去就は #322）。設定画面の
+  // ZIP の読み取りはどちらの形式でも main が担当する（完全形式は #485・旧形式
+  // metadata.json + images/ は #322）。レンダラが受け取るのは結果と、旧形式のとき
+  // だけ書庫のパスで、バイト列も展開後のレコードも流れてこない。設定画面の
   // 取り込みボタンと空状態の CTA の両方がここを通る。
   async function runZipImport() {
     try {
@@ -1814,19 +1813,18 @@ export function endFilterEditSession(): void {
         if (skipped > 0) notify(getMessage('importSkipped', [imported, skipped]));
         else notify(getMessage('imported', [imported]));
       };
-      if (res && res.legacy && res.bytes) {
-        const posts = await readLegacyZipPosts(new Uint8Array(res.bytes));
-        if (!posts) {
-          notify(getMessage('importFailed'));
-          return;
-        }
+      if (res && res.legacy && res.path) {
         // #34: 取り込む投稿が既にライブラリにあるとき、コピー／置換／スキップを
         // 1回だけ聞く（1件ずつ聞くと数百回になるため、バッチ単位）。重複が無ければ
         // main 側が即座に取り込むので、この確認は出ない。
-        const first = await importPosts(posts);
-        if (first?.needsChoice) {
+        const first = await importLegacyZip(res.path);
+        if (!first || first.error) {
+          notify(getMessage('importFailed'));
+          return;
+        }
+        if (first.needsChoice) {
           const finish = async (mode: string) => {
-            const r = await importPosts(posts, mode);
+            const r = await importLegacyZip(res.path, mode);
             await done(r.imported, r.skipped);
           };
           confirmOpen({

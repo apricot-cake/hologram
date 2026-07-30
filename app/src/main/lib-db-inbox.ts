@@ -73,7 +73,7 @@ function resolveMediaPath(saveFolder: string, name: string): string | null {
 
 // The record's own display artifacts — what a viewer needs to show this post
 // at all. avatarFile is deliberately excluded: it is best-effort everywhere
-// else in the codebase (bridge.cts's download, import-posts), and its absence
+// else in the codebase (bridge.cts's download, the legacy ZIP import), and its absence
 // already degrades gracefully (the viewer hides a missing avatar) rather than
 // blocking the post.
 function requiredMediaFiles(record: PostRecordShape): string[] {

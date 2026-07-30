@@ -49,7 +49,11 @@ const api = {
   imageDataUrl: (image: string): Promise<string | null> => ipcRenderer.invoke('image-data-url', image),
   deletePost: (image: string): Promise<any> => ipcRenderer.invoke('delete-post', image),
   updateTags: (image: string, tags: unknown, patch?: unknown): Promise<any> => ipcRenderer.invoke('update-tags', image, tags, patch),
-  importPosts: (posts: unknown, duplicateMode?: string): Promise<any> => ipcRenderer.invoke('import-posts', posts, duplicateMode),
+  // Legacy-format ZIP import, second half: main reads the archive at `zipPath`
+  // (the path import-complete handed back), so neither its bytes nor the records
+  // it expands to cross this boundary (#322). Call once without a mode to learn
+  // whether the batch has duplicates, then again with the answer (#34).
+  importLegacyZip: (zipPath: string, duplicateMode?: string): Promise<any> => ipcRenderer.invoke('import-legacy-zip', zipPath, duplicateMode),
   clearAll: (): Promise<any> => ipcRenderer.invoke('clear-all'),
   exportSave: (filename: string, bytes: Uint8Array | ArrayBuffer): Promise<any> => ipcRenderer.invoke('export-save', filename, bytes),
   exportComplete: (mode?: string, includeTrash?: boolean): Promise<any> => ipcRenderer.invoke('export-complete', mode, includeTrash),

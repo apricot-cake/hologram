@@ -12,7 +12,7 @@
 // (trash.ts: listTrash/restorePost/deleteFromTrash/emptyTrash), backup (backup.ts:
 // getBackup/setBackup/pickBackupDir/runBackup/onBackupStart/onBackupDone/
 // getIntegrityStatus/runOrphanRecovery/onIntegrityCheckDone), and posts
-// (posts.ts: listPosts/listPostsDelta/imageDataUrl/deletePost/updateTags/importPosts/
+// (posts.ts: listPosts/listPostsDelta/imageDataUrl/deletePost/updateTags/importLegacyZip/
 // importImages/clearAll/exportSave/exportComplete/importComplete/pickSaveFolder/
 // onSaveFolderProgress/onPostsChanged) — those domain services call this module
 // rather than window.hologram directly, same as viewer.ts. Still flat here (no clear
@@ -55,7 +55,7 @@ export const hologramIpc: HologramPreload = {
   imageDataUrl: (image) => bridge().imageDataUrl(image),
   deletePost: (image) => bridge().deletePost(image),
   updateTags: (image, tags, patch) => bridge().updateTags(image, tags, patch),
-  importPosts: (posts, duplicateMode) => bridge().importPosts(posts, duplicateMode),
+  importLegacyZip: (zipPath, duplicateMode) => bridge().importLegacyZip(zipPath, duplicateMode),
   clearAll: () => bridge().clearAll(),
   exportSave: (filename, bytes) => bridge().exportSave(filename, bytes),
   exportComplete: (mode, includeTrash) => bridge().exportComplete(mode, includeTrash),

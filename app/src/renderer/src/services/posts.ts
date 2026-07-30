@@ -1,5 +1,5 @@
 // Posts service — post-record CRUD, import/export and the save-folder move flow
-// (list/listDelta/imageDataUrl/deletePost/updateTags/importPosts/importImages/
+// (list/listDelta/imageDataUrl/deletePost/updateTags/importLegacyZip/importImages/
 // clearAll/exportSave/exportComplete/importComplete/pickSaveFolder/onPostsChanged/
 // onSaveFolderProgress), wrapping the flat hologramIpc calls. A real ES module (named
 // exports) now — imported directly by the consumers that share this domain: viewer.ts
@@ -25,8 +25,11 @@ export function deletePost(image: string) {
 export function updateTags(image: string, tags: unknown, patch?: unknown) {
   return hologramIpc.updateTags(image, tags, patch);
 }
-export function importPosts(posts: unknown, duplicateMode?: string) {
-  return hologramIpc.importPosts(posts, duplicateMode);
+// Legacy-format ZIP import (#322): main reads the archive at the path
+// importComplete handed back. Without a mode it answers { needsChoice, duplicates }
+// instead of importing (#34); call again with the answer.
+export function importLegacyZip(zipPath: string, duplicateMode?: string) {
+  return hologramIpc.importLegacyZip(zipPath, duplicateMode);
 }
 export function importImages() {
   return hologramIpc.importImages();
@@ -41,8 +44,8 @@ export function exportComplete(mode?: string, includeTrash?: boolean) {
   return hologramIpc.exportComplete(mode, includeTrash);
 }
 // main owns the file picker AND the read (#485) — this resolves to the import
-// result, to { canceled:true }, or to { legacy:true, bytes } for an archive that
-// isn't a complete export (see legacy-zip-import.ts).
+// result, to { canceled:true }, or to { legacy:true, path } for an archive that
+// isn't a complete export but is a legacy one (finish it with importLegacyZip).
 export function importComplete() {
   return hologramIpc.importComplete();
 }

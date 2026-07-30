@@ -2,8 +2,8 @@
 
 // The shared single-post DB writer: posts + media + post_tags + posts_fts for
 // ONE record, so every producer that turns a PostRecordInput into DB rows — the
-// inbox consumer (lib-db-inbox.ts), the app-internal import-posts/import-images
-// handlers (ipc-transfer.ts), the ZIP importer (lib-archive.ts), orphan recovery
+// inbox consumer (lib-db-inbox.ts), the app-internal ZIP/media import handlers
+// (ipc-transfer.ts), the complete-ZIP importer (lib-archive.ts), orphan recovery
 // (lib-db-integrity.ts) and the one-time legacy migration (lib-legacy-import.ts)
 // — shares one column list and one write order instead of five drifting copies.
 //

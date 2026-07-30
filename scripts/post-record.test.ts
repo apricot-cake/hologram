@@ -153,7 +153,8 @@ describe('素通しと変換', () => {
 });
 
 // このビルダーが存在する理由そのもの（#5 2026-07-18 のコメント）:
-// app/src/main/ipc-transfer.ts の import-posts は ~30 フィールドを手で並べており、
+// app/src/main/ipc-transfer.ts の importPostRecords（当時の import-posts ハンドラ）は
+// ~30 フィールドを手で並べており、
 // media[] と replyToId を黙って落としていた。共有ビルダーは、生成側が入れたフィールドを
 // 落とせない＝省略されたものに既定値を入れることしかできない。
 describe('生成側が入れたフィールドは落とさない', () => {
