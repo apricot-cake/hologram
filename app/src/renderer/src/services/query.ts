@@ -342,14 +342,14 @@ export function textHaystackOf(p: HologramPost): string[] {
     .map((x) => (x == null ? '' : String(x)));
 }
 
-// --- Saved-leaf schema normalization (pre-release migration) ---------------
+// --- Saved-leaf schema self-heal for retired leaf-type names ----------------
 // The single place to record retired leaf-type renames. sanitizeSavedTabs runs
 // every persisted tree + shadow (state.tree / state.f) through normalizeTree /
 // normalizeLeaf on load, so an old tabs.json self-heals on the next write — no
-// bulk rewrite script and no permanent predicate alias to carry (pre-release,
-// there is no third-party data whose old shape must be supported forever). Add a
-// row here whenever a leaf `type` is renamed; unknown types pass through and the
-// predicate fail-opens (default → () => true), so the chip still shows its type.
+// bulk rewrite script and no permanent predicate alias to carry. This is a
+// standing mechanism, not one-off migration scaffolding: add a row here whenever
+// a leaf `type` is renamed, now or in the future; unknown types pass through and
+// the predicate fail-opens (default → () => true), so the chip still shows its type.
 const LEAF_TYPE_RENAMES: Record<string, string> = { collection: 'folder' };
 export function normalizeLeaf<T extends { type?: unknown }>(leaf: T): T {
   if (leaf && typeof (leaf as any).type === 'string') {

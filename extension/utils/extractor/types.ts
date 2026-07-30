@@ -17,6 +17,7 @@
 //
 // The ENTRY split is unchanged — content scripts and the service worker are
 // still separate bundles; each simply never calls the phase it has no use for.
+import type { AnnouncedMedia } from '../../../native-host/protocol.mts';
 
 // Same shape as DOMRect's readable half, but plain data: capture geometry is
 // adjusted (Misskey grows the rect to its <article>, pixiv narrows it to the
@@ -50,23 +51,12 @@ interface RawAcquisition {
   body: string;
 }
 
-interface MediaItem {
-  url: string;
-  alt: string | null;
-  width: number | null;
-  height: number | null;
-  referer?: string;
-  // DOWNLOAD transport, not the display label: 'image' (default, omitted on the
-  // older still-image-only platforms below) | 'video' | 'gif' | 'ugoira'.
-  // Everything but 'image' additionally carries `poster` — a still frame URL the
-  // native host downloads as <base>-poster.<ext> (#119 St1).
-  type?: 'image' | 'video' | 'gif' | 'ugoira';
-  poster?: string | null;
-  // 'ugoira' only (#119 St3): the frame order and per-frame display time inside
-  // the saved zip. Without it the archive is a bag of pictures — nothing else
-  // records how long each one is shown.
-  frames?: { file: string; delay: number }[];
-}
+// What an extractor announces for one picture/video is exactly what crosses the
+// native-messaging boundary as `metadata.media[]`, so the shape is declared
+// where that boundary is (#400 — native-host/protocol.mts) and this is the name
+// the extractors know it by. Distinct from the record's SAVED media, which names
+// files on disk and only the host can fill in.
+type MediaItem = AnnouncedMedia;
 
 // The normalized sidecar record shape. Declared explicitly (not just inferred
 // from the emptyRecord() literal) because every field initializes to `null`

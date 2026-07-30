@@ -15,6 +15,8 @@
 // (this is a regular page script, background.ts is the service worker), but
 // tsc compiles every extension file as one program, so top-level names must
 // stay unique across it. drag.ts/i18n.ts use the same IIFE convention.
+import type { HostRequest } from '../../native-host/protocol.mts';
+
 export function startDiagnostics(): void {
   const DIAG_PREFIX = 'diaglog_';
 
@@ -56,7 +58,7 @@ export function startDiagnostics(): void {
         done({ ok: false, where: 'disconnect', error: (chrome.runtime.lastError && chrome.runtime.lastError.message) || null });
       });
       try {
-        port.postMessage({ type: 'ping' });
+        port.postMessage({ type: 'ping' } satisfies HostRequest);
       } catch (e: any) {
         clearTimeout(timer);
         done({ ok: false, where: 'post-threw', error: String((e && e.message) || e) });

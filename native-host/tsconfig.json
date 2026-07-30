@@ -68,5 +68,5 @@
     "typeRoots": ["../node_modules/@types", "../app/node_modules/@types"],
     "types": ["node"]
   },
-  "files": ["bridge.cts", "install.cts", "paths.cts", "media-download.cts", "config-recovery.cts", "post-key.mts", "post-record.mts", "inbox.mts", "raw-payload.mts"]
+  "files": ["bridge.cts", "install.cts", "paths.cts", "media-download.cts", "config-recovery.cts", "post-key.mts", "post-record.mts", "inbox.mts", "raw-payload.mts", "protocol.mts"]
 }

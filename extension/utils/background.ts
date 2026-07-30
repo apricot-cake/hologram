@@ -1,10 +1,16 @@
 // Which sites exist, and everything platform-specific about them, comes from
 // the extractor registry (utils/extractor/) — this file holds no per-platform
 // branch of its own (#212).
+// The native-messaging contract, shared with the host that reads these messages
+// (#400 — native-host/protocol.mts). A save request built here is the same
+// declaration the bridge's parse produces, so a renamed or missing field is a
+// compile error on this side rather than a save that fails on disk.
+import { readHostResponse, responseId } from '../../native-host/protocol.mts';
+import type { CaptureMetadata, HostRequest, SavedResults } from '../../native-host/protocol.mts';
 import { CROP_TIMEOUT_MS, NATIVE_HOST_TIMEOUT_MS, SAVED_QUERY_TIMEOUT_MS, withDeadline } from './deadline.ts';
 import { extractorFor, fetchPostMetadata, getHostname, highResUrlOf, isAllowedSender, mediaKeyOf } from './extractor/index.ts';
 import type { PostRecord } from './extractor/types.ts';
-import type { BridgeAck, CaptureAndSendResponse, CheckSavedResponse, ContentToBackgroundMessage, CropImageMessage, CropImageResponse, DumpLogsResponse, LogCaptureResponse, NotifyMessage, SavedEntry, SavedResults, SavedUpdateMessage, SaveProgressMessage, SaveResponse } from './messages.ts';
+import type { BridgeAck, CaptureAndSendResponse, CheckSavedResponse, ContentToBackgroundMessage, CropImageMessage, CropImageResponse, DumpLogsResponse, LogCaptureResponse, NotifyMessage, SavedEntry, SavedUpdateMessage, SaveProgressMessage, SaveResponse } from './messages.ts';
 import { classifySaveFailure } from './native-error.ts';
 import { createSaveGate, saveRequestKey } from './host-budget.ts';
 import type { SaveLogEntry, SaveStage } from './capture-log.ts';
@@ -325,7 +331,9 @@ export function startBackground(): void {
     }
     if (!response?.croppedDataUrl) throw trace.fail('crop', 'Cropping failed');
     trace.passed('crop');
-    const jpegBase64 = response.croppedDataUrl.split(',')[1];
+    // `?? ''` for a data URL with no comma — the host answers an empty image with
+    // 'Missing image data', exactly as it did when this sent `undefined`.
+    const jpegBase64 = response.croppedDataUrl.split(',')[1] ?? '';
 
     // Metadata comes from the platform's API (no DOM scraping).
     // fetchPostMetadata is defined in metadata.js (imported at the top).
@@ -369,7 +377,7 @@ export function startBackground(): void {
   // into the user's save folder) and resolve with its ack. The host is short-lived:
   // Chrome spawns it per connection, so this works even when the desktop app is not
   // running.
-  function bridgeSend(message: unknown): Promise<BridgeAck> {
+  function bridgeSend(message: HostRequest): Promise<BridgeAck> {
     return new Promise((resolve, reject) => {
       let settled = false;
       let timer: ReturnType<typeof setTimeout> | null = null;
@@ -397,9 +405,14 @@ export function startBackground(): void {
 
       timer = setTimeout(() => finish(new Error('Native host timed out')), NATIVE_HOST_TIMEOUT_MS);
 
+      // Read through the shared contract rather than each caller's own idea of
+      // what a reply looks like (#400): before this, "did that work?" and "whose
+      // answer is this?" were each answered twice, here and in the query port
+      // below, in slightly different words.
       port.onMessage.addListener((msg) => {
-        if (msg?.ok) finish(null, msg);
-        else finish(new Error(msg?.error || 'Native host returned an error'));
+        const res = readHostResponse(msg);
+        if (res.ok) finish(null, res.ack);
+        else finish(new Error(res.error));
       });
 
       port.onDisconnect.addListener(() => {
@@ -417,18 +430,18 @@ export function startBackground(): void {
   // saveId rides along too, on every route: the host writes its own capture.log
   // lines, and without the id those lines could not be tied to the extension's
   // (#519).
-  function sendToBridge(captureId, jpegBase64, record, metaOk, metaReason, saveId: string | null) {
+  function sendToBridge(captureId: string, jpegBase64: string, record: CaptureMetadata, metaOk: boolean, metaReason: string | null, saveId: string | null) {
     return bridgeSend({ type: 'save', captureId, saveId, image: jpegBase64, metadata: record, metaOk, metaReason });
   }
 
   // Bulk-intake save (#362): metadata only, no screenshot — the host downloads
   // the post's own media and the first one becomes the record's image.
-  function sendPostToBridge(captureId, record, metaOk, metaReason, saveId: string | null) {
+  function sendPostToBridge(captureId: string, record: CaptureMetadata, metaOk: boolean, metaReason: string | null, saveId: string | null) {
     return bridgeSend({ type: 'savePost', captureId, saveId, metadata: record, metaOk, metaReason });
   }
 
   // Image-drag save: the host downloads the dragged image itself (no screenshot).
-  function sendDraggedToBridge(captureId, imageUrl, imageReferer, record, metaOk, metaReason, saveId: string | null) {
+  function sendDraggedToBridge(captureId: string, imageUrl: string, imageReferer: string | null, record: CaptureMetadata, metaOk: boolean, metaReason: string | null, saveId: string | null) {
     return bridgeSend({ type: 'saveDragged', captureId, saveId, imageUrl, imageReferer, metadata: record, metaOk, metaReason });
   }
 
@@ -453,7 +466,7 @@ export function startBackground(): void {
   // current anyway).
   let queryPort: chrome.runtime.Port | null = null;
   let nextQueryId = 1;
-  const pendingQueries = new Map<number, { resolve: (r: any) => void; reject: (e: Error) => void; timer: ReturnType<typeof setTimeout> }>();
+  const pendingQueries = new Map<number, { resolve: (r: unknown) => void; reject: (e: Error) => void; timer: ReturnType<typeof setTimeout> }>();
 
   function failAllPending(message: string) {
     for (const [, p] of pendingQueries) {
@@ -467,10 +480,11 @@ export function startBackground(): void {
     if (queryPort) return queryPort;
     const port = chrome.runtime.connectNative(NATIVE_HOST);
     queryPort = port;
-    port.onMessage.addListener((msg: any) => {
-      const p = msg && msg.id != null ? pendingQueries.get(msg.id) : null;
-      if (!p) return; // late reply to a timed-out request — nothing to settle
-      pendingQueries.delete(msg.id);
+    port.onMessage.addListener((msg: unknown) => {
+      const id = responseId(msg);
+      const p = id == null ? null : pendingQueries.get(id);
+      if (p == null || id == null) return; // late reply to a timed-out request — nothing to settle
+      pendingQueries.delete(id);
       clearTimeout(p.timer);
       p.resolve(msg);
     });
@@ -498,9 +512,19 @@ export function startBackground(): void {
         pendingQueries.delete(id);
         reject(new Error('Native host timed out'));
       }, SAVED_QUERY_TIMEOUT_MS);
-      pendingQueries.set(id, { resolve: (msg) => resolve((msg && msg.results) || {}), reject, timer });
+      // A host that answered ok:false answers the badge with "nothing known",
+      // not with a rejection: the question is optional, and the caller already
+      // treats an empty result as "leave these posts unmarked".
+      pendingQueries.set(id, {
+        resolve: (msg) => {
+          const res = readHostResponse(msg);
+          resolve(res.ok ? res.ack.results || {} : {});
+        },
+        reject,
+        timer,
+      });
       try {
-        port.postMessage({ type: 'query', id, urls });
+        port.postMessage({ type: 'query', id, urls } satisfies HostRequest);
       } catch (error: any) {
         pendingQueries.delete(id);
         clearTimeout(timer);
@@ -799,7 +823,7 @@ export function startBackground(): void {
     try {
       // The host reads its stdin in a loop and answers each framed message, so
       // one connection carries the whole batch (native-host/bridge.cts).
-      for (const queued of batch) port.postMessage({ type: 'log', entry: queued.entry });
+      for (const queued of batch) port.postMessage({ type: 'log', entry: queued.entry } satisfies HostRequest);
     } catch {
       done();
     }
@@ -977,7 +1001,7 @@ export function startBackground(): void {
 // downloaded illustration becomes image, media stays []) and instead records
 // which image of a multi-image post it was. Single source of truth so a new field
 // can't drift between the two paths.
-function buildRecord(meta, { captureId, capturedAt, postUrl, sendPlatform, replaces, extra }: { captureId: string; capturedAt: string; postUrl: string; sendPlatform: string; replaces?: string | null; extra: Record<string, unknown> }) {
+function buildRecord(meta, { captureId, capturedAt, postUrl, sendPlatform, replaces, extra }: { captureId: string; capturedAt: string; postUrl: string; sendPlatform: string; replaces?: string | null; extra: Record<string, unknown> }): CaptureMetadata {
   return Object.assign(
     {
       captureId,

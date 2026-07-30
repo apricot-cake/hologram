@@ -22,6 +22,7 @@ store. The desktop app owns deletes/edits/index.
 | File | Role |
 |---|---|
 | `bridge.cts` | The stdio host (reads/writes length-prefixed JSON) — bundle entry. |
+| `protocol.mts` | The message contract, imported by the extension too — see below. |
 | `paths.cts` | Resolves the shared config dir (must match the Electron app). |
 | `media-download.cts` | Shared best-effort still-image downloader (SSRF guard, size/time caps) — also a bundle entry (see below). |
 | `config-recovery.cts` | Save-folder recovery + destructive-op gating (pure functions). |
@@ -31,6 +32,15 @@ store. The desktop app owns deletes/edits/index.
 The sources stay CommonJS (`require`/`module.exports`, not `import`/`export`) and
 carry types Node strips at runtime; see `native-host/tsconfig.json` for the full
 rationale. `install.cts` is loaded as-is by the Electron app.
+
+`protocol.mts` declares the messages themselves — the six requests, the acks, the
+capture-id rule and the protocol version — and the **extension imports it from
+here** (Vite inlines it into the extension bundle, so nothing at runtime reaches
+back into this directory). It has to live on this side because this directory is
+shipped without `app/`, so anything the deployed host reads must sit in it. That
+makes it the one module here that enters a browser bundle: it must stay free of
+node builtins, and its imports from `post-record.mts` / `raw-payload.mts` are
+type-only for exactly that reason.
 
 `bridge.cts` and the modules it requires are **bundled** into
 `native-host/dist/bridge.js` (one file, node builtins external) by
