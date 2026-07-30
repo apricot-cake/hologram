@@ -15,6 +15,7 @@
 import { treeLeaves, userKey } from './query.ts';
 import { formatCount, localeDate } from './format.ts';
 import { open as inspectorOpen, refresh as inspectorRefresh } from './inspector.ts';
+import { setOpen as panelSetOpen } from './inspector-panel.ts';
 import { open as lightboxOpen } from './lightbox.ts';
 import { open as menuOpen } from './menu.ts';
 import { promptName } from '../prompt/Prompt.tsx';
@@ -273,9 +274,11 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
     refreshPosterTagFields(key);
   }
   // opts.focusTags: see showDetail in inspector-builder.ts — the poster context
-  // menu's タグを編集, replacing the poster card's own 🏷 button (P2⑦).
+  // menu's タグを編集, replacing the poster card's own 🏷 button (P2⑦). Opening a
+  // closed panel is that route's doing, and only that route's; see the note there.
   function showPosterDetail(u: HologramUserAgg, opts?: { focusTags?: boolean }) {
     if (!u) return;
+    if (opts && opts.focusTags) panelSetOpen(true);
     const pfName = u.platform ? deps.PF_NAME[u.platform] || u.platform : '';
     const avatarSrc = u.avatarFile ? deps.fileSrc(u.avatarFile) : null;
     const name = u.displayName || (u.screenName ? '@' + u.screenName : '(unknown)');
@@ -342,7 +345,10 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
         deps.showKindMenu(tag, x, y, () => refreshPosterTagFields(u.key));
       },
     });
-    byId('postDetail').hidden = false;
+    // No poke at the panel's own `hidden` here (it used to force the element visible):
+    // the shell derives that from state, so the write both fought React and contradicted
+    // #243 — a poster card click would reveal a panel the user had closed, and leave it
+    // revealed until the next render happened to disagree. Post cards never did this.
     deps.setInspectedKey('poster:' + u.key); // post + poster cards clear/set their ring reactively (hologramStore subscribe)
   }
 

@@ -13,6 +13,7 @@
 // append the members of `add` it does not already hold. Never write back a captured
 // list — that is the difference between this and the snapshot model #235 rejected.
 import { makeUndo, type DirectedChange, type UndoChange } from './undo.ts';
+import { isVisible as panelIsVisible } from './inspector-panel.ts';
 import { postIdKey } from './records.ts';
 import { updateTags as postsUpdateTags } from './posts.ts';
 import { applyPosterTagRecords, getPosterTags } from './tags.ts';
@@ -49,8 +50,6 @@ function nextList(current: readonly string[] | null | undefined, change: Directe
 }
 
 export function makeUndoController(deps: UndoBuilderDeps) {
-  const byId = (id: string) => document.getElementById(id) as HTMLElement;
-
   async function applyPostTags(changes: DirectedChange[]) {
     for (const c of changes) {
       const rec = deps.getPostById(c.target); // O(1) via the delta-cache map (allPosts holds the same record refs)
@@ -70,7 +69,7 @@ export function makeUndoController(deps: UndoBuilderDeps) {
     // Keep the inspector in sync if it's showing the affected group (undo isn't fired
     // while typing in the add input, so a full re-render here is safe).
     const inspectedKey = deps.getInspectedKey();
-    if (!byId('postDetail').hidden && inspectedKey) {
+    if (panelIsVisible() && inspectedKey) {
       const fresh = deps.getViewGroups().find((g2) => postIdKey(g2.rep) === inspectedKey);
       if (fresh) deps.showDetail(fresh);
     }
@@ -84,7 +83,7 @@ export function makeUndoController(deps: UndoBuilderDeps) {
     const current = getPosterTags();
     applyPosterTagRecords(changes.map((c) => ({ key: c.target, tags: nextList(current[c.target], c) })));
     const inspectedKey = deps.getInspectedKey();
-    if (!byId('postDetail').hidden && typeof inspectedKey === 'string' && inspectedKey.indexOf('poster:') === 0) {
+    if (panelIsVisible() && typeof inspectedKey === 'string' && inspectedKey.indexOf('poster:') === 0) {
       deps.refreshPosterTagFields(inspectedKey.slice('poster:'.length));
     }
   }

@@ -113,7 +113,7 @@ function ShellClasses() {
 
 // Modal chrome: lock background scroll while any full-screen overlay is up. Observes each
 // overlay's visibility so no open/close site can be missed — self-contained (no orchestrator
-// state). The inspector (#postDetail) is a side panel, not a modal, so it's excluded.
+// state). The inspector is a side panel, not a modal, so it's excluded.
 //
 // This used to also dim the OS-drawn window-control strip in lockstep with the scrim, because
 // a web backdrop cannot cover an OS-painted overlay. The buttons are app-drawn now

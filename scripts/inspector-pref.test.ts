@@ -70,16 +70,37 @@ const bridge = {
   setPref: async (key: string, value: unknown) => setPref(key, value),
 };
 
+// 画面幅（layout-mode.ts）の代役。`isVisible` の入力の一つが幅なので、テストから
+// 広⇔狭を動かせるようにする＝本物の matchMedia と同じ形（matches ＋ change イベント）
+// だけを備え、`fireWidth` でリスナーを起こす。
+let mediaListener: ((e: { matches: boolean }) => void) | null = null;
+let mediaMatches = true;
+function fireWidth(wide: boolean): void {
+  mediaMatches = wide;
+  mediaListener?.({ matches: wide });
+}
+
 beforeEach(() => {
   configJson = '{}';
   cache.clear();
+  mediaListener = null;
+  mediaMatches = true;
   (globalThis as any).localStorage = localStorageStub;
   (globalThis as any).window = { hologram: bridge };
+  (globalThis as any).matchMedia = () => ({
+    get matches() {
+      return mediaMatches;
+    },
+    addEventListener: (_type: string, cb: (e: { matches: boolean }) => void) => {
+      mediaListener = cb;
+    },
+  });
   vi.resetModules();
 });
 
 afterEach(() => {
   vi.restoreAllMocks();
+  (globalThis as any).matchMedia = undefined;
 });
 
 // モジュール内に開閉状態を持つので、シナリオごとに読み直す（localStorage を仕込んでから）。
@@ -200,5 +221,70 @@ describe('renderer: 起動時の突き合わせ（config.json が勝つ）', () 
     const second = await freshPanel();
     await second.load();
     expect(second.isOpen()).toBe(false);
+  });
+});
+
+// isVisible（P2⑦）＝「いま画面に出ているか」。isOpen（＝出ているべきか）とは別の問いで、
+// 入力が4つある。これを固定する理由＝**この式の写しが2つあった**から。シェルが React 側で
+// 組み立て、React の外のモジュール（inspector-builder / image-tab-builder / undo-builder）は
+// 同じ問いを `#postDetail.hidden` を DOM から読み返して答えていた。式を1本にした以上、
+// 各入力が効いていることをここで押さえる。
+describe('renderer: 画面に出ているか（isVisible）', () => {
+  // 4つの入力を同じ世代のモジュールから取る＝resetModules 後は別インスタンスになるので、
+  // まとめて import する。
+  async function freshWorld() {
+    const panel = await freshPanel();
+    const panels = await import('../app/src/renderer/src/services/panels');
+    const store = await import('../app/src/renderer/src/services/store');
+    return { panel, panels, store };
+  }
+
+  test('既定（広幅・開・マスク無し）は出ている＝未選択でもプレースホルダを出す', async () => {
+    const { panel } = await freshWorld();
+    expect(panel.isVisible()).toBe(true);
+  });
+
+  test('ユーザーが閉じたら出ていない', async () => {
+    const { panel } = await freshWorld();
+    panel.setOpen(false);
+    expect(panel.isVisible()).toBe(false);
+  });
+
+  test('#245 の一括マスクは、パネル自身の状態を変えずに隠す', async () => {
+    const { panel, panels } = await freshWorld();
+    panels.setHidden(true);
+    expect(panel.isVisible()).toBe(false);
+    expect(panel.isOpen()).toBe(true); // 隠されただけ＝保存された選択は無傷
+    panels.setHidden(false);
+    expect(panel.isVisible()).toBe(true);
+  });
+
+  // 狭幅ではオーバーレイ＝選択に乗る（#259/#244）。何も選ばれていないのに浮いていると
+  // 画面に穴が開くだけなので出ない。
+  test('狭幅は選択があるときだけ出る', async () => {
+    const { panel, store } = await freshWorld();
+    fireWidth(false);
+    expect(panel.isVisible()).toBe(false);
+    store.set('inspectedKey', 'post:1');
+    expect(panel.isVisible()).toBe(true);
+    store.set('inspectedKey', null);
+    expect(panel.isVisible()).toBe(false);
+  });
+
+  test('subscribeVisible は4つの入力すべてで起き、解除できる', async () => {
+    const { panel, panels, store } = await freshWorld();
+    let notified = 0;
+    const off = panel.subscribeVisible(() => {
+      notified++;
+    });
+    panel.setOpen(false); // ①パネル自身
+    panels.setHidden(true); // ②一括マスク
+    fireWidth(false); // ③幅
+    store.set('inspectedKey', 'post:1'); // ④選択
+    expect(notified).toBe(4);
+    off();
+    panel.setOpen(true);
+    store.set('inspectedKey', null);
+    expect(notified).toBe(4);
   });
 });
