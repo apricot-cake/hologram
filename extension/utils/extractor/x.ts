@@ -447,6 +447,11 @@ const x: Extractor = {
       if (unit.tagName === 'LI') return [...unit.querySelectorAll('img')].filter((img) => x.mediaIdentity?.isPostMedia(img as HTMLImageElement) ?? false);
       return [...unit.querySelectorAll('[data-testid="tweetPhoto"], [data-testid="videoPlayer"]')];
     },
+    // The author avatar (#575) — the only element a text-only tweet still has
+    // in common with one that has a picture. A grid tile (the LI shape above)
+    // never reaches here: it always has media, or mediaIn returns nothing at
+    // all for it and there is no separate "text-only tile" to mark.
+    textAnchorIn: (unit) => unit.querySelector('[data-testid="Tweet-User-Avatar"]'),
   },
 
   residentMatches: ['https://x.com/*', 'https://twitter.com/*'],

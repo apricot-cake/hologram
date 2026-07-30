@@ -90,6 +90,12 @@ const X_HTML = `<!doctype html><html><body>
       <a href="/judy/status/1111"><time datetime="2026-07-01T00:00:00Z">11h</time></a>
       <div data-testid="tweetPhoto" data-rect-top="4800" id="p11a"><img src="https://pbs.twimg.com/media/MMM.jpg"></div>
     </article>
+    <!-- テキストのみの投稿（#575）: mediaIn が何も返さない形。投稿要素自身とアバターが
+         それぞれ自分の幾何を持つ＝印は投稿要素を足場に、アバターの左下へ置かれる。 -->
+    <article data-testid="tweet" id="p12" data-rect-top="5200" data-rect-size="120">
+      <div data-testid="Tweet-User-Avatar" data-rect-top="5212" data-rect-size="40" id="p12avatar"></div>
+      <a href="/kim/status/1212"><time datetime="2026-07-01T00:00:00Z">12h</time></a>
+    </article>
   </div>
 </body></html>`;
 
@@ -141,7 +147,7 @@ const MEDIA_BOX = '[data-testid="tweetPhoto"], [data-testid="videoPlayer"]';
 const boxOf = (id: string) => {
   const el = window.document.getElementById(id);
   if (el.matches(MEDIA_BOX)) return el;
-  return el.querySelector(MEDIA_BOX) || el.querySelector('img'); // メディアタブの li は <img> 自体が枠
+  return el.querySelector(MEDIA_BOX) || el.querySelector('img') || el; // メディアタブの li は <img> 自体が枠、テキストのみの投稿（#575）は投稿要素自身が枠
 };
 const controlOf = (id: string) => controls().filter((el) => el.parentElement === boxOf(id));
 const pointerMove = (target: any, x: number, y: number) => {
@@ -246,7 +252,7 @@ beforeAll(async () => {
 }, 30000);
 
 test('初回走査で全ての投稿が観測される', () => {
-  expect(observed.size).toBe(11);
+  expect(observed.size).toBe(12);
 });
 
 describe('問い合わせは見えている投稿だけ・1バッチで', () => {
@@ -901,5 +907,46 @@ describe('撮影退避フック（#311）', () => {
 
     expect(controlOf('p1')[0].style.display).not.toBe('none');
     expect(synthetic.style.display).toBe('flex');
+  });
+});
+
+// #575: mediaIn が何も返さない投稿（絵の枠が無い）。印は投稿要素自身を足場に、
+// アバターの左端・下端の少し下へ置かれる。ボタンは出さない＝保存の手段は #122
+// （右クリックメニュー）の担当のまま、本 Issue は「もう取り込んであるか」だけを答える。
+describe('テキストのみの投稿（#575）', () => {
+  test('未保存の間はホバーしても何も出さない（ボタンにならない）', async () => {
+    intersect(['p12'], true);
+    await settle();
+    hover('p12');
+    await settle();
+
+    // p12 自身の枠だけを見る（controls() は他の投稿の一時的な face='flash' も拾う）。
+    expect(controlOf('p12')).toHaveLength(0);
+    hoverAway();
+  });
+
+  test('保存済みになるとホバーで印が出る。ボタンにはならない', async () => {
+    savedAnswer['https://x.com/kim/status/1212'] = { id: '1780000000012-mm', media: [] };
+    intersect(['p12'], false);
+    await settle();
+    intersect(['p12'], true);
+    await settle();
+    hover('p12');
+    await settle();
+
+    const p12Controls = controlOf('p12');
+    expect(p12Controls).toHaveLength(1);
+    expect(p12Controls[0].getAttribute('data-hologram-face')).toBe('mark');
+    expect(labelOf(p12Controls[0])).toBe('Saved in Hologram');
+  });
+
+  // 投稿要素自身が足場（アバターの親をホストにできるほどアバターの箱が大きくない
+  // ため）＝左端はアバターと揃え、上端はアバターの下端から少し離す。X の左上は
+  // アバターそのもの、右上は⋯メニューが埋めているので、これが両方を避ける唯一の帯。
+  test('位置は投稿要素を足場に、アバターの左端・下端のすぐ下', () => {
+    const [mark] = controlOf('p12');
+    expect(mark.style.left).toBe('0px');
+    expect(mark.style.top).toBe('58px');
+    hoverAway();
   });
 });
