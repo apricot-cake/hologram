@@ -162,14 +162,16 @@ export class StatusSurface {
     };
   }
 
-  // The banner drops from the top edge and the zone rises from the bottom, and
-  // the banner's permanent translateX(-50%) has to be carried by every keyframe
-  // or the pop would fling it half a width sideways.
+  // The banner drops from the top edge and the zone rises from the bottom.
+  // Neither carries a permanent offset any more: the banner used to be centred
+  // with translateX(-50%), which every keyframe then had to re-state or the pop
+  // flung it half a width sideways. It is centred by margin now (components.css,
+  // which explains why), so both variants animate from a bare offset.
   private frames(): [Keyframe, Keyframe] {
     return this.variant === 'banner'
       ? [
-          { opacity: 0, transform: 'translateX(-50%) translateY(-14px) scale(0.96)' },
-          { opacity: 1, transform: 'translateX(-50%)' },
+          { opacity: 0, transform: 'translateY(-14px) scale(0.96)' },
+          { opacity: 1, transform: 'none' },
         ]
       : [
           { opacity: 0, transform: 'translateY(14px) scale(0.96)' },
