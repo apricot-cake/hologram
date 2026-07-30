@@ -233,16 +233,33 @@ function replacePostTags(sqlite: Sqlite, postId: string, tags: unknown, patch: u
   return true;
 }
 
-// Current tags + userKind/tagReviewed for one post — ipc-trash.ts's
-// delete-post reads this before a post's row disappears (trashing moves the
-// sidecar out of the watched folder, and the next importAll cascade-deletes
-// post_tags along with the row) so it can carry the DB state into the
-// trashed sidecar copy restore-post already re-derives from.
-function readPostFlags(sqlite: Sqlite, postId: string): { tags: string[]; userKind: string | null; tagReviewed: boolean | null } | null {
+// Where a post sits in the library's structure, as the trash record has to carry
+// it (#593). Both are ID references, not names: a folder rename between the
+// delete and the restore must not lose the membership.
+interface PostMemberships {
+  folders: string[];
+  // seq is the post's position INSIDE its group, kept because a manual group is
+  // an ordered container — restoring a post to the end of the group it used to
+  // lead is not "back where it was".
+  manualGroups: Array<{ groupId: number; seq: number }>;
+}
+
+// Everything about one post that lives in the DB rather than in its record, read
+// before the row disappears — ipc-trash.ts's delete-post carries this into the
+// trash record, and restore-post reads it back.
+//
+// Every field here shares one reason for existing: FK ON DELETE CASCADE takes
+// these rows with the post, and nothing in a record would reconstruct them.
+// #593 added the two memberships after finding that a restored post came back
+// with its tags but belonging to nothing — while #34's replacement path had been
+// carrying the same two across to the new capture all along.
+function readPostFlags(sqlite: Sqlite, postId: string): ({ tags: string[]; userKind: string | null; tagReviewed: boolean | null } & PostMemberships) | null {
   const row = sqlite.prepare('SELECT userKind, tagReviewed FROM posts WHERE captureId = ?').get(postId) as { userKind: string | null; tagReviewed: number | null } | undefined;
   if (!row) return null;
   const tags = (sqlite.prepare('SELECT t.name FROM post_tags pt JOIN tags t ON t.id = pt.tagId WHERE pt.postId = ? ORDER BY pt.rowid').all(postId) as Array<{ name: string }>).map((r) => r.name);
-  return { tags, userKind: row.userKind, tagReviewed: row.tagReviewed == null ? null : !!row.tagReviewed };
+  const folders = (sqlite.prepare('SELECT folderId FROM folder_items WHERE postId = ? ORDER BY rowid').all(postId) as Array<{ folderId: string }>).map((r) => r.folderId);
+  const manualGroups = sqlite.prepare('SELECT groupId, seq FROM manual_group_items WHERE postId = ? ORDER BY groupId').all(postId) as Array<{ groupId: number; seq: number }>;
+  return { tags, userKind: row.userKind, tagReviewed: row.tagReviewed == null ? null : !!row.tagReviewed, folders, manualGroups };
 }
 
 // Re-applies userKind/tagReviewed from a sidecar-shaped record onto an
@@ -280,11 +297,48 @@ function deleteAllPosts(sqlite: Sqlite): number {
   return sqlite.prepare('DELETE FROM posts').run().changes;
 }
 
-function applyPostFlagsFromRecord(sqlite: Sqlite, postId: string, rec: { userKind?: unknown; tagReviewed?: unknown }) {
+function applyPostFlagsFromRecord(sqlite: Sqlite, postId: string, rec: { userKind?: unknown; tagReviewed?: unknown; folders?: unknown; manualGroups?: unknown }) {
   const userKind = rec.userKind === 'plain' || rec.userKind === 'media' ? rec.userKind : null;
   const tagReviewed = rec.tagReviewed == null ? null : rec.tagReviewed ? 1 : 0;
-  if (userKind == null && tagReviewed == null) return;
-  sqlite.prepare('UPDATE posts SET userKind = COALESCE(?, userKind), tagReviewed = COALESCE(?, tagReviewed) WHERE captureId = ?').run(userKind, tagReviewed, postId);
+  if (userKind != null || tagReviewed != null) {
+    sqlite.prepare('UPDATE posts SET userKind = COALESCE(?, userKind), tagReviewed = COALESCE(?, tagReviewed) WHERE captureId = ?').run(userKind, tagReviewed, postId);
+  }
+  restoreMemberships(sqlite, postId, rec);
+}
+
+// Puts the post back into the folders and manual groups it was in (#593), and
+// ONLY into the ones that still exist.
+//
+// A container can be deleted while the post sits in the trash, and both tables
+// reference theirs by foreign key — an INSERT naming a folder that is gone fails
+// and would take the whole restore down with it. Dropping just that one
+// membership is what #34's replacement path already does in effect (it copies
+// the surviving rows, so a deleted folder contributes nothing), and losing the
+// post to protect a membership would be the wrong trade.
+//
+// Silent by design: the alternatives are refusing the restore, or recreating a
+// container the user deleted on purpose. INSERT OR IGNORE covers the post
+// already being a member (a restore replayed after a partial failure).
+//
+// The record is external input — the trash folder is writable from outside the
+// app (#324) — so every id is type-checked before it reaches a statement.
+function restoreMemberships(sqlite: Sqlite, postId: string, rec: { folders?: unknown; manualGroups?: unknown }) {
+  const folders = Array.isArray(rec.folders) ? rec.folders : [];
+  if (folders.length) {
+    const insert = sqlite.prepare('INSERT OR IGNORE INTO folder_items (folderId, postId) SELECT ?, ? WHERE EXISTS (SELECT 1 FROM folders WHERE id = ?)');
+    for (const folderId of folders) {
+      if (typeof folderId === 'string' && folderId) insert.run(folderId, postId, folderId);
+    }
+  }
+  const groups = Array.isArray(rec.manualGroups) ? rec.manualGroups : [];
+  if (groups.length) {
+    const insert = sqlite.prepare('INSERT OR IGNORE INTO manual_group_items (groupId, postId, seq) SELECT ?, ?, ? WHERE EXISTS (SELECT 1 FROM manual_groups WHERE id = ?)');
+    for (const g of groups) {
+      const groupId = g && typeof g === 'object' ? (g as { groupId?: unknown }).groupId : null;
+      const seq = g && typeof g === 'object' ? (g as { seq?: unknown }).seq : null;
+      if (typeof groupId === 'number' && Number.isInteger(groupId) && typeof seq === 'number' && Number.isInteger(seq)) insert.run(groupId, postId, seq, groupId);
+    }
+  }
 }
 
 function replaceTabs(sqlite: Sqlite, data: any) {
@@ -329,7 +383,7 @@ function createDbWriter(sqlite: Sqlite) {
     setTabs: (data: unknown) => transaction(() => replaceTabs(sqlite, data)),
     setPostTags: (postId: string, tags: unknown, patch: unknown) => transaction(() => replacePostTags(sqlite, postId, tags, patch)),
     getPostFlags: (postId: string) => readPostFlags(sqlite, postId),
-    restorePostFlags: (postId: string, rec: { userKind?: unknown; tagReviewed?: unknown }) => transaction(() => applyPostFlagsFromRecord(sqlite, postId, rec)),
+    restorePostFlags: (postId: string, rec: { userKind?: unknown; tagReviewed?: unknown; folders?: unknown; manualGroups?: unknown }) => transaction(() => applyPostFlagsFromRecord(sqlite, postId, rec)),
     deletePost: (postId: string) => transaction(() => deletePost(sqlite, postId)),
     deleteAllPosts: () => transaction(() => deleteAllPosts(sqlite)),
   };
