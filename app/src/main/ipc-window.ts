@@ -9,10 +9,11 @@ import { ipcMain, shell, BrowserWindow, clipboard, nativeImage, screen } from 'e
 import fs from 'node:fs';
 import path from 'node:path';
 import { isLibraryFileName, isViewerImageName, libraryFilePaths } from './library-files.ts';
+import type { IpcContext } from './ipc-context.ts';
 
-function register(ctx) {
+function register(ctx: IpcContext) {
   const { getSaveFolder, APP_ICON } = ctx;
-  const libraryPath = (file) => path.join(getSaveFolder(), file);
+  const libraryPath = (file: string) => path.join(getSaveFolder(), file);
 
   ipcMain.handle('open-external', (_event, url) => {
     if (typeof url === 'string' && /^https?:\/\//i.test(url)) {
@@ -91,7 +92,7 @@ function register(ctx) {
 
   // startDrag REQUIRES a non-empty icon, so anything nativeImage can't decode
   // (svg, video, a broken file) falls back to the app icon rather than throwing.
-  function dragIcon(file) {
+  function dragIcon(file: string) {
     const img = nativeImage.createFromPath(file);
     return (img.isEmpty() ? nativeImage.createFromPath(APP_ICON) : img).resize({ width: 64 });
   }

@@ -51,6 +51,7 @@ WXT（Vite ベース）でビルドする TypeScript ソース。`npm run build:
 electron-vite で main・preload・renderer の3面をバンドルする標準構成（#156・2026-07。それ以前は main プロセスを `.mts` 直実行する build-less 構成だった＝過去の設計判断は Issue #156 参照）。ソースは `src/main/`・`src/preload/`・`src/renderer/`、ビルド出力は `out/`（gitignore・`electron.vite.config.ts` が3面の設定を持つ）。
 
 - `src/main/index.ts` — メインプロセス（ウィンドウ生成・取込キューの `fs.watch`・IPC登録）
+- `src/main/ipc-*.ts` — チャンネル別のハンドラ群。IPC境界の型は2つに分かれる（#228）＝`ipc-context.ts` の `IpcContext` が index.ts から各 `register(ctx)` へ渡す依存の契約（main専用。BrowserWindow や DB writer を名前で持つ）、`ipc-payloads.ts` が**実際にIPCを渡るペイロードの形**。後者は import を1つも持たない＝renderer 側の DOM-only プログラムが `HologramPreload` 経由で辿り着くため。ハンドラ側の戻り値にも同じ型を注釈してあるので、片端だけの変更はビルドで落ちる（チャンネル名で両端を突き合わせる仕組みは #10 の集中ラッパーの担当で、まだ無い）
 - `src/main/lib-archive.ts` — ZIP入出力
 - `src/main/lib-db*.ts` — SQLite 層（エンジン/スキーマ/クエリ/書き込み/取込キュー/整合チェック）。取得原本（`raw_payloads`・[ADR 0011](decisions/0011-preserve-acquisition-payloads.md)）は共有 writer が投稿と同じトランザクションで書き、追記のみで消さない。いずれも Electron 非依存＝node でテスト可。`listPosts` は DB への1クエリで、更新は差分IPC（list-posts-delta）＝`lib-post-delta.ts` が「前回配った分」と突き合わせて追加/削除だけ返す（#302 でファイル走査は消え、ヒントの受け渡しも不要になった）
 - `src/main/lib-card-dims.ts` — カード画像の実寸（`shotW`/`shotH`）をヘッダだけ読んで測る。masonry のカード高さを画像ロード前に確保するため、**レコードを書く時に**測って DB に入れる

@@ -1814,17 +1814,19 @@ export function endFilterEditSession(): void {
         else notify(getMessage('imported', [imported]));
       };
       if (res && res.legacy && res.path) {
+        // Bound once: the callbacks below outlive the narrowing on res.path.
+        const zipPath = res.path;
         // #34: 取り込む投稿が既にライブラリにあるとき、コピー／置換／スキップを
         // 1回だけ聞く（1件ずつ聞くと数百回になるため、バッチ単位）。重複が無ければ
         // main 側が即座に取り込むので、この確認は出ない。
-        const first = await importLegacyZip(res.path);
+        const first = await importLegacyZip(zipPath);
         if (!first || first.error) {
           notify(getMessage('importFailed'));
           return;
         }
         if (first.needsChoice) {
           const finish = async (mode: string) => {
-            const r = await importLegacyZip(res.path, mode);
+            const r = await importLegacyZip(zipPath, mode);
             await done(r.imported, r.skipped);
           };
           confirmOpen({
@@ -1849,7 +1851,9 @@ export function endFilterEditSession(): void {
         notify(getMessage('importFailed'));
         return;
       }
-      await done(res.imported, res.skipped);
+      // A complete import that answered ok always carries both counters; the
+      // fallbacks are only what the flat result shape (ipc-payloads.ts) forces.
+      await done(res.imported ?? 0, res.skipped ?? 0);
     } catch {
       notify(getMessage('importFailed'));
     }

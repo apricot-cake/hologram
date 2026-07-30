@@ -21,13 +21,18 @@ import { parseJsonLoose } from './lib-json.ts';
 import { postsByIds } from './lib-db-query.ts';
 import { makeTagResolver, preparePostStmts, writePost } from './lib-db-record-writer.ts';
 import { listTrashRecords, trashCapture } from './lib-trash-capture.ts';
+import type { IpcContext } from './ipc-context.ts';
+import type { OkResult } from './ipc-payloads.ts';
 
-function register(ctx) {
+function register(ctx: IpcContext) {
   const { getSaveFolder, getTrashDir, baseOf, LIBRARY_MEDIA_EXTS, getDbWriter, ensurePostsSynced, send } = ctx;
 
-  ipcMain.handle('delete-post', async (_e, image) => {
+  ipcMain.handle('delete-post', async (_e, image): Promise<OkResult> => {
     const folder = getSaveFolder();
-    if (!folder || !image) return { ok: false };
+    // trashDir is null exactly when there is no save folder, so folding it into
+    // the guard adds no reachable branch — it just states that for the compiler.
+    const trashDir = getTrashDir();
+    if (!folder || !image || !trashDir) return { ok: false };
     // Soft-delete: move all files for this captureId into .trash/ (instead of unlinking).
     const base = baseOf(image);
     // Read the record and its DB-only state (tags/userKind/tagReviewed) BEFORE the
@@ -40,7 +45,7 @@ function register(ctx) {
     getDbWriter().deletePost(base);
     // The file half — shared with #34's replacement sweep so both retire a
     // capture the same way (lib-trash-capture.ts).
-    await trashCapture({ folder, trashDir: getTrashDir(), mediaExts: LIBRARY_MEDIA_EXTS, captureId: base, record: rec, flags });
+    await trashCapture({ folder, trashDir, mediaExts: LIBRARY_MEDIA_EXTS, captureId: base, record: rec, flags });
     return { ok: true };
   });
 
@@ -53,7 +58,7 @@ function register(ctx) {
     return await listTrashRecords(trashDir);
   });
 
-  ipcMain.handle('restore-post', async (_e, image) => {
+  ipcMain.handle('restore-post', async (_e, image): Promise<OkResult> => {
     const trashDir = getTrashDir();
     const folder = getSaveFolder();
     if (!trashDir || !folder) return { ok: false };
@@ -120,7 +125,7 @@ function register(ctx) {
     return { ok: true };
   });
 
-  ipcMain.handle('empty-trash', async () => {
+  ipcMain.handle('empty-trash', async (): Promise<OkResult> => {
     const trashDir = getTrashDir();
     if (!trashDir) return { ok: true };
     try {
@@ -129,7 +134,7 @@ function register(ctx) {
     return { ok: true };
   });
 
-  ipcMain.handle('delete-from-trash', async (_e, image) => {
+  ipcMain.handle('delete-from-trash', async (_e, image): Promise<OkResult> => {
     const trashDir = getTrashDir();
     if (!trashDir) return { ok: false };
     const base = baseOf(image);
@@ -152,7 +157,7 @@ function register(ctx) {
   // #298/St5: tag edits are an in-app write, so they go straight to the DB
   // (post_tags + posts.userKind/tagReviewed) — see lib-db-write.ts's
   // replacePostTags.
-  ipcMain.handle('update-tags', async (_e, image, tags, patch) => {
+  ipcMain.handle('update-tags', async (_e, image, tags, patch): Promise<OkResult> => {
     const captureId = baseOf(image);
     if (!captureId) return { ok: false };
     try {

@@ -84,7 +84,13 @@ export function toggle(): void {
 export async function load(): Promise<void> {
   try {
     const prefs = hologramIpc.getPrefs ? await hologramIpc.getPrefs() : null;
-    const saved = prefs ? prefs.inspectorOpen : null;
+    // ⚠️ `inspectorOpen` is NOT a member of get-prefs' payload (AppPrefs): main's
+    // pref allow-list (ipc-config.ts's PREF_KEYS) has never carried the key, so
+    // setOpen's setPref above is refused and this read can only ever be
+    // undefined — the localStorage cache is what actually persists the panel.
+    // Surfaced by #228's boundary typing; restoring the round-trip is a
+    // behaviour change rather than a typing one, so it is left as found here.
+    const saved = prefs ? (prefs as unknown as Record<string, unknown>).inspectorOpen : null;
     if (typeof saved !== 'boolean' || saved === open) return;
     open = saved;
     writeCache(saved);

@@ -37,6 +37,7 @@ import * as ipcWindow from './ipc-window.ts';
 import * as ipcTrash from './ipc-trash.ts';
 import * as ipcBackup from './ipc-backup.ts';
 import * as ipcTransfer from './ipc-transfer.ts';
+import type { IpcContext } from './ipc-context.ts';
 
 // CJS require + __dirname reconstructed for ESM. native-host/ modules are loaded by
 // computed path (dev sibling vs packaged resource), so they stay dynamic CJS requires.
@@ -1341,8 +1342,12 @@ function installNavigationGuards() {
 // has no ordering dependency on app-ready, and keeping registration top-level avoids
 // racing an early renderer IPC. Mutable state (win, config-corrupt flag, delta) is
 // exposed via accessors, never by value, so the closures read the live binding.
+// The annotation is the point (#228): `IpcContext` (./ipc-context.ts) is what
+// every register(ctx) is typed against, so a helper renamed or reshaped here is
+// a build error rather than a runtime one on the boundary that carries
+// clear-all / import-complete / move-save-folder.
 function registerExtractedIpc() {
-  const ctx = {
+  const ctx: IpcContext = {
     getSaveFolder,
     getDbWriter,
     ensurePostsSynced,
