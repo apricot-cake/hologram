@@ -205,10 +205,13 @@ CREATE TABLE ungrouped_keys (
 
 -- tabs: one row per tab, windowId ready for #32 stage 3 (today every row uses
 -- the same sentinel window). state is left as an opaque JSON blob (nav history
--- stack + query tree) rather than exploded into columns — nothing here queries
--- INTO a tab's state, it is replayed whole, so relational columns would buy
--- nothing but migration churn every time the renderer's state shape grows a
--- field.
+-- stack + scroll position + query tree) rather than exploded into columns —
+-- nothing here queries INTO a tab's state, it is replayed whole, so relational
+-- columns would buy nothing but migration churn every time the renderer's state
+-- shape grows a field. The contract that makes that hold: the renderer puts
+-- EVERYTHING except these columns inside the blob (services/tab-state.ts's
+-- HologramTabPersist) — a field written next to the state column instead of
+-- inside it is a field this INSERT drops (#565).
 CREATE TABLE tabs (
   id TEXT PRIMARY KEY,
   windowId TEXT NOT NULL DEFAULT 'main',
