@@ -44,5 +44,10 @@ export default defineConfig({
     // Sandboxes ~/.hologram per test file (CLAUDE.md: never let a test see the
     // real config dir).
     setupFiles: [path.resolve(__dirname, 'scripts/vitest.setup.ts')],
+    // Builds the extension when its output is stale, so the suites that read
+    // extension/.output/chrome-mv3 (the jsdom bundle suites and the manifest
+    // consistency guard) never test a bundle older than the sources (#130).
+    // Once per RUN, not per file — see that file's header.
+    globalSetup: [path.resolve(__dirname, 'scripts/vitest.global-setup.ts')],
   },
 });
