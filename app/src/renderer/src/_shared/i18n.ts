@@ -4,7 +4,7 @@
 // rendering so t() is synchronous inside components.
 // Shared by settings / toolbar / searchbox (was duplicated per-component until the
 // third consumer arrived — BACKLOG「i18n.js 共有化」).
-import { hologramI18n } from '../services/i18n.ts';
+import { hologramI18n, type HologramI18nApi } from '../services/i18n.ts';
 
 let api: HologramI18nApi | null = null;
 

@@ -51,9 +51,6 @@ function register(ctx: IpcContext) {
     }
   });
 
-  // (poster favorites feature removed; legacy <saveFolder>/poster-favorites.json is
-  // still listed in INTERNAL_FILES so the post index keeps skipping it.)
-
   // Named poster folders (poster view). { folders: [{ id, name, items:[posterKey] }] }
   // — a plain { folders } shape, so ZIP import reuses mergePosterFolders.
   ipcMain.handle('get-poster-folders', (): PosterFoldersState => {
