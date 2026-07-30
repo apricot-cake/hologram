@@ -326,6 +326,18 @@ export interface MediaImportResult {
   canceled?: boolean;
 }
 
+/**
+ * import-clipboard (#85). `empty:true` = the clipboard held no image, which is a
+ * normal outcome (the user pressed Ctrl+V with text on the clipboard) and is
+ * deliberately NOT reported as `error` — the renderer answers it with a plain
+ * toast rather than a failure.
+ */
+export interface ClipboardImportResult {
+  imported: number;
+  empty?: boolean;
+  error?: string;
+}
+
 /** move-save-folder — the relocation's own outcome. */
 export interface SaveFolderMoveResult {
   ok: boolean;

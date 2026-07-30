@@ -15,10 +15,10 @@ import { SettingsHost } from '../settings/index.tsx';
 import { BulkTagDialogHost } from '../selection/BulkTagDialog.tsx';
 import { Toaster } from '@/components/ui/sonner';
 import { TooltipHost } from '../tooltip/TooltipHost.tsx';
-import { registerViewTransitionRunners } from '../services/command-builder.ts';
 import { handleShortcutPaletteKey } from '../services/command-registry.ts';
 import { handleShortcutPanelsKey } from '../services/panels.ts';
-import { runPostDensityViewTransition, runPosterDensityViewTransition } from '../_shared/density-transition.ts';
+import { handleShortcutZoomKey } from '../services/image-zoom.ts';
+import { handleShortcutClipboardKey } from '../services/clipboard-intake.ts';
 import { onPostsChanged } from '../services/posts.ts';
 import { onChange as foldersOnChange } from '../services/folders.ts';
 import { get as storeGet, subscribe as storeSubscribe } from '../services/store.ts';
@@ -180,6 +180,15 @@ function GlobalShortcuts() {
       // services/panels.ts, and only the registration is here. Plain Ctrl+B stays with
       // SidebarProvider's own listener — the sidebar alone is its business.
       handleShortcutPanelsKey(e);
+      // Ctrl/Cmd+0 = フィット / Ctrl/Cmd+1 = 原寸 while an image view is showing
+      // (#150). Same arrangement again: the guard is that a zoomable slide has
+      // registered a controller, which only services/image-zoom.ts can know.
+      handleShortcutZoomKey(e);
+      // Ctrl/Cmd+V = import the clipboard's image (#85). Same arrangement again:
+      // only the registration is here. Its guard is the strictest of the set,
+      // because this is the ONE shortcut whose key already means something
+      // everywhere else — see services/clipboard-intake.ts.
+      handleShortcutClipboardKey(e);
     };
     const onMouseup = (e: MouseEvent) => handleShortcutMouseNav(e);
     // Ctrl+wheel = content size (#141). Non-passive on purpose: the handler
@@ -194,18 +203,6 @@ function GlobalShortcuts() {
       window.removeEventListener('wheel', onWheel);
     };
   }, []);
-  return null;
-}
-
-// The palette's ギャラリー/リスト commands re-lay a grid out, which is the one surface that
-// animates through a View Transition (#252). Its start point captures live card geometry, so
-// it lives island-side (_shared/density-transition.ts) and services cannot import it —
-// App.tsx is this codebase's wiring layer for exactly that shape of gap, the same way it
-// registers the orchestrator's shortcut handlers. Both runners go over because the two grids
-// name their cards in separate namespaces; command-builder picks by browseMode. Without this
-// the switch still happens; it just snaps instead of animating.
-function CommandWiring() {
-  useEffect(() => registerViewTransitionRunners({ posts: runPostDensityViewTransition, posters: runPosterDensityViewTransition }), []);
   return null;
 }
 
@@ -336,8 +333,6 @@ export function App() {
       <ModalChrome />
       {/* Global keyboard/mouse shortcuts — React owns the listener registration. */}
       <GlobalShortcuts />
-      {/* Hands the island-side View Transition runner to the command layer (#28). */}
-      <CommandWiring />
       {/* Esc-priority inspector close + outside-click dismiss — capture phase. */}
       <DetailDismiss />
       {/* Tab bar event wiring (click/keydown/contextmenu/etc + Ctrl+T/W/Tab). */}

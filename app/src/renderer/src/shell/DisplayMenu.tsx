@@ -23,7 +23,6 @@ import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { t } from '../_shared/i18n.ts';
-import { runPostDensityViewTransition, runPosterDensityViewTransition } from '../_shared/density-transition.ts';
 import type { HologramSizeTrack } from '../services/grid-density-builder.ts';
 import { applyPostSize, applyPosterSize, getPostSizeTrack, getPosterSizeTrack, rerollShuffle } from '../services/orchestrator.ts';
 import { isHidden as panelsAreHidden, setHidden as setPanelsHidden, subscribe as panelsSubscribe } from '../services/panels.ts';
@@ -175,18 +174,13 @@ function PostControls() {
     else if (view === 'tile') galleryInfo.current = false;
   }, [view]);
 
-  // Both writes go through the density View Transition (#252): the store write re-lays the
-  // whole grid out, and this is the start point for the animation that carries the cards
-  // from the old arrangement to the new one.
   const setLayout = useCallback((next: string) => {
-    runPostDensityViewTransition(() => {
-      if (next === 'list') storeSet('view', 'list');
-      else storeSet('view', galleryInfo.current ? 'card' : 'tile');
-    });
+    if (next === 'list') storeSet('view', 'list');
+    else storeSet('view', galleryInfo.current ? 'card' : 'tile');
   }, []);
   const setInfo = useCallback((on: boolean) => {
     galleryInfo.current = on;
-    runPostDensityViewTransition(() => storeSet('view', on ? 'card' : 'tile')); // only reachable while layout = gallery
+    storeSet('view', on ? 'card' : 'tile'); // only reachable while layout = gallery
   }, []);
 
   const sortSel = document.getElementById('sortSelect') as HTMLSelectElement | null;
@@ -244,9 +238,7 @@ function PosterControls() {
         <SortSelect_ storeKey="sortPoster" sel={null} options={SORT_POSTER} />
       </Row>
       <Separator />
-      {/* Same View Transition as the post side (#252): the same control in the same popover
-          has to move its cards the same way. */}
-      <ToggleGroup className="w-full" variant="outline" spacing={0} value={[posterView]} onValueChange={(v) => v.length && runPosterDensityViewTransition(() => storeSet('posterView', v[0] as string))} aria-label={t('sbViewTitle')}>
+      <ToggleGroup className="w-full" variant="outline" spacing={0} value={[posterView]} onValueChange={(v) => v.length && storeSet('posterView', v[0] as string)} aria-label={t('sbViewTitle')}>
         {POSTER_VIEWS.map(({ v, key, Icon }) => (
           <ToggleGroupItem key={v} className="flex-1" value={v} aria-label={t(key)}>
             <Icon />

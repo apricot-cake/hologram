@@ -63,6 +63,8 @@ const POST_COLUMNS = [
   'trashedAt',
   'userKind',
   'tagReviewed',
+  'imageIndex',
+  'imageCount',
 ] as const;
 
 function fromDbBool(v: unknown): boolean | null {
@@ -192,6 +194,11 @@ function assemble(sqlite: Database.Database, postRows: any[]): any[] {
       trashedAt: r.trashedAt,
       userKind: r.userKind,
       tagReviewed: fromDbBool(r.tagReviewed),
+      // #560: the drag save's place in the original post. Read (unlike
+      // capturedVia/replaces, which stay writer-only) because the inspector shows
+      // it and the export sidecar has to carry it.
+      imageIndex: r.imageIndex,
+      imageCount: r.imageCount,
     };
   });
 }
