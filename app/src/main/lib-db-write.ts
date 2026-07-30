@@ -246,13 +246,11 @@ function readPostFlags(sqlite: Sqlite, postId: string): { tags: string[]; userKi
 }
 
 // Re-applies userKind/tagReviewed from a sidecar-shaped record onto an
-// existing posts row. Shared by two callers that both need it because these
-// two columns never round-trip through normalizePostRecord/lib-db-import.ts
-// (module comment above): index.ts's one-time flip backfill (reading the
-// original sidecars) and ipc-trash.ts's restore-post (reading the trashed
-// sidecar copy delete-post stamped with the pre-trash DB values) — a plain
-// importAll after either recreates the posts row with tags intact but these
-// two columns NULL, since nothing else ever writes them from a sidecar.
+// existing posts row. Used by ipc-trash.ts's restore-post (reading the trashed
+// sidecar copy delete-post stamped with the pre-trash DB values), because these
+// two columns never round-trip through normalizePostRecord/lib-db-import.ts: a
+// plain importAll after a restore recreates the posts row with tags intact but
+// these two columns NULL, since nothing else ever writes them from a sidecar.
 // COALESCE keeps the existing column when the record doesn't carry the field
 // (undefined -> null param), rather than clobbering it to NULL.
 // Direct DB-side removal for a user-initiated delete (ipc-trash.ts's

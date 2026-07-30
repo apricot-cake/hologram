@@ -895,3 +895,8 @@ export const hologramI18n = (async () => {
 
   return { lang, resolved, getMessage };
 })();
+
+// The resolved shape components consume (was a hand-maintained `HologramI18nApi`
+// ambient interface in types/globals.d.ts; derived from the real return type now
+// that this is a plain ES module — moved beside its owning module, #231).
+export type HologramI18nApi = Awaited<typeof hologramI18n>;

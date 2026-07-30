@@ -1,10 +1,17 @@
-// Window-global contracts between the build-less renderer (viewer.js and the
-// plain-IIFE bridge files, now under services/) and the React components — TypeScript
-// stage 1 (BACKLOG 採用#1). The bridges are IMPLEMENTED in plain JS that tsc
-// does not check yet; this file is where those cross-boundary contracts become
-// visible to the components. Model payloads built by viewer.js are typed to the
-// fields the components actually consume; an index signature keeps pass-through
-// fields legal until the plain-JS side converts (単一バンドル化 or later).
+// Window-global contracts for the renderer's React components. Two kinds of
+// declaration live here: (1) genuine cross-boundary ambients — the preload
+// contextBridge surface (window.hologram) and the CSS side-effect import, which
+// no `import` statement can express — and (2) data-shape interfaces shared
+// between a producing service module and its consuming component(s), kept
+// ambient (no import needed) rather than exported+imported per call site. Most
+// producing modules used to be plain-JS push bridges with no ambient/tsc
+// coverage at all (TypeScript stage 1, BACKLOG 採用#1); that migration finished
+// module-by-module, and by 2026-07 every one of them was a real ES module. The
+// per-module "already converted, ambient no longer needed" tombstone comments
+// that migration left behind were removed 2026-07-30 (#231) along with the
+// interfaces they used to introduce; only the contracts still read below
+// survive. `HologramI18nApi` (a pure data shape) moved beside its owning module,
+// services/i18n.ts, in the same pass — see that file.
 
 export {};
 
@@ -12,58 +19,8 @@ export {};
 // only modules (settings imports './styles.css').
 declare module '*.css' {}
 
-// The former `declare module 'hologram-svc:*'` ambient is gone: the barrel
-// (app/index.tsx) imports the renderer service layer by plain relative path now
-// (the last bare-specifier alias is gone), so tsc resolves the real
-// modules directly. The service .ts files are type-checked in this same program
-// (merged 2026-07-09 into one tsconfig.json), via the `renderer/**/*` include.
-
 declare global {
   type HologramUnsubscribe = () => void;
-
-  // ---- services/store.ts — key-addressed external store (viewer ⇄ components). A
-  // real ES module now — get/set/subscribe are imported directly by
-  // every consumer; no ambient Window-shaped interface needed here. ----
-
-  // ---- renderer/i18n.ts — hologramI18n resolves after prefs are read. Data-shape
-  // type only (the promise's resolved value) — the module itself is a real ES
-  // module (named export `hologramI18n`), imported by _shared/i18n.ts. ----
-  interface HologramI18nApi {
-    lang: string;
-    resolved: 'ja' | 'en';
-    getMessage(key: string, subs?: ReadonlyArray<string | number | null | undefined>): string;
-  }
-
-  // ---- services/search.ts — the single smart-search matcher (normalize/compile).
-  // A real ES module (named exports) now — no ambient Window-shaped interface needed.
-
-  // ---- services/ui.ts — notify/escapeHtml. A real ES module (named exports)
-  // now — no ambient Window-shaped interface needed.
-
-  // ---- services/theme-api.ts — apply/get/set/resolve. A real ES module
-  // (named exports) now — no ambient Window-shaped interface needed. The pre-paint
-  // renderer/theme.js boot publishes no window global.
-
-  // ---- services/folders.ts — shared post-folder domain. A real ES module (named
-  // exports) now — App.tsx imports onChange directly, so no ambient interface is
-  // needed here anymore.
-
-  // ---- services/tags.ts — tag vocabulary / 種別 domain. A real ES module now;
-  // Sidebar/PosterSidebar import getTagLabels directly, so no ambient partial
-  // interface is needed here anymore.
-
-  // ---- orchestrator.ts — its old shared bridge is gone. Every
-  // method it used to carry (global shortcuts, inspector-dismiss, tab-bar events,
-  // store/IPC subscription handlers, boot, nav/reset) is now a real ES export that
-  // App.tsx/Activebar.tsx import directly — no ambient Window-shaped interface
-  // needed here.
-
-  // ---- services/records.ts — a real ES module now; SelectionBar imports postIdKey
-  // directly, so no ambient partial interface is needed here anymore.
-
-  // ---- services/selection.ts — a real ES module now (named exports); SelectionBar
-  // imports isAllSelected/selectedGroups directly instead of re-deriving
-  // allSelected/groupDisabled itself.
 
   // ---- app/src/preload/index.ts — the full contextBridge IPC surface (window.hologram). The
   // type is exported by the implementation itself (typeof the exposed api object,
@@ -123,10 +80,6 @@ declare global {
     cancel(): void;
   }
 
-  // ---- services/posts-data.ts — the "allPosts changed" choke point.
-  // A real ES module (named exports) now — no ambient Window-shaped interface
-  // needed.
-
   // ---- services/image-tab.ts — converts the image-tab detail view
   // (#imageTabView) off the old push (viewer.js built a full model and called
   // render(model) on it from ~8 call sites) to a PULLED source, same shape as
@@ -135,7 +88,7 @@ declare global {
   // the full tabs→store move) + still owns 'inspectedKey' (state→store
   // phase); get() crosses both with posts-data.ts (library changes — a deleted
   // post degrades to the missing state live with no viewer push, exactly what
-  // the posts-data.ts comment above anticipated). Commands (index step /
+  // posts-data.ts's own comment anticipated). Commands (index step /
   // inspector toggle / close tab) dispatch back to viewer.ts via configure()
   // callbacks (DI'd off its old shared bridge when image-tab-builder.ts was
   // extracted) — this file only computes, it never mutates tab state. A real ES module
@@ -176,8 +129,6 @@ declare global {
     closeTitle?: string;
     newTitle?: string;
   }
-  // services/tabs.ts — a real ES module (named export: hologramTabsSource) now,
-  // imported directly by tabs/index.tsx.
 
   // ---- viewer-anchored popup models share this anchor shape (a DOMRect works) ----
   interface HologramAnchorRect {
@@ -191,8 +142,6 @@ declare global {
   interface HologramQfPopItem {
     [key: string]: any;
   }
-  // HologramQfPopModel (the retired qf-pop flyout's view model) removed with the
-  // flyout UI (P2③) and the search-mode hint fields (P2④).
 
   // ---- renderer/menu.js — shared right-click context menu ----
   interface HologramMenuItem {
@@ -215,8 +164,6 @@ declare global {
     // biome-ignore lint/suspicious/noConfusingVoidType: void is the intentional "close the menu" return
     onPick: ((item: HologramMenuItem) => HologramMenuItem[] | void) | null;
   }
-  // HologramContextMenu (the open/close/pick/get/subscribe API) removed — menu.ts
-  // is a real ES module now, imported directly by its consumers.
 
   // ---- renderer/kind-menu.js — tag-kind (work/character/…) menu ----
   interface HologramKindMenuRow {
@@ -236,8 +183,6 @@ declare global {
     onPick(kind: string): void;
     onRename(kind: string): void;
   }
-  // HologramKindMenu (the open/close/get/subscribe API) removed — kind-menu.ts
-  // is a real ES module now, imported directly by its consumers.
 
   // ---- renderer/filter-popover.js — date / engagement / poster-date forms ----
   interface HologramFilterPopoverModel {
@@ -259,8 +204,6 @@ declare global {
     onRemove(): void;
     [extra: string]: any;
   }
-  // HologramFilterPopover (the open/close/get/subscribe API) removed — filter-popover.ts
-  // is a real ES module now, imported directly by its consumers.
 
   // ---- renderer/inspector.js — model mechanics; the deep field lists live in
   // viewer.js's model builders. ----
@@ -287,8 +230,6 @@ declare global {
     onFolderCreate?(): void;
     [extra: string]: any;
   }
-  // HologramInspector (the open/refresh/close/get/subscribe API) removed —
-  // inspector.ts is a real ES module now, imported directly by its consumers.
   // ---- services/sidebar.ts — the two filter-row columns (converted
   // from a PUSHED bridge — viewer built a full model incl. labels and called
   // render()/renderPoster() — to a PULLED source, same shape as the grid/image-tab/
@@ -315,30 +256,12 @@ declare global {
     badges: Record<string, number>; // per-row active leaf count (poster query shadow)
     visible: { work: boolean; character: boolean; tag: boolean; instance: boolean };
   }
-  // services/sidebar.ts — a real ES module (named exports: hologramPostSidebarSource/
-  // hologramPosterSidebarSource) now, imported directly by Sidebar.tsx/PosterSidebar.tsx.
-
-  // ---- Bulk-action selection bar. Now the bottom floating FloatingBar component
-  // (selection/, redesign P2⑥): no #selectionBar container and no delegated
-  // data-act handler — each button calls an orchestrator-exported selection action
-  // directly. It derives count/allSelected/groupDisabled itself from hologramStore's
-  // 'selectedSet' + 'postGroups' (the old renderer/selection-bar.ts push bridge was
-  // deleted — no callers left, same as renderer/empty.ts below). ----
 
   // ---- #emptyState placeholder — viewer keeps the container's show/hide + the
   // delegated CTA click handler; EmptyState.tsx derives the
   // variant itself from hologramStore instead of a pushed bridge (the old
   // renderer/empty.js bridge was deleted — no callers left). ----
   type HologramEmptyVariant = 'firstRun' | 'filtered' | 'posterFirstRun';
-
-  // ---- the query-builder FRAME (#postActiveBar / #posterActiveBar): nav 戻る/進む,
-  // フィルター title, empty hint, result count, リセット, and the ⓘ help popover.
-  // ActivebarHost derives everything itself from hologramStore ('postQueryTree'/
-  // 'posterQueryTree'/'searchQuery'/'postGroups'/'posterGroups'/'navCanBack'/
-  // 'navCanForward') + t(), and imports navBack/navForward/resetAllFilters/
-  // resetPosterFilters directly for the actions (the old renderer/activebar.ts push
-  // bridge was deleted — no callers left). Portaled into sub-mounts that used to sit
-  // BESIDE the chip containers (those went with the chip render path, #230). ----
 
   // ---- services/confirm.ts — shared confirm modal (shadcn AlertDialog). Callers open it
   // with a message + optional skip/keyword gate + callbacks; the component renders it. ----
@@ -400,28 +323,6 @@ declare global {
   interface HologramBulkTagModel extends HologramBulkTagConfig {
     openId: number;
   }
-  // Bulk tag dialog (bulk-tag.ts + BulkTagDialog) — "タグを追加" on the selection
-  // bar (P2⑦), the replacement for tag-pop's mode:'bulk'. The staged tags are the
-  // dialog's own React state, so nothing here carries them: the renderer supplies
-  // only what it alone knows (the vocabulary, the kind menu, the write), and gets
-  // the finished list back once, on apply.
-  interface HologramBulkTagConfig {
-    count: number; // selected posts — the apply button and the toast count them
-    tagLabels: Record<string, string>; // TagField's labels bundle
-    labels: { title: string; additiveHint: string; apply: string; cancel: string };
-    /** Vocabulary/co-occurrence/source-tag groups for the picker, given the tags staged so far. */
-    pickerData(tags: string[]): { vocabGroups?: any; coocGroups?: any; srcTagsForPicker?: any };
-    /** Right-click a tag → kind menu. onChange re-derives pickerData (a kind change re-sections the vocabulary). */
-    onKindMenu(tag: string, x: number, y: number, onChange: () => void): void;
-    /** Persist the staged tags onto the selection. The host closes the dialog first. */
-    onApply(tags: string[]): void;
-  }
-  interface HologramBulkTagModel extends HologramBulkTagConfig {
-    openId: number;
-  }
-  // HologramConfirm / HologramEditOverlay (the open/close/get/subscribe APIs)
-  // removed — confirm.ts / edit-overlay.ts are real ES modules now, imported
-  // directly by their consumers.
 
   // ---- services/searchbox.ts — a real ES module (named exports: init/handlers/
   // registerFocus/focusSearchBox) now. Only the handlers payload contract stays here
@@ -434,31 +335,6 @@ declare global {
     onPick(item: any): void;
     onConfirmText(): void;
   }
-
-  // ---- services/settings.ts / services/lightbox.ts — real ES modules now,
-  // imported directly by their components and by orchestrator.ts / the *-builder.ts
-  // modules — no ambient Window-shaped interface needed.
-
-  // services/query-chips.ts — a real ES module (named export: createQueryBuilder),
-  // imported directly by query-builder.ts. Its model/dispatch bridge went with the
-  // query-chips component's render path (#230).
-
-  // ---- services/trash.ts — trash domain. A real ES module now; the Settings > Trash
-  // component imports its commands directly, so no ambient interface is needed here. ----
-
-  // ---- services/backup.ts — auto-backup domain, read by both viewer.ts's project
-  // (the #mirrorStatus rail) and this strict renderer project (the Settings > データ
-  // component calls it directly). A real ES module (named exports) now — no ambient
-  // Window-shaped interface needed.
-
-  // ---- services/posts.ts — post-record CRUD/import/export + save-folder move
-  // domain, read by both viewer.ts's project (list/delete/tags/import/clearAll/
-  // change-watch) and this strict renderer project (the Settings > データ component
-  // calls the save-folder/export/import/import-media methods directly). A real ES
-  // module (named exports) now — no ambient Window-shaped interface needed.
-
-  // services/ipc.ts — the P4 IPC→service seam over the raw bridge below. A real ES
-  // module now (named export `hologramIpc`), imported directly by every caller.
 
   interface Window {
     hologram: HologramPreload;
