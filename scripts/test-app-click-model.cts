@@ -73,7 +73,10 @@ const evalJs = `(async () => {
   const arrow = (key) => document.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }));
   const click = (el, mods) => el && el.dispatchEvent(new MouseEvent('click', Object.assign({ bubbles: true }, mods)));
   const dblclick = (el) => el && el.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
-  const inspVisible = () => byId('postDetail') && !byId('postDetail').hidden;
+  // The panel has no id of its own (P2⑦) — data-slot is the hook, same as the
+  // parts inside it.
+  const insp = () => document.querySelector('[data-slot="inspector"]');
+  const inspVisible = () => { const el = insp(); return !!el && !el.hidden; };
   // The peek overlay is conditionally rendered (P2⑦) — its presence IS its open state.
   const peekOpen = () => !!document.querySelector('[data-slot="lightbox"]');
   const errors = [];
@@ -88,12 +91,12 @@ const evalJs = `(async () => {
   // B. plain click = single-select + inspector (post kind, no poster head)
   click(cardOf('dummy-c1'));
   out.inspOpenedB = await waitFor(inspVisible);
-  out.inspIsPost = inspVisible() && !!byId('postDetail').querySelector('[data-slot="inspector-post"]');
+  out.inspIsPost = inspVisible() && !!insp().querySelector('[data-slot="inspector-post"]');
   await sleep(60);
   out.selAfterB = selectedKeys().join(',');
 
   // C. inspector preview thumbnail → quick-view lightbox (peek); Esc closes it
-  const thumb = byId('postDetail').querySelector('[data-slot="inspector-thumb"]');
+  const thumb = insp().querySelector('[data-slot="inspector-thumb"]');
   out.thumbPeekable = !!(thumb && thumb.getAttribute('data-peek') === 'true');
   click(thumb);
   out.lightboxOpened = await waitFor(() => peekOpen());
@@ -149,7 +152,7 @@ const evalJs = `(async () => {
   // F. plain click a poster → poster inspector (has the poster head block)
   document.querySelector('#posterGrid .poster-card')?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
   out.inspOpenedF = await waitFor(inspVisible);
-  out.inspIsPoster = inspVisible() && !!byId('postDetail').querySelector('[data-slot="inspector-poster"]');
+  out.inspIsPoster = inspVisible() && !!insp().querySelector('[data-slot="inspector-poster"]');
 
   // G. double-click a poster → drill into their posts (browseMode leaves posters)
   dblclick(document.querySelector('#posterGrid .poster-card'));

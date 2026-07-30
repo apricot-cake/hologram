@@ -1008,8 +1008,10 @@
     /* every click selects now — plain pointer everywhere (no zoom-in over images,
        no "click to expand" hint on the text) */
     .post-grid.selecting .post-card, .post-grid.selecting .post-card :is(img, video) { cursor: pointer; }
-    /* inspector open: a click swaps the panel content, not zoom → plain pointer */
-    .post-grid.insp-open .post-card :is(img, video) { cursor: pointer; }
+    /* inspector open: a click swaps the panel content, not zoom → plain pointer.
+       The attribute is written by the shell (AppShell.tsx) — see the note there for
+       why it is not a class. */
+    .post-grid[data-insp-open] .post-card :is(img, video) { cursor: pointer; }
     .post-grid.selecting .post-meta .text.truncated:hover .text-hint { display: none; }
 
     /* --- List view: text-first (scanning post text is the point of the list) --- */
@@ -1200,7 +1202,7 @@
 
     /* --- Image tab (type:'image') — fit-to-screen detail view --- */
     /* The active image tab swaps the browse chrome (query bar / sidebar / grid)
-       for a single media stage; the inspector column (#postDetail) stays. */
+       for a single media stage; the inspector column stays. */
     #imageTabView { display: none; }
     body.image-tab-active #mode-post { display: none; }
     /* The toolbar band itself STAYS under an image tab: the active tab's

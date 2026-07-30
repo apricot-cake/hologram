@@ -12,7 +12,7 @@
 import { userKey } from './query.ts';
 import { formatCount, localeDate, localeDateTime } from './format.ts';
 import { open as inspectorOpen, refresh as inspectorRefresh, close as inspectorClose } from './inspector.ts';
-import { isOpen as panelIsOpen, setOpen as panelSetOpen, subscribe as panelSubscribe } from './inspector-panel.ts';
+import { isOpen as panelIsOpen, isVisible as panelIsVisible, panelContains, setOpen as panelSetOpen, subscribe as panelSubscribe } from './inspector-panel.ts';
 import { isWide as isWideLayout } from './layout-mode.ts';
 import { get as confirmGet } from './confirm.ts';
 import { get as kindMenuGet } from './kind-menu.ts';
@@ -127,9 +127,8 @@ export function makeInspector(deps: InspectorBuilderDeps) {
   // is not a selection act, and the docked column at wide width has nothing to wave away.
   function handleOutsideClickDismissDetail(e: MouseEvent) {
     if (isWideLayout()) return; // wide = a docked column; nothing to dismiss
-    const insp = byId('postDetail');
-    if (insp.hidden) return;
-    if (insp.contains(e.target as Node | null)) return;
+    if (!panelIsVisible()) return;
+    if (panelContains(e.target)) return;
     if (!closestOf(e, '#mode-post')) return; // sidebar/overlays: leave it open
     if (closestOf(e, '.post-card')) return; // card click = swap the inspector to it
     if (closestOf(e, '.poster-card')) return; // poster click = swap the inspector to it (#143)
@@ -141,13 +140,14 @@ export function makeInspector(deps: InspectorBuilderDeps) {
   // A closed panel keeps no content: reopening starts from the placeholder (#244), and the
   // inspected-card ring can't outlive the panel that explains it. The size track needs no
   // poke here — the display popover computes it from the live grid width when it opens.
+  //
+  // The visibility-linked grid chrome used to be toggled from here too, as a classList
+  // reach-in on #postGrid; the shell renders it as a data attribute now (P2⑦ / #153 ④),
+  // so this subscriber is left with only the state it owns.
   panelSubscribe(() => {
-    const open = panelIsOpen();
-    if (!open) {
-      inspectorClose();
-      deps.setInspectedKey(null); // grid/poster cells clear their own ring reactively (hologramStore subscribe)
-    }
-    byId('postGrid').classList.toggle('insp-open', open);
+    if (panelIsOpen()) return;
+    inspectorClose();
+    deps.setInspectedKey(null); // grid/poster cells clear their own ring reactively (hologramStore subscribe)
   });
   function persistManual() {
     persistManualGroups(deps.getManualGroups());
@@ -275,8 +275,15 @@ export function makeInspector(deps: InspectorBuilderDeps) {
   // the card context menu's タグを編集 route — the replacement for the card's 🏷
   // button, which used to open a popover of its own (P2⑦). A plain card click must
   // never take focus, so this is per-open rather than a property of the panel.
+  //
+  // It is also the one route here that OPENS a closed panel, and the exception proves
+  // #243's rule rather than breaking it: selecting a card is not a request for the panel,
+  // but invoking a command that only exists inside it is. Without this, タグを編集 on a
+  // closed panel silently did nothing — it filled a surface the user could not see. Eagle
+  // and Lightroom reveal their inspector for the same reason.
   function showDetail(g: HologramPostGroup, opts?: { focusTags?: boolean }) {
     if (!g) return;
+    if (opts && opts.focusTags) panelSetOpen(true);
     const p = g.rep;
     const eng: string[] = [];
     if (p.likes != null) eng.push('♡ ' + formatCount(p.likes));
@@ -379,7 +386,7 @@ export function makeInspector(deps: InspectorBuilderDeps) {
       },
     });
     // Selecting a card fills the panel; it does NOT open one the user has closed (#243).
-    // The visibility-linked chrome (insp-open, the tile track) therefore isn't touched
+    // The visibility-linked chrome (data-insp-open, the tile track) therefore isn't touched
     // here — it follows the panel store, not the content.
     //
     // Ring-mark the inspected card so swapping content stays traceable — the grid
@@ -417,7 +424,7 @@ export function makeInspector(deps: InspectorBuilderDeps) {
     // Narrow overlay only (#259). Something laid OVER the grid is expected to answer Esc,
     // and the pre-#243 slide-over did. The docked column still does not: #143/#242 ruled
     // Esc out there, where it would dismiss nothing the user can see covering anything.
-    if (!isWideLayout() && !byId('postDetail').hidden) dismissDetail();
+    if (!isWideLayout() && panelIsVisible()) dismissDetail();
   }
 
   return {

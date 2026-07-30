@@ -72,9 +72,9 @@ const evalJs = `(async () => {
   const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   const waitFor = async (fn, ms = 5000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (fn()) return true; await sleep(40); } return false; };
   const byId = (id) => document.getElementById(id);
-  const field = () => document.querySelector('#postDetail [data-slot="inspector-tags"]');
-  const chips = () => [...document.querySelectorAll('#postDetail [data-slot="tag-chip"]')].map(c => c.getAttribute('data-tag'));
-  const input = () => document.querySelector('#postDetail [data-slot="tag-input"]');
+  const field = () => document.querySelector('[data-slot="inspector"] [data-slot="inspector-tags"]');
+  const chips = () => [...document.querySelectorAll('[data-slot="inspector"] [data-slot="tag-chip"]')].map(c => c.getAttribute('data-tag'));
+  const input = () => document.querySelector('[data-slot="inspector"] [data-slot="tag-input"]');
   const cardOf = (key) => document.querySelector('#postGrid .post-card[data-key*="' + key + '"]');
   const errors = [];
   window.addEventListener('error', (e) => errors.push(String((e && e.message) || e)));
@@ -169,7 +169,7 @@ const evalJs = `(async () => {
 
   // F. the chip's × removes a tag
   out.chipsBeforeRemove = chips().join(',');
-  const chipEl = [...document.querySelectorAll('#postDetail [data-slot="tag-chip"]')].find(c => c.getAttribute('data-tag') === '新規タグ');
+  const chipEl = [...document.querySelectorAll('[data-slot="inspector"] [data-slot="tag-chip"]')].find(c => c.getAttribute('data-tag') === '新規タグ');
   const removeBtn = chipEl && chipEl.querySelector('button');
   out.hasRemoveBtn = !!removeBtn;
   if (removeBtn) removeBtn.click();

@@ -86,11 +86,11 @@ const evalJs = `(async () => {
   // (a separate listener) cannot be what any of this measures.
   const click = (x, y, mods) => { down(x, y, mods); up(); };
   const inspectedCards = () => document.querySelectorAll('#postGrid .post-card.inspected').length;
-  const panelFilled = () => !!document.querySelector('#postDetailBox [data-slot="inspector-tags"]');
+  const panelFilled = () => !!document.querySelector('[data-slot="inspector-body"] [data-slot="inspector-tags"]');
   // The panel's "nothing is selected" state (#244). Asserted on its own rather than
   // as "not filled": the placeholder is what has to be THERE, and the panel renders
   // it at both widths (only whether the column is on screen differs).
-  const panelPlaceholder = () => !!document.querySelector('#postDetailBox [data-slot="inspector-empty"]');
+  const panelPlaceholder = () => !!document.querySelector('[data-slot="inspector-body"] [data-slot="inspector-empty"]');
 
   // Cards the band would touch, computed from LIVE DOM rects — the independent
   // answer the app's positioner-based hit test has to agree with.
@@ -236,7 +236,7 @@ const evalJs = `(async () => {
   const posterCard = document.querySelector('#posterGrid .poster-card');
   posterCard?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
   await sleep(150);
-  out.posterFilledBeforeJ = !!document.querySelector('#postDetailBox [data-slot="inspector-poster"]');
+  out.posterFilledBeforeJ = !!document.querySelector('[data-slot="inspector-body"] [data-slot="inspector-poster"]');
   const pr = posterCard.getBoundingClientRect();
   const py = Math.round((pr.top + pr.bottom) / 2);
   out.posterPressOnEmpty = !(document.elementFromPoint(x0, py) || {}).closest?.('.poster-card');

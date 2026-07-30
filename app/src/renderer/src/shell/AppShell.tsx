@@ -19,9 +19,10 @@
 // - #mode-post is kept as the scroll root (orchestrator's contentScrollEl + per-tab
 //   scroll restore key off this id). #postGrid/#posterGrid keep ids+classes for the
 //   masonic host-attach and the body.browse-posters visibility CSS.
-// - The right inspector keeps the legacy #postDetail element: its .inspector CSS
-//   already implements the #143 model (wide = fixed 320px column, narrow = slide-over),
-//   so P1 inherits that behavior; the content is reworked in P2⑦.
+// - The right inspector wears the legacy .inspector CSS, which already implements the
+//   #143 model (wide = fixed 320px column, narrow = slide-over). Its id is gone (P2⑦):
+//   whether it is on screen is state (inspector-panel.ts), and the element itself reaches
+//   the one handler that needs it by ref, so nothing looks it up by id any more.
 import type { CSSProperties } from 'react';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { SIDEBAR_WIDTH, SidebarInset, SidebarProvider } from '@/components/ui/sidebar';
@@ -30,10 +31,10 @@ import { t } from '../_shared/i18n.ts';
 import { InspectorRail } from './InspectorRail.tsx';
 import { type PanelResize, resolveCssLength, usePanelResize } from './use-panel-resize.ts';
 import { LIMITS, type PanelKey, cachedWidth, clampWidth, loadWidth, persistWidth } from '../services/panel-width-pref.ts';
-import { isOpen as inspectorIsOpen, load as inspectorLoad, subscribe as inspectorSubscribe } from '../services/inspector-panel.ts';
+import { isOpen as inspectorIsOpen, isVisible as inspectorIsVisible, load as inspectorLoad, registerPanelEl, subscribe as inspectorSubscribe, subscribeVisible as subscribeInspectorVisible } from '../services/inspector-panel.ts';
 import { isWide as isWideLayout, subscribe as layoutSubscribe } from '../services/layout-mode.ts';
 import { isHidden as panelsAreHidden, load as panelsLoad, reveal as panelsReveal, subscribe as panelsSubscribe } from '../services/panels.ts';
-import { get as storeGet, set as storeSet, subscribe as storeSubscribe } from '../services/store.ts';
+import { set as storeSet } from '../services/store.ts';
 import { cachedOpen, loadOpen, persistOpen } from '../services/sidebar-pref.ts';
 import { signalShellReady } from '../services/shell-ready.ts';
 import { AppToolbar } from './AppToolbar.tsx';
@@ -62,10 +63,6 @@ import { WindowControls } from './WindowControls.tsx';
 // never overwritten by width: it is masked while narrow and comes back untouched. And the
 // user can still expand over the mask (narrowOpen below) — width picks the starting form,
 // it does not lock one in.
-// The inspected card, mirrored into the store by orchestrator.ts on every selection.
-const subInspected = (cb: () => void) => storeSubscribe('inspectedKey', cb);
-const getInspected = () => storeGet('inspectedKey') as string | null | undefined;
-
 function useSidebarOpen(): [boolean, (open: boolean) => void] {
   const [open, setOpen] = useState(() => cachedOpen() ?? true);
   // A user toggle mid-boot must not lose to the reconcile landing a tick later.
@@ -185,8 +182,11 @@ export function AppShell() {
   // when a card is inspected and is waved away by a click on the grid (Esc / × too). A
   // floating panel with nothing in it would just be a hole in the view, so the #244
   // placeholder stays a wide-layout affair.
-  const inspectedKey = useSyncExternalStore(subInspected, getInspected);
-  const inspectorVisible = !panelsHidden && inspectorOpen && (wide || inspectedKey != null);
+  //
+  // The formula itself moved to inspector-panel.ts (P2⑦): the renderer modules outside
+  // React ask the same question, and they used to answer it by reading this element's
+  // `hidden` back off the DOM. One copy, two readers.
+  const inspectorVisible = useSyncExternalStore(subscribeInspectorVisible, inspectorIsVisible);
   // Published rather than re-derived downstream: the floating selection bar has to hold
   // back the panel's width while it overlays the grid (as a docked column the panel
   // narrows the bar's container instead, and the bar needs to do nothing). Deriving this
@@ -270,7 +270,12 @@ export function AppShell() {
                 {/* Scroll root for the content area (the page itself never scrolls). */}
                 <div id="mode-post" ref={contentRef} className="relative min-h-0 flex-1 overflow-y-auto">
                   <div id="panelPosts" className="tab-panel active">
-                    <div id="postGrid" className="post-grid" />
+                    {/* data-insp-open: with the panel there, a click on a card swaps its
+                        contents rather than zooming, so the media stops offering a zoom
+                        cursor. An ATTRIBUTE, not a class — grid-density-builder writes
+                        this element's className imperatively (list-view / selecting / …),
+                        and a React-owned className would wipe those on every flip. */}
+                    <div id="postGrid" className="post-grid" data-insp-open={inspectorOpen || undefined} />
                     <div id="posterGrid" className="poster-grid" />
                     <div id="emptyState" className="empty-state" hidden>
                       <EmptyState />
@@ -294,14 +299,14 @@ export function AppShell() {
                   Visibility is the user's own toggle (#243): it is no longer opened/closed as
                   a side effect of selecting a card, and the content (Inspector) shows a
                   placeholder while nothing is selected (#244). */}
-              <aside id="postDetail" className={wide ? 'inspector relative' : 'inspector inspector--overlay'} hidden={!inspectorVisible}>
+              <aside data-slot="inspector" ref={registerPanelEl} className={wide ? 'inspector relative' : 'inspector inspector--overlay'} hidden={!inspectorVisible}>
                 {/* Drag edge (#30). Wide layout only, for the same reason the sidebar rail
                     is: the narrow form is an overlay pinned to the window edge. */}
                 {wide && <InspectorRail resize={inspector.resize} />}
                 {/* flex:1 (in .inspector-body) gives this a definite height, so the
                     empty-state placeholder can still center itself in the column; a filled
                     panel just overflows it into the scroll, as before. */}
-                <div id="postDetailBox" className="inspector-body">
+                <div data-slot="inspector-body" className="inspector-body">
                   <Inspector />
                 </div>
               </aside>

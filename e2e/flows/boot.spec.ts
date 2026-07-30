@@ -14,7 +14,7 @@ test('起動するとシードした投稿がグリッドに並ぶ', async ({ la
   for (const post of FIXTURE_POSTS) await expect(cards.filter({ hasText: post.text })).toHaveCount(1);
   // The shell's three panels are all mounted, not just the grid.
   await expect(page.locator('[data-slot="sidebar"]')).toBeVisible();
-  await expect(page.locator('#postDetail')).toBeVisible();
+  await expect(page.locator('[data-slot="inspector"]')).toBeVisible();
 });
 
 test('投稿が無いライブラリでは初回の空状態が出る', async ({ launchHologram }) => {

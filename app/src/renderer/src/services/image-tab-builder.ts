@@ -8,6 +8,8 @@
 // 確定未決2), and the tab-title stamping (_autoTitle). The stack itself lives in
 // tabs-builder.ts's nav (handed in as deps).
 import { imageTabGroup, imageTabTitleOf } from './records.ts';
+import { isVisible as panelIsVisible, setOpen as panelSetOpen } from './inspector-panel.ts';
+import { reveal as panelsReveal } from './panels.ts';
 import { genTabId, navEntryUrl } from './tab-state.ts';
 import { set as storeSet } from './store.ts';
 
@@ -34,8 +36,6 @@ export interface ImageTabBuilderDeps {
 }
 
 export function makeImageTabController(deps: ImageTabBuilderDeps) {
-  const byId = (id: string) => document.getElementById(id) as HTMLElement;
-
   // recs resolve against the live library on every use (imageTabGroup,
   // records.ts), so deletions degrade to a "missing" empty state instead of a
   // broken image. No cached group (_g) anymore — resolution is a map lookup.
@@ -106,13 +106,30 @@ export function makeImageTabController(deps: ImageTabBuilderDeps) {
     publish(st.recs, i);
     deps.persistTabsDebounced();
   }
+  // The image view's own inspector button — the same act as the tab band's toggle
+  // (shell/InspectorToggle.tsx), reachable from the view that fills the window. "Is it on
+  // screen" comes from the panel store rather than from reading the element's `hidden`
+  // (P2⑦ / #153 ⑤), and BOTH branches move the panel's own state:
+  // - Showing: this button IS the request for the panel, so it opens a closed one. Merely
+  //   filling it while it stayed hidden — what the old code did whenever the user had
+  //   closed it — made the button look dead. #245's bulk mask is a "closed" the user can
+  //   see, so it comes off first, exactly as the tab-band toggle does it.
+  // - Hiding: close the panel rather than dismiss its contents. dismissDetail() only
+  //   clears the inspected key, which at wide width leaves the docked column on screen —
+  //   so the button could turn the panel ON and never off. Closing clears the contents
+  //   anyway (inspector-builder's panel subscriber).
   function toggleImageTabInspector() {
     const cur = deps.nav.current();
     if (!imageViewShowing || !cur || cur.kind !== 'image') return;
-    if (byId('postDetail').hidden) {
-      const g = resolveGroup((cur.state as { recs: string[] }).recs);
-      if (g) deps.showDetail(g);
-    } else deps.dismissDetail();
+    if (panelIsVisible()) {
+      panelSetOpen(false);
+      return;
+    }
+    const g = resolveGroup((cur.state as { recs: string[] }).recs);
+    if (!g) return;
+    panelsReveal();
+    panelSetOpen(true);
+    deps.showDetail(g);
     // inspectorOpen derives from hologramStore's 'inspectedKey' reactively — no repaint call needed.
   }
   // The view's close command: browser semantics — an image entry reached from a
