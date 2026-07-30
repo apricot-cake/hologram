@@ -94,6 +94,11 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     imageCopyFailed: 'この形式の画像はコピーできません',
     ctxShowInFolder: 'ファイルの場所を開く',
     ctxOpenNewTab: '新しいタブで開く',
+    // 選択テキストの右クリック（#167）。「SauceNAOで検索」「ascii2dで検索」と同じ並びに
+    // 入る行なので、綴りも「〜で検索」に揃える
+    ctxCopyText: 'コピー',
+    ctxSearchWeb: 'Googleで検索',
+    ctxSearchLibrary: 'ライブラリ内検索',
     imgTabFallback: '画像',
     imgTabMissing: 'この画像はライブラリに見つかりません（削除された可能性があります）',
     imgTabCloseBtn: 'タブを閉じる',
@@ -520,6 +525,9 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     imageCopyFailed: "This image format can't be copied",
     ctxShowInFolder: 'Show in folder',
     ctxOpenNewTab: 'Open in new tab',
+    ctxCopyText: 'Copy',
+    ctxSearchWeb: 'Search on Google',
+    ctxSearchLibrary: 'Search the library',
     imgTabFallback: 'Image',
     imgTabMissing: 'This image is no longer in the library (it may have been deleted)',
     imgTabCloseBtn: 'Close tab',

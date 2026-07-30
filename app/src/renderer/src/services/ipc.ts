@@ -49,6 +49,7 @@ export const hologramIpc: HologramPreload = {
   showInFolder: (file) => bridge().showInFolder(file),
   dragOut: (files) => bridge().dragOut(files),
   copyImage: (file) => bridge().copyImage(file),
+  copyText: (text) => bridge().copyText(text),
   getAppInfo: () => bridge().getAppInfo(),
   getPrefs: () => bridge().getPrefs(),
   setPref: (key, value) => bridge().setPref(key, value),

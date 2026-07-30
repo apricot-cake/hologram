@@ -36,6 +36,7 @@ import { makePosterGridBuilder } from './poster-grid-builder.ts';
 import { makeGridDensity, bindApplyTileOverlay, type HologramSizeTrack } from './grid-density-builder.ts';
 import { makeInspector } from './inspector-builder.ts';
 import { makeSelectionBar } from './selection-builder.ts';
+import { makeSelectionMenu, selectionTextAt } from './selection-menu.ts';
 import { makeBulkEdit } from './bulk-edit-builder.ts';
 import { makeTabsController } from './tabs-builder.ts';
 import { makeImageTabController } from './image-tab-builder.ts';
@@ -80,6 +81,10 @@ export let handleTabBarClick: (e: MouseEvent) => void;
 export let handleTabBarAuxclick: (e: MouseEvent) => void;
 export let handleTabBarMousedown: (e: MouseEvent) => void;
 export let handleTabBarContextmenu: (e: MouseEvent) => void;
+// Document-level right-click fallback for selected text (#167). Registered last in
+// the bubble phase, and it bails on defaultPrevented — every surface with a menu of
+// its own has already claimed the event by then.
+export let handleSelectionContextmenu: (e: MouseEvent) => void;
 export let handleTabBarDblclick: (e: MouseEvent) => void;
 export let handleGlobalTabShortcut: (e: KeyboardEvent) => void;
 export let handleViewStoreChange: () => void;
@@ -789,6 +794,16 @@ export function endFilterEditSession(): void {
   // are forward references (postQB/buildUsers/showDetail/renderPosters/…
   // declared later in this closure) — deferred arrows the same TDZ-safe way
   // every other service wiring in this file already works.
+  // Selected-text menu rows (#167) — built here because two callers need the SAME
+  // three rows: the card menu splices them in (postGrid deps below), and the
+  // document-level fallback opens them alone everywhere else. searchBox is wired
+  // far below, so its search entry point is a deferred arrow like the rest.
+  const selectionMenu = makeSelectionMenu({
+    t: getMessage,
+    searchInLibrary: (text) => searchBox.searchFor(text),
+  });
+  handleSelectionContextmenu = selectionMenu.handleContextmenu;
+
   const postGrid = makePostGridBuilder({
     t: getMessage,
     smokeCapture: SMOKE_CAPTURE,
@@ -821,6 +836,7 @@ export function endFilterEditSession(): void {
     showDetail: (g, opts) => showDetail(g, opts),
     jumpToPoster: (post) => jumpToPoster(post),
     addImageTab: (g) => imageTabCtl.addImageTab(g),
+    selectionMenu,
   });
   const { loadPosts, renderPosts, markPostsMutated, keepCurrentVisible, showFoldMenu, showCardMenu } = postGrid;
   bindLoadPosts(postGrid.loadPosts);
@@ -1062,7 +1078,9 @@ export function endFilterEditSession(): void {
     e.preventDefault();
     if (byId('postGrid').classList.contains('selecting')) return; // selection bar owns bulk actions
     const g = postGrid.getViewGroups()[Number.parseInt(card.dataset.index ?? '', 10)];
-    if (g) showCardMenu(g, e.clientX, e.clientY);
+    // A card's body text is selectable, so the same click can be a text gesture —
+    // the rows get spliced into this menu rather than opening a second one (#167).
+    if (g) showCardMenu(g, e.clientX, e.clientY, selectionTextAt(e.target));
   });
 
   // Sidebar folder chips (shared folders.json): count + ★default. Like tag chips
