@@ -6,7 +6,7 @@
 // currently "being typed" (editingTextNode, private state) and the state
 // transitions: sync on typing, confirm on Enter, rebind after a tab/history
 // restore, drop when a concrete suggestion is picked instead. Rendering/persistence side effects
-// (afterQueryChange/renderPosts/updateSidebarState) stay injected callbacks —
+// (afterQueryChange/renderPosts) stay injected callbacks —
 // this module never touches the DOM (same shape as tab-state.js's
 // makeNavHistory / undo.js's makeUndo: encapsulated mutable state + injected
 // side-effect callbacks, not a pure function).
@@ -16,7 +16,7 @@
 //     instance's tree ops (postQB), passed as bound wrappers.
 //   treeLeaves(tree) — query.js pure helper.
 //   searchQuery() / setSearchBoxValue(v) — the search box's value getter/setter.
-//   afterQueryChange() / renderPosts() / updateSidebarState() — viewer.js
+//   afterQueryChange() / renderPosts() — viewer.js
 //     re-render triggers, called after a state transition.
 export interface SearchEditingDeps {
   getTree(): HologramQueryGroup;
@@ -27,11 +27,10 @@ export interface SearchEditingDeps {
   setSearchBoxValue(v: string): void;
   afterQueryChange(): void;
   renderPosts(): void;
-  updateSidebarState(): void;
 }
 
 export function makeSearchEditing(deps: SearchEditingDeps) {
-  const { getTree, addFilter, removeNode, treeLeaves, searchQuery, setSearchBoxValue, afterQueryChange, renderPosts, updateSidebarState } = deps;
+  const { getTree, addFilter, removeNode, treeLeaves, searchQuery, setSearchBoxValue, afterQueryChange, renderPosts } = deps;
   let editingTextNode: HologramQueryLeaf | null = null;
 
   function isEditingLeaf(node: unknown) {
@@ -102,7 +101,6 @@ export function makeSearchEditing(deps: SearchEditingDeps) {
     }
     if (it.kind === 'tag') addFilter({ type: 'tag', value: it.value });
     else if (it.kind === 'user') addFilter({ type: 'user', value: it.value, label: it.label });
-    updateSidebarState();
   }
 
   return { isEditingLeaf, onLeafMutated, clear, sync, confirm, rebind, pick };

@@ -327,14 +327,13 @@ declare global {
   type HologramEmptyVariant = 'firstRun' | 'filtered' | 'posterFirstRun';
 
   // ---- the query-builder FRAME (#postActiveBar / #posterActiveBar): nav 戻る/進む,
-  // フィルター title, empty hint, result count, リセット, and the ⓘ help popover. viewer
-  // keeps only the container reveal + --activebar-h measurement; ActivebarHost
-  // derives everything else itself from hologramStore ('postQueryTree'/
+  // フィルター title, empty hint, result count, リセット, and the ⓘ help popover.
+  // ActivebarHost derives everything itself from hologramStore ('postQueryTree'/
   // 'posterQueryTree'/'searchQuery'/'postGroups'/'posterGroups'/'navCanBack'/
   // 'navCanForward') + t(), and imports navBack/navForward/resetAllFilters/
   // resetPosterFilters directly for the actions (the old renderer/activebar.ts push
-  // bridge was deleted — no callers left). Portaled into sub-mounts BESIDE the chips
-  // containers, which stay their own component. ----
+  // bridge was deleted — no callers left). Portaled into sub-mounts that used to sit
+  // BESIDE the chip containers (those went with the chip render path, #230). ----
 
   // ---- services/confirm.ts — shared confirm modal (shadcn AlertDialog). Callers open it
   // with a message + optional skip/keyword gate + callbacks; the component renders it. ----
@@ -435,8 +434,9 @@ declare global {
   // imported directly by their components and by orchestrator.ts / the *-builder.ts
   // modules — no ambient Window-shaped interface needed.
 
-  // services/query-chips.ts — a real ES module (named exports: createQueryBuilder/
-  // getModel/subscribe/dispatch) now, imported directly by query-chips/index.tsx.
+  // services/query-chips.ts — a real ES module (named export: createQueryBuilder),
+  // imported directly by query-builder.ts. Its model/dispatch bridge went with the
+  // query-chips component's render path (#230).
 
   // ---- services/trash.ts — trash domain. A real ES module now; the Settings > Trash
   // component imports its commands directly, so no ambient interface is needed here. ----

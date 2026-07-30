@@ -45,7 +45,6 @@ export interface PosterGridBuilderDeps {
   // deferred arrow at the viewer.ts call site.
   posterQBGetTree(): HologramQueryGroup;
   posterQBResetTree(): void;
-  posterQBRender(): void;
   posterQBRemoveByLeaf(type: string, value: string): void;
   posterQBRemoveCondsMatching(pred: (c: HologramQueryLeaf) => boolean): boolean;
   posterQBSyncShadow(): void;
@@ -140,7 +139,6 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
     const grid = byId('posterGrid');
     const empty = byId('emptyState');
     renderPosterFilterRows();
-    deps.posterQBRender(); // draw the query bar (pills / groups) for the poster tree
     posterList = deps.filteredPosters();
     // 投稿者モードはクエリバー（postCount の常設先）を隠すので、件数はポスターコントロール
     // 側の #posterCount に出す（バー右端の件数と役割分担）。#posterCount + poster reset/empty

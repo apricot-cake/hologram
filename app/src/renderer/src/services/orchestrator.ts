@@ -351,8 +351,9 @@ export function endFilterEditSession(): void {
     },
   });
 
-  // Leading type glyph for a query-builder chip (qcGlyph, imported above) moved
-  // to query-builder.ts along with the postQB/posterQB instance wiring.
+  // (The leading type glyph for a query-builder chip, qcGlyph, moved to
+  // query-builder.ts with the postQB/posterQB wiring, then went with the chip
+  // render path itself in #230 — the live chips use filterbar's CatIcon.)
 
   const PF_NAME: Record<string, string> = { x: 'X', bluesky: 'Bluesky', misskey: 'Misskey', mastodon: 'Mastodon', pixiv: 'pixiv' };
 
@@ -503,14 +504,11 @@ export function endFilterEditSession(): void {
   // フライアウトはクリックのみで開閉（ホバーで開く実験は撤回＝誤爆・絞り込み入力中に
   // 別行へカーソルが乗って別フライアウトに化ける問題があったため）。
 
-  // Update sidebar state — kept as a thin alias to renderQueryChips (its many call
-  // sites keep their name) now that badges/tag-visibility are self-derived by
+  // (updateSidebarState() lived here. Badges/tag-visibility are self-derived by
   // services/sidebar.ts's hologramPostSidebarSource/hologramPosterSidebarSource
-  // (see that file for how postQueryTree/tags/folders/posts-data feed it).
-  function updateSidebarState() {
-    // (#searchBox's has-value accent is owned by the searchbox component)
-    renderQueryChips(); // 検索/フォルダ等の変化を下部アクティブバーへ即時反映
-  }
+  // — see that file for how postQueryTree/tags/folders/posts-data feed it — so
+  // by #230 the function's whole body was a renderQueryChips() call into the
+  // retired chip renderer. Its callers were dropped with it.)
 
   // --- Tag area: the タグ row opens ONE flyout listing every general tag
   // (種別なし). The 作品/キャラ kinded tags get their own rows; general tags stay a
@@ -617,7 +615,7 @@ export function endFilterEditSession(): void {
   // (改訂③: flat conditions you drag into parenthesised
   // groups; no auto type-grouping). BOTH views (posts / posters) share ONE builder
   // implementation via the createQueryBuilder(ctx) factory below; ctx carries the
-  // per-view differences (container, leaf predicate, label, callbacks). The tree is
+  // per-view differences (leaf predicate, facet schema, callbacks). The tree is
   // ALWAYS a root group (op 'and' by default). Each instance's `.shadow()` is a
   // derived flat shadow of the leaves (sidebar highlight / row badges / tab
   // title / counts) — postQB.shadow()/posterQB.shadow(), read fresh at each
@@ -628,18 +626,14 @@ export function endFilterEditSession(): void {
   // Runtime couplings are injected here: collections resolve through CF()
   // lazily (folders.js registers after this closure is built, and predicates only
   // run post-init), fuzzy text matching through search.ts's compile.
-  // The shared facet-chip builder (改訂④) lives in
-  // query-chips.ts (the event half): tree state, cluster view-model
-  // derivation, qbNodeMap, and click/contextmenu dispatch all moved there — the
-  // query-chips component reads a cached model + calls dispatch() directly instead
-  // of viewer.js pushing a model and delegating raw DOM events. The postQB/
-  // posterQB instance construction (predOf/glyph/createQueryBuilder ctx) itself
-  // moved to query-builder.ts; orchestrator.ts keeps the orchestration
-  // around a change (onChange/openLeafEditor/onClearSearch) since those still
-  // reach into state (renderPosts, searchEditing, popovers) not yet extracted.
-  // i18n strings the builder needs for labels/menus — query-builder.ts/
-  // query-chips.ts have no access to orchestrator.ts's i18n binding, so getMessage
-  // itself is passed in via ctx.t.
+  // The shared facet builder (改訂④) lives in query-chips.ts: tree state and the
+  // mutation helpers moved there. It renders nothing — the chips on screen come
+  // from activeFilters() (below) via the filterbar component, which recomputes
+  // off the postQueryTree/posterQueryTree store keys the builder mirrors on every
+  // mutation. The postQB/posterQB instance construction (predOf/facet schema/
+  // createQueryBuilder ctx) itself moved to query-builder.ts; orchestrator.ts
+  // keeps the orchestration around a change (onChange) since that still reaches
+  // into state (renderPosts, searchEditing) not yet extracted.
 
   // The post-side builder instance. Badge/tab-title/etc. reads used
   // to mirror the tree shadow into a module-level `activeFilters` global via an
@@ -647,10 +641,6 @@ export function endFilterEditSession(): void {
   // instance already exposes the same cached array) — every read site now calls
   // postQB.shadow() directly instead of maintaining a second copy.
   const { qb: postQB, predOf: postPredOf } = makePostQueryBuilder({
-    t: getMessage,
-    container: document.getElementById('queryChips') as HTMLElement,
-    barEl: document.getElementById('postActiveBar'), // reveal + --activebar-h measure (empty/reset are the component's)
-    labelOf: filterLabel,
     // A saved tag leaf from before the DB migration (#297) carries only a name;
     // query.ts's tag case resolves and caches its tagId on first evaluation via
     // this. Scans the loaded posts' parallel tags/tagIds arrays rather than a
@@ -663,34 +653,19 @@ export function endFilterEditSession(): void {
       }
       return undefined;
     },
-    getSearchVal: () => searchQuery(),
-    onClearSearch: () => {
-      setSearchBoxValue('');
-      afterQueryChange();
-    },
     onChange: () => {
       renderPosts();
     },
-    // Legacy chip-click leaf editing routed through the retired filter-popover flyout;
-    // in the redesign a date/engagement chip re-opens the filterbar FormEditor instead
-    // (P2③). Inert now (the query-chips dispatch that called this is gone) — kept as a
-    // no-op until createQueryBuilder's dispatch is stripped.
-    openLeafEditor: () => {},
-    // When the editing text leaf is removed or dragged on the bar, detach it from
-    // the box. textInTree (query-builder.ts) suppresses the legacy echo chip (the
-    // term is a real leaf). Deferred arrows: searchEditing is constructed later in
-    // this closure (the makeSearchBox() call below), same forward-reference
-    // pattern as postQB/posterQB being referenced from functions defined above
-    // their own declarations.
+    // When the editing text leaf is removed, detach it from the box. Deferred
+    // arrow: searchEditing is constructed later in this closure (the
+    // makeSearchBox() call below), same forward-reference pattern as
+    // postQB/posterQB being referenced from functions defined above their own
+    // declarations.
     onLeafMutated: (node: HologramQueryLeaf) => searchEditing.onLeafMutated(node),
-    isEditingLeaf: (node: HologramQueryLeaf) => searchEditing.isEditingLeaf(node),
   });
   // Thin module-level wrappers so existing post-side call sites keep their names.
   function currentTree() {
     return postQB.getTree();
-  }
-  function renderQueryChips() {
-    postQB.render();
   }
   function addFilter(filter: { type: string; [k: string]: any }) {
     postQB.addFilter(filter);
@@ -830,7 +805,6 @@ export function endFilterEditSession(): void {
     buildUsers: () => buildUsers(),
     snapshotState: () => tabsCtl.snapshotState(), // tabsCtl is constructed below — deferred forward reference
     syncTitleAndPersist: () => tabsCtl.syncTitleAndPersist(),
-    updateSidebarState,
     applyTileLayout: () => gridDensity.applyTileLayout(),
     getBrowseMode: () => browseMode,
     renderPosters: (keepLimit) => renderPosters(keepLimit),
@@ -931,7 +905,6 @@ export function endFilterEditSession(): void {
     searchQuery: () => searchQuery(), // makeSearchBox() is wired far below — deferred
     setSearchBoxValue: (v) => setSearchBoxValue(v),
     rebindEditingTextLeaf: () => rebindEditingTextLeaf(),
-    renderQueryChips: () => renderQueryChips(),
     renderPosts: (keepLimit) => renderPosts(keepLimit), // postGrid is declared above — already in scope
     setLastRenderedState: (json) => postGrid.setLastRenderedState(json),
     getAllPostsCount: () => postGrid.getAllPosts().length,
@@ -1349,7 +1322,6 @@ export function endFilterEditSession(): void {
     groupRecords: postGrid.groupRecords,
     posterQBGetTree: () => posterQB.getTree(),
     posterQBResetTree: () => posterQB.resetTree(),
-    posterQBRender: () => posterQB.render(),
     posterQBRemoveByLeaf: (type, value) => posterQB.removeByLeaf(type, value),
     posterQBRemoveCondsMatching: (pred) => posterQB.removeCondsMatching(pred),
     posterQBSyncShadow: () => posterQB.syncShadow(),
@@ -1366,10 +1338,10 @@ export function endFilterEditSession(): void {
     onPosterRendered: () => tabsCtl.syncPosterTitleAndPersist(),
   });
   const { getPosterList, pfStore, posterFolderById, renderPosterFilterRows, renderPosters, openPosterPosts, jumpToPoster, refreshPosterTagFields, showPosterDetail, showPosterMenu } = posterGrid;
-  // --- Poster query builder: the SAME drag builder (createQueryBuilder), evaluated
+  // --- Poster query builder: the SAME builder (createQueryBuilder), evaluated
   // against poster (user) objects instead of posts. Leaf types: platform / instance /
-  // tag(作品/キャラ含む) / folder / date(範囲). The bar lives in
-  // #posterActiveBar; sidebar rows are the entry points (like #filterRows for posts). ---
+  // tag(作品/キャラ含む) / folder / date(範囲). Its chips are the shared filter bar
+  // (FilterChips reads the active mode's tree); "+ フィルタ" is the entry point. ---
   // Poster leaf predicate — query.ts's makePosterPredOf (the mirror of postPredOf)
   // is now called inside query-builder.ts's makePosterQueryBuilder;
   // posterTagsOf (tags.js) and posterFolderById (pfStore) are passed in as deps,
@@ -1378,29 +1350,19 @@ export function endFilterEditSession(): void {
   // The poster date-range popover (and its editingPosterDateNode state) retired with
   // the filter-popover component (P2③ タスク3); a poster date chip re-opens the filterbar
   // FormEditor now.
-  // The poster-side builder instance (predOf/glyph/instance construction moved to
+  // The poster-side builder instance (predOf/instance construction moved to
   // query-builder.ts — see that file's makePosterQueryBuilder).
   // transient (no tabs / nav history for posters); onChange → renderPosters
-  // (which redraws the rows + bar + grid). This used to also mirror
+  // (which redraws the rows + grid). This used to also mirror
   // the tree shadow into a module-level `posterShadow` global via onShadow — that
   // global had zero readers (the poster sidebar model read posterQB.shadow()
   // directly, and now services/sidebar.ts's source reads the mirrored
   // 'posterQueryTree' store key via query.ts's buildShadow instead), so it's
   // removed outright rather than converted to a read site.
   const { qb: posterQB } = makePosterQueryBuilder({
-    t: getMessage,
-    container: document.getElementById('posterQueryChips') as HTMLElement,
-    barEl: document.getElementById('posterActiveBar'), // reveal + --activebar-h measure (empty/reset are the component's)
-    labelOf: posterFilterLabel,
-    getSearchVal: () => searchQuery(),
-    onClearSearch: () => {
-      setSearchBoxValue('');
-      renderPosters();
-    },
     onChange: () => {
       renderPosters();
     },
-    openLeafEditor: () => {}, // retired filter-popover flyout; inert (see the post-side note above)
     posterTagsOf,
     folderById: posterFolderById,
   });
@@ -1423,7 +1385,6 @@ export function endFilterEditSession(): void {
     addFilter,
     removeFilter,
     buildUsers: () => buildUsers(),
-    updateSidebarState,
   });
 
   // The "+ フィルタ" category menu (redesign §3-2 / P2③): the facet categories the
@@ -1748,7 +1709,6 @@ export function endFilterEditSession(): void {
     afterQueryChange: () => afterQueryChange(),
     renderPosts: () => renderPosts(),
     renderPosters: () => renderPosters(),
-    updateSidebarState: () => updateSidebarState(),
   });
   const { searchQuery, setSearchBoxValue, rebindEditingTextLeaf, searchEditing } = searchBox;
   // React owns the subscribe() registration (StoreSubscriptions, App.tsx), importing
@@ -1883,10 +1843,9 @@ export function endFilterEditSession(): void {
   handleFolderChange = function (kind?: string) {
     // 絞り込み中のフォルダが削除されたらそのフィルタを除去（一覧が原因不明に空になるのを防ぐ）。
     const dangling = (c: HologramQueryLeaf) => c.type === 'folder' && !CF().byId(c.value);
-    if (postQB.removeCondsMatching(dangling)) {
-      postQB.syncShadow();
-      postQB.render();
-    }
+    // syncShadow is the whole repaint: it pushes the pruned tree into the store,
+    // which is what the chips and the sidebar badges read.
+    if (postQB.removeCondsMatching(dangling)) postQB.syncShadow();
     // Folder leaves live in three places, and a delete that reaches only some of
     // them is invisible until the day it isn't: the live tree (above), the saved
     // searches (folders.ts sweeps its own on delete) and the OTHER tabs' saved
@@ -1929,7 +1888,6 @@ export function endFilterEditSession(): void {
   // orchestration logic of WHAT), rather than orchestrator.ts self-booting in parallel
   // with React's mount.
   bootApp = async function () {
-    renderQueryChips();
     if (CF()) await CF().load(); // load folders before first render so 📁/chips are correct
     // Grouping persistence (shared with the old image-view): manual groups + opt-outs.
     postGrid.setUngrouped(await loadUngrouped());

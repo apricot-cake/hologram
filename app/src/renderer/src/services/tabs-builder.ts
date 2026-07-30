@@ -39,7 +39,6 @@ export interface TabsBuilderDeps {
   searchQuery(): string;
   setSearchBoxValue(v: string | null | undefined): void;
   rebindEditingTextLeaf(): void;
-  renderQueryChips(): void;
   renderPosts(keepLimit?: boolean): void;
   setLastRenderedState(json: string): void;
   getAllPostsCount(): number;
@@ -171,7 +170,6 @@ export function makeTabsController(deps: TabsBuilderDeps) {
     deps.setSortValue(s.sort);
     deps.setShuffleSeed(s.shuffleSeed || ''); // pre-#118 states have none — random then re-seeds on pick
     deps.setMultiOnly(!!s.multi);
-    deps.renderQueryChips();
     deps.renderPosts();
     restoringState = false;
     document.title = deps.tabTitleOf(s, { allCount: deps.getAllPostsCount() }).text + ' — Hologram';

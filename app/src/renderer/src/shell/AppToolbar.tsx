@@ -7,8 +7,9 @@
 // P1 scope: the FRAME. Search hosts the existing SearchBox component (rewired to
 // Autocomplete in P2④). The "+ フィルタ" add-filter flow (P2③) and the 表示 Display
 // popover (P2②) are both live now. The chip row below renders the filterbar component's
-// Linear-style FilterChips; the hidden #queryChips / #posterQueryChips divs remain only
-// as the container ids the legacy query builders resolve at boot (removed in タスク3).
+// Linear-style FilterChips — the only chip surface (the hidden #queryChips /
+// #posterQueryChips containers the legacy builders resolved at boot went with
+// their render path in #230).
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { useSyncExternalStore } from 'react';
 import { Button } from '@/components/ui/button';
@@ -100,15 +101,11 @@ export function AppToolbar() {
         </div>
       </div>
       {/* Active-filter chips (redesign §3-2 / P2③) — Linear型 chips rendered by the
-          filterbar component from activeFilters(); a chip click reopens its editor. The
-          hidden #queryChips / #posterQueryChips divs remain only as the container ids the
-          legacy post/poster query builders resolve at boot — removed in タスク3 with the
-          query-chips component. px-8 = #mode-post's 32px content padding, so the chip row sits
+          filterbar component from activeFilters(); a chip click reopens its editor.
+          px-8 = #mode-post's 32px content padding, so the chip row sits
           on the same left axis as the cards it filters (Linear's filter row ↔ list gutter). */}
       <div className="px-8">
         <FilterChips />
-        <div id="queryChips" hidden />
-        <div id="posterQueryChips" hidden />
       </div>
     </div>
   );
