@@ -53,9 +53,6 @@ const SHARED_EXACT = new Set([
   '--chrome-glass-bg',
   '--chrome-glass-blur',
   '--chrome-glass-rim',
-  // モーションのタイミング。--dur-*/--ease-* と同じくテーマ非依存（接頭辞が違うだけ）＝
-  // カード登場のずらし幅（34ms）は両テーマで同じ。
-  '--stagger',
 ]);
 const isShared = (n: string) => SHARED_EXACT.has(n) || SHARED_PREFIX.some((p) => n.startsWith(p));
 
