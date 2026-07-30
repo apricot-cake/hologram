@@ -11,7 +11,7 @@
 // it that travel onward into content<->background responses (BridgeAck,
 // SavedEntry), so a content script reads the host's answer under the same type
 // the host wrote it under.
-import type { HostAckView, ProtocolSkew, SavedEntry, SavedResults } from '../../native-host/protocol.mts';
+import type { HostAckView, ProtocolSkew, SavedEntry, SavedResults, TrashedEntry, TrashedResults } from '../../native-host/protocol.mts';
 import type { CropRect } from './crop.ts';
 import type { SaveFailureKind } from './native-error.ts';
 import type { SaveLogEntry, SaveStage } from './capture-log.ts';
@@ -188,7 +188,13 @@ type CheckSavedResponse = { ok: true; results: SavedResults } | { ok: false; err
 
 // ok:false = the question could not be answered (no permalink, unreachable
 // host). The caller saves anyway — see duplicate-guard.ts on failing open.
-type CheckDuplicateResponse = { ok: true; duplicate: boolean; captureId?: string | null } | { ok: false };
+//
+// `duplicate` and `trashed` are mutually exclusive and both optional: a post can
+// be in the library (duplicate), in its trash (trashed, #158), or in neither.
+// `trashed` is a separate field rather than a third value of `duplicate` because
+// the two lead to different questions — a live duplicate can be REPLACED, a
+// trashed one has no live record to replace.
+type CheckDuplicateResponse = { ok: true; duplicate: boolean; captureId?: string | null; trashed?: TrashedEntry | null } | { ok: false };
 
 interface LogCaptureResponse {
   ok: true;
@@ -229,4 +235,6 @@ export type {
   SavePostMessage,
   SaveProgressMessage,
   SaveResponse,
+  TrashedEntry,
+  TrashedResults,
 };

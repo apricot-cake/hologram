@@ -67,6 +67,7 @@ type SaveDraggedRequest = import('./protocol.mts').SaveDraggedRequest;
 type SavePostRequest = import('./protocol.mts').SavePostRequest;
 type SaveRequest = import('./protocol.mts').SaveRequest;
 type SavedEntry = import('./protocol.mts').SavedEntry;
+type TrashedEntry = import('./protocol.mts').TrashedEntry;
 
 // --- Diagnostic log -----------------------------------------------------------
 // Chrome spawns this process once per native-messaging connection, so a line
@@ -306,6 +307,12 @@ interface SavedIndex {
   savedIndexMtimeMs: number;
   journalMtimeMs: number;
   keys: Map<string, IndexEntry>; // postKey -> entry
+  // postKey -> trash record, for the posts sitting in `.trash/` (#158). Read
+  // straight out of the snapshot with no journal/inbox patching behind it,
+  // because unlike saves the trash only ever moves while the APP is running —
+  // there is no app-was-closed case for this half to cover, and the app rewrites
+  // the snapshot on every trash operation.
+  trashed: Map<string, TrashedEntry>;
 }
 let savedIndexCache: SavedIndex | null = null;
 
@@ -457,12 +464,34 @@ function scanRecentInbox(folder: string, sinceMs: number, keys: Map<string, Inde
   }
 }
 
+// One `trashed` map entry as the snapshot carries it, vetted field by field.
+// The snapshot is a file the host does not write, so an id that is not a string
+// or a deletedAt that is an object has to become null here rather than reach a
+// reply — the extension renders the date.
+function readTrashedEntry(value: unknown): TrashedEntry | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const v = value as { id?: unknown; deletedAt?: unknown };
+  return { id: typeof v.id === 'string' ? v.id : '', deletedAt: typeof v.deletedAt === 'string' && v.deletedAt ? v.deletedAt : null };
+}
+
 function buildSavedIndex(folder: string): SavedIndex {
   const indexFile = savedIndexPath();
   const savedIndexMtimeMs = statMtimeMs(indexFile);
   const keys = new Map<string, IndexEntry>();
+  const trashed = new Map<string, TrashedEntry>();
   try {
     const idx = JSON.parse(fs.readFileSync(indexFile, 'utf8'));
+    // v4 (#158). A snapshot written before it has no `trashed` map at all, which
+    // reads as "nothing in the trash" — the notice simply never appears until
+    // the app rewrites the file, exactly like every other stale-snapshot case.
+    const trash = idx && idx.trashed;
+    if (trash && typeof trash === 'object' && !Array.isArray(trash)) {
+      for (const [key, value] of Object.entries(trash)) {
+        if (typeof key !== 'string' || !key || trashed.has(key)) continue;
+        const entry = readTrashedEntry(value);
+        if (entry) trashed.set(key, entry);
+      }
+    }
     const entries = idx && idx.entries;
     if (entries && typeof entries === 'object') {
       for (const [key, value] of Object.entries(entries)) {
@@ -484,40 +513,53 @@ function buildSavedIndex(folder: string): SavedIndex {
   }
   scanRecentInbox(folder, savedIndexMtimeMs, keys);
   for (const e of readJournal(savedIndexMtimeMs)) mergeSavedEntry(keys, e.k, e.id, e.m);
-  return { folder, savedIndexMtimeMs, journalMtimeMs: statMtimeMs(journalPath()), keys };
+  return { folder, savedIndexMtimeMs, journalMtimeMs: statMtimeMs(journalPath()), keys, trashed };
 }
 
-// Cached map, rebuilt when the save folder changed or either source moved. The
+// Cached index, rebuilt when the save folder changed or either source moved. The
 // two stats are the whole cost of a warm query.
-function savedIndex(folder: string): Map<string, IndexEntry> {
+function savedIndex(folder: string): SavedIndex {
   const c = savedIndexCache;
   if (c && c.folder === folder && c.savedIndexMtimeMs === statMtimeMs(savedIndexPath()) && c.journalMtimeMs === statMtimeMs(journalPath())) {
-    return c.keys;
+    return c;
   }
   savedIndexCache = buildSavedIndex(folder);
-  return savedIndexCache.keys;
+  return savedIndexCache;
 }
 
-// {type:'query', urls:[…]} → {ok:true, results:{[url]: {id, media}|null}}.
-// null means "not in the library". An entry means saved, and its media list
-// says WHICH of the post's pictures are (#334) — empty when the library knows
-// the post but not its pictures, which the asker treats as the whole post.
+// {type:'query', urls:[…]} → {ok:true, results:{[url]: {id, media}|null}, trashed:{…}}.
+// A null result means "not in the library". An entry means saved, and its media
+// list says WHICH of the post's pictures are (#334) — empty when the library
+// knows the post but not its pictures, which the asker treats as the whole post.
 // The captureId is informational (a record whose id we could not read answers
 // with '').
+//
+// `trashed` is the second, sparse answer (#158): the urls whose posts are in the
+// library's trash. A url NEVER appears in both — a saved answer wins, because a
+// post with a live capture is saved regardless of what else of it is in the trash
+// (deleting one picture's record while another survives is ordinary). The app's
+// own index already applies that rule; it is re-applied here because the saved
+// half has two more sources behind it (the journal and the inbox rescan) that the
+// app's snapshot could not have known about.
 function handleQuery(req: QueryRequest): QueryAck {
   // Guarded despite the contract's string[], because this handler is ALSO
   // called directly by its unit tests (scripts/bridge-query.test.ts): the badge
   // query is a read, and answering an empty result beats throwing inside it.
   const urls: unknown[] = (Array.isArray(req.urls) ? req.urls : []).slice(0, QUERY_URL_CAP);
   const results: QueryAck['results'] = {};
-  if (!urls.length) return { ok: true, results };
-  const keys = savedIndex(readSaveFolder());
+  const trashed: NonNullable<QueryAck['trashed']> = {};
+  if (!urls.length) return { ok: true, results, trashed };
+  const index = savedIndex(readSaveFolder());
   for (const u of urls) {
     if (typeof u !== 'string' || !u) continue;
     const key = postKeyOf(u);
-    results[u] = (key && keys.get(key)) || null;
+    const saved = (key && index.keys.get(key)) || null;
+    results[u] = saved;
+    if (saved || !key) continue;
+    const trash = index.trashed.get(key);
+    if (trash) trashed[u] = trash;
   }
-  return { ok: true, results };
+  return { ok: true, results, trashed };
 }
 
 async function handleSave(req: SaveRequest): Promise<CaptureAck> {

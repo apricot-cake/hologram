@@ -19,6 +19,24 @@ import { postKeyOf } from '../native-host/post-key.mts';
 const MULTI = 'https://x.com/dave/status/444';
 const IMG_A = 'https://pbs.twimg.com/media/AAA?format=jpg&name=orig';
 const IMG_B = 'https://pbs.twimg.com/media/BBB?format=jpg&name=orig';
+const TWICE = 'https://x.com/jun/status/1010';
+
+// ゴミ箱に在る記録（#158）＝ライブラリの posts 行が消えた後、ファイルの隣に残るもの。
+// 呼び出し側（index.ts）が `.trash/` から読んで渡す形をそのまま置いている。
+const TRASH = [
+  // 素のケース＝ライブラリに同じ投稿は無い。
+  { captureId: 'trash-1', url: 'https://x.com/ivy/status/999', trashedAt: '2026-01-02T10:00:00Z' },
+  // 同じ投稿を2回削除した（1枚ずつ保存して1枚ずつ消した）。新しい方の日付を採る＝告知は
+  // 日付を名乗るので、古い方を採ると別の判断の日付を出してしまう。表記ゆれも畳まれる。
+  { captureId: 'trash-2a', url: TWICE, trashedAt: '2026-01-02T10:00:00Z' },
+  { captureId: 'trash-2b', url: `${TWICE.replace('x.com', 'twitter.com')}?s=20`, trashedAt: '2026-01-05T10:00:00Z' },
+  // 削除日時が無い記録（記録の書き込みが中断された）＝載るが日付は null。
+  { captureId: 'trash-3', url: 'https://x.com/kai/status/1111', trashedAt: null },
+  // postKey が作れない＝載せようがない。
+  { captureId: 'trash-4', url: null, trashedAt: '2026-01-02T10:00:00Z' },
+  // ライブラリに生きている同じ投稿がある（複数枚投稿の1枚だけを消した形）。
+  { captureId: 'trash-5', url: MULTI, trashedAt: '2026-01-02T10:00:00Z' },
+];
 
 let dir: string;
 let handle: any;
@@ -46,7 +64,9 @@ beforeAll(() => {
   // テキストのみ投稿（#365）は殻ではない＝本文がライブラリに在る。
   writePost(stmts, resolveTagId, { ...base, captureId: 'cap-f', url: 'https://x.com/hana/status/888', text: '本文だけの投稿', image: null, media: [] });
 
-  index = buildSavedIndex(handle.sqlite, () => '2026-01-03T00:00:00Z');
+  // ゴミ箱の記録は DB に無い（posts 行ごと消えている）ので呼び出し側から渡す＝#158。
+  // 実物は listTrashRecords が `.trash/*.json` から読んだもの。
+  index = buildSavedIndex(handle.sqlite, TRASH, () => '2026-01-03T00:00:00Z');
 });
 
 afterAll(() => {
@@ -55,9 +75,9 @@ afterAll(() => {
 });
 
 describe('スナップショットの形', () => {
-  test('絵と、その絵を持つレコードまで運ぶ v3', () => {
+  test('絵・その絵を持つレコード・ゴミ箱の中身まで運ぶ v4', () => {
     expect(index.version).toBe(SAVED_INDEX_VERSION);
-    expect(SAVED_INDEX_VERSION).toBe(3);
+    expect(SAVED_INDEX_VERSION).toBe(4);
   });
 
   test('鍵は postKey＝URL の表記ゆれを畳んだもの', () => {
@@ -100,5 +120,37 @@ describe('投稿の保存済みの絵', () => {
 
   test('ゴミ箱の投稿は載らない', () => {
     expect(index.entries[postKeyOf('https://x.com/frank/status/666') as string]).toBeUndefined();
+  });
+});
+
+// #158: ゴミ箱に現物が残っている間の告知の元。保存済みマップと**別の場所**に置くのが要点＝
+// TL バッジは「エントリが在る＝ライブラリが持っている」と読むので、混ぜるとゴミ箱の投稿で
+// バッジが点いて保存ボタンが消える。
+describe('ゴミ箱マップ', () => {
+  test('ゴミ箱の投稿が載る（鍵は postKey・削除日を運ぶ）', () => {
+    expect(index.trashed[postKeyOf('https://x.com/ivy/status/999') as string]).toEqual({ id: 'trash-1', deletedAt: '2026-01-02T10:00:00Z' });
+  });
+
+  test('同じ投稿を2回削除したら新しい方の日付', () => {
+    expect(index.trashed[postKeyOf(TWICE) as string]).toEqual({ id: 'trash-2b', deletedAt: '2026-01-05T10:00:00Z' });
+  });
+
+  test('削除日時が無い記録も載る（日付だけ null＝告知は日付を省く）', () => {
+    expect(index.trashed[postKeyOf('https://x.com/kai/status/1111') as string]).toEqual({ id: 'trash-3', deletedAt: null });
+  });
+
+  test('postKey が作れない記録は載らない', () => {
+    expect(Object.values(index.trashed).some((e: any) => e.id === 'trash-4')).toBe(false);
+  });
+
+  // 複数枚投稿の1枚だけを消した状態＝その投稿は「保存済み」が正しい答えで、#34 の3択が要る。
+  // ゴミ箱の告知（2択・置換なし）を出すと、生きているレコードを置換する道が消える。
+  test('ライブラリに生きている同じ投稿があるなら載らない（保存済みが勝つ）', () => {
+    expect(index.trashed[postKeyOf(MULTI) as string]).toBeUndefined();
+    expect(index.entries[postKeyOf(MULTI) as string]).toBeDefined();
+  });
+
+  test('ゴミ箱の記録を渡さなければ空（既定引数＝呼び出し側がまだ読んでいない場合）', () => {
+    expect(buildSavedIndex(handle.sqlite).trashed).toEqual({});
   });
 });

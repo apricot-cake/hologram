@@ -10,6 +10,7 @@ import { computeDelta } from './lib-post-delta.ts';
 import { postsFromDb } from './lib-db-query.ts';
 import { createDbWriter } from './lib-db-write.ts';
 import { buildSavedIndex, SAVED_INDEX_FILE } from './lib-saved-index.ts';
+import { listTrashRecords } from './lib-trash-capture.ts';
 import { drainInbox } from './lib-db-inbox.ts';
 import { applyPendingReplacements } from './lib-db-replaces.ts';
 import { compactInbox } from './lib-db-inbox-compact.ts';
@@ -222,9 +223,16 @@ let savedIndexTimer: any = null;
 let savedIndexPrimed = false;
 function scheduleSavedIndexWrite(handle: { sqlite: any }) {
   clearTimeout(savedIndexTimer);
-  savedIndexTimer = setTimeout(() => {
+  savedIndexTimer = setTimeout(async () => {
     try {
-      const data = buildSavedIndex(handle.sqlite);
+      // The trash half (#158) comes off the filesystem, not the DB: a trashed
+      // post has no posts row at all. listTrashRecords is what the trash view
+      // itself reads with, so a planted record is normalized here too (#324).
+      // A trash folder that cannot be read yields no notices rather than
+      // failing the whole write — the saved half is the more important one.
+      const trashDir = getTrashDir();
+      const trash = trashDir ? (await listTrashRecords(trashDir)).map((r) => ({ captureId: r.captureId, url: r.url, trashedAt: r.trashedAt })) : [];
+      const data = buildSavedIndex(handle.sqlite, trash);
       const dir = configDir();
       fs.mkdirSync(dir, { recursive: true });
       writeFileAtomicSync(path.join(dir, SAVED_INDEX_FILE), JSON.stringify(data));
@@ -454,6 +462,17 @@ async function purgeOldTrash() {
         break;
       }
     }
+  }
+  // An expired record's "it is in the trash" notice has to expire with it
+  // (#158): the post is gone for good now, and the index is the only thing the
+  // bridge reads. Nothing else would rewrite it — this pass touches no DB row.
+  // Guarded because purgeOldTrash is fire-and-forget (a startup timer, nothing
+  // awaits it), so a database that will not open must not surface here as an
+  // unhandled rejection — the files are already gone either way.
+  try {
+    scheduleSavedIndexWrite(ensureDb());
+  } catch {
+    /* the index keeps the stale notice until the next write; the purge itself stands */
   }
 }
 
