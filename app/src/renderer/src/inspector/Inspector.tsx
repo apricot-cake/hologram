@@ -202,11 +202,14 @@ function PosterInspector({ m }: { m: HologramInspectorModel }) {
           {m.works.map((w: { thumbSrc: string; onClick?: () => void }, i: number) => (
             <img
               // A positional strip with no stable id of its own — the index IS the identity here.
+              // decoding="async" (#569): a 3-wide grid of these can be decoding together,
+              // same call as PostCard's card thumbnail.
               key={i}
               className="aspect-square w-full cursor-pointer rounded-md border border-border bg-muted object-cover transition-transform hover:scale-105"
               src={w.thumbSrc}
               alt=""
               loading="lazy"
+              decoding="async"
               onClick={w.onClick}
             />
           ))}

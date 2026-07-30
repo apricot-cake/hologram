@@ -23,7 +23,6 @@ import { setPosterTags } from './tags.ts';
 import { hologramPosterGridSource } from './grid.ts';
 import * as folders from './folders.ts';
 import { set as storeSet } from './store.ts';
-import { isViewTransitionRunning } from '../_shared/view-transition.ts';
 
 export interface PosterGridBuilderDeps {
   t(key: string, subs?: ReadonlyArray<string | number | null | undefined>): string;
@@ -81,15 +80,12 @@ function monoHue(seed: string): number {
 
 export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
   const byId = (id: string) => document.getElementById(id) as HTMLElement;
-  const prefersReducedMotion = () => !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
-  const GRID_ANIM_MS = 950; // mirrors post-grid-builder.ts's constant (kept in lockstep with that file's own copy)
 
   let posterList: HologramUserAgg[] = [];
   function getPosterList() {
     return posterList;
   }
   let posterWorkGroups: any[] = []; // recent works shown in the poster inspector
-  let _posterAnimT: any = null;
 
   // --- Named poster folders (poster view) — { id, name, items:[posterKey] } ---
   // Reuses the shared folder-list store (folders.ts createPersistedFolderStore) so the
@@ -164,16 +160,7 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
       return;
     }
     empty.hidden = true;
-    // Entrance skipped while a View Transition is carrying this rebuild (#252 — the density
-    // switch): the transition already moves each card, and fading them in on top of that
-    // reads as one unsettled motion. Same rule as the post grid's renderPosts.
-    grid.classList.toggle('anim-in', !keepLimit && !prefersReducedMotion() && !isViewTransitionRunning());
     storeSet('posterGroups', posterList);
-    // With windowing, cells keep MOUNTING while the user scrolls — drop the
-    // entrance class once the initial animation has played, or every late
-    // cell would replay it mid-scroll (same wiring as the post grid).
-    clearTimeout(_posterAnimT);
-    if (grid.classList.contains('anim-in')) _posterAnimT = setTimeout(() => grid.classList.remove('anim-in'), GRID_ANIM_MS);
     if (!keepLimit) deps.onPosterRendered(); // per-tab history record + persist (#144 — posters entries ride the same stack)
   }
 

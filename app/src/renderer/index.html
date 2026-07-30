@@ -614,12 +614,6 @@
       transition: box-shadow var(--dur-hover) var(--ease-out), border-color var(--dur-hover), transform var(--dur-hover) var(--ease-out);
     }
     .poster-card:hover { box-shadow: var(--shadow-md); border-color: var(--border); transform: translateY(-3px) scale(1.014); z-index: 1; }
-    /* backwards (not both): a forwards fill pins transform:none and kills :hover scale
-       (see the .post-grid.anim-in note for the full reasoning). Staggered like posts. */
-    .poster-grid.anim-in .poster-card {
-      animation: hologramCardIn var(--dur-entrance) var(--ease-out) backwards;
-      animation-delay: calc(min(var(--card-i, 0), 15) * var(--stagger));
-    }
     .poster-card.inspected { border-color: var(--accent-soft); box-shadow: 0 0 0 1px var(--accent-soft); }
     .poster-av {
       width: 100%; aspect-ratio: 1; flex: none; overflow: hidden;
@@ -730,14 +724,12 @@
          re-renders offscreen cards on scroll-back — causes the "hitch" sensation. */
       overflow-anchor: none;
     }
-    /* Hidden SMOKE capture window: force cards to paint (nothing is ever "on-screen"
-       there, so content-visibility:auto would skip them all) AND skip the entrance
-       animation — hologramCardIn starts at opacity:0 with fill `both`, and the hidden
-       window doesn't advance the animation, so cards stayed invisible despite being
-       laid out with loaded images. Gated on the class so the normal app is untouched. */
+    /* Hidden SMOKE capture window: force cards to paint (nothing is ever "on-screen" there,
+       so content-visibility:auto would skip them all). Gated on the class so the normal app
+       is untouched. The companion rule that cancelled the card entrance is gone with the
+       entrance itself — a hidden window never advanced that animation, so cards stayed at
+       its opacity:0 start frame and captured blank. */
     html.smoke-capture .post-card { content-visibility: visible; }
-    html.smoke-capture .post-grid .post-card,
-    html.smoke-capture .empty-state { animation: none !important; opacity: 1 !important; transform: none !important; }
     /* Hover lift: deeper shadow + a rise-and-slight-grow reads as "picked up"
        (Pinterest/gallery idiom; values from the motion-study canvas 2026-07-05).
        All layouts incl. list rows — the whole row lifts as one element; z-index
@@ -1860,13 +1852,12 @@
     } /* @layer legacy */
   </style>
 
-  <!-- Motion: tasteful, fast entrance/open animations layered on top of the
-       existing hover transitions. Card entrance plays only on a fresh render
-       (viewer.js adds .anim-in; load-more / reduced-motion skip it). Everything
-       is neutralized under prefers-reduced-motion. -->
+  <!-- Motion: fast open/appear animations layered on top of the existing hover
+       transitions. Everything is neutralized under prefers-reduced-motion. The grid
+       itself has no entrance animation — its only motion is the density switch's
+       View Transition (ADR 0014). -->
   <style>
     @layer legacy {
-    @keyframes hologramCardIn { from { opacity: 0; transform: translateY(11px) scale(.985); } to { opacity: 1; transform: none; } }
     @keyframes hologramFadeIn { from { opacity: 0; } to { opacity: 1; } }
     @keyframes hologramPopIn { from { opacity: 0; transform: scale(.96); } to { opacity: 1; transform: none; } }
     @keyframes hologramPanelIn { from { opacity: 0; transform: translateX(18px); } to { opacity: 1; transform: none; } }
@@ -1885,27 +1876,21 @@
       70% { transform: rotate(45deg) scale(1.15); opacity: 1; }
       100% { transform: rotate(45deg) scale(1); }
     }
-    /* Card entrance — only when the grid is (re)built fresh, e.g. filter/sort/search.
-       Fill is `backwards`, NOT `both`: the grid keeps .anim-in until the next render,
-       so a forwards fill would pin the final `transform: none` on every card forever —
-       and an animation's value outranks the `:hover` rule, which silently killed the
-       hover-scale lift. `backwards` still holds the hidden pre-start state but stops
-       contributing a transform once the run ends, so :hover scale works again.
-       Staggered: each card delays by its model index (--card-i, inline from the
-       component), capped at 15 steps so the grid's .anim-in removal window
-       (GRID_ANIM_MS in viewer.js) can cover the last card. */
-    .post-grid.anim-in .post-card {
-      animation: hologramCardIn var(--dur-entrance) var(--ease-out) backwards;
-      animation-delay: calc(min(var(--card-i, 0), 15) * var(--stagger));
-    }
+    /* The staggered card entrance is gone (#252). It played on every fresh build — so on every
+       filter, sort and search, not just the first load — and took ~0.87s for the last card to
+       settle from opacity:0, which is time spent not reading a library you are in the middle of
+       narrowing down. It also fought the virtualized grid: cells keep mounting as you scroll,
+       so the class had to be stripped on a timer or late cells replayed it mid-scroll. Removing
+       it takes that timer, both motion tokens, the --card-i plumbing and a :hover-scale hazard
+       (a forwards fill pinned transform:none and outranked the hover rule) with it. Grid motion
+       is now the density switch's View Transition only — see ADR 0014. */
 
-    /* Empty state: same slide-in as cards when first shown. */
-    .empty-state.anim-in { animation: hologramCardIn var(--dur-entrance) var(--ease-out) both; }
-
-    /* View mode transition (card↔tile↔list): scope to the grid only so sidebar
-       doesn't repaint. Old grid fades out quickly; new grid's anim-in handles
-       the card entrance. ::view-transition-new gets animation:none so we don't
-       double-animate with anim-in. */
+    /* View mode transition (card↔tile↔list): scope to the grid only so the sidebar doesn't
+       repaint. The old grid fades out quickly and the new one is simply there — the movement
+       the eye follows belongs to the individually named cards (ADR 0014), so a fade on the
+       container as well would only wash them out. (The original reason for animation:none was
+       to avoid doubling up with the staggered card entrance; that entrance is gone, and the
+       rule stands on its own now.) */
     ::view-transition-old(post-grid) { animation: hologramFadeIn .12s ease-in reverse both; }
     ::view-transition-new(post-grid) { animation: none; }
     /* The post-grid snapshot renders in the TOP LAYER and would cover the sticky

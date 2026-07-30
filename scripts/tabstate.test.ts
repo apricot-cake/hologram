@@ -306,30 +306,38 @@ describe('serializeTabs', () => {
     expect(p.activeTabId).toBe('b');
   });
 
-  test('フィルタタブの id/pinned/title/state/scrollTop が載る', () => {
-    expect(p.tabs[0]).toMatchObject({ id: 'a', pinned: true, title: 'メモ', scrollTop: 120 });
-    expect(p.tabs[0].state.f).toEqual([]);
+  // #565: DB が列に持つ3つ以外は全て state の中＝main は state を中身を見ずに
+  // 1つの塊として保存する。兄弟が増えると main の INSERT が黙って捨てる。
+  test('タブ直下は id/pinned/title/state の4つだけ', () => {
+    expect(Object.keys(p.tabs[0]).sort()).toEqual(['id', 'pinned', 'state', 'title']);
+  });
+
+  test('フィルタタブの id/pinned/title と、塊の中の view/scrollTop が載る', () => {
+    expect(p.tabs[0]).toMatchObject({ id: 'a', pinned: true, title: 'メモ' });
+    expect(p.tabs[0].state.scrollTop).toBe(120);
+    expect(p.tabs[0].state.view?.f).toEqual([]);
   });
 
   test('nav スタックはパース済みオブジェクトとして永続化する', () => {
-    expect(p.tabs[0].nav.hist).toHaveLength(1);
-    expect(p.tabs[0].nav.hist[0].kind).toBe('posts');
-    expect(p.tabs[0].nav.idx).toBe(0);
+    expect(p.tabs[0].state.nav?.hist).toHaveLength(1);
+    expect(p.tabs[0].state.nav?.hist[0].kind).toBe('posts');
+    expect(p.tabs[0].state.nav?.idx).toBe(0);
   });
 
   test('ランタイム専用フィールドは生では載せない', () => {
     expect(p.tabs[0]).not.toHaveProperty('_navHist');
     expect(p.tabs[0]).not.toHaveProperty('_g');
+    expect(p.tabs[0].state).not.toHaveProperty('_g');
   });
 
   test('画像エントリの nav と autoTitle が載る', () => {
-    expect(p.tabs[1].nav.hist[0].kind).toBe('image');
-    expect(p.tabs[1].autoTitle).toBe(true);
+    expect(p.tabs[1].state.nav?.hist[0].kind).toBe('image');
+    expect(p.tabs[1].state.autoTitle).toBe(true);
   });
 
   test('スタックの無いタブは nav/autoTitle が undefined（JSON で消える）', () => {
-    expect(p.tabs[2].nav).toBeUndefined();
-    expect(p.tabs[2].autoTitle).toBeUndefined();
+    expect(p.tabs[2].state.nav).toBeUndefined();
+    expect(p.tabs[2].state.autoTitle).toBeUndefined();
   });
 });
 
@@ -342,21 +350,21 @@ describe('sanitizeSavedTabs', () => {
     expect(sanitizeSavedTabs({ tabs: [] }, genId)).toBeNull();
   });
 
-  describe('正規化と自己修復', () => {
+  describe('正規化', () => {
     const st = sanitizeSavedTabs(
       {
-        activeTabId: 'b',
+        activeTabId: 'c',
         tabs: [
-          { pinned: 1, title: '', state: { f: [] }, scrollTop: '9' },
-          // #144 以前の image タブの形 → 1コマの image 履歴へ自己修復する
-          { id: 'b', type: 'image', img: { recs: ['ok', 42, null, 'ok2'], idx: '3' } },
+          { pinned: 1, title: '', state: { view: { f: [] }, scrollTop: '9' } },
           // 永続化された nav スタック: 壊れた行は落ち、idx は残った行へ再マップされる
           {
             id: 'c',
-            scrollTop: 55,
-            nav: {
-              hist: [{ u: '/posts', kind: 'posts', state: { f: [] } }, { bogus: true }, { u: '/posters', kind: 'posters', state: { sort: 'count' } }, { u: '/image/x', kind: 'image', state: { recs: [], idx: 0 } }],
-              idx: 2,
+            state: {
+              scrollTop: 55,
+              nav: {
+                hist: [{ u: '/posts', kind: 'posts', state: { f: [] } }, { bogus: true }, { u: '/posters', kind: 'posters', state: { sort: 'count' } }, { u: '/image/x', kind: 'image', state: { recs: [], idx: 0 } }],
+                idx: 2,
+              },
             },
           },
         ],
@@ -377,25 +385,8 @@ describe('sanitizeSavedTabs', () => {
       expect(st.tabs[0]._navHist).toBeUndefined();
     });
 
-    test('旧 image タブは1コマの image エントリへ変換される', () => {
-      const b = st.tabs[1];
-      const e = JSON.parse(b._navHist[0]);
-
-      expect(b._navHist).toHaveLength(1);
-      expect(b._navIdx).toBe(0);
-      expect(e).toMatchObject({ kind: 'image', u: '/image/ok' });
-    });
-
-    test('変換で recs は文字列だけになり、idx はクランプされ、自動タイトル印が付く', () => {
-      const e = JSON.parse(st.tabs[1]._navHist[0]);
-
-      expect(e.state.recs).toHaveLength(2);
-      expect(e.state.idx).toBe(0);
-      expect(st.tabs[1]._autoTitle).toBe(true);
-    });
-
     test('nav スタックは不正なコマを捨て、idx を残存コマへ再マップする', () => {
-      const c = st.tabs[2];
+      const c = st.tabs[1];
 
       expect(c._navHist.map((s: string) => JSON.parse(s).kind)).toEqual(['posts', 'posters']);
       expect(c._navIdx).toBe(1);
@@ -403,19 +394,12 @@ describe('sanitizeSavedTabs', () => {
     });
 
     test('保存された activeTabId が実在すれば採る', () => {
-      expect(st.activeTabId).toBe('b');
+      expect(st.activeTabId).toBe('c');
     });
   });
 
   test('activeTabId が実在しなければ先頭タブへ落ちる', () => {
     expect(sanitizeSavedTabs({ activeTabId: 'ghost', tabs: [{ id: 'a' }] }, genId).activeTabId).toBe('a');
-  });
-
-  test('旧 image タブで recs が配列でなければ履歴を作らない（素のタブになる）', () => {
-    const st3 = sanitizeSavedTabs({ tabs: [{ id: 'a', type: 'image', img: { idx: 1 } }] }, genId);
-
-    expect(st3.tabs[0]._navHist).toBeUndefined();
-    expect(st3.tabs[0]._autoTitle).toBe(false);
   });
 
   // #42: 廃止した葉の型を読み込み時に直す＝保存済みクエリ木にもタイトルの影にも残る
@@ -427,11 +411,13 @@ describe('sanitizeSavedTabs', () => {
           {
             id: 'm',
             state: {
-              f: [
-                { type: 'collection', value: 'x' },
-                { type: 'tag', value: 't' },
-              ],
-              tree: { kind: 'group', op: 'and', neg: false, children: [{ kind: 'cond', type: 'collection', value: 'x' }] },
+              view: {
+                f: [
+                  { type: 'collection', value: 'x' },
+                  { type: 'tag', value: 't' },
+                ],
+                tree: { kind: 'group', op: 'and', neg: false, children: [{ kind: 'cond', type: 'collection', value: 'x' }] },
+              },
             },
           },
         ],

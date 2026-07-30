@@ -11,7 +11,7 @@
 // aspect, inspected) into a plain model; this component only lays it out.
 // Raw strings (text, names) are passed unescaped — JSX escapes them.
 
-import type { CSSProperties, ReactEventHandler, Ref } from 'react';
+import type { ReactEventHandler, Ref } from 'react';
 
 // The cell model viewer.js resolves per card (see its cardModel()) — only the
 // fields this component lays out.
@@ -86,15 +86,7 @@ export function PostCard({ m, L, cellRef, onImgLoad }: { m: PostCardModel; L: Re
   const hasStats = stats.length > 0;
   const hasFoot = !!(fd.post || fd.cap);
   return (
-    <div
-      ref={cellRef}
-      className={'post-card' + ((m.nImg as number) > 1 ? ' grouped' : '') + (m.selected ? ' selected' : '') + (m.noUrl ? ' no-url' : '') + (m.inspected ? ' inspected' : '')}
-      data-url={m.url}
-      data-index={m.index}
-      data-key={m.postKey}
-      // --card-i drives the entrance stagger delay (CSS caps it via min()).
-      style={{ '--card-i': m.index } as CSSProperties}
-    >
+    <div ref={cellRef} className={'post-card' + ((m.nImg as number) > 1 ? ' grouped' : '') + (m.selected ? ' selected' : '') + (m.noUrl ? ' no-url' : '') + (m.inspected ? ' inspected' : '')} data-url={m.url} data-index={m.index} data-key={m.postKey}>
       {/* Multi-image group → the whole card reads as a duplicated pile: rotated
           dummy cards peek out BEHIND this one (z-index:-1), each carrying the
           group's 2nd/3rd real thumbnail. Per-layout geometry lives in CSS. */}

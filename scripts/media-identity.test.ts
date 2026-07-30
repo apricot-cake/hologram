@@ -17,7 +17,9 @@ import { getMediaIdentitySite, mediaKeyOf } from '../extension/utils/extractor/i
 
 const FIXTURES_DIR = path.join(import.meta.dirname, 'fixtures', 'content');
 
-const KEYS = ['window', 'document', 'location', 'Element', 'HTMLElement', 'HTMLAnchorElement', 'HTMLImageElement', 'Node'];
+// getComputedStyle: only Misskey's matchesPage (the --MI_THEME-accent
+// fingerprint, shared with site-detect.ts) reads it — see content-fixtures.test.ts.
+const KEYS = ['window', 'document', 'location', 'getComputedStyle', 'Element', 'HTMLElement', 'HTMLAnchorElement', 'HTMLImageElement', 'Node'];
 
 function installFixture(fixtureFile: string, url: string) {
   const dom = new JSDOM(fs.readFileSync(path.join(FIXTURES_DIR, fixtureFile), 'utf8'), { url });
@@ -176,6 +178,39 @@ describe('pixiv', () => {
     setLocation(ctx.dom, 'https://www.pixiv.net/artworks/2001');
     const img = ctx.document.getElementById('imgLocationFallback');
     expect(config.extractIdentity(img)).toEqual({ postId: '2001', link: 'https://www.pixiv.net/artworks/2001' });
+  });
+});
+
+describe('Misskey', () => {
+  let ctx: ReturnType<typeof installFixture>;
+  let config: any;
+
+  beforeAll(() => {
+    ctx = installFixture('media-misskey.html', 'https://misskey.io/');
+    config = getMediaIdentitySite();
+  });
+  afterAll(() => ctx.restore());
+
+  test('プラットフォームを判定する', () => {
+    expect(config?.platform).toBe('misskey');
+  });
+
+  test('投稿の絵はノートの article 経由で同定される', () => {
+    const img = ctx.document.getElementById('imgPost1');
+    expect(config.extractIdentity(img)).toEqual({ postId: '9abc', link: 'https://misskey.io/notes/9abc' });
+  });
+
+  test('投稿の絵は isPostMedia が真', () => {
+    expect(config.isPostMedia(ctx.document.getElementById('imgPost1'))).toBe(true);
+  });
+
+  test('同じノート内のアバターも投稿へは同定される（identity と isPostMedia は別のゲート）', () => {
+    const img = ctx.document.getElementById('imgAvatar');
+    expect(config.extractIdentity(img)).toEqual({ postId: '9def', link: 'https://misskey.io/notes/9def' });
+  });
+
+  test('アバターは /@ プロフィールリンクの中にあるため isPostMedia が偽', () => {
+    expect(config.isPostMedia(ctx.document.getElementById('imgAvatar'))).toBe(false);
   });
 });
 

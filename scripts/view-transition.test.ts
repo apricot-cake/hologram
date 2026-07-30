@@ -9,7 +9,7 @@
 // 直接見るこの層だけ（実際に何フレーム動いたかは見られない＝そこは実機の目視）。
 import { JSDOM } from 'jsdom';
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
-import { canViewTransition, isViewTransitionRunning, runViewTransition } from '../app/src/renderer/src/_shared/view-transition.ts';
+import { canViewTransition, runViewTransition } from '../app/src/renderer/src/_shared/view-transition.ts';
 
 const KEYS = ['window', 'document', 'Element', 'HTMLElement', 'Node'];
 
@@ -36,10 +36,8 @@ function installDom(reducedMotion = false) {
   transitions = [];
 }
 
-// 1回の startViewTransition ＝ 1本の finished。install ごとに1本を共有させると、
-// 連続起動のテストが同じ Promise を取り合って偽の結果になる（実 API は当然1本ずつ）。
-// テスト間に漏れる状態が1つある＝モジュール内の「走行中の本数」カウンタなので、
-// afterEach で必ず全部 settle させて 0 へ戻す。
+// 1回の startViewTransition ＝ 1本の finished（実 API と同じ）。install ごとに1本を
+// 共有させると、複数起動のテストが同じ Promise を取り合って偽の結果になる。
 function installViewTransitionApi() {
   (dom.window.document as any).startViewTransition = (cb: () => void): FakeTransition => {
     let settle!: () => void;
@@ -76,10 +74,9 @@ beforeEach(() => {
   installDom();
 });
 afterEach(async () => {
-  // 走行中カウンタはモジュール内に残るので、開けたものは全部閉じてから次のテストへ渡す。
+  // 開けた遷移は全部閉じてから次のテストへ渡す（finished を待つハンドラが後から走らないように）。
   for (const t of transitions) t.settle();
   await flush();
-  expect(isViewTransitionRunning()).toBe(false);
   for (const k of KEYS) (global as any)[k] = saved[k];
 });
 
@@ -175,78 +172,6 @@ describe('名前の付け外し', () => {
     fail();
     await flush();
     expect(nameOf(a)).toBe('');
-  });
-});
-
-describe('遷移中フラグ（グリッドのカード入場を二重に走らせないための唯一の合図）', () => {
-  test('コールバックの中で既に立っている＝グリッドの再描画がそれを見られる', () => {
-    installViewTransitionApi();
-    let insideCallback: boolean | null = null;
-    runViewTransition(() => {
-      insideCallback = isViewTransitionRunning();
-    });
-    expect(isViewTransitionRunning()).toBe(true); // 古い状態のキャプチャ中も立っている
-    started[0]();
-    expect(insideCallback).toBe(true);
-  });
-
-  test('finished で降りる', async () => {
-    installViewTransitionApi();
-    runViewTransition(() => {});
-    started[0]();
-    expect(isViewTransitionRunning()).toBe(true);
-    finish();
-    await flush();
-    expect(isViewTransitionRunning()).toBe(false);
-  });
-
-  test('reject でも降りる（降りないとカード入場が二度と出なくなる）', async () => {
-    installViewTransitionApi();
-    runViewTransition(() => {});
-    fail();
-    await flush();
-    expect(isViewTransitionRunning()).toBe(false);
-  });
-
-  test('API が無い回は立てない＝素の更新なので入場アニメは通常どおり出てよい', () => {
-    let during: boolean | null = null;
-    runViewTransition(() => {
-      during = isViewTransitionRunning();
-    });
-    expect(during).toBe(false);
-    expect(isViewTransitionRunning()).toBe(false);
-  });
-
-  test('名前が重複して諦めた回も立てない（演出が無いのに入場まで消えると何も動かない）', () => {
-    installViewTransitionApi();
-    const a = card('cap-a');
-    const b = card('cap-a');
-    let during: boolean | null = null;
-    runViewTransition(
-      () => {
-        during = isViewTransitionRunning();
-      },
-      () =>
-        new Map([
-          [a, 'post-card-cap-a'],
-          [b, 'post-card-cap-a'],
-        ]),
-    );
-    expect(started).toHaveLength(0);
-    expect(during).toBe(false);
-  });
-
-  test('連続で起動しても、先に終わった1本目で降りない（素朴な真偽値だと降りる）', async () => {
-    installViewTransitionApi();
-    runViewTransition(() => {}); // 1本目
-    runViewTransition(() => {}); // 2本目（密度を続けて切り替えた時の形）
-    expect(transitions).toHaveLength(2);
-    transitions[0].settle(); // 先に始まった方だけ終わる
-    await flush();
-    expect(isViewTransitionRunning()).toBe(true); // 2本目はまだ走っている
-    transitions[1].settle();
-    await flush();
-    expect(isViewTransitionRunning()).toBe(false);
   });
 });
 

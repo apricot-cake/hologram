@@ -47,17 +47,12 @@ function _TagIcon() {
 
 function PosterCard({ c }: { c: PosterCardModel }) {
   return (
-    <div
-      className={'poster-card' + (c.inspected ? ' inspected' : '')}
-      data-index={c.index}
-      data-key={c.posterKey}
-      tabIndex={0}
-      // --card-i drives the entrance stagger delay (CSS caps it via min()).
-      style={{ '--card-i': c.index } as CSSProperties}
-    >
+    <div className={'poster-card' + (c.inspected ? ' inspected' : '')} data-index={c.index} data-key={c.posterKey} tabIndex={0}>
       <div className="poster-av">
         {c.avatarSrc ? (
-          <img src={c.avatarSrc} alt="" loading="lazy" />
+          // decoding="async" (#569): a virtualized grid can have many of these
+          // decoding at once — same call as PostCard's card thumbnail.
+          <img src={c.avatarSrc} alt="" loading="lazy" decoding="async" />
         ) : (
           // Circular monogram, not a card-filling letter (#107) — --mono-h carries the
           // per-poster hue the CSS tints the disc with (poster-grid-builder's monoHue).

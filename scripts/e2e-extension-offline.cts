@@ -122,6 +122,25 @@ async function waitForCapture(libraryDir: string, timeoutMs = 20_000): Promise<{
     if (!activation.ok) throw new Error(`capture activation failed: ${activation.error}`);
 
     await page.locator('#capture-target').click({ position: { x: 100, y: 100 } });
+    // Watch the banner settle while the save runs. The point is the version
+    // handshake (#205): this is the only place a REAL extension and a REAL host
+    // of the same generation meet, so it is the only place that can prove a
+    // matched pair says nothing about updating. A false "update Hologram" on
+    // every save would pass every unit test — both sides would be behaving
+    // exactly as told — and reach the user as a permanent nag.
+    const bannerSettled = page
+      .waitForFunction(
+        () => {
+          const el = document.querySelector('hologram-extension-ui')?.shadowRoot?.querySelector('.surface[data-variant="banner"]') as HTMLElement | null;
+          // The three states a save ENDS in — everything else (idle, active
+          // while picking a post, busy while saving) is on the way there.
+          const state = el?.dataset.state;
+          if (!el || (state !== 'success' && state !== 'partial' && state !== 'error')) return null;
+          return { state, label: el.querySelector('.label')?.textContent || '' };
+        },
+        { timeout: 30000 },
+      )
+      .then((handle: any) => handle.jsonValue());
     const landed = await waitForCapture(nativeHost.libraryDir);
     const envelope = JSON.parse(fs.readFileSync(path.join(nativeHost.libraryDir, '.hologram-inbox', 'new', landed.envelope), 'utf8'));
     const jpeg = fs.readFileSync(path.join(nativeHost.libraryDir, landed.jpg));
@@ -140,7 +159,13 @@ async function waitForCapture(libraryDir: string, timeoutMs = 20_000): Promise<{
       throw new Error('capture log has no successful bridge outcome');
     }
 
-    console.log(`PASS e2e-extension-offline: ${landed.jpg} + .hologram-inbox/new/${landed.envelope}`);
+    const banner = await bannerSettled;
+    // 'partial' is the state a skew is shown in, so a plain 'success' is the
+    // assertion; the wording check names what would be wrong if it ever is not.
+    if (banner.state !== 'success') throw new Error(`banner settled at ${banner.state}, wanted success: ${banner.label}`);
+    if (/update/i.test(banner.label)) throw new Error(`a matched extension/host pair asked the user to update: ${banner.label}`);
+
+    console.log(`PASS e2e-extension-offline: ${landed.jpg} + .hologram-inbox/new/${landed.envelope} (banner: ${banner.label})`);
   } finally {
     if (browser) await browser.close().catch(() => {});
     fs.rmSync(extensionDir, { recursive: true, force: true });

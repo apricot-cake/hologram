@@ -5,8 +5,8 @@
 // (#400 — native-host/protocol.mts). A save request built here is the same
 // declaration the bridge's parse produces, so a renamed or missing field is a
 // compile error on this side rather than a save that fails on disk.
-import { readHostResponse, responseId } from '../../native-host/protocol.mts';
-import type { CaptureMetadata, HostRequest, SavedResults } from '../../native-host/protocol.mts';
+import { protocolSkewOf, readHostResponse, responseId } from '../../native-host/protocol.mts';
+import type { CaptureMetadata, HostRequest, ProtocolSkew, SavedResults } from '../../native-host/protocol.mts';
 import { CROP_TIMEOUT_MS, NATIVE_HOST_TIMEOUT_MS, SAVED_QUERY_TIMEOUT_MS, withDeadline } from './deadline.ts';
 import { extractorFor, fetchPostMetadata, getHostname, highResUrlOf, isAllowedSender, mediaKeyOf } from './extractor/index.ts';
 import type { PostRecord } from './extractor/types.ts';
@@ -258,7 +258,7 @@ export function startBackground(): void {
     trace.passed('bridge');
     markSaved([record.url, postUrl], ack?.captureId || captureId, savedMediaUrls(ack), tab.id);
     const grouped = await bumpRecentSave(record.url);
-    return { ...ack, metaOk, metaReason: meta.metaError || null, grouped };
+    return { ...ack, metaOk, metaReason: meta.metaError || null, grouped, hostSkew: skewNote() };
   }
 
   chrome.runtime.onMessage.addListener((message: ContentToBackgroundMessage, sender, sendResponse) => {
@@ -370,7 +370,37 @@ export function startBackground(): void {
     // grouped = prior saves of this post this session → the banner says the save
     // merged with them (the app folds same-URL records into one card).
     const grouped = await bumpRecentSave(record.url);
-    chrome.tabs.sendMessage(tab.id, { type: 'notify', success: true, metaOk, metaReason: meta.metaError || null, grouped } satisfies NotifyMessage).catch(() => {});
+    chrome.tabs.sendMessage(tab.id, { type: 'notify', success: true, metaOk, metaReason: meta.metaError || null, grouped, hostSkew: skewNote() } satisfies NotifyMessage).catch(() => {});
+  }
+
+  // --- Protocol version handshake (#205) ----------------------------------------
+  // That the two halves are the same generation is an ASSUMPTION: the extension
+  // updates through the Chrome Web Store and the host through the desktop app's
+  // own updater, so "one of them is behind" is the normal state of affairs after
+  // release, not an accident. Every host reply carries the contract version it
+  // was built from (native-host/protocol.mts) and this is where it is compared
+  // with the one this bundle was built from.
+  //
+  // NOTHING IS GATED ON THE RESULT. A skew never refuses a save, never retries,
+  // never changes which fields are sent, and no code below asks which version
+  // answered — the save is attempted exactly as it always was and the outcome
+  // carries a note about which side to update. Losing a post because a number
+  // did not match is the failure this check exists to prevent, not to cause.
+  //
+  // Remembered on the worker rather than stored: it costs one field, a restarted
+  // worker learns it again from the very next reply, and a stale answer is worse
+  // than none (it would keep telling the user to update something they just did).
+  let hostSkew: ProtocolSkew | null = null; // null until any host has answered
+
+  function noteHostProtocol(version: number | null): void {
+    hostSkew = protocolSkewOf(version);
+  }
+
+  // What a save's outcome should say about the pairing, or null for nothing to
+  // say. `null` covers both halves matching AND no host having answered yet — a
+  // save that never reached the host has its own, better, message.
+  function skewNote(): ProtocolSkew | null {
+    return hostSkew && hostSkew !== 'match' ? hostSkew : null;
   }
 
   // Send a message to the native messaging host (which writes the sidecar + image
@@ -411,6 +441,9 @@ export function startBackground(): void {
       // below, in slightly different words.
       port.onMessage.addListener((msg) => {
         const res = readHostResponse(msg);
+        // Read off every reply, the failures included (#205): a host far enough
+        // behind to be refusing saves is the one whose version matters most.
+        noteHostProtocol(res.protocolVersion);
         if (res.ok) finish(null, res.ack);
         else finish(new Error(res.error));
       });
@@ -518,6 +551,10 @@ export function startBackground(): void {
       pendingQueries.set(id, {
         resolve: (msg) => {
           const res = readHostResponse(msg);
+          // The badge's port is often the FIRST thing to reach the host (a
+          // timeline asks before anything is saved), so this is usually where a
+          // skew is noticed — in time for the first save's banner to say so.
+          noteHostProtocol(res.protocolVersion);
           resolve(res.ok ? res.ack.results || {} : {});
         },
         reject,
@@ -991,7 +1028,7 @@ export function startBackground(): void {
     // saved without post info isn't shown as a plain success. grouped = prior
     // saves of this post this session (the overlay says the save merged).
     const grouped = await bumpRecentSave(record.url);
-    return { ...ack, metaOk, metaReason: meta.metaError || null, grouped };
+    return { ...ack, metaOk, metaReason: meta.metaError || null, grouped, hostSkew: skewNote() };
   }
 }
 

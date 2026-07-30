@@ -164,6 +164,14 @@ export interface PosterTagsState {
 }
 
 // --- Tabs ---------------------------------------------------------------
+/**
+ * One persisted tab. Exactly these four fields cross the boundary: three the DB
+ * indexes as columns, plus `state` — one opaque blob main stores verbatim and
+ * never reads into. The renderer owns the blob's shape (services/tab-state.ts's
+ * HologramTabPersist: the query snapshot, the nav stack, the scroll position),
+ * so it can grow a field without a schema change; anything sent NEXT to `state`
+ * is dropped on the way to the DB (#565).
+ */
 export interface TabRecord {
   id: string;
   pinned: boolean;

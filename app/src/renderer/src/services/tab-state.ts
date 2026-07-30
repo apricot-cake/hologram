@@ -257,24 +257,53 @@ export function makeNavHistory(deps: { cap: number; enabled(): boolean; snapshot
   return { push, replace, record, back, forward, current, applyCurrent, adopt, saveInto, canBack: () => idx > 0, canForward: () => idx < hist.length - 1 };
 }
 
-// tabs.json payload. scrollTop rides along so the view restores across
-// RESTART, not just tab switches (main.js writes the payload verbatim — no
-// whitelist). The old renderLimit field is gone with the windowed path: the
-// virtualized grid restores any depth from scrollTop alone (stale saved
-// fields are ignored). The per-tab back/forward stack persists as parsed
-// entry objects under `nav` (#144 未決5 — NAV_CAP is the only size bound;
-// Chrome carries tab history across restarts the same way).
-export function serializeTabs(tabs: HologramTab[], activeTabId: string | null): { activeTabId: string | null; tabs: Array<{ [k: string]: any }> } {
+// Everything one tab needs to come back after a restart, as ONE opaque blob:
+// main stores it verbatim in the tabs table's `state` column and never looks
+// inside (lib-db-schema.ts says so at the table). scrollTop rides along so the
+// view restores across RESTART, not just tab switches; the per-tab back/forward
+// stack persists as parsed entry objects under `nav` (#144 未決5 — NAV_CAP is
+// the only size bound; Chrome carries tab history across restarts the same way).
+// The old renderLimit field is gone with the windowed path: the virtualized grid
+// restores any depth from scrollTop alone (stale saved fields are ignored).
+export interface HologramTabPersist {
+  /** The posts-grid snapshot applyState restores from (null on a never-touched tab). */
+  view: HologramTabSnapshot | null;
+  /** Image-view stamped title (cleared on grid entries). */
+  autoTitle?: boolean;
+  scrollTop?: number;
+  nav?: { hist: HologramNavEntry[]; idx?: number };
+}
+// One persisted tab. id / pinned / title are the ONLY siblings of the blob —
+// they are the columns main indexes (position comes from the array order).
+// #565: nav / scrollTop / autoTitle used to ride as siblings too and main's
+// INSERT dropped them silently, so the back/forward stack and the scroll
+// position died at every restart while every test stayed green. The explicit
+// type here is the guard that keeps it fixed: a fourth sibling is now a
+// compile error, so the next per-tab field has to go where it survives.
+export interface HologramPersistedTab {
+  id: string;
+  pinned: boolean;
+  title: string | null;
+  state: HologramTabPersist;
+}
+export interface HologramPersistedTabs {
+  activeTabId: string | null;
+  tabs: HologramPersistedTab[];
+}
+
+export function serializeTabs(tabs: HologramTab[], activeTabId: string | null): HologramPersistedTabs {
   return {
     activeTabId,
     tabs: tabs.map((t) => ({
       id: t.id,
       pinned: t.pinned,
       title: t.title,
-      autoTitle: t._autoTitle || undefined, // image-view stamped title (cleared on grid entries)
-      state: t.state,
-      scrollTop: t._scrollTop,
-      nav: Array.isArray(t._navHist) && t._navHist.length ? { hist: t._navHist.map((s) => JSON.parse(s)), idx: t._navIdx } : undefined,
+      state: {
+        view: t.state ?? null,
+        autoTitle: t._autoTitle || undefined,
+        scrollTop: t._scrollTop,
+        nav: Array.isArray(t._navHist) && t._navHist.length ? { hist: t._navHist.map((s) => JSON.parse(s)), idx: t._navIdx } : undefined,
+      },
     })),
   };
 }
@@ -312,9 +341,7 @@ function sanitizeNavEntry(e: any): string | null {
 
 // Restore-side sanitizer for a persisted tabs.json payload. Returns null when
 // nothing usable was saved (the caller seeds a fresh single tab). The nav
-// stack is validated row-by-row (bad rows dropped, idx clamped); a pre-#144
-// image tab ({type:'image', img}) self-heals into a one-entry image history —
-// the unified shape (one-off migration, droppable before release).
+// stack is validated row-by-row (bad rows dropped, idx clamped).
 export function sanitizeSavedTabs(saved: unknown, genId: () => string): { tabs: HologramTab[]; activeTabId: string } | null {
   // `saved` is raw tabs.json JSON (unknown/older shape on disk) — narrow to a
   // loose shape once here, matching the HologramPost "open JSON" convention,
@@ -322,36 +349,32 @@ export function sanitizeSavedTabs(saved: unknown, genId: () => string): { tabs: 
   const data = saved as { tabs?: any[]; activeTabId?: string } | null | undefined;
   if (!data || !Array.isArray(data.tabs) || data.tabs.length === 0) return null;
   const tabs: HologramTab[] = data.tabs.map((t) => {
+    // Everything except the three columns lives inside the blob (serializeTabs).
+    const p: Partial<HologramTabPersist> = t.state && typeof t.state === 'object' ? t.state : {};
     let navHist: string[] | undefined;
     let navIdx: number | undefined;
-    if (t.nav && Array.isArray(t.nav.hist)) {
-      const raw: any[] = t.nav.hist;
+    if (p.nav && Array.isArray(p.nav.hist)) {
+      const raw: any[] = p.nav.hist;
       const kept = raw.map((e, i) => ({ s: sanitizeNavEntry(e), i })).filter((x) => x.s != null);
       if (kept.length) {
         navHist = kept.map((x) => x.s as string);
-        const savedIdx = typeof t.nav.idx === 'number' ? t.nav.idx : raw.length - 1;
+        const savedIdx = typeof p.nav.idx === 'number' ? p.nav.idx : raw.length - 1;
         // Point at the kept row nearest the saved current row (dropped rows shift it).
         let mapped = kept.filter((x) => x.i <= savedIdx).length - 1;
         if (mapped < 0) mapped = 0;
         navIdx = Math.min(mapped, navHist.length - 1);
-      }
-    } else if (t.type === 'image' && t.img && Array.isArray(t.img.recs)) {
-      const s = sanitizeNavEntry({ kind: 'image', state: { recs: t.img.recs, idx: t.img.idx } });
-      if (s) {
-        navHist = [s];
-        navIdx = 0;
       }
     }
     return {
       id: t.id || genId(),
       pinned: !!t.pinned,
       title: t.title || null,
-      _autoTitle: !!t.autoTitle || (t.type === 'image' && !!navHist),
+      _autoTitle: !!p.autoTitle,
       // Self-heal retired leaf-type names in the persisted query tree + its title
       // shadow (e.g. #42 'collection'→'folder'). applyState prefers state.tree, so
       // both are normalized; the next tab-switch write persists the healed shape.
-      state: normalizeSavedState(t.state),
-      _scrollTop: typeof t.scrollTop === 'number' ? t.scrollTop : 0,
+      state: normalizeSavedState(p.view),
+      _scrollTop: typeof p.scrollTop === 'number' ? p.scrollTop : 0,
       _navHist: navHist,
       _navIdx: navIdx,
     };

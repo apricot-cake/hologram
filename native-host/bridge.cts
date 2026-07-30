@@ -55,7 +55,7 @@ const { packRawPayloads } = require('./raw-payload.mts');
 // native-host/tsconfig.json): the whole point of the contract is that the parse
 // returns a narrowed union, and an `any` at this one line would hand every
 // handler back the untyped message this Issue removed.
-const { parseHostFrame, isCaptureId } = require('./protocol.mts') as typeof import('./protocol.mts');
+const { parseHostFrame, isCaptureId, stampProtocol } = require('./protocol.mts') as typeof import('./protocol.mts');
 type BulkAck = import('./protocol.mts').BulkAck;
 type CaptureAck = import('./protocol.mts').CaptureAck;
 type DraggedAck = import('./protocol.mts').DraggedAck;
@@ -743,7 +743,13 @@ if (require.main === module) {
       // its single reply — but the badge multiplexes many queries over ONE port
       // and has to match each answer to its question. Echoed for every type so
       // the correlation rule is the message's, not the handler's.
-      const reply = (id: number | null, res: HostResponse) => sendMessage(id != null ? Object.assign({ id }, res) : res);
+      //
+      // Every reply is also stamped with this build's PROTOCOL_VERSION (#205),
+      // at this one seam rather than in each handler: the extension compares it
+      // with its own to notice that the two halves have drifted apart, and a
+      // reply that forgot the stamp would be read as coming from a host older
+      // than the stamp itself.
+      const reply = (id: number | null, res: HostResponse) => sendMessage(id != null ? Object.assign({ id }, stampProtocol(res)) : stampProtocol(res));
       if (!parsed.ok) {
         logLine(`recv: ${parsed.failure.error}`);
         reply(parsed.id, parsed.failure);
