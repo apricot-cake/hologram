@@ -6,8 +6,9 @@
 // from the save folder as a data: URL. Core helpers arrive via ctx.
 import { ipcMain } from 'electron';
 import fs from 'node:fs';
+import type { IpcContext } from './ipc-context.ts';
 
-function register(ctx) {
+function register(ctx: IpcContext) {
   const { listPosts, listPostsDelta, resolveInFolder, mimeForFile } = ctx;
 
   ipcMain.handle('list-posts', () => listPosts());

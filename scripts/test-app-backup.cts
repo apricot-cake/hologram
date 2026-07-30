@@ -100,9 +100,11 @@ function launch(evalJs): Promise<Record<string, any>> {
   });
 }
 
-// A file that turns up in the library after the first backup. Any name would do —
-// this one doubles as the clear-all skip-list check below.
-const lateFilePath = path.join(saveFolder, 'folders.json');
+// A file that turns up in the library after the first backup. The name is
+// arbitrary; what matters is that the mirror carries whatever it finds at the
+// library root, and that a later in-place edit does NOT re-copy (write-once).
+const LATE_FILE = 'late-arrival.json';
+const lateFilePath = path.join(saveFolder, LATE_FILE);
 
 (async () => {
   // launch A: output dir nested inside the save folder must be rejected (overlap);
@@ -139,7 +141,7 @@ const lateFilePath = path.join(saveFolder, 'folders.json');
 
   // The mirror must not freeze at its first snapshot: a file that appears later is
   // still picked up by the next run.
-  fs.writeFileSync(lateFilePath, JSON.stringify({ folders: [{ id: 'f1', name: 'A', kind: 'static', created: 1, items: [] }] }, null, 2));
+  fs.writeFileSync(lateFilePath, JSON.stringify({ notes: ['A'] }, null, 2));
 
   const evalB = `(async () => {
     const e1 = await window.hologram.runBackup();
@@ -151,19 +153,7 @@ const lateFilePath = path.join(saveFolder, 'folders.json');
   // Change it in place. Nothing the mirror carries changes after it is written, so
   // a run after this must copy nothing — write-once is the contract, not an
   // oversight (see runBackup's comment).
-  fs.writeFileSync(
-    lateFilePath,
-    JSON.stringify(
-      {
-        folders: [
-          { id: 'f1', name: 'A', kind: 'static', created: 1, items: [] },
-          { id: 'f2', name: 'B', kind: 'static', created: 2, items: [] },
-        ],
-      },
-      null,
-      2,
-    ),
-  );
+  fs.writeFileSync(lateFilePath, JSON.stringify({ notes: ['A', 'B'] }, null, 2));
 
   const evalC = `(async () => {
     const e2 = await window.hologram.runBackup();
@@ -178,9 +168,9 @@ const lateFilePath = path.join(saveFolder, 'folders.json');
     const r3 = await window.hologram.runBackup();
     const pruneWorks = !!(r3 && r3.ok && r3.pruned === 1 && r3.fileCount === e3.fileCount - 1 && !r3.pruneSkipped);
 
-    // collapse src (clear-all wipes posts, keeps the legacy JSON) → guard MUST hold the
-    // prune and leave the mirror untouched. Reason is shrink/empty depending on how
-    // much metadata survives; either is a valid trip.
+    // collapse src (clear-all wipes every post asset) → guard MUST hold the prune
+    // and leave the mirror untouched. Reason is shrink/empty depending on what is
+    // left at the root; either is a valid trip.
     await window.hologram.clearAll();
     const r4 = await window.hologram.runBackup();
     const guardHeld = !!(r4 && r4.ok && r4.pruned === 0 && (r4.pruneSkipped === 'empty' || r4.pruneSkipped === 'shrink'));
@@ -197,29 +187,28 @@ const lateFilePath = path.join(saveFolder, 'folders.json');
   const mirrorAfter = countMirror();
   const mirrorIntact = typeof r.expectMirror === 'number' && mirrorAfter === r.expectMirror;
   // filesystem-side verification of write-once: the mirrored copy holds the file as
-  // it was when it was first copied (1 folder), NOT the later in-place edit.
+  // it was when it was first copied (1 note), NOT the later in-place edit.
   let writeOnceOnDisk = false;
   try {
-    const mj = JSON.parse(fs.readFileSync(path.join(mirror, 'folders.json'), 'utf8'));
-    writeOnceOnDisk = Array.isArray(mj.folders) && mj.folders.length === 1;
+    const mj = JSON.parse(fs.readFileSync(path.join(mirror, LATE_FILE), 'utf8'));
+    writeOnceOnDisk = Array.isArray(mj.notes) && mj.notes.length === 1;
   } catch {
     /* missing/unreadable → stays false */
   }
-  // filesystem-side verification of the clear-all skip list: the wipe must keep the
-  // legacy JSON a pre-#5 library can still have (LEGACY_INTERNAL_FILES) while
-  // removing every post asset — a regression here means a name fell out of the skip
-  // set and got wiped along with the posts.
-  let clearKeptOrg = false;
+  // filesystem-side verification of clear-all: since #302 a library holds media and
+  // nothing else, so the wipe is exactly "every post asset goes" — a non-media file
+  // sitting at the root is none of its business and must survive.
+  let clearSweptAssets = false;
   try {
     const left = fs.readdirSync(saveFolder);
-    clearKeptOrg = left.includes('folders.json') && !left.some((f) => /\.jpe?g$/i.test(f));
+    clearSweptAssets = !left.some((f) => /\.jpe?g$/i.test(f)) && left.includes(LATE_FILE);
   } catch {
     /* unreadable → stays false */
   }
   fs.rmSync(tmp, { recursive: true, force: true });
-  const ok = r.overlapRejected && r.dirSet && r.run1 && r.run2 && r.edit1 && r.writeOnce && r.editIdempotent && writeOnceOnDisk && r.pruneWorks && r.guardHeld && mirrorIntact && clearKeptOrg && dbSnapshotWritten;
+  const ok = r.overlapRejected && r.dirSet && r.run1 && r.run2 && r.edit1 && r.writeOnce && r.editIdempotent && writeOnceOnDisk && r.pruneWorks && r.guardHeld && mirrorIntact && clearSweptAssets && dbSnapshotWritten;
   console.log(
-    `overlap=${r.overlapRejected} dirSet=${r.dirSet} run1=${r.run1} run2=${r.run2} lateFile=${r.edit1} writeOnce=${r.writeOnce} idem=${r.editIdempotent} writeOnceOnDisk=${writeOnceOnDisk} prune=${r.pruneWorks} guard=${r.guardHeld} mirror=${mirrorAfter}/${mirrorIntact} clearKeptOrg=${clearKeptOrg} dbSnapshot=${dbSnapshotWritten}`,
+    `overlap=${r.overlapRejected} dirSet=${r.dirSet} run1=${r.run1} run2=${r.run2} lateFile=${r.edit1} writeOnce=${r.writeOnce} idem=${r.editIdempotent} writeOnceOnDisk=${writeOnceOnDisk} prune=${r.pruneWorks} guard=${r.guardHeld} mirror=${mirrorAfter}/${mirrorIntact} clearSweptAssets=${clearSweptAssets} dbSnapshot=${dbSnapshotWritten}`,
   );
   console.log(ok ? 'BACKUP_TEST_PASS' : 'BACKUP_TEST_FAIL');
   process.exit(ok ? 0 : 1);

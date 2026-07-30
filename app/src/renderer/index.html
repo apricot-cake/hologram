@@ -391,7 +391,7 @@
     /* Search-mode toggle = macOS segmented control (recessed track + raised thumb):
        both options stay visible, so the state AND the switch read at a glance — the
        old lone right-edge chip didn't look like a toggle (BACKLOG: 発見性が低い).
-       Shared by the main search box and, compact, the filter flyout (.seg-control--qf).
+       Used by the main search box (the compact flyout variant retired with the flyout).
        Labels are behavior-words (ぴったり/おおまか) + a one-line hint (DESIGN「声と語り口」). */
     /* Full-width = the control spans the same width as the input bar directly above
        it (the search box in the sidebar, the 絞り込み find box in the flyout) so they
@@ -423,14 +423,8 @@
     }
     .seg-control .seg-opt.is-on { color: var(--text-strong); font-weight: 600; }
     .seg-control .seg-opt:hover:not(.is-on) { color: var(--text); }
-    /* Flyout variant: full-width to match the find box above it, and a MORE VISIBLE
-       track — the sidebar's light --seg-track melted into the refracted glass (user:
-       コントラスト低くて溶けてる). --surface-3 + a hairline reads as a recessed control
-       on glass, matching the find input's treatment. */
-    .seg-control--qf { margin: 6px 4px 2px; }
-    .seg-control--qf .seg-opt { padding: 3px 4px; font-size: 11px; }
-    .qf-pop .seg-control--qf { background: var(--surface-3); border: 1px solid var(--border-strong); }
-    .qf-pop .seg-control--qf .seg-thumb { background: var(--seg-thumb); }
+    /* (.seg-control--qf, the ぴったり/おおまか variant inside the qf-pop value flyout,
+       was removed with the flyout — see the .qf-pop note below.) */
     @media (prefers-reduced-motion: reduce) { .seg-control .seg-thumb { transition: none; } }
     /* バックアップ設定のラジオ/チェック行 */
     .radio-line { display: flex; align-items: center; gap: 6px; font-size: 13px; margin: 4px 0; cursor: pointer; flex-wrap: wrap; }
@@ -1286,7 +1280,6 @@
     }
     .fold-menu.kind-menu { z-index: 13500; }   /* above the edit modal (13000) so the 種別 menu shows on top */
     .fold-menu.show { display: block; animation: hologramPopIn var(--dur-pop) var(--ease-out) both; }
-    .fold-menu.qf-pop.show { display: flex; flex-direction: column; max-height: calc(100vh - var(--tabbar-h) - 16px); }
     .fold-menu .fm-row {
       display: flex; align-items: center; gap: 6px; padding: 5px 8px;
       border-radius: 5px; cursor: pointer; font-size: 12px; color: var(--text);
@@ -1354,14 +1347,8 @@
     .post-grid.list-view .act-pill { top: 50%; transform: translateY(-50%); }
 
     /* --- Popovers --- */
-    .qf-popover {
-      position: fixed; background: var(--surface); border-radius: 10px;
-      box-shadow: var(--shadow-pop); border: 1px solid var(--float-border); padding: 16px;
-      z-index: 1001; min-width: 260px;
-      /* Entrance pop. Placement code must keep measuring via offsetWidth/Height —
-         getBoundingClientRect mid-pop reads ~4% small (scale .96 start). */
-      animation: hologramPopIn var(--dur-pop) var(--ease-out) both;
-    }
+    /* (.qf-popover, the retired date/engagement filter-popover surface, was removed
+       with its component — see the .qf-pop note below.) */
     /* Poster date popover: 日付の種類 / 並び替え / 期間 を小見出し付きで縦に積む。 */
     .pd-field { margin-bottom: 10px; }
     .pd-label { display: block; font-size: 10.5px; letter-spacing: .03em; color: var(--text-muted); margin-bottom: 4px; }
@@ -1398,8 +1385,7 @@
     }
     /* Query builder = full-width top bar that spans ABOVE the sidebar+content row
        (it pierces over the sidebar's top; the sidebar starts below it). Sticks
-       directly under the (sticky) tab bar. Its height feeds --activebar-h (set in
-       JS) so the floating sidebar below can offset its sticky top. */
+       directly under the (sticky) tab bar. */
     /* Query bar = a TOOLBAR row under the tabs, NOT an input field. Active
        filters are chips laid directly on the bar surface — the industry shape
        for applied filters (Linear/Notion filter rows, Lightroom's Library
@@ -1437,7 +1423,6 @@
        point instead (声: 平易・次にやることの導線). Hidden once anything is on. */
     .qb-empty { font-size: 12px; color: var(--text-subtle); }
     .content-activebar .sb-activebar-title { flex: none; font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .5px; }
-    .content-activebar #queryChips, .content-activebar #posterQueryChips { display: flex; flex-wrap: wrap; gap: 4px; flex: 0 1 auto; min-width: 0; justify-content: flex-start; align-items: center; }
     /* Trailing cluster sits just past the pill's right edge (outside the capsule).
        The pill grows to fill, so no auto margin is needed to push it over. */
     .content-activebar .qb-trail { flex: none; display: flex; align-items: center; gap: 8px; }
@@ -1615,64 +1600,12 @@
     /* No permanent drag-grip glyph on pills: draggability is signalled by the
        grab cursor, the empty-zone "ここへドラッグで移動" hint and the ⓘ help.
        (The tiny ⋮⋮ read as a squashed 三 and added noise to every pill.) */
-    /* scrollbar-gutter: without it the scrollbar that appears AFTER placement
-       re-wraps the chip rows narrower → content grows past the measured height
-       and a sliver of scroll survives even when the list could have fit. */
-    .qf-pop .qf-vals { overflow-y: auto; flex: 1; min-height: 0; scrollbar-gutter: stable; }
-    /* Find input + ぴったり/おおまか form the flyout's SEARCH HEADER (Finder/Mail:
-       field + scope bar as one block, then results). The seg now carries its own
-       border (visible on glass), so the values area needs no extra hairline above it. */
-    .qf-pop .qf-find {
-      width: 100%; padding: 5px 10px; font-size: 12px;
-      border: 1px solid var(--border-strong); border-radius: 6px; background: var(--surface-3);
-      color: var(--text); outline: none;
-    }
-    .qf-pop .qf-find:focus { border-color: var(--accent); }
-    /* Tag-group heading inside the flyout: same non-interactive-header anatomy as
-       .fm-head (10px/600/subtle) PLUS a hairline above the group — the macOS menu
-       section pattern (separator + small grey header). Whitespace + faint text alone
-       still read as a greyed-out tag row (0-count rows share that tone). */
-    .qf-pop .qf-ghead { font-size: 10px; font-weight: 600; letter-spacing: .3px; color: var(--text-subtle); padding: 8px 8px 3px; margin-top: 5px; border-top: 1px solid var(--border); pointer-events: none; }
-    .qf-pop .qf-vals > .qf-ghead:first-child { margin-top: 0; border-top: none; padding-top: 5px; }
-    /* instance sub-rows nested under Misskey/Mastodon in the platform flyout */
-    .qf-pop .fm-row.fm-sub { padding-left: 24px; font-size: 11px; color: var(--text-muted); }
-    .qf-pop .fm-row.fm-sub .fm-name { color: inherit; }
-    /* Facet count: how many current-query matches carry this value. Quiet
-       tabular number, sits right of the name (which flexes) before the ✓.
-       0件 → whole row greyed (still pickable); a divider marks the present→absent
-       boundary on flat lists. Muted via color, never opacity (DESIGN.md). */
-    .qf-pop .fm-count { flex-shrink: 0; font-size: 11px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
-    .qf-pop .fm-row.off { color: var(--text-muted); }
-    .qf-pop .fm-row.off .fm-count { color: var(--text-subtle); }
-    .qf-pop .qf-div { height: 1px; background: var(--border); margin: 5px 6px; }
-    /* Two-pane mode (the タグ flyout when 種別 sections are present): section list on
-       the LEFT (すべて + 作品/キャラ/未分類), the selected section's tags as rows on the
-       RIGHT. Replaces the wrapped-chip single flyout
-       (2026-07-04): a sectioned vocabulary reads faster as pick-a-section → see-its-tags
-       than as one long chip-wrapped scroll. The flyout widens to hold both columns. */
-    /* width:max-content = the flyout sizes to its content (both columns), capped at
-       520px / viewport — NOT a fixed 560 slab (user 2026-07-04: 横長すぎ). The panes'
-       own min-widths set the effective floor (≈110+150+gutters), so a short vocabulary
-       gives a narrow flyout and a long one grows to the cap. */
-    .fold-menu.qf-pop--twopane { width: max-content; max-width: min(520px, calc(100vw - 24px)); }
-    .qf-pop .qf-panes { flex: 1; display: flex; min-height: 0; }
-    /* Left column: the 種別 sections (全て + each section), hugs its content (min 110px).
-       Active section = the app's monotone-contrast active fill (not accent — DESIGN). */
-    .qf-pop .qf-groups { flex: 0 0 auto; min-width: 110px; max-width: 190px; overflow-y: auto; padding: 4px 4px 4px 2px; border-right: 1px solid var(--border); scrollbar-gutter: stable; }
-    .qf-pop .qf-group-row {
-      display: flex; align-items: center; gap: 6px; width: 100%; padding: 5px 8px;
-      border: 0; border-radius: 6px; background: transparent; cursor: pointer;
-      font: inherit; font-size: 12px; color: var(--text); text-align: left;
-      transition: background .12s, color .12s;
-    }
-    .qf-pop .qf-group-row:hover { background: var(--sidebar-row-hover); }
-    .qf-pop .qf-group-row.active { background: var(--accent-subtle); color: var(--text-strong); font-weight: 600; }
-    .qf-pop .qf-group-row .fm-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .qf-pop .qf-group-row .fm-count { flex-shrink: 0; font-size: 11px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
-    .qf-pop .qf-panes .qf-vals { flex: 1 1 auto; min-width: 150px; }
-    .qf-pop .qf-footer { border-top: 1px solid var(--border); padding: 2px 0; flex-shrink: 0; }
-    .qf-pop .qf-footer-link { display: block; width: 100%; text-align: left; padding: 6px 10px; font-size: 12px; font-weight: 500; color: var(--accent-text); background: none; border: none; cursor: pointer; }
-    .qf-pop .qf-footer-link:hover { background: var(--hover); text-decoration: underline; }
+    /* The .qf-pop* rules that used to live here (the value flyout: find box, 種別
+       two-pane picker, facet counts, footer link) styled DOM nothing generates since
+       the flyout retired with its component in #154 P2③ — the live value picker is
+       filterbar/ValueEditor inside a Popover, Tailwind-styled. Removed in #230; the
+       flyout's own scoped variants (.seg-control--qf, .qf-popover,
+       .fold-menu.qf-pop*) went with them. */
     /* リアルタイム検索サジェスト（検索ボックス直下・タグ/作者候補）
        react-aria Popover: position/visibility は portal + inline style 側が持つので
        ここはパネルの見た目と行だけ。--trigger-width は react-aria が供給。 */

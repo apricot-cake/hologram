@@ -47,6 +47,7 @@ const repoRoot = path.join(__dirname, '..');
 const appDir = path.join(repoRoot, 'app');
 const { electronPath: resolveElectron } = require('./lib-electron-path.cts');
 const { makePng, seedRealSandbox, DEFAULT_MAX_DIM } = require('./lib-sandbox-real-seed.cts');
+const { seedLibrary } = require('./lib-seed-library.cts');
 const { configDir: realConfigDir, defaultLibraryDir } = require('../native-host/paths.cts');
 
 const electronPath = resolveElectron();
@@ -91,37 +92,32 @@ const TEXTS = ['サンドボックス検証用のダミー投稿です。', '短
 
 function seedFixtureLibrary() {
   fs.mkdirSync(saveFolder, { recursive: true });
-  if (fs.readdirSync(saveFolder).some((f) => f.endsWith('.json'))) return false;
+  if (libraryIsSeeded()) return false;
   const base = Date.UTC(2026, 0, 15, 12, 0, 0);
+  const records: any[] = [];
   for (let i = 0; i < 12; i++) {
     const platform = PLATFORMS[i % PLATFORMS.length];
     const [w, h] = SIZES[i % SIZES.length];
     const captureId = `${base - i * 86400000}-sb${String(i).padStart(2, '0')}`;
     fs.writeFileSync(path.join(saveFolder, `${captureId}.png`), makePng(w, h, COLORS[i % COLORS.length]));
     const date = new Date(base - i * 86400000 - 7200000).toISOString();
-    fs.writeFileSync(
-      path.join(saveFolder, `${captureId}.json`),
-      JSON.stringify(
-        {
-          captureId,
-          image: `${captureId}.png`,
-          url: `https://example.com/sandbox/${i}`,
-          platform,
-          text: `[${i + 1}/12] ${TEXTS[i % TEXTS.length]}`,
-          displayName: `サンドボックス${i + 1}号`,
-          screenName: `sandbox_${i + 1}`,
-          likes: (i * 137) % 9000,
-          reposts: (i * 41) % 800,
-          replies: (i * 7) % 60,
-          date,
-          capturedAt: new Date(base - i * 86400000).toISOString(),
-          tags: TAGS[i % TAGS.length],
-        },
-        null,
-        2,
-      ),
-    );
+    records.push({
+      captureId,
+      image: `${captureId}.png`,
+      url: `https://example.com/sandbox/${i}`,
+      platform,
+      text: `[${i + 1}/12] ${TEXTS[i % TEXTS.length]}`,
+      displayName: `サンドボックス${i + 1}号`,
+      screenName: `sandbox_${i + 1}`,
+      likes: (i * 137) % 9000,
+      reposts: (i * 41) % 800,
+      replies: (i * 7) % 60,
+      date,
+      capturedAt: new Date(base - i * 86400000).toISOString(),
+      tags: TAGS[i % TAGS.length],
+    });
   }
+  seedLibrary(configDir, records);
   return true;
 }
 

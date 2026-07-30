@@ -20,6 +20,9 @@ import { cloudSyncProviderOf } from './save-folder-guard.ts';
 import { fillCardDims } from './lib-card-dims.ts';
 import { makeTagResolver, preparePostStmts, writePost } from './lib-db-record-writer.ts';
 import type { PostRecordInput } from '../../../native-host/post-record.mts';
+import type { BrowserWindow } from 'electron';
+import type { IpcContext } from './ipc-context.ts';
+import type { ClearAllResult, CompleteImportResult, ExportCompleteResult, ExportSaveResult, LegacyImportResult, MediaImportResult, SaveFolderMoveResult, SaveFolderPickResult } from './ipc-payloads.ts';
 
 function exportStamp() {
   return new Date().toISOString().replace(/[:.]/g, '-').replace('T', '_').slice(0, 19);
@@ -36,7 +39,7 @@ const IMPORTABLE_IMG = ['jpg', 'jpeg', 'jfif', 'png', 'webp', 'gif', 'avif', 'bm
 const IMPORTABLE_VID = ['mp4', 'webm', 'mov', 'm4v'];
 const IMPORTABLE_MEDIA = IMPORTABLE_IMG.concat(IMPORTABLE_VID);
 
-function register(ctx) {
+function register(ctx: IpcContext) {
   const {
     getSaveFolder,
     getTrashDir,
@@ -46,7 +49,6 @@ function register(ctx) {
     getConfigLastCorrupt,
     clearAllBlockReason,
     LIBRARY_MEDIA_EXTS,
-    LEGACY_INTERNAL_FILES,
     getDbWriter,
     pixivRefererFor,
     downloadAvatar,
@@ -158,7 +160,7 @@ function register(ctx) {
     const avatarFailed = new Set();
     async function fetchAvatarShared(url) {
       if (avatarFailed.has(url)) return null;
-      let file = null;
+      let file: string | null = null;
       try {
         file = await downloadAvatar(url, pixivRefererFor(url), folder);
       } catch {
@@ -289,7 +291,7 @@ function register(ctx) {
     return { imported, skipped };
   }
 
-  ipcMain.handle('clear-all', async () => {
+  ipcMain.handle('clear-all', async (): Promise<ClearAllResult> => {
     const folder = getSaveFolder();
     if (!folder) return { ok: false, count: 0 };
     // Refuse to wipe when config is degraded: a corrupt config, or one that lost its
@@ -310,13 +312,11 @@ function register(ctx) {
     ensurePostsSynced();
     getDbWriter().deleteAllPosts();
     // Then the media — every viewable type (incl. jfif/avif/svg/video/-poster),
-    // mirroring delete-post. Leftover JSON from a pre-#5 library is skipped rather
-    // than swept, so a wipe never destroys metadata the legacy migration might still
-    // want; that skip list goes with the scaffolding (#441).
-    const CLEAR_RE = new RegExp('\\.(' + LIBRARY_MEDIA_EXTS.join('|') + '|json)$', 'i');
+    // mirroring delete-post. Media is all a library holds since #302: the records
+    // are in the DB, so there is no companion file to sweep alongside them.
+    const CLEAR_RE = new RegExp('\\.(' + LIBRARY_MEDIA_EXTS.join('|') + ')$', 'i');
     try {
       for (const f of fs.readdirSync(folder)) {
-        if (LEGACY_INTERNAL_FILES.has(f)) continue;
         if (CLEAR_RE.test(f)) {
           try {
             fs.unlinkSync(path.join(folder, f));
@@ -332,8 +332,11 @@ function register(ctx) {
     return { ok: true, count };
   });
 
-  ipcMain.handle('export-save', async (_e, filename, bytes) => {
-    const res = await dialog.showSaveDialog(getWin(), { defaultPath: filename });
+  ipcMain.handle('export-save', async (_e, filename, bytes): Promise<ExportSaveResult> => {
+    // Every dialog below is parented to the main window, whose renderer is where
+    // the call came from — so getWin() is non-null here, which is what Electron's
+    // parent parameter requires.
+    const res = await dialog.showSaveDialog(getWin() as BrowserWindow, { defaultPath: filename });
     if (res.canceled || !res.filePath) return { saved: false };
     try {
       await fs.promises.writeFile(res.filePath, Buffer.from(bytes));
@@ -350,7 +353,7 @@ function register(ctx) {
   // anymore). Excludes config.json (machine-specific).
   // Manual-only: the scheduled path is the incremental mirror (runBackup), which
   // replaced the old scheduled-ZIP idea — ZIP stays as the hand-carried snapshot.
-  ipcMain.handle('export-complete', async (_e, mode, includeTrash) => {
+  ipcMain.handle('export-complete', async (_e, mode, includeTrash): Promise<ExportCompleteResult> => {
     const imagesOnly = mode === 'images';
     const src = getSaveFolder();
     // Emptiness is a cheap readdir — check it BEFORE the dialog so an empty library
@@ -369,7 +372,7 @@ function register(ctx) {
       handle = await ensurePostsSynced();
       if (!handle) return { saved: false, error: 'no-folder' };
     }
-    const res = await dialog.showSaveDialog(getWin(), { defaultPath: `hologram-${imagesOnly ? 'images' : 'export'}-${exportStamp()}.zip` });
+    const res = await dialog.showSaveDialog(getWin() as BrowserWindow, { defaultPath: `hologram-${imagesOnly ? 'images' : 'export'}-${exportStamp()}.zip` });
     if (res.canceled || !res.filePath) return { saved: false };
     // Stream the archive straight to the chosen path (yazl: bounded memory + ZIP64) —
     // the whole library never sits in memory and a >4 GiB archive stays valid. Progress
@@ -439,8 +442,8 @@ function register(ctx) {
   // second call: the #34 duplicate question is UI policy and has to sit between
   // reading and writing. What crosses IPC is the PATH main picked — never the
   // archive's bytes, and never the expanded records.
-  ipcMain.handle('import-complete', async () => {
-    const res = await dialog.showOpenDialog(getWin(), {
+  ipcMain.handle('import-complete', async (): Promise<CompleteImportResult> => {
+    const res = await dialog.showOpenDialog(getWin() as BrowserWindow, {
       properties: ['openFile'],
       filters: [{ name: 'ZIP', extensions: ['zip'] }],
     });
@@ -463,7 +466,7 @@ function register(ctx) {
   // rather than kept expanded in memory across a user prompt. Reading it is all
   // this does with the path, and the guards in readLegacyZipPosts are what bound
   // that; a ZipLimitError lands in the catch as a plain failed import.
-  ipcMain.handle('import-legacy-zip', async (_e, zipPath, duplicateMode) => {
+  ipcMain.handle('import-legacy-zip', async (_e, zipPath, duplicateMode): Promise<LegacyImportResult> => {
     if (!zipPath || typeof zipPath !== 'string') return { ok: false, error: 'invalid', imported: 0, skipped: 0 };
     try {
       const posts = await archive.readLegacyZipPosts(zipPath);
@@ -484,7 +487,7 @@ function register(ctx) {
   // should see first; move-save-folder does the actual relocation once they accept.
   // The move re-validates from scratch — the renderer round-trip is a UI step, not a
   // trust boundary.
-  function moveLibraryTo(dest) {
+  function moveLibraryTo(dest: string): SaveFolderMoveResult | Promise<SaveFolderMoveResult> {
     const src = getSaveFolder();
     const v = validateSaveFolder(dest);
     if (!v.ok) return { ok: false, error: v.error };
@@ -505,8 +508,8 @@ function register(ctx) {
     });
   }
 
-  ipcMain.handle('pick-save-folder', async () => {
-    const res = await dialog.showOpenDialog(getWin(), { properties: ['openDirectory', 'createDirectory'] });
+  ipcMain.handle('pick-save-folder', async (): Promise<SaveFolderPickResult> => {
+    const res = await dialog.showOpenDialog(getWin() as BrowserWindow, { properties: ['openDirectory', 'createDirectory'] });
     if (res.canceled || !res.filePaths || !res.filePaths[0]) return { ok: false, canceled: true };
     const chosen = res.filePaths[0];
     // Treat the picked folder as a PARENT and put the library in a named subfolder
@@ -528,7 +531,7 @@ function register(ctx) {
 
   // Second half of the pick flow: relocate to a destination the user already
   // accepted a warning for. Not a general "move anywhere" entry point.
-  ipcMain.handle('move-save-folder', async (_e, dest) => {
+  ipcMain.handle('move-save-folder', async (_e, dest): Promise<SaveFolderMoveResult> => {
     if (!dest || typeof dest !== 'string') return { ok: false, error: 'invalid' };
     return moveLibraryTo(dest);
   });
@@ -536,10 +539,10 @@ function register(ctx) {
   // #299: same rationale as importPostRecords above — write straight into the DB (a real
   // video field now, not the `(rec as any).video` escape hatch this used pre-
   // #299) instead of a sidecar the DB would have to re-derive from later.
-  ipcMain.handle('import-images', async () => {
+  ipcMain.handle('import-images', async (): Promise<MediaImportResult> => {
     const folder = getSaveFolder();
     if (!folder) return { imported: 0, skipped: 0, error: 'no-folder' };
-    const res = await dialog.showOpenDialog(getWin(), {
+    const res = await dialog.showOpenDialog(getWin() as BrowserWindow, {
       properties: ['openFile', 'multiSelections'],
       filters: [{ name: 'Media', extensions: IMPORTABLE_MEDIA }],
     });

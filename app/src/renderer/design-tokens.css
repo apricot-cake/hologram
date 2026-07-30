@@ -337,10 +337,10 @@
      caption grid, 46px each. The tab strip reserves this on its right so tabs never run
      under them. */
   --window-controls-w: 138px;
-  /* Height of the full-width query-builder top bar. Updated in JS from the bar's
-     measured height (it wraps when many chips), so the floating sidebar below can
-     offset its sticky top to clear it. */
-  --activebar-h: 46px;
+  /* (--activebar-h held the measured height of the full-width query-builder top
+     bar, for the floating sidebar to offset its sticky top by. Nothing read it
+     once that bar became the toolbar's own flex row; the JS that measured it was
+     part of the retired chip render path, removed in #230.) */
   /* Margin around the floating ("window-like") sidebar — Claude-app style.
      Asymmetric: extra left breathing room (motion-study canvas, 2026-07-05). */
   --sidebar-float: 14px 10px 14px 22px;

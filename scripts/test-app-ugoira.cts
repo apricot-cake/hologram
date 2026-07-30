@@ -27,6 +27,7 @@ const { electronPath: resolveElectron } = require('./lib-electron-path.cts');
 const { readEvalResult } = require('./lib-eval-result.cts');
 
 const electronPath = resolveElectron();
+const { seedLibrary } = require('./lib-seed-library.cts');
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-ugoira-'));
 const configDir = path.join(tmp, 'Hologram');
@@ -115,24 +116,19 @@ const FRAMES = FRAME_COLORS.map((_, i) => ({ file: `00000${i}.png`, delay: 60 })
 fs.writeFileSync(path.join(saveFolder, `${ID}-media-0.zip`), zipOf(FRAMES.map((f, i) => ({ name: f.file, data: png1x1(FRAME_COLORS[i][0], FRAME_COLORS[i][1], FRAME_COLORS[i][2]) }))));
 fs.writeFileSync(path.join(saveFolder, `${ID}-poster.jpg`), jpeg);
 fs.writeFileSync(path.join(saveFolder, `${ID}.jpg`), jpeg);
-fs.writeFileSync(
-  path.join(saveFolder, `${ID}.json`),
-  JSON.stringify(
-    {
-      captureId: ID,
-      image: `${ID}.jpg`,
-      url: 'https://www.pixiv.net/artworks/147661146',
-      platform: 'pixiv',
-      title: 'うごイラ',
-      mediaType: 'gif',
-      media: [{ url: 'https://i.pximg.net/u.zip', alt: null, width: 1, height: 1, file: `${ID}-media-0.zip`, type: 'ugoira', posterFile: `${ID}-poster.jpg`, frames: FRAMES }],
-      capturedAt: '2026-01-01T00:00:00.000Z',
-      date: '2026-01-01T00:00:00.000Z',
-    },
-    null,
-    2,
-  ),
-);
+seedLibrary(configDir, [
+  {
+    captureId: ID,
+    image: `${ID}.jpg`,
+    url: 'https://www.pixiv.net/artworks/147661146',
+    platform: 'pixiv',
+    title: 'うごイラ',
+    mediaType: 'gif',
+    media: [{ url: 'https://i.pximg.net/u.zip', alt: null, width: 1, height: 1, file: `${ID}-media-0.zip`, type: 'ugoira', posterFile: `${ID}-poster.jpg`, frames: FRAMES }],
+    capturedAt: '2026-01-01T00:00:00.000Z',
+    date: '2026-01-01T00:00:00.000Z',
+  },
+]);
 
 const evalJs = `(async () => {
   const sleep = (ms) => new Promise(r => setTimeout(r, ms));

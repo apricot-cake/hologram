@@ -31,6 +31,7 @@ const { readEvalResult } = require('./lib-eval-result.cts');
 
 const electronPath = resolveElectron();
 const { openDatabase } = require(path.join(appDir, 'src', 'main', 'lib-db.ts'));
+const { seedLibrary } = require('./lib-seed-library.cts');
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-bulktag-'));
 const configDir = path.join(tmp, 'Hologram');
@@ -46,30 +47,25 @@ const seed = [
   { id: 'bulk-a', tags: [] },
   { id: 'bulk-b', tags: ['既存タグ'] },
 ];
+const records: any[] = [];
 seed.forEach((s, i) => {
   fs.writeFileSync(path.join(saveFolder, `${s.id}.jpg`), jpeg);
-  fs.writeFileSync(
-    path.join(saveFolder, `${s.id}.json`),
-    JSON.stringify(
-      {
-        captureId: s.id,
-        image: `${s.id}.jpg`,
-        url: `https://x.com/u${i}/status/${900 + i}`,
-        platform: 'x',
-        text: `本文${i}`,
-        displayName: `人${i}`,
-        screenName: `u${i}`,
-        capturedAt: `2026-05-0${i + 1}T12:00:00Z`,
-        date: `2026-04-0${i + 1}T10:00:00Z`,
-        media: [{ file: `${s.id}-orig.jpg`, url: 'https://x.com/i/1.jpg' }],
-        tags: s.tags,
-        hashtags: [],
-      },
-      null,
-      2,
-    ),
-  );
+  records.push({
+    captureId: s.id,
+    image: `${s.id}.jpg`,
+    url: `https://x.com/u${i}/status/${900 + i}`,
+    platform: 'x',
+    text: `本文${i}`,
+    displayName: `人${i}`,
+    screenName: `u${i}`,
+    capturedAt: `2026-05-0${i + 1}T12:00:00Z`,
+    date: `2026-04-0${i + 1}T10:00:00Z`,
+    media: [{ file: `${s.id}-orig.jpg`, url: 'https://x.com/i/1.jpg' }],
+    tags: s.tags,
+    hashtags: [],
+  });
 });
+seedLibrary(configDir, records);
 
 const evalJs = `(async () => {
   const sleep = (ms) => new Promise(r => setTimeout(r, ms));

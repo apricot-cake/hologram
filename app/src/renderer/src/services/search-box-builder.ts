@@ -24,7 +24,6 @@ export interface SearchBoxDeps {
   afterQueryChange(): void;
   renderPosts(): void;
   renderPosters(): void;
-  updateSidebarState(): void;
 }
 
 export function makeSearchBox(deps: SearchBoxDeps) {
@@ -55,7 +54,6 @@ export function makeSearchBox(deps: SearchBoxDeps) {
     setSearchBoxValue,
     afterQueryChange: () => deps.afterQueryChange(),
     renderPosts: () => deps.renderPosts(),
-    updateSidebarState: () => deps.updateSidebarState(),
   });
   function rebindEditingTextLeaf() {
     searchEditing.rebind();

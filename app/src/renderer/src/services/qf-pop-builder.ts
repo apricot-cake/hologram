@@ -15,7 +15,6 @@ export interface QfPopDeps {
   addFilter(filter: { type: string; [k: string]: any }): void;
   removeFilter(index: number): void;
   buildUsers(): HologramUserAgg[];
-  updateSidebarState(): void;
 }
 
 export function makeQfPop(deps: QfPopDeps) {
@@ -59,7 +58,6 @@ export function makeQfPop(deps: QfPopDeps) {
     } else {
       deps.addFilter({ type: vtype, value: v });
     }
-    deps.updateSidebarState();
   }
 
   // pickValue = onQfPick exposed for the redesign filter bar (filterbar/):

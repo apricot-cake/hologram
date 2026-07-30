@@ -15,13 +15,14 @@ import { navBack, navForward, resetAllFilters, resetPosterFilters } from '../ser
 // the old orchestrator bridge for these is gone. No more pushed model (the old
 // renderer/activebar.ts bridge is gone too).
 //
-// The chips (#queryChips / #posterQueryChips) are their OWN component (query-chips) and keep
-// orchestrator's delegated click/contextmenu handlers. So the frame is NOT a single portal into
-// the bar (that would replace the chips container and detach those handlers). Instead each
-// dynamic piece portals into a static sub-mount that sits BESIDE the chips container
-// (#postNavMount / #postFrameLead / #postTrailMount / #posterFrameLead / #posterTrailMount /
-// #posterCount) — the chips containers are never touched. Same ids/classes as the old
-// static HTML so CSS + the verify scripts that click #postResetBtn etc. keep working.
+// The chips used to be their OWN component rendering into #queryChips /
+// #posterQueryChips, so the frame could NOT be a single portal into the bar (that would
+// replace the chips container). Instead each dynamic piece portals into a static
+// sub-mount that sits BESIDE where the chips were (#postNavMount / #postFrameLead /
+// #postTrailMount / #posterFrameLead / #posterTrailMount / #posterCount). Same
+// ids/classes as the old static HTML so CSS + the verify scripts that click
+// #postResetBtn etc. keep working. (The chips themselves are the toolbar's FilterChips
+// now; their containers went with the render path in #230.)
 
 const subSearchQuery = (cb: () => void) => storeSubscribe('searchQuery', cb);
 const getSearchQuery = () => (storeGet('searchQuery') as string | undefined) ?? '';

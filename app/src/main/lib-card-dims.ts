@@ -12,7 +12,7 @@
 // also the only moment the numbers can be wrong for a *new* reason (the file just
 // landed next to it). Every DB producer that has the save folder in hand calls
 // fillCardDims() before writePost(): the inbox consumer, the legacy ZIP import /
-// import-images, the complete-ZIP importer, orphan recovery, and the legacy migration.
+// import-images, the complete-ZIP importer, and orphan recovery.
 //
 // Kept Electron-free (fs/path only) so it unit-tests in plain node.
 
