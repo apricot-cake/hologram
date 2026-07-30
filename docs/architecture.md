@@ -28,7 +28,7 @@ WXT（Vite ベース）でビルドする TypeScript ソース。`npm run build:
 
 - `wxt.config.ts` — 固定 `key`、権限、action、commands を含む生成 manifest の共通設定
 - `entrypoints/background.ts` — Service Worker。タブキャプチャ → クロップ → `utils/extractor/` でAPI取得 → Native Messaging 送信。動的なクリック保存は固定名の `capture.js` を `scripting.executeScript` で注入し、`activeTab` のモデルを維持する
-- `entrypoints/resident.content.ts` — X/Bluesky/pixiv に常駐する統合コンテンツスクリプト（ドラッグ保存とTLオーバーレイ）
+- `entrypoints/resident.content.ts` — X/Bluesky/pixiv/misskey.io に常駐する統合コンテンツスクリプト（ドラッグ保存とTLオーバーレイ）
 - `entrypoints/options.html` / `diag.html` — 設定・内部診断ページ。`options.html` はタブで開く
 - `utils/` — 通常の ESM 共有モジュール。`drag.ts`、`overlay.ts`、`capture.ts`、`bulk-capture.ts`、`glass-ui.ts`、`i18n.ts` など**サイトに依らない**層を置く。
 - `utils/extractor/` — **サイト別の抽出（extractor）＝1サイト1モジュール**（`x.ts`／`bluesky.ts`／`misskey.ts`／`mastodon.ts`／`pixiv.ts`）。1つのモジュールが DOM 相（ページ判定・投稿要素・permalink・画像の帰属・オーバーレイの取り付け先）と API 相（投稿URLの解析・メタデータ取得）の両方を持ち、共通の `Extractor` 契約（`types.ts`）で束ねる。`index.ts` の登録簿（配列）が**サイトの唯一の真実源**で、manifest の match とhost_permissions もここから引く＝対応サイトを増やす編集は「モジュール1本＋登録簿1行」（#212）。取得は失敗時に空レコードを返し、Misskey/Mastodon のAPI取得は sender tab のhostに固定する。応答は**本文として1度だけ読んでから解析**し、受け取ったままの本文をレコードに添えてブリッジへ渡す（[ADR 0011](decisions/0011-preserve-acquisition-payloads.md) の原本層。圧縮・ハッシュ・上限はブリッジ側の担当＝ブラウザ側は「何を残す価値があるか」を決めない）
