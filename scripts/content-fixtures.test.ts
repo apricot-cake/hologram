@@ -79,6 +79,60 @@ describe('X (Twitter)', () => {
   });
 });
 
+// #325: 画像拡大表示（lightbox）＝X が /<user>/status/<id>/photo/<n> で開く別レイヤー。
+// 記事の子孫にならないので通常の祖先探索では投稿要素が見つからず、Alt+S が無反応に見えていた。
+describe('X: 画像拡大表示（lightbox）', () => {
+  let ctx: ReturnType<typeof installFixture>;
+  let config: any;
+
+  beforeAll(() => {
+    ctx = installFixture('x-lightbox.html', 'https://x.com/alice/status/111/photo/2');
+    config = getCaptureSite();
+  });
+  afterAll(() => ctx.restore());
+
+  test('拡大中の画像そのものが対象になる（撮影範囲＝画像の矩形）', () => {
+    const img = ctx.document.getElementById('viewerImg');
+    expect(config.findPostElement(img)).toBe(img);
+  });
+
+  test('パーマリンクは URL の /photo/N を落とした投稿のもの', () => {
+    const img = ctx.document.getElementById('viewerImg');
+    expect(config.getPermalink(config.findPostElement(img))).toBe('https://x.com/alice/status/111');
+  });
+
+  test('動画投稿のポスターフレームも同じ扱い（#450）', () => {
+    const video = ctx.document.getElementById('viewerVideo');
+    expect(config.findPostElement(video)).toBe(video);
+  });
+
+  test('メディアでないビューアの部品（閉じるボタン・背景）は捕捉しない', () => {
+    expect(config.findPostElement(ctx.document.getElementById('viewerClose'))).toBe(null);
+    expect(config.findPostElement(ctx.document.getElementById('viewerBackdrop'))).toBe(null);
+  });
+
+  test('ビューア内のアバターは捕捉しない（URL から投稿は引けてしまうため）', () => {
+    expect(config.findPostElement(ctx.document.getElementById('viewerAvatar'))).toBe(null);
+  });
+
+  test('背後の返信の画像は返信自身へ帰属する（URL バーの投稿に化けない・A-1n）', () => {
+    const post = config.findPostElement(ctx.document.getElementById('replyImg'));
+    expect(post?.id).toBe('tweetReply');
+    expect(config.getPermalink(post)).toBe('https://x.com/bob/status/222');
+  });
+
+  test('背後の投稿詳細の画像は従来どおり記事へ解決する', () => {
+    const post = config.findPostElement(ctx.document.getElementById('detailImg'));
+    expect(post?.id).toBe('tweetDetail');
+    expect(config.getPermalink(post)).toBe('https://x.com/alice/status/111');
+  });
+
+  test('/photo/N でない URL では同じ形でも捕捉しない（ビューアが開いている時だけ）', () => {
+    setLocation(ctx.dom, 'https://x.com/alice/status/111');
+    expect(config.findPostElement(ctx.document.getElementById('viewerImg'))).toBe(null);
+  });
+});
+
 describe('Bluesky', () => {
   let ctx: ReturnType<typeof installFixture>;
   let config: any;
