@@ -306,30 +306,38 @@ describe('serializeTabs', () => {
     expect(p.activeTabId).toBe('b');
   });
 
-  test('フィルタタブの id/pinned/title/state/scrollTop が載る', () => {
-    expect(p.tabs[0]).toMatchObject({ id: 'a', pinned: true, title: 'メモ', scrollTop: 120 });
-    expect(p.tabs[0].state.f).toEqual([]);
+  // #565: DB が列に持つ3つ以外は全て state の中＝main は state を中身を見ずに
+  // 1つの塊として保存する。兄弟が増えると main の INSERT が黙って捨てる。
+  test('タブ直下は id/pinned/title/state の4つだけ', () => {
+    expect(Object.keys(p.tabs[0]).sort()).toEqual(['id', 'pinned', 'state', 'title']);
+  });
+
+  test('フィルタタブの id/pinned/title と、塊の中の view/scrollTop が載る', () => {
+    expect(p.tabs[0]).toMatchObject({ id: 'a', pinned: true, title: 'メモ' });
+    expect(p.tabs[0].state.scrollTop).toBe(120);
+    expect(p.tabs[0].state.view?.f).toEqual([]);
   });
 
   test('nav スタックはパース済みオブジェクトとして永続化する', () => {
-    expect(p.tabs[0].nav.hist).toHaveLength(1);
-    expect(p.tabs[0].nav.hist[0].kind).toBe('posts');
-    expect(p.tabs[0].nav.idx).toBe(0);
+    expect(p.tabs[0].state.nav?.hist).toHaveLength(1);
+    expect(p.tabs[0].state.nav?.hist[0].kind).toBe('posts');
+    expect(p.tabs[0].state.nav?.idx).toBe(0);
   });
 
   test('ランタイム専用フィールドは生では載せない', () => {
     expect(p.tabs[0]).not.toHaveProperty('_navHist');
     expect(p.tabs[0]).not.toHaveProperty('_g');
+    expect(p.tabs[0].state).not.toHaveProperty('_g');
   });
 
   test('画像エントリの nav と autoTitle が載る', () => {
-    expect(p.tabs[1].nav.hist[0].kind).toBe('image');
-    expect(p.tabs[1].autoTitle).toBe(true);
+    expect(p.tabs[1].state.nav?.hist[0].kind).toBe('image');
+    expect(p.tabs[1].state.autoTitle).toBe(true);
   });
 
   test('スタックの無いタブは nav/autoTitle が undefined（JSON で消える）', () => {
-    expect(p.tabs[2].nav).toBeUndefined();
-    expect(p.tabs[2].autoTitle).toBeUndefined();
+    expect(p.tabs[2].state.nav).toBeUndefined();
+    expect(p.tabs[2].state.autoTitle).toBeUndefined();
   });
 });
 
@@ -347,14 +355,16 @@ describe('sanitizeSavedTabs', () => {
       {
         activeTabId: 'c',
         tabs: [
-          { pinned: 1, title: '', state: { f: [] }, scrollTop: '9' },
+          { pinned: 1, title: '', state: { view: { f: [] }, scrollTop: '9' } },
           // 永続化された nav スタック: 壊れた行は落ち、idx は残った行へ再マップされる
           {
             id: 'c',
-            scrollTop: 55,
-            nav: {
-              hist: [{ u: '/posts', kind: 'posts', state: { f: [] } }, { bogus: true }, { u: '/posters', kind: 'posters', state: { sort: 'count' } }, { u: '/image/x', kind: 'image', state: { recs: [], idx: 0 } }],
-              idx: 2,
+            state: {
+              scrollTop: 55,
+              nav: {
+                hist: [{ u: '/posts', kind: 'posts', state: { f: [] } }, { bogus: true }, { u: '/posters', kind: 'posters', state: { sort: 'count' } }, { u: '/image/x', kind: 'image', state: { recs: [], idx: 0 } }],
+                idx: 2,
+              },
             },
           },
         ],
@@ -401,11 +411,13 @@ describe('sanitizeSavedTabs', () => {
           {
             id: 'm',
             state: {
-              f: [
-                { type: 'collection', value: 'x' },
-                { type: 'tag', value: 't' },
-              ],
-              tree: { kind: 'group', op: 'and', neg: false, children: [{ kind: 'cond', type: 'collection', value: 'x' }] },
+              view: {
+                f: [
+                  { type: 'collection', value: 'x' },
+                  { type: 'tag', value: 't' },
+                ],
+                tree: { kind: 'group', op: 'and', neg: false, children: [{ kind: 'cond', type: 'collection', value: 'x' }] },
+              },
             },
           },
         ],
