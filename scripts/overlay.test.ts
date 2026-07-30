@@ -90,6 +90,19 @@ const X_HTML = `<!doctype html><html><body>
       <a href="/judy/status/1111"><time datetime="2026-07-01T00:00:00Z">11h</time></a>
       <div data-testid="tweetPhoto" data-rect-top="4800" id="p11a"><img src="https://pbs.twimg.com/media/MMM.jpg"></div>
     </article>
+    <!-- #576: ホバー保存だけホストの版ずれ案内（#205）が乗っていなかった配線漏れを試す
+         専用の投稿。p11 と同じ理由で、保存済みにしてしまうと保存ボタンが消えるので
+         このテストの最後まで他のどの describe も触らない。 -->
+    <article data-testid="tweet" id="p12">
+      <a href="/kevin/status/1212"><time datetime="2026-07-01T00:00:00Z">12h</time></a>
+      <div data-testid="tweetPhoto" data-rect-top="5200" id="p12a"><img src="https://pbs.twimg.com/media/NNN.jpg"></div>
+    </article>
+    <!-- 同じく#576: 版が一致している（hostSkew: null）ときに誤警報が出ないことは
+         p12 とは別の未保存の絵で見る＝p12 は上のテストで保存済みになってしまう。 -->
+    <article data-testid="tweet" id="p13">
+      <a href="/laura/status/1313"><time datetime="2026-07-01T00:00:00Z">13h</time></a>
+      <div data-testid="tweetPhoto" data-rect-top="5600" id="p13a"><img src="https://pbs.twimg.com/media/OOO.jpg"></div>
+    </article>
   </div>
 </body></html>`;
 
@@ -246,7 +259,7 @@ beforeAll(async () => {
 }, 30000);
 
 test('初回走査で全ての投稿が観測される', () => {
-  expect(observed.size).toBe(11);
+  expect(observed.size).toBe(13); // p1〜p13（#576 で p12/p13 を追加）
 });
 
 describe('問い合わせは見えている投稿だけ・1バッチで', () => {
@@ -850,6 +863,63 @@ describe('投稿情報が取れなかった保存（#310）', () => {
   test('角そのものは印のまま＝長い文面を載せない', () => {
     expect(labelOf(controlOf('p11a')[0])).toBe('Saved in Hologram');
     expect(controlOf('p11a')[0].hasAttribute('title')).toBe(false);
+  });
+});
+
+// #576: #205 が用意した「ホストの版がずれている」案内は、Alt+S（capture-overlay.test.ts）と
+// ドロップゾーン（drag-zone.test.ts）には配線されていたが、保存の出口3本目であるホバー保存
+// （このファイル）だけが一度も showSaveBanner に渡していなかった。文言・緊急度（partial ＝
+// 琥珀、他の成功文面より前）は他の2経路と同じものを #205 からそのまま使う。
+describe('ホストの版がずれているときの案内（#205 の配線漏れ・#576）', () => {
+  beforeAll(async () => {
+    saveReply = { ok: true, metaOk: true, grouped: 0, hostSkew: 'host-old' };
+    intersect(['p12'], true);
+    await settle();
+    hover('p12a');
+    await settle();
+    click(saveButtons()[0]);
+  });
+
+  afterAll(() => {
+    saveReply = { ok: true, metaOk: true };
+    hoverAway();
+  });
+
+  test('保存できたことと更新の要求を同時に出す', () => {
+    const banner: any = saveBanners().at(-1);
+
+    expect(banner.dataset.state).toBe('partial');
+    expect(banner.textContent).toBe('Saved — please update the Hologram app (it no longer matches this extension)');
+  });
+
+  test('角そのものは印のまま＝長い文面を載せない', () => {
+    expect(labelOf(controlOf('p12a')[0])).toBe('Saved in Hologram');
+  });
+});
+
+// 誤警報が無いこと＝版が一致している（もしくはまだどのホストからも答えを聞いていない）
+// ときは、他の成功と同じく黙ったまま。バナー数を絶対値0で比べないのはこのハーネスの
+// 都合＝StatusSurface の退場は Web Animations の finish イベントで消えるが、この
+// スイートの animate() スタブは onfinish を呼ばない（drag-zone.test.ts と違い、この
+// ファイルは他の場面でアニメの発火自体を見る必要があるため）ので、直前の describe が
+// 出したバナーは実ブラウザと違って DOM に残ったまま。そのため「このアクションの前後で
+// バナーの個数が増えていないこと」を見る＝新しいバナーが1つも足されなければ、この
+// アクションは黙っていたと言える。
+describe('版が一致しているときは誤警報を出さない', () => {
+  let before: number;
+
+  beforeAll(async () => {
+    before = saveBanners().length;
+    saveReply = { ok: true, metaOk: true, grouped: 0, hostSkew: null };
+    intersect(['p13'], true);
+    await settle();
+    hover('p13a');
+    await settle();
+    click(saveButtons()[0]);
+  });
+
+  test('バナーが増えない（誤警報が出ない）', () => {
+    expect(saveBanners().length).toBe(before);
   });
 });
 
