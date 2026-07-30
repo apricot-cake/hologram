@@ -140,13 +140,14 @@ export const MESSAGES = {
     dupSuppress: '今後この確認を出さない',
     // #158: ライブラリには無いが、ゴミ箱に現物が残っている投稿。ここで保存すると
     // 気付かないまま同じ投稿を2つ持つことになる（後で復元すれば本当に2つになる）。
-    // ⚠️「復元」は選択肢に出せない＝保存プログラムはライブラリに対して読み取り専用
-    // で、復元はアプリ側の操作。どこにあるかだけ伝えて、戻すのはアプリに任せる。
+    // ⚠️「復元」はボタンにできない＝保存プログラムはライブラリに対して読み取り専用
+    // で、復元はアプリ側の操作。だから**文言で行き先を教える**＝知らせるだけだと
+    // 「消えたものが出てきた」で終わり、戻す道があること自体が伝わらない。
     // 選択肢は「コピー」と「スキップ」の2つ（置換は相手の現行レコードが無い）。
     // $1 = 削除した日（時刻は出さない＝「いつ要らないと決めたか」は日単位の話）。
-    trashedTitleOn: 'この投稿はゴミ箱にあります（$1 に削除）',
+    trashedTitleOn: 'この投稿はゴミ箱にあります（$1 に削除）。Hologram で元に戻せます',
     // 削除日時が記録されていない場合（記録の書き込みが中断された等）。
-    trashedTitle: 'この投稿はゴミ箱にあります',
+    trashedTitle: 'この投稿はゴミ箱にあります。Hologram で元に戻せます',
   },
 
   en: {
@@ -211,8 +212,8 @@ export const MESSAGES = {
     dupSuppress: "Don't ask again",
     // #158 — see the ja notes. Restoring is not offered: the host is read-only
     // over the library, so putting the post back is done in the app.
-    trashedTitleOn: 'This post is in the trash (deleted $1)',
-    trashedTitle: 'This post is in the trash',
+    trashedTitleOn: 'This post is in the trash (deleted $1). You can restore it in Hologram',
+    trashedTitle: 'This post is in the trash. You can restore it in Hologram',
   },
 };
 
