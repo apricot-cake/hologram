@@ -11,7 +11,7 @@
 // avatar fetch) live outside this module (#227: lib-backup.ts, lib-migrate.ts,
 // lib-config.ts, native-host.ts) and arrive via ctx; mutable state is reached through
 // getWin/send/getConfigLastCorrupt/resetDelta accessors.
-import { ipcMain, dialog } from 'electron';
+import { ipcMain, dialog, clipboard } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -20,10 +20,11 @@ import { parseJsonLoose } from './lib-json.ts';
 import { cloudSyncProviderOf } from './save-folder-guard.ts';
 import { fillCardDims } from './lib-card-dims.ts';
 import { makeTagResolver, preparePostStmts, writePost } from './lib-db-record-writer.ts';
+import { IMPORTABLE_MEDIA, buildLocalRecord, importLocalImage, localCaptureId } from './lib-local-intake.ts';
 import type { PostRecordInput } from '../../../native-host/post-record.mts';
 import type { BrowserWindow } from 'electron';
 import type { IpcContext } from './ipc-context.ts';
-import type { ClearAllResult, CompleteImportResult, ExportCompleteResult, ExportSaveResult, LegacyImportResult, MediaImportResult, SaveFolderMoveResult, SaveFolderPickResult } from './ipc-payloads.ts';
+import type { ClearAllResult, ClipboardImportResult, CompleteImportResult, ExportCompleteResult, ExportSaveResult, LegacyImportResult, MediaImportResult, SaveFolderMoveResult, SaveFolderPickResult } from './ipc-payloads.ts';
 
 function exportStamp() {
   return new Date().toISOString().replace(/[:.]/g, '-').replace('T', '_').slice(0, 19);
@@ -33,12 +34,9 @@ function exportStamp() {
 // sidecars/images flat into it (parallel to BACKUP_SUBDIR's Hologram-mirror).
 const LIBRARY_SUBDIR = 'Hologram-library';
 
-// Import arbitrary image files as library images (the user's own files are fine).
-// Tagged source:'drag' so they appear in the image browse view. Also serves as the
-// import path for Hologram' media-only export.
-const IMPORTABLE_IMG = ['jpg', 'jpeg', 'jfif', 'png', 'webp', 'gif', 'avif', 'bmp', 'tiff', 'svg'];
-const IMPORTABLE_VID = ['mp4', 'webm', 'mov', 'm4v'];
-const IMPORTABLE_MEDIA = IMPORTABLE_IMG.concat(IMPORTABLE_VID);
+// The extension lists and the record shape a locally-imported file becomes now live
+// in lib-local-intake.ts — the dialog below is one of four doors that share them
+// (#84's 実装設計 comment; the clipboard door is at the bottom of this file).
 
 function register(ctx: IpcContext) {
   const {
@@ -569,30 +567,22 @@ function register(ctx: IpcContext) {
           skipped++;
           continue;
         }
-        const isVid = IMPORTABLE_VID.includes(ext);
-        const captureId = `drag-${stamp}-${String(seq++).padStart(4, '0')}`;
+        const captureId = localCaptureId('drag', stamp, seq++);
         const file = `${captureId}.${ext}`;
         const nowIso = new Date().toISOString();
         const mtimeIso = st.mtime && !Number.isNaN(st.mtime.getTime()) ? st.mtime.toISOString() : nowIso;
-        const rec: PostRecordInput = {
+        // Shared with the clipboard door and (later) the watch folder — see
+        // lib-local-intake.ts. This door keeps its own copy+batch-transaction
+        // because it writes many records at once; only the record SHAPE is shared.
+        const rec: PostRecordInput = buildLocalRecord({
           captureId,
+          file,
+          ext,
           source: 'drag',
-          url: null,
-          platform: null,
           title: path.basename(fp, path.extname(fp)) || null,
-          text: null,
-          displayName: null,
-          screenName: null,
-          mediaType: isVid ? 'video' : 'image',
-          capturedAt: nowIso,
           date: mtimeIso,
-          updatedAt: nowIso,
-          media: [],
-          tags: [],
-          hashtags: [],
-          image: isVid ? null : file,
-          video: isVid ? file : null,
-        };
+          now: nowIso,
+        });
         await fs.promises.copyFile(fp, path.join(folder, file));
         toWrite.push(rec);
         imported++;
@@ -614,6 +604,58 @@ function register(ctx: IpcContext) {
       }
     }
     return { imported, skipped };
+  });
+
+  // Paste an image straight into the library (#85). The renderer's Ctrl+V lands
+  // here; everything about WHEN that key counts as an import (input fields,
+  // overlays) is decided renderer-side in services/clipboard-intake.ts, because
+  // only the renderer knows what has focus.
+  //
+  // PNG, always: readImage() hands back a decoded bitmap with the original
+  // encoding already lost, so re-encoding is not a choice — "keep the source
+  // format" has no implementation here. Callers who want the original bytes use a
+  // file door (the dialog, #234's drop, #84's watch folder).
+  //
+  // `title` comes from the renderer because the label is user-visible and this
+  // process holds no message table (i18n is renderer-only, services/i18n.ts).
+  // Nothing else about the record is taken from it.
+  ipcMain.handle('import-clipboard', async (_e, title): Promise<ClipboardImportResult> => {
+    const folder = getSaveFolder();
+    if (!folder) return { imported: 0, error: 'no-folder' };
+    let bytes: Buffer | null = null;
+    try {
+      // availableFormats() first: a clipboard holding only text answers an empty
+      // NativeImage anyway, but asking the cheap question keeps a large text/html
+      // payload from being handed to the image decoder just to be discarded.
+      if (clipboard.availableFormats().some((f) => f.startsWith('image/'))) {
+        const img = clipboard.readImage();
+        if (!img.isEmpty()) bytes = img.toPNG();
+      }
+    } catch {
+      bytes = null;
+    }
+    // Not an error — the user pressed Ctrl+V with something else on the clipboard.
+    if (!bytes || !bytes.length) return { imported: 0, empty: true };
+    const handle = await ensurePostsSynced();
+    if (!handle) return { imported: 0, error: 'no-folder' };
+    try {
+      await importLocalImage({
+        folder,
+        sqlite: handle.sqlite,
+        source: 'clipboard',
+        idPrefix: 'clip',
+        ext: 'png',
+        bytes,
+        title: typeof title === 'string' && title.trim() ? title : null,
+        // No origin date to carry — the paste IS the record's date (#85).
+      });
+    } catch (err) {
+      return { imported: 0, error: err.message };
+    }
+    // An in-app write leaves no inbox event, so the watcher that normally tells the
+    // renderer to refetch never fires — same as a delete (ipc-trash.ts).
+    send('posts-changed', null);
+    return { imported: 1 };
   });
 }
 

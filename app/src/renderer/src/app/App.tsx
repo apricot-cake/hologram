@@ -18,6 +18,7 @@ import { TooltipHost } from '../tooltip/TooltipHost.tsx';
 import { handleShortcutPaletteKey } from '../services/command-registry.ts';
 import { handleShortcutPanelsKey } from '../services/panels.ts';
 import { handleShortcutZoomKey } from '../services/image-zoom.ts';
+import { handleShortcutClipboardKey } from '../services/clipboard-intake.ts';
 import { onPostsChanged } from '../services/posts.ts';
 import { onChange as foldersOnChange } from '../services/folders.ts';
 import { get as storeGet, subscribe as storeSubscribe } from '../services/store.ts';
@@ -180,6 +181,11 @@ function GlobalShortcuts() {
       // (#150). Same arrangement again: the guard is that a zoomable slide has
       // registered a controller, which only services/image-zoom.ts can know.
       handleShortcutZoomKey(e);
+      // Ctrl/Cmd+V = import the clipboard's image (#85). Same arrangement again:
+      // only the registration is here. Its guard is the strictest of the set,
+      // because this is the ONE shortcut whose key already means something
+      // everywhere else — see services/clipboard-intake.ts.
+      handleShortcutClipboardKey(e);
     };
     const onMouseup = (e: MouseEvent) => handleShortcutMouseNav(e);
     // Ctrl+wheel = content size (#141). Non-passive on purpose: the handler
