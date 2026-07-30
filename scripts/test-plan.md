@@ -10,21 +10,23 @@
 ## テスト後の一括検証（毎回）
 
 ```
-python scripts/verify-store.py --recent N
+node scripts/test-watch-verify.cts --recent N
 ```
 
-保存フォルダの `<id>.json` サイドカー（メタデータ）と `<id>.jpg`（ペア画像の存在）を、Bluesky / Misskey の公開APIと自動照合。
+ライブラリのデータベース（読み取り専用で開くのでアプリ起動中でも可）のレコードを各プラットフォームの公開APIと自動照合し、レコードが指す保存ファイル（スクリーンショット・動画・`media[]` の原寸とポスター・アバター）がディスクにあることを確認する。1件だけなら `--id <captureId>`、引数なしなら保存を監視して着地ごとに自動照合。
 
 ---
 
 ## 共通確認項目（全キャプチャテスト共通）
 
-各キャプチャ後に以下を確認。verify-store.py が自動チェックする項目は [auto] と記載。
+各キャプチャ後に以下を確認。`test-watch-verify.cts` が自動チェックする項目は [auto] と記載。
 
-- [auto] サイドカー内の screenName, displayName, userId, text, date（API照合。X は screenName のみ）
-- [auto] サイドカー内の likes, reposts, replies（API照合・件数は変動許容）
-- [auto] `<captureId>.jpg` と `<captureId>.json` のペアが保存先フォルダに生成
-- [ ] サイドカー内の captureId, capturedAt, mediaType, lang, isReply, isQuote, isThread（参考表示・手動確認）
+- [auto] レコードの screenName, displayName, userId, text, date（API照合）
+- [auto] レコードの likes, reposts, replies, bookmarks, views（API照合・件数は変動許容＝不一致でも FAIL にしない）
+- [auto] url がそのプラットフォームのパーマリンク形式（`/photo/N`・`/liked-by` などが付いていない）
+- [auto] レコードが指す保存ファイルが全部ディスクにある（スクリーンショット・動画・`media[]` の原寸とポスター・アバター）
+- [auto] media の枚数（保存 ≤ live・`imageIndex` が `imageCount` の範囲内）
+- [ ] capturedAt, mediaType, lang, isReply, isQuote, isThread, tags（`保存値:` 行に印字される・手動確認）
 
 ---
 
