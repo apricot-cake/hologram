@@ -33,7 +33,7 @@ const POST_URL = 'https://x.com/EGOBJ4/status/2079187119311118431';
 const CAPTURE_ID = 'dummy-466';
 const SNAPSHOT_FILE = path.join(configDir, 'bridge-saved-index.json');
 
-// Seeded straight into the DB via writePost + truthSource='db' (lib-seed-library.cts),
+// Seeded straight into the DB via writePost (lib-seed-library.cts),
 // never through the inbox and with no orphan to recover — exactly the shape that used
 // to leave scheduleSavedIndexWrite uncalled for an entire app lifetime (#466).
 seedLibrary(configDir, [
