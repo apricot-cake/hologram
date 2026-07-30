@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import type { PointerEvent as ReactPointerEvent } from 'react';
 import { UgoiraPlayer } from './UgoiraPlayer.tsx';
+import { createNeighborPreloader, neighborPreloadSources, type NeighborPreloader } from './preload.ts';
 import { TransformComponent, TransformWrapper } from 'react-zoom-pan-pinch';
 import type { ReactZoomPanPinchRef } from 'react-zoom-pan-pinch';
 
@@ -131,7 +132,14 @@ function Zoomable({ src, alt }: { src: string; alt: string }) {
     // way. Per-tick bounds clamping makes both motions dead straight.
     <TransformWrapper ref={twRef} minScale={MIN_SCALE} maxScale={MAX_SCALE} centerOnInit disablePadding doubleClick={{ disabled: true }} wheel={{ disabled: true }}>
       <TransformComponent wrapperClass="itv-tw" contentClass="itv-tc" wrapperStyle={{ width: '100%', height: '100%' }} contentStyle={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <img ref={imgRef} className="itv-media" src={src} alt={alt} draggable={false} onDoubleClick={onDouble} onPointerDown={onPointerDown} onPointerUp={onPointerUp} />
+        {/* decoding="async" (#241): this <img> IS the surface, so there is no
+            "other DOM content" that a sync decode would keep in step with — all
+            it could do is hold the frame (and the nav buttons, and the counter)
+            hostage to a multi-megapixel decode. Same answer the grid's cards
+            already give. The blank moment async can leave on a slide change is
+            covered from the other side, by preload.ts warming the decode before
+            the step happens. */}
+        <img ref={imgRef} className="itv-media" src={src} alt={alt} decoding="async" draggable={false} onDoubleClick={onDouble} onPointerDown={onPointerDown} onPointerUp={onPointerUp} />
       </TransformComponent>
     </TransformWrapper>
   );
@@ -142,6 +150,16 @@ function Zoomable({ src, alt }: { src: string; alt: string }) {
 // empty-state rule (always offer the next action).
 export function ImageTab({ model }: { model: ImageTabModel }) {
   const { items, idx, missing, labels } = model;
+  const i = items.length ? Math.max(0, Math.min(idx, items.length - 1)) : 0;
+  // Keep the neighbours fetched AND decoded (#241). Above the missing-state
+  // return so the hook order is stable: an empty list simply preloads nothing
+  // and drops whatever the previous tab was holding.
+  const preloader = useRef<NeighborPreloader | null>(null);
+  useEffect(() => {
+    if (!preloader.current) preloader.current = createNeighborPreloader();
+    preloader.current.sync(neighborPreloadSources(items, i));
+  }, [items, i]);
+  useEffect(() => () => preloader.current?.clear(), []);
   if (missing || !items.length) {
     return (
       <div className="itv-empty">
@@ -152,11 +170,18 @@ export function ImageTab({ model }: { model: ImageTabModel }) {
       </div>
     );
   }
-  const i = Math.max(0, Math.min(idx, items.length - 1));
   const item = items[i];
   const multi = items.length > 1;
   const step = (d: number) => model.onIndexChange && model.onIndexChange((i + d + items.length) % items.length);
   return (
+    // The per-slide `key` stays (#241 left the choice to implementation). It is
+    // what resets zoom/pan to fit on a step, and it is what stops one slide's
+    // playback state (うごイラ decode loop, <video> position) from bleeding into
+    // the next. Dropping it would mean re-deriving all of that from a src-change
+    // effect — a strictly larger surface than the thing being sped up — and it
+    // would buy nothing here, because what made the step feel cold was the cold
+    // fetch+decode, not the remount. With preload.ts warming the neighbours, the
+    // remounted <img> hits a warm resource and a warm decode.
     <div className="itv-stage">
       {item.ugoira ? (
         <UgoiraPlayer key={item.src} file={item.ugoira.file} frames={item.ugoira.frames} poster={item.poster} alt={item.alt} labels={labels} />
