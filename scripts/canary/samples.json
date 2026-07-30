@@ -2,54 +2,163 @@
   "$comment": [
     "API スキーマカナリア（#191）の観測対象。node scripts/schema-canary.cts が読む。",
     "label は投稿の種別。同じ platform の中で一意にする（スナップショットのキーになる）。",
-    "他人の公開投稿なので消えることがある。消えたサンプルは『不通』として報告され、",
-    "スキーマ変化とは区別される＝報告に出たらここを差し替える。堅牢化の最終形は各PFに",
-    "観測用の自前投稿を種別ごと用意して置き換えること（一度きりの準備作業）。",
-    "差し替えたら該当 label の基準は snapshots/<platform>.json から自動で作り直される",
-    "（古い label の行は手で消す）。"
+    "candidates は同じ種別の候補で、順序が優先順（#464）。カナリアは生きている候補を1本だけ",
+    "使い、全候補が落ちたときにだけ『不通』として差し替えを求める＝1本消えても監視は止まらない。",
+    "前回使った候補はスナップショットの sources に記録され、次回も最優先で試される（往復を防ぐ",
+    "ため＝観測対象が変わると基準は作り直しになり、その回は何とも比較できない）。",
+    "候補は『消えにくいか』で選ぶ＝機関・公式アカウント、または長年残っている古い投稿。",
+    "label 自体を減らした時だけ snapshots/<platform>.json の古い行を手で消す。"
   ],
   "$gaps": [
-    "X の GIF（animated_gif）: 公式系アカウントに見つからず未登録。",
-    "X の tombstone（鍵付き・年齢制限）: 2026-07-26 に tombstone.text の消失を実地確認した種別だが、",
-    "  他人の非公開投稿を観測対象として公開リポジトリに置くのは避けた。存在しない ID は 404 で、",
-    "  tombstone 応答そのものを安定して引ける公開サンプルが無い。自前投稿を用意する時に足す。",
-    "Mastodon の投票: mastodon.social の公式系アカウントに現存せず未登録（Misskey 側で投票を観測している）。",
-    "Misskey の動画: misskey.io の公式系アカウントとグローバル TL に見つからず未登録。"
+    "X の GIF（animated_gif）: 機関・公式系アカウントに見つからず未登録。",
+    "X の tombstone（投稿が存在するのに中身が配信されない応答）: カナリア本体が『サンプルが消えた』と",
+    "  同じ箱に入れるため、登録すると恒久的に不通扱いになる＝samples.json だけでは足せない。",
+    "  観測対象そのものは公開のものが実在する（2006年の削除済み投稿は tombstone.text を持つ応答を返し続ける）。",
+    "  カナリア側に『tombstone が期待値』の概念を足す #588 で扱う。",
+    "Misskey の動画: misskey.io の @ai（1200件超を走査）に現存せず未登録。",
+    "Bluesky の record.tags[]（tag ファセットとは別のタグ欄・#177 はこことも合流する）: bsky.app と",
+    "  atproto.com の公開投稿200件に1件も無く未登録。公式クライアントから設定できない欄のため。",
+    "Mastodon の投票は #464 で登録済み（@Gargron）＝この穴は埋まった。"
   ],
   "platforms": {
     "x": [
-      { "label": "text", "url": "https://x.com/jack/status/20", "note": "2006年・最古の投稿＝消えない" },
-      { "label": "image", "url": "https://x.com/BarackObama/status/266031293945503744", "note": "2012年・写真1枚" },
-      { "label": "multiImage", "url": "https://x.com/NASASpox/status/2080777261897175496", "note": "写真4枚" },
-      { "label": "video", "url": "https://x.com/NASA/status/2080330036607893817" },
-      { "label": "quote", "url": "https://x.com/X/status/2074264959219896698" },
-      { "label": "reply", "url": "https://x.com/X/status/2079275370742677949" },
-      { "label": "card", "url": "https://x.com/NASA/status/2081307441594331350", "note": "リンクカード（metadata.ts は未読取）" }
+      {
+        "label": "text",
+        "candidates": [{ "url": "https://x.com/jack/status/20", "note": "2006年・最古の投稿＝20年消えていない" }, { "url": "https://x.com/jack/status/29", "note": "2006年・同日の連番" }, { "url": "https://x.com/biz/status/21", "note": "2006年・共同創業者" }]
+      },
+      {
+        "label": "image",
+        "candidates": [{ "url": "https://x.com/BarackObama/status/266031293945503744", "note": "2012年・写真1枚" }, { "url": "https://x.com/BarackObama/status/896523232098078720", "note": "2017年・歴代最多いいねの投稿" }, { "url": "https://x.com/NASA/status/2040059740848283920" }]
+      },
+      {
+        "label": "multiImage",
+        "candidates": [{ "url": "https://x.com/NASASpox/status/2080777261897175496", "note": "写真4枚" }, { "url": "https://x.com/NASA/status/2057195134630928749", "note": "写真4枚" }, { "url": "https://x.com/NASA/status/2046969982131507400", "note": "写真4枚" }]
+      },
+      {
+        "label": "video",
+        "candidates": [{ "url": "https://x.com/NASA/status/2080330036607893817" }, { "url": "https://x.com/NASA/status/2072078153082696090" }, { "url": "https://x.com/X/status/2029986216842613078" }]
+      },
+      {
+        "label": "quote",
+        "candidates": [{ "url": "https://x.com/X/status/2074264959219896698", "note": "候補が1本しかない＝X には公開の投稿一覧APIが無く、引用ポストだけを機械的に探す手段が無い。見つけ次第足す" }]
+      },
+      {
+        "label": "reply",
+        "candidates": [{ "url": "https://x.com/X/status/2079275370742677949" }, { "url": "https://x.com/NASA/status/2042756933686337713" }, { "url": "https://x.com/NASA/status/2042748454535917793" }]
+      },
+      {
+        "label": "card",
+        "candidates": [{ "url": "https://x.com/NASA/status/2081307441594331350", "note": "リンクカード（metadata.ts は未読取）" }, { "url": "https://x.com/NASA/status/2042731951308579134" }, { "url": "https://x.com/JAXA_jp/status/2047558230130532396" }]
+      },
+      {
+        "label": "hashtag",
+        "candidates": [
+          { "url": "https://x.com/JAXA_jp/status/1943219646368460881", "note": "entities.hashtags の観測点（#177）＝4個・全角混じり" },
+          { "url": "https://x.com/tnsc_JAXA/status/1885944672390168845", "note": "4個・全角混じり" },
+          { "url": "https://x.com/TheEllenShow/status/440322224407314432", "note": "2014年・英字1個" }
+        ]
+      }
     ],
     "bluesky": [
-      { "label": "text", "url": "https://bsky.app/profile/bsky.app/post/3mp54n7zccc2j" },
-      { "label": "image", "url": "https://bsky.app/profile/bsky.app/post/3moipb3xbg226" },
-      { "label": "video", "url": "https://bsky.app/profile/bsky.app/post/3mk4lzkrnk22d" },
-      { "label": "quote", "url": "https://bsky.app/profile/bsky.app/post/3mpoezgevvc23" },
-      { "label": "reply", "url": "https://bsky.app/profile/bsky.app/post/3mpohxl64mk2z" },
-      { "label": "external", "url": "https://bsky.app/profile/atproto.com/post/3mnkles3mh22l", "note": "外部リンク埋め込み" }
+      {
+        "label": "text",
+        "candidates": [{ "url": "https://bsky.app/profile/bsky.app/post/3mp54n7zccc2j" }, { "url": "https://bsky.app/profile/bsky.app/post/3moy6udt27w2r" }, { "url": "https://bsky.app/profile/bsky.app/post/3mojb23vtt22c" }]
+      },
+      {
+        "label": "image",
+        "candidates": [{ "url": "https://bsky.app/profile/bsky.app/post/3moipb3xbg226" }, { "url": "https://bsky.app/profile/bsky.app/post/3mqafridzgk2e" }, { "url": "https://bsky.app/profile/bsky.app/post/3mgdifcgakc2e" }]
+      },
+      {
+        "label": "video",
+        "candidates": [{ "url": "https://bsky.app/profile/bsky.app/post/3mk4lzkrnk22d" }, { "url": "https://bsky.app/profile/bsky.app/post/3mehbtjykb22n" }, { "url": "https://bsky.app/profile/bsky.app/post/3mgdqhzxy7s2u" }]
+      },
+      {
+        "label": "quote",
+        "candidates": [{ "url": "https://bsky.app/profile/bsky.app/post/3mpoezgevvc23" }, { "url": "https://bsky.app/profile/bsky.app/post/3mlvllqtnmk2g" }, { "url": "https://bsky.app/profile/bsky.app/post/3mfl45k3q6s2l" }]
+      },
+      {
+        "label": "reply",
+        "candidates": [{ "url": "https://bsky.app/profile/bsky.app/post/3mpohxl64mk2z" }, { "url": "https://bsky.app/profile/bsky.app/post/3mphaptzcwc22" }, { "url": "https://bsky.app/profile/bsky.app/post/3mp7sbnuyu22b" }]
+      },
+      {
+        "label": "external",
+        "candidates": [{ "url": "https://bsky.app/profile/atproto.com/post/3mnkles3mh22l", "note": "外部リンク埋め込み" }, { "url": "https://bsky.app/profile/atproto.com/post/3mrascn5v6i2p" }, { "url": "https://bsky.app/profile/bsky.app/post/3mk3sdiixhs2n" }]
+      },
+      {
+        "label": "hashtag",
+        "candidates": [{ "url": "https://bsky.app/profile/bsky.app/post/3ml7bvrr4yk2l", "note": "tag ファセットの観測点（#177）" }, { "url": "https://bsky.app/profile/bsky.app/post/3mggjs262vc2i" }]
+      }
     ],
     "mastodon": [
-      { "label": "text", "url": "https://mastodon.social/@Mastodon/116967892835165166" },
-      { "label": "image", "url": "https://mastodon.social/@Mastodon/116877164722118013" },
-      { "label": "multiImage", "url": "https://mastodon.social/@Mastodon/114584709515916614" },
-      { "label": "video", "url": "https://mastodon.social/@Mastodon/116839714185151652" },
-      { "label": "cw", "url": "https://mastodon.social/@Gargron/116988836378462541", "note": "閲覧注意（spoiler_text）" },
-      { "label": "reply", "url": "https://mastodon.social/@Mastodon/116880274053020002" }
+      {
+        "label": "text",
+        "candidates": [{ "url": "https://mastodon.social/@Mastodon/116967892835165166", "note": "ハッシュタグ6個＝tags[] の観測点も兼ねる" }, { "url": "https://mastodon.social/@Mastodon/116835166965413321" }, { "url": "https://mastodon.social/@Gargron/117000391422402354" }]
+      },
+      {
+        "label": "image",
+        "candidates": [{ "url": "https://mastodon.social/@Mastodon/116877164722118013" }, { "url": "https://mastodon.social/@Mastodon/116929144390213579" }, { "url": "https://mastodon.social/@Gargron/116980222529903625" }]
+      },
+      {
+        "label": "multiImage",
+        "candidates": [{ "url": "https://mastodon.social/@Mastodon/114584709515916614" }, { "url": "https://mastodon.social/@Mastodon/113900604787941302" }, { "url": "https://mastodon.social/@Gargron/116906260093183230" }]
+      },
+      {
+        "label": "video",
+        "candidates": [{ "url": "https://mastodon.social/@Mastodon/116839714185151652", "note": "gifv" }, { "url": "https://mastodon.social/@Mastodon/116296397062584045", "note": "gifv" }, { "url": "https://mastodon.social/@Gargron/116416327731475888", "note": "video" }]
+      },
+      {
+        "label": "cw",
+        "candidates": [
+          {
+            "url": "https://mastodon.social/@Gargron/116988836378462541",
+            "note": "閲覧注意（spoiler_text）。候補が1本しかない＝@Mastodon と @Gargron を計900件走査して CW 付きはこれだけだった。見つけ次第足す"
+          }
+        ]
+      },
+      {
+        "label": "reply",
+        "candidates": [{ "url": "https://mastodon.social/@Mastodon/116880274053020002" }, { "url": "https://mastodon.social/@Mastodon/116929144745009058" }, { "url": "https://mastodon.social/@Mastodon/116840833111454550" }]
+      },
+      {
+        "label": "poll",
+        "candidates": [{ "url": "https://mastodon.social/@Gargron/116725432434510925" }, { "url": "https://mastodon.social/@Gargron/116678508564928485" }, { "url": "https://mastodon.social/@Gargron/116460783363908188" }]
+      }
     ],
     "misskey": [
-      { "label": "text", "url": "https://misskey.io/notes/ap81757sr0bp0bxo" },
-      { "label": "image", "url": "https://misskey.io/notes/ap7c5zlxyyzf03ng" },
-      { "label": "poll", "url": "https://misskey.io/notes/ap7dmcut8yp700al" },
-      { "label": "cw", "url": "https://misskey.io/notes/ap7e5qdqy8se08pv" },
-      { "label": "reply", "url": "https://misskey.io/notes/ap7jh6mtcd7t02nn" },
-      { "label": "quote", "url": "https://misskey.io/notes/ap7jlc4y7kvv066m", "note": "引用リノート" }
+      {
+        "label": "text",
+        "candidates": [{ "url": "https://misskey.io/notes/ap81757sr0bp0bxo" }, { "url": "https://misskey.io/notes/apa8i2g808c009ch" }, { "url": "https://misskey.io/notes/apa6cwq9xgfp05nd" }]
+      },
+      {
+        "label": "image",
+        "candidates": [{ "url": "https://misskey.io/notes/ap7c5zlxyyzf03ng" }, { "url": "https://misskey.io/notes/apa96ypoggj709ud" }, { "url": "https://misskey.io/notes/apa71pd0xgfp06zh" }]
+      },
+      {
+        "label": "poll",
+        "candidates": [{ "url": "https://misskey.io/notes/ap7dmcut8yp700al" }, { "url": "https://misskey.io/notes/apa8i24208c009cg" }, { "url": "https://misskey.io/notes/ap9thxrqsu2g086r" }]
+      },
+      {
+        "label": "cw",
+        "candidates": [{ "url": "https://misskey.io/notes/ap7e5qdqy8se08pv" }, { "url": "https://misskey.io/notes/apa91fc7iac603y5" }, { "url": "https://misskey.io/notes/ap9u1cfpwrn901hc" }]
+      },
+      {
+        "label": "reply",
+        "candidates": [{ "url": "https://misskey.io/notes/ap7jh6mtcd7t02nn" }, { "url": "https://misskey.io/notes/apacvz6twi0d01o5" }, { "url": "https://misskey.io/notes/apabry6gdd8j0d5c" }]
+      },
+      {
+        "label": "quote",
+        "candidates": [{ "url": "https://misskey.io/notes/ap7jlc4y7kvv066m", "note": "引用リノート" }, { "url": "https://misskey.io/notes/ap9uvy0otobb02na" }, { "url": "https://misskey.io/notes/ap8xvwh5w7xv0a3f" }]
+      }
     ],
-    "pixiv": [{ "label": "single", "url": "https://www.pixiv.net/artworks/1580459", "note": "pixiv 事務局・2010年・1ページ" }, { "label": "multiPage", "url": "https://www.pixiv.net/artworks/146691579", "note": "複数ページ＝/pages エンドポイントも通る" }]
+    "pixiv": [
+      {
+        "label": "single",
+        "candidates": [{ "url": "https://www.pixiv.net/artworks/1580459", "note": "pixiv 事務局・2008年・1ページ" }, { "url": "https://www.pixiv.net/artworks/1637647", "note": "pixiv 事務局・2008年" }, { "url": "https://www.pixiv.net/artworks/1795232", "note": "pixiv 事務局・2008年" }]
+      },
+      {
+        "label": "multiPage",
+        "candidates": [{ "url": "https://www.pixiv.net/artworks/146691579", "note": "複数ページ＝/pages エンドポイントも通る" }, { "url": "https://www.pixiv.net/artworks/147301328", "note": "pixiv 事務局・5ページ" }, { "url": "https://www.pixiv.net/artworks/147150669", "note": "pixiv 事務局・5ページ" }]
+      }
+    ]
   }
 }
