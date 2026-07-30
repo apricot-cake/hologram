@@ -529,18 +529,21 @@ export function endFilterEditSession(): void {
   // live in kind-menu-builder.ts now; tagsSetTagKind below is only
   // for maybeDistinguishHomonym's own direct write.
   const _ic = (paths: string) => `<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${paths}</svg>`;
-  // --- In-session Edit Undo/Redo ---
-  // Records tag-edit operations so the user can undo bulk mistakes (Ctrl+Z / Ctrl+Shift+Z).
-  // Linear stack, clears on restart. Deletions are NOT included (handled by trash).
-  // Stack semantics + the orchestrator-owned apply callbacks/shortcut handler moved to
-  // undo-builder.ts — a viewer.ts decomposition slice. Constructed here
-  // (its original spot) so pushUndo is ready in time for inspector/postGrid/posterGrid's
-  // own deps below; postGrid/inspector/posterGrid are all declared later, so their
-  // accessors are deferred forward references (same shape as inspector-builder.ts's
-  // jumpToPoster). showToast itself is notify, imported directly at the top —
-  // no forward reference needed there.
+  // --- In-session Edit Undo/Redo (#235) ---
+  // Records the DIFF each library edit actually produced — post tags, poster tags and
+  // folder membership (both views) — so a bulk mistake can be taken back with Ctrl+Z /
+  // Ctrl+Shift+Z, or straight from the toast the operation raised. Linear stack, cleared
+  // on restart. Deleting a post is NOT on the stack yet (ゴミ箱 is its rescue path) — the
+  // remaining coverage is tracked in #235.
+  // Stack semantics + the orchestrator-owned apply callbacks/shortcut handler live in
+  // undo-builder.ts. Constructed here (its original spot) so pushUndo is ready in time
+  // for inspector/postGrid/posterGrid's own deps below; postGrid/inspector/posterGrid are
+  // all declared later, so their accessors are deferred forward references (same shape as
+  // inspector-builder.ts's jumpToPoster). showToast itself is notify, imported directly at
+  // the top — no forward reference needed there.
   const undoCtl = makeUndoController({
     showToast: notify,
+    t: getMessage,
     getPostById: (id) => postGrid.getPostById(id), // postGrid is declared below — deferred
     markPostsMutated: () => postGrid.markPostsMutated(),
     renderPosts: (keepLimit) => postGrid.renderPosts(keepLimit),
@@ -548,9 +551,19 @@ export function endFilterEditSession(): void {
     getInspectedKey: () => inspectedKey,
     showDetail: (g) => showDetail(g), // showDetail (inspector) is declared far below — deferred
     refreshPosterTagFields: (key) => refreshPosterTagFields(key), // refreshPosterTagFields (posterGrid) is declared far below — deferred
+    getPosterFolderStore: () => posterGrid.pfStore, // posterGrid is declared far below — deferred
+    onFolderMembershipChanged: () => {
+      folders.notifyChanged('membership'); // same channel a normal toggle uses — chips and sidebar counts hang off it
+      postGrid.renderPosts(true); // unconditional here: an undo is rare and deliberate, so pay one repaint rather than re-derive whether a folder filter is live
+    },
+    onPosterFolderMembershipChanged: () => posterGrid.refreshPosterFolderViews(),
   });
-  const { pushUndo } = undoCtl;
+  const { pushUndo, undoAction } = undoCtl;
   handleShortcutUndoKey = undoCtl.handleShortcutUndoKey;
+  // folders.ts fires its own toast for a membership toggle, so it also owns putting
+  // 「元に戻す」 on it — the stack is injected because that leaf module loads long
+  // before this controller exists.
+  folders.setUndoRecorder((folderId, added, removed) => pushUndo([{ kind: 'folder-items', target: folderId, added, removed }]), getMessage('undoAction'));
 
   // --- State ---
   // allPosts/_postsById/loadPosts/renderPosts and the render-reuse guard moved to
@@ -1218,6 +1231,7 @@ export function endFilterEditSession(): void {
     showKindMenu,
     inspectorTagPickerData,
     pushUndo,
+    undoAction,
     markPostsMutated,
     renderPosts,
     keepCurrentVisible,
@@ -1352,6 +1366,7 @@ export function endFilterEditSession(): void {
     fileSrc,
     showToast: notify,
     pushUndo,
+    undoAction,
     showKindMenu,
     buildGroupGalleryItems,
     posterTagsOf,

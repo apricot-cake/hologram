@@ -24,6 +24,7 @@ import { isOpen as settingsIsOpen } from './settings.ts';
 import { sameTags, setTagKind as tagsSetTagKind } from './tags.ts';
 import { updateTags as postsUpdateTags } from './posts.ts';
 import { hologramIpc } from './ipc.ts';
+import type { UndoChange } from './undo.ts';
 
 export interface InspectorBuilderDeps {
   t(key: string, subs?: ReadonlyArray<string | number | null | undefined>): string;
@@ -37,7 +38,7 @@ export interface InspectorBuilderDeps {
   // Peek this group in the quick-view lightbox (#143 未決事項3) — the inspector
   // preview thumbnail is one of its two entries (the other = Space on the card).
   openQuickView(g: HologramPostGroup): void;
-  pushUndo(kind: string, records: HologramUndoRecord[]): void;
+  pushUndo(changes: readonly UndoChange[]): (() => void) | null;
   inspectorTagPickerData(tags: string[], recordsForSource: any[], kind: string): any;
   getViewGroups(): HologramPostGroup[];
   getAllPosts(): HologramPost[];
@@ -196,9 +197,9 @@ export function makeInspector(deps: InspectorBuilderDeps) {
     if (!g) return;
     const recs = g.records && g.records.length ? g.records : [g.rep];
     deps.keepCurrentVisible(); // removing a tag can un-match an active tag filter
-    const undoRecords: HologramUndoRecord[] = [];
+    const changes: UndoChange[] = [];
     for (const r of recs) {
-      const prev = (r.tags || []).slice();
+      const prev: string[] = (r.tags || []).slice();
       const next = mutate(prev.slice());
       if (!next || sameTags(prev, next)) continue;
       try {
@@ -208,10 +209,17 @@ export function makeInspector(deps: InspectorBuilderDeps) {
       }
       const rec = deps.getPostById(r.captureId); // O(1) lookup; allPosts shares the same record refs
       if (rec) rec.tags = next.slice();
-      undoRecords.push({ captureId: r.captureId, image: r.image || r.video, prevTags: prev, newTags: next });
+      // The recorded change is the difference, not the two lists (#235).
+      changes.push({
+        kind: 'post-tags',
+        target: r.captureId,
+        image: r.image || r.video,
+        added: next.filter((tag) => !prev.includes(tag)),
+        removed: prev.filter((tag) => !next.includes(tag)),
+      });
     }
-    if (!undoRecords.length) return;
-    deps.pushUndo('tags', undoRecords);
+    if (!changes.length) return;
+    deps.pushUndo(changes);
     deps.markPostsMutated();
     deps.renderPosts(true);
     const fresh = deps.getViewGroups().find((g2) => postIdKey(g2.rep) === deps.getInspectedKey());

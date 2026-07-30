@@ -63,6 +63,7 @@ Active filters gather at the top of the screen; **Reset** clears them all at onc
 - **Tags** — right-click a card → "Edit tags." To tag a batch of untagged posts, filter to "no tags," save that search, then step through with the arrow keys and type into the tag field as you go.
 - **Folders** — right-click → "Add to a folder…" to group by theme or favorites.
 - **Bulk actions** — select multiple posts with the ○ at the top-left of each card, then tag, add to a folder, group, or delete them all at once.
+- **Undo (`Ctrl+Z`)** — takes back tag and folder changes one step at a time, and the toast a bulk edit raises carries an Undo button. It lasts until you close the app. A batch that only added a tag to some of the selection gives back exactly that much — posts that already carried the tag keep it. Deleting is not on this stack; the trash is where a deleted post waits.
 
 ### 5. Backup & portability
 

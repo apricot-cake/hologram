@@ -23,13 +23,16 @@ import { setPosterTags } from './tags.ts';
 import { hologramPosterGridSource } from './grid.ts';
 import * as folders from './folders.ts';
 import { set as storeSet } from './store.ts';
+import type { UndoChange } from './undo.ts';
+import type { NotifyAction } from './ui.ts';
 
 export interface PosterGridBuilderDeps {
   t(key: string, subs?: ReadonlyArray<string | number | null | undefined>): string;
   PF_NAME: Record<string, string>;
   fileSrc(file: string, w?: number): string;
-  showToast(msg: unknown): void;
-  pushUndo(kind: string, records: any[]): void;
+  showToast(msg: unknown, action?: NotifyAction | null): void;
+  pushUndo(changes: readonly UndoChange[]): (() => void) | null;
+  undoAction(undoFn: (() => void) | null): NotifyAction | null;
   showKindMenu(tag: string, x: number, y: number, onChange: () => void): void;
   buildGroupGalleryItems(g: HologramPostGroup): any[];
   posterTagsOf(key: string): string[];
@@ -105,10 +108,16 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
     const res = pfStore.toggleIn(id, key);
     if (!res) return false;
     const f = posterFolderById(id);
-    deps.showToast(deps.t(res === 'removed' ? 'posterFolderRemoved' : 'posterFolderAdded', [f?.name ?? '']));
+    const undoFn = deps.pushUndo([{ kind: 'poster-folder-items', target: id, added: res.op === 'added' ? res.keys : [], removed: res.op === 'removed' ? res.keys : [] }]);
+    deps.showToast(deps.t(res.op === 'removed' ? 'posterFolderRemoved' : 'posterFolderAdded', [f?.name ?? '']), deps.undoAction(undoFn));
+    refreshPosterFolderViews();
+    return res.op === 'added';
+  }
+  // What a poster-folder membership change has to touch besides the store — shared
+  // with the undo path so a reverted membership updates the same surfaces.
+  function refreshPosterFolderViews() {
     renderPosterFilterRows(); // folder badge count changed
     if (treeLeaves(deps.posterQBGetTree()).some((c) => c.type === 'folder')) renderPosters(); // membership change may add/remove from the filtered grid
-    return res === 'added';
   }
 
   // The poster-mode filter-row model (#posterFilterRows: row labels, per-row active-leaf
@@ -259,7 +268,7 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
     if (!next) return;
     const changed = next.length !== prev.length || next.some((t, i) => t !== prev[i]);
     if (!changed) return;
-    deps.pushUndo('poster-tags', [{ key, prevTags: prev.slice(), newTags: next.slice() }]);
+    deps.pushUndo([{ kind: 'poster-tags', target: key, added: next.filter((tag) => !prev.includes(tag)), removed: prev.filter((tag) => !next.includes(tag)) }]);
     setPosterTags(key, next.length ? next : null);
     refreshPosterTagFields(key);
   }
@@ -381,6 +390,7 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
     createPosterFolder,
     deletePosterFolder,
     togglePosterFolderMember,
+    refreshPosterFolderViews,
     renderPosterFilterRows,
     resetPosterFilters,
     renderPosters,

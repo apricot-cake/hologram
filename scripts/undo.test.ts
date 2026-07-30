@@ -1,112 +1,269 @@
-// undo.ts のロジック単体テスト。線形履歴のスタック意味論（上限50・新規編集で redo 破棄・
-// prev/new の方向写像・poster-tags ルーティング・適用有無の bool 返却）を、スタブ deps
-// 注入で検証する。副作用（IPC 書き・再描画）は viewer 残置＝ここでは呼び出し記録のみ見る。
+// undo.ts のロジック単体テスト（#235）。差分方式の取り消しスタックが持つ意味論を、
+// 「適用先の現在値」を持つスタブ deps で検証する。副作用（IPC 書き・再描画）は
+// undo-builder 側＝ここでは差分がどう当たるかだけを見る。
+//
+// 主眼は往復＝実行 → 取り消しで元の状態へ戻ること、そして
+// 「他の項目・後から入った別の編集を巻き込まない」こと（#235 が却下した
+// スナップショット丸ごと書き戻し／単純な逆操作との違い）。
 
 import { describe, expect, test } from 'vitest';
-import { makeUndo } from '../app/src/renderer/src/services/undo';
+import { makeUndo, type DirectedChange, type UndoChange, type UndoKind } from '../app/src/renderer/src/services/undo';
 
-// 適用呼び出しを記録するだけのスタブ
-function setup() {
-  const tagCalls: any[] = [];
-  const posterCalls: any[] = [];
+// 対象ごとの値集合を持つ、最小の「ライブラリ」スタブ。applier は
+// 現在値に対して remove → add を当てるだけ（本体の undo-builder と同じ規則）。
+function setup(initial: Record<string, string[]> = {}) {
+  const state: Record<string, string[]> = {};
+  for (const [k, v] of Object.entries(initial)) state[k] = v.slice();
+  const calls: Array<{ kind: UndoKind; changes: DirectedChange[] }> = [];
+
+  const applierFor = (kind: UndoKind) => (changes: DirectedChange[]) => {
+    calls.push({ kind, changes: changes.map((c) => ({ ...c })) });
+    for (const c of changes) {
+      const cur = state[c.target] || [];
+      const kept = cur.filter((v) => !c.remove.includes(v));
+      state[c.target] = [...kept, ...c.add.filter((v) => !kept.includes(v))];
+    }
+  };
+
   const undo = makeUndo({
-    applyTags: (records) => {
-      tagCalls.push(records);
-    },
-    applyPosterTags: (records) => {
-      posterCalls.push(records);
+    appliers: {
+      'post-tags': applierFor('post-tags'),
+      'poster-tags': applierFor('poster-tags'),
+      'folder-items': applierFor('folder-items'),
+      'poster-folder-items': applierFor('poster-folder-items'),
     },
   });
-  return { undo, tagCalls, posterCalls };
+  return { undo, state, calls };
 }
 
-const tagEdit = (captureId: string, prevTags: string[], newTags: string[]) => [{ captureId, image: `${captureId}.jpg`, prevTags, newTags }];
+// 「対象に applyTags を足す」一括操作を実行し、実際に足された分だけを差分として返す。
+function bulkAdd(state: Record<string, string[]>, targets: string[], tags: string[]): UndoChange[] {
+  const changes: UndoChange[] = [];
+  for (const target of targets) {
+    const prev = state[target] || [];
+    const added = tags.filter((t) => !prev.includes(t));
+    if (!added.length) continue;
+    state[target] = [...prev, ...added];
+    changes.push({ kind: 'post-tags', target, added, removed: [] });
+  }
+  return changes;
+}
 
-describe('空スタックは no-op（false 返却＝トーストしない契約）', () => {
-  test('undo は false', async () => {
-    expect(await setup().undo.undo()).toBe(false);
+describe('空スタックは no-op（null 返却＝トーストしない契約）', () => {
+  test('undo は null', async () => {
+    expect(await setup().undo.undo()).toBeNull();
   });
 
-  test('redo は false', async () => {
-    expect(await setup().undo.redo()).toBe(false);
+  test('redo は null', async () => {
+    expect(await setup().undo.redo()).toBeNull();
   });
 
-  test('apply は呼ばれない', async () => {
-    const { undo, tagCalls, posterCalls } = setup();
+  test('applier は呼ばれない', async () => {
+    const { undo, calls } = setup();
     await undo.undo();
-    expect(tagCalls).toHaveLength(0);
-    expect(posterCalls).toHaveLength(0);
+    expect(calls).toHaveLength(0);
   });
 });
 
-test('push ガード: 空/null records は積まれない', async () => {
-  const { undo } = setup();
-  undo.push('tags', []);
-  undo.push('tags', null);
-
-  expect(await undo.undo()).toBe(false);
-});
-
-describe('undo は prevTags・redo は newTags を適用（post 側の形状写像込み）', () => {
-  test('undo: applyTags へ prevTags が {captureId,image,tags} で渡る', async () => {
-    const { undo, tagCalls } = setup();
-    undo.push('tags', tagEdit('c1', ['旧'], ['新']));
-
-    expect(await undo.undo()).toBe(true);
-    expect(tagCalls).toEqual([[{ captureId: 'c1', image: 'c1.jpg', tags: ['旧'] }]]);
-  });
-
-  test('redo: applyTags へ newTags が渡る', async () => {
-    const { undo, tagCalls } = setup();
-    undo.push('tags', tagEdit('c1', ['旧'], ['新']));
-    await undo.undo();
-
-    expect(await undo.redo()).toBe(true);
-    expect(tagCalls[1]).toEqual([{ captureId: 'c1', image: 'c1.jpg', tags: ['新'] }]);
-  });
-
-  // redo 後は undo スタックへ戻っている（もう一往復できる）
-  test('redo 後に再 undo 可能', async () => {
+describe('push の正規化（no-op は記録しない）', () => {
+  test('空配列・null は積まれない', async () => {
     const { undo } = setup();
-    undo.push('tags', tagEdit('c1', ['旧'], ['新']));
+    expect(undo.push([])).toBeNull();
+    expect(undo.push(null)).toBeNull();
+    expect(await undo.undo()).toBeNull();
+  });
+
+  test('added/removed がともに空の変更は落ちる', () => {
+    const { undo } = setup();
+    expect(undo.push([{ kind: 'post-tags', target: 'c1', added: [], removed: [] }])).toBeNull();
+  });
+
+  test('added と removed に同じ値がある場合は両方から落ちる（逆適用が定義できないため）', () => {
+    const { undo } = setup();
+    expect(undo.push([{ kind: 'post-tags', target: 'c1', added: ['同'], removed: ['同'] }])).toBeNull();
+  });
+
+  test('重複は畳まれる', async () => {
+    const { undo, calls } = setup({ c1: [] });
+    undo.push([{ kind: 'post-tags', target: 'c1', added: ['a', 'a', 'b'], removed: [] }]);
+    await undo.undo();
+
+    expect(calls[0].changes[0].remove).toEqual(['a', 'b']);
+  });
+});
+
+describe('往復: 実行 → 取り消しで元の状態に戻る', () => {
+  test('タグ追加の往復', async () => {
+    const { undo, state } = setup({ c1: ['旧'] });
+    undo.push(bulkAdd(state, ['c1'], ['新']));
+    expect(state.c1).toEqual(['旧', '新']);
+
+    await undo.undo();
+
+    expect(state.c1).toEqual(['旧']);
+  });
+
+  test('タグ削除の往復（戻した値は末尾へ＝位置は差分に含めない）', async () => {
+    const { undo, state } = setup({ c1: ['a', 'b', 'c'] });
+    state.c1 = ['a', 'c'];
+    undo.push([{ kind: 'post-tags', target: 'c1', added: [], removed: ['b'] }]);
+
+    await undo.undo();
+
+    expect(state.c1).toEqual(['a', 'c', 'b']);
+  });
+
+  test('取り消しのあと redo で操作後の状態へ戻る', async () => {
+    const { undo, state } = setup({ c1: ['旧'] });
+    undo.push(bulkAdd(state, ['c1'], ['新']));
+    await undo.undo();
+
+    await undo.redo();
+
+    expect(state.c1).toEqual(['旧', '新']);
+  });
+
+  test('redo 後にもう一度 undo できる', async () => {
+    const { undo, state } = setup({ c1: [] });
+    undo.push(bulkAdd(state, ['c1'], ['t']));
     await undo.undo();
     await undo.redo();
 
-    expect(await undo.undo()).toBe(true);
+    expect(await undo.undo()).not.toBeNull();
+    expect(state.c1).toEqual([]);
+  });
+
+  test('フォルダ所属の往復', async () => {
+    const { undo, state } = setup({ f1: ['c1'] });
+    state.f1 = ['c1', 'c2', 'c3'];
+    undo.push([{ kind: 'folder-items', target: 'f1', added: ['c2', 'c3'], removed: [] }]);
+
+    await undo.undo();
+
+    expect(state.f1).toEqual(['c1']);
   });
 });
 
-describe('poster-tags ルーティング', () => {
-  test('applyPosterTags へ {key,tags} で渡る', async () => {
-    const { undo, posterCalls } = setup();
-    undo.push('poster-tags', [{ key: 'x:alice', prevTags: ['a'], newTags: ['a', 'b'] }]);
+describe('実データを壊さない: 記録した差分の外へ手を出さない', () => {
+  // #235 却下2（単純な逆操作＝対象全件からタグを剥がす）が壊すケース。
+  test('一括タグ付けで元から持っていた項目は、取り消しでもタグを失わない', async () => {
+    const { undo, state } = setup({ c1: [], c2: ['猫'] });
+
+    undo.push(bulkAdd(state, ['c1', 'c2'], ['猫']));
+    expect(state).toEqual({ c1: ['猫'], c2: ['猫'] });
+
     await undo.undo();
 
-    expect(posterCalls).toEqual([[{ key: 'x:alice', tags: ['a'] }]]);
+    expect(state).toEqual({ c1: [], c2: ['猫'] });
   });
 
-  test('applyTags 側は呼ばれない', async () => {
-    const { undo, tagCalls } = setup();
-    undo.push('poster-tags', [{ key: 'x:alice', prevTags: ['a'], newTags: ['a', 'b'] }]);
+  // #235 却下1（操作前スナップショットの丸ごと書き戻し）が壊すケース。
+  test('取り消すまでの間に入った別の編集は巻き込まれない', async () => {
+    const { undo, state } = setup({ c1: ['旧'] });
+    undo.push(bulkAdd(state, ['c1'], ['A']));
+    state.c1 = [...state.c1, '後から足したタグ']; // 別経路の編集（スタックには載っていない）
+
     await undo.undo();
 
-    expect(tagCalls).toHaveLength(0);
+    expect(state.c1).toEqual(['旧', '後から足したタグ']);
+  });
+
+  test('同じ対象の2手を順に取り消しても、各手の分だけが戻る', async () => {
+    const { undo, state } = setup({ c1: [] });
+    undo.push(bulkAdd(state, ['c1'], ['A']));
+    undo.push(bulkAdd(state, ['c1'], ['B']));
+
+    await undo.undo();
+    expect(state.c1).toEqual(['A']);
+
+    await undo.undo();
+    expect(state.c1).toEqual([]);
+  });
+});
+
+describe('種別ごとのルーティングと束ね方', () => {
+  test('種別の違う変更は、それぞれの applier へ振り分けられる', async () => {
+    const { undo, calls } = setup({ c1: ['a'], 'x:alice': ['b'], f1: ['c1'] });
+    undo.push([
+      { kind: 'post-tags', target: 'c1', added: ['a2'], removed: [] },
+      { kind: 'poster-tags', target: 'x:alice', added: ['b2'], removed: [] },
+      { kind: 'folder-items', target: 'f1', added: ['c9'], removed: [] },
+    ]);
+
+    await undo.undo();
+
+    expect(calls.map((c) => c.kind)).toEqual(['post-tags', 'poster-tags', 'folder-items']);
+  });
+
+  test('同じ種別の複数対象は1回の applier 呼び出しに束ねる（永続化は1回で済む）', async () => {
+    const { undo, state, calls } = setup({ c1: [], c2: [] });
+    undo.push(bulkAdd(state, ['c1', 'c2'], ['猫']));
+
+    await undo.undo();
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0].changes).toHaveLength(2);
+  });
+
+  test('image は post-tags の変更に付いて回る（update-tags はファイル名で引くため）', async () => {
+    const { undo, calls } = setup({ c1: [] });
+    undo.push([{ kind: 'post-tags', target: 'c1', image: 'c1.jpg', added: ['t'], removed: [] }]);
+
+    await undo.undo();
+
+    expect(calls[0].changes[0].image).toBe('c1.jpg');
+  });
+});
+
+describe('トーストの「元に戻す」＝スタック最新のときだけ効く', () => {
+  test('直後なら効く', async () => {
+    const { undo, state } = setup({ c1: [] });
+    const entry = undo.push(bulkAdd(state, ['c1'], ['t']));
+
+    expect(await undo.undoIfTop(entry?.id ?? -1)).not.toBeNull();
+    expect(state.c1).toEqual([]);
+  });
+
+  test('後から別の編集が入ったら no-op（他人の編集を戻さない）', async () => {
+    const { undo, state } = setup({ c1: [], c2: [] });
+    const first = undo.push(bulkAdd(state, ['c1'], ['t']));
+    undo.push(bulkAdd(state, ['c2'], ['u']));
+
+    expect(await undo.undoIfTop(first?.id ?? -1)).toBeNull();
+    expect(state).toEqual({ c1: ['t'], c2: ['u'] });
+  });
+
+  test('同じ id で二度押しても二重には戻らない', async () => {
+    const { undo, state } = setup({ c1: ['旧'] });
+    const entry = undo.push(bulkAdd(state, ['c1'], ['新']));
+    await undo.undoIfTop(entry?.id ?? -1);
+
+    expect(await undo.undoIfTop(entry?.id ?? -1)).toBeNull();
+    expect(state.c1).toEqual(['旧']);
+  });
+
+  test('peek は次に Ctrl+Z が取る手を指す', () => {
+    const { undo, state } = setup({ c1: [] });
+    undo.push(bulkAdd(state, ['c1'], ['a']));
+    const second = undo.push(bulkAdd(state, ['c1'], ['b']));
+
+    expect(undo.peek()?.id).toBe(second?.id);
   });
 });
 
 test('新規編集で redo スタックを破棄（線形履歴）', async () => {
-  const { undo } = setup();
-  undo.push('tags', tagEdit('c1', ['旧'], ['新']));
+  const { undo, state } = setup({ c1: [], c2: [] });
+  undo.push(bulkAdd(state, ['c1'], ['t']));
   await undo.undo(); // redo スタックに1件ある状態
 
-  undo.push('tags', tagEdit('c2', [], ['t']));
+  undo.push(bulkAdd(state, ['c2'], ['u']));
 
-  expect(await undo.redo()).toBe(false);
+  expect(await undo.redo()).toBeNull();
 });
 
 test('上限50: 51件 push すると最古が落ちる', async () => {
-  const { undo } = setup();
-  for (let i = 0; i < 51; i++) undo.push('tags', tagEdit(`c${i}`, [], ['t']));
+  const { undo, state } = setup();
+  for (let i = 0; i < 51; i++) undo.push(bulkAdd(state, [`c${i}`], ['t']));
 
   let n = 0;
   while (await undo.undo()) n++;
