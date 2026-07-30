@@ -924,31 +924,37 @@ export async function startOverlay(): Promise<void> {
   }
 
   // A text-only post's mark (#575) RIDES THE AVATAR, the way a picture's mark
-  // rides the picture: its centre sits on the avatar's edge at the bottom
-  // right, so half the disc covers the image and half hangs outside it. That is
-  // where a badge goes on an avatar, and it is what keeps the translucent disc
-  // meaning what it means — it is over a photo, same as always.
+  // rides the picture — and on the SAME CORNER, top left. Its centre sits on
+  // the avatar's edge there, so half the disc covers the image and half hangs
+  // off into the post's own padding. For the 40–42px avatars x.com and bsky.app
+  // draw, the offset works out to −CONTROL_INSET: the picture's +6px turned
+  // inside out. A picture is big enough to hold the disc inside its corner; a
+  // 40px avatar would be swallowed by it.
   //
-  // The first attempt put the disc in the empty strip beside the avatar
-  // instead. That strip is geometrically free on every layout, but it read as
-  // floating loose in the margin rather than marking the post (user,
-  // 2026-07-30): a mark needs a surface to be ON, and the avatar is the only
-  // surface a post without pictures has.
+  // Two placements were measured and rejected before this one:
+  //   the empty strip beside the avatar — free on every layout, but it read as
+  //   floating loose in the margin rather than marking the post, because a mark
+  //   needs a surface to be ON and the avatar is the only surface a post
+  //   without pictures has (user, 2026-07-30);
   //
-  // Measured against live x.com and bsky.app, this point clears the text
-  // column, the ⋯ menu and the thread connector line on all four shapes those
-  // two sites use (feed row and focused-post layouts, which differ in where the
-  // post's text starts).
+  //   the gap after the timestamp, where both platforms put their own per-post
+  //   metadata glyphs — 163–342px wide on ordinary posts, but x.com truncates a
+  //   long display name only as far as it must to keep the time visible, so the
+  //   gap collapses to 8px and cannot hold a 24px disc.
+  //
+  // This point clears the text column, the ⋯ menu and the thread connector on
+  // all four shapes those two sites use (feed row and focused-post layouts,
+  // which differ in where the post's text starts).
   function positionTextControl(anchor: Anchor, host: HTMLElement, place: (left: number, top: number) => void): void {
     const hostRect = host.getBoundingClientRect();
     const avatar = site.textAnchorIn?.(anchor.box)?.getBoundingClientRect();
     if (!avatar) return;
-    // The 45° point on the avatar's circle, as an offset from its top-left
+    // The 135° point on the avatar's circle, as an offset from its top-left
     // corner; then back off half the disc so that point is the disc's centre.
     // Rounded because a disc has no detail that a subpixel offset could place
     // more accurately, and whole numbers are what a reader can check by eye.
     const radius = (avatar.width + avatar.height) / 4;
-    const offset = Math.round(radius + radius * Math.SQRT1_2 - CONTROL_SIZE / 2);
+    const offset = Math.round(radius - radius * Math.SQRT1_2 - CONTROL_SIZE / 2);
     place(avatar.left - hostRect.left + offset, avatar.top - hostRect.top + offset);
   }
 

@@ -106,7 +106,7 @@ const X_HTML = `<!doctype html><html><body>
     <!-- テキストのみの投稿（#575）: mediaIn が何も返さない形。投稿要素自身とアバターが
          それぞれ自分の幾何を持つ＝印は投稿要素を足場に、アバターの左下へ置かれる。 -->
     <article data-testid="tweet" id="p14" data-rect-top="6000" data-rect-size="120">
-      <div data-testid="Tweet-User-Avatar" data-rect-top="6012" data-rect-size="40" id="p14avatar"></div>
+      <div data-testid="Tweet-User-Avatar" data-rect-top="6012" data-rect-left="66" data-rect-size="40" id="p14avatar"></div>
       <a href="/kim/status/1414"><time datetime="2026-07-01T00:00:00Z">14h</time></a>
     </article>
   </div>
@@ -196,7 +196,10 @@ beforeAll(async () => {
     if (declared === null || declared === undefined) return { left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0, x: 0, y: 0 };
     const top = Number(declared);
     const size = Number(this.getAttribute('data-rect-size') || 300);
-    return { left: 50, top, right: 50 + size, bottom: top + size, width: size, height: size, x: 50, y: top };
+    // data-rect-left は既定の 50 から横にずらしたい要素だけが宣言する＝アバターのように
+    // 投稿の左端からのインデントが位置決めの入力になるもの（#575）。
+    const left = Number(this.getAttribute('data-rect-left') || 50);
+    return { left, top, right: left + size, bottom: top + size, width: size, height: size, x: left, y: top };
   };
   let nextAnimationFrame = 1;
   window.requestAnimationFrame = (fn) => {
@@ -1060,15 +1063,15 @@ describe('テキストのみの投稿（#575）', () => {
     expect(labelOf(p14Controls[0])).toBe('Saved in Hologram');
   });
 
-  // 印はアバターに乗る＝円の中心がアバターの縁（右下の45°の点）へ来るので、半分が
-  // 写真の上・半分が外にはみ出す。アバターの脇の空き帯に置いた最初の案は、幾何的には
-  // 空いているのに「投稿に付いた印」ではなく余白に浮いて見えた（2026-07-30 ユーザー）。
-  // ここでは 40px のアバターが (50, 6012)、投稿要素が (50, 6000) なので
-  // オフセット＝20 + 20/√2 − 12 ≈ 22。
-  test('印の中心がアバターの右下の縁に乗る', () => {
+  // 印はアバターに乗る＝円の中心がアバターの縁（左上の135°の点）へ来るので、半分が
+  // 写真の上・半分が投稿のパディングへはみ出す。角は画像の印と同じ左上で、オフセットは
+  // 40px のアバターなら 20 − 20/√2 − 12 ≈ −6＝画像の +6 を裏返した値。
+  // ここでは投稿要素が (50, 6000)、アバターが (66, 6012) なので (10, 6)＝
+  // 実測した x.com の値（アバターが投稿の左端から 16px）と同じ。
+  test('印の中心がアバターの左上の縁に乗る', () => {
     const [mark] = controlOf('p14');
-    expect(mark.style.left).toBe('22px');
-    expect(mark.style.top).toBe('34px');
+    expect(mark.style.left).toBe('10px');
+    expect(mark.style.top).toBe('6px');
   });
 
   // 乗っている先はどのプラットフォームでもプロフィールへのリンク。押せない印が
