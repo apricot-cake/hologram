@@ -691,6 +691,12 @@
        beat the [hidden] attribute — so use !important here). */
     body.browse-posters #postGrid { display: none !important; }
     body:not(.browse-posters) #posterGrid { display: none !important; }
+    /* ゴミ箱 (#268) — the third destination. It hides the post grid AND the post
+       empty state (which is driven by the [hidden] attribute, so this needs the
+       same !important the rules above do). */
+    body:not(.browse-trash) #trashPanel { display: none !important; }
+    body.browse-trash #postGrid,
+    body.browse-trash #emptyState { display: none !important; }
     /* Poster mode hides the post-only chrome (filters + active bar). Sort and density
        moved to the display popover, which is mode-aware in React. */
     body.browse-posters #postActiveBar,

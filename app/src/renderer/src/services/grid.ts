@@ -29,6 +29,7 @@ import type { ZoomAnchor } from './zoom-anchor.ts';
 
 type PostGridConfig = { modelOf(item: any, i: number): any; keyOf(item: any, i: number): string | number | null | undefined; labels: any; onAspect(cap: string, ar: string): void };
 type PosterGridConfig = { modelOf(item: any, i: number): any; keyOf(item: any, i: number): string | number | null | undefined };
+type TrashGridConfig = Omit<PostGridConfig, 'onAspect'>;
 
 // Post grid model source: items come from hologramStore('postGroups'),
 // layout is derived from hologramStore('view'/'cardSize'/'tileSize'/'listThumb')
@@ -176,3 +177,68 @@ function makePosterGridSource() {
   };
 }
 export const hologramPosterGridSource = makePosterGridSource();
+
+// Trash grid model source (#268) — the ゴミ箱 destination draws the SAME cards the
+// library does, so it takes the post side's modelOf/keyOf/labels verbatim
+// (orchestrator hands over post-grid-builder's cardModel) and derives its layout
+// from the same density keys. Its items come from 'trashGroups', which
+// services/trash-view.ts writes; nothing else differs, and deliberately so — a
+// second card vocabulary for deleted posts is exactly the "二重 UI" the design
+// rejected. No onAspect (the learned-aspect cache belongs to the library's own
+// masonry pass), no live column width / zoom anchor (Ctrl+wheel zoom and the size
+// slider drag both aim at the post grid).
+function makeTrashGridSource() {
+  let config: TrashGridConfig | null = null;
+  let lastItems: any;
+  let itemsKeySeq = 0;
+  let paintSeq = 0;
+  const subs = new Set<() => void>();
+  const notify = () => {
+    for (const cb of [...subs]) {
+      try {
+        cb();
+      } catch (_e) {
+        /* ignore */
+      }
+    }
+  };
+  for (const k of ['trashGroups', 'view', 'cardSize', 'tileSize', 'listThumb']) storeSubscribe(k, notify);
+  function computeModel(): HologramGridModel | null {
+    if (!config) return null;
+    const items = storeGet('trashGroups');
+    if (items == null) return null; // undefined (never loaded) or explicit null (trash empty)
+    if (items !== lastItems) {
+      lastItems = items;
+      itemsKeySeq++;
+    }
+    const view = storeGet('view') || 'card';
+    const cardSize = storeGet('cardSize');
+    const tileSize = storeGet('tileSize');
+    const listThumb = storeGet('listThumb');
+    return {
+      view,
+      items,
+      itemsKey: itemsKeySeq,
+      modelOf: config.modelOf,
+      keyOf: config.keyOf,
+      labels: config.labels,
+      columnCount: view === 'list' ? 1 : undefined,
+      columnWidth: view === 'tile' ? tileSize : view === 'card' ? cardSize : undefined,
+      square: view === 'tile',
+      rowGutter: view === 'list' ? 14 : view === 'tile' ? 8 : 16,
+      itemHeightEstimate: view === 'list' ? Math.round(listThumb * 1.25) : view === 'tile' ? tileSize : Math.round(cardSize * 1.2),
+      paint: ++paintSeq,
+    } as HologramGridModel;
+  }
+  return {
+    configure(cfg: TrashGridConfig) {
+      config = cfg;
+    },
+    get: computeModel,
+    subscribe(cb: () => void) {
+      subs.add(cb);
+      return () => subs.delete(cb);
+    },
+  };
+}
+export const hologramTrashGridSource = makeTrashGridSource();

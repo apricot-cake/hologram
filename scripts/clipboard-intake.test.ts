@@ -287,8 +287,9 @@ describe('renderer: 取り込んだ画像はスクショ扱いにならない', 
 });
 
 // #85 の最重要ガード。Ctrl+V は貼り付けのキーであって、取込が横取りしてよい場面は限られる。
-// レンダラ側は純判定として書いてあるので jsdom は要らない（document を見るのは2か所だけで、
-// どちらも `typeof document === 'undefined'` を通る）。
+// レンダラ側は純判定として書いてあるので jsdom は要らない（document を見る3か所は
+// どれも `typeof document === 'undefined'` を通る）。document を見る側だけは最小の
+// スタブを置いて確かめる（下の「ゴミ箱」）。
 describe('renderer: Ctrl+V の判定', () => {
   const calls: string[] = [];
   let answer: any = { imported: 1 };
@@ -412,6 +413,28 @@ describe('renderer: Ctrl+V の判定', () => {
     expect(calls).toHaveLength(0);
     expect(k.wasPrevented()).toBe(false);
     lightbox.close();
+  });
+
+  // ゴミ箱（#268）は「新規保存を無効」にする唯一の行き先＝貼り付けはそこでは何もしない。
+  // 見ているのは body のクラスなので、document を最小に立てて判定だけを確かめる。
+  test('ゴミ箱を開いている間は発火しない', async () => {
+    const intake = await freshIntake();
+    const classes = new Set<string>(['browse-trash']);
+    (globalThis as any).document = { getElementById: () => null, body: { classList: { contains: (c: string) => classes.has(c) } } };
+    try {
+      const k = key({ key: 'v', ctrlKey: true });
+      intake.handleShortcutClipboardKey(k.ev);
+      await settle();
+      expect(calls).toHaveLength(0);
+      expect(k.wasPrevented()).toBe(false);
+      // ライブラリへ戻れば元どおり取り込む＝止めているのは行き先であって document ではない。
+      classes.delete('browse-trash');
+      intake.handleShortcutClipboardKey(key({ key: 'v', ctrlKey: true }).ev);
+      await settle();
+      expect(calls).toHaveLength(1);
+    } finally {
+      (globalThis as any).document = undefined;
+    }
   });
 
   test('コマンドパレットが開いている間は発火しない', async () => {

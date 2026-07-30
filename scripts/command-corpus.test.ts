@@ -136,7 +136,7 @@ describe('面ごとの顔ぶれ（同じ生成・別の見せ方）', () => {
 
 describe('操作系コマンド', () => {
   test('空クエリでも全部出る（まず何ができるかが読める）', () => {
-    expect(titlesOf(R.queryEntries('', PALETTE), 'command')).toEqual(['cmdOpenSettings', 'cmdNewTab', 'cmdClearFilters', 'cmdViewGallery', 'cmdViewList', 'cmdTogglePanels', 'cmdBrowsePosts', 'cmdBrowsePosters']);
+    expect(titlesOf(R.queryEntries('', PALETTE), 'command')).toEqual(['cmdOpenSettings', 'cmdNewTab', 'cmdClearFilters', 'cmdViewGallery', 'cmdViewList', 'cmdTogglePanels', 'cmdBrowsePosts', 'cmdBrowsePosters', 'cmdBrowseTrash']);
   });
 
   const run = (title: string) => {
@@ -157,10 +157,12 @@ describe('操作系コマンド', () => {
     expect(performed).toEqual(['resetAllFilters', 'resetPosterFilters']);
   });
 
-  test('投稿 / 投稿者の切替', () => {
+  test('投稿 / 投稿者 / ゴミ箱の切替', () => {
     run('cmdBrowsePosts');
     run('cmdBrowsePosters');
-    expect(performed).toEqual(['browseTo:posts', 'browseTo:posters']);
+    // ゴミ箱も他の2つと同じ browseTo の行き先（#268）＝パレット側に専用の経路を作らない。
+    run('cmdBrowseTrash');
+    expect(performed).toEqual(['browseTo:posts', 'browseTo:posters', 'browseTo:trash']);
   });
 
   test('フォルダへのジャンプは applyFolderFilter を通る', () => {

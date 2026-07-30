@@ -80,6 +80,10 @@ export function handleShortcutClipboardKey(e: KeyboardEvent): void {
   // The single-image view is its own screen with its own keys — same exclusion as
   // Ctrl+C / Space (selection-builder.ts).
   if (imageTabActive()) return;
+  // ゴミ箱 (#268): a paste is a new save, and the trash is the one destination where
+  // saving into the library is off. Pasting there would silently drop the image into
+  // a grid the user is not looking at.
+  if (typeof document !== 'undefined' && document.body.classList.contains('browse-trash')) return;
   e.preventDefault();
   void importFromClipboard();
 }
