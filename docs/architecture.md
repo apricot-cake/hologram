@@ -54,7 +54,6 @@ electron-vite で main・preload・renderer の3面をバンドルする標準�
 - `src/main/lib-archive.ts` — ZIP入出力
 - `src/main/lib-db*.ts` — SQLite 層（エンジン/スキーマ/クエリ/書き込み/取込キュー/整合チェック）。取得原本（`raw_payloads`・[ADR 0011](decisions/0011-preserve-acquisition-payloads.md)）は共有 writer が投稿と同じトランザクションで書き、追記のみで消さない。いずれも Electron 非依存＝node でテスト可。`listPosts` は DB への1クエリで、更新は差分IPC（list-posts-delta）＝`lib-post-delta.ts` が「前回配った分」と突き合わせて追加/削除だけ返す（#302 でファイル走査は消え、ヒントの受け渡しも不要になった）
 - `src/main/lib-card-dims.ts` — カード画像の実寸（`shotW`/`shotH`）をヘッダだけ読んで測る。masonry のカード高さを画像ロード前に確保するため、**レコードを書く時に**測って DB に入れる
-- `src/main/lib-legacy-import.ts` — **リリース前に撤去する仮設コード**（#441）＝#5 以前のライブラリに残る投稿ごと JSON と整理層 JSON を1回だけ DB へ移す
 - `src/preload/index.ts` — contextBridge の実装。公開APIの型は実装から`HologramPreload`としてexportし、rendererはそれを型エイリアスで参照（手書き型ミラーなし・Issue #17）
 - `src/renderer/index.html`＋`src/renderer/public/`（`theme.js`＝pre-paint、`<script>`で直読み。`app/build-theme-boot.mjs`が`theme.ts`から再生成＝バンドル外の同期スクリプトという制約は変わらない）
 - `src/renderer/src/services/`（旧 `renderer/*.ts`）＝`orchestrator.ts`（2026-07-11に`viewer.ts`から改名。boot orchestration層として意図的に独立モジュールのまま残す設計）が状態/オーケストレーション/IPC呼び出しの中核、`store.ts`ほか単機能サービス（`tags.ts`/`selection.ts`/`query.ts`/`records.ts`等）に段階抽出済み。`design-tokens.css`は`src/renderer/`直下（index.htmlの`<link>`が参照）

@@ -29,6 +29,7 @@ const appDir = path.join(__dirname, '..', 'app');
 const { electronPath: resolveElectron } = require('./lib-electron-path.cts');
 
 const electronPath = resolveElectron();
+const { seedLibrary } = require('./lib-seed-library.cts');
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-se-'));
 const configDir = path.join(tmp, 'Hologram');
@@ -38,32 +39,26 @@ fs.mkdirSync(saveFolder, { recursive: true });
 fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolder, extensionId: 'x', language: 'ja' }));
 
 const jpeg = Buffer.from('/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACP/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AfwH/2Q==', 'base64');
+const records: any[] = [];
 const texts = ['ネコかわいい', 'こんにちは世界', 'いぬのおさんぽ'];
 for (let i = 0; i < texts.length; i++) {
   const id = '170000000000' + i + '-se' + i;
   fs.writeFileSync(path.join(saveFolder, id + '.jpg'), jpeg);
-  fs.writeFileSync(
-    path.join(saveFolder, id + '.json'),
-    JSON.stringify(
-      {
-        captureId: id,
-        image: id + '.jpg',
-        url: 'https://x.com/u/status/' + (900 + i),
-        platform: 'x',
-        text: texts[i],
-        displayName: '人' + i,
-        screenName: 'u' + i,
-        likes: 10 + i,
-        capturedAt: '2026-04-0' + (i + 1) + 'T12:00:00Z',
-        date: '2026-04-0' + (i + 1) + 'T10:00:00Z',
-        media: [],
-        tags: [],
-        hashtags: [],
-      },
-      null,
-      2,
-    ),
-  );
+  records.push({
+    captureId: id,
+    image: id + '.jpg',
+    url: 'https://x.com/u/status/' + (900 + i),
+    platform: 'x',
+    text: texts[i],
+    displayName: '人' + i,
+    screenName: 'u' + i,
+    likes: 10 + i,
+    capturedAt: '2026-04-0' + (i + 1) + 'T12:00:00Z',
+    date: '2026-04-0' + (i + 1) + 'T10:00:00Z',
+    media: [],
+    tags: [],
+    hashtags: [],
+  });
 }
 
 // Date-filter boundary fixtures. TZ is Asia/Tokyo (UTC+9), so the LOCAL day of
@@ -82,29 +77,23 @@ const dateFixtures = [
 for (const dz of dateFixtures) {
   const id = '1750000000000-' + dz.id;
   fs.writeFileSync(path.join(saveFolder, id + '.jpg'), jpeg);
-  fs.writeFileSync(
-    path.join(saveFolder, id + '.json'),
-    JSON.stringify(
-      {
-        captureId: id,
-        image: id + '.jpg',
-        url: 'https://x.com/u/status/' + dz.id,
-        platform: 'x',
-        text: 'boundary ' + dz.id,
-        displayName: 'D',
-        screenName: 'd',
-        likes: 0,
-        capturedAt: dz.date,
-        date: dz.date,
-        media: [],
-        tags: [],
-        hashtags: [],
-      },
-      null,
-      2,
-    ),
-  );
+  records.push({
+    captureId: id,
+    image: id + '.jpg',
+    url: 'https://x.com/u/status/' + dz.id,
+    platform: 'x',
+    text: 'boundary ' + dz.id,
+    displayName: 'D',
+    screenName: 'd',
+    likes: 0,
+    capturedAt: dz.date,
+    date: dz.date,
+    media: [],
+    tags: [],
+    hashtags: [],
+  });
 }
+seedLibrary(configDir, records);
 
 const evalJs = `(async () => {
   const wait = (ms) => new Promise(r => setTimeout(r, ms));

@@ -77,9 +77,9 @@ test('タブが往復する', () => {
 });
 
 test('state の単純な key/value が往復する', () => {
-  writer.stateSet('truthSource', 'db');
+  writer.stateSet('activeFolderId', 'f-1');
 
-  expect(writer.stateGet('truthSource')).toBe('db');
+  expect(writer.stateGet('activeFolderId')).toBe('f-1');
 });
 
 // #444。投稿の書き込みとタグ編集と削除が、同じ1本の FTS 行（posts.ftsRowid）を

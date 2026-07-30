@@ -17,6 +17,7 @@ const appDir = path.join(__dirname, '..', 'app');
 const { electronPath: resolveElectron } = require('./lib-electron-path.cts');
 
 const electronPath = resolveElectron();
+const { seedLibrary } = require('./lib-seed-library.cts');
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-users-'));
 const configDir = path.join(tmp, 'Hologram');
@@ -27,34 +28,29 @@ fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolde
 
 const jpeg = Buffer.from('/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACP/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AfwH/2Q==', 'base64');
 
-function writePost(id, platform, userId, screenName, displayName, when) {
+const records: any[] = [];
+function addPost(id, platform, userId, screenName, displayName, when) {
   fs.writeFileSync(path.join(saveFolder, `${id}.jpg`), jpeg);
-  fs.writeFileSync(
-    path.join(saveFolder, `${id}.json`),
-    JSON.stringify(
-      {
-        captureId: id,
-        image: `${id}.jpg`,
-        url: `https://example.com/${id}`,
-        platform,
-        userId,
-        screenName,
-        displayName,
-        text: id,
-        tags: [],
-        capturedAt: when,
-        date: when,
-      },
-      null,
-      2,
-    ),
-  );
+  records.push({
+    captureId: id,
+    image: `${id}.jpg`,
+    url: `https://example.com/${id}`,
+    platform,
+    userId,
+    screenName,
+    displayName,
+    text: id,
+    tags: [],
+    capturedAt: when,
+    date: when,
+  });
 }
 // Alice (x) has 2 posts; Bob (bluesky) and Carol (misskey) have 1 each.
-writePost('a1', 'x', '111', 'alice', 'Alice', '2026-01-04T00:00:00.000Z');
-writePost('a2', 'x', '111', 'alice', 'Alice', '2026-01-03T00:00:00.000Z');
-writePost('b1', 'bluesky', 'did:plc:bob', 'bob.bsky.social', 'Bob', '2026-01-02T00:00:00.000Z');
-writePost('c1', 'misskey', 'mk1', 'carol', 'Carol', '2026-01-01T00:00:00.000Z');
+addPost('a1', 'x', '111', 'alice', 'Alice', '2026-01-04T00:00:00.000Z');
+addPost('a2', 'x', '111', 'alice', 'Alice', '2026-01-03T00:00:00.000Z');
+addPost('b1', 'bluesky', 'did:plc:bob', 'bob.bsky.social', 'Bob', '2026-01-02T00:00:00.000Z');
+addPost('c1', 'misskey', 'mk1', 'carol', 'Carol', '2026-01-01T00:00:00.000Z');
+seedLibrary(configDir, records);
 
 const evalJs = `(async () => {
   const sleep = (ms) => new Promise(r => setTimeout(r, ms));

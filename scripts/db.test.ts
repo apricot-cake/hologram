@@ -118,13 +118,14 @@ describe('openDatabase', () => {
     sqlite.close();
   });
 
-  // St5 は「どちらが正か」の切り替えをデータベース自身に持たせる。IPC の書き手が
-  // 頼り始める前に、新規データベースでもマーカーが使えていなければならない。
+  // store_state は整理層のうち「行」にならない単票（タグ用語帳のラベル・最後に
+  // 選ばれていたフォルダ）の置き場。新規データベースでも即使えていなければ、IPC の
+  // 書き手が最初の書き込みで落ちる。
   test('store-state のマーカーが保存できる', () => {
     const { sqlite } = openDatabase(mkdb());
-    sqlite.prepare("INSERT INTO store_state (key, value) VALUES ('truthSource', 'db')").run();
+    sqlite.prepare("INSERT INTO store_state (key, value) VALUES ('activeFolderId', 'f-1')").run();
 
-    expect(sqlite.prepare("SELECT value FROM store_state WHERE key = 'truthSource'").get().value).toBe('db');
+    expect(sqlite.prepare("SELECT value FROM store_state WHERE key = 'activeFolderId'").get().value).toBe('f-1');
 
     sqlite.close();
   });
