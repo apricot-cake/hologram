@@ -46,6 +46,7 @@ import {
   handleTabBarContextmenu,
   handleTabBarDblclick,
   handleGlobalTabShortcut,
+  handleSelectionContextmenu,
   handleViewStoreChange,
   handleBrowseModeStoreChange,
   handlePosterViewStoreChange,
@@ -264,6 +265,26 @@ function TabBarEvents() {
   return null;
 }
 
+// Selected-text right-click (#167): コピー / Googleで検索 / ライブラリ内検索 for the
+// surfaces that have no context menu of their own — the inspector's body and
+// metadata, chiefly. Electron ships no default menu and the window runs
+// removeMenu(), so without this a right-click there hits nothing at all.
+//
+// document, BUBBLE phase, deliberately: every surface that DOES own a menu
+// (cards / posters / tabs / folders / tag chips) preventDefault()s its own
+// contextmenu first, and the handler bails on defaultPrevented. That keeps this
+// a fallback with no list of surfaces to maintain — and leaves "no selection →
+// no menu" exactly as it was. Same no-boot-guard reasoning as GlobalShortcuts:
+// it only fires on a real right-click.
+function SelectionContextMenu() {
+  useEffect(() => {
+    const onContextmenu = (e: MouseEvent) => handleSelectionContextmenu(e);
+    document.addEventListener('contextmenu', onContextmenu);
+    return () => document.removeEventListener('contextmenu', onContextmenu);
+  }, []);
+  return null;
+}
+
 // External-store / IPC subscriptions: hologramStore keys (view / browseMode /
 // posterView / searchQuery), the search-mode toggle, shared folder changes, and the
 // fs-watch posts-changed hint. React owns the subscribe() registration (mounted once
@@ -312,6 +333,8 @@ export function App() {
       <DetailDismiss />
       {/* Tab bar event wiring (click/keydown/contextmenu/etc + Ctrl+T/W/Tab). */}
       <TabBarEvents />
+      {/* Right-click on selected text where no other menu claims the click (#167). */}
+      <SelectionContextMenu />
       {/* External-store / IPC subscriptions (hologramStore keys, qf-pop, search mode,
           folder changes, posts-changed fs-watch hint). */}
       <StoreSubscriptions />

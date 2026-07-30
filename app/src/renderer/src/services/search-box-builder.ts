@@ -99,6 +99,23 @@ export function makeSearchBox(deps: SearchBoxDeps) {
     }, 150);
   }
 
+  // Search the library for a term that came from OUTSIDE the box — today the
+  // selected-text context menu (#167). Deliberately pushed into the store WITHOUT
+  // the echo marker, so it travels the pipeline a KEYSTROKE travels: the component
+  // re-renders the input from the store, and handleSearchQueryStoreChange above
+  // runs the debounced filter+render for whichever browse mode is showing. The
+  // term is left in the box (not confirmed into a leaf) for the same reason —
+  // "put it in the search box" is a state the user can see, edit and clear, which
+  // a confirmed filter row is not.
+  function searchFor(text: string) {
+    const v = String(text ?? '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (!v) return;
+    deps.storeSet('searchQuery', v);
+    focusSearchBox(); // show WHERE the term landed, and leave the caret in it
+  }
+
   // --- リアルタイム検索サジェスト -------------------------------------------
   // タイプのたびに、本文検索と並行してタグ/作者の候補を検索ボックス直下に表示。
   // クリック/Enter でそのままフィルタ化（タイプした文字は消す）。
@@ -151,6 +168,7 @@ export function makeSearchBox(deps: SearchBoxDeps) {
   return {
     searchQuery,
     setSearchBoxValue,
+    searchFor,
     handleSearchQueryStoreChange,
     rebindEditingTextLeaf,
     handleShortcutSearchFocusKey,

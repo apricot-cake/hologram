@@ -108,6 +108,18 @@ function register(ctx: IpcContext) {
     clipboard.writeImage(img);
     return true;
   });
+
+  // Copy selected text to the clipboard (selection context menu — #167). The
+  // renderer has no built-in Copy row to lean on (the window runs removeMenu(),
+  // which takes Chromium's own context menu with it), so the write goes through
+  // main exactly like copy-image above rather than through navigator.clipboard —
+  // one clipboard route for the app, no secure-context/permission surprises.
+  // Empty writes are refused: they would silently WIPE whatever was there.
+  ipcMain.handle('copy-text', (_event, text) => {
+    if (typeof text !== 'string' || !text) return false;
+    clipboard.writeText(text);
+    return true;
+  });
 }
 
 export { register };

@@ -51,6 +51,13 @@ export interface PostGridBuilderDeps {
   showDetail(g: HologramPostGroup, opts?: { focusTags?: boolean }): void;
   jumpToPoster(post: HologramPost): void;
   addImageTab(g: HologramPostGroup): void;
+  // Selected-text rows (#167). The card grid is the one surface that already had
+  // a menu on the same click, so the rows are spliced into it rather than opening
+  // a second one; services/selection-menu.ts owns both the rows and what they do.
+  selectionMenu: {
+    items(): HologramMenuItem[];
+    pick(text: string, item: HologramMenuItem): boolean;
+  };
 }
 
 export function makePostGridBuilder(deps: PostGridBuilderDeps) {
@@ -434,11 +441,15 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
   // Card context menu — React-owned glass menu (menu.ts); viewer owns
   // items + actions. 'folder' opens the folder picker (a DIFFERENT menu) at the same
   // spot; the bridge's transition guard keeps that open instead of closing it.
-  function cardMenuItems(g: HologramPostGroup) {
+  function cardMenuItems(g: HologramPostGroup, selText = '') {
     // SNS posts have a poster in the poster view (buildUsers skips url-less migrations).
     const canPoster = !!(g.rep.url && deps.buildUsers().some((u) => u.key === userKey(g.rep)));
     const srcUrl = (g.records.flatMap((r) => (Array.isArray(r.media) ? r.media : [])).find((m: { url?: string }) => m && m.url) || {}).url || '';
     const items: any[] = [];
+    // Text rows lead when the right-click landed inside a selection — the gesture
+    // was aimed at the text, and that is the order Chromium uses. Without a
+    // selection the menu is byte-for-byte the one it has always been (#167).
+    if (selText) items.push(...deps.selectionMenu.items(), { sep: true });
     if (g.rep.url) items.push({ label: deps.t('tipOpen'), act: 'open', icon: CM_IC.open });
     items.push({ label: deps.t('ctxOpenNewTab'), act: 'newtab', icon: CM_IC.newtab });
     items.push({ label: deps.t('tipFolder'), act: 'folder', icon: CM_IC.folder });
@@ -462,7 +473,8 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
     items.push({ label: deps.t('tipDelete'), act: 'delete', icon: CM_IC.del, danger: true });
     return { items, srcUrl };
   }
-  function onCardMenuPick(g: HologramPostGroup, x: number, y: number, srcUrl: string, item: HologramMenuItem) {
+  function onCardMenuPick(g: HologramPostGroup, x: number, y: number, srcUrl: string, item: HologramMenuItem, selText = '') {
+    if (deps.selectionMenu.pick(selText, item)) return; // a spliced-in text row (#167)
     const act = item.act;
     if (act === 'open') {
       if (g.rep.url) hologramIpc.openExternal(g.rep.url);
@@ -511,9 +523,9 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
     const files = dragFilesOf(g, selection.selectedGroups(viewGroups, postIdKey));
     if (files.length) hologramIpc.dragOut(files);
   }
-  function showCardMenu(g: HologramPostGroup, x: number, y: number) {
-    const { items, srcUrl } = cardMenuItems(g);
-    menuOpen({ items, x, y }, (item) => onCardMenuPick(g, x, y, srcUrl, item));
+  function showCardMenu(g: HologramPostGroup, x: number, y: number, selText = '') {
+    const { items, srcUrl } = cardMenuItems(g, selText);
+    menuOpen({ items, x, y }, (item) => onCardMenuPick(g, x, y, srcUrl, item, selText));
   }
 
   function requestDeleteGroup(g: HologramPostGroup) {
