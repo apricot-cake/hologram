@@ -41,6 +41,8 @@ beforeAll(async () => {
     platform: 'x',
     isReply: true,
     isQuote: false,
+    isEdited: true,
+    editedAt: '2026-01-01T12:00:00Z',
     capturedAt: '2026-01-01T00:00:00Z',
     updatedAt: '2026-01-01T00:00:00Z',
   });
@@ -130,6 +132,14 @@ describe('postsFromDb: 形と並び', () => {
   test('未設定の真偽値列は false でなく null のまま', async () => {
     const cap2 = (await postsFromDb(handle.sqlite)).find((p: any) => p.captureId === 'cap-2');
     expect(cap2.isReply).toBeNull();
+  });
+
+  // #189: isEdited/editedAt が posts テーブルを往復する（isReply と同じ 0/1 <-> bool 変換）
+  test('isEdited / editedAt が往復する', async () => {
+    const cap1 = (await postsFromDb(handle.sqlite)).find((p: any) => p.captureId === 'cap-1');
+    expect({ isEdited: cap1.isEdited, editedAt: cap1.editedAt }).toEqual({ isEdited: true, editedAt: '2026-01-01T12:00:00Z' });
+    const cap2 = (await postsFromDb(handle.sqlite)).find((p: any) => p.captureId === 'cap-2');
+    expect({ isEdited: cap2.isEdited, editedAt: cap2.editedAt }).toEqual({ isEdited: null, editedAt: null });
   });
 
   // #560: 書き込み器だけが知っていて読み出し器が引かない列だと、インスペクタの

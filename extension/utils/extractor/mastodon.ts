@@ -132,6 +132,14 @@ async function fetchMastodonStatus(parsed, url): Promise<PostRecord> {
     rec.likes = s.favourites_count ?? null;
     rec.reposts = s.reblogs_count ?? null;
     rec.replies = s.replies_count ?? null;
+    // edited_at is the documented shape: an ISO timestamp once the author has
+    // edited the status, null when they never have (#189). The field is
+    // always present on a real status, so its absence here is read the same
+    // as null — nothing is ever guessed as edited from silence.
+    if (s.edited_at) {
+      rec.isEdited = true;
+      rec.editedAt = toIso(s.edited_at);
+    }
     rec.lang = s.language || null;
     // status.tags[] is { name, url }, where name is documented as "the value of
     // the hashtag after the # sign" (#177) — the instance's own resolution, so
