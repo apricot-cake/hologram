@@ -50,6 +50,7 @@ describe('既定値', () => {
     'lang',
     'quotedUrl',
     'replyToId',
+    'editedAt',
     'eagleName',
     'description',
     'source',
@@ -69,7 +70,7 @@ describe('既定値', () => {
   });
 
   // 三値（未知/true/false）であって false ではない
-  test.each(['isReply', 'isQuote', 'isThread'])('%s の既定は null（三値）', (k) => {
+  test.each(['isReply', 'isQuote', 'isThread', 'isEdited'])('%s の既定は null（三値）', (k) => {
     expect(rec[k]).toBeNull();
   });
 });
@@ -81,6 +82,8 @@ describe('素通しと変換', () => {
       url: 'https://bsky.app/profile/a/post/b',
       likes: 42,
       isReply: true,
+      isEdited: true,
+      editedAt: '2026-02-02T00:00:00.000Z',
       hashtags: ['a', 'b', 3, null],
       media: [{ url: 'https://x/1.jpg', width: 10, height: 20, file: '1.jpg' }, { file: '2.jpg' }, null, { url: 'https://x/2.mp4', file: '2.mp4', type: 'video', posterFile: 'poster.jpg' }],
       capturedAt: '2026-01-01T00:00:00.000Z',
@@ -93,6 +96,12 @@ describe('素通しと変換', () => {
 
   test('明示されたフィールドはそのまま通る', () => {
     expect(rec).toMatchObject({ url: 'https://bsky.app/profile/a/post/b', likes: 42, isReply: true });
+  });
+
+  // #189: isEdited と editedAt は独立（X は前者だけ埋まることがある）ので、
+  // どちらも渡された時にそのまま素通しされることを見る。
+  test('isEdited / editedAt もそのまま通る', () => {
+    expect(rec).toMatchObject({ isEdited: true, editedAt: '2026-02-02T00:00:00.000Z' });
   });
 
   test('文字列でないハッシュタグは落とす（変換しない）', () => {

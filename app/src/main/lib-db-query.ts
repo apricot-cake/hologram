@@ -52,6 +52,8 @@ const POST_COLUMNS = [
   'isReply',
   'isQuote',
   'isThread',
+  'isEdited',
+  'editedAt',
   'quotedUrl',
   'replyToId',
   'hashtags',
@@ -181,6 +183,10 @@ function assemble(sqlite: Database.Database, postRows: any[]): any[] {
       isReply: fromDbBool(r.isReply),
       isQuote: fromDbBool(r.isQuote),
       isThread: fromDbBool(r.isThread),
+      // #189: platform-reported edit state. Same null-means-no-signal
+      // convention as isReply/isQuote/isThread above.
+      isEdited: fromDbBool(r.isEdited),
+      editedAt: r.editedAt,
       quotedUrl: r.quotedUrl,
       replyToId: r.replyToId,
       hashtags: parseHashtags(r.hashtags),

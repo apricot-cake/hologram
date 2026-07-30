@@ -238,6 +238,8 @@ function register(ctx: IpcContext) {
         isReply: p.isReply || null,
         isQuote: p.isQuote || null,
         isThread: p.isThread || null,
+        isEdited: p.isEdited || null,
+        editedAt: p.editedAt || null,
         quotedUrl: p.quotedUrl || null,
         replyToId: p.replyToId || null,
         media: Array.isArray(p.media) ? p.media : [],

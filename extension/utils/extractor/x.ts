@@ -299,6 +299,39 @@ function xSnowflakeDate(id) {
   }
 }
 
+// t.co short links in the body text, swapped for the URL entities.urls
+// announces (#189). j.text keeps every link shortened — a search or a URL
+// probe run over the SAVED text would only ever see t.co, which resolves to
+// nothing once the redirect dies. expanded_url is used, never display_url:
+// X truncates the latter for on-screen width ("en.wikipedia.org/wiki/…"),
+// which is the one thing that must NOT happen to a value being saved for
+// full-text search and URL probing (#189's own wording — 元URL・元ドメイン).
+//
+// A plain split/join on the literal t.co string, not entities.urls[].indices:
+// the indices are Twitter's own character offsets into the ORIGINAL text and
+// have their own surrogate-pair counting rules, while the short URL itself is
+// a unique, unambiguous substring — matching on it needs no offset math and
+// cannot desync if an earlier replacement changed the string's length.
+function xExpandUrls(text: string, entities): string {
+  const urls = entities && Array.isArray(entities.urls) ? entities.urls : [];
+  let out = text;
+  for (const u of urls) {
+    if (!u || typeof u.url !== 'string' || typeof u.expanded_url !== 'string') continue;
+    out = out.split(u.url).join(u.expanded_url);
+  }
+  return out;
+}
+
+// Has X's own edit history got more than one entry (#189)? edit_control.edit_
+// tweet_ids lists every version's tweet id, oldest first — a never-edited
+// tweet's own id is the only entry. Unlike Mastodon there is no "when" field
+// anywhere in this object (editable_until_msecs is a future deadline, not a
+// past edit time), so this can only ever answer the yes/no half.
+function xWasEdited(editControl): boolean {
+  const ids = editControl && Array.isArray(editControl.edit_tweet_ids) ? editControl.edit_tweet_ids : null;
+  return !!ids && ids.length > 1;
+}
+
 function xMediaType(details) {
   const t = details && details[0] && details[0].type;
   if (t === 'video') return 'video';
@@ -412,7 +445,8 @@ async function fetchXTweet(parsed, url): Promise<PostRecord> {
       rec.date = xSnowflakeDate(parsed.id);
       return rec;
     }
-    rec.text = j.text || null;
+    rec.text = j.text ? xExpandUrls(j.text, j.entities) : null;
+    if (xWasEdited(j.edit_control)) rec.isEdited = true;
     if (j.user) {
       rec.displayName = j.user.name || null;
       rec.screenName = j.user.screen_name || rec.screenName;

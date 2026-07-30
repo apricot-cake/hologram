@@ -11,6 +11,7 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { fetchBlueskyPost } from '../extension/utils/extractor/bluesky.ts';
 import { fetchPostMetadata } from '../extension/utils/extractor/index.ts';
+import { fetchMastodonStatus } from '../extension/utils/extractor/mastodon.ts';
 import { fetchMisskeyNote } from '../extension/utils/extractor/misskey.ts';
 import { fetchPixivIllust } from '../extension/utils/extractor/pixiv.ts';
 import { fetchXTweet } from '../extension/utils/extractor/x.ts';
@@ -58,6 +59,130 @@ describe('X: screen_name の無い引用', () => {
     mockFetch([['cdn.syndication.twimg.com', { text: 'hi', mediaDetails: [], user: { screen_name: 'alice', id_str: '1' }, quoted_tweet: { id_str: '999', user: { screen_name: 'bob' } } }]]);
 
     expect((await fetchXTweet(X_ID, X_URL)).quotedUrl).toBe('https://x.com/bob/status/999');
+  });
+});
+
+// #189: 本文中の t.co を entities.urls の expanded_url へ展開し、edit_control から
+// 編集済みかどうかを読む。どちらも実ライブラリの応答（scripts/canary/snapshots/x.json、
+// 2026-07-29 計測）が持つ実在の形をそのまま固定する。
+describe('X: t.co 展開と編集済みフラグ（#189）', () => {
+  test('entities.urls の expanded_url へ置換する（display_url ではない）', async () => {
+    mockFetch([
+      [
+        'cdn.syndication.twimg.com',
+        {
+          text: 'see this https://t.co/abc123 for details',
+          mediaDetails: [],
+          user: { screen_name: 'alice', id_str: '1' },
+          entities: {
+            urls: [{ url: 'https://t.co/abc123', expanded_url: 'https://en.wikipedia.org/wiki/Very_Long_Article_Title', display_url: 'en.wikipedia.org/wiki/Very_Lo…', indices: [9, 32] }],
+          },
+        },
+      ],
+    ]);
+
+    const r = await fetchXTweet(X_ID, X_URL);
+    expect(r.text).toBe('see this https://en.wikipedia.org/wiki/Very_Long_Article_Title for details');
+  });
+
+  test('複数の短縮 URL をそれぞれの展開先へ置換する', async () => {
+    mockFetch([
+      [
+        'cdn.syndication.twimg.com',
+        {
+          text: 'https://t.co/aaa and https://t.co/bbb',
+          mediaDetails: [],
+          user: { screen_name: 'alice', id_str: '1' },
+          entities: {
+            urls: [
+              { url: 'https://t.co/aaa', expanded_url: 'https://example.com/first', display_url: 'example.com/first', indices: [0, 16] },
+              { url: 'https://t.co/bbb', expanded_url: 'https://example.org/second', display_url: 'example.org/second', indices: [21, 38] },
+            ],
+          },
+        },
+      ],
+    ]);
+
+    expect((await fetchXTweet(X_ID, X_URL)).text).toBe('https://example.com/first and https://example.org/second');
+  });
+
+  test('entities が無ければ本文をそのまま通す', async () => {
+    mockFetch([['cdn.syndication.twimg.com', { text: 'no links here', mediaDetails: [], user: { screen_name: 'alice', id_str: '1' } }]]);
+
+    expect((await fetchXTweet(X_ID, X_URL)).text).toBe('no links here');
+  });
+
+  test('edit_control.edit_tweet_ids が2件以上なら編集済み', async () => {
+    mockFetch([
+      [
+        'cdn.syndication.twimg.com',
+        {
+          text: 'edited now',
+          mediaDetails: [],
+          user: { screen_name: 'alice', id_str: '1' },
+          edit_control: { edit_tweet_ids: ['1', '2'], editable_until_msecs: '99999999999', edits_remaining: '4', is_edit_eligible: true },
+        },
+      ],
+    ]);
+
+    const r = await fetchXTweet(X_ID, X_URL);
+    expect(r.isEdited).toBe(true);
+    // X の edit_control には「いつ」を答えるフィールドが無い
+    expect(r.editedAt).toBeNull();
+  });
+
+  test('edit_tweet_ids が自分だけ（1件）なら未編集＝null のまま', async () => {
+    mockFetch([
+      [
+        'cdn.syndication.twimg.com',
+        {
+          text: 'never touched',
+          mediaDetails: [],
+          user: { screen_name: 'alice', id_str: '1' },
+          edit_control: { edit_tweet_ids: ['1'], editable_until_msecs: '99999999999', edits_remaining: '5', is_edit_eligible: true },
+        },
+      ],
+    ]);
+
+    expect((await fetchXTweet(X_ID, X_URL)).isEdited).toBeNull();
+  });
+});
+
+describe('Mastodon: edited_at から編集済みフラグ（#189）', () => {
+  test('edited_at が非 null なら isEdited=true・editedAt に ISO 日時', async () => {
+    mockFetch([
+      [
+        '/api/v1/statuses/',
+        {
+          content: '<p>hi</p>',
+          created_at: '2026-01-01T00:00:00Z',
+          edited_at: '2026-01-02T03:04:05.000Z',
+          account: { acct: 'alice', username: 'alice' },
+        },
+      ],
+    ]);
+
+    const r = await fetchMastodonStatus({ platform: 'mastodon', host: 'mastodon.social', id: '1' }, 'https://mastodon.social/@alice/1');
+    expect(r.isEdited).toBe(true);
+    expect(r.editedAt).toBe('2026-01-02T03:04:05.000Z');
+  });
+
+  test('edited_at が null なら未編集＝null のまま（false ではない）', async () => {
+    mockFetch([
+      [
+        '/api/v1/statuses/',
+        {
+          content: '<p>hi</p>',
+          created_at: '2026-01-01T00:00:00Z',
+          edited_at: null,
+          account: { acct: 'alice', username: 'alice' },
+        },
+      ],
+    ]);
+
+    const r = await fetchMastodonStatus({ platform: 'mastodon', host: 'mastodon.social', id: '2' }, 'https://mastodon.social/@alice/2');
+    expect(r.isEdited).toBeNull();
+    expect(r.editedAt).toBeNull();
   });
 });
 

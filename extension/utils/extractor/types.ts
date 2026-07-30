@@ -89,6 +89,18 @@ interface PostRecord {
   isReply: boolean | null;
   isQuote: boolean | null;
   isThread: boolean | null;
+  // Whether the platform's own API says this post was edited after it was
+  // first published (#189). true only when a site positively confirms it —
+  // Mastodon's edited_at and X's edit_control.edit_tweet_ids are the only two
+  // sources today. Same convention as isReply/isQuote/isThread above: a site
+  // with no edit signal in its API (or a fetch that failed) leaves this null
+  // rather than guessing false.
+  isEdited: boolean | null;
+  // ISO 8601 timestamp of the last edit, when the platform names one.
+  // Mastodon's edited_at gives an exact time; X's edit_control carries no
+  // "when" field at all, so isEdited can be true there with editedAt staying
+  // null — the two fields are independent, not a pair that both fill together.
+  editedAt: string | null;
   quotedUrl: string | null;
   replyToId: string | null;
   hashtags: string[];

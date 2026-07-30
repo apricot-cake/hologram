@@ -229,6 +229,19 @@ const MIGRATIONS: Migration[] = [
   // a thing to join or filter on, so it needs no table of its own.
   // Empty ('[]') on every record whose API fetch succeeded in full.
   { name: 'add-post-dom-filled', up: (db) => db.exec('ALTER TABLE posts ADD COLUMN domFilled TEXT') },
+  // #189: whether the platform's own API reports this post as edited, and
+  // when. Two columns because they answer independent questions — X's
+  // edit_control has no timestamp at all (see PostRecordShape.editedAt), so a
+  // row can have isEdited=1 and editedAt=NULL. Both null on every row written
+  // before this migration and on every platform with no edit signal.
+  {
+    name: 'add-post-edited-fields',
+    up: (db) =>
+      db.exec(`
+        ALTER TABLE posts ADD COLUMN isEdited INTEGER;
+        ALTER TABLE posts ADD COLUMN editedAt TEXT;
+      `),
+  },
 ];
 
 interface Migration {
@@ -372,6 +385,9 @@ interface PostsTable {
   // add-post-dom-filled migration (#202) — JSON string[], same storage as
   // hashtags. See PostRecordShape.domFilled. Null on rows written before it.
   domFilled: string | null;
+  // add-post-edited-fields migration (#189) — see PostRecordShape.isEdited/editedAt.
+  isEdited: number | null;
+  editedAt: string | null;
 }
 interface MediaTable {
   id: Generated<number>;

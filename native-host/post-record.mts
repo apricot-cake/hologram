@@ -92,6 +92,15 @@ export interface PostRecordShape {
   isReply: boolean | null;
   isQuote: boolean | null;
   isThread: boolean | null;
+  // Whether the platform's own API says this post was edited (#189). See
+  // extension/utils/extractor/types.ts's PostRecord.isEdited for the
+  // per-platform sourcing — null means "no platform signal", never "confirmed
+  // unedited".
+  isEdited: boolean | null;
+  // ISO 8601 timestamp of the last edit, when the platform names one (Mastodon
+  // does; X's edit signal carries no timestamp, so isEdited can be true here
+  // with editedAt staying null).
+  editedAt: string | null;
   quotedUrl: string | null;
   replyToId: string | null;
   hashtags: string[];
@@ -280,6 +289,8 @@ export function normalizePostRecord(input: PostRecordInput, now: () => string = 
     isReply: normBool(input.isReply),
     isQuote: normBool(input.isQuote),
     isThread: normBool(input.isThread),
+    isEdited: normBool(input.isEdited),
+    editedAt: normStr(input.editedAt),
     quotedUrl: normStr(input.quotedUrl),
     replyToId: normStr(input.replyToId),
     hashtags: normStrArray(input.hashtags),
