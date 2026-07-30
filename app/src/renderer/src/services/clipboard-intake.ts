@@ -25,16 +25,11 @@ import { get as confirmGet } from './confirm.ts';
 import { isOpen as paletteIsOpen } from './command-registry.ts';
 import { isOpen as lightboxIsOpen } from './lightbox.ts';
 import { isOpen as settingsIsOpen } from './settings.ts';
+import { isManagerOpen as folderManagerIsOpen } from './folders.ts';
 import { importClipboard } from './posts.ts';
 import { formatDate } from './format.ts';
 import { notify } from './ui.ts';
 import { t } from '../_shared/i18n.ts';
-
-function byIdVisible(id: string): boolean {
-  if (typeof document === 'undefined') return false;
-  const el = document.getElementById(id) as HTMLElement | null;
-  return !!el && !el.hidden;
-}
 
 function imageTabActive(): boolean {
   return typeof document !== 'undefined' && document.body.classList.contains('image-tab-active');
@@ -76,7 +71,7 @@ export function handleShortcutClipboardKey(e: KeyboardEvent): void {
   if (confirmGet() || lightboxIsOpen()) return;
   if (settingsIsOpen()) return;
   if (paletteIsOpen()) return;
-  if (byIdVisible('ivFolderModal')) return;
+  if (folderManagerIsOpen()) return;
   // The single-image view is its own screen with its own keys — same exclusion as
   // Ctrl+C / Space (selection-builder.ts).
   if (imageTabActive()) return;

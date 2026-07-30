@@ -38,6 +38,7 @@ import { isOpen as paletteIsOpen } from './command-registry.ts';
 import { hologramIpc } from './ipc.ts';
 import { isOpen as lightboxIsOpen } from './lightbox.ts';
 import { isOpen as settingsIsOpen } from './settings.ts';
+import { isManagerOpen as folderManagerIsOpen } from './folders.ts';
 
 const KEY = 'hologram-panels-hidden';
 const DEFAULT_HIDDEN = false;
@@ -149,8 +150,7 @@ export function handleShortcutPanelsKey(e: KeyboardEvent): void {
   if (confirmGet() || lightboxIsOpen()) return;
   if (settingsIsOpen()) return;
   if (paletteIsOpen()) return;
-  const folderModal = typeof document === 'undefined' ? null : document.getElementById('ivFolderModal');
-  if (folderModal && !folderModal.hidden) return;
+  if (folderManagerIsOpen()) return;
   e.preventDefault();
   toggle();
 }

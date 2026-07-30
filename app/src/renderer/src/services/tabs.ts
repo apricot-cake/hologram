@@ -1,12 +1,12 @@
-// Tab-strip model source — converts #tabBarInner off the old push
+// Tab-strip model source — converts the strip off the old push
 // (viewer.js built a full TabsModel via renderTabs() and pushed it to a shared
 // render bridge from ~15 call sites) to a PULLED source, the
 // same shape as the grid sources (services/grid.ts) and the image-tab source
-// (services/image-tab.ts). viewer.js no longer holds tabs/activeTabId/
-// tabEditingId as closure state — hologramStore's 'tabs'/'activeTabId'/
-// 'tabEditingId' keys ARE the state now (the SAME "single source of truth" move
-// selection.ts made for selectedSet); every renderTabs() call site is gone, its
-// notification now automatic through the store subscriptions below.
+// (services/image-tab.ts). viewer.js no longer holds tabs/activeTabId as closure
+// state — hologramStore's 'tabs'/'activeTabId' keys ARE the state now (the SAME
+// "single source of truth" move selection.ts made for selectedSet); every
+// renderTabs() call site is gone, its notification now automatic through the store
+// subscriptions below.
 //
 // The ACTIVE tab's title/icon still need the LIVE filter state (not the tab's
 // persisted .state, which only updates on switch-away). postQB.shadow() was
@@ -23,11 +23,9 @@
 // glyph, as invariant callbacks (same "configure once" shape as the grid
 // sources' modelOf/keyOf/labels/onAspect).
 //
-// Tab bar EVENTS (click/contextmenu/keydown/…) stay wired through TabBarEvents
-// (App.tsx), which imports the handlers' live bindings from
-// viewer.ts directly — unchanged by this move; this file only computes the
-// model, it never mutates tab state.
-// Plain IIFE on window (like grid.ts / image-tab.ts); loaded BEFORE viewer.js.
+// Tab EVENTS are the strip's own props now (tabs/Tabs.tsx calls orchestrator's
+// switchTab/closeTab/… directly, #621) — this file only computes the model, it never
+// mutates tab state.
 import { buildShadow } from './query.ts';
 import { get as storeGet, subscribe as storeSubscribe } from './store.ts';
 
@@ -89,7 +87,6 @@ function get(): HologramTabsModel | null {
   const rawTabs: HologramTab[] | undefined = storeGet('tabs');
   if (!rawTabs) return null; // not yet loaded by viewer's initTabs()
   const activeTabId = storeGet('activeTabId');
-  const editingId = storeGet('tabEditingId') || null;
   const allCount = storeGet('allPostsCount') || 0;
   const tabs = rawTabs.map((t) => {
     const isActive = t.id === activeTabId;
@@ -105,17 +102,18 @@ function get(): HologramTabsModel | null {
       return { id: t.id, title: t.title || imageFallbackTitle, icon: t.pinned ? pinSvg : icons.media, active: isActive, pinned: !!t.pinned, showClose: !t.pinned && rawTabs.length > 1 };
     }
     if (kind === 'posters') {
-      const title = t.title && !t._autoTitle ? t.title : postersTitle;
-      return { id: t.id, title, icon: t.pinned ? pinSvg : icons.user, active: isActive, pinned: !!t.pinned, showClose: !t.pinned && rawTabs.length > 1 };
+      return { id: t.id, title: postersTitle, icon: t.pinned ? pinSvg : icons.user, active: isActive, pinned: !!t.pinned, showClose: !t.pinned && rawTabs.length > 1 };
     }
     const s = isActive ? liveActiveState() : t.state || {};
     const derived = tt(s, { allCount });
     const icon = t.pinned ? pinSvg : icons[derived.iconType] || icons.all;
-    // _autoTitle = a stale image title on a tab that navigated back to a grid
-    // before the clear landed — never show it over the derived grid title.
-    return { id: t.id, title: t.title && !t._autoTitle ? t.title : derived.text, icon, active: isActive, pinned: !!t.pinned, showClose: !t.pinned && rawTabs.length > 1 };
+    // t.title is never shown on a grid tab: with manual renaming dropped (#621), the
+    // only title a tab can carry is the auto one an image entry stamped on it, and on
+    // a grid the derived title is the truth (the auto one may be a frame stale, if the
+    // tab navigated back before clearAutoTitle landed).
+    return { id: t.id, title: derived.text, icon, active: isActive, pinned: !!t.pinned, showClose: !t.pinned && rawTabs.length > 1 };
   });
-  return { tabs, editingId, closeTitle, newTitle };
+  return { tabs, closeTitle, newTitle };
 }
 
 export const hologramTabsSource = {
@@ -135,4 +133,4 @@ export const hologramTabsSource = {
     return () => subs.delete(cb);
   },
 };
-for (const k of ['tabs', 'activeTabId', 'tabEditingId', 'postQueryTree', 'searchQuery', 'sortPost', 'multiOnly', 'allPostsCount', 'browseMode', 'activeImageTab']) storeSubscribe(k, notify);
+for (const k of ['tabs', 'activeTabId', 'postQueryTree', 'searchQuery', 'sortPost', 'multiOnly', 'allPostsCount', 'browseMode', 'activeImageTab']) storeSubscribe(k, notify);

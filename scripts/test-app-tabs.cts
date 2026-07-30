@@ -55,10 +55,10 @@ const evalJs = `(async () => {
   };
   const key = (k, opts = {}) =>
     document.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true, ...opts }));
-  const tabItems  = () => document.querySelectorAll('#tabBar .tab-item');
+  const tabItems  = () => document.querySelectorAll('[data-slot="tab"]');
   const tabCount  = () => tabItems().length;
   const activeTitle = () => {
-    const el = document.querySelector('#tabBar .tab-item.active .tab-title');
+    const el = document.querySelector('[data-slot="tab"][data-active] [data-slot="tab-title"]');
     return el ? el.textContent.trim() : '';
   };
   const cardCount = () => document.querySelectorAll('#postGrid .post-card').length;

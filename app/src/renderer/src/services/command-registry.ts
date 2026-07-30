@@ -16,6 +16,7 @@ import { get as confirmGet } from './confirm.ts';
 import { isOpen as lightboxIsOpen } from './lightbox.ts';
 import { compile, normalize } from './search.ts';
 import { isOpen as settingsIsOpen } from './settings.ts';
+import { isManagerOpen as folderManagerIsOpen } from './folders.ts';
 
 // section は「見出し」であり、種別で挙動を分けるための型ではない。
 // 'folder' は設計コメントが 'collection' と書いていた枠＝コレクションがサイドバーの
@@ -202,11 +203,6 @@ export function runEntry(entry: CommandEntry): void {
 // Ctrl+K は検索ボックスの隣のバッジが入口を教える＝そこから押せないと嘘になる。
 // Windows のテキスト入力に Ctrl+K の既定動作は無く、Chrome 自身も Ctrl+K を
 // アドレスバーの検索に使っている）。
-function folderModalOpen(): boolean {
-  const el = typeof document === 'undefined' ? null : document.getElementById('ivFolderModal');
-  return !!el && !(el as HTMLElement).hidden;
-}
-
 export function handleShortcutPaletteKey(e: KeyboardEvent): void {
   if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return;
   if ((e.key || '').toLowerCase() !== 'k') return;
@@ -214,7 +210,7 @@ export function handleShortcutPaletteKey(e: KeyboardEvent): void {
   if (open_) return;
   if (confirmGet() || lightboxIsOpen()) return;
   if (settingsIsOpen()) return;
-  if (folderModalOpen()) return;
+  if (folderManagerIsOpen()) return;
   e.preventDefault();
   open();
 }

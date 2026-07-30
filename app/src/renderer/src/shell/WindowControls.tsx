@@ -77,7 +77,7 @@ export function WindowControls() {
   const base = 'app-no-drag inline-grid h-8 w-[46px] place-items-center text-muted-foreground transition-colors duration-75';
   // Portaled to body and z-[13600]: above every modal surface (dialog 13000 / alert 13100 /
   // sheet 13500) so window management still works while a modal is up, the way the OS buttons
-  // it replaces did. Inside the tab bar this was impossible — #tabBar is its own stacking
+  // it replaces did. Inside the tab bar this was impossible — the band is its own stacking
   // context at z-50, so no z-index on a child could clear the scrim. The dim that the scrim
   // would have applied is painted by .wc-dim instead (globals.css).
   // The strip is opaque: it sits ABOVE the scrim, so without a background the scrim would

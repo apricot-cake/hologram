@@ -1,18 +1,24 @@
-import type { DragEvent } from 'react';
-import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
-import { createPortal } from 'react-dom';
+import type { DragEvent, MouseEvent as ReactMouseEvent } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { t } from '../_shared/i18n.ts';
 import { promptName } from '../prompt/Prompt.tsx';
 import { closeManager, getManager, managerCreate, managerMove, managerRemove, managerRename, subscribeManager } from '../services/folders.ts';
 
-// Shared folder management modal (#ivFolderModal) — React-owned. Lists whichever
-// store folders.ts's openManager() currently targets (the library collections store by
-// default, or the poster folder store when opened via openManager({store, onChange}) — see
-// folders.ts); create/rename/delete/drag-reorder all call folders.ts's manager* actions,
-// which persist via that store and notify onChange so the owning view refreshes its chips.
-// #ivFolderModal stays the portal target (its [hidden] attribute + .iv-detail-box CSS hooks
-// are unchanged) — same "empty static container, React owns the content + visibility"
-// pattern as ConfirmHost/#confirmOverlay.
+// Folder management modal — React-owned, and React-MOUNTED since #621: it used to portal
+// into an empty <div id="ivFolderModal"> kept static in index.html and drive that
+// element's [hidden] attribute by hand, which made "is the folder modal up?" a question
+// six other modules answered by reading the DOM back. Now the overlay IS the component
+// (present only while open) and everyone asks folders.ts's isManagerOpen() instead.
+//
+// It lists whichever store folders.ts's openManager() currently targets. Library folders
+// are edited in the sidebar tree now (#41), so in practice the one caller left is the
+// poster-folder facet's 管理 footer; create/rename/delete/drag-reorder all call folders.ts's
+// manager* actions, which persist via that store and notify onChange so the owning view
+// refreshes its chips.
+//
+// TRANSIENT: the .iv-detail-overlay / .iv-detail-box classes are still legacy CSS. This
+// surface is not one of the redesigned ones, so it keeps them until either it is reworked
+// or P3 (#6) sweeps the layer.
 
 function dropBefore(row: HTMLElement, clientY: number) {
   const r = row.getBoundingClientRect();
@@ -137,23 +143,18 @@ function FolderManagerBox({ model }: { model: HologramFolderManagerModel }) {
 
 export function FolderManagerHost() {
   const model = useSyncExternalStore(subscribeManager, getManager);
-  // #ivFolderModal's CSS keys on [hidden] (not a .show class, unlike confirmOverlay) —
-  // toggle it before paint so there's no open/close flash.
-  useLayoutEffect(() => {
-    const el = document.getElementById('ivFolderModal');
-    if (el) el.hidden = !model;
-  }, [model]);
-  // Backdrop click (on #ivFolderModal itself, outside .iv-detail-box) closes — attached
-  // once on the static element, same idiom as ConfirmHost/LightboxHost.
-  useEffect(() => {
-    const el = document.getElementById('ivFolderModal');
-    if (!el) return;
-    const onClick = (e: MouseEvent) => {
-      if (e.target === el) closeManager();
-    };
-    el.addEventListener('click', onClick);
-    return () => el.removeEventListener('click', onClick);
-  }, []);
-  const host = document.getElementById('ivFolderModal');
-  return model && host ? createPortal(<FolderManagerBox key={model.openId} model={model} />, host) : null;
+  if (!model) return null;
+  return (
+    // Conditionally rendered, so its presence IS its open state — the same shape the
+    // quick-view peek took in P2⑦. A click that lands on the scrim itself (not inside
+    // the box) closes.
+    <div
+      className="iv-detail-overlay"
+      onClick={(e: ReactMouseEvent<HTMLDivElement>) => {
+        if (e.target === e.currentTarget) closeManager();
+      }}
+    >
+      <FolderManagerBox key={model.openId} model={model} />
+    </div>
+  );
 }

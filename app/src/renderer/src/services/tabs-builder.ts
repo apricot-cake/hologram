@@ -3,8 +3,10 @@
 // selection-builder.ts: the state machines (makeNavHistory / the
 // tabs.json (de)serialization pair) stay in tab-state.ts untouched —
 // this module is their consumer, replacing viewer.ts's inline wiring, plus
-// the hologramStore-backed tabs/activeTabId/tabEditingId accessors (former
-// viewer.ts locals) and the tab-bar DOM event handlers.
+// the hologramStore-backed tabs/activeTabId accessors (former viewer.ts locals)
+// and the tab actions the strip calls (switchTab/addTab/closeTab/pinTab/
+// duplicateTab/showTabMenu). The strip itself owns its own DOM events now —
+// nothing here listens on the bar (#621).
 //
 // The image view cluster (showImageView/hideImageView/openImageEntry/
 // setImageTabIndex/toggleImageTabInspector/closeImageTab/addImageTab) lives in
@@ -19,6 +21,7 @@
 import { genTabId, makeNavHistory, navEntryUrl, sanitizeSavedTabs, loadTabs, persistTabs } from './tab-state.ts';
 import { isOpen as paletteIsOpen } from './command-registry.ts';
 import { get as confirmGet } from './confirm.ts';
+import { isManagerOpen as folderManagerIsOpen } from './folders.ts';
 import { isOpen as lightboxIsOpen } from './lightbox.ts';
 import { cloneTree, facetTreeFrom } from './query.ts';
 import { open as menuOpen } from './menu.ts';
@@ -69,13 +72,7 @@ export interface TabsBuilderDeps {
 const NAV_CAP = 60;
 
 export function makeTabsController(deps: TabsBuilderDeps) {
-  const byId = (id: string) => document.getElementById(id) as HTMLElement;
-  const closestOf = (e: Event, sel: string) => {
-    const t = e.target as HTMLElement | null;
-    return t instanceof Element ? (t.closest(sel) as HTMLElement | null) : null;
-  };
-
-  // --- hologramStore-backed tab list (tabs/activeTabId/tabEditingId) ---
+  // --- hologramStore-backed tab list (tabs/activeTabId) ---
   const getTabs = (): HologramTab[] => storeGet('tabs') || [];
   const setTabs = (arr: HologramTab[]) => storeSet('tabs', arr);
   function mutateTabs(fn: (arr: HologramTab[]) => HologramTab[] | undefined) {
@@ -85,8 +82,6 @@ export function makeTabsController(deps: TabsBuilderDeps) {
   }
   const getActiveTabId = (): string | null => storeGet('activeTabId') ?? null;
   const setActiveTabId = (id: string | null) => storeSet('activeTabId', id);
-  const getTabEditingId = (): string | null => storeGet('tabEditingId') ?? null; // id of the tab being inline-renamed (React renders its input)
-  const setTabEditingId = (id: string | null) => storeSet('tabEditingId', id);
   const activeTab = () => getTabs().find((t) => t.id === getActiveTabId());
   let appBooted = false; // gate history until initTabs has applied the saved view (avoids a spurious empty entry from the early prefs render)
   function markBooted() {
@@ -202,8 +197,9 @@ export function makeTabsController(deps: TabsBuilderDeps) {
     applyState(e.state as HologramTabSnapshot);
   }
   // An image entry stamps its title onto the tab (auto-title); leaving the image
-  // entry clears it back to the derived grid title. User renames (retiring UI)
-  // are left alone — only titles flagged _autoTitle are cleared.
+  // entry clears it back to the derived grid title. Since manual renaming was
+  // dropped, an auto title is the ONLY kind a tab can carry — the _autoTitle flag
+  // stays as the "this title is stale once the tab leaves the image" marker.
   function clearAutoTitle() {
     const id = getActiveTabId();
     const t = getTabs().find((x) => x.id === id);
@@ -249,7 +245,7 @@ export function makeTabsController(deps: TabsBuilderDeps) {
     if (confirmGet() || lightboxIsOpen()) return false;
     if (settingsIsOpen()) return false;
     if (paletteIsOpen()) return false;
-    if (!byId('ivFolderModal').hidden) return false;
+    if (folderManagerIsOpen()) return false;
     return true;
   }
   // Back/forward through the per-tab view history: Alt+←/→ + mouse side buttons (the bar
@@ -327,9 +323,9 @@ export function makeTabsController(deps: TabsBuilderDeps) {
     const y = typeof t._scrollTop === 'number' ? t._scrollTop : 0;
     requestAnimationFrame(() => requestAnimationFrame(() => deps.scrollContentTo(y)));
   }
-  // Model derivation (title/icon/editing state) lives in services/tabs.ts's
+  // Model derivation (title/icon) lives in services/tabs.ts's
   // hologramTabsSource — it pulls from the SAME hologramStore keys
-  // every mutation below writes (tabs/activeTabId/tabEditingId, plus
+  // every mutation below writes (tabs/activeTabId, plus
   // postQueryTree/searchQuery/sortPost/multiOnly/allPostsCount for the active
   // tab's derived title), so nothing here builds a model or pushes one. The
   // pin glyph + close/new i18n strings it needs are handed over once below.
@@ -411,18 +407,6 @@ export function makeTabsController(deps: TabsBuilderDeps) {
     });
     persistTabsDebounced();
   }
-  function renameTab(id: string, name: string) {
-    const t = getTabs().find((t) => t.id === id);
-    if (!t) return;
-    mutateTabs((arr) => {
-      const tt = arr.find((x) => x.id === id);
-      if (tt) {
-        tt.title = name.trim() || null;
-        tt._autoTitle = false; // a manual rename is never auto-cleared
-      }
-    });
-    persistTabsDebounced();
-  }
   function duplicateTab(id: string) {
     saveActiveTabState(); // flushes the live history into src if src is active
     const src = getTabs().find((t) => t.id === id);
@@ -431,7 +415,7 @@ export function makeTabsController(deps: TabsBuilderDeps) {
     const nt: HologramTab = {
       id: genTabId(),
       pinned: false,
-      title: src.title ? (src._autoTitle ? src.title : src.title + ' (2)') : null,
+      title: src.title,
       _autoTitle: src._autoTitle,
       state: JSON.parse(JSON.stringify(src.state || {})),
       // Chrome-style: the duplicate carries the full back/forward stack.
@@ -500,22 +484,19 @@ export function makeTabsController(deps: TabsBuilderDeps) {
       nav.adopt(getTabs()[0]);
     }
   }
-  // Tab bar: rename-input commit/cancel, close/new/switch clicks, middle-click close,
-  // autoscroll suppression, right-click context menu, double-click rename, and the
-  // Ctrl+T/W/Tab document shortcuts. React owns the registration (TabBarEvents,
-  // app/App.tsx), importing these handlers' live bindings from viewer.ts
-  // directly (assigned at this controller's construction site); this stays the guard
-  // + action logic (viewer keeps the orchestration, React owns the wiring) — same
-  // "cut out and rewire" as the global shortcuts / detail-dismiss slices.
-  // Tab context menu (right-click a tab): pin / rename / duplicate / close /
-  // close-others. React-owned glass menu (menu.ts); this module owns the
-  // items + actions.
-  function showTabMenu(id: string, e: MouseEvent) {
+  // Tab context menu (right-click a tab): pin / duplicate / close / close-others.
+  // React-owned glass menu (menu.ts); this module owns the items + actions. The
+  // strip calls it straight from its own onContextMenu — there is no delegated
+  // listener on the bar any more (#621).
+  //
+  // No 名前を変更 row: manual tab renaming was dropped in the redesign (2026-07-13),
+  // the way Chrome and VS Code have no rename either — a tab's name is derived from
+  // what it shows (tabTitleOf).
+  function showTabMenu(id: string, e: { clientX: number; clientY: number }) {
     const t = getTabs().find((t) => t.id === id);
     if (!t) return;
     const items: any[] = [
       { label: t.pinned ? deps.t('tabUnpin') : deps.t('tabPin'), act: 'pin' },
-      { label: deps.t('tabRename'), act: 'rename' },
       { label: deps.t('tabDuplicate'), act: 'duplicate' },
     ];
     if (getTabs().length > 1) {
@@ -526,7 +507,6 @@ export function makeTabsController(deps: TabsBuilderDeps) {
       const tid = id;
       const act = item.act;
       if (act === 'pin') pinTab(tid);
-      else if (act === 'rename') startTabRename(tid);
       else if (act === 'duplicate') duplicateTab(tid);
       else if (act === 'close') closeTab(tid);
       else if (act === 'close-others') {
@@ -539,92 +519,12 @@ export function makeTabsController(deps: TabsBuilderDeps) {
       }
     });
   }
-  // Inline rename: flag the tab as editing → React renders a .tab-rename-input in
-  // place of its title span (it survives re-renders, unlike the old imperative
-  // replaceWith on React-owned DOM). Commit/cancel are delegated on the bar below.
-  // The store notify that follows setTabEditingId() may land the re-render either
-  // synchronously or on the next frame (services/tabs.ts's pull source isn't
-  // useSyncExternalStore-backed — see its own comment) — rAF is the same
-  // "wait for React to have painted" trick restoreTabView already relies on.
-  function startTabRename(id: string) {
-    if (!getTabs().find((t) => t.id === id)) return;
-    setTabEditingId(id);
-    requestAnimationFrame(() => {
-      const input = byId('tabBarInner')?.querySelector('.tab-rename-input') as HTMLInputElement | null;
-      if (input) {
-        input.focus();
-        input.select();
-      }
-    });
-  }
-  function commitTabRename() {
-    if (!getTabEditingId()) return;
-    const input = byId('tabBarInner')?.querySelector('.tab-rename-input') as HTMLInputElement | null;
-    const id = getTabEditingId() as string;
-    setTabEditingId(null);
-    if (input) renameTab(id, input.value);
-  }
-  function cancelTabRename() {
-    if (!getTabEditingId()) return;
-    setTabEditingId(null); // discard the edit, restore the title
-  }
-  // Rename input commit (Enter / blur) + cancel (Escape), delegated on the bar so
-  // they keep working across React re-renders of the strip.
-  function handleTabBarKeydown(e: KeyboardEvent) {
-    if (!getTabEditingId() || !closestOf(e, '.tab-rename-input')) return;
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      commitTabRename();
-    } else if (e.key === 'Escape') {
-      e.preventDefault();
-      cancelTabRename();
-    }
-  }
-  function handleTabBarFocusout(e: FocusEvent) {
-    if (getTabEditingId() && closestOf(e, '.tab-rename-input')) commitTabRename();
-  }
-  function handleTabBarClick(e: MouseEvent) {
-    const closeBtn = closestOf(e, '[data-close]');
-    if (closeBtn) {
-      e.stopPropagation();
-      closeTab(closeBtn.dataset.close);
-      return;
-    }
-    const newBtn = closestOf(e, '.tab-new');
-    if (newBtn) {
-      addTab();
-      return;
-    }
-    const tabBtn = closestOf(e, '.tab-item[data-tab]');
-    if (tabBtn && !closestOf(e, '.tab-rename-input')) {
-      switchTab(tabBtn.dataset.tab as string);
-      return;
-    }
-  }
-  // Middle-click (wheel) a tab to close it — matches the close-button rule
-  // (pinned tabs and the last remaining tab stay protected).
-  function handleTabBarAuxclick(e: MouseEvent) {
-    if (e.button !== 1) return;
-    const tabBtn = closestOf(e, '.tab-item[data-tab]');
-    if (!tabBtn) return;
-    e.preventDefault();
-    const t = getTabs().find((x) => x.id === tabBtn.dataset.tab);
+  // Middle-click (wheel) closes a tab, on the same rule as the ✕ button: pinned tabs
+  // and the last remaining tab stay put. The strip decides WHICH tab was hit (it
+  // renders them); this is the rule.
+  function closeTabByGesture(id: string) {
+    const t = getTabs().find((x) => x.id === id);
     if (t && !t.pinned && getTabs().length > 1) closeTab(t.id);
-  }
-  // Suppress the middle-click autoscroll cursor over the tab strip.
-  function handleTabBarMousedown(e: MouseEvent) {
-    if (e.button === 1 && closestOf(e, '.tab-item[data-tab]')) e.preventDefault();
-  }
-  function handleTabBarContextmenu(e: MouseEvent) {
-    const tabBtn = closestOf(e, '.tab-item[data-tab]');
-    if (!tabBtn) return;
-    e.preventDefault();
-    showTabMenu(tabBtn.dataset.tab as string, e);
-  }
-  function handleTabBarDblclick(e: MouseEvent) {
-    const tabBtn = closestOf(e, '.tab-item[data-tab]');
-    if (!tabBtn || closestOf(e, '[data-close]')) return;
-    startTabRename(tabBtn.dataset.tab as string);
   }
   function handleGlobalTabShortcut(e: KeyboardEvent) {
     if (!e.ctrlKey || e.altKey) return;
@@ -674,17 +574,11 @@ export function makeTabsController(deps: TabsBuilderDeps) {
     switchTab,
     addTab,
     closeTab,
+    closeTabByGesture,
     pinTab,
-    renameTab,
     duplicateTab,
+    showTabMenu,
     initTabs,
-    handleTabBarKeydown,
-    handleTabBarFocusout,
-    handleTabBarClick,
-    handleTabBarAuxclick,
-    handleTabBarMousedown,
-    handleTabBarContextmenu,
-    handleTabBarDblclick,
     handleGlobalTabShortcut,
   };
 }

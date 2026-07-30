@@ -68,8 +68,8 @@ const PRELUDE = `
   const waitFor = async (fn, ms = 8000) => { for (let i = 0; i * 50 < ms; i++) { if (fn()) return true; await sleep(50); } return false; };
   const byText = (sel, text) => [...document.querySelectorAll(sel)].find((el) => (el.textContent || '').trim() === text) || null;
   const scroller = () => document.getElementById('mode-post');
-  const tabItems = () => document.querySelectorAll('#tabBar .tab-item');
-  const activeTitle = () => { const el = document.querySelector('#tabBar .tab-item.active .tab-title'); return el ? el.textContent.trim() : ''; };
+  const tabItems = () => document.querySelectorAll('[data-slot="tab"]');
+  const activeTitle = () => { const el = document.querySelector('[data-slot="tab"][data-active] [data-slot="tab-title"]'); return el ? el.textContent.trim() : ''; };
   const cardCount = () => document.querySelectorAll('#postGrid .post-card').length;
   const backBtn = () => document.querySelector('button[aria-label="戻る"]');
   const key = (k, opts = {}) => document.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true, ...opts }));

@@ -192,7 +192,7 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
     if (confirmGet() || lightboxIsOpen()) return;
     if (settingsIsOpen()) return;
-    if (!byId('ivFolderModal').hidden) return;
+    if (folders.isManagerOpen()) return;
     if (deps.getBrowseMode() !== 'posts') return; // select-all is post-grid only (posters/collections excluded)
     if (deps.getViewGroups().length === 0) return;
     e.preventDefault();
@@ -212,7 +212,7 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
     if (confirmGet() || lightboxIsOpen()) return;
     if (settingsIsOpen()) return;
-    if (!byId('ivFolderModal').hidden) return;
+    if (folders.isManagerOpen()) return;
     if (document.body.classList.contains('image-tab-active')) return;
     if (deps.getBrowseMode() !== 'posts') return;
     if (String(window.getSelection() || '')) return; // the user highlighted post text — that's what they mean to copy
@@ -234,7 +234,7 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
     if (confirmGet() || lightboxIsOpen()) return;
     if (settingsIsOpen()) return;
-    if (!byId('ivFolderModal').hidden) return;
+    if (folders.isManagerOpen()) return;
     if (document.body.classList.contains('image-tab-active')) return;
     if (deps.getBrowseMode() !== 'posts') return;
     const groups = selection.selectedGroups(deps.getViewGroups(), postIdKey);
@@ -272,7 +272,7 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
     if (confirmGet() || lightboxIsOpen()) return;
     if (settingsIsOpen()) return;
-    if (!byId('ivFolderModal').hidden) return;
+    if (folders.isManagerOpen()) return;
     if (document.body.classList.contains('image-tab-active')) return;
     if (deps.getBrowseMode() !== 'posts') return;
     const groups = deps.getViewGroups();

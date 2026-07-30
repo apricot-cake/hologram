@@ -1,6 +1,4 @@
-import type { ReactNode } from 'react';
 import { useEffect, useLayoutEffect, useSyncExternalStore } from 'react';
-import { createPortal } from 'react-dom';
 import { AppShell } from '../shell/AppShell.tsx';
 import { get as confirmGet, subscribe as confirmSubscribe } from '../services/confirm.ts';
 import { isOpen as lightboxIsOpen, subscribe as lightboxSubscribe } from '../services/lightbox.ts';
@@ -20,7 +18,7 @@ import { handleShortcutPanelsKey } from '../services/panels.ts';
 import { handleShortcutZoomKey } from '../services/image-zoom.ts';
 import { handleShortcutClipboardKey } from '../services/clipboard-intake.ts';
 import { onPostsChanged } from '../services/posts.ts';
-import { onChange as foldersOnChange } from '../services/folders.ts';
+import { isManagerOpen as folderManagerIsOpen, onChange as foldersOnChange, subscribeManager as subscribeFolderManager } from '../services/folders.ts';
 import { get as storeGet, subscribe as storeSubscribe } from '../services/store.ts';
 import {
   viewerReady,
@@ -39,13 +37,6 @@ import {
   handleZoomWheel,
   handleEscDismissDetail,
   handleOutsideClickDismissDetail,
-  handleTabBarKeydown,
-  handleTabBarFocusout,
-  handleTabBarClick,
-  handleTabBarAuxclick,
-  handleTabBarMousedown,
-  handleTabBarContextmenu,
-  handleTabBarDblclick,
   handleGlobalTabShortcut,
   handleSelectionContextmenu,
   handleViewStoreChange,
@@ -57,25 +48,14 @@ import {
 // The single React root for the whole renderer — the 最終形B DoD: 島 root 群の1本統合
 // (consolidation of the former independent island roots into one). Components used to be
 // their own createRoot() calls; they were migrated here in verifiable batches, and each still
-// owns only RENDERING and reads its state from a window.hologram* bridge (orchestrator.ts keeps
-// the logic/state). Container-mounted components portal into their existing orchestrator-owned
-// static container (unchanged DOM/CSS contract); body-level overlays render as fixed-
-// positioned children of this root. This component is the source of truth for which
-// components live under the unified root. root.tsx gates the mount on initI18n() so t() is
-// synchronous here.
+// owns only RENDERING and reads its state from a service module (orchestrator.ts keeps the
+// logic/state). This component is the source of truth for which components live under the
+// unified root. root.tsx gates the mount on initI18n() so t() is synchronous here.
 //
-// Batch 1 (overlays): the four body-level popup hosts.
-// Batch 2 (container components): the sidebar filter-row columns, selection bar, inspector,
-//   bulk-edit overlay, and the search box — each portaled into its static container.
-
-// Portal a subtree into an existing orchestrator-owned container by id. The containers are
-// static HTML (present before app.js runs), so getElementById resolves synchronously; the
-// wrapper only re-runs the lookup if the App itself re-renders (it doesn't — each child
-// subscribes to its own bridge).
-function Portal({ id, children }: { id: string; children: ReactNode }) {
-  const el = document.getElementById(id);
-  return el ? createPortal(children, el) : null;
-}
+// Since #621 there is nothing left to portal into: index.html is the root mount point and
+// nothing else (redesign §0-0⑥), so every overlay below either renders in place as a
+// fixed-positioned child of this root, or portals onto document.body from its own component
+// (the Base UI ones).
 
 // App bootstrap: the single React root (this component) is the app's one entry point,
 // so it also owns triggering the initial data load — rather than orchestrator.ts self-booting
@@ -120,34 +100,22 @@ function ShellClasses() {
 // (shell/WindowControls.tsx), so the scrim covers them on its own and that whole mechanism —
 // the recolor, the dedupe, the paint-timing deferral — is gone.
 function ModalChrome() {
-  // Scroll-lock (`.modal-open` = overflow:hidden) is for the LEGACY overlays that aren't Base
-  // UI (the folder modal) plus the confirm AlertDialog and the quick-view peek. The shadcn
-  // Dialog/AlertDialog lock their own scroll, so settings isn't in this set.
+  // Scroll-lock (`.modal-open` = overflow:hidden) is for the overlays that aren't Base UI:
+  // the folder-management modal, the confirm AlertDialog and the quick-view peek. The
+  // shadcn Dialog/AlertDialog lock their own scroll, so settings isn't in this set.
   //
-  // The peek is a plain subscription now that it is React-rendered (P2⑦) — no DOM
-  // visibility to observe. The folder modal keeps the MutationObserver until ⑧ reworks it.
+  // All three are plain subscriptions now (#621): the folder modal used to be a static
+  // element whose `hidden` attribute this watched with a MutationObserver, which is
+  // exactly the DOM-sniffed open state #153 rules out. It is conditionally rendered and
+  // asked through folders.ts like the other two.
   const confirmOpen = useSyncExternalStore(confirmSubscribe, () => !!confirmGet());
   const peekOpen = useSyncExternalStore(lightboxSubscribe, lightboxIsOpen);
+  const folderManagerOpen = useSyncExternalStore(subscribeFolderManager, folderManagerIsOpen);
+  const scrollLock = confirmOpen || peekOpen || folderManagerOpen;
   useEffect(() => {
-    const ids = ['ivFolderModal'];
-    const visible = (el: HTMLElement | null) => !!el && !el.hasAttribute('hidden') && getComputedStyle(el).display !== 'none';
-    const sync = () => {
-      const legacy = ids.some((id) => visible(document.getElementById(id)));
-      const scrollLock = confirmOpen || peekOpen || legacy;
-      document.documentElement.classList.toggle('modal-open', scrollLock);
-      document.body.classList.toggle('modal-open', scrollLock);
-    };
-    const observers = ids
-      .map((id) => document.getElementById(id))
-      .filter((el): el is HTMLElement => !!el)
-      .map((el) => {
-        const mo = new MutationObserver(sync);
-        mo.observe(el, { attributes: true, attributeFilter: ['class', 'hidden', 'style'] });
-        return mo;
-      });
-    sync();
-    return () => observers.forEach((mo) => mo.disconnect());
-  }, [confirmOpen, peekOpen]);
+    document.documentElement.classList.toggle('modal-open', scrollLock);
+    document.body.classList.toggle('modal-open', scrollLock);
+  }, [scrollLock]);
   return null;
 }
 
@@ -189,6 +157,9 @@ function GlobalShortcuts() {
       // because this is the ONE shortcut whose key already means something
       // everywhere else — see services/clipboard-intake.ts.
       handleShortcutClipboardKey(e);
+      // Ctrl+T / Ctrl+W / Ctrl+Tab — the tab shortcuts act on the window, not on a
+      // tab you are pointing at, so they belong here rather than on the strip (#621).
+      handleGlobalTabShortcut(e);
     };
     const onMouseup = (e: MouseEvent) => handleShortcutMouseNav(e);
     // Ctrl+wheel = content size (#141). Non-passive on purpose: the handler
@@ -225,47 +196,6 @@ function DetailDismiss() {
     return () => {
       document.removeEventListener('keydown', onKeydown, true);
       document.removeEventListener('click', onClick, true);
-    };
-  }, []);
-  return null;
-}
-
-// Tab bar: rename-input commit/cancel, close/new/switch clicks, middle-click close,
-// autoscroll suppression, right-click context menu, double-click rename, and the
-// Ctrl+T/W/Tab document shortcuts. React owns the listener registration (mounted once
-// for the app's lifetime); guard + action logic is unchanged and stays in orchestrator.ts,
-// imported directly as a live binding — same "cut out and rewire" as GlobalShortcuts.
-// #tabBarInner is TabsHost's static portal container (present before app.js runs), so
-// getElementById resolves synchronously, same as the Portal() containers below.
-function TabBarEvents() {
-  useEffect(() => {
-    const bar = document.getElementById('tabBarInner');
-    if (!bar) return;
-    const onKeydown = (e: KeyboardEvent) => handleTabBarKeydown(e);
-    const onFocusout = (e: FocusEvent) => handleTabBarFocusout(e);
-    const onClick = (e: MouseEvent) => handleTabBarClick(e);
-    const onAuxclick = (e: MouseEvent) => handleTabBarAuxclick(e);
-    const onMousedown = (e: MouseEvent) => handleTabBarMousedown(e);
-    const onContextmenu = (e: MouseEvent) => handleTabBarContextmenu(e);
-    const onDblclick = (e: MouseEvent) => handleTabBarDblclick(e);
-    const onDocKeydown = (e: KeyboardEvent) => handleGlobalTabShortcut(e);
-    bar.addEventListener('keydown', onKeydown);
-    bar.addEventListener('focusout', onFocusout);
-    bar.addEventListener('click', onClick);
-    bar.addEventListener('auxclick', onAuxclick);
-    bar.addEventListener('mousedown', onMousedown);
-    bar.addEventListener('contextmenu', onContextmenu);
-    bar.addEventListener('dblclick', onDblclick);
-    document.addEventListener('keydown', onDocKeydown);
-    return () => {
-      bar.removeEventListener('keydown', onKeydown);
-      bar.removeEventListener('focusout', onFocusout);
-      bar.removeEventListener('click', onClick);
-      bar.removeEventListener('auxclick', onAuxclick);
-      bar.removeEventListener('mousedown', onMousedown);
-      bar.removeEventListener('contextmenu', onContextmenu);
-      bar.removeEventListener('dblclick', onDblclick);
-      document.removeEventListener('keydown', onDocKeydown);
     };
   }, []);
   return null;
@@ -335,8 +265,6 @@ export function App() {
       <GlobalShortcuts />
       {/* Esc-priority inspector close + outside-click dismiss — capture phase. */}
       <DetailDismiss />
-      {/* Tab bar event wiring (click/keydown/contextmenu/etc + Ctrl+T/W/Tab). */}
-      <TabBarEvents />
       {/* Right-click on selected text where no other menu claims the click (#167). */}
       <SelectionContextMenu />
       {/* External-store / IPC subscriptions (hologramStore keys, qf-pop, search mode,
@@ -347,9 +275,8 @@ export function App() {
           chips / empty / mirror) rendered in place (redesign §3, P1-2..P1-5). */}
       <AppShell />
       {/* Body-level overlays. Menus / confirm / dialogs / toaster / tooltip / quick-view peek
-          self-portal onto document.body; settings and the folder modal still portal into the
-          two overlay containers kept static in index.html (folded into the shell when those
-          surfaces are reworked — settings P2⑩ / folders P2⑧). */}
+          self-portal onto document.body; the folder modal is a fixed-positioned child of this
+          root. Neither needs a static container in index.html any more (#621). */}
       <ContextMenuHost />
       <KindMenuHost />
       <ConfirmHost />
@@ -366,9 +293,8 @@ export function App() {
       <BulkTagDialogHost />
       <FolderManagerHost />
       <LightboxHost />
-      <Portal id="settingsRoot">
-        <SettingsHost />
-      </Portal>
+      {/* 設定 — a shadcn Dialog, so it portals onto document.body itself. */}
+      <SettingsHost />
       {/* Toast outlet (sonner) — services/ui.ts notify() feeds it. */}
       <Toaster />
       {/* Legacy [data-tip] glass tooltip singleton (retired with the Tip overhaul, P3). */}

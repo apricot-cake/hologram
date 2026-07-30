@@ -106,13 +106,12 @@ declare global {
     onCloseTab?(): void;
   }
 
-  // ---- services/tabs.ts — converts the tab strip (#tabBarInner) off
-  // the old push (viewer.js built a TabsModel via renderTabs() and pushed it to a
-  // shared render bridge from ~15 call sites) to a PULLED source, same
-  // shape as the grid/image-tab sources. viewer.js no longer owns tabs/
-  // activeTabId/tabEditingId as closure state — hologramStore's keys of the same
-  // names ARE the state; it keeps only the mutation functions (switchTab/addTab/…)
-  // and all #tabBarInner event delegation (TabBarEvents, App.tsx, unchanged).
+  // ---- services/tabs.ts — converts the tab strip off the old push (viewer.js built a
+  // TabsModel via renderTabs() and pushed it to a shared render bridge from ~15 call
+  // sites) to a PULLED source, same shape as the grid/image-tab sources. viewer.js no
+  // longer owns tabs/activeTabId as closure state — hologramStore's keys of the same
+  // names ARE the state; it keeps only the mutation functions (switchTab/addTab/…),
+  // which the strip calls straight from its own handlers (#621).
   // tabTitleOf/tabIcons/pinSvg are viewer-built invariants handed over once
   // (configure), the same "configure once" shape as the grid sources.
   interface HologramTabModel {
@@ -125,7 +124,6 @@ declare global {
   }
   interface HologramTabsModel {
     tabs: HologramTabModel[];
-    editingId?: string | null;
     closeTitle?: string;
     newTitle?: string;
   }

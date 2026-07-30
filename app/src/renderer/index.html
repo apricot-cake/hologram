@@ -30,109 +30,6 @@
       background: var(--bg); color: var(--fg);
       display: flex; flex-direction: column; height: 100vh; overflow: hidden;
     }
-    #tabBar {
-      height: var(--tabbar-h); flex-shrink: 0; display: flex; align-items: center;
-      -webkit-app-region: drag;
-      background: var(--tabbar-bg);
-      /* No bottom divider line: the tab strip already steps in tone from the band
-         below (tabbar-bg vs sidebar-bg), and the active tab connects into it —
-         Chrome draws no hard rule between the strip and the toolbar. */
-      position: sticky; top: 0; z-index: 50;
-      /* The band reaches the window's right edge (#518) and the app-drawn window buttons
-         are portaled over that corner, so reserve their width here. The inspector toggle
-         is a normal child of this row and needs no reservation. */
-      padding-right: var(--window-controls-w, 138px);
-    }
-    #tabBarInner > * { -webkit-app-region: no-drag; }
-    #tabBarInner {
-      box-sizing: border-box;
-      min-width: 0; flex: 1; display: flex; align-items: flex-end;
-      align-self: stretch;
-      /* The grab gutter: a draggable patch between the last tab and the inspector toggle,
-         kept even when tabs fill the row. */
-      padding: 0 var(--tabbar-drag-gutter, 88px) 0 8px;
-      gap: 0;
-    }
-    /* Window tabs (Phase 2) — Chrome tab-strip anatomy: all tabs share one
-       32px bottom-flush box (one text axis); inactive hover = floating pill
-       inset within the box; active = connected to the band below with
-       concave "ears" at both bottom corners. */
-    .tab-item {
-      position: relative; display: flex; align-items: center;
-      height: 34px; flex: 1 1 0; max-width: 200px; min-width: 0;
-      padding: 0 8px 0 10px;
-      background: transparent; border: none; border-radius: 8px;
-      cursor: pointer; color: var(--text-muted-strong); font-size: 12px;
-      transition: color .12s; overflow: hidden;
-      user-select: none;   /* .tab-item is a div now; dblclick = rename, not text selection */
-    }
-    .tab-body {
-      display: flex; align-items: center; gap: 6px;
-      flex: 1; min-width: 0; overflow: hidden; white-space: nowrap;
-    }
-    /* Hover pill — floats centered inside the tab box */
-    .tab-item::before {
-      content: ''; position: absolute; inset: 3px 2px;
-      border-radius: 7px; background: transparent;
-      transition: background .12s; pointer-events: none;
-    }
-    /* ALL children above the ::before pill (icon/title/close/rename input) */
-    .tab-item > * { position: relative; z-index: 1; }
-    .tab-item.pinned:not(.active) { color: var(--accent-text); }
-    .tab-item.pinned:not(.active)::before { background: var(--accent-subtle); }
-    .tab-item:hover:not(.active) { color: var(--text); }
-    /* Hover pill colour: midway between the bar (--bg) and the band
-       (--sidebar-bg) — Chrome's hierarchy. var(--hover) collides with
-       --sidebar-bg in dark mode (both #202226), which would make a hovered
-       inactive tab look exactly like the active one. */
-    .tab-item:hover:not(.active)::before { background: color-mix(in srgb, var(--sidebar-bg) 60%, var(--bg)); }
-    /* Active tab: connected to the band below, Chrome-style concave ears */
-    .tab-item.active {
-      background: var(--sidebar-bg); color: var(--text);
-      border-radius: 8px 8px 0 0; overflow: visible; z-index: 1;
-    }
-    /* Ear geometry: fill OUTSIDE a quarter-circle whose center sits at the
-       square's corner TOUCHING THE BAR BG (top-left for the left ear,
-       top-right for the right ear) — the filled sliver hugs the tab wall
-       and the band, the transparent bulk shows the bar. */
-    .tab-item.active::before {
-      inset: auto; bottom: 0; left: -8px;
-      width: 8px; height: 8px; border-radius: 0;
-      background: radial-gradient(circle 8px at top left, transparent 7.5px, var(--sidebar-bg) 8px);
-      transition: none;
-    }
-    .tab-item.active::after {
-      content: ''; position: absolute;
-      bottom: 0; right: -8px;
-      width: 8px; height: 8px;
-      background: radial-gradient(circle 8px at top right, transparent 7.5px, var(--sidebar-bg) 8px);
-      pointer-events: none;
-    }
-    .tab-icon { width: 12px; height: 12px; flex-shrink: 0; opacity: .7; display: flex; align-items: center; }
-    .tab-item.active .tab-icon { opacity: 1; }
-    .tab-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; font-weight: 500; }
-    .tab-close {
-      position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
-      width: 16px; height: 16px; border-radius: 3px;
-      display: flex; align-items: center; justify-content: center;
-      background: none; border: none; cursor: pointer; padding: 0;
-      color: var(--text-muted); opacity: 0; transition: opacity .12s, background .1s, color .1s;
-    }
-    .tab-item.active .tab-close { opacity: 1; }
-    .tab-item:not(.active):hover .tab-close { opacity: .7; }
-    .tab-close:hover { background: var(--hover); color: var(--text); opacity: 1 !important; }
-    .tab-new {
-      flex-shrink: 0; width: 24px; height: 24px; border-radius: 6px;
-      /* Vertically centered in the bar (tabs are flex-end / bottom-flush, so the
-         + needs align-self:center to sit on the bar's mid-line), with a small
-         gap from the last tab. */
-      align-self: center; margin-left: 6px;
-      display: flex; align-items: center; justify-content: center;
-      background: none; border: none; cursor: pointer; color: var(--text-muted);
-      transition: background .12s, color .12s;
-    }
-    .tab-new:hover { background: var(--hover); color: var(--text); }
-    .tab-rename-input { flex: 1; min-width: 0; font-size: 12px; font-weight: 500; border: none; outline: none; background: transparent; color: inherit; padding: 0; user-select: text; /* parent .tab-item is user-select:none */ }
     #appBody {
       display: flex; flex: 1; min-height: 0;
       /* 背景グリッド（方眼）。線色は --text 混色でライト/ダーク自動追従。26px セル。
@@ -1679,15 +1576,15 @@
   </style>
 </head>
 <body>
-  <!-- Legacy shell markup removed (redesign P1 cutover): the React AppShell
-       (shell/AppShell.tsx) now owns the tab bar, sidebar, toolbar, grid host
-       and inspector. The two overlay containers below (#ivFolderModal / #settingsRoot)
-       stay static until their surfaces are reworked (P2 ⑧/⑩). -->
+  <!-- No shell markup at all (redesign §0-0⑥, completed by #621): src/app/root.tsx appends
+       the single React host div and the AppShell (shell/AppShell.tsx) draws the tab bar,
+       sidebar, toolbar, grid host and inspector. Every overlay is either a child of that
+       root or portals onto document.body from its own component — no static containers
+       left to portal into. The <style> blocks below are legacy CSS the redesigned surfaces
+       have not eaten yet; they go with P3 (#6). -->
 
-  <!-- Folder management modal (shared by both modes) — React component (FolderManagerModal,
-       folders/) owns the content + [hidden] visibility; folders.ts's
-       openManager()/closeManager() drive it. -->
-  <div id="ivFolderModal" class="iv-detail-overlay" hidden></div>
+  <!-- Folder management modal: a conditionally rendered child of the App root
+       (folders/FolderManagerModal.tsx); folders.ts's openManager()/closeManager() drive it. -->
 
   <!-- Bulk "add tags to selection" is a React Dialog now (P2⑦,
        selection/BulkTagDialog.tsx) — no static markup here (it portals
@@ -1902,9 +1799,8 @@
     } /* @layer legacy */
   </style>
 
-  <!-- Settings modal is a React component (settings/); it renders the
-       whole overlay into this mount point. The gear (#settingsBtn) opens it. -->
-  <div id="settingsRoot"></div>
+  <!-- Settings is a React Dialog (settings/) mounted under the App root and portaled
+       onto document.body by Base UI. The gear (#settingsBtn) opens it. -->
 
   <!-- The entire renderer SERVICE layer (i18n/ui/folders/store/bridge/menu/kind-menu/
        filter-popover/qf-pop/inspector/edit-overlay/searchbox/grid/sidebar/confirm/
