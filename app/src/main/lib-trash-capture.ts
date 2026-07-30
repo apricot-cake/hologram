@@ -23,10 +23,16 @@ import { parseJsonLoose } from './lib-json.ts';
 import { normalizePostRecord } from '../../../native-host/post-record.mts';
 import type { PostRecordShape } from '../../../native-host/post-record.mts';
 
+// The DB-only state a trashed capture has to take with it: none of it lives in
+// the record, and FK ON DELETE CASCADE removes all of it with the posts row.
+// folders / manualGroups are #593 — a restored post used to come back belonging
+// to nothing.
 export interface TrashCaptureFlags {
   tags?: string[];
   userKind?: string | null;
   tagReviewed?: boolean | null;
+  folders?: string[];
+  manualGroups?: Array<{ groupId: number; seq: number }>;
 }
 
 // Every file in the save folder this capture owns. Three sources, because a
@@ -85,6 +91,10 @@ export async function trashCapture(opts: { folder: string; trashDir: string; med
     if (flags.tags) r.tags = flags.tags;
     if (flags.userKind != null) r.userKind = flags.userKind;
     if (flags.tagReviewed != null) r.tagReviewed = flags.tagReviewed;
+    // Written only when non-empty: a post in no folder should not leave an empty
+    // array behind for a reader to interpret.
+    if (flags.folders?.length) r.folders = flags.folders;
+    if (flags.manualGroups?.length) r.manualGroups = flags.manualGroups;
   }
   try {
     await fs.promises.writeFile(path.join(trashDir, `${captureId}.json`), JSON.stringify(r, null, 2), 'utf8');
@@ -160,7 +170,12 @@ export async function listTrashRecords(trashDir: string): Promise<PostRecordShap
       // record whose own captureId field is missing or not a string is listed
       // under its filename rather than dropped.
       const captureId = typeof rec.captureId === 'string' && rec.captureId ? rec.captureId : f.replace(/\.json$/i, '');
-      records.push(rebaseOntoTrash(normalizePostRecord({ ...rec, captureId })));
+      // The acquisition originals are dropped on the way out (#593): a trash
+      // record now carries them so a restore can put them back, but nothing
+      // downstream of here displays originals (#292 leaves a disclosure surface
+      // out of scope), and otherwise every trashed post's base64 would ride the
+      // list-trash IPC on every open of the trash view.
+      records.push({ ...rebaseOntoTrash(normalizePostRecord({ ...rec, captureId })), raw: [] });
     } catch {
       /* skip corrupt record */
     }

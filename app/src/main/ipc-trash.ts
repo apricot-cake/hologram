@@ -18,7 +18,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fillCardDims } from './lib-card-dims.ts';
 import { parseJsonLoose } from './lib-json.ts';
-import { postsByIds } from './lib-db-query.ts';
+import { postRawPayloads, postsByIds } from './lib-db-query.ts';
 import { makeTagResolver, preparePostStmts, writePost } from './lib-db-record-writer.ts';
 import { listTrashRecords, trashCapture } from './lib-trash-capture.ts';
 import type { IpcContext } from './ipc-context.ts';
@@ -42,6 +42,17 @@ function register(ctx: IpcContext) {
     const handle = ensurePostsSynced();
     const flags = getDbWriter().getPostFlags(base);
     const rec: any = handle ? (await postsByIds(handle.sqlite, [base]))[0] || null : null;
+    // The acquisition originals (#292) travel with the record, not with the DB
+    // state above, because the shared record writer already restores anything a
+    // record carries in `raw` — so putting them here is the whole of #593's
+    // originals half. postsByIds deliberately leaves them out (they are a
+    // per-post collection no viewer reads), which is exactly why a restore used
+    // to drop them, and why they have to be fetched separately.
+    //
+    // Already base64 on the way out of the database (postRawPayloads says why:
+    // every boundary out of it is JSON), which is the shape a trash record needs
+    // and the shape writePost reads back.
+    if (rec && handle) rec.raw = postRawPayloads(handle.sqlite, [base]).get(base) || [];
     getDbWriter().deletePost(base);
     // The file half — shared with #34's replacement sweep so both retire a
     // capture the same way (lib-trash-capture.ts).
