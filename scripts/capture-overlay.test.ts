@@ -262,7 +262,10 @@ describe('重複保存の警告（保存前の3択）', () => {
     test('告知バナーになり、選択肢は2つ（置換を出さない）', async () => {
       await clickPostWithDuplicate(TRASHED);
       // 日付は環境のロケール・時間帯で表記が変わるので、前半だけを固定して見る。
-      expect(ctx.bannerLabel().textContent).toMatch(/^This post is in the trash \(deleted .+\)$/);
+      // 日付は環境のロケール・時間帯で表記が変わるので前後を固定して見る。末尾の
+      // 「戻せる」は文言の要＝「どこにあるか」だけ言って戻し方を言わないと、復元は
+      // アプリ側の操作なので導線がどこにも出ない（バナーにボタンは置けない）。
+      expect(ctx.bannerLabel().textContent).toMatch(/^This post is in the trash \(deleted .+\)\. You can restore it in Hologram$/);
       expect(ctx.bannerButtons().map((b: any) => b.textContent)).toEqual(['Copy', 'Skip']);
       expect(ctx.sent.some((m) => m.type === 'captureAndSend')).toBe(false);
     });
@@ -282,7 +285,7 @@ describe('重複保存の警告（保存前の3択）', () => {
 
     test('削除日時が無い記録なら日付を省いた文言', async () => {
       await clickPostWithDuplicate({ ok: true, duplicate: false, trashed: { id: 'cap-gone', deletedAt: null } });
-      expect(ctx.bannerLabel().textContent).toBe('This post is in the trash');
+      expect(ctx.bannerLabel().textContent).toBe('This post is in the trash. You can restore it in Hologram');
     });
 
     test('コピー: 置換の印なしで撮る（新しい1件になる）', async () => {

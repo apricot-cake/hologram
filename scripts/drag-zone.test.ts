@@ -300,7 +300,7 @@ describe('重複保存の警告（ドロップ前の3択）', () => {
     zone().dispatchEvent(dragEvent('drop'));
     await settle();
 
-    expect(label().textContent).toMatch(/^This post is in the trash \(deleted .+\)$/);
+    expect(label().textContent).toMatch(/^This post is in the trash \(deleted .+\)\. You can restore it in Hologram$/);
     expect(state()).toBe('ask');
     expect(buttons().map((b) => b.textContent)).toEqual(['Copy', 'Skip']);
     // ボタン名は据え置きで補助文だけが場面を語る＝両経路で同じ文が出ること（capture.ts 側と対）。
