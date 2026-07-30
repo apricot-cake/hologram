@@ -5,9 +5,10 @@ import { App } from './App.tsx';
 import { ErrorBoundary } from './ErrorBoundary.tsx';
 
 // Mounts the single unified React root (最終形B DoD). A body-appended host div holds the
-// App; the App's children portal into their viewer-owned containers or render as fixed
-// overlays. One createRoot() for the whole renderer — components used to be their own
-// createRoot() calls and were migrated under this one in batches (see App.tsx). The mount
+// App; the App's children render in place or as fixed overlays (nothing portals into a
+// static container any more — #621). One createRoot() for the whole renderer — components
+// used to be their own createRoot() calls and were migrated under this one in batches (see
+// App.tsx). The mount
 // is gated on initI18n() so t() is synchronous inside the App (the searchbox placeholder,
 // and future toolbar/settings text, need it). Overlays and model-push components are
 // unaffected by the tiny gate delay — they render only once their

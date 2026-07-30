@@ -2,7 +2,7 @@
 // (orchestrator.ts). The library data lives in folders.json (keyed by captureId) —
 // the unified container for folders (folders). This
 // module owns the data, the management-modal state (rendering is the FolderManagerModal
-// component, #ivFolderModal), membership toggling, and the toast (sonner via ui.ts); the "which
+// component), membership toggling, and the toast (sonner via ui.ts); the "which
 // folder is filtered" state stays per-view. Subscribers (onChange) are notified after
 // any mutation so each view refreshes its own chips.
 //
@@ -343,7 +343,7 @@ export function hologramPosterFolderStore(): HologramPersistedFolderStore {
 // Library folders [{ id, name, kind, created, items:[captureId] }] — the unified
 // folders container. isLibrary enables kind/created + dynamic saved-search.
 const store = createFolderStore({ idPrefix: 'f', persist: () => persist(), isLibrary: true });
-// The management modal (FolderManagerModal component, #ivFolderModal) is shared: by
+// The management modal (FolderManagerModal component) is shared: by
 // default it edits the library store, but openManager({store,onChange}) re-points it at
 // the poster folder store (orchestrator.ts pfStore) so both views get the same CRUD +
 // drag-reorder UI. Each store owns its own persist (folders.json vs poster-folders.json);

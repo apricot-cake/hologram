@@ -21,6 +21,7 @@ import { get as menuGet } from './menu.ts';
 import { isAnySelectOpen } from './open-select-registry.ts';
 import { postIdKey, postKeyOf, captureFile, persistManualGroups, persistUngrouped } from './records.ts';
 import { isOpen as settingsIsOpen } from './settings.ts';
+import { isManagerOpen as folderManagerIsOpen } from './folders.ts';
 import { sameTags, setTagKind as tagsSetTagKind } from './tags.ts';
 import { updateTags as postsUpdateTags } from './posts.ts';
 import { hologramIpc } from './ipc.ts';
@@ -60,7 +61,6 @@ export interface InspectorBuilderDeps {
 }
 
 export function makeInspector(deps: InspectorBuilderDeps) {
-  const byId = (id: string) => document.getElementById(id) as HTMLElement;
   const closestOf = (e: Event, sel: string) => {
     const t = e.target as HTMLElement | null;
     return t instanceof Element ? (t.closest(sel) as HTMLElement | null) : null;
@@ -413,7 +413,7 @@ export function makeInspector(deps: InspectorBuilderDeps) {
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
     if (lightboxIsOpen()) return;
     if (settingsIsOpen()) return;
-    if (!byId('ivFolderModal').hidden) return;
+    if (folderManagerIsOpen()) return;
     if (confirmGet()) return;
     if (menuGet() || kindMenuGet()) return;
     if (isAnySelectOpen()) return; // …and an open shadcn Select (display popover / filter editors), tracked by state not DOM

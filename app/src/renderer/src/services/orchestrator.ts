@@ -76,17 +76,22 @@ export let handleEscDismissDetail: (e: KeyboardEvent) => void;
 // Outside-click dismissal for the narrow overlay (#259). Back after #243 removed it —
 // this time the width test lives in layout-mode.ts, not in the handler's own media query.
 export let handleOutsideClickDismissDetail: (e: MouseEvent) => void;
-export let handleTabBarKeydown: (e: KeyboardEvent) => void;
-export let handleTabBarFocusout: (e: FocusEvent) => void;
-export let handleTabBarClick: (e: MouseEvent) => void;
-export let handleTabBarAuxclick: (e: MouseEvent) => void;
-export let handleTabBarMousedown: (e: MouseEvent) => void;
-export let handleTabBarContextmenu: (e: MouseEvent) => void;
 // Document-level right-click fallback for selected text (#167). Registered last in
 // the bubble phase, and it bails on defaultPrevented — every surface with a menu of
 // its own has already claimed the event by then.
 export let handleSelectionContextmenu: (e: MouseEvent) => void;
-export let handleTabBarDblclick: (e: MouseEvent) => void;
+// Tab-strip actions (#621). The strip (tabs/Tabs.tsx) calls these from its own
+// onClick / onAuxClick / onContextMenu — the delegated listeners that used to sit on
+// #tabBarInner and route by `closest('.tab-item[data-tab]')` are gone, and with them
+// the DOM contract that forced the strip to keep emitting those class names.
+export let switchTab: (id: string) => void;
+export let addTab: () => void;
+export let closeTab: (id: string) => void;
+/** Middle-click close: no-ops on a pinned tab and on the last remaining one. */
+export let closeTabByGesture: (id: string) => void;
+export let showTabMenu: (id: string, at: { clientX: number; clientY: number }) => void;
+// Ctrl+T / Ctrl+W / Ctrl+Tab — document level, so it stays a GlobalShortcuts
+// registration rather than something the strip owns.
 export let handleGlobalTabShortcut: (e: KeyboardEvent) => void;
 export let handleViewStoreChange: () => void;
 export let handleBrowseModeStoreChange: () => void;
@@ -904,8 +909,8 @@ export function endFilterEditSession(): void {
   // below writes lastRenderedState via postGrid.setLastRenderedState.
   //
   // Nav history (browser-style back/forward), the hologramStore-backed tabs/
-  // activeTabId/tabEditingId accessors, and the tab bar CRUD/DOM
-  // handlers all moved to tabs-builder.ts during the viewer.ts decomposition.
+  // activeTabId accessors, and the tab CRUD actions all moved to tabs-builder.ts
+  // during the viewer.ts decomposition.
   // Image tabs moved to image-tab-builder.ts below — that module's
   // scope — and receive tabsCtl's tab-state surface as deferred deps/direct
   // references (imageTabCtl is constructed just below, after tabsCtl).
@@ -949,21 +954,19 @@ export function endFilterEditSession(): void {
     // search-typing burst (searchBox is constructed far below — deferred read).
     navCoalesceKey: () => _filterEditSession || searchBox.liveSearchKey(),
   });
-  const { getTabs, mutateTabs, getActiveTabId, setActiveTabId, nav, persistTabsDebounced, saveActiveTabState, closeTab } = tabsCtl;
+  const { getTabs, mutateTabs, getActiveTabId, setActiveTabId, nav, persistTabsDebounced, saveActiveTabState } = tabsCtl;
   // The rest of tabsCtl's surface only ever gets read through the module-scope exports
-  // above (App.tsx/Activebar.tsx import those directly) — assigned by property, not
-  // destructured, so there's no local same-named binding shadowing the `export let`s.
+  // above (App.tsx/Activebar.tsx/Tabs.tsx import those directly) — assigned by property,
+  // not destructured, so there's no local same-named binding shadowing the `export let`s.
   navBack = tabsCtl.navBack;
   navForward = tabsCtl.navForward;
   handleShortcutNavKey = tabsCtl.handleShortcutNavKey;
   handleShortcutMouseNav = tabsCtl.handleShortcutMouseNav;
-  handleTabBarKeydown = tabsCtl.handleTabBarKeydown;
-  handleTabBarFocusout = tabsCtl.handleTabBarFocusout;
-  handleTabBarClick = tabsCtl.handleTabBarClick;
-  handleTabBarAuxclick = tabsCtl.handleTabBarAuxclick;
-  handleTabBarMousedown = tabsCtl.handleTabBarMousedown;
-  handleTabBarContextmenu = tabsCtl.handleTabBarContextmenu;
-  handleTabBarDblclick = tabsCtl.handleTabBarDblclick;
+  switchTab = tabsCtl.switchTab;
+  addTab = tabsCtl.addTab;
+  closeTab = tabsCtl.closeTab;
+  closeTabByGesture = tabsCtl.closeTabByGesture;
+  showTabMenu = tabsCtl.showTabMenu;
   handleGlobalTabShortcut = tabsCtl.handleGlobalTabShortcut;
 
   // --- Image view ('image' history entries) — fit-to-screen detail view (Eagle 風) ---
@@ -981,7 +984,7 @@ export function endFilterEditSession(): void {
     // Same reason as postGrid's: the image view hands the detail back when a tab
     // stops owning it. Losing the subject is not "I don't want this panel".
     dismissDetail: () => dismissDetail(),
-    closeTab,
+    closeTab: (id) => tabsCtl.closeTab(id),
     getActiveTabId,
     setActiveTabId,
     mutateTabs,
@@ -992,10 +995,9 @@ export function endFilterEditSession(): void {
   });
   const { openImageEntry, setImageTabIndex, toggleImageTabInspector, closeImageTab, addImageTab } = imageTabCtl;
 
-  // initTabs/showTabMenu/tab-rename commit-cancel/tab-bar DOM handlers/the
-  // Ctrl+T/W/Tab shortcut all live in tabsCtl now (destructured above); the
-  // module-scope export assignment for the tab-bar handlers happened at that
-  // construction site too.
+  // initTabs/showTabMenu/the tab CRUD actions/the Ctrl+T/W/Tab shortcut all live in
+  // tabsCtl now; the module-scope export assignment for the ones the strip calls
+  // happened at that construction site above.
 
   // keepCurrentVisible/imgAspect/cardModel/hologramPostGridSource.configure/
   // renderPosts all moved to post-grid-builder.ts (postGrid above).

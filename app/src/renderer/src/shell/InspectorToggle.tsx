@@ -6,7 +6,8 @@
 // it out of the toolbar also preserves the IA split this redesign is built on — the
 // toolbar holds PREDICATES (search / filter / display), and opening a panel is not one.
 //
-// A plain child of #tabBar, laid out just left of the corner the window buttons reserve.
+// A plain child of the titlebar band, laid out just left of the corner the window buttons
+// reserve.
 // It used to be portaled and pinned to the window instead, because the band then ended at
 // the inspector's left edge and an in-band toggle would have drifted 320px whenever the
 // panel it controls was open; since #518 the band reaches the window edge, so the flow

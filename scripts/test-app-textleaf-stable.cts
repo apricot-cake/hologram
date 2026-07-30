@@ -76,11 +76,11 @@ const evalJs = `(async () => {
   setVal('いぬ'); await wait(240);
   r.aChips = textChips();          // 1 (editing leaf)
   r.aCards = cards();              // 1 (いぬのおさんぽ)
-  const firstTab = (document.querySelector('.tab-item.active') || {}).dataset.tab;
-  document.querySelector('.tab-new').click(); await wait(200);   // addTab → fresh empty tab
+  const firstTab = (document.querySelector('[data-slot="tab"][data-active]') || {}).dataset.tabId;
+  document.querySelector('[data-slot="tab-new"]').click(); await wait(200);   // addTab → fresh empty tab
   r.newChips = textChips();        // 0 (new tab is empty)
   r.newCards = cards();            // 3 (all)
-  document.querySelector('.tab-item[data-tab="' + firstTab + '"]').click(); await wait(240);  // back
+  document.querySelector('[data-slot="tab"][data-tab-id="' + firstTab + '"]').click(); await wait(240);  // back
   r.backChips = textChips();       // 1 (restored leaf)
   r.backCards = cards();           // 1
   r.backBox = sb.value;            // 'いぬ'

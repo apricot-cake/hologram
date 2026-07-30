@@ -10,9 +10,9 @@
 //   — over the inspector's column, Chrome-style — so the window buttons always sit on the
 //   tab strip. Before #518 the inspector was full-height too and had to hand its top row
 //   to the window chrome as an empty strip, which left the buttons floating on blank
-//   panel. The tab bar keeps the legacy #tabBar/#tabBarInner ids + titlebar CSS (drag
-//   region) + delegated handlers. TRANSIENT: TabsHost still emits legacy .tab-item DOM;
-//   the Tailwind rewrite + delegation teardown is the follow-up (P1-2 rest).
+//   panel. The band is plain Tailwind now (#621) — the #tabBar/#tabBarInner ids, their
+//   legacy CSS and the delegated handlers that needed them are gone; the strip itself is
+//   tabs/Tabs.tsx, which wires its own gestures to the exported tab actions.
 // - The sidebar's own header row is the window's titlebar drag strip and holds the
 //   collapse trigger (moved out of the toolbar). shadcn's fixed sidebar-container now
 //   spans inset-y-0 as-is (the --tabbar-h offset hack is gone).
@@ -250,18 +250,20 @@ export function AppShell() {
             {/* Electron titlebar band. It starts at the sidebar's edge — so the tab strip
                 never crosses that seam (#154) — and runs to the window's right edge, over
                 the inspector's column, so the window buttons always have the band under
-                them (#518). Legacy #tabBar CSS styles it; TabsHost fills #tabBarInner. */}
-            <header id="tabBar" className="shrink-0">
-              <div id="tabBarInner">
-                <TabsHost />
-              </div>
+                them (#518). No bottom divider: the strip already steps in tone from the
+                band below it (--tabbar-bg vs --sidebar-bg) and the active tab connects
+                into that band — Chrome draws no rule between the strip and the toolbar.
+                The right padding reserves the corner the app-drawn window buttons are
+                portaled over; the inspector toggle is a normal child and needs none. */}
+            <header className="app-drag sticky top-0 z-50 flex h-[var(--tabbar-h)] shrink-0 items-center bg-[var(--tabbar-bg)] pr-[var(--window-controls-w,138px)]">
+              <TabsHost />
               {/* Inspector toggle (#243) — mirrors the sidebar trigger at the band's left
                   end. A real child here (not portaled), so it sits just left of the window
                   buttons and is covered by a modal scrim like everything else. */}
               <InspectorToggle />
               {/* The window buttons are ours now (see WindowControls). Mounted here for
                   ownership, but portaled to the window's top-right above the modal scrim —
-                  #tabBar reserves --window-controls-w so this row's flow stays clear. */}
+                  the band reserves --window-controls-w so this row's flow stays clear. */}
               <WindowControls />
             </header>
             <div className="flex min-h-0 flex-1">
