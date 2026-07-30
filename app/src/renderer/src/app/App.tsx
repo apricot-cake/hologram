@@ -17,6 +17,7 @@ import { Toaster } from '@/components/ui/sonner';
 import { TooltipHost } from '../tooltip/TooltipHost.tsx';
 import { registerViewTransitionRunners } from '../services/command-builder.ts';
 import { handleShortcutPaletteKey } from '../services/command-registry.ts';
+import { handleShortcutPanelsKey } from '../services/panels.ts';
 import { runPostDensityViewTransition, runPosterDensityViewTransition } from '../_shared/density-transition.ts';
 import { onPostsChanged } from '../services/posts.ts';
 import { onChange as foldersOnChange } from '../services/folders.ts';
@@ -171,6 +172,11 @@ function GlobalShortcuts() {
       // opening the palette is pure UI state (guard + action live in
       // services/command-registry.ts, next to the state they read).
       handleShortcutPaletteKey(e);
+      // Ctrl/Cmd+Shift+B = hide the sidebar and the inspector together (#245). Same
+      // arrangement as the palette key above: guard + action sit next to the state in
+      // services/panels.ts, and only the registration is here. Plain Ctrl+B stays with
+      // SidebarProvider's own listener — the sidebar alone is its business.
+      handleShortcutPanelsKey(e);
     };
     const onMouseup = (e: MouseEvent) => handleShortcutMouseNav(e);
     // Ctrl+wheel = content size (#141). Non-passive on purpose: the handler

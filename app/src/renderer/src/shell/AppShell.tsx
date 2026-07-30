@@ -32,6 +32,7 @@ import { type PanelResize, resolveCssLength, usePanelResize } from './use-panel-
 import { LIMITS, type PanelKey, cachedWidth, clampWidth, loadWidth, persistWidth } from '../services/panel-width-pref.ts';
 import { isOpen as inspectorIsOpen, load as inspectorLoad, subscribe as inspectorSubscribe } from '../services/inspector-panel.ts';
 import { isWide as isWideLayout, subscribe as layoutSubscribe } from '../services/layout-mode.ts';
+import { isHidden as panelsAreHidden, load as panelsLoad, reveal as panelsReveal, subscribe as panelsSubscribe } from '../services/panels.ts';
 import { get as storeGet, set as storeSet, subscribe as storeSubscribe } from '../services/store.ts';
 import { cachedOpen, loadOpen, persistOpen } from '../services/sidebar-pref.ts';
 import { signalShellReady } from '../services/shell-ready.ts';
@@ -161,6 +162,10 @@ export function AppShell() {
   // had a chance to write over it.
   const inspector = usePanelWidthResize('inspectorWidth', t('resizeInspector'), 'right', () => resolveCssLength(getComputedStyle(document.documentElement).getPropertyValue('--inspector-w')), writeInspectorWidth);
   const inspectorOpen = useSyncExternalStore(inspectorSubscribe, inspectorIsOpen);
+  // #245's bulk hide. A mask over the two panels' own state, not a write to it — see
+  // services/panels.ts. Every place below that decides whether a panel is on screen ANDs
+  // it in; nothing below changes what the panels themselves think.
+  const panelsHidden = useSyncExternalStore(panelsSubscribe, panelsAreHidden);
   const wide = useSyncExternalStore(layoutSubscribe, isWideLayout);
   // Narrow-width sidebar state: transient, so the saved preference survives a trip
   // through a small window untouched. Reset on every crossing — widening restores the
@@ -179,7 +184,7 @@ export function AppShell() {
   // floating panel with nothing in it would just be a hole in the view, so the #244
   // placeholder stays a wide-layout affair.
   const inspectedKey = useSyncExternalStore(subInspected, getInspected);
-  const inspectorVisible = inspectorOpen && (wide || inspectedKey != null);
+  const inspectorVisible = !panelsHidden && inspectorOpen && (wide || inspectedKey != null);
   // Published rather than re-derived downstream: the floating selection bar has to hold
   // back the panel's width while it overlays the grid (as a docked column the panel
   // narrows the bar's container instead, and the bar needs to do nothing). Deriving this
@@ -194,7 +199,21 @@ export function AppShell() {
   // inspector-panel.ts for why it has to).
   useEffect(() => {
     inspectorLoad();
+    panelsLoad();
   }, []);
+  // The sidebar's open/closed state, as the shell actually paints it. The bulk mask wins
+  // over both the saved preference and the narrow-width one; a toggle aimed at the sidebar
+  // (Ctrl+B / the trigger / the rail) drops the mask first, so the value it computes is a
+  // flip of what the user can SEE, and the inspector comes back to whatever it was.
+  const sidebarShown = panelsHidden ? false : wide ? sidebarOpen : narrowOpen;
+  const chooseSidebar = useCallback(
+    (open: boolean) => {
+      panelsReveal();
+      if (wide) setSidebarOpen(open);
+      else setNarrowOpen(open);
+    },
+    [wide, setSidebarOpen],
+  );
   // Tell the orchestrator its shell DOM is now in the document (it awaits shellReady
   // before wiring the delegated #postGrid/#emptyState/etc. listeners — those elements
   // are React-rendered below, not static index.html markup anymore).
@@ -218,7 +237,7 @@ export function AppShell() {
   return (
     <TooltipProvider delay={0}>
       <div className="flex h-svh flex-col overflow-hidden">
-        <SidebarProvider ref={shellRef} open={wide ? sidebarOpen : narrowOpen} onOpenChange={wide ? setSidebarOpen : setNarrowOpen} className="min-h-0 flex-1" style={{ '--sidebar-width': `${sidebar.width}px` } as CSSProperties}>
+        <SidebarProvider ref={shellRef} open={sidebarShown} onOpenChange={chooseSidebar} className="min-h-0 flex-1" style={{ '--sidebar-width': `${sidebar.width}px` } as CSSProperties}>
           {/* The rail is a resize handle only while the sidebar is a column. Below the
               breakpoint it is a slide-over whose width is the window's, so there is
               nothing to drag (#30 v1) — and the rail would sit over the grid. */}
