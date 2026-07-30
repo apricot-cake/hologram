@@ -2,6 +2,7 @@ import { createRoot } from 'react-dom/client';
 import './log.ts';
 import { initI18n } from '../_shared/i18n.ts';
 import { App } from './App.tsx';
+import { ErrorBoundary } from './ErrorBoundary.tsx';
 
 // Mounts the single unified React root (最終形B DoD). A body-appended host div holds the
 // App; the App's children portal into their viewer-owned containers or render as fixed
@@ -19,7 +20,13 @@ function mount() {
   const root = document.createElement('div');
   root.id = 'hologramAppRoot';
   document.body.appendChild(root);
-  createRoot(root).render(<App />);
+  // One root means one uncaught render error empties the entire window, so the
+  // boundary sits directly under it (#324 — see ErrorBoundary.tsx).
+  createRoot(root).render(
+    <ErrorBoundary>
+      <App />
+    </ErrorBoundary>,
+  );
 }
 
 initI18n().then(() => {

@@ -36,6 +36,10 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     sbSortTitle: '並び順',
     engParticle: 'が',
     ctxManage: 'フォルダを管理…',
+    // viewer: 描画が落ちた時の最後の受け皿（app/ErrorBoundary.tsx）
+    renderErrorTitle: '画面を表示できませんでした',
+    renderErrorBody: 'ライブラリのデータはそのままです。再読み込みすると元に戻ります。',
+    renderErrorReload: '再読み込み',
     // viewer: folder management modal + folder toasts (folders.js)
     foldManageTitle: 'フォルダを管理',
     foldNewPlaceholder: '新しいフォルダ名',
@@ -458,6 +462,10 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     sbSortTitle: 'Sort',
     engParticle: '',
     ctxManage: 'Manage folders…',
+    // viewer: render-failure fallback (app/ErrorBoundary.tsx)
+    renderErrorTitle: 'This screen could not be displayed',
+    renderErrorBody: 'Your library data is untouched. Reloading brings the window back.',
+    renderErrorReload: 'Reload',
     // viewer: folder management modal + folder toasts (folders.js)
     foldManageTitle: 'Manage folders',
     foldNewPlaceholder: 'New folder name',

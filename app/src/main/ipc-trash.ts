@@ -20,7 +20,7 @@ import { fillCardDims } from './lib-card-dims.ts';
 import { parseJsonLoose } from './lib-json.ts';
 import { postsByIds } from './lib-db-query.ts';
 import { makeTagResolver, preparePostStmts, writePost } from './lib-db-record-writer.ts';
-import { trashCapture } from './lib-trash-capture.ts';
+import { listTrashRecords, trashCapture } from './lib-trash-capture.ts';
 
 function register(ctx) {
   const { getSaveFolder, getTrashDir, baseOf, LIBRARY_MEDIA_EXTS, getDbWriter, ensurePostsSynced, send } = ctx;
@@ -44,27 +44,13 @@ function register(ctx) {
     return { ok: true };
   });
 
+  // Reading and normalizing the .trash/ JSON lives in lib-trash-capture.ts
+  // (listTrashRecords) — Electron-free, so the trust boundary it enforces is
+  // unit-testable (#324). This handler is only the wiring.
   ipcMain.handle('list-trash', async () => {
     const trashDir = getTrashDir();
     if (!trashDir) return [];
-    let names: string[];
-    try {
-      names = await fs.promises.readdir(trashDir);
-    } catch {
-      return [];
-    }
-    const records: any[] = [];
-    for (const f of names) {
-      if (!f.toLowerCase().endsWith('.json')) continue;
-      try {
-        const rec = parseJsonLoose(await fs.promises.readFile(path.join(trashDir, f), 'utf8'));
-        if (rec) records.push(rec);
-      } catch {
-        /* skip corrupt record */
-      }
-    }
-    records.sort((a, b) => new Date(b.trashedAt || 0).getTime() - new Date(a.trashedAt || 0).getTime());
-    return records;
+    return await listTrashRecords(trashDir);
   });
 
   ipcMain.handle('restore-post', async (_e, image) => {
@@ -82,8 +68,14 @@ function register(ctx) {
     const trashJson = path.join(trashDir, `${base}.json`);
     let restored: any = null;
     try {
-      restored = parseJsonLoose(await fs.promises.readFile(trashJson, 'utf8'));
-      delete restored.trashedAt;
+      const parsed = parseJsonLoose(await fs.promises.readFile(trashJson, 'utf8'));
+      // Objects only: the file is external input (a planted `.trash/x.json` can
+      // hold any JSON value, #324), and a bare number/string/array reaching
+      // writePost below would fail the write with a NOT NULL captureId instead.
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        restored = parsed;
+        delete restored.trashedAt;
+      }
     } catch {
       /* no record in the trash — the media still moves back, as an orphan (#301) */
     }
