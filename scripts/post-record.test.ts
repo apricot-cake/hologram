@@ -62,6 +62,8 @@ describe('既定値', () => {
     'views',
     'shotW',
     'shotH',
+    'imageIndex',
+    'imageCount',
   ])('%s の既定は null', (k) => {
     expect(rec[k]).toBeNull();
   });
@@ -83,6 +85,8 @@ describe('素通しと変換', () => {
       media: [{ url: 'https://x/1.jpg', width: 10, height: 20, file: '1.jpg' }, { file: '2.jpg' }, null, { url: 'https://x/2.mp4', file: '2.mp4', type: 'video', posterFile: 'poster.jpg' }],
       capturedAt: '2026-01-01T00:00:00.000Z',
       capturedVia: 'x-bookmarks',
+      imageIndex: 2,
+      imageCount: 4,
     },
     fixedNow,
   );
@@ -149,6 +153,17 @@ describe('素通しと変換', () => {
 
   test('capturedVia が通る（#362 一括取込の経路マーカー）', () => {
     expect(rec.capturedVia).toBe('x-bookmarks');
+  });
+
+  // #560: 拡張は昔からこの2つを送っていたが、ここで落ちて DB にも列が無く、
+  // インスペクタの「N / M 枚目」は絶対に出なかった。
+  test('imageIndex / imageCount が通る（#560 ドラッグ保存の元投稿での位置）', () => {
+    expect({ imageIndex: rec.imageIndex, imageCount: rec.imageCount }).toEqual({ imageIndex: 2, imageCount: 4 });
+  });
+
+  test('数でない imageIndex / imageCount は null になる', () => {
+    const bad = normalizePostRecord({ captureId: 'cap-3', imageIndex: '2', imageCount: Number.NaN } as never, fixedNow);
+    expect({ imageIndex: bad.imageIndex, imageCount: bad.imageCount }).toEqual({ imageIndex: null, imageCount: null });
   });
 });
 

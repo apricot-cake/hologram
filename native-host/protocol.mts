@@ -192,14 +192,6 @@ export interface CaptureMetadata extends Partial<Omit<PostRecordShape, 'captureI
   // Referer the avatar has to be fetched with (pixiv rejects fetches without
   // one). Not a stored field — it is fetch instructions, spent by the host.
   avatarReferer?: string | null;
-  // Which picture of a multi-image post a dragged save took, 1-based, and how
-  // many there are. NOTE: nothing consumes these today — normalizePostRecord has
-  // no such field, so they are dropped before the record is written, while
-  // app/src/renderer's inspector still reads `imageIndex`/`imageCount` off a
-  // post. Declared because they really are on the wire; the gap is #400's
-  // finding, not its fix.
-  imageCount?: number | null;
-  imageIndex?: number | null;
 }
 
 // --- responses (host -> extension) ----------------------------------------------
