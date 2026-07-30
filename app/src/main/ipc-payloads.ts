@@ -107,6 +107,7 @@ export interface AppPrefs {
   posterCardSize: number | null;
   sidebarOpen: boolean | null;
   sidebarWidth: number | null;
+  inspectorOpen: boolean | null;
   inspectorWidth: number | null;
 }
 
