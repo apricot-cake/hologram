@@ -94,6 +94,9 @@ export function makeCommands(deps: CommandDeps): void {
     { id: 'cmd:toggle-panels', section: 'command', title: t('cmdTogglePanels'), hint: 'Ctrl+Shift+B', perform: () => togglePanels() },
     { id: 'cmd:browse-posts', section: 'command', title: t('cmdBrowsePosts'), perform: () => deps.browseTo('posts') },
     { id: 'cmd:browse-posters', section: 'command', title: t('cmdBrowsePosters'), perform: () => deps.browseTo('posters') },
+    // ゴミ箱も行き先の1つ（#268）＝サイドバーに常設された destination はパレットにも
+    // 並ぶ、という上2行と同じ扱い。
+    { id: 'cmd:browse-trash', section: 'command', title: t('cmdBrowseTrash'), perform: () => deps.browseTo('trash') },
   ];
   registerCommands('commands', commands);
 

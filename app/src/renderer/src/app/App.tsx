@@ -104,6 +104,9 @@ function ShellClasses() {
   const mode = useSyncExternalStore(subBrowseMode, getBrowseMode);
   useLayoutEffect(() => {
     document.body.classList.toggle('browse-posters', mode === 'posters');
+    // browse-trash is the third destination (#268) — same mechanism, so the
+    // question "which of the three is on screen" keeps ONE answer.
+    document.body.classList.toggle('browse-trash', mode === 'trash');
   }, [mode]);
   return null;
 }

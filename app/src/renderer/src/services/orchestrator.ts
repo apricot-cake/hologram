@@ -17,7 +17,7 @@ import { notify } from './ui.ts';
 import { makeQfPop } from './qf-pop-builder.ts';
 import { makeFacets } from './facets.ts';
 import { makeCooc } from './cooc.ts';
-import { mediaFilesOf, densityImage, percentileFn, makeGallery, loadUngrouped, loadManualGroups } from './records.ts';
+import { mediaFilesOf, densityImage, percentileFn, makeGallery, loadUngrouped, loadManualGroups, postIdKey } from './records.ts';
 import { makeTags, bindTagKindOf, bindPosterFilterVocab, getTagTypes, getTagLabels, getPosterTags, load as loadTags } from './tags.ts';
 import { makeTabLabels } from './tab-state.ts';
 import { importComplete, importLegacyZip } from './posts.ts';
@@ -26,7 +26,8 @@ import { hologramI18n } from './i18n.ts';
 import * as folders from './folders.ts';
 import { open as lightboxOpen } from './lightbox.ts';
 import { shellReady } from './shell-ready.ts';
-import { hologramPostGridSource } from './grid.ts';
+import { hologramPostGridSource, hologramTrashGridSource } from './grid.ts';
+import { configure as configureTrashView, refresh as trashRefresh } from './trash-view.ts';
 import { makePostQueryBuilder, makePosterQueryBuilder, POST_FACET_OPTS, POSTER_FACET_OPTS } from './query-builder.ts';
 import { makeKindMenu } from './kind-menu-builder.ts';
 import { makeSearchBox } from './search-box-builder.ts';
@@ -1023,6 +1024,23 @@ export function endFilterEditSession(): void {
     onCloseTab: closeImageTab,
   });
 
+  // ゴミ箱 (#268). The trash draws the library's OWN cards — post-grid-builder's
+  // cardModel and its label set go over verbatim — and groups its records with the
+  // library's grouping, so a multi-image post deleted as one card comes back as one
+  // card. Wired here rather than at the trash's own module scope because both halves
+  // (the card model, the gallery the peek reads) are orchestrator-owned; the trash
+  // view itself stays free of the asset:// scheme and of the grouping rules.
+  hologramTrashGridSource.configure({
+    modelOf: (g, i) => postGrid.cardModel(g, i),
+    keyOf: (g) => postIdKey(g.rep),
+    labels: postGrid.cardLabels,
+  });
+  configureTrashView({
+    t: getMessage,
+    groupRecords: postGrid.groupRecords,
+    openQuickView: (g) => lightboxOpen(buildGroupGalleryItems(g)[0]),
+  });
+
   // Primary card gesture (#143 P2⑥): a plain click single-selects the card and
   // shows it in the inspector (Eagle/Explorer 型「シングル＝選択して詳細」); Ctrl
   // adds/removes, Shift range-selects — neither touches the inspector (確定 未決
@@ -1226,14 +1244,21 @@ export function endFilterEditSession(): void {
   // subscribe registration (StoreSubscriptions, App.tsx) to it.
   handleViewStoreChange = gridDensity.handleViewStoreChange;
 
-  // === Browse-mode toggle: 投稿グリッド ↔ 投稿者グリッド ===
+  // === Browse-mode toggle: 投稿グリッド ↔ 投稿者グリッド ↔ ゴミ箱 ===
+  // The three destinations the left nav offers. 'trash' (#268) joined the pair as a
+  // real browse mode rather than a modal, because it IS a place in the library — but
+  // it is NOT a per-tab view: nothing records it on the tab's back/forward stack, so
+  // a tab restored after a restart comes back on its grid. Leaving the trash is
+  // therefore always a plain move to another destination (or a history step, which
+  // applies its own kind through setBrowseModeLite below).
+  const normalizeBrowseMode = (mode: string) => (mode === 'posters' ? 'posters' : mode === 'trash' ? 'trash' : 'posts'); // collections retired (now a sidebar folder list)
   // The light half: flip the mode state (let + store mirror + stale-detail close)
   // WITHOUT rendering. applyEntry (tabs-builder) uses this so a history restore
   // renders exactly once — its own kind-specific render right after.
   // No pref write anywhere: mode is per-tab state on the history entry now (#144
   // 確定未決3 — the old global browseMode pref is retired; a new tab opens posts).
   function setBrowseModeLite(mode: string) {
-    mode = mode === 'posters' ? 'posters' : 'posts'; // collections retired (now a sidebar folder list)
+    mode = normalizeBrowseMode(mode);
     if (browseMode === mode) return;
     browseMode = mode;
     // Mirror into the store so the React components (LeftSidebar active state, App's
@@ -1249,14 +1274,17 @@ export function endFilterEditSession(): void {
   // The render lands as a fresh history entry of the new kind (renderPosts /
   // renderPosters record it — that push IS the mode switch on the tab history).
   function setBrowseMode(mode: string) {
-    mode = mode === 'posters' ? 'posters' : 'posts';
+    mode = normalizeBrowseMode(mode);
     setBrowseModeLite(mode);
     // Optimistic UI: the mode state (active state / grid swap via body class) was
     // updated synchronously above; defer the heavy grid render past a paint so the
     // switch shows INSTANTLY instead of blocking on renderPosts/Posters.
     const render = () => {
       if (browseMode !== mode) return;
-      if (mode === 'posters') renderPosters();
+      // The trash reads .trash/ instead of the library, and records NO history entry
+      // — it is not a view a tab can be restored into (see normalizeBrowseMode).
+      if (mode === 'trash') trashRefresh();
+      else if (mode === 'posters') renderPosters();
       else renderPosts();
     };
     clearTimeout(_browseRenderT);
@@ -1271,7 +1299,7 @@ export function endFilterEditSession(): void {
   // guard keeps pressing the active destination a genuine no-op (no re-render, no
   // stray history entry).
   browseTo = (mode) => {
-    mode = mode === 'posters' ? 'posters' : 'posts';
+    mode = normalizeBrowseMode(mode);
     if (imageTabCtl.isShowing()) {
       imageTabCtl.hideImageView();
       setBrowseMode(mode);
@@ -1921,6 +1949,11 @@ export function endFilterEditSession(): void {
     // can't stack onto the adopted history.
     await tabsCtl.initTabs();
     await loadPosts();
+    // The nav's ゴミ箱 badge (#268) is a count of .trash/, so it needs one read at
+    // boot; every later change goes through a delete / restore / empty that refreshes
+    // it itself. Not awaited — nothing below depends on it and the badge appearing a
+    // tick late is invisible.
+    trashRefresh();
     // A restored image entry could only resolve its captureIds now that the
     // library is loaded — enter the detail view here, on top of the grid.
     {

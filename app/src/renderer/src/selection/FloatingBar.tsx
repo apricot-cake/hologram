@@ -99,7 +99,10 @@ export function FloatingBar() {
   const inspectorOverlay = useSyncExternalStore(subInspectorOverlay, getInspectorOverlay);
 
   const count = selectedSet ? selectedSet.size : 0;
-  const shown = count > 0 && mode !== 'posters';
+  // ...and in the trash (#268), which carries its OWN selection and its own two
+  // verbs: this bar's tag / folder / group actions all write to the library, which
+  // is exactly what a deleted post must not accept until it is restored.
+  const shown = count > 0 && mode !== 'posters' && mode !== 'trash';
   const groups = postGroups || [];
   const allSelected = isAllSelected(groups, postIdKey);
   // Manual grouping needs at least two selected cards (groups).
