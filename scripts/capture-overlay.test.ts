@@ -98,7 +98,10 @@ async function setup(): Promise<Ctx> {
   window.cancelAnimationFrame = () => {};
 
   const sent: any[] = [];
-  let listener: any = null;
+  // 複数保持する＝Chrome と同じ。単一スロットだったころ、保存の待ち受け
+  // （save-deadline.ts）が自分のリスナーを足した瞬間にキャプチャ本体のリスナーを
+  // 上書きして、notify が誰にも届かなくなった。
+  const listeners: any[] = [];
   // #34: capturePost は撮る前に checkDuplicate を1往復する。既定は「重複なし」で、
   // 3択バナーのシナリオだけ setDuplicate() で答えを差し替える。
   let duplicateAnswer: any = { ok: true, duplicate: false };
@@ -112,11 +115,10 @@ async function setup(): Promise<Ctx> {
         if (msg.type === 'checkDuplicate') cb?.(duplicateAnswer);
       },
       onMessage: {
-        addListener: (fn: any) => {
-          listener = fn;
-        },
+        addListener: (fn: any) => listeners.push(fn),
         removeListener: (fn: any) => {
-          if (listener === fn) listener = null;
+          const i = listeners.indexOf(fn);
+          if (i >= 0) listeners.splice(i, 1);
         },
       },
     },
@@ -135,7 +137,9 @@ async function setup(): Promise<Ctx> {
   return {
     window,
     sent,
-    notify: (msg: any) => listener?.(msg, {}, () => {}),
+    notify: (msg: any) => {
+      for (const fn of [...listeners]) fn(msg, {}, () => {});
+    },
     banner,
     bannerState: () => banner()?.dataset.state ?? null,
     bannerLabel: () => banner()?.querySelector('.label'),

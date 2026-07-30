@@ -66,6 +66,10 @@ window.IntersectionObserver = class {
   disconnect() {}
 } as any;
 
+// 保存の待ち受け（save-deadline.ts）が自分の分を足して外すので、実際に登録・解除
+// できる入れ物にしておく。数える用途は無い＝居場所があることが要件。
+const dropListeners: any[] = [];
+
 window.chrome = {
   runtime: {
     id: 'test-extension-id',
@@ -74,7 +78,13 @@ window.chrome = {
       sent.push(msg);
       cb?.(msg.type === 'checkDuplicate' ? duplicateAnswer : sendReply);
     },
-    onMessage: { addListener: () => {} },
+    onMessage: {
+      addListener: (fn: any) => dropListeners.push(fn),
+      removeListener: (fn: any) => {
+        const i = dropListeners.indexOf(fn);
+        if (i >= 0) dropListeners.splice(i, 1);
+      },
+    },
   },
   storage: {
     local: { get: (_keys: any, cb: any) => cb({}) },

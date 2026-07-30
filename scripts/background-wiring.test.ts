@@ -527,8 +527,23 @@ describe('保存の記録（#519）', () => {
     await responseP;
 
     const progress = env.tabsSent.filter((s) => s.message.type === 'saveProgress').map((s) => s.message);
-    expect(progress.map((m) => m.reached)).toEqual([['metadata'], ['metadata', 'bridge']]);
+    // 先頭の空配列は「受け取った」の合図＝まだ1段も通っていない。ページ側の上限は
+    // これが来るまで「そもそも動いているのか」を、来てからは「黙っていないか」を
+    // 測る（save-deadline.ts）ので、段の報告と同じ経路で最初に1本必要になる。
+    expect(progress.map((m) => m.reached)).toEqual([[], ['metadata'], ['metadata', 'bridge']]);
     expect(progress.every((m) => m.saveId === 'trace-1')).toBe(true);
+  });
+
+  test('保存を受け取った時点で、まだ何も通っていなくても1本押す（居るかどうかが先に分かる）', async () => {
+    const createdPorts = env.connectAsControllablePort();
+
+    // ポートには何も答えさせない＝ホストの手前で止まった保存。それでも受領だけは
+    // 先に届いている、というのがこの合図の役目。
+    env.dispatch({ type: 'savePost', platform: 'misskey', postUrl: UNPARSEABLE_POST_URL }, MISSKEY_SENDER);
+    await portThatSent(createdPorts, 'savePost');
+
+    const first = env.tabsSent.filter((s) => s.message.type === 'saveProgress').map((s) => s.message)[0];
+    expect(first, `tabsSent: ${JSON.stringify(env.tabsSent)}`).toMatchObject({ saveId: 'trace-1', reached: [] });
   });
 });
 

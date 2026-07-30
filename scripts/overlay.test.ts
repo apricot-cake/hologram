@@ -242,7 +242,13 @@ beforeAll(async () => {
         for (const u of msg.urls || []) results[u] = Object.hasOwn(savedAnswer, u) ? savedAnswer[u] : null;
         cb?.({ ok: true, results });
       },
-      onMessage: { addListener: (fn: any) => runtimeListeners.push(fn) },
+      onMessage: {
+        addListener: (fn: any) => runtimeListeners.push(fn),
+        removeListener: (fn: any) => {
+          const i = runtimeListeners.indexOf(fn);
+          if (i >= 0) runtimeListeners.splice(i, 1);
+        },
+      },
     },
     storage: {
       local: {
