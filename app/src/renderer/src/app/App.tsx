@@ -17,6 +17,7 @@ import { Toaster } from '@/components/ui/sonner';
 import { TooltipHost } from '../tooltip/TooltipHost.tsx';
 import { handleShortcutPaletteKey } from '../services/command-registry.ts';
 import { handleShortcutPanelsKey } from '../services/panels.ts';
+import { handleShortcutZoomKey } from '../services/image-zoom.ts';
 import { onPostsChanged } from '../services/posts.ts';
 import { onChange as foldersOnChange } from '../services/folders.ts';
 import { get as storeGet, subscribe as storeSubscribe } from '../services/store.ts';
@@ -175,6 +176,10 @@ function GlobalShortcuts() {
       // services/panels.ts, and only the registration is here. Plain Ctrl+B stays with
       // SidebarProvider's own listener — the sidebar alone is its business.
       handleShortcutPanelsKey(e);
+      // Ctrl/Cmd+0 = フィット / Ctrl/Cmd+1 = 原寸 while an image view is showing
+      // (#150). Same arrangement again: the guard is that a zoomable slide has
+      // registered a controller, which only services/image-zoom.ts can know.
+      handleShortcutZoomKey(e);
     };
     const onMouseup = (e: MouseEvent) => handleShortcutMouseNav(e);
     // Ctrl+wheel = content size (#141). Non-passive on purpose: the handler

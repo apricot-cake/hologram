@@ -45,7 +45,7 @@ Point at an image you've already saved and the same corner shows a small mark in
 
 Switch between **card / tile / list** views at the top of the left sidebar. Tile is good for browsing illustrations side by side; list is good for reading text.
 
-Click a card's image to open a **gallery** that bundles the screenshot and the original-resolution images. Posts with multiple images can be paged with `←` `→` or the arrow keys, and videos play right there.
+Click a card's image to open a **gallery** that bundles the screenshot and the original-resolution images. Posts with multiple images can be paged with `←` `→` or the arrow keys, and videos play right there. The toolbar at the top carries zoom (− / level / ＋) and a **fit ⇄ actual size** toggle (`Ctrl+0` / `Ctrl+1`); the wheel and a double-click do the same two things.
 
 ### 3. Find
 

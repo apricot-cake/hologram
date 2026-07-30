@@ -1193,19 +1193,16 @@
     /* The active image tab swaps the browse chrome (query bar / sidebar / grid)
        for a single media stage; the inspector column (#postDetail) stays. */
     #imageTabView { display: none; }
-    body.image-tab-active #posterActiveBar,
-    body.image-tab-active #sidebar, body.image-tab-active #mode-post { display: none; }
-    /* The activebar band itself STAYS under an image tab: the active tab's
+    body.image-tab-active #mode-post { display: none; }
+    /* The toolbar band itself STAYS under an image tab: the active tab's
        Chrome-style connected shape needs the band below it — hiding the whole
        bar left the strip looking clipped (every browser keeps its toolbar row
-       on every tab). Only the nav pair remains (disabled — an image tab has no
-       filter history, like a fresh browser tab); the grid-specific innards
-       (funnel/title/chips/count/reset/ⓘ) don't apply here and hide instead.
-       !important outranks the poster-mode hide when browse-posters is still
-       set while an image tab shows. */
-    body.image-tab-active #postActiveBar { display: flex !important; }
-    body.image-tab-active #postActiveBar .qb-body,
-    body.image-tab-active #postActiveBar .qb-trail { display: none; }
+       on every tab). WHAT it carries swaps instead — the grid's predicates out,
+       the viewer's zoom controls in — and that swap is React's now
+       (shell/AppToolbar.tsx + image-tab/ViewerToolbar.tsx, #150). The rules
+       that used to do it here named #postActiveBar / #posterActiveBar /
+       #sidebar, none of which have existed since the shell became React (#154);
+       they were hiding nothing. */
     body.image-tab-active #imageTabView { display: flex; flex: 1; min-width: 0; min-height: 0; }
     .itv-stage { flex: 1; position: relative; overflow: hidden; display: flex; min-width: 0; }
     .itv-media { max-width: 100%; max-height: 100%; object-fit: contain; }
