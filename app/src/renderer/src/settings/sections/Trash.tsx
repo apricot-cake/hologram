@@ -80,7 +80,13 @@ export function Trash() {
             const date = fmtDate(r.trashedAt);
             return (
               <div key={r.captureId || r.image || r.video} className="flex items-center gap-3 p-2.5">
-                {r.image ? <img src={'asset://' + r.image} className="size-9 shrink-0 rounded-md object-cover" loading="lazy" alt="" /> : <span className="bg-muted size-9 shrink-0 rounded-md" />}
+                {r.image ? (
+                  // decoding="async" (#569): a scrollable list of these can be decoding
+                  // together, same call as PostCard's card thumbnail.
+                  <img src={'asset://' + r.image} className="size-9 shrink-0 rounded-md object-cover" loading="lazy" decoding="async" alt="" />
+                ) : (
+                  <span className="bg-muted size-9 shrink-0 rounded-md" />
+                )}
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-[13px] font-medium">{title}</div>
                   <div className="text-muted-foreground text-xs">{`${platform} ${date}`}</div>
