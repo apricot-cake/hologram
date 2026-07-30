@@ -5,7 +5,7 @@
 
 import { prepareScopedCaptureState } from './dom.ts';
 import { fileBasenameKey } from './media.ts';
-import { emptyRecord, htmlToText, readJsonKeepingRaw, toIso } from './record.ts';
+import { emptyRecord, htmlToText, normalizeHashtags, readJsonKeepingRaw, toIso } from './record.ts';
 import type { Extractor, PostRecord } from './types.ts';
 
 // === DOM ===
@@ -133,6 +133,10 @@ async function fetchMastodonStatus(parsed, url): Promise<PostRecord> {
     rec.reposts = s.reblogs_count ?? null;
     rec.replies = s.replies_count ?? null;
     rec.lang = s.language || null;
+    // status.tags[] is { name, url }, where name is documented as "the value of
+    // the hashtag after the # sign" (#177) — the instance's own resolution, so
+    // it also carries tags that only exist on a federated copy of the post.
+    rec.hashtags = normalizeHashtags((Array.isArray(s.tags) ? s.tags : []).map((t) => t && t.name));
     rec.mediaType = mastodonMediaType(s.media_attachments);
     rec.media = mastodonMedia(s.media_attachments);
     if (s.in_reply_to_id) {
