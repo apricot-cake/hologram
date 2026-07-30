@@ -21,6 +21,7 @@ const appDir = path.join(__dirname, '..', 'app');
 const { electronPath: resolveElectron } = require('./lib-electron-path.cts');
 
 const electronPath = resolveElectron();
+const { seedLibrary } = require('./lib-seed-library.cts');
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-fc-'));
 const configDir = path.join(tmp, 'Hologram');
@@ -37,33 +38,28 @@ const seeds = [
   { plat: 'bluesky', url: 'https://bsky.app/profile/u3/post/803', tags: ['猫'] },
   { plat: 'misskey', url: 'https://misskey.io/notes/804', tags: [] },
 ];
+const records: any[] = [];
 seeds.forEach((s, i) => {
   const id = '170000000000' + i + '-fc' + i;
   fs.writeFileSync(path.join(saveFolder, id + '.jpg'), jpeg);
-  fs.writeFileSync(
-    path.join(saveFolder, id + '.json'),
-    JSON.stringify(
-      {
-        captureId: id,
-        image: id + '.jpg',
-        url: s.url,
-        platform: s.plat,
-        text: '本文' + i,
-        displayName: '人' + i,
-        screenName: 'u' + i,
-        isReply: !!s.isReply,
-        likes: 10 + i,
-        capturedAt: '2026-04-0' + (i + 1) + 'T12:00:00Z',
-        date: '2026-04-0' + (i + 1) + 'T10:00:00Z',
-        media: [],
-        tags: s.tags,
-        hashtags: [],
-      },
-      null,
-      2,
-    ),
-  );
+  records.push({
+    captureId: id,
+    image: id + '.jpg',
+    url: s.url,
+    platform: s.plat,
+    text: '本文' + i,
+    displayName: '人' + i,
+    screenName: 'u' + i,
+    isReply: !!s.isReply,
+    likes: 10 + i,
+    capturedAt: '2026-04-0' + (i + 1) + 'T12:00:00Z',
+    date: '2026-04-0' + (i + 1) + 'T10:00:00Z',
+    media: [],
+    tags: s.tags,
+    hashtags: [],
+  });
 });
+seedLibrary(configDir, records);
 
 const evalJs = `(async () => {
   const wait = (ms) => new Promise(r => setTimeout(r, ms));

@@ -11,8 +11,6 @@ import { openDatabase, DatabaseCorruptError } from './lib-db.ts';
 import { computeDelta } from './lib-post-delta.ts';
 import { postsFromDb } from './lib-db-query.ts';
 import { createDbWriter } from './lib-db-write.ts';
-// ⚠️ Scaffolding — the one-time pre-#5 library migration (#441).
-import { LEGACY_INTERNAL_FILES, migrateLegacyLibrary } from './lib-legacy-import.ts';
 import { buildSavedIndex, SAVED_INDEX_FILE } from './lib-saved-index.ts';
 import { drainInbox } from './lib-db-inbox.ts';
 import { applyPendingReplacements } from './lib-db-replaces.ts';
@@ -360,19 +358,6 @@ function getDbWriter() {
   return createDbWriter(ensureDb().sqlite);
 }
 
-// ⚠️ Scaffolding — remove before release together with lib-legacy-import.ts
-// (#441). Runs at most once per database: a library predating #5 still
-// has its metadata as per-post sidecar + organization JSON on disk, and this is
-// the only thing left that reads that format. A release-time install finds
-// nothing and stamps truthSource straight away.
-function ensureDbTruthSource(folder: string, handle: { db: any; sqlite: any }) {
-  if (getDbWriter().stateGet('truthSource') === 'db') return;
-  const report = migrateLegacyLibrary({ folder, sqlite: handle.sqlite, backupRoot: path.join(configDir(), 'db-migration-backups'), trashSubdir: TRASH_SUBDIR });
-  if (report.sidecarCount) log.info(`legacy library migrated: ${report.sidecarCount} sidecar(s) -> ${report.dbPostCount} post row(s); old JSON preserved at ${report.backupPath}`);
-  for (const f of report.parseFailures) log.warn(`legacy migration skipped ${f.file}: ${f.error}`);
-  getDbWriter().stateSet('truthSource', 'db');
-}
-
 // The bridge's other half of the "saved" badge (#5 St6 / #299 — see
 // bridge.cts's "Saved-post index" comment): a small postKey->captureId map
 // rebuilt from the DB and written to configDir, NOT the save folder (so it never
@@ -451,21 +436,19 @@ function scheduleInboxCompaction(folder: string, sqlite: any) {
   }, 1500);
 }
 
-// Opens the DB, applies the one-time legacy migration if this database has never
-// seen it, and drains the intake queue — everything that has to happen before the
-// posts table can be considered current. Returns the open handle (null if no save
-// folder is set yet). Write handlers share this because a post-level DB write
-// assumes its captureId already has a posts row, and an IPC call is not
-// guaranteed to arrive after the renderer's own first listPosts().
+// Opens the DB and drains the intake queue — everything that has to happen
+// before the posts table can be considered current. Returns the open handle
+// (null if no save folder is set yet). Write handlers share this because a
+// post-level DB write assumes its captureId already has a posts row, and an IPC
+// call is not guaranteed to arrive after the renderer's own first listPosts().
 function ensurePostsSynced() {
   const folder = getSaveFolder();
   if (!folder) return null;
   const handle = ensureDb();
-  ensureDbTruthSource(folder, handle);
-  // Prime the snapshot once truthSource is confirmed 'db', regardless of
-  // whether this pass finds anything to drain — buildSavedIndex is two
-  // indexed SELECTs, cheap enough to run unconditionally on every launch
-  // rather than tracking file freshness against the DB's last write.
+  // Prime the snapshot regardless of whether this pass finds anything to
+  // drain — buildSavedIndex is two indexed SELECTs, cheap enough to run
+  // unconditionally on every launch rather than tracking file freshness
+  // against the DB's last write.
   if (!savedIndexPrimed) {
     savedIndexPrimed = true;
     scheduleSavedIndexWrite(handle);
@@ -1364,9 +1347,6 @@ function registerExtractedIpc() {
     getTrashDir,
     baseOf,
     LIBRARY_MEDIA_EXTS,
-    // ⚠️ Scaffolding — clear-all's "don't delete these" list is only about JSON a
-    // pre-#5 library can still have lying around; it goes with #441.
-    LEGACY_INTERNAL_FILES,
     readBackupConfig,
     writeBackupConfig,
     validateBackupDir,

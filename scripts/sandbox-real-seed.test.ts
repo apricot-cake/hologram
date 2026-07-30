@@ -173,9 +173,6 @@ describe('実ライブラリからのシード', () => {
     expect(fs.existsSync(dbFile)).toBe(true);
     const { sqlite } = openDatabase(dbFile, { readonly: true });
     expect((sqlite.prepare('SELECT count(*) c FROM posts').get() as any).c).toBe(3);
-    // 実DBが legacy 移行済みであることも一緒に写る＝サンドボックス側で
-    // サイドカー取り込みが走らない。
-    expect((sqlite.prepare("SELECT value FROM store_state WHERE key = 'truthSource'").get() as any).value).toBe('db');
     sqlite.close();
     expect(report.db.posts).toBe(3);
   });

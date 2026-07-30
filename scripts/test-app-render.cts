@@ -14,6 +14,7 @@ const appDir = path.join(__dirname, '..', 'app');
 const { electronPath: resolveElectron } = require('./lib-electron-path.cts');
 
 const electronPath = resolveElectron();
+const { seedLibrary } = require('./lib-seed-library.cts');
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-render-'));
 const configDir = path.join(tmp, 'Hologram'); // passed as HOLOGRAM_CONFIG_DIR below
@@ -26,28 +27,23 @@ const jpegB64 = '/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBk
 
 const captureId = '1717500000000-abcd';
 fs.writeFileSync(path.join(saveFolder, `${captureId}.jpg`), Buffer.from(jpegB64, 'base64'));
-fs.writeFileSync(
-  path.join(saveFolder, `${captureId}.json`),
-  JSON.stringify(
-    {
-      captureId,
-      image: `${captureId}.jpg`,
-      url: 'https://x.com/testuser/status/1',
-      platform: 'x',
-      text: 'レンダリング確認用のダミー投稿です。サイドカーから一覧が描画されることを確認します。',
-      displayName: 'てすと太郎',
-      screenName: 'testuser',
-      likes: 24853,
-      reposts: 3210,
-      replies: 142,
-      date: '2026-04-04T10:30:00Z',
-      capturedAt: '2026-04-04T12:00:00Z',
-      tags: ['test'],
-    },
-    null,
-    2,
-  ),
-);
+seedLibrary(configDir, [
+  {
+    captureId,
+    image: `${captureId}.jpg`,
+    url: 'https://x.com/testuser/status/1',
+    platform: 'x',
+    text: 'レンダリング確認用のダミー投稿です。DBのレコードから一覧が描画されることを確認します。',
+    displayName: 'てすと太郎',
+    screenName: 'testuser',
+    likes: 24853,
+    reposts: 3210,
+    replies: 142,
+    date: '2026-04-04T10:30:00Z',
+    capturedAt: '2026-04-04T12:00:00Z',
+    tags: ['test'],
+  },
+]);
 
 const shot = path.join(appDir, '.smoke-shot.png');
 try {

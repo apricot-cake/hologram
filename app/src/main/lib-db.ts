@@ -29,10 +29,9 @@ import { POSTS_FTS_COLUMNS, POSTS_FTS_SQL, SCHEMA_V1_SQL } from './lib-db-schema
 //
 // add-source-mtime / drop-source-mtime (#297, retired by #302): posts.sourceMtimeMs
 // let the repeating sidecar->DB sync skip re-deriving a post whose file hadn't
-// moved. There is no repeating sync any more — the DB is written directly and the
-// one-time legacy migration runs once against a folder nothing is writing — so the
-// column has no reader left. Both entries stay because the list is append-only; a
-// fresh database runs them back to back and ends up in the right shape.
+// moved. There is no sync any more — the DB is written directly — so the column
+// has no reader left. Both entries stay because the list is append-only; a fresh
+// database runs them back to back and ends up in the right shape.
 const MIGRATIONS: Migration[] = [
   { name: 'schema-v1', up: (db) => db.exec(SCHEMA_V1_SQL) },
   { name: 'add-source-mtime', up: (db) => db.exec('ALTER TABLE posts ADD COLUMN sourceMtimeMs INTEGER') },

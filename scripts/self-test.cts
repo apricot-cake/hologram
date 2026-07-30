@@ -92,13 +92,15 @@ function sandboxRoundTrip() {
       const pong = frames.some((f) => f && f.pong);
       const saved = frames.some((f) => f && f.ok && f.file);
       const jpgOk = fs.existsSync(path.join(saveFolder, `${captureId}.jpg`));
-      const jsonOk = fs.existsSync(path.join(saveFolder, `${captureId}.json`));
+      // The record's half of a save is the intake envelope (#5 St6 / #299), not a
+      // file beside the image — the app owns the database and drains the queue.
+      const envelopeOk = fs.existsSync(path.join(saveFolder, '.hologram-inbox', 'new', `${captureId}.json`));
       fs.rmSync(tmp, { recursive: true, force: true });
-      const ok = pong && saved && jpgOk && jsonOk;
+      const ok = pong && saved && jpgOk && envelopeOk;
       resolve({
         name: 'bridge round-trip (sandbox)',
         ok,
-        detail: ok ? 'ping+save+sidecar OK' : `pong=${pong} save=${saved} jpg=${jpgOk} json=${jsonOk}`,
+        detail: ok ? 'ping+save+envelope OK' : `pong=${pong} save=${saved} jpg=${jpgOk} envelope=${envelopeOk}`,
       });
     });
     child.stdin.write(frame({ type: 'ping' }));

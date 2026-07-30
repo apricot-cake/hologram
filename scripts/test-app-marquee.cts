@@ -27,6 +27,7 @@ const { electronPath: resolveElectron } = require('./lib-electron-path.cts');
 const { readEvalResult } = require('./lib-eval-result.cts');
 
 const electronPath = resolveElectron();
+const { seedLibrary } = require('./lib-seed-library.cts');
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-marquee-'));
 const configDir = path.join(tmp, 'Hologram');
@@ -38,31 +39,26 @@ fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolde
 const jpeg = Buffer.from('/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACP/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AfwH/2Q==', 'base64');
 // Enough posts for several masonry rows, so a band can cut one row without
 // touching the ones around it.
+const records: any[] = [];
 for (let i = 0; i < 12; i++) {
   const id = `dummy-m${i}`;
   fs.writeFileSync(path.join(saveFolder, `${id}.jpg`), jpeg);
-  fs.writeFileSync(
-    path.join(saveFolder, `${id}.json`),
-    JSON.stringify(
-      {
-        captureId: id,
-        image: `${id}.jpg`,
-        url: `https://x.com/u${i}/status/${900 + i}`,
-        platform: 'x',
-        text: `本文${i}`,
-        displayName: `人${i}`,
-        screenName: `u${i}`,
-        capturedAt: `2026-05-01T12:00:${String(i).padStart(2, '0')}Z`,
-        date: `2026-04-01T10:00:${String(i).padStart(2, '0')}Z`,
-        media: [{ file: `${id}-orig.jpg`, url: 'https://x.com/i/1.jpg' }],
-        tags: [],
-        hashtags: [],
-      },
-      null,
-      2,
-    ),
-  );
+  records.push({
+    captureId: id,
+    image: `${id}.jpg`,
+    url: `https://x.com/u${i}/status/${900 + i}`,
+    platform: 'x',
+    text: `本文${i}`,
+    displayName: `人${i}`,
+    screenName: `u${i}`,
+    capturedAt: `2026-05-01T12:00:${String(i).padStart(2, '0')}Z`,
+    date: `2026-04-01T10:00:${String(i).padStart(2, '0')}Z`,
+    media: [{ file: `${id}-orig.jpg`, url: 'https://x.com/i/1.jpg' }],
+    tags: [],
+    hashtags: [],
+  });
 }
+seedLibrary(configDir, records);
 
 const evalJs = `(async () => {
   const sleep = (ms) => new Promise(r => setTimeout(r, ms));

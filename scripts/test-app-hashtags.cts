@@ -16,6 +16,7 @@ const appDir = path.join(__dirname, '..', 'app');
 const { electronPath: resolveElectron } = require('./lib-electron-path.cts');
 
 const electronPath = resolveElectron();
+const { seedLibrary } = require('./lib-seed-library.cts');
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-ht-'));
 const configDir = path.join(tmp, 'Hologram');
@@ -26,31 +27,26 @@ fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolde
 
 const jpeg = Buffer.from('/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACP/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AfwH/2Q==', 'base64');
 
-function writePost(id, text, tags, hashtags) {
+const records: any[] = [];
+function addPost(id, text, tags, hashtags) {
   fs.writeFileSync(path.join(saveFolder, `${id}.jpg`), jpeg);
-  fs.writeFileSync(
-    path.join(saveFolder, `${id}.json`),
-    JSON.stringify(
-      {
-        captureId: id,
-        image: `${id}.jpg`,
-        url: `https://x.com/u/status/${id}`,
-        platform: 'x',
-        text,
-        tags: tags || [],
-        hashtags: hashtags || [],
-        capturedAt: '2026-01-01T00:00:00.000Z',
-        date: '2026-01-01T00:00:00.000Z',
-      },
-      null,
-      2,
-    ),
-  );
+  records.push({
+    captureId: id,
+    image: `${id}.jpg`,
+    url: `https://x.com/u/status/${id}`,
+    platform: 'x',
+    text,
+    tags: tags || [],
+    hashtags: hashtags || [],
+    capturedAt: '2026-01-01T00:00:00.000Z',
+    date: '2026-01-01T00:00:00.000Z',
+  });
 }
 // 8 unique user tags so the tag flyout search input is shown (> 8 items).
-writePost('p1', 'TypeScript最高', ['alpha', 'beta', 'gamma'], ['typescript', 'プログラミング']);
-writePost('p2', '別記事の続き', ['delta', 'epsilon'], ['typescript']);
-writePost('p3', 'タグなし投稿', ['zeta', 'eta', 'theta'], ['rust']);
+addPost('p1', 'TypeScript最高', ['alpha', 'beta', 'gamma'], ['typescript', 'プログラミング']);
+addPost('p2', '別記事の続き', ['delta', 'epsilon'], ['typescript']);
+addPost('p3', 'タグなし投稿', ['zeta', 'eta', 'theta'], ['rust']);
+seedLibrary(configDir, records);
 
 const evalJs = `(async () => {
   const sleep = (ms) => new Promise(r => setTimeout(r, ms));

@@ -15,6 +15,7 @@ const appDir = path.join(__dirname, '..', 'app');
 const { electronPath: resolveElectron } = require('./lib-electron-path.cts');
 
 const electronPath = resolveElectron();
+const { seedLibrary } = require('./lib-seed-library.cts');
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-tabs-'));
 const configDir = path.join(tmp, 'Hologram');
@@ -25,32 +26,25 @@ fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolde
 
 const jpeg = Buffer.from('/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACP/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AfwH/2Q==', 'base64');
 
-function writePost(id, text, tags) {
+const records: any[] = [];
+function addPost(id, text, tags) {
   fs.writeFileSync(path.join(saveFolder, `${id}.jpg`), jpeg);
-  fs.writeFileSync(
-    path.join(saveFolder, `${id}.json`),
-    JSON.stringify(
-      {
-        captureId: id,
-        image: `${id}.jpg`,
-        url: `https://x.com/u/status/${id}`,
-        platform: 'x',
-        text,
-        tags: tags || [],
-        capturedAt: '2026-01-01T00:00:00.000Z',
-        date: '2026-01-01T00:00:00.000Z',
-      },
-      null,
-      2,
-    ),
-  );
+  records.push({
+    captureId: id,
+    image: `${id}.jpg`,
+    url: `https://x.com/u/status/${id}`,
+    platform: 'x',
+    text,
+    tags: tags || [],
+    capturedAt: '2026-01-01T00:00:00.000Z',
+    date: '2026-01-01T00:00:00.000Z',
+  });
 }
 
-writePost('p1', '投稿1', ['alpha']);
-writePost('p2', '投稿2', ['alpha', 'beta']);
-writePost('p3', '投稿3', ['beta']);
-
-const tabsJsonPath = path.join(saveFolder, 'tabs.json');
+addPost('p1', '投稿1', ['alpha']);
+addPost('p2', '投稿2', ['alpha', 'beta']);
+addPost('p3', '投稿3', ['beta']);
+seedLibrary(configDir, records);
 
 const evalJs = `(async () => {
   const sleep = (ms) => new Promise(r => setTimeout(r, ms));
@@ -168,7 +162,6 @@ child.stdout.on('data', (d) => {
 });
 
 child.on('close', () => {
-  const fsTabsOk = fs.existsSync(tabsJsonPath);
   const m = out.match(/EVAL_RESULT (\{.*\})/);
   let r: Record<string, any> = {};
   try {
@@ -200,7 +193,7 @@ child.on('close', () => {
   check('⑦ 最後の1タブ Ctrl+W: タブ数は1のまま', r.lastTabCount === 1);
   check('⑦ 最後の1タブ Ctrl+W: タイトルが "すべて" にリセット', r.lastTabTitle && r.lastTabTitle.includes('すべて'));
   check('⑦ 最後の1タブ Ctrl+W: 3件 (フィルタ解除)', r.lastTabCards === 3);
-  check('⑧ tabs.json 永続 (IPC 確認)', r.ipcOk || fsTabsOk);
+  check('⑧ タブがDBへ永続 (IPC 確認)', r.ipcOk);
 
   console.log('\n' + (ok ? 'TABS_TEST_PASS' : 'TABS_TEST_FAIL'));
   process.exit(ok ? 0 : 1);

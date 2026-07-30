@@ -16,6 +16,7 @@ const appDir = path.join(__dirname, '..', 'app');
 const { electronPath: resolveElectron } = require('./lib-electron-path.cts');
 
 const electronPath = resolveElectron();
+const { seedLibrary } = require('./lib-seed-library.cts');
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-inst-'));
 const configDir = path.join(tmp, 'Hologram');
@@ -26,34 +27,29 @@ fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolde
 
 const jpeg = Buffer.from('/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACP/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AfwH/2Q==', 'base64');
 
-function writePost(id, platform, url, when) {
+const records: any[] = [];
+function addPost(id, platform, url, when) {
   fs.writeFileSync(path.join(saveFolder, `${id}.jpg`), jpeg);
-  fs.writeFileSync(
-    path.join(saveFolder, `${id}.json`),
-    JSON.stringify(
-      {
-        captureId: id,
-        image: `${id}.jpg`,
-        url,
-        platform,
-        text: id,
-        screenName: 'u',
-        displayName: 'U',
-        tags: [],
-        capturedAt: when,
-        date: when,
-      },
-      null,
-      2,
-    ),
-  );
+  records.push({
+    captureId: id,
+    image: `${id}.jpg`,
+    url,
+    platform,
+    text: id,
+    screenName: 'u',
+    displayName: 'U',
+    tags: [],
+    capturedAt: when,
+    date: when,
+  });
 }
 // Mastodon on two servers (2 + 1), Misskey on two instances (1 + 1).
-writePost('m1', 'mastodon', 'https://mastodon.social/@u/111', '2026-01-05T00:00:00Z');
-writePost('m2', 'mastodon', 'https://mastodon.social/@u/112', '2026-01-04T00:00:00Z');
-writePost('m3', 'mastodon', 'https://mstdn.jp/@u/113', '2026-01-03T00:00:00Z');
-writePost('k1', 'misskey', 'https://misskey.io/notes/aaa', '2026-01-02T00:00:00Z');
-writePost('k2', 'misskey', 'https://nijimiss.moe/notes/bbb', '2026-01-01T00:00:00Z');
+addPost('m1', 'mastodon', 'https://mastodon.social/@u/111', '2026-01-05T00:00:00Z');
+addPost('m2', 'mastodon', 'https://mastodon.social/@u/112', '2026-01-04T00:00:00Z');
+addPost('m3', 'mastodon', 'https://mstdn.jp/@u/113', '2026-01-03T00:00:00Z');
+addPost('k1', 'misskey', 'https://misskey.io/notes/aaa', '2026-01-02T00:00:00Z');
+addPost('k2', 'misskey', 'https://nijimiss.moe/notes/bbb', '2026-01-01T00:00:00Z');
+seedLibrary(configDir, records);
 
 const evalJs = `(async () => {
   const sleep = (ms) => new Promise(r => setTimeout(r, ms));

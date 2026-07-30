@@ -17,6 +17,7 @@ const appDir = path.join(__dirname, '..', 'app');
 const { electronPath: resolveElectron } = require('./lib-electron-path.cts');
 
 const electronPath = resolveElectron();
+const { seedLibrary } = require('./lib-seed-library.cts');
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-overview-zoom-'));
 const configDir = path.join(tmp, 'Hologram');
@@ -29,24 +30,23 @@ fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolde
 const jpegB64 = '/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0a' + 'HBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAA' + 'AAAAAAAAAAAACP/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AfwH/2Q==';
 
 // 列数トラックは1ノッチ=1列なので、何枚あっても効く。走査対象らしく数枚置く。
+const records: any[] = [];
 for (let i = 0; i < 12; i++) {
   const captureId = `171750000000${i}-abcd`;
   fs.writeFileSync(path.join(saveFolder, `${captureId}.jpg`), Buffer.from(jpegB64, 'base64'));
-  fs.writeFileSync(
-    path.join(saveFolder, `${captureId}.json`),
-    JSON.stringify({
-      captureId,
-      image: `${captureId}.jpg`,
-      url: `https://x.com/testuser/status/${i}`,
-      platform: 'x',
-      text: `俯瞰ズーム検証用のダミー投稿 ${i}`,
-      displayName: 'てすと太郎',
-      screenName: 'testuser',
-      date: '2026-04-04T10:30:00Z',
-      capturedAt: '2026-04-04T12:00:00Z',
-    }),
-  );
+  records.push({
+    captureId,
+    image: `${captureId}.jpg`,
+    url: `https://x.com/testuser/status/${i}`,
+    platform: 'x',
+    text: `俯瞰ズーム検証用のダミー投稿 ${i}`,
+    displayName: 'てすと太郎',
+    screenName: 'testuser',
+    date: '2026-04-04T10:30:00Z',
+    capturedAt: '2026-04-04T12:00:00Z',
+  });
 }
+seedLibrary(configDir, records);
 
 // ホイールは #postGrid 上で発火させる（ハンドラは #mode-post の内側だけを見る）。
 // window 直撃だと target が window になり、スクロール外として無視される。

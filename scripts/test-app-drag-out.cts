@@ -29,6 +29,7 @@ const { electronPath: resolveElectron } = require('./lib-electron-path.cts');
 const { readEvalResult } = require('./lib-eval-result.cts');
 
 const electronPath = resolveElectron();
+const { seedLibrary } = require('./lib-seed-library.cts');
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-dragout-'));
 const configDir = path.join(tmp, 'Hologram');
@@ -43,30 +44,25 @@ const jpeg = Buffer.from('/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDB
 // missing paths, so the handler runs its full course without ever starting a real
 // OS drag session on the machine running the tests.
 const ids = ['dummy-d1', 'dummy-d2', 'dummy-d3'];
+const records: any[] = [];
 ids.forEach((id, i) => {
   fs.writeFileSync(path.join(saveFolder, `${id}.jpg`), jpeg);
-  fs.writeFileSync(
-    path.join(saveFolder, `${id}.json`),
-    JSON.stringify(
-      {
-        captureId: id,
-        image: `${id}.jpg`,
-        url: `https://x.com/u/status/${900 + i}`,
-        platform: 'x',
-        text: `本文${i}`,
-        displayName: `人${i}`,
-        screenName: `u${i}`,
-        capturedAt: `2026-05-0${i + 1}T12:00:00Z`,
-        date: `2026-04-0${i + 1}T10:00:00Z`,
-        media: [{ file: `${id}-orig.jpg`, url: 'https://x.com/i/1.jpg' }],
-        tags: [],
-        hashtags: [],
-      },
-      null,
-      2,
-    ),
-  );
+  records.push({
+    captureId: id,
+    image: `${id}.jpg`,
+    url: `https://x.com/u/status/${900 + i}`,
+    platform: 'x',
+    text: `本文${i}`,
+    displayName: `人${i}`,
+    screenName: `u${i}`,
+    capturedAt: `2026-05-0${i + 1}T12:00:00Z`,
+    date: `2026-04-0${i + 1}T10:00:00Z`,
+    media: [{ file: `${id}-orig.jpg`, url: 'https://x.com/i/1.jpg' }],
+    tags: [],
+    hashtags: [],
+  });
 });
+seedLibrary(configDir, records);
 
 const evalJs = `(async () => {
   const sleep = (ms) => new Promise(r => setTimeout(r, ms));

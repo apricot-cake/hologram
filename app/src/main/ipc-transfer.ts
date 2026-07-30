@@ -49,7 +49,6 @@ function register(ctx: IpcContext) {
     getConfigLastCorrupt,
     clearAllBlockReason,
     LIBRARY_MEDIA_EXTS,
-    LEGACY_INTERNAL_FILES,
     getDbWriter,
     pixivRefererFor,
     downloadAvatar,
@@ -313,13 +312,11 @@ function register(ctx: IpcContext) {
     ensurePostsSynced();
     getDbWriter().deleteAllPosts();
     // Then the media — every viewable type (incl. jfif/avif/svg/video/-poster),
-    // mirroring delete-post. Leftover JSON from a pre-#5 library is skipped rather
-    // than swept, so a wipe never destroys metadata the legacy migration might still
-    // want; that skip list goes with the scaffolding (#441).
-    const CLEAR_RE = new RegExp('\\.(' + LIBRARY_MEDIA_EXTS.join('|') + '|json)$', 'i');
+    // mirroring delete-post. Media is all a library holds since #302: the records
+    // are in the DB, so there is no companion file to sweep alongside them.
+    const CLEAR_RE = new RegExp('\\.(' + LIBRARY_MEDIA_EXTS.join('|') + ')$', 'i');
     try {
       for (const f of fs.readdirSync(folder)) {
-        if (LEGACY_INTERNAL_FILES.has(f)) continue;
         if (CLEAR_RE.test(f)) {
           try {
             fs.unlinkSync(path.join(folder, f));
