@@ -125,6 +125,10 @@ export const MESSAGES = {
     // warning is that the user did not know there would be two.
     dupCopy: 'コピー',
     dupCopyHint: 'もう1件として保存します',
+    // #158: ボタン名は同じ「コピー」だが、ゴミ箱の場面は相手が画面に無い＝何をコピー
+    // するのかが読み手に見えない。ゴミ箱の分がどうなるか（消えない）まで書くのは
+    // この文言だけの仕事＝重複の場面には言うことが無く、こちらには要る。
+    dupCopyHintTrashed: 'ゴミ箱の分はそのままにして、新しく保存します',
     dupReplace: '置換',
     dupReplaceHint: '前の保存をゴミ箱へ移し、タグと入っているフォルダを引き継ぎます',
     dupSkip: 'スキップ',
@@ -195,6 +199,9 @@ export const MESSAGES = {
     dupTitle: 'This post is already saved',
     dupCopy: 'Copy',
     dupCopyHint: 'Save it again as a second record',
+    // #158 — see the ja note. Same button name, different situation: nothing is
+    // on screen to copy, and what happens to the trashed one has to be said here.
+    dupCopyHintTrashed: 'Save a new record, leaving the trashed one alone',
     dupReplace: 'Replace',
     dupReplaceHint: 'Move the earlier save to the trash, keeping its tags and folders',
     dupSkip: 'Skip',

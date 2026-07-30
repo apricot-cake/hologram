@@ -8,7 +8,7 @@
 // button so the two paths can never disagree about what a save records.
 import { logSaveEvent, newSaveId, reportSaveTimeout } from './capture-log.ts';
 import { SAVE_WATCHDOG_MS } from './deadline.ts';
-import { buildChoiceRow, checkDuplicate, formatDeletedAt, TRASHED_CHOICES } from './duplicate-guard.ts';
+import { buildChoiceRow, checkDuplicate, formatDeletedAt } from './duplicate-guard.ts';
 import { collectImageUrls, getMediaIdentitySite } from './extractor/index.ts';
 import { ICONS } from './icons.ts';
 import { StatusSurface } from './status-surface.ts';
@@ -155,7 +155,7 @@ export async function startDrag(): Promise<void> {
               z.setState('busy', t('bannerSaving'));
               send(z, p, choice === 'replace' ? hit.captureId : null);
             },
-            hit.trashed ? TRASHED_CHOICES : undefined,
+            hit.trashed ? 'trashed' : 'duplicate',
           ),
         );
       });

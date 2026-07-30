@@ -31,11 +31,22 @@ export const DUPLICATE_WARNING_KEY = 'duplicateWarning';
 
 export type DuplicateChoice = 'copy' | 'replace' | 'skip';
 
-// The answers offered for an ordinary duplicate: least to most destructive, with
-// the reversible one first (see buildChoiceRow). A trashed post gets a shorter
-// row — `replace` needs a live record to retire, and a trashed post has none.
-const ALL_CHOICES: readonly DuplicateChoice[] = ['copy', 'replace', 'skip'];
-export const TRASHED_CHOICES: readonly DuplicateChoice[] = ['copy', 'skip'];
+// Which question the row is answering. 'duplicate' is #34's (the post is in the
+// library); 'trashed' is #158's (the post is in the library's trash).
+//
+// One parameter rather than two, because the variant decides BOTH the answers
+// offered and how `copy` describes itself, and those two must move together: a
+// shortened row with the library wording would say "save it again as a second
+// record" about a record the library does not have, and the full row with the
+// trash wording would offer a `replace` whose target is gone.
+export type ChoiceVariant = 'duplicate' | 'trashed';
+
+// Least to most destructive, with the reversible answer first. A trashed post
+// drops `replace`: it needs a live record to retire, and a trashed post has none.
+const CHOICES: Record<ChoiceVariant, readonly DuplicateChoice[]> = {
+  duplicate: ['copy', 'replace', 'skip'],
+  trashed: ['copy', 'skip'],
+};
 
 export interface DuplicateHit {
   // The record the re-saved picture is already in — what a "replace" answer
@@ -185,11 +196,13 @@ function makeChoiceButton(label: string, title: string, primary: boolean): HTMLB
 // what the save would have done without the warning: the question adds
 // choices, it does not change the default.
 //
-// `choices` narrows the row: the trash notice passes TRASHED_CHOICES, because a
-// post with no live record has nothing for "replace" to retire (#158). Filtering
-// here rather than building a second row keeps one definition of what each answer
-// is called, how it is styled, and that it must come from a real user gesture.
-export function buildChoiceRow(t: Messages, onChoose: (choice: DuplicateChoice) => void, choices: readonly DuplicateChoice[] = ALL_CHOICES): HTMLDivElement {
+// `variant` picks the question being answered (#158) — which answers appear and
+// how `copy` describes itself. Narrowing one row rather than building a second
+// keeps ONE definition of what each answer is called, how it is styled, and that
+// it must come from a real user gesture. The BUTTON NAMES are deliberately shared
+// across variants: a control that renames itself per situation has to be learned
+// twice, while the hint beneath it is read in the moment and can be situational.
+export function buildChoiceRow(t: Messages, onChoose: (choice: DuplicateChoice) => void, variant: ChoiceVariant = 'duplicate'): HTMLDivElement {
   const wrap = document.createElement('div');
   wrap.className = 'choices';
 
@@ -201,8 +214,12 @@ export function buildChoiceRow(t: Messages, onChoose: (choice: DuplicateChoice) 
     answered = true;
     onChoose(choice);
   };
+  const choices = CHOICES[variant];
   const buttons: Array<[DuplicateChoice, string, string, boolean]> = [
-    ['copy', t('dupCopy'), t('dupCopyHint'), true],
+    // The trash variant's hint says what happens to the copy in the trash, which
+    // the library wording has no reason to mention and this one must: the answer
+    // leaves TWO records behind, one of them still deleted.
+    ['copy', t('dupCopy'), t(variant === 'trashed' ? 'dupCopyHintTrashed' : 'dupCopyHint'), true],
     ['replace', t('dupReplace'), t('dupReplaceHint'), false],
     ['skip', t('dupSkip'), t('dupSkipHint'), false],
   ];

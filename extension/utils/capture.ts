@@ -1,6 +1,6 @@
 import { startBulkCapture } from './bulk-capture.ts';
 import { cropScreenshot } from './crop.ts';
-import { buildChoiceRow, checkDuplicate, formatDeletedAt, pagePictureUrls, TRASHED_CHOICES } from './duplicate-guard.ts';
+import { buildChoiceRow, checkDuplicate, formatDeletedAt, pagePictureUrls } from './duplicate-guard.ts';
 import { logSaveEvent, newSaveId, reportSaveTimeout, type SaveStage } from './capture-log.ts';
 import { SAVE_WATCHDOG_MS } from './deadline.ts';
 import { normalizeRect } from './extractor/dom.ts';
@@ -293,7 +293,7 @@ export async function startCapture(): Promise<void> {
               replacing = choice === 'replace';
               shoot(post, postUrl, replacing ? hit.captureId : null);
             },
-            hit.trashed ? TRASHED_CHOICES : undefined,
+            hit.trashed ? 'trashed' : 'duplicate',
           ),
         );
       });
