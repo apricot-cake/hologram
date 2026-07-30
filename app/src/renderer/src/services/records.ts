@@ -348,7 +348,8 @@ export function makeGallery(deps: { fileSrc(file: string): string }) {
 // asset URLs) is INJECTED so this stays DOM-free and Node-testable. The subtle
 // rules that used to live inside renderPosts are locked here: engagement
 // zero-suppression, both-date same-day dedup, body-text dedup vs the author
-// line, GIF full-size (no thumb) in card/list, card-masonry height reservation
+// line, GIF full-size (no thumb) in card/list, which densities loop an mp4-backed
+// GIF in place vs. leave it on its poster (#476), card-masonry height reservation
 // (shotW/H → learned cache), and the multi-image back-stack sheets.
 //   deps.currentView() / imgAspect() are getters (viewer reassigns the lets);
 //   fileSrc keeps folder + asset knowledge viewer-owned. Selection is
@@ -411,12 +412,34 @@ export function makeCardModel(deps: {
     // 'image' is the default media type for the vast majority of cards — an
     // always-on "画像" label is pure noise there (#110: mark exceptions only).
     const mediaLabel = p.mediaType === 'video' ? t('qfVideo') : p.mediaType === 'gif' ? t('qfGif') : '';
+    const leadMedia = mediaItemsOf(p)[0];
+    // An mp4-backed GIF (X animated_gif / Mastodon gifv) is a GIF to the reader —
+    // mp4 is only how the platform ships it, and the source site loops it right in
+    // the timeline. So card and list PLAY it in place (#476), which is also what a
+    // real .gif entry already does there (no per-item type → plain <img>, served
+    // full-size by the imgW carve-out above). The per-item `type` is the mark that
+    // tells the two mp4 kinds apart: 'gif' is the short silent loop, 'video' has a
+    // length and must not start itself, 'ugoira' needs the zip unpacked first
+    // (#119 St3) — neither of those autoplays anywhere.
+    //   Tile stays on the still: it is the overview density, and the back-stack
+    // sheets of a group are stills by construction (CSS background-image).
+    //   In list the still would be the capture screenshot (densityImage's rule),
+    // and the loop takes that slot rather than sitting next to it — the point of
+    // the criterion is that a GIF moves in the list the way it moves on the site
+    // it came from. imgSrc below is left as the density picked it, so the context
+    // menu's 画像をコピー / フォルダに表示 still name a real still image.
+    const gifVideo = (view === 'card' || view === 'list') && leadMedia && leadMedia.type === 'gif' && leadMedia.file ? leadMedia : null;
+    // Full size, never the thumbnailer: it hands back a single flattened frame.
+    const videoSrc = gifVideo ? fileSrc(gifVideo.file as string) : '';
+    // Painted until the first frame decodes, so the cell does not flash empty.
+    const videoPoster = gifVideo?.posterFile ? fileSrc(gifVideo.posterFile, view === 'list' ? listThumbW() : cardThumbW()) : '';
     // ▶ badge over the thumb: only when the leading media item's downloaded
     // TRANSPORT is a video (type 'video'/'gif' — an mp4-backed X animated_gif
     // / Mastodon gifv). A real .gif file has no per-item type (still-image
     // transport, #119 St1) and already reads as animated once loaded — no badge.
-    const leadMedia = mediaItemsOf(p)[0];
-    const videoBadge = !!leadMedia && (leadMedia.type === 'video' || leadMedia.type === 'gif' || leadMedia.type === 'ugoira');
+    // Nor does anything that is already playing: a ▶ over a moving picture would
+    // be telling the reader to start what they are watching.
+    const videoBadge = !videoSrc && !!leadMedia && (leadMedia.type === 'video' || leadMedia.type === 'gif' || leadMedia.type === 'ugoira');
     const postKey = postIdKey(p);
     // Multi-image stack: the 2nd/3rd images ride the back sheets (real
     // thumbnails — motion-study canvas 2026-07-05). Downscaled like the front
@@ -428,8 +451,12 @@ export function makeCardModel(deps: {
       url: p.url || '',
       postKey,
       noUrl: !p.url,
-      hasThumb: !!(imgFile || p.video),
+      // videoSrc counts: a gif whose poster download failed AND whose post has no
+      // capture has no still to show, but it still has something to play.
+      hasThumb: !!(imgFile || p.video || videoSrc),
       imgSrc: imgFile ? fileSrc(imgFile, imgW) : '',
+      videoSrc,
+      videoPoster,
       videoBadge,
       captureId: p.captureId || '',
       aspRatio,

@@ -28,8 +28,15 @@ export interface PostCardModel {
   inspected?: boolean;
   hasThumb?: boolean;
   imgSrc?: string | null;
+  /** An mp4-backed GIF this density loops in place instead of showing a still
+      (#476) — set by the model only for card/list. Takes the .card-img slot, so
+      every delegated card gesture keeps working on it unchanged. */
+  videoSrc?: string | null;
+  /** Its poster still, painted until the first frame decodes. */
+  videoPoster?: string | null;
   /** Video/gif(mp4) lead media: overlay a ▶ badge on the poster thumbnail
-      (#119 St1). Not set for a real .gif — it already reads as animated. */
+      (#119 St1). Not set for a real .gif — it already reads as animated — nor
+      when videoSrc is playing that media right here. */
   videoBadge?: boolean;
   captureId?: string;
   aspRatio?: string | null;
@@ -97,13 +104,22 @@ export function PostCard({ m, L, cellRef, onImgLoad }: { m: PostCardModel; L: Re
           </span>
         ))}
       <div className="act-pill" aria-hidden="true" />
-      {/* draggable on the video placeholder only — an <img> already is by default.
-          Both hand the gesture to the #postGrid dragstart delegate, which cancels
-          the HTML5 drag (it would carry the asset:// URL) and starts an OS drag of
-          the ORIGINAL files instead (#132). */}
+      {/* draggable is spelled out on the <video> and on the placeholder — an <img>
+          already is by default. All three hand the gesture to the #postGrid
+          dragstart delegate, which cancels the HTML5 drag (it would carry the
+          asset:// URL) and starts an OS drag of the ORIGINAL files instead (#132). */}
       {m.hasThumb && (
         <div className="card-thumb">
-          {m.imgSrc ? (
+          {m.videoSrc ? (
+            // muted is what makes autoplay legal at all (Chromium never blocks a
+            // silent one); loop + playsInline make it read as the GIF it is, and
+            // no `controls` keeps the card a card. It only exists while the cell
+            // is mounted, and the grid unmounts everything outside the scrolled
+            // window — so what plays is bounded by the viewport, not the library.
+            // draggable: <video> is not draggable by default, and the drag-out
+            // delegate (#132) is armed on .card-img.
+            <video className="card-img" src={m.videoSrc} poster={m.videoPoster || undefined} data-cap={m.captureId} style={m.aspRatio ? { aspectRatio: m.aspRatio } : undefined} autoPlay muted loop playsInline draggable disablePictureInPicture />
+          ) : m.imgSrc ? (
             <>
               <img className="card-img" src={m.imgSrc} alt="" data-cap={m.captureId} style={m.aspRatio ? { aspectRatio: m.aspRatio } : undefined} loading={m.eager ? 'eager' : 'lazy'} decoding="async" onLoad={onImgLoad} />
               {m.videoBadge && (

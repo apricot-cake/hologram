@@ -510,6 +510,90 @@ describe('makeCardModel（カード1枚のビューモデル）', () => {
     });
   });
 
+  // #476: mp4 実体の GIF（X animated_gif / Mastodon gifv）はカードとリストでその場
+  // ループ再生する。判定の唯一の印は per-item の type='gif'（保存時に付く・#119 St1）
+  // ＝実体の拡張子でも mediaType ラベルでもない。
+  describe('videoSrc（mp4実体のGIFの自動再生）', () => {
+    const gifMedia = [{ file: 'g-media-0.mp4', type: 'gif', posterFile: 'g-poster.jpg' }];
+    const gifPost = { ...p, mediaType: 'gif', media: gifMedia };
+    const withView = (v: string, fn: () => void) => {
+      view = v;
+      try {
+        fn();
+      } finally {
+        view = 'card';
+      }
+    };
+
+    test('card では原寸の mp4 を再生し、ポスターを poster に敷く', () => {
+      const mGif = model(gifPost, ['g-media-0.mp4']);
+      expect(mGif.videoSrc).toBe('g-media-0.mp4@0'); // w 無し＝サムネイラを通さない（1コマに潰される）
+      expect(mGif.videoPoster).toBe('g-poster.jpg@200');
+      expect(mGif.hasThumb).toBe(true);
+    });
+
+    // list は通常スクショ優先（imgSrc）だが、GIF はスクショの中でも動いていたもの
+    // ＝一覧で動かすのが受け入れ条件（本文）。再生はそのスクショの席を取る。
+    test('list でも再生する（スクショ優先の席を取る・poster はリストのサムネ幅）', () => {
+      withView('list', () => {
+        const mGif = model(gifPost, ['g-media-0.mp4']);
+        expect(mGif.imgSrc).toBe('shot.jpg@50'); // 密度の既定は変えていない
+        expect(mGif.videoSrc).toBe('g-media-0.mp4@0');
+        expect(mGif.videoPoster).toBe('g-poster.jpg@50');
+      });
+    });
+
+    test('tile は静止のまま＝再生せず ▶ バッジを出す（一覧の俯瞰密度）', () => {
+      withView('tile', () => {
+        const mGif = model(gifPost, ['g-media-0.mp4']);
+        expect(mGif.videoSrc).toBe('');
+        expect(mGif.videoBadge).toBe(true);
+      });
+    });
+
+    test('動画（type video）は長さがある＝勝手に再生しない', () => {
+      const mVideo = model({ ...p, mediaType: 'video', media: [{ file: 'clip.mp4', type: 'video', posterFile: 'clip-poster.jpg' }] }, ['clip.mp4']);
+      expect(mVideo.videoSrc).toBe('');
+      expect(mVideo.videoBadge).toBe(true);
+    });
+
+    test('うごイラ（type ugoira）は zip の展開が要る＝一覧では再生しない', () => {
+      const mUgoira = model({ ...p, mediaType: 'gif', media: [{ file: 'u-media-0.zip', type: 'ugoira', posterFile: 'u-poster.jpg' }] }, ['u-media-0.zip']);
+      expect(mUgoira.videoSrc).toBe('');
+      expect(mUgoira.videoBadge).toBe(true);
+    });
+
+    // 実 .gif は per-item type を持たない（静止画としてダウンロードされる）＝<img> のまま
+    test('実 gif ファイルは <img> のまま（判定は拡張子でなく type）', () => {
+      const mReal = model({ ...p, mediaType: 'gif', media: [{ file: 'anim.gif' }] }, ['anim.gif']);
+      expect(mReal.videoSrc).toBe('');
+      expect(mReal.videoBadge).toBe(false);
+    });
+
+    // mediaType は表示ラベル用で、取り込み種別とは別軸（#119 St1 の分離）。
+    test('mediaType が gif でも先頭メディアが動画なら再生しない', () => {
+      const mMislabel = model({ ...p, mediaType: 'gif', media: [{ file: 'clip.mp4', type: 'video', posterFile: 'clip-poster.jpg' }] }, ['clip.mp4']);
+      expect(mMislabel.videoSrc).toBe('');
+    });
+
+    test('再生している面には ▶ バッジを出さない（動いているものに再生を促さない）', () => {
+      expect(model(gifPost, ['g-media-0.mp4']).videoBadge).toBe(false);
+    });
+
+    test('ポスターが無くても再生する（poster 無し・サムネの当ても無い）', () => {
+      const noPoster = { ...p, mediaType: 'gif', image: '', media: [{ file: 'g-media-0.mp4', type: 'gif' }] };
+      const mNo = model(noPoster, ['g-media-0.mp4']);
+      expect(mNo.videoSrc).toBe('g-media-0.mp4@0');
+      expect(mNo.videoPoster).toBe('');
+      expect(mNo.hasThumb).toBe(true); // 静止画が1枚も無くても再生するものはある
+    });
+
+    test('メディアが無い投稿では空（画像だけのカードに <video> を生やさない）', () => {
+      expect(m.videoSrc).toBe('');
+      expect(m.videoPoster).toBe('');
+    });
+  });
+
   test('本文が投稿者名と同じなら空にする（ライブラリ画像の重複排除）', () => {
     expect(model({ ...p, text: 'Alice' }).text).toBe('');
   });

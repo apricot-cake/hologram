@@ -748,7 +748,10 @@
       .post-card:hover, .poster-card:hover { transform: none; }
       .post-card:hover .card-thumb .card-img { transform: none; }
     }
-    .post-card img {
+    /* :is(img, video) throughout the card rules — an mp4-backed GIF loops in the
+       .card-img slot as a <video> (#476) and has to lay out as the still it
+       replaces. Same specificity as the bare type selector it grew out of. */
+    .post-card :is(img, video) {
       width: 100%; display: block;
       max-height: 300px; object-fit: cover; cursor: zoom-in;
     }
@@ -1004,9 +1007,9 @@
     .post-grid.selecting:not(.tile-view) .card-ntag { opacity: 0; }
     /* every click selects now — plain pointer everywhere (no zoom-in over images,
        no "click to expand" hint on the text) */
-    .post-grid.selecting .post-card, .post-grid.selecting .post-card img { cursor: pointer; }
+    .post-grid.selecting .post-card, .post-grid.selecting .post-card :is(img, video) { cursor: pointer; }
     /* inspector open: a click swaps the panel content, not zoom → plain pointer */
-    .post-grid.insp-open .post-card img { cursor: pointer; }
+    .post-grid.insp-open .post-card :is(img, video) { cursor: pointer; }
     .post-grid.selecting .post-meta .text.truncated:hover .text-hint { display: none; }
 
     /* --- List view: text-first (scanning post text is the point of the list) --- */
@@ -1023,7 +1026,7 @@
       overflow: hidden; align-items: stretch;
       contain-intrinsic-size: auto 104px;
     }
-    .post-grid.list-view .post-card img {
+    .post-grid.list-view .post-card :is(img, video) {
       width: var(--list-thumb, 88px); min-width: var(--list-thumb, 88px); align-self: stretch;
       height: auto; max-height: calc(var(--list-thumb, 88px) * 1.25); object-fit: cover;
     }
