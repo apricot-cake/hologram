@@ -47,7 +47,7 @@ const repoRoot = path.join(__dirname, '..');
 const appMainDir = path.join(repoRoot, 'app', 'src', 'main');
 const { openDatabase } = require(path.join(appMainDir, 'lib-db.ts'));
 const { cardImageFile } = require(path.join(appMainDir, 'lib-card-dims.ts'));
-const { resolveMediaPath } = require(path.join(appMainDir, 'lib-db-inbox.ts'));
+const { resolveInSaveFolder } = require(path.join(appMainDir, 'lib-save-folder-path.ts'));
 
 const VIDEO_EXT = /\.(mp4|webm|mov|m4v)$/i;
 // One shared size for every reference whose dimensions the DB does not record
@@ -214,7 +214,7 @@ function writeStandins(destLibrary: string, plan: StandinPlan, opts: { maxDim?: 
   for (const [file, dims] of plan.files) {
     // Same containment rule the app applies when it resolves a record's media
     // reference — a hostile/legacy row must not write outside the sandbox.
-    const dest = resolveMediaPath(destLibrary, file);
+    const dest = resolveInSaveFolder(destLibrary, file);
     if (!dest) {
       escaped.push(file);
       continue;
@@ -255,8 +255,8 @@ function copyRealMedia(sqlite: any, captureIds: string[], srcLibrary: string, de
       continue;
     }
     for (const file of files) {
-      const src = resolveMediaPath(srcLibrary, file);
-      const dest = resolveMediaPath(destLibrary, file);
+      const src = resolveInSaveFolder(srcLibrary, file);
+      const dest = resolveInSaveFolder(destLibrary, file);
       if (!src || !dest || !fs.existsSync(src)) {
         missing.push(file);
         continue;
@@ -323,7 +323,7 @@ function verifyIsolation(input: IsolationInput): { ok: boolean; problems: string
       if (!ref) continue;
       mediaRefs++;
       if (path.isAbsolute(ref)) problems.push(`absolute media reference in snapshot: ${ref}`);
-      else if (!resolveMediaPath(input.sandboxLibrary, ref)) problems.push(`media reference escapes the sandbox library: ${ref}`);
+      else if (!resolveInSaveFolder(input.sandboxLibrary, ref)) problems.push(`media reference escapes the sandbox library: ${ref}`);
     }
   } finally {
     handle.sqlite.close();

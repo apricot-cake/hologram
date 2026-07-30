@@ -14,6 +14,13 @@
 // hologramTrashGridSource) so a trashed post looks exactly like it did in the grid;
 // the grouping function is injected here for the same reason — a multi-image post
 // deleted as one card comes back as one card.
+//
+// Nothing here knows where the trash lives on disk, and that is what lets the
+// library's own card model draw these records: list-trash names their files
+// relative to the SAVE FOLDER (`.trash/<file>`, see lib-trash-capture.ts's
+// rebaseOntoTrash), which is the one frame every filename in the app is read in
+// (#267). The prefix is invisible to restore/permanent-delete as well: both
+// address a record by its captureId, which main recovers with baseOf().
 import { open as confirmOpen } from './confirm.ts';
 import { postIdKey, stampPost } from './records.ts';
 import { set as storeSet } from './store.ts';
