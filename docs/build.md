@@ -199,7 +199,7 @@ electron-builder, win/nsis。
 - **`app/package.json` の `electron` は範囲指定でなく固定版**（`43.2.0`。`^43.0.0` に戻さないこと）。electron-builder は配布するランタイムの実バージョンを知る必要があり、まず `<projectDir>/node_modules/electron` を読む。`app/` は npm ワークスペースなので electron はリポジトリ直下へ巻き上げられて `app/node_modules` には存在せず、electron-builder は `app/package.json` の指定へフォールバックする＝そこが範囲だと解決できず `Cannot compute electron version from installed node modules` で停止する（2026-07-28 実測。25系でも同じ＝バージョン退行ではなく #156 のワークスペース化の影響）。electron-builder 自身が案内する回避は「package.json で固定版にする」か「設定に `electronVersion` を書く」の2つで、後者は同じ版を2箇所に書くことになるため前者を採用（VS Code など実運用の Electron アプリも固定版が通例）。
 - **`asarUnpack` に `better-sqlite3` を入れてある**。`.node` は asar 内から読めないため、これが無いと配布ビルドでのみ DB が開けない。将来コード署名を入れる際は、asar の外に出たこのバイナリも署名対象に含める。
 - **NSIS ワンクリックインストーラ** は winCodeSign 展開時に **symlink 作成権限** が要る。**Windows 設定 → 開発者向け → 開発者モード を ON**（または管理者で実行）してから `npm run dist` で `Hologram Setup x.x.x.exe` が生成される。OFF だと winCodeSign 展開が失敗し `win-unpacked` のみになる（macOS用 dylib symlink でこける／コードの問題ではない）。
-- `native-host/` は `extraResources` で `resources/native-host` に同梱。`app/src/main/index.ts` が `app.isPackaged` でパス解決（dev=`../../../native-host`＝electron-vite の `out/main/` からの相対）。
+- `native-host/` は `extraResources` で `resources/native-host` に同梱。`app/src/main/native-host.ts` が `app.isPackaged` でパス解決（dev=`../../../native-host`＝electron-vite の `out/main/` からの相対）。
 
 ## アイコン（全再生成の単一導線）
 
@@ -210,7 +210,7 @@ electron-builder, win/nsis。
 
 これで以下が一括更新される（`scripts/make-icons.cjs` の `TARGETS`/`BANNERS` が配置先の単一真実源＝増えたらここに足す）:
 
-- `app/assets/icon.png`（512）＝Electron ウィンドウ/タスクバーアイコン。`app/package.json` の `build.win.icon` がこれを指し、electron-builder が配布時に `.ico` 化（PNG→ICO 自動変換）。dev では `src/main/index.ts` の `BrowserWindow({icon})`＋`app.setAppUserModelId` で反映。
+- `app/assets/icon.png`（512）＝Electron ウィンドウ/タスクバーアイコン。`app/package.json` の `build.win.icon` がこれを指し、electron-builder が配布時に `.ico` 化（PNG→ICO 自動変換）。dev では `src/main/lib-window.ts` の `BrowserWindow({icon})`＋`src/main/index.ts` の `app.setAppUserModelId` で反映。
 - `extension/public/icons/icon{16,32,48,128}.png`＝Chrome 拡張（生成manifest の `icons`/`action.default_icon`）。開発中は WXT が再読み込みしてツールバーへ反映。128 が manifest の最大サイズ＝256 は Chrome 側で使い道が無く同梱しない（#231 で確認・撤去）。
 - `assets/icon.png`（256）＝汎用ブランドラスター/ファビコン。
 - `assets/banner-{light,dark,en-light,en-dark}.svg`＝README バナー。ワードマーク `hologram`＋タグラインは保持し、先頭マークだけ虹色スクエアの埋め込み画像（base64）に差し替え。

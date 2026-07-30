@@ -1,11 +1,9 @@
 'use strict';
 
-import { app, BrowserWindow, protocol, nativeImage, nativeTheme, screen } from 'electron';
+import { app, BrowserWindow, protocol } from 'electron';
 import log from 'electron-log/main';
 import fs from 'node:fs';
 import path from 'node:path';
-import { createRequire } from 'node:module';
-import { fileURLToPath } from 'node:url';
 
 import { openDatabase, DatabaseCorruptError } from './lib-db.ts';
 import { computeDelta } from './lib-post-delta.ts';
@@ -15,17 +13,20 @@ import { buildSavedIndex, SAVED_INDEX_FILE } from './lib-saved-index.ts';
 import { drainInbox } from './lib-db-inbox.ts';
 import { applyPendingReplacements } from './lib-db-replaces.ts';
 import { compactInbox } from './lib-db-inbox-compact.ts';
-import { snapshotDatabase } from './lib-db-snapshot.ts';
-import { checkOrphans, recoverOrphanRecords } from './lib-db-integrity.ts';
-import { inboxNewDir, ensureInboxDirs, INBOX_DIRNAME } from '../../../native-host/inbox.mts';
-import { pruneDecision, nextBaseline } from './backup-guard.ts';
-import { resolveDevServerUrl } from './dev-server-guard.ts';
+import { inboxNewDir, ensureInboxDirs } from '../../../native-host/inbox.mts';
 import { parseJsonLoose } from './lib-json.ts';
-import { commitFileAtomic, writeFileAtomicSync } from './lib-atomic.ts';
-import { assetSecurityHeaders } from './asset-headers.ts';
-import { isViewerImageName } from './library-files.ts';
+import { writeFileAtomicSync } from './lib-atomic.ts';
 // Save-folder relocation engine (copy+catch-up → flip → verified cleanup → sweep).
 import { relocateLibrary } from './lib-migrate.ts';
+// Subsystems extracted from this file (#227) — mechanical moves, logic unchanged.
+// Each module's header states what it took and what it deliberately left behind;
+// what remains here is the assembly plus the record pipeline every part of it
+// shares (config → DB → inbox → renderer).
+import { configDir, defaultLibraryDir, installer, pixivRefererFor, downloadAvatar, clearAllBlockReason } from './native-host.ts';
+import { readConfig, writeConfig, getSaveFolder, readSavePointer, initSaveFolderRedundancy, isConfigCorrupt } from './lib-config.ts';
+import { mimeForFile, registerImageProtocol } from './lib-thumbnails.ts';
+import { backupIntervalMs, createBackupEngine, dbSnapshotPath, readBackupConfig, readIntegrityStatus, validateBackupDir, validateSaveFolder, writeBackupConfig } from './lib-backup.ts';
+import { APP_ICON, DEV_SERVER_URL, createWindow, devServer, getWin, installNavigationGuards, sendToWin, sendWindowToBack } from './lib-window.ts';
 // IPC handler modules, extracted from this file (mechanical move — logic unchanged).
 // Each exposes register(ctx); ctx is built after the core functions below and passed
 // in at the top-level registration site (see registerExtractedIpc, before whenReady).
@@ -38,47 +39,10 @@ import * as ipcBackup from './ipc-backup.ts';
 import * as ipcTransfer from './ipc-transfer.ts';
 import type { IpcContext } from './ipc-context.ts';
 
-// CJS require + __dirname reconstructed for ESM. native-host/ modules are loaded by
-// computed path (dev sibling vs packaged resource), so they stay dynamic CJS requires.
-const require = createRequire(import.meta.url);
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-
-// native-host/ lives outside app/. In dev, electron-vite emits this file to
-// app/out/main/index.js, so native-host (a repo-root sibling of app/) is three
-// levels up. When packaged it is bundled as an extraResource under resources/native-host.
-const nativeHostDir = app.isPackaged ? path.join(process.resourcesPath, 'native-host') : path.join(__dirname, '..', '..', '..', 'native-host');
-const { configDir, defaultLibraryDir } = require(path.join(nativeHostDir, 'paths.cts'));
-const installer = require(path.join(nativeHostDir, 'install.cts'));
-// Best-effort avatar download for the legacy ZIP import (same SSRF guard/caps as capture,
-// same shared avatars/ store — downloadAvatar dedupes by avatar URL).
-//
-// media-download.cts requires the npm package undici. In dev, requiring the raw
-// source resolves it fine (repo-root node_modules), so dev keeps requiring the
-// source directly — edit-and-restart needs no rebuild. But electron-builder
-// copies native-host/ as a raw extraResource with no node_modules, so a packaged
-// build must require the pre-bundled copy (undici inlined) that
-// app/build-native-host-bridge.mjs produces at native-host/dist/media-download.js
-// — requiring the raw source there crashed on startup with "Cannot find module
-// 'undici'".
-const mediaDownloadPath = app.isPackaged ? path.join(nativeHostDir, 'dist', 'media-download.js') : path.join(nativeHostDir, 'media-download.cts');
-const { pixivRefererFor, downloadAvatar } = require(mediaDownloadPath);
-// Save-folder resolution + clear-all gating. Shared with the native host (which
-// must resolve the SAME save folder), so it lives alongside paths.cts in native-host/.
-const { resolveSaveFolder, clearAllBlockReason } = require(path.join(nativeHostDir, 'config-recovery.cts'));
-
-// Holographic app icon (iridescent square). Used for the taskbar/window icon at
-// runtime; electron-builder converts the same PNG to .ico for the installed exe.
-// out/main/index.js -> out -> app/, where assets/ sits alongside out/ (both dev
-// and packaged: electron-builder's `files` ships out/** and assets/** at the same
-// relative depth from the package root).
-const APP_ICON = path.join(__dirname, '..', '..', 'assets', 'icon.png');
-
 // Pin userData to the SAME directory the native host reads its config from, so
 // the bridge (plain Node, spawned by Chrome) and this app always agree.
 // Must run before app is ready.
 app.setPath('userData', configDir());
-
-const CONFIG_PATH = path.join(configDir(), 'config.json');
 
 // Keep diagnostics next to the configuration shared with the native host, rather
 // than Electron's AppData default. MSIX storage virtualization can otherwise make
@@ -89,125 +53,22 @@ log.transports.file.resolvePathFn = () => path.join(configDir(), 'logs', 'main.l
 log.initialize({ preload: false });
 log.errorHandler.startCatching({ showDialog: false });
 
+// A rejected ELECTRON_RENDERER_URL is reported HERE rather than in lib-window.ts,
+// which resolves it: that module's body runs before the lines above, so the same
+// warning written there would land in electron-log's default file instead of the
+// log this app keeps beside its config (#381 / #227).
+if (process.env.ELECTRON_RENDERER_URL && devServer.rejected) {
+  log.warn('Ignoring ELECTRON_RENDERER_URL, loading the bundled renderer', { reason: devServer.rejected });
+}
+
 // Custom scheme to serve images from the (arbitrary) save folder. Lets the
 // renderer lazy-load images by filename without disabling webSecurity or
 // loading every image into JS memory.
 protocol.registerSchemesAsPrivileged([{ scheme: 'asset', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } }]);
 
-let win: BrowserWindow | null = null;
-
 // --- Config ---
-// True iff the LAST readConfig() found config.json present-but-unparseable. Lets
-// destructive ops (clear-all) refuse to run on top of a degraded config.
-let configLastCorrupt = false;
-function readConfig() {
-  let raw: string;
-  try {
-    raw = fs.readFileSync(CONFIG_PATH, 'utf8');
-  } catch {
-    configLastCorrupt = false;
-    return {}; // no config yet (fresh install) — absence is not corruption
-  }
-  try {
-    const cfg = parseJsonLoose(raw);
-    configLastCorrupt = false;
-    return cfg;
-  } catch {
-    // Corrupt config (e.g. a truncation from a pre-atomic-write forced kill).
-    // PRESERVE it instead of letting the caller silently overwrite it with {} —
-    // a truncated config that reads as {} and is then re-written loses
-    // saveFolder/extensionId/backup at once. Keep a copy for recovery/forensics.
-    configLastCorrupt = true;
-    try {
-      if (raw && raw.length) fs.copyFileSync(CONFIG_PATH, `${CONFIG_PATH}.corrupt-${Date.now()}`);
-    } catch {
-      /* best-effort */
-    }
-    return {};
-  }
-}
-
-// Redundant save-folder pointer: a tiny file written ALONGSIDE config.json holding
-// just the save-folder path. config.json carrying the only copy of saveFolder is
-// what let one truncation drop the library to the empty default; this independent
-// file survives that and lets getSaveFolder() recover instead of silently switching.
-const SAVE_POINTER_PATH = () => path.join(configDir(), 'saveFolder.path');
-function writeSavePointer(folder) {
-  if (typeof folder !== 'string' || !folder.trim()) return;
-  try {
-    fs.mkdirSync(configDir(), { recursive: true });
-    writeFileAtomicSync(SAVE_POINTER_PATH(), folder); // atomic, independent of config.json
-  } catch {
-    /* best-effort redundancy */
-  }
-}
-function readSavePointer() {
-  try {
-    const p = fs.readFileSync(SAVE_POINTER_PATH(), 'utf8').trim();
-    return p || null;
-  } catch {
-    return null;
-  }
-}
-function dirExists(p) {
-  try {
-    return fs.statSync(p).isDirectory();
-  } catch {
-    return false;
-  }
-}
-
-// Atomic write: a forced kill or crash mid-write must NEVER leave a truncated
-// config.json. Write to a tmp file, fsync, then rename over the target — readers
-// only ever see the complete old or complete new file. (Non-atomic writeFileSync
-// truncated config.json on a forced kill → readConfig() returned {} → the next
-// write persisted {} → saveFolder/extensionId/backup were lost at once. That
-// cascade is what made a library "disappear".) The one caller that asks
-// lib-atomic.ts for the fsync, because this is the file whose loss loses the
-// save folder itself.
-function writeConfig(cfg) {
-  fs.mkdirSync(configDir(), { recursive: true });
-  writeFileAtomicSync(CONFIG_PATH, JSON.stringify(cfg, null, 2), { fsync: true });
-  // Keep the redundant pointer in lockstep with whatever save folder we just wrote.
-  if (cfg && typeof cfg.saveFolder === 'string' && cfg.saveFolder.trim()) writeSavePointer(cfg.saveFolder);
-}
-
-// Explicit config wins; otherwise recover from the redundant pointer before falling
-// back to the shared default library dir (same resolution as the bridge's
-// readSaveFolder). Never returns null — a fresh install uses defaultLibraryDir().
-// The pointer is only consulted when config has no saveFolder (degraded/fresh), so
-// the common path stays a single config read with no extra file I/O.
-function getSaveFolder() {
-  const folder = readConfig().saveFolder;
-  if (typeof folder === 'string' && folder.trim()) return folder;
-  const ptr = readSavePointer();
-  return resolveSaveFolder({
-    configSaveFolder: folder,
-    pointer: ptr,
-    pointerExists: ptr ? dirExists(ptr) : false,
-    defaultDir: defaultLibraryDir(),
-  }).folder;
-}
-
-// Once at startup: keep the redundant pointer fresh for an existing install, and —
-// if config LOST its saveFolder (corruption) but the pointer still resolves to a
-// real library — write it back into config so the value is durable and the native
-// host (which reads config independently) stays in sync rather than diverging.
-function initSaveFolderRedundancy() {
-  const cfg = readConfig();
-  if (typeof cfg.saveFolder === 'string' && cfg.saveFolder.trim()) {
-    writeSavePointer(cfg.saveFolder);
-    return;
-  }
-  const ptr = readSavePointer();
-  if (ptr && dirExists(ptr)) {
-    try {
-      writeConfig(Object.assign({}, cfg, { saveFolder: ptr }));
-    } catch {
-      /* best-effort recovery */
-    }
-  }
-}
+// config.json reads/writes, the corruption guard and the redundant save-folder
+// pointer were extracted to ./lib-config.ts (imported above).
 
 // Watch .hologram-inbox/new (#5 St6 / #299) — the ONE thing that writes into the
 // library from outside the app. Since #302 there is no second watcher on the save
@@ -270,7 +131,7 @@ function watchInboxFolder() {
         void sweepReplacements().finally(() => {
           // null = full reconcile — see the function comment for why this
           // watcher never tries to ship a targeted hint.
-          if (win && !win.isDestroyed()) win.webContents.send('posts-changed', null);
+          sendToWin('posts-changed', null);
         });
       }, 400);
     });
@@ -294,13 +155,6 @@ function watchInboxFolder() {
 // cloud-synced directory (exactly what #95/#101 warn about) would defeat that
 // assumption on day one. thumb-cache sits in configDir for the same "local,
 // not portable with the library" reason.
-// Where runBackup's DB snapshot lands (#301) — a dedicated subfolder under the
-// mirror root, same "don't dump into dest's top level" convention INBOX_DIRNAME
-// already follows there. Read here (restore) and written in runBackup
-// (snapshot); kept as one function so the two never drift apart.
-function dbSnapshotPath(backupDir: string) {
-  return path.join(backupDest(backupDir), 'hologram-db', 'hologram.db');
-}
 
 // Copies the latest DB snapshot over `file` if one exists — called only when
 // `file` is about to be created fresh (missing, or corrupt-and-just-deleted) so a
@@ -309,7 +163,8 @@ function dbSnapshotPath(backupDir: string) {
 // strictly better than empty. #299's inbox replay (ensurePostsSynced's
 // drainInboxLogged) then catches up whatever happened after the snapshot, and
 // #301's orphan synthesis (run-orphan-recovery) can recover what neither the
-// snapshot nor the inbox saw.
+// snapshot nor the inbox saw. (dbSnapshotPath is lib-backup.ts's: it names a
+// place inside the mirror, and runBackup is what writes there.)
 function restoreFromSnapshotIfAvailable(file: string): boolean {
   const b = readBackupConfig();
   if (!b.dir) return false;
@@ -505,152 +360,9 @@ function ensureHostRegistered() {
 }
 
 // --- Image protocol ---
-// Screenshots are JPEG; downloaded original media may be png/webp/gif.
-const EXT_MIME = {
-  '.jpg': 'image/jpeg',
-  '.jpeg': 'image/jpeg',
-  '.jfif': 'image/jpeg',
-  '.png': 'image/png',
-  '.webp': 'image/webp',
-  '.gif': 'image/gif',
-  '.avif': 'image/avif',
-  '.svg': 'image/svg+xml',
-  '.mp4': 'video/mp4',
-  '.webm': 'video/webm',
-  '.mov': 'video/quicktime',
-  '.m4v': 'video/x-m4v',
-  '.zip': 'application/zip', // pixiv うごイラ archive (#119 St3) — fetched by the player, never rendered
-};
-function mimeForFile(name) {
-  return EXT_MIME[path.extname(name || '').toLowerCase()] || 'application/octet-stream';
-}
-
-// Thumbnails: the image-view tile grid downscaled full-resolution originals
-// (multi-MB pixiv/X art) into ~180px cells, which made scrolling stutter as the
-// GPU decoded every full image. Instead serve a resized JPEG via asset://…?w=N,
-// generated once with Electron's built-in nativeImage and cached on disk
-// (keyed by name + mtime + width, so re-migration invalidates it). The
-// full-resolution original is still served when no ?w= is given (lightbox/viewer).
-const THUMB_EXT = new Set(['.jpg', '.jpeg', '.jfif', '.png', '.webp', '.gif', '.avif', '.svg']);
-function thumbCacheDir() {
-  return path.join(configDir(), 'thumb-cache');
-}
-
-// nativeImage decode/resize/toJPEG is synchronous and runs on the main process's
-// single JS thread. The tile grid fires many asset?w= requests at once when first
-// scrolling into uncached cells; left unbounded they execute back-to-back as one
-// long synchronous burst that starves every other IPC/UI message (first-scroll
-// stutter). Funnel the heavy generation through a small pool that yields to the
-// event loop (setImmediate) between jobs so the main thread keeps breathing, and
-// coalesce concurrent identical requests so each tile is decoded at most once.
-const THUMB_POOL = 2;
-let _thumbRunning = 0;
-const _thumbQueue: any[] = [];
-const _thumbInflight = new Map(); // cachePath -> Promise<Buffer|null>
-function _pumpThumbs() {
-  while (_thumbRunning < THUMB_POOL && _thumbQueue.length) {
-    const job = _thumbQueue.shift();
-    _thumbRunning++;
-    setImmediate(async () => {
-      try {
-        job.resolve(await job.fn());
-      } catch {
-        job.resolve(null);
-      } finally {
-        _thumbRunning--;
-        _pumpThumbs();
-      }
-    });
-  }
-}
-function runThumbJob(fn) {
-  return new Promise((resolve) => {
-    _thumbQueue.push({ fn, resolve });
-    _pumpThumbs();
-  });
-}
-
-async function getThumbnail(resolved, name, w) {
-  if (!THUMB_EXT.has(path.extname(name).toLowerCase())) return null;
-  let st: any;
-  try {
-    st = await fs.promises.stat(resolved);
-  } catch {
-    return null;
-  }
-  // q3: resize by the SHORT edge (not width). Tiles are square + object-fit:cover, so the
-  // short edge is what maps to the tile. Resizing by width made wide images (e.g. 1920x1080)
-  // become 180x101, which then got upscaled vertically into the square tile → heavy blur.
-  const key = `${name}.${Math.round(st.mtimeMs)}.w${w}.q3.jpg`.replace(/[^\w.-]/g, '_');
-  const cachePath = path.join(thumbCacheDir(), key);
-  try {
-    return await fs.promises.readFile(cachePath);
-  } catch {
-    /* cache miss */
-  }
-  // Coalesce: if this exact tile is already being generated, await that one job
-  // instead of starting a duplicate decode (a full grid rebuild re-requests still-
-  // visible tiles while the first decode is in flight).
-  const pending = _thumbInflight.get(cachePath);
-  if (pending) return pending;
-  const job = runThumbJob(() => {
-    let img = nativeImage.createFromPath(resolved);
-    if (img.isEmpty()) return null;
-    const sz = img.getSize();
-    if (Math.min(sz.width, sz.height) > w) {
-      img = sz.width >= sz.height ? img.resize({ height: w, quality: 'good' }) : img.resize({ width: w, quality: 'good' });
-    }
-    const buf = img.toJPEG(90);
-    fs.promises
-      .mkdir(thumbCacheDir(), { recursive: true })
-      .then(() => fs.promises.writeFile(cachePath, buf))
-      .catch(() => {
-        /* cache best-effort */
-      });
-    return buf;
-  });
-  _thumbInflight.set(cachePath, job);
-  try {
-    return await job;
-  } finally {
-    _thumbInflight.delete(cachePath);
-  }
-}
-
-function registerImageProtocol() {
-  protocol.handle('asset', async (request) => {
-    try {
-      const folder = getSaveFolder();
-      if (!folder) return new Response('No save folder', { status: 404 });
-
-      const url = new URL(request.url);
-      const rel = decodeURIComponent(url.pathname.replace(/^\/+/, ''));
-      if (!rel || rel === '.' || rel === '..') return new Response('Not found', { status: 404 });
-
-      // Same containment rule as every file handler: basenames only, plus the
-      // sanctioned 'avatars/<file>' subpath (shared avatar store). resolveInFolder
-      // asserts the resolved path lands strictly INSIDE the save folder.
-      const resolved = resolveInFolder(rel);
-      if (!resolved) return new Response('Forbidden', { status: 403 });
-      const name = path.basename(resolved);
-
-      const w = Number.parseInt(url.searchParams.get('w') || '', 10);
-      if (Number.isFinite(w) && w >= 64 && w <= 720) {
-        const thumb = await getThumbnail(resolved, name, w);
-        // Cache-key includes mtime+width, and capture filenames are content-stable
-        // (unique captureId, written once) → immutable lets Chromium keep the
-        // decoded bitmap and skip re-reads/re-decodes on scroll-back.
-        if (thumb) return new Response(thumb, { headers: { ...assetSecurityHeaders(), 'content-type': 'image/jpeg', 'cache-control': 'public, max-age=31536000, immutable' } });
-        // fall through to the original if thumbnailing failed
-      }
-
-      const data = await fs.promises.readFile(resolved);
-      return new Response(data, { headers: { ...assetSecurityHeaders(), 'content-type': mimeForFile(name), 'cache-control': 'public, max-age=31536000, immutable' } });
-    } catch {
-      return new Response('Error', { status: 500 });
-    }
-  });
-}
+// The asset:// handler, the mime table and the thumbnail pool/cache behind ?w=N
+// were extracted to ./lib-thumbnails.ts (registered via registerImageProtocol
+// below, which takes resolveInFolder from here).
 
 // --- IPC ---
 // Config / prefs / tabs handlers (get-config / set-extension-id / get-prefs / set-pref /
@@ -672,6 +384,10 @@ function registerImageProtocol() {
 // subfolder is the shared avatar store 'avatars/<file>' (single level, no deeper):
 // anything else is squashed to its basename, and the resolved path must still
 // land strictly inside the folder.
+//
+// Stays here rather than moving with the asset:// handler: this is the rule EVERY
+// file handler shares (image-data-url, the trash sweeps, drag-out), so it belongs
+// to the assembly that hands it to all of them, not to the first caller.
 function resolveInFolder(name) {
   const folder = getSaveFolder();
   if (!folder || !name) return null;
@@ -749,559 +465,16 @@ async function purgeOldTrash() {
 // import-complete) were extracted to ./ipc-transfer.js (registered via ipcTransfer.register
 // below); exportStamp moved there too.
 
-// --- バックアップ / 増分ミラー --------------------------------------------------
-// 保存先フォルダ自体をクラウド同期フォルダに置くとライブ書き込み中の同期で壊れやすい。
-// ここでは選択した「宛先フォルダ」の中に「写し（remote）」を保持する。
-// アセットは immutable（一度書いたら変わらない）→ 宛先に無いファイルだけコピー(O(new))。
-// 削除は宛先からも伝播（最新ミラー）。ZIP は手動エクスポート専用に残す。
-// 宛先直下にぶちまけない安全策として専用サブフォルダに書く（下記 BACKUP_SUBDIR）。
-const BACKUP_SUBDIR = 'Hologram-mirror';
-function backupDest(dir) {
-  return path.join(dir, BACKUP_SUBDIR);
-}
-// (LIBRARY_SUBDIR — the named subfolder for a relocated library — moved to
-// ./ipc-transfer.js with the pick-save-folder handler that owns it.)
+// --- バックアップ / 増分ミラー ---
+// The mirror engine, its schedule, the destination validators and the #301
+// integrity pass were extracted to ./lib-backup.ts. The engine is instantiated
+// here because it needs the record pipeline above (a mirror run must sync the DB
+// before it snapshots it or counts orphans against it).
+const { runBackup, armBackupSchedule, runStartupIntegrityCheck, runOrphanRecovery } = createBackupEngine({ ensurePostsSynced, scheduleSavedIndexWrite, send: sendToWin });
 
-const BACKUP_DEFAULTS = {
-  dir: null, // 出力先（保存先フォルダの内外と重複しないこと）
-  interval: false, // 一定間隔
-  intervalValue: 1, // 間隔の数
-  intervalUnit: 'day', // 'day' | 'week' | 'month'
-  lastRunAt: null,
-  lastResult: null,
-};
-function readBackupConfig() {
-  const b = readConfig().backup || {};
-  return Object.assign({}, BACKUP_DEFAULTS, b);
-}
-function writeBackupConfig(patch) {
-  const cfg = readConfig();
-  cfg.backup = Object.assign({}, BACKUP_DEFAULTS, cfg.backup || {}, patch || {});
-  writeConfig(cfg);
-  return cfg.backup;
-}
-
-// Integrity-check status (#301) — kept OUT of BACKUP_DEFAULTS/backup config on
-// purpose: the startup orphan/integrity_check pass must run and be visible
-// even when no mirror `dir` is configured (that's the whole point of it being
-// separate from the "daily reconciliation" pass that piggybacks on runBackup),
-// so it cannot live inside a config object whose UI treats `dir` as the
-// feature's on/off switch.
-const INTEGRITY_DEFAULTS = {
-  lastCheckAt: null,
-  dbOk: null, // null = never checked yet
-  orphanCount: 0,
-  missingCount: 0,
-};
-function readIntegrityStatus() {
-  return Object.assign({}, INTEGRITY_DEFAULTS, readConfig().integrity || {});
-}
-function writeIntegrityStatus(patch) {
-  const cfg = readConfig();
-  cfg.integrity = Object.assign({}, INTEGRITY_DEFAULTS, cfg.integrity || {}, patch || {});
-  writeConfig(cfg);
-  return cfg.integrity;
-}
-
-// The one shared DB<->media reconciliation pass (#301 design: "検出機構は
-// #100の品目1と共用し二重実装しない") — called both at startup (independent
-// of any backup config) and from runBackup (piggybacking the interval run as
-// the "daily照合"). `knownFiles`, when passed, is runBackup's already-scanned
-// srcSet — skips a second readdir of the save folder.
-function runIntegrityPass(folder: string, sqlite: any, knownFiles?: Set<string>) {
-  let dbOk = true;
-  try {
-    const check = sqlite.pragma('integrity_check', { simple: true });
-    dbOk = check === 'ok';
-    if (!dbOk) log.error(`integrity_check failed: ${check}`);
-  } catch (err) {
-    dbOk = false;
-    log.error('integrity_check threw:', err);
-  }
-  const { orphanMedia, missingMedia } = checkOrphans(folder, sqlite, knownFiles);
-  const status = writeIntegrityStatus({ lastCheckAt: new Date().toISOString(), dbOk, orphanCount: orphanMedia.length, missingCount: missingMedia.length });
-  if (win && !win.isDestroyed()) win.webContents.send('integrity-check-done', status);
-  return { dbOk, orphanMedia, missingMedia };
-}
-
-// Standalone startup check (armBackupSchedule() call site) — must work with no
-// backup mirror configured, so it opens the DB itself rather than piggybacking
-// on runBackup (which early-returns before opening anything when `!b.dir`).
-async function runStartupIntegrityCheck() {
-  const folder = getSaveFolder();
-  if (!folder) return;
-  try {
-    // ensurePostsSynced (not raw ensureDb) — see runBackup's identical
-    // reasoning: the DB must reflect disk state before orphans are computed,
-    // and this timer can fire before the renderer's first listPosts() call.
-    const handle = await ensurePostsSynced();
-    if (!handle) return;
-    runIntegrityPass(folder, handle.sqlite);
-  } catch (err) {
-    log.error('startup integrity check failed:', err);
-  }
-}
-
-// Manual-trigger orphan recovery (#301 design: never automatic — see
-// lib-db-integrity.ts's recoverOrphanRecords comment for why a save still
-// mid-flight must never be misread as a permanent loss). Re-runs the
-// integrity pass afterward so the visible orphanCount drops immediately.
-// `adopted` counts the orphans whose own sidecar was read back rather than
-// summarized into a minimal record (#511) — worth logging, since the two
-// outcomes differ in everything but the count.
-async function runOrphanRecovery() {
-  const folder = getSaveFolder();
-  if (!folder) return { ok: false, error: 'not-configured' };
-  const handle = await ensurePostsSynced();
-  if (!handle) return { ok: false, error: 'not-configured' };
-  const written = recoverOrphanRecords(folder, handle.sqlite);
-  if (written.length) scheduleSavedIndexWrite(handle);
-  runIntegrityPass(folder, handle.sqlite);
-  const adopted = written.filter((w) => w.via === 'sidecar').length;
-  if (written.length) log.info(`orphan recovery: ${written.length} recovered (${adopted} from a sidecar, ${written.length - adopted} synthesized)`);
-  return { ok: true, recovered: written.length, adopted };
-}
-
-function pathIsInside(child, parent) {
-  const c = path.resolve(child),
-    p = path.resolve(parent);
-  return c === p || c.startsWith(p + path.sep);
-}
-// 出力先が保存先と入れ子/同一だと、出力→watch→再エクスポートのループや破壊が起きる。
-function validateBackupDir(dir) {
-  if (!dir) return { ok: true };
-  const src = getSaveFolder();
-  if (src && (pathIsInside(dir, src) || pathIsInside(src, dir))) return { ok: false, error: 'overlap' };
-  return { ok: true };
-}
-
-// --- Save-folder relocation ---
-// Reject a destination that would corrupt the library or loop: the current
-// folder itself, anything nested with it (can't move a folder into its own
-// child), the config dir, or the backup mirror. Last, prove it's writable.
-function validateSaveFolder(dir) {
-  if (!dir || typeof dir !== 'string' || !dir.trim()) return { ok: false, error: 'invalid' };
-  const cur = getSaveFolder();
-  if (path.resolve(dir) === path.resolve(cur)) return { ok: false, error: 'same' };
-  if (pathIsInside(dir, cur) || pathIsInside(cur, dir)) return { ok: false, error: 'nested' };
-  if (pathIsInside(dir, configDir()) || pathIsInside(configDir(), dir)) return { ok: false, error: 'config-overlap' };
-  const b = readBackupConfig();
-  if (b && b.dir && (pathIsInside(dir, b.dir) || pathIsInside(b.dir, dir))) return { ok: false, error: 'backup-overlap' };
-  try {
-    fs.mkdirSync(dir, { recursive: true });
-    const probe = path.join(dir, `.hologram-write-probe-${Date.now()}`);
-    fs.writeFileSync(probe, '');
-    fs.unlinkSync(probe);
-  } catch {
-    return { ok: false, error: 'not-writable' };
-  }
-  return { ok: true };
-}
-
-let backupRunning = false;
-async function runBackup(reason) {
-  const b = readBackupConfig();
-  const src = getSaveFolder();
-  if (!src || !b.dir) return { ok: false, error: 'not-configured' };
-  if (!validateBackupDir(b.dir).ok) return { ok: false, error: 'overlap' };
-  if (backupRunning) return { ok: false, error: 'busy' };
-  backupRunning = true;
-  if (win && !win.isDestroyed()) win.webContents.send('backup-start'); // sidebar sync icon → syncing
-  // written = new files copied; pruned = files deleted (propagated deletions)
-  const result: any = { ok: true, reason: reason || 'manual', fileCount: 0, written: 0, pruned: 0 };
-  try {
-    const dest = backupDest(b.dir);
-    await fs.promises.mkdir(dest, { recursive: true });
-
-    // Collect source files, skipping the trash bucket and transient write artifacts.
-    // Keep each file's mtime so the mirror copy can carry it over.
-    let srcFiles: string[];
-    try {
-      srcFiles = await fs.promises.readdir(src);
-    } catch {
-      srcFiles = [];
-    }
-    const srcSet = new Set<string>();
-    const srcStat = new Map<string, any>(); // name -> { size, mtimeMs }
-    for (const f of srcFiles) {
-      if (f === TRASH_SUBDIR) continue;
-      if (/\.tmp(-\d+)?$/i.test(f)) continue;
-      try {
-        const st = await fs.promises.stat(path.join(src, f));
-        if (st.isFile()) {
-          srcSet.add(f);
-          srcStat.set(f, { size: st.size, mtimeMs: st.mtimeMs });
-        }
-      } catch {
-        /* skip inaccessible entries */
-      }
-    }
-    // Shared avatar store (avatars/<urlhash>.<ext> — write-once, single level):
-    // mirror it under the same relative names so a restore keeps author icons.
-    // Collected as 'avatars/<f>' entries; path.join resolves the '/' on Windows.
-    const collectSubdir = async (root, sub, into, stats) => {
-      let names: string[] = [];
-      try {
-        names = await fs.promises.readdir(path.join(root, sub));
-      } catch {
-        return; // subfolder absent (pre-avatars library)
-      }
-      for (const f of names) {
-        if (/\.tmp(-\d+)?$/i.test(f)) continue;
-        try {
-          const st = await fs.promises.stat(path.join(root, sub, f));
-          if (st.isFile()) {
-            into.add(`${sub}/${f}`);
-            if (stats) stats.set(`${sub}/${f}`, { size: st.size, mtimeMs: st.mtimeMs });
-          }
-        } catch {
-          /* skip inaccessible entries */
-        }
-      }
-    };
-    await collectSubdir(src, 'avatars', srcSet, srcStat);
-    result.fileCount = srcSet.size;
-
-    // Collect destination files
-    // (.hologram-inbox mirroring happens further below, deliberately OUTSIDE
-    // srcSet/destSet — see the comment there for why.)
-    let destFiles: string[];
-    try {
-      destFiles = await fs.promises.readdir(dest);
-    } catch {
-      destFiles = [];
-    }
-    const destSet = new Set<string>(destFiles.filter((f) => !/\.tmp(-\d+)?$/i.test(f)));
-    await collectSubdir(dest, 'avatars', destSet, null);
-
-    // .hologram-inbox/{new,segments} (#5 St6 / #299): mirrored separately from
-    // srcSet/destSet, NOT folded into the general file-count pruneDecision()
-    // guard above — compaction can legitimately shrink the loose event count
-    // by >50% in one run (1,000 loose -> 1 segment), which must never look
-    // like the "src collapsed" signal that guard exists to catch
-    // (backup-guard.ts's module comment, the 2026-06-23 library-loss
-    // incident). tmp/ is excluded; both new/ and segments/ entries are
-    // immutable (write-once, like avatars/) so "present at dest" is proof
-    // enough — no drift-refresh needed.
-    const srcInboxNew = new Set<string>();
-    const destInboxNew = new Set<string>();
-    const srcInboxSegments = new Set<string>();
-    const destInboxSegments = new Set<string>();
-    const collectInboxSubdir = async (root: string, sub: string, into: Set<string>) => {
-      let names: string[] = [];
-      try {
-        names = await fs.promises.readdir(path.join(root, INBOX_DIRNAME, sub));
-      } catch {
-        return; // no inbox (or that subdir) yet
-      }
-      for (const f of names) {
-        if (/\.tmp(-\d+)?$/i.test(f)) continue;
-        try {
-          const st = await fs.promises.stat(path.join(root, INBOX_DIRNAME, sub, f));
-          if (st.isFile()) into.add(f);
-        } catch {
-          /* skip inaccessible entries */
-        }
-      }
-    };
-    await collectInboxSubdir(src, 'new', srcInboxNew);
-    await collectInboxSubdir(src, 'segments', srcInboxSegments);
-    await collectInboxSubdir(dest, 'new', destInboxNew);
-    await collectInboxSubdir(dest, 'segments', destInboxSegments);
-
-    const copyInboxMissing = async (sub: string, srcNames: Set<string>, destNames: Set<string>) => {
-      if (!srcNames.size) return;
-      await fs.promises.mkdir(path.join(dest, INBOX_DIRNAME, sub), { recursive: true });
-      for (const f of srcNames) {
-        if (destNames.has(f)) continue;
-        const destFile = path.join(dest, INBOX_DIRNAME, sub, f);
-        try {
-          await commitFileAtomic(destFile, (tmp) => fs.promises.copyFile(path.join(src, INBOX_DIRNAME, sub, f), tmp), { tmpSuffix: `.tmp-${Date.now()}` });
-          destNames.add(f);
-          result.written++;
-        } catch (e: any) {
-          if (!result.firstError) result.firstError = e.message;
-        }
-      }
-    };
-    // segments first: the loose prune below depends on knowing which segments
-    // already landed at dest THIS run.
-    await copyInboxMissing('segments', srcInboxSegments, destInboxSegments);
-    await copyInboxMissing('new', srcInboxNew, destInboxNew);
-
-    // Copy files missing at dest; presence is proof enough. Everything the mirror
-    // carries from the library is write-once — media, screenshots, avatars, inbox
-    // segments — so a file that exists at dest can never have a newer version at
-    // src. Until #302 this also had to re-copy the organization JSON on size/mtime
-    // drift, because that layer was rewritten in place on every edit; it lives in
-    // the DB now and reaches the mirror as the snapshot runBackup takes below.
-    // The copy is atomic (tmp + rename) so a reader never sees a half-written file.
-    if ([...srcSet].some((f) => f.startsWith('avatars/'))) {
-      await fs.promises.mkdir(path.join(dest, 'avatars'), { recursive: true });
-    }
-    for (const f of srcSet) {
-      if (destSet.has(f)) continue;
-      try {
-        await commitFileAtomic(
-          path.join(dest, f),
-          async (tmp) => {
-            await fs.promises.copyFile(path.join(src, f), tmp);
-            // Preserve mtime (floored to ms, the granularity utimes can set) so a
-            // mirror restored back into place keeps the library's own timestamps.
-            try {
-              const s = srcStat.get(f);
-              if (s) {
-                const t = new Date(Math.floor(s.mtimeMs));
-                await fs.promises.utimes(tmp, t, t);
-              }
-            } catch {
-              /* best-effort */
-            }
-          },
-          { tmpSuffix: `.tmp-${Date.now()}` },
-        );
-        result.written++;
-      } catch (e) {
-        // Surface the first copy error but keep going for the rest
-        if (!result.firstError) result.firstError = e.message;
-      }
-    }
-
-    // Prune files present in dest but gone from src (deleted posts propagate) —
-    // but refuse to mirror a suspicious collapse of src (backup-guard.js).
-    // Baseline = the src count from the last run we TRUSTED (carried forward when
-    // a run skipped, so one empty/partial blip can't poison the threshold).
-    const prevSummary = b.lastResult || {};
-    const baseline = Number(prevSummary.lastGoodCount) || Number(prevSummary.fileCount) || 0;
-    const decision = pruneDecision({ srcCount: srcSet.size, destCount: destSet.size, baseline });
-    if (decision.skip) {
-      result.pruneSkipped = decision.reason;
-      result.baselineCount = baseline;
-    } else {
-      for (const f of destSet) {
-        if (!srcSet.has(f)) {
-          try {
-            await fs.promises.unlink(path.join(dest, f));
-            result.pruned++;
-          } catch {}
-        }
-      }
-    }
-    result.lastGoodCount = nextBaseline(decision.skip, srcSet.size, baseline);
-
-    // Inbox loose prune: only once every currently-known src segment is ALSO
-    // at dest this run — independent of the general pruneDecision() guard
-    // above (which is scoped to srcSet/destSet and never sees inbox entries).
-    // Local compaction only deletes a loose file after its segment is
-    // verified + renamed + receipted (lib-db-inbox-compact.ts); mirroring
-    // that same ordering here means a loose file's mirror copy is never
-    // pruned before the segment that supersedes it is safely at dest too —
-    // design comment: "対応する event を含む検証済み segment が同じミラーに
-    // コピー済みの場合だけ許可する".
-    if ([...srcInboxSegments].every((f) => destInboxSegments.has(f))) {
-      for (const f of destInboxNew) {
-        if (!srcInboxNew.has(f)) {
-          try {
-            await fs.promises.unlink(path.join(dest, INBOX_DIRNAME, 'new', f));
-            result.pruned++;
-          } catch {}
-        }
-      }
-    }
-
-    // DB snapshot (#301): the ONLY sanctioned way to mirror the live
-    // hologram.db — #97 forbids a raw file copy of a live .db (see
-    // lib-db-snapshot.ts's module comment). Piggybacks the daily
-    // reconciliation onto this same run (#301 design: "日次照合に
-    // integrity_checkを相乗り"), reusing srcSet this run already
-    // enumerated so the orphan/missing scan costs no extra readdir.
-    try {
-      // ensurePostsSynced (not raw ensureDb) so the DB reflects whatever is
-      // actually on disk right now before orphans are computed against it —
-      // otherwise a backup firing before the renderer's first listPosts() ever
-      // ran could see an empty posts table and flag every file as orphaned.
-      const handle = await ensurePostsSynced();
-      if (!handle) throw new Error('save folder unavailable');
-      await snapshotDatabase(handle.sqlite, dbSnapshotPath(b.dir));
-      const pass = runIntegrityPass(src, handle.sqlite, srcSet);
-      result.orphanCount = pass.orphanMedia.length;
-      result.missingCount = pass.missingMedia.length;
-    } catch (e: any) {
-      if (!result.firstError) result.firstError = e.message;
-    }
-  } catch (err) {
-    result.ok = false;
-    result.error = err.message;
-  } finally {
-    backupRunning = false;
-  }
-  const at = new Date().toISOString();
-  const summary = {
-    fileCount: result.fileCount,
-    written: result.written,
-    pruned: result.pruned,
-    reason: result.reason,
-    ok: result.ok,
-    error: result.error || result.firstError || null,
-    at: at,
-    pruneSkipped: result.pruneSkipped || null,
-    baselineCount: result.baselineCount || 0,
-    lastGoodCount: typeof result.lastGoodCount === 'number' ? result.lastGoodCount : 0,
-    orphanCount: result.orphanCount || 0,
-    missingCount: result.missingCount || 0,
-  };
-  try {
-    writeBackupConfig({ lastRunAt: at, lastResult: summary });
-  } catch {
-    /* ignore */
-  }
-  if (win && !win.isDestroyed()) win.webContents.send('backup-done', Object.assign({}, result, { at: at }));
-  return result;
-}
-
-let backupIntervalTimer: any = null;
-// Node の setInterval は 2^31-1 ms 超の delay を 1ms にクランプするため、
-// 大きな間隔（week×4 以上・year など）を直接渡すと暴走する。
-// 短い heartbeat（1分）で due を判定し、閾値を超えたときだけ実行する方式に変更。
-const BACKUP_HEARTBEAT_MS = 60 * 1000;
-function backupIntervalMs(b) {
-  // 'year' は UI から廃止済みだが旧設定値の後方互換として残す
-  const unitMs = { day: 86400000, week: 604800000, month: 2592000000, year: 31536000000 };
-  return Math.max(60000, (Number(b.intervalValue) || 1) * (unitMs[b.intervalUnit] || unitMs.day));
-}
-function armBackupSchedule() {
-  if (backupIntervalTimer) {
-    clearInterval(backupIntervalTimer);
-    backupIntervalTimer = null;
-  }
-  const b = readBackupConfig();
-  if (!b.dir || !b.interval) return;
-  backupIntervalTimer = setInterval(() => {
-    const cur = readBackupConfig();
-    if (!cur.dir || !cur.interval) return;
-    const last = cur.lastRunAt ? Date.parse(cur.lastRunAt) : 0;
-    if (Date.now() - last >= backupIntervalMs(cur)) runBackup('interval');
-  }, BACKUP_HEARTBEAT_MS);
-}
-
-// Backup handlers (get-backup / set-backup / pick-backup-dir / run-backup) were
-// extracted to ./ipc-backup.js (registered via ipcBackup.register below).
-
-// Relocation + local-import handlers (pick-save-folder / import-images) were extracted
-// to ./ipc-transfer.js (registered via ipcTransfer.register below); IMPORTABLE_* moved
-// there too.
-
-// --- Window size/position persistence ---
-// The window was fixed at 1100x820 every launch. Save bounds to config.json
-// (`windowBounds`) and restore them, clamped to a visible display so a
-// disconnected monitor can't reopen the window off-screen.
-let _boundsSaveTimer: any = null;
-function persistWindowBounds() {
-  clearTimeout(_boundsSaveTimer);
-  _boundsSaveTimer = setTimeout(saveWindowBoundsNow, 400);
-}
-function saveWindowBoundsNow() {
-  if (!win || win.isDestroyed()) return;
-  try {
-    const b = win.getNormalBounds ? win.getNormalBounds() : win.getBounds();
-    const cfg = readConfig();
-    cfg.windowBounds = { x: b.x, y: b.y, width: b.width, height: b.height, isMaximized: win.isMaximized() };
-    writeConfig(cfg);
-  } catch {
-    /* best-effort */
-  }
-}
-function savedWindowBounds() {
-  const b = readConfig().windowBounds;
-  if (!b || !Number.isFinite(b.width) || !Number.isFinite(b.height) || b.width < 400 || b.height < 300) return null;
-  try {
-    const onScreen = screen.getAllDisplays().some((d) => {
-      const a = d.workArea;
-      return b.x < a.x + a.width && b.x + b.width > a.x && b.y < a.y + a.height && b.y + b.height > a.y;
-    });
-    // Off-screen (e.g. monitor unplugged) → keep the size, drop x/y so the OS centers it.
-    if (!onScreen || !Number.isFinite(b.x) || !Number.isFinite(b.y)) {
-      return { width: b.width, height: b.height, isMaximized: !!b.isMaximized };
-    }
-  } catch {
-    /* screen module unavailable before ready — fall through to use as-is */
-  }
-  return { x: b.x, y: b.y, width: b.width, height: b.height, isMaximized: !!b.isMaximized };
-}
-
-// electron-vite's dev server (HMR + React Fast Refresh for the renderer). Set
-// automatically by `electron-vite dev`; absent under `electron-vite build` (and
-// under Claude's own build→relaunch verification loop, which never runs
-// `electron-vite dev` — see docs/build.md). null in prod, so loadFile + the
-// file:// navigation guard stand unchanged.
-//
-// The value is an environment variable and this window's preload hands out
-// destructive IPC, so it goes through dev-server-guard rather than straight into
-// loadURL: a packaged build ignores it outright, and in dev only an http: loopback
-// address survives. Everything the guard rejects loads the bundled renderer (#381).
-const devServer = resolveDevServerUrl(process.env.ELECTRON_RENDERER_URL, app.isPackaged);
-const DEV_SERVER_URL = devServer.url;
-if (process.env.ELECTRON_RENDERER_URL && devServer.rejected) {
-  log.warn('Ignoring ELECTRON_RENDERER_URL, loading the bundled renderer', { reason: devServer.rejected });
-}
-
-// Navigation lockdown for every web-contents the app creates. Without it, a file
-// (e.g. a local .html) dropped onto a window would make the top frame navigate to
-// file://…, which inherits the same preload and could call destructive IPC
-// (clear-all / import-complete / …). We:
-//   - deny will-navigate to anything other than our own renderer (file://…/
-//     renderer/index.html) or a raster image on the asset:// viewer scheme. The
-//     initial loadFile/loadURL does NOT fire will-navigate, so this never blocks
-//     startup — a reload of the image window is what actually passes through here.
-//   - deny window.open / target=_blank entirely; external links are funneled
-//     through the open-external IPC (shell.openExternal), which this leaves intact.
-function installNavigationGuards() {
-  const indexFile = path.resolve(__dirname, '..', 'renderer', 'index.html');
-  // Derived from the guard's output, never from the raw environment variable, so a
-  // rejected value cannot widen what will-navigate accepts (#381).
-  const devOrigin = DEV_SERVER_URL ? new URL(DEV_SERVER_URL).origin : null;
-  const isAllowedNavigation = (rawUrl) => {
-    let u: URL;
-    try {
-      u = new URL(rawUrl);
-    } catch {
-      return false;
-    }
-    // The standalone image window lives on the app-controlled asset:// scheme —
-    // but only for the raster formats it is meant to show (#215). A blanket
-    // asset: pass would let anything that can steer a top-level navigation put a
-    // scripted SVG on the library's own origin; the same allow-list gates
-    // open-image-window, so both ways in agree on what may become a document.
-    if (u.protocol === 'asset:') {
-      try {
-        return isViewerImageName(path.basename(decodeURIComponent(u.pathname)));
-      } catch {
-        return false;
-      }
-    }
-    // Dev only: allow navigations within the Vite dev server — its HMR client does
-    // a full location.reload() on non-Fast-Refreshable edits, which would otherwise
-    // be blocked here. devOrigin is null in prod, so this is a no-op there.
-    if (devOrigin && u.origin === devOrigin) return true;
-    // Our own renderer, reached by file path (ignore query/hash differences).
-    if (u.protocol === 'file:') {
-      try {
-        return path.resolve(decodeURIComponent(u.pathname).replace(/^\//, '')) === indexFile;
-      } catch {
-        return false;
-      }
-    }
-    return false;
-  };
-  app.on('web-contents-created', (_e, contents) => {
-    contents.on('will-navigate', (event, url) => {
-      if (!isAllowedNavigation(url)) event.preventDefault();
-    });
-    // Deny all renderer-initiated new windows/tabs. External navigation is meant
-    // to go through the open-external IPC, not a popup that inherits our preload.
-    contents.setWindowOpenHandler(() => ({ action: 'deny' }));
-  });
-}
+// --- Window ---
+// Bounds persistence, the navigation lockdown and createWindow were extracted to
+// ./lib-window.ts, which also owns the `win` binding (getWin / sendToWin).
 
 // --- Extracted IPC registration ---
 // The handlers below used to be inline ipcMain.handle(...) calls in this file. They
@@ -1347,15 +520,13 @@ function registerExtractedIpc() {
     validateSaveFolder,
     relocateLibrary,
     watchInboxFolder,
-    getWin: () => win,
-    getConfigLastCorrupt: () => configLastCorrupt,
+    getWin,
+    getConfigLastCorrupt: isConfigCorrupt,
     resetDelta: () => {
       _deltaFolder = null;
       _lastSent = new Map();
     },
-    send: (channel, ...args) => {
-      if (win && !win.isDestroyed()) win.webContents.send(channel, ...args);
-    },
+    send: sendToWin,
   };
   ipcOrganize.register(ctx);
   ipcPosts.register(ctx);
@@ -1366,104 +537,6 @@ function registerExtractedIpc() {
   ipcTransfer.register(ctx);
 }
 registerExtractedIpc();
-
-// --- Window ---
-function createWindow(show = true) {
-  // Resolve the theme from config up front so the first paint (and the window's
-  // backdrop) match it — no flash, and SMOKE captures reflect it. We pass the
-  // PREF (auto/light/dark) to the page as a ?theme= query that theme.js reads
-  // synchronously during <head>; 'auto' is resolved there via prefers-color-scheme
-  // (which follows nativeTheme). For the backdrop we resolve 'auto' here too.
-  const cfgTheme = readConfig().theme;
-  const theme = ['auto', 'light', 'dark'].includes(cfgTheme) ? cfgTheme : 'auto';
-  const dark = theme === 'dark' || (theme === 'auto' && nativeTheme.shouldUseDarkColors);
-  const smoke = process.env.HOLOGRAM_SMOKE === '1';
-  const sb = smoke ? null : savedWindowBounds();
-  win = new BrowserWindow({
-    width: (sb && sb.width) || 1100,
-    height: (sb && sb.height) || 820,
-    ...(sb && Number.isFinite(sb.x) ? { x: sb.x, y: sb.y } : {}),
-    minWidth: 720,
-    minHeight: 480,
-    show,
-    backgroundColor: dark ? '#0c0e12' : '#f6f7f9',
-    title: 'Hologram',
-    icon: APP_ICON,
-    paintWhenInitiallyHidden: true,
-    // No titleBarOverlay: the min/max/close buttons are app-drawn in the tab bar. The OS
-    // overlay draws its strip on the browser process' own compositor, so its color could
-    // never be synchronized with a web-layer change (a modal scrim) — it could only be
-    // approximated per frame, which showed as a flicker. App-drawn buttons live in the same
-    // frame as the scrim, so the whole class of mismatch is gone. The cost is the Windows 11
-    // Snap Layouts flyout, which only appears for a real caption button (the OS asks the
-    // window "is this point the maximize button?" and only the native overlay can say yes);
-    // Discord/Figma/Spotify/Obsidian all sit on this side of the trade. Snap itself still
-    // works everywhere else: Win+arrow, drag-to-edge, Win+Z.
-    titleBarStyle: 'hidden',
-    webPreferences: {
-      preload: path.join(__dirname, '..', 'preload', 'index.js'),
-      contextIsolation: true,
-      nodeIntegration: false,
-      backgroundThrottling: false,
-    },
-  });
-  win.removeMenu();
-  // The app-drawn maximize button mirrors the real window state, which also changes without
-  // the button (snap, double-click on the drag strip, Win+arrow, the taskbar), so push every
-  // change rather than have the renderer poll.
-  const sendMaximized = () => {
-    if (!win || win.isDestroyed()) return;
-    win.webContents.send('window-maximized-changed', win.isMaximized());
-  };
-  win.on('maximize', sendMaximized);
-  win.on('unmaximize', sendMaximized);
-  if (!smoke) {
-    if (sb && sb.isMaximized) win.maximize();
-    // Remember size/position across launches (debounced on resize/move; flushed on close).
-    win.on('resize', persistWindowBounds);
-    win.on('move', persistWindowBounds);
-    win.on('maximize', persistWindowBounds);
-    win.on('unmaximize', persistWindowBounds);
-    win.on('close', saveWindowBoundsNow);
-  }
-  // Pass smoke=1 so the renderer disables the offscreen render optimizations
-  // (content-visibility / lazy images) that leave the hidden capture window blank.
-  if (DEV_SERVER_URL) {
-    // Dev: load the renderer from electron-vite's Vite dev server (HMR + Fast Refresh).
-    // Built through URL rather than string concatenation so the query lands in the
-    // query slot whatever shape the (already validated) dev URL has.
-    const devUrl = new URL(DEV_SERVER_URL);
-    devUrl.search = new URLSearchParams({ theme, ...(smoke ? { smoke: '1' } : {}) }).toString();
-    win.loadURL(devUrl.href);
-  } else {
-    win.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'), { query: { theme, ...(smoke ? { smoke: '1' } : {}) } });
-  }
-}
-
-// Move a window to the bottom of the z-order without activating it. Only used by
-// the HOLOGRAM_START_INACTIVE verify path below, so koffi is a devDependency and
-// the require is deliberately lazy: a packaged build never reaches this line, and
-// if it somehow does, the window just stays where it is instead of the app dying.
-// HWND is passed as uintptr_t rather than void* — getNativeWindowHandle() returns
-// a Buffer HOLDING the handle, and a void* parameter would pass the address of
-// that buffer instead of the handle itself.
-function sendWindowToBack(w: BrowserWindow): void {
-  if (process.platform !== 'win32') return;
-  const HWND_BOTTOM = 1;
-  const SWP_NOSIZE = 0x0001;
-  const SWP_NOMOVE = 0x0002;
-  const SWP_NOACTIVATE = 0x0010;
-  try {
-    const koffi = require('koffi');
-    const user32 = koffi.load('user32.dll');
-    const SetWindowPos = user32.func('__stdcall', 'SetWindowPos', 'bool', ['uintptr_t', 'uintptr_t', 'int', 'int', 'int', 'int', 'uint']);
-    const hwnd = w.getNativeWindowHandle().readBigUInt64LE(0);
-    const ok = SetWindowPos(hwnd, HWND_BOTTOM, 0, 0, 0, 0, SWP_NOSIZE | SWP_NOMOVE | SWP_NOACTIVATE);
-    if (!ok) log.warn('SetWindowPos(HWND_BOTTOM) returned false');
-  } catch (err) {
-    log.warn('could not send window to back', { error: (err as Error).message });
-  }
-}
 
 // Side-effect-free launch check: skips host registration, hides the window,
 // and quits once the renderer has loaded. Run with HOLOGRAM_SMOKE=1.
@@ -1499,10 +572,11 @@ if (!gotSingleInstanceLock) {
 } else {
   if (!SMOKE) {
     app.on('second-instance', () => {
-      if (win) {
-        if (win.isMinimized()) win.restore();
-        win.show();
-        win.focus();
+      const w = getWin();
+      if (w) {
+        if (w.isMinimized()) w.restore();
+        w.show();
+        w.focus();
       }
     });
   }
@@ -1529,7 +603,7 @@ if (!gotSingleInstanceLock) {
     // Dev server and sandbox runs never capture, so skip host registration —
     // no HKCU writes and no native-host copy into the shared ~/.hologram.
     if (!SMOKE && !SANDBOX && !DEV_SERVER_URL) ensureHostRegistered();
-    registerImageProtocol();
+    registerImageProtocol({ resolveInFolder });
     installNavigationGuards();
     const startMin = !SMOKE && process.env.HOLOGRAM_START_MINIMIZED === '1';
     // Verification launches (the sandbox second instance, a restart driven from a
@@ -1544,11 +618,12 @@ if (!gotSingleInstanceLock) {
     // from this window is personal data. The notice is drawn INSIDE the page
     // rather than printed to the console, because a screenshot has to carry it;
     // re-applied on every load so a renderer reload cannot drop it.
-    if (SANDBOX && process.env.HOLOGRAM_SANDBOX_NOTICE && win) {
+    if (SANDBOX && process.env.HOLOGRAM_SANDBOX_NOTICE && getWin()) {
       const notice = process.env.HOLOGRAM_SANDBOX_NOTICE;
-      win.webContents.on('did-finish-load', () => {
-        if (!win || win.isDestroyed()) return;
-        win.webContents
+      (getWin() as BrowserWindow).webContents.on('did-finish-load', () => {
+        const w = getWin();
+        if (!w || w.isDestroyed()) return;
+        w.webContents
           .executeJavaScript(
             `(() => { const id = 'hologram-sandbox-notice'; const old = document.getElementById(id); if (old) old.remove();
                const el = document.createElement('div'); el.id = id; el.textContent = ${JSON.stringify(notice)};
@@ -1582,7 +657,7 @@ if (!gotSingleInstanceLock) {
 
     if (SMOKE) {
       const shot = process.env.HOLOGRAM_SMOKE_SHOT;
-      (win as BrowserWindow).webContents.on('console-message', (_e, level, message) => {
+      (getWin() as BrowserWindow).webContents.on('console-message', (_e, level, message) => {
         console.log(`[renderer:${level}] ${message}`);
       });
       let done = false;
@@ -1592,11 +667,11 @@ if (!gotSingleInstanceLock) {
         console.log(tag);
         app.quit();
       };
-      (win as BrowserWindow).webContents.once('did-finish-load', () =>
+      (getWin() as BrowserWindow).webContents.once('did-finish-load', () =>
         setTimeout(async () => {
           if (process.env.HOLOGRAM_SMOKE_EVAL) {
             try {
-              const r = await (win as BrowserWindow).webContents.executeJavaScript(process.env.HOLOGRAM_SMOKE_EVAL);
+              const r = await (getWin() as BrowserWindow).webContents.executeJavaScript(process.env.HOLOGRAM_SMOKE_EVAL);
               console.log('EVAL_RESULT', JSON.stringify(r));
             } catch (e) {
               console.log('EVAL_ERR', e.message);
@@ -1604,7 +679,7 @@ if (!gotSingleInstanceLock) {
           }
           if (shot) {
             try {
-              const img = await (win as BrowserWindow).webContents.capturePage();
+              const img = await (getWin() as BrowserWindow).webContents.capturePage();
               fs.writeFileSync(shot, img.toPNG());
             } catch (err) {
               console.error('capture failed:', err);
@@ -1625,11 +700,12 @@ if (!gotSingleInstanceLock) {
     // flashing the taskbar button: show inactive (no focus → no FlashWindowEx), then
     // minimize and explicitly clear any pending attention flash. (A normal launch
     // opens a focused window.)
-    if (startMin && win) {
-      win.once('ready-to-show', () => {
-        (win as BrowserWindow).showInactive();
-        (win as BrowserWindow).minimize();
-        (win as BrowserWindow).flashFrame(false);
+    if (startMin && getWin()) {
+      (getWin() as BrowserWindow).once('ready-to-show', () => {
+        const w = getWin() as BrowserWindow;
+        w.showInactive();
+        w.minimize();
+        w.flashFrame(false);
       });
     }
 
@@ -1639,11 +715,12 @@ if (!gotSingleInstanceLock) {
     // position, not a bug: "showInactive() should maintain the Z order" was closed
     // as wontfix (electron#9941), and Electron exposes moveTop() with no counterpart.
     // So the window is pushed down through the Win32 call Windows provides for it.
-    if (startInactive && win) {
-      win.once('ready-to-show', () => {
-        (win as BrowserWindow).showInactive();
-        (win as BrowserWindow).flashFrame(false);
-        sendWindowToBack(win as BrowserWindow);
+    if (startInactive && getWin()) {
+      (getWin() as BrowserWindow).once('ready-to-show', () => {
+        const w = getWin() as BrowserWindow;
+        w.showInactive();
+        w.flashFrame(false);
+        sendWindowToBack(w);
       });
     }
 
