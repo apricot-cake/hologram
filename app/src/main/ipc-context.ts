@@ -76,7 +76,7 @@ export interface IpcContext {
 
   // --- Database ---
   getDbWriter(): DbWriter;
-  /** Opens the DB, applies the one-time legacy migration and drains the intake queue. */
+  /** Opens the DB and drains the intake queue. */
   ensurePostsSynced(): DbHandle | null;
   scheduleSavedIndexWrite(handle: { sqlite: Database.Database }): void;
   /** Consumes pending `replaces` markers (#34) — no inbox event fires for an in-app write. */
