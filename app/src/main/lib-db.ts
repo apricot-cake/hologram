@@ -223,6 +223,12 @@ const MIGRATIONS: Migration[] = [
         ALTER TABLE posts ADD COLUMN imageCount INTEGER;
       `),
   },
+  // #202: which of the record's fields were read off the PAGE because the
+  // platform API answered nothing for them. A JSON string[] in one TEXT column,
+  // exactly like `hashtags` — it is a small annotation read WITH the post, never
+  // a thing to join or filter on, so it needs no table of its own.
+  // Empty ('[]') on every record whose API fetch succeeded in full.
+  { name: 'add-post-dom-filled', up: (db) => db.exec('ALTER TABLE posts ADD COLUMN domFilled TEXT') },
 ];
 
 interface Migration {
@@ -363,6 +369,9 @@ interface PostsTable {
   // add-post-image-index migration (#560) — see PostRecordShape.imageIndex
   imageIndex: number | null;
   imageCount: number | null;
+  // add-post-dom-filled migration (#202) — JSON string[], same storage as
+  // hashtags. See PostRecordShape.domFilled. Null on rows written before it.
+  domFilled: string | null;
 }
 interface MediaTable {
   id: Generated<number>;

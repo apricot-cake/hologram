@@ -4,8 +4,9 @@ import { buildChoiceRow, checkDuplicate, formatDeletedAt, pagePictureUrls } from
 import { logSaveEvent, newSaveId, reportSaveTimeout, type SaveStage } from './capture-log.ts';
 import { type SaveDeadline, startSaveDeadline } from './save-deadline.ts';
 import { normalizeRect } from './extractor/dom.ts';
+import { readDomMeta } from './extractor/dom-meta.ts';
 import { getCaptureSite } from './extractor/index.ts';
-import type { CaptureSite, PostRect } from './extractor/types.ts';
+import type { CaptureSite, DomMeta, PostRect } from './extractor/types.ts';
 import { ICONS } from './icons.ts';
 import { StatusSurface } from './status-surface.ts';
 import { createI18n } from './i18n.ts';
@@ -70,6 +71,12 @@ export async function startCapture(): Promise<void> {
   // retirement of the old capture is the app's later job — so the only side
   // that knows this save was a replacement is the one that asked.
   let replacing = false;
+  // What the page showed for the chosen post (#202), read once at the moment
+  // it was chosen. Held here rather than re-read at send time because the two
+  // are separated by a scroll-into-view, a screenshot and two animation frames,
+  // and X's virtual list recycles rows across all of that — the element under
+  // `post` can be a different post's row by then.
+  let domMeta: DomMeta | null = null;
   // The deadline on waiting for the save's result, and the latch that keeps the
   // banner from being written twice when a late answer follows a timeout (#507).
   let saveDeadline: SaveDeadline | null = null;
@@ -234,8 +241,13 @@ export async function startCapture(): Promise<void> {
     saveId = newSaveId();
 
     // Metadata is fetched from the platform API in the background from this URL.
-    // The page is only used to identify the clicked post and its permalink.
+    // The page identifies the clicked post and its permalink — and, since #202,
+    // is also read as a SECOND source for the fields that API cannot answer
+    // (a protected or age-restricted X post, and the counts syndication has no
+    // field for). readDomMeta never throws: a broken selector must cost the
+    // extra metadata, never the save.
     const postUrl = site.getPermalink(post);
+    domMeta = readDomMeta(site, post);
 
     // Without a permalink the API metadata can't be fetched either — the save
     // would produce a platform:null record the viewer never shows. Abort here,
@@ -358,6 +370,7 @@ export async function startCapture(): Promise<void> {
             platform: site.platform,
             saveId: saveId as string,
             replaces,
+            domMeta,
           } satisfies CaptureAndSendMessage,
           (res?: CaptureAndSendResponse) => {
             // The RESULT arrives separately, as a notify push — this callback
@@ -521,7 +534,7 @@ export async function startCapture(): Promise<void> {
         // success (otherwise the save looks like a silent no-op in the grid).
         // A replacement says so INSTEAD of "grouped": the earlier record is on
         // its way to the trash, so calling it a merge would be wrong.
-        text = skewText ?? (partial ? partialSaveText(msg.metaReason) : replacing ? getMessage('dupReplaced') : msg.grouped > 0 ? getMessage('bannerSavedGrouped', [msg.grouped + 1]) : MSG.saved);
+        text = skewText ?? (partial ? partialSaveText(msg.metaReason, msg.domFilled) : replacing ? getMessage('dupReplaced') : msg.grouped > 0 ? getMessage('bannerSavedGrouped', [msg.grouped + 1]) : MSG.saved);
       }
       banner.setState(attention ? 'partial' : msg.success ? 'success' : 'error', text);
       // Small badge pop so the state flip reads even in peripheral vision

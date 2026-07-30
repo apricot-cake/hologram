@@ -243,6 +243,9 @@ function register(ctx: IpcContext) {
         media: Array.isArray(p.media) ? p.media : [],
         hashtags: Array.isArray(p.hashtags) ? p.hashtags : [],
         tags: Array.isArray(p.tags) ? p.tags : [],
+        // #202: carried through so a transfer round trip does not silently
+        // relabel a page-read value as one the platform API vouched for.
+        domFilled: Array.isArray(p.domFilled) ? p.domFilled : [],
       };
       try {
         fs.writeFileSync(path.join(folder, `${captureId}.jpg`), imgBuf);

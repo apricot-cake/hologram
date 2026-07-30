@@ -7,13 +7,18 @@
 // The banner language follows the browser locale; the desktop app owns all
 // viewer/settings strings in app/renderer/i18n.ts.
 import type { ProtocolSkew } from '../../native-host/protocol.mts';
+import { domRescuedEssentials } from './extractor/dom-meta.ts';
 import type { SaveFailureKind } from './native-error.ts';
 
 export interface HologramI18nApi {
   lang: string;
   resolved: string;
   getMessage: (key: string, subs?: ReadonlyArray<unknown>) => string;
-  partialSaveText: (reason?: string | null) => string;
+  // domFilled (#202) = the record fields the PAGE supplied because the API
+  // answered nothing for them. When it rescued the author or the text, the
+  // save is still partial but no longer empty, and the wording has to say so —
+  // "post info unavailable" would be flatly untrue of a record that has both.
+  partialSaveText: (reason?: string | null, domFilled?: readonly string[] | null) => string;
   saveFailureText: (kind?: SaveFailureKind | null, reason?: string | null) => string;
   // null when there is nothing to say, so a caller can write
   // `skewText(x) ?? <its usual success wording>` (#205).
@@ -42,6 +47,12 @@ export const MESSAGES = {
     // Reason-specific partial-save wording (metaReason from background.js).
     bannerSavedNoMetaProtected: '保存しました（鍵付きアカウントのため投稿情報は取得できません）',
     bannerSavedNoMetaAgeRestricted: '保存しました（年齢制限付き投稿のため投稿情報は取得できません）',
+    // #202: APIは何も返さなかったが、画面に出ている投稿から本文や作者を読み取って
+    // 埋めた。⚠️成功（緑）には上げない＝画面から読んだ数値は「1.2万」のような概数で、
+    // APIの正確な値と品質が違う。その差を隠さないのが partial（アンバー）の役目。
+    // 理由（鍵付き・年齢制限）は言わない＝レコードが空でなくなった時点で、
+    // 「APIがなぜ黙ったか」はユーザーの手当てを要さない話になる。
+    bannerSavedFromPage: '保存しました（投稿情報は画面から補完・数値は概数）',
     // 拡張とアプリ側の保存プログラムの版が合っていない（#205）。⚠️「失敗」ではない＝
     // 保存自体は済んでいる。合っていない事実だけを伝え、動作は一切変えない。
     // どちらを更新すればよいかまで言い切る＝ユーザーには「どちらが古いか」を
@@ -158,6 +169,9 @@ export const MESSAGES = {
     bannerSavedNoMeta: 'Saved (post info unavailable)',
     bannerSavedNoMetaProtected: 'Saved (post info unavailable: private account)',
     bannerSavedNoMetaAgeRestricted: 'Saved (post info unavailable: age-restricted post)',
+    // See the ja note: the API gave nothing, the page did. Still amber — the
+    // counts read off the page are rounded ("1.2K"), the API's are exact.
+    bannerSavedFromPage: 'Saved (post info read from the page; counts are approximate)',
     // See the ja notes: the save SUCCEEDED, the two halves are out of step.
     bannerSavedHostOld: 'Saved — please update the Hologram app (it no longer matches this extension)',
     bannerSavedExtensionOld: 'Saved — please update the extension (it no longer matches the Hologram app)',
@@ -239,7 +253,14 @@ export function createI18n(): Promise<HologramI18nApi> {
     // Partial-save wording: pick the reason-specific string when the
     // background classified WHY the post info is missing (metaReason), fall
     // back to the generic one for unclassified failures.
-    const partialSaveText = (reason) => getMessage(reason === 'protected' ? 'bannerSavedNoMetaProtected' : reason === 'ageRestricted' ? 'bannerSavedNoMetaAgeRestricted' : 'bannerSavedNoMeta');
+    //
+    // The DOM-rescued case (#202) is checked FIRST and ignores the reason: the
+    // reason-specific strings all end in "the post info cannot be obtained",
+    // and once the page has supplied the author or the text that sentence is
+    // the wrong one to show — WHY the API stayed silent stopped mattering the
+    // moment the record stopped being empty. The state stays amber either way,
+    // because page-read counts are approximate and the API's are not.
+    const partialSaveText = (reason, domFilled?) => (domRescuedEssentials(domFilled) ? getMessage('bannerSavedFromPage') : getMessage(reason === 'protected' ? 'bannerSavedNoMetaProtected' : reason === 'ageRestricted' ? 'bannerSavedNoMetaAgeRestricted' : 'bannerSavedNoMeta'));
 
     // Same shape as partialSaveText, but for the opposite outcome: nothing was
     // written at all. Only 'post-unavailable' takes a reason — the other kinds

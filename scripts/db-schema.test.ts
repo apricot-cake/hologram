@@ -64,9 +64,9 @@ describe('マイグレーションが通り、テーブルが揃う', () => {
   );
   sqlite.close();
 
-  test('user_version は 16（v1 DDL ＋ #560 add-post-image-index までの追加15本）', () => {
+  test('user_version は 17（v1 DDL ＋ #202 add-post-dom-filled までの追加16本）', () => {
     const { sqlite } = openDatabase(mkdb());
-    expect(sqlite.pragma('user_version', { simple: true })).toBe(16);
+    expect(sqlite.pragma('user_version', { simple: true })).toBe(17);
     sqlite.close();
   });
 
@@ -326,7 +326,7 @@ describe('既存 v1 データベースの開き直しは no-op', () => {
   const second = openDatabase(file);
 
   test('マイグレーションを再実行しない', () => {
-    expect(second.sqlite.pragma('user_version', { simple: true })).toBe(16);
+    expect(second.sqlite.pragma('user_version', { simple: true })).toBe(17);
   });
 
   test('前回のデータが残る', () => {

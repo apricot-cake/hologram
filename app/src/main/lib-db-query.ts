@@ -65,6 +65,7 @@ const POST_COLUMNS = [
   'tagReviewed',
   'imageIndex',
   'imageCount',
+  'domFilled',
 ] as const;
 
 function fromDbBool(v: unknown): boolean | null {
@@ -199,6 +200,12 @@ function assemble(sqlite: Database.Database, postRows: any[]): any[] {
       // it and the export sidecar has to carry it.
       imageIndex: r.imageIndex,
       imageCount: r.imageCount,
+      // #202: which fields came from the page rather than the platform API.
+      // Read for the same reason imageIndex is — the export sidecar has to
+      // carry it, or a ZIP round trip would quietly relabel a page-read value
+      // as one the API vouched for. Same JSON string[] storage as hashtags, so
+      // the same all-or-nothing parse.
+      domFilled: parseHashtags(r.domFilled),
     };
   });
 }

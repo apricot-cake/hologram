@@ -8,8 +8,9 @@
 import { protocolSkewOf, readHostResponse, responseId } from '../../native-host/protocol.mts';
 import type { CaptureMetadata, HostRequest, ProtocolSkew, SavedResults, TrashedEntry, TrashedResults } from '../../native-host/protocol.mts';
 import { CROP_TIMEOUT_MS, NATIVE_HOST_TIMEOUT_MS, SAVED_QUERY_TIMEOUT_MS, withDeadline } from './deadline.ts';
+import { mergeDomMeta } from './extractor/dom-meta.ts';
 import { extractorFor, fetchPostMetadata, getHostname, highResUrlOf, isAllowedSender, mediaKeyOf } from './extractor/index.ts';
-import type { PostRecord } from './extractor/types.ts';
+import type { DomMeta, PostRecord } from './extractor/types.ts';
 import type { BridgeAck, CaptureAndSendResponse, CheckSavedResponse, ContentToBackgroundMessage, CropImageMessage, CropImageResponse, DumpLogsResponse, LogCaptureResponse, NotifyMessage, SavedEntry, SavedUpdateMessage, SaveProgressMessage, SaveResponse } from './messages.ts';
 import { classifySaveFailure } from './native-error.ts';
 import { createSaveGate, saveRequestKey } from './host-budget.ts';
@@ -288,7 +289,7 @@ export function startBackground(): void {
     const tab = sender.tab;
     // captureAndSend never carries a capturedVia (only the intake routes —
     // savePost / imageDragged — do): captureAndSave keeps its default (null).
-    const admitted = admitSave(message, tabId, senderHost, [], () => captureAndSave(tab, message.rect, message.postUrl, message.platform, null, message.replaces || null, message.saveId));
+    const admitted = admitSave(message, tabId, senderHost, [], () => captureAndSave(tab, message.rect, message.postUrl, message.platform, null, message.replaces || null, message.saveId, message.domMeta || null));
     if (!admitted) {
       chrome.tabs.sendMessage(tabId, { type: 'notify', success: false, errorKind: 'busy' } satisfies NotifyMessage).catch(() => {});
       sendResponse({ ok: false, errorKind: 'busy', error: BUSY_ERROR } satisfies CaptureAndSendResponse);
@@ -310,7 +311,7 @@ export function startBackground(): void {
     return true;
   });
 
-  async function captureAndSave(tab, rect, postUrl, sendPlatform, capturedVia: string | null = null, replaces: string | null = null, saveId: string | null = null) {
+  async function captureAndSave(tab, rect, postUrl, sendPlatform, capturedVia: string | null = null, replaces: string | null = null, saveId: string | null = null, domMeta: DomMeta | null = null) {
     const captureId = generateCaptureId();
     const capturedAt = new Date().toISOString();
     const trace = beginSave('save', { saveId, captureId, platform: sendPlatform, url: postUrl, tabId: tab.id ?? null });
@@ -356,6 +357,16 @@ export function startBackground(): void {
     }
     trace.passed('metadata');
 
+    // The SECOND source (#202), and the only place the two are ever combined:
+    // whatever the page showed fills the fields the API left null, and nothing
+    // else. Runs before metaFetched below, but does not change its answer —
+    // metaOk keeps meaning "the platform API told us about this post", so a
+    // record assembled off the screen stays a partial save. What changes is the
+    // record: an age-restricted post that used to reach the host carrying
+    // nothing now carries its text and its author, which is the difference
+    // between a save the host refuses (#492) and a post in the library.
+    const domFilled = mergeDomMeta(meta, domMeta);
+
     const record = buildRecord(meta, {
       captureId,
       capturedAt,
@@ -364,7 +375,7 @@ export function startBackground(): void {
       replaces,
       // The screenshot is the primary image; media[] (API original URLs) is what the
       // bridge downloads, then overwrites with the saved filenames.
-      extra: { image: `${captureId}.jpg`, mediaType: meta.mediaType, media: meta.media || [], capturedVia },
+      extra: { image: `${captureId}.jpg`, mediaType: meta.mediaType, media: meta.media || [], capturedVia, domFilled },
     });
 
     const metaOk = metaFetched(meta);
@@ -379,7 +390,7 @@ export function startBackground(): void {
     // grouped = prior saves of this post this session → the banner says the save
     // merged with them (the app folds same-URL records into one card).
     const grouped = await bumpRecentSave(record.url);
-    chrome.tabs.sendMessage(tab.id, { type: 'notify', success: true, metaOk, metaReason: meta.metaError || null, grouped, hostSkew: skewNote() } satisfies NotifyMessage).catch(() => {});
+    chrome.tabs.sendMessage(tab.id, { type: 'notify', success: true, metaOk, metaReason: meta.metaError || null, grouped, hostSkew: skewNote(), domFilled } satisfies NotifyMessage).catch(() => {});
   }
 
   // --- Protocol version handshake (#205) ----------------------------------------
