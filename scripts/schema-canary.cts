@@ -267,13 +267,15 @@ async function runCanary(platforms: string[], dryRun: boolean): Promise<number> 
     for (const sample of list) {
       sampleCount++;
       const pick = await pickCandidate(platform, sample, snap.sources[sample.label]);
-      for (const s of pick.skipped) stale.push(`${platform}/${sample.label}: ${s.reason} — ${s.url}`);
       if (!pick.obs) {
-        // Every candidate is gone. Only now does a human have to find a new one.
+        // Every candidate is gone. Only now does a human have to find a new one,
+        // and the skipped ones belong to this line rather than to the "still
+        // watching" list below — nothing is still watching.
         outages.push(`${platform}/${sample.label}: 候補が全滅（${pick.skipped.length}本）— ${pick.skipped.map((s) => s.url).join(' / ')}`);
         console.log(`  × ${sample.label}: 候補が全滅（${pick.skipped.length}本）— samples.json に候補を足す`);
         continue;
       }
+      for (const s of pick.skipped) stale.push(`${platform}/${sample.label}: ${s.reason} — ${s.url}`);
       responses += Object.keys(pick.obs.shapes).length;
       const switched = rebaseOnSourceChange(snap, sample.label, pick.url);
       const hadBaseline = !!snap.shapes[sample.label];

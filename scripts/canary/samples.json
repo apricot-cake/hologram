@@ -16,6 +16,8 @@
     "  観測対象そのものは公開のものが実在する（2006年の削除済み投稿は tombstone.text を持つ応答を返し続ける）。",
     "  カナリア側に『tombstone が期待値』の概念を足す別 Issue で扱う。",
     "Misskey の動画: misskey.io の @ai（1200件超を走査）に現存せず未登録。",
+    "Bluesky の record.tags[]（tag ファセットとは別のタグ欄・#177 はこことも合流する）: bsky.app と",
+    "  atproto.com の公開投稿200件に1件も無く未登録。公式クライアントから設定できない欄のため。",
     "Mastodon の投票は #464 で登録済み（@Gargron）＝この穴は埋まった。"
   ],
   "platforms": {
