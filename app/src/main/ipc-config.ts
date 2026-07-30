@@ -7,6 +7,8 @@
 // allow-lists live here (used only by these handlers).
 import { ipcMain, app } from 'electron';
 import fs from 'node:fs';
+import type { IpcContext } from './ipc-context.ts';
+import type { AppInfo, AppPrefs, ConfigSummary, ExtensionIdResult, OkResult, TabsState } from './ipc-payloads.ts';
 
 // --- Preferences (language / viewMode / skipDeleteConfirm / sortBy) ---
 const PREF_KEYS = ['language', 'viewMode', 'skipDeleteConfirm', 'sortBy', 'imageTileSize', 'cardSize', 'listThumb', 'theme', 'tileOverlay', 'browseMode', 'posterViewMode', 'posterTileSize', 'posterCardSize', 'sidebarOpen', 'sidebarWidth', 'inspectorWidth'];
@@ -17,15 +19,15 @@ const VALID_SORTS = ['date-desc', 'date-asc', 'likes-desc', 'reposts-desc', 'rep
 // else is coerced to '' — same handling as an empty id (see install.js).
 const VALID_EXT_ID = /^[a-p]{32}$/;
 
-function register(ctx) {
+function register(ctx: IpcContext) {
   const { readConfig, writeConfig, getSaveFolder, getDbWriter, installer, getWin } = ctx;
 
-  ipcMain.handle('get-config', () => {
+  ipcMain.handle('get-config', (): ConfigSummary => {
     const cfg = readConfig();
     return { saveFolder: getSaveFolder(), extensionId: cfg.extensionId || null };
   });
 
-  ipcMain.handle('set-extension-id', (_event, id) => {
+  ipcMain.handle('set-extension-id', (_event, id): ExtensionIdResult => {
     const cfg = readConfig();
     const trimmed = typeof id === 'string' ? id.trim() : '';
     cfg.extensionId = VALID_EXT_ID.test(trimmed) ? trimmed : '';
@@ -46,7 +48,7 @@ function register(ctx) {
   // Window controls. The min/max/close buttons are drawn by the app (renderer DOM), not by
   // the OS overlay, so the window commands they used to carry natively come over IPC now.
   // See the AppShell WindowControls component for why they are app-drawn.
-  ipcMain.handle('window-control', (_e, action) => {
+  ipcMain.handle('window-control', (_e, action): boolean | null => {
     const win = getWin();
     if (!win) return null;
     if (action === 'minimize') win.minimize();
@@ -65,10 +67,10 @@ function register(ctx) {
     return !!win && win.isMaximized();
   });
 
-  ipcMain.handle('get-tabs', () => {
+  ipcMain.handle('get-tabs', (): TabsState | null => {
     return getSaveFolder() ? getDbWriter().getTabs() : null;
   });
-  ipcMain.handle('set-tabs', (_e, data) => {
+  ipcMain.handle('set-tabs', (_e, data): OkResult => {
     if (!getSaveFolder()) return { ok: false };
     try {
       getDbWriter().setTabs(data);
@@ -80,14 +82,17 @@ function register(ctx) {
 
   // Build/version info for the settings "About" panel. app.getVersion() reads the
   // loaded app's package.json (1.1.0), so it is correct in dev and packaged alike.
-  ipcMain.handle('app-info', () => ({
-    version: app.getVersion(),
-    electron: process.versions.electron,
-    chromium: process.versions.chrome,
-    node: process.versions.node,
-  }));
+  ipcMain.handle(
+    'app-info',
+    (): AppInfo => ({
+      version: app.getVersion(),
+      electron: process.versions.electron,
+      chromium: process.versions.chrome,
+      node: process.versions.node,
+    }),
+  );
 
-  ipcMain.handle('get-prefs', () => {
+  ipcMain.handle('get-prefs', (): AppPrefs => {
     const cfg = readConfig();
     return {
       language: cfg.language || 'auto',
@@ -109,7 +114,7 @@ function register(ctx) {
     };
   });
 
-  ipcMain.handle('set-pref', (_e, key, value) => {
+  ipcMain.handle('set-pref', (_e, key, value): OkResult => {
     if (!PREF_KEYS.includes(key)) return { ok: false };
     const cfg = readConfig();
     cfg[key] = value;

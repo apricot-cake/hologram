@@ -16,6 +16,7 @@ import { getBackup, setBackup as setBackupConfig, pickBackupDir, onBackupDone, g
 import { onExportProgress, onSaveFolderProgress, pickSaveFolder, moveSaveFolder, exportComplete, importComplete, importLegacyZip, importImages } from '../../services/posts.ts';
 import { open as confirmOpen } from '../../services/confirm.ts';
 import { loadPosts } from '../../services/post-grid-builder.ts';
+import type { BackupConfig, BackupRunResult, IntegrityStatus, SaveFolderProgress } from '../../../../main/ipc-payloads.ts';
 
 // Missing-bridge calls throw and land in the callers' try/catch, same as the
 // untyped original — the {} fallback only exists for the bare dev server.
@@ -24,46 +25,17 @@ const reloadPosts = () => {
   if (loadPosts) loadPosts();
 };
 
-// save-folder-progress IPC payload (main.js move pipeline).
-interface SaveFolderProgress {
-  phase: 'copy' | 'switch' | 'cleanup' | 'done' | 'straggler' | 'error';
-  done?: number;
-  total?: number;
-  percent?: number;
-  moved?: number;
-  leftover?: number;
-  error?: string;
-}
-// backup config + last-run result (get-backup / set-backup / backup-done IPC).
-interface BackupResult {
-  ok?: boolean;
-  error?: string;
-  pruneSkipped?: string;
-  at?: string;
-  written?: number;
-  fileCount?: number;
-}
-interface BackupState {
-  dir?: string | null;
-  interval?: boolean;
-  intervalValue?: number;
-  intervalUnit?: string;
-  lastResult?: BackupResult | null;
-}
-// get-integrity-status / integrity-check-done IPC payload (#301).
-interface IntegrityStatus {
-  lastCheckAt?: string | null;
-  dbOk?: boolean | null;
-  orphanCount?: number;
-  missingCount?: number;
-}
+// The save-folder-progress / get-backup / backup-done / get-integrity-status
+// payloads are the shared IPC contract (#228) — this component used to keep its
+// own hand-written copies of all four, which is exactly the drift that contract
+// exists to stop.
 
 // The preload's on* bridges attach a new ipcRenderer listener on every call with
 // no remover, and this component remounts on each modal open. So register the
 // underlying IPC listeners exactly ONCE and fan out to the live React subscriber
 // set — effects only add/remove themselves, never re-subscribe to IPC.
 const progressSubs = new Set<(p: SaveFolderProgress) => void>();
-const backupSubs = new Set<(r: BackupResult) => void>();
+const backupSubs = new Set<(r: BackupRunResult) => void>();
 const integritySubs = new Set<(s: IntegrityStatus) => void>();
 let ipcWired = false;
 function wireIpcOnce() {
@@ -75,7 +47,7 @@ function wireIpcOnce() {
     /* bare dev server: no preload bridge behind hologramPosts */
   }
   try {
-    onBackupDone((r: BackupResult) => backupSubs.forEach((cb) => cb(r)));
+    onBackupDone((r: BackupRunResult) => backupSubs.forEach((cb) => cb(r)));
   } catch {
     /* bare dev server: no preload bridge behind hologramBackup */
   }
@@ -130,7 +102,7 @@ export function Data() {
   const [progress, setProgress] = useState<{ pct: number; log: string[] } | null>(null); // while/after a move
 
   // --- backup ---
-  const [backup, setBackup] = useState<BackupState | null>(null);
+  const [backup, setBackup] = useState<BackupConfig | null>(null);
 
   // --- integrity (#301) ---
   const [integrity, setIntegrity] = useState<IntegrityStatus | null>(null);
@@ -208,6 +180,10 @@ export function Data() {
       // A destination that looks cloud-synced is a warning, not a rejection (#95) —
       // ask, then move if the user still wants it.
       if (res.confirm === 'cloud-sync') {
+        // Bound once: the callback below outlives any narrowing on res.dest.
+        // main always sends dest alongside confirm — the flat result shape
+        // (ipc-payloads.ts) is what leaves it optional.
+        const dest = res.dest as string;
         setProgress(null);
         confirmOpen({
           message: t('saveFolderCloudWarn', [res.provider]),
@@ -217,7 +193,7 @@ export function Data() {
           onOk: async () => {
             setMigrating(true);
             try {
-              applyMoveResult(await moveSaveFolder(res.dest));
+              applyMoveResult(await moveSaveFolder(dest));
             } catch {
               notify(t('saveFolderErrGeneric'));
             } finally {
@@ -277,17 +253,19 @@ export function Data() {
         else notify(t('imported', [imported]));
       };
       if (res && res.legacy && res.path) {
+        // Bound once: the callbacks below outlive the narrowing on res.path.
+        const zipPath = res.path;
         // #34: 取り込む投稿が既にライブラリにあるとき、コピー／置換／スキップを
         // 1回だけ聞く（1件ずつ聞くと数百回になるため、バッチ単位）。重複が無ければ
         // main 側が即座に取り込むので、この確認は出ない。
-        const first = await importLegacyZip(res.path);
+        const first = await importLegacyZip(zipPath);
         if (!first || first.error) {
           notify(t('importFailed'));
           return;
         }
         if (first.needsChoice) {
           const finish = async (mode: string) => {
-            const r = await importLegacyZip(res.path, mode);
+            const r = await importLegacyZip(zipPath, mode);
             done(r.imported, r.skipped);
           };
           confirmOpen({
@@ -312,7 +290,9 @@ export function Data() {
         notify(t('importFailed'));
         return;
       }
-      done(res.imported, res.skipped);
+      // A complete import that answered ok always carries both counters; the
+      // fallbacks are only what the flat result shape (ipc-payloads.ts) forces.
+      done(res.imported ?? 0, res.skipped ?? 0);
     } catch {
       notify(t('importFailed'));
     }
@@ -335,7 +315,7 @@ export function Data() {
   // (onBackupStart only drove the rail "syncing" glyph, which stays in viewer.js.)
   useEffect(() => {
     wireIpcOnce();
-    const onDone = (r: BackupResult) => {
+    const onDone = (r: BackupRunResult) => {
       if (!r) return;
       setBackup((b) => (b ? Object.assign({}, b, { lastResult: r }) : b));
     };
@@ -376,7 +356,7 @@ export function Data() {
     }
   };
 
-  const saveBackup = async (patch: Partial<BackupState>) => {
+  const saveBackup = async (patch: Partial<BackupConfig>) => {
     try {
       const res = await setBackupConfig(patch);
       if (res && res.ok === false && res.error === 'overlap') notify(t('backupOverlap'));

@@ -6,8 +6,11 @@
 import { get as themeGet, set as themeSet } from '../services/theme-api.ts';
 import { hologramIpc } from '../services/ipc.ts';
 import { applyTileOverlay } from '../services/grid-density-builder.ts';
+import type { AppPrefs } from '../../../main/ipc-payloads.ts';
 
-export const getPrefs = () => (hologramIpc.getPrefs ? hologramIpc.getPrefs() : Promise.resolve({}));
+// Partial, not AppPrefs: the bare-dev-server fallback resolves to {}, and every
+// caller here already treats a missing member as "not set".
+export const getPrefs = (): Promise<Partial<AppPrefs>> => (hologramIpc.getPrefs ? hologramIpc.getPrefs() : Promise.resolve({}));
 export const setPref = (key: string, value: unknown) => (hologramIpc.setPref ? hologramIpc.setPref(key, value) : Promise.resolve());
 export const getAppInfo = () => (hologramIpc.getAppInfo ? hologramIpc.getAppInfo() : Promise.resolve(null));
 export const openExternal = (url: string) => hologramIpc.openExternal(url);

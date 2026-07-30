@@ -10,6 +10,7 @@
 // in through the hologramStore 'view'/'posterView' keys.
 import { sizeFor, sliderTrack, trackCols, thumbW } from './geometry.ts';
 import { get as storeGet, set as storeSet } from './store.ts';
+import type { AppPrefs } from '../../../main/ipc-payloads.ts';
 
 export interface GridDensityDeps {
   hologramIpc: { setPref(key: string, value: unknown): void };
@@ -482,16 +483,16 @@ export function makeGridDensity(deps: GridDensityDeps) {
   }
 
   // Load saved view modes + sizes (called from viewer.ts's hologramIpc.getPrefs().then).
-  function restorePrefs(prefs: { [k: string]: unknown }) {
-    if (['card', 'tile', 'list'].includes(prefs.viewMode as string)) {
-      currentView = prefs.viewMode as string;
+  function restorePrefs(prefs: AppPrefs) {
+    if (['card', 'tile', 'list'].includes(prefs.viewMode)) {
+      currentView = prefs.viewMode;
       // Push the restored view into the store so the display popover renders the right
       // button active. currentView is already set, so handleViewStoreChange no-ops
       // (idempotent guard) — no double render, no echo.
       storeSet('view', currentView);
     }
-    if (['card', 'tile', 'list'].includes(prefs.posterViewMode as string)) {
-      posterView = prefs.posterViewMode as string;
+    if (['card', 'tile', 'list'].includes(prefs.posterViewMode)) {
+      posterView = prefs.posterViewMode;
       storeSet('posterView', posterView);
     }
     // Poster-grid view sizes mirror into hologramStore (mirrors the post-side treatment below).
