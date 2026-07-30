@@ -33,6 +33,14 @@
 // coordinates has to wait for JavaScript on every scroll frame and visibly
 // trails smooth scrolling.
 //
+// A text-only post has no picture to be that child of (#575's "saved" mark,
+// #363's save button stays out of scope). Its unit becomes its own host —
+// already positioned, already sized — and the mark sits just under the
+// post's own avatar rather than the picture's corner: X's ⋯ menu already
+// owns the opposite corner and the action row shares the text column's left
+// edge, so that is the one strip neither platform draws anything into. Same
+// vocabulary, a different landmark to sit beside.
+//
 // Staying in the page's subtree used to mean staying in the page's CASCADE
 // too: a host rule as ordinary as `button { all: unset !important }` beats an
 // inline style, so the corner was one stylesheet away from having no box at
@@ -72,6 +80,12 @@ export async function startOverlay(): Promise<void> {
 
   interface Anchor {
     box: Element; // the media box whose corner this control sits on
+    // 'text' (#575): box is the whole POST unit, not a picture — there isn't
+    // one. The mark still needs somewhere to sit, so it borrows the unit's own
+    // box (already positioned, already sized) instead of a media element's.
+    // Everything that would try to treat this anchor as a save target (the
+    // button face, per-picture key matching) short-circuits on this instead.
+    kind: 'media' | 'text';
     el: HTMLElement | null; // <hologram-corner-control>, in the page's subtree
     root: ShadowRoot | HTMLElement | null; // what el's face is drawn inside
     control: HTMLDivElement | HTMLButtonElement | null; // the disc itself
@@ -443,6 +457,10 @@ export async function startOverlay(): Promise<void> {
     const saved = state.saved;
     if (!saved) return false;
     if (saved.whole) return true;
+    // A text anchor has no picture to compare a per-picture key against —
+    // `whole` above is the only way a text-only post's record can say "yes"
+    // (#365: it carries no media rows for readSavedPictures to key on).
+    if (anchor.kind === 'text') return false;
     const el = media ? postMediaIn(anchor.box) : null;
     const keys = el && media ? mediaKeysOf(el, media.platform) : [];
     if (keys.some((key) => saved.keys.has(key))) return true;
@@ -769,7 +787,13 @@ export async function startOverlay(): Promise<void> {
   // previews resolving), and the same unit element gets recycled for another
   // post entirely.
   function syncAnchors(unit: Element, state: UnitState) {
-    const boxes = site.mediaIn(unit);
+    const mediaBoxes = site.mediaIn(unit);
+    // A text-only post (#575) has no picture to key off, so the unit itself
+    // becomes the one synthetic anchor — but only when the site can point to
+    // an avatar to place it near; otherwise it stays unmarked, the same as
+    // before this existed.
+    const textAnchor = mediaBoxes.length ? null : (site.textAnchorIn?.(unit) ?? null);
+    const boxes: Element[] = mediaBoxes.length ? mediaBoxes : textAnchor ? [unit] : [];
     const live = new Set(boxes);
     for (const [box, anchor] of state.anchors) {
       if (live.has(box) && box.isConnected) continue;
@@ -780,7 +804,8 @@ export async function startOverlay(): Promise<void> {
     }
     for (const box of boxes) {
       if (state.anchors.has(box)) continue;
-      const anchor: Anchor = { box, el: null, root: null, control: null, host: null, hostInlinePosition: null, hostInlinePriority: '', face: null, phase: 'idle', timer: null };
+      const kind: Anchor['kind'] = mediaBoxes.length ? 'media' : 'text';
+      const anchor: Anchor = { box, kind, el: null, root: null, control: null, host: null, hostInlinePosition: null, hostInlinePriority: '', face: null, phase: 'idle', timer: null };
       state.anchors.set(box, anchor);
       anchorOf.set(box, { unit, anchor });
     }
@@ -834,7 +859,11 @@ export async function startOverlay(): Promise<void> {
   }
 
   function mountControl(anchor: Anchor, el: HTMLElement): boolean {
-    const host = controlHost(anchor.box);
+    // A text anchor's box IS the post unit (#575): already positioned,
+    // already the right size, nothing to walk up to find. controlHost()'s
+    // static/absolute walk is for picking a media box's containing block,
+    // which does not apply here.
+    const host = anchor.kind === 'text' ? (anchor.box as HTMLElement) : controlHost(anchor.box);
     if (!host) return false;
     if (anchor.host !== host) {
       restoreControlHost(anchor);
@@ -854,6 +883,10 @@ export async function startOverlay(): Promise<void> {
       el.style.setProperty('left', `${left}px`, 'important');
       el.style.setProperty('top', `${top}px`, 'important');
     };
+    if (anchor.kind === 'text') {
+      positionTextControl(anchor, host || (anchor.box as HTMLElement), place);
+      return;
+    }
     if (!host || host === anchor.box) {
       place(CONTROL_INSET, CONTROL_INSET);
       return;
@@ -861,6 +894,26 @@ export async function startOverlay(): Promise<void> {
     const hostRect = host.getBoundingClientRect();
     const boxRect = anchor.box.getBoundingClientRect();
     place(boxRect.left - hostRect.left + CONTROL_INSET, boxRect.top - hostRect.top + CONTROL_INSET);
+  }
+
+  // A text-only post's corner (#575): the same top-left vocabulary a picture
+  // gets, moved down just far enough to clear the post's own avatar — X's ⋯
+  // menu sits in the opposite corner and the action row shares the text
+  // column's left edge, so the strip directly under the avatar is the one
+  // area no platform-drawn element already claims. Left-aligned with the
+  // avatar rather than the unit's own inset so the mark reads as tied to the
+  // same landmark a picture's mark would sit beside. Clamped to the unit's own
+  // height so a short post never pushes the control past its bottom edge —
+  // if that leaves no room at all, it lands snug under the avatar instead of
+  // overflowing (§positionControl's caller only ever sees a placed control,
+  // never a broken one).
+  function positionTextControl(anchor: Anchor, host: HTMLElement, place: (left: number, top: number) => void): void {
+    const hostRect = host.getBoundingClientRect();
+    const avatar = site.textAnchorIn?.(anchor.box)?.getBoundingClientRect() ?? null;
+    const left = avatar ? avatar.left - hostRect.left : CONTROL_INSET;
+    const desiredTop = avatar ? avatar.bottom - hostRect.top + CONTROL_INSET : CONTROL_INSET;
+    const maxTop = hostRect.height - CONTROL_SIZE - CONTROL_INSET;
+    place(left, Math.max(CONTROL_INSET, Math.min(desiredTop, maxTop)));
   }
 
   function restoreControlHost(anchor: Anchor): void {
@@ -877,6 +930,9 @@ export async function startOverlay(): Promise<void> {
   // per-platform rule), a resolvable post, and a picture big enough to be the
   // point of the post — all three, or no button.
   function savable(anchor: Anchor, rect: DOMRect): boolean {
+    // The save button stays out of scope for a text-only post (#575 covers
+    // the mark only — #122's right-click menu is the save route there).
+    if (anchor.kind === 'text') return false;
     if (!media) return false;
     if (rect.width < MIN_SAVE_PX || rect.height < MIN_SAVE_PX) return false;
     const el = postMediaIn(anchor.box);

@@ -391,6 +391,10 @@ const bluesky: Extractor = {
   overlay: {
     unitSelector: POST_CONTAINER,
     mediaIn: (unit) => [...unit.querySelectorAll('img[src*="/img/feed_thumbnail/"], img[src*="/img/feed_fullsize/"], video')],
+    // The author avatar (#575) — same CDN-path family the isPostMedia check
+    // above rejects, which is exactly why it never gets mistaken for a save
+    // target once anchored.
+    textAnchorIn: (unit) => unit.querySelector('img[src*="/img/avatar"]'),
   },
 
   residentMatches: ['https://bsky.app/*'],

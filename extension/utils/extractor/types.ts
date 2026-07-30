@@ -172,6 +172,13 @@ interface OverlaySite {
   // about the POST, but the save button acts on ONE picture, so the overlay
   // tracks each box rather than only the first.
   mediaIn(unit: Element): Element[];
+  // Where to anchor the "saved" mark on a post mediaIn found no picture on
+  // (#575) — the post's own author avatar, the one element every post shape
+  // carries regardless of media. Only consulted when mediaIn returns nothing;
+  // null (or no implementation) leaves the post unmarked, same as before this
+  // existed. Never a save target: a text-only post gets no save button, only
+  // the answer to "is this already in the library".
+  textAnchorIn?(unit: Element): Element | null;
 }
 
 // --- The extractor -----------------------------------------------------------
