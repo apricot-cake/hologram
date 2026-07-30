@@ -11,8 +11,8 @@
 // scan gone, the measurement belongs to the moment a record is written, which is
 // also the only moment the numbers can be wrong for a *new* reason (the file just
 // landed next to it). Every DB producer that has the save folder in hand calls
-// fillCardDims() before writePost(): the inbox consumer, import-posts /
-// import-images, the ZIP importer, orphan recovery, and the legacy migration.
+// fillCardDims() before writePost(): the inbox consumer, the legacy ZIP import /
+// import-images, the complete-ZIP importer, orphan recovery, and the legacy migration.
 //
 // Kept Electron-free (fs/path only) so it unit-tests in plain node.
 

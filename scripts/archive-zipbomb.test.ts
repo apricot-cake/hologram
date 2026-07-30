@@ -1,4 +1,5 @@
-// app/src/main/lib-archive.ts#importCompleteZipToDb の zip 爆弾／無制限展開の回帰テスト。
+// app/src/main/lib-archive.ts の取り込み2経路（完全形式 importCompleteZipToDb・旧形式
+// readLegacyZipPosts）の zip 爆弾／無制限展開の回帰テスト。
 //   (a) 普通の完全書き出し ZIP（capture + folders.json）は取り込める
 //   (b) 展開後サイズの申告合計が上限を超える書庫は拒否する
 //   (c) エントリ数の申告が多すぎる書庫は拒否する
@@ -8,6 +9,8 @@
 //   (f) 整理用 JSON（folders.json 等）専用の上限（#382）: 申告サイズが専用上限を超える
 //       ものは展開前に拒否し、上限内なら従来どおりマージできる
 //   (g) 整理用 JSON 専用上限は、実際の出力バイト数でも打ち切る（申告値の偽装への防御）
+//   (i) 旧形式（metadata.json + images/）の入口も同じ申告ガードを通り、さらに
+//       メモリ展開専用の上限（#322）で拒否する
 // どの拒否でも、悪意あるペイロードや .tmp-import をディスクに残してはいけない。
 //
 // 実際の上限は GiB 級で、本物の圧縮データから作るのは非現実的。そこで (b)-(d),(f) は
@@ -24,7 +27,7 @@ import path from 'node:path';
 import { Readable } from 'node:stream';
 import JSZip from 'jszip';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
-import { MAX_ZIP_ENTRIES, MAX_ZIP_ENTRY_BYTES, MAX_ZIP_ORG_BYTES, MAX_ZIP_TOTAL_BYTES, ZipLimitError, importCompleteZipToDb, readStreamCapped, writeStreamCapped } from '../app/src/main/lib-archive';
+import { MAX_LEGACY_ENTRY_BYTES, MAX_LEGACY_TOTAL_BYTES, MAX_ZIP_ENTRIES, MAX_ZIP_ENTRY_BYTES, MAX_ZIP_ORG_BYTES, MAX_ZIP_TOTAL_BYTES, ZipLimitError, importCompleteZipToDb, readLegacyZipPosts, readStreamCapped, writeStreamCapped } from '../app/src/main/lib-archive';
 import { openDatabase } from '../app/src/main/lib-db';
 import { createDbWriter } from '../app/src/main/lib-db-write';
 
@@ -302,5 +305,81 @@ describe('(h) 過少申告した capture は、書き出し中に打ち切られ
     expect(fs.existsSync(path.join(dest, 'liar.bin'))).toBe(false);
     expect(fs.readdirSync(dest).filter((n) => n.includes('.tmp-import'))).toEqual([]);
     expect(res.skipped).toBeGreaterThan(0);
+  });
+});
+
+// 旧形式（pre-#300 の metadata.json + images/）は #322 まで**申告ガードを1つも通らない**
+// 別経路だった＝レンダラーが JSZip で自分で開き、参照された画像を base64 でメモリへ
+// 全展開していた。main の readLegacyZipPosts へ移した今は、完全形式と同じ申告タリー
+// （件数・単体・合計）に加えて、メモリ展開専用の上限2本を通る。
+const legacyImages = (n: number) => Array.from({ length: n }, (_, i) => `images/p${i}.jpg`);
+async function buildLegacyZipBytes(n: number, extra: Record<string, string> = {}) {
+  const files: Record<string, string> = Object.assign({}, extra);
+  files['metadata.json'] = JSON.stringify(legacyImages(n).map((imageFile, i) => ({ imageFile, eagleName: `post ${i}`, capturedAt: '2026-01-01T00:00:00.000Z' })));
+  for (const [i, name] of legacyImages(n).entries()) files[name] = `JPEGDATA${i}`;
+  return buildZipBytes(files);
+}
+
+describe('(i) 旧形式の入口（#322）', () => {
+  test('正常な旧形式は data URL つきのレコードとして読める', async () => {
+    const posts = await readLegacyZipPosts(zipFileOf(await buildLegacyZipBytes(2)));
+
+    expect(posts?.length).toBe(2);
+    expect(posts?.[0].eagleName).toBe('post 0');
+    expect(Buffer.from(posts?.[0].image.split(',')[1], 'base64').toString('utf8')).toBe('JPEGDATA0');
+  });
+
+  test('metadata.json が無い書庫は null（旧形式ですらない）', async () => {
+    const zipPath = zipFileOf(await buildZipBytes({ 'library/cap1.jpg': 'JPEGDATA1' }));
+
+    expect(await readLegacyZipPosts(zipPath)).toBeNull();
+  });
+
+  test('metadata.json が配列でなければ null', async () => {
+    const zipPath = zipFileOf(await buildZipBytes({ 'metadata.json': '{"posts":1}' }));
+
+    expect(await readLegacyZipPosts(zipPath)).toBeNull();
+  });
+
+  test('metadata.json が指す画像が書庫に無いレコードは落ちる', async () => {
+    const zipPath = zipFileOf(await buildZipBytes({ 'metadata.json': JSON.stringify([{ imageFile: 'images/gone.jpg' }, { imageFile: 'images/here.jpg' }]), 'images/here.jpg': 'JPEGDATA' }));
+
+    expect((await readLegacyZipPosts(zipPath))?.length).toBe(1);
+  });
+
+  test('共有の件数ガードが効く（申告が多すぎる書庫）', async () => {
+    const zipPath = zipFileOf(craftArchiveDeclaring(MAX_ZIP_ENTRIES + 5));
+
+    await expect(readLegacyZipPosts(zipPath)).rejects.toThrow(ZipLimitError);
+  });
+
+  test('共有の単体ガードが効く（1エントリの申告が 1 GiB 超え）', async () => {
+    const zipPath = zipFileOf(forgeDeclaredSizes(await buildLegacyZipBytes(2), (name) => (name === 'images/p0.jpg' ? MAX_ZIP_ENTRY_BYTES + 1 : null)));
+
+    await expect(readLegacyZipPosts(zipPath)).rejects.toThrow(ZipLimitError);
+  });
+
+  test('旧形式専用の単体上限（64 MiB）で拒否する', async () => {
+    const oversize = MAX_LEGACY_ENTRY_BYTES + 1;
+    expect(oversize).toBeLessThan(MAX_ZIP_ENTRY_BYTES); // 共有ガードでなく専用ガードが発火する位置
+    const zipPath = zipFileOf(forgeDeclaredSizes(await buildLegacyZipBytes(2), (name) => (name === 'images/p1.jpg' ? oversize : null)));
+
+    await expect(readLegacyZipPosts(zipPath)).rejects.toThrow(ZipLimitError);
+  });
+
+  test('metadata.json 自身が旧形式専用の単体上限を超えていれば、1バイトも読まずに拒否する', async () => {
+    const zipPath = zipFileOf(forgeDeclaredSizes(await buildLegacyZipBytes(2), (name) => (name === 'metadata.json' ? MAX_LEGACY_ENTRY_BYTES + 1 : null)));
+
+    await expect(readLegacyZipPosts(zipPath)).rejects.toThrow(ZipLimitError);
+  });
+
+  test('参照画像の申告合計が展開上限（1 GiB）を超えれば拒否する', async () => {
+    const each = 60 * 1024 * 1024; // 単体上限（64 MiB）の下＝合計ガードだけが発火しうる
+    const n = 20;
+    expect(n * each).toBeGreaterThan(MAX_LEGACY_TOTAL_BYTES);
+    expect(n * each).toBeLessThan(MAX_ZIP_TOTAL_BYTES); // 共有の合計ガードは発火しない
+    const zipPath = zipFileOf(forgeDeclaredSizes(await buildLegacyZipBytes(n), (name) => (name === 'metadata.json' ? null : each)));
+
+    await expect(readLegacyZipPosts(zipPath)).rejects.toThrow(ZipLimitError);
   });
 });

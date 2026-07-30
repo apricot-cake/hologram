@@ -49,7 +49,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const nativeHostDir = app.isPackaged ? path.join(process.resourcesPath, 'native-host') : path.join(__dirname, '..', '..', '..', 'native-host');
 const { configDir, defaultLibraryDir } = require(path.join(nativeHostDir, 'paths.cts'));
 const installer = require(path.join(nativeHostDir, 'install.cts'));
-// Best-effort avatar download for import-posts (same SSRF guard/caps as capture,
+// Best-effort avatar download for the legacy ZIP import (same SSRF guard/caps as capture,
 // same shared avatars/ store — downloadAvatar dedupes by avatar URL).
 //
 // media-download.cts requires the npm package undici. In dev, requiring the raw
@@ -771,7 +771,7 @@ async function purgeOldTrash() {
 // delete-from-trash / update-tags) were extracted to ./ipc-trash.js (registered via
 // ipcTrash.register below).
 
-// Transfer handlers (import-posts / clear-all / export-save / export-complete /
+// Transfer handlers (import-legacy-zip / clear-all / export-save / export-complete /
 // import-complete) were extracted to ./ipc-transfer.js (registered via ipcTransfer.register
 // below); exportStamp moved there too.
 
