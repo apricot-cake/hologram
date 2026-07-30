@@ -76,5 +76,7 @@ const onBackgroundClick = () => selectionClickBackground();
 export function GridHost({ model }: { model: HologramGridModel }) {
   // nav: this is the grid selection moves through, so it publishes its column count
   // and scroll geometry to services/grid-nav.ts (the poster grid has no selection).
-  return <VirtualGridHost model={model} cell={Cell} nav marquee={marqueeSink} onBackgroundClick={onBackgroundClick} />;
+  // anchor: and it is the grid Ctrl+wheel zoom holds a position in (#282) — the
+  // poster grid's zoom path commits per tick and never anchors.
+  return <VirtualGridHost model={model} cell={Cell} nav anchor marquee={marqueeSink} onBackgroundClick={onBackgroundClick} />;
 }

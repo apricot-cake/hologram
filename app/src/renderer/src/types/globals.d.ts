@@ -92,6 +92,11 @@ declare global {
     rowGutter?: number;
     itemHeightEstimate?: number;
     square?: boolean;
+    // #282: the item Ctrl+wheel zoom wants held still, and where on screen to hold
+    // it. Rides on the model rather than hologramStore for the same reason the live
+    // column width does — it is a side channel between one gesture and one grid, and
+    // the grid island (not the zoom) is what turns it back into a scroll position.
+    zoomAnchor?: import('../services/zoom-anchor').ZoomAnchor | null;
     labels?: any;
     onAspect?(cap: string, aspectRatio: string): void;
     paint: number;
