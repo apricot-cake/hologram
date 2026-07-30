@@ -5,7 +5,7 @@
 // follower-only works).
 
 import { anySrc, findAncestorContainerLink, hostnameMatches, mediaSrcs, normalizeRect, parseMediaUrlPath, prepareScopedCaptureState } from './dom.ts';
-import { emptyRecord, htmlToText, readJsonKeepingRaw, toIso } from './record.ts';
+import { emptyRecord, htmlToText, normalizeHashtags, readJsonKeepingRaw, toIso } from './record.ts';
 import type { Extractor, MediaIdentity, MediaItem, PostMediaElement, PostRect, PostRecord } from './types.ts';
 
 const HOSTS = ['www.pixiv.net', 'pixiv.net'];
@@ -174,7 +174,9 @@ async function fetchPixivIllust(parsed, url): Promise<PostRecord> {
     rec.views = il.viewCount ?? null;
     rec.replies = il.commentCount ?? null;
     rec.date = toIso(il.createDate || il.uploadDate);
-    rec.hashtags = (il.tags && Array.isArray(il.tags.tags) ? il.tags.tags : []).map((t) => t.tag).filter(Boolean);
+    // pixiv's tags.tags[].tag is the bare tag already; the shared rule (#177)
+    // only has to dedupe it and is what keeps every platform's spelling equal.
+    rec.hashtags = normalizeHashtags((il.tags && Array.isArray(il.tags.tags) ? il.tags.tags : []).map((t) => t && t.tag));
     // うごイラ is a silent looping animation — to the person browsing their
     // library that is the same kind of thing as an X animated_gif or a Mastodon
     // gifv, which already label as 'gif'. mediaType is the DISPLAY label (what

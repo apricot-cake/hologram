@@ -10,9 +10,15 @@
 // これは ShadowRoot（extension/utils/ui-root.ts）が在る理由そのもので、境界が
 // 外れても普通のテストは全部緑のまま通る＝ここで押さえないと静かに壊れる。
 //
-// 3つ目に、ホストが `style-src 'none'` を返す場合も見る。#270 の実測どおり、
+// 3つ目に、ホストが inline のスタイルを禁じる CSP を返す場合も見る。#270 の実測どおり、
 // 構築済みシート（adoptedStyleSheets）は CSP の検査対象ではないので、トークンは
 // 解決されなければならない。x.com が実際に出しているのがこの種のポリシー。
+//
+// ⚠️敵対 CSS は**外部シートで配る**（`<style>` ではなく `<link>`）。`style-src 'none'` は
+// ページ自身の `<style>` と `style=` 属性も等しく殺すので、`<style>` に敵対規則を書くと
+// **その規則ごと効かなくなり、1と2が空振りのまま緑になる**（2026-07-30 実測。同じ理由で
+// フィクスチャ側の寸法もインライン属性では書けない）。`style-src 'self'` なら同一オリジンの
+// 外部シートだけが通る＝敵対 CSS は実際に当たり、inline を当てにできない状況は保たれる。
 //
 // 使い捨ての Chromium と使い捨ての拡張ステージング＝ユーザーのプロファイルにも
 // 実ライブラリにも触らない（e2e-overlay-visual と同じ台）。
@@ -21,6 +27,7 @@ const { launchOverlayBrowser, wait } = require('./lib-overlay-e2e.cts');
 
 const POST_ID = '1999999999999999996';
 const POST_URL = `https://x.com/hologram/status/${POST_ID}`;
+const CSS_URL = 'https://x.com/hostile.css';
 
 // ページ側の敵対的な CSS。拡張が使う要素・クラス名を名指しで潰しにいく。
 const HOSTILE = `
@@ -34,17 +41,26 @@ const HOSTILE = `
     border: 0 !important;
   }
   hologram-extension-ui { display: none !important; position: static !important; opacity: 0 !important; }
+  /* 写真の角のコントロール（#310）。固定レイヤーではなく投稿の部分木に居るので、
+     ページの CSS からは名指しできる位置にある＝ここを潰しにいく。 */
+  hologram-corner-control { display: none !important; position: static !important; width: auto !important; height: auto !important; }
   article, .media { display: block !important; }
+`;
+
+const PAGE_CSS = `
+  article { width: 640px; min-height: 360px; margin: 80px auto; padding: 32px; }
+  .media { margin-top: 24px; background: #888; }
+  ${HOSTILE}
+  /* 全消しの後にページが自分の写真枠を寸法づけ直す（特異度で上の * に勝つ）。
+     実サイトでも普通の形であり、これが無いと枠が 0 高さになって「小さすぎる枠」として
+     角のコントロールが最初から出ない＝下の検査が空振りする。 */
+  #capture-target .media { display: block !important; width: 480px !important; height: 220px !important; }
 `;
 
 const POST_HTML = `<!doctype html>
 <html lang="ja">
 <head><meta charset="utf-8"><title>Hologram hostile-CSS fixture</title>
-<style>
-  article { width: 640px; min-height: 360px; margin: 80px auto; padding: 32px; }
-  .media { height: 220px; margin-top: 24px; background: #888; }
-  ${HOSTILE}
-</style>
+<link rel="stylesheet" href="${CSS_URL}">
 </head>
 <body>
   <article id="capture-target" data-testid="tweet">
@@ -95,12 +111,16 @@ interface Measured {
         await route.fulfill({
           status: 200,
           contentType: 'text/html; charset=utf-8',
-          // style-src 'none' — the policy that kills an injected <style> even
-          // inside a shadow root (#270's measurement). adoptedStyleSheets and
-          // CSSOM are not CSP sinks, and those are what the extension uses.
-          headers: { 'content-security-policy': "style-src 'none'" },
+          // style-src 'self' — no 'unsafe-inline', so an injected <style> is
+          // dead even inside a shadow root (#270's measurement), while the
+          // page's OWN hostile sheet still loads because it is same-origin and
+          // external. adoptedStyleSheets and CSSOM are not CSP sinks, and those
+          // are what the extension uses.
+          headers: { 'content-security-policy': "style-src 'self'" },
           body: POST_HTML,
         });
+      } else if (route.request().url() === CSS_URL) {
+        await route.fulfill({ status: 200, contentType: 'text/css; charset=utf-8', body: PAGE_CSS });
       } else if (route.request().resourceType() === 'image') {
         // A REAL picture, because the drag below has to be a real one: Chromium
         // starts no drag from a broken image, so an aborted request would leave
@@ -111,6 +131,62 @@ interface Measured {
     });
     await page.goto(POST_URL, { waitUntil: 'domcontentloaded' });
     await page.locator('#capture-target').waitFor();
+
+    // === 写真の角のコントロール（#310）=====================================
+    // ドロップゾーンと違って固定レイヤーには居ない＝投稿の部分木に残したまま、各自の
+    // 小さな ShadowRoot で隔離している。だから見るものが2つある: ①ホスト要素の箱が
+    // ページの `!important` に勝って残っているか（ここだけはページから名指しできる）
+    // ②円そのものがページの `button { all: unset !important }` に触られていないか。
+    const media = await page.locator('.media').boundingBox();
+    await page.mouse.move(media.x + media.width / 2, media.y + media.height / 2);
+    await page.waitForSelector('[data-hologram-overlay][data-hologram-face="save"]', { timeout: 5000 });
+    const corner = await page.evaluate(() => {
+      const el = document.querySelector('[data-hologram-overlay]') as HTMLElement;
+      const disc = el?.shadowRoot?.firstElementChild as HTMLElement | undefined;
+      const box = document.querySelector('.media') as HTMLElement;
+      if (!el || !disc) return null;
+      const hostStyle = getComputedStyle(el);
+      const discStyle = getComputedStyle(disc);
+      const r = disc.getBoundingClientRect();
+      const boxRect = box.getBoundingClientRect();
+      return {
+        hostDisplay: hostStyle.display,
+        hostPosition: hostStyle.position,
+        tag: disc.tagName,
+        display: discStyle.display,
+        width: r.width,
+        height: r.height,
+        radius: discStyle.borderRadius,
+        background: discStyle.backgroundColor,
+        borderTopWidth: discStyle.borderTopWidth,
+        boxShadow: discStyle.boxShadow,
+        glyphs: disc.querySelectorAll('svg').length,
+        label: disc.getAttribute('aria-label'),
+        titled: el.hasAttribute('title') || disc.hasAttribute('title'),
+        // 角に居ること＝借りた containing block（ページ要素の position: relative）が
+        // ページの `position: static !important` に負けていないことの、唯一の観測点。
+        offsetLeft: r.left - boxRect.left,
+        offsetTop: r.top - boxRect.top,
+      };
+    });
+    const cornerFail = (why: string) => {
+      throw new Error(`HOSTILE_CSS_CORNER_FAIL: ${why} — ${JSON.stringify(corner)}`);
+    };
+    if (!corner) cornerFail('the corner control has no shadow root of its own');
+    if (corner.hostDisplay !== 'block') cornerFail(`the host element is display:${corner.hostDisplay}, wanted block`);
+    if (corner.hostPosition !== 'absolute') cornerFail(`the host element is position:${corner.hostPosition}, wanted absolute`);
+    if (corner.tag !== 'BUTTON') cornerFail(`the save face is a <${corner.tag}>, wanted BUTTON`);
+    if (corner.display !== 'flex') cornerFail(`the disc is display:${corner.display}, wanted flex`);
+    if (Math.abs(corner.width - 24) > 0.5 || Math.abs(corner.height - 24) > 0.5) cornerFail(`the disc is ${corner.width}x${corner.height}, wanted 24x24`);
+    if (corner.radius !== '50%') cornerFail(`the disc radius is ${corner.radius}, wanted 50%`);
+    if (corner.background === 'rgba(0, 0, 0, 0)' || corner.background === 'rgb(255, 0, 255)') cornerFail(`the disc fill is ${corner.background}`);
+    if (corner.borderTopWidth !== '1px') cornerFail(`the disc outline is ${corner.borderTopWidth}, wanted 1px`);
+    // 影は 24px 専用トークン（#310）＝カード用の 36px ぼかしを共有していない。
+    if (!/\b2px\b/.test(corner.boxShadow) || /3[0-9]px/.test(corner.boxShadow)) cornerFail(`the disc shadow is "${corner.boxShadow}", wanted the compact control shadow`);
+    if (corner.glyphs !== 1) cornerFail(`the disc holds ${corner.glyphs} glyphs, wanted 1`);
+    if (!corner.label) cornerFail('the pressable face has no accessible name');
+    if (corner.titled) cornerFail('the corner still carries a browser tooltip');
+    if (Math.abs(corner.offsetLeft - 6) > 1 || Math.abs(corner.offsetTop - 6) > 1) cornerFail(`the disc sits ${corner.offsetLeft},${corner.offsetTop} from the picture's corner, wanted 6,6`);
 
     // The DROP ZONE, not the Alt+S banner: activating capture needs activeTab,
     // which only an extension-level gesture (toolbar or command) can grant, and
@@ -185,6 +261,11 @@ interface Measured {
       throw new Error(`HOSTILE_CSS_FAIL: ${why} — ${JSON.stringify(m)}`);
     };
 
+    // 前提の自己検査＝敵対 CSS が実際に当たっていること。`.surface { background: #ff00ff }`
+    // はページ自身の規則なので、これがマゼンタでなければシートが読まれていない＝以降の
+    // 判定は全部空振りで緑になる。#44 の初版はまさにその状態だった（`<style>` を
+    // `style-src 'none'` が殺していた・2026-07-30 に #310 で発見）。
+    if (m.impostorBackground !== 'rgb(255, 0, 255)') fail(`the hostile sheet did not apply (the page's own .surface is ${m.impostorBackground}, wanted magenta) — every check below would pass vacuously`);
     if (!m.found) fail('the drop zone is not in the shared root at all');
     // 1. The host's `display:none !important` on our tag and our classes must not
     //    reach anything: the host element's own box is inline !important from us,
@@ -213,7 +294,8 @@ interface Measured {
     if (Math.abs(m.impostorWidth - m.width) < 1) fail(`the host's own .surface was given our width (${m.impostorWidth}px)`);
     if (m.impostorBackground === m.background) fail(`the host's own .surface was given our fill (${m.impostorBackground})`);
 
-    console.log(`PASS e2e-extension-hostile-css: zone ${Math.round(m.width)}x${Math.round(m.height)} anchored at ${Math.round(m.right)},${Math.round(m.bottom)}, fill ${m.background}, outline ${m.borderTopWidth}, --hologram-surface ${m.surfaceToken} resolved under style-src 'none'`);
+    console.log(`PASS e2e-extension-hostile-css: zone ${Math.round(m.width)}x${Math.round(m.height)} anchored at ${Math.round(m.right)},${Math.round(m.bottom)}, fill ${m.background}, outline ${m.borderTopWidth}, --hologram-surface ${m.surfaceToken} resolved under style-src 'self'`);
+    console.log(`  corner control: ${Math.round(corner.width)}x${Math.round(corner.height)} <${corner.tag}> in its own shadow root, fill ${corner.background}, shadow ${corner.boxShadow}, no tooltip, name "${corner.label}"`);
   } finally {
     await overlay.close();
   }

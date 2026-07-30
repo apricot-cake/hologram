@@ -6,8 +6,8 @@
 
 import { normalizeRect, prepareScopedCaptureState } from './dom.ts';
 import { fileBasenameKey } from './media.ts';
-import { emptyRecord, readJsonKeepingRaw, toIso } from './record.ts';
-import type { Extractor, PostRect, PostRecord } from './types.ts';
+import { emptyRecord, normalizeHashtags, readJsonKeepingRaw, toIso } from './record.ts';
+import type { Extractor, MediaIdentity, PostMediaElement, PostRect, PostRecord } from './types.ts';
 
 // === DOM ===
 
@@ -135,6 +135,38 @@ function parseMisskeyNoteLink(href: string): MisskeyNoteLink | null {
   }
 }
 
+// === Media identity (#238 — drag save + hover save on misskey.io) ===
+
+// The same ancestor walk capture.ts uses to find the note under the pointer,
+// reused here so a drag and (once #94 lands) a hover button can never resolve
+// a picture to a different note than Alt+S would screenshot — the two save
+// paths must never disagree about what a save records (drag.ts's own header
+// comment).
+function extractMisskeyIdentity(el: PostMediaElement): MediaIdentity | null {
+  const post = findMisskeyPostElement(el);
+  if (!post) return null;
+  const link = getMisskeyPermalink(post);
+  if (!link) return null;
+  const parsed = parseMisskeyNoteLink(link);
+  return parsed ? { postId: parsed.id, link } : null;
+}
+
+// The avatar sits in the same note and resolves to the same permalink as the
+// note's own pictures (extractIdentity does not — and per types.ts's
+// MediaIdentitySite contract must not — tell them apart): isPostMedia is the
+// separate gate for that, exactly like the other sites' isPostMedia handles
+// their own avatar. Misskey's DriveFile-backed URLs give post media and
+// avatars no distinguishing CDN path (both are `<instance>/files/...`, unlike
+// X's profile_images/ or Bluesky's img/avatar/), so the signal used here is
+// structural instead: Misskey links an avatar to the AUTHOR'S profile
+// (`/@user`), never to the note — the one part of the DOM shape that is a
+// documented, stable Misskey URL convention rather than one of its internal
+// (Vue-scoped, version-specific) class names. Not verified against a live
+// instance (#238's constraints ruled that out) — worth a live check.
+function isMisskeyPostMedia(el: PostMediaElement): boolean {
+  return !el.closest('a[href^="/@"]');
+}
+
 // === API ===
 
 function misskeyItemType(f) {
@@ -232,6 +264,12 @@ async function fetchMisskeyNote(parsed, url): Promise<PostRecord> {
     rec.reposts = note.renoteCount ?? null;
     rec.replies = note.repliesCount ?? null;
     if (note.lang) rec.lang = note.lang;
+    // note.tags[] is the server's own extraction (#177): Misskey parses the
+    // MFM of text, CW and poll choices at post time and stores the hashtags as
+    // bare strings — no '#', and run through its normalizeForSearch, which
+    // lower-cases them. Reading the field rather than re-parsing the text is
+    // what keeps a tag written in the CW from going missing.
+    rec.hashtags = normalizeHashtags(Array.isArray(note.tags) ? note.tags : []);
     rec.mediaType = misskeyMediaType(note.files);
     rec.media = misskeyMedia(note.files);
     if (note.replyId) {
@@ -312,8 +350,37 @@ const misskey: Extractor = {
       return prepareScopedCaptureState('__snsCaptureMisskeyNoHover', [post, getMisskeyPrimaryArticle(post)]);
     },
   },
+
+  mediaIdentity: {
+    platform: 'misskey',
+    extractIdentity: extractMisskeyIdentity,
+    isPostMedia: isMisskeyPostMedia,
+  },
+
+  overlay: {
+    // Mirrors isMisskeyNoteElement's article check (the permalink half is
+    // left to capture.getPermalink/extractIdentity, which already fall back
+    // to the URL bar on a note detail page — see getMisskeyPermalink) — this
+    // is what keeps the reply-parent preview (no <article> of its own) out.
+    unitSelector: 'div[tabindex="0"]:has(article)',
+    // Scoped to the note's own <article>, same as getMisskeyPermalink: the
+    // reply-parent preview renders before it and must not contribute media.
+    // isPostMedia filters here rather than only gating the save button
+    // (X's LI-tile branch does the same) since Misskey has no CDN-path
+    // signal to filter on later.
+    mediaIn: (unit) => {
+      const scope = getMisskeyPrimaryArticle(unit) || unit;
+      return [...scope.querySelectorAll<PostMediaElement>('img, video')].filter((el) => isMisskeyPostMedia(el));
+    },
+  },
+
+  // #238: misskey.io only — the general "any Misskey instance" case is #204's
+  // (optional host permission + user registration). See #238's decision log
+  // for why misskey.io alone is worth a required host permission where
+  // Mastodon's instances are not.
+  residentMatches: ['https://misskey.io/*'],
 };
 
 export default misskey;
-export { fetchMisskeyNote, findMisskeyPostElement, getMisskeyPermalink, looksLikeMisskey, misskeyMedia, parseMisskeyNoteLink };
+export { extractMisskeyIdentity, fetchMisskeyNote, findMisskeyPostElement, getMisskeyPermalink, isMisskeyPostMedia, looksLikeMisskey, misskeyMedia, parseMisskeyNoteLink };
 export type { MisskeyNoteLink };

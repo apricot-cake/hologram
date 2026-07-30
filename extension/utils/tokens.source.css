@@ -48,6 +48,26 @@
   --hologram-overlay-border: #8f8f8f;
   --hologram-overlay-shadow: 0 12px 36px -8px rgba(0, 0, 0, 0.28), 0 0 0 0.5px rgba(0, 0, 0, 0.06);
 
+  /* THE SHADOW OF A 24px DISC, which is NOT the one above (#310). Until now the
+     280px card and the corner control shared --hologram-overlay-shadow, and a
+     shadow does not scale with the thing casting it: at 36px blur offset 12px
+     down, the card's shadow is WIDER THAN THE DISC and sits half its own height
+     below it. Two consequences, both wrong for this control — it reads as an
+     object raised off the page (elevation is the vocabulary of a button, and
+     whether this corner should look pressable is #125's question, not something
+     a borrowed value gets to answer), and it smears a soft dark patch across
+     the user's picture, which is the one thing the translucent disc exists to
+     avoid. The dark theme's `inset 0 1px 0` made it worse: an inset highlight
+     is a bevel for a large flat panel, and on a 24px circle it lands as a
+     bright arc over the top third of the disc.
+
+     So: a contact shadow only. 1px down, 2px blur, no spread, no inset — just
+     enough to say the disc is not part of the photograph. It is the same job
+     the 1px outline does, and between them nothing else is needed at this size.
+     Dark carries more alpha because the pictures it sits on are, on average,
+     what a dark browser theme is being used to look at. */
+  --hologram-control-shadow: 0 1px 2px rgba(0, 0, 0, 0.28);
+
   /* STATUS. Each fill carries its own ink instead of a shared white: the amber
      that reads as a warning is too light to hold white at any tier, and the
      dark theme's red is lighter still (the app's --destructive brightens on
@@ -116,6 +136,7 @@
      holds because the band's floor is set by the host page, not by #171717. */
   --hologram-overlay-border: #707070;
   --hologram-overlay-shadow: 0 12px 36px -8px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  --hologram-control-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
 
   --hologram-success: #3ecf8e;
   --hologram-on-success: #052e1b;

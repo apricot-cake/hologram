@@ -59,6 +59,39 @@ async function readJsonKeepingRaw(rec: PostRecord, sourceKind: string, res: Resp
   return JSON.parse(body);
 }
 
+// One shape for every platform's hashtags (#177). Each site's API names the
+// field differently — X's entities.hashtags[].text, Bluesky's tag facets plus
+// record.tags[], Misskey's note.tags[], Mastodon's tags[].name, pixiv's
+// tags.tags[].tag — but they all mean the same thing, so what lands in the
+// record must not differ by site: the BARE tag, no leading '#', deduped in
+// first-seen order. A '#' kept on one platform and dropped on another would
+// split one tag into two buckets in the viewer's hashtag facet, and a tag
+// repeated inside one post would inflate that bucket's count.
+//
+// Case and character width are left EXACTLY as the platform reports them.
+// Misskey and Mastodon hand back server-normalized (lower-cased) tags while
+// X / Bluesky / pixiv keep the author's spelling, so the same word can still
+// arrive in two spellings across platforms — folding those together is
+// 字形正規化 and belongs to #197, not here.
+function normalizeHashtags(values: unknown[]): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const v of values) {
+    if (typeof v !== 'string') continue;
+    // Strip '#' and its full-width twin '＃': the platform fields above carry
+    // neither, but a text-derived fallback does, and a client is free to store
+    // the prefix in a free-form tag array.
+    const tag = v
+      .trim()
+      .replace(/^[#＃]+/, '')
+      .trim();
+    if (!tag || seen.has(tag)) continue;
+    seen.add(tag);
+    out.push(tag);
+  }
+  return out;
+}
+
 function toIso(s) {
   if (!s) return null;
   const d = new Date(s);
@@ -86,4 +119,4 @@ function htmlToText(html) {
   return s.trim() || null;
 }
 
-export { emptyRecord, htmlToText, readJsonKeepingRaw, toIso };
+export { emptyRecord, htmlToText, normalizeHashtags, readJsonKeepingRaw, toIso };

@@ -42,6 +42,14 @@ const { launchOverlayBrowser, openFixture, fixtureHtml, takeLog, wheelScroll, su
 // Mirrors overlay.ts's SCROLL_HOVER_SETTLE_MS; waits must outlast it.
 const SETTLE_MS = 100;
 
+// The save FACE, asked for by name rather than by element type. Since #310 the
+// element in the page's subtree is the shadow host (<hologram-corner-control>);
+// the <button> is inside its shadow root, so `button[data-hologram-overlay]` —
+// what this used to wait for — can no longer match anything. `data-hologram-face`
+// is on the host for exactly this reason: the face's own wording follows the
+// browser locale and is not something a test can wait on.
+const SAVE_FACE = '[data-hologram-overlay][data-hologram-face="save"]';
+
 const PLATFORMS: Record<string, { url: string; image: string }> = {
   x: { url: 'https://x.com/home', image: '[data-testid="tweetPhoto"]' },
   bluesky: { url: 'https://bsky.app/', image: '.thumbwrap img' },
@@ -99,7 +107,7 @@ async function runPlatform(overlay: any, name: string): Promise<void> {
     let hoverOk = true;
     let hoverDetail = 'save button appeared on hover';
     try {
-      await page.waitForSelector('button[data-hologram-overlay]', { timeout: 3000 });
+      await page.waitForSelector(SAVE_FACE, { timeout: 3000 });
     } catch {
       hoverOk = false;
       hoverDetail = 'no save button within 3s of hovering the picture';
@@ -183,7 +191,7 @@ async function runPlatform(overlay: any, name: string): Promise<void> {
     await wait(SETTLE_MS + 400);
     const retarget = await imageCenter(page, spec.image, 1);
     await page.mouse.move(retarget.x, retarget.y);
-    await page.waitForSelector('button[data-hologram-overlay]', { timeout: 3000 });
+    await page.waitForSelector(SAVE_FACE, { timeout: 3000 });
     await takeLog(page);
     await wheelScroll(page, { from: retarget, steps: 12, deltaY: 120, stepMs: 50, jitterPx: 2 });
     await wait(SETTLE_MS + 250);

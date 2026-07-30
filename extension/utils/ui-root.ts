@@ -14,9 +14,9 @@
 // not want them: a fixed layer has to copy viewport coordinates on every scroll
 // frame, which visibly trails smooth scrolling, and it draws over the host's own
 // sticky header. Both were measured on the previous implementation (#270's
-// design review, 2026-07-29). Giving each of those controls its OWN small shadow
-// root, in place in the subtree, is the way to isolate them without moving them
-// — that belongs with #310, which owns their shape.
+// design review, 2026-07-29). They are isolated all the same: #310 gave each of
+// those controls its OWN small shadow root, in place in the subtree, so the
+// boundary is there without the move (overlay.ts's CONTROL_TAG).
 //
 // HOW THE CSS GETS IN. Constructed stylesheets, never an injected <style>: a
 // host serving `style-src 'none'` kills a <style> even inside a shadow root,

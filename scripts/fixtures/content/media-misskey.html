@@ -1,0 +1,34 @@
+<!--
+  Hand-authored Misskey DOM shapes for extension/utils/extractor/misskey.ts's
+  mediaIdentity extractIdentity/isPostMedia (#238). Distinct from
+  fixtures/content/misskey.html (site-detect.ts's own fixture has no <img>s) —
+  same rationale as media-x.html / media-bluesky.html. --MI_THEME-accent is set
+  inline the same way content/misskey.html does (jsdom does not compute
+  getComputedStyle from stylesheets, only from an element's own inline style).
+-->
+<!DOCTYPE html>
+<html style="--MI_THEME-accent: #86b300;">
+<head></head>
+<body>
+
+  <!-- normal note: the picture sits in the note's own <article>, not inside
+       the permalink anchor itself -->
+  <div tabindex="0" id="note1">
+    <article>
+      <a href="/notes/9abc"><time datetime="2026-01-01T00:00:00Z">1h</time></a>
+      <img id="imgPost1" src="https://misskey.io/files/webpublic-AAA.webp">
+    </article>
+  </div>
+
+  <!-- avatar in the same note: identity still resolves to the note (the same
+       ancestor walk capture.ts uses) but isPostMedia must reject it — Misskey
+       links the avatar to the AUTHOR's profile (/@user), never to the note. -->
+  <div tabindex="0" id="note2">
+    <article>
+      <a href="/notes/9def"><time datetime="2026-01-01T00:00:00Z">2h</time></a>
+      <a class="avatar" href="/@carol"><img id="imgAvatar" src="https://misskey.io/files/webpublic-BBB.webp"></a>
+    </article>
+  </div>
+
+</body>
+</html>
