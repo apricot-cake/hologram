@@ -342,14 +342,12 @@ describe('sanitizeSavedTabs', () => {
     expect(sanitizeSavedTabs({ tabs: [] }, genId)).toBeNull();
   });
 
-  describe('正規化と自己修復', () => {
+  describe('正規化', () => {
     const st = sanitizeSavedTabs(
       {
-        activeTabId: 'b',
+        activeTabId: 'c',
         tabs: [
           { pinned: 1, title: '', state: { f: [] }, scrollTop: '9' },
-          // #144 以前の image タブの形 → 1コマの image 履歴へ自己修復する
-          { id: 'b', type: 'image', img: { recs: ['ok', 42, null, 'ok2'], idx: '3' } },
           // 永続化された nav スタック: 壊れた行は落ち、idx は残った行へ再マップされる
           {
             id: 'c',
@@ -377,25 +375,8 @@ describe('sanitizeSavedTabs', () => {
       expect(st.tabs[0]._navHist).toBeUndefined();
     });
 
-    test('旧 image タブは1コマの image エントリへ変換される', () => {
-      const b = st.tabs[1];
-      const e = JSON.parse(b._navHist[0]);
-
-      expect(b._navHist).toHaveLength(1);
-      expect(b._navIdx).toBe(0);
-      expect(e).toMatchObject({ kind: 'image', u: '/image/ok' });
-    });
-
-    test('変換で recs は文字列だけになり、idx はクランプされ、自動タイトル印が付く', () => {
-      const e = JSON.parse(st.tabs[1]._navHist[0]);
-
-      expect(e.state.recs).toHaveLength(2);
-      expect(e.state.idx).toBe(0);
-      expect(st.tabs[1]._autoTitle).toBe(true);
-    });
-
     test('nav スタックは不正なコマを捨て、idx を残存コマへ再マップする', () => {
-      const c = st.tabs[2];
+      const c = st.tabs[1];
 
       expect(c._navHist.map((s: string) => JSON.parse(s).kind)).toEqual(['posts', 'posters']);
       expect(c._navIdx).toBe(1);
@@ -403,19 +384,12 @@ describe('sanitizeSavedTabs', () => {
     });
 
     test('保存された activeTabId が実在すれば採る', () => {
-      expect(st.activeTabId).toBe('b');
+      expect(st.activeTabId).toBe('c');
     });
   });
 
   test('activeTabId が実在しなければ先頭タブへ落ちる', () => {
     expect(sanitizeSavedTabs({ activeTabId: 'ghost', tabs: [{ id: 'a' }] }, genId).activeTabId).toBe('a');
-  });
-
-  test('旧 image タブで recs が配列でなければ履歴を作らない（素のタブになる）', () => {
-    const st3 = sanitizeSavedTabs({ tabs: [{ id: 'a', type: 'image', img: { idx: 1 } }] }, genId);
-
-    expect(st3.tabs[0]._navHist).toBeUndefined();
-    expect(st3.tabs[0]._autoTitle).toBe(false);
   });
 
   // #42: 廃止した葉の型を読み込み時に直す＝保存済みクエリ木にもタイトルの影にも残る

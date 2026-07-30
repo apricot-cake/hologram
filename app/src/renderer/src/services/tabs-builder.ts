@@ -334,8 +334,9 @@ export function makeTabsController(deps: TabsBuilderDeps) {
   hologramTabsSource.configure({ tabTitleOf: deps.tabTitleOf, tabIcons: TAB_ICONS, pinSvg: TAB_PIN_SVG, closeTitle: deps.t('tabClose'), newTitle: deps.t('tabNew'), postersTitle: deps.t('browsePosters'), imageFallbackTitle: deps.t('imgTabFallback') });
   // Activate a tab object: adopt its history and re-apply its current entry
   // (the stack knows which view — posts/posters/image — the tab was on). Tabs
-  // without a stack (pre-#144 files) fall back to the legacy state path, then
-  // seed a fresh history from the applied view.
+  // without a usable stack (fresh tab, or every persisted nav row dropped as
+  // invalid) fall back to the plain state path, then seed a fresh history from
+  // the applied view.
   function activateTab(t: HologramTab) {
     if (Array.isArray(t._navHist) && t._navHist.length) {
       nav.adopt(t);

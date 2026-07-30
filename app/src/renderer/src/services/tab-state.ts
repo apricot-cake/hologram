@@ -312,9 +312,7 @@ function sanitizeNavEntry(e: any): string | null {
 
 // Restore-side sanitizer for a persisted tabs.json payload. Returns null when
 // nothing usable was saved (the caller seeds a fresh single tab). The nav
-// stack is validated row-by-row (bad rows dropped, idx clamped); a pre-#144
-// image tab ({type:'image', img}) self-heals into a one-entry image history —
-// the unified shape (one-off migration, droppable before release).
+// stack is validated row-by-row (bad rows dropped, idx clamped).
 export function sanitizeSavedTabs(saved: unknown, genId: () => string): { tabs: HologramTab[]; activeTabId: string } | null {
   // `saved` is raw tabs.json JSON (unknown/older shape on disk) — narrow to a
   // loose shape once here, matching the HologramPost "open JSON" convention,
@@ -335,18 +333,12 @@ export function sanitizeSavedTabs(saved: unknown, genId: () => string): { tabs: 
         if (mapped < 0) mapped = 0;
         navIdx = Math.min(mapped, navHist.length - 1);
       }
-    } else if (t.type === 'image' && t.img && Array.isArray(t.img.recs)) {
-      const s = sanitizeNavEntry({ kind: 'image', state: { recs: t.img.recs, idx: t.img.idx } });
-      if (s) {
-        navHist = [s];
-        navIdx = 0;
-      }
     }
     return {
       id: t.id || genId(),
       pinned: !!t.pinned,
       title: t.title || null,
-      _autoTitle: !!t.autoTitle || (t.type === 'image' && !!navHist),
+      _autoTitle: !!t.autoTitle,
       // Self-heal retired leaf-type names in the persisted query tree + its title
       // shadow (e.g. #42 'collection'→'folder'). applyState prefers state.tree, so
       // both are normalized; the next tab-switch write persists the healed shape.
