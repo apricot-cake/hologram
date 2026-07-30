@@ -32,6 +32,7 @@
   --hologram-ease-in:               cubic-bezier(0.4, 0, 1, 1);
   --hologram-overlay-border:        #8f8f8f;
   --hologram-overlay-shadow:        0 12px 36px -8px rgba(0, 0, 0, 0.28), 0 0 0 0.5px rgba(0, 0, 0, 0.06);
+  --hologram-control-shadow:        0 1px 2px rgba(0, 0, 0, 0.28);
   --hologram-success:               #067647;
   --hologram-on-success:            #ffffff;
   --hologram-warning:               #b45309;
@@ -65,6 +66,7 @@
     --hologram-danger:                #ff6467;
     --hologram-overlay-border:        #707070;
     --hologram-overlay-shadow:        0 12px 36px -8px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    --hologram-control-shadow:        0 1px 2px rgba(0, 0, 0, 0.5);
     --hologram-success:               #3ecf8e;
     --hologram-on-success:            #052e1b;
     --hologram-warning:               #f5b544;

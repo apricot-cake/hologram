@@ -84,6 +84,12 @@ const X_HTML = `<!doctype html><html><body>
       <div data-testid="tweetPhoto" data-rect-top="4000" id="p10a"><img src="https://pbs.twimg.com/media/KKK.jpg"></div>
       <div data-testid="tweetPhoto" data-rect-top="4400" id="p10b"><img src="https://pbs.twimg.com/media/LLL.jpg"></div>
     </article>
+    <!-- 「絵は保存できたが投稿情報が取れなかった」（partial）を試すためだけの投稿。
+         最後まで未保存で残しておく必要があるので、他のどの describe も触らない。 -->
+    <article data-testid="tweet" id="p11">
+      <a href="/judy/status/1111"><time datetime="2026-07-01T00:00:00Z">11h</time></a>
+      <div data-testid="tweetPhoto" data-rect-top="4800" id="p11a"><img src="https://pbs.twimg.com/media/MMM.jpg"></div>
+    </article>
   </div>
 </body></html>`;
 
@@ -113,14 +119,19 @@ const setSetting = (key: string, value: unknown) => {
 };
 
 // 小型コントロールは投稿の部分木に残る（#44 は固定レイヤーへ移していない＝スクロール
-// 追従とホストの重ね順を壊すため）ので、素の document から拾えるままでよい。
+// 追従とホストの重ね順を壊すため）ので、素の document から拾えるままでよい。拾えるのは
+// ホスト要素 `<hologram-corner-control>` で、円そのものはその ShadowRoot の中にある
+// （#310＝部分木に居たままホスト CSS から隔離する）。
 const controls = (): any[] => Array.from(window.document.querySelectorAll('[data-hologram-overlay]'));
+// ホスト要素から円へ。見た目・タブ順・読み上げ名を見るテストは全部こちら側。
+const disc = (el: any): any => el?.shadowRoot?.firstElementChild ?? el;
+const labelOf = (el: any): string | null => disc(el)?.getAttribute('aria-label');
 // 一方で、失敗を伝える上部バナーは共有の ShadowRoot の中（ui-root.ts）。
 const saveBanners = (): any[] => Array.from((window.document.querySelector('hologram-extension-ui') as any)?.shadowRoot?.querySelectorAll('[data-hologram-save-banner]') || []);
-// 常駐バンドルは自前のローカライズ文字列を持つ。jsdom は英語ロケールが既定なので、
-// ソースのキーではなくブラウザに見えるラベルで拾う。
-const marks = () => controls().filter((el) => el.title === 'Saved in Hologram');
-const saveButtons = () => controls().filter((el) => el.title === 'Save image');
+// 面はホスト要素の data-hologram-face で名指しされている（#310）＝ローカライズされた
+// 文言に依存せずに「どの顔か」を聞ける。文言そのものは別のテストが見る。
+const marks = () => controls().filter((el) => el.getAttribute('data-hologram-face') === 'mark');
+const saveButtons = () => controls().filter((el) => el.getAttribute('data-hologram-face') === 'save');
 const settle = () => new Promise((r) => setTimeout(r, 400)); // 300ms の問い合わせデバウンスを越える
 
 // overlay.ts はポインタが何の上にあるかを「座標」で決める（実際の pointermove は必ず
@@ -146,9 +157,11 @@ const hover = (id: string) => {
 };
 const hoverAway = () => pointerMove(window.document.getElementById('feed'), 900, 50); // どの枠よりも右＝何の上でもない
 // #323: 保存ボタンと再試行はユーザーの押下でしか動かない。ページが投げられる版は
-// pageClick 側で、そちらはガード自身のテストだけが使う。
-const pageClick = (el: any) => el.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
-const click = (el: any) => el.dispatchEvent(asUser(new window.MouseEvent('click', { bubbles: true })));
+// pageClick 側で、そちらはガード自身のテストだけが使う。押下は円（ShadowRoot の中）へ
+// 投げる＝ホスト要素へ投げたイベントは shadow tree に入らないので、ホスト側へ投げると
+// 「押しても何も起きない」がガードのおかげか経路違いか分からなくなる。
+const pageClick = (el: any) => disc(el).dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+const click = (el: any) => disc(el).dispatchEvent(asUser(new window.MouseEvent('click', { bubbles: true })));
 const rectTop = (sel: string, top: string) => window.document.querySelector(sel)?.setAttribute('data-rect-top', top);
 
 beforeAll(async () => {
@@ -233,7 +246,7 @@ beforeAll(async () => {
 }, 30000);
 
 test('初回走査で全ての投稿が観測される', () => {
-  expect(observed.size).toBe(10);
+  expect(observed.size).toBe(11);
 });
 
 describe('問い合わせは見えている投稿だけ・1バッチで', () => {
@@ -284,11 +297,27 @@ describe('savedBadgeMode の三値', () => {
   });
 
   // 「押せる面か」で分ける分岐（#536）の、押せない側。報告するだけの面は素の div の
-  // まま＝タブ順にも入らないし、読み上げ名も持たない（title だけを持つ）。
-  test('報告するだけの印はタブ順に入らず、読み上げ名も持たない', () => {
-    expect(marks()[0].tagName).toBe('DIV');
-    expect(marks()[0].tabIndex).toBe(-1);
-    expect(marks()[0].hasAttribute('aria-label')).toBe(false);
+  // まま＝タブ順にも入らない。読み上げ名は持つ（事実を述べる図形として）。
+  test('報告するだけの印はタブ順に入らない', () => {
+    expect(disc(marks()[0]).tagName).toBe('DIV');
+    expect(disc(marks()[0]).tabIndex).toBe(-1);
+    expect(disc(marks()[0]).getAttribute('role')).toBe('img');
+  });
+
+  // #310: 説明はブラウザのツールチップ（title）で出さない＝拡張が描く他の面と別系統に
+  // なる上、キーボードとタッチには最初から届いていなかった。残すのは読み上げ名だけ。
+  test('印は title を持たず、読み上げ名だけを持つ', () => {
+    expect(marks()[0].hasAttribute('title')).toBe(false);
+    expect(disc(marks()[0]).hasAttribute('title')).toBe(false);
+    expect(labelOf(marks()[0])).toBe('Saved in Hologram');
+  });
+
+  // #310: 部分木に居たままホスト CSS から隔離する＝円はホスト要素の ShadowRoot の中で、
+  // ページ側の CSS はセレクタが届かない。境界そのものの数値検査は e2e-extension-hostile-css。
+  test('円はホスト要素の ShadowRoot の中にある', () => {
+    expect(marks()[0].tagName.toLowerCase()).toBe('hologram-corner-control');
+    expect(marks()[0].shadowRoot).toBeTruthy();
+    expect(disc(marks()[0]).parentNode).toBe(marks()[0].shadowRoot);
   });
 });
 
@@ -397,12 +426,14 @@ describe('保存ボタン', () => {
   });
 
   test('静止した単色グリフだけの native button で、読み上げ名を持つ', () => {
-    const b = saveButtons()[0];
+    const b = disc(saveButtons()[0]);
 
     expect(b.tagName).toBe('BUTTON');
     // 4つの面（マーク・保存・進行中・再試行）は同じ寸法＝押した瞬間に角が縮まない。
     expect(b.style.width).toBe('24px');
     expect(b.style.background).toBe('var(--hologram-control-surface)');
+    // #310: 影はカード面と共有をやめ、24px 専用のトークンを持つ。
+    expect(b.style.boxShadow).toBe('var(--hologram-control-shadow)');
     expect(b.getAttribute('aria-label')).toBe('Save image');
     // 押せる面は必ずタブ順に入る（#536）＝グリフだけのボタンなので、名前と focus の
     // どちらが欠けてもキーボードとスクリーンリーダーからは無いものになる。
@@ -411,8 +442,15 @@ describe('保存ボタン', () => {
     expect(animatedElements.has(b)).toBe(false);
   });
 
+  // #310: 押せる面も title を持たない＝押せるかどうかは読み上げ名とカーソルが言う。
+  test('保存ボタンも title を持たない', () => {
+    expect(disc(saveButtons()[0]).hasAttribute('title')).toBe(false);
+    expect(saveButtons()[0].hasAttribute('title')).toBe(false);
+    expect(disc(saveButtons()[0]).style.cursor).toBe('pointer');
+  });
+
   test('ホバーは状態色を足さずに見分けをつける', () => {
-    const b = saveButtons()[0];
+    const b = disc(saveButtons()[0]);
     b.dispatchEvent(new window.Event('pointerenter'));
 
     // 状態色ではなく面の色＋ハロー＋拡大だけ。ホバーでも半透明のままである
@@ -489,9 +527,14 @@ describe('保存に失敗したとき', () => {
     failed = controlOf('p4a');
   });
 
-  test('その場でローカライズされた復旧案内を出す', () => {
+  // #310: 24px の円は「押せば再試行できる」だけを言う。長い復旧案内（診断ページへの
+  // 誘導）は同じ文面のままバナーが持つ＝幅も role="alert" も在る面。
+  test('角は再試行できることを言い、復旧案内は載せない', () => {
     expect(failed).toHaveLength(1);
-    expect(failed[0].title).toBe("Hologram's saver could not start. Open the diagnostics page from the extension settings.");
+    expect(labelOf(failed[0])).toBe('Save failed. Press to retry');
+    expect(labelOf(failed[0])).not.toContain('diagnostics');
+    expect(failed[0].hasAttribute('title')).toBe(false);
+    expect(disc(failed[0]).hasAttribute('title')).toBe(false);
   });
 
   test('上部バナーも読める文面で、生のエラーを漏らさない', () => {
@@ -504,11 +547,11 @@ describe('保存に失敗したとき', () => {
   });
 
   // 再試行は「押せば即その場で回復できる」唯一の手段なので、ポインタしか届かない状態は
-  // 回復手段そのものの欠落（#536）。名前は失敗理由の文面をそのまま使う＝専用文言は #310。
+  // 回復手段そのものの欠落（#536）。名前は「再試行」という語を含む専用文言（#310）。
   test('再試行の面は保存ボタンと同じくキーボードで到達でき、読み上げ名を持つ', () => {
-    expect(failed[0].tagName).toBe('BUTTON');
-    expect(failed[0].tabIndex).toBe(0);
-    expect(failed[0].getAttribute('aria-label')).toBe("Hologram's saver could not start. Open the diagnostics page from the extension settings.");
+    expect(disc(failed[0]).tagName).toBe('BUTTON');
+    expect(disc(failed[0]).tabIndex).toBe(0);
+    expect(labelOf(failed[0])).toContain('retry');
   });
 
   test('失敗表示を押すと何も起きないのではなく再試行する', () => {
@@ -553,8 +596,10 @@ describe('絵ごとに1ボタン・投稿ごとに1印', () => {
     expect(p4Controls[0].parentElement).toBe(boxOf('p4a'));
   });
 
-  test('さっきの失敗の文面は失敗より長生きしない', () => {
-    expect(controlOf('p4a')[0]?.title).toBe('Saved in Hologram');
+  // 失敗の文面は失敗より長生きしない。#310 以降そもそも角に文面を持ち越さない
+  // （理由は失敗の瞬間にバナーが言い切る）ので、印は常に自分の名前だけを持つ。
+  test('印は前の失敗の文面を引きずらない', () => {
+    expect(labelOf(controlOf('p4a')[0])).toBe('Saved in Hologram');
     setSetting('savedBadgeMode', 'hover');
   });
 });
@@ -580,7 +625,7 @@ describe('1枚だけ保存された投稿', () => {
   test('保存済みの絵にだけ印が付く（1枚目ではなく、その絵に）', () => {
     expect(controlOf('p10a')).toHaveLength(0);
     expect(controlOf('p10b')).toHaveLength(1);
-    expect(controlOf('p10b')[0].title).toBe('Saved in Hologram');
+    expect(labelOf(controlOf('p10b')[0])).toBe('Saved in Hologram');
   });
 
   test('まだの絵にはホバーで保存ボタンが出る', async () => {
@@ -597,7 +642,7 @@ describe('1枚だけ保存された投稿', () => {
     await settle();
 
     expect(saveButtons()).toHaveLength(0);
-    expect(controlOf('p10b')[0].title).toBe('Saved in Hologram');
+    expect(labelOf(controlOf('p10b')[0])).toBe('Saved in Hologram');
     hoverAway();
   });
 
@@ -607,7 +652,7 @@ describe('1枚だけ保存された投稿', () => {
     for (const fn of runtimeListeners) fn({ type: 'savedUpdate', url: 'https://x.com/ivan/status/1010', media: ['https://pbs.twimg.com/media/KKK?format=jpg&name=orig'] });
 
     expect(controlOf('p10a')).toHaveLength(1);
-    expect(controlOf('p10a')[0].title).toBe('Saved in Hologram');
+    expect(labelOf(controlOf('p10a')[0])).toBe('Saved in Hologram');
     expect(controlOf('p10b')).toHaveLength(1);
   });
 });
@@ -695,7 +740,7 @@ describe('メディアタブのグリッドタイル（#349）', () => {
 
     const p8Controls = controls().filter((el) => el.parentElement === boxOf('p8') || el.parentElement === boxOf('p8').parentElement);
     expect(p8Controls).toHaveLength(1);
-    expect(p8Controls[0].title).toBe('Save image');
+    expect(labelOf(p8Controls[0])).toBe('Save image');
     hoverAway();
   });
 
@@ -731,7 +776,7 @@ describe('メディアタブのグリッドタイル（#349）', () => {
       hover('p8');
 
       expect(p8Controls()).toHaveLength(1);
-      expect(p8Controls()[0].title).toBe('Save image');
+      expect(labelOf(p8Controls()[0])).toBe('Save image');
       hoverAway();
     });
 
@@ -742,7 +787,7 @@ describe('メディアタブのグリッドタイル（#349）', () => {
       hover('p8');
 
       expect(p8Controls()).toHaveLength(1);
-      expect(p8Controls()[0].title).toBe('Saved in Hologram');
+      expect(labelOf(p8Controls()[0])).toBe('Saved in Hologram');
       hoverAway();
     });
   });
@@ -771,6 +816,40 @@ describe('再生中の動画投稿（#450）', () => {
     expect(save).toMatchObject({ type: 'imageDragged', platform: 'x', postUrl: 'https://x.com/heidi/status/999' });
     expect(save.imageUrls).toContain('https://pbs.twimg.com/amplify_video_thumb/999/img/JJJ.jpg');
     hoverAway();
+  });
+});
+
+// #310: 「保存はできたが投稿の文章と投稿者は取れなかった」は、成功でも失敗でもない
+// 結果で、角がそれを言う場所は無い（24px の円に文が入らない）。以前は印の title に
+// 入れていた＝1秒ホバーしないと出ず、キーボードとタッチには最初から届いていなかった。
+// 今はその瞬間にバナーの琥珀（partial）で言い切る。素の成功は今までどおり無言。
+describe('投稿情報が取れなかった保存（#310）', () => {
+  beforeAll(async () => {
+    saveReply = { ok: true, metaOk: false, metaReason: 'protected' };
+    intersect(['p11'], true);
+    await settle();
+    hover('p11a');
+    await settle();
+    click(saveButtons()[0]);
+  });
+
+  afterAll(() => {
+    saveReply = { ok: true, metaOk: true };
+    hoverAway();
+  });
+
+  // 直近のバナーを見る＝退場アニメーションは Web Animations なので、それを潰している
+  // このハーネスでは前の失敗バナーの要素が DOM に残ったままになる（実ブラウザでは消える）。
+  test('バナーが理由つきで出る', () => {
+    const banner: any = saveBanners().at(-1);
+
+    expect(banner.dataset.state).toBe('partial');
+    expect(banner.textContent).toBe('Saved (post info unavailable: private account)');
+  });
+
+  test('角そのものは印のまま＝長い文面を載せない', () => {
+    expect(labelOf(controlOf('p11a')[0])).toBe('Saved in Hologram');
+    expect(controlOf('p11a')[0].hasAttribute('title')).toBe(false);
   });
 });
 
@@ -804,7 +883,7 @@ describe('撮影退避フック（#311）', () => {
 
   test('印・ボタン面の両方が画面上にある', () => {
     expect(controlOf('p1')).toHaveLength(1);
-    expect(controlOf('p1')[0].title).toBe('Saved in Hologram');
+    expect(labelOf(controlOf('p1')[0])).toBe('Saved in Hologram');
     expect(synthetic.style.display).toBe('flex');
   });
 

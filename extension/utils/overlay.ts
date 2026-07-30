@@ -32,6 +32,18 @@
 // composited scroll as the picture. A fixed layer that copies viewport
 // coordinates has to wait for JavaScript on every scroll frame and visibly
 // trails smooth scrolling.
+//
+// Staying in the page's subtree used to mean staying in the page's CASCADE
+// too: a host rule as ordinary as `button { all: unset !important }` beats an
+// inline style, so the corner was one stylesheet away from having no box at
+// all. #310 closes that without moving anything — what is inserted into the
+// subtree is a <hologram-corner-control> host element with its OWN small shadow
+// root, and the disc lives inside it. Host CSS cannot select into a shadow tree,
+// so the only surface left exposed is the host element's own box, and that is
+// written as inline !important (the top of the author cascade, the same trick
+// ui-root.ts uses for the fixed layer's host). Scroll following and stacking
+// order are untouched: the host element is still an ordinary absolutely
+// positioned child of the picture.
 import { newSaveId, reportSaveTimeout } from './capture-log.ts';
 import { SAVE_WATCHDOG_MS } from './deadline.ts';
 import { collectImageUrls, getCaptureSite, getMediaIdentitySite, getOverlaySite, mediaKeyOf, mediaKeysOf } from './extractor/index.ts';
@@ -60,17 +72,15 @@ export async function startOverlay(): Promise<void> {
 
   interface Anchor {
     box: Element; // the media box whose corner this control sits on
-    el: HTMLDivElement | HTMLButtonElement | null;
+    el: HTMLElement | null; // <hologram-corner-control>, in the page's subtree
+    root: ShadowRoot | HTMLElement | null; // what el's face is drawn inside
+    control: HTMLDivElement | HTMLButtonElement | null; // the disc itself
     host: HTMLElement | null; // positioned parent that scrolls with the media
     hostInlinePosition: string | null; // restores an inline position we added
+    hostInlinePriority: string; // ...and the priority it was written with
     face: Face | null; // what el currently draws (so a re-render can skip)
     phase: Phase;
     timer: ReturnType<typeof setTimeout> | null; // clears phase back to idle
-    // Tooltip override from the last save attempt (why it failed; that the post
-    // info was missing). Lives on the anchor, not on the element: the element is
-    // rebuilt every time the corner changes face, and a title written straight
-    // onto it would either be lost or outlive what it described.
-    note: string | null;
   }
 
   // What the library holds for one post, as far as this side can compare it
@@ -111,6 +121,28 @@ export async function startOverlay(): Promise<void> {
   // mismatch.
   const CONTROL_SIZE = 24;
   const CONTROL_INSET = 6;
+  // The shadow host. A hyphenated name is what makes attachShadow legal on an
+  // element the HTML parser has never heard of, and it is the name a host page
+  // would have to write to target us at all.
+  const CONTROL_TAG = 'hologram-corner-control';
+  // The host element's own box — the only part of this control the page's
+  // cascade can still reach, so every declaration is inline !important (nothing
+  // an author stylesheet can write outranks that). `all: initial` comes first
+  // and is the reason the rest follows: it drops the inherited font, colour,
+  // line-height and text rendering the page would otherwise push through the
+  // shadow boundary. It does NOT reset custom properties, which is exactly why
+  // the --hologram-* tokens still arrive inside.
+  const CONTROL_HOST_STYLE: Array<[string, string]> = [
+    ['all', 'initial'],
+    ['position', 'absolute'],
+    ['display', 'block'],
+    ['width', `${CONTROL_SIZE}px`],
+    ['height', `${CONTROL_SIZE}px`],
+    ['pointer-events', 'auto'],
+    // Above the picture, below anything the page raises on purpose: this is an
+    // annotation on someone else's content, not a layer over it.
+    ['z-index', '1'],
+  ];
   // The two faces that are an ACTION rather than a report. Everything that
   // follows from "this one can be pressed" — the native <button> element, the
   // accessible name, the tab stop, the pointer cursor — is decided from this
@@ -122,7 +154,7 @@ export async function startOverlay(): Promise<void> {
   const isPressable = (face: Face) => face === 'save' || face === 'failed';
   const FLASH_MS = 1400; // "saved" confirmation after a press
   const ERROR_MS = 2500; // failure shown, then back to a button to retry
-  const ERROR_BANNER_MS = 2800; // same readable dwell as the Alt+S failure banner
+  const SAVE_BANNER_MS = 2800; // same readable dwell as the Alt+S failure banner
   // A picture too small to be the point of the post: a quote-preview thumbnail,
   // an avatar-sized decoration. Saving those is almost never meant.
   const MIN_SAVE_PX = 100;
@@ -161,13 +193,16 @@ export async function startOverlay(): Promise<void> {
   // right next to this call in capture.ts.
   window.__hologramPrepareOverlayForCapture = () => {
     const controls = Array.from(document.querySelectorAll<HTMLElement>('[data-hologram-overlay]'));
-    const previousDisplay = controls.map((el) => el.style.display);
-    controls.forEach((el) => {
-      el.style.display = 'none';
-    });
+    // Priority is carried, not just the value: the host element writes its own
+    // `display` as !important (CONTROL_HOST_STYLE), so a plain assignment would
+    // lose to it and the corner would be photographed after all.
+    const previousDisplay = controls.map((el) => [el.style.getPropertyValue('display'), el.style.getPropertyPriority('display')] as const);
+    controls.forEach((el) => el.style.setProperty('display', 'none', 'important'));
     return () => {
       controls.forEach((el, i) => {
-        el.style.display = previousDisplay[i] ?? '';
+        const [value, priority] = previousDisplay[i] ?? ['', ''];
+        if (value) el.style.setProperty('display', value, priority);
+        else el.style.removeProperty('display');
       });
     };
   };
@@ -178,8 +213,8 @@ export async function startOverlay(): Promise<void> {
 
   let markMode: MarkMode = 'always';
   let hoverSave = true;
-  let failureBanner: StatusSurface | null = null;
-  let failureBannerTimer: ReturnType<typeof setTimeout> | null = null;
+  let saveBanner: StatusSurface | null = null;
+  let saveBannerTimer: ReturnType<typeof setTimeout> | null = null;
   const tracked = new Map<Element, UnitState>();
   const anchorOf = new Map<Element, { unit: Element; anchor: Anchor }>(); // media box -> its anchor
   const visible = new Set<Element>();
@@ -602,35 +637,45 @@ export async function startOverlay(): Promise<void> {
 
   // === saving ===
 
-  function showFailureBanner(text: string) {
-    if (failureBannerTimer) clearTimeout(failureBannerTimer);
-    failureBannerTimer = null;
-    failureBanner?.remove();
+  // THE place a hover save says anything in words. The corner itself says none
+  // (#310): a 24px circle cannot hold "open the diagnostics page from the
+  // extension settings", and putting it in a `title` only meant the sentence
+  // existed somewhere nobody with a keyboard or a phone would ever reach. So
+  // the sentence comes here, to the same banner Alt+S uses — which already has
+  // the width, the state colours and the `alert` role for it.
+  //
+  // Only the two outcomes the user could not have predicted get one. A plain
+  // success stays silent (the mark appearing IS the answer), whereas `partial`
+  // — saved, but the post's own text and author are missing — is a fact about
+  // this save that nothing on screen would otherwise state.
+  function showSaveBanner(state: 'error' | 'partial', text: string) {
+    if (saveBannerTimer) clearTimeout(saveBannerTimer);
+    saveBannerTimer = null;
+    saveBanner?.remove();
 
     // The same component the Alt+S banner is (#44 — status-surface.ts). This
     // used to be a hand-copied pill kept "separate until #44 replaces them",
     // which is what let it drift: it never grew the outline tint the other
     // banners had. Now there is one banner and this is a state of it.
-    const banner = new StatusSurface({ variant: 'banner', resting: ICONS.cross, role: 'alert' });
+    const banner = new StatusSurface({ variant: 'banner', resting: ICONS.cross, role: state === 'error' ? 'alert' : 'status' });
     banner.el.setAttribute('data-hologram-save-banner', '');
-    banner.setState('error', text);
+    banner.setState(state, text);
     banner.mount();
     banner.enter();
-    failureBanner = banner;
+    saveBanner = banner;
 
-    failureBannerTimer = setTimeout(() => {
-      failureBannerTimer = null;
-      if (failureBanner === banner) failureBanner = null;
+    saveBannerTimer = setTimeout(() => {
+      saveBannerTimer = null;
+      if (saveBanner === banner) saveBanner = null;
       banner.exit();
-    }, ERROR_BANNER_MS);
+    }, SAVE_BANNER_MS);
   }
 
   // Put a save's failure on the button and in the page banner. Shared by the
   // reported failures and the deadline, so the two cannot present differently.
   function failSave(unit: Element, state: UnitState, anchor: Anchor, failureText: string) {
     setPhase(anchor, 'error', ERROR_MS);
-    anchor.note = failureText;
-    showFailureBanner(failureText);
+    showSaveBanner('error', failureText);
     paint(unit, state);
   }
 
@@ -643,7 +688,6 @@ export async function startOverlay(): Promise<void> {
     const identity = el && media.extractIdentity(el);
     if (!el || !identity) return;
     setPhase(anchor, 'saving', 0);
-    anchor.note = null;
     paint(unit, state);
     // The same message drag.js sends on drop. A page-side button cannot use the
     // capture path at all (chrome.tabs.captureVisibleTab needs activeTab, which
@@ -686,9 +730,11 @@ export async function startOverlay(): Promise<void> {
       // (they key to the same picture, which is what mediaKeyOf guarantees).
       state.saved = addSavedPictures(state.saved, Array.isArray(res.media) && res.media.length ? res.media : collectImageUrls(el, media.platform));
       setPhase(anchor, 'flash', FLASH_MS);
-      // A partial save stays worth saying for as long as the mark is there: the
-      // picture is in the library but the post's text and author are not.
-      anchor.note = res.metaOk === false ? partialSaveText(res.metaReason) : null;
+      // "Saved, but the post's own information is missing" is worth a sentence,
+      // and the corner has nowhere to put one. It used to live in the mark's
+      // `title`, i.e. behind a one-second hover on a 24px circle; it is now the
+      // banner's amber state, said once, at the moment it is true (#310).
+      if (res.metaOk === false) showSaveBanner('partial', partialSaveText(res.metaReason));
       paint(unit, state);
     });
   }
@@ -701,9 +747,6 @@ export async function startOverlay(): Promise<void> {
     anchor.timer = setTimeout(() => {
       anchor.timer = null;
       anchor.phase = 'idle';
-      // The failure text described that attempt only. Left behind, it would
-      // resurface as the tooltip of the "saved" mark this corner shows next.
-      if (phase === 'error') anchor.note = null;
       repaintAnchor(anchor);
     }, ms);
   }
@@ -726,7 +769,7 @@ export async function startOverlay(): Promise<void> {
     }
     for (const box of boxes) {
       if (state.anchors.has(box)) continue;
-      const anchor: Anchor = { box, el: null, host: null, hostInlinePosition: null, face: null, phase: 'idle', timer: null, note: null };
+      const anchor: Anchor = { box, el: null, root: null, control: null, host: null, hostInlinePosition: null, hostInlinePriority: '', face: null, phase: 'idle', timer: null };
       state.anchors.set(box, anchor);
       anchorOf.set(box, { unit, anchor });
     }
@@ -764,38 +807,59 @@ export async function startOverlay(): Promise<void> {
     return box instanceof HTMLImageElement ? box.parentElement : box instanceof HTMLElement ? box : null;
   }
 
-  function mountControl(anchor: Anchor, el: HTMLDivElement | HTMLButtonElement): boolean {
+  // The one thing that CANNOT go behind the shadow boundary: the containing
+  // block has to be an element of the page's own, so the borrowed
+  // `position: relative` is written onto the page's element and stays subject
+  // to the page's cascade. !important because a host rule as ordinary as
+  // `* { all: unset !important }` would otherwise win, and then the control is
+  // positioned against some ancestor further up and lands nowhere near its
+  // picture — a silent failure, since the control still exists and still says
+  // the right thing. The previous inline value AND its priority are kept so
+  // unmounting puts the page back exactly as it was.
+  function borrowHostPosition(anchor: Anchor, host: HTMLElement): void {
+    anchor.hostInlinePosition = host.style.getPropertyValue('position');
+    anchor.hostInlinePriority = host.style.getPropertyPriority('position');
+    host.style.setProperty('position', 'relative', 'important');
+  }
+
+  function mountControl(anchor: Anchor, el: HTMLElement): boolean {
     const host = controlHost(anchor.box);
     if (!host) return false;
     if (anchor.host !== host) {
       restoreControlHost(anchor);
       anchor.host = host;
-      if (getComputedStyle(host).position === 'static') {
-        anchor.hostInlinePosition = host.style.position;
-        host.style.position = 'relative';
-      }
+      if (getComputedStyle(host).position === 'static') borrowHostPosition(anchor, host);
     }
     host.appendChild(el);
     return true;
   }
 
-  function positionControl(anchor: Anchor, el: HTMLDivElement | HTMLButtonElement): void {
+  function positionControl(anchor: Anchor, el: HTMLElement): void {
     const host = anchor.host;
+    // !important for the same reason the rest of the host element's box is
+    // (CONTROL_HOST_STYLE): these two numbers are the difference between the
+    // picture's corner and the top-left of whatever is containing us.
+    const place = (left: number, top: number) => {
+      el.style.setProperty('left', `${left}px`, 'important');
+      el.style.setProperty('top', `${top}px`, 'important');
+    };
     if (!host || host === anchor.box) {
-      el.style.left = `${CONTROL_INSET}px`;
-      el.style.top = `${CONTROL_INSET}px`;
+      place(CONTROL_INSET, CONTROL_INSET);
       return;
     }
     const hostRect = host.getBoundingClientRect();
     const boxRect = anchor.box.getBoundingClientRect();
-    el.style.left = `${boxRect.left - hostRect.left + CONTROL_INSET}px`;
-    el.style.top = `${boxRect.top - hostRect.top + CONTROL_INSET}px`;
+    place(boxRect.left - hostRect.left + CONTROL_INSET, boxRect.top - hostRect.top + CONTROL_INSET);
   }
 
   function restoreControlHost(anchor: Anchor): void {
-    if (anchor.host && anchor.hostInlinePosition !== null && anchor.host.style.position === 'relative') anchor.host.style.position = anchor.hostInlinePosition;
+    if (anchor.host && anchor.hostInlinePosition !== null && anchor.host.style.getPropertyValue('position') === 'relative') {
+      if (anchor.hostInlinePosition) anchor.host.style.setProperty('position', anchor.hostInlinePosition, anchor.hostInlinePriority);
+      else anchor.host.style.removeProperty('position');
+    }
     anchor.host = null;
     anchor.hostInlinePosition = null;
+    anchor.hostInlinePriority = '';
   }
 
   // Would a save here produce an honest record? Src pattern (media-identity's
@@ -852,52 +916,34 @@ export async function startOverlay(): Promise<void> {
         removeControl(anchor);
         continue;
       }
-      let el = anchor.el;
-      const interactive = isPressable(face);
-      // The saved/busy faces are status indicators, whereas save/retry are
-      // actual actions. Recreate on that boundary so an icon-only action keeps
-      // the browser's native button semantics instead of imitating them.
-      if (el && el instanceof HTMLButtonElement !== interactive) {
-        el.remove();
-        anchor.el = null;
-        el = null;
+      // The HOST element outlives a change of face: it carries no look of its
+      // own, only the box, so keeping it means the corner does not leave and
+      // re-enter the page's DOM every time the face changes (one fewer thing
+      // for the flicker timeline to record, and one fewer reason for the corner
+      // to move at the moment it is reporting something).
+      const born = !anchor.el;
+      if (born) {
+        const made = makeControlHost();
+        if (!mountControl(anchor, made.el)) continue;
+        anchor.el = made.el;
+        anchor.root = made.root;
       }
-      const born = !el;
-      if (!el) {
-        el = document.createElement(interactive ? 'button' : 'div');
-        if (el instanceof HTMLButtonElement) el.type = 'button';
-        el.style.cssText = [
-          'position:absolute',
-          `width:${CONTROL_SIZE}px`,
-          `height:${CONTROL_SIZE}px`,
-          'border-radius:50%',
-          'display:flex',
-          'align-items:center',
-          'justify-content:center',
-          'box-sizing:border-box',
-          `border:1px solid ${token.overlayBorder}`,
-          `box-shadow:${token.overlayShadow}`,
-          // No width/height/border-radius here: #531 gave all four faces the
-          // same 24px circle, so those can no longer differ between faces and
-          // an animation on them has nothing left to animate.
-          `transition:background ${token.durationBase},color ${token.durationBase},border-color ${token.durationBase},box-shadow ${token.durationBase},transform ${token.durationBase} ${token.easeOut}`,
-          'appearance:none',
-          'font:inherit',
-        ].join(';');
-        el.setAttribute('data-hologram-overlay', '');
-        if (!mountControl(anchor, el)) continue;
-        anchor.el = el;
-      }
+      const el = anchor.el;
+      if (!el) continue;
       if (born || anchor.face !== face) {
-        drawFace(el, face, anchor, unit, state);
+        drawFace(anchor, face, unit, state);
         anchor.face = face;
+        // Named for the tests, which cannot read the localized name (the corner
+        // follows the browser locale) — the same role data-hologram-choice
+        // plays for the duplicate warning's buttons.
+        el.setAttribute('data-hologram-face', face);
       }
       positionControl(anchor, el);
       // A hover save control is routinely created for the image newly under the
       // pointer while scrolling. Keep it still so that normal scrolling does
       // not turn into a repeated pop animation.
       if (born && face !== 'save' && !prefersReducedMotion())
-        el.animate(
+        anchor.control?.animate(
           [
             { opacity: 0, transform: 'scale(0.6)' },
             { opacity: 1, transform: 'scale(1.08)', offset: 0.6 },
@@ -908,19 +954,80 @@ export async function startOverlay(): Promise<void> {
     }
   }
 
-  function drawFace(el: HTMLDivElement | HTMLButtonElement, face: Face, anchor: Anchor, unit: Element, state: UnitState) {
+  // The page-side host element plus the place its face is drawn. The shadow
+  // root is the isolation; the fallback to the host element itself is the same
+  // "an unstyled control still saves the picture" rule the rest of this file
+  // follows — attachShadow only fails on a document that could not take one,
+  // and losing the save there would be a far worse trade than losing the
+  // boundary.
+  function makeControlHost(): { el: HTMLElement; root: ShadowRoot | HTMLElement } {
+    const el = document.createElement(CONTROL_TAG);
+    for (const [property, value] of CONTROL_HOST_STYLE) el.style.setProperty(property, value, 'important');
+    el.setAttribute('data-hologram-overlay', '');
+    let root: ShadowRoot | HTMLElement = el;
+    try {
+      root = el.attachShadow({ mode: 'open' });
+    } catch {
+      /* see above */
+    }
+    return { el, root };
+  }
+
+  // The disc itself, inside the shadow root. Styled inline rather than through
+  // a stylesheet: inline needs no CSSStyleSheet constructor (jsdom has none)
+  // and no <style> element (a host serving `style-src 'none'` kills those even
+  // inside a shadow root — #270 measured it), and inside a shadow tree there is
+  // no host cascade left to beat, so the usual reason to prefer classes is gone.
+  function makeControl(anchor: Anchor, pressable: boolean): HTMLDivElement | HTMLButtonElement {
+    const el = document.createElement(pressable ? 'button' : 'div');
+    if (el instanceof HTMLButtonElement) el.type = 'button';
+    el.style.cssText = [
+      `width:${CONTROL_SIZE}px`,
+      `height:${CONTROL_SIZE}px`,
+      'border-radius:50%',
+      'display:flex',
+      'align-items:center',
+      'justify-content:center',
+      'box-sizing:border-box',
+      'margin:0',
+      `border:1px solid ${token.overlayBorder}`,
+      // Its own shadow, not the card's (#310 — tokens.source.css).
+      `box-shadow:${token.controlShadow}`,
+      // No width/height/border-radius here: #531 gave all four faces the
+      // same 24px circle, so those can no longer differ between faces and
+      // an animation on them has nothing left to animate.
+      `transition:background ${token.durationBase},color ${token.durationBase},border-color ${token.durationBase},box-shadow ${token.durationBase},transform ${token.durationBase} ${token.easeOut}`,
+      'appearance:none',
+      `font-family:${token.fontSans}`,
+    ].join(';');
+    anchor.root?.replaceChildren(el);
+    anchor.control = el;
+    return el;
+  }
+
+  function drawFace(anchor: Anchor, face: Face, unit: Element, state: UnitState) {
+    // What being pressable brings with it, in one place rather than per face:
+    // the element type, the tab stop, the cursor, and the accessible name below
+    // (it needs the face's own sentence, which the switch writes).
+    const pressable = isPressable(face);
+    // The saved/busy faces are status indicators, whereas save/retry are
+    // actual actions. Recreate on that boundary so an icon-only action keeps
+    // the browser's native button semantics instead of imitating them.
+    let el = anchor.control;
+    if (!el || el instanceof HTMLButtonElement !== pressable) el = makeControl(anchor, pressable);
     el.replaceChildren();
     el.onclick = null;
     el.onpointerdown = null;
     el.onpointerenter = null;
     el.onpointerleave = null;
-    el.removeAttribute('aria-label');
-    // What being pressable brings with it, in one place rather than per face:
-    // the tab stop and the cursor here, the accessible name below (it needs the
-    // face's own sentence, which the switch writes). A status face gets neither.
-    const pressable = isPressable(face);
     el.tabIndex = pressable ? 0 : -1;
     el.style.cursor = pressable ? 'pointer' : '';
+    // A status face is a graphic that states a fact; `img` is what makes it one
+    // object with one name rather than an empty <div> assistive tech skips. A
+    // pressable face is already a <button> and must not be told it is anything
+    // else.
+    if (pressable) el.removeAttribute('role');
+    else el.setAttribute('role', 'img');
     // The default fill for the corner, whatever it is saying: a translucent
     // disc, because this thing sits on the user's own picture. The mark is the
     // binding case — it rides every saved picture, permanently, when nobody
@@ -936,19 +1043,45 @@ export async function startOverlay(): Promise<void> {
     el.style.gap = '0';
     el.style.borderRadius = '50%';
     el.style.borderColor = token.overlayBorder;
-    el.style.boxShadow = token.overlayShadow;
+    el.style.boxShadow = token.controlShadow;
     el.style.transform = '';
+    // The sentence this face carries. It is an accessible NAME and nothing
+    // else: no face of this corner shows words, and none of them used to
+    // either — what they had was a `title`, i.e. the BROWSER's tooltip, which
+    // is a different UI system from every other surface this extension draws
+    // (those are its own elements with `role="status"` / `role="alert"`, appear
+    // at once and where the extension put them, while a `title` waits about a
+    // second, lands wherever the OS decides, and never appears at all for a
+    // keyboard or touch user). #310 settles that by removing the tooltip rather
+    // than reimplementing it:
+    //
+    //   the mark states a fact and is not something to operate — an explanation
+    //   attached to it would be hover affordance on a non-control, which is the
+    //   one signal that must stay free for the button sharing this corner
+    //   (#125 has still to decide whether it becomes one);
+    //
+    //   the two pressable faces DO owe the user a sentence, but the place for
+    //   it is the name, not a floating chip: a chip would open right where the
+    //   pointer already is, on top of the picture being looked at, to repeat
+    //   what a 24px glyph under the cursor has already said. What genuinely
+    //   needs words — why a save failed, what to do about it — goes to the
+    //   banner (showSaveBanner), which has room for a sentence.
+    //
+    // A `title` was never a substitute for this: support for falling back to it
+    // varies by assistive technology, and it is never announced to someone who
+    // arrived by keyboard.
+    let name: string;
     switch (face) {
       case 'mark':
         // Monotone check (not the accent): the mark states a fact about the
         // post, it is not an action to take, so it stays out of the accent's
         // vocabulary — which is exactly what tells it apart from the button
         // that shares this corner.
-        el.title = anchor.note || t('badgeSaved');
+        name = t('cornerSaved');
         el.appendChild(makeIcon(ICONS.check, 14));
         break;
       case 'save': {
-        el.title = t('hoverSaveImage');
+        name = t('cornerSave');
         // Keep the same compact, glyph-only monochrome language as the saved
         // mark — same size, same translucency. This control also sits on the
         // user's picture, and the disc is the only thing between them and it
@@ -966,13 +1099,13 @@ export async function startOverlay(): Promise<void> {
           // solid on hover would undo the translucency exactly where the
           // pointer is, which is where the picture is being looked at.
           el.style.background = token.controlSurfaceHover;
-          el.style.boxShadow = `${token.overlayShadow}, 0 0 0 2px ${token.controlHoverGlow}`;
+          el.style.boxShadow = `${token.controlShadow}, 0 0 0 2px ${token.controlHoverGlow}`;
           el.style.transform = 'scale(1.04)';
         };
         el.onpointerleave = () => {
           el.style.background = token.controlSurface;
           el.style.borderColor = token.overlayBorder;
-          el.style.boxShadow = token.overlayShadow;
+          el.style.boxShadow = token.controlShadow;
           el.style.transform = '';
         };
         // A trusted press only (#323). This control is a child of the picture it
@@ -986,18 +1119,19 @@ export async function startOverlay(): Promise<void> {
         break;
       }
       case 'busy':
-        el.title = t('bannerSaving');
+        name = t('cornerSaving');
         el.appendChild(makeSpinner(14));
         break;
       case 'failed':
-        // The note says WHY. A failure is not a dead end: pressing it again
-        // retries straight away, and it returns to a plain button on its own.
-        el.title = anchor.note || t('bannerFailed');
+        // A failure is not a dead end: pressing it again retries straight away,
+        // and it returns to a plain button on its own. The name says exactly
+        // that — the old one was the failure REASON, so the single control whose
+        // press recovers the save was the one place "retry" was never said.
+        name = t('cornerRetry');
         el.onpointerdown = stopPress;
         el.onclick = userOnly<MouseEvent>((e) => {
           stopPress(e);
           setPhase(anchor, 'idle', 0);
-          anchor.note = null;
           startSave(unit, state, anchor);
         });
         el.style.background = token.danger;
@@ -1005,14 +1139,7 @@ export async function startOverlay(): Promise<void> {
         el.appendChild(makeIcon(ICONS.cross, 14));
         break;
     }
-    // The name is the sentence the face already carries: "save this image" for
-    // the button, and for retry the reason the save failed. A `title` alone is
-    // not a name — support for using it as the fallback varies by assistive
-    // technology, and it is never announced to a keyboard user who tabbed here
-    // rather than hovered. Retry saying only WHY it failed is thin for a control
-    // whose press retries; the vocabulary of this corner is #310's to settle,
-    // and until then the existing sentence beats no name at all.
-    if (pressable) el.setAttribute('aria-label', el.title);
+    el.setAttribute('aria-label', name);
   }
 
   function stopPress(e: Event) {
@@ -1023,6 +1150,8 @@ export async function startOverlay(): Promise<void> {
   function removeControl(anchor: Anchor) {
     anchor.el?.remove();
     anchor.el = null;
+    anchor.root = null;
+    anchor.control = null;
     anchor.face = null;
     restoreControlHost(anchor);
   }

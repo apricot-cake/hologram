@@ -64,6 +64,10 @@ export const token = {
   controlSurface: 'var(--hologram-control-surface)',
   controlSurfaceHover: 'var(--hologram-control-surface-hover)',
   controlHoverGlow: 'var(--hologram-control-hover-glow)',
+  // Its own shadow, not the card's (#310): a 36px blur offset 12px down is
+  // wider than a 24px disc and hangs half its height below it — tokens.source.css
+  // argues why that reads as elevation rather than as a mark.
+  controlShadow: 'var(--hologram-control-shadow)',
   // type + motion
   fontSans: 'var(--hologram-font-sans)',
   durationBase: 'var(--hologram-duration-base)',

@@ -35,7 +35,6 @@ export const MESSAGES = {
     // Reason-specific partial-save wording (metaReason from background.js).
     bannerSavedNoMetaProtected: '保存しました（鍵付きアカウントのため投稿情報は取得できません）',
     bannerSavedNoMetaAgeRestricted: '保存しました（年齢制限付き投稿のため投稿情報は取得できません）',
-    bannerFailed: '保存に失敗しました',
     // $1 = reason. Shown when a save fails with a known cause, so the banner
     // says WHY instead of a bare "failed".
     bannerFailedReason: '保存に失敗: $1',
@@ -65,12 +64,24 @@ export const MESSAGES = {
     // drag.js: drop-zone hint (the toasts reuse the banner* keys above)
     dragDropHint: 'ここにドロップで Hologram に保存',
 
-    // overlay.js: tooltip on the timeline's "already saved" mark
-    badgeSaved: 'Hologram に保存済み',
-    // overlay.js: tooltip on the hover save button. It says IMAGE, not post:
-    // this route saves the picture plus the post's text/author, never a
-    // screenshot of how the post looks (that is Alt+S element capture).
-    hoverSaveImage: '画像を保存',
+    // overlay.ts: the four faces of the control in the corner of a picture
+    // (#310). Its OWN vocabulary — the corner used to borrow the banner's
+    // `bannerSaving` / `bannerFailed` for two of its faces, which meant the
+    // wording of a 24px circle was decided by what read well on a 300px pill.
+    // These are accessible names, not tooltips: nothing here is drawn on
+    // screen (see drawFace in overlay.ts for why the corner explains nothing
+    // visually), so each has to be a complete sentence on its own.
+    cornerSaved: 'Hologram に保存済み',
+    // It says IMAGE, not post: this route saves the picture plus the post's
+    // text/author, never a screenshot of how the post looks (that is Alt+S
+    // element capture).
+    cornerSave: '画像を保存',
+    cornerSaving: '保存中',
+    // Says the WORD "再試行". The old wording was the failure reason alone, so
+    // the one control whose press recovers the save never said that pressing it
+    // would (#310). WHY it failed belongs to the banner, which has room for a
+    // sentence and can point at the diagnostics page.
+    cornerRetry: '保存に失敗しました。押すと再試行します',
 
     // bulk-capture.ts: X bookmarks chase-mode intake banner (#362)
     bulkStop: '中断',
@@ -120,7 +131,6 @@ export const MESSAGES = {
     bannerSavedNoMeta: 'Saved (post info unavailable)',
     bannerSavedNoMetaProtected: 'Saved (post info unavailable: private account)',
     bannerSavedNoMetaAgeRestricted: 'Saved (post info unavailable: age-restricted post)',
-    bannerFailed: 'Save failed',
     bannerFailedReason: 'Save failed: $1',
     reasonNoPermalink: 'could not find the post link',
     bannerHostMissing: "Can't reach Hologram's saver. Please restart Chrome.",
@@ -137,10 +147,12 @@ export const MESSAGES = {
     // drag.js: drop-zone hint (the toasts reuse the banner* keys above)
     dragDropHint: 'Drop here to save to Hologram',
 
-    // overlay.js: tooltip on the timeline's "already saved" mark
-    badgeSaved: 'Saved in Hologram',
-    // overlay.js: tooltip on the hover save button (see the ja note).
-    hoverSaveImage: 'Save image',
+    // overlay.ts: the corner control's four faces — accessible names, not
+    // tooltips (see the ja notes).
+    cornerSaved: 'Saved in Hologram',
+    cornerSave: 'Save image',
+    cornerSaving: 'Saving',
+    cornerRetry: 'Save failed. Press to retry',
 
     // bulk-capture.ts: X bookmarks chase-mode intake banner (#362)
     bulkStop: 'Stop',
