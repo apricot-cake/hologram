@@ -20,6 +20,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { JSDOM } from 'jsdom';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
+import { asUser } from './lib-user-event.ts';
 
 // overlay.ts の x 分岐が狙う形の投稿。data-rect-top がメディア枠の幾何を宣言し
 // （jsdom は何もレイアウトしない）、data-rect-size で大きさを絞る。
@@ -144,7 +145,10 @@ const hover = (id: string) => {
   pointerMove(box, r.left + r.width / 2, r.top + r.height / 2);
 };
 const hoverAway = () => pointerMove(window.document.getElementById('feed'), 900, 50); // どの枠よりも右＝何の上でもない
-const click = (el: any) => el.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+// #323: 保存ボタンと再試行はユーザーの押下でしか動かない。ページが投げられる版は
+// pageClick 側で、そちらはガード自身のテストだけが使う。
+const pageClick = (el: any) => el.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+const click = (el: any) => el.dispatchEvent(asUser(new window.MouseEvent('click', { bubbles: true })));
 const rectTop = (sel: string, top: string) => window.document.querySelector(sel)?.setAttribute('data-rect-top', top);
 
 beforeAll(async () => {
@@ -418,6 +422,17 @@ describe('保存ボタン', () => {
     expect(b.style.transform).toBe('scale(1.04)');
 
     b.dispatchEvent(new window.Event('pointerleave'));
+  });
+
+  // #323: この角はページ自身の DOM の中に置かれている（絵の子＝ui-root.ts の但し書き）
+  // ので、ページ側スクリプトから見つけてクリックできる。押せば確認も何も無く保存が
+  // 走る面なので、ユーザーの押下でなければ何も起きない。
+  test('ページが投げた合成クリックでは保存しない（#323）', () => {
+    const before = sent.length;
+    pageClick(saveButtons()[0]);
+
+    expect(sent.slice(before)).toHaveLength(0);
+    expect(saveButtons()).toHaveLength(1); // まだ申し出たまま＝進行中にすらならない
   });
 
   describe('押したとき', () => {

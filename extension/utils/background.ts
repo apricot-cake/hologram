@@ -6,6 +6,7 @@ import { extractorFor, fetchPostMetadata, getHostname, highResUrlOf, isAllowedSe
 import type { PostRecord } from './extractor/types.ts';
 import type { BridgeAck, CaptureAndSendResponse, CheckSavedResponse, ContentToBackgroundMessage, CropImageMessage, CropImageResponse, DumpLogsResponse, LogCaptureResponse, NotifyMessage, SavedEntry, SavedResults, SavedUpdateMessage, SaveProgressMessage, SaveResponse } from './messages.ts';
 import { classifySaveFailure } from './native-error.ts';
+import { createSaveGate, saveRequestKey } from './host-budget.ts';
 import type { SaveLogEntry, SaveStage } from './capture-log.ts';
 
 export function startBackground(): void {
@@ -17,6 +18,15 @@ export function startBackground(): void {
   // recorded). See logCapture / stashLogLocally / the dumpLogs handler.
   const DIAG_PREFIX = 'diaglog_';
   const DIAG_KEEP = 50;
+
+  // How many saves may be in flight at once, and which requests are the same
+  // save (#323 — host-budget.ts). One gate for all three save routes: the bound
+  // is on the native host, and the host does not care which route asked.
+  const saveGate = createSaveGate<any>();
+  // What a refused request answers with. Not a malfunction and nothing for the
+  // user to repair — the only way a person reaches it is by saving faster than
+  // the host can finish, and waiting is the whole of the advice.
+  const BUSY_ERROR = 'Too many saves in flight for this tab';
 
   interface StageError extends Error {
     stage: SaveStage;
@@ -66,7 +76,7 @@ export function startBackground(): void {
   // the order unreadable — sort by `ts`, not by position.
   function beginSave(type: 'save' | 'savePost' | 'saveDragged', ctx: { saveId: string | null; captureId: string; platform: string | null; url: string | null; tabId: number | null }): SaveTrace {
     const reached: SaveStage[] = [];
-    void logCapture({ stage: 'save', phase: 'begin', saveId: ctx.saveId, captureId: ctx.captureId, type, platform: ctx.platform, url: ctx.url });
+    logCapture({ stage: 'save', phase: 'begin', saveId: ctx.saveId, captureId: ctx.captureId, type, platform: ctx.platform, url: ctx.url });
     return {
       // A stage finished. Kept here for the terminal line, and pushed to the
       // page because the page is the only side still able to write a line when
@@ -92,7 +102,7 @@ export function startBackground(): void {
   // before this, a failure line named the stage and nothing else, so it could
   // not be tied to the save's own `begin` line except by timestamp).
   function logSaveFailure(error: StageError | undefined, ctx: { saveId: string | null; platform: string | null; host: string | null; url: string | null }) {
-    void logCapture(
+    logCapture(
       {
         stage: error?.stage || 'unknown',
         phase: 'fail',
@@ -108,6 +118,21 @@ export function startBackground(): void {
     );
   }
 
+  // Start a save, join the identical one already running, or say no (#323 —
+  // host-budget.ts). Shared by the three routes so the bound, and the line a
+  // refusal leaves behind, cannot differ between them.
+  //
+  // The refusal is recorded because it is otherwise invisible: the save simply
+  // did not happen, and `inFlight` is the only thing that says why. Written
+  // through the coalescing queue below, so a page that provokes refusals in a
+  // loop cannot turn the record of them back into a connection per line.
+  function admitSave(message: { type: string; saveId?: string | null; platform: string; postUrl: string }, tabId: number, host: string | null, imageUrls: readonly string[], start: () => Promise<any>): Promise<any> | null {
+    const admitted = saveGate.admit(saveRequestKey(tabId, message.type, message.postUrl, imageUrls), tabId, start);
+    if (admitted) return admitted;
+    logCapture({ stage: 'save', phase: 'fail', saveId: message.saveId ?? null, type: message.type, platform: message.platform, host, url: message.postUrl, error: BUSY_ERROR, inFlight: saveGate.inFlight(tabId) }, true);
+    return null;
+  }
+
   async function activateOnTab(tab, auto = false) {
     // Log the attempt (and the silent non-http bail) to capture.log: an icon
     // click that "does nothing" is otherwise diagnosable only from the SW
@@ -118,10 +143,10 @@ export function startBackground(): void {
     // `activate` line with no `save`/`begin` after it means the user opened the
     // UI and stopped (#519).
     if (!tab.id || !/^https?:/i.test(tab.url || '')) {
-      void logCapture({ stage: 'activate', phase: 'skip', url: tab.url || '(no url)' });
+      logCapture({ stage: 'activate', phase: 'skip', url: tab.url || '(no url)' });
       return;
     }
-    void logCapture({ stage: 'activate', phase: 'ok', host: getHostname(tab.url), url: tab.url, auto });
+    logCapture({ stage: 'activate', phase: 'ok', host: getHostname(tab.url), url: tab.url, auto });
     try {
       // Auto capture (#362) is asked for by its OWN gesture, so the choice
       // rides in as a page-side flag rather than being inferred from the URL —
@@ -146,7 +171,7 @@ export function startBackground(): void {
       });
     } catch (error) {
       console.error('Failed to inject content script:', error);
-      void logCapture({ stage: 'activate', phase: 'fail', host: getHostname(tab.url), url: tab.url, error: (error as Error)?.message });
+      logCapture({ stage: 'activate', phase: 'fail', host: getHostname(tab.url), url: tab.url, error: (error as Error)?.message });
     }
   }
 
@@ -175,7 +200,14 @@ export function startBackground(): void {
       return false;
     }
     const senderHost = getHostname(sender.tab.url);
-    savePostByUrl(sender.tab, message.platform, message.postUrl, message.capturedVia || null, message.saveId)
+    const tabId = sender.tab.id;
+    const tab = sender.tab;
+    const admitted = admitSave(message, tabId, senderHost, [], () => savePostByUrl(tab, message.platform, message.postUrl, message.capturedVia || null, message.saveId));
+    if (!admitted) {
+      sendResponse({ ok: false, errorKind: 'busy', error: BUSY_ERROR } satisfies SaveResponse);
+      return false;
+    }
+    admitted
       .then((result) => sendResponse({ ok: true, ...result } satisfies SaveResponse))
       .catch((error) => {
         console.error(error);
@@ -238,9 +270,16 @@ export function startBackground(): void {
 
     const tabId = sender.tab.id;
     const senderHost = getHostname(sender.tab.url);
+    const tab = sender.tab;
     // captureAndSend never carries a capturedVia (only the intake routes —
     // savePost / imageDragged — do): captureAndSave keeps its default (null).
-    captureAndSave(sender.tab, message.rect, message.postUrl, message.platform, null, message.replaces || null, message.saveId)
+    const admitted = admitSave(message, tabId, senderHost, [], () => captureAndSave(tab, message.rect, message.postUrl, message.platform, null, message.replaces || null, message.saveId));
+    if (!admitted) {
+      chrome.tabs.sendMessage(tabId, { type: 'notify', success: false, errorKind: 'busy' } satisfies NotifyMessage).catch(() => {});
+      sendResponse({ ok: false, errorKind: 'busy', error: BUSY_ERROR } satisfies CaptureAndSendResponse);
+      return false;
+    }
+    admitted
       // captureAndSave has no return value (it notifies the content script
       // directly via notify() instead) — content.js's capturePost() never reads
       // this sendResponse either, so `ok:true` is the whole payload.
@@ -657,46 +696,113 @@ export function startBackground(): void {
   }
 
   // Best-effort diagnostics: append one capture event to the native host's
-  // capture.log so a broken save can be diagnosed from disk later. Opens its OWN
+  // capture.log so a broken save can be diagnosed from disk later. Its own
   // short-lived native connection — not piggybacked on the save (bridgeSend
   // finishes on its first reply), and pre-bridge failures have no save connection
   // at all. NEVER throws and never blocks the save: if the host can't be reached
   // (e.g. it isn't registered — itself worth recording) the entry falls back to a
   // chrome.storage ring buffer that {type:'dumpLogs'} can read back.
-  function logCapture(entry: SaveLogEntry, keepLocal = false): Promise<void> {
+  //
+  // ONE CONNECTION AT A TIME, and no more than one per cooldown (#323). Chrome
+  // starts a host process per connection, so a line-per-connection log turns any
+  // source of repeated lines into a source of processes — which is how #323's
+  // synthetic clicks spawned them without saving anything. Lines written while a
+  // flush is open ride out on the next one, and the queue is capped: past it,
+  // lines go to the local ring buffer only, so the log can drop entries but never
+  // grow the memory or the process count of a wedged worker.
+  //
+  // The cooldown is why the flush is LEADING-EDGE — the first line after a quiet
+  // spell goes out at once. #519's `save`/`begin` line has to reach disk before
+  // the waits it precedes can stall, and a debounce that held it back would take
+  // that away from every save to slow down a case that only a loop reaches.
+  const LOG_COOLDOWN_MS = 1000;
+  const LOG_HOST_TIMEOUT_MS = 4000;
+  const LOG_QUEUE_MAX = 100;
+  interface QueuedLog {
+    entry: SaveLogEntry & { ts: string };
+    // Already in the ring buffer (a `fail` line, stashed before anything is
+    // attempted), so a flush that fails must not stash it a second time.
+    stashed: boolean;
+  }
+  let logQueue: QueuedLog[] = [];
+  let logFlushing = false;
+  let logFlushTimer: ReturnType<typeof setTimeout> | null = null;
+  let lastLogFlushAt = Number.NEGATIVE_INFINITY;
+
+  function logCapture(entry: SaveLogEntry, keepLocal = false): void {
     const full = Object.assign({ ts: new Date().toISOString() }, entry);
     if (keepLocal) stashLogLocally(full);
-    return new Promise((resolve) => {
-      let settled = false;
-      let port: chrome.runtime.Port | null = null;
-      let timer: ReturnType<typeof setTimeout> | null = null;
-      const done = (viaHost: boolean) => {
-        if (settled) return;
-        settled = true;
-        if (timer) clearTimeout(timer);
-        try {
-          port?.disconnect();
-        } catch {
-          /* already gone */
-        }
-        if (!viaHost && !keepLocal) stashLogLocally(full);
-        resolve();
-      };
-      timer = setTimeout(() => done(false), 4000);
+    if (logQueue.length >= LOG_QUEUE_MAX) {
+      if (!keepLocal) stashLogLocally(full); // dropped from the log, kept on disk
+      return;
+    }
+    logQueue.push({ entry: full, stashed: keepLocal });
+    scheduleLogFlush();
+  }
+
+  function scheduleLogFlush() {
+    if (logFlushing || logFlushTimer !== null || !logQueue.length) return;
+    const wait = Math.max(0, lastLogFlushAt + LOG_COOLDOWN_MS - Date.now());
+    if (!wait) {
+      flushLog();
+      return;
+    }
+    logFlushTimer = setTimeout(() => {
+      logFlushTimer = null;
+      flushLog();
+    }, wait);
+  }
+
+  function flushLog() {
+    if (logFlushing || !logQueue.length) return;
+    const batch = logQueue;
+    logQueue = [];
+    logFlushing = true;
+    lastLogFlushAt = Date.now();
+
+    let settled = false;
+    let acked = 0; // replies received = lines this host has taken
+    let port: chrome.runtime.Port | null = null;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const done = () => {
+      if (settled) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
       try {
-        port = chrome.runtime.connectNative(NATIVE_HOST);
+        port?.disconnect();
       } catch {
-        done(false);
-        return;
+        /* already gone */
       }
-      port.onMessage.addListener(() => done(true));
-      port.onDisconnect.addListener(() => done(false));
-      try {
-        port.postMessage({ type: 'log', entry: full });
-      } catch {
-        done(false);
+      // Whatever the host did not acknowledge never reached capture.log.
+      for (const queued of batch.slice(acked)) {
+        if (!queued.stashed) stashLogLocally(queued.entry);
       }
+      logFlushing = false;
+      // The cooldown runs from the END of a flush: a host that took four
+      // seconds to answer must not be asked again the moment it does.
+      lastLogFlushAt = Date.now();
+      scheduleLogFlush(); // anything written while this connection was open
+    };
+
+    timer = setTimeout(done, LOG_HOST_TIMEOUT_MS);
+    try {
+      port = chrome.runtime.connectNative(NATIVE_HOST);
+    } catch {
+      done();
+      return;
+    }
+    port.onMessage.addListener(() => {
+      acked++;
+      if (acked >= batch.length) done();
     });
+    port.onDisconnect.addListener(done);
+    try {
+      // The host reads its stdin in a loop and answers each framed message, so
+      // one connection carries the whole batch (native-host/bridge.cts).
+      for (const queued of batch) port.postMessage({ type: 'log', entry: queued.entry });
+    } catch {
+      done();
+    }
   }
 
   // Ring buffer for entries that couldn't reach the host. One key per entry
@@ -755,7 +861,15 @@ export function startBackground(): void {
       return false;
     }
     const senderHost = getHostname(sender.tab.url);
-    captureAndSaveDragged(sender.tab, message.platform, message.postUrl, message.imageUrls || [], message.replaces || null, message.saveId)
+    const tabId = sender.tab.id;
+    const tab = sender.tab;
+    const imageUrls = message.imageUrls || [];
+    const admitted = admitSave(message, tabId, senderHost, imageUrls, () => captureAndSaveDragged(tab, message.platform, message.postUrl, imageUrls, message.replaces || null, message.saveId));
+    if (!admitted) {
+      sendResponse({ ok: false, errorKind: 'busy', error: BUSY_ERROR } satisfies SaveResponse);
+      return false;
+    }
+    admitted
       .then((result) => sendResponse({ ok: true, ...result } satisfies SaveResponse))
       .catch((error) => {
         console.error(error);
@@ -772,7 +886,7 @@ export function startBackground(): void {
   chrome.runtime.onMessage.addListener((message: ContentToBackgroundMessage, sender, sendResponse) => {
     if (message.type === 'logCapture') {
       const entry = Object.assign({ host: getHostname(sender.tab?.url) }, message.entry || {});
-      void logCapture(entry, entry.phase === 'fail');
+      logCapture(entry, entry.phase === 'fail');
       sendResponse({ ok: true } satisfies LogCaptureResponse);
       return false;
     }

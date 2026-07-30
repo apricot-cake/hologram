@@ -22,6 +22,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { JSDOM } from 'jsdom';
 import { beforeAll, expect, test } from 'vitest';
+import { asUser } from './lib-user-event.ts';
 
 // ブックマーク済みの投稿5件。p1/p2 は固定ヘッダの下に完全に収まり、ビューポートにも収まる
 // （取り込み可能）。p3 はまだ矩形を持たない（折り返しの下＝実際の仮想リストがレイアウトを
@@ -216,7 +217,7 @@ test('常駐オーバーレイの操作部を隠す規則を1つも入れない'
 
 test('停止すると、生のカウンタではなく要約が出る', async () => {
   const stopBtn = Array.from(banner()?.querySelectorAll('button') || [])[0] as HTMLButtonElement;
-  stopBtn.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+  stopBtn.dispatchEvent(asUser(new window.MouseEvent('click', { bubbles: true })));
   await settle();
 
   expect(bannerText().includes('中断') || bannerText().toLowerCase().includes('stop')).toBe(true);

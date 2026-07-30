@@ -40,6 +40,7 @@ import { ICONS, makeIcon, makeSpinner } from './icons.ts';
 import { StatusSurface } from './status-surface.ts';
 import { ensureTokens, motion, prefersReducedMotion, token } from './tokens.ts';
 import { createI18n } from './i18n.ts';
+import { userOnly } from './user-gesture.ts';
 import type { BackgroundToContentMessage, CheckSavedMessage, CheckSavedResponse, ImageDraggedMessage, SavedEntry, SaveResponse } from './messages.ts';
 
 let overlayActive = false;
@@ -974,10 +975,14 @@ export async function startOverlay(): Promise<void> {
           el.style.boxShadow = token.overlayShadow;
           el.style.transform = '';
         };
-        el.onclick = (e) => {
+        // A trusted press only (#323). This control is a child of the picture it
+        // annotates — in the page's own subtree, by design (ui-root.ts) — so the
+        // page can find it and click it, and this route saves without any
+        // further confirmation.
+        el.onclick = userOnly<MouseEvent>((e) => {
           stopPress(e);
           startSave(unit, state, anchor);
-        };
+        });
         break;
       }
       case 'busy':
@@ -989,12 +994,12 @@ export async function startOverlay(): Promise<void> {
         // retries straight away, and it returns to a plain button on its own.
         el.title = anchor.note || t('bannerFailed');
         el.onpointerdown = stopPress;
-        el.onclick = (e) => {
+        el.onclick = userOnly<MouseEvent>((e) => {
           stopPress(e);
           setPhase(anchor, 'idle', 0);
           anchor.note = null;
           startSave(unit, state, anchor);
-        };
+        });
         el.style.background = token.danger;
         el.style.color = token.onDanger;
         el.appendChild(makeIcon(ICONS.cross, 14));

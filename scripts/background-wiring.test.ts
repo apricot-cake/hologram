@@ -630,3 +630,88 @@ describe('imageDragged の振り分け（#450）', () => {
     expect(sent.metadata.mediaType).toBe('image');
   });
 });
+
+// #323 の後半。ページ側のガード（isTrusted）が塞ぐのは「今在る経路」だけなので、
+// ホストのプロセスを起こす側にも上限を置く。connectNative 1本につきホストのプロセスが
+// 1つ起動する（設計どおり＝アプリが閉じていても保存できる理由）ので、「何本開けるか」は
+// そのまま「何プロセス起こせるか」になる。
+describe('ネイティブホストの起動を有界にする（#323）', () => {
+  const MISSKEY_TAB = { tab: { id: 7, url: 'https://misskey.example/notes/1' } };
+  const postUrl = (n: number) => `https://misskey.example/not-a-known-post-shape-${n}`;
+  const savePorts = (createdPorts: any[]) => createdPorts.filter((p: any) => p.sent.some((m: any) => m.type === 'savePost'));
+
+  test('同じ保存の連打は1本にまとまり、両方に同じ結果を返す', async () => {
+    const env = setupBackground();
+    const createdPorts = env.connectAsControllablePort();
+
+    const first = env.dispatch({ type: 'savePost', platform: 'misskey', postUrl: postUrl(1), saveId: 'a' }, MISSKEY_TAB);
+    const second = env.dispatch({ type: 'savePost', platform: 'misskey', postUrl: postUrl(1), saveId: 'b' }, MISSKEY_TAB);
+
+    const portCtl = await portThatSent(createdPorts, 'savePost');
+    portCtl.emitMessage({ ok: true, captureId: 'cap-1', file: 'one.jpg' });
+
+    // saveId が違っても「同じタブの同じ投稿」＝同じ保存。2本目のホスト接続は開かない。
+    expect(savePorts(createdPorts)).toHaveLength(1);
+    await expect(first.responseP).resolves.toMatchObject({ ok: true, captureId: 'cap-1' });
+    await expect(second.responseP).resolves.toMatchObject({ ok: true, captureId: 'cap-1' });
+  });
+
+  test('同時に走らせられる保存には上限があり、超えた分は接続を開かずに断る', async () => {
+    const env = setupBackground();
+    const createdPorts = env.connectAsControllablePort();
+
+    // どれも答えない＝全部が在庫を握ったまま。人の操作では届かない数（上限は8）。
+    for (let i = 0; i < 8; i++) env.dispatch({ type: 'savePost', platform: 'misskey', postUrl: postUrl(i), saveId: `s${i}` }, MISSKEY_TAB);
+    await vi.waitFor(() => expect(savePorts(createdPorts)).toHaveLength(8));
+
+    const refused = env.dispatch({ type: 'savePost', platform: 'misskey', postUrl: postUrl(99), saveId: 's99' }, MISSKEY_TAB);
+
+    // 断りは同期で返る＝ホストへは触れていない。
+    expect(refused.returns).not.toContain(true);
+    await expect(refused.responseP).resolves.toMatchObject({ ok: false, errorKind: 'busy' });
+    expect(savePorts(createdPorts)).toHaveLength(8);
+  });
+
+  test('正常に終われば枠は戻る（断りが焼き付かない）', async () => {
+    const env = setupBackground();
+    const createdPorts = env.connectAsControllablePort();
+
+    const running = [];
+    for (let i = 0; i < 8; i++) running.push(env.dispatch({ type: 'savePost', platform: 'misskey', postUrl: postUrl(i), saveId: `s${i}` }, MISSKEY_TAB));
+    await vi.waitFor(() => expect(savePorts(createdPorts)).toHaveLength(8));
+    savePorts(createdPorts)[0].emitMessage({ ok: true, captureId: 'cap-0', file: 'zero.jpg' });
+    // 応答が返った時点で枠は返っている（在庫の解放は sendResponse より先に走る）。
+    await expect(running[0].responseP).resolves.toMatchObject({ ok: true });
+
+    const next = env.dispatch({ type: 'savePost', platform: 'misskey', postUrl: postUrl(100), saveId: 's100' }, MISSKEY_TAB);
+    await vi.waitFor(() => expect(savePorts(createdPorts)).toHaveLength(9));
+    expect(next.returns).toContain(true); // busy ではなく本物の保存として受け付けた
+  });
+
+  // 本件の発端そのもの＝投稿に解決しないクリックが1行ずつ診断ログを出し、その1行ごとに
+  // 接続が開いていた。行は捨てず、接続だけをまとめる。
+  //
+  // 1行目は待たせない（先端で出す）＝#519 の「保存が始まった」行は、その後に続く待ちが
+  // 詰まるより先にディスクへ置く必要がある。まとめるのはその1本が開いている間に積まれた
+  // 分で、20行でも接続は2本＝行数に比例しない。
+  test('失敗ログが連続しても、接続は行数に比例しない（開いている1本にまとめる）', async () => {
+    const env = setupBackground();
+    const createdPorts = env.connectAsControllablePort();
+    // 接続は「この20行のどれかを運んだか」で数える。前のテストが立てたワーカーの
+    // タイマーがこちらの stub へ紛れ込みうる（テスト環境だけの話＝実物はワーカー1つ）。
+    const ourLines = (port: any) => port.sent.filter((m: any) => m.type === 'log' && typeof m.entry?.seq === 'number');
+    const ourPorts = () => createdPorts.filter((p: any) => ourLines(p).length);
+
+    for (let i = 0; i < 20; i++) {
+      env.dispatch({ type: 'logCapture', entry: { stage: 'select', phase: 'fail', seq: i } }, { tab: { url: 'https://x.com/a' } });
+    }
+
+    await vi.waitFor(() => expect(ourPorts()).toHaveLength(1));
+    expect(ourLines(ourPorts()[0])).toHaveLength(1); // 先頭の1行はすぐ出る＝残り19行では接続が増えない
+
+    ourPorts()[0].emitMessage({ ok: true }); // この接続は用済み＝溜まった分が次の1本で出る
+    await vi.waitFor(() => expect(ourPorts()).toHaveLength(2), { timeout: 3000 });
+    expect(ourLines(ourPorts()[1])).toHaveLength(19); // どの行も捨てていない
+    expect(ourPorts()).toHaveLength(2); // 20行で接続2本
+  });
+});

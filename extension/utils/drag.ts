@@ -13,6 +13,7 @@ import { collectImageUrls, getMediaIdentitySite } from './extractor/index.ts';
 import { ICONS } from './icons.ts';
 import { StatusSurface } from './status-surface.ts';
 import { createI18n } from './i18n.ts';
+import { userOnly } from './user-gesture.ts';
 import type { ImageDraggedMessage, SaveResponse } from './messages.ts';
 
 export async function startDrag(): Promise<void> {
@@ -48,7 +49,12 @@ export async function startDrag(): Promise<void> {
     z.el.addEventListener('dragleave', () => {
       z.setState('idle');
     });
-    z.el.addEventListener('drop', onDrop, true);
+    // The drop is the save. The zone is inside the extension's shared shadow
+    // root, which is `open` for reasons that have nothing to do with keeping
+    // the page out (ui-root.ts) — so the page can find this element and throw a
+    // `drop` at it. A trusted event is what tells the user's release of the
+    // pointer from that (#323).
+    z.el.addEventListener('drop', userOnly(onDrop), true);
     return z;
   }
 
@@ -75,7 +81,7 @@ export async function startDrag(): Promise<void> {
 
   document.addEventListener(
     'dragstart',
-    (e) => {
+    userOnly<DragEvent>((e) => {
       if (!chrome.runtime?.id) return;
       const target = e.target as Element | null;
       const img = (target?.closest?.('img') as HTMLImageElement | null) || (target?.tagName === 'IMG' ? (target as HTMLImageElement) : null);
@@ -88,18 +94,21 @@ export async function startDrag(): Promise<void> {
       // before it can ask about duplicates (#519).
       pending = { type: 'imageDragged', platform: siteConfig.platform, postUrl: identity.link, imageUrls: collectImageUrls(img, siteConfig.platform), saveId: newSaveId() };
       showOverlay();
-    },
+    }),
     true,
   );
 
   // Drag ended without dropping into the zone (dropped elsewhere or cancelled).
+  // Trusted too, and for the pair's sake rather than for the save: a synthetic
+  // `dragend` in the middle of the user's real drag would take the zone away
+  // from under the picture they are still carrying.
   document.addEventListener(
     'dragend',
-    () => {
+    userOnly(() => {
       if (savingViaDrop) return; // a zone drop is handling its own feedback/hide
       pending = null;
       hideOverlay(true);
-    },
+    }),
     true,
   );
 

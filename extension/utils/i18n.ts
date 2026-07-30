@@ -54,6 +54,9 @@ export function createI18n(): Promise<HologramI18nApi> {
       // 詰まり・サービスワーカーの停止）なので、最も安く効く再試行を先頭に置く。
       // 診断ページへの誘導は「繰り返す場合」の第2手＝bannerFailedUnknown が持つ。
       bannerTimedOut: '保存が終わらないため中止しました。もう一度お試しください（繰り返す場合は Chrome を再起動）',
+      // 同時に走っている保存が多すぎて受け付けられなかった（#323）。壊れておらず、
+      // 直すものも無い＝待てば通るので、診断ページへは誘導しない。
+      bannerBusy: '保存が立て込んでいます。少し待ってからもう一度お試しください',
       bannerFailedUnknown: '保存に失敗しました。拡張機能の設定から診断ページを確認してください',
 
       // drag.js: drop-zone hint (the toasts reuse the banner* keys above)
@@ -125,6 +128,8 @@ export function createI18n(): Promise<HologramI18nApi> {
       bannerPostUnavailableProtected: 'Nothing was saved: this account limits who can view its posts',
       bannerPostUnavailableAgeRestricted: 'Nothing was saved: age-restricted post (X serves no post info for it)',
       bannerTimedOut: 'Save timed out and was stopped. Try again (restart Chrome if it keeps happening).',
+      // See the ja note: too many saves at once, nothing broken, no diagnostics.
+      bannerBusy: 'Too many saves at once. Wait a moment and try again.',
       bannerFailedUnknown: 'Save failed. Open the diagnostics page from the extension settings.',
 
       // drag.js: drop-zone hint (the toasts reuse the banner* keys above)
@@ -190,7 +195,9 @@ export function createI18n(): Promise<HologramI18nApi> {
     const postUnavailableText = (reason) => getMessage(reason === 'protected' ? 'bannerPostUnavailableProtected' : reason === 'ageRestricted' ? 'bannerPostUnavailableAgeRestricted' : 'bannerPostUnavailable');
 
     const saveFailureText = (kind, reason?) =>
-      kind === 'post-unavailable' ? postUnavailableText(reason) : getMessage(kind === 'host-missing' ? 'bannerHostMissing' : kind === 'host-unavailable' ? 'bannerHostUnavailable' : kind === 'origin-rejected' ? 'bannerOriginRejected' : kind === 'timeout' ? 'bannerTimedOut' : 'bannerFailedUnknown');
+      kind === 'post-unavailable'
+        ? postUnavailableText(reason)
+        : getMessage(kind === 'host-missing' ? 'bannerHostMissing' : kind === 'host-unavailable' ? 'bannerHostUnavailable' : kind === 'origin-rejected' ? 'bannerOriginRejected' : kind === 'timeout' ? 'bannerTimedOut' : kind === 'busy' ? 'bannerBusy' : 'bannerFailedUnknown');
 
     return { lang: resolved, resolved, getMessage, partialSaveText, saveFailureText };
   })();
