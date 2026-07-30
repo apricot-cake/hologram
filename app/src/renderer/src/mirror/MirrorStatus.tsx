@@ -107,7 +107,7 @@ export function MirrorStatus() {
       if (alive) tick();
     };
     load();
-    onIntegrityCheckDone((_e: unknown, status: any) => {
+    onIntegrityCheckDone((status: any) => {
       integrityRef.current = status;
       if (alive) tick();
     });
@@ -128,7 +128,7 @@ export function MirrorStatus() {
     });
     // A run finished: carry over the fresh result (and pull cfg if it was empty when the
     // run began) so the rail is correct without a manual refresh.
-    onBackupDone(async (_e: any, r: any) => {
+    onBackupDone(async (r: any) => {
       syncingRef.current = false;
       if (!cfgRef.current) {
         try {
