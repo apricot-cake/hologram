@@ -6,7 +6,7 @@
 
 import { normalizeRect, prepareScopedCaptureState } from './dom.ts';
 import { fileBasenameKey } from './media.ts';
-import { emptyRecord, readJsonKeepingRaw, toIso } from './record.ts';
+import { emptyRecord, normalizeHashtags, readJsonKeepingRaw, toIso } from './record.ts';
 import type { Extractor, MediaIdentity, PostMediaElement, PostRect, PostRecord } from './types.ts';
 
 // === DOM ===
@@ -264,6 +264,12 @@ async function fetchMisskeyNote(parsed, url): Promise<PostRecord> {
     rec.reposts = note.renoteCount ?? null;
     rec.replies = note.repliesCount ?? null;
     if (note.lang) rec.lang = note.lang;
+    // note.tags[] is the server's own extraction (#177): Misskey parses the
+    // MFM of text, CW and poll choices at post time and stores the hashtags as
+    // bare strings — no '#', and run through its normalizeForSearch, which
+    // lower-cases them. Reading the field rather than re-parsing the text is
+    // what keeps a tag written in the CW from going missing.
+    rec.hashtags = normalizeHashtags(Array.isArray(note.tags) ? note.tags : []);
     rec.mediaType = misskeyMediaType(note.files);
     rec.media = misskeyMedia(note.files);
     if (note.replyId) {

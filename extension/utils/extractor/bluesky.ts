@@ -5,7 +5,7 @@
 // document names the PDS holding the original blob (see bskyMedia).
 
 import { anySrc, findAncestorContainerLink, hostnameMatches, parseMediaUrlPath, prepareScopedCaptureState } from './dom.ts';
-import { emptyRecord, readJsonKeepingRaw, toIso } from './record.ts';
+import { emptyRecord, normalizeHashtags, readJsonKeepingRaw, toIso } from './record.ts';
 import type { Extractor, MediaIdentity, PostMediaElement, PostRecord } from './types.ts';
 
 const HOSTS = ['bsky.app'];
@@ -203,6 +203,23 @@ function bskyMedia(post, pds?: string | null) {
     }));
 }
 
+// A post's tags live in TWO places in one record, and both are the author's
+// (#177). The '#…' runs typed into the text are richtext facets — feature
+// $type app.bsky.richtext.facet#tag, whose `tag` holds the value without the
+// '#' ("the facet reference should not [include the prefix]", the lexicon
+// says). record.tags[] is the lexicon's separate "additional hashtags, in
+// addition to any included in post text and facets" (max 8), which clients
+// offering a non-inline tag field write instead. Reading only one of them
+// drops half a post's tags depending on which client posted it.
+function bskyHashtags(record): string[] {
+  const facets = Array.isArray(record.facets) ? record.facets : [];
+  const inline = facets
+    .flatMap((f) => (f && Array.isArray(f.features) ? f.features : []))
+    .filter((ft) => ft && String(ft.$type || '').includes('richtext.facet#tag'))
+    .map((ft) => ft.tag);
+  return normalizeHashtags([...inline, ...(Array.isArray(record.tags) ? record.tags : [])]);
+}
+
 async function fetchBlueskyPost(parsed, url): Promise<PostRecord> {
   const rec = emptyRecord(url, 'bluesky');
   rec.screenName = parsed.handle;
@@ -252,6 +269,7 @@ async function fetchBlueskyPost(parsed, url): Promise<PostRecord> {
       }
     }
     if (record.langs && record.langs.length) rec.lang = record.langs[0];
+    rec.hashtags = bskyHashtags(record);
     rec.mediaType = bskyMediaType(post);
     // Only a video post pays for the DID-document round trip; an images post
     // already has its fullsize URLs from the AppView.

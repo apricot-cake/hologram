@@ -5,7 +5,7 @@
 // API — likes/replies/text/author/date/media only, no reposts/bookmarks/views.
 
 import { anySrc, findAncestorContainerLink, hostnameMatches, parseMediaUrlPath, prepareScopedCaptureState } from './dom.ts';
-import { emptyRecord, readJsonKeepingRaw, toIso } from './record.ts';
+import { emptyRecord, normalizeHashtags, readJsonKeepingRaw, toIso } from './record.ts';
 import type { Extractor, MediaIdentity, MediaItem, PostMediaElement, PostRecord } from './types.ts';
 
 const HOSTS = ['x.com', 'twitter.com'];
@@ -216,6 +216,26 @@ function xMedia(details) {
   return out;
 }
 
+// Hashtags a '#' run in the post text would produce, for the one case where
+// the syndication payload does not list them itself (see xHashtags). A tag is
+// letters/digits/underscore in any script — X's own rule — so a '#' inside a
+// URL or a lone '#' yields nothing, and the preceding character must not be
+// word-like (a colour like "#fff" written after a letter is not a tag).
+const X_HASHTAG_IN_TEXT = /(?<![\p{L}\p{N}_])[#＃]([\p{L}\p{N}_][\p{L}\p{N}\p{M}_]*)/gu;
+
+// entities.hashtags[].text is the tag WITHOUT its '#' (the legacy entities
+// shape the syndication endpoint still serves). The key is not guaranteed to
+// be there: the acquisition originals of real saves show `entities` carrying
+// only urls / user_mentions / media on posts that have no hashtag
+// (scripts/canary/snapshots/x.json), and a tombstone has no entities at all.
+// So its ABSENCE says nothing, and the post text — which syndication always
+// returns verbatim, hashes included — is read instead.
+function xHashtags(j): string[] {
+  const ents = j && j.entities && Array.isArray(j.entities.hashtags) ? j.entities.hashtags : null;
+  if (ents) return normalizeHashtags(ents.map((h) => h && h.text));
+  return normalizeHashtags([...String((j && j.text) || '').matchAll(X_HASHTAG_IN_TEXT)].map((m) => m[1]));
+}
+
 async function fetchXTweet(parsed, url): Promise<PostRecord> {
   const rec = emptyRecord(url, 'x');
   rec.screenName = parsed.screenName;
@@ -269,6 +289,7 @@ async function fetchXTweet(parsed, url): Promise<PostRecord> {
     rec.replies = j.conversation_count ?? null;
     rec.date = toIso(j.created_at);
     rec.lang = j.lang || null;
+    rec.hashtags = xHashtags(j);
     rec.mediaType = xMediaType(j.mediaDetails);
     rec.media = xMedia(j.mediaDetails);
     if (j.in_reply_to_screen_name) {
