@@ -15,6 +15,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { JSDOM } from 'jsdom';
 import { beforeAll, describe, expect, test } from 'vitest';
+import { asUser } from './lib-user-event.ts';
 
 const HTML = `<!doctype html><html><body>
   <div id="feed">
@@ -93,7 +94,12 @@ const label = () => zone()?.querySelector('.label') as any;
 const state = () => zone()?.dataset.state;
 // 要素の存在そのものが開閉状態（入場アニメ付きで mount、退場アニメの後に remove）。
 const shown = () => !!zone()?.isConnected;
-const dragEvent = (type: string) => new window.Event(type, { bubbles: true, cancelable: true });
+// The user's drag, not the page's: the drag that arms the zone and the drop
+// that commits it are both trusted-only since #323 (see lib-user-event.ts).
+// `pageEvent` is the same event WITHOUT that mark — what a script on x.com can
+// produce — and is used only by the guard's own tests below.
+const pageEvent = (type: string) => new window.Event(type, { bubbles: true, cancelable: true });
+const dragEvent = (type: string) => asUser(pageEvent(type));
 const settle = (ms = 20) => new Promise((r) => setTimeout(r, ms));
 
 beforeAll(async () => {
@@ -264,6 +270,33 @@ describe('重複保存の警告（ドロップ前の3択）', () => {
     expect(label().textContent).toBe('Not saved');
     duplicateAnswer = { ok: true, duplicate: false };
     await settle(1500);
+  });
+});
+
+// #323: ページ自身が投げた合成イベントでこの経路は1ミリも進まない。ドラッグ保存は
+// 「ユーザーが絵を掴んでゾーンへ落とす」という操作そのものが唯一の関門で、それが
+// isTrusted 未検査だとページ側スクリプトが好きなときに保存を成立させられた。
+describe('#323 ページ由来の合成イベントでは動かない', () => {
+  test('合成 dragstart はゾーンを出さない（保存の入口が開かない）', async () => {
+    await settle(1600); // 直前のシナリオのゾーンが閉じきるまで
+    window.document.getElementById('img1')?.dispatchEvent(pageEvent('dragstart'));
+
+    expect(shown()).toBe(false);
+  });
+
+  test('本物のドラッグ中でも、合成 drop は保存を送らない', async () => {
+    window.document.getElementById('img1')?.dispatchEvent(dragEvent('dragstart'));
+    expect(shown()).toBe(true);
+    const before = sent.length;
+
+    zone().dispatchEvent(pageEvent('drop'));
+    await settle();
+
+    expect(sent.slice(before).map((m) => m.type)).not.toContain('imageDragged');
+    expect(state()).toBe('idle'); // ゾーンはまだユーザーのドロップを待っている
+
+    window.document.dispatchEvent(dragEvent('dragend'));
+    await settle(300);
   });
 });
 

@@ -38,6 +38,10 @@ function writeCache(open: boolean): void {
 }
 
 let open = readCache() ?? DEFAULT_OPEN;
+// Set by the first explicit toggle. load() resolves a tick after boot, and a user who has
+// already reached for the panel by then must not have their choice snapped back by the
+// reconcile — the same race AppShell's `toggled` ref keeps off the sidebar.
+let chosen = false;
 const subs = new Set<() => void>();
 
 function notify(): void {
@@ -66,6 +70,7 @@ export function subscribe(cb: () => void): () => void {
 export function setOpen(next: boolean): void {
   if (open === next) return;
   open = next;
+  chosen = true;
   writeCache(next);
   try {
     hologramIpc.setPref('inspectorOpen', next);
@@ -79,19 +84,15 @@ export function toggle(): void {
   setOpen(!open);
 }
 
-// Reconcile the cache with config.json once at boot — an out-of-app edit still wins.
-// Silent when the pref is unset/unreadable: the cached guess already in use stands.
+// Reconcile the cache with config.json once at boot: config.json is the durable home, so
+// it outranks the cached guess the first render was painted from and an out-of-app edit
+// wins. Silent when the pref is unreadable, or null — null means the user has never
+// toggled the panel, not "closed", so the cached guess (or DEFAULT_OPEN) stands.
 export async function load(): Promise<void> {
   try {
     const prefs = hologramIpc.getPrefs ? await hologramIpc.getPrefs() : null;
-    // ⚠️ #391: `inspectorOpen` is NOT a member of get-prefs' payload (AppPrefs),
-    // because main's pref allow-list (ipc-config.ts's PREF_KEYS) has never
-    // carried the key — so setOpen's setPref above is refused and this read can
-    // only ever be undefined. The localStorage cache is what actually persists
-    // the panel. The cast is what keeps that fact visible until #391 adds the
-    // key at both ends; typing the boundary (#228) did not change it.
-    const saved = prefs ? (prefs as unknown as Record<string, unknown>).inspectorOpen : null;
-    if (typeof saved !== 'boolean' || saved === open) return;
+    const saved = prefs ? prefs.inspectorOpen : null;
+    if (chosen || typeof saved !== 'boolean' || saved === open) return;
     open = saved;
     writeCache(saved);
     notify();

@@ -14,6 +14,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { JSDOM } from 'jsdom';
 import { beforeEach, describe, expect, test } from 'vitest';
+import { asUser } from './lib-user-event.ts';
 
 const BUNDLE = fs.readFileSync(path.join(import.meta.dirname, '..', 'extension', '.output', 'chrome-mv3', 'capture.js'), 'utf8');
 
@@ -27,6 +28,14 @@ const HTML = `<!doctype html><html><body>
     </article>
   </div>
 </body></html>`;
+
+// #323: 投稿を選ぶクリック・答えのボタン・Esc・右クリックは、ユーザーのイベントで
+// しか通らない。ページが投げられる版（合成イベント）は pageEvent 側で、そちらは
+// ガード自身のテストだけが使う。
+const pageEvent = (ctx: Ctx, type: string) => new ctx.window.Event(type, { bubbles: true, cancelable: true });
+const userEvent = (ctx: Ctx, type: string) => asUser(pageEvent(ctx, type));
+const pageKey = (ctx: Ctx, key: string) => new ctx.window.KeyboardEvent('keydown', { key, bubbles: true });
+const userKey = (ctx: Ctx, key: string) => asUser(pageKey(ctx, key));
 
 interface Ctx {
   window: any;
@@ -170,7 +179,7 @@ describe('投稿をクリックすると busy バナーになり captureAndSend 
   beforeEach(async () => {
     ctx = await setup();
     const time = ctx.window.document.querySelector('#post1 time');
-    time.dispatchEvent(new ctx.window.Event('click', { bubbles: true, cancelable: true }));
+    time.dispatchEvent(userEvent(ctx, 'click'));
     await ctx.settle(100); // 二重 requestAnimationFrame を越える
   });
 
@@ -198,7 +207,7 @@ describe('重複保存の警告（保存前の3択）', () => {
   async function clickPostWithDuplicate(answer: any = { ok: true, duplicate: true, captureId: 'cap-old' }) {
     ctx = await setup();
     ctx.setDuplicate(answer);
-    ctx.window.document.querySelector('#post1 time').dispatchEvent(new ctx.window.Event('click', { bubbles: true, cancelable: true }));
+    ctx.window.document.querySelector('#post1 time').dispatchEvent(userEvent(ctx, 'click'));
     await ctx.settle(100);
   }
 
@@ -211,7 +220,7 @@ describe('重複保存の警告（保存前の3択）', () => {
 
   test('スキップ: 保存せずに片付く', async () => {
     await clickPostWithDuplicate();
-    ctx.bannerButtons()[2].dispatchEvent(new ctx.window.Event('click', { bubbles: true, cancelable: true }));
+    ctx.bannerButtons()[2].dispatchEvent(userEvent(ctx, 'click'));
     await ctx.settle(100);
     expect(ctx.sent.some((m) => m.type === 'captureAndSend')).toBe(false);
     expect(ctx.bannerLabel().textContent).toBe('Not saved');
@@ -219,21 +228,21 @@ describe('重複保存の警告（保存前の3択）', () => {
 
   test('コピー: 置換の印なしで撮る', async () => {
     await clickPostWithDuplicate();
-    ctx.bannerButtons()[0].dispatchEvent(new ctx.window.Event('click', { bubbles: true, cancelable: true }));
+    ctx.bannerButtons()[0].dispatchEvent(userEvent(ctx, 'click'));
     await ctx.settle(100);
     expect(ctx.sent.at(-1)).toMatchObject({ type: 'captureAndSend', replaces: null });
   });
 
   test('置換: 置き換える相手の captureId を載せて撮る', async () => {
     await clickPostWithDuplicate();
-    ctx.bannerButtons()[1].dispatchEvent(new ctx.window.Event('click', { bubbles: true, cancelable: true }));
+    ctx.bannerButtons()[1].dispatchEvent(userEvent(ctx, 'click'));
     await ctx.settle(100);
     expect(ctx.sent.at(-1)).toMatchObject({ type: 'captureAndSend', replaces: 'cap-old' });
   });
 
   test('置換のあとの成功表示は「置き換えました」', async () => {
     await clickPostWithDuplicate();
-    ctx.bannerButtons()[1].dispatchEvent(new ctx.window.Event('click', { bubbles: true, cancelable: true }));
+    ctx.bannerButtons()[1].dispatchEvent(userEvent(ctx, 'click'));
     await ctx.settle(100);
     ctx.notify({ type: 'notify', success: true, metaOk: true, grouped: 1 });
     expect(ctx.bannerLabel().textContent).toBe('Replaced (the earlier save goes to the trash)');
@@ -250,7 +259,7 @@ describe('notify: 成功', () => {
 
   beforeEach(async () => {
     ctx = await setup();
-    ctx.window.document.querySelector('#post1 time').dispatchEvent(new ctx.window.Event('click', { bubbles: true, cancelable: true }));
+    ctx.window.document.querySelector('#post1 time').dispatchEvent(userEvent(ctx, 'click'));
     await ctx.settle(100);
     ctx.notify({ type: 'notify', success: true });
   });
@@ -272,7 +281,7 @@ describe('notify: 部分成功・グループ化・失敗', () => {
 
   beforeEach(async () => {
     ctx = await setup();
-    ctx.window.document.querySelector('#post1 time').dispatchEvent(new ctx.window.Event('click', { bubbles: true, cancelable: true }));
+    ctx.window.document.querySelector('#post1 time').dispatchEvent(userEvent(ctx, 'click'));
     await ctx.settle(100);
   });
 
@@ -306,11 +315,51 @@ describe('notify: 部分成功・グループ化・失敗', () => {
 describe('パーマリンクが無い投稿は選ぶと即座に失敗する', () => {
   test('理由付きの fail 文面で、保存メッセージは送らない', async () => {
     const ctx = await setup();
-    ctx.window.document.querySelector('#post2 [data-testid="tweetText"]').dispatchEvent(new ctx.window.Event('click', { bubbles: true, cancelable: true }));
+    ctx.window.document.querySelector('#post2 [data-testid="tweetText"]').dispatchEvent(userEvent(ctx, 'click'));
     await ctx.settle(50);
 
     expect(ctx.sent.some((m) => m.type === 'captureAndSend')).toBe(false);
     expect(ctx.bannerLabel().textContent).toBe('Save failed: could not find the post link');
+  });
+});
+
+// #323: キャプチャセッションが開いている間、ページ側スクリプトはイベント経路を共有して
+// いる＝合成クリックがこのハンドラにも届いていた。届いた結果は2つとも重い＝①ユーザーの
+// クリック無しに保存が成立する ②投稿に解決しないクリックが失敗ログを1行ずつ出し、その
+// 1行ごとにネイティブホストのプロセスが起動する。どちらもここで止める。
+describe('#323 ページ由来の合成イベントではセッションが動かない', () => {
+  test('合成クリックは保存も失敗ログも起こさない（セッションは開いたまま）', async () => {
+    const ctx = await setup();
+
+    // 投稿の上：本物なら保存が始まるクリック。
+    ctx.window.document.querySelector('#post1 time').dispatchEvent(pageEvent(ctx, 'click'));
+    // 投稿に解決しない場所：本物なら select/fail の行が出るクリック（ホスト起動の経路）。
+    ctx.window.document.getElementById('feed').dispatchEvent(pageEvent(ctx, 'click'));
+    await ctx.settle(50);
+
+    expect(ctx.sent).toEqual([]); // 保存も診断ログも1件も出ない
+    expect(ctx.bannerState()).toBe('active'); // まだ「投稿をクリック」を待っている
+    expect(ctx.window.__snsPostSaveActive).toBe(true);
+  });
+
+  test('合成の Esc / 右クリックではセッションを畳まない', async () => {
+    const ctx = await setup();
+
+    ctx.window.document.dispatchEvent(pageKey(ctx, 'Escape'));
+    ctx.window.document.dispatchEvent(pageEvent(ctx, 'contextmenu'));
+    await ctx.settle(50);
+
+    expect(ctx.banner()?.isConnected).toBe(true);
+    expect(ctx.sent).toEqual([]); // cancel の行も出ない＝やめてすらいない
+  });
+
+  test('ユーザーのクリックはそのまま通る（ガードが本物まで止めていないこと）', async () => {
+    const ctx = await setup();
+
+    ctx.window.document.querySelector('#post1 time').dispatchEvent(userEvent(ctx, 'click'));
+    await ctx.settle(50);
+
+    expect(ctx.sent.some((m) => m.type === 'captureAndSend')).toBe(true);
   });
 });
 
@@ -322,7 +371,7 @@ describe('Escape / 右クリックでキャンセル', () => {
 
   test('Escape は保存を送らずに片付き、やめたことだけ記録する', async () => {
     const ctx = await setup();
-    ctx.window.document.dispatchEvent(new ctx.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    ctx.window.document.dispatchEvent(userKey(ctx, 'Escape'));
     await ctx.settle(50);
 
     expect(saveMessages(ctx)).toHaveLength(0);
@@ -333,7 +382,7 @@ describe('Escape / 右クリックでキャンセル', () => {
 
   test('右クリックも同じ（保存は送らない・やめたことは残る）', async () => {
     const ctx = await setup();
-    ctx.window.document.dispatchEvent(new ctx.window.Event('contextmenu', { bubbles: true, cancelable: true }));
+    ctx.window.document.dispatchEvent(userEvent(ctx, 'contextmenu'));
     await ctx.settle(50);
 
     expect(saveMessages(ctx)).toHaveLength(0);

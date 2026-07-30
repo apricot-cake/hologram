@@ -60,6 +60,9 @@ const POST_HTML = `<!doctype html>
 
 declare const chrome: any;
 
+// 1x1 の透明 PNG。中身は問われない＝「壊れていない画像」であることだけが要る。
+const PIXEL = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
+
 // 数値で押さえるもの。敵対的な CSS が効いてしまうと、どれか必ず外れる。
 interface Measured {
   found: boolean;
@@ -98,6 +101,12 @@ interface Measured {
           headers: { 'content-security-policy': "style-src 'none'" },
           body: POST_HTML,
         });
+      } else if (route.request().resourceType() === 'image') {
+        // A REAL picture, because the drag below has to be a real one: Chromium
+        // starts no drag from a broken image, so an aborted request would leave
+        // the zone with nothing to appear for. The URL keeps its x.com shape —
+        // that is what the extension reads the post's identity from.
+        await route.fulfill({ status: 200, contentType: 'image/png', body: PIXEL });
       } else await route.abort();
     });
     await page.goto(POST_URL, { waitUntil: 'domcontentloaded' });
@@ -106,9 +115,19 @@ interface Measured {
     // The DROP ZONE, not the Alt+S banner: activating capture needs activeTab,
     // which only an extension-level gesture (toolbar or command) can grant, and
     // Playwright can press neither. The resident content script is already on
-    // this origin by manifest, and a dragstart on a post's picture is a page
-    // event — same shared surface, same shared root, no permission needed.
-    await page.dispatchEvent('#pic', 'dragstart');
+    // this origin by manifest, and dragging a post's picture is a page-level
+    // gesture — same shared surface, same shared root, no permission needed.
+    //
+    // A REAL drag, not `page.dispatchEvent('dragstart')`: since #323 the zone
+    // only appears for a trusted event, and a dispatched one is by definition
+    // the page's. Pressing and moving the mouse goes through the DevTools
+    // protocol's input domain, which is the user's side of that line. The
+    // release below is far from the zone, so nothing is saved — this test is
+    // about how the zone LOOKS.
+    const picture = await page.locator('#pic').boundingBox();
+    await page.mouse.move(picture.x + picture.width / 2, picture.y + picture.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(picture.x + picture.width / 2 + 80, picture.y + picture.height / 2 + 40, { steps: 8 });
     await wait(600); // the zone's entrance
 
     const m: Measured = await page.evaluate(() => {
@@ -159,6 +178,8 @@ interface Measured {
         surfaceToken: s.getPropertyValue('--hologram-surface').trim(),
       };
     });
+
+    await page.mouse.up(); // let the drag go, away from the zone — nothing is saved
 
     const fail = (why: string) => {
       throw new Error(`HOSTILE_CSS_FAIL: ${why} — ${JSON.stringify(m)}`);

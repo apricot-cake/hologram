@@ -9,6 +9,7 @@ import type { CaptureSite, PostRect } from './extractor/types.ts';
 import { ICONS } from './icons.ts';
 import { StatusSurface } from './status-surface.ts';
 import { createI18n } from './i18n.ts';
+import { userOnly } from './user-gesture.ts';
 import type { BackgroundToContentMessage, CaptureAndSendMessage, CaptureAndSendResponse, CropImageResponse } from './messages.ts';
 
 export async function startCapture(): Promise<void> {
@@ -187,6 +188,16 @@ export async function startCapture(): Promise<void> {
 
   // === Event handlers ===
 
+  // What the user DECIDED — this post, or not this session — as opposed to
+  // where the pointer is. Only these three cross the page's event path into a
+  // save or out of a session, so only these three require a trusted event
+  // (#323 — utils/user-gesture.ts). Wrapped once here rather than at each
+  // addEventListener call because removeEventListener needs this exact
+  // reference back; the handlers themselves are hoisted declarations below.
+  const onUserClick = userOnly(onClick);
+  const onUserContextMenu = userOnly(onContextMenu);
+  const onUserKeyDown = userOnly(onKeyDown);
+
   function onMouseMove(e: MouseEvent) {
     lastPointer = { x: e.clientX, y: e.clientY };
     aimHighlight(findPostElement(e.target));
@@ -242,8 +253,8 @@ export async function startCapture(): Promise<void> {
     // duplicate check so a second click cannot pick another post while the
     // question is on screen; Esc still cancels (onKeyDown stays registered).
     document.removeEventListener('mousemove', onMouseMove, true);
-    document.removeEventListener('click', onClick, true);
-    document.removeEventListener('contextmenu', onContextMenu, true);
+    document.removeEventListener('click', onUserClick, true);
+    document.removeEventListener('contextmenu', onUserContextMenu, true);
     removeEventListener('scroll', onScroll, true);
     highlight.style.display = 'none';
 
@@ -434,9 +445,9 @@ export async function startCapture(): Promise<void> {
     clearSaveWatchdog(); // Esc during a save: the banner is going, the timer must too
 
     document.removeEventListener('mousemove', onMouseMove, true);
-    document.removeEventListener('click', onClick, true);
-    document.removeEventListener('contextmenu', onContextMenu, true);
-    document.removeEventListener('keydown', onKeyDown, true);
+    document.removeEventListener('click', onUserClick, true);
+    document.removeEventListener('contextmenu', onUserContextMenu, true);
+    document.removeEventListener('keydown', onUserKeyDown, true);
     removeEventListener('scroll', onScroll, true);
     chrome.runtime.onMessage.removeListener(onRuntimeMessage);
     restoreCaptureState?.();
@@ -515,8 +526,8 @@ export async function startCapture(): Promise<void> {
 
   // === Listener registration ===
   document.addEventListener('mousemove', onMouseMove, true);
-  document.addEventListener('click', onClick, true);
-  document.addEventListener('contextmenu', onContextMenu, true);
-  document.addEventListener('keydown', onKeyDown, true);
+  document.addEventListener('click', onUserClick, true);
+  document.addEventListener('contextmenu', onUserContextMenu, true);
+  document.addEventListener('keydown', onUserKeyDown, true);
   addEventListener('scroll', onScroll, { capture: true, passive: true });
 }

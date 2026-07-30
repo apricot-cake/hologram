@@ -72,16 +72,11 @@ export interface IpcContext {
   baseOf(name: string | null | undefined): string;
   /** Every extension a downloaded library file can carry. */
   LIBRARY_MEDIA_EXTS: readonly string[];
-  /**
-   * ⚠️ Scaffolding — clear-all's "don't delete these" list is only about JSON a
-   * pre-#5 library can still have lying around; it goes with #441.
-   */
-  LEGACY_INTERNAL_FILES: ReadonlySet<string>;
   APP_ICON: string;
 
   // --- Database ---
   getDbWriter(): DbWriter;
-  /** Opens the DB, applies the one-time legacy migration and drains the intake queue. */
+  /** Opens the DB and drains the intake queue. */
   ensurePostsSynced(): DbHandle | null;
   scheduleSavedIndexWrite(handle: { sqlite: Database.Database }): void;
   /** Consumes pending `replaces` markers (#34) — no inbox event fires for an in-app write. */
