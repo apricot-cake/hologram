@@ -1,6 +1,6 @@
 import { startBulkCapture } from './bulk-capture.ts';
 import { cropScreenshot } from './crop.ts';
-import { buildChoiceRow, checkDuplicate, pagePictureUrls } from './duplicate-guard.ts';
+import { buildChoiceRow, checkDuplicate, formatDeletedAt, pagePictureUrls, TRASHED_CHOICES } from './duplicate-guard.ts';
 import { logSaveEvent, newSaveId, reportSaveTimeout, type SaveStage } from './capture-log.ts';
 import { SAVE_WATCHDOG_MS } from './deadline.ts';
 import { normalizeRect } from './extractor/dom.ts';
@@ -271,23 +271,30 @@ export async function startCapture(): Promise<void> {
           shoot(post, postUrl, null);
           return;
         }
-        banner.setState('ask', getMessage('dupTitle'));
+        // #158: the same question, for a post sitting in the trash rather than in
+        // the library. Dated when the record said when, undated when it did not.
+        const deletedOn = hit.trashed ? formatDeletedAt(hit.trashed.deletedAt) : '';
+        banner.setState('ask', hit.trashed ? (deletedOn ? getMessage('trashedTitleOn', [deletedOn]) : getMessage('trashedTitle')) : getMessage('dupTitle'));
         banner.slot(
-          buildChoiceRow(getMessage, (choice) => {
-            if (isCleanedUp) return;
-            if (choice === 'skip') {
-              // Answering "don't save" is a decision, not a hang. Recorded as
-              // `skip` rather than `cancel` because nothing was abandoned: the
-              // post is already in the library, which is why we asked (#519).
-              openStage = null;
-              logSaveEvent({ stage: 'duplicate', phase: 'skip', saveId, platform: site.platform, url: postUrl });
-              banner.setState('success', getMessage('dupSkipped'));
-              setTimeout(cleanup, 1500);
-              return;
-            }
-            replacing = choice === 'replace';
-            shoot(post, postUrl, replacing ? hit.captureId : null);
-          }),
+          buildChoiceRow(
+            getMessage,
+            (choice) => {
+              if (isCleanedUp) return;
+              if (choice === 'skip') {
+                // Answering "don't save" is a decision, not a hang. Recorded as
+                // `skip` rather than `cancel` because nothing was abandoned: the
+                // post is already in the library, which is why we asked (#519).
+                openStage = null;
+                logSaveEvent({ stage: 'duplicate', phase: 'skip', saveId, platform: site.platform, url: postUrl });
+                banner.setState('success', getMessage('dupSkipped'));
+                setTimeout(cleanup, 1500);
+                return;
+              }
+              replacing = choice === 'replace';
+              shoot(post, postUrl, replacing ? hit.captureId : null);
+            },
+            hit.trashed ? TRASHED_CHOICES : undefined,
+          ),
         );
       });
   }

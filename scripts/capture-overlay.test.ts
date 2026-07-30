@@ -253,6 +253,45 @@ describe('重複保存の警告（保存前の3択）', () => {
     await clickPostWithDuplicate({ ok: false });
     expect(ctx.sent.some((m) => m.type === 'captureAndSend')).toBe(true);
   });
+
+  // #158: ゴミ箱に現物が残っている投稿。同じ器（保存前に聞くバナー）だが選択肢は2つ＝
+  // 置換する相手のレコードがライブラリに無い。
+  describe('ゴミ箱にある投稿の告知', () => {
+    const TRASHED = { ok: true, duplicate: false, trashed: { id: 'cap-gone', deletedAt: '2026-07-01T09:00:00Z' } };
+
+    test('告知バナーになり、選択肢は2つ（置換を出さない）', async () => {
+      await clickPostWithDuplicate(TRASHED);
+      // 日付は環境のロケール・時間帯で表記が変わるので、前半だけを固定して見る。
+      expect(ctx.bannerLabel().textContent).toMatch(/^This post is in the trash \(deleted .+\)$/);
+      expect(ctx.bannerButtons().map((b: any) => b.textContent)).toEqual(['Copy', 'Skip']);
+      expect(ctx.sent.some((m) => m.type === 'captureAndSend')).toBe(false);
+    });
+
+    test('削除日時が無い記録なら日付を省いた文言', async () => {
+      await clickPostWithDuplicate({ ok: true, duplicate: false, trashed: { id: 'cap-gone', deletedAt: null } });
+      expect(ctx.bannerLabel().textContent).toBe('This post is in the trash');
+    });
+
+    test('コピー: 置換の印なしで撮る（新しい1件になる）', async () => {
+      await clickPostWithDuplicate(TRASHED);
+      ctx.bannerButtons()[0].dispatchEvent(userEvent(ctx, 'click'));
+      await ctx.settle(100);
+      expect(ctx.sent.at(-1)).toMatchObject({ type: 'captureAndSend', replaces: null });
+    });
+
+    test('スキップ: 保存しない', async () => {
+      await clickPostWithDuplicate(TRASHED);
+      ctx.bannerButtons()[1].dispatchEvent(userEvent(ctx, 'click'));
+      await ctx.settle(100);
+      expect(ctx.sent.some((m) => m.type === 'captureAndSend')).toBe(false);
+      expect(ctx.bannerLabel().textContent).toBe('Not saved');
+    });
+
+    test('告知が無ければ何も聞かずに撮る', async () => {
+      await clickPostWithDuplicate({ ok: true, duplicate: false });
+      expect(ctx.sent.some((m) => m.type === 'captureAndSend')).toBe(true);
+    });
+  });
 });
 
 describe('notify: 成功', () => {

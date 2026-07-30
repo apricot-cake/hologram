@@ -6,7 +6,7 @@
 // declaration the bridge's parse produces, so a renamed or missing field is a
 // compile error on this side rather than a save that fails on disk.
 import { protocolSkewOf, readHostResponse, responseId } from '../../native-host/protocol.mts';
-import type { CaptureMetadata, HostRequest, ProtocolSkew, SavedResults } from '../../native-host/protocol.mts';
+import type { CaptureMetadata, HostRequest, ProtocolSkew, SavedResults, TrashedEntry, TrashedResults } from '../../native-host/protocol.mts';
 import { CROP_TIMEOUT_MS, NATIVE_HOST_TIMEOUT_MS, SAVED_QUERY_TIMEOUT_MS, withDeadline } from './deadline.ts';
 import { extractorFor, fetchPostMetadata, getHostname, highResUrlOf, isAllowedSender, mediaKeyOf } from './extractor/index.ts';
 import type { PostRecord } from './extractor/types.ts';
@@ -531,7 +531,11 @@ export function startBackground(): void {
   // Ask the host about a batch of URLs. Rejects (rather than answering "not
   // saved") when the host can't be reached, so a missing host shows NO badges
   // instead of asserting that a saved post isn't saved.
-  function queryBridge(urls: string[]): Promise<SavedResults> {
+  //
+  // Answers BOTH halves of the host's reply (#158): what is saved, and what is in
+  // the library's trash. `trashed` is sparse (only the urls that are) and empty
+  // from a host built before it existed.
+  function queryBridge(urls: string[]): Promise<{ results: SavedResults; trashed: TrashedResults }> {
     return new Promise((resolve, reject) => {
       let port: chrome.runtime.Port;
       try {
@@ -555,7 +559,7 @@ export function startBackground(): void {
           // timeline asks before anything is saved), so this is usually where a
           // skew is noticed — in time for the first save's banner to say so.
           noteHostProtocol(res.protocolVersion);
-          resolve(res.ok ? res.ack.results || {} : {});
+          resolve(res.ok ? { results: res.ack.results || {}, trashed: res.ack.trashed || {} } : { results: {}, trashed: {} });
         },
         reject,
         timer,
@@ -581,11 +585,18 @@ export function startBackground(): void {
   // user had just deleted and meant to take again. Re-asking is cheap: the host
   // answers from an index it keeps in memory, invalidated by the save folder's
   // own mtimes, so it already sees the delete.
+  // Both halves of the host's answer are cached together (#158): they come from
+  // one round trip, and a trash notice goes stale on exactly the events a "saved"
+  // does (the post is restored, the trash is emptied, the record expires).
   const SAVED_TTL_MS = 60_000;
   const SAVED_CACHE_MAX = 2000;
-  const savedCache = new Map<string, { entry: SavedEntry | null; until: number }>();
+  interface CachedAnswer {
+    entry: SavedEntry | null;
+    trashed: TrashedEntry | null;
+  }
+  const savedCache = new Map<string, CachedAnswer & { until: number }>();
 
-  function cacheGet(url: string): { entry: SavedEntry | null } | undefined {
+  function cacheGet(url: string): CachedAnswer | undefined {
     const hit = savedCache.get(url);
     if (!hit) return undefined;
     if (hit.until && hit.until < Date.now()) {
@@ -595,9 +606,9 @@ export function startBackground(): void {
     return hit;
   }
 
-  function cacheSet(url: string, entry: SavedEntry | null) {
+  function cacheSet(url: string, entry: SavedEntry | null, trashed: TrashedEntry | null = null) {
     savedCache.delete(url); // re-insert so Map iteration order is LRU-ish
-    savedCache.set(url, { entry, until: Date.now() + SAVED_TTL_MS });
+    savedCache.set(url, { entry, trashed, until: Date.now() + SAVED_TTL_MS });
     if (savedCache.size > SAVED_CACHE_MAX) {
       for (const k of [...savedCache.keys()].slice(0, savedCache.size - SAVED_CACHE_MAX)) savedCache.delete(k);
     }
@@ -639,7 +650,9 @@ export function startBackground(): void {
           merged.owners?.push(captureId || null); // this save wrote this picture
         }
       }
-      cacheSet(url, merged);
+      // No trash notice survives a save of the same post (#158): whatever is in
+      // the trash, this post is now in the library, and "saved" is the answer.
+      cacheSet(url, merged, null);
       if (tabId != null) chrome.tabs.sendMessage(tabId, { type: 'savedUpdate', url, media } satisfies SavedUpdateMessage).catch(() => {});
     }
   }
@@ -661,8 +674,11 @@ export function startBackground(): void {
     queryBridge(ask)
       .then((fresh) => {
         for (const u of ask) {
-          const entry = (Object.hasOwn(fresh, u) ? fresh[u] : null) || null;
-          cacheSet(u, entry);
+          const entry = (Object.hasOwn(fresh.results, u) ? fresh.results[u] : null) || null;
+          // The badge does not draw trash notices — it only asks "is this
+          // saved" — but the answer is cached so the duplicate check does not
+          // have to ask again for a post the timeline just looked at.
+          cacheSet(u, entry, (Object.hasOwn(fresh.trashed, u) ? fresh.trashed[u] : null) || null);
           results[u] = entry;
         }
         sendResponse({ ok: true, results } satisfies CheckSavedResponse);
@@ -695,6 +711,10 @@ export function startBackground(): void {
     ok: boolean;
     duplicate?: boolean;
     captureId?: string | null;
+    // #158: the post is not in the library, but its record and files are in the
+    // library's trash. Never set together with duplicate:true — a live capture
+    // is the stronger answer, and it is the one that can be replaced.
+    trashed?: TrashedEntry | null;
   }
 
   // Two axes, in the order they can be decided (#34's confirmed design):
@@ -710,14 +730,22 @@ export function startBackground(): void {
     if (typeof url !== 'string' || !url) return { ok: true, duplicate: false };
     const hit = cacheGet(url);
     let entry: SavedEntry | null;
+    let trashed: TrashedEntry | null;
     if (hit) {
       entry = hit.entry;
+      trashed = hit.trashed;
     } else {
       const fresh = await queryBridge([url]);
-      entry = (Object.hasOwn(fresh, url) ? fresh[url] : null) || null;
-      cacheSet(url, entry);
+      entry = (Object.hasOwn(fresh.results, url) ? fresh.results[url] : null) || null;
+      trashed = (Object.hasOwn(fresh.trashed, url) ? fresh.trashed[url] : null) || null;
+      cacheSet(url, entry, trashed);
     }
-    if (!entry) return { ok: true, duplicate: false };
+    // Nothing live, but the post is in the trash (#158): re-saving would build a
+    // second copy of a post whose original is still restorable, so the notice is
+    // worth the interruption. Asked BEFORE the picture comparison below because
+    // there are no saved pictures to compare against — the record left the
+    // library, and the trash index answers per post, not per picture.
+    if (!entry) return trashed ? { ok: true, duplicate: false, trashed } : { ok: true, duplicate: false };
 
     const wanted = imageUrls.map((u) => mediaKeyOf(platform, u)).filter((k): k is string => !!k);
     const saved = entry.media.map((u, i) => ({ key: u ? mediaKeyOf(platform, u) : null, owner: (entry?.owners && entry.owners[i]) || entry?.id || null }));

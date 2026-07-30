@@ -69,7 +69,7 @@
     "description": "Options label for the duplicate-save warning"
   },
   "optionsDuplicateWarningDesc": {
-    "message": "すでに保存した画像をもう一度保存しようとしたときに、コピー・置換・スキップを選べる確認を出します。同じ投稿でも別の画像（漫画の次のページなど）なら確認は出ません。",
+    "message": "すでに保存した画像をもう一度保存しようとしたときに、コピー・置換・スキップを選べる確認を出します。同じ投稿でも別の画像（漫画の次のページなど）なら確認は出ません。ゴミ箱に入れた投稿を保存しようとしたときも、ゴミ箱にあることを知らせます（この確認を切ると、そちらも出なくなります）。",
     "description": "Options description for the duplicate-save warning, including when it does NOT ask"
   }
 }
