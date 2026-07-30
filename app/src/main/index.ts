@@ -21,6 +21,7 @@ import { inboxNewDir, ensureInboxDirs, INBOX_DIRNAME } from '../../../native-hos
 import { pruneDecision, nextBaseline } from './backup-guard.ts';
 import { resolveDevServerUrl } from './dev-server-guard.ts';
 import { parseJsonLoose } from './lib-json.ts';
+import { commitFileAtomic, writeFileAtomicSync } from './lib-atomic.ts';
 import { assetSecurityHeaders } from './asset-headers.ts';
 import { isViewerImageName } from './library-files.ts';
 // Save-folder relocation engine (copy+catch-up → flip → verified cleanup → sweep).
@@ -135,9 +136,7 @@ function writeSavePointer(folder) {
   if (typeof folder !== 'string' || !folder.trim()) return;
   try {
     fs.mkdirSync(configDir(), { recursive: true });
-    const tmp = SAVE_POINTER_PATH() + '.tmp';
-    fs.writeFileSync(tmp, folder, 'utf8');
-    fs.renameSync(tmp, SAVE_POINTER_PATH()); // atomic, independent of config.json
+    writeFileAtomicSync(SAVE_POINTER_PATH(), folder); // atomic, independent of config.json
   } catch {
     /* best-effort redundancy */
   }
@@ -163,18 +162,12 @@ function dirExists(p) {
 // only ever see the complete old or complete new file. (Non-atomic writeFileSync
 // truncated config.json on a forced kill → readConfig() returned {} → the next
 // write persisted {} → saveFolder/extensionId/backup were lost at once. That
-// cascade is what made a library "disappear".) Mirrors lib-index's snapshot write.
+// cascade is what made a library "disappear".) The one caller that asks
+// lib-atomic.ts for the fsync, because this is the file whose loss loses the
+// save folder itself.
 function writeConfig(cfg) {
   fs.mkdirSync(configDir(), { recursive: true });
-  const tmp = `${CONFIG_PATH}.tmp`;
-  const fd = fs.openSync(tmp, 'w');
-  try {
-    fs.writeSync(fd, JSON.stringify(cfg, null, 2));
-    fs.fsyncSync(fd);
-  } finally {
-    fs.closeSync(fd);
-  }
-  fs.renameSync(tmp, CONFIG_PATH);
+  writeFileAtomicSync(CONFIG_PATH, JSON.stringify(cfg, null, 2), { fsync: true });
   // Keep the redundant pointer in lockstep with whatever save folder we just wrote.
   if (cfg && typeof cfg.saveFolder === 'string' && cfg.saveFolder.trim()) writeSavePointer(cfg.saveFolder);
 }
@@ -379,10 +372,7 @@ function scheduleSavedIndexWrite(handle: { sqlite: any }) {
       const data = buildSavedIndex(handle.sqlite);
       const dir = configDir();
       fs.mkdirSync(dir, { recursive: true });
-      const file = path.join(dir, SAVED_INDEX_FILE);
-      const tmp = `${file}.tmp`;
-      fs.writeFileSync(tmp, JSON.stringify(data), 'utf8');
-      fs.renameSync(tmp, file);
+      writeFileAtomicSync(path.join(dir, SAVED_INDEX_FILE), JSON.stringify(data));
     } catch {
       /* best-effort — the bridge falls back to journal + loose-inbox scanning */
     }
@@ -1025,16 +1015,11 @@ async function runBackup(reason) {
       for (const f of srcNames) {
         if (destNames.has(f)) continue;
         const destFile = path.join(dest, INBOX_DIRNAME, sub, f);
-        const tmp = `${destFile}.tmp-${Date.now()}`;
         try {
-          await fs.promises.copyFile(path.join(src, INBOX_DIRNAME, sub, f), tmp);
-          await fs.promises.rename(tmp, destFile);
+          await commitFileAtomic(destFile, (tmp) => fs.promises.copyFile(path.join(src, INBOX_DIRNAME, sub, f), tmp), { tmpSuffix: `.tmp-${Date.now()}` });
           destNames.add(f);
           result.written++;
         } catch (e: any) {
-          try {
-            await fs.promises.unlink(tmp);
-          } catch {}
           if (!result.firstError) result.firstError = e.message;
         }
       }
@@ -1056,26 +1041,27 @@ async function runBackup(reason) {
     }
     for (const f of srcSet) {
       if (destSet.has(f)) continue;
-      const tmp = path.join(dest, f + '.tmp-' + Date.now());
       try {
-        await fs.promises.copyFile(path.join(src, f), tmp);
-        // Preserve mtime (floored to ms, the granularity utimes can set) so a
-        // mirror restored back into place keeps the library's own timestamps.
-        try {
-          const s = srcStat.get(f);
-          if (s) {
-            const t = new Date(Math.floor(s.mtimeMs));
-            await fs.promises.utimes(tmp, t, t);
-          }
-        } catch {
-          /* best-effort */
-        }
-        await fs.promises.rename(tmp, path.join(dest, f));
+        await commitFileAtomic(
+          path.join(dest, f),
+          async (tmp) => {
+            await fs.promises.copyFile(path.join(src, f), tmp);
+            // Preserve mtime (floored to ms, the granularity utimes can set) so a
+            // mirror restored back into place keeps the library's own timestamps.
+            try {
+              const s = srcStat.get(f);
+              if (s) {
+                const t = new Date(Math.floor(s.mtimeMs));
+                await fs.promises.utimes(tmp, t, t);
+              }
+            } catch {
+              /* best-effort */
+            }
+          },
+          { tmpSuffix: `.tmp-${Date.now()}` },
+        );
         result.written++;
       } catch (e) {
-        try {
-          await fs.promises.unlink(tmp);
-        } catch {}
         // Surface the first copy error but keep going for the rest
         if (!result.firstError) result.firstError = e.message;
       }

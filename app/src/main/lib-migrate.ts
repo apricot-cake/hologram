@@ -19,7 +19,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-// Transient write artifacts (writeSidecarAtomic tmp names). Never copied; a COLD one
+// Transient write artifacts (lib-atomic.ts's tmp names). Never copied; a COLD one
 // in an abandoned src is garbage from an interrupted write and may be swept.
 const TMP_RE = /\.tmp(-\d+)?$/i;
 

@@ -44,6 +44,7 @@ import type { Entry as ZipEntry, ZipFile as ZipReader } from 'yauzl';
 import { ZipFile } from 'yazl';
 import type Database from 'better-sqlite3';
 import type { RawPayloadShape } from '../../../native-host/raw-payload.mts';
+import { commitFileAtomic } from './lib-atomic.ts';
 import { fillCardDims } from './lib-card-dims.ts';
 import { parseJsonLoose } from './lib-json.ts';
 import { postCapturedVia, postRawPayloads, postsFromDb, tagParentsFromDb, tagsFromDb } from './lib-db-query.ts';
@@ -693,21 +694,15 @@ async function writeCaptureFile(zipfile: ZipReader, entry: ZipEntry, destDir: st
     if (!isWithin(destDir, dest)) return 'skipped'; // defensive Zip-Slip guard
     if (fs.existsSync(dest)) return 'skipped';
     if (name.startsWith('avatars/')) await fs.promises.mkdir(path.join(destDir, 'avatars'), { recursive: true });
-    const tmp = dest + '.tmp-import';
     // Streamed write with a per-entry byte cap: caps even an entry whose declared
-    // size lied past the pre-check above. On abort, drop the partial tmp file.
+    // size lied past the pre-check above. On abort, commitFileAtomic drops the
+    // partial tmp file before rethrowing.
     try {
-      await writeStreamCapped(await zipfile.openReadStreamPromise(entry), tmp, MAX_ZIP_ENTRY_BYTES);
+      await commitFileAtomic(dest, async (tmp) => writeStreamCapped(await zipfile.openReadStreamPromise(entry), tmp, MAX_ZIP_ENTRY_BYTES), { tmpSuffix: '.tmp-import' });
     } catch (e) {
-      try {
-        await fs.promises.unlink(tmp);
-      } catch {
-        /* ignore */
-      }
       if (e instanceof ZipLimitError) return 'skipped';
       throw e;
     }
-    await fs.promises.rename(tmp, dest);
     return 'imported';
   } catch {
     return 'skipped';
