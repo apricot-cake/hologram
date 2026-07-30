@@ -96,6 +96,23 @@ export interface PostRecordShape {
   replyToId: string | null;
   hashtags: string[];
   tags: string[];
+  // Which of this record's fields came from the PAGE rather than from the
+  // platform API (#202) — e.g. ['text','displayName','views']. Empty on every
+  // record the API answered in full, which is the overwhelming majority.
+  //
+  // Recorded because the two sources are not the same quality and nothing else
+  // in the record says which one a value came from: a page-read count is the
+  // rounded form the site displayed ("1.2万" -> 12000), and a page-read text is
+  // what was rendered, ellipsis and all. Kept as the field LIST rather than a
+  // single flag so a later reader can qualify one value without distrusting the
+  // whole record.
+  //
+  // (#202's design comment says "omit when empty". It is written unconditionally
+  // instead, because normalizePostRecord's contract is that every producer emits
+  // the same key set — the same reason hashtags/tags are always present and
+  // empty rather than absent. An empty array carries the same "nothing was
+  // filled from the page" meaning.)
+  domFilled: string[];
   media: MediaItemShape[];
   // Which picture of a multi-image post this record holds, 1-based, and how many
   // the post had (#560). Only a drag save can fill them: it takes ONE picture out
@@ -267,6 +284,7 @@ export function normalizePostRecord(input: PostRecordInput, now: () => string = 
     replyToId: normStr(input.replyToId),
     hashtags: normStrArray(input.hashtags),
     tags: normStrArray(input.tags),
+    domFilled: normStrArray(input.domFilled),
     media: normMedia(input.media),
     imageIndex: normNum(input.imageIndex),
     imageCount: normNum(input.imageCount),

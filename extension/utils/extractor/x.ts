@@ -5,8 +5,9 @@
 // API — likes/replies/text/author/date/media only, no reposts/bookmarks/views.
 
 import { anySrc, findAncestorContainerLink, hostnameMatches, parseMediaUrlPath, prepareScopedCaptureState } from './dom.ts';
+import { parseCount } from './dom-meta.ts';
 import { emptyRecord, normalizeHashtags, readJsonKeepingRaw, toIso } from './record.ts';
-import type { Extractor, MediaIdentity, MediaItem, PostMediaElement, PostRecord } from './types.ts';
+import type { DomMeta, Extractor, MediaIdentity, MediaItem, PostMediaElement, PostRecord } from './types.ts';
 
 const HOSTS = ['x.com', 'twitter.com'];
 
@@ -126,6 +127,144 @@ function findXViewerMedia(el: Element): Element | null {
   if (!X_PHOTO_VIEWER_PATH.test(location.pathname)) return null;
   if (el.tagName !== 'IMG' && el.tagName !== 'VIDEO') return null;
   return x.mediaIdentity?.isPostMedia(el as PostMediaElement) ? el : null;
+}
+
+// === DOM: what the page shows about the post (#202) ===
+//
+// The second source of post information, for the posts the syndication API
+// answers nothing for. On X that is a measured 4.7% of a real library — 31
+// age-restricted posts and 14 protected ones out of 951, counted 2026-07-29 —
+// every one of which is fully rendered on the screen of the person saving it.
+// It also fills the three counts syndication has no field for at all (see this
+// file's header), which are missing from EVERY X record, successful fetch or
+// not.
+//
+// Everything below queries inside the post element only. A document-wide
+// lookup here would attribute a neighbouring post's text to this record, and
+// unlike a selector that stops matching (which costs nothing — the field stays
+// as the API left it) a wrong caption is silently wrong forever.
+
+// A quote card is a post rendered INSIDE another post: its text, its author and
+// its timestamp are all in the quoting article's subtree and all belong to a
+// different post. `[data-testid="quoteTweet"]` names it where X emits that
+// testid; `div[role="link"]` is the shape it has always had (the card is one
+// big link to the quoted post) and is what catches the renders that carry no
+// testid. Matching too eagerly is the safe direction: an over-wide rule fills
+// nothing, an under-wide one fills the wrong post's words.
+const X_QUOTE_CARD = '[data-testid="quoteTweet"], div[role="link"]';
+
+// The first match that belongs to THIS post rather than to a card it embeds.
+function xOwn(post: Element, selector: string): Element | null {
+  for (const el of post.querySelectorAll(selector)) {
+    let inCard = false;
+    for (let n: Element | null = el.parentElement; n && n !== post; n = n.parentElement) {
+      if (n.matches?.(X_QUOTE_CARD)) {
+        inCard = true;
+        break;
+      }
+    }
+    if (!inCard) return el;
+  }
+  return null;
+}
+
+// Post text as a person reads it: emoji are <img alt="😀"> and line breaks are
+// <br>, so textContent alone would silently drop both. <svg> subtrees are
+// skipped whole — the verified badge and the icons live there and their <title>
+// text ("Verified account") is decoration, not part of what was written.
+function xReadText(el: Element): string {
+  let out = '';
+  for (const node of el.childNodes) {
+    if (node.nodeType === 3) {
+      out += node.nodeValue ?? '';
+      continue;
+    }
+    if (node.nodeType !== 1) continue;
+    const child = node as Element;
+    const tag = child.tagName.toLowerCase();
+    if (tag === 'svg') continue;
+    if (tag === 'img') out += child.getAttribute('alt') || '';
+    else if (tag === 'br') out += '\n';
+    else out += xReadText(child);
+  }
+  return out;
+}
+
+// One engagement control's number. The rendered digits come first and the
+// aria-label second, because the label is a sentence in the browser's UI
+// language ("1,234 Likes" / "いいね 1,234件") — the number sits in a different
+// place in each, so reading it there is a fallback, not the rule.
+//
+// A count X does not render at all (it hides zeros) yields null, not 0: this
+// cannot tell "nobody liked it" from "the page did not say", and null is the
+// answer that leaves the record alone.
+function xControlCount(control: Element | null): number | null {
+  if (!control) return null;
+  const shown = control.querySelector('[data-testid="app-text-transition-container"]');
+  // The container holds TWO stacked copies of the figure for the length of X's
+  // count-change animation (that animation is what the container is for), and
+  // reading the whole of it then would splice "12" and "13" into 1213. The
+  // first rendered face is one of the two real values; their concatenation is
+  // never one.
+  const face = shown?.firstElementChild ?? shown;
+  const direct = parseCount(face ? xReadText(face) : '');
+  if (direct != null) return direct;
+  const label = control.getAttribute('aria-label') || '';
+  const run = label.match(/\d[\d.,  ]*[KkMmBb万億兆]?/);
+  return run ? parseCount(run[0]) : null;
+}
+
+// testid per count, both spellings: X flips the control's testid once the
+// viewer has acted on the post (like -> unlike), and a list that knew only the
+// un-acted spelling would go blank on exactly the posts a person bookmarks.
+const X_COUNT_CONTROLS: ReadonlyArray<readonly ['replies' | 'reposts' | 'likes' | 'bookmarks', readonly string[]]> = [
+  ['replies', ['reply']],
+  ['reposts', ['retweet', 'unretweet']],
+  ['likes', ['like', 'unlike']],
+  ['bookmarks', ['bookmark', 'removeBookmark']],
+];
+
+function extractXDomMeta(post: Element): DomMeta {
+  const meta: DomMeta = {};
+  if (!(post instanceof Element)) return meta;
+
+  const textEl = xOwn(post, '[data-testid="tweetText"]');
+  // No text node at all is a normal state, not a failure: an image-only post
+  // has no caption, and an interstitial can render a post with its body held
+  // back. Either way nothing is written — an empty string here would be
+  // indistinguishable from a text post whose text was lost.
+  if (textEl) meta.text = xReadText(textEl);
+
+  // The author block. Its first link is the display name and the one reading
+  // "@handle" is the screen name — the same two anchors X has rendered there
+  // since the redesign, and the only place on a timeline row that carries the
+  // display name at all.
+  const nameEl = xOwn(post, '[data-testid="User-Name"]');
+  if (nameEl) {
+    for (const link of nameEl.querySelectorAll('a')) {
+      const label = xReadText(link).trim();
+      if (!label) continue;
+      if (label.startsWith('@')) meta.screenName ??= label.slice(1);
+      else meta.displayName ??= label;
+    }
+  }
+
+  // <time datetime> is already ISO — the human-readable face ("10h", "1月2日")
+  // is locale-dependent and is never parsed.
+  const timeEl = xOwn(post, 'time[datetime]');
+  if (timeEl) meta.date = toIso(timeEl.getAttribute('datetime'));
+
+  for (const [field, testids] of X_COUNT_CONTROLS) {
+    const control = xOwn(post, testids.map((t) => `[data-testid="${t}"]`).join(','));
+    const n = xControlCount(control);
+    if (n != null) meta[field] = n;
+  }
+  // Views hang off the analytics link rather than a testid'd button — it is the
+  // one number in the action bar that is not a control the viewer can press.
+  const views = xControlCount(xOwn(post, 'a[href*="/analytics"]'));
+  if (views != null) meta.views = views;
+
+  return meta;
 }
 
 // The bookmarks list, and only it: /i/bookmarks and /i/bookmarks/<folderId>.
@@ -399,6 +538,7 @@ const x: Extractor = {
       return prepareScopedCaptureState('__snsCaptureXNoHover', [post, post.parentElement, post.closest('[data-testid="cellInnerDiv"]')]);
     },
     isBulkCapturePage: isXBookmarksPage,
+    extractDomMeta: extractXDomMeta,
   },
 
   mediaIdentity: {
@@ -459,5 +599,5 @@ const x: Extractor = {
 };
 
 export default x;
-export { fetchXTweet, getXPostLink, isXBookmarksPage, parseXPostLink, xMedia, xSnowflakeDate, xToken };
+export { extractXDomMeta, fetchXTweet, getXPostLink, isXBookmarksPage, parseXPostLink, xMedia, xSnowflakeDate, xToken };
 export type { XPostLink };

@@ -1,0 +1,127 @@
+<!--
+  Hand-authored reproduction of the parts of X's tweet DOM that #202's stage 1
+  reads: the body text, the author block, the timestamp and the action bar's
+  counts. NOT a scraped capture — X serves this shape only to an authenticated
+  live session, which these offline suites deliberately never need (same
+  reasoning as x.html next to it).
+
+  What each post is here to prove is written above it. Between them they cover
+  the selectors extension/utils/extractor/x.ts's extractXDomMeta depends on and
+  the ways they have been observed to vary: the acted-on spelling of a control's
+  testid (like -> unlike), the two count vocabularies (1.2K / 1.2万), a quote
+  card's text and author sitting inside the quoting post's own subtree, and the
+  posts that legitimately carry no text or no counts at all.
+-->
+<!DOCTYPE html>
+<html>
+<head></head>
+<body>
+
+  <!-- The ordinary shape: text, author, timestamp, and all five counts. -->
+  <article data-testid="tweet" id="tweetPlain">
+    <div data-testid="User-Name">
+      <div><a href="/alice" role="link"><div dir="ltr"><span>Alice </span><span>Example</span></div></a></div>
+      <svg aria-label="Verified account"><title>Verified account</title></svg>
+      <div><a href="/alice" role="link"><div dir="ltr"><span>@alice</span></div></a></div>
+      <a href="/alice/status/111"><time datetime="2026-01-02T03:04:05.000Z">10h</time></a>
+    </div>
+    <div data-testid="tweetText"><span>Hello </span><img alt="🌸" src="emoji.svg"><br><span>world</span></div>
+    <div role="group" aria-label="12 replies, 34 reposts, 56 likes, 78 bookmarks, 9012 views">
+      <button data-testid="reply" aria-label="12 Replies. Reply">
+        <span data-testid="app-text-transition-container"><span>12</span></span>
+      </button>
+      <button data-testid="retweet" aria-label="34 reposts. Repost">
+        <span data-testid="app-text-transition-container"><span>34</span></span>
+      </button>
+      <button data-testid="like" aria-label="56 Likes. Like">
+        <span data-testid="app-text-transition-container"><span>56</span></span>
+      </button>
+      <button data-testid="bookmark" aria-label="78 Bookmarks. Bookmark">
+        <span data-testid="app-text-transition-container"><span>78</span></span>
+      </button>
+      <a href="/alice/status/111/analytics" aria-label="9012 views. View post analytics">
+        <span data-testid="app-text-transition-container"><span>9,012</span></span>
+      </a>
+    </div>
+  </article>
+
+  <!-- Already liked / reposted / bookmarked: X flips the control's testid.
+       Counts are the abbreviated Japanese forms a ja-locale UI renders. -->
+  <article data-testid="tweet" id="tweetActed">
+    <div data-testid="User-Name">
+      <div><a href="/bob" role="link"><div dir="ltr"><span>Bob</span></div></a></div>
+      <div><a href="/bob" role="link"><div dir="ltr"><span>@bob</span></div></a></div>
+      <a href="/bob/status/222"><time datetime="2026-02-03T00:00:00.000Z">2h</time></a>
+    </div>
+    <div data-testid="tweetText"><span>ふつうの投稿</span></div>
+    <div role="group">
+      <button data-testid="reply" aria-label="返信 1,234 件">
+        <span data-testid="app-text-transition-container"><span>1,234</span></span>
+      </button>
+      <button data-testid="unretweet" aria-label="リポスト済み">
+        <span data-testid="app-text-transition-container"><span>3.4万</span></span>
+      </button>
+      <button data-testid="unlike" aria-label="いいね済み">
+        <span data-testid="app-text-transition-container"><span>1.2万</span></span>
+      </button>
+      <button data-testid="removeBookmark" aria-label="ブックマーク済み">
+        <span data-testid="app-text-transition-container"><span>567</span></span>
+      </button>
+      <a href="/bob/status/222/analytics" aria-label="表示 2.1億 回">
+        <span data-testid="app-text-transition-container"><span>2.1億</span></span>
+      </a>
+    </div>
+  </article>
+
+  <!-- A quote post. The embedded card carries its own tweetText, User-Name and
+       time INSIDE the quoting article — reading any of them would file the
+       quoted author's words under the quoting post. -->
+  <article data-testid="tweet" id="tweetQuote">
+    <div data-testid="User-Name">
+      <div><a href="/carol" role="link"><div dir="ltr"><span>Carol</span></div></a></div>
+      <div><a href="/carol" role="link"><div dir="ltr"><span>@carol</span></div></a></div>
+      <a href="/carol/status/333"><time datetime="2026-03-04T00:00:00.000Z">5h</time></a>
+    </div>
+    <div data-testid="tweetText"><span>これは引用した側の本文</span></div>
+    <div role="link" data-testid="quoteTweet">
+      <div data-testid="User-Name">
+        <div><a href="/dave" role="link"><div dir="ltr"><span>Dave</span></div></a></div>
+        <div><a href="/dave" role="link"><div dir="ltr"><span>@dave</span></div></a></div>
+        <a href="/dave/status/444"><time datetime="2020-01-01T00:00:00.000Z">2020</time></a>
+      </div>
+      <div data-testid="tweetText"><span>引用された側の本文</span></div>
+    </div>
+  </article>
+
+  <!-- An image post with no caption, and a post whose counts are all zero (X
+       renders no digits at all for a zero). Neither is a failure: both must
+       leave the field ABSENT rather than write "" or 0 over the API's answer. -->
+  <article data-testid="tweet" id="tweetNoText">
+    <div data-testid="User-Name">
+      <div><a href="/erin" role="link"><div dir="ltr"><span>Erin</span></div></a></div>
+      <div><a href="/erin" role="link"><div dir="ltr"><span>@erin</span></div></a></div>
+      <a href="/erin/status/555"><time datetime="2026-04-05T00:00:00.000Z">1d</time></a>
+    </div>
+    <div data-testid="tweetPhoto"><img src="https://pbs.twimg.com/media/abc.jpg" alt=""></div>
+    <div role="group">
+      <button data-testid="reply" aria-label="Reply">
+        <span data-testid="app-text-transition-container"></span>
+      </button>
+      <button data-testid="like" aria-label="Like">
+        <span data-testid="app-text-transition-container"></span>
+      </button>
+    </div>
+  </article>
+
+  <!-- Every selector this reads has been renamed by a redesign. The save must
+       be entirely unaffected: nothing is filled, nothing throws. -->
+  <article data-testid="tweet" id="tweetRedesigned">
+    <div data-testid="UserNameV2"><a href="/frank"><span>Frank</span></a></div>
+    <div data-testid="postBody"><span>New markup, same post</span></div>
+    <div role="group">
+      <button data-testid="replyAction"><span>7</span></button>
+    </div>
+  </article>
+
+</body>
+</html>

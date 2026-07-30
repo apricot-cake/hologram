@@ -116,6 +116,35 @@ interface ParsedPost {
 
 // --- DOM phase ---------------------------------------------------------------
 
+// What the PAGE shows about a post, read off the post element at the moment
+// the user chooses it (#202). Every field is optional and every one of them is
+// a gap-filler: the platform API's answer wins wherever it has one, and the
+// merge rule that enforces that lives in ONE place (dom-meta.ts's
+// mergeDomMeta) rather than in each site's extractor.
+//
+// Counts are APPROXIMATE where the page abbreviates them ("1.2万" reads back
+// as 12000) — see dom-meta.ts's parseCount for why that is the specification
+// and not a defect.
+//
+// This shape crosses the content-script -> service-worker boundary as part of
+// the save request (messages.ts's CaptureAndSendMessage.domMeta), so it holds
+// plain data only.
+interface DomMeta {
+  text?: string | null;
+  displayName?: string | null;
+  screenName?: string | null;
+  // ISO 8601. Every site that renders a post time renders it in a <time
+  // datetime> whose attribute is already ISO, so nothing here parses a
+  // human-readable date — a locale-dependent "10h" is not recoverable and is
+  // left absent rather than guessed at.
+  date?: string | null;
+  likes?: number | null;
+  reposts?: number | null;
+  replies?: number | null;
+  bookmarks?: number | null;
+  views?: number | null;
+}
+
 // Alt+S screenshot capture: which element is the post, where to draw the
 // highlight, what its permalink is, and how to quiet the page's own hover
 // styling while the screenshot is taken.
@@ -131,6 +160,20 @@ interface CaptureSite {
   // The site has a list page the chase-mode intake (Alt+Shift+S) can walk, and
   // we are on it right now. Absent on every site that has no such page (#362).
   isBulkCapturePage?(): boolean;
+  // Read what the page is showing for this post, so the fields the platform
+  // API could not answer can still be saved (#202). Absent on the sites this
+  // has not been written for yet — the save is unchanged where it is.
+  //
+  // CALLED THROUGH dom-meta.ts's readDomMeta, never directly: that wrapper is
+  // what keeps a thrown selector error out of the save. An implementation is
+  // still expected not to throw, but it is not what stands between a page
+  // redesign and a lost post.
+  //
+  // MUST QUERY WITHIN `post` ONLY. A document-wide lookup is the one way this
+  // feature can do real damage: it would fill this record with the neighbouring
+  // post's text, and a wrong caption is worse than a missing one because
+  // nothing later reveals it as wrong.
+  extractDomMeta?(post: Element): DomMeta | null;
 }
 
 interface MediaIdentity {
@@ -248,4 +291,4 @@ interface Extractor {
   apiHostPermissions?: readonly string[];
 }
 
-export type { CaptureSite, Extractor, MediaIdentity, MediaIdentitySite, MediaItem, OverlaySite, ParsedPost, PostMediaElement, PostRecord, PostRect, RawAcquisition };
+export type { CaptureSite, DomMeta, Extractor, MediaIdentity, MediaIdentitySite, MediaItem, OverlaySite, ParsedPost, PostMediaElement, PostRecord, PostRect, RawAcquisition };

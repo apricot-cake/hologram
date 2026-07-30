@@ -68,6 +68,7 @@ const POST_COLUMNS = [
   'replaces',
   'imageIndex',
   'imageCount',
+  'domFilled',
 ] as const;
 
 const UPSERT_POST_SQL = `INSERT INTO posts (${POST_COLUMNS.join(',')}) VALUES (${POST_COLUMNS.map(() => '?').join(',')})
@@ -121,6 +122,8 @@ function postParams(n: PostRecordShape): unknown[] {
     replaces: n.replaces,
     imageIndex: n.imageIndex,
     imageCount: n.imageCount,
+    // Same storage as hashtags above: a JSON string[] in one TEXT column (#202).
+    domFilled: JSON.stringify(n.domFilled),
   };
   return POST_COLUMNS.map((c) => byName[c]);
 }

@@ -13,6 +13,7 @@
 // the host wrote it under.
 import type { HostAckView, ProtocolSkew, SavedEntry, SavedResults, TrashedEntry, TrashedResults } from '../../native-host/protocol.mts';
 import type { CropRect } from './crop.ts';
+import type { DomMeta } from './extractor/types.ts';
 import type { SaveFailureKind } from './native-error.ts';
 import type { SaveLogEntry, SaveStage } from './capture-log.ts';
 
@@ -31,6 +32,13 @@ interface CaptureAndSendMessage {
   // The captureId this save replaces, when the duplicate warning was answered
   // "replace" (#34). null/absent on every ordinary save.
   replaces?: string | null;
+  // What the PAGE showed for this post, read off the post element at the
+  // moment it was chosen (#202). It rides on the request because this is the
+  // only side that has the element: the service worker holds a permalink and a
+  // crop rect, and by the time it learns the API answered nothing, the tab may
+  // have scrolled the post away or navigated. Absent on the sites with no
+  // extraction rule yet, and on any read that came back empty.
+  domMeta?: DomMeta | null;
 }
 
 interface SavePostMessage {
@@ -111,6 +119,12 @@ interface NotifySuccessMessage {
   // 'host-old' = update the desktop app; 'host-new' = update the extension.
   // null/absent = the halves match, or no host has answered yet.
   hostSkew?: ProtocolSkew | null;
+  // Which record fields were filled from what the page showed rather than from
+  // the platform API (#202). Read for the banner's WORDING only — a partial
+  // save stays partial, because the two sources are not the same quality and
+  // hiding that is what the amber state exists to prevent. Empty/absent on
+  // every save the API answered in full.
+  domFilled?: string[];
 }
 
 interface NotifyFailureMessage {
