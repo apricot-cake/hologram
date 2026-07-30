@@ -48,6 +48,25 @@ const { buildEnvelope, writeInboxEvent, inboxNewDir, parseInboxEnvelope } = requ
 // side of the native-messaging boundary, so the browser never decides how much
 // of an original is worth keeping.
 const { packRawPayloads } = require('./raw-payload.mts');
+// The message contract itself (#400), shared with the extension: what a request
+// looks like, what an ack looks like, and the one parse that turns a received
+// frame into either. No handler below reads a raw field off the wire.
+// Typed unlike every other require() here (a plain one resolves to `any` — see
+// native-host/tsconfig.json): the whole point of the contract is that the parse
+// returns a narrowed union, and an `any` at this one line would hand every
+// handler back the untyped message this Issue removed.
+const { parseHostFrame, isCaptureId } = require('./protocol.mts') as typeof import('./protocol.mts');
+type BulkAck = import('./protocol.mts').BulkAck;
+type CaptureAck = import('./protocol.mts').CaptureAck;
+type DraggedAck = import('./protocol.mts').DraggedAck;
+type HostResponse = import('./protocol.mts').HostResponse;
+type QueryAck = import('./protocol.mts').QueryAck;
+type QueryRequest = import('./protocol.mts').QueryRequest;
+type SaveAck = import('./protocol.mts').SaveAck;
+type SaveDraggedRequest = import('./protocol.mts').SaveDraggedRequest;
+type SavePostRequest = import('./protocol.mts').SavePostRequest;
+type SaveRequest = import('./protocol.mts').SaveRequest;
+type SavedEntry = import('./protocol.mts').SavedEntry;
 
 // --- Diagnostic log -----------------------------------------------------------
 // Chrome spawns this process once per native-messaging connection, so a line
@@ -93,14 +112,14 @@ function appendLog(entry: Record<string, unknown>): void {
 // reached the host" and "the host had it and did not finish" — a question
 // #507's investigation could not answer from this log, because the only host
 // line was written after the work was already done.
-function logSaveReceived(type: string, msg: any): void {
-  const meta = (msg && msg.metadata) || {};
+function logSaveReceived(req: SaveRequest | SavePostRequest | SaveDraggedRequest): void {
+  const meta = req.metadata;
   appendLog({
     stage: 'bridge',
     phase: 'begin',
-    type,
-    saveId: (msg && msg.saveId) || null,
-    captureId: (msg && msg.captureId) || null,
+    type: req.type,
+    saveId: req.saveId || null,
+    captureId: req.captureId || null,
     platform: meta.platform || null,
     url: meta.url || null,
   });
@@ -108,16 +127,16 @@ function logSaveReceived(type: string, msg: any): void {
 
 // One capture.log line for a bridge-side save result (the final stage). The
 // extension logs the earlier stages; this ties the outcome to the same url.
-function logSaveOutcome(type: string, msg: any, res: any, err: Error | null): void {
-  const meta = (msg && msg.metadata) || {};
+function logSaveOutcome(req: SaveRequest | SavePostRequest | SaveDraggedRequest, res: SaveAck | null, err: Error | null): void {
+  const meta = req.metadata;
   appendLog({
     stage: 'bridge',
     phase: err ? 'fail' : 'ok',
-    type,
+    type: req.type,
     // Minted by the page and carried through both other processes, so this line
     // can be read together with the extension's own (#519).
-    saveId: (msg && msg.saveId) || null,
-    captureId: (res && res.file) || (msg && msg.captureId) || null,
+    saveId: req.saveId || null,
+    captureId: (res && res.file) || req.captureId || null,
     platform: meta.platform || null,
     url: meta.url || null,
     // metaOk is computed by the extension (whether the post API returned info);
@@ -125,9 +144,11 @@ function logSaveOutcome(type: string, msg: any, res: any, err: Error | null): vo
     // metaReason is its cause when the extension could classify one (protected /
     // ageRestricted / unavailable / fetchFailed) — the difference between "the
     // post is gone" and "our fetch broke", which the outcome alone cannot say.
-    metaOk: msg ? msg.metaOk : undefined,
-    metaReason: msg ? msg.metaReason : undefined,
-    mediaCount: res ? res.mediaCount : undefined,
+    metaOk: req.metaOk,
+    metaReason: req.metaReason,
+    // Absent on the dragged-save route, which downloads exactly one picture and
+    // reports it in `media` instead (see the ack types).
+    mediaCount: res && 'mediaCount' in res ? res.mediaCount : undefined,
     error: err ? err.message : undefined,
   });
 }
@@ -187,8 +208,12 @@ function sendMessage(obj: unknown): void {
   }
 }
 
-// captureId is "<epochMillis>-<hex>". Reject anything else so it can never
-// escape the save folder via path separators or "..".
+// captureId is "<epochMillis>-<hex>", and anything else has already been
+// rejected by the shared parse (protocol.mts's CAPTURE_ID_PATTERN) before a
+// request reaches a handler here — the rule belongs to the contract because it
+// is what keeps a page-chosen id from escaping the save folder via a path
+// separator or "..". A handler therefore only has to answer the case where the
+// request carried no usable id at all (captureId === null).
 //
 // Every save's ack carries `captureId` (the uniqueBase-resolved id, which may
 // differ from the one asked for) BESIDE `file`. They are not interchangeable:
@@ -196,11 +221,6 @@ function sendMessage(obj: unknown): void {
 // id (it is the first downloaded media's name). The extension needs the id
 // itself to name a record — #34's "replace" answer says WHICH capture it
 // retires — and used to make do with `file`.
-const SAFE_ID = /^[0-9]{1,20}-[0-9a-f]{1,8}$/i;
-
-function sanitizeCaptureId(id: unknown): string | null {
-  return typeof id === 'string' && SAFE_ID.test(id) ? id : null;
-}
 
 // Collision-avoidance for the captureId-derived base name. Checks the media file at
 // the save-folder root (.jpg) and the inbox envelope (new/<id>.json) — the two
@@ -277,16 +297,15 @@ const INBOX_ENVELOPE_NAME = /^(\d{10,})-[0-9a-f]{1,8}(?:-\d+)?\.json$/i;
 // answer "which capture is this picture in" for a post whose pictures are
 // spread across several records — which is the question the duplicate-save
 // warning's "replace" answer has to get right (#34).
-interface SavedEntry {
-  id: string; // captureId ('' when the source could not report one)
-  media: Array<string | null>;
-  owners: Array<string | null>;
-}
+// The wire shape (protocol.mts's SavedEntry) with `owners` required: on the
+// answering side every entry is BUILT here, so the field is never the "an older
+// snapshot did not carry it" absence the contract has to allow for a reader.
+type IndexEntry = SavedEntry & { owners: Array<string | null> };
 interface SavedIndex {
   folder: string;
   savedIndexMtimeMs: number;
   journalMtimeMs: number;
-  keys: Map<string, SavedEntry>; // postKey -> entry
+  keys: Map<string, IndexEntry>; // postKey -> entry
 }
 let savedIndexCache: SavedIndex | null = null;
 
@@ -310,7 +329,7 @@ function mediaUrlsOf(source: any): Array<string | null> {
 // position is meaningful inside its own record and nowhere else, so appending
 // one from a later record would put a "picture number" at a number that is not
 // its own. Dropping it costs nothing the badge can use.
-function mergeSavedEntry(keys: Map<string, SavedEntry>, key: string, id: string, urls: Array<string | null>, owners?: Array<string | null>): void {
+function mergeSavedEntry(keys: Map<string, IndexEntry>, key: string, id: string, urls: Array<string | null>, owners?: Array<string | null>): void {
   const ownerOf = (i: number) => (owners && owners[i] ? owners[i] : id || null);
   const entry = keys.get(key);
   if (!entry) {
@@ -408,7 +427,7 @@ function readJournal(savedIndexMtimeMs: number): Array<{ k: string; id: string; 
 // Loose inbox envelopes newer than the saved-index snapshot, read newest-first
 // and capped. Reads the save time out of the FILENAME (see INBOX_ENVELOPE_NAME)
 // rather than stat-ing every file — same trick scanRecentSidecars used pre-#299.
-function scanRecentInbox(folder: string, sinceMs: number, keys: Map<string, SavedEntry>): void {
+function scanRecentInbox(folder: string, sinceMs: number, keys: Map<string, IndexEntry>): void {
   let files: string[];
   try {
     files = fs.readdirSync(inboxNewDir(folder));
@@ -441,7 +460,7 @@ function scanRecentInbox(folder: string, sinceMs: number, keys: Map<string, Save
 function buildSavedIndex(folder: string): SavedIndex {
   const indexFile = savedIndexPath();
   const savedIndexMtimeMs = statMtimeMs(indexFile);
-  const keys = new Map<string, SavedEntry>();
+  const keys = new Map<string, IndexEntry>();
   try {
     const idx = JSON.parse(fs.readFileSync(indexFile, 'utf8'));
     const entries = idx && idx.entries;
@@ -470,7 +489,7 @@ function buildSavedIndex(folder: string): SavedIndex {
 
 // Cached map, rebuilt when the save folder changed or either source moved. The
 // two stats are the whole cost of a warm query.
-function savedIndex(folder: string): Map<string, SavedEntry> {
+function savedIndex(folder: string): Map<string, IndexEntry> {
   const c = savedIndexCache;
   if (c && c.folder === folder && c.savedIndexMtimeMs === statMtimeMs(savedIndexPath()) && c.journalMtimeMs === statMtimeMs(journalPath())) {
     return c.keys;
@@ -485,9 +504,12 @@ function savedIndex(folder: string): Map<string, SavedEntry> {
 // the post but not its pictures, which the asker treats as the whole post.
 // The captureId is informational (a record whose id we could not read answers
 // with '').
-function handleQuery(msg: any) {
-  const urls: unknown[] = Array.isArray(msg.urls) ? msg.urls.slice(0, QUERY_URL_CAP) : [];
-  const results: Record<string, SavedEntry | null> = {};
+function handleQuery(req: QueryRequest): QueryAck {
+  // Guarded despite the contract's string[], because this handler is ALSO
+  // called directly by its unit tests (scripts/bridge-query.test.ts): the badge
+  // query is a read, and answering an empty result beats throwing inside it.
+  const urls: unknown[] = (Array.isArray(req.urls) ? req.urls : []).slice(0, QUERY_URL_CAP);
+  const results: QueryAck['results'] = {};
   if (!urls.length) return { ok: true, results };
   const keys = savedIndex(readSaveFolder());
   for (const u of urls) {
@@ -498,10 +520,14 @@ function handleQuery(msg: any) {
   return { ok: true, results };
 }
 
-async function handleSave(msg: any) {
-  const captureId = sanitizeCaptureId(msg.captureId);
+async function handleSave(req: SaveRequest): Promise<CaptureAck> {
+  // Re-checked, not merely trusted: parseHostRequest has already applied
+  // CAPTURE_ID_PATTERN, but this id becomes a FILENAME, and a path-escape guard
+  // that only holds when the caller took one particular route is not a guard.
+  // These handlers are exported and called directly by their unit tests.
+  const captureId = isCaptureId(req.captureId) ? req.captureId : null;
   if (!captureId) throw new Error('Invalid captureId');
-  if (typeof msg.image !== 'string' || !msg.image) throw new Error('Missing image data');
+  if (!req.image) throw new Error('Missing image data');
 
   const saveFolder = readSaveFolder();
   fs.mkdirSync(saveFolder, { recursive: true });
@@ -514,13 +540,13 @@ async function handleSave(msg: any) {
   // the JPEG SOI marker (FF D8 FF) and fail loudly before writing anything; the
   // throw is caught upstream and returned as { ok:false, error }, leaving no
   // orphaned files (the inbox envelope is written only after the image).
-  const img = Buffer.from(msg.image, 'base64');
+  const img = Buffer.from(req.image, 'base64');
   if (img.length < 3 || img[0] !== 0xff || img[1] !== 0xd8 || img[2] !== 0xff) {
     throw new Error('Invalid image data (not a JPEG)');
   }
   fs.writeFileSync(jpgPath, img);
 
-  const meta = msg.metadata || {};
+  const meta = req.metadata;
   // ONE byte budget for this save, shared by the attachments and the avatar
   // below, so a hostile post cannot spend it twice (#389).
   const budget = createByteBudget();
@@ -597,15 +623,15 @@ async function handleSave(msg: any) {
 // permanently prevents. Failing here costs a retry; succeeding here costs the
 // post. recordHoldsContent is the shared rule (post-record.mts), and the badge
 // index applies the SAME rule so shells written before this fix stop answering.
-async function handleSavePost(msg: any) {
-  const captureId = sanitizeCaptureId(msg.captureId);
+async function handleSavePost(req: SavePostRequest): Promise<BulkAck> {
+  const captureId = isCaptureId(req.captureId) ? req.captureId : null; // see handleSave
   if (!captureId) throw new Error('Invalid captureId');
 
   const saveFolder = readSaveFolder();
   fs.mkdirSync(saveFolder, { recursive: true });
 
   const base = uniqueBase(saveFolder, captureId);
-  const meta = msg.metadata || {};
+  const meta = req.metadata;
 
   // Stricter than the screenshot path: with no screenshot the media IS the
   // record's face, so a download that FAILS must not be papered over as a
@@ -640,7 +666,7 @@ async function handleSavePost(msg: any) {
   // Nothing of the post arrived — see this function's comment. Thrown before
   // the envelope is written AND before noteSaved, so the post stays unsaved and
   // unbadged: the next intake run offers it again instead of skipping it.
-  if (!recordHoldsContent(record)) throw new Error(`Post unavailable: nothing was obtained for it (${msg.metaReason || 'no post info'}, no media)`);
+  if (!recordHoldsContent(record)) throw new Error(`Post unavailable: nothing was obtained for it (${req.metaReason || 'no post info'}, no media)`);
   await writeInboxEvent(saveFolder, buildEnvelope(record));
   noteSaved(record.url, base, record.media); // see handleSave
 
@@ -659,21 +685,21 @@ async function handleSavePost(msg: any) {
 // pictures were already in the library. This is the same "illustration record"
 // shape an imported library item produces. captureId is the normal
 // epochMillis-hex form, so it passes SAFE_ID.
-async function handleSaveDragged(msg: any) {
-  const captureId = sanitizeCaptureId(msg.captureId);
+async function handleSaveDragged(req: SaveDraggedRequest): Promise<DraggedAck> {
+  const captureId = isCaptureId(req.captureId) ? req.captureId : null; // see handleSave
   if (!captureId) throw new Error('Invalid captureId');
-  if (typeof msg.imageUrl !== 'string' || !msg.imageUrl) throw new Error('Missing image URL');
+  if (!req.imageUrl) throw new Error('Missing image URL');
 
   const saveFolder = readSaveFolder();
   fs.mkdirSync(saveFolder, { recursive: true });
   const base = uniqueBase(saveFolder, captureId);
 
   const budget = createByteBudget(); // see handleSave: one per save operation
-  const got = await saveStillImage(msg.imageUrl, msg.imageReferer, saveFolder, base, budget);
+  const got = await saveStillImage(req.imageUrl, req.imageReferer, saveFolder, base, budget);
   if (!got) throw new Error('Image download failed (unsupported type, too large, or network error)');
   const imageFile = got.file;
 
-  const meta = msg.metadata || {};
+  const meta = req.metadata;
   let avatarFile = null;
   try {
     avatarFile = await downloadAvatar(meta.avatar, meta.avatarReferer, saveFolder, budget);
@@ -682,7 +708,7 @@ async function handleSaveDragged(msg: any) {
   }
   // source:'drag' marks the image as the artwork itself (not a post screenshot),
   // so the image-view shows it. Mirrors the migrated records' source marker.
-  const media = [{ url: msg.imageUrl, file: imageFile }];
+  const media = [{ url: req.imageUrl, file: imageFile }];
   const record = normalizePostRecord(Object.assign({}, meta, { captureId: base, image: imageFile, media, source: 'drag', avatarFile, raw: packRawPayloads(meta.rawPayloads) }));
   await writeInboxEvent(saveFolder, buildEnvelope(record));
   noteSaved(record.url, base, record.media); // see handleSave
@@ -708,76 +734,70 @@ if (require.main === module) {
       const body = buffer.subarray(4, 4 + len);
       buffer = buffer.subarray(4 + len);
 
-      let msg: any;
-      try {
-        msg = JSON.parse(body.toString('utf8'));
-      } catch {
-        logLine('recv: invalid JSON');
-        sendMessage({ ok: false, error: 'Invalid JSON message' });
-        continue;
-      }
-
-      // The badge's port stays open for a whole browsing session and asks on
-      // every scroll, so its queries would drown bridge.log's one-line-per-save
-      // signal. Everything else still logs — a save that never arrives is the
-      // failure this log exists for.
-      if (msg.type !== 'query') logLine(`recv type=${msg && msg.type}`);
+      // ONE parse for the whole boundary (#400 — protocol.mts): what comes back
+      // is either a request narrowed to its type, or the failure to reply with.
+      // Nothing below reads a field off the raw frame.
+      const parsed = parseHostFrame(body.toString('utf8'));
       // Replies carry the request's id back when it has one. A one-shot
       // connection (every save path) does not need it — the port closes after
       // its single reply — but the badge multiplexes many queries over ONE port
       // and has to match each answer to its question. Echoed for every type so
       // the correlation rule is the message's, not the handler's.
-      const reply = (res: Record<string, unknown>) => sendMessage(msg && msg.id != null ? Object.assign({ id: msg.id }, res) : res);
+      const reply = (id: number | null, res: HostResponse) => sendMessage(id != null ? Object.assign({ id }, res) : res);
+      if (!parsed.ok) {
+        logLine(`recv: ${parsed.failure.error}`);
+        reply(parsed.id, parsed.failure);
+        continue;
+      }
+      const req = parsed.request;
+      // The badge's port stays open for a whole browsing session and asks on
+      // every scroll, so its queries would drown bridge.log's one-line-per-save
+      // signal. Everything else still logs — a save that never arrives is the
+      // failure this log exists for.
+      if (req.type !== 'query') logLine(`recv type=${req.type}`);
+      // A save's ack is sent once its downloads settle; the process drains
+      // naturally, so the pending fetch keeps it alive. `save-failed` is the
+      // handler's own refusal — the message inside it is what the extension
+      // classifies (native-error.ts), so it is passed through untouched.
+      const settle = (r: SaveRequest | SavePostRequest | SaveDraggedRequest, work: Promise<SaveAck>) =>
+        work
+          .then((res) => {
+            logSaveOutcome(r, res, null);
+            reply(r.id ?? null, res);
+          })
+          .catch((err) => {
+            logSaveOutcome(r, null, err);
+            reply(r.id ?? null, { ok: false, error: err.message, code: 'save-failed' });
+          });
       try {
-        if (msg.type === 'save') {
-          logSaveReceived('save', msg);
-          // async (downloads original media) — ack is sent once it settles. The
-          // process drains naturally so the pending fetch keeps it alive.
-          handleSave(msg)
-            .then((res) => {
-              logSaveOutcome('save', msg, res, null);
-              reply(res);
-            })
-            .catch((err) => {
-              logSaveOutcome('save', msg, null, err);
-              reply({ ok: false, error: err.message });
-            });
-        } else if (msg.type === 'savePost') {
-          logSaveReceived('savePost', msg);
-          handleSavePost(msg)
-            .then((res) => {
-              logSaveOutcome('savePost', msg, res, null);
-              reply(res);
-            })
-            .catch((err) => {
-              logSaveOutcome('savePost', msg, null, err);
-              reply({ ok: false, error: err.message });
-            });
-        } else if (msg.type === 'saveDragged') {
-          logSaveReceived('saveDragged', msg);
-          handleSaveDragged(msg)
-            .then((res) => {
-              logSaveOutcome('saveDragged', msg, res, null);
-              reply(res);
-            })
-            .catch((err) => {
-              logSaveOutcome('saveDragged', msg, null, err);
-              reply({ ok: false, error: err.message });
-            });
-        } else if (msg.type === 'query') {
-          // Read-only: "which of these permalinks are already in the library?"
-          reply(handleQuery(msg));
-        } else if (msg.type === 'log') {
-          // Diagnostics relayed by the extension (pre-bridge stages). Persist + ack.
-          appendLog(msg.entry || {});
-          reply({ ok: true });
-        } else if (msg.type === 'ping') {
-          reply({ ok: true, pong: true });
-        } else {
-          reply({ ok: false, error: `Unknown message type: ${msg.type}` });
+        switch (req.type) {
+          case 'save':
+            logSaveReceived(req);
+            settle(req, handleSave(req));
+            break;
+          case 'savePost':
+            logSaveReceived(req);
+            settle(req, handleSavePost(req));
+            break;
+          case 'saveDragged':
+            logSaveReceived(req);
+            settle(req, handleSaveDragged(req));
+            break;
+          case 'query':
+            // Read-only: "which of these permalinks are already in the library?"
+            reply(req.id ?? null, handleQuery(req));
+            break;
+          case 'log':
+            // Diagnostics relayed by the extension (pre-bridge stages). Persist + ack.
+            appendLog(req.entry);
+            reply(req.id ?? null, { ok: true });
+            break;
+          case 'ping':
+            reply(req.id ?? null, { ok: true, pong: true });
+            break;
         }
       } catch (err) {
-        reply({ ok: false, error: err.message });
+        reply(req.id ?? null, { ok: false, error: err.message, code: 'save-failed' });
       }
     }
   });
