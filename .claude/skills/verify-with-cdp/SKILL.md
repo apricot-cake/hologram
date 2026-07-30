@@ -61,7 +61,11 @@ description: Hologram を CDP（Chrome DevTools Protocol）で計測・撮影・
 
 - **実機の Chrome が読んでいるのは本体ツリーの `extension/.output/chrome-mv3`**＝dev ビルドと production ビルドが同じフォルダに書かれる（`outDirTemplate`＝docs/build.md）。挙動を検証する前に**今どちらのビルドが載っているか**を確認する＝`dev:ext` の常駐の有無と対象バンドルのビルド時刻（確認を怠って1時間、旧バンドルの挙動を「修正後のコード」として推測し外した・2026-07-26）。
 - dev と prod は manifest の `key` が同じ＝**拡張 ID が同一**で、resident.js も両方が自己完結バンドル＝**ページ側からどちらが載っているかは判別できない**。判別できるのは `chrome://extensions` のロード元だけ。
-- **拡張側のグローバルは isolated world**＝ページの JS コンソール（`javascript_tool`／DevTools）からは常に `undefined`/`false` に見える。`false` を「拡張が動いていない」根拠にしない。正しい観測点は**共有 DOM の副作用**＝合成 `dragstart` で `#__hologramDropZone`（`z-index:2147483647` の body 直下 div）が出れば注入は生きている。
+- **拡張側のグローバルは isolated world**＝ページの JS コンソール（`javascript_tool`／DevTools）からは常に `undefined`/`false` に見える。`false` を「拡張が動いていない」根拠にしない。
+- **⛔ 注入の生死を `dispatchEvent` で作ったイベントで判定しない**（実害 2026-07-31）。`utils/user-gesture.ts` の `userOnly`（#323 の信頼境界）が**保存を開始・応答・終了させる全ハンドラ**（投稿を選ぶクリック・重複警告の3つの答え・ドロップゾーンを出す `dragstart` とコミットする `drop`・ホバーの保存ボタン・取込の停止・セッションを捨てるキーと右クリック）に掛かっていて、**`isTrusted !== true` を設計どおり無言で捨てる**。`dispatchEvent` は定義上 `isTrusted:false` を付けるので、**届かないのが正常**＝「反応しない」を「注入されていない」と読むと切り分けが丸ごと壊れる（この日、権限・プロファイル・ビルド・ブラウザ再起動まで疑って往復した末、ユーザーが実際にドラッグしたら一発で出た）。
+  - **trusted なイベントを作れるのは CDP の `Input.*` だけ**（`user-gesture.ts` の冒頭コメントが明記）＝`Input.dispatchMouseEvent`／claude-in-chrome なら `computer` の `hover`・`left_click_drag`。`page.dispatchEvent` はページ側と同じ扱いになる。
+  - **「痕跡ゼロ」も注入の否定にならない**＝`hologram-extension-ui` を作るのは `ui-root.ts` の `ensureUiRoot()` だけで、唯一の呼び出し元は `status-surface.ts`（出すものが無い間は生成されない）。`<hologram-corner-control>` は画像ごとに、保存済みの印かホバー時の保存ボタンとしてだけ挿入される。**素のタイムラインで custom element 0 は健全な状態。**
+  - **注入の生死を非破壊で見たいなら、まず他の拡張と比べる**＝同じ x.com を見ている別の content script（Control Panel for Twitter 等）の痕跡も同時に消えているなら、疑うのはそのタブやプロファイルであって Hologram ではない。
 - **アイコン無反応の一次診断は `~/.hologram/capture.log`**: click 行なし＝クリックが SW に届いていない（別ウィンドウ/別アイコンの疑い）／`phase:"skip"`＝非 http タブ／`phase:"fail"`＝executeScript のエラー内容つき。
 - **全自動テストは `scripts/e2e-capture-test.cts`**（使い捨て Chrome＋SW evaluate で activateOnTab 相当 → バナー → 保存 → API 照合 → 掃除）。⚠️SW 注入の files リストは `background.ts` と**手動同期**＝本体の注入リストを変えたら e2e も直す。
 - 拡張 ID は manifest `key` から決定的に計算できる: `SHA256(base64decode(key))` の先頭16バイトを a〜p の16進アルファベットへ。
@@ -74,5 +78,5 @@ description: Hologram を CDP（Chrome DevTools Protocol）で計測・撮影・
 
 - **スクロール検証は `document.visibilityState` を先に読む**（2026-07-26）。**背面タブでは X の仮想リストがそもそも動かない**（hidden のまま `window.scrollBy` で 5824px 進めても投稿件数もページ高も不変）。可視タブなら合成スクロール（`scrollIntoView`＋`scrollBy`）でもメディア画像は読み込まれた。「合成スクロールだから読まれない」と結論する前に「背面だから何も動いていない」を潰す。
 - **X で `performance.getEntriesByType('resource')` を件数の根拠にしない**（実地被弾 2026-07-26）。X 自身が `clearResourceTimings()` を定期的に呼ぶのでバッファは直近の消去以降しか残らない。**画像が読めたかの判定は `img.complete && img.naturalWidth>0`**。
-- 合成 Alt+S は CDP Input ゆえ `chrome.commands` を発火しない。代わりに常駐 content_script の drag 経路を使う＝投稿画像に `dragstart` を合成 → `#__hologramDropZone` へ `dragover`/`drop`。page main world からの dispatch でも isolated world のリスナに届き `saveDragged`→`connectNative` が走る。到達確認は overlay の `textContent` と bridge.log の `launched` 行。
+- 合成 Alt+S は CDP Input ゆえ `chrome.commands` を発火しない。代わりに常駐 content_script の drag 経路を使う＝投稿画像に `dragstart` → `#__hologramDropZone` へ `dragover`/`drop`。**⚠️この経路は CDP の `Input.*` で駆動すること**＝`page.dispatchEvent` で合成したものは `userOnly`（上の「拡張を診断する」参照）に弾かれて何も起きない。2026-07-31 より前のこの行は「main world からの dispatch でも届く」と書いていたが、それは #323 の信頼境界が入る前の事実。到達確認は overlay の `textContent` と bridge.log の `launched` 行。
 - `javascript_tool` の返り値に URL やクエリ文字列が混じると `[BLOCKED: Cookie/query string data]` で落ちる＝boolean かサニタイズ（`replace(/https?:\/\/\S+/g,'<url>')`）して返す。
