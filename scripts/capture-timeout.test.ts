@@ -14,7 +14,15 @@ import path from 'node:path';
 import { describe, expect, test, vi } from 'vitest';
 import { clickPost, makeRig, REPLY_UNTIL_SAVE, settle } from './lib-capture-rig.ts';
 
-test('保存要求に誰も答えなければ、上限で必ず終わる（永久に「保存中...」にしない）', async () => {
+// 待つ側が測るのは**沈黙**で、保存の総時間ではない（#507 の続き）。
+// 上限がひとつの平らな 90 秒だったころ、90 秒でなければならない理由があった＝
+// 脚（crop 10s ＋ メタデータ 20s ＋ ホスト 30s）は直列なので、平らな上限は合計を
+// 越えないと遅い保存を失敗と呼んでしまう。ワーカーは脚の切れ目ごとに1行
+// 押してくる（saveProgress）ので、待つ側は「次の1行」を待てば足りる＝
+// 受領 10 秒・沈黙 40 秒という短い2問に分かれる。
+const ackOf = (rig: { sent: any[] }) => rig.sent.find((m) => m.type === 'captureAndSend').saveId;
+
+test('バックグラウンドが受領すら返さなければ、10 秒で終わる（永久に「保存中...」にしない）', async () => {
   // captureAndSend にだけ答えない＝バックグラウンドが黙った状態そのもの。
   const rig = makeRig(REPLY_UNTIL_SAVE);
   await clickPost(rig);
@@ -22,13 +30,12 @@ test('保存要求に誰も答えなければ、上限で必ず終わる（永�
   expect(rig.sent.some((m) => m.type === 'captureAndSend')).toBe(true);
   expect(rig.state()).toBe('busy');
 
-  // 正常な保存を巻き添えにしないこと＝バックグラウンド側の予算（crop 10s ＋
-  // メタデータ 20s ＋ ネイティブホスト 30s）を跨いでもまだ待っている。
-  rig.advance(60_000);
+  // 受領の上限より手前では諦めない＝押した直後に失敗と言い出さないこと。
+  rig.advance(9_000);
   await settle();
   expect(rig.state()).toBe('busy');
 
-  rig.advance(31_000); // 90 秒の見張りを越える
+  rig.advance(1_500); // 受領の 10 秒を越える
   await settle();
   expect(rig.state()).toBe('error');
   // バナーはブラウザのロケールに従う＝jsdom は en。日本語版の同じ文言は
@@ -37,16 +44,55 @@ test('保存要求に誰も答えなければ、上限で必ず終わる（永�
   expect(rig.text()).toContain('Try again');
 });
 
-test('タイムアウトは capture.log へ残す', async () => {
+test('受領が来たら、遅い保存を失敗と呼ばない（脚の合計を越えても待つ）', async () => {
   const rig = makeRig(REPLY_UNTIL_SAVE);
   await clickPost(rig);
-  rig.advance(91_000);
+  const saveId = ackOf(rig);
+
+  // ワーカーが「受け取った」と告げる＝ここから測るのは沈黙になる。
+  rig.push({ type: 'saveProgress', saveId, reached: [] });
+  rig.advance(30_000); // 受領だけの上限（10 秒）はもう越えている
+  await settle();
+  expect(rig.state()).toBe('busy');
+
+  // 脚を通過するたびに待ち直す＝実測の最重量（4枚・12.4 秒）どころか、
+  // 平らな上限だった 90 秒を越えて進む保存も打ち切られない。
+  for (const stage of ['capture', 'crop', 'metadata', 'bridge']) {
+    rig.push({ type: 'saveProgress', saveId, reached: [stage] });
+    rig.advance(30_000);
+    await settle();
+    expect(rig.state(), `${stage} を報告した直後に打ち切られた`).toBe('busy');
+  }
+
+  // 最後の1行から沈黙が続けば終わる＝ホストの 30 秒より長い 40 秒。
+  rig.advance(41_000);
+  await settle();
+  expect(rig.state()).toBe('error');
+});
+
+test('別の保存の進捗では待ち直さない（他のタブに固まりを支えさせない）', async () => {
+  const rig = makeRig(REPLY_UNTIL_SAVE);
+  await clickPost(rig);
+
+  rig.push({ type: 'saveProgress', saveId: 'someone-else', reached: ['metadata'] });
+  rig.advance(11_000);
+  await settle();
+  expect(rig.state()).toBe('error');
+});
+
+test('タイムアウトは capture.log へ残す（どちらの上限で終えたかも書く）', async () => {
+  const rig = makeRig(REPLY_UNTIL_SAVE);
+  await clickPost(rig);
+  rig.advance(11_000);
   await settle();
 
   const logged = rig.sent.filter((m) => m.type === 'logCapture').map((m) => m.entry);
   const timeout = logged.find((e) => e.phase === 'fail' && e.stage === 'result');
   expect(timeout, `logCapture entries: ${JSON.stringify(logged)}`).toBeTruthy();
   expect(String(timeout.error)).toMatch(/timed out/i);
+  // 「受け取られなかった」と「受け取ったあと黙った」は原因が別＝前者は居ない
+  // ワーカー、後者は生きているが脚で止まったワーカー。行がどちらか言うこと。
+  expect(String(timeout.error)).toMatch(/never acknowledged/i);
 });
 
 test('サービスワーカーが落ちてチャネルが閉じたら、見張りを待たずに終わる', async () => {
@@ -103,7 +149,7 @@ describe('打ち切りは必ず記録される（#507 の穴）', () => {
 
   test.each(SURFACES)('%s は上限を張り、かつ打ち切りを記録する', (file) => {
     const source = code(file);
-    expect(source, `${file} が保存の上限を張らなくなった＝この不変条件の対象から外れたなら SURFACES を直す`).toContain('SAVE_WATCHDOG_MS');
+    expect(source, `${file} が保存の上限を張らなくなった＝この不変条件の対象から外れたなら SURFACES を直す`).toMatch(/startSaveDeadline\(/);
     expect(source, `${file} が capture-log を読み込んでいない`).toMatch(/from '\.\/capture-log\.ts'/);
     expect(source, `${file} は上限を張るのに reportSaveTimeout() を呼んでいない＝打ち切りが capture.log に残らない`).toMatch(/reportSaveTimeout\(/);
   });
@@ -111,8 +157,9 @@ describe('打ち切りは必ず記録される（#507 の穴）', () => {
   test('上限を張るファイルを数え漏らしていない', () => {
     const armed = fs
       .readdirSync(UTILS)
-      .filter((f) => f.endsWith('.ts') && f !== 'deadline.ts')
-      .filter((f) => code(f).includes('SAVE_WATCHDOG_MS'));
+      // deadline.ts は数値、save-deadline.ts は待ち方そのもの＝どちらも面ではない。
+      .filter((f) => f.endsWith('.ts') && f !== 'deadline.ts' && f !== 'save-deadline.ts')
+      .filter((f) => code(f).includes('startSaveDeadline'));
     expect(armed.sort()).toEqual([...SURFACES].sort());
   });
 });

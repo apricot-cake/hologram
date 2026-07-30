@@ -71,7 +71,7 @@ test('保存が始まって終わらなかった場合は、やめた場合と�
   const rig = makeRig(REPLY_UNTIL_SAVE);
   await clickPost(rig);
 
-  rig.advance(91_000); // 90 秒の見張りを越える
+  rig.advance(91_000); // どちらの上限（受領 10 秒・沈黙 40 秒）も越える
   await settle();
 
   const entries = rig.logged();

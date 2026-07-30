@@ -45,7 +45,7 @@
 // order are untouched: the host element is still an ordinary absolutely
 // positioned child of the picture.
 import { newSaveId, reportSaveTimeout } from './capture-log.ts';
-import { SAVE_WATCHDOG_MS } from './deadline.ts';
+import { startSaveDeadline } from './save-deadline.ts';
 import { collectImageUrls, getCaptureSite, getMediaIdentitySite, getOverlaySite, mediaKeyOf, mediaKeysOf } from './extractor/index.ts';
 import type { CaptureSite, OverlaySite, PostMediaElement } from './extractor/types.ts';
 import { ICONS, makeIcon, makeSpinner } from './icons.ts';
@@ -705,22 +705,17 @@ export async function startOverlay(): Promise<void> {
     // why, exactly like a reported failure.
     // Groups this press's lines across the three processes (#519).
     const saveId = newSaveId();
-    let settled = false;
-    const watchdog = setTimeout(() => {
-      if (settled) return;
-      settled = true;
+    const deadline = startSaveDeadline(saveId, (error) => {
       // Recorded, not just shown. This is the surface the hang in #507 was
       // actually reported from, and it is the one with no service-worker line
       // to fall back on: the resident script logs nothing on its own, so
       // without this the timeout leaves capture.log exactly as empty as the
       // silent spinner did.
-      reportSaveTimeout('hover-save', media.platform, identity.link, `save timed out — no result from the background within ${SAVE_WATCHDOG_MS}ms`, saveId);
+      reportSaveTimeout('hover-save', media.platform, identity.link, error, saveId);
       failSave(unit, state, anchor, saveFailureText('timeout'));
-    }, SAVE_WATCHDOG_MS);
+    });
     chrome.runtime.sendMessage({ type: 'imageDragged', platform: media.platform, postUrl: identity.link, imageUrls: collectImageUrls(el, media.platform), saveId } satisfies ImageDraggedMessage, (res?: SaveResponse) => {
-      if (settled) return; // a late answer to a press already given up on
-      settled = true;
-      clearTimeout(watchdog);
+      if (!deadline.settle()) return; // a late answer to a press already given up on
       if (chrome.runtime.lastError || !res || !res.ok) {
         failSave(unit, state, anchor, saveFailureText(res && !res.ok ? res.errorKind : undefined, res && !res.ok ? res.metaReason : undefined));
         return;
