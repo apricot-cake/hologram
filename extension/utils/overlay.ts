@@ -110,6 +110,15 @@ export async function startOverlay(): Promise<void> {
   // mismatch.
   const CONTROL_SIZE = 24;
   const CONTROL_INSET = 6;
+  // The two faces that are an ACTION rather than a report. Everything that
+  // follows from "this one can be pressed" — the native <button> element, the
+  // accessible name, the tab stop, the pointer cursor — is decided from this
+  // one predicate, so a face cannot be pressable and yet miss part of what
+  // being pressable requires. Retry used to (#536): the per-face code restored
+  // the name and the tab stop for `save` only, leaving retry a nameless button
+  // at tabIndex -1, i.e. the recovery from a failed save was reachable by
+  // pointer alone.
+  const isPressable = (face: Face) => face === 'save' || face === 'failed';
   const FLASH_MS = 1400; // "saved" confirmation after a press
   const ERROR_MS = 2500; // failure shown, then back to a button to retry
   const ERROR_BANNER_MS = 2800; // same readable dwell as the Alt+S failure banner
@@ -843,7 +852,7 @@ export async function startOverlay(): Promise<void> {
         continue;
       }
       let el = anchor.el;
-      const interactive = face === 'save' || face === 'failed';
+      const interactive = isPressable(face);
       // The saved/busy faces are status indicators, whereas save/retry are
       // actual actions. Recreate on that boundary so an icon-only action keeps
       // the browser's native button semantics instead of imitating them.
@@ -902,8 +911,12 @@ export async function startOverlay(): Promise<void> {
     el.onpointerenter = null;
     el.onpointerleave = null;
     el.removeAttribute('aria-label');
-    el.tabIndex = -1;
-    el.style.cursor = '';
+    // What being pressable brings with it, in one place rather than per face:
+    // the tab stop and the cursor here, the accessible name below (it needs the
+    // face's own sentence, which the switch writes). A status face gets neither.
+    const pressable = isPressable(face);
+    el.tabIndex = pressable ? 0 : -1;
+    el.style.cursor = pressable ? 'pointer' : '';
     // The STATUS default. A face that merely reports something — the saved
     // mark, the in-flight spinner — rides a translucent disc, because the mark
     // is the one thing this extension puts on screen when nobody asked for
@@ -939,13 +952,10 @@ export async function startOverlay(): Promise<void> {
         // hover lift, not a bigger circle or a state colour: it appears only
         // where the pointer is, which is already the strongest signal there is.
         el.style.color = token.ink;
-        el.style.cursor = 'pointer';
         el.appendChild(makeIcon(ICONS.drop, 14));
         // Both handlers stop the event: the control is outside the post's
         // subtree, but x.com and bsky.app listen on the document, and a press
         // that reached them would open the lightbox behind the save.
-        el.setAttribute('aria-label', t('hoverSaveImage'));
-        el.tabIndex = 0;
         el.onpointerdown = stopPress;
         el.onpointerenter = () => {
           // The hover lift changes the disc's COLOUR, not its opacity: going
@@ -975,7 +985,6 @@ export async function startOverlay(): Promise<void> {
         // The note says WHY. A failure is not a dead end: pressing it again
         // retries straight away, and it returns to a plain button on its own.
         el.title = anchor.note || t('bannerFailed');
-        el.style.cursor = 'pointer';
         el.onpointerdown = stopPress;
         el.onclick = (e) => {
           stopPress(e);
@@ -988,6 +997,14 @@ export async function startOverlay(): Promise<void> {
         el.appendChild(makeIcon(ICONS.cross, 14));
         break;
     }
+    // The name is the sentence the face already carries: "save this image" for
+    // the button, and for retry the reason the save failed. A `title` alone is
+    // not a name — support for using it as the fallback varies by assistive
+    // technology, and it is never announced to a keyboard user who tabbed here
+    // rather than hovered. Retry saying only WHY it failed is thin for a control
+    // whose press retries; the vocabulary of this corner is #310's to settle,
+    // and until then the existing sentence beats no name at all.
+    if (pressable) el.setAttribute('aria-label', el.title);
   }
 
   function stopPress(e: Event) {

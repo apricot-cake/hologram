@@ -278,6 +278,14 @@ describe('savedBadgeMode の三値', () => {
   test('コントロールは操作可能（pointer-events を殺していない）', () => {
     expect((marks()[0] as any).style.pointerEvents).not.toBe('none');
   });
+
+  // 「押せる面か」で分ける分岐（#536）の、押せない側。報告するだけの面は素の div の
+  // まま＝タブ順にも入らないし、読み上げ名も持たない（title だけを持つ）。
+  test('報告するだけの印はタブ順に入らず、読み上げ名も持たない', () => {
+    expect(marks()[0].tagName).toBe('DIV');
+    expect(marks()[0].tabIndex).toBe(-1);
+    expect(marks()[0].hasAttribute('aria-label')).toBe(false);
+  });
 });
 
 // コントロールはメディア枠の中にあるのでスクロールでは同じ合成操作の中で一緒に動く＝
@@ -392,6 +400,9 @@ describe('保存ボタン', () => {
     expect(b.style.width).toBe('24px');
     expect(b.style.background).toBe('var(--hologram-control-surface)');
     expect(b.getAttribute('aria-label')).toBe('Save image');
+    // 押せる面は必ずタブ順に入る（#536）＝グリフだけのボタンなので、名前と focus の
+    // どちらが欠けてもキーボードとスクリーンリーダーからは無いものになる。
+    expect(b.tabIndex).toBe(0);
     expect(b.textContent).toBe('');
     expect(animatedElements.has(b)).toBe(false);
   });
@@ -475,6 +486,14 @@ describe('保存に失敗したとき', () => {
     expect(banners[0].getAttribute('role')).toBe('alert');
     expect(banners[0].textContent).toBe("Hologram's saver could not start. Open the diagnostics page from the extension settings.");
     expect(banners[0].textContent).not.toContain('Error when communicating');
+  });
+
+  // 再試行は「押せば即その場で回復できる」唯一の手段なので、ポインタしか届かない状態は
+  // 回復手段そのものの欠落（#536）。名前は失敗理由の文面をそのまま使う＝専用文言は #310。
+  test('再試行の面は保存ボタンと同じくキーボードで到達でき、読み上げ名を持つ', () => {
+    expect(failed[0].tagName).toBe('BUTTON');
+    expect(failed[0].tabIndex).toBe(0);
+    expect(failed[0].getAttribute('aria-label')).toBe("Hologram's saver could not start. Open the diagnostics page from the extension settings.");
   });
 
   test('失敗表示を押すと何も起きないのではなく再試行する', () => {
