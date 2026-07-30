@@ -103,6 +103,11 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     imgTabFallback: '画像',
     imgTabMissing: 'この画像はライブラリに見つかりません（削除された可能性があります）',
     imgTabCloseBtn: 'タブを閉じる',
+    // 画像ビューのツールバー（#150）。ショートカットは括弧で添える（他のツールチップと同じ書き方）
+    itvZoomOut: 'ズームアウト',
+    itvZoomIn: 'ズームイン',
+    itvFitToWindow: 'ウィンドウに合わせる (Ctrl+0)',
+    itvActualSize: '原寸 (Ctrl+1)',
     // うごイラ再生（#119 St3）。pixiv 自身の呼び名をそのまま使う（新語を作らない）
     ugoiraLabel: 'うごイラ',
     ugoiraPlay: '再生',
@@ -536,6 +541,10 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     imgTabFallback: 'Image',
     imgTabMissing: 'This image is no longer in the library (it may have been deleted)',
     imgTabCloseBtn: 'Close tab',
+    itvZoomOut: 'Zoom out',
+    itvZoomIn: 'Zoom in',
+    itvFitToWindow: 'Fit to window (Ctrl+0)',
+    itvActualSize: 'Actual size (Ctrl+1)',
     ugoiraLabel: 'Ugoira animation',
     ugoiraPlay: 'Play',
     ugoiraPause: 'Pause',

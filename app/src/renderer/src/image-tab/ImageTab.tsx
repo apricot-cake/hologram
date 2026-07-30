@@ -1,18 +1,17 @@
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import type { PointerEvent as ReactPointerEvent } from 'react';
 import { UgoiraPlayer } from './UgoiraPlayer.tsx';
 import { createNeighborPreloader, neighborPreloadSources, type NeighborPreloader } from './preload.ts';
 import { TransformComponent, TransformWrapper } from 'react-zoom-pan-pinch';
 import type { ReactZoomPanPinchRef } from 'react-zoom-pan-pinch';
+import { MAX_SCALE, MIN_SCALE, ZOOM_MS, FIT_MS, actualScaleOf, actualTarget, fitToggleTarget, isAtFit, publish as publishZoom, register as registerZoom, steppedScale, zoomPercentOf } from '../services/image-zoom.ts';
 
 // Wheel-zoom tuning (#134): one mouse-wheel notch (deltaY~100) MULTIPLIES the
-// scale by WHEEL_FACTOR. Multiplicative so a notch feels equally strong at 1x
+// scale by ZOOM_STEP. Multiplicative so a notch feels equally strong at 1x
 // and 30x — the old additive step (+1 per notch) doubled the image at 1x but
-// barely moved it at high zoom. Each notch eases for WHEEL_ZOOM_MS.
-const MIN_SCALE = 1;
-const MAX_SCALE = 40;
-const WHEEL_FACTOR = 1.25;
-const WHEEL_ZOOM_MS = 200;
+// barely moved it at high zoom. Each notch eases for ZOOM_MS. The constants and
+// the arithmetic moved to services/image-zoom.ts when the toolbar's ± started
+// sharing them (#150) — one ladder for the wheel and the buttons.
 
 // Model built by viewer.js (renderImageTabView): the gallery items of ONE post
 // group, the controlled index, and the tab-level actions. Zoom/pan state stays
@@ -58,27 +57,94 @@ function Zoomable({ src, alt }: { src: string; alt: string }) {
   // ignore the double-click that tails one.
   const downPos = useRef<{ x: number; y: number } | null>(null);
   const dragEndAt = useRef(0);
-  // Accumulated wheel-zoom target. Steps chain off this, NOT the live scale:
-  // the live value is mid-tween while the wheel is still spinning, so stepping
-  // from it swallowed part of each notch and the total zoom depended on how
-  // fast the wheel was turned. null = out of sync (double-click jumps the
-  // scale outside the wheel path) → re-seed from the live scale.
-  const wheelTarget = useRef<number | null>(null);
-  const onDouble = () => {
-    if (performance.now() - dragEndAt.current < 400) return;
+  // Accumulated zoom target. Steps chain off this, NOT the live scale: the live
+  // value is mid-tween while the wheel is still spinning, so stepping from it
+  // swallowed part of each notch and the total zoom depended on how fast the
+  // wheel was turned. null = out of sync (a fit/actual jump leaves the step
+  // ladder) → re-seed from the live scale. The toolbar's ± chains off the SAME
+  // ref (#150) — a mashed ＋ button is the same accumulation problem as a fast
+  // wheel, and two separate accumulators would fight over the tween.
+  const zoomTarget = useRef<number | null>(null);
+  // Scale change + anchor, in one place: the wheel anchors on the cursor, the
+  // toolbar's ± on the middle of the stage. Reading the instance STATE (not the
+  // live bounding rect) is what makes this exact mid-animation — see #134 below.
+  const zoomTo = useCallback((next: number, clientX?: number, clientY?: number) => {
+    const tw = twRef.current;
+    const wrapper = tw?.instance.wrapperComponent;
+    if (!tw || !wrapper) return;
+    const { scale, positionX, positionY } = tw.instance.state;
+    const wr = wrapper.getBoundingClientRect(); // static element — transition-safe
+    const ax = clientX ?? wr.left + wr.width / 2;
+    const ay = clientY ?? wr.top + wr.height / 2;
+    // Keep the content point under the anchor fixed across the scale change.
+    const cx = (ax - wr.left - positionX) / scale;
+    const cy = (ay - wr.top - positionY) / scale;
+    // The content box fills the wrapper 1:1 (contentStyle 100%), so bounds
+    // clamp directly against the wrapper size (mirrors disablePadding).
+    const nx = Math.min(0, Math.max(wr.width - wr.width * next, ax - wr.left - cx * next));
+    const ny = Math.min(0, Math.max(wr.height - wr.height * next, ay - wr.top - cy * next));
+    tw.setTransform(nx, ny, next, ZOOM_MS, 'easeOut');
+  }, []);
+  // Push the readout the toolbar prints. Called per animation frame by the
+  // library's onTransform, and again whenever the layout width can have moved
+  // (image load, stage resize) — the percent is scale × layout width ÷ intrinsic
+  // width, so all three inputs have to be able to trigger it.
+  const publish = useCallback(() => {
     const tw = twRef.current;
     const img = imgRef.current;
     if (!tw || !img) return;
     const scale = tw.instance.state.scale;
-    // offsetWidth is the layout (fit) width — unaffected by the CSS transform —
-    // so naturalWidth/offsetWidth is exactly the scale where 1 image px = 1
-    // screen px. Images smaller than the viewport get a plain zoom step instead.
-    const actual = img.offsetWidth ? img.naturalWidth / img.offsetWidth : 1;
-    const target = actual > 1.05 ? actual : 2.5;
-    wheelTarget.current = null;
-    if (scale > 1.02) tw.resetTransform(180);
-    else tw.centerView(target, 180);
+    // The ± buttons enable off the accumulated TARGET, not the live scale: a
+    // mid-tween value would flicker a button back on before the step it was
+    // disabled for had landed.
+    const base = zoomTarget.current ?? scale;
+    publishZoom({ percent: zoomPercentOf(scale, img.offsetWidth, img.naturalWidth), atFit: isAtFit(scale), canZoomIn: base < MAX_SCALE, canZoomOut: base > MIN_SCALE });
+  }, []);
+  const step = useCallback(
+    (dir: 1 | -1) => {
+      const tw = twRef.current;
+      if (!tw) return;
+      const base = zoomTarget.current ?? tw.instance.state.scale;
+      const next = steppedScale(base, dir);
+      if (next === base) return;
+      zoomTarget.current = next;
+      zoomTo(next);
+    },
+    [zoomTo],
+  );
+  // resetTransform/centerView jump outside the step ladder, so they clear the
+  // accumulator on the way through (all three below).
+  const fit = useCallback(() => {
+    const tw = twRef.current;
+    if (!tw) return;
+    zoomTarget.current = null;
+    tw.resetTransform(FIT_MS);
+  }, []);
+  const actual = useCallback(() => {
+    const tw = twRef.current;
+    const img = imgRef.current;
+    if (!tw || !img) return;
+    zoomTarget.current = null;
+    tw.centerView(actualTarget(actualScaleOf(img.naturalWidth, img.offsetWidth)), FIT_MS);
+  }, []);
+  const toggleFitActual = useCallback(() => {
+    const tw = twRef.current;
+    const img = imgRef.current;
+    if (!tw || !img) return;
+    const target = fitToggleTarget(tw.instance.state.scale, actualScaleOf(img.naturalWidth, img.offsetWidth));
+    zoomTarget.current = null;
+    if (target.fit) tw.resetTransform(FIT_MS);
+    else tw.centerView(target.scale, FIT_MS);
+  }, []);
+  // Double-click is the gesture half of the same toggle (its own guard aside).
+  const onDouble = () => {
+    if (performance.now() - dragEndAt.current < 400) return;
+    toggleFitActual();
   };
+  // Hand the commands to the toolbar / Ctrl+0 / Ctrl+1 for as long as this slide
+  // is mounted. A video or うごイラ slide renders no Zoomable at all, so "nothing
+  // registered" is exactly "nothing to zoom" (services/image-zoom.ts).
+  useEffect(() => registerZoom({ step, toggleFitActual, fit, actual }), [step, toggleFitActual, fit, actual]);
   // Custom wheel zoom, animated by the library's own setTransform (#134). The
   // library applies wheel deltas instantly; easing them with a CSS transition
   // corrupted its cursor-anchor math — it reads the content's LIVE bounding
@@ -93,26 +159,26 @@ function Zoomable({ src, alt }: { src: string; alt: string }) {
       const tw = twRef.current;
       if (!tw) return;
       e.preventDefault();
-      const { scale, positionX, positionY } = tw.instance.state;
-      const base = wheelTarget.current ?? scale;
-      const next = Math.min(MAX_SCALE, Math.max(MIN_SCALE, base * WHEEL_FACTOR ** (-e.deltaY / 100)));
+      const base = zoomTarget.current ?? tw.instance.state.scale;
+      const next = steppedScale(base, -e.deltaY / 100);
       if (next === base) return;
-      wheelTarget.current = next;
-      // Keep the content point under the cursor fixed across the scale change.
-      const wr = wrapper.getBoundingClientRect(); // static element — transition-safe
-      const cx = (e.clientX - wr.left - positionX) / scale;
-      const cy = (e.clientY - wr.top - positionY) / scale;
-      // The content box fills the wrapper 1:1 (contentStyle 100%), so bounds
-      // clamp directly against the wrapper size (mirrors disablePadding).
-      const nx = Math.min(0, Math.max(wr.width - wr.width * next, e.clientX - wr.left - cx * next));
-      const ny = Math.min(0, Math.max(wr.height - wr.height * next, e.clientY - wr.top - cy * next));
-      tw.setTransform(nx, ny, next, WHEEL_ZOOM_MS, 'easeOut');
+      zoomTarget.current = next;
+      zoomTo(next, e.clientX, e.clientY);
     };
     // React attaches wheel passively — a native non-passive listener is needed
     // for preventDefault (else the page scrolls behind the zoom).
     wrapper.addEventListener('wheel', onWheel, { passive: false });
     return () => wrapper.removeEventListener('wheel', onWheel);
-  }, []);
+  }, [zoomTo]);
+  // The stage can change width without the transform moving (window resize, the
+  // inspector opening), and the percent is measured against that width.
+  useEffect(() => {
+    const img = imgRef.current;
+    if (!img || typeof ResizeObserver === 'undefined') return undefined;
+    const ro = new ResizeObserver(() => publish());
+    ro.observe(img);
+    return () => ro.disconnect();
+  }, [publish]);
   const onPointerDown = (e: ReactPointerEvent<HTMLImageElement>) => {
     downPos.current = { x: e.clientX, y: e.clientY };
   };
@@ -130,7 +196,7 @@ function Zoomable({ src, alt }: { src: string; alt: string }) {
     // alignment then animates it back ("slides away, then gets pulled home");
     // dragging past the image edge bounced back to center on release the same
     // way. Per-tick bounds clamping makes both motions dead straight.
-    <TransformWrapper ref={twRef} minScale={MIN_SCALE} maxScale={MAX_SCALE} centerOnInit disablePadding doubleClick={{ disabled: true }} wheel={{ disabled: true }}>
+    <TransformWrapper ref={twRef} minScale={MIN_SCALE} maxScale={MAX_SCALE} centerOnInit disablePadding doubleClick={{ disabled: true }} wheel={{ disabled: true }} onTransform={publish}>
       <TransformComponent wrapperClass="itv-tw" contentClass="itv-tc" wrapperStyle={{ width: '100%', height: '100%' }} contentStyle={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         {/* decoding="async" (#241): this <img> IS the surface, so there is no
             "other DOM content" that a sync decode would keep in step with — all
@@ -139,7 +205,11 @@ function Zoomable({ src, alt }: { src: string; alt: string }) {
             already give. The blank moment async can leave on a slide change is
             covered from the other side, by preload.ts warming the decode before
             the step happens. */}
-        <img ref={imgRef} className="itv-media" src={src} alt={alt} decoding="async" draggable={false} onDoubleClick={onDouble} onPointerDown={onPointerDown} onPointerUp={onPointerUp} />
+        {/* onLoad, not just onTransform: the percent divides by naturalWidth, which
+            is 0 until the intrinsic size arrives — the first publish would print
+            nothing at all without a second one once the image is really there. A
+            cached image can also be complete before this element ever transforms. */}
+        <img ref={imgRef} className="itv-media" src={src} alt={alt} decoding="async" draggable={false} onLoad={publish} onDoubleClick={onDouble} onPointerDown={onPointerDown} onPointerUp={onPointerUp} />
       </TransformComponent>
     </TransformWrapper>
   );
