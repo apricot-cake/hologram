@@ -177,6 +177,8 @@ Start-ScheduledTask -TaskName 'HologramLaunch'
 
 ホストまで届かなかった分は拡張側の chrome.storage リングバッファにも積まれ、`chrome-extension://<id>/diag.html` で読める。
 
+**同じ診断ページの `protocol` が、拡張とホストの契約版を並べて出す**（#205）＝`extension` はページを開いた拡張の版、`host` は ping に答えたホストが名乗った版、`skew` が `host-old`（アプリ側が古い）／`host-new`（拡張が古い）／`match`。`hostAnswered:false` はホストが起動できていない場合で、その時 `host` が null なのは版が古いからではない（`nativeTest` が理由を持つ）。⚠️**`hostAnswered:true` で `host:null` は「版を名乗らないホスト」＝この仕組みより前のバイナリが `~/.hologram/bridge.js` に残っている**という意味で、`skew` は `host-old` になる。保存が通っていてもこの状態は正常ではない（配備し損ねたホストが動き続けたのが #511）。保存側では、ずれている間は保存のたびにバナーが「Hologram アプリを更新してください」（逆なら拡張）を出す＝**保存は止まらない**。
+
 ### サンドボックスへの実データシード（`--real`・#286）
 
 `node scripts/sandbox-app.cts start --real` で、フィクスチャの代わりに**実ライブラリのスナップショット**をサンドボックスへ入れる。DB は backup API の静止コピー（実ライブラリは読むだけ）、メディアは DB が持つ縦横比で生成した**スタンドイン画像**＝レイアウトと件数は実データ相当のまま、実物の画像は1枚も入らない。特定の投稿を実物で再現したい時だけ `--capture <captureId>` でその投稿のファイルだけコピーする。シード済みのサンドボックスを入れ替えるには `--reseed`（起動中は拒否＝先に `stop`）。

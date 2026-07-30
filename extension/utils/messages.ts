@@ -11,7 +11,7 @@
 // it that travel onward into content<->background responses (BridgeAck,
 // SavedEntry), so a content script reads the host's answer under the same type
 // the host wrote it under.
-import type { HostAckView, SavedEntry, SavedResults } from '../../native-host/protocol.mts';
+import type { HostAckView, ProtocolSkew, SavedEntry, SavedResults } from '../../native-host/protocol.mts';
 import type { CropRect } from './crop.ts';
 import type { SaveFailureKind } from './native-error.ts';
 import type { SaveLogEntry, SaveStage } from './capture-log.ts';
@@ -95,12 +95,22 @@ interface CropImageMessage {
 // A successful capture always carries its meta/grouped fields; a failed one
 // always carries errorKind instead — split on `success` so a reader (capture.ts's
 // onRuntimeMessage) gets the right fields typed as present, not just optional.
+// The save's own outcome, plus one thing that is not about this save at all:
+// hostSkew says the extension and the native host were built from different
+// versions of their shared contract (#205), which is a standing condition of the
+// installation rather than an event. It rides on the save because the save's
+// banner is the only surface a person actually looks at — the extension has no
+// popup yet (#124) — and it is reported on a SUCCESS because a skew does not
+// stop a save: the record is on disk, and the note is about the next one.
 interface NotifySuccessMessage {
   type: 'notify';
   success: true;
   metaOk: boolean;
   metaReason: string | null;
   grouped: number;
+  // 'host-old' = update the desktop app; 'host-new' = update the extension.
+  // null/absent = the halves match, or no host has answered yet.
+  hostSkew?: ProtocolSkew | null;
 }
 
 interface NotifyFailureMessage {
@@ -163,6 +173,9 @@ type SaveResponse =
       metaOk: boolean;
       metaReason: string | null;
       grouped: number;
+      // See NotifySuccessMessage — the drag/hover routes answer here instead of
+      // through a notify, so the note has to travel on both.
+      hostSkew?: ProtocolSkew | null;
     })
   | ErrorResponse;
 
@@ -209,6 +222,7 @@ export type {
   NotifyFailureMessage,
   NotifyMessage,
   NotifySuccessMessage,
+  ProtocolSkew,
   SavedEntry,
   SavedResults,
   SavedUpdateMessage,

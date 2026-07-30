@@ -42,6 +42,7 @@ interface Ctx {
   sent: any[];
   notify: (msg: any) => void;
   banner: () => any;
+  bannerState: () => string | null;
   bannerLabel: () => any;
   bannerButtons: () => any[];
   highlight: () => any;
@@ -309,6 +310,29 @@ describe('notify: 部分成功・グループ化・失敗', () => {
     await ctx.settle(1600); // 成功の滞留(1500ms)は越えたが失敗の滞留(2800ms)にはまだ届かない
 
     expect(ctx.banner()?.isConnected ?? false).toBe(true);
+  });
+
+  // #205: 拡張とアプリの版がずれている。保存は成功しているので緑の「保存しました」に
+  // なりうるが、そのまま流すと更新が要ることに誰も気付かない＝partial（琥珀）の側へ
+  // 倒して、他の成功文面より前に出す。
+  test('版のずれは、保存できたことと更新の要求を同時に出す', () => {
+    ctx.notify({ type: 'notify', success: true, metaOk: true, grouped: 0, hostSkew: 'host-old' });
+
+    expect(ctx.bannerLabel().textContent).toBe('Saved — please update the Hologram app (it no longer matches this extension)');
+    expect(ctx.bannerState()).toBe('partial');
+  });
+
+  test('版のずれは、グループ化の知らせより前に出る', () => {
+    ctx.notify({ type: 'notify', success: true, metaOk: true, grouped: 1, hostSkew: 'host-new' });
+
+    expect(ctx.bannerLabel().textContent).toBe('Saved — please update the extension (it no longer matches the Hologram app)');
+  });
+
+  test('ずれていなければ普段どおりの成功', () => {
+    ctx.notify({ type: 'notify', success: true, metaOk: true, grouped: 0, hostSkew: null });
+
+    expect(ctx.bannerLabel().textContent).toBe('Image saved');
+    expect(ctx.bannerState()).toBe('success');
   });
 });
 
