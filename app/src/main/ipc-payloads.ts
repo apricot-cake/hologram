@@ -109,6 +109,8 @@ export interface AppPrefs {
   sidebarWidth: number | null;
   inspectorOpen: boolean | null;
   inspectorWidth: number | null;
+  /** #245: both panels above masked away at once. Independent of their own state. */
+  panelsHidden: boolean | null;
 }
 
 // --- Organization layer (DB-backed, ipc-organize.ts) ---------------------

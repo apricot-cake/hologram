@@ -11,7 +11,7 @@ import type { IpcContext } from './ipc-context.ts';
 import type { AppInfo, AppPrefs, ConfigSummary, ExtensionIdResult, OkResult, TabsState } from './ipc-payloads.ts';
 
 // --- Preferences (language / viewMode / skipDeleteConfirm / sortBy) ---
-const PREF_KEYS = ['language', 'viewMode', 'skipDeleteConfirm', 'sortBy', 'imageTileSize', 'cardSize', 'listThumb', 'theme', 'tileOverlay', 'browseMode', 'posterViewMode', 'posterTileSize', 'posterCardSize', 'sidebarOpen', 'sidebarWidth', 'inspectorOpen', 'inspectorWidth'];
+const PREF_KEYS = ['language', 'viewMode', 'skipDeleteConfirm', 'sortBy', 'imageTileSize', 'cardSize', 'listThumb', 'theme', 'tileOverlay', 'browseMode', 'posterViewMode', 'posterTileSize', 'posterCardSize', 'sidebarOpen', 'sidebarWidth', 'inspectorOpen', 'inspectorWidth', 'panelsHidden'];
 const VALID_SORTS = ['date-desc', 'date-asc', 'likes-desc', 'reposts-desc', 'replies-desc', 'captured-desc', 'likes-pct'];
 
 // Chrome extension ids are exactly 32 chars of a–p. The id crosses a trust
@@ -112,6 +112,7 @@ function register(ctx: IpcContext) {
       sidebarWidth: Number.isFinite(cfg.sidebarWidth) ? cfg.sidebarWidth : null, // dragged column width px; null = never resized
       inspectorOpen: typeof cfg.inspectorOpen === 'boolean' ? cfg.inspectorOpen : null, // inspector panel shown/hidden; null = never toggled
       inspectorWidth: Number.isFinite(cfg.inspectorWidth) ? cfg.inspectorWidth : null,
+      panelsHidden: typeof cfg.panelsHidden === 'boolean' ? cfg.panelsHidden : null, // #245 bulk hide over the two panels above; null = never used
     };
   });
 

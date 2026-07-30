@@ -133,7 +133,7 @@ describe('面ごとの顔ぶれ（同じ生成・別の見せ方）', () => {
 
 describe('操作系コマンド', () => {
   test('空クエリでも全部出る（まず何ができるかが読める）', () => {
-    expect(titlesOf(R.queryEntries('', PALETTE), 'command')).toEqual(['cmdOpenSettings', 'cmdNewTab', 'cmdClearFilters', 'cmdViewGallery', 'cmdViewList', 'cmdBrowsePosts', 'cmdBrowsePosters']);
+    expect(titlesOf(R.queryEntries('', PALETTE), 'command')).toEqual(['cmdOpenSettings', 'cmdNewTab', 'cmdClearFilters', 'cmdViewGallery', 'cmdViewList', 'cmdTogglePanels', 'cmdBrowsePosts', 'cmdBrowsePosters']);
   });
 
   const run = (title: string) => {

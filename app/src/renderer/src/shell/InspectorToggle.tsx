@@ -18,11 +18,27 @@
 import { useSyncExternalStore } from 'react';
 import { PanelRight } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { isOpen, subscribe, toggle } from '../services/inspector-panel.ts';
+import { isOpen, setOpen, subscribe, toggle } from '../services/inspector-panel.ts';
+import { isHidden as panelsAreHidden, reveal as panelsReveal, subscribe as panelsSubscribe } from '../services/panels.ts';
 import { t } from '../_shared/i18n.ts';
 
+// While #245's bulk hide is on, this button is the one panel control still on screen (it
+// lives in the tab band, not in the panel it opens) — so it has to be the way back. It
+// reads and writes what the user SEES: masked means "closed" no matter what the panel's own
+// state says, and pressing it drops the mask and opens, rather than flipping a state behind
+// the mask and looking broken.
 export function InspectorToggle() {
-  const open = useSyncExternalStore(subscribe, isOpen);
+  const panelOpen = useSyncExternalStore(subscribe, isOpen);
+  const panelsHidden = useSyncExternalStore(panelsSubscribe, panelsAreHidden);
+  const open = panelOpen && !panelsHidden;
+  const press = () => {
+    if (panelsHidden) {
+      panelsReveal();
+      setOpen(true);
+      return;
+    }
+    toggle();
+  };
   const label = t('toggleInspector');
   return (
     // px-2 matches the sidebar trigger's inset from the opposite corner. The band's own
@@ -31,7 +47,7 @@ export function InspectorToggle() {
       <Tooltip>
         <TooltipTrigger
           render={
-            <button type="button" className="inline-grid h-8 w-8 place-items-center rounded-md text-muted-foreground transition-colors duration-75 hover:bg-foreground/8 hover:text-foreground active:bg-foreground/16" aria-label={label} aria-pressed={open} onClick={() => toggle()}>
+            <button type="button" className="inline-grid h-8 w-8 place-items-center rounded-md text-muted-foreground transition-colors duration-75 hover:bg-foreground/8 hover:text-foreground active:bg-foreground/16" aria-label={label} aria-pressed={open} onClick={press}>
               <PanelRight className="size-4" />
             </button>
           }

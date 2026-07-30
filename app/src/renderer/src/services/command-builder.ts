@@ -9,6 +9,7 @@
 // 共有するので、「現在のタブに AND 追加」という挙動が面ごとにズレない。
 import { type CommandEntry, registerCommands, registerProvider } from './command-registry.ts';
 import { handlers as searchBoxHandlers } from './searchbox.ts';
+import { toggle as togglePanels } from './panels.ts';
 import { open as openSettings } from './settings.ts';
 import { set as storeSet } from './store.ts';
 import { hologramTabsSource } from './tabs.ts';
@@ -88,6 +89,9 @@ export function makeCommands(deps: CommandDeps): void {
         withTransition(mode, () => storeSet(mode === 'posters' ? 'posterView' : 'view', 'list'));
       },
     },
+    // 一括表示トグル（#245）。名前は状態を言わず動作だけを言う＝パレットの行は開いた
+    // 瞬間の状態で書き換わらない（「隠す」と「戻す」が入れ替わる行は探して見つからない）。
+    { id: 'cmd:toggle-panels', section: 'command', title: t('cmdTogglePanels'), hint: 'Ctrl+Shift+B', perform: () => togglePanels() },
     { id: 'cmd:browse-posts', section: 'command', title: t('cmdBrowsePosts'), perform: () => deps.browseTo('posts') },
     { id: 'cmd:browse-posters', section: 'command', title: t('cmdBrowsePosters'), perform: () => deps.browseTo('posters') },
   ];

@@ -84,9 +84,16 @@ function SidebarProvider({
   }, [isMobile, setOpen, setOpenMobile]);
 
   // Adds a keyboard shortcut to toggle the sidebar.
+  //
+  // FORKED FROM UPSTREAM (#245): Ctrl+SHIFT+B now hides this panel and the inspector
+  // together, so the individual key has to say it wants the plain chord. Upstream's
+  // `event.key === 'b'` already misses the shifted chord — until Caps Lock swaps the pair
+  // and Ctrl+Shift+B arrives as 'b' while plain Ctrl+B arrives as 'B', at which point the
+  // two shortcuts trade places. Comparing case-insensitively and rejecting the modifiers
+  // outright is what makes the pair hold under Caps Lock.
   React.useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === SIDEBAR_KEYBOARD_SHORTCUT && (event.metaKey || event.ctrlKey)) {
+      if ((event.key || '').toLowerCase() === SIDEBAR_KEYBOARD_SHORTCUT && (event.metaKey || event.ctrlKey) && !event.shiftKey && !event.altKey) {
         event.preventDefault();
         toggleSidebar();
       }

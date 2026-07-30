@@ -26,6 +26,7 @@ import { t } from '../_shared/i18n.ts';
 import { runPostDensityViewTransition, runPosterDensityViewTransition } from '../_shared/density-transition.ts';
 import type { HologramSizeTrack } from '../services/grid-density-builder.ts';
 import { applyPostSize, applyPosterSize, getPostSizeTrack, getPosterSizeTrack, rerollShuffle } from '../services/orchestrator.ts';
+import { isHidden as panelsAreHidden, setHidden as setPanelsHidden, subscribe as panelsSubscribe } from '../services/panels.ts';
 import { get as storeGet, set as storeSet, subscribe as storeSubscribe } from '../services/store.ts';
 
 const subKey = (key: string) => (cb: () => void) => storeSubscribe(key, cb);
@@ -262,6 +263,34 @@ function PosterControls() {
   );
 }
 
+// Panel visibility (#245) — the bulk hide, plus the line that teaches the key pair.
+//
+// It belongs in this popover and not in the toolbar proper: 表示 is the "how do I see it"
+// axis, and "is the grid boxed in by two panels" is an answer to that question, whereas the
+// toolbar itself holds PREDICATES (search / filter / display) and a panel is not one — the
+// split InspectorToggle's header describes, applied one level in.
+//
+// One switch, not three. This surface can honestly own the mask (services/panels.ts is its
+// single home), but the sidebar's own open state is React-local to AppShell — it carries a
+// transient narrow-window form on top of the saved choice — so a switch here claiming to be
+// the sidebar would be reading a different answer than the shell paints. The pair is
+// written out below instead, which is what #245 asked this menu for: the two keys side by
+// side, where Ctrl+B → Ctrl+Shift+B reads as "add Shift, take more with it".
+//
+// Mode-independent, so it renders outside the posts/posters branch.
+function PanelControls() {
+  const hidden = useSyncExternalStore(panelsSubscribe, panelsAreHidden);
+  return (
+    <>
+      <Separator />
+      <Row label={t('displayPanels')}>
+        <Switch checked={!hidden} onCheckedChange={(on) => setPanelsHidden(!on)} />
+      </Row>
+      <p className="text-xs text-muted-foreground">{t('displayPanelsHint')}</p>
+    </>
+  );
+}
+
 export function DisplayMenu() {
   const mode = useSyncExternalStore(subKey('browseMode'), () => (storeGet('browseMode') as string) || 'posts');
   return (
@@ -276,6 +305,7 @@ export function DisplayMenu() {
       />
       <PopoverContent align="end" className="w-72 gap-2">
         {mode === 'posters' ? <PosterControls /> : <PostControls />}
+        <PanelControls />
       </PopoverContent>
     </Popover>
   );

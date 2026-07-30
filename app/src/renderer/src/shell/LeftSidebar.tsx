@@ -12,6 +12,7 @@ import { ChevronRight, Folder, LayoutGrid, Plus, Search, Settings, Terminal, Use
 import type { DragEvent, MouseEvent } from 'react';
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupAction, SidebarGroupContent, SidebarGroupLabel, SidebarHeader, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarMenuSub, SidebarRail, SidebarTrigger } from '@/components/ui/sidebar';
 import type { PanelResize } from './use-panel-resize.ts';
 import { MirrorStatus } from '../mirror/MirrorStatus.tsx';
@@ -23,6 +24,7 @@ import { all as folderAll, createFolder, placeFolder, isSavedSearch, load as fol
 import { open as confirmOpen } from '../services/confirm.ts';
 import { cloneTree } from '../services/query.ts';
 import { open as menuOpen } from '../services/menu.ts';
+import { isHidden as panelsAreHidden, subscribe as panelsSubscribe } from '../services/panels.ts';
 import { promptName } from '../prompt/Prompt.tsx';
 import { applyFolderFilter, applySavedSearch, browseTo } from '../services/orchestrator.ts';
 
@@ -166,6 +168,7 @@ interface FolderTreeCtx {
 export function LeftSidebar({ resize }: { resize?: PanelResize }) {
   const mode = useSyncExternalStore(subBrowse, getBrowse);
   const isPosters = mode === 'posters';
+  const panelsHidden = useSyncExternalStore(panelsSubscribe, panelsAreHidden);
   const allFolders = useFolders();
   const folders = allFolders.filter((f) => !isSavedSearch(f));
   const saved = allFolders.filter(isSavedSearch);
@@ -286,13 +289,28 @@ export function LeftSidebar({ resize }: { resize?: PanelResize }) {
     });
   };
   return (
-    <Sidebar collapsible="icon">
+    // Ctrl+B collapses to the icon rail; Ctrl+Shift+B takes the rail too (#245) — half a
+    // panel left standing is not what "use the grid wide" asks for. Same component either
+    // way: shadcn's two collapse forms differ only in this attribute, so the rail sliding
+    // out is the same 200ms motion as the columns narrowing.
+    <Sidebar collapsible={panelsHidden ? 'offcanvas' : 'icon'}>
       {/* Titlebar-height drag strip (Obsidian-type shell, #154): the sidebar starts at
           the window top now, so its header row IS the left half of the titlebar — the
           collapse trigger sits here (moved out of the toolbar), the rest is grab space
           to move the window. No wordmark: chrome stays quiet. */}
       <SidebarHeader className="app-drag h-[var(--tabbar-h)] flex-row items-center justify-start px-1">
-        <SidebarTrigger className="app-no-drag text-muted-foreground" />
+        {/* The tooltip is where Ctrl+B is learnable (#245): the shortcut carries no hint of
+            itself, and the target users are not assumed to know editor key conventions. Its
+            partner Ctrl+Shift+B is spelled out next to it in the 表示 popover, where the two
+            can be read as the pair they are — a tooltip on one button is the wrong place to
+            explain a key that acts on two panels. */}
+        <Tooltip>
+          <TooltipTrigger render={<SidebarTrigger className="app-no-drag text-muted-foreground" aria-label={t('toggleSidebar')} />} />
+          <TooltipContent side="bottom" align="start">
+            {t('toggleSidebar')}
+            <span className="text-background/60">Ctrl+B</span>
+          </TooltipContent>
+        </Tooltip>
       </SidebarHeader>
       <SidebarContent>
         <SidebarGroup>
