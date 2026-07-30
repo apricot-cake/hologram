@@ -15,10 +15,8 @@ import { SettingsHost } from '../settings/index.tsx';
 import { BulkTagDialogHost } from '../selection/BulkTagDialog.tsx';
 import { Toaster } from '@/components/ui/sonner';
 import { TooltipHost } from '../tooltip/TooltipHost.tsx';
-import { registerViewTransitionRunners } from '../services/command-builder.ts';
 import { handleShortcutPaletteKey } from '../services/command-registry.ts';
 import { handleShortcutPanelsKey } from '../services/panels.ts';
-import { runPostDensityViewTransition, runPosterDensityViewTransition } from '../_shared/density-transition.ts';
 import { onPostsChanged } from '../services/posts.ts';
 import { onChange as foldersOnChange } from '../services/folders.ts';
 import { get as storeGet, subscribe as storeSubscribe } from '../services/store.ts';
@@ -194,18 +192,6 @@ function GlobalShortcuts() {
   return null;
 }
 
-// The palette's ギャラリー/リスト commands re-lay a grid out, which is the one surface that
-// animates through a View Transition (#252). Its start point captures live card geometry, so
-// it lives island-side (_shared/density-transition.ts) and services cannot import it —
-// App.tsx is this codebase's wiring layer for exactly that shape of gap, the same way it
-// registers the orchestrator's shortcut handlers. Both runners go over because the two grids
-// name their cards in separate namespaces; command-builder picks by browseMode. Without this
-// the switch still happens; it just snaps instead of animating.
-function CommandWiring() {
-  useEffect(() => registerViewTransitionRunners({ posts: runPostDensityViewTransition, posters: runPosterDensityViewTransition }), []);
-  return null;
-}
-
 // Esc-priority dismiss for the image-tab detail view. Must run in the CAPTURE phase (ahead
 // of the overlays/popovers it checks for) — a different phase than GlobalShortcuts'
 // bubble-phase keydown, so this stays a separate effect/component rather than merging into
@@ -333,8 +319,6 @@ export function App() {
       <ModalChrome />
       {/* Global keyboard/mouse shortcuts — React owns the listener registration. */}
       <GlobalShortcuts />
-      {/* Hands the island-side View Transition runner to the command layer (#28). */}
-      <CommandWiring />
       {/* Esc-priority inspector close + outside-click dismiss — capture phase. */}
       <DetailDismiss />
       {/* Tab bar event wiring (click/keydown/contextmenu/etc + Ctrl+T/W/Tab). */}
