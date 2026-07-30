@@ -43,6 +43,13 @@ export interface StatusSurfaceOptions {
   role?: 'status' | 'alert';
 }
 
+// How long a just-inserted live region is given to register before it is given
+// words (see announce). Assistive tech subscribes to a region when it appears;
+// text that is already there when it appears is not a change, so nobody reads
+// it out. ~50ms is the delay the practice settled on — long enough to register,
+// short enough that the sentence still belongs to the action that caused it.
+const ANNOUNCE_MS = 50;
+
 export class StatusSurface {
   readonly el: HTMLDivElement;
   readonly badge: HTMLDivElement;
@@ -52,6 +59,7 @@ export class StatusSurface {
   private readonly variant: SurfaceVariant;
   private slotted: HTMLElement | null = null;
   private exitAnim: Animation | null = null;
+  private announceTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(options: StatusSurfaceOptions) {
     this.variant = options.variant;
@@ -95,6 +103,9 @@ export class StatusSurface {
   // The ONE place a state becomes a look. Colour comes from components.css via
   // the attribute; this method only decides the glyph and the text.
   setState(state: SurfaceState, text?: string): void {
+    // Whatever a pending announce was about to say belongs to the state that
+    // asked for it, not to this one.
+    this.cancelAnnounce();
     if (text !== undefined) this.label.textContent = text;
     this.el.dataset.state = state;
     // A question takes input; every other state is a readout that must not
@@ -127,6 +138,37 @@ export class StatusSurface {
     this.slotted = null;
   }
 
+  // Words for a surface that was BORN for this one message, i.e. whose live
+  // region enters the DOM at the same moment as the sentence inside it (#367).
+  //
+  // Assistive tech announces CHANGES to a live region, and it can only notice a
+  // change to a region it has already registered. A `status` that arrives with
+  // its text already in place is therefore read by nobody — which for the
+  // save caveat would have meant swapping an unread `title` for an unread
+  // banner, leaving the thing #367 exists to fix exactly where it was. MDN:
+  // "Start with an empty live region, then – in a separate step – change the
+  // content inside the region."
+  //
+  // `alert` is the documented exception (browsers announce one even when it is
+  // injected already full), so a failure has no reason to come through here and
+  // every reason not to: urgency is the whole point of that tier.
+  //
+  // Callers mount FIRST, then call this. The delay is a registration window,
+  // not an animation cue — the surface enters at opacity 0, so the frames
+  // before the sentence lands are not on screen anyway.
+  announce(text: string): void {
+    this.cancelAnnounce();
+    this.announceTimer = setTimeout(() => {
+      this.announceTimer = null;
+      this.label.textContent = text;
+    }, ANNOUNCE_MS);
+  }
+
+  private cancelAnnounce(): void {
+    if (this.announceTimer) clearTimeout(this.announceTimer);
+    this.announceTimer = null;
+  }
+
   // Entrance: the app's toast, mirrored to whichever edge this surface lives on.
   // Web Animations rather than CSS because the pop has to run on INSERTION, and
   // its duration is a number the token sheet cannot hand to `animate()`.
@@ -142,6 +184,7 @@ export class StatusSurface {
   // Exit plays the entrance backwards, then removes. An abrupt remove() reads as
   // a glitch next to the app's own toast. Safe to call twice.
   exit(onDone?: () => void): void {
+    this.cancelAnnounce(); // nothing left to say to a surface on its way out
     if (!this.el.isConnected || prefersReducedMotion()) {
       this.el.remove();
       onDone?.();
@@ -199,6 +242,7 @@ export class StatusSurface {
   }
 
   remove(): void {
+    this.cancelAnnounce();
     this.exitAnim?.cancel();
     this.exitAnim = null;
     this.el.remove();

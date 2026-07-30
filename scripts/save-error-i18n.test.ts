@@ -127,6 +127,71 @@ describe('取得できなかった投稿の理由（post-unavailable）', () => 
   });
 });
 
+// #367: 「保存はできたが記録に欠けがある」時の但し書き。バナーへ出すようになった以上、
+// どの状況でどう名乗るかが文面レベルで固定されている必要がある＝理由が分かればそれを名指し、
+// 分からなければ family を名乗り、画面から埋まった時は「取れなかった」と言わない。
+describe('保存の但し書き（partialSaveText・#367）', () => {
+  test('理由が分かれば名指しする', async () => {
+    setLanguage('ja-JP');
+    const ja = await createI18n();
+
+    expect(ja.partialSaveText('protected')).toContain('鍵付きアカウント');
+    expect(ja.partialSaveText('ageRestricted')).toContain('年齢制限');
+  });
+
+  test('理由が分からなければ汎用の但し書き', async () => {
+    setLanguage('ja-JP');
+    const ja = await createI18n();
+
+    expect(ja.partialSaveText()).toBe('保存しました（投稿情報の取得に失敗）');
+    expect(ja.partialSaveText(null)).toBe('保存しました（投稿情報の取得に失敗）');
+  });
+
+  // どれも「保存はできている」と読めること＝失敗の文面（何も保存されていない）と
+  // 取り違えられたら、但し書きをバナーへ出したことがそのまま誤報になる。
+  test('どの但し書きも「保存しました」で始まり「失敗しました」とは読めない', async () => {
+    setLanguage('ja-JP');
+    const ja = await createI18n();
+
+    for (const reason of [undefined, 'protected', 'ageRestricted'] as const) {
+      expect(ja.partialSaveText(reason).startsWith('保存しました')).toBe(true);
+      expect(ja.partialSaveText(reason)).not.toBe(ja.saveFailureText('post-unavailable', reason));
+    }
+  });
+
+  // #202 との噛み合わせ。画面から本文か作者を埋めた保存に「投稿情報は取得できません」と
+  // 言うのは事実に反する＝レコードは空ではない。理由（鍵付き・年齢制限）はここで黙る＝
+  // API がなぜ答えなかったかは、中身が入った時点でユーザーの手当てを要さない話になる。
+  test('画面から本文・作者が埋まったら「取れなかった」とは言わない', async () => {
+    setLanguage('ja-JP');
+    const ja = await createI18n();
+    const text = ja.partialSaveText('protected', ['text', 'displayName']);
+
+    expect(text).toBe('保存しました（投稿情報は画面から補完・数値は概数）');
+    expect(text).not.toContain('取得できません');
+    expect(text).not.toContain('鍵付き');
+  });
+
+  // 数値だけを画面から拾った場合は「補完した」とは名乗らない＝本文も作者も空のままで、
+  // ユーザーが見直すべきレコードであることは変わらない。
+  test('数値だけ埋まった場合は理由つきの但し書きのまま', async () => {
+    setLanguage('ja-JP');
+    const ja = await createI18n();
+
+    expect(ja.partialSaveText('protected', ['likes', 'views'])).toContain('鍵付きアカウント');
+    expect(ja.partialSaveText('protected', [])).toContain('鍵付きアカウント');
+  });
+
+  test('英語ロケールも同じ区別を持つ', async () => {
+    setLanguage('en-US');
+    const en = await createI18n();
+
+    expect(en.partialSaveText('protected')).toContain('private account');
+    expect(en.partialSaveText('protected', ['text'])).toContain('read from the page');
+    expect(en.partialSaveText('protected', ['text'])).not.toContain('unavailable');
+  });
+});
+
 // #205: 拡張とホストの版がずれた時の案内。⚠️これは「失敗」の一族ではない＝保存は
 // 済んでいる。上の bannerFailed* 系と取り違えると、保存できたのに何も残っていないと
 // 読める文になるので、区別が文面レベルで残っていることをここで固定する。
