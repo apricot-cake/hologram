@@ -665,7 +665,7 @@ export async function startOverlay(): Promise<void> {
   // Only the outcomes the user could not have predicted get one. A plain
   // success stays silent (the mark appearing IS the answer), whereas `partial`
   // — saved, but the post's own text and author are missing — is a fact about
-  // this save that nothing on screen would otherwise state. The same banner
+  // this save that nothing on screen would otherwise state (#367). The same banner
   // also carries the #205 protocol-skew notice (drag.ts and capture.ts already
   // did; hover save was the one save route still silent about it, #576) — the
   // save still succeeded, so it rides the amber `partial` state rather than a
@@ -679,11 +679,25 @@ export async function startOverlay(): Promise<void> {
     // used to be a hand-copied pill kept "separate until #44 replaces them",
     // which is what let it drift: it never grew the outline tint the other
     // banners had. Now there is one banner and this is a state of it.
-    const banner = new StatusSurface({ variant: 'banner', resting: ICONS.cross, role: state === 'error' ? 'alert' : 'status' });
+    //
+    // Two tiers, and the difference is not only the colour (#367): a failure is
+    // an `alert`, which interrupts, and a caveat is a `status`, which waits its
+    // turn. That split is also why they are filled differently. Unlike the
+    // Alt+S banner and the drop zone — both of which are already on screen when
+    // their outcome arrives, so the outcome is a CHANGE to a region assistive
+    // tech has long since registered — this banner is created for the message
+    // it carries. A `status` inserted with its sentence already in it changes
+    // nothing after anyone was listening and is announced by no one, so the
+    // caveat enters empty and is spoken a moment later (see announce). An
+    // `alert` is exempt by documented browser behaviour and stays untouched,
+    // which is also what #367 asks for: failures do not change.
+    const isFailure = state === 'error';
+    const banner = new StatusSurface({ variant: 'banner', resting: ICONS.cross, role: isFailure ? 'alert' : 'status' });
     banner.el.setAttribute('data-hologram-save-banner', '');
-    banner.setState(state, text);
+    banner.setState(state, isFailure ? text : undefined);
     banner.mount();
     banner.enter();
+    if (!isFailure) banner.announce(text);
     saveBanner = banner;
 
     saveBannerTimer = setTimeout(() => {
@@ -750,7 +764,14 @@ export async function startOverlay(): Promise<void> {
       // "Saved, but the post's own information is missing" is worth a sentence,
       // and the corner has nowhere to put one. It used to live in the mark's
       // `title`, i.e. behind a one-second hover on a 24px circle; it is now the
-      // banner's amber state, said once, at the moment it is true (#310).
+      // banner's amber state, said once, at the moment it is true (#310, #367).
+      //
+      // Amber, not the neutral tint #367 first sketched: #202 lands post text
+      // and author read off the PAGE in these records, and page-read counts are
+      // approximations where the API's are exact. Amber is what keeps that
+      // difference visible, so the caveat shares `partial` with every other
+      // "saved, with something to know about it" outcome instead of inventing
+      // an eighth state.
       //
       // Same priority as drag.ts's done(): the skew notice wins over the
       // partial-save one when a save somehow manages to be both, because a skew
@@ -758,6 +779,12 @@ export async function startOverlay(): Promise<void> {
       // null when the two halves match or no host has answered yet (#576).
       const skewText = skewSaveText(res.hostSkew);
       if (skewText) showSaveBanner('partial', skewText);
+      // No domFilled argument, and that is not an omission: #202 reads the page
+      // on the Alt+S route only, so on this one nothing was ever filled from the
+      // page and "post info read from the page" would be a false claim. Whoever
+      // teaches THIS route to send domMeta has to carry domFilled back on
+      // SaveResponse and pass it here in the same change, or the caveat will go
+      // on blaming a private account for a record the page already rescued.
       else if (res.metaOk === false) showSaveBanner('partial', partialSaveText(res.metaReason));
       paint(unit, state);
     });

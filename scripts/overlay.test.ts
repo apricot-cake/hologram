@@ -844,11 +844,18 @@ describe('再生中の動画投稿（#450）', () => {
   });
 });
 
-// #310: 「保存はできたが投稿の文章と投稿者は取れなかった」は、成功でも失敗でもない
+// #310 / #367: 「保存はできたが投稿の文章と投稿者は取れなかった」は、成功でも失敗でもない
 // 結果で、角がそれを言う場所は無い（24px の円に文が入らない）。以前は印の title に
 // 入れていた＝1秒ホバーしないと出ず、キーボードとタッチには最初から届いていなかった。
 // 今はその瞬間にバナーの琥珀（partial）で言い切る。素の成功は今までどおり無言。
-describe('投稿情報が取れなかった保存（#310）', () => {
+//
+// #367 が足したのはバナーの2段化＝失敗（割り込む alert・赤）と但し書き（割り込まない
+// status・琥珀）を別の緊急度として持つこと。下の3件はその受け入れ条件をそのまま固定する。
+describe('投稿情報が取れなかった保存（#310・#367）', () => {
+  // 「DOM に入った瞬間」の姿。但し書きはこの時点で言葉を持っていてはいけない（下記）ので、
+  // 出来上がりだけを見ていると壊れても気付けない＝押した直後に控える。
+  let born: { role: string | null; text: string; state: string };
+
   beforeAll(async () => {
     saveReply = { ok: true, metaOk: false, metaReason: 'protected' };
     intersect(['p11'], true);
@@ -856,6 +863,9 @@ describe('投稿情報が取れなかった保存（#310）', () => {
     hover('p11a');
     await settle();
     click(saveButtons()[0]);
+    const el: any = saveBanners().at(-1);
+    born = { role: el.getAttribute('role'), text: el.textContent, state: el.dataset.state };
+    await settle(); // 読み上げ登録の待ち（status-surface.ts の ANNOUNCE_MS）を越える
   });
 
   afterAll(() => {
@@ -870,6 +880,34 @@ describe('投稿情報が取れなかった保存（#310）', () => {
 
     expect(banner.dataset.state).toBe('partial');
     expect(banner.textContent).toBe('Saved (post info unavailable: private account)');
+  });
+
+  // #367 の緊急度2段化。但し書きは「保存はできている」話なので読み上げに割り込まない＝
+  // status。失敗（上の describe）は alert のままで、そこは変えない。
+  test('但し書きは割り込まない＝role は status（失敗の alert と分ける）', () => {
+    expect(born.role).toBe('status');
+    expect(born.state).toBe('partial');
+  });
+
+  // status のライブリージョンが読み上げられるのは「登録された後に中身が変わった」時だけ＝
+  // 文を入れたまま DOM へ挿すと誰にも読まれない。それでは title に書いてあった頃と同じで、
+  // #367 が直そうとしている状態がバナーへ移動しただけになる。だから空で入って後から喋る。
+  // （alert は browser 側の特別扱いで挿入時のままでも読まれるので、失敗はこの経路を通らない）
+  test('読み上げが登録される前に喋らない＝空で入り、文はその後で入る', () => {
+    const banner: any = saveBanners().at(-1);
+
+    expect(born.text).toBe('');
+    expect(banner.textContent).not.toBe('');
+  });
+
+  // 操作を持つ通知は自動で消してはならない（読み上げ利用者が操作へ到達できなくなる）＝
+  // 但し書きは自動で消える以上、押せるものを載せてはいけない。正常な保存のたびに出る面が
+  // 居座らないことは、この「何も載せない」で担保している。
+  test('但し書きは操作を持たない＝自動で消してよい面のまま', () => {
+    const banner: any = saveBanners().at(-1);
+
+    expect(banner.querySelector('button, a, [role="button"], input')).toBeNull();
+    expect(banner.style.pointerEvents).toBe('none');
   });
 
   test('角そのものは印のまま＝長い文面を載せない', () => {
@@ -890,6 +928,7 @@ describe('ホストの版がずれているときの案内（#205 の配線漏�
     hover('p12a');
     await settle();
     click(saveButtons()[0]);
+    await settle(); // 但し書きの面は空で入って後から喋る（#367）＝文が入るまで待つ
   });
 
   afterAll(() => {
@@ -917,6 +956,10 @@ describe('ホストの版がずれているときの案内（#205 の配線漏�
 // 出したバナーは実ブラウザと違って DOM に残ったまま。そのため「このアクションの前後で
 // バナーの個数が増えていないこと」を見る＝新しいバナーが1つも足されなければ、この
 // アクションは黙っていたと言える。
+//
+// これは #367 の「但し書きが出ない条件」でもある＝投稿情報も揃い版もずれていない素の保存
+// は、印が出るだけで何も言わない。但し書きが「言うことがある時だけ出る」ものであることは、
+// 出る側（上の describe）と出ない側（ここ）の両方を留めて初めて固定される。
 describe('版が一致しているときは誤警報を出さない', () => {
   let before: number;
 
@@ -928,6 +971,7 @@ describe('版が一致しているときは誤警報を出さない', () => {
     hover('p13a');
     await settle();
     click(saveButtons()[0]);
+    await settle(); // 遅れて喋る面（#367）が後から現れないことまで見る
   });
 
   test('バナーが増えない（誤警報が出ない）', () => {
