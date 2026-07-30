@@ -55,11 +55,27 @@ export function TrashView() {
       const key = cardKeyOf(e);
       if (key) preview(key);
     };
+    // A trashed card does not leave the app (#132). The post grid answers dragstart
+    // by starting an OS drag of the ORIGINALS; here the gesture is only CANCELLED,
+    // for two separate reasons:
+    //  - it must not export. Dragging out of a trash means "restore it here" in
+    //    every file manager that teaches the gesture, and a drag that hands over a
+    //    path can't mean that (main refuses `.trash/` names for the same reason —
+    //    library-files.ts's libraryFilePath). 復元 first, then drag.
+    //  - left alone, the browser's own drag still runs and carries the card's
+    //    asset:// thumbnail URL into whatever it is dropped on — an internal URL
+    //    landing in someone's chat window, and nothing the user asked for.
+    const onDragStart = (e: Event) => {
+      const target = e.target;
+      if (target instanceof Element && target.closest('.card-img')) e.preventDefault();
+    };
     el.addEventListener('click', onClick);
     el.addEventListener('dblclick', onDblClick);
+    el.addEventListener('dragstart', onDragStart);
     return () => {
       el.removeEventListener('click', onClick);
       el.removeEventListener('dblclick', onDblClick);
+      el.removeEventListener('dragstart', onDragStart);
     };
   }, []);
 

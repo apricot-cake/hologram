@@ -7,7 +7,8 @@
 
 import path from 'node:path';
 import { describe, expect, test } from 'vitest';
-import { isLibraryFileName, isViewerImageName, libraryFilePaths } from '../app/src/main/library-files';
+import { resolveInSaveFolder } from '../app/src/main/lib-save-folder-path';
+import { isLibraryFileName, isViewerImageName, libraryFilePath, libraryFilePaths } from '../app/src/main/library-files';
 
 const save = path.resolve(path.sep === '\\' ? 'C:\\Hologram\\library' : '/home/alice/Hologram/library');
 const at = (f: string) => path.join(save, f);
@@ -53,6 +54,48 @@ describe('isViewerImageName（単独ウィンドウで開いてよい形式・#2
   });
 });
 
+// アプリの外へ実体を渡す唯一の口＝ドラッグアウト・クリップボード・エクスプローラで表示。
+// 封じ込め自体は lib-save-folder-path.ts（#267）が持ち、ここはその上に乗る「持ち出してよい
+// 形」の規則＝保存フォルダ直下だけ・与えられた名前そのままだけ。通る形と通らない形を同じ
+// describe に並べるのは、片方だけ見て規則を広げると気付けないため。
+describe('libraryFilePath（持ち出しの解決）', () => {
+  test.each(['a.jpg', 'dummy-x_1.png', '.hidden.jpg', 'ふつうの 名前.png'])('保存フォルダ直下の素の名前は通す: %s', (name) => {
+    expect(libraryFilePath(name, save)).toBe(at(name));
+  });
+
+  // 綴りを変えても抜けないこと＝判定は「入力文字列がどう見えるか」ではなく
+  // 「解決した先がどこか」で行う（resolveInSaveFolder が正規化してから見る）。
+  test.each(['..', '.', '../secret.json', '..\\secret.json', 'a/../../b.jpg', 'sub/../a.jpg', './a.jpg', '.\\a.jpg'])('親をたどる綴りは全部弾く: %s', (name) => {
+    expect(libraryFilePath(name, save)).toBeNull();
+  });
+
+  test.each(['C:\\Windows\\system32\\calc.exe', '/etc/passwd', '\\\\server\\share\\x.jpg', 'C:/Hologram/library/a.jpg'])('絶対パスは弾く（basename へ潰して通さない）: %s', (name) => {
+    expect(libraryFilePath(name, save)).toBeNull();
+  });
+
+  test.each(['sub/b.png', 'sub\\b.png', 'sub/deeper/b.png'])('知らないサブフォルダは弾く: %s', (name) => {
+    expect(libraryFilePath(name, save)).toBeNull();
+  });
+
+  // 賭かっている失敗モード＝「読める場所」と「出してよい場所」を同じ規則にしてしまうこと。
+  // #267 で .trash/ と avatars/ は解決できるようになった＝カードが描けるのはそのおかげだが、
+  // 持ち出しは別の判断（ゴミ箱＝復元が先・30日で消える／アバター＝投稿のメディアではない）。
+  test.each(['.trash/a.jpg', '.trash\\a.jpg', 'avatars/a.png', 'avatars\\a.png'])('許可サブフォルダでも持ち出しは弾く: %s', (name) => {
+    expect(libraryFilePath(name, save)).toBeNull();
+  });
+
+  test('同じ名前が「読めるが出せない」＝2つの規則の差はここにしかない', () => {
+    expect(resolveInSaveFolder(save, '.trash/a.jpg')).toBe(at(path.join('.trash', 'a.jpg')));
+    expect(resolveInSaveFolder(save, 'avatars/a.png')).toBe(at(path.join('avatars', 'a.png')));
+    expect(libraryFilePath('.trash/a.jpg', save)).toBeNull();
+    expect(libraryFilePath('avatars/a.png', save)).toBeNull();
+  });
+
+  test.each([['', null, undefined, 0, 42, {}, [], true]].flat())('文字列でない・空を弾く: %s', (v) => {
+    expect(libraryFilePath(v, save)).toBeNull();
+  });
+});
+
 describe('libraryFilePaths（ドラッグアウトの一括解決）', () => {
   test('保存フォルダ基準で解決する', () => {
     expect(libraryFilePaths(['a.jpg', 'b.png'], save, existsAll)).toEqual([at('a.jpg'), at('b.png')]);
@@ -60,6 +103,12 @@ describe('libraryFilePaths（ドラッグアウトの一括解決）', () => {
 
   test('ゲートが弾く名前だけ落として残りは通す', () => {
     expect(libraryFilePaths(['a.jpg', '../secret.json', 'sub/b.png', 'c.webp'], save, existsAll)).toEqual([at('a.jpg'), at('c.webp')]);
+  });
+
+  // 1枚でもゴミ箱の実体が混ざれば、その1枚だけ落ちて残りは出せる＝ドラッグ全体は止めない
+  // （欠損ファイルと同じ扱い。ゴミ箱のカードはそもそもドラッグを受けない＝TrashView.tsx）。
+  test('ゴミ箱・アバターの実体は一括でも落とす', () => {
+    expect(libraryFilePaths(['a.jpg', '.trash/deleted.jpg', 'avatars/who.png', 'b.jpg'], save, existsAll)).toEqual([at('a.jpg'), at('b.jpg')]);
   });
 
   test('消えたファイルは落とす（隣が1つ消えただけでドラッグを中止させない）', () => {
