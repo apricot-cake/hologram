@@ -361,8 +361,6 @@
   --dur-hover: 0.18s;
   --dur-pop: 0.2s;
   --dur-panel: 0.26s;
-  --dur-entrance: 0.36s;
-  --stagger: 34ms;
 
   /* ---- Floating-surface materials (#136 readability policy) ----
      Every floating surface is one of THREE materials:
