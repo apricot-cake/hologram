@@ -1,4 +1,9 @@
-export type SaveFailureKind = 'host-missing' | 'host-unavailable' | 'origin-rejected' | 'post-unavailable' | 'timeout' | 'unknown';
+// `busy` is the one kind that never comes from the host: the service worker
+// refused to start this save because the tab already had its share of them in
+// flight (#323 — host-budget.ts). Nothing is broken and nothing was written, so
+// it is neither a malfunction to diagnose nor a post that cannot be had — the
+// advice is to wait, which is why it needs a kind of its own.
+export type SaveFailureKind = 'host-missing' | 'host-unavailable' | 'origin-rejected' | 'post-unavailable' | 'timeout' | 'busy' | 'unknown';
 
 // Native Messaging exposes failures as human-readable runtime.lastError text,
 // not stable error codes. Keep the known matches deliberately narrow: a Chrome

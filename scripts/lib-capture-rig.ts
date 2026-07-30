@@ -16,6 +16,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { JSDOM } from 'jsdom';
+import { asUser } from './lib-user-event.ts';
 
 const BUNDLE = fs.readFileSync(path.join(import.meta.dirname, '..', 'extension', '.output', 'chrome-mv3', 'capture.js'), 'utf8');
 
@@ -138,14 +139,16 @@ export function makeRig(reply: (msg: any) => any): Rig {
 export const REPLY_UNTIL_SAVE = (msg: any) => (msg.type === 'checkDuplicate' ? { ok: true, duplicate: false } : msg.type === 'captureAndSend' ? undefined : { ok: true });
 
 // Get as far as the banner sitting on "saving…" with the request delivered.
+// The click is the USER's (asUser): since #323 the capture session ignores every
+// other kind, and what these suites are about is what happens after a real one.
 export async function clickPost(rig: Rig): Promise<void> {
   await settle();
   const post = rig.window.document.getElementById('p1');
-  post.dispatchEvent(new rig.window.MouseEvent('click', { bubbles: true }));
+  post.dispatchEvent(asUser(new rig.window.MouseEvent('click', { bubbles: true })));
   for (let i = 0; i < 20; i++) await settle();
 }
 
 // Press a key on the document the way the page's own capture listener sees it.
 export function pressKey(rig: Rig, key: string): void {
-  rig.window.document.dispatchEvent(new rig.window.KeyboardEvent('keydown', { key, bubbles: true }));
+  rig.window.document.dispatchEvent(asUser(new rig.window.KeyboardEvent('keydown', { key, bubbles: true })));
 }

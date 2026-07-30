@@ -21,6 +21,7 @@
 // is one extra record; the cost of a blocked save is the post.
 import { DUPLICATE_ASK_TIMEOUT_MS } from './deadline.ts';
 import { collectImageUrls, getMediaIdentitySite } from './extractor/index.ts';
+import { userOnly } from './user-gesture.ts';
 import type { PostMediaElement } from './extractor/types.ts';
 
 // chrome.storage.local, boolean. Absent = on: the warning is the point of the
@@ -166,11 +167,16 @@ export function buildChoiceRow(t: Messages, onChoose: (choice: DuplicateChoice) 
     // (the banner follows the browser locale) — same role the overlay's
     // data-hologram-overlay attribute plays for the capture-time hide.
     b.setAttribute('data-hologram-choice', choice);
-    b.onclick = (e) => {
+    // The answer must be the USER's (#323). These buttons live in the shared
+    // shadow root, which the page can reach into, and "replace" is the most
+    // destructive thing any on-page control does — it names an existing record
+    // to retire. A page that could press it could pick which of the library's
+    // captures goes to the trash.
+    b.onclick = userOnly<MouseEvent>((e) => {
       e.preventDefault();
       e.stopPropagation();
       answer(choice);
-    };
+    });
     row.appendChild(b);
   }
   wrap.appendChild(row);
@@ -183,9 +189,11 @@ export function buildChoiceRow(t: Messages, onChoose: (choice: DuplicateChoice) 
   optOut.className = 'opt-out';
   const box = document.createElement('input');
   box.type = 'checkbox';
-  box.onchange = () => {
+  // Trusted as well: this box writes a PERSISTENT setting, so a page that could
+  // tick it would turn the warning off for every later save on every site (#323).
+  box.onchange = userOnly(() => {
     if (box.checked) suppressWarning();
-  };
+  });
   optOut.appendChild(box);
   const optOutText = document.createElement('span');
   optOutText.textContent = t('dupSuppress');

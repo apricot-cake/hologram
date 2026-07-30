@@ -15,6 +15,7 @@
 // scripts/capture-timeout.test.ts。装置は scripts/lib-capture-rig.ts。
 import { expect, test } from 'vitest';
 import { clickPost, makeRig, pressKey, REPLY_UNTIL_SAVE, settle } from './lib-capture-rig.ts';
+import { asUser } from './lib-user-event.ts';
 
 // --- ① 起動しただけ ------------------------------------------------------------
 
@@ -57,7 +58,7 @@ test('重複警告に「やめる」と答えたのは失敗でも沈黙でも�
 
   const root = (rig.window.document.querySelector('hologram-extension-ui') as any).shadowRoot;
   const skip = Array.from(root.querySelectorAll('button')).at(-1) as any;
-  skip.dispatchEvent(new rig.window.MouseEvent('click', { bubbles: true }));
+  skip.dispatchEvent(asUser(new rig.window.MouseEvent('click', { bubbles: true })));
   await settle();
 
   expect(rig.logged().at(-1)).toMatchObject({ stage: 'duplicate', phase: 'skip' });

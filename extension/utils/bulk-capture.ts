@@ -32,6 +32,7 @@ import type { CaptureSite } from './extractor/types.ts';
 import { isXBookmarksPage } from './extractor/x.ts';
 import { ICONS } from './icons.ts';
 import { StatusSurface } from './status-surface.ts';
+import { userOnly } from './user-gesture.ts';
 import type { HologramI18nApi } from './i18n.ts';
 import type { CheckSavedMessage, CheckSavedResponse, SavePostMessage, SaveResponse } from './messages.ts';
 
@@ -79,11 +80,13 @@ export function startBulkCapture(site: CaptureSite, i18n: HologramI18nApi): void
   stopButton.type = 'button';
   stopButton.className = 'action';
   stopButton.textContent = t('bulkStop');
-  stopButton.onclick = (e) => {
+  // Trusted only (#323): stopping is the user's decision about their own run,
+  // and this button is inside the shared shadow root the page can reach into.
+  stopButton.onclick = userOnly<MouseEvent>((e) => {
     e.preventDefault();
     e.stopPropagation();
     finish(true);
-  };
+  });
   banner.el.style.pointerEvents = 'auto';
   banner.slot(stopButton);
 
@@ -312,7 +315,7 @@ export function startBulkCapture(site: CaptureSite, i18n: HologramI18nApi): void
     });
     observer.disconnect();
     removeEventListener('scroll', onScroll, true);
-    document.removeEventListener('keydown', onKeyDown, true);
+    document.removeEventListener('keydown', onUserKeyDown, true);
     if (pumpTimer) clearTimeout(pumpTimer);
     if (window.__snsPostSaveCleanup === stop) delete window.__snsPostSaveCleanup;
     window.__snsPostSaveActive = false;
@@ -352,6 +355,8 @@ export function startBulkCapture(site: CaptureSite, i18n: HologramI18nApi): void
   function onKeyDown(e: KeyboardEvent) {
     if (e.key === 'Escape') finish(true);
   }
+  // Esc is the user's, the same way the stop button is (#323).
+  const onUserKeyDown = userOnly(onKeyDown);
 
   const observer = new MutationObserver((records) => {
     // x.com is an SPA: leaving the bookmarks list swaps the feed in place and
@@ -368,7 +373,7 @@ export function startBulkCapture(site: CaptureSite, i18n: HologramI18nApi): void
   });
   observer.observe(document.documentElement, { childList: true, subtree: true });
   addEventListener('scroll', onScroll, { capture: true, passive: true });
-  document.addEventListener('keydown', onKeyDown, true);
+  document.addEventListener('keydown', onUserKeyDown, true);
 
   // A second activation ends the mode, matching the single-shot path's toggle.
   window.__snsPostSaveActive = true;
