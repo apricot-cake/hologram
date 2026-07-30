@@ -414,7 +414,7 @@ describe('queryBridge — checkSaved の常駐 Port 配線', () => {
     // nextQueryId は張り直しても引き継がれる（1件目の失敗リクエストが使った id を再利用しない）ので、
     // 実際に送られた id を読み取って返す。
     const sentId = createdPorts[1].sent[0].id;
-    createdPorts[1].emitMessage({ id: sentId, results: { 'https://x.com/a/status/1': { id: 'file-1', media: [] } } });
+    createdPorts[1].emitMessage({ id: sentId, ok: true, results: { 'https://x.com/a/status/1': { id: 'file-1', media: [] } } });
     await expect(second.responseP).resolves.toEqual({ ok: true, results: { 'https://x.com/a/status/1': { id: 'file-1', media: [] } } });
   });
 
@@ -430,8 +430,8 @@ describe('queryBridge — checkSaved の常駐 Port 配線', () => {
 
     // 応答順を入れ替えて返す — id で正しい呼び出し元へ届くことを確認する。
     const [reqA, reqB] = createdPorts[0].sent;
-    createdPorts[0].emitMessage({ id: reqB.id, results: { 'https://x.com/b/status/2': { id: 'file-b', media: [] } } });
-    createdPorts[0].emitMessage({ id: reqA.id, results: { 'https://x.com/a/status/1': { id: 'file-a', media: [] } } });
+    createdPorts[0].emitMessage({ id: reqB.id, ok: true, results: { 'https://x.com/b/status/2': { id: 'file-b', media: [] } } });
+    createdPorts[0].emitMessage({ id: reqA.id, ok: true, results: { 'https://x.com/a/status/1': { id: 'file-a', media: [] } } });
 
     await expect(first.responseP).resolves.toEqual({ ok: true, results: { 'https://x.com/a/status/1': { id: 'file-a', media: [] } } });
     await expect(second.responseP).resolves.toEqual({ ok: true, results: { 'https://x.com/b/status/2': { id: 'file-b', media: [] } } });

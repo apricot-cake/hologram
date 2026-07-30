@@ -5,11 +5,13 @@
 // payload typed for free — a field rename now shows up as a compile error at
 // every call site instead of failing silently at runtime (#225).
 //
-// BridgeAck is the one exception: it types the native host's ack (a THIRD
-// boundary — extension <-> native messaging host, native-host/bridge.cts,
-// its own separate TS project) only as far as background.ts reads pieces of
-// it back into its own content<->background responses (see SaveResponse).
-// The native messaging protocol itself stays untyped on the host side.
+// The THIRD boundary — extension <-> native messaging host — is NOT defined
+// here: since #400 it has one shared declaration that both sides import,
+// native-host/protocol.mts. What this file still does is re-export the pieces of
+// it that travel onward into content<->background responses (BridgeAck,
+// SavedEntry), so a content script reads the host's answer under the same type
+// the host wrote it under.
+import type { HostAckView, SavedEntry, SavedResults } from '../../native-host/protocol.mts';
 import type { CropRect } from './crop.ts';
 import type { SaveFailureKind } from './native-error.ts';
 import type { SaveLogEntry, SaveStage } from './capture-log.ts';
@@ -148,19 +150,12 @@ interface ErrorResponse {
 // request was accepted; capture.ts never reads it.
 type CaptureAndSendResponse = { ok: true } | ErrorResponse;
 
-// What the native host's ack carries for a completed save (see the module
-// header for why this lives here despite being a different boundary).
-interface BridgeAck {
-  // The uniqueBase-resolved id of the record just written — NOT derivable from
-  // `file`, whose bulk-intake form is a media filename (#34).
-  captureId?: string;
-  file?: string;
-  saveFolder?: string;
-  mediaCount?: number;
-  media?: Array<string | null>;
-  // Written to disk, but the library can't show it until #365 lands.
-  deferred?: boolean;
-}
+// What the native host's ack carries for a completed save, as a READER may
+// assume it: native-host/protocol.mts's HostAckView, where every field is
+// optional because the two sides update through separate channels (Chrome Web
+// Store vs the app's own updater), so an ack can arrive from a host older or
+// newer than the extension reading it.
+type BridgeAck = HostAckView;
 
 type SaveResponse =
   | (BridgeAck & {
@@ -171,22 +166,10 @@ type SaveResponse =
     })
   | ErrorResponse;
 
-// What the host says about one permalink: the captureId of a record that
-// holds it, plus WHICH of the post's pictures are in the library (#334) —
-// positional, so the index is the picture's number in the record and null
-// marks one the library kept no URL for. An empty list means the post is
-// saved but its pictures are not known apart; the overlay reads that as the
-// whole post, exactly as it behaved before per-picture answers existed.
-interface SavedEntry {
-  id: string;
-  media: Array<string | null>;
-  // Parallel to media: which captureId holds that picture (#34). `id` names
-  // only the FIRST record to claim the post's key, so it cannot answer that.
-  // Absent from a saved-index snapshot the app has not rewritten since #34.
-  owners?: Array<string | null>;
-}
-
-type SavedResults = Record<string, SavedEntry | null>;
+// SavedEntry / SavedResults — what the host says about one permalink (the
+// captureId of a record holding it, plus WHICH of its pictures are in the
+// library, #334) — are the HOST's declarations, imported above and re-exported
+// below because they travel on to the content scripts unchanged.
 
 type CheckSavedResponse = { ok: true; results: SavedResults } | { ok: false; error?: string; results: SavedResults };
 
