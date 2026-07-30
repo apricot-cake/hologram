@@ -305,7 +305,7 @@ describe('notify: 成功', () => {
   });
 
   test('ok 状態の文面', () => {
-    expect(ctx.bannerLabel().textContent).toBe('Image saved');
+    expect(ctx.bannerLabel().textContent).toBe('Post saved');
   });
 
   test('しばらくすると片付く（バナーが消え、再開可能になる）', async () => {
@@ -370,7 +370,7 @@ describe('notify: 部分成功・グループ化・失敗', () => {
   test('ずれていなければ普段どおりの成功', () => {
     ctx.notify({ type: 'notify', success: true, metaOk: true, grouped: 0, hostSkew: null });
 
-    expect(ctx.bannerLabel().textContent).toBe('Image saved');
+    expect(ctx.bannerLabel().textContent).toBe('Post saved');
     expect(ctx.bannerState()).toBe('success');
   });
 });

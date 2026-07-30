@@ -30,7 +30,10 @@ export const MESSAGES = {
     // content.js capture banner
     bannerSelect: '保存する投稿をクリック（Esc または右クリックでキャンセル）',
     bannerSaving: '保存中...',
-    bannerSaved: '画像を保存しました',
+    // The unit of a save is the POST, not the image file that was clicked: the
+    // app folds same-post records into ONE card, so wording this as "image"
+    // contradicted what the library shows right after the banner.
+    bannerSaved: '投稿を保存しました',
     // $1 = how many images of this post are saved now (2nd, 3rd, …). Shown when
     // a save hits a post already saved this session — the app folds same-post
     // records into ONE stacked card, so nothing "new" appears in the grid.
@@ -145,7 +148,7 @@ export const MESSAGES = {
   en: {
     bannerSelect: 'Click a post to save (Esc or right-click to cancel)',
     bannerSaving: 'Saving...',
-    bannerSaved: 'Image saved',
+    bannerSaved: 'Post saved',
     bannerSavedGrouped: 'Saved — grouped with your earlier image ($1 of this post)',
     bannerSavedNoMeta: 'Saved (post info unavailable)',
     bannerSavedNoMetaProtected: 'Saved (post info unavailable: private account)',

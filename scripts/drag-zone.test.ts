@@ -165,7 +165,7 @@ describe('ドロップ: 成功', () => {
   });
 
   test('保存済みテキストを出す', () => {
-    expect(label().textContent).toBe('Image saved');
+    expect(label().textContent).toBe('Post saved');
   });
 
   test('しばらくすると隠れる', async () => {
