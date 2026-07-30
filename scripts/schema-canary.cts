@@ -12,8 +12,11 @@
 //   node scripts/schema-canary.cts --payloads      # compare against SAVED originals (#292)
 //
 // Exit code: 0 = no change, 1 = a confirmed disappearance, 2 = no alarm but at
-// least one sample could not be fetched (the canary is partly blind — the
-// sample needs replacing in samples.json).
+// least one sample has no living candidate left (the canary is partly blind —
+// that sample needs another candidate in samples.json). A sample whose FIRST
+// candidate died but whose second answered is not an outage: it is reported and
+// keeps watching, because absorbing that death without a human is the point of
+// carrying candidates at all (#464).
 //
 // The responses come from fetchPostMetadata() itself rather than a private set
 // of URL builders. That was not possible when this was designed: the fetch
@@ -29,7 +32,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { fetchPostMetadata } = require('../extension/utils/extractor/index.ts');
-const { advanceStreak, carryBaseline, diffShapes, endpointMissingDiff, labelPath, shapeOf, sortShape, MISSING_STREAK_ALARM } = require('./lib-schema-canary.cts');
+const { advanceStreak, candidateOrder, carryBaseline, diffShapes, endpointMissingDiff, labelPath, rebaseOnSourceChange, shapeOf, sortShape, MISSING_STREAK_ALARM } = require('./lib-schema-canary.cts');
 
 const CANARY_DIR = path.join(__dirname, 'canary');
 const SAMPLES_FILE = path.join(CANARY_DIR, 'samples.json');
@@ -50,16 +53,22 @@ const PRIMARY_ENDPOINT: Record<string, string> = {
 };
 
 type Shape = Record<string, string>;
-interface Sample {
-  label: string;
+interface Candidate {
   url: string;
   note?: string;
+}
+interface Sample {
+  label: string;
+  candidates: Candidate[];
 }
 interface Snapshot {
   platform: string;
   updatedAt: string;
   shapes: Record<string, Record<string, Shape>>;
   missingStreak: Record<string, Record<string, Record<string, number>>>;
+  // Which candidate URL each baseline was observed from. A baseline describes
+  // one post, so it is only valid for that post (see rebaseOnSourceChange).
+  sources: Record<string, string>;
 }
 
 function sleep(ms: number) {
@@ -78,9 +87,9 @@ function snapshotFile(platform: string): string {
 function readSnapshot(platform: string): Snapshot {
   try {
     const j = JSON.parse(fs.readFileSync(snapshotFile(platform), 'utf8'));
-    return { platform, updatedAt: j.updatedAt || '', shapes: j.shapes || {}, missingStreak: j.missingStreak || {} };
+    return { platform, updatedAt: j.updatedAt || '', shapes: j.shapes || {}, missingStreak: j.missingStreak || {}, sources: j.sources || {} };
   } catch {
-    return { platform, updatedAt: '', shapes: {}, missingStreak: {} };
+    return { platform, updatedAt: '', shapes: {}, missingStreak: {}, sources: {} };
   }
 }
 
@@ -101,7 +110,9 @@ function writeSnapshot(snap: Snapshot) {
     }
     if (Object.keys(byKind).length) streak[label] = byKind;
   }
-  fs.writeFileSync(snapshotFile(snap.platform), `${JSON.stringify({ platform: snap.platform, updatedAt: snap.updatedAt, shapes, missingStreak: streak }, null, 2)}\n`, 'utf8');
+  const sources: Snapshot['sources'] = {};
+  for (const label of Object.keys(snap.sources).sort()) sources[label] = snap.sources[label] as string;
+  fs.writeFileSync(snapshotFile(snap.platform), `${JSON.stringify({ platform: snap.platform, updatedAt: snap.updatedAt, sources, shapes, missingStreak: streak }, null, 2)}\n`, 'utf8');
 }
 
 // One sample's observation: every response body the fetch chain received,
@@ -114,11 +125,11 @@ interface Observation {
   reason: string;
 }
 
-async function observe(platform: string, sample: Sample): Promise<Observation> {
+async function observe(platform: string, url: string): Promise<Observation> {
   const out: Observation = { shapes: {}, parseErrors: {}, dead: false, reason: '' };
   let rec: any;
   try {
-    rec = await fetchPostMetadata(sample.url);
+    rec = await fetchPostMetadata(url);
   } catch (err) {
     return { ...out, dead: true, reason: `取得が例外で落ちた: ${err.message}` };
   }
@@ -210,10 +221,35 @@ function compareSample(snap: Snapshot, label: string, obs: Observation): { lines
   return { lines, alarms };
 }
 
+// Walks a sample's candidates in sticky order and stops at the first one that
+// answers with a real post. Candidates skipped on the way are returned too: the
+// canary keeps working without them, but a dead candidate is worth pruning
+// before it is the last one left.
+interface Pick {
+  url: string;
+  obs: Observation | null;
+  skipped: Array<{ url: string; reason: string }>;
+}
+
+async function pickCandidate(platform: string, sample: Sample, previous: string | undefined): Promise<Pick> {
+  const skipped: Array<{ url: string; reason: string }> = [];
+  for (const url of candidateOrder(
+    sample.candidates.map((c) => c.url),
+    previous,
+  )) {
+    const obs = await observe(platform, url);
+    await sleep(REQUEST_GAP_MS);
+    if (!obs.dead) return { url, obs, skipped };
+    skipped.push({ url, reason: obs.reason });
+  }
+  return { url: '', obs: null, skipped };
+}
+
 async function runCanary(platforms: string[], dryRun: boolean): Promise<number> {
   const samples = loadSamples();
   const findings: Finding[] = [];
   const outages: string[] = [];
+  const stale: string[] = [];
   let alarms = 0;
   let responses = 0;
   let sampleCount = 0;
@@ -230,26 +266,28 @@ async function runCanary(platforms: string[], dryRun: boolean): Promise<number> 
     console.log(`\n== ${platform} （${list.length} サンプル${isNew ? '・初回＝基準を作成' : ''}）`);
     for (const sample of list) {
       sampleCount++;
-      const obs = await observe(platform, sample);
-      responses += Object.keys(obs.shapes).length;
-      if (obs.dead) {
-        outages.push(`${platform}/${sample.label}: ${obs.reason} — ${sample.url}`);
-        console.log(`  × ${sample.label}: ${obs.reason}`);
-        await sleep(REQUEST_GAP_MS);
+      const pick = await pickCandidate(platform, sample, snap.sources[sample.label]);
+      for (const s of pick.skipped) stale.push(`${platform}/${sample.label}: ${s.reason} — ${s.url}`);
+      if (!pick.obs) {
+        // Every candidate is gone. Only now does a human have to find a new one.
+        outages.push(`${platform}/${sample.label}: 候補が全滅（${pick.skipped.length}本）— ${pick.skipped.map((s) => s.url).join(' / ')}`);
+        console.log(`  × ${sample.label}: 候補が全滅（${pick.skipped.length}本）— samples.json に候補を足す`);
         continue;
       }
+      responses += Object.keys(pick.obs.shapes).length;
+      const switched = rebaseOnSourceChange(snap, sample.label, pick.url);
       const hadBaseline = !!snap.shapes[sample.label];
-      const res = compareSample(snap, sample.label, obs);
+      const res = compareSample(snap, sample.label, pick.obs);
       if (!hadBaseline) baselines++;
+      const note = switched ? '（観測対象を切り替え＝基準を作り直した）' : hadBaseline ? '' : '（基準を作成）';
       if (res.lines.length) {
         findings.push({ platform, label: sample.label, kind: '', lines: res.lines, alarms: res.alarms });
-        console.log(`  ${res.alarms ? '⚠' : '・'} ${sample.label}`);
+        console.log(`  ${res.alarms ? '⚠' : '・'} ${sample.label}${note}`);
         for (const line of res.lines) console.log(line);
       } else {
-        console.log(`  ○ ${sample.label}${hadBaseline ? '' : '（基準を作成）'}`);
+        console.log(`  ○ ${sample.label}${note}`);
       }
       alarms += res.alarms;
-      await sleep(REQUEST_GAP_MS);
     }
     snap.updatedAt = new Date().toISOString();
     if (!dryRun) writeSnapshot(snap);
@@ -257,9 +295,12 @@ async function runCanary(platforms: string[], dryRun: boolean): Promise<number> 
 
   console.log('\n—— まとめ ——');
   console.log(`サンプル ${sampleCount} / 応答 ${responses}${baselines ? ` / 新規に基準を作成 ${baselines}` : ''}`);
-  console.log(`警報 ${alarms} / 不通のサンプル ${outages.length}`);
+  console.log(`警報 ${alarms} / 不通のサンプル ${outages.length}${stale.length ? ` / 不通の候補 ${stale.length}（監視は継続）` : ''}`);
   for (const o of outages) console.log(`  × ${o}`);
-  if (outages.length) console.log('  → 不通のサンプルは samples.json を差し替える（消えた投稿はスキーマ変化ではない）');
+  if (outages.length) console.log('  → 不通のサンプルは samples.json に候補を足す（消えた投稿はスキーマ変化ではない）');
+  // Reported but deliberately not part of the exit code: the sample still has a
+  // living candidate, so the canary is not blind and nothing is urgent.
+  for (const s of stale) console.log(`  ・候補が不通（他の候補で継続中）: ${s}`);
   if (dryRun) console.log('（--dry-run: スナップショットは書き換えていない）');
   if (alarms) return 1;
   return outages.length ? 2 : 0;

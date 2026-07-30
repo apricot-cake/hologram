@@ -293,6 +293,48 @@ function labelPath(path: string): string {
   return path === '' ? '(root)' : path;
 }
 
+// --- which post to observe (#464) ----------------------------------------
+//
+// A sample is a LIST of candidate posts, not one post. Any single public post is
+// mortal, and replacing a dead one by hand is exactly the recurring maintenance
+// the canary exists to avoid. With candidates, one death is absorbed in silence
+// and only the last one has to ask for a human.
+
+// The order candidates are tried in. The URL that produced the stored baseline
+// goes FIRST even when it is not first in the list.
+//
+// Stickiness is the point: a candidate that failed once (an outage, a rate
+// limit, a moment of moderation) must not make the canary walk back and forth
+// between two posts, because every walk costs a run — the baseline belongs to
+// one post, so switching rebuilds it and that run compares nothing.
+function candidateOrder(urls: string[], previous?: string): string[] {
+  if (!previous || !urls.includes(previous)) return [...urls];
+  return [previous, ...urls.filter((url) => url !== previous)];
+}
+
+// A stored baseline describes ONE post. Comparing it against a DIFFERENT post
+// reports the two posts' differences — the optional fields one carries and the
+// other does not — as schema movement. That is a false alarm, and it was
+// reachable before candidates existed: swapping a sample's URL by hand made the
+// following runs alarm on fields that had never disappeared.
+//
+// So a baseline is owned by the URL it was observed from, and a change of source
+// discards it. The run that switches records a fresh baseline and reports
+// nothing, exactly like the first run of a brand new sample.
+interface SourcedSnapshot {
+  shapes: Record<string, unknown>;
+  missingStreak: Record<string, unknown>;
+  sources: Record<string, string>;
+}
+function rebaseOnSourceChange(snap: SourcedSnapshot, label: string, url: string): boolean {
+  const stored = snap.sources[label];
+  snap.sources[label] = url;
+  if (!stored || stored === url) return false;
+  delete snap.shapes[label];
+  delete snap.missingStreak[label];
+  return true;
+}
+
 module.exports = {
   MISSING_STREAK_ALARM,
   UNKNOWN,
@@ -308,4 +350,6 @@ module.exports = {
   isUnder,
   labelPath,
   streakKey,
+  candidateOrder,
+  rebaseOnSourceChange,
 };

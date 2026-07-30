@@ -8,7 +8,7 @@
 //     カナリアを読まれなくするので、消失を見落とすのと同じくらい致命的）
 
 import { describe, expect, test } from 'vitest';
-import { advanceStreak, carryBaseline, diffShapes, endpointMissingDiff, MISSING_STREAK_ALARM, shapeOf } from './lib-schema-canary.cts';
+import { advanceStreak, candidateOrder, carryBaseline, diffShapes, endpointMissingDiff, MISSING_STREAK_ALARM, rebaseOnSourceChange, shapeOf } from './lib-schema-canary.cts';
 
 describe('shapeOf（値を捨てて構造だけ取り出す）', () => {
   test('入れ子のオブジェクトはパスに展開され、値は残らない', () => {
@@ -156,6 +156,53 @@ describe('advanceStreak（ヒステリシス＝2回連続で初めて警報）',
   test('エンドポイントごと取得されなくなった場合も同じヒステリシスに乗る', () => {
     expect(advanceStreak({}, endpointMissingDiff()).pending).toEqual([{ path: '(endpoint)', type: 'present', count: 1 }]);
     expect(advanceStreak({ '(endpoint) :: present': 1 }, endpointMissingDiff()).alarms).toHaveLength(1);
+  });
+});
+
+describe('candidateOrder（どの候補から試すか）', () => {
+  const urls = ['https://a.test/1', 'https://b.test/2', 'https://c.test/3'];
+
+  test('前回の記録が無ければ記載順', () => {
+    expect(candidateOrder(urls)).toEqual(urls);
+  });
+
+  test('前回使った候補を先頭へ寄せる＝2本目へ移った後に1本目へ戻らない', () => {
+    // 戻ると基準が作り直され、その回は何とも比較できない（監視の空振り）。
+    expect(candidateOrder(urls, 'https://b.test/2')).toEqual(['https://b.test/2', 'https://a.test/1', 'https://c.test/3']);
+  });
+
+  test('候補から外された URL が記録に残っていても記載順に落ちるだけ', () => {
+    expect(candidateOrder(urls, 'https://gone.test/9')).toEqual(urls);
+  });
+
+  test('元の配列を書き換えない', () => {
+    const input = [...urls];
+    candidateOrder(input, 'https://c.test/3');
+    expect(input).toEqual(urls);
+  });
+});
+
+describe('rebaseOnSourceChange（基準は観測対象ごと）', () => {
+  test('観測対象が切り替わったら基準を捨てる＝別の投稿と比べて誤警報を出さない', () => {
+    // 基準が古い投稿のまま残ると、投稿ごとの任意項目の違いが「消失」として
+    // 2回連続で数えられ、2回目に必ず鳴る（#464 が見つけた誤警報）。
+    const snap = { shapes: { text: { kind: { a: 'string' } } }, missingStreak: { text: { kind: { 'a :: string': 1 } } }, sources: { text: 'https://example.test/1' } };
+    expect(rebaseOnSourceChange(snap, 'text', 'https://example.test/2')).toBe(true);
+    expect(snap.shapes.text).toBeUndefined();
+    expect(snap.missingStreak.text).toBeUndefined();
+    expect(snap.sources.text).toBe('https://example.test/2');
+  });
+
+  test('同じ観測対象なら基準はそのまま＝毎回作り直したら何も監視できない', () => {
+    const snap = { shapes: { text: { kind: { a: 'string' } } }, missingStreak: {}, sources: { text: 'https://example.test/1' } };
+    expect(rebaseOnSourceChange(snap, 'text', 'https://example.test/1')).toBe(false);
+    expect(snap.shapes.text).toEqual({ kind: { a: 'string' } });
+  });
+
+  test('出所の記録が無い初回は切り替え扱いにしない（記録だけ残す）', () => {
+    const snap: { shapes: Record<string, unknown>; missingStreak: Record<string, unknown>; sources: Record<string, string> } = { shapes: {}, missingStreak: {}, sources: {} };
+    expect(rebaseOnSourceChange(snap, 'text', 'https://example.test/1')).toBe(false);
+    expect(snap.sources.text).toBe('https://example.test/1');
   });
 });
 
