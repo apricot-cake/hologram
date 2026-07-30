@@ -355,6 +355,10 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     noData: 'エクスポートするデータがありません',
     importFailed: 'インポートに失敗しました',
     exportFailed: 'エクスポートに失敗しました',
+    // #85: クリップボードの画像を Ctrl+V で取り込む。$1 は取り込んだ日時（カードの見出しになる）
+    clipboardTitle: 'クリップボード $1',
+    clipboardImported: 'クリップボードから取り込みました',
+    clipboardNoImage: 'クリップボードに画像がありません',
 
     // viewer: engagement labels (legacy, still referenced)
 
@@ -785,6 +789,9 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     noData: 'No data to export',
     importFailed: 'Import failed',
     exportFailed: 'Export failed',
+    clipboardTitle: 'Clipboard $1',
+    clipboardImported: 'Imported from the clipboard',
+    clipboardNoImage: 'No image on the clipboard',
 
     viewCard: 'Cards',
     viewTile: 'Tiles',

@@ -70,6 +70,7 @@ export const hologramIpc: HologramPreload = {
   pickBackupDir: () => bridge().pickBackupDir(),
   runBackup: () => bridge().runBackup(),
   importImages: () => bridge().importImages(),
+  importClipboard: (title) => bridge().importClipboard(title),
   onBackupStart: (cb) => bridge().onBackupStart(cb),
   onBackupDone: (cb) => bridge().onBackupDone(cb),
   getIntegrityStatus: () => bridge().getIntegrityStatus(),
