@@ -101,6 +101,24 @@ function parseFrames(raw: string | null): { file: string; delay: number }[] | nu
   }
 }
 
+// posts.hashtags is a JSON string[] column (lib-db-schema.ts). writePost is the
+// only writer and always stores a normalized array, so a value that is neither
+// is a damaged or foreign database — but this read is the app's ENTIRE post
+// list, so an uncaught JSON.parse here would fail the whole library rather than
+// one record, and a parsed non-array would reach the renderer's `hashtags.map`
+// consumers as something that has no map (#324). Same all-or-nothing shape as
+// parseFrames above: unreadable becomes empty, which is what a record whose
+// hashtags never arrived already looks like.
+function parseHashtags(raw: unknown): string[] {
+  if (typeof raw !== 'string' || !raw) return [];
+  try {
+    const v = JSON.parse(raw);
+    return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
 // Assembles complete post records from already-fetched `posts` rows plus their
 // media/tags, grouped by postId. Shared by postsFromDb (all rows) and
 // postsByIds (a captureId subset) so both produce the exact same shape.
@@ -162,7 +180,7 @@ function assemble(sqlite: Database.Database, postRows: any[]): any[] {
       isThread: fromDbBool(r.isThread),
       quotedUrl: r.quotedUrl,
       replyToId: r.replyToId,
-      hashtags: JSON.parse(r.hashtags || '[]'),
+      hashtags: parseHashtags(r.hashtags),
       tags: tags.map((t) => t.name),
       tagIds: tags.map((t) => t.id),
       media,
