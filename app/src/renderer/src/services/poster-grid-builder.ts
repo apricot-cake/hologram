@@ -178,9 +178,6 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
       const s = (u.displayName || u.screenName || '').trim();
       return {
         index: i,
-        // Stable per-poster id on the card root, mirroring .post-card[data-key]. The density
-        // View Transition (#252) reads it to name each visible card; nothing else needs it.
-        posterKey: u.key ?? null,
         avatarSrc: u.avatarFile ? deps.fileSrc(u.avatarFile) : null,
         monogram: u.avatarFile ? null : s ? s[0].toUpperCase() : '?',
         monoHue: u.avatarFile ? null : monoHue(u.key || s),

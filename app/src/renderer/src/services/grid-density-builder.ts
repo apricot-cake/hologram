@@ -332,20 +332,17 @@ export function makeGridDensity(deps: GridDensityDeps) {
   // into currentView, persist it, and re-render the grid. The idempotent guard
   // skips the no-op set from restorePrefs, so the loop stays one-way. React owns the
   // subscribe() registration (StoreSubscriptions, App.tsx), importing this function
-  // directly (viewer.ts wires it into the module-scope export).
-  //
-  // SYNCHRONOUS on purpose, and no view transition of its own (#252). The animation is
-  // started by the React side that writes the store key (_shared/density-transition.ts) and
-  // captures only the DOM changes that land before its callback returns — so the regroup
-  // this triggers has to happen inside the same store write, not a paint later. The old
-  // setTimeout deferral existed to let the pressed button paint first; the transition
-  // freezes that frame anyway, so there is nothing left for it to buy.
+  // directly (viewer.ts wires it into the module-scope export). The re-render is
+  // deferred past a paint so the pressed control paints its new state before the
+  // (heavier) grid regroup runs — the optimistic-press pattern the old handler used.
+  let _densityRenderT: ReturnType<typeof setTimeout> | undefined;
   function handleViewStoreChange() {
     const v = storeGet('view');
     if (v === currentView) return;
     currentView = v;
     deps.hologramIpc.setPref('viewMode', currentView);
-    deps.renderPosts();
+    clearTimeout(_densityRenderT);
+    _densityRenderT = setTimeout(() => deps.renderPosts(), 0);
   }
 
   // --- Poster grid: density + size state (kept SEPARATE from the post-side
@@ -432,18 +429,15 @@ export function makeGridDensity(deps: GridDensityDeps) {
   // reacts to a change: mirror it into posterView, persist it, and re-render the
   // poster grid. The idempotent guard skips the no-op set from restorePrefs. React owns
   // the subscribe() registration (StoreSubscriptions, App.tsx), importing this
-  // function directly.
-  //
-  // SYNCHRONOUS, for the same reason as handleViewStoreChange above (#252): the animation is
-  // started by the React side that writes the store key and captures only the DOM changes
-  // that land before its callback returns, so this re-render has to happen inside the same
-  // store write rather than a paint later.
+  // function directly. Deferred past a paint like handleViewStoreChange above.
+  let _posterDensityRenderT: ReturnType<typeof setTimeout> | undefined;
   function handlePosterViewStoreChange() {
     const v = storeGet('posterView');
     if (v === posterView) return;
     posterView = v;
     deps.hologramIpc.setPref('posterViewMode', posterView);
-    deps.renderPosters();
+    clearTimeout(_posterDensityRenderT);
+    _posterDensityRenderT = setTimeout(() => deps.renderPosters(), 0);
   }
 
   // Load saved view modes + sizes (called from viewer.ts's hologramIpc.getPrefs().then).

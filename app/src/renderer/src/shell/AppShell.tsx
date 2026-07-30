@@ -46,6 +46,8 @@ import { Inspector } from '../inspector/Inspector.tsx';
 import { PostGrid } from '../grid/index.tsx';
 import { PosterGrid } from '../posters/index.tsx';
 import { TabsHost } from '../tabs/index.tsx';
+import { TrashGrid } from '../trash/TrashGrid.tsx';
+import { TrashView } from '../trash/TrashView.tsx';
 import { WindowControls } from './WindowControls.tsx';
 
 // #149 + #243 + #259: the stored state is purely the user's saved choice (sidebar-pref.ts).
@@ -273,6 +275,10 @@ export function AppShell() {
                     <div id="emptyState" className="empty-state" hidden>
                       <EmptyState />
                     </div>
+                    {/* ゴミ箱 (#268) — the third destination of the content area, on
+                        the same scroll root as the two grids above. Always mounted;
+                        body.browse-trash decides which of the three is on screen. */}
+                    <TrashView />
                   </div>
                 </div>
                 {/* Image-tab detail view (Eagle 風 fit-to-screen); body.image-tab-active swaps it in. */}
@@ -321,6 +327,7 @@ export function AppShell() {
           out of the container so masonic's host-attach + flushSync path is unchanged. */}
       <PostGrid />
       <PosterGrid />
+      <TrashGrid />
     </TooltipProvider>
   );
 }

@@ -1,6 +1,10 @@
 {
   "platform": "pixiv",
-  "updatedAt": "2026-07-28T11:47:49.738Z",
+  "updatedAt": "2026-07-30T09:06:08.883Z",
+  "sources": {
+    "multiPage": "https://www.pixiv.net/artworks/146691579",
+    "single": "https://www.pixiv.net/artworks/1580459"
+  },
   "shapes": {
     "multiPage": {
       "api:pixiv/illust": {

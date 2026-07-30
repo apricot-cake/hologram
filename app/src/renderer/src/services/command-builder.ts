@@ -34,26 +34,6 @@ export interface CommandDeps {
   applyFolderFilter(id: string): void;
 }
 
-// グリッドの密度切替（投稿側のギャラリー⇄リスト・投稿者側の card/tile/list）は View
-// Transition を通る唯一の面で、その起点は島側にある（`_shared/density-transition.ts` が
-// 生きたカードの座標を採る）。services はコンポーネント側のモジュールを import しないので、
-// ランナーは React から登録してもらう＝searchbox.ts が focus コールバックを受け取っている
-// のと同じ形。登録前（あるいは未登録のまま）でも切替そのものは成立する＝素の store
-// 書き込みに落ちて、演出だけが付かない。
-// 投稿側と投稿者側でカードの名前空間が違う＝ランナーも別（#252）。
-type TransitionRunner = (update: () => void) => void;
-let runners: { posts: TransitionRunner; posters: TransitionRunner } | null = null;
-export function registerViewTransitionRunners(next: { posts: TransitionRunner; posters: TransitionRunner }): () => void {
-  runners = next;
-  return () => {
-    if (runners === next) runners = null;
-  };
-}
-const withTransition = (mode: string, update: () => void) => {
-  const run = runners && (mode === 'posters' ? runners.posters : runners.posts);
-  run ? run(update) : update();
-};
-
 export function makeCommands(deps: CommandDeps): void {
   const { t } = deps;
 
@@ -75,25 +55,22 @@ export function makeCommands(deps: CommandDeps): void {
       title: t('cmdViewGallery'),
       // 投稿側は 'card'（情報つきギャラリー）へ。DisplayMenu が覚えている「情報の
       // オン/オフ」の記憶までは引き継がない＝パレットは表示軸の記憶を持つ面ではない。
-      perform: () => {
-        const mode = deps.getBrowseMode();
-        withTransition(mode, () => storeSet(mode === 'posters' ? 'posterView' : 'view', 'card'));
-      },
+      perform: () => storeSet(deps.getBrowseMode() === 'posters' ? 'posterView' : 'view', 'card'),
     },
     {
       id: 'cmd:view-list',
       section: 'command',
       title: t('cmdViewList'),
-      perform: () => {
-        const mode = deps.getBrowseMode();
-        withTransition(mode, () => storeSet(mode === 'posters' ? 'posterView' : 'view', 'list'));
-      },
+      perform: () => storeSet(deps.getBrowseMode() === 'posters' ? 'posterView' : 'view', 'list'),
     },
     // 一括表示トグル（#245）。名前は状態を言わず動作だけを言う＝パレットの行は開いた
     // 瞬間の状態で書き換わらない（「隠す」と「戻す」が入れ替わる行は探して見つからない）。
     { id: 'cmd:toggle-panels', section: 'command', title: t('cmdTogglePanels'), hint: 'Ctrl+Shift+B', perform: () => togglePanels() },
     { id: 'cmd:browse-posts', section: 'command', title: t('cmdBrowsePosts'), perform: () => deps.browseTo('posts') },
     { id: 'cmd:browse-posters', section: 'command', title: t('cmdBrowsePosters'), perform: () => deps.browseTo('posters') },
+    // ゴミ箱も行き先の1つ（#268）＝サイドバーに常設された destination はパレットにも
+    // 並ぶ、という上2行と同じ扱い。
+    { id: 'cmd:browse-trash', section: 'command', title: t('cmdBrowseTrash'), perform: () => deps.browseTo('trash') },
   ];
   registerCommands('commands', commands);
 

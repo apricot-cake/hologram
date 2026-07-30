@@ -54,6 +54,19 @@ beforeAll(async () => {
     capturedAt: '2026-01-02T00:00:00Z',
     updatedAt: '2026-01-02T00:00:00Z',
   });
+  // #560: ドラッグ保存の形＝4枚組から2枚目だけを取ったので media は1件しか持たず、
+  // 元投稿での位置は imageIndex/imageCount にしか残らない
+  add({
+    captureId: 'cap-3',
+    image: 'cap-3.jpg',
+    media: [{ url: 'https://x.example/3.jpg', alt: null, width: 800, height: 600, file: 'cap-3.jpg' }],
+    source: 'drag',
+    platform: 'x',
+    imageIndex: 2,
+    imageCount: 4,
+    capturedAt: '2026-01-03T00:00:00Z',
+    updatedAt: '2026-01-03T00:00:00Z',
+  });
 
   handle = openDatabase(path.join(mkTempDir('hologram-db-query-db-'), 'test.db'));
   const stmts = preparePostStmts(handle.sqlite);
@@ -67,17 +80,17 @@ afterAll(() => {
   for (const d of dirs) fs.rmSync(d, { recursive: true, force: true });
 });
 
-test('writePost が2件を投入する（前提）', () => {
-  expect(postCount).toBe(2);
+test('writePost が3件を投入する（前提）', () => {
+  expect(postCount).toBe(3);
 });
 
 describe('postsFromDb: 形と並び', () => {
   test('全件返す', async () => {
-    expect(await postsFromDb(handle.sqlite)).toHaveLength(2);
+    expect(await postsFromDb(handle.sqlite)).toHaveLength(3);
   });
 
   test('capturedAt の新しい順', async () => {
-    expect((await postsFromDb(handle.sqlite)).map((p: any) => p.captureId)).toEqual(['cap-2', 'cap-1']);
+    expect((await postsFromDb(handle.sqlite)).map((p: any) => p.captureId)).toEqual(['cap-3', 'cap-2', 'cap-1']);
   });
 
   test('text 列が往復する', async () => {
@@ -117,6 +130,18 @@ describe('postsFromDb: 形と並び', () => {
   test('未設定の真偽値列は false でなく null のまま', async () => {
     const cap2 = (await postsFromDb(handle.sqlite)).find((p: any) => p.captureId === 'cap-2');
     expect(cap2.isReply).toBeNull();
+  });
+
+  // #560: 書き込み器だけが知っていて読み出し器が引かない列だと、インスペクタの
+  // 「N / M 枚目」は列があっても出ない＝往復して初めて意味を持つ
+  test('ドラッグ保存の imageIndex / imageCount が往復する（#560）', async () => {
+    const cap3 = (await postsFromDb(handle.sqlite)).find((p: any) => p.captureId === 'cap-3');
+    expect({ imageIndex: cap3.imageIndex, imageCount: cap3.imageCount }).toEqual({ imageIndex: 2, imageCount: 4 });
+  });
+
+  test('ドラッグ以外の保存経路では両方 null', async () => {
+    const cap1 = (await postsFromDb(handle.sqlite)).find((p: any) => p.captureId === 'cap-1');
+    expect({ imageIndex: cap1.imageIndex, imageCount: cap1.imageCount }).toEqual({ imageIndex: null, imageCount: null });
   });
 });
 

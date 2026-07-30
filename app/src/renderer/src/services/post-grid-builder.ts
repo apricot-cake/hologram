@@ -16,6 +16,7 @@ import { formatCount, formatDate, compactDate } from './format.ts';
 import { densityImage, dragFilesOf, postIdKey, makeGroupRecords, makeCardModel, stampPost } from './records.ts';
 import { hologramPostGridSource } from './grid.ts';
 import { listPostsDelta, deletePost, clearAll } from './posts.ts';
+import { refresh as trashRefresh } from './trash-view.ts';
 import { hologramIpc } from './ipc.ts';
 import { sync as syncPostsData } from './posts-data.ts';
 import { set as storeSet } from './store.ts';
@@ -568,10 +569,15 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
     markPostsMutated(); // a deleted author/instance must drop out of the sidebar
     renderPosts(true);
     reconcileFolders(); // 削除した captureId をフォルダから即時掃除
+    trashRefresh(); // the nav's ゴミ箱 badge counts what just landed there (#268)
     notify(deps.t('deleted'));
   }
 
   return {
+    // Handed out so the ゴミ箱 grid (#268) can draw the SAME card: one card model,
+    // one label set, so a deleted post is recognizable as the post it was.
+    cardModel,
+    cardLabels,
     loadPosts,
     renderPosts,
     getAllPosts,
