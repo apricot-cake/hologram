@@ -65,11 +65,22 @@
 }
 
 /* The banner: a compact pill at the top edge, centred. Same position for every
- * state, so a save that goes select → busy → success does not move. */
+ * state, so a save that goes select → busy → success does not move.
+ *
+ * Centred by `inset-inline: 0` + `margin-inline: auto` + `width: fit-content`,
+ * NOT by `left: 50%` + `translateX(-50%)`. The transform trick centres the box
+ * visually but leaves layout thinking the box starts at the middle of the
+ * viewport, so a shrink-to-fit width can only grow from there to the right edge
+ * — HALF the viewport, whatever `max-width` says. The pill then wrapped its
+ * contents (the choice row stacking into a column, #158) while looking like it
+ * had room to spare, and `max-width` had in fact never been the binding limit.
+ * Keeping the transform free of a permanent offset also means the entrance /
+ * exit keyframes do not have to re-state it (status-surface.ts). */
 .surface[data-variant='banner'] {
   top: 12px;
-  left: 50%;
-  transform: translateX(-50%);
+  inset-inline: 0;
+  margin-inline: auto;
+  width: fit-content;
   gap: 9px;
   padding: 6px 16px 6px 7px;
   max-width: calc(100vw - 48px);
@@ -220,11 +231,18 @@
 
 /* The duplicate warning's three answers (#34), mounted inside whichever surface
  * asked. The row takes input while the rest of the surface does not. */
+/* The answers, and the opt-out under them. flex-shrink: 0 because when the pill
+ * does run out of room, the prose is what should give: a label wraps to a second
+ * line and still reads, whereas a control row that wraps reads as broken layout.
+ * Without it the flex algorithm shrinks this side toward its min-content width —
+ * which for wrappable Japanese text is very small — and the buttons stack while
+ * the label keeps a comfortable measure, exactly backwards. */
 .choices {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 8px;
+  flex-shrink: 0;
   pointer-events: auto;
 }
 .choice-row {
