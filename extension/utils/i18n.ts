@@ -6,6 +6,7 @@
 //
 // The banner language follows the browser locale; the desktop app owns all
 // viewer/settings strings in app/renderer/i18n.ts.
+import type { ProtocolSkew } from '../../native-host/protocol.mts';
 import type { SaveFailureKind } from './native-error.ts';
 
 export interface HologramI18nApi {
@@ -14,6 +15,9 @@ export interface HologramI18nApi {
   getMessage: (key: string, subs?: ReadonlyArray<unknown>) => string;
   partialSaveText: (reason?: string | null) => string;
   saveFailureText: (kind?: SaveFailureKind | null, reason?: string | null) => string;
+  // null when there is nothing to say, so a caller can write
+  // `skewText(x) ?? <its usual success wording>` (#205).
+  skewSaveText: (skew?: ProtocolSkew | null) => string | null;
 }
 
 // The two tables live at module scope, and are exported, so the guards can read
@@ -35,6 +39,12 @@ export const MESSAGES = {
     // Reason-specific partial-save wording (metaReason from background.js).
     bannerSavedNoMetaProtected: '保存しました（鍵付きアカウントのため投稿情報は取得できません）',
     bannerSavedNoMetaAgeRestricted: '保存しました（年齢制限付き投稿のため投稿情報は取得できません）',
+    // 拡張とアプリ側の保存プログラムの版が合っていない（#205）。⚠️「失敗」ではない＝
+    // 保存自体は済んでいる。合っていない事実だけを伝え、動作は一切変えない。
+    // どちらを更新すればよいかまで言い切る＝ユーザーには「どちらが古いか」を
+    // 調べる手段が無い（診断ページには両方の版が並ぶ）。
+    bannerSavedHostOld: '保存しました — Hologram アプリを更新してください（拡張機能と版が合っていません）',
+    bannerSavedExtensionOld: '保存しました — 拡張機能を更新してください（Hologram アプリと版が合っていません）',
     bannerFailed: '保存に失敗しました',
     // $1 = reason. Shown when a save fails with a known cause, so the banner
     // says WHY instead of a bare "failed".
@@ -120,6 +130,9 @@ export const MESSAGES = {
     bannerSavedNoMeta: 'Saved (post info unavailable)',
     bannerSavedNoMetaProtected: 'Saved (post info unavailable: private account)',
     bannerSavedNoMetaAgeRestricted: 'Saved (post info unavailable: age-restricted post)',
+    // See the ja notes: the save SUCCEEDED, the two halves are out of step.
+    bannerSavedHostOld: 'Saved — please update the Hologram app (it no longer matches this extension)',
+    bannerSavedExtensionOld: 'Saved — please update the extension (it no longer matches the Hologram app)',
     bannerFailed: 'Save failed',
     bannerFailedReason: 'Save failed: $1',
     reasonNoPermalink: 'could not find the post link',
@@ -202,6 +215,11 @@ export function createI18n(): Promise<HologramI18nApi> {
         ? postUnavailableText(reason)
         : getMessage(kind === 'host-missing' ? 'bannerHostMissing' : kind === 'host-unavailable' ? 'bannerHostUnavailable' : kind === 'origin-rejected' ? 'bannerOriginRejected' : kind === 'timeout' ? 'bannerTimedOut' : kind === 'busy' ? 'bannerBusy' : 'bannerFailedUnknown');
 
-    return { lang: resolved, resolved, getMessage, partialSaveText, saveFailureText };
+    // The save worked; the halves it travelled between did not match (#205).
+    // Returns null for 'match' and for no answer yet, so this can be tried
+    // FIRST by a caller and fall through to its ordinary success wording.
+    const skewSaveText = (skew) => (skew === 'host-old' ? getMessage('bannerSavedHostOld') : skew === 'host-new' ? getMessage('bannerSavedExtensionOld') : null);
+
+    return { lang: resolved, resolved, getMessage, partialSaveText, saveFailureText, skewSaveText };
   })();
 }

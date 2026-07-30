@@ -59,7 +59,11 @@ export function Lightbox({ state }: { state: LightboxState }) {
       {item.video ? (
         <video key={item.src} className="max-h-[95vh] max-w-[95vw] rounded object-contain duration-[var(--motion-duration-base)] ease-[var(--motion-ease-out)] animate-in fade-in zoom-in-95" src={item.src} controls playsInline preload="metadata" />
       ) : (
-        <img key={item.src} className="max-h-[95vh] max-w-[95vw] rounded object-contain duration-[var(--motion-duration-base)] ease-[var(--motion-ease-out)] animate-in fade-in zoom-in-95" src={item.src} alt={item.alt || ''} />
+        // decoding="async" (#241): the peek has no prev/next, so there is no
+        // neighbour to preload here — the attribute is the whole of it. async
+        // keeps a multi-megapixel decode from holding up the scrim and its
+        // fade-in, which are the parts that have to answer the click at once.
+        <img key={item.src} className="max-h-[95vh] max-w-[95vw] rounded object-contain duration-[var(--motion-duration-base)] ease-[var(--motion-ease-out)] animate-in fade-in zoom-in-95" src={item.src} alt={item.alt || ''} decoding="async" />
       )}
     </div>,
     document.body,

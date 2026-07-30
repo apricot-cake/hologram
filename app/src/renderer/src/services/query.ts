@@ -335,10 +335,19 @@ export const hostOf = (url: string | null | undefined): string => {
 export const userKey = (p: HologramPost): string => p.platform + ':' + (p.userId || '@' + (p.screenName || ''));
 // Every text-ish field a free-text query can match against.
 // (p.description = Eagle-migration annotation — real prose, so it belongs here.)
+// media[].alt (#288): saved ALT text — X `ext_alt_text` / Bluesky `alt` / Misskey
+// file `comment` / Mastodon attachment `description`, already captured on save.
+// pixiv has no ALT concept (media[].alt is always null there) so this is a no-op
+// for that platform. This is the ONLY live free-text search path today — the
+// SQLite posts_fts index (lib-db-schema.ts) is not wired into the search UX yet
+// (searchPostsFts in lib-db-query.ts has no caller outside tests/bench; #29 is
+// the eventual consumer), so adding alt there would not change what a user can
+// find until that stage lands.
 export function textHaystackOf(p: HologramPost): string[] {
   return [p.text, p.title, p.eagleName, p.screenName, p.displayName, p.description]
     .concat(p.tags || [])
     .concat(p.hashtags || [])
+    .concat((p.media || []).map((m: any) => m?.alt))
     .map((x) => (x == null ? '' : String(x)));
 }
 

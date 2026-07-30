@@ -176,6 +176,15 @@ describe('text: 単一スマートマッチとメモ化', () => {
     expect(predOf({ type: 'text', value: '注釈テキスト' })(post({ description: 'ここに注釈テキストがある' }))).toBe(true);
   });
 
+  test('media[].alt（画像ALT）にしか無い語にも当たる（#288）', () => {
+    expect(predOf({ type: 'text', value: 'ALT専用語' })(post({ text: '', media: [{ alt: 'ここにALT専用語がある' }] }))).toBe(true);
+  });
+
+  test('media が無い・alt が null な投稿でも例外にならない', () => {
+    expect(predOf({ type: 'text', value: '存在しない語' })(post({ media: undefined }))).toBe(false);
+    expect(predOf({ type: 'text', value: '存在しない語' })(post({ media: [{ alt: null }, { url: 'x' }] }))).toBe(false);
+  });
+
   test('半角カナが matcher の正規化で当たる（注入経路の証明）', () => {
     expect(predOf({ type: 'text', value: 'ﾈｺ' })(post({ text: 'ネコ' }))).toBe(true);
     expect(fuzzyCalls).toEqual(['ﾈｺ']);
@@ -360,6 +369,11 @@ describe('純ヘルパ', () => {
 
   test('textHaystackOf は null 安全に文字列化する', () => {
     expect(Q.textHaystackOf({ text: null, tags: ['t'] }).every((s: unknown) => typeof s === 'string')).toBe(true);
+  });
+
+  test('textHaystackOf は media[].alt を連結し、media 欠如や alt=null でも例外にならない（#288）', () => {
+    expect(Q.textHaystackOf({ text: null, media: [{ alt: 'キャラA' }, { alt: null }, { url: 'x' }] })).toEqual(expect.arrayContaining(['キャラA']));
+    expect(Q.textHaystackOf({ text: null }).every((s: unknown) => typeof s === 'string')).toBe(true);
   });
 
   test('localDayRange の to は翌日ローカル0時（排他）で、空は null', () => {

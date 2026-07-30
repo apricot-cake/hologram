@@ -183,7 +183,10 @@ export function UgoiraPlayer({ file, frames, poster, alt, labels }: { file: stri
   return (
     <div className="itv-ugoira">
       <canvas ref={canvasRef} className="itv-media" role="img" aria-label={alt || labels.ugoira || ''} style={status === 'ready' ? undefined : { display: 'none' }} />
-      {status !== 'ready' && poster && <img className="itv-media" src={poster} alt={alt || ''} />}
+      {/* decoding="async" like the rest of the viewer surface (#241) — the
+          archive is being unzipped and decoded on the same thread's tasks, so
+          the poster must not add a blocking decode on top of that. */}
+      {status !== 'ready' && poster && <img className="itv-media" src={poster} alt={alt || ''} decoding="async" />}
       {status === 'ready' && (
         <button type="button" className="icon-btn itv-ugoira-toggle" aria-label={playing ? labels.pause : labels.play} data-tip={playing ? labels.pause : labels.play} onClick={() => setPlaying((p) => !p)}>
           {playing ? PAUSE_ICON : PLAY_ICON}

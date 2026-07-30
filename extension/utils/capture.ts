@@ -15,7 +15,7 @@ import type { BackgroundToContentMessage, CaptureAndSendMessage, CaptureAndSendR
 export async function startCapture(): Promise<void> {
   // --- i18n ---
   const i18n = await createI18n();
-  const { getMessage, partialSaveText, saveFailureText } = i18n;
+  const { getMessage, partialSaveText, saveFailureText, skewSaveText } = i18n;
   const MSG = {
     select: getMessage('bannerSelect'),
     saving: getMessage('bannerSaving'),
@@ -499,6 +499,14 @@ export async function startCapture(): Promise<void> {
       // Saved but the post-info API returned nothing → amber "partial" state so
       // the user notices (rather than a plain green success). Held longer.
       const partial = msg.success && msg.metaOk === false;
+      // The extension and the native host were built from different versions of
+      // their shared contract (#205). Said on a SUCCESSFUL save, and said ahead
+      // of every other success wording: the others describe this save, which
+      // worked, while this one says the tool itself is half-updated and the next
+      // save may not. Shown in the amber "needs attention" state rather than
+      // green for the same reason, and held as long as a partial save.
+      const skewText = msg.success ? skewSaveText(msg.hostSkew) : null;
+      const attention = partial || !!skewText;
       let text: string;
       if (!msg.success) {
         // The background keeps the raw diagnostic detail out of the page and
@@ -510,14 +518,14 @@ export async function startCapture(): Promise<void> {
         // success (otherwise the save looks like a silent no-op in the grid).
         // A replacement says so INSTEAD of "grouped": the earlier record is on
         // its way to the trash, so calling it a merge would be wrong.
-        text = partial ? partialSaveText(msg.metaReason) : replacing ? getMessage('dupReplaced') : msg.grouped > 0 ? getMessage('bannerSavedGrouped', [msg.grouped + 1]) : MSG.saved;
+        text = skewText ?? (partial ? partialSaveText(msg.metaReason) : replacing ? getMessage('dupReplaced') : msg.grouped > 0 ? getMessage('bannerSavedGrouped', [msg.grouped + 1]) : MSG.saved);
       }
-      banner.setState(partial ? 'partial' : msg.success ? 'success' : 'error', text);
+      banner.setState(attention ? 'partial' : msg.success ? 'success' : 'error', text);
       // Small badge pop so the state flip reads even in peripheral vision
       // (app hologramBadgePop: .3s on the shared ease-out curve).
-      if (msg.success && !partial) banner.pop();
-      // Hold failures (and partials) longer so the reason is readable.
-      setTimeout(cleanup, partial || !msg.success ? 2800 : 1500);
+      if (msg.success && !attention) banner.pop();
+      // Hold failures (and anything needing attention) longer so it is readable.
+      setTimeout(cleanup, attention || !msg.success ? 2800 : 1500);
     }
     return undefined;
   }

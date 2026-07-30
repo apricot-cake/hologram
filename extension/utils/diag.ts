@@ -15,6 +15,7 @@
 // (this is a regular page script, background.ts is the service worker), but
 // tsc compiles every extension file as one program, so top-level names must
 // stay unique across it. drag.ts/i18n.ts use the same IIFE convention.
+import { PROTOCOL_VERSION, hostProtocolVersion, protocolSkewOf } from '../../native-host/protocol.mts';
 import type { HostRequest } from '../../native-host/protocol.mts';
 
 export function startDiagnostics(): void {
@@ -79,10 +80,34 @@ export function startDiagnostics(): void {
     );
   }
 
+  // The two halves' contract versions side by side (#205). This is the page the
+  // banner sends people to, and the only place either number can be READ — the
+  // banner can say "update the app" but not what it saw, and a user comparing
+  // two version numbers is exactly the sort of check a diagnostics page is for.
+  //
+  // `host` is null when the ping never got an answer (the host could not be
+  // launched — nativeTest says which) AND when it answered without a stamp,
+  // which is a host from before this handshake existed. Those two are not the
+  // same thing, so `hostAnswered` keeps them apart rather than making the reader
+  // infer it from nativeTest.
+  function protocolReport(nativeTest: Record<string, unknown>) {
+    const answered = nativeTest.ok === true;
+    const host = answered ? hostProtocolVersion(nativeTest.msg) : null;
+    return {
+      extension: PROTOCOL_VERSION,
+      host,
+      hostAnswered: answered,
+      // Only meaningful once the host has answered: an unreachable host has no
+      // version to be behind or ahead of.
+      skew: answered ? protocolSkewOf(host) : null,
+    };
+  }
+
   async function run() {
     const out: Record<string, unknown> = { id: chrome.runtime.id, ts: new Date().toISOString() };
     out.storedLogs = await readStoredLogs();
     out.nativeTest = await testNative(); // launches the host if Chrome can find it
+    out.protocol = protocolReport(out.nativeTest as Record<string, unknown>);
     window.__hologramDiag = out; // readable via the page console
     const outEl = document.getElementById('out');
     if (outEl) outEl.textContent = JSON.stringify(out, null, 2);

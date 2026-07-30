@@ -15,7 +15,7 @@
 
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { generateCaptureId, startBackground } from '../extension/utils/background';
-import { CAPTURE_ID_PATTERN, PROTOCOL_VERSION, isCaptureId, parseHostFrame, parseHostRequest, readHostResponse, responseId } from '../native-host/protocol.mts';
+import { CAPTURE_ID_PATTERN, PROTOCOL_VERSION, hostProtocolVersion, isCaptureId, parseHostFrame, parseHostRequest, protocolSkewOf, readHostResponse, responseId, stampProtocol } from '../native-host/protocol.mts';
 
 const UNPARSEABLE_POST_URL = 'https://misskey.example/not-a-known-post-shape';
 const SENDER = { tab: { id: 7, windowId: 1, url: 'https://misskey.example/notes/1' } };
@@ -28,7 +28,9 @@ const CROPPED = 'data:image/jpeg;base64,/9j/4AAQ';
 function setup() {
   const messageListeners: Array<(message: any, sender: any, sendResponse: (r: any) => void) => boolean> = [];
   const sent: any[] = [];
-  const ports: Array<{ emitMessage(msg: any): void }> = [];
+  // ポートごとの送信も控える＝返信を「その問い合わせを出したポート」へ返すため
+  // （保存・ログ・バッジで別々のポートが開くので、返す先を間違えると届かない）。
+  const ports: Array<{ emitMessage(msg: any): void; sent: any[] }> = [];
 
   const chromeStub: any = {
     runtime: {
@@ -36,13 +38,18 @@ function setup() {
       onMessage: { addListener: (fn: any) => messageListeners.push(fn) },
       connectNative: () => {
         const listeners: Array<(msg: any) => void> = [];
+        const portSent: any[] = [];
         const port = {
-          postMessage: (msg: any) => sent.push(msg),
+          postMessage: (msg: any) => {
+            sent.push(msg);
+            portSent.push(msg);
+          },
           disconnect: () => {},
           onMessage: { addListener: (fn: (msg: any) => void) => listeners.push(fn) },
           onDisconnect: { addListener: () => {} },
         };
         ports.push({
+          sent: portSent,
           emitMessage(msg: any) {
             for (const fn of listeners) fn(msg);
           },
@@ -88,6 +95,15 @@ function setup() {
       const parsed = parseHostRequest(raw);
       if (!parsed.ok) throw new Error(`${type} が契約の parse に拒まれた: ${parsed.failure.error}`);
       return parsed.request;
+    },
+    // その型を送ったポート＝そこへ返信を流せば、拡張側の待っている処理へ届く。
+    async portThatSent(type: string) {
+      let found: (typeof ports)[number] | undefined;
+      await vi.waitFor(() => {
+        found = ports.find((p) => p.sent.some((m) => m?.type === type));
+        expect(found, `${type} を送ったポートが無い`).toBeTruthy();
+      });
+      return found as (typeof ports)[number];
     },
   };
 }
@@ -213,7 +229,7 @@ describe('captureId は契約が持つ＝保存フォルダから出られない
 describe('readHostResponse / responseId — 返信の読み方も1か所', () => {
   test('ok:true は ack、それ以外は文言つきの失敗', () => {
     expect(readHostResponse({ ok: true, captureId: '1717500000000-ab', file: 'a.jpg', saveFolder: 'D:/x', media: [], mediaCount: 0 })).toMatchObject({ ok: true, ack: { file: 'a.jpg' } });
-    expect(readHostResponse({ ok: false, error: 'Post unavailable: …', code: 'save-failed' })).toEqual({ ok: false, error: 'Post unavailable: …', code: 'save-failed' });
+    expect(readHostResponse({ ok: false, error: 'Post unavailable: …', code: 'save-failed' })).toEqual({ ok: false, error: 'Post unavailable: …', code: 'save-failed', protocolVersion: null });
   });
 
   // 保存は済んでいるのに読み手が「失敗した」と言い出すのが最悪なので、知らない
@@ -223,8 +239,8 @@ describe('readHostResponse / responseId — 返信の読み方も1か所', () =>
   });
 
   test('返信になっていないものは既定の文言で失敗にする', () => {
-    expect(readHostResponse(undefined)).toEqual({ ok: false, error: 'Native host returned an error', code: null });
-    expect(readHostResponse({ ok: false })).toEqual({ ok: false, error: 'Native host returned an error', code: null });
+    expect(readHostResponse(undefined)).toEqual({ ok: false, error: 'Native host returned an error', code: null, protocolVersion: null });
+    expect(readHostResponse({ ok: false })).toEqual({ ok: false, error: 'Native host returned an error', code: null, protocolVersion: null });
   });
 
   test('返信の id は、どの問い合わせの答えかを言う唯一の手段', () => {
@@ -236,4 +252,50 @@ describe('readHostResponse / responseId — 返信の読み方も1か所', () =>
 test('PROTOCOL_VERSION は契約が変わった時だけ動く整数（#205 が比較する値）', () => {
   expect(Number.isInteger(PROTOCOL_VERSION)).toBe(true);
   expect(PROTOCOL_VERSION).toBeGreaterThan(0);
+});
+
+// 拡張とホストは別経路で更新される（拡張＝Chrome ウェブストア／ホスト＝アプリの
+// 自動更新）ので「片方だけ新しい」は事故ではなく常態。ここが見るのは、そのずれが
+// ①検知されること ②検知しても保存を止めないこと の2点。
+describe('プロトコル版のハンドシェイク（#205）', () => {
+  test('返信への刻印は1か所で付く＝2つ目の送り手が付け忘れられない', () => {
+    expect(stampProtocol({ ok: true, pong: true })).toEqual({ ok: true, pong: true, protocolVersion: PROTOCOL_VERSION });
+    // 失敗の返信にも付く＝保存を断るほど古いホストこそ、版が知りたい相手。
+    expect(stampProtocol({ ok: false, error: 'boom', code: 'save-failed' })).toMatchObject({ protocolVersion: PROTOCOL_VERSION });
+  });
+
+  test('比較は整数比較だけ（版ごとの分岐は持たない）', () => {
+    expect(protocolSkewOf(PROTOCOL_VERSION)).toBe('match');
+    expect(protocolSkewOf(PROTOCOL_VERSION - 1)).toBe('host-old');
+    expect(protocolSkewOf(PROTOCOL_VERSION + 1)).toBe('host-new');
+  });
+
+  test('版を名乗らない返信は「ホストが古い」＝配備し損ねた bridge.js を見つける道（#511）', () => {
+    expect(hostProtocolVersion({ ok: true })).toBeNull();
+    expect(protocolSkewOf(hostProtocolVersion({ ok: true }))).toBe('host-old');
+    // 比較できない刻印は「無い」と同じ扱い＝3つ目の状態を作らない。
+    expect(hostProtocolVersion({ ok: true, protocolVersion: '1' })).toBeNull();
+    expect(hostProtocolVersion({ ok: true, protocolVersion: 1.5 })).toBeNull();
+    expect(hostProtocolVersion({ ok: true, protocolVersion: 2 })).toBe(2);
+  });
+
+  test('版がずれていても保存は止まらず、結果に更新案内が乗る', async () => {
+    const env = setup();
+    const responseP = env.dispatch({ type: 'savePost', platform: 'misskey', postUrl: UNPARSEABLE_POST_URL, saveId: 'skew-1' });
+    const port = await env.portThatSent('savePost');
+    // 版を名乗らない＝この契約より前のホスト。ack 自体は正常に返す。
+    port.emitMessage({ ok: true, captureId: '1717500000000-abcd', file: 'a.jpg', saveFolder: 'D:/x', media: [] });
+    const res = await responseP;
+    expect(res.ok).toBe(true); // ⚠️止めない＝データを捨てない（リトライキュー #203 と同じ方針）
+    expect(res.captureId).toBe('1717500000000-abcd'); // 保存の結果もそのまま届く
+    expect(res.hostSkew).toBe('host-old');
+  });
+
+  test('版が合っていれば案内は出ない', async () => {
+    const env = setup();
+    const responseP = env.dispatch({ type: 'savePost', platform: 'misskey', postUrl: UNPARSEABLE_POST_URL, saveId: 'skew-2' });
+    const port = await env.portThatSent('savePost');
+    port.emitMessage({ ok: true, captureId: '1717500000000-abcd', file: 'a.jpg', saveFolder: 'D:/x', media: [], protocolVersion: PROTOCOL_VERSION });
+    await expect(responseP).resolves.toMatchObject({ ok: true, hostSkew: null });
+  });
 });

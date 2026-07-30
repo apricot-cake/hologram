@@ -205,6 +205,25 @@ describe('ドロップ: グループ化（同じ投稿を2枚目）', () => {
   });
 });
 
+// #205: ドロップ経路も同じ案内を出す＝保存の出口が3本あるのに1本でしか言わないと、
+// 普段ドラッグしか使わない人には更新が要ることが一生届かない。
+describe('ドロップ: 版のずれ（#205）', () => {
+  beforeAll(async () => {
+    window.document.getElementById('img1')?.dispatchEvent(dragEvent('dragstart'));
+    sendReply = { ok: true, metaOk: true, grouped: 0, hostSkew: 'host-old' };
+    zone().dispatchEvent(dragEvent('drop'));
+    await settle();
+  });
+
+  test('保存できたことと更新の要求を同時に出す', () => {
+    expect(label().textContent).toBe('Saved — please update the Hologram app (it no longer matches this extension)');
+  });
+
+  test('緑ではなく partial（琥珀）へ倒す＝見落とさせない', () => {
+    expect(state()).toBe('partial');
+  });
+});
+
 describe('ドロップ: 失敗', () => {
   beforeAll(async () => {
     window.document.getElementById('img1')?.dispatchEvent(dragEvent('dragstart'));
