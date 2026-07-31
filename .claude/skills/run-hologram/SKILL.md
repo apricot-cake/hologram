@@ -37,7 +37,7 @@ Start-ScheduledTask -TaskName 'HologramLaunch'
 実機（:9222）に触るのは**実ライブラリでの最終確認とキャプチャ経路の確認だけ**。
 
 1. **挙動・自動テスト → SMOKE 隔離**: `HOLOGRAM_SMOKE=1` ＋ `HOLOGRAM_CONFIG_DIR=<tmp>`。隠しウィンドウ・自動終了。雛形は `scripts/test-app-tagtypes.cts`。ユーザーが本体アプリを触っていても結果に混ざらない。
-2. **見た目・モーション → サンドボックス2台目**: `node scripts/sandbox-app.cts` で可視・常駐のインスタンスを起動。CDP ポートは起動時に表示される。接続は `CDP_PORT=<port> node scripts/cdp-verify.cts`、終了は `node scripts/sandbox-app.cts stop`。HKCU も共有 config も触らないので実機と共存でき、worktree ごとに独立する。
+2. **見た目・モーション → サンドボックス2台目**: `node scripts/sandbox-app.cts` で可視・常駐のインスタンスを起動。CDP ポートはツリーのパスから決まる（起動時に表示・`.sandbox/instance.json`）。**接続は `CDP_PORT=sandbox node scripts/cdp-verify.cts`**＝そのツリーの記録から解決するので番号を持ち回らない。終了は `node scripts/sandbox-app.cts stop`。HKCU も共有 config も触らないので実機と共存でき、worktree ごとに独立する。**他ツリーのサンドボックスへ番号で繋ごうとすると止まる**（#640＝繋がったまま成功するのが唯一の失敗の顔だった）。
 3. **実機（:9222）**: `HologramLaunch` で起動したウィンドウへ CDP 接続。短く済ませ、混ざった疑いがあれば撮り直す。
 
 CSS の transition や inline 配置は隠しウィンドウでは再現しないので、見た目の確認を SMOKE で済ませようとしない。
