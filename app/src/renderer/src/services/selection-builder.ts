@@ -10,7 +10,6 @@
 // calls it via a deferred dep, same shape as jumpToPoster/showToast forward-
 // references in inspector-builder.ts.
 import * as selection from './selection.ts';
-import * as folders from './folders.ts';
 import { isOpen as lightboxIsOpen } from './lightbox.ts';
 import { isActive as imageViewIsActive } from './image-tab.ts';
 import { gridColumnCount, scrollGridIndexIntoView } from './grid-nav.ts';
@@ -171,7 +170,6 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
     if (confirmGet() || lightboxIsOpen()) return;
     if (settingsIsOpen()) return;
-    if (folders.isManagerOpen()) return;
     if (deps.getBrowseMode() !== 'posts') return; // select-all is post-grid only (posters/collections excluded)
     if (deps.getViewGroups().length === 0) return;
     e.preventDefault();
@@ -191,7 +189,6 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
     if (confirmGet() || lightboxIsOpen()) return;
     if (settingsIsOpen()) return;
-    if (folders.isManagerOpen()) return;
     if (imageViewIsActive()) return;
     if (deps.getBrowseMode() !== 'posts') return;
     if (String(window.getSelection() || '')) return; // the user highlighted post text — that's what they mean to copy
@@ -213,7 +210,6 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
     if (confirmGet() || lightboxIsOpen()) return;
     if (settingsIsOpen()) return;
-    if (folders.isManagerOpen()) return;
     if (imageViewIsActive()) return;
     if (deps.getBrowseMode() !== 'posts') return;
     const groups = selection.selectedGroups(deps.getViewGroups(), postIdKey);
@@ -251,7 +247,6 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
     if (confirmGet() || lightboxIsOpen()) return;
     if (settingsIsOpen()) return;
-    if (folders.isManagerOpen()) return;
     if (imageViewIsActive()) return;
     if (deps.getBrowseMode() !== 'posts') return;
     const groups = deps.getViewGroups();
@@ -308,7 +303,6 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
   // フォルダに追加: open the folder picker for the whole selection (you choose the
   // destination, same as a card's 📁 — no default folder).
   function folderSelection(anchorEl: HTMLElement) {
-    if (!folders) return;
     const recs = selectedRecords();
     const ids = recs.map((r) => r.captureId).filter(Boolean);
     if (!ids.length) return;

@@ -4,7 +4,6 @@ import { ConfirmHost } from '../confirm/Confirm.tsx';
 import { PaletteHost } from '../palette/CommandPalette.tsx';
 import { PromptHost } from '../prompt/Prompt.tsx';
 import { ContextMenuHost } from '../context-menu/ContextMenu.tsx';
-import { FolderManagerHost } from '../folders/FolderManagerModal.tsx';
 import { KindMenuHost } from '../kind-menu/KindMenu.tsx';
 import { LightboxHost } from '../lightbox/index.tsx';
 import { SettingsHost } from '../settings/index.tsx';
@@ -254,7 +253,6 @@ export function App() {
           flow that stages before it writes, so it gets a Dialog rather than the
           inspector's inline field. */}
       <BulkTagDialogHost />
-      <FolderManagerHost />
       <LightboxHost />
       {/* 設定 — a shadcn Dialog, so it portals onto document.body itself. */}
       <SettingsHost />

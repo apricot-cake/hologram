@@ -223,13 +223,11 @@ interface HologramFolderStore {
   /** Present only on the folders store (isLibrary): re-save a dynamic folder's search. */
   update?(id: string | null | undefined, patch: { tree?: unknown } | null | undefined): boolean;
 }
-/** A ready-to-use folder store backed by a get/set IPC pair (persist()/load() built in). */
-type HologramPersistedFolderStore = HologramFolderStore & { load(): Promise<void> };
-/** folders.ts's management-modal state (FolderManagerModal.tsx via getManager()/subscribeManager()). openId bumps only on openManager() (a fresh modal session), not on list refreshes. */
-interface HologramFolderManagerModel {
-  openId: number;
-  list: HologramFolder[];
-}
+/** A ready-to-use folder store backed by a get/set IPC pair. subscribe() (#6 残1) is its own
+ * change channel — every mutation (via persist()) and every completed load() notifies —
+ * so a React list (the poster-folder sidebar group) can useSyncExternalStore off it directly,
+ * with no manager-modal model in between (that model, and the modal itself, are retired). */
+type HologramPersistedFolderStore = HologramFolderStore & { load(): Promise<void>; subscribe(cb: () => void): () => void };
 
 // services/store.ts is a real ES module now — get/set/subscribe are
 // imported directly by every consumer; no ambient HologramStore/Window merge

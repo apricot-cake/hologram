@@ -21,7 +21,6 @@
 import { genTabId, makeNavHistory, navEntryUrl, sanitizeSavedTabs, loadTabs, persistTabs } from './tab-state.ts';
 import { isOpen as paletteIsOpen } from './command-registry.ts';
 import { get as confirmGet } from './confirm.ts';
-import { isManagerOpen as folderManagerIsOpen } from './folders.ts';
 import { isOpen as lightboxIsOpen } from './lightbox.ts';
 import { cloneTree, facetTreeFrom } from './query.ts';
 import { open as menuOpen } from './menu.ts';
@@ -245,7 +244,6 @@ export function makeTabsController(deps: TabsBuilderDeps) {
     if (confirmGet() || lightboxIsOpen()) return false;
     if (settingsIsOpen()) return false;
     if (paletteIsOpen()) return false;
-    if (folderManagerIsOpen()) return false;
     return true;
   }
   // Back/forward through the per-tab view history: Alt+←/→ + mouse side buttons (the bar
