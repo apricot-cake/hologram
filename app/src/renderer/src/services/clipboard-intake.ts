@@ -27,6 +27,7 @@ import { isOpen as lightboxIsOpen } from './lightbox.ts';
 import { isActive as imageViewIsActive } from './image-tab.ts';
 import { isOpen as settingsIsOpen } from './settings.ts';
 import { isManagerOpen as folderManagerIsOpen } from './folders.ts';
+import { get as storeGet } from './store.ts';
 import { importClipboard } from './posts.ts';
 import { formatDate } from './format.ts';
 import { notify } from './ui.ts';
@@ -74,8 +75,10 @@ export function handleShortcutClipboardKey(e: KeyboardEvent): void {
   if (imageViewIsActive()) return;
   // ゴミ箱 (#268): a paste is a new save, and the trash is the one destination where
   // saving into the library is off. Pasting there would silently drop the image into
-  // a grid the user is not looking at.
-  if (typeof document !== 'undefined' && document.body.classList.contains('browse-trash')) return;
+  // a grid the user is not looking at. Asked of the store, like every other guard
+  // above asks its own module — reading a body class would be the DOM sniffing #153
+  // rules out, and it made the class exist for no other reader.
+  if (storeGet('browseMode') === 'trash') return;
   e.preventDefault();
   void importFromClipboard();
 }

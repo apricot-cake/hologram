@@ -5,10 +5,10 @@
 // Unlike the tag-pop it replaces, this bridge carries NO staged tag list. The
 // staging is the dialog's own React state, so there is no module-level mirror to
 // keep in step and no refresh() round-trip after every add/remove — the reason
-// the old bulk path needed both a staging module (bulk-edit.ts) and a
-// recompute-and-push helper. The renderer keeps what only it can do: the tag
-// vocabulary (pickerData), the kind menu, and the persistence/undo/toast in
-// onApply.
+// the retired bulk path needed both a staging module and a recompute-and-push
+// helper. The renderer keeps what only it can do: the tag vocabulary
+// (pickerData), the kind menu, and the persistence/undo/toast in onApply
+// (bulk-tag-builder.ts).
 let current: HologramBulkTagModel | null = null;
 let seq = 0;
 const subs = new Set<() => void>();

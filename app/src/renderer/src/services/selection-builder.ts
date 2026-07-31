@@ -4,7 +4,7 @@
 // (services/grid.ts's cardActions, wired in orchestrator.ts). selection.ts (the hologramStore-backed selectedSet/anchor
 // bridge) stays untouched — this module is one of its consumers (the
 // FloatingBar component's own model derivation is the other, unaffected here).
-// タグを追加 (openBulkTagDialog) is bulk-edit-builder.ts territory
+// タグを追加 (openBulkTagDialog) is bulk-tag-builder.ts territory
 // (re-targeted at a Dialog in P2⑦). It's constructed right after this module
 // in viewer.ts (needs this module's own selectedRecords), so this module only
 // calls it via a deferred dep, same shape as jumpToPoster/showToast forward-
@@ -31,7 +31,7 @@ export interface SelectionBarDeps {
   loadPosts(keepLimit?: boolean): Promise<void>;
   persistManual(): void;
   showFoldMenu(g: HologramPostGroup, x: number, y: number): void;
-  // openBulkTagDialog lives in bulk-edit-builder.ts — a deferred dep, same shape
+  // openBulkTagDialog lives in bulk-tag-builder.ts — a deferred dep, same shape
   // as jumpToPoster/showToast in inspector-builder.ts.
   openBulkTagDialog(): void;
   // browseMode is a viewer.ts `let` (read/written outside this cluster too) — a

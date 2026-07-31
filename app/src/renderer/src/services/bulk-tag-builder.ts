@@ -1,19 +1,22 @@
 // Bulk "add tags to selection" — the write side of the selection bar's タグを追加.
-// The surface is a Dialog now (selection/BulkTagDialog, P2⑦); before that
-// it was tag-pop's mode:'bulk', and before that the edit-overlay modal. What moved
-// each time is only where the tags are staged — this module has always owned the
+// The surface is a Dialog (selection/BulkTagDialog, P2⑦); before that it was
+// tag-pop's mode:'bulk', and before that the edit-overlay modal. What moved each
+// time is only where the tags are staged — this module has always owned the
 // commit: persistence, undo capture, re-render, toast.
 //
-// The staging list itself is gone from the renderer (bulk-edit.ts deleted with the
-// tag-pop path): the dialog holds it in React state and hands it over once, on
-// apply, so there is no module-level copy to keep in step and no refresh() push
-// after every add/remove.
+// The staging list is not in the renderer at all any more: the dialog holds it in
+// React state and hands it over once, on apply, so there is no module-level copy to
+// keep in step and no refresh() push after every add/remove. That module (and the
+// whole 「タグ付けセッション」 surface it served) is retired — P2⑬ — and this file
+// dropped the bulk-edit name with it. Tagging many posts is a composition now:
+// filter to 「タグなし」, arrow through the results, edit tags in the inspector. This
+// Dialog is only the shortcut for "same tags, all of these at once".
 import { open as bulkTagOpen } from './bulk-tag.ts';
 import { updateTags as postsUpdateTags } from './posts.ts';
 import type { UndoChange } from './undo.ts';
 import type { NotifyAction } from './ui.ts';
 
-export interface BulkEditBuilderDeps {
+export interface BulkTagBuilderDeps {
   t(key: string, subs?: ReadonlyArray<string | number | null | undefined>): string;
   showToast(msg: unknown, action?: NotifyAction | null): void;
   showKindMenu(tag: string, x: number, y: number, onChange: () => void): void;
@@ -27,7 +30,7 @@ export interface BulkEditBuilderDeps {
   selectedRecords(): HologramPost[];
 }
 
-export function makeBulkEdit(deps: BulkEditBuilderDeps) {
+export function makeBulkTag(deps: BulkTagBuilderDeps) {
   // Merge the staged tags into every selected record. Additive is the only mode
   // (no "replace the tags of N posts" UI exists), so each record keeps its own
   // tags and gains these.

@@ -416,24 +416,25 @@ describe('renderer: Ctrl+V の判定', () => {
   });
 
   // ゴミ箱（#268）は「新規保存を無効」にする唯一の行き先＝貼り付けはそこでは何もしない。
-  // 見ているのは body のクラスなので、document を最小に立てて判定だけを確かめる。
+  // 見ているのは store の browseMode（P2⑬で body クラスの覗き見をやめた）ので、他の
+  // ガードと同じく本物のモジュールを動かして判定を確かめる。
   test('ゴミ箱を開いている間は発火しない', async () => {
     const intake = await freshIntake();
-    const classes = new Set<string>(['browse-trash']);
-    (globalThis as any).document = { getElementById: () => null, body: { classList: { contains: (c: string) => classes.has(c) } } };
+    const store = await import('../app/src/renderer/src/services/store');
+    store.set('browseMode', 'trash');
     try {
       const k = key({ key: 'v', ctrlKey: true });
       intake.handleShortcutClipboardKey(k.ev);
       await settle();
       expect(calls).toHaveLength(0);
       expect(k.wasPrevented()).toBe(false);
-      // ライブラリへ戻れば元どおり取り込む＝止めているのは行き先であって document ではない。
-      classes.delete('browse-trash');
+      // ライブラリへ戻れば元どおり取り込む＝止めているのは行き先であって鍵ではない。
+      store.set('browseMode', 'posts');
       intake.handleShortcutClipboardKey(key({ key: 'v', ctrlKey: true }).ev);
       await settle();
       expect(calls).toHaveLength(1);
     } finally {
-      (globalThis as any).document = undefined;
+      store.set('browseMode', 'posts');
     }
   });
 

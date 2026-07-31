@@ -30,7 +30,7 @@
 //     old islands/build.mjs / vite.config.mjs — while each was converted one wave at a time
 //     from a window-IIFE global bridge to a real named export, consumed via a plain relative
 //     import). query/listing/format/geometry/posts-data/undo/users/ui/search-editing/
-//     bulk-edit/confirm/inspector/kind-menu/menu/edit-overlay/bridge/filter-popover/
+//     confirm/inspector/kind-menu/menu/edit-overlay/bridge/filter-popover/
 //     qf-pop/cooc/facets/about-icon/searchbox/theme/records/tags/tab-state/trash/backup/
 //     posts/search/i18n/folders/selection/grid/query-chips/sidebar/tabs are all real ES
 //     modules now, imported directly by their consumers — no barrel entry needed, and

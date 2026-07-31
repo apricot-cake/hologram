@@ -415,6 +415,11 @@ export function makePostPredOf(deps: {
       // (deps.tagIdOf absent, or the name no longer exists) — never a hard
       // failure for an old or since-deleted tag.
       case 'tag': {
+        // 「タグなし」: the one tag leaf that is not a tag. It has no id to pin and no
+        // name to match — resolving it through tagIdOf would fall back to looking for a
+        // tag literally called '__none' — so it answers first. Same sentinel shape as
+        // platform's '__none' above.
+        if (f.value === '__none') return (p) => !(p.tags || []).length;
         if (f.tagId == null && deps.tagIdOf) f.tagId = deps.tagIdOf(f.value);
         return (p) => (f.tagId != null ? (p.tagIds || []).includes(f.tagId) : (p.tags || []).includes(f.value));
       }

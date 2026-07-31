@@ -40,6 +40,7 @@ const LABELS: Record<string, string> = {
   qfGif: 'GIF',
   qfMultiImage: '複数画像',
   qfPlatformNone: 'なし',
+  qfTagNone: 'タグなし',
 };
 
 const { facetCounts, qfValues } = makeFacets({
@@ -151,7 +152,7 @@ describe('qfValues: postType / media', () => {
   });
 });
 
-// 一般タグのみ・種別付き除外・present 先行
+// 一般タグのみ・種別付き除外・「タグなし」先頭固定・present 先行
 describe('qfValues: tag', () => {
   test('種別付きタグは出さない', () => {
     const vs = qfValues('tag').map((r) => r.v);
@@ -163,8 +164,27 @@ describe('qfValues: tag', () => {
     expect(qfValues('tag').every((r) => r.ghead == null)).toBe(true);
   });
 
-  test('present 先行（風景 count=2 が先頭）', () => {
-    expect(qfValues('tag')[0]).toMatchObject({ v: '風景', count: 2 });
+  // 連続タグ付けの入口なので count 順に混ぜず先頭へ固定する（P2⑬）
+  test('「タグなし」が先頭に固定される', () => {
+    expect(qfValues('tag')[0]).toMatchObject({ v: '__none', l: 'タグなし' });
+  });
+
+  test('「タグなし」の count は tags が空の投稿（filtered 由来）', () => {
+    // filtered = 先頭3件。うち tags が空なのは misskey の1件だけ。
+    expect(qfValues('tag')[0].count).toBe(1);
+  });
+
+  test('「タグなし」が選択中なら on になる', () => {
+    active.add('tag:__none');
+    try {
+      expect(qfValues('tag')[0].on).toBe(true);
+    } finally {
+      active.delete('tag:__none');
+    }
+  });
+
+  test('present 先行（風景 count=2 が「タグなし」の次）', () => {
+    expect(qfValues('tag')[1]).toMatchObject({ v: '風景', count: 2 });
   });
 
   test('未分類タグも一覧に含む', () => {
@@ -234,4 +254,29 @@ describe('qfValues: poster-*', () => {
 
 test('未知のカテゴリは []', () => {
   expect(qfValues('nonsense')).toEqual([]);
+});
+
+// 空振りする行は並べない＝プラットフォームなしと同じ規則。ライブラリ全体を見て決めるので、
+// 別の makeFacets を立てて「全件にタグがある」状態を作る。
+test('タグの無い投稿が1件も無ければ「タグなし」を出さない', () => {
+  const tagged = posts.map((p) => ({ ...p, tags: p.tags && p.tags.length ? p.tags : ['何かのタグ'] }));
+  const { qfValues: qv } = makeFacets({
+    getFilteredPosts: () => tagged,
+    qHasValue: () => false,
+    posterQHasValue: () => false,
+    allPosts: () => tagged,
+    hostOf: () => '',
+    userKey: (p) => String(p.platform),
+    t: (key: string) => LABELS[key],
+    PF_NAME: { x: 'X', bluesky: 'Bluesky', misskey: 'Misskey', mastodon: 'Mastodon', pixiv: 'pixiv' },
+    tagKindOf: (t: string) => KIND[t],
+    posterTagsOf: () => [],
+    filteredPosters: () => [],
+    posterFilterVocab: () => [],
+    namedPosters: () => [],
+    posterFolders: () => [],
+    postFolders: () => [],
+    buildUsers: () => [],
+  });
+  expect(qv('tag').map((r) => r.v)).not.toContain('__none');
 });

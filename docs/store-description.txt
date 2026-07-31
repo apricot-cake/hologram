@@ -32,7 +32,7 @@ FIND IT AGAIN
 - Browse as cards, tiles, or a reading-friendly list; open a gallery that bundles the screenshot and the original-resolution images
 
 ORGANIZE
-- Tags, plus a "tagging session" mode to tag untagged posts one after another
+- Tags — filter to "No tags" and arrow from post to post to tag them one after another
 - Folders for themes and favorites
 - Bulk actions: select many posts and tag, file, group, or delete them at once
 

@@ -55,8 +55,10 @@ export function makeTabLabels(deps: {
       }
       case 'engagement':
         return `${engTypeLabels[f.engType] || f.engType} ${f.op === 'lte' ? '≤' : '≥'} ${formatCount(f.min)}`;
+      // '__none' = 「タグなし」 (facets.ts) — the chip has to spell it out, or it would
+      // read as a tag whose name is '__none'.
       case 'tag':
-        return f.value;
+        return f.value === '__none' ? t('qfTagNone') : f.value;
       case 'hashtag':
         return `#${f.value}`;
       // A folder chip stands for the folder AND its subfolders (#41), so the one that

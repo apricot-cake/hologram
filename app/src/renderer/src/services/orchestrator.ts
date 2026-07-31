@@ -41,7 +41,7 @@ import { makeGridDensity, type HologramSizeTrack } from './grid-density-builder.
 import { makeInspector } from './inspector-builder.ts';
 import { makeSelectionBar } from './selection-builder.ts';
 import { makeSelectionMenu, selectionTextAt } from './selection-menu.ts';
-import { makeBulkEdit } from './bulk-edit-builder.ts';
+import { makeBulkTag } from './bulk-tag-builder.ts';
 import { makeTabsController } from './tabs-builder.ts';
 import { makeImageTabController } from './image-tab-builder.ts';
 import { hologramImageTabSource } from './image-tab.ts';
@@ -1174,9 +1174,9 @@ export function endFilterEditSession(): void {
     loadPosts,
     persistManual,
     showFoldMenu,
-    // bulkEdit is constructed just below — deferred since it needs this
+    // bulkTag is constructed just below — deferred since it needs this
     // selectionCtl's own selectedRecords.
-    openBulkTagDialog: () => bulkEdit.openBulkTagDialog(),
+    openBulkTagDialog: () => bulkTag.openBulkTagDialog(),
     getBrowseMode: () => browseMode, // orchestrator.ts `let`, read live
     copyGroupImage: (g) => postGrid.copyGroupImage(g),
     openQuickView: (g) => lightboxOpen(buildGroupGalleryItems(g)[0]), // Space peek (single image, #143)
@@ -1211,10 +1211,10 @@ export function endFilterEditSession(): void {
 
   // --- Bulk "add tags to selection" (Dialog — P2⑦) ---
   // The staged tags live in the dialog's own React state; nothing persists until
-  // Apply hands the finished list to bulk-edit-builder.ts. Constructed here (after
+  // Apply hands the finished list to bulk-tag-builder.ts. Constructed here (after
   // selectionCtl above) since openBulkTagDialog needs this cluster's own
   // selectedRecords — see the deferred dep on selectionCtl above.
-  const bulkEdit = makeBulkEdit({
+  const bulkTag = makeBulkTag({
     t: getMessage,
     showToast: notify,
     showKindMenu,

@@ -9,6 +9,7 @@ const STATIC_MSG: Record<string, string> = {
   kindPost: '投稿',
   kindImage: '画像',
   qfPlatformNone: 'PFなし',
+  qfTagNone: 'タグなし',
   qfPost: 'ポスト',
   qfReply: 'リプライ',
   qfQuote: '引用',
@@ -51,6 +52,7 @@ describe('filterLabel（switch の枝ごとに1ケース）', () => {
     [{ type: 'engagement', engType: 'likes', op: 'gte', min: 100 }, 'いいね ≥ C100'],
     [{ type: 'engagement', engType: 'quotes', op: 'lte', min: 5 }, 'quotes ≤ C5'], // 未知 engType は素通し
     [{ type: 'tag', value: '風景' }, '風景'],
+    [{ type: 'tag', value: '__none' }, 'タグなし'], // 番兵値はチップでも名前を出す（P2⑬）
     [{ type: 'hashtag', value: 'art' }, '#art'],
     [{ type: 'folder', value: 'c1' }, 'お気に入り'],
     [{ type: 'folder', value: 'c9' }, 'c9'], // 未知は id へフォールバック

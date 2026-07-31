@@ -5,6 +5,9 @@
 //   fixed lists (platform): every value carries a count, counts reflect the
 //     CURRENT query, and a 0 keeps its place (no greying — order is stable).
 //   facetDim lists (tag): counts reflect the query AND a 0 value is greyed.
+//   「タグなし」 (P2⑬): pinned to the top of the tag editor, counted like any value,
+//     and picking it leaves exactly the untagged post — the filter half of the
+//     composition that replaced the retired tagging-session mode.
 //   seeds: p0 x/猫/reply, p1 x/犬, p2 x/猫, p3 bluesky/猫, p4 misskey/(no tag)
 //     all platform → x=3, bluesky=1, misskey=1
 //     filter tag=猫 → x=2, bluesky=1, misskey=0 (misskey row stays, not greyed);
@@ -102,6 +105,15 @@ const evalJs = `(async () => {
   // apply tag=猫 via its editor
   await goBack();
   await pickCat('タグ');
+  // 「タグなし」 (P2⑬) — pinned first, counted over the same population, and picking it
+  // leaves only the post that carries no tags (p4). Picked twice to get back to all 5:
+  // the row toggles like every other value row.
+  r.noneFirst = (edRows()[0] && edRows()[0].querySelector('span.truncate') || {}).textContent; // 'タグなし'
+  r.noneCount = cntOf('タグなし'); // 1
+  rowEl('タグなし').click(); await wait(220);
+  r.noneCards = cards();          // 1 (p4)
+  rowEl('タグなし').click(); await wait(220);
+  r.noneOffCards = cards();       // 5 again
   rowEl('猫').click(); await wait(220);
   r.afterCatCards = cards();        // 3 (p0,p2,p3)
   // back to platform — counts now reflect the 猫 query (values() reads the live tree)
@@ -116,6 +128,8 @@ const evalJs = `(async () => {
   r.tagCat = cntOf('猫');           // 3
   r.tagDog = cntOf('犬');           // 0
   r.tagDogOff = offOf('犬');        // true (facetDim greys a 0)
+  r.noneCatCount = cntOf('タグなし'); // 0 (no untagged post is a 猫)
+  r.noneCatOff = offOf('タグなし');   // true — greyed like any other absent value
   // --- poster view: counts come from filteredPosters() (population = posters) ---
   byText('button', 'フィルタ').click(); // toggle shut (don't await the throttled unmount)
   await wait(120);
@@ -149,10 +163,12 @@ child.on('close', () => {
   fs.rmSync(tmp, { recursive: true, force: true });
   const fixed = r.pfX_all === '3' && r.pfBsky_all === '1' && r.pfMisskey_all === '1' && r.afterCatCards === 3 && r.pfX_cat === '2' && r.pfMisskey_cat === '0' && r.pfMisskey_off === false;
   const facetDim = r.tagCat === '3' && r.tagDog === '0' && r.tagDogOff === true;
+  const none = r.noneFirst === 'タグなし' && r.noneCount === '1' && r.noneCards === 1 && r.noneOffCards === 5 && r.noneCatCount === '0' && r.noneCatOff === true;
   const poster = r.posterPfX === '3' && r.posterPfBsky === '1' && r.posterPfMisskey === '1';
-  const ok = fixed && facetDim && poster;
+  const ok = fixed && facetDim && none && poster;
   console.log(`fixed: pfX_all=${r.pfX_all} bsky=${r.pfBsky_all} misskey=${r.pfMisskey_all} afterCat=${r.afterCatCards} pfX_cat=${r.pfX_cat} misskey_cat=${r.pfMisskey_cat} misskey_off=${r.pfMisskey_off}`);
   console.log(`facetDim: tagCat=${r.tagCat} tagDog=${r.tagDog} tagDogOff=${r.tagDogOff}`);
+  console.log(`tagNone: first=${r.noneFirst} count=${r.noneCount} cards=${r.noneCards} offCards=${r.noneOffCards} catCount=${r.noneCatCount} catOff=${r.noneCatOff}`);
   console.log(`poster: pfX=${r.posterPfX} bsky=${r.posterPfBsky} misskey=${r.posterPfMisskey}`);
   console.log(ok ? 'FACETCOUNTS_TEST_PASS' : 'FACETCOUNTS_TEST_FAIL');
   process.exit(ok ? 0 : 1);
