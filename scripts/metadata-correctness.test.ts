@@ -186,6 +186,101 @@ describe('Mastodon: edited_at から編集済みフラグ（#189）', () => {
   });
 });
 
+// #178: CW 文言とセンシティブフラグの取得。各プラットフォームの実在フィールド
+// （scripts/canary/snapshots/{misskey,mastodon,x}.json、2026-07-30 計測の実応答が
+// 持つ形）をそのまま固定する。Bluesky は自己ラベル
+// （com.atproto.label.defs#selfLabels）で、公式レキシコンで確認した形。
+describe('CW・センシティブフラグ（#178）', () => {
+  test('Misskey: note.cw が CW 文言、note レベルのセンシティブ信号は無い', async () => {
+    mockFetch([['/api/notes/show', { text: 'hi', cw: 'spider photo inside', user: { username: 'alice' }, createdAt: '2026-01-01T00:00:00Z' }]]);
+
+    const r = await fetchMisskeyNote({ platform: 'misskey', host: 'misskey.io', noteId: 'cw1' }, 'https://misskey.io/notes/cw1');
+    expect(r.cw).toBe('spider photo inside');
+    expect(r.sensitive).toBeNull();
+  });
+
+  test('Misskey: cw が null なら CW 無し', async () => {
+    mockFetch([['/api/notes/show', { text: 'hi', cw: null, user: { username: 'alice' }, createdAt: '2026-01-01T00:00:00Z' }]]);
+
+    expect((await fetchMisskeyNote({ platform: 'misskey', host: 'misskey.io', noteId: 'cw2' }, 'https://misskey.io/notes/cw2')).cw).toBeNull();
+  });
+
+  test('Mastodon: spoiler_text が CW 文言、sensitive はそのまま真偽値で通る', async () => {
+    mockFetch([['/api/v1/statuses/', { content: '<p>hi</p>', created_at: '2026-01-01T00:00:00Z', spoiler_text: 'nsfw art', sensitive: true, account: { acct: 'alice' } }]]);
+
+    const r = await fetchMastodonStatus({ platform: 'mastodon', host: 'mastodon.social', id: 'cw1' }, 'https://mastodon.social/@alice/cw1');
+    expect(r.cw).toBe('nsfw art');
+    expect(r.sensitive).toBe(true);
+  });
+
+  test('Mastodon: spoiler_text が空文字なら CW 無し（null に丸める）、sensitive=false は false のまま', async () => {
+    mockFetch([['/api/v1/statuses/', { content: '<p>hi</p>', created_at: '2026-01-01T00:00:00Z', spoiler_text: '', sensitive: false, account: { acct: 'alice' } }]]);
+
+    const r = await fetchMastodonStatus({ platform: 'mastodon', host: 'mastodon.social', id: 'cw2' }, 'https://mastodon.social/@alice/cw2');
+    expect(r.cw).toBeNull();
+    // isEdited と違い、sensitive は API が常に答える確定値 — false を null に丸めない
+    expect(r.sensitive).toBe(false);
+  });
+
+  test('X: possibly_sensitive をそのまま通す（CW 文言の欄は無い）', async () => {
+    mockFetch([['cdn.syndication.twimg.com', { text: 'hi', mediaDetails: [], user: { screen_name: 'alice', id_str: '1' }, possibly_sensitive: true }]]);
+
+    const r = await fetchXTweet({ platform: 'x', id: 'cw1', screenName: 'alice' }, 'https://x.com/alice/status/cw1');
+    expect(r.sensitive).toBe(true);
+    expect(r.cw).toBeNull();
+  });
+
+  test('X: possibly_sensitive が無ければ null（false を捏造しない）', async () => {
+    mockFetch([['cdn.syndication.twimg.com', { text: 'hi', mediaDetails: [], user: { screen_name: 'alice', id_str: '1' } }]]);
+
+    expect((await fetchXTweet({ platform: 'x', id: 'cw2', screenName: 'alice' }, 'https://x.com/alice/status/cw2')).sensitive).toBeNull();
+  });
+
+  describe('Bluesky: 自己ラベル（com.atproto.label.defs#selfLabels）から sensitive を導く', () => {
+    const postWithLabels = (labelVals: string[] | null) => ({
+      author: { handle: 'alice.bsky.social', did: DID, displayName: 'Alice' },
+      record: {
+        text: 'hi',
+        createdAt: '2026-01-01T00:00:00Z',
+        ...(labelVals ? { labels: { $type: 'com.atproto.label.defs#selfLabels', values: labelVals.map((val) => ({ val })) } } : {}),
+      },
+    });
+
+    test('porn ラベルがあれば sensitive=true', async () => {
+      mockFetch([
+        ['resolveHandle', { did: DID }],
+        ['getPostThread', { thread: { post: postWithLabels(['porn']) } }],
+      ]);
+      expect((await fetchBlueskyPost(BSKY_ID, BSKY_URL)).sensitive).toBe(true);
+    });
+
+    test('ラベルが無ければ sensitive=false（null ではない — 投稿は取得できている）', async () => {
+      mockFetch([
+        ['resolveHandle', { did: DID }],
+        ['getPostThread', { thread: { post: postWithLabels(null) } }],
+      ]);
+      expect((await fetchBlueskyPost(BSKY_ID, BSKY_URL)).sensitive).toBe(false);
+    });
+
+    // 'bot' はコンテンツの警告ではなくアカウント種別のラベルなので sensitive を立てない
+    test('bot ラベルだけでは sensitive=false（コンテンツの警告ではない）', async () => {
+      mockFetch([
+        ['resolveHandle', { did: DID }],
+        ['getPostThread', { thread: { post: postWithLabels(['bot']) } }],
+      ]);
+      expect((await fetchBlueskyPost(BSKY_ID, BSKY_URL)).sensitive).toBe(false);
+    });
+
+    test('Bluesky には CW 自由記述欄が無い（cw は常に null）', async () => {
+      mockFetch([
+        ['resolveHandle', { did: DID }],
+        ['getPostThread', { thread: { post: postWithLabels(['porn']) } }],
+      ]);
+      expect((await fetchBlueskyPost(BSKY_ID, BSKY_URL)).cw).toBeNull();
+    });
+  });
+});
+
 describe('Bluesky: 引用と言えるのは投稿の埋め込みだけ', () => {
   const post = (embedRecord: unknown) => ({
     author: { handle: 'alice.bsky.social', did: DID, displayName: 'Alice' },

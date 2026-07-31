@@ -455,6 +455,11 @@ async function fetchXTweet(parsed, url): Promise<PostRecord> {
     }
     rec.text = j.text ? xExpandUrls(j.text, j.entities) : null;
     if (xWasEdited(j.edit_control)) rec.isEdited = true;
+    // #178: possibly_sensitive is a real boolean syndication always answers
+    // when the fetch succeeds (same "definite value" treatment as
+    // favorite_count, not the null-means-no-signal convention isEdited uses).
+    // No free-text CW field exists on this endpoint — rec.cw stays null.
+    rec.sensitive = typeof j.possibly_sensitive === 'boolean' ? j.possibly_sensitive : null;
     if (j.user) {
       rec.displayName = j.user.name || null;
       rec.screenName = j.user.screen_name || rec.screenName;

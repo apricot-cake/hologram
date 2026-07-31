@@ -43,6 +43,8 @@ beforeAll(async () => {
     isQuote: false,
     isEdited: true,
     editedAt: '2026-01-01T12:00:00Z',
+    cw: 'spider photo inside',
+    sensitive: true,
     capturedAt: '2026-01-01T00:00:00Z',
     updatedAt: '2026-01-01T00:00:00Z',
   });
@@ -142,6 +144,15 @@ describe('postsFromDb: 形と並び', () => {
     expect({ isEdited: cap2.isEdited, editedAt: cap2.editedAt }).toEqual({ isEdited: null, editedAt: null });
   });
 
+  // #178: cw/sensitive が posts テーブルを往復する。sensitive は isEdited と
+  // 同じ 0/1 <-> bool 変換だが、未設定は false でなく null のまま（三値）。
+  test('cw / sensitive が往復する', async () => {
+    const cap1 = (await postsFromDb(handle.sqlite)).find((p: any) => p.captureId === 'cap-1');
+    expect({ cw: cap1.cw, sensitive: cap1.sensitive }).toEqual({ cw: 'spider photo inside', sensitive: true });
+    const cap2 = (await postsFromDb(handle.sqlite)).find((p: any) => p.captureId === 'cap-2');
+    expect({ cw: cap2.cw, sensitive: cap2.sensitive }).toEqual({ cw: null, sensitive: null });
+  });
+
   // #560: 書き込み器だけが知っていて読み出し器が引かない列だと、インスペクタの
   // 「N / M 枚目」は列があっても出ない＝往復して初めて意味を持つ
   test('ドラッグ保存の imageIndex / imageCount が往復する（#560）', async () => {
@@ -207,6 +218,11 @@ describe('searchPostsFts（FTS5 の rank 契約）', () => {
 
   test('rank は数値で出る（bm25＝より負なら関連が強い）', () => {
     expect(typeof searchPostsFts(handle.sqlite, 'mountains')[0].rank).toBe('number');
+  });
+
+  // #178: CW 文言は投稿者自身の言葉（text/title と同じ扱い）なので全文検索に乗る
+  test('cw の語も検索に乗る（#178）', () => {
+    expect(searchPostsFts(handle.sqlite, 'spider').map((h: any) => h.postId)).toEqual(['cap-1']);
   });
 
   test('空クエリは全件一致でなく0件', () => {

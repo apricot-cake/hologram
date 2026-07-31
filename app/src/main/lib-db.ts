@@ -181,6 +181,16 @@ const MIGRATIONS: Migration[] = [
   // hashtags is posts.hashtags' JSON array space-joined (the pre-tokenized copy,
   // schema comment in lib-db-schema.ts) and tagsText is the post's tag names.
   // reading stays NULL because nothing writes it yet (#164).
+  //
+  // The posts_fts DDL and column list are INLINED here rather than
+  // interpolating POSTS_FTS_SQL/POSTS_FTS_COLUMNS (unlike the
+  // add-post-cw-sensitive migration below, which is the one that gets to call
+  // itself "current"): this migration is historical and must keep rebuilding
+  // the exact 10-column shape it shipped with, even after a later migration
+  // (#178) makes those constants describe an 11-column table. Interpolating
+  // the shared constant here silently changed this frozen migration's SQL out
+  // from under it the moment #178 landed — caught by db.test.ts/db-schema.test.ts
+  // failing on every fresh database ("11 values for 12 columns").
   {
     name: 'fts-rowid-addressing',
     up: (db) =>
@@ -189,8 +199,20 @@ const MIGRATIONS: Migration[] = [
         UPDATE posts SET ftsRowid = rowid;
         CREATE UNIQUE INDEX idx_posts_ftsRowid ON posts(ftsRowid);
         DROP TABLE posts_fts;
-        ${POSTS_FTS_SQL}
-        INSERT INTO posts_fts (rowid, ${POSTS_FTS_COLUMNS})
+        CREATE VIRTUAL TABLE posts_fts USING fts5(
+          postId UNINDEXED,
+          text,
+          title,
+          displayName,
+          screenName,
+          eagleName,
+          description,
+          hashtags,
+          tagsText,
+          reading,
+          tokenize = 'trigram'
+        );
+        INSERT INTO posts_fts (rowid, postId, text, title, displayName, screenName, eagleName, description, hashtags, tagsText, reading)
           SELECT
             p.ftsRowid, p.captureId, p.text, p.title, p.displayName, p.screenName, p.eagleName, p.description,
             COALESCE(CASE WHEN json_valid(p.hashtags) THEN (SELECT group_concat(h.value, ' ' ORDER BY h.key) FROM json_each(p.hashtags) h) END, ''),
@@ -240,6 +262,41 @@ const MIGRATIONS: Migration[] = [
       db.exec(`
         ALTER TABLE posts ADD COLUMN isEdited INTEGER;
         ALTER TABLE posts ADD COLUMN editedAt TEXT;
+      `),
+  },
+  // #178: content-warning text (Misskey note.cw / Mastodon spoiler_text) and
+  // the platform's own sensitive/adult flag (Mastodon sensitive / X
+  // possibly_sensitive / Bluesky self-labels) — see PostRecordShape.cw/sensitive
+  // for the per-platform sourcing. Both null on every row written before this
+  // migration and on every platform with no such signal (Misskey has no
+  // note-level sensitivity boolean; X and Bluesky have no CW free text).
+  //
+  // cw is the author's own written words — same footing as text/title — so
+  // posts_fts is reshaped to index it too, not just the posts row. FTS5 has no
+  // ALTER; a rebuild is the only way to add a column (same rationale as
+  // fts-rowid-addressing, #444). The rebuild reuses each post's existing
+  // ftsRowid (fts-rowid-addressing already ran by this point in the migration
+  // order) and recomputes hashtags/tagsText exactly like that migration did;
+  // reading stays NULL because nothing writes it yet (#164). cw itself just
+  // added by the ALTER above is NULL for every existing row, so the copied
+  // value is a no-op today and becomes real the first time each post is
+  // rewritten.
+  {
+    name: 'add-post-cw-sensitive',
+    up: (db) =>
+      db.exec(`
+        ALTER TABLE posts ADD COLUMN cw TEXT;
+        ALTER TABLE posts ADD COLUMN sensitive INTEGER;
+        DROP TABLE posts_fts;
+        ${POSTS_FTS_SQL}
+        INSERT INTO posts_fts (rowid, ${POSTS_FTS_COLUMNS})
+          SELECT
+            p.ftsRowid, p.captureId, p.text, p.title, p.displayName, p.screenName, p.eagleName, p.description,
+            COALESCE(CASE WHEN json_valid(p.hashtags) THEN (SELECT group_concat(h.value, ' ' ORDER BY h.key) FROM json_each(p.hashtags) h) END, ''),
+            COALESCE((SELECT group_concat(t.name, ' ' ORDER BY pt.rowid) FROM post_tags pt JOIN tags t ON t.id = pt.tagId WHERE pt.postId = p.captureId), ''),
+            NULL,
+            p.cw
+          FROM posts p;
       `),
   },
 ];
@@ -388,6 +445,9 @@ interface PostsTable {
   // add-post-edited-fields migration (#189) — see PostRecordShape.isEdited/editedAt.
   isEdited: number | null;
   editedAt: string | null;
+  // add-post-cw-sensitive migration (#178) — see PostRecordShape.cw/sensitive.
+  cw: string | null;
+  sensitive: number | null;
 }
 interface MediaTable {
   id: Generated<number>;
@@ -516,6 +576,7 @@ interface PostsFtsTable {
   hashtags: string | null; // space-joined tokens, NOT the posts.hashtags JSON
   tagsText: string | null; // resolved tag names, space-joined (post_tags has no text to index directly)
   reading: string | null; // #164 backfills this; empty at every row until then
+  cw: string | null; // add-post-cw-sensitive migration (#178) — the author's own CW text
 }
 
 interface Schema {
