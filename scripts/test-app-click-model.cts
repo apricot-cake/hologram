@@ -2,7 +2,7 @@
 
 // Verifies the unified card click model (#143, redesign P2⑥) in a real renderer:
 //
-//   - post cards carry NO hover ℹ / ○ select ring (ホバー部品ゼロ・Eagle 純型)
+//   - post cards carry NO hover ℹ / ○ select ring (zero hover parts — the pure Eagle model)
 //   - a plain click single-selects a post AND opens its inspector
 //   - the inspector preview thumbnail opens the quick-view lightbox (peek)
 //   - Ctrl-click adds a second card to the selection (Shift-range is covered by
@@ -94,7 +94,7 @@ const evalJs = `(async () => {
   await waitFor(() => postCards().length >= 3);
 
   // A. post cards have no ℹ / ○ hover parts (they were retired in #143)
-  // Nothing appears on hover at all now (確定A): no ℹ, no 🏷, no ○ ring, no highlight.
+  // Nothing appears on hover at all now (confirmed as Case A): no ℹ, no 🏷, no ○ ring, no highlight.
   out.postHoverParts = document.querySelectorAll('[data-slot="post-grid"] [data-slot="post-card"] button, [data-slot="post-grid"] [data-slot="post-card"] [class*="act-pill"]').length;
   // Control for the 0 above: the same descendant query, asking for ANY child. A card
   // whose insides we cannot see would report 0 hover parts too, and that 0 would mean
@@ -134,7 +134,7 @@ const evalJs = `(async () => {
   await waitFor(() => !peekOpen());
 
   // D3. Arrow keys move the single selection through the grid (P2⑥), and the
-  // inspector follows — the pair that makes 連続タグ付け a composition. Starts from
+  // inspector follows — the pair that makes continuous tagging a composition. Starts from
   // the MIDDLE card so both directions have somewhere to go whatever the sort is.
   click(cardOf(1));
   await sleep(60);
@@ -194,12 +194,13 @@ const evalJs = `(async () => {
   // E. switch to the posters view → poster cards carry no ℹ button
   [...document.querySelectorAll('button')].find(b => (b.textContent || '').trim() === '投稿者')?.click();
   out.posterCardsShown = await waitFor(() => navActive() && document.querySelectorAll('[data-slot="poster-grid"] [data-slot="poster-card"]').length >= 1);
-  // 投稿者カードにもホバー部品は無い＝A と同じ形で数える。
-  // ここは [data-slot="poster-info"] を数えていたが、その ℹ ボタンは tag-pop の撤去
-  // (1512e839) でアプリのどこにも無くなっており、数えても必ず 0 ＝ 落ちようのない検査
-  // だった（#635）。いま使っている手掛かりは2つとも同じ実行の中で live だと分かる:
-  // poster-card は直上の posterCardsShown が 1 以上を確かめており、button は HTML のタグ
-  // なので死なない。撤去された名前を数え続ける形には戻さない。
+  // Poster cards have no hover parts either = counted the same way as A.
+  // This used to count [data-slot="poster-info"], but after tag-pop was removed
+  // (1512e839) that ℹ button is gone everywhere in the app, so the count would always be
+  // 0 = a check that could never fail (#635). The two markers now in use are both
+  // confirmed live within the same run: poster-card is confirmed by posterCardsShown
+  // just above being >= 1, and button is an HTML tag, so it can't disappear. Do not go
+  // back to counting a name that has been retired.
   out.posterHoverParts = document.querySelectorAll('[data-slot="poster-grid"] [data-slot="poster-card"] button, [data-slot="poster-grid"] [data-slot="poster-card"] [class*="act-pill"]').length;
   out.posterCardParts = document.querySelectorAll('[data-slot="poster-grid"] [data-slot="poster-card"] *').length; // same control as A
 

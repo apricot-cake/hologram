@@ -1,13 +1,15 @@
-// image-tab/preload.ts のロジック単体テスト（#241 隣接プリロード）。
+// Unit tests for image-tab/preload.ts's logic (#241 neighbor preload).
 //
-// ここで守るのは受け入れ条件のうち機械で固定できる2つ＝①先読みの相手が「隣接」に
-// 限られること（＝大量枚数のタブでもメモリが青天井にならない・保持数の上限が
-// 半径だけで決まること）②画像でないもの（動画・うごイラのアーカイブ）を先読みの
-// 対象にしないこと。実際に体感が速くなったか（フェッチとデコードが本当に温まって
-// いるか）は実 Electron 上の計測の領分＝ここでは測れない。
+// What's pinned down here is the 2 acceptance criteria that can be fixed
+// mechanically = ① preload targets are limited to "neighbors" (i.e. memory doesn't
+// grow unbounded even on tabs with huge page counts, and the cap on how many are
+// held is decided by the radius alone) ② things that aren't images (video, ugoira
+// archives) aren't preload targets. Whether it actually feels faster (whether fetch
+// and decode are truly warmed up) is the domain of real-Electron measurement =
+// out of scope here.
 //
-// `new Image()` はブラウザ側の API なので、保持と追い出しの帳簿だけを見るために
-// 最小のスタブを global へ差す（node 環境なので素の global には存在しない）。
+// `new Image()` is a browser-side API, so to inspect just the hold/evict bookkeeping
+// we stub a minimal version onto global (a plain node environment has no such global).
 
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import * as P from '../app/src/renderer/src/image-tab/preload';
@@ -48,7 +50,7 @@ describe('neighborPreloadSources: 隣接だけ・近い順・前が先', () => {
 
   test('半径を広げても「隣接から順に 2×半径 枚」で頭打ち＝枚数に依らない', () => {
     expect(P.neighborPreloadSources(five, 2, 2)).toEqual(['d', 'b', 'e', 'a']);
-    // 100枚あっても保持数は半径だけで決まる（青天井にならない受け入れ条件）
+    // Even with 100 pages, the hold count is decided by the radius alone (the acceptance criterion for not growing unbounded)
     const many = Array.from({ length: 100 }, (_, k) => img(`p${k}`));
     expect(P.neighborPreloadSources(many, 50)).toHaveLength(2);
     expect(P.neighborPreloadSources(many, 50, 3)).toHaveLength(6);
@@ -79,8 +81,8 @@ describe('neighborPreloadSources: 隣接だけ・近い順・前が先', () => {
 });
 
 describe('createNeighborPreloader: 保持と追い出しの帳簿', () => {
-  // decode() の時点の src / decoding を記録する（属性は生成後に代入されるので、
-  // コンストラクタで読むと空になる）。
+  // Record src / decoding at the time decode() is called (the attributes get
+  // assigned after construction, so reading them in the constructor gives empty values).
   const made: { src: string; decoding: string }[] = [];
   class FakeImage {
     src = '';
@@ -109,7 +111,7 @@ describe('createNeighborPreloader: 保持と追い出しの帳簿', () => {
     expect(made.map((m) => m.src)).toEqual(['a', 'b']);
     expect(made.every((m) => m.decoding === 'async')).toBe(true);
 
-    // 1つ進んだ形。残っている方は作り直さない（デコードのやり直しを避ける）
+    // The shape after advancing by one. The one that's still held isn't recreated (avoids redoing the decode)
     p.sync(['c', 'a']);
     expect(p.held().sort()).toEqual(['a', 'c']);
     expect(made).toHaveLength(3);

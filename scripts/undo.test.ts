@@ -1,16 +1,17 @@
-// undo.ts のロジック単体テスト（#235）。差分方式の取り消しスタックが持つ意味論を、
-// 「適用先の現在値」を持つスタブ deps で検証する。副作用（IPC 書き・再描画）は
-// undo-builder 側＝ここでは差分がどう当たるかだけを見る。
+// Unit tests for the logic in undo.ts (#235). Verifies the semantics of the diff-based
+// undo stack against stub deps that hold the "current value being applied to". The side
+// effects (IPC writes, re-rendering) belong to undo-builder — here we only check how the
+// diff gets applied.
 //
-// 主眼は往復＝実行 → 取り消しで元の状態へ戻ること、そして
-// 「他の項目・後から入った別の編集を巻き込まない」こと（#235 が却下した
-// スナップショット丸ごと書き戻し／単純な逆操作との違い）。
+// The main focus is the round trip: execute -> undo returns to the original state, and
+// "doesn't drag in other items or edits made afterward" (the difference from what #235
+// rejected: writing back a whole snapshot, or a naive inverse operation).
 
 import { describe, expect, test } from 'vitest';
 import { makeUndo, type DirectedChange, type UndoChange, type UndoKind } from '../app/src/renderer/src/services/undo';
 
-// 対象ごとの値集合を持つ、最小の「ライブラリ」スタブ。applier は
-// 現在値に対して remove → add を当てるだけ（本体の undo-builder と同じ規則）。
+// A minimal "library" stub holding a value set per target. The applier just applies
+// remove -> add to the current value (the same rule as the real undo-builder).
 function setup(initial: Record<string, string[]> = {}) {
   const state: Record<string, string[]> = {};
   for (const [k, v] of Object.entries(initial)) state[k] = v.slice();
@@ -36,7 +37,7 @@ function setup(initial: Record<string, string[]> = {}) {
   return { undo, state, calls };
 }
 
-// 「対象に applyTags を足す」一括操作を実行し、実際に足された分だけを差分として返す。
+// Runs the bulk operation "add applyTags to the targets" and returns, as the diff, only what was actually added.
 function bulkAdd(state: Record<string, string[]>, targets: string[], tags: string[]): UndoChange[] {
   const changes: UndoChange[] = [];
   for (const target of targets) {
@@ -145,7 +146,7 @@ describe('往復: 実行 → 取り消しで元の状態に戻る', () => {
 });
 
 describe('実データを壊さない: 記録した差分の外へ手を出さない', () => {
-  // #235 却下2（単純な逆操作＝対象全件からタグを剥がす）が壊すケース。
+  // The case broken by #235's rejected option 2 (a naive inverse operation: strip the tag from all targets).
   test('一括タグ付けで元から持っていた項目は、取り消しでもタグを失わない', async () => {
     const { undo, state } = setup({ c1: [], c2: ['猫'] });
 
@@ -157,11 +158,11 @@ describe('実データを壊さない: 記録した差分の外へ手を出さ�
     expect(state).toEqual({ c1: [], c2: ['猫'] });
   });
 
-  // #235 却下1（操作前スナップショットの丸ごと書き戻し）が壊すケース。
+  // The case broken by #235's rejected option 1 (writing back the whole pre-operation snapshot).
   test('取り消すまでの間に入った別の編集は巻き込まれない', async () => {
     const { undo, state } = setup({ c1: ['旧'] });
     undo.push(bulkAdd(state, ['c1'], ['A']));
-    state.c1 = [...state.c1, '後から足したタグ']; // 別経路の編集（スタックには載っていない）
+    state.c1 = [...state.c1, '後から足したタグ']; // an edit from a separate path (not on the stack)
 
     await undo.undo();
 
@@ -254,7 +255,7 @@ describe('トーストの「元に戻す」＝スタック最新のときだけ�
 test('新規編集で redo スタックを破棄（線形履歴）', async () => {
   const { undo, state } = setup({ c1: [], c2: [] });
   undo.push(bulkAdd(state, ['c1'], ['t']));
-  await undo.undo(); // redo スタックに1件ある状態
+  await undo.undo(); // state where the redo stack has 1 entry
 
   undo.push(bulkAdd(state, ['c2'], ['u']));
 

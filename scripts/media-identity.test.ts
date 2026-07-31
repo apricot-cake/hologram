@@ -1,13 +1,13 @@
-// extension/utils/extractor/ 各サイトモジュールの mediaIdentity（getMediaIdentitySite()）.extractIdentity/
-// isPostMedia の、オフライン純ユニットテスト。jsdom 上で手書きの HTML フィクスチャ
-// （scripts/fixtures/content/media-*.html）に対して走らせる。content-fixtures.test.ts
-// と同じ据え方（フィクスチャの DOM をコンテンツスクリプトの実行文脈と同じグローバルに
-// する）だが、別ファイル: site-detect.ts 用の fixtures/content/*.html には <img> が無く、
-// ここが見る「ドラッグ／ホバーした画像がどの投稿の所有物か」は判定できない。
+// Offline pure unit test for each site module's mediaIdentity (getMediaIdentitySite()).extractIdentity/
+// isPostMedia in extension/utils/extractor/. Runs against hand-written HTML fixtures
+// (scripts/fixtures/content/media-*.html) on jsdom. Same setup as content-fixtures.test.ts
+// (installing the fixture DOM into the same globals as the content script's execution context),
+// but a separate file: fixtures/content/*.html for site-detect.ts has no <img>, so it can't
+// judge what this test looks at — "which post does the dragged/hovered image belong to".
 //
-// extractIdentity は drag.ts のドラッグ保存と overlay.ts のホバー保存ボタン両方が読む
-// 同定ロジック（#94）＝この2つの保存経路が同じ画像を違う投稿だと答えることは絶対に
-// あってはならない。isPostMedia はホバーボタンの表示可否だけのゲート（drag.ts は使わない）。
+// extractIdentity is the identification logic (#94) read by both drag.ts's drag-save and
+// overlay.ts's hover-save button — these two save paths must never disagree about which
+// post the same image belongs to. isPostMedia is only the gate for whether the hover button shows (drag.ts doesn't use it).
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -70,8 +70,8 @@ describe('X (Twitter)', () => {
     expect(config.isPostMedia(ctx.document.getElementById('imgAvatar'))).toBe(false);
   });
 
-  // #372: 動画・GIF 投稿のサムネは media/ ではなく *_video_thumb/ で配られる。
-  // 3本とも実測で確認済みのパス（推測で許可集合へ足さない＝#372 の受け入れ条件）。
+  // #372: video/GIF post thumbnails are served from *_video_thumb/, not media/.
+  // All three paths were confirmed by actual observation (don't add to the allow set by guesswork — that's #372's acceptance condition).
   test.each([
     ['動画（amplify_video_thumb/）', 'imgAmplify'],
     ['動画（ext_tw_video_thumb/）', 'imgExtTw'],
@@ -80,7 +80,7 @@ describe('X (Twitter)', () => {
     expect(config.isPostMedia(ctx.document.getElementById(id))).toBe(true);
   });
 
-  // 許可集合をホスト一致へ緩めると真になってしまうもの＝緩めていないことの証拠。
+  // Would become true if the allow set were loosened to a host match — proof it hasn't been loosened.
   test('リンクカードの絵は card_img/ パスで isPostMedia が偽', () => {
     expect(config.isPostMedia(ctx.document.getElementById('imgCard'))).toBe(false);
   });
@@ -89,8 +89,8 @@ describe('X (Twitter)', () => {
     expect(config.extractIdentity(ctx.document.getElementById('imgCard'))).toEqual({ postId: '555', link: 'https://x.com/erin/status/555' });
   });
 
-  // #450: 再生が始まった動画投稿には <img> が無く、ポスターだけが手掛かりとして残る。
-  // ホバーできる状態の動画投稿は必ずこの形なので、ここが通らないとボタンは出ない。
+  // #450: a video post that has started playing has no <img> — only the poster remains as a clue.
+  // A hoverable video post is always in this shape, so if this fails the button never shows.
   test('再生中の動画投稿は <video> の poster で isPostMedia が真', () => {
     expect(config.isPostMedia(ctx.document.getElementById('videoPlaying'))).toBe(true);
   });
@@ -99,8 +99,8 @@ describe('X (Twitter)', () => {
     expect(config.extractIdentity(ctx.document.getElementById('videoPlaying'))).toEqual({ postId: '666', link: 'https://x.com/frank/status/666' });
   });
 
-  // 判定の根拠はあくまでパスであって要素の種類ではない＝<video> でも投稿メディアの
-  // パスでなければ偽。
+  // The basis for the judgment is strictly the path, not the element type — even a <video>
+  // is false if it's not on a post-media path.
   test('poster が投稿メディアのパスでない <video> は isPostMedia が偽', () => {
     expect(config.isPostMedia(ctx.document.getElementById('videoNotPostMedia'))).toBe(false);
   });
@@ -214,14 +214,16 @@ describe('Misskey', () => {
   });
 });
 
-// mediaKeyOf＝「この2つの URL は同じ絵か」の、プラットフォームごとにただ1つの規則。
-// ページが見せるサムネイル・API が announce する原寸・保存が実際に落とした URL は
-// どれも同じ絵の別表記なので、文字列比較では毎回「別物」と答えてしまう。
+// mediaKeyOf = the single rule per platform for "are these two URLs the same image".
+// The thumbnail the page shows, the full-size the API announces, and the URL actually
+// downloaded by the save are all different notations of the same image, so a plain
+// string comparison would answer "different" every time.
 //
-// 読み手は2箇所あり、両方が同じ関数でなければならない（#334）＝ドラッグ／ホバー保存が
-// 「指された絵は announce された何枚目か」を決める経路（background.ts の
-// pickPrimaryImage）と、タイムラインが「この投稿のどの絵がもうライブラリに在るか」を
-// 決める経路（overlay.ts）。規則がずれると、保存済みの絵に保存ボタンを出す。
+// There are two readers of this, and both must be the same function (#334): the path that
+// decides "which announced image number does the pointed-at image correspond to" for
+// drag/hover saves (pickPrimaryImage in background.ts), and the path that decides "which
+// image of this post is already in the library" for the timeline (overlay.ts). If the rule
+// drifts between them, a save button gets shown on an image that's already saved.
 describe('mediaKeyOf — 表記ゆれを越えた画像の同一性', () => {
   test('x: name= のサイズ指定が違っても同じ絵', () => {
     const key = mediaKeyOf('x', 'https://pbs.twimg.com/media/ABC123?format=jpg&name=orig');
@@ -265,8 +267,8 @@ describe('mediaKeyOf — 表記ゆれを越えた画像の同一性', () => {
     expect(mediaKeyOf('mastodon', 'https://mastodon.social/media/xyz.png')).toBe('xyz');
   });
 
-  // null は「一致しない」ではなく「比べられない」＝呼び手はそこで断定してはいけない。
-  // 動画本体（X は .mp4 を保存し、ページ側にはポスターしか無い）がこれに当たる。
+  // null means "can't be compared", not "doesn't match" — the caller must not treat it as a definite answer.
+  // The video body itself (X saves .mp4, but the page side only has the poster) falls into this case.
   test('比べられない URL は null', () => {
     expect(mediaKeyOf('x', 'https://video.twimg.com/ext_tw_video/999/pu/vid/720x1280/abc.mp4')).toBeNull();
     expect(mediaKeyOf('unknown-platform', 'https://example.com/a.jpg')).toBeNull();

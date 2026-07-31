@@ -67,8 +67,8 @@ export function rectFromPoints(ax: number, ay: number, bx: number, by: number): 
   return { x: Math.min(ax, bx), y: Math.min(ay, by), width: Math.abs(bx - ax), height: Math.abs(by - ay) };
 }
 
-// 交差 (intersect), NOT 内包 (contain): a card the band merely touches is
-// selected. Explorer と Finder はいずれも交差 (#484 本文) — requiring full
+// Intersect, NOT contain: a card the band merely touches is
+// selected. Explorer and Finder both use intersect (#484's issue body) — requiring full
 // containment makes tall masonry cards nearly unselectable, since one card can
 // be taller than the visible band ever gets.
 //

@@ -1,12 +1,12 @@
-// backfill --all: 再取得が「失敗」したとき、保存済みレコードを null で潰してはいけない。
-// X/Bluesky はネットワークに出る前に投稿 URL から screenName/handle を埋めるので、失敗した
-// 取得でも screenName は載っている＝スキップ判定は API でしか得られない項目（text/likes/date）
-// で行わなければならない。実スクリプトを spawn し、fetch スタブを `node -r` で先読みさせる
-// （SSRF ガードが localhost を拒むため。avatar-fill.test.ts と同じ手）。ケース:
-//   F  X・取得失敗（syndication 404）    → 保存済みメタが保たれ、no-data として飛ばされる
-//   S  X・取得成功                        → 新しいメタで更新される
-//   P  X・部分的（応答に likes が無い）   → 既存の likes が `?? rec` で生き残る
-//   BF Bluesky・getPostThread 失敗        → 保存済みメタが保たれ、飛ばされる
+// backfill --all: when a refetch "fails", the stored record must not be clobbered with null.
+// X/Bluesky fill in screenName/handle from the post URL before ever hitting the network, so even a failed
+// fetch still has screenName set = the skip decision must be based only on fields that can only come from the API
+// (text/likes/date). Spawns the real script and preloads the fetch stub via `node -r`
+// (because the SSRF guard rejects localhost; same trick as avatar-fill.test.ts). Cases:
+//   F  X, fetch fails (syndication 404)    → stored meta is preserved, skipped as no-data
+//   S  X, fetch succeeds                    → updated with fresh meta
+//   P  X, partial (response missing likes)  → existing likes survives via `?? rec`
+//   BF Bluesky, getPostThread fails          → stored meta is preserved, skipped
 
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -27,7 +27,7 @@ let saveFolder: string;
 let dbFile: string;
 let res: ReturnType<typeof spawnSync>;
 
-// 失敗した再取得で潰されてはいけない、フル装備の保存済みレコード
+// A fully-populated stored record that must not be clobbered by a failed refetch
 const storedX = (id: string, screenName: string) => ({
   captureId: id,
   url: `https://x.com/${screenName}/status/${id}`,
@@ -50,7 +50,7 @@ beforeAll(() => {
   fs.mkdirSync(saveFolder, { recursive: true });
   fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolder }));
 
-  // レコードはライブラリのDBに置く（#302 以降、保存フォルダにサイドカーは無い）。
+  // Records live in the library DB (since #302, there's no sidecar in the save folder).
   dbFile = path.join(configDir, 'hologram.db');
   const seed = openDatabase(dbFile);
   const stmts = preparePostStmts(seed.sqlite);
@@ -59,7 +59,7 @@ beforeAll(() => {
   write(F, storedX('100', 'failuser'));
   write(S, storedX('200', 'okuser'));
   write(P, storedX('300', 'partialuser'));
-  // Bluesky: handle は解決するがスレッドが 404（handle は URL 由来で、取得成功の証拠ではない）
+  // Bluesky: handle resolves but the thread 404s (the handle comes from the URL, not proof of a successful fetch)
   write(BF, {
     captureId: BF,
     url: 'https://bsky.app/profile/failhandle.bsky.social/post/abc123',
@@ -75,8 +75,8 @@ beforeAll(() => {
     lang: 'en',
   });
 
-  // fetch スタブ: URL で分岐。id=200 は成功 JSON、id=300 は favorite_count 抜きの成功 JSON、
-  // 他の syndication id は 404（失敗）。Bluesky は resolveHandle 成功・getPostThread 404。
+  // fetch stub: branches on URL. id=200 returns success JSON, id=300 returns success JSON without favorite_count,
+  // other syndication ids return 404 (failure). Bluesky: resolveHandle succeeds, getPostThread 404s.
   const stub = path.join(tmp, 'stub-fetch.js');
   fs.writeFileSync(
     stub,
@@ -155,8 +155,8 @@ describe('S: X の取得成功＝新しいメタで更新', () => {
   });
 });
 
-// 応答に favorite_count が無い＝新しい項目は反映しつつ、欠けた likes は
-// `m.likes ?? rec.likes` で保存済みの値へ落ちる
+// The response has no favorite_count = new fields get applied, but the missing likes
+// falls back to the stored value via `m.likes ?? rec.likes`
 describe('P: X の部分的な応答', () => {
   test('来た項目は更新され、欠けた likes は保存済みの値が残る', async () => {
     expect(await read(P)).toMatchObject({ text: 'partial body', userId: '777', likes: 42 });

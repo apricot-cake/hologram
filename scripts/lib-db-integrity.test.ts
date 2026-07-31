@@ -1,12 +1,13 @@
-// app/src/main/lib-db-integrity.ts のユニットテスト＝DB<->メディア相互照合と
-// orphan回復（#5 St8 / #301・サイドカー採用は #511）。db-inbox.test.ts と同じ
-// 流儀＝合成の saveFolder + 本物の SQLite（lib-db.ts 経由）で確定済み設計を
-// 直接見る。
+// Unit test for app/src/main/lib-db-integrity.ts, DB<->media cross-checking and
+// orphan recovery (#5 St8 / #301; sidecar adoption is #511). Same approach as
+// db-inbox.test.ts = look directly at the finalized design using a synthetic
+// saveFolder + real SQLite (via lib-db.ts).
 //
-// 最後の describe（'復元リハーサル'）は #301 の受け入れ条件そのもの:
-// DB消失 → (a) inbox経由の投稿はリプレイで復活、(b) writePost直書き（ZIPイン
-// ポート/ドラッグ取込を模した、sidecarもinboxイベントも残さない経路）で入っ
-// た投稿は孤児メディアとして検出され、最小レコード合成で復活する。
+// The last describe ('recovery rehearsal') is exactly #301's acceptance
+// criterion: on DB loss -> (a) posts that came in via the inbox are revived by
+// replay, (b) posts written in via writePost directly (simulating a ZIP
+// import/drag intake, a path that leaves neither a sidecar nor an inbox event)
+// are detected as orphan media and revived via minimal-record synthesis.
 
 import fs from 'node:fs';
 import os from 'node:os';
@@ -94,7 +95,7 @@ describe('findOrphanMedia / findMissingMedia', () => {
   });
 
   test('knownFilesを渡すとreaddirせずそれを使う（runBackupのsrcSet相乗り）', () => {
-    // saveFolder上には何も対応する物が無い captureId を knownFiles だけに含める。
+    // Include a captureId with nothing corresponding on saveFolder, only in knownFiles.
     const orphans = findOrphanMedia(saveFolder, handle.sqlite, new Set(['1700000000099-ab99.jpg']));
 
     expect(orphans).toEqual([{ captureId: '1700000000099-ab99', file: '1700000000099-ab99.jpg' }]);
@@ -103,7 +104,7 @@ describe('findOrphanMedia / findMissingMedia', () => {
   test('DB行があってもファイルが無ければmissing扱い', () => {
     const rec = normalizePostRecord({ captureId: '1700000000003-aa04', image: '1700000000003-aa04.jpg' });
     const stmts = preparePostStmts(handle.sqlite);
-    writePost(stmts, makeTagResolver(handle.sqlite), rec, null); // ファイルは書かない
+    writePost(stmts, makeTagResolver(handle.sqlite), rec, null); // don't write the file
 
     const missing = findMissingMedia(saveFolder, handle.sqlite);
 
@@ -113,7 +114,7 @@ describe('findOrphanMedia / findMissingMedia', () => {
   test('trashedAtが付いた投稿は.trash/へ物理移動済み前提なのでmissingに含めない', () => {
     const rec = normalizePostRecord({ captureId: '1700000000004-aa05', image: '1700000000004-aa05.jpg', trashedAt: new Date().toISOString() });
     const stmts = preparePostStmts(handle.sqlite);
-    writePost(stmts, makeTagResolver(handle.sqlite), rec, null); // ファイルは.trash/にある想定＝rootには書かない
+    writePost(stmts, makeTagResolver(handle.sqlite), rec, null); // assumes the file is in .trash/, so don't write it to root
 
     const missing = findMissingMedia(saveFolder, handle.sqlite);
 
@@ -127,9 +128,10 @@ describe('findOrphanMedia / findMissingMedia', () => {
   });
 });
 
-// #511: 直下の <captureId>.json は「そのキャプチャのレコード」でメディアでは
-// ない。#302 以降これを書くものは無いが、#302 より前の保存は全部残しており、
-// #299 より前のバンドルが動けば今でも作られる（実際に2件作られた）。
+// #511: a top-level <captureId>.json is "that capture's record", not media.
+// Nothing has written these since #302, but every save from before #302 still
+// has one, and they can still be produced today if a bundle from before #299
+// runs (in fact, two of them were produced).
 describe('直下サイドカーの扱い（#511）', () => {
   let saveFolder: string;
   let handle: { db: any; sqlite: any };
@@ -149,9 +151,9 @@ describe('直下サイドカーの扱い（#511）', () => {
   });
 
   test('サイドカーだけで直下にcaptureId名のメディアが無い動画の孤児も、レコードを読んで検出される', () => {
-    // 動画保存の形（#496）＝image は null で media[0] に本体とポスター。直下の
-    // ファイル名は -media-0 / -poster なので、レコードを読まないと孤児として
-    // 検出すらされない。
+    // Video save shape (#496) = image is null, with the file and poster in
+    // media[0]. The top-level file names are -media-0 / -poster, so without
+    // reading the record it wouldn't even be detected as an orphan.
     fs.writeFileSync(path.join(saveFolder, '1700000002001-bb02-media-0.mp4'), 'x');
     fs.writeFileSync(path.join(saveFolder, '1700000002001-bb02-poster.jpg'), 'x');
     fs.writeFileSync(
@@ -182,7 +184,7 @@ describe('直下サイドカーの扱い（#511）', () => {
     expect(video).toMatchObject({ image: null, url: 'https://x.com/u/status/2', source: null });
     const media = handle.sqlite.prepare('SELECT file, posterFile FROM media WHERE postId = ?').all('1700000002001-bb02');
     expect(media).toEqual([{ file: '1700000002001-bb02-media-0.mp4', posterFile: '1700000002001-bb02-poster.jpg' }]);
-    // 回復後は posts 行があるので、もう孤児ではない＝警告が消える
+    // After recovery there's a posts row, so it's no longer an orphan = the warning disappears
     expect(findOrphanMedia(saveFolder, handle.sqlite).some((o) => o.captureId.startsWith('1700000002000') || o.captureId.startsWith('1700000002001'))).toBe(false);
   });
 
@@ -278,42 +280,43 @@ describe('復元リハーサル（#301受け入れ条件: DB消失→スナッ�
     const dbFile = path.join(dbDir, 'hologram.db');
     let handle = openDatabase(dbFile);
 
-    // (a) inbox経由の投稿 — #299のリプレイで救えるはずの経路
+    // (a) a post that came in via the inbox — the path that #299's replay should be able to save
     const inboxRec = normalizePostRecord({ captureId: '1700000001000-ff01', url: 'https://x.com/u/status/1', image: '1700000001000-ff01.jpg', text: 'via inbox' });
     fs.writeFileSync(path.join(saveFolder, '1700000001000-ff01.jpg'), 'x');
     await writeInboxEvent(saveFolder, buildEnvelope(inboxRec));
     drainInbox(saveFolder, handle.sqlite);
     expect(handle.sqlite.prepare('SELECT 1 FROM posts WHERE captureId = ?').get('1700000001000-ff01')).toBeTruthy();
 
-    // (b) 直書きの投稿 — sidecarもinboxイベントも無い、orphan-recoveryでしか救えない経路
+    // (b) a directly-written post — has neither a sidecar nor an inbox event, a path that only orphan-recovery can save
     writeDirectPost(handle.sqlite, saveFolder, '1700000001001-ff02', '1700000001001-ff02.jpg');
     expect(handle.sqlite.prepare('SELECT 1 FROM posts WHERE captureId = ?').get('1700000001001-ff02')).toBeTruthy();
 
-    // スナップショット（lib-db-snapshot.ts）— backup APIで静止コピーを作る
+    // snapshot (lib-db-snapshot.ts) — makes a quiesced copy via the backup API
     const snapshotFile = path.join(mkTempDir('hologram-rehearsal-mirror-'), 'hologram.db');
     await snapshotDatabase(handle.sqlite, snapshotFile);
     expect(fs.existsSync(snapshotFile)).toBe(true);
 
-    // DB消失を模擬: (b)の投稿はスナップショット後に何も新しいイベントを生まない
-    // ため、スナップショット自体には既に(b)の行が入っている。orphan-recoveryが
-    // 本当に必要なのは「スナップショットより後に直書きされ、かつDBが失われた」
-    // ケースなので、スナップショット済みDBを捨てて空DBから始める（=スナップ
-    // ショットが無い/古い最悪ケースの再現）。
+    // Simulate DB loss: since (b)'s post produces no new event after the
+    // snapshot, the snapshot itself already has (b)'s row in it. What
+    // orphan-recovery actually needs to handle is the case of "written directly
+    // after the snapshot, and the DB was then lost", so discard the snapshotted
+    // DB and start from an empty DB instead (= reproducing the worst case, where
+    // there's no snapshot or it's stale).
     handle.sqlite.close();
     fs.rmSync(dbFile, { force: true });
     fs.rmSync(`${dbFile}-wal`, { force: true });
     fs.rmSync(`${dbFile}-shm`, { force: true });
-    handle = openDatabase(dbFile); // 真っさらな空DB
+    handle = openDatabase(dbFile); // a completely fresh, empty DB
 
-    // リプレイ: (a)はinboxのloose eventからdrainInboxで復活する
+    // replay: (a) is revived by drainInbox from the inbox's loose event
     const report = drainInbox(saveFolder, handle.sqlite);
     expect(report.applied).toContain('1700000001000-ff01');
     expect(handle.sqlite.prepare('SELECT text FROM posts WHERE captureId = ?').get('1700000001000-ff01')).toMatchObject({ text: 'via inbox' });
 
-    // (b)はまだ無い — リプレイでは救えない
+    // (b) still doesn't exist — replay can't save it
     expect(handle.sqlite.prepare('SELECT 1 FROM posts WHERE captureId = ?').get('1700000001001-ff02')).toBeUndefined();
 
-    // 孤児検出 → 最小レコード合成で(b)も復活する
+    // orphan detection -> minimal-record synthesis revives (b) too
     const { orphanMedia } = checkOrphans(saveFolder, handle.sqlite);
     expect(orphanMedia).toEqual(expect.arrayContaining([{ captureId: '1700000001001-ff02', file: '1700000001001-ff02.jpg' }]));
     const recovered = recoverOrphanRecords(saveFolder, handle.sqlite);
@@ -322,7 +325,7 @@ describe('復元リハーサル（#301受け入れ条件: DB消失→スナッ�
     const restoredB = handle.sqlite.prepare('SELECT image, source, url FROM posts WHERE captureId = ?').get('1700000001001-ff02');
     expect(restoredB).toMatchObject({ image: '1700000001001-ff02.jpg', source: 'orphan-recovery', url: null });
 
-    // 最終確認: 両方とも投稿として復活している
+    // final check: both were revived as posts
     expect(handle.sqlite.prepare('SELECT COUNT(*) AS n FROM posts').get().n).toBe(2);
 
     handle.sqlite.close();

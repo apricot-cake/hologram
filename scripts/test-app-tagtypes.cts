@@ -1,6 +1,6 @@
 'use strict';
 
-// Round-trips the tag 用語帳 IPC (get/set-tag-types) through the real Electron main
+// Round-trips the tag glossary IPC (get/set-tag-types) through the real Electron main
 // process. Two-launch check: launch 1 sets the types, launch 2 (fresh process,
 // same configDir/DB) reads them back — proving the write actually persisted to
 // SQLite (the #298/St5 truth-source flip's write path; see lib-db-write.ts)
@@ -54,7 +54,7 @@ function launch(evalJs): Promise<Record<string, any>> {
   });
 }
 
-// set kinds + renamed 種別 labels, then read both maps back in the SAME process
+// set kinds + renamed type labels, then read both maps back in the SAME process
 // first (the rename UI persists via the same setTagTypes(types, labels) path).
 const setEvalJs = `(async () => {
   await window.hologram.setTagTypes({ 'ブルアカ': 'work', 'アロナ': 'character' }, { work: 'シリーズ', character: '登場人物' });

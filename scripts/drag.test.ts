@@ -1,7 +1,7 @@
-// ネイティブホストのドラッグ保存（イラストレコード）テスト。fetch を差し替えるので
-// ネットワーク不要。handleSaveDragged が、ドラッグされた画像を主画像 <base>.<ext>
-// （JPEG 以外でも可）として落とし、media[] は空のまま、API 由来のメタデータを保ち、
-// pixiv の Referer を送り、失敗時に孤児を残さないことを見る。
+// Test for the native host's drag-save (illustration record). fetch is swapped
+// out, so no network needed. Checks that handleSaveDragged drops the dragged
+// image as the main image <base>.<ext> (even for non-JPEG formats), leaves
+// media[] empty, preserves API-sourced metadata, sends pixiv's Referer, and leaves no orphan on failure.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -9,8 +9,8 @@ import { afterEach, beforeAll, describe, expect, test, vi } from 'vitest';
 
 const png = Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex');
 
-// bridge.cts は読み込み時に configDir を解決するので、config.json を先に置いてから
-// 動的 import する（setup が用意した HOLOGRAM_CONFIG_DIR のサンドボックスを使う）。
+// Since bridge.cts resolves configDir at load time, place config.json first and
+// then do a dynamic import (using the HOLOGRAM_CONFIG_DIR sandbox that setup prepared).
 let handleSaveDragged: any;
 let saveFolder: string;
 
@@ -32,7 +32,7 @@ describe('成功時', () => {
   let res: any;
 
   beforeAll(async () => {
-    // 本物の Response を返す＝取得は本文をストリームで受けてディスクへ流す（#389）
+    // Returns a real Response = fetching streams the body straight to disk (#389)
     vi.stubGlobal('fetch', async (_url: string, opts: any) => {
       sentHeaders = opts?.headers;
       return new Response(png, { status: 200, headers: { 'content-type': 'image/png' } });
@@ -69,11 +69,12 @@ describe('成功時', () => {
     expect(fs.existsSync(path.join(saveFolder, '.hologram-inbox', 'new', '1717500000000-ab01.json'))).toBe(true);
   });
 
-  // media は「落とした絵1件」＝どの絵を持っているレコードなのかの記録（#334）。
-  // 呼び出し側が announce した media[] は上書きする＝この保存が実際に持っているのは
-  // 指された1枚だけで、投稿の全部ではない。ライトボックスは media が在ればそれを、
-  // 無ければ image を読む（records.ts の artworkFile/groupFilesOf）ので、同じ1枚を
-  // 指す両者が重複を作ることはない。
+  // media is "the one picture that was dropped" = a record of which picture
+  // this record holds (#334). It overrides whatever media[] the caller
+  // announced = what this save actually has is only the one pointed-to
+  // picture, not the whole post. Since the lightbox reads media if present and
+  // falls back to image otherwise (records.ts's artworkFile/groupFilesOf), the
+  // two pointing at the same single picture never create a duplicate.
   test('レコードは image と、落とした1枚だけの media を持つ', () => {
     const envelope = JSON.parse(fs.readFileSync(path.join(saveFolder, '.hologram-inbox', 'new', '1717500000000-ab01.json'), 'utf8'));
     expect(envelope.record.image).toBe('1717500000000-ab01.png');
@@ -102,7 +103,7 @@ describe('失敗時', () => {
     await expect(handleSaveDragged({ captureId: '1717500000001-ab02', imageUrl: 'https://x/y', metadata: {} })).rejects.toThrow();
     expect(fs.existsSync(path.join(saveFolder, '1717500000001-ab02.json'))).toBe(false);
     expect(fs.existsSync(path.join(saveFolder, '.hologram-inbox', 'new', '1717500000001-ab02.json'))).toBe(false);
-    // 一時ファイルも残らない（本文を1バイトも書く前に落ちる経路）
+    // No temp file is left behind either (this path fails before writing even one byte of the body)
     expect(fs.readdirSync(saveFolder).filter((f) => f.endsWith('.tmp'))).toEqual([]);
   });
 });

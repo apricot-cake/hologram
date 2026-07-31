@@ -1,8 +1,9 @@
-// 開発サーバー URL の検証（app/src/main/dev-server-guard.ts）のユニットテスト。
-// メインウィンドウの preload は破壊的な IPC（全削除・インポート・保存先の変更）を
-// 公開するので、「どこを読み込むか」は信頼境界そのもの。環境変数
-// ELECTRON_RENDERER_URL を無検証で loadURL へ渡すと、アプリの起動環境を書き換え
-// られるだけでその橋を外部ページへ渡せてしまう（#381）。純ロジック＝Electron 不要。
+// Unit test for validating the dev server URL (app/src/main/dev-server-guard.ts).
+// Since the main window's preload exposes destructive IPC (delete everything,
+// import, change the save destination), "what gets loaded" is a trust boundary
+// in itself. Passing the ELECTRON_RENDERER_URL environment variable to loadURL
+// without validation would hand that bridge to an external page just by
+// rewriting the app's launch environment (#381). Pure logic = no Electron needed.
 
 import { describe, expect, test } from 'vitest';
 import { resolveDevServerUrl } from '../app/src/main/dev-server-guard';
@@ -11,8 +12,8 @@ const dev = (raw: string | undefined | null) => resolveDevServerUrl(raw, false);
 const packaged = (raw: string | undefined | null) => resolveDevServerUrl(raw, true);
 
 describe('配布版（app.isPackaged === true）', () => {
-  // 受け入れ条件そのもの: 配布物を HOLOGRAM_DEV_SERVER=1 相当の値や外部 URL 付きで
-  // 起動しても、同梱レンダラーを読む
+  // The acceptance criterion itself: even if a distributed build is launched
+  // with a value equivalent to HOLOGRAM_DEV_SERVER=1 or with an external URL, it loads the bundled renderer
   test.each(['1', 'http://localhost:5173', 'http://evil.example/', ''])('値 %j にかかわらず読み込まない', (raw) => {
     expect(packaged(raw)).toEqual({ url: null, rejected: 'packaged' });
   });
@@ -27,10 +28,10 @@ describe('開発時に許可するもの', () => {
     ['http://localhost:5173', 'http://localhost:5173/'],
     ['http://127.0.0.1:5173', 'http://127.0.0.1:5173/'],
     ['http://[::1]:5173', 'http://[::1]:5173/'],
-    // Vite が既定で出す形（末尾スラッシュ付き）とサブパス付き
+    // The shape Vite gives by default (with a trailing slash), and one with a subpath
     ['http://localhost:5173/', 'http://localhost:5173/'],
     ['http://localhost:5173/app/', 'http://localhost:5173/app/'],
-    // WHATWG URL が正規化する短縮表記・16進表記もループバックとして通る
+    // Shorthand and hex notation that WHATWG URL normalizes also pass through as loopback
     ['http://127.1:5173', 'http://127.0.0.1:5173/'],
     ['http://0x7f.0.0.1:5173', 'http://127.0.0.1:5173/'],
   ])('%s は正規化した %s を返す', (raw, href) => {
@@ -44,22 +45,23 @@ describe('開発時でも拒否するもの', () => {
     expect(dev('')).toEqual({ url: null, rejected: 'unset' });
   });
 
-  // URL でない値。`HOLOGRAM_DEV_SERVER=1` のような真偽値のつもりの指定もここ＝
-  // 「値が入っている＝開発サーバーがある」とは解釈しない
+  // A value that isn't a URL. A boolean-looking value like `HOLOGRAM_DEV_SERVER=1`
+  // also belongs here = "a value is set" is never interpreted as "a dev server exists"
   test.each(['1', 'true', 'まだ URL ではない'])('URL として壊れている %j', (raw) => {
     expect(dev(raw)).toEqual({ url: null, rejected: 'malformed' });
   });
 
-  // http: 以外は、ループバックであっても通さない（fail-closed の境界を
-  // スキームで先に閉じる）。最後の `localhost:5173` はスキームを省いた書き方で、
-  // WHATWG URL は「localhost: というスキームの URL」として解釈する＝ホスト名が
-  // 空になるので、http: の判定で先に落ちる
+  // Anything other than http: doesn't get through even if it's loopback (the
+  // fail-closed boundary is closed by scheme first). The last one,
+  // `localhost:5173`, is written without a scheme, and WHATWG URL interprets
+  // it as "a URL with the scheme localhost:" = the hostname ends up empty, so it's rejected by the http: check first.
   test.each(['https://localhost:5173/', 'file:///C:/tmp/evil.html', 'data:text/html,<h1>x', 'ws://localhost:5173/', 'localhost:5173'])('http: ではない %j', (raw) => {
     expect(dev(raw)).toEqual({ url: null, rejected: 'not-http' });
   });
 
-  // 認証情報付き。2件目は「ホスト名がループバックに見える」細工＝実際のホストは
-  // evil.example で、localhost:5173 はユーザー名とパスワードとして解釈される
+  // With credentials attached. The second case is crafted so "the hostname
+  // looks like loopback" = the actual host is evil.example, and
+  // localhost:5173 gets interpreted as a username and password
   test.each(['http://user:pass@localhost:5173/', 'http://localhost:5173@evil.example/'])('認証情報を含む %j', (raw) => {
     expect(dev(raw)).toEqual({ url: null, rejected: 'has-credentials' });
   });
@@ -68,10 +70,10 @@ describe('開発時でも拒否するもの', () => {
     'http://evil.example/',
     'http://192.168.1.10:5173/',
     'http://10.0.0.1:5173/',
-    // 前方一致・サフィックスでループバックに見せかける形
+    // Shapes that fake being loopback via a prefix match or a suffix
     'http://localhost.evil.example/',
     'http://evil.example/localhost:5173',
-    // ループバック帯（127.0.0.0/8）でも 127.0.0.1 以外は通さない
+    // Even within the loopback range (127.0.0.0/8), nothing but 127.0.0.1 gets through
     'http://127.0.0.2:5173/',
   ])('ループバックではない %j', (raw) => {
     expect(dev(raw)).toEqual({ url: null, rejected: 'not-loopback' });

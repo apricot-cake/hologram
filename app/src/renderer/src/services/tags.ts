@@ -1,14 +1,14 @@
-// Tag vocabulary / 種別 (kind) domain service — the read-side derivations over
-// the tag stores: tagKindOf/kindLabel (種別 lookup + renamable labels),
+// Tag vocabulary / kind domain service — the read-side derivations over
+// the tag stores: tagKindOf/kindLabel (kind lookup + renamable labels),
 // groupedTagVocab (the picker's sectioned vocabulary for post/poster scopes),
 // inspectorTagPickerData (the React tag editor's full data bundle incl. cooc
 // suggestion tiers), posterTagsOf/posterFilterVocab (poster-applied tags), and
 // sameTags — extracted 1:1 from viewer.js as the eighth "pure logic → service"
-// slice of the viewer decomposition (最終形B). makeTags' pure derivations
+// slice of the viewer decomposition (final form B). makeTags' pure derivations
 // still take every store as an injected getter (unchanged signature — the
 // Node unit test stubs these directly), but the getters passed in by
 // viewer.js now point at THIS module's own state instead of viewer.js's own
-// `let`s (P4 "状態→store" tags slice, 2026-07-08): tagTypes/tagLabels/
+// `let`s (P4 "state→store" tags slice, 2026-07-08): tagTypes/tagLabels/
 // posterTags moved here as the service's single source of truth,
 // with mutators (setTagKind/setKindLabel/setPosterTags/
 // applyPosterTagRecords) that persist to disk and notify subscribers via
@@ -57,8 +57,8 @@ export function makeTags(deps: {
     return Array.isArray(t) ? t : [];
   }
   // Tags actually applied to at least one poster — the vocabulary the filter offers.
-  // Kinded (作品/キャラ) tags stay in (種別 dots distinguish them); order is by 種別
-  // (作品 → キャラ → 一般) then ja-collation so the flyout reads like the palette.
+  // Kinded (Work/Character) tags stay in (kind dots distinguish them); order is by kind
+  // (Work → Character → General) then ja-collation so the flyout reads like the palette.
   function posterFilterVocab(): string[] {
     const set = new Set<string>();
     for (const arr of Object.values(posterTags())) for (const t of Array.isArray(arr) ? arr : []) set.add(t);
@@ -69,8 +69,8 @@ export function makeTags(deps: {
     return [...set].sort((a, b) => rank(a) - rank(b) || a.localeCompare(b, 'ja'));
   }
 
-  // Tag vocabulary sectioned by 種別: the 作品/キャラ kind sections first, then 未分類
-  // (applied tags carrying no 種別), each section filtered by `query`. Shared by the
+  // Tag vocabulary sectioned by kind: the Work/Character kind sections first, then Uncategorized
+  // (applied tags carrying no kind), each section filtered by `query`. Shared by the
   // inspector's tag field and the bulk tag dialog (via inspectorTagPickerData).
   function groupedTagVocab(query: string, opts?: { scope?: 'post' | 'poster' } | null): Array<{ name: string; tags: string[] }> {
     const scope = (opts && opts.scope) || 'post';
@@ -78,9 +78,9 @@ export function makeTags(deps: {
     const ok = (t: string) => !q || t.toLowerCase().includes(q);
     const byJa = (a: string, b: string) => a.localeCompare(b, 'ja');
     const out: Array<{ name: string; tags: string[] }> = [];
-    // 用語帳: 作品/キャラ are first-class categories — surface them as their own
-    // sections ahead of 未分類, and pull kinded tags OUT of 未分類 so each tag shows
-    // once (種別 takes precedence, danbooru-style).
+    // Glossary: Work/Character are first-class categories — surface them as their own
+    // sections ahead of Uncategorized, and pull kinded tags OUT of Uncategorized so each tag shows
+    // once (kind takes precedence, danbooru-style).
     const kindSec: Record<string, string[]> = { work: [], character: [] };
     for (const [t, k] of Object.entries(tagTypes())) if (k === 'work' || k === 'character') kindSec[k].push(t);
     for (const [k, name] of [
@@ -90,7 +90,7 @@ export function makeTags(deps: {
       const tags = kindSec[k].filter(ok).sort(byJa);
       if (tags.length) out.push({ name, tags });
     }
-    // Poster scope shares 作品/キャラ (a tag's 種別 is a global attribute of the
+    // Poster scope shares Work/Character (a tag's kind is a global attribute of the
     // string) but keeps a SEPARATE general pool: post-applied tags are post-content
     // descriptors, meaningless for a person. The poster general pool grows from
     // poster-applied tags instead (posterTags), so people get their own vocabulary.
@@ -118,7 +118,7 @@ export function makeTags(deps: {
     const srcSet = new Set<string>();
     for (const r of recordsForSource || []) for (const h of Array.isArray(r.hashtags) ? r.hashtags : []) srcSet.add(h);
     const srcTagsForPicker = [...srcSet].map((t) => ({ tag: t, kind: tagKindOf(t) || null }));
-    // Suggestion groups, strongest first. Tier 1 (kind-scoped): 作品 on the card →
+    // Suggestion groups, strongest first. Tier 1 (kind-scoped): Work on the card →
     // character candidates. Tier 2 (generic, post scope only): tags that often share
     // a post with any selected tag — a weak hint, so it sits below the kinded group,
     // dedupes against it, and stays silent until pairs have real support (minCount

@@ -47,16 +47,20 @@ export const MESSAGES = {
     // Reason-specific partial-save wording (metaReason from background.js).
     bannerSavedNoMetaProtected: '保存しました（鍵付きアカウントのため投稿情報は取得できません）',
     bannerSavedNoMetaAgeRestricted: '保存しました（年齢制限付き投稿のため投稿情報は取得できません）',
-    // #202: APIは何も返さなかったが、画面に出ている投稿から本文や作者を読み取って
-    // 埋めた。⚠️成功（緑）には上げない＝画面から読んだ数値は「1.2万」のような概数で、
-    // APIの正確な値と品質が違う。その差を隠さないのが partial（アンバー）の役目。
-    // 理由（鍵付き・年齢制限）は言わない＝レコードが空でなくなった時点で、
-    // 「APIがなぜ黙ったか」はユーザーの手当てを要さない話になる。
+    // #202: The API returned nothing, but the body/author were read off the post as
+    // shown on screen and filled in. ⚠️Do NOT promote this to success (green) = a
+    // number read from the screen is an approximation like "1.2万" (roughly 12K),
+    // which differs in quality from the API's exact value. Not hiding that
+    // difference is partial's (amber's) job.
+    // Do not state the reason (protected account / age-restricted) = once the
+    // record is no longer empty, "why the API stayed silent" becomes something
+    // the user does not need to act on.
     bannerSavedFromPage: '保存しました（投稿情報は画面から補完・数値は概数）',
-    // 拡張とアプリ側の保存プログラムの版が合っていない（#205）。⚠️「失敗」ではない＝
-    // 保存自体は済んでいる。合っていない事実だけを伝え、動作は一切変えない。
-    // どちらを更新すればよいかまで言い切る＝ユーザーには「どちらが古いか」を
-    // 調べる手段が無い（診断ページには両方の版が並ぶ）。
+    // The extension's and the app-side save program's versions do not match
+    // (#205). ⚠️This is NOT a "failure" = the save itself already completed.
+    // State only the mismatch as fact; behavior does not change at all. Say
+    // outright which side to update = the user has no way to tell which one
+    // is older (the diagnostics page lists both versions side by side).
     bannerSavedHostOld: '保存しました — Hologram アプリを更新してください（拡張機能と版が合っていません）',
     bannerSavedExtensionOld: '保存しました — 拡張機能を更新してください（Hologram アプリと版が合っていません）',
     // $1 = reason. Shown when a save fails with a known cause, so the banner
@@ -69,26 +73,34 @@ export const MESSAGES = {
     bannerHostMissing: 'Hologram の保存先に接続できません。Chrome を再起動してください',
     bannerHostUnavailable: 'Hologram の保存プログラムを起動できませんでした。拡張機能の設定から診断ページを確認してください',
     bannerOriginRejected: 'Hologram の保存設定が一致していません。Hologram を再インストールしてください',
-    // 投稿そのものが取得できなかった（削除・凍結・鍵付き・年齢制限）＝壊れていない。
-    // 直すものが無いので、診断ページへ誘導する bannerFailedUnknown とは別文言。
-    // ⚠️どれも「何も保存されていない」と読めること＝上の bannerSavedNoMeta* は
-    // 画像が保存できた上で投稿情報だけ欠けた場合で、意味が正反対（#505）。
+    // The post itself could not be fetched (deleted, suspended, protected,
+    // age-restricted) = nothing is broken. There is nothing to fix, so this is
+    // worded separately from bannerFailedUnknown, which points to the
+    // diagnostics page. ⚠️All of these must read as "nothing was saved" = the
+    // bannerSavedNoMeta* wording above is for the opposite case, where the
+    // image WAS saved and only the post info is missing (#505).
     bannerPostUnavailable: '投稿を取得できないため、何も保存できませんでした（削除・非公開・年齢制限など）',
     bannerPostUnavailableProtected: '鍵付きアカウントのため、何も保存できませんでした',
     bannerPostUnavailableAgeRestricted: '年齢制限付き投稿のため、何も保存できませんでした（X が投稿情報を返しません）',
-    // 応答が返らないまま上限に達した（#507）。原因の多くは一過性（ネットワークの
-    // 詰まり・サービスワーカーの停止）なので、最も安く効く再試行を先頭に置く。
-    // 診断ページへの誘導は「繰り返す場合」の第2手＝bannerFailedUnknown が持つ。
+    // Hit the timeout without ever getting a response (#507). Most causes are
+    // transient (a network hiccup, the service worker stopping), so the
+    // cheapest fix — retry — is offered first. Pointing to the diagnostics
+    // page is the second move, for "if it keeps happening" = that belongs to
+    // bannerFailedUnknown.
     bannerTimedOut: '保存が終わらないため中止しました。もう一度お試しください（繰り返す場合は Chrome を再起動）',
-    // 同時に走っている保存が多すぎて受け付けられなかった（#323）。壊れておらず、
-    // 直すものも無い＝待てば通るので、診断ページへは誘導しない。
+    // Rejected because too many saves are already running at once (#323).
+    // Nothing is broken and there is nothing to fix = it will go through if
+    // you wait, so this does not point to the diagnostics page.
     bannerBusy: '保存が立て込んでいます。少し待ってからもう一度お試しください',
     bannerFailedUnknown: '保存に失敗しました。拡張機能の設定から診断ページを確認してください',
-    // 拡張が更新（またはリロード）されて、このタブに残っていたスクリプトが拡張から
-    // 切り離された（#594）。⚠️他のどの失敗とも違って**壊れていない**＝新しい版は正常で、
-    // 取り残されているのはこのページだけ。だから直し方は1つしかなく、それを言い切る。
-    // 診断ページへは誘導しない（見に行っても全項目 PASS になる）し、「もう一度お試し
-    // ください」も言わない＝このタブで何度押しても同じ結果にしかならない。
+    // The extension was updated (or reloaded), and the script left behind in
+    // this tab got detached from the extension (#594). ⚠️Unlike every other
+    // failure, this one **is not broken** = the new version is fine, only
+    // this page has been left behind. So there is exactly one fix, and the
+    // wording states it outright. It does not point to the diagnostics page
+    // (every item there would show PASS anyway), and it does not say "please
+    // try again" = pressing it again in this tab can only ever give the same
+    // result.
     bannerExtensionReloaded: '拡張機能が更新されました。このページを再読み込みしてください',
 
     // drag.js: drop-zone hint (the toasts reuse the banner* keys above)
@@ -107,7 +119,7 @@ export const MESSAGES = {
     // element capture).
     cornerSave: '画像を保存',
     cornerSaving: '保存中',
-    // Says the WORD "再試行". The old wording was the failure reason alone, so
+    // Says the word "retry". The old wording was the failure reason alone, so
     // the one control whose press recovers the save never said that pressing it
     // would (#310). WHY it failed belongs to the banner, which has room for a
     // sentence and can point at the diagnostics page.
@@ -124,12 +136,15 @@ export const MESSAGES = {
     // Saved to disk but not yet displayable (#365 gives image-less records a
     // home). Never say "skipped" — the post IS in the library.
     bulkSummaryDeferred: '画像なし $1件も保存済み（一覧への表示は準備中）',
-    // 取得できなかった投稿（#492）。「失敗」と分けて数える＝直すもののある不具合と、
-    // 投稿が既に無いだけの正常な結果を、同じ言葉で並べない。
+    // Posts that could not be fetched (#492). Counted separately from
+    // "failed" = do not lump a fixable defect together with the normal
+    // result of a post simply no longer being there.
     bulkSummaryUnavailable: '取得できず $1件（削除・非公開など）',
-    // 年齢制限は上とさらに分ける（#505）＝投稿は生きていて、消えたわけではない。
-    // 何度取り込み直しても同じ結果になる（Xの埋め込み用APIは匿名なので届かない）
-    // ことが、削除との違いとして伝わる必要がある。
+    // Age-restricted is split out even further from the above (#505) = the
+    // post is alive, not gone. It needs to come across as different from
+    // deletion, in that re-importing it will always give the same result no
+    // matter how many times (X's embed API is anonymous, so it can never
+    // reach it).
     bulkSummaryAgeRestricted: '年齢制限のため保存できず $1件',
     bulkSummaryFailed: '失敗 $1件',
 
@@ -138,13 +153,15 @@ export const MESSAGES = {
     // app closed there is no later place to resolve it.
     dupTitle: 'この投稿はもう保存されています',
     // "Copy" = save anyway, as a second record. Named for what it leaves
-    // behind (two copies), not for the click ("保存") — the whole point of the
+    // behind (two copies), not for the click ("save") — the whole point of the
     // warning is that the user did not know there would be two.
     dupCopy: 'コピー',
     dupCopyHint: 'もう1件として保存します',
-    // #158: ボタン名は同じ「コピー」だが、ゴミ箱の場面は相手が画面に無い＝何をコピー
-    // するのかが読み手に見えない。ゴミ箱の分がどうなるか（消えない）まで書くのは
-    // この文言だけの仕事＝重複の場面には言うことが無く、こちらには要る。
+    // #158: The button has the same "Copy" label, but in the trash case the
+    // other copy is not on screen = the reader cannot see what is being
+    // copied. Spelling out what happens to the trashed copy (it does not
+    // disappear) is this wording's job alone = the plain duplicate case has
+    // nothing to say here, but this one needs it.
     dupCopyHintTrashed: 'ゴミ箱の分はそのままにして、新しく保存します',
     dupReplace: '置換',
     dupReplaceHint: '前の保存をゴミ箱へ移し、タグと入っているフォルダを引き継ぎます',
@@ -155,15 +172,20 @@ export const MESSAGES = {
     // desktop app next runs, so the wording does not claim it is gone already.
     dupReplaced: '置き換えました（前の保存はゴミ箱へ）',
     dupSuppress: '今後この確認を出さない',
-    // #158: ライブラリには無いが、ゴミ箱に現物が残っている投稿。ここで保存すると
-    // 気付かないまま同じ投稿を2つ持つことになる（後で復元すれば本当に2つになる）。
-    // ⚠️「復元」はボタンにできない＝保存プログラムはライブラリに対して読み取り専用
-    // で、復元はアプリ側の操作。だから**文言で行き先を教える**＝知らせるだけだと
-    // 「消えたものが出てきた」で終わり、戻す道があること自体が伝わらない。
-    // 選択肢は「コピー」と「スキップ」の2つ（置換は相手の現行レコードが無い）。
-    // $1 = 削除した日（時刻は出さない＝「いつ要らないと決めたか」は日単位の話）。
+    // #158: A post that is not in the library but still has a physical copy
+    // sitting in the trash. Saving here would leave the user with two copies
+    // of the same post without realizing it (and restoring it later really
+    // would make it two). ⚠️"Restore" cannot be made a button here = the save
+    // program only has read-only access to the library, and restoring is an
+    // app-side operation. So **the wording has to tell the user where to go
+    // instead** = merely informing them would end at "something that
+    // disappeared has come back", without ever conveying that there is a way
+    // back. The choices are just "Copy" and "Skip" (there is no current
+    // record on the other side to "Replace"). $1 = the day it was deleted (no
+    // time of day = "when it was decided to be unneeded" is a day-level
+    // fact).
     trashedTitleOn: 'この投稿はゴミ箱にあります（$1 に削除）。Hologram で元に戻せます',
-    // 削除日時が記録されていない場合（記録の書き込みが中断された等）。
+    // For when the deletion date/time was not recorded (e.g. the write was interrupted).
     trashedTitle: 'この投稿はゴミ箱にあります。Hologram で元に戻せます',
   },
 

@@ -5,7 +5,7 @@
 // (which stay in main.js with the delta bookkeeping); image-data-url reads one file
 // from the save folder as a data: URL. Core helpers arrive via ctx.
 //
-// The うごイラ pair (#506) sits here for the reason image-data-url does: each is a
+// The ugoira pair (#506) sits here for the reason image-data-url does: each is a
 // read of ONE file out of the save folder, through the same containment check.
 // What they are not is a second copy of the archive machinery — the zip stays on
 // disk and only the requested frame crosses this boundary (ADR 0015).
@@ -32,7 +32,7 @@ function register(ctx: IpcContext) {
   });
 
   // Only a .zip inside the save folder reaches a ZIP reader through this door:
-  // うごイラ is the one media kind the library stores as an archive.
+  // ugoira is the one media kind the library stores as an archive.
   const ugoiraPath = (file: unknown) => (typeof file === 'string' && /\.zip$/i.test(file) ? resolveInFolder(file) : null);
 
   // Asked once before playback starts — see ugoiraFramesPresent for why the

@@ -46,7 +46,7 @@ export function makeGridDensity(deps: GridDensityDeps) {
   let listThumb = 88; // list: thumbnail width px (pref listThumb)
 
   // Thumbnail width tracks the cell so larger cells stay sharp (60px buckets).
-  // Quality follows the SHAPE axis (2026-07-19 確定): a square cell is a cropped
+  // Quality follows the SHAPE axis (2026-07-19 confirmed): a square cell is a cropped
   // still served by the thumbnailer, an original-aspect cell is the card as it has
   // always been (DPR-aware, capped at the thumbnailer's 720px max — main.js
   // getThumbnail). Both floors sit at/below the smallest cell the axis allows; the
@@ -79,7 +79,7 @@ export function makeGridDensity(deps: GridDensityDeps) {
       set: (v: number) => {
         gridSize = v;
       },
-      // The floor rides the 情報を表示 switch: bare cells reach down to the overview
+      // The floor rides the "Show info" switch: bare cells reach down to the overview
       // zoom (#141), cells carrying a metadata block cannot.
       min: gridMin(shape.info),
       max: GRID_MAX,
@@ -298,7 +298,7 @@ export function makeGridDensity(deps: GridDensityDeps) {
     deps.hologramIpc.setPref('squareThumbs', shape.square);
     deps.hologramIpc.setPref('showInfo', shape.info);
     deps.hologramIpc.setPref('showAvatar', shape.avatar);
-    // 情報を表示 raises the grid's floor, so a grid sitting at overview size has to
+    // "Show info" raises the grid's floor, so a grid sitting at overview size has to
     // come up with it — otherwise the metadata block renders into a 48px column.
     if (!shape.list) {
       const clamped = clampGridSize(gridSize, shape.info);
@@ -314,7 +314,7 @@ export function makeGridDensity(deps: GridDensityDeps) {
 
   // --- Poster grid: size state (the display SHAPE lives in display.ts, #630) ---
   // Kept SEPARATE from the post side's: the poster axes are two, not three, so one
-  // shared key would leave 正方形 undefined in poster mode.
+  // shared key would leave "square" undefined in poster mode.
   let posterGridSize = 200; // grid: column width px (pref posterGridSize)
 
   // The size the slider drives. One per LAYOUT, exactly as on the post side: the grid
@@ -328,7 +328,7 @@ export function makeGridDensity(deps: GridDensityDeps) {
       set: (v: number) => {
         posterGridSize = v;
       },
-      // The floor rides 情報を表示, same as the post grid's: bare cells are pure
+      // The floor rides "Show info", same as the post grid's: bare cells are pure
       // avatar and reach down to the overview zoom, cells with a metadata block cannot.
       min: posterGridMin(currentPosterShape().info),
       max: POSTER_GRID_MAX,
@@ -422,13 +422,13 @@ export function makeGridDensity(deps: GridDensityDeps) {
       _posterShapeSig = posterShapeSnapshot();
     }
     // The poster grid's size mirrors into hologramStore too, clamped against the
-    // 情報を表示 switch the block above has just restored.
+    // "Show info" switch the block above has just restored.
     if (Number.isFinite(prefs.posterGridSize)) {
       posterGridSize = clampPosterGridSize(prefs.posterGridSize as number, currentPosterShape().info);
       storeSet('posterGridSize', posterGridSize);
     }
     // Post-grid sizes also mirror into hologramStore (see setViewSize). The grid's
-    // saved width is clamped against the CURRENT 情報を表示 switch, which the block
+    // saved width is clamped against the CURRENT "Show info" switch, which the block
     // above has already restored.
     if (Number.isFinite(prefs.gridSize)) {
       gridSize = clampGridSize(prefs.gridSize as number, currentShape().info);

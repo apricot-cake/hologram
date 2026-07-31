@@ -1,11 +1,11 @@
-// asset:// 応答が必ず載せるセキュリティヘッダ（app/src/main/asset-headers.ts, #215）の
-// ユニットテスト。純ロジック＝Electron 不要。ここで賭かっているのは「送っている文字列が
-// スクリプトを許していないこと」で、Chromium が実際にそれを守るかは実 Electron 側
-// （scripts/test-app-asset-csp.cts）の担当。
+// Unit test for the security headers (app/src/main/asset-headers.ts, #215) that every
+// asset:// response must carry. Pure logic = no Electron needed. What's being bet on here is that
+// "the string being sent doesn't permit script" — whether Chromium actually enforces that
+// is the job of the real-Electron side (scripts/test-app-asset-csp.cts).
 //
-// CSP は「ディレクティブが在ること」ではなく「script が落ちること」で見る＝
-// default-src 'none' に script-src のフォールバックが効いている状態を、後から
-// 誰かが script-src を足して緩めた時に落ちる形で固定する。
+// CSP is checked by "does script actually get blocked" rather than "is the directive present" =
+// this pins down the state where the default-src 'none' fallback covers script-src, so it fails
+// if someone later loosens things by adding a script-src.
 
 import { describe, expect, test } from 'vitest';
 import { assetSecurityHeaders } from '../app/src/main/asset-headers';

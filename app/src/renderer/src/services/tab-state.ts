@@ -3,7 +3,7 @@
 // the tabs.json (de)serialization pair (serializeTabs / sanitizeSavedTabs), and
 // the tabs.json load/persist calls (loadTabs / persistTabs), extracted 1:1 from
 // viewer.js as the sixth "pure logic → service" slice of the viewer
-// decomposition (最終形B) plus the P4 "IPC→service" domain-grouping follow-up.
+// decomposition (final form B) plus the P4 "IPC→service" domain-grouping follow-up.
 // A real ES module (named exports) imported directly by viewer.ts; touches no
 // DOM. Runtime couplings are injected — reassigned viewer lets (appBooted) come
 // in as getter functions and later-declared consts (PF_NAME / CF) as deferred
@@ -55,7 +55,7 @@ export function makeTabLabels(deps: {
       }
       case 'engagement':
         return `${engTypeLabels[f.engType] || f.engType} ${f.op === 'lte' ? '≤' : '≥'} ${formatCount(f.min)}`;
-      // '__none' = 「タグなし」 (facets.ts) — the chip has to spell it out, or it would
+      // '__none' = "No tags" (facets.ts) — the chip has to spell it out, or it would
       // read as a tag whose name is '__none'.
       case 'tag':
         return f.value === '__none' ? t('qfTagNone') : f.value;
@@ -156,7 +156,7 @@ export function navEntryUrl(kind: HologramNavEntry['kind'], state: any): string 
 // tagged-union HologramNavEntry JSON — posts / posters / image all ride the same
 // stack). idx points at the current entry. Linear: navigating back then making
 // a fresh change drops the forward entries. The stack rides on the tab object
-// across switches via adopt/saveInto and persists to tabs.json (未決5).
+// across switches via adopt/saveInto and persists to tabs.json (pending decision 5).
 //
 // deps contract:
 //   cap — history depth cap
@@ -172,8 +172,8 @@ export function makeNavHistory(deps: { cap: number; enabled(): boolean; snapshot
   let idx = -1;
   // Coalescing state for record(): while the caller keeps handing the same
   // non-null key (one live-typing burst, one open facet editor), follow-up
-  // records REPLACE the entry the first record pushed — "1 セッション 1 エントリ"
-  // (確定未決2). Any navigation / adopt resets it, so post-nav edits push fresh.
+  // records REPLACE the entry the first record pushed — "1 session, 1 entry"
+  // (the now-resolved pending decision 2). Any navigation / adopt resets it, so post-nav edits push fresh.
   let lastKey: unknown = null;
 
   // Record a fresh view. No-op when the state equals the current entry, so
@@ -190,7 +190,7 @@ export function makeNavHistory(deps: { cap: number; enabled(): boolean; snapshot
     onChange();
   }
   // Rewrite the current entry in place (live typing / gallery paging / sort —
-  // the 確定 replace list). When the rewrite makes it a duplicate of the
+  // the settled replace list). When the rewrite makes it a duplicate of the
   // previous entry (e.g. a typing session backspaced to where it started),
   // drop it instead of keeping two identical neighbours.
   function replace(e: HologramNavEntry) {
@@ -263,7 +263,7 @@ export function makeNavHistory(deps: { cap: number; enabled(): boolean; snapshot
 // main stores it verbatim in the tabs table's `state` column and never looks
 // inside (lib-db-schema.ts says so at the table). scrollTop rides along so the
 // view restores across RESTART, not just tab switches; the per-tab back/forward
-// stack persists as parsed entry objects under `nav` (#144 未決5 — NAV_CAP is
+// stack persists as parsed entry objects under `nav` (#144 pending decision 5 — NAV_CAP is
 // the only size bound; Chrome carries tab history across restarts the same way).
 // The old renderLimit field is gone with the windowed path: the virtualized grid
 // restores any depth from scrollTop alone (stale saved fields are ignored).

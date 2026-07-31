@@ -76,7 +76,7 @@ async function readJsonKeepingRaw(rec: PostRecord, sourceKind: string, res: Resp
 // Misskey and Mastodon hand back server-normalized (lower-cased) tags while
 // X / Bluesky / pixiv keep the author's spelling, so the same word can still
 // arrive in two spellings across platforms — folding those together is
-// 字形正規化 and belongs to #197, not here.
+// glyph normalization and belongs to #197, not here.
 function normalizeHashtags(values: unknown[]): string[] {
   const out: string[] = [];
   const seen = new Set<string>();

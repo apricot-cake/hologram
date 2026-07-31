@@ -1,19 +1,22 @@
 'use strict';
 
-// 「起動しただけ」と「保存が始まって終わらなかった」が capture.log で区別できること
-// （#519）を、実ブラウザ・実ネイティブホストで見る。
+// Checks, on a real browser and a real native host, that "just activated" and
+// "a save started and never finished" can be told apart in capture.log (#519).
 //
-// この2つは同じ記録だった＝どちらも activate の行が1本あって、その後に何も続かない。
-// ログを読んだセッションが3回続けて誤診し、うち1回はユーザーへ誤った警告を出して
-// 撤回している。だから受け入れ条件は「ログだけを見て区別できる」で、それは**実際に
-// 2つを走らせて記録を並べる**以外に確かめようがない＝このスクリプトが1回の実行で
-// 両方をやり、両方の記録を印字する。
+// These two used to produce the same record = both had a single activate line
+// with nothing following it. A session that read the log misdiagnosed this
+// three times in a row, and once even issued a false warning to the user and
+// had to retract it. So the acceptance criterion is "distinguishable from the
+// log alone", and there's no way to verify that other than **actually running
+// both and lining up the records** = this script does both in a single run and prints both records.
 //
-// 台は e2e-extension-timeout と同じ＝使い捨ての Chromium・使い捨てのネイティブホスト
-// 登録・使い捨てのライブラリで、ユーザーのプロファイルにも実ライブラリにも触らない。
+// Same rig as e2e-extension-timeout = disposable Chromium, disposable native
+// host registration, disposable library — touches neither the user's profile
+// nor the real library.
 //
-// jsdom 側（scripts/save-log.test.ts）は同じ区別をコンテンツスクリプト単体で見る。
-// ここでしか見られないのは、**行が本当にホストのプロセスを通ってディスクへ着くか**。
+// The jsdom side (scripts/save-log.test.ts) checks this same distinction with
+// the content script alone. The only thing that can be seen here is **whether
+// the line actually makes it to disk through the host's process**.
 
 const fs = require('node:fs');
 const path = require('node:path');
@@ -26,9 +29,9 @@ const EXPECTED_EXTENSION_ID = 'keggmjkemfcekcffohnpaojacdakpejh';
 const POST_ID = '1999999999999999996';
 const POST_URL = `https://x.com/hologram/status/${POST_ID}`;
 
-// メタデータの上限は 20 秒。取りこぼしを避けるため 2 倍強を待つ。
+// The metadata cap is 20 seconds. Wait a bit over twice that to avoid missing it.
 const WAIT_FOR_END_MS = 45_000;
-// ホストのプロセスが起きて1行書き終えるまで（Windows で1〜2秒かかる）。
+// Time until the host's process wakes up and finishes writing one line (takes 1-2 seconds on Windows).
 const WAIT_FOR_LOG_MS = 20_000;
 
 const POST_HTML = `<!doctype html>
@@ -80,7 +83,7 @@ function captureLogEntries(configDir: string): any[] {
     .filter(Boolean);
 }
 
-// 読める形で1行にする＝この印字が「2つが違って見える」ことの現物。
+// Renders one entry into a single readable line = this printout is the actual evidence that "the two look different".
 function render(entry: any): string {
   const bits = [`${entry.stage}/${entry.phase}`];
   if (entry.saveId) bits.push(`saveId=${entry.saveId}`);
@@ -114,9 +117,10 @@ async function waitForLog(configDir: string, from: number, predicate: (entries: 
       throw new Error(`staged extension id ${browser.extensionId} does not match native-host allow-list ${EXPECTED_EXTENSION_ID}`);
     }
 
-    // メタデータの取得を、②では「繋がったまま黙る」相手・③では普通に答える相手に
-    // する。abort は保存を終わらせてしまう（reject するので）＝終わらない保存を作れる
-    // のは握り続ける形だけ。
+    // Make the metadata fetch, in case (2), a peer that "stays connected but
+    // silent", and in case (3), a peer that answers normally. abort would end
+    // the save (since it rejects) = the only way to create a save that never
+    // finishes is to keep holding the route open.
     const held: any[] = [];
     let stallMetadata = true;
     await browser.context.route('**/*', async (route: any) => {
@@ -131,12 +135,13 @@ async function waitForLog(configDir: string, from: number, predicate: (entries: 
     await page.goto(POST_URL, { waitUntil: 'domcontentloaded' });
     await page.locator('#capture-target').waitFor();
 
-    // Alt+S はブラウザ側のコマンドで Playwright からは押せないので、コマンド
-    // ハンドラが呼ぶのと同じ scripting.executeScript で注入する。
+    // Alt+S is a browser-side command that Playwright can't press, so inject
+    // via the same scripting.executeScript that the command handler calls.
     const activate = async () => {
-      // 前の回が片付き終わるのを待つ。capture.js の再注入は「動いている回を終わらせ
-      // る」トグルなので（__snsPostSaveCleanup）、失敗表示が消える前に注入すると
-      // 新しい回が始まらずに前の回が閉じるだけになる。
+      // Wait for the previous round to finish cleaning up. Re-injecting
+      // capture.js is a toggle that "ends whichever round is running"
+      // (__snsPostSaveCleanup), so if it's injected before the failure display
+      // disappears, a new round won't start and it'll just close the previous one.
       await page.locator('[data-hologram-capture-banner]').waitFor({ state: 'detached', timeout: 15_000 });
       const done = await browser.serviceWorker.evaluate(async () => {
         const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -152,7 +157,7 @@ async function waitForLog(configDir: string, from: number, predicate: (entries: 
       await page.locator('[data-hologram-capture-banner][data-state="active"]').waitFor({ timeout: 15_000 });
     };
 
-    // === ① UI を開いて、保存せずに閉じた =====================================
+    // === (1) opened the UI and closed it without saving =====================================
     await activate();
     await page.keyboard.press('Escape');
 
@@ -165,12 +170,12 @@ async function waitForLog(configDir: string, from: number, predicate: (entries: 
 
     const afterCase1 = captureLogEntries(nativeHost.configDir).length;
 
-    // === ② 保存を始めて、途中で止まった =====================================
+    // === (2) started a save and it stalled partway through =====================================
     await activate();
     await page.locator('#capture-target').click({ position: { x: 100, y: 100 } });
     await page.locator('[data-hologram-capture-banner][data-state="busy"]').waitFor({ timeout: 15_000 });
 
-    // 始まったことが**待ちに入る前に**ディスクに在る＝これが無いと①と区別できない。
+    // The fact that it started is on disk **before entering the wait** = without this, it can't be distinguished from case (1).
     const begun = await waitForLog(nativeHost.configDir, afterCase1, (e) => e.some((x: any) => x.stage === 'save' && x.phase === 'begin'), page);
     const begin = begun.find((e: any) => e.stage === 'save' && e.phase === 'begin');
     if (!begin) throw new Error(`case 2 never announced its save: ${JSON.stringify(begun)}`);
@@ -185,8 +190,8 @@ async function waitForLog(configDir: string, from: number, predicate: (entries: 
     if (stalled.some((e: any) => e.phase === 'cancel')) throw new Error('case 2 claims the user gave up; nobody did');
     if (stalled.some((e: any) => e.stage === 'bridge' && e.phase === 'ok')) throw new Error('a save was written despite the metadata fetch never answering');
 
-    // どの段まで進んだか＝スクリーンショットと切り抜きは終わり、メタデータで止まった。
-    // #507 の調査が答えられなかった問いがこれ。
+    // How far it got = screenshot and crop finished, and it stalled at metadata.
+    // This is exactly the question #507's investigation couldn't answer.
     if (failure.stage !== 'metadata') throw new Error(`the failure names stage=${failure.stage}, wanted metadata`);
     const reached = Array.isArray(failure.reached) ? failure.reached : [];
     if (reached.join(',') !== 'capture,crop') throw new Error(`the failure says it reached [${reached.join(',')}], wanted [capture,crop]`);
@@ -194,10 +199,11 @@ async function waitForLog(configDir: string, from: number, predicate: (entries: 
     for (const route of held) await route.abort().catch(() => {});
     const afterCase2 = captureLogEntries(nativeHost.configDir).length;
 
-    // === ③ 保存が普通に終わった ==============================================
-    // 対照＝止まった保存が「止まった」と読めるのは、終わった保存が「終わった」と
-    // 読めるからで、両方を1つの記録から見て初めて区別が成立する。ホストが書く2行
-    // （受け取った / 書き終えた）も、拡張が振った saveId を運んでいること。
+    // === (3) a save that finished normally ==============================================
+    // The control case = a stalled save can be read as "stalled" only because a
+    // finished save can be read as "finished" — the distinction only holds once
+    // both are seen from a single record. Also checks that the two lines the
+    // host writes (received / finished writing) carry the saveId the extension assigned.
     stallMetadata = false;
     await activate();
     await page.locator('#capture-target').click({ position: { x: 100, y: 100 } });
@@ -207,9 +213,9 @@ async function waitForLog(configDir: string, from: number, predicate: (entries: 
     const ids = new Set(done.filter((e: any) => e.saveId).map((e: any) => e.saveId));
     if (ids.size !== 1) throw new Error(`case 3 spread over ${ids.size} save ids, wanted 1: ${JSON.stringify(done)}`);
     const trail = done.map((e: any) => `${e.stage}/${e.phase}`);
-    // ホストが受け取ったことと書き終えたことが別の行になっている＝「ホストへ届かな
-    // かった」と「ホストが持っていて終わらなかった」が区別できる（#507 が答えられ
-    // なかった問い）。
+    // The host receiving it and the host finishing writing it are separate
+    // lines = this lets "never reached the host" and "the host had it but it
+    // never finished" be told apart (a question #507 couldn't answer).
     for (const wanted of ['save/begin', 'bridge/begin', 'bridge/ok']) {
       if (!trail.includes(wanted)) throw new Error(`case 3 is missing the ${wanted} line: ${trail.join(' → ')}`);
     }

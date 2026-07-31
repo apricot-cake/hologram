@@ -19,8 +19,8 @@
 // on. Every explicit individual action — Ctrl+B, the sidebar trigger, the inspector's
 // toggle — calls reveal() FIRST and then applies itself, so the mask drops and the user's
 // action lands on a panel they can see. Hiding two panels and then silently rearranging
-// them behind the mask is the one behavior #245 ruled out ("隠れたまま内部状態だけ変わる
-// 挙動は作らない"), and it is ruled out here rather than at each call site by giving them
+// them behind the mask is the one behavior #245 ruled out ("we don't build behavior where
+// the internal state changes while it stays hidden"), and it is ruled out here rather than at each call site by giving them
 // nothing else to call.
 //
 // Since #244 declined to give the inspector a shortcut of its own, Ctrl+Shift+B is also

@@ -1,21 +1,23 @@
-// 周辺UIの一括表示トグル（#245）— 保存の往復とキー判定のユニットテスト。
+// Bulk show/hide toggle for surrounding UI (#245) — unit tests for the save round trip and key detection.
 //
-// 保存の側は inspector-pref.test.ts の形をそのまま写している（docs/testing.md「新しい
-// プリファレンスを足す時はこの形を写す」）＝`electron` を差し替えて本物の ipc-config.ts を
-// 登録し、その `set-pref` / `get-prefs` をレンダラーの `window.hologram` スタブへ配線して、
-// **レンダラーが送るキー名と main の許可キー（PREF_KEYS）を1本の線でつなげて**見る。
-// 片端だけを見ても捕まらない＝`set-pref` は許可キーに無いキーを `{ok:false}` で捨て、
-// 呼び出し側はその返り値を読まないので、キー名の取りこぼしは**無言で、しかも保存できて
-// いるように見える**（#391 の `inspectorOpen` が数ヶ月そうだった）。
+// The save side copies the shape of inspector-pref.test.ts verbatim (docs/testing.md: "copy
+// this shape when adding a new preference") — it swaps out `electron` to register the real
+// ipc-config.ts, then wires its `set-pref` / `get-prefs` up to the renderer's `window.hologram`
+// stub, checking **that the key name the renderer sends and main's allow-list (PREF_KEYS) are
+// connected by a single line**. Looking at only one end won't catch it: `set-pref` silently
+// drops any key not in the allow list with `{ok:false}`, and the caller doesn't read that
+// return value, so a missed key name **fails silently and even looks like it saved**
+// (#391's `inspectorOpen` was like that for months).
 //
-// 保存の往復に加えて、このスイートは #245 の中身そのものも見る。一括状態は2つのパネルの
-// 状態を**書き換えず覆うマスク**だという設計（services/panels.ts のヘッダ）が本物なら、
-// 「隠す → 再起動 → 戻す」で元の組み合わせが返ってくるはずで、それはスナップショットを
-// メモリに持つ実装では成立しない＝ここが実装の選択そのものを固定している。
+// On top of the save round trip, this suite also exercises the substance of #245 itself. If
+// the design that the bulk state is **a mask that covers without rewriting** the two panels'
+// state (per the header of services/panels.ts) actually holds, then "hide -> restart -> restore"
+// should return the original combination — which doesn't hold for an implementation that keeps
+// a separate snapshot in memory. That's what pins down the implementation choice itself here.
 //
-// キー判定（Ctrl+Shift+B）を別立てで見るのは、相方の Ctrl+B が別ファイル
-// （components/ui/sidebar.tsx の SidebarProvider）にいるため＝2つのハンドラが同じ物理キーを
-// 取り合う形になっていて、Shift の有無だけが境界線になっている。
+// Key detection (Ctrl+Shift+B) is checked separately because its counterpart Ctrl+B lives in a
+// different file (SidebarProvider in components/ui/sidebar.tsx) — the two handlers end up
+// contending for the same physical key, and whether Shift is held is the only dividing line.
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { IpcContext } from '../app/src/main/ipc-context';
 import { register as registerConfigIpc } from '../app/src/main/ipc-config';
@@ -33,8 +35,8 @@ vi.mock('electron', () => ({
   app: { getVersion: () => '0.0.0-test' },
 }));
 
-// config.json そのものの代役。文字列で持つ＝ハンドラが読み書きするたびに本当に
-// シリアライズを1往復するので、「オブジェクトを共有しているから通っただけ」が起きない。
+// Stand-in for config.json itself. Held as a string, so the handler genuinely does a full
+// round trip through serialization on every read/write — it never passes just because it's sharing an object.
 let configJson = '{}';
 const readStoredConfig = () => JSON.parse(configJson) as Record<string, unknown>;
 
@@ -54,7 +56,7 @@ registerConfigIpc(ctx);
 const setPref = (key: string, value: unknown) => stub.handlers.get('set-pref')?.(null, key, value);
 const getPrefs = () => stub.handlers.get('get-prefs')?.(null);
 
-// --- localStorage / window.hologram の代役 -------------------------------
+// --- Stand-ins for localStorage / window.hologram -------------------------------
 const cache = new Map<string, string>();
 const localStorageStub = {
   getItem: (k: string) => (cache.has(k) ? (cache.get(k) as string) : null),
@@ -83,7 +85,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-// モジュール内に状態を持つので、シナリオごとに読み直す（localStorage を仕込んでから）。
+// State lives inside the module, so re-import per scenario (after seeding localStorage).
 type PanelsModule = typeof import('../app/src/renderer/src/services/panels');
 const freshPanels = (): Promise<PanelsModule> => import('../app/src/renderer/src/services/panels');
 type InspectorModule = typeof import('../app/src/renderer/src/services/inspector-panel');
@@ -106,13 +108,13 @@ describe('main: 許可キーと get-prefs', () => {
     expect(getPrefs().panelsHidden).toBeNull();
   });
 
-  // config.json は人が手で編集できる＝真偽値以外が入りうる。他の開閉プリファレンスと同じ扱い。
+  // config.json can be hand-edited by a person, so non-boolean values can end up in it. Same handling as the other open/close preferences.
   test('真偽値でない値は null へ倒す', () => {
     configJson = JSON.stringify({ panelsHidden: 'true' });
     expect(getPrefs().panelsHidden).toBeNull();
   });
 
-  // 一括状態と各パネルの状態は独立に保存される＝どちらか片方だけを見て復元できない。
+  // The bulk state and each panel's state are saved independently — restoring by looking at only one of them isn't possible.
   test('各パネルの状態と同時に持てる', () => {
     setPref('sidebarOpen', true);
     setPref('inspectorOpen', false);
@@ -172,12 +174,12 @@ describe('renderer: 一括状態の保存', () => {
   });
 });
 
-// #245 の設計の核＝一括状態はマスクで、覆っている間パネル自身の状態には触らない。
-// スナップショットを別に持つ実装だと、そのスナップショットが揮発した瞬間に組み合わせを
-// 見失う＝下の「再起動を挟んでも戻せる」が落ちる。
+// The core of #245's design: the bulk state is a mask, and it doesn't touch the panels' own
+// state while covering them. An implementation that keeps a separate snapshot loses track of
+// the combination the instant that snapshot evaporates — the "can restore across a restart" test below would fail.
 describe('renderer: マスクは各パネルの状態を書き換えない', () => {
-  // 覆う直前の組み合わせ＝サイドバーは開、詳細パネルは閉（どちらも既定と違う側に倒して
-  // おく＝既定へ落ちただけの復元を「戻った」と読み違えない）。
+  // The combination right before covering: sidebar open, detail panel closed (both tipped to
+  // the side opposite their defaults, so a restore that merely fell back to defaults isn't misread as "restored").
   test('隠している間もパネル自身の保存値はそのまま', async () => {
     const inspector = await freshInspector();
     const panels = await freshPanels();
@@ -195,7 +197,7 @@ describe('renderer: マスクは各パネルの状態を書き換えない', () 
     setPref('sidebarOpen', true);
     panels.setHidden(true);
 
-    vi.resetModules(); // 再起動（localStorage と config.json だけが残る）
+    vi.resetModules(); // Restart (only localStorage and config.json survive)
     const inspector2 = await freshInspector();
     const panels2 = await freshPanels();
     await panels2.load();
@@ -214,7 +216,7 @@ describe('renderer: 起動時の突き合わせ（config.json が勝つ）', () 
     cache.set(CACHE_KEY, 'false');
     configJson = JSON.stringify({ panelsHidden: true });
     const panels = await freshPanels();
-    expect(panels.isHidden()).toBe(false); // 初回描画はキャッシュの推測で塗る
+    expect(panels.isHidden()).toBe(false); // The first render paints using the cache's guess
     let notified = 0;
     panels.subscribe(() => {
       notified++;
@@ -232,21 +234,21 @@ describe('renderer: 起動時の突き合わせ（config.json が勝つ）', () 
     expect(panels.isHidden()).toBe(true);
   });
 
-  // load() は起動から1tick 遅れて着地する＝その間にユーザーが押していたら、そちらが新しい。
+  // load() lands one tick after startup — if the user pressed something in that window, that's the newer value.
   test('起動途中のユーザー操作は突き合わせに上書きされない', async () => {
-    cache.set(CACHE_KEY, 'true'); // 前回は隠したまま終わっている
+    cache.set(CACHE_KEY, 'true'); // Ended last time still hidden
     configJson = JSON.stringify({ panelsHidden: true });
     const panels = await freshPanels();
     const pending = panels.load();
-    panels.setHidden(false); // 突き合わせが着地する前にユーザーが戻した
+    panels.setHidden(false); // User reverted it before the reconciliation landed
     await pending;
     expect(panels.isHidden()).toBe(false);
     expect(readStoredConfig().panelsHidden).toBe(false);
   });
 });
 
-// Ctrl+Shift+B。相方の Ctrl+B は SidebarProvider 側にいるので、境界（Shift の有無）が
-// ここで守られていないと2つのショートカットが同時に走る。
+// Ctrl+Shift+B. Its counterpart Ctrl+B lives on the SidebarProvider side, so if the boundary
+// (whether Shift is held) isn't enforced here, the two shortcuts fire at the same time.
 describe('renderer: Ctrl+Shift+B の判定', () => {
   const key = (init: Partial<KeyboardEvent> & { key: string }) => {
     let prevented = false;
@@ -267,7 +269,7 @@ describe('renderer: Ctrl+Shift+B の判定', () => {
     expect(k.wasPrevented()).toBe(true);
   });
 
-  // Caps Lock で 'b'/'B' が入れ替わっても同じ chord は同じ意味であること。
+  // The same chord must mean the same thing even if Caps Lock swaps 'b'/'B'.
   test('小文字で届いても同じ', async () => {
     const panels = await freshPanels();
     panels.handleShortcutPanelsKey(key({ key: 'b', ctrlKey: true, shiftKey: true }).ev);

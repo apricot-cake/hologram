@@ -1,19 +1,21 @@
-// クリップボード取込（#85）＝Ctrl+V で貼った画像がライブラリのレコードになる経路。
+// Clipboard intake (#85) = the path where an image pasted with Ctrl+V becomes a library record.
 //
-// **実クリップボードは一切触らない**＝`electron` を差し替えて `clipboard` を注入する。
-// 本物を読むテストは、走らせた人の手元のコピー内容とCI・並行セッションに結果が左右される
-// ＝「緑だったのはたまたま画像がコピーされていたから」と区別が付かなくなる。偽物にするのは
-// `clipboard.availableFormats()` / `readImage()` の2つだけで、保存先への書き込み・DB への
-// 書き込み・カード実寸の計測は製品コードがそのまま走る（テンポラリの保存先とテンポラリの
-// `hologram.db` を本当に作る）。
+// **Never touches the real clipboard** = swaps out `electron` and injects `clipboard`. A test
+// that reads the real clipboard would have its result depend on whatever's copied on the
+// runner's machine, plus CI and concurrent sessions = you couldn't tell "it passed" apart from
+// "it passed because an image happened to be copied". Only `clipboard.availableFormats()` /
+// `readImage()` are faked; writing to the save folder, writing to the DB, and measuring the
+// card's actual dimensions all run the real product code (it genuinely creates a temp save
+// folder and a temp `hologram.db`).
 //
-// #85 の受け入れ条件をそのまま並べてある:
-//   ①入力欄にフォーカスがある Ctrl+V が通常の貼り付けとして通る（取込が発火しない）
-//   ②画像を持たないクリップボードがエラーでなくトーストで終わる
-//   ③貼った画像が一覧へ出る
+// #85's acceptance criteria are laid out here as-is:
+//   1. Ctrl+V while an input field is focused passes through as a normal paste (intake doesn't fire)
+//   2. A clipboard with no image ends in a toast, not an error
+//   3. The pasted image shows up in the list
 //
-// ③の「一覧へ出る」をここでは `posts-changed` の送信で見る＝アプリ内書き込みは取込キューの
-// イベントを残さないので、レンダラへ知らせる線はこの1本しかない（削除・ipc-trash.ts と同じ）。
+// #3's "shows up in the list" is checked here via the `posts-changed` send = in-app writes
+// don't leave an event in the intake queue, so this is the only line that notifies the
+// renderer (same as deletion / ipc-trash.ts).
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -25,10 +27,10 @@ type Handler = (event: unknown, ...args: any[]) => any;
 
 const stub = vi.hoisted(() => ({
   handlers: new Map<string, (event: unknown, ...args: any[]) => any>(),
-  // クリップボードの代役。`formats` が「画像を持っているか」の答え、`png` が readImage() の
-  // 中身、`throws` は読み取り自体が失敗する状況（他アプリが掴んだまま等）。
+  // Clipboard stand-in. `formats` answers "does it have an image", `png` is readImage()'s
+  // contents, `throws` simulates the read itself failing (e.g. another app still holding it).
   clip: { formats: [] as string[], png: null as Buffer | null, throws: false },
-  // トーストの受け皿。vi.mock のファクトリは巻き上げられるので、hoisted な束縛でないと掴めない。
+  // Toast collector. vi.mock's factory is hoisted, so only a hoisted binding can be captured by it.
   toasts: [] as string[],
 }));
 
@@ -61,10 +63,10 @@ vi.mock('sonner', () => ({
 import { openDatabase } from '../app/src/main/lib-db';
 import { register as registerTransferIpc } from '../app/src/main/ipc-transfer';
 
-// --- 実寸が測れる本物の PNG ------------------------------------------------
-// `fillCardDims` がヘッダを読むので、中身のあるバイト列でないと「測れなかった」と区別が
-// 付かない。CRC は自前で計算する（`zlib.crc32` はまだ新しい API で、ここが黙って 0 を
-// 書くと PNG として壊れる）。
+// --- A real PNG whose dimensions can actually be measured ------------------------------------------------
+// `fillCardDims` reads the header, so it needs a byte sequence with real content — otherwise you
+// can't tell it apart from "measurement failed". CRC is computed by hand (`zlib.crc32` is still
+// a newer API, and silently writing 0 here would produce a broken PNG).
 const CRC_TABLE = (() => {
   const t = new Uint32Array(256);
   for (let n = 0; n < 256; n++) {
@@ -99,7 +101,7 @@ function makePng(w: number, h: number): Buffer {
   return Buffer.concat([sig, pngChunk('IHDR', ihdr), pngChunk('IDAT', zlib.deflateSync(raw)), pngChunk('IEND', Buffer.alloc(0))]);
 }
 
-// --- 保存先と DB（本物）--------------------------------------------------
+// --- Save folder and DB (real) --------------------------------------------------
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-clip-'));
 const folder = path.join(dir, 'library');
 fs.mkdirSync(folder, { recursive: true });
@@ -154,20 +156,20 @@ describe('main: import-clipboard', () => {
     const all = rows();
     expect(all).toHaveLength(1);
     const rec = all[0];
-    // captureId の接頭辞・拡張子・保存ファイル名は #85 の設計どおり（clip-…・PNG 固定）。
+    // The captureId prefix, extension, and saved file name follow #85's design (clip-..., PNG fixed).
     expect(rec.captureId).toMatch(/^clip-\d+-\d{4}$/);
     expect(rec.image).toBe(`${rec.captureId}.png`);
     expect(rec.video).toBeNull();
     expect(fs.existsSync(path.join(folder, rec.image))).toBe(true);
     expect(rec.source).toBe('clipboard');
     expect(rec.mediaType).toBe('image');
-    // url が立たないことが「取り込み画像」であり続ける条件（kind は url の有無から導出される）。
+    // url staying unset is the condition that keeps it classified as an "imported image" (kind is derived from whether url is present).
     expect(rec.url).toBeNull();
     expect(rec.title).toBe('クリップボード 2026/7/30 12:34');
-    // 貼った瞬間が date＝持ち込める元の日付が無い。
+    // The moment it's pasted is the date = there's no original date to carry over.
     expect(new Date(rec.date).getTime()).toBeGreaterThanOrEqual(before - 1000);
     expect(new Date(rec.capturedAt).getTime()).toBeGreaterThanOrEqual(before - 1000);
-    // カード高さの確保に使う実寸は「書いた時に測る」＝あとから測り直す走査はもう無い。
+    // The dimensions used to reserve card height are "measured at write time" = there's no later re-measuring scan anymore.
     expect(rec.shotW).toBe(24);
     expect(rec.shotH).toBe(12);
     expect(sent).toEqual([{ channel: 'posts-changed', payload: null }]);
@@ -179,7 +181,7 @@ describe('main: import-clipboard', () => {
     expect(await importClipboard('t')).toEqual({ imported: 0, empty: true });
     expect(rows()).toHaveLength(0);
     expect(fs.readdirSync(folder)).toHaveLength(0);
-    // 何も起きていないのに一覧を作り直させない。
+    // Don't force the list to be rebuilt when nothing happened.
     expect(sent).toHaveLength(0);
   });
 
@@ -226,8 +228,8 @@ describe('main: import-clipboard', () => {
   });
 });
 
-// ローカル取込の共通ヘルパ（#84 と共有）。別の入口が乗る時にレコードの形が入口ごとに
-// ずれないことをここで固定する。
+// Shared helper for local intake (shared with #84). Pins down here that the record shape
+// doesn't drift between different entry points as they get added.
 describe('main: 共通ヘルパ（lib-local-intake）', () => {
   beforeEach(resetLibrary);
 
@@ -274,23 +276,24 @@ describe('main: 共通ヘルパ（lib-local-intake）', () => {
   });
 });
 
-// ローカル取込のレコードは「作画」扱い＝スクショではない。PNG 固定の今は拡張子の判定だけで
-// 除外されるが、判定リストに載っていること自体がこの区分の宣言なので固定しておく。
+// A local-intake record is treated as "artwork" = not a screenshot. Right now with PNG fixed,
+// it's excluded by the extension check alone, but being on that check list is itself the
+// declaration of this classification, so it's pinned down here.
 describe('renderer: 取り込んだ画像はスクショ扱いにならない', () => {
   test('clipboard は drag / eagle-migration と同じ側', async () => {
     const { isScreenshot } = await import('../app/src/renderer/src/services/records');
 
     expect(isScreenshot({ image: 'clip-1-0000.jpg', source: 'clipboard' } as any)).toBe(false);
     expect(isScreenshot({ image: 'clip-1-0000.png', source: 'clipboard' } as any)).toBe(false);
-    // 拡張から入った本物のキャプチャは今までどおり。
+    // A real capture that came in via the extension behaves as before.
     expect(isScreenshot({ image: 'x-1.jpg', source: 'extension' } as any)).toBe(true);
   });
 });
 
-// #85 の最重要ガード。Ctrl+V は貼り付けのキーであって、取込が横取りしてよい場面は限られる。
-// レンダラ側は純判定として書いてあるので jsdom は要らない（document を見る3か所は
-// どれも `typeof document === 'undefined'` を通る）。document を見る側だけは最小の
-// スタブを置いて確かめる（下の「ゴミ箱」）。
+// #85's most important guard. Ctrl+V is the key for paste, and there are only limited cases
+// where intake is allowed to hijack it. The renderer side is written as a pure check, so jsdom
+// isn't needed (all 3 places that look at document go through `typeof document === 'undefined'`).
+// Only the places that do look at document get a minimal stub to verify (the "trash" case below).
 describe('renderer: Ctrl+V の判定', () => {
   const calls: string[] = [];
   let answer: any = { imported: 1 };
@@ -330,7 +333,7 @@ describe('renderer: Ctrl+V の判定', () => {
     };
   };
 
-  // ハンドラは同期で、取込は待たない Promise＝マイクロタスクを1周させてから見る。
+  // The handler is synchronous, and intake is a Promise it doesn't await = check after letting a microtask cycle pass.
   const settle = () => new Promise((r) => setTimeout(r, 0));
 
   test('Ctrl+V で取り込む＝見出しに日時が入る', async () => {
@@ -352,14 +355,14 @@ describe('renderer: Ctrl+V の判定', () => {
     expect(calls).toHaveLength(1);
   });
 
-  // ここが本 Issue の核＝入力欄の貼り付けを横取りしない。
+  // This is the core of the Issue = don't hijack paste in an input field.
   test('INPUT にフォーカスがある間は発火しない', async () => {
     const intake = await freshIntake();
     const k = key({ key: 'v', ctrlKey: true, target: { tagName: 'INPUT' } as any });
     intake.handleShortcutClipboardKey(k.ev);
     await settle();
     expect(calls).toHaveLength(0);
-    // preventDefault を呼ばない＝既定の貼り付けがそのまま走る。
+    // preventDefault isn't called = the default paste runs as-is.
     expect(k.wasPrevented()).toBe(false);
   });
 
@@ -416,9 +419,9 @@ describe('renderer: Ctrl+V の判定', () => {
     lightbox.close();
   });
 
-  // ゴミ箱（#268）は「新規保存を無効」にする唯一の行き先＝貼り付けはそこでは何もしない。
-  // 見ているのは store の browseMode（P2⑬で body クラスの覗き見をやめた）ので、他の
-  // ガードと同じく本物のモジュールを動かして判定を確かめる。
+  // Trash (#268) is the only destination that "disables new saves" = paste does nothing there.
+  // What's checked is the store's browseMode (peeking at the body class was dropped in P2-13),
+  // so this runs the real module and verifies the check, just like the other guards.
   test('ゴミ箱を開いている間は発火しない', async () => {
     const intake = await freshIntake();
     const store = await import('../app/src/renderer/src/services/store');
@@ -429,7 +432,7 @@ describe('renderer: Ctrl+V の判定', () => {
       await settle();
       expect(calls).toHaveLength(0);
       expect(k.wasPrevented()).toBe(false);
-      // ライブラリへ戻れば元どおり取り込む＝止めているのは行き先であって鍵ではない。
+      // Going back to the library resumes intake as before = what blocks it is the destination, not a lock.
       store.set('browseMode', 'posts');
       intake.handleShortcutClipboardKey(key({ key: 'v', ctrlKey: true }).ev);
       await settle();

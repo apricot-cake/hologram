@@ -1,8 +1,9 @@
-// app/src/main/lib-migrate.ts のユニットテスト＝保存フォルダの引っ越しエンジン
-// （BACKLOG L1: 移動中に src へ着地した capture が見えないまま取り残されていた）。
-// 素の Node と一時ディレクトリだけ・Electron 不要。追いかけコピーの周回・削除前の検証・
-// 空になった殻の撤去・取り残し掃除の cold/hot 判別・relocateLibrary 全体の統率
-// （config 反転の順序・取り残しの報告・遅延掃除）を覆う。
+// Unit tests for app/src/main/lib-migrate.ts = the save-folder relocation engine
+// (BACKLOG L1: captures that landed in src during a move were going unseen and left
+// stranded). Plain Node and a temp directory only — no Electron needed. Covers the
+// chase-copy loop, pre-delete verification, cleanup of emptied shells, cold/hot
+// triage for straggler sweeping, and relocateLibrary's overall orchestration
+// (config-flip ordering, straggler reporting, delayed sweep).
 
 import fs from 'node:fs';
 import os from 'node:os';
@@ -78,14 +79,14 @@ describe('copyLibraryInto', () => {
     expect(read(dest, 'a.jpg')).toBe('THEIRS');
   });
 
-  // L1 の核心: コピー中に着地したファイルを追いかけ周回が拾う
+  // L1's core case: the chase loop picks up files that land during the copy
   test('コピー中に着地したファイルを拾う', async () => {
     const { src, dest } = mkroot();
     seed(src, { 'a.jpg': 'AAA', 'b.jpg': 'BBB' });
     let dropped = false;
 
     const cp = await copyLibraryInto(src, dest, (done: number) => {
-      // 初回コピー中にネイティブホストの capture が着地した状況を模す
+      // Simulate a native-host capture landing during the initial copy
       if (done === 1 && !dropped) {
         dropped = true;
         fs.writeFileSync(path.join(src, 'late.jpg'), 'LATE');
@@ -103,7 +104,7 @@ describe('copyLibraryInto', () => {
     seed(src, { 'a.jpg': 'AAA' });
 
     const cp = await copyLibraryInto(src, dest, () => {
-      // 途中で宛先と衝突する名前を落とす → 追いかけコピーが EEXIST で落ちる
+      // Drop a name partway through that collides with the destination → the chase copy fails with EEXIST
       fs.writeFileSync(path.join(src, 'clash.jpg'), 'MINE');
       fs.mkdirSync(path.join(dest, 'clash.jpg'), { recursive: true });
     });
@@ -132,7 +133,7 @@ describe('verifyAndCleanup', () => {
     const { src, dest } = mkroot();
     seed(src, { 'a.jpg': 'AAAAAA', 'tags.json': '{"v":1}' });
     const cp = await copyLibraryInto(src, dest, null);
-    // 途中で切れたコピーと、コピー後の src 側編集（整理 JSON の書き直し）を模す
+    // Simulate a copy that got cut off partway through, plus a src-side edit made after the copy (rewriting the organizing JSON)
     fs.writeFileSync(path.join(dest, 'a.jpg'), 'X');
     fs.writeFileSync(path.join(src, 'tags.json'), '{"v":2,"edited":true}');
 
@@ -140,14 +141,14 @@ describe('verifyAndCleanup', () => {
 
     expect(cl).toMatchObject({ removed: 2, emptied: true });
     expect(read(dest, 'a.jpg')).toBe('AAAAAA');
-    expect(read(dest, 'tags.json')).toBe('{"v":2,"edited":true}'); // コピー後の編集が勝つ（最新が正）
+    expect(read(dest, 'tags.json')).toBe('{"v":2,"edited":true}'); // the post-copy edit wins (latest is authoritative)
   });
 
   test('未知の着地は leftover として残す', async () => {
     const { src, dest } = mkroot();
     seed(src, { 'a.jpg': 'AAA' });
     const cp = await copyLibraryInto(src, dest, null);
-    // 最後の追いかけ周回の後に着地した capture（すき間の窓）
+    // A capture that lands after the last chase loop (the gap window)
     fs.writeFileSync(path.join(src, 'straggler.jpg'), 'SSS');
 
     const cl = await verifyAndCleanup(src, dest, cp.entries);
@@ -190,7 +191,7 @@ describe('sweepStragglers', () => {
     seed(src, { 'dup.jpg': 'SAME', 'diff.jpg': 'MINE' });
     seed(dest, { 'dup.jpg': 'SAME', 'diff.jpg': 'THEIRS-LONGER' });
     for (const f of ['dup.jpg', 'diff.jpg']) setOld(path.join(src, f), 60000);
-    // 同一のペアには同じ mtime を与える（実際に前段でコピーされていればそうなる）
+    // Give the identical pair the same mtime (which is what would happen if it had actually been copied in an earlier stage)
     const t = new Date(Date.now() - 60000);
     fs.utimesSync(path.join(dest, 'dup.jpg'), t, t);
 
@@ -229,9 +230,9 @@ describe('relocateLibrary（全体の統率）', () => {
     });
 
     expect(res).toMatchObject({ ok: true, moved: 2, leftover: 0 });
-    expect(cfg).toMatchObject({ saveFolder: dest, extensionId: 'x' }); // 他のキーは保たれる
-    expect(flippedBeforeCleanup).toBe(true); // クラッシュしても安全な順序
-    expect(afterFlipCalled).toBe(true); // 監視・差分のフック
+    expect(cfg).toMatchObject({ saveFolder: dest, extensionId: 'x' }); // other keys are preserved
+    expect(flippedBeforeCleanup).toBe(true); // order that stays safe even if it crashes
+    expect(afterFlipCalled).toBe(true); // hook for watching/diffing
     expect(phases[0]).toBe('copy');
     expect(phases).toEqual(expect.arrayContaining(['switch', 'cleanup']));
     expect(phases.at(-1)).toBe('done');
@@ -263,7 +264,7 @@ describe('relocateLibrary（全体の統率）', () => {
     expect(phases.at(-1)).toBe('error');
   });
 
-  // すき間の窓で着地した取り残しは、まず報告され、冷えた後に予約された掃除が回収する
+  // A straggler that lands in the gap window is reported first, then picked up by the scheduled sweep once it's cold
   test('取り残しは報告され、遅延掃除が回収する', async () => {
     const { src, dest } = mkroot();
     seed(src, { 'a.jpg': 'AAA' });
@@ -277,8 +278,8 @@ describe('relocateLibrary（全体の統率）', () => {
         cfg = c;
         if (!plantedLate) {
           plantedLate = true;
-          // 最後の追いかけ readdir の後に着地させる。掃除は既定の 15s minAge を使うので
-          // ファイルの時刻を戻して「冷えた」状態にしておく。
+          // Land it after the last chase readdir. The sweep uses the default 15s minAge,
+          // so wind the file's timestamp back to make it look "cold".
           fs.writeFileSync(path.join(src, 'late.jpg'), 'LATE');
           setOld(path.join(src, 'late.jpg'), 60000);
         }

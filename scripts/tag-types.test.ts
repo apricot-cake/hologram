@@ -1,6 +1,7 @@
-// タグ用語帳（Phase 2 ①）tag-types.json のユニット＋取り込みテスト。
-// mergeTagTypes（和集合・すでに分類済みのタグは現ライブラリが勝つ・labels も合流）と、
-// 完全ZIPの取り込み経由で tag-types.json が実際に合流するところまで見る（合流先はDB）。
+// Unit + import tests for the tag glossary (Phase 2 ①) tag-types.json.
+// Covers mergeTagTypes (union of sets — for a tag already classified, the current library
+// wins; labels are merged too), and follows through to where tag-types.json actually gets
+// merged via a full-ZIP import (the merge destination is the DB).
 
 import fs from 'node:fs';
 import os from 'node:os';
@@ -16,7 +17,7 @@ describe('mergeTagTypes（純関数）', () => {
     expect(mergeTagTypes({ types: { ブルアカ: 'work' } }, { types: { アロナ: 'character' } }).types).toEqual({ ブルアカ: 'work', アロナ: 'character' });
   });
 
-  // 取り込みが、意図して付けたローカルの種別を黙って上書きしてはいけない
+  // An import must not silently overwrite a kind that was intentionally set locally
   test('衝突したら現ライブラリ側が勝つ', () => {
     expect(mergeTagTypes({ types: { アリス: 'character' } }, { types: { アリス: 'work' } }).types.アリス).toBe('character');
   });
@@ -50,15 +51,15 @@ describe('完全ZIPの取り込みが tag-types.json を合流させる', () => 
     fs.mkdirSync(dest, { recursive: true });
     handle = openDatabase(path.join(root, 'test.db'));
 
-    // 既存ライブラリは アリス=character・ブルアカ=work を分類済み
+    // The existing library has already classified アリス=character, ブルアカ=work
     createDbWriter(handle.sqlite).setTagTypes({ アリス: 'character', ブルアカ: 'work' }, null);
 
-    // 取り込む ZIP: アロナ=character を足し、アリス→work へ倒そうとする（負けるべき）
+    // The ZIP being imported: adds アロナ=character, and tries to flip アリス→work (which should lose)
     const zip = new JSZip();
     zip.file('library/cap1.jpg', Buffer.from('JPEGDATA1'));
     zip.file('library/tag-types.json', JSON.stringify({ types: { アロナ: 'character', アリス: 'work' } }));
 
-    // importCompleteZipToDb は PATH を取る（#485 — main が yauzl で開く）。
+    // importCompleteZipToDb takes a PATH (#485 — main opens it with yauzl).
     const zipPath = path.join(root, 'fixture.zip');
     fs.writeFileSync(zipPath, Buffer.from(await zip.generateAsync({ type: 'nodebuffer' })));
     await importCompleteZipToDb(handle.sqlite, zipPath, dest);

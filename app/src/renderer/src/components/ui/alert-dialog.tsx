@@ -20,7 +20,7 @@ function AlertDialogPortal({ ...props }: AlertDialogPrimitive.Portal.Props) {
 
 function AlertDialogOverlay({ className, ...props }: AlertDialogPrimitive.Backdrop.Props) {
   // z-[13100]: same legacy-scale bump as Dialog (see dialog.tsx), a notch higher so a
-  // confirm raised FROM an open settings Dialog (e.g. 危険な操作 → clear-all) stacks above
+  // confirm raised FROM an open settings Dialog (e.g. Danger zone → clear-all) stacks above
   // it. Still below the z-[13500] popover portals. bg-black/50 + the stock fade (see
   // dialog.tsx for why the fade was gone while the window buttons were OS-drawn).
   // Re-apply both on `shadcn add alert-dialog`.

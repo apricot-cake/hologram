@@ -94,7 +94,7 @@ interface TagRow {
   name: string;
 }
 
-// The うごイラ frame table comes back out as the array the sidecar carried
+// The ugoira frame table comes back out as the array the sidecar carried
 // (#119 St3). A row written before the column existed, or one whose JSON no
 // longer parses, reads as null — the player then has no timings and falls back
 // to the poster, which is the same outcome as an archive that never downloaded.

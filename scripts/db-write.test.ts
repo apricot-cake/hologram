@@ -1,5 +1,5 @@
-// DB が持つ整理情報の書き込み（#298/St5）。置き換え操作が、sidecar も organization の
-// JSON ファイルも触らずに往復することを見る。
+// Writing organization data held by the DB (#298/St5). Checks that replace
+// operations round-trip without touching either the sidecar or organization's JSON files.
 
 import fs from 'node:fs';
 import os from 'node:os';
@@ -32,9 +32,9 @@ test('タグ用語帳が往復する', () => {
   expect(writer.getTagTypes()).toEqual({ types: { alice: 'character' }, labels: { character: 'Character' } });
 });
 
-// #197: setPostTags / setPosterTags / setTagTypes は共通の tagResolver を通るので、
-// 字形正規化（NFKC + trim）は各エントリで別々に確認せずここで一括して見る＝
-// どの入口から書いても同じ tags 行へ収束すること。
+// #197: since setPostTags / setPosterTags / setTagTypes all go through the
+// shared tagResolver, glyph normalization (NFKC + trim) is checked here in one
+// batch rather than separately per entry point = writing through any entry point converges on the same tags row.
 describe('タグ名の字形正規化（#197）', () => {
   let ownDir: string;
   let db: any;
@@ -73,7 +73,7 @@ describe('タグ名の字形正規化（#197）', () => {
 
   test('setTagTypes もキー（タグ名）を正規化してから解決する', () => {
     own.setTagTypes({ ＶＴｕｂｅｒ: 'character' }, {});
-    // 別入口 (setPostTags) が既に作った半角形の同じ名前へ、同じタグ行として揃う。
+    // Converges as the same tags row, onto the same half-width-form name that another entry point (setPostTags) already created.
     own.setPostTags('tn-post', ['VTuber'], null);
 
     expect(db.prepare("SELECT COUNT(*) n FROM tags WHERE name = 'VTuber'").get().n).toBe(1);
@@ -137,15 +137,16 @@ test('state の単純な key/value が往復する', () => {
   expect(writer.stateGet('activeFolderId')).toBe('f-1');
 });
 
-// #593: 削除→復元で「整理した位置」が戻ること。フォルダ所属も手動グループ所属も
-// 外部キーの CASCADE で投稿ごと消えるので、消える前に読み出して記録へ載せ、戻す時に
-// 入れ直す以外に道が無い（レコードからは再構成できない）。
+// #593: on delete -> restore, "where it was organized" comes back. Since both
+// folder membership and manual group membership vanish along with the post via
+// the foreign key CASCADE, there's no way but to read them out before deletion,
+// carry them on the trash record, and put them back on restore (they can't be reconstructed from the record).
 describe('削除→復元で整理した位置が戻る（#593）', () => {
   let ownDir: string;
   let db: any;
   let own: ReturnType<typeof createDbWriter>;
 
-  // このスイートは投稿とフォルダを消す（上の節が作った状態を壊す）ので、自前の DB を持つ。
+  // This suite deletes posts and folders (which would break the state the section above built), so it has its own DB.
   beforeAll(() => {
     ownDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-restore-'));
     ({ sqlite: db } = openDatabase(path.join(ownDir, 'test.db')));
@@ -158,7 +159,7 @@ describe('削除→復元で整理した位置が戻る（#593）', () => {
       ],
       activeId: 'keep',
     });
-    // p-1 がグループの2番目（seq=1）＝並び順を保って戻ることを見たいので先頭に置かない。
+    // p-1 is the group's second item (seq=1) = not placed first, since we want to check that the order is preserved on restore.
     own.setManualGroups([['p-2', 'p-1']]);
   });
 
@@ -177,12 +178,12 @@ describe('削除→復元で整理した位置が戻る（#593）', () => {
   test('復元で所属が戻る（グループ内の並び順ごと）／消えたフォルダの分だけ落ちる', () => {
     const flags = own.getPostFlags('p-1');
     const groupId = flags?.manualGroups?.[0]?.groupId;
-    // ゴミ箱に居る間にフォルダを1つ削除する＝これが「戻す先が無い」状態。
+    // Deletes one folder while the post is in the trash = this is the "nowhere to restore it to" state.
     own.setFolders({ folders: [{ id: 'keep', name: 'Keep', kind: 'static', created: 1, items: [] }], activeId: 'keep' });
     own.deletePost('p-1');
     expect(db.prepare('SELECT COUNT(*) n FROM folder_items WHERE postId = ?').get('p-1').n).toBe(0);
 
-    // 復元＝投稿の行を作り直してから、記録が持っていた所属を戻す。
+    // Restore = re-create the post's row, then put back the membership the trash record held.
     db.prepare("INSERT INTO posts (captureId, capturedAt, updatedAt) VALUES ('p-1', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')").run();
     own.restorePostFlags('p-1', flags);
 
@@ -197,8 +198,9 @@ describe('削除→復元で整理した位置が戻る（#593）', () => {
     expect(db.prepare('SELECT COUNT(*) n FROM manual_group_items WHERE postId = ?').get('p-1').n).toBe(1);
   });
 
-  // ゴミ箱の記録は外から書ける（#324）＝壊れた id が statement へ届くと、外部キー違反で
-  // 復元ごと落ちる。型を通してから入れる。
+  // A trash record can be written to from outside (#324) = if a broken id
+  // reaches the statement, it would take down the whole restore with a foreign
+  // key violation. Pass it through a type check before inserting.
   test('壊れた所属は黙って落ち、復元自体は成功する', () => {
     own.restorePostFlags('p-2', {
       folders: ['keep', 42, '', null, { id: 'keep' }],
@@ -209,8 +211,8 @@ describe('削除→復元で整理した位置が戻る（#593）', () => {
   });
 });
 
-// #444。投稿の書き込みとタグ編集と削除が、同じ1本の FTS 行（posts.ftsRowid）を
-// 指し続けること。ここが崩れると索引が実データから静かにずれる。
+// #444. Writing a post, editing its tags, and deleting it all keep pointing at
+// the same single FTS row (posts.ftsRowid). If this breaks, the index silently drifts from the real data.
 describe('FTS 行の鍵の一生（#444）', () => {
   let ownDir: string;
   let db: any;

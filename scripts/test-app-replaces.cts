@@ -2,8 +2,9 @@
 
 // Verifies #34's "replace" end-to-end through a real Electron boot: a capture
 // saved WHILE THE APP WAS CLOSED that carries a `replaces` marker retires the
-// capture it names at the next launch — the acceptance criterion "アプリ停止中に
-// 「置換」を選んだ場合も、次回起動時に旧ペアの掃除とタグ引き継ぎが完了する".
+// capture it names at the next launch — the acceptance criterion "even when
+// 「置換」(replace) is chosen while the app is stopped, cleanup of the old pair
+// and tag inheritance still completes at the next launch".
 //
 // That path cannot be unit-tested: scripts/db-replaces.test.ts drives
 // applyPendingReplacements directly, and what is unproven there is the WIRING —

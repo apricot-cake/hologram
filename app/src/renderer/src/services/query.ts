@@ -1,6 +1,6 @@
 // Query engine — the boolean condition-tree core of Hologram filtering
-// (改訂③), extracted 1:1 from viewer.js as the
-// first "pure logic → service" slice of the viewer decomposition (最終形B).
+// (revision ③), extracted 1:1 from viewer.js as the
+// first "pure logic → service" slice of the viewer decomposition (final form B).
 // A real ES module (named exports) — imported directly by its consumers
 // (viewer.ts / query-chips.ts / sidebar.ts / tabs.ts) via a relative path;
 // touches no DOM. Runtime couplings (collections / fuzzy matcher) are
@@ -195,16 +195,16 @@ export function wrapAllInGroup(tree: HologramQueryGroup): HologramQueryGroup | n
   return root;
 }
 
-// --- Facet domain (改訂④ ファセット・チップ).
+// --- Facet domain (revision ④ facet chips).
 // The UI only ever BUILDS facet-CNF trees: root group(and) whose children are
 // per-type groups (2+ positive values of one type), bare positive leaves, and
-// negated leaves (the 除く cluster — root-AND makes them "none of these").
+// negated leaves (the "Exclude" cluster — root-AND makes them "none of these").
 // Arbitrary trees remain evaluable (evalNode is untouched) for persisted
-// 改訂③ states; the bar just renders those read-only.
+// revision ③ states; the bar just renders those read-only.
 // opts: { multiValueTypes: string[], standaloneTypes: string[] } — view-owned
 // type schemas (posts vs posters differ), injected like predOf. ---
 /** Default within-cluster operator: multi-value attributes narrow by default
- *  (すべて); for single-value attributes "any of" is the only satisfiable read. */
+ *  ("All"); for single-value attributes "any of" is the only satisfiable read. */
 export function facetDefaultOp(type: string, opts: HologramFacetOpts): 'and' | 'or' {
   return (opts.multiValueTypes || []).includes(type) ? 'and' : 'or';
 }
@@ -212,7 +212,7 @@ export function facetDefaultOp(type: string, opts: HologramFacetOpts): 'and' | '
 // negated, empty or mixed-type groups / two containers of one type) → the bar
 // falls back to a read-only summary. Semantics-preserving with ONE deliberate
 // repair: 2+ bare single-value leaves of one type read as 'or' (their root-AND
-// was the 改訂③ two-platform always-false trap).
+// was the revision ③ two-platform always-false trap).
 export function facetViewOf(tree: HologramQueryGroup, opts: HologramFacetOpts): HologramFacetView | null {
   if (!tree || tree.kind !== 'group' || tree.op !== 'and' || tree.neg) return null;
   const standalone = new Set<string>(opts.standaloneTypes || []);
@@ -248,7 +248,7 @@ export function facetViewOf(tree: HologramQueryGroup, opts: HologramFacetOpts): 
   return { clusters: Array.from(clusters.values()), singles, excl };
 }
 // Rebuild a facet-shaped tree into canonical form IN PLACE: every 2+-value
-// cluster becomes a real group (the すべて/どれか toggle needs a node to write
+// cluster becomes a real group (the "All"/"Any" toggle needs a node to write
 // to), ordered clusters → standalone leaves → excluded leaves. Returns true
 // when the tree was facet-shaped (now canonical); false leaves it untouched.
 export function canonicalizeFacet(tree: HologramQueryGroup, opts: HologramFacetOpts): boolean {
@@ -281,7 +281,7 @@ export function facetAdd(tree: HologramQueryGroup, node: HologramQueryLeaf, opts
   tree.children.push(node);
   return node;
 }
-// The すべて/どれか toggle: set a cluster's operator. Clusters with 2+ values
+// The "All"/"Any" toggle: set a cluster's operator. Clusters with 2+ values
 // are real groups in a canonical tree; false when no such group exists.
 export function facetSetOp(tree: HologramQueryGroup, type: string, op: string): boolean {
   for (const c of tree.children) {
@@ -292,7 +292,7 @@ export function facetSetOp(tree: HologramQueryGroup, type: string, op: string): 
   }
   return false;
 }
-// Move a leaf between its cluster and the 除く cluster: detach, flip neg,
+// Move a leaf between its cluster and the "Exclude" cluster: detach, flip neg,
 // re-insert (negated → top level; positive → back through facetAdd). A value
 // returning while it already exists positively is dropped as redundant.
 export function facetSetNeg(tree: HologramQueryGroup, node: HologramQueryLeaf, neg: boolean, opts: HologramFacetOpts): boolean {
@@ -384,7 +384,7 @@ export function normalizeTree(node: any): any {
 //     are an ID entity; a saved leaf that only has a name lazily resolves and
 //     caches its id the first time it's evaluated post-DB-migration, below)
 export function makePostPredOf(deps: {
-  /** `only` = the leaf's 「このフォルダのみ」 flag; without it a folder stands for its subtree (#41). */
+  /** `only` = the leaf's "This folder only" flag; without it a folder stands for its subtree (#41). */
   isInFolder(id: string, captureId: string, only?: boolean): boolean;
   fuzzyCompile?(q: string): ((hay: string) => boolean) | null;
   postKeyOf?(url: string | null | undefined): string | null;
@@ -392,7 +392,7 @@ export function makePostPredOf(deps: {
 }): (f: HologramQueryLeaf) => (p: HologramPost) => boolean {
   return function postPredOf(f) {
     switch (f.type) {
-      // 'post' = SNS投稿（リンクあり）/ 'image' = 取り込み画像（リンクなし）。url の有無が本質。
+      // 'post' = an SNS post (has a link) / 'image' = a captured image (no link). What matters is whether url is set.
       case 'kind':
         return (p) => (f.value === 'post') === !!p.url;
       case 'platform':
@@ -415,7 +415,7 @@ export function makePostPredOf(deps: {
       // (deps.tagIdOf absent, or the name no longer exists) — never a hard
       // failure for an old or since-deleted tag.
       case 'tag': {
-        // 「タグなし」: the one tag leaf that is not a tag. It has no id to pin and no
+        // "No tags": the one tag leaf that is not a tag. It has no id to pin and no
         // name to match — resolving it through tagIdOf would fall back to looking for a
         // tag literally called '__none' — so it answers first. Same sentinel shape as
         // platform's '__none' above.
@@ -446,7 +446,7 @@ export function makePostPredOf(deps: {
       }
       // Free-text leaf: the search-box term, now a first-class tree citizen,
       // matched by the single smart matcher (deps.fuzzyCompile; the per-leaf
-      // exact/fuzzy mode field is gone — P2④ 単一スマート検索). The compiled
+      // exact/fuzzy mode field is gone — P2④ single smart search). The compiled
       // matcher is memoized on the node — evalNode calls postPredOf per item, so
       // compiling in the bare factory body would recompile once per post.
       // The !_compiled guard is essential: a node round-tripped through JSON
@@ -489,7 +489,7 @@ export function makePostPredOf(deps: {
 // an asymmetry with the extracted post side). Poster facets are a subset
 // (platform / instance / tag / folder / date). deps carry the poster-only
 // couplings the engine must not own:
-//   posterTagsOf(key) → string[]           — tags.ts (作品/キャラ share 'tag')
+//   posterTagsOf(key) → string[]           — tags.ts (Work/Character share 'tag')
 //   folderById(id) → {items:string[]}|null — poster-folders.js state
 export function makePosterPredOf(deps: { posterTagsOf(key: string): string[]; folderById(id: string): { items: string[] } | null | undefined }): (f: HologramQueryLeaf) => (u: HologramUserAgg) => boolean {
   return function posterPredOf(f) {
@@ -499,7 +499,7 @@ export function makePosterPredOf(deps: { posterTagsOf(key: string): string[]; fo
       case 'instance':
         return (u) => u.instance === f.value;
       case 'tag':
-        return (u) => deps.posterTagsOf(u.key).includes(f.value); // 作品/キャラも同じ tag 型
+        return (u) => deps.posterTagsOf(u.key).includes(f.value); // Work/Character use the same tag type too
       case 'folder': {
         const fo = deps.folderById(f.value);
         const set = new Set(fo ? fo.items : []);

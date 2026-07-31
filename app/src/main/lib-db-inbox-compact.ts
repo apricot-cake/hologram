@@ -1,11 +1,11 @@
 'use strict';
 
 // Compacts the durable intake queue's loose, already-applied envelopes into
-// append-only JSON-Lines segments (#5 St6 / #299 design comment, "保持量と
-// コンパクション"). Bounds the LOOSE file count (drainInbox's readdir cost,
+// append-only JSON-Lines segments (#5 St6 / #299 design comment, "retention
+// volume and compaction"). Bounds the LOOSE file count (drainInbox's readdir cost,
 // the mirror's per-file overhead) without ever discarding history: a segment
-// is one more replay source, never a summary that could lose a field. "取込
-// 済みだから削除" never happens — only a verified, receipted segment lets its
+// is one more replay source, never a summary that could lose a field. "delete
+// because it's been ingested" never happens — only a verified, receipted segment lets its
 // loose members go.
 //
 // Electron-free (better-sqlite3 + node builtins only) so it unit-tests in
@@ -31,8 +31,9 @@ export interface CompactReport {
 
 // Crash recovery: an event whose receipt already names a segment, but whose
 // loose file is still on disk — the process died between the segment rename
-// and the loose unlink (design comment: "segment 発行後・loose 削除前に落ち
-// ると両方残るが、event receipt で no-op になる"). Safe to delete now: the
+// and the loose unlink (design comment: "if it crashes after segment issuance
+// and before loose deletion, both remain, but the event receipt makes it a no-op").
+// Safe to delete now: the
 // segment write was already whole-file SHA-256 verified before its receipt
 // was committed, so the loose copy is provably redundant.
 function cleanOrphanedLoose(saveFolder: string, sqlite: Database.Database): number {
@@ -53,7 +54,7 @@ function cleanOrphanedLoose(saveFolder: string, sqlite: Database.Database): numb
 // Folds up to SEGMENT_EVENT_CAP (or SEGMENT_BYTE_CAP, whichever first) of the
 // oldest not-yet-segmented, already-applied loose events into one verified
 // JSON-Lines segment, then removes exactly those loose files. No-ops below
-// COMPACT_THRESHOLD loose events — the design's "未処理/異常分 + 999件" loose
+// COMPACT_THRESHOLD loose events — the design's "unprocessed/abnormal portion + 999 items" loose
 // ceiling after a first compaction.
 function compactInbox(saveFolder: string, sqlite: Database.Database, now: () => string = () => new Date().toISOString()): CompactReport {
   const orphanCleaned = cleanOrphanedLoose(saveFolder, sqlite);
@@ -101,7 +102,7 @@ function compactInbox(saveFolder: string, sqlite: Database.Database, now: () => 
     const tmpPath = path.join(inboxTmpDir(saveFolder), `segment.${process.pid}.${Date.now()}.tmp`);
     fs.writeFileSync(tmpPath, body, { flag: 'wx', flush: true });
     // Whole-file verification before the segment is trusted (design comment:
-    // "全体 SHA-256 検証後、hash を含む最終名へ rename").
+    // "after whole-file SHA-256 verification, rename to the final name that includes the hash").
     const verify = createHash('sha256').update(fs.readFileSync(tmpPath, 'utf8'), 'utf8').digest('hex');
     if (verify !== segmentId) {
       fs.unlinkSync(tmpPath);

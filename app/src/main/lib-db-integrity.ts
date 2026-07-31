@@ -11,8 +11,8 @@
 //     only — there is no file to synthesize.
 //
 // This is the shared detection #100 (library-health dashboard) is meant to
-// call rather than reimplement (#301 design comment, "検出機構は#100の品目1
-// と共用し二重実装しない").
+// call rather than reimplement (#301 design comment, "share the detection
+// mechanism with #100's item 1, don't duplicate the implementation").
 //
 // Why orphan media exists at all despite #299's inbox-replay recovery:
 // ipc-transfer.ts's ZIP-import and drag-import handlers write posts directly
@@ -144,7 +144,7 @@ function readSidecarRecord(saveFolder: string, captureId: string): PostRecordSha
 // the base name every producer writes: a bare-captureId media file, or a bare
 // <captureId>.json sidecar that names its media itself.
 // `knownFiles` lets a caller that already enumerated the folder (runBackup's
-// srcSet) skip the readdir — the "相乗り" (piggyback) the design calls for.
+// srcSet) skip the readdir — the "piggyback" the design calls for.
 function findOrphanMedia(saveFolder: string, sqlite: Database.Database, knownFiles?: Set<string>): OrphanMedia[] {
   const files = knownFiles ? [...knownFiles] : listRootFiles(saveFolder);
   const hasPost = sqlite.prepare('SELECT 1 FROM posts WHERE captureId = ?');
@@ -222,7 +222,7 @@ function capturedAtFromId(captureId: string): string {
 //                   available sidecar would be a LOSS dressed up as a repair.
 //   'synthesized' — no usable sidecar. A minimal record: captureId, the file
 //                   itself in image/video by extension, and the capturedAt
-//                   decoded from the id. It shows up as "取り込み画像" (kind=image,
+//                   decoded from the id. It shows up as "Imported images" (kind=image,
 //                   since url stays null — see i18n.ts's kindImage), and
 //                   source:'orphan-recovery' marks the provenance the same way
 //                   eagleName/description do for the Eagle-migration path — a

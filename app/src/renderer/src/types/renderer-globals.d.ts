@@ -37,7 +37,7 @@ interface HologramQueryGroup {
 }
 type HologramQueryNode = HologramQueryLeaf | HologramQueryGroup;
 
-// Facet domain (改訂④ ファセット・チップ): the UI builds only facet-CNF trees.
+// Facet domain (revision ④, facet chips): the UI builds only facet-CNF trees.
 // opts = the view-owned type schema (multi-value vs standalone types).
 interface HologramFacetOpts {
   multiValueTypes?: string[];
@@ -87,7 +87,7 @@ interface HologramQfRow {
   [k: string]: any;
 }
 
-// ---- services/tags.ts — tag vocabulary / 種別 (kind) domain. A real ES module
+// ---- services/tags.ts — tag vocabulary / kind domain. A real ES module
 // (named exports) now; the read-side derivations + disk round-trip carry their own
 // types, so no ambient Window-shaped interface is declared here anymore. ----
 
@@ -134,7 +134,7 @@ interface HologramTab {
   state: HologramTabSnapshot | null;
   _scrollTop?: number;
   // Per-tab back/forward stack (JSON-serialized HologramNavEntry each) — carried
-  // on the tab object across switches AND persisted to tabs.json (#144 未決5).
+  // on the tab object across switches AND persisted to tabs.json (#144 open point 5).
   _navHist?: string[];
   _navIdx?: number;
   [k: string]: any;
@@ -203,7 +203,7 @@ interface HologramFolderStore {
   hasDeep(id: string | null | undefined, key: string, only?: boolean): boolean;
   /** Direct children, in sibling order (= array order). */
   childrenOf(id: string | null): HologramFolder[];
-  /** "親 / 子 / 孫" — for surfaces that show a folder outside the tree, where a bare name no longer identifies it. */
+  /** "parent / child / grandchild" — for surfaces that show a folder outside the tree, where a bare name no longer identifies it. */
   pathOf(id: string | null | undefined): string;
   /** The folder plus everything under it (empty when id is absent). */
   subtreeIds(id: string | null | undefined): Set<string>;
@@ -223,7 +223,7 @@ interface HologramFolderStore {
   /** Present only on the folders store (isLibrary): re-save a dynamic folder's search. */
   update?(id: string | null | undefined, patch: { tree?: unknown } | null | undefined): boolean;
 }
-/** A ready-to-use folder store backed by a get/set IPC pair. subscribe() (#6 残1) is its own
+/** A ready-to-use folder store backed by a get/set IPC pair. subscribe() (#6 remainder 1) is its own
  * change channel — every mutation (via persist()) and every completed load() notifies —
  * so a React list (the poster-folder sidebar group) can useSyncExternalStore off it directly,
  * with no manager-modal model in between (that model, and the modal itself, are retired). */

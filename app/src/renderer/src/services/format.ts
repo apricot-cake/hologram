@@ -1,6 +1,6 @@
 // Display formatting service — pure count/date presentation formatters, extracted
 // 1:1 from viewer.js as the next "pure logic → service" slice of the viewer
-// decomposition (最終形B). Engagement counts, card/inspector dates and the backup
+// decomposition (final form B). Engagement counts, card/inspector dates and the backup
 // rail's relative time were each formatted by private functions scattered across
 // viewer.js, several rebuilding an Intl formatter per call; this module is the
 // single owner and caches the formatters once. A real ES module (named exports),
@@ -55,7 +55,7 @@ export function fmtTime(iso: string | number | Date): string {
 }
 
 // Backup rail: compact relative time (today/yesterday HH:MM, else M/D or Y/M/D).
-// The "今日"/"昨日" words are i18n-owned by the caller and passed as labels.
+// The "today"/"yesterday" words are i18n-owned by the caller and passed as labels.
 export function fmtBackupTime(iso: string | number | Date, labels: { today: string; yesterday: string }): string {
   if (!iso) return '';
   const d = new Date(iso);

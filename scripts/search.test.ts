@@ -1,5 +1,5 @@
-// search.ts のロジック単体テスト。正規化(B)・サブシーケンス(A)・近似部分一致＝
-// 編集距離(C) を直接検証する。
+// Logic unit tests for search.ts. Directly verifies normalization (B), subsequence (A),
+// and approximate partial match = edit distance (C).
 
 import { describe, expect, test } from 'vitest';
 import * as S from '../app/src/renderer/src/services/search';
@@ -35,7 +35,7 @@ describe('B: 濁点・半濁点の同一視（#96）', () => {
     expect(S.normalize('ヴ')).toBe('う');
   });
 
-  // ラテン系の分音記号は落とさない（NFC へ戻す＝合成形のまま・語長も従来どおり）
+  // Latin diacritics are not stripped (revert to NFC = keep the composed form; string length stays as before)
   test('é は分解したままにしない', () => {
     expect(S.normalize('café')).toBe('café');
   });
@@ -70,7 +70,7 @@ describe('A: サブシーケンス（順序一致・飛び石OK）', () => {
 });
 
 describe('C: 編集距離', () => {
-  // 「こんにちは」の ち→と 置換ミス
+  // A ち→と substitution typo in "こんにちは"
   test('置換ミス "こんにとは" が "こんにちは世界" に一致', () => {
     expect(S.compile('こんにとは')('こんにちは世界')).toBe(true);
   });
@@ -79,7 +79,7 @@ describe('C: 編集距離', () => {
     expect(S.compile('こんにとは')('いぬのおさんぽ')).toBe(false);
   });
 
-  // 短語(<=2)は編集距離0（誤爆防止）
+  // Short terms (<=2 chars) get edit distance 0 (prevents false hits)
   test('短語は厳密（"ねこ" は "ねね" に不一致）', () => {
     expect(S.compile('ねこ')('ねね')).toBe(false);
   });

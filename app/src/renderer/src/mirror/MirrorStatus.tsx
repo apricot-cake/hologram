@@ -59,7 +59,7 @@ function pruneSkipTip(r: any): string {
 
 // Derive the rail model from the raw backup config + syncing flag (verbatim from the old
 // viewer updateMirrorStatus). No backup folder → null (progressive disclosure: the rail
-// stays empty). The 今日/昨日 relative-time words are i18n-owned here and passed to
+// stays empty). The today/yesterday relative-time words are i18n-owned here and passed to
 // fmtBackupTime as labels.
 function deriveModel(cfg: any, syncing: boolean): MirrorModel {
   if (!cfg || !cfg.dir) return null;
@@ -178,7 +178,7 @@ export function MirrorStatus() {
     <span data-slot="mirror-status" title={m.title || ''} className={`ml-2 inline-flex max-w-[150px] items-center gap-[5px] overflow-hidden px-2 text-[11px] whitespace-nowrap text-[var(--text-muted)] group-data-[collapsible=icon]:hidden ${TONE[m.kind]}`}>
       {m.kind === 'done' ? <IconDone /> : m.kind === 'syncing' ? <IconSync /> : <IconWarn />}
       {m.kind === 'done' ? (
-        // 完了 alone carries a second line (when it ran), so it stacks; the other two are
+        // "Done" alone carries a second line (when it ran), so it stacks; the other two are
         // one line and sit straight in the row.
         <span className="flex min-w-0 flex-col leading-[1.2]">
           <span className="truncate">{m.text}</span>

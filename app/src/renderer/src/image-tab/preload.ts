@@ -51,7 +51,7 @@ export interface PreloadableItem {
 // is not an image at all.
 export function stillSourceOf(item: PreloadableItem | undefined): string | undefined {
   if (!item) return undefined;
-  // An うごイラ shows its poster until the archive opens, and the archive comes
+  // An ugoira shows its poster until the archive opens, and the archive comes
   // over IPC as a data URL (UgoiraPlayer) — not something an <img> can warm.
   if (item.ugoira) return item.poster || undefined;
   // A <video> has its own contract (preload="metadata"); pulling whole clips in

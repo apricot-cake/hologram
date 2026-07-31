@@ -5,7 +5,7 @@ import { kindDotClass } from '../_shared/kind-dot.ts';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuLabel, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
-// 種別 (tag-kind) menu — ONE always-mounted instance that renders whatever
+// kind (tag-kind) menu — ONE always-mounted instance that renders whatever
 // kind-menu.ts currently holds (or nothing). The orchestrator side builds the
 // row model (current kind, already-localized labels) and owns the pick/rename
 // actions; this component draws a shadcn DropdownMenu anchored at the click point.

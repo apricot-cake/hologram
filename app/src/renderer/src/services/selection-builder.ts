@@ -4,7 +4,7 @@
 // (services/grid.ts's cardActions, wired in orchestrator.ts). selection.ts (the hologramStore-backed selectedSet/anchor
 // bridge) stays untouched — this module is one of its consumers (the
 // FloatingBar component's own model derivation is the other, unaffected here).
-// タグを追加 (openBulkTagDialog) is bulk-tag-builder.ts territory
+// "Add tags" (openBulkTagDialog) is bulk-tag-builder.ts territory
 // (re-targeted at a Dialog in P2⑦). It's constructed right after this module
 // in viewer.ts (needs this module's own selectedRecords), so this module only
 // calls it via a deferred dep, same shape as jumpToPoster/showToast forward-
@@ -40,7 +40,7 @@ export interface SelectionBarDeps {
   // choice and the IPC); this module only owns the Ctrl+C gesture and its guards.
   copyGroupImage(g: HologramPostGroup): void;
   // Open the quick-view lightbox (peek) for a group — the Space-key entry (#143
-  // 未決事項3). Same wiring as the inspector thumbnail's onThumbClick;
+  // pending decision 3). Same wiring as the inspector thumbnail's onThumbClick;
   // orchestrator supplies the gallery items.
   openQuickView(g: HologramPostGroup): void;
   // Swap the inspector to a group — inspector-builder.ts's showDetail, so arrow
@@ -57,7 +57,7 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
   // The card's own click, given the GROUP it drew (the cell hands it over — nothing
   // reads an index back off the DOM any more). Returns whether the inspector should
   // follow: a plain click is "select this one and show it", Ctrl/Shift only build the
-  // selection and leave the panel alone (#143 確定未決2).
+  // selection and leave the panel alone (#143 the now-resolved pending decision 2).
   function clickSelect(g: HologramPostGroup, e: { ctrlKey?: boolean; metaKey?: boolean; shiftKey?: boolean }) {
     const idx = deps.getViewGroups().indexOf(g);
     const key = postIdKey(g.rep);
@@ -113,7 +113,7 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
   // hologramStore's 'selectedSet' (which selection.ts already wrote), so it re-renders
   // itself the moment the selection changes. The `.selecting` class this used to toggle
   // on the grid container existed to hide the cards' hover controls, and those are gone
-  // (#618 確定A).
+  // (#618 decision A confirmed).
 
   // Every record of every selected group (bulk actions operate on records).
   function selectedRecords() {
@@ -198,8 +198,8 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
     deps.copyGroupImage(groups[0]);
   }
 
-  // Space peeks the selected card in the quick-view lightbox (#143 未決事項3 —
-  // Quick Look / Eagle と同型). Single selection only (peek is one card); same
+  // Space peeks the selected card in the quick-view lightbox (#143 pending decision 3 —
+  // the same style as Quick Look / Eagle). Single selection only (peek is one card); same
   // guard shape as the copy key above, plus: a lightbox already open owns Space
   // (its own paging), and a text field / the image view keep the key. Registration
   // lives in the GlobalShortcuts component (app/App.tsx).
@@ -219,8 +219,8 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
   }
 
   // Arrow keys move the selection through the grid (redesign P2⑥, the last piece of
-  // it). This is what makes 連続タグ付け a composition instead of a dedicated mode:
-  // filter to 「タグなし」, then arrow to the next card and type into the inspector's
+  // it). This is what makes continuous tagging a composition instead of a dedicated mode:
+  // filter to "No tags", then arrow to the next card and type into the inspector's
   // tag field — the same loop Lightroom and Eagle give you without a tagging screen.
   //
   // Left/Right step one card; Up/Down step one ROW, which is why the column count has
@@ -312,7 +312,7 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
         for (const p of toDelete) await deletePost(p.image || p.video);
         selection.clear();
         await deps.loadPosts(true);
-        trashRefresh(); // the nav's ゴミ箱 badge counts what just landed there (#268)
+        trashRefresh(); // the nav's Trash badge counts what just landed there (#268)
         deps.showToast(deps.t('deletedN', [count]));
       },
     });
@@ -321,17 +321,17 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
   // The bulk-action buttons are the bottom floating bar's now (selection/
   // FloatingBar.tsx) — it calls these named actions straight through orchestrator's
   // exports (onClick → function), so there's no #selectionBar container, no data-act
-  // DOM contract, and no delegated dispatcher anymore (redesign §8-1 ゼロ許容). The
+  // DOM contract, and no delegated dispatcher anymore (redesign §8-1 zero tolerance). The
   // The one menu-anchored action left (folder) takes the clicked BUTTON so its menu
   // opens against it (Base UI measures it and collision-flips above the bottom bar).
 
-  // タグを追加: stage tags for the whole selection in a Dialog (P2⑦). Centered and
+  // "Add tags": stage tags for the whole selection in a Dialog (P2⑦). Centered and
   // modal, so unlike the folder menu below it takes no anchor rect.
   function tagSelection() {
     deps.openBulkTagDialog();
   }
 
-  // フォルダに追加: open the folder picker for the whole selection (you choose the
+  // "Add to folder": open the folder picker for the whole selection (you choose the
   // destination, same as a card's 📁 — no default folder).
   function folderSelection(anchorEl: HTMLElement) {
     const recs = selectedRecords();
@@ -339,7 +339,7 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
     if (!ids.length) return;
     // Synthetic stand-in group (no real key/files — showFoldMenu's callees only read
     // .rep.captureId and .records for this bulk "add selection to folder" path).
-    // The picker hangs off the フォルダに追加 button itself, above it: the bar is
+    // The picker hangs off the "Add to folder" button itself, above it: the bar is
     // pinned to the bottom, so `side: 'top'` is where it fits (and Base UI flips it
     // back down if it ever doesn't).
     deps.showFoldMenu({ rep: { captureId: ids[0] }, records: recs } as unknown as HologramPostGroup, { anchorEl, side: 'top', align: 'center' });

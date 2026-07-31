@@ -51,7 +51,7 @@ export interface TabsBuilderDeps {
   setBrowseModeLite(mode: 'posts' | 'posters'): void;
   contentScrollTop(): number;
   scrollContentTo(y: number): void;
-  // Poster-side view state for 'posters' entries (#144 未決3 — mode is per-tab now,
+  // Poster-side view state for 'posters' entries (#144 pending decision 3 — mode is per-tab now,
   // so the poster filter tree / sort / live search ride the history entry).
   getPosterTree(): HologramQueryGroup;
   setPosterTree(t: HologramQueryGroup | null | undefined): void;
@@ -59,12 +59,12 @@ export interface TabsBuilderDeps {
   setPosterSort(v: string): void;
   renderPosters(): void;
   // Image view (fit-to-screen detail) — an 'image' history entry, not a tab type
-  // anymore (#144 未決1: 画像タブの統一).
+  // anymore (#144 pending decision 1: unifying the image tab).
   showImageView(recs: string[], idx: number): void;
   hideImageView(): void;
   // Coalescing hint for record(): a stable non-null key while one editing burst
   // is in progress (live search typing / an open facet editor session) makes
-  // follow-up records replace instead of push — "1 セッション 1 エントリ" (未決2).
+  // follow-up records replace instead of push — "1 session, 1 entry" (pending decision 2).
   navCoalesceKey(): unknown;
 }
 
@@ -116,7 +116,7 @@ export function makeTabsController(deps: TabsBuilderDeps) {
     return entryOf('posts', snapshotState());
   }
   // push/replace router around nav.record: a one-shot replace flag (sort changes —
-  // 確定未決2's replace list) beats the coalesce key (live typing / facet editor).
+  // the now-resolved pending decision 2's replace list) beats the coalesce key (live typing / facet editor).
   let _navReplaceNext = false;
   function setNavReplaceNext() {
     _navReplaceNext = true;
@@ -145,7 +145,7 @@ export function makeTabsController(deps: TabsBuilderDeps) {
   }
   // The poster-grid mirror (deps.onPosterRendered of poster-grid-builder): every
   // fresh renderPosters() records a 'posters' entry — poster filters/sort/search
-  // are history now that mode is per-tab (#144 未決3).
+  // are history now that mode is per-tab (#144 pending decision 3).
   function syncPosterTitleAndPersist() {
     if (storeGet('activeImageTab')) return;
     if (deps.getBrowseMode() !== 'posters') return;
@@ -224,7 +224,7 @@ export function makeTabsController(deps: TabsBuilderDeps) {
     apply: applyEntry,
     onChange: updateNavButtons,
   });
-  // The nav 戻る/進む disabled state used to be part of a pushed activebar model; the
+  // The nav Back/Forward disabled state used to be part of a pushed activebar model; the
   // activebar component now self-derives everything else from hologramStore, but
   // nav's canBack/canForward live in a closure (the history stack), not the store — so this
   // is the one remaining mirror-on-change (same shape as multiOnly/qfCat elsewhere).
@@ -287,13 +287,13 @@ export function makeTabsController(deps: TabsBuilderDeps) {
     engagement: '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>',
     kind: '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>',
     folder: '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>',
-    // ゴミ箱 (#268) — lucide's trash-2, the same glyph the sidebar entry wears.
+    // Trash (#268) — lucide's trash-2, the same glyph the sidebar entry wears.
     trash:
       '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>',
   };
   function persistTabsNow() {
     clearTimeout(_tabPersistTimer);
-    saveActiveTabState(); // snapshot + carry the live history (it persists now — #144 未決5)
+    saveActiveTabState(); // snapshot + carry the live history (it persists now — #144 pending decision 5)
     persistTabs(getTabs(), getActiveTabId());
   }
   function persistTabsDebounced() {
@@ -487,7 +487,7 @@ export function makeTabsController(deps: TabsBuilderDeps) {
   // strip calls it straight from its own onContextMenu — there is no delegated
   // listener on the bar any more (#621).
   //
-  // No 名前を変更 row: manual tab renaming was dropped in the redesign (2026-07-13),
+  // No "Rename" row: manual tab renaming was dropped in the redesign (2026-07-13),
   // the way Chrome and VS Code have no rename either — a tab's name is derived from
   // what it shows (tabTitleOf).
   function showTabMenu(id: string, e: { clientX: number; clientY: number }) {
@@ -526,9 +526,10 @@ export function makeTabsController(deps: TabsBuilderDeps) {
   }
   function handleGlobalTabShortcut(e: KeyboardEvent) {
     if (!e.ctrlKey || e.altKey) return;
-    // パレット表示中は素通りさせない（#28 の受け入れ条件）。Ctrl+T/W/Tab は他の全域
-    // ショートカットと違って対象が入力欄かどうかを見ていない＝パレットの入力欄に
-    // 文字を打っている最中でも、そのままタブが増えたり閉じたりしてしまう。
+    // Don't let these pass through while the palette is open (#28's acceptance criteria).
+    // Unlike other global shortcuts, Ctrl+T/W/Tab don't check whether the target is an
+    // input field — meaning tabs would keep getting added or closed even while typing
+    // in the palette's input field.
     if (paletteIsOpen()) return;
     if (e.key === 't') {
       e.preventDefault();

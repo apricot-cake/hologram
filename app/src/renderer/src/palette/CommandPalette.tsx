@@ -1,15 +1,17 @@
-// コマンドパレット（#28）の島＝器だけを持つ。候補・並び・実行はすべて
-// services/command-registry.ts 側にあり、ここは「窓・入力欄・候補一覧」を描くだけ。
+// The command palette's (#28) island — holds only the shell. Candidates, ordering, and
+// execution all live in services/command-registry.ts; this file only draws the "window,
+// input field, candidate list."
 //
-// 部品は既にあるものだけで組んである（追加依存ゼロ）: shadcn Dialog（＝Base UI Dialog。
-// 背景クリック / Esc の dismiss・フォーカストラップ・閉じたときのフォーカス復帰・
-// スクロールロック、それに .wc-dim 経由でウィンドウ操作ボタンの減光まで、
-// data-slot='dialog-overlay' を見ている既存の仕組みがそのまま効く）＋ Base UI
-// Autocomplete の `inline` モード（自前のポップアップを持たずに List をその場に描く形＝
-// ダイアログの中に入力欄と一覧を並べる、パレットそのものの形）。
+// Assembled entirely from parts that already exist (zero added dependencies): shadcn
+// Dialog (= Base UI Dialog. Background-click / Esc dismiss, focus trap, focus restore on
+// close, scroll lock, and even the dimming of window-control buttons via .wc-dim — the
+// existing mechanism that watches data-slot='dialog-overlay' just works as-is) + Base UI
+// Autocomplete's `inline` mode (draws the List in place without its own popup = the exact
+// shape of the palette itself: an input field and a list side by side inside a dialog).
 //
-// cmdk は不採用（Radix 依存で a11y スタックが二重化し、内蔵スコアラでマッチの意味論も
-// 二重規格になる）。自前オーバーレイも不採用。
+// cmdk was not adopted (its Radix dependency would double up the a11y stack, and its
+// built-in scorer would also create a second matching semantics alongside ours). A
+// custom overlay was not adopted either.
 import { Autocomplete } from '@base-ui/react/autocomplete';
 import { AppWindow, Folder, Tag, Terminal, User } from 'lucide-react';
 import { useMemo, useState, useSyncExternalStore } from 'react';
@@ -36,37 +38,43 @@ const SECTION_LABEL: Record<CommandSection, string> = {
 
 function PaletteBody() {
   const [query, setQuery] = useState('');
-  // 候補は値から同期的に導出する（SearchBox と同じ理由＝setState を挟むと一覧と入力が
-  // 一瞬ずれる）。provider はその場で母集合を読むので、パレットを開いている間に
-  // ライブラリが変わっても次のキーストロークで追いつく。
+  // Candidates are derived synchronously from the value (same reason as SearchBox —
+  // interposing a setState makes the list and the input drift out of sync for a moment).
+  // The provider reads the population fresh each time, so if the library changes while
+  // the palette is open, the very next keystroke catches up.
   //
-  // 件数の上限は掛けない＝アプリ内の候補一覧の作法に揃える（「+ フィルタ」バーの一覧は
-  // 上限なしでスクロール、サイドバーのファセット行は100件）。当たった分は全部出して、
-  // 足りなければ打ち足して絞る／スクロールする。検索ボックスの面だけは従来どおり
-  // タグ6件・投稿者4件で、そちらは入力欄直下のドロップダウンで縦に伸ばせないため。
+  // No cap on the count — matches the app-wide convention for candidate lists (the
+  // "+ filter" bar's list scrolls with no cap, the sidebar facet rows cap at 100). Show
+  // everything that matched, and let the user type more to narrow it down or scroll.
+  // Only the search box face keeps the old cap of 6 tags / 4 posters, because there it's
+  // a dropdown directly under the input field and can't stretch vertically.
   const groups = useMemo<CommandGroup[]>(() => queryEntries(query), [query]);
 
   return (
-    // gap-0 / p-0 / 上寄せ: パレットは「入力欄＋一覧」の2段だけで、ダイアログの余白と
-    // 縦中央寄せ（＝候補が増えるたびに窓が上下に伸びる）はこの形に合わない。
+    // gap-0 / p-0 / top-aligned: the palette is just two tiers — "input field + list" —
+    // and the dialog's default padding and vertical centering (which would make the
+    // window grow up and down every time candidates increase) don't fit this shape.
     <DialogContent className="top-[15%] max-w-[calc(100%-2rem)] translate-y-0 gap-0 overflow-hidden p-0 sm:max-w-lg" showCloseButton={false}>
-      {/* Base UI Dialog は Popup の中に Title を要求する（aria-labelledby の解決先）。
-          パレットは見出しを描く面ではないので sr-only で置く。 */}
+      {/* Base UI Dialog requires a Title inside the Popup (the resolution target for
+          aria-labelledby). The palette isn't a surface that draws a heading, so it's
+          placed sr-only. */}
       <DialogHeader className="sr-only">
         <DialogTitle>{t('paletteTitle')}</DialogTitle>
         <DialogDescription>{t('paletteDesc')}</DialogDescription>
       </DialogHeader>
       <Autocomplete.Root
-        // inline + open: 自前ポップアップを使わず、この場に List を描く（Base UI の
-        // 定めどおり open を無条件に渡す）。mode="none": 絞り込みは queryEntries が
-        // 済ませてある＝Base UI に再フィルタさせない（＝マッチ意味論が二重にならない）。
+        // inline + open: draws the List in place instead of using its own popup (per
+        // Base UI's rules, pass open unconditionally). mode="none": narrowing is already
+        // done by queryEntries — don't let Base UI refilter (i.e. don't double up the
+        // matching semantics).
         inline
         open
         mode="none"
         items={groups}
         value={query}
         onValueChange={setQuery}
-        // 先頭を常にハイライト＝開いて打って Enter で走る（VS Code / Linear と同じ）。
+        // Always highlight the first item — open, type, hit Enter, it runs (same as
+        // VS Code / Linear).
         autoHighlight="always"
         itemToStringValue={(entry: CommandEntry) => entry.title}
       >
@@ -75,10 +83,10 @@ function PaletteBody() {
             autoFocus
             aria-label={t('paletteTitle')}
             placeholder={t('palettePlaceholder')}
-            // IME 変換中の Enter は Base UI の ComboboxInput 側が弾く（変換中の
-            // keydown は Chromium が which=229 で寄せてくるので、Enter の処理へ
-            // 進む前に return する）。実機で確認済み。
-            // 枠は入れ物側の border-b が担うので、入力そのものは border-0。
+            // Enter while an IME conversion is in progress is blocked by Base UI's own
+            // ComboboxInput (Chromium routes keydown during conversion to which=229, so
+            // it returns before reaching the Enter handling). Confirmed on real hardware.
+            // The border is owned by the container's border-b, so the input itself is border-0.
             className="h-8 w-full min-w-0 border-0 bg-transparent px-2 text-base outline-none placeholder:text-muted-foreground md:text-sm"
           />
         </div>
@@ -90,7 +98,7 @@ function PaletteBody() {
                 {(entry: CommandEntry) => {
                   const Icon = SECTION_ICON[entry.section];
                   return (
-                    // close してから perform する（順序の理由は runEntry のコメント）。
+                    // close, then perform (see the comment on runEntry for why in this order).
                     <Autocomplete.Item key={entry.id} value={entry} onClick={() => runEntry(entry)} className="flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-sm select-none data-highlighted:bg-muted">
                       <Icon className="size-4 shrink-0 text-muted-foreground" />
                       <span className="min-w-0 flex-1 truncate">{entry.title}</span>
@@ -102,10 +110,11 @@ function PaletteBody() {
             </Autocomplete.Group>
           )}
         </Autocomplete.List>
-        {/* Empty は「一覧が空のときだけ children を描く」部品で、それ自体は読み上げの
-            ために DOM へ残り続ける＝中身が無い間は箱ごと畳む（余白だけが残るのを防ぐ）。
-            操作系は空クエリでも全件当たるので、ここが出るのは打った文字が本当に
-            どこにも当たらないときだけ。 */}
+        {/* Empty is a part that "draws its children only when the list is empty" — it
+            still stays in the DOM for screen readers, so when there's no content the box
+            itself is collapsed (to stop bare padding from being left behind). The action
+            entries all match even on an empty query, so this only ever shows up when what
+            was typed truly matches nothing at all. */}
         <Autocomplete.Empty className="px-3 py-6 text-center text-sm text-muted-foreground empty:hidden">{t('paletteEmpty')}</Autocomplete.Empty>
       </Autocomplete.Root>
     </DialogContent>
@@ -114,18 +123,20 @@ function PaletteBody() {
 
 export function PaletteHost() {
   const open = useSyncExternalStore(subscribe, isOpen);
-  // openId をキーに: 閉じるアニメーション中に開き直しても、打ちかけのクエリを
-  // 持ち越さずに開き直す（ConfirmHost / BulkTagDialogHost と同じ作法）。
+  // Keyed on openId: even if it's reopened during the closing animation, it reopens
+  // without carrying over the half-typed query (same convention as ConfirmHost /
+  // BulkTagDialogHost).
   const seq = useSyncExternalStore(subscribe, openId);
   return (
     <Dialog
       open={open}
       onOpenChange={(next) => {
-        if (!next) close(); // Esc / 背景クリック
+        if (!next) close(); // Esc / background click
       }}
     >
-      {/* 常にマウントしておく＝閉じるアニメーションは Base UI Dialog（Portal/Popup）が
-          open を見て回すので、こちらで出し入れすると exit が消える。 */}
+      {/* Always keep it mounted — the closing animation is driven by Base UI Dialog
+          (Portal/Popup) watching `open`, so mounting/unmounting it here would make the
+          exit animation disappear. */}
       <PaletteBody key={seq} />
     </Dialog>
   );

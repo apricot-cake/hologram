@@ -1,22 +1,22 @@
-// V2 — ブリッジによるオリジナルメディアの取得: 検証・ディスクへの書き込み・
-// best-effort の取りこぼし・sidecar の `media[]`。global.fetch を差し替えてプロセス内で
-// 走る（ネットワークも TLS も無し）。
+// V2 — original media fetching via the bridge: validation, writing to disk,
+// best-effort dropping, and the sidecar's `media[]`. Runs in-process by swapping out
+// global.fetch (no network, no TLS).
 
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 
-// 有効な 1x1 PNG（ブリッジが見るのは content-type だけ）
+// A valid 1x1 PNG (the bridge only checks content-type)
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64');
 const jpegB64 = '/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACP/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AfwH/2Q==';
-// ZIP の先頭（PK）＝うごイラのアーカイブと判別できる最小形
+// ZIP header (PK) = the minimal shape distinguishable as a ugoira archive
 const ZIP_BYTES = Buffer.concat([Buffer.from([0x50, 0x4b, 0x03, 0x04]), Buffer.alloc(20)]);
-// ISO base media の先頭（サイズ4バイト＋'ftyp'＋ブランド）＝mp4 と判別できる最小形
+// ISO base media header (4-byte size + 'ftyp' + brand) = the minimal shape distinguishable as mp4
 const MP4_HEAD = Buffer.concat([Buffer.from([0, 0, 0, 0x20]), Buffer.from('ftypisom'), Buffer.alloc(8)]);
 
 const realFetch = global.fetch;
-// 直近のリクエストを覚えておき、Referer（pixiv）を転送したかを見られるようにする
+// Remember the most recent request so we can check whether the Referer (pixiv) was forwarded
 let lastFetch: { url: string; headers: any } | null = null;
 
 let saveFolder: string;
@@ -28,7 +28,7 @@ beforeAll(async () => {
   const configDir = process.env.HOLOGRAM_CONFIG_DIR as string;
   saveFolder = path.join(configDir, 'saves');
   fs.mkdirSync(configDir, { recursive: true });
-  // handleSave は自分で mkdir するが、downloadMedia を直接呼ぶ経路にも要る
+  // handleSave does its own mkdir, but this is also needed for the path that calls downloadMedia directly
   fs.mkdirSync(saveFolder, { recursive: true });
   fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolder }));
 
@@ -41,8 +41,8 @@ beforeAll(async () => {
     if (u.endsWith('/big.png')) return new Response(PNG, { status: 200, headers: { 'content-type': 'image/png', 'content-length': String(99 * 1024 * 1024) } });
     if (u.endsWith('/clip.mp4')) return new Response(Buffer.from('fake-mp4-bytes'), { status: 200, headers: { 'content-type': 'video/mp4' } });
     if (u.endsWith('/huge.mp4')) return new Response(Buffer.from('fake-mp4-bytes'), { status: 200, headers: { 'content-type': 'video/mp4', 'content-length': String(300 * 1024 * 1024) } });
-    if (u.endsWith('/poster.jpg')) return new Response(PNG, { status: 200, headers: { 'content-type': 'image/jpeg' } }); // 中身は問わない
-    // 型を名乗らない CDN（Bluesky の動画サムネイルが実際にこれ・#119 St2）
+    if (u.endsWith('/poster.jpg')) return new Response(PNG, { status: 200, headers: { 'content-type': 'image/jpeg' } }); // contents don't matter
+    // A CDN that doesn't declare its type (Bluesky's video thumbnails actually do this — #119 St2)
     if (u.endsWith('/opaque-thumb')) return new Response(PNG, { status: 200, headers: { 'content-type': 'application/octet-stream' } });
     if (u.endsWith('/opaque-mp4')) return new Response(MP4_HEAD, { status: 200, headers: { 'content-type': 'application/octet-stream' } });
     if (u.endsWith('/opaque-junk')) return new Response(Buffer.from('not a picture at all'), { status: 200, headers: { 'content-type': 'application/octet-stream' } });
@@ -69,11 +69,11 @@ describe('downloadMedia: 有効な画像だけ残る', () => {
     saved = await downloadMedia(
       [
         { url: 'https://h/img.png', alt: 'pic', width: 1, height: 1 },
-        { url: 'https://h/page.html', alt: null }, // content-type 違い → 落とす
+        { url: 'https://h/page.html', alt: null }, // wrong content-type -> dropped
         { url: 'https://h/photo.jpg', alt: null, width: 2, height: 3 },
-        { url: 'https://h/big.png', alt: null }, // 申告サイズ超過 → 落とす
-        { url: 'https://h/missing', alt: null }, // 404 → 落とす
-        { url: 'http://h/img.png', alt: null }, // https でない → fetch すらしない
+        { url: 'https://h/big.png', alt: null }, // declared size too large -> dropped
+        { url: 'https://h/missing', alt: null }, // 404 -> dropped
+        { url: 'http://h/img.png', alt: null }, // not https -> doesn't even fetch
       ],
       saveFolder,
       base,
@@ -99,8 +99,8 @@ describe('downloadMedia: 有効な画像だけ残る', () => {
   });
 });
 
-// X/Misskey/Mastodon では動画は1投稿に高々1件なので、ケースごとに base を分ける
-// （共有すると添字の無い <base>-poster.<ext> が衝突する）
+// On X/Misskey/Mastodon a post has at most one video, so each case uses a separate base
+// (sharing one would collide on the unindexed <base>-poster.<ext>)
 describe('動画・GIF エントリ（#119 St1）', () => {
   test('動画: 本体とポスターの両方が書かれ、type/posterFile が記録される', async () => {
     const base = '1717500000000-vid1';
@@ -138,8 +138,8 @@ describe('動画・GIF エントリ（#119 St1）', () => {
   });
 });
 
-// pixiv のうごイラは zip のまま保存する（変換しない＝エンコーダを持ち込まない）。
-// 静止画・動画とは別の許可リストなので、zip がそれらのエントリに紛れ込むことはない。
+// pixiv's ugoira is saved as-is in zip form (not converted — no encoder is brought in).
+// It's on a separate allow list from stills/video, so a zip can never sneak into those entries.
 describe('うごイラのアーカイブ（#119 St3）', () => {
   const FRAMES = [
     { file: '000000.jpg', delay: 60 },
@@ -179,8 +179,8 @@ describe('うごイラのアーカイブ（#119 St3）', () => {
   });
 });
 
-// content-type が application/octet-stream＝「何か分からない」であって「対象外」ではない。
-// この時だけ実バイトの magic を見て決める（許可リスト自体は広がらない）。
+// content-type of application/octet-stream means "unknown", not "out of scope".
+// Only in this case do we look at the actual byte magic to decide (the allow list itself doesn't grow).
 describe('型を名乗らない応答のマジックバイト判別（#119 St2）', () => {
   test('octet-stream でも中身が PNG なら .png として残る', async () => {
     const base = '1717500000000-sniff1';
@@ -265,7 +265,7 @@ describe('handleSave（end-to-end）: inbox エンベロープは実際に落ち
         avatar: 'https://h/img.png',
         media: [
           { url: 'https://h/img.png', alt: 'pic', width: 1, height: 1 },
-          { url: 'https://h/missing', alt: null }, // 落ちるが保存自体は失敗させない
+          { url: 'https://h/missing', alt: null }, // dropped, but doesn't fail the save itself
         ],
       },
     });

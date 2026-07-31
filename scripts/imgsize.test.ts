@@ -1,6 +1,6 @@
-// app/src/main/lib-imgsize.ts のユニットテスト＝インデックスがメイソンリーのカードを
-// 先に採寸するために使う「ヘッダだけ読む画像寸法パーサ」。対応形式ごとに最小の
-// 合成ヘッダを作り、壊れた入力の拒否まで見る。
+// Unit test for app/src/main/lib-imgsize.ts, the "header-only image size parser"
+// the index uses to measure masonry cards up front. Builds a minimal synthetic
+// header for each supported format and also checks rejection of broken input.
 
 import { describe, expect, test } from 'vitest';
 import { imageSize } from '../app/src/main/lib-imgsize';

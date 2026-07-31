@@ -1,13 +1,13 @@
-// ビルド済みの capture エントリポイントがどちらのモードへ入るかの、オフライン純ユニット
-// テスト（#362）。自動取り込みは専用のジェスチャを持つ（Alt+Shift+S → background.ts が
-// window.__hologramAutoCapture を立ててから注入する）。素の Alt+S は、ブックマーク一覧を
-// 含めた「どのページでも」保存したい投稿をクリックする意味のままでなければならない。
-// 以前のビルドは URL だけからモードを推測しており、ブックマークページから通常の
-// 単発保存を丸ごと奪っていた（実利用からの報告・2026-07-26）。
+// Offline pure unit test for which mode the built capture entry point enters (#362). Auto
+// intake has a dedicated gesture (Alt+Shift+S -> background.ts sets window.__hologramAutoCapture
+// before injecting). Plain Alt+S must keep meaning "click the post you want to save, on
+// whatever page you're on" — including the bookmarks list. An earlier build inferred the mode
+// from the URL alone, which entirely took away normal single-post save on the bookmarks page
+// (reported from real usage, 2026-07-26).
 //
-// 自動モード自体の振る舞いは bulk-capture.test.ts が見る。ここは分岐だけ。
+// Auto mode's own behavior is covered by bulk-capture.test.ts. This only checks the branching.
 //
-// 前提: extension のビルド成果物（extension/.output/chrome-mv3/capture.js）が要る。
+// Prerequisite: the extension's build output (extension/.output/chrome-mv3/capture.js) is needed.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -24,7 +24,7 @@ const HTML = `<!doctype html><html><body>
   </div>
 </body></html>`;
 
-// バンドルがページへ出した UI を返す＝単発のピッカーのバナーか、自動取り込みのバナーか。
+// Returns the UI the bundle exposed on the page = the single-shot picker banner, or the auto-intake banner.
 async function runOn(url: string, auto: boolean): Promise<'single' | 'auto' | 'none'> {
   const dom = new JSDOM(HTML, { url, runScripts: 'outside-only' });
   const { window } = dom;
@@ -48,8 +48,8 @@ async function runOn(url: string, auto: boolean): Promise<'single' | 'auto' | 'n
     runtime: {
       id: 'test-extension-id',
       lastError: undefined,
-      // checkSaved にだけ答えて自動モードを進ませ、他は握り潰す
-      // （このスイートは取り込みを最後まで走らせない）
+      // Only answers checkSaved to let auto mode proceed, and swallows everything else
+      // (this suite doesn't run intake all the way through)
       sendMessage: (msg, cb) => cb?.({ ok: true, results: Object.fromEntries((msg.urls || []).map((u: string) => [u, null])) }),
       onMessage: { addListener: () => {}, removeListener: () => {} },
     },
@@ -57,11 +57,11 @@ async function runOn(url: string, auto: boolean): Promise<'single' | 'auto' | 'n
 
   if (auto) (window as any).__hologramAutoCapture = true;
   window.eval(BUNDLE);
-  await new Promise((r) => setTimeout(r, 300)); // createI18n() と最初の収集が終わるまで
+  await new Promise((r) => setTimeout(r, 300)); // Until createI18n() and the first collection finish
 
   const uiRoot = (window.document.querySelector('hologram-extension-ui') as any)?.shadowRoot;
   if (uiRoot?.querySelector('[data-hologram-bulk-banner]')) return 'auto';
-  // 単発の経路はこのグローバルで自分を印す（自前のバナーは data 属性を持たない）
+  // The single-shot path marks itself via this global (its own banner has no data attribute)
   if ((window as any).__snsPostSaveActive === true) return 'single';
   return 'none';
 }

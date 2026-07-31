@@ -1,17 +1,18 @@
-// 拡張⇄ネイティブホストのメッセージ契約（#400 — native-host/protocol.mts）。
+// The extension <-> native host message contract (#400 — native-host/protocol.mts).
 //
-// 型検査だけでは片側しか守れない：拡張とホストは別の TS プロジェクトで、
-// `npm run typecheck` は両方を別々に通すので、「同じ宣言を import している」
-// ことは型検査では見えても「拡張が実際に線に載せた形」は見えない。
-// ここが見るのはそこ＝**拡張のコードが本当に送ったメッセージ**を、
-// **ホストが本当に使う parse** に通す。フィールドを片側だけ改名すれば、
-// 型検査が落ちなくてもこのスイートが落ちる。
+// Type checking alone only protects one side: the extension and the host are separate
+// TS projects, and `npm run typecheck` checks each of them separately, so "they import
+// the same declaration" is visible to type checking, but "the shape the extension
+// actually put on the wire" is not.
+// This is what this file checks — it runs **the message the extension's code actually
+// sent** through **the parse the host actually uses**. If a field gets renamed on only
+// one side, this suite fails even if type checking doesn't.
 //
-// 送信側は startBackground() をそのまま動かす（bridgeSend / queryBridge は
-// 閉包の中で、外から呼べないため）。chrome スタブの方針は
-// scripts/background-wiring.test.ts と同じ＝ライブラリを使わず Port を自前で演じる。
-// ネットワークに触れないよう postUrl はどのプラットフォームにも一致しない文字列を使う
-// （fetchPostMetadata が fetch を呼ばず空レコードで即解決する）。
+// The sending side just runs startBackground() as-is (bridgeSend / queryBridge live
+// inside a closure and can't be called from outside). The chrome-stub approach follows
+// scripts/background-wiring.test.ts — no library, playing the Port ourselves by hand.
+// To avoid touching the network, postUrl uses a string that doesn't match any platform
+// (fetchPostMetadata doesn't call fetch and resolves immediately with an empty record).
 
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { generateCaptureId, startBackground } from '../extension/utils/background';
@@ -19,17 +20,19 @@ import { CAPTURE_ID_PATTERN, PROTOCOL_VERSION, hostExtBuild, hostProtocolVersion
 
 const UNPARSEABLE_POST_URL = 'https://misskey.example/not-a-known-post-shape';
 const SENDER = { tab: { id: 7, windowId: 1, url: 'https://misskey.example/notes/1' } };
-// 1x1 の JPEG は要らない＝ホストへ渡る前の形だけを見るので、crop の返り値は
-// data URL の体裁さえ整っていればよい。
+// No need for an actual 1x1 JPEG — this only checks the shape before it's passed to
+// the host, so crop's return value just needs to look like a data URL.
 const CROPPED = 'data:image/jpeg;base64,/9j/4AAQ';
 
-// 送信された全メッセージを1本のリストに集める chrome スタブ。ポートを何本開いたか
-// （保存用・ログ用・バッジ用）はここでの関心ではない＝線に載った物だけを見る。
+// A chrome stub that collects every message sent into a single list. How many ports
+// got opened (for saving / logging / badges) isn't a concern here — only what went
+// on the wire is.
 function setup() {
   const messageListeners: Array<(message: any, sender: any, sendResponse: (r: any) => void) => boolean> = [];
   const sent: any[] = [];
-  // ポートごとの送信も控える＝返信を「その問い合わせを出したポート」へ返すため
-  // （保存・ログ・バッジで別々のポートが開くので、返す先を間違えると届かない）。
+  // Also record sends per-port — so a reply can be routed back to "the port that made
+  // that request" (save / log / badge each open separate ports, so getting the
+  // destination wrong means the reply never arrives).
   const ports: Array<{ emitMessage(msg: any): void; sent: any[] }> = [];
 
   const chromeStub: any = {
@@ -61,8 +64,9 @@ function setup() {
       sendMessage: (_tabId: number, message: any) => Promise.resolve(message?.type === 'cropImage' ? { croppedDataUrl: CROPPED } : undefined),
       query: async () => [{ id: SENDER.tab.id, windowId: SENDER.tab.windowId }],
       captureVisibleTab: async () => CROPPED,
-      // 押しても無反応だった時のツールバー表示（#269）が張る受け口。ここが見るのは
-      // 線に載るメッセージなので、鳴らす経路は無いが、無いと startBackground が落ちる。
+      // The listener socket that the toolbar display (#269) hooks into when a click gets
+      // no response. What this checks is what goes on the wire, so there's no path that
+      // fires it, but without it startBackground would crash.
       onUpdated: { addListener: () => {} },
       onRemoved: { addListener: () => {} },
     },
@@ -89,7 +93,7 @@ function setup() {
       for (const fn of messageListeners) fn(message, SENDER, respond);
       return responseP;
     },
-    // 型ごとに1件取り出し、共有 parse を通した結果を返す。parse が拒めばここで落ちる。
+    // Pull out one message per type and return the result of running it through the shared parse. If parse rejects it, this fails here.
     async parsedOf(type: string) {
       let raw: unknown;
       await vi.waitFor(() => {
@@ -100,7 +104,7 @@ function setup() {
       if (!parsed.ok) throw new Error(`${type} が契約の parse に拒まれた: ${parsed.failure.error}`);
       return parsed.request;
     },
-    // その型を送ったポート＝そこへ返信を流せば、拡張側の待っている処理へ届く。
+    // The port that sent that type — sending the reply there is what reaches the extension side's waiting process.
     async portThatSent(type: string) {
       let found: (typeof ports)[number] | undefined;
       await vi.waitFor(() => {
@@ -124,12 +128,13 @@ describe('拡張が送るメッセージは、ホストが使う parse をその
     const req = await env.parsedOf('savePost');
     expect(req.type).toBe('savePost');
     if (req.type !== 'savePost') return;
-    // captureId は契約の形（parse が弾いた id は null になる）＝ホストがそのまま
-    // ファイル名の頭に使う値なので、ここが null で通ることは無い。
+    // captureId has the contract's shape (an id parse rejects becomes null) — since the
+    // host uses this value as-is for the front of the filename, it must never pass through
+    // as null here.
     expect(req.captureId).toMatch(CAPTURE_ID_PATTERN);
-    expect(req.saveId).toBe('trace-1'); // #519: 3プロセスをまたいで保存を結ぶ id
+    expect(req.saveId).toBe('trace-1'); // #519: the id that ties a save together across 3 processes
     expect(req.metadata.url).toBe(UNPARSEABLE_POST_URL);
-    expect(req.metaOk).toBe(false); // 空レコード＝プラットフォーム API から何も返っていない
+    expect(req.metaOk).toBe(false); // empty record = nothing came back from the platform API
   });
 
   test('save（スクリーンショット保存）', async () => {
@@ -138,7 +143,7 @@ describe('拡張が送るメッセージは、ホストが使う parse をその
     expect(req.type).toBe('save');
     if (req.type !== 'save') return;
     expect(req.captureId).toMatch(CAPTURE_ID_PATTERN);
-    expect(req.image).toBe(CROPPED.split(',')[1]); // data URL の頭は落として base64 だけを渡す
+    expect(req.image).toBe(CROPPED.split(',')[1]); // drop the data URL's head and pass only the base64
   });
 
   test('saveDragged（ドラッグ保存）', async () => {
@@ -177,8 +182,9 @@ describe('拡張が送るメッセージは、ホストが使う parse をその
   });
 });
 
-// ping は診断ページ（extension/utils/diag.ts）だけが送る。DOM ごと立ち上げずに
-// 形だけを確かめる＝送信箇所は `satisfies HostRequest` で型検査が押さえている。
+// ping is sent only by the diagnostics page (extension/utils/diag.ts). Checks only the
+// shape without spinning up the whole DOM — the send site is pinned by type checking
+// via `satisfies HostRequest`.
 describe('parseHostRequest — 型ごとの受理と、失敗の答え方', () => {
   test('ping', () => {
     const parsed = parseHostRequest({ type: 'ping' });
@@ -205,8 +211,8 @@ describe('parseHostRequest — 型ごとの受理と、失敗の答え方', () =
     const parsed = parseHostRequest({ type: 'save' });
     expect(parsed.ok).toBe(true);
     if (!parsed.ok || parsed.request.type !== 'save') return;
-    expect(parsed.request.captureId).toBeNull(); // → ハンドラの 'Invalid captureId'
-    expect(parsed.request.image).toBe(''); // → ハンドラの 'Missing image data'
+    expect(parsed.request.captureId).toBeNull(); // -> handler's 'Invalid captureId'
+    expect(parsed.request.image).toBe(''); // -> handler's 'Missing image data'
     expect(parsed.request.metadata).toEqual({});
   });
 
@@ -236,8 +242,9 @@ describe('readHostResponse / responseId — 返信の読み方も1か所', () =>
     expect(readHostResponse({ ok: false, error: 'Post unavailable: …', code: 'save-failed' })).toEqual({ ok: false, error: 'Post unavailable: …', code: 'save-failed', protocolVersion: null, extBuild: null });
   });
 
-  // 保存は済んでいるのに読み手が「失敗した」と言い出すのが最悪なので、知らない
-  // フィールドは通す＝ホストと拡張は別経路で更新される（#205 が扱う世代ずれ）。
+  // The worst case is the save having actually succeeded while the reader claims it
+  // "failed", so unknown fields are passed through — the host and extension are updated
+  // via separate paths (the version skew that #205 deals with).
   test('見覚えのないフィールドを持つ ack も ack のまま通る', () => {
     expect(readHostResponse({ ok: true, file: 'a.jpg', somethingNewer: 1 })).toMatchObject({ ok: true });
   });
@@ -249,7 +256,7 @@ describe('readHostResponse / responseId — 返信の読み方も1か所', () =>
 
   test('返信の id は、どの問い合わせの答えかを言う唯一の手段', () => {
     expect(responseId({ id: 12, ok: true })).toBe(12);
-    expect(responseId({ ok: true })).toBeNull(); // 保存の返信＝1往復のポートなので id は要らない
+    expect(responseId({ ok: true })).toBeNull(); // a save reply — since it's a single round-trip port, no id is needed
   });
 });
 
@@ -258,13 +265,14 @@ test('PROTOCOL_VERSION は契約が変わった時だけ動く整数（#205 が�
   expect(PROTOCOL_VERSION).toBeGreaterThan(0);
 });
 
-// 拡張とホストは別経路で更新される（拡張＝Chrome ウェブストア／ホスト＝アプリの
-// 自動更新）ので「片方だけ新しい」は事故ではなく常態。ここが見るのは、そのずれが
-// ①検知されること ②検知しても保存を止めないこと の2点。
+// The extension and host are updated via separate paths (extension = Chrome Web
+// Store / host = the app's auto-update), so "only one side is newer" is the normal
+// state, not an accident. What this checks is two things about that skew:
+// (1) it gets detected, and (2) detecting it doesn't stop the save.
 describe('プロトコル版のハンドシェイク（#205）', () => {
   test('返信への刻印は1か所で付く＝2つ目の送り手が付け忘れられない', () => {
     expect(stampProtocol({ ok: true, pong: true })).toEqual({ ok: true, pong: true, protocolVersion: PROTOCOL_VERSION });
-    // 失敗の返信にも付く＝保存を断るほど古いホストこそ、版が知りたい相手。
+    // also attached to failure replies — a host old enough to refuse the save is exactly who wants to know the version.
     expect(stampProtocol({ ok: false, error: 'boom', code: 'save-failed' })).toMatchObject({ protocolVersion: PROTOCOL_VERSION });
   });
 
@@ -277,7 +285,7 @@ describe('プロトコル版のハンドシェイク（#205）', () => {
   test('版を名乗らない返信は「ホストが古い」＝配備し損ねた bridge.js を見つける道（#511）', () => {
     expect(hostProtocolVersion({ ok: true })).toBeNull();
     expect(protocolSkewOf(hostProtocolVersion({ ok: true }))).toBe('host-old');
-    // 比較できない刻印は「無い」と同じ扱い＝3つ目の状態を作らない。
+    // a stamp that can't be compared is treated the same as "absent" — don't create a third state.
     expect(hostProtocolVersion({ ok: true, protocolVersion: '1' })).toBeNull();
     expect(hostProtocolVersion({ ok: true, protocolVersion: 1.5 })).toBeNull();
     expect(hostProtocolVersion({ ok: true, protocolVersion: 2 })).toBe(2);
@@ -287,22 +295,23 @@ describe('プロトコル版のハンドシェイク（#205）', () => {
     const env = setup();
     const responseP = env.dispatch({ type: 'savePost', platform: 'misskey', postUrl: UNPARSEABLE_POST_URL, saveId: 'skew-1' });
     const port = await env.portThatSent('savePost');
-    // 版を名乗らない＝この契約より前のホスト。ack 自体は正常に返す。
+    // doesn't state a version = a host older than this contract. The ack itself still comes back normally.
     port.emitMessage({ ok: true, captureId: '1717500000000-abcd', file: 'a.jpg', saveFolder: 'D:/x', media: [] });
     const res = await responseP;
-    expect(res.ok).toBe(true); // ⚠️止めない＝データを捨てない（リトライキュー #203 と同じ方針）
-    expect(res.captureId).toBe('1717500000000-abcd'); // 保存の結果もそのまま届く
+    expect(res.ok).toBe(true); // ⚠️don't stop = don't discard data (same policy as the retry queue #203)
+    expect(res.captureId).toBe('1717500000000-abcd'); // the save result arrives untouched too
     expect(res.hostSkew).toBe('host-old');
   });
 
-  // #650: ローカルビルドの印が同じ座席に乗る。版と違って**中身は不透明**で、
-  // 比較するのは一致/不一致だけ。開発機でしか付かない＝配布物では常に無い。
+  // #650: the local-build marker rides in the same seat. Unlike the version, **its
+  // contents are opaque** — the only comparison is match/mismatch. It's only attached
+  // on dev machines — always absent in distributed builds.
   test('ローカルビルドの印は、言うことがある時だけ乗る（既定の返信は #650 以前と同一）', () => {
     expect(stampProtocol({ ok: true, pong: true })).toEqual({ ok: true, pong: true, protocolVersion: PROTOCOL_VERSION });
     expect(stampProtocol({ ok: true, pong: true }, null)).toEqual({ ok: true, pong: true, protocolVersion: PROTOCOL_VERSION });
     expect(stampProtocol({ ok: true, pong: true }, 'b-1')).toEqual({ ok: true, pong: true, protocolVersion: PROTOCOL_VERSION, extBuild: 'b-1' });
-    // 失敗の返信にも乗る＝ビルドを焼いた直後にホストが失敗を返す状況こそ、
-    // 新しいビルドを載せたい瞬間。
+    // also rides on failure replies — the moment right after a build was just flashed and
+    // the host returns a failure is exactly when you want the new build attached.
     expect(stampProtocol({ ok: false, error: 'boom', code: 'save-failed' }, 'b-1')).toMatchObject({ extBuild: 'b-1' });
   });
 
@@ -311,7 +320,7 @@ describe('プロトコル版のハンドシェイク（#205）', () => {
     expect(hostExtBuild({ ok: true, extBuild: '' })).toBeNull();
     expect(hostExtBuild({ ok: true, extBuild: 7 })).toBeNull();
     expect(hostExtBuild({ ok: true, extBuild: 'b-1' })).toBe('b-1');
-    // 成否どちらの返信からも同じ口で読める（ReadResponse の両腕に居る）。
+    // readable through the same path from either a success or failure reply (present on both arms of ReadResponse).
     expect(readHostResponse({ ok: true, extBuild: 'b-1' }).extBuild).toBe('b-1');
     expect(readHostResponse({ ok: false, error: 'boom', extBuild: 'b-1' }).extBuild).toBe('b-1');
   });

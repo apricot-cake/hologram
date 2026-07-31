@@ -1,15 +1,18 @@
-// app/src/main/lib-db-replaces.ts のユニットテスト＝重複保存の警告で「置換」を選んだ
-// ときに走る掃除（#34）。拡張は write-once のネイティブホスト越しに保存するので、旧
-// レコードを消せるのはアプリだけ＝新レコードに載ってくるのは `replaces` という印だけで、
-// 実際の置換はここが行う。
+// Unit test for app/src/main/lib-db-replaces.ts, the cleanup that runs when
+// "replace" is chosen at the duplicate-save warning (#34). Since the extension
+// saves through a write-once native host, only the app can delete the old
+// record = all the new record carries is a marker called `replaces`, and the
+// actual replacement is carried out here.
 //
-// ここが押さえるのは受け入れ条件そのもの:
-//   - 旧レコードのファイルが .trash へ移り、記録（<captureId>.json）が並んで残る
-//   - 旧タグが新レコードへ union で合流する（新レコードのタグは消えない）
-//   - フォルダ・手動グループの captureId 参照が新レコードへ付け替わる（孤児にしない）
-//   - 取得原本（#292）も引き継ぐ＝置換は「原本を忘れてくれ」という意味ではない
-//   - 印は消化され、2回目の掃除は何もしない（posts-changed ごとに走るので冪等が要る）
-//   - このライブラリに無い captureId を指す印は、何も動かさずに消える（replay 由来）
+// What this pins down is exactly the acceptance criterion:
+//   - the old record's file moves to .trash, and its record (<captureId>.json) is left alongside it
+//   - the old tags merge into the new record as a union (the new record's tags aren't lost)
+//   - folder and manual group captureId references get repointed to the new record (never orphaned)
+//   - the acquired original (#292) is carried over too = replace doesn't mean "forget the original"
+//   - the marker is consumed, and a second cleanup pass does nothing (this runs
+//     on every posts-changed, so it must be idempotent)
+//   - a marker pointing at a captureId that doesn't exist in this library is
+//     cleared without doing anything else (produced by a replay)
 
 import fs from 'node:fs';
 import os from 'node:os';
@@ -48,11 +51,11 @@ beforeAll(async () => {
 
   writePost(stmts, resolveTagId, { ...base, captureId: 'old', image: 'old.jpg', media: [{ url: 'https://pbs.twimg.com/media/AAA', file: 'old-media-0.png' }], tags: ['風景', '保留'] });
   writePost(stmts, resolveTagId, { ...base, captureId: 'new', image: 'new.jpg', media: [{ url: 'https://pbs.twimg.com/media/AAA', file: 'new.jpg' }], tags: ['風景'], replaces: 'old' });
-  // 印が「このライブラリに無い captureId」を指す形（別マシンの inbox を replay した後）。
+  // The shape of a marker pointing at "a captureId that doesn't exist in this library" (after replaying another machine's inbox).
   writePost(stmts, resolveTagId, { ...base, captureId: 'lonely', url: 'https://x.com/erin/status/555', image: 'new.jpg', replaces: 'never-existed' });
 
-  // 旧レコードだけが持つ整理情報。置換で新レコードへ移らなければ「フォルダから消えた」
-  // として出る（#34 設計コメントの罠）。
+  // Organization data only the old record holds. If it isn't carried over to
+  // the new record on replace, it would surface as "vanished from the folder" (a trap from #34's design comment).
   sqlite.prepare("INSERT INTO folders (id, name, kind) VALUES ('f1','お気に入り','static')").run();
   sqlite.prepare("INSERT INTO folder_items (folderId, postId) VALUES ('f1','old')").run();
   sqlite.prepare('INSERT INTO manual_groups DEFAULT VALUES').run();
@@ -95,7 +98,7 @@ describe('置換の掃除', () => {
     const rec = JSON.parse(fs.readFileSync(path.join(trashDir, 'old.json'), 'utf8'));
     expect(rec.captureId).toBe('old');
     expect(rec.trashedAt).toBeTruthy();
-    // 復元したときにタグと種別が戻せること＝delete-post と同じ内容を残す。
+    // So tags and kind can be restored on undo = leaves the same content as delete-post.
     expect(rec.tags.sort()).toEqual(['保留', '風景']);
     expect(rec.userKind).toBe('media');
   });

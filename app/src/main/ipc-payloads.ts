@@ -133,7 +133,7 @@ export interface AppPrefs {
 }
 
 // --- Organization layer (DB-backed, ipc-organize.ts) ---------------------
-/** get/set-tag-types: tag name -> 種別, plus the renamable work/character labels. */
+/** get/set-tag-types: tag name -> kind, plus the renamable work/character labels. */
 export interface TagTypesState {
   types: Record<string, string>;
   labels: Record<string, string> | null;

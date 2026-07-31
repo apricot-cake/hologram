@@ -1,19 +1,23 @@
-// インスペクタ開閉（`inspectorOpen`）が config.json に届くことのユニットテスト（#391）。
+// Unit test that inspector open/close (`inspectorOpen`) reaches config.json (#391).
 //
-// このスイートが存在する理由＝**取りこぼしが無言だった**から。main の `set-pref` は許可キー
-// （ipc-config.ts の PREF_KEYS）に無いキーを `{ok:false}` で捨て、レンダラー側の呼び出しは
-// その返り値を読まない。だから `inspectorOpen` は「保存しているつもりで一度も書かれない」
-// まま数ヶ月生き延び、config.json を突き合わせるはずの `inspector-panel.ts` の `load()` は
-// 恒久的な dead code になっていた（localStorage のキャッシュだけが実際の保存先だった）。
-// 片端だけを見るテストではこれを捕まえられない＝レンダラーが送るキー名と main が受け付ける
-// キー名が一致しているかが問題なので、**両端を1本の線でつなげて**見る。
+// Why this suite exists = **the dropped write was silent**. Main's `set-pref`
+// discards any key not in the allowlist (PREF_KEYS in ipc-config.ts) by returning
+// `{ok:false}`, and the renderer-side caller never reads that return value. So
+// `inspectorOpen` survived for months "believing it was saving but never actually
+// written", and `inspector-panel.ts`'s `load()`, which was supposed to reconcile
+// against config.json, had become permanent dead code (localStorage's cache was
+// the only place it was actually saved). A test that only looks at one end can't
+// catch this — the question is whether the key name the renderer sends matches
+// the key name main accepts — so this **connects both ends with a single line**.
 //
-// つなぎ方: `electron` を差し替えて本物の ipc-config.ts を登録し、その `set-pref` /
-// `get-prefs` ハンドラを window.hologram のスタブへそのまま配線する。IPC の輸送だけが偽物で、
-// 許可キー・既定値の解決・キャッシュとの突き合わせはすべて製品コードが走る。
+// How they're connected: swap out `electron` and register the real ipc-config.ts,
+// wiring its `set-pref` / `get-prefs` handlers straight into the window.hologram
+// stub. Only the IPC transport is fake; the allowlist, default-value resolution,
+// and cache reconciliation are all real product code running.
 //
-// localStorage は Map 一枚の代役で足りる（このモジュールが使うのは getItem/setItem の2つと、
-// 値が文字列であることだけ）。DOM は他に一切触らないので jsdom は要らない。
+// A single Map stands in for localStorage (this module only uses getItem/setItem
+// and the fact that values are strings). Nothing else touches the DOM, so jsdom
+// isn't needed.
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { IpcContext } from '../app/src/main/ipc-context';
 import { register as registerConfigIpc } from '../app/src/main/ipc-config';
@@ -31,8 +35,9 @@ vi.mock('electron', () => ({
   app: { getVersion: () => '0.0.0-test' },
 }));
 
-// config.json そのものの代役。文字列で持つ＝ハンドラが読み書きするたびに本当に
-// シリアライズを1往復するので、「オブジェクトを共有しているから通っただけ」が起きない。
+// Stands in for config.json itself. Held as a string so every read/write by a
+// handler round-trips through real serialization, so it can't pass merely because
+// they're sharing an object reference.
 let configJson = '{}';
 const readStoredConfig = () => JSON.parse(configJson) as Record<string, unknown>;
 
@@ -52,7 +57,7 @@ registerConfigIpc(ctx);
 const setPref = (key: string, value: unknown) => stub.handlers.get('set-pref')?.(null, key, value);
 const getPrefs = () => stub.handlers.get('get-prefs')?.(null);
 
-// --- localStorage / window.hologram の代役 -------------------------------
+// --- stand-in for localStorage / window.hologram -------------------------------
 const cache = new Map<string, string>();
 const localStorageStub = {
   getItem: (k: string) => (cache.has(k) ? (cache.get(k) as string) : null),
@@ -64,15 +69,16 @@ const localStorageStub = {
   },
 };
 
-// レンダラーのブリッジ＝上で登録した本物のハンドラをそのまま呼ぶ。
+// The renderer's bridge = calls the real handlers registered above directly.
 const bridge = {
   getPrefs: async () => getPrefs(),
   setPref: async (key: string, value: unknown) => setPref(key, value),
 };
 
-// 画面幅（layout-mode.ts）の代役。`isVisible` の入力の一つが幅なので、テストから
-// 広⇔狭を動かせるようにする＝本物の matchMedia と同じ形（matches ＋ change イベント）
-// だけを備え、`fireWidth` でリスナーを起こす。
+// Stand-in for screen width (layout-mode.ts). Since one of `isVisible`'s inputs is
+// width, this lets the test drive wide<->narrow = it provides only the same shape
+// as the real matchMedia (matches + change event), and `fireWidth` fires the
+// listener.
 let mediaListener: ((e: { matches: boolean }) => void) | null = null;
 let mediaMatches = true;
 function fireWidth(wide: boolean): void {
@@ -103,7 +109,7 @@ afterEach(() => {
   (globalThis as any).matchMedia = undefined;
 });
 
-// モジュール内に開閉状態を持つので、シナリオごとに読み直す（localStorage を仕込んでから）。
+// Open/close state lives inside the module, so re-import it per scenario (after seeding localStorage).
 type PanelModule = typeof import('../app/src/renderer/src/services/inspector-panel');
 const freshPanel = (): Promise<PanelModule> => import('../app/src/renderer/src/services/inspector-panel');
 
@@ -124,7 +130,7 @@ describe('main: 許可キーと get-prefs', () => {
     expect(getPrefs().inspectorOpen).toBeNull();
   });
 
-  // config.json は人が手で編集できる＝真偽値以外が入りうる。sidebarOpen と同じ扱いに落とす。
+  // config.json can be hand-edited by a person = non-boolean values can end up in there. Fall back to the same handling as sidebarOpen.
   test('真偽値でない値は null へ倒す', () => {
     configJson = JSON.stringify({ inspectorOpen: 'false' });
     expect(getPrefs().inspectorOpen).toBeNull();
@@ -156,28 +162,29 @@ describe('renderer: 開閉の保存', () => {
   });
 });
 
-// #391 の本体: load() は「起動時に config.json をキャッシュへ突き合わせる」処理で、
-// 許可キーが無かった間は必ず早期 return する dead code だった。生き返ったので固定する。
+// The heart of #391: load() is the process of "reconciling config.json against the
+// cache at startup", and while the allowlisted key was missing it always did an
+// early return, making it dead code. Now that it's alive again, pin it down.
 describe('renderer: 起動時の突き合わせ（config.json が勝つ）', () => {
   test('config.json の外部編集がキャッシュに勝つ', async () => {
-    cache.set(CACHE_KEY, 'false'); // 前回の起動＝閉じていた
-    configJson = JSON.stringify({ inspectorOpen: true }); // アプリの外で開くよう書き換えられた
+    cache.set(CACHE_KEY, 'false'); // previous startup = it was closed
+    configJson = JSON.stringify({ inspectorOpen: true }); // rewritten to open outside the app
     const panel = await freshPanel();
-    expect(panel.isOpen()).toBe(false); // 初回描画はキャッシュの推測で塗る
+    expect(panel.isOpen()).toBe(false); // the first render paints from the cache's guess
     let notified = 0;
     panel.subscribe(() => {
       notified++;
     });
     await panel.load();
     expect(panel.isOpen()).toBe(true);
-    expect(notified).toBe(1); // 変わったので購読者へ伝わる
-    expect(cache.get(CACHE_KEY)).toBe('true'); // キャッシュも追従
+    expect(notified).toBe(1); // it changed, so subscribers are notified
+    expect(cache.get(CACHE_KEY)).toBe('true'); // the cache follows along too
   });
 
   test('localStorage を消しても config.json から復元される', async () => {
     configJson = JSON.stringify({ inspectorOpen: false });
     const panel = await freshPanel();
-    expect(panel.isOpen()).toBe(true); // キャッシュ不在＝既定は開
+    expect(panel.isOpen()).toBe(true); // no cache = default is open
     await panel.load();
     expect(panel.isOpen()).toBe(false);
     expect(cache.get(CACHE_KEY)).toBe('false');
@@ -202,18 +209,18 @@ describe('renderer: 起動時の突き合わせ（config.json が勝つ）', () 
     expect(notified).toBe(0);
   });
 
-  // load() は起動から1tick 遅れて着地する＝その間にユーザーが触っていたら、そちらが新しい。
+  // load() lands one tick after startup = if the user touched it during that gap, the user's action is newer.
   test('起動途中のユーザー操作は突き合わせに上書きされない', async () => {
     configJson = JSON.stringify({ inspectorOpen: true });
     const panel = await freshPanel();
     const pending = panel.load();
-    panel.setOpen(false); // load() が解決する前にユーザーが閉じた
+    panel.setOpen(false); // the user closed it before load() resolved
     await pending;
     expect(panel.isOpen()).toBe(false);
     expect(readStoredConfig().inspectorOpen).toBe(false);
   });
 
-  // 保存先が2つある以上、書いた直後に読み直しても同じ答えになることが要る（再起動の代役）。
+  // With two places it's saved, re-reading right after writing must give the same answer (stands in for a restart).
   test('保存 → 起動し直し（キャッシュ健在）で復元される', async () => {
     const first = await freshPanel();
     first.setOpen(false);
@@ -224,14 +231,16 @@ describe('renderer: 起動時の突き合わせ（config.json が勝つ）', () 
   });
 });
 
-// isVisible（P2⑦）＝「いま画面に出ているか」。isOpen（＝出ているべきか）とは別の問いで、
-// 入力が4つある。これを固定する理由＝**この式の写しが2つあった**から。シェルが React 側で
-// 組み立て、React の外のモジュール（inspector-builder / image-tab-builder / undo-builder）は
-// 同じ問いを `#postDetail.hidden` を DOM から読み返して答えていた。式を1本にした以上、
-// 各入力が効いていることをここで押さえる。
+// isVisible (P2-7) = "is it currently shown on screen". This is a different question
+// from isOpen (= should it be shown), and it has four inputs. Why we pin this down =
+// **there used to be two copies of this formula**. The shell assembles it on the
+// React side, while modules outside React (inspector-builder / image-tab-builder /
+// undo-builder) answered the same question by reading `#postDetail.hidden` back
+// from the DOM. Now that the formula is unified into one, this locks down that
+// each input actually has an effect.
 describe('renderer: 画面に出ているか（isVisible）', () => {
-  // 4つの入力を同じ世代のモジュールから取る＝resetModules 後は別インスタンスになるので、
-  // まとめて import する。
+  // Take all four inputs from the same generation of modules = after resetModules
+  // they'd become separate instances, so import them together.
   async function freshWorld() {
     const panel = await freshPanel();
     const panels = await import('../app/src/renderer/src/services/panels');
@@ -254,13 +263,13 @@ describe('renderer: 画面に出ているか（isVisible）', () => {
     const { panel, panels } = await freshWorld();
     panels.setHidden(true);
     expect(panel.isVisible()).toBe(false);
-    expect(panel.isOpen()).toBe(true); // 隠されただけ＝保存された選択は無傷
+    expect(panel.isOpen()).toBe(true); // only hidden = the saved selection is untouched
     panels.setHidden(false);
     expect(panel.isVisible()).toBe(true);
   });
 
-  // 狭幅ではオーバーレイ＝選択に乗る（#259/#244）。何も選ばれていないのに浮いていると
-  // 画面に穴が開くだけなので出ない。
+  // At narrow widths it's an overlay = it rides on the selection (#259/#244). If
+  // nothing is selected, floating there would just leave a hole in the screen, so it doesn't show.
   test('狭幅は選択があるときだけ出る', async () => {
     const { panel, store } = await freshWorld();
     fireWidth(false);
@@ -277,10 +286,10 @@ describe('renderer: 画面に出ているか（isVisible）', () => {
     const off = panel.subscribeVisible(() => {
       notified++;
     });
-    panel.setOpen(false); // ①パネル自身
-    panels.setHidden(true); // ②一括マスク
-    fireWidth(false); // ③幅
-    store.set('inspectedKey', 'post:1'); // ④選択
+    panel.setOpen(false); // (1) the panel itself
+    panels.setHidden(true); // (2) bulk mask
+    fireWidth(false); // (3) width
+    store.set('inspectedKey', 'post:1'); // (4) selection
     expect(notified).toBe(4);
     off();
     panel.setOpen(true);

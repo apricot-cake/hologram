@@ -1,4 +1,4 @@
-// Bulk "add tags to selection" — the write side of the selection bar's タグを追加.
+// Bulk "add tags to selection" — the write side of the selection bar's "Add tags".
 // The surface is a Dialog (selection/BulkTagDialog, P2⑦); before that it was
 // tag-pop's mode:'bulk', and before that the edit-overlay modal. What moved each
 // time is only where the tags are staged — this module has always owned the
@@ -7,9 +7,9 @@
 // The staging list is not in the renderer at all any more: the dialog holds it in
 // React state and hands it over once, on apply, so there is no module-level copy to
 // keep in step and no refresh() push after every add/remove. That module (and the
-// whole 「タグ付けセッション」 surface it served) is retired — P2⑬ — and this file
+// whole "tagging session" surface it served) is retired — P2⑬ — and this file
 // dropped the bulk-edit name with it. Tagging many posts is a composition now:
-// filter to 「タグなし」, arrow through the results, edit tags in the inspector. This
+// filter to "No tags", arrow through the results, edit tags in the inspector. This
 // Dialog is only the shortcut for "same tags, all of these at once".
 import { open as bulkTagOpen } from './bulk-tag.ts';
 import { updateTags as postsUpdateTags } from './posts.ts';
@@ -87,7 +87,7 @@ export function makeBulkTag(deps: BulkTagBuilderDeps) {
       },
       onKindMenu: (tag, x, y, onChange) => deps.showKindMenu(tag, x, y, onChange),
       // `records` is captured at open time on purpose: the dialog is modal, so the
-      // selection it names in "N 件に適用" cannot change while it is up.
+      // selection it names in "Apply to N" cannot change while it is up.
       onApply: (tags) => void applyTagsToSelection(records, tags),
     });
   }

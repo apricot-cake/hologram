@@ -1,5 +1,5 @@
 // The window tab strip — Chrome's tab-strip anatomy, drawn in Tailwind and wired
-// straight to the tab actions (#621, redesign P1-2 の残り).
+// straight to the tab actions (#621, leftover from redesign P1-2).
 //
 // Two things went away here together, because they were the same knot. The strip used
 // to emit a fixed shape of legacy DOM (`.tab-item[data-tab]`, `.tab-close[data-close]`,

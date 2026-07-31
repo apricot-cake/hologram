@@ -1,17 +1,19 @@
-// app/src/main/lib-db-inbox.ts のユニットテスト＝耐久取込キューの consumer
-// （#5 St6 / #299）。合成の saveFolder（.hologram-inbox/new へ本物の envelope を
-// native-host/inbox.mts の buildEnvelope/writeInboxEvent で書く）を作り、本物の
-// SQLite（app/src/main/lib-db.ts 経由）へ drainInbox で取り込んで、確定済み設計の
-// 冪等性・競合ルールを直接見る:
-//   - 新規 event は1回だけ posts 行になり、receipt が付く
-//   - 同じ event の再 drain は no-op（受け入れ条件の冪等性そのもの）
-//   - その no-op はファイルを開かずに済ませる（receipt より新しくない loose は読まない）
-//   - eventId は同じだが hash が違えば conflict として報告し、既存行は変えない
-//   - captureId は既にあるが URL/media が食い違えば conflict として報告する
-//   - captureId は既にあり URL/media が一致すれば receipt だけ足す（上書きしない）
-//   - 必須メディアが無ければ receipt を付けず次回に持ち越す。他 event は塞がない
-//   - 上記いずれの skip でも DB に行が増えない（トランザクション境界の間接的な証拠）
-//   - 封筒に載った取得原本（#292）が posts と同じトランザクションで raw_payloads へ着く
+// Unit test for app/src/main/lib-db-inbox.ts, the durable intake queue's
+// consumer (#5 St6 / #299). Builds a synthetic saveFolder (writing real
+// envelopes into .hologram-inbox/new via native-host/inbox.mts's
+// buildEnvelope/writeInboxEvent), intakes them into a real SQLite (via
+// app/src/main/lib-db.ts) with drainInbox, and directly checks the finalized
+// design's idempotency and conflict rules:
+//   - a new event becomes a posts row exactly once and gets a receipt
+//   - re-draining the same event is a no-op (the acceptance criterion's idempotency, directly)
+//   - that no-op happens without opening the file (a loose file no newer than its receipt is never read)
+//   - if the eventId matches but the hash differs, it's reported as a conflict and the existing row is untouched
+//   - if the captureId already exists but URL/media disagree, it's reported as a conflict
+//   - if the captureId already exists and URL/media agree, only the receipt is added (no overwrite)
+//   - if required media is missing, no receipt is attached and it's carried
+//     over to next time; other events aren't blocked by it
+//   - none of the skips above add a row to the DB (indirect evidence of the transaction boundary)
+//   - an acquired original (#292) carried in the envelope lands in raw_payloads in the same transaction as posts
 
 import fs from 'node:fs';
 import os from 'node:os';
@@ -85,10 +87,11 @@ describe('drainInbox', () => {
       expect(count('posts')).toBe(before);
     });
 
-    // 取込済みの loose は receipt だけで no-op になる＝中身を読まない。読んでいれば
-    // 壊れた JSON が invalid-json として skipped に出るので、出ないことが「開いていない」
-    // ことの証拠になる。mtime を receipt より古く戻すのは「取込後に書き換えられていない」
-    // 状態の再現（書き換えられた場合は下の hash-conflict が読みに行く）。
+    // A loose file that's already been intaken becomes a no-op purely from its
+    // receipt = its content is never read. If it were read, the broken JSON
+    // would show up in skipped as invalid-json, so its absence is evidence that
+    // it was "never opened". Setting mtime back to before the receipt
+    // reproduces the state of "not rewritten since intake" (if it had been rewritten, hash-conflict below is what would go read it).
     test('取込済みの loose はファイルを開かずに no-op になる', () => {
       const captureId = '1700000000000-aa01';
       const file = path.join(inboxNewDir(saveFolder), `${captureId}.json`);
@@ -107,22 +110,22 @@ describe('drainInbox', () => {
 
   describe('hash-conflict', () => {
     test('同じ eventId で違う payload は conflict として報告し、既存行を変えない', async () => {
-      const captureId = '1700000000000-aa01'; // 前段で既に applied 済み
+      const captureId = '1700000000000-aa01'; // already applied in the earlier stage
       const rec = normalizePostRecord({ captureId, url: 'https://x.com/u/status/1', image: '1700000000000-aa01.jpg', text: 'DIFFERENT' });
       const envelope = buildEnvelope(rec);
-      // eventId は同じだが payload（text）が違う envelope を直接書き込む（同じファイルを上書き）。
+      // Writes an envelope directly whose eventId is the same but whose payload (text) differs (overwriting the same file).
       fs.writeFileSync(path.join(inboxNewDir(saveFolder), `${captureId}.json`), JSON.stringify(envelope));
 
       const report = drainInbox(saveFolder, handle.sqlite);
 
       expect(report.skipped).toEqual([expect.objectContaining({ reason: 'hash-conflict' })]);
-      expect(one('SELECT text FROM posts WHERE captureId = ?', captureId).text).toBe('hello'); // 変わっていない
+      expect(one('SELECT text FROM posts WHERE captureId = ?', captureId).text).toBe('hello'); // unchanged
     });
   });
 
   describe('missing-media', () => {
     test('必須メディアが saveFolder に無ければ receipt を付けず、他 event は続行する', async () => {
-      const missing = await seedEnvelope({ captureId: '1700000000100-bb01', url: 'https://x.com/u/status/2', image: '1700000000100-bb01.jpg' }); // 画像ファイルは書かない
+      const missing = await seedEnvelope({ captureId: '1700000000100-bb01', url: 'https://x.com/u/status/2', image: '1700000000100-bb01.jpg' }); // don't write the image file
       const ok = await seedEnvelope({ captureId: '1700000000100-bb02', url: 'https://x.com/u/status/3', image: '1700000000100-bb02.jpg' }, ['1700000000100-bb02.jpg']);
 
       const report = drainInbox(saveFolder, handle.sqlite);
@@ -132,7 +135,8 @@ describe('drainInbox', () => {
       expect(one('SELECT 1 FROM posts WHERE captureId = ?', missing.eventId)).toBeUndefined();
       expect(one('SELECT 1 FROM inbox_events WHERE eventId = ?', missing.eventId)).toBeUndefined();
 
-      // 後からメディアが届けば次回 drain で拾われる（同期復元でメディア到着が遅い場合の再試行契約）。
+      // If the media arrives later, the next drain picks it up (the retry
+      // contract for when media arrives late during sync restore).
       fs.writeFileSync(path.join(saveFolder, '1700000000100-bb01.jpg'), 'x');
       const report2 = drainInbox(saveFolder, handle.sqlite);
       expect(report2.applied).toEqual([missing.eventId]);
@@ -168,7 +172,7 @@ describe('drainInbox', () => {
     test('URL/media が一致すれば receipt だけ足す（上書きしない）', async () => {
       const captureId = '1700000000300-dd01';
       fs.writeFileSync(path.join(saveFolder, `${captureId}.jpg`), 'x');
-      // 先に「別経路（import 相当）」で同じ captureId の投稿が既に DB にあるとする。
+      // Assumes a post with the same captureId already exists in the DB, arriving earlier via "a different path (equivalent to an import)".
       handle.sqlite.prepare('INSERT INTO posts (captureId, assetClass, image, url, capturedAt, updatedAt, hashtags) VALUES (?,?,?,?,?,?,?)').run(captureId, 'media', `${captureId}.jpg`, 'https://x.com/u/status/10', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z', '[]');
 
       const envelope = await seedEnvelope({ captureId, url: 'https://x.com/u/status/10', image: `${captureId}.jpg` });
@@ -194,8 +198,9 @@ describe('drainInbox', () => {
     });
   });
 
-  // #292: 取得原本は投稿と同じトランザクションで確定する＝封筒に載って来た原本が
-  // posts 行と一緒に着く（片方だけ着く状態を作らない）。
+  // #292: the acquired original is committed in the same transaction as the
+  // post = the original carried in the envelope arrives together with the
+  // posts row (never a state where only one of them arrives).
   describe('取得原本（raw_payloads）', () => {
     const captureId = '1700000000500-ff01';
     const body = '{"text":"hello","unknown_future_field":42}';
@@ -215,7 +220,7 @@ describe('drainInbox', () => {
       expect(unpackRawPayload(row)).toBe(body);
     });
 
-    // 原本を持たない生成側（ZIP 取込・アプリ内取込・旧レコード）は行を作らないだけ
+    // A producer with no original (ZIP import, in-app intake, an old record) simply doesn't create a row
     test('原本の無いレコードは行を作らない', async () => {
       const other = '1700000000600-ff02';
       await seedEnvelope({ captureId: other, url: 'https://x.com/u/status/12', image: `${other}.jpg` }, [`${other}.jpg`]);

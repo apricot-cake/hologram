@@ -37,7 +37,7 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     sbSortTitle: '並び順',
     engParticle: 'が',
     ctxManage: 'フォルダを管理…',
-    // viewer: 描画が落ちた時の最後の受け皿（app/ErrorBoundary.tsx）
+    // viewer: the final catch-all for when rendering crashes (app/ErrorBoundary.tsx)
     renderErrorTitle: '画面を表示できませんでした',
     renderErrorBody: 'ライブラリのデータはそのままです。再読み込みすると元に戻ります。',
     renderErrorReload: '再読み込み',
@@ -50,7 +50,7 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     foldDelete: '削除',
     foldRenamePrompt: 'フォルダ名',
     foldDeleteConfirm: 'フォルダ「$1」を削除しますか？（中の画像自体は消えません）',
-    // フォルダ階層（#41）: サイドバーのツリー直編集
+    // Folder hierarchy (#41): direct tree editing in the sidebar
     foldNew: 'フォルダを作成',
     foldNewSub: 'サブフォルダを作成',
     foldToggleSubs: 'サブフォルダの表示',
@@ -70,7 +70,7 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     qbMenuInclude: '含む条件に戻す',
     // Filter-bar chip/editor mode segment (redesign §4-2 B, Linear「is any of / all of / is not」)
     fbModeExclude: '〜以外',
-    // チップ帯のインライン入力（#148）
+    // Chip-band inline input (#148)
     fbAddFilter: '絞り込みを追加',
     fbAddFilterPh: 'タグ・投稿者・本文…',
     fbInlineText: '本文を検索: 「$1」',
@@ -99,8 +99,8 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     imageCopyFailed: 'この形式の画像はコピーできません',
     ctxShowInFolder: 'ファイルの場所を開く',
     ctxOpenNewTab: '新しいタブで開く',
-    // 選択テキストの右クリック（#167）。「SauceNAOで検索」「ascii2dで検索」と同じ並びに
-    // 入る行なので、綴りも「〜で検索」に揃える
+    // Right-click on selected text (#167). This row sits in the same lineup as "Search with
+    // SauceNAO" / "Search with ascii2d", so the wording is aligned to the same "Search with 〜" pattern
     ctxCopyText: 'コピー',
     ctxSearchWeb: 'Googleで検索',
     ctxSearchLibrary: 'ライブラリ内検索',
@@ -108,12 +108,12 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     imgTabMissing: 'この画像はライブラリにありません',
     imgTabMissingDesc: '削除された可能性があります。削除した投稿はゴミ箱に30日間残るので、戻せばまたここで開けます。',
     imgTabCloseBtn: 'タブを閉じる',
-    // 画像ビューのツールバー（#150）。ショートカットは括弧で添える（他のツールチップと同じ書き方）
+    // Image view toolbar (#150). Shortcuts are appended in parentheses (same style as other tooltips)
     itvZoomOut: 'ズームアウト',
     itvZoomIn: 'ズームイン',
     itvFitToWindow: 'ウィンドウに合わせる (Ctrl+0)',
     itvActualSize: '原寸 (Ctrl+1)',
-    // うごイラ再生（#119 St3）。pixiv 自身の呼び名をそのまま使う（新語を作らない）
+    // Ugoira playback (#119 St3). Uses pixiv's own name for it as-is (no coined terms)
     ugoiraLabel: 'うごイラ',
     ugoiraPlay: '再生',
     ugoiraPause: '一時停止',
@@ -133,7 +133,7 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     tagRemove: 'タグを外す',
     tagNewName: '新しいタグ',
     tagNoTags: 'タグがまだありません。下の入力欄で作成できます。',
-    // タグの種別（用語帳: 作品/キャラ）— Phase 2 ①
+    // Tag Kind (glossary: Work/Character) — Phase 2 ①
     tagKindHeader: '種別',
     kindWork: '作品',
     kindCharacter: 'キャラ',
@@ -165,13 +165,13 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     close: '閉じる',
     postCount: '$1 件ヒット',
 
-    // viewer: ライブラリ/投稿者 ビュー切替・投稿者ビュー
+    // viewer: library/poster view switching, poster view
     browsePosts: 'ライブラリ',
     browsePosters: '投稿者',
-    // サイドバー・インスペクタの幅ドラッグ（#30）— つまみの読み上げ名。
+    // Sidebar/inspector width drag (#30) — the handle's screen-reader name.
     resizeSidebar: 'サイドバーの幅を変更',
     resizeInspector: 'インスペクタの幅を変更',
-    // 保存した検索（#40）— サイドバーのグループ、アクティブバーの保存ボタン。
+    // Saved searches (#40) — the sidebar group, the active bar's save button.
     promptOk: 'OK',
     savedSearches: '保存した検索',
     saveSearch: '検索を保存',
@@ -293,7 +293,7 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     qfAllTags: 'すべて',
     qfFindPh: '絞り込み…',
     sbFilterTitle: 'フィルタ',
-    // viewer: settings > backup（指定フォルダ内への増分ミラー）
+    // viewer: settings > backup (incremental mirror into a chosen folder)
     hintBackup: '選んだフォルダ内に写し（ミラー）を保ちます。新しいファイルだけコピーし、削除も反映します。',
     backupDirNone: '（出力先が未設定）',
     backupChoose: '出力先を選択',
@@ -368,7 +368,7 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     importing: 'インポート中...',
     imported: '$1 件インポートしました',
     importSkipped: '$1 件インポート（$2 件は既存のためスキップ）',
-    // #34: 取り込む投稿が既にライブラリにあるときの3択（バッチ単位で1回だけ聞く）
+    // #34: the 3-way choice for when an imported post is already in the library (asked once per batch)
     importDuplicate: '$1 件は同じ投稿がすでに保存されています',
     importDuplicateDesc: '重複する分をどう扱いますか。他の投稿はそのまま取り込みます。',
     importDuplicateCopy: 'コピー',
@@ -377,7 +377,7 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     noData: 'エクスポートするデータがありません',
     importFailed: 'インポートに失敗しました',
     exportFailed: 'エクスポートに失敗しました',
-    // #85: クリップボードの画像を Ctrl+V で取り込む。$1 は取り込んだ日時（カードの見出しになる）
+    // #85: import a clipboard image with Ctrl+V. $1 is the import date/time (becomes the card's heading)
     clipboardTitle: 'クリップボード $1',
     clipboardImported: 'クリップボードから取り込みました',
     clipboardNoImage: 'クリップボードに画像がありません',
@@ -386,9 +386,11 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
 
     // viewer: view toggle + selection
     displayTitle: '表示',
-    // 表示の軸（投稿は3軸 #618・投稿者は2軸 #630）。名前が要るのは正方形の側だけ＝OFF は
-    // 「元の比率のまま」で、敷き詰めレイアウトに固有名は付けない。投稿者に正方形の軸は無い
-    // （アバターは全PFが正方形配信＝切り抜きが恒等写像）ので、下の3つを両モードで共有する。
+    // Display axes (posts have 3 axes #618, posters have 2 #630). Only the square side needs
+    // a name — OFF is "kept at the original aspect ratio", and the tiling layout gets no
+    // proper name of its own. Posters have no square axis (every platform serves avatars
+    // square already — cropping would be the identity function), so the three below are
+    // shared by both modes.
     layoutGrid: 'グリッド',
     layoutList: 'リスト',
     displaySquare: '正方形のサムネ',
@@ -397,9 +399,9 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     displaySize: 'サイズ',
     displayPanels: 'サイドバーと詳細パネル',
     displayPanelsHint: 'サイドバーだけなら Ctrl+B、両方まとめてなら Ctrl+Shift+B',
-    // クイックビュー（#143）— 見出しは描かないので読み上げ用だけ
+    // Quick view (#143) — no visible heading is drawn, so this is screen-reader only
     quickViewTitle: 'クイックビュー',
-    // コマンドパレット（#28）— 器の文言・見出し・初期コマンド
+    // Command palette (#28) — the container's copy, headings, and initial commands
     paletteTitle: 'コマンドパレット',
     paletteDesc: 'コマンドを実行したり、タグ・投稿者・フォルダへ移動します。',
     palettePlaceholder: 'コマンド・タグ・投稿者・フォルダを検索',
@@ -437,8 +439,8 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     confirmDeletePost: 'この投稿を削除しますか？',
     confirmSkip: '今後表示しない',
     deleted: '削除しました',
-    // viewer: セッション内の編集の取り消し（#235）。undoAction はトーストのボタン、
-    // 残り2つは Ctrl+Z / Ctrl+Shift+Z の結果。
+    // viewer: undoing an edit within the session (#235). undoAction is the toast's button,
+    // the remaining two are the results of Ctrl+Z / Ctrl+Shift+Z.
     undoAction: '元に戻す',
     undoDone: '編集を元に戻しました',
     redoDone: '編集をやり直しました',

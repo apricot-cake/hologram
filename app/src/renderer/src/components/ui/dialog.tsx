@@ -22,7 +22,7 @@ function DialogClose({ ...props }: DialogPrimitive.Close.Props) {
 }
 
 function DialogOverlay({ className, ...props }: DialogPrimitive.Backdrop.Props) {
-  // z-[13000]: like the popover/menu/select手当て (z-[13500]), a modal must stack ABOVE
+  // z-[13000]: like the popover/menu/select fix (z-[13500]), a modal must stack ABOVE
   // the legacy overlay scale — the narrow-mode inspector is z-9500 and legacy modals are
   // z-11000/12000, so the shadcn default z-50 renders the dialog UNDER them (the inspector
   // shows through, undimmed). Kept below the z-[13500] popover portals so an in-dialog

@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { ugoiraFrame, ugoiraFramesPresent } from '../services/posts.ts';
 import { PLATE } from './plate.ts';
 
-// pixiv うごイラ playback (#119 St3). The library stores pixiv's own archive
+// pixiv ugoira playback (#119 St3). The library stores pixiv's own archive
 // untouched — a zip of frame images — because every single-file form of it
 // (mp4/webm/gif) would mean re-encoding, i.e. carrying an encoder in the app and
 // throwing away what the artist uploaded. Nothing native plays a zip, so the
@@ -14,7 +14,7 @@ export interface UgoiraFrame {
   delay: number; // ms this frame is shown (pixiv's own per-frame value)
 }
 
-// Decoded frames are bounded by BYTES, not by frame count. Measured うごイラ
+// Decoded frames are bounded by BYTES, not by frame count. Measured ugoira
 // (2026-07-29, pixiv daily ranking) run from 8 frames of 500x500 to 104 frames
 // of 1280x720 and 24 frames of 2000x1125 — decoding a whole archive up front
 // would be 8MB for the first and ~366MB for the second. The player therefore
@@ -192,7 +192,7 @@ export function UgoiraPlayer({ file, frames, poster, alt, labels }: { file: stri
   // The canvas is mounted from the first render (the draw loop needs its ref
   // the moment the archive opens) and the poster covers it until then. Loading
   // and failure both fall back to that poster — the still frame pixiv serves
-  // for this work, already downloaded next to the archive — so a うごイラ whose
+  // for this work, already downloaded next to the archive — so an ugoira whose
   // archive won't open still shows the artwork.
   return (
     <div data-slot="ugoira-stage" className="relative flex min-w-0 flex-1">

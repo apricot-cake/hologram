@@ -197,7 +197,7 @@ function writePost(stmts: PostStmts, resolveTagId: (name: string) => number, rec
   const ftsInsert = stmts.insertFts.run(ftsRowid, n.captureId, n.text, n.title, n.displayName, n.screenName, n.eagleName, n.description, n.hashtags.join(' '), n.tags.join(' '), null, n.cw);
   if (ftsRowid == null) stmts.claimFtsRowid.run(Number(ftsInsert.lastInsertRowid), n.captureId);
   // Acquisition originals (#292), in the SAME transaction the caller opened for
-  // the post — the design's "投稿保存と同じ transaction で参照を確定する". A
+  // the post — the design's "finalize the reference in the same transaction as the post save". A
   // post committed without its originals would be a post whose unrecoverable
   // half was silently discarded.
   for (const r of n.raw) {

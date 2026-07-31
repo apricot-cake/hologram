@@ -6,7 +6,7 @@
 // Two things this card deliberately does NOT have:
 //
 //  - **Hover parts.** No ℹ button, no 🏷 button, no ○ select ring, no hover highlight
-//    (確定A, Eagle 純型). Everything a card can do is reached by selecting it (click /
+//    (confirmed option A, Eagle's pure form). Everything a card can do is reached by selecting it (click /
 //    Ctrl / Shift) or by its context menu. Hovering only lifts the card, which is
 //    feedback, not a control.
 //  - **A DOM contract.** The old markup carried `data-index` / `data-key` /
@@ -243,8 +243,8 @@ export function CardThumb({ m, shape, onAspect, className, imgClassName, style: 
             loading={m.eager ? 'eager' : 'lazy'}
             decoding="async"
             onLoad={
-              // Only cells that reserved NO height have anything to learn (原比率
-              // グリッド with no shotW/H and no cached aspect); the rest already know.
+              // Only cells that reserved NO height have anything to learn (original-aspect-ratio
+              // grid with no shotW/H and no cached aspect); the rest already know.
               onAspect && !m.aspRatio && m.captureId && !shape.list && !shape.square
                 ? (e) => {
                     const img = e.currentTarget;

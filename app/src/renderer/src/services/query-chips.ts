@@ -1,4 +1,4 @@
-// The shared facet query builder (改訂④) —
+// The shared facet query builder (revision ④) —
 // extracted from viewer.js's inline createQueryBuilder (the event half).
 // One instance per view (posts / posters). Owns the tree state, the mutation
 // helpers, and the flat leaf shadow. It has no view of its own: the chips on
@@ -40,9 +40,9 @@ export function createQueryBuilder(ctx: QbCtx) {
   let shadow: any[] = []; // last computed flat (deduped) leaf shadow
   const singleValueTypes = ctx.singleValueTypes || [];
   const noDupTypes = ctx.noDupTypes || [];
-  // Facet schema: which types may hold 2+ values with an すべて/どれか choice
+  // Facet schema: which types may hold 2+ values with an "All"/"Any" choice
   // (multi-value attributes), and which stay standalone chips. Every other
-  // type clusters as a silent どれか — the schema answers the operator
+  // type clusters as a silent "Any" — the schema answers the operator
   // question, so the UI never has to ask.
   const facetOpts = { multiValueTypes: ctx.multiValueTypes || [], standaloneTypes: ctx.standaloneTypes || [] };
 
@@ -70,12 +70,12 @@ export function createQueryBuilder(ctx: QbCtx) {
     ctx.onChange();
   };
 
-  // Sidebar entry points add a condition into its attribute cluster (改訂④):
+  // Sidebar entry points add a condition into its attribute cluster (revision ④):
   // the newcomer joins its type's group, or pairs with the existing bare leaf
   // (structure is DERIVED — the user never builds it). On a non-facet tree
-  // (persisted 改訂③ nesting) it lands at the top level (AND) instead.
+  // (persisted revision ③ nesting) it lands at the top level (AND) instead.
   function addFilter(filter: { type: string; [k: string]: any }): HologramQueryLeaf | null {
-    // Single-valued types (択一): a new one replaces the existing anywhere.
+    // Single-valued types (single choice): a new one replaces the existing anywhere.
     if (singleValueTypes.includes(filter.type)) removeCondsMatching((c) => c.type === filter.type);
     // Prevent exact duplicates (anywhere in the tree), except for multi types.
     else if (!noDupTypes.includes(filter.type) && qHasValue(filter.type, filter.value)) return null;
@@ -122,7 +122,7 @@ export function createQueryBuilder(ctx: QbCtx) {
       // shadow — and its consumers (.shadow() readers → sidebar row badges) —
       // stale until the next mutation. Post-side callers were masked by a
       // following afterQueryChange()→refresh(); the poster reset (renderPosters, no
-      // refresh) exposed it as row badges that stayed lit after リセット.
+      // refresh) exposed it as row badges that stayed lit after "Reset".
       syncShadow();
     },
     addFilter,

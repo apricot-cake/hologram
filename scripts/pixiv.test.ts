@@ -1,14 +1,16 @@
-// pixiv の決定的ユニットテスト（ネットワーク非使用）。parsePostUrl・複数ページの
-// media[] 導出・fetchPixivIllust のフィールド対応を、fetch を差し替えて検証する。
-// 実際の fetch は拡張の service worker がユーザーの pixiv Cookie ＋ host_permission
-// 付きで走らせるもので、Node からの実 fetch は代表性が無い＝ajax 応答を模す。
+// Deterministic unit tests for pixiv (no network use). Verifies parsePostUrl,
+// multi-page media[] derivation, and fetchPixivIllust's field mapping by stubbing
+// fetch. The real fetch runs from the extension's service worker with the user's
+// pixiv cookie + host_permission, so a real fetch from Node wouldn't be
+// representative = simulate the ajax response instead.
 
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { parsePostUrl } from '../extension/utils/extractor/index.ts';
 import { fetchPixivIllust, pixivMedia } from '../extension/utils/extractor/pixiv.ts';
 
-// 本物の Response を返す＝metadata.ts は応答を1度だけ本文として読み、原本層（#292）へ
-// 積んでから JSON.parse する。json() だけを持つ手作りのモックではその経路を通らない。
+// Returns a real Response = metadata.ts reads the response body exactly once, stacks
+// it into the raw-source layer (#292), then JSON.parses it. A hand-rolled mock that
+// only has json() wouldn't go through that path.
 function jsonRes(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 }
@@ -90,7 +92,7 @@ describe('fetchPixivIllust', () => {
     expect(rec.mediaType).toBe('image');
   });
 
-  // 削除済み・非公開・R-18 のログアウト時は 200 + {error:true} で返る
+  // Deleted / private / R-18-while-logged-out come back as 200 + {error:true}
   test('エラー body は空レコード（throw しない）', async () => {
     vi.stubGlobal('fetch', async () => jsonRes({ error: true, message: 'not found' }));
     const rec = await fetchPixivIllust({ id: '1' }, 'https://www.pixiv.net/artworks/1');
@@ -109,9 +111,10 @@ describe('fetchPixivIllust', () => {
   });
 });
 
-// #119 St3: illustType 2 はうごイラ＝コマ画像の zip ＋ コマごとの表示時間。zip も
-// 表示時間も illust ペイロードには無く、/ugoira_meta が両方を持つ。保存するのは
-// pixiv が配る原本そのままで、変換（＝エンコーダの持ち込み）はしない。
+// #119 St3: illustType 2 is ugoira = a zip of frame images plus a per-frame display
+// duration. Neither the zip nor the durations are in the illust payload; /ugoira_meta
+// carries both. What gets saved is the raw original pixiv distributes as-is, with no
+// conversion (i.e. no bringing in an encoder).
 describe('うごイラ（#119 St3）', () => {
   const UGOIRA_ILLUST = {
     error: false,
@@ -167,8 +170,9 @@ describe('うごイラ（#119 St3）', () => {
     });
   });
 
-  // 表示ラベルは「短い無音のループ」＝X の animated_gif や Mastodon の gifv と同類。
-  // 取り込み経路（media[].type）とは意図的に食い違う（ファセットに新語を作らない）
+  // The display label is "short silent loop" = the same category as X's animated_gif
+  // or Mastodon's gifv. This is deliberately different from the ingest path
+  // (media[].type) (no coining a new term in the facets)
   test('mediaType は gif（media[].type は ugoira）', async () => {
     stub([
       ['/ugoira_meta', UGOIRA_META],

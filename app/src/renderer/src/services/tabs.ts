@@ -91,7 +91,7 @@ function get(): HologramTabsModel | null {
   const tabs = rawTabs.map((t) => {
     const isActive = t.id === activeTabId;
     const kind = isActive ? (storeGet('activeImageTab') ? 'image' : storeGet('browseMode') === 'posters' ? 'posters' : storeGet('browseMode') === 'trash' ? 'trash' : 'posts') : navKindOf(t);
-    // ゴミ箱 (#268) — only ever the ACTIVE tab, since the trash records no history
+    // Trash (#268) — only ever the ACTIVE tab, since the trash records no history
     // entry (navKindOf can never answer 'trash'). The strip says where the tab is
     // looking, and while it is looking at the trash the old grid title would lie.
     if (kind === 'trash') {

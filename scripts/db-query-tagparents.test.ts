@@ -1,6 +1,6 @@
-// app/src/main/lib-db-query.ts の #300 (St7) 追加分（tagsFromDb/tagParentsFromDb/
-// postCapturedVia）のユニットテスト。tag_parents はどの機能からも書かれたことが
-// 無い dormant スキーマなので、importer を経由せず直接 SQL で種を撒く。
+// Unit tests for the #300 (St7) additions to app/src/main/lib-db-query.ts (tagsFromDb/tagParentsFromDb/
+// postCapturedVia). tag_parents is a dormant schema that no feature has ever written to,
+// so we seed it directly via SQL without going through the importer.
 
 import fs from 'node:fs';
 import os from 'node:os';
@@ -27,7 +27,7 @@ beforeAll(() => {
   const insTag = sqlite.prepare('INSERT INTO tags (name, kind, reading) VALUES (?, ?, ?)');
   characterId = Number(insTag.run('character', 'category', null).lastInsertRowid);
   aliceId = Number(insTag.run('alice', 'character', 'ありす').lastInsertRowid);
-  aliceEastId = Number(insTag.run('alice', 'character', null).lastInsertRowid); // 同名別実体（東方寄りの方）
+  aliceEastId = Number(insTag.run('alice', 'character', null).lastInsertRowid); // a distinct entity with the same name (the Touhou-leaning one)
   sqlite.prepare('INSERT INTO tag_parents (tagId, parentTagId, isDisplay) VALUES (?, ?, 1)').run(aliceId, characterId);
   sqlite.prepare('INSERT INTO tag_parents (tagId, parentTagId, isDisplay) VALUES (?, ?, 0)').run(aliceEastId, characterId);
 

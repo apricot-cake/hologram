@@ -58,7 +58,7 @@ function looksLikeLibrary(dir: string): boolean {
 
 // The extension lists and the record shape a locally-imported file becomes now live
 // in lib-local-intake.ts — the dialog below is one of four doors that share them
-// (#84's 実装設計 comment; the clipboard door is at the bottom of this file).
+// (#84's implementation design comment; the clipboard door is at the bottom of this file).
 
 function register(ctx: IpcContext) {
   const {

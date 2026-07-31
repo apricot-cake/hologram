@@ -4,7 +4,7 @@
 // folder derivations (dynamic saved-search matching, per-pass record cache,
 // cover thumbs, counts, condition chips, filteredFolders). Extracted 1:1
 // from viewer.js as the seventh "pure logic → service" slice of the viewer
-// decomposition (最終形B). A real ES module (named exports), imported directly
+// decomposition (final form B). A real ES module (named exports), imported directly
 // by viewer.ts / sidebar.ts. Touches no DOM. Runtime couplings are injected via
 // makeListing(deps) — reassigned viewer lets come in as getters, consts
 // declared after the wiring point as deferred arrows — so this file can be
@@ -58,8 +58,9 @@ export function makeListing(deps: ListingDeps) {
   const hasContent = (p: HologramPost) => !!(p.image || mediaFilesOf(p).length || p.text || p.title);
 
   function getFilteredPosts() {
-    // 統一ビュー: 全アイテム（SNS投稿＋ライブラリ画像）が対象。中身（画像 or 本文）の
-    // 無いレコードだけ除外。SNS投稿だけ/画像だけの絞り込みは「種別」フィルタ(kind)で。
+    // Unified view: every item (SNS posts + library images) is in scope. Only records
+    // with no content (image or body text) are excluded. Narrowing to SNS-posts-only /
+    // images-only is done via the "Kind" filter (kind).
     let posts = allPosts().filter(hasContent);
     const sort = sortValue();
     // The search-box term now lives in the query tree as a 'text' leaf — evaluated by
@@ -67,7 +68,7 @@ export function makeListing(deps: ListingDeps) {
 
     // ---- Query-builder evaluation: boolean condition tree ----
     // queryTree is a tree of groups (AND/OR, optionally negated) over leaf
-    // conditions, built directly by the inline drag builder (改訂③); evalNode
+    // conditions, built directly by the inline drag builder (revision 3); evalNode
     // walks it recursively.
     const queryRoot = currentTree(); // the boolean query tree (root group)
     if (queryRoot.children.length) posts = posts.filter((p) => evalNode(queryRoot, p, postPredOf));
@@ -130,12 +131,12 @@ export function makeListing(deps: ListingDeps) {
     // Boolean query tree (platform / instance / tag / folder / date).
     const root = posterQBTree();
     if (root.children.length) list = list.filter((u) => posterQBEval(u));
-    // Search is kept OUT of the tree (same作法 as the post side).
+    // Search is kept OUT of the tree (same approach as the post side).
     if (q) list = list.filter((u) => (u.displayName || '').toLowerCase().includes(q) || (u.screenName || '').toLowerCase().includes(q));
     const nameOf = (u: HologramUserAgg) => (u.displayName || u.screenName || '').toLowerCase();
     list = list.slice();
     // Sort: 'count' | 'name' | 'date-desc' | 'date-asc'. The date axis (dim) comes from the
-    // query's date leaf (range axis == sort axis), falling back to 最終投稿日 (latest).
+    // query's date leaf (range axis == sort axis), falling back to the last-post date (latest).
     const pSort = posterSort();
     if (pSort === 'date-desc' || pSort === 'date-asc') {
       const dl = treeLeaves(root).find((c) => c.type === 'date');
@@ -162,7 +163,7 @@ export function makeListing(deps: ListingDeps) {
 
   // Records backing a folder's cover + count. Static = its explicit items
   // (existing ones only); dynamic = posts matching the saved search (tree + q)
-  // against the CURRENT library (= 開けば最新). Memoized per renderFolders pass
+  // against the CURRENT library (= always current when opened). Memoized per renderFolders pass
   // (resetFolderCache) so the sort + the card map don't each re-scan allPosts.
   let _folderRecCache: Map<string, any> | null = null;
   function resetFolderCache() {
@@ -207,7 +208,7 @@ export function makeListing(deps: ListingDeps) {
     return folderRecords(coll).length;
   }
   // Small condition chips summarizing a dynamic folder's saved tree. Capped;
-  // purely informational (the mock's optional 条件チップ).
+  // purely informational (the mock's optional condition chips).
   function folderCondLabels(coll: HologramFolder) {
     const chips: string[] = [];
     try {

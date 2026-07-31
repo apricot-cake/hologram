@@ -2,10 +2,10 @@
 // old image TAB (type:'image') into an 'image' history entry on the unified
 // per-tab back/forward stack: double-click pushes an image entry onto the
 // current tab (leaving is nav-back), middle-click opens a background tab whose
-// history is a single image entry (back stays disabled — 確定未決1). This module
+// history is a single image entry (back stays disabled — confirmed (pending item 1)). This module
 // owns the view show/hide (hologramStore 'activeImageTab' → the ImageTabHost
 // component derives the whole React model), the gallery index (replace, not push —
-// 確定未決2), and the tab-title stamping (_autoTitle). The stack itself lives in
+// confirmed (pending item 2)), and the tab-title stamping (_autoTitle). The stack itself lives in
 // tabs-builder.ts's nav (handed in as deps).
 import { imageTabGroup, imageTabTitleOf } from './records.ts';
 import { isVisible as panelIsVisible, setOpen as panelSetOpen } from './inspector-panel.ts';
@@ -85,9 +85,9 @@ export function makeImageTabController(deps: ImageTabBuilderDeps) {
     deps.dismissDetail(); // the open detail belonged to the image view; grid tabs reopen it per card
   }
 
-  // Double-click a card (#143 確定): the image view is a history DESTINATION in
+  // Double-click a card (#143 confirmed): the image view is a history DESTINATION in
   // the current tab — push an image entry and show it. Leaving is ←/Alt+← (Esc
-  // stays a dismiss-only key — 確定).
+  // stays a dismiss-only key — confirmed).
   function openImageEntry(g: HologramPostGroup) {
     const recs = g.records.map((r) => r.captureId).filter(Boolean);
     if (!recs.length) return;
@@ -97,7 +97,7 @@ export function makeImageTabController(deps: ImageTabBuilderDeps) {
   }
 
   // Gallery index step — rewrites the current image entry in place (paging
-  // within one image view is not a navigation — 確定未決2's replace list).
+  // within one image view is not a navigation — confirmed (pending item 2)'s replace list).
   function setImageTabIndex(i: number) {
     const cur = deps.nav.current();
     if (!imageViewShowing || !cur || cur.kind !== 'image') return;
@@ -141,7 +141,7 @@ export function makeImageTabController(deps: ImageTabBuilderDeps) {
   }
 
   // Open a post group as its own tab: a normal tab whose history is one image
-  // entry (中クリック＝「画像ビューを直接開いた新タブ」＝履歴1コマ — 確定未決1).
+  // entry (middle-click = "a new tab that directly opened the image view" = one history entry — confirmed (pending item 1)).
   // Background by default (browser-like: middle-click leaves you in the grid).
   function addImageTab(g: HologramPostGroup, opts?: { activate?: boolean }) {
     const recs = g.records.map((r) => r.captureId).filter(Boolean);
