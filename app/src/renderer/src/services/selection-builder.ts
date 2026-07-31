@@ -12,6 +12,7 @@
 import * as selection from './selection.ts';
 import * as folders from './folders.ts';
 import { isOpen as lightboxIsOpen } from './lightbox.ts';
+import { isActive as imageViewIsActive } from './image-tab.ts';
 import { gridColumnCount, scrollGridIndexIntoView } from './grid-nav.ts';
 import { postIdKey } from './records.ts';
 import { deletePost } from './posts.ts';
@@ -191,7 +192,7 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
     if (confirmGet() || lightboxIsOpen()) return;
     if (settingsIsOpen()) return;
     if (folders.isManagerOpen()) return;
-    if (document.body.classList.contains('image-tab-active')) return;
+    if (imageViewIsActive()) return;
     if (deps.getBrowseMode() !== 'posts') return;
     if (String(window.getSelection() || '')) return; // the user highlighted post text — that's what they mean to copy
     const groups = selection.selectedGroups(deps.getViewGroups(), postIdKey);
@@ -213,7 +214,7 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
     if (confirmGet() || lightboxIsOpen()) return;
     if (settingsIsOpen()) return;
     if (folders.isManagerOpen()) return;
-    if (document.body.classList.contains('image-tab-active')) return;
+    if (imageViewIsActive()) return;
     if (deps.getBrowseMode() !== 'posts') return;
     const groups = selection.selectedGroups(deps.getViewGroups(), postIdKey);
     if (groups.length !== 1) return;
@@ -251,7 +252,7 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
     if (confirmGet() || lightboxIsOpen()) return;
     if (settingsIsOpen()) return;
     if (folders.isManagerOpen()) return;
-    if (document.body.classList.contains('image-tab-active')) return;
+    if (imageViewIsActive()) return;
     if (deps.getBrowseMode() !== 'posts') return;
     const groups = deps.getViewGroups();
     if (groups.length === 0) return;

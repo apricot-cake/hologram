@@ -4,6 +4,7 @@ import { get, subscribe } from '../services/inspector.ts';
 import { t } from '../_shared/i18n.ts';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty';
 import { Separator } from '@/components/ui/separator';
 import { TagField } from './TagField.tsx';
 import type { ReactNode } from 'react';
@@ -249,12 +250,21 @@ function PosterInspector({ m }: { m: HologramInspectorModel }) {
 // state of it rather than a reason for it to disappear — and what belongs here is only
 // that fact. A library-wide summary was considered and rejected: this surface is defined
 // as the detail OF a selection (#143), and the counts it would show are already on the tab.
+//
+// The anatomy is the app's shared Empty (P2⑫) — the same icon plate + title the grids,
+// the trash and the image view use — so a panel with nothing in it reads as the same
+// kind of state everywhere. It carries no description and no action, which the component
+// allows: there is exactly one thing to say here.
 function InspectorEmpty() {
   return (
-    <div data-slot="inspector-empty" className="flex h-full flex-col items-center justify-center gap-2 px-4 text-center text-muted-foreground">
-      <PanelRight className="size-6 opacity-40" aria-hidden="true" />
-      <span className="text-xs">{t('inspectorEmpty')}</span>
-    </div>
+    <Empty data-slot="inspector-empty" className="h-full px-4">
+      <EmptyHeader>
+        <EmptyMedia variant="icon">
+          <PanelRight />
+        </EmptyMedia>
+        <EmptyTitle>{t('inspectorEmpty')}</EmptyTitle>
+      </EmptyHeader>
+    </Empty>
   );
 }
 

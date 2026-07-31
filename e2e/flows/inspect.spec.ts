@@ -37,6 +37,10 @@ test('カードをダブルクリックすると画像ビューが開く', async
   const { page } = await launchHologram();
   await page.locator('[data-slot="post-grid"] [data-slot="post-card"]').filter({ hasText: '猫が机の上で寝ている' }).dblclick();
 
-  await expect(page.locator('body')).toHaveClass(/image-tab-active/);
-  await expect(page.locator('#imageTabView')).toBeVisible();
+  // What the user sees, not how it is wired: the media stage is up and the browse
+  // column is gone. Both used to be asserted through `body.image-tab-active`, which
+  // is exactly the "test pins the mechanism" shape #153 ② is about — the class does
+  // not exist any more, and this test did not have to change its meaning to say so.
+  await expect(page.locator('[data-slot="image-tab-view"]')).toBeVisible();
+  await expect(page.locator('[data-slot="content-scroll"]')).toBeHidden();
 });

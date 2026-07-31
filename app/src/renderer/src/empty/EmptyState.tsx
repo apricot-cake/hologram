@@ -1,15 +1,26 @@
 import type { ReactNode } from 'react';
 import { useSyncExternalStore } from 'react';
+import { Images, SearchX, Users } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty';
 import { t } from '../_shared/i18n.ts';
+import { importFromClipboard } from '../services/clipboard-intake.ts';
 import { resetAllFilters, resetPosterFilters, runZipImport } from '../services/orchestrator.ts';
 import { get as storeGet, subscribe as storeSubscribe } from '../services/store.ts';
 
-// Empty-state placeholder: the "no posts yet" first-run message, the "no results"
-// filtered-empty message, or the poster first-run message. It owns its own container and
-// its own visibility — the shell used to mount it inside a static `#emptyState` div whose
-// `hidden` two render pipelines wrote by hand, while this component already knew from the
-// store whether it had anything to say. Its buttons call the orchestrator directly, in
-// place of the delegated click listener that matched them by element id (#153).
+// Empty-state placeholder for the two library grids: the "no posts yet" first-run
+// message, the "no results" filtered-empty message, or the poster first-run message. It
+// owns its own container and its own visibility — the shell used to mount it inside a
+// static `#emptyState` div whose `hidden` two render pipelines wrote by hand (gone), while this
+// component already knew from the store whether it had anything to say. Its buttons call
+// the orchestrator directly, in place of the delegated click listener that matched them
+// by element id (#153).
+//
+// The SHAPE is shadcn's Empty (P2⑫): icon plate, title, description, then the actions —
+// the anatomy every empty state in the app now wears (the trash's, the inspector's, the
+// image view's "post is gone"). It used to be a bare <div> of <p><strong> lines plus a
+// button styled here and nowhere else, which is how three surfaces that all say "there
+// is nothing here" ended up looking like three different products.
 //
 // BOTH variants (post and poster) are folded into self-derived selectors —
 // hologramStore already carries everything needed reactively — instead of a viewer
@@ -55,55 +66,65 @@ export function EmptyState() {
     if (posterGroups !== undefined && posterGroups.length === 0) variant = allUsersCount === 0 && !query.trim() ? 'posterFirstRun' : 'filtered';
   }
   if (!variant) return null;
-  if (variant === 'posterFirstRun') {
+  // A filter or a search ate everything → the one honest next action is to undo it.
+  // No made-up second button here: the grid is empty BECAUSE of a predicate the user
+  // set, and "reset" is the whole of what can be done about it from this spot.
+  if (variant === 'filtered') {
     return (
       <Frame>
-        <p className="mb-2">
-          <strong>{t('posterEmptyTitle')}</strong>
-        </p>
-        <p>{t('posterEmptyDesc')}</p>
+        <EmptyHeader>
+          <EmptyMedia variant="icon">
+            <SearchX />
+          </EmptyMedia>
+          <EmptyTitle>{t('emptySearchTitle')}</EmptyTitle>
+          <EmptyDescription>{t('emptySearchDesc')}</EmptyDescription>
+        </EmptyHeader>
+        <EmptyContent>
+          <Button variant="outline" onClick={() => (mode === 'posters' ? resetPosterFilters?.() : resetAllFilters?.())}>
+            {t('emptyResetBtn')}
+          </Button>
+        </EmptyContent>
       </Frame>
     );
   }
-  if (variant === 'firstRun') {
-    return (
-      <Frame>
-        <p className="mb-2">
-          <strong>{t('emptyTitle')}</strong>
-        </p>
-        <p className="mb-2">{t('emptyDesc')}</p>
-        {/* emptyCaptureHint carries <kbd> markup, so it's set as HTML (matches the old innerHTML). */}
-        {/* biome-ignore lint/security/noDangerouslySetInnerHtml: i18n string with intentional <kbd> markup */}
-        <p className="mb-2" dangerouslySetInnerHTML={{ __html: t('emptyCaptureHint') }} />
-        <Cta onClick={() => runZipImport?.()}>{t('importZip')}</Cta>
-      </Frame>
-    );
-  }
-  // 'filtered' (post or poster): a search / filter ate everything → one-click reset.
+  // First run, posts or posters: the library really is empty, so what belongs here is
+  // "how do things get in". Three routes exist and all three are named — the extension
+  // (Alt+S) in the description, because the app cannot press it, and the two the app CAN
+  // perform as the buttons. Both were otherwise reachable only from the command palette.
+  const poster = variant === 'posterFirstRun';
   return (
     <Frame>
-      <p className="mb-2">
-        <strong>{t('emptySearchTitle')}</strong>
-      </p>
-      <p>{t('emptySearchDesc')}</p>
-      <Cta onClick={() => (mode === 'posters' ? resetPosterFilters?.() : resetAllFilters?.())}>{t('emptyResetBtn')}</Cta>
+      <EmptyHeader>
+        <EmptyMedia variant="icon">{poster ? <Users /> : <Images />}</EmptyMedia>
+        <EmptyTitle>{t(poster ? 'posterEmptyTitle' : 'emptyTitle')}</EmptyTitle>
+        <EmptyDescription>
+          {t(poster ? 'posterEmptyDesc' : 'emptyDesc')} {/* emptyCaptureHint carries <kbd> markup, so it's set as HTML (matches the old innerHTML). */}
+          {/* biome-ignore lint/security/noDangerouslySetInnerHtml: i18n string with intentional <kbd> markup */}
+          <span dangerouslySetInnerHTML={{ __html: t('emptyCaptureHint') }} />
+        </EmptyDescription>
+      </EmptyHeader>
+      <EmptyContent>
+        <div className="flex flex-wrap items-center justify-center gap-2">
+          <Button variant="outline" onClick={() => runZipImport?.()}>
+            {t('importZip')}
+          </Button>
+          <Button variant="outline" onClick={() => void importFromClipboard()}>
+            {t('emptyImportClipboard')}
+          </Button>
+        </div>
+      </EmptyContent>
     </Frame>
   );
 }
 
+// The grids' empty state is a block INSIDE the scrolling content column, not a panel
+// filling it, so the Empty's own `flex-1` has nothing to stretch against — the height
+// comes from the padding instead. (The inspector's and the image view's do fill their
+// container, and use the component as-is.)
 function Frame({ children }: { children: ReactNode }) {
   return (
-    <div data-slot="empty-state" className="px-5 py-15 text-center text-[var(--text-subtle)]">
+    <Empty data-slot="empty-state" className="py-16">
       {children}
-    </div>
-  );
-}
-
-/** "What to do next" affordance — rounded square = action, per DESIGN.md. */
-function Cta({ onClick, children }: { onClick: () => void; children: ReactNode }) {
-  return (
-    <button type="button" onClick={onClick} className="mt-3 cursor-pointer rounded-md border border-[var(--border-strong)] bg-[var(--surface)] px-4.5 py-[7px] text-[13px] text-[var(--text)] transition-colors hover:border-[var(--accent)] hover:bg-[var(--hover)] hover:text-[var(--accent-text)]">
-      {children}
-    </button>
+    </Empty>
   );
 }

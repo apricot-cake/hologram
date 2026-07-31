@@ -63,13 +63,13 @@ export function makeImageTabController(deps: ImageTabBuilderDeps) {
     });
   }
 
-  // body.image-tab-active is React-owned (ImageTabHost toggles it from model
-  // presence — the class ⟺ the image view is showing). This closure keeps only
-  // this local flag for the re-entrancy guard + command gating.
+  // "Is the image view showing" is React's to draw and services/image-tab.ts's to
+  // answer (isActive() ⟺ there is a model). This closure keeps only this local flag
+  // for the re-entrancy guard + command gating.
   let imageViewShowing = false;
   function showImageView(recs: string[], idx: number) {
     imageViewShowing = true;
-    publish(recs, idx); // → ImageTabHost derives the model, adds body.image-tab-active
+    publish(recs, idx); // → ImageTabHost derives the model and draws the stage
     const g = resolveGroup(recs);
     // The inspector opens with the view (Eagle-style detail screen).
     if (g) deps.showDetail(g);
@@ -81,7 +81,7 @@ export function makeImageTabController(deps: ImageTabBuilderDeps) {
   function hideImageView() {
     if (!imageViewShowing) return;
     imageViewShowing = false;
-    storeSet('activeImageTab', null); // → ImageTabHost removes the class
+    storeSet('activeImageTab', null); // → ImageTabHost renders nothing, the content column comes back
     deps.dismissDetail(); // the open detail belonged to the image view; grid tabs reopen it per card
   }
 

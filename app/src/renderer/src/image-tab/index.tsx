@@ -1,11 +1,11 @@
-import { useEffect, useLayoutEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { hologramImageTabSource } from '../services/image-tab.ts';
 import { get as confirmGet } from '../services/confirm.ts';
 import { isOpen as lightboxIsOpen } from '../services/lightbox.ts';
 import { isOpen as settingsIsOpen } from '../services/settings.ts';
 import { ImageTab } from './ImageTab.tsx';
 
-// React-owned image-tab detail view (#imageTabView). viewer.js owns the tab object
+// React-owned image-tab detail view. viewer.js owns the tab object
 // (type:'image') and its recs/idx; this component PULLS its model from services/image-tab.ts
 // instead of being pushed one — this was converted off the old render(model) push
 // (viewer called it from ~8 call sites), the same shape as the two grid sources.
@@ -23,19 +23,24 @@ export function ImageTabHost() {
     sync(); // catch anything that changed before this effect ran
     return unsub;
   }, []);
-  // body.image-tab-active ⟺ an image tab is showing. useLayoutEffect = toggled before
-  // paint, in the same commit that renders the view → no flash.
-  useLayoutEffect(() => {
-    document.body.classList.toggle('image-tab-active', !!model);
-  }, [model]);
-  return model ? <ImageTab model={model} /> : null;
+  // The stage's own container. It used to be a static `#imageTabView` div in AppShell that
+  // two CSS rules (`#imageTabView{display:none}` + `body.image-tab-active #imageTabView`)
+  // switched on, with a third rule hiding the content column — the body class was the
+  // wiring between "there is a model" and "the browse chrome is gone". Now the component
+  // that HAS the model draws the container, and the shell hides the content column from the
+  // same predicate (services/image-tab.ts's isActive) — one React decision, no class to race
+  // (P2⑫ / #153 ⑥).
+  return model ? (
+    <div data-slot="image-tab-view" className="flex min-h-0 min-w-0 flex-1">
+      <ImageTab model={model} />
+    </div>
+  ) : null;
 }
 
 // ←/→ step through the group's images while an image tab is the active view.
 // Yields to typing, overlays and the lightbox (mirrors the viewer's guards).
 document.addEventListener('keydown', (e) => {
   if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
-  if (!document.body.classList.contains('image-tab-active')) return;
   const model = hologramImageTabSource.get();
   if (!model || !model.onIndexChange || model.items.length < 2) return;
   const t = e.target as HTMLElement | null;

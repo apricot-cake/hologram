@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useRef } from 'react';
 import type { PointerEvent as ReactPointerEvent } from 'react';
+import { ChevronLeft, ChevronRight, ImageOff, Info } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { UgoiraPlayer } from './UgoiraPlayer.tsx';
 import { createNeighborPreloader, neighborPreloadSources, type NeighborPreloader } from './preload.ts';
 import { TransformComponent, TransformWrapper } from 'react-zoom-pan-pinch';
@@ -36,13 +40,11 @@ export interface ImageTabModel {
   onCloseTab?: () => void;
 }
 
-const INFO_ICON = (
-  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
-    <circle cx="12" cy="12" r="9" />
-    <line x1="12" y1="11" x2="12" y2="16" />
-    <line x1="12" y1="7.6" x2="12" y2="7.7" />
-  </svg>
-);
+// The stage's floating controls share one tone (P2⑫): a shadcn Button over a translucent,
+// blurred plate, so they read on a white photo and a black one alike without the picture
+// having to be dimmed. Before this they were .itv-nav / .icon-btn — three hand-mixed
+// color-mix fills and a 28px "‹" text glyph standing in for an icon.
+const PLATE = 'bg-background/70 text-muted-foreground shadow-xs backdrop-blur-sm hover:bg-background/90 hover:text-foreground';
 
 // One image with Eagle-style zoom/pan (react-zoom-pan-pinch): wheel = zoom at
 // the cursor, drag = pan, double-click = actual pixels ⇄ fit. The parent keys
@@ -217,7 +219,8 @@ function Zoomable({ src, alt }: { src: string; alt: string }) {
 
 // The whole stage: media + prev/next + counter + the inspector toggle. The
 // missing state (post deleted from the library) keeps the tab closable per the
-// empty-state rule (always offer the next action).
+// empty-state rule (always offer the next action) — and wears the same Empty
+// anatomy as every other empty state in the app now (P2⑫).
 export function ImageTab({ model }: { model: ImageTabModel }) {
   const { items, idx, missing, labels } = model;
   const i = items.length ? Math.max(0, Math.min(idx, items.length - 1)) : 0;
@@ -232,12 +235,20 @@ export function ImageTab({ model }: { model: ImageTabModel }) {
   useEffect(() => () => preloader.current?.clear(), []);
   if (missing || !items.length) {
     return (
-      <div className="itv-empty">
-        <p>{labels.missing}</p>
-        <button type="button" className="btn-outline" onClick={() => model.onCloseTab && model.onCloseTab()}>
-          {labels.closeTab}
-        </button>
-      </div>
+      <Empty>
+        <EmptyHeader>
+          <EmptyMedia variant="icon">
+            <ImageOff />
+          </EmptyMedia>
+          <EmptyTitle>{labels.missing}</EmptyTitle>
+          <EmptyDescription>{labels.missingDesc}</EmptyDescription>
+        </EmptyHeader>
+        <EmptyContent>
+          <Button variant="outline" onClick={() => model.onCloseTab?.()}>
+            {labels.closeTab}
+          </Button>
+        </EmptyContent>
+      </Empty>
     );
   }
   const item = items[i];
@@ -252,7 +263,7 @@ export function ImageTab({ model }: { model: ImageTabModel }) {
     // would buy nothing here, because what made the step feel cold was the cold
     // fetch+decode, not the remount. With preload.ts warming the neighbours, the
     // remounted <img> hits a warm resource and a warm decode.
-    <div className="itv-stage">
+    <div data-slot="image-tab-stage" className="relative flex min-w-0 flex-1 overflow-hidden">
       {item.ugoira ? (
         <UgoiraPlayer key={item.src} file={item.ugoira.file} frames={item.ugoira.frames} poster={item.poster} alt={item.alt} labels={labels} />
       ) : item.video ? (
@@ -261,21 +272,36 @@ export function ImageTab({ model }: { model: ImageTabModel }) {
         <Zoomable key={item.src} src={item.src} alt={item.alt || ''} />
       )}
       {multi && (
-        <button type="button" className="itv-nav itv-prev" aria-label={labels.prev} onClick={() => step(-1)}>
-          {'‹'}
-        </button>
+        <>
+          {/* Tall and narrow, at the stage's own edges — the shape every image viewer
+              (Windows フォト / Eagle / IrfanView) gives these, because the target has to be
+              hittable without aiming while the eye is on the picture. */}
+          <Button data-slot="image-tab-prev" variant="ghost" size="icon" aria-label={labels.prev} onClick={() => step(-1)} className={`-translate-y-1/2 absolute top-1/2 left-3 z-2 h-14 w-10 ${PLATE}`}>
+            <ChevronLeft className="size-6" />
+          </Button>
+          <Button data-slot="image-tab-next" variant="ghost" size="icon" aria-label={labels.next} onClick={() => step(1)} className={`-translate-y-1/2 absolute top-1/2 right-3 z-2 h-14 w-10 ${PLATE}`}>
+            <ChevronRight className="size-6" />
+          </Button>
+          {/* Not a Badge: this is a live readout of where you are, not a status chip, and
+              tabular-nums keeps it from twitching as the index crosses a digit. */}
+          <div data-slot="image-tab-counter" className="-translate-x-1/2 absolute bottom-4 left-1/2 z-2 rounded-full bg-background/70 px-2.5 py-0.5 text-muted-foreground text-xs tabular-nums shadow-xs backdrop-blur-sm">
+            {i + 1} / {items.length}
+          </div>
+        </>
       )}
-      {multi && (
-        <button type="button" className="itv-nav itv-next" aria-label={labels.next} onClick={() => step(1)}>
-          {'›'}
-        </button>
-      )}
-      {multi && <div className="itv-counter">{i + 1 + ' / ' + items.length}</div>}
-      <div className="itv-tools">
-        <button type="button" className="icon-btn" data-tip={labels.info} aria-label={labels.info} aria-pressed={!!model.inspectorOpen} onClick={() => model.onToggleInspector && model.onToggleInspector()}>
-          {INFO_ICON}
-        </button>
-      </div>
+      {/* The inspector toggle rides on the picture because the picture is the whole
+          window here; the tooltip is the app's own (shadcn), not the legacy data-tip
+          layer, so it matches the zoom cluster in the toolbar band. */}
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <Button data-slot="image-tab-info" variant="ghost" size="icon-sm" aria-label={labels.info} aria-pressed={!!model.inspectorOpen} onClick={() => model.onToggleInspector?.()} className={`absolute top-3 right-3 z-2 ${model.inspectorOpen ? 'bg-background/90 text-foreground shadow-xs backdrop-blur-sm' : PLATE}`}>
+              <Info />
+            </Button>
+          }
+        />
+        <TooltipContent side="left">{labels.info}</TooltipContent>
+      </Tooltip>
     </div>
   );
 }

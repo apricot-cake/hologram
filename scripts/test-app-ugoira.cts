@@ -144,7 +144,7 @@ const evalJs = `(async () => {
   out.playBadge = !!document.querySelector('[data-slot="post-card-play"]');
 
   card.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
-  out.imageTabActive = !!(await waitFor(() => document.body.classList.contains('image-tab-active')));
+  out.imageTabActive = !!(await waitFor(() => document.querySelector('[data-slot="image-tab-view"]')));
 
   const canvas = await waitFor(() => document.querySelector('.itv-ugoira canvas'));
   out.canvasFound = !!canvas;
@@ -165,7 +165,7 @@ const evalJs = `(async () => {
   out.colorsSeen = [...seen].sort();
 
   // 一時停止で止まる
-  const toggle = document.querySelector('.itv-ugoira-toggle');
+  const toggle = document.querySelector('[data-slot="ugoira-toggle"]');
   out.toggleFound = !!toggle;
   if (toggle) {
     toggle.click();

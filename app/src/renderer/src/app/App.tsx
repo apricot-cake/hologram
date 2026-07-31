@@ -77,7 +77,7 @@ function AppBoot() {
 // Shell-level body classes that React owns (orchestrator no longer touches document.body for
 // these). browse-posters is driven by the hologramStore 'browseMode' key (orchestrator sets the
 // store; the class is a pure derivation). useLayoutEffect toggles it before paint = no
-// flash. (image-tab-active is owned by ImageTabHost from its model; modal-open stays in
+// flash. (modal-open stays in
 // orchestrator — it observes overlay visibility, a cross-cutting shell concern, not drawing.)
 const subBrowseMode = (cb: () => void) => storeSubscribe('browseMode', cb);
 const getBrowseMode = () => storeGet('browseMode') as string;
