@@ -229,11 +229,26 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
   // grid, wrapping from the last card to the first is disorienting and no file manager
   // or photo library does it.
   //
-  // Plain arrows only. Shift+Arrow (extend the range) is deliberately NOT wired: the
-  // range primitive here moves the anchor to the new index on every call, so repeated
+  // Home/End jump straight to the first/last card (#672 — the two ends arrow movement
+  // never reached). They are wired into this SAME function rather than a parallel one so
+  // the guard block below (input/textarea/contentEditable, confirm/lightbox/settings/image
+  // view, posts-only browse mode) and the post-move steps (select, scroll into view, show
+  // detail) are literally shared code, not a copy that could drift — #672's own decision
+  // record leans on this. They move the SELECTION, matching arrow's vocabulary (Left/Right/
+  // Up/Down move the selected card, not just the scroll position) rather than being a bare
+  // scrollTo: mixing "arrows move selection" with "Home/End only scroll" inside one key
+  // group is the two-meanings problem #672 rejected, and Explorer's own Home/End move the
+  // focused row, not just the viewport. Posters and trash stay out of reach here for the
+  // same reason arrows never reached them — neither has a selection model; #606's visible
+  // button already covers getting back to the top there.
+  //
+  // Plain arrows/Home/End only. Shift+Arrow (extend the range) is deliberately NOT wired:
+  // the range primitive here moves the anchor to the new index on every call, so repeated
   // extends would only ever grow the selection and could never shrink it back — the
   // opposite of what Shift+Arrow means. Doing it properly needs a fixed anchor plus a
-  // separate cursor, which is its own change.
+  // separate cursor, which is its own change. Shift+Home/End (extend to an end) is out for
+  // the same reason. Ctrl/Alt+Home/End are left alone too — Ctrl+Home is a bare-document
+  // shortcut some browsers still reserve, and nothing here needs it.
   //
   // Same guard shape as the Space peek below it, plus one of its own: with no anchor
   // and no single selection there is nothing to move FROM, so the first press selects
@@ -241,9 +256,14 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
   // component (app/App.tsx).
   function handleShortcutArrowNav(e: KeyboardEvent) {
     if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return;
+    const isHome = e.key === 'Home';
+    const isEnd = e.key === 'End';
     const step = e.key === 'ArrowLeft' ? -1 : e.key === 'ArrowRight' ? 1 : e.key === 'ArrowUp' ? -gridColumnCount() : e.key === 'ArrowDown' ? gridColumnCount() : 0;
-    if (!step) return;
+    if (!step && !isHome && !isEnd) return;
     const t = e.target as HTMLElement | null;
+    // Home/End inside a text field or contentEditable is the field's own caret-to-line-
+    // start/end motion — the same reason this guard already keeps arrow nav off the search
+    // box and tag input (#672 accept criteria: input focus must not lose Home/End).
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
     if (confirmGet() || lightboxIsOpen()) return;
     if (settingsIsOpen()) return;
@@ -251,21 +271,32 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
     if (deps.getBrowseMode() !== 'posts') return;
     const groups = deps.getViewGroups();
     if (groups.length === 0) return;
-    e.preventDefault(); // the grid scrolls on arrows otherwise, and the selection would slide out of view
+    e.preventDefault(); // the grid scrolls on arrows/Home/End otherwise, and the selection would slide out of view
 
     // Where we are: the anchor is authoritative (selectOnly/toggle keep it current).
     // It's null after select-all / clear / a deselecting toggle, so fall back to a lone
     // selected card, then to "nothing yet" — where the first press lands on card 0.
     const selected = selection.selectedGroups(groups, postIdKey);
     const from = selection.anchorIndex() ?? (selected.length === 1 ? groups.indexOf(selected[0]) : -1);
-    const next = from < 0 ? 0 : Math.min(groups.length - 1, Math.max(0, from + step));
-    if (next === from) return; // already at that edge — don't churn the inspector
-
-    const g = groups[next];
-    if (!g) return;
-    selection.selectOnly(next, postIdKey(g.rep));
+    const next = isHome ? 0 : isEnd ? groups.length - 1 : from < 0 ? 0 : Math.min(groups.length - 1, Math.max(0, from + step));
+    // Selection unchanged (already at that edge) — skip selectOnly/showDetail so the
+    // inspector doesn't churn for nothing, same as before. But the SCROLL is re-asserted
+    // unconditionally below regardless of whether the selection moved: #606's own "back to
+    // top" button (and a plain wheel/drag scroll) moves the viewport WITHOUT touching the
+    // selection or the anchor, so without this, End → #606's button → End again would
+    // silently do nothing the second time (the selection was already sitting on the last
+    // card the whole time, so next === from, and the user is left staring at the top with
+    // no keyboard way back down — found verifying #672 against #606's button). Re-running
+    // scrollGridIndexIntoView is safe to call unconditionally: it is itself a no-op once the
+    // target card is actually in view (services/grid-nav.ts / VirtualGrid.tsx), so this costs
+    // nothing on the ordinary path where the viewport never drifted.
+    if (next !== from) {
+      const g = groups[next];
+      if (!g) return;
+      selection.selectOnly(next, postIdKey(g.rep));
+      deps.showDetail(g); // the inspector follows, exactly as it does for a plain click
+    }
     scrollGridIndexIntoView(next);
-    deps.showDetail(g); // the inspector follows, exactly as it does for a plain click
   }
 
   function requestDeleteSelected() {
