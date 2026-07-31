@@ -13,6 +13,8 @@
 // posterQB reference below is wrapped, the same "wrapper only runs at call time"
 // pattern used throughout this decomposition).
 import { treeLeaves, userKey } from './query.ts';
+import { hologramIpc } from './ipc.ts';
+import { posterProfileUrl } from './profile-url.ts';
 import { formatCount, localeDate } from './format.ts';
 import { open as inspectorOpen, refresh as inspectorRefresh } from './inspector.ts';
 import { setOpen as panelSetOpen } from './inspector-panel.ts';
@@ -271,6 +273,7 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
       })
       .filter(Boolean);
     const tags = deps.posterTagsOf(u.key);
+    const profileUrl = posterProfileUrl({ platform: u.platform, screenName: u.screenName, instance: u.instance });
     inspectorOpen({
       kind: 'poster',
       focusTags: !!(opts && opts.focusTags),
@@ -298,12 +301,14 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
         posterFolders: deps.t('ivPosterFolders'),
         newFolderPlaceholder: deps.t('posterFolderNewPlaceholder'),
         posterViewPosts: deps.t('posterViewPosts'),
+        openProfile: deps.t('detailOpenProfile'),
         tags: deps.t('ivPosterTags'),
         tagsEmpty: deps.t('tagsEmpty'),
         editTags: deps.t('tipEditTags'),
       },
       onClose: deps.closeDetail,
       onPosterPosts: () => openPosterPosts(u),
+      onOpenProfile: profileUrl ? () => hologramIpc.openExternal(profileUrl) : null,
       onFolderToggle: (id: string) => {
         togglePosterFolderMember(id, u.key);
         refreshPosterFolderFields(u.key);

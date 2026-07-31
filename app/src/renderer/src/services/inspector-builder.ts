@@ -9,7 +9,8 @@
 // clusters — poster card clicks, undo, browse-mode switch — read/write it too;
 // same "shared cross-cutting state stays at the call site, builder takes a
 // getter/setter dep" shape as posterReturn in poster-grid-builder.ts).
-import { userKey } from './query.ts';
+import { hostOf, userKey } from './query.ts';
+import { posterProfileUrl } from './profile-url.ts';
 import { formatCount, localeDate, localeDateTime } from './format.ts';
 import { open as inspectorOpen, refresh as inspectorRefresh, close as inspectorClose } from './inspector.ts';
 import { isOpen as panelIsOpen, isVisible as panelIsVisible, panelContains, setOpen as panelSetOpen, subscribe as panelSubscribe } from './inspector-panel.ts';
@@ -359,6 +360,11 @@ export function makeInspector(deps: InspectorBuilderDeps) {
     // The poster exists in the poster view only for SNS posts (buildUsers skips url-less
     // migrations); when it does, the name+avatar links to it (双方向ナビ: posts ↔ posters).
     const jumpUser = p.url ? deps.buildUsers().find((u) => u.key === userKey(p)) : null;
+    // Same platform → instance rule buildUsers uses for HologramUserAgg.instance
+    // (services/users.ts): only misskey/mastodon posts carry an arbitrary instance
+    // host, taken from the post's own captured URL.
+    const posterInstance = p.platform === 'misskey' || p.platform === 'mastodon' ? hostOf(p.url) : null;
+    const posterProfileHref = posterProfileUrl({ platform: p.platform, screenName: p.screenName, instance: posterInstance });
     const heading = p.title || p.text || '';
     const thumbFile = g.files[0] || captureFile(p);
     // Reverse image search needs a PUBLIC image URL. media[].url keeps the
@@ -426,11 +432,13 @@ export function makeInspector(deps: InspectorBuilderDeps) {
         sourceTags: deps.t('detailSourceTags'),
         viewPoster: deps.t('ctxViewPoster'),
         open: deps.t('detailOpen'),
+        openProfile: deps.t('detailOpenProfile'),
         sauce: deps.t('detailSauce'),
         ascii: deps.t('detailAscii'),
       },
       onClose: closeOrDismissDetail,
       onOpenExternal: p.url ? () => hologramIpc.openExternal(p.url) : null,
+      onOpenProfile: posterProfileHref ? () => hologramIpc.openExternal(posterProfileHref) : null,
       onSauce: srcImageUrl ? () => hologramIpc.openExternal('https://saucenao.com/search.php?url=' + encodeURIComponent(srcImageUrl)) : null,
       onAscii: srcImageUrl ? () => hologramIpc.openExternal('https://ascii2d.net/search/url/' + encodeURIComponent(srcImageUrl)) : null,
       onPosterJump: jumpUser ? () => deps.jumpToPoster(p) : null,

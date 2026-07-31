@@ -121,6 +121,7 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     editCoocWhy: '$1 と $2 件で一緒に使われています',
     editCoocRelated: 'よく一緒に使われるタグ',
     detailOpen: '元投稿を開く',
+    detailOpenProfile: '元のプロフィールを開く',
     detailSauce: 'SauceNAOで検索',
     detailAscii: 'ascii2dで検索',
     // card / inspector tag editing
@@ -574,6 +575,7 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     editCoocWhy: 'Used together with $1 ($2×)',
     editCoocRelated: 'Often used together',
     detailOpen: 'Open original',
+    detailOpenProfile: 'Open original profile',
     detailSauce: 'Search on SauceNAO',
     detailAscii: 'Search on ascii2d',
     // card / inspector tag editing
