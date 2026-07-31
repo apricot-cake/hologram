@@ -14,10 +14,15 @@
 // Naming: only the SQUARE side is named — "元の比率のまま敷き詰める" needs no term of
 // its own, which is why there is no `masonry`/`waterfall` in the codebase (2026-07-19
 // 確定, #154). `square` is Mac 写真.app の「正方形のサムネール」と同語.
+//
+// #658 adds a 4th orthogonal key, `avatar` — every state above ×2 (avatar on/off),
+// ten legal states, no new concept (same extend-don't-bundle rule this module already
+// follows). See `avatarDisabled` below for why its disabled condition runs the
+// OPPOSITE way from `square`/`info`'s.
 import { get as storeGet, set as storeSet, subscribe as storeSubscribe } from './store.ts';
 
-/** The three store keys that make up a display state. */
-export const DISPLAY_KEYS = ['layout', 'squareThumbs', 'showInfo'] as const;
+/** The four store keys that make up a display state. */
+export const DISPLAY_KEYS = ['layout', 'squareThumbs', 'showInfo', 'showAvatar'] as const;
 
 export interface DisplayShape {
   /** Rows instead of a grid. Both switches below are inert (and disabled) while true. */
@@ -26,14 +31,17 @@ export interface DisplayShape {
   square: boolean;
   /** Grid: draw the poster / excerpt / meta block under the thumbnail. */
   info: boolean;
+  /** Draw the author's avatar in AuthorLine (#658). Independent of `info` — see avatarDisabled. */
+  avatar: boolean;
 }
 
-/** Defaults = grid, original aspect, info on (what the old `view: 'card'` drew). */
+/** Defaults = grid, original aspect, info on (what the old `view: 'card'` drew), avatar on. */
 export function currentShape(): DisplayShape {
   return {
     list: storeGet('layout') === 'list',
     square: storeGet('squareThumbs') === true,
     info: storeGet('showInfo') !== false,
+    avatar: storeGet('showAvatar') !== false,
   };
 }
 
@@ -48,7 +56,7 @@ export function subscribeShape(cb: () => void): () => void {
 /** A value that changes whenever the shape does (useSyncExternalStore snapshots). */
 export function shapeSnapshot(): string {
   const s = currentShape();
-  return `${s.list ? 'list' : 'grid'}|${s.square ? 'sq' : 'ar'}|${s.info ? 'info' : 'bare'}`;
+  return `${s.list ? 'list' : 'grid'}|${s.square ? 'sq' : 'ar'}|${s.info ? 'info' : 'bare'}|${s.avatar ? 'av' : 'noav'}`;
 }
 
 // --- The size axis ----------------------------------------------------------
@@ -87,6 +95,21 @@ export function setSquare(on: boolean): void {
 }
 export function setInfo(on: boolean): void {
   storeSet('showInfo', on);
+}
+export function setAvatar(on: boolean): void {
+  storeSet('showAvatar', on);
+}
+
+// The avatar switch disables on the OPPOSITE condition from square/info: those go
+// inert in LIST mode (a row has no separate info toggle — see `list`'s doc above).
+// The avatar has somewhere to draw in list mode too: ListRow.tsx always renders
+// AuthorLine, list or no "info" concept of its own. What kills the avatar's only
+// drawing surface is the GRID's own info block going away — PostCard.tsx doesn't
+// render its `info` block (AuthorLine's home) at all when `shape.info` is false, so
+// there is nothing left for the switch to act on. Hence: disabled only in grid, and
+// only once info is off; list always leaves it live (#658).
+export function avatarDisabled(s: DisplayShape): boolean {
+  return !s.list && !s.info;
 }
 
 // --- The poster grid's axes (#630) ------------------------------------------

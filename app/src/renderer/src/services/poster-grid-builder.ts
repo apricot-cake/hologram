@@ -21,7 +21,7 @@ import { setOpen as panelSetOpen } from './inspector-panel.ts';
 import { open as lightboxOpen } from './lightbox.ts';
 import { open as menuOpen } from './menu.ts';
 import { promptName } from '../prompt/Prompt.tsx';
-import { captureFile } from './records.ts';
+import { captureFile, monoHue } from './records.ts';
 import { setPosterTags } from './tags.ts';
 import { hologramPosterGridSource } from './grid.ts';
 import * as folders from './folders.ts';
@@ -63,21 +63,6 @@ export interface PosterGridBuilderDeps {
   // history + persists (#144) — the poster-mode mirror of the post grid's
   // syncTitleAndPersist dep. Not called on keepLimit (in-place) refreshes.
   onPosterRendered(): void;
-}
-
-// Fallback-avatar tint (#107): a stable hue per poster so avatar-less cards stay
-// distinguishable at a glance, the way GitHub / Google fallback avatars do. Hue only —
-// the cell picks saturation and lightness, so light and dark each keep their own tonal
-// range from one number. FNV-1a over the poster key (the identity the card is keyed by,
-// unlike a display name it cannot change under us), so a poster's letter+color pairing is
-// the same on every render and every restart.
-function monoHue(seed: string): number {
-  let h = 0x811c9dc5;
-  for (let i = 0; i < seed.length; i++) {
-    h ^= seed.charCodeAt(i);
-    h = Math.imul(h, 0x01000193);
-  }
-  return (h >>> 0) % 360;
 }
 
 export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {

@@ -44,6 +44,12 @@ export interface PostCardModel {
   /** Thumb srcs for the 2nd/3rd images of a multi-image group — they ride the back sheets. */
   stackSrcs?: string[];
   userName?: string;
+  /** Real avatar image (#658) — draws in AuthorLine when the shape's avatar switch is on. */
+  avatarSrc?: string | null;
+  /** Fallback-avatar initial, when there is no avatarSrc. */
+  monogram?: string | null;
+  /** Fallback-avatar hue, when there is no avatarSrc. */
+  monoHue?: number | null;
   handle?: string | null;
   flags: string[];
   mediaLabel?: string | null;
@@ -137,10 +143,41 @@ export function CountBadge({ n, top }: { n: number; top: number }) {
   );
 }
 
-/** The poster line every shape shares: display name, then the @handle it goes by. */
-export function AuthorLine({ userName, handle, className }: { userName?: string; handle?: string | null; className?: string }) {
+export interface AvatarModel {
+  avatarSrc?: string | null;
+  monogram?: string | null;
+  monoHue?: number | null;
+}
+
+/**
+ * Circular avatar with a GitHub/Google-style fallback monogram disc (#107) when
+ * there is no image — an initial on a pale hue-hashed disc (only the HUE varies
+ * per identity; each theme pins its own saturation/lightness). Shared by post
+ * cards, poster cards (#630) and AuthorLine (#658) so an avatar-less identity
+ * reads the same everywhere.
+ */
+export function Avatar({ c, className, discClassName }: { c: AvatarModel; className?: string; discClassName?: string }) {
+  return (
+    <div className={cn('@container flex shrink-0 items-center justify-center overflow-hidden bg-[var(--surface-3)]', className)}>
+      {c.avatarSrc ? (
+        <img className="block size-full object-cover" src={c.avatarSrc} alt="" loading="lazy" decoding="async" />
+      ) : (
+        <span
+          className={cn('flex items-center justify-center rounded-full font-semibold leading-none', 'bg-[hsl(var(--mono-h,220)_52%_88%)] text-[hsl(var(--mono-h,220)_42%_32%)]', 'dark:bg-[hsl(var(--mono-h,220)_26%_27%)] dark:text-[hsl(var(--mono-h,220)_50%_78%)]', discClassName)}
+          style={{ '--mono-h': c.monoHue ?? undefined } as CSSProperties}
+        >
+          {c.monogram}
+        </span>
+      )}
+    </div>
+  );
+}
+
+/** The poster line every shape shares: an optional avatar, display name, then the @handle it goes by. */
+export function AuthorLine({ userName, handle, avatar, className }: { userName?: string; handle?: string | null; avatar?: AvatarModel | null; className?: string }) {
   return (
     <div className={cn('flex min-w-0 items-center gap-1.5', className)}>
+      {avatar && <Avatar c={avatar} className="size-5 rounded-full border border-[var(--border-soft)]" discClassName="size-full text-[10px]" />}
       <span className="truncate">{userName}</span>
       {handle && <span className="min-w-0 flex-1 truncate font-normal text-[11px] text-[var(--text-subtle)]">{handle}</span>}
     </div>
@@ -285,7 +322,7 @@ export function PostCard({ m, shape, overview, group, actions, cellRef, onAspect
     // the squares line up and the cards below them do not. At the original aspect
     // nothing is even anyway, so there the block just takes what it needs.
     <div data-slot="post-card-meta" className={cn('relative flex min-w-0 flex-1 flex-col rounded-b-lg bg-[var(--surface)] p-3', shape.square && 'h-24 overflow-hidden')}>
-      <AuthorLine userName={m.userName} handle={m.handle} className="mb-1 font-semibold text-[13px]" />
+      <AuthorLine userName={m.userName} handle={m.handle} avatar={shape.avatar ? m : null} className="mb-1 font-semibold text-[13px]" />
       {(m.flags.length > 0 || m.mediaLabel) && (
         <div className="mb-[3px] flex flex-wrap gap-x-2 gap-y-0.5 text-[10px] text-[var(--text-muted)] leading-[1.6]">
           {m.flags.map((f) => (

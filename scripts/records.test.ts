@@ -389,8 +389,8 @@ describe('makeGallery（ライトボックスの項目）', () => {
 
 describe('makeCardModel（カード1枚のビューモデル）', () => {
   const STATIC_MSG: Record<string, string> = { qfThread: 'THREAD', qfReply: 'REPLY', qfQuote: 'QUOTE', qfImage: 'IMG', qfVideo: 'VID', qfGif: 'GIF' };
-  // 既定の表示＝グリッド・元の比率・情報あり（旧 'card'）
-  let shape = { list: false, square: false, info: true };
+  // 既定の表示＝グリッド・元の比率・情報あり・アバターあり（旧 'card'）
+  let shape = { list: false, square: false, info: true, avatar: true };
   let relevant = true; // エンゲージメント/取得日を出す条件が立っているか
   const cardModel = R.makeCardModel({
     t: (key: string, subs: any[]) => {
@@ -465,6 +465,30 @@ describe('makeCardModel（カード1枚のビューモデル）', () => {
   // プラットフォームのバッジはサムネから撤去済み（1423e65）＝pfName はもう出さない
   test('投稿者の同定（userName / handle）', () => {
     expect(m).toMatchObject({ userName: 'Alice', handle: '@alice' });
+  });
+
+  // #658: AuthorLine が描くアバターのモデル（実画像 or 色付きモノグラムのフォールバック）
+  describe('アバター（#658）', () => {
+    test('avatarFile があれば avatarSrc を fileSrc 経由で持ち、フォールバック2つは null', () => {
+      const withAvatar = model({ ...p, avatarFile: 'ava.jpg' });
+      expect(withAvatar.avatarSrc).toBe('ava.jpg@0');
+      expect(withAvatar.monogram).toBeNull();
+      expect(withAvatar.monoHue).toBeNull();
+    });
+
+    test('avatarFile が無ければ avatarSrc は falsy、monogram は userName の頭文字、monoHue は [0,360) の数値', () => {
+      expect(m.avatarSrc).toBeFalsy();
+      expect(m.monogram).toBe('A'); // userName: 'Alice'
+      expect(typeof m.monoHue).toBe('number');
+      expect(m.monoHue).toBeGreaterThanOrEqual(0);
+      expect(m.monoHue).toBeLessThan(360);
+    });
+
+    test('同じ投稿から2回作っても monoHue は同じ（決定的）', () => {
+      const a = model(p);
+      const b = model(p);
+      expect(a.monoHue).toBe(b.monoHue);
+    });
   });
 
   test('フラグは thread/quote のみ（reply は false）', () => {
