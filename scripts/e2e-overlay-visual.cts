@@ -162,7 +162,38 @@ const HTML = `<!doctype html>
     const headerClear = await page.evaluate(() => !document.querySelector('[data-hologram-overlay]'));
     if (!headerClear) throw new Error('OVERLAY_HEADER_OCCLUSION_FAIL: control remained while the pointer was on the fixed header');
 
-    console.log('PASS e2e-overlay-visual: failure banner layout, corner has no tooltip, scroll tracking, modal occlusion, fixed-header occlusion');
+    // #659: the viewer IS a `[role="dialog"][aria-modal="true"]` itself. The
+    // blanket "any open modal blocks hover" rule this file's compose-dialog
+    // case (above) exists to pin would, if unfixed, make the viewer's own
+    // picture permanently unreachable — modalCovers() must exempt a modal
+    // that CONTAINS the anchor.
+    const VIEWER_HTML = `<!doctype html>
+<html><head><meta charset="utf-8"><style>
+  * { box-sizing: border-box; margin: 0; }
+  body { background: #000; }
+  [role="dialog"] { position: fixed; inset: 0; display: grid; place-items: center; }
+  [data-testid="swipe-to-dismiss"] { position: relative; width: 420px; height: 420px; }
+  [data-testid="swipe-to-dismiss"] img { display: block; width: 100%; height: 100%; object-fit: contain; }
+</style></head><body>
+  <div role="dialog" aria-modal="true">
+    <div data-testid="swipe-to-dismiss">
+      <img src="https://pbs.twimg.com/media/AAA.jpg?format=jpg&amp;name=large" alt="viewer image">
+    </div>
+  </div>
+</body></html>`;
+    const viewerPage = await openFixture(overlay, 'https://x.com/alice/status/111/photo/1', VIEWER_HTML);
+    const viewerMedia = await viewerPage.$('[data-testid="swipe-to-dismiss"]');
+    const viewerBox = await viewerMedia.boundingBox();
+    if (!viewerBox) throw new Error('viewer fixture has no browser layout box');
+    await viewerPage.mouse.move(viewerBox.x + viewerBox.width / 2, viewerBox.y + viewerBox.height / 2);
+    const viewerControlVisible = await viewerPage.waitForSelector('[data-hologram-overlay]', { timeout: 3000 }).then(
+      () => true,
+      () => false,
+    );
+    if (!viewerControlVisible) throw new Error('OVERLAY_VIEWER_MODAL_BLOCKED_FAIL: the photo viewer is itself a dialog, and hover was blocked by it — modalCovers() should exempt a modal that contains the anchor');
+    await viewerPage.close();
+
+    console.log('PASS e2e-overlay-visual: failure banner layout, corner has no tooltip, scroll tracking, modal occlusion, fixed-header occlusion, photo-viewer hover (#659)');
   } finally {
     await overlay.close();
   }

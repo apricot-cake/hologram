@@ -111,22 +111,30 @@ function findXPostElement(target: EventTarget | null): Element | null {
   return findXViewerMedia(el);
 }
 
-// The picture the photo viewer is showing, when that is what the pointer is on.
+// The picture the photo viewer is showing — accepts either the picture itself
+// (el IS the <img>/<video>) or a wrapper that contains it. The second shape is
+// not hypothetical: X layers its own swipe-down-to-dismiss hit target
+// (`div[data-testid="swipe-to-dismiss"]`) over the picture, several ancestors
+// above the <img>, and that is what a click or a hover-scan unit actually
+// lands on. Accepting only the bare element (the original shape here) meant
+// the SELECT click landed on the wrapper and resolved to nothing — the
+// highlight drawn by the overlay branch below and the click a person then made
+// disagreed about what was under the pointer (#582).
 //
-// Returned as the post element itself, which is what makes the capture rect the
-// picture's own box: the modal spans the viewport, and the navigation arrows,
-// the reply column and the dimmed backdrop are not part of the post. The
-// permalink then comes from getPermalink's URL-bar fallback, which already
-// strips /photo/<n> down to the post.
+// Returned as the resolved picture itself (never the wrapper), which is what
+// makes the capture rect the picture's own box: the modal spans the viewport,
+// and the navigation arrows, the reply column and the dimmed backdrop are not
+// part of the post. The permalink then comes from getPermalink's URL-bar
+// fallback, which already strips /photo/<n> down to the post.
 //
 // Nothing else in the viewer is capturable: the close button and the backdrop
-// are not media, and the author's avatar is media the URL bar would attribute
-// to the post perfectly well — so the same CDN-path allowlist the hover save
-// button gates on (#94) decides here too.
+// contain no picture, and the author's avatar IS an <img> the URL bar would
+// attribute to the post perfectly well — so the same CDN-path allowlist the
+// hover save button gates on (#94) decides here too.
 function findXViewerMedia(el: Element): Element | null {
   if (!X_PHOTO_VIEWER_PATH.test(location.pathname)) return null;
-  if (el.tagName !== 'IMG' && el.tagName !== 'VIDEO') return null;
-  return x.mediaIdentity?.isPostMedia(el as PostMediaElement) ? el : null;
+  const found = el.tagName === 'IMG' || el.tagName === 'VIDEO' ? el : el.querySelector('img, video');
+  return found && x.mediaIdentity?.isPostMedia(found as PostMediaElement) ? found : null;
 }
 
 // === DOM: what the page shows about the post (#202) ===
@@ -602,12 +610,21 @@ const x: Extractor = {
   },
 
   overlay: {
-    // Two shapes: a timeline `article` (permalink anchor and media both
-    // live somewhere inside it) and a media-tab grid tile — a bare `<li>`
+    // Three shapes: a timeline `article` (permalink anchor and media both
+    // live somewhere inside it), a media-tab grid tile — a bare `<li>`
     // several ancestors above its own `/status/` anchor, with no
-    // `article`/testid wrapper at all (#349). `:has()` reaches the anchor
-    // regardless of the div nesting in between.
-    unitSelector: 'article[data-testid="tweet"], li:has(a[href*="/status/"])',
+    // `article`/testid wrapper at all (#349, `:has()` reaches the anchor
+    // regardless of the div nesting in between) — and the photo viewer's
+    // `div[data-testid="swipe-to-dismiss"]`, which wraps exactly the one
+    // slide currently shown and sits outside every article (#659, same
+    // modal-layer shape #325 first hit for Alt+S). That testid is X's own
+    // internal naming and could vanish silently, so mediaIn double-checks it
+    // with findXViewerMedia (URL shape `/photo/<n>` + the same CDN-path
+    // allowlist every other branch here uses) before treating it as a unit —
+    // this also keeps the scope to the photo viewer only, not the video
+    // immersive viewer (`/video/<n>`), matching #325's v1 decision not to
+    // guess at a shape nobody has confirmed.
+    unitSelector: 'article[data-testid="tweet"], li:has(a[href*="/status/"]), div[data-testid="swipe-to-dismiss"]',
     // querySelectorAll returns document order, so the first entry is the
     // first picture of a multi-image post — where the "saved" mark belongs.
     // A grid tile has no tweetPhoto/videoPlayer testid to key on — its
@@ -617,8 +634,17 @@ const x: Extractor = {
     // Video and GIF tiles pass that check as of #372, so they are tracked
     // like picture tiles: the media tab must answer the same question the
     // timeline does, which is the inconsistency #349 existed to remove.
+    //
+    // The viewer branch returns the WRAPPER itself as the media box — the
+    // same shape tweetPhoto/videoPlayer already use (a testid'd container,
+    // with postMediaIn() digging out the actual <img>/<video> later) — so the
+    // corner lands at the container's own top-left inset rather than needing
+    // its own positioning rule. findXViewerMedia is used only as a gate here
+    // (is the viewer open, and does this wrapper hold a real post picture);
+    // the box handed to the rest of overlay.ts stays the wrapper (#659).
     mediaIn: (unit) => {
       if (unit.tagName === 'LI') return [...unit.querySelectorAll('img')].filter((img) => x.mediaIdentity?.isPostMedia(img as HTMLImageElement) ?? false);
+      if (unit.getAttribute('data-testid') === 'swipe-to-dismiss') return findXViewerMedia(unit) ? [unit] : [];
       return [...unit.querySelectorAll('[data-testid="tweetPhoto"], [data-testid="videoPlayer"]')];
     },
     // The author avatar (#575) — the only element a text-only tweet still has
