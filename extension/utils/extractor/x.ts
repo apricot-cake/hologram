@@ -640,16 +640,23 @@ const x: Extractor = {
     // like picture tiles: the media tab must answer the same question the
     // timeline does, which is the inconsistency #349 existed to remove.
     //
-    // The viewer branch returns the WRAPPER itself as the media box — the
-    // same shape tweetPhoto/videoPlayer already use (a testid'd container,
-    // with postMediaIn() digging out the actual <img>/<video> later) — so the
-    // corner lands at the container's own top-left inset rather than needing
-    // its own positioning rule. findXViewerMedia is used only as a gate here
-    // (is the viewer open, and does this wrapper hold a real post picture);
-    // the box handed to the rest of overlay.ts stays the wrapper (#659).
+    // The viewer branch returns the resolved picture itself, never the
+    // `swipe-to-dismiss` wrapper (#704, correcting #659): that wrapper is the
+    // swipe-down hit target, sized to the viewer's slide — not to the
+    // picture — so treating it as the media box put the "saved" corner
+    // (controlHost()'s HTMLElement branch, box's own top-left inset) at the
+    // viewer's own top-left, on top of X's close (×) button. Grid tiles
+    // already dodge this: they hand back the real <img> directly, letting
+    // controlHost()'s IMG branch borrow box.parentElement's position:relative
+    // instead of inventing a placement rule. findXViewerMedia already returns
+    // that resolved element (its own doc comment: "never the wrapper") — this
+    // branch is now shaped exactly like the LI one just below.
     mediaIn: (unit) => {
       if (unit.tagName === 'LI') return [...unit.querySelectorAll('img')].filter((img) => x.mediaIdentity?.isPostMedia(img as HTMLImageElement) ?? false);
-      if (unit.getAttribute('data-testid') === 'swipe-to-dismiss') return findXViewerMedia(unit) ? [unit] : [];
+      if (unit.getAttribute('data-testid') === 'swipe-to-dismiss') {
+        const media = findXViewerMedia(unit);
+        return media ? [media] : [];
+      }
       return [...unit.querySelectorAll('[data-testid="tweetPhoto"], [data-testid="videoPlayer"]')];
     },
     // The author avatar (#575) — the only element a text-only tweet still has
