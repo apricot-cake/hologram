@@ -8,7 +8,7 @@
 //
 // Same rules as the card: no hover parts, no DOM contract, gestures as props.
 import { cn } from '@/lib/utils';
-import { AuthorLine, CardThumb, cellChrome, cellHandlers, MetaFoot, StackSheets, type PostCellProps } from './PostCard.tsx';
+import { AuthorLine, CardThumb, cellChrome, cellHandlers, MetaFoot, SelectionRing, StackSheets, type PostCellProps } from './PostCard.tsx';
 
 /** The count that the card carries as a badge — a row has room to just say it. */
 function CountLabel({ n }: { n: number }) {
@@ -28,8 +28,11 @@ export function ListRow({ m, shape, group, actions, cellRef, listThumb = 88 }: P
           className="relative shrink-0 self-stretch overflow-hidden rounded-l-md"
           imgClassName="block h-full w-full cursor-zoom-in object-cover"
           // The thumbnail column IS the list's size axis, so its width is the model's,
-          // not a class — one number, driven by the display popover's slider.
-          style={{ flex: `0 0 ${listThumb}px`, width: listThumb }}
+          // not a class — one number, driven by the display popover's slider. Its
+          // height is a crop of that width, NOT the picture's own proportions: a row
+          // whose height follows its thumbnail makes the list a ragged column, and the
+          // point of a list is that the rows scan.
+          style={{ flex: `0 0 ${listThumb}px`, width: listThumb, height: Math.round(listThumb * 1.25) }}
         />
       )}
       <div data-slot="post-card-meta" className="relative flex min-w-0 flex-1 flex-col justify-center gap-0.5 rounded-r-md bg-[var(--surface)] px-3.5 py-2.5">
@@ -40,6 +43,7 @@ export function ListRow({ m, shape, group, actions, cellRef, listThumb = 88 }: P
           <MetaFoot m={m} className="min-w-0 flex-1" />
         </div>
       </div>
+      {m.selected && <SelectionRing />}
     </div>
   );
 }

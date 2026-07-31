@@ -257,8 +257,17 @@ export function cellChrome(m: PostCardModel, grouped: boolean): string {
     // and shadow, so the card box itself steps back to nothing.
     grouped && 'overflow-visible border-transparent bg-transparent shadow-none hover:shadow-none',
     m.inspected && 'border-[var(--accent-border)] shadow-[0_0_0_1px_var(--accent-border)]',
-    m.selected && 'ring-3 ring-selected/45 ring-inset',
   );
+}
+
+/**
+ * The selection ring, as an OVERLAY rather than a ring/outline on the card box. Both of
+ * those paint under the thumbnail (a card is its own stacking context and the image sits
+ * on top), so the ring came out thinner over the picture than over the metadata —
+ * reported on the old build, and the reason this has always been a positioned element.
+ */
+export function SelectionRing() {
+  return <span aria-hidden="true" className="pointer-events-none absolute inset-0 z-[6] rounded-[inherit] border-[3px] border-selected/45" />;
 }
 
 export function PostCard({ m, shape, overview, group, actions, cellRef, onAspect }: PostCellProps) {
@@ -267,7 +276,11 @@ export function PostCard({ m, shape, overview, group, actions, cellRef, onAspect
   const stack = grouped ? (m.stackSrcs ?? []) : [];
   const showBadge = grouped && !overview;
   const info: ReactNode = shape.info && (
-    <div data-slot="post-card-meta" className="relative flex min-w-0 flex-1 flex-col rounded-b-lg bg-[var(--surface)] p-3">
+    // Square thumbnails are chosen to get an EVEN lattice, so the block under them is
+    // a fixed height (INFO_BLOCK) rather than one that grows with the text — otherwise
+    // the squares line up and the cards below them do not. At the original aspect
+    // nothing is even anyway, so there the block just takes what it needs.
+    <div data-slot="post-card-meta" className={cn('relative flex min-w-0 flex-1 flex-col rounded-b-lg bg-[var(--surface)] p-3', shape.square && 'h-24 overflow-hidden')}>
       <AuthorLine userName={m.userName} handle={m.handle} className="mb-1 font-semibold text-[13px]" />
       {(m.flags.length > 0 || m.mediaLabel) && (
         <div className="mb-[3px] flex flex-wrap gap-x-2 gap-y-0.5 text-[10px] text-[var(--text-muted)] leading-[1.6]">
@@ -277,7 +290,7 @@ export function PostCard({ m, shape, overview, group, actions, cellRef, onAspect
           {m.mediaLabel && <span>{m.mediaLabel}</span>}
         </div>
       )}
-      {m.text && <div className="mb-1.5 line-clamp-3 text-[13px] text-[var(--text)]">{m.text}</div>}
+      {m.text && <div className={cn('mb-1.5 text-[13px] text-[var(--text)]', shape.square ? 'line-clamp-1' : 'line-clamp-3')}>{m.text}</div>}
       {/* Pinned to the bottom edge so the date lines up across a row of cards of
           different text lengths. */}
       <MetaFoot m={m} className="mt-auto pt-1.5" />
@@ -306,6 +319,7 @@ export function PostCard({ m, shape, overview, group, actions, cellRef, onAspect
       )}
       {showBadge && <CountBadge n={m.nImg as number} top={(grouped ? g.deck : 0) + 8} />}
       {info}
+      {m.selected && <SelectionRing />}
     </div>
   );
 }

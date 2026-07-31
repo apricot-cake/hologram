@@ -10,7 +10,7 @@ test('カードをクリックすると選択されインスペクタに内容�
   const card = page.locator('[data-slot="post-grid"] [data-slot="post-card"]').filter({ hasText: '猫が机の上で寝ている' });
   await card.click();
 
-  await expect(card).toHaveClass(/\bselected\b/);
+  await expect(card).toHaveAttribute('data-selected', 'true');
   const inspector = page.locator('[data-slot="inspector-post"]');
   await expect(inspector).toBeVisible();
   await expect(inspector).toContainText('猫沢みけ');
@@ -25,11 +25,11 @@ test('別のカードをクリックすると選択が入れ替わる', async ({
   const second = page.locator('[data-slot="post-grid"] [data-slot="post-card"]').filter({ hasText: '夕暮れの街並み' });
 
   await first.click();
-  await expect(first).toHaveClass(/\bselected\b/);
+  await expect(first).toHaveAttribute('data-selected', 'true');
   await second.click();
 
   await expect(page.locator('[data-slot="post-grid"] [data-slot="post-card"][data-selected]')).toHaveCount(1);
-  await expect(second).toHaveClass(/\bselected\b/);
+  await expect(second).toHaveAttribute('data-selected', 'true');
   await expect(page.locator('[data-slot="inspector-post"]')).toContainText('街田あかね');
 });
 
