@@ -277,7 +277,7 @@ export function AppShell() {
                 into that band — Chrome draws no rule between the strip and the toolbar.
                 The right padding reserves the corner the app-drawn window buttons are
                 portaled over; the inspector toggle is a normal child and needs none. */}
-            <header className="app-drag sticky top-0 z-50 flex h-[var(--tabbar-h)] shrink-0 items-center bg-[var(--tabbar-bg)] pr-[var(--window-controls-w,138px)]">
+            <header data-slot="titlebar-band" className="app-drag sticky top-0 z-50 flex h-[var(--tabbar-h)] shrink-0 items-center bg-[var(--tabbar-bg)] pr-[var(--window-controls-w,138px)]">
               <TabsHost />
               {/* Inspector toggle (#243) — mirrors the sidebar trigger at the band's left
                   end. A real child here (not portaled), so it sits just left of the window
