@@ -111,6 +111,7 @@ const sent: Array<{ channel: string; payload: unknown }> = [];
 const ctx = {
   getSaveFolder: () => saveFolder,
   getTrashDir: () => null,
+  getLibraryStatus: () => ({ missing: false, path: saveFolder }),
   ensurePostsSynced: () => (saveFolder ? { db: null, sqlite } : null),
   send: (channel: string, payload: unknown) => {
     sent.push({ channel, payload });

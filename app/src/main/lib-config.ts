@@ -197,6 +197,24 @@ function getSaveFolder() {
   }).folder;
 }
 
+// #37: whether the CURRENT save folder is missing on disk right now — i.e. an
+// explicit config.saveFolder that no longer resolves to a real directory
+// (moved/renamed/unmounted from outside the app). Never true for a fresh
+// install (no explicit folder): that case resolves through the pointer/default
+// and the default dir is created on demand, not "missing".
+//
+// Deliberately a fresh stat on every call rather than a cached flag: the check
+// is one statSync (dirExists), cheap enough to run wherever a write handler or
+// the renderer's status IPC needs the CURRENT answer, and a cached flag would
+// need its own invalidation story (repoint, retry, drive remount) for no real
+// savings.
+function saveFolderStatus() {
+  const explicit = loadConfig().data.saveFolder;
+  const hasExplicit = typeof explicit === 'string' && !!explicit.trim();
+  const folder = getSaveFolder();
+  return { folder, missing: hasExplicit && !dirExists(folder) };
+}
+
 // Once at startup: keep the redundant pointer fresh for an existing install, and —
 // if config LOST its saveFolder (corruption) but the pointer still resolves to a
 // real library — write it back into config so the value is durable and the native
@@ -217,4 +235,4 @@ function initSaveFolderRedundancy() {
   }
 }
 
-export { readConfig, writeConfig, getSaveFolder, readSavePointer, initSaveFolderRedundancy, isConfigCorrupt, invalidateConfigCache };
+export { readConfig, writeConfig, getSaveFolder, readSavePointer, initSaveFolderRedundancy, isConfigCorrupt, invalidateConfigCache, saveFolderStatus };

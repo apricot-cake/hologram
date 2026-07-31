@@ -8,7 +8,7 @@
 import { ipcMain, app } from 'electron';
 import fs from 'node:fs';
 import type { HologramConfig, IpcContext } from './ipc-context.ts';
-import type { AppInfo, AppPrefs, ConfigSummary, ExtensionIdResult, OkResult, TabsState } from './ipc-payloads.ts';
+import type { AppInfo, AppPrefs, ConfigSummary, ExtensionIdResult, LibraryStatus, OkResult, TabsState } from './ipc-payloads.ts';
 
 // --- Preferences (language / layoutMode / skipDeleteConfirm / …) ---
 // Post sort is NOT here: it lives in the per-tab state (tabs-builder.ts's
@@ -40,12 +40,17 @@ const legacyPosterGridSize = (cfg: HologramConfig): number | null => {
 const VALID_EXT_ID = /^[a-p]{32}$/;
 
 function register(ctx: IpcContext) {
-  const { readConfig, writeConfig, invalidateConfigCache, getSaveFolder, getDbWriter, installer, getWin } = ctx;
+  const { readConfig, writeConfig, invalidateConfigCache, getSaveFolder, getDbWriter, installer, getWin, getLibraryStatus } = ctx;
 
   ipcMain.handle('get-config', (): ConfigSummary => {
     const cfg = readConfig();
     return { saveFolder: getSaveFolder(), extensionId: cfg.extensionId || null };
   });
+
+  // #37: the renderer calls this on boot (and again after a retry/repoint) to
+  // decide whether to show the normal library or the libraryMissing screen —
+  // see empty/LibraryMissingState.tsx. Always a fresh check, not a cached push.
+  ipcMain.handle('get-library-status', (): LibraryStatus => getLibraryStatus());
 
   ipcMain.handle('set-extension-id', (_event, id): ExtensionIdResult => {
     const cfg = readConfig();

@@ -73,6 +73,19 @@ export interface ConfigSummary {
   extensionId: string | null;
 }
 
+/**
+ * get-library-status (#37). `missing` is a fresh statSync of the CURRENT
+ * explicit save folder, not a cached flag — the renderer re-asks this after a
+ * retry or a repoint rather than listening for a push. `path` is null only
+ * when there is no explicit save folder at all (fresh install), in which case
+ * `missing` is always false — see native-host/config-recovery.cts's
+ * libraryIsMissing.
+ */
+export interface LibraryStatus {
+  missing: boolean;
+  path: string | null;
+}
+
 /** set-extension-id — the id as stored, i.e. '' when the input was refused. */
 export interface ExtensionIdResult {
   extensionId: string;
@@ -342,6 +355,29 @@ export interface ClipboardImportResult {
   imported: number;
   empty?: boolean;
   error?: string;
+}
+
+/**
+ * pick-repoint-folder (#37): resolves + validates a destination for repoint
+ * WITHOUT writing anything — apply-repoint does the actual write, mirroring
+ * pick-save-folder/move-save-folder's two-step shape. `hasEvidence` says
+ * whether the folder looks like an existing Hologram library (a .trash or
+ * .hologram-inbox subfolder, or a library media file directly inside it); the
+ * renderer confirms with the user before repointing at a folder with none.
+ */
+export interface RepointPickResult {
+  ok: boolean;
+  canceled?: boolean;
+  error?: string;
+  dest?: string;
+  hasEvidence?: boolean;
+}
+
+/** apply-repoint (#37): rewrites config.saveFolder to `dest` with NO copy. */
+export interface RepointApplyResult {
+  ok: boolean;
+  error?: string;
+  saveFolder?: string;
 }
 
 /** move-save-folder — the relocation's own outcome. */

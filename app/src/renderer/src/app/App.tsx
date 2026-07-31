@@ -15,9 +15,10 @@ import { handleShortcutPanelsKey } from '../services/panels.ts';
 import { handleShortcutZoomKey } from '../services/image-zoom.ts';
 import { handleShortcutClipboardKey } from '../services/clipboard-intake.ts';
 import { onPostsChanged } from '../services/posts.ts';
+import { getLibraryStatus } from '../services/library-path.ts';
 import { subscribePosterShape as subscribePosterDisplay, subscribeShape as subscribeDisplay } from '../services/display.ts';
 import { onChange as foldersOnChange } from '../services/folders.ts';
-import { subscribe as storeSubscribe } from '../services/store.ts';
+import { set as storeSet, subscribe as storeSubscribe } from '../services/store.ts';
 import {
   viewerReady,
   bootApp,
@@ -67,6 +68,28 @@ import {
 function AppBoot() {
   useEffect(() => {
     viewerReady.then(() => bootApp());
+  }, []);
+  return null;
+}
+
+// #37: seeds hologramStore's 'libraryMissing'/'libraryMissingPath' once on mount, so
+// AppShell/LibraryMissingState know whether to show the library or explain why it is
+// unreachable. A one-shot fetch, not a subscription — get-library-status is a fresh
+// statSync every call and there is no push channel (see main/index.ts's
+// refreshLibraryStatus comment); empty/LibraryMissingState.tsx re-fetches itself after
+// 再試行/repoint. Independent of AppBoot/bootApp: the DB-backed post list loads either
+// way (the DB does not know or care whether the save folder exists), this effect only
+// decides whether AppShell shows it.
+function LibraryStatusGate() {
+  useEffect(() => {
+    getLibraryStatus()
+      .then((status) => {
+        storeSet('libraryMissing', !!(status && status.missing));
+        storeSet('libraryMissingPath', (status && status.path) || null);
+      })
+      .catch(() => {
+        /* leave the default (not missing) — the normal grid still tries to load */
+      });
   }, []);
   return null;
 }
@@ -225,6 +248,8 @@ export function App() {
     <TooltipProvider delay={0}>
       {/* Triggers the app's initial data load once, on mount. */}
       <AppBoot />
+      {/* #37: seeds the libraryMissing store keys once, on mount. */}
+      <LibraryStatusGate />
       {/* Global keyboard/mouse shortcuts — React owns the listener registration. */}
       <GlobalShortcuts />
       {/* Esc-priority inspector close + outside-click dismiss — capture phase. */}

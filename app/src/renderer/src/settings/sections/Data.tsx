@@ -74,8 +74,26 @@ const saveFolderErr = (code?: string) => {
       return t('saveFolderErrCopyFailed');
     case 'not-writable':
       return t('saveFolderErrNotWritable');
+    // #37: the current save folder is missing on disk — relocation (which COPIES
+    // from it) refuses outright; the content column's 再指定 (repoint) button is
+    // the way out, not this dialog's 変更 button.
+    case 'library-missing':
+      return t('saveFolderErrLibraryMissing');
     default:
       return t('saveFolderErrGeneric');
+  }
+};
+
+// #37: backup run failures that are specific ERROR CODES (not an arbitrary
+// exception .message, which falls through to the default and is shown as-is).
+const backupErr = (code?: string | null) => {
+  switch (code) {
+    case 'dest-missing':
+      return t('backupErrDestMissing');
+    case 'src-missing':
+      return t('backupErrSrcMissing');
+    default:
+      return code || '';
   }
 };
 
@@ -303,6 +321,12 @@ export function Data() {
     try {
       const res = await importImages();
       if (!res || res.canceled) return;
+      // #37: main refuses while the save folder is missing (see ipc-transfer.ts's
+      // import-images guard) — surface that rather than reporting "0 imported".
+      if (res.error) {
+        notify(res.error === 'library-missing' ? t('saveFolderErrLibraryMissing') : t('importFailed'));
+        return;
+      }
       reloadPosts();
       if (res.skipped > 0) notify(t('importSkipped', [res.imported, res.skipped]));
       else notify(t('imported', [res.imported]));
@@ -384,7 +408,7 @@ export function Data() {
     const r = backup.lastResult;
     if (!r) return null;
     if (r.ok === false && r.error) {
-      return <div className="text-destructive mt-2 text-[0.8rem]">{`⚠ ${r.error}`}</div>;
+      return <div className="text-destructive mt-2 text-[0.8rem]">{`⚠ ${backupErr(r.error)}`}</div>;
     }
     if (r.pruneSkipped) {
       const msg = r.pruneSkipped === 'shrink' ? t('backupPruneShrink') : t('backupPruneEmpty');
