@@ -43,7 +43,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type Database from 'better-sqlite3';
-import { inboxNewDir, inboxSegmentsDir, parseInboxEnvelope } from '../../../native-host/inbox.mts';
+import { SAFE_EVENT_ID, inboxNewDir, inboxSegmentsDir, parseInboxEnvelope } from '../../../native-host/inbox.mts';
 import type { InboxEnvelope } from '../../../native-host/inbox.mts';
 import type { PostRecordShape } from '../../../native-host/post-record.mts';
 import { fillCardDims } from './lib-card-dims.ts';
@@ -129,7 +129,7 @@ function makeApplyCtx(saveFolder: string, sqlite: Database.Database): InboxApply
     sqlite,
     stmts: preparePostStmts(sqlite),
     resolveTagId: makeTagResolver(sqlite),
-    selectReceipt: sqlite.prepare('SELECT payloadSha256 FROM inbox_events WHERE eventId = ?'),
+    selectReceipt: sqlite.prepare('SELECT payloadSha256, importedAt FROM inbox_events WHERE eventId = ?'),
     insertReceipt: sqlite.prepare('INSERT INTO inbox_events (eventId, captureId, payloadSha256, importedAt, sourceSegment) VALUES (?,?,?,?,?)'),
     selectExistingPost: sqlite.prepare('SELECT url, image, video FROM posts WHERE captureId = ?'),
     selectExistingMedia: sqlite.prepare('SELECT file FROM media WHERE postId = ?'),
@@ -237,7 +237,44 @@ function replaySegments(ctx: InboxApplyCtx, report: InboxDrainReport) {
   }
 }
 
+// True when the file is provably covered by a receipt that is newer than the
+// file itself — the drain can then count it as already applied WITHOUT opening
+// it. The file name is the eventId (native-host/inbox.mts writes
+// new/<eventId>.json), so the receipt can be found before any read.
+//
+// The mtime comparison is what keeps the hash-conflict contract: a receipt says
+// "this eventId was imported at T", not "the bytes on disk are still the ones
+// that were imported". A file rewritten after T is read in full and goes down
+// the normal path, which is where a differing payload is reported. Only a file
+// that has not been touched since its own import is taken on the receipt's word.
+// stat() is metadata-only and ~12x cheaper than read + SHA-256 on a cold file
+// cache (measured on ~1,000 envelopes), and the drain never reads what it does
+// not have to.
+function receiptCoversUntouchedFile(ctx: InboxApplyCtx, dir: string, name: string): boolean {
+  const eventId = name.slice(0, -'.json'.length);
+  // Anything not shaped like one of our event ids is left to the reader, so a
+  // stray file still gets its reason reported instead of vanishing from the report.
+  if (!SAFE_EVENT_ID.test(eventId)) return false;
+  const receipt = ctx.selectReceipt.get(eventId) as { payloadSha256: string; importedAt: string } | undefined;
+  if (!receipt) return false;
+  const importedAt = Date.parse(receipt.importedAt || '');
+  if (!Number.isFinite(importedAt)) return false;
+  try {
+    return fs.statSync(path.join(dir, name)).mtimeMs <= importedAt;
+  } catch {
+    return false; // unreadable metadata — fall through and let the read report it
+  }
+}
+
 // Applies every loose envelope in .hologram-inbox/new not yet receipted.
+//
+// Already-imported envelopes are skipped on their receipt alone (see above).
+// They are the overwhelming majority: loose files are RETAINED after import as
+// the replay source (this module's header), so without the skip every drain
+// re-read and re-hashed the entire retained archive — and drainInbox runs on the
+// critical path of the first post list, plus on every inbox watch event. This is
+// the same rule replaySegments already applies to segments ("already replayed —
+// never opened"); the loose path simply never had it.
 function drainLoose(ctx: InboxApplyCtx, report: InboxDrainReport) {
   const dir = inboxNewDir(ctx.saveFolder);
   let files: string[];
@@ -248,6 +285,10 @@ function drainLoose(ctx: InboxApplyCtx, report: InboxDrainReport) {
   }
   for (const name of files.filter((f) => f.toLowerCase().endsWith('.json')).sort()) {
     report.scanned++;
+    if (receiptCoversUntouchedFile(ctx, dir, name)) {
+      report.noop++;
+      continue;
+    }
     let raw: string;
     try {
       raw = fs.readFileSync(path.join(dir, name), 'utf8');

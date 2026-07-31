@@ -5,6 +5,7 @@
 // 冪等性・競合ルールを直接見る:
 //   - 新規 event は1回だけ posts 行になり、receipt が付く
 //   - 同じ event の再 drain は no-op（受け入れ条件の冪等性そのもの）
+//   - その no-op はファイルを開かずに済ませる（receipt より新しくない loose は読まない）
 //   - eventId は同じだが hash が違えば conflict として報告し、既存行は変えない
 //   - captureId は既にあるが URL/media が食い違えば conflict として報告する
 //   - captureId は既にあり URL/media が一致すれば receipt だけ足す（上書きしない）
@@ -82,6 +83,25 @@ describe('drainInbox', () => {
 
       expect(report).toMatchObject({ applied: [], receiptOnly: [], noop: 1, skipped: [] });
       expect(count('posts')).toBe(before);
+    });
+
+    // 取込済みの loose は receipt だけで no-op になる＝中身を読まない。読んでいれば
+    // 壊れた JSON が invalid-json として skipped に出るので、出ないことが「開いていない」
+    // ことの証拠になる。mtime を receipt より古く戻すのは「取込後に書き換えられていない」
+    // 状態の再現（書き換えられた場合は下の hash-conflict が読みに行く）。
+    test('取込済みの loose はファイルを開かずに no-op になる', () => {
+      const captureId = '1700000000000-aa01';
+      const file = path.join(inboxNewDir(saveFolder), `${captureId}.json`);
+      const importedAt = Date.parse(one('SELECT importedAt FROM inbox_events WHERE eventId = ?', captureId).importedAt);
+      const original = fs.readFileSync(file);
+      fs.writeFileSync(file, 'this is not json');
+      const old = new Date(importedAt - 60_000);
+      fs.utimesSync(file, old, old);
+
+      const report = drainInbox(saveFolder, handle.sqlite);
+
+      expect(report).toMatchObject({ applied: [], receiptOnly: [], noop: 1, skipped: [] });
+      fs.writeFileSync(file, original);
     });
   });
 
