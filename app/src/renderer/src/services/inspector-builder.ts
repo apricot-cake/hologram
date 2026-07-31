@@ -364,7 +364,12 @@ export function makeInspector(deps: InspectorBuilderDeps) {
     // host, taken from the post's own captured URL.
     const posterInstance = p.platform === 'misskey' || p.platform === 'mastodon' ? hostOf(p.url) : null;
     const posterProfileHref = posterProfileUrl({ platform: p.platform, screenName: p.screenName, instance: posterInstance });
-    const heading = p.title || p.text || '';
+    // #676: the heading is a NAME (title), not a body — a title-less SNS post shows
+    // no heading at all rather than borrowing the post text (the 投稿者 row directly
+    // below already carries identity, so there is nothing to fall back to). The body
+    // gets its own section (bodyText, below) instead of masquerading as a heading.
+    const heading = p.title || '';
+    const bodyText = (p.text || '').trim();
     const thumbFile = g.files[0] || captureFile(p);
     // Reverse image search needs a PUBLIC image URL. media[].url keeps the
     // original CDN URL (pbs.twimg.com / cdn.bsky.app / instance media / pximg);
@@ -390,6 +395,7 @@ export function makeInspector(deps: InspectorBuilderDeps) {
       kind: 'post',
       focusTags: !!(opts && opts.focusTags),
       heading,
+      bodyText,
       thumbSrc: thumbFile ? deps.fileSrc(thumbFile, 480) : null,
       onThumbClick: thumbFile ? () => deps.openQuickView(g) : null,
       platformLabel: (p.platform || '').toUpperCase(),
@@ -430,6 +436,7 @@ export function makeInspector(deps: InspectorBuilderDeps) {
         updated: deps.t('detailUpdated'),
         images: deps.t('detailImages'),
         imageOf: deps.t('detailImageOf'),
+        text: deps.t('detailText'),
         series: deps.t('detailSeries'),
         seriesOrder: deps.t('detailSeriesOrder'),
         tags: deps.t('detailTags'),

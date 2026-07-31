@@ -25,7 +25,7 @@ import { relocateLibrary } from './lib-migrate.ts';
 // what remains here is the assembly plus the record pipeline every part of it
 // shares (config → DB → inbox → renderer).
 import { configDir, defaultLibraryDir, installer, pixivRefererFor, downloadAvatar, clearAllBlockReason } from './native-host.ts';
-import { readConfig, writeConfig, getSaveFolder, readSavePointer, initSaveFolderRedundancy, isConfigCorrupt, invalidateConfigCache } from './lib-config.ts';
+import { readConfig, writeConfig, getSaveFolder, readSavePointer, initSaveFolderRedundancy, isConfigCorrupt, invalidateConfigCache, saveFolderStatus } from './lib-config.ts';
 import { mimeForFile, registerImageProtocol } from './lib-thumbnails.ts';
 import { backupIntervalMs, createBackupEngine, dbSnapshotPath, readBackupConfig, readIntegrityStatus, validateBackupDir, validateSaveFolder, writeBackupConfig } from './lib-backup.ts';
 import { APP_ICON, DEV_SERVER_URL, createWindow, devServer, getWin, installNavigationGuards, sendToWin, sendWindowToBack } from './lib-window.ts';
@@ -122,6 +122,17 @@ function watchInboxFolder() {
   }
   const folder = getSaveFolder();
   if (!folder) return;
+  // #37: never mkdir the save folder back into existence here. getSaveFolder()
+  // returns an EXPLICIT config value verbatim even when nothing is there any
+  // more (moved/renamed/unmounted outside the app) — before this check,
+  // ensureInboxDirs below unconditionally recreated the folder (plus its empty
+  // .hologram-inbox tree) on every launch, which is exactly the "looks like a
+  // fresh empty library" failure this Issue exists to stop. Skip the watch
+  // entirely; refreshLibraryStatus() is what surfaces this to the renderer.
+  if (!fs.existsSync(folder)) {
+    log.warn('save folder is missing — not watching or recreating it', { folder });
+    return;
+  }
   try {
     ensureInboxDirs(folder);
     inboxWatcher = fs.watch(inboxNewDir(folder), () => {
@@ -180,6 +191,23 @@ function restoreFromSnapshotIfAvailable(file: string): boolean {
     log.error('failed to restore DB snapshot:', err);
     return false;
   }
+}
+
+// #37: the current save-folder status (missing on disk or not) for the
+// renderer's get-library-status IPC — a fresh saveFolderStatus() read on every
+// call, not a cached flag. The renderer re-invokes this at boot and after a
+// retry/repoint, which is all "detection" this module does; there is no
+// dedicated poll (fs.watch does not notice a directory disappearing anyway).
+function refreshLibraryStatus() {
+  const status = saveFolderStatus();
+  if (status.missing) log.warn('save folder is missing', { folder: status.folder });
+  return { missing: status.missing, path: status.folder };
+}
+// Live check for write-guards (clear-all / import* / relocate) — a fresh
+// statSync, not the cached push above, so a drive that comes back mid-session
+// (remounted, folder restored) unblocks writes without requiring a restart.
+function isLibraryMissing() {
+  return saveFolderStatus().missing;
 }
 
 let dbHandle: { db: any; sqlite: any } | null = null;
@@ -536,6 +564,8 @@ function registerExtractedIpc() {
     runOrphanRecovery,
     readSavePointer,
     clearAllBlockReason,
+    getLibraryStatus: refreshLibraryStatus,
+    isLibraryMissing,
     pixivRefererFor,
     downloadAvatar,
     validateSaveFolder,
@@ -613,6 +643,10 @@ if (!gotSingleInstanceLock) {
     // (watcher, listPosts, native host) sees a config repaired from the pointer rather
     // than the empty default when config was truncated. (2026-06-23 incident.)
     initSaveFolderRedundancy();
+    // #37: log the initial verdict once at boot — refreshLibraryStatus() itself
+    // is called again by the renderer's get-library-status on mount, so this is
+    // observability only (main.log), not the source of truth the UI reads.
+    refreshLibraryStatus();
     // Fresh install (no explicit save folder): make sure the default library dir
     // exists so folder/tag writes don't fail before the first capture. Explicit
     // user-picked folders are left untouched.

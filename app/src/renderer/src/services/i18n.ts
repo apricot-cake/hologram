@@ -87,6 +87,7 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     detailImages: '画像数',
     detailImageOf: '元投稿の画像',
     imageOf: '$1 / $2 枚目',
+    detailText: '本文',
     // pixiv シリーズ情報（#188）。シリーズに属さない作品では両方とも空
     detailSeries: 'シリーズ',
     detailSeriesOrder: '話数',
@@ -221,6 +222,17 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     emptyResetBtn: 'フィルタをリセット',
     emptyImportClipboard: 'クリップボードから取り込む',
 
+    // viewer: library missing (#37) — the save folder itself is gone from disk
+    libraryMissingTitle: '保存先が見つかりません',
+    libraryMissingDesc: '以前の保存先フォルダが見つかりません。外部で移動・削除されたか、ドライブが接続されていない可能性があります。',
+    libraryMissingRetry: '再試行',
+    libraryMissingRepoint: 'フォルダを再指定',
+    libraryMissingRepointConfirm: 'このフォルダに以前のライブラリの手がかりが見つかりません',
+    libraryMissingRepointConfirmDesc: 'このまま再指定すると、これまで保存した投稿の画像がこのフォルダに見つからない可能性があります。ライブラリを移動した先のフォルダを選んだ場合のみ続けてください。',
+    libraryMissingRepointConfirmOk: 'このまま再指定',
+    libraryMissingRepointDone: '保存先を再指定しました',
+    libraryMissingResolved: '保存先が見つかりました',
+
     // viewer: common
     saved: '保存しました',
 
@@ -260,6 +272,7 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     saveFolderErrCollision: '移行先に同名のファイルがあります（空のフォルダを選んでください）',
     saveFolderErrNotWritable: '選んだフォルダに書き込めません',
     saveFolderErrCopyFailed: '移行中にエラーが発生しました（元データは安全です）',
+    saveFolderErrLibraryMissing: '保存先フォルダが見つからないため変更できません（「フォルダを再指定」をお使いください）',
     saveFolderErrGeneric: '保存先を変更できませんでした',
     saveFolderCloudWarn: 'このフォルダは $1 の同期対象のようです',
     saveFolderCloudWarnDesc: 'ライブラリは使用中に書き換わるため、同期ツールと競合して壊れることがあります。同期対象外の場所をおすすめします（クラウドに置くならバックアップ先の方が安全です）。',
@@ -273,6 +286,8 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     exportModeImages: '画像のみ',
     exportIncludeTrash: 'ゴミ箱を含める',
     backupSubTitle: '自動バックアップ',
+    backupErrDestMissing: 'バックアップ先フォルダが見つかりません（外部で移動・削除された可能性があります）',
+    backupErrSrcMissing: '保存先フォルダが見つからないためバックアップを実行できませんでした',
     deleteKeyword: 'すべて削除',
     confirmKeywordPh: '「すべて削除」と入力すると実行できます',
     qfCatFolder: 'フォルダ',
@@ -551,6 +566,7 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     detailImages: 'Images',
     detailImageOf: 'In original post',
     imageOf: '$1 of $2',
+    detailText: 'Text',
     // pixiv series info (#188). Both blank when the work isn't in a series
     detailSeries: 'Series',
     detailSeriesOrder: 'Installment',
@@ -680,6 +696,17 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     emptyResetBtn: 'Reset filters',
     emptyImportClipboard: 'Import from clipboard',
 
+    // library missing (#37) — the save folder itself is gone from disk
+    libraryMissingTitle: 'Save folder not found',
+    libraryMissingDesc: 'The previous save folder could not be found. It may have been moved or deleted outside the app, or its drive may not be connected.',
+    libraryMissingRetry: 'Retry',
+    libraryMissingRepoint: 'Point to a different folder',
+    libraryMissingRepointConfirm: 'No sign of an existing library in this folder',
+    libraryMissingRepointConfirmDesc: "Pointing here means your existing posts' images may not be found in this folder. Only continue if this is really where you moved the library.",
+    libraryMissingRepointConfirmOk: 'Point here anyway',
+    libraryMissingRepointDone: 'Save folder repointed',
+    libraryMissingResolved: 'Save folder found',
+
     saved: 'Saved',
 
     settingsSearch: 'Search settings…',
@@ -716,6 +743,7 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     saveFolderErrCollision: 'The target already has a file with the same name (pick an empty folder)',
     saveFolderErrNotWritable: 'Cannot write to the chosen folder',
     saveFolderErrCopyFailed: 'Migration failed (your data is safe)',
+    saveFolderErrLibraryMissing: 'Can\'t change it — the save folder is missing (use "Point to a different folder" instead)',
     saveFolderErrGeneric: 'Could not change the save folder',
     saveFolderCloudWarn: 'This folder looks like it syncs with $1',
     saveFolderCloudWarnDesc: 'The library is rewritten while you use it, so a sync client can race those writes and corrupt it. A folder outside sync is recommended (if you want a cloud copy, point the backup there instead).',
@@ -729,6 +757,8 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     exportModeImages: 'Images only',
     exportIncludeTrash: 'Include trash',
     backupSubTitle: 'Auto backup',
+    backupErrDestMissing: 'The backup folder could not be found (it may have been moved or deleted outside the app)',
+    backupErrSrcMissing: 'Backup could not run — the save folder could not be found',
     deleteKeyword: 'DELETE ALL',
     confirmKeywordPh: 'Type "DELETE ALL" to confirm',
     qfCatFolder: 'Folders',

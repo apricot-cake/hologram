@@ -23,7 +23,7 @@ import type { BrowserWindow } from 'electron';
 import type Database from 'better-sqlite3';
 import type { createDbWriter } from './lib-db-write.ts';
 import type { relocateLibrary } from './lib-migrate.ts';
-import type { BackupConfig, BackupRunResult, IntegrityStatus, OrphanRecoveryResult, PostsDelta, PostsSnapshot, ValidationResult } from './ipc-payloads.ts';
+import type { BackupConfig, BackupRunResult, IntegrityStatus, LibraryStatus, OrphanRecoveryResult, PostsDelta, PostsSnapshot, ValidationResult } from './ipc-payloads.ts';
 
 /** The organization-state writer every DB-backed handler goes through. */
 export type DbWriter = ReturnType<typeof createDbWriter>;
@@ -65,6 +65,10 @@ export interface IpcContext {
   getTrashDir(): string | null;
   /** The redundant save-folder pointer written beside config.json. */
   readSavePointer(): string | null;
+  /** #37: is the CURRENT explicit save folder missing on disk right now? Fresh statSync, never cached. */
+  isLibraryMissing(): boolean;
+  /** #37: isLibraryMissing() plus the path — what get-library-status hands the renderer. */
+  getLibraryStatus(): LibraryStatus;
   /** Resolves a name INSIDE the save folder, or null if it would escape it. */
   resolveInFolder(name: string): string | null;
   mimeForFile(name: string): string;
@@ -95,7 +99,7 @@ export interface IpcContext {
   /** True iff config.json is present but unparseable, as of right now. */
   isConfigCorrupt(): boolean;
   /** Why a wipe must be refused on a degraded config, or null. */
-  clearAllBlockReason(args: { configCorrupt: boolean; hasExplicitSaveFolder: boolean; hasPointer: boolean }): string | null;
+  clearAllBlockReason(args: { configCorrupt: boolean; hasExplicitSaveFolder: boolean; hasPointer: boolean; libraryMissing: boolean }): string | null;
   installer: NativeHostInstaller;
 
   // --- Backup mirror + integrity ---

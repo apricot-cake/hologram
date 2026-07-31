@@ -36,6 +36,10 @@ interface ClearAllBlockReasonArgs {
   configCorrupt: boolean;
   hasExplicitSaveFolder: boolean;
   hasPointer: boolean;
+  // #37: an explicit saveFolder that does not resolve to a real directory right
+  // now (moved/renamed/unmounted from OUTSIDE the app). Distinct from `lost`:
+  // config still HAS the value, it just does not exist on disk — see libraryIsMissing.
+  libraryMissing: boolean;
 }
 
 // Whether a destructive "delete everything" must be refused because we may be
@@ -43,11 +47,29 @@ interface ClearAllBlockReasonArgs {
 //   configCorrupt          — config.json existed but failed to parse this read
 //   hasExplicitSaveFolder  — config currently carries a non-empty saveFolder
 //   hasPointer             — the redundant pointer file exists (a folder was chosen before)
-function clearAllBlockReason({ configCorrupt, hasExplicitSaveFolder, hasPointer }: ClearAllBlockReasonArgs): 'corrupt' | 'lost' | null {
+//   libraryMissing         — see libraryIsMissing below
+function clearAllBlockReason({ configCorrupt, hasExplicitSaveFolder, hasPointer, libraryMissing }: ClearAllBlockReasonArgs): 'corrupt' | 'missing' | 'lost' | null {
   if (configCorrupt) return 'corrupt';
+  // The configured folder itself is gone: never wipe (and never lazily
+  // recreate it) while we cannot see what is actually there (#37).
+  if (libraryMissing) return 'missing';
   // No explicit folder but a pointer proves one existed → config dropped it.
   if (!hasExplicitSaveFolder && hasPointer) return 'lost';
   return null; // fresh install (no folder, no pointer) or a healthy explicit folder
 }
 
-module.exports = { resolveSaveFolder, clearAllBlockReason };
+interface LibraryIsMissingArgs {
+  hasExplicitSaveFolder: boolean;
+  folderExists: boolean;
+}
+
+// #37: the save folder went away from OUTSIDE the app (moved, renamed, drive
+// unplugged) while config.json still names it explicitly. Deliberately narrow —
+// only fires for an EXPLICIT saveFolder: a fresh install (no explicit folder,
+// resolving through the default dir) is never "missing", it just has not
+// captured anything yet, and the default dir is created on demand.
+function libraryIsMissing({ hasExplicitSaveFolder, folderExists }: LibraryIsMissingArgs): boolean {
+  return hasExplicitSaveFolder && !folderExists;
+}
+
+module.exports = { resolveSaveFolder, clearAllBlockReason, libraryIsMissing };
