@@ -372,13 +372,10 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     // viewer: engagement labels (legacy, still referenced)
 
     // viewer: view toggle + selection
-    // 投稿者グリッドはまだ3値（カード/タイル/リスト）— 投稿グリッドの2値+スイッチとは別軸
-    viewCard: 'カード',
-    viewTile: 'タイル',
-    viewList: 'リスト',
     displayTitle: '表示',
-    // 表示の3軸（#618）。名前が要るのは正方形の側だけ＝OFF は「元の比率のまま」で、
-    // 敷き詰めレイアウトに固有名は付けない。
+    // 表示の軸（投稿は3軸 #618・投稿者は2軸 #630）。名前が要るのは正方形の側だけ＝OFF は
+    // 「元の比率のまま」で、敷き詰めレイアウトに固有名は付けない。投稿者に正方形の軸は無い
+    // （アバターは全PFが正方形配信＝切り抜きが恒等写像）ので、下の3つを両モードで共有する。
     layoutGrid: 'グリッド',
     layoutList: 'リスト',
     displaySquare: '正方形のサムネ',
@@ -821,9 +818,6 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     clipboardImported: 'Imported from the clipboard',
     clipboardNoImage: 'No image on the clipboard',
 
-    viewCard: 'Cards',
-    viewTile: 'Tiles',
-    viewList: 'List',
     displayTitle: 'Display',
     layoutGrid: 'Grid',
     layoutList: 'List',

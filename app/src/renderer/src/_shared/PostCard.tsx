@@ -244,8 +244,12 @@ export function cellHandlers(actions: HologramCardActions | undefined, group: un
   };
 }
 
-/** Shared card chrome: the surface, the hover lift, and the selected/inspected rings. */
-export function cellChrome(m: PostCardModel, grouped: boolean): string {
+/**
+ * Shared card chrome: the surface, the hover lift, and the selected/inspected rings.
+ * Takes only what it reads, so the poster cells (#630) wear the same chrome as the
+ * post ones rather than a second copy of the same six declarations.
+ */
+export function cellChrome(m: { inspected?: boolean }, grouped: boolean): string {
   return cn(
     'group relative cursor-pointer overflow-hidden border border-[var(--border-subtle)] bg-[var(--surface)] shadow-[var(--shadow-sm)]',
     'transition-[box-shadow,border-color,transform] duration-[var(--dur-hover)] ease-[var(--ease-out)]',

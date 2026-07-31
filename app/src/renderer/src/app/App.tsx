@@ -18,7 +18,7 @@ import { handleShortcutPanelsKey } from '../services/panels.ts';
 import { handleShortcutZoomKey } from '../services/image-zoom.ts';
 import { handleShortcutClipboardKey } from '../services/clipboard-intake.ts';
 import { onPostsChanged } from '../services/posts.ts';
-import { subscribeShape as subscribeDisplay } from '../services/display.ts';
+import { subscribePosterShape as subscribePosterDisplay, subscribeShape as subscribeDisplay } from '../services/display.ts';
 import { isManagerOpen as folderManagerIsOpen, onChange as foldersOnChange, subscribeManager as subscribeFolderManager } from '../services/folders.ts';
 import { get as storeGet, subscribe as storeSubscribe } from '../services/store.ts';
 import {
@@ -42,7 +42,7 @@ import {
   handleSelectionContextmenu,
   handleDisplayStoreChange,
   handleBrowseModeStoreChange,
-  handlePosterViewStoreChange,
+  handlePosterDisplayStoreChange,
   handleSearchQueryStoreChange,
 } from '../services/orchestrator.ts';
 
@@ -223,8 +223,8 @@ function SelectionContextMenu() {
   return null;
 }
 
-// External-store / IPC subscriptions: hologramStore keys (the display axes / browseMode /
-// posterView / searchQuery), the search-mode toggle, shared folder changes, and the
+// External-store / IPC subscriptions: hologramStore keys (both grids' display axes /
+// browseMode / searchQuery), the search-mode toggle, shared folder changes, and the
 // fs-watch posts-changed hint. React owns the subscribe() registration (mounted once
 // for the app's lifetime). The store/search-mode handlers are guard+action logic that
 // still lives in orchestrator.ts, imported directly as live bindings — "cut out and
@@ -239,14 +239,14 @@ function StoreSubscriptions() {
   useEffect(() => {
     const unsubDisplay = subscribeDisplay(() => handleDisplayStoreChange());
     const unsubBrowseMode = storeSubscribe('browseMode', () => handleBrowseModeStoreChange());
-    const unsubPosterView = storeSubscribe('posterView', () => handlePosterViewStoreChange());
+    const unsubPosterDisplay = subscribePosterDisplay(() => handlePosterDisplayStoreChange());
     const unsubSearchQuery = storeSubscribe('searchQuery', () => handleSearchQueryStoreChange());
     foldersOnChange((kind) => handleFolderChange(kind));
     onPostsChanged(() => handlePostsChanged());
     return () => {
       unsubDisplay();
       unsubBrowseMode();
-      unsubPosterView();
+      unsubPosterDisplay();
       unsubSearchQuery();
     };
   }, []);

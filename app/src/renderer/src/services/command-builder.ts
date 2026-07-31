@@ -9,10 +9,9 @@
 // 共有するので、「現在のタブに AND 追加」という挙動が面ごとにズレない。
 import { type CommandEntry, registerCommands, registerProvider } from './command-registry.ts';
 import { handlers as searchBoxHandlers } from './searchbox.ts';
-import { setLayout } from './display.ts';
+import { setLayout, setPosterLayout } from './display.ts';
 import { toggle as togglePanels } from './panels.ts';
 import { open as openSettings } from './settings.ts';
-import { set as storeSet } from './store.ts';
 import { hologramTabsSource } from './tabs.ts';
 
 // deps＝アプリが供給するもの（ライブラリの実体・フォルダ一覧・タブ操作・クエリの
@@ -54,15 +53,15 @@ export function makeCommands(deps: CommandDeps): void {
       id: 'cmd:view-grid',
       section: 'command',
       title: t('cmdViewGrid'),
-      // レイアウト軸だけを動かす＝正方形サムネ／情報を表示の2スイッチには触らない
-      // （#618 の直交キー化。パレットは表示の記憶を持つ面ではない）。
-      perform: () => (deps.getBrowseMode() === 'posters' ? storeSet('posterView', 'card') : setLayout(false)),
+      // レイアウト軸だけを動かす＝正方形サムネ／情報を表示のスイッチには触らない
+      // （#618・#630 の直交キー化。パレットは表示の記憶を持つ面ではない）。
+      perform: () => (deps.getBrowseMode() === 'posters' ? setPosterLayout(false) : setLayout(false)),
     },
     {
       id: 'cmd:view-list',
       section: 'command',
       title: t('cmdViewList'),
-      perform: () => (deps.getBrowseMode() === 'posters' ? storeSet('posterView', 'list') : setLayout(true)),
+      perform: () => (deps.getBrowseMode() === 'posters' ? setPosterLayout(true) : setLayout(true)),
     },
     // 一括表示トグル（#245）。名前は状態を言わず動作だけを言う＝パレットの行は開いた
     // 瞬間の状態で書き換わらない（「隠す」と「戻す」が入れ替わる行は探して見つからない）。

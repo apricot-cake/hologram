@@ -57,6 +57,8 @@ declare global {
     labels?: any;
     /** The display shape this model was derived from (#618) — cells lay themselves out from it. */
     shape?: import('../services/display').DisplayShape;
+    /** The poster grid's own shape (#630) — two axes, since an avatar has no aspect to choose. */
+    posterShape?: import('../services/display').PosterShape;
     /** The small end of the size axis (#141) — cells drop their chrome there. */
     overview?: boolean;
     /** List rows: the thumbnail column's width in px (the list's own size axis). */

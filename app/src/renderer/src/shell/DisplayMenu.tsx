@@ -1,17 +1,20 @@
 // Display popover — the "how do I see it" axis of the new IA (redesign §3-3, P2②).
 // Linear's "Display" popover: one surface collecting ordering + view + view options,
-// opened from the toolbar's 表示 button. Mode-aware (browseMode): posts get sort +
-// gallery/list + "show info on cards"; posters get their own sort + view. Anchors:
-// Linear Display, Notion view options.
+// opened from the toolbar's 表示 button. Mode-aware (browseMode): each grid gets its
+// own sort and its own display axes. Anchors: Linear Display, Notion view options.
 //
-// The post side's display state is three ORTHOGONAL keys (#618): layout, then two
-// independent switches for the grid. P2② shipped this popover as a facade over a
-// single 3-value key, which is what made 情報を表示 quietly change the thumbnail's
-// shape as well; services/display.ts holds the real axes now and this surface is
-// exactly a view of them. Posters keep their own 3-way view (card/tile/list) until
-// that axis is re-conceived separately (the split was scoped to the post grid).
+// Both sides are ORTHOGONAL store keys now, not a 3-value enum: three for posts
+// (#618 — layout plus two grid switches), two for posters (#630 — layout plus one,
+// since every platform serves a square avatar and a 正方形 switch there would do
+// nothing). P2② shipped this popover as a facade over a single value, which is what
+// made 情報を表示 quietly change the thumbnail's shape as well; services/display.ts
+// holds the real axes and this surface is exactly a view of them.
+//
+// The rows differ by mode, and only by SUBTRACTION: the layout toggle, 情報を表示 and
+// サイズ sit at the same height in both modes, and posts add 正方形のサムネ between the
+// first two. Nothing is renamed or reordered across the switch.
 import type { ReactNode } from 'react';
-import { LayoutGrid, List, Shuffle, SlidersHorizontal, Square } from 'lucide-react';
+import { LayoutGrid, List, Shuffle, SlidersHorizontal } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -21,7 +24,7 @@ import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { t } from '../_shared/i18n.ts';
-import { currentShape, DISPLAY_KEYS, setInfo as setShowInfo, setLayout, setSquare, shapeSnapshot, subscribeShape } from '../services/display.ts';
+import { currentPosterShape, currentShape, DISPLAY_KEYS, POSTER_DISPLAY_KEYS, posterShapeSnapshot, setInfo as setShowInfo, setLayout, setPosterInfo, setPosterLayout, setSquare, shapeSnapshot, subscribePosterShape, subscribeShape } from '../services/display.ts';
 import type { HologramSizeTrack } from '../services/grid-density-builder.ts';
 import { applyPostSize, applyPosterSize, getPostSizeTrack, getPosterSizeTrack, rerollShuffle, setPostSort } from '../services/orchestrator.ts';
 import { isHidden as panelsAreHidden, setHidden as setPanelsHidden, subscribe as panelsSubscribe } from '../services/panels.ts';
@@ -37,8 +40,8 @@ const subMany = (keys: string[]) => (cb: () => void) => {
 };
 const subPostSize = subMany([...DISPLAY_KEYS, 'gridSize', 'listThumb']);
 const postSizeSnap = () => `${shapeSnapshot()}|${storeGet('gridSize')}|${storeGet('listThumb')}`;
-const subPosterSize = subMany(['posterView', 'posterTileSize', 'posterCardSize']);
-const posterSizeSnap = () => `${storeGet('posterView')}|${storeGet('posterTileSize')}|${storeGet('posterCardSize')}`;
+const subPosterSize = subMany([...POSTER_DISPLAY_KEYS, 'posterGridSize']);
+const posterSizeSnap = () => `${posterShapeSnapshot()}|${storeGet('posterGridSize')}`;
 
 // Sort option tables (value = the sort key the listing pipeline reads; key = i18n
 // label).
@@ -201,15 +204,12 @@ function PostControls() {
   );
 }
 
-// Poster grid: sort + its existing 3-way view (avatars/cards/rows). Not re-conceived
-// into gallery/list — that axis is out of P2②'s scope (see the file header).
-const POSTER_VIEWS = [
-  { v: 'card', key: 'viewCard', Icon: Square },
-  { v: 'tile', key: 'viewTile', Icon: LayoutGrid },
-  { v: 'list', key: 'viewList', Icon: List },
-];
+// Poster grid: sort, then its two display axes (#630). No 形 row — an avatar is
+// already square everywhere Hologram reads one, so the switch would be a no-op wearing
+// a control (see services/display.ts). Everything else lines up with the post side.
 function PosterControls() {
-  const posterView = useSyncExternalStore(subKey('posterView'), () => (storeGet('posterView') as string) || 'card');
+  useSyncExternalStore(subscribePosterShape, posterShapeSnapshot);
+  const shape = currentPosterShape();
   const posterSizeTrack = usePosterSizeTrack();
   return (
     <>
@@ -217,14 +217,19 @@ function PosterControls() {
         <SortSelect_ storeKey="sortPoster" options={SORT_POSTER} />
       </Row>
       <Separator />
-      <ToggleGroup className="w-full" variant="outline" spacing={0} value={[posterView]} onValueChange={(v) => v.length && storeSet('posterView', v[0] as string)} aria-label={t('sbViewTitle')}>
-        {POSTER_VIEWS.map(({ v, key, Icon }) => (
-          <ToggleGroupItem key={v} className="flex-1" value={v} aria-label={t(key)}>
-            <Icon />
-            {t(key)}
-          </ToggleGroupItem>
-        ))}
+      <ToggleGroup className="w-full" variant="outline" spacing={0} value={[shape.list ? 'list' : 'grid']} onValueChange={(v) => v.length && setPosterLayout(v[0] === 'list')} aria-label={t('sbViewTitle')}>
+        <ToggleGroupItem className="flex-1" value="grid">
+          <LayoutGrid />
+          {t('layoutGrid')}
+        </ToggleGroupItem>
+        <ToggleGroupItem className="flex-1" value="list">
+          <List />
+          {t('layoutList')}
+        </ToggleGroupItem>
       </ToggleGroup>
+      <Row label={t('displayShowInfo')}>
+        <Switch checked={shape.info} onCheckedChange={setPosterInfo} disabled={shape.list} />
+      </Row>
       {posterSizeTrack && !posterSizeTrack.single && (
         <Row label={t('displaySize')}>
           <SizeSlider key={`poster:${posterSizeTrack.min}:${posterSizeTrack.max}`} track={posterSizeTrack} onDrag={(v) => applyPosterSize?.(v, posterSizeTrack.min, posterSizeTrack.max)} onCommit={(v) => applyPosterSize?.(v, posterSizeTrack.min, posterSizeTrack.max)} />

@@ -1,17 +1,20 @@
 // Virtualized poster grid — poster cells on the shared VirtualGridHost. React renders
 // + windows and owns every gesture ON a card (#618: the gestures are props now, so the
 // cells no longer carry a `data-index` for a delegated listener on the container to
-// read back). orchestrator.ts still owns posterList, the count badge and the density
-// classes. The inspected highlight is derived from hologramStore, not modelOf.
+// read back). orchestrator.ts still owns posterList and the count badge. The inspected
+// highlight is derived from hologramStore, not modelOf.
 //
-// The poster grid's own three-way density (card / tile / list) is NOT the post grid's
-// display axes: re-conceiving it was scoped out of #618, so its cells keep the legacy
-// `.poster-card` markup and CSS until that axis gets its own pass.
+// Which cell a poster is drawn as comes from the model's poster shape (#630) — grid or
+// row, and for the grid whether the metadata block is there. No density class on the
+// container decides it in CSS any more; the legacy `.poster-card` sheet is gone and
+// both cells are Tailwind, like the post side's.
 import type { CSSProperties } from 'react';
 import { useSyncExternalStore } from 'react';
-import { cellHandlers } from '../_shared/PostCard.tsx';
+import { cn } from '@/lib/utils';
+import { cellChrome, cellHandlers } from '../_shared/PostCard.tsx';
 import { useGridModel, VirtualGridHost } from '../_shared/VirtualGrid.tsx';
 import type { GridCellProps } from '../_shared/VirtualGrid.tsx';
+import type { PosterShape } from '../services/display.ts';
 import { posterClickBackground } from '../services/orchestrator.ts';
 import { get as storeGet, subscribe as storeSubscribe } from '../services/store.ts';
 
@@ -21,49 +24,108 @@ import { get as storeGet, subscribe as storeSubscribe } from '../services/store.
 const subInspected = (cb: () => void) => storeSubscribe('inspectedKey', cb);
 const getInspected = () => (storeGet('inspectedKey') as string | null | undefined) ?? null;
 
-// The poster cell model viewer.js resolves per card — only the fields laid out here.
+// The poster cell model poster-grid-builder resolves per card — only the fields laid
+// out here. Deliberately NOT here: a last-saved date. HologramUserAgg does not carry
+// one, and inventing it would be a data-side change rather than a display one (#630).
 interface PosterCardModel {
   index: number;
   inspected?: boolean;
   avatarSrc?: string | null;
-  monogram?: string;
+  monogram?: string | null;
   monoHue?: number | null;
   name?: string;
   handle?: string | null;
   platform?: string | null;
-  pfName?: string;
+  pfName?: string | null;
   countLabel?: string;
 }
 
-function PosterCard({ c, group, actions }: { c: PosterCardModel; group: unknown; actions?: HologramCardActions }) {
+// Platform dot colour. The tokens stay in design-tokens.css (they are the brand
+// palette); the platform→token lookup is here because a class per platform was the
+// last thing keeping a poster stylesheet alive.
+const PF_COLOR: Record<string, string> = {
+  x: 'var(--brand-x)',
+  bluesky: 'var(--brand-bluesky)',
+  misskey: 'var(--brand-misskey)',
+  mastodon: 'var(--brand-mastodon)',
+  pixiv: 'var(--brand-pixiv)',
+};
+
+function PlatformTag({ platform, pfName, className }: { platform?: string | null; pfName?: string | null; className?: string }) {
+  if (!platform) return null;
   return (
-    <div data-slot="poster-card" className={'poster-card' + (c.inspected ? ' inspected' : '')} {...cellHandlers(actions, group)}>
-      <div className="poster-av">
-        {c.avatarSrc ? (
-          // decoding="async" (#569): a virtualized grid can have many of these
-          // decoding at once — same call as PostCard's card thumbnail.
-          <img src={c.avatarSrc} alt="" loading="lazy" decoding="async" />
-        ) : (
-          // Circular monogram, not a card-filling letter (#107) — --mono-h carries the
-          // per-poster hue the CSS tints the disc with (poster-grid-builder's monoHue).
-          <span className="poster-mono" style={{ '--mono-h': c.monoHue ?? undefined } as CSSProperties}>
-            {c.monogram}
-          </span>
-        )}
-      </div>
-      <div className="poster-meta">
-        <div className="poster-name">{c.name}</div>
-        {c.handle && <div className="poster-handle">@{c.handle}</div>}
-        <div className="poster-foot">
-          {c.platform && (
-            <span className="pf-tag">
-              <span className={'pf-dot ' + c.platform} />
-              {c.pfName}
-            </span>
-          )}
-          <span className="poster-count">{c.countLabel}</span>
+    <span className={cn('inline-flex min-w-0 items-center gap-[5px] whitespace-nowrap text-[10px] uppercase tracking-[0.04em]', className)}>
+      <span aria-hidden="true" className="size-[7px] shrink-0 rounded-full" style={{ background: PF_COLOR[platform] || 'var(--text-muted)' }} />
+      <span className="truncate">{pfName}</span>
+    </span>
+  );
+}
+
+/**
+ * The avatar. Avatar-less posters wear the standard circular monogram (the GitHub /
+ * Google fallback-avatar idiom, #107): an initial on a pale hue-hashed disc, where a
+ * card-filling letter read as a wall of glyphs. Only the HUE varies per poster; each
+ * theme pins its own saturation/lightness so the tint stays pale in light and muted in
+ * dark. The disc sizes off the frame (container query), which the size axis drives.
+ */
+function Avatar({ c, className, discClassName }: { c: PosterCardModel; className?: string; discClassName?: string }) {
+  return (
+    <div className={cn('@container flex shrink-0 items-center justify-center overflow-hidden bg-[var(--surface-3)]', className)}>
+      {c.avatarSrc ? (
+        // decoding="async" (#569): a virtualized grid can have many of these
+        // decoding at once — same call as PostCard's card thumbnail.
+        <img className="block size-full object-cover" src={c.avatarSrc} alt="" loading="lazy" decoding="async" />
+      ) : (
+        <span
+          className={cn('flex items-center justify-center rounded-full font-semibold leading-none', 'bg-[hsl(var(--mono-h,220)_52%_88%)] text-[hsl(var(--mono-h,220)_42%_32%)]', 'dark:bg-[hsl(var(--mono-h,220)_26%_27%)] dark:text-[hsl(var(--mono-h,220)_50%_78%)]', discClassName)}
+          style={{ '--mono-h': c.monoHue ?? undefined } as CSSProperties}
+        >
+          {c.monogram}
+        </span>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The grid cell: an avatar-led card. With 情報を表示 off it is the avatar and nothing
+ * else — that IS the overview (#141), the poster-side twin of a bare thumbnail grid,
+ * and the reason the layout can call the cell square.
+ */
+function PosterCard({ c, shape, group, actions }: { c: PosterCardModel; shape: PosterShape; group: unknown; actions?: HologramCardActions }) {
+  return (
+    <div data-slot="poster-card" data-inspected={c.inspected || undefined} className={cn(cellChrome(c, false), 'flex w-full flex-col rounded-lg')} {...cellHandlers(actions, group)}>
+      <Avatar c={c} className="aspect-square w-full" discClassName="size-[44cqw] text-[19cqw]" />
+      {shape.info && (
+        <div data-slot="poster-card-meta" className="flex min-w-0 flex-col gap-px px-[11px] pt-[9px] pb-2.5">
+          <div className="truncate font-semibold text-[13.5px] text-[var(--text)]">{c.name}</div>
+          {c.handle && <div className="truncate text-[11.5px] text-[var(--text-muted)]">@{c.handle}</div>}
+          <div className="mt-1 flex min-w-0 items-center gap-2">
+            <PlatformTag platform={c.platform} pfName={c.pfName} className="text-[var(--text-muted)]" />
+            <span className="ml-auto shrink-0 whitespace-nowrap text-[11px] text-[var(--text-subtle)]">{c.countLabel}</span>
+          </div>
         </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The list cell: a full-width row. What it shows is everything the poster roll-up
+ * already knows — small avatar, display name, @handle, platform, saved count — which
+ * is also how GitHub's contributor rows, Linear's member rows and Mastodon's follow
+ * list read: avatar + name + handle + one number.
+ */
+function PosterRow({ c, group, actions }: { c: PosterCardModel; group: unknown; actions?: HologramCardActions }) {
+  return (
+    <div data-slot="poster-card" data-list-row="" data-inspected={c.inspected || undefined} className={cn(cellChrome(c, false), 'flex w-full items-center gap-2.5 rounded-md px-2.5 py-[7px] shadow-none')} {...cellHandlers(actions, group)}>
+      <Avatar c={c} className="size-9 rounded-full border border-[var(--border-soft)]" discClassName="size-full text-[15px]" />
+      <div data-slot="poster-card-meta" className="flex min-w-0 flex-1 items-baseline gap-2">
+        <span className="truncate font-semibold text-[13.5px] text-[var(--text)]">{c.name}</span>
+        {c.handle && <span className="min-w-0 shrink truncate text-[11.5px] text-[var(--text-muted)]">@{c.handle}</span>}
       </div>
+      <PlatformTag platform={c.platform} pfName={c.pfName} className="shrink-0 text-[var(--text-muted)]" />
+      <span className="shrink-0 whitespace-nowrap text-[11px] text-[var(--text-subtle)] tabular-nums">{c.countLabel}</span>
     </div>
   );
 }
@@ -72,9 +134,11 @@ function PosterCard({ c, group, actions }: { c: PosterCardModel; group: unknown;
 function PosterCell({ index, data }: GridCellProps) {
   const model = useGridModel();
   const inspectedKey = useSyncExternalStore(subInspected, getInspected);
+  const shape = model.posterShape as PosterShape;
   const c = model.modelOf(data, index);
   c.inspected = data != null && data.key != null && inspectedKey === 'poster:' + data.key;
-  return <PosterCard c={c} group={data} actions={model.cardActions} />;
+  if (shape?.list) return <PosterRow c={c} group={data} actions={model.cardActions} />;
+  return <PosterCard c={c} shape={shape} group={data} actions={model.cardActions} />;
 }
 
 // Background click (#242). No marquee sink: this grid has no selection, so the press

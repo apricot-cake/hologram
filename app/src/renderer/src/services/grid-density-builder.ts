@@ -8,13 +8,14 @@
 // computeSizeTrack/computePosterSizeTrack as data and calls the setters back, so
 // nothing here touches a slider element.
 //
-// The post side's display state is NOT here: it is the three orthogonal store keys
-// services/display.ts owns (#618). This module only reacts to them — persist, clamp
-// the size into the range the new shape allows, re-render.
-import { clampGridSize, currentShape, GRID_MAX, gridMin, gutterFor, LIST_MAX, LIST_MIN, shapeSnapshot } from './display.ts';
+// Neither grid's display SHAPE is here: those are the orthogonal store keys
+// services/display.ts owns — three for posts (#618), two for posters (#630). This
+// module only reacts to them — persist, clamp the size into the range the new shape
+// allows, re-render.
+import { clampGridSize, clampPosterGridSize, currentPosterShape, currentShape, GRID_MAX, gridMin, gutterFor, LIST_MAX, LIST_MIN, POSTER_GRID_MAX, posterGridMin, posterGutterFor, posterShapeSnapshot, shapeSnapshot } from './display.ts';
 import { gridWidth, scroller } from './content-area.ts';
 import { sizeFor, sliderTrack, trackCols, thumbW } from './geometry.ts';
-import { get as storeGet, set as storeSet } from './store.ts';
+import { set as storeSet } from './store.ts';
 import { resolveZoomAnchor } from './zoom-anchor.ts';
 import type { ZoomAnchor } from './zoom-anchor.ts';
 import type { AppPrefs } from '../../../main/ipc-payloads.ts';
@@ -154,7 +155,7 @@ export function makeGridDensity(deps: GridDensityDeps) {
   }
 
   // Ctrl+- / Ctrl+= step the content size one notch, on whichever grid is showing
-  // (post densities card/tile/list, or the poster grid). It steps the same track the
+  // (the post grid or the poster grid). It steps the same track the
   // display popover's Slider reads — there is no slider element to poke anymore.
   // Registration lives in the GlobalShortcuts component (app/App.tsx).
   function handleShortcutSizeKey(e: KeyboardEvent) {
@@ -310,43 +311,28 @@ export function makeGridDensity(deps: GridDensityDeps) {
     _displayRenderT = setTimeout(() => deps.renderPosts(), 0);
   }
 
-  // --- Poster grid: density + size state (kept SEPARATE from the post-side
-  // currentView — its masonry/tile/list layouts are bound to poster-card markup).
-  // Tile view leads with avatars. ---
-  let posterView = 'card'; // 'card' | 'tile' | 'list'
-  let posterTileSize = 132; // tile view: avatar tile edge px
-  let posterCardSize = 200; // card view: min column width px
-  const PTILE_MIN = 96,
-    PTILE_MAX = 220;
-  const PCARD_MIN = 150,
-    PCARD_MAX = 340;
+  // --- Poster grid: size state (the display SHAPE lives in display.ts, #630) ---
+  // Kept SEPARATE from the post side's: the poster axes are two, not three, so one
+  // shared key would leave 正方形 undefined in poster mode.
+  let posterGridSize = 200; // grid: column width px (pref posterGridSize)
 
-  // Which size the slider drives, per density (mirrors the post viewSizeState).
-  // The size feeds masonic's columnWidth (minimum — columns stretch to fill, the
-  // same math as the old CSS auto-fill minmax); list is a full-width stack with
-  // no size axis, so it returns null (slider hidden).
+  // The size the slider drives. One per LAYOUT, exactly as on the post side: the grid
+  // has a column width, the list has none (a poster row is a fixed line — GitHub's
+  // contributor rows have no size control either), so the list returns null and the
+  // caller hides the slider.
   function posterSizeState() {
-    if (posterView === 'tile')
-      return {
-        get: () => posterTileSize,
-        set: (v: number) => {
-          posterTileSize = v;
-        },
-        min: PTILE_MIN,
-        max: PTILE_MAX,
-        pref: 'posterTileSize',
-      };
-    if (posterView === 'card')
-      return {
-        get: () => posterCardSize,
-        set: (v: number) => {
-          posterCardSize = v;
-        },
-        min: PCARD_MIN,
-        max: PCARD_MAX,
-        pref: 'posterCardSize',
-      };
-    return null;
+    if (currentPosterShape().list) return null;
+    return {
+      get: () => posterGridSize,
+      set: (v: number) => {
+        posterGridSize = v;
+      },
+      // The floor rides 情報を表示, same as the post grid's: bare cells are pure
+      // avatar and reach down to the overview zoom, cells with a metadata block cannot.
+      min: posterGridMin(currentPosterShape().info),
+      max: POSTER_GRID_MAX,
+      pref: 'posterGridSize',
+    };
   }
 
   // The slider track maps to COLUMN COUNTS (like the post tile slider), not raw px:
@@ -356,8 +342,8 @@ export function makeGridDensity(deps: GridDensityDeps) {
     const W = gridWidth('poster');
     if (!W) return null;
     // Gutters live in the masonic model now (services/grid.ts), not container CSS —
-    // keep this math in lockstep with the rowGutter derived there.
-    return { W, g: posterView === 'tile' ? 10 : 14 };
+    // one formula, read from display.ts by both.
+    return { W, g: posterGutterFor(currentPosterShape()) };
   }
 
   // Poster size-slider track as data (mirrors computeSizeTrack). Null for the list view
@@ -382,25 +368,37 @@ export function makeGridDensity(deps: GridDensityDeps) {
     const size = Math.max(st.min, Math.min(st.max, sizeFor(trackCols(value, min, max), m)));
     st.set(size);
     // Mirror into hologramStore — the poster grid source derives columnWidth from it,
-    // same as the post grid does with cardSize/tileSize.
+    // same as the post grid does with gridSize.
     storeSet(st.pref, size);
     deps.hologramIpc.setPref(st.pref, size);
   }
 
-  // Poster grid density (card/tile/list) — rendered by the display popover
-  // (hologramStore 'posterView'). React owns the active state + glass thumb; this
-  // reacts to a change: mirror it into posterView, persist it, and re-render the
-  // poster grid. The idempotent guard skips the no-op set from restorePrefs. React owns
-  // the subscribe() registration (StoreSubscriptions, App.tsx), importing this
-  // function directly. Deferred past a paint like handleDisplayStoreChange above.
-  let _posterDensityRenderT: ReturnType<typeof setTimeout> | undefined;
-  function handlePosterViewStoreChange() {
-    const v = storeGet('posterView');
-    if (v === posterView) return;
-    posterView = v;
-    deps.hologramIpc.setPref('posterViewMode', posterView);
-    clearTimeout(_posterDensityRenderT);
-    _posterDensityRenderT = setTimeout(() => deps.renderPosters(), 0);
+  // The poster display switches live in the display popover, which writes the two
+  // services/display.ts poster keys and nothing else (#630). This is what a change to
+  // either costs — the poster twin of handleDisplayStoreChange above: persist it, pull
+  // the size back into the range the new shape allows, re-render. React owns the
+  // subscribe() registration (StoreSubscriptions, App.tsx), importing this function
+  // directly. Deferred past a paint so the pressed control paints before the regroup.
+  let _posterShapeSig = posterShapeSnapshot();
+  let _posterDisplayRenderT: ReturnType<typeof setTimeout> | undefined;
+  function handlePosterDisplayStoreChange() {
+    if (_restoring) return;
+    const sig = posterShapeSnapshot();
+    if (sig === _posterShapeSig) return;
+    _posterShapeSig = sig;
+    const shape = currentPosterShape();
+    deps.hologramIpc.setPref('posterLayoutMode', shape.list ? 'list' : 'grid');
+    deps.hologramIpc.setPref('posterShowInfo', shape.info);
+    if (!shape.list) {
+      const clamped = clampPosterGridSize(posterGridSize, shape.info);
+      if (clamped !== posterGridSize) {
+        posterGridSize = clamped;
+        storeSet('posterGridSize', posterGridSize);
+        deps.hologramIpc.setPref('posterGridSize', posterGridSize);
+      }
+    }
+    clearTimeout(_posterDisplayRenderT);
+    _posterDisplayRenderT = setTimeout(() => deps.renderPosters(), 0);
   }
 
   // Load the saved display shape + sizes (called from viewer.ts's getPrefs().then).
@@ -414,22 +412,18 @@ export function makeGridDensity(deps: GridDensityDeps) {
       storeSet('layout', prefs.layoutMode === 'list' ? 'list' : 'grid');
       storeSet('squareThumbs', prefs.squareThumbs === true);
       storeSet('showInfo', prefs.showInfo !== false);
+      storeSet('posterLayout', prefs.posterLayoutMode === 'list' ? 'list' : 'grid');
+      storeSet('posterShowInfo', prefs.posterShowInfo !== false);
     } finally {
       _restoring = false;
       _shapeSig = shapeSnapshot();
+      _posterShapeSig = posterShapeSnapshot();
     }
-    if (['card', 'tile', 'list'].includes(prefs.posterViewMode)) {
-      posterView = prefs.posterViewMode;
-      storeSet('posterView', posterView);
-    }
-    // Poster-grid view sizes mirror into hologramStore (mirrors the post-side treatment below).
-    if (Number.isFinite(prefs.posterTileSize)) {
-      posterTileSize = Math.max(PTILE_MIN, Math.min(PTILE_MAX, prefs.posterTileSize as number));
-      storeSet('posterTileSize', posterTileSize);
-    }
-    if (Number.isFinite(prefs.posterCardSize)) {
-      posterCardSize = Math.max(PCARD_MIN, Math.min(PCARD_MAX, prefs.posterCardSize as number));
-      storeSet('posterCardSize', posterCardSize);
+    // The poster grid's size mirrors into hologramStore too, clamped against the
+    // 情報を表示 switch the block above has just restored.
+    if (Number.isFinite(prefs.posterGridSize)) {
+      posterGridSize = clampPosterGridSize(prefs.posterGridSize as number, currentPosterShape().info);
+      storeSet('posterGridSize', posterGridSize);
     }
     // Post-grid sizes also mirror into hologramStore (see setViewSize). The grid's
     // saved width is clamped against the CURRENT 情報を表示 switch, which the block
@@ -454,8 +448,7 @@ export function makeGridDensity(deps: GridDensityDeps) {
     handleDisplayStoreChange,
     computePosterSizeTrack,
     setPosterSizeFromSlider,
-    handlePosterViewStoreChange,
+    handlePosterDisplayStoreChange,
     restorePrefs,
-    getPosterView: () => posterView,
   };
 }
