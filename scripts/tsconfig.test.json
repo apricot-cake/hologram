@@ -1,0 +1,146 @@
+{
+  // TypeScript project #7 — the Vitest suites under scripts/ (#635).
+  //
+  // These were the one body of TypeScript in the repo that nothing type-checked.
+  // The cost was not hypothetical: facets.test.ts's makeFacets stub passed a
+  // `multiOnly` the service never declared and omitted the REQUIRED `postFolders`,
+  // so the 'folder' facet row model had no coverage at all while the suite stayed
+  // green. A stub that drifts from the contract tests a shape the app never passes,
+  // and it does it without ever going red.
+  //
+  // Why a separate project rather than folding *.test.ts into scripts/tsconfig.json:
+  // that project is a standalone-Node CommonJS runtime (nodenext, .cts, run un-built
+  // by Node's type stripping). The suites are a different runtime — Vitest transpiles
+  // them through Vite, and they import ACROSS layers (renderer services, main-process
+  // modules, extension utils) whose sources are written for bundler resolution and
+  // explicit .ts specifiers. Measured both ways: nodenext leaves 70 suites red purely
+  // on module-format grounds, bundler leaves 53. So this project mirrors
+  // app/tsconfig.web.json (the settings the imported renderer sources are written
+  // for) plus Node types, since the suites themselves run under Node.
+  //
+  // The ambient renderer .d.ts files are pulled in explicitly: HologramPost /
+  // HologramUserAgg / HologramFolder are globals declared there, and they are the
+  // shapes the stubs are supposed to match.
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "esModuleInterop": true,
+    "isolatedModules": true,
+    "strict": true,
+    // noImplicitAny / useUnknownInCatchVariables stay off for the same reason as
+    // every other project here (see app/tsconfig.node.json).
+    "noImplicitAny": false,
+    "useUnknownInCatchVariables": false,
+    "noUncheckedSideEffectImports": false,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
+    // Same both-candidates typeRoots as scripts/tsconfig.json — npm is free to hoist
+    // @types to the repo root or nest it under app/, and a missing entry is ignored.
+    "typeRoots": ["../node_modules/@types", "../app/node_modules/@types"],
+    "types": ["node"],
+    // Mirrors app/tsconfig.web.json's aliases; paths are relative to THIS file.
+    "paths": {
+      "@/*": ["../app/src/renderer/src/*"],
+      "jszip": ["../app/src/renderer/src/types/jszip-shim.d.ts"],
+      "electron": ["../app/src/renderer/src/types/electron-shim.d.ts"]
+    }
+  },
+  // Glob, not a hand-written list: a NEW suite is type-checked the moment it lands.
+  // That is the point of the whole project — the exclusions below are existing debt,
+  // not a policy, and nothing new is allowed to join them silently.
+  "include": ["**/*.test.ts", "vitest.setup.ts", "vitest.global-setup.ts", "lib-capture-rig.ts", "lib-user-event.ts", "../app/src/renderer/src/types/**/*.d.ts"],
+  // 59 of the 105 suites do not compile yet. Turning them on at once would be a
+  // ~450-error change touching most of the test tree, so they are quarantined here
+  // and burned down separately; 46 suites are checked from day one. Four causes, and
+  // only the last is the drift this project exists to catch:
+  //
+  //   (a) imports a .cts module that exports via `module.exports = {...}` (8 suites).
+  //       TypeScript only models CommonJS export assignment under nodenext/commonjs,
+  //       and this project is bundler — so native-host/bridge.cts, config-recovery.cts,
+  //       lib-sandbox-instance.cts and friends read as having no named exports. Not
+  //       drift; a module-format gap, and the one cause that will keep catching NEW
+  //       suites, because a .cts helper next to a .ts suite is a normal shape here.
+  //       Fixing it means either ESM exports in those .cts files (impossible — they run
+  //       un-built under Node's type stripping, which only erases) or a second project
+  //       on nodenext for the suites that import them.
+  //   (b) imports extension/ sources that need wxt's generated globals (10 suites) —
+  //       `browser`, the i18n table, the entrypoint declarations. extension/tsconfig.json
+  //       gets those from `wxt prepare`; this project has no such step.
+  //   (c) imports app/src/main modules and so needs the REAL electron types (3 suites).
+  //       The `electron` alias above points at the renderer's shim on purpose (it keeps
+  //       Node globals from shadowing the DOM lib), which is exactly wrong for the
+  //       main-process half.
+  //   (d) fixtures that have drifted from the ambient shapes (38 suites) — HologramPost /
+  //       HologramUserAgg / HologramQueryLeaf / HologramNavEntry literals missing required
+  //       members, wrong arity, wrong element types. THIS is the real debt, and each one
+  //       is an instance of exactly the bug #635 was filed about.
+  //
+  // Removing a name from this list is the unit of work. facets.test.ts was the first
+  // one taken off it.
+  "exclude": [
+    "archive-db-export.test.ts",
+    "archive-db-import.test.ts",
+    "archive-zipbomb.test.ts",
+    "archive-zipslip.test.ts",
+    "avatar-fill.test.ts",
+    "background-unit.test.ts",
+    "background-wiring.test.ts",
+    "bridge-query.test.ts",
+    "bridge-ssrf.test.ts",
+    "bulk-capture.test.ts",
+    "capture-overlay.test.ts",
+    "capture-timeout.test.ts",
+    "clipboard-intake.test.ts",
+    "config-cache.test.ts",
+    "config-recovery.test.ts",
+    "content-fixtures.test.ts",
+    "contrast-parity.test.ts",
+    "db-inbox.test.ts",
+    "db-replaces.test.ts",
+    "db-schema.test.ts",
+    "db-write.test.ts",
+    "db.test.ts",
+    "drag.test.ts",
+    "electron-path-guard.test.ts",
+    "extension-tokens.test.ts",
+    "folder-nesting.test.ts",
+    "folders-merge.test.ts",
+    "host-protocol.test.ts",
+    "hostile-record-shape.test.ts",
+    "image-zoom.test.ts",
+    "inspector-pref.test.ts",
+    "lib-db-integrity.test.ts",
+    "listing.test.ts",
+    "mastodon-url.test.ts",
+    "media-limits.test.ts",
+    "media.test.ts",
+    "metadata-correctness.test.ts",
+    "metadata-origin.test.ts",
+    "migrate.test.ts",
+    "native-host-install.test.ts",
+    "panels-pref.test.ts",
+    "panelwidth.test.ts",
+    "post-record.test.ts",
+    "query.test.ts",
+    "records.test.ts",
+    "sandbox-instance.test.ts",
+    "sandbox-real-seed.test.ts",
+    "save-error-i18n.test.ts",
+    "save-folder-guard.test.ts",
+    "save-post-empty.test.ts",
+    "save-post-video.test.ts",
+    "saved-index.test.ts",
+    "schema-canary.test.ts",
+    "tabstate.test.ts",
+    "tag-types.test.ts",
+    "tags.test.ts",
+    "transfer-roundtrip.test.ts",
+    "users.test.ts",
+    "verify-record.test.ts"
+  ]
+}

@@ -7,8 +7,8 @@
 //   - the inspector preview thumbnail opens the quick-view lightbox (peek)
 //   - Ctrl-click adds a second card to the selection (Shift-range is covered by
 //     test-app-drag-out's selection build)
-//   - poster cards carry no ℹ button; a plain click opens the poster inspector,
-//     a double-click drills into that poster's posts
+//   - poster cards carry no hover parts either; a plain click opens the poster
+//     inspector, a double-click drills into that poster's posts
 //   - a double-click on a post opens the image view (in-tab history destination)
 //
 // The gestures are the cells' own props (#618), so this drives real
@@ -93,6 +93,10 @@ const evalJs = `(async () => {
   // A. post cards have no ℹ / ○ hover parts (they were retired in #143)
   // Nothing appears on hover at all now (確定A): no ℹ, no 🏷, no ○ ring, no highlight.
   out.postHoverParts = document.querySelectorAll('[data-slot="post-grid"] [data-slot="post-card"] button, [data-slot="post-grid"] [data-slot="post-card"] [class*="act-pill"]').length;
+  // Control for the 0 above: the same descendant query, asking for ANY child. A card
+  // whose insides we cannot see would report 0 hover parts too, and that 0 would mean
+  // nothing (#635).
+  out.postCardParts = document.querySelectorAll('[data-slot="post-grid"] [data-slot="post-card"] *').length;
 
   // B. plain click = single-select + inspector (post kind, no poster head)
   click(cardOf(0));
@@ -153,7 +157,14 @@ const evalJs = `(async () => {
   // E. switch to the posters view → poster cards carry no ℹ button
   [...document.querySelectorAll('button')].find(b => (b.textContent || '').trim() === '投稿者')?.click();
   out.posterCardsShown = await waitFor(() => navActive() && document.querySelectorAll('[data-slot="poster-grid"] [data-slot="poster-card"]').length >= 1);
-  out.posterHoverInfo = document.querySelectorAll('[data-slot="poster-grid"] [data-slot="poster-info"]').length;
+  // 投稿者カードにもホバー部品は無い＝A と同じ形で数える。
+  // ここは [data-slot="poster-info"] を数えていたが、その ℹ ボタンは tag-pop の撤去
+  // (1512e839) でアプリのどこにも無くなっており、数えても必ず 0 ＝ 落ちようのない検査
+  // だった（#635）。いま使っている手掛かりは2つとも同じ実行の中で live だと分かる:
+  // poster-card は直上の posterCardsShown が 1 以上を確かめており、button は HTML のタグ
+  // なので死なない。撤去された名前を数え続ける形には戻さない。
+  out.posterHoverParts = document.querySelectorAll('[data-slot="poster-grid"] [data-slot="poster-card"] button, [data-slot="poster-grid"] [data-slot="poster-card"] [class*="act-pill"]').length;
+  out.posterCardParts = document.querySelectorAll('[data-slot="poster-grid"] [data-slot="poster-card"] *').length; // same control as A
 
   // F. plain click a poster → poster inspector (has the poster head block)
   document.querySelector('[data-slot="poster-grid"] [data-slot="poster-card"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
@@ -195,6 +206,7 @@ child.on('close', () => {
   }
   const checks = [
     ['post cards have no ℹ / ○ hover parts', r.postHoverParts === 0],
+    ['…and we could see inside them (that 0 is a real 0)', r.postCardParts >= 1],
     ['plain click opens the inspector', r.inspOpenedB === true],
     ['plain click shows the POST inspector', r.inspIsPost === true],
     ['plain click single-selects the card', r.selAfterB === '本文0'],
@@ -209,7 +221,8 @@ child.on('close', () => {
     ['← moves the selection back', r.arrowLeftStep === -1],
     ['← clamps at the first card instead of wrapping', r.arrowClampedAtStart === true],
     ['poster cards render', r.posterCardsShown === true],
-    ['poster cards have no ℹ button', r.posterHoverInfo === 0],
+    ['poster cards have no ℹ / ○ hover parts', r.posterHoverParts === 0],
+    ['…and we could see inside them (that 0 is a real 0)', r.posterCardParts >= 1],
     ['plain click opens the poster inspector', r.inspOpenedF === true && r.inspIsPoster === true],
     ['double-click a poster drills into their posts', r.drilledIn === true],
     ['double-click a post opens the image view', r.imageViewActive === true],
