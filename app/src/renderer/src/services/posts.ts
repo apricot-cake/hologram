@@ -19,6 +19,14 @@ export function listPostsDelta(haveBaseline: boolean) {
 export function imageDataUrl(image: string) {
   return hologramIpc.imageDataUrl(image);
 }
+// pixiv うごイラ playback (#506). The archive stays in main — these hand the
+// player a yes/no about the frame table and then one frame's bytes at a time.
+export function ugoiraFramesPresent(file: string, names: string[]) {
+  return hologramIpc.ugoiraFramesPresent(file, names);
+}
+export function ugoiraFrame(file: string, name: string) {
+  return hologramIpc.ugoiraFrame(file, name);
+}
 export function deletePost(image: string) {
   return hologramIpc.deletePost(image);
 }

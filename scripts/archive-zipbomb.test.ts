@@ -11,6 +11,7 @@
 //   (g) 整理用 JSON 専用上限は、実際の出力バイト数でも打ち切る（申告値の偽装への防御）
 //   (i) 旧形式（metadata.json + images/）の入口も同じ申告ガードを通り、さらに
 //       メモリ展開専用の上限（#322）で拒否する
+//   (j) うごイラのコマ読み（#506）も同じ申告ガードを通り、さらに1コマ専用の上限で拒否する
 // どの拒否でも、悪意あるペイロードや .tmp-import をディスクに残してはいけない。
 //
 // 実際の上限は GiB 級で、本物の圧縮データから作るのは非現実的。そこで (b)-(d),(f) は
@@ -27,7 +28,22 @@ import path from 'node:path';
 import { Readable } from 'node:stream';
 import JSZip from 'jszip';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
-import { MAX_LEGACY_ENTRY_BYTES, MAX_LEGACY_TOTAL_BYTES, MAX_ZIP_ENTRIES, MAX_ZIP_ENTRY_BYTES, MAX_ZIP_ORG_BYTES, MAX_ZIP_TOTAL_BYTES, ZipLimitError, importCompleteZipToDb, readLegacyZipPosts, readStreamCapped, writeStreamCapped } from '../app/src/main/lib-archive';
+import {
+  MAX_LEGACY_ENTRY_BYTES,
+  MAX_LEGACY_TOTAL_BYTES,
+  MAX_UGOIRA_FRAME_BYTES,
+  MAX_ZIP_ENTRIES,
+  MAX_ZIP_ENTRY_BYTES,
+  MAX_ZIP_ORG_BYTES,
+  MAX_ZIP_TOTAL_BYTES,
+  ZipLimitError,
+  importCompleteZipToDb,
+  readLegacyZipPosts,
+  readStreamCapped,
+  readUgoiraFrame,
+  ugoiraFramesPresent,
+  writeStreamCapped,
+} from '../app/src/main/lib-archive';
 import { openDatabase } from '../app/src/main/lib-db';
 import { createDbWriter } from '../app/src/main/lib-db-write';
 
@@ -381,5 +397,57 @@ describe('(i) 旧形式の入口（#322）', () => {
     const zipPath = zipFileOf(forgeDeclaredSizes(await buildLegacyZipBytes(n), (name) => (name === 'metadata.json' ? null : each)));
 
     await expect(readLegacyZipPosts(zipPath)).rejects.toThrow(ZipLimitError);
+  });
+});
+
+// うごイラ再生（#506）は書庫を開く3つ目の読み手＝レンダラーの JSZip を追い出した先。
+// pixiv 配布の zip をそのまま持っている＝第三者由来なので、他の2経路と同じ申告タリーを
+// 通したうえで「1コマ＝静止画1枚」の専用上限を持つ。書庫あたりの合計上限は無い（一度に
+// 1コマしか持たないので、縛る対象が存在しない）。
+const buildUgoiraZipBytes = () => buildZipBytes({ '000000.jpg': 'FRAME0', '000001.jpg': 'FRAME1', '000002.jpg': 'FRAME2' });
+
+describe('(j) うごイラのコマ読み（#506）', () => {
+  test('コマ表の名前が全部あれば true', async () => {
+    const zipPath = zipFileOf(await buildUgoiraZipBytes());
+
+    expect(await ugoiraFramesPresent(zipPath, ['000000.jpg', '000001.jpg', '000002.jpg'])).toBe(true);
+  });
+
+  test('1つでも欠けていれば false（全か無か＝コマ表と書庫が別物なら再生させない）', async () => {
+    const zipPath = zipFileOf(await buildUgoiraZipBytes());
+
+    expect(await ugoiraFramesPresent(zipPath, ['000000.jpg', 'gone.jpg'])).toBe(false);
+  });
+
+  test('コマ表が空なら false', async () => {
+    const zipPath = zipFileOf(await buildUgoiraZipBytes());
+
+    expect(await ugoiraFramesPresent(zipPath, [])).toBe(false);
+  });
+
+  test('要求した1コマのバイト列だけを返す', async () => {
+    const zipPath = zipFileOf(await buildUgoiraZipBytes());
+
+    expect((await readUgoiraFrame(zipPath, '000001.jpg'))?.toString('utf8')).toBe('FRAME1');
+  });
+
+  test('書庫に無い名前は null（例外にしない＝プレイヤーはポスターへ落ちる）', async () => {
+    const zipPath = zipFileOf(await buildUgoiraZipBytes());
+
+    expect(await readUgoiraFrame(zipPath, 'gone.jpg')).toBeNull();
+  });
+
+  test('1コマ専用の上限（64 MiB）を申告が超えていれば、1バイトも読まずに拒否する', async () => {
+    const oversize = MAX_UGOIRA_FRAME_BYTES + 1;
+    expect(oversize).toBeLessThan(MAX_ZIP_ENTRY_BYTES); // 共有ガードでなく専用ガードが発火する位置
+    const zipPath = zipFileOf(forgeDeclaredSizes(await buildUgoiraZipBytes(), (name) => (name === '000001.jpg' ? oversize : null)));
+
+    await expect(readUgoiraFrame(zipPath, '000001.jpg')).rejects.toThrow(ZipLimitError);
+  });
+
+  test('共有の件数ガードも効く（申告が多すぎる書庫）', async () => {
+    const zipPath = zipFileOf(craftArchiveDeclaring(MAX_ZIP_ENTRIES + 5));
+
+    await expect(ugoiraFramesPresent(zipPath, ['000000.jpg'])).rejects.toThrow(ZipLimitError);
   });
 });

@@ -99,6 +99,13 @@ const MAX_ZIP_ORG_BYTES = 16 * 1024 * 1024; // 16 MiB
 //     full-size library is the complete format's job, and that one streams.
 const MAX_LEGACY_ENTRY_BYTES = 64 * 1024 * 1024; // 64 MiB
 const MAX_LEGACY_TOTAL_BYTES = 1024 * 1024 * 1024; // 1 GiB expanded across the archive
+// A pixiv うごイラ archive (#119 St3) is a third party's file that the player
+// expands ONE FRAME AT A TIME (#506), so it gets a per-frame budget rather than
+// riding the multi-GB media cap: a frame is a single still image, the shape the
+// legacy per-entry cap was already sized for. There is deliberately no
+// per-archive total to go with it — the player never holds the whole archive,
+// and the download step already refused one past its own size limit.
+const MAX_UGOIRA_FRAME_BYTES = 64 * 1024 * 1024; // 64 MiB
 class ZipLimitError extends Error {}
 // yauzl reads uncompressedSize straight off the central directory (widened from
 // the ZIP64 extra field when present), so this is the declared size for archives
@@ -945,6 +952,74 @@ async function readLegacyFromOpenZip(zipfile: ZipReader): Promise<any[] | null> 
   return posts;
 }
 
+// --- pixiv うごイラ playback (#506) ---------------------------------------------
+// The player needs frames out of an archive the library stores untouched, and it
+// needs them WITHOUT the archive crossing into the renderer — the rule the export
+// and import paths already follow (ADR 0015). These two were the last renderer-side
+// ZIP reader in the app.
+//
+// Both open the file per call and hold nothing between calls: an うごイラ has tens
+// of frames, so re-reading the central directory is cheaper than owning an fd's
+// lifetime across IPC round trips.
+//
+// Frame names come from the capture's frame table, never from the archive, and no
+// path is ever built from one — they are only compared against entry names that
+// already passed yauzl's validateFileName at open (same reasoning as the legacy
+// reader above, so there is no Zip-Slip surface here either).
+
+// True only when EVERY name the frame table asks for exists in the archive. The
+// all-or-nothing answer is the point: a partial match means the table and the
+// archive no longer describe the same animation, and a silently reordered
+// animation is worse than the poster (#474).
+async function ugoiraFramesPresent(zipPath: string, names: string[]): Promise<boolean> {
+  if (!Array.isArray(names) || !names.length) return false;
+  const zipfile = await openZipForRead(zipPath, { autoClose: false });
+  try {
+    const tally = declaredSizeTally(zipfile);
+    const wanted = new Set(names);
+    for await (const entry of zipfile.eachEntry()) {
+      if (entry.fileName.endsWith('/')) continue; // directory entry (yauzl's only marker)
+      tally(entry.fileName, entry);
+      wanted.delete(entry.fileName);
+    }
+    return wanted.size === 0;
+  } finally {
+    try {
+      zipfile.close();
+    } catch {
+      /* already closed by an error path */
+    }
+  }
+}
+
+// One frame's bytes, or null when the archive has no such entry. Capped twice,
+// like every other entry this module expands: the declared size is refused before
+// a byte is read, and the stream is cut at the same limit so a lying central
+// directory buys nothing.
+async function readUgoiraFrame(zipPath: string, name: string): Promise<Buffer | null> {
+  if (!name) return null;
+  const zipfile = await openZipForRead(zipPath, { autoClose: false });
+  try {
+    const tally = declaredSizeTally(zipfile);
+    let found: ZipEntry | null = null;
+    for await (const entry of zipfile.eachEntry()) {
+      if (entry.fileName.endsWith('/')) continue;
+      tally(entry.fileName, entry);
+      if (entry.fileName === name) found = entry;
+    }
+    if (!found) return null;
+    const declared = entryUncompressedSize(found);
+    if (declared > MAX_UGOIRA_FRAME_BYTES) throw new ZipLimitError('ugoira frame "' + name + '" declares ' + declared + ' bytes (> frame cap ' + MAX_UGOIRA_FRAME_BYTES + ')');
+    return await readStreamCapped(await zipfile.openReadStreamPromise(found), MAX_UGOIRA_FRAME_BYTES);
+  } finally {
+    try {
+      zipfile.close();
+    } catch {
+      /* already closed by an error path */
+    }
+  }
+}
+
 export {
   EXPORT_SKIP,
   ORG_MERGE,
@@ -954,6 +1029,7 @@ export {
   MAX_ZIP_ORG_BYTES,
   MAX_LEGACY_ENTRY_BYTES,
   MAX_LEGACY_TOTAL_BYTES,
+  MAX_UGOIRA_FRAME_BYTES,
   ZipLimitError,
   writeStreamCapped,
   readStreamCapped,
@@ -962,6 +1038,8 @@ export {
   hasExportableFiles,
   importCompleteZipToDb,
   readLegacyZipPosts,
+  ugoiraFramesPresent,
+  readUgoiraFrame,
   mergeFolders,
   mergePosterFolders,
   mergeTagTypes,
