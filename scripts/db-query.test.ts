@@ -68,6 +68,11 @@ beforeAll(async () => {
     platform: 'x',
     imageIndex: 2,
     imageCount: 4,
+    // #188: pixiv シリーズ情報も他の任意フィールドと同じ列に相乗り（プラットフォーム名
+    // はテストの前提を崩さないよう 'x' のままにしてある — 往復するかどうかに関係ない）
+    seriesId: '12345',
+    seriesTitle: 'ある冒険',
+    seriesOrder: 3,
     capturedAt: '2026-01-03T00:00:00Z',
     updatedAt: '2026-01-03T00:00:00Z',
   });
@@ -151,6 +156,15 @@ describe('postsFromDb: 形と並び', () => {
     expect({ cw: cap1.cw, sensitive: cap1.sensitive }).toEqual({ cw: 'spider photo inside', sensitive: true });
     const cap2 = (await postsFromDb(handle.sqlite)).find((p: any) => p.captureId === 'cap-2');
     expect({ cw: cap2.cw, sensitive: cap2.sensitive }).toEqual({ cw: null, sensitive: null });
+  });
+
+  // #188: series info is likewise meaningless just because the column exists — it only
+  // round-trips once the reader actually reads it
+  test('seriesId / seriesTitle / seriesOrder が往復する（#188）', async () => {
+    const cap3 = (await postsFromDb(handle.sqlite)).find((p: any) => p.captureId === 'cap-3');
+    expect({ seriesId: cap3.seriesId, seriesTitle: cap3.seriesTitle, seriesOrder: cap3.seriesOrder }).toEqual({ seriesId: '12345', seriesTitle: 'ある冒険', seriesOrder: 3 });
+    const cap2 = (await postsFromDb(handle.sqlite)).find((p: any) => p.captureId === 'cap-2');
+    expect({ seriesId: cap2.seriesId, seriesTitle: cap2.seriesTitle, seriesOrder: cap2.seriesOrder }).toEqual({ seriesId: null, seriesTitle: null, seriesOrder: null });
   });
 
   // #560: if a column is known only to the writer and never queried by the reader, the inspector's

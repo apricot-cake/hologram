@@ -343,8 +343,11 @@ export const userKey = (p: HologramPost): string => p.platform + ':' + (p.userId
 // (searchPostsFts in lib-db-query.ts has no caller outside tests/bench; #29 is
 // the eventual consumer), so adding alt there would not change what a user can
 // find until that stage lands.
+// p.seriesTitle (#188): pixiv series name, so "シリーズ名で検索" finds every
+// saved work in that series — null on everything else (no series, or a
+// non-pixiv post), same graceful-absence convention as the other fields here.
 export function textHaystackOf(p: HologramPost): string[] {
-  return [p.text, p.title, p.eagleName, p.screenName, p.displayName, p.description]
+  return [p.text, p.title, p.eagleName, p.screenName, p.displayName, p.description, p.seriesTitle]
     .concat(p.tags || [])
     .concat(p.hashtags || [])
     .concat((p.media || []).map((m: any) => m?.alt))

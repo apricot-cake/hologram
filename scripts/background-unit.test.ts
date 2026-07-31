@@ -156,6 +156,12 @@ describe('buildRecord — サイドカーレコードの組み立て', () => {
     const rec = buildRecord({ text: 'from-meta' }, { ...base, extra: { text: 'from-extra' } });
     expect(rec.text).toBe('from-extra');
   });
+
+  // #188: pixiv シリーズ情報も他の meta フィールドと同じ経路でレコードへ写る
+  test('meta.seriesId/seriesTitle/seriesOrder をレコードへ写す', () => {
+    const rec = buildRecord({ seriesId: '12345', seriesTitle: 'ある冒険', seriesOrder: 3 }, base);
+    expect({ seriesId: rec.seriesId, seriesTitle: rec.seriesTitle, seriesOrder: rec.seriesOrder }).toEqual({ seriesId: '12345', seriesTitle: 'ある冒険', seriesOrder: 3 });
+  });
 });
 
 describe('generateCaptureId — #125 の外部参照キーになる想定なので形式を固定する', () => {

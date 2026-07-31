@@ -177,6 +177,17 @@ async function fetchPixivIllust(parsed, url): Promise<PostRecord> {
     // pixiv's tags.tags[].tag is the bare tag already; the shared rule (#177)
     // only has to dedupe it and is what keeps every platform's spelling equal.
     rec.hashtags = normalizeHashtags((il.tags && Array.isArray(il.tags.tags) ? il.tags.tags : []).map((t) => t && t.tag));
+    // Series membership (#188): seriesNavData is present only on a work that
+    // belongs to a series (confirmed against a live capture — schema-canary's
+    // scripts/canary/snapshots/pixiv.json shows it null on a standalone work
+    // and an object on one in a series). Its own top-level `order` is THIS
+    // work's 1-based position — next.order/prev.order describe the NEIGHBORING
+    // works, not this one, so they are not used here.
+    if (il.seriesNavData) {
+      rec.seriesId = il.seriesNavData.seriesId || null;
+      rec.seriesTitle = il.seriesNavData.title || null;
+      rec.seriesOrder = typeof il.seriesNavData.order === 'number' ? il.seriesNavData.order : null;
+    }
     // ugoira is a silent looping animation — to the person browsing their
     // library that is the same kind of thing as an X animated_gif or a Mastodon
     // gifv, which already label as 'gif'. mediaType is the DISPLAY label (what

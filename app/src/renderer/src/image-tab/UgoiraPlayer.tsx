@@ -196,11 +196,17 @@ export function UgoiraPlayer({ file, frames, poster, alt, labels }: { file: stri
   // archive won't open still shows the artwork.
   return (
     <div data-slot="ugoira-stage" className="relative flex min-w-0 flex-1">
-      <canvas ref={canvasRef} className="m-auto max-h-full max-w-full object-contain" role="img" aria-label={alt || labels.ugoira || ''} style={status === 'ready' ? undefined : { display: 'none' }} />
+      {/* data-slot="viewer-canvas" (#88): privacy mode blurs this alongside
+          ImageTab.tsx's data-slot="viewer-image"/"viewer-video" — the toggle button
+          below is deliberately its own sibling, not inside this stage's blur, so it
+          stays legible/clickable while the frame it controls is hidden. */}
+      <canvas ref={canvasRef} data-slot="viewer-canvas" className="m-auto max-h-full max-w-full object-contain" role="img" aria-label={alt || labels.ugoira || ''} style={status === 'ready' ? undefined : { display: 'none' }} />
       {/* decoding="async" like the rest of the viewer surface (#241) — the
           archive is being unzipped and decoded on the same thread's tasks, so
-          the poster must not add a blocking decode on top of that. */}
-      {status !== 'ready' && poster && <img className="m-auto max-h-full max-w-full object-contain" src={poster} alt={alt || ''} decoding="async" />}
+          the poster must not add a blocking decode on top of that. Shares
+          data-slot="viewer-image" with the still frame below — it's the same
+          "still image standing in for this work" role privacy mode blurs there. */}
+      {status !== 'ready' && poster && <img data-slot="viewer-image" className="m-auto max-h-full max-w-full object-contain" src={poster} alt={alt || ''} decoding="async" />}
       {/* Bottom-left, where a <video> puts its own play button — the same corner the
           browser's native controls use for the neighbouring slide type. Same translucent
           plate as the stage's other floating controls (P2⑫). */}

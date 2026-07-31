@@ -130,6 +130,8 @@ export interface AppPrefs {
   inspectorWidth: number | null;
   /** #245: both panels above masked away at once. Independent of their own state. */
   panelsHidden: boolean | null;
+  /** #88: one-key blur over every image surface (grid/list/inspector/viewer/lightbox). */
+  privacyMode: boolean | null;
 }
 
 // --- Organization layer (DB-backed, ipc-organize.ts) ---------------------

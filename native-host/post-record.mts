@@ -115,6 +115,12 @@ export interface PostRecordShape {
   sensitive: boolean | null;
   quotedUrl: string | null;
   replyToId: string | null;
+  // pixiv series membership (#188) — see extension/utils/extractor/types.ts's
+  // PostRecord.seriesId/seriesTitle/seriesOrder for the sourcing. All three
+  // null on every non-pixiv record and on a pixiv work that isn't in a series.
+  seriesId: string | null;
+  seriesTitle: string | null;
+  seriesOrder: number | null;
   hashtags: string[];
   tags: string[];
   // Which of this record's fields came from the PAGE rather than from the
@@ -307,6 +313,9 @@ export function normalizePostRecord(input: PostRecordInput, now: () => string = 
     sensitive: normBool(input.sensitive),
     quotedUrl: normStr(input.quotedUrl),
     replyToId: normStr(input.replyToId),
+    seriesId: normStr(input.seriesId),
+    seriesTitle: normStr(input.seriesTitle),
+    seriesOrder: normNum(input.seriesOrder),
     // NFKC + trim (#197) — the save-pipeline convergence point every producer's
     // hashtags/tags pass through (inbox, ZIP import, orphan recovery). domFilled
     // stays on plain normStrArray: those are field-name identifiers, not tag text.

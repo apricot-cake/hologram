@@ -299,6 +299,19 @@ const MIGRATIONS: Migration[] = [
           FROM posts p;
       `),
   },
+  // #188: pixiv series membership — which series a work belongs to and its
+  // 1-based position in it, from the illust payload's seriesNavData (see
+  // PostRecordShape.seriesId/seriesTitle/seriesOrder). All three null on every
+  // row written before this migration and on every non-series/non-pixiv post.
+  {
+    name: 'add-post-series-fields',
+    up: (db) =>
+      db.exec(`
+        ALTER TABLE posts ADD COLUMN seriesId TEXT;
+        ALTER TABLE posts ADD COLUMN seriesTitle TEXT;
+        ALTER TABLE posts ADD COLUMN seriesOrder INTEGER;
+      `),
+  },
 ];
 
 interface Migration {
@@ -448,6 +461,10 @@ interface PostsTable {
   // add-post-cw-sensitive migration (#178) — see PostRecordShape.cw/sensitive.
   cw: string | null;
   sensitive: number | null;
+  // add-post-series-fields migration (#188) — see PostRecordShape.seriesId/seriesTitle/seriesOrder.
+  seriesId: string | null;
+  seriesTitle: string | null;
+  seriesOrder: number | null;
 }
 interface MediaTable {
   id: Generated<number>;

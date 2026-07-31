@@ -1385,6 +1385,9 @@ function buildRecord(meta, { captureId, capturedAt, postUrl, sendPlatform, repla
       sensitive: meta.sensitive,
       quotedUrl: meta.quotedUrl,
       replyToId: meta.replyToId,
+      seriesId: meta.seriesId,
+      seriesTitle: meta.seriesTitle,
+      seriesOrder: meta.seriesOrder,
       hashtags: meta.hashtags || [],
       tags: meta.tags || [],
       // The acquisition originals (#292), still as received text — the native

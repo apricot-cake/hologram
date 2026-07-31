@@ -398,6 +398,12 @@ describe('純ヘルパ', () => {
     expect(Q.textHaystackOf({ text: null }).every((s: unknown) => typeof s === 'string')).toBe(true);
   });
 
+  // #188: pixiv シリーズタイトルで検索すると所属作品が出るように、検索テキスト束へ足す
+  test('textHaystackOf は seriesTitle を連結する（#188）', () => {
+    expect(Q.textHaystackOf({ text: null, seriesTitle: 'ある冒険' })).toEqual(expect.arrayContaining(['ある冒険']));
+    expect(Q.textHaystackOf({ text: null, seriesTitle: null }).every((s: unknown) => typeof s === 'string')).toBe(true);
+  });
+
   test('localDayRange の to は翌日ローカル0時（排他）で、空は null', () => {
     const ldr = Q.localDayRange('2026-05-10', '2026-05-10');
     expect(ldr.to.getTime() - ldr.from.getTime()).toBe(24 * 3600 * 1000);

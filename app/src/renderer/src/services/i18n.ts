@@ -88,6 +88,9 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     detailImageOf: '元投稿の画像',
     imageOf: '$1 / $2 枚目',
     detailText: '本文',
+    // pixiv シリーズ情報（#188）。シリーズに属さない作品では両方とも空
+    detailSeries: 'シリーズ',
+    detailSeriesOrder: '話数',
     detailTags: 'タグ',
     tagsEmpty: 'タグなし',
     tipEditTags: 'タグを編集',
@@ -399,6 +402,9 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     displaySize: 'サイズ',
     displayPanels: 'サイドバーと詳細パネル',
     displayPanelsHint: 'サイドバーだけなら Ctrl+B、両方まとめてなら Ctrl+Shift+B',
+    // Privacy mode (#88) — the titlebar's toggle & indicator, hotkey is unmodified P
+    privacyModeToggle: 'プライバシーモード (P)',
+    cmdTogglePrivacy: 'プライバシーモードを切り替え',
     // Quick view (#143) — no visible heading is drawn, so this is screen-reader only
     quickViewTitle: 'クイックビュー',
     // Command palette (#28) — the container's copy, headings, and initial commands
@@ -566,6 +572,9 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     detailImageOf: 'In original post',
     imageOf: '$1 of $2',
     detailText: 'Text',
+    // pixiv series info (#188). Both blank when the work isn't in a series
+    detailSeries: 'Series',
+    detailSeriesOrder: 'Installment',
     detailTags: 'Tags',
     tagsEmpty: 'No tags',
     tipEditTags: 'Edit tags',
@@ -858,6 +867,9 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     displaySize: 'Size',
     displayPanels: 'Sidebar and details panel',
     displayPanelsHint: 'Ctrl+B for the sidebar alone, Ctrl+Shift+B for both',
+    // Privacy mode (#88) — titlebar toggle + indicator; the hotkey is plain P, no modifier
+    privacyModeToggle: 'Privacy mode (P)',
+    cmdTogglePrivacy: 'Toggle privacy mode',
     // Quick view (#143) — no visible heading, so this is the screen-reader name only
     quickViewTitle: 'Quick view',
     // Command palette (#28)
