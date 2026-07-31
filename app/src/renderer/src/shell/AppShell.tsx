@@ -44,6 +44,7 @@ import { InspectorToggle } from './InspectorToggle.tsx';
 import { LeftSidebar } from './LeftSidebar.tsx';
 import { EmptyState } from '../empty/EmptyState.tsx';
 import { FloatingBar } from '../selection/FloatingBar.tsx';
+import { ScrollToTop } from './ScrollToTop.tsx';
 import { ImageTabHost } from '../image-tab/index.tsx';
 import { Inspector } from '../inspector/Inspector.tsx';
 import { PostGrid, PostGridSlot } from '../grid/index.tsx';
@@ -321,6 +322,10 @@ export function AppShell() {
                     a body-level overlay) so it centers on the content column and stays clear of
                     the right inspector, which is a flex sibling that narrows the inset when open. */}
                 <FloatingBar />
+                {/* "Back to top" (#606) — same reason it lives here rather than at the
+                    window level: the inset is what the inspector narrows, so bottom-right
+                    of THIS box is bottom-right of the content the user is scrolling. */}
+                <ScrollToTop />
               </SidebarInset>
               {/* Right inspector — a column under the band, like Chrome's side panel (#518).
                   Visibility is the user's own toggle (#243): it is no longer opened/closed as
