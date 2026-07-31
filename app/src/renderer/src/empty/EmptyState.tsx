@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty';
 import { t } from '../_shared/i18n.ts';
 import { importFromClipboard } from '../services/clipboard-intake.ts';
+import { libraryEmptyVariant } from '../services/library-status.ts';
 import { resetAllFilters, resetPosterFilters, runZipImport } from '../services/orchestrator.ts';
 import { get as storeGet, subscribe as storeSubscribe } from '../services/store.ts';
 
@@ -25,18 +26,25 @@ import { get as storeGet, subscribe as storeSubscribe } from '../services/store.
 // BOTH variants (post and poster) are folded into self-derived selectors —
 // hologramStore already carries everything needed reactively — instead of a viewer
 // push. The old shared push bridge has no callers left anywhere and was deleted.
+//
+// The variant decision itself lives in services/library-status.ts, not here (#682):
+// it gates on 'libraryLoaded' so a grid mid-load never reads as "confirmed empty" —
+// see that module's header for why postGroups/posterGroups alone couldn't tell the
+// two apart, and empty/LibraryLoading.tsx for what fills the gap while loading.
 const subPostGroups = (cb: () => void) => storeSubscribe('postGroups', cb);
 const getPostGroups = () => storeGet('postGroups') as any[] | null | undefined;
 const subAllPostsCount = (cb: () => void) => storeSubscribe('allPostsCount', cb);
 const getAllPostsCount = () => (storeGet('allPostsCount') as number | undefined) ?? 0;
 const subPosterGroups = (cb: () => void) => storeSubscribe('posterGroups', cb);
-const getPosterGroups = () => storeGet('posterGroups') as any[] | undefined; // never explicitly null — see the comment below
+const getPosterGroups = () => storeGet('posterGroups') as any[] | undefined; // never explicitly null — see library-status.ts
 const subAllUsersCount = (cb: () => void) => storeSubscribe('allUsersCount', cb);
 const getAllUsersCount = () => (storeGet('allUsersCount') as number | undefined) ?? 0;
 const subSearchQuery = (cb: () => void) => storeSubscribe('searchQuery', cb);
 const getSearchQuery = () => (storeGet('searchQuery') as string | undefined) ?? '';
 const subMode = (cb: () => void) => storeSubscribe('browseMode', cb);
 const getMode = () => (storeGet('browseMode') as string | undefined) ?? 'posts';
+const subLibraryLoaded = (cb: () => void) => storeSubscribe('libraryLoaded', cb);
+const getLibraryLoaded = () => !!storeGet('libraryLoaded');
 
 export function EmptyState() {
   const mode = useSyncExternalStore(subMode, getMode);
@@ -45,26 +53,8 @@ export function EmptyState() {
   const posterGroups = useSyncExternalStore(subPosterGroups, getPosterGroups);
   const allUsersCount = useSyncExternalStore(subAllUsersCount, getAllUsersCount);
   const query = useSyncExternalStore(subSearchQuery, getSearchQuery);
-  let variant: HologramEmptyVariant | null = null;
-  // The trash has its own empty state, inside its own view (#268) — this
-  // placeholder belongs to the two library grids and would otherwise answer for a
-  // destination it knows nothing about.
-  if (mode === 'trash') return null;
-  if (mode === 'posts') {
-    // postGroups is undefined before the first renderPosts() ever ran (nothing to
-    // show yet), an array while the grid has content (nothing to show), or
-    // explicitly null when renderPosts() found the filtered/grouped set empty
-    // (orchestrator distinguishes these on purpose — see services/orchestrator.ts's
-    // renderPosts and services/grid.ts's computeModel).
-    if (postGroups === null) variant = allPostsCount === 0 && !query.trim() ? 'firstRun' : 'filtered';
-  } else {
-    // posterGroups has no such null sentinel — viewer always pushes an array
-    // (possibly empty) once renderPosters() has run at all, undefined before that
-    // (the poster grid never needed the post grid's unmount-before-innerHTML-clear
-    // ordering, so there was nothing forcing a null push — see services/grid.ts's
-    // makePosterGridSource doc comment).
-    if (posterGroups !== undefined && posterGroups.length === 0) variant = allUsersCount === 0 && !query.trim() ? 'posterFirstRun' : 'filtered';
-  }
+  const libraryLoaded = useSyncExternalStore(subLibraryLoaded, getLibraryLoaded);
+  const variant = libraryEmptyVariant({ mode, libraryLoaded, postGroups, posterGroups, allPostsCount, allUsersCount, query });
   if (!variant) return null;
   // A filter or a search ate everything → the one honest next action is to undo it.
   // No made-up second button here: the grid is empty BECAUSE of a predicate the user
