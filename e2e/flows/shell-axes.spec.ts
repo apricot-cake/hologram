@@ -8,8 +8,9 @@
 // the axes belong to the band and to the sidebar column, and the controls are participants.
 //
 // WHY HERE AND NOT IN scripts/test-app-*.cts. Geometry is only meaningful against a fixed
-// viewport and a fixed device scale factor, and lib/harness.ts is where those are fixed
-// (1280x800 content box, --force-device-scale-factor=1, plus theme / language / timezone).
+// viewport and a fixed device scale factor, and lib/harness.ts is where those are fixed (a
+// content box on the wide side of the layout breakpoint per lib/viewport.ts,
+// --force-device-scale-factor=1, plus theme / language / timezone).
 // The scripts/ layer boots hidden at its own default size and inherits the machine's DPI, so
 // the same numbers there would be the machine's numbers.
 //

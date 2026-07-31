@@ -36,7 +36,7 @@ npm run test:e2e:update  # 正解画像を撮り直す
 
 `e2e/lib/harness.ts` が起動時に固定する。増やすときはここに足す。
 
-- **ウィンドウの中身のサイズ** 1280×800（枠の寸法は OS 側の都合なので content で測る）
+- **ウィンドウの中身のサイズ** 高さは 800、**幅はレイアウトの wide 判定の下限（`layout-mode.ts` の `WIDE_MIN_PX`）から算出**する（`e2e/lib/viewport.ts`・#649）＝flow は wide 側のレイアウトを見るテスト群なので、ブレークポイントを動かしても wide 側に留まる。幅を数値で書くと境界の真上に乗り、動かした時に**全ケースが黙って narrow 側へ移る**。起動ごとに実測もしていて、narrow 側に落ちたら赤くなる（枠の寸法は OS 側の都合なので content で測る）
 - **DPI** `--force-device-scale-factor=1`
 - **テーマ** config.json に書いてから起動（`auto` を OS 設定で解決させない）
 - **言語** `ja`／**タイムゾーン** `Asia/Tokyo`（どちらもラベル・日付を読むため）
