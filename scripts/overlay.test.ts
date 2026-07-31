@@ -116,6 +116,20 @@ const X_HTML = `<!doctype html><html><body>
       <div data-testid="tweetPhoto" data-rect-top="6400" id="p15a"><img src="https://pbs.twimg.com/media/PPP.jpg"></div>
     </article>
   </div>
+    <!-- #659: 写真ビューア（拡大表示）。article の外側の独立したモーダル層で、
+         data-testid="swipe-to-dismiss" が表示中のスライドを包む（実 DOM 監査 2026-07-31）。
+         viewerDialog は既定で data-rect-top を持たない＝矩形ゼロ＝「開いていない」ものとして
+         無視される。開いた状態は各テストが rectTop() で明示的に有効化・後始末する。
+         top は 9000＝他のどの投稿の矩形（最大でも p15 の 6400〜6700）とも重ならない値。
+         このハーネスの座標は実レイアウトでなく data-rect-top の宣言そのものなので、
+         重なると anchorAtPoint() が「同面積なら先勝ち」でビューアでない方を拾ってしまう
+         （p1 の 100〜400 と衝突して顕在化・デバッグ時に modalCovers() が誤って true を
+         返しているように見えた——実際は p1 を拾っていただけだった）。 -->
+    <div role="dialog" aria-modal="true" id="viewerDialog">
+      <div data-testid="swipe-to-dismiss" data-rect-top="9000" id="p16">
+        <img src="https://pbs.twimg.com/media/QQQ.jpg?format=jpg&amp;name=large">
+      </div>
+    </div>
 </body></html>`;
 
 // runScripts:'outside-only' で下の window.eval に本物のスクリプト文脈を与える
@@ -280,7 +294,7 @@ beforeAll(async () => {
 }, 30000);
 
 test('初回走査で全ての投稿が観測される', () => {
-  expect(observed.size).toBe(15); // p1〜p15（#576 で p12/p13、#575 で p14、#594 で p15 を追加）
+  expect(observed.size).toBe(16); // p1〜p16（#576 で p12/p13、#575 で p14、#594 で p15、#659 で p16 を追加）
 });
 
 describe('問い合わせは見えている投稿だけ・1バッチで', () => {
@@ -1085,6 +1099,82 @@ describe('テキストのみの投稿（#575）', () => {
   test('アバターのリンクを塞がない（pointer-events を通す）', () => {
     expect(controlOf('p14')[0].style.pointerEvents).toBe('none');
     hoverAway();
+  });
+});
+
+// #659: X の写真ビューア（拡大表示）。article の外側にある独立したモーダル層で、旧
+// modalIsOpen() は「どれかモーダルが開いていたら一律遮断」だったので、ここへのホバーは
+// 常に隠されていた——ビューア自身がその「開いているモーダル」だったため。modalCovers は
+// 「アンカーを含まないモーダルが可視な時だけ遮断」へ絞り、unitSelector にビューアの単位
+// （swipe-to-dismiss）を足した。
+describe('写真ビューア（拡大表示）でもホバー保存が出る（#659）', () => {
+  const viewerBox = () => window.document.getElementById('p16') as any;
+  const hoverViewer = () => {
+    const box = viewerBox();
+    const r = box.getBoundingClientRect();
+    pointerMove(box, r.left + r.width / 2, r.top + r.height / 2);
+  };
+
+  afterAll(async () => {
+    dom.reconfigure({ url: 'https://x.com/home' });
+    window.document.getElementById('viewerDialog')?.removeAttribute('data-rect-top');
+    intersect(['p16'], false);
+    hoverAway();
+    await settle();
+  });
+
+  test('URL が /photo/N でない間は絵として申し出ない', async () => {
+    intersect(['p16'], true);
+    await settle();
+    hoverViewer();
+    await settle();
+
+    expect(controlOf('p16')).toHaveLength(0);
+    hoverAway();
+  });
+
+  describe('ビューアを開いた状態（URL が /photo/N・ダイアログが可視）', () => {
+    beforeAll(async () => {
+      dom.reconfigure({ url: 'https://x.com/nina/status/1616/photo/1' });
+      rectTop('#viewerDialog', '0');
+      // The URL and the dialog's rect are read lazily by mediaIn/modalCovers —
+      // neither change is itself a DOM mutation the MutationObserver above
+      // watches (data-rect-top isn't in its attributeFilter, and there is no
+      // navigation event in jsdom), so nothing re-runs syncAnchors on its own.
+      // An intersection flip is what the real IntersectionObserver would also
+      // fire once the viewer actually mounts its slide.
+      intersect(['p16'], false);
+      intersect(['p16'], true);
+      await settle();
+    });
+
+    test('ビューアの画像がユニットとして解決され、ホバーで保存ボタンが出る', async () => {
+      hoverViewer();
+      await settle();
+
+      expect(saveButtons()).toHaveLength(1);
+      expect(saveButtons()[0].parentElement).toBe(viewerBox());
+    });
+
+    test('押すとパーマリンクは URL の /photo/N を落とした投稿になる（ドラッグ保存経路を再利用）', () => {
+      click(saveButtons()[0]);
+      const save = sent.at(-1);
+
+      expect(save).toMatchObject({ type: 'imageDragged', platform: 'x' });
+      expect(save.postUrl).toBe('https://x.com/nina/status/1616');
+      hoverAway();
+    });
+
+    // 旧 modalIsOpen() の一律遮断を「アンカーを含まないモーダルが可視な時だけ」へ絞った、
+    // その裏側の固定＝ビューアの外の絵は、開いているダイアログに覆われて従来どおり出ない
+    // （#347 の趣旨を維持）。p13 はこの時点で既に保存済み（savedBadgeMode: hover）。
+    test('ビューアの外の絵は、開いているダイアログに覆われて出ない', async () => {
+      hover('p13a');
+      await settle();
+
+      expect(controlOf('p13a')).toHaveLength(0);
+      hoverAway();
+    });
   });
 });
 

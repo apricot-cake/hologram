@@ -106,6 +106,13 @@ describe('X: 画像拡大表示（lightbox）', () => {
     expect(config.findPostElement(video)).toBe(video);
   });
 
+  test('ラッパ要素がクリック対象でも、中の画像/動画を引き当てる（swipe-to-dismiss 相当・#582）', () => {
+    const img = ctx.document.getElementById('viewerImg');
+    const video = ctx.document.getElementById('viewerVideo');
+    expect(config.findPostElement(ctx.document.getElementById('viewerMediaBox'))).toBe(img);
+    expect(config.findPostElement(ctx.document.getElementById('viewerVideoBox'))).toBe(video);
+  });
+
   test('メディアでないビューアの部品（閉じるボタン・背景）は捕捉しない', () => {
     expect(config.findPostElement(ctx.document.getElementById('viewerClose'))).toBe(null);
     expect(config.findPostElement(ctx.document.getElementById('viewerBackdrop'))).toBe(null);

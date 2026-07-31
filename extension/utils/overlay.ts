@@ -588,7 +588,7 @@ export async function startOverlay(): Promise<void> {
   // path has to remember (#347).
   function pointerStillOn(anchor: Anchor | null): boolean {
     if (!anchor || !pointerPosition) return false;
-    if (!anchor.box.isConnected || modalIsOpen()) return false;
+    if (!anchor.box.isConnected || modalCovers(anchor)) return false;
     if (!rectHoldsPointer(anchor.box.getBoundingClientRect(), pointerPosition.x, pointerPosition.y)) return false;
     return !pointerIsOccluded(anchor);
   }
@@ -598,11 +598,15 @@ export async function startOverlay(): Promise<void> {
   // Then the picture already hovered keeps its control for as long as the
   // pointer is on it, and a different one may not take it over.
   function updateHoveredAtPointer(adopt: boolean) {
-    if (!pointerPosition || modalIsOpen()) {
+    if (!pointerPosition) {
       setHovered(null);
       return;
     }
     const next = anchorAtPoint(pointerPosition.x, pointerPosition.y);
+    if (next && modalCovers(next)) {
+      setHovered(null);
+      return;
+    }
     if (!adopt && next !== hovered) {
       if (!pointerStillOn(hovered)) setHovered(null);
       return;
@@ -631,8 +635,18 @@ export async function startOverlay(): Promise<void> {
     updateHoveredAtPointer(true);
   }
 
-  function modalIsOpen(): boolean {
+  // Is a MODAL layered over this anchor's picture — a lightbox that ISN'T
+  // this one, a compose dialog? Blanket "any modal open" was the original
+  // rule (#347): it protects a picture sitting BEHIND a dialog, since the
+  // corner control is only ever z-index:1 within its own picture's stacking
+  // context and would be unreachable and visually wrong there. But X's own
+  // photo viewer is itself `[role="dialog"][aria-modal="true"]`, so that
+  // blanket rule made the viewer's own picture permanently unreachable too
+  // (#659) — the one thing the guard was never meant to hide. A modal that
+  // CONTAINS the anchor is not covering it; it IS what is being looked at.
+  function modalCovers(anchor: Anchor): boolean {
     return [...document.querySelectorAll<HTMLElement>('dialog[open], [role="dialog"], [aria-modal="true"]')].some((el) => {
+      if (el.contains(anchor.box)) return false;
       const style = getComputedStyle(el);
       const rect = el.getBoundingClientRect();
       return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
