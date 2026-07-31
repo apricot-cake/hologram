@@ -49,6 +49,20 @@ const OUT_TS = path.join(ROOT, 'extension', 'utils', 'tokens.generated.ts');
 const MOTION_MS = ['--hologram-duration-base', '--hologram-duration-fast'];
 const MOTION_EASE = ['--hologram-ease-out', '--hologram-ease-in'];
 
+// The toolbar badge (#269), the second thing that cannot be a var(): the
+// alert the extension raises when it could not inject its UI is drawn by the
+// BROWSER, from chrome.action.setBadgeBackgroundColor / setBadgeTextColor,
+// which take a resolved colour string and re-read nothing afterwards.
+//
+// LIGHT ONLY, deliberately. A service worker has no theme signal at all —
+// there is no matchMedia in a worker and no chrome.* API that reports the
+// browser's colour scheme — so there is no branch to write even if two values
+// were emitted. The pill is opaque and carries its own ink, so what the
+// toolbar behind it is doing does not enter the contrast either way; the pair
+// only has to hold against itself, which is what the light row already
+// guarantees (scripts/extension-tokens.test.ts asserts it again for this use).
+const BADGE = { background: '--hologram-danger', text: '--hologram-on-danger' };
+
 // The allowlist. Everything the extension gets from the app is named here, so
 // adding a token to globals.css never silently widens what crosses the border,
 // and the mapping doubles as the record of which app role each extension
@@ -317,6 +331,11 @@ function build(): { tokens: GeneratedToken[]; css: string; ts: string } {
   ].join('\n')}\n`;
 
   const camel = (name: string) => name.replace('--hologram-', '').replace(/-(\w)/g, (_m, c: string) => c.toUpperCase());
+  const lightValue = (name: string) => {
+    const t = tokens.find((x) => x.name === name);
+    if (!t) throw new Error(`token ${name} is not generated`);
+    return t.light;
+  };
   const value = (name: string) => {
     const t = tokens.find((x) => x.name === name);
     if (!t) throw new Error(`motion token ${name} is not generated`);
@@ -336,14 +355,23 @@ function build(): { tokens: GeneratedToken[]; css: string; ts: string } {
     '// tokens is delivered as CSS custom properties (tokens.generated.css) so a theme',
     '// switch reaches UI already on screen; this file exists only for the values that',
     '// CANNOT be read as a custom property — Web Animations takes a number of',
-    '// milliseconds for `duration`, not a var().',
+    '// milliseconds for `duration`, not a var(), and the toolbar badge is painted by',
+    '// the browser from a resolved colour string.',
     '//',
-    '// Exported under a distinct name and re-exported as `motion` from tokens.ts:',
-    '// WXT auto-imports every module under utils/, and two of them exporting the',
-    '// same symbol makes it warn on every build about which one it dropped.',
+    '// Exported under distinct names and re-exported as `motion` / `actionBadge` from',
+    '// tokens.ts: WXT auto-imports every module under utils/, and two of them exporting',
+    '// the same symbol makes it warn on every build about which one it dropped.',
     'export const generatedMotion = {',
     ...MOTION_MS.map((n) => `  ${camel(n)}: ${ms(value(n))}, // ${n}`),
     ...MOTION_EASE.map((n) => `  ${camel(n)}: '${value(n)}', // ${n}`),
+    '} as const;',
+    '',
+    '// The alert badge on the toolbar icon (#269). LIGHT ROW ONLY — a service',
+    '// worker has no way to ask which colour scheme the browser is wearing, so',
+    '// there is no branch to feed a second value to. The pill is opaque and',
+    '// carries its own ink, so the toolbar behind it never enters the contrast.',
+    'export const generatedActionBadge = {',
+    ...Object.entries(BADGE).map(([key, name]) => `  ${key}: '${lightValue(name)}', // ${name}`),
     '} as const;',
   ].join('\n')}\n`;
 

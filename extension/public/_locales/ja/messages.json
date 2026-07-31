@@ -11,6 +11,14 @@
     "message": "投稿を保存",
     "description": "Toolbar button tooltip"
   },
+  "actionInjectUnreadable": {
+    "message": "Hologram: 拡張機能のファイルを読めないため保存を開始できません。chrome://extensions で「再読み込み」してください",
+    "description": "Toolbar tooltip when the extension's own files can no longer be read, so injecting the capture UI fails on every page"
+  },
+  "actionInjectRefused": {
+    "message": "Hologram: このページでは保存を開始できませんでした",
+    "description": "Toolbar tooltip when the extension is healthy but this particular page refused the injection"
+  },
   "cmdActivate": {
     "message": "投稿の保存を開始",
     "description": "Keyboard command description (Alt+S)"

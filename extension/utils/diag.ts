@@ -114,6 +114,14 @@ export function startDiagnostics(): void {
     return out;
   }
 
+  // Why the reader is here, when the toolbar alert sent them (#269 —
+  // diag.html?issue=inject). Only the extension's own service worker builds
+  // that URL, and the parameter selects a fixed block already in the page
+  // rather than carrying any text of its own.
+  if (new URLSearchParams(location.search).get('issue') === 'inject') {
+    document.getElementById('issue-inject')?.removeAttribute('hidden');
+  }
+
   document.getElementById('rerun')?.addEventListener('click', run);
   document.getElementById('clear')?.addEventListener('click', () => {
     chrome.storage.local.get(null, (all) => {

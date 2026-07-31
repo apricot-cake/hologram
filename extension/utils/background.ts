@@ -14,6 +14,7 @@ import type { DomMeta, PostRecord } from './extractor/types.ts';
 import type { BridgeAck, CaptureAndSendResponse, CheckSavedResponse, ContentToBackgroundMessage, CropImageMessage, CropImageResponse, DumpLogsResponse, LogCaptureResponse, NotifyMessage, SavedEntry, SavedUpdateMessage, SaveProgressMessage, SaveResponse } from './messages.ts';
 import { classifySaveFailure } from './native-error.ts';
 import { createSaveGate, saveRequestKey } from './host-budget.ts';
+import { clearInjectFailure, escalationUrl, injectFailureKind, showInjectFailure } from './inject-failure.ts';
 import type { SaveLogEntry, SaveStage } from './capture-log.ts';
 
 export function startBackground(): void {
@@ -149,6 +150,37 @@ export function startBackground(): void {
     return null;
   }
 
+  // --- The click that did nothing (#269) ----------------------------------------
+  // Which tabs have already been told, this worker's lifetime, that their last
+  // press could not start. In memory on purpose: the state is "the press you
+  // just made failed", which a restarted worker has no business asserting on
+  // its own. The consequence of forgetting is only that the next failure is
+  // treated as a first one again — a badge instead of a new tab, which is the
+  // quieter of the two mistakes. See utils/inject-failure.ts for what is drawn.
+  const injectFailedTabs = new Set<number>();
+
+  async function alertInjectFailure(tabId: number): Promise<void> {
+    const kind = await injectFailureKind();
+    const repeated = injectFailedTabs.has(tabId);
+    injectFailedTabs.add(tabId);
+    showInjectFailure(tabId, kind);
+    // Second press in a row on this tab: the toolbar mark evidently was not
+    // enough, so open the page that can actually resolve it.
+    if (repeated) chrome.tabs.create({ url: escalationUrl(kind) }).catch(() => {});
+  }
+
+  // Chrome drops a tab-scoped badge and title by itself when the tab navigates
+  // or closes (measured — see inject-failure.ts), so these listeners exist to
+  // drop OUR memory in step with it. Without them a press on a freshly loaded
+  // page would count as the second one and open a tab with no mark on screen
+  // to explain it. Neither event needs the `tabs` permission.
+  chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
+    if (changeInfo.status === 'loading') injectFailedTabs.delete(tabId);
+  });
+  chrome.tabs.onRemoved.addListener((tabId) => {
+    injectFailedTabs.delete(tabId);
+  });
+
   async function activateOnTab(tab, auto = false) {
     // Log the attempt (and the silent non-http bail) to capture.log: an icon
     // click that "does nothing" is otherwise diagnosable only from the SW
@@ -185,9 +217,18 @@ export function startBackground(): void {
         // script without relying on execution order between global files.
         files: ['capture.js'],
       });
+      // The UI is on the page, so whatever alert an earlier press left on the
+      // toolbar is answered (#269). Also the only moment a badge left behind
+      // by a worker that has since been killed can be taken down.
+      clearInjectFailure(tab.id);
+      injectFailedTabs.delete(tab.id);
     } catch (error) {
       console.error('Failed to inject content script:', error);
-      logCapture({ stage: 'activate', phase: 'fail', host: getHostname(tab.url), url: tab.url, error: (error as Error)?.message });
+      // keepLocal: this line is the ONLY record of a click that did nothing,
+      // and the diagnostics page reads the local ring buffer — a save that
+      // never started has no other place to be read back from (#269).
+      logCapture({ stage: 'activate', phase: 'fail', host: getHostname(tab.url), url: tab.url, error: (error as Error)?.message }, true);
+      await alertInjectFailure(tab.id);
     }
   }
 

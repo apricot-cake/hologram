@@ -15,12 +15,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, test } from 'vitest';
-import { build, OUT_CSS, parseColor } from './gen-extension-tokens.cts';
+import { generatedActionBadge } from '../extension/utils/tokens.generated.ts';
+import { build, OUT_CSS, OUT_TS, parseColor } from './gen-extension-tokens.cts';
 
 const ROOT = path.join(import.meta.dirname, '..');
 const EXT = path.join(ROOT, 'extension');
 
-const { tokens, css } = build();
+const { tokens, css, ts } = build();
 const light = new Map(tokens.map((t: any) => [t.name, t.light as string]));
 const dark = new Map(tokens.map((t: any) => [t.name, t.dark as string]));
 
@@ -85,6 +86,13 @@ describe('生成物', () => {
     expect(fs.readFileSync(OUT_CSS, 'utf8')).toBe(css);
   });
 
+  // TS 側の生成物も同じ検査に入れる（#269）。⚠️ここが無いと下の「色のベタ書き」検査から
+  // tokens.generated.ts を外した瞬間、このファイルだけ手編集し放題になる＝バッジの色が
+  // アプリのトークンから外れても誰も気付かない。
+  test('tokens.generated.ts は入力と一致している', () => {
+    expect(fs.readFileSync(OUT_TS, 'utf8')).toBe(ts);
+  });
+
   test('ライトに無くダークにだけある値は無い', () => {
     expect([...dark.keys()].filter((n) => !light.has(n))).toEqual([]);
   });
@@ -131,10 +139,18 @@ describe('拡張コードとの噛み合わせ', () => {
     // 事故の入口だった（#136 が根絶したはずの、片テーマだけ壊れる系統）。
     const COLOR = /#[0-9a-fA-F]{3,8}\b|\b(?:rgba?|hsla?|oklch|oklab|color-mix)\s*\(/g;
     const offenders: string[] = [];
-    for (const rel of SOURCES) {
+    // 生成された .ts は SOURCES に残したまま、この検査からだけ外す＝ツールバーの
+    // バッジ（#269）はブラウザが解決済みの色文字列から描くので var() を渡せず、
+    // 生成物が色リテラルを持つのが正しい。SOURCES から外すと、この生成物だけが
+    // 名指ししているトークン（モーション4種）が「使われていない」に転ぶ。
+    for (const rel of SOURCES.filter((f) => path.basename(f) !== 'tokens.generated.ts')) {
       const text = read(rel)
         .replace(/\/\*[\s\S]*?\*\//g, '')
-        .replace(/^\s*\/\/.*$/gm, '');
+        .replace(/^\s*\/\/.*$/gm, '')
+        // HTML のコメントも落とす＝拡張ページの .html は3種類目のコメント様式を
+        // 持つ。落とさないと Issue 番号（`#269`）が16進の色として引っかかり、
+        // 「色をベタ書きした」と読めるメッセージで落ちる。
+        .replace(/<!--[\s\S]*?-->/g, '');
       for (const [hit] of text.matchAll(COLOR)) offenders.push(`${rel}: ${hit}`);
     }
     expect(offenders.sort()).toEqual([]);
@@ -215,5 +231,23 @@ describe.each(THEMES)('コントラスト（%s テーマ）', (_name, v) => {
   // リングはカードの内側なので、下地はホストページではなくカードの塗り。
   test('ドロップ先の破線リングがカードの上で 3:1 以上', () => {
     expect(ratio(over(v.get('--hologram-ring') as string, surface()), surface())).toBeGreaterThanOrEqual(3);
+  });
+});
+
+// === ⑤ツールバーのバッジ（#269） ============================================
+
+// ブラウザが描く唯一の面＝サービスワーカーにはテーマを問う手段が無いので、
+// ライト行の値をそのまま両テーマのツールバーへ出す。丸はその値で塗り潰される
+// （ツールバーの色は透けない）ので、成立が要るのは「塗りと文字」の対だけ。
+describe('ツールバーのバッジ', () => {
+  const badge = generatedActionBadge as { background: string; text: string };
+
+  test('文字が塗りの上で 4.5:1 以上', () => {
+    expect(ratio(rgb(badge.text), rgb(badge.background))).toBeGreaterThanOrEqual(4.5);
+  });
+
+  test('生成された値はライトの danger 対そのもの（手で置き換えられていない）', () => {
+    expect(badge.background).toBe(light.get('--hologram-danger'));
+    expect(badge.text).toBe(light.get('--hologram-on-danger'));
   });
 });

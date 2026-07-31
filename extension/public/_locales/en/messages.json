@@ -11,6 +11,14 @@
     "message": "Save post",
     "description": "Toolbar button tooltip"
   },
+  "actionInjectUnreadable": {
+    "message": "Hologram: can't start saving — the extension's own files can't be read. Reload it at chrome://extensions.",
+    "description": "Toolbar tooltip when the extension's own files can no longer be read, so injecting the capture UI fails on every page"
+  },
+  "actionInjectRefused": {
+    "message": "Hologram: couldn't start saving on this page",
+    "description": "Toolbar tooltip when the extension is healthy but this particular page refused the injection"
+  },
   "cmdActivate": {
     "message": "Start capturing a post",
     "description": "Keyboard command description (Alt+S)"

@@ -67,25 +67,53 @@ function setupBackground() {
   let connectNativeImpl: (name: string) => any = () => {
     throw new Error('Specified native messaging host not found.');
   };
+  // #269 の面（ツールバーの action・注入・タブの一生）。既定は「注入は通る／
+  // 拡張のファイルは読める」＝ここを差し替えたテストだけが失敗経路に入る。
+  const actionCalls: Array<{ call: string; arg: any }> = [];
+  const createdTabs: Array<{ url: string }> = [];
+  const clickListeners: Array<(tab: any) => void> = [];
+  const tabUpdatedListeners: Array<(tabId: number, changeInfo: any) => void> = [];
+  const tabRemovedListeners: Array<(tabId: number) => void> = [];
+  let executeScriptImpl: (arg: any) => Promise<any> = async () => [];
+  let packageReadable = true;
+  const recordAction = (call: string) => (arg: any) => {
+    actionCalls.push({ call, arg });
+    return Promise.resolve();
+  };
 
   const chromeStub: any = {
     runtime: {
+      id: 'test-extension-id',
       lastError: undefined as { message: string } | undefined,
       onMessage: { addListener: (fn: any) => messageListeners.push(fn) },
       connectNative: (name: string) => connectNativeImpl(name),
+      getURL: (file: string) => `chrome-extension://test-extension-id/${file}`,
     },
+    i18n: { getMessage: (key: string) => `msg:${key}` },
     tabs: {
       sendMessage: (tabId: number, message: any) => {
         tabsSent.push({ tabId, message });
         return Promise.resolve();
       },
       query: async () => [],
+      create: async (arg: any) => {
+        createdTabs.push(arg);
+        return { id: 999 };
+      },
       captureVisibleTab: async () => {
         throw new Error('captureVisibleTab is out of scope for this suite');
       },
+      onUpdated: { addListener: (fn: any) => tabUpdatedListeners.push(fn) },
+      onRemoved: { addListener: (fn: any) => tabRemovedListeners.push(fn) },
     },
-    scripting: { executeScript: async () => {} },
-    action: { onClicked: { addListener: () => {} } },
+    scripting: { executeScript: (arg: any) => executeScriptImpl(arg) },
+    action: {
+      onClicked: { addListener: (fn: any) => clickListeners.push(fn) },
+      setBadgeText: recordAction('setBadgeText'),
+      setBadgeBackgroundColor: recordAction('setBadgeBackgroundColor'),
+      setBadgeTextColor: recordAction('setBadgeTextColor'),
+      setTitle: recordAction('setTitle'),
+    },
     commands: { onCommand: { addListener: () => {} } },
     storage: {
       local: {
@@ -120,6 +148,14 @@ function setupBackground() {
   };
 
   (globalThis as any).chrome = chromeStub;
+  // 拡張が自分のファイルを読めるかの実測（#269・inject-failure.ts）。ここを
+  // 偽ではなく fetch そのもので差し替える＝本番でもこの1本の返事だけが
+  // 「拡張が壊れているのか、そのページが断ったのか」を決めている。
+  (globalThis as any).fetch = async (url: string) => {
+    if (!String(url).startsWith('chrome-extension://')) throw new Error(`unexpected fetch in this suite: ${url}`);
+    if (!packageReadable) throw new Error('Failed to fetch');
+    return { ok: true, status: 200 };
+  };
   startBackground();
 
   function dispatch(message: any, sender: any = {}) {
@@ -140,6 +176,32 @@ function setupBackground() {
     dispatch,
     tabsSent,
     localStore,
+    actionCalls,
+    createdTabs,
+    // ツールバーのアイコンを押す（#269）。onClicked は tab をそのまま渡すので、
+    // テスト側も id と url だけの最小の tab を渡す。**待つのは待ち合わせの回数を
+    // 数えてではなく、リスナーが返した Promise 自身**＝注入・生死の実測・action の
+    // 呼び出しがすべてその中にあるので、途中に await が1つ増えても壊れない。
+    clickAction: async (tab: any) => {
+      await Promise.all(clickListeners.map((fn) => fn(tab)));
+    },
+    navigateTab(tabId: number) {
+      for (const fn of tabUpdatedListeners) fn(tabId, { status: 'loading' });
+    },
+    closeTab(tabId: number) {
+      for (const fn of tabRemovedListeners) fn(tabId);
+    },
+    failInjection(message: string) {
+      executeScriptImpl = async () => {
+        throw new Error(message);
+      };
+    },
+    allowInjection() {
+      executeScriptImpl = async () => [];
+    },
+    setPackageReadable(readable: boolean) {
+      packageReadable = readable;
+    },
     connectAsUnavailable(message: string) {
       connectNativeImpl = () => {
         throw new Error(message);
@@ -544,6 +606,125 @@ describe('保存の記録（#519）', () => {
 
     const first = env.tabsSent.filter((s) => s.message.type === 'saveProgress').map((s) => s.message)[0];
     expect(first, `tabsSent: ${JSON.stringify(env.tabsSent)}`).toMatchObject({ saveId: 'trace-1', reached: [] });
+  });
+});
+
+// === 注入そのものが失敗した時（#269） =========================================
+//
+// クリック保存は「background が capture.js を注入し、注入されたスクリプトがバナーを描く」
+// 構造なので、**注入が失敗するとその失敗を伝える面がページ上に存在しない**＝押しても
+// 完全に無反応になる。ページを持たない側＝ツールバーの action だけが残る表示面で、
+// ここが見るのはその面の配線。ドラッグ保存は常駐スクリプトが自前で描くので無関係。
+//
+// ⚠️「拡張が壊れた」と「そのページが断った」を分けているのは Chrome の例外文言ではなく
+// **拡張が自分のファイルを読めるかの実測**（fetch(chrome.runtime.getURL(...))）。文言は
+// 契約ではないので、そちらで分岐すると Chrome の言い回しが変わった日に案内が反転する。
+describe('注入が失敗した時のツールバー表示（#269）', () => {
+  let env: ReturnType<typeof setupBackground>;
+  const TAB = { id: 42, url: 'https://x.com/someone/status/1' };
+  const badgeText = (calls: Array<{ call: string; arg: any }>) => calls.filter((c) => c.call === 'setBadgeText').map((c) => c.arg);
+  const titles = (calls: Array<{ call: string; arg: any }>) => calls.filter((c) => c.call === 'setTitle').map((c) => c.arg);
+
+  beforeEach(() => {
+    env = setupBackground();
+  });
+
+  test('注入が通れば何も出さない（正常時にノイズを足さない）', async () => {
+    await env.clickAction(TAB);
+    expect(badgeText(env.actionCalls)).toEqual([{ text: '', tabId: 42 }]);
+    expect(env.createdTabs).toEqual([]);
+  });
+
+  test('失敗したら押したタブにだけ `!` が点く（他タブへ漏れない）', async () => {
+    env.failInjection("Could not load file: 'capture.js'.");
+    await env.clickAction(TAB);
+    expect(badgeText(env.actionCalls)).toEqual([{ text: '!', tabId: 42 }]);
+    // 色は生成トークン由来＝ここに色リテラルは無い（#270）。
+    expect(env.actionCalls.filter((c) => c.call === 'setBadgeBackgroundColor')).toHaveLength(1);
+    expect(env.actionCalls.every((c) => c.arg.tabId === 42)).toBe(true);
+  });
+
+  test('拡張のファイルが読めないなら「再読み込みして」と言う', async () => {
+    env.failInjection("Could not load file: 'capture.js'.");
+    env.setPackageReadable(false);
+    await env.clickAction(TAB);
+    expect(titles(env.actionCalls)).toEqual([{ title: 'msg:actionInjectUnreadable', tabId: 42 }]);
+  });
+
+  test('拡張が健全ならページ側の事情として言う（直すものが無いのに再読み込みを勧めない）', async () => {
+    env.failInjection('The extensions gallery cannot be scripted.');
+    await env.clickAction(TAB);
+    expect(titles(env.actionCalls)).toEqual([{ title: 'msg:actionInjectRefused', tabId: 42 }]);
+  });
+
+  test('1回目はバッジだけ・同じタブで2回目に初めてページが開く', async () => {
+    env.failInjection('The extensions gallery cannot be scripted.');
+    await env.clickAction(TAB);
+    expect(env.createdTabs).toEqual([]);
+    await env.clickAction(TAB);
+    expect(env.createdTabs).toEqual([{ url: 'chrome-extension://test-extension-id/diag.html?issue=inject' }]);
+  });
+
+  // 実測（2026-07-31・使い捨て Chromium）: 拡張の展開先が消えると
+  // chrome-extension://<id>/diag.html は ERR_FILE_NOT_FOUND で開けない＝
+  // **この Issue を起こした失敗そのものでは診断ページへ逃がせない**。
+  // 唯一まだ描ける面が chrome://extensions で、そこの「再読み込み」が修理そのもの。
+  test('拡張が読めない側の2回目は chrome://extensions（診断ページはそもそも開けない）', async () => {
+    env.failInjection("Could not load file: 'capture.js'.");
+    env.setPackageReadable(false);
+    await env.clickAction(TAB);
+    await env.clickAction(TAB);
+    expect(env.createdTabs).toEqual([{ url: 'chrome://extensions/?id=test-extension-id' }]);
+  });
+
+  test('別タブの1回目は別に数える（1つのタブの失敗が他タブを飛ばさない）', async () => {
+    env.failInjection('The extensions gallery cannot be scripted.');
+    await env.clickAction(TAB);
+    await env.clickAction({ id: 43, url: 'https://x.com/other/status/2' });
+    expect(env.createdTabs).toEqual([]);
+  });
+
+  test('ページが遷移したら数え直す（バッジはブラウザが消すので、こちらは記憶を捨てる）', async () => {
+    env.failInjection('The extensions gallery cannot be scripted.');
+    await env.clickAction(TAB);
+    env.navigateTab(42);
+    await env.clickAction(TAB);
+    expect(env.createdTabs).toEqual([]);
+  });
+
+  test('タブが閉じたら数え直す', async () => {
+    env.failInjection('The extensions gallery cannot be scripted.');
+    await env.clickAction(TAB);
+    env.closeTab(42);
+    await env.clickAction(TAB);
+    expect(env.createdTabs).toEqual([]);
+  });
+
+  test('注入が通ったら印を消し、次の失敗はまた1回目から', async () => {
+    env.failInjection('The extensions gallery cannot be scripted.');
+    await env.clickAction(TAB);
+    env.allowInjection();
+    await env.clickAction(TAB);
+    expect(badgeText(env.actionCalls).at(-1)).toEqual({ text: '', tabId: 42 });
+    expect(titles(env.actionCalls).at(-1)).toEqual({ title: 'msg:actionTitle', tabId: 42 });
+    env.failInjection('The extensions gallery cannot be scripted.');
+    await env.clickAction(TAB);
+    expect(env.createdTabs).toEqual([]);
+  });
+
+  test('http(s) でないタブは今までどおり黙って抜ける（失敗ではない）', async () => {
+    env.failInjection("Could not load file: 'capture.js'.");
+    await env.clickAction({ id: 44, url: 'chrome://newtab/' });
+    expect(env.actionCalls).toEqual([]);
+    expect(env.createdTabs).toEqual([]);
+  });
+
+  test('無反応だった押下は退避ログにも残る（診断ページが読み戻せる唯一の記録）', async () => {
+    env.failInjection("Could not load file: 'capture.js'.");
+    await env.clickAction(TAB);
+    const stashed = [...env.localStore.values()].filter((e: any) => e.stage === 'activate' && e.phase === 'fail');
+    expect(stashed).toHaveLength(1);
+    expect(stashed[0].error).toBe("Could not load file: 'capture.js'.");
   });
 });
 

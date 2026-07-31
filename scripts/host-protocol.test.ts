@@ -61,6 +61,10 @@ function setup() {
       sendMessage: (_tabId: number, message: any) => Promise.resolve(message?.type === 'cropImage' ? { croppedDataUrl: CROPPED } : undefined),
       query: async () => [{ id: SENDER.tab.id, windowId: SENDER.tab.windowId }],
       captureVisibleTab: async () => CROPPED,
+      // 押しても無反応だった時のツールバー表示（#269）が張る受け口。ここが見るのは
+      // 線に載るメッセージなので、鳴らす経路は無いが、無いと startBackground が落ちる。
+      onUpdated: { addListener: () => {} },
+      onRemoved: { addListener: () => {} },
     },
     scripting: { executeScript: async () => {} },
     action: { onClicked: { addListener: () => {} } },

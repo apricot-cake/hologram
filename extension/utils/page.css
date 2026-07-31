@@ -180,6 +180,24 @@ button:active {
   margin: 0 0 16px;
 }
 
+/* The reason the reader was sent here (#269), when they did not choose to come.
+ * Amber rather than red: something needs attention, but nothing has been lost —
+ * a save did not start, and the block below says what to try. Its own block
+ * rather than a line in the lede, because the lede describes the page and this
+ * describes one visit to it. */
+.notice {
+  margin: 0 0 20px;
+  padding: 12px 14px;
+  border: 1px solid var(--hologram-warning);
+  border-radius: 12px; /* app --radius-lg, same as .log */
+  background: var(--hologram-page-surface);
+  color: var(--hologram-ink);
+}
+.notice code {
+  font-family: var(--hologram-font-mono);
+  font-size: 12px;
+}
+
 /* Diagnostics output. Monospace because it is a machine's answer being read by
  * a person, not prose — line structure is the information. */
 .log {
