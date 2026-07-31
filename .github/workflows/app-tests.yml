@@ -91,6 +91,13 @@ jobs:
       - name: Extension save-log e2e (offline fixture)
         if: ${{ !cancelled() }}
         run: node scripts/e2e-extension-save-log.cts
+      # Measures the platform premises #269 chose between (which surfaces still
+      # work once the extension's own files cannot be read). A Chrome update is
+      # exactly what could invalidate them, and nothing else in the suite would
+      # go red if it did — which is why this one earns a daily run.
+      - name: Extension inject-failure premises
+        if: ${{ !cancelled() }}
+        run: node scripts/e2e-extension-inject-failure.cts
       - name: Overlay visual regression
         if: ${{ !cancelled() }}
         run: node scripts/e2e-overlay-visual.cts

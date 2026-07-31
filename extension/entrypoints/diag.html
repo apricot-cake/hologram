@@ -10,6 +10,13 @@
       <h1>Hologram 診断</h1>
       <p class="lede">拡張とこのPC上の保存機能がつながっているかを調べます。保存がうまくいかないときに見るページです。</p>
     </div>
+    <!-- Shown only when the toolbar alert sent the reader here (#269): the
+         extension could not put its capture UI on the page at all, twice in a
+         row on the same tab. Hidden markup rather than a string built in JS so
+         the wording sits with the rest of the page's. -->
+    <p class="notice" id="issue-inject" hidden>
+      保存の画面をページへ送り込めませんでした。拡張機能そのものは動いているので、多くはそのページ側の事情です（Chrome ウェブストアや、組織のポリシーで拡張を止めているページなど）。ほかのページでも同じなら、chrome://extensions で Hologram を「再読み込み」してください。下の記録の <code>stage: "activate"</code> の行に、そのとき Chrome が返した理由が入っています。
+    </p>
     <div class="actions">
       <button id="rerun" type="button">再実行</button>
       <button id="clear" type="button">退避ログを消去</button>

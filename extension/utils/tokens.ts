@@ -27,11 +27,17 @@
 // Trusted Types is unaffected either way: `replaceSync` and `element.style` are
 // not script sinks. String sinks like innerHTML still are — see icons.ts.
 import tokensCss from './tokens.generated.css?inline';
-import { generatedMotion } from './tokens.generated.ts';
+import { generatedActionBadge, generatedMotion } from './tokens.generated.ts';
 
 // The motion values as numbers/strings, for the entrance and exit pops that go
 // through Web Animations (whose `duration` cannot be a custom property).
 export const motion = generatedMotion;
+
+// The toolbar badge the service worker raises when it could not inject the UI
+// at all (#269). The one surface in this file that is NOT drawn by us: Chrome
+// paints the pill from a resolved colour, so this is a value rather than a
+// var() reference and cannot follow a theme switch. See the generated file.
+export const actionBadge = generatedActionBadge;
 
 // One reference per token. Anything drawing on-page UI goes through here, which
 // is what keeps colour literals out of the rest of the extension (enforced by
