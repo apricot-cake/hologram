@@ -90,6 +90,13 @@ const api = {
   getPrefs: (): Promise<AppPrefs> => ipcRenderer.invoke('get-prefs'),
   setPref: (key: string, value: unknown): Promise<OkResult> => ipcRenderer.invoke('set-pref', key, value),
   imageDataUrl: (image: string): Promise<string | null> => ipcRenderer.invoke('image-data-url', image),
+  // pixiv うごイラ playback (#506): main opens the archive and the renderer never
+  // sees it. Ask once whether every frame the capture's table names is really in
+  // there, then pull frames one at a time as the playhead needs them.
+  ugoiraFramesPresent: (file: string, names: string[]): Promise<boolean> => ipcRenderer.invoke('ugoira-frames-present', file, names),
+  // Uint8Array<ArrayBuffer>, not a bare Uint8Array: the renderer hands these
+  // straight to a Blob, and BlobPart refuses a possibly-shared backing buffer.
+  ugoiraFrame: (file: string, name: string): Promise<Uint8Array<ArrayBuffer> | null> => ipcRenderer.invoke('ugoira-frame', file, name),
   deletePost: (image: string): Promise<OkResult> => ipcRenderer.invoke('delete-post', image),
   updateTags: (image: string, tags: unknown, patch?: unknown): Promise<OkResult> => ipcRenderer.invoke('update-tags', image, tags, patch),
   // Legacy-format ZIP import, second half: main reads the archive at `zipPath`

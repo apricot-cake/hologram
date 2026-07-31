@@ -23,14 +23,13 @@
     "noUncheckedSideEffectImports": false,
     "forceConsistentCasingInFileNames": true,
     "skipLibCheck": true,
-    // Redirect the 'jszip' type import to a minimal local shim (2026-07-11, V18 §7):
-    // jszip's bundled DefinitelyTyped .d.ts carries `/// <reference types="node" />`,
-    // which — once anything in this browser-only program imports jszip — pulls Node's
-    // globals in and shadows the DOM lib's setTimeout/setInterval (number) with
-    // NodeJS.Timeout, breaking unrelated renderer code. `paths` is TypeScript-only;
-    // the runtime import still resolves to the real npm package via Vite/Node.
-    // 'electron' gets the same treatment (same node-globals hazard) for src/preload,
-    // which this program pulls in via types/globals.d.ts's HologramPreload import type —
+    // Redirect the 'electron' type import to a minimal local shim (2026-07-11, V18 §7):
+    // electron's own .d.ts carries `/// <reference types="node" />`, which — once
+    // anything in this browser-only program imports it — pulls Node's globals in and
+    // shadows the DOM lib's setTimeout/setInterval (number) with NodeJS.Timeout,
+    // breaking unrelated renderer code. `paths` is TypeScript-only; the runtime
+    // import still resolves to the real package via Vite/Node. This program pulls
+    // src/preload in via types/globals.d.ts's HologramPreload import type —
     // see src/renderer/src/types/electron-shim.d.ts.
     // '@/*' → src/renderer/src/* : shadcn/ui standard import alias.
     // Mirrored in electron.vite.config.ts's renderer resolve.alias.
@@ -39,7 +38,6 @@
     // (No baseUrl — deprecated in TS6; these paths resolve relative to this file.)
     "paths": {
       "@/*": ["./src/renderer/src/*"],
-      "jszip": ["./src/renderer/src/types/jszip-shim.d.ts"],
       "electron": ["./src/renderer/src/types/electron-shim.d.ts"]
     }
   },

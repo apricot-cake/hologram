@@ -46,7 +46,6 @@
     // Mirrors app/tsconfig.web.json's aliases; paths are relative to THIS file.
     "paths": {
       "@/*": ["../app/src/renderer/src/*"],
-      "jszip": ["../app/src/renderer/src/types/jszip-shim.d.ts"],
       "electron": ["../app/src/renderer/src/types/electron-shim.d.ts"]
     }
   },

@@ -1,6 +1,6 @@
 // Minimal 'electron' surface for the RENDERER tsc program only (tsconfig.json
-// paths maps 'electron' here — the same device as the jszip shim, and for the
-// same reason): the real electron.d.ts carries /// <reference types="node" />,
+// paths maps 'electron' here): the real electron.d.ts carries
+// /// <reference types="node" />,
 // which would pull Node's globals into this browser-only program and shadow the
 // DOM lib's setTimeout/setInterval (number) with NodeJS.Timeout.
 //

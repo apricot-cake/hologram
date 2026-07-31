@@ -1,8 +1,7 @@
-import JSZip from 'jszip';
 import { useEffect, useRef, useState } from 'react';
 import { Pause, Play } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { imageDataUrl } from '../services/posts.ts';
+import { ugoiraFrame, ugoiraFramesPresent } from '../services/posts.ts';
 import { PLATE } from './plate.ts';
 
 // pixiv うごイラ playback (#119 St3). The library stores pixiv's own archive
@@ -47,7 +46,14 @@ export function UgoiraPlayer({ file, frames, poster, alt, labels }: { file: stri
     // loser and double-count its bytes).
     const pending = new Map<number, Promise<ImageBitmap | null>>();
     let decodedBytes = 0;
-    let blobs: Blob[] = [];
+    let frameCount = 0;
+    // The archive is NOT opened here. main reads it off disk and hands over one
+    // frame's bytes per call (#506) — neither the file nor a base64 copy of it
+    // crosses IPC, the same rule the export/import paths follow (ADR 0015).
+    // Those bytes are cached so a second lap costs no IPC at all; that cache is
+    // bounded by the archive's own size, unlike the decoded bitmaps above.
+    const blobs = new Map<number, Blob>();
+    const blobJobs = new Map<number, Promise<Blob | null>>();
     let timer: ReturnType<typeof setTimeout> | undefined;
 
     const sizeOf = (b: ImageBitmap) => b.width * b.height * 4;
@@ -58,13 +64,34 @@ export function UgoiraPlayer({ file, frames, poster, alt, labels }: { file: stri
       bitmaps.delete(i);
       b.close();
     };
+    const blobFor = (i: number): Promise<Blob | null> => {
+      const held = blobs.get(i);
+      if (held) return Promise.resolve(held);
+      const running = blobJobs.get(i);
+      if (running) return running;
+      const name = framesRef.current[i]?.file;
+      if (!name) return Promise.resolve(null);
+      const job = ugoiraFrame(file, name)
+        .then((bytes) => {
+          if (!bytes) return null;
+          const blob = new Blob([bytes]);
+          blobs.set(i, blob);
+          return blob;
+        })
+        .catch(() => null)
+        .finally(() => blobJobs.delete(i));
+      blobJobs.set(i, job);
+      return job;
+    };
     const decode = (i: number): Promise<ImageBitmap | null> => {
       const held = bitmaps.get(i);
       if (held) return Promise.resolve(held);
       const running = pending.get(i);
       if (running) return running;
-      const job = createImageBitmap(blobs[i])
+      const job = blobFor(i)
+        .then((blob) => (blob ? createImageBitmap(blob) : null))
         .then((bmp) => {
+          if (!bmp) return null;
           if (disposed) {
             bmp.close();
             return null;
@@ -81,7 +108,7 @@ export function UgoiraPlayer({ file, frames, poster, alt, labels }: { file: stri
     // least MIN_AHEAD frames so a huge-frame archive still plays (one oversized
     // bitmap must not stop the window from advancing).
     const prefetch = async (from: number) => {
-      const n = blobs.length;
+      const n = frameCount;
       for (let k = 0; k < n; k++) {
         if (disposed) return;
         if (k >= MIN_AHEAD && decodedBytes >= DECODED_BUDGET_BYTES) return;
@@ -91,7 +118,7 @@ export function UgoiraPlayer({ file, frames, poster, alt, labels }: { file: stri
     // Free what the playhead has passed, but only once the budget is actually
     // under pressure — a small archive stays fully decoded and loops for free.
     const releaseBehind = (i: number) => {
-      const n = blobs.length;
+      const n = frameCount;
       for (const k of [...bitmaps.keys()]) {
         if (k === i || decodedBytes < DECODED_BUDGET_BYTES) continue;
         if ((k - i + n) % n >= MIN_AHEAD) drop(k);
@@ -100,36 +127,30 @@ export function UgoiraPlayer({ file, frames, poster, alt, labels }: { file: stri
 
     (async () => {
       try {
-        if (!framesRef.current.length) throw new Error('no frames');
-        // NOT fetch('asset://…'): the renderer document is served from file://,
-        // and Chromium refuses a cross-origin fetch to a custom scheme outright
-        // ("Cross origin requests are only supported for protocol schemes:
-        // chrome, chrome-extension, chrome-untrusted, data, http, https") — a
-        // CSP allowance cannot grant what the scheme check denies. The existing
-        // image-data-url IPC hands the bytes over instead, with the same
-        // save-folder containment check every other file read goes through.
-        const url = await imageDataUrl(file);
-        if (!url) throw new Error('archive unreadable');
-        const res = await fetch(url);
-        const zip = await JSZip.loadAsync(await res.arrayBuffer());
-        blobs = await Promise.all(
-          framesRef.current.map(async (f) => {
-            const entry = zip.file(f.file);
-            // A frame named in the table but absent from the archive means the
-            // two no longer describe the same animation — better to show the
-            // poster than to play a silently reordered one.
-            if (!entry) throw new Error(`missing frame ${f.file}`);
-            return (await entry.async('blob')) as Blob;
-          }),
-        );
-        if (disposed || !blobs.length) return;
+        const names = framesRef.current.map((f) => f.file);
+        if (!names.length) throw new Error('no frames');
+        // A frame named in the table but absent from the archive means the two
+        // no longer describe the same animation — better to show the poster than
+        // to play a silently reordered one. main answers this in one pass over
+        // the central directory, without expanding a single entry.
+        if (!(await ugoiraFramesPresent(file, names))) throw new Error('archive does not match the frame table');
+        if (disposed) return;
+        frameCount = names.length;
 
         let i = 0;
         const tick = async () => {
           if (disposed) return;
           const bmp = await decode(i);
+          if (disposed) return;
+          // A frame that was there at the check above and unreadable now means
+          // the archive changed under us; stop rather than skip, and let the
+          // poster take over.
+          if (!bmp) {
+            setStatus('error');
+            return;
+          }
           const canvas = canvasRef.current;
-          if (disposed || !bmp || !canvas) return;
+          if (!canvas) return;
           if (canvas.width !== bmp.width || canvas.height !== bmp.height) {
             canvas.width = bmp.width;
             canvas.height = bmp.height;
@@ -147,7 +168,7 @@ export function UgoiraPlayer({ file, frames, poster, alt, labels }: { file: stri
               timer = setTimeout(step, 100);
               return;
             }
-            i = (i + 1) % blobs.length;
+            i = (i + 1) % frameCount;
             void tick();
           };
           timer = setTimeout(step, delay);
@@ -164,6 +185,7 @@ export function UgoiraPlayer({ file, frames, poster, alt, labels }: { file: stri
       if (timer) clearTimeout(timer);
       for (const b of bitmaps.values()) b.close();
       bitmaps.clear();
+      blobs.clear();
     };
   }, [file]);
 

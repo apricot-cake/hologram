@@ -6,8 +6,9 @@
 // 再生できる単一ファイル形式は存在しない＝アプリ側が zip を開いてコマを canvas へ
 // 描く。ここで見るのはその経路そのもので、ユニットテストでは触れない部分:
 //
-//   - CSP の connect-src が asset: を許し、レンダラが zip を fetch できる
-//   - jszip がレンダラバンドルに載っていて、コマを取り出せる
+//   - main が書庫を開き、コマ表との突き合わせと1コマぶんのバイトを IPC で返す
+//     （ugoira-frames-present / ugoira-frame・#506）
+//   - レンダラが受け取ったバイトから Blob を作り、canvas へ描ける
 //   - canvas がコマ表の delay どおりに進む（画素が実際に変わる）
 //   - 一時停止でコマが止まり、再生で再び進む
 //
@@ -150,7 +151,7 @@ const evalJs = `(async () => {
   out.canvasFound = !!canvas;
   if (!canvas) return JSON.stringify(out);
 
-  // zip が開けて最初のコマが描かれるまで（fetch → jszip → createImageBitmap）
+  // 最初のコマが描かれるまで（IPC → Blob → createImageBitmap）
   const px = () => {
     try {
       const d = canvas.getContext('2d').getImageData(0, 0, 1, 1).data;
@@ -209,7 +210,7 @@ child.on('close', () => {
   check('② ▶ バッジが付く', r.playBadge === true);
   check('③ ダブルクリックで画像タブへ', r.imageTabActive === true);
   check('④ canvas が立つ', r.canvasFound === true);
-  check(`⑤ zip を fetch → 展開 → 1コマ目を描画 (${r.firstPixel})`, !!r.firstPixel && !String(r.firstPixel).startsWith('ERR'));
+  check(`⑤ main がコマを返し 1コマ目を描画 (${r.firstPixel})`, !!r.firstPixel && !String(r.firstPixel).startsWith('ERR'));
   check(`⑥ コマが進む（2色以上を観測: ${JSON.stringify(r.colorsSeen)}）`, Array.isArray(r.colorsSeen) && r.colorsSeen.length >= 2);
   check('⑦ 一時停止ボタンがある', r.toggleFound === true);
   check('⑦ 一時停止でコマが止まる', r.pausedHeld === true);
