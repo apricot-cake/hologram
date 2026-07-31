@@ -400,6 +400,9 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     displaySize: 'サイズ',
     displayPanels: 'サイドバーと詳細パネル',
     displayPanelsHint: 'サイドバーだけなら Ctrl+B、両方まとめてなら Ctrl+Shift+B',
+    // プライバシーモード（#88）— タイトルバーのトグル兼インジケータ、ホットキーは修飾キー無しの P
+    privacyModeToggle: 'プライバシーモード (P)',
+    cmdTogglePrivacy: 'プライバシーモードを切り替え',
     // クイックビュー（#143）— 見出しは描かないので読み上げ用だけ
     quickViewTitle: 'クイックビュー',
     // コマンドパレット（#28）— 器の文言・見出し・初期コマンド
@@ -862,6 +865,9 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     displaySize: 'Size',
     displayPanels: 'Sidebar and details panel',
     displayPanelsHint: 'Ctrl+B for the sidebar alone, Ctrl+Shift+B for both',
+    // Privacy mode (#88) — titlebar toggle + indicator; the hotkey is plain P, no modifier
+    privacyModeToggle: 'Privacy mode (P)',
+    cmdTogglePrivacy: 'Toggle privacy mode',
     // Quick view (#143) — no visible heading, so this is the screen-reader name only
     quickViewTitle: 'Quick view',
     // Command palette (#28)
