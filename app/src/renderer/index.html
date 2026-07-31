@@ -4,13 +4,13 @@
   <meta charset="utf-8">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' data:; img-src 'self' asset: data: blob:; media-src 'self' asset: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; base-uri 'none'; form-action 'none';">
   <title>Hologram</title>
-  <!-- Cascade-layer order for the shadcn/Tailwind coexistence (trial branch):
-       every legacy <style> below is wrapped in @layer legacy, slotted BETWEEN
-       Tailwind's base (preflight) and components/utilities. So legacy rules
-       still beat the preflight reset (legacy screens keep their look), while
-       shadcn component utilities beat the legacy universal reset. This first
-       declaration pins the relative order; the Tailwind sheet injected by
-       src/app/index.tsx declares the same names minus `legacy` and merges in. -->
+  <!-- Cascade-layer order for the shadcn/Tailwind coexistence: every legacy <style>
+       below is wrapped in @layer legacy, slotted BETWEEN Tailwind's base (preflight)
+       and components/utilities. So legacy rules still beat the preflight reset (legacy
+       screens keep their look), while shadcn component utilities beat the legacy
+       universal reset. This first declaration pins the relative order; the Tailwind
+       sheet injected by src/app/index.tsx declares the same names minus `legacy` and
+       merges in. -->
   <style>@layer theme, base, legacy, components, utilities;</style>
   <link rel="stylesheet" href="design-tokens.css">
   <!-- Component CSS (settings layout) is bundled via src/app/index.tsx's globals.css import
@@ -30,172 +30,7 @@
       background: var(--bg); color: var(--fg);
       display: flex; flex-direction: column; height: 100vh; overflow: hidden;
     }
-    #appBody {
-      display: flex; flex: 1; min-height: 0;
-      /* 背景グリッド（方眼）。線色は --text 混色でライト/ダーク自動追従。26px セル。
-         コンテンツの背後に薄く敷く控えめなテクスチャ。background-attachment: fixed
-         でビューポートに固定＝コンテンツがスクロールしてもグリッドは動かない
-         （紙の方眼の上をカードが滑る感じ）。 */
-      background-image:
-        linear-gradient(to right, color-mix(in srgb, var(--text) 8%, transparent) 1px, transparent 1px),
-        linear-gradient(to bottom, color-mix(in srgb, var(--text) 8%, transparent) 1px, transparent 1px);
-      background-size: 26px 26px;
-      background-attachment: fixed;
-    }
 
-    /* --- Single left sidebar (Claude-Desktop style): brand + mode nav at the
-       top, then the active mode's controls below. One column, no second rail. --- */
-    #sidebar {
-      /* --sb-gutter = the ONE horizontal inset for the whole column. Every
-         item's box aligns to it (the scroll owns the inset; items are full
-         width within, no per-element left padding). Change it here and the
-         entire column's left/right axis moves together. */
-      --sb-gutter: 12px;
-      width: 248px; flex-shrink: 0; z-index: 30;
-      /* Floating "window" sidebar (Claude-app style): rounded card with a margin on
-         all sides. appBody is a fixed-height flex row (the content area scrolls, not
-         the page), so the sidebar just stretches to it — no sticky needed. */
-      margin: var(--sidebar-float);
-      /* Flat fill — the vertical gradient was dropped (user). */
-      background-color: var(--sidebar-bg);
-      display: flex; flex-direction: column; padding: 14px 10px 0; gap: 2px;
-      overflow: hidden;   /* スクロールは内側の .sb-scroll が担当（角丸でクリップ） */
-      /* Window-like: a defined rim + lift (replaces the old 1px content hairline). */
-      border: 1px solid var(--float-border);
-      border-radius: 14px;
-      box-shadow: var(--shadow-md);
-    }
-    /* Settings gear pinned bottom-left of the sidebar (title/theme button removed;
-       theme moved into Settings). */
-    .sidebar-footer { flex-shrink: 0; display: flex; align-items: center; margin: 4px -10px 0; padding: 8px 10px; border-top: 1px solid var(--border); }
-    .icon-btn {
-      flex-shrink: 0; width: 26px; height: 26px; border-radius: 6px;
-      border: 1px solid var(--border); background: var(--surface); color: var(--text-muted);
-      cursor: pointer; display: flex; align-items: center; justify-content: center;
-      transition: background .12s, color .12s, border-color .12s;
-    }
-    .icon-btn:hover { background: var(--hover); color: var(--text); border-color: var(--border-strong); }
-    .icon-btn svg { width: 15px; height: 15px; }
-    /* Ghost variant: keeps the SAME 26×26 box (so size/edges stay aligned with
-       siblings by construction), only lightens the chrome — no border/fill, muted
-       ink that warms on hover. Use for secondary icon buttons in a row of icons. */
-    .icon-btn--ghost { border-color: transparent; background: none; color: var(--text-subtle); }
-    .icon-btn--ghost:hover { border-color: transparent; background: var(--hover); color: var(--text); }
-
-    /* Keyboard-shortcut hint: hover the ? button to see all shortcuts */
-    .kb-hint-wrap { position: relative; display: flex; align-items: center; margin-left: 6px; }
-    .kb-hint-pop {
-      display: none; position: fixed; bottom: 52px; left: 14px;
-      border-radius: 10px; padding: 12px 14px; z-index: 12000; white-space: nowrap;
-    }
-    .kb-hint-wrap:hover .kb-hint-pop { display: block; animation: hologramPopIn var(--dur-pop) var(--ease-out); }
-    /* Floating-surface materials (.pop-solid / .glass-chrome) are defined as a
-       utility layer at the END of this stylesheet so they win source-order over
-       component rules like .fold-menu. See "=== Floating-surface materials ===". */
-    .kb-hint-head { font-size: 10px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 8px; }
-    .kb-hint-grid { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; align-items: center; }
-    .kb-hint-grid kbd {
-      font-size: 10.5px; font-family: ui-monospace, monospace;
-      background: var(--surface-2); border: 1px solid var(--border);
-      border-radius: 4px; padding: 2px 6px; color: var(--text); white-space: nowrap;
-      /* hug the key label (grid items stretch to the column otherwise) + keycap bevel */
-      justify-self: start; min-width: 20px; text-align: center; box-sizing: border-box;
-      box-shadow: inset 0 -1px 0 var(--border);
-    }
-    .kb-hint-grid span { font-size: 11.5px; color: var(--text); font-weight: 400; }
-
-    /* Settings overlay (opened by the brand-bar gear; floats above either mode) */
-    /* Settings: centered modal over a dimmed backdrop (was a fullscreen page) */
-    .settings-view {
-      position: fixed; inset: 0; z-index: 11000; background: var(--overlay);
-      display: flex; align-items: center; justify-content: center; padding: 36px;
-    }
-    .settings-view[hidden] { display: none; }
-    .settings-view:not([hidden]) { animation: hologramFadeIn .16s ease-out; }
-    .settings-view-inner {
-      width: 100%; max-width: 880px; max-height: 100%; overflow-y: auto;
-      background: var(--surface);
-      border: 1px solid var(--float-border); border-radius: 16px;
-      box-shadow: var(--shadow-lg);
-      padding: 4px 32px 40px;
-    }
-    /* Settings search (in the sticky head) + side TOC + scrollable panel. */
-    .settings-search-wrap { position: relative; flex: 1; max-width: 280px; margin: 0 14px 0 18px; display: flex; align-items: center; }
-    .settings-search-ic { position: absolute; left: 10px; width: 14px; height: 14px; color: var(--text-muted); pointer-events: none; }
-    .settings-search { width: 100%; padding: 6px 10px 6px 30px; font-size: 13px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); outline: none; }
-    .settings-search:focus { border-color: var(--accent); }
-    /* Master-detail: the TOC is the persistent left nav; the right pane shows
-       only the selected section as its own "page" (no long scroll). */
-    .settings-body { display: flex; align-items: stretch; gap: 0; }
-    .settings-toc { flex-shrink: 0; width: max-content; min-width: 150px; display: flex; flex-direction: column; gap: 1px; padding-right: 22px; border-right: 1px solid var(--border-subtle); }
-    .settings-toc .toc-item { text-align: left; border: none; background: transparent; color: var(--text-muted); font-size: 13px; padding: 6px 10px; border-radius: 6px; cursor: pointer; transition: background .12s, color .12s; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .settings-toc .toc-item:hover { background: var(--hover); color: var(--text); }
-    .settings-toc .toc-item.active { color: var(--text-strong); font-weight: 600; background: var(--hover); }
-    .settings-toc .toc-item[hidden] { display: none; }
-    .settings-view #panelSettings { display: block; flex: 1; min-width: 0; max-width: none; padding-left: 26px; }
-    /* One page = one section card; drop the inter-section margin in single-page mode. */
-    .settings-view .section { margin-bottom: 16px; }
-    .settings-view .section:last-child { margin-bottom: 0; }
-    /* Search hit highlight inside the settings panel — pinpoints the matching item
-       within a surfaced section (esp. the long データ section). Soft accent tint. */
-    .settings-view mark.set-hl { background: var(--accent-subtle); color: var(--accent-subtle-fg); border-radius: 3px; padding: 0 1px; }
-    .settings-empty { display: none; padding: 28px 6px; color: var(--text-muted); font-size: 13px; }
-    .settings-empty:not([hidden]) { display: block; }
-    /* Narrow: keep the TOC reachable (else pages can't be switched) — stack it
-       as a horizontal chip row above the page. */
-    @media (max-width: 680px) {
-      .settings-body { flex-direction: column; }
-      .settings-toc { width: auto; flex-direction: row; flex-wrap: wrap; gap: 4px; padding: 0 0 12px; border-right: none; border-bottom: 1px solid var(--border-subtle); margin-bottom: 14px; }
-      .settings-view #panelSettings { padding-left: 0; }
-      .settings-search-wrap { max-width: none; }
-    }
-    .settings-view:not([hidden]) .settings-view-inner { animation: hologramPopIn .2s ease-out; }
-    .settings-view-head {
-      display: flex; align-items: center; justify-content: space-between;
-      position: sticky; top: 0; background: transparent; padding: 12px 0 14px;
-      z-index: 1; margin-bottom: 4px;
-    }
-    .settings-view-title { font-size: var(--text-2xl); font-weight: var(--weight-semibold); color: var(--text-strong); }
-    .settings-view-head .icon-btn { width: 30px; height: 30px; }
-    .settings-view-head .icon-btn svg { width: 17px; height: 17px; }
-    /* About panel: centered "this app" card (live holographic icon over name/version).
-       Anchored on the macOS/Windows "About <app>" dialog — big app icon, then name,
-       version and a one-line descriptor stacked below it. */
-    .about-card { display: flex; flex-direction: column; align-items: center; text-align: center;
-      gap: 14px; padding: 24px 0 10px; }
-    /* Deliberately undecorated: no radius, no shadow, no gloss — it should read as a
-       plain flat square image, so the fact that it is quietly animating is a surprise. */
-    .about-icon { width: 176px; height: 176px; }
-    .about-icon canvas { display: block; width: 100%; height: 100%; }
-    .about-name { font-size: 24px; font-weight: var(--weight-semibold); color: var(--text-strong); letter-spacing: .2px; }
-    .about-version { font-size: var(--text-sm); color: var(--text-muted); margin-top: -8px; }
-    .about-tagline { font-size: var(--text-sm); color: var(--text-muted); max-width: 36em; line-height: 1.55; text-wrap: balance; }
-    .about-meta { font-size: 11px; color: var(--text-subtle); font-variant-numeric: tabular-nums; margin-top: 2px; }
-    .about-links { display: flex; gap: 16px; margin-top: 4px; }
-    .about-links a { font-size: var(--text-sm); color: var(--accent-text); text-decoration: none; }
-    .about-links a:hover { text-decoration: underline; }
-    /* Settings rows (Settings → 外観) */
-    .setting-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 13px; color: var(--text); cursor: pointer; }
-    .side-controls { display: flex; flex-direction: column; flex: 1; min-height: 0; }
-    /* スクロールするのは内側の .sb-scroll だけ。アクティブフィルタバーはその外側の
-       固定フッターにして、スクロールバーがバーに被らないようにする。 */
-    /* 左: ガター6px（チェックボックスの negative margin が overflow で見切れない
-       よう padding 側に逃がす。位置は margin-left で相殺＝従来どおり）。
-       右: コンテンツとスクロールバーの間に 8px の余白。 */
-    .sb-scroll {
-      flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain;
-      /* The gutter lives HERE (single source). 6px is the negative-margin
-         escape for select-ring overflow; 8px is the scrollbar gap. */
-      margin-left: -6px;
-      /* Right gutter was 8px+gutter PLUS the 10px transparent scrollbar, so items
-         hugged the left (左右の余白が非対称・報告). The scrollbar already supplies
-         the visual right gap, so keep padding-right minimal to balance the edges. */
-      padding-left: calc(6px + var(--sb-gutter)); padding-right: 4px;
-      padding-bottom: 16px;
-    }
-    #sidebar select, #sidebar input.search-box { width: 100%; }
-
-    #appMain { flex: 1; min-width: 0; min-height: 0; display: flex; overflow: hidden; }
     /* --- Modern scrollbars (Chromium/Electron). NOTE: setting the standard
        `scrollbar-width` property disables these ::-webkit-scrollbar rules in
        Chromium, so style scrollable areas via padding, not scrollbar-width. --- */
@@ -208,35 +43,6 @@
     ::-webkit-scrollbar-thumb:hover { background: color-mix(in oklch, var(--text-muted) 70%, transparent); background-clip: padding-box; }
     ::-webkit-scrollbar-corner { background: transparent; }
 
-    /* Sidebar scrollbar: auto-hide (macOS / Claude-Desktop overlay language).
-       A permanently-visible thumb drew a vertical line down the sidebar's right
-       edge that broke the tab → query-builder → sidebar surface into pieces
-       (ユーザー指摘). At rest the thumb is fully transparent so the --sidebar-bg
-       plane reads as one continuous surface; it fades in only while the pointer
-       is over the sidebar or a field inside it is focused. The track is already
-       transparent and the 10px width is unchanged, so nothing shifts — the bar
-       just stops being visible when idle. Position stays on the right (natural). */
-    .sb-scroll::-webkit-scrollbar-thumb { background: transparent; transition: background .18s ease; }
-    .sb-scroll:hover::-webkit-scrollbar-thumb,
-    .sb-scroll:focus-within::-webkit-scrollbar-thumb {
-      background: color-mix(in oklch, var(--text-subtle) 45%, transparent); background-clip: padding-box;
-    }
-    .sb-scroll::-webkit-scrollbar-thumb:hover {
-      background: color-mix(in oklch, var(--text-muted) 70%, transparent); background-clip: padding-box;
-    }
-
-    #panelSettings { max-width: 720px; }
-
-    /* --- Toolbar (stacked in the sidebar) --- */
-    .toolbar {
-      display: flex; flex-direction: column; align-items: stretch; gap: 18px;
-      margin-bottom: 18px;   /* same inter-section rhythm as .sb-section */
-    }
-    .toolbar select { width: 100%; }
-    .toolbar .view-toggle, .toolbar > .chip { align-self: flex-start; }
-    /* 件数はサイドバー左下（設定の歯車の隣）に常駐。subtle だと読めないと
-       指摘があったので muted（セカンダリの標準）まで上げる */
-    .sidebar-footer .post-count { font-size: 12px; color: var(--text-muted); }
     .mirror-status { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--text-muted); margin-left: 8px; white-space: nowrap; overflow: hidden; max-width: 150px; }
     .mirror-status .ms-ic { flex-shrink: 0; }
     .mirror-status .ms-body { display: flex; flex-direction: column; line-height: 1.2; min-width: 0; }
@@ -247,268 +53,6 @@
     .mirror-status.is-syncing .ms-ic { animation: ms-spin 0.9s linear infinite; }
     @keyframes ms-spin { to { transform: rotate(360deg); } }
     @media (prefers-reduced-motion: reduce) { .mirror-status.is-syncing .ms-ic { animation: none; } }
-    /* Unified field anatomy (motion-study canvas 2026-07-05): 32px / r8 /
-       recessed fill (--field-bg + inset shadow) + visible border. */
-    .search-box {
-      width: 100%; box-sizing: border-box; height: 32px;
-      padding: 0 12px; border: 1px solid var(--border-strong); border-radius: var(--radius-md);
-      background: var(--field-bg); color: var(--text);
-      box-shadow: inset 0 1px 2px rgba(16, 19, 26, 0.05);
-      font-size: 14px; outline: none;
-      transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
-    }
-    [data-theme="dark"] .search-box { box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.3); }
-    .search-box:focus {
-      border-color: var(--accent); background: var(--surface);
-      box-shadow: 0 0 0 3px color-mix(in oklch, var(--sky-500) 32%, transparent);
-    }
-    /* Search field + leading magnifier (macOS search-field anatomy). */
-    .search-wrap { position: relative; display: flex; align-items: center; }
-    .search-wrap .search-ico {
-      position: absolute; left: 10px; top: 50%; transform: translateY(-50%);
-      width: 15px; height: 15px; fill: none; stroke: var(--text-subtle);
-      stroke-width: 2; stroke-linecap: round; pointer-events: none;
-    }
-    .search-wrap .search-box { padding-left: 31px; }
-    .search-wrap .search-cb { width: 100%; }   /* react-aria ComboBox wrapper — the input fills the wrap */
-    /* Search-mode toggle = macOS segmented control (recessed track + raised thumb):
-       both options stay visible, so the state AND the switch read at a glance — the
-       old lone right-edge chip didn't look like a toggle (BACKLOG: 発見性が低い).
-       Used by the main search box (the compact flyout variant retired with the flyout).
-       Labels are behavior-words (ぴったり/おおまか) + a one-line hint (DESIGN「声と語り口」). */
-    /* Full-width = the control spans the same width as the input bar directly above
-       it (the search box in the sidebar, the 絞り込み find box in the flyout) so they
-       line up as one block (user 2026-07-04). The thumb slide is an inline transform
-       set by the component (fuzzy=left / exact=right). Each option names itself via a
-       tooltip on hover. */
-    .seg-control {
-      position: relative; display: grid; grid-template-columns: 1fr 1fr;
-      background: var(--seg-track); border-radius: var(--radius-md);
-      padding: 3px; margin-top: 8px; user-select: none;
-      box-shadow: inset 0 1px 2px rgba(16, 19, 26, 0.06);   /* recessed track */
-    }
-    [data-theme="dark"] .seg-control { box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.3); }
-    .seg-control .seg-thumb {
-      position: absolute; top: 3px; left: 3px;
-      width: calc(50% - 3px); height: calc(100% - 6px);
-      background: var(--seg-thumb); border-radius: calc(var(--radius-md) - 2px);
-      box-shadow: 0 1px 2px rgba(16, 19, 26, 0.12), 0 0 0 1px var(--border-strong);
-      transition: transform var(--dur-slow) var(--ease-out);
-    }
-    [data-theme="dark"] .seg-control .seg-thumb {
-      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.06);
-    }
-    .seg-control .seg-opt {
-      position: relative; z-index: 1; appearance: none; background: transparent;
-      border: 0; font: inherit; font-size: 12px; padding: 0 4px; height: 26px;
-      color: var(--text-muted); cursor: pointer;
-      border-radius: calc(var(--radius-md) - 2px); transition: color var(--dur-base);
-    }
-    .seg-control .seg-opt.is-on { color: var(--text-strong); font-weight: 600; }
-    .seg-control .seg-opt:hover:not(.is-on) { color: var(--text); }
-    /* (.seg-control--qf, the ぴったり/おおまか variant inside the qf-pop value flyout,
-       was removed with the flyout — see the .qf-pop note below.) */
-    @media (prefers-reduced-motion: reduce) { .seg-control .seg-thumb { transition: none; } }
-    /* バックアップ設定のラジオ/チェック行 */
-    .radio-line { display: flex; align-items: center; gap: 6px; font-size: 13px; margin: 4px 0; cursor: pointer; flex-wrap: wrap; }
-    .radio-line input { cursor: pointer; }
-    select {
-      padding: 8px 12px; border: 1px solid var(--border); border-radius: 6px;
-      font-size: 13px; background: var(--surface); outline: none; cursor: pointer;
-    }
-    /* Custom dropdown: native select hidden (value source), field-styled
-       trigger + a glass option list reusing .fold-menu (matches the flyouts;
-       native select popups are OS-drawn and can't be glassed). */
-    select.cs-host { display: none !important; }
-    .cs-btn {
-      width: 100%; box-sizing: border-box; display: flex; align-items: center; justify-content: space-between; gap: 8px;
-      height: 32px; background: var(--field-bg); border: 1px solid var(--border-strong); border-radius: var(--radius-md);
-      padding: 0 12px; font-size: 12.5px; color: var(--text); cursor: pointer; text-align: left;
-      box-shadow: inset 0 1px 2px rgba(16, 19, 26, 0.05);
-      transition: border-color .12s, background .12s;
-    }
-    [data-theme="dark"] .cs-btn { box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.3); }
-    .cs-btn:hover { border-color: var(--text-muted); background: var(--hover); }
-    .cs-btn .cs-arrow { /* color/display/flex-shrink from shared .sb-row-arrow rule */ }
-    .cs-pop { min-width: 160px; }
-    .cs-pop .fm-row.cs-on { color: var(--accent-subtle-fg); font-weight: 600; }
-    .post-count {
-      font-size: 12px; color: var(--text-subtle);
-    }
-
-    /* --- Chip buttons --- */
-    .chip {
-      background: var(--surface); border: 1px solid var(--border); border-radius: 16px;
-      padding: 4px 14px; font-size: 13px; color: var(--text);
-      cursor: pointer; transition: all 0.15s; white-space: nowrap;
-    }
-    .chip:hover { border-color: var(--accent); color: var(--accent-text); }
-    .date-input {
-      padding: 4px 12px; border: 1px solid var(--border); border-radius: 6px;
-      font-size: 12px; color: var(--text); outline: none; cursor: pointer;
-    }
-    .date-input:focus { border-color: var(--accent); }
-
-    /* --- Selection bar (pinned at the sidebar top while ≥1 card is selected) --- */
-    .selection-bar {
-      /* 2-col grid (was a 6-tall vertical stack of full-width buttons = tall/heavy,
-         user). The count spans the top row; the 6 actions pack into 3 rows of 2 →
-         ~half the height. Buttons stay rectangular (操作=四角ボタン規約は維持). */
-      display: grid; grid-template-columns: 1fr 1fr; gap: 6px;
-      margin-bottom: 10px; padding: 8px 10px;
-      background: var(--accent-subtle); border: 1px solid var(--accent-border);
-      border-radius: 10px;
-    }
-    .selection-bar .post-count { grid-column: 1 / -1; color: var(--text); font-weight: 600; }
-    /* compact fill for the narrow half-width cells (scoped — leaves dialog buttons untouched) */
-    .selection-bar .btn-outline, .selection-bar .btn-danger { padding: 5px 8px; font-size: 12px; text-align: center; }
-
-    /* --- Sidebar control readability: in dark mode the sidebar bg (--sidebar-bg)
-       is LIGHTER than --surface, so surface-colored controls look sunken/dark.
-       Raise them to --surface-3 + --border-strong (same fix as the sb-chips). --- */
-    /* Inputs (search/select/date/number): RECESSED fill + visible hairline —
-       a field must read as a well you can type into. (First pass used
-       border-subtle on surface-3 and the fields sank into the background —
-       user report. Borders remain an input-only affordance.) */
-    #sidebar .chip:not(.active), #sidebar select, #sidebar .search-box,
-    #sidebar .date-input, #sidebar input[type="number"] {
-      background: var(--field-bg); border-color: var(--border-strong); color: var(--text);
-    }
-    /* icon buttons (history ←→ etc.): ghost — bare glyph, fill on hover */
-    #sidebar .icon-btn { background: transparent; border-color: transparent; color: var(--text-muted); }
-    #sidebar .chip:not(.active):hover { background: var(--active); color: var(--text-strong); }
-    /* Segmented control hover: brighten the GLYPH only — the track background
-       stays put (the raised thumb is the only fill that moves). */
-    #sidebar .view-toggle button:not(.active):hover { background: transparent; color: var(--text); }
-    #sidebar .icon-btn:hover { background: var(--hover); color: var(--text); }
-    /* Back-to-top: glass-chrome (icon-only, floats above content). NB `#sidebar
-       .icon-btn` (1,1,0) outweighs a bare `#sbTop` (1,0,0) and was forcing the
-       ghost transparent fill (+ transparent border) → the button was invisible on
-       the light sidebar (user). Qualify with #sidebar so the chrome fill wins. */
-    #sidebar #sbTop {
-      background: var(--chrome-glass-bg); color: #fff;
-      border: 1px solid var(--chrome-glass-rim);
-      backdrop-filter: var(--chrome-glass-blur); -webkit-backdrop-filter: var(--chrome-glass-blur);
-      box-shadow: var(--shadow-md);
-    }
-    #sidebar #sbTop:hover { background: rgba(20,22,26,0.6); color: #fff; }
-    #sidebar .search-box:focus, #sidebar .date-input:focus, #sidebar input[type="number"]:focus { border-color: var(--accent); }
-    /* Sidebar controls run slimmer than the dialog defaults: the column is a
-       dense list, so tall bars waste vertical room (vertical padding only —
-       the 12px side padding carries the 23px text axis). */
-    #sidebar select { padding-top: 5px; padding-bottom: 5px; transition: border-color .12s, background .12s; }
-    #sidebar select:hover { background: var(--hover); border-color: var(--text-muted); }
-    /* 12.5px = same as the sibling .cs-btn (at 14px the 13-glyph JP placeholder
-       "テキスト・ユーザー名で検索" overran the ~178px field and clipped). */
-    #sidebar .search-box { font-size: 12.5px; }
-    /* Two axes, both derived from the gutter: section HEADERS sit at the gutter
-       (box edge); all CONTENT (filter-row icons, bar text, chips) sits one
-       content-pad (12px) inside it — so headers read as one step out, content
-       one step in. No magic per-element numbers. */
-    #sidebar .sb-chips { padding-left: 12px; }
-    /* Active filter row: accent INK on the icon only — no fill (motion-study
-       canvas 2026-07-05; the grey slab read as a heavier state than it is).
-       Hover keeps the plain .sb-row treatment. */
-    .multi-row.active .sb-row-ic { color: var(--accent-text); }
-    /* checkbox rows: the BOX aligns with the control edge (same x as the pill
-       chips above), like any other control in the column */
-    .engagement-select {
-      padding: 4px 8px; border: 1px solid var(--border); border-radius: 6px;
-      font-size: 12px; color: var(--text); background: var(--surface); outline: none; cursor: pointer;
-    }
-    .engagement-input {
-      width: 80px; padding: 4px 8px; border: 1px solid var(--border); border-radius: 6px;
-      font-size: 12px; color: var(--text); outline: none;
-    }
-    .engagement-input:focus { border-color: var(--accent); }
-
-    /* --- View toggle --- */
-    /* Segmented control = recessed track + raised thumb (macOS/iOS style).
-       Icon-only: the raised thumb is the ONLY active cue — no label, no glyph
-       fill, no color shift — so switching just slides the thumb and the buttons
-       never resize or shove each other. */
-    .view-toggle {
-      display: flex; border: none; border-radius: 8px;
-      background: var(--seg-track); padding: 3px; gap: 2px;   /* 26px buttons + 6 = 32px */
-      box-shadow: inset 0 1px 2px rgba(16, 19, 26, 0.06);      /* recessed track */
-    }
-    [data-theme="dark"] .view-toggle { box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.3); }
-    .view-toggle button {
-      flex: 1; display: flex; align-items: center; justify-content: center;
-      height: 26px; box-sizing: border-box; padding: 0;
-      background: transparent; border: none; border-radius: 6px;
-      cursor: pointer; color: var(--text-muted); line-height: 0;
-      transition: background .15s, color .15s;
-    }
-    /* Glyph stays outlined in every state; the thumb behind it marks the active one. */
-    .view-toggle .vt-ico { width: 15px; height: 15px; display: block; flex-shrink: 0; fill: none; stroke: currentColor; stroke-width: 1.7; }
-    .view-toggle .vt-label { display: none; }
-    /* Active = a single FLAT thumb (.vt-thumb, a real element) that SLIDES between
-       segments (macOS segmented-control motion). The thumb is the BUTTON/chip, not
-       the track. JS sets its inline width/transform from the active button's
-       measured geometry (a ::before with var() didn't resolve % translate / inherited
-       props reliably). Flat white on a recessed track — the liquid-glass thumb was
-       retired with the control unification (motion-study canvas 2026-07-05):
-       same material as .seg-thumb so every segmented control reads as one family. */
-    .view-toggle { position: relative; }
-    .vt-thumb {
-      position: absolute; z-index: 0; top: 3px; bottom: 3px; left: 3px; pointer-events: none;
-      width: calc((100% - 10px) / 3);   /* card fallback before JS measures left/width */
-      border-radius: 6px;
-      transition: left .22s var(--ease-out), width .22s var(--ease-out);
-      background: var(--seg-thumb);
-      box-shadow: 0 1px 2px rgba(16, 19, 26, 0.12), 0 0 0 1px var(--border-strong);
-    }
-    /* No dome highlight — flat in both themes (the ::before convex cue is retired). */
-    .vt-thumb::before { display: none; }
-    [data-theme="dark"] .vt-thumb {
-      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.06);
-    }
-    /* Flat slide — no jelly bulge (the mid-travel scale pulse read as the thumb puffing up). */
-    @media (prefers-reduced-motion: reduce) { .vt-thumb { transition: none; } }
-    .view-toggle button { position: relative; z-index: 1; }
-    /* Active glyph: light uses a soft grey (the glass thumb IS the active cue, so the
-       icon needn't go near-black); dark keeps bright ink to read on the dark thumb. */
-    .view-toggle button.active { color: var(--text); }
-    [data-theme="dark"] .view-toggle button.active { color: var(--text-strong); }
-
-    /* Browse-mode toggle (ライブラリ / 投稿者 / コレクション): reuses .view-toggle visuals
-       verbatim — glyph-only in EVERY state (the active-label idiom was retired
-       2026-07-04: text on the active segment made the thumb width jump per mode and
-       read as a different control from the layout toggle). Segments name themselves
-       via their tooltips; the glass thumb marks the active one. */
-    /* Lives at the sidebar top (.browse-bar-section = a .sb-section). */
-    .browse-bar-section { margin-bottom: 16px; }
-
-    #posterFilterRows { margin-top: 22px; }
-    /* Poster toggle row (no flyout): active = monotone contrast
-       (DESIGN: アクティブはグレー面、色は機能的一点だけ). */
-    .sb-row.poster-toggle-row.active { background: var(--accent-subtle); color: var(--text-strong); }
-    .sb-row.poster-toggle-row.active .sb-row-ic { color: var(--text-strong); }
-    /* Poster folders: sidebar list (text rows + hover, active = monotone contrast)
-       + create input. Membership is assigned from the poster inspector (chips). */
-    .pf-list { display: flex; flex-direction: column; gap: 1px; margin-top: 4px; }
-    .pf-row { display: flex; align-items: center; gap: 8px; padding: 5px 8px; border-radius: 7px; cursor: pointer; color: var(--text); }
-    .pf-row:hover { background: var(--hover); }
-    /* Drag-reorder: dim the dragged row; a 2px accent edge marks the drop side. */
-    .pf-row.pf-dragging { opacity: 0.45; }
-    .pf-row.pf-drop-before { box-shadow: inset 0 2px 0 var(--accent); }
-    .pf-row.pf-drop-after { box-shadow: inset 0 -2px 0 var(--accent); }
-    .pf-row.active { background: var(--accent-subtle); color: var(--text-strong); }
-    .pf-row-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; }
-    .pf-row-n { font-size: 11px; color: var(--text-muted); }
-    .pf-row-del { display: none; align-items: center; justify-content: center; background: transparent; border: none; color: var(--text-muted); cursor: pointer; padding: 2px; border-radius: 5px; line-height: 0; }
-    .pf-row:hover .pf-row-del, .pf-row:focus-within .pf-row-del { display: inline-flex; }
-    .pf-row-del:hover { color: var(--danger); background: var(--hover); }
-    .pf-new { display: flex; gap: 6px; margin-top: 8px; }
-    .pf-new-input { flex: 1; min-width: 0; padding: 5px 8px; border: 1px solid var(--border-strong); border-radius: 7px; background: var(--field-bg); color: var(--text); font-size: 12.5px; }
-    .pf-new-btn { flex: none; }
-    /* Poster mode hides the post-only chrome (filters + active bar). Sort and the
-       display axes moved to the display popover, which is mode-aware in React. */
-    body.browse-posters #postActiveBar,
-    body.browse-posters #filterRows { display: none !important; }
-    /* The poster query bar mirrors #postActiveBar: only shown while browsing posters. */
-    body:not(.browse-posters) #posterActiveBar { display: none !important; }
 
     /* Drag range selection (#484). The band is an overlay owned imperatively by the
        grid host (_shared/VirtualGrid.tsx) and attached to <body>, so it is placed in
@@ -525,74 +69,9 @@
       border: 1px solid color-mix(in oklch, var(--color-selected) 70%, transparent);
     }
 
-    /* --- Settings --- */
-    .section {
-      background: var(--surface); border-radius: 8px;
-      padding: 16px 20px; margin-bottom: 16px;
-      border: 1px solid var(--border-subtle); box-shadow: var(--shadow-sm);
-    }
-    .section h2 {
-      font-size: 13px; font-weight: 600; color: var(--text-muted);
-      text-transform: uppercase; letter-spacing: 0.5px;
-      margin-bottom: 12px;
-    }
-    label { display: block; font-size: 13px; color: var(--text); margin-bottom: 6px; }
-    /* Generic dialog text input. :not(.search-box) — the attribute selector
-       otherwise outweighs the unified .search-box field anatomy (r8/32px). */
-    input[type="text"]:not(.search-box) {
-      width: 100%; padding: 8px 12px;
-      border: 1px solid var(--border); border-radius: 6px;
-      font-size: 14px; outline: none; transition: border-color 0.15s;
-    }
-    input[type="text"]:not(.search-box):focus { border-color: var(--accent); }
-    .hint { font-size: 12px; color: var(--text-subtle); margin-top: 6px; }
-    .actions { display: flex; align-items: center; margin-top: 16px; }
-
-    /* --- Buttons --- */
-    .btn {
-      background: var(--accent); color: #fff; border: none; border-radius: 6px;
-      padding: 8px 20px; font-size: 14px; font-weight: 600;
-      cursor: pointer; transition: background 0.15s;
-    }
-    .btn:hover { background: var(--accent-hover); }
-    .btn-outline {
-      background: var(--surface); color: var(--text); border: 1px solid var(--border);
-      border-radius: 6px; padding: 7px 16px; font-size: 13px;
-      cursor: pointer; transition: border-color 0.15s, color 0.15s;
-    }
-    .btn-outline:hover { border-color: var(--accent); color: var(--accent-text); }
-    .btn-danger {
-      background: var(--surface); color: var(--danger); border: 1px solid var(--danger);
-      border-radius: 6px; padding: 7px 16px; font-size: 13px;
-      cursor: pointer; transition: background 0.15s;
-    }
-    .btn-danger:hover { background: var(--danger-bg); }
-
-    a { color: var(--accent-text); text-decoration: none; }
-    a:hover { text-decoration: underline; }
-
-    /* --- Data management --- */
-    .data-section {
-      display: flex; gap: 8px; flex-wrap: wrap; align-items: center;
-    }
-    .data-hint {
-      width: 100%; font-size: 12px; color: var(--text-subtle); margin-top: 8px;
-    }
-
-    /* The quick-view peek overlay is Tailwind in lightbox/ now (P2⑦) — it was
-       .lightbox-overlay here while #lightbox was a static container. */
-
     /* --- Image tab (type:'image') — fit-to-screen detail view --- */
     /* What is left here is the MEDIA sizing, which the zoom/pan surface depends on
-       (see the pointer-events note below) and which P3 (#6) takes with the rest of
-       the legacy sheet. The swap itself is gone from CSS (P2⑫): "an image tab is
-       showing" was a body class plus three display rules — one hiding the content
-       column, one showing #imageTabView, one re-docking the inspector — and it is
-       now a render decision in shell/AppShell.tsx off services/image-tab.ts's
-       isActive(). The toolbar band stays under an image tab either way: the active
-       tab's Chrome-style connected shape needs the band below it, and WHAT it
-       carries swaps instead (shell/AppToolbar.tsx + image-tab/ViewerToolbar.tsx,
-       #150). */
+       (see the pointer-events note below). */
     .itv-media { max-width: 100%; max-height: 100%; object-fit: contain; }
     /* react-zoom-pan-pinch's own stylesheet sets pointer-events:none on every
        img inside the content box (native img-drag protection), which silently
@@ -606,358 +85,49 @@
     /* うごイラ (#119 St3): a canvas plus its own play/pause, since a zip of
        frames has no native controls the way <video> does. */
     .itv-ugoira > .itv-media { margin: auto; }
-    /* The viewer's CHROME — prev/next, the counter, the info toggle, the うごイラ
-       play button, the "post is gone" state — is Tailwind + shadcn parts in
-       image-tab/ now (P2⑫). It was .itv-nav / .itv-prev / .itv-next / .itv-counter
-       / .itv-tools / .itv-ugoira-toggle / .itv-empty here, each a one-off tone
-       (hand-mixed color-mix fills, a 28px "‹" glyph for an icon, .icon-btn's own
-       hover) that no other surface in the app shared. */
-
-    /* --- Original-media thumbnail strip (grid view) --- */
 
     /* While a modal scrim is up, lock background scroll so the page scrollbar (which
        paints above the overlay) doesn't stay visible. JS toggles .modal-open. */
     html.modal-open, body.modal-open { overflow: hidden; }
 
-    /* Flyout menus: the card context menu (full action list) and the folder
-       picker it opens share one look. */
-    .fold-menu {
-      position: fixed; z-index: 12000; min-width: 180px; max-width: 260px;
-      background: var(--surface); border: 1px solid var(--float-border);
-      border-radius: 8px; box-shadow: var(--shadow-pop); padding: 4px; display: none;
-    }
-    .fold-menu.kind-menu { z-index: 13500; }   /* above the edit modal (13000) so the 種別 menu shows on top */
-    .fold-menu.show { display: block; animation: hologramPopIn var(--dur-pop) var(--ease-out) both; }
-    .fold-menu .fm-row {
-      display: flex; align-items: center; gap: 6px; padding: 5px 8px;
-      border-radius: 5px; cursor: pointer; font-size: 12px; color: var(--text);
-    }
-    .fold-menu .fm-row:hover { background: var(--hover); }
-    .fm-name { flex: 1; word-break: break-word; }
-    /* High-contrast monotone check (was thin accent ✓ that read as cursive). */
-    .fm-check { color: var(--text-strong); flex-shrink: 0; display: inline-flex; align-items: center; }
-    .fm-check svg { display: block; }
-    /* Quiet rename ✎ on the 作品/キャラ kind rows — hidden until the row is hovered
-       (段階的開示), so the menu reads as a simple kind picker at rest. */
-    .fm-rename { display: inline-flex; align-items: center; padding: 2px; border: 0; background: none;
-      color: var(--text-subtle); cursor: pointer; border-radius: 4px; opacity: 0; flex-shrink: 0; }
-    .fold-menu .fm-row:hover .fm-rename { opacity: .65; }
-    .fm-rename:hover { opacity: 1; background: var(--sidebar-row-hover); color: var(--text); }
-    .fm-rename svg { display: block; }
-    .fm-sep { height: 1px; background: var(--border); margin: 4px 2px; }
-    .fm-manage { color: var(--accent-text); }
-    .fm-ic { display: flex; align-items: center; color: var(--text-muted); flex-shrink: 0; }
-    .fm-ic svg { display: block; }
-    /* destructive row: quiet red, stronger on hover (srgb mix — oklch turns purple on dark) */
-    .fold-menu .fm-row.fm-danger { color: var(--danger); }
-    .fold-menu .fm-row.fm-danger .fm-ic { color: var(--danger); }
-    .fold-menu .fm-row.fm-danger:hover { background: color-mix(in srgb, var(--red-500) 14%, transparent); }
-    /* Tag-kind menu (用語帳): non-interactive header + kind dots. Dot colors follow
-       danbooru's tag-category convention (copyright=purple, character=green). */
-    .fold-menu .fm-head { padding: 4px 8px 3px; font-size: 10px; font-weight: 600; letter-spacing: .3px; text-transform: uppercase; color: var(--text-subtle); pointer-events: none; }
+    /* Tag-kind dots (用語帳). Dot colors follow danbooru's tag-category convention
+       (copyright=purple, character=green). */
     .tk-dot { width: 8px; height: 8px; border-radius: 999px; flex-shrink: 0; }
     .tk-work { background: var(--tint-purple-bd); }
     .tk-character { background: var(--tint-green-bd); }
 
-    /* --- Popovers --- */
-    /* (.qf-popover, the retired date/engagement filter-popover surface, was removed
-       with its component — see the .qf-pop note below.) */
-    /* Poster date popover: 日付の種類 / 並び替え / 期間 を小見出し付きで縦に積む。 */
-    .pd-field { margin-bottom: 10px; }
-    .pd-label { display: block; font-size: 10.5px; letter-spacing: .03em; color: var(--text-muted); margin-bottom: 4px; }
+    /* Generic dialog text input. :not(.search-box) — the attribute selector
+       otherwise outweighs the unified .search-box field anatomy (r8/32px). */
+    input[type="text"]:not(.search-box) {
+      width: 100%; padding: 8px 12px;
+      border: 1px solid var(--border); border-radius: 6px;
+      font-size: 14px; outline: none; transition: border-color 0.15s;
+    }
+    input[type="text"]:not(.search-box):focus { border-color: var(--accent); }
 
-    /* --- App layout: content column beside the persistent left #sidebar --- */
-    .app-content { flex: 1; min-width: 0; }
+    /* Unified field anatomy (motion-study canvas 2026-07-05): 32px / r8 /
+       recessed fill (--field-bg + inset shadow) + visible border. */
+    .search-box {
+      width: 100%; box-sizing: border-box; height: 32px;
+      padding: 0 12px; border: 1px solid var(--border-strong); border-radius: var(--radius-md);
+      background: var(--field-bg); color: var(--text);
+      box-shadow: inset 0 1px 2px rgba(16, 19, 26, 0.05);
+      font-size: 14px; outline: none;
+      transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
+    }
+    [data-theme="dark"] .search-box { box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.3); }
+    .search-box:focus {
+      border-color: var(--accent); background: var(--surface);
+      box-shadow: 0 0 0 3px color-mix(in oklch, var(--sky-500) 32%, transparent);
+    }
 
-    /* フラットなサイドバー: セクションごとの白カード/影は低コントラストでノイズだったので撤去。
-       見出し(sb-title)だけでグループを区切る。 */
-    /* One left text-axis for the whole sidebar: boxed controls (search/select/
-       date) start their text at 10(sidebar pad)+1(border)+12(inner pad)=23px, so
-       bare text (titles, subtitles, counts) gets a 13px indent to land on the
-       same axis, and pills use a 12px inner pad. */
-    /* Rhythm: generous space BETWEEN sections, tight spacing inside them
-       (title→content 6px, rows 4-8px) — Linear-style grouping. */
-    .sb-section { padding: 0; margin-bottom: 18px; }
-    /* Lower column: separate the big groups (filters / tags /
-       folders) by generous WHITESPACE rather than divider lines (user: no
-       rules). The extra air carries the structure. */
-    .sb-scroll > .sb-section { margin-bottom: 18px; }
-    .sb-title {
-      font-size: 11px; font-weight: 600; color: var(--text-muted-strong);
-      text-transform: uppercase; letter-spacing: 0.5px;
-      margin-bottom: 6px; padding-left: 0;   /* aligns to the gutter (container) */
-      display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    .btn-outline {
+      background: var(--surface); color: var(--text); border: 1px solid var(--border);
+      border-radius: 6px; padding: 7px 16px; font-size: 13px;
+      cursor: pointer; transition: border-color 0.15s, color 0.15s;
     }
-    /* Active-filter bar pinned to the sidebar bottom (sticky). Holds the active filter
-       pills + AND/OR toggle + reset. Shown only when at least one filter is active. */
-    /* アクティブフィルタバーは .sb-scroll の外側の固定フッター（スクロールしない）。
-       sticky をやめたことでスクロール時の再描画も無くなる＝カクつき低減。 */
-    .sb-activebar {
-      flex-shrink: 0; margin: 8px -10px 0; padding: 8px 10px;
-      background: var(--surface); border-top: 1px solid var(--border);
-    }
-    /* Query builder = full-width top bar that spans ABOVE the sidebar+content row
-       (it pierces over the sidebar's top; the sidebar starts below it). Sticks
-       directly under the (sticky) tab bar. */
-    /* Query bar = a TOOLBAR row under the tabs, NOT an input field. Active
-       filters are chips laid directly on the bar surface — the industry shape
-       for applied filters (Linear/Notion filter rows, Lightroom's Library
-       Filter bar, SAP Fiori "filter feedback bar", Baymard's applied-filters
-       overview). The former omnibox capsule (field fill + border + pill
-       radius, 前例 Chrome) made three promises an address bar keeps and this
-       bar breaks: one line (chips + 読み下し文 wrap to two), typable (it is
-       not — first-run users tried, BACKLOG 誤認 2026-06-21), one value (it
-       holds N discrete chips). Back/forward + tabs survive without an address
-       bar — Finder is the precedent. Layout: [◀ ▶ nav] · [lead glyph + title +
-       chips, wrapping] · [count + save + reset + help]. */
-    .content-activebar {
-      position: sticky; top: var(--tabbar-h); z-index: 40;
-      flex-shrink: 0;
-      display: flex; align-items: center; gap: 10px;
-      padding: 7px 16px;
-      background: var(--sidebar-bg); border-bottom: 1px solid var(--float-border);
-    }
-    /* Nav + lead glyph anchor to the FIRST row of chips — otherwise they float
-       to the block's middle when the chips wrap to multiple rows. */
-    .qb-nav { flex: none; display: flex; align-items: center; gap: 2px; align-self: flex-start; }
-    .qb-nav .icon-btn { width: 28px; height: 28px; }
-    .qb-nav .icon-btn svg { width: 17px; height: 17px; }
-    /* #113: opacity:.3 on top of the already-muted ghost color made the shape
-       nearly invisible — "can't press" only needs to read, not "can't see". */
-    .qb-nav .icon-btn:disabled { cursor: default; }
-    .qb-nav .icon-btn:disabled:hover { background: none; color: var(--text-subtle); border-color: transparent; }
-    .qb-body {
-      flex: 1 1 auto; min-width: 0;
-      display: flex; align-items: center; gap: 8px;
-    }
-    .qb-body .qb-lead { flex: none; display: inline-flex; align-items: center; color: var(--text-muted); align-self: flex-start; margin-top: 6px; }
-    .qb-body .qb-main { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
-    /* Empty-bar hint: the bar is a display, not an input — teach the entry
-       point instead (声: 平易・次にやることの導線). Hidden once anything is on. */
-    .qb-empty { font-size: 12px; color: var(--text-subtle); }
-    .content-activebar .sb-activebar-title { flex: none; font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .5px; }
-    /* Trailing cluster sits just past the pill's right edge (outside the capsule).
-       The pill grows to fill, so no auto margin is needed to push it over. */
-    .content-activebar .qb-trail { flex: none; display: flex; align-items: center; gap: 8px; }
-    .content-activebar .post-count { flex: none; font-size: 12px; color: var(--text-muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
-    .content-activebar .sb-reset { flex-shrink: 0; }
-    .sb-activebar-head { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
-    .sb-activebar-title { font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .5px; flex: 1; }
-    .sb-reset { font-size: 10px; padding: 2px 9px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--muted); cursor: pointer; }
-    .sb-reset:hover { border-color: var(--accent); color: var(--accent-text); }
-    /* Save-search = a feature-launch button: borderless chip fill + accent icon/text
-       (DESIGN「フィーチャー起動ボタン」). The accent makes it read as an action you can
-       take; the label says it outright. Was an unstyled button = looked like stray text
-       and gave no hint you could save the search (user 2026-06-27). */
-    .sb-save-search { display: inline-flex; align-items: center; gap: 4px; font-size: 10px; padding: 3px 10px; border: none; border-radius: 10px; background: var(--chip-bg); color: var(--accent-text); cursor: pointer; white-space: nowrap; transition: background .12s; }
-    .sb-save-search svg { color: var(--accent); }
-    .sb-save-search:hover { background: var(--chip-bg-hover); }
-    /* 値が入っているフィルタ欄の強調（検索・数値・日付） */
-    /* 値が入っている欄の強調はパステルに（強い青の二重リングは主張しすぎ） */
-    .has-value {
-      border-color: color-mix(in oklch, var(--accent) 45%, var(--border)) !important;
-      box-shadow: 0 0 0 2px color-mix(in oklch, var(--accent) 14%, transparent);
-    }
-    .sb-chips { display: flex; flex-wrap: wrap; gap: 6px; }
-    /* Breathing room under the chip row, only when chips exist (the container is
-       always mounted — an unconditional padding would gap the empty toolbar). */
-    .sb-chips:has(*) { padding-bottom: 8px; }
-    /* The sidebar's feature-launcher CTA (.sb-feature) went with the 「タグ付けセッション」
-       it launched — P2⑬. Tagging many posts is a composition now (filter to 「タグなし」,
-       arrow through the results, edit tags in the inspector), and a composition has no
-       launcher to style. */
-    /* Value chips: FILLED pill, no outline (GitHub topics / Notion tags).
-       The transparent border keeps geometry so the active tint border can
-       appear without layout shift. Hover = neutral lift, never accent. */
-    /* Resting chip carries a visible border — relying on bg-tint alone made chips
-       vanish into the muted sidebar (recurring low-contrast complaint). A border
-       is contrast-independent, so it survives any background. */
-    .sb-chip {
-      background: var(--chip-bg); border: 1px solid var(--chip-border); border-radius: 12px;
-      padding: 3px 12px; font-size: 11px; color: var(--text);
-      cursor: pointer; white-space: nowrap;
-      /* transition: all はスクロール時のスタイル再計算を重くするので対象プロパティを限定 */
-      transition: background-color 0.15s, border-color 0.15s, color 0.15s;
-    }
-    .sb-chip:hover { background: var(--chip-bg-hover); color: var(--text-strong); }
-    /* Active = soft tint (light accent bg + accent text), NOT a saturated border —
-       the hard accent border read as too loud (user). Matches the quiet filter-row
-       active (accent text) for one consistent selection language across the sidebar. */
-    .sb-chip.active {
-      background: var(--accent-subtle); border-color: var(--accent-subtle);
-      color: var(--accent-subtle-fg); font-weight: 600;
-    }
-    /* tag chips cycle 解除→いずれか(OR)→すべて含む(AND): AND = 濃いめのティント + ＋ prefix */
-    .sb-chip.active.and {
-      background: color-mix(in srgb, var(--accent) 30%, var(--surface));
-      border-color: var(--accent); color: var(--accent-subtle-fg);
-    }
-    /* Poster tag filter (投稿者タグ②): selected chips wear the 種別 dot inline; the
-       clear-all chip reads quietly (it's an action, not an active filter). */
-    .poster-tag-chip { display: inline-flex; align-items: center; gap: 5px; }
-    .poster-tag-clear { color: var(--text-muted); }
-    .poster-tag-clear:hover { color: var(--text-strong); }
-
-    /* Active-filter pills = one uniform SOLID material (monotone). The old
-       per-type rainbow tints (qc-platform/postType/date/…) read as "color groups
-       floating" against the monotone UI (報告) — dropped for a single pill; the
-       leading icon/label still tells the type apart. Solid, not glass (#136):
-       the pill sits on the solid activebar, so a backdrop blur had nothing to
-       sample — the chip tokens give the same clear step above the bar as the
-       sidebar chips get. */
-    .sb-active-chip {
-      display: inline-flex; align-items: center; gap: 4px;
-      border-radius: 999px; padding: 3px 10px; font-size: 12px;
-      cursor: pointer; transition: opacity 0.15s; white-space: nowrap;
-      color: var(--text);
-      background: var(--chip-bg);
-      border: 1px solid var(--chip-border);
-    }
-    .sb-active-chip:hover { opacity: 0.7; }
-    .sb-active-chip .qc-ic { width: 12px; height: 12px; flex-shrink: 0; opacity: .72; }
-    .sb-active-chip.chip-new, .qb-val.chip-new { animation: hologramPillIn var(--dur-pop) var(--ease-out) both; }
-    /* Chip exit: the query-chips component keeps removed values as .leaving ghosts
-       for the animation's length, then prunes them (pointer-events off so the
-       stale data-nid can't reach the delegated handlers). */
-    .qb-val.leaving { animation: hologramPillOut var(--dur-pop) var(--ease-out) forwards; pointer-events: none; }
-    /* A whole attribute cluster removed → the entire pill leaves as one. */
-    .sb-active-chip.leaving { animation: hologramPillOut var(--dur-pop) var(--ease-out) forwards; pointer-events: none; }
-    /* 検索/フォルダの特殊ピルは「値」ではなく入力欄寄りなので角丸四角に */
-    .sb-active-chip.qc-search, .sb-active-chip.qc-folder { border-radius: 6px; }
-    /* Facet-chip query builder (改訂④): values
-       cluster by attribute inside ONE glass pill (.qb-cluster), joined by 「・」
-       (.qb-sep), each with a hover ✕ (.qb-del-btn). The only operator surface is
-       the すべて/どれか toggle (.qb-opt) on multi-value clusters; exclusions live
-       in the 除く cluster (.qb-cluster-excl); a non-facet persisted tree renders
-       read-only (.qb-summary). No parens, no connective words, no drag. */
-    .qb-cluster { gap: 4px; }
-    .qb-cluster:hover { opacity: 1; }  /* cancel .sb-active-chip's click-fade: the container itself isn't clickable */
-    .qb-val { position: relative; display: inline-flex; align-items: center; gap: 3px; min-width: 0; }
-    .qb-val .qb-val-label { min-width: 0; }
-    .qb-val-edit { cursor: pointer; }
-    .qb-val-edit:hover .qb-val-label { text-decoration: underline dotted; }
-    .qb-sep { color: var(--text-subtle); pointer-events: none; user-select: none; }
-    /* すべて/どれか = miniature segmented control (recessed track + raised
-       thumb), the app's vocabulary for a two-state switch: BOTH options stay
-       visible so it reads as pressable and the alternative frames the meaning
-       ("all of these" vs "any of these"). Same reasoning that replaced the
-       lone search-mode chip with ぴったり/おおまか (.seg-control) — a single
-       word read as a status badge, not a switch (ユーザー指摘 2026-07-03). */
-    .qb-opt { display: inline-flex; align-self: center; padding: 2px; gap: 2px;
-      background: var(--seg-track); border-radius: 7px; }
-    .qb-opt-btn { border: 0; background: transparent; cursor: pointer; padding: 1px 7px;
-      border-radius: 5px; font: inherit; font-size: 10.5px; color: var(--text-muted);
-      white-space: nowrap; transition: color var(--dur-base); }
-    .qb-opt-btn:hover:not(.is-on) { color: var(--text); }
-    .qb-opt-btn.is-on { background: var(--seg-thumb); color: var(--text-strong);
-      font-weight: 600; box-shadow: var(--shadow-xs); cursor: default; }
-    .qb-excl-label { font-size: 11px; color: var(--text-muted); font-weight: 600; }
-    /* Read-only 「かつ」 between the search echo and the query. */
-    .qc-conn { font-size: 11px; color: var(--text-subtle); margin: 0 4px; align-self: center; pointer-events: none; }
-    /* ✕ delete: tucked at the value's right edge, INSIDE its bounds. Reserves its
-       slot always so revealing it on hover causes no layout shift. The exclusion
-       move + a redundant delete live in the right-click menu. */
-    .qb-del-btn { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
-      width: 15px; height: 15px; margin-left: 1px; margin-right: -4px; padding: 0; border: none;
-      border-radius: 50%; background: none; color: var(--text-muted); cursor: pointer; opacity: 0;
-      transition: opacity .12s, color .12s, background .12s; }
-    .qb-val:hover .qb-del-btn { opacity: .75; }
-    .qb-del-btn:hover { opacity: 1; color: var(--danger); background: color-mix(in srgb, var(--red-500) 16%, transparent); }
-    .qb-del-btn svg { display: block; }
-    /* Read-only summary of a persisted non-facet (改訂③) tree. */
-    .qb-summary { font-size: 12px; color: var(--text-muted-strong); align-self: center; cursor: help; min-width: 0; }
-    /* ⓘ クエリビルダの使い方ヘルプ。バーの右端＝ヘルプの定番コーナーに置く
-       (margin-left:auto でチップ/リセットを左に寄せ、ⓘ だけ右へ逃がす)。 */
-    .qb-help {
-      flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center;
-      width: 24px; height: 24px; border: none; border-radius: 50%;
-      background: none; color: var(--text-subtle); cursor: pointer; transition: color .12s;
-    }
-    .qb-help:hover { color: var(--accent-text); }
-    /* (.qb-help-pop is gone with #62: the ⓘ hint is a multi-line Base UI Tooltip now,
-       so placement, the viewport clamp and the material all come from the ui kit.) */
-    /* grip dots = 「ドラッグで移せる」の定番アフォーダンス（pseudo なので
-       textContent には乗らない） */
-    /* No permanent drag-grip glyph on pills: draggability is signalled by the
-       grab cursor, the empty-zone "ここへドラッグで移動" hint and the ⓘ help.
-       (The tiny ⋮⋮ read as a squashed 三 and added noise to every pill.) */
-    /* The .qf-pop* rules that used to live here (the value flyout: find box, 種別
-       two-pane picker, facet counts, footer link) styled DOM nothing generates since
-       the flyout retired with its component in #154 P2③ — the live value picker is
-       filterbar/ValueEditor inside a Popover, Tailwind-styled. Removed in #230; the
-       flyout's own scoped variants (.seg-control--qf, .qf-popover,
-       .fold-menu.qf-pop*) went with them. */
-    /* リアルタイム検索サジェスト（検索ボックス直下・タグ/作者候補）
-       react-aria Popover: position/visibility は portal + inline style 側が持つので
-       ここはパネルの見た目と行だけ。--trigger-width は react-aria が供給。 */
-    .search-suggest {
-      z-index: 12000; max-height: 300px; overflow-y: auto;
-      min-width: var(--trigger-width);
-      background: var(--surface); border: 1px solid var(--border-strong);
-      border-radius: 8px; box-shadow: var(--shadow-pop); padding: 4px;
-    }
-    /* allowsEmptyCollection keeps the popover openable from a single paste event
-       (open decisions see the pre-render collection); an EMPTY open is hidden here
-       instead — same visible behavior as the old "no matches → no dropdown". */
-    .search-suggest:not(:has(.sg-row)) { display: none; }
-    .search-suggest .sg-row {
-      display: flex; align-items: center; gap: 7px; padding: 5px 8px;
-      border-radius: 5px; cursor: pointer; font-size: 12px; color: var(--text);
-    }
-    .search-suggest .sg-row:hover, .search-suggest .sg-row[data-focused] { background: var(--hover); }
-    .search-suggest .sg-ic { flex-shrink: 0; font-size: 11px; }
-    .search-suggest .sg-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .search-suggest .sg-n { flex-shrink: 0; font-size: 10px; color: var(--text-subtle); }
-  /* Filter rows: one-line category buttons; a flyout with the values opens
-     beside the row. Badge = number of active filters of that type. */
-  /* Category rows: borderless text rows with a soft fill ONLY on hover
-     (Finder/Notion idiom). Boxing every row in a border+fill read as
-     wireframe placeholders ("Wordの図形" — user-rejected). The transparent
-     1px border keeps the 23px text axis geometry intact. */
-  .sb-row {
-    display: flex; align-items: center; gap: 7px; width: 100%;
-    padding: 4px 12px; margin-bottom: 1px; text-align: left;
-    background: transparent; border: 1px solid transparent;
-    border-radius: 8px; color: var(--text); font-size: 12px; cursor: pointer;
-    transition: background .12s, color .12s;
-  }
-  .sb-row:hover { background: var(--sidebar-row-hover); }
-  .sb-row .sb-row-ic { display: flex; align-items: center; color: var(--text-muted); flex-shrink: 0; transition: color .12s; }
-  .sb-row .sb-row-ic svg { width: 14px; height: 14px; display: block; }
-  .sb-row:hover .sb-row-ic { color: var(--text); }
-  .sb-row .sb-row-name { flex: 1; }
-  /* Active-filter count. The old filled grey
-     pill read as a clunky notification badge against the flat sidebar (user: ダサい);
-     replaced by a PLAIN right-aligned number. It marks an ACTIVE category, so it
-     carries a touch more weight + the full --text ink — "active = grey
-     contrast", not a tint or a box (DESIGN.md). */
-  .sb-row .sb-row-badge {
-    display: none; flex-shrink: 0;
-    color: var(--text); font-size: 11px; font-weight: 600;
-    font-variant-numeric: tabular-nums;
-  }
-  .sb-row .sb-row-badge.on { display: inline-block; animation: hologramBadgePop .3s var(--ease-out); }
-  /* Rows with an active filter mark their icon in accent ink (motion-study
-     canvas 2026-07-05) — (0,3,1) outweighs the (0,2,1) hover rule above. */
-  .sb-row:has(.sb-row-badge.on) .sb-row-ic { color: var(--accent-text); }
-  /* --- Disclosure arrows (single source of truth; shape = inline SVG set in HTML/JS) ---
-     All ▸/▾ indicators share this token. Per-component rules keep only spacing. */
-  .sb-row-arrow, .cs-btn .cs-arrow {
-    color: var(--text-muted); display: inline-flex; align-items: center; flex-shrink: 0;
-    pointer-events: none;
-  }
-  /* Always-visible (#112): posterFilterRows never hid this arrow, so the
-     library rows were the odd one out — same "opens a popover" affordance,
-     inconsistent visual language between the two sidebars. */
-  /* Sub-section block (開始日/終了日 etc.): indented with a guide line sitting on
-     the 23px text axis, labels at readable contrast. */
-  .sb-sub {
-    display: flex; flex-direction: column; gap: 2px;
-    margin-left: 13px; padding-left: 10px;
-    border-left: 2px solid var(--border-strong);
-  }
-  .sb-sub .date-input { width: 100%; }
-  } /* @layer legacy */
+    .btn-outline:hover { border-color: var(--accent); color: var(--accent-text); }
+    } /* @layer legacy */
   </style>
 </head>
 <body>
@@ -965,46 +135,42 @@
        the single React host div and the AppShell (shell/AppShell.tsx) draws the tab bar,
        sidebar, toolbar, grid host and inspector. Every overlay is either a child of that
        root or portals onto document.body from its own component — no static containers
-       left to portal into. The <style> blocks below are legacy CSS the redesigned surfaces
+       left to portal into. The <style> blocks are legacy CSS the redesigned surfaces
        have not eaten yet; they go with P3 (#6). -->
 
-  <!-- Folder management modal: a conditionally rendered child of the App root
-       (folders/FolderManagerModal.tsx); folders.ts's openManager()/closeManager() drive it. -->
-
-  <!-- Bulk "add tags to selection" is a React Dialog now (P2⑦,
-       selection/BulkTagDialog.tsx) — no static markup here (it portals
-       onto document.body like qf-pop/context-menu). -->
-
-  <!-- Date / engagement / poster-date-range popovers are the filterbar React
-       component now (filterbar/FormEditor.tsx, filterbar/ValueEditor.tsx — replacing the
-       retired filter-popover) — no static markup here. -->
-
-  <!-- Styles that began life in the (now-removed) image-view but are reused by the
-       unified post-view: ℹ detail popup, AND/OR tag toggle, folder chips +
-       management modal, toast, and the multi-image / group-expand checkboxes.
-       The image-view tile grid, sidebar layout and fullscreen lightbox CSS went
-       away with that view. -->
   <style>
     @layer legacy {
-    .iv-tagn { opacity: .55; margin-left: 4px; font-size: 10px; }
-    .iv-htbtn { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 4px 12px; font-size: 12px; cursor: pointer; color: var(--fg); transition: all .15s; }
-    .iv-htbtn:hover { border-color: var(--accent); color: var(--accent-text); }
-    .iv-htbtn:disabled { opacity: .5; cursor: default; }
-
-    /* Detail popup (ℹ action): centered modal over a dim backdrop. */
+    /* Folder management modal (folders/FolderManagerModal.tsx): a centered box over a
+       dim backdrop. */
     .iv-detail-overlay {
       position: fixed; inset: 0; z-index: 11000; background: rgba(0,0,0,0.5);
       display: flex; align-items: center; justify-content: center; padding: 24px;
+      animation: hologramFadeIn .16s ease-out;
     }
-    .iv-detail-overlay[hidden] { display: none; }
     .iv-detail-box {
       background: var(--surface); color: var(--fg); border-radius: 12px;
       padding: 18px; width: 100%; max-width: 420px; max-height: 85vh; overflow-y: auto;
       font-size: 12px; border: 1px solid var(--border); box-shadow: var(--shadow-lg);
+      animation: hologramPopIn .2s ease-out;
     }
     .iv-insp-close { float: right; border: none; background: none; font-size: 18px; line-height: 1; color: var(--muted); cursor: pointer; }
     .iv-insp-close:hover { color: var(--fg); }
     .iv-insp-title { font-size: 13px; font-weight: 600; line-height: 1.5; word-break: break-word; margin-bottom: 8px; padding-right: 20px; }
+    .iv-htbtn { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 4px 12px; font-size: 12px; cursor: pointer; color: var(--fg); transition: all .15s; }
+    .iv-htbtn:hover { border-color: var(--accent); color: var(--accent-text); }
+    .iv-htbtn:disabled { opacity: .5; cursor: default; }
+    .iv-folder-new { display: flex; gap: 6px; margin: 10px 0; }
+    .iv-folder-new .search-box { flex: 1; }
+    .iv-folder-list { display: flex; flex-direction: column; gap: 2px; }
+    .iv-folder-empty { color: var(--muted); font-size: 12px; padding: 10px 2px; }
+    .iv-folder-row { display: flex; align-items: center; gap: 8px; padding: 6px 4px; border-bottom: 1px solid var(--border-soft); cursor: grab; }
+    .iv-folder-row.iv-dragging { opacity: 0.45; }
+    .iv-folder-row.iv-drop-before { box-shadow: inset 0 2px 0 var(--accent); }
+    .iv-folder-row.iv-drop-after { box-shadow: inset 0 -2px 0 var(--accent); }
+    .iv-fold-name { flex: 1; word-break: break-word; }
+    .iv-fold-n { color: var(--muted); font-size: 11px; }
+    .iv-fold-btn { border: none; background: none; cursor: pointer; font-size: 14px; line-height: 1; padding: 2px 4px; border-radius: 5px; color: var(--muted); }
+    .iv-fold-btn:hover { background: var(--hover); }
 
     /* Inspector: an inline right column, at every window width (#243). The panel
        used to detach into a fixed slide-over below 1280px; that automatic reshape
@@ -1032,117 +198,12 @@
       border-left: 1px solid var(--float-border); box-shadow: var(--shadow-lg);
       z-index: 9500;   /* over the content, under modals/lightbox (11000+) */
     }
-    /* (Under an image tab the panel keeps the docked form at every width — Eagle-style
-       detail screen, since a slide-over would cover the very image being inspected.
-       That is AppShell's class choice now, not an override that undid these rules one
-       property at a time — P2⑫.) */
     .inspector[hidden] { display: none; }
     .inspector:not([hidden]) { animation: hologramPanelIn var(--dur-panel) var(--ease-out); }
-    /* Inspector inline tag editor — always shown while the inspector is open: tag
-       editing is per-card here, no mode to enter (posts + posters behave the same). */
-    .iv-tag-edit, .iv-tag-edit-poster { display: flex; flex-direction: column; gap: 8px; margin: 6px 0 4px; }
-    .iv-tag-label { font-size: 11px; color: var(--text-muted); }
-    .iv-tag-chips { display: flex; flex-wrap: wrap; gap: 5px; }
-    .iv-tag-chips .tag-chip { cursor: pointer; font-size: 11px; transition: background .12s, color .12s; }
-    .iv-tag-chips .tag-chip:hover { background: color-mix(in srgb, var(--red-500) 20%, transparent); color: var(--danger); }
-    .iv-tag-addrow { display: flex; gap: 6px; }
-    .iv-tag-addrow input { flex: 1; min-width: 0; padding: 5px 9px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); font-size: 12px; outline: none; }
-    .iv-tag-addrow input:focus { border-color: var(--accent); }
-    .iv-tag-addrow .btn-outline { flex-shrink: 0; padding: 5px 11px; font-size: 12px; }
-    .iv-tag-picker.edit-picker { margin-top: 2px; max-height: 42vh; }
 
-    /* (Old .iv-andor AND/OR toggle removed in the query-builder 改訂③ redesign;
-       改訂④ removed the operator vocabulary from the bar entirely.) */
-
-    /* Folder management modal */
-    .iv-folder-new { display: flex; gap: 6px; margin: 10px 0; }
-    .iv-folder-new .search-box { flex: 1; }
-    .iv-folder-list { display: flex; flex-direction: column; gap: 2px; }
-    .iv-folder-empty { color: var(--muted); font-size: 12px; padding: 10px 2px; }
-    .iv-folder-row { display: flex; align-items: center; gap: 8px; padding: 6px 4px; border-bottom: 1px solid var(--border-soft); cursor: grab; }
-    .iv-folder-row.iv-dragging { opacity: 0.45; }
-    .iv-folder-row.iv-drop-before { box-shadow: inset 0 2px 0 var(--accent); }
-    .iv-folder-row.iv-drop-after { box-shadow: inset 0 -2px 0 var(--accent); }
-    .iv-fold-name { flex: 1; word-break: break-word; }
-    .iv-fold-n { color: var(--muted); font-size: 11px; }
-    .iv-fold-btn { border: none; background: none; cursor: pointer; font-size: 14px; line-height: 1; padding: 2px 4px; border-radius: 5px; color: var(--muted); }
-    .iv-fold-btn:hover { background: var(--hover); }
-
-    /* ============================================================
-       === Floating-surface materials (#136 readability policy) ===
-       Utility layer (defined LAST so it wins source-order over component
-       rules like .fold-menu). Three materials, chosen by CONTENT:
-         1 .pop-solid    — text-bearing floats on UI: themed solid. Menus/
-                           popovers/panels/settings restate the same recipe in
-                           their component rules; this class is the shared hook
-                           for hosts without one (hint family).
-         2 scrim solid   — text-bearing floats over CONTENT (toast, thumbnail
-                           badges): --scrim-bg/--scrim-ink inline in the
-                           component rules (shapes differ too much for a class).
-         3 .glass-chrome — the ONLY glass. Icon-only chrome floating over
-                           content (hover card buttons, back-to-top). Dark veil
-                           + white ink = contrast guaranteed over any image,
-                           so it is theme-INDEPENDENT. Never carries text.
-       ============================================================ */
-    .pop-solid {
-      background: var(--surface);
-      border: 1px solid var(--float-border);
-      box-shadow: var(--shadow-pop);
-    }
-    .glass-chrome {
-      background: var(--chrome-glass-bg); color: #fff;
-      backdrop-filter: var(--chrome-glass-blur);
-      -webkit-backdrop-filter: var(--chrome-glass-blur);
-      border: 1px solid var(--chrome-glass-rim);
-      box-shadow: var(--shadow-md);
-    }
-    .glass-chrome:hover { background: rgba(20,22,26,0.6); color: #fff; }
-
-    /* (The shared hover-hint surface .ui-tip / .ui-tip--rich is gone with #62: every
-       hover hint is its own Base UI Tooltip, whose material lives in
-       components/ui/tooltip.tsx rather than here.) */
-
-    /* a11y escape hatch: text faces are already solid (#136), so only the two
-       remaining backdrop-filter users need a fallback here. */
-    @media (prefers-reduced-transparency: reduce) {
-      .glass-chrome, #sidebar #sbTop { background: rgba(20,22,26,0.86); }
-      .glass-chrome, #sidebar #sbTop { backdrop-filter: none; -webkit-backdrop-filter: none; }
-    }
-    } /* @layer legacy */
-  </style>
-
-  <!-- Motion: fast open/appear animations layered on top of the existing hover
-       transitions. Everything is neutralized under prefers-reduced-motion. The grid
-       itself has no entrance animation — its only motion is the density switch's
-       View Transition (ADR 0014). -->
-  <style>
-    @layer legacy {
     @keyframes hologramFadeIn { from { opacity: 0; } to { opacity: 1; } }
     @keyframes hologramPopIn { from { opacity: 0; transform: scale(.96); } to { opacity: 1; transform: none; } }
     @keyframes hologramPanelIn { from { opacity: 0; transform: translateX(18px); } to { opacity: 1; transform: none; } }
-    @keyframes hologramPillIn { from { opacity: 0; transform: scale(.6); } to { opacity: 1; transform: scale(1); } }
-    /* Chip exit — the component marks removed values .leaving and prunes them
-       after the run (see query-chips AnimatedChips). */
-    @keyframes hologramPillOut { to { opacity: 0; transform: scale(.55); } }
-    /* Badge pop on activation. Uses the independent `scale` property, NOT
-       transform: a badge positioned via transform (e.g. translateY(-50%))
-       would get yanked off its axis mid-pop by a transform keyframe. */
-    @keyframes hologramBadgePop { 0% { scale: 1; } 50% { scale: 1.5; } 100% { scale: 1; } }
-    /* Selection check draw: overshoot then settle. rotate(45deg) rides along in
-       every frame — it's what shapes the border-drawn checkmark. */
-    @keyframes hologramCheckDraw {
-      0% { transform: rotate(45deg) scale(0); opacity: 0; }
-      70% { transform: rotate(45deg) scale(1.15); opacity: 1; }
-      100% { transform: rotate(45deg) scale(1); }
-    }
-    /* The grid has NO entrance or view-switch animation, on purpose (#252, ADR 0017):
-       results and density changes render instantly. Hover lift and the open/appear
-       keyframes above are the only grid-adjacent motion left. */
-
-    /* Detail popup (ℹ): backdrop fades, box pops in. Replays on each open because
-       removing [hidden] re-mounts the element (display:none -> flex). */
-    .iv-detail-overlay:not([hidden]) { animation: hologramFadeIn .16s ease-out; }
-    .iv-detail-overlay:not([hidden]) .iv-detail-box { animation: hologramPopIn .2s ease-out; }
 
     @media (prefers-reduced-motion: reduce) {
       *, *::before, *::after {
@@ -1157,14 +218,6 @@
   <!-- Settings is a React Dialog (settings/) mounted under the App root and portaled
        onto document.body by Base UI. The gear (#settingsBtn) opens it. -->
 
-  <!-- The entire renderer SERVICE layer (i18n/ui/folders/store/bridge/menu/kind-menu/
-       filter-popover/qf-pop/inspector/edit-overlay/searchbox/grid/sidebar/confirm/
-       about-icon/shell, plus the logic-service wave — search/query/records/facets/cooc/
-       tags/users/tab-state/listing/geometry/format/undo) is folded into this entry's
-       bundle: each service is a real ES module imported directly by its consumers
-       (shell.ts last via src/app/index.tsx, mirroring the old script order). theme.js
-       stays its own pre-paint <script> (head, above) — it must run before first paint,
-       which this module script (deferred by spec) cannot guarantee. -->
   <!-- All React components, React itself, the renderer service layer, AND the boot
        orchestrator in electron-vite's renderer bundle: src/app/index.tsx is the entry,
        which side-effect-imports every service, every component, then (last)
@@ -1172,7 +225,9 @@
        data/state/event-delegation + the remaining window.hologram* bridges; each
        component subscribes and renders. Ordering is robust — orchestrator's body awaits
        hologramI18n so it stays deferred behind the synchronous component mounts, and
-       components pull current state on mount. -->
+       components pull current state on mount. theme.js stays its own pre-paint <script>
+       (head, above) — it must run before first paint, which this module script
+       (deferred by spec) cannot guarantee. -->
   <script type="module" src="./src/app/index.tsx"></script>
 </body>
 </html>

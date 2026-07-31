@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useSyncExternalStore } from 'react';
+import { useEffect, useSyncExternalStore } from 'react';
 import { AppShell } from '../shell/AppShell.tsx';
 import { get as confirmGet, subscribe as confirmSubscribe } from '../services/confirm.ts';
 import { ConfirmHost } from '../confirm/Confirm.tsx';
@@ -19,7 +19,7 @@ import { handleShortcutClipboardKey } from '../services/clipboard-intake.ts';
 import { onPostsChanged } from '../services/posts.ts';
 import { subscribePosterShape as subscribePosterDisplay, subscribeShape as subscribeDisplay } from '../services/display.ts';
 import { isManagerOpen as folderManagerIsOpen, onChange as foldersOnChange, subscribeManager as subscribeFolderManager } from '../services/folders.ts';
-import { get as storeGet, subscribe as storeSubscribe } from '../services/store.ts';
+import { subscribe as storeSubscribe } from '../services/store.ts';
 import {
   viewerReady,
   bootApp,
@@ -73,24 +73,10 @@ function AppBoot() {
   return null;
 }
 
-// Shell-level body classes that React owns (orchestrator no longer touches document.body for
-// these). browse-posters is driven by the hologramStore 'browseMode' key (orchestrator sets the
-// store; the class is a pure derivation). useLayoutEffect toggles it before paint = no
-// flash. (modal-open stays in
-// orchestrator — it observes overlay visibility, a cross-cutting shell concern, not drawing.)
-const subBrowseMode = (cb: () => void) => storeSubscribe('browseMode', cb);
-const getBrowseMode = () => storeGet('browseMode') as string;
-function ShellClasses() {
-  const mode = useSyncExternalStore(subBrowseMode, getBrowseMode);
-  useLayoutEffect(() => {
-    document.body.classList.toggle('browse-posters', mode === 'posters');
-    // No browse-trash twin: its only reader (clipboard-intake.ts's paste guard) asks
-    // the store directly now (P2⑬), so writing the class would leave a DOM contract
-    // nothing consumes. browse-posters stays only because legacy CSS still selects on
-    // it (index.html) — that goes with P3 (#6), and this whole component with it.
-  }, [mode]);
-  return null;
-}
+// (ShellClasses lived here: it mirrored the browse mode onto <body> as .browse-posters
+// for the legacy sheet to select on. Its twin .browse-trash had already gone once its
+// reader started asking the store instead (P2⑬); .browse-posters' last reader was the
+// legacy sheet itself, so the class went with it — P3 #6.)
 
 // Modal chrome: lock background scroll while any full-screen overlay is up. Observes each
 // overlay's visibility so no open/close site can be missed — self-contained (no orchestrator
@@ -261,8 +247,6 @@ export function App() {
     <TooltipProvider delay={0}>
       {/* Triggers the app's initial data load once, on mount. */}
       <AppBoot />
-      {/* Shell body classes React owns (orchestrator no longer sets them). */}
-      <ShellClasses />
       {/* Modal chrome (body/html .modal-open + native titlebar tint) — observes the
           overlay containers below; must precede them only for readability, not order. */}
       <ModalChrome />
