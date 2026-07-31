@@ -91,6 +91,21 @@ async function collapseToRail(page: Page): Promise<void> {
   await expect.poll(async () => (await measure(page, [['rail', '[data-slot="sidebar"]']]))[0].w, { message: 'サイドバーがアイコンレール幅まで畳まれること' }).toBeLessThan(100);
 }
 
+/**
+ * Reach the expanded column regardless of what state launchHologram() started in. Before
+ * #678 a fresh launch WAS the expanded column, so the axis test below could just measure —
+ * now the default is the rail (services/sidebar-pref.ts's DEFAULT_OPEN), so getting to
+ * "expanded" is a step, not a given. This file is about the axis, not about what the
+ * default is (that is sidebar-rail.spec.ts's job), so it reaches the state it needs
+ * explicitly instead of assuming it.
+ */
+async function expandToColumn(page: Page): Promise<void> {
+  const state = await page.locator('[data-slot="sidebar"]').getAttribute('data-state');
+  if (state === 'expanded') return;
+  await page.keyboard.press('Control+b');
+  await expect(page.locator('[data-slot="sidebar"]')).toHaveAttribute('data-state', 'expanded');
+}
+
 const BAND: Target = ['帯', '[data-slot="titlebar-band"]'];
 // The band's icon controls. Three owners: the sidebar's component draws the first, the tab
 // strip the second, the shell the third, and the app-drawn caption strip (portaled to body,
@@ -149,6 +164,7 @@ test('サイドバー列の軸: トグルとナビ行が列の左端を共有し
 
   // Expanded first. Here the rows fill the column's width, so the shared thing is the left
   // edge: the trigger has to start where the rows start.
+  await expandToColumn(page);
   const expanded = await measure(page, [['列（展開）', '[data-slot="sidebar"]'], TRIGGER, ...NAV]);
   const [, expandedTrigger, ...expandedNav] = expanded;
   for (const row of expandedNav) {

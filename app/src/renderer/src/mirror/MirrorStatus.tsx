@@ -168,8 +168,13 @@ export function MirrorStatus() {
   if (!m) return null;
   return (
     // max-w keeps a long state string from widening the sidebar footer; the label
-    // truncates instead. group-data-[collapsible=icon]:hidden is the sidebar's own
-    // idiom for "not in the rail" — there is no room for a text rail at 48px.
+    // truncates instead. group-data-[collapsible=icon]:hidden keeps this out of the rail
+    // — a deliberate choice (#678), not a space constraint: the rail's scope is the 5
+    // fixed destinations only, and this status readout is ambient state, not a
+    // destination. At 72px there is slightly more room than the old 48px, but not enough
+    // for icon + status word (+ sometimes a relative-timestamp second line) without
+    // clutter, and a labelless icon-only stand-in would itself contradict #678's own rule
+    // against unlabeled rail icons. So: expanded column only.
     <span data-slot="mirror-status" title={m.title || ''} className={`ml-2 inline-flex max-w-[150px] items-center gap-[5px] overflow-hidden px-2 text-[11px] whitespace-nowrap text-[var(--text-muted)] group-data-[collapsible=icon]:hidden ${TONE[m.kind]}`}>
       {m.kind === 'done' ? <IconDone /> : m.kind === 'syncing' ? <IconSync /> : <IconWarn />}
       {m.kind === 'done' ? (
