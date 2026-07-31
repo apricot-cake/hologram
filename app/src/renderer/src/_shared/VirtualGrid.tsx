@@ -1,7 +1,7 @@
 // Shared virtualized-grid plumbing (masonic useMasonry + usePositioner +
-// useResizeObserver wired to the app's OWN scroll container #mode-post —
-// masonic's <Masonry> is window-scroll only, so the scroller wiring here is
-// hand-rolled, exactly as validated in the runtime PoC). Extracted 1:1 from the
+// useResizeObserver wired to the app's OWN scroll container — masonic's <Masonry> is
+// window-scroll only, so the scroller wiring here is hand-rolled, exactly as validated
+// in the runtime PoC). Extracted 1:1 from the
 // post-grid component when the poster/collection grids joined the same foundation:
 // each grid module supplies its own cell component; this host owns windowing.
 //
@@ -14,6 +14,7 @@ import { createPortal, flushSync } from 'react-dom';
 import { useMasonry, usePositioner, useResizeObserver } from 'masonic';
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { ComponentType, ReactNode } from 'react';
+import { scroller as contentScroller } from '../services/content-area.ts';
 import { registerGridNav } from '../services/grid-nav.ts';
 import { autoScrollStep, clearsSelection, exceedsThreshold, hitIndices, rectFromPoints } from '../services/marquee.ts';
 import type { MarqueeCell } from '../services/marquee.ts';
@@ -35,7 +36,9 @@ const ModelCtx = createContext<HologramGridModel | null>(null);
 export const useGridModel = () => useContext(ModelCtx) as HologramGridModel;
 
 export function VirtualGridHost({ model, cell, nav, anchor, marquee, onBackgroundClick }: { model: HologramGridModel; cell: ComponentType<GridCellProps>; nav?: boolean; anchor?: boolean; marquee?: HologramMarqueeSink; onBackgroundClick?: () => void }) {
-  const scroller = document.getElementById('mode-post') as HTMLElement; // the app's scroll container (never the window); static HTML, always present
+  // The app's scroll container (never the window). The shell registers it on mount and
+  // this host only ever renders from inside a portal attached later, so it is there.
+  const scroller = contentScroller() as HTMLElement;
   const containerRef = useRef<HTMLElement | null>(null);
   // offset of the masonry container's top inside the scroller's CONTENT (the
   // active-filter bar etc. sit above the grid) — subtracted from scrollTop so
@@ -384,7 +387,7 @@ export function VirtualGridHost({ model, cell, nav, anchor, marquee, onBackgroun
       if (!el || !el.offsetWidth) return; // grid hidden (other browse mode)
       const target = e.target as HTMLElement | null;
       if (!target) return;
-      if (target.closest('.post-card')) return; // cards own the click and the OS drag-out (#132)
+      if (target.closest('[data-slot="post-card"], [data-slot="poster-card"]')) return; // cells own the click and the OS drag-out (#132)
       if (target.closest('a, button, input, textarea, select, [role="button"], [contenteditable="true"]')) return;
       const sr = scroller.getBoundingClientRect();
       if (e.clientX - sr.left >= scroller.clientWidth) return; // the scrollbar gutter, not the grid
@@ -442,11 +445,14 @@ export function VirtualGridHost({ model, cell, nav, anchor, marquee, onBackgroun
 }
 
 // Shared mount for every virtualized grid — a component under the single App root now
-// (app/App.tsx renders <PostGrid/> / <PosterGrid/>). React does NOT portal into the
-// container itself: viewer.js still blanket-clears it (grid.innerHTML='' on the empty
-// push), and React must never watch its managed nodes vanish underneath it. So the grid
-// renders into its OWN host <div>, attached/detached as a whole, and React portals the
-// masonry into that host.
+// (AppShell renders <PostGrid/> / <PosterGrid/> / <TrashGrid/>). The grid renders into
+// its OWN host <div>, attached to the shell's grid slot as a whole, and React portals
+// the masonry into that host: attaching and detaching one node is what lets an empty
+// push unmount every cell synchronously without React ever watching nodes it manages
+// vanish underneath it.
+//
+// `container` is a getter, not an element id: the shell hands its slot over through
+// services/content-area.ts (#153 category 2 — nothing looks the grid up by id).
 //
 // Renders are flushed SYNCHRONOUSLY (flushSync): viewer.js (outside React) relies on a
 // push having fully committed before its next line runs (e.g. restoring scrollTop right
@@ -458,11 +464,10 @@ export function VirtualGridHost({ model, cell, nav, anchor, marquee, onBackgroun
 // bridge only needs get()/subscribe() (HologramGridSource) — both the post source
 // and the poster source satisfy it, plus their own configure()/etc. that GridMount
 // never touches.
-export function GridMount({ bridge, containerId, hostId, renderHost }: { bridge: HologramGridSource; containerId: string; hostId: string; renderHost: (model: HologramGridModel) => ReactNode }) {
+export function GridMount({ bridge, container, renderHost }: { bridge: HologramGridSource; container: () => HTMLElement | null; renderHost: (model: HologramGridModel) => ReactNode }) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   if (!hostRef.current) {
     const h = document.createElement('div');
-    h.id = hostId;
     h.style.width = '100%';
     hostRef.current = h;
   }
@@ -473,7 +478,7 @@ export function GridMount({ bridge, containerId, hostId, renderHost }: { bridge:
     // Attach the host to the container BEFORE rendering into it — masonic measures
     // offsetWidth on mount, and a detached host measures 0 (the blank-grid trap).
     const attach = () => {
-      const c = document.getElementById(containerId);
+      const c = container();
       if (c && !host.isConnected) c.appendChild(host);
     };
     const sync = () => {
@@ -483,7 +488,7 @@ export function GridMount({ bridge, containerId, hostId, renderHost }: { bridge:
         flushSync(() => setModel(m));
       } else {
         flushSync(() => setModel(null));
-        host.remove(); // viewer's following grid.innerHTML='' then has nothing of ours to clear
+        host.remove(); // the slot is empty again — the empty state takes the space
       }
     };
     const unsub = bridge.subscribe(sync);
@@ -493,7 +498,7 @@ export function GridMount({ bridge, containerId, hostId, renderHost }: { bridge:
       setModel(bridge.get());
     }
     return unsub;
-  }, [bridge, containerId, host]);
+  }, [bridge, container, host]);
 
   return model ? createPortal(renderHost(model), host) : null;
 }

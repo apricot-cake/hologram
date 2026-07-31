@@ -64,8 +64,10 @@ const evalJs = `(async () => {
   const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   const waitFor = async (fn, ms = 5000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (fn()) return true; await sleep(40); } return false; };
   const byId = (id) => document.getElementById(id);
-  const cards = () => [...document.querySelectorAll('#postGrid .post-card')];
-  const selectedKeys = () => [...document.querySelectorAll('#postGrid .post-card.selected')].map(c => c.dataset.key).sort();
+  const cards = () => [...document.querySelectorAll('[data-slot="post-grid"] [data-slot="post-card"]')];
+  // Cards are identified by their own text (no key attribute — #618).
+  const nameOf = (c) => ((c.textContent || '').match(/本文\\d+/) || [])[0] || '?';
+  const selectedKeys = () => cards().filter(c => c.hasAttribute('data-selected')).map(nameOf).sort();
   const band = () => document.querySelector('.grid-marquee');
   const errors = [];
   window.addEventListener('error', (e) => errors.push(String((e && e.message) || e)));
@@ -74,7 +76,7 @@ const evalJs = `(async () => {
   await waitFor(() => cards().length >= 12);
   await sleep(200); // let masonic settle its measured heights before reading rects
 
-  const scroller = byId('mode-post');
+  const scroller = document.querySelector('[data-slot="content-scroll"]');
   const sr = scroller.getBoundingClientRect();
 
   const down = (x, y, mods) => scroller.dispatchEvent(new MouseEvent('mousedown', Object.assign({ bubbles: true, button: 0, clientX: x, clientY: y }, mods)));
@@ -85,7 +87,7 @@ const evalJs = `(async () => {
   // No 'click' event is synthesized, so the narrow overlay's outside-click dismiss
   // (a separate listener) cannot be what any of this measures.
   const click = (x, y, mods) => { down(x, y, mods); up(); };
-  const inspectedCards = () => document.querySelectorAll('#postGrid .post-card.inspected').length;
+  const inspectedCards = () => document.querySelectorAll('[data-slot="post-grid"] [data-slot="post-card"][data-inspected]').length;
   const panelFilled = () => !!document.querySelector('[data-slot="inspector-body"] [data-slot="inspector-tags"]');
   // The panel's "nothing is selected" state (#244). Asserted on its own rather than
   // as "not filled": the placeholder is what has to be THERE, and the panel renders
@@ -96,7 +98,7 @@ const evalJs = `(async () => {
   // answer the app's positioner-based hit test has to agree with.
   const expectFor = (x0, y0, x1, y1) => {
     const l = Math.min(x0, x1), r = Math.max(x0, x1), t = Math.min(y0, y1), b = Math.max(y0, y1);
-    return cards().filter(c => { const k = c.getBoundingClientRect(); return l < k.right && r > k.left && t < k.bottom && b > k.top; }).map(c => c.dataset.key).sort();
+    return cards().filter(c => { const k = c.getBoundingClientRect(); return l < k.right && r > k.left && t < k.bottom && b > k.top; }).map(nameOf).sort();
   };
   // One full pass: press in the left margin, cross the threshold, drag, release.
   const drag = async (x0, y0, x1, y1, mods) => {
@@ -128,7 +130,9 @@ const evalJs = `(async () => {
   await drag(x0, cy - 5, x1, cy + 5);
   out.gotA = selectedKeys();
   out.scrolledA = scroller.scrollTop; // the band stayed clear of the auto-scroll edges
-  out.selectingClass = byId('postGrid').classList.contains('selecting');
+  // 「選択モードに入った」は、底部フローティングバーが出ていることで見る（グリッド
+  // 側の .selecting クラスは、隠すべきホバー部品ごと無くなった＝#618 確定A）。
+  out.selectingClass = document.querySelector('[data-slot="selection-bar"]')?.getAttribute('aria-hidden') === 'false';
   out.bandRemovedA = !band();
 
   // B. a press that never crosses the threshold draws no band, and with Ctrl held
@@ -219,7 +223,7 @@ const evalJs = `(async () => {
   const belowY = Math.round(lowest + 24);
   const belowX = Math.round(sr.left + scroller.clientWidth / 2);
   out.belowAvailable = belowY < sr.bottom - 4;
-  out.belowIsEmpty = out.belowAvailable && !(document.elementFromPoint(belowX, belowY) || {}).closest?.('.post-card');
+  out.belowIsEmpty = out.belowAvailable && !(document.elementFromPoint(belowX, belowY) || {}).closest?.('[data-slot="post-card"]');
   out.beforeI = selectedKeys();
   if (out.belowAvailable) {
     click(belowX, belowY);
@@ -231,15 +235,15 @@ const evalJs = `(async () => {
   //    cards are inspected, never selected — so all its background click does is put
   //    the panel both grids share back to the placeholder.
   [...document.querySelectorAll('button')].find(b => (b.textContent || '').trim() === '投稿者')?.click();
-  out.posterCardsShown = await waitFor(() => document.querySelectorAll('#posterGrid .poster-card').length >= 1);
+  out.posterCardsShown = await waitFor(() => document.querySelectorAll('[data-slot="poster-grid"] [data-slot="poster-card"]').length >= 1);
   await sleep(250); // masonic lays the poster grid out from scratch
-  const posterCard = document.querySelector('#posterGrid .poster-card');
+  const posterCard = document.querySelector('[data-slot="poster-grid"] [data-slot="poster-card"]');
   posterCard?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
   await sleep(150);
   out.posterFilledBeforeJ = !!document.querySelector('[data-slot="inspector-body"] [data-slot="inspector-poster"]');
   const pr = posterCard.getBoundingClientRect();
   const py = Math.round((pr.top + pr.bottom) / 2);
-  out.posterPressOnEmpty = !(document.elementFromPoint(x0, py) || {}).closest?.('.poster-card');
+  out.posterPressOnEmpty = !(document.elementFromPoint(x0, py) || {}).closest?.('[data-slot="poster-card"]');
   click(x0, py);
   await sleep(150);
   out.posterPlaceholderAfterJ = panelPlaceholder();

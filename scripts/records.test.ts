@@ -66,9 +66,10 @@ describe('レコード形状ヘルパ', () => {
     expect(R.artworkFile(eagle)).toBe('c.png');
   });
 
-  test('densityImage は list=キャプチャ優先・card=アートワーク優先', () => {
-    expect(R.densityImage(withMedia, 'list')).toBe('d.jpg');
-    expect(R.densityImage(withMedia, 'card')).toBe('m1.png');
+  // #618: 表示によらず元画像が先頭。キャプチャは元画像が無い投稿の代役だけ。
+  test('densityImage はアートワーク優先（キャプチャは代役）', () => {
+    expect(R.densityImage(withMedia)).toBe('m1.png');
+    expect(R.densityImage(shot)).toBe('a.jpg');
   });
 
   test('groupFilesOf は media が無ければ artwork', () => {
@@ -94,8 +95,8 @@ describe('レコード形状ヘルパ', () => {
       expect(R.artworkFile(withVideoNoPoster)).toBe('');
     });
 
-    test('densityImage card はポスター無しならスクショへ落ちる', () => {
-      expect(R.densityImage(withVideoNoPoster, 'card')).toBe('shot.jpg');
+    test('densityImage はポスター無しならスクショへ落ちる', () => {
+      expect(R.densityImage(withVideoNoPoster)).toBe('shot.jpg');
     });
 
     test('mediaFilesOf は type を問わず実ファイルを返す（ギャラリー用）', () => {
@@ -388,7 +389,9 @@ describe('makeGallery（ライトボックスの項目）', () => {
 
 describe('makeCardModel（カード1枚のビューモデル）', () => {
   const STATIC_MSG: Record<string, string> = { qfThread: 'THREAD', qfReply: 'REPLY', qfQuote: 'QUOTE', qfImage: 'IMG', qfVideo: 'VID', qfGif: 'GIF' };
-  let view = 'card';
+  // 既定の表示＝グリッド・元の比率・情報あり（旧 'card'）
+  let shape = { list: false, square: false, info: true };
+  let relevant = true; // エンゲージメント/取得日を出す条件が立っているか
   const cardModel = R.makeCardModel({
     t: (key: string, subs: any[]) => {
       if (key === 'postedOn') return `posted ${subs[0]}`;
@@ -400,12 +403,23 @@ describe('makeCardModel（カード1枚のビューモデル）', () => {
     compactDate: (d: string) => d.slice(0, 10),
     fileSrc: (f: string, w?: number) => `${f}@${w || 0}`,
     smokeCapture: false,
-    currentView: () => view,
+    shape: () => shape,
     imgAspect: () => ({ capX: '4/3' }),
-    tileThumbW: () => 100,
-    cardThumbW: () => 200,
+    gridThumbW: () => 200,
     listThumbW: () => 50,
+    showEngagement: () => relevant,
+    showCaptured: () => relevant,
   });
+  // 表示を差し替えて1件だけ評価するヘルパ（元へ必ず戻す）
+  const withShape = (next: Partial<typeof shape>, fn: () => void) => {
+    const prev = shape;
+    shape = { ...prev, ...next };
+    try {
+      fn();
+    } finally {
+      shape = prev;
+    }
+  };
 
   // 基準: card ビュー・スクショ（jpeg）・複数画像グループ・エンゲージメント混在・
   // 2つの日付が同じ暦日・thread+quote のフラグ
@@ -435,8 +449,8 @@ describe('makeCardModel（カード1枚のビューモデル）', () => {
   const model = (rep: any, files: string[] = ['a.jpg'], i = 0) => cardModel({ rep, records: [rep], files }, i);
   const m = model(p, ['a.jpg', 'b.jpg', 'c.jpg', 'd.jpg'], 5);
 
-  test('index / url / postKey / noUrl', () => {
-    expect(m).toMatchObject({ index: 5, url: 'https://x.com/u/status/1', postKey: 'capX', noUrl: false });
+  test('index / postKey', () => {
+    expect(m).toMatchObject({ index: 5, postKey: 'capX' });
   });
 
   test('エンゲージメントは非ゼロだけ（0 は null）', () => {
@@ -463,20 +477,34 @@ describe('makeCardModel（カード1枚のビューモデル）', () => {
     expect(model({ ...p, mediaType: 'video' }).mediaLabel).not.toBe('');
   });
 
-  test('likesOv は formatCount(likes)', () => {
-    expect(m.likesOv).toBe('N12');
+  // #618: 並べ替えやフィルタがエンゲージメントを話題にしていない限り、数字は載せない
+  test('関係のない時はエンゲージメントも取得日もモデルに載らない', () => {
+    relevant = false;
+    try {
+      const quiet = model(p);
+      expect(quiet.stats).toEqual({});
+      expect(quiet.footDates.cap).toBeNull();
+    } finally {
+      relevant = true;
+    }
   });
 
-  test('aspRatio は shotW/shotH（card＝メイソンリーの高さ予約）', () => {
+  test('aspRatio は shotW/shotH（元比率グリッド＝高さ予約）', () => {
     expect(m.aspRatio).toBe('800/600');
   });
 
-  test('nImg と stackSrcs（2・3枚目のみ・幅は cardThumbW）', () => {
+  // 正方形とリストは高さがレイアウト側で決まる＝予約は要らない
+  test('aspRatio は正方形サムネ・リストでは空', () => {
+    withShape({ square: true }, () => expect(model(p).aspRatio).toBe(''));
+    withShape({ list: true }, () => expect(model(p).aspRatio).toBe(''));
+  });
+
+  test('nImg と stackSrcs（2・3枚目のみ・幅はセル幅）', () => {
     expect(m.nImg).toBe(4);
     expect(m.stackSrcs).toEqual(['b.jpg@200', 'c.jpg@200']);
   });
 
-  test('imgSrc は fileSrc(shot.jpg, cardThumbW)', () => {
+  test('imgSrc は fileSrc(shot.jpg, グリッドのサムネ幅)', () => {
     expect(m.imgSrc).toBe('shot.jpg@200');
     expect(m.hasThumb).toBe(true);
   });
@@ -516,35 +544,26 @@ describe('makeCardModel（カード1枚のビューモデル）', () => {
   describe('videoSrc（mp4実体のGIFの自動再生）', () => {
     const gifMedia = [{ file: 'g-media-0.mp4', type: 'gif', posterFile: 'g-poster.jpg' }];
     const gifPost = { ...p, mediaType: 'gif', media: gifMedia };
-    const withView = (v: string, fn: () => void) => {
-      view = v;
-      try {
-        fn();
-      } finally {
-        view = 'card';
-      }
-    };
-
-    test('card では原寸の mp4 を再生し、ポスターを poster に敷く', () => {
+    test('元比率グリッドでは原寸の mp4 を再生し、ポスターを poster に敷く', () => {
       const mGif = model(gifPost, ['g-media-0.mp4']);
       expect(mGif.videoSrc).toBe('g-media-0.mp4@0'); // w 無し＝サムネイラを通さない（1コマに潰される）
       expect(mGif.videoPoster).toBe('g-poster.jpg@200');
       expect(mGif.hasThumb).toBe(true);
     });
 
-    // list は通常スクショ優先（imgSrc）だが、GIF はスクショの中でも動いていたもの
-    // ＝一覧で動かすのが受け入れ条件（本文）。再生はそのスクショの席を取る。
-    test('list でも再生する（スクショ優先の席を取る・poster はリストのサムネ幅）', () => {
-      withView('list', () => {
+    // 行でも動く（サイトで動いていたものが一覧でも動く、が受け入れ条件）。
+    test('リストでも再生する（poster は行のサムネ幅）', () => {
+      withShape({ list: true }, () => {
         const mGif = model(gifPost, ['g-media-0.mp4']);
-        expect(mGif.imgSrc).toBe('shot.jpg@50'); // 密度の既定は変えていない
+        expect(mGif.imgSrc).toBe('g-poster.jpg@50'); // 元画像（ここではそのポスター）優先はリストでも同じ（#618）
         expect(mGif.videoSrc).toBe('g-media-0.mp4@0');
         expect(mGif.videoPoster).toBe('g-poster.jpg@50');
       });
     });
 
-    test('tile は静止のまま＝再生せず ▶ バッジを出す（一覧の俯瞰密度）', () => {
-      withView('tile', () => {
+    // 再生と画質は「形」の軸に従う（2026-07-19 確定）＝正方形は切り抜きの静止画
+    test('正方形サムネは静止のまま＝再生せず ▶ バッジを出す', () => {
+      withShape({ square: true }, () => {
         const mGif = model(gifPost, ['g-media-0.mp4']);
         expect(mGif.videoSrc).toBe('');
         expect(mGif.videoBadge).toBe(true);
@@ -602,17 +621,8 @@ describe('makeCardModel（カード1枚のビューモデル）', () => {
     expect(model({ ...p, image: 'anim.gif' }, ['anim.gif']).imgSrc).toBe('anim.gif@0');
   });
 
-  test('shotW/H が無ければ学習したアスペクト比のキャッシュへ落ちる（card のみ）', () => {
+  test('shotW/H が無ければ学習したアスペクト比のキャッシュへ落ちる（元比率グリッドのみ）', () => {
     expect(model({ ...p, shotW: 0, shotH: 0 }).aspRatio).toBe('4/3');
-  });
-
-  test('tile 密度ではアスペクト比の予約をしない', () => {
-    view = 'tile';
-    try {
-      expect(model(p).aspRatio).toBe('');
-    } finally {
-      view = 'card';
-    }
   });
 });
 

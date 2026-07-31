@@ -7,15 +7,26 @@
 // allow-list lives here (used only by these handlers).
 import { ipcMain, app } from 'electron';
 import fs from 'node:fs';
-import type { IpcContext } from './ipc-context.ts';
+import type { HologramConfig, IpcContext } from './ipc-context.ts';
 import type { AppInfo, AppPrefs, ConfigSummary, ExtensionIdResult, OkResult, TabsState } from './ipc-payloads.ts';
 
-// --- Preferences (language / viewMode / skipDeleteConfirm / …) ---
+// --- Preferences (language / layoutMode / skipDeleteConfirm / …) ---
 // Post sort is NOT here: it lives in the per-tab state (tabs-builder.ts's
 // snapshotState), which is where it is persisted and restored from. The old
 // 'sortBy' pref was the losing half of that double storage — the two raced on
 // load — and the renderer stopped reading it when the tab state took over.
-const PREF_KEYS = ['language', 'viewMode', 'skipDeleteConfirm', 'imageTileSize', 'cardSize', 'listThumb', 'theme', 'tileOverlay', 'browseMode', 'posterViewMode', 'posterTileSize', 'posterCardSize', 'sidebarOpen', 'sidebarWidth', 'inspectorOpen', 'inspectorWidth', 'panelsHidden'];
+const PREF_KEYS = ['language', 'layoutMode', 'squareThumbs', 'showInfo', 'skipDeleteConfirm', 'gridSize', 'listThumb', 'theme', 'browseMode', 'posterViewMode', 'posterTileSize', 'posterCardSize', 'sidebarOpen', 'sidebarWidth', 'inspectorOpen', 'inspectorWidth', 'panelsHidden'];
+
+// --- One-off read of the retired 3-value density (#618) ---------------------
+// `viewMode` (card/tile/list) + its two size keys are no longer written by anyone;
+// these read a config.json left by an older build so the app opens on the display
+// the user last chose. Pre-release scaffolding: delete both, and their call sites in
+// get-prefs, before 1.0 (CLAUDE.md「リリース前につき『他人のライブラリ』は存在しない」).
+const legacyDensity = (cfg: HologramConfig): string => (['card', 'tile', 'list'].includes(cfg.viewMode) ? cfg.viewMode : 'card');
+const legacyGridSize = (cfg: HologramConfig): number | null => {
+  const px = legacyDensity(cfg) === 'tile' ? cfg.imageTileSize : cfg.cardSize;
+  return Number.isFinite(px) ? px : null;
+};
 
 // Chrome extension ids are exactly 32 chars of a–p. The id crosses a trust
 // boundary (IPC arg → native-messaging manifest allowed_origins), so anything
@@ -107,12 +118,16 @@ function register(ctx: IpcContext) {
     const cfg = readConfig();
     return {
       language: cfg.language || 'auto',
-      viewMode: ['card', 'tile', 'list'].includes(cfg.viewMode) ? cfg.viewMode : 'card', // display density
+      // #618: layout + two independent grid switches. `legacy*` below reads the
+      // retired 3-value density (card/tile/list) once, so a config written before
+      // this split still opens on the display the user left. Pre-release scaffolding
+      // — delete the legacy fallbacks (and this comment) before 1.0.
+      layoutMode: ['grid', 'list'].includes(cfg.layoutMode) ? cfg.layoutMode : legacyDensity(cfg) === 'list' ? 'list' : 'grid',
+      squareThumbs: typeof cfg.squareThumbs === 'boolean' ? cfg.squareThumbs : legacyDensity(cfg) === 'tile',
+      showInfo: typeof cfg.showInfo === 'boolean' ? cfg.showInfo : legacyDensity(cfg) !== 'tile',
       skipDeleteConfirm: !!cfg.skipDeleteConfirm,
-      imageTileSize: Number.isFinite(cfg.imageTileSize) ? cfg.imageTileSize : null, // tile view: edge px
-      cardSize: Number.isFinite(cfg.cardSize) ? cfg.cardSize : null, // card view: min column px
-      listThumb: Number.isFinite(cfg.listThumb) ? cfg.listThumb : null, // list view: thumbnail px
-      tileOverlay: cfg.tileOverlay !== false, // was missing → pref never restored on restart
+      gridSize: Number.isFinite(cfg.gridSize) ? cfg.gridSize : legacyGridSize(cfg), // grid: column width px
+      listThumb: Number.isFinite(cfg.listThumb) ? cfg.listThumb : null, // list: thumbnail width px
       theme: ['auto', 'light', 'dark'].includes(cfg.theme) ? cfg.theme : 'auto', // システム / ライト / ダーク
       browseMode: cfg.browseMode === 'posters' ? 'posters' : 'posts', // ライブラリ / 投稿者（起動時に復元）
       posterViewMode: ['card', 'tile', 'list'].includes(cfg.posterViewMode) ? cfg.posterViewMode : 'card', // 投稿者グリッドの表示密度

@@ -1,6 +1,6 @@
 'use strict';
 
-// Verifies the #postGrid dragstart wiring for drag-out (#132) in a real renderer:
+// Verifies the card's dragstart wiring for drag-out (#132) in a real renderer:
 //
 //  - a drag started on a card image is INTERCEPTED (preventDefault) — otherwise
 //    the browser's own drag runs and carries the asset:// thumbnail URL instead
@@ -67,9 +67,12 @@ seedLibrary(configDir, records);
 const evalJs = `(async () => {
   const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   const waitFor = async (fn, ms = 5000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (fn()) return true; await sleep(40); } return false; };
-  await waitFor(() => document.querySelectorAll('#postGrid .post-card').length >= 3);
-  const cardOf = (key) => document.querySelector('#postGrid .post-card[data-key="' + key + '"]');
-  const selectedKeys = () => [...document.querySelectorAll('#postGrid .post-card.selected')].map(c => c.dataset.key).sort().join(',');
+  await waitFor(() => document.querySelectorAll('[data-slot="post-grid"] [data-slot="post-card"]').length >= 3);
+  // Addressed by what the card says (the cells carry no key attribute — #618).
+  const postCards = () => [...document.querySelectorAll('[data-slot="post-grid"] [data-slot="post-card"]')];
+  const cardOf = (n) => postCards().find(c => (c.textContent || '').includes('本文' + n));
+  const nameOf = (c) => ((c.textContent || '').match(/本文(\\d)/) || [])[0] || '?';
+  const selectedKeys = () => postCards().filter(c => c.hasAttribute('data-selected')).map(nameOf).sort().join(',');
   // A handler that throws is the failure mode this suite exists for: dispatchEvent
   // does NOT rethrow, so a dead line after the throw is invisible from the page —
   // it only surfaces as an uncaught error. That's how drag-out shipped broken with
@@ -87,28 +90,28 @@ const evalJs = `(async () => {
 
   // 1. nothing selected: the drag is intercepted and selects NOTHING — an export
   //    gesture leaves the library as it found it
-  out.prevented1 = await dragFrom(cardOf('dummy-d1').querySelector('.card-img'));
+  out.prevented1 = await dragFrom(cardOf(0).querySelector('[data-slot="post-card-media"]'));
   out.selAfter1 = selectedKeys();
 
   // 2. build a real selection by hand the way a user does now that the ○ ring is
   //    gone (#143): a plain click single-selects, Ctrl-click adds the second card.
-  cardOf('dummy-d1').dispatchEvent(new MouseEvent('click', { bubbles: true }));
-  cardOf('dummy-d2').dispatchEvent(new MouseEvent('click', { bubbles: true, ctrlKey: true }));
+  cardOf(0).dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  cardOf(1).dispatchEvent(new MouseEvent('click', { bubbles: true, ctrlKey: true }));
   await sleep(80);
   out.selBuilt = selectedKeys();
 
   // 3. drag a card INSIDE that selection → selection untouched
-  out.prevented3 = await dragFrom(cardOf('dummy-d1').querySelector('.card-img'));
+  out.prevented3 = await dragFrom(cardOf(0).querySelector('[data-slot="post-card-media"]'));
   out.selAfter3 = selectedKeys();
 
   // 4. drag a card OUTSIDE it → still untouched. The hand-built working set is not
   //    Explorer's throwaway cursor; dragging one card must not wipe it (which files
   //    actually leave is records.ts's dragFilesOf — test-records-unit).
-  out.prevented4 = await dragFrom(cardOf('dummy-d3').querySelector('.card-img'));
+  out.prevented4 = await dragFrom(cardOf(2).querySelector('[data-slot="post-card-media"]'));
   out.selAfter4 = selectedKeys();
 
   // 5. a drag started on the post text is NOT ours — the browser keeps it
-  const txt = cardOf('dummy-d3').querySelector('.text') || cardOf('dummy-d3').querySelector('.post-meta');
+  const txt = cardOf(2).querySelector('[data-slot="post-card-meta"]');
   out.preventedText = await dragFrom(txt);
   out.selAfterText = selectedKeys();
   out.errors = errors;
@@ -139,11 +142,11 @@ child.on('close', () => {
   const checks = [
     ['card image drag is intercepted', r.prevented1 === true],
     ['a drag selects nothing (export must not change the library)', r.selAfter1 === ''],
-    ['click + Ctrl-click builds the selection', r.selBuilt === 'dummy-d1,dummy-d2'],
-    ['dragging inside the selection leaves it alone', r.prevented3 === true && r.selAfter3 === 'dummy-d1,dummy-d2'],
-    ['dragging outside the selection leaves it alone too', r.prevented4 === true && r.selAfter4 === 'dummy-d1,dummy-d2'],
+    ['click + Ctrl-click builds the selection', r.selBuilt === '本文0,本文1'],
+    ['dragging inside the selection leaves it alone', r.prevented3 === true && r.selAfter3 === '本文0,本文1'],
+    ['dragging outside the selection leaves it alone too', r.prevented4 === true && r.selAfter4 === '本文0,本文1'],
     ['a drag off the image is left to the browser', r.preventedText === false],
-    ['a drag off the image leaves the selection alone', r.selAfterText === 'dummy-d1,dummy-d2'],
+    ['a drag off the image leaves the selection alone', r.selAfterText === '本文0,本文1'],
     // The one that would have caught the shipped bug: no drag may throw, or the
     // ipc call after the throw silently never happens.
     ['no drag threw (a throw skips the IPC after it)', Array.isArray(r.errors) && r.errors.length === 0],

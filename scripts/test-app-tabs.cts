@@ -61,7 +61,7 @@ const evalJs = `(async () => {
     const el = document.querySelector('[data-slot="tab"][data-active] [data-slot="tab-title"]');
     return el ? el.textContent.trim() : '';
   };
-  const cardCount = () => document.querySelectorAll('#postGrid .post-card').length;
+  const cardCount = () => document.querySelectorAll('[data-slot="post-grid"] [data-slot="post-card"]').length;
 
   // Wait for all 3 posts to render
   await waitFor(() => cardCount() >= 3);

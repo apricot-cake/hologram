@@ -83,8 +83,6 @@ function monoHue(seed: string): number {
 }
 
 export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
-  const byId = (id: string) => document.getElementById(id) as HTMLElement;
-
   let posterList: HologramUserAgg[] = [];
   function getPosterList() {
     return posterList;
@@ -142,23 +140,16 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
   }
 
   function renderPosters(keepLimit?: boolean) {
-    const grid = byId('posterGrid');
-    const empty = byId('emptyState');
     renderPosterFilterRows();
     posterList = deps.filteredPosters();
     // 投稿者モードはクエリバー（postCount の常設先）を隠すので、件数はポスターコントロール
     // 側の #posterCount に出す（バー右端の件数と役割分担）。#posterCount + poster reset/empty
     // frame は activebar 島が 'posterGroups'/'posterQueryTree'/'searchQuery' から自己派生
     // する（下の hologramStore.set('posterGroups', …) を購読）。
-    // Density: the classes style the CELLS (descendant selectors); the column
-    // layout itself lives in the masonic model (pushPosterModel).
-    grid.classList.toggle('tile-view', deps.posterView() === 'tile');
-    grid.classList.toggle('list-view', deps.posterView() === 'list');
+    // Density: the classes that style the CELLS ride the grid slot, which React draws
+    // from the 'posterView' store key (posters/index.tsx) — nothing is toggled onto an
+    // element found by id here any more. The column layout lives in the masonic model.
     if (posterList.length === 0) {
-      // #470: drive visibility through the SAME `hidden` attribute the placeholder is
-      // mounted with (AppShell.tsx), not an inline style.display — Tailwind's preflight
-      // `[hidden]{display:none!important}` always outranks an inline style.
-      empty.hidden = false;
       // allUsersCount feeds the EmptyState component's self-derived 'posterFirstRun'
       // vs 'filtered' choice (mirrors the post grid's allPostsCount). Only
       // computed here (buildUsers() is the generation-cached poster roll-up — the
@@ -169,19 +160,18 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
       if (!keepLimit) deps.onPosterRendered(); // 0件 state also records/persists (mirrors the post grid)
       return;
     }
-    empty.hidden = true;
     storeSet('posterGroups', posterList);
     if (!keepLimit) deps.onPosterRendered(); // per-tab history record + persist (#144 — posters entries ride the same stack)
   }
 
-  // React owns the poster cells (virtualized — hologramPosterGridSource);
-  // viewer.js keeps posterList, the count badge, the density
-  // classes, and #posterGrid's click/contextmenu delegation. The inspected
+  // React owns the poster cells (virtualized — hologramPosterGridSource) and every
+  // gesture on one (orchestrator.ts's configureActions); this module keeps posterList
+  // and the count badge. The inspected
   // highlight is NOT part of this model — the component derives its own ring from
   // hologramStore's 'inspectedKey' (useSyncExternalStore), keyed off the raw
   // item's `.key`. modelOf/keyOf never change identity
   // meaningfully between renders, so they're configured ONCE (mirrors the post
-  // source's cardModel/cardLabels hoist) instead of rebuilt every renderPosters().
+  // source's cardModel hoist) instead of rebuilt every renderPosters().
   hologramPosterGridSource.configure({
     modelOf: (u: HologramUserAgg, i: number) => {
       const hasName = !!u.displayName;

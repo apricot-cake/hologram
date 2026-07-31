@@ -19,13 +19,12 @@ import { hologramIpc } from './ipc.ts';
 // reaching it through this service, unchanged.
 import { postKeyOf } from '../../../../../native-host/post-key.mts';
 export { postKeyOf };
+import type { DisplayShape } from './display.ts';
 
-// Per-density image source. A post may carry both a capture (screenshot) and
-// real media/artwork; the density decides which leads:
-//   tile / card → artwork preferred (the actual image leads — a clean grid),
-//                 capture as fallback (posts whose original didn't download)
-//   list        → capture preferred (the post as it looked in its compact row)
-// NOTE: lib-index's cardImageFile() MUST mirror the card branch so the masonry
+// A post may carry both a capture (screenshot) and real media/artwork. Artwork
+// leads everywhere; the capture stands in for posts whose original never downloaded
+// and for text-only posts (see densityImage below).
+// NOTE: lib-index's cardImageFile() MUST mirror that rule so the masonry
 // height reservation (shotW/shotH) sizes the same image the card shows.
 const SS_EXT = /\.jpe?g$/i;
 // A downloaded media file is a video/animated-loop, not a still — used both to
@@ -68,10 +67,17 @@ export const artworkFile = (p: HologramPost): string => {
   // one. No poster is reachable from here, so there is nothing to substitute.
   return p.image && !isScreenshot(p) && !isVideoFile(p.image) ? p.image : '';
 };
-export function densityImage(p: HologramPost, density: string): string {
-  const cap = captureFile(p),
-    art = artworkFile(p);
-  return density === 'list' ? cap || art : art || cap;
+/**
+ * The one image a post SHOWS: its own artwork, with the capture screenshot standing
+ * in only when there is no artwork (a text-only post). The list used to invert this
+ * and lead with the screenshot; at row-thumbnail size that is a shrunk picture of
+ * text, unreadable and doubled by the row's own text column, so the rule is now the
+ * same everywhere (2026-07-19 確定, #154). Deciding it here also keeps the gallery's
+ * 「サムネに表示されているものが最初に表示される」 rule true by construction — the
+ * gallery列 leads with artwork too (#143).
+ */
+export function densityImage(p: HologramPost): string {
+  return artworkFile(p) || captureFile(p);
 }
 
 // --- Grouping (ported from image-view) --------------------------------------
@@ -342,16 +348,16 @@ export function makeGallery(deps: { fileSrc(file: string): string }) {
 }
 
 // --- Card view model (per-card presentation derivation) ---------------------
-// The model PostCard.tsx renders (grid modelOf). Pure field-mapping over a
-// group + the live view density; every runtime coupling (current density,
+// The model PostCard.tsx / ListRow.tsx render (grid modelOf). Pure field-mapping over
+// a group + the live display shape (#618); every runtime coupling (the shape,
 // learned-aspect cache, thumb widths, i18n messages,
 // asset URLs) is INJECTED so this stays DOM-free and Node-testable. The subtle
 // rules that used to live inside renderPosts are locked here: engagement
-// zero-suppression, both-date same-day dedup, body-text dedup vs the author
-// line, GIF full-size (no thumb) in card/list, which densities loop an mp4-backed
-// GIF in place vs. leave it on its poster (#476), card-masonry height reservation
-// (shotW/H → learned cache), and the multi-image back-stack sheets.
-//   deps.currentView() / imgAspect() are getters (viewer reassigns the lets);
+// zero-suppression and its relevance gate, both-date same-day dedup, body-text dedup
+// vs the author line, GIF full-size (no thumb) at original aspect, which shapes loop
+// an mp4-backed GIF in place vs. leave it on its poster (#476), masonry height
+// reservation (shotW/H → learned cache), and the multi-image back-stack sheets.
+//   deps.shape() / imgAspect() are getters (viewer reassigns the lets);
 //   fileSrc keeps folder + asset knowledge viewer-owned. Selection is
 //   NOT here — the grid component derives .selected straight from hologramStore's
 //   'selectedSet' (same pattern as inspectedKey), so this stays selection-free.
@@ -362,25 +368,32 @@ export function makeCardModel(deps: {
   compactDate(d: string): string;
   fileSrc(file: string, w?: number): string;
   smokeCapture: boolean;
-  currentView(): string;
+  shape(): DisplayShape;
   imgAspect(): Record<string, string>;
-  tileThumbW(): number;
-  cardThumbW(): number;
+  gridThumbW(): number;
   listThumbW(): number;
+  /** Engagement counts are library noise unless a sort or filter made them relevant. */
+  showEngagement(): boolean;
+  /** Likewise the capture date, which is otherwise a second date saying "today-ish". */
+  showCaptured(): boolean;
 }) {
-  const { t, formatCount, formatDate, compactDate, fileSrc, smokeCapture, currentView, imgAspect, tileThumbW, cardThumbW, listThumbW } = deps;
+  const { t, formatCount, formatDate, compactDate, fileSrc, smokeCapture, shape, imgAspect, gridThumbW, listThumbW, showEngagement, showCaptured } = deps;
   return function cardModel(g: HologramPostGroup, i: number): Record<string, any> {
     const p = g.rep;
-    const view = currentView();
+    const view = shape();
     const aspectCache = imgAspect();
-    // Engagement: nonzero only (zeros are noise). Formatted here; the component
-    // owns the outline TEXT glyphs (♡ ⇄ 🗨 🔖).
-    const stats = {
-      likes: p.likes > 0 ? formatCount(p.likes) : null,
-      reposts: p.reposts > 0 ? formatCount(p.reposts) : null,
-      replies: p.replies > 0 ? formatCount(p.replies) : null,
-      bookmarks: p.bookmarks > 0 ? formatCount(p.bookmarks) : null,
-    };
+    // Engagement: nonzero only (zeros are noise), and only while something on screen
+    // is ABOUT engagement. Formatted here; the component owns the outline TEXT glyphs
+    // (♡ ⇄ 🗨 🔖). This used to be a CSS gate on a container class (.show-eng), which
+    // meant every card carried counts nobody could see.
+    const stats = showEngagement()
+      ? {
+          likes: p.likes > 0 ? formatCount(p.likes) : null,
+          reposts: p.reposts > 0 ? formatCount(p.reposts) : null,
+          replies: p.replies > 0 ? formatCount(p.replies) : null,
+          bookmarks: p.bookmarks > 0 ? formatCount(p.bookmarks) : null,
+        }
+      : {};
     // Both dates: post date bare (primary) + capture date with a 📷 mark
     // (secondary). Deduped when they land on the same day.
     const dateStr = p.date ? t('postedOn', [formatDate(p.date)]) : '';
@@ -389,7 +402,7 @@ export function makeCardModel(deps: {
     const capCompact = p.capturedAt ? compactDate(p.capturedAt) : '';
     const footDates = {
       post: postCompact ? { label: postCompact, title: dateStr || '' } : null,
-      cap: capCompact && capCompact !== postCompact ? { label: capCompact, title: capturedStr || '' } : null,
+      cap: showCaptured() && capCompact && capCompact !== postCompact ? { label: capCompact, title: capturedStr || '' } : null,
     };
     const userName = p.displayName || p.screenName || p.title || '';
     const handle = p.screenName ? `@${p.screenName}` : '';
@@ -397,14 +410,18 @@ export function makeCardModel(deps: {
     // duplicate body when they match the user line.
     const textRaw = p.text || p.title || '';
     const text = textRaw === userName ? '' : textRaw;
-    const imgFile = densityImage(p, view); // tile: artwork→capture; card/list: capture→artwork
-    // GIFs stay full-size in card/list so they keep animating (thumbnailer
-    // flattens GIF to a static JPEG); tile already used a thumb, so unchanged.
-    const imgW = view === 'tile' ? tileThumbW() : /\.gif$/i.test(imgFile || '') ? 0 : view === 'list' ? listThumbW() : cardThumbW();
-    // Reserve the card image's height up front (card masonry) so columns pack
-    // right the first time — pixel size from the index, learned cache fallback.
-    const aspRatio = view !== 'card' ? '' : p.shotW > 0 && p.shotH > 0 ? p.shotW + '/' + p.shotH : p.captureId && aspectCache[p.captureId] ? aspectCache[p.captureId] : '';
-    // Post-type + media flags (grid view only; CSS hides them in compact list).
+    const imgFile = densityImage(p); // artwork, capture only as its stand-in
+    // A square cell is a crop, so it always takes a thumbnail; anything showing the
+    // image at its own proportions keeps a real .gif full-size, or it stops animating
+    // (the thumbnailer flattens GIF to a static JPEG).
+    const cellW = view.list ? listThumbW() : gridThumbW();
+    const imgW = view.square || !/\.gif$/i.test(imgFile || '') ? cellW : 0;
+    // Reserve the image's height up front so the masonry packs right the first time —
+    // pixel size from the index, learned cache fallback. Only the original-aspect grid
+    // needs it: square cells and list rows have a height the layout already knows.
+    const aspRatio = view.list || view.square ? '' : p.shotW > 0 && p.shotH > 0 ? p.shotW + '/' + p.shotH : p.captureId && aspectCache[p.captureId] ? aspectCache[p.captureId] : '';
+    // Post-type + media flags. The list row spends its width on the post text and
+    // leaves these out (ListRow), so they are grid furniture.
     const flags: string[] = [];
     if (p.isThread) flags.push(t('qfThread'));
     if (p.isReply) flags.push(t('qfReply'));
@@ -421,18 +438,17 @@ export function makeCardModel(deps: {
     // tells the two mp4 kinds apart: 'gif' is the short silent loop, 'video' has a
     // length and must not start itself, 'ugoira' needs the zip unpacked first
     // (#119 St3) — neither of those autoplays anywhere.
-    //   Tile stays on the still: it is the overview density, and the back-stack
-    // sheets of a group are stills by construction (CSS background-image).
-    //   In list the still would be the capture screenshot (densityImage's rule),
-    // and the loop takes that slot rather than sitting next to it — the point of
-    // the criterion is that a GIF moves in the list the way it moves on the site
-    // it came from. imgSrc below is left as the density picked it, so the context
-    // menu's 画像をコピー / フォルダに表示 still name a real still image.
-    const gifVideo = (view === 'card' || view === 'list') && leadMedia && leadMedia.type === 'gif' && leadMedia.file ? leadMedia : null;
+    //   The SQUARE grid stays on the still, and that is the shape axis carrying
+    // playback with it (2026-07-19 確定): squares are the even lattice you scan, and
+    // the back-stack sheets of a group are stills by construction (background-image),
+    // so a looping front face would be the odd one out. imgSrc below is left as the
+    // still either way, so the context menu's 画像をコピー / フォルダに表示 still
+    // name a real image file.
+    const gifVideo = !view.square && leadMedia && leadMedia.type === 'gif' && leadMedia.file ? leadMedia : null;
     // Full size, never the thumbnailer: it hands back a single flattened frame.
     const videoSrc = gifVideo ? fileSrc(gifVideo.file as string) : '';
     // Painted until the first frame decodes, so the cell does not flash empty.
-    const videoPoster = gifVideo?.posterFile ? fileSrc(gifVideo.posterFile, view === 'list' ? listThumbW() : cardThumbW()) : '';
+    const videoPoster = gifVideo?.posterFile ? fileSrc(gifVideo.posterFile, cellW) : '';
     // ▶ badge over the thumb: only when the leading media item's downloaded
     // TRANSPORT is a video (type 'video'/'gif' — an mp4-backed X animated_gif
     // / Mastodon gifv). A real .gif file has no per-item type (still-image
@@ -444,13 +460,10 @@ export function makeCardModel(deps: {
     // Multi-image stack: the 2nd/3rd images ride the back sheets (real
     // thumbnails — motion-study canvas 2026-07-05). Downscaled like the front
     // image (GIFs too: a static flattened thumb is right for a back sheet).
-    const stackW = view === 'tile' ? tileThumbW() : view === 'list' ? listThumbW() : cardThumbW();
-    const stackSrcs = g.files.length > 1 ? g.files.slice(1, 3).map((f) => fileSrc(f, stackW)) : [];
+    const stackSrcs = g.files.length > 1 ? g.files.slice(1, 3).map((f) => fileSrc(f, cellW)) : [];
     return {
       index: i,
-      url: p.url || '',
       postKey,
-      noUrl: !p.url,
       // videoSrc counts: a gif whose poster download failed AND whose post has no
       // capture has no still to show, but it still has something to play.
       hasThumb: !!(imgFile || p.video || videoSrc),
@@ -464,7 +477,6 @@ export function makeCardModel(deps: {
       nImg: g.files.length,
       stackSrcs,
       userName,
-      likesOv: p.likes != null ? formatCount(p.likes) : null,
       handle,
       flags,
       mediaLabel,

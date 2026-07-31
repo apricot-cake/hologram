@@ -85,7 +85,9 @@ const evalJs = `(async () => {
   const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   const waitFor = async (fn, ms = 5000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (fn()) return true; await sleep(40); } return false; };
   const q = (sel) => document.querySelector(sel);
-  const cardOf = (key) => document.querySelector('#postGrid .post-card[data-key="' + key + '"]');
+  // Addressed by what the card says (no key attribute on the cells — #618).
+  const postCards = () => [...document.querySelectorAll('[data-slot="post-grid"] [data-slot="post-card"]')];
+  const cardOf = (text) => postCards().find(c => (c.textContent || '').includes(text));
   const dblclick = (el) => el && el.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
   const zoomLevel = () => { const el = q('[data-slot="viewer-zoom-level"]'); return el ? el.textContent.trim() : null; };
   const btn = (slot) => q('[data-slot="' + slot + '"]');
@@ -99,14 +101,14 @@ const evalJs = `(async () => {
   window.addEventListener('error', (e) => errors.push(String((e && e.message) || e)));
   const out = {};
 
-  await waitFor(() => document.querySelectorAll('#postGrid .post-card').length >= 2);
+  await waitFor(() => document.querySelectorAll('[data-slot="post-grid"] [data-slot="post-card"]').length >= 2);
 
   // A. グリッドタブ: ツールバーは存在しない（検索欄は出ている）
   out.toolbarInGrid = !!q('[data-slot="viewer-toolbar"]');
   out.searchInGrid = searchShown();
 
   // B. 画像ビューを開く → ツールバーが帯に出て、検索欄は引っ込む
-  dblclick(cardOf('dummy-z1'));
+  dblclick(cardOf('ズーム対象'));
   out.imageViewActive = await waitFor(() => document.body.classList.contains('image-tab-active'));
   out.toolbarInImageView = await waitFor(() => !!q('[data-slot="viewer-toolbar"]'));
   out.searchInImageView = searchShown();
@@ -142,7 +144,7 @@ const evalJs = `(async () => {
   out.searchAfterBack = searchShown();
 
   // H. 先頭が動画の投稿 → ズーム系は disabled のまま「そこに在る」
-  dblclick(cardOf('dummy-z2'));
+  dblclick(cardOf('動画つき'));
   out.videoViewActive = await waitFor(() => document.body.classList.contains('image-tab-active'));
   await waitFor(() => !!q('[data-slot="viewer-toolbar"]'));
   out.videoSlideIsVideo = !!q('.itv-stage video');

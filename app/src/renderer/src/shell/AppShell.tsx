@@ -16,9 +16,10 @@
 // - The sidebar's own header row is the window's titlebar drag strip and holds the
 //   collapse trigger (moved out of the toolbar). shadcn's fixed sidebar-container now
 //   spans inset-y-0 as-is (the --tabbar-h offset hack is gone).
-// - #mode-post is kept as the scroll root (orchestrator's contentScrollEl + per-tab
-//   scroll restore key off this id). #postGrid/#posterGrid keep ids+classes for the
-//   masonic host-attach and the body.browse-posters visibility CSS.
+// - The content column is the scroll root (the page itself never scrolls). It and the
+//   three grid slots inside it are handed to the modules that measure them through
+//   services/content-area.ts — none of the four is looked up by id any more (#618), and
+//   which destination is on screen is a `hidden` this file writes, not a body class.
 // - The right inspector wears the legacy .inspector CSS, which already implements the
 //   #143 model (wide = fixed 320px column, narrow = slide-over). Its id is gone (P2⑦):
 //   whether it is on screen is state (inspector-panel.ts), and the element itself reaches
@@ -31,10 +32,11 @@ import { t } from '../_shared/i18n.ts';
 import { InspectorRail } from './InspectorRail.tsx';
 import { type PanelResize, resolveCssLength, usePanelResize } from './use-panel-resize.ts';
 import { LIMITS, type PanelKey, cachedWidth, clampWidth, loadWidth, persistWidth } from '../services/panel-width-pref.ts';
-import { isOpen as inspectorIsOpen, isVisible as inspectorIsVisible, load as inspectorLoad, registerPanelEl, subscribe as inspectorSubscribe, subscribeVisible as subscribeInspectorVisible } from '../services/inspector-panel.ts';
+import { isVisible as inspectorIsVisible, load as inspectorLoad, registerPanelEl, subscribeVisible as subscribeInspectorVisible } from '../services/inspector-panel.ts';
+import { registerScroller } from '../services/content-area.ts';
 import { isWide as isWideLayout, subscribe as layoutSubscribe } from '../services/layout-mode.ts';
 import { isHidden as panelsAreHidden, load as panelsLoad, reveal as panelsReveal, subscribe as panelsSubscribe } from '../services/panels.ts';
-import { set as storeSet } from '../services/store.ts';
+import { get as storeGet, set as storeSet, subscribe as storeSubscribe } from '../services/store.ts';
 import { cachedOpen, loadOpen, persistOpen } from '../services/sidebar-pref.ts';
 import { signalShellReady } from '../services/shell-ready.ts';
 import { AppToolbar } from './AppToolbar.tsx';
@@ -44,8 +46,8 @@ import { EmptyState } from '../empty/EmptyState.tsx';
 import { FloatingBar } from '../selection/FloatingBar.tsx';
 import { ImageTabHost } from '../image-tab/index.tsx';
 import { Inspector } from '../inspector/Inspector.tsx';
-import { PostGrid } from '../grid/index.tsx';
-import { PosterGrid } from '../posters/index.tsx';
+import { PostGrid, PostGridSlot } from '../grid/index.tsx';
+import { PosterGrid, PosterGridSlot } from '../posters/index.tsx';
 import { TabsHost } from '../tabs/index.tsx';
 import { TrashGrid } from '../trash/TrashGrid.tsx';
 import { TrashView } from '../trash/TrashView.tsx';
@@ -84,6 +86,10 @@ function useSidebarOpen(): [boolean, (open: boolean) => void] {
 
   return [open, choose];
 }
+
+// Which of the three destinations the content column shows (posts / posters / trash).
+const subBrowseMode = (cb: () => void) => storeSubscribe('browseMode', cb);
+const getBrowseMode = () => (storeGet('browseMode') as string | undefined) ?? 'posts';
 
 // A panel's width, on the same two tiers as the open/closed state above (cache first,
 // config.json reconciled a tick later). The default is a thunk rather than a number so
@@ -160,7 +166,6 @@ export function AppShell() {
   // The inspector's default is its token's own value, measured before anything here has
   // had a chance to write over it.
   const inspector = usePanelWidthResize('inspectorWidth', t('resizeInspector'), 'right', () => resolveCssLength(getComputedStyle(document.documentElement).getPropertyValue('--inspector-w')), writeInspectorWidth);
-  const inspectorOpen = useSyncExternalStore(inspectorSubscribe, inspectorIsOpen);
   // #245's bulk hide. A mask over the two panels' own state, not a write to it — see
   // services/panels.ts. Every place below that decides whether a panel is on screen ANDs
   // it in; nothing below changes what the panels themselves think.
@@ -222,11 +227,20 @@ export function AppShell() {
   useEffect(() => {
     signalShellReady();
   }, []);
+  // Which destination the content column is showing. All three stay mounted (see below),
+  // so this only decides which one is `hidden`.
+  const mode = useSyncExternalStore(subBrowseMode, getBrowseMode);
   // The narrow overlay covers the content area, not the tab bar and toolbar above it, so
   // it needs to know where that area starts. Measured rather than computed: the chip row
   // appears and disappears with the filter, so the toolbar has no fixed height to add up.
-  // Observing #mode-post catches that for free — the toolbar growing shrinks it.
+  // Observing the scroll root catches that for free — the toolbar growing shrinks it.
   const contentRef = useRef<HTMLDivElement>(null);
+  // One ref, two jobs: the measurement below, and handing the element to the modules
+  // outside React that read or write its scroll position (services/content-area.ts).
+  const setContentEl = useCallback((el: HTMLDivElement | null) => {
+    contentRef.current = el;
+    registerScroller(el);
+  }, []);
   useEffect(() => {
     const el = contentRef.current;
     if (!el) return;
@@ -270,21 +284,23 @@ export function AppShell() {
               <SidebarInset className="min-w-0">
                 <AppToolbar />
                 {/* Scroll root for the content area (the page itself never scrolls). */}
-                <div id="mode-post" ref={contentRef} className="relative min-h-0 flex-1 overflow-y-auto">
-                  <div id="panelPosts" className="tab-panel active">
-                    {/* data-insp-open: with the panel there, a click on a card swaps its
-                        contents rather than zooming, so the media stops offering a zoom
-                        cursor. An ATTRIBUTE, not a class — grid-density-builder writes
-                        this element's className imperatively (list-view / selecting / …),
-                        and a React-owned className would wipe those on every flip. */}
-                    <div id="postGrid" className="post-grid" data-insp-open={inspectorOpen || undefined} />
-                    <div id="posterGrid" className="poster-grid" />
-                    <div id="emptyState" className="empty-state" hidden>
-                      <EmptyState />
-                    </div>
-                    {/* ゴミ箱 (#268) — the third destination of the content area, on
-                        the same scroll root as the two grids above. Always mounted;
-                        body.browse-trash decides which of the three is on screen. */}
+                {/* The content area's scroll root. Its element is handed to the modules
+                    that measure or move it (services/content-area.ts) instead of being
+                    looked up by id — see that file. */}
+                {/* scrollbar-gutter:stable keeps the column width from jumping ±10px as
+                    the bar toggles (the size slider's column-fit math depends on a stable
+                    width); overflow-anchor:none stops the browser compensating for a cell
+                    that mounts above the viewport, which reads as the grid jittering. */}
+                <div ref={setContentEl} data-slot="content-scroll" className="relative min-h-0 min-w-0 flex-1 overflow-y-auto px-8 py-6 [overflow-anchor:none] [scrollbar-gutter:stable]">
+                  {/* Three destinations, one scroll root. All three stay MOUNTED and the
+                      inactive ones are `hidden` — the virtualized hosts keep their
+                      measured layout that way, and "which one is on screen" is one
+                      React decision rather than a body class racing an inline style. */}
+                  <PostGridSlot hidden={mode !== 'posts'} />
+                  <PosterGridSlot hidden={mode === 'posts' || mode === 'trash'} />
+                  {mode !== 'trash' && <EmptyState />}
+                  {/* ゴミ箱 (#268) — the third destination. */}
+                  <div hidden={mode !== 'trash'}>
                     <TrashView />
                   </div>
                 </div>
@@ -316,22 +332,8 @@ export function AppShell() {
           </div>
         </SidebarProvider>
       </div>
-      {/* Hidden sort value source — orchestrator/tabs read+write #sortSelect.value as the
-          post-sort state holder (selectById + a change listener). TRANSIENT: sort moves to
-          the display popover + store in P2②, which retires this stub. Poster sort is already
-          store-driven, so it needs no stub here. */}
-      <select id="sortSelect" className="hidden" aria-hidden="true" tabIndex={-1} defaultValue="date-desc">
-        <option value="date-desc" />
-        <option value="date-asc" />
-        <option value="likes-desc" />
-        <option value="reposts-desc" />
-        <option value="replies-desc" />
-        <option value="captured-desc" />
-        <option value="likes-pct" />
-        <option value="random" />
-      </select>
-      {/* Virtual grids attach to #postGrid / #posterGrid via GridMount's effect — kept
-          out of the container so masonic's host-attach + flushSync path is unchanged. */}
+      {/* Virtual grids attach into the slots above via GridMount's effect — kept out of
+          the content column so masonic's host-attach + flushSync path is unchanged. */}
       <PostGrid />
       <PosterGrid />
       <TrashGrid />

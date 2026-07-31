@@ -15,6 +15,8 @@ UI に出さない開発用語は日本語の欄を `—` にする。
 | ライブラリ | library | 保存先フォルダ1つ分の保存物の全体（既定 `~/Hologram/library`）。固有語（Obsidian の vault のようなメタファー）は立てず、一般語のまま用語として使う | [#176](https://github.com/apricot-cake/hologram/issues/176#issuecomment-5020571660) |
 | — | 原本 / raw payload | 取得の過程で手元に来た応答を、加工せずそのまま保存したもの（DB の `raw_payloads`）。「元データ」「生 JSON」等では呼ばず、UI に出す面はまだ持たない | [ADR 0011](decisions/0011-preserve-acquisition-payloads.md) |
 | — | extractor | サイト別のメタデータ抽出モジュールの総称。和訳語（「抽出器」等）は立てず英語のまま書き、和文では初出でだけ「サイト別のメタデータ抽出モジュール」と補う。ユーザーが読む面には出さず「対応サイト」で表す | [#212](https://github.com/apricot-cake/hologram/issues/212#issuecomment-5020507758) |
+| 正方形のサムネ | squareThumbs | 投稿グリッドのサムネを正方形に切り抜いて均質な格子にする ON/OFF。Mac 写真.app の表示メニュー「正方形のサムネール」と同語 | [#618](https://github.com/apricot-cake/hologram/issues/618) |
+| 情報を表示 | showInfo | 投稿グリッドのセルに投稿者・抜粋・メタのブロックを付ける ON/OFF。「正方形のサムネ」とは独立で、4通りすべてが正規 | [#618](https://github.com/apricot-cake/hologram/issues/618) |
 
 ## 固有名を付けない領域
 
@@ -25,4 +27,5 @@ UI に出さない開発用語は日本語の欄を `—` にする。
 | 保存物に添えるメタデータ JSON | サイドカー / sidecar（`<captureId>.json`） | yt-dlp も `.info.json` と機能語だけで形式名を持たない。名前の付いた交換形式が要る役は XMP 書き出し（#57）が担う。**ライブラリ内の置き場としては #302 で退役**＝メタデータの正本は DB で、この語が指すのは完全ZIP が DB から再生成する `library/<captureId>.json` とゴミ箱の per-item レコードだけ | [#264](https://github.com/apricot-cake/hologram/issues/264) |
 | 拡張と保存先をつなぐ常駐プログラム | Native Messaging ブリッジ / bridge（`native-host/`） | Chrome 公式ドキュメントの "native messaging host" が既に総称になっている。その上に固有名を重ねない | [#264](https://github.com/apricot-cake/hologram/issues/264) |
 | 検索とファセットの機構 | 検索 / search・ファセット / facet | 機構そのものに固有名を持つ同種製品が見当たらない（照合結果は #264）。将来ユーザー向けの検索構文へ名前を付ける場合の器は、#260 の却下案（LoQL の保留）にある | [#264](https://github.com/apricot-cake/hologram/issues/264) |
+| 元の比率のまま敷き詰める投稿グリッド | グリッド（「正方形のサムネ」が OFF のとき） | 名前が要るのは正方形の側だけで、OFF 側は既定＝「何もしていない状態」。masonry / waterfall のような呼称を立てると、平易語で自明だった2つのスイッチに馴染みの薄い語が1つ増えるだけになる | [#618](https://github.com/apricot-cake/hologram/issues/618) |
 | デザイン語彙（面の質感・部品の呼び名） | shadcn / Base UI の語をそのまま | デザイン語彙の公開命名例はプラットフォームや組織の規模のもので、単一アプリの例が見当たらない（照合結果は #264）。素の shadcn ルックを採る決定と揃える | [ADR 0006](decisions/0006-plain-shadcn-look.md) |

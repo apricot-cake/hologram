@@ -77,7 +77,9 @@ const evalJs = `(async () => {
   const applyBtn = () => dialog() && btnIn(dialog(), /件に適用/);
   const cancelBtn = () => dialog() && btnIn(dialog(), /^キャンセル$/);
   const barTagBtn = () => document.querySelector('button[aria-label="タグを追加"]');
-  const cardOf = (key) => document.querySelector('#postGrid .post-card[data-key*="' + key + '"]');
+  // Addressed by what the card says (no key attribute on the cells — #618).
+  const postCards = () => [...document.querySelectorAll('[data-slot="post-grid"] [data-slot="post-card"]')];
+  const cardOf = (n) => postCards().find(c => (c.textContent || '').includes('本文' + n));
   const errors = [];
   window.addEventListener('error', (e) => errors.push(String((e && e.message) || e)));
   const out = {};
@@ -96,11 +98,11 @@ const evalJs = `(async () => {
     el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
   };
 
-  await waitFor(() => document.querySelectorAll('#postGrid .post-card').length >= 2);
+  await waitFor(() => document.querySelectorAll('[data-slot="post-grid"] [data-slot="post-card"]').length >= 2);
 
   // A. select both cards (plain click = single, Ctrl = add) — the bar appears
-  cardOf('bulk-a').dispatchEvent(new MouseEvent('click', { bubbles: true }));
-  cardOf('bulk-b').dispatchEvent(new MouseEvent('click', { bubbles: true, ctrlKey: true }));
+  cardOf(0).dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  cardOf(1).dispatchEvent(new MouseEvent('click', { bubbles: true, ctrlKey: true }));
   out.barShown = await waitFor(() => !!barTagBtn());
 
   // B. タグを追加 opens the dialog, and it starts with nothing staged

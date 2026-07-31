@@ -8,7 +8,7 @@ test('インスペクタでタグを足すとチップになり DB に保存さ�
   const hologram = await launchHologram();
   const { page } = hologram;
 
-  await page.locator('#postGrid .post-card').filter({ hasText: '猫が机の上で寝ている' }).click();
+  await page.locator('[data-slot="post-grid"] [data-slot="post-card"]').filter({ hasText: '猫が机の上で寝ている' }).click();
   const tags = page.locator('[data-slot="inspector-tags"]');
   await expect(tags).toBeVisible();
 
@@ -27,7 +27,7 @@ test('タグのチップから削除すると DB からも消える', async ({ l
   const hologram = await launchHologram();
   const { page } = hologram;
 
-  await page.locator('#postGrid .post-card').filter({ hasText: '青い空と海の写真です' }).click();
+  await page.locator('[data-slot="post-grid"] [data-slot="post-card"]').filter({ hasText: '青い空と海の写真です' }).click();
   const tags = page.locator('[data-slot="inspector-tags"]');
   const chip = tags.locator('[data-slot="tag-chip"]').filter({ hasText: '青' });
   await expect(chip).toHaveCount(1);

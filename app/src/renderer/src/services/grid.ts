@@ -1,6 +1,6 @@
 // Grid model sources — the imperative→declarative bridge for every VIRTUALIZED
-// grid (#postGrid / #posterGrid). viewer.js owns the data pipeline, the
-// container's classes/CSS vars, and every delegated container event handler;
+// grid (library posts / posters / trash). orchestrator.ts owns the data pipeline and
+// supplies what a gesture on a cell does (configureActions);
 // the grid components own cell rendering + windowing (masonic). Kept SEPARATE from
 // hologramStore for modelOf/keyOf specifically, which carry CALLBACKS (same
 // reason as menu.js/qf-pop.js) — everything else (items, layout inputs) DOES live
@@ -8,6 +8,8 @@
 // module now — its exports are imported directly by viewer.ts and the grid
 // components; hologramStore itself is a real ES module too (store.ts).
 
+import { currentShape, DISPLAY_KEYS, gutterFor } from './display.ts';
+import type { DisplayShape } from './display.ts';
 import { get as storeGet, subscribe as storeSubscribe } from './store.ts';
 import type { ZoomAnchor } from './zoom-anchor.ts';
 //
@@ -27,17 +29,45 @@ import type { ZoomAnchor } from './zoom-anchor.ts';
 //    field VALUES repeat, since a fresh object ref is what React's bridge-driven
 //    setState in GridMount keys off.
 
-type PostGridConfig = { modelOf(item: any, i: number): any; keyOf(item: any, i: number): string | number | null | undefined; labels: any; onAspect(cap: string, ar: string): void };
+type PostGridConfig = { modelOf(item: any, i: number): any; keyOf(item: any, i: number): string | number | null | undefined; labels?: any; onAspect(cap: string, ar: string): void };
 type PosterGridConfig = { modelOf(item: any, i: number): any; keyOf(item: any, i: number): string | number | null | undefined };
 type TrashGridConfig = Omit<PostGridConfig, 'onAspect'>;
 
-// Post grid model source: items come from hologramStore('postGroups'),
-// layout is derived from hologramStore('view'/'cardSize'/'tileSize'/'listThumb')
-// using the same formulas renderPosts() used to compute inline. configure() sets
-// the invariant callbacks once (modelOf/keyOf/labels/onAspect never change
+// The layout half of a post-grid model, derived from the display shape (#618) plus
+// the size axis. One function, three grids (library / trash), so a display change
+// cannot land on one of them and not the other.
+//
+//  - columnCount pins the list to a single full-width column; the grid leaves it
+//    unset so masonic treats columnWidth as a MINIMUM and stretches columns to fill
+//    (the same math as the old CSS auto-fill minmax).
+//  - `square` tells the host a cell is exactly one column wide AND high, which makes
+//    its height estimate exact. True only for a BARE square grid — with 情報を表示 on
+//    the metadata block hangs below the square, so the height is measured, not known.
+//  - itemHeightEstimate is only ever a first guess (masonic measures what it renders);
+//    it decides how far a deep-scroll restore lands before the real heights arrive.
+function postLayout(shape: DisplayShape, gridSize: number, listThumb: number) {
+  const infoBlock = 96; // rough height of the poster/excerpt/meta block under a square
+  return {
+    shape,
+    // The small end of the size axis IS the overview zoom (#141): at that scale a cell
+    // is all thumbnail, and a badge painted over it covers the thing it is counting.
+    overview: !shape.list && gridSize < 96,
+    columnCount: shape.list ? 1 : undefined,
+    columnWidth: shape.list ? undefined : gridSize,
+    square: shape.square && !shape.info,
+    rowGutter: gutterFor(shape),
+    itemHeightEstimate: shape.list ? Math.round(listThumb * 1.25) : shape.square ? gridSize + (shape.info ? infoBlock : 0) : Math.round(gridSize * 1.2),
+    listThumb,
+  };
+}
+
+// Post grid model source: items come from hologramStore('postGroups'), layout from the
+// display axes plus hologramStore('gridSize'/'listThumb') via postLayout above.
+// configure() sets the invariant callbacks once (modelOf/keyOf/onAspect never change
 // identity meaningfully across renders — only items+layout do).
 function makePostGridSource() {
   let config: PostGridConfig | null = null;
+  let actions: HologramCardActions | undefined; // what a gesture ON a cell does (orchestrator.ts fills it in)
   let liveColumnWidth: number | null = null; // mid-drag override; deliberately not in hologramStore (see the type's doc comment)
   let zoomAnchor: ZoomAnchor | null = null; // the position Ctrl+wheel zoom wants held (#282) — same side channel as the live column width
   let lastItems: any;
@@ -56,7 +86,7 @@ function makePostGridSource() {
   // Store-key listeners are wired ONCE (not per subscribe() caller) — there's a
   // single consumer (GridMount) in practice, but this avoids stacking duplicate
   // hologramStore subscriptions (and duplicate notify() fan-out) if that changes.
-  for (const k of ['postGroups', 'view', 'cardSize', 'tileSize', 'listThumb']) storeSubscribe(k, notify);
+  for (const k of ['postGroups', ...DISPLAY_KEYS, 'gridSize', 'listThumb']) storeSubscribe(k, notify);
   function computeModel(): HologramGridModel | null {
     if (!config) return null;
     const items = storeGet('postGroups');
@@ -65,23 +95,16 @@ function makePostGridSource() {
       lastItems = items;
       itemsKeySeq++;
     }
-    const view = storeGet('view') || 'card';
-    const cardSize = storeGet('cardSize');
-    const tileSize = storeGet('tileSize');
-    const listThumb = storeGet('listThumb');
-    const computedColumnWidth = view === 'tile' ? tileSize : view === 'card' ? cardSize : undefined;
+    const layout = postLayout(currentShape(), storeGet('gridSize') || 280, storeGet('listThumb') || 88);
     return {
-      view,
+      ...layout,
       items,
       itemsKey: itemsKeySeq,
       modelOf: config.modelOf,
       keyOf: config.keyOf,
       labels: config.labels,
-      columnCount: view === 'list' ? 1 : undefined,
-      columnWidth: liveColumnWidth ?? computedColumnWidth,
-      square: view === 'tile',
-      rowGutter: view === 'list' ? 14 : view === 'tile' ? 8 : 16,
-      itemHeightEstimate: view === 'list' ? Math.round(listThumb * 1.25) : view === 'tile' ? tileSize : Math.round(cardSize * 1.2),
+      cardActions: actions,
+      columnWidth: liveColumnWidth ?? layout.columnWidth,
       zoomAnchor,
       onAspect: config.onAspect,
       paint: ++paintSeq,
@@ -90,6 +113,9 @@ function makePostGridSource() {
   return {
     configure(cfg: PostGridConfig) {
       config = cfg;
+    },
+    configureActions(a: HologramCardActions) {
+      actions = a;
     },
     setLiveColumnWidth(px: number | null) {
       liveColumnWidth = px;
@@ -122,6 +148,7 @@ export const hologramPostGridSource = makePostGridSource();
 // from the store like every other layout input.
 function makePosterGridSource() {
   let config: PosterGridConfig | null = null;
+  let actions: HologramCardActions | undefined;
   let lastItems: any;
   let itemsKeySeq = 0;
   let paintSeq = 0;
@@ -152,6 +179,7 @@ function makePosterGridSource() {
       itemsKey: itemsKeySeq,
       modelOf: config.modelOf,
       keyOf: config.keyOf,
+      cardActions: actions,
       // list: one full-width row column, gap 4. tile: squares packed by minimum
       // width posterTileSize, gap 10. card: avatar-led columns of minimum width
       // posterCardSize, gap 14 — masonic stretches columns to fill, the same
@@ -168,6 +196,9 @@ function makePosterGridSource() {
   return {
     configure(cfg: PosterGridConfig) {
       config = cfg;
+    },
+    configureActions(a: HologramCardActions) {
+      actions = a;
     },
     get: computeModel,
     subscribe(cb: () => void) {
@@ -189,6 +220,7 @@ export const hologramPosterGridSource = makePosterGridSource();
 // slider drag both aim at the post grid).
 function makeTrashGridSource() {
   let config: TrashGridConfig | null = null;
+  let actions: HologramCardActions | undefined;
   let lastItems: any;
   let itemsKeySeq = 0;
   let paintSeq = 0;
@@ -202,7 +234,7 @@ function makeTrashGridSource() {
       }
     }
   };
-  for (const k of ['trashGroups', 'view', 'cardSize', 'tileSize', 'listThumb']) storeSubscribe(k, notify);
+  for (const k of ['trashGroups', ...DISPLAY_KEYS, 'gridSize', 'listThumb']) storeSubscribe(k, notify);
   function computeModel(): HologramGridModel | null {
     if (!config) return null;
     const items = storeGet('trashGroups');
@@ -211,28 +243,23 @@ function makeTrashGridSource() {
       lastItems = items;
       itemsKeySeq++;
     }
-    const view = storeGet('view') || 'card';
-    const cardSize = storeGet('cardSize');
-    const tileSize = storeGet('tileSize');
-    const listThumb = storeGet('listThumb');
     return {
-      view,
+      ...postLayout(currentShape(), storeGet('gridSize') || 280, storeGet('listThumb') || 88),
       items,
       itemsKey: itemsKeySeq,
       modelOf: config.modelOf,
       keyOf: config.keyOf,
       labels: config.labels,
-      columnCount: view === 'list' ? 1 : undefined,
-      columnWidth: view === 'tile' ? tileSize : view === 'card' ? cardSize : undefined,
-      square: view === 'tile',
-      rowGutter: view === 'list' ? 14 : view === 'tile' ? 8 : 16,
-      itemHeightEstimate: view === 'list' ? Math.round(listThumb * 1.25) : view === 'tile' ? tileSize : Math.round(cardSize * 1.2),
+      cardActions: actions,
       paint: ++paintSeq,
     } as HologramGridModel;
   }
   return {
     configure(cfg: TrashGridConfig) {
       config = cfg;
+    },
+    configureActions(a: HologramCardActions) {
+      actions = a;
     },
     get: computeModel,
     subscribe(cb: () => void) {

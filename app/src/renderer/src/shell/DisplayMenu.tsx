@@ -4,17 +4,15 @@
 // gallery/list + "show info on cards"; posters get their own sort + view. Anchors:
 // Linear Display, Notion view options.
 //
-// STAGING (P2②): the user-facing model is the new gallery/list + info toggle
-// (redesign 未決事項E), but the rendering ENGINE is still grid-density-builder's
-// card/tile/list. This popover is a faithful FACADE over the store 'view' key —
-// gallery+info→card, gallery→tile, list→list — so no engine change is needed here.
-// The store-value migration + the real gallery/list layouts land together in P2⑪
-// ("※新レイアウトの実装自体は⑪"). The size slider is the follow-up commit (P2②-2);
-// posters keep their existing 3-way view (card/tile/list) until that axis is
-// re-conceived separately (未決事項E scoped the gallery/list split to the post grid).
+// The post side's display state is three ORTHOGONAL keys (#618): layout, then two
+// independent switches for the grid. P2② shipped this popover as a facade over a
+// single 3-value key, which is what made 情報を表示 quietly change the thumbnail's
+// shape as well; services/display.ts holds the real axes now and this surface is
+// exactly a view of them. Posters keep their own 3-way view (card/tile/list) until
+// that axis is re-conceived separately (the split was scoped to the post grid).
 import type { ReactNode } from 'react';
 import { LayoutGrid, List, Shuffle, SlidersHorizontal, Square } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -23,21 +21,22 @@ import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { t } from '../_shared/i18n.ts';
+import { currentShape, DISPLAY_KEYS, setInfo as setShowInfo, setLayout, setSquare, shapeSnapshot, subscribeShape } from '../services/display.ts';
 import type { HologramSizeTrack } from '../services/grid-density-builder.ts';
-import { applyPostSize, applyPosterSize, getPostSizeTrack, getPosterSizeTrack, rerollShuffle } from '../services/orchestrator.ts';
+import { applyPostSize, applyPosterSize, getPostSizeTrack, getPosterSizeTrack, rerollShuffle, setPostSort } from '../services/orchestrator.ts';
 import { isHidden as panelsAreHidden, setHidden as setPanelsHidden, subscribe as panelsSubscribe } from '../services/panels.ts';
 import { get as storeGet, set as storeSet, subscribe as storeSubscribe } from '../services/store.ts';
 
 const subKey = (key: string) => (cb: () => void) => storeSubscribe(key, cb);
 
 // Subscribe to several store keys at once (any change fires cb) — the size track depends
-// on the view AND the active view's size, which live in separate store keys.
+// on the display shape AND the active layout's size, which live in separate store keys.
 const subMany = (keys: string[]) => (cb: () => void) => {
   const unsubs = keys.map((k) => storeSubscribe(k, cb));
   return () => unsubs.forEach((u) => u());
 };
-const subPostSize = subMany(['view', 'tileSize', 'cardSize', 'listThumb']);
-const postSizeSnap = () => `${storeGet('view')}|${storeGet('tileSize')}|${storeGet('cardSize')}|${storeGet('listThumb')}`;
+const subPostSize = subMany([...DISPLAY_KEYS, 'gridSize', 'listThumb']);
+const postSizeSnap = () => `${shapeSnapshot()}|${storeGet('gridSize')}|${storeGet('listThumb')}`;
 const subPosterSize = subMany(['posterView', 'posterTileSize', 'posterCardSize']);
 const posterSizeSnap = () => `${storeGet('posterView')}|${storeGet('posterTileSize')}|${storeGet('posterCardSize')}`;
 
@@ -119,30 +118,21 @@ function SizeSlider({ track, onDrag, onCommit }: { track: HologramSizeTrack; onD
   );
 }
 
-// Sort Select. Post sort's value source is the hidden #sortSelect (`sel`): on pick we
-// drive it (value + 'change' event) so the orchestrator's existing change listener
-// re-renders + persists per tab, then mirror into the store so the label updates.
-// Poster sort has no native element (`sel` = null) — its single source IS the store
-// key, which the orchestrator subscribes to for re-render.
-function SortSelect_({ storeKey, sel, options }: { storeKey: string; sel: HTMLSelectElement | null; options: { value: string; key: string }[] }) {
+// Sort Select. Both sorts are plain store keys now: the post sort used to be a hidden
+// <select> in the shell that this drove with a synthetic 'change' event (#153 category
+// 3), and it is setPostSort() — a real function call — instead.
+function SortSelect_({ storeKey, apply, options }: { storeKey: string; apply?: (value: string) => void; options: { value: string; key: string }[] }) {
   const subscribe = useCallback((cb: () => void) => storeSubscribe(storeKey, cb), [storeKey]);
-  const getVal = useCallback((): string => {
-    const v = storeGet(storeKey);
-    if (v != null) return v as string;
-    return sel?.value ?? options[0].value;
-  }, [storeKey, sel, options]);
+  const getVal = useCallback((): string => (storeGet(storeKey) as string) ?? options[0].value, [storeKey, options]);
   const value = useSyncExternalStore(subscribe, getVal);
   const items = useMemo(() => Object.fromEntries(options.map((o) => [o.value, t(o.key)])), [options]);
   const choose = useCallback(
     (next: string | null) => {
       if (next == null) return; // Base UI passes null on clear — never our case
-      if (sel && sel.value !== next) {
-        sel.value = next;
-        sel.dispatchEvent(new Event('change', { bubbles: true }));
-      }
-      storeSet(storeKey, next);
+      if (apply) apply(next);
+      else storeSet(storeKey, next);
     },
-    [sel, storeKey],
+    [apply, storeKey],
   );
   return (
     <Select items={items} value={value} onValueChange={choose}>
@@ -160,38 +150,21 @@ function SortSelect_({ storeKey, sel, options }: { storeKey: string; sel: HTMLSe
   );
 }
 
-// Post grid: sort + gallery/list view + "show info on cards". The view/info pair is a
-// facade over the store 'view' key (card/tile/list); see the file header.
+// Post grid: sort, then the display axes — layout (グリッド/リスト) plus, for the grid,
+// two independent switches. All five combinations are legal on purpose (#618); the two
+// switches go inert in the list, where a row IS its own information.
 function PostControls() {
-  const view = useSyncExternalStore(subKey('view'), () => (storeGet('view') as string) || 'card');
+  useSyncExternalStore(subscribeShape, shapeSnapshot);
+  const shape = currentShape();
   const sizeTrack = usePostSizeTrack();
-  const layout = view === 'list' ? 'list' : 'gallery';
-  const infoOn = view !== 'tile'; // card/list → on, tile → off (in list the switch is disabled)
-  // Remember the gallery sub-choice (info on/off) so leaving/returning via list keeps it.
-  const galleryInfo = useRef(true);
-  useEffect(() => {
-    if (view === 'card') galleryInfo.current = true;
-    else if (view === 'tile') galleryInfo.current = false;
-  }, [view]);
-
-  const setLayout = useCallback((next: string) => {
-    if (next === 'list') storeSet('view', 'list');
-    else storeSet('view', galleryInfo.current ? 'card' : 'tile');
-  }, []);
-  const setInfo = useCallback((on: boolean) => {
-    galleryInfo.current = on;
-    storeSet('view', on ? 'card' : 'tile'); // only reachable while layout = gallery
-  }, []);
-
-  const sortSel = document.getElementById('sortSelect') as HTMLSelectElement | null;
   // Random is the one sort with something left to say after it is picked: the order is
   // seeded, so re-rolling is how you get a different one (#118).
-  const sort = useSyncExternalStore(subKey('sortPost'), () => (storeGet('sortPost') as string) || sortSel?.value || 'date-desc');
+  const sort = useSyncExternalStore(subKey('sortPost'), () => (storeGet('sortPost') as string) || 'date-desc');
   return (
     <>
       <Row label={t('sbSortTitle')}>
         <div className="flex items-center gap-1">
-          <SortSelect_ storeKey="sortPost" sel={sortSel} options={SORT_POST} />
+          <SortSelect_ storeKey="sortPost" apply={(v) => setPostSort?.(v)} options={SORT_POST} />
           {sort === 'random' && (
             <Button variant="ghost" size="icon" aria-label={t('sortReroll')} title={t('sortReroll')} onClick={() => rerollShuffle?.()}>
               <Shuffle />
@@ -200,18 +173,24 @@ function PostControls() {
         </div>
       </Row>
       <Separator />
-      <ToggleGroup className="w-full" variant="outline" spacing={0} value={[layout]} onValueChange={(v) => v.length && setLayout(v[0] as string)} aria-label={t('sbViewTitle')}>
-        <ToggleGroupItem className="flex-1" value="gallery">
+      <ToggleGroup className="w-full" variant="outline" spacing={0} value={[shape.list ? 'list' : 'grid']} onValueChange={(v) => v.length && setLayout(v[0] === 'list')} aria-label={t('sbViewTitle')}>
+        <ToggleGroupItem className="flex-1" value="grid">
           <LayoutGrid />
-          {t('viewGallery')}
+          {t('layoutGrid')}
         </ToggleGroupItem>
         <ToggleGroupItem className="flex-1" value="list">
           <List />
-          {t('viewList')}
+          {t('layoutList')}
         </ToggleGroupItem>
       </ToggleGroup>
+      {/* Only the square side is named: leaving it off means "keep each picture's own
+          proportions", which needs no term (2026-07-19 確定). Mac 写真.app calls the
+          same switch 「正方形のサムネール」. */}
+      <Row label={t('displaySquare')}>
+        <Switch checked={shape.square} onCheckedChange={setSquare} disabled={shape.list} />
+      </Row>
       <Row label={t('displayShowInfo')}>
-        <Switch checked={infoOn} onCheckedChange={setInfo} disabled={layout === 'list'} />
+        <Switch checked={shape.info} onCheckedChange={setShowInfo} disabled={shape.list} />
       </Row>
       {sizeTrack && !sizeTrack.single && (
         <Row label={t('displaySize')}>
@@ -235,7 +214,7 @@ function PosterControls() {
   return (
     <>
       <Row label={t('sbPosterSortTitle')}>
-        <SortSelect_ storeKey="sortPoster" sel={null} options={SORT_POSTER} />
+        <SortSelect_ storeKey="sortPoster" options={SORT_POSTER} />
       </Row>
       <Separator />
       <ToggleGroup className="w-full" variant="outline" spacing={0} value={[posterView]} onValueChange={(v) => v.length && storeSet('posterView', v[0] as string)} aria-label={t('sbViewTitle')}>

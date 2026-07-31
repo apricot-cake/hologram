@@ -51,7 +51,7 @@ seedLibrary(configDir, records);
 const evalJs = `(async () => {
   const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   const waitFor = async (fn, ms = 4000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (fn()) return true; await sleep(40); } return false; };
-  await waitFor(() => document.querySelectorAll('#postGrid .post-card').length >= 3);
+  await waitFor(() => document.querySelectorAll('[data-slot="post-grid"] [data-slot="post-card"]').length >= 3);
 
   // Filterbar idioms (see test-app-facetcounts): one "+ フィルタ" popover session,
   // categories navigated via 戻る, queries scoped to the open popup.
@@ -84,7 +84,7 @@ const evalJs = `(async () => {
   const tsRow = rowEl('#typescript');
   if (tsRow) tsRow.click();
   await sleep(220);
-  const htCards = document.querySelectorAll('#postGrid .post-card').length;
+  const htCards = document.querySelectorAll('[data-slot="post-grid"] [data-slot="post-card"]').length;
 
   return { tagFlyCount, htFlyCount, htCards };
 })()`;

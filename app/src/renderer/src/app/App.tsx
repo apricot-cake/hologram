@@ -18,6 +18,7 @@ import { handleShortcutPanelsKey } from '../services/panels.ts';
 import { handleShortcutZoomKey } from '../services/image-zoom.ts';
 import { handleShortcutClipboardKey } from '../services/clipboard-intake.ts';
 import { onPostsChanged } from '../services/posts.ts';
+import { subscribeShape as subscribeDisplay } from '../services/display.ts';
 import { isManagerOpen as folderManagerIsOpen, onChange as foldersOnChange, subscribeManager as subscribeFolderManager } from '../services/folders.ts';
 import { get as storeGet, subscribe as storeSubscribe } from '../services/store.ts';
 import {
@@ -39,7 +40,7 @@ import {
   handleOutsideClickDismissDetail,
   handleGlobalTabShortcut,
   handleSelectionContextmenu,
-  handleViewStoreChange,
+  handleDisplayStoreChange,
   handleBrowseModeStoreChange,
   handlePosterViewStoreChange,
   handleSearchQueryStoreChange,
@@ -221,7 +222,7 @@ function SelectionContextMenu() {
   return null;
 }
 
-// External-store / IPC subscriptions: hologramStore keys (view / browseMode /
+// External-store / IPC subscriptions: hologramStore keys (the display axes / browseMode /
 // posterView / searchQuery), the search-mode toggle, shared folder changes, and the
 // fs-watch posts-changed hint. React owns the subscribe() registration (mounted once
 // for the app's lifetime). The store/search-mode handlers are guard+action logic that
@@ -235,14 +236,14 @@ function SelectionContextMenu() {
 // single-page app.
 function StoreSubscriptions() {
   useEffect(() => {
-    const unsubView = storeSubscribe('view', () => handleViewStoreChange());
+    const unsubDisplay = subscribeDisplay(() => handleDisplayStoreChange());
     const unsubBrowseMode = storeSubscribe('browseMode', () => handleBrowseModeStoreChange());
     const unsubPosterView = storeSubscribe('posterView', () => handlePosterViewStoreChange());
     const unsubSearchQuery = storeSubscribe('searchQuery', () => handleSearchQueryStoreChange());
     foldersOnChange((kind) => handleFolderChange(kind));
     onPostsChanged(() => handlePostsChanged());
     return () => {
-      unsubView();
+      unsubDisplay();
       unsubBrowseMode();
       unsubPosterView();
       unsubSearchQuery();

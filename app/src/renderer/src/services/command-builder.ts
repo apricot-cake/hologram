@@ -9,6 +9,7 @@
 // 共有するので、「現在のタブに AND 追加」という挙動が面ごとにズレない。
 import { type CommandEntry, registerCommands, registerProvider } from './command-registry.ts';
 import { handlers as searchBoxHandlers } from './searchbox.ts';
+import { setLayout } from './display.ts';
 import { toggle as togglePanels } from './panels.ts';
 import { open as openSettings } from './settings.ts';
 import { set as storeSet } from './store.ts';
@@ -50,18 +51,18 @@ export function makeCommands(deps: CommandDeps): void {
       perform: () => (deps.getBrowseMode() === 'posters' ? deps.resetPosterFilters() : deps.resetAllFilters()),
     },
     {
-      id: 'cmd:view-gallery',
+      id: 'cmd:view-grid',
       section: 'command',
-      title: t('cmdViewGallery'),
-      // 投稿側は 'card'（情報つきギャラリー）へ。DisplayMenu が覚えている「情報の
-      // オン/オフ」の記憶までは引き継がない＝パレットは表示軸の記憶を持つ面ではない。
-      perform: () => storeSet(deps.getBrowseMode() === 'posters' ? 'posterView' : 'view', 'card'),
+      title: t('cmdViewGrid'),
+      // レイアウト軸だけを動かす＝正方形サムネ／情報を表示の2スイッチには触らない
+      // （#618 の直交キー化。パレットは表示の記憶を持つ面ではない）。
+      perform: () => (deps.getBrowseMode() === 'posters' ? storeSet('posterView', 'card') : setLayout(false)),
     },
     {
       id: 'cmd:view-list',
       section: 'command',
       title: t('cmdViewList'),
-      perform: () => storeSet(deps.getBrowseMode() === 'posters' ? 'posterView' : 'view', 'list'),
+      perform: () => (deps.getBrowseMode() === 'posters' ? storeSet('posterView', 'list') : setLayout(true)),
     },
     // 一括表示トグル（#245）。名前は状態を言わず動作だけを言う＝パレットの行は開いた
     // 瞬間の状態で書き換わらない（「隠す」と「戻す」が入れ替わる行は探して見つからない）。

@@ -1,12 +1,15 @@
+import type { ReactNode } from 'react';
 import { useSyncExternalStore } from 'react';
 import { t } from '../_shared/i18n.ts';
+import { resetAllFilters, resetPosterFilters, runZipImport } from '../services/orchestrator.ts';
 import { get as storeGet, subscribe as storeSubscribe } from '../services/store.ts';
 
-// Empty-state placeholder (#emptyState): the "no posts yet" first-run message, the "no
-// results" filtered-empty message, or the poster first-run message. Pure presentation —
-// viewer keeps the container's show/hide + the delegated CTA click handler. Labels come
-// from i18n keys here (the component owns them), so no static text set-up in viewer races
-// us on a language reload.
+// Empty-state placeholder: the "no posts yet" first-run message, the "no results"
+// filtered-empty message, or the poster first-run message. It owns its own container and
+// its own visibility — the shell used to mount it inside a static `#emptyState` div whose
+// `hidden` two render pipelines wrote by hand, while this component already knew from the
+// store whether it had anything to say. Its buttons call the orchestrator directly, in
+// place of the delegated click listener that matched them by element id (#153).
 //
 // BOTH variants (post and poster) are folded into self-derived selectors —
 // hologramStore already carries everything needed reactively — instead of a viewer
@@ -54,40 +57,53 @@ export function EmptyState() {
   if (!variant) return null;
   if (variant === 'posterFirstRun') {
     return (
-      <>
-        <p>
+      <Frame>
+        <p className="mb-2">
           <strong>{t('posterEmptyTitle')}</strong>
         </p>
         <p>{t('posterEmptyDesc')}</p>
-      </>
+      </Frame>
     );
   }
   if (variant === 'firstRun') {
     return (
-      <>
-        <p>
+      <Frame>
+        <p className="mb-2">
           <strong>{t('emptyTitle')}</strong>
         </p>
-        <p>{t('emptyDesc')}</p>
+        <p className="mb-2">{t('emptyDesc')}</p>
         {/* emptyCaptureHint carries <kbd> markup, so it's set as HTML (matches the old innerHTML). */}
         {/* biome-ignore lint/security/noDangerouslySetInnerHtml: i18n string with intentional <kbd> markup */}
-        <p dangerouslySetInnerHTML={{ __html: t('emptyCaptureHint') }} />
-        <button type="button" className="empty-cta" id="emptyImportBtn">
-          {t('importZip')}
-        </button>
-      </>
+        <p className="mb-2" dangerouslySetInnerHTML={{ __html: t('emptyCaptureHint') }} />
+        <Cta onClick={() => runZipImport?.()}>{t('importZip')}</Cta>
+      </Frame>
     );
   }
   // 'filtered' (post or poster): a search / filter ate everything → one-click reset.
   return (
-    <>
-      <p>
+    <Frame>
+      <p className="mb-2">
         <strong>{t('emptySearchTitle')}</strong>
       </p>
       <p>{t('emptySearchDesc')}</p>
-      <button type="button" className="empty-cta" id="emptyResetBtn">
-        {t('emptyResetBtn')}
-      </button>
-    </>
+      <Cta onClick={() => (mode === 'posters' ? resetPosterFilters?.() : resetAllFilters?.())}>{t('emptyResetBtn')}</Cta>
+    </Frame>
+  );
+}
+
+function Frame({ children }: { children: ReactNode }) {
+  return (
+    <div data-slot="empty-state" className="px-5 py-15 text-center text-[var(--text-subtle)]">
+      {children}
+    </div>
+  );
+}
+
+/** "What to do next" affordance — rounded square = action, per DESIGN.md. */
+function Cta({ onClick, children }: { onClick: () => void; children: ReactNode }) {
+  return (
+    <button type="button" onClick={onClick} className="mt-3 cursor-pointer rounded-md border border-[var(--border-strong)] bg-[var(--surface)] px-4.5 py-[7px] text-[13px] text-[var(--text)] transition-colors hover:border-[var(--accent)] hover:bg-[var(--hover)] hover:text-[var(--accent-text)]">
+      {children}
+    </button>
   );
 }

@@ -111,14 +111,9 @@ async function launch(options: LaunchOptions): Promise<{ hologram: Hologram; clo
   // business and differ between machines, while the content box is what the
   // screenshots are of.
   await app.evaluate(({ BrowserWindow }, size) => BrowserWindow.getAllWindows()[0].setContentSize(size.width, size.height), CONTENT_SIZE);
-  // "The first render finished" — read off the grid, which the builder resolves
-  // one of two ways: cards mount into it, or it is display:none'd and the empty
-  // placeholder takes the space. Waiting on the placeholder instead would be a
-  // gate on someone else's bug (#470).
-  await page.waitForFunction(() => {
-    const grid = document.getElementById('postGrid');
-    return !!grid && (grid.style.display === 'none' || !!grid.querySelector('.post-card'));
-  });
+  // "The first render finished" — either cards have mounted into the grid slot, or
+  // the library is empty and the placeholder took the space instead.
+  await page.waitForFunction(() => !!document.querySelector('[data-slot="post-card"], [data-slot="empty-state"]'));
 
   const hologram: Hologram = {
     app,

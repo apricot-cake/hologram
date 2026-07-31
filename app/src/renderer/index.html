@@ -196,12 +196,6 @@
     #sidebar select, #sidebar input.search-box { width: 100%; }
 
     #appMain { flex: 1; min-width: 0; min-height: 0; display: flex; overflow: hidden; }
-    /* The content area is the scroll container (not the page): the scrollbar stays
-       inside the grid column, never crossing the tab/query bands or the sidebar.
-       scrollbar-gutter:stable keeps the column width from jumping ±10px as the bar
-       toggles (the tile slider's column-fit math depends on a stable width). */
-    #mode-post { flex: 1; min-width: 0; min-height: 0; padding: 24px 32px; overflow-y: auto; overflow-anchor: none; scrollbar-gutter: stable; }
-
     /* --- Modern scrollbars (Chromium/Electron). NOTE: setting the standard
        `scrollbar-width` property disables these ::-webkit-scrollbar rules in
        Chromium, so style scrollable areas via padding, not scrollbar-width. --- */
@@ -232,14 +226,6 @@
     }
 
     #panelSettings { max-width: 720px; }
-
-    /* The tab row was removed (one post view). #panelPosts keeps .tab-panel and
-       #controls-posts keeps .tab-controls as the single always-active set. */
-    .tab-panel { display: none; }
-    .tab-panel.active { display: block; }
-    /* Per-tab control set in the sidebar; only the active tab's controls show. */
-    .tab-controls { display: none; }
-    .tab-controls.active { display: flex; flex-direction: column; flex: 1; min-height: 0; }
 
     /* --- Toolbar (stacked in the sidebar) --- */
     .toolbar {
@@ -583,17 +569,6 @@
     /* Poster-mode sidebar controls: only while browsing posters. */
     #posterControls, #posterViewSection { display: none; }
     body.browse-posters #posterControls, body.browse-posters #posterViewSection { display: block; }
-    /* Mode visibility: the body class is the single source of truth (an inline
-       display set by renderPosts, or .poster-grid's display:grid, would otherwise
-       beat the [hidden] attribute — so use !important here). */
-    body.browse-posters #postGrid { display: none !important; }
-    body:not(.browse-posters) #posterGrid { display: none !important; }
-    /* ゴミ箱 (#268) — the third destination. It hides the post grid AND the post
-       empty state (which is driven by the [hidden] attribute, so this needs the
-       same !important the rules above do). */
-    body:not(.browse-trash) #trashPanel { display: none !important; }
-    body.browse-trash #postGrid,
-    body.browse-trash #emptyState { display: none !important; }
     /* Poster mode hides the post-only chrome (filters + active bar). Sort and density
        moved to the display popover, which is mode-aware in React. */
     body.browse-posters #postActiveBar,
@@ -601,206 +576,6 @@
     /* The poster query bar mirrors #postActiveBar: only shown while browsing posters. */
     body:not(.browse-posters) #posterActiveBar { display: none !important; }
 
-    /* --- Post grid --- */
-    .post-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(var(--card-size, 280px), 1fr));
-      gap: 16px;
-    }
-    /* Masonry (card view only): the virtualized grid component (masonic) measures
-       each card to pack Eagle-style waterfall columns — content-visibility must
-       be ON (visible) so offscreen-but-mounted cards report real heights, and
-       width:100% fills the component's positioned cell wrapper. (The old JS
-       .mcols/.mcol column DOM is gone.) */
-    .post-grid.masonry { display: block; }
-    .post-grid.masonry .post-card { content-visibility: visible; contain-intrinsic-size: auto; width: 100%; }
-    .post-card {
-      background: var(--surface); border-radius: 8px; overflow: hidden;
-      border: 1px solid var(--border-subtle); box-shadow: var(--shadow-sm);
-      cursor: pointer; transition: box-shadow var(--dur-hover) var(--ease-out), border-color var(--dur-hover), transform var(--dur-hover) var(--ease-out);
-      position: relative;
-      /* Skip rendering offscreen cards (huge win for thousands of items, like
-         the image grid). The intrinsic size is the per-density height estimate. */
-      content-visibility: auto; contain-intrinsic-size: auto 360px;
-      /* Prevent scroll anchoring from adjusting viewport when content-visibility
-         re-renders offscreen cards on scroll-back — causes the "hitch" sensation. */
-      overflow-anchor: none;
-    }
-    /* Hidden SMOKE capture window: force cards to paint (nothing is ever "on-screen" there,
-       so content-visibility:auto would skip them all). Gated on the class so the normal app
-       is untouched. The companion rule that cancelled the card entrance is gone with the
-       entrance itself — a hidden window never advanced that animation, so cards stayed at
-       its opacity:0 start frame and captured blank. */
-    html.smoke-capture .post-card { content-visibility: visible; }
-    /* Hover lift: deeper shadow + a rise-and-slight-grow reads as "picked up"
-       (Pinterest/gallery idiom; values from the motion-study canvas 2026-07-05).
-       All layouts incl. list rows — the whole row lifts as one element; z-index
-       raises it above neighbors so the grow isn't clipped.
-       Transform origin is the center; off under prefers-reduced-motion. */
-    .post-card:hover { box-shadow: var(--shadow-md); border-color: var(--border); transform: translateY(-3px) scale(1.014); z-index: 1; }
-    /* Slow thumbnail zoom under the lift (clipped by the card / thumb box). */
-    .card-thumb .card-img { transition: transform .5s var(--ease-out); }
-    .post-card:hover .card-thumb .card-img { transform: scale(1.055); }
-    @media (prefers-reduced-motion: reduce) {
-      .post-card:hover, .poster-card:hover { transform: none; }
-      .post-card:hover .card-thumb .card-img { transform: none; }
-    }
-    /* :is(img, video) throughout the card rules — an mp4-backed GIF loops in the
-       .card-img slot as a <video> (#476) and has to lay out as the still it
-       replaces. Same specificity as the bare type selector it grew out of. */
-    .post-card :is(img, video) {
-      width: 100%; display: block;
-      max-height: 300px; object-fit: cover; cursor: zoom-in;
-    }
-    .post-meta {
-      padding: 12px;
-    }
-    /* Meta line 1: brand dot + name (strong) + handle (subtle, ellipsis).
-       The old solid platform badge was the loudest element on the card while
-       carrying the least information (Reeder/Ivory keep source markers quiet —
-       the dot's brand color + tooltip identify the platform). */
-    .post-meta .user {
-      font-weight: 600; font-size: 13px;
-      margin-bottom: 4px; min-width: 0;
-      display: flex; align-items: center; gap: 6px;
-    }
-    .post-meta .user .uname { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .post-meta .user .handle {
-      color: var(--text-subtle); font-weight: 400; font-size: 11px;
-      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 0;
-    }
-    /* Source badge: platform marker pinned to the thumbnail's bottom-left
-       (Instagram/Pinterest style). .card-thumb wraps the image as the anchor;
-       in tile/list it collapses (display:contents) so the badge falls back to
-       the card box, which there coincides with the image edge. */
-    .card-thumb { position: relative; display: block; line-height: 0; }
-    .post-grid.tile-view .card-thumb, .post-grid.list-view .card-thumb { display: contents; }
-
-    /* --- Stacked cards: a multi-image group = the CARD itself duplicated -----
-       Inner-deck at REST + fan-out on HOVER (motion-study 2026-07-05; replaces
-       the outward-rotation-only peek). The old peek rotated the sheets out past
-       the card edge, so its whole visibility budget was the layout's gutter
-       (~8px) and it shrank to nothing as the tile shrank — the exact wall the
-       user hit. New model, two states:
-
-       REST — the multi-ness is drawn INSIDE the card's own footprint. The front
-       face (thumb/meta) is pushed down by --deck (padding-top); the sheets fill
-       the PADDING box (inset:0), so their tops already sit --deck above the inset
-       front face and never cross the border box. Only that fixed --deck-tall band
-       peeks. s1 (always present — it's the 2nd image, so the ONLY back sheet on a
-       ×2 group) is the BACKMOST layer and fills the band from the very top, so a
-       ×2 reads as a clear single step with no empty strip; s2 (the 3rd image, only
-       on ×3+) steps in front of it. Zero gutter is consumed (non-stacked cards,
-       the majority, pay nothing) and the peek is a constant pixel height that
-       survives any tile size.
-
-       HOVER — no stack-specific effect (user 2026-07-05: the sheet motion felt
-       unnecessary). The card lifts as any card does and the whole deck rides up
-       with it; the sheets themselves don't move. Geometry is per-layout via the
-       --s1/--s2 (rest) custom props. ×N badge stays as the precise count. */
-    .post-card.grouped {
-      background: transparent;   /* the deck band shows the sheets behind */
-      border-color: transparent; /* the front-face edge is drawn by ::before */
-      box-shadow: none;          /* the sheets + ::before carry every shadow */
-      padding-top: var(--deck, 9px);  /* pushes the front face down = the deck */
-      content-visibility: visible;    /* cv:auto's implicit paint containment
-         would clip the fanned sheets to the card box; cheap to drop since the
-         virtualized grid unmounts offscreen cells anyway. */
-    }
-    .post-card .stack-sheet {
-      position: absolute; inset: 0;   /* fill the PADDING box — the card's padding-top
-         IS the deck, so the sheet's top already peeks --deck above the inset front
-         face and never crosses the border box (zero gutter, no outward peek) */
-      overflow: hidden; transform-origin: top center;
-      background: var(--surface); border: 1px solid var(--border-strong);   /* strong, not hairline: a white sheet edge on a near-white bg/front needs a real line */
-      border-radius: 8px; box-shadow: var(--shadow-md);   /* md, not sm: white sheets carrying white-ish images need the shadow to read at all */
-    }
-    /* Depth dim: back sheets tint their IMAGE toward --text (dark in light theme,
-       light in dark) so the stepped deck reads as distinct layers even when every
-       thumbnail is near-white manga line-art. Scoped to the image (NOT the whole
-       sheet) so list's white sheet-body doesn't peek as a gray band across the
-       row top — only the thumbnail sliver dims. s1 is backmost so it's the dimmer. */
-    .stack-sheet .stack-sheet-img::after {
-      content: ''; position: absolute; inset: 0; border-radius: inherit;
-      pointer-events: none; background: var(--stack-dim, transparent);
-    }
-    .post-card.grouped .stack-s1 { z-index: -2; transform: var(--s1); --stack-dim: color-mix(in srgb, var(--text) 15%, transparent); }
-    .post-card.grouped .stack-s2 { z-index: -1; transform: var(--s2); --stack-dim: color-mix(in srgb, var(--text) 8%, transparent); }
-    /* Chrome sits on the FRONT face, not in the deck band: push the ×N badge
-       (always-on for grouped) and the ○ select ring down by --deck. */
-    .post-grid:not(.tile-view) .post-card.grouped .card-ntag { top: calc(8px + var(--deck)); }
-    .post-grid.tile-view .post-card.grouped .card-ntag { top: calc(6px + var(--deck)); }
-    .post-card.grouped .select-check { top: calc(8px + var(--deck)); }
-    /* Front-face edge re-cast ABOVE the negative-z sheets (the card's own
-       box-shadow paints UNDER them — CSS paint order). Rings the INSET front
-       face only (top at --deck) so it reads as sitting ON the pile; deepens on
-       hover for the lift. z-index:0 keeps it under the positioned content. */
-    .post-card.grouped::before {
-      content: ''; position: absolute; top: var(--deck, 9px);
-      left: -1px; right: -1px; bottom: -1px; z-index: 0;
-      border-radius: inherit; pointer-events: none;
-      box-shadow: 0 0 0 1px var(--border-strong), 0 2px 8px rgba(16, 19, 26, 0.18);
-      transition: box-shadow var(--dur-hover) var(--ease-out);
-    }
-    .post-card.grouped:hover::before { box-shadow: 0 0 0 1px var(--border-strong), 0 8px 20px rgba(16, 19, 26, 0.24); }
-    [data-theme="dark"] .post-card.grouped::before { box-shadow: 0 0 0 1px var(--border-strong), 0 2px 8px rgba(0, 0, 0, 0.55); }
-    [data-theme="dark"] .post-card.grouped:hover::before { box-shadow: 0 0 0 1px var(--border-strong), 0 8px 20px rgba(0, 0, 0, 0.6); }
-    /* Card view: sheet top ~56% = thumbnail area (mirrors the card anatomy —
-       image on top, meta panel below). */
-    .stack-sheet .stack-sheet-img {
-      position: absolute; inset: 0 0 44% 0;
-      background-size: cover; background-position: center top;
-      border-radius: 8px 8px 0 0;
-    }
-    /* ---- card view (masonry) ---- */
-    .post-grid.masonry .post-card.grouped {
-      overflow: visible; z-index: 0; --deck: 15px;
-      --s1: scale(0.93);                     /* backmost: fills the band from the top */
-      --s2: translateY(7px) scale(0.965);    /* middle: steps down toward the face */
-    }
-    .post-grid.masonry .post-card.grouped:hover { z-index: 1; box-shadow: none; }   /* beat the generic hover md; ::before carries the lift */
-    /* The card is overflow:visible now — the thumb re-clips the hover img zoom. */
-    .post-grid.masonry .post-card.grouped .card-thumb { overflow: hidden; border-radius: 8px 8px 0 0; }
-    .post-grid.masonry .post-card.grouped .post-meta { position: relative; background: var(--surface); border-radius: 0 0 8px 8px; }
-    /* ---- tile: square image-only cells → full-bleed sheet thumbs (no meta
-       split). Same inner-deck; the front thumb regains a clip box for the hover
-       img zoom now that the card is overflow:visible. ---- */
-    .post-grid.tile-view .post-card.grouped {
-      overflow: visible; z-index: 0; --deck: 13px;
-      --s1: scale(0.92);                     /* backmost: fills the band from the top */
-      --s2: translateY(6px) scale(0.955);    /* middle: steps down */
-    }
-    .post-grid.tile-view .post-card.grouped:hover { z-index: 1; box-shadow: none; }
-    /* the front thumb is ABSOLUTE (fills the padding box), so padding-top can't
-       push it — inset its top by --deck explicitly to open the deck band. */
-    .post-grid.tile-view .post-card.grouped .card-thumb {
-      display: block; position: absolute; inset: var(--deck) 0 0 0; overflow: hidden;
-      border-radius: 8px; line-height: 0;
-    }
-    .post-grid.tile-view .stack-sheet .stack-sheet-img { inset: 0; border-radius: 8px; }
-    /* ---- list: the WHOLE ROW is the stacked object. The deck peeks along the
-       row's top edge; the sheet mirrors the row anatomy (thumb-wide image left,
-       white body — only the image dims, so no gray band crosses the row top). A
-       row is a wide, short lever, so the rest taper uses scaleX≈1 with a real
-       scaleY to keep the bottom inside. ---- */
-    .post-grid.list-view .post-card.grouped {
-      overflow: visible; z-index: 0; --deck: 10px;
-      --s1: scale(0.997, 0.8);               /* backmost: fills the band top (scaleY keeps the bottom inside) */
-      --s2: translateY(5px) scale(0.999, 0.9); /* middle: steps down */
-    }
-    .post-grid.list-view .post-card.grouped:hover { z-index: 1; box-shadow: none; }
-    .post-grid.list-view .post-card.grouped .card-thumb {
-      display: block; position: relative; line-height: 0;
-      flex: 0 0 var(--list-thumb, 88px); width: var(--list-thumb, 88px);
-      align-self: stretch; overflow: hidden; border-radius: 6px 0 0 6px;
-    }
-    .post-grid.list-view .post-card.grouped .card-thumb .card-img {
-      width: 100%; min-width: 0; height: 100%; max-height: none; object-fit: cover;
-    }
-    .post-grid.list-view .stack-sheet { border-radius: 6px; }
-    .post-grid.list-view .stack-sheet .stack-sheet-img {
-      inset: 0 auto 0 0; width: var(--list-thumb, 88px); border-radius: 6px 0 0 6px;
-    }
     /* .pf-dot is used by the poster grid's inline pf-tag (the thumbnail badge
        itself was removed — #109 follow-up: no platform chrome on artwork). */
     .pf-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
@@ -809,79 +584,6 @@
     .pf-dot.misskey { background: var(--brand-misskey); }
     .pf-dot.mastodon { background: var(--brand-mastodon); }
     .pf-dot.pixiv { background: var(--brand-pixiv); }
-    .post-meta .text {
-      font-size: 13px; color: var(--text);
-      display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
-      overflow: hidden; margin-bottom: 6px; cursor: pointer;
-    }
-    .post-meta .text.expanded {
-      -webkit-line-clamp: unset; display: block;
-    }
-    .post-meta .text { position: relative; }
-    .text-hint {
-      position: absolute; bottom: 0; right: 0;
-      font-size: 10px; color: var(--text-subtle);
-      background: color-mix(in oklch, var(--surface) 88%, transparent); padding: 0 4px;
-      border-radius: 3px; pointer-events: none;
-      display: none;
-    }
-    .post-meta .text.truncated:hover .text-hint { display: block; }
-    .post-meta .text.expanded .text-hint { display: none; }
-    /* Footer line: nonzero engagement (monotone glyphs) + ONE compact date,
-       both quiet — a single line where two full timestamp rows used to sit. */
-    .post-foot { display: flex; align-items: center; gap: 10px; margin-top: 6px; }
-    .post-meta .stats {
-      display: flex; gap: 10px; font-size: 11.5px; color: var(--text-subtle);
-    }
-    .post-meta .stats .st { display: inline-flex; align-items: center; gap: 3px; }
-    /* Engagement counts / capture date are library noise at rest — show them only
-       while a sort or filter makes them relevant (.show-eng / .show-cap on the
-       grid, same gate the tile ♡ overlay already uses). */
-    .post-grid:not(.show-eng) .post-meta .stats { display: none; }
-    .post-grid:not(.show-cap) .post-foot .cdate { display: none; }
-    /* footer right corner: post date (primary) + 📷 capture date (secondary) */
-    .post-foot .foot-r { margin-left: auto; display: inline-flex; align-items: center; gap: 7px; min-width: 0; }
-    .post-foot .pdate { font-size: 11px; color: var(--text-subtle); white-space: nowrap; }
-    .post-foot .cdate { font-size: 11px; color: var(--text-subtle); opacity: .82; display: inline-flex; align-items: center; gap: 2px; white-space: nowrap; }
-    .post-foot .cdate .cdate-ic { flex-shrink: 0; }
-    /* Card view: pin the footer (date + pf-tag source corner) to the card bottom.
-       Cards in a grid row stretch to equal height, so a short-text card left its
-       footer floating mid-card with empty space below — pf-tag landed at a
-       different height in every card (ユーザー指摘). flex-column + margin-top:auto
-       drops the footer to the bottom edge so it lines up across the row. Scoped to
-       card view: tile hides .post-meta, list re-lays it as a row. */
-    .post-grid:not(.tile-view):not(.list-view) .post-card { display: flex; flex-direction: column; }
-    .post-grid:not(.tile-view):not(.list-view) .post-meta { flex: 1; display: flex; flex-direction: column; min-width: 0; }
-    .post-grid:not(.tile-view):not(.list-view) .post-foot { margin-top: auto; }
-
-    /* Selection ring as an overlay (::after) so it paints ABOVE the positioned
-       .card-thumb. An `outline` on the card was painted under the thumb, so it
-       looked thinner over the thumbnail than over the meta (user report). */
-    .post-card.selected::after {
-      content: ''; position: absolute; inset: 0; z-index: 6;
-      border: 3px solid color-mix(in oklch, var(--color-selected) 45%, transparent); border-radius: 8px; pointer-events: none;
-    }
-    /* ○ select ring — the ONLY selection entry point. A hollow white ring with a
-       soft dark halo (visible on any image), top-left, shown on hover; fills with
-       the accent + ✓ once selected (selected cards keep it shown). */
-    .post-card .select-check {
-      position: absolute; top: 8px; left: 8px;
-      width: 22px; height: 22px; border-radius: 50%;
-      background: transparent; border: 2px solid #fff;
-      box-shadow: 0 0 2px 1px rgba(0,0,0,0.45);
-      opacity: 0; transition: opacity .1s, background .1s;
-      display: flex; cursor: pointer; z-index: 5;
-      align-items: center; justify-content: center;
-    }
-    .post-card:hover .select-check { opacity: 1; }
-    .post-card.selected .select-check { opacity: 1; background: var(--color-selected); border-color: #fff; }
-    /* sharp geometric check drawn with borders (matches image-view; no ✓ glyph).
-       Draws in with an overshoot on selection (hologramCheckDraw). */
-    .post-card.selected .select-check::after {
-      content: ''; width: 5px; height: 9px; margin-top: -1px;
-      border: solid #fff; border-width: 0 2px 2px 0; transform: rotate(45deg);
-      animation: hologramCheckDraw .3s var(--ease-out) backwards;
-    }
     /* Drag range selection (#484). The band is an overlay owned imperatively by the
        grid host (_shared/VirtualGrid.tsx) and attached to <body>, so it is placed in
        viewport coordinates and clipped to the scroller's visible area — the press
@@ -896,139 +598,6 @@
       background: color-mix(in oklch, var(--color-selected) 16%, transparent);
       border: 1px solid color-mix(in oklch, var(--color-selected) 70%, transparent);
     }
-
-    /* Selection mode (≥1 selected): clicking anywhere on a card toggles it, so
-       every ring stays visible and the per-card hover actions step aside. */
-    .post-grid.selecting .select-check { opacity: 1; }
-    .post-grid.selecting .info-btn, .post-grid.selecting .act-pill { display: none; }
-    .post-grid.selecting:not(.tile-view) .card-ntag { opacity: 0; }
-    /* every click selects now — plain pointer everywhere (no zoom-in over images,
-       no "click to expand" hint on the text) */
-    .post-grid.selecting .post-card, .post-grid.selecting .post-card :is(img, video) { cursor: pointer; }
-    /* inspector open: a click swaps the panel content, not zoom → plain pointer.
-       The attribute is written by the shell (AppShell.tsx) — see the note there for
-       why it is not a class. */
-    .post-grid[data-insp-open] .post-card :is(img, video) { cursor: pointer; }
-    .post-grid.selecting .post-meta .text.truncated:hover .text-hint { display: none; }
-
-    /* --- List view: text-first (scanning post text is the point of the list) --- */
-    .post-grid.list-view {
-      /* gap mirrors the masonic rowGutter (viewer.js). Kept at 14 for scanning
-         rhythm; the grouped-row stack no longer needs clearance here — its rest
-         deck stays inside the row footprint and the hover fan raises z-index so
-         it paints above neighbors rather than parting them. */
-      display: flex; flex-direction: column; gap: 14px;
-      grid-template-columns: unset;
-    }
-    .post-grid.list-view .post-card {
-      display: flex; flex-direction: row; border-radius: 6px;
-      overflow: hidden; align-items: stretch;
-      contain-intrinsic-size: auto 104px;
-    }
-    .post-grid.list-view .post-card :is(img, video) {
-      width: var(--list-thumb, 88px); min-width: var(--list-thumb, 88px); align-self: stretch;
-      height: auto; max-height: calc(var(--list-thumb, 88px) * 1.25); object-fit: cover;
-    }
-    .post-grid.list-view .post-meta {
-      display: flex; flex-wrap: wrap; align-items: baseline;
-      gap: 3px 10px; padding: 9px 14px; flex: 1; min-width: 0;
-      /* keep the right gutter clear for the hover trio (ℹ@8 + ws@40 + tag@72,
-         28px wide) so the right-aligned date never sits under them */
-      padding-right: 104px;
-    }
-    /* text is the hero: full width, up to 2 lines, darker and a touch larger */
-    .post-grid.list-view .post-meta .text {
-      order: 0; flex-basis: 100%; width: 100%;
-      -webkit-line-clamp: 2; margin-bottom: 2px;
-      font-size: 14px; line-height: 1.45; color: var(--text-strong);
-    }
-    /* secondary line: user · stats · date, small and muted */
-    .post-grid.list-view .post-meta .user {
-      order: 1; margin-bottom: 0; white-space: nowrap;
-      font-size: 12px; font-weight: 500; color: var(--text-muted);
-    }
-    .post-grid.list-view .post-meta .post-foot { order: 2; flex: 1; min-width: 0; margin-top: 0; }
-    .post-grid.list-view .post-meta .stats { white-space: nowrap; font-size: 11px; }
-    .post-grid.list-view .post-meta .pdate { white-space: nowrap; }
-    .post-grid.list-view .post-meta .tags-label { display: none; }
-
-    /* --- Tile density: a post-card with its info section hidden + a compact
-       author/❤ overlay on the image. Purely presentational (reuses the card's
-       buttons + select), so card⇄tile⇄list is just like grid/list. --- */
-    .post-grid.tile-view {
-      grid-template-columns: repeat(auto-fill, minmax(var(--tile-size, 180px), 1fr));
-      gap: 8px;
-    }
-    .post-grid.tile-view .post-card { aspect-ratio: 1; border-color: var(--border); box-shadow: none; contain-intrinsic-size: auto var(--tile-size, 180px); }
-    /* Tiles keep the same hover buttons as cards (🔖・ℹ・🏷 — everything else
-       lives in the right-click menu), laid out horizontally top-right and scaled
-       with the tile size so they never collide with the ○ ring. */
-    /* round() keeps the buttons on whole pixels — a fractional size (e.g.
-       180×0.13=23.4px) rounds width and height differently at fractional
-       display scaling and the circles render as slight ellipses */
-    .post-grid.tile-view { --act: round(nearest, clamp(18px, calc(var(--tile-size, 180px) * 0.13), 26px), 1px); }
-    .post-grid.tile-view .info-btn {
-      width: var(--act); height: var(--act); top: 6px; font-size: calc(var(--act) * 0.55);
-      right: 6px;
-    }
-    .post-grid.tile-view .act-pill { width: var(--act); height: var(--act); top: 6px; right: 6px; }
-    .post-grid.tile-view .post-card:has(.info-btn:hover) .act-pill { right: 6px; }
-    .post-grid.tile-view .info-btn svg { width: 60%; height: 60%; }
-    .post-grid.tile-view .post-card:hover { box-shadow: var(--shadow-md); }
-    .post-grid.tile-view .card-img { width: 100%; height: 100%; max-height: none; object-fit: cover; }
-    .post-grid.tile-view .post-meta { display: none; }
-    .card-overlay, .card-ntag { display: none; }
-    /* Card / list view: show the ×N image-count badge on the thumbnail's top-left
-       (top-right is the hover action row; the selection check only appears when
-       selected, so it takes the corner then). */
-    .post-grid:not(.tile-view) .card-ntag {
-      display: block; position: absolute; top: 8px; left: 8px; z-index: 1;
-      padding: 2px 7px; border-radius: 4px; font-size: 11px; font-weight: 600;
-      background: rgba(0,0,0,0.72); color: #fff; transition: opacity .1s;
-    }
-    /* the ○ select ring shares the top-left corner: it takes over on hover */
-    .post-grid:not(.tile-view) .post-card:hover .card-ntag { opacity: 0; }
-    .post-card.selected .card-ntag { display: none; }
-    .post-grid.tile-view .card-overlay {
-      display: flex; align-items: flex-end; gap: 8px;
-      position: absolute; left: 0; right: 0; bottom: 0; padding: 52px 8px 8px;
-      background: var(--scrim-grad); color: #fff; font-size: 11px; pointer-events: none;
-    }
-    .post-grid.tile-view .card-overlay .ov-author { flex: 1; min-width: 0; color: #eee; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .post-grid.tile-view .card-overlay .ov-likes { flex-shrink: 0; }
-    /* tile info overlay is optional (表示 > タイルに情報を表示) */
-    .post-grid.tile-view.no-overlay .card-overlay { display: none; }
-    /* overview zoom (#141): at the small end of the size axis a tile is all thumbnail —
-       chrome would cover it. Independent of the pref above (both hide, neither writes). */
-    .post-grid.tile-view.overview .card-overlay,
-    .post-grid.tile-view.overview .card-ntag { display: none; }
-    /* the ❤ count on tiles only matters while sorting/filtering by engagement */
-    .post-grid.tile-view .card-overlay .ov-likes { display: none; }
-    .post-grid.tile-view.show-eng .card-overlay .ov-likes { display: block; }
-    .post-grid.tile-view .card-ntag {
-      display: block; position: absolute; top: 6px; right: 6px; z-index: 2;
-      padding: 2px 6px; border-radius: 3px; font-size: 10px; font-weight: 600;
-      background: rgba(0,0,0,0.8); color: #fff; transition: opacity .1s;
-    }
-    .post-grid.tile-view .post-card:hover .card-ntag { opacity: 0; }
-
-    .empty-state {
-      text-align: center; padding: 60px 20px; color: var(--text-subtle);
-    }
-    .empty-state p { margin-bottom: 8px; }
-    .empty-state kbd {
-      display: inline-block; padding: 1px 7px; border: 1px solid var(--border-strong);
-      border-bottom-width: 2px; border-radius: 4px; background: var(--surface);
-      color: var(--text); font: 12px/1.6 var(--font-sans);
-    }
-    /* "What to do next" affordance — rounded square = action, per DESIGN.md */
-    .empty-cta {
-      margin-top: 12px; padding: 7px 18px; border-radius: 6px;
-      border: 1px solid var(--border-strong); background: var(--surface);
-      color: var(--text); font-size: 13px; cursor: pointer;
-      transition: border-color .12s, color .12s, background .12s;
-    }
-    .empty-cta:hover { border-color: var(--accent); color: var(--accent-text); background: var(--hover); }
 
     /* --- Settings --- */
     .section {
@@ -1084,16 +653,6 @@
       width: 100%; font-size: 12px; color: var(--text-subtle); margin-top: 8px;
     }
 
-    .card-video { display: flex; align-items: center; justify-content: center; min-height: 120px; background: var(--surface-2); color: var(--text-muted); font-size: 30px; cursor: pointer; }
-    /* ▶ badge over a video/gif(mp4) card's poster thumbnail (#119 St1) — the
-       poster is a plain still, so this is the only on-thumb cue it plays. */
-    .card-play-badge {
-      position: absolute; bottom: 6px; right: 6px; z-index: 1;
-      display: flex; align-items: center; justify-content: center;
-      width: 22px; height: 22px; border-radius: 50%;
-      background: rgba(0,0,0,0.72); color: #fff; font-size: 10px;
-      pointer-events: none;
-    }
     /* The quick-view peek overlay is Tailwind in lightbox/ now (P2⑦) — it was
        .lightbox-overlay here while #lightbox was a static container. */
 
@@ -1101,7 +660,7 @@
     /* The active image tab swaps the browse chrome (query bar / sidebar / grid)
        for a single media stage; the inspector column stays. */
     #imageTabView { display: none; }
-    body.image-tab-active #mode-post { display: none; }
+    body.image-tab-active [data-slot='content-scroll'] { display: none; }
     /* The toolbar band itself STAYS under an image tab: the active tab's
        Chrome-style connected shape needs the band below it — hiding the whole
        bar left the strip looking clipped (every browser keeps its toolbar row
@@ -1152,21 +711,6 @@
        paints above the overlay) doesn't stay visible. JS toggles .modal-open. */
     html.modal-open, body.modal-open { overflow: hidden; }
 
-    /* --- Tags --- */
-    .tags-label { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 4px; }
-    .tag-chip { font-size: 10px; background: var(--surface-3); border-radius: 10px; padding: 1px 8px; color: var(--text-muted); }
-    /* Flags (リプライ/引用/動画 etc.): quiet muted text, NOT boxed chips —
-       the boxed-tint chips were more outlined boxes (wireframe feel) and
-       競合した with the real value chips in the sidebar. */
-    .post-flags { display: flex; flex-wrap: wrap; gap: 2px 8px; margin: 0 0 3px; }
-    .post-flag { font-size: 10px; color: var(--text-muted); line-height: 1.6; }
-    .post-grid.list-view .post-meta .post-flags { order: 1; margin: 0; }
-    /* Hover buttons are glass-chrome (icon-only, floating OVER the thumbnail).
-       The blur layer is enabled only on the hovered card so 150
-       offscreen-invisible buttons don't each cost a backdrop pass. */
-    .post-card:hover .info-btn {
-      backdrop-filter: var(--chrome-glass-blur); -webkit-backdrop-filter: var(--chrome-glass-blur);
-    }
     /* Flyout menus: the card context menu (full action list) and the folder
        picker it opens share one look. */
     .fold-menu {
@@ -1206,41 +750,6 @@
     .tk-dot { width: 8px; height: 8px; border-radius: 999px; flex-shrink: 0; }
     .tk-work { background: var(--tint-purple-bd); }
     .tk-character { background: var(--tint-green-bd); }
-
-    /* --- ℹ detail-popup button on card (ported from image-view) --- */
-    .info-btn {
-      position: absolute; top: 8px; right: 8px;
-      width: 28px; height: 28px; border-radius: 50%;
-      background: rgba(20,22,26,0.42); color: #fff; border: none; font-size: 14px;
-      box-shadow: inset 0 1px 0 rgba(255,255,255,0.18);
-      display: flex; align-items: center; justify-content: center;
-      cursor: pointer; opacity: 0; transition: opacity 0.15s;
-      z-index: 1;
-    }
-    /* block display kills the inline-baseline slack; even 16px in the even
-       28px button avoids the half-pixel that nudged the icon bottom-right */
-    .info-btn svg { display: block; }
-    .post-card:hover .info-btn { opacity: 1; }
-    .post-grid.list-view .info-btn { top: 50%; right: 8px; transform: translateY(-50%); }
-
-    /* Liquid hover highlight: ONE accent blob shared by the two hover buttons,
-       gliding between them (iPadOS pointer-style), driven by :has() — no JS.
-       It sits under the buttons (earlier in DOM, same z-index), so opaque
-       button states (red=remove / green=added) still win visually. */
-    .act-pill {
-      position: absolute; top: 8px; right: 8px; width: 28px; height: 28px;
-      border-radius: 50%; pointer-events: none; z-index: 2; opacity: 0;
-      /* NEUTRAL white, never accent: hover = "pointer is here" (iPadOS
-         pointer / Fluent hover), accent = selected STATE. A translucent
-         accent blob gliding over thumbnails read as a color smear.
-         z-index 2 = ABOVE the buttons (iPadOS layers the highlight OVER
-         content); under the dark glass it was nearly invisible and the
-         glide could not be seen. */
-      background: rgba(255,255,255,0.25);
-      transition: opacity .12s;
-    }
-    .post-card:has(.info-btn:hover) .act-pill { right: 8px; opacity: 1; }
-    .post-grid.list-view .act-pill { top: 50%; transform: translateY(-50%); }
 
     /* --- Popovers --- */
     /* (.qf-popover, the retired date/engagement filter-popover surface, was removed
@@ -1667,8 +1176,6 @@
     .iv-tag-addrow input:focus { border-color: var(--accent); }
     .iv-tag-addrow .btn-outline { flex-shrink: 0; padding: 5px 11px; font-size: 12px; }
     .iv-tag-picker.edit-picker { margin-top: 2px; max-height: 42vh; }
-    /* The card currently shown in the inspector — tinted ring, not solid */
-    .post-card.inspected { border-color: var(--accent-border); box-shadow: 0 0 0 1px var(--accent-border); }
 
     /* (Old .iv-andor AND/OR toggle removed in the query-builder 改訂③ redesign;
        改訂④ removed the operator vocabulary from the bar entirely.) */
@@ -1749,8 +1256,7 @@
     /* a11y escape hatch: text faces are already solid (#136), so only the two
        remaining backdrop-filter users need a fallback here. */
     @media (prefers-reduced-transparency: reduce) {
-      .glass-chrome, .info-btn, #sidebar #sbTop { background: rgba(20,22,26,0.86); }
-      .post-card:hover .info-btn,
+      .glass-chrome, #sidebar #sbTop { background: rgba(20,22,26,0.86); }
       .glass-chrome, #sidebar #sbTop { backdrop-filter: none; -webkit-backdrop-filter: none; }
     }
     } /* @layer legacy */

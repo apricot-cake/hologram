@@ -5,7 +5,7 @@ import { expect, test } from '../lib/harness.ts';
 
 test('検索語を打つとグリッドが絞り込まれ、消すと元に戻る', async ({ launchHologram }) => {
   const { page } = await launchHologram();
-  const cards = page.locator('#postGrid .post-card');
+  const cards = page.locator('[data-slot="post-grid"] [data-slot="post-card"]');
   await expect(cards).toHaveCount(4);
 
   const search = page.getByPlaceholder('テキスト・ユーザー名で検索');
@@ -30,7 +30,7 @@ test('投稿者名でも絞り込める', async ({ launchHologram }) => {
   await search.click();
   await search.fill('akane_machi');
 
-  const cards = page.locator('#postGrid .post-card');
+  const cards = page.locator('[data-slot="post-grid"] [data-slot="post-card"]');
   await expect(cards).toHaveCount(1);
   await expect(cards.first()).toContainText('夕暮れの街並み');
 });

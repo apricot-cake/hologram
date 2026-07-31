@@ -1,4 +1,4 @@
-// Display density (card/tile/list) + tile/card/list size slider — extracted
+// The size axis of both grids, plus the side effects of a display change — extracted
 // from the old viewer.ts monolith.
 // The post grid and poster grid each carried their own density + size state
 // (viewSizeState/posterSizeState, tileGridMetrics/posterGridMetrics) driving the
@@ -6,8 +6,13 @@
 // the single owner of both, replacing two near-duplicate copies in viewer.ts.
 // The size control itself is the React display popover (#154 P2②): it reads
 // computeSizeTrack/computePosterSizeTrack as data and calls the setters back, so
-// nothing here touches a slider element. Density (card/tile/list) likewise comes
-// in through the hologramStore 'view'/'posterView' keys.
+// nothing here touches a slider element.
+//
+// The post side's display state is NOT here: it is the three orthogonal store keys
+// services/display.ts owns (#618). This module only reacts to them — persist, clamp
+// the size into the range the new shape allows, re-render.
+import { clampGridSize, currentShape, GRID_MAX, gridMin, gutterFor, LIST_MAX, LIST_MIN, shapeSnapshot } from './display.ts';
+import { gridWidth, scroller } from './content-area.ts';
 import { sizeFor, sliderTrack, trackCols, thumbW } from './geometry.ts';
 import { get as storeGet, set as storeSet } from './store.ts';
 import { resolveZoomAnchor } from './zoom-anchor.ts';
@@ -35,70 +40,28 @@ export interface HologramSizeTrack {
 }
 
 export function makeGridDensity(deps: GridDensityDeps) {
-  // --- Post grid: density + size state ---
-  let currentView = 'card'; // 'card' | 'tile' | 'list' (display density)
-  let tileOverlay = true; // tile view: show the author/❤ info overlay (pref)
-  let tileSize = 180; // tile view: edge px (pref imageTileSize)
-  let cardSize = 280; // card view: min column width px (pref cardSize)
-  let listThumb = 88; // list view: thumbnail width px (pref listThumb)
-  // The tile floor is the OVERVIEW zoom (#141): pulled all the way back, a few
-  // hundred thumbnails fit on one screen for visual scanning. It is the end of the
-  // ordinary size axis, not a mode of its own (Explorer / Lightroom / Eagle all put
-  // "smaller" on the same control).
-  const TILE_MIN = 48,
-    TILE_MAX = 400;
-  // Below this edge a tile has no room for chrome, so the grid drops to pure
-  // thumbnails (CSS class, see applyTileLayout).
-  const OVERVIEW_MAX = 96;
-  const CARD_MIN = 240,
-    CARD_MAX = 560;
-  const LIST_MIN = 56,
-    LIST_MAX = 200;
+  // --- Post grid: size state (the display SHAPE lives in display.ts) ---
+  let gridSize = 280; // grid: column width px (pref gridSize)
+  let listThumb = 88; // list: thumbnail width px (pref listThumb)
 
-  // Thumbnail width tracks the tile edge so larger tiles stay sharp (60px buckets).
-  // The floor follows the tile floor down (48*1.4 ≈ 67 → 120 after bucketing); the
+  // Thumbnail width tracks the cell so larger cells stay sharp (60px buckets).
+  // Quality follows the SHAPE axis (2026-07-19 確定): a square cell is a cropped
+  // still served by the thumbnailer, an original-aspect cell is the card as it has
+  // always been (DPR-aware, capped at the thumbnailer's 720px max — main.js
+  // getThumbnail). Both floors sit at/below the smallest cell the axis allows; the
   // thumbnailer serves from 64px, so nothing changes on the main side.
-  const tileThumbW = () => thumbW(tileSize * 1.4, 120, 960);
-  // card/list serve a thumbnail too (they used to load the full original —
-  // multi-MB pixiv/X art decoded on every scroll and stuttered). DPR-aware, 60px
-  // buckets, capped at the thumbnailer's 720px max (main.js getThumbnail).
   const _dpr = Math.min(2, window.devicePixelRatio || 1);
-  const cardThumbW = () => thumbW(cardSize * 1.3 * _dpr, 240, 720);
+  const gridThumbW = () => (currentShape().square ? thumbW(gridSize * 1.4, 120, 960) : thumbW(gridSize * 1.3 * _dpr, 240, 720));
   const listThumbW = () => thumbW(listThumb * 1.5 * _dpr, 120, 720);
 
-  function applyTileLayout() {
-    const grid = document.getElementById('postGrid');
-    if (grid) {
-      grid.style.setProperty('--tile-size', tileSize + 'px');
-      grid.style.setProperty('--card-size', cardSize + 'px');
-      grid.style.setProperty('--list-thumb', listThumb + 'px');
-      // Overview zoom: hide the per-tile chrome below OVERVIEW_MAX. A class of its
-      // own, ANDed with .no-overlay in CSS — the 「タイルに情報を表示」 pref keeps
-      // whatever the user set, and comes back when they zoom out of the overview.
-      grid.classList.toggle('overview', currentView === 'tile' && tileSize < OVERVIEW_MAX);
-    }
-  }
-
-  // View-size slider — every density has one. The auto-fill grids (tile/card)
-  // quantize the real width to "how many columns fit", so their track maps to
-  // COLUMN COUNTS (one detent = exactly one column, no dead notches). The
-  // list is a full-width stack, so its track maps straight to the thumbnail
-  // px. Right = larger. While dragging only the CSS vars update; persisting +
-  // re-requesting thumbnails happens on release.
+  // View-size slider — both layouts have one. The grid quantizes the real width to
+  // "how many columns fit", so its track maps to COLUMN COUNTS (one detent = exactly
+  // one column, no dead notches). The list is a full-width stack, so its track maps
+  // straight to the thumbnail px. Right = larger. While dragging only the live column
+  // width updates; persisting + re-requesting thumbnails happens on release.
   function viewSizeState() {
-    if (currentView === 'card')
-      return {
-        get: () => cardSize,
-        set: (v: number) => {
-          cardSize = v;
-        },
-        min: CARD_MIN,
-        max: CARD_MAX,
-        pref: 'cardSize',
-        storeKey: 'cardSize',
-        columns: true,
-      };
-    if (currentView === 'list')
+    const shape = currentShape();
+    if (shape.list)
       return {
         get: () => listThumb,
         set: (v: number) => {
@@ -111,14 +74,16 @@ export function makeGridDensity(deps: GridDensityDeps) {
         columns: false,
       };
     return {
-      get: () => tileSize,
+      get: () => gridSize,
       set: (v: number) => {
-        tileSize = v;
+        gridSize = v;
       },
-      min: TILE_MIN,
-      max: TILE_MAX,
-      pref: 'imageTileSize',
-      storeKey: 'tileSize',
+      // The floor rides the 情報を表示 switch: bare cells reach down to the overview
+      // zoom (#141), cells carrying a metadata block cannot.
+      min: gridMin(shape.info),
+      max: GRID_MAX,
+      pref: 'gridSize',
+      storeKey: 'gridSize',
       columns: true,
     };
   }
@@ -126,7 +91,6 @@ export function makeGridDensity(deps: GridDensityDeps) {
   function setViewSize(px: number, commit = true) {
     const st = viewSizeState();
     st.set(Math.max(st.min, Math.min(st.max, px)));
-    applyTileLayout();
     if (!commit) {
       // Live re-flow while dragging (masonic recreates its positioner on columnWidth
       // change) via a deliberate side channel, NOT hologramStore — writing every drag
@@ -149,28 +113,27 @@ export function makeGridDensity(deps: GridDensityDeps) {
     deps.renderPosts(true);
   }
 
-  function tileGridMetrics(): HologramGridMetrics | null {
-    const grid = document.getElementById('postGrid');
-    if (!grid) return null;
-    // floor of the FRACTIONAL width: clientWidth rounds up half-pixels, which
-    // makes an exact-fill size 1px too wide and silently drops a column.
-    const W = Math.floor(grid.getBoundingClientRect().width);
+  // The grid's own box, measured. The gutter is the layout's own constant rather than
+  // a computed style: masonic draws the gaps, the container has none.
+  function postGridMetrics(): HologramGridMetrics | null {
+    const W = gridWidth('post');
     if (!W) return null;
-    const gv = Number.parseFloat(getComputedStyle(grid).columnGap);
-    return { W, g: Number.isFinite(gv) ? gv : 8 };
+    return { W, g: gutterFor(currentShape()) };
   }
 
   let _dragMetrics: HologramGridMetrics | null = null; // grid geometry cached for the duration of one size drag
 
   // Size-slider track as DATA (the React display popover reads this; the old #tileSlider
-  // DOM path is gone). A column-count track for the auto-fill views (one detent = one
-  // column, no dead notches) and raw px for the list.
+  // DOM path is gone). A column-count track for the grid (one detent = one column, no
+  // dead notches) and raw px for the list.
   function computeSizeTrack(): HologramSizeTrack | null {
     const st = viewSizeState();
     if (!st.columns) return { min: st.min, max: st.max, value: st.get(), step: 8, single: false };
-    const m = tileGridMetrics();
+    const m = postGridMetrics();
     if (!m) return null;
-    const tr = sliderTrack({ min: st.min, max: st.max, size: st.get() }, m, currentView === 'card' ? { minCols: 1 } : undefined);
+    // Original-aspect cells may go as wide as the grid (one column is a legal, if odd,
+    // reading width); a square lattice of one giant tile is not a lattice.
+    const tr = sliderTrack({ min: st.min, max: st.max, size: st.get() }, m, currentShape().square ? undefined : { minCols: 1 });
     return { min: tr.nBig, max: tr.nSmall, value: tr.value, step: 1, single: tr.single };
   }
 
@@ -184,7 +147,7 @@ export function makeGridDensity(deps: GridDensityDeps) {
       setViewSize(value, commit);
       return;
     }
-    const m = (!commit && _dragMetrics) || tileGridMetrics();
+    const m = (!commit && _dragMetrics) || postGridMetrics();
     if (!m) return;
     _dragMetrics = commit ? null : m;
     setViewSize(sizeFor(trackCols(value, min, max), m), commit);
@@ -275,8 +238,8 @@ export function makeGridDensity(deps: GridDensityDeps) {
 
   function handleZoomWheel(e: WheelEvent) {
     if (!(e.ctrlKey || e.metaKey) || e.altKey || !e.deltaY) return;
-    const scroller = document.getElementById('mode-post');
-    if (!scroller || !scroller.contains(e.target as Node)) return;
+    const el = scroller();
+    if (!el || !el.contains(e.target as Node)) return;
     e.preventDefault();
     // Wheel up = zoom in = larger tiles = fewer columns; the track is already
     // inverted that way, so a positive step is simply "bigger".
@@ -313,36 +276,38 @@ export function makeGridDensity(deps: GridDensityDeps) {
     }, 150);
   }
 
-  // Tile overlay lives in the React settings component; this is the apply-and-persist
-  // function it calls (settings/ipc.ts's setTileOverlay imports the
-  // `applyTileOverlay` live binding below directly — no shared-bridge detour) so
-  // the post grid updates immediately.
-  function applyTileOverlay(v: boolean) {
-    tileOverlay = v;
-    deps.hologramIpc.setPref('tileOverlay', tileOverlay);
-    // Class-only: the overlay markup is always in the DOM (.no-overlay just hides it
-    // via CSS), so flip the class directly instead of re-grouping + rebuilding the
-    // grid (a full renderPosts reloaded every tile image = flicker).
-    const grid = document.getElementById('postGrid');
-    if (grid) grid.classList.toggle('no-overlay', !tileOverlay);
-  }
-
-  // The density buttons live in the display popover (hologramStore 'view'). React
-  // owns the active state + glass thumb; this reacts to a view change: mirror it
-  // into currentView, persist it, and re-render the grid. The idempotent guard
-  // skips the no-op set from restorePrefs, so the loop stays one-way. React owns the
-  // subscribe() registration (StoreSubscriptions, App.tsx), importing this function
-  // directly (viewer.ts wires it into the module-scope export). The re-render is
-  // deferred past a paint so the pressed control paints its new state before the
-  // (heavier) grid regroup runs — the optimistic-press pattern the old handler used.
-  let _densityRenderT: ReturnType<typeof setTimeout> | undefined;
-  function handleViewStoreChange() {
-    const v = storeGet('view');
-    if (v === currentView) return;
-    currentView = v;
-    deps.hologramIpc.setPref('viewMode', currentView);
-    clearTimeout(_densityRenderT);
-    _densityRenderT = setTimeout(() => deps.renderPosts(), 0);
+  // The display switches live in the display popover, which writes the three
+  // services/display.ts store keys and nothing else. This is what a change to any of
+  // them costs: persist it, pull the size back into the range the new shape allows,
+  // and re-render. React owns the subscribe() registration (StoreSubscriptions,
+  // App.tsx), importing this function directly (viewer.ts wires it into the
+  // module-scope export). The re-render is deferred past a paint so the pressed
+  // control paints its new state before the (heavier) grid regroup runs — the
+  // optimistic-press pattern the old density handler used.
+  let _shapeSig = shapeSnapshot();
+  let _displayRenderT: ReturnType<typeof setTimeout> | undefined;
+  let _restoring = false; // restorePrefs pushes the saved shape in; that is not a user change
+  function handleDisplayStoreChange() {
+    if (_restoring) return;
+    const sig = shapeSnapshot();
+    if (sig === _shapeSig) return;
+    _shapeSig = sig;
+    const shape = currentShape();
+    deps.hologramIpc.setPref('layoutMode', shape.list ? 'list' : 'grid');
+    deps.hologramIpc.setPref('squareThumbs', shape.square);
+    deps.hologramIpc.setPref('showInfo', shape.info);
+    // 情報を表示 raises the grid's floor, so a grid sitting at overview size has to
+    // come up with it — otherwise the metadata block renders into a 48px column.
+    if (!shape.list) {
+      const clamped = clampGridSize(gridSize, shape.info);
+      if (clamped !== gridSize) {
+        gridSize = clamped;
+        storeSet('gridSize', gridSize);
+        deps.hologramIpc.setPref('gridSize', gridSize);
+      }
+    }
+    clearTimeout(_displayRenderT);
+    _displayRenderT = setTimeout(() => deps.renderPosts(), 0);
   }
 
   // --- Poster grid: density + size state (kept SEPARATE from the post-side
@@ -388,12 +353,10 @@ export function makeGridDensity(deps: GridDensityDeps) {
   // the auto-fill minmax(size,1fr) grid stretches columns, so changing the min only
   // moves the layout at column-count thresholds. Right = larger = fewer columns.
   function posterGridMetrics(): HologramGridMetrics | null {
-    const grid = document.getElementById('posterGrid');
-    if (!grid) return null;
-    const W = Math.floor(grid.getBoundingClientRect().width);
+    const W = gridWidth('poster');
     if (!W) return null;
-    // Gutters live in the masonic model now (pushPosterModel), not container CSS —
-    // keep this math in lockstep with the rowGutter pushed there.
+    // Gutters live in the masonic model now (services/grid.ts), not container CSS —
+    // keep this math in lockstep with the rowGutter derived there.
     return { W, g: posterView === 'tile' ? 10 : 14 };
   }
 
@@ -429,7 +392,7 @@ export function makeGridDensity(deps: GridDensityDeps) {
   // reacts to a change: mirror it into posterView, persist it, and re-render the
   // poster grid. The idempotent guard skips the no-op set from restorePrefs. React owns
   // the subscribe() registration (StoreSubscriptions, App.tsx), importing this
-  // function directly. Deferred past a paint like handleViewStoreChange above.
+  // function directly. Deferred past a paint like handleDisplayStoreChange above.
   let _posterDensityRenderT: ReturnType<typeof setTimeout> | undefined;
   function handlePosterViewStoreChange() {
     const v = storeGet('posterView');
@@ -440,14 +403,20 @@ export function makeGridDensity(deps: GridDensityDeps) {
     _posterDensityRenderT = setTimeout(() => deps.renderPosters(), 0);
   }
 
-  // Load saved view modes + sizes (called from viewer.ts's hologramIpc.getPrefs().then).
+  // Load the saved display shape + sizes (called from viewer.ts's getPrefs().then).
+  // The three display keys go straight into the store — that is where the popover and
+  // every renderer read them from — with handleDisplayStoreChange muted for the
+  // duration: restoring is not a user change, and letting it through would persist
+  // the shape back one key at a time and clamp the size against a half-applied one.
   function restorePrefs(prefs: AppPrefs) {
-    if (['card', 'tile', 'list'].includes(prefs.viewMode)) {
-      currentView = prefs.viewMode;
-      // Push the restored view into the store so the display popover renders the right
-      // button active. currentView is already set, so handleViewStoreChange no-ops
-      // (idempotent guard) — no double render, no echo.
-      storeSet('view', currentView);
+    _restoring = true;
+    try {
+      storeSet('layout', prefs.layoutMode === 'list' ? 'list' : 'grid');
+      storeSet('squareThumbs', prefs.squareThumbs === true);
+      storeSet('showInfo', prefs.showInfo !== false);
+    } finally {
+      _restoring = false;
+      _shapeSig = shapeSnapshot();
     }
     if (['card', 'tile', 'list'].includes(prefs.posterViewMode)) {
       posterView = prefs.posterViewMode;
@@ -462,49 +431,31 @@ export function makeGridDensity(deps: GridDensityDeps) {
       posterCardSize = Math.max(PCARD_MIN, Math.min(PCARD_MAX, prefs.posterCardSize as number));
       storeSet('posterCardSize', posterCardSize);
     }
-    // Post-grid view sizes also mirror into hologramStore (see setViewSize).
-    if (Number.isFinite(prefs.imageTileSize)) {
-      tileSize = Math.max(TILE_MIN, Math.min(TILE_MAX, prefs.imageTileSize as number));
-      storeSet('tileSize', tileSize);
-    }
-    if (Number.isFinite(prefs.cardSize)) {
-      cardSize = Math.max(CARD_MIN, Math.min(CARD_MAX, prefs.cardSize as number));
-      storeSet('cardSize', cardSize);
+    // Post-grid sizes also mirror into hologramStore (see setViewSize). The grid's
+    // saved width is clamped against the CURRENT 情報を表示 switch, which the block
+    // above has already restored.
+    if (Number.isFinite(prefs.gridSize)) {
+      gridSize = clampGridSize(prefs.gridSize as number, currentShape().info);
+      storeSet('gridSize', gridSize);
     }
     if (Number.isFinite(prefs.listThumb)) {
       listThumb = Math.max(LIST_MIN, Math.min(LIST_MAX, prefs.listThumb as number));
       storeSet('listThumb', listThumb);
     }
-    if (prefs.tileOverlay === false) {
-      tileOverlay = false;
-    }
   }
 
   return {
-    tileThumbW,
-    cardThumbW,
+    gridThumbW,
     listThumbW,
-    applyTileLayout,
-    applyTileOverlay,
     computeSizeTrack,
     setSizeFromSlider,
     handleShortcutSizeKey,
     handleZoomWheel,
-    handleViewStoreChange,
+    handleDisplayStoreChange,
     computePosterSizeTrack,
     setPosterSizeFromSlider,
     handlePosterViewStoreChange,
     restorePrefs,
-    getCurrentView: () => currentView,
-    getTileOverlay: () => tileOverlay,
     getPosterView: () => posterView,
   };
-}
-
-// applyTileOverlay is bound once at boot (viewer.ts, right after constructing
-// gridDensity) so the settings component (settings/ipc.ts) can flip the
-// tile-overlay pref directly — no shared-bridge detour.
-export let applyTileOverlay: ((v: boolean) => void) | null = null;
-export function bindApplyTileOverlay(fn: (v: boolean) => void): void {
-  applyTileOverlay = fn;
 }

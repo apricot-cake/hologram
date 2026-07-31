@@ -138,10 +138,10 @@ const evalJs = `(async () => {
   };
   const out = {};
 
-  const card = await waitFor(() => document.querySelector('#postGrid .post-card'));
+  const card = await waitFor(() => document.querySelector('[data-slot="post-grid"] [data-slot="post-card"]'));
   out.cardFound = !!card;
   // ▶ バッジ: 「クリックしないと動かない」印は動画と同じく出る
-  out.playBadge = !!document.querySelector('#postGrid .card-play-badge');
+  out.playBadge = !!document.querySelector('[data-slot="post-card-play"]');
 
   card.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
   out.imageTabActive = !!(await waitFor(() => document.body.classList.contains('image-tab-active')));

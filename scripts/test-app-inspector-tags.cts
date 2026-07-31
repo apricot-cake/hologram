@@ -75,7 +75,10 @@ const evalJs = `(async () => {
   const field = () => document.querySelector('[data-slot="inspector"] [data-slot="inspector-tags"]');
   const chips = () => [...document.querySelectorAll('[data-slot="inspector"] [data-slot="tag-chip"]')].map(c => c.getAttribute('data-tag'));
   const input = () => document.querySelector('[data-slot="inspector"] [data-slot="tag-input"]');
-  const cardOf = (key) => document.querySelector('#postGrid .post-card[data-key*="' + key + '"]');
+  // Addressed by what the card says (no key attribute on the cells — #618).
+  const postCards = () => [...document.querySelectorAll('[data-slot="post-grid"] [data-slot="post-card"]')];
+  const cardOf = (n) => postCards().find(c => (c.textContent || '').includes('本文' + n));
+  const nameOf = (c) => ((c.textContent || '').match(/本文\\d+/) || [])[0] || '?';
   const errors = [];
   window.addEventListener('error', (e) => errors.push(String((e && e.message) || e)));
   const out = {};
@@ -89,13 +92,13 @@ const evalJs = `(async () => {
   };
   const key = (el, k) => el.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true }));
 
-  await waitFor(() => document.querySelectorAll('#postGrid .post-card').length >= 2);
+  await waitFor(() => document.querySelectorAll('[data-slot="post-grid"] [data-slot="post-card"]').length >= 2);
 
   // A. タグを編集 in the card context menu is the route from a card into tagging
   // since the hover 🏷 (and the popover it opened) went away in P2⑦. It opens the
   // panel for that card AND puts the caret in the field — otherwise it would just be
   // an alias for 詳細 and the user would still have to go find the input.
-  cardOf('tag-b').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 40, clientY: 40 }));
+  cardOf(1).dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 40, clientY: 40 }));
   const menuItems = () => [...document.querySelectorAll('[data-slot="dropdown-menu-item"]')];
   out.menuOpened = await waitFor(() => menuItems().some(r => r.textContent.includes('タグを編集')));
   const tagItem = menuItems().find(r => r.textContent.includes('タグを編集'));
@@ -106,12 +109,12 @@ const evalJs = `(async () => {
   key(document.body, 'Escape'); // dismiss the menu before the rest of the flow
 
   // B. selecting a card puts its tags in the field (tag-b already has one)
-  cardOf('tag-b').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  cardOf(1).dispatchEvent(new MouseEvent('click', { bubbles: true }));
   out.fieldShown = await waitFor(() => !!field());
   out.chipsForB = chips().join(',');
 
   // C. free text + Enter adds a tag to the inspected card
-  cardOf('tag-a').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  cardOf(0).dispatchEvent(new MouseEvent('click', { bubbles: true }));
   await waitFor(() => !!field() && chips().length === 0);
   const el = input();
   out.hasInput = !!el;
@@ -182,11 +185,11 @@ const evalJs = `(async () => {
   const el3 = input();
   el3.focus();
   setInput(el3, 'あいう');
-  const selBefore = [...document.querySelectorAll('#postGrid .post-card.selected')].map(c => c.dataset.key).join(',');
+  const selBefore = postCards().filter(c => c.hasAttribute('data-selected')).map(nameOf).join(',');
   el3.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }));
   el3.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
   await sleep(120);
-  out.selectionHeldWhileTyping = [...document.querySelectorAll('#postGrid .post-card.selected')].map(c => c.dataset.key).join(',') === selBefore;
+  out.selectionHeldWhileTyping = postCards().filter(c => c.hasAttribute('data-selected')).map(nameOf).join(',') === selBefore;
   setInput(el3, '');
   key(el3, 'Escape');
   await sleep(60);

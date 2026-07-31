@@ -28,7 +28,6 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     toggleInspector: '詳細パネル',
     inspectorEmpty: '項目を選択してください',
     tipFolder: 'フォルダに追加…',
-    tipSelect: '選択（Shiftで範囲選択）',
     tagSelected: 'タグを追加',
     folderSelected: 'フォルダに追加',
     tagApplyN: '$1 件に適用',
@@ -71,7 +70,6 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     // Filter-bar chip/editor mode segment (redesign §4-2 B, Linear「is any of / all of / is not」)
     fbModeExclude: '〜以外',
     qbSummaryTip: '旧形式の絞り込みのため、ここでは編集できません。「リセット」で作り直せます。',
-    tileOverlay: 'タイルに情報を表示',
     detailPlatform: 'プラットフォーム',
     detailAuthor: '投稿者',
     detailUser: 'ユーザー名',
@@ -372,12 +370,17 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     // viewer: engagement labels (legacy, still referenced)
 
     // viewer: view toggle + selection
+    // 投稿者グリッドはまだ3値（カード/タイル/リスト）— 投稿グリッドの2値+スイッチとは別軸
     viewCard: 'カード',
     viewTile: 'タイル',
     viewList: 'リスト',
-    viewGallery: 'ギャラリー',
     displayTitle: '表示',
-    displayShowInfo: 'カードに情報を表示',
+    // 表示の3軸（#618）。名前が要るのは正方形の側だけ＝OFF は「元の比率のまま」で、
+    // 敷き詰めレイアウトに固有名は付けない。
+    layoutGrid: 'グリッド',
+    layoutList: 'リスト',
+    displaySquare: '正方形のサムネ',
+    displayShowInfo: '情報を表示',
     displaySize: 'サイズ',
     displayPanels: 'サイドバーと詳細パネル',
     displayPanelsHint: 'サイドバーだけなら Ctrl+B、両方まとめてなら Ctrl+Shift+B',
@@ -394,7 +397,7 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     cmdOpenSettings: '設定を開く',
     cmdNewTab: '新しいタブ',
     cmdClearFilters: 'フィルタを全解除',
-    cmdViewGallery: 'ギャラリー表示にする',
+    cmdViewGrid: 'グリッド表示にする',
     cmdViewList: 'リスト表示にする',
     cmdTogglePanels: 'サイドバーと詳細パネルの表示を切り替え',
     cmdBrowsePosts: '投稿を見る',
@@ -426,7 +429,6 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     redoDone: '編集をやり直しました',
 
     // viewer: post card
-    clickToExpand: 'クリックで全文表示',
     tipOpen: '投稿を開く',
     lbPrev: '前へ',
     lbNext: '次へ',
@@ -486,7 +488,6 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     toggleInspector: 'Details panel',
     inspectorEmpty: 'Select an item',
     tipFolder: 'Add to a folder…',
-    tipSelect: 'Select (Shift for range)',
     tagSelected: 'Add tags',
     folderSelected: 'Add to folder',
     tagApplyN: 'Apply to $1',
@@ -529,7 +530,6 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     // Filter-bar chip/editor mode segment (redesign §4-2 B, Linear「is any of / all of / is not」)
     fbModeExclude: 'Is not',
     qbSummaryTip: 'Saved in an older format, so it cannot be edited here. Press Reset to rebuild it.',
-    tileOverlay: 'Show info on tiles',
     detailPlatform: 'Platform',
     detailAuthor: 'Poster',
     detailUser: 'Username',
@@ -819,9 +819,11 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     viewCard: 'Cards',
     viewTile: 'Tiles',
     viewList: 'List',
-    viewGallery: 'Gallery',
     displayTitle: 'Display',
-    displayShowInfo: 'Show info on cards',
+    layoutGrid: 'Grid',
+    layoutList: 'List',
+    displaySquare: 'Square thumbnails',
+    displayShowInfo: 'Show info',
     displaySize: 'Size',
     displayPanels: 'Sidebar and details panel',
     displayPanelsHint: 'Ctrl+B for the sidebar alone, Ctrl+Shift+B for both',
@@ -838,7 +840,7 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     cmdOpenSettings: 'Open settings',
     cmdNewTab: 'New tab',
     cmdClearFilters: 'Clear all filters',
-    cmdViewGallery: 'Switch to gallery view',
+    cmdViewGrid: 'Switch to grid view',
     cmdViewList: 'Switch to list view',
     cmdTogglePanels: 'Toggle the sidebar and details panel',
     cmdBrowsePosts: 'Browse posts',
@@ -866,7 +868,6 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     undoDone: 'Edit undone',
     redoDone: 'Edit redone',
 
-    clickToExpand: 'Click to expand',
     tipOpen: 'Open post',
     lbPrev: 'Previous',
     lbNext: 'Next',

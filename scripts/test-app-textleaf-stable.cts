@@ -56,7 +56,7 @@ seedLibrary(configDir, records);
 
 const evalJs = `(async () => {
   const wait = (ms) => new Promise(r => setTimeout(r, ms));
-  const cards = () => document.querySelectorAll('#postGrid .post-card').length;
+  const cards = () => document.querySelectorAll('[data-slot="post-grid"] [data-slot="post-card"]').length;
   // Filter chips = the FilterChips component ([data-slot=filter-chips], one span per chip).
   // Only text terms are active in this test, so counting all chips counts text chips.
   const chipRow = () => document.querySelector('[data-slot="filter-chips"]');

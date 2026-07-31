@@ -79,12 +79,12 @@ for (let i = 0; i < 3; i++) {
 }
 
 const evalJs = `(async () => {
-  const grid = document.getElementById('postGrid');
+  const grid = document.querySelector('[data-slot="post-grid"]');
   const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   const waitFor = async (fn, ms = 3000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (fn()) return true; await sleep(40); } return false; };
   const click = (el) => el && el.dispatchEvent(new MouseEvent('click', { bubbles: true }));
   const rclick = (el) => el && el.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 60, clientY: 60 }));
-  const cards = () => grid.querySelectorAll('.post-card').length;
+  const cards = () => grid.querySelectorAll('[data-slot="post-card"]').length;
   const rows = () => [...document.querySelectorAll('[data-slot="folder-row"]')];
   const rowNamed = (name) => rows().find(r => r.textContent.trim() === name);
   // menu.ts renders every context menu through the shared DropdownMenu component.
