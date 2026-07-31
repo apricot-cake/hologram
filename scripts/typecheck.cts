@@ -3,13 +3,8 @@
 // tsc over whole projects rather than asserting anything, so it stays a plain
 // script — `npm run check` is what runs it alongside the tests.
 //
-// Six projects (all no-emit) so type rot can't accumulate silently between
-// sessions. The Vitest suites (scripts/*.test.ts) are deliberately NOT a seventh:
-// a single suite imports across the renderer, main-process, native-host and
-// extension layers, and those are separate projects precisely because their
-// compiler settings conflict (DOM vs Node globals, bundler vs nodenext). They
-// were unchecked before this migration too — require() typed every import as
-// any — so this is the status quo, not a loss.
+// Seven projects (all no-emit) so type rot can't accumulate silently between
+// sessions.
 //   1. app/tsconfig.web.json      — single strict project for the renderer
 //      (React components under src/renderer/src/* + the service layer under
 //      src/renderer/src/services/*), bundled by electron-vite's renderer target.
@@ -32,6 +27,12 @@
 //   6. e2e/tsconfig.json          — the Playwright E2E layer (#14): the specs and
 //      their launch harness, compiled by Playwright's own loader. A SIXTH
 //      runtime, .ts with ESM import syntax, no build step.
+//   7. scripts/tsconfig.test.json — the Vitest suites (scripts/*.test.ts, #635).
+//      A SEVENTH runtime: transpiled through Vite by Vitest, so bundler-shaped
+//      like the renderer even though it executes under Node. Kept apart from
+//      project 5 because that one is nodenext/.cts and these suites import
+//      across layers written for bundler resolution. 59 suites are still
+//      quarantined in its `exclude` — the reasons are written there.
 
 const { spawnSync } = require('node:child_process');
 const fs = require('node:fs');
@@ -67,6 +68,7 @@ const PROJECTS = [
   { p: path.join(extDir, 'tsconfig.json'), label: 'extension', tsc: extTsc, prepare: extWxt, cwd: extDir },
   { p: path.join(__dirname, 'tsconfig.json'), label: 'scripts', tsc: appTsc, cwd: appDir },
   { p: path.join(__dirname, '..', 'e2e', 'tsconfig.json'), label: 'e2e (Playwright)', tsc: appTsc, cwd: appDir },
+  { p: path.join(__dirname, 'tsconfig.test.json'), label: 'vitest suites', tsc: appTsc, cwd: appDir },
 ];
 
 let failed = 0;
@@ -80,4 +82,4 @@ for (const project of PROJECTS) {
   }
 }
 if (failed) process.exit(1);
-console.log('PASS typecheck: renderer + main process + native-host + extension + scripts + e2e type-check clean');
+console.log('PASS typecheck: renderer + main process + native-host + extension + scripts + e2e + vitest suites type-check clean');

@@ -147,7 +147,12 @@ describe('アプリの外で書き換わったら次の読みで反映される'
   test('バイト数が変わる書き換え', async () => {
     const { readConfig, writeConfig } = await freshModule();
     writeConfig({ saveFolder: 'D:\\lib' });
+    const before = fs.statSync(configPath).size;
     writeOutside(JSON.stringify({ saveFolder: 'E:\\moved-somewhere-else', theme: 'dark' }));
+    // このテストが見ているのはサイズ違いでの検出なので、サイズが本当に違うことを先に固定する。
+    // 同じになった瞬間、その場書き換え＋同一 ino のまま時計だけが頼りになり、テストが
+    // NTFS の刻み次第で落ちるようになる（#625 で実際に起きた壊れ方）。
+    expect(fs.statSync(configPath).size).not.toBe(before);
     expect(readConfig()).toEqual({ saveFolder: 'E:\\moved-somewhere-else', theme: 'dark' });
   });
 
@@ -196,7 +201,11 @@ describe('アプリの外で書き換わったら次の読みで反映される'
     const { getSaveFolder, writeConfig } = await freshModule();
     writeConfig({ saveFolder: 'D:\\lib' });
     expect(getSaveFolder()).toBe('D:\\lib');
+    const before = fs.statSync(configPath).size;
     writeOutside(JSON.stringify({ saveFolder: 'E:\\elsewhere' }));
+    // 上と同じ理由でサイズ違いを明示的に固定する（同サイズのその場書き換えになると
+    // 時計頼みになり #625 の揺れが戻る）。
+    expect(fs.statSync(configPath).size).not.toBe(before);
     expect(getSaveFolder()).toBe('E:\\elsewhere');
   });
 });
@@ -273,7 +282,14 @@ describe('壊れた config', () => {
     writeOutside(GARBAGE);
     const { readConfig, isConfigCorrupt } = await freshModule();
     expect(isConfigCorrupt()).toBe(true);
-    writeOutside(JSON.stringify({ saveFolder: 'D:\\lib' }));
+    // 直す側は rename で置き換える＝エディタの原子的保存と同じ経路で、必ず新しい ino が
+    // 載るので検出は時計に依存しない。その場書き換えに戻してはいけない: GARBAGE と修復後は
+    // たまたま同じ 24 バイトなので、2回の書き込みが NTFS の約15ms 刻みに収まると
+    // (size, mtimeNs, ino) が3つとも一致し、キャッシュが修復を見落とす（実測で 200 回中
+    // 156 回が同一指紋＝マシンの速さ次第で落ちたり落ちなかったりする・#625）。
+    // その場書き換えの検出そのものは上の「アプリの外で書き換わったら〜」の2本
+    // （バイト数が変わる／時刻が進む）が担保しているので、ここは経路を固定してよい。
+    writeOutside(JSON.stringify({ saveFolder: 'D:\\lib' }), { viaRename: true });
     expect(isConfigCorrupt()).toBe(false);
     expect(readConfig().saveFolder).toBe('D:\\lib');
   });

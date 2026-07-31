@@ -6,12 +6,12 @@ import { makeFacets } from '../app/src/renderer/src/services/facets';
 
 // --- スタブ環境: 投稿6件（x2・misskey1・mastodon1・pixiv1・PFなし1） ---
 const posts = [
-  { url: 'https://x.com/a/status/1', platform: 'x', userId: 'u1', screenName: 'alice', displayName: 'アリス', tags: ['風景', '作品A'], hashtags: ['art'], mediaType: 'image', isReply: false, isQuote: false, isThread: false },
-  { url: 'https://x.com/b/status/2', platform: 'x', userId: 'u2', screenName: 'bob', displayName: '', tags: ['風景'], hashtags: ['art', 'wip'], mediaType: 'video', isReply: true, isQuote: false, isThread: false },
-  { url: 'https://misskey.io/notes/n1', platform: 'misskey', userId: 'u3', screenName: 'carol', tags: [], hashtags: [], mediaType: 'image', isReply: false, isQuote: true, isThread: false },
-  { url: 'https://mstdn.jp/@d/3', platform: 'mastodon', userId: 'u4', screenName: 'dan', tags: ['キャラX'], hashtags: [], mediaType: 'gif', isReply: false, isQuote: false, isThread: true },
-  { url: 'https://www.pixiv.net/artworks/9', platform: 'pixiv', userId: 'u5', screenName: 'eve', tags: ['未分類タグ'], hashtags: [], mediaType: 'image', isReply: false, isQuote: false, isThread: false },
-  { url: null, platform: null, tags: ['風景'], hashtags: [], mediaType: 'image', isReply: false, isQuote: false, isThread: false },
+  { captureId: 'c1', url: 'https://x.com/a/status/1', platform: 'x', userId: 'u1', screenName: 'alice', displayName: 'アリス', tags: ['風景', '作品A'], hashtags: ['art'], mediaType: 'image', isReply: false, isQuote: false, isThread: false },
+  { captureId: 'c2', url: 'https://x.com/b/status/2', platform: 'x', userId: 'u2', screenName: 'bob', displayName: '', tags: ['風景'], hashtags: ['art', 'wip'], mediaType: 'video', isReply: true, isQuote: false, isThread: false },
+  { captureId: 'c3', url: 'https://misskey.io/notes/n1', platform: 'misskey', userId: 'u3', screenName: 'carol', tags: [], hashtags: [], mediaType: 'image', isReply: false, isQuote: true, isThread: false },
+  { captureId: 'c4', url: 'https://mstdn.jp/@d/3', platform: 'mastodon', userId: 'u4', screenName: 'dan', tags: ['キャラX'], hashtags: [], mediaType: 'gif', isReply: false, isQuote: false, isThread: true },
+  { captureId: 'c5', url: 'https://www.pixiv.net/artworks/9', platform: 'pixiv', userId: 'u5', screenName: 'eve', tags: ['未分類タグ'], hashtags: [], mediaType: 'image', isReply: false, isQuote: false, isThread: false },
+  { captureId: 'c6', url: null, platform: null, tags: ['風景'], hashtags: [], mediaType: 'image', isReply: false, isQuote: false, isThread: false },
 ];
 // 現在クエリの母集団＝先頭3件だけに絞れている想定（facet count はこちらで数える）
 const filtered = posts.slice(0, 3);
@@ -20,13 +20,38 @@ const active = new Set(['platform:x', 'tag:風景']);
 const posterActive = new Set(['tag:P趣味']);
 const KIND: Record<string, string> = { 作品A: 'work', キャラX: 'character', P作品: 'work' };
 
+// 投稿者集計は 13 フィールド全部が必須（HologramUserAgg）＝この行が facet の読む分だけを
+// 上書きし、残りは空で埋める。部分オブジェクトを直接置くと deps の契約と合わない。
+const userAgg = (u: Partial<HologramUserAgg>): HologramUserAgg => ({
+  key: '',
+  platform: '',
+  screenName: '',
+  displayName: '',
+  avatarFile: '',
+  followers: null,
+  authorCreatedAt: '',
+  instance: '',
+  latest: '',
+  firstPost: '',
+  lastCapture: '',
+  firstCapture: '',
+  count: 0,
+  ...u,
+});
+
 const posters = [
-  { key: 'x:u1', platform: 'x', screenName: 'alice', displayName: 'アリス', count: 3 },
-  { key: 'misskey:u3', platform: 'misskey', instance: 'misskey.io', screenName: 'carol', count: 2 },
-  { key: 'mastodon:u4', platform: 'mastodon', instance: 'mstdn.jp', screenName: 'dan', count: 1 },
+  userAgg({ key: 'x:u1', platform: 'x', screenName: 'alice', displayName: 'アリス', count: 3 }),
+  userAgg({ key: 'misskey:u3', platform: 'misskey', instance: 'misskey.io', screenName: 'carol', count: 2 }),
+  userAgg({ key: 'mastodon:u4', platform: 'mastodon', instance: 'mstdn.jp', screenName: 'dan', count: 1 }),
 ];
 const posterTags: Record<string, string[]> = { 'x:u1': ['P趣味', 'P作品'], 'misskey:u3': ['P趣味'], 'mastodon:u4': [] };
 const posterFolders = [{ id: 'pf1', name: '推し', items: ['x:u1', 'mastodon:u4'] }];
+// 投稿フォルダ（folders.json）は投稿者フォルダとは別の dep。親配下の小計まで数える（#41）
+// ので、親子を1組持たせて「行のラベル＝パス／count＝サブツリー」を見られるようにする。
+const postFolders = [
+  { id: 'f-parent', name: '親', items: ['c1'] },
+  { id: 'f-child', name: '子', items: ['c2'], parentId: 'f-parent' },
+];
 
 const LABELS: Record<string, string> = {
   kindPost: 'SNS投稿',
@@ -50,7 +75,7 @@ const { facetCounts, qfValues } = makeFacets({
   allPosts: () => posts,
   hostOf: (url) => {
     try {
-      return new URL(url).hostname;
+      return new URL(url ?? '').hostname;
     } catch {
       return '';
     }
@@ -59,13 +84,13 @@ const { facetCounts, qfValues } = makeFacets({
   t: (key: string) => LABELS[key],
   PF_NAME: { x: 'X', bluesky: 'Bluesky', misskey: 'Misskey', mastodon: 'Mastodon', pixiv: 'pixiv' },
   tagKindOf: (t: string) => KIND[t],
-  multiOnly: () => false,
   posterTagsOf: (key: string) => posterTags[key] || [],
   filteredPosters: () => posters,
   posterFilterVocab: () => ['P趣味', 'P作品'],
   namedPosters: () => posters,
   posterFolders: () => posterFolders,
-  buildUsers: () => posters.map((u) => ({ key: u.key, screenName: u.screenName, displayName: u.displayName, count: u.count })),
+  postFolders: () => postFolders,
+  buildUsers: () => posters,
 });
 
 describe('facetCounts', () => {
@@ -87,9 +112,11 @@ describe('facetCounts', () => {
   });
 
   test('pool を渡すと母集団が切り替わる', () => {
-    const pool = facetCounts((p) => p.platform, posts.slice(3));
+    // 2引数の overload は投稿者プール専用（facets.ts の契約）＝poster-* の行がここを通る。
+    const pool = facetCounts((u) => u.platform, posters.slice(1));
+    expect(pool.get('misskey')).toBe(1);
     expect(pool.get('mastodon')).toBe(1);
-    expect(pool.get('pixiv')).toBe(1);
+    expect(pool.has('x')).toBe(false);
   });
 });
 
@@ -116,7 +143,7 @@ describe('qfValues: kind / platform', () => {
   test('platform の count は filtered 由来', () => {
     const main = qfValues('platform').filter((r) => !r.sub);
     expect(main[0].count).toBe(2);
-    expect(main.find((r) => r.v === 'pixiv').count).toBe(0);
+    expect(main.find((r) => r.v === 'pixiv')?.count).toBe(0);
   });
 
   test('platform のインスタンスサブ行は全ライブラリから列挙（type=instance）', () => {
@@ -128,8 +155,8 @@ describe('qfValues: kind / platform', () => {
 
   test('platform サブ行の count（filtered 外は 0）', () => {
     const subs = qfValues('platform').filter((r) => r.sub);
-    expect(subs.find((r) => r.v === 'misskey.io').count).toBe(1);
-    expect(subs.find((r) => r.v === 'mstdn.jp').count).toBe(0);
+    expect(subs.find((r) => r.v === 'misskey.io')?.count).toBe(1);
+    expect(subs.find((r) => r.v === 'mstdn.jp')?.count).toBe(0);
   });
 });
 
@@ -216,13 +243,22 @@ describe('qfValues: hashtag / user / instance', () => {
   });
 
   test('user の count は filtered の userKey 集計', () => {
-    expect(qfValues('user').find((r) => r.v === 'x:u1').count).toBe(1);
+    expect(qfValues('user').find((r) => r.v === 'x:u1')?.count).toBe(1);
   });
 
   test('instance は misskey/mastodon のホストを列挙し present 先行', () => {
     const i = qfValues('instance');
     expect(i.map((r) => r.v).sort()).toEqual(['misskey.io', 'mstdn.jp']);
     expect(i[0]).toMatchObject({ v: 'misskey.io', count: 1 });
+  });
+});
+
+// postFolders は posterFolders とは別の dep。スタブが渡していなかった間ここは一度も
+// 呼ばれておらず、型検査の対象外だったので誰も気づかなかった（#635）。
+describe('qfValues: folder（投稿フォルダ）', () => {
+  test('ラベルはパス・count はサブツリー小計（#41）', () => {
+    // filtered＝先頭3件（c1/c2/c3）。親は自分の c1 ＋ 子の c2 で 2、子は c2 だけで 1。
+    expect(qfValues('folder')).toEqual([expect.objectContaining({ v: 'f-parent', l: '親', count: 2 }), expect.objectContaining({ v: 'f-child', l: '親 / 子', count: 1 })]);
   });
 });
 
