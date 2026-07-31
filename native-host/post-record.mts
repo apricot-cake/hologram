@@ -17,7 +17,11 @@
 // field set — this shape is that schema's row shape, not the DB's: tags stay
 // plain name strings here (ID-entity resolution — name to tagId, with dedup —
 // is a database-write-time concern for whoever wires this into the DB in
-// St5/St6, not a capture-time normalization concern).
+// St5/St6, not a capture-time normalization concern). Glyph normalization
+// (NFKC + trim, #197) IS applied here though — it is a save-pipeline concern,
+// not an ID-entity one: every producer's tags/hashtags converge on this single
+// builder, so this is the one place that guarantees no producer's raw text
+// reaches the library unnormalized.
 //
 // Kept Electron-free (node builtins and its .mts siblings only) so it
 // unit-tests in plain node under both the native-host CJS runtime (via require,
@@ -31,6 +35,7 @@
 // St5/St6's job (#295) — this file is inert until then.
 
 import { normalizeRawPayloads } from './raw-payload.mts';
+import { normalizeTagNames } from './tag-normalize.mts';
 import type { RawPayloadShape } from './raw-payload.mts';
 
 export interface MediaItemShape {
@@ -293,8 +298,11 @@ export function normalizePostRecord(input: PostRecordInput, now: () => string = 
     editedAt: normStr(input.editedAt),
     quotedUrl: normStr(input.quotedUrl),
     replyToId: normStr(input.replyToId),
-    hashtags: normStrArray(input.hashtags),
-    tags: normStrArray(input.tags),
+    // NFKC + trim (#197) — the save-pipeline convergence point every producer's
+    // hashtags/tags pass through (inbox, ZIP import, orphan recovery). domFilled
+    // stays on plain normStrArray: those are field-name identifiers, not tag text.
+    hashtags: normalizeTagNames(input.hashtags),
+    tags: normalizeTagNames(input.tags),
     domFilled: normStrArray(input.domFilled),
     media: normMedia(input.media),
     imageIndex: normNum(input.imageIndex),

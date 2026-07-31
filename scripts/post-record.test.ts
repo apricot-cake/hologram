@@ -108,6 +108,29 @@ describe('素通しと変換', () => {
     expect(rec.hashtags).toEqual(['a', 'b']);
   });
 
+  // #197: hashtags/tags は保存パイプラインのこの一箇所で NFKC + trim される。
+  // pixiv 等プラットフォームが生の表記のまま渡してくる字形ゆれ（全角/半角・前後空白）が
+  // ここで畳まれ、語彙一覧・件数集計が割れないようにする。大小文字・カナ⇔かなは畳まない。
+  describe('タグ・ハッシュタグの字形正規化（#197）', () => {
+    const norm = (hashtags: unknown, tags: unknown) => normalizePostRecord({ captureId: 'cap-tags', hashtags, tags } as never, fixedNow);
+
+    test('全角英数は半角へ畳む', () => {
+      expect(norm(['＃ＶＴｕｂｅｒ'], ['ＡＢＣ'])).toMatchObject({ hashtags: ['#VTuber'], tags: ['ABC'] });
+    });
+
+    test('前後の空白を trim する', () => {
+      expect(norm([], ['  猫  '])).toMatchObject({ tags: ['猫'] });
+    });
+
+    test('正規化した結果が同じになれば重複排除する', () => {
+      expect(norm([], ['ＡＢＣ', 'ABC', ' ABC '])).toMatchObject({ tags: ['ABC'] });
+    });
+
+    test('大小文字・カナ⇔かなは畳まない（表示とユーザーの表記選択を保持）', () => {
+      expect(norm([], ['VTuber', 'ネコ', 'ねこ'])).toMatchObject({ tags: ['VTuber', 'ネコ', 'ねこ'] });
+    });
+  });
+
   test('null の media エントリは穴として残さず落とす', () => {
     expect(rec.media).toHaveLength(3);
   });
