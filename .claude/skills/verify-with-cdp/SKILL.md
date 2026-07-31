@@ -62,8 +62,8 @@ description: Hologram を CDP（Chrome DevTools Protocol）で計測・撮影・
 
 ## 拡張を診断する
 
-- **実機の Chrome が読んでいるのは本体ツリーの `extension/.output/chrome-mv3`**＝dev ビルドと production ビルドが同じフォルダに書かれる（`outDirTemplate`＝docs/build.md）。挙動を検証する前に**今どちらのビルドが載っているか**を確認する＝`dev:ext` の常駐の有無と対象バンドルのビルド時刻（確認を怠って1時間、旧バンドルの挙動を「修正後のコード」として推測し外した・2026-07-26）。
-- dev と prod は manifest の `key` が同じ＝**拡張 ID が同一**で、resident.js も両方が自己完結バンドル＝**ページ側からどちらが載っているかは判別できない**。判別できるのは `chrome://extensions` のロード元だけ。
+- **実機の Chrome が読んでいるのは本体ツリーの `extension/.output/chrome-mv3`**（`outDirTemplate`＝docs/build.md）。挙動を検証する前に**今のビルドがいつのものか**を確認する＝`chrome-extension://<id>/diag.html` の `devBuild`（`running` / `onDisk`）かファイルの更新時刻を見る（確認を怠って1時間、旧バンドルの挙動を「修正後のコード」として推測し外した・2026-07-26＝当時は dev:ext と production の2ビルドが同一フォルダを取り合っていたが、dev:ext 自体は #675 で撤去済み）。
+- resident.js は自己完結バンドルなので**ページ側からビルドの新旧は判別できない**。判別できるのは `chrome://extensions` のロード元・更新時刻か diag.html の `devBuild` だけ。
 - **拡張側のグローバルは isolated world**＝ページの JS コンソール（`javascript_tool`／DevTools）からは常に `undefined`/`false` に見える。`false` を「拡張が動いていない」根拠にしない。
 - **⛔ 注入の生死を `dispatchEvent` で作ったイベントで判定しない**（実害 2026-07-31）。`utils/user-gesture.ts` の `userOnly`（#323 の信頼境界）が**保存を開始・応答・終了させる全ハンドラ**（投稿を選ぶクリック・重複警告の3つの答え・ドロップゾーンを出す `dragstart` とコミットする `drop`・ホバーの保存ボタン・取込の停止・セッションを捨てるキーと右クリック）に掛かっていて、**`isTrusted !== true` を設計どおり無言で捨てる**。`dispatchEvent` は定義上 `isTrusted:false` を付けるので、**届かないのが正常**＝「反応しない」を「注入されていない」と読むと切り分けが丸ごと壊れる（この日、権限・プロファイル・ビルド・ブラウザ再起動まで疑って往復した末、ユーザーが実際にドラッグしたら一発で出た）。
   - **trusted なイベントを作れるのは CDP の `Input.*` だけ**（`user-gesture.ts` の冒頭コメントが明記）＝`Input.dispatchMouseEvent`／claude-in-chrome なら `computer` の `hover`・`left_click_drag`。`page.dispatchEvent` はページ側と同じ扱いになる。

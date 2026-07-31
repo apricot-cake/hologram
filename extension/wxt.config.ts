@@ -2,16 +2,20 @@ import { defineConfig } from 'wxt';
 import { API_HOST_PERMISSIONS } from './utils/extractor/index.ts';
 
 export default defineConfig({
-  // Dev and production builds write to the same .output/chrome-mv3 (WXT's
-  // default appends "-dev" in dev mode). The user's daily Chrome loads this
-  // single path, so switching modes is one rebuild + one extension reload —
-  // never a remove/re-add, which wipes chrome.storage.local and shortcut
-  // assignments (docs/build.md「拡張機能の開発・配布」).
+  // WXT appends "-dev" to this path in its own dev mode (`wxt` / `wxt dev`),
+  // which this project no longer runs — the standard loop is
+  // `npm run build:ext` only (dev:ext retired, #675). The override stays as
+  // a guard: if `wxt` is ever invoked directly (by hand, outside the npm
+  // scripts), its output still lands in the one path the daily Chrome loads
+  // instead of silently forking into an unread `chrome-mv3-dev` folder
+  // (docs/build.md「拡張機能の開発・配布」).
   outDirTemplate: '{{browser}}-mv{{manifestVersion}}',
   // Never let WXT auto-launch a browser via web-ext-run: that dependency
-  // carries known-vulnerable transitives (shell-quote, tmp, adm-zip). Our
-  // only runner is the user's daily Chrome loading .output/chrome-mv3 (#378);
-  // the dev server's file watch and hot-reload keep working without it (#398).
+  // carries known-vulnerable transitives (shell-quote, tmp, adm-zip). The
+  // only runner is the user's daily Chrome loading .output/chrome-mv3 (#378),
+  // which never goes through this launcher; disabling it is a guard against
+  // `wxt` being invoked directly, not something the standard `build:ext`
+  // loop depends on (#398, #675).
   webExt: {
     disabled: true,
   },
