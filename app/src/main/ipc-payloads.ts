@@ -130,6 +130,8 @@ export interface AppPrefs {
   inspectorWidth: number | null;
   /** #245: both panels above masked away at once. Independent of their own state. */
   panelsHidden: boolean | null;
+  /** #46: triage mode's manually-pinned number-key (1-9) quick tags, in slot order. */
+  triagePinnedTags: string[];
 }
 
 // --- Organization layer (DB-backed, ipc-organize.ts) ---------------------

@@ -38,6 +38,8 @@ export interface CommandDeps {
   posterFolderRows(): { id: string; name: string }[];
   /** 投稿者ビューのクエリへ条件を1つ足す。 */
   posterAddFilter(filter: { type: string; value: string; label?: string }): void;
+  /** 高速トリアージモード（#46）を開く。 */
+  startTriage(): void;
 }
 
 export function makeCommands(deps: CommandDeps): void {
@@ -77,6 +79,9 @@ export function makeCommands(deps: CommandDeps): void {
     // ゴミ箱も行き先の1つ（#268）＝サイドバーに常設された destination はパレットにも
     // 並ぶ、という上2行と同じ扱い。
     { id: 'cmd:browse-trash', section: 'command', title: t('cmdBrowseTrash'), perform: () => deps.browseTo('trash') },
+    // #46: 未タグ・未フォルダの投稿を1件ずつ片付ける専用フロー。行き先系（上3行）とは
+    // 別モードだが、固定エントリという点は同じ＝出し入れなし。
+    { id: 'cmd:triage-start', section: 'command', title: t('cmdTriageStart'), perform: () => deps.startTriage() },
   ];
   registerCommands('commands', commands);
 

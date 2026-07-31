@@ -8,6 +8,7 @@ import { KindMenuHost } from '../kind-menu/KindMenu.tsx';
 import { LightboxHost } from '../lightbox/index.tsx';
 import { SettingsHost } from '../settings/index.tsx';
 import { BulkTagDialogHost } from '../selection/BulkTagDialog.tsx';
+import { TriageHost } from '../triage/index.tsx';
 import { Toaster } from '@/components/ui/sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { handleShortcutPaletteKey } from '../services/command-registry.ts';
@@ -278,6 +279,10 @@ export function App() {
           flow that stages before it writes, so it gets a Dialog rather than the
           inspector's inline field. */}
       <BulkTagDialogHost />
+      {/* Fast triage mode (#46) — a full-screen dialog like the ones above, not part
+          of the shell's content-column swap (AppShell), so it composes cleanly with
+          whatever mode/tab was showing underneath when it closes. */}
+      <TriageHost />
       <LightboxHost />
       {/* 設定 — a shadcn Dialog, so it portals onto document.body itself. */}
       <SettingsHost />

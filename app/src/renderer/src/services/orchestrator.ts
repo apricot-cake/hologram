@@ -45,6 +45,7 @@ import { makeBulkTag } from './bulk-tag-builder.ts';
 import { makeTabsController } from './tabs-builder.ts';
 import { makeImageTabController } from './image-tab-builder.ts';
 import { hologramImageTabSource } from './image-tab.ts';
+import { makeTriage } from './triage-builder.ts';
 import { get as storeGet, set as storeSet, subscribe as storeSubscribe } from './store.ts';
 import { hologramIpc } from './ipc.ts';
 
@@ -253,6 +254,22 @@ export let activeFilters: () => ActiveFilter[];
 // half-typed free-text leaf, which is right for "the text was only for finding the
 // filter" and wrong for an input that lives in the chip row.
 export let addFilterToCurrentView: (filter: { type: string; value: string; label?: string }) => void;
+
+// Fast triage mode (#46) — bindings for triage/index.tsx (the Host) and
+// triage/TriageMode.tsx, same "deferred forward reference, assigned once
+// construction below is done" shape as every other export let in this file.
+// State/pure actions live in services/triage.ts (imported directly by the
+// components); these are the deps-requiring half (services/triage-builder.ts).
+export let openTriage: () => void;
+export let triageCloseTriage: () => void;
+export let triageApplyTag: (tag: string) => Promise<void>;
+export let triageApplyFolder: (folderId: string) => void;
+export let triageSkip: () => void;
+export let triageUndoLast: () => void;
+export let triageHandleKey: (e: KeyboardEvent) => void;
+export let triageCurrentMedia: () => import('./triage-builder.ts').TriageMedia | null;
+export let triageListFolders: () => HologramFolder[];
+export let triageQueueCount: () => number;
 
 // One open facet-editor popup = one nav-history entry (#144 確定未決2: エディタ
 // 1セッション1エントリ). The filterbar's ValueEditor/FormEditor bracket their
@@ -935,6 +952,33 @@ export function endFilterEditSession(): void {
     onToggleInspector: toggleImageTabInspector,
     onCloseTab: closeImageTab,
   });
+
+  // --- Fast triage mode (#46) ---
+  // Constructed here: needs postGrid (getAllPosts/groupRecords/getPostById/
+  // markPostsMutated/renderPosts, all built above), pushUndo (undoCtl, built even
+  // earlier so postGrid's own deps could reach it), and buildGroupGalleryItems
+  // (just above — the SAME gallery instance the image view and lightbox read, so a
+  // post's triage preview is pixel-identical to its thumbnail/quick-view).
+  const triageCtl = makeTriage({
+    t: getMessage,
+    buildGroupGalleryItems,
+    getAllPosts: () => postGrid.getAllPosts(),
+    groupRecords: postGrid.groupRecords,
+    pushUndo,
+    getPostById: postGrid.getPostById,
+    markPostsMutated: () => postGrid.markPostsMutated(),
+    renderPosts: (keepLimit) => postGrid.renderPosts(keepLimit),
+  });
+  openTriage = triageCtl.openTriage;
+  triageCloseTriage = triageCtl.closeTriage;
+  triageApplyTag = triageCtl.applyTag;
+  triageApplyFolder = triageCtl.applyFolder;
+  triageSkip = triageCtl.skip;
+  triageUndoLast = triageCtl.undoLast;
+  triageHandleKey = triageCtl.handleTriageKey;
+  triageCurrentMedia = triageCtl.currentMedia;
+  triageListFolders = triageCtl.listFolders;
+  triageQueueCount = triageCtl.queueCount;
 
   // ゴミ箱 (#268). The trash draws the library's OWN cards — post-grid-builder's
   // cardModel and its label set go over verbatim — and groups its records with the
@@ -1686,6 +1730,7 @@ export function endFilterEditSession(): void {
     posterTagRows: () => (['poster-tag', 'poster-work', 'poster-character'] as const).flatMap((cat) => (qfValues(cat) as FilterRow[]).map((r) => ({ value: String(r.v), count: Number(r.count) || 0 }))),
     posterFolderRows: () => (qfValues('poster-folder') as FilterRow[]).map((r) => ({ id: String(r.v), name: String(r.l ?? r.v) })),
     posterAddFilter: (filter) => posterQB.addFilter(filter),
+    startTriage: () => openTriage(),
   });
 
   // #148 のチップ帯インライン入力の commit 口＝いま見ているビューの絞り込みへ条件を

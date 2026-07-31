@@ -15,7 +15,7 @@ import type { AppInfo, AppPrefs, ConfigSummary, ExtensionIdResult, LibraryStatus
 // snapshotState), which is where it is persisted and restored from. The old
 // 'sortBy' pref was the losing half of that double storage — the two raced on
 // load — and the renderer stopped reading it when the tab state took over.
-const PREF_KEYS = ['language', 'layoutMode', 'squareThumbs', 'showInfo', 'showAvatar', 'skipDeleteConfirm', 'gridSize', 'listThumb', 'theme', 'browseMode', 'posterLayoutMode', 'posterShowInfo', 'posterGridSize', 'sidebarOpen', 'sidebarWidth', 'inspectorOpen', 'inspectorWidth', 'panelsHidden'];
+const PREF_KEYS = ['language', 'layoutMode', 'squareThumbs', 'showInfo', 'showAvatar', 'skipDeleteConfirm', 'gridSize', 'listThumb', 'theme', 'browseMode', 'posterLayoutMode', 'posterShowInfo', 'posterGridSize', 'sidebarOpen', 'sidebarWidth', 'inspectorOpen', 'inspectorWidth', 'panelsHidden', 'triagePinnedTags'];
 
 // --- One-off read of the retired 3-value densities (#618 posts / #630 posters) ---
 // `viewMode` / `posterViewMode` (card/tile/list) and their per-density size keys are
@@ -153,6 +153,8 @@ function register(ctx: IpcContext) {
       inspectorOpen: typeof cfg.inspectorOpen === 'boolean' ? cfg.inspectorOpen : null, // inspector panel shown/hidden; null = never toggled
       inspectorWidth: Number.isFinite(cfg.inspectorWidth) ? cfg.inspectorWidth : null,
       panelsHidden: typeof cfg.panelsHidden === 'boolean' ? cfg.panelsHidden : null, // #245 bulk hide over the two panels above; null = never used
+      // #46: up to 9 manually-pinned tags for triage mode's number-key quick tagging.
+      triagePinnedTags: Array.isArray(cfg.triagePinnedTags) ? cfg.triagePinnedTags.filter((v: unknown): v is string => typeof v === 'string').slice(0, 9) : [],
     };
   });
 
