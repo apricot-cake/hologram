@@ -111,7 +111,7 @@ function PostInspector({ m }: { m: HologramInspectorModel }) {
   ) : (
     <span className="truncate">{m.authorName}</span>
   );
-  const actions = m.onOpenExternal || m.onSauce || m.onAscii || m.groupBtn;
+  const actions = m.onOpenExternal || m.onOpenProfile || m.onSauce || m.onAscii || m.groupBtn;
   return (
     <div data-slot="inspector-post" className="flex flex-col gap-3">
       <div className="flex items-start justify-between gap-2">
@@ -172,6 +172,12 @@ function PostInspector({ m }: { m: HologramInspectorModel }) {
             {m.onOpenExternal ? (
               <ActionLink onClick={m.onOpenExternal}>
                 {m.labels.open}
+                <ArrowUpRight aria-hidden="true" />
+              </ActionLink>
+            ) : null}
+            {m.onOpenProfile ? (
+              <ActionLink onClick={m.onOpenProfile}>
+                {m.labels.openProfile}
                 <ArrowUpRight aria-hidden="true" />
               </ActionLink>
             ) : null}
@@ -266,6 +272,12 @@ function PosterInspector({ m }: { m: HologramInspectorModel }) {
             {m.labels.posterViewPosts}
             <ArrowUpRight aria-hidden="true" />
           </ActionLink>
+          {m.onOpenProfile ? (
+            <ActionLink onClick={m.onOpenProfile}>
+              {m.labels.openProfile}
+              <ArrowUpRight aria-hidden="true" />
+            </ActionLink>
+          ) : null}
         </div>
       </Divided>
     </div>
