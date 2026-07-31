@@ -14,7 +14,14 @@
 
 @theme inline {
     --font-heading: var(--font-sans);
-    --font-sans: 'Geist Variable', sans-serif;
+    /* Geist carries no CJK, and this UI is Japanese-primary — so the stack has to name
+       the Japanese faces itself, exactly as design-tokens.css's copy has always said
+       ("prepend 'Geist' to --font-sans"). Without them the kana fall through to
+       Chromium's generic sans-serif, whose full-width metrics run ~42% wider than
+       'Yu Gothic UI' and wrap labels that used to fit (#654; regressed with #6 when the
+       legacy sheet's `body { font: 14px/1.6 var(--font-sans) }` went away and body
+       started inheriting this value instead). Keep identical to design-tokens.css. */
+    --font-sans: 'Geist Variable', -apple-system, 'Segoe UI', 'Hiragino Kaku Gothic ProN', 'Yu Gothic UI', 'Noto Sans JP', system-ui, sans-serif;
     /* Motion tokens (§3-10a): the single knob for the whole redesign's motion tone.
        Restrained/calm (Linear / Claude Desktop). Every animated surface reads these
        via var() instead of hard-coding ms/curves, so the tone tunes in one place.
