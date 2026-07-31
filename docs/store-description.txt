@@ -3,6 +3,9 @@ The SUMMARY must match extension/public/_locales/en/messages.json extDesc (the s
 summary is taken from the manifest description; max 132 characters).
 Before submission, re-verify every feature claim against the shipped UI
 (features and terminology may change before release).
+The "when post details cannot be fetched" block must be checked against the
+wording the extension actually shows at save time — the range narrows as the
+page-side fallback reaches more save routes.
 
 === SUMMARY (max 132 chars) ===
 
@@ -38,6 +41,9 @@ ORGANIZE
 
 SUPPORTED PLATFORMS
 X (Twitter) / Bluesky / Misskey / Mastodon / pixiv
+
+WHEN POST DETAILS CANNOT BE FETCHED
+For some posts the platform hands back nothing about them — age-restricted posts and posts from protected accounts on X, followers-only posts on Misskey and Mastodon. The picture can still be saved; what goes missing is the post's text and author, and Hologram tells you so at save time (saving with Alt+S fills part of the gap from what the page is showing). A post that has already been deleted cannot be saved at all.
 
 REQUIREMENTS
 Saving and browsing require the Hologram desktop app (Windows, free and open source). Install it first, then add this extension.

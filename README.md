@@ -73,6 +73,22 @@ From the **gear (Settings)** at the bottom-left of the screen.
 - **Scheduled backup (mirror)** to another folder
 - Theme (light/dark) and display language can also be switched here
 
+## When post details cannot be fetched
+
+The text, author, date and engagement counts come from the platform's own API, fetched by your browser — Hologram never signs in as you. For some posts that route answers nothing, even though the post is plainly on your screen:
+
+- **X** — age-restricted posts, and posts from protected accounts. The endpoint X serves post details from answers anonymous callers only, and your x.com sign-in does not reach it.
+- **Misskey / Mastodon** — followers-only posts, and servers that turn off API access for callers who are not signed in.
+- **Bluesky / pixiv** — nothing of this kind. (pixiv is fetched with your own session, so what you can see, Hologram can read.)
+
+What that means depends on how you save:
+
+- **`Alt+S`** — the screenshot is saved either way, and the text and author are filled in from what the page is showing (X only so far). Counts read off the page are the rounded ones the page displays, not the exact figures the API gives.
+- **The other ways of saving** — the picture you pointed at is saved, without the post's text and author.
+- If nothing about the post can be obtained and there is no picture to keep either — a post that has been deleted, or a video whose file only the platform's answer would name — **nothing is written at all**, rather than an empty entry.
+
+Either way the save says so at the time, so a post that came in without its details is never a silent one.
+
 ## Setup
 
 Preparing for release (including publishing the extension to the Chrome Web Store).
