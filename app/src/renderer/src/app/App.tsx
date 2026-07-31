@@ -85,9 +85,10 @@ function ShellClasses() {
   const mode = useSyncExternalStore(subBrowseMode, getBrowseMode);
   useLayoutEffect(() => {
     document.body.classList.toggle('browse-posters', mode === 'posters');
-    // browse-trash is the third destination (#268) — same mechanism, so the
-    // question "which of the three is on screen" keeps ONE answer.
-    document.body.classList.toggle('browse-trash', mode === 'trash');
+    // No browse-trash twin: its only reader (clipboard-intake.ts's paste guard) asks
+    // the store directly now (P2⑬), so writing the class would leave a DOM contract
+    // nothing consumes. browse-posters stays only because legacy CSS still selects on
+    // it (index.html) — that goes with P3 (#6), and this whole component with it.
   }, [mode]);
   return null;
 }

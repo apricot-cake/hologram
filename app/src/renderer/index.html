@@ -836,35 +836,10 @@
     /* Breathing room under the chip row, only when chips exist (the container is
        always mounted — an unconditional padding would gap the empty toolbar). */
     .sb-chips:has(*) { padding-bottom: 8px; }
-    /* Feature launcher (tagging session): an explicit CTA button (Notion "+New" /
-       Linear式) — defined fill + border + xs shadow, plus a hover LIFT (translateY
-       + shadow) so it reads unmistakably as a press target, not a flat tinted box.
-       The accent icon sits in its own soft chip so the button has a clear "head".
-       (.btn-outline language — a single CTA, not a category row.) */
-    .sb-feature {
-      width: 100%; display: flex; align-items: center; gap: 9px;
-      padding: 8px 11px; margin: 2px 0 12px; border-radius: 9px;
-      border: 1px solid var(--border); background: var(--chip-bg);
-      color: var(--text); font-size: 13px; font-weight: 600;
-      cursor: pointer; text-align: left;
-      box-shadow: var(--shadow-xs);
-      transition: background .12s, border-color .12s, box-shadow .12s, transform .12s;
-    }
-    .sb-feature:hover {
-      background: var(--chip-bg-hover); border-color: var(--accent-soft);
-      box-shadow: var(--shadow-sm); transform: translateY(-1px);
-    }
-    .sb-feature:active { transform: translateY(0); box-shadow: var(--shadow-xs); }
-    /* Icon gets a soft accent chip = the button's "head" (recognisable affordance,
-       like Linear's coloured glyph badge). */
-    .sb-feature .sb-feature-ic {
-      flex-shrink: 0; width: 24px; height: 24px; border-radius: 6px;
-      display: flex; align-items: center; justify-content: center;
-      background: color-mix(in srgb, var(--accent) 14%, transparent);
-      color: var(--accent-text);
-    }
-    .sb-feature .sb-feature-ic svg { width: 15px; height: 15px; }
-    .sb-feature svg { width: 15px; height: 15px; flex-shrink: 0; color: var(--accent-text); }
+    /* The sidebar's feature-launcher CTA (.sb-feature) went with the 「タグ付けセッション」
+       it launched — P2⑬. Tagging many posts is a composition now (filter to 「タグなし」,
+       arrow through the results, edit tags in the inspector), and a composition has no
+       launcher to style. */
     /* Value chips: FILLED pill, no outline (GitHub topics / Notion tags).
        The transparent border keeps geometry so the active tint border can
        appear without layout shift. Hover = neutral lift, never accent. */

@@ -195,12 +195,21 @@ export function makeFacets(deps: {
       case 'tag': {
         // Include tags from all posts (incl. imported url-less images), not just SNS posts.
         // 用語帳: kinded tags live in the 作品/キャラ rows — the タグ flyout is general-only.
-        const cnt = facetCounts((p) => p.tags);
+        // A post with no tags at all buckets under the '__none' sentinel — same shape as
+        // プラットフォームなし above, and query.ts special-cases the value the same way.
+        const cnt = facetCounts((p) => ((p.tags || []).length ? p.tags : '__none'));
         const item = (t: string) => ({ v: t, l: t, on: act('tag', t), count: cnt.get(t) || 0, facetDim: true });
         // Present values (count desc) precede absent ones.
         const byCount = (a: { count: number; l: string }, b: { count: number; l: string }) => b.count - a.count || a.l.localeCompare(b.l, 'ja');
         const allTags = [...new Set<string>(allPosts().flatMap((p) => p.tags || []))].filter((t) => !tagKindOf(t)).sort();
-        return allTags.map(item).sort(byCount);
+        const out = allTags.map(item).sort(byCount);
+        // 「タグなし」= tags が空の投稿。連続タグ付けの入口なので、count 順の並びには
+        // 混ぜず先頭に固定する（GitHub の Labels ドロップダウンが Unlabeled を先頭に
+        // 置くのと同型。プラットフォームなしを末尾に置いているのは、あちらが縁の
+        // ケースで入口にならないため）。該当が1件もなければ出さない＝空振りする項目を
+        // 並べない、はプラットフォーム側と同じ。
+        if (allPosts().some((p) => !(p.tags || []).length)) out.unshift({ v: '__none', l: t('qfTagNone'), on: act('tag', '__none'), count: cnt.get('__none') || 0, facetDim: true });
+        return out;
       }
       case 'folder': {
         // Library folders (folders.json). Each row toggles a 'folder' leaf.

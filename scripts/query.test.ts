@@ -90,6 +90,27 @@ describe('葉の述語', () => {
     expect(predOf({ type: 'tag', value: '作画' })(post({ tags: undefined }))).toBe(false);
   });
 
+  // 「タグなし」（P2⑬）＝タグの名前ではなく「tags が空か」を見る番兵値
+  test('tag: __none は tags が空の投稿だけ', () => {
+    expect(predOf({ type: 'tag', value: '__none' })(post({ tags: [] }))).toBe(true);
+    expect(predOf({ type: 'tag', value: '__none' })(post({ tags: undefined }))).toBe(true);
+    expect(predOf({ type: 'tag', value: '__none' })(post())).toBe(false);
+  });
+
+  // tagId 経路より先に答える＝'__none' という名前のタグを探しにいかない
+  test('tag: __none は tagIdOf を引かない', () => {
+    const calls: string[] = [];
+    const p = Q.makePostPredOf({
+      isInFolder: () => false,
+      tagIdOf: (name: string) => {
+        calls.push(name);
+        return 7;
+      },
+    });
+    expect(p({ kind: 'cond', type: 'tag', value: '__none' } as any)(post({ tags: [], tagIds: [7] }) as any)).toBe(true);
+    expect(calls).toEqual([]);
+  });
+
   test('folder: 注入した依存で判定する', () => {
     expect(predOf({ type: 'folder', value: 'col-1' })(post({ captureId: 'cap-in' }))).toBe(true);
     expect(predOf({ type: 'folder', value: 'col-1' })(post())).toBe(false);

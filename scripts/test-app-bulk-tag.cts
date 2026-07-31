@@ -11,7 +11,7 @@
 //     each record already had (additive is the only mode)
 //
 // This replaces tag-pop's mode:'bulk', where the staging lived in a renderer
-// module (bulk-edit.ts); it now lives in the dialog's React state. The "discard"
+// module of its own; it now lives in the dialog's React state. The "discard"
 // and "reopened dialog is empty" checks are what that move has to keep true.
 // Assertions are on chips and on disk, not on the Base UI internals.
 //
