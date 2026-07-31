@@ -45,6 +45,9 @@ function emptyRecord(url: string | null | undefined, platform: string | null | u
     // id). Lets the viewer group a self-reply with its parent when both are in
     // the library.
     replyToId: null,
+    seriesId: null,
+    seriesTitle: null,
+    seriesOrder: null,
     hashtags: [],
     tags: [],
     raw: [],
