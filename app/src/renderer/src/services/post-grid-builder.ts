@@ -44,8 +44,6 @@ export interface PostGridBuilderDeps {
   getBrowseMode(): string;
   renderPosters(keepLimit?: boolean): void;
   onPostsLoaded(): void;
-  getInspectedKey(): string | null;
-  dismissDetail(): void;
   showDetail(g: HologramPostGroup, opts?: { focusTags?: boolean }): void;
   jumpToPoster(post: HologramPost): void;
   addImageTab(g: HologramPostGroup): void;
@@ -523,9 +521,12 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
   }
 
   // Delete every record of the group (a group IS one post in the UI).
+  // Nothing here has to think about the inspector any more (#633): it used to dismiss the
+  // panel itself when the inspected post was among the records, which left every OTHER way
+  // a record can vanish (the floating bar's bulk delete, the wipe, an import 置換) free to
+  // strand it. inspector-builder.ts watches posts-data.ts for disappearance instead — one
+  // answer for all of them, reached through the markPostsMutated() below.
   async function executeDeleteGroup(g: HologramPostGroup) {
-    const inspectedKey = deps.getInspectedKey();
-    if (inspectedKey && g.records.some((r) => postIdKey(r) === inspectedKey)) deps.dismissDetail();
     for (const r of g.records) {
       try {
         await deletePost(r.image || r.video);

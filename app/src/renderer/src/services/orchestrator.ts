@@ -741,11 +741,6 @@ export function endFilterEditSession(): void {
       // posts-data.ts subscription, and the inspector toggle resolves its group
       // fresh from the current history entry — no cached group to refresh (#144).
     },
-    getInspectedKey: () => inspectedKey,
-    // The grid calls this when the INSPECTED post leaves the view, which is a
-    // loss of subject, not the user asking for the panel to go away — so it must
-    // not touch the stored preference (see inspector-builder's closeDetail).
-    dismissDetail: () => dismissDetail(),
     showDetail: (g, opts) => showDetail(g, opts),
     jumpToPoster: (post) => jumpToPoster(post),
     addImageTab: (g) => imageTabCtl.addImageTab(g),

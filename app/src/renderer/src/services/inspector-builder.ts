@@ -19,6 +19,7 @@ import { get as kindMenuGet } from './kind-menu.ts';
 import { isOpen as lightboxIsOpen } from './lightbox.ts';
 import { get as menuGet } from './menu.ts';
 import { isAnySelectOpen } from './open-select-registry.ts';
+import { subscribe as subscribePostsData } from './posts-data.ts';
 import { postIdKey, postKeyOf, captureFile, persistManualGroups, persistUngrouped } from './records.ts';
 import { isOpen as settingsIsOpen } from './settings.ts';
 import { isManagerOpen as folderManagerIsOpen } from './folders.ts';
@@ -101,6 +102,50 @@ export function makeInspector(deps: InspectorBuilderDeps) {
     inspectorClose();
     deps.setInspectedKey(null);
   }
+
+  // === The inspected subject has to keep existing (#633) ===
+  //
+  // The panel's content is a SNAPSHOT: showDetail() reads a group once and pushes a
+  // finished model through inspector.ts. The library underneath it is live, so a subject
+  // that stops existing left the panel answering for a record that is gone — with its
+  // inline tag editor still writing to it. The image view made that visible because its
+  // stage IS live (services/image-tab.ts resolves the group against the library on every
+  // notify): the picture fell to「ライブラリにありません」while the column beside it kept
+  // showing the post.
+  //
+  // ONE place asks the question, for every way a subject can vanish — the same move #617
+  // made for "is the panel on screen" (isVisible) and #619 for "is the image view showing"
+  // (isActive). Before this, each delete path had to remember on its own: the card menu's
+  // delete did, the floating bar's bulk delete did not, and neither did the library wipe,
+  // the ZIP import's 置換, or anything else that can drop a record. Deletion is not the
+  // interesting event — DISAPPEARANCE is, and posts-data.ts is where the library announces
+  // it (markPostsMutated is the single choke point every mutation already goes through).
+  //
+  // What it lands on is dismissDetail(), not a new "this post was deleted" panel state:
+  // the inspector is defined as the detail OF a selection (#143/#244), so with the subject
+  // gone there is no selection, and the placeholder that already means that is the honest
+  // answer. A second「削除されました」empty state would also say what the stage is already
+  // saying, one column over.
+  function inspectedSubjectExists(key: string): boolean {
+    // Poster keys are the roll-up's own (poster-grid-builder stamps 'poster:' + u.key);
+    // a poster exists exactly as long as one of its posts does, which is what buildUsers
+    // recomputes (cached behind the library generation, so this costs nothing extra on a
+    // notify that already invalidated it).
+    if (key.indexOf('poster:') === 0) {
+      const uk = key.slice('poster:'.length);
+      return deps.buildUsers().some((u) => u.key === uk);
+    }
+    // postIdKey IS the captureId for every stored record, so the map lookup answers in
+    // O(1); the scan is only reached for the url|capturedAt fallback key, and for a
+    // record that really has gone (once per deletion, alongside the array rebuild).
+    if (deps.getPostById(key)) return true;
+    return deps.getAllPosts().some((p) => postIdKey(p) === key);
+  }
+  subscribePostsData(() => {
+    const key = deps.getInspectedKey();
+    if (key == null || inspectedSubjectExists(key)) return;
+    dismissDetail();
+  });
 
   // The panel's own × takes whichever meaning its CURRENT form gives it. Docked, × is the
   // only way off the screen, so it stores the preference. As an overlay it sits beside Esc
