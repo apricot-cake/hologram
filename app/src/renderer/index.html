@@ -43,58 +43,9 @@
     ::-webkit-scrollbar-thumb:hover { background: color-mix(in oklch, var(--text-muted) 70%, transparent); background-clip: padding-box; }
     ::-webkit-scrollbar-corner { background: transparent; }
 
-    .mirror-status { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--text-muted); margin-left: 8px; white-space: nowrap; overflow: hidden; max-width: 150px; }
-    .mirror-status .ms-ic { flex-shrink: 0; }
-    .mirror-status .ms-body { display: flex; flex-direction: column; line-height: 1.2; min-width: 0; }
-    .mirror-status .ms-t { overflow: hidden; text-overflow: ellipsis; }
-    .mirror-status .ms-time { font-size: 9.5px; color: var(--text-subtle); overflow: hidden; text-overflow: ellipsis; }
-    .mirror-status.is-error { color: var(--danger); }
-    .mirror-status.is-syncing { color: var(--accent-text); }
-    .mirror-status.is-syncing .ms-ic { animation: ms-spin 0.9s linear infinite; }
-    @keyframes ms-spin { to { transform: rotate(360deg); } }
-    @media (prefers-reduced-motion: reduce) { .mirror-status.is-syncing .ms-ic { animation: none; } }
-
-    /* Drag range selection (#484). The band is an overlay owned imperatively by the
-       grid host (_shared/VirtualGrid.tsx) and attached to <body>, so it is placed in
-       viewport coordinates and clipped to the scroller's visible area — the press
-       point scrolls away during a long drag. Same --color-selected as the ring, at
-       the translucent-fill + hairline-border weight Explorer/Finder use. */
-    .grid-marquee-clip {
-      position: fixed; overflow: hidden; pointer-events: none; z-index: 45;
-      contain: strict;
-    }
-    .grid-marquee {
-      position: absolute; top: 0; left: 0; will-change: transform, width, height;
-      background: color-mix(in oklch, var(--color-selected) 16%, transparent);
-      border: 1px solid color-mix(in oklch, var(--color-selected) 70%, transparent);
-    }
-
-    /* --- Image tab (type:'image') — fit-to-screen detail view --- */
-    /* What is left here is the MEDIA sizing, which the zoom/pan surface depends on
-       (see the pointer-events note below). */
-    .itv-media { max-width: 100%; max-height: 100%; object-fit: contain; }
-    /* react-zoom-pan-pinch's own stylesheet sets pointer-events:none on every
-       img inside the content box (native img-drag protection), which silently
-       killed the double-click fit-toggle AND the grab cursor for real input.
-       The img is draggable={false}, so receiving events is safe. The library
-       CSS loads after this sheet (injected by app.js) — outrank it via .itv-tc. */
-    .itv-tc img.itv-media { pointer-events: auto; }
-    img.itv-media { cursor: grab; }
-    img.itv-media:active { cursor: grabbing; }
-    .itv-video { margin: auto; }
-    /* うごイラ (#119 St3): a canvas plus its own play/pause, since a zip of
-       frames has no native controls the way <video> does. */
-    .itv-ugoira > .itv-media { margin: auto; }
-
     /* While a modal scrim is up, lock background scroll so the page scrollbar (which
        paints above the overlay) doesn't stay visible. JS toggles .modal-open. */
     html.modal-open, body.modal-open { overflow: hidden; }
-
-    /* Tag-kind dots (用語帳). Dot colors follow danbooru's tag-category convention
-       (copyright=purple, character=green). */
-    .tk-dot { width: 8px; height: 8px; border-radius: 999px; flex-shrink: 0; }
-    .tk-work { background: var(--tint-purple-bd); }
-    .tk-character { background: var(--tint-green-bd); }
 
     /* Generic dialog text input. :not(.search-box) — the attribute selector
        otherwise outweighs the unified .search-box field anatomy (r8/32px). */
@@ -171,35 +122,6 @@
     .iv-fold-n { color: var(--muted); font-size: 11px; }
     .iv-fold-btn { border: none; background: none; cursor: pointer; font-size: 14px; line-height: 1; padding: 2px 4px; border-radius: 5px; color: var(--muted); }
     .iv-fold-btn:hover { background: var(--hover); }
-
-    /* Inspector: an inline right column, at every window width (#243). The panel
-       used to detach into a fixed slide-over below 1280px; that automatic reshape
-       is gone — the column is opened and closed by the user (toggle / ×) and the
-       width no longer decides its form. Clicking a card while it is open swaps the
-       content (double-click → gallery). */
-    .inspector {
-      width: var(--inspector-w); flex-shrink: 0;
-      height: 100%; z-index: 25;
-      background: var(--surface); border-left: 1px solid var(--border);
-      font-size: 12px;
-      /* The panel starts below the tab band (#518), which spans the window's full width
-         right of the sidebar — so unlike the sidebar it never reaches the window top and
-         has no titlebar row of its own to give up. */
-      display: flex; flex-direction: column;
-    }
-    .inspector-body { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 16px 18px; }
-    /* Narrow widths (#259): the same panel floats over the grid instead of taking a
-       column out of it. --content-top is measured by AppShell (the toolbar's height
-       moves with the filter chip row), so the overlay starts exactly at the content
-       area and leaves the tab bar + toolbar reachable. React owns the width decision —
-       no media query here; layout-mode.ts is the only place the breakpoint lives. */
-    .inspector--overlay {
-      position: fixed; top: var(--content-top, var(--tabbar-h)); right: 0; bottom: 0; height: auto;
-      border-left: 1px solid var(--float-border); box-shadow: var(--shadow-lg);
-      z-index: 9500;   /* over the content, under modals/lightbox (11000+) */
-    }
-    .inspector[hidden] { display: none; }
-    .inspector:not([hidden]) { animation: hologramPanelIn var(--dur-panel) var(--ease-out); }
 
     @keyframes hologramFadeIn { from { opacity: 0; } to { opacity: 1; } }
     @keyframes hologramPopIn { from { opacity: 0; transform: scale(.96); } to { opacity: 1; transform: none; } }

@@ -331,14 +331,34 @@ export function AppShell() {
                   used to be a `body.image-tab-active .inspector--overlay` override that
                   undid the overlay's own rules one by one; picking the docked form outright
                   is the same result with one decision instead of two. */}
-              <aside data-slot="inspector" ref={registerPanelEl} className={wide || imageView ? 'inspector relative' : 'inspector inspector--overlay'} hidden={!inspectorVisible}>
+              {/* [&[hidden]]:hidden is required, not belt-and-braces: `display: flex` from
+                  this element's own class beats the UA sheet's [hidden] { display: none },
+                  so the attribute alone would leave the panel on screen. The enter
+                  animation replays on every reveal because the element goes through
+                  display:none in between. */}
+              <aside
+                data-slot="inspector"
+                ref={registerPanelEl}
+                className={`z-25 flex h-full w-[var(--inspector-w)] shrink-0 flex-col border-l border-border bg-[var(--surface)] text-[12px] duration-[var(--dur-panel)] ease-[var(--ease-out)] animate-in fade-in slide-in-from-right-[18px] [&[hidden]]:hidden ${
+                  wide || imageView
+                    ? 'relative'
+                    : // Narrow widths (#259): the same panel floats over the grid instead of
+                      // taking a column out of it. --content-top is measured by the effect
+                      // above, so the overlay starts exactly at the content area and leaves
+                      // the tab bar + toolbar reachable — React owns the width decision, so
+                      // there is no media query anywhere; layout-mode.ts holds the breakpoint.
+                      // z-9500 = over the content, under modals/lightbox (11000+).
+                      'fixed top-[var(--content-top,var(--tabbar-h))] right-0 bottom-0 z-9500 h-auto border-l-[var(--float-border)] shadow-[var(--shadow-lg)]'
+                }`}
+                hidden={!inspectorVisible}
+              >
                 {/* Drag edge (#30). Wide layout only, for the same reason the sidebar rail
                     is: the narrow form is an overlay pinned to the window edge. */}
                 {wide && <InspectorRail resize={inspector.resize} />}
-                {/* flex:1 (in .inspector-body) gives this a definite height, so the
-                    empty-state placeholder can still center itself in the column; a filled
-                    panel just overflows it into the scroll, as before. */}
-                <div data-slot="inspector-body" className="inspector-body">
+                {/* flex-1 gives this a definite height, so the empty-state placeholder can
+                    still center itself in the column; a filled panel just overflows it into
+                    the scroll, as before. */}
+                <div data-slot="inspector-body" className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-[18px] py-4">
                   <Inspector />
                 </div>
               </aside>

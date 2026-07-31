@@ -68,7 +68,7 @@ const evalJs = `(async () => {
   // Cards are identified by their own text (no key attribute — #618).
   const nameOf = (c) => ((c.textContent || '').match(/本文\\d+/) || [])[0] || '?';
   const selectedKeys = () => cards().filter(c => c.hasAttribute('data-selected')).map(nameOf).sort();
-  const band = () => document.querySelector('.grid-marquee');
+  const band = () => document.querySelector('[data-slot="grid-marquee"]');
   const errors = [];
   window.addEventListener('error', (e) => errors.push(String((e && e.message) || e)));
   const out = {};

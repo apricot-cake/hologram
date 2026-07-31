@@ -146,7 +146,7 @@ const evalJs = `(async () => {
   card.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
   out.imageTabActive = !!(await waitFor(() => document.querySelector('[data-slot="image-tab-view"]')));
 
-  const canvas = await waitFor(() => document.querySelector('.itv-ugoira canvas'));
+  const canvas = await waitFor(() => document.querySelector('[data-slot="ugoira-stage"] canvas'));
   out.canvasFound = !!canvas;
   if (!canvas) return JSON.stringify(out);
 

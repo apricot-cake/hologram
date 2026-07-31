@@ -450,11 +450,9 @@ export function LeftSidebar({ resize }: { resize?: PanelResize }) {
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
-        {/* Backup / mirror status rail — renders its content into #mirrorStatus and
-            writes the status class onto that host span (its own contract). */}
-        <span id="mirrorStatus" className="mirror-status px-2 group-data-[collapsible=icon]:hidden">
-          <MirrorStatus />
-        </span>
+        {/* Backup / mirror status rail. It draws its own root (P3 #6) — this used to be a
+            host <span> the component wrote a status class onto from a layout effect. */}
+        <MirrorStatus />
       </SidebarFooter>
       {/* The column's drag edge (#30). Passed in rather than read from context: only
           the shell knows whether the sidebar is a column right now or a slide-over,

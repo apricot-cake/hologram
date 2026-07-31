@@ -94,7 +94,7 @@ function PathChip({ children }: { children?: string | null }) {
 
 // データ: save-folder (with live migration progress), export/import, auto backup.
 // Port of viewer.js setupSaveFolder + the export/import handlers + setupBackup —
-// only the modal-side UI. The always-visible rail #mirrorStatus stays in viewer.js.
+// only the modal-side UI. The always-visible rail is mirror/MirrorStatus.tsx.
 export function Data() {
   // --- save folder ---
   const [saveFolder, setSaveFolder] = useState('');

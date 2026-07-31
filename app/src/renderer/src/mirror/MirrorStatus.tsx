@@ -1,44 +1,48 @@
-import { useEffect, useLayoutEffect, useReducer, useRef } from 'react';
+import { useEffect, useReducer, useRef } from 'react';
 import { t } from '../_shared/i18n.ts';
 import { fmtBackupTime, fmtTime } from '../services/format.ts';
 import { getBackup, onBackupStart, onBackupDone, getIntegrityStatus, onIntegrityCheckDone } from '../services/backup.ts';
 
-// Backup status rail (#mirrorStatus) — the always-visible sidebar footer showing the
-// auto-backup state. This component OWNS the state machine (backup config + last result +
-// syncing flag), reading it straight from backup.ts (getBackup + onBackupStart/
-// Done) and deriving the model (kind/text/title/time) with its own t() + format.ts's
-// fmtBackupTime/fmtTime — there is no viewer push (the old shared push bridge +
-// setupMirrorStatusRail are gone). The status modifier (.is-syncing / .is-error / .is-done)
-// lives on the host <span> itself (the portal target, not a React-owned element), so a
-// useLayoutEffect writes host.className/title there — the inline margin-left:auto style is
-// left untouched.
+// Backup status rail — the always-visible sidebar footer showing the auto-backup state.
+// This component OWNS the state machine (backup config + last result + syncing flag),
+// reading it straight from backup.ts (getBackup + onBackupStart/Done) and deriving the
+// model (kind/text/title/time) with its own t() + format.ts's fmtBackupTime/fmtTime —
+// there is no viewer push (the old shared push bridge + setupMirrorStatusRail are gone).
+//
+// It renders its own root now (P3 #6). The status tone used to be a modifier class
+// (.is-syncing / .is-error / .is-done) that a useLayoutEffect wrote onto the sidebar's
+// host <span> — a cross-boundary DOM write into another component's element (#153
+// category 4), which existed only because the tone lived in the legacy sheet. The tone is
+// a prop of this element's own className now, so the sidebar just places the component.
 
 // Status glyphs (verbatim from viewer's old MS_ICON_*): spinning arrows = syncing, check =
 // done, triangle = error / prune-guarded.
 const IconSync = () => (
-  <svg className="ms-ic" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+  <svg className="shrink-0 animate-spin motion-reduce:animate-none" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
     <path d="M23 4v6h-6" />
     <path d="M1 20v-6h6" />
     <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
   </svg>
 );
 const IconDone = () => (
-  <svg className="ms-ic" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+  <svg className="shrink-0" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
     <polyline points="20 6 9 17 4 12" />
   </svg>
 );
 const IconWarn = () => (
-  <svg className="ms-ic" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+  <svg className="shrink-0" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
     <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
     <path d="M12 9v4" />
     <path d="M12 17h.01" />
   </svg>
 );
 
-const CLASS: Record<string, string> = {
-  syncing: 'mirror-status is-syncing',
-  error: 'mirror-status is-error',
-  done: 'mirror-status is-done',
+// The rail's tone by state. Only two states colour it — a run in progress and something
+// wrong; a finished backup is ordinary sidebar chrome and stays muted.
+const TONE: Record<string, string> = {
+  syncing: 'text-[var(--accent-text)]',
+  error: 'text-[var(--danger)]',
+  done: '',
 };
 
 type MirrorModel = { kind: 'syncing' | 'error' | 'done'; text: string; title?: string; time?: string } | null;
@@ -153,31 +157,23 @@ export function MirrorStatus() {
   // An orphan/DB-integrity warning wins over the ordinary mirror state (and shows even
   // with no mirror `dir` configured — the startup check runs independent of backup config).
   const m = deriveIntegrityModel(integrityRef.current) || deriveModel(cfgRef.current, syncingRef.current);
-  // className / title live on the host <span> (portal target), not a React element. m is a
-  // fresh object each render, but a re-render only happens on tick() (an actual backup-state
-  // change), so re-running this idempotent host write on [m] is correct, not wasteful.
-  useLayoutEffect(() => {
-    const host = document.getElementById('mirrorStatus');
-    if (!host) return;
-    host.className = m ? CLASS[m.kind] : 'mirror-status';
-    host.title = m ? m.title || '' : '';
-  }, [m]);
   if (!m) return null;
-  if (m.kind === 'done') {
-    return (
-      <>
-        <IconDone />
-        <span className="ms-body">
-          <span className="ms-t">{m.text}</span>
-          {m.time ? <span className="ms-time">{m.time}</span> : null}
-        </span>
-      </>
-    );
-  }
   return (
-    <>
-      {m.kind === 'syncing' ? <IconSync /> : <IconWarn />}
-      <span className="ms-t">{m.text}</span>
-    </>
+    // max-w keeps a long state string from widening the sidebar footer; the label
+    // truncates instead. group-data-[collapsible=icon]:hidden is the sidebar's own
+    // idiom for "not in the rail" — there is no room for a text rail at 48px.
+    <span data-slot="mirror-status" title={m.title || ''} className={`ml-2 inline-flex max-w-[150px] items-center gap-[5px] overflow-hidden px-2 text-[11px] whitespace-nowrap text-[var(--text-muted)] group-data-[collapsible=icon]:hidden ${TONE[m.kind]}`}>
+      {m.kind === 'done' ? <IconDone /> : m.kind === 'syncing' ? <IconSync /> : <IconWarn />}
+      {m.kind === 'done' ? (
+        // 完了 alone carries a second line (when it ran), so it stacks; the other two are
+        // one line and sit straight in the row.
+        <span className="flex min-w-0 flex-col leading-[1.2]">
+          <span className="truncate">{m.text}</span>
+          {m.time ? <span className="truncate text-[9.5px] text-[var(--text-subtle)]">{m.time}</span> : null}
+        </span>
+      ) : (
+        <span className="truncate">{m.text}</span>
+      )}
+    </span>
   );
 }

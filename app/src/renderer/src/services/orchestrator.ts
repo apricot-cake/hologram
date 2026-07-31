@@ -1797,7 +1797,7 @@ export function endFilterEditSession(): void {
   }
   runZipImport = runZipImportImpl;
 
-  // Backup status rail (#mirrorStatus) is fully owned by the MirrorStatus component now — it
+  // Backup status rail is fully owned by the MirrorStatus component now — it
   // imports backup.ts (getBackup + onBackupStart/Done) directly and derives the rail model
   // itself. orchestrator no longer holds any of that state (the old setupMirrorStatusRail +
   // shared push bridge are gone).
