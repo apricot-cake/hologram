@@ -9,8 +9,6 @@
   "scripts": {
     "build": "npm run tokens && wxt build",
     "build:ext": "npm run tokens && wxt build",
-    "dev": "npm run tokens && wxt",
-    "dev:ext": "npm run tokens && wxt",
     "zip": "wxt zip",
     "typecheck": "wxt prepare && tsc --noEmit",
     "postinstall": "wxt prepare",

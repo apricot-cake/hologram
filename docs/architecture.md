@@ -24,7 +24,7 @@
 
 ### `extension/` — Chrome拡張一式（MV3）
 
-WXT（Vite ベース）でビルドする TypeScript ソース。`npm run build:ext` は `extension/.output/chrome-mv3/` を生成し、**このディレクトリを Load unpacked する**。開発時は `npm run dev:ext` を常駐させ、WXT がビルドと拡張再読み込みを担う。`wxt.config.ts` の `key` が固定IDを保つため、Native Messaging の許可元は変わらない。
+WXT（Vite ベース）でビルドする TypeScript ソース。`npm run build:ext` は `extension/.output/chrome-mv3/` を生成し、**このディレクトリを Load unpacked する**。ビルドのたびに拡張が自分でリロードするので手動の再読み込みは不要（#650）。`wxt.config.ts` の `key` が固定IDを保つため、Native Messaging の許可元は変わらない。
 
 - `wxt.config.ts` — 固定 `key`、権限、action、commands を含む生成 manifest の共通設定
 - `entrypoints/background.ts` — Service Worker。タブキャプチャ → クロップ → `utils/extractor/` でAPI取得 → Native Messaging 送信。動的なクリック保存は固定名の `capture.js` を `scripting.executeScript` で注入し、`activeTab` のモデルを維持する

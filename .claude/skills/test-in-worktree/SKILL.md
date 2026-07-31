@@ -23,20 +23,19 @@ install が済めば `npm test`・`npm run typecheck`・アプリ起動ハーネ
 
 ## worktree から拡張機能を実機検証する
 
-**ホットリロードは worktree に届かない。** `npm run dev:ext` が監視しているのは**本体ツリーの `extension/`** で、日常の Chrome に読み込まれているのも**本体ツリーの `.output/chrome-mv3`**（dev/production 共用＝docs/build.md）。worktree でいくら直しても反映されない。ここで「手で読み込み直してもらおう」はグローバル CLAUDE.md が名指しで禁じている（渡す手順は人でないと不可能な部分まで切り詰める）。
+**自動反映は worktree に届かない。** `npm run build:ext` が更新するのは**自分が実行されたツリーの `.output`** で、日常の Chrome に読み込まれているのは**本体ツリーの `.output/chrome-mv3`**（docs/build.md）。worktree でビルドしても本体の拡張には反映されない。ここで「手で読み込み直してもらおう」はグローバル CLAUDE.md が名指しで禁じている（渡す手順は人でないと不可能な部分まで切り詰める）。
 
-**正しい手順＝`dev:ext` が見ているツリーへコードを持っていく**（ユーザーの手作業は Alt+S だけになる）:
+**正しい手順＝本体ツリー自身を対象コミットへ動かしてビルドする**（`build:ext` 一本目的地＝クリック不要。ユーザーの手作業は Alt+S などの検証操作だけになる）:
 
 1. 並行セッションの稼働と本体ツリーが clean かを確認（`list_sessions` / `git -C <本体> status`）。拡張のリロードは worktree で隔離されない共有装置（docs/build.md）。
-2. **`dev:ext` を先に停止する**（理由は下）。
-3. `git -C <本体> checkout --detach <対象コミット>`。**ブランチ名では checkout できない**＝worktree が掴んでいるので必ずコミット SHA を指定する。
-4. 本体ツリーで `dev:ext` を起動。
-5. dev バンドルに変更が入ったことを確認してからユーザーへ渡す（**バンドルの grep は識別子で**＝正規表現リテラルは偽の空振りを起こす・skill `verify-extension`「罠」）。
-6. 検証後は同じ順で戻す（停止 → `checkout main` → 終わりなら `build:ext`＝#650 以降 production ビルドは拡張が自分で載せるのでクリックは要らない。skill `verify-extension`）。掴んだままにしない。
+2. `git -C <本体> checkout --detach <対象コミット>`。**ブランチ名では checkout できない**＝worktree が掴んでいるので必ずコミット SHA を指定する。
+3. 本体ツリーで `npm run build:ext`。拡張は次の往復で自分をリロードする（#650・skill `verify-extension`）。
+4. ビルドに変更が入ったことを確認してから検証する（**バンドルの grep は識別子で**＝正規表現リテラルは偽の空振りを起こす・下記）。
+5. 検証後は同じ順で戻す（`checkout main` → `npm run build:ext`＝#650 以降 production ビルドは拡張が自分で載せるのでクリックは要らない。skill `verify-extension`）。掴んだままにしない。
 
-**なぜ先に止めるか**＝`git checkout` は監視下のファイルを一斉に書き換えるので watcher が壊れる。2026-07-26 の実測では checkout 直後に **wxt のプロセスごと消えていた**（症状＝`.output` の mtime が据え置き・ソースを touch しても再ビルドが起きない）。crash の因果は再現で確かめていないが、**止めてから切り替えれば因果がどちらでも成立する**＝「落ちたか」を毎回判定する手間ごと消える。起動し直した後は安定（20分以上生存を確認）。
+急ぐ／本体を detach したくない時は、worktree で `npm run build:ext` して出力を本体の `chrome-mv3` へ上書きする代替経路もある（skill `verify-extension`）＝ただし worktree のビルドは識別子を告知しないため、この経路は自己リロードの対象外でユーザーへ手動リロードを1回依頼することになる。
 
-**dev バンドルの grep は正規表現リテラルのエスケープで偽の空振りを起こす**。ソースの `/^\/i\/bookmarks(\/|$)/` はバンドル上も `i\/bookmarks` と出るため `i/bookmarks` で grep すると 0 件＝「ビルドされていない」と誤読する。空振りはまず自分の検索式を疑う。
+**バンドルの grep は正規表現リテラルのエスケープで偽の空振りを起こす**。ソースの `/^\/i\/bookmarks(\/|$)/` はバンドル上も `i\/bookmarks` と出るため `i/bookmarks` で grep すると 0 件＝「ビルドされていない」と誤読する。空振りはまず自分の検索式を疑う。
 
 ## 検証の粒度
 

@@ -36,14 +36,13 @@ Dependabot（#395）の更新 PR で新バージョンが来たときも、確�
 
 ## 拡張機能の開発・配布
 
-依存は `npm run setup` が `extension/` の分もまとめて入れる（`extension/` は独立した npm プロジェクト＝ルートの install では入らない）。**ブラウザは日常の Chrome 1本、読み込む出力も本体ツリーの `extension/.output/chrome-mv3/` 1箇所**（2026-07-26 にこの形へ寄せた＝ホットリロードを普段使いのブラウザで効かせるのが狙い）。dev ビルドも production ビルドも同じフォルダへ書く＝`wxt.config.ts` の `outDirTemplate` で WXT 既定の `-dev` サフィックスを外してある。モードの切り替えはビルド＋リロード1回で済み、**拡張の削除→再追加は発生しない**（削除→再追加は `chrome.storage.local` の設定とショートカット割当を消す）。
+依存は `npm run setup` が `extension/` の分もまとめて入れる（`extension/` は独立した npm プロジェクト＝ルートの install では入らない）。**ブラウザは日常の Chrome 1本、読み込む出力も本体ツリーの `extension/.output/chrome-mv3/` 1箇所**（2026-07-26 にこの形へ寄せた＝当時はホットリロードを普段使いのブラウザで効かせる狙いだったが、その後の dev:ext 撤去（#675）後も #650 の自己リロードが同じ単一出力を前提にしている）。`wxt.config.ts` の `outDirTemplate` で WXT 既定の `-dev` サフィックスを外してあり、拡張の削除→再追加は発生しない（削除→再追加は `chrome.storage.local` の設定とショートカット割当を消す）。
 
 | 状態 | 作るコマンド | 入るとき / 出るとき |
 | --- | --- | --- |
-| **平常＝ふだんの開発**（production・サーバー非依存） | `npm run build:ext` | **クリック不要**＝拡張が自分でリロードする（下記「新しいビルドを拡張が自分で載せる」） |
-| **ホットリロードを使うとき**（任意） | `npm run dev:ext`（その間だけ常駐） | 起動後に `chrome://extensions` でリロード1回。**戻すときも `build:ext`＋リロード1回**＝dev ビルドは自己リロードの仕組みを持たない |
+| **ふだんの開発**（production・サーバー非依存。唯一の状態） | `npm run build:ext` | **クリック不要**＝拡張が自分でリロードする（下記「新しいビルドを拡張が自分で載せる」） |
 
-**標準の開発ループは `npm run build:ext` だけになった**（#650）。ビルドは1秒前後で、押すクリックはゼロ。`dev:ext` は差分反映の速さが要るときの選択肢として残っているが、下の #362 の危険とリロード2回はそのまま残る。
+**開発ループは `npm run build:ext` 一本**（#650・#675）。ビルドは1秒前後で、押すクリックはゼロ。**WXT の dev モード（`dev:ext`＝ファイル保存のたびに常駐サーバーがホットリロードする方式）は撤去済み**（#675）＝差分反映は速かったが、開発サーバーを止めたまま戻し忘れると常駐スクリプトの登録先を失い**日常使いの拡張が黙って死ぬ**という危険（2026-07-26 に被弾）を道具そのものが運んでいた。`build:ext` が0クリックへ追いついたことで、そのリスクを負い続ける理由が無くなったため退役させた。
 
 ### 新しいビルドを拡張が自分で載せる（#650）
 
@@ -58,18 +57,15 @@ Dependabot（#395）の更新 PR で新バージョンが来たときも、確�
 - **作業を壊さない**。保存が飛んでいる間・キャプチャUI が開いている間・一括取込が走っている間はリロードを見送り、終わってから入れ替える。見送りは**必ず切れる**＝作業の証拠が来なくなれば60秒で失効する。「なぜ反映されないのか」は `chrome-extension://<id>/diag.html` の `devBuild`（`running` / `onDisk`）で読める。
 - **同じ識別子で二度リロードしない**。何らかの理由でリロードしても新しいビルドにならなかったとき（後述の worktree など）に、往復のたびに再起動し続けるのを止める唯一の弁。
 - **linked worktree からは印を出さない**（`HOLOGRAM_CONFIG_DIR` を明示した場合を除く）。worktree の `.output` はどのブラウザも読んでいないので、そこから告知すると**日常の拡張が来ないビルドのために再起動する**。判定は `.git` がディレクトリか（本体ツリー）ファイルか（linked worktree）。
-- **dev ビルドは自己リロードしない**。`wxt dev` は識別子を渡さないので、dev ビルドが載っている間は `build:ext` を回してもリロードは起きない＝dev モードの出入りは今も手でリロードする。
 
-- **dev サーバーを止めたら production へ戻すまでが1セット**。開発モードの拡張は manifest に `content_scripts` を持たず、常駐スクリプトを **dev サーバー接続経由で実行時登録**する。dev ビルドを残したままサーバーが居なくなる・繋がらない（Node ≥17 は `::1` のみに bind することがあり Chrome は IPv4 で来る）と**普段使いの拡張が丸ごと沈黙**し、原因は `chrome://extensions` を開かない限り見えない（2026-07-26 被弾＝#362）。
-- **dev:ext 起動直後のリロード1回を忘れない**: リロードするまで Chrome に載っているのは前のビルドのまま＝直したはずの挙動が出ない（同型の被弾 2026-07-25＝修正が1時間空振り）。
-- **拡張の色はアプリのトークンから生成される**（#270）。`dev:ext` / `build:ext` は WXT の前に `scripts/gen-extension-tokens.cts` を走らせ、`app/src/renderer/src/globals.css` と `extension/utils/tokens.source.css` から `extension/utils/tokens.generated.{css,ts}` を書き直す。生成物はコミット対象で、古いまま残っていると `npm test` が落ちる（`scripts/extension-tokens.test.ts`）。**dev サーバーは globals.css の変更を監視しない**＝アプリ側のトークンを触ったら `npm run tokens:ext` を明示的に回す。
-- **なぜ WXT にブラウザを起動させないか**（`web-ext.config.ts` で無効化）: 自動化スタック（web-ext-run → chrome-launcher）経由の起動は大量の `--disable-*` フラグ＝自動化ツールの指紋が付き、X も Google もボット判定してサインインを弾く（2026-07-26 実測）。ホットリロード自体は拡張⇔dev サーバー間の WebSocket なので、普段どおり起動した Chrome でそのまま効く。
+- **拡張の色はアプリのトークンから生成される**（#270）。`build:ext` は WXT の前に `scripts/gen-extension-tokens.cts` を走らせ、`app/src/renderer/src/globals.css` と `extension/utils/tokens.source.css` から `extension/utils/tokens.generated.{css,ts}` を書き直す。生成物はコミット対象で、古いまま残っていると `npm test` が落ちる（`scripts/extension-tokens.test.ts`）。ビルドのたびに毎回再生成されるので、アプリ側のトークンを触った後も明示的に別コマンドを走らせる必要は無い。
+- **なぜ WXT にブラウザを起動させないか**（`web-ext.config.ts` で無効化）: 自動化スタック（web-ext-run → chrome-launcher）経由の起動は大量の `--disable-*` フラグ＝自動化ツールの指紋が付き、X も Google もボット判定してサインインを弾く（2026-07-26 実測）。`wxt build` はそもそもブラウザを起動しないので実害は無いが、`wxt` を手で直接叩いた場合の保険として無効化を残してある（extension/wxt.config.ts）。
 - **デバッグポートは開けない**: TCP のデバッグポートは無認証で、ローカルの任意プロセスがブラウザを乗っ取りサインイン中のセッションを抜けられる（Chrome 136 が既定プロファイルで同スイッチを拒否するのも同じ理由）。
 
-**読み込むのは本体ツリーのパスに限る。**worktree の `.output` を読み込むと、その worktree を撤去した時点で拡張が壊れる。dev サーバーは**自分が起動されたツリーの `.output` だけ**を更新するので、worktree で拡張を直している間はホットリロードが届かない。worktree の変更を実ブラウザで見る手段は2つ:
+**読み込むのは本体ツリーのパスに限る。**worktree の `.output` を読み込むと、その worktree を撤去した時点で拡張が壊れる。`npm run build:ext` は**自分が実行されたツリーの `.output` だけ**を更新するので、worktree で拡張を直している間は本体ツリーの拡張に自動では反映されない。worktree の変更を実ブラウザで見る手段は2つ:
 
-- 本体ツリーを対象コミットへ detach してから本体で `npm run dev:ext` を回す（手順は skill `test-in-worktree`）
-- 急ぐなら worktree で `npm run build:ext` し、本体の `chrome-mv3` へ上書き→リロード1回（手順は skill `verify-extension`）＝**この経路は自己リロードの対象外**（worktree は印を出さないため・上記）
+- 本体ツリーを対象コミットへ detach してから本体で `npm run build:ext` を回す（自己リロードが効く。手順は skill `test-in-worktree`）
+- worktree で `npm run build:ext` し、本体の `chrome-mv3` へ上書き→リロード1回（手順は skill `verify-extension`）＝**この経路は自己リロードの対象外**（worktree は印を出さないため・上記）
 
 固定IDを保つ `key` は `extension/wxt.config.ts` にある。移行後もID・Native Messaging 保存・5プラットフォームのクリック/ドラッグ保存は実機確認の対象である。
 

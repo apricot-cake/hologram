@@ -30,7 +30,6 @@
   "scripts": {
     "build:ext": "node scripts/build-extension.cts",
     "tokens:ext": "node scripts/gen-extension-tokens.cts",
-    "dev:ext": "npm --prefix extension run dev:ext",
     "test:overlay-visual": "npm run build:ext && node scripts/e2e-overlay-visual.cts",
     "test:overlay-flicker": "npm run build:ext && node scripts/e2e-overlay-flicker.cts",
     "test:e2e-extension": "npm run build:ext && node scripts/e2e-extension-offline.cts",
