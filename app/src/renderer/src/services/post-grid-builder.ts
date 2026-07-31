@@ -135,6 +135,11 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
         for (const p of res.added || []) _postsById.set(p.captureId, stampPost(p));
       }
       _haveBaseline = true;
+      // Mirrored into the store the moment the first real snapshot lands —
+      // the single signal empty/EmptyState.tsx (via services/library-status.ts)
+      // uses to tell 'still loading' apart from 'confirmed empty' (#682). posts
+      // and posters share this cache, so one flag covers both grids.
+      storeSet('libraryLoaded', true);
       allPosts = [..._postsById.values()];
       markPostsMutated();
       stickyRecs.clear(); // 画面更新（再読込）でミューテーション生存分を整理

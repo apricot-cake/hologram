@@ -43,6 +43,7 @@ import { AppToolbar } from './AppToolbar.tsx';
 import { InspectorToggle } from './InspectorToggle.tsx';
 import { LeftSidebar } from './LeftSidebar.tsx';
 import { EmptyState } from '../empty/EmptyState.tsx';
+import { LibraryLoading } from '../empty/LibraryLoading.tsx';
 import { FloatingBar } from '../selection/FloatingBar.tsx';
 import { ScrollToTop } from './ScrollToTop.tsx';
 import { ImageTabHost } from '../image-tab/index.tsx';
@@ -308,6 +309,7 @@ export function AppShell() {
                   <PostGridSlot hidden={mode !== 'posts'} />
                   <PosterGridSlot hidden={mode === 'posts' || mode === 'trash'} />
                   {mode !== 'trash' && <EmptyState />}
+                  <LibraryLoading />
                   {/* ゴミ箱 (#268) — the third destination. */}
                   <div hidden={mode !== 'trash'}>
                     <TrashView />
