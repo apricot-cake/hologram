@@ -44,3 +44,4 @@
 | [0016](0016-one-candidate-engine-three-faces.md) | 「タイプ→候補」のエンジンは1つ・面は3つにする | 採用 |
 | [0017](0017-no-grid-motion-view-transitions-retired.md) | グリッドの切替はすべて即時にし、View Transitions を使わない | 採用 |
 | [0018](0018-labeled-navigation-rail-default.md) | 左サイドバーの既定をラベル付きナビゲーションレールにする | 採用 |
+| [0019](0019-detect-missing-save-and-backup-paths.md) | 保存先・バックアップ先はパスの実在を検証し、消失を静かに再作成しない | 採用 |

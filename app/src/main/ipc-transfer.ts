@@ -21,10 +21,12 @@ import { cloudSyncProviderOf } from './save-folder-guard.ts';
 import { fillCardDims } from './lib-card-dims.ts';
 import { makeTagResolver, preparePostStmts, writePost } from './lib-db-record-writer.ts';
 import { IMPORTABLE_MEDIA, buildLocalRecord, importLocalImage, localCaptureId } from './lib-local-intake.ts';
+import { TRASH_SUBDIR } from './lib-save-folder-path.ts';
+import { INBOX_DIRNAME } from '../../../native-host/inbox.mts';
 import type { PostRecordInput } from '../../../native-host/post-record.mts';
 import type { BrowserWindow } from 'electron';
 import type { IpcContext } from './ipc-context.ts';
-import type { ClearAllResult, ClipboardImportResult, CompleteImportResult, ExportCompleteResult, ExportSaveResult, LegacyImportResult, MediaImportResult, SaveFolderMoveResult, SaveFolderPickResult } from './ipc-payloads.ts';
+import type { ClearAllResult, ClipboardImportResult, CompleteImportResult, ExportCompleteResult, ExportSaveResult, LegacyImportResult, MediaImportResult, RepointApplyResult, RepointPickResult, SaveFolderMoveResult, SaveFolderPickResult } from './ipc-payloads.ts';
 
 function exportStamp() {
   return new Date().toISOString().replace(/[:.]/g, '-').replace('T', '_').slice(0, 19);
@@ -33,6 +35,26 @@ function exportStamp() {
 // Named subfolder for a relocated library, so picking a folder never dumps
 // sidecars/images flat into it (parallel to BACKUP_SUBDIR's Hologram-mirror).
 const LIBRARY_SUBDIR = 'Hologram-library';
+
+// #37: does `dir` look like it already holds a Hologram library — a .trash or
+// .hologram-inbox subfolder, or at least one library media file directly
+// inside it? This is repoint's ONLY signal (there is no per-post sidecar or
+// index file inside a save folder any more since #302 — the DB is the truth
+// source), and it exists purely to pick which confirmation the renderer shows:
+// evidence found → repoint silently; none found → ask "start as an empty new
+// library?" first. It never blocks repoint outright — an unreadable or empty
+// folder is a legitimate destination too.
+function looksLikeLibrary(dir: string): boolean {
+  let names: string[];
+  try {
+    names = fs.readdirSync(dir);
+  } catch {
+    return false;
+  }
+  if (names.includes(TRASH_SUBDIR) || names.includes(INBOX_DIRNAME)) return true;
+  const mediaRe = new RegExp('\\.(' + IMPORTABLE_MEDIA.join('|') + ')$', 'i');
+  return names.some((f) => mediaRe.test(f));
+}
 
 // The extension lists and the record shape a locally-imported file becomes now live
 // in lib-local-intake.ts — the dialog below is one of four doors that share them
@@ -47,6 +69,7 @@ function register(ctx: IpcContext) {
     readSavePointer,
     isConfigCorrupt,
     clearAllBlockReason,
+    getLibraryStatus,
     LIBRARY_MEDIA_EXTS,
     getDbWriter,
     pixivRefererFor,
@@ -90,6 +113,10 @@ function register(ctx: IpcContext) {
     const mode = duplicateMode === 'copy' || duplicateMode === 'replace' || duplicateMode === 'skip' ? duplicateMode : null;
     const folder = getSaveFolder();
     if (!folder || !Array.isArray(posts)) return { imported: 0, skipped: 0 };
+    // #37: never lazily recreate a save folder that went missing out from under
+    // the app — mkdirSync below would otherwise silently start a brand-new empty
+    // library at the old path the moment an import runs.
+    if (getLibraryStatus().missing) return { imported: 0, skipped: 0, error: 'library-missing' };
     fs.mkdirSync(folder, { recursive: true });
     const handle = await ensurePostsSynced();
     if (!handle) return { imported: 0, skipped: 0 };
@@ -298,15 +325,18 @@ function register(ctx: IpcContext) {
   ipcMain.handle('clear-all', async (): Promise<ClearAllResult> => {
     const folder = getSaveFolder();
     if (!folder) return { ok: false, count: 0 };
-    // Refuse to wipe when config is degraded: a corrupt config, or one that lost its
-    // saveFolder while the redundant pointer proves a library was chosen, means we may
-    // be aimed at a recovered/default folder. Bail so a wipe can't hit the wrong place
-    // (the user should restart to let initSaveFolderRedundancy repair config first).
+    // Refuse to wipe when config is degraded: a corrupt config, one that lost its
+    // saveFolder while the redundant pointer proves a library was chosen, or one
+    // whose explicit folder is missing on disk right now (#37), all mean we may
+    // be aimed at the wrong place. Bail so a wipe can't hit it (missing: repoint
+    // or restore the folder first; corrupt/lost: restart to let
+    // initSaveFolderRedundancy repair config first).
     const cfg = readConfig();
     const blocked = clearAllBlockReason({
       configCorrupt: isConfigCorrupt(),
       hasExplicitSaveFolder: typeof cfg.saveFolder === 'string' && !!cfg.saveFolder.trim(),
       hasPointer: !!readSavePointer(),
+      libraryMissing: getLibraryStatus().missing,
     });
     if (blocked) return { ok: false, blocked, count: 0 };
     let count = 0;
@@ -447,6 +477,9 @@ function register(ctx: IpcContext) {
   // reading and writing. What crosses IPC is the PATH main picked — never the
   // archive's bytes, and never the expanded records.
   ipcMain.handle('import-complete', async (): Promise<CompleteImportResult> => {
+    // #37: checked before the picker even opens — restoring a ZIP into a folder
+    // that is not there any more would recreate it as a fresh empty library.
+    if (getLibraryStatus().missing) return { ok: false, error: 'library-missing' };
     const res = await dialog.showOpenDialog(getWin() as BrowserWindow, {
       properties: ['openFile'],
       filters: [{ name: 'ZIP', extensions: ['zip'] }],
@@ -493,6 +526,12 @@ function register(ctx: IpcContext) {
   // trust boundary.
   function moveLibraryTo(dest: string): SaveFolderMoveResult | Promise<SaveFolderMoveResult> {
     const src = getSaveFolder();
+    // #37: relocation COPIES from the current folder — if that folder is the one
+    // that went missing, there is nothing to copy from, and "moving" it would
+    // really just start a new empty library at `dest` while silently abandoning
+    // whatever is still really out there. Repoint (pick-repoint-folder /
+    // apply-repoint below) is the escape hatch for this state instead.
+    if (getLibraryStatus().missing) return { ok: false, error: 'library-missing' };
     const v = validateSaveFolder(dest);
     if (!v.ok) return { ok: false, error: v.error };
 
@@ -540,12 +579,53 @@ function register(ctx: IpcContext) {
     return moveLibraryTo(dest);
   });
 
+  // --- Repoint: point config.saveFolder at an already-existing library, with NO
+  // copy (#37). The relocation flow above assumes the CURRENT folder is readable
+  // (it copies from it); repoint is for the opposite situation — the current
+  // folder is missing, and the real library is sitting somewhere else (a
+  // different drive letter, a folder the user moved by hand outside the app).
+  // Split the same way pick/move-save-folder are: pick-repoint-folder resolves +
+  // validates a destination and reports whether it looks like an existing
+  // library, so the renderer can ask "start empty?" first when it does not;
+  // apply-repoint does the actual (copy-free) write once the user has accepted
+  // whatever the renderer needed to ask.
+  ipcMain.handle('pick-repoint-folder', async (): Promise<RepointPickResult> => {
+    const res = await dialog.showOpenDialog(getWin() as BrowserWindow, { properties: ['openDirectory', 'createDirectory'] });
+    if (res.canceled || !res.filePaths || !res.filePaths[0]) return { ok: false, canceled: true };
+    const dest = res.filePaths[0];
+    // Reuses validateSaveFolder's path-safety + writability checks (same rules a
+    // relocation destination has to meet: not nested with the current — missing —
+    // folder, no config/backup overlap, writable). Its mkdirSync recursive probe
+    // is a no-op when `dest` already exists, which is the expected case here.
+    const v = validateSaveFolder(dest);
+    if (!v.ok) return { ok: false, error: v.error };
+    return { ok: true, dest, hasEvidence: looksLikeLibrary(dest) };
+  });
+
+  ipcMain.handle('apply-repoint', (_e, dest): RepointApplyResult => {
+    if (!dest || typeof dest !== 'string') return { ok: false, error: 'invalid' };
+    const v = validateSaveFolder(dest);
+    if (!v.ok) return { ok: false, error: v.error };
+    const cfg = readConfig();
+    cfg.saveFolder = dest;
+    writeConfig(cfg);
+    // Re-point the inbox watcher (a real folder now — this arms it, it does not
+    // create anything) and drop the delta baseline so the renderer full-resyncs
+    // against whatever the DB already knows, same as a relocation's afterFlip.
+    watchInboxFolder();
+    resetDelta();
+    return { ok: true, saveFolder: dest };
+  });
+
   // #299: same rationale as importPostRecords above — write straight into the DB (a real
   // video field now, not the `(rec as any).video` escape hatch this used pre-
   // #299) instead of a sidecar the DB would have to re-derive from later.
   ipcMain.handle('import-images', async (): Promise<MediaImportResult> => {
     const folder = getSaveFolder();
     if (!folder) return { imported: 0, skipped: 0, error: 'no-folder' };
+    // #37: see importPostRecords's identical guard — the mkdirSync a few lines
+    // below would otherwise recreate a missing save folder from scratch.
+    if (getLibraryStatus().missing) return { imported: 0, skipped: 0, error: 'library-missing' };
     const res = await dialog.showOpenDialog(getWin() as BrowserWindow, {
       properties: ['openFile', 'multiSelections'],
       filters: [{ name: 'Media', extensions: IMPORTABLE_MEDIA }],
@@ -627,6 +707,9 @@ function register(ctx: IpcContext) {
   ipcMain.handle('import-clipboard', async (_e, title): Promise<ClipboardImportResult> => {
     const folder = getSaveFolder();
     if (!folder) return { imported: 0, error: 'no-folder' };
+    // #37: importLocalImage (lib-local-intake.ts) mkdirs the save folder before
+    // writing — refuse here so a paste never recreates a missing one.
+    if (getLibraryStatus().missing) return { imported: 0, error: 'library-missing' };
     let bytes: Buffer | null = null;
     try {
       // availableFormats() first: a clipboard holding only text answers an empty

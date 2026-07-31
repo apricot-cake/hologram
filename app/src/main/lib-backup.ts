@@ -186,6 +186,11 @@ function createBackupEngine({ ensurePostsSynced, scheduleSavedIndexWrite, send }
   async function runStartupIntegrityCheck() {
     const folder = getSaveFolder();
     if (!folder) return;
+    // #37: a folder that does not exist on disk would make every post's media
+    // read back as "missing" — noise from the folder being unavailable, not a
+    // real DB<->media mismatch. Skip the pass entirely rather than let it
+    // report thousands of false positives while the library is unreachable.
+    if (!fs.existsSync(folder)) return;
     try {
       // ensurePostsSynced (not raw ensureDb) — see runBackup's identical
       // reasoning: the DB must reflect disk state before orphans are computed,
@@ -208,6 +213,10 @@ function createBackupEngine({ ensurePostsSynced, scheduleSavedIndexWrite, send }
   async function runOrphanRecovery() {
     const folder = getSaveFolder();
     if (!folder) return { ok: false, error: 'not-configured' };
+    // #37: never synthesize "recovered" records against a folder that is not
+    // actually there — every post would look orphaned/missing for the wrong
+    // reason, and recovery would have nothing real to read back from.
+    if (!fs.existsSync(folder)) return { ok: false, error: 'library-missing' };
     const handle = await ensurePostsSynced();
     if (!handle) return { ok: false, error: 'not-configured' };
     const written = recoverOrphanRecords(folder, handle.sqlite);
@@ -224,6 +233,15 @@ function createBackupEngine({ ensurePostsSynced, scheduleSavedIndexWrite, send }
     const src = getSaveFolder();
     if (!src || !b.dir) return { ok: false, error: 'not-configured' };
     if (!validateBackupDir(b.dir).ok) return { ok: false, error: 'overlap' };
+    // #37: never let a missing library read as "an empty library backed up
+    // successfully" — refuse instead of collecting 0 files and writing that
+    // as this run's lastResult (backup-guard's prune-skip only protects the
+    // MIRROR's existing files; it does not stop this misleading "ok" outcome).
+    if (!fs.existsSync(src)) return { ok: false, error: 'src-missing' };
+    // #37: the destination's PARENT is gone (drive unplugged, folder renamed).
+    // mkdir({recursive:true}) below would silently recreate the whole chain —
+    // exactly the "looks fine, quietly starts over" failure this Issue closes.
+    if (!fs.existsSync(b.dir)) return { ok: false, error: 'dest-missing' };
     if (backupRunning) return { ok: false, error: 'busy' };
     backupRunning = true;
     send('backup-start'); // sidebar sync icon → syncing

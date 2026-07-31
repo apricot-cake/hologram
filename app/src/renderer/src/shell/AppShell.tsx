@@ -44,6 +44,7 @@ import { InspectorToggle } from './InspectorToggle.tsx';
 import { LeftSidebar } from './LeftSidebar.tsx';
 import { EmptyState } from '../empty/EmptyState.tsx';
 import { LibraryLoading } from '../empty/LibraryLoading.tsx';
+import { LibraryMissingState } from '../empty/LibraryMissingState.tsx';
 import { FloatingBar } from '../selection/FloatingBar.tsx';
 import { ScrollToTop } from './ScrollToTop.tsx';
 import { ImageTabHost } from '../image-tab/index.tsx';
@@ -92,6 +93,12 @@ function useSidebarOpen(): [boolean, (open: boolean) => void] {
 // Which of the three destinations the content column shows (posts / posters / trash).
 const subBrowseMode = (cb: () => void) => storeSubscribe('browseMode', cb);
 const getBrowseMode = () => (storeGet('browseMode') as string | undefined) ?? 'posts';
+// #37: is the save folder missing on disk right now? Seeded by App.tsx's
+// LibraryStatusGate on boot. When true, LibraryMissingState replaces the three
+// destinations below instead of the grids rendering DB-backed posts whose media
+// files are not actually there (the DB is independent of the save folder since #302).
+const subLibraryMissing = (cb: () => void) => storeSubscribe('libraryMissing', cb);
+const getLibraryMissing = () => !!storeGet('libraryMissing');
 
 // A panel's width, on the same two tiers as the open/closed state above (cache first,
 // config.json reconciled a tick later). The default is a thunk rather than a number so
@@ -232,6 +239,7 @@ export function AppShell() {
   // Which destination the content column is showing. All three stay mounted (see below),
   // so this only decides which one is `hidden`.
   const mode = useSyncExternalStore(subBrowseMode, getBrowseMode);
+  const libraryMissing = useSyncExternalStore(subLibraryMissing, getLibraryMissing);
   // An image tab swaps the browse chrome for the media stage (P2⑫). The swap is a render
   // decision here — a `hidden` on the content column and the stage's own component below —
   // where it used to be `body.image-tab-active` plus three CSS rules in index.html. Same
@@ -302,16 +310,23 @@ export function AppShell() {
                     width); overflow-anchor:none stops the browser compensating for a cell
                     that mounts above the viewport, which reads as the grid jittering. */}
                 <div ref={setContentEl} data-slot="content-scroll" hidden={imageView} className="relative min-h-0 min-w-0 flex-1 overflow-y-auto px-8 py-6 [overflow-anchor:none] [scrollbar-gutter:stable]">
+                  {/* #37: the save folder is missing on disk — show that instead of the
+                      three destinations below (their own `hidden` conditions each grow
+                      an `|| libraryMissing` rather than being wrapped in a new element,
+                      so the virtualized hosts — PostGrid/PosterGrid/TrashGrid, mounted at
+                      the bottom of this component — keep attaching into these exact same
+                      slots by ref at the same DOM depth). */}
+                  <LibraryMissingState />
                   {/* Three destinations, one scroll root. All three stay MOUNTED and the
                       inactive ones are `hidden` — the virtualized hosts keep their
                       measured layout that way, and "which one is on screen" is one
                       React decision rather than a body class racing an inline style. */}
-                  <PostGridSlot hidden={mode !== 'posts'} />
-                  <PosterGridSlot hidden={mode === 'posts' || mode === 'trash'} />
-                  {mode !== 'trash' && <EmptyState />}
-                  <LibraryLoading />
+                  <PostGridSlot hidden={mode !== 'posts' || libraryMissing} />
+                  <PosterGridSlot hidden={mode === 'posts' || mode === 'trash' || libraryMissing} />
+                  {mode !== 'trash' && !libraryMissing && <EmptyState />}
+                  {!libraryMissing && <LibraryLoading />}
                   {/* ゴミ箱 (#268) — the third destination. */}
-                  <div hidden={mode !== 'trash'}>
+                  <div hidden={mode !== 'trash' || libraryMissing}>
                     <TrashView />
                   </div>
                 </div>

@@ -30,6 +30,7 @@ import type {
   IntegrityStatus,
   IpcPostRecord,
   LegacyImportResult,
+  LibraryStatus,
   ManualGroupsState,
   MediaImportResult,
   OkResult,
@@ -38,6 +39,8 @@ import type {
   PostsSnapshot,
   PosterFoldersState,
   PosterTagsState,
+  RepointApplyResult,
+  RepointPickResult,
   SaveFolderMoveResult,
   SaveFolderPickResult,
   SaveFolderProgress,
@@ -111,6 +114,14 @@ const api = {
   importComplete: (): Promise<CompleteImportResult> => ipcRenderer.invoke('import-complete'),
   pickSaveFolder: (): Promise<SaveFolderPickResult> => ipcRenderer.invoke('pick-save-folder'),
   moveSaveFolder: (dest: string): Promise<SaveFolderMoveResult> => ipcRenderer.invoke('move-save-folder', dest),
+  // #37: whether the CURRENT save folder is missing on disk right now — always a
+  // fresh check, never a cached push (see ipc-config.ts's get-library-status).
+  getLibraryStatus: (): Promise<LibraryStatus> => ipcRenderer.invoke('get-library-status'),
+  // Repoint: point config.saveFolder at an already-existing library elsewhere, with
+  // NO copy (#37's escape hatch for a missing save folder — pick-save-folder/
+  // move-save-folder above assume the CURRENT folder is there to copy FROM).
+  pickRepointFolder: (): Promise<RepointPickResult> => ipcRenderer.invoke('pick-repoint-folder'),
+  applyRepoint: (dest: string): Promise<RepointApplyResult> => ipcRenderer.invoke('apply-repoint', dest),
   onSaveFolderProgress: (cb: (p: SaveFolderProgress) => void): void => {
     ipcRenderer.on('save-folder-progress', (_e, p) => cb(p));
   },
