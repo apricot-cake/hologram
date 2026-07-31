@@ -2,9 +2,9 @@
 //
 // 帯の末尾の「＋」を押すとその場に1行の入力欄が開き、打った文字に当たった候補
 // （タグ／投稿者／フォルダ）と、常設最下段の逃げ道「本文を検索: 「…」」が下にポップする。
-// 選ぶとチップが1つ増えて入力欄は閉じ、「＋」に戻る＝帯は1行のまま。チップが1つも
-// 無いときは「＋」でなく「＋ 絞り込みを追加」の案内を兼ねた入口になる（旧 qbEmptyHint
-// の役目をこの1要素が引き継ぐ＝案内と入口が別の場所にあると、読んだ場所からは始められない）。
+// 選ぶとチップが1つ増えて入力欄は閉じ、「＋」に戻る＝帯は1行のまま。帯自体がチップ
+// 1つ以上でしか存在しない（#674）ので、この面はアイコンだけの「＋」以外の顔を持たない
+// ＝空状態の案内は「+ フィルタ」ボタン・検索ボックスのサジェスト・Ctrl+K が担う。
 //
 // 候補は services/command-registry.ts の queryEntries から引く＝検索ボックスのサジェスト・
 // コマンドパレットと**同じ1つのエンジン**（ADR 0016）。この面が自分で決めるのは
@@ -52,7 +52,7 @@ const ROW_ICON: Partial<Record<RowSection, ComponentType<{ className?: string }>
 // 「投稿者の猫」が読み分けられない（Issue の例そのまま＝「タグ: 抱きしめ」）。
 const ROW_LABEL: Partial<Record<RowSection, string>> = { tag: 'paletteSecTag', user: 'paletteSecUser', folder: 'paletteSecFolder' };
 
-export function InlineFilterInput({ hasChips, posters }: { hasChips: boolean; posters: boolean }) {
+export function InlineFilterInput({ posters }: { posters: boolean }) {
   const [editing, setEditing] = useState(false);
   const [query, setQuery] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
@@ -98,17 +98,15 @@ export function InlineFilterInput({ hasChips, posters }: { hasChips: boolean; po
       <button
         type="button"
         data-slot="filter-add-inline"
-        // チップがあるときはアイコンだけの「＋」（帯の末尾に置く小さな追加口）、
-        // 無いときは文言つき＝そこが「絞り込みはここから」の案内も兼ねる。どちらも枠は
-        // 持たない＝この帯の破線枠は「〜以外」チップの印なので、追加口が同じ顔をすると
-        // 除外条件が1つ立っているように読める（隣の 検索を保存 と同じ ghost に揃える）。
-        className={hasChips ? 'inline-flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-accent-foreground' : 'inline-flex h-7 items-center gap-1 rounded-md px-1.5 text-muted-foreground text-sm hover:bg-accent hover:text-accent-foreground'}
+        // アイコンだけの「＋」（帯の末尾に置く小さな追加口）。枠は持たない＝この帯の
+        // 破線枠は「〜以外」チップの印なので、追加口が同じ顔をすると除外条件が1つ
+        // 立っているように読める（隣の 検索を保存 と同じ ghost に揃える）。
+        className="inline-flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-accent-foreground"
         aria-label={t('fbAddFilter')}
-        title={hasChips ? t('fbAddFilter') : undefined}
+        title={t('fbAddFilter')}
         onClick={() => setEditing(true)}
       >
         <Plus className="size-3.5" />
-        {hasChips ? null : <span>{t('fbAddFilter')}</span>}
       </button>
     );
 

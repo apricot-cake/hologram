@@ -67,6 +67,7 @@ const evalJs = `(async () => {
   const chipCount = () => (chipRow() ? chipRow().querySelectorAll(':scope > span').length : 0);
   await waitFor(() => cards() >= 3);
   const chipsBefore = chipCount();   // 0 — no chip row while nothing is filtered
+  const rowAbsentBefore = chipRow() === null; // #674 — the band is unmounted, not just empty
   // add a platform filter via the value editor
   byText('button', 'フィルタ').click();
   await waitFor(() => !!document.querySelector(POP + ' [data-slot="command-item"]'));
@@ -74,6 +75,7 @@ const evalJs = `(async () => {
   await waitFor(() => !!rowEl('X'));
   rowEl('X').click();
   await sleep(220);
+  const rowPresentAfter = chipRow() !== null; // #674 — the band mounts once there is a chip
   const chipShown = chipCount() === 1 && chipRow().textContent.includes('X');
   const cardsFiltered = cards();                                   // 2 (p0,p1)
   const rowChecked = !!(rowEl('X') && rowEl('X').querySelector('svg')); // ✓ on the picked row
@@ -84,8 +86,9 @@ const evalJs = `(async () => {
   chipRow().querySelector(':scope > span > button[aria-label]').click();
   await sleep(220);
   const chipsAfter = chipCount();   // 0
+  const rowAbsentAfter = chipRow() === null; // #674 — clearing the last chip unmounts the band again
   const cardsAfter = cards();       // 3
-  return { chipsBefore, chipShown, cardsFiltered, rowChecked, stillOpen, chipsAfter, cardsAfter };
+  return { chipsBefore, rowAbsentBefore, rowPresentAfter, chipShown, cardsFiltered, rowChecked, stillOpen, chipsAfter, rowAbsentAfter, cardsAfter };
 })()`;
 
 const env = Object.assign({}, process.env, { APPDATA: tmp, HOLOGRAM_CONFIG_DIR: path.join(tmp, 'Hologram'), HOLOGRAM_SMOKE: '1', HOLOGRAM_SMOKE_EVAL: evalJs });
@@ -106,8 +109,8 @@ child.on('close', () => {
     }
   }
   fs.rmSync(tmp, { recursive: true, force: true });
-  const ok = r.chipsBefore === 0 && r.chipShown === true && r.cardsFiltered === 2 && r.rowChecked === true && r.stillOpen === true && r.chipsAfter === 0 && r.cardsAfter === 3;
-  console.log(`chipsBefore=${r.chipsBefore} chipShown=${r.chipShown} filtered=${r.cardsFiltered} rowChecked=${r.rowChecked} stillOpen=${r.stillOpen} chipsAfter=${r.chipsAfter} cardsAfter=${r.cardsAfter}`);
+  const ok = r.chipsBefore === 0 && r.rowAbsentBefore === true && r.rowPresentAfter === true && r.chipShown === true && r.cardsFiltered === 2 && r.rowChecked === true && r.stillOpen === true && r.chipsAfter === 0 && r.rowAbsentAfter === true && r.cardsAfter === 3;
+  console.log(`chipsBefore=${r.chipsBefore} rowAbsentBefore=${r.rowAbsentBefore} rowPresentAfter=${r.rowPresentAfter} chipShown=${r.chipShown} filtered=${r.cardsFiltered} rowChecked=${r.rowChecked} stillOpen=${r.stillOpen} chipsAfter=${r.chipsAfter} rowAbsentAfter=${r.rowAbsentAfter} cardsAfter=${r.cardsAfter}`);
   console.log(ok ? 'POSTFILTER_TEST_PASS' : 'POSTFILTER_TEST_FAIL');
   process.exit(ok ? 0 : 1);
 });

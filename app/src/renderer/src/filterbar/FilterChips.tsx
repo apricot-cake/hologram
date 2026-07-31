@@ -114,11 +114,15 @@ export function FilterChips() {
   // anyway, so [] is correct).
   useSyncExternalStore(subActive, getActive);
   const chips = activeFilters ? activeFilters() : [];
+  // Zero chips = nothing to draw (#674): the band used to stay mounted with a
+  // 「＋ 絞り込みを追加」hint filling the empty state, but that duplicated the "+ フィルタ"
+  // button's job. The other three entry points (AddFilterButton, the search-box suggest,
+  // and Ctrl+K) already cover starting a filter from scratch, so with no active filter
+  // the band itself has nothing left to show and is unmounted rather than left as an
+  // empty 40px row. The accepted tradeoff is that the grid shifts down when the first
+  // chip appears — no transition softens that, per the Issue's decision.
+  if (chips.length === 0) return null;
   const posters = storeGet('browseMode') === 'posters';
-  // The row no longer disappears when there is nothing filtering (#148): with zero chips
-  // it carries the「＋ 絞り込みを追加」entry, which is both the hint and the way in — the
-  // old split (hint in the retired sidebar bar, entry elsewhere) meant you could not start
-  // from where you read. Its height is the same either way, so the band stays one line.
   return (
     <div data-slot="filter-chips" className="flex flex-wrap items-center gap-1.5 py-1.5">
       {chips.map((f, i) => (
@@ -127,10 +131,9 @@ export function FilterChips() {
         // remount its chip so the values line stays the chip's identity.
         <Chip key={f.cat + ':' + f.mode + ':' + i + ':' + f.values.join(' ')} f={f} />
       ))}
-      <InlineFilterInput hasChips={chips.length > 0} posters={posters} />
-      {/* No chips = nothing to save, so this rides with them (post side only — a saved
-          search is a post query). */}
-      {chips.length > 0 && !posters && <SaveSearchButton />}
+      <InlineFilterInput posters={posters} />
+      {/* Post side only — a saved search is a post query. */}
+      {!posters && <SaveSearchButton />}
     </div>
   );
 }
