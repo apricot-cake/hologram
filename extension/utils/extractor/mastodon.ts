@@ -118,6 +118,13 @@ async function fetchMastodonStatus(parsed, url): Promise<PostRecord> {
     // Mastodon UI), so federated Lemmy/PieFed posts don't become dead links.
     rec.url = s.url && isMastodonStatusUrl(s.url) ? s.url : url;
     rec.text = htmlToText(s.content);
+    // #178: spoiler_text is the CW the author wrote (empty string, not null,
+    // when they set none — normalized to null here like every other free-text
+    // field). sensitive is a real boolean the API always answers (unlike
+    // isEdited's edit_control, which can be silent), so a definite false is
+    // kept, not folded into null.
+    rec.cw = s.spoiler_text || null;
+    rec.sensitive = typeof s.sensitive === 'boolean' ? s.sensitive : null;
     rec.date = toIso(s.created_at);
     if (s.account) {
       rec.displayName = s.account.display_name || s.account.username || null;

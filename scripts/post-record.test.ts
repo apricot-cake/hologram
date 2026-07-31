@@ -54,6 +54,7 @@ describe('既定値', () => {
     'seriesTitle',
     'seriesOrder',
     'editedAt',
+    'cw',
     'eagleName',
     'description',
     'source',
@@ -73,7 +74,7 @@ describe('既定値', () => {
   });
 
   // 三値（未知/true/false）であって false ではない
-  test.each(['isReply', 'isQuote', 'isThread', 'isEdited'])('%s の既定は null（三値）', (k) => {
+  test.each(['isReply', 'isQuote', 'isThread', 'isEdited', 'sensitive'])('%s の既定は null（三値）', (k) => {
     expect(rec[k]).toBeNull();
   });
 });
@@ -105,6 +106,13 @@ describe('素通しと変換', () => {
   // どちらも渡された時にそのまま素通しされることを見る。
   test('isEdited / editedAt もそのまま通る', () => {
     expect(rec).toMatchObject({ isEdited: true, editedAt: '2026-02-02T00:00:00.000Z' });
+  });
+
+  // #178: sensitive=false は isEdited と違って platform が答えた「確定した値」
+  // なので、null に丸められず生き残らなければならない。
+  test('sensitive=false もそのまま通る（isEdited と違い null に丸めない）', () => {
+    const withFalse = normalizePostRecord({ captureId: 'cap-2b', cw: 'spoiler text', sensitive: false }, fixedNow);
+    expect(withFalse).toMatchObject({ cw: 'spoiler text', sensitive: false });
   });
 
   test('文字列でないハッシュタグは落とす（変換しない）', () => {

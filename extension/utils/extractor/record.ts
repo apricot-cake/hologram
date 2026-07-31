@@ -38,6 +38,8 @@ function emptyRecord(url: string | null | undefined, platform: string | null | u
     isThread: null,
     isEdited: null,
     editedAt: null,
+    cw: null,
+    sensitive: null,
     quotedUrl: null,
     // Reply parent's platform-local post id (tweet id / rkey / note id / status
     // id). Lets the viewer group a self-reply with its parent when both are in

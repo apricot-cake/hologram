@@ -265,9 +265,11 @@ CREATE VIRTUAL TABLE posts_fts USING fts5(
 // and recreate the table (FTS5 has no ALTER; a rebuild is the only way to change
 // anything about it). Deliberately a copy of the text inside SCHEMA_V1_SQL rather
 // than an interpolation: that string is historical and must not move when this one
-// does. The columns here are identical to v1's — the fts-rowid-addressing
-// migration (#444) rebuilds the table to re-key its rows, it does not reshape it,
-// so the MATCH/bm25 query contract is unchanged.
+// does. The fts-rowid-addressing migration (#444) rebuilt the table to re-key its
+// rows without reshaping it; the add-post-cw-sensitive migration (#178) is the
+// first to reshape it — cw is the post's own words (the author's content-warning
+// text), same footing as text/title, so it belongs in the searchable index and
+// not just the posts row.
 //
 // Deliberately NOT an external-content table (content=posts), even though this
 // index therefore keeps its own copy of the text — considered and rejected in
@@ -289,10 +291,11 @@ CREATE VIRTUAL TABLE posts_fts USING fts5(
   hashtags,
   tagsText,
   reading,
+  cw,
   tokenize = 'trigram'
 );
 `;
 
 // The posts_fts column list in write order, shared by the migration's reindex and
 // the shared record writer's INSERT so the two cannot drift.
-export const POSTS_FTS_COLUMNS = 'postId, text, title, displayName, screenName, eagleName, description, hashtags, tagsText, reading';
+export const POSTS_FTS_COLUMNS = 'postId, text, title, displayName, screenName, eagleName, description, hashtags, tagsText, reading, cw';

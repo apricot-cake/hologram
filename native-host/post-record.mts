@@ -101,6 +101,13 @@ export interface PostRecordShape {
   // does; X's edit signal carries no timestamp, so isEdited can be true here
   // with editedAt staying null).
   editedAt: string | null;
+  // Content-warning text the author attached, and whether the platform's own
+  // API marks the post sensitive/adult (#178). See
+  // extension/utils/extractor/types.ts's PostRecord.cw/sensitive for the
+  // per-platform sourcing and the null-vs-false convention (sensitive is a
+  // definite answer on the platforms that carry it, not a no-signal null).
+  cw: string | null;
+  sensitive: boolean | null;
   quotedUrl: string | null;
   replyToId: string | null;
   // pixiv series membership (#188) — see extension/utils/extractor/types.ts's
@@ -297,6 +304,8 @@ export function normalizePostRecord(input: PostRecordInput, now: () => string = 
     isThread: normBool(input.isThread),
     isEdited: normBool(input.isEdited),
     editedAt: normStr(input.editedAt),
+    cw: normStr(input.cw),
+    sensitive: normBool(input.sensitive),
     quotedUrl: normStr(input.quotedUrl),
     replyToId: normStr(input.replyToId),
     seriesId: normStr(input.seriesId),

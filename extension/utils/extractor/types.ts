@@ -101,6 +101,26 @@ interface PostRecord {
   // "when" field at all, so isEdited can be true there with editedAt staying
   // null — the two fields are independent, not a pair that both fill together.
   editedAt: string | null;
+  // Content-warning text the AUTHOR attached to the post (#178) — Misskey's
+  // note.cw and Mastodon's spoiler_text are free-text fields the poster wrote,
+  // so this is effectively part of the post's own words (kept in posts_fts
+  // alongside text/title). null means the platform has no such field (X,
+  // Bluesky — see `sensitive` below) or the author left it empty; never
+  // guessed from the text itself.
+  cw: string | null;
+  // Whether the platform's own API marks the post as sensitive/adult content
+  // (#178). Mastodon's `sensitive` and X's `possibly_sensitive` are booleans
+  // the API always answers (true/false is a real value, same convention as
+  // likes/reposts — NOT the null-means-no-signal convention isReply/isEdited
+  // use), so a successful fetch on those two platforms never leaves this
+  // null. Bluesky has no boolean field at all — derived from whether the
+  // post's self-labels (com.atproto.label.defs#selfLabels) include one of
+  // the adult-content values (porn/sexual/nudity/graphic-media); a
+  // successfully fetched post with no matching label is false, same
+  // definite-answer treatment. Misskey exposes no note-level sensitivity
+  // signal (only a per-FILE isSensitive on individual attachments, a
+  // different fact from "is this post sensitive") — stays null there.
+  sensitive: boolean | null;
   quotedUrl: string | null;
   replyToId: string | null;
   // pixiv series membership (#188): which series this work belongs to and its

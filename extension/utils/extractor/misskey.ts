@@ -226,6 +226,11 @@ async function fetchMisskeyNote(parsed, url): Promise<PostRecord> {
     if (!res.ok) return rec;
     const note = await readJsonKeepingRaw(rec, 'api:misskey/notes-show', res);
     rec.text = note.text || null;
+    // #178: the CW text the author wrote (misskey.io, real note, 2026-07-30 —
+    // scripts/canary/snapshots/misskey.json's 'cw' source). No note-level
+    // sensitivity boolean exists on this endpoint (only a per-file isSensitive
+    // on individual attachments, a different fact) — rec.sensitive stays null.
+    rec.cw = note.cw || null;
     rec.date = toIso(note.createdAt);
     if (note.user) {
       rec.displayName = note.user.name || null;
