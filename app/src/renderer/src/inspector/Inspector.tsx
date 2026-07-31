@@ -81,6 +81,21 @@ function TagsSection({ m }: { m: HologramInspectorModel }) {
   );
 }
 
+// The post's own text (#676). A full-width labeled section — the same shape as
+// TagsSection/SourceTagsSection below — rather than a Fields row: the 2-column
+// grid's value column is too narrow for prose, and cramming it in there was the
+// bug this section replaces (the heading <h2> borrowing p.text when there was no
+// title). Un-clamped (the panel scrolls) and normal weight, unlike the bold,
+// single-line-in-spirit heading it used to masquerade as.
+function TextSection({ text, label }: { text: string; label?: string }) {
+  return (
+    <section data-slot="inspector-text" className="flex flex-col gap-1.5">
+      <span className="text-xs text-muted-foreground">{label}</span>
+      <p className="text-[13px] leading-snug whitespace-pre-wrap break-words">{text}</p>
+    </section>
+  );
+}
+
 // Hashtags carried in from the source post, minus the ones already adopted as user
 // tags. Outline (not filled) keeps them visibly a different class of thing from the
 // user's own vocabulary.
@@ -119,6 +134,7 @@ function PostInspector({ m }: { m: HologramInspectorModel }) {
         <CloseButton onClose={m.onClose} />
       </div>
       {m.thumbSrc ? <img data-slot="inspector-thumb" data-peek={m.onThumbClick ? 'true' : undefined} className={'block w-full rounded-lg border border-border' + (m.onThumbClick ? ' cursor-zoom-in' : '')} src={m.thumbSrc} alt="" onClick={m.onThumbClick ?? undefined} /> : null}
+      {m.bodyText ? <TextSection text={m.bodyText} label={m.labels.text} /> : null}
       <Fields>
         <Field k={m.labels.platform} v={m.platformLabel} />
         {hasAuthor ? (
