@@ -37,7 +37,7 @@ import { hologramImageTabSource, isActive as imageViewIsActive } from '../servic
 import { isWide as isWideLayout, subscribe as layoutSubscribe } from '../services/layout-mode.ts';
 import { isHidden as panelsAreHidden, load as panelsLoad, reveal as panelsReveal, subscribe as panelsSubscribe } from '../services/panels.ts';
 import { get as storeGet, set as storeSet, subscribe as storeSubscribe } from '../services/store.ts';
-import { cachedOpen, loadOpen, persistOpen } from '../services/sidebar-pref.ts';
+import { DEFAULT_OPEN, cachedOpen, loadOpen, persistOpen } from '../services/sidebar-pref.ts';
 import { signalShellReady } from '../services/shell-ready.ts';
 import { AppToolbar } from './AppToolbar.tsx';
 import { InspectorToggle } from './InspectorToggle.tsx';
@@ -68,7 +68,7 @@ import { WindowControls } from './WindowControls.tsx';
 // user can still expand over the mask (narrowOpen below) — width picks the starting form,
 // it does not lock one in.
 function useSidebarOpen(): [boolean, (open: boolean) => void] {
-  const [open, setOpen] = useState(() => cachedOpen() ?? true);
+  const [open, setOpen] = useState(() => cachedOpen() ?? DEFAULT_OPEN);
   // A user toggle mid-boot must not lose to the reconcile landing a tick later.
   const toggled = useRef(false);
 

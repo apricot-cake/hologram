@@ -8,6 +8,12 @@
 // the folder as a place filter), the 保存した検索 group (#40) and the footer (settings
 // gear + mirror rail). Still to come (P1-3 continuation): folder HIERARCHY +
 // create/rename/delete (#41).
+//
+// #678: the default is now the collapsed labeled rail, not the expanded column. Its
+// scope is deliberately the 5 fixed destinations only (投稿/投稿者/ゴミ箱/コマンドパレット/
+// 設定) — the 3 user-grown groups below (library folders, saved searches, poster
+// folders) carry `group-data-[collapsible=icon]:hidden` and show only when expanded.
+// See docs/decisions/0018-labeled-navigation-rail-default.md for the design.
 import { ChevronRight, Folder, LayoutGrid, Plus, Search, Settings, Terminal, Trash2, Users } from 'lucide-react';
 import type { DragEvent, MouseEvent } from 'react';
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
@@ -456,13 +462,13 @@ export function LeftSidebar({ resize }: { resize?: PanelResize }) {
               <SidebarMenuItem>
                 <SidebarMenuButton isActive={!isPosters && !isTrash} tooltip={t('browsePosts')} onClick={() => browseTo('posts')}>
                   <LayoutGrid />
-                  <span>{t('browsePosts')}</span>
+                  <span data-slot="menu-label">{t('browsePosts')}</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
               <SidebarMenuItem>
                 <SidebarMenuButton isActive={isPosters} tooltip={t('browsePosters')} onClick={() => browseTo('posters')}>
                   <Users />
-                  <span>{t('browsePosters')}</span>
+                  <span data-slot="menu-label">{t('browsePosters')}</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
             </SidebarMenu>
@@ -473,7 +479,10 @@ export function LeftSidebar({ resize }: { resize?: PanelResize }) {
             There is no management modal to open — the tree IS the manager, the way
             Finder / Eagle / Raindrop do it. The group stays mounted even when empty so
             the + is always reachable. */}
-        <SidebarGroup>
+        {/* group-data-[collapsible=icon]:hidden on this and the next two groups (poster
+            folders, saved searches): the rail's scope is the 5 fixed destinations only
+            (#678) — user-grown lists show only when expanded. */}
+        <SidebarGroup className="group-data-[collapsible=icon]:hidden">
           {/* The heading doubles as the drop target for "out of every folder": a tree
               needs somewhere to drop that means the root, and the only other place —
               empty space below the last row — is not a target you can aim at. */}
@@ -514,7 +523,7 @@ export function LeftSidebar({ resize }: { resize?: PanelResize }) {
             each other here, and both saying plain 「フォルダ」 read as one group split
             in two rather than two different things. */}
         {isPosters && (
-          <SidebarGroup>
+          <SidebarGroup className="group-data-[collapsible=icon]:hidden">
             <SidebarGroupLabel>{t('sbPosterFoldersSidebarTitle')}</SidebarGroupLabel>
             <SidebarGroupAction aria-label={t('foldNew')} title={t('foldNew')} onClick={newPosterFolder}>
               <Plus />
@@ -535,7 +544,7 @@ export function LeftSidebar({ resize }: { resize?: PanelResize }) {
             has no cheap size — counting one means scanning the whole library, and a
             badge on every row would do that on every render. */}
         {saved.length > 0 && (
-          <SidebarGroup>
+          <SidebarGroup className="group-data-[collapsible=icon]:hidden">
             <SidebarGroupLabel>{t('savedSearches')}</SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
@@ -550,7 +559,7 @@ export function LeftSidebar({ resize }: { resize?: PanelResize }) {
                       }}
                     >
                       <Search />
-                      <span>{f.name}</span>
+                      <span className="truncate">{f.name}</span>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 ))}
@@ -573,7 +582,7 @@ export function LeftSidebar({ resize }: { resize?: PanelResize }) {
               <SidebarMenuItem>
                 <SidebarMenuButton isActive={isTrash} tooltip={t('trashTitle')} onClick={() => browseTo('trash')}>
                   <Trash2 />
-                  <span>{t('trashTitle')}</span>
+                  <span data-slot="menu-label">{t('trashTitle')}</span>
                 </SidebarMenuButton>
                 {trashN > 0 && <SidebarMenuBadge>{trashN}</SidebarMenuBadge>}
               </SidebarMenuItem>
@@ -592,14 +601,16 @@ export function LeftSidebar({ resize }: { resize?: PanelResize }) {
           <SidebarMenuItem>
             <SidebarMenuButton tooltip={`${t('paletteTitle')} (Ctrl+K)`} onClick={() => openPalette()}>
               <Terminal />
-              <span>{t('paletteTitle')}</span>
-              <span className="ml-auto text-xs text-muted-foreground">Ctrl+K</span>
+              <span data-slot="menu-label">{t('paletteTitle')}</span>
+              {/* No room for the hint in the rail (~56px content width) — already
+                  effectively invisible there before this change, now made explicit. */}
+              <span className="ml-auto text-xs text-muted-foreground group-data-[collapsible=icon]:hidden">Ctrl+K</span>
             </SidebarMenuButton>
           </SidebarMenuItem>
           <SidebarMenuItem>
             <SidebarMenuButton tooltip={t('tabSettings')} onClick={() => openSettings()}>
               <Settings />
-              <span>{t('tabSettings')}</span>
+              <span data-slot="menu-label">{t('tabSettings')}</span>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>

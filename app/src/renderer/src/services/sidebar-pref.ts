@@ -15,6 +15,11 @@ import { hologramIpc } from './ipc.ts';
 
 const KEY = 'hologram-sidebar-open';
 
+// A fresh profile (nothing in the cache yet) now starts on the labeled rail, not the
+// expanded 256px column (#678). This only decides what someone who has NEVER touched
+// the toggle sees first — an existing user's saved choice (cachedOpen()) is untouched.
+export const DEFAULT_OPEN = false;
+
 function readCache(): boolean | null {
   try {
     const v = localStorage.getItem(KEY);

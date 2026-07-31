@@ -22,7 +22,15 @@ import type { PanelResize } from '@/shell/use-panel-resize.ts';
 // config.json instead — see services/sidebar-pref.ts.
 const SIDEBAR_WIDTH = '16rem';
 const SIDEBAR_WIDTH_MOBILE = '18rem';
-const SIDEBAR_WIDTH_ICON = '3rem';
+// FORKED FROM UPSTREAM (#678): upstream's icon rail is an icon-only square (48px is
+// enough to center a 16px glyph). Hologram's collapsed state is now a LABELED rail —
+// Material Design 3's "Navigation rail" (https://m3.material.io/components/navigation-rail/guidelines):
+// collapsed is the DEFAULT, and each item is an icon over a short 1-word label, never an
+// icon alone — an icon-only rail doesn't read ("設定アイコンとかは見ただけで分かるけど、
+// ビューアイコンのグリッドや人マークって伝わりづらいでしょ", the issue's own reasoning).
+// 72px is room enough for a stacked icon-over-label row without wrapping onto a third
+// line. See sidebarMenuButtonVariants below for the row layout that actually uses this.
+const SIDEBAR_WIDTH_ICON = '4.5rem';
 const SIDEBAR_KEYBOARD_SHORTCUT = 'b';
 
 type SidebarContextProps = {
@@ -231,6 +239,12 @@ function Sidebar({
 // (the x half of #628). Changed here rather than by a className at the single call site,
 // because "the child decides its own size" is the shape that produced the drift in the first
 // place; the size belongs to the column, and this is the column's component.
+// #678 addendum: `group-data-[collapsible=icon]:w-full!` makes the trigger fill the
+// rail's content width in icon mode, instead of staying the 32px square it is
+// everywhere else. Nav rows (sidebarMenuButtonVariants below) now widen to `w-full` in
+// the rail too, to hold a label — without this the trigger would be the one 32px-wide
+// control above a column of ~56px-wide rows, and the #628 axis (same left edge, same
+// width, same centre x) would break again the same way the 28-vs-32 mismatch did.
 function SidebarTrigger({ className, onClick, ...props }: React.ComponentProps<typeof Button>) {
   const { toggleSidebar } = useSidebar();
 
@@ -240,7 +254,7 @@ function SidebarTrigger({ className, onClick, ...props }: React.ComponentProps<t
       data-slot="sidebar-trigger"
       variant="ghost"
       size="icon"
-      className={cn(className)}
+      className={cn('group-data-[collapsible=icon]:w-full!', className)}
       onClick={(event) => {
         onClick?.(event);
         toggleSidebar();
@@ -382,8 +396,16 @@ function SidebarMenuItem({ className, ...props }: React.ComponentProps<'li'>) {
   return <li data-slot="sidebar-menu-item" data-sidebar="menu-item" className={cn('group/menu-item relative', className)} {...props} />;
 }
 
+// #678 fork point: icon mode used to be a clipped 32px icon-only square
+// (group-data-[collapsible=icon]:size-8!); it is now a labeled rail row instead — a
+// stacked icon-over-label column that fills the rail's width (SIDEBAR_WIDTH_ICON above).
+// The label span that should show/wrap in rail mode has to be marked explicitly with
+// `data-slot="menu-label"` (see LeftSidebar.tsx) rather than picked up as "whichever span
+// is the DOM's last child" — the old `[&>span:last-child]:truncate` selector broke
+// silently for any button with a trailing hint span after the label (コマンドパレット's
+// "Ctrl+K"), where the hint, not the label, was the one thing actually getting truncated.
 const sidebarMenuButtonVariants = cva(
-  'peer/menu-button group/menu-button flex w-full items-center gap-2 overflow-hidden rounded-md p-2 text-left text-sm ring-sidebar-ring outline-hidden transition-[width,height,padding] group-has-data-[sidebar=menu-action]/menu-item:pr-8 group-data-[collapsible=icon]:size-8! group-data-[collapsible=icon]:p-2! hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 active:bg-sidebar-accent active:text-sidebar-accent-foreground disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 data-open:hover:bg-sidebar-accent data-open:hover:text-sidebar-accent-foreground data-active:bg-sidebar-accent data-active:font-medium data-active:text-sidebar-accent-foreground [&_svg]:size-4 [&_svg]:shrink-0 [&>span:last-child]:truncate',
+  'peer/menu-button group/menu-button flex w-full items-center gap-2 overflow-hidden rounded-md p-2 text-left text-sm ring-sidebar-ring outline-hidden transition-[width,height,padding] group-has-data-[sidebar=menu-action]/menu-item:pr-8 group-data-[collapsible=icon]:h-auto! group-data-[collapsible=icon]:w-full! group-data-[collapsible=icon]:flex-col group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:gap-1 group-data-[collapsible=icon]:px-1! group-data-[collapsible=icon]:py-2! hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 active:bg-sidebar-accent active:text-sidebar-accent-foreground disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 data-open:hover:bg-sidebar-accent data-open:hover:text-sidebar-accent-foreground data-active:bg-sidebar-accent data-active:font-medium data-active:text-sidebar-accent-foreground [&_svg]:size-4 [&_svg]:shrink-0 group-data-[collapsible=icon]:[&_svg]:size-5 [&_[data-slot=menu-label]]:truncate group-data-[collapsible=icon]:[&_[data-slot=menu-label]]:w-full group-data-[collapsible=icon]:[&_[data-slot=menu-label]]:overflow-visible group-data-[collapsible=icon]:[&_[data-slot=menu-label]]:whitespace-normal group-data-[collapsible=icon]:[&_[data-slot=menu-label]]:text-center group-data-[collapsible=icon]:[&_[data-slot=menu-label]]:text-[10px] group-data-[collapsible=icon]:[&_[data-slot=menu-label]]:leading-[1.15]',
   {
     variants: {
       variant: {

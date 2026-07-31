@@ -28,6 +28,9 @@ function seedFolders({ configDir }: { configDir: string }) {
 
 test('フォルダ行を上端・下端へドロップすると並び順が入れ替わる', async ({ launchHologram }) => {
   const { page } = await launchHologram({ seed: seedFolders });
+  // The library folder group is hidden in the rail, which is now the default (#678) — this
+  // flow needs the rows visible and hit-testable, so expand the column first.
+  await page.keyboard.press('Control+b');
   const row = (id: string) => page.locator(`[data-folder-id="${id}"]`).first();
 
   // Drag `sourceId` onto `targetId`'s top (before) or bottom (after) edge zone.
@@ -58,6 +61,8 @@ test('フォルダ行を上端・下端へドロップすると並び順が入�
 
 test('親フォルダを開くと子はインデントされ、横スクロールを出さない', async ({ launchHologram }) => {
   const { page } = await launchHologram({ seed: seedFolders });
+  // Same reason as the drag case above: the folder group is rail-hidden by default (#678).
+  await page.keyboard.press('Control+b');
   const row = (id: string) => page.locator(`[data-folder-id="${id}"]`).first();
 
   await row('f-a').locator('[data-slot="folder-twisty"]').click();
