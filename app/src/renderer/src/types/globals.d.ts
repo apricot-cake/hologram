@@ -103,7 +103,7 @@ declare global {
   }
 
   // ---- services/image-tab.ts — converts the image-tab detail view
-  // (#imageTabView) off the old push (viewer.js built a full model and called
+  // off the old push (viewer.js built a full model and called
   // render(model) on it from ~8 call sites) to a PULLED source, same shape as
   // the two grid sources. viewer.js writes only the tab identity (hologramStore's
   // 'activeImageTab' — id/recs/idx, the one piece of tab state migrated ahead of
@@ -277,10 +277,10 @@ declare global {
     visible: { work: boolean; character: boolean; tag: boolean; instance: boolean };
   }
 
-  // ---- #emptyState placeholder — viewer keeps the container's show/hide + the
-  // delegated CTA click handler; EmptyState.tsx derives the
-  // variant itself from hologramStore instead of a pushed bridge (the old
-  // renderer/empty.js bridge was deleted — no callers left). ----
+  // ---- Empty-state variant — EmptyState.tsx derives this itself from hologramStore
+  // instead of a pushed bridge (the old renderer/empty.js bridge was deleted — no
+  // callers left), and owns its own container and visibility (the static #emptyState
+  // div two render pipelines wrote `hidden` on went with it). ----
   type HologramEmptyVariant = 'firstRun' | 'filtered' | 'posterFirstRun';
 
   // ---- services/confirm.ts — shared confirm modal (shadcn AlertDialog). Callers open it

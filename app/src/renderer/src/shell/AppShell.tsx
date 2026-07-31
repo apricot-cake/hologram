@@ -34,6 +34,7 @@ import { type PanelResize, resolveCssLength, usePanelResize } from './use-panel-
 import { LIMITS, type PanelKey, cachedWidth, clampWidth, loadWidth, persistWidth } from '../services/panel-width-pref.ts';
 import { isVisible as inspectorIsVisible, load as inspectorLoad, registerPanelEl, subscribeVisible as subscribeInspectorVisible } from '../services/inspector-panel.ts';
 import { registerScroller } from '../services/content-area.ts';
+import { hologramImageTabSource, isActive as imageViewIsActive } from '../services/image-tab.ts';
 import { isWide as isWideLayout, subscribe as layoutSubscribe } from '../services/layout-mode.ts';
 import { isHidden as panelsAreHidden, load as panelsLoad, reveal as panelsReveal, subscribe as panelsSubscribe } from '../services/panels.ts';
 import { get as storeGet, set as storeSet, subscribe as storeSubscribe } from '../services/store.ts';
@@ -230,6 +231,11 @@ export function AppShell() {
   // Which destination the content column is showing. All three stay mounted (see below),
   // so this only decides which one is `hidden`.
   const mode = useSyncExternalStore(subBrowseMode, getBrowseMode);
+  // An image tab swaps the browse chrome for the media stage (P2⑫). The swap is a render
+  // decision here — a `hidden` on the content column and the stage's own component below —
+  // where it used to be `body.image-tab-active` plus three CSS rules in index.html. Same
+  // predicate the toolbar swaps its controls on, so the two halves cannot disagree.
+  const imageView = useSyncExternalStore(hologramImageTabSource.subscribe, imageViewIsActive);
   // The narrow overlay covers the content area, not the tab bar and toolbar above it, so
   // it needs to know where that area starts. Measured rather than computed: the chip row
   // appears and disappears with the filter, so the toolbar has no fixed height to add up.
@@ -291,7 +297,7 @@ export function AppShell() {
                     the bar toggles (the size slider's column-fit math depends on a stable
                     width); overflow-anchor:none stops the browser compensating for a cell
                     that mounts above the viewport, which reads as the grid jittering. */}
-                <div ref={setContentEl} data-slot="content-scroll" className="relative min-h-0 min-w-0 flex-1 overflow-y-auto px-8 py-6 [overflow-anchor:none] [scrollbar-gutter:stable]">
+                <div ref={setContentEl} data-slot="content-scroll" hidden={imageView} className="relative min-h-0 min-w-0 flex-1 overflow-y-auto px-8 py-6 [overflow-anchor:none] [scrollbar-gutter:stable]">
                   {/* Three destinations, one scroll root. All three stay MOUNTED and the
                       inactive ones are `hidden` — the virtualized hosts keep their
                       measured layout that way, and "which one is on screen" is one
@@ -304,10 +310,11 @@ export function AppShell() {
                     <TrashView />
                   </div>
                 </div>
-                {/* Image-tab detail view (Eagle 風 fit-to-screen); body.image-tab-active swaps it in. */}
-                <div id="imageTabView">
-                  <ImageTabHost />
-                </div>
+                {/* Image-tab detail view (Eagle 風 fit-to-screen). It draws its own container
+                    when there is something to show and nothing at all otherwise (P2⑫), so the
+                    "which of the two fills the inset" decision is the `hidden` above and this
+                    line — no id, no display rules in index.html. */}
+                <ImageTabHost />
                 {/* Bottom floating selection bar (redesign §3-4 / P2⑥). Inside the inset (not
                     a body-level overlay) so it centers on the content column and stays clear of
                     the right inspector, which is a flex sibling that narrows the inset when open. */}
@@ -317,7 +324,12 @@ export function AppShell() {
                   Visibility is the user's own toggle (#243): it is no longer opened/closed as
                   a side effect of selecting a card, and the content (Inspector) shows a
                   placeholder while nothing is selected (#244). */}
-              <aside data-slot="inspector" ref={registerPanelEl} className={wide ? 'inspector relative' : 'inspector inspector--overlay'} hidden={!inspectorVisible}>
+              {/* …and an inline column under an image tab at ANY width (Eagle-style detail
+                  screen): a slide-over would cover the very picture being inspected. That
+                  used to be a `body.image-tab-active .inspector--overlay` override that
+                  undid the overlay's own rules one by one; picking the docked form outright
+                  is the same result with one decision instead of two. */}
+              <aside data-slot="inspector" ref={registerPanelEl} className={wide || imageView ? 'inspector relative' : 'inspector inspector--overlay'} hidden={!inspectorVisible}>
                 {/* Drag edge (#30). Wide layout only, for the same reason the sidebar rail
                     is: the narrow form is an overlay pinned to the window edge. */}
                 {wide && <InspectorRail resize={inspector.resize} />}

@@ -1,6 +1,9 @@
 import JSZip from 'jszip';
 import { useEffect, useRef, useState } from 'react';
+import { Pause, Play } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import { imageDataUrl } from '../services/posts.ts';
+import { PLATE } from './plate.ts';
 
 // pixiv うごイラ playback (#119 St3). The library stores pixiv's own archive
 // untouched — a zip of frame images — because every single-file form of it
@@ -24,17 +27,6 @@ const MIN_AHEAD = 3; // always keep this many decoded, however large the frames
 // the event loop; clamp instead of trusting pixiv's number outright.
 const MIN_DELAY_MS = 10;
 const MAX_DELAY_MS = 10000;
-
-const PLAY_ICON = (
-  <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true">
-    <path d="M8 5v14l11-7z" />
-  </svg>
-);
-const PAUSE_ICON = (
-  <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true">
-    <path d="M6 5h4v14H6zM14 5h4v14h-4z" />
-  </svg>
-);
 
 export function UgoiraPlayer({ file, frames, poster, alt, labels }: { file: string; frames: UgoiraFrame[]; poster?: string; alt?: string; labels: Record<string, string> }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -181,16 +173,22 @@ export function UgoiraPlayer({ file, frames, poster, alt, labels }: { file: stri
   // for this work, already downloaded next to the archive — so a うごイラ whose
   // archive won't open still shows the artwork.
   return (
-    <div className="itv-ugoira">
+    // .itv-ugoira keeps ONE job in index.html — centering the canvas/poster inside this
+    // box (`.itv-ugoira > .itv-media { margin: auto }`), which belongs with the rest of
+    // the media sizing that P3 (#6) takes. The box itself is Tailwind (P2⑫).
+    <div className="itv-ugoira relative flex min-w-0 flex-1">
       <canvas ref={canvasRef} className="itv-media" role="img" aria-label={alt || labels.ugoira || ''} style={status === 'ready' ? undefined : { display: 'none' }} />
       {/* decoding="async" like the rest of the viewer surface (#241) — the
           archive is being unzipped and decoded on the same thread's tasks, so
           the poster must not add a blocking decode on top of that. */}
       {status !== 'ready' && poster && <img className="itv-media" src={poster} alt={alt || ''} decoding="async" />}
+      {/* Bottom-left, where a <video> puts its own play button — the same corner the
+          browser's native controls use for the neighbouring slide type. Same translucent
+          plate as the stage's other floating controls (P2⑫). */}
       {status === 'ready' && (
-        <button type="button" className="icon-btn itv-ugoira-toggle" aria-label={playing ? labels.pause : labels.play} data-tip={playing ? labels.pause : labels.play} onClick={() => setPlaying((p) => !p)}>
-          {playing ? PAUSE_ICON : PLAY_ICON}
-        </button>
+        <Button data-slot="ugoira-toggle" variant="ghost" size="icon" aria-label={playing ? labels.pause : labels.play} onClick={() => setPlaying((p) => !p)} className={`absolute bottom-3 left-3 z-2 ${PLATE}`}>
+          {playing ? <Pause /> : <Play />}
+        </Button>
       )}
     </div>
   );

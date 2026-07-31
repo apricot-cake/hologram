@@ -20,6 +20,7 @@ import { SearchBox } from '../searchbox/SearchBox.tsx';
 import { ViewerToolbar } from '../image-tab/ViewerToolbar.tsx';
 import { t } from '../_shared/i18n.ts';
 import { open as openPalette } from '../services/command-registry.ts';
+import { hologramImageTabSource, isActive as imageViewIsActive } from '../services/image-tab.ts';
 import { get as storeGet, subscribe as storeSubscribe } from '../services/store.ts';
 import { navBack, navForward } from '../services/orchestrator.ts';
 
@@ -28,13 +29,11 @@ const subBack = subKey('navCanBack');
 const getBack = (): boolean => !!storeGet('navCanBack');
 const subForward = subKey('navCanForward');
 const getForward = (): boolean => !!storeGet('navCanForward');
-// An image view is showing ⟺ the store holds its identity (services/image-tab.ts
-// derives the whole stage from this key). The band stays — every browser keeps its
-// toolbar row on every tab — but what it carries swaps: the predicate controls are
-// about the grid, which is not on screen, and the zoom controls are about the picture,
-// which is (#150).
-const subImageView = subKey('activeImageTab');
-const getImageView = (): boolean => storeGet('activeImageTab') != null;
+// An image view is showing — asked of services/image-tab.ts, the module that builds the
+// stage, so the toolbar and the shell cannot disagree about which one is on screen (P2⑫).
+// The band stays — every browser keeps its toolbar row on every tab — but what it carries
+// swaps: the predicate controls are about the grid, which is not on screen, and the zoom
+// controls are about the picture, which is (#150).
 
 // Leading magnifier for the search field (SearchBox renders only the input; the
 // icon is the field's chrome, same split the old #searchWrap used).
@@ -76,7 +75,7 @@ function PaletteBadge() {
 export function AppToolbar() {
   const canBack = useSyncExternalStore(subBack, getBack);
   const canForward = useSyncExternalStore(subForward, getForward);
-  const imageView = useSyncExternalStore(subImageView, getImageView);
+  const imageView = useSyncExternalStore(hologramImageTabSource.subscribe, imageViewIsActive);
   return (
     // bg-sidebar, not bg-background: the toolbar and the left sidebar form ONE band
     // under the tab strip, and the active tab connects into that band (its legacy

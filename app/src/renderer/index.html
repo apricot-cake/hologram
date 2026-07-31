@@ -657,21 +657,16 @@
        .lightbox-overlay here while #lightbox was a static container. */
 
     /* --- Image tab (type:'image') — fit-to-screen detail view --- */
-    /* The active image tab swaps the browse chrome (query bar / sidebar / grid)
-       for a single media stage; the inspector column stays. */
-    #imageTabView { display: none; }
-    body.image-tab-active [data-slot='content-scroll'] { display: none; }
-    /* The toolbar band itself STAYS under an image tab: the active tab's
-       Chrome-style connected shape needs the band below it — hiding the whole
-       bar left the strip looking clipped (every browser keeps its toolbar row
-       on every tab). WHAT it carries swaps instead — the grid's predicates out,
-       the viewer's zoom controls in — and that swap is React's now
-       (shell/AppToolbar.tsx + image-tab/ViewerToolbar.tsx, #150). The rules
-       that used to do it here named #postActiveBar / #posterActiveBar /
-       #sidebar, none of which have existed since the shell became React (#154);
-       they were hiding nothing. */
-    body.image-tab-active #imageTabView { display: flex; flex: 1; min-width: 0; min-height: 0; }
-    .itv-stage { flex: 1; position: relative; overflow: hidden; display: flex; min-width: 0; }
+    /* What is left here is the MEDIA sizing, which the zoom/pan surface depends on
+       (see the pointer-events note below) and which P3 (#6) takes with the rest of
+       the legacy sheet. The swap itself is gone from CSS (P2⑫): "an image tab is
+       showing" was a body class plus three display rules — one hiding the content
+       column, one showing #imageTabView, one re-docking the inspector — and it is
+       now a render decision in shell/AppShell.tsx off services/image-tab.ts's
+       isActive(). The toolbar band stays under an image tab either way: the active
+       tab's Chrome-style connected shape needs the band below it, and WHAT it
+       carries swaps instead (shell/AppToolbar.tsx + image-tab/ViewerToolbar.tsx,
+       #150). */
     .itv-media { max-width: 100%; max-height: 100%; object-fit: contain; }
     /* react-zoom-pan-pinch's own stylesheet sets pointer-events:none on every
        img inside the content box (native img-drag protection), which silently
@@ -684,26 +679,13 @@
     .itv-video { margin: auto; }
     /* うごイラ (#119 St3): a canvas plus its own play/pause, since a zip of
        frames has no native controls the way <video> does. */
-    .itv-ugoira { flex: 1; position: relative; display: flex; min-width: 0; }
     .itv-ugoira > .itv-media { margin: auto; }
-    .itv-ugoira-toggle { position: absolute; left: 12px; bottom: 12px; z-index: 2; }
-    .itv-nav {
-      position: absolute; top: 50%; transform: translateY(-50%);
-      width: 40px; height: 56px; border: none; border-radius: 6px;
-      background: color-mix(in srgb, var(--text) 8%, transparent); color: var(--text-muted);
-      font-size: 28px; line-height: 1; cursor: pointer; z-index: 2;
-    }
-    .itv-nav:hover { background: var(--hover); color: var(--text); }
-    .itv-prev { left: 12px; }
-    .itv-next { right: 12px; }
-    .itv-counter {
-      position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%);
-      color: var(--text-muted); font-size: 12px;
-      background: color-mix(in srgb, var(--text) 8%, transparent);
-      padding: 3px 10px; border-radius: 12px; z-index: 2;
-    }
-    .itv-tools { position: absolute; top: 10px; right: 10px; z-index: 2; display: flex; gap: 6px; }
-    .itv-empty { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; color: var(--text-muted); font-size: 13px; }
+    /* The viewer's CHROME — prev/next, the counter, the info toggle, the うごイラ
+       play button, the "post is gone" state — is Tailwind + shadcn parts in
+       image-tab/ now (P2⑫). It was .itv-nav / .itv-prev / .itv-next / .itv-counter
+       / .itv-tools / .itv-ugoira-toggle / .itv-empty here, each a one-off tone
+       (hand-mixed color-mix fills, a 28px "‹" glyph for an icon, .icon-btn's own
+       hover) that no other surface in the app shared. */
 
     /* --- Original-media thumbnail strip (grid view) --- */
 
@@ -1156,12 +1138,10 @@
       border-left: 1px solid var(--float-border); box-shadow: var(--shadow-lg);
       z-index: 9500;   /* over the content, under modals/lightbox (11000+) */
     }
-    /* Image tab: the inspector is part of the detail view (Eagle-style), so it stays an
-       inline column even when narrow — a slide-over would cover the very image being
-       inspected. */
-    body.image-tab-active .inspector--overlay {
-      position: static; height: 100%; box-shadow: none; border-left: 1px solid var(--border);
-    }
+    /* (Under an image tab the panel keeps the docked form at every width — Eagle-style
+       detail screen, since a slide-over would cover the very image being inspected.
+       That is AppShell's class choice now, not an override that undid these rules one
+       property at a time — P2⑫.) */
     .inspector[hidden] { display: none; }
     .inspector:not([hidden]) { animation: hologramPanelIn var(--dur-panel) var(--ease-out); }
     /* Inspector inline tag editor — always shown while the inspector is open: tag

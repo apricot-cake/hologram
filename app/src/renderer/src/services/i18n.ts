@@ -99,7 +99,8 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     ctxSearchWeb: 'Googleで検索',
     ctxSearchLibrary: 'ライブラリ内検索',
     imgTabFallback: '画像',
-    imgTabMissing: 'この画像はライブラリに見つかりません（削除された可能性があります）',
+    imgTabMissing: 'この画像はライブラリにありません',
+    imgTabMissingDesc: '削除された可能性があります。削除した投稿はゴミ箱に30日間残るので、戻せばまたここで開けます。',
     imgTabCloseBtn: 'タブを閉じる',
     // 画像ビューのツールバー（#150）。ショートカットは括弧で添える（他のツールチップと同じ書き方）
     itvZoomOut: 'ズームアウト',
@@ -210,6 +211,7 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     emptySearchDesc: '検索条件を変更してください。',
     emptyCaptureHint: 'ブラウザで <kbd>Alt</kbd>+<kbd>S</kbd> → 投稿をクリックで保存できます。',
     emptyResetBtn: 'フィルタをリセット',
+    emptyImportClipboard: 'クリップボードから取り込む',
 
     // viewer: common
     saved: '保存しました',
@@ -557,7 +559,8 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     ctxSearchWeb: 'Search on Google',
     ctxSearchLibrary: 'Search the library',
     imgTabFallback: 'Image',
-    imgTabMissing: 'This image is no longer in the library (it may have been deleted)',
+    imgTabMissing: 'This image is not in the library',
+    imgTabMissingDesc: 'It may have been deleted. Deleted posts stay in the trash for 30 days, so putting one back opens it here again.',
     imgTabCloseBtn: 'Close tab',
     itvZoomOut: 'Zoom out',
     itvZoomIn: 'Zoom in',
@@ -665,6 +668,7 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     emptySearchDesc: 'Try changing your search terms.',
     emptyCaptureHint: 'Press <kbd>Alt</kbd>+<kbd>S</kbd> in your browser, then click a post to save it.',
     emptyResetBtn: 'Reset filters',
+    emptyImportClipboard: 'Import from clipboard',
 
     saved: 'Saved',
 

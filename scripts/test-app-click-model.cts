@@ -165,7 +165,7 @@ const evalJs = `(async () => {
 
   // H. double-click a post → the image view (in-tab history destination)
   dblclick(postCards()[0]);
-  out.imageViewActive = await waitFor(() => document.body.classList.contains('image-tab-active'));
+  out.imageViewActive = await waitFor(() => !!document.querySelector('[data-slot="image-tab-view"]'));
 
   out.errors = errors;
   return JSON.stringify(out);

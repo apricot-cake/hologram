@@ -1,4 +1,4 @@
-// Image-tab model source — converts #imageTabView off the old push
+// Image-tab model source — converts the image detail view off the old push
 // (viewer.js built the React model and called render(model) on it from ~8 call
 // sites: showImageTab / hideImageTabView / index step / inspector toggle /
 // library refresh) to a PULLED source, the same shape as the grid sources
@@ -72,6 +72,20 @@ function get(): HologramImageTabModel | null {
     onToggleInspector: dispatchToggleInspector,
     onCloseTab: dispatchClose,
   };
+}
+
+/**
+ * Is the image view the thing on screen?
+ *
+ * ONE answer to that question, for everyone who needs it (P2⑫ / #153 ⑤) — the shell's
+ * content-vs-stage switch, the toolbar's control swap, and the global shortcuts that
+ * yield to the viewer. It used to be `document.body.classList.contains('image-tab-active')`
+ * in five places plus a CSS rule, i.e. DOM sniffing for a fact this module computes:
+ * the view is showing exactly when there is a model to show. Same shape as
+ * lightbox.ts / settings.ts / inspector-panel.ts expose for their own surfaces.
+ */
+export function isActive(): boolean {
+  return get() != null;
 }
 
 export const hologramImageTabSource = {

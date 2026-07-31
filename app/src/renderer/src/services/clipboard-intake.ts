@@ -24,16 +24,13 @@
 import { get as confirmGet } from './confirm.ts';
 import { isOpen as paletteIsOpen } from './command-registry.ts';
 import { isOpen as lightboxIsOpen } from './lightbox.ts';
+import { isActive as imageViewIsActive } from './image-tab.ts';
 import { isOpen as settingsIsOpen } from './settings.ts';
 import { isManagerOpen as folderManagerIsOpen } from './folders.ts';
 import { importClipboard } from './posts.ts';
 import { formatDate } from './format.ts';
 import { notify } from './ui.ts';
 import { t } from '../_shared/i18n.ts';
-
-function imageTabActive(): boolean {
-  return typeof document !== 'undefined' && document.body.classList.contains('image-tab-active');
-}
 
 /**
  * Ask main for whatever image the clipboard holds, and report the outcome.
@@ -74,7 +71,7 @@ export function handleShortcutClipboardKey(e: KeyboardEvent): void {
   if (folderManagerIsOpen()) return;
   // The single-image view is its own screen with its own keys — same exclusion as
   // Ctrl+C / Space (selection-builder.ts).
-  if (imageTabActive()) return;
+  if (imageViewIsActive()) return;
   // ゴミ箱 (#268): a paste is a new save, and the trash is the one destination where
   // saving into the library is off. Pasting there would silently drop the image into
   // a grid the user is not looking at.

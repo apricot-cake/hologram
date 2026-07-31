@@ -109,7 +109,7 @@ const evalJs = `(async () => {
 
   // B. 画像ビューを開く → ツールバーが帯に出て、検索欄は引っ込む
   dblclick(cardOf('ズーム対象'));
-  out.imageViewActive = await waitFor(() => document.body.classList.contains('image-tab-active'));
+  out.imageViewActive = await waitFor(() => !!q('[data-slot="image-tab-view"]'));
   out.toolbarInImageView = await waitFor(() => !!q('[data-slot="viewer-toolbar"]'));
   out.searchInImageView = searchShown();
 
@@ -139,15 +139,15 @@ const evalJs = `(async () => {
 
   // G. グリッドへ戻る（Alt+←）→ ツールバーは消え、検索欄が戻る
   chord('ArrowLeft', { altKey: true });
-  out.leftImageView = await waitFor(() => !document.body.classList.contains('image-tab-active'));
+  out.leftImageView = await waitFor(() => !q('[data-slot="image-tab-view"]'));
   out.toolbarAfterBack = !!q('[data-slot="viewer-toolbar"]');
   out.searchAfterBack = searchShown();
 
   // H. 先頭が動画の投稿 → ズーム系は disabled のまま「そこに在る」
   dblclick(cardOf('動画つき'));
-  out.videoViewActive = await waitFor(() => document.body.classList.contains('image-tab-active'));
+  out.videoViewActive = await waitFor(() => !!q('[data-slot="image-tab-view"]'));
   await waitFor(() => !!q('[data-slot="viewer-toolbar"]'));
-  out.videoSlideIsVideo = !!q('.itv-stage video');
+  out.videoSlideIsVideo = !!q('[data-slot="image-tab-stage"] video');
   out.videoToolbarPresent = !!q('[data-slot="viewer-toolbar"]');
   out.videoZoomInDisabled = disabled('viewer-zoom-in');
   out.videoZoomOutDisabled = disabled('viewer-zoom-out');
@@ -155,7 +155,7 @@ const evalJs = `(async () => {
   out.videoPercent = zoomLevel();
 
   // I. 次のスライド（スクショ画像）へ送ると生き返る
-  const next = q('.itv-next');
+  const next = q('[data-slot="image-tab-next"]');
   if (next) next.click();
   out.zoomBackAfterStep = await waitFor(() => !disabled('viewer-zoom-in'), 5000);
   out.percentAfterStep = await settled('100%');

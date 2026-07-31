@@ -15,6 +15,7 @@ import { MoreHorizontal, RotateCcw, Trash2, X } from 'lucide-react';
 import type { MouseEvent as ReactMouseEvent } from 'react';
 import { useSyncExternalStore } from 'react';
 import { Button } from '@/components/ui/button';
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty';
 import { t } from '../_shared/i18n.ts';
 import { registerGridSlot } from '../services/content-area.ts';
 import { open as menuOpen } from '../services/menu.ts';
@@ -77,12 +78,18 @@ export function TrashView() {
           row — including the 30-day rule, which is the only reason an item can leave
           without anyone pressing anything. */}
       {snap.loaded && snap.count === 0 && (
-        <div className="px-5 py-15 text-center text-[var(--text-subtle)]">
-          <p className="mb-2">
-            <strong>{t('trashEmpty')}</strong>
-          </p>
-          <p>{t('trashEmptyDesc')}</p>
-        </div>
+        // Same anatomy as the library's own empty states (P2⑫) — icon plate, title,
+        // description. No action: an empty trash is a finished state, and inventing a
+        // button here would only take you somewhere the left nav already goes.
+        <Empty className="py-16">
+          <EmptyHeader>
+            <EmptyMedia variant="icon">
+              <Trash2 />
+            </EmptyMedia>
+            <EmptyTitle>{t('trashEmpty')}</EmptyTitle>
+            <EmptyDescription>{t('trashEmptyDesc')}</EmptyDescription>
+          </EmptyHeader>
+        </Empty>
       )}
     </div>
   );
