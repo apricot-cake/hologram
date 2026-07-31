@@ -301,7 +301,11 @@ export function LeftSidebar({ resize }: { resize?: PanelResize }) {
           the window top now, so its header row IS the left half of the titlebar — the
           collapse trigger sits here (moved out of the toolbar), the rest is grab space
           to move the window. No wordmark: chrome stays quiet. */}
-      <SidebarHeader className="app-drag h-[var(--tabbar-h)] flex-row items-center justify-start px-1">
+      {/* No px override: the header keeps SidebarHeader's own p-2, which is the same 8px the
+          groups and the footer below it use — so the trigger starts on the column's left edge
+          like every nav row (#628, the sidebar-column axis). The px-1 that used to be here was
+          the only 4 in the column and was what pulled the trigger 4px off that edge. */}
+      <SidebarHeader className="app-drag h-[var(--tabbar-h)] flex-row items-center justify-start">
         {/* The tooltip is where Ctrl+B is learnable (#245): the shortcut carries no hint of
             itself, and the target users are not assumed to know editor key conventions. Its
             partner Ctrl+Shift+B is spelled out next to it in the 表示 popover, where the two

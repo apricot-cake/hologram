@@ -42,13 +42,15 @@ export function InspectorToggle() {
   };
   const label = t('toggleInspector');
   return (
-    // px-2 matches the sidebar trigger's inset from the opposite corner. The band's own
-    // right padding (--window-controls-w) is what keeps this clear of the window buttons.
+    // px-2 matches the sidebar trigger's inset from the opposite corner — true again since
+    // #628 gave the sidebar's header row the column's own 8 (it had drifted to 4, which is
+    // what made this note quietly wrong). The band's own right padding (--window-controls-w)
+    // is what keeps this clear of the window buttons.
     <div className="app-no-drag grid h-8 shrink-0 place-items-center px-2">
       <Tooltip>
         <TooltipTrigger
           render={
-            <button type="button" className="inline-grid h-8 w-8 place-items-center rounded-md text-muted-foreground transition-colors duration-75 hover:bg-foreground/8 hover:text-foreground active:bg-foreground/16" aria-label={label} aria-pressed={open} onClick={press}>
+            <button type="button" data-slot="inspector-toggle" className="inline-grid h-8 w-8 place-items-center rounded-md text-muted-foreground transition-colors duration-75 hover:bg-foreground/8 hover:text-foreground active:bg-foreground/16" aria-label={label} aria-pressed={open} onClick={press}>
               <PanelRight className="size-4" />
             </button>
           }

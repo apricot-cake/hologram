@@ -223,6 +223,14 @@ function Sidebar({
   );
 }
 
+// FORKED FROM UPSTREAM (#628): the button is `icon` (32), not upstream's `icon-sm` (28).
+//
+// 32 is the size this column already agrees on — SidebarMenuButton is size-8 in the icon rail,
+// and the inspector toggle at the other end of the same band is 32 too. Upstream's 28 made the
+// trigger the one 28 in a column of 32s, which put its centre 6px left of the rail's mid-line
+// (the x half of #628). Changed here rather than by a className at the single call site,
+// because "the child decides its own size" is the shape that produced the drift in the first
+// place; the size belongs to the column, and this is the column's component.
 function SidebarTrigger({ className, onClick, ...props }: React.ComponentProps<typeof Button>) {
   const { toggleSidebar } = useSidebar();
 
@@ -231,7 +239,7 @@ function SidebarTrigger({ className, onClick, ...props }: React.ComponentProps<t
       data-sidebar="trigger"
       data-slot="sidebar-trigger"
       variant="ghost"
-      size="icon-sm"
+      size="icon"
       className={cn(className)}
       onClick={(event) => {
         onClick?.(event);

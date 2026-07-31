@@ -154,8 +154,19 @@ export function Tabs({ model }: { model: TabsModel | null }) {
     // the active one can connect into the band below. The right padding is the grab
     // gutter: a draggable patch between the last tab and the inspector toggle, kept even
     // when the tabs fill the row — the strip itself stays part of the drag region and
-    // each interactive child opts out (app-no-drag).
-    <div data-slot="tab-strip" role="tablist" className="flex min-w-0 flex-1 items-end self-stretch pr-[var(--tabbar-drag-gutter,88px)] pl-2">
+    // each interactive child opts out (app-no-drag). Windows' title-bar guidance asks for
+    // exactly this: a region that can always be grabbed, left of the caption buttons.
+    //
+    // 88px is written here rather than behind a token (#628). It was `var(--tabbar-drag-gutter,
+    // 88px)` from the day it was added, but the variable was never defined anywhere — so the
+    // fallback was always the value, and the name only suggested an owner that did not exist.
+    // A length becomes a token when two independent owners have to agree on it: --tabbar-h is
+    // read by the band and by everything that lines up inside it, --window-controls-w by the
+    // band's padding and by the portaled strip's width. Nothing has to agree with the gutter —
+    // it is one element's own padding, and the space right of the tabs is whatever the band
+    // has left. So it stays a literal, which is also what acceptance condition 6 of #628 asks
+    // for (no new size tokens).
+    <div data-slot="tab-strip" role="tablist" className="flex min-w-0 flex-1 items-end self-stretch pr-[88px] pl-2">
       {model.tabs.map((t) => (
         <Tab key={t.id} t={t} closeTitle={model.closeTitle} />
       ))}

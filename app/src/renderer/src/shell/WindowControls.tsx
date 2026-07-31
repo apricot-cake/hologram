@@ -14,8 +14,13 @@
 // "HTMAXBUTTON"); Electron does not expose that for app-drawn buttons. Snap itself is
 // unaffected — Win+arrow, drag-to-screen-edge and Win+Z all still work.
 //
-// Geometry follows the Windows caption convention: 46x32 buttons, Segoe-style glyphs, and the
-// close button's red hover (#c42b1c, the system's own value — Windows Terminal uses it too).
+// Geometry follows the Windows caption convention: 46px-wide buttons, Segoe-style glyphs, and
+// the close button's red hover (#c42b1c, the system's own value — Windows Terminal uses it too).
+// The HEIGHT is the band's, not the caption grid's 32 (#628): Microsoft's title-bar guidance says
+// a taller title bar takes taller caption buttons with it (WinUI's PreferredHeightOption=Tall
+// raises them to 48 with the bar), and 32 inside a 44 band left these three sitting 6px above the
+// centre every other control in the band shares. Full height also puts the close button in the
+// window's actual top-right corner, which is what makes it throwable-at (Fitts).
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { hologramIpc } from '../services/ipc.ts';
@@ -74,7 +79,10 @@ export function WindowControls() {
   // it reads in both themes without a per-theme token, and it can't collide with the strip's
   // own background the way --hover did (that token IS --tabbar-bg in the light theme, so the
   // hover was invisible there — and `bg-[var(--hover)]` never even generated a rule).
-  const base = 'app-no-drag inline-grid h-8 w-[46px] place-items-center text-muted-foreground transition-colors duration-75';
+  // The height is the band's own token so the strip cannot drift off the band's mid-line again;
+  // e2e/flows/shell-axes.spec.ts holds that as an invariant. The width stays 46 (the caption
+  // grid's), and with it --window-controls-w = 138 that the band reserves on its right.
+  const base = 'app-no-drag inline-grid h-[var(--tabbar-h)] w-[46px] place-items-center text-muted-foreground transition-colors duration-75';
   // Portaled to body and z-[13600]: above every modal surface (dialog 13000 / alert 13100 /
   // sheet 13500) so window management still works while a modal is up, the way the OS buttons
   // it replaces did. Inside the tab bar this was impossible — the band is its own stacking
@@ -88,13 +96,13 @@ export function WindowControls() {
   // surface that ever ends up under these buttons.
   return createPortal(
     <div className="wc-strip app-no-drag fixed top-0 right-0 z-[13600] flex">
-      <button type="button" aria-label="最小化" className={`${base} hover:bg-foreground/8 active:bg-foreground/16`} onClick={() => hologramIpc.windowControl('minimize')}>
+      <button type="button" data-slot="window-control" aria-label="最小化" className={`${base} hover:bg-foreground/8 active:bg-foreground/16`} onClick={() => hologramIpc.windowControl('minimize')}>
         <MinimizeGlyph />
       </button>
-      <button type="button" aria-label={maximized ? '元のサイズに戻す' : '最大化'} className={`${base} hover:bg-foreground/8 active:bg-foreground/16`} onClick={() => hologramIpc.windowControl('toggle-maximize')}>
+      <button type="button" data-slot="window-control" aria-label={maximized ? '元のサイズに戻す' : '最大化'} className={`${base} hover:bg-foreground/8 active:bg-foreground/16`} onClick={() => hologramIpc.windowControl('toggle-maximize')}>
         {maximized ? <RestoreGlyph /> : <MaximizeGlyph />}
       </button>
-      <button type="button" aria-label="閉じる" className={`${base} hover:bg-[#c42b1c] hover:text-white active:bg-[#c42b1c]/90 active:text-white`} onClick={() => hologramIpc.windowControl('close')}>
+      <button type="button" data-slot="window-control" aria-label="閉じる" className={`${base} hover:bg-[#c42b1c] hover:text-white active:bg-[#c42b1c]/90 active:text-white`} onClick={() => hologramIpc.windowControl('close')}>
         <CloseGlyph />
       </button>
       {/* The scrim's dim, re-created over the buttons (they're above the scrim). pointer-events
