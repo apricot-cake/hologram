@@ -32,6 +32,61 @@ test('タグ用語帳が往復する', () => {
   expect(writer.getTagTypes()).toEqual({ types: { alice: 'character' }, labels: { character: 'Character' } });
 });
 
+// #197: setPostTags / setPosterTags / setTagTypes は共通の tagResolver を通るので、
+// 字形正規化（NFKC + trim）は各エントリで別々に確認せずここで一括して見る＝
+// どの入口から書いても同じ tags 行へ収束すること。
+describe('タグ名の字形正規化（#197）', () => {
+  let ownDir: string;
+  let db: any;
+  let own: ReturnType<typeof createDbWriter>;
+
+  beforeAll(() => {
+    ownDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-db-write-tagnorm-'));
+    ({ sqlite: db } = openDatabase(path.join(ownDir, 'test.db')));
+    own = createDbWriter(db);
+    db.prepare("INSERT INTO posts (captureId, capturedAt, updatedAt) VALUES ('tn-post', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')").run();
+  });
+
+  afterAll(() => {
+    db.close();
+    fs.rmSync(ownDir, { recursive: true, force: true });
+  });
+
+  test('setPostTags: 前後の空白と全角/半角の字形ゆれを畳んで保存する', () => {
+    own.setPostTags('tn-post', ['  猫  ', 'ＡＢＣ'], null);
+
+    expect(own.getPostFlags('tn-post')?.tags).toEqual(['猫', 'ABC']);
+  });
+
+  test('同じ post に半角/全角の同じ語を渡すと1つのタグ行へ収束する', () => {
+    own.setPostTags('tn-post', ['ABC', 'ＡＢＣ', ' ABC '], null);
+
+    expect(own.getPostFlags('tn-post')?.tags).toEqual(['ABC']);
+    expect(db.prepare("SELECT COUNT(*) n FROM tags WHERE name = 'ABC'").get().n).toBe(1);
+  });
+
+  test('setPosterTags も同じ正規化を通る', () => {
+    own.setPosterTags({ tags: { 'poster:1': ['ＶＴｕｂｅｒ', '  猫  '] } });
+
+    expect(own.getPosterTags()).toEqual({ tags: { 'poster:1': ['VTuber', '猫'] } });
+  });
+
+  test('setTagTypes もキー（タグ名）を正規化してから解決する', () => {
+    own.setTagTypes({ ＶＴｕｂｅｒ: 'character' }, {});
+    // 別入口 (setPostTags) が既に作った半角形の同じ名前へ、同じタグ行として揃う。
+    own.setPostTags('tn-post', ['VTuber'], null);
+
+    expect(db.prepare("SELECT COUNT(*) n FROM tags WHERE name = 'VTuber'").get().n).toBe(1);
+    expect(own.getTagTypes()).toEqual({ types: { VTuber: 'character' }, labels: {} });
+  });
+
+  test('大小文字・カナ⇔かなは畳まない', () => {
+    own.setPostTags('tn-post', ['ネコ', 'ねこ', 'Neko', 'neko'], null);
+
+    expect(own.getPostFlags('tn-post')?.tags?.sort()).toEqual(['Neko', 'neko', 'ねこ', 'ネコ'].sort());
+  });
+});
+
 describe('フォルダ', () => {
   beforeAll(() => {
     writer.setFolders({

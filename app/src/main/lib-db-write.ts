@@ -7,9 +7,13 @@
 
 import type Database from 'better-sqlite3';
 import { normFolders } from './lib-folder-tree.ts';
+import { normalizeTagName, normalizeTagNames } from '../../../native-host/tag-normalize.mts';
 
 type Sqlite = Database.Database;
 
+// Generic string-array cleanup for non-tag values (postId/folderId/postKey
+// arrays) — no glyph normalization, those aren't tag text. Tag arrays use
+// normalizeTagNames instead (below): see replacePostTags/replacePosterTags.
 function strings(value: unknown): string[] {
   return Array.isArray(value) ? [...new Set(value.filter((v) => typeof v === 'string' && v).map(String))] : [];
 }
@@ -27,10 +31,14 @@ function existingPostIds(sqlite: Sqlite): Set<string> {
   return new Set((sqlite.prepare('SELECT captureId FROM posts').all() as Array<{ captureId: string }>).map((row) => row.captureId));
 }
 
+// Normalizes (NFKC + trim, #197) before every lookup/insert — the choke point
+// for every IPC-driven tag write below (tag types, poster tags, post tags),
+// same role makeTagResolver plays for the save pipeline (lib-db-record-writer.ts).
 function tagResolver(sqlite: Sqlite) {
   const select = sqlite.prepare('SELECT id FROM tags WHERE name = ? ORDER BY id LIMIT 1');
   const insert = sqlite.prepare('INSERT INTO tags (name) VALUES (?)');
-  return (name: string) => {
+  return (rawName: string) => {
+    const name = normalizeTagName(rawName) || rawName;
     const row = select.get(name) as { id: number } | undefined;
     return row?.id ?? Number(insert.run(name).lastInsertRowid);
   };
@@ -41,7 +49,8 @@ function replaceTagTypes(sqlite: Sqlite, types: unknown, labels: unknown) {
   const resolve = tagResolver(sqlite);
   sqlite.prepare('UPDATE tags SET kind = NULL').run();
   const setKind = sqlite.prepare('UPDATE tags SET kind = ? WHERE id = ?');
-  for (const [name, kind] of Object.entries(normalized)) {
+  for (const [rawName, kind] of Object.entries(normalized)) {
+    const name = normalizeTagName(rawName);
     if (!name) continue;
     setKind.run(typeof kind === 'string' ? kind : null, resolve(name));
   }
@@ -180,7 +189,7 @@ function replacePosterTags(sqlite: Sqlite, data: any) {
   const insert = sqlite.prepare('INSERT OR IGNORE INTO poster_tags (posterKey, tagId) VALUES (?, ?)');
   for (const [key, tags] of Object.entries(data?.tags && typeof data.tags === 'object' ? data.tags : {})) {
     if (!key) continue;
-    for (const name of strings(tags)) insert.run(key, resolve(name));
+    for (const name of normalizeTagNames(tags)) insert.run(key, resolve(name));
   }
 }
 
@@ -203,7 +212,7 @@ function replacePostTags(sqlite: Sqlite, postId: string, tags: unknown, patch: u
   const post = sqlite.prepare('SELECT ftsRowid FROM posts WHERE captureId = ?').get(postId) as { ftsRowid: number | null } | undefined;
   if (!post) return false;
 
-  const names = strings(tags);
+  const names = normalizeTagNames(tags);
   sqlite.prepare('DELETE FROM post_tags WHERE postId = ?').run(postId);
   const resolve = tagResolver(sqlite);
   const insertTag = sqlite.prepare('INSERT OR IGNORE INTO post_tags (postId, tagId) VALUES (?, ?)');
