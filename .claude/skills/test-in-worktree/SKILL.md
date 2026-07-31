@@ -23,7 +23,7 @@ install が済めば `npm test`・`npm run typecheck`・アプリ起動ハーネ
 
 ## worktree から拡張機能を実機検証する
 
-**ホットリロードは worktree に届かない。** `npm run dev:ext` が監視しているのは**本体ツリーの `extension/`** で、日常の Chrome に読み込まれているのも**本体ツリーの `.output/chrome-mv3`**（dev/production 共用＝docs/build.md）。worktree でいくら直しても反映されない。ここで「手で読み込み直してもらおう」は共通指示が名指しで禁じている（渡す手順は人でないと不可能な部分まで切り詰める）。
+**ホットリロードは worktree に届かない。** `npm run dev:ext` が監視しているのは**本体ツリーの `extension/`** で、日常の Chrome に読み込まれているのも**本体ツリーの `.output/chrome-mv3`**（dev/production 共用＝docs/build.md）。worktree でいくら直しても反映されない。ここで「手で読み込み直してもらおう」はグローバル CLAUDE.md が名指しで禁じている（渡す手順は人でないと不可能な部分まで切り詰める）。
 
 **正しい手順＝`dev:ext` が見ているツリーへコードを持っていく**（ユーザーの手作業は Alt+S だけになる）:
 

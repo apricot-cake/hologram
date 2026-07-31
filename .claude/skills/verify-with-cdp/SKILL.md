@@ -14,7 +14,7 @@ description: Hologram を CDP（Chrome DevTools Protocol）で計測・撮影・
   - ポップオーバーをキーボードで開くのは**再起動直後だけフレークする**ので数回リトライ。
 - **ページへ合成ポインタを投げるなら `new PointerEvent`。`new Event('pointermove')` に座標を後付けした形は届かない**（実測 2026-07-28・bsky.app）。同じ要素・同じ座標・同じ瞬間で A/B すると、`new PointerEvent('pointermove',{clientX,clientY})` は拡張のホバーオーバーレイを動かし、`Object.assign(new Event('pointermove'),{clientX,clientY})` は何も起こさない。**`isTrusted` は無関係**＝構築した `PointerEvent` は `isTrusted:false` でも動くので、「本物のマウスでないと駄目」と誤診しない。理由は未特定だが、`clientX` はハンドラ側から読み戻せるので値の欠落ではない。
   - **罠になるのは `scripts/overlay.test.ts`（jsdom）が後者の書き方で緑になること**＝ハーネスの癖をそのまま実機の検証へ持ち込むと、何も起きないのを「機能が壊れている」と読む。2026-07-28 に #372 の検証で実際にそう誤診し、拡張の設定・ビルド・保存済み照会を順に疑って往復した。
-  - 実マウスに近い経路が要るなら CDP の `Input.dispatchMouseEvent`（コンピューター操作では `computer` の `hover`）。こちらも同じ結果になる。
+  - 実マウスに近い経路が要るなら CDP の `Input.dispatchMouseEvent`（claude-in-chrome なら `computer` の `hover`）。こちらも同じ結果になる。
 - **Base UI の `ComboboxInput` は素の `new Event('input')` では開かない**（実害 2026-07-31・#148）。入力が「本物のタイプ」に見える時だけポップアップを開くガード（`inputType` を持ち、かつ `insertReplacementText` でない＝オートフィル避け）が入っているため、**値は入り `onValueChange` も発火するのにリストだけ開かない**＝その面が壊れているように見える。正しい駆動は `new InputEvent('input', { inputType: 'insertText' })`。**検索ボックスとコマンドパレットにも同じことが効く**（同じ部品系）。
 - **ホバーを測る前にスクロールを終わらせる**。プログラム的なスクロールの直後はオーバーレイ側の追跡（IntersectionObserver → 描画 → ホバー対象の登録）が追いつかず、直前まで出ていたボタンが出なくなる。スクロールと計測は別の呼び出しに分け、計測中は一切スクロールしない。
 - **駆動は1フロー1起動**。多数のフローを1スクリプトに詰めると相互に絡んで解析不能になり、自分の駆動残留を「ユーザーが触った」と誤診する（docs/build.md「実機で異常を見たら、まず自分の駆動の残留を疑う」）。
@@ -66,7 +66,7 @@ description: Hologram を CDP（Chrome DevTools Protocol）で計測・撮影・
 - dev と prod は manifest の `key` が同じ＝**拡張 ID が同一**で、resident.js も両方が自己完結バンドル＝**ページ側からどちらが載っているかは判別できない**。判別できるのは `chrome://extensions` のロード元だけ。
 - **拡張側のグローバルは isolated world**＝ページの JS コンソール（`javascript_tool`／DevTools）からは常に `undefined`/`false` に見える。`false` を「拡張が動いていない」根拠にしない。
 - **⛔ 注入の生死を `dispatchEvent` で作ったイベントで判定しない**（実害 2026-07-31）。`utils/user-gesture.ts` の `userOnly`（#323 の信頼境界）が**保存を開始・応答・終了させる全ハンドラ**（投稿を選ぶクリック・重複警告の3つの答え・ドロップゾーンを出す `dragstart` とコミットする `drop`・ホバーの保存ボタン・取込の停止・セッションを捨てるキーと右クリック）に掛かっていて、**`isTrusted !== true` を設計どおり無言で捨てる**。`dispatchEvent` は定義上 `isTrusted:false` を付けるので、**届かないのが正常**＝「反応しない」を「注入されていない」と読むと切り分けが丸ごと壊れる（この日、権限・プロファイル・ビルド・ブラウザ再起動まで疑って往復した末、ユーザーが実際にドラッグしたら一発で出た）。
-  - **trusted なイベントを作れるのは CDP の `Input.*` だけ**（`user-gesture.ts` の冒頭コメントが明記）＝`Input.dispatchMouseEvent`／コンピューター操作なら `computer` の `hover`・`left_click_drag`。`page.dispatchEvent` はページ側と同じ扱いになる。
+  - **trusted なイベントを作れるのは CDP の `Input.*` だけ**（`user-gesture.ts` の冒頭コメントが明記）＝`Input.dispatchMouseEvent`／claude-in-chrome なら `computer` の `hover`・`left_click_drag`。`page.dispatchEvent` はページ側と同じ扱いになる。
   - **「痕跡ゼロ」も注入の否定にならない**＝`hologram-extension-ui` を作るのは `ui-root.ts` の `ensureUiRoot()` だけで、唯一の呼び出し元は `status-surface.ts`（出すものが無い間は生成されない）。`<hologram-corner-control>` は画像ごとに、保存済みの印かホバー時の保存ボタンとしてだけ挿入される。**素のタイムラインで custom element 0 は健全な状態。**
   - **注入の生死を非破壊で見たいなら、まず他の拡張と比べる**＝同じ x.com を見ている別の content script（Control Panel for Twitter 等）の痕跡も同時に消えているなら、疑うのはそのタブやプロファイルであって Hologram ではない。
 - **アイコン無反応の一次診断は `~/.hologram/capture.log`**: click 行なし＝クリックが SW に届いていない（別ウィンドウ/別アイコンの疑い）／`phase:"skip"`＝非 http タブ／`phase:"fail"`＝executeScript のエラー内容つき。
@@ -77,7 +77,7 @@ description: Hologram を CDP（Chrome DevTools Protocol）で計測・撮影・
 
 ### 実 Chrome でページを見る時
 
-奪ってはいけないのはフォーカスだけで、実 Chrome での検証自体は歓迎（共通指示「Chrome のフォーカスを奪わない」）。背面タブのまま CDP で読む／JS を走らせるのを既定にする。ヘッドレス（`scripts/e2e-capture-test.cts`）で足りるならそちら。
+奪ってはいけないのはフォーカスだけで、実 Chrome での検証自体は歓迎（グローバル CLAUDE.md「Chrome のフォーカスを奪わない」）。背面タブのまま CDP で読む／JS を走らせるのを既定にする。ヘッドレス（`scripts/e2e-capture-test.cts`）で足りるならそちら。
 
 - **スクロール検証は `document.visibilityState` を先に読む**（2026-07-26）。**背面タブでは X の仮想リストがそもそも動かない**（hidden のまま `window.scrollBy` で 5824px 進めても投稿件数もページ高も不変）。可視タブなら合成スクロール（`scrollIntoView`＋`scrollBy`）でもメディア画像は読み込まれた。「合成スクロールだから読まれない」と結論する前に「背面だから何も動いていない」を潰す。
 - **X で `performance.getEntriesByType('resource')` を件数の根拠にしない**（実地被弾 2026-07-26）。X 自身が `clearResourceTimings()` を定期的に呼ぶのでバッファは直近の消去以降しか残らない。**画像が読めたかの判定は `img.complete && img.naturalWidth>0`**。
