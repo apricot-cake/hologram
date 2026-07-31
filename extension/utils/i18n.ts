@@ -84,6 +84,12 @@ export const MESSAGES = {
     // 直すものも無い＝待てば通るので、診断ページへは誘導しない。
     bannerBusy: '保存が立て込んでいます。少し待ってからもう一度お試しください',
     bannerFailedUnknown: '保存に失敗しました。拡張機能の設定から診断ページを確認してください',
+    // 拡張が更新（またはリロード）されて、このタブに残っていたスクリプトが拡張から
+    // 切り離された（#594）。⚠️他のどの失敗とも違って**壊れていない**＝新しい版は正常で、
+    // 取り残されているのはこのページだけ。だから直し方は1つしかなく、それを言い切る。
+    // 診断ページへは誘導しない（見に行っても全項目 PASS になる）し、「もう一度お試し
+    // ください」も言わない＝このタブで何度押しても同じ結果にしかならない。
+    bannerExtensionReloaded: '拡張機能が更新されました。このページを再読み込みしてください',
 
     // drag.js: drop-zone hint (the toasts reuse the banner* keys above)
     dragDropHint: 'ここにドロップで Hologram に保存',
@@ -187,6 +193,9 @@ export const MESSAGES = {
     // See the ja note: too many saves at once, nothing broken, no diagnostics.
     bannerBusy: 'Too many saves at once. Wait a moment and try again.',
     bannerFailedUnknown: 'Save failed. Open the diagnostics page from the extension settings.',
+    // See the ja note: nothing is broken — this tab was left behind by an
+    // update. One repair, no retry, no diagnostics page.
+    bannerExtensionReloaded: 'The extension was updated. Please reload this page.',
 
     // drag.js: drop-zone hint (the toasts reuse the banner* keys above)
     dragDropHint: 'Drop here to save to Hologram',
