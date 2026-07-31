@@ -44,3 +44,71 @@ test('カードをダブルクリックすると画像ビューが開く', async
   await expect(page.locator('[data-slot="image-tab-view"]')).toBeVisible();
   await expect(page.locator('[data-slot="content-scroll"]')).toBeHidden();
 });
+
+// #633. The panel holds a SNAPSHOT of what was inspected, so a subject that stops
+// existing has to be noticed from the library side — otherwise the picture is gone
+// and the detail of it is still there, with a live tag editor writing to a record
+// that no longer exists. Both cases go through the floating bar, which is the delete
+// the user can actually reach from either place (the image view has no card menu,
+// and the bar floats over the stage).
+async function deleteSelectionViaBar(page: import('@playwright/test').Page) {
+  await page.getByRole('button', { name: '削除' }).click();
+  const confirm = page.locator('[data-slot="alert-dialog-content"]');
+  await expect(confirm).toBeVisible();
+  await confirm.getByRole('button', { name: '削除する' }).click();
+}
+
+test('画像ビューを開いたまま削除するとステージもインスペクタも投稿を手放す', async ({ launchHologram }) => {
+  const { page } = await launchHologram();
+  // A double click both selects the card and opens the image view, so the floating
+  // bar is on screen over the stage with exactly this post selected.
+  await page.locator('[data-slot="post-grid"] [data-slot="post-card"]').filter({ hasText: '猫が机の上で寝ている' }).dblclick();
+  await expect(page.locator('[data-slot="image-tab-view"]')).toBeVisible();
+  await expect(page.locator('[data-slot="inspector-post"]')).toContainText('猫沢みけ');
+
+  await deleteSelectionViaBar(page);
+
+  // The stage says the post is gone…
+  await expect(page.getByText('この画像はライブラリにありません')).toBeVisible();
+  // …and the right column must not keep answering for it. No post detail, no tag
+  // field to type into — the panel falls back to its own no-selection state.
+  await expect(page.locator('[data-slot="inspector-post"]')).toHaveCount(0);
+  await expect(page.locator('[data-slot="inspector-empty"]')).toBeVisible();
+});
+
+test('グリッドで選択中の投稿を削除するとインスペクタが空になる', async ({ launchHologram }) => {
+  const { page } = await launchHologram();
+  const card = page.locator('[data-slot="post-grid"] [data-slot="post-card"]').filter({ hasText: '夕暮れの街並み' });
+  await card.click();
+  await expect(page.locator('[data-slot="inspector-post"]')).toContainText('街田あかね');
+
+  await deleteSelectionViaBar(page);
+
+  await expect(page.locator('[data-slot="post-grid"] [data-slot="post-card"]')).toHaveCount(3);
+  await expect(page.locator('[data-slot="inspector-post"]')).toHaveCount(0);
+  await expect(page.locator('[data-slot="inspector-empty"]')).toBeVisible();
+});
+
+test('カードメニューから削除してもインスペクタが空になる', async ({ launchHologram }) => {
+  const { page } = await launchHologram();
+  const card = page.locator('[data-slot="post-grid"] [data-slot="post-card"]').filter({ hasText: '青い空と海の写真' });
+  // The card menu is the route that stands DOWN for a selection (the floating bar owns
+  // bulk actions then), so this whole case has to stay selection-free: 詳細 fills the
+  // panel without selecting, exactly as the menu's own 削除 will delete without one.
+  await card.click({ button: 'right' });
+  await page.getByRole('menuitem', { name: '詳細' }).click();
+  await expect(page.locator('[data-slot="inspector-post"]')).toContainText('海野そら');
+
+  // The second route into deletion. It used to dismiss the panel by itself, which is
+  // exactly why the other routes did not — the check moved to one place (#633), so this
+  // case is what proves the move did not lose the behaviour it replaced.
+  await card.click({ button: 'right' });
+  await page.getByRole('menuitem', { name: '削除' }).click();
+  const confirm = page.locator('[data-slot="alert-dialog-content"]');
+  await expect(confirm).toBeVisible();
+  await confirm.getByRole('button', { name: '削除する' }).click();
+
+  await expect(page.locator('[data-slot="post-grid"] [data-slot="post-card"]')).toHaveCount(3);
+  await expect(page.locator('[data-slot="inspector-post"]')).toHaveCount(0);
+  await expect(page.locator('[data-slot="inspector-empty"]')).toBeVisible();
+});
