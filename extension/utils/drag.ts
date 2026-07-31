@@ -7,6 +7,7 @@
 // belongs to comes from media-identity.js, shared with overlay.js's hover save
 // button so the two paths can never disagree about what a save records.
 import { logSaveEvent, newSaveId, reportSaveTimeout } from './capture-log.ts';
+import { extensionAlive, noteExtensionGone, onExtensionGone } from './extension-context.ts';
 import { startSaveDeadline } from './save-deadline.ts';
 import { buildChoiceRow, checkDuplicate, formatDeletedAt } from './duplicate-guard.ts';
 import { collectImageUrls, getMediaIdentitySite } from './extractor/index.ts';
@@ -79,38 +80,66 @@ export async function startDrag(): Promise<void> {
     z.exit();
   }
 
-  document.addEventListener(
-    'dragstart',
-    userOnly<DragEvent>((e) => {
-      if (!chrome.runtime?.id) return;
-      const target = e.target as Element | null;
-      const img = (target?.closest?.('img') as HTMLImageElement | null) || (target?.tagName === 'IMG' ? (target as HTMLImageElement) : null);
-      if (!img) return;
-      const identity = siteConfig.extractIdentity(img);
-      if (!identity || !identity.link) return;
-      // The id is minted with the pending drag rather than at drop: a drag that
-      // is never dropped writes no line at all (every image drag on the page
-      // would otherwise leave one), and a drag that IS dropped needs the id
-      // before it can ask about duplicates (#519).
-      pending = { type: 'imageDragged', platform: siteConfig.platform, postUrl: identity.link, imageUrls: collectImageUrls(img, siteConfig.platform), saveId: newSaveId() };
-      showOverlay();
-    }),
-    true,
-  );
+  // Named, and kept, so teardown can take them off the document again (#594).
+  const onDragStart = userOnly<DragEvent>((e) => {
+    // The same probe that used to be written inline here, now also the trigger
+    // for the cleanup below. Nothing is said: starting a drag is not a request
+    // to save anything — the picture may well be on its way to the desktop —
+    // so an orphaned tab behaves exactly like one with no extension installed,
+    // which is that no drop zone appears.
+    if (!extensionAlive()) return;
+    const target = e.target as Element | null;
+    const img = (target?.closest?.('img') as HTMLImageElement | null) || (target?.tagName === 'IMG' ? (target as HTMLImageElement) : null);
+    if (!img) return;
+    const identity = siteConfig.extractIdentity(img);
+    if (!identity || !identity.link) return;
+    // The id is minted with the pending drag rather than at drop: a drag that
+    // is never dropped writes no line at all (every image drag on the page
+    // would otherwise leave one), and a drag that IS dropped needs the id
+    // before it can ask about duplicates (#519).
+    pending = { type: 'imageDragged', platform: siteConfig.platform, postUrl: identity.link, imageUrls: collectImageUrls(img, siteConfig.platform), saveId: newSaveId() };
+    showOverlay();
+  });
 
   // Drag ended without dropping into the zone (dropped elsewhere or cancelled).
   // Trusted too, and for the pair's sake rather than for the save: a synthetic
   // `dragend` in the middle of the user's real drag would take the zone away
   // from under the picture they are still carrying.
-  document.addEventListener(
-    'dragend',
-    userOnly(() => {
-      if (savingViaDrop) return; // a zone drop is handling its own feedback/hide
-      pending = null;
+  const onDragEnd = userOnly(() => {
+    if (savingViaDrop) return; // a zone drop is handling its own feedback/hide
+    pending = null;
+    hideOverlay(true);
+  });
+
+  document.addEventListener('dragstart', onDragStart, true);
+  document.addEventListener('dragend', onDragEnd, true);
+
+  // The extension went away under this tab (#594). The drop zone is the only
+  // thing this module leaves on the page, and the two document listeners are the
+  // only work it leaves running.
+  //
+  // The zone is spared while a drop is being answered, because that is exactly
+  // when this fires with something to SAY: onDrop below puts the reload notice
+  // in the zone's own error state, and that surface fades itself out on the
+  // usual dwell. With no drop in flight there is nothing to read and the zone
+  // simply goes.
+  onExtensionGone(() => {
+    document.removeEventListener('dragstart', onDragStart, true);
+    document.removeEventListener('dragend', onDragEnd, true);
+    pending = null;
+    if (!savingViaDrop) hideOverlay();
+  });
+
+  // The reload notice on the surface the user is already looking at (#594), and
+  // the end of this drop. No retry offered: pressing again in this tab reaches
+  // the same severed connection.
+  function orphaned(z: StatusSurface) {
+    z.setState('error', t('bannerExtensionReloaded'));
+    setTimeout(() => {
       hideOverlay(true);
-    }),
-    true,
-  );
+      savingViaDrop = false;
+    }, 2600);
+  }
 
   function onDrop(e: Event) {
     e.preventDefault();
@@ -123,6 +152,14 @@ export async function startDrag(): Promise<void> {
     }
     savingViaDrop = true;
     const z = ensureOverlay();
+    // Dropping IS the request to save, so unlike dragstart above this one gets
+    // told. The context can die between the drag starting and the picture being
+    // let go — the zone is already on screen by then, which is why the notice
+    // has somewhere to go.
+    if (!extensionAlive()) {
+      orphaned(z);
+      return;
+    }
     z.setState('busy', t('bannerSaving'));
     // #34: the picture the pointer carried is the whole of what this path
     // saves, so its own URLs are the picture set to compare — which is what
@@ -172,10 +209,20 @@ export async function startDrag(): Promise<void> {
       reportSaveTimeout('drop-zone', p.platform, p.postUrl, error, p.saveId);
       done(z, undefined, replaces, true);
     });
-    chrome.runtime.sendMessage({ ...p, replaces } satisfies ImageDraggedMessage, (res?: SaveResponse) => {
-      if (!deadline.settle()) return; // a late answer to a drop already given up on
-      done(z, res, replaces, false);
-    });
+    try {
+      chrome.runtime.sendMessage({ ...p, replaces } satisfies ImageDraggedMessage, (res?: SaveResponse) => {
+        if (!deadline.settle()) return; // a late answer to a drop already given up on
+        done(z, res, replaces, false);
+      });
+    } catch {
+      // The extension was invalidated between the probe in onDrop and this call
+      // (#594). Belt to that braces: without it the deadline above is all that
+      // is left running, and the drop would sit under a spinner until it ran out
+      // and then blame a timeout for an extension that is simply gone.
+      noteExtensionGone();
+      deadline.settle();
+      orphaned(z);
+    }
   }
 
   // The one place a drop's outcome is put on screen, whether it came back from

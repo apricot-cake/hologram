@@ -53,6 +53,7 @@
 // order are untouched: the host element is still an ordinary absolutely
 // positioned child of the picture.
 import { newSaveId, reportSaveTimeout } from './capture-log.ts';
+import { extensionAlive, noteExtensionGone, onExtensionGone } from './extension-context.ts';
 import { startSaveDeadline } from './save-deadline.ts';
 import { collectImageUrls, getCaptureSite, getMediaIdentitySite, getOverlaySite, mediaKeyOf, mediaKeysOf } from './extractor/index.ts';
 import type { CaptureSite, OverlaySite, PostMediaElement } from './extractor/types.ts';
@@ -251,15 +252,24 @@ export async function startOverlay(): Promise<void> {
 
   // === settings ===
 
-  chrome.storage.local.get([MARK_MODE_KEY, HOVER_SAVE_KEY], (got) => {
-    if (chrome.runtime.lastError) return; // storage unavailable — stay on the defaults
-    applySettings(got[MARK_MODE_KEY], got[HOVER_SAVE_KEY]);
-  });
-  chrome.storage.onChanged.addListener((changes, area) => {
-    if (area !== 'local') return;
-    if (!changes[MARK_MODE_KEY] && !changes[HOVER_SAVE_KEY]) return;
-    applySettings(changes[MARK_MODE_KEY] ? changes[MARK_MODE_KEY].newValue : markMode, changes[HOVER_SAVE_KEY] ? changes[HOVER_SAVE_KEY].newValue : hoverSave);
-  });
+  // Wrapped because chrome.storage THROWS on an invalidated context rather than
+  // reporting through lastError (#594). A content script cannot start in a dead
+  // context, but it can be awaiting createI18n above when the extension is
+  // reloaded, and losing the whole overlay to that would be a worse outcome than
+  // running on the defaults.
+  try {
+    chrome.storage.local.get([MARK_MODE_KEY, HOVER_SAVE_KEY], (got) => {
+      if (chrome.runtime.lastError) return; // storage unavailable — stay on the defaults
+      applySettings(got[MARK_MODE_KEY], got[HOVER_SAVE_KEY]);
+    });
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area !== 'local') return;
+      if (!changes[MARK_MODE_KEY] && !changes[HOVER_SAVE_KEY]) return;
+      applySettings(changes[MARK_MODE_KEY] ? changes[MARK_MODE_KEY].newValue : markMode, changes[HOVER_SAVE_KEY] ? changes[HOVER_SAVE_KEY].newValue : hoverSave);
+    });
+  } catch {
+    noteExtensionGone();
+  }
 
   function applySettings(mode: unknown, save: unknown) {
     const wantedMode: MarkMode = mode === 'hover' || mode === 'off' ? mode : 'always';
@@ -347,7 +357,7 @@ export async function startOverlay(): Promise<void> {
     }, SCAN_DEBOUNCE_MS);
   }
 
-  new MutationObserver((records) => {
+  const mo = new MutationObserver((records) => {
     const childrenChanged = records.some((record) => record.type === 'childList');
     const modalChanged = records.some((record) => record.type === 'attributes' && record.target instanceof Element && record.target.matches('dialog, [role="dialog"], [aria-modal]'));
     if (hovered && (childrenChanged || modalChanged)) {
@@ -355,7 +365,8 @@ export async function startOverlay(): Promise<void> {
       else if (!pointerStillOn(hovered)) setHovered(null);
     }
     if (childrenChanged) scheduleScan();
-  }).observe(document.documentElement, {
+  });
+  mo.observe(document.documentElement, {
     childList: true,
     attributes: true,
     attributeFilter: ['aria-modal', 'class', 'hidden', 'open', 'style'],
@@ -374,7 +385,13 @@ export async function startOverlay(): Promise<void> {
   }
 
   function flushQuery() {
-    if (!queriesWanted() || !chrome.runtime?.id) {
+    // The PASSIVE half of #594. This runs whenever a post scrolls into view, so
+    // on an orphaned tab it is what notices — and what takes the stale marks and
+    // buttons off the page — the moment the user starts using the tab again.
+    // Nothing is said: scrolling is not a request, and a toast on every open
+    // timeline after an auto-update is exactly the noise #154's charter 2 keeps
+    // out. The user's own request has its own path, in startSave below.
+    if (!queriesWanted() || !extensionAlive()) {
       pending.clear();
       return;
     }
@@ -502,25 +519,24 @@ export async function startOverlay(): Promise<void> {
   // and may delay that boundary event. `pointermove` fires only when the user
   // actually moves the pointing device, so it cannot make the control trail a
   // scrolling picture.
-  document.addEventListener(
-    'pointermove',
-    (e) => {
-      const pe = e as PointerEvent;
-      pointerPosition = { x: pe.clientX, y: pe.clientY };
-      updateHoveredAtPointer(true);
-    },
-    true,
-  );
-  document.addEventListener(
-    'pointerout',
-    (e) => {
-      if (!(e as PointerEvent).relatedTarget) {
-        pointerPosition = null;
-        setHovered(null); // pointer left the document
-      }
-    },
-    true,
-  );
+  //
+  // Deliberately NOT a liveness check (#594), unlike the query flush: the save
+  // button only exists while the pointer is on the picture, so tearing down here
+  // would remove the button in the same gesture that reveals it, and the user's
+  // press — the one event that has something to tell them — could never happen.
+  const onPointerMove = (e: Event) => {
+    const pe = e as PointerEvent;
+    pointerPosition = { x: pe.clientX, y: pe.clientY };
+    updateHoveredAtPointer(true);
+  };
+  const onPointerOut = (e: Event) => {
+    if (!(e as PointerEvent).relatedTarget) {
+      pointerPosition = null;
+      setHovered(null); // pointer left the document
+    }
+  };
+  document.addEventListener('pointermove', onPointerMove, true);
+  document.addEventListener('pointerout', onPointerOut, true);
 
   // Which media box the pointer is inside — by GEOMETRY, not the DOM tree. The
   // earlier ancestor-walk ("which tracked box is an ancestor of what the pointer
@@ -715,8 +731,25 @@ export async function startOverlay(): Promise<void> {
     paint(unit, state);
   }
 
+  // The ACTIVE half of #594: the user asked for a save and this tab cannot make
+  // one. Said on the banner rather than swallowed, because until this existed
+  // the press produced an uncaught "Extension context invalidated.", a spinner,
+  // and then — ten seconds later, from the deadline that was all that survived
+  // the throw — "the save timed out, restart Chrome", which is a healthy
+  // extension being blamed and the one repair that works (reload THIS page)
+  // never mentioned. Shown once: the teardown that runs with it takes the
+  // button away, so there is nothing left to press a second time.
+  function reportOrphaned() {
+    noteExtensionGone();
+    showSaveBanner('error', t('bannerExtensionReloaded'));
+  }
+
   function startSave(unit: Element, state: UnitState, anchor: Anchor) {
     if (anchor.phase !== 'idle' || !media) return; // already in flight — one press, one save
+    if (!extensionAlive()) {
+      reportOrphaned();
+      return;
+    }
     // Identity is read HERE, never cached on the anchor: a virtualized feed
     // reuses the same box element for a different post as you scroll, and a
     // cached postUrl would file the new picture under the old post.
@@ -746,7 +779,9 @@ export async function startOverlay(): Promise<void> {
       reportSaveTimeout('hover-save', media.platform, identity.link, error, saveId);
       failSave(unit, state, anchor, saveFailureText('timeout'));
     });
-    chrome.runtime.sendMessage({ type: 'imageDragged', platform: media.platform, postUrl: identity.link, imageUrls: collectImageUrls(el, media.platform), saveId } satisfies ImageDraggedMessage, (res?: SaveResponse) => {
+    // Named rather than written inline at the call, so the call itself is the
+    // one statement inside the try/catch below.
+    const onAnswer = (res?: SaveResponse) => {
       if (!deadline.settle()) return; // a late answer to a press already given up on
       if (chrome.runtime.lastError || !res || !res.ok) {
         failSave(unit, state, anchor, saveFailureText(res && !res.ok ? res.errorKind : undefined, res && !res.ok ? res.metaReason : undefined));
@@ -787,7 +822,20 @@ export async function startOverlay(): Promise<void> {
       // on blaming a private account for a record the page already rescued.
       else if (res.metaOk === false) showSaveBanner('partial', partialSaveText(res.metaReason));
       paint(unit, state);
-    });
+    };
+    // try/catch as well as the probe at the top (#594): sendMessage is the ONE
+    // call on this side that throws on an invalidated context, and the deadline
+    // is already armed by the time it does — so an unguarded throw leaves the
+    // timer as the only thing still running, which is precisely how a dead tab
+    // used to report a timeout instead of an update. The window between the
+    // probe and this line is small, not nonexistent.
+    try {
+      chrome.runtime.sendMessage({ type: 'imageDragged', platform: media.platform, postUrl: identity.link, imageUrls: collectImageUrls(el, media.platform), saveId } satisfies ImageDraggedMessage, onAnswer);
+    } catch {
+      deadline.settle();
+      setPhase(anchor, 'idle', 0);
+      reportOrphaned();
+    }
   }
 
   function setPhase(anchor: Anchor, phase: Phase, ms: number) {
@@ -1319,24 +1367,74 @@ export async function startOverlay(): Promise<void> {
   // picture, and geometry says whether the pointer is still on it. Scrolling a
   // picture OUT from under the pointer clears the control here; scrolling
   // WITHIN one (the wheel jiggle that reads a long post) leaves it alone.
-  addEventListener(
-    'scroll',
-    () => {
-      inScrollBurst = true;
-      if (repositionFrame !== null) cancelAnimationFrame(repositionFrame);
-      repositionFrame = null;
-      repositionQueued = false;
-      if (hovered && !pointerStillOn(hovered)) setHovered(null);
-      settleHoverAfterScroll();
-    },
-    { capture: true, passive: true },
-  );
-  addEventListener('resize', () => scheduleReposition(true), { passive: true });
+  const onScroll = () => {
+    inScrollBurst = true;
+    if (repositionFrame !== null) cancelAnimationFrame(repositionFrame);
+    repositionFrame = null;
+    repositionQueued = false;
+    if (hovered && !pointerStillOn(hovered)) setHovered(null);
+    settleHoverAfterScroll();
+  };
+  const onResize = () => scheduleReposition(true);
+  addEventListener('scroll', onScroll, { capture: true, passive: true });
+  addEventListener('resize', onResize, { passive: true });
   // A post can be answered BEFORE its picture has a size: the observer's margin
   // deliberately reaches past the viewport, and a feed's images are lazy. Such a
   // media box measures 0×0 and paint skips it (verified on a live x.com
   // timeline), so the control would wait for the next scroll. An image's own load
   // event is exactly when the box gains its size — on `document` in the capture
   // phase, since load does not bubble.
-  document.addEventListener('load', () => scheduleReposition(true), { capture: true, passive: true });
+  const onMediaLoad = () => scheduleReposition(true);
+  document.addEventListener('load', onMediaLoad, { capture: true, passive: true });
+
+  // === the extension went away under this tab (#594) ===
+
+  // Put the page back the way it was found, as far as this script is concerned:
+  // every corner control removed (removeControl restores the inline `position`
+  // it borrowed from the page's own element), every observer disconnected, every
+  // listener and timer this module installed taken back off.
+  //
+  // What is deliberately LEFT: the shared <hologram-extension-ui> host element.
+  // It is an empty, inert, pointer-events:none fixed layer — ui-root.ts already
+  // keeps it around between activations for that reason — and Alt+S still works
+  // in this tab (the worker injects a FRESH capture.js, which is not orphaned),
+  // so emptying the layer it may be drawing in would be taking away a live
+  // script's banner. The failure banner this module may have just put there is
+  // left alone for the same reason: it fades itself out on its own dwell.
+  onExtensionGone(() => {
+    io.disconnect();
+    mo.disconnect();
+    document.removeEventListener('pointermove', onPointerMove, true);
+    document.removeEventListener('pointerout', onPointerOut, true);
+    document.removeEventListener('load', onMediaLoad, { capture: true });
+    removeEventListener('scroll', onScroll, { capture: true });
+    removeEventListener('resize', onResize);
+    if (queryTimer) clearTimeout(queryTimer);
+    if (scanTimer) clearTimeout(scanTimer);
+    if (scrollHoverTimer !== null) clearTimeout(scrollHoverTimer);
+    if (repositionFrame !== null) cancelAnimationFrame(repositionFrame);
+    queryTimer = scanTimer = scrollHoverTimer = null;
+    repositionFrame = null;
+    repositionQueued = false;
+    hovered = null;
+    for (const [, state] of tracked) {
+      for (const [, anchor] of state.anchors) {
+        // Cleared here rather than in removeControl: elsewhere a phase timer
+        // outliving its control is what brings the corner back after a flash,
+        // and only this path wants it gone for good.
+        if (anchor.timer) clearTimeout(anchor.timer);
+        anchor.timer = null;
+      }
+      clearControls(state);
+      state.anchors.clear();
+    }
+    tracked.clear();
+    anchorOf.clear();
+    visible.clear();
+    pending.clear();
+    // capture.ts calls this hook optionally; with no controls left there is
+    // nothing for it to hide, and leaving a closure over a dead world behind
+    // would be leaving one more thing on the page than was found.
+    delete window.__hologramPrepareOverlayForCapture;
+  });
 }

@@ -39,6 +39,7 @@
     "test:e2e-save-log": "npm run build:ext && node scripts/e2e-extension-save-log.cts",
     "test:e2e-hostile-css": "npm run build:ext && node scripts/e2e-extension-hostile-css.cts",
     "test:e2e-inject-failure": "npm run build:ext && node scripts/e2e-extension-inject-failure.cts",
+    "test:e2e-orphan": "npm run build:ext && node scripts/e2e-extension-orphan.cts",
     "test:e2e-banner-layout": "node scripts/e2e-extension-banner-layout.cts",
     "zip:ext": "npm --prefix extension run zip",
     "setup": "node scripts/setup.cts",

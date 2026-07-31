@@ -98,6 +98,13 @@ jobs:
       - name: Extension inject-failure premises
         if: ${{ !cancelled() }}
         run: node scripts/e2e-extension-inject-failure.cts
+      # Reloads the extension under two live tabs (#594) — the only way to make a
+      # real orphaned content script. Measures both what Chrome does to such a
+      # context (the premises the detector rests on) and what the extension then
+      # does with the UI it left on the page.
+      - name: Extension orphaned-tab e2e
+        if: ${{ !cancelled() }}
+        run: node scripts/e2e-extension-orphan.cts
       - name: Overlay visual regression
         if: ${{ !cancelled() }}
         run: node scripts/e2e-overlay-visual.cts

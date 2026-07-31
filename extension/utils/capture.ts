@@ -2,6 +2,7 @@ import { startBulkCapture } from './bulk-capture.ts';
 import { cropScreenshot } from './crop.ts';
 import { buildChoiceRow, checkDuplicate, formatDeletedAt, pagePictureUrls } from './duplicate-guard.ts';
 import { logSaveEvent, newSaveId, reportSaveTimeout, type SaveStage } from './capture-log.ts';
+import { noteExtensionGone } from './extension-context.ts';
 import { type SaveDeadline, startSaveDeadline } from './save-deadline.ts';
 import { normalizeRect } from './extractor/dom.ts';
 import { readDomMeta } from './extractor/dom-meta.ts';
@@ -21,6 +22,7 @@ export async function startCapture(): Promise<void> {
     select: getMessage('bannerSelect'),
     saving: getMessage('bannerSaving'),
     saved: getMessage('bannerSaved'),
+    extensionReloaded: getMessage('bannerExtensionReloaded'),
   };
 
   const siteConfig = getCaptureSite();
@@ -362,28 +364,53 @@ export async function startCapture(): Promise<void> {
         // a selection — and the log should say which (#519).
         openStage = 'save';
 
-        chrome.runtime.sendMessage(
-          {
-            type: 'captureAndSend',
-            rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
-            postUrl,
-            platform: site.platform,
-            saveId: saveId as string,
-            replaces,
-            domMeta,
-          } satisfies CaptureAndSendMessage,
-          (res?: CaptureAndSendResponse) => {
-            // The RESULT arrives separately, as a notify push — this callback
-            // is read only for the absence of one. A reply of either kind means
-            // the background is alive and has said its piece (a failure sends
-            // notify too), so the banner is left to that handler.
-            if (res) return;
-            const error = `save timed out — ${chrome.runtime.lastError?.message || 'the background closed the channel without answering'}`;
-            endSaveUnanswered(postUrl, error);
-          },
-        );
+        // #594: this script is injected fresh on every activation, so it is not
+        // orphaned the way the resident one is — but the extension can still be
+        // updated in the seconds between Alt+S and the click that picks a post,
+        // and then this call throws. Without the catch the deadline armed just
+        // above is the only thing left running, and the banner would blame a
+        // timeout for an extension that is merely newer than this script.
+        try {
+          chrome.runtime.sendMessage(
+            {
+              type: 'captureAndSend',
+              rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+              postUrl,
+              platform: site.platform,
+              saveId: saveId as string,
+              replaces,
+              domMeta,
+            } satisfies CaptureAndSendMessage,
+            (res?: CaptureAndSendResponse) => {
+              // The RESULT arrives separately, as a notify push — this callback
+              // is read only for the absence of one. A reply of either kind means
+              // the background is alive and has said its piece (a failure sends
+              // notify too), so the banner is left to that handler.
+              if (res) return;
+              const error = `save timed out — ${chrome.runtime.lastError?.message || 'the background closed the channel without answering'}`;
+              endSaveUnanswered(postUrl, error);
+            },
+          );
+        } catch {
+          endSaveOrphaned();
+        }
       });
     });
+  }
+
+  // The extension was replaced under this capture (#594). Nothing to report to —
+  // the log line would travel through the same severed connection — so the
+  // banner is the whole of it, and it names the one repair that works. Shares
+  // endSaveUnanswered's bookkeeping so an answer arriving late cannot re-open a
+  // save this already closed.
+  function endSaveOrphaned() {
+    if (isCleanedUp || saveSettled) return;
+    saveSettled = true;
+    openStage = null;
+    clearSaveDeadline();
+    noteExtensionGone();
+    banner.setState('error', MSG.extensionReloaded);
+    setTimeout(cleanup, 2800);
   }
 
   // No result is coming. Say so, say what to do next, and leave a line behind:

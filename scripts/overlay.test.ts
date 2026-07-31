@@ -109,6 +109,12 @@ const X_HTML = `<!doctype html><html><body>
       <div data-testid="Tweet-User-Avatar" data-rect-top="6012" data-rect-left="66" data-rect-size="40" id="p14avatar"></div>
       <a href="/kim/status/1414"><time datetime="2026-07-01T00:00:00Z">14h</time></a>
     </article>
+    <!-- #594: 拡張が更新されて孤児になったタブ。撤去は取り消せない（オーバーレイは
+         二度と描かない）ので、この投稿はファイル最後の describe だけが触る。 -->
+    <article data-testid="tweet" id="p15">
+      <a href="/mia/status/1515"><time datetime="2026-07-01T00:00:00Z">15h</time></a>
+      <div data-testid="tweetPhoto" data-rect-top="6400" id="p15a"><img src="https://pbs.twimg.com/media/PPP.jpg"></div>
+    </article>
   </div>
 </body></html>`;
 
@@ -274,7 +280,7 @@ beforeAll(async () => {
 }, 30000);
 
 test('初回走査で全ての投稿が観測される', () => {
-  expect(observed.size).toBe(14); // p1〜p14（#576 で p12/p13、#575 で p14 を追加）
+  expect(observed.size).toBe(15); // p1〜p15（#576 で p12/p13、#575 で p14、#594 で p15 を追加）
 });
 
 describe('問い合わせは見えている投稿だけ・1バッチで', () => {
@@ -1079,5 +1085,66 @@ describe('テキストのみの投稿（#575）', () => {
   test('アバターのリンクを塞がない（pointer-events を通す）', () => {
     expect(controlOf('p14')[0].style.pointerEvents).toBe('none');
     hoverAway();
+  });
+});
+
+// #594: 拡張がリロード／自動更新されると、開いたままのタブの常駐スクリプトは拡張との
+// 接続を失う（孤児化）。UI はページに残るが、`chrome.*` を呼ぶと同期例外になる。
+//
+// ⚠️このスイートの最後でなければならない＝撤去は取り消せない。以降どの投稿もオーバーレイを
+// 持たなくなる。
+//
+// ⚠️ここで見るのは**配線**（検知したら何をするか）だけ。「孤児化とは実際にどういう状態か」
+// ＝`chrome.runtime.id` が falsy になり `sendMessage` が投げる、という**前提そのもの**は
+// jsdom では作りものにしかならないので、実ブラウザで拡張を本当にリロードする
+// `scripts/e2e-extension-orphan.cts` が測る。前提が変われば、こちらは全部緑のまま通る。
+describe('拡張が更新されて孤児になったタブ（#594）', () => {
+  // 実測（e2e-extension-orphan.cts）に合わせたスタブ＝`chrome.runtime` は残り、`id` だけが
+  // 落ち、`sendMessage` と `storage` は同期で投げる。
+  const orphan = () => {
+    const api = window.chrome as any;
+    api.runtime.id = undefined;
+    api.runtime.sendMessage = () => {
+      throw new Error('Extension context invalidated.');
+    };
+    api.storage.local.get = () => {
+      throw new Error('Extension context invalidated.');
+    };
+  };
+
+  beforeAll(async () => {
+    intersect(['p15'], true);
+    await settle();
+    hover('p15');
+    await settle();
+  });
+
+  test('孤児になる前は普通に保存ボタンが出ている', () => {
+    const [button] = controlOf('p15');
+
+    expect(button?.getAttribute('data-hologram-face')).toBe('save');
+  });
+
+  // 直っていなかった頃はここが Uncaught Error になり、スピナーが回ったまま受領期限まで
+  // 待ってから「保存が終わらないため中止しました（繰り返す場合は Chrome を再起動）」＝
+  // 健全な拡張とホストのせいにする文言が出ていた。
+  test('孤児化した後に押しても投げず、再読み込みの案内が出る', () => {
+    orphan();
+    const [button] = controlOf('p15');
+
+    expect(() => click(button)).not.toThrow();
+    expect(saveBanners().map((el) => el.textContent)).toContain('The extension was updated. Please reload this page.');
+  });
+
+  test('注入した UI を自分で撤去する（残って無反応にならない）', () => {
+    expect(controls()).toHaveLength(0);
+  });
+
+  test('撤去後はホバーしても二度と描かない', async () => {
+    hoverAway();
+    hover('p15');
+    await settle();
+
+    expect(controls()).toHaveLength(0);
   });
 });
