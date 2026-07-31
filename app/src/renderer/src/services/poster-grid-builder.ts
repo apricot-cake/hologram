@@ -65,7 +65,7 @@ export interface PosterGridBuilderDeps {
 
 // Fallback-avatar tint (#107): a stable hue per poster so avatar-less cards stay
 // distinguishable at a glance, the way GitHub / Google fallback avatars do. Hue only —
-// .poster-mono owns saturation and lightness, so light and dark each keep their own tonal
+// the cell picks saturation and lightness, so light and dark each keep their own tonal
 // range from one number. FNV-1a over the poster key (the identity the card is keyed by,
 // unlike a display name it cannot change under us), so a poster's letter+color pairing is
 // the same on every render and every restart.
@@ -125,8 +125,7 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
     if (deps.posterQBRemoveCondsMatching((c) => c.type === 'tag' && !present.has(c.value))) deps.posterQBSyncShadow();
   }
 
-  // Poster query reset — the activebar component's #posterResetBtn calls this directly by
-  // importing the resetPosterFilters live binding from viewer.ts.
+  // Poster query reset — the filter bar's リセット imports this live binding directly.
   function resetPosterFilters() {
     deps.posterQBResetTree();
     deps.setSearchBoxValue('');
@@ -191,14 +190,9 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
   function openPosterPosts(u: HologramUserAgg) {
     if (!u) return;
     deps.postQBResetTree();
-    const set = (id: string, v: string) => {
-      const el = document.getElementById(id) as HTMLInputElement | null;
-      if (el) el.value = v;
-    };
+    // (Same as resetAllFilters: the date / engagement inputs this blanked belonged to
+    // the facet column, which is gone — P3 #6.)
     deps.setSearchBoxValue('');
-    set('sbDateFrom', '');
-    set('sbDateTo', '');
-    set('sbEngMin', '');
     deps.setBrowseMode('posts');
     // The drill-in lands as a fresh 'posts' entry on the tab history (#144) — going
     // back to the poster grid is nav-back now (the old posterReturn bounce is gone).

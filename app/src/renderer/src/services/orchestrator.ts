@@ -281,19 +281,9 @@ export function endFilterEditSession(): void {
   // the viewport is gone: every menu is a Base UI popup now, and collision handling is
   // its job — #62.)
 
-  // --- Apply i18n to static elements ---
-  const setAttr = (id: string, attr: string, val: string) => {
-    const el = document.getElementById(id);
-    if (el) el.setAttribute(attr, val);
-  };
-
-  // #contentTop (the content column's back-to-top button) is the last element whose
-  // label is applied from here; every other surface is a React component that resolves
-  // its own strings through t(). The filter-row columns, the query-bar frame and the
-  // display/sort/browse controls all used to be listed here as "no longer set from
-  // here" notes — the components they moved to are the only ones left, so the notes
-  // went with the modules that made them necessary (P3 #6).
-  setAttr('contentTop', 'aria-label', getMessage('sbTopTip'));
+  // (An "apply i18n to static elements" block lived here, writing labels onto ids the
+  // shell promised. Nothing is left to write to: every surface is a component that
+  // resolves its own strings through t() — P3 #6.)
 
   // Post sort's single source is hologramStore 'sortPost' — the same shape the poster
   // sort has always had. It used to be a hidden <select> in the shell that the display
@@ -350,19 +340,13 @@ export function endFilterEditSession(): void {
     // history push now, so "back to the poster grid" is the ← button / Alt+←.
     postQB.resetTree();
     searchEditing.clear(); // the editing text leaf is gone with the tree
-    const set = (id: string, v: string) => {
-      const el = document.getElementById(id) as HTMLInputElement | null;
-      if (el) el.value = v;
-    };
+    // (The date / engagement inputs this used to blank were the facet column's; that
+    // column is gone, and its values live in the query tree resetTree() just cleared.)
     setSearchBoxValue('');
-    set('sbDateFrom', '');
-    set('sbDateTo', '');
-    set('sbEngMin', '');
     afterQueryChange();
   };
-  // #postResetBtn / #navBackBtn / #navFwdBtn clicks are wired by the activebar component,
-  // which imports resetAllFilters/navBack/navForward directly (no more pushed model
-  // callbacks) — the buttons are React-owned.
+  // The リセット / 戻る / 進む buttons import resetAllFilters/navBack/navForward directly
+  // (no pushed model callbacks) — they are React-owned, in the toolbar.
   //
   // Back/forward through the per-tab view history (nav's state machine, the Alt+←/→ +
   // mouse-side-button handlers, and the tab bar/CRUD below) moved to tabs-builder.ts
@@ -690,19 +674,8 @@ export function endFilterEditSession(): void {
   // scroller, and both went with that column — the nav sidebar is short enough not to
   // want one. The content area keeps its button below.)
 
-  // Back-to-top for the CONTENT area — watch the scroll container's scrollTop, not the
-  // window's (the page itself never scrolls).
-  (function setupContentTop() {
-    const btn = document.getElementById('contentTop');
-    const scroller = contentScrollEl();
-    if (!btn || !scroller) return;
-    const onScroll = () => {
-      btn.style.display = scroller.scrollTop > 300 ? 'flex' : 'none';
-    };
-    scroller.addEventListener('scroll', onScroll, { passive: true });
-    btn.addEventListener('click', () => scroller.scrollTo({ top: 0, behavior: 'smooth' }));
-    onScroll();
-  })();
+  // (The content area's back-to-top button was wired here. Its element went with the
+  // shell cutover, so the listener has bound to nothing since — P3 #6.)
 
   // --- Authors (作者 row → flyout; derived from post author fields, no fetching) ---
   // buildUsers (generation-cached poster roll-up) moved to users.ts (imported
@@ -1621,9 +1594,7 @@ export function endFilterEditSession(): void {
     renderPosters();
   });
   // Poster query reset (bar右の「リセット」): empty the poster tree + the shared search box.
-  // Wired to the activebar component's #posterResetBtn via onPosterReset (React-owned button).
-  // The poster [data-qfrow] flyout rows were removed with the poster sidebar facet
-  // rows (P1); poster filters are added via the "+ フィルタ" bar now (P2③).
+  // The button that calls it is the filter bar's, which imports resetPosterFilters directly.
 
   // Collections are a sidebar folder list now (renderCollectionSidebar), not a
   // browse view. The old third-mode grid, its context menu, and dynamic collections
