@@ -237,6 +237,13 @@ export interface ActiveFilter {
 }
 export let activeFilters: () => ActiveFilter[];
 
+// Commit port for the chip row's inline input (#148): add ONE condition to the view
+// that is on screen (post query tree, or the poster one while browsing posters).
+// Deliberately NOT the search box's pick — that one also empties the box and drops the
+// half-typed free-text leaf, which is right for "the text was only for finding the
+// filter" and wrong for an input that lives in the chip row.
+export let addFilterToCurrentView: (filter: { type: string; value: string; label?: string }) => void;
+
 // One open facet-editor popup = one nav-history entry (#144 確定未決2: エディタ
 // 1セッション1エントリ). The filterbar's ValueEditor/FormEditor bracket their
 // mount with these; while a session token is live, tabs-builder coalesces the
@@ -1767,7 +1774,18 @@ export function endFilterEditSession(): void {
     resetPosterFilters: () => resetPosterFilters(),
     browseTo: (mode) => browseTo(mode),
     applyFolderFilter: (id) => applyFolderFilter(id),
+    // 投稿者ビューの語彙。タグは一般タグと作品/キャラを1つに畳む（クエリ上はどれも
+    // 同じ 'tag' 葉で、種別は「+ フィルタ」の一覧を分けるためだけのもの）。
+    posterTagRows: () => (['poster-tag', 'poster-work', 'poster-character'] as const).flatMap((cat) => (qfValues(cat) as FilterRow[]).map((r) => ({ value: String(r.v), count: Number(r.count) || 0 }))),
+    posterFolderRows: () => (qfValues('poster-folder') as FilterRow[]).map((r) => ({ id: String(r.v), name: String(r.l ?? r.v) })),
+    posterAddFilter: (filter) => posterQB.addFilter(filter),
   });
+
+  // #148 のチップ帯インライン入力の commit 口＝いま見ているビューの絞り込みへ条件を
+  // 1つ足す。検索ボックスの pick（searchEditing.pick）を通さないのが要点で、あちらは
+  // 「打った文字は絞り込みを探すためのもの」という前提で入力欄を空にし打ちかけの本文語を
+  // 捨てる。チップ帯の入力は本文検索の欄ではないので、その巻き添えを起こしてはいけない。
+  addFilterToCurrentView = (filter) => (browseMode === 'posters' ? posterQB.addFilter(filter) : addFilter(filter));
 
   // The display popover's sort Select calls this. Sort lives in the tab state (persisted
   // per tab via renderPosts→persist), not a separate global pref — that double-storage

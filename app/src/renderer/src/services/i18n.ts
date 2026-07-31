@@ -69,6 +69,10 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     qbMenuInclude: '含む条件に戻す',
     // Filter-bar chip/editor mode segment (redesign §4-2 B, Linear「is any of / all of / is not」)
     fbModeExclude: '〜以外',
+    // チップ帯のインライン入力（#148）
+    fbAddFilter: '絞り込みを追加',
+    fbAddFilterPh: 'タグ・投稿者・本文…',
+    fbInlineText: '本文を検索: 「$1」',
     qbSummaryTip: '旧形式の絞り込みのため、ここでは編集できません。「リセット」で作り直せます。',
     detailPlatform: 'プラットフォーム',
     detailAuthor: '投稿者',
@@ -529,6 +533,10 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     qbMenuInclude: 'Move back to include',
     // Filter-bar chip/editor mode segment (redesign §4-2 B, Linear「is any of / all of / is not」)
     fbModeExclude: 'Is not',
+    // Chip-row inline input (#148)
+    fbAddFilter: 'Add filter',
+    fbAddFilterPh: 'Tag, poster, text…',
+    fbInlineText: 'Search text: "$1"',
     qbSummaryTip: 'Saved in an older format, so it cannot be edited here. Press Reset to rebuild it.',
     detailPlatform: 'Platform',
     detailAuthor: 'Poster',
