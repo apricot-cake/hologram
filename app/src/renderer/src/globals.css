@@ -202,13 +202,18 @@
   }
 }
 
-/* App shell (AppShell.tsx): Obsidian-type shell (#154) — the sidebar spans the full
-   window height and the tab bar lives INSIDE the content column, so the sidebar no
-   longer needs the --tabbar-h offset (shadcn's fixed inset-y-0 default now applies).
-   The sidebar's header row is the left half of the window titlebar: it drags the
-   window, and the collapse trigger opts out. Unlayered so -webkit-app-region wins. */
-.app-drag { -webkit-app-region: drag; }
-.app-no-drag { -webkit-app-region: no-drag; }
+/* The window titlebar's drag region. -webkit-app-region is an Electron property with no
+   utility of its own, so these are declared as first-class ones (@utility) rather than
+   left as a pair of hand-written classes — same name at the call site, same layer as
+   every other utility. The sidebar's header row IS the left half of the titlebar
+   (Obsidian-type shell, #154): it drags the window, and everything interactive inside it
+   opts out. */
+@utility app-drag {
+  -webkit-app-region: drag;
+}
+@utility app-no-drag {
+  -webkit-app-region: no-drag;
+}
 
 /* The window-control strip is opaque (WindowControls.tsx says why), so it has to carry the
    color of whatever it covers. That is always the tab band: since #518 the band spans from
@@ -223,7 +228,7 @@
    instead; #518 removes the question, because nothing but the band is ever under the
    strip. Keep it that way: if some future panel reaches the window top again, the honest
    fix is the form, not a second color branch here. */
-.wc-strip {
+@utility wc-strip {
   background: var(--tabbar-bg);
 }
 
