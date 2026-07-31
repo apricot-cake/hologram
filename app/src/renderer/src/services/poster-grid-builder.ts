@@ -3,9 +3,9 @@
 // + render pipeline, the poster-folder CRUD (the poster-view named-folder
 // store), the poster inspector (recent works + tag/folder editing), and the
 // poster context menu all move here.
-// Density/tile-size state (posterView/posterTileSize/posterCardSize,
-// posterSizeState/posterGridMetrics) stays in viewer.ts — grid-density-builder.ts
-// later unifies it with the post-grid density state into one shared module.
+// The size-axis state (posterSizeState/posterGridMetrics) lives in
+// grid-density-builder.ts alongside the post grid's; the display axes themselves
+// (posterLayout / posterShowInfo, #630) live in services/display.ts.
 // postQB/posterQB instance construction and the qf-pop/filter-popover bridge
 // wiring also stay call-site-owned in viewer.ts; this module only takes their
 // already-built instances' methods as deferred-arrow deps (posterQB is constructed
@@ -57,10 +57,6 @@ export interface PosterGridBuilderDeps {
   setBrowseMode(mode: string, opts?: { silent?: boolean }): void;
   closeDetail(): void;
   setInspectedKey(key: string | null): void;
-  // Density state (posterView) stays viewer.ts-owned (grid-density-builder.ts
-  // territory) — renderPosters still needs to read it, same as the old code did
-  // before this extraction.
-  posterView(): string;
   // Fresh poster render → tabs-builder records a 'posters' entry on the per-tab
   // history + persists (#144) — the poster-mode mirror of the post grid's
   // syncTitleAndPersist dep. Not called on keepLimit (in-place) refreshes.
@@ -146,9 +142,9 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
     // 側の #posterCount に出す（バー右端の件数と役割分担）。#posterCount + poster reset/empty
     // frame は activebar 島が 'posterGroups'/'posterQueryTree'/'searchQuery' から自己派生
     // する（下の hologramStore.set('posterGroups', …) を購読）。
-    // Density: the classes that style the CELLS ride the grid slot, which React draws
-    // from the 'posterView' store key (posters/index.tsx) — nothing is toggled onto an
-    // element found by id here any more. The column layout lives in the masonic model.
+    // Display: nothing here decides how a cell is drawn. The shape rides the masonic
+    // model (services/grid.ts derives it from the poster display keys) and each cell
+    // lays itself out from it — no density class on any container (#630).
     if (posterList.length === 0) {
       // allUsersCount feeds the EmptyState component's self-derived 'posterFirstRun'
       // vs 'filtered' choice (mirrors the post grid's allPostsCount). Only

@@ -88,3 +88,74 @@ export function setSquare(on: boolean): void {
 export function setInfo(on: boolean): void {
   storeSet('showInfo', on);
 }
+
+// --- The poster grid's axes (#630) ------------------------------------------
+// The same decomposition, one axis short. A saved picture can be worth cropping to a
+// square — the library holds every proportion — but an AVATAR is already square on all
+// five platforms Hologram reads (X / Bluesky / Misskey / Mastodon / pixiv serve them
+// that way), so a 正方形 switch here would be the identity function wearing a control.
+// GitHub's Members / Stargazers, Linear's Members and Discord's member list carry no
+// aspect switch over a list of people either.
+//
+//   grid + 情報あり   (GitHub Members のカード)
+//   grid + 情報なし   (アバターだけの俯瞰 — #141 と同じ性格)
+//   list              (行そのものが情報なのでスイッチは無効)
+//
+// The retired 3-value density (card / tile / list) maps onto these one-for-one, so this
+// is the same three states drawn from two keys — nothing gained, nothing dropped.
+//
+// The keys are the poster grid's OWN (not shared with the post grid): with a different
+// number of axes, a shared key would leave `squareThumbs` meaningless in poster mode —
+// the same failure the facade had. Finder / Explorer and Photos.app's People likewise
+// remember a view per place rather than one for the whole app.
+export const POSTER_DISPLAY_KEYS = ['posterLayout', 'posterShowInfo'] as const;
+
+export interface PosterShape {
+  /** Rows instead of a grid. The switch below is inert (and disabled) while true. */
+  list: boolean;
+  /** Grid: draw the name / handle / platform / count block under the avatar. */
+  info: boolean;
+}
+
+/** Defaults = grid, info on (what the old `posterView: 'card'` drew). */
+export function currentPosterShape(): PosterShape {
+  return {
+    list: storeGet('posterLayout') === 'list',
+    info: storeGet('posterShowInfo') !== false,
+  };
+}
+
+export function subscribePosterShape(cb: () => void): () => void {
+  const unsubs = POSTER_DISPLAY_KEYS.map((k) => storeSubscribe(k, cb));
+  return () => {
+    for (const u of unsubs) u();
+  };
+}
+
+export function posterShapeSnapshot(): string {
+  const s = currentPosterShape();
+  return `${s.list ? 'list' : 'grid'}|${s.info ? 'info' : 'bare'}`;
+}
+
+// One size per LAYOUT, as on the post side: the grid's is a column width, and the list
+// has none at all (a row is a fixed-height line of text — GitHub's contributor rows and
+// Linear's member rows have no size control either). The floor rides 情報を表示 for the
+// same reason it does over there: a bare cell is pure avatar and can shrink to the
+// overview zoom, a cell carrying a metadata block cannot.
+export const POSTER_GRID_MAX = 340;
+export const POSTER_GRID_MIN_BARE = 72;
+export const POSTER_GRID_MIN_INFO = 150;
+
+export const posterGridMin = (info: boolean): number => (info ? POSTER_GRID_MIN_INFO : POSTER_GRID_MIN_BARE);
+
+export const clampPosterGridSize = (px: number, info: boolean): number => Math.max(posterGridMin(info), Math.min(POSTER_GRID_MAX, px));
+
+/** Gutter between poster cells — a bare avatar lattice packs tightest. */
+export const posterGutterFor = (shape: PosterShape): number => (shape.list ? 4 : shape.info ? 14 : 10);
+
+export function setPosterLayout(list: boolean): void {
+  storeSet('posterLayout', list ? 'list' : 'grid');
+}
+export function setPosterInfo(on: boolean): void {
+  storeSet('posterShowInfo', on);
+}

@@ -15,16 +15,22 @@ import type { AppInfo, AppPrefs, ConfigSummary, ExtensionIdResult, OkResult, Tab
 // snapshotState), which is where it is persisted and restored from. The old
 // 'sortBy' pref was the losing half of that double storage — the two raced on
 // load — and the renderer stopped reading it when the tab state took over.
-const PREF_KEYS = ['language', 'layoutMode', 'squareThumbs', 'showInfo', 'skipDeleteConfirm', 'gridSize', 'listThumb', 'theme', 'browseMode', 'posterViewMode', 'posterTileSize', 'posterCardSize', 'sidebarOpen', 'sidebarWidth', 'inspectorOpen', 'inspectorWidth', 'panelsHidden'];
+const PREF_KEYS = ['language', 'layoutMode', 'squareThumbs', 'showInfo', 'skipDeleteConfirm', 'gridSize', 'listThumb', 'theme', 'browseMode', 'posterLayoutMode', 'posterShowInfo', 'posterGridSize', 'sidebarOpen', 'sidebarWidth', 'inspectorOpen', 'inspectorWidth', 'panelsHidden'];
 
-// --- One-off read of the retired 3-value density (#618) ---------------------
-// `viewMode` (card/tile/list) + its two size keys are no longer written by anyone;
-// these read a config.json left by an older build so the app opens on the display
-// the user last chose. Pre-release scaffolding: delete both, and their call sites in
-// get-prefs, before 1.0 (CLAUDE.md「リリース前につき『他人のライブラリ』は存在しない」).
+// --- One-off read of the retired 3-value densities (#618 posts / #630 posters) ---
+// `viewMode` / `posterViewMode` (card/tile/list) and their per-density size keys are
+// no longer written by anyone; these read a config.json left by an older build so the
+// app opens on the display the user last chose. Pre-release scaffolding: delete these
+// four, and their call sites in get-prefs, before 1.0 (CLAUDE.md「リリース前につき
+// 『他人のライブラリ』は存在しない」).
 const legacyDensity = (cfg: HologramConfig): string => (['card', 'tile', 'list'].includes(cfg.viewMode) ? cfg.viewMode : 'card');
 const legacyGridSize = (cfg: HologramConfig): number | null => {
   const px = legacyDensity(cfg) === 'tile' ? cfg.imageTileSize : cfg.cardSize;
+  return Number.isFinite(px) ? px : null;
+};
+const legacyPosterDensity = (cfg: HologramConfig): string => (['card', 'tile', 'list'].includes(cfg.posterViewMode) ? cfg.posterViewMode : 'card');
+const legacyPosterGridSize = (cfg: HologramConfig): number | null => {
+  const px = legacyPosterDensity(cfg) === 'tile' ? cfg.posterTileSize : cfg.posterCardSize;
   return Number.isFinite(px) ? px : null;
 };
 
@@ -130,9 +136,11 @@ function register(ctx: IpcContext) {
       listThumb: Number.isFinite(cfg.listThumb) ? cfg.listThumb : null, // list: thumbnail width px
       theme: ['auto', 'light', 'dark'].includes(cfg.theme) ? cfg.theme : 'auto', // システム / ライト / ダーク
       browseMode: cfg.browseMode === 'posters' ? 'posters' : 'posts', // ライブラリ / 投稿者（起動時に復元）
-      posterViewMode: ['card', 'tile', 'list'].includes(cfg.posterViewMode) ? cfg.posterViewMode : 'card', // 投稿者グリッドの表示密度
-      posterTileSize: Number.isFinite(cfg.posterTileSize) ? cfg.posterTileSize : null, // 投稿者タイルの一辺px
-      posterCardSize: Number.isFinite(cfg.posterCardSize) ? cfg.posterCardSize : null, // 投稿者カードの最小列幅px
+      // #630: the poster grid's own two axes. `legacyPoster*` reads the retired
+      // 3-value density (card/tile/list) once, the same one-off the post side does.
+      posterLayoutMode: ['grid', 'list'].includes(cfg.posterLayoutMode) ? cfg.posterLayoutMode : legacyPosterDensity(cfg) === 'list' ? 'list' : 'grid',
+      posterShowInfo: typeof cfg.posterShowInfo === 'boolean' ? cfg.posterShowInfo : legacyPosterDensity(cfg) !== 'tile',
+      posterGridSize: Number.isFinite(cfg.posterGridSize) ? cfg.posterGridSize : legacyPosterGridSize(cfg), // 投稿者グリッドの列幅px
       sidebarOpen: typeof cfg.sidebarOpen === 'boolean' ? cfg.sidebarOpen : null, // sidebar expanded/collapsed; null = never toggled
       sidebarWidth: Number.isFinite(cfg.sidebarWidth) ? cfg.sidebarWidth : null, // dragged column width px; null = never resized
       inspectorOpen: typeof cfg.inspectorOpen === 'boolean' ? cfg.inspectorOpen : null, // inspector panel shown/hidden; null = never toggled

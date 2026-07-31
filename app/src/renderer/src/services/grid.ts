@@ -8,8 +8,8 @@
 // module now — its exports are imported directly by viewer.ts and the grid
 // components; hologramStore itself is a real ES module too (store.ts).
 
-import { currentShape, DISPLAY_KEYS, gutterFor } from './display.ts';
-import type { DisplayShape } from './display.ts';
+import { currentPosterShape, currentShape, DISPLAY_KEYS, gutterFor, POSTER_DISPLAY_KEYS, posterGutterFor } from './display.ts';
+import type { DisplayShape, PosterShape } from './display.ts';
 import { get as storeGet, subscribe as storeSubscribe } from './store.ts';
 import type { ZoomAnchor } from './zoom-anchor.ts';
 //
@@ -139,6 +139,25 @@ function makePostGridSource() {
 }
 export const hologramPostGridSource = makePostGridSource();
 
+// The layout half of a poster-grid model, derived from the poster display shape
+// (#630) plus its one size. Twin of postLayout above, one axis shorter.
+//
+//  - `square` is true for the BARE grid: a cell is exactly the avatar, so its height
+//    is its column width and masonic needs no measurement. With 情報を表示 on, the
+//    metadata block hangs below and the height is measured.
+//  - the list pins to one full-width column, like the post side's.
+function posterLayout(shape: PosterShape, gridSize: number) {
+  const infoBlock = 78; // rough height of the name / handle / platform + count block
+  return {
+    posterShape: shape,
+    columnCount: shape.list ? 1 : undefined,
+    columnWidth: shape.list ? undefined : gridSize,
+    square: !shape.list && !shape.info,
+    rowGutter: posterGutterFor(shape),
+    itemHeightEstimate: shape.list ? 52 : gridSize + (shape.info ? infoBlock : 0),
+  };
+}
+
 // Poster grid model source: same shape as the post source, minus
 // onAspect (poster avatars don't report a learned aspect ratio) and minus a
 // live-drag override — the poster size slider already commits hologramIpc.setPref
@@ -162,7 +181,7 @@ function makePosterGridSource() {
       }
     }
   };
-  for (const k of ['posterGroups', 'posterView', 'posterTileSize', 'posterCardSize']) storeSubscribe(k, notify);
+  for (const k of ['posterGroups', ...POSTER_DISPLAY_KEYS, 'posterGridSize']) storeSubscribe(k, notify);
   function computeModel(): HologramGridModel | null {
     if (!config) return null;
     const items = storeGet('posterGroups');
@@ -171,25 +190,13 @@ function makePosterGridSource() {
       lastItems = items;
       itemsKeySeq++;
     }
-    const view = storeGet('posterView') || 'card';
-    const posterTileSize = storeGet('posterTileSize');
-    const posterCardSize = storeGet('posterCardSize');
     return {
+      ...posterLayout(currentPosterShape(), storeGet('posterGridSize') || 200),
       items,
       itemsKey: itemsKeySeq,
       modelOf: config.modelOf,
       keyOf: config.keyOf,
       cardActions: actions,
-      // list: one full-width row column, gap 4. tile: squares packed by minimum
-      // width posterTileSize, gap 10. card: avatar-led columns of minimum width
-      // posterCardSize, gap 14 — masonic stretches columns to fill, the same
-      // math as the old CSS auto-fill minmax (mirrors the post source's formula
-      // shape with poster's own numbers — see the old pushPosterModel()).
-      columnCount: view === 'list' ? 1 : undefined,
-      columnWidth: view === 'tile' ? posterTileSize : view === 'card' ? posterCardSize : undefined,
-      square: view === 'tile', // meta overlays the square avatar → cell height = column width
-      rowGutter: view === 'list' ? 4 : view === 'tile' ? 10 : 14,
-      itemHeightEstimate: view === 'list' ? 52 : Math.round(posterCardSize * 1.35),
       paint: ++paintSeq,
     } as HologramGridModel;
   }

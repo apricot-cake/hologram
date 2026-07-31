@@ -104,9 +104,11 @@ export interface AppPrefs {
   listThumb: number | null;
   theme: string;
   browseMode: string;
-  posterViewMode: string;
-  posterTileSize: number | null;
-  posterCardSize: number | null;
+  /** #630: the poster grid's own axes — layout, then one switch (an avatar has no aspect to choose). */
+  posterLayoutMode: string;
+  posterShowInfo: boolean;
+  /** Poster grid: column width px. The poster list has no size axis. */
+  posterGridSize: number | null;
   sidebarOpen: boolean | null;
   sidebarWidth: number | null;
   inspectorOpen: boolean | null;

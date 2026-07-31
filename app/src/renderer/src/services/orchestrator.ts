@@ -98,7 +98,7 @@ export let showTabMenu: (id: string, at: { clientX: number; clientY: number }) =
 export let handleGlobalTabShortcut: (e: KeyboardEvent) => void;
 export let handleDisplayStoreChange: () => void;
 export let handleBrowseModeStoreChange: () => void;
-export let handlePosterViewStoreChange: () => void;
+export let handlePosterDisplayStoreChange: () => void;
 export let handleSearchQueryStoreChange: () => void;
 export let navBack: () => void;
 export let navForward: () => void;
@@ -1331,21 +1331,20 @@ export function endFilterEditSession(): void {
   // posterSort ('count' | 'name' | 'date-desc' | 'date-asc') lives in hologramStore
   // 'sortPoster' (read via the listing dep getter above); a subscription below
   // re-renders on change.
-  // Poster grid density + tile/card size slider (kept SEPARATE from the post-side
-  // currentView — its masonry/tile/list layouts are bound to poster-card markup)
-  // lives in grid-density-builder.ts now, alongside the post-side
-  // equivalent above. This just bridges React's subscribe registration
-  // (StoreSubscriptions, App.tsx) to it.
-  handlePosterViewStoreChange = gridDensity.handlePosterViewStoreChange;
+  // The poster grid's display axes (#630) live in services/display.ts and their
+  // side effects in grid-density-builder.ts, alongside the post-side equivalent
+  // above. This just bridges React's subscribe registration (StoreSubscriptions,
+  // App.tsx) to it.
+  handlePosterDisplayStoreChange = gridDensity.handlePosterDisplayStoreChange;
   // Poster browse filters (platform / tag / instance / folder / date範囲) live
   // in the posterQB query tree (createQueryBuilder + posterPredOf), not separate Sets.
 
   // Poster grid/filter/inspector/folder cluster (posterWorkGroups, the named
   // poster-folder store, renderPosterFilterRows, renderPosters, openPosterPosts/
   // jumpToPoster, the poster inspector, and the poster context menu) moved to
-  // poster-grid-builder.ts during the viewer.ts decomposition. Density/
-  // tile-size slider state (posterView etc.) moved to grid-density-builder.ts
-  // (above). Wired BEFORE posterQB below (posterQB's construction
+  // poster-grid-builder.ts during the viewer.ts decomposition. The size-slider
+  // state moved to grid-density-builder.ts (above), the display axes to
+  // services/display.ts. Wired BEFORE posterQB below (posterQB's construction
   // needs pfStore/posterFolderById from here as direct values, not deferred
   // arrows) — posterQB itself is only available to this builder as deferred
   // arrows (posterQBGetTree etc.), the mirror image.
@@ -1379,7 +1378,6 @@ export function endFilterEditSession(): void {
     // column's one way off the screen.
     closeDetail: closeOrDismissDetail,
     setInspectedKey,
-    posterView: gridDensity.getPosterView,
     onPosterRendered: () => tabsCtl.syncPosterTitleAndPersist(),
   });
   const { pfStore, posterFolderById, renderPosterFilterRows, renderPosters, openPosterPosts, jumpToPoster, refreshPosterTagFields, showPosterDetail, showPosterMenu } = posterGrid;
