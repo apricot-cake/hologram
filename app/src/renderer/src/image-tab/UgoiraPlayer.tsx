@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Pause, Play } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { imageDataUrl } from '../services/posts.ts';
+import { PLATE } from './plate.ts';
 
 // pixiv うごイラ playback (#119 St3). The library stores pixiv's own archive
 // untouched — a zip of frame images — because every single-file form of it
@@ -185,7 +186,7 @@ export function UgoiraPlayer({ file, frames, poster, alt, labels }: { file: stri
           browser's native controls use for the neighbouring slide type. Same translucent
           plate as the stage's other floating controls (P2⑫). */}
       {status === 'ready' && (
-        <Button data-slot="ugoira-toggle" variant="ghost" size="icon" aria-label={playing ? labels.pause : labels.play} onClick={() => setPlaying((p) => !p)} className="absolute bottom-3 left-3 z-2 bg-background/70 text-muted-foreground shadow-xs backdrop-blur-sm hover:bg-background/90 hover:text-foreground">
+        <Button data-slot="ugoira-toggle" variant="ghost" size="icon" aria-label={playing ? labels.pause : labels.play} onClick={() => setPlaying((p) => !p)} className={`absolute bottom-3 left-3 z-2 ${PLATE}`}>
           {playing ? <Pause /> : <Play />}
         </Button>
       )}

@@ -4,6 +4,7 @@ import { ChevronLeft, ChevronRight, ImageOff, Info } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { PLATE, PLATE_SURFACE } from './plate.ts';
 import { UgoiraPlayer } from './UgoiraPlayer.tsx';
 import { createNeighborPreloader, neighborPreloadSources, type NeighborPreloader } from './preload.ts';
 import { TransformComponent, TransformWrapper } from 'react-zoom-pan-pinch';
@@ -39,12 +40,6 @@ export interface ImageTabModel {
   onToggleInspector?: () => void;
   onCloseTab?: () => void;
 }
-
-// The stage's floating controls share one tone (P2⑫): a shadcn Button over a translucent,
-// blurred plate, so they read on a white photo and a black one alike without the picture
-// having to be dimmed. Before this they were .itv-nav / .icon-btn — three hand-mixed
-// color-mix fills and a 28px "‹" text glyph standing in for an icon.
-const PLATE = 'bg-background/70 text-muted-foreground shadow-xs backdrop-blur-sm hover:bg-background/90 hover:text-foreground';
 
 // One image with Eagle-style zoom/pan (react-zoom-pan-pinch): wheel = zoom at
 // the cursor, drag = pan, double-click = actual pixels ⇄ fit. The parent keys
@@ -284,7 +279,7 @@ export function ImageTab({ model }: { model: ImageTabModel }) {
           </Button>
           {/* Not a Badge: this is a live readout of where you are, not a status chip, and
               tabular-nums keeps it from twitching as the index crosses a digit. */}
-          <div data-slot="image-tab-counter" className="-translate-x-1/2 absolute bottom-4 left-1/2 z-2 rounded-full bg-background/70 px-2.5 py-0.5 text-muted-foreground text-xs tabular-nums shadow-xs backdrop-blur-sm">
+          <div data-slot="image-tab-counter" className={`-translate-x-1/2 absolute bottom-4 left-1/2 z-2 rounded-full border px-2.5 py-0.5 text-muted-foreground text-xs tabular-nums ${PLATE_SURFACE}`}>
             {i + 1} / {items.length}
           </div>
         </>
@@ -295,7 +290,7 @@ export function ImageTab({ model }: { model: ImageTabModel }) {
       <Tooltip>
         <TooltipTrigger
           render={
-            <Button data-slot="image-tab-info" variant="ghost" size="icon-sm" aria-label={labels.info} aria-pressed={!!model.inspectorOpen} onClick={() => model.onToggleInspector?.()} className={`absolute top-3 right-3 z-2 ${model.inspectorOpen ? 'bg-background/90 text-foreground shadow-xs backdrop-blur-sm' : PLATE}`}>
+            <Button data-slot="image-tab-info" variant="ghost" size="icon-sm" aria-label={labels.info} aria-pressed={!!model.inspectorOpen} onClick={() => model.onToggleInspector?.()} className={`absolute top-3 right-3 z-2 ${model.inspectorOpen ? `${PLATE_SURFACE} text-foreground` : PLATE}`}>
               <Info />
             </Button>
           }
