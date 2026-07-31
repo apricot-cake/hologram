@@ -24,7 +24,7 @@ import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { t } from '../_shared/i18n.ts';
-import { currentPosterShape, currentShape, DISPLAY_KEYS, POSTER_DISPLAY_KEYS, posterShapeSnapshot, setInfo as setShowInfo, setLayout, setPosterInfo, setPosterLayout, setSquare, shapeSnapshot, subscribePosterShape, subscribeShape } from '../services/display.ts';
+import { avatarDisabled, currentPosterShape, currentShape, DISPLAY_KEYS, POSTER_DISPLAY_KEYS, posterShapeSnapshot, setAvatar, setInfo as setShowInfo, setLayout, setPosterInfo, setPosterLayout, setSquare, shapeSnapshot, subscribePosterShape, subscribeShape } from '../services/display.ts';
 import type { HologramSizeTrack } from '../services/grid-density-builder.ts';
 import { applyPostSize, applyPosterSize, getPostSizeTrack, getPosterSizeTrack, rerollShuffle, setPostSort } from '../services/orchestrator.ts';
 import { isHidden as panelsAreHidden, setHidden as setPanelsHidden, subscribe as panelsSubscribe } from '../services/panels.ts';
@@ -194,6 +194,9 @@ function PostControls() {
       </Row>
       <Row label={t('displayShowInfo')}>
         <Switch checked={shape.info} onCheckedChange={setShowInfo} disabled={shape.list} />
+      </Row>
+      <Row label={t('displayShowAvatar')}>
+        <Switch checked={shape.avatar} onCheckedChange={setAvatar} disabled={avatarDisabled(shape)} />
       </Row>
       {sizeTrack && !sizeTrack.single && (
         <Row label={t('displaySize')}>

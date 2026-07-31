@@ -38,7 +38,7 @@ export function ListRow({ m, shape, group, actions, cellRef, listThumb = 88 }: P
       <div data-slot="post-card-meta" className="relative flex min-w-0 flex-1 flex-col justify-center gap-0.5 rounded-r-md bg-[var(--surface)] px-3.5 py-2.5">
         {m.text && <div className="line-clamp-2 text-[14px] text-[var(--text-strong)] leading-[1.45]">{m.text}</div>}
         <div className="flex min-w-0 items-center gap-2.5 text-[12px] text-[var(--text-muted)]">
-          <AuthorLine userName={m.userName} handle={m.handle} className="max-w-[40%] shrink-0 font-medium" />
+          <AuthorLine userName={m.userName} handle={m.handle} avatar={shape.avatar ? m : null} className="max-w-[40%] shrink-0 font-medium" />
           {grouped && <CountLabel n={m.nImg as number} />}
           <MetaFoot m={m} className="min-w-0 flex-1" />
         </div>

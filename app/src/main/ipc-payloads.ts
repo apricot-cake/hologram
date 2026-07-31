@@ -97,6 +97,8 @@ export interface AppPrefs {
   layoutMode: string;
   squareThumbs: boolean;
   showInfo: boolean;
+  /** #658: whether AuthorLine draws the author's avatar. */
+  showAvatar: boolean;
   skipDeleteConfirm: boolean;
   /** Grid: column width px (the size slider's axis). */
   gridSize: number | null;

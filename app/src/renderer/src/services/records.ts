@@ -20,6 +20,7 @@ import { hologramIpc } from './ipc.ts';
 import { postKeyOf } from '../../../../../native-host/post-key.mts';
 export { postKeyOf };
 import type { DisplayShape } from './display.ts';
+import { userKey } from './query.ts';
 
 // A post may carry both a capture (screenshot) and real media/artwork. Artwork
 // leads everywhere; the capture stands in for posts whose original never downloaded
@@ -347,6 +348,23 @@ export function makeGallery(deps: { fileSrc(file: string): string }) {
   return { buildGalleryItems, buildGroupGalleryItems };
 }
 
+// Fallback-avatar tint (#107): a stable hue per identity so avatar-less cards stay
+// distinguishable at a glance, the way GitHub / Google fallback avatars do. Hue only —
+// the cell picks saturation and lightness, so light and dark each keep their own tonal
+// range from one number. FNV-1a over the identity key (not a display name, which can
+// change under us), so the letter+color pairing is stable across renders and restarts.
+// Exported (moved here from poster-grid-builder.ts, #658) so the post grid's cards and
+// the poster grid share one implementation — same seed (userKey), same color, for the
+// same identity in both places.
+export function monoHue(seed: string): number {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < seed.length; i++) {
+    h ^= seed.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return (h >>> 0) % 360;
+}
+
 // --- Card view model (per-card presentation derivation) ---------------------
 // The model PostCard.tsx / ListRow.tsx render (grid modelOf). Pure field-mapping over
 // a group + the live display shape (#618); every runtime coupling (the shape,
@@ -405,6 +423,9 @@ export function makeCardModel(deps: {
       cap: showCaptured() && capCompact && capCompact !== postCompact ? { label: capCompact, title: capturedStr || '' } : null,
     };
     const userName = p.displayName || p.screenName || p.title || '';
+    const avatarSrc = p.avatarFile ? fileSrc(p.avatarFile) : null;
+    const monogram = p.avatarFile ? null : userName ? userName[0].toUpperCase() : '?';
+    const cardMonoHue = p.avatarFile ? null : monoHue(userKey(p) || userName);
     const handle = p.screenName ? `@${p.screenName}` : '';
     // Library images carry the filename as BOTH title and text — drop the
     // duplicate body when they match the user line.
@@ -477,6 +498,9 @@ export function makeCardModel(deps: {
       nImg: g.files.length,
       stackSrcs,
       userName,
+      avatarSrc,
+      monogram,
+      monoHue: cardMonoHue,
       handle,
       flags,
       mediaLabel,

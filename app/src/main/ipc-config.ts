@@ -15,7 +15,7 @@ import type { AppInfo, AppPrefs, ConfigSummary, ExtensionIdResult, OkResult, Tab
 // snapshotState), which is where it is persisted and restored from. The old
 // 'sortBy' pref was the losing half of that double storage — the two raced on
 // load — and the renderer stopped reading it when the tab state took over.
-const PREF_KEYS = ['language', 'layoutMode', 'squareThumbs', 'showInfo', 'skipDeleteConfirm', 'gridSize', 'listThumb', 'theme', 'browseMode', 'posterLayoutMode', 'posterShowInfo', 'posterGridSize', 'sidebarOpen', 'sidebarWidth', 'inspectorOpen', 'inspectorWidth', 'panelsHidden'];
+const PREF_KEYS = ['language', 'layoutMode', 'squareThumbs', 'showInfo', 'showAvatar', 'skipDeleteConfirm', 'gridSize', 'listThumb', 'theme', 'browseMode', 'posterLayoutMode', 'posterShowInfo', 'posterGridSize', 'sidebarOpen', 'sidebarWidth', 'inspectorOpen', 'inspectorWidth', 'panelsHidden'];
 
 // --- One-off read of the retired 3-value densities (#618 posts / #630 posters) ---
 // `viewMode` / `posterViewMode` (card/tile/list) and their per-density size keys are
@@ -131,6 +131,8 @@ function register(ctx: IpcContext) {
       layoutMode: ['grid', 'list'].includes(cfg.layoutMode) ? cfg.layoutMode : legacyDensity(cfg) === 'list' ? 'list' : 'grid',
       squareThumbs: typeof cfg.squareThumbs === 'boolean' ? cfg.squareThumbs : legacyDensity(cfg) === 'tile',
       showInfo: typeof cfg.showInfo === 'boolean' ? cfg.showInfo : legacyDensity(cfg) !== 'tile',
+      // #658: no legacy density carried an avatar axis — just a plain boolean default.
+      showAvatar: typeof cfg.showAvatar === 'boolean' ? cfg.showAvatar : true,
       skipDeleteConfirm: !!cfg.skipDeleteConfirm,
       gridSize: Number.isFinite(cfg.gridSize) ? cfg.gridSize : legacyGridSize(cfg), // grid: column width px
       listThumb: Number.isFinite(cfg.listThumb) ? cfg.listThumb : null, // list: thumbnail width px

@@ -297,6 +297,7 @@ export function makeGridDensity(deps: GridDensityDeps) {
     deps.hologramIpc.setPref('layoutMode', shape.list ? 'list' : 'grid');
     deps.hologramIpc.setPref('squareThumbs', shape.square);
     deps.hologramIpc.setPref('showInfo', shape.info);
+    deps.hologramIpc.setPref('showAvatar', shape.avatar);
     // 情報を表示 raises the grid's floor, so a grid sitting at overview size has to
     // come up with it — otherwise the metadata block renders into a 48px column.
     if (!shape.list) {
@@ -412,6 +413,7 @@ export function makeGridDensity(deps: GridDensityDeps) {
       storeSet('layout', prefs.layoutMode === 'list' ? 'list' : 'grid');
       storeSet('squareThumbs', prefs.squareThumbs === true);
       storeSet('showInfo', prefs.showInfo !== false);
+      storeSet('showAvatar', prefs.showAvatar !== false);
       storeSet('posterLayout', prefs.posterLayoutMode === 'list' ? 'list' : 'grid');
       storeSet('posterShowInfo', prefs.posterShowInfo !== false);
     } finally {

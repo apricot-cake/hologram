@@ -8,10 +8,9 @@
 // row, and for the grid whether the metadata block is there. No density class on the
 // container decides it in CSS any more; the legacy `.poster-card` sheet is gone and
 // both cells are Tailwind, like the post side's.
-import type { CSSProperties } from 'react';
 import { useSyncExternalStore } from 'react';
 import { cn } from '@/lib/utils';
-import { cellChrome, cellHandlers } from '../_shared/PostCard.tsx';
+import { Avatar, cellChrome, cellHandlers } from '../_shared/PostCard.tsx';
 import { useGridModel, VirtualGridHost } from '../_shared/VirtualGrid.tsx';
 import type { GridCellProps } from '../_shared/VirtualGrid.tsx';
 import type { PosterShape } from '../services/display.ts';
@@ -58,32 +57,6 @@ function PlatformTag({ platform, pfName, className }: { platform?: string | null
       <span aria-hidden="true" className="size-[7px] shrink-0 rounded-full" style={{ background: PF_COLOR[platform] || 'var(--text-muted)' }} />
       <span className="truncate">{pfName}</span>
     </span>
-  );
-}
-
-/**
- * The avatar. Avatar-less posters wear the standard circular monogram (the GitHub /
- * Google fallback-avatar idiom, #107): an initial on a pale hue-hashed disc, where a
- * card-filling letter read as a wall of glyphs. Only the HUE varies per poster; each
- * theme pins its own saturation/lightness so the tint stays pale in light and muted in
- * dark. The disc sizes off the frame (container query), which the size axis drives.
- */
-function Avatar({ c, className, discClassName }: { c: PosterCardModel; className?: string; discClassName?: string }) {
-  return (
-    <div className={cn('@container flex shrink-0 items-center justify-center overflow-hidden bg-[var(--surface-3)]', className)}>
-      {c.avatarSrc ? (
-        // decoding="async" (#569): a virtualized grid can have many of these
-        // decoding at once — same call as PostCard's card thumbnail.
-        <img className="block size-full object-cover" src={c.avatarSrc} alt="" loading="lazy" decoding="async" />
-      ) : (
-        <span
-          className={cn('flex items-center justify-center rounded-full font-semibold leading-none', 'bg-[hsl(var(--mono-h,220)_52%_88%)] text-[hsl(var(--mono-h,220)_42%_32%)]', 'dark:bg-[hsl(var(--mono-h,220)_26%_27%)] dark:text-[hsl(var(--mono-h,220)_50%_78%)]', discClassName)}
-          style={{ '--mono-h': c.monoHue ?? undefined } as CSSProperties}
-        >
-          {c.monogram}
-        </span>
-      )}
-    </div>
   );
 }
 
