@@ -12,7 +12,6 @@ import { isOpen as lightboxIsOpen } from './lightbox.ts';
 import { makeSearchEditing } from './search-editing.ts';
 import { focusSearchBox, init as initSearchBox } from './searchbox.ts';
 import { isOpen as settingsIsOpen } from './settings.ts';
-import { isManagerOpen as folderManagerIsOpen } from './folders.ts';
 
 export interface SearchBoxDeps {
   storeGet(key: string): unknown;
@@ -159,7 +158,6 @@ export function makeSearchBox(deps: SearchBoxDeps) {
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
     if (confirmGet() || lightboxIsOpen()) return;
     if (settingsIsOpen()) return;
-    if (folderManagerIsOpen()) return;
     e.preventDefault();
     focusSearchBox(); // the component's registered focus callback (no-op until it mounts) — the #searchBox id contract is gone (P2④)
   }

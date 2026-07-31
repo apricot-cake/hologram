@@ -16,7 +16,6 @@ import { get as confirmGet } from './confirm.ts';
 import { isOpen as lightboxIsOpen } from './lightbox.ts';
 import { compile, normalize } from './search.ts';
 import { isOpen as settingsIsOpen } from './settings.ts';
-import { isManagerOpen as folderManagerIsOpen } from './folders.ts';
 
 // section は「見出し」であり、種別で挙動を分けるための型ではない。
 // 'folder' は設計コメントが 'collection' と書いていた枠＝コレクションがサイドバーの
@@ -223,7 +222,6 @@ export function handleShortcutPaletteKey(e: KeyboardEvent): void {
   if (open_) return;
   if (confirmGet() || lightboxIsOpen()) return;
   if (settingsIsOpen()) return;
-  if (folderManagerIsOpen()) return;
   e.preventDefault();
   open();
 }

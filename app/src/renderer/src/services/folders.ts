@@ -1,17 +1,15 @@
-// Shared folder store + management-modal state + toast, used by the post-view
-// (orchestrator.ts). The library data lives in folders.json (keyed by captureId) —
-// the unified container for folders (folders). This
-// module owns the data, the management-modal state (rendering is the FolderManagerModal
-// component), membership toggling, and the toast (sonner via ui.ts); the "which
-// folder is filtered" state stays per-view. Subscribers (onChange) are notified after
-// any mutation so each view refreshes its own chips.
+// Shared folder store + toast, used by the post-view (orchestrator.ts). The library
+// data lives in folders.json (keyed by captureId) — the unified container for folders
+// (folders). This module owns the data, membership toggling, and the toast (sonner via
+// ui.ts); the "which folder is filtered" state stays per-view. Subscribers (onChange)
+// are notified after any mutation so each view refreshes its own chips.
 //
-// A real ES module (named exports) now: load, all, byId, has, toggleIn,
-// reconcile, openManager,
-// closeManager, isManagerOpen, getManager, subscribeManager, managerCreate,
-// managerRename, managerRemove, managerMove, toast, onChange, isLoaded, allFolders,
-// createFolder, updateFolder, renameFolder, removeFolder — plus the
-// hologramPosterFolderStore() factory (orchestrator.ts's poster-folder store).
+// A real ES module (named exports) now: load, all, byId, has, toggleIn, reconcile,
+// toast, onChange, isLoaded, allFolders, createFolder, updateFolder, renameFolder,
+// removeFolder — plus the hologramPosterFolderStore() factory (orchestrator.ts's
+// poster-folder store). There is no management-modal state any more (#6 残1): both the
+// library folder tree (#41/確定D) and the poster-folder sidebar group read/write their
+// stores directly (createPersistedFolderStore's own subscribe(), for the poster store).
 import { notify as uiNotify, type NotifyAction } from './ui.ts';
 import { hologramI18n } from './i18n.ts';
 import { hologramIpc } from './ipc.ts';
@@ -309,13 +307,22 @@ function createFolderStore({ idPrefix, persist, isLibrary }: { idPrefix: string;
 // store's own load()/persist() below, generalized). Currently used for the poster
 // folder store (viewer.js pfStore used to hand-assemble this: its own persist()
 // closure + a manual getPosterFolders/setAll block in boot — both now live here).
-function createPersistedFolderStore({ idPrefix, get, set }: { idPrefix: string; get: () => Promise<{ folders?: unknown[] } | null>; set: (data: { folders: HologramFolder[] }) => Promise<unknown> }): HologramFolderStore & { load: () => Promise<void> } {
+function createPersistedFolderStore({ idPrefix, get, set }: { idPrefix: string; get: () => Promise<{ folders?: unknown[] } | null>; set: (data: { folders: HologramFolder[] }) => Promise<unknown> }): HologramFolderStore & { load: () => Promise<void>; subscribe: (cb: () => void) => () => void } {
   let loadPromise: Promise<void> | null = null;
+  // Its own change channel (#6 残1): the poster-folder sidebar group has no manager
+  // modal to read a shared mgrModel from any more, so each persisted store notifies its
+  // own subscribers directly — on every mutation (via persist()) and on a completed
+  // load(), the two moments the list a subscriber is holding can go stale.
+  const subs = new Set<() => void>();
+  function notify() {
+    for (const cb of [...subs]) cb();
+  }
   function doPersist() {
     loadPromise = null; // invalidate the load cache so a later load() re-reads disk
     set({ folders: store.allRaw() }).catch(() => {
       /* best-effort */
     });
+    notify();
   }
   const store = createFolderStore({ idPrefix, persist: doPersist });
   async function doLoad() {
@@ -325,12 +332,19 @@ function createPersistedFolderStore({ idPrefix, get, set }: { idPrefix: string; 
     } catch {
       store.setAll([]);
     }
+    notify();
   }
   function load() {
     if (!loadPromise) loadPromise = doLoad();
     return loadPromise;
   }
-  return { ...store, load };
+  function subscribe(cb: () => void) {
+    subs.add(cb);
+    return () => {
+      subs.delete(cb);
+    };
+  }
+  return { ...store, load, subscribe };
 }
 export function hologramPosterFolderStore(): HologramPersistedFolderStore {
   return createPersistedFolderStore({
@@ -343,28 +357,6 @@ export function hologramPosterFolderStore(): HologramPersistedFolderStore {
 // Library folders [{ id, name, kind, created, items:[captureId] }] — the unified
 // folders container. isLibrary enables kind/created + dynamic saved-search.
 const store = createFolderStore({ idPrefix: 'f', persist: () => persist(), isLibrary: true });
-// The management modal (FolderManagerModal component) is shared: by
-// default it edits the library store, but openManager({store,onChange}) re-points it at
-// the poster folder store (orchestrator.ts pfStore) so both views get the same CRUD +
-// drag-reorder UI. Each store owns its own persist (folders.json vs poster-folders.json);
-// mgrAfter re-renders the view that owns the rows. mgrModel/mgrSubs are the modal's own
-// open/closed + list state (separate from `subs`/notify below, which is the folder-DATA
-// change channel every view's chips subscribe to) — FolderManagerModal.tsx subscribes
-// via getManager()/subscribeManager().
-let mgrStore = store;
-let mgrAfter = () => notify('list');
-let mgrModel: HologramFolderManagerModel | null = null;
-let mgrSeq = 0;
-const mgrSubs = new Set<() => void>();
-function notifyMgr() {
-  for (const cb of [...mgrSubs]) {
-    try {
-      cb();
-    } catch {
-      /* ignore */
-    }
-  }
-}
 let loaded = false;
 let loadPromise: Promise<void> | null = null;
 const subs: Array<(kind?: string) => void> = [];
@@ -372,9 +364,9 @@ const subs: Array<(kind?: string) => void> = [];
 // i18n: this module's own toasts (foldAdded/foldRemoved,
 // fired from business logic below, outside any component render) reuse the
 // renderer's i18n — hologramI18n is a promise from i18n.ts; resolve once and cache
-// getMessage as t(), until then t() echoes the key. The modal's own labels (title,
-// placeholder, rename/delete prompts) are the component's concern — FolderManagerModal.tsx
-// uses the shared _shared/i18n.ts t() directly in JSX.
+// getMessage as t(), until then t() echoes the key. Every component that needs its own
+// labels (titles, placeholders, rename/delete prompts) uses the shared _shared/i18n.ts
+// t() directly in JSX instead.
 let t: (key: string, subs2?: ReadonlyArray<string | number | null | undefined>) => string = (key) => key;
 hologramI18n.then((api) => {
   if (api && api.getMessage) t = api.getMessage;
@@ -484,67 +476,6 @@ export function toggleIn(fid: string | null | undefined, captureIds: string[] | 
 // --- toast (shared — sonner via ui.ts notify()) ---
 export function toast(msg: unknown, action?: NotifyAction | null) {
   return uiNotify(msg, action);
-}
-
-// --- management modal (state only — rendering is FolderManagerModal.tsx) ---
-export function isManagerOpen() {
-  return !!mgrModel;
-}
-export function openManager(opts?: { store?: HologramFolderStore; onChange?: () => void } | null) {
-  mgrStore = (opts && opts.store) || store;
-  mgrAfter = (opts && opts.onChange) || (() => notify('list'));
-  mgrModel = { openId: ++mgrSeq, list: managerList() };
-  notifyMgr();
-}
-export function closeManager() {
-  mgrModel = null;
-  mgrStore = store;
-  mgrAfter = () => notify('list');
-  notifyMgr();
-}
-// The manager edits folders, not saved searches: it creates them, renames them and
-// drag-reorders them among each other, none of which a saved search participates in
-// (its own rename/delete live on the sidebar row). The filter is a no-op for the
-// poster store, whose folders carry no kind.
-function managerList() {
-  return mgrStore.all().filter((f) => !isSavedSearch(f));
-}
-function refreshManager() {
-  if (!mgrModel) return;
-  mgrModel = { ...mgrModel, list: managerList() };
-  notifyMgr();
-}
-export function getManager() {
-  return mgrModel;
-}
-export function subscribeManager(cb: () => void) {
-  mgrSubs.add(cb);
-  return () => mgrSubs.delete(cb);
-}
-export function managerCreate(name: string | null | undefined) {
-  if (!mgrStore.create(name)) return false; // store mints the id + persists
-  refreshManager();
-  mgrAfter();
-  return true;
-}
-export function managerRename(id: string | null | undefined, name: string | null | undefined) {
-  if (!mgrStore.rename(id, name)) return false;
-  refreshManager();
-  mgrAfter(); // mgrStore.rename persists on success
-  return true;
-}
-export function managerRemove(id: string | null | undefined) {
-  mgrStore.remove(id);
-  refreshManager();
-  mgrAfter();
-}
-// Drag-and-drop reorder (same idiom as the poster folders): persist via store.move,
-// notify so the sidebar chips re-render in the new order.
-export function managerMove(draggedId: string | null | undefined, targetId: string | null | undefined, before: boolean) {
-  if (!mgrStore.move(draggedId, targetId, before)) return false;
-  refreshManager();
-  mgrAfter();
-  return true;
 }
 
 export function all() {

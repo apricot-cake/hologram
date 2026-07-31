@@ -152,6 +152,16 @@ export let browseTo: (mode: string) => void;
 // folder facet with the clicked folder, then re-render. The new left sidebar's
 // folder rows call this directly (no qf-pop flyout).
 export let applyFolderFilter: (id: string) => void;
+// Poster-folder sidebar group (#6 残1): the flat CRUD surface LeftSidebar's poster-mode
+// folder rows call directly (create goes straight through posterFolderStore.create —
+// rename/reorder likewise — delete goes through removePosterFolder so a dangling filter
+// leaf is cleaned up too). No manager modal for posters any more (FolderManagerModal
+// retired) — the sidebar list IS the manager, the way #41/確定D already made
+// it for library folders. Assigned once posterGrid/posterQB exist (TDZ-safe: read only
+// after mount, same pattern as applyFolderFilter above).
+export let posterFolderStore: HologramPersistedFolderStore;
+export let removePosterFolder: (id: string) => void;
+export let applyPosterFolderFilter: (id: string) => void;
 // Saved searches (#40) are APPLIED, not toggled: clicking one replaces the current
 // tab's whole query with the saved condition, so every condition lands in the chip
 // bar and stays editable. A folder, by contrast, is one leaf among others. Applying
@@ -1005,8 +1015,9 @@ export function endFilterEditSession(): void {
   // 複数画像 row entry (active state) is self-derived now by
   // services/sidebar.ts's hologramPostSidebarSource — no orchestrator-side
   // re-render call needed after a multi/folder mutation.
-  // フォルダ管理の起動口はフライアウト下部の qf-pop フッターボタン（onManage→CF().openManager()）に統一。
-  // 旧 #postFolderManage ボタンは HTML から撤去済み（デッドリスナーを削除）。
+  // フォルダ管理は左サイドバーのツリー（ライブラリ／投稿者とも）に統一（#41・#6 残1）。
+  // 旧 #postFolderManage ボタン・フォルダ管理モーダル（qf-pop フッターの管理ボタン）は
+  // どちらもコードから撤去済み。
 
   // 複数画像 sidebar row: reflects the group-level multiOnly flag as the row's active
   // state (accent icon) via the model. The click that flips it is handled by the
@@ -1280,7 +1291,9 @@ export function endFilterEditSession(): void {
     setInspectedKey,
     onPosterRendered: () => tabsCtl.syncPosterTitleAndPersist(),
   });
-  const { pfStore, posterFolderById, prunePosterTagFilters, renderPosters, openPosterPosts, jumpToPoster, refreshPosterTagFields, showPosterDetail, showPosterMenu } = posterGrid;
+  const { pfStore, posterFolderById, deletePosterFolder, renderPosters, openPosterPosts, jumpToPoster, refreshPosterTagFields, showPosterDetail, showPosterMenu } = posterGrid;
+  posterFolderStore = pfStore;
+  removePosterFolder = deletePosterFolder;
   // --- Poster query builder: the SAME builder (createQueryBuilder), evaluated
   // against poster (user) objects instead of posts. Leaf types: platform / instance /
   // tag(作品/キャラ含む) / folder / date(範囲). Its chips are the shared filter bar
@@ -1309,6 +1322,14 @@ export function endFilterEditSession(): void {
     posterTagsOf,
     folderById: posterFolderById,
   });
+
+  // Folder-as-place for posters (mirrors applyFolderFilter above, minus the
+  // enterPostsForSidebar mode-switch — the poster-folder sidebar rows only render while
+  // already browsing posters, so there is no other mode to leave).
+  applyPosterFolderFilter = (id) => {
+    posterQB.removeCondsMatching((c) => c.type === 'folder');
+    posterQB.addFilter({ type: 'folder', value: id });
+  };
 
   // prunePosterTagFilters (dropping tag conditions whose backing value disappeared)
   // moved to poster-grid-builder.ts along with the rest of the poster cluster —
@@ -1404,18 +1425,10 @@ export function endFilterEditSession(): void {
       const vc = valuesCat(posterQB, POSTER_FACET_OPTS);
       const cats: FilterCat[] = [vc('poster-platform', getMessage('sbPosterPlatformTitle'), 'platform', false), vc('poster-tag', getMessage('sbPosterTagsTitle'), 'tag', true, { valuesFn: combinedTagValues('poster-tag', 'poster-work', 'poster-character') })];
       if (qfValues('poster-instance').length) cats.push(vc('poster-instance', getMessage('qfInstance'), 'instance', true));
-      cats.push(
-        vc('poster-folder', getMessage('sbPosterFoldersTitle'), 'folder', false, {
-          manage: () =>
-            folders.openManager({
-              store: pfStore,
-              onChange: () => {
-                prunePosterTagFilters();
-                renderPosters();
-              },
-            }),
-        }),
-      );
+      // No manage() footer here any more (#6 残1): poster folders get their own
+      // sidebar tree now (LeftSidebar, posterFolderStore/applyPosterFolderFilter), the
+      // same way library folders' 'folder' facet below has none — the tree IS the manager.
+      cats.push(vc('poster-folder', getMessage('sbPosterFoldersTitle'), 'folder', false));
       cats.push({
         cat: 'poster-date',
         label: getMessage('qfDate'),
@@ -1443,9 +1456,8 @@ export function endFilterEditSession(): void {
       vc('hashtag', getMessage('tabTags'), 'hashtag', true),
       vc('user', getMessage('sidebarAuthors'), 'user', true),
       // No 「フォルダを管理…」 here: the sidebar tree IS the manager now (#41 / 確定D).
-      // The poster-side row below still opens the modal — poster folders have no tree
-      // of their own yet, and taking their only management surface away to keep this
-      // one symmetric would just delete the feature.
+      // The poster-side facet below is symmetric with this one now too (#6 残1) — its own
+      // sidebar tree (LeftSidebar) replaced the poster-folder manager modal, which is gone.
       vc('folder', getMessage('qfCatFolder'), 'folder', false, {
         // 「このフォルダのみ」 is one switch for the whole facet, not one per value:
         // the chip is per-facet, so a per-value flag could not be read back off it.

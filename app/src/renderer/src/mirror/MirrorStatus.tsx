@@ -2,6 +2,7 @@ import { useEffect, useReducer, useRef } from 'react';
 import { t } from '../_shared/i18n.ts';
 import { fmtBackupTime, fmtTime } from '../services/format.ts';
 import { getBackup, onBackupStart, onBackupDone, getIntegrityStatus, onIntegrityCheckDone } from '../services/backup.ts';
+import { isOpen as settingsIsOpen, subscribe as settingsSubscribe } from '../services/settings.ts';
 
 // Backup status rail — the always-visible sidebar footer showing the auto-backup state.
 // This component OWNS the state machine (backup config + last result + syncing flag),
@@ -144,13 +145,20 @@ export function MirrorStatus() {
       if (cfgRef.current && r) cfgRef.current.lastResult = r;
       if (alive) tick();
     });
-    // Refresh when the settings modal opens — the Data.tsx component may have changed the
-    // backup folder.
-    const settingsBtn = document.getElementById('settingsBtn');
-    settingsBtn?.addEventListener('click', load);
+    // Refresh when the settings dialog closes — the Data.tsx component may have changed
+    // the backup folder. This reads services/settings.ts's own open/closed store (the
+    // same one settings/index.tsx wires the Dialog into) instead of reaching across a
+    // component boundary into the sidebar's DOM (#153 category 4) — the settings gear's
+    // id/element never enters this module at all.
+    let settingsWasOpen = settingsIsOpen();
+    const unsubSettings = settingsSubscribe(() => {
+      const nowOpen = settingsIsOpen();
+      if (settingsWasOpen && !nowOpen) load();
+      settingsWasOpen = nowOpen;
+    });
     return () => {
       alive = false;
-      settingsBtn?.removeEventListener('click', load);
+      unsubSettings();
     };
   }, []);
 

@@ -26,7 +26,7 @@ import { cloneTree } from '../services/query.ts';
 import { open as menuOpen } from '../services/menu.ts';
 import { isHidden as panelsAreHidden, subscribe as panelsSubscribe } from '../services/panels.ts';
 import { promptName } from '../prompt/Prompt.tsx';
-import { applyFolderFilter, applySavedSearch, browseTo } from '../services/orchestrator.ts';
+import { applyFolderFilter, applyPosterFolderFilter, applySavedSearch, browseTo, posterFolderStore, removePosterFolder, viewerReady } from '../services/orchestrator.ts';
 import { getCount as trashCount, subscribe as trashSubscribe } from '../services/trash-view.ts';
 
 // browseMode is the single source of truth for the active destination. Writing
@@ -48,6 +48,32 @@ function useFolders(): HologramFolder[] {
     folderLoad().then(sync);
     folderOnChange(sync);
     sync();
+  }, []);
+  return list;
+}
+
+// Poster folders (poster-folders.json, viewer-mode #6 残1). The store itself lives in
+// orchestrator.ts's posterGrid builder, assigned to the posterFolderStore export only
+// once the boot IIFE gets there — this component can mount before that happens (React
+// mounts in parallel with orchestrator.ts's async setup, see App.tsx), so the load +
+// subscribe wiring waits on viewerReady first. Once assigned, the store is a stable
+// singleton for the app's lifetime, same as folders.ts's own module-level store.
+function usePosterFolders(): HologramFolder[] {
+  const [list, setList] = useState<HologramFolder[]>([]);
+  useEffect(() => {
+    let alive = true;
+    let unsub: (() => void) | undefined;
+    viewerReady.then(() => {
+      if (!alive) return;
+      const sync = () => setList(posterFolderStore.all().slice());
+      posterFolderStore.load().then(sync);
+      unsub = posterFolderStore.subscribe(sync);
+      sync();
+    });
+    return () => {
+      alive = false;
+      unsub?.();
+    };
   }, []);
   return list;
 }
@@ -142,6 +168,66 @@ function FolderNode({ f, ctx }: { f: HologramFolder; ctx: FolderTreeCtx }) {
         </CollapsibleContent>
       )}
     </Collapsible>
+  );
+}
+// One row of the FLAT poster-folder list (poster mode only, #6 残1). Same row shell as
+// FolderNode above (drag handle, context menu, click = apply) minus everything that only
+// makes sense for a tree: no twisty, no kids, no "into" drop mode — a poster folder can
+// only land before or after a sibling, never inside one (posterFolderStore never sets
+// parentId). Click routes through applyPosterFolderFilter (posterQB), not
+// applyFolderFilter (postQB) — the two query builders are separate instances.
+interface PosterFolderDropTarget {
+  id: string;
+  mode: 'before' | 'after';
+}
+interface PosterFolderCtx {
+  dragId: string | null;
+  setDrag: (id: string | null) => void;
+  drop: PosterFolderDropTarget | null;
+  setDrop: (t: PosterFolderDropTarget | null) => void;
+  menu: (e: MouseEvent, f: HologramFolder) => void;
+  apply: (id: string) => void;
+  place: (t: PosterFolderDropTarget) => void;
+}
+function PosterFolderRow({ f, ctx }: { f: HologramFolder; ctx: PosterFolderCtx }) {
+  const dragging = ctx.dragId === f.id;
+  const hint = ctx.drop && ctx.drop.id === f.id ? ctx.drop.mode : null;
+  const onDragOver = (e: DragEvent<HTMLDivElement>) => {
+    if (!ctx.dragId || ctx.dragId === f.id) return;
+    const r = e.currentTarget.getBoundingClientRect();
+    const mode = (e.clientY - r.top) / r.height < 0.5 ? 'before' : 'after';
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    ctx.setDrop({ id: f.id, mode });
+  };
+  return (
+    <SidebarMenuItem>
+      <div
+        data-slot="poster-folder-row"
+        data-folder-id={f.id}
+        className={`relative flex items-center rounded-md ${dragging ? 'opacity-45' : ''}`}
+        draggable
+        onDragStart={(e) => {
+          ctx.setDrag(f.id);
+          e.dataTransfer.effectAllowed = 'move';
+          e.dataTransfer.setData('text/plain', f.id);
+        }}
+        onDragEnd={() => ctx.setDrag(null)}
+        onContextMenu={(e) => ctx.menu(e, f)}
+        onDragOver={onDragOver}
+        onDrop={(e) => {
+          e.preventDefault();
+          if (ctx.drop) ctx.place(ctx.drop);
+        }}
+      >
+        {hint === 'before' && <span className="pointer-events-none absolute inset-x-0 top-0 h-0.5 rounded-full bg-sidebar-ring" />}
+        {hint === 'after' && <span className="pointer-events-none absolute inset-x-0 bottom-0 h-0.5 rounded-full bg-sidebar-ring" />}
+        <SidebarMenuButton className="min-w-0 flex-1" tooltip={f.name} onClick={() => ctx.apply(f.id)}>
+          <Folder />
+          <span className="truncate">{f.name}</span>
+        </SidebarMenuButton>
+      </div>
+    </SidebarMenuItem>
   );
 }
 // The heading is not a folder, so it needs an id no folder can have to appear as
@@ -291,6 +377,50 @@ export function LeftSidebar({ resize }: { resize?: PanelResize }) {
       } else if (item.act === 'delete') removeFolder(f.id);
     });
   };
+
+  // Poster-mode folder group (#6 残1): a flat sibling list backed by posterFolderStore
+  // (poster-folders.json), visible only while browsing posters — unlike the library tree
+  // above, which stays reachable from every mode so a click can jump there. There is no
+  // manager modal to open any more: this list creates/renames/deletes/reorders directly,
+  // the same "the sidebar IS the manager" grammar #41/確定D already gave library folders.
+  const posterFolders = usePosterFolders();
+  const [pfDragId, setPfDrag] = useState<string | null>(null);
+  const [pfDrop, setPfDrop] = useState<PosterFolderDropTarget | null>(null);
+  const newPosterFolder = () => {
+    promptName(t('posterFolderRenamePrompt'), '', (name) => posterFolderStore.create(name));
+  };
+  const deletePosterFolderRow = (f: HologramFolder) => {
+    confirmOpen({
+      message: t('posterFolderDeleteConfirm', [f.name]),
+      okLabel: t('foldDelete'),
+      cancelLabel: t('confirmCancel'),
+      onOk: () => removePosterFolder(f.id),
+    });
+  };
+  const posterFolderMenu = (e: MouseEvent, f: HologramFolder) => {
+    e.preventDefault();
+    const items = [{ label: t('foldRename'), act: 'rename' }, { sep: true }, { label: t('foldDelete'), act: 'delete', danger: true }];
+    menuOpen({ x: e.clientX, y: e.clientY, items }, (item) => {
+      if (item.act === 'rename') promptName(t('posterFolderRenamePrompt'), f.name, (name) => posterFolderStore.rename(f.id, name));
+      else if (item.act === 'delete') deletePosterFolderRow(f);
+    });
+  };
+  const posterFolderCtx: PosterFolderCtx = {
+    dragId: pfDragId,
+    setDrag: (id) => {
+      setPfDrag(id);
+      if (!id) setPfDrop(null);
+    },
+    drop: pfDrop,
+    setDrop: setPfDrop,
+    menu: posterFolderMenu,
+    apply: (id) => applyPosterFolderFilter(id),
+    place: (t) => {
+      posterFolderStore.move(pfDragId, t.id, t.mode === 'before');
+      setPfDrag(null);
+      setPfDrop(null);
+    },
+  };
   return (
     // Ctrl+B collapses to the icon rail; Ctrl+Shift+B takes the rail too (#245) — half a
     // panel left standing is not what "use the grid wide" asks for. Same component either
@@ -375,6 +505,29 @@ export function LeftSidebar({ resize }: { resize?: PanelResize }) {
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
+        {/* Poster-mode folders (#6 残1) — only while browsing posters (unlike the library
+            tree above, which stays reachable from every mode): a flat list, edited in
+            place the same way — + on the heading creates, the row's context menu
+            renames/deletes, drag reorders. No management modal for these either now.
+            Own heading string (sbPosterFoldersSidebarTitle, distinct from the qf-pop
+            facet's sbPosterFoldersTitle): the two groups sit stacked right on top of
+            each other here, and both saying plain 「フォルダ」 read as one group split
+            in two rather than two different things. */}
+        {isPosters && (
+          <SidebarGroup>
+            <SidebarGroupLabel>{t('sbPosterFoldersSidebarTitle')}</SidebarGroupLabel>
+            <SidebarGroupAction aria-label={t('foldNew')} title={t('foldNew')} onClick={newPosterFolder}>
+              <Plus />
+            </SidebarGroupAction>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {posterFolders.map((f) => (
+                  <PosterFolderRow key={f.id} f={f} ctx={posterFolderCtx} />
+                ))}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
         {/* 保存した検索 (#40) — its own group, never mixed in with the folders above:
             a folder is a place you put posts, a saved search is a question you re-ask.
             Click REPLACES the current query with the saved one, so every condition
@@ -444,11 +597,7 @@ export function LeftSidebar({ resize }: { resize?: PanelResize }) {
             </SidebarMenuButton>
           </SidebarMenuItem>
           <SidebarMenuItem>
-            {/* id="settingsBtn" is kept as a (b) contract: MirrorStatus refreshes
-                its rail on this button's click (folders/backup may have changed).
-                The id + the cross-boundary listener are retired together when the
-                settings surface is reworked (redesign 未決事項G / P2⑩). */}
-            <SidebarMenuButton id="settingsBtn" tooltip={t('tabSettings')} onClick={() => openSettings()}>
+            <SidebarMenuButton tooltip={t('tabSettings')} onClick={() => openSettings()}>
               <Settings />
               <span>{t('tabSettings')}</span>
             </SidebarMenuButton>

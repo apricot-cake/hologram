@@ -26,7 +26,6 @@ import { isOpen as paletteIsOpen } from './command-registry.ts';
 import { isOpen as lightboxIsOpen } from './lightbox.ts';
 import { isActive as imageViewIsActive } from './image-tab.ts';
 import { isOpen as settingsIsOpen } from './settings.ts';
-import { isManagerOpen as folderManagerIsOpen } from './folders.ts';
 import { get as storeGet } from './store.ts';
 import { importClipboard } from './posts.ts';
 import { formatDate } from './format.ts';
@@ -69,7 +68,6 @@ export function handleShortcutClipboardKey(e: KeyboardEvent): void {
   if (confirmGet() || lightboxIsOpen()) return;
   if (settingsIsOpen()) return;
   if (paletteIsOpen()) return;
-  if (folderManagerIsOpen()) return;
   // The single-image view is its own screen with its own keys — same exclusion as
   // Ctrl+C / Space (selection-builder.ts).
   if (imageViewIsActive()) return;
