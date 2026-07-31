@@ -14,6 +14,7 @@ import { handleShortcutPaletteKey } from '../services/command-registry.ts';
 import { handleShortcutPanelsKey } from '../services/panels.ts';
 import { handleShortcutZoomKey } from '../services/image-zoom.ts';
 import { handleShortcutClipboardKey } from '../services/clipboard-intake.ts';
+import { handleShortcutPrivacyKey } from '../services/privacy-mode.ts';
 import { onPostsChanged } from '../services/posts.ts';
 import { getLibraryStatus } from '../services/library-path.ts';
 import { subscribePosterShape as subscribePosterDisplay, subscribeShape as subscribeDisplay } from '../services/display.ts';
@@ -147,6 +148,12 @@ function GlobalShortcuts() {
       // Ctrl+T / Ctrl+W / Ctrl+Tab — the tab shortcuts act on the window, not on a
       // tab you are pointing at, so they belong here rather than on the strip (#621).
       handleGlobalTabShortcut(e);
+      // P (no modifier) = privacy mode (#88). Deliberately last and deliberately NOT
+      // guarded by confirmGet()/lightboxIsOpen()/settingsIsOpen()/paletteIsOpen() the
+      // way every handler above it is — see services/privacy-mode.ts's handler
+      // comment for why a "hide everything right now" reflex key has to keep working
+      // no matter what else is on screen.
+      handleShortcutPrivacyKey(e);
     };
     const onMouseup = (e: MouseEvent) => handleShortcutMouseNav(e);
     // Ctrl+wheel = content size (#141). Non-passive on purpose: the handler

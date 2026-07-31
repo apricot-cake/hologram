@@ -11,6 +11,7 @@ import { type CommandEntry, registerCommands, registerProvider } from './command
 import { handlers as searchBoxHandlers } from './searchbox.ts';
 import { setLayout, setPosterLayout } from './display.ts';
 import { toggle as togglePanels } from './panels.ts';
+import { toggle as togglePrivacyMode } from './privacy-mode.ts';
 import { open as openSettings } from './settings.ts';
 import { hologramTabsSource } from './tabs.ts';
 
@@ -72,6 +73,8 @@ export function makeCommands(deps: CommandDeps): void {
     // 一括表示トグル（#245）。名前は状態を言わず動作だけを言う＝パレットの行は開いた
     // 瞬間の状態で書き換わらない（「隠す」と「戻す」が入れ替わる行は探して見つからない）。
     { id: 'cmd:toggle-panels', section: 'command', title: t('cmdTogglePanels'), hint: 'Ctrl+Shift+B', perform: () => togglePanels() },
+    // #88: 一括ぼかしの切り替え。名前は状態を言わず動作だけを言う＝上の一括表示トグルと同じ理由。
+    { id: 'cmd:toggle-privacy', section: 'command', title: t('cmdTogglePrivacy'), hint: 'P', perform: () => togglePrivacyMode() },
     { id: 'cmd:browse-posts', section: 'command', title: t('cmdBrowsePosts'), perform: () => deps.browseTo('posts') },
     { id: 'cmd:browse-posters', section: 'command', title: t('cmdBrowsePosters'), perform: () => deps.browseTo('posters') },
     // ゴミ箱も行き先の1つ（#268）＝サイドバーに常設された destination はパレットにも
