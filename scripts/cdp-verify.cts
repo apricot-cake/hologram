@@ -16,15 +16,51 @@
 // that left content rendered into the top-left until restart). So we never clip —
 // crop the saved jpg afterward with whatever image tool is at hand.
 //
-// Port via $CDP_PORT (default 9222). Page target = the one loading index.html.
+// Port via $CDP_PORT (default 9222 = the real app). CDP_PORT=sandbox resolves
+// THIS tree's sandbox instance from .sandbox/instance.json, so nobody has to
+// copy a port number around. Page target = the one loading index.html.
 const http = require('node:http');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const cp = require('node:child_process');
 const WebSocket = require('ws');
+const { instanceFile, isSandboxPort, readInstance, targetBelongsToTree, targetFilePath } = require('./lib-sandbox-instance.cts');
 
-const PORT = process.env.CDP_PORT || 9222;
+const repoRoot = path.join(__dirname, '..');
+
+function resolvePort(): number {
+  const raw = process.env.CDP_PORT;
+  if (!raw) return 9222;
+  if (raw === 'sandbox') {
+    const inst = readInstance(repoRoot);
+    if (!inst) {
+      console.error(`ERR no sandbox instance recorded for this tree (${instanceFile(repoRoot)}) — start one: node scripts/sandbox-app.cts`);
+      process.exit(1);
+    }
+    return inst.port;
+  }
+  return Number(raw);
+}
+
+const PORT = resolvePort();
+
+// A sandbox port belongs to exactly ONE tree, and the whole failure mode of #640
+// is that talking to the wrong tree's instance SUCCEEDS: the eval returns, the
+// screenshot is written, and the answer is about someone else's app. So the
+// identity is checked against the live target (its renderer is loaded out of
+// <tree>/app/out) before a single command goes out. The real app on :9222 is
+// outside this check — it is launched from the main tree by design (docs/build.md).
+function assertOwnSandbox(pageUrl: string) {
+  if (!isSandboxPort(PORT)) return;
+  const inst = readInstance(repoRoot);
+  if (!inst) throw new Error(`:${PORT} is a sandbox port, but this tree records no instance (${instanceFile(repoRoot)}). Start one with 'node scripts/sandbox-app.cts', or run cdp-verify from the tree that owns :${PORT}.`);
+  if (inst.port !== PORT) throw new Error(`this tree's sandbox is on :${inst.port}, not :${PORT} — use CDP_PORT=${inst.port} (or CDP_PORT=sandbox).`);
+  const mine = targetBelongsToTree(pageUrl, repoRoot);
+  if (mine === false) throw new Error(`:${PORT} is serving ANOTHER tree's sandbox (${targetFilePath(pageUrl)}) — this tree's record is stale. Drive it from its own tree; 'node scripts/sandbox-app.cts' here will take a fresh port.`);
+  // mine === null: a dev-server renderer (http) carries no tree in its URL, so
+  // the record above is all we have. Nothing else to check.
+}
 
 // OS-level window control for the Electron window. This Electron build's CDP has
 // NO Browser.* domain (Browser.getWindowForTarget -> -32601), so a minimized window
@@ -58,6 +94,7 @@ function getTarget() {
             const list = JSON.parse(body);
             const page = list.find((t) => t.type === 'page' && t.url.includes('index.html')) || list.find((t) => t.type === 'page');
             if (!page) return reject(new Error('no page target — is the app running with --remote-debugging-port?'));
+            assertOwnSandbox(String(page.url));
             resolve(page.webSocketDebuggerUrl);
           } catch (e) {
             reject(e);
