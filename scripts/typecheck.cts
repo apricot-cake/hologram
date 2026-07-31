@@ -31,7 +31,7 @@
 //      A SEVENTH runtime: transpiled through Vite by Vitest, so bundler-shaped
 //      like the renderer even though it executes under Node. Kept apart from
 //      project 5 because that one is nodenext/.cts and these suites import
-//      across layers written for bundler resolution. 59 suites are still
+//      across layers written for bundler resolution. 59 of 105 suites are still
 //      quarantined in its `exclude` — the reasons are written there.
 
 const { spawnSync } = require('node:child_process');
