@@ -10,6 +10,9 @@
 //   - poster cards carry no hover parts either; a plain click opens the poster
 //     inspector, a double-click drills into that poster's posts
 //   - a double-click on a post opens the image view (in-tab history destination)
+//   - Home/End jump the selection to the first/last card, reusing the same guard and
+//     post-move steps as arrow nav (#672); Home/End targeted at the search box is left to
+//     the browser (caret-to-line motion), not hijacked
 //
 // The gestures are the cells' own props (#618), so this drives real
 // synthetic MouseEvents and asserts the resulting DOM state (inspector open,
@@ -150,6 +153,40 @@ const evalJs = `(async () => {
   await sleep(80);
   out.arrowClampedAtStart = selectedIndex() === 0;
 
+  // D3b. Home/End (#672) jump straight to the two ends arrow movement never reached,
+  // reusing the same selection primitive — currently sitting at index 0 from the clamp
+  // above, so End must move all the way to the LAST card, and a second End is a no-op
+  // (already there — nothing should churn or throw).
+  const lastIdx = postCards().length - 1;
+  arrow('End');
+  await sleep(80);
+  out.endSelIndex = selectedIndex();
+  out.endFollowsInspector = !!selectedCard() && selectedCard().hasAttribute('data-inspected');
+  arrow('End');
+  await sleep(80);
+  out.endIsIdempotent = selectedIndex() === lastIdx;
+  arrow('Home');
+  await sleep(80);
+  out.homeSelIndex = selectedIndex();
+
+  // D3c. Home/End must NOT hijack a text field's own caret-to-line-start/end motion
+  // (#672 accept criteria) — the search box input is real (SearchBox.tsx), so focus it
+  // and confirm the grid selection stays put on Home *targeted at the input*, exactly
+  // the guard arrow keys already get.
+  const searchInput = document.querySelector('input[aria-label="テキスト・ユーザー名で検索"]');
+  out.searchInputFound = !!searchInput;
+  if (searchInput) {
+    searchInput.focus();
+    const beforeGuardIdx = selectedIndex();
+    searchInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Home', bubbles: true }));
+    await sleep(60);
+    out.homeIgnoredInSearchBox = selectedIndex() === beforeGuardIdx;
+    searchInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true }));
+    await sleep(60);
+    out.endIgnoredInSearchBox = selectedIndex() === beforeGuardIdx;
+    searchInput.blur();
+  }
+
   // The 投稿者 nav's active state tracks browseMode (grids are CSS-hidden, not
   // unmounted, so poster cards stay in the DOM — the active nav is the mode marker).
   const navActive = () => { const b = [...document.querySelectorAll('button')].find(x => (x.textContent || '').trim() === '投稿者'); return !!(b && b.hasAttribute('data-active') && b.getAttribute('data-active') !== 'false'); };
@@ -220,6 +257,13 @@ child.on('close', () => {
     ['arrow movement swaps the inspector to the new card', r.arrowFollowsInspector === true],
     ['← moves the selection back', r.arrowLeftStep === -1],
     ['← clamps at the first card instead of wrapping', r.arrowClampedAtStart === true],
+    ['End jumps to the last card', r.endSelIndex === 2],
+    ['End follows with the inspector, same as arrow movement', r.endFollowsInspector === true],
+    ['a second End (already there) is a no-op, not an error', r.endIsIdempotent === true],
+    ['Home jumps back to the first card', r.homeSelIndex === 0],
+    ['the search box input was actually found (guard below is not a false positive)', r.searchInputFound === true],
+    ['Home targeted at the search box leaves the grid selection alone', r.homeIgnoredInSearchBox === true],
+    ['End targeted at the search box leaves the grid selection alone', r.endIgnoredInSearchBox === true],
     ['poster cards render', r.posterCardsShown === true],
     ['poster cards have no ℹ / ○ hover parts', r.posterHoverParts === 0],
     ['…and we could see inside them (that 0 is a real 0)', r.posterCardParts >= 1],
