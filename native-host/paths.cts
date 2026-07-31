@@ -58,4 +58,18 @@ function defaultLibraryDir(): string {
   return path.join(base, APP_NAME, 'library');
 }
 
-module.exports = { configDir, defaultLibraryDir, APP_NAME };
+// Where a LOCAL extension build announces itself (#650). Written by
+// `npm run build:ext` once the output folder is complete, read by the bridge so
+// every reply can carry the token — which is how an unpacked extension learns
+// that its own bundle on disk has been replaced and reloads itself.
+//
+// In configDir() rather than next to the build output because that is the one
+// absolute path the two processes already agree on without being told: the
+// bridge is spawned by Chrome from a registry entry and has no idea where the
+// repository is. Absent on every machine that has not built the extension, which
+// is what makes the whole path inert for released installs.
+function extensionBuildStampPath(): string {
+  return path.join(configDir(), 'extension-build.json');
+}
+
+module.exports = { configDir, defaultLibraryDir, extensionBuildStampPath, APP_NAME };

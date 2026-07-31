@@ -210,6 +210,30 @@ export interface VersionStamp {
   protocolVersion?: number;
 }
 
+// Which locally built extension is sitting in the build output folder right now
+// (#650). NOT a version and not part of the handshake above: it is an opaque
+// token that changes exactly once per completed `npm run build:ext`, so that an
+// extension loaded from that folder can notice its own bundle is out of date and
+// call chrome.runtime.reload() instead of waiting for a human to press the
+// button in chrome://extensions.
+//
+// Rides on the SAME seat as the protocol version, and for the same reason: the
+// extension already talks to this host on every save and every badge query, so
+// the news reaches it without a second channel, a second process or a port.
+// Native messaging cannot be initiated from the host's end (Chrome's rule), so
+// the only shape available is riding back on a round trip the extension started
+// — which this is.
+//
+// ABSENT for everyone who did not build the extension themselves: the host
+// publishes it only when the build has written the stamp file this reads (see
+// bridge.cts's readExtBuild), and a released host on a released install never
+// finds one. Optional on the wire and never required by a reader, exactly like
+// the version stamp — an older host sends none and the extension then simply has
+// nothing to compare against.
+export interface DevBuildStamp {
+  extBuild?: string;
+}
+
 // What the host says about one permalink: the captureId of a record holding it,
 // plus WHICH of the post's pictures are in the library (#334) — positional, so
 // the index is the picture's number in the record and null marks one the library
@@ -318,8 +342,15 @@ export type HostResponse = SaveAck | QueryAck | LogAck | PongAck | HostFailure;
 // that "every reply says which contract wrote it" is a property of the contract
 // — a second producer (a test double, a future host) cannot forget it and leave
 // the extension reading its silence as an out-of-date host.
-export function stampProtocol<T extends HostResponse>(res: T): T & VersionStamp {
-  return Object.assign({ protocolVersion: PROTOCOL_VERSION }, res);
+// `extBuild` rides along on the same call so that "every reply says which
+// contract wrote it" and "every reply says which local build is on disk" cannot
+// come apart: there is one seam, and a producer that forgets one forgets both.
+// Omitted entirely when there is nothing to say, so a reply to an ordinary
+// installation is byte-identical to what this sent before #650.
+export function stampProtocol<T extends HostResponse>(res: T, extBuild?: string | null): T & VersionStamp & DevBuildStamp {
+  const stamped = Object.assign({ protocolVersion: PROTOCOL_VERSION } as VersionStamp & DevBuildStamp, res);
+  if (extBuild) stamped.extBuild = extBuild;
+  return stamped;
 }
 
 // Which side is behind, from one reply's stamp (#205). Integer comparison and
@@ -349,6 +380,14 @@ export function hostProtocolVersion(raw: unknown): number | null {
   return isObject(raw) && typeof raw.protocolVersion === 'number' && Number.isInteger(raw.protocolVersion) ? raw.protocolVersion : null;
 }
 
+// The build stamp on one received reply, or null when it carries none (#650).
+// Empty strings read as null too: the build publishes an opaque token or nothing
+// at all, and "" is neither — treating it as absent keeps a malformed stamp from
+// ever being compared against a real one.
+export function hostExtBuild(raw: unknown): string | null {
+  return isObject(raw) && typeof raw.extBuild === 'string' && raw.extBuild ? raw.extBuild : null;
+}
+
 // What a READER of a reply may assume. Everything optional on purpose: the two
 // sides update through completely separate channels (Chrome Web Store vs the
 // app's own updater), so an ack can arrive from a host that is older or newer
@@ -356,7 +395,7 @@ export function hostProtocolVersion(raw: unknown): number | null {
 // skew into "the save failed", which is the opposite of true — the record is on
 // disk either way. Derived from the strict producer types, so it cannot drift
 // from them; #205 is where a skew becomes something the user is told about.
-export type HostAckView = { ok: true } & VersionStamp & Partial<CaptureAck & BulkAck & QueryAck & PongAck>;
+export type HostAckView = { ok: true } & VersionStamp & DevBuildStamp & Partial<CaptureAck & BulkAck & QueryAck & PongAck>;
 
 // --- parsing --------------------------------------------------------------------
 
@@ -461,7 +500,11 @@ export function responseId(raw: unknown): RequestId | null {
 // host was asked — it rides on whatever reply happens to come back, and a host
 // far enough out of date to be failing saves is the one whose version matters
 // most. null = the reply carried no stamp (see protocolSkewOf).
-export type ReadResponse = { ok: true; ack: HostAckView; protocolVersion: number | null } | { ok: false; error: string; code: HostErrorCode | null; protocolVersion: number | null };
+// `extBuild` is on BOTH arms for the same reason `protocolVersion` is: it is not
+// an answer to the request, it rides on whatever reply happens to come back —
+// and a reply that failed is just as good a carrier for "the build on disk
+// changed" as one that succeeded. null = the reply carried no stamp (#650).
+export type ReadResponse = { ok: true; ack: HostAckView; protocolVersion: number | null; extBuild: string | null } | { ok: false; error: string; code: HostErrorCode | null; protocolVersion: number | null; extBuild: string | null };
 
 // Read one reply off a port. `ok:true` is the host's own success marker and the
 // only thing this can go on — see HostAckView on why an ack is narrowed here and
@@ -470,11 +513,12 @@ export type ReadResponse = { ok: true; ack: HostAckView; protocolVersion: number
 // save senders and the badge query answered that question in its own words.
 export function readHostResponse(raw: unknown): ReadResponse {
   const protocolVersion = hostProtocolVersion(raw);
+  const extBuild = hostExtBuild(raw);
   // Through `unknown`: the frame is a bag of `unknown` values and HostAckView
   // declares types for some of them, so the two are not directly comparable.
   // Narrowing rather than validating is the point — see HostAckView.
-  if (isObject(raw) && raw.ok === true) return { ok: true, ack: raw as unknown as HostAckView, protocolVersion };
+  if (isObject(raw) && raw.ok === true) return { ok: true, ack: raw as unknown as HostAckView, protocolVersion, extBuild };
   const error = isObject(raw) && typeof raw.error === 'string' && raw.error ? raw.error : 'Native host returned an error';
   const code = isObject(raw) && typeof raw.code === 'string' ? (raw.code as HostErrorCode) : null;
-  return { ok: false, error, code, protocolVersion };
+  return { ok: false, error, code, protocolVersion, extBuild };
 }

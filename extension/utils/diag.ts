@@ -15,8 +15,9 @@
 // (this is a regular page script, background.ts is the service worker), but
 // tsc compiles every extension file as one program, so top-level names must
 // stay unique across it. drag.ts/i18n.ts use the same IIFE convention.
-import { PROTOCOL_VERSION, hostProtocolVersion, protocolSkewOf } from '../../native-host/protocol.mts';
+import { PROTOCOL_VERSION, hostExtBuild, hostProtocolVersion, protocolSkewOf } from '../../native-host/protocol.mts';
 import type { HostRequest } from '../../native-host/protocol.mts';
+import { EXT_BUILD_ID } from './dev-reload.ts';
 
 export function startDiagnostics(): void {
   const DIAG_PREFIX = 'diaglog_';
@@ -103,11 +104,24 @@ export function startDiagnostics(): void {
     };
   }
 
+  // Which local build is RUNNING versus which one is on disk (#650). The reload
+  // that closes that gap is deliberately deferred while a save or an in-page UI
+  // would be destroyed by it, so "why is my change not in the browser yet?" has
+  // to have an answer somewhere — this is it, and it needs nothing from the
+  // service worker's memory. `null` on both sides is the ordinary state of any
+  // installation that did not build the extension itself.
+  function devBuildReport(nativeTest: Record<string, unknown>) {
+    const running = EXT_BUILD_ID || null;
+    const onDisk = nativeTest.ok === true ? hostExtBuild(nativeTest.msg) : null;
+    return { running, onDisk, pending: !!(running && onDisk && running !== onDisk) };
+  }
+
   async function run() {
     const out: Record<string, unknown> = { id: chrome.runtime.id, ts: new Date().toISOString() };
     out.storedLogs = await readStoredLogs();
     out.nativeTest = await testNative(); // launches the host if Chrome can find it
     out.protocol = protocolReport(out.nativeTest as Record<string, unknown>);
+    out.devBuild = devBuildReport(out.nativeTest as Record<string, unknown>);
     window.__hologramDiag = out; // readable via the page console
     const outEl = document.getElementById('out');
     if (outEl) outEl.textContent = JSON.stringify(out, null, 2);

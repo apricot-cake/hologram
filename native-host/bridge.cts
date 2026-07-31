@@ -27,7 +27,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const _os = require('node:os');
 
-const { configDir, defaultLibraryDir } = require('./paths.cts');
+const { configDir, defaultLibraryDir, extensionBuildStampPath } = require('./paths.cts');
 // Best-effort remote-image download (original media + avatars) lives in a shared
 // module so the SSRF guard / size caps are identical across capture, import and
 // backfill. See media-download.cts.
@@ -80,6 +80,26 @@ function logLine(msg: string): void {
     fs.appendFileSync(path.join(configDir(), 'bridge.log'), `${new Date().toISOString()} [pid ${process.pid}] ${msg}\n`);
   } catch {
     /* ignore — logging is non-essential */
+  }
+}
+
+// --- The local extension build's token (#650) ---------------------------------
+// Read fresh on every reply rather than once per process, because ONE of the
+// connections is long-lived: the saved-post badge holds a single port open for a
+// whole browsing session, and that port is the fastest way for a build finished
+// thirty seconds ago to reach the extension. A cached value would make the badge
+// port — the most useful carrier — the only one that could never carry news.
+//
+// Costs a ~120-byte read per reply. Never throws and never explains itself: no
+// file (the ordinary case, on every machine that has not built the extension),
+// unreadable file, malformed JSON and a missing field all mean the same thing —
+// there is nothing to say, so the reply says nothing.
+function readExtBuild(): string | null {
+  try {
+    const raw = JSON.parse(fs.readFileSync(extensionBuildStampPath(), 'utf8'));
+    return raw && typeof raw.build === 'string' && raw.build ? raw.build : null;
+  } catch {
+    return null;
   }
 }
 
@@ -791,7 +811,12 @@ if (require.main === module) {
       // with its own to notice that the two halves have drifted apart, and a
       // reply that forgot the stamp would be read as coming from a host older
       // than the stamp itself.
-      const reply = (id: number | null, res: HostResponse) => sendMessage(id != null ? Object.assign({ id }, stampProtocol(res)) : stampProtocol(res));
+      //
+      // The same seam carries the local build's token (#650) — see readExtBuild.
+      const reply = (id: number | null, res: HostResponse) => {
+        const stamped = stampProtocol(res, readExtBuild());
+        sendMessage(id != null ? Object.assign({ id }, stamped) : stamped);
+      };
       if (!parsed.ok) {
         logLine(`recv: ${parsed.failure.error}`);
         reply(parsed.id, parsed.failure);

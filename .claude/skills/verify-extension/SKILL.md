@@ -1,6 +1,6 @@
 ---
 name: verify-extension
-description: 拡張機能（extension/）の変更を実ブラウザで確かめる手順＝日常の Chrome が読む本体ツリーの `.output/chrome-mv3` へ dev ビルドを流し、ホットリロードに任せる。開発の入りと出でリロード1回ずつをユーザーに依頼し、終わったら必ず production へ戻す。「拡張を実機で確認して」「Alt+S を試して」など実ブラウザで拡張の動きを見る依頼で使う。
+description: 拡張機能（extension/）の変更を実ブラウザで確かめる手順＝日常の Chrome が読む本体ツリーの `.output/chrome-mv3` へ production ビルドを書き、拡張が自分でリロードするのに任せる（#650 以降クリック依頼は不要）。「拡張を実機で確認して」「Alt+S を試して」など実ブラウザで拡張の動きを見る依頼で使う。
 ---
 
 # verify-extension — 拡張の変更を実ブラウザで確かめる
@@ -9,27 +9,30 @@ description: 拡張機能（extension/）の変更を実ブラウザで確かめ
 
 ## 土台: ブラウザは日常の Chrome 1本、出力も1箇所
 
-日常の Chrome が読むのは**本体ツリーの `extension/.output/chrome-mv3` だけ**。dev ビルドも production ビルドも同じフォルダへ書かれる（`wxt.config.ts` の `outDirTemplate`）ので、モードの切り替え＝ビルド＋リロード1回。**拡張の削除→再追加は決してしない**（`chrome.storage.local` の設定とショートカット割当が消える）。
+日常の Chrome が読むのは**本体ツリーの `extension/.output/chrome-mv3` だけ**。**拡張の削除→再追加は決してしない**（`chrome.storage.local` の設定とショートカット割当が消える）。
 
-**開発が終わったら production へ戻すまでが1セット。** dev ビルドは manifest に `content_scripts` を持たず、常駐スクリプトを dev サーバー接続経由で実行時登録する＝dev ビルドを残したままサーバーが止まると、普段使いの拡張が丸ごと沈黙する（2026-07-26 被弾＝#362）。
+**リロードのクリックは要らない**（#650）。`npm run build:ext` は出力が完全なことを確かめてから `~/.hologram/extension-build.json` にそのビルドの識別子を書き、ネイティブメッセージングホストが全ての返信にそれを乗せる＝拡張は次の往復（保存・保存済みバッジの問い合わせ・ログ中継のいずれか）で気付いて自分をリロードし、開いていたタブも自動で再読み込みする。**保存が飛んでいる間・キャプチャUI が開いている間・一括取込の走行中は見送られる**（作業の証拠が途絶えれば60秒で失効）。仕組みと確認の口は docs/build.md「新しいビルドを拡張が自分で載せる」。
 
-**ブラウザを自動化スタックで起動しない。** web-ext / chrome-launcher / Playwright 経由の起動は自動化フラグの指紋が付き、X・Google がボット判定してサインインを弾く（2026-07-26 実測）。ホットリロードは拡張⇔dev サーバー間の機構＝普段どおり起動した Chrome でそのまま効く。
+**ブラウザを自動化スタックで起動しない。** web-ext / chrome-launcher / Playwright 経由の起動は自動化フラグの指紋が付き、X・Google がボット判定してサインインを弾く（2026-07-26 実測）。
 
 ## 手順（既定）
 
-1. **本体ツリーの** `extension/` で dev サーバーを起動する。dev サーバーが更新するのは自分のツリーの `.output` だけ＝worktree で起動しても日常の Chrome には届かない。worktree の変更を見たい時は skill `test-in-worktree` の手順で本体を対象コミットへ detach してから本体で起動する。
-
-   **Claude が起動する時は標準入力を開いたまま**にする＝WXT は起動後に「Press o + enter」で stdin を待つ対話モードに入り、`npm run dev:ext` を素で背景実行すると **EOF を読んで即終了する**（2026-07-26 実測）。
-
-   ```
-   tail -f /dev/null | npm run dev:ext
-   ```
-2. `chrome://extensions` でのリロード1回をユーザーに依頼する（dev ビルドへの入れ替え。`chrome://` は Claude から触れない）。リロードするまで Chrome に載っているのは前のビルドのまま＝ここを飛ばすと修正が空振りする（2026-07-25 被弾）。
-3. **以後ソースを直したらホットリロードに任せる**。手動で拡張もページも再読み込みしない。
+1. **本体ツリーで `npm run build:ext`**。ビルドは1秒前後。worktree で回しても日常の Chrome には届かない（worktree は識別子を告知しない＝docs/build.md）ので、worktree の変更を見たい時は skill `test-in-worktree` の手順で本体を対象コミットへ detach してから本体でビルドする。
+2. **反映を待つ**＝拡張は次にホストと往復した時にリロードする。SNS のタブを開いていれば保存済みバッジの問い合わせで数秒。急ぐなら `chrome-extension://<id>/diag.html` を開く（ping が往復し、`devBuild` に `running` / `onDisk` が出る）。
+3. **反映されない時に手でリロードを頼まない**＝まず `diag.html` の `devBuild` を見る。`running` と `onDisk` が食い違ったままなら作業中（保存・キャプチャUI・一括取込）で見送られているか、`build:ext` が出力の検査で止まっている。
 4. **Claude の自動確認は使い捨て環境で行う**＝`scripts/lib-extension-e2e.cts` 系（同梱 Chromium・一時プロファイル・モック native host。`npm run test:e2e-extension` / 実サイトカナリアは `e2e-capture-test.cts`）。Playwright はポート未指定ならパイプで喋るのでどこにも listen しない。
    **ログイン済みアカウントでの挙動は自動化しない**＝この拡張は「X から自動化に見えないこと」を設計原則に持ち（#362）、同じ制約が検証にもかかる。自動化スタックからのサインインはボット検知にも当たる（2026-07-26 実測）。ログインが要る確認は人間が日常の Chrome で行い、Claude は結果・スクショを受け取る。
-5. 人でないと不可能な操作（リロード・ログインが要る確認・実キー入力）だけユーザーへ依頼する。
-6. **終了時: dev サーバーを止め、`npm run build:ext` で production を書き戻し、リロード1回を依頼する**。この戻しまで済ませてから完了報告する。
+5. 人でないと不可能な操作（ログインが要る確認・実キー入力）だけユーザーへ依頼する。
+
+## ホットリロード（`dev:ext`）を使う場合だけの手順
+
+差分反映の速さが要る時だけ。**dev ビルドは自己リロードを持たない**ので、入りも出も `chrome://extensions` のリロード1回をユーザーに依頼することになる（`chrome://` は Claude から触れない）。加えて dev ビルドは manifest に `content_scripts` を持たず、常駐スクリプトを dev サーバー接続経由で実行時登録する＝**dev ビルドを残したままサーバーが止まると普段使いの拡張が丸ごと沈黙する**（2026-07-26 被弾＝#362）。使ったら `npm run build:ext`＋リロード1回で production へ戻すまでが1セット。
+
+**Claude が起動する時は標準入力を開いたまま**にする＝WXT は起動後に「Press o + enter」で stdin を待つ対話モードに入り、`npm run dev:ext` を素で背景実行すると **EOF を読んで即終了する**（2026-07-26 実測）。
+
+```
+tail -f /dev/null | npm run dev:ext
+```
 
 ## Claude から見えないもの（実測 2026-07-26）
 

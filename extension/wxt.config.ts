@@ -28,6 +28,21 @@ export default defineConfig({
     build: {
       modulePreload: false,
     },
+    // Which build this bundle IS (#650). Minted per build by
+    // scripts/build-extension.cts, which puts the same token in a stamp file the
+    // native host reads — the extension then notices that the folder it was
+    // loaded from now holds a different build and reloads itself, so a code
+    // change needs no click in chrome://extensions.
+    //
+    // Read from the environment rather than generated here so that the value is
+    // decided ONCE per build, outside, by the script that also has to verify the
+    // output and publish the stamp. A bare `wxt build` (which `npm run zip:ext`
+    // runs to make the store artifact) sets nothing, and the identifier stays
+    // undefined — utils/dev-reload.ts reads that as "there is no local build",
+    // which is the correct answer for anything that leaves this machine.
+    define: {
+      __EXT_BUILD_ID__: JSON.stringify(process.env.HOLOGRAM_EXT_BUILD_ID || ''),
+    },
   }),
   manifest: {
     key: 'MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAzBGm/kCBitgpMoAkBDv5YrWwfAf74U8Uiy/rEuZgwFP703HT2EIhASBHEfVX7MSBF1a5V3D5IwZzu9mRFQmTzXtjyli8wdvxIjXVy3fqXXCRSmPMfCklL5nZ56ncx2LATi40kP8IiP36b40ZhPCVsq/NExT9gO0TNFpyJchDuAGgefqSBSS/xwp6c25vozxjbSfD3vcD2ohfSqpa75mui4XGwwouvbHl+69I7zXpeM5yYxmU+tTqWSUEblFGM67BsYSaPXGxcP9izInSB8JQ6WbmOyjCd/6az1RbKz9Yud2Yc4cX4z9+qWAx/ldn6vmQ6cjpvEAWTQdngSyHpawP5QIDAQAB',

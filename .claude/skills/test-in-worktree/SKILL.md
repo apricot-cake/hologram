@@ -32,7 +32,7 @@ install が済めば `npm test`・`npm run typecheck`・アプリ起動ハーネ
 3. `git -C <本体> checkout --detach <対象コミット>`。**ブランチ名では checkout できない**＝worktree が掴んでいるので必ずコミット SHA を指定する。
 4. 本体ツリーで `dev:ext` を起動。
 5. dev バンドルに変更が入ったことを確認してからユーザーへ渡す（**バンドルの grep は識別子で**＝正規表現リテラルは偽の空振りを起こす・skill `verify-extension`「罠」）。
-6. 検証後は同じ順で戻す（停止 → `checkout main` → 開発を続けるなら `dev:ext` 再起動、終わりなら `build:ext`＋リロード1回で production へ＝skill `verify-extension`）。掴んだままにしない。
+6. 検証後は同じ順で戻す（停止 → `checkout main` → 終わりなら `build:ext`＝#650 以降 production ビルドは拡張が自分で載せるのでクリックは要らない。skill `verify-extension`）。掴んだままにしない。
 
 **なぜ先に止めるか**＝`git checkout` は監視下のファイルを一斉に書き換えるので watcher が壊れる。2026-07-26 の実測では checkout 直後に **wxt のプロセスごと消えていた**（症状＝`.output` の mtime が据え置き・ソースを touch しても再ビルドが起きない）。crash の因果は再現で確かめていないが、**止めてから切り替えれば因果がどちらでも成立する**＝「落ちたか」を毎回判定する手間ごと消える。起動し直した後は安定（20分以上生存を確認）。
 
