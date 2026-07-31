@@ -240,6 +240,12 @@ function register(ctx: IpcContext) {
         isThread: p.isThread || null,
         isEdited: p.isEdited || null,
         editedAt: p.editedAt || null,
+        cw: p.cw || null,
+        // #178: sensitive carries a definite `false` on the platforms that
+        // answer it (unlike isEdited above, which is never explicitly false)
+        // — `?? null` so a real false survives the round trip instead of
+        // collapsing to null the way `|| null` would.
+        sensitive: p.sensitive ?? null,
         quotedUrl: p.quotedUrl || null,
         replyToId: p.replyToId || null,
         media: Array.isArray(p.media) ? p.media : [],

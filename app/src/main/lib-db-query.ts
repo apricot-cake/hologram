@@ -54,6 +54,8 @@ const POST_COLUMNS = [
   'isThread',
   'isEdited',
   'editedAt',
+  'cw',
+  'sensitive',
   'quotedUrl',
   'replyToId',
   'hashtags',
@@ -187,6 +189,11 @@ function assemble(sqlite: Database.Database, postRows: any[]): any[] {
       // convention as isReply/isQuote/isThread above.
       isEdited: fromDbBool(r.isEdited),
       editedAt: r.editedAt,
+      // #178: cw is the author's own CW text. sensitive is a definite answer
+      // wherever the platform carries the signal (Mastodon/X/Bluesky), not the
+      // null-means-no-signal convention above — see PostRecordShape.sensitive.
+      cw: r.cw,
+      sensitive: fromDbBool(r.sensitive),
       quotedUrl: r.quotedUrl,
       replyToId: r.replyToId,
       hashtags: parseHashtags(r.hashtags),

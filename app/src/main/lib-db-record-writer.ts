@@ -57,6 +57,8 @@ const POST_COLUMNS = [
   'isThread',
   'isEdited',
   'editedAt',
+  'cw',
+  'sensitive',
   'quotedUrl',
   'replyToId',
   'hashtags',
@@ -113,6 +115,8 @@ function postParams(n: PostRecordShape): unknown[] {
     isThread: toDbBool(n.isThread),
     isEdited: toDbBool(n.isEdited),
     editedAt: n.editedAt,
+    cw: n.cw,
+    sensitive: toDbBool(n.sensitive),
     quotedUrl: n.quotedUrl,
     replyToId: n.replyToId,
     hashtags: JSON.stringify(n.hashtags),
@@ -159,7 +163,7 @@ function preparePostStmts(sqlite: Database.Database): PostStmts {
     // posts.ftsRowid is that key — see the fts-rowid-addressing migration.
     selectFtsRowid: sqlite.prepare('SELECT ftsRowid FROM posts WHERE captureId = ?'),
     deleteFts: sqlite.prepare('DELETE FROM posts_fts WHERE rowid = ?'),
-    insertFts: sqlite.prepare(`INSERT INTO posts_fts (rowid, ${POSTS_FTS_COLUMNS}) VALUES (?,?,?,?,?,?,?,?,?,?,?)`),
+    insertFts: sqlite.prepare(`INSERT INTO posts_fts (rowid, ${POSTS_FTS_COLUMNS}) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`),
     claimFtsRowid: sqlite.prepare('UPDATE posts SET ftsRowid = ? WHERE captureId = ?'),
     deletePost: sqlite.prepare('DELETE FROM posts WHERE captureId = ?'),
     // OR IGNORE, and no matching DELETE: raw_payloads is append-only (#292 —
@@ -189,7 +193,7 @@ function writePost(stmts: PostStmts, resolveTagId: (name: string) => number, rec
   // column, since ftsRowid is deliberately not in POST_COLUMNS.
   const ftsRowid = (stmts.selectFtsRowid.get(n.captureId) as { ftsRowid: number | null } | undefined)?.ftsRowid ?? null;
   if (ftsRowid != null) stmts.deleteFts.run(ftsRowid);
-  const ftsInsert = stmts.insertFts.run(ftsRowid, n.captureId, n.text, n.title, n.displayName, n.screenName, n.eagleName, n.description, n.hashtags.join(' '), n.tags.join(' '), null);
+  const ftsInsert = stmts.insertFts.run(ftsRowid, n.captureId, n.text, n.title, n.displayName, n.screenName, n.eagleName, n.description, n.hashtags.join(' '), n.tags.join(' '), null, n.cw);
   if (ftsRowid == null) stmts.claimFtsRowid.run(Number(ftsInsert.lastInsertRowid), n.captureId);
   // Acquisition originals (#292), in the SAME transaction the caller opened for
   // the post — the design's "投稿保存と同じ transaction で参照を確定する". A

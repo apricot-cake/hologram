@@ -1381,6 +1381,8 @@ function buildRecord(meta, { captureId, capturedAt, postUrl, sendPlatform, repla
       isThread: meta.isThread,
       isEdited: meta.isEdited,
       editedAt: meta.editedAt,
+      cw: meta.cw,
+      sensitive: meta.sensitive,
       quotedUrl: meta.quotedUrl,
       replyToId: meta.replyToId,
       hashtags: meta.hashtags || [],

@@ -64,9 +64,9 @@ describe('マイグレーションが通り、テーブルが揃う', () => {
   );
   sqlite.close();
 
-  test('user_version は 18（v1 DDL ＋ #189 add-post-edited-fields までの追加17本）', () => {
+  test('user_version は 19（v1 DDL ＋ #178 add-post-cw-sensitive までの追加18本）', () => {
     const { sqlite } = openDatabase(mkdb());
-    expect(sqlite.pragma('user_version', { simple: true })).toBe(18);
+    expect(sqlite.pragma('user_version', { simple: true })).toBe(19);
     sqlite.close();
   });
 
@@ -192,6 +192,53 @@ describe('fts-rowid-addressing の移行（#444）', () => {
     const row = sqlite.prepare('SELECT hashtags, tagsText, reading FROM posts_fts WHERE postId = ?').get('cap-1');
     expect(row).toEqual({ hashtags: '写真 記録', tagsText: 'アリス', reading: null });
     expect(sqlite.prepare('SELECT postId FROM posts_fts WHERE posts_fts MATCH ?').all('tagsText:"アリス"')).toHaveLength(1);
+  });
+});
+
+// #178: 既存ライブラリを壊さないこと。fts-rowid-addressing の1つ手前まで進めた
+// 本物の DB を作り（cw 列も posts_fts の cw 列もまだ無い状態）、そこから
+// add-post-cw-sensitive まで開き直す。FTS5 は ALTER が無いので posts_fts は
+// 丸ごと再構築される（#444 と同じ手口）— 既存の text/hashtags/tagsText の
+// MATCH が退行しないこと、ftsRowid が引き継がれること、新設の cw 列が
+// 既存行では NULL のまま（何も語らない）で、次に posts.cw を持つ行を書けば
+// 検索に乗ることを見る。
+describe('add-post-cw-sensitive の移行（#178）', () => {
+  const file = mkdb();
+  const before = new Database(file);
+  runMigrations(
+    before,
+    MIGRATIONS.slice(
+      0,
+      MIGRATIONS.findIndex((m) => m.name === 'add-post-cw-sensitive'),
+    ),
+  );
+  before.prepare('INSERT INTO posts (captureId, capturedAt, updatedAt, text, hashtags) VALUES (?,?,?,?,?)').run('cap-1', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z', '吾輩は猫である', '[]');
+  before.exec("UPDATE posts SET ftsRowid = 1 WHERE captureId = 'cap-1'");
+  before.prepare('INSERT INTO posts_fts (rowid, postId, text, hashtags, tagsText) VALUES (?,?,?,?,?)').run(1, 'cap-1', '吾輩は猫である', '', '');
+  before.close();
+
+  const { sqlite } = openDatabase(file); // ここで add-post-cw-sensitive が走る
+  afterAll(() => sqlite.close());
+
+  test('posts.cw / posts.sensitive 列ができる', () => {
+    const cols = (sqlite.prepare('PRAGMA table_info(posts)').all() as Array<{ name: string }>).map((c) => c.name);
+    expect(cols).toContain('cw');
+    expect(cols).toContain('sensitive');
+  });
+
+  test('移行前の行は cw が NULL のまま（何も捏造しない）', () => {
+    expect(sqlite.prepare("SELECT cw FROM posts WHERE captureId = 'cap-1'").get()).toEqual({ cw: null });
+  });
+
+  test('ftsRowid は引き継がれ、既存の MATCH は退行しない', () => {
+    expect(sqlite.prepare('SELECT ftsRowid FROM posts WHERE captureId = ?').get('cap-1')).toEqual({ ftsRowid: 1 });
+    expect(sqlite.prepare('SELECT postId FROM posts_fts WHERE posts_fts MATCH ?').all('"猫である"')).toEqual([{ postId: 'cap-1' }]);
+  });
+
+  test('posts_fts に cw 列があり、新しく書いた行の CW 文言が検索に乗る', () => {
+    sqlite.prepare("UPDATE posts SET cw = 'spider photo' WHERE captureId = 'cap-1'").run();
+    sqlite.prepare("UPDATE posts_fts SET cw = 'spider photo' WHERE rowid = 1").run();
+    expect(sqlite.prepare('SELECT postId FROM posts_fts WHERE posts_fts MATCH ?').all('cw:"spider photo"')).toEqual([{ postId: 'cap-1' }]);
   });
 });
 
@@ -326,7 +373,7 @@ describe('既存 v1 データベースの開き直しは no-op', () => {
   const second = openDatabase(file);
 
   test('マイグレーションを再実行しない', () => {
-    expect(second.sqlite.pragma('user_version', { simple: true })).toBe(18);
+    expect(second.sqlite.pragma('user_version', { simple: true })).toBe(19);
   });
 
   test('前回のデータが残る', () => {

@@ -220,6 +220,23 @@ function bskyHashtags(record): string[] {
   return normalizeHashtags([...inline, ...(Array.isArray(record.tags) ? record.tags : [])]);
 }
 
+// #178: Bluesky has no CW free-text field, only self-applied moderation
+// labels (com.atproto.label.defs#selfLabels — record.labels.values[].val,
+// confirmed against the official lexicon: raw.githubusercontent.com/
+// bluesky-social/atproto/main/lexicons/{app/bsky/feed/post,com/atproto/
+// label/defs}.json). Only the CONTENT labels count as "sensitive" here —
+// 'bot' (an account-kind marker) and the moderation hints ('!hide'/'!warn'/
+// '!no-unauthenticated') answer a different question and would false-positive
+// an ordinary bot account or a self-moderation flag as adult content.
+// A post that reaches this line always has a definite answer (the record
+// either carries labels or it doesn't — nothing here can fail the way a
+// network fetch can), so absence is a confident false, not null.
+const BLUESKY_SENSITIVE_LABELS = new Set(['porn', 'sexual', 'nudity', 'graphic-media']);
+function bskySensitive(record): boolean {
+  const values = record.labels && Array.isArray(record.labels.values) ? record.labels.values : [];
+  return values.some((v) => v && BLUESKY_SENSITIVE_LABELS.has(v.val));
+}
+
 async function fetchBlueskyPost(parsed, url): Promise<PostRecord> {
   const rec = emptyRecord(url, 'bluesky');
   rec.screenName = parsed.handle;
@@ -270,6 +287,7 @@ async function fetchBlueskyPost(parsed, url): Promise<PostRecord> {
     }
     if (record.langs && record.langs.length) rec.lang = record.langs[0];
     rec.hashtags = bskyHashtags(record);
+    rec.sensitive = bskySensitive(record);
     rec.mediaType = bskyMediaType(post);
     // Only a video post pays for the DID-document round trip; an images post
     // already has its fullsize URLs from the AppView.
