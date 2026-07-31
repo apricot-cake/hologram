@@ -10,7 +10,7 @@ import { expect, test } from '../lib/harness.ts';
 test('選択バーから削除するとグリッドから消えてごみ箱に入る', async ({ launchHologram }) => {
   const hologram = await launchHologram();
   const { page } = hologram;
-  const cards = page.locator('#postGrid .post-card');
+  const cards = page.locator('[data-slot="post-grid"] [data-slot="post-card"]');
   const nav = page.locator('[data-slot="sidebar"]').first();
   const trashEntry = nav.getByRole('button', { name: 'ゴミ箱' });
 
@@ -43,7 +43,7 @@ test('選択バーから削除するとグリッドから消えてごみ箱に�
   // ゴミ箱 opens as a destination in the content area: the deleted post is a card
   // there, selecting it arms 復元, and pressing it puts the post back.
   await trashEntry.click();
-  const trashCards = page.locator('#trashGrid .post-card');
+  const trashCards = page.locator('[data-slot="trash-grid"] [data-slot="post-card"]');
   await expect(trashCards).toHaveCount(1);
   await expect(trashCards.filter({ hasText: 'rough_fudemoto' })).toHaveCount(1);
 
@@ -53,7 +53,7 @@ test('選択バーから削除するとグリッドから消えてごみ箱に�
   await expect(restoreButton).toBeEnabled();
   await restoreButton.click();
   await expect(trashCards).toHaveCount(0);
-  await expect(page.locator('#trashPanel').getByText('ゴミ箱は空です').first()).toBeVisible();
+  await expect(page.locator('[data-slot="trash-view"]').getByText('ゴミ箱は空です').first()).toBeVisible();
 
   // Restored means the row and the media are back where the library keeps them.
   await expect.poll(() => hologram.readDb((sqlite) => sqlite.prepare('SELECT captureId FROM posts WHERE captureId = ?').get('e2e-0004'))).toEqual({ captureId: 'e2e-0004' });

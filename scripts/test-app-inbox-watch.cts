@@ -46,10 +46,10 @@ async function saveViaInbox(id) {
 // for the grid to reach 2 cards on its own once the second capture lands.
 const evalJs = `(async () => {
   for (let i = 0; i < 40; i++) {
-    if (document.querySelectorAll('.post-card').length >= 2) return 2;
+    if (document.querySelectorAll('[data-slot="post-card"]').length >= 2) return 2;
     await new Promise(r => setTimeout(r, 150));
   }
-  return document.querySelectorAll('.post-card').length;
+  return document.querySelectorAll('[data-slot="post-card"]').length;
 })()`;
 
 const env = Object.assign({}, process.env, { APPDATA: tmp, HOLOGRAM_CONFIG_DIR: configDir, HOLOGRAM_SMOKE: '1', HOLOGRAM_SMOKE_EVAL: evalJs });

@@ -1,8 +1,7 @@
 // Card selection + selection-bar bulk actions — extracted from the old viewer.ts
 // monolith. Mirrors inspector-builder.ts / post-grid-builder.ts: the pure logic
-// moves here, DOM event registration (addEventListener calls on
-// #postGrid/#selectionBar) stays in viewer.ts, which just wires the returned
-// functions in. selection.ts (the hologramStore-backed selectedSet/anchor
+// moves here; the gestures that reach it are the cells' own props now
+// (services/grid.ts's cardActions, wired in orchestrator.ts). selection.ts (the hologramStore-backed selectedSet/anchor
 // bridge) stays untouched — this module is one of its consumers (the
 // FloatingBar component's own model derivation is the other, unaffected here).
 // タグを追加 (openBulkTagDialog) is bulk-edit-builder.ts territory
@@ -55,36 +54,22 @@ export interface SelectionBarDeps {
 }
 
 export function makeSelectionBar(deps: SelectionBarDeps) {
-  const byId = (id: string) => document.getElementById(id) as HTMLElement;
-
-  // Toggle a card in/out of the selection; Shift additionally selects the range
-  // from the last-selected card (anchor), Google-Photos style.
-  function toggleCardSelection(card: HTMLElement, shiftKey: boolean) {
-    const idx = Number.parseInt(card.dataset.index ?? '', 10);
-    const key = card.dataset.key as string;
-    selection.toggle(idx, key, shiftKey, deps.getViewGroups(), postIdKey);
-    syncSelectionClasses(); // class-only: don't rebuild the grid (was reloading every visible image)
-  }
-
-  // Unified card-click selection (#143): plain = single-select (the caller then
-  // opens the inspector for it), Ctrl/Cmd = add/remove, Shift = range from the
-  // anchor. Returns true only for a plain click, so the caller knows to swap the
-  // inspector to this card (Ctrl/Shift must not touch it — 確定 未決事項2).
-  function clickSelect(card: HTMLElement, e: { ctrlKey?: boolean; metaKey?: boolean; shiftKey?: boolean }) {
-    const idx = Number.parseInt(card.dataset.index ?? '', 10);
-    const key = card.dataset.key as string;
+  // The card's own click, given the GROUP it drew (the cell hands it over — nothing
+  // reads an index back off the DOM any more). Returns whether the inspector should
+  // follow: a plain click is "select this one and show it", Ctrl/Shift only build the
+  // selection and leave the panel alone (#143 確定未決2).
+  function clickSelect(g: HologramPostGroup, e: { ctrlKey?: boolean; metaKey?: boolean; shiftKey?: boolean }) {
+    const idx = deps.getViewGroups().indexOf(g);
+    const key = postIdKey(g.rep);
     if (e.shiftKey) {
       selection.toggle(idx, key, true, deps.getViewGroups(), postIdKey);
-      syncSelectionClasses();
       return false;
     }
     if (e.ctrlKey || e.metaKey) {
       selection.toggle(idx, key, false, deps.getViewGroups(), postIdKey);
-      syncSelectionClasses();
       return false;
     }
     selection.selectOnly(idx, key);
-    syncSelectionClasses();
     return true;
   }
 
@@ -99,14 +84,12 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
     },
     update(indices: number[]) {
       selection.updateMarquee(indices, deps.getViewGroups(), postIdKey);
-      syncSelectionClasses();
     },
     end() {
       selection.endMarquee();
     },
     cancel() {
       selection.cancelMarquee();
-      syncSelectionClasses();
     },
   };
 
@@ -122,18 +105,15 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
   function clickBackground() {
     if (selection.size()) {
       selection.clear();
-      syncSelectionClasses();
     }
     deps.dismissDetail();
   }
 
-  // Toggle .selecting on the grid container (viewer-owned, static). Per-card
-  // .selected is no longer pushed through here — the grid component's Cell reads
-  // hologramStore's 'selectedSet' directly (selection.toggle already
-  // wrote the fresh snapshot), so it re-renders on its own the moment the store changes.
-  function syncSelectionClasses() {
-    byId('postGrid').classList.toggle('selecting', selection.size() > 0);
-  }
+  // There is nothing left to sync by hand: every visible cell subscribes to
+  // hologramStore's 'selectedSet' (which selection.ts already wrote), so it re-renders
+  // itself the moment the selection changes. The `.selecting` class this used to toggle
+  // on the grid container existed to hide the cards' hover controls, and those are gone
+  // (#618 確定A).
 
   // Every record of every selected group (bulk actions operate on records).
   function selectedRecords() {
@@ -142,7 +122,6 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
 
   function clearSelection() {
     selection.clear();
-    syncSelectionClasses(); // class-only (callers that change content re-render themselves)
   }
 
   // updateSelectionBar() lived here: it drove #selectionBar's container show/hide
@@ -180,7 +159,6 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
 
   function toggleSelectAll() {
     selection.toggleAll(deps.getViewGroups(), postIdKey);
-    syncSelectionClasses();
   }
 
   // Ctrl/Cmd+A selects every visible (filtered) card. Left to the browser when
@@ -290,7 +268,6 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
     const g = groups[next];
     if (!g) return;
     selection.selectOnly(next, postIdKey(g.rep));
-    syncSelectionClasses();
     scrollGridIndexIntoView(next);
     deps.showDetail(g); // the inspector follows, exactly as it does for a plain click
   }
@@ -341,7 +318,6 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
   }
 
   return {
-    toggleCardSelection,
     clickSelect,
     marquee,
     clickBackground,

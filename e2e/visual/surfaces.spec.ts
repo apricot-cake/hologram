@@ -22,7 +22,7 @@ for (const theme of ['light', 'dark'] as const) {
   test.describe(theme, () => {
     test('インスペクタ（投稿の詳細）', async ({ launchHologram }) => {
       const { page } = await launchHologram({ theme });
-      await page.locator('#postGrid .post-card').filter({ hasText: '青い空と海の写真です' }).click();
+      await page.locator('[data-slot="post-grid"] [data-slot="post-card"]').filter({ hasText: '青い空と海の写真です' }).click();
       const inspector = page.locator('[data-slot="inspector-post"]');
       await expect(inspector).toBeVisible();
       await expect(inspector).toHaveScreenshot(`inspector-post-${theme}.png`);
@@ -38,7 +38,7 @@ for (const theme of ['light', 'dark'] as const) {
 
     test('削除の確認ダイアログ', async ({ launchHologram }) => {
       const { page } = await launchHologram({ theme });
-      await page.locator('#postGrid .post-card').filter({ hasText: '青い空と海の写真です' }).click();
+      await page.locator('[data-slot="post-grid"] [data-slot="post-card"]').filter({ hasText: '青い空と海の写真です' }).click();
       await page.getByRole('button', { name: '削除' }).click();
       const confirm = page.locator('[data-slot="alert-dialog-content"]');
       await expect(confirm).toBeVisible();

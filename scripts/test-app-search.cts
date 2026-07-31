@@ -97,7 +97,7 @@ seedLibrary(configDir, records);
 
 const evalJs = `(async () => {
   const wait = (ms) => new Promise(r => setTimeout(r, ms));
-  const cards = () => document.querySelectorAll('#postGrid .post-card').length;
+  const cards = () => document.querySelectorAll('[data-slot="post-grid"] [data-slot="post-card"]').length;
   const waitFor = async (fn, ms = 4000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (fn()) return true; await wait(40); } return false; };
   // React controlled inputs (searchbox component / date form): a bare .value write is
   // invisible to React's value tracker — go through the prototype setter, then 'input'.
@@ -134,11 +134,12 @@ const evalJs = `(async () => {
   // Counting alone is too weak: a UTC-anchored bound mis-buckets dz0 (drops it)
   // AND dz2 (adds it), so the COUNT stays 2 while the SET changes — only the set
   // distinguishes correct (dz0,dz1) from buggy (dz1,dz2).
+  // Read off the card's own text ('boundary dz0') — the cells carry no data-url (#618).
   // NOTE: this string is itself inside a backtick template literal, so the regex
   // backslash MUST be doubled (\\d) to survive into the evaluated code.
-  const dzSet = () => Array.from(document.querySelectorAll('#postGrid .post-card'))
-    .map((c) => (c.dataset.url || '').split('/').pop())
-    .filter((id) => /^dz\\d$/.test(id)).sort().join(',');
+  const dzSet = () => Array.from(document.querySelectorAll('[data-slot="post-grid"] [data-slot="post-card"]'))
+    .map((c) => ((c.textContent || '').match(/boundary (dz\\d)/) || [])[1])
+    .filter(Boolean).sort().join(',');
   const byText = (sel, text) => Array.from(document.querySelectorAll(sel)).find((el) => (el.textContent || '').trim() === text) || null;
   // 「+ フィルタ」ボタン（AddFilterButton: icon + 'フィルタ'）
   byText('button', 'フィルタ').click();

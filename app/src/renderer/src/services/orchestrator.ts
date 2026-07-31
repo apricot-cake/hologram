@@ -26,15 +26,18 @@ import { hologramI18n } from './i18n.ts';
 import * as folders from './folders.ts';
 import { open as lightboxOpen } from './lightbox.ts';
 import { shellReady } from './shell-ready.ts';
-import { hologramPostGridSource, hologramTrashGridSource } from './grid.ts';
-import { configure as configureTrashView, refresh as trashRefresh } from './trash-view.ts';
+import { scroller as contentScroller } from './content-area.ts';
+import { currentShape } from './display.ts';
+import * as selection from './selection.ts';
+import { hologramPostGridSource, hologramPosterGridSource, hologramTrashGridSource } from './grid.ts';
+import { clickCard as trashClickCard, configure as configureTrashView, preview as trashPreview, refresh as trashRefresh } from './trash-view.ts';
 import { makePostQueryBuilder, makePosterQueryBuilder, POST_FACET_OPTS, POSTER_FACET_OPTS } from './query-builder.ts';
 import { makeKindMenu } from './kind-menu-builder.ts';
 import { makeSearchBox } from './search-box-builder.ts';
 import { makeCommands } from './command-builder.ts';
 import { makePostGridBuilder, bindLoadPosts, bindConfirmClearAll, bindGetSkipDeleteConfirm, bindSetSkipDeleteConfirm } from './post-grid-builder.ts';
 import { makePosterGridBuilder } from './poster-grid-builder.ts';
-import { makeGridDensity, bindApplyTileOverlay, type HologramSizeTrack } from './grid-density-builder.ts';
+import { makeGridDensity, type HologramSizeTrack } from './grid-density-builder.ts';
 import { makeInspector } from './inspector-builder.ts';
 import { makeSelectionBar } from './selection-builder.ts';
 import { makeSelectionMenu, selectionTextAt } from './selection-menu.ts';
@@ -93,7 +96,7 @@ export let showTabMenu: (id: string, at: { clientX: number; clientY: number }) =
 // Ctrl+T / Ctrl+W / Ctrl+Tab — document level, so it stays a GlobalShortcuts
 // registration rather than something the strip owns.
 export let handleGlobalTabShortcut: (e: KeyboardEvent) => void;
-export let handleViewStoreChange: () => void;
+export let handleDisplayStoreChange: () => void;
 export let handleBrowseModeStoreChange: () => void;
 export let handlePosterViewStoreChange: () => void;
 export let handleSearchQueryStoreChange: () => void;
@@ -128,9 +131,15 @@ export let getPosterSizeTrack: () => HologramSizeTrack | null;
 export let applyPosterSize: (value: number, min: number, max: number) => void;
 // Re-roll the shuffle order (#118). The 'random' sort is a pure function of a seed,
 // so a new order means a new seed — this replaces it and re-renders. The display
-// popover's re-roll button calls it; picking 'random' seeds itself (see the
-// sortSelect change listener).
+// popover's re-roll button calls it; picking 'random' seeds itself (see setPostSort).
 export let rerollShuffle: () => void;
+// Post sort. The display popover's Select calls this; hologramStore 'sortPost' is the
+// value it reads back. (Poster sort has no action of its own — writing 'sortPoster' is
+// the whole of it, and orchestrator subscribes to that key.)
+export let setPostSort: (value: string) => void;
+// Import a library from a ZIP. The settings panel's button and the first-run empty
+// state's CTA are the two entry points.
+export let runZipImport: () => Promise<void>;
 // Go to a browse destination (投稿グリッド / 投稿者グリッド) from the left sidebar.
 // The sidebar is the "go to another place" axis (browser address bar / bookmarks),
 // so choosing a destination while the image view is up LEAVES it and lands on that
@@ -252,11 +261,10 @@ export function endFilterEditSession(): void {
   // Messages live in i18n.js (loaded before this script via index.html).
   // Manifest-level strings come from _locales/*/messages.json via Chrome.
   const { getMessage } = await hologramI18n;
-  // The shell is React-owned now (AppShell.tsx): its DOM (#postGrid / #posterGrid /
-  // #emptyState / #searchBox / #sortSelect …) is rendered on mount,
-  // not present as static index.html markup. Wait for that mount before any of the
-  // shell-DOM setup below runs, so getElementById/byId resolve. (viewerReady still
-  // resolves at the end of this IIFE → AppBoot's bootApp fires after, unchanged.)
+  // The shell is React-owned now (AppShell.tsx). Wait for its mount before any of the
+  // shell-DOM setup below runs, so the elements it registers (services/content-area.ts)
+  // and the few byId() lookups still left resolve. (viewerReady still resolves at the
+  // end of this IIFE → AppBoot's bootApp fires after, unchanged.)
   await shellReady;
   // Count / date display formatters live in format.ts now (imported above).
   // (The backup-rail time formatters fmtTime/fmtBackupTime are used only by the
@@ -277,9 +285,7 @@ export function endFilterEditSession(): void {
   // surrounding code already dereferences it directly — and narrow to the concrete
   // element subtype so .value/.options/.min/.disabled type-check. closestOf mirrors
   // folders.js: casts an event target to the nearest matching element (or null). ---
-  const byId = (id: string) => document.getElementById(id) as HTMLElement;
   const _inputById = (id: string) => document.getElementById(id) as HTMLInputElement;
-  const selectById = (id: string) => document.getElementById(id) as HTMLSelectElement;
   const closestOf = (e: Event, sel: string) => {
     const t = e.target as HTMLElement | null;
     return t instanceof Element ? (t.closest(sel) as HTMLElement | null) : null;
@@ -321,13 +327,12 @@ export function endFilterEditSession(): void {
   // static setText here.
   setAttr('sbTop', 'data-tip', getMessage('sbTopTip')); // #sbTop back-to-top retired in the shell cutover; setAttr no-ops if absent
 
-  // Post sort's value source is the hidden <select> AppShell renders. The display
-  // popover's Select drives it on pick (value + a 'change' event, so the listener far
-  // below still fires) and mirrors the value into hologramStore 'sortPost', which is what
-  // lets the popover reflect programmatic changes (a tab restore pushes 'sortPost' —
-  // see applyState / the tab click handler). Poster sort has no element: the store key
-  // IS its single source. Collapsing this stub into the store is #217's follow-up.
-  const sortSelect = selectById('sortSelect');
+  // Post sort's single source is hologramStore 'sortPost' — the same shape the poster
+  // sort has always had. It used to be a hidden <select> in the shell that the display
+  // popover drove with a synthetic 'change' event (#153 category 3); the popover calls
+  // setPostSort() below instead, and a tab restore writes the key directly (applyState),
+  // which is what keeps a restore from counting as a user sort change.
+  const sortValue = () => (storeGet('sortPost') as string) || 'date-desc';
 
   // --- Query Field ---
   const ENG_TYPE_LABELS: Record<string, string> = {
@@ -397,17 +402,9 @@ export function endFilterEditSession(): void {
   // (after postQB/postGrid/browseMode/multiOnly are in scope) and its handlers are
   // assigned to the module-scope exports at that construction site.
 
-  // Empty-state CTAs (innerHTML rebuilds the buttons each render → delegate)
-  byId('emptyState').addEventListener('click', (e) => {
-    const btn = closestOf(e, 'button');
-    if (!btn) return;
-    if (btn.id === 'emptyResetBtn') {
-      if (browseMode === 'posters') {
-        setSearchBoxValue('');
-        renderPosters();
-      } else resetAllFilters();
-    } else if (btn.id === 'emptyImportBtn') void runZipImport();
-  });
+  // The empty state's CTAs are its own component's onClick now (empty/EmptyState.tsx),
+  // calling resetAllFilters / resetPosterFilters / runZipImport through the module-scope
+  // exports below — the delegated listener that matched them by element id is gone.
 
   // --- カテゴリ値フライアウト: サイドバーの行/タググループボタンの横に開く。
   // State (どのカテゴリが開いているか) + row-model building (qfValues — bespoke facet
@@ -589,9 +586,10 @@ export function endFilterEditSession(): void {
   })();
   if (SMOKE_CAPTURE) document.documentElement.classList.add('smoke-capture');
 
-  // #mode-post is the scroll container (the page itself never scrolls), so scroll
-  // position is read/written there, not on window.
-  const contentScrollEl = () => document.getElementById('mode-post');
+  // The content column is the scroll container (the page itself never scrolls), so
+  // scroll position is read/written there, not on window. The shell hands the element
+  // over (services/content-area.ts) rather than promising an id.
+  const contentScrollEl = () => contentScroller();
   const contentScrollTop = () => {
     const el = contentScrollEl();
     return el ? el.scrollTop : 0;
@@ -625,8 +623,7 @@ export function endFilterEditSession(): void {
     renderPosters: () => renderPosters(),
     getBrowseMode: () => browseMode,
   });
-  const { tileThumbW, cardThumbW, listThumbW } = gridDensity;
-  bindApplyTileOverlay(gridDensity.applyTileOverlay);
+  const { gridThumbW, listThumbW } = gridDensity;
   // Post-grid selection state (Set + shift-range anchor) lives in
   // services/selection.ts — hologramStore's
   // 'selectedSet' key IS the state; the grid component's cells read it reactively.
@@ -761,8 +758,8 @@ export function endFilterEditSession(): void {
     btn.addEventListener('click', () => scroller.scrollTo({ top: 0, behavior: 'smooth' }));
   })();
 
-  // Back-to-top for the CONTENT area. #mode-post is the scroll container (the page
-  // itself never scrolls), so watch its scrollTop, not the window.
+  // Back-to-top for the CONTENT area — watch the scroll container's scrollTop, not the
+  // window's (the page itself never scrolls).
   (function setupContentTop() {
     const btn = document.getElementById('contentTop');
     const scroller = contentScrollEl();
@@ -822,19 +819,16 @@ export function endFilterEditSession(): void {
     t: getMessage,
     smokeCapture: SMOKE_CAPTURE,
     fileSrc,
-    currentView: gridDensity.getCurrentView,
-    tileOverlay: gridDensity.getTileOverlay,
+    shape: currentShape,
     multiOnly: () => multiOnly,
-    tileThumbW,
-    cardThumbW,
+    gridThumbW,
     listThumbW,
-    sortValue: () => sortSelect.value,
+    sortValue,
     postShadow: () => postQB.shadow(),
     getFilteredPosts: () => getFilteredPosts(),
     buildUsers: () => buildUsers(),
     snapshotState: () => tabsCtl.snapshotState(), // tabsCtl is constructed below — deferred forward reference
     syncTitleAndPersist: () => tabsCtl.syncTitleAndPersist(),
-    applyTileLayout: () => gridDensity.applyTileLayout(),
     getBrowseMode: () => browseMode,
     renderPosters: (keepLimit) => renderPosters(keepLimit),
     onPostsLoaded: () => {
@@ -878,7 +872,7 @@ export function endFilterEditSession(): void {
     postPredOf,
     currentTree,
     stickyRecs: postGrid.getStickyRecs(),
-    sortValue: () => sortSelect.value,
+    sortValue,
     // Shuffle seed (#118) — hologramStore 'shuffleSeed', snapshotted per tab like the
     // sort key itself. Only the 'random' sort reads it.
     shuffleSeed: () => (storeGet('shuffleSeed') as string) || '',
@@ -918,11 +912,10 @@ export function endFilterEditSession(): void {
     t: getMessage,
     tabTitleOf,
     postQB,
-    getSortValue: () => sortSelect.value,
-    setSortValue: (v) => {
-      sortSelect.value = v;
-      storeSet('sortPost', sortSelect.value); // mirror into the store so the display popover reflects it
-    },
+    getSortValue: sortValue,
+    // A restore WRITES the key and nothing else: renderPosts is the caller's own next
+    // step, so going through setPostSort() here would push a duplicate history entry.
+    setSortValue: (v) => storeSet('sortPost', v),
     // The shuffle seed travels with the sort key in the tab snapshot (#118), so a
     // restored tab reproduces the order it was showing.
     getShuffleSeed: () => (storeGet('shuffleSeed') as string) || '',
@@ -1003,22 +996,6 @@ export function endFilterEditSession(): void {
   // renderPosts all moved to post-grid-builder.ts (postGrid above).
   const _prefersReducedMotion = () => !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
 
-  // Text expand/collapse on click
-  byId('postGrid').addEventListener('click', (e) => {
-    const textEl = closestOf(e, '.text');
-    if (textEl) {
-      e.stopPropagation();
-      textEl.classList.toggle('expanded');
-      if (textEl.classList.contains('expanded')) {
-        textEl.classList.remove('truncated');
-      } else {
-        requestAnimationFrame(() => {
-          textEl.classList.toggle('truncated', textEl.scrollHeight > textEl.clientHeight);
-        });
-      }
-    }
-  });
-
   // Image lightbox / quick-view peek (a single image — #143). The overlay UI lives
   // in the React component (services/lightbox.ts + lightbox/); orchestrator.ts
   // only resolves a post's gallery items below and hands the FIRST (the thumbnail)
@@ -1048,7 +1025,6 @@ export function endFilterEditSession(): void {
   hologramTrashGridSource.configure({
     modelOf: (g, i) => postGrid.cardModel(g, i),
     keyOf: (g) => postIdKey(g.rep),
-    labels: postGrid.cardLabels,
   });
   configureTrashView({
     t: getMessage,
@@ -1056,59 +1032,60 @@ export function endFilterEditSession(): void {
     openQuickView: (g) => lightboxOpen(buildGroupGalleryItems(g)[0]),
   });
 
-  // Primary card gesture (#143 P2⑥): a plain click single-selects the card and
-  // shows it in the inspector (Eagle/Explorer 型「シングル＝選択して詳細」); Ctrl
-  // adds/removes, Shift range-selects — neither touches the inspector (確定 未決
-  //事項2). Double-click opens the image view as an in-tab history destination
-  // (#144). The expandable post text keeps its
-  // dedicated handler, so that region is skipped here. selectionCtl/showDetail
-  // are declared below — safe closure forward-refs (they run only on a real click).
-  byId('postGrid').addEventListener('click', (e) => {
-    if (closestOf(e, '.text')) return;
-    const card = closestOf(e, '.post-card');
-    if (!card) return;
-    const g = postGrid.getViewGroups()[Number.parseInt(card.dataset.index ?? '', 10)];
-    if (selectionCtl.clickSelect(card, e) && g) showDetail(g);
-  });
-  byId('postGrid').addEventListener('dblclick', (e) => {
-    if (closestOf(e, '.text')) return;
-    const card = closestOf(e, '.post-card');
-    if (!card) return;
-    const g = postGrid.getViewGroups()[Number.parseInt(card.dataset.index ?? '', 10)];
-    if (g) openImageEntry(g);
-  });
-
-  // Middle-click an image → open the post as a background image tab
-  // (browser-like; replaces the old single-image window).
-  byId('postGrid').addEventListener('auxclick', (e) => {
-    if (e.button !== 1) return;
-    const img = closestOf(e, '.card-img');
-    if (!img) return;
-    e.preventDefault();
-    const g = postGrid.getViewGroups()[Number.parseInt((img.closest('.post-card') as HTMLElement | null)?.dataset.index ?? '', 10)];
-    if (g) addImageTab(g);
-  });
-  // suppress the middle-click autoscroll on card images
-  byId('postGrid').addEventListener('mousedown', (e) => {
-    if (e.button === 1 && closestOf(e, '.card-img')) e.preventDefault();
-  });
-
-  // Drag a card's ORIGINAL files out to another app (#132). No interplay with the
-  // click/dblclick/auxclick handlers above is needed: the browser only fires
-  // dragstart past its own drag threshold, and a completed drag suppresses click.
-  byId('postGrid').addEventListener('dragstart', (e) => postGrid.handleCardDragStart(e as DragEvent));
-
-  // foldMenuItems/onFoldMenuPick/showFoldMenu and cardMenuItems/onCardMenuPick/
-  // showCardMenu moved to post-grid-builder.ts (postGrid above).
-  byId('postGrid').addEventListener('contextmenu', (e) => {
-    const card = closestOf(e, '.post-card');
-    if (!card) return;
-    e.preventDefault();
-    if (byId('postGrid').classList.contains('selecting')) return; // selection bar owns bulk actions
-    const g = postGrid.getViewGroups()[Number.parseInt(card.dataset.index ?? '', 10)];
-    // A card's body text is selectable, so the same click can be a text gesture —
-    // the rows get spliced into this menu rather than opening a second one (#167).
-    if (g) showCardMenu(g, e.clientX, e.clientY, selectionTextAt(e.target));
+  // Every gesture a post card answers, as the cell's own props (#618). These used to be
+  // six delegated listeners on the grid container that recovered the group by parsing a
+  // `data-index` attribute back off the DOM — #153 categories 1 and 2 — so the card had
+  // to promise a markup shape and the grid had to promise an id. Now the cell hands the
+  // group straight back. selectionCtl/showDetail are declared below: safe closure
+  // forward-refs, since none of these run before a real gesture.
+  //
+  // #143 P2⑥: a plain click single-selects the card AND shows it in the inspector
+  // (Eagle/Explorer 型「シングル＝選択して詳細」); Ctrl adds/removes, Shift range-selects
+  // — neither touches the inspector (確定 未決事項2). Double-click opens the image view
+  // as an in-tab history destination (#144).
+  // Did the gesture land on the card's picture (as opposed to its text or metadata)?
+  // The two middle-click behaviours below are about the image specifically.
+  const onMedia = (e: { target: EventTarget | null }) => e.target instanceof Element && !!e.target.closest('[data-slot="post-card-media"]');
+  const postCardActions: HologramCardActions = {
+    onClick: (g: HologramPostGroup, e) => {
+      if (selectionCtl.clickSelect(g, e) && g) showDetail(g);
+    },
+    onDoubleClick: (g: HologramPostGroup) => openImageEntry(g),
+    // Middle-click the media → open the post as a background image tab (browser-like).
+    onAuxClick: (g: HologramPostGroup, e) => {
+      if (e.button !== 1 || !onMedia(e)) return;
+      e.preventDefault();
+      addImageTab(g);
+    },
+    // Suppress the middle-click autoscroll over the media.
+    onMouseDown: (_g: HologramPostGroup, e) => {
+      if (e.button === 1 && onMedia(e)) e.preventDefault();
+    },
+    // Drag a card's ORIGINAL files out to another app (#132). No interplay with the
+    // handlers above is needed: the browser only fires dragstart past its own drag
+    // threshold, and a completed drag suppresses click.
+    onDragStart: (g: HologramPostGroup, e) => postGrid.handleCardDragStart(g, e.nativeEvent),
+    // foldMenuItems/onFoldMenuPick/showFoldMenu and cardMenuItems/onCardMenuPick/
+    // showCardMenu live in post-grid-builder.ts (postGrid above).
+    onContextMenu: (g: HologramPostGroup, e) => {
+      e.preventDefault();
+      if (selection.size() > 0) return; // the selection bar owns bulk actions
+      // A card's body text is selectable, so the same click can be a text gesture —
+      // the rows get spliced into this menu rather than opening a second one (#167).
+      showCardMenu(g, e.clientX, e.clientY, selectionTextAt(e.target));
+    },
+  };
+  hologramPostGridSource.configureActions(postCardActions);
+  // The trash draws the same cells but answers far less: click selects within the
+  // trash's own selection, double-click peeks, and everything else is refused (see
+  // trash/TrashGrid.tsx for why).
+  hologramTrashGridSource.configureActions({
+    onClick: (g: HologramPostGroup, e) => trashClickCard(postIdKey(g.rep), { ctrl: e.ctrlKey || e.metaKey, shift: e.shiftKey }),
+    onDoubleClick: (g: HologramPostGroup) => trashPreview(postIdKey(g.rep)),
+    // Dragging out of a trash means "restore it here" in every file manager that
+    // teaches the gesture, and the browser's own drag would carry the card's internal
+    // asset:// URL into whatever it is dropped on. Cancel it and say nothing.
+    onDragStart: (_g: HologramPostGroup, e) => e.preventDefault(),
   });
 
   // Sidebar folder chips (shared folders.json): count + ★default. Like tag chips
@@ -1258,7 +1235,7 @@ export function endFilterEditSession(): void {
   // reaction (mirror into currentView, persist, re-render with a view transition)
   // lives in grid-density-builder.ts now — this just bridges React's
   // subscribe registration (StoreSubscriptions, App.tsx) to it.
-  handleViewStoreChange = gridDensity.handleViewStoreChange;
+  handleDisplayStoreChange = gridDensity.handleDisplayStoreChange;
 
   // === Browse-mode toggle: 投稿グリッド ↔ 投稿者グリッド ↔ ゴミ箱 ===
   // The three destinations the left nav offers. 'trash' (#268) joined the pair as a
@@ -1395,7 +1372,7 @@ export function endFilterEditSession(): void {
     posterView: gridDensity.getPosterView,
     onPosterRendered: () => tabsCtl.syncPosterTitleAndPersist(),
   });
-  const { getPosterList, pfStore, posterFolderById, renderPosterFilterRows, renderPosters, openPosterPosts, jumpToPoster, refreshPosterTagFields, showPosterDetail, showPosterMenu } = posterGrid;
+  const { pfStore, posterFolderById, renderPosterFilterRows, renderPosters, openPosterPosts, jumpToPoster, refreshPosterTagFields, showPosterDetail, showPosterMenu } = posterGrid;
   // --- Poster query builder: the SAME builder (createQueryBuilder), evaluated
   // against poster (user) objects instead of posts. Leaf types: platform / instance /
   // tag(作品/キャラ含む) / folder / date(範囲). Its chips are the shared filter bar
@@ -1682,28 +1659,19 @@ export function endFilterEditSession(): void {
   // their posts (下の dblclick). The ℹ and 🏷 buttons are both retired — the
   // inspector is the single-click destination, and tagging is its inline field,
   // reached from the context menu's タグを編集 (P2⑦).
-  byId('posterGrid').addEventListener('click', (e) => {
-    const card = closestOf(e, '.poster-card');
-    if (!card) return;
-    const u = getPosterList()[Number.parseInt(card.dataset.index ?? '', 10)];
-    if (u) showPosterDetail(u);
-  });
-  // Double-click a poster → drill into that poster's posts (posts mode + user
-  // filter). ドリルイン＝#143 確定のダブルクリック割当（#24 の旧「シングル＝切替」を上書き）。
-  byId('posterGrid').addEventListener('dblclick', (e) => {
-    const card = closestOf(e, '.poster-card');
-    if (!card) return;
-    const u = getPosterList()[Number.parseInt(card.dataset.index ?? '', 10)];
-    if (u) openPosterPosts(u);
-  });
+  // The same props-not-delegation shape the post cards got (#618): the poster cell hands
+  // its own poster back, so nothing parses a `data-index` off the DOM.
   // posterMenuItems/onPosterMenuPick/showPosterMenu moved to poster-grid-builder.ts —
   // destructured (showPosterMenu) from posterGrid above.
-  byId('posterGrid').addEventListener('contextmenu', (e) => {
-    const card = closestOf(e, '.poster-card');
-    if (!card) return;
-    e.preventDefault();
-    const u = getPosterList()[Number.parseInt(card.dataset.index ?? '', 10)];
-    if (u) showPosterMenu(u, e.clientX, e.clientY);
+  hologramPosterGridSource.configureActions({
+    onClick: (u: HologramUserAgg) => showPosterDetail(u),
+    // Double-click a poster → drill into that poster's posts (posts mode + user
+    // filter). ドリルイン＝#143 確定のダブルクリック割当（#24 の旧「シングル＝切替」を上書き）。
+    onDoubleClick: (u: HologramUserAgg) => openPosterPosts(u),
+    onContextMenu: (u: HologramUserAgg, e) => {
+      e.preventDefault();
+      showPosterMenu(u, e.clientX, e.clientY);
+    },
   });
   // Poster-mode sort. Single source = hologramStore 'sortPoster' (the display popover's
   // Select writes it on pick); re-render when it changes — one trigger, no dual source.
@@ -1733,17 +1701,16 @@ export function endFilterEditSession(): void {
   getPosterSizeTrack = gridDensity.computePosterSizeTrack;
   applyPosterSize = gridDensity.setPosterSizeFromSlider;
 
-  // Tile overlay/reloadPosts/setSkipDeleteConfirm/confirmClearAll used to bridge
+  // reloadPosts/setSkipDeleteConfirm/confirmClearAll used to bridge
   // through the old shared bridge for the React settings component (Danger.tsx/Data.tsx/
   // settings/ipc.ts) to reach; those now import the live bindings above directly.
 
-  // Load saved view mode and skipDeleteConfirm
+  // Load the saved display shape + skipDeleteConfirm
   hologramIpc.getPrefs().then((prefs) => {
     gridDensity.restorePrefs(prefs);
     postGrid.restoreSkipDeleteConfirm(!!prefs.skipDeleteConfirm);
-    // Re-render once after applying the saved view mode. Sort is NOT read here anymore
-    // — it comes from the tab state (applied by initTabs), so the old prefs/initTabs
-    // load race on sortSelect.value is gone.
+    // Re-render once after applying the saved display. Sort is NOT read here — it comes
+    // from the tab state (applied by initTabs), so the two never race on load.
     renderPosts();
   });
 
@@ -1799,17 +1766,19 @@ export function endFilterEditSession(): void {
     applyFolderFilter: (id) => applyFolderFilter(id),
   });
 
-  sortSelect.addEventListener('change', () => {
-    // Sort lives in the tab state (persisted per tab via renderPosts→persist), not a
-    // separate global pref — that double-storage raced on load. renderPosts captures it.
-    // A sort change rewrites the current history entry instead of pushing (#144 確定未決2).
-    // Picking 'random' with no seed yet mints one, so the first pick already shuffles
-    // (#118); an existing seed is kept, which is what makes leaving and coming back to
-    // random show the same order until the user re-rolls.
-    if (sortSelect.value === 'random' && !storeGet('shuffleSeed')) storeSet('shuffleSeed', newShuffleSeed());
+  // The display popover's sort Select calls this. Sort lives in the tab state (persisted
+  // per tab via renderPosts→persist), not a separate global pref — that double-storage
+  // raced on load. A sort change rewrites the current history entry instead of pushing
+  // (#144 確定未決2). Picking 'random' with no seed yet mints one, so the first pick
+  // already shuffles (#118); an existing seed is kept, which is what makes leaving and
+  // coming back to random show the same order until the user re-rolls.
+  setPostSort = (v: string) => {
+    if (v === sortValue()) return;
+    storeSet('sortPost', v);
+    if (v === 'random' && !storeGet('shuffleSeed')) storeSet('shuffleSeed', newShuffleSeed());
     tabsCtl.setNavReplaceNext();
     renderPosts();
-  });
+  };
   rerollShuffle = () => {
     storeSet('shuffleSeed', newShuffleSeed());
     tabsCtl.setNavReplaceNext();
@@ -1821,7 +1790,7 @@ export function endFilterEditSession(): void {
   // metadata.json + images/ は #322）。レンダラが受け取るのは結果と、旧形式のとき
   // だけ書庫のパスで、バイト列も展開後のレコードも流れてこない。設定画面の
   // 取り込みボタンと空状態の CTA の両方がここを通る。
-  async function runZipImport() {
+  async function runZipImportImpl() {
     try {
       const res = await importComplete();
       if (res && res.canceled) return;
@@ -1876,6 +1845,7 @@ export function endFilterEditSession(): void {
       notify(getMessage('importFailed'));
     }
   }
+  runZipImport = runZipImportImpl;
 
   // Backup status rail (#mirrorStatus) is fully owned by the MirrorStatus component now — it
   // imports backup.ts (getBackup + onBackupStart/Done) directly and derives the rail model

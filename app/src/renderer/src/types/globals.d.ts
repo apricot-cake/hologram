@@ -55,9 +55,31 @@ declare global {
     // the grid island (not the zoom) is what turns it back into a scroll position.
     zoomAnchor?: import('../services/zoom-anchor').ZoomAnchor | null;
     labels?: any;
+    /** The display shape this model was derived from (#618) — cells lay themselves out from it. */
+    shape?: import('../services/display').DisplayShape;
+    /** The small end of the size axis (#141) — cells drop their chrome there. */
+    overview?: boolean;
+    /** List rows: the thumbnail column's width in px (the list's own size axis). */
+    listThumb?: number;
+    /** What a gesture ON a cell does. Each grid supplies its own (library / trash). */
+    cardActions?: HologramCardActions;
     onAspect?(cap: string, aspectRatio: string): void;
     paint: number;
     [extra: string]: any;
+  }
+  // Per-card gestures, as callbacks rather than a delegated listener on the grid
+  // container reading `data-index` back off the DOM (#153 categories 1 and 2). The
+  // cell hands over the GROUP it is drawing, so nothing has to look an index up.
+  // Every member is optional: the trash grid answers a click and a double-click and
+  // deliberately refuses the rest (a deleted post does not drag out, and its menu is
+  // the view's own action row).
+  interface HologramCardActions {
+    onClick?(group: any, e: import('react').MouseEvent): void;
+    onDoubleClick?(group: any, e: import('react').MouseEvent): void;
+    onAuxClick?(group: any, e: import('react').MouseEvent): void;
+    onContextMenu?(group: any, e: import('react').MouseEvent): void;
+    onDragStart?(group: any, e: import('react').DragEvent): void;
+    onMouseDown?(group: any, e: import('react').MouseEvent): void;
   }
   // The shape GridMount (_shared/VirtualGrid.tsx) actually consumes — it only
   // ever calls get()/subscribe(), so this is the minimal contract both sources

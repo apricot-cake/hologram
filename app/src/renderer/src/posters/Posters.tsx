@@ -1,13 +1,15 @@
-// Virtualized poster grid — poster cells on the shared VirtualGridHost. Emits
-// the SAME DOM the old flow layout did — `.poster-card[data-index]` (+inspected)
-// with `.poster-av`, `.poster-meta` (.poster-name / .poster-handle /
-// .poster-foot) — so the
-// delegated click/dblclick/contextmenu on #posterGrid keeps
-// firing. React renders + windows; viewer.js owns posterList, the count badge,
-// the density classes on the container, and every event. The inspected
-// highlight is derived from hologramStore, not modelOf (see below).
+// Virtualized poster grid — poster cells on the shared VirtualGridHost. React renders
+// + windows and owns every gesture ON a card (#618: the gestures are props now, so the
+// cells no longer carry a `data-index` for a delegated listener on the container to
+// read back). orchestrator.ts still owns posterList, the count badge and the density
+// classes. The inspected highlight is derived from hologramStore, not modelOf.
+//
+// The poster grid's own three-way density (card / tile / list) is NOT the post grid's
+// display axes: re-conceiving it was scoped out of #618, so its cells keep the legacy
+// `.poster-card` markup and CSS until that axis gets its own pass.
 import type { CSSProperties } from 'react';
 import { useSyncExternalStore } from 'react';
+import { cellHandlers } from '../_shared/PostCard.tsx';
 import { useGridModel, VirtualGridHost } from '../_shared/VirtualGrid.tsx';
 import type { GridCellProps } from '../_shared/VirtualGrid.tsx';
 import { posterClickBackground } from '../services/orchestrator.ts';
@@ -33,19 +35,9 @@ interface PosterCardModel {
   countLabel?: string;
 }
 
-// 🏷 edit-tags button — ported 1:1 from viewer.js.
-function _TagIcon() {
+function PosterCard({ c, group, actions }: { c: PosterCardModel; group: unknown; actions?: HologramCardActions }) {
   return (
-    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z" />
-      <circle cx="7.5" cy="7.5" r=".5" fill="currentColor" />
-    </svg>
-  );
-}
-
-function PosterCard({ c }: { c: PosterCardModel }) {
-  return (
-    <div className={'poster-card' + (c.inspected ? ' inspected' : '')} data-index={c.index} tabIndex={0}>
+    <div data-slot="poster-card" className={'poster-card' + (c.inspected ? ' inspected' : '')} {...cellHandlers(actions, group)}>
       <div className="poster-av">
         {c.avatarSrc ? (
           // decoding="async" (#569): a virtualized grid can have many of these
@@ -82,7 +74,7 @@ function PosterCell({ index, data }: GridCellProps) {
   const inspectedKey = useSyncExternalStore(subInspected, getInspected);
   const c = model.modelOf(data, index);
   c.inspected = data != null && data.key != null && inspectedKey === 'poster:' + data.key;
-  return <PosterCard c={c} />;
+  return <PosterCard c={c} group={data} actions={model.cardActions} />;
 }
 
 // Background click (#242). No marquee sink: this grid has no selection, so the press

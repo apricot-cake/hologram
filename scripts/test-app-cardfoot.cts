@@ -1,11 +1,16 @@
 'use strict';
 
-// Verifies the card-footer noise gate (#show-eng / #show-cap on #postGrid):
-//  - at rest (date sort, no filters) the engagement stats row and the 📷
-//    capture date are hidden — only the post date shows
-//  - an engagement sort (likes-desc) flips .show-eng → stats row visible
-//  - the capture sort (captured-desc) flips .show-cap → capture date visible,
-//    stats hidden again
+// Verifies the card-footer noise gate (the card model's showEngagement/showCaptured):
+//  - at rest (date sort, no filters) neither the engagement stats row nor the 📷
+//    capture date is DRAWN — only the post date is
+//  - an engagement sort (likes-desc) puts the stats row on the card
+//  - the capture sort (captured-desc) puts the capture date on it, and takes the
+//    stats back off
+//
+// #618 moved this from CSS (two classes on the grid container hiding markup that was
+// always there) into the card model, so the assertions are about a card HAVING the
+// part, not about its `display`. The sort is driven through the display popover —
+// the same surface a person uses, since the hidden <select> it used to poke is gone.
 //
 //   node scripts/test-app-cardfoot.cts
 
@@ -55,33 +60,34 @@ seedLibrary(configDir, records);
 const evalJs = `(async () => {
   const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   const waitFor = async (fn, ms = 4000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (fn()) return true; await sleep(40); } return false; };
-  const grid = document.getElementById('postGrid');
-  const vis = (sel) => { const el = document.querySelector(sel); return el ? getComputedStyle(el).display !== 'none' : null; };
-  const setSort = async (v) => {
-    const s = document.getElementById('sortSelect');
-    s.value = v;
-    s.dispatchEvent(new Event('change', { bubbles: true }));
-    await waitFor(() => document.querySelectorAll('#postGrid .post-card').length >= 3);
-    await sleep(120);
+  const cards = () => document.querySelectorAll('[data-slot="post-grid"] [data-slot="post-card"]').length;
+  const has = (slot) => !!document.querySelector('[data-slot="post-grid"] [data-slot="' + slot + '"]');
+  const byText = (sel, text) => Array.from(document.querySelectorAll(sel)).find((el) => (el.textContent || '').trim() === text) || null;
+  // Pick a sort the way a person does: 表示 popover → the sort Select → the option.
+  const setSort = async (label) => {
+    byText('button', '表示').click();
+    await waitFor(() => !!document.querySelector('[data-slot="select-trigger"]'));
+    document.querySelector('[data-slot="select-trigger"]').click();
+    await waitFor(() => !!byText('[data-slot="select-item"]', label));
+    byText('[data-slot="select-item"]', label).click();
+    await sleep(200);
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    await waitFor(() => cards() >= 3);
+    await sleep(160);
   };
-  await waitFor(() => document.querySelectorAll('#postGrid .post-card').length >= 3);
-  // at rest: neither gate class, stats + cdate hidden, pdate visible
-  const defEng = grid.classList.contains('show-eng');
-  const defCap = grid.classList.contains('show-cap');
-  const defStats = vis('#postGrid .post-card .stats');
-  const defCdate = vis('#postGrid .post-card .cdate');
-  const defPdate = vis('#postGrid .post-card .pdate');
-  // engagement sort: .show-eng flips on, stats row shows
-  await setSort('likes-desc');
-  const engClass = grid.classList.contains('show-eng');
-  const engStats = vis('#postGrid .post-card .stats');
-  // capture sort: .show-cap on, .show-eng off — cdate shows, stats hide again
-  await setSort('captured-desc');
-  const capClass = grid.classList.contains('show-cap');
-  const capEng = grid.classList.contains('show-eng');
-  const capCdate = vis('#postGrid .post-card .cdate');
-  const capStats = vis('#postGrid .post-card .stats');
-  return { defEng, defCap, defStats, defCdate, defPdate, engClass, engStats, capClass, capEng, capCdate, capStats };
+  await waitFor(() => cards() >= 3);
+  // at rest: the post date is the only thing in the footer
+  const defStats = has('post-card-stats');
+  const defCdate = has('post-card-capdate');
+  const defPdate = has('post-card-date');
+  // engagement sort → the counts become the point, so they are drawn
+  await setSort('いいね順');
+  const engStats = has('post-card-stats');
+  // capture sort → the capture date is drawn, the counts go away again
+  await setSort('キャプチャ日時順');
+  const capCdate = has('post-card-capdate');
+  const capStats = has('post-card-stats');
+  return { defStats, defCdate, defPdate, engStats, capCdate, capStats };
 })()`;
 
 const env = Object.assign({}, process.env, { APPDATA: tmp, HOLOGRAM_CONFIG_DIR: path.join(tmp, 'Hologram'), HOLOGRAM_SMOKE: '1', HOLOGRAM_SMOKE_EVAL: evalJs });
@@ -102,8 +108,8 @@ child.on('close', () => {
     }
   }
   fs.rmSync(tmp, { recursive: true, force: true });
-  const ok = r.defEng === false && r.defCap === false && r.defStats === false && r.defCdate === false && r.defPdate === true && r.engClass === true && r.engStats === true && r.capClass === true && r.capEng === false && r.capCdate === true && r.capStats === false;
-  console.log(`defEng=${r.defEng} defCap=${r.defCap} defStats=${r.defStats} defCdate=${r.defCdate} defPdate=${r.defPdate} engClass=${r.engClass} engStats=${r.engStats} capClass=${r.capClass} capEng=${r.capEng} capCdate=${r.capCdate} capStats=${r.capStats}`);
+  const ok = r.defStats === false && r.defCdate === false && r.defPdate === true && r.engStats === true && r.capCdate === true && r.capStats === false;
+  console.log(`defStats=${r.defStats} defCdate=${r.defCdate} defPdate=${r.defPdate} engStats=${r.engStats} capCdate=${r.capCdate} capStats=${r.capStats}`);
   console.log(ok ? 'CARDFOOT_TEST_PASS' : 'CARDFOOT_TEST_FAIL');
   process.exit(ok ? 0 : 1);
 });

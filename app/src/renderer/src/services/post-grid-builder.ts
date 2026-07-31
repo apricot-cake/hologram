@@ -14,6 +14,7 @@ import { open as confirmOpen } from './confirm.ts';
 import { open as menuOpen } from './menu.ts';
 import { formatCount, formatDate, compactDate } from './format.ts';
 import { densityImage, dragFilesOf, postIdKey, makeGroupRecords, makeCardModel, stampPost } from './records.ts';
+import type { DisplayShape } from './display.ts';
 import { hologramPostGridSource } from './grid.ts';
 import { listPostsDelta, deletePost, clearAll } from './posts.ts';
 import { refresh as trashRefresh } from './trash-view.ts';
@@ -30,11 +31,9 @@ export interface PostGridBuilderDeps {
   t(key: string, subs?: ReadonlyArray<string | number | null | undefined>): string;
   smokeCapture: boolean;
   fileSrc(file: string, w?: number): string;
-  currentView(): string;
-  tileOverlay(): boolean;
+  shape(): DisplayShape;
   multiOnly(): boolean;
-  tileThumbW(): number;
-  cardThumbW(): number;
+  gridThumbW(): number;
   listThumbW(): number;
   sortValue(): string;
   postShadow(): { type: string; value?: string }[];
@@ -42,7 +41,6 @@ export interface PostGridBuilderDeps {
   buildUsers(): HologramUserAgg[];
   snapshotState(): unknown;
   syncTitleAndPersist(): void;
-  applyTileLayout(): void;
   getBrowseMode(): string;
   renderPosters(keepLimit?: boolean): void;
   onPostsLoaded(): void;
@@ -62,7 +60,6 @@ export interface PostGridBuilderDeps {
 
 export function makePostGridBuilder(deps: PostGridBuilderDeps) {
   const CF = () => folders; // shared folder module
-  const byId = (id: string) => document.getElementById(id) as HTMLElement;
 
   // Delete-confirmation skip pref — was injected from viewer.ts as a dep; now
   // owned here since this module is the only reader (requestDeleteGroup below)
@@ -77,7 +74,7 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
     hologramIpc.setPref('skipDeleteConfirm', v);
   }
   // Restoring a saved pref shouldn't re-persist it right back (mirrors
-  // grid-density-builder.ts's restorePrefs, which assigns tileOverlay directly).
+  // grid-density-builder.ts's restorePrefs, which assigns its own state directly).
   function restoreSkipDeleteConfirm(v: boolean) {
     skipDeleteConfirm = v;
   }
@@ -261,26 +258,23 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
     compactDate,
     fileSrc: deps.fileSrc,
     smokeCapture: deps.smokeCapture,
-    currentView: () => deps.currentView(),
+    shape: () => deps.shape(),
     imgAspect: () => imgAspect,
-    tileThumbW: deps.tileThumbW,
-    cardThumbW: deps.cardThumbW,
+    gridThumbW: deps.gridThumbW,
     listThumbW: deps.listThumbW,
+    // Engagement counts and the capture date are library noise at rest, so they only
+    // ride the model while a sort or a filter has made them the point. This used to be
+    // a pair of classes on the grid container that CSS hid the markup with — every card
+    // carried counts nobody could see.
+    showEngagement: () => ['likes-desc', 'reposts-desc', 'replies-desc', 'likes-pct'].includes(deps.sortValue()) || deps.postShadow().some((f: { type: string }) => f.type === 'engagement'),
+    showCaptured: () => deps.sortValue() === 'captured-desc' || deps.postShadow().some((f: { type: string; dateField?: string }) => f.type === 'date' && f.dateField === 'capturedAt'),
   });
-  // i18n labels are identical for every card — set up once (also keeps them in sync
-  // after a language change, which always full-reloads the app).
-  const cardLabels = {
-    tipSelect: deps.t('tipSelect'),
-    tipInfo: deps.t('tipInfo'),
-    clickToExpand: deps.t('clickToExpand'),
-  };
-  // modelOf/keyOf/labels/onAspect never change identity meaningfully between
+  // modelOf/keyOf/onAspect never change identity meaningfully between
   // renders (only items/layout do, and those are hologramStore-derived by the
   // source itself) — configure once instead of rebuilding + pushing every renderPosts().
   hologramPostGridSource.configure({
     modelOf: (g, i) => cardModel(g, i),
     keyOf: (g) => postIdKey(g.rep),
-    labels: cardLabels,
     onAspect: onCardAspect,
   });
 
@@ -297,8 +291,6 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
     if (!inPlace && stickyRecs.size && lastRenderedState !== null && stateSig !== lastRenderedState) {
       stickyRecs.clear();
     }
-    const grid = byId('postGrid');
-    const empty = byId('emptyState');
     // Group the filtered records (auto by post URL + manual groups); each group
     // renders as ONE card. multiOnly now means "groups with more than one image".
     // Reuse the previous build's groups on an in-place re-render: re-filtering +
@@ -323,43 +315,20 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
       // The EmptyState component derives 'firstRun'/'filtered' itself from this same key +
       // 'allPostsCount' + 'searchQuery' — one less push.
       storeSet('postGroups', null);
-      grid.style.display = 'none';
-      // #470: the placeholder mount carries a `hidden` attribute (AppShell.tsx) — drive
-      // visibility through that SAME attribute, not an inline style.display. Tailwind's
-      // preflight emits `[hidden]{display:none!important}`, which always outranks an
-      // inline style, so setting style.display here never actually showed the element.
-      empty.hidden = false;
+      // Nothing else to do here. The grid host unmounts itself on the null push, and
+      // the empty state decides from the SAME store keys whether it has something to
+      // say (empty/EmptyState.tsx) — both used to be shown and hidden from this
+      // function by hand, against elements it found by id.
       if (!inPlace) deps.syncTitleAndPersist(); // 0件の状態もタイトル・永続化を同期
       return;
     }
 
-    // Container-level layout (the old flex column / CSS grid / masonry block) is
-    // dead in the virtualized grid — masonic positions cells absolutely inside
-    // its host. The view classes stay purely for descendant styling (.masonry
-    // keeps card cells content-visibility:visible + width:100%).
-    grid.style.display = 'block';
-    grid.classList.toggle('list-view', deps.currentView() === 'list');
-    grid.classList.toggle('tile-view', deps.currentView() === 'tile');
-    deps.applyTileLayout();
-    empty.hidden = true;
-
-    grid.classList.toggle('masonry', deps.currentView() === 'card');
-    // Selection mode: rings stay visible on every card, hover actions hide (CSS).
-    grid.classList.toggle('selecting', selection.size() > 0);
-    // Tile overlay (author/❤) is optional; engagement counts (tile ❤ overlay +
-    // card/list stats row) and the capture date only show while a sort or
-    // filter makes them relevant (otherwise they're noise — CSS gates them).
-    grid.classList.toggle('no-overlay', !deps.tileOverlay());
-    grid.classList.toggle('show-eng', ['likes-desc', 'reposts-desc', 'replies-desc', 'likes-pct'].includes(deps.sortValue()) || deps.postShadow().some((f: { type: string }) => f.type === 'engagement'));
-    grid.classList.toggle('show-cap', deps.sortValue() === 'captured-desc' || deps.postShadow().some((f: { type: string; dateField?: string }) => f.type === 'date' && f.dateField === 'capturedAt'));
-
     // THE GRID — fully React-owned (grid component via hologramPostGridSource):
-    // masonic windowing + live cell rendering for all three views. viewer.js keeps
-    // the data pipeline (viewGroups above), the container's classes/CSS vars, and
-    // every delegated #postGrid handler. Layout (view/columnWidth/rowGutter/
-    // itemHeightEstimate/…) is no longer pushed — the source derives it itself
-    // from hologramStore's 'view'/'cardSize'/'tileSize'/'listThumb'; modelOf/keyOf/
-    // labels/onAspect were configured once, above. Pushing the SAME array
+    // masonic windowing + live cell rendering for both layouts. This module keeps the
+    // data pipeline (viewGroups above) and nothing else about the container: layout
+    // (shape/columnWidth/rowGutter/itemHeightEstimate/…) is not pushed — the source
+    // derives it from the display axes and hologramStore's 'gridSize'/'listThumb' —
+    // and modelOf/keyOf/onAspect were configured once, above. Pushing the SAME array
     // reference (in-place reuse) is a no-op via the store's identity guard,
     // matching the old itemsKey-doesn't-bump behavior.
     storeSet('postGroups', viewGroups);
@@ -437,7 +406,7 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
     items.push({ label: deps.t('ctxEditTags'), act: 'tags', icon: CM_IC.tag });
     if (canPoster) items.push({ label: deps.t('ctxViewPoster'), act: 'poster', icon: CM_IC.poster });
     // The file the card is showing right now (capture or artwork per density).
-    const cardFile = densityImage(g.rep, deps.currentView()) || g.rep.image || '';
+    const cardFile = densityImage(g.rep) || g.rep.image || '';
     if (srcUrl || cardFile) items.push({ sep: true });
     if (srcUrl) {
       items.push({ label: deps.t('detailSauce'), act: 'sauce', icon: CM_IC.sauce });
@@ -468,7 +437,7 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
     else if (act === 'sauce') hologramIpc.openExternal('https://saucenao.com/search.php?url=' + encodeURIComponent(srcUrl));
     else if (act === 'ascii') hologramIpc.openExternal('https://ascii2d.net/search/url/' + encodeURIComponent(srcUrl));
     else if (act === 'reveal') {
-      const file = densityImage(g.rep, deps.currentView()) || g.rep.image;
+      const file = densityImage(g.rep) || g.rep.image;
       if (file && hologramIpc.showInFolder) hologramIpc.showInFolder(file);
     } else if (act === 'copyImage') copyGroupImage(g);
     else if (act === 'delete') requestDeleteGroup(g);
@@ -478,7 +447,7 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
   // selection (#132). The file is picked exactly like 'reveal' picks it: whatever
   // this density is actually showing.
   async function copyGroupImage(g: HologramPostGroup) {
-    const file = densityImage(g.rep, deps.currentView()) || g.rep.image;
+    const file = densityImage(g.rep) || g.rep.image;
     if (!file) return;
     // false = main couldn't decode it (svg, some tiff) and left the clipboard
     // alone; staying silent would read as "copied" over whatever was there.
@@ -489,12 +458,10 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
   // — it would carry the asset:// thumbnail URL — so main can start an OS drag of
   // the ORIGINAL files instead. Registration is the #postGrid dragstart delegate in
   // orchestrator.ts, like every other card gesture.
-  function handleCardDragStart(e: DragEvent) {
+  function handleCardDragStart(g: HologramPostGroup, e: DragEvent) {
     const t = e.target;
-    if (!(t instanceof Element) || !t.closest('.card-img')) return; // text/buttons: leave the browser's drag alone
-    const card = t.closest('.post-card') as HTMLElement | null;
-    const g = card && viewGroups[Number.parseInt(card.dataset.index ?? '', 10)];
-    if (!g) return;
+    // Text and any other non-media part of a card keep the browser's own drag.
+    if (!(t instanceof Element) || !t.closest('[data-slot="post-card-media"]')) return;
     e.preventDefault();
     // Which files leave is records.ts's rule (pure — see test-records-unit). The
     // selection is only READ: a drag leaves the library exactly as it found it.
@@ -574,10 +541,9 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
   }
 
   return {
-    // Handed out so the ゴミ箱 grid (#268) can draw the SAME card: one card model,
-    // one label set, so a deleted post is recognizable as the post it was.
+    // Handed out so the ゴミ箱 grid (#268) can draw the SAME card, so a deleted post
+    // is recognizable as the post it was.
     cardModel,
-    cardLabels,
     loadPosts,
     renderPosts,
     getAllPosts,

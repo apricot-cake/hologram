@@ -1,17 +1,18 @@
 import { useState, useEffect } from 'react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Separator } from '@/components/ui/separator';
-import { Switch } from '@/components/ui/switch';
 import { SettingRow } from '../components/SettingRow.tsx';
 import { t } from '../../_shared/i18n.ts';
 import * as ipc from '../ipc.ts';
 
 const cleanPref = (p: unknown) => (p === 'light' || p === 'dark' ? p : 'auto');
 
-// 外観: theme (auto/light/dark) + "show info on tiles" toggle.
+// 外観: theme (auto/light/dark).
+//
+// 「タイルに情報を表示」 used to sit here too. It is gone (#618): 情報を表示 is one of
+// the display popover's two grid switches now, and the same answer must not be asked
+// twice on two surfaces.
 export function Appearance() {
   const [theme, setTheme] = useState(() => ipc.theme.get());
-  const [tileOverlay, setTileOverlay] = useState(true);
 
   // Reconcile with persisted prefs once they resolve — theme.js may still be
   // syncing config from IPC when the component first mounts.
@@ -19,9 +20,7 @@ export function Appearance() {
     ipc
       .getPrefs()
       .then((p) => {
-        if (!p) return;
-        if (p.theme) setTheme(cleanPref(p.theme));
-        setTileOverlay(p.tileOverlay !== false);
+        if (p?.theme) setTheme(cleanPref(p.theme));
       })
       .catch(() => {});
   }, []);
@@ -47,16 +46,6 @@ export function Appearance() {
             <SelectItem value="dark">{t('themeDark')}</SelectItem>
           </SelectContent>
         </Select>
-      </SettingRow>
-      <Separator />
-      <SettingRow label={t('tileOverlay')}>
-        <Switch
-          checked={tileOverlay}
-          onCheckedChange={(v) => {
-            setTileOverlay(v);
-            ipc.setTileOverlay(v);
-          }}
-        />
       </SettingRow>
     </div>
   );

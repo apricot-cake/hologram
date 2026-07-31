@@ -130,8 +130,7 @@ export function makeInspector(deps: InspectorBuilderDeps) {
     if (!panelIsVisible()) return;
     if (panelContains(e.target)) return;
     if (!closestOf(e, '#mode-post')) return; // sidebar/overlays: leave it open
-    if (closestOf(e, '.post-card')) return; // card click = swap the inspector to it
-    if (closestOf(e, '.poster-card')) return; // poster click = swap the inspector to it (#143)
+    if (closestOf(e, '[data-slot="post-card"], [data-slot="poster-card"]')) return; // a cell click = swap the inspector to it (#143)
     e.preventDefault();
     e.stopPropagation();
     dismissDetail();

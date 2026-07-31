@@ -55,7 +55,7 @@ seedLibrary(configDir, records);
 const evalJs = `(async () => {
   const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   const waitFor = async (fn, ms = 4000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (fn()) return true; await sleep(40); } return false; };
-  await waitFor(() => document.querySelectorAll('#postGrid .post-card').length >= 4);
+  await waitFor(() => document.querySelectorAll('[data-slot="post-grid"] [data-slot="post-card"]').length >= 4);
 
   // 投稿者 editor ("+ フィルタ" flow — the 作者 row flyout is gone since P2③) —
   // posters are listed by post count. Filterbar idioms: see test-app-facetcounts.
@@ -74,7 +74,7 @@ const evalJs = `(async () => {
   await sleep(200);
   const chips = document.querySelector('[data-slot="filter-chips"]');
   const chipText = chips ? [chips.textContent] : [];
-  const cardCount = document.querySelectorAll('#postGrid .post-card').length;
+  const cardCount = document.querySelectorAll('[data-slot="post-grid"] [data-slot="post-card"]').length;
   const aliceActive = await waitFor(() => !!edRows().find(r => nameOf(r) === 'Alice' && r.querySelector('svg')));
   const stillOpen = !!document.querySelector(POP);
 

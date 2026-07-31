@@ -13,7 +13,7 @@
 
 // deps contract (all functions unless noted):
 //   allPosts() / postsById() — the library + its captureId map (getters — viewer reassigns both)
-//   mediaFilesOf(p) / densityImage(p, d) / percentileFn(list) — from records.ts
+//   mediaFilesOf(p) / densityImage(p) / percentileFn(list) — from records.ts
 //   evalNode(n, item, predOf) / treeLeaves(n) — from query.ts
 //   postPredOf(f) — the post-side leaf-predicate (query.ts makePostPredOf product)
 //   currentTree() — the active tab's boolean query tree (root group)
@@ -32,7 +32,7 @@ export interface ListingDeps {
   allPosts(): HologramPost[];
   postsById(): Map<string, HologramPost>;
   mediaFilesOf(p: HologramPost): string[];
-  densityImage(p: HologramPost, density: string): string;
+  densityImage(p: HologramPost): string;
   percentileFn(list: HologramPost[]): (p: HologramPost) => number;
   evalNode(n: HologramQueryNode, item: unknown, predOf: (f: HologramQueryLeaf) => (item: any) => boolean): boolean;
   treeLeaves(n: HologramQueryNode | null | undefined, out?: HologramQueryLeaf[]): HologramQueryLeaf[];
@@ -197,7 +197,7 @@ export function makeListing(deps: ListingDeps) {
   function folderThumbsFrom(recs: HologramPost[]) {
     const files: string[] = [];
     for (const rec of recs) {
-      const f = densityImage(rec, 'card');
+      const f = densityImage(rec);
       if (f) files.push(f);
       if (files.length >= 4) break;
     }

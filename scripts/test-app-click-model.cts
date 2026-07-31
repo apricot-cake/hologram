@@ -11,7 +11,7 @@
 //     a double-click drills into that poster's posts
 //   - a double-click on a post opens the image view (in-tab history destination)
 //
-// The gestures are delegated on #postGrid / #posterGrid, so this drives real
+// The gestures are the cells' own props (#618), so this drives real
 // synthetic MouseEvents and asserts the resulting DOM state (inspector open,
 // lightbox mounted, image view active) — the same black-box shape as
 // test-app-drag-out. Boots its own sandboxed Electron (HOLOGRAM_SMOKE).
@@ -65,11 +65,15 @@ const evalJs = `(async () => {
   const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   const waitFor = async (fn, ms = 5000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (fn()) return true; await sleep(40); } return false; };
   const byId = (id) => document.getElementById(id);
-  const postCards = () => [...document.querySelectorAll('#postGrid .post-card')];
-  const cardOf = (key) => document.querySelector('#postGrid .post-card[data-key="' + key + '"]');
-  const selectedKeys = () => [...document.querySelectorAll('#postGrid .post-card.selected')].map(c => c.dataset.key).sort();
-  const selectedCard = () => document.querySelector('#postGrid .post-card.selected');
-  const selectedIndex = () => { const c = selectedCard(); return c ? Number(c.dataset.index) : -1; };
+  const postCards = () => [...document.querySelectorAll('[data-slot="post-grid"] [data-slot="post-card"]')];
+  // A card is addressed the way a person would address it: by what it says. The cells
+  // carry no key/index attribute any more (#618) — the seeded posts read 本文0/1/2.
+  const cardOf = (n) => postCards().find(c => (c.textContent || '').includes('本文' + n));
+  const nameOf = (c) => ((c.textContent || '').match(/本文(\\d)/) || [])[0] || '?';
+  const selectedCards = () => postCards().filter(c => c.hasAttribute('data-selected'));
+  const selectedKeys = () => selectedCards().map(nameOf).sort();
+  const selectedCard = () => selectedCards()[0] || null;
+  const selectedIndex = () => { const c = selectedCard(); return c ? postCards().indexOf(c) : -1; };
   const arrow = (key) => document.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }));
   const click = (el, mods) => el && el.dispatchEvent(new MouseEvent('click', Object.assign({ bubbles: true }, mods)));
   const dblclick = (el) => el && el.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
@@ -86,10 +90,11 @@ const evalJs = `(async () => {
   await waitFor(() => postCards().length >= 3);
 
   // A. post cards have no ℹ / ○ hover parts (they were retired in #143)
-  out.postHoverParts = document.querySelectorAll('#postGrid .info-btn, #postGrid .select-check').length;
+  // Nothing appears on hover at all now (確定A): no ℹ, no 🏷, no ○ ring, no highlight.
+  out.postHoverParts = document.querySelectorAll('[data-slot="post-grid"] [data-slot="post-card"] button, [data-slot="post-grid"] [data-slot="post-card"] [class*="act-pill"]').length;
 
   // B. plain click = single-select + inspector (post kind, no poster head)
-  click(cardOf('dummy-c1'));
+  click(cardOf(0));
   out.inspOpenedB = await waitFor(inspVisible);
   out.inspIsPost = inspVisible() && !!insp().querySelector('[data-slot="inspector-post"]');
   await sleep(60);
@@ -104,7 +109,7 @@ const evalJs = `(async () => {
   out.lightboxClosed = await waitFor(() => !peekOpen());
 
   // D. Ctrl-click adds a second card (plain click above kept c1 selected)
-  click(cardOf('dummy-c2'), { ctrlKey: true });
+  click(cardOf(1), { ctrlKey: true });
   await sleep(60);
   out.selAfterD = selectedKeys().join(',');
 
@@ -113,7 +118,7 @@ const evalJs = `(async () => {
   document.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', code: 'Space', bubbles: true }));
   await sleep(80);
   out.spaceIgnoredForMulti = !(peekOpen());
-  click(cardOf('dummy-c1')); // collapse to a single selection
+  click(cardOf(0)); // collapse to a single selection
   await sleep(60);
   document.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', code: 'Space', bubbles: true }));
   out.spacePeeked = await waitFor(() => peekOpen());
@@ -123,14 +128,14 @@ const evalJs = `(async () => {
   // D3. Arrow keys move the single selection through the grid (P2⑥), and the
   // inspector follows — the pair that makes 連続タグ付け a composition. Starts from
   // the MIDDLE card so both directions have somewhere to go whatever the sort is.
-  click(cardOf('dummy-c2'));
+  click(cardOf(1));
   await sleep(60);
-  const startIdx = Number(cardOf('dummy-c2').dataset.index);
+  const startIdx = postCards().indexOf(cardOf(1));
   arrow('ArrowRight');
   await sleep(80);
   out.arrowRightSel = selectedKeys().join(',');
   out.arrowRightStep = selectedIndex() - startIdx;
-  out.arrowFollowsInspector = selectedCard() && selectedCard().classList.contains('inspected');
+  out.arrowFollowsInspector = !!selectedCard() && selectedCard().hasAttribute('data-inspected');
   arrow('ArrowLeft');
   arrow('ArrowLeft');
   await sleep(80);
@@ -146,16 +151,16 @@ const evalJs = `(async () => {
 
   // E. switch to the posters view → poster cards carry no ℹ button
   [...document.querySelectorAll('button')].find(b => (b.textContent || '').trim() === '投稿者')?.click();
-  out.posterCardsShown = await waitFor(() => navActive() && document.querySelectorAll('#posterGrid .poster-card').length >= 1);
-  out.posterHoverInfo = document.querySelectorAll('#posterGrid .poster-info').length;
+  out.posterCardsShown = await waitFor(() => navActive() && document.querySelectorAll('[data-slot="poster-grid"] [data-slot="poster-card"]').length >= 1);
+  out.posterHoverInfo = document.querySelectorAll('[data-slot="poster-grid"] [data-slot="poster-info"]').length;
 
   // F. plain click a poster → poster inspector (has the poster head block)
-  document.querySelector('#posterGrid .poster-card')?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  document.querySelector('[data-slot="poster-grid"] [data-slot="poster-card"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
   out.inspOpenedF = await waitFor(inspVisible);
   out.inspIsPoster = inspVisible() && !!insp().querySelector('[data-slot="inspector-poster"]');
 
   // G. double-click a poster → drill into their posts (browseMode leaves posters)
-  dblclick(document.querySelector('#posterGrid .poster-card'));
+  dblclick(document.querySelector('[data-slot="poster-grid"] [data-slot="poster-card"]'));
   out.drilledIn = await waitFor(() => !navActive());
 
   // H. double-click a post → the image view (in-tab history destination)
@@ -191,11 +196,11 @@ child.on('close', () => {
     ['post cards have no ℹ / ○ hover parts', r.postHoverParts === 0],
     ['plain click opens the inspector', r.inspOpenedB === true],
     ['plain click shows the POST inspector', r.inspIsPost === true],
-    ['plain click single-selects the card', r.selAfterB === 'dummy-c1'],
+    ['plain click single-selects the card', r.selAfterB === '本文0'],
     ['inspector thumbnail advertises the peek (zoom-in)', r.thumbPeekable === true],
     ['inspector thumbnail opens the quick-view lightbox', r.lightboxOpened === true],
     ['Esc closes the quick-view lightbox', r.lightboxClosed === true],
-    ['Ctrl-click adds a second card', r.selAfterD === 'dummy-c1,dummy-c2'],
+    ['Ctrl-click adds a second card', r.selAfterD === '本文0,本文1'],
     ['Space is ignored while multiple are selected', r.spaceIgnoredForMulti === true],
     ['Space peeks the single selected card', r.spacePeeked === true],
     ['→ moves the selection one card and keeps it single', r.arrowRightStep === 1 && r.arrowRightSel.split(',').length === 1],

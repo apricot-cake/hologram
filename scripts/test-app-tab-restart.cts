@@ -67,10 +67,10 @@ const PRELUDE = `
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const waitFor = async (fn, ms = 8000) => { for (let i = 0; i * 50 < ms; i++) { if (fn()) return true; await sleep(50); } return false; };
   const byText = (sel, text) => [...document.querySelectorAll(sel)].find((el) => (el.textContent || '').trim() === text) || null;
-  const scroller = () => document.getElementById('mode-post');
+  const scroller = () => document.querySelector('[data-slot="content-scroll"]');
   const tabItems = () => document.querySelectorAll('[data-slot="tab"]');
   const activeTitle = () => { const el = document.querySelector('[data-slot="tab"][data-active] [data-slot="tab-title"]'); return el ? el.textContent.trim() : ''; };
-  const cardCount = () => document.querySelectorAll('#postGrid .post-card').length;
+  const cardCount = () => document.querySelectorAll('[data-slot="post-grid"] [data-slot="post-card"]').length;
   const backBtn = () => document.querySelector('button[aria-label="戻る"]');
   const key = (k, opts = {}) => document.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true, ...opts }));
   // スクロール位置が動かなくなるまで待つ（仮想グリッドは描画窓を作り直す）。

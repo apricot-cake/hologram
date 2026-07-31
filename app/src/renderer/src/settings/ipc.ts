@@ -5,7 +5,6 @@
 
 import { get as themeGet, set as themeSet } from '../services/theme-api.ts';
 import { hologramIpc } from '../services/ipc.ts';
-import { applyTileOverlay } from '../services/grid-density-builder.ts';
 import type { AppPrefs } from '../../../main/ipc-payloads.ts';
 
 // Partial, not AppPrefs: the bare-dev-server fallback resolves to {}, and every
@@ -23,13 +22,4 @@ export const theme = {
   set: (v: string) => {
     themeSet(v);
   },
-};
-
-// Tile overlay also drives the post grid, so flipping it must reach
-// grid-density-builder.ts to update the grid class immediately. That module
-// exposes the apply-and-persist bridge as a live binding (bound at boot from
-// viewer.ts); fall back to a plain setPref if it isn't bound yet.
-export const setTileOverlay = (v: boolean) => {
-  if (applyTileOverlay) applyTileOverlay(v);
-  else setPref('tileOverlay', v);
 };

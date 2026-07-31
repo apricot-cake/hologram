@@ -63,8 +63,8 @@ seedLibrary(configDir, records);
 
 const evalJs = `(async () => {
   const wait = (ms) => new Promise(r => setTimeout(r, ms));
-  const cards = () => document.querySelectorAll('#postGrid .post-card').length;
-  const posterCards = () => document.querySelectorAll('#posterGrid .poster-card').length;
+  const cards = () => document.querySelectorAll('[data-slot="post-grid"] [data-slot="post-card"]').length;
+  const posterCards = () => document.querySelectorAll('[data-slot="poster-grid"] [data-slot="poster-card"]').length;
   const waitFor = async (fn, ms = 4000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (fn()) return true; await wait(40); } return false; };
   // Filterbar idioms (see test-app-tabs): the "+ フィルタ" popover → Command category
   // list → ValueEditor rows (div.cursor-default with a label span + tabular-nums count).

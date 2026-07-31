@@ -110,6 +110,7 @@ export function FloatingBar() {
   return (
     <div
       ref={wrapRef}
+      data-slot="selection-bar"
       aria-hidden={!shown}
       // Hold back the inspector's width while it OVERLAYS the grid (#259). As a docked
       // column it narrows this bar's container instead, and centering needs no help —

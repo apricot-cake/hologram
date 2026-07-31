@@ -93,12 +93,15 @@ export interface AppInfo {
  */
 export interface AppPrefs {
   language: string;
-  viewMode: string;
+  /** #618: the display axes are orthogonal — layout, then two independent grid switches. */
+  layoutMode: string;
+  squareThumbs: boolean;
+  showInfo: boolean;
   skipDeleteConfirm: boolean;
-  imageTileSize: number | null;
-  cardSize: number | null;
+  /** Grid: column width px (the size slider's axis). */
+  gridSize: number | null;
+  /** List: thumbnail width px. */
   listThumb: number | null;
-  tileOverlay: boolean;
   theme: string;
   browseMode: string;
   posterViewMode: string;

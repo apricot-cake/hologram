@@ -56,7 +56,7 @@ seedLibrary(configDir, records);
 const evalJs = `(async () => {
   const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   const waitFor = async (fn, ms = 4000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (fn()) return true; await sleep(40); } return false; };
-  const cards = () => document.querySelectorAll('#postGrid .post-card').length;
+  const cards = () => document.querySelectorAll('[data-slot="post-grid"] [data-slot="post-card"]').length;
   // Filterbar idioms (see test-app-facetcounts): "+ フィルタ" popover → category →
   // ValueEditor rows, chips in the [data-slot=filter-chips] row.
   const POP = '[data-slot="popover-content"]:not([data-closed])';

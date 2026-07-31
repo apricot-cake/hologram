@@ -1,8 +1,8 @@
 'use strict';
 
 // 俯瞰ズーム (#141) の挙動を隔離インスタンスで検証する。Ctrl+ホイールがサイズ軸を
-// 1ノッチ動かし、下限側で情報オーバーレイが自動的に消え（.overview）、停止後に
-// 確定して imageTileSize が永続化されるか。あわせて、ズームがカーソル下の投稿を
+// 1ノッチ動かし、下限側までセルが縮み、停止後に確定して gridSize が永続化されるか。
+// 下限側では ×N バッジ等のチロームが落ちる（サムネを覆わない）。あわせて、ズームがカーソル下の投稿を
 // 画面の同じ高さに留めるか (#282) も測る。実機ではなく HOLOGRAM_SMOKE の別
 // プロセス・別 config なので、ユーザーが本体アプリを操作していても混ざらない
 // （docs/build.md）。test-app-tagtypes.cts と同じハーネス。
@@ -25,8 +25,9 @@ const configDir = path.join(tmp, 'Hologram');
 const saveFolder = path.join(tmp, 'saves');
 fs.mkdirSync(configDir, { recursive: true });
 fs.mkdirSync(saveFolder, { recursive: true });
-// tile ビューで起動し、下限(48)まで数ノッチ分の余地がある位置から始める。
-fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolder, extensionId: 'x', viewMode: 'tile', imageTileSize: 180, tileOverlay: true }));
+// 正方形サムネ・情報なしのグリッドで起動する（下限48まで数ノッチ分の余地がある位置から）。
+// 情報を表示 ON だと下限が 200px なので、俯瞰の下限そのものが測れない（#618）。
+fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolder, extensionId: 'x', layoutMode: 'grid', squareThumbs: true, showInfo: false, gridSize: 180 }));
 
 const jpegB64 = '/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0a' + 'HBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAA' + 'AAAAAAAAAAAACP/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AfwH/2Q==';
 
@@ -51,12 +52,15 @@ for (let i = 0; i < 200; i++) {
 }
 seedLibrary(configDir, records);
 
-// ホイールは #postGrid 上で発火させる（ハンドラは #mode-post の内側だけを見る）。
+// ホイールはグリッドの上で発火させる（ハンドラはスクロール面の内側だけを見る）。
 // window 直撃だと target が window になり、スクロール外として無視される。
 const evalJs = `(async () => {
-  const grid = document.getElementById('postGrid');
+  const grid = document.querySelector('[data-slot="post-grid"]');
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-  const size = () => Number.parseInt(grid.style.getPropertyValue('--tile-size'), 10);
+  // サイズ軸は「セルがどれだけ大きいか」でしか外から見えない（CSS 変数を書く経路は
+  // #618 で消えた）＝実際に描かれたカードの幅を測る。列は幅いっぱいに伸びるので、
+  // 最小列幅そのものではなく「その設定で何列入るか」の結果を見ていることになる。
+  const size = () => { const c = grid.querySelector('[data-slot="post-card"]'); return c ? Math.round(c.getBoundingClientRect().width) : Number.NaN; };
   const fire = (deltaY, x, y) => {
     const r = grid.getBoundingClientRect();
     grid.dispatchEvent(new WheelEvent('wheel', { deltaY, ctrlKey: true, clientX: x == null ? r.left + 20 : x, clientY: y == null ? r.top + 20 : y, bubbles: true, cancelable: true }));
@@ -85,13 +89,13 @@ const evalJs = `(async () => {
       else { stable = 0; last = s; }
     }
   };
-  const scroller = document.getElementById('mode-post');
+  const scroller = document.querySelector('[data-slot="content-scroll"]');
   // 全件ぶんの高さが立つまで＝仮想グリッドが最初のレイアウトを終えるまで待つ。
   const laidOut = await waitFor(() => scroller.scrollHeight > scroller.clientHeight * 4, 8000);
   scroller.scrollTop = 2000;
   const scrolled = await waitFor(() => Math.abs(scroller.scrollTop - 2000) < 2, 3000);
   const sr = scroller.getBoundingClientRect();
-  const seen = () => [...grid.querySelectorAll('.post-card')].map((c) => [c, c.getBoundingClientRect()]).filter(([, r]) => r.bottom > sr.top && r.top < sr.bottom);
+  const seen = () => [...grid.querySelectorAll('[data-slot="post-card"]')].map((c) => [c, c.getBoundingClientRect()]).filter(([, r]) => r.bottom > sr.top && r.top < sr.bottom);
   // scrollTop への直代入は「大ジャンプ」＝仮想グリッドは描画窓を作り直すまで、まだ前の
   // 場所のセルを持っている。scrollTop が落ち着いた**だけ**で読むと画面が空に見える
   // （#282 本文の罠。実測で3回中2回それを踏んだ）ので、セルが実際に見えるまで待つ。
@@ -104,11 +108,15 @@ const evalJs = `(async () => {
   visible.sort((a, b) => Math.abs(a[1].top + a[1].height / 2 - midY) - Math.abs(b[1].top + b[1].height / 2 - midY));
   const target = visible.length ? visible[0][0] : null;
   const r0 = visible.length ? visible[0][1] : null;
-  const anchorKey = target ? target.dataset.key : null;
+  // 情報を表示 OFF のセルは文字を持たないので、掴んだ1枚は「出ている画像」で見分ける
+  // （cells carry no key attribute — #618）。
+  // サムネ幅はサイズ軸で変わる＝URL のクエリは落として、どのファイルかだけで見る。
+  const srcOf = (c) => { const el = c && c.querySelector('[data-slot="post-card-media"]'); return el ? (el.getAttribute('src') || '').split('?')[0] : null; };
+  const anchorKey = srcOf(target);
   if (target) fire(-120, r0.left + r0.width / 2, r0.top + r0.height / 2); // 1ノッチ拡大
   await settle();
   const moved = Math.round(scroller.scrollTop) !== scrolledTo; // 位置合わせが実際に働いたか
-  const held = anchorKey ? grid.querySelector('.post-card[data-key="' + CSS.escape(anchorKey) + '"]') : null;
+  const held = anchorKey ? [...grid.querySelectorAll('[data-slot="post-card"]')].find(c => srcOf(c) === anchorKey) : null;
   const drift = held && r0 ? Math.round(held.getBoundingClientRect().top - r0.top) : 9999;
   const anchorReady = laidOut && scrolled && windowed && !!anchorKey;
   // 元の大きさへ戻してから下の系列に入る（start は上で読み終えている）。
@@ -120,7 +128,6 @@ const evalJs = `(async () => {
   for (let i = 0; i < 40; i++) fire(120);
   await sleep(300);
   const small = size();
-  const overviewOn = grid.classList.contains('overview');
   const prefs = await window.hologram.getPrefs();
   // 端に張り付いた状態でさらに回してもサイズは動かない。**確定を走らせないこと**は
   // ここでは検証できない＝この規模（200件）だと確定がほぼ無コストで、DOM ノードの
@@ -133,7 +140,7 @@ const evalJs = `(async () => {
   for (let i = 0; i < 3; i++) fire(-120);
   await sleep(300);
   const back = size();
-  return [start, small, overviewOn, prefs.imageTileSize, prefs.tileOverlay, back, grid.classList.contains('overview'), stableAtLimit, anchorReady ? 1 : 0, drift, moved ? 1 : 0].join(',');
+  return [start, small, prefs.gridSize, back, stableAtLimit, anchorReady ? 1 : 0, drift, moved ? 1 : 0].join(',');
 })()`;
 
 const env = Object.assign({}, process.env, {
@@ -157,17 +164,15 @@ child.on('close', () => {
     console.log('OVERVIEW_ZOOM_TEST_FAIL (no EVAL_RESULT)');
     process.exit(1);
   }
-  const [start, small, overviewOn, persisted, overlayPref, back, overviewAfter, stableAtLimit, anchored, drift, moved] = m[1].split(',');
+  const [start, small, persisted, back, stableAtLimit, anchored, drift, moved] = m[1].split(',');
   const checks = [
-    ['開始サイズは復元された180', Number(start) === 180],
-    ['Ctrl+ホイール下でタイルが縮む', Number(small) < Number(start)],
+    ['開始サイズは復元された180あたり', Number(start) >= 180],
+    ['Ctrl+ホイール下でセルが縮む', Number(small) < Number(start)],
     ['下限は48（それ以下へ落ちない）', Number(small) >= 48],
-    ['俯瞰サイズ(<96)で .overview が付く', Number(small) < 96 && overviewOn === 'true'],
-    ['停止後に imageTileSize が確定・永続化', Number(persisted) === Number(small)],
-    ['タイル情報表示の pref は書き換えない', overlayPref === 'true'],
+    ['俯瞰サイズまで引ける（<96）', Number(small) < 96],
+    ['停止後に gridSize が確定・永続化', Number(persisted) >= 48 && Number(persisted) < 96],
     ['端で回し続けてもサイズが動かない', stableAtLimit === 'true'],
     ['Ctrl+ホイール上でズームインして戻る', Number(back) > Number(small)],
-    ['96px を越えたら .overview が外れる', Number(back) < 96 || overviewAfter === 'false'],
     // #282: 掴んだ投稿が生き残り、画面上のほぼ同じ高さに残る。8px はタイルの溝1つぶん＝
     // 「1行ぶんずれた」なら必ず落ちる幅で、丸めの1〜2pxは通す。
     ['アンカー計測の前提が整っている（レイアウト完了・スクロール成立・掴めた）', anchored === '1'],
