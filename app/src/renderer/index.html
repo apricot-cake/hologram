@@ -2,15 +2,38 @@
 <html lang="ja">
 <head>
   <meta charset="utf-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' data:; img-src 'self' asset: data: blob:; media-src 'self' asset: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; base-uri 'none'; form-action 'none';">
+  <!-- CSP hardening pass (#683):
+       - object-src 'none' added explicitly (default-src 'self' already covered it,
+         but the Electron security checklist favours writing restrictive rules out).
+       - style-src keeps 'unsafe-inline': measured by removing it and running the app
+         (npm run build --workspace=app + scripts/sandbox-app.cts), which produced
+         "Applying inline style violates ... style-src" console errors on load. The
+         Tailwind stylesheet itself is NOT the culprit — the production build emits
+         it as a real <link rel="stylesheet"> asset, not an injected <style> (see the
+         note below). The actual requirement is React's style={{...}} prop, which
+         writes the DOM style attribute directly (panel widths/positions, drag
+         offsets, toast placement — ~12 components, e.g. AppShell.tsx, sidebar.tsx,
+         PostCard.tsx, FloatingBar.tsx, sonner.tsx). Moving those to a nonce/hash CSP
+         is a real rewrite, out of scope here.
+       - frame-ancestors is intentionally NOT set: it is not supported inside a
+         <meta> CSP at all (silently ignored, not an error — MDN, CSP spec), and the
+         production build loads via loadFile() (file://), where Electron's own
+         security checklist says the HTTP-header delivery method (onHeadersReceived)
+         "is not possible" (confirmed by electron/electron#23485 too). So there is
+         currently no delivery channel that can actually enforce it. Revisit if/when
+         #7 (file:// -> app:// custom protocol) lands. -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' data:; img-src 'self' asset: data: blob:; media-src 'self' asset: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none';">
   <title>Hologram</title>
   <!-- Design tokens (colours, type, spacing, elevation, light/dark) — the ONE stylesheet
        this document links. Everything that consumes them is a Tailwind utility written at
        its own element; there is no app stylesheet in here any more (#6), and with the
        legacy sheet gone there is no cascade layer left to declare either — Tailwind's own
        @layer order is the only one. The Tailwind sheet is bundled through
-       src/app/index.tsx's globals.css import and injected at runtime as a <style> (the
-       page CSP allows inline styles), so it needs no <link>. -->
+       src/app/index.tsx's globals.css import; in the production build (electron-vite
+       build) it is extracted to a real asset and linked as
+       <link rel="stylesheet" href="./assets/index-*.css"> in app/out/renderer/index.html
+       (verified #683) — it does NOT need style-src 'unsafe-inline'. Only `electron-vite
+       dev`'s Vite dev server injects CSS as a <style> tag for HMR, which is dev-only. -->
   <link rel="stylesheet" href="design-tokens.css">
   <script src="theme.js"></script>
 </head>
