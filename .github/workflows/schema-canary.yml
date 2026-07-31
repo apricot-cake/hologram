@@ -1,0 +1,149 @@
+name: Schema canary
+
+# The API schema canary (#191) on a schedule (#465). It fetches the fixed sample
+# posts in scripts/canary/samples.json through the extension's own fetch chain,
+# reduces each response to a field-path -> type tree, and diffs that against the
+# baseline committed under scripts/canary/snapshots/. What it watches — a platform
+# quietly changing the shape of its answer — happens on the platform's clock, not
+# on ours, so it belongs on a timer rather than on `push`.
+#
+# NOT a job inside app-tests.yml, even though that workflow already owns the daily
+# slot. Four things differ (#465's design comment):
+#   - This needs no Windows, no Electron, no desktop session — and no `npm install`
+#     at all: the script pulls in nothing outside Node's builtins and this repo's
+#     own files. app-tests.yml pays several minutes of setup + app build + Playwright
+#     Chromium before its first assertion, on a runner that bills at twice the rate.
+#   - A red here means "a platform changed its API", not "our code broke", and
+#     re-running it costs another round of requests to endpoints that owe us nothing.
+#     Sharing a workflow name would make the two indistinguishable in the run list
+#     and re-running either would run both.
+#   - This job needs `contents: write` (see the commit step). Keeping it in a job
+#     that executes only code from this repository keeps that token away from the
+#     third-party packages and browsers app-tests.yml unpacks.
+on:
+  schedule:
+    # 18:07 UTC = 03:07 JST — half an hour ahead of app-tests.yml so the two do not
+    # queue together, off the hour, and outside the 22:00-02:00 UTC peak for the
+    # same reason app-tests.yml avoids it. Both are done before the morning check.
+    #
+    # Once a day, not less: a disappearance is only confirmed after TWO consecutive
+    # runs (MISSING_STREAK_ALARM), so weekly would take a fortnight to confirm and
+    # the early warning stops being early. Not more, either: nothing here needs to
+    # be known within the day, and these are public endpoints under no obligation
+    # to serve us.
+    - cron: '7 18 * * *'
+  workflow_dispatch:
+
+# Read by default; the one job that needs to write says so for itself below.
+permissions:
+  contents: read
+
+concurrency:
+  group: schema-canary
+  # Never cancel a run in flight: it is halfway through a series of live requests,
+  # and the snapshot it is about to write is the next run's baseline.
+  cancel-in-progress: false
+
+jobs:
+  canary:
+    name: API schema canary
+    runs-on: ubuntu-latest
+    # Write is for the baseline commit below, and is the whole reason this job
+    # exists on its own rather than inside app-tests.yml.
+    permissions:
+      contents: write
+    # The script paces itself at 500ms between samples and takes about a minute for
+    # the 27 samples. The ceiling only exists so a hung socket cannot burn six hours.
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Full history: the push below rebases onto whatever landed while this ran,
+          # and a depth-1 clone has nothing to rebase onto.
+          fetch-depth: 0
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: package.json
+          # No `cache:` and no install step. Verified on a worktree with no
+          # node_modules at all: the canary's whole require graph
+          # (extension/utils/extractor/** and scripts/lib-schema-canary.cts) resolves
+          # to Node builtins and files in this repo. The one dependency-bearing path,
+          # `--payloads`, requires better-sqlite3 lazily inside its own function and
+          # is not used here.
+      - name: Run the canary
+        id: canary
+        run: |
+          code=0
+          node scripts/schema-canary.cts > canary.log 2>&1 || code=$?
+          cat canary.log
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+      - name: Report
+        if: ${{ !cancelled() }}
+        run: |
+          {
+            echo '### API スキーマカナリア（終了コード ${{ steps.canary.outputs.code }}）'
+            echo
+            echo '```'
+            cat canary.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      # Exit code 2 = no schema alarm, but some sample has no living candidate left,
+      # so the canary is blind for that post type until a human adds a candidate to
+      # samples.json. Deliberately NOT a failure. Red has to keep meaning exactly one
+      # thing — "a platform changed the shape of its answer" — and a state that only
+      # a human edit can clear would stand red for days, hiding any real alarm that
+      # arrived behind it. The cost of that choice is that this warning is passive:
+      # nothing pushes it at anyone (#465 leaves an active channel as an open
+      # question).
+      - name: Blind sample (not an alarm)
+        if: steps.canary.outputs.code == '2'
+        run: |
+          echo "::warning title=カナリアの一部が盲目::全候補が落ちたサンプルがある＝その投稿タイプの監視は止まっている。scripts/canary/samples.json に候補を足す（スキーマ変化ではない）"
+      # The baseline has to survive between runs or the two-in-a-row confirmation
+      # never happens and the canary is decorative (#15's note when #191 landed).
+      # It is committed rather than cached because snapshots/ is already the
+      # committed record: a CI-only copy would leave anyone running the script
+      # locally diffing against a stale one, and the commit history doubles as the
+      # log of when each platform's shape actually moved.
+      #
+      # Skipped on a confirmed alarm (code 1) on purpose. Advancing the baseline
+      # drops the field that just disappeared, so the next run would be green and
+      # the alarm would exist for exactly one day. Leaving the baseline alone makes
+      # it fire every day until someone either fixes the extractor or accepts the
+      # new shape by committing the snapshot themselves.
+      - name: Carry the baseline forward
+        if: steps.canary.outputs.code == '0' || steps.canary.outputs.code == '2'
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- scripts/canary/snapshots
+          # Every run rewrites `updatedAt`, so a plain "commit if changed" would add a
+          # commit a day forever. Only a line that is not an updatedAt line counts as
+          # movement — which also makes the committed updatedAt read as "when this
+          # platform's shape last changed" rather than "when the job last ran".
+          if git diff --cached -U0 -- scripts/canary/snapshots | grep -E '^[+-]' | grep -Ev '^(\+\+\+|---)' | grep -qv '"updatedAt"'; then
+            git commit -m 'chore(canary): carry the schema baselines forward'
+            # Push with a rebase retry: main moves under long-running jobs. Only
+            # scripts/canary/snapshots/ is touched, so a real conflict would need a
+            # human editing the same baselines at the same minute.
+            for attempt in 1 2 3; do
+              if git push origin "HEAD:${GITHUB_REF_NAME}"; then
+                exit 0
+              fi
+              git pull --rebase origin "${GITHUB_REF_NAME}"
+            done
+            echo "::error title=基準を push できなかった::3回試して失敗＝次回は古い基準から比較することになる"
+            exit 1
+          fi
+          git reset -- scripts/canary/snapshots
+          echo '基準に動きなし（updatedAt だけの差分）＝コミットしない'
+      # Last, so the steps above still run and report on a red. Anything that is not
+      # 0 or 2 is red: 1 is the alarm this workflow exists for, and any other code
+      # means the script itself fell over.
+      - name: Fail on a confirmed schema change
+        if: steps.canary.outputs.code != '0' && steps.canary.outputs.code != '2'
+        run: |
+          echo "::error title=スキーマカナリアが鳴った::終了コード ${{ steps.canary.outputs.code }} — ログとジョブサマリを見る。1 = 消失の確定または宣言と違う応答。それ以外 = スクリプトが落ちた"
+          exit 1
