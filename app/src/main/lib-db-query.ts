@@ -56,6 +56,9 @@ const POST_COLUMNS = [
   'editedAt',
   'quotedUrl',
   'replyToId',
+  'seriesId',
+  'seriesTitle',
+  'seriesOrder',
   'hashtags',
   'eagleName',
   'description',
@@ -189,6 +192,11 @@ function assemble(sqlite: Database.Database, postRows: any[]): any[] {
       editedAt: r.editedAt,
       quotedUrl: r.quotedUrl,
       replyToId: r.replyToId,
+      // #188: pixiv series membership. Read for the same reason quotedUrl/
+      // replyToId are — the inspector shows it and the export sidecar carries it.
+      seriesId: r.seriesId,
+      seriesTitle: r.seriesTitle,
+      seriesOrder: r.seriesOrder,
       hashtags: parseHashtags(r.hashtags),
       tags: tags.map((t) => t.name),
       tagIds: tags.map((t) => t.id),

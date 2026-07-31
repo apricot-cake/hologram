@@ -156,6 +156,8 @@ function PostInspector({ m }: { m: HologramInspectorModel }) {
           <Field k={m.labels.updated} v={m.updatedLabel} />
           <Field k={m.labels.images} v={m.imagesLabel} />
           <Field k={m.labels.imageOf} v={m.imageOfLabel} />
+          <Field k={m.labels.series} v={m.seriesLabel} />
+          <Field k={m.labels.seriesOrder} v={m.seriesOrderLabel} />
         </Fields>
       </Divided>
       <Divided>

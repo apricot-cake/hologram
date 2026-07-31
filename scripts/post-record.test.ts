@@ -50,6 +50,9 @@ describe('既定値', () => {
     'lang',
     'quotedUrl',
     'replyToId',
+    'seriesId',
+    'seriesTitle',
+    'seriesOrder',
     'editedAt',
     'eagleName',
     'description',
@@ -190,6 +193,19 @@ describe('生成側が入れたフィールドは落とさない', () => {
 
   test('replyToId が生き残る', () => {
     expect(rec.replyToId).toBe('parent-123');
+  });
+});
+
+// #188: pixiv シリーズ情報（extension/utils/extractor/pixiv.ts）が最後まで通ることの確認。
+describe('シリーズ情報（#188）', () => {
+  test('seriesId/seriesTitle/seriesOrder がそのまま通る', () => {
+    const rec = normalizePostRecord({ captureId: 'cap-4', seriesId: '999', seriesTitle: 'ある冒険', seriesOrder: 3 }, fixedNow);
+    expect({ seriesId: rec.seriesId, seriesTitle: rec.seriesTitle, seriesOrder: rec.seriesOrder }).toEqual({ seriesId: '999', seriesTitle: 'ある冒険', seriesOrder: 3 });
+  });
+
+  test('seriesOrder は数値以外を落とす（他の number フィールドと同じ規約）', () => {
+    const rec = normalizePostRecord({ captureId: 'cap-5', seriesOrder: '3' as any }, fixedNow);
+    expect(rec.seriesOrder).toBeNull();
   });
 });
 

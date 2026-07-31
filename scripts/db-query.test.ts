@@ -66,6 +66,11 @@ beforeAll(async () => {
     platform: 'x',
     imageIndex: 2,
     imageCount: 4,
+    // #188: pixiv シリーズ情報も他の任意フィールドと同じ列に相乗り（プラットフォーム名
+    // はテストの前提を崩さないよう 'x' のままにしてある — 往復するかどうかに関係ない）
+    seriesId: '12345',
+    seriesTitle: 'ある冒険',
+    seriesOrder: 3,
     capturedAt: '2026-01-03T00:00:00Z',
     updatedAt: '2026-01-03T00:00:00Z',
   });
@@ -140,6 +145,14 @@ describe('postsFromDb: 形と並び', () => {
     expect({ isEdited: cap1.isEdited, editedAt: cap1.editedAt }).toEqual({ isEdited: true, editedAt: '2026-01-01T12:00:00Z' });
     const cap2 = (await postsFromDb(handle.sqlite)).find((p: any) => p.captureId === 'cap-2');
     expect({ isEdited: cap2.isEdited, editedAt: cap2.editedAt }).toEqual({ isEdited: null, editedAt: null });
+  });
+
+  // #188: シリーズ情報も列があるだけでは意味を持たない＝読み出し器が引いて初めて往復する
+  test('seriesId / seriesTitle / seriesOrder が往復する（#188）', async () => {
+    const cap3 = (await postsFromDb(handle.sqlite)).find((p: any) => p.captureId === 'cap-3');
+    expect({ seriesId: cap3.seriesId, seriesTitle: cap3.seriesTitle, seriesOrder: cap3.seriesOrder }).toEqual({ seriesId: '12345', seriesTitle: 'ある冒険', seriesOrder: 3 });
+    const cap2 = (await postsFromDb(handle.sqlite)).find((p: any) => p.captureId === 'cap-2');
+    expect({ seriesId: cap2.seriesId, seriesTitle: cap2.seriesTitle, seriesOrder: cap2.seriesOrder }).toEqual({ seriesId: null, seriesTitle: null, seriesOrder: null });
   });
 
   // #560: 書き込み器だけが知っていて読み出し器が引かない列だと、インスペクタの

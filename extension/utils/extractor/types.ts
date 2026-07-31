@@ -103,6 +103,13 @@ interface PostRecord {
   editedAt: string | null;
   quotedUrl: string | null;
   replyToId: string | null;
+  // pixiv series membership (#188): which series this work belongs to and its
+  // 1-based position in it, from the illust payload's seriesNavData. All three
+  // stay null on a work that isn't part of a series (seriesNavData itself is
+  // null there) and on every non-pixiv platform, which has no series concept.
+  seriesId: string | null;
+  seriesTitle: string | null;
+  seriesOrder: number | null;
   hashtags: string[];
   tags: string[];
   // Every response body this record's acquisition received, in the order it
