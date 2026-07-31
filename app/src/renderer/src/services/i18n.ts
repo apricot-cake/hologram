@@ -383,6 +383,8 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     displaySize: 'サイズ',
     displayPanels: 'サイドバーと詳細パネル',
     displayPanelsHint: 'サイドバーだけなら Ctrl+B、両方まとめてなら Ctrl+Shift+B',
+    // クイックビュー（#143）— 見出しは描かないので読み上げ用だけ
+    quickViewTitle: 'クイックビュー',
     // コマンドパレット（#28）— 器の文言・見出し・初期コマンド
     paletteTitle: 'コマンドパレット',
     paletteDesc: 'コマンドを実行したり、タグ・投稿者・フォルダへ移動します。',
@@ -826,6 +828,8 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     displaySize: 'Size',
     displayPanels: 'Sidebar and details panel',
     displayPanelsHint: 'Ctrl+B for the sidebar alone, Ctrl+Shift+B for both',
+    // Quick view (#143) — no visible heading, so this is the screen-reader name only
+    quickViewTitle: 'Quick view',
     // Command palette (#28)
     paletteTitle: 'Command palette',
     paletteDesc: 'Run a command, or jump to a tag, poster or folder.',

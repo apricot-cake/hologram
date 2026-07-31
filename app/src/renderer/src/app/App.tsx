@@ -1,7 +1,6 @@
 import { useEffect, useLayoutEffect, useSyncExternalStore } from 'react';
 import { AppShell } from '../shell/AppShell.tsx';
 import { get as confirmGet, subscribe as confirmSubscribe } from '../services/confirm.ts';
-import { isOpen as lightboxIsOpen, subscribe as lightboxSubscribe } from '../services/lightbox.ts';
 import { ConfirmHost } from '../confirm/Confirm.tsx';
 import { PaletteHost } from '../palette/CommandPalette.tsx';
 import { PromptHost } from '../prompt/Prompt.tsx';
@@ -102,18 +101,17 @@ function ShellClasses() {
 // (shell/WindowControls.tsx), so the scrim covers them on its own and that whole mechanism —
 // the recolor, the dedupe, the paint-timing deferral — is gone.
 function ModalChrome() {
-  // Scroll-lock (`.modal-open` = overflow:hidden) is for the overlays that aren't Base UI:
-  // the folder-management modal, the confirm AlertDialog and the quick-view peek. The
-  // shadcn Dialog/AlertDialog lock their own scroll, so settings isn't in this set.
+  // Scroll-lock (`.modal-open` = overflow:hidden) is the fallback for overlays that don't lock
+  // their own: the folder-management modal and the confirm AlertDialog. A shadcn Dialog locks
+  // scroll itself, which is why settings was never in this set — and why the quick-view peek
+  // left it when #62 moved the peek onto the Dialog.
   //
-  // All three are plain subscriptions now (#621): the folder modal used to be a static
-  // element whose `hidden` attribute this watched with a MutationObserver, which is
-  // exactly the DOM-sniffed open state #153 rules out. It is conditionally rendered and
-  // asked through folders.ts like the other two.
+  // Both are plain subscriptions (#621): the folder modal used to be a static element whose
+  // `hidden` attribute this watched with a MutationObserver, which is exactly the DOM-sniffed
+  // open state #153 rules out. It is conditionally rendered and asked through folders.ts.
   const confirmOpen = useSyncExternalStore(confirmSubscribe, () => !!confirmGet());
-  const peekOpen = useSyncExternalStore(lightboxSubscribe, lightboxIsOpen);
   const folderManagerOpen = useSyncExternalStore(subscribeFolderManager, folderManagerIsOpen);
-  const scrollLock = confirmOpen || peekOpen || folderManagerOpen;
+  const scrollLock = confirmOpen || folderManagerOpen;
   useEffect(() => {
     document.documentElement.classList.toggle('modal-open', scrollLock);
     document.body.classList.toggle('modal-open', scrollLock);
