@@ -19,6 +19,7 @@ import { get as storeGet, subscribe as storeSubscribe } from '../services/store.
 import { CatIcon } from './index.tsx';
 import { promptName } from '../prompt/Prompt.tsx';
 import { FormEditor } from './FormEditor.tsx';
+import { InlineFilterInput } from './InlineFilterInput.tsx';
 import { ValueEditor } from './ValueEditor.tsx';
 import { t } from '../_shared/i18n.ts';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -113,7 +114,11 @@ export function FilterChips() {
   // anyway, so [] is correct).
   useSyncExternalStore(subActive, getActive);
   const chips = activeFilters ? activeFilters() : [];
-  if (!chips.length) return null;
+  const posters = storeGet('browseMode') === 'posters';
+  // The row no longer disappears when there is nothing filtering (#148): with zero chips
+  // it carries the「＋ 絞り込みを追加」entry, which is both the hint and the way in — the
+  // old split (hint in the retired sidebar bar, entry elsewhere) meant you could not start
+  // from where you read. Its height is the same either way, so the band stays one line.
   return (
     <div data-slot="filter-chips" className="flex flex-wrap items-center gap-1.5 py-1.5">
       {chips.map((f, i) => (
@@ -122,7 +127,10 @@ export function FilterChips() {
         // remount its chip so the values line stays the chip's identity.
         <Chip key={f.cat + ':' + f.mode + ':' + i + ':' + f.values.join(' ')} f={f} />
       ))}
-      {storeGet('browseMode') !== 'posters' && <SaveSearchButton />}
+      <InlineFilterInput hasChips={chips.length > 0} posters={posters} />
+      {/* No chips = nothing to save, so this rides with them (post side only — a saved
+          search is a post query). */}
+      {chips.length > 0 && !posters && <SaveSearchButton />}
     </div>
   );
 }

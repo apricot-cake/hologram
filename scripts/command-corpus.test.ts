@@ -25,8 +25,14 @@ const BASE_POSTS = () => [
   { url: null, platform: null, tags: ['取込タグ'] }, // SNS 投稿でない＝タグ集計外
 ];
 
+// #148 のチップ帯インライン入力の面（投稿ビュー / 投稿者ビュー）。
+const INLINE_POSTS: R.QueryOptions = { sections: ['tag', 'user', 'folder'], limit: { tag: 6, user: 4, folder: 4 } };
+const INLINE_POSTERS: R.QueryOptions = { sections: ['tag', 'folder'], limit: { tag: 6, folder: 4 } };
+
 let posts: any[];
 let folderList: any[];
+let posterTags: { value: string; count: number }[];
+let posterFolders: { id: string; name: string }[];
 let performed: string[];
 let mode: string;
 
@@ -51,6 +57,8 @@ beforeEach(() => {
   R.close();
   posts = BASE_POSTS();
   folderList = [{ id: 'f1', name: 'お気に入り' }];
+  posterTags = [{ value: '常連', count: 4 }];
+  posterFolders = [{ id: 'pf1', name: '追いかけ中' }];
   performed = [];
   mode = 'posts';
   makeCommands({
@@ -66,6 +74,9 @@ beforeEach(() => {
     resetPosterFilters: () => performed.push('resetPosterFilters'),
     browseTo: (m) => performed.push(`browseTo:${m}`),
     applyFolderFilter: (id) => performed.push(`applyFolderFilter:${id}`),
+    posterTagRows: () => posterTags,
+    posterFolderRows: () => posterFolders,
+    posterAddFilter: (f) => performed.push(`posterAddFilter:${f.type}:${f.value}`),
   });
 });
 
@@ -168,5 +179,53 @@ describe('操作系コマンド', () => {
   test('フォルダへのジャンプは applyFolderFilter を通る', () => {
     itemsOf(R.queryEntries('お気に入り', PALETTE), 'folder')[0].perform();
     expect(performed).toEqual(['applyFolderFilter:f1']);
+  });
+});
+
+// #148: 3つ目の面（チップ帯のインライン入力）。生成は同じ queryEntries を通り、面が
+// 変えるのは「どのセクションを何件見せるか」と「確定したときの動作」だけ、が要点。
+describe('チップ帯インライン入力の面（#148）', () => {
+  test('タグ・投稿者の候補は filter（＝足す条件そのもの）を持つ', () => {
+    expect(itemsOf(R.queryEntries('風景', INLINE_POSTS), 'tag')[0].filter).toEqual({ type: 'tag', value: '風景' });
+    expect(itemsOf(R.queryEntries('アリス', INLINE_POSTS), 'user')[0].filter).toEqual({ type: 'user', value: 'x:u1', label: 'アリス' });
+  });
+
+  test('フォルダは filter を持たない＝行き先なので perform() に倒れる', () => {
+    expect(itemsOf(R.queryEntries('お気に入り', INLINE_POSTS), 'folder')[0].filter).toBeUndefined();
+  });
+
+  test('チップ帯の面とパレットの面は同じ候補（顔ぶれがズレない）', () => {
+    expect(titlesOf(R.queryEntries('風景', INLINE_POSTS), 'tag')).toEqual(titlesOf(R.queryEntries('風景', PALETTE), 'tag'));
+  });
+});
+
+describe('語彙は見ているビューのもの（#148）', () => {
+  beforeEach(() => {
+    mode = 'posters';
+  });
+
+  test('投稿者ビューでは投稿側のタグ・投稿者・フォルダを出さない', () => {
+    expect(titlesOf(R.queryEntries('風景', PALETTE), 'tag')).toEqual([]);
+    expect(titlesOf(R.queryEntries('アリス', PALETTE), 'user')).toEqual([]);
+    expect(titlesOf(R.queryEntries('お気に入り', PALETTE), 'folder')).toEqual([]);
+  });
+
+  test('投稿者ビューのタグは投稿者側の語彙から出て、投稿者のクエリへ入る', () => {
+    const tags = itemsOf(R.queryEntries('常連', INLINE_POSTERS), 'tag');
+    expect(tags.map((e) => e.title)).toEqual(['常連']);
+    expect(tags[0]).toMatchObject({ hint: '4', weight: 4, filter: { type: 'tag', value: '常連' } });
+    tags[0].perform();
+    expect(performed).toEqual(['posterAddFilter:tag:常連']);
+  });
+
+  test('投稿者ビューのフォルダは択一ファセット＝ここに居たまま入れ替わるので filter を持つ', () => {
+    const folders = itemsOf(R.queryEntries('追いかけ', INLINE_POSTERS), 'folder');
+    expect(folders[0]).toMatchObject({ title: '追いかけ中', filter: { type: 'folder', value: 'pf1' } });
+  });
+
+  test('投稿ビューへ戻れば投稿側の語彙に戻る（provider は出し分けるだけ）', () => {
+    mode = 'posts';
+    expect(titlesOf(R.queryEntries('風景', PALETTE), 'tag')).toEqual(['風景']);
+    expect(titlesOf(R.queryEntries('常連', PALETTE), 'tag')).toEqual([]);
   });
 });

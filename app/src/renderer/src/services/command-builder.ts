@@ -32,6 +32,12 @@ export interface CommandDeps {
   resetPosterFilters(): void;
   browseTo(mode: string): void;
   applyFolderFilter(id: string): void;
+  /** 投稿者ビューのタグ語彙（一般タグ＋作品/キャラ）。件数は現在の絞り込み後の投稿者数。 */
+  posterTagRows(): { value: string; count: number }[];
+  /** 投稿者ビューのフォルダ一覧。 */
+  posterFolderRows(): { id: string; name: string }[];
+  /** 投稿者ビューのクエリへ条件を1つ足す。 */
+  posterAddFilter(filter: { type: string; value: string; label?: string }): void;
 }
 
 export function makeCommands(deps: CommandDeps): void {
@@ -105,15 +111,21 @@ export function makeCommands(deps: CommandDeps): void {
   const pick = (kind: string, value: string, label: string) => {
     searchBoxHandlers()?.onPick({ kind, value, label });
   };
+  // 語彙は見ているビューのもの＝投稿を見ている間は投稿のタグ・投稿者、投稿者を見て
+  // いる間は投稿者のタグ・フォルダ（#148）。同じ「タグ」でも別の語彙・別のクエリ木で、
+  // 混ぜると押しても何も起きない候補（投稿者ビューで投稿側のクエリを編集する行）に
+  // なる。provider を2本に割って mode で出し分けるのは、セクションの顔ぶれと並びを
+  // 1つの queryEntries に通したままにするため（面ごとの候補生成を増やさない）。
+  const posters = () => deps.getBrowseMode() === 'posters';
   registerProvider({
     id: 'corpus',
     entries: (query) => {
-      if (!query.trim()) return [];
+      if (!query.trim() || posters()) return [];
       const out: CommandEntry[] = [];
       const counts = new Map<string, number>();
       for (const p of deps.allPosts()) if (p.url) for (const tag of p.tags || []) counts.set(tag, (counts.get(tag) || 0) + 1);
       for (const [tag, count] of counts) {
-        out.push({ id: `tag:${tag}`, section: 'tag', title: tag, hint: String(count), weight: count, perform: () => pick('tag', tag, tag) });
+        out.push({ id: `tag:${tag}`, section: 'tag', title: tag, hint: String(count), weight: count, filter: { type: 'tag', value: tag }, perform: () => pick('tag', tag, tag) });
       }
       for (const u of deps.buildUsers()) {
         const label = u.displayName || u.screenName || t('cmdUnknownUser');
@@ -124,12 +136,32 @@ export function makeCommands(deps: CommandDeps): void {
           keywords: u.screenName || undefined,
           hint: String(u.count),
           weight: u.count,
+          filter: { type: 'user', value: u.key, label },
           perform: () => pick('user', u.key, label),
         });
       }
       for (const f of deps.listFolders()) {
         // 入れ子のフォルダは同名がありうるのでパス表示（「親 / 子」）を名前にする。
+        // filter を持たせないのは、フォルダが「場所」＝行き先で、確定は単なる条件追加で
+        // なく「投稿ビューへ移って既存のフォルダ条件を置き換える」ひとまとまりだから
+        // （applyFolderFilter がその全部を持っている）。
         out.push({ id: `folder:${f.id}`, section: 'folder', title: deps.folderPath(f.id) || f.name, keywords: f.name, perform: () => deps.applyFolderFilter(f.id) });
+      }
+      return out;
+    },
+  });
+  registerProvider({
+    id: 'poster-corpus',
+    entries: (query) => {
+      if (!query.trim() || !posters()) return [];
+      const out: CommandEntry[] = [];
+      for (const row of deps.posterTagRows()) {
+        out.push({ id: `poster-tag:${row.value}`, section: 'tag', title: row.value, hint: String(row.count), weight: row.count, filter: { type: 'tag', value: row.value }, perform: () => deps.posterAddFilter({ type: 'tag', value: row.value }) });
+      }
+      for (const f of deps.posterFolderRows()) {
+        // 投稿者ビューのフォルダは posterQB の択一ファセット（既存を置換）＝投稿側の
+        // 「場所へ移る」とは違い、ここに居たまま条件が1つ入れ替わるだけなので filter を持つ。
+        out.push({ id: `poster-folder:${f.id}`, section: 'folder', title: f.name, filter: { type: 'folder', value: f.id }, perform: () => deps.posterAddFilter({ type: 'folder', value: f.id }) });
       }
       return out;
     },
