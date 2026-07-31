@@ -221,11 +221,10 @@
 }
 /* The lightbox (#328) — a full-screen scrim like the modals, but it was never in this list, so
    the strip stayed bright inside it. Matched to ITS scrim on both counts: 0.8 black, and the
-   enter animation Lightbox.tsx runs on the overlay (--motion-duration-base / --motion-ease-out),
-   for the same one-frame reason the modal branch borrows the modals'.
-   No data-closed twin: the lightbox has no exit animation — it unmounts on close, so the base
-   rule takes the dim off in the same frame the scrim disappears. */
-:root:has([data-slot='lightbox']) .wc-dim {
+   animation Lightbox.tsx runs on the overlay (--motion-duration-base / --motion-ease-out),
+   for the same one-frame reason the modal branch borrows the modals'. It carries its own slot
+   name rather than dialog-overlay's precisely so these two depths stay separable (#62). */
+:root:has([data-slot='lightbox'][data-open]) .wc-dim {
   --tw-enter-opacity: 0;
   opacity: 0.8;
   animation: enter var(--motion-duration-base) var(--motion-ease-out);
@@ -242,4 +241,12 @@
   --tw-exit-opacity: 0;
   opacity: 0.5;
   animation: exit 100ms ease forwards;
+}
+/* The lightbox's exit, same pairing as its enter above. It only needed no twin while the
+   overlay was hand-rolled and vanished on unmount; the Dialog keeps it mounted through the
+   fade, so without this the strip would snap bright a frame into the fade-out (#62). */
+:root:has([data-slot='lightbox'][data-closed]) .wc-dim {
+  --tw-exit-opacity: 0;
+  opacity: 0.8;
+  animation: exit var(--motion-duration-base) var(--motion-ease-out) forwards;
 }

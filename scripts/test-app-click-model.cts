@@ -81,8 +81,9 @@ const evalJs = `(async () => {
   // parts inside it.
   const insp = () => document.querySelector('[data-slot="inspector"]');
   const inspVisible = () => { const el = insp(); return !!el && !el.hidden; };
-  // The peek overlay is conditionally rendered (P2⑦) — its presence IS its open state.
-  const peekOpen = () => !!document.querySelector('[data-slot="lightbox"]');
+  // The peek overlay is conditionally rendered (P2⑦). Since #62 it is a shadcn Dialog, so
+  // the scrim outlives the close by one fade — [data-open] is the open state, not presence.
+  const peekOpen = () => !!document.querySelector('[data-slot="lightbox"][data-open]');
   const errors = [];
   window.addEventListener('error', (e) => errors.push(String((e && e.message) || e)));
   const out = {};
