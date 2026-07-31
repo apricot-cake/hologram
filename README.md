@@ -19,7 +19,7 @@ Hologram is **free and open source** (MIT). Your library is nothing but ordinary
 
 - **Save the whole post** — not just a screenshot, but the text, author, date, like count, and original URL too. So you can always find "that post" later.
 - **Organize and search freely** — filter by your own tags, in-text hashtags, platform, date, engagement, and author. Reach what you want even among thousands.
-- **Illustrations and posts in one place** — from pixiv illustrations to X text posts, all in a single library. View images as cards or tiles, read text in a list — switch to whatever suits the moment.
+- **Illustrations and posts in one place** — from pixiv illustrations to X text posts, all in a single library. View images in a grid (with square thumbnails and info as independent toggles), or read text in a list — switch to whatever suits the moment.
 - **Everything stays with you** — your data lives on your PC, with images and metadata sitting side by side as ordinary files. Nothing is sent to any server. Open them later in another tool, or move the whole library — it's all yours.
 - **Backup & portability** — export/import the whole library as a ZIP. You can also set up a **scheduled backup (mirror)** to another folder.
 
@@ -43,7 +43,7 @@ Point at an image you've already saved and the same corner shows a small mark in
 
 ### 2. Browse & read
 
-Switch between **card / tile / list** views at the top of the left sidebar. Tile is good for browsing illustrations side by side; list is good for reading text.
+Switch between **grid** and **list** at the top of the left sidebar. In the grid, **square thumbnails** and **show info** are independent toggles — turn on square thumbnails for an even, tile-like grid of illustrations, or leave it off to keep each picture's own proportions; turn on show info to add the author, an excerpt, and other details to each cell. List is good for reading text.
 
 Click a card's image to open a **gallery** that bundles the screenshot and the original-resolution images. Posts with multiple images can be paged with `←` `→` or the arrow keys, and videos play right there. The toolbar at the top carries zoom (− / level / ＋) and a **fit ⇄ actual size** toggle (`Ctrl+0` / `Ctrl+1`); the wheel and a double-click do the same two things.
 

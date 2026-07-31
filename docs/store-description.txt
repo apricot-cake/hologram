@@ -24,15 +24,16 @@ YOUR DATA STAYS WITH YOU
 - Export/import the whole library as a ZIP, or set up a scheduled mirror backup to another folder.
 
 HOW TO SAVE
-1. Press Alt+S (or click the extension icon), then click a post — it is captured together with its text, author, date, and engagement details.
-2. Or drag an image to save an illustration as the image file itself.
-3. New captures appear in the desktop app automatically.
+1. Point at an image and press the save button in its corner — captures the picture together with the post's text, author, and source URL.
+2. Or press Alt+S (or click the extension icon), then click a post to capture a screenshot of how it looks, plus its text, author, date, and engagement details.
+3. Or drag an image to save an illustration as the image file itself.
+4. New captures appear in the desktop app automatically.
 
 FIND IT AGAIN
 - Search by text or username, with smart matching that forgives typos and kana variants
 - Filter by platform, author, tag, in-text hashtag, date, engagement, and folder — combined freely
 - Sort by newest, most likes, save date, and more
-- Browse as cards, tiles, or a reading-friendly list; open a gallery that bundles the screenshot and the original-resolution images
+- Browse in a grid or list; in the grid, square thumbnails and show info are independent toggles. Open a gallery that bundles the screenshot and the original-resolution images
 
 ORGANIZE
 - Tags — filter to "No tags" and arrow from post to post to tag them one after another
