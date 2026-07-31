@@ -21,6 +21,7 @@
 // No rename UI: manual tab titles were dropped in the redesign (2026-07-13) — a tab is
 // named after what it shows (tabTitleOf), like Chrome's and VS Code's.
 import type { MouseEvent } from 'react';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { addTab, closeTab, closeTabByGesture, showTabMenu, switchTab } from '../services/orchestrator.ts';
 
 // The strip model TabsHost pulls from services/tabs.ts's hologramTabsSource.
@@ -122,19 +123,25 @@ function Tab({ t, closeTitle }: { t: TabModel; closeTitle?: string }) {
         </span>
       </span>
       {t.showClose && (
-        <button
-          type="button"
-          data-slot="tab-close"
-          className={`absolute top-1/2 right-1.5 z-1 grid size-4 -translate-y-1/2 place-items-center rounded-[3px] text-[var(--text-muted)] transition-opacity hover:bg-[var(--hover)] hover:text-[var(--text)] hover:opacity-100! ${t.active ? 'opacity-100' : 'opacity-0 group-hover:opacity-70'}`}
-          data-tip={closeTitle}
-          aria-label={closeTitle}
-          onClick={(e: MouseEvent) => {
-            e.stopPropagation(); // the row underneath would otherwise switch to the tab being closed
-            closeTab(t.id);
-          }}
-        >
-          <CloseIcon />
-        </button>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <button
+                type="button"
+                data-slot="tab-close"
+                className={`absolute top-1/2 right-1.5 z-1 grid size-4 -translate-y-1/2 place-items-center rounded-[3px] text-[var(--text-muted)] transition-opacity hover:bg-[var(--hover)] hover:text-[var(--text)] hover:opacity-100! ${t.active ? 'opacity-100' : 'opacity-0 group-hover:opacity-70'}`}
+                aria-label={closeTitle}
+                onClick={(e: MouseEvent) => {
+                  e.stopPropagation(); // the row underneath would otherwise switch to the tab being closed
+                  closeTab(t.id);
+                }}
+              >
+                <CloseIcon />
+              </button>
+            }
+          />
+          <TooltipContent side="bottom">{closeTitle}</TooltipContent>
+        </Tooltip>
       )}
     </div>
   );
@@ -152,18 +159,24 @@ export function Tabs({ model }: { model: TabsModel | null }) {
       {model.tabs.map((t) => (
         <Tab key={t.id} t={t} closeTitle={model.closeTitle} />
       ))}
-      <button
-        type="button"
-        data-slot="tab-new"
-        // Tabs are bottom-flush, so the ＋ centres itself on the strip's mid-line rather
-        // than riding the tab baseline.
-        className="app-no-drag ml-1.5 grid size-6 shrink-0 place-items-center self-center rounded-[6px] text-[var(--text-muted)] transition-colors hover:bg-[var(--hover)] hover:text-[var(--text)]"
-        data-tip={model.newTitle}
-        aria-label={model.newTitle}
-        onClick={() => addTab()}
-      >
-        <NewIcon />
-      </button>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <button
+              type="button"
+              data-slot="tab-new"
+              // Tabs are bottom-flush, so the ＋ centres itself on the strip's mid-line rather
+              // than riding the tab baseline.
+              className="app-no-drag ml-1.5 grid size-6 shrink-0 place-items-center self-center rounded-[6px] text-[var(--text-muted)] transition-colors hover:bg-[var(--hover)] hover:text-[var(--text)]"
+              aria-label={model.newTitle}
+              onClick={() => addTab()}
+            >
+              <NewIcon />
+            </button>
+          }
+        />
+        <TooltipContent side="bottom">{model.newTitle}</TooltipContent>
+      </Tooltip>
     </div>
   );
 }

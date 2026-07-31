@@ -280,7 +280,7 @@
        it (the search box in the sidebar, the 絞り込み find box in the flyout) so they
        line up as one block (user 2026-07-04). The thumb slide is an inline transform
        set by the component (fuzzy=left / exact=right). Each option names itself via a
-       .ui-tip tooltip on hover. */
+       tooltip on hover. */
     .seg-control {
       position: relative; display: grid; grid-template-columns: 1fr 1fr;
       background: var(--seg-track); border-radius: var(--radius-md);
@@ -476,7 +476,7 @@
        verbatim — glyph-only in EVERY state (the active-label idiom was retired
        2026-07-04: text on the active segment made the thumb width jump per mode and
        read as a different control from the layout toggle). Segments name themselves
-       via the instant .ui-tip tooltips; the glass thumb marks the active one. */
+       via their tooltips; the glass thumb marks the active one. */
     /* Lives at the sidebar top (.browse-bar-section = a .sb-section). */
     .browse-bar-section { margin-bottom: 16px; }
 
@@ -874,15 +874,8 @@
       background: none; color: var(--text-subtle); cursor: pointer; transition: color .12s;
     }
     .qb-help:hover { color: var(--accent-text); }
-    .qb-help-pop {
-      position: fixed; z-index: 12000; display: none; max-width: 360px;
-      border-radius: 10px; padding: 12px 14px;   /* material (bg/border/shadow) = shared pop-solid */
-      font-size: 12px; line-height: 1.7; color: var(--text);
-    }
-    .qb-help-pop.show { display: block; animation: hologramPopIn var(--dur-pop) var(--ease-out); }
-    .qb-help-pop .qh-title { font-weight: 700; margin-bottom: 6px; }
-    .qb-help-pop .qh-row { display: flex; gap: 7px; margin-top: 4px; }
-    .qb-help-pop .qh-row::before { content: '・'; color: var(--text-subtle); flex-shrink: 0; }
+    /* (.qb-help-pop is gone with #62: the ⓘ hint is a multi-line Base UI Tooltip now,
+       so placement, the viewport clamp and the material all come from the ui kit.) */
     /* grip dots = 「ドラッグで移せる」の定番アフォーダンス（pseudo なので
        textContent には乗らない） */
     /* No permanent drag-grip glyph on pills: draggability is signalled by the
@@ -1105,34 +1098,9 @@
     }
     .glass-chrome:hover { background: rgba(20,22,26,0.6); color: #fff; }
 
-    /* The single shared hover-hint surface (.ui-tip + .pop-solid, singleton div
-       owned by tooltip/TooltipHost.tsx, portaled onto document.body; the
-       store + tipProps() live in _shared/tip.ts). EVERY hover hint drives
-       it — React tipProps() and the [data-tip] delegation — so tooltips
-       can't drift apart. Replaces native `title` on custom controls (the OS
-       tooltip is ~1s delayed and OS-styled = チープ). Shows immediately on
-       hover/focus with a fast fade+rise; pop-solid supplies the material.
-       Topmost surface (above every fold-menu/popover at ≤13500). */
-    .ui-tip {
-      position: fixed; z-index: 14000; pointer-events: none;
-      padding: 6px 10px; border-radius: 6px;
-      font-size: 12px; font-weight: 400; line-height: 1.45;
-      letter-spacing: 0.01em;
-      color: var(--text-strong); white-space: nowrap;
-      opacity: 0; visibility: hidden; translate: 0 3px;
-      transition: opacity .12s var(--ease-out), translate .12s var(--ease-out), visibility 0s .12s;
-    }
-    .ui-tip.show { opacity: 1; visibility: visible; translate: 0 0; transition-delay: 0s; }
-    @media (prefers-reduced-motion: reduce) { .ui-tip { transition: none; translate: 0 0; } }
-    /* Rich variant: a multi-line explanatory hint — wraps, wider,
-       left-aligned, roomier corners/padding. Material = the same .pop-solid as
-       the single-line tip (#136: the whole hover-hint family is solid now;
-       no per-host fill bumps). */
-    .ui-tip--rich {
-      white-space: normal; max-width: 260px; text-align: left;
-      padding: 9px 12px; border-radius: 8px;
-      line-height: 1.6;
-    }
+    /* (The shared hover-hint surface .ui-tip / .ui-tip--rich is gone with #62: every
+       hover hint is its own Base UI Tooltip, whose material lives in
+       components/ui/tooltip.tsx rather than here.) */
 
     /* a11y escape hatch: text faces are already solid (#136), so only the two
        remaining backdrop-filter users need a fallback here. */

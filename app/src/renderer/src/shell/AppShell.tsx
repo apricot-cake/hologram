@@ -27,7 +27,6 @@
 import type { CSSProperties } from 'react';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { SIDEBAR_WIDTH, SidebarInset, SidebarProvider } from '@/components/ui/sidebar';
-import { TooltipProvider } from '@/components/ui/tooltip';
 import { t } from '../_shared/i18n.ts';
 import { InspectorRail } from './InspectorRail.tsx';
 import { type PanelResize, resolveCssLength, usePanelResize } from './use-panel-resize.ts';
@@ -257,7 +256,10 @@ export function AppShell() {
     return () => ro.disconnect();
   }, []);
   return (
-    <TooltipProvider delay={0}>
+    // The TooltipProvider is App.tsx's now: tooltip triggers also live in the
+    // body-level overlays that sit OUTSIDE this shell (the 種別 menu's rename button),
+    // and a shared delay is only shared if one provider covers them all.
+    <>
       <div className="flex h-svh flex-col overflow-hidden">
         <SidebarProvider ref={shellRef} open={sidebarShown} onOpenChange={chooseSidebar} className="min-h-0 flex-1" style={{ '--sidebar-width': `${sidebar.width}px` } as CSSProperties}>
           {/* The rail is a resize handle only while the sidebar is a column. Below the
@@ -349,6 +351,6 @@ export function AppShell() {
       <PostGrid />
       <PosterGrid />
       <TrashGrid />
-    </TooltipProvider>
+    </>
   );
 }

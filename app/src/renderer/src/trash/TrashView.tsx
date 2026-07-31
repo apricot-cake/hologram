@@ -28,9 +28,10 @@ export function TrashView() {
 
   const selectedCount = snap.selected.size;
   const hasSelection = selectedCount > 0;
+  // Anchored to the ⋯ button itself, not to a rect this component measured: the menu
+  // hangs under it, right-aligned, and the ui kit owns the gap and the collision flip.
   const overflow = (e: ReactMouseEvent<HTMLButtonElement>) => {
-    const r = e.currentTarget.getBoundingClientRect();
-    menuOpen({ x: r.left, y: r.bottom + 4, items: [{ label: t('trashSelectAll'), act: 'selectAll' }, { sep: true }, { label: t('trashEmptyBtn'), act: 'empty', danger: true }] }, (item) => {
+    menuOpen({ anchorEl: e.currentTarget, align: 'end', items: [{ label: t('trashSelectAll'), act: 'selectAll' }, { sep: true }, { label: t('trashEmptyBtn'), act: 'empty', danger: true }] }, (item) => {
       if (item.act === 'selectAll') selectAll();
       else if (item.act === 'empty') requestEmptyAll();
     });

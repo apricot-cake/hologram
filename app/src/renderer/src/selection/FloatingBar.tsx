@@ -127,7 +127,7 @@ export function FloatingBar() {
         <Action label={showFull ? t('tagSelected') : t('selTag')} title={t('tagSelected')} onClick={() => selectionTag()}>
           <Tag />
         </Action>
-        <Action label={showFull ? t('folderSelected') : t('selFolder')} title={t('folderSelected')} onClick={(e) => selectionFolder(e.currentTarget.getBoundingClientRect())}>
+        <Action label={showFull ? t('folderSelected') : t('selFolder')} title={t('folderSelected')} onClick={(e) => selectionFolder(e.currentTarget)}>
           <FolderPlus />
         </Action>
         <Action label={t('groupSelected')} title={t('groupSelected')} disabled={groupDisabled} onClick={() => selectionGroup()}>

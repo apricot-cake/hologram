@@ -2,6 +2,7 @@ import type { DragEvent, MouseEvent as ReactMouseEvent } from 'react';
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { t } from '../_shared/i18n.ts';
 import { promptName } from '../prompt/Prompt.tsx';
+import { open as confirmOpen } from '../services/confirm.ts';
 import { closeManager, getManager, managerCreate, managerMove, managerRemove, managerRename, subscribeManager } from '../services/folders.ts';
 
 // Folder management modal — React-owned, and React-MOUNTED since #621: it used to portal
@@ -52,8 +53,15 @@ function FolderManagerBox({ model }: { model: HologramFolderManagerModel }) {
   const doRename = (f: HologramFolder) => {
     promptName(t('foldRenamePrompt'), f.name, (nm) => managerRename(f.id, nm));
   };
+  // Same AlertDialog the sidebar tree's folder delete uses (LeftSidebar's deleteFolder) —
+  // these stores are flat, so there is no subtree count to warn about.
   const doRemove = (f: HologramFolder) => {
-    if (window.confirm(t('foldDeleteConfirm', [f.name]))) managerRemove(f.id);
+    confirmOpen({
+      message: t('foldDeleteConfirm', [f.name]),
+      okLabel: t('foldDelete'),
+      cancelLabel: t('confirmCancel'),
+      onOk: () => managerRemove(f.id),
+    });
   };
   const endDrag = () => {
     dragIdRef.current = null;
