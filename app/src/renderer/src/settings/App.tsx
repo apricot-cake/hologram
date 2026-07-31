@@ -62,7 +62,7 @@ export function App({ store }: { store: OpenStore }) {
   return (
     <SearchContext.Provider value={q}>
       <Dialog open={open} onOpenChange={(v) => store.set(v)}>
-        <DialogContent className="flex h-[min(680px,85vh)] flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl">
+        <DialogContent className="flex h-[min(1000px,85vh)] flex-col gap-0 overflow-hidden p-0 sm:max-w-[min(1100px,90vw)]">
           <DialogHeader className="shrink-0 gap-3 border-b px-6 pt-5 pb-4">
             <DialogTitle className="text-lg">{t('tabSettings')}</DialogTitle>
             <DialogDescription className="sr-only">{t('settingsSearch')}</DialogDescription>
