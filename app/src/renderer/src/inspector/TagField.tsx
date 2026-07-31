@@ -3,6 +3,7 @@ import { X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { KeyboardEvent } from 'react';
 import { setSelectOpen } from '../services/open-select-registry.ts';
+import { normalizeTagName } from '../../../../../native-host/tag-normalize.mts';
 
 // Inline tag editing, in the inspector (P2⑦). Editing used to live in a popover
 // anchored to a ✎ / 🏷 button (Issue #22); it is now part of the panel that
@@ -100,7 +101,12 @@ export function TagField({ tags, vocabGroups, coocGroups, srcTags, labels, onAdd
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key !== 'Enter') return;
     if (highlightedRef.current) return; // Base UI commits the highlighted item instead
-    const typed = query.trim();
+    // NFKC + trim (#197) so a freshly typed glyph variant of an existing tag
+    // (full-width vs half-width, stray whitespace) lands as the SAME stored
+    // tag instead of forking the vocabulary — normalizing here (not just at
+    // the DB layer) also makes the `tags.includes(picked)` dup-check in
+    // inspector-builder.ts/poster-grid-builder.ts compare like-for-like.
+    const typed = normalizeTagName(query);
     if (!typed) return;
     e.preventDefault();
     onAdd(typed); // free text: a tag that isn't in the vocabulary yet
