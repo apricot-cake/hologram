@@ -31,8 +31,11 @@
 //   - config.json is always written BEFORE first launch, pointing saveFolder at
 //     the sandbox library — an unconfigured launch would fall back to the real
 //     default library dir.
-//   - CDP port is probed from 9333 (the real app owns :9222) and recorded in
-//     .sandbox/instance.json. Connect with: CDP_PORT=<port> node scripts/cdp-verify.cts
+//   - CDP port is derived from THIS tree's path (the real app owns :9222) and
+//     recorded in .sandbox/instance.json together with the tree it belongs to,
+//     so parallel worktrees cannot end up driving each other's instance without
+//     noticing (#640 — scripts/lib-sandbox-instance.cts has the why).
+//     Connect with: CDP_PORT=sandbox node scripts/cdp-verify.cts
 //
 // The sandbox lives in <tree>/.sandbox/ (gitignored): per-worktree, and the
 // seeded fixture library survives restarts.
@@ -49,6 +52,7 @@ const { electronPath: resolveElectron } = require('./lib-electron-path.cts');
 const { makePng, seedRealSandbox, DEFAULT_MAX_DIM } = require('./lib-sandbox-real-seed.cts');
 const { seedLibrary } = require('./lib-seed-library.cts');
 const { configDir: realConfigDir, defaultLibraryDir } = require('../native-host/paths.cts');
+const { PORT_MIN, PORT_SPAN, clearInstance, foreignSandboxAt, readInstance, sandboxPortBase, writeInstance } = require('./lib-sandbox-instance.cts');
 
 const electronPath = resolveElectron();
 
@@ -56,7 +60,6 @@ const sandboxRoot = path.join(repoRoot, '.sandbox');
 const configDir = path.join(sandboxRoot, 'config');
 const saveFolder = path.join(sandboxRoot, 'library');
 const appData = path.join(sandboxRoot, 'appdata'); // keep any %APPDATA% fallback reads/writes out of the real one (same practice as the test-app-* harnesses)
-const instanceFile = path.join(sandboxRoot, 'instance.json');
 // What the current library was seeded from — read on every start, because the
 // real-data notice has to be re-applied to an instance that is merely restarted.
 const seedFile = path.join(sandboxRoot, 'seed.json');
@@ -206,24 +209,20 @@ function isAlive(pid: number): boolean {
   }
 }
 
-function readInstance(): { pid: number; port: number } | null {
-  try {
-    const r = JSON.parse(fs.readFileSync(instanceFile, 'utf8'));
-    return Number.isInteger(r.pid) && Number.isInteger(r.port) ? r : null;
-  } catch {
-    return null;
-  }
-}
-
-function findFreePort(start: number): Promise<number> {
+// From this tree's own base port, then walking WITHIN the sandbox range so a
+// hash collision or a leftover listener still yields an instance. A walked port
+// is only safe because instance.json records the tree and cdp-verify checks the
+// live target against it (#640).
+function findFreePort(base: number): Promise<number> {
   return new Promise((resolve, reject) => {
-    const tryPort = (port: number) => {
-      if (port > start + 100) return reject(new Error('no free port found'));
+    const tryNth = (n: number) => {
+      if (n >= PORT_SPAN) return reject(new Error(`no free port in the sandbox range ${PORT_MIN}-${PORT_MIN + PORT_SPAN - 1}`));
+      const port = PORT_MIN + ((base - PORT_MIN + n) % PORT_SPAN);
       const srv = net.createServer();
-      srv.once('error', () => tryPort(port + 1));
+      srv.once('error', () => tryNth(n + 1));
       srv.listen(port, '127.0.0.1', () => srv.close(() => resolve(port)));
     };
-    tryPort(start);
+    tryNth(0);
   });
 }
 
@@ -245,13 +244,18 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 function printConnectHint(port: number) {
   console.log(`sandbox instance up: CDP on 127.0.0.1:${port}`);
-  console.log(`  connect: CDP_PORT=${port} node scripts/cdp-verify.cts`);
+  console.log(`  connect: CDP_PORT=sandbox node scripts/cdp-verify.cts   (resolves :${port} from this tree's record)`);
   console.log('  stop:    node scripts/sandbox-app.cts stop');
 }
 
 async function start(opts: StartOptions) {
-  const existing = readInstance();
-  if (existing && isAlive(existing.pid)) {
+  const existing = readInstance(repoRoot);
+  // A live pid is not proof the recorded port is still ours: pids get reused,
+  // and an instance killed from outside leaves this file behind while another
+  // tree takes the port. Never kill anything on that suspicion — just stop
+  // believing the file and start our own instance on a fresh port (#640).
+  const foreign = existing ? await foreignSandboxAt(existing.port, repoRoot) : null;
+  if (existing && isAlive(existing.pid) && !foreign) {
     // Seeding swaps the database out from under the app, so it cannot happen
     // while the instance holds it open.
     if (opts.reseed || (opts.real && (readSeed() || {}).mode !== 'real')) {
@@ -261,6 +265,7 @@ async function start(opts: StartOptions) {
     printConnectHint(existing.port);
     return;
   }
+  if (foreign) console.warn(`⚠ .sandbox/instance.json claims :${existing?.port}, but that port is serving ${foreign} — ignoring the stale record (pid ${existing?.pid} is not stopped by this script)`);
 
   fs.mkdirSync(configDir, { recursive: true });
   fs.mkdirSync(appData, { recursive: true });
@@ -284,7 +289,7 @@ async function start(opts: StartOptions) {
   }
   const notice = noticeFor(readSeed());
 
-  const port = await findFreePort(9333);
+  const port = await findFreePort(sandboxPortBase(repoRoot));
   const env = Object.assign({}, process.env, {
     APPDATA: appData,
     HOLOGRAM_CONFIG_DIR: configDir,
@@ -305,7 +310,7 @@ async function start(opts: StartOptions) {
 
   for (let i = 0; i < 66; i++) {
     if (await cdpReady(port)) {
-      fs.writeFileSync(instanceFile, JSON.stringify({ pid: child.pid, port }, null, 2));
+      writeInstance(repoRoot, { pid: child.pid as number, port });
       if (seeded && !opts.real) console.log(`seeded 12 fixture posts into ${saveFolder}`);
       if (notice) console.log(`⚠ ${notice}`);
       printConnectHint(port);
@@ -319,13 +324,20 @@ async function start(opts: StartOptions) {
 }
 
 async function stop() {
-  const inst = readInstance();
+  const inst = readInstance(repoRoot);
   if (!inst || !isAlive(inst.pid)) {
     console.log('sandbox instance is not running');
-    try {
-      fs.unlinkSync(instanceFile);
-    } catch {}
+    clearInstance(repoRoot);
     return;
+  }
+  // "stop this tree's instance only" has to survive a stale record: if the port
+  // is answering for another tree, this pid is a reused number and killing it
+  // would take down someone else's session (#640).
+  const foreign = await foreignSandboxAt(inst.port, repoRoot);
+  if (foreign) {
+    console.error(`FAIL :${inst.port} is serving another tree's sandbox (${foreign}) — refusing to kill pid ${inst.pid}. Dropping the stale record; stop that instance from its own tree.`);
+    clearInstance(repoRoot);
+    process.exit(1);
   }
   process.kill(inst.pid);
   for (let i = 0; i < 20 && isAlive(inst.pid); i++) await sleep(250);
@@ -333,9 +345,7 @@ async function stop() {
     console.error(`FAIL pid ${inst.pid} still alive after kill`);
     process.exit(1);
   }
-  try {
-    fs.unlinkSync(instanceFile);
-  } catch {}
+  clearInstance(repoRoot);
   console.log(`stopped sandbox instance (pid ${inst.pid}, port ${inst.port})`);
 }
 

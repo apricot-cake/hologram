@@ -15,6 +15,7 @@ description: Hologram を CDP（Chrome DevTools Protocol）で計測・撮影・
 - **ページへ合成ポインタを投げるなら `new PointerEvent`。`new Event('pointermove')` に座標を後付けした形は届かない**（実測 2026-07-28・bsky.app）。同じ要素・同じ座標・同じ瞬間で A/B すると、`new PointerEvent('pointermove',{clientX,clientY})` は拡張のホバーオーバーレイを動かし、`Object.assign(new Event('pointermove'),{clientX,clientY})` は何も起こさない。**`isTrusted` は無関係**＝構築した `PointerEvent` は `isTrusted:false` でも動くので、「本物のマウスでないと駄目」と誤診しない。理由は未特定だが、`clientX` はハンドラ側から読み戻せるので値の欠落ではない。
   - **罠になるのは `scripts/overlay.test.ts`（jsdom）が後者の書き方で緑になること**＝ハーネスの癖をそのまま実機の検証へ持ち込むと、何も起きないのを「機能が壊れている」と読む。2026-07-28 に #372 の検証で実際にそう誤診し、拡張の設定・ビルド・保存済み照会を順に疑って往復した。
   - 実マウスに近い経路が要るなら CDP の `Input.dispatchMouseEvent`（claude-in-chrome なら `computer` の `hover`）。こちらも同じ結果になる。
+- **Base UI の `ComboboxInput` は素の `new Event('input')` では開かない**（実害 2026-07-31・#148）。入力が「本物のタイプ」に見える時だけポップアップを開くガード（`inputType` を持ち、かつ `insertReplacementText` でない＝オートフィル避け）が入っているため、**値は入り `onValueChange` も発火するのにリストだけ開かない**＝その面が壊れているように見える。正しい駆動は `new InputEvent('input', { inputType: 'insertText' })`。**検索ボックスとコマンドパレットにも同じことが効く**（同じ部品系）。
 - **ホバーを測る前にスクロールを終わらせる**。プログラム的なスクロールの直後はオーバーレイ側の追跡（IntersectionObserver → 描画 → ホバー対象の登録）が追いつかず、直前まで出ていたボタンが出なくなる。スクロールと計測は別の呼び出しに分け、計測中は一切スクロールしない。
 - **駆動は1フロー1起動**。多数のフローを1スクリプトに詰めると相互に絡んで解析不能になり、自分の駆動残留を「ユーザーが触った」と誤診する（docs/build.md「実機で異常を見たら、まず自分の駆動の残留を疑う」）。
 - **ユーザーデータをトグルする検証をしない**（実害 2026-07-13）。仮想グリッドの DOM 順は click 間で不定＝`querySelector('.clip-btn')` が別カードに当たり往復が成立しない。さらに掃除のつもりで `.in` を外して回ると**実ライブラリのクリップまで巻き込む**。ミューテーションが要る検証は `HOLOGRAM_CONFIG_DIR=<tmp>` のサンドボックスで行うか、表示だけで確かめられる経路を選ぶ。
@@ -31,10 +32,12 @@ description: Hologram を CDP（Chrome DevTools Protocol）で計測・撮影・
 ## 撮る
 
 - **`clip` 罠**: `Page.captureScreenshot` に `clip` を渡すと可視ビューポートがその寸法に縮んで固着する（`clearDeviceMetricsOverride` でも戻らない）。**clip を使わずフル撮影して Python PIL でクロップ・縮小**（`im.crop(...).resize(...)`、quality 70 前後で Read できるサイズに）。固着したらアプリ再起動で復帰。
+- **半透明のスクリムはフレームに入らない**（実害 2026-07-31・#62／PR #638）。全画面バックドロップの `bg-black/50`・`bg-black/80` は `Page.captureScreenshot` に写らず（`fromSurface` の有無を問わず再現・不透明色に差し替えると写る）、**「暗転していない」と読めるスクショが返る**。ダイアログ・ライトボックスの暗転はスクショで判定せず computed style で見る（オーバーレイの `backgroundColor`／タイトルバー側は `.wc-dim`）。
 - **`captureBeyondViewport:true` は使わない**（数千カードの全文書を撮る）。
 - **背面撮影が既定**（`cdp-verify.cts shot`）＝`fromSurface:true` ＋ `bringToFront` しない。**ユーザーのアクティブウィンドウを奪わないため**。`CDP_FOCUS=1` で旧経路（OS 復元＋前面化）を強制できる。
 - **`fromSurface:true` は完全に隠蔽・throttle された窓で永久ハングし、GPU ごとアプリを落とす**（実害 2026-07-05）。撮影は **1.5s のタイムアウトでレース**し、来なければフォールバックへ——この安全弁が `cdp-verify.cts` に入っている前提で運用する。
 - **最小化ウィンドウ**は OS サーフェスを持たず `-32000 Unable to capture screenshot`（`screenX/Y` が -32000・`visibilityState` は "visible" のままで紛らわしい）。`cdp-verify.cts shot` が検知 → OS 復元（user32 `ShowWindowAsync` の `SW_RESTORE`。**この Electron ビルドは CDP `Browser.*` 非対応**＝`-32601` で復元できない）→ 撮影 → 再最小化まで自動でやる。**ユーザーは普段アプリを最小化して使う**＝最小化は起動バグではない。
+- **完全に隠蔽されたウィンドウでは Base UI ダイアログの退場アニメーションが終わらない**（2026-07-31）＝`visibilityState: hidden` でフレーム生成が止まり、閉じたダイアログがアンマウントされないまま DOM に残る。可視に戻せば即座に解消するので**アプリの欠陥ではない**＝「閉じたのに DOM に居る」を不具合と読まない。サンドボックスは背面起動が既定なので、この状態は普通に起きる。
 - **白フレーム（ペイント停止）** が返ったら、確認を取らずにアプリを再起動して描画を復帰させる（手順は docs/build.md）。
 - **採寸は最小化でも有効**（`getBoundingClientRect`・`innerWidth/Height` は実寸）＝スクショ無しで判定できることは多い。画像トークンは重いので、computed style やコントラスト比で足りるなら撮らない。
 - 計測・撮影用の使い捨て `scripts/cdp-*.cts` は調査後に削除する（リポに残さない）。
