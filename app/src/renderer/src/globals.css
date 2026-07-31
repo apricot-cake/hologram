@@ -145,11 +145,45 @@
   * {
     @apply border-border outline-ring/50;
     }
+  /* The window itself never scrolls — the content column, the sidebar and the inspector
+     each own a scroller. body's overflow propagates to the viewport (html stays
+     `visible`), so this one declaration is the whole page-level scroll lock; overlays do
+     not need to add their own.
+
+     The base type size lives on body, NOT on html: Tailwind's spacing scale is rem-based,
+     so moving the root size would rescale every padding and gap in the app by the same
+     12.5% (P3 #6 — the legacy sheet set `font: 14px/1.6` on body for this reason too).
+     The colours are the design tokens rather than shadcn's --background/--foreground: the
+     app's page tone is a step off white in light, and in dark its body ink is a step
+     softer than the near-white shadcn uses. */
   body {
-    @apply bg-background text-foreground;
+    @apply h-screen overflow-hidden bg-[var(--bg)] text-[14px] leading-[1.6] text-[color:var(--fg)];
     }
   html {
     @apply font-sans;
+    }
+  /* Scrollbars (Chromium/Electron). NOTE: setting the standard `scrollbar-width`
+     property disables these ::-webkit-scrollbar rules in Chromium, so style scrollable
+     areas via padding, not scrollbar-width. */
+  ::-webkit-scrollbar {
+    width: var(--scrollbar-w);
+    height: var(--scrollbar-w);
+    }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+    }
+  ::-webkit-scrollbar-thumb {
+    background: color-mix(in oklch, var(--text-subtle) 55%, transparent);
+    border-radius: 8px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+    }
+  ::-webkit-scrollbar-thumb:hover {
+    background: color-mix(in oklch, var(--text-muted) 70%, transparent);
+    background-clip: padding-box;
+    }
+  ::-webkit-scrollbar-corner {
+    background: transparent;
     }
 }
 

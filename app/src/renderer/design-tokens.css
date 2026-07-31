@@ -144,9 +144,9 @@
      ring, logo tick) where nothing rides on top. NB: 水色 is lighter than the old
      indigo, so white-on-accent contrast is lower (~3:1 vs 8:1) — sky-600 keeps the
      hue while staying usable for ✓/large primary text.
-     #114: this sky accent is a @layer legacy asset retiring with the redesign —
-     the current accent policy (#2563eb, scoped to selection/active-only) lives in
-     globals.css's --color-selected, not here. Do not re-tune this sky scale for it. */
+     #114: this sky accent is a leftover of the pre-redesign palette — the current
+     accent policy (#2563eb, scoped to selection/active-only) lives in globals.css's
+     --color-selected, not here. Do not re-tune this sky scale for it. */
   --accent:         var(--sky-600);
   --accent-hover:   var(--sky-700);
   --accent-fg:      #ffffff;

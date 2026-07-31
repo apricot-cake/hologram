@@ -1,5 +1,8 @@
 import type { DragEvent, MouseEvent as ReactMouseEvent } from 'react';
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { Pencil, Trash2, X } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { t } from '../_shared/i18n.ts';
 import { promptName } from '../prompt/Prompt.tsx';
 import { open as confirmOpen } from '../services/confirm.ts';
@@ -17,9 +20,13 @@ import { closeManager, getManager, managerCreate, managerMove, managerRemove, ma
 // manager* actions, which persist via that store and notify onChange so the owning view
 // refreshes its chips.
 //
-// TRANSIENT: the .iv-detail-overlay / .iv-detail-box classes are still legacy CSS. This
-// surface is not one of the redesigned ones, so it keeps them until either it is reworked
-// or P3 (#6) sweeps the layer.
+// 残 (P3 #6): the redesign charter (#154 憲章5) retires management modals — the manager is
+// the sidebar tree. That landed for LIBRARY folders in #621; POSTER folders have no tree of
+// their own, so this is still their only rename / delete / reorder surface and removing it
+// would delete the feature rather than move it. The look is Tailwind + the shadcn parts now,
+// so the legacy sheet could go, but the surface itself waits on a poster-folder home.
+// Consequence to keep in mind: its scrim is its own div, not a Base UI overlay, so the
+// window-control strip's .wc-dim (globals.css) does not dim while it is up.
 
 function dropBefore(row: HTMLElement, clientY: number) {
   const r = row.getBoundingClientRect();
@@ -34,7 +41,7 @@ function FolderManagerBox({ model }: { model: HologramFolderManagerModel }) {
   // dragstart→dragover can fire in the same tick (no yield between them, especially on a
   // fast flick), ahead of the setDragId() re-render — so the id that GATES over/drop must
   // come from a ref (always current), not the `dragId` state closure (can be stale by one
-  // render). `dragId` state stays for the .iv-dragging CSS class only, where a one-frame
+  // render). `dragId` state stays for the dimmed-row styling only, where a one-frame
   // lag is harmless.
   const dragIdRef = useRef<string | null>(null);
 
@@ -70,41 +77,30 @@ function FolderManagerBox({ model }: { model: HologramFolderManagerModel }) {
   };
 
   return (
-    <div className="iv-detail-box">
-      <button className="iv-insp-close" id="ivFolderClose" type="button" onClick={closeManager}>
-        ×
-      </button>
-      <div className="iv-insp-title">{t('foldManageTitle')}</div>
-      <div className="iv-folder-new">
-        <input
-          ref={inputRef}
-          id="ivFolderNewName"
-          type="text"
-          className="search-box"
-          placeholder={t('foldNewPlaceholder')}
-          maxLength={60}
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') doCreate();
-          }}
-        />
-        <button className="iv-htbtn" id="ivFolderCreate" type="button" onClick={doCreate}>
-          {t('foldCreate')}
-        </button>
+    <div className="max-h-[85vh] w-full max-w-[420px] animate-in overflow-y-auto rounded-xl border border-border bg-[var(--surface)] p-[18px] text-[12px] duration-200 fade-in zoom-in-95">
+      <div className="mb-2 flex items-start justify-between gap-2">
+        <div className="text-[13px] leading-[1.5] font-semibold break-words">{t('foldManageTitle')}</div>
+        <Button variant="ghost" size="icon" className="-mt-1 -mr-1 size-7 shrink-0 text-muted-foreground" aria-label={t('confirmCancel')} onClick={closeManager}>
+          <X />
+        </Button>
       </div>
-      <div id="ivFolderList" className="iv-folder-list">
+      <div className="my-2.5 flex gap-1.5">
+        <Input ref={inputRef} type="text" className="flex-1" placeholder={t('foldNewPlaceholder')} maxLength={60} value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && doCreate()} />
+        <Button variant="outline" size="sm" className="shrink-0" onClick={doCreate}>
+          {t('foldCreate')}
+        </Button>
+      </div>
+      <div className="flex flex-col gap-0.5">
         {model.list.length === 0 ? (
-          <div className="iv-folder-empty">{t('foldEmpty')}</div>
+          <div className="px-0.5 py-2.5 text-muted-foreground">{t('foldEmpty')}</div>
         ) : (
           model.list.map((f) => {
-            const cls = ['iv-folder-row'];
-            if (dragId === f.id) cls.push('iv-dragging');
-            if (dropTarget && dropTarget.id === f.id) cls.push(dropTarget.before ? 'iv-drop-before' : 'iv-drop-after');
+            const dragging = dragId === f.id;
+            const drop = dropTarget && dropTarget.id === f.id ? (dropTarget.before ? 'shadow-[inset_0_2px_0_var(--accent)]' : 'shadow-[inset_0_-2px_0_var(--accent)]') : '';
             return (
               <div
                 key={f.id}
-                className={cls.join(' ')}
+                className={`flex cursor-grab items-center gap-2 border-b border-[var(--border-subtle)] px-1 py-1.5 ${dragging ? 'opacity-45' : ''} ${drop}`}
                 draggable
                 onDragStart={(e: DragEvent<HTMLDivElement>) => {
                   dragIdRef.current = f.id;
@@ -132,14 +128,14 @@ function FolderManagerBox({ model }: { model: HologramFolderManagerModel }) {
                 }}
                 onDragEnd={endDrag}
               >
-                <span className="iv-fold-name">{f.name}</span>
-                <span className="iv-fold-n">{f.items.length}</span>
-                <button className="iv-fold-btn" type="button" title={t('foldRename')} onClick={() => doRename(f)}>
-                  ✎
-                </button>
-                <button className="iv-fold-btn" type="button" title={t('foldDelete')} onClick={() => doRemove(f)}>
-                  🗑
-                </button>
+                <span className="flex-1 break-words">{f.name}</span>
+                <span className="text-[11px] text-muted-foreground">{f.items.length}</span>
+                <Button variant="ghost" size="icon" className="size-6 text-muted-foreground" aria-label={t('foldRename')} title={t('foldRename')} onClick={() => doRename(f)}>
+                  <Pencil className="size-3.5" />
+                </Button>
+                <Button variant="ghost" size="icon" className="size-6 text-muted-foreground hover:text-destructive" aria-label={t('foldDelete')} title={t('foldDelete')} onClick={() => doRemove(f)}>
+                  <Trash2 className="size-3.5" />
+                </Button>
               </div>
             );
           })
@@ -157,7 +153,7 @@ export function FolderManagerHost() {
     // quick-view peek took in P2⑦. A click that lands on the scrim itself (not inside
     // the box) closes.
     <div
-      className="iv-detail-overlay"
+      className="fixed inset-0 z-[11000] flex animate-in items-center justify-center bg-black/50 p-6 duration-150 fade-in"
       onClick={(e: ReactMouseEvent<HTMLDivElement>) => {
         if (e.target === e.currentTarget) closeManager();
       }}

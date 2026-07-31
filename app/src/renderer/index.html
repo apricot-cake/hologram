@@ -4,141 +4,22 @@
   <meta charset="utf-8">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' data:; img-src 'self' asset: data: blob:; media-src 'self' asset: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; base-uri 'none'; form-action 'none';">
   <title>Hologram</title>
-  <!-- Cascade-layer order for the shadcn/Tailwind coexistence: every legacy <style>
-       below is wrapped in @layer legacy, slotted BETWEEN Tailwind's base (preflight)
-       and components/utilities. So legacy rules still beat the preflight reset (legacy
-       screens keep their look), while shadcn component utilities beat the legacy
-       universal reset. This first declaration pins the relative order; the Tailwind
-       sheet injected by src/app/index.tsx declares the same names minus `legacy` and
-       merges in. -->
-  <style>@layer theme, base, legacy, components, utilities;</style>
+  <!-- Design tokens (colours, type, spacing, elevation, light/dark) — the ONE stylesheet
+       this document links. Everything that consumes them is a Tailwind utility written at
+       its own element; there is no app stylesheet in here any more (#6), and with the
+       legacy sheet gone there is no cascade layer left to declare either — Tailwind's own
+       @layer order is the only one. The Tailwind sheet is bundled through
+       src/app/index.tsx's globals.css import and injected at runtime as a <style> (the
+       page CSP allows inline styles), so it needs no <link>. -->
   <link rel="stylesheet" href="design-tokens.css">
-  <!-- Component CSS (settings layout) is bundled via src/app/index.tsx's globals.css import
-       and injected at runtime as a <style> (CSP style-src allows unsafe-inline) — no <link> needed. -->
   <script src="theme.js"></script>
-  <style>
-    @layer legacy {
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-
-    /* --- Design tokens (colours, type, spacing, light/dark) live in
-       design-tokens.css, linked above. Legacy var names (--fg / --muted /
-       --border-soft …) are aliased there onto the new semantic tokens, so the
-       rules below keep working while picking up the new palette + dark mode. --- */
-
-    body {
-      font: 14px/1.6 var(--font-sans);
-      background: var(--bg); color: var(--fg);
-      display: flex; flex-direction: column; height: 100vh; overflow: hidden;
-    }
-
-    /* --- Modern scrollbars (Chromium/Electron). NOTE: setting the standard
-       `scrollbar-width` property disables these ::-webkit-scrollbar rules in
-       Chromium, so style scrollable areas via padding, not scrollbar-width. --- */
-    ::-webkit-scrollbar { width: var(--scrollbar-w); height: var(--scrollbar-w); }
-    ::-webkit-scrollbar-track { background: transparent; }
-    ::-webkit-scrollbar-thumb {
-      background: color-mix(in oklch, var(--text-subtle) 55%, transparent); border-radius: 8px;
-      border: 2px solid transparent; background-clip: padding-box;
-    }
-    ::-webkit-scrollbar-thumb:hover { background: color-mix(in oklch, var(--text-muted) 70%, transparent); background-clip: padding-box; }
-    ::-webkit-scrollbar-corner { background: transparent; }
-
-    /* While a modal scrim is up, lock background scroll so the page scrollbar (which
-       paints above the overlay) doesn't stay visible. JS toggles .modal-open. */
-    html.modal-open, body.modal-open { overflow: hidden; }
-
-    /* Generic dialog text input. :not(.search-box) — the attribute selector
-       otherwise outweighs the unified .search-box field anatomy (r8/32px). */
-    input[type="text"]:not(.search-box) {
-      width: 100%; padding: 8px 12px;
-      border: 1px solid var(--border); border-radius: 6px;
-      font-size: 14px; outline: none; transition: border-color 0.15s;
-    }
-    input[type="text"]:not(.search-box):focus { border-color: var(--accent); }
-
-    /* Unified field anatomy (motion-study canvas 2026-07-05): 32px / r8 /
-       recessed fill (--field-bg + inset shadow) + visible border. */
-    .search-box {
-      width: 100%; box-sizing: border-box; height: 32px;
-      padding: 0 12px; border: 1px solid var(--border-strong); border-radius: var(--radius-md);
-      background: var(--field-bg); color: var(--text);
-      box-shadow: inset 0 1px 2px rgba(16, 19, 26, 0.05);
-      font-size: 14px; outline: none;
-      transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
-    }
-    [data-theme="dark"] .search-box { box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.3); }
-    .search-box:focus {
-      border-color: var(--accent); background: var(--surface);
-      box-shadow: 0 0 0 3px color-mix(in oklch, var(--sky-500) 32%, transparent);
-    }
-
-    .btn-outline {
-      background: var(--surface); color: var(--text); border: 1px solid var(--border);
-      border-radius: 6px; padding: 7px 16px; font-size: 13px;
-      cursor: pointer; transition: border-color 0.15s, color 0.15s;
-    }
-    .btn-outline:hover { border-color: var(--accent); color: var(--accent-text); }
-    } /* @layer legacy */
-  </style>
 </head>
 <body>
-  <!-- No shell markup at all (redesign §0-0⑥, completed by #621): src/app/root.tsx appends
-       the single React host div and the AppShell (shell/AppShell.tsx) draws the tab bar,
+  <!-- No markup at all (redesign §0-0⑥, completed by #621): src/app/root.tsx appends the
+       single React host div and the AppShell (shell/AppShell.tsx) draws the tab bar,
        sidebar, toolbar, grid host and inspector. Every overlay is either a child of that
        root or portals onto document.body from its own component — no static containers
-       left to portal into. The <style> blocks are legacy CSS the redesigned surfaces
-       have not eaten yet; they go with P3 (#6). -->
-
-  <style>
-    @layer legacy {
-    /* Folder management modal (folders/FolderManagerModal.tsx): a centered box over a
-       dim backdrop. */
-    .iv-detail-overlay {
-      position: fixed; inset: 0; z-index: 11000; background: rgba(0,0,0,0.5);
-      display: flex; align-items: center; justify-content: center; padding: 24px;
-      animation: hologramFadeIn .16s ease-out;
-    }
-    .iv-detail-box {
-      background: var(--surface); color: var(--fg); border-radius: 12px;
-      padding: 18px; width: 100%; max-width: 420px; max-height: 85vh; overflow-y: auto;
-      font-size: 12px; border: 1px solid var(--border); box-shadow: var(--shadow-lg);
-      animation: hologramPopIn .2s ease-out;
-    }
-    .iv-insp-close { float: right; border: none; background: none; font-size: 18px; line-height: 1; color: var(--muted); cursor: pointer; }
-    .iv-insp-close:hover { color: var(--fg); }
-    .iv-insp-title { font-size: 13px; font-weight: 600; line-height: 1.5; word-break: break-word; margin-bottom: 8px; padding-right: 20px; }
-    .iv-htbtn { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 4px 12px; font-size: 12px; cursor: pointer; color: var(--fg); transition: all .15s; }
-    .iv-htbtn:hover { border-color: var(--accent); color: var(--accent-text); }
-    .iv-htbtn:disabled { opacity: .5; cursor: default; }
-    .iv-folder-new { display: flex; gap: 6px; margin: 10px 0; }
-    .iv-folder-new .search-box { flex: 1; }
-    .iv-folder-list { display: flex; flex-direction: column; gap: 2px; }
-    .iv-folder-empty { color: var(--muted); font-size: 12px; padding: 10px 2px; }
-    .iv-folder-row { display: flex; align-items: center; gap: 8px; padding: 6px 4px; border-bottom: 1px solid var(--border-soft); cursor: grab; }
-    .iv-folder-row.iv-dragging { opacity: 0.45; }
-    .iv-folder-row.iv-drop-before { box-shadow: inset 0 2px 0 var(--accent); }
-    .iv-folder-row.iv-drop-after { box-shadow: inset 0 -2px 0 var(--accent); }
-    .iv-fold-name { flex: 1; word-break: break-word; }
-    .iv-fold-n { color: var(--muted); font-size: 11px; }
-    .iv-fold-btn { border: none; background: none; cursor: pointer; font-size: 14px; line-height: 1; padding: 2px 4px; border-radius: 5px; color: var(--muted); }
-    .iv-fold-btn:hover { background: var(--hover); }
-
-    @keyframes hologramFadeIn { from { opacity: 0; } to { opacity: 1; } }
-    @keyframes hologramPopIn { from { opacity: 0; transform: scale(.96); } to { opacity: 1; transform: none; } }
-    @keyframes hologramPanelIn { from { opacity: 0; transform: translateX(18px); } to { opacity: 1; transform: none; } }
-
-    @media (prefers-reduced-motion: reduce) {
-      *, *::before, *::after {
-        animation-duration: .001ms !important;
-        animation-iteration-count: 1 !important;
-        transition-duration: .001ms !important;
-      }
-    }
-    } /* @layer legacy */
-  </style>
-
-  <!-- Settings is a React Dialog (settings/) mounted under the App root and portaled
-       onto document.body by Base UI. The gear (#settingsBtn) opens it. -->
+       left to portal into. -->
 
   <!-- All React components, React itself, the renderer service layer, AND the boot
        orchestrator in electron-vite's renderer bundle: src/app/index.tsx is the entry,
