@@ -133,6 +133,54 @@ async function askHost(configRoot: string, messages: unknown[]): Promise<any[]> 
   return parsed;
 }
 
+// #650: 「いまディスクにあるローカルビルド」を全ての返信に乗せる＝拡張はこれを
+// 見て自分をリロードする。実プロセスを起こして見るのは版と同じ理由（刻印は返信の
+// 出口に1か所だけあり、ハンドラを読んでも出ているかは分からない）。加えてここは
+// **ファイルの有無で切り替わる**ので、無い時に何も言わないことがより大事＝
+// 拡張をビルドしたことのない全ユーザーがその状態。
+describe('ローカルビルドの印（#650）', () => {
+  test('印のファイルが無ければ、返信は何も言わない', async () => {
+    const bare = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-nostamp-'));
+    try {
+      fs.mkdirSync(path.join(bare, 'Hologram'), { recursive: true });
+      const [reply] = await askHost(bare, [{ type: 'ping' }]);
+      expect(reply).toMatchObject({ ok: true, pong: true });
+      expect(reply.extBuild).toBeUndefined();
+    } finally {
+      fs.rmSync(bare, { recursive: true, force: true });
+    }
+  });
+
+  test('印のファイルがあれば、成功にも失敗にも同じトークンが乗る', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-stamp-'));
+    try {
+      const dir = path.join(root, 'Hologram');
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(path.join(dir, 'extension-build.json'), JSON.stringify({ build: '1785000000000-feedface' }));
+      const replies = await askHost(root, [{ type: 'ping' }, { type: 'nonsense' }]);
+      expect(replies).toHaveLength(2);
+      for (const reply of replies) expect(reply.extBuild).toBe('1785000000000-feedface');
+      expect(replies[1]).toMatchObject({ ok: false, code: 'unknown-type' });
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test('壊れた印（JSON でない・build が無い）は「無い」と同じ＝ホストは黙る', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-badstamp-'));
+    try {
+      const dir = path.join(root, 'Hologram');
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(path.join(dir, 'extension-build.json'), '{"build":');
+      expect((await askHost(root, [{ type: 'ping' }]))[0].extBuild).toBeUndefined();
+      fs.writeFileSync(path.join(dir, 'extension-build.json'), JSON.stringify({ builtAt: 'x' }));
+      expect((await askHost(root, [{ type: 'ping' }]))[0].extBuild).toBeUndefined();
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('保存されたもの', () => {
   test('JPEG と inbox エンベロープが書かれる（sidecar は書かれない）', () => {
     expect(fs.existsSync(path.join(saveFolder, `${captureId}.jpg`))).toBe(true);

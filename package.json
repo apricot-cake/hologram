@@ -28,7 +28,7 @@
     "brace-expansion": "^5.0.8"
   },
   "scripts": {
-    "build:ext": "npm --prefix extension run build:ext",
+    "build:ext": "node scripts/build-extension.cts",
     "tokens:ext": "node scripts/gen-extension-tokens.cts",
     "dev:ext": "npm --prefix extension run dev:ext",
     "test:overlay-visual": "npm run build:ext && node scripts/e2e-overlay-visual.cts",

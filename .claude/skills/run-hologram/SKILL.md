@@ -30,7 +30,7 @@ Start-ScheduledTask -TaskName 'HologramLaunch'
 | --- | --- |
 | main・preload・renderer のいずれか | `npm run build --workspace=app` → **再起動**（electron-vite が3面を`app/out/`へ一括ビルド。`electron-vite dev`を使わない限り「renderer だけは再起動不要」の特例は無い） |
 | `native-host/` のブリッジ本体 | `npm run build:native-host-bridge --workspace=app` → `node native-host/install.cts` で再配備（アプリ再起動は不要。ビルドを飛ばすと配備は「バンドル未ビルド」で止まる） |
-| 拡張機能 | 開発中は本体で `npm run dev:ext` 常駐＋開始時リロード1回。終わったら `build:ext`＋リロード1回で production へ戻す（skill `verify-extension`） |
+| 拡張機能 | 本体で `npm run build:ext`＝拡張が自分でリロードするのでクリックは要らない（#650・skill `verify-extension`） |
 
 ## どのインスタンスで検証するか（既定＝隔離）
 
