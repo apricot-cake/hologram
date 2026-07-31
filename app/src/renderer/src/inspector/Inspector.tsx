@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty';
 import { Separator } from '@/components/ui/separator';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { TagField } from './TagField.tsx';
 import type { ReactNode } from 'react';
 
@@ -41,9 +42,18 @@ function Divided({ children }: { children: ReactNode }) {
 
 function CloseButton({ onClose }: { onClose?: () => void }) {
   return (
-    <Button variant="ghost" size="icon-xs" className="-mt-0.5 -mr-1 shrink-0 text-muted-foreground" aria-label={t('close')} data-tip={t('close')} onClick={onClose}>
-      <X aria-hidden="true" />
-    </Button>
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Button variant="ghost" size="icon-xs" className="-mt-0.5 -mr-1 shrink-0 text-muted-foreground" aria-label={t('close')} onClick={onClose}>
+            <X aria-hidden="true" />
+          </Button>
+        }
+      />
+      <TooltipContent side="bottom" align="end">
+        {t('close')}
+      </TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -116,9 +126,18 @@ function PostInspector({ m }: { m: HologramInspectorModel }) {
             <dt className="text-muted-foreground">{m.labels.author}</dt>
             <dd className="min-w-0">
               {m.jumpable ? (
-                <button type="button" className="flex min-w-0 cursor-pointer items-center gap-1.5 text-left hover:text-primary" data-tip={m.labels.viewPoster} onClick={m.onPosterJump}>
-                  {authorValue}
-                </button>
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <button type="button" className="flex min-w-0 cursor-pointer items-center gap-1.5 text-left hover:text-primary" onClick={m.onPosterJump}>
+                        {authorValue}
+                      </button>
+                    }
+                  />
+                  <TooltipContent side="bottom" align="start">
+                    {m.labels.viewPoster}
+                  </TooltipContent>
+                </Tooltip>
               ) : (
                 authorValue
               )}
@@ -225,9 +244,16 @@ function PosterInspector({ m }: { m: HologramInspectorModel }) {
                 {f.name}
               </Badge>
             ))}
-            <Badge variant="outline" className="cursor-pointer text-muted-foreground hover:bg-muted" aria-label={m.labels.newFolderPlaceholder} data-tip={m.labels.newFolderPlaceholder} render={<button type="button" onClick={m.onFolderCreate} />}>
-              <Plus aria-hidden="true" />
-            </Badge>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Badge variant="outline" className="cursor-pointer text-muted-foreground hover:bg-muted" aria-label={m.labels.newFolderPlaceholder} render={<button type="button" onClick={m.onFolderCreate} />}>
+                    <Plus aria-hidden="true" />
+                  </Badge>
+                }
+              />
+              <TooltipContent side="top">{m.labels.newFolderPlaceholder}</TooltipContent>
+            </Tooltip>
           </div>
         </section>
       </Divided>

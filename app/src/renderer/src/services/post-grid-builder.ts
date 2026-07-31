@@ -365,9 +365,11 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
       if (deps.postShadow().some((f: { type: string }) => f.type === 'folder')) renderPosts(true);
     }
   }
-  function showFoldMenu(g: HologramPostGroup, x: number, y: number) {
+  // `at` is the cursor for the card menu's フォルダ row and the clicked button for the
+  // selection bar's — see HologramMenuAnchor. Passed straight through; no arithmetic.
+  function showFoldMenu(g: HologramPostGroup, at: HologramMenuAnchor) {
     if (!CF()) return;
-    menuOpen({ items: foldMenuItems(g), x, y }, (item) => onFoldMenuPick(g, item));
+    menuOpen({ items: foldMenuItems(g), ...at }, (item) => onFoldMenuPick(g, item));
   }
 
   // --- Card context menu: the labeled table of contents of per-card actions.
@@ -428,7 +430,7 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
     } else if (act === 'newtab') {
       deps.addImageTab(g); // background, browser-like
     } else if (act === 'folder') {
-      showFoldMenu(g, x, y);
+      showFoldMenu(g, { x, y });
       return;
     } // opens the folder picker (bridge keeps it open)
     else if (act === 'info') deps.showDetail(g);

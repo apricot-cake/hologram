@@ -20,9 +20,20 @@ const notify = () => {
   }
 };
 
+// The menu hangs off either the cursor ({x, y}) or a button ({ anchorEl }) — see
+// HologramMenuAnchor. Nothing here computes a position: an element anchor is handed
+// to the ui kit as-is, which is what retired the old rect arithmetic at the call sites.
 // biome-ignore lint/suspicious/noConfusingVoidType: void is the intentional "close the menu" return (same as HologramContextMenu in globals.d.ts)
-export function open(model: { items?: HologramMenuItem[]; x?: number; y?: number } | null, onPick?: (item: HologramMenuItem) => HologramMenuItem[] | void) {
-  current = { items: (model && model.items) || [], x: (model && model.x) || 0, y: (model && model.y) || 0, onPick: onPick || null };
+export function open(model: ({ items?: HologramMenuItem[] } & HologramMenuAnchor) | null, onPick?: (item: HologramMenuItem) => HologramMenuItem[] | void) {
+  current = {
+    items: (model && model.items) || [],
+    x: (model && model.x) || 0,
+    y: (model && model.y) || 0,
+    anchorEl: (model && model.anchorEl) || null,
+    side: model?.side,
+    align: model?.align,
+    onPick: onPick || null,
+  };
   notify();
 }
 export function close() {

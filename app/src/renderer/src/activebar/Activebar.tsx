@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
-import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { t } from '../_shared/i18n.ts';
 import { get as storeGet, subscribe as storeSubscribe } from '../services/store.ts';
 import { navBack, navForward, resetAllFilters, resetPosterFilters } from '../services/orchestrator.ts';
@@ -53,41 +54,60 @@ const showHide = (visible: boolean) => ({ display: visible ? '' : 'none' });
 
 function NavBtn({ dir, disabled, onClick }: { dir: 'back' | 'fwd'; disabled: boolean; onClick: () => void }) {
   const back = dir === 'back';
+  const label = back ? '戻る (Alt+←)' : '進む (Alt+→)';
   return (
-    <button className="icon-btn icon-btn--ghost" id={back ? 'navBackBtn' : 'navFwdBtn'} type="button" aria-label={back ? '戻る' : '進む'} data-tip={back ? '戻る (Alt+←)' : '進む (Alt+→)'} disabled={disabled} onClick={onClick}>
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <polyline points={back ? '15 18 9 12 15 6' : '9 18 15 12 9 6'} />
-      </svg>
-    </button>
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <button className="icon-btn icon-btn--ghost" id={back ? 'navBackBtn' : 'navFwdBtn'} type="button" aria-label={back ? '戻る' : '進む'} disabled={disabled} onClick={onClick}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points={back ? '15 18 9 12 15 6' : '9 18 15 12 9 6'} />
+            </svg>
+          </button>
+        }
+      />
+      <TooltipContent side="bottom" align="start">
+        {label}
+      </TooltipContent>
+    </Tooltip>
   );
 }
 
-// ⓘ help hover popover — pop-solid material (shared hover-hint), positioned under the
-// button and clamped to the viewport's right edge (1:1 port of viewer's showQbHelp). Only
-// rendered while open, so `show` is always present (its CSS gives display:block + pop-in).
-function HelpPop({ help }: { help: { title: string; rows: string[] } }) {
-  const ref = useRef<HTMLDivElement>(null);
-  useLayoutEffect(() => {
-    const pop = ref.current;
-    const btn = document.getElementById('qbHelpBtn');
-    if (!pop || !btn) return;
-    const r = btn.getBoundingClientRect();
-    pop.style.left = `${r.left}px`;
-    pop.style.top = `${r.bottom + 6}px`;
-    const pr = pop.getBoundingClientRect();
-    if (pr.right > window.innerWidth - 8) pop.style.left = `${Math.max(8, window.innerWidth - pr.width - 8)}px`;
-    // Position once on mount — HelpPop remounts on each open (helpOpen toggles it), so this
-    // reruns per open. No reactive deps (ref/document/window aren't dependencies).
-  }, []);
+// ⓘ how-to-read-the-filters hint — a multi-line ("rich") Tooltip. It used to be a
+// hand-rolled .qb-help-pop: a fixed-position div placed under the button by hand and
+// clamped to the right edge, with its own Escape handler and open state. Base UI owns
+// placement, collision flipping and dismissal now (#62); all that is left here is the
+// content and how wide it may get.
+function HelpTip() {
+  const rows = [t('qbHelp1'), t('qbHelp2'), t('qbHelp3'), t('qbHelp4'), t('qbHelp5')];
   return (
-    <div ref={ref} className="qb-help-pop pop-solid show">
-      <div className="qh-title">{help.title}</div>
-      {help.rows.map((row) => (
-        <div className="qh-row" key={row}>
-          {row}
-        </div>
-      ))}
-    </div>
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <button className="qb-help" id="qbHelpBtn" type="button" aria-label={t('qbHelpTitle')}>
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              <circle cx="12" cy="12" r="9" />
+              <line x1="12" y1="11" x2="12" y2="16" />
+              <line x1="12" y1="7.6" x2="12" y2="7.7" />
+            </svg>
+          </button>
+        }
+      />
+      {/* Explanatory prose, not a label: it wraps, stacks and reads left-aligned, so the
+          single-line defaults (inline-flex / items-center / max-w-xs) are overridden here.
+          Same 360px ceiling the hand-rolled popover had. */}
+      <TooltipContent side="bottom" align="end" className="max-w-[min(360px,calc(100vw-1rem))] flex-col items-start gap-1 p-3 text-left leading-relaxed">
+        <span className="font-bold">{t('qbHelpTitle')}</span>
+        {rows.map((row) => (
+          <span className="flex gap-1.5" key={row}>
+            <span aria-hidden="true" className="shrink-0 opacity-60">
+              ・
+            </span>
+            {row}
+          </span>
+        ))}
+      </TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -99,16 +119,6 @@ export function ActivebarHost() {
   const posterGroups = useSyncExternalStore(subPosterGroups, getPosterGroups);
   const navCanBack = useSyncExternalStore(subNavCanBack, getNavCanBack);
   const navCanForward = useSyncExternalStore(subNavCanForward, getNavCanForward);
-  const [helpOpen, setHelpOpen] = useState(false);
-  // Escape closes the hint (parity with viewer's old global keydown handler).
-  useEffect(() => {
-    if (!helpOpen) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setHelpOpen(false);
-    };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [helpOpen]);
 
   const postActive = (postTree?.children?.length ?? 0) > 0 || !!search;
   const posterActive = (posterTree?.children?.length ?? 0) > 0 || !!search;
@@ -145,13 +155,7 @@ export function ActivebarHost() {
           <button className="sb-reset" id="postResetBtn" type="button" style={showHide(postActive)} onClick={() => resetAllFilters()}>
             {t('reset')}
           </button>
-          <button className="qb-help" id="qbHelpBtn" type="button" onMouseEnter={() => setHelpOpen(true)} onMouseLeave={() => setHelpOpen(false)} onFocus={() => setHelpOpen(true)} onBlur={() => setHelpOpen(false)}>
-            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-              <circle cx="12" cy="12" r="9" />
-              <line x1="12" y1="11" x2="12" y2="16" />
-              <line x1="12" y1="7.6" x2="12" y2="7.7" />
-            </svg>
-          </button>
+          <HelpTip />
         </>,
       )}
       {/* --- Poster bar frame (no nav / title; count lives in the sidebar) --- */}
@@ -168,8 +172,6 @@ export function ActivebarHost() {
         </button>,
       )}
       {into('posterCount', t('posterCount', [posterCount]))}
-      {/* Fixed-position help popover: viewport-relative, so it renders as a direct child. */}
-      {helpOpen && <HelpPop help={{ title: t('qbHelpTitle'), rows: [t('qbHelp1'), t('qbHelp2'), t('qbHelp3'), t('qbHelp4'), t('qbHelp5')] }} />}
     </>
   );
 }

@@ -7,9 +7,12 @@ import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMe
 // actions; this component only draws a shadcn DropdownMenu anchored at the click
 // point and dispatches clicks back through menu.ts's pick().
 //
-// The menu opens programmatically at (x, y) — there is no trigger element — so
-// the content is anchored to a virtual element at those coordinates (Base UI
-// positions + viewport-clamps it; the old hand-rolled clampIntoView is gone).
+// The menu opens programmatically. A right-click names the CURSOR, and there is no
+// trigger element, so the content is anchored to a virtual element at those
+// coordinates — Base UI's own API for that case (Base UI positions + viewport-clamps
+// it; the old hand-rolled clampIntoView is gone). A menu opened by a BUTTON hands the
+// button itself over instead (menu.ts's anchorEl), so nothing has to turn a rect into
+// coordinates and add a gap by hand.
 //
 // closeOnClick is false on EVERY row: the bridge alone decides whether a pick
 // closes the menu (default), keeps it open re-rendered (folder-assignment
@@ -23,9 +26,11 @@ import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMe
 export function ContextMenuHost() {
   const menu = useSyncExternalStore(subscribe, get);
 
-  // Virtual anchor at the click point (recreated whenever the model changes).
+  // The button that opened it, or a virtual anchor at the click point (recreated
+  // whenever the model changes).
   const anchor = useMemo(() => {
     if (!menu) return null;
+    if (menu.anchorEl) return menu.anchorEl;
     const { x, y } = menu;
     return { getBoundingClientRect: () => new DOMRect(x, y, 0, 0) };
   }, [menu]);
@@ -38,7 +43,7 @@ export function ContextMenuHost() {
         if (!open) close();
       }}
     >
-      <DropdownMenuContent anchor={anchor} align="start" sideOffset={2} collisionPadding={8} className="w-auto min-w-44">
+      <DropdownMenuContent anchor={anchor} side={menu.side ?? 'bottom'} align={menu.align ?? 'start'} sideOffset={2} collisionPadding={8} className="w-auto min-w-44">
         {menu.items.map((it, i) =>
           it.sep ? (
             <DropdownMenuSeparator key={i} />

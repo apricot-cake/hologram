@@ -30,7 +30,7 @@ export interface SelectionBarDeps {
   renderPosts(inPlace?: boolean): void;
   loadPosts(keepLimit?: boolean): Promise<void>;
   persistManual(): void;
-  showFoldMenu(g: HologramPostGroup, x: number, y: number): void;
+  showFoldMenu(g: HologramPostGroup, at: HologramMenuAnchor): void;
   // openBulkTagDialog lives in bulk-tag-builder.ts — a deferred dep, same shape
   // as jumpToPoster/showToast in inspector-builder.ts.
   openBulkTagDialog(): void;
@@ -296,8 +296,8 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
   // FloatingBar.tsx) — it calls these named actions straight through orchestrator's
   // exports (onClick → function), so there's no #selectionBar container, no data-act
   // DOM contract, and no delegated dispatcher anymore (redesign §8-1 ゼロ許容). The
-  // The one menu-anchored action left (folder) takes the clicked button's rect so
-  // its menu opens against it (Base UI collision-flips it above the bottom bar).
+  // The one menu-anchored action left (folder) takes the clicked BUTTON so its menu
+  // opens against it (Base UI measures it and collision-flips above the bottom bar).
 
   // タグを追加: stage tags for the whole selection in a Dialog (P2⑦). Centered and
   // modal, so unlike the folder menu below it takes no anchor rect.
@@ -307,15 +307,17 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
 
   // フォルダに追加: open the folder picker for the whole selection (you choose the
   // destination, same as a card's 📁 — no default folder).
-  function folderSelection(anchorRect: HologramAnchorRect) {
+  function folderSelection(anchorEl: HTMLElement) {
     if (!folders) return;
     const recs = selectedRecords();
     const ids = recs.map((r) => r.captureId).filter(Boolean);
     if (!ids.length) return;
     // Synthetic stand-in group (no real key/files — showFoldMenu's callees only read
     // .rep.captureId and .records for this bulk "add selection to folder" path).
-    // Anchor the picker at the button's top edge: Base UI flips it above the bottom bar.
-    deps.showFoldMenu({ rep: { captureId: ids[0] }, records: recs } as unknown as HologramPostGroup, anchorRect.left, anchorRect.top);
+    // The picker hangs off the フォルダに追加 button itself, above it: the bar is
+    // pinned to the bottom, so `side: 'top'` is where it fits (and Base UI flips it
+    // back down if it ever doesn't).
+    deps.showFoldMenu({ rep: { captureId: ids[0] }, records: recs } as unknown as HologramPostGroup, { anchorEl, side: 'top', align: 'center' });
   }
 
   return {

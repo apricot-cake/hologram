@@ -16,6 +16,7 @@ import { t } from '../_shared/i18n.ts';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 
 // The facet's operator/exclusion mode (redesign §4-2 B, Linear「is any of / all of /
@@ -80,13 +81,26 @@ function buildGroups(items: FilterRow[]): Group[] {
   return groups;
 }
 
+// The 種別 colour dot. Its only job is to name the colour on hover, so it is a Tooltip
+// around a plain span (no trigger button — the row underneath owns the click).
+function KindDot({ kind, title }: { kind: string; title: string }) {
+  const dot = <span className={'tk-dot tk-' + kind} />;
+  if (!title) return dot;
+  return (
+    <Tooltip>
+      <TooltipTrigger render={dot} />
+      <TooltipContent side="top">{title}</TooltipContent>
+    </Tooltip>
+  );
+}
+
 // One value row, shared by both layouts. 0-count rows stay pickable, muted via color.
 function ValueRow({ it, onPick }: { it: FilterRow; onPick: (it: FilterRow) => void }) {
   const sub = !!it.sub;
   const off = !!(it.facetDim && it.count === 0);
   return (
     <div className={cn('flex cursor-default items-center gap-1.5 rounded-md px-1.5 py-1 text-sm select-none hover:bg-accent hover:text-accent-foreground', sub && 'pl-6 text-xs', (sub || off) && 'text-muted-foreground')} onClick={() => onPick(it)}>
-      {it.kind ? <span className={'tk-dot tk-' + it.kind} data-tip={(it.dotTitle as string) || ''} /> : null}
+      {it.kind ? <KindDot kind={it.kind as string} title={(it.dotTitle as string) || ''} /> : null}
       <span className="min-w-0 flex-1 truncate">{it.l as string}</span>
       {it.count != null ? <span className={cn('shrink-0 text-xs tabular-nums', off ? 'text-muted-foreground/60' : 'text-muted-foreground')}>{it.count as number}</span> : null}
       {it.on ? <CheckIcon className="size-4 shrink-0" /> : null}

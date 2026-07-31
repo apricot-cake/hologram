@@ -110,7 +110,7 @@ export let resetPosterFilters: () => void;
 // menu against the bar; tag opens a centered Dialog and needs none.
 export let selectionSelectAll: () => void;
 export let selectionTag: () => void;
-export let selectionFolder: (anchorRect: HologramAnchorRect) => void;
+export let selectionFolder: (anchorEl: HTMLElement) => void;
 export let selectionGroup: () => void;
 export let selectionDelete: () => void;
 export let selectionClear: () => void;
@@ -270,15 +270,9 @@ export function endFilterEditSession(): void {
   // (The backup-rail time formatters fmtTime/fmtBackupTime are used only by the
   // MirrorStatus component now, which imports format.ts directly.)
 
-  // Nudge an already-shown, cursor-positioned popup back inside the viewport (8px
-  // margin). Shared by the cursor-placed context menus (query-builder / folder /
-  // card / 種別) so the clamp formula stays in one place instead of drifting between
-  // copies. Anchored flyouts (cs/qf/tab) keep their own placement strategy.
-  function _clampIntoView(el: HTMLElement) {
-    const r = el.getBoundingClientRect();
-    if (r.right > innerWidth - 8) el.style.left = Math.max(8, innerWidth - r.width - 8) + 'px';
-    if (r.bottom > innerHeight - 8) el.style.top = Math.max(8, innerHeight - r.height - 8) + 'px';
-  }
+  // (The hand-rolled clampIntoView that used to nudge cursor-placed popups back inside
+  // the viewport is gone: every menu is a Base UI popup now, and collision handling is
+  // its job — #62.)
 
   // --- Typed DOM accessors (checkJs). getElementById returns HTMLElement|null;
   // these assert the element exists — it is static markup in index.html and the
@@ -325,7 +319,8 @@ export function endFilterEditSession(): void {
   // #filterRows titles/row names (フィルタ / 作品 / キャラ / タグ / ハッシュタグ …) are
   // rendered by the sidebar component, self-deriving from hologramPostSidebarSource — no
   // static setText here.
-  setAttr('sbTop', 'data-tip', getMessage('sbTopTip')); // #sbTop back-to-top retired in the shell cutover; setAttr no-ops if absent
+  // (#sbTop's back-to-top hint went with the shell cutover; the [data-tip] delegation it
+  // was written for is gone too — every hover hint is its own Base UI Tooltip now, #62.)
 
   // Post sort's single source is hologramStore 'sortPost' — the same shape the poster
   // sort has always had. It used to be a hidden <select> in the shell that the display

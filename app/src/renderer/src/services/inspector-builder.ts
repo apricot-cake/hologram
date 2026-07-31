@@ -14,7 +14,7 @@ import { formatCount, localeDate, localeDateTime } from './format.ts';
 import { open as inspectorOpen, refresh as inspectorRefresh, close as inspectorClose } from './inspector.ts';
 import { isOpen as panelIsOpen, isVisible as panelIsVisible, panelContains, setOpen as panelSetOpen, subscribe as panelSubscribe } from './inspector-panel.ts';
 import { isWide as isWideLayout } from './layout-mode.ts';
-import { get as confirmGet } from './confirm.ts';
+import { get as confirmGet, open as confirmOpen } from './confirm.ts';
 import { get as kindMenuGet } from './kind-menu.ts';
 import { isOpen as lightboxIsOpen } from './lightbox.ts';
 import { get as menuGet } from './menu.ts';
@@ -239,7 +239,7 @@ export function makeInspector(deps: InspectorBuilderDeps) {
   async function addInspectorTag(g: HologramPostGroup, tag: string) {
     const adding = !(freshGroup(g).rep.tags || []).includes(tag);
     await applyInspectorTagChange(freshGroup(g), (prev) => (prev.includes(tag) ? prev : [...prev, tag]));
-    if (adding) await maybeDistinguishHomonym(freshGroup(g), tag);
+    if (adding) maybeDistinguishHomonym(freshGroup(g), tag);
   }
   async function removeInspectorTag(g: HologramPostGroup, tag: string) {
     await applyInspectorTagChange(freshGroup(g), (prev) => prev.filter((t) => t !== tag));
@@ -249,7 +249,7 @@ export function makeInspector(deps: InspectorBuilderDeps) {
   // this character was seen with before, it's likely a same-name character from
   // another work. Offer the danbooru-style freeform distinction キャラ（作品）.
   // Deterministic + confirm-gated + silent until there's history (薄いうちは沈黙).
-  async function maybeDistinguishHomonym(g: HologramPostGroup | null | undefined, addedTag: string) {
+  function maybeDistinguishHomonym(g: HologramPostGroup | null | undefined, addedTag: string) {
     if (!g || deps.tagKindOf(addedTag) !== 'character') return;
     const cardTags: string[] = g.rep && Array.isArray(g.rep.tags) ? g.rep.tags : [];
     const worksNow = cardTags.filter((t) => deps.tagKindOf(t) === 'work');
@@ -261,13 +261,25 @@ export function makeInspector(deps: InspectorBuilderDeps) {
     const work = worksNow[0];
     const distinguished = `${addedTag}（${work}）`;
     if (cardTags.includes(distinguished)) return;
-    if (!window.confirm(deps.t('homonymConfirm', [addedTag, work]))) return;
-    // The distinguished string stays a character (danbooru-style); record its 種別.
-    if (!deps.tagKindOf(distinguished)) {
-      await tagsSetTagKind(distinguished, 'character');
-    }
-    await applyInspectorTagChange(g, (prev) => prev.map((t) => (t === addedTag ? distinguished : t)));
-    deps.showToast(deps.t('homonymDistinguished', [distinguished]));
+    // The shared AlertDialog (confirm.ts), not window.confirm — the native one is a
+    // BLOCKING call, which is why this used to read as a straight `if`. The rename is
+    // the dialog's onOk continuation instead; nothing downstream waits on it (the one
+    // caller, the inspector's onTagAdd, doesn't await either). Not destructive — it
+    // renames a tag you just typed — so the OK button keeps the default variant.
+    confirmOpen({
+      message: deps.t('homonymConfirm', [addedTag, work]),
+      okLabel: deps.t('promptOk'),
+      cancelLabel: deps.t('confirmCancel'),
+      okDestructive: false,
+      onOk: async () => {
+        // The distinguished string stays a character (danbooru-style); record its 種別.
+        if (!deps.tagKindOf(distinguished)) {
+          await tagsSetTagKind(distinguished, 'character');
+        }
+        await applyInspectorTagChange(g, (prev) => prev.map((t) => (t === addedTag ? distinguished : t)));
+        deps.showToast(deps.t('homonymDistinguished', [distinguished]));
+      },
+    });
   }
 
   // opts.focusTags: open the panel with the caret already in the tag field. It is

@@ -12,7 +12,7 @@ import { LightboxHost } from '../lightbox/index.tsx';
 import { SettingsHost } from '../settings/index.tsx';
 import { BulkTagDialogHost } from '../selection/BulkTagDialog.tsx';
 import { Toaster } from '@/components/ui/sonner';
-import { TooltipHost } from '../tooltip/TooltipHost.tsx';
+import { TooltipProvider } from '@/components/ui/tooltip';
 import { handleShortcutPaletteKey } from '../services/command-registry.ts';
 import { handleShortcutPanelsKey } from '../services/panels.ts';
 import { handleShortcutZoomKey } from '../services/image-zoom.ts';
@@ -255,7 +255,12 @@ function StoreSubscriptions() {
 
 export function App() {
   return (
-    <>
+    // One TooltipProvider for the whole app: every hover hint is its own Base UI
+    // Tooltip now (the singleton .ui-tip host + its document-level [data-tip]
+    // delegation are gone, #62), and the provider is what keeps them sharing one
+    // delay and one open-at-a-time group. It has to sit above the body-level
+    // overlays too — the 種別 menu's rename button carries a tooltip.
+    <TooltipProvider delay={0}>
       {/* Triggers the app's initial data load once, on mount. */}
       <AppBoot />
       {/* Shell body classes React owns (orchestrator no longer sets them). */}
@@ -299,8 +304,6 @@ export function App() {
       <SettingsHost />
       {/* Toast outlet (sonner) — services/ui.ts notify() feeds it. */}
       <Toaster />
-      {/* Legacy [data-tip] glass tooltip singleton (retired with the Tip overhaul, P3). */}
-      <TooltipHost />
-    </>
+    </TooltipProvider>
   );
 }

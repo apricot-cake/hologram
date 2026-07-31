@@ -176,10 +176,26 @@ declare global {
     icon?: string;
     [extra: string]: any;
   }
+  // Where a menu hangs. Right-click menus name the cursor ({x, y}); a menu opened
+  // by a BUTTON names the button instead ({ anchorEl }) so the ui kit measures it,
+  // keeps it attached and flips it on collision — no caller ever offsets a rect by
+  // hand (#62). side/align are the preferred placement, not the final one.
+  type HologramMenuSide = 'top' | 'bottom' | 'left' | 'right';
+  type HologramMenuAlign = 'start' | 'center' | 'end';
+  interface HologramMenuAnchor {
+    x?: number;
+    y?: number;
+    anchorEl?: HTMLElement | null;
+    side?: HologramMenuSide;
+    align?: HologramMenuAlign;
+  }
   interface HologramContextMenuModel {
     items: HologramMenuItem[];
     x: number;
     y: number;
+    anchorEl: HTMLElement | null;
+    side?: HologramMenuSide;
+    align?: HologramMenuAlign;
     // Returning a new items array keeps the menu open (toggle rows); returning
     // nothing closes it. The `| void` arm is that "close" signal — it also lets
     // void-returning pick handlers (the common case) assign cleanly.

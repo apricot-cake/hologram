@@ -2,6 +2,7 @@ import { PencilIcon } from 'lucide-react';
 import { useMemo, useSyncExternalStore } from 'react';
 import { close, get, subscribe } from '../services/kind-menu.ts';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuLabel, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 // 種別 (tag-kind) menu — ONE always-mounted instance that renders whatever
 // kind-menu.ts currently holds (or nothing). The orchestrator side builds the
@@ -60,9 +61,16 @@ export function KindMenuHost() {
                 {row.dot && <span className={'tk-dot tk-' + row.kind} />}
                 {row.label}
                 {row.renameable && (
-                  <button type="button" className="ml-auto flex items-center rounded-sm p-0.5 text-muted-foreground hover:bg-accent hover:text-accent-foreground" aria-label={menu.renameTitle} data-tip={menu.renameTitle} onClick={(e) => rename(e, row.kind)}>
-                    <PencilIcon className="size-3.5" />
-                  </button>
+                  <Tooltip>
+                    <TooltipTrigger
+                      render={
+                        <button type="button" className="ml-auto flex items-center rounded-sm p-0.5 text-muted-foreground hover:bg-accent hover:text-accent-foreground" aria-label={menu.renameTitle} onClick={(e) => rename(e, row.kind)}>
+                          <PencilIcon className="size-3.5" />
+                        </button>
+                      }
+                    />
+                    <TooltipContent side="right">{menu.renameTitle}</TooltipContent>
+                  </Tooltip>
                 )}
               </DropdownMenuRadioItem>
             ),
