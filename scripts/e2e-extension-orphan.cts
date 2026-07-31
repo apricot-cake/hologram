@@ -26,6 +26,9 @@
 //     受領期限（SAVE_ACK_MS）を過ぎても遅れて別のバナーが出ないこと。
 //   押していない時（タブB）: スクロールしただけで**黙って**UI が消えること
 //     （バナーを出さない＝#154 憲章2。自動更新のたびに全タブへ通知が出る形を却下した根拠）。
+//   一括取込の走行中（タブC・#646）: 進捗バナーが「再読み込みしてください」に変わって走行が
+//     終わること。**一括取込は分単位で走り続ける**＝自動更新に出くわす確率が最も高い経路で、
+//     しかも #594 の修正はここを通っていなかった。
 //
 //   node scripts/e2e-extension-orphan.cts
 
@@ -56,6 +59,31 @@ const PROBE_JS = `
 })();
 `;
 
+// The bulk intake (#362) starts on the bookmarks list and nowhere else, and it
+// is started by its own gesture — Alt+Shift+S — which is a browser accelerator
+// no page-level input can reach. So the run is started the way background.ts
+// starts it, from the worker: the flag first, then the capture entrypoint.
+const START_BULK_JS = `
+(async () => {
+  const [tab] = await chrome.tabs.query({ url: 'https://x.com/i/bookmarks*' });
+  if (!tab || !tab.id) throw new Error('the bookmarks tab is not visible to the worker');
+  await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: () => { window.__hologramAutoCapture = true; } });
+  await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['capture.js'] });
+  return tab.id;
+})()
+`;
+
+// One more row arrives in the list — the event the intake is built around (it
+// reads a permalink the instant a row mounts). Written from the PAGE's world on
+// purpose: it has to be the list growing under the run, not the run being poked.
+const MOUNT_ROW_JS = `(() => {
+  const article = document.createElement('article');
+  article.setAttribute('data-testid', 'tweet');
+  article.innerHTML = '<a href="/zoe/status/9901"><time datetime="2026-07-01T00:00:00Z">now</time></a><div data-testid="tweetPhoto"><img src="https://pbs.twimg.com/media/ZZZ.jpg"></div>';
+  document.getElementById('feed').appendChild(article);
+  return document.querySelectorAll('[data-testid="tweet"]').length;
+})()`;
+
 const failures: string[] = [];
 const check = (ok: boolean, what: string) => {
   console.log(`${ok ? '  ok  ' : '  FAIL'} ${what}`);
@@ -64,15 +92,18 @@ const check = (ok: boolean, what: string) => {
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const FIXTURE_URL = 'https://x.com/home';
+// The bulk intake refuses to start anywhere else (isXBookmarksPage), and the
+// same fixture serves both: the bookmarks list is a feed of the same rows.
+const BOOKMARKS_URL = 'https://x.com/i/bookmarks';
 
-async function openFeed(context: any): Promise<any> {
+async function openFeed(context: any, url: string = FIXTURE_URL): Promise<any> {
   const page = await context.newPage();
   await page.route('**/*', async (route: any) => {
     const request = route.request();
-    if (request.isNavigationRequest() && request.url() === FIXTURE_URL) await route.fulfill({ status: 200, contentType: 'text/html', body: fixtureHtml('x') });
+    if (request.isNavigationRequest() && request.url() === url) await route.fulfill({ status: 200, contentType: 'text/html', body: fixtureHtml('x') });
     else await route.abort();
   });
-  await page.goto(FIXTURE_URL, { waitUntil: 'domcontentloaded' });
+  await page.goto(url, { waitUntil: 'domcontentloaded' });
   await page.waitForSelector('[data-testid="tweetPhoto"]');
   await wait(900); // document_idle startup, first scan, first badge query
   return page;
@@ -84,9 +115,27 @@ const overlayState = (page: any) =>
     banner: document.querySelector('hologram-extension-ui')?.shadowRoot?.querySelector('[data-hologram-save-banner]')?.textContent || null,
   }));
 
+// The intake's own surface. `stop` counts the button the run offers while it is
+// running: setState drops whatever the previous state had slotted, so a run that
+// has ended cannot still be offering it.
+const bulkState = (page: any) =>
+  page.evaluate(() => {
+    const root = document.querySelector('hologram-extension-ui')?.shadowRoot;
+    return {
+      banner: root?.querySelector('[data-hologram-bulk-label]')?.textContent || null,
+      stop: root?.querySelectorAll('[data-hologram-bulk-banner] button').length ?? 0,
+    };
+  });
+
 (async () => {
   const extensionDir = stageExtension({
     tempPrefix: 'hologram-orphan-e2e-',
+    // Only so the worker can inject capture.js into the bookmarks tab below.
+    // In real use that injection rides on the activeTab grant Alt+Shift+S
+    // carries, and a test cannot press a browser accelerator. Nothing about the
+    // intake's own behaviour changes with the wider permission — it neither
+    // reads it nor takes a different path.
+    allUrls: true,
     // Never the production name: this development machine HAS com.hologram.host
     // registered for Chromium too, and a press that got as far as the host would
     // be writing into the real library.
@@ -116,7 +165,17 @@ const overlayState = (page: any) =>
     await pressTab.waitForSelector('[data-hologram-overlay]', { timeout: 4000 });
     check(true, 'baseline: the hover save button is drawn while the extension is alive');
 
-    // --- orphan both tabs for real ------------------------------------------
+    // A third tab with a bulk intake RUNNING on it (#646). Started before the
+    // reload, because that is the situation: a run lasts minutes and the update
+    // lands in the middle of one.
+    const bulkTab = await openFeed(browser.context, BOOKMARKS_URL);
+    bulkTab.on('pageerror', (error: any) => pageErrors.push(String(error?.message || error)));
+    await browser.serviceWorker.evaluate(START_BULK_JS);
+    await bulkTab.waitForSelector('[data-hologram-bulk-banner]', { timeout: 6000 });
+    const bulkBefore = await bulkState(bulkTab);
+    check(bulkBefore.banner !== RELOAD_NOTICE && bulkBefore.stop === 1, `baseline: the intake is running and offering its stop button (${JSON.stringify(bulkBefore)})`);
+
+    // --- orphan every tab for real ------------------------------------------
     // The call kills the worker that is running it, so the evaluate never returns.
     await browser.serviceWorker.evaluate('chrome.runtime.reload()').catch(() => {});
     await wait(2500);
@@ -194,6 +253,26 @@ const overlayState = (page: any) =>
     check(stillDraws === 0, `after scrolling, the orphaned overlay draws nothing at all — it took itself off the page (${stillDraws} drawn)`);
     check(scrolled.banner === null, `…and said nothing while doing it — an auto-update must not toast every open timeline (got ${JSON.stringify(scrolled.banner)})`);
     check(pageErrors.length === 0, `nothing thrown on the passive path either (${JSON.stringify(pageErrors)})`);
+
+    // --- ② the bulk intake that was running when the update landed (#646) ----
+    //
+    // Last on purpose: this is the section that produces uncaught errors on the
+    // unfixed code, and the checks above read the same `pageErrors` array.
+    //
+    // The trigger is a ROW MOUNTING, not a scroll or a click, because that is
+    // the intake's only input — it reads a permalink the instant a row appears
+    // and asks the library whether that post is already saved. That question is
+    // the sendMessage this issue is about. By now more than SAVED_QUERY_TIMEOUT_MS
+    // has passed since the reload, so the batch that was in flight before it has
+    // long since given up and cleared the "a question is out" latch; without
+    // that the run would decline to ask again and nothing would be measured.
+    const rows = await bulkTab.evaluate(MOUNT_ROW_JS);
+    check(rows > 8, `a new row mounted in the bookmark list, which is the intake's only input (${rows} rows)`);
+    await wait(1500);
+    const bulkAfter = await bulkState(bulkTab);
+    check(pageErrors.length === 0, `the running intake asks about the new row without throwing into the page (${JSON.stringify(pageErrors)})`);
+    check(bulkAfter.banner === RELOAD_NOTICE, `the progress banner became the reload notice — the run was cut off by an update, not by anything the user or the library did (got ${JSON.stringify(bulkAfter.banner)})`);
+    check(bulkAfter.stop === 0, `…and the run is over rather than relabelled: its stop button is gone (${bulkAfter.stop} left)`);
   } finally {
     await browser.close().catch(() => {});
     fs.rmSync(extensionDir, { recursive: true, force: true });

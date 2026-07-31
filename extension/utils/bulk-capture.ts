@@ -28,6 +28,7 @@
 // one site with such a list so far.
 import { logSaveEvent, newSaveId, reportSaveTimeout } from './capture-log.ts';
 import { SAVED_QUERY_TIMEOUT_MS } from './deadline.ts';
+import { extensionAlive, noteExtensionGone, onExtensionGone } from './extension-context.ts';
 import { startSaveDeadline } from './save-deadline.ts';
 import type { CaptureSite } from './extractor/types.ts';
 import { isXBookmarksPage } from './extractor/x.ts';
@@ -142,6 +143,12 @@ export function startBulkCapture(site: CaptureSite, i18n: HologramI18nApi): void
     if (asking || stopped) return;
     const urls = [...entries].filter(([, state]) => state === 'unknown').map(([url]) => url);
     if (!urls.length) return;
+    // #594: the extension may have been replaced under this run. A run lasts
+    // minutes, which makes this the path most likely to be standing here when
+    // Chrome updates the extension on its own — and this call is reached on
+    // every batch of rows the user scrolls into view, so it is what notices.
+    // The probe announces, and the handler registered below ends the run.
+    if (!extensionAlive()) return;
     asking = true;
     // A question that is never answered would leave `asking` stuck true and no
     // further batch would ever be sent — the run would look alive and take
@@ -153,7 +160,7 @@ export function startBulkCapture(site: CaptureSite, i18n: HologramI18nApi): void
       answered = true;
       asking = false;
     }, SAVED_QUERY_TIMEOUT_MS);
-    chrome.runtime.sendMessage({ type: 'checkSaved', urls } satisfies CheckSavedMessage, (res?: CheckSavedResponse) => {
+    const onAnswer = (res?: CheckSavedResponse) => {
       if (answered) return;
       answered = true;
       clearTimeout(askTimer);
@@ -171,7 +178,20 @@ export function startBulkCapture(site: CaptureSite, i18n: HologramI18nApi): void
       paint();
       schedulePump();
       askSaved(); // rows that mounted while this batch was in flight
-    });
+    };
+    // try/catch as well as the probe above (#594): the window between asking
+    // and calling is small, not nonexistent, and an unguarded throw here comes
+    // out of the MutationObserver callback that mounted the row — taking the
+    // rest of the harvest with it and leaving `asking` stuck true, so the run
+    // would sit under a banner that still says it is working.
+    try {
+      chrome.runtime.sendMessage({ type: 'checkSaved', urls } satisfies CheckSavedMessage, onAnswer);
+    } catch {
+      answered = true;
+      clearTimeout(askTimer);
+      asking = false;
+      noteExtensionGone();
+    }
   }
 
   // === save queue ===
@@ -197,6 +217,11 @@ export function startBulkCapture(site: CaptureSite, i18n: HologramI18nApi): void
       checkEnd();
       return;
     }
+    // #594, before anything is marked as in flight and before the deadline is
+    // armed: a save started into a severed connection leaves that timer as the
+    // only thing still running, which is exactly how this used to end in "the
+    // save timed out" — a healthy extension blamed for having been updated.
+    if (!extensionAlive()) return;
     busy = true;
     lastSaveStartedAt = Date.now();
     entries.set(url, 'saving');
@@ -221,60 +246,73 @@ export function startBulkCapture(site: CaptureSite, i18n: HologramI18nApi): void
       paint();
       schedulePump();
     });
-    chrome.runtime.sendMessage(
-      {
-        type: 'savePost',
-        postUrl: url,
-        platform: site.platform,
-        saveId,
-        // Marks the record's intake route so a bulk-imported post can be told
-        // apart from an ordinary one-at-a-time save (native-host/post-record).
-        capturedVia: 'x-bookmarks',
-      } satisfies SavePostMessage,
-      (res?: SaveResponse) => {
-        if (!deadline.settle()) return; // a late answer to a post already given up on
-        busy = false;
-        // Narrowed here rather than inside the branch below: that condition is
-        // a disjunction (the port itself may have failed), so it tells TypeScript
-        // nothing about `res` — and SaveResponse's success arm carries no
-        // errorKind to read. #492 and #225 landed within minutes of each other
-        // and neither PR's CI saw the combination, which is what left main red.
-        const failure = res && !res.ok ? res : null;
-        if (chrome.runtime.lastError || !res?.ok) {
-          // The post itself could not be obtained (#492) — deleted, suspended,
-          // protected, age gated. Nothing was written and nothing is broken, so
-          // it is counted apart from real failures: a bookmark list can hold a
-          // handful of dead posts forever, and every run would otherwise report
-          // them as breakage the user is meant to go and fix.
-          //
-          // Age-restricted posts are split off again (#505): those are ALIVE —
-          // X simply serves no post info to an anonymous embed request, which is
-          // the only kind we can make. Folding them into "deleted or private"
-          // would tell the user the post is gone when it is still there, and
-          // would hide that re-running the intake can never change the outcome.
-          if (failure?.errorKind === 'post-unavailable' && failure.metaReason === 'ageRestricted') {
-            entries.set(url, 'ageRestricted');
-            ageRestrictedCount++;
-          } else if (failure?.errorKind === 'post-unavailable') {
-            entries.set(url, 'unavailable');
-            unavailableCount++;
-          } else {
-            entries.set(url, 'failed');
-            failedCount++;
-          }
-        } else if (res.deferred) {
-          // Written to disk, but the library cannot show it until #365 — count
-          // it apart so the summary never claims it is visible.
-          entries.set(url, 'deferred');
-          deferredCount++;
+    // Named rather than written inline at the call, so the call itself is the
+    // one statement inside the try/catch below (#594).
+    const onAnswer = (res?: SaveResponse) => {
+      if (!deadline.settle()) return; // a late answer to a post already given up on
+      busy = false;
+      // Narrowed here rather than inside the branch below: that condition is
+      // a disjunction (the port itself may have failed), so it tells TypeScript
+      // nothing about `res` — and SaveResponse's success arm carries no
+      // errorKind to read. #492 and #225 landed within minutes of each other
+      // and neither PR's CI saw the combination, which is what left main red.
+      const failure = res && !res.ok ? res : null;
+      if (chrome.runtime.lastError || !res?.ok) {
+        // The post itself could not be obtained (#492) — deleted, suspended,
+        // protected, age gated. Nothing was written and nothing is broken, so
+        // it is counted apart from real failures: a bookmark list can hold a
+        // handful of dead posts forever, and every run would otherwise report
+        // them as breakage the user is meant to go and fix.
+        //
+        // Age-restricted posts are split off again (#505): those are ALIVE —
+        // X simply serves no post info to an anonymous embed request, which is
+        // the only kind we can make. Folding them into "deleted or private"
+        // would tell the user the post is gone when it is still there, and
+        // would hide that re-running the intake can never change the outcome.
+        if (failure?.errorKind === 'post-unavailable' && failure.metaReason === 'ageRestricted') {
+          entries.set(url, 'ageRestricted');
+          ageRestrictedCount++;
+        } else if (failure?.errorKind === 'post-unavailable') {
+          entries.set(url, 'unavailable');
+          unavailableCount++;
         } else {
-          entries.set(url, 'saved');
-          savedCount++;
+          entries.set(url, 'failed');
+          failedCount++;
         }
-        paint();
-        schedulePump();
-      },
-    );
+      } else if (res.deferred) {
+        // Written to disk, but the library cannot show it until #365 — count
+        // it apart so the summary never claims it is visible.
+        entries.set(url, 'deferred');
+        deferredCount++;
+      } else {
+        entries.set(url, 'saved');
+        savedCount++;
+      }
+      paint();
+      schedulePump();
+    };
+    try {
+      chrome.runtime.sendMessage(
+        {
+          type: 'savePost',
+          postUrl: url,
+          platform: site.platform,
+          saveId,
+          // Marks the record's intake route so a bulk-imported post can be told
+          // apart from an ordinary one-at-a-time save (native-host/post-record).
+          capturedVia: 'x-bookmarks',
+        } satisfies SavePostMessage,
+        onAnswer,
+      );
+    } catch {
+      // Invalidated between the probe above and this line (#594). The deadline
+      // is armed by now, so it is settled here rather than left to fire: this
+      // post is not a failure the run should count, because there is no run
+      // left to count it — the handler below ends it.
+      deadline.settle();
+      busy = false;
+      noteExtensionGone();
+    }
   }
 
   // === end of list ===
@@ -289,9 +327,22 @@ export function startBulkCapture(site: CaptureSite, i18n: HologramI18nApi): void
 
   // === teardown ===
 
+  // Everything the run leaves running, taken back off. Shared with the orphaned
+  // ending below, which has no summary to print and no line it could write.
+  function teardown() {
+    stopped = true;
+    observer.disconnect();
+    removeEventListener('scroll', onScroll, true);
+    document.removeEventListener('keydown', onUserKeyDown, true);
+    if (pumpTimer) clearTimeout(pumpTimer);
+    pumpTimer = null;
+    if (window.__snsPostSaveCleanup === stop) delete window.__snsPostSaveCleanup;
+    window.__snsPostSaveActive = false;
+    banner.el.style.pointerEvents = 'none';
+  }
+
   function finish(byUser: boolean) {
     if (stopped) return;
-    stopped = true;
     // How the run ended, and with what. `cancel` is the point: the stop button,
     // Esc, and navigating away from the bookmarks list are all the user deciding
     // to stop, and telling that apart from a run that died mid-way is what this
@@ -309,20 +360,37 @@ export function startBulkCapture(site: CaptureSite, i18n: HologramI18nApi): void
       ageRestricted: ageRestrictedCount,
       failed: failedCount,
     });
-    observer.disconnect();
-    removeEventListener('scroll', onScroll, true);
-    document.removeEventListener('keydown', onUserKeyDown, true);
-    if (pumpTimer) clearTimeout(pumpTimer);
-    if (window.__snsPostSaveCleanup === stop) delete window.__snsPostSaveCleanup;
-    window.__snsPostSaveActive = false;
+    teardown();
 
     // A run that hit real failures ends amber, not green — the summary says so
     // in words, and the surface now says it in colour too (setState drops the
     // stop button along with the state that owned it).
     const bad = failedCount > 0;
     banner.setState(bad ? 'partial' : 'success', summaryText(byUser));
-    banner.el.style.pointerEvents = 'none';
     setTimeout(dismiss, bad || deferredCount || unavailableCount || ageRestrictedCount ? 6000 : 3500);
+  }
+
+  // The extension was replaced under this run (#594). A run lasts minutes, so
+  // of every path in the extension this is the one most likely to be standing
+  // here when Chrome updates it on its own — and until this existed the intake
+  // simply threw "Extension context invalidated." out of whichever callback
+  // reached the severed connection, then went on showing a progress banner for
+  // a run that could no longer take anything.
+  //
+  // The user asked for this run, so it is told: the notice goes into the error
+  // state of the banner the run has been drawing all along, which is #594's
+  // rule for a request that failed (the silent half is for tabs nobody asked
+  // anything of). No summary — the counts describe a run that ended, and this
+  // one was cut off mid-way with an instruction that has to be read instead.
+  // Nothing is logged either: that line would travel through the same severed
+  // connection.
+  function finishOrphaned() {
+    if (stopped) return;
+    teardown();
+    // The long dwell, as for a run that ended with something to read: this is
+    // an instruction, not a result, and it is the only place it is said.
+    banner.setState('error', t('bannerExtensionReloaded'));
+    setTimeout(dismiss, 6000);
   }
 
   function summaryText(byUser: boolean): string {
@@ -374,6 +442,13 @@ export function startBulkCapture(site: CaptureSite, i18n: HologramI18nApi): void
   // A second activation ends the mode, matching the single-shot path's toggle.
   window.__snsPostSaveActive = true;
   window.__snsPostSaveCleanup = stop;
+
+  // Registered AFTER the observer and the listeners exist, because a context
+  // already known to be gone runs this handler on the spot — and teardown()
+  // would then be reaching for an observer that has not been created yet.
+  // Whichever of the two calls above notices first ends the run through here,
+  // so there is one ending rather than one per call site.
+  onExtensionGone(finishOrphaned);
 
   // A run has started. Paired with the `bulk` line finish() writes, so a run
   // that is cut short by the page going away leaves a beginning with no end
