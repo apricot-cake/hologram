@@ -32,13 +32,15 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { FIXTURE_POSTS, type FixturePost, seedFixtureLibrary } from './library.ts';
+import { CONTENT_SIZE, WIDE_MIN_PX } from './viewport.ts';
 
 const repoRoot = path.join(__dirname, '..', '..');
 const appDir = path.join(repoRoot, 'app');
 const { electronPath, buildArtifactError } = require(path.join(repoRoot, 'scripts', 'lib-electron-path.cts'));
 
-/** The window's content box for every case. Fixed, because the baselines are pixels. */
-export const CONTENT_SIZE = { width: 1280, height: 800 };
+// The content box is viewport.ts's now, computed from the layout's own breakpoint rather than
+// written down again here (#649). Re-exported because it is the harness the specs import.
+export { CONTENT_SIZE };
 
 export interface LaunchOptions {
   /** Posts to seed. Pass [] for the first-run empty state. Defaults to FIXTURE_POSTS. */
@@ -114,6 +116,14 @@ async function launch(options: LaunchOptions): Promise<{ hologram: Hologram; clo
   // "The first render finished" — either cards have mounted into the grid slot, or
   // the library is empty and the placeholder took the space instead.
   await page.waitForFunction(() => !!document.querySelector('[data-slot="post-card"], [data-slot="empty-state"]'));
+  // …and it finished on the WIDE side of the breakpoint, which is the layout every flow case
+  // is written against. CONTENT_SIZE is derived so that it cannot be otherwise (#649), but the
+  // request is not the outcome: setContentSize is clamped to the work area, so a display
+  // narrower than the request would silently hand every case the narrow layout. Asked the way
+  // the app asks it — the same media query layout-mode.ts builds — so this follows the
+  // breakpoint too, and it is asked once per launch rather than once in one spec.
+  const side = await page.evaluate((bp) => ({ width: window.innerWidth, wide: matchMedia(`(min-width: ${bp}px)`).matches }), WIDE_MIN_PX);
+  if (!side.wide) throw new Error(`E2E ウィンドウが narrow 側で起動しました（実測 ${side.width}px ／ wide の下限 ${WIDE_MIN_PX}px）。要求した ${CONTENT_SIZE.width}px が画面の作業領域に収まらなかったか、幅の算出がブレークポイントから外れています。`);
 
   const hologram: Hologram = {
     app,
