@@ -5,10 +5,11 @@
    --surface, --text, --accent, …); primitives (--gray-*, --blue-*) are raw.
 
    Ported deltas vs. the source kit:
-   - fonts: the source @imported Geist from the Google Fonts CDN. This app is
-     an offline Electron viewer with Japanese-primary UI, so --font-sans uses a
-     system stack with a Japanese fallback instead. (To adopt Geist later: drop
-     the .woff2 in vendor/, @font-face it, and prepend 'Geist' to --font-sans.)
+   - fonts: the source @imported Geist from the Google Fonts CDN. This app is an
+     offline Electron viewer, so Geist ships bundled (@fontsource-variable/geist,
+     @imported from globals.css) — and because the UI is Japanese-primary, the
+     system stack with its Japanese faces stays behind Geist in --font-sans rather
+     than being replaced by it. Geist has no CJK of its own.
    - category tints (--tint-*): light + dark variants so the per-category filter
      chip colour-coding (platform / type / date / engagement / media / tag /
      user) survives in dark mode.
@@ -276,8 +277,11 @@
    Typography tokens
    ============================================================================ */
 :root {
-  /* System stack + Japanese fallback (offline-safe; Geist optional later). */
-  --font-sans: -apple-system, 'Segoe UI', 'Hiragino Kaku Gothic ProN', 'Yu Gothic UI', 'Noto Sans JP', system-ui, sans-serif;
+  /* Geist (bundled via @fontsource-variable) for Latin, system stack + Japanese
+     fallback behind it. Must stay identical to globals.css's @theme copy: that one
+     feeds the `font-sans` utility (and `html`), this one feeds every var(--font-sans)
+     reader, and a split between them is what #654 caught. */
+  --font-sans: 'Geist Variable', -apple-system, 'Segoe UI', 'Hiragino Kaku Gothic ProN', 'Yu Gothic UI', 'Noto Sans JP', system-ui, sans-serif;
   --font-mono: ui-monospace, 'SF Mono', 'Roboto Mono', 'Cascadia Code', Consolas, monospace;
 
   --text-2xs: 10px;

@@ -30,7 +30,9 @@ for (const theme of ['light', 'dark'] as const) {
 
     test('設定ダイアログ（外観）', async ({ launchHologram }) => {
       const { page } = await launchHologram({ theme });
-      await page.locator('#settingsBtn').click();
+      // By role, not by id: the gear is a sidebar footer row now (#153 took the
+      // last #settingsBtn listener out, #6 took the element's id with it).
+      await page.getByRole('button', { name: '設定', exact: true }).click();
       const dialog = page.locator('[data-slot="dialog-content"]');
       await expect(dialog).toBeVisible();
       await expect(dialog).toHaveScreenshot(`settings-appearance-${theme}.png`);
