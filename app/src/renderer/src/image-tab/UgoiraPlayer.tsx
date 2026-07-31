@@ -173,15 +173,12 @@ export function UgoiraPlayer({ file, frames, poster, alt, labels }: { file: stri
   // for this work, already downloaded next to the archive — so a うごイラ whose
   // archive won't open still shows the artwork.
   return (
-    // .itv-ugoira keeps ONE job in index.html — centering the canvas/poster inside this
-    // box (`.itv-ugoira > .itv-media { margin: auto }`), which belongs with the rest of
-    // the media sizing that P3 (#6) takes. The box itself is Tailwind (P2⑫).
-    <div className="itv-ugoira relative flex min-w-0 flex-1">
-      <canvas ref={canvasRef} className="itv-media" role="img" aria-label={alt || labels.ugoira || ''} style={status === 'ready' ? undefined : { display: 'none' }} />
+    <div data-slot="ugoira-stage" className="relative flex min-w-0 flex-1">
+      <canvas ref={canvasRef} className="m-auto max-h-full max-w-full object-contain" role="img" aria-label={alt || labels.ugoira || ''} style={status === 'ready' ? undefined : { display: 'none' }} />
       {/* decoding="async" like the rest of the viewer surface (#241) — the
           archive is being unzipped and decoded on the same thread's tasks, so
           the poster must not add a blocking decode on top of that. */}
-      {status !== 'ready' && poster && <img className="itv-media" src={poster} alt={alt || ''} decoding="async" />}
+      {status !== 'ready' && poster && <img className="m-auto max-h-full max-w-full object-contain" src={poster} alt={alt || ''} decoding="async" />}
       {/* Bottom-left, where a <video> puts its own play button — the same corner the
           browser's native controls use for the neighbouring slide type. Same translucent
           plate as the stage's other floating controls (P2⑫). */}

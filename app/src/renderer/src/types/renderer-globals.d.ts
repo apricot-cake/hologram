@@ -231,10 +231,6 @@ interface HologramFolderManagerModel {
   list: HologramFolder[];
 }
 
-// services/bridge.ts's makeCallbackBridge factory (shared by the callback-carrying
-// popover bridges qf-pop / filter-popover) is a real ES module (named export) now —
-// its return type is inferred, so no ambient HologramCallbackBridge/HologramMakeBridge type.
-
 // services/store.ts is a real ES module now — get/set/subscribe are
 // imported directly by every consumer; no ambient HologramStore/Window merge
 // exists anywhere anymore. The old duplicated `interface Window { hologramSelection }`

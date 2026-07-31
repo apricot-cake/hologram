@@ -141,8 +141,6 @@ export function InlineFilterInput({ hasChips, posters }: { hasChips: boolean; po
         aria-label={t('fbAddFilter')}
         placeholder={t('fbAddFilterPh')}
         onKeyDown={onKeyDown}
-        // border-0 は必須（パレットと同じ理由）＝旧スタイルシートの `input[type="text"]`
-        // 規則が Base UI の Input に乗る。枠はこの入れ物側が持つ。
         className="h-7 w-44 min-w-0 rounded-md border border-input bg-background px-2 text-base outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 md:text-sm"
       />
       <Autocomplete.Portal>

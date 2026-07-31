@@ -268,33 +268,6 @@ declare global {
     onFolderCreate?(): void;
     [extra: string]: any;
   }
-  // ---- services/sidebar.ts — the two filter-row columns (converted
-  // from a PUSHED bridge — viewer built a full model incl. labels and called
-  // render()/renderPoster() — to a PULLED source, same shape as the grid/image-tab/
-  // tabs sources. Labels are NOT in the model: the components resolve their own static
-  // row names via t() and the 作品/キャラ custom label via hologramTags.getTagLabels(),
-  // the same "component resolves its own i18n" pattern every other component uses.
-  // Everything else (badges/visible/multi/openCat) is derived from hologramStore
-  // keys (postQueryTree/posterQueryTree/multiOnly/qfCat) + hologramTags/hologramFolders/
-  // posts-data.ts/hologramListing — no viewer push needed, so viewer's mutation call
-  // sites (addFilter/removeFilter/setTagKind/markPostsMutated/…) no longer need a
-  // matching re-push; the source's own subscriptions cover it. Two independent
-  // sources (post / poster) so a change in one column never re-renders the other. ----
-  interface HologramSidebarModel {
-    openCat: string | null; // the flyout cat with .qf-open (null = none)
-    multi: { active: boolean };
-    badges: Record<string, number>; // per-row active-filter count
-    visible: { work: boolean; character: boolean }; // 種別 progressive disclosure
-  }
-  // Poster column (#posterFilterRows): a leaner twin — no multi toggle, and the
-  // rows are keyed by their full poster-* cat (data-qfrow === data-badge). work / character
-  // / tag / instance are progressively disclosed once posters actually carry such values.
-  interface HologramPosterSidebarModel {
-    openCat: string | null; // the poster-* flyout cat with .qf-open (null = none)
-    badges: Record<string, number>; // per-row active leaf count (poster query shadow)
-    visible: { work: boolean; character: boolean; tag: boolean; instance: boolean };
-  }
-
   // ---- Empty-state variant — EmptyState.tsx derives this itself from hologramStore
   // instead of a pushed bridge (the old renderer/empty.js bridge was deleted — no
   // callers left), and owns its own container and visibility (the static #emptyState

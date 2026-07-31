@@ -1,6 +1,7 @@
 import { PencilIcon } from 'lucide-react';
 import { useMemo, useSyncExternalStore } from 'react';
 import { close, get, subscribe } from '../services/kind-menu.ts';
+import { kindDotClass } from '../_shared/kind-dot.ts';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuLabel, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
@@ -15,7 +16,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 //
 // Kind selection is one-of-N, so rows are a RadioGroup (right-side indicator
 // marks the current kind — the shadcn idiom for single-choice menus). The
-// colored kind dot keeps its legacy tk-dot classes: kind colors are app domain,
+// colored kind dot comes from _shared/kind-dot.ts: kind colors are app domain,
 // not ui-kit styling. closeOnClick stays false / close() is called explicitly,
 // same bridge-owned lifecycle as ContextMenu.
 
@@ -58,7 +59,7 @@ export function KindMenuHost() {
               <DropdownMenuSeparator key={i} />
             ) : (
               <DropdownMenuRadioItem key={i} value={row.kind as string} closeOnClick={false} onClick={() => pick(row)}>
-                {row.dot && <span className={'tk-dot tk-' + row.kind} />}
+                {row.dot && <span className={kindDotClass(row.kind as string)} />}
                 {row.label}
                 {row.renameable && (
                   <Tooltip>

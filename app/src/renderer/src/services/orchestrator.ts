@@ -281,53 +281,9 @@ export function endFilterEditSession(): void {
   // the viewport is gone: every menu is a Base UI popup now, and collision handling is
   // its job — #62.)
 
-  // --- Typed DOM accessors (checkJs). getElementById returns HTMLElement|null;
-  // these assert the element exists — it is static markup in index.html and the
-  // surrounding code already dereferences it directly — and narrow to the concrete
-  // element subtype so .value/.options/.min/.disabled type-check. closestOf mirrors
-  // folders.js: casts an event target to the nearest matching element (or null). ---
-  const _inputById = (id: string) => document.getElementById(id) as HTMLInputElement;
-  const closestOf = (e: Event, sel: string) => {
-    const t = e.target as HTMLElement | null;
-    return t instanceof Element ? (t.closest(sel) as HTMLElement | null) : null;
-  };
-
-  // --- Apply i18n to static elements ---
-  const setAttr = (id: string, attr: string, val: string) => {
-    const el = document.getElementById(id);
-    if (el) el.setAttribute(attr, val);
-  };
-
-  // #settingsBtn is the sidebar component's gear now (LeftSidebar): it carries the
-  // Sidebar tooltip + its own <span> label, so the legacy [data-tip]/aria-label
-  // written here stacked a SECOND .ui-tip chip on top of it on hover.
-  // #filterRows row labels + the クリップ row / 空にする button (icon, tip, aria) are
-  // rendered by the sidebar component, self-deriving from hologramPostSidebarSource
-  // (services/sidebar.ts) — no static setText here.
-  setAttr('contentTop', 'aria-label', getMessage('sbTopTip'));
-  // #postResetBtn label + the activebar frame (nav / title / empty hint / count / reset /
-  // ⓘ help) are the activebar component now, self-deriving from hologramStore
-  // (renderer/activebar.ts is gone — no bridge left) — no static setText here.
-  // Density (post + poster) and the sort labels live in the display popover
-  // (shell/DisplayMenu.tsx); browse mode is the left sidebar's. All three
-  // render from i18n themselves — no static setText here.
-  // #posterFilterRows title + row labels are rendered by the poster sidebar component,
-  // self-deriving from hologramPosterSidebarSource (services/sidebar.ts). No
-  // static setText here (mirror of the post-side #filterRows note above).
-  // posterDateDim options / posterDateDimLabel / posterDateRangeLabel / posterDateApply /
-  // posterDateClear are the filterbar React component now (replacing the retired
-  // filter-popover) — no static labels here.
-  // Settings-modal labels (theme/lang/data/backup/trash/danger/about) live in the React
-  // settings component; the confirm modal is the React confirm component (labels come through
-  // confirmOpen's config), so no static confirm setText here either.
-
-  // #activebarLabel / #qbEmptyHint / #posterQbEmptyHint are the activebar component now,
-  // self-deriving from hologramStore + t() — no static setText here.
-  // #filterRows titles/row names (フィルタ / 作品 / キャラ / タグ / ハッシュタグ …) are
-  // rendered by the sidebar component, self-deriving from hologramPostSidebarSource — no
-  // static setText here.
-  // (#sbTop's back-to-top hint went with the shell cutover; the [data-tip] delegation it
-  // was written for is gone too — every hover hint is its own Base UI Tooltip now, #62.)
+  // (An "apply i18n to static elements" block lived here, writing labels onto ids the
+  // shell promised. Nothing is left to write to: every surface is a component that
+  // resolves its own strings through t() — P3 #6.)
 
   // Post sort's single source is hologramStore 'sortPost' — the same shape the poster
   // sort has always had. It used to be a hidden <select> in the shell that the display
@@ -384,19 +340,13 @@ export function endFilterEditSession(): void {
     // history push now, so "back to the poster grid" is the ← button / Alt+←.
     postQB.resetTree();
     searchEditing.clear(); // the editing text leaf is gone with the tree
-    const set = (id: string, v: string) => {
-      const el = document.getElementById(id) as HTMLInputElement | null;
-      if (el) el.value = v;
-    };
+    // (The date / engagement inputs this used to blank were the facet column's; that
+    // column is gone, and its values live in the query tree resetTree() just cleared.)
     setSearchBoxValue('');
-    set('sbDateFrom', '');
-    set('sbDateTo', '');
-    set('sbEngMin', '');
     afterQueryChange();
   };
-  // #postResetBtn / #navBackBtn / #navFwdBtn clicks are wired by the activebar component,
-  // which imports resetAllFilters/navBack/navForward directly (no more pushed model
-  // callbacks) — the buttons are React-owned.
+  // The リセット / 戻る / 進む buttons import resetAllFilters/navBack/navForward directly
+  // (no pushed model callbacks) — they are React-owned, in the toolbar.
   //
   // Back/forward through the per-tab view history (nav's state machine, the Alt+←/→ +
   // mouse-side-button handlers, and the tab bar/CRUD below) moved to tabs-builder.ts
@@ -494,31 +444,10 @@ export function endFilterEditSession(): void {
   // hologramPostSidebarSource. No static setText for プラットフォーム / 投稿 /
   // メディア / 日付 / エンゲージメント here.)
 
-  // Sidebar chip toggle (platform, postType, media)
-  // Filter rows: click a row → flyout with that category's values beside it.
-  // 日付/エンゲージはパラメータ入力付きの専用ポップオーバーへ委譲。
-  document.getElementById('filterRows')?.addEventListener('click', (e) => {
-    // 複数画像: a direct 2-state toggle (no data-qfrow, no flyout). Handled via this
-    // delegated listener rather than its own — the row can be (re)built after wiring
-    // time, so a listener bound at load could miss it. Flips the group-level flag.
-    if (closestOf(e, '#multiRow')) {
-      multiOnly = !multiOnly;
-      storeSet('multiOnly', multiOnly); // mirror into the store — the sidebar/Tabs sources read it directly
-      renderPosts();
-      return;
-    }
-    // The [data-qfrow] value/date/engagement flyout rows were removed with the
-    // sidebar facet rows (P1) — adding filters is the "+ フィルタ" bar now (P2③).
-  });
-
-  // フライアウトはクリックのみで開閉（ホバーで開く実験は撤回＝誤爆・絞り込み入力中に
-  // 別行へカーソルが乗って別フライアウトに化ける問題があったため）。
-
-  // (updateSidebarState() lived here. Badges/tag-visibility are self-derived by
-  // services/sidebar.ts's hologramPostSidebarSource/hologramPosterSidebarSource
-  // — see that file for how postQueryTree/tags/folders/posts-data feed it — so
-  // by #230 the function's whole body was a renderQueryChips() call into the
-  // retired chip renderer. Its callers were dropped with it.)
+  // (The delegated #filterRows listener lived here — the last委譲 listener of the old
+  // facet-row column. Its container went with the shell cutover and the column itself
+  // with P3 #6, so every row it routed is either the filter bar's (adding filters) or
+  // gone. multiOnly survives as tab state only; see setMultiOnly below.)
 
   // --- Tag area: the タグ row opens ONE flyout listing every general tag
   // (種別なし). The 作品/キャラ kinded tags get their own rows; general tags stay a
@@ -741,38 +670,12 @@ export function endFilterEditSession(): void {
   // LeftSidebar's gear for the open call; Esc / backdrop close live in the component).
   // The old wireSettingsGear() listener on #settingsBtn duplicated that onClick.
 
-  // Hashtag browsing is now covered by the sidebar タグ section + the search box
-  // (typing "#tag" matches post text), so the dedicated hashtag tab was removed.
-  // Back-to-top: floats in the sidebar corner once the filter column is scrolled.
-  (function setupSbTop() {
-    const btn = document.getElementById('sbTop');
-    const scroller = document.querySelector('#controls-posts .sb-scroll');
-    if (!btn || !scroller) return;
-    // Threshold must stay BELOW the sidebar's max scroll, which is small now that
-    // sections were trimmed (~140px). 300 made the button unreachable (=消えてる).
-    scroller.addEventListener(
-      'scroll',
-      () => {
-        btn.style.display = scroller.scrollTop > 80 ? 'flex' : 'none';
-      },
-      { passive: true },
-    );
-    btn.addEventListener('click', () => scroller.scrollTo({ top: 0, behavior: 'smooth' }));
-  })();
+  // (The sidebar's own back-to-top button lived here. It watched the facet column's
+  // scroller, and both went with that column — the nav sidebar is short enough not to
+  // want one. The content area keeps its button below.)
 
-  // Back-to-top for the CONTENT area — watch the scroll container's scrollTop, not the
-  // window's (the page itself never scrolls).
-  (function setupContentTop() {
-    const btn = document.getElementById('contentTop');
-    const scroller = contentScrollEl();
-    if (!btn || !scroller) return;
-    const onScroll = () => {
-      btn.style.display = scroller.scrollTop > 300 ? 'flex' : 'none';
-    };
-    scroller.addEventListener('scroll', onScroll, { passive: true });
-    btn.addEventListener('click', () => scroller.scrollTo({ top: 0, behavior: 'smooth' }));
-    onScroll();
-  })();
+  // (The content area's back-to-top button was wired here. Its element went with the
+  // shell cutover, so the listener has bound to nothing since — P3 #6.)
 
   // --- Authors (作者 row → flyout; derived from post author fields, no fetching) ---
   // buildUsers (generation-cached poster roll-up) moved to users.ts (imported
@@ -1342,7 +1245,7 @@ export function endFilterEditSession(): void {
   // in the posterQB query tree (createQueryBuilder + posterPredOf), not separate Sets.
 
   // Poster grid/filter/inspector/folder cluster (posterWorkGroups, the named
-  // poster-folder store, renderPosterFilterRows, renderPosters, openPosterPosts/
+  // poster-folder store, prunePosterTagFilters, renderPosters, openPosterPosts/
   // jumpToPoster, the poster inspector, and the poster context menu) moved to
   // poster-grid-builder.ts during the viewer.ts decomposition. The size-slider
   // state moved to grid-density-builder.ts (above), the display axes to
@@ -1382,7 +1285,7 @@ export function endFilterEditSession(): void {
     setInspectedKey,
     onPosterRendered: () => tabsCtl.syncPosterTitleAndPersist(),
   });
-  const { pfStore, posterFolderById, renderPosterFilterRows, renderPosters, openPosterPosts, jumpToPoster, refreshPosterTagFields, showPosterDetail, showPosterMenu } = posterGrid;
+  const { pfStore, posterFolderById, prunePosterTagFilters, renderPosters, openPosterPosts, jumpToPoster, refreshPosterTagFields, showPosterDetail, showPosterMenu } = posterGrid;
   // --- Poster query builder: the SAME builder (createQueryBuilder), evaluated
   // against poster (user) objects instead of posts. Leaf types: platform / instance /
   // tag(作品/キャラ含む) / folder / date(範囲). Its chips are the shared filter bar
@@ -1412,9 +1315,8 @@ export function endFilterEditSession(): void {
     folderById: posterFolderById,
   });
 
-  // renderPosterFilterRows (the #posterFilterRows model's one orchestrator-side side
-  // effect: pruning tag selections whose backing value disappeared) moved to
-  // poster-grid-builder.ts along with the rest of the poster cluster —
+  // prunePosterTagFilters (dropping tag conditions whose backing value disappeared)
+  // moved to poster-grid-builder.ts along with the rest of the poster cluster —
   // destructured from posterGrid above.
 
   // qf-pop value-pick routing — a viewer.ts decomposition slice, now just
@@ -1513,7 +1415,7 @@ export function endFilterEditSession(): void {
             folders.openManager({
               store: pfStore,
               onChange: () => {
-                renderPosterFilterRows();
+                prunePosterTagFilters();
                 renderPosters();
               },
             }),
@@ -1692,9 +1594,7 @@ export function endFilterEditSession(): void {
     renderPosters();
   });
   // Poster query reset (bar右の「リセット」): empty the poster tree + the shared search box.
-  // Wired to the activebar component's #posterResetBtn via onPosterReset (React-owned button).
-  // The poster [data-qfrow] flyout rows were removed with the poster sidebar facet
-  // rows (P1); poster filters are added via the "+ フィルタ" bar now (P2③).
+  // The button that calls it is the filter bar's, which imports resetPosterFilters directly.
 
   // Collections are a sidebar folder list now (renderCollectionSidebar), not a
   // browse view. The old third-mode grid, its context menu, and dynamic collections
@@ -1868,7 +1768,7 @@ export function endFilterEditSession(): void {
   }
   runZipImport = runZipImportImpl;
 
-  // Backup status rail (#mirrorStatus) is fully owned by the MirrorStatus component now — it
+  // Backup status rail is fully owned by the MirrorStatus component now — it
   // imports backup.ts (getBackup + onBackupStart/Done) directly and derives the rail model
   // itself. orchestrator no longer holds any of that state (the old setupMirrorStatusRail +
   // shared push bridge are gone).

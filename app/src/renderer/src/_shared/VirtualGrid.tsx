@@ -264,10 +264,15 @@ export function VirtualGridHost({ model, cell, nav, anchor, marquee, onBackgroun
     // A fixed clip box the size of the scroller's viewport + the band inside it:
     // the band's origin is the press point, which scrolls away during a long drag,
     // so without the clip it would paint over the toolbar and the sidebar.
+    // contain:strict keeps a band that is repositioned every frame from invalidating
+    // layout outside its own box. The band's tone is --color-selected at the
+    // translucent-fill + hairline-border weight Explorer/Finder give a rubber band.
     const clip = document.createElement('div');
-    clip.className = 'grid-marquee-clip';
+    clip.dataset.slot = 'grid-marquee-clip';
+    clip.className = 'pointer-events-none fixed z-45 overflow-hidden [contain:strict]';
     const bandEl = document.createElement('div');
-    bandEl.className = 'grid-marquee';
+    bandEl.dataset.slot = 'grid-marquee';
+    bandEl.className = 'absolute top-0 left-0 border border-[color-mix(in_oklch,var(--color-selected)_70%,transparent)] bg-[color-mix(in_oklch,var(--color-selected)_16%,transparent)] [will-change:transform,width,height]';
     clip.appendChild(bandEl);
 
     let drag: {

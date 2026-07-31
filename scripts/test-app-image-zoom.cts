@@ -162,7 +162,7 @@ const evalJs = `(async () => {
 
   // J. 回帰: ダブルクリックのフィット切替（トグルボタンと同じ関数を共用させたので、
   //    ジェスチャ側が巻き添えで壊れていないことを見る）
-  const media = q('.itv-tc img.itv-media');
+  const media = q('[data-slot="viewer-image"]');
   if (media) media.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
   out.percentAfterDblclick = await settled('250%');
   if (media) media.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
@@ -171,7 +171,7 @@ const evalJs = `(async () => {
   // K. 回帰（#134）: ホイールを速く4ノッチ回すと 1.25^4 = 2.44… ぶん効く。
   //    累積ターゲットを共有し損ねて live scale から計算し直すと、tween 途中の値を
   //    基準にする分だけ回した量が飲まれてここが小さくなる。
-  const wrap = q('.itv-tw');
+  const wrap = q('[data-slot="viewer-zoom-wrapper"]');
   if (wrap) {
     const wr = wrap.getBoundingClientRect();
     for (let i = 0; i < 4; i++) wrap.dispatchEvent(new WheelEvent('wheel', { deltaY: -100, clientX: wr.left + wr.width / 2, clientY: wr.top + wr.height / 2, bubbles: true, cancelable: true }));

@@ -65,7 +65,7 @@ export interface PosterGridBuilderDeps {
 
 // Fallback-avatar tint (#107): a stable hue per poster so avatar-less cards stay
 // distinguishable at a glance, the way GitHub / Google fallback avatars do. Hue only —
-// .poster-mono owns saturation and lightness, so light and dark each keep their own tonal
+// the cell picks saturation and lightness, so light and dark each keep their own tonal
 // range from one number. FNV-1a over the poster key (the identity the card is keyed by,
 // unlike a display name it cannot change under us), so a poster's letter+color pairing is
 // the same on every render and every restart.
@@ -111,24 +111,21 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
   // What a poster-folder membership change has to touch besides the store — shared
   // with the undo path so a reverted membership updates the same surfaces.
   function refreshPosterFolderViews() {
-    renderPosterFilterRows(); // folder badge count changed
+    prunePosterTagFilters();
     if (treeLeaves(deps.posterQBGetTree()).some((c) => c.type === 'folder')) renderPosters(); // membership change may add/remove from the filtered grid
   }
 
-  // The poster-mode filter-row model (#posterFilterRows: row labels, per-row active-leaf
-  // badge counts, 作品/キャラ/タグ/サーバー progressive-disclosure visibility, which flyout
-  // row wears .qf-open) is self-derived by services/sidebar.ts's
-  // hologramPosterSidebarSource — no viewer-side build+push.
-  // Poster sidebar filter rows: prune tag selections that no longer have a backing value
-  // (poster removed/edited). The rows are React-owned; this is the ONE remaining side
-  // effect (the shadow prune) — badges/disclosure/openCat all self-derive from the store.
-  function renderPosterFilterRows() {
+  // Drop tag conditions from the poster query once no poster carries that tag any more
+  // (the poster was deleted, or the tag edited off it) — otherwise the chip stays on the
+  // bar filtering everything out. Named renderPosterFilterRows while the poster facet
+  // column existed and this was its re-render hook; the column is gone (P3 #6) and the
+  // prune is all that was ever left of it.
+  function prunePosterTagFilters() {
     const present = new Set(deps.posterFilterVocab());
     if (deps.posterQBRemoveCondsMatching((c) => c.type === 'tag' && !present.has(c.value))) deps.posterQBSyncShadow();
   }
 
-  // Poster query reset — the activebar component's #posterResetBtn calls this directly by
-  // importing the resetPosterFilters live binding from viewer.ts.
+  // Poster query reset — the filter bar's リセット imports this live binding directly.
   function resetPosterFilters() {
     deps.posterQBResetTree();
     deps.setSearchBoxValue('');
@@ -136,12 +133,10 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
   }
 
   function renderPosters(keepLimit?: boolean) {
-    renderPosterFilterRows();
+    prunePosterTagFilters();
     posterList = deps.filteredPosters();
-    // 投稿者モードはクエリバー（postCount の常設先）を隠すので、件数はポスターコントロール
-    // 側の #posterCount に出す（バー右端の件数と役割分担）。#posterCount + poster reset/empty
-    // frame は activebar 島が 'posterGroups'/'posterQueryTree'/'searchQuery' から自己派生
-    // する（下の hologramStore.set('posterGroups', …) を購読）。
+    // 件数とリセットはツールバーのフィルタバーが 'posterGroups'/'posterQueryTree'/
+    // 'searchQuery' から自己派生する（下の hologramStore.set('posterGroups', …) を購読）。
     // Display: nothing here decides how a cell is drawn. The shape rides the masonic
     // model (services/grid.ts derives it from the poster display keys) and each cell
     // lays itself out from it — no density class on any container (#630).
@@ -195,14 +190,9 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
   function openPosterPosts(u: HologramUserAgg) {
     if (!u) return;
     deps.postQBResetTree();
-    const set = (id: string, v: string) => {
-      const el = document.getElementById(id) as HTMLInputElement | null;
-      if (el) el.value = v;
-    };
+    // (Same as resetAllFilters: the date / engagement inputs this blanked belonged to
+    // the facet column, which is gone — P3 #6.)
     deps.setSearchBoxValue('');
-    set('sbDateFrom', '');
-    set('sbDateTo', '');
-    set('sbEngMin', '');
     deps.setBrowseMode('posts');
     // The drill-in lands as a fresh 'posts' entry on the tab history (#144) — going
     // back to the poster grid is nav-back now (the old posterReturn bounce is gone).
@@ -383,7 +373,7 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
     deletePosterFolder,
     togglePosterFolderMember,
     refreshPosterFolderViews,
-    renderPosterFilterRows,
+    prunePosterTagFilters,
     resetPosterFilters,
     renderPosters,
     openPosterPosts,

@@ -13,6 +13,7 @@ import { CheckIcon } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { beginFilterEditSession, endFilterEditSession, type FacetMode, type FilterCatValues, type FilterRow } from '../services/orchestrator.ts';
 import { t } from '../_shared/i18n.ts';
+import { kindDotClass } from '../_shared/kind-dot.ts';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
@@ -84,7 +85,7 @@ function buildGroups(items: FilterRow[]): Group[] {
 // The 種別 colour dot. Its only job is to name the colour on hover, so it is a Tooltip
 // around a plain span (no trigger button — the row underneath owns the click).
 function KindDot({ kind, title }: { kind: string; title: string }) {
-  const dot = <span className={'tk-dot tk-' + kind} />;
+  const dot = <span className={kindDotClass(kind)} />;
   if (!title) return dot;
   return (
     <Tooltip>

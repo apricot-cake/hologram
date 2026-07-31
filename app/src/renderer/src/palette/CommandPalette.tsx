@@ -78,11 +78,7 @@ function PaletteBody() {
             // IME 変換中の Enter は Base UI の ComboboxInput 側が弾く（変換中の
             // keydown は Chromium が which=229 で寄せてくるので、Enter の処理へ
             // 進む前に return する）。実機で確認済み。
-            // border-0 は必須: 旧スタイルシート（index.html の @layer legacy）に
-            // `input[type="text"]` の枠線＋:focus でアクセント色に変える規則があり、
-            // Base UI の Input は type="text" を出す＝何も宣言しないとその枠線が
-            // そのまま乗る（レイヤーの優劣ではなく「宣言が無い」ことが原因なので、
-            // 打ち消すには自分で宣言する）。枠は入れ物側の border-b が担う。
+            // 枠は入れ物側の border-b が担うので、入力そのものは border-0。
             className="h-8 w-full min-w-0 border-0 bg-transparent px-2 text-base outline-none placeholder:text-muted-foreground md:text-sm"
           />
         </div>

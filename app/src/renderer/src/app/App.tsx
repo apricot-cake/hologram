@@ -1,6 +1,5 @@
-import { useEffect, useLayoutEffect, useSyncExternalStore } from 'react';
+import { useEffect } from 'react';
 import { AppShell } from '../shell/AppShell.tsx';
-import { get as confirmGet, subscribe as confirmSubscribe } from '../services/confirm.ts';
 import { ConfirmHost } from '../confirm/Confirm.tsx';
 import { PaletteHost } from '../palette/CommandPalette.tsx';
 import { PromptHost } from '../prompt/Prompt.tsx';
@@ -18,8 +17,8 @@ import { handleShortcutZoomKey } from '../services/image-zoom.ts';
 import { handleShortcutClipboardKey } from '../services/clipboard-intake.ts';
 import { onPostsChanged } from '../services/posts.ts';
 import { subscribePosterShape as subscribePosterDisplay, subscribeShape as subscribeDisplay } from '../services/display.ts';
-import { isManagerOpen as folderManagerIsOpen, onChange as foldersOnChange, subscribeManager as subscribeFolderManager } from '../services/folders.ts';
-import { get as storeGet, subscribe as storeSubscribe } from '../services/store.ts';
+import { onChange as foldersOnChange } from '../services/folders.ts';
+import { subscribe as storeSubscribe } from '../services/store.ts';
 import {
   viewerReady,
   bootApp,
@@ -73,51 +72,17 @@ function AppBoot() {
   return null;
 }
 
-// Shell-level body classes that React owns (orchestrator no longer touches document.body for
-// these). browse-posters is driven by the hologramStore 'browseMode' key (orchestrator sets the
-// store; the class is a pure derivation). useLayoutEffect toggles it before paint = no
-// flash. (modal-open stays in
-// orchestrator — it observes overlay visibility, a cross-cutting shell concern, not drawing.)
-const subBrowseMode = (cb: () => void) => storeSubscribe('browseMode', cb);
-const getBrowseMode = () => storeGet('browseMode') as string;
-function ShellClasses() {
-  const mode = useSyncExternalStore(subBrowseMode, getBrowseMode);
-  useLayoutEffect(() => {
-    document.body.classList.toggle('browse-posters', mode === 'posters');
-    // No browse-trash twin: its only reader (clipboard-intake.ts's paste guard) asks
-    // the store directly now (P2⑬), so writing the class would leave a DOM contract
-    // nothing consumes. browse-posters stays only because legacy CSS still selects on
-    // it (index.html) — that goes with P3 (#6), and this whole component with it.
-  }, [mode]);
-  return null;
-}
+// (ShellClasses lived here: it mirrored the browse mode onto <body> as .browse-posters
+// for the legacy sheet to select on. Its twin .browse-trash had already gone once its
+// reader started asking the store instead (P2⑬); .browse-posters' last reader was the
+// legacy sheet itself, so the class went with it — P3 #6.)
 
-// Modal chrome: lock background scroll while any full-screen overlay is up. Observes each
-// overlay's visibility so no open/close site can be missed — self-contained (no orchestrator
-// state). The inspector is a side panel, not a modal, so it's excluded.
-//
-// This used to also dim the OS-drawn window-control strip in lockstep with the scrim, because
-// a web backdrop cannot cover an OS-painted overlay. The buttons are app-drawn now
-// (shell/WindowControls.tsx), so the scrim covers them on its own and that whole mechanism —
-// the recolor, the dedupe, the paint-timing deferral — is gone.
-function ModalChrome() {
-  // Scroll-lock (`.modal-open` = overflow:hidden) is the fallback for overlays that don't lock
-  // their own: the folder-management modal and the confirm AlertDialog. A shadcn Dialog locks
-  // scroll itself, which is why settings was never in this set — and why the quick-view peek
-  // left it when #62 moved the peek onto the Dialog.
-  //
-  // Both are plain subscriptions (#621): the folder modal used to be a static element whose
-  // `hidden` attribute this watched with a MutationObserver, which is exactly the DOM-sniffed
-  // open state #153 rules out. It is conditionally rendered and asked through folders.ts.
-  const confirmOpen = useSyncExternalStore(confirmSubscribe, () => !!confirmGet());
-  const folderManagerOpen = useSyncExternalStore(subscribeFolderManager, folderManagerIsOpen);
-  const scrollLock = confirmOpen || folderManagerOpen;
-  useEffect(() => {
-    document.documentElement.classList.toggle('modal-open', scrollLock);
-    document.body.classList.toggle('modal-open', scrollLock);
-  }, [scrollLock]);
-  return null;
-}
+// (ModalChrome lived here: while the folder modal or the confirm dialog was up it put a
+// .modal-open class on <html> and <body> to lock background scroll. Nothing was ever
+// unlocked by it — the page has not been scrollable since the shell became a fixed-height
+// column, and body's own overflow:hidden (globals.css) propagates to the viewport. It went
+// with the class it existed to write, P3 #6. Its earlier job, dimming the OS-drawn window
+// strip in lockstep with the scrim, had already gone when the buttons became app-drawn.)
 
 // Global keyboard/mouse shortcuts (tab-history nav, undo/redo, select-all, search
 // focus, content-size step). React now owns the DOM listener registration (mounted
@@ -261,11 +226,6 @@ export function App() {
     <TooltipProvider delay={0}>
       {/* Triggers the app's initial data load once, on mount. */}
       <AppBoot />
-      {/* Shell body classes React owns (orchestrator no longer sets them). */}
-      <ShellClasses />
-      {/* Modal chrome (body/html .modal-open + native titlebar tint) — observes the
-          overlay containers below; must precede them only for readability, not order. */}
-      <ModalChrome />
       {/* Global keyboard/mouse shortcuts — React owns the listener registration. */}
       <GlobalShortcuts />
       {/* Esc-priority inspector close + outside-click dismiss — capture phase. */}
@@ -285,12 +245,10 @@ export function App() {
       <ContextMenuHost />
       <KindMenuHost />
       <ConfirmHost />
-      {/* Command palette (#28) — Ctrl+K. A shadcn Dialog, so it locks its own scroll
-          and needs no ModalChrome entry, same as PromptHost. */}
+      {/* Command palette (#28) — Ctrl+K. */}
       <PaletteHost />
       {/* Shared naming dialog (prompt.ts bridge) — window.prompt is unavailable in
-          the Electron renderer, so naming flows go through this instead. A shadcn
-          Dialog, so it locks its own scroll and needs no ModalChrome entry. */}
+          the Electron renderer, so naming flows go through this instead. */}
       <PromptHost />
       {/* Bulk tagging for the selection (bulk-tag.ts bridge, P2⑦) — the one tagging
           flow that stages before it writes, so it gets a Dialog rather than the

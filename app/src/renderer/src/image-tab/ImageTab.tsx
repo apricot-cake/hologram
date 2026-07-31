@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef } from 'react';
-import type { PointerEvent as ReactPointerEvent } from 'react';
+import type { HTMLAttributes, PointerEvent as ReactPointerEvent } from 'react';
 import { ChevronLeft, ChevronRight, ImageOff, Info } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty';
@@ -194,7 +194,11 @@ function Zoomable({ src, alt }: { src: string; alt: string }) {
     // dragging past the image edge bounced back to center on release the same
     // way. Per-tick bounds clamping makes both motions dead straight.
     <TransformWrapper ref={twRef} minScale={MIN_SCALE} maxScale={MAX_SCALE} centerOnInit disablePadding doubleClick={{ disabled: true }} wheel={{ disabled: true }} onTransform={publish}>
-      <TransformComponent wrapperClass="itv-tw" contentClass="itv-tc" wrapperStyle={{ width: '100%', height: '100%' }} contentStyle={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      {/* The wrapper is where the wheel listener above lives, so it needs a name the
+          verify script can aim a wheel event at. The cast is the library's typing, not
+          ours: wrapperProps is declared as React.HTMLAttributes, which has no data-*
+          index signature — the object is spread onto a real <div>. */}
+      <TransformComponent wrapperProps={{ 'data-slot': 'viewer-zoom-wrapper' } as HTMLAttributes<HTMLDivElement>} wrapperStyle={{ width: '100%', height: '100%' }} contentStyle={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         {/* decoding="async" (#241): this <img> IS the surface, so there is no
             "other DOM content" that a sync decode would keep in step with — all
             it could do is hold the frame (and the nav buttons, and the counter)
@@ -206,7 +210,14 @@ function Zoomable({ src, alt }: { src: string; alt: string }) {
             is 0 until the intrinsic size arrives — the first publish would print
             nothing at all without a second one once the image is really there. A
             cached image can also be complete before this element ever transforms. */}
-        <img ref={imgRef} className="itv-media" src={src} alt={alt} decoding="async" draggable={false} onLoad={publish} onDoubleClick={onDouble} onPointerDown={onPointerDown} onPointerUp={onPointerUp} />
+        {/* pointer-events-auto! is not decoration: react-zoom-pan-pinch's own stylesheet
+            sets pointer-events:none on every <img> inside its content box (native
+            img-drag protection), which silently killed BOTH the double-click fit toggle
+            and the grab cursor for real input. That sheet is unlayered, so it outranks
+            any layered utility no matter how specific — the important modifier is what a
+            third-party rule written that way leaves available. Receiving the events is
+            safe here because the image is draggable={false} in the first place. */}
+        <img ref={imgRef} data-slot="viewer-image" className="pointer-events-auto! max-h-full max-w-full cursor-grab object-contain active:cursor-grabbing" src={src} alt={alt} decoding="async" draggable={false} onLoad={publish} onDoubleClick={onDouble} onPointerDown={onPointerDown} onPointerUp={onPointerUp} />
       </TransformComponent>
     </TransformWrapper>
   );
@@ -262,7 +273,7 @@ export function ImageTab({ model }: { model: ImageTabModel }) {
       {item.ugoira ? (
         <UgoiraPlayer key={item.src} file={item.ugoira.file} frames={item.ugoira.frames} poster={item.poster} alt={item.alt} labels={labels} />
       ) : item.video ? (
-        <video key={item.src} className="itv-media itv-video" src={item.src} controls playsInline preload="metadata" />
+        <video key={item.src} data-slot="viewer-video" className="m-auto max-h-full max-w-full object-contain" src={item.src} controls playsInline preload="metadata" />
       ) : (
         <Zoomable key={item.src} src={item.src} alt={item.alt || ''} />
       )}
