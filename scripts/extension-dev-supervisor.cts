@@ -24,8 +24,10 @@ function alive(pid) {
   try {
     process.kill(pid, 0);
     return true;
-  } catch {
-    return false;
+  } catch (error) {
+    // A process started by an S4U scheduled task lives in session 0. The same
+    // user can see it, but Windows denies the signal probe with EPERM.
+    return error instanceof Error && 'code' in error && error.code === 'EPERM';
   }
 }
 

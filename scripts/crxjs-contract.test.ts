@@ -5,6 +5,7 @@ import { describe, expect, test } from 'vitest';
 
 const require = createRequire(import.meta.url);
 const registrationScript = fs.readFileSync(path.join(import.meta.dirname, 'register-extension-dev-task.ps1'), 'utf8');
+const supervisorScript = fs.readFileSync(path.join(import.meta.dirname, 'extension-dev-supervisor.cts'), 'utf8');
 const patch = require('./patch-crxjs-runtime-reload.cts') as {
   verify(): void;
   expectedVersion: string;
@@ -30,5 +31,9 @@ describe('extension development logon task', () => {
     expect(registrationScript).toContain('-RunLevel Limited');
     expect(registrationScript).toContain('-Hidden');
     expect(registrationScript).not.toContain('-LogonType Interactive');
+  });
+
+  test('recognizes session-zero S4U processes as alive', () => {
+    expect(supervisorScript).toContain("error.code === 'EPERM'");
   });
 });
