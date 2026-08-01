@@ -47,6 +47,15 @@ export function importImages() {
 export function importClipboard(title: string) {
   return hologramIpc.importClipboard(title);
 }
+export function getWatchImport() {
+  return hologramIpc.getWatchImport();
+}
+export function pickWatchImportFolder() {
+  return hologramIpc.pickWatchImportFolder();
+}
+export function setWatchImport(folders: Array<{ path: string; enabled: boolean }>, markExisting?: string[]) {
+  return hologramIpc.setWatchImport(folders, markExisting);
+}
 export function clearAll() {
   return hologramIpc.clearAll();
 }

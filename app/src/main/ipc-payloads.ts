@@ -349,6 +349,16 @@ export interface MediaImportResult {
   canceled?: boolean;
 }
 
+/** #84: directories watched for non-destructive local-media intake. */
+export interface WatchImportFolder {
+  path: string;
+  enabled: boolean;
+}
+export interface WatchImportConfig {
+  folders: WatchImportFolder[];
+  status: { imported: number; at: string | null };
+}
+
 /**
  * import-clipboard (#85). `empty:true` = the clipboard held no image, which is a
  * normal outcome (the user pressed Ctrl+V with text on the clipboard) and is

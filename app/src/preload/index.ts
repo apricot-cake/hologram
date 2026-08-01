@@ -33,6 +33,8 @@ import type {
   LibraryStatus,
   ManualGroupsState,
   MediaImportResult,
+  WatchImportConfig,
+  WatchImportFolder,
   OkResult,
   OrphanRecoveryResult,
   PostsDelta,
@@ -140,6 +142,9 @@ const api = {
   // Ctrl+V in the app window (#85). `title` is built renderer-side because it is
   // a localized, user-visible label and main holds no message table.
   importClipboard: (title: string): Promise<ClipboardImportResult> => ipcRenderer.invoke('import-clipboard', title),
+  getWatchImport: (): Promise<WatchImportConfig> => ipcRenderer.invoke('get-watch-import'),
+  pickWatchImportFolder: (): Promise<{ ok: boolean; canceled?: boolean; error?: string; path?: string }> => ipcRenderer.invoke('pick-watch-import-folder'),
+  setWatchImport: (folders: WatchImportFolder[], markExisting?: string[]): Promise<WatchImportConfig> => ipcRenderer.invoke('set-watch-import', folders, markExisting),
   // A run started — no payload at all, so cb takes no arguments; the raw IPC event
   // is not forwarded (#383). Never hand a renderer callback straight to
   // ipcRenderer.on: that lets Electron's IpcRendererEvent (and its `sender`)

@@ -39,6 +39,8 @@ import * as ipcWindow from './ipc-window.ts';
 import * as ipcTrash from './ipc-trash.ts';
 import * as ipcBackup from './ipc-backup.ts';
 import * as ipcTransfer from './ipc-transfer.ts';
+import * as ipcWatchImport from './ipc-watch-import.ts';
+import { createWatchImportManager } from './lib-watch-import.ts';
 import type { IpcContext } from './ipc-context.ts';
 
 // Pin userData to the SAME directory the native host reads its config from, so
@@ -519,6 +521,7 @@ async function purgeOldTrash() {
 // here because it needs the record pipeline above (a mirror run must sync the DB
 // before it snapshots it or counts orphans against it).
 const { runBackup, armBackupSchedule, runStartupIntegrityCheck, runOrphanRecovery } = createBackupEngine({ ensurePostsSynced, scheduleSavedIndexWrite, send: sendToWin });
+const watchImport = createWatchImportManager({ readConfig, writeConfig, getSaveFolder, isLibraryMissing, ensurePostsSynced, send: sendToWin });
 
 // --- Window ---
 // Bounds persistence, the navigation lockdown and createWindow were extracted to
@@ -571,6 +574,12 @@ function registerExtractedIpc() {
     validateSaveFolder,
     relocateLibrary,
     watchInboxFolder,
+    watchImportFolders: () => watchImport.refresh(),
+    getWatchImportConfig: () => ({ folders: watchImport.folders(), status: watchImport.status() }),
+    setWatchImportFolders: async (folders, markExisting = []) => {
+      const result = await watchImport.setFolders(folders, markExisting);
+      return { folders: result.folders, status: result.status };
+    },
     getWin,
     isConfigCorrupt,
     resetDelta: () => {
@@ -583,6 +592,7 @@ function registerExtractedIpc() {
   ipcPosts.register(ctx);
   ipcConfig.register(ctx);
   ipcWindow.register(ctx);
+  ipcWatchImport.register(ctx);
   ipcTrash.register(ctx);
   ipcBackup.register(ctx);
   ipcTransfer.register(ctx);
@@ -689,6 +699,7 @@ if (!gotSingleInstanceLock) {
       });
     }
     watchInboxFolder();
+    void watchImport.refresh();
     // #34: a "replace" answered while the app was closed is only a marker on the
     // new record until now — this is where it becomes the replacement. Outside
     // the SMOKE guard below and ahead of purgeOldTrash: the capture it retires
