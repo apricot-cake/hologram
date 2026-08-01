@@ -66,7 +66,7 @@ import type { BackgroundToContentMessage, CheckSavedMessage, CheckSavedResponse,
 
 let overlayActive = false;
 
-export async function startOverlay(): Promise<void> {
+export async function startOverlay(): Promise<() => void> {
   // What the corner is doing right now. `flash` is the moment after a save the
   // user made here: the mark shows even when marks are set to "never", because
   // the button they just pressed has to answer them.
@@ -181,12 +181,12 @@ export async function startOverlay(): Promise<void> {
   const MAX_TRACKED = 600;
 
   const detected = getOverlaySite();
-  if (!detected) return;
+  if (!detected) return () => undefined;
   // The extractor's capture phase owns permalink extraction and its media
   // identity owns "which post is this picture from"; both come from the same
   // site module as the overlay shape above. Resolved once, not per post.
   const detectedCapture = getCaptureSite();
-  if (!detectedCapture) return;
+  if (!detectedCapture) return () => undefined;
   // Re-bound as already-narrowed consts: TS does not carry a null-narrowing
   // into the closures below (same constraint drag.ts's DropZone works around).
   const site: OverlaySite = detected;
@@ -194,7 +194,7 @@ export async function startOverlay(): Promise<void> {
   // May be null on a page media-identity has no rules for: marks still work
   // (they only need a permalink), the save button simply never appears.
   const media = getMediaIdentitySite();
-  if (overlayActive) return;
+  if (overlayActive) return () => undefined;
   overlayActive = true;
 
   // #311: capture.ts (a separate, on-demand content script sharing this same
@@ -1439,7 +1439,10 @@ export async function startOverlay(): Promise<void> {
   // so emptying the layer it may be drawing in would be taking away a live
   // script's banner. The failure banner this module may have just put there is
   // left alone for the same reason: it fades itself out on its own dwell.
-  onExtensionGone(() => {
+  let disposed = false;
+  const cleanup = () => {
+    if (disposed) return;
+    disposed = true;
     io.disconnect();
     mo.disconnect();
     document.removeEventListener('pointermove', onPointerMove, true);
@@ -1474,5 +1477,11 @@ export async function startOverlay(): Promise<void> {
     // nothing for it to hide, and leaving a closure over a dead world behind
     // would be leaving one more thing on the page than was found.
     delete window.__hologramPrepareOverlayForCapture;
-  });
+    overlayActive = false;
+  };
+  const stopWatchingContext = onExtensionGone(cleanup);
+  return () => {
+    stopWatchingContext();
+    cleanup();
+  };
 }

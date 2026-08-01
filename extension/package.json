@@ -2,21 +2,24 @@
   "name": "hologram-extension",
   "private": true,
   "version": "1.1.0",
-  "description": "Hologram Chrome extension (MV3), built by WXT",
+  "description": "Hologram browser extension (MV3), built by CRXJS and Vite",
+  "type": "module",
   "overrides": {
     "brace-expansion": "^5.0.8"
   },
   "scripts": {
-    "build": "npm run tokens && wxt build",
-    "build:ext": "npm run tokens && wxt build",
-    "zip": "wxt zip",
-    "typecheck": "wxt prepare && tsc --noEmit",
-    "postinstall": "wxt prepare",
+    "dev": "npm run tokens && vite --mode chrome",
+    "build": "npm run build:chrome",
+    "build:chrome": "npm run tokens && vite build --mode chrome",
+    "build:firefox": "npm run tokens && vite build --mode firefox",
+    "typecheck": "tsc --noEmit",
+    "postinstall": "node ../scripts/patch-crxjs-runtime-reload.cts",
     "tokens": "node ../scripts/gen-extension-tokens.cts"
   },
   "devDependencies": {
+    "@crxjs/vite-plugin": "2.7.1",
     "@types/chrome": "^0.2.2",
     "typescript": "^7.0.2",
-    "wxt": "^0.21.1"
+    "vite": "8.2.0"
   }
 }

@@ -27,7 +27,7 @@ before/after は同 Issue の 2026-07-23（旧経路）と 2026-07-28（DB経路
 - **照合の判定規則そのものの単体は `verify-record.test.ts`**（ネットワークもDBも使わない）＝何を FAIL と呼ぶかがここに固定される。とくに①レコードが指す保存ファイルは `image` だけでなく `media[]` の原寸・ポスター・アバターまで全部見ること（#377 以降、投稿の原寸の家は `media[]` なので `image` 
 だけを見ると1枚もディスクに無いレコードが PASS する）②**API に届かなかったことを届いたと読み違えないこと**（extractor はネットワークに出る前に URL から screenName を組むので、失敗した応答も screenName だけは持って返る＝それを「取れた」の根拠にすると、レコードの投稿者をそのレコード自身の url と突き合わせて PASS 
 と印字する）の2点は、実行して目で見た人だけが気付ける類なのでテストが正本。
-- `e2e-capture-test.cts` は WXT の本番出力を Playwright Chromium へ読み込む実サイトカナリア（ユーザーChrome・Alt+S 不要）。画面を出さない隔離実行はプラットフォーム名と `--headless` を渡す（例: `node scripts/e2e-capture-test.cts bluesky --headless`）
+- `e2e-capture-test.cts` は検証済み CRXJS Chrome release を Playwright Chromium へ読み込む実サイトカナリア（ユーザーChrome・Alt+S 不要）。画面を出さない隔離実行はプラットフォーム名と `--headless` を渡す（例: `node scripts/e2e-capture-test.cts bluesky --headless`）
 。X はログインなしでは投稿DOMを出さないため、検証時だけ閉じた Chrome のプロファイルを `--user-data-dir` で渡す。ブラウザE2Eの初回実行前にリポジトリ直下で `npx playwright install chromium` を実行する。
 - `npm run test:e2e-extension` は固定fixture・モックAPI・一時Native Messagingホスト・一時ライブラリで `content → background → native-host → ファイル着地` をネットワークなしに確認する。同じ土台の `npm run test:e2e-duplicate` は重複保存の警告（#34）＝
 同じ投稿を2度撮ると3択が出ること・「スキップ」で何も書かれないこと・「置換」の封筒が `replaces` に旧 captureId を載せることを見る（本物のブリッジが答えるので、保存済み判定がジャーナル越しに効いていることまで含む）。
@@ -52,7 +52,7 @@ falsy判定に転ぶと正確な0を画面の概数で潰す。逆に**取得が
 が変わっても読めること、省略表記（`1.2万`/`1.2K`）が概数へ落ちること、**セレクタが全滅しても投げず何も埋めないこと**。
 - ⚠️「X側がDOMを変えた」はここでは捕まらない＝実サイトe2eの担当。サイト別モジュールを束ねる**登録簿そのものの不変条件**（platform の一意性・DOM 相と API 相が同じ platform を名乗ること・インスタンス型サイトが並びの後ろに来ること・manifest の match/host_permissions が登録簿から組み上がること）は 
 `extractor-registry.test.ts`（#212）。
-- TL上のオーバーレイ（#54/#94/#309/#334）は `overlay.test.ts`（WXTの生成した resident bundle をjsdomで実行）と `bridge-query.test.ts` に分かれる。前者は照会のバッチ化・マークの3値設定・ホバー保存ボタンの表示・`imageDragged` 経路の再利用・失敗の表示と復帰・投稿DOM非変更を確認する。
+- TL上のオーバーレイ（#54/#94/#309/#334）は `overlay.test.ts`（CRXJSの生成した Chrome release の resident bundle をjsdomで実行）と `bridge-query.test.ts` に分かれる。前者は照会のバッチ化・マークの3値設定・ホバー保存ボタンの表示・`imageDragged` 経路の再利用・失敗の表示と復帰・投稿DOM非変更を確認する。
 - **上部バナーの緊急度2段（#367）もここ**＝失敗は割り込む `role="alert"`、但し書き（保存はできたが記録に欠けがある）は割り込まない `role="status"` で、押せるものを載せない（自動で消える面に操作を持たせない）こと、そして**但し書きが空のまま DOM へ入り、文はその後で入ること**を見る。
 - ⚠️最後の1つが本体＝`status` のライブリージョンは登録された後の変化しか読まれないので、文を入れたまま挿すと読み上げには一生届かない（title に書いてあった頃と同じ＝#367 が直した状態へ黙って戻る）。見た目は同じなので、この検査以外に気付く手段が無い。
 - 保存済み判定は投稿単位でなく**画像単位**（#334）で、その3層＝画像 URL の同一性規則が `media-identity.test.ts`（extractor の `mediaKey`／`mediaKeyOf`＝サムネ/原寸/`name=orig`/`@jpeg` の表記ゆれを畳む唯一の規則）、DB からスナップショットを組む側が 
@@ -69,7 +69,7 @@ null のまま・`trashed` を持たない古いスナップショットでも�
 - **サンプルは `expect: "tombstone"` で「投稿は在るのに中身が配信されない応答が正解」と宣言できる**（#588）＝これが無いと、X の tombstone は「サンプルが消えた」と同じ箱に入って恒久的に不通扱いになり、`tombstone.text` の文言（#505 の理由の出し分けが依存している）を一度も記録できない。
 宣言したサンプルに普通の投稿が返ってきたら警報＝鍵が外れた・年齢制限が消えた側の検知で、このときスナップショットは触らない（別物の本体で基準を上書きしないため）。応答は `fetchPostMetadata` が #292 で原本ごと返すようになったのでそれを読む＝拡張が実際に叩く経路そのものを観測する。鳴った後に実物を見るのは `--dry-run` ではなく 
 `--payloads`（保存済みの原本と基準を突き合わせる・DBは読み取り専用）。判定部の単体は `schema-canary.test.ts`。
-- X ブックマークの一括取込（#362・追いかけ型）は `bulk-capture.test.ts`（WXTが生成した capture bundle をjsdomで実行、要 `extension` で `npm run build:ext` 済み）で、機械が自らスクロールしないこと・保存済みのスキップ・見送り（撮り逃し）の検知と再開・進捗/中断バナーの文言を確認する。
+- X ブックマークの一括取込（#362・追いかけ型）は `bulk-capture.test.ts`（CRXJSが生成した Chrome release の capture IIFE をjsdomで実行）で、機械が自らスクロールしないこと・保存済みのスキップ・見送り（撮り逃し）の検知と再開・進捗/中断バナーの文言を確認する。
 - **投稿を1つも取得できなかった保存が「保存済み」にならないこと**（#492）は両端で押さえる＝書く側が `save-post-empty.test.ts`（`handleSavePost` が殻レコードを断り、エンベロープもバッジのジャーナルも残さない）、答える側が `saved-index.test.ts`（中身を持たない投稿はスナップショットに載らない）。
 判定規則そのもの（`recordHoldsContent`）の網羅は `post-record.test.ts` で、この3本がずれると殻レコードにバッジが点いたまま残る。
 - **拡張⇄ホストのメッセージ契約は `host-protocol.test.ts`**（#400）＝拡張とホストは別の TS プロジェクトなので、型検査は「同じ宣言を import しているか」しか見られない。ここは `startBackground()` を実際に動かして**線に載ったメッセージそのもの**を共有 
@@ -77,9 +77,7 @@ parse（`native-host/protocol.mts`）に通す＝フィールドを片側だけ�
 - **プロトコル版のハンドシェイク**（#205）も同じファイルで、①比較が整数比較だけであること ②版を名乗らない返信が `host-old` になること ③**ずれていても保存が完走し、結果に更新案内だけが乗ること**を見る。
 - ⚠️③が本体＝「検知して止める」に転ぶと投稿を落とす。刻印が**実際に線へ出ている**ことは `bridge.test.ts` が受け持つ（ホストのプロセスを起こして stdout のフレームを読む＝刻印はハンドラでなく返信の出口にあるので、単体では見えない）。画面まで届くかは `capture-overlay.test.ts` と 
 `drag-zone.test.ts`（保存の出口が3本あるので、1本でしか案内しないと普段その経路を使わない人には届かない）。
-- **新しいローカルビルドを拡張が自分で載せる仕組み**（#650）も同じ座席に乗るので同じ3本＋1本＝`host-protocol.test.ts`（印は言うことがある時だけ乗り、成功にも失敗にも同じ値が乗る／空文字・非文字列は「無い」と同じ）、`bridge.test.ts`（**印のファイルが無ければ返信は #650 以前と1バイト違わない**＝
-拡張をビルドしたことのない全ユーザーがその状態。壊れた印も「無い」と同じ）、そして**リロードしてよい瞬間の判断が `dev-reload.test.ts`**＝①同じトークンで二度リロードしない（無限ループの唯一の止め弁）②保存中・キャプチャUI が開いている間・一括取込の走行中は待つ ③**待ちは必ず切れる**（作業の証拠が来なくなれば60秒で失効・
-保存の枠は各レグの期限で解放される）。時刻を注入して境界の上下を決め打ちで見る。**開いているSNSタブを列挙・ping・再読み込みする経路は持たない**。実ブラウザ検証でページ更新が必要なら `verify-extension` の手順で、エージェントが作った検証タブだけを更新する。
+- **CRXJS の reload 契約は `crxjs-contract.test.ts`**（#714）＝pinned 2.7.1 の worker `chrome.runtime.reload()` と content HMR forwarding は残し、host page の `location.reload()` だけを2経路とも抑止する。postinstall patch の seam が上流更新で変わった場合も黙って外れず install/build が失敗する。**開いているSNSタブを列挙・ping・再読み込みする経路は持たない**。実ブラウザ検証でページ更新が必要なら、エージェント所有の検証タブだけを外から更新する。
 - ⚠️**「ビーコンが届いたら実際に入れ替わるか」はここでは見えない**＝`chrome.runtime.reload()` は使い捨て Chromium でも `--load-extension` 経由だと拡張を**無効化**するので（#650 実測・#657）、実物は CDP `Extensions.loadUnpacked` で読み込んだ拡張でしか測れない。
 
 ### スモーク／退行・セキュリティ・正しさ
@@ -126,8 +124,8 @@ harness が `<img>` 原寸／サムネ（`?w=`）／SVG を絵として／CSS ba
 - **拡張のデザイントークンは `extension-tokens.test.ts`**（#270）＝アプリの `globals.css` から生成した `extension/utils/tokens.generated.*` が最新か・拡張のコードが実在するトークンだけを参照しているか・色のベタ書きが復活していないか・
 **両テーマ × 参照4下地（純黒 / X dim / pixiv dark / 白）でコントラストが足りているか**を見る。4下地を固定するのは、拡張の面がアプリの選んだ背景ではなく任意のページの上に乗るため＝アプリ内なら成立する「サーフェス色に近い細い境界線」がそのままでは成立しない。アプリ自身のトークン側のガードは `token-parity.test.ts`／
 `contrast-parity.test.ts` で、こちらとは別物。
-- **生成された manifest とそれを前提に書いたコードの突合は `ext-consistency.test.ts`**（#130）＝WXT 移行（#198）と extractor 登録簿（#212）で manifest は生成物になったので「手書きの対応表がずれる」型の事故は構造的に消えたが、**生成物とコードの間の約束**は型でも lint 
-でも捕まらず実機でしか分からない。ここが見るのは①生成された match / host_permissions が登録簿の宣言そのままか ②manifest が名指しするファイルと、コードが文字列で名指しして注入するファイル（`files: ['capture.js']`＝リネームすると Alt+S だけが静かに死ぬ）が出力に実在するか ③`commands` 
+- **生成された manifest とそれを前提に書いたコードの突合は `ext-consistency.test.ts`**（#130）＝CRXJS 移行（#714）と extractor 登録簿（#212）で manifest は生成物になったので「手書きの対応表がずれる」型の事故は構造的に消えたが、**生成物とコードの間の約束**は型でも lint
+でも捕まらず実機でしか分からない。ここが見るのは①生成された match / host_permissions が登録簿の宣言そのままか ②manifest の全 resource と CRXJS `?script` が生成する capture IIFE が出力に実在するか ③`commands`
 と待ち受けのコマンド名が一致するか ④`key` から決まる拡張IDを、それを許可する側（e2e ハーネスが組む Native Messaging の `allowed_origins`）も同じ値で持っているか ⑤`__MSG_*` と `getMessage` のキーが実在する文言か（**使う側との突合はここだけ**＝`i18n-parity.test.ts` 
 は日英テーブル同士しか見ない）。⑤は逆向き＝**どこからも呼ばれないキーが残っていること**も落とす。
 - **外から来たレコードの「形」を信じてよい境界は `hostile-record-shape.test.ts`**（#324）＝レンダラは `tags` を配列・`title` を文字列として読むので、形の違うレコードが1件でも届くと描画が例外になり、React のルートが1本な以上ツリー全体（グリッド・サイドバー・インスペクタ・設定・ゴミ箱）が同時に消える。
@@ -157,8 +155,8 @@ harness が `<img>` 原寸／サムネ（`?w=`）／SVG を絵として／CSS ba
 実測すると立て続けの書き込み199組のうち112組が同一 mtime になる。そこで「同じバイト数の外部書き換えを立て続けに30回」を1本置いてある＝mtime とサイズだけの突き合わせに退化させると必ず赤くなる（実際に確かめてある）。**⚠️そのぶん、テスト側が「同じバイト数・その場書き換え（rename でない）」をすると自分がこの穴に落ちる**（#625）＝指紋 
 `(size, mtimeNs, ino)` が3つとも一致してキャッシュが変更を見落とすので、テストがマシンの速さ次第で落ちる。実測で 200 回中 156 回が同一指紋になった。**外の書き換えを「必ず気づかれる」前提で書くなら rename（新しい ino）かサイズ違いのどちらかを明示的に固定する**＝どちらでもない書き方は、その場でテストしたい性質ではなく NTFS の時計を測っていることになる。
 - **一括実行**: `npm test`＝Vitest（`vitest.config.ts`）で Electron 不要の純ユニットを回す。**登録は glob**＝`scripts/**/*.test.ts` に置けば自動で拾われる（一覧を手で足す場所は無い）。**拡張のビルドは `npm test` 自身が面倒を見る**（#130・
-`scripts/vitest.global-setup.ts`）＝バンドルを読むスイート（`overlay` / `drag-zone` / `capture-*` / `bulk-capture` / `ext-consistency`）が古い `extension/.output` を読まないよう、ソースのほうが新しい（または出力が無い）ときだけ走り出す前に 
-`build:ext` を1回回す＝**手で `npm run build:ext` してから `npm test` する必要はもう無い**。`wxt dev` が動いている間は出力がソースより新しいので何も起きない＝日常の Chrome が読んでいる dev ビルドを潰さない。**除外の理由は設定にコメントで書く**＝ネットワークが要る取り込み 
+`scripts/vitest.global-setup.ts`）＝バンドルを読むスイート（`overlay` / `drag-zone` / `capture-*` / `bulk-capture` / `ext-consistency`）が古い `extension/.output` を読まないよう、ソースのほうが新しい（または出力が無い）ときだけ走り出す前に
+`build:ext` を1回回す＝**手で `npm run build:ext` してから `npm test` する必要はもう無い**。テストは日常 Chrome の dev 出力でなく `chrome-mv3-release` を読むため、常駐 server を潰さない。**除外の理由は設定にコメントで書く**＝ネットワークが要る取り込み
 CLI（`test-metadata.cts`／`test-select-posts.cts`／`test-watch-verify.cts`）と Electron が要るアプリハーネス（`test-app-*.cts`）は `.cts` のままで、この glob に入らない。
   - 型検査は `npm run typecheck`（`scripts/typecheck.cts`）＝app renderer（`tsconfig.web.json`）・app main+preload（`tsconfig.node.json`）・native-host・extension・scripts・e2e・
 **Vitest スイート**（`scripts/tsconfig.test.json`）の7プロジェクトの `tsc --noEmit`。テストではないので Vitest 管轄外。3つまとめて回すのは `npm run check`（lint→typecheck→test）＝マージ前のゲート。

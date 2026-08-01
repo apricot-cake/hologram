@@ -18,20 +18,16 @@ import path from 'node:path';
 //
 // Only run the build when "the output is missing" or "the source is newer". Measured at
 // 0.7s, so running it every time would be fine too, but the reason for the condition isn't
-// speed — it's **not stepping on `wxt dev`'s output**: day-to-day Chrome reads
-// .output/chrome-mv3 in the main tree, shared between dev and production (docs/build.md).
-// While the dev server is alive, its output stays newer than the source, so this does
-// nothing in that case. If you edit after stopping the dev server, a production build
-// overwrites it — which is also the "state it should be restored to" per docs/build.md.
+// speed — it keeps the test-only release output separate from the daily dev path.
 const ROOT = path.join(import.meta.dirname, '..');
 const EXT = path.join(ROOT, 'extension');
-const OUT = path.join(EXT, '.output', 'chrome-mv3');
+const OUT = path.join(EXT, '.output', 'chrome-mv3-release');
 
 // Files the suites actually read. If even one is missing, a build is needed.
-const REQUIRED = ['manifest.json', 'capture.js', path.join('content-scripts', 'resident.js')];
+const REQUIRED = ['manifest.json', path.join('entrypoints', 'capture.js'), path.join('entrypoints', 'resident.content.js')];
 
-// Build output, dependencies, and WXT-generated artifacts are not source.
-const NOT_SOURCE = new Set(['node_modules', '.output', '.wxt']);
+// Build output and dependencies are not source.
+const NOT_SOURCE = new Set(['node_modules', '.output']);
 
 function newestSourceMtime(dir: string): number {
   let newest = 0;
@@ -64,5 +60,5 @@ export function setup(): void {
   // On Windows, spawning npm.cmd without a shell throws EINVAL (skill windows-scripting).
   execFileSync('npm run build:ext', { cwd: ROOT, shell: true, stdio: 'inherit' });
   const missing = REQUIRED.filter((name) => !fs.existsSync(path.join(OUT, name)));
-  if (missing.length) throw new Error(`build:ext は成功したのに出力が揃っていない: ${missing.join(', ')}（WXT の出力ファイル名が変わった？）`);
+  if (missing.length) throw new Error(`build:ext は成功したのに CRXJS 出力が揃っていない: ${missing.join(', ')}`);
 }

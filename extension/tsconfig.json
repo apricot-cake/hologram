@@ -1,12 +1,18 @@
 {
-  "extends": "./.wxt/tsconfig.json",
   "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "allowImportingTsExtensions": true,
+    "resolveJsonModule": true,
+    "noEmit": true,
     "strict": true,
     "noImplicitAny": false,
     "useUnknownInCatchVariables": false,
     "forceConsistentCasingInFileNames": true,
     "skipLibCheck": true,
-    "types": ["chrome"]
+    "types": ["chrome", "vite/client"]
   },
-  "include": [".wxt/wxt.d.ts", "entrypoints/**/*.ts", "pages/**/*.ts", "utils/**/*.ts", "types/globals.d.ts", "wxt.config.ts"]
+  "include": ["entrypoints/**/*.ts", "pages/**/*.ts", "utils/**/*.ts", "types/globals.d.ts", "vite-env.d.ts", "manifest.config.ts", "vite.config.ts"]
 }

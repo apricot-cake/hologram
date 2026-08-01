@@ -76,10 +76,14 @@ export function extensionAlive(): boolean {
 // Run `handler` when this context is orphaned — immediately if that already
 // happened, since a caller registering late is exactly the caller that has just
 // been told to give up.
-export function onExtensionGone(handler: GoneHandler): void {
+export function onExtensionGone(handler: GoneHandler): () => void {
   if (announced) {
     run(handler);
-    return;
+    return () => undefined;
   }
   handlers.push(handler);
+  return () => {
+    const index = handlers.indexOf(handler);
+    if (index >= 0) handlers.splice(index, 1);
+  };
 }

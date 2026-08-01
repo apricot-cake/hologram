@@ -67,9 +67,8 @@
   //       Fixing it means either ESM exports in those .cts files (impossible — they run
   //       un-built under Node's type stripping, which only erases) or a second project
   //       on nodenext for the suites that import them.
-  //   (b) imports extension/ sources that need wxt's generated globals (10 suites) —
-  //       `browser`, the i18n table, the entrypoint declarations. extension/tsconfig.json
-  //       gets those from `wxt prepare`; this project has no such step.
+  //   (b) imports extension/ sources whose Chrome/Vite ambient types are not part
+  //       of this Node-oriented test project (10 suites).
   //   (c) imports app/src/main modules and so needs the REAL electron types (4 suites).
   //       The `electron` alias above points at the renderer's shim on purpose (it keeps
   //       Node globals from shadowing the DOM lib), which is exactly wrong for the

@@ -8,7 +8,7 @@
 // the browser from a resolved colour string.
 //
 // Exported under distinct names and re-exported as `motion` / `actionBadge` from
-// tokens.ts: WXT auto-imports every module under utils/, and two of them exporting
+// tokens.ts: CRXJS/Vite bundles only imported modules, and two of them exporting
 // the same symbol makes it warn on every build about which one it dropped.
 export const generatedMotion = {
   durationBase: 180, // --hologram-duration-base

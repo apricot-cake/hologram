@@ -11,7 +11,7 @@ const path = require('node:path');
 const { chromium } = require('playwright');
 
 const ROOT = path.join(__dirname, '..');
-const SOURCE_EXTENSION = path.join(ROOT, 'extension', '.output', 'chrome-mv3');
+const SOURCE_EXTENSION = path.join(ROOT, 'extension', '.output', 'chrome-mv3-release');
 const PRODUCTION_NATIVE_HOST = 'com.hologram.host';
 
 interface StageExtensionOptions {
@@ -79,7 +79,7 @@ interface LaunchExtensionOptions {
   args?: string[];
   // Which binary to drive. Tests keep the default bundled Chromium so a run is
   // reproducible. Pass 'chrome' when the point is a profile a HUMAN signed into
-  // (the dev browser's, which WXT opens in real Chrome): a profile directory
+  // (a signed-in real Chrome profile): a profile directory
   // belongs to one Chromium build, so borrowing it from the other one risks
   // both the session and the profile itself.
   channel?: string;

@@ -40,9 +40,9 @@
 //   loader prefers the bundled prebuild regardless of whether build/Release/
 //   exists.
 //
-//   The flag is blunt: it disables EVERY package's install scripts. Electron and
-//   WXT are collateral damage (Electron's downloads the ~225MB runtime, WXT's
-//   generates .wxt/tsconfig.json), so this script puts those two back by hand.
+//   The flag is blunt: it disables EVERY root package install script. Electron's
+//   runtime is therefore restored explicitly below; the extension is installed
+//   separately and its CRXJS patch runs through its own postinstall.
 //
 // (2) --legacy-peer-deps — electron-vite's peer range vs vite 8
 //   electron-vite@5 declares `peer vite: ^5 || ^6 || ^7` while app/ builds on
@@ -170,14 +170,10 @@ function main() {
   run(['npm install', ...flags].join(' '), repoRoot);
 
   // extension/ is a separate npm project with its own lockfile (deliberately —
-  // it is a standalone WXT build), so a root install does not cover it. Fresh
+  // it is a standalone CRXJS/Vite build), so a root install does not cover it. Fresh
   // worktrees need this or the extension build and its type check both fail.
-  // Its own postinstall runs `wxt prepare`, which writes
-  // extension/.wxt/tsconfig.json; extension/tsconfig.json extends that file, so
-  // without it BOTH the extension type check and every Vitest suite that imports
-  // extension code fail — the latter with "Tsconfig not found", because Vite reads
-  // the nearest tsconfig when transforming a file. Its own tree has no peer
-  // conflict and no scripts to skip, so it takes no flags.
+  // Its own postinstall applies the pinned CRXJS 2.7.1 page-reload patch. Its own
+  // tree has no peer conflict and takes no install flags.
   const extDir = path.join(repoRoot, 'extension');
   run('npm install', extDir);
 

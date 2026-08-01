@@ -158,7 +158,7 @@ function getOverlaySite(): OverlaySite | null {
 
 // === Manifest ===
 
-// Read by the resident content-script entrypoint and by wxt.config.ts, so that
+// Read by the resident content-script entrypoint and by manifest.config.ts, so that
 // a new site's hosts arrive with its module rather than in a second edit.
 const RESIDENT_MATCHES: string[] = EXTRACTORS.flatMap((e) => [...(e.residentMatches ?? [])]);
 const API_HOST_PERMISSIONS: string[] = EXTRACTORS.flatMap((e) => [...(e.apiHostPermissions ?? [])]);

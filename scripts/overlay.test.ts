@@ -313,8 +313,8 @@ beforeAll(async () => {
     },
   } as any;
 
-  // The resident content script bundle is the exact same WXT output that Chrome reads
-  window.eval(fs.readFileSync(path.join(import.meta.dirname, '..', 'extension', '.output', 'chrome-mv3', 'content-scripts', 'resident.js'), 'utf8'));
+  // The resident content script bundle is the exact same CRXJS release output that Chrome reads
+  window.eval(fs.readFileSync(path.join(import.meta.dirname, '..', 'extension', '.output', 'chrome-mv3-release', 'entrypoints', 'resident.content.js'), 'utf8'));
 }, 30000);
 
 test('初回走査で全ての投稿が観測される', () => {

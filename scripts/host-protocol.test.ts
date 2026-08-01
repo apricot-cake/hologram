@@ -16,7 +16,7 @@
 
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { generateCaptureId, startBackground } from '../extension/utils/background';
-import { CAPTURE_ID_PATTERN, PROTOCOL_VERSION, hostExtBuild, hostProtocolVersion, isCaptureId, parseHostFrame, parseHostRequest, protocolSkewOf, readHostResponse, responseId, stampProtocol } from '../native-host/protocol.mts';
+import { CAPTURE_ID_PATTERN, PROTOCOL_VERSION, hostProtocolVersion, isCaptureId, parseHostFrame, parseHostRequest, protocolSkewOf, readHostResponse, responseId, stampProtocol } from '../native-host/protocol.mts';
 
 const UNPARSEABLE_POST_URL = 'https://misskey.example/not-a-known-post-shape';
 const SENDER = { tab: { id: 7, windowId: 1, url: 'https://misskey.example/notes/1' } };
@@ -239,7 +239,7 @@ describe('captureId は契約が持つ＝保存フォルダから出られない
 describe('readHostResponse / responseId — 返信の読み方も1か所', () => {
   test('ok:true は ack、それ以外は文言つきの失敗', () => {
     expect(readHostResponse({ ok: true, captureId: '1717500000000-ab', file: 'a.jpg', saveFolder: 'D:/x', media: [], mediaCount: 0 })).toMatchObject({ ok: true, ack: { file: 'a.jpg' } });
-    expect(readHostResponse({ ok: false, error: 'Post unavailable: …', code: 'save-failed' })).toEqual({ ok: false, error: 'Post unavailable: …', code: 'save-failed', protocolVersion: null, extBuild: null });
+    expect(readHostResponse({ ok: false, error: 'Post unavailable: …', code: 'save-failed' })).toEqual({ ok: false, error: 'Post unavailable: …', code: 'save-failed', protocolVersion: null });
   });
 
   // The worst case is the save having actually succeeded while the reader claims it
@@ -250,8 +250,8 @@ describe('readHostResponse / responseId — 返信の読み方も1か所', () =>
   });
 
   test('返信になっていないものは既定の文言で失敗にする', () => {
-    expect(readHostResponse(undefined)).toEqual({ ok: false, error: 'Native host returned an error', code: null, protocolVersion: null, extBuild: null });
-    expect(readHostResponse({ ok: false })).toEqual({ ok: false, error: 'Native host returned an error', code: null, protocolVersion: null, extBuild: null });
+    expect(readHostResponse(undefined)).toEqual({ ok: false, error: 'Native host returned an error', code: null, protocolVersion: null });
+    expect(readHostResponse({ ok: false })).toEqual({ ok: false, error: 'Native host returned an error', code: null, protocolVersion: null });
   });
 
   test('返信の id は、どの問い合わせの答えかを言う唯一の手段', () => {
@@ -301,28 +301,6 @@ describe('プロトコル版のハンドシェイク（#205）', () => {
     expect(res.ok).toBe(true); // ⚠️don't stop = don't discard data (same policy as the retry queue #203)
     expect(res.captureId).toBe('1717500000000-abcd'); // the save result arrives untouched too
     expect(res.hostSkew).toBe('host-old');
-  });
-
-  // #650: the local-build marker rides in the same seat. Unlike the version, **its
-  // contents are opaque** — the only comparison is match/mismatch. It's only attached
-  // on dev machines — always absent in distributed builds.
-  test('ローカルビルドの印は、言うことがある時だけ乗る（既定の返信は #650 以前と同一）', () => {
-    expect(stampProtocol({ ok: true, pong: true })).toEqual({ ok: true, pong: true, protocolVersion: PROTOCOL_VERSION });
-    expect(stampProtocol({ ok: true, pong: true }, null)).toEqual({ ok: true, pong: true, protocolVersion: PROTOCOL_VERSION });
-    expect(stampProtocol({ ok: true, pong: true }, 'b-1')).toEqual({ ok: true, pong: true, protocolVersion: PROTOCOL_VERSION, extBuild: 'b-1' });
-    // also rides on failure replies — the moment right after a build was just flashed and
-    // the host returns a failure is exactly when you want the new build attached.
-    expect(stampProtocol({ ok: false, error: 'boom', code: 'save-failed' }, 'b-1')).toMatchObject({ extBuild: 'b-1' });
-  });
-
-  test('印を名乗らない返信・空文字は「無い」と同じ＝比較対象を作らない', () => {
-    expect(hostExtBuild({ ok: true })).toBeNull();
-    expect(hostExtBuild({ ok: true, extBuild: '' })).toBeNull();
-    expect(hostExtBuild({ ok: true, extBuild: 7 })).toBeNull();
-    expect(hostExtBuild({ ok: true, extBuild: 'b-1' })).toBe('b-1');
-    // readable through the same path from either a success or failure reply (present on both arms of ReadResponse).
-    expect(readHostResponse({ ok: true, extBuild: 'b-1' }).extBuild).toBe('b-1');
-    expect(readHostResponse({ ok: false, error: 'boom', extBuild: 'b-1' }).extBuild).toBe('b-1');
   });
 
   test('版が合っていれば案内は出ない', async () => {

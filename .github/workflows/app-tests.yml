@@ -51,7 +51,7 @@ jobs:
             extension/package-lock.json
       # Same entry point as ci.yml — see scripts/setup.cts for why a plain
       # `npm ci` does not produce a working tree. It also builds the extension,
-      # which every browser test below loads from extension/.output/chrome-mv3.
+      # which every browser test below stages from the verified Chrome release output.
       - name: Install dependencies
         run: npm run setup
       # The harnesses spawn `electron .` in app/, whose main field points at

@@ -17,11 +17,11 @@ import { createI18n } from './i18n.ts';
 import { userOnly } from './user-gesture.ts';
 import type { ImageDraggedMessage, SaveResponse } from './messages.ts';
 
-export async function startDrag(): Promise<void> {
+export async function startDrag(): Promise<() => void> {
   type PendingDrag = ImageDraggedMessage;
 
   const siteConfig = getMediaIdentitySite();
-  if (!siteConfig) return;
+  if (!siteConfig) return () => undefined;
 
   let pending: PendingDrag | null = null;
   let zone: StatusSurface | null = null;
@@ -123,12 +123,16 @@ export async function startDrag(): Promise<void> {
   // in the zone's own error state, and that surface fades itself out on the
   // usual dwell. With no drop in flight there is nothing to read and the zone
   // simply goes.
-  onExtensionGone(() => {
+  let disposed = false;
+  const cleanup = () => {
+    if (disposed) return;
+    disposed = true;
     document.removeEventListener('dragstart', onDragStart, true);
     document.removeEventListener('dragend', onDragEnd, true);
     pending = null;
     if (!savingViaDrop) hideOverlay();
-  });
+  };
+  const stopWatchingContext = onExtensionGone(cleanup);
 
   // The reload notice on the surface the user is already looking at (#594), and
   // the end of this drop. No retry offered: pressing again in this tab reaches
@@ -259,4 +263,9 @@ export async function startDrag(): Promise<void> {
       attention ? 2600 : grouped || replaced ? 2200 : 1400,
     );
   }
+
+  return () => {
+    stopWatchingContext();
+    cleanup();
+  };
 }
