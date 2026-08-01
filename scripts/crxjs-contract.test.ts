@@ -50,6 +50,8 @@ describe('extension development logon task', () => {
     expect(supervisorScript).toContain('HOLOGRAM_EXTENSION_DEV_OUTPUT');
     expect(supervisorScript).toContain('sourceRoot');
     expect(viteConfig).toContain('process.env.HOLOGRAM_EXTENSION_DEV_OUTPUT');
+    expect(viteConfig).toContain("readFile(resolve(developmentOutput, 'manifest.json'))");
+    expect(viteConfig).not.toContain("readFile(resolve(import.meta.dirname, '.output/chrome-mv3/manifest.json'))");
   });
 });
 
