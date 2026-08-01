@@ -1,6 +1,12 @@
+import { extensionOrigin, logSaveEvent } from '../utils/capture-log.ts';
 import { startDrag } from '../utils/drag.ts';
 import { startOverlay } from '../utils/overlay.ts';
+import { installUncaughtReporting } from '../utils/uncaught-report.ts';
 import { refreshUiRootStyles } from '../utils/ui-root.ts';
+
+// Outside the disposable runtime on purpose: reporting must outlive a
+// generation swap, and installUncaughtReporting is once-per-realm anyway (#727).
+installUncaughtReporting(window, logSaveEvent, { context: 'content', ownOrigin: extensionOrigin() });
 
 const OWNER = Symbol.for('hologram.resident-runtime');
 

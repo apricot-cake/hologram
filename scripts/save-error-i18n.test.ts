@@ -5,7 +5,7 @@
 
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { createI18n } from '../extension/utils/i18n';
-import { classifySaveFailure } from '../extension/utils/native-error';
+import { classifySaveFailure, saveFailureConsoleLevel } from '../extension/utils/native-error';
 
 function setLanguage(language: string) {
   vi.stubGlobal('navigator', { language });
@@ -32,6 +32,23 @@ describe('classifySaveFailure: Chrome の生エラー文の分類', () => {
     ['Image download failed: HTTP 403', 'unknown'],
   ])('"%s" → %s', (raw, expected) => {
     expect(classifySaveFailure(raw)).toBe(expected);
+  });
+});
+
+// #580: refusals that are outcomes of a save (an unobtainable post, a tab over
+// its in-flight budget) must not land in the chrome://extensions error console;
+// everything actually broken must keep doing so.
+describe('saveFailureConsoleLevel: エラー欄に出すか（#580）', () => {
+  test.each([
+    ['post-unavailable', 'warn'],
+    ['busy', 'warn'],
+    ['host-missing', 'error'],
+    ['host-unavailable', 'error'],
+    ['origin-rejected', 'error'],
+    ['timeout', 'error'],
+    ['unknown', 'error'],
+  ] as const)('%s → console.%s', (kind, level) => {
+    expect(saveFailureConsoleLevel(kind)).toBe(level);
   });
 });
 

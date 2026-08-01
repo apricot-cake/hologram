@@ -162,7 +162,7 @@ Start-ScheduledTask -TaskName 'HologramLaunch'
 | `bridge` | ネイティブホスト。`begin`＝受け取った／`ok`・`fail`＝書き終えた結果 | サービスワーカー・ホスト |
 | `result` | ページが結果を待つ段。**返って来なかった時だけ**出る（#507） | ページ |
 | `bulk` | 一括取込の run 全体（#362）。多数の保存を含むので `saveId` は載らない | ページ |
-| `unknown` | 段の付いていない例外 | サービスワーカー |
+| `unknown` | 段の付いていない例外。未捕捉の例外・未処理の Promise 拒否もここに載り、`uncaught` フィールドが発生元（`background`／`content`／`diag`／`options`）を示す（#727） | サービスワーカー・ページ |
 
 #### `phase`＝その段で何が起きたか
 

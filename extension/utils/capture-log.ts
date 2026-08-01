@@ -141,6 +141,17 @@ export function logSaveEvent(entry: SaveLogEntry): void {
   }
 }
 
+// The extension's own origin, for attributing shared-window events to our own
+// code (uncaught-report.ts); null when chrome.runtime is gone — an orphaned
+// content script left behind by a reload (#594's shape).
+export function extensionOrigin(): string | null {
+  try {
+    return chrome.runtime.getURL('');
+  } catch {
+    return null;
+  }
+}
+
 // A page-side deadline gave up. The one way that gets written down, shared
 // rather than copied because the first version of the deadlines wrote this line
 // on the Alt+S path ONLY, and the surface the hang was actually reported from

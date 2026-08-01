@@ -42,3 +42,13 @@ export function classifySaveFailure(message: unknown): SaveFailureKind {
 
   return 'unknown';
 }
+
+// Which console a save failure belongs in (#580). console.error lines pile up
+// in the chrome://extensions error console, and two kinds have no business
+// there because they are outcomes of a save, not malfunctions: the post that
+// cannot be obtained (nothing for the user to repair — #492/#505) and the save
+// refused because the tab already had its share in flight. Left at
+// console.error they accumulate until the extension looks broken.
+export function saveFailureConsoleLevel(kind: SaveFailureKind): 'warn' | 'error' {
+  return kind === 'post-unavailable' || kind === 'busy' ? 'warn' : 'error';
+}

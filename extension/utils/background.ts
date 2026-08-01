@@ -13,10 +13,11 @@ import { mergeDomMeta } from './extractor/dom-meta.ts';
 import { extractorFor, fetchPostMetadata, getHostname, highResUrlOf, isAllowedSender, mediaKeyOf } from './extractor/index.ts';
 import type { DomMeta, PostRecord } from './extractor/types.ts';
 import type { BridgeAck, CaptureAndSendResponse, CheckSavedResponse, ContentToBackgroundMessage, CropImageMessage, CropImageResponse, DumpLogsResponse, LogCaptureResponse, NotifyMessage, SavedEntry, SavedUpdateMessage, SaveProgressMessage, SaveResponse } from './messages.ts';
-import { classifySaveFailure } from './native-error.ts';
+import { classifySaveFailure, saveFailureConsoleLevel } from './native-error.ts';
 import { createSaveGate, saveRequestKey } from './host-budget.ts';
 import { clearInjectFailure, escalationUrl, injectFailureKind, showInjectFailure } from './inject-failure.ts';
 import type { SaveLogEntry, SaveStage } from './capture-log.ts';
+import { installUncaughtReporting } from './uncaught-report.ts';
 
 export function startBackground(): void {
   const NATIVE_HOST = 'com.hologram.host';
@@ -269,8 +270,10 @@ export function startBackground(): void {
     admitted
       .then((result) => sendResponse({ ok: true, ...result } satisfies SaveResponse))
       .catch((error) => {
-        console.error(error);
         const errorKind = classifySaveFailure(error?.message);
+        // warn for the failures that are outcomes rather than malfunctions —
+        // console.error piles them up in the extensions error console (#580).
+        console[saveFailureConsoleLevel(errorKind)](error);
         logSaveFailure(error, { saveId: message.saveId, platform: message.platform, host: senderHost, url: message.postUrl });
         sendResponse({ ok: false, errorKind, metaReason: error?.metaReason || null, error: error?.message } satisfies SaveResponse);
       });
@@ -344,8 +347,10 @@ export function startBackground(): void {
       // this sendResponse either, so `ok:true` is the whole payload.
       .then(() => sendResponse({ ok: true } satisfies CaptureAndSendResponse))
       .catch((error) => {
-        console.error(error);
         const errorKind = classifySaveFailure(error?.message);
+        // warn for the failures that are outcomes rather than malfunctions —
+        // console.error piles them up in the extensions error console (#580).
+        console[saveFailureConsoleLevel(errorKind)](error);
         logSaveFailure(error, { saveId: message.saveId, platform: message.platform, host: senderHost, url: message.postUrl });
         chrome.tabs.sendMessage(tabId, { type: 'notify', success: false, errorKind } satisfies NotifyMessage).catch(() => {});
         sendResponse({ ok: false, errorKind } satisfies CaptureAndSendResponse);
@@ -978,6 +983,15 @@ export function startBackground(): void {
     }
   }
 
+  // What only the chrome://extensions error console would otherwise hold
+  // (#727). keepLocal: an uncaught error is precisely the situation in which
+  // the host may be the thing that is broken. No origin filter — everything
+  // running in this worker is the extension's own. Guarded because tests run
+  // this closure where no service-worker global exists.
+  if (typeof self !== 'undefined' && typeof self.addEventListener === 'function') {
+    installUncaughtReporting(self, (entry) => logCapture(entry, true), { context: 'background' });
+  }
+
   // A metadata fetch "succeeded" if the platform API returned any identifying
   // field. An empty record (fetch failed / API down / unparseable URL) has null
   // author/date/text and no media — the screenshot still saved, but the user
@@ -1024,8 +1038,10 @@ export function startBackground(): void {
     admitted
       .then((result) => sendResponse({ ok: true, ...result } satisfies SaveResponse))
       .catch((error) => {
-        console.error(error);
         const errorKind = classifySaveFailure(error?.message);
+        // warn for the failures that are outcomes rather than malfunctions —
+        // console.error piles them up in the extensions error console (#580).
+        console[saveFailureConsoleLevel(errorKind)](error);
         logSaveFailure(error, { saveId: message.saveId, platform: message.platform, host: senderHost, url: message.postUrl });
         sendResponse({ ok: false, errorKind, metaReason: error?.metaReason || null } satisfies SaveResponse);
       });
