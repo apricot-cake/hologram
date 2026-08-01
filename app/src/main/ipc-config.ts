@@ -15,7 +15,28 @@ import type { AppInfo, AppPrefs, ConfigSummary, ExtensionIdResult, LibraryStatus
 // snapshotState), which is where it is persisted and restored from. The old
 // 'sortBy' pref was the losing half of that double storage — the two raced on
 // load — and the renderer stopped reading it when the tab state took over.
-const PREF_KEYS = ['language', 'layoutMode', 'squareThumbs', 'showInfo', 'showAvatar', 'skipDeleteConfirm', 'gridSize', 'listThumb', 'theme', 'browseMode', 'posterLayoutMode', 'posterShowInfo', 'posterGridSize', 'sidebarOpen', 'sidebarWidth', 'inspectorOpen', 'inspectorWidth', 'panelsHidden', 'privacyMode', 'triagePinnedTags'];
+const PREF_KEYS = [
+  'language',
+  'layoutMode',
+  'squareThumbs',
+  'showInfo',
+  'showAvatar',
+  'skipDeleteConfirm',
+  'gridSize',
+  'listThumb',
+  'theme',
+  'browseMode',
+  'posterLayoutMode',
+  'posterShowInfo',
+  'posterGridSize',
+  'sidebarOpen',
+  'sidebarWidth',
+  'inspectorOpen',
+  'inspectorWidth',
+  'panelsHidden',
+  'privacyMode',
+  'triagePinnedTags',
+];
 
 // --- One-off read of the retired 3-value densities (#618 posts / #630 posters) ---
 // `viewMode` / `posterViewMode` (card/tile/list) and their per-density size keys are
