@@ -12,6 +12,7 @@
 import { CheckIcon } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { beginFilterEditSession, endFilterEditSession, type FacetMode, type FilterCatValues, type FilterRow } from '../services/orchestrator.ts';
+import { includesNormalized } from '../services/search.ts';
 import { t } from '../_shared/i18n.ts';
 import { kindDotClass } from '../_shared/kind-dot.ts';
 import { Button } from '@/components/ui/button';
@@ -158,14 +159,11 @@ export function ValueEditor({ cat, onManage }: { cat: FilterCatValues; onManage:
   const allTags = useMemo(() => groups.flatMap((g) => g.items).sort((a, b) => ((b.count as number) || 0) - ((a.count as number) || 0) || String(a.l).localeCompare(String(b.l), 'ja')), [groups]);
 
   // Single smart match: plain substring (a leading @ scopes to screen name, sn).
-  const raw = query.trim().toLowerCase();
+  const raw = query.trim();
   const atMode = raw.startsWith('@');
   const q = atMode ? raw.slice(1) : raw;
   const filtering = !!q;
-  const hit = (hay: unknown) =>
-    String(hay ?? '')
-      .toLowerCase()
-      .includes(q);
+  const hit = (hay: unknown) => includesNormalized(hay, q);
   const matchItem = (it: FilterRow) => !filtering || (atMode ? hit(it.sn) : hit(it.l));
   const visible = rows.filter((r) => (r.type !== 'row' ? !filtering : matchItem(r.item)));
   const paneItems = (groupSel < 0 ? allTags : groups[groupSel] ? groups[groupSel].items : []).filter(matchItem);

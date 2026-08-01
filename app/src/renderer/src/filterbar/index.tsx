@@ -7,7 +7,9 @@
 // component only renders + navigates the two steps.
 import { ArrowLeft, BookMarked, Calendar, Drama, Folder, Globe, Hash, Heart, Image, Link2, ListFilter, type LucideIcon, MessageSquare, Search, Server, Tag, User } from 'lucide-react';
 import { useState } from 'react';
+import { defaultFilter } from 'cmdk';
 import { type FilterCat, filterCategories } from '../services/orchestrator.ts';
+import { normalize } from '../services/search.ts';
 import { FormEditor } from './FormEditor.tsx';
 import { ValueEditor } from './ValueEditor.tsx';
 import { t } from '../_shared/i18n.ts';
@@ -28,7 +30,7 @@ export function CatIcon({ cat }: { cat: string }) {
 
 function CatList({ cats, onPick }: { cats: FilterCat[]; onPick: (c: FilterCat) => void }) {
   return (
-    <Command className="w-64">
+    <Command className="w-64" filter={(value, search, keywords) => defaultFilter(normalize(value), normalize(search), keywords?.map(normalize))}>
       <CommandInput placeholder={t('qfFindPh')} />
       <CommandList>
         <CommandEmpty>—</CommandEmpty>

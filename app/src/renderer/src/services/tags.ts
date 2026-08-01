@@ -70,12 +70,10 @@ export function makeTags(deps: {
   }
 
   // Tag vocabulary sectioned by kind: the Work/Character kind sections first, then Uncategorized
-  // (applied tags carrying no kind), each section filtered by `query`. Shared by the
-  // inspector's tag field and the bulk tag dialog (via inspectorTagPickerData).
-  function groupedTagVocab(query: string, opts?: { scope?: 'post' | 'poster' } | null): Array<{ name: string; tags: string[] }> {
+  // (applied tags carrying no kind). Shared by the inspector's tag field and the bulk
+  // tag dialog (via inspectorTagPickerData), which filter locally while typing.
+  function groupedTagVocab(opts?: { scope?: 'post' | 'poster' } | null): Array<{ name: string; tags: string[] }> {
     const scope = (opts && opts.scope) || 'post';
-    const q = (query || '').toLowerCase();
-    const ok = (t: string) => !q || t.toLowerCase().includes(q);
     const byJa = (a: string, b: string) => a.localeCompare(b, 'ja');
     const out: Array<{ name: string; tags: string[] }> = [];
     // Glossary: Work/Character are first-class categories — surface them as their own
@@ -87,7 +85,7 @@ export function makeTags(deps: {
       ['work', kindLabel('work')],
       ['character', kindLabel('character')],
     ]) {
-      const tags = kindSec[k].filter(ok).sort(byJa);
+      const tags = kindSec[k].sort(byJa);
       if (tags.length) out.push({ name, tags });
     }
     // Poster scope shares Work/Character (a tag's kind is a global attribute of the
@@ -100,18 +98,17 @@ export function makeTags(deps: {
     } else {
       for (const p of allPosts()) for (const t of Array.isArray(p.tags) ? p.tags : []) if (!tagKindOf(t)) applied.add(t);
     }
-    const general = [...applied].filter(ok).sort(byJa);
+    const general = [...applied].sort(byJa);
     if (general.length) out.push({ name: t18n('tagUncategorized'), tags: general });
     return out;
   }
 
   // Same underlying vocabulary as the pickers (groupedTagVocab/charCandidatesFor)
   // but shaped as DATA for the React tag editor, which filters by its own local
-  // query client-side — so keystrokes never round-trip through here (the full/
-  // unfiltered vocabulary is the only thing ever asked for: query is always '').
+  // query client-side — so keystrokes never round-trip through here.
   function inspectorTagPickerData(selectedTags: string[] | null | undefined, recordsForSource: HologramPost[] | null | undefined, scope?: string) {
     const sel = new Set<string>(selectedTags || []);
-    const vocabGroups = groupedTagVocab('', { scope: (scope || 'post') as 'post' | 'poster' }).map((g) => ({
+    const vocabGroups = groupedTagVocab({ scope: (scope || 'post') as 'post' | 'poster' }).map((g) => ({
       name: g.name,
       items: g.tags.map((t) => ({ tag: t, kind: tagKindOf(t) || null })),
     }));
