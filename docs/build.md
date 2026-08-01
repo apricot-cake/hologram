@@ -44,7 +44,7 @@ Dependabot（#395）の更新 PR で新バージョンが来たときも、確�
 | **静的 release** | `npm run build:ext` | Chrome／Firefox を別出力へ生成・検証。日常パスは上書きしない |
 | **静的復旧** | `npm run ext:recover` | server を止め、検証済み Chrome release を日常パスへ配備 |
 
-開発サーバーは `127.0.0.1:51731` の固定 loopback だけで待ち受け、別 port へ逃げず、ブラウザを起動しない。`npm run ext:status` で状態・PID・競合 PID・ログを読み、`npm run ext:restart` で復旧する。初回登録は `npm run ext:register`。supervisor は一重起動・readiness probe・指数 backoff を持ち、連続失敗は一度だけ画面にも通知する。
+開発サーバーは `127.0.0.1:51731` の固定 loopback だけで待ち受け、別 port へ逃げず、ブラウザを起動しない。`npm run ext:status` で状態・PID・競合 PID・ログを読み、`npm run ext:restart` で復旧する。初回登録は `npm run ext:register`。ログオンタスクは通常ユーザー権限の非対話（S4U）プロセスとして動くため、空の Windows Terminal は表示されない。supervisor は一重起動・readiness probe・指数 backoff を持ち、連続失敗は一度だけ画面にも通知する。
 
 ### CRXJS の反映と release 検証（#714）
 
