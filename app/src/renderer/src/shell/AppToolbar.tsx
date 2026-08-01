@@ -10,9 +10,11 @@
 // Linear-style FilterChips — the only chip surface (the hidden #queryChips /
 // #posterQueryChips containers the legacy builders resolved at boot went with
 // their render path in #230).
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Inbox } from 'lucide-react';
 import { useSyncExternalStore } from 'react';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { AddFilterButton } from '../filterbar/index.tsx';
 import { FilterChips } from '../filterbar/FilterChips.tsx';
 import { DisplayMenu } from './DisplayMenu.tsx';
@@ -21,8 +23,9 @@ import { ViewerToolbar } from '../image-tab/ViewerToolbar.tsx';
 import { t } from '../_shared/i18n.ts';
 import { open as openPalette } from '../services/command-registry.ts';
 import { hologramImageTabSource, isActive as imageViewIsActive } from '../services/image-tab.ts';
+import { subscribeQueueCount } from '../services/triage-builder.ts';
 import { get as storeGet, subscribe as storeSubscribe } from '../services/store.ts';
-import { navBack, navForward } from '../services/orchestrator.ts';
+import { navBack, navForward, openTriage, triageQueueCount } from '../services/orchestrator.ts';
 
 const subKey = (key: string) => (cb: () => void) => storeSubscribe(key, cb);
 const subBack = subKey('navCanBack');
@@ -72,6 +75,42 @@ function PaletteBadge() {
   );
 }
 
+// Fast triage mode's entry point (#46). Placed beside the display/filter pair —
+// same "always visible, right cell" spot as those — rather than only living in the
+// command palette, since triage is meant to be an often-reached-for workflow
+// (photo-culling tools give this its own toolbar affordance, not just a shortcut).
+// The count subscribes independently of the rest of the toolbar (services/
+// triage-builder.ts's subscribeQueueCount): it has to move on a tag/folder edit
+// ANYWHERE in the app, not just from this component's own actions.
+function TriageButton() {
+  // triageQueueCount/openTriage are orchestrator.ts `export let`s, assigned once its
+  // async IIFE finishes constructing triageCtl — AFTER `await hologramI18n` — while
+  // React mounts and paints synchronously well before that. Every OTHER export-let
+  // in this toolbar is read from inside a click handler (by which point boot has
+  // long finished); this one is read as useSyncExternalStore's getSnapshot, which
+  // runs on the FIRST render too — so it needs its own guard rather than borrowing
+  // theirs (hit this for real: a fresh boot crashed the whole tree with "getSnapshot
+  // is not a function" before this guard existed).
+  const count = useSyncExternalStore(subscribeQueueCount, () => (triageQueueCount ? triageQueueCount() : 0));
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Button data-slot="triage-toolbar-button" variant="ghost" size="icon-sm" aria-label={t('triageToolbarLabel')} onClick={() => openTriage?.()} className="relative">
+            <Inbox />
+            {count > 0 && (
+              <Badge variant="secondary" className="-top-1 -right-1 absolute h-4 min-w-4 justify-center px-1 text-[10px] tabular-nums">
+                {count > 99 ? '99+' : count}
+              </Badge>
+            )}
+          </Button>
+        }
+      />
+      <TooltipContent>{count > 0 ? t('triageToolbarHint', [count]) : t('triageToolbarLabel')}</TooltipContent>
+    </Tooltip>
+  );
+}
+
 export function AppToolbar() {
   const canBack = useSyncExternalStore(subBack, getBack);
   const canForward = useSyncExternalStore(subForward, getForward);
@@ -114,6 +153,7 @@ export function AppToolbar() {
             <ViewerToolbar />
           ) : (
             <>
+              <TriageButton />
               <AddFilterButton />
               <DisplayMenu />
             </>
