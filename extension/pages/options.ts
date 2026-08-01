@@ -4,6 +4,10 @@
 // the rest of the settings page bundle.
 import '../utils/tokens.generated.css';
 import '../utils/page.css';
+import { logSaveEvent } from '../utils/capture-log.ts';
 import { startOptions } from '../utils/options.ts';
+import { installUncaughtReporting } from '../utils/uncaught-report.ts';
 
+// Unfiltered: everything running on an extension-owned page is our own (#727).
+installUncaughtReporting(window, logSaveEvent, { context: 'options' });
 startOptions();

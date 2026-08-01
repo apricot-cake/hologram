@@ -950,3 +950,45 @@ describe('ネイティブホストの起動を有界にする（#323）', () => 
     expect(ourPorts()).toHaveLength(2); // 2 connections for 20 lines
   });
 });
+
+// #580: which console a failed save lands in. console.error piles up in the
+// chrome://extensions error console, so the refusals that are outcomes of a
+// save (an unobtainable post) must go to console.warn, while everything
+// actually broken must keep reaching console.error.
+describe('保存失敗の console 振り分け（#580）', () => {
+  let env: ReturnType<typeof setupBackground>;
+  let errorSpy: ReturnType<typeof vi.spyOn>;
+  let warnSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    env = setupBackground();
+    errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    errorSpy.mockRestore();
+    warnSpy.mockRestore();
+  });
+
+  test('post-unavailable（直しようのない拒否）は console.warn 止まり', async () => {
+    const createdPorts = env.connectAsControllablePort();
+    const { responseP } = env.dispatch({ type: 'savePost', platform: 'misskey', postUrl: UNPARSEABLE_POST_URL }, MISSKEY_SENDER);
+    (await portThatSent(createdPorts, 'savePost')).emitMessage({ ok: false, error: 'Post unavailable: nothing was obtained for it (ageRestricted, no media)' });
+
+    const res = await responseP;
+    expect(res).toMatchObject({ ok: false, errorKind: 'post-unavailable' });
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(errorSpy).not.toHaveBeenCalled();
+  });
+
+  test('host-missing（本当に壊れている失敗）は従来どおり console.error', async () => {
+    env.connectAsUnavailable('Specified native messaging host not found.');
+    const { responseP } = env.dispatch({ type: 'savePost', platform: 'misskey', postUrl: UNPARSEABLE_POST_URL }, MISSKEY_SENDER);
+
+    const res = await responseP;
+    expect(res).toMatchObject({ ok: false, errorKind: 'host-missing' });
+    expect(errorSpy).toHaveBeenCalledTimes(1);
+    expect(warnSpy).not.toHaveBeenCalled();
+  });
+});
