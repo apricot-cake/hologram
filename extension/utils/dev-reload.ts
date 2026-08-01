@@ -27,9 +27,9 @@
 // the comparison below never has two values to compare.
 //
 // WHAT THIS FILE HOLDS is the part with no chrome.* in it: when a reload is
-// allowed to happen. The wiring — reading the stamp off replies, reloading, and
-// putting the open tabs back — is in background.ts, because only the worker can
-// see the events that count as work.
+// allowed to happen. The wiring — reading the stamp off replies and reloading
+// the extension — is in background.ts, because only the worker can see the
+// events that count as work.
 
 // Set by scripts/build-extension.cts through Vite's `define`, and by nothing
 // else: an ordinary `wxt build` (what `npm run zip:ext` runs to produce the
@@ -53,11 +53,6 @@ export interface DevReloadState {
   // reply would ask for the same reload again, forever. One attempt per token,
   // and a genuinely new build is the only thing that unlocks another.
   attempted?: string | null;
-  // The tabs whose content scripts were alive when the worker reloaded, and
-  // when it asked. Read once by the next instance (see DEV_RELOAD_TAB_WINDOW_MS)
-  // and then dropped.
-  tabs?: number[];
-  at?: number;
 }
 
 // How long after the last evidence of work a hold survives on its own. Nothing
@@ -76,13 +71,6 @@ export const DEV_RELOAD_WORK_MS = 60_000;
 // running intake is not cut in half between two of its posts; short enough that
 // an ordinary save is followed by the new build almost at once.
 export const DEV_RELOAD_QUIET_MS = 3_000;
-
-// How stale a note about which tabs to put back may be before the next instance
-// ignores it. Bounds the one thing here that is not idempotent: reloading
-// somebody's tabs. A worker that comes up long after the reload — because the
-// browser restarted, because the extension was disabled and re-enabled by hand —
-// has no business navigating tabs on the strength of an old note.
-export const DEV_RELOAD_TAB_WINDOW_MS = 30_000;
 
 // One thing that is happening and would be destroyed by a reload. Keyed by what
 // it is and where, so a bulk intake and a capture UI on the SAME tab are two

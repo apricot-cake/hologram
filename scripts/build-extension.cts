@@ -49,14 +49,6 @@ const NAMED_BY_CODE = ['capture.js', 'diag.html'];
 // compares it with what the host reports on every reply.
 const CARRIES_TOKEN = 'background.js';
 
-// The resident content script does not hold the token — the minifier folds
-// `if (EXT_BUILD_ID)` against the inlined literal and the string disappears —
-// but it does have to hold the listener that fold decides to keep, because that
-// listener is how the worker learns which tabs to put back after a reload. So
-// the check on this side is for the message name, not the token.
-const RESIDENT = path.join('content-scripts', 'resident.js');
-const RESIDENT_MARKER = 'devReloadPing';
-
 function mintBuildId(): string {
   return `${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
 }
@@ -111,9 +103,6 @@ function verifyOutput(buildId: string): void {
   // noise this feature must not make.)
   if (!fs.readFileSync(path.join(OUT, CARRIES_TOKEN), 'utf8').includes(buildId)) {
     throw new Error(`${CARRIES_TOKEN} does not carry this build's token (${buildId}) — the define in extension/wxt.config.ts did not reach it`);
-  }
-  if (!fs.readFileSync(path.join(OUT, RESIDENT), 'utf8').includes(RESIDENT_MARKER)) {
-    throw new Error(`${RESIDENT} does not answer "${RESIDENT_MARKER}" — the tabs orphaned by a reload could not be identified, so none would be put back`);
   }
 }
 
