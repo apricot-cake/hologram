@@ -203,10 +203,16 @@ const HTML = `<!doctype html>
     // must be CONTROL_INSET (6px) inside the picture's corner, which the
     // fixture keeps far away from the wrapper's own corner.
     const viewerCorner = await viewerPage.evaluate(() => {
-      const control = (document.querySelector('[data-hologram-overlay]') as HTMLElement).getBoundingClientRect();
-      const img = document.querySelector('[data-testid="swipe-to-dismiss"] img')!.getBoundingClientRect();
-      const wrapper = document.querySelector('[data-testid="swipe-to-dismiss"]')!.getBoundingClientRect();
-      return { controlLeft: control.left, controlTop: control.top, imgLeft: img.left, imgTop: img.top, wrapperLeft: wrapper.left, wrapperTop: wrapper.top };
+      const control = document.querySelector('[data-hologram-overlay]');
+      const img = document.querySelector('[data-testid="swipe-to-dismiss"] img');
+      const wrapper = document.querySelector('[data-testid="swipe-to-dismiss"]');
+      if (!(control instanceof HTMLElement) || !(img instanceof HTMLImageElement) || !(wrapper instanceof HTMLElement)) {
+        throw new Error('viewer fixture lost its control, picture, or swipe wrapper');
+      }
+      const controlRect = control.getBoundingClientRect();
+      const imgRect = img.getBoundingClientRect();
+      const wrapperRect = wrapper.getBoundingClientRect();
+      return { controlLeft: controlRect.left, controlTop: controlRect.top, imgLeft: imgRect.left, imgTop: imgRect.top, wrapperLeft: wrapperRect.left, wrapperTop: wrapperRect.top };
     });
     if (Math.abs(viewerCorner.imgLeft - viewerCorner.wrapperLeft) < 50 || Math.abs(viewerCorner.imgTop - viewerCorner.wrapperTop) < 50) throw new Error('viewer fixture regressed: the wrapper must be meaningfully larger than the picture for this case to test anything (#704)');
     const viewerOffsetX = viewerCorner.controlLeft - viewerCorner.imgLeft;
