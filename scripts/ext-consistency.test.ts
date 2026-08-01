@@ -1,7 +1,7 @@
 // A guard that cross-checks the generated manifest against the code that's written assuming it (#130).
 //
-// With the WXT migration (#198) and the extractor registry (#212), the manifest
-// is no longer hand-written; it's **generated** from wxt.config.ts plus each
+// With the CRXJS migration (#714) and the extractor registry (#212), the manifest
+// is no longer hand-written; it's generated from manifest.config.ts plus each
 // site module. So the kind of drift where "the manifest's match and the code's
 // correspondence table need to be kept in sync by hand" has structurally gone
 // away (the registry's own invariants are covered by
@@ -35,7 +35,7 @@ import { MESSAGES } from '../extension/utils/i18n.ts';
 
 const ROOT = path.join(import.meta.dirname, '..');
 const EXT = path.join(ROOT, 'extension');
-const OUT = path.join(EXT, '.output', 'chrome-mv3');
+const OUT = path.join(EXT, '.output', 'chrome-mv3-release');
 
 const manifest = JSON.parse(fs.readFileSync(path.join(OUT, 'manifest.json'), 'utf8'));
 const backgroundSrc = fs.readFileSync(path.join(EXT, 'utils', 'background.ts'), 'utf8');
@@ -46,7 +46,7 @@ function extensionSources(): string[] {
   const walk = (dir: string) => {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
       if (entry.isDirectory()) {
-        if (['node_modules', '.output', '.wxt'].includes(entry.name)) continue;
+        if (['node_modules', '.output'].includes(entry.name)) continue;
         walk(path.join(dir, entry.name));
       } else if (entry.name.endsWith('.ts') && !entry.name.startsWith('tokens.generated')) {
         files.push(path.join(dir, entry.name));
@@ -109,7 +109,7 @@ function keysPassedTo(callee: RegExp): Set<string> {
 
 describe('生成された manifest は登録簿の宣言どおり', () => {
   test('常駐コンテンツスクリプトの matches は RESIDENT_MATCHES と一致する', () => {
-    // Compared as sets = WXT re-orders match when it outputs, so order isn't part of the spec.
+    // Compared as sets because generation order isn't part of the spec.
     const matches = manifest.content_scripts.flatMap((script: any) => script.matches);
     expect([...matches].sort()).toEqual([...RESIDENT_MATCHES].sort());
   });
@@ -130,15 +130,11 @@ describe('manifest とコードが名指しするファイルは出力に在る'
     expect(referenced.filter((file) => !fs.existsSync(path.join(OUT, file)))).toEqual([]);
   });
 
-  test('background が注入するファイル名が出力に在る', () => {
-    // The capture entry injected via activeTab isn't listed in the manifest =
-    // it names WXT's output file name as a string. A rename kills only Alt+S, silently.
-    const injected = callArgs(backgroundSrc, /executeScript\(/g).flatMap((args) => {
-      const files = args.match(/files:\s*\[([^\]]*)\]/);
-      return files ? literalsIn(files[1]) : [];
-    });
-    expect(injected).not.toEqual([]);
-    expect(injected.filter((file) => !fs.existsSync(path.join(OUT, file)))).toEqual([]);
+  test('background の ?script import が standalone capture IIFE を指す', () => {
+    expect(backgroundSrc).toContain('../entrypoints/capture.ts?script');
+    const capture = manifest.web_accessible_resources.flatMap((group: any) => group.resources).find((file: string) => /(?:^|\/)capture\.js$/.test(file));
+    expect(capture).toBe('entrypoints/capture.js');
+    expect(fs.existsSync(path.join(OUT, capture))).toBe(true);
   });
 
   test('default_locale の _locales が出力に在る', () => {

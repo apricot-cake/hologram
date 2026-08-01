@@ -68,8 +68,4 @@ function defaultLibraryDir(): string {
 // bridge is spawned by Chrome from a registry entry and has no idea where the
 // repository is. Absent on every machine that has not built the extension, which
 // is what makes the whole path inert for released installs.
-function extensionBuildStampPath(): string {
-  return path.join(configDir(), 'extension-build.json');
-}
-
-module.exports = { configDir, defaultLibraryDir, extensionBuildStampPath, APP_NAME };
+module.exports = { configDir, defaultLibraryDir, APP_NAME };

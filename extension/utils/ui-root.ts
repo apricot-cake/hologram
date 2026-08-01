@@ -22,7 +22,7 @@
 // host serving `style-src 'none'` kills a <style> even inside a shadow root,
 // while `adoptedStyleSheets` is not a CSP-guarded sink at all (measured, #270 —
 // see tokens.ts for the full table). x.com ships exactly that policy.
-import { ensureTokens, tokensSheet } from './tokens.ts';
+import { ensureTokens, withCurrentTokenSheet } from './tokens.ts';
 import componentsCss from './components.css?inline';
 
 const HOST_TAG = 'hologram-extension-ui';
@@ -52,17 +52,45 @@ const HOST_STYLE: Record<string, string> = {
   opacity: '1',
 };
 
-let sheet: CSSStyleSheet | null = null;
+const COMPONENTS_STATE = Symbol.for('hologram.components-stylesheet');
+interface ComponentsState {
+  css: string;
+  sheet: CSSStyleSheet | null;
+  previous: Set<CSSStyleSheet>;
+}
+
+const componentScope = globalThis as typeof globalThis & { [COMPONENTS_STATE]?: ComponentsState };
 
 function componentsSheet(): CSSStyleSheet | null {
-  if (sheet) return sheet;
+  const current = componentScope[COMPONENTS_STATE];
+  if (current?.css === componentsCss) return current.sheet;
+  let sheet: CSSStyleSheet | null = null;
   try {
     const created = new CSSStyleSheet();
     created.replaceSync(componentsCss);
     sheet = created;
-    return created;
   } catch {
-    return null; // jsdom and any engine without constructed sheets: see below
+    // jsdom and any engine without constructed sheets: see below
+  }
+  const next: ComponentsState = {
+    css: componentsCss,
+    sheet,
+    previous: new Set(current?.previous ?? []),
+  };
+  if (current?.sheet) next.previous.add(current.sheet);
+  componentScope[COMPONENTS_STATE] = next;
+  return sheet;
+}
+
+function adoptCurrentStyles(root: ShadowRoot): void {
+  try {
+    const components = componentsSheet();
+    const componentState = componentScope[COMPONENTS_STATE];
+    const obsolete = componentState?.previous ?? new Set<CSSStyleSheet>();
+    const kept = root.adoptedStyleSheets.filter((candidate) => candidate !== components && !obsolete.has(candidate));
+    root.adoptedStyleSheets = [...withCurrentTokenSheet(kept), ...(components ? [components] : [])];
+  } catch {
+    /* constructed stylesheets are an enhancement; saving remains available */
   }
 }
 
@@ -91,6 +119,8 @@ export function ensureUiRoot(): ShadowRoot | null {
     // A single-page app can move or drop nodes wholesale; re-attach rather than
     // hand back a root that is no longer in the document.
     if (!existing.isConnected) parent.appendChild(existing);
+    ensureTokens();
+    adoptCurrentStyles(existing.shadowRoot);
     return existing.shadowRoot;
   }
 
@@ -98,15 +128,7 @@ export function ensureUiRoot(): ShadowRoot | null {
     const host = existing || document.createElement(HOST_TAG);
     for (const [property, value] of Object.entries(HOST_STYLE)) host.style.setProperty(property, value, 'important');
     const root = host.attachShadow({ mode: 'open' });
-    const sheets: CSSStyleSheet[] = [];
-    // Tokens first: components.css reads var(--hologram-*), and the generated
-    // sheet targets `:root, :host` precisely so the same file serves the pages
-    // and this root (#270).
-    const tokens = tokensSheet();
-    if (tokens) sheets.push(tokens);
-    const components = componentsSheet();
-    if (components) sheets.push(components);
-    root.adoptedStyleSheets = sheets;
+    adoptCurrentStyles(root);
     if (!host.isConnected) parent.appendChild(host);
     // The pages' own UI also wants the tokens on the document (the compact
     // controls in the subtree read them), and that call is idempotent.
@@ -115,6 +137,14 @@ export function ensureUiRoot(): ShadowRoot | null {
   } catch {
     return null;
   }
+}
+
+// HMR may change CSS while the shared root is idle. Refresh it without creating
+// a page-level host that the user has never opened.
+export function refreshUiRootStyles(): void {
+  ensureTokens();
+  const root = document.querySelector(HOST_TAG)?.shadowRoot;
+  if (root) adoptCurrentStyles(root);
 }
 
 // Everything this root holds, removed. The host element itself is left in place:

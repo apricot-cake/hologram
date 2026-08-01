@@ -16,7 +16,7 @@
     // Anchoring keeps the repo-root .claude (skills, hooks, settings) excluded
     // while leaving a worktree's own files linted. The other entries keep **/
     // because they name build output that only ever appears at those paths.
-    "includes": ["**", "!**/app/out", "!**/extension/.output", "!**/extension/.wxt", "!**/app/src/renderer/public/vendor", "!**/package-lock.json", "!**/package.json", "!.claude"]
+    "includes": ["**", "!**/app/out", "!**/extension/.output", "!**/app/src/renderer/public/vendor", "!**/package-lock.json", "!**/package.json", "!.claude"]
   },
   // import 並べ替えは今はしない（チャーン優先度が低い・必要なら別途）
   "assist": { "actions": { "source": { "organizeImports": "off" } } },

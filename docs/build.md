@@ -32,42 +32,43 @@ npm run setup
 
 Dependabot（#395）の更新 PR で新バージョンが来たときも、確認すべき条件は上表と同じ。**解消したら `scripts/setup.cts`・`scripts/setup-probes.test.ts`・`package.json` の `setup`・本節をまとめて消すこと。**
 
-（`extension/` 側は `wxt prepare`（postinstall）以外に gyp 系の依存を持たないため `--ignore-scripts` は付けない＝プレーンな `npm install` で `wxt prepare` も自動で走る。**Electron 本体の手動取得は上記どちらのフラグとも無関係に今も必要**＝pin している electron@43.2.0 自体に postinstall が無い（`--ignore-scripts` の有無に関わらず自動では降ってこない）。）
+（`extension/` 側は CRXJS 2.7.1 の局所パッチを postinstall で適用するため、プレーンな `npm install` を別途行う。**Electron 本体の手動取得は上記どちらのフラグとも無関係に今も必要**＝pin している electron@43.2.0 自体に postinstall が無い。）
 
 ## 拡張機能の開発・配布
 
-依存は `npm run setup` が `extension/` の分もまとめて入れる（`extension/` は独立した npm プロジェクト＝ルートの install では入らない）。**ブラウザは日常の Chrome 1本、読み込む出力も本体ツリーの `extension/.output/chrome-mv3/` 1箇所**（2026-07-26 にこの形へ寄せた＝当時はホットリロードを普段使いのブラウザで効かせる狙いだったが、その後の dev:ext 撤去（#675）後も #650 の自己リロードが同じ単一出力を前提にしている）。`wxt.config.ts` の `outDirTemplate` で WXT 既定の `-dev` サフィックスを外してあり、拡張の削除→再追加は発生しない（削除→再追加は `chrome.storage.local` の設定とショートカット割当を消す）。
+依存は `npm run setup` が `extension/` の分もまとめて入れる（`extension/` は独立した npm プロジェクト）。日常の Chrome は本体ツリーの `extension/.output/chrome-mv3/` を Load unpacked する。CRXJS/Vite の開発出力も同じ固定パス、manifest の key も同じなので、ID `keggmjkemfcekcffohnpaojacdakpejh`、storage、ショートカット、Native Messaging は維持される。
 
 | 状態 | 作るコマンド | 入るとき / 出るとき |
 | --- | --- | --- |
-| **ふだんの開発**（production・サーバー非依存。唯一の状態） | `npm run build:ext` | **クリック不要**＝拡張が自分でリロードする（下記「新しいビルドを拡張が自分で載せる」） |
+| **ふだんの開発** | ログオンタスク `HologramExtensionDev`（手動は `npm run dev:ext`） | JS/CSS は HMR、background 更新と server reconnect は拡張だけを即時 reload。日常タブは reload しない |
+| **静的 release** | `npm run build:ext` | Chrome／Firefox を別出力へ生成・検証。日常パスは上書きしない |
+| **静的復旧** | `npm run ext:recover` | server を止め、検証済み Chrome release を日常パスへ配備 |
 
-**開発ループは `npm run build:ext` 一本**（#650・#675）。ビルドは1秒前後で、押すクリックはゼロ。**WXT の dev モード（`dev:ext`＝ファイル保存のたびに常駐サーバーがホットリロードする方式）は撤去済み**（#675）＝差分反映は速かったが、開発サーバーを止めたまま戻し忘れると常駐スクリプトの登録先を失い**日常使いの拡張が黙って死ぬ**という危険（2026-07-26 に被弾）を道具そのものが運んでいた。`build:ext` が0クリックへ追いついたことで、そのリスクを負い続ける理由が無くなったため退役させた。
+開発サーバーは `127.0.0.1:51731` の固定 loopback だけで待ち受け、別 port へ逃げず、ブラウザを起動しない。`npm run ext:status` で状態・PID・競合 PID・ログを読み、`npm run ext:restart` で復旧する。初回登録は `npm run ext:register`。supervisor は一重起動・readiness probe・指数 backoff を持ち、連続失敗は一度だけ画面にも通知する。
 
-### 新しいビルドを拡張が自分で載せる（#650）
+### CRXJS の反映と release 検証（#714）
 
-`npm run build:ext` は WXT のビルドのあとに `scripts/build-extension.cts` が2つのことをする。
+`npm run build:ext` は Chrome と Firefox の自己完結 release をそれぞれ `chrome-mv3-release` / `firefox-mv3-release` へ生成し、`scripts/build-extension.cts` が検査する。
 
-1. **出力が完全か確かめる**＝manifest が JSON として読めるか、manifest が名指しするファイルと `capture.js` / `diag.html` が実在して空でないか、ビルド識別子が `background.js` に届いているか、`resident.js` が生きているか。**1つでも欠ければここで止まり、次の印は出ない**＝中途半端な出力のままリロードされると Chrome が `DISABLE_RELOAD` で拡張を**無効化し、ファイルを戻しても自力で復活しない**（人手のクリックでしか戻らない・2026-07-31 実測）。
-2. **`~/.hologram/extension-build.json` にそのビルドの識別子を書く**。ネイティブメッセージングホストは**全ての返信にこの識別子を乗せる**ので、拡張は保存・保存済みバッジの問い合わせ・ログ中継のどれかが往復するたびに「ディスク上のビルドが自分と違う」ことを知り、`chrome.runtime.reload()` を呼ぶ。**ページのタブは再読み込みしない**。更新前から開いていたタブは #594 の安全な劣化処理に委ね、実機確認が必要ならエージェントが用意した検証タブだけをビルド後または確認直前に再読み込みする。
+1. manifest の全 resource、固定 ID、dynamic capture IIFE、options/diagnostics、Native Messaging permission を確認する。
+2. localhost、Vite client、source map が release に混ざっていないことを全テキスト生成物で確認する。ZIP はこの検査を通った Chrome release だけを `npm run zip:ext` で梱包する。
 
 読むべき性質:
 
-- **配布物では永久に発火しない**。ストア版は識別子を持たず（`wxt zip` は環境変数を渡さない）、ビルドしたことのない環境には印のファイルも無い。2つの門が両方開くのは、このリポジトリでビルドした開発機だけ。
-- **作業を壊さない**。保存が飛んでいる間・キャプチャUI が開いている間・一括取込が走っている間はリロードを見送り、終わってから入れ替える。見送りは**必ず切れる**＝作業の証拠が来なくなれば60秒で失効する。「なぜ反映されないのか」は `chrome-extension://<id>/diag.html` の `devBuild`（`running` / `onDisk`）で読める。
-- **同じ識別子で二度リロードしない**。何らかの理由でリロードしても新しいビルドにならなかったとき（後述の worktree など）に、往復のたびに再起動し続けるのを止める唯一の弁。
-- **linked worktree からは印を出さない**（`HOLOGRAM_CONFIG_DIR` を明示した場合を除く）。worktree の `.output` はどのブラウザも読んでいないので、そこから告知すると**日常の拡張が来ないビルドのために再起動する**。判定は `.git` がディレクトリか（本体ツリー）ファイルか（linked worktree）。
+- **background と server reconnect** は CRXJS 標準の `chrome.runtime.reload()` を使う。Native Messaging のビルド印や保存ゲートには接続しない。
+- **日常タブは reload しない**。CRXJS 2.7.1 の content client が行う `location.reload()` だけを pinned postinstall patch で抑止し、契約テストが runtime reload と通常 HMR の存続を同時に守る。実機検証タブの再読み込みは検証側が外から行う。
+- resident は global owner を1世代だけ持ち、HMR dispose で listener、observer、timer、UI を除去する。component/token CSS は constructed stylesheet を差し替える。
 
-- **拡張の色はアプリのトークンから生成される**（#270）。`build:ext` は WXT の前に `scripts/gen-extension-tokens.cts` を走らせ、`app/src/renderer/src/globals.css` と `extension/utils/tokens.source.css` から `extension/utils/tokens.generated.{css,ts}` を書き直す。生成物はコミット対象で、古いまま残っていると `npm test` が落ちる（`scripts/extension-tokens.test.ts`）。ビルドのたびに毎回再生成されるので、アプリ側のトークンを触った後も明示的に別コマンドを走らせる必要は無い。
-- **なぜ WXT にブラウザを起動させないか**（`web-ext.config.ts` で無効化）: 自動化スタック（web-ext-run → chrome-launcher）経由の起動は大量の `--disable-*` フラグ＝自動化ツールの指紋が付き、X も Google もボット判定してサインインを弾く（2026-07-26 実測）。`wxt build` はそもそもブラウザを起動しないので実害は無いが、`wxt` を手で直接叩いた場合の保険として無効化を残してある（extension/wxt.config.ts）。
+- **拡張の色はアプリのトークンから生成される**（#270）。各 build は Vite の前に `scripts/gen-extension-tokens.cts` を走らせる。
+- **ブラウザを自動起動しない**。普段使い Chrome の既存セッションへ固定 unpacked path だけで接続する。
 - **デバッグポートは開けない**: TCP のデバッグポートは無認証で、ローカルの任意プロセスがブラウザを乗っ取りサインイン中のセッションを抜けられる（Chrome 136 が既定プロファイルで同スイッチを拒否するのも同じ理由）。
 
 **読み込むのは本体ツリーのパスに限る。**worktree の `.output` を読み込むと、その worktree を撤去した時点で拡張が壊れる。`npm run build:ext` は**自分が実行されたツリーの `.output` だけ**を更新するので、worktree で拡張を直している間は本体ツリーの拡張に自動では反映されない。worktree の変更を実ブラウザで見る手段は2つ:
 
-- 本体ツリーを対象コミットへ detach してから本体で `npm run build:ext` を回す（自己リロードが効く。手順は skill `test-in-worktree`）
-- worktree で `npm run build:ext` し、本体の `chrome-mv3` へ上書き→リロード1回（手順は skill `verify-extension`）＝**この経路は自己リロードの対象外**（worktree は印を出さないため・上記）
+- 本体ツリーを対象コミットへ detach してから本体の supervisor を再起動する（手順は skill `test-in-worktree`）
+- worktree の変更を本体へ統合し、本体の dev server に反映する（手順は skill `verify-extension`）
 
-固定IDを保つ `key` は `extension/wxt.config.ts` にある。移行後もID・Native Messaging 保存・5プラットフォームのクリック/ドラッグ保存は実機確認の対象である。
+固定IDを保つ `key` は `extension/manifest.config.ts` にある。ID・Native Messaging 保存・5プラットフォームのクリック/ドラッグ保存は実機確認の対象である。
 
 - 手元の実ターミナルから動かすだけなら `npm start`、ワンクリック起動は `restart-app.ps1` を右クリック →「PowerShell で実行」でよい。
 - **Claude（MSIX コンテナ内）や CDP 検証を伴う起動は `HologramLaunch` タスク経由**（下記「コード変更の反映」）。初回／タスク削除後は `restart-app.ps1` を一度実行するとタスクが自己作成される（以後は最小形で再起動可）。
@@ -256,7 +257,7 @@ electron-builder, win/nsis。
 これで以下が一括更新される（`scripts/make-icons.cjs` の `TARGETS`/`BANNERS` が配置先の単一真実源＝増えたらここに足す）:
 
 - `app/assets/icon.png`（512）＝Electron ウィンドウ/タスクバーアイコン。`app/package.json` の `build.win.icon` がこれを指し、electron-builder が配布時に `.ico` 化（PNG→ICO 自動変換）。dev では `src/main/lib-window.ts` の `BrowserWindow({icon})`＋`src/main/index.ts` の `app.setAppUserModelId` で反映。
-- `extension/public/icons/icon{16,32,48,128}.png`＝Chrome 拡張（生成manifest の `icons`/`action.default_icon`）。開発中は WXT が再読み込みしてツールバーへ反映。128 が manifest の最大サイズ＝256 は Chrome 側で使い道が無く同梱しない（#231 で確認・撤去）。
+- `extension/public/icons/icon{16,32,48,128}.png`＝ブラウザ拡張（生成manifest の `icons`/`action.default_icon`）。開発中は CRXJS が反映する。128 が manifest の最大サイズ＝256 は Chrome 側で使い道が無く同梱しない（#231 で確認・撤去）。
 - `assets/icon.png`（256）＝汎用ブランドラスター/ファビコン。
 - `assets/banner-{light,dark,en-light,en-dark}.svg`＝README バナー。ワードマーク `hologram`＋タグラインは保持し、先頭マークだけ虹色スクエアの埋め込み画像（base64）に差し替え。
 

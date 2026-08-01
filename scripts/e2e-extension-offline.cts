@@ -113,7 +113,7 @@ async function waitForCapture(libraryDir: string, timeoutMs = 20_000): Promise<{
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
       if (!tab?.id) return { ok: false, error: 'no active tab' };
       try {
-        await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['capture.js'] });
+        await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['entrypoints/capture.js'] });
         return { ok: true };
       } catch (error) {
         return { ok: false, error: String(error) };

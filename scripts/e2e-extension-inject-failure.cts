@@ -110,7 +110,7 @@ async function tabIdEndingWith(worker: any, suffix: string): Promise<number> {
     const before = await sw(
       serviceWorker,
       `Promise.all([
-        chrome.scripting.executeScript({ target: { tabId: ${tabB} }, files: ['capture.js'] }).then(() => null, e => String((e && e.message) || e)),
+        chrome.scripting.executeScript({ target: { tabId: ${tabB} }, files: ['entrypoints/capture.js'] }).then(() => null, e => String((e && e.message) || e)),
         fetch(chrome.runtime.getURL('diag.html')).then(r => r.ok, () => false),
       ]).then(([inject, readable]) => ({ inject, readable }))`,
     );
@@ -129,7 +129,7 @@ async function tabIdEndingWith(worker: any, suffix: string): Promise<number> {
     const after = await sw(
       serviceWorker,
       `Promise.all([
-        chrome.scripting.executeScript({ target: { tabId: ${tabC} }, files: ['capture.js'] }).then(() => null, e => String((e && e.message) || e)),
+        chrome.scripting.executeScript({ target: { tabId: ${tabC} }, files: ['entrypoints/capture.js'] }).then(() => null, e => String((e && e.message) || e)),
         fetch(chrome.runtime.getURL('diag.html')).then(r => r.ok, () => false),
         (async () => {
           try {

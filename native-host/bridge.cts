@@ -27,7 +27,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const _os = require('node:os');
 
-const { configDir, defaultLibraryDir, extensionBuildStampPath } = require('./paths.cts');
+const { configDir, defaultLibraryDir } = require('./paths.cts');
 // Best-effort remote-image download (original media + avatars) lives in a shared
 // module so the SSRF guard / size caps are identical across capture, import and
 // backfill. See media-download.cts.
@@ -94,15 +94,6 @@ function logLine(msg: string): void {
 // file (the ordinary case, on every machine that has not built the extension),
 // unreadable file, malformed JSON and a missing field all mean the same thing —
 // there is nothing to say, so the reply says nothing.
-function readExtBuild(): string | null {
-  try {
-    const raw = JSON.parse(fs.readFileSync(extensionBuildStampPath(), 'utf8'));
-    return raw && typeof raw.build === 'string' && raw.build ? raw.build : null;
-  } catch {
-    return null;
-  }
-}
-
 // --- Structured capture diagnostics log ---------------------------------------
 // One JSON line per capture event in capture.log, so a broken save can be
 // diagnosed after the fact: which stage failed and why. The extension relays its
@@ -811,10 +802,8 @@ if (require.main === module) {
       // with its own to notice that the two halves have drifted apart, and a
       // reply that forgot the stamp would be read as coming from a host older
       // than the stamp itself.
-      //
-      // The same seam carries the local build's token (#650) — see readExtBuild.
       const reply = (id: number | null, res: HostResponse) => {
-        const stamped = stampProtocol(res, readExtBuild());
+        const stamped = stampProtocol(res);
         sendMessage(id != null ? Object.assign({ id }, stamped) : stamped);
       };
       if (!parsed.ok) {

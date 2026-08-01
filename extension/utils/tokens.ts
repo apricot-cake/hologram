@@ -81,8 +81,34 @@ export const token = {
   easeOut: 'var(--hologram-ease-out)',
 } as const;
 
-let sheet: CSSStyleSheet | null = null;
-let sheetFailed = false;
+const TOKENS_STATE = Symbol.for('hologram.tokens-stylesheet');
+interface TokensState {
+  css: string;
+  sheet: CSSStyleSheet | null;
+  previous: Set<CSSStyleSheet>;
+}
+
+const tokenScope = globalThis as typeof globalThis & { [TOKENS_STATE]?: TokensState };
+
+function state(): TokensState {
+  const current = tokenScope[TOKENS_STATE];
+  if (current?.css === tokensCss) return current;
+  let nextSheet: CSSStyleSheet | null = null;
+  try {
+    nextSheet = new CSSStyleSheet();
+    nextSheet.replaceSync(tokensCss);
+  } catch {
+    /* jsdom and engines without constructed stylesheets */
+  }
+  const next: TokensState = {
+    css: tokensCss,
+    sheet: nextSheet,
+    previous: new Set(current?.previous ?? []),
+  };
+  if (current?.sheet) next.previous.add(current.sheet);
+  tokenScope[TOKENS_STATE] = next;
+  return next;
+}
 
 // The constructed sheet itself, for callers that need to adopt it somewhere
 // other than the document — the page-level ShadowRoot (#44) adopts this exact
@@ -90,15 +116,13 @@ let sheetFailed = false;
 // just `:root`. Built at most once per module instance; null where constructed
 // sheets do not exist (jsdom in the offline unit suites).
 export function tokensSheet(): CSSStyleSheet | null {
-  if (sheet || sheetFailed) return sheet;
-  try {
-    const created = new CSSStyleSheet();
-    created.replaceSync(tokensCss);
-    sheet = created;
-  } catch {
-    sheetFailed = true;
-  }
-  return sheet;
+  return state().sheet;
+}
+
+export function withCurrentTokenSheet(current: CSSStyleSheet[]): CSSStyleSheet[] {
+  const tokenState = state();
+  const kept = current.filter((candidate) => candidate !== tokenState.sheet && !tokenState.previous.has(candidate));
+  return tokenState.sheet ? [...kept, tokenState.sheet] : kept;
 }
 
 // Idempotent: every on-page entry point calls this before it builds anything.
@@ -106,7 +130,8 @@ export function tokensSheet(): CSSStyleSheet | null {
 // world per document, so the module state above is shared too and the second
 // caller is free.
 export function ensureTokens(): void {
-  const created = tokensSheet();
+  const tokenState = state();
+  const created = tokenState.sheet;
   if (!created) return;
   try {
     // Guarded rather than assumed: a document without adoptedStyleSheets at all
@@ -115,8 +140,8 @@ export function ensureTokens(): void {
     // (memory: dead-dom-throw-kills-next-line). An unstyled control still saves
     // the picture, which is the part that must not depend on any of this.
     const current = document.adoptedStyleSheets;
-    if (!current || current.includes(created)) return;
-    document.adoptedStyleSheets = [...current, created];
+    if (!current) return;
+    document.adoptedStyleSheets = withCurrentTokenSheet(current);
   } catch {
     /* same reason */
   }

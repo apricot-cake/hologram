@@ -18,8 +18,7 @@
 //      no DOM; runs un-built via the same Node type-stripping)
 //   4. extension/tsconfig.json    — the Chrome extension (MV3) browser layer,
 //      stage 2/3; a FOURTH runtime (real browser, no type-stripping) — the one
-//      layer is built by WXT. Its type check runs `wxt prepare` first so the
-//      generated entrypoint declarations are present.
+//      layer is built by CRXJS/Vite.
 //   5. scripts/tsconfig.json      — the dev-tooling / CLI layer (app-harness
 //      Electron smoke + capture/verify CLIs), stage 2/3; a FIFTH standalone-Node
 //      runtime, .cts, no build step — the runtime the original TS-scope
@@ -47,8 +46,7 @@ const extDir = path.join(__dirname, '..', 'extension');
 // version, so whether typescript lands in app/node_modules or the root is an
 // install-order detail the repo doesn't control — the hardcoded nested path
 // made `npm test` red on a plain root `npm install` while every other check
-// stayed green. require.resolve is not usable here: wxt's package.json is
-// walled off by its "exports" map, and a bin path is not an export either.
+// stayed green.
 function resolveBin(pkg: string, subPath: string, fromDir: string): string {
   for (let dir = fromDir; ; dir = path.dirname(dir)) {
     const candidate = path.join(dir, 'node_modules', pkg, subPath);
@@ -59,13 +57,12 @@ function resolveBin(pkg: string, subPath: string, fromDir: string): string {
 
 const appTsc = resolveBin('typescript', path.join('bin', 'tsc'), appDir);
 const extTsc = resolveBin('typescript', path.join('bin', 'tsc'), extDir);
-const extWxt = resolveBin('wxt', path.join('bin', 'wxt.mjs'), extDir);
 
 const PROJECTS = [
   { p: path.join(appDir, 'tsconfig.web.json'), label: 'renderer (components + services)', tsc: appTsc, cwd: appDir },
   { p: path.join(appDir, 'tsconfig.node.json'), label: 'main process + preload', tsc: appTsc, cwd: appDir },
   { p: path.join(__dirname, '..', 'native-host', 'tsconfig.json'), label: 'native-host', tsc: appTsc, cwd: appDir },
-  { p: path.join(extDir, 'tsconfig.json'), label: 'extension', tsc: extTsc, prepare: extWxt, cwd: extDir },
+  { p: path.join(extDir, 'tsconfig.json'), label: 'extension', tsc: extTsc, cwd: extDir },
   { p: path.join(__dirname, 'tsconfig.json'), label: 'scripts', tsc: appTsc, cwd: appDir },
   { p: path.join(__dirname, '..', 'e2e', 'tsconfig.json'), label: 'e2e (Playwright)', tsc: appTsc, cwd: appDir },
   { p: path.join(__dirname, 'tsconfig.test.json'), label: 'vitest suites', tsc: appTsc, cwd: appDir },
@@ -74,8 +71,7 @@ const PROJECTS = [
 let failed = 0;
 for (const project of PROJECTS) {
   const { p, label, tsc, cwd } = project;
-  const prepared = project.prepare ? spawnSync(process.execPath, [project.prepare, 'prepare'], { stdio: 'inherit', cwd }) : null;
-  const r = project.prepare ? (prepared?.status === 0 ? spawnSync(process.execPath, [tsc, '--noEmit', '-p', p], { stdio: 'inherit', cwd }) : prepared) : spawnSync(process.execPath, [tsc, '--noEmit', '-p', p], { stdio: 'inherit', cwd });
+  const r = spawnSync(process.execPath, [tsc, '--noEmit', '-p', p], { stdio: 'inherit', cwd });
   if (r.status !== 0) {
     console.error(`FAIL typecheck: ${label} reported errors`);
     failed++;

@@ -18,7 +18,7 @@ const PIXIV_REFERER = 'https://www.pixiv.net/';
 // Merging them would quietly change which URLs each caller recognizes.
 //
 // Module scope is safe even though the capture entry is re-injected on every
-// Alt+S: WXT bundles each entry as an IIFE, so every injection evaluates these
+// Alt+S: CRXJS bundles the capture entry as an IIFE, so every injection evaluates these
 // in a fresh function scope (an un-wrapped top-level `const` used to throw
 // "already declared" before the script could run its own re-injection guard).
 const PXIMG_ARTWORK_ID = /\/(\d+)_p\d+(?:_|\.)/;
