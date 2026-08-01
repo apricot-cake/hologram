@@ -210,7 +210,7 @@ function TriageStage({ state }: { state: triage.TriageState }) {
       </div>
       <div className="flex min-h-0 flex-1 items-center justify-center overflow-hidden p-4">
         {media &&
-          (media.video ? <video key={media.src} className="max-h-full max-w-full object-contain" src={media.src} controls playsInline preload="metadata" /> : <img key={media.poster || media.src} className="max-h-full max-w-full object-contain" src={media.poster || media.src} alt={media.alt || ''} decoding="async" />)}
+          (media.video ? <video key={media.src} data-slot="triage-media" className="max-h-full max-w-full object-contain" src={media.src} controls playsInline preload="metadata" /> : <img key={media.poster || media.src} data-slot="triage-media" className="max-h-full max-w-full object-contain" src={media.poster || media.src} alt={media.alt || ''} decoding="async" />)}
       </div>
       <div className="flex flex-col gap-2 border-t px-4 py-3">
         {state.lastAction && (

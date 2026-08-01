@@ -120,7 +120,7 @@ function PostInspector({ m }: { m: HologramInspectorModel }) {
   const hasAuthor = !!(m.authorName || m.avatarSrc);
   const authorValue = m.avatarSrc ? (
     <span className="flex items-center gap-1.5">
-      <img className="size-6 shrink-0 rounded-full border border-border object-cover" src={m.avatarSrc} alt="" />
+      <img data-slot="avatar-image" className="size-6 shrink-0 rounded-full border border-border object-cover" src={m.avatarSrc} alt="" />
       <span className="truncate">{m.authorName}</span>
     </span>
   ) : (
@@ -172,6 +172,8 @@ function PostInspector({ m }: { m: HologramInspectorModel }) {
           <Field k={m.labels.updated} v={m.updatedLabel} />
           <Field k={m.labels.images} v={m.imagesLabel} />
           <Field k={m.labels.imageOf} v={m.imageOfLabel} />
+          <Field k={m.labels.series} v={m.seriesLabel} />
+          <Field k={m.labels.seriesOrder} v={m.seriesOrderLabel} />
         </Fields>
       </Divided>
       <Divided>
@@ -227,7 +229,7 @@ function PosterInspector({ m }: { m: HologramInspectorModel }) {
     <div data-slot="inspector-poster" className="flex flex-col gap-3">
       <div className="flex items-start justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2.5">
-          {m.avatarSrc ? <img className="size-10 shrink-0 rounded-full border border-border object-cover" src={m.avatarSrc} alt="" /> : null}
+          {m.avatarSrc ? <img data-slot="avatar-image" className="size-10 shrink-0 rounded-full border border-border object-cover" src={m.avatarSrc} alt="" /> : null}
           <span className="truncate text-[15px] font-semibold">{m.name}</span>
         </div>
         <CloseButton onClose={m.onClose} />
@@ -247,6 +249,7 @@ function PosterInspector({ m }: { m: HologramInspectorModel }) {
               // decoding="async" (#569): a 3-wide grid of these can be decoding together,
               // same call as PostCard's card thumbnail.
               key={i}
+              data-slot="inspector-work-thumb"
               className="aspect-square w-full cursor-pointer rounded-md border border-border bg-muted object-cover transition-transform hover:scale-105"
               src={w.thumbSrc}
               alt=""

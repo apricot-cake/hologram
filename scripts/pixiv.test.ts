@@ -107,6 +107,63 @@ describe('fetchPixivIllust', () => {
     expect(rec.media).toHaveLength(0);
     expect(rec.likes).toBeNull();
   });
+
+  // seriesNavData を持たない応答（この describe の `body` 自体）では3フィールドとも null。
+  test('seriesNavData の無い応答はシリーズ3フィールドとも null', async () => {
+    vi.stubGlobal('fetch', async () => jsonRes({ error: false, body }));
+    const rec = await fetchPixivIllust({ id: '555' }, 'https://www.pixiv.net/artworks/555');
+    expect({ seriesId: rec.seriesId, seriesTitle: rec.seriesTitle, seriesOrder: rec.seriesOrder }).toEqual({ seriesId: null, seriesTitle: null, seriesOrder: null });
+  });
+});
+
+// #188: シリーズ所属情報。フィールド名は実際の pixiv 応答から確認済み
+// （scripts/canary/snapshots/pixiv.json の "single" サンプル、2026-07-30 取得）——
+// seriesNavData はシリーズに属する作品にだけ現れるオブジェクトで、その
+// トップレベルの order がこの作品自身の話数（next/prev の order は隣の作品のもの）。
+describe('シリーズ情報（#188）', () => {
+  const seriesBody = {
+    illustTitle: 'My Art',
+    userId: '77',
+    pageCount: 1,
+    urls: { original: 'https://i.pximg.net/img-original/img/2021/05/06/07/08/09/555_p0.png' },
+    tags: { tags: [] },
+    seriesNavData: {
+      isNotifying: false,
+      isWatched: false,
+      next: { id: '556', order: 4, title: '次話' },
+      order: 3,
+      prev: { id: '554', order: 2, title: '前話' },
+      seriesId: '12345',
+      seriesType: 'illust',
+      title: 'ある冒険',
+    },
+  };
+
+  test('seriesNavData の seriesId/title/order をそのまま記録する', async () => {
+    vi.stubGlobal('fetch', async () => jsonRes({ error: false, body: seriesBody }));
+    const rec = await fetchPixivIllust({ id: '555' }, 'https://www.pixiv.net/artworks/555');
+    expect({ seriesId: rec.seriesId, seriesTitle: rec.seriesTitle, seriesOrder: rec.seriesOrder }).toEqual({ seriesId: '12345', seriesTitle: 'ある冒険', seriesOrder: 3 });
+  });
+
+  // next/prev の order を拾ってはいけない（3 ではなく 4 や 2 になっていないか）。
+  test('order はこの作品自身のもの（next/prev の order とは別）', async () => {
+    vi.stubGlobal('fetch', async () => jsonRes({ error: false, body: seriesBody }));
+    const rec = await fetchPixivIllust({ id: '555' }, 'https://www.pixiv.net/artworks/555');
+    expect(rec.seriesOrder).not.toBe(seriesBody.seriesNavData.next.order);
+    expect(rec.seriesOrder).not.toBe(seriesBody.seriesNavData.prev.order);
+  });
+
+  test('先頭作品（prev が無い）でも order は取れる', async () => {
+    vi.stubGlobal('fetch', async () => jsonRes({ error: false, body: { ...seriesBody, seriesNavData: { ...seriesBody.seriesNavData, prev: null, order: 1 } } }));
+    const rec = await fetchPixivIllust({ id: '555' }, 'https://www.pixiv.net/artworks/555');
+    expect(rec.seriesOrder).toBe(1);
+  });
+
+  test('シリーズに属さない作品は seriesNavData が null で、3フィールドとも null のまま', async () => {
+    vi.stubGlobal('fetch', async () => jsonRes({ error: false, body: { ...seriesBody, seriesNavData: null } }));
+    const rec = await fetchPixivIllust({ id: '555' }, 'https://www.pixiv.net/artworks/555');
+    expect({ seriesId: rec.seriesId, seriesTitle: rec.seriesTitle, seriesOrder: rec.seriesOrder }).toEqual({ seriesId: null, seriesTitle: null, seriesOrder: null });
+  });
 });
 
 // #119 St3: illustType 2 はうごイラ＝コマ画像の zip ＋ コマごとの表示時間。zip も

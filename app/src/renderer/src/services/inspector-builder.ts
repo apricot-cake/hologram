@@ -411,6 +411,11 @@ export function makeInspector(deps: InspectorBuilderDeps) {
       updatedLabel: localeDateTime(p.updatedAt),
       imagesLabel: g.files.length > 1 ? deps.t('imagesCount', [g.files.length]) : '',
       imageOfLabel: p.imageIndex && p.imageCount ? deps.t('imageOf', [p.imageIndex, p.imageCount]) : '',
+      // pixiv series membership (#188). seriesTitle/seriesOrder are independent
+      // fields in the model (not composed into one sentence here) so a series
+      // whose order somehow came back null still shows its name.
+      seriesLabel: p.seriesTitle || '',
+      seriesOrderLabel: p.seriesOrder != null ? String(p.seriesOrder) : '',
       tags: userTags,
       srcTagsView,
       // Inline tag editing (P2⑦): the picker's own data rides in the inspector model.
@@ -432,6 +437,8 @@ export function makeInspector(deps: InspectorBuilderDeps) {
         images: deps.t('detailImages'),
         imageOf: deps.t('detailImageOf'),
         text: deps.t('detailText'),
+        series: deps.t('detailSeries'),
+        seriesOrder: deps.t('detailSeriesOrder'),
         tags: deps.t('detailTags'),
         tagsEmpty: deps.t('tagsEmpty'),
         editTags: deps.t('tipEditTags'),

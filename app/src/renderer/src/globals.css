@@ -296,3 +296,31 @@
   opacity: 0.8;
   animation: exit var(--motion-duration-base) var(--motion-ease-out) forwards;
 }
+
+/* Privacy mode (#88) — one key (P, services/privacy-mode.ts) blurs every surface that draws
+   a saved image, so the app is safe to leave on screen while sharing/streaming. The attribute
+   is set directly on <html> (same mechanism as [data-theme], see that module's header for
+   why this one skips theme.ts's separate pre-paint boot script).
+
+   The selector list IS the coverage checklist #88 left to implementation — every place a
+   library image, avatar or video paints: grid/list cards (post-card-media, its multi-image
+   stack peek, and every avatar), the inspector's post/poster thumbnails, the image-tab
+   stage (still/video/ugoira canvas), the quick-view lightbox and the triage stage (#46). Deliberately excludes app
+   chrome that happens to be <img>/<canvas> too (the settings About logo) — this hides LIBRARY
+   CONTENT, not app decoration, so the list is an allow-list of data-slot names rather than a
+   blanket `img, video, canvas` selector. blur() over saturate() (not opacity/visibility): the
+   post still has to read as "there is something here" — the point is unrecognizable, not gone
+   (an empty-looking grid reads as broken, not as protected). */
+:root[data-privacy-mode='true'] [data-slot='post-card-media'],
+:root[data-privacy-mode='true'] [data-slot='post-card-stack-thumb'],
+:root[data-privacy-mode='true'] [data-slot='avatar-image'],
+:root[data-privacy-mode='true'] [data-slot='inspector-thumb'],
+:root[data-privacy-mode='true'] [data-slot='inspector-work-thumb'],
+:root[data-privacy-mode='true'] [data-slot='viewer-image'],
+:root[data-privacy-mode='true'] [data-slot='viewer-video'],
+:root[data-privacy-mode='true'] [data-slot='viewer-canvas'],
+:root[data-privacy-mode='true'] [data-slot='lightbox-media'],
+:root[data-privacy-mode='true'] [data-slot='triage-media'] {
+  filter: blur(22px) saturate(0.85);
+  transition: filter var(--motion-duration-fast) var(--motion-ease-in);
+}
