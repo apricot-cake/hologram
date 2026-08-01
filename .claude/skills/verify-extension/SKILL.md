@@ -1,6 +1,6 @@
 ---
 name: verify-extension
-description: 拡張機能（extension/）の変更を実ブラウザで確かめる手順＝日常の Chrome が読む本体ツリーの `.output/chrome-mv3` へ production ビルドを書き、拡張が自分でリロードするのに任せる（#650 以降クリック依頼は不要）。「拡張を実機で確認して」「Alt+S を試して」など実ブラウザで拡張の動きを見る依頼で使う。
+description: 拡張機能（extension/）の変更を実ブラウザで確かめる手順＝対象 worktree を日常 Chrome の HMR 配信元として取得し、固定の `.output/chrome-mv3` と拡張 ID を維持したまま検証する。「拡張を実機で確認して」「Alt+S を試して」など実ブラウザで拡張の動きを見る依頼で使う。
 ---
 
 # verify-extension — 拡張の変更を実ブラウザで確かめる
@@ -11,19 +11,19 @@ description: 拡張機能（extension/）の変更を実ブラウザで確かめ
 
 日常の Chrome が読むのは**本体ツリーの `extension/.output/chrome-mv3` だけ**。**拡張の削除→再追加は決してしない**（`chrome.storage.local` の設定とショートカット割当が消える）。
 
-**リロードのクリックは要らない**（#650）。`npm run build:ext` は出力が完全なことを確かめてから `~/.hologram/extension-build.json` にそのビルドの識別子を書き、ネイティブメッセージングホストが全ての返信にそれを乗せる＝拡張は次の往復（保存・保存済みバッジの問い合わせ・ログ中継のいずれか）で気付いて自分をリロードする。**開いているSNSタブは再読み込みしない**。保存が飛んでいる間・キャプチャUI が開いている間・一括取込の走行中は見送られる（作業の証拠が途絶えれば60秒で失効）。仕組みと確認の口は docs/build.md「新しいビルドを拡張が自分で載せる」。
+**リロードのクリックは要らない**（#714・#718）。通常の content 変更は CRXJS HMR、background 更新と server reconnect は `chrome.runtime.reload()` で反映する。**開いている日常タブは再読み込みしない**。実機検証タブだけを検証側から必要時に更新する。
 
 **ブラウザを自動化スタックで起動しない。** web-ext / chrome-launcher / Playwright 経由の起動は自動化フラグの指紋が付き、X・Google がボット判定してサインインを弾く（2026-07-26 実測）。
 
 ## 手順（既定）
 
-1. **本体ツリーで `npm run build:ext`**。ビルドは1秒前後。worktree で回しても日常の Chrome には届かない（worktree は識別子を告知しない＝docs/build.md）ので、worktree の変更を見たい時は skill `test-in-worktree` の手順で本体を対象コミットへ detach してから本体でビルドする。
-2. **反映を待つ**＝拡張は次にホストと往復した時にリロードする。SNS のタブを開いていれば保存済みバッジの問い合わせで数秒。急ぐなら `chrome-extension://<id>/diag.html` を開く（ping が往復し、`devBuild` に `running` / `onDisk` が出る）。
-3. **ページ側を確認する時は、エージェントが対応SNSの検証タブを新規に用意する**。ビルド識別子が変わった後、または確認直前に、**その検証タブだけ**を再読み込みして新しい常駐スクリプトを注入する。既に開いている日常タブを列挙・更新してはならない。目視が必要なら、この検証タブだけを対象に依頼する。
-4. **反映されない時に手でリロードを頼まない**＝まず `diag.html` の `devBuild` を見る。`running` と `onDisk` が食い違ったままなら作業中（保存・キャプチャUI・一括取込）で見送られているか、`build:ext` が出力の検査で止まっている。
+1. fresh worktree は `npm run setup` を済ませ、対象 worktree で preview 所有を取得する（Claude Code は hook、Codex は `npm run ext:preview:acquire`）。
+2. `npm run ext:status` で state が `ready`、`sourceRoot` が対象 worktree であることを確認する。
+3. **ページ側を確認する時は、エージェントが対応SNSの検証タブを新規に用意する**。background reload 後、または確認直前に、**その検証タブだけ**を再読み込みして新しい常駐スクリプトを注入する。既に開いている日常タブを列挙・更新してはならない。目視が必要なら、この検証タブだけを対象に依頼する。
+4. **反映されない時に手でリロードを頼まない**＝`npm run ext:status` の `sourceRoot`・server PID・ログを確認する。別 worktree が所有していれば横取りしない。
 5. **Claude の自動確認は使い捨て環境で行う**＝`scripts/lib-extension-e2e.cts` 系（同梱 Chromium・一時プロファイル・モック native host。`npm run test:e2e-extension` / 実サイトカナリアは `e2e-capture-test.cts`）。Playwright はポート未指定ならパイプで喋るのでどこにも listen しない。
    **ログイン済みアカウントでの挙動は自動化しない**＝この拡張は「X から自動化に見えないこと」を設計原則に持ち（#362）、同じ制約が検証にもかかる。自動化スタックからのサインインはボット検知にも当たる（2026-07-26 実測）。ログインが要る確認は人間が日常の Chrome で行い、Claude は結果・スクショを受け取る。
-6. 人でないと不可能な操作（ログインが要る確認・実キー入力）だけユーザーへ依頼する。
+6. 人でないと不可能な操作（ログインが要る確認・実キー入力）だけユーザーへ依頼する。終了時は preview を解放して main 配信へ戻す。
 
 ## Claude から見えないもの（実測 2026-07-26）
 
