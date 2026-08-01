@@ -120,6 +120,12 @@ const X_HTML = `<!doctype html><html><body>
       <a href="/mia/status/1515"><time datetime="2026-07-01T00:00:00Z">15h</time></a>
       <div data-testid="tweetPhoto" data-rect-top="6400" id="p15a"><img src="https://pbs.twimg.com/media/PPP.jpg"></div>
     </article>
+    <!-- A small timeline picture behind the viewer. Its rectangle crosses the
+         viewer picture at the hover point, but the open dialog covers it. -->
+    <article data-testid="tweet" id="p17">
+      <a href="/olivia/status/1717"><time datetime="2026-07-01T00:00:00Z">17h</time></a>
+      <div data-testid="tweetPhoto" data-rect-top="9100" data-rect-left="250" data-rect-size="100" id="p17a"><img src="https://pbs.twimg.com/media/RRR.jpg"></div>
+    </article>
   </div>
     <!-- #659: the photo viewer (lightbox). An independent modal layer outside the article,
          where data-testid="swipe-to-dismiss" wraps the slide currently being shown (verified
@@ -140,6 +146,7 @@ const X_HTML = `<!doctype html><html><body>
       <div data-testid="swipe-to-dismiss" data-rect-top="8900" data-rect-size="600" id="p16">
         <img data-rect-top="9000" data-rect-left="150" src="https://pbs.twimg.com/media/QQQ.jpg?format=jpg&amp;name=large">
       </div>
+      <button aria-label="Close" data-rect-top="9010" data-rect-left="160" data-rect-size="36"></button>
     </div>
 </body></html>`;
 
@@ -311,7 +318,7 @@ beforeAll(async () => {
 }, 30000);
 
 test('初回走査で全ての投稿が観測される', () => {
-  expect(observed.size).toBe(16); // p1-p16 (added p12/p13 in #576, p14 in #575, p15 in #594, p16 in #659)
+  expect(observed.size).toBe(17); // p1-p17 (added p12/p13 in #576, p14 in #575, p15 in #594, p16 in #659, p17 in #704)
 });
 
 describe('問い合わせは見えている投稿だけ・1バッチで', () => {
@@ -1163,7 +1170,7 @@ describe('写真ビューア（拡大表示）でもホバー保存が出る（#
   afterAll(async () => {
     dom.reconfigure({ url: 'https://x.com/home' });
     window.document.getElementById('viewerDialog')?.removeAttribute('data-rect-top');
-    intersect(['p16'], false);
+    intersect(['p16', 'p17'], false);
     hoverAway();
     await settle();
   });
@@ -1190,6 +1197,7 @@ describe('写真ビューア（拡大表示）でもホバー保存が出る（#
       // fire once the viewer actually mounts its slide.
       intersect(['p16'], false);
       intersect(['p16'], true);
+      intersect(['p17'], true);
       await settle();
     });
 
@@ -1201,12 +1209,14 @@ describe('写真ビューア（拡大表示）でもホバー保存が出る（#
       // controlHost() の IMG 分岐＝mount 先は img.parentElement（ラッパー自身）。
       // 「どこに置かれて見えるか」は下の位置テストが別に見る（host と矩形は別物）。
       expect(saveButtons()[0].parentElement).toBe(viewerBox());
+      expect(controlOf('p17a')).toHaveLength(0);
     });
 
-    // #704: ラッパー（swipe-to-dismiss）はビューア全体大のスワイプ判定領域なので、
-    // その角に置くとXの閉じる（×）ボタンに重なる。ボタンは画像自身の角に出ること。
-    // host はラッパーなので left/top は「ラッパー左上から画像左上までの差分＋inset」。
-    test('保存ボタンは画像の角に出る（ラッパーの角ではない）（#704）', () => {
+    // #704: The viewer's swipe wrapper is the full-slide hit target, so its
+    // corner is not the picture's corner. When X's close button overlays the
+    // picture's own corner, preserve the image-relative left edge and clear it
+    // vertically instead of moving to a different corner.
+    test('保存ボタンは画像の左上に付き、Xの閉じるボタンと重ならない（#704）', () => {
       const [button] = saveButtons();
       const wrapper = viewerBox().getBoundingClientRect();
       const img = viewerImg().getBoundingClientRect();
@@ -1215,7 +1225,7 @@ describe('写真ビューア（拡大表示）でもホバー保存が出る（#
       expect(img.left).not.toBe(wrapper.left);
       expect(img.top).not.toBe(wrapper.top);
       expect(button.style.left).toBe(`${img.left - wrapper.left + 6}px`); // 106px = (150−50)+CONTROL_INSET
-      expect(button.style.top).toBe(`${img.top - wrapper.top + 6}px`); // 106px = (9000−8900)+CONTROL_INSET
+      expect(button.style.top).toBe('152px'); // Close button bottom (9010+36) − wrapper top + inset
     });
 
     test('押すとパーマリンクは URL の /photo/N を落とした投稿になる（ドラッグ保存経路を再利用）', () => {

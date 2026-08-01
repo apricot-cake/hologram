@@ -168,23 +168,23 @@ const HTML = `<!doctype html>
     // picture permanently unreachable — modalCovers() must exempt a modal
     // that CONTAINS the anchor.
     // #704: the swipe-to-dismiss wrapper is X's swipe-down hit target, sized
-    // to the viewer's slide — NOT to the picture. The fixture makes the
-    // wrapper fill the dialog while the picture stays 420×420 in its centre,
-    // so the corner assertion below can tell "on the picture" apart from "on
-    // the wrapper" (the previous fixture pinned them to the same size, which
-    // is exactly the hole that let #704's overlap ship green).
+    // to the viewer's slide — NOT to the picture. This layout mirrors the
+    // wide-window case where the picture reaches the viewport's top edge and
+    // would otherwise collide with X's close button.
     const VIEWER_HTML = `<!doctype html>
 <html><head><meta charset="utf-8"><style>
   * { box-sizing: border-box; margin: 0; }
   body { background: #000; }
   [role="dialog"] { position: fixed; inset: 0; }
-  [data-testid="swipe-to-dismiss"] { position: relative; width: 100%; height: 100%; display: grid; place-items: center; }
-  [data-testid="swipe-to-dismiss"] img { display: block; width: 420px; height: 420px; object-fit: contain; }
+  [data-testid="swipe-to-dismiss"] { position: relative; width: 100%; height: 100%; }
+  [data-testid="swipe-to-dismiss"] img { display: block; position: absolute; left: 18px; top: 0; width: 1100px; height: 620px; object-fit: contain; }
+  button[aria-label="Close"] { position: fixed; left: 12px; top: 12px; width: 36px; height: 36px; }
 </style></head><body>
   <div role="dialog" aria-modal="true">
     <div data-testid="swipe-to-dismiss">
       <img src="https://pbs.twimg.com/media/AAA.jpg?format=jpg&amp;name=large" alt="viewer image">
     </div>
+    <button aria-label="Close"></button>
   </div>
 </body></html>`;
     const viewerPage = await openFixture(overlay, 'https://x.com/alice/status/111/photo/1', VIEWER_HTML);
@@ -197,11 +197,11 @@ const HTML = `<!doctype html>
       () => false,
     );
     if (!viewerControlVisible) throw new Error('OVERLAY_VIEWER_MODAL_BLOCKED_FAIL: the photo viewer is itself a dialog, and hover was blocked by it — modalCovers() should exempt a modal that contains the anchor');
-    // #704: the control sits in the PICTURE's corner, not the wrapper's.
+    // #704: the control sits at the PICTURE's left edge, not the wrapper's.
     // Ownership is judged by geometry (the control mounts on the wrapper —
     // controlHost()'s IMG branch — so containment says nothing): its top-left
-    // must be CONTROL_INSET (6px) inside the picture's corner, which the
-    // fixture keeps far away from the wrapper's own corner.
+    // must be CONTROL_INSET (6px) inside the picture's left edge. It shifts
+    // down only when the close button occupies the image's top-left corner.
     const viewerCorner = await viewerPage.evaluate(() => {
       const control = document.querySelector('[data-hologram-overlay]');
       const img = document.querySelector('[data-testid="swipe-to-dismiss"] img');
@@ -212,12 +212,12 @@ const HTML = `<!doctype html>
       const controlRect = control.getBoundingClientRect();
       const imgRect = img.getBoundingClientRect();
       const wrapperRect = wrapper.getBoundingClientRect();
-      return { controlLeft: controlRect.left, controlTop: controlRect.top, imgLeft: imgRect.left, imgTop: imgRect.top, wrapperLeft: wrapperRect.left, wrapperTop: wrapperRect.top };
+      return { controlLeft: controlRect.left, controlTop: controlRect.top, imgLeft: imgRect.left, imgTop: imgRect.top, imgWidth: imgRect.width, imgHeight: imgRect.height, wrapperLeft: wrapperRect.left, wrapperTop: wrapperRect.top, wrapperWidth: wrapperRect.width, wrapperHeight: wrapperRect.height };
     });
-    if (Math.abs(viewerCorner.imgLeft - viewerCorner.wrapperLeft) < 50 || Math.abs(viewerCorner.imgTop - viewerCorner.wrapperTop) < 50) throw new Error('viewer fixture regressed: the wrapper must be meaningfully larger than the picture for this case to test anything (#704)');
+    if (viewerCorner.wrapperWidth - viewerCorner.imgWidth < 50 && viewerCorner.wrapperHeight - viewerCorner.imgHeight < 50) throw new Error('viewer fixture regressed: the wrapper must be meaningfully larger than the picture for this case to test anything (#704)');
     const viewerOffsetX = viewerCorner.controlLeft - viewerCorner.imgLeft;
     const viewerOffsetY = viewerCorner.controlTop - viewerCorner.imgTop;
-    if (Math.abs(viewerOffsetX - 6) > 1.5 || Math.abs(viewerOffsetY - 6) > 1.5) throw new Error(`OVERLAY_VIEWER_CORNER_FAIL: control sits at ${viewerOffsetX}×${viewerOffsetY}px from the picture's corner (expected the 6px inset) — it is anchored to the wrapper, which is where X's own close button lives (#704)`);
+    if (Math.abs(viewerOffsetX - 6) > 1.5 || Math.abs(viewerOffsetY - 54) > 1.5) throw new Error(`OVERLAY_VIEWER_CLOSE_CLEARANCE_FAIL: control sits at ${viewerOffsetX}×${viewerOffsetY}px from the picture's corner (expected 6px right and 54px down) — it either follows the wrapper or intersects X's close button (#704)`);
     await viewerPage.close();
 
     console.log('PASS e2e-overlay-visual: failure banner layout, corner has no tooltip, scroll tracking, modal occlusion, fixed-header occlusion, photo-viewer hover (#659) and picture-corner placement (#704)');

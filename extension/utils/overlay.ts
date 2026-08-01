@@ -556,7 +556,7 @@ export async function startOverlay(): Promise<void> {
       if (!state) continue;
       for (const [box, anchor] of state.anchors) {
         const r = box.getBoundingClientRect();
-        if (!rectHoldsPointer(r, x, y)) continue;
+        if (!rectHoldsPointer(r, x, y) || modalCovers(anchor)) continue;
         // Smallest box wins where they overlap, so a picture inside a quoted
         // post is preferred over the outer post's own picture behind it.
         const area = r.width * r.height;
@@ -977,12 +977,36 @@ export async function startOverlay(): Promise<void> {
       return;
     }
     if (!host || host === anchor.box) {
-      place(CONTROL_INSET, CONTROL_INSET);
+      const boxRect = anchor.box.getBoundingClientRect();
+      place(CONTROL_INSET, clearXViewerCloseButton(anchor.box, boxRect, CONTROL_INSET, CONTROL_INSET));
       return;
     }
     const hostRect = host.getBoundingClientRect();
     const boxRect = anchor.box.getBoundingClientRect();
-    place(boxRect.left - hostRect.left + CONTROL_INSET, boxRect.top - hostRect.top + CONTROL_INSET);
+    const left = boxRect.left - hostRect.left + CONTROL_INSET;
+    const top = boxRect.top - hostRect.top + CONTROL_INSET;
+    place(left, clearXViewerCloseButton(anchor.box, hostRect, left, top));
+  }
+
+  // X's photo viewer sometimes lets the picture itself reach the viewport's
+  // top-left. The normal image-corner placement then lands on the viewer's
+  // close button. Keep the left edge tied to the picture, but move down only
+  // far enough to clear any native button intersecting that one small corner.
+  // This is deliberately scoped to the viewer's stable swipe wrapper: feed
+  // pictures keep their ordinary 6px image-corner placement (#704).
+  function clearXViewerCloseButton(box: Element, hostRect: DOMRect, left: number, top: number): number {
+    if (!box.closest('[data-testid="swipe-to-dismiss"]')) return top;
+    let adjustedTop = top;
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      const controlLeft = hostRect.left + left;
+      const controlTop = hostRect.top + adjustedTop;
+      const collisions = [...document.querySelectorAll('button[aria-label]')].map((button) => button.getBoundingClientRect()).filter((rect) => rect.width > 0 && rect.height > 0 && controlLeft < rect.right && controlLeft + CONTROL_SIZE > rect.left && controlTop < rect.bottom && controlTop + CONTROL_SIZE > rect.top);
+      if (!collisions.length) break;
+      const nextTop = Math.max(adjustedTop, ...collisions.map((rect) => rect.bottom - hostRect.top + CONTROL_INSET));
+      if (nextTop === adjustedTop) break;
+      adjustedTop = nextTop;
+    }
+    return adjustedTop;
   }
 
   // A text-only post's mark (#575) RIDES THE AVATAR, the way a picture's mark
