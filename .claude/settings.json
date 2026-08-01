@@ -8,11 +8,28 @@
             "shell": "bash",
             "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/sweep-orphan-worktrees.mjs\"",
             "statusMessage": "sweeping orphan worktree shells"
+          },
+          {
+            "type": "command",
+            "shell": "bash",
+            "command": "node \"$CLAUDE_PROJECT_DIR/scripts/extension-preview-control.cts\" hook-acquire",
+            "statusMessage": "acquiring extension preview"
           }
         ]
       }
     ],
     "PreToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "shell": "bash",
+            "command": "node \"$CLAUDE_PROJECT_DIR/scripts/extension-preview-control.cts\" hook-check",
+            "statusMessage": "checking extension preview ownership"
+          }
+        ]
+      },
       {
         "matcher": "Bash",
         "hooks": [
@@ -21,6 +38,18 @@
             "shell": "bash",
             "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-commit-heredoc.js\"",
             "statusMessage": "checking commit syntax"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "shell": "bash",
+            "command": "node \"$CLAUDE_PROJECT_DIR/scripts/extension-preview-control.cts\" hook-release",
+            "statusMessage": "returning extension preview to main"
           }
         ]
       }

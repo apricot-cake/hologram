@@ -7,6 +7,7 @@ import manifest, { EXTENSION_ID } from './manifest.config.ts';
 export default defineConfig(({ command, mode }) => {
   const browser = mode === 'firefox' ? 'firefox' : 'chrome';
   const development = command === 'serve';
+  const developmentOutput = process.env.HOLOGRAM_EXTENSION_DEV_OUTPUT ? resolve(process.env.HOLOGRAM_EXTENSION_DEV_OUTPUT) : resolve(import.meta.dirname, '.output/chrome-mv3');
 
   return {
     plugins: [
@@ -51,7 +52,7 @@ export default defineConfig(({ command, mode }) => {
       },
     },
     build: {
-      outDir: development ? '.output/chrome-mv3' : `.output/${browser}-mv3-release`,
+      outDir: development ? developmentOutput : `.output/${browser}-mv3-release`,
       emptyOutDir: true,
       modulePreload: false,
       sourcemap: false,
