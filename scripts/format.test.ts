@@ -1,10 +1,10 @@
-// format.ts のロジック単体テスト。件数の短縮（formatCount）・日付整形
-// （formatShortDate/compactDate/formatDate）・バックアップ時刻（fmtTime/
-// fmtBackupTime＝相対ラベルは呼び出し側から注入）・ロケール既定ヘルパ
-// （localeDate/localeDateTime）を検証する。旧 viewer.js に散在していた整形関数が
-// 単一所有へ統合されたスライスの回帰ガード。ロケール依存の出力（compactDate/
-// formatDate/locale*）はバイト値でなく「非空・falsy は空」等の不変条件で確認し、
-// CI ロケール差でのフレーク化を避ける。
+// Unit tests for the logic in format.ts. Verifies count shortening (formatCount), date formatting
+// (formatShortDate/compactDate/formatDate), backup timestamps (fmtTime/
+// fmtBackupTime = the relative label is injected by the caller), and the locale default helpers
+// (localeDate/localeDateTime). A regression guard for the slice where formatting functions that
+// used to be scattered across the old viewer.js got consolidated into single ownership. For
+// locale-dependent output (compactDate/formatDate/locale*), we check invariants like "non-empty" /
+// "falsy is empty" rather than exact byte values, to avoid flakiness from CI locale differences.
 
 import { describe, expect, test } from 'vitest';
 import * as F from '../app/src/renderer/src/services/format';
@@ -62,7 +62,7 @@ describe('formatShortDate: 今年は M/D、他年は Y/M/D（ゼロ埋めしな�
   });
 });
 
-// ロケール依存の出力は「不正日付は空・正日付は非空」の不変条件だけ見る
+// For locale-dependent output, only check the invariant "invalid date is empty, valid date is non-empty"
 describe('compactDate / formatDate', () => {
   test('compactDate: 空は空', () => {
     expect(F.compactDate('')).toBe('');
@@ -95,7 +95,7 @@ describe('fmtTime: ゼロ埋め Y/M/D HH:MM（ロケール非依存＝バイト�
   });
 
   test('月日時分をゼロ埋め', () => {
-    // ローカルタイムで組むので、ローカル日時から期待値を作って一致を見る
+    // Built from local time, so we build the expected value from a local date/time and compare
     const d = new Date(2021, 0, 5, 7, 3); // 2021-01-05 07:03 local
     expect(F.fmtTime(d.toISOString())).toBe('2021/01/05 07:03');
   });

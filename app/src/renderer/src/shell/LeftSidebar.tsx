@@ -5,13 +5,13 @@
 // Linear, not the old facet-row wall.
 //
 // P1 scope: the two browse destinations, the library folders (flat, click = apply
-// the folder as a place filter), the 保存した検索 group (#40) and the footer (settings
+// the folder as a place filter), the Saved Searches group (#40) and the footer (settings
 // gear + mirror rail). Still to come (P1-3 continuation): folder HIERARCHY +
 // create/rename/delete (#41).
 //
 // #678: the default is now the collapsed labeled rail, not the expanded column. Its
-// scope is deliberately the 5 fixed destinations only (投稿/投稿者/ゴミ箱/コマンドパレット/
-// 設定) — the 3 user-grown groups below (library folders, saved searches, poster
+// scope is deliberately the 5 fixed destinations only (posts/posters/trash/command palette/
+// settings) — the 3 user-grown groups below (library folders, saved searches, poster
 // folders) carry `group-data-[collapsible=icon]:hidden` and show only when expanded.
 // See docs/decisions/0018-labeled-navigation-rail-default.md for the design.
 import { ChevronRight, Folder, LayoutGrid, Plus, Search, Settings, Terminal, Trash2, Users } from 'lucide-react';
@@ -58,7 +58,7 @@ function useFolders(): HologramFolder[] {
   return list;
 }
 
-// Poster folders (poster-folders.json, viewer-mode #6 残1). The store itself lives in
+// Poster folders (poster-folders.json, viewer-mode #6 remainder 1). The store itself lives in
 // orchestrator.ts's posterGrid builder, assigned to the posterFolderStore export only
 // once the boot IIFE gets there — this component can mount before that happens (React
 // mounts in parallel with orchestrator.ts's async setup, see App.tsx), so the load +
@@ -176,7 +176,7 @@ function FolderNode({ f, ctx }: { f: HologramFolder; ctx: FolderTreeCtx }) {
     </Collapsible>
   );
 }
-// One row of the FLAT poster-folder list (poster mode only, #6 残1). Same row shell as
+// One row of the FLAT poster-folder list (poster mode only, #6 remainder 1). Same row shell as
 // FolderNode above (drag handle, context menu, click = apply) minus everything that only
 // makes sense for a tree: no twisty, no kids, no "into" drop mode — a poster folder can
 // only land before or after a sibling, never inside one (posterFolderStore never sets
@@ -372,7 +372,7 @@ export function LeftSidebar({ resize }: { resize?: PanelResize }) {
   // one action here whose effect is invisible, so it is the one that says anything.
   const savedSearchMenu = (e: MouseEvent, f: HologramFolder) => {
     e.preventDefault();
-    // 条件を更新 is offered only when there IS a filter to capture — re-saving an empty
+    // "Update Condition" is offered only when there IS a filter to capture — re-saving an empty
     // query would quietly turn the saved search into "everything".
     const items = [...(currentKey ? [{ label: t('savedSearchUpdate'), act: 'update' }] : []), { label: t('foldRename'), act: 'rename' }, { sep: true }, { label: t('foldDelete'), act: 'delete', danger: true }];
     menuOpen({ x: e.clientX, y: e.clientY, items }, (item) => {
@@ -384,11 +384,11 @@ export function LeftSidebar({ resize }: { resize?: PanelResize }) {
     });
   };
 
-  // Poster-mode folder group (#6 残1): a flat sibling list backed by posterFolderStore
+  // Poster-mode folder group (#6 remainder 1): a flat sibling list backed by posterFolderStore
   // (poster-folders.json), visible only while browsing posters — unlike the library tree
   // above, which stays reachable from every mode so a click can jump there. There is no
   // manager modal to open any more: this list creates/renames/deletes/reorders directly,
-  // the same "the sidebar IS the manager" grammar #41/確定D already gave library folders.
+  // the same "the sidebar IS the manager" grammar #41/finalized decision D already gave library folders.
   const posterFolders = usePosterFolders();
   const [pfDragId, setPfDrag] = useState<string | null>(null);
   const [pfDrop, setPfDrop] = useState<PosterFolderDropTarget | null>(null);
@@ -444,7 +444,7 @@ export function LeftSidebar({ resize }: { resize?: PanelResize }) {
       <SidebarHeader className="app-drag h-[var(--tabbar-h)] flex-row items-center justify-start">
         {/* The tooltip is where Ctrl+B is learnable (#245): the shortcut carries no hint of
             itself, and the target users are not assumed to know editor key conventions. Its
-            partner Ctrl+Shift+B is spelled out next to it in the 表示 popover, where the two
+            partner Ctrl+Shift+B is spelled out next to it in the Display popover, where the two
             can be read as the pair they are — a tooltip on one button is the wrong place to
             explain a key that acts on two panels. */}
         <Tooltip>
@@ -474,7 +474,7 @@ export function LeftSidebar({ resize }: { resize?: PanelResize }) {
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
-        {/* The folder tree, edited in place (#41 / 確定D): + on the group heading makes a
+        {/* The folder tree, edited in place (#41 / finalized decision D): + on the group heading makes a
             root folder, the row's context menu makes a subfolder, renames or deletes.
             There is no management modal to open — the tree IS the manager, the way
             Finder / Eagle / Raindrop do it. The group stays mounted even when empty so
@@ -514,13 +514,13 @@ export function LeftSidebar({ resize }: { resize?: PanelResize }) {
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
-        {/* Poster-mode folders (#6 残1) — only while browsing posters (unlike the library
+        {/* Poster-mode folders (#6 remainder 1) — only while browsing posters (unlike the library
             tree above, which stays reachable from every mode): a flat list, edited in
             place the same way — + on the heading creates, the row's context menu
             renames/deletes, drag reorders. No management modal for these either now.
             Own heading string (sbPosterFoldersSidebarTitle, distinct from the qf-pop
             facet's sbPosterFoldersTitle): the two groups sit stacked right on top of
-            each other here, and both saying plain 「フォルダ」 read as one group split
+            each other here, and both saying plain "folder" read as one group split
             in two rather than two different things. */}
         {isPosters && (
           <SidebarGroup className="group-data-[collapsible=icon]:hidden">
@@ -537,7 +537,7 @@ export function LeftSidebar({ resize }: { resize?: PanelResize }) {
             </SidebarGroupContent>
           </SidebarGroup>
         )}
-        {/* 保存した検索 (#40) — its own group, never mixed in with the folders above:
+        {/* Saved Searches (#40) — its own group, never mixed in with the folders above:
             a folder is a place you put posts, a saved search is a question you re-ask.
             Click REPLACES the current query with the saved one, so every condition
             lands in the chip bar ready to be adjusted. No count badge: a saved search
@@ -567,11 +567,11 @@ export function LeftSidebar({ resize }: { resize?: PanelResize }) {
             </SidebarGroupContent>
           </SidebarGroup>
         )}
-        {/* ゴミ箱 (#268) — a library destination, so it lives here in the nav rather
-            than in the footer (which holds the app-level entries) or in 設定, where it
+        {/* Trash (#268) — a library destination, so it lives here in the nav rather
+            than in the footer (which holds the app-level entries) or in Settings, where it
             used to be. Last and always present: digiKam puts the trash as the final
-            entry of the album tree, Apple 写真 keeps 「最近削除した項目」 in a
-            ユーティリティ group at the bottom, and neither hides it when it is empty —
+            entry of the album tree, Apple Photos keeps "Recently Deleted" in a
+            Utilities group at the bottom, and neither hides it when it is empty —
             a row that disappears turns "where did my deleted post go" into a search.
             mt-auto pins it under whatever the folder / saved-search groups grew to.
             The badge is the count, shown only from 1 up: "0" is not information, and
@@ -592,12 +592,14 @@ export function LeftSidebar({ resize }: { resize?: PanelResize }) {
       </SidebarContent>
       <SidebarFooter>
         <SidebarMenu>
-          {/* コマンドパレット (#28) — 見える入口の1つ目（もう1つは検索ボックス右端の
-              バッジ）。⋮ メニュー案は #146 で却下され、「#28 の入口は実装時にサイドバー
-              へ足す」と決まっている＝左レールを持つアプリ（VS Code の Manage 歯車 /
-              Obsidian のリボン）は全域の入口をサイドバー側に置く、というのがその理由。
-              設定と同じフッターに並ぶのは、どちらも「今見ているもの」ではなくアプリ
-              そのものへの入口だから。畳んだ状態でもツールチップ付きで押せる。 */}
+          {/* Command Palette (#28) — the first of two visible entry points (the other is
+              the badge at the search box's right edge). The ⋮ menu proposal was rejected
+              in #146, and it was decided that "#28's entry point will be added to the
+              sidebar when implemented" — the reasoning being that apps with a left rail
+              (VS Code's Manage gear / Obsidian's ribbon) put their app-wide entry points
+              on the sidebar side. It sits in the same footer as Settings because both are
+              entry points to the app itself, not to "what you're currently looking at."
+              Even collapsed, it stays clickable with a tooltip. */}
           <SidebarMenuItem>
             <SidebarMenuButton tooltip={`${t('paletteTitle')} (Ctrl+K)`} onClick={() => openPalette()}>
               <Terminal />

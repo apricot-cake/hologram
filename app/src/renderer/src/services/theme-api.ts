@@ -1,5 +1,5 @@
 // Theme runtime API — apply/get/set/resolve, the module the React
-// Appearance section (Settings → 外観) drives. Bundled into app.js via the App.tsx /
+// Appearance section (Settings → Appearance) drives. Bundled into app.js via the App.tsx /
 // settings-ipc imports; it owns the LIVE pref state after load: it follows OS theme
 // changes while in 'auto' and reconciles once with config.json over IPC.
 //

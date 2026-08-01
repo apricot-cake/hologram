@@ -5,7 +5,7 @@
 // islands/build.mjs producing ONE IIFE for all islands — retired when the renderer moved
 // to electron-vite; see #156.)
 //
-// The renderer's single React root (最終形B DoD: 島 root 群の1本統合 — COMPLETE, i.e. the
+// The renderer's single React root (Final shape B DoD: consolidate the island root group into one — COMPLETE, i.e. the
 // former independent island roots were consolidated into one). root.tsx
 // creates ONE createRoot(#hologramAppRoot) and renders app/App.tsx, which is the source of
 // truth for the component roster: every component renders under that one root (container-mounted
@@ -36,7 +36,7 @@
 //     modules now, imported directly by their consumers — no barrel entry needed, and
 //     the hologram-svc alias itself is long gone.
 //     shell.ts — the last side-effect-only entry (searchMode pref
-//     restore) — was deleted with the search-mode toggle itself (P2④ 単一スマート検索). ---
+//     restore) — was deleted with the search-mode toggle itself (P2④ single smart search). ---
 // Tailwind v4 + shadcn/ui theme (globals.css) — imported FIRST so the
 // generated stylesheet precedes any component-level CSS in cascade order.
 import '../globals.css';

@@ -75,8 +75,8 @@ const saveFolderErr = (code?: string) => {
     case 'not-writable':
       return t('saveFolderErrNotWritable');
     // #37: the current save folder is missing on disk — relocation (which COPIES
-    // from it) refuses outright; the content column's 再指定 (repoint) button is
-    // the way out, not this dialog's 変更 button.
+    // from it) refuses outright; the content column's repoint button is
+    // the way out, not this dialog's Change button.
     case 'library-missing':
       return t('saveFolderErrLibraryMissing');
     default:
@@ -110,7 +110,7 @@ function PathChip({ children }: { children?: string | null }) {
   return <code className="bg-muted min-w-0 flex-1 rounded-md px-2.5 py-1.5 font-mono text-xs break-all">{children}</code>;
 }
 
-// データ: save-folder (with live migration progress), export/import, auto backup.
+// Data: save-folder (with live migration progress), export/import, auto backup.
 // Port of viewer.js setupSaveFolder + the export/import handlers + setupBackup —
 // only the modal-side UI. The always-visible rail is mirror/MirrorStatus.tsx.
 export function Data() {
@@ -273,9 +273,10 @@ export function Data() {
       if (res && res.legacy && res.path) {
         // Bound once: the callbacks below outlive the narrowing on res.path.
         const zipPath = res.path;
-        // #34: 取り込む投稿が既にライブラリにあるとき、コピー／置換／スキップを
-        // 1回だけ聞く（1件ずつ聞くと数百回になるため、バッチ単位）。重複が無ければ
-        // main 側が即座に取り込むので、この確認は出ない。
+        // #34: When the posts being imported already exist in the library, ask
+        // copy / replace / skip just once (asking per item would mean hundreds of
+        // prompts, so it's batched). If there are no duplicates, the main process
+        // imports immediately, so this confirmation never appears.
         const first = await importLegacyZip(zipPath);
         if (!first || first.error) {
           notify(t('importFailed'));
@@ -422,7 +423,7 @@ export function Data() {
 
   return (
     <div className="space-y-6">
-      {/* 保存先フォルダ */}
+      {/* Save destination folder */}
       <Card>
         <CardHeader>
           <CardTitle className="text-sm">
@@ -440,7 +441,7 @@ export function Data() {
             </Button>
           </div>
 
-          {/* 移行の進捗（移動中以外は非表示） */}
+          {/* Migration progress (hidden except while moving) */}
           {progress && (
             <div className="space-y-2.5">
               <div className="text-sm font-medium">{t('saveFolderProgressTitle')}</div>
@@ -499,7 +500,7 @@ export function Data() {
         </CardContent>
       </Card>
 
-      {/* 自動バックアップ */}
+      {/* Auto backup */}
       <Card>
         <CardHeader>
           <CardTitle className="text-sm">
@@ -551,7 +552,7 @@ export function Data() {
         </CardContent>
       </Card>
 
-      {/* 整合性チェック（#301） — 何も問題が無ければ progressive disclosure で非表示 */}
+      {/* Integrity check (#301) — hidden via progressive disclosure when there are no problems */}
       {integrity && (integrity.dbOk === false || (integrity.orphanCount ?? 0) > 0 || (integrity.missingCount ?? 0) > 0) && (
         <Card>
           <CardHeader>

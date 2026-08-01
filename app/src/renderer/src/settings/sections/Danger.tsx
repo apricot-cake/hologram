@@ -9,7 +9,7 @@ import { t } from '../../_shared/i18n.ts';
 import { getPrefs } from '../ipc.ts';
 import { setSkipDeleteConfirm, confirmClearAll } from '../../services/post-grid-builder.ts';
 
-// 危険な操作: re-enable the delete confirmation + wipe the whole library.
+// Dangerous operations: re-enable the delete confirmation + wipe the whole library.
 // The wipe is NOT reimplemented here — the button only triggers the shared
 // keyword-gated confirm overlay via post-grid-builder.ts's confirmClearAll live binding.
 export function Danger() {

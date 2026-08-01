@@ -26,9 +26,9 @@
 //   - identity fields match a live API re-fetch (screenName/displayName/userId/
 //     text-prefix/date) — engagement counts drift and are reported as info
 //   - media count sanity (saved ≤ live, imageIndex within imageCount)
-// plus a "保存値" line of the fields no API can confirm (capturedAt, mediaType,
+// plus a "saved values" line of the fields no API can confirm (capturedAt, mediaType,
 // lang, the reply/quote/thread flags, tags) for the human's own eyes — the
-// manual half of test-plan.md's 共通確認項目.
+// manual half of test-plan.md's common verification items.
 //
 // This is the whole of what scripts/verify-store.py used to do (#60). That
 // script was a second, Python implementation of this same comparison, still
@@ -201,7 +201,7 @@ async function verifyRecord(rec: any, dir: string) {
   for (const i of issues) console.log(`   - ${i}`);
   if (info.length) console.log(`   (${info.join(' / ')})`);
   // The fields no API can confirm, printed for the human beside the automatic
-  // checks — test-plan.md's 共通確認項目 keeps these as a manual row, and it can
+  // checks — test-plan.md's common verification items keeps these as a manual row, and it can
   // only stay manual if the values are actually in front of the person reading.
   const tags = (rec.tags || []).join(',');
   console.log(`   保存値: capturedAt=${rec.capturedAt || 'null'} mediaType=${rec.mediaType || 'null'} lang=${rec.lang || 'null'} isReply=${flag(rec.isReply)} isQuote=${flag(rec.isQuote)} isThread=${flag(rec.isThread)}${rec.quotedUrl ? ` quotedUrl=${rec.quotedUrl}` : ''}${tags ? ` tags=${tags}` : ''}`);

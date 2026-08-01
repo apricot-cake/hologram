@@ -23,7 +23,7 @@ import { type CommandEntry, type CommandSection, type QueryOptions, queryEntries
 import { handlers as sbHandlers, registerFocus } from '../services/searchbox.ts';
 import { get as storeGet, set as storeSet, subscribe as storeSubscribe } from '../services/store.ts';
 
-// This face's顔ぶれ: tags and posters only (the palette adds commands, tabs and
+// This face's lineup: tags and posters only (the palette adds commands, tabs and
 // folders). The counts are the ones the old buildSuggest used — a dropdown under a
 // live-filtering input has room for a handful, not a page.
 const SUGGEST: QueryOptions = { sections: ['tag', 'user'], limit: { tag: 6, user: 4 } };
@@ -70,9 +70,9 @@ export function SearchBox({ placeholder }: { placeholder?: string }) {
 
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key !== 'Enter') return;
-    // IME 変換中の Enter は変換の確定であって検索の確定ではない。Base UI 側は自分の
-    // Enter 処理を which=229 で弾いているが、この handler は Base UI より先に走る
-    // ので、こちらでも見る必要がある（#28 で足した）。
+    // Enter while an IME conversion is in progress confirms the conversion, not the
+    // search. Base UI itself blocks its own Enter handling via which=229, but this
+    // handler runs before Base UI does, so it needs to check for this too (added in #28).
     if (e.nativeEvent.isComposing) return;
     // A highlighted item means Base UI commits it (→ the Item's onClick). Bare
     // Enter confirms the free-text term as a query-tree leaf (search-editing's

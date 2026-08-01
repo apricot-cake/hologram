@@ -1,11 +1,11 @@
-// Form editor for the "+ フィルタ" flow (redesign §3-2 / P2③) — the date-range and
+// Form editor for the "+ Filter" flow (redesign §3-2 / P2③) — the date-range and
 // engagement forms, adapted from the retired filter-popover component. Driven by a
 // FilterCatDate / FilterCatEng entry (orchestrator's filterCategories): the entry
 // carries the localized dim/type options + the apply action; this component only
 // collects the raw field values and hands them off, then closes the popover.
 //
-// Add-only here (the "+ フィルタ" flow never edits an existing leaf — that's the
-// chip-click path, P2③ 後半), so there is no remove button.
+// Add-only here (the "+ Filter" flow never edits an existing leaf — that's the
+// chip-click path, P2③ second half), so there is no remove button.
 import { useEffect, useMemo, useState } from 'react';
 import { beginFilterEditSession, endFilterEditSession, type FilterCatDate, type FilterCatEng } from '../services/orchestrator.ts';
 import { t } from '../_shared/i18n.ts';
@@ -103,7 +103,7 @@ function EngForm({ cat, onClose }: { cat: FilterCatEng; onClose: () => void }) {
 }
 
 export function FormEditor({ cat, onClose }: { cat: FilterCatDate | FilterCatEng; onClose: () => void }) {
-  // One mounted editor = one nav-history entry (#144 確定未決2) — same bracket as
+  // One mounted editor = one nav-history entry (#144 confirmed-pending item 2) — same bracket as
   // ValueEditor (the form applies once, but an edit-reopen replaces in place).
   useEffect(() => {
     beginFilterEditSession();

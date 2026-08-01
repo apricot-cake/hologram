@@ -1,10 +1,10 @@
 'use strict';
 
-// Verifies the single smart search end-to-end in the app (P2④: the ぴったり/おおまか
+// Verifies the single smart search end-to-end in the app (P2④: the ぴったり(exact)/おおまか(loose)
 // toggle is gone — the loose matcher is the only behavior):
-//   B 正規化: "ねこ" matches the katakana body "ネコかわいい" → 1
-//   C 編集距離: typo "こんにとは" matches "こんにちは世界" → 1
-//   無関係語 → 0
+//   B normalization: "ねこ" matches the katakana body "ネコかわいい" → 1
+//   C edit distance: typo "こんにとは" matches "こんにちは世界" → 1
+//   unrelated term → 0
 //
 // Also verifies the date-filter predicate's timezone boundary (postPredOf /
 // localDayRange) through the real UI — the "+ フィルタ" flow's date form (P2③
@@ -111,23 +111,23 @@ const evalJs = `(async () => {
   await waitFor(() => cards() >= 7);   // 3 search posts + 4 date-boundary posts; post view loads async
 
   // --- Single smart search (the only behavior — no mode toggle) ---
-  // B 正規化: ひらがなクエリがカタカナ本文に当たる
+  // B normalization: a hiragana query hits the katakana body text
   typeSearch('ねこ');
   await wait(240);
   const smartKana = cards();
-  // C 編集距離: 'こんにとは'（ち→と 置換ミス）が 'こんにちは世界' に一致
+  // C edit distance: 'こんにとは' (a ち→と substitution typo) matches 'こんにちは世界'
   typeSearch('こんにとは');
   await wait(240);
   const smartTypo = cards();
-  // 無関係語は当たらない
+  // an unrelated term doesn't match
   typeSearch('存在しない語');
   await wait(240);
   const smartMiss = cards();
 
   // --- Date filter: local-day boundary (TZ=Asia/Tokyo, see fixtures) ---
   // Clear the search term so it does not co-filter the grid, then drive the real
-  // "+ フィルタ" flow (filterbar component): open the popover, pick 日付, fill the
-  // from/to date inputs, click 適用.
+  // "+ フィルタ" flow (filterbar component): open the popover, pick 日付 (date), fill the
+  // from/to date inputs, click 適用 (apply).
   typeSearch('');
   await wait(240);
   // Collect the boundary-fixture ids (dz*) currently in the grid, sorted+joined.
@@ -141,7 +141,7 @@ const evalJs = `(async () => {
     .map((c) => ((c.textContent || '').match(/boundary (dz\\d)/) || [])[1])
     .filter(Boolean).sort().join(',');
   const byText = (sel, text) => Array.from(document.querySelectorAll(sel)).find((el) => (el.textContent || '').trim() === text) || null;
-  // 「+ フィルタ」ボタン（AddFilterButton: icon + 'フィルタ'）
+  // The "+ フィルタ" button (AddFilterButton: icon + 'フィルタ')
   byText('button', 'フィルタ').click();
   await waitFor(() => !!byText('[data-slot="command-item"]', '日付'));
   byText('[data-slot="command-item"]', '日付').click();   // date category → DateForm

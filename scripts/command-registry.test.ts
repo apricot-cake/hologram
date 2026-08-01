@@ -1,17 +1,19 @@
-// command-registry.ts のロジック単体テスト（#28 コマンドパレット）。既存の検索ユニット
-// （search.test.ts / facets.test.ts）と同型で、レジストリの純粋な部分だけを直接検証する:
-// 登録・セクションごとの束ね・スコア順（完全一致 > 前方一致 > 部分一致 > あいまい）・
-// 面ごとの絞り込み（sections / limit）・開閉状態・runEntry の「閉じてから実行」。
+// Unit tests for the logic in command-registry.ts (#28 command palette). Mirrors the existing
+// search units (search.test.ts / facets.test.ts), directly verifying only the registry's pure
+// parts: registration, bundling per section, score ordering (exact > prefix > substring >
+// fuzzy), per-surface narrowing (sections / limit), open/close state, and runEntry's
+// "close, then execute".
 //
-// 器（Base UI Dialog + Autocomplete）とエントリの中身（command-builder.ts の perform
-// クロージャ）は実機検証の担当。ここは供給源の意味論だけを見る。
+// The container (Base UI Dialog + Autocomplete) and the content of each entry (the perform
+// closure in command-builder.ts) are the job of real-device verification. This only checks the
+// semantics of the supply source.
 
 import { beforeEach, describe, expect, test } from 'vitest';
 import * as R from '../app/src/renderer/src/services/command-registry';
 
 type Entry = R.CommandEntry;
 
-// perform が呼ばれた順に id を積む（runEntry の順序検証にも使う）。
+// Stack ids in the order perform was called (also used to verify runEntry's ordering).
 let ran: string[] = [];
 const entry = (id: string, section: R.CommandSection, title: string, extra: Partial<Entry> = {}): Entry => ({
   id,
@@ -38,7 +40,7 @@ describe('登録と束ね', () => {
   });
 
   test('セクションの並びは固定＝スコアで入れ替わらない', () => {
-    // タグ側が完全一致・コマンド側が部分一致でも、見出しの順序は command → tag のまま。
+    // Even when the tag side is an exact match and the command side is only a substring match, section order stays command -> tag.
     R.registerCommands('c', [entry('a', 'command', 'あ風景あ'), entry('b', 'tag', '風景')]);
     expect(R.queryEntries('風景').map((g) => g.section)).toEqual(['command', 'tag']);
   });
@@ -72,7 +74,7 @@ describe('登録と束ね', () => {
 describe('並びのスコア', () => {
   test('完全一致 > 前方一致 > 部分一致 > あいまい', () => {
     R.registerCommands('c', [
-      // あいまい: サブシーケンス一致（「ねこ」が順番に現れる）
+      // fuzzy: subsequence match ("ねこ" appears in order)
       entry('fuzzy', 'tag', 'ねずみとこども'),
       entry('substring', 'tag', 'くろねこ'),
       entry('prefix', 'tag', 'ねこじゃらし'),
@@ -93,9 +95,9 @@ describe('並びのスコア', () => {
 
   test('マッチ意味論は search.ts と同じ＝表記ゆれもタイプミスも当たる', () => {
     R.registerCommands('c', [entry('a', 'tag', 'ネコ'), entry('b', 'user', 'アリス')]);
-    // カタカナ/ひらがな + 全角半角の正規化（B）
+    // Katakana/hiragana + full-width/half-width normalization (B)
     expect(titlesOf(R.queryEntries('ねこ'), 'tag')).toEqual(['ネコ']);
-    // 編集距離（C）＝1文字違いでも拾う
+    // Edit distance (C) = catches even a 1-character difference
     expect(titlesOf(R.queryEntries('アリヌ'), 'user')).toEqual(['アリス']);
   });
 
@@ -123,7 +125,7 @@ describe('面ごとの顔ぶれ（sections / limit）', () => {
   test('limit はセクション単位＝上限の外は weight の低い方から落ちる', () => {
     const groups = R.queryEntries('ねこ', { limit: { tag: 2 } });
     expect(titlesOf(groups, 'tag')).toEqual(['ねこ1', 'ねこ2']);
-    // 上限を指定していないセクションは出し切る
+    // A section with no limit specified shows every item
     expect(titlesOf(groups, 'command')).toEqual(['ねこを開く']);
   });
 });
@@ -136,7 +138,7 @@ describe('開閉状態', () => {
     R.open();
     expect(R.isOpen()).toBe(true);
     expect(hits).toBe(1);
-    R.open(); // 同じ値の再設定は通知しない
+    R.open(); // Re-setting to the same value doesn't notify
     expect(hits).toBe(1);
     R.close();
     expect(R.isOpen()).toBe(false);
@@ -152,7 +154,7 @@ describe('開閉状態', () => {
     R.open();
     expect(R.openId()).toBe(before + 1);
     R.close();
-    expect(R.openId()).toBe(before + 1); // 閉じるでは進まない
+    expect(R.openId()).toBe(before + 1); // Closing doesn't advance it
     R.open();
     expect(R.openId()).toBe(before + 2);
     R.close();

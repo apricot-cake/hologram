@@ -1,6 +1,7 @@
-// #300 (St7) の受け入れ条件を直接証明する統合テスト: DB A（投稿＋タグ階層＋表示用親＋
-// 静的/動的（保存検索）フォルダ＋ゴミ箱投稿）を writeCompleteZip でZIP化し、空のDB B へ
-// importCompleteZipToDb で取り込み、DB Bの各テーブルがDB Aと同等であることを見る。
+// An integration test that directly proves #300 (St7)'s acceptance criteria: zip up DB A
+// (posts + tag hierarchy + display parents + static/dynamic (saved search) folders +
+// trashed posts) with writeCompleteZip, import it into an empty DB B with
+// importCompleteZipToDb, and check that each of DB B's tables matches DB A.
 
 import fs from 'node:fs';
 import os from 'node:os';

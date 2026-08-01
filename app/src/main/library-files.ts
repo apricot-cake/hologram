@@ -56,7 +56,7 @@ export const isViewerImageName = (f: unknown): f is string => isLibraryFileName(
 // "restore it here" everywhere the OS teaches the gesture (in Windows' Recycle Bin
 // a drag to a folder IS the restore), while Hologram's drag hands over a path and
 // never learns where the drop landed — it cannot mean that. The path it would hand
-// over is also one the 30-day sweep deletes. 復元 first, then drag; the trash view
+// over is also one the 30-day sweep deletes. Restore first, then drag; the trash view
 // offers that verb and no other edit (#268).
 export function libraryFilePath(name: unknown, saveFolder: string): string | null {
   if (typeof name !== 'string' || !name) return null;

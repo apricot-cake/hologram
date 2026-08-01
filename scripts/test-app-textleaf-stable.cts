@@ -1,14 +1,14 @@
 'use strict';
 
 // Verifies the remaining text-leaf stability invariant (previously only argued by
-// review — BACKLOG「残」):
-//   タブ復元の二重葉: an EDITING text leaf survives a tab round-trip without
+// review — BACKLOG「leftover」):
+//   Duplicate leaf on tab restore: an EDITING text leaf survives a tab round-trip without
 //   duplicating. Type「いぬ」(no Enter) → open a new tab → switch back → the box value
 //   is restored AND rebound to the same leaf, so typing one more char EDITS that leaf
 //   (chips stay 1) instead of spawning a second one.
-//   seeds: p0 本文「ネコかわいい」/ p1「こんにちは世界」/ p2「いぬのおさんぽ」
-// (The old Part B — 確定済み葉の exact/fuzzy モード凍結 — retired with the search-mode
-// toggle itself: P2④ 単一スマート検索 has no per-leaf mode.)
+//   seeds: p0 text「ネコかわいい」/ p1「こんにちは世界」/ p2「いぬのおさんぽ」
+// (The old Part B — freezing exact/fuzzy mode on a finalized leaf — retired with the search-mode
+// toggle itself: P2④ single smart search has no per-leaf mode.)
 //
 //   node scripts/test-app-textleaf-stable.cts
 

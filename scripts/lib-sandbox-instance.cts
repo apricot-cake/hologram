@@ -23,7 +23,7 @@ const http = require('node:http');
 const path = require('node:path');
 const { fileURLToPath } = require('node:url');
 
-// :9222 is the real app (docs/build.md「検証ルール」), so sandboxes live above it.
+// :9222 is the real app (docs/build.md, "Verification Rules" section), so sandboxes live above it.
 const PORT_MIN = 9333;
 const PORT_SPAN = 100;
 

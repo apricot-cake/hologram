@@ -1,6 +1,6 @@
 'use strict';
 
-// Verifies the sidebar 作者 (authors) section (derived from post author fields,
+// Verifies the sidebar authors section (derived from post author fields,
 // no extra fetching; replaced the old Users tab): seeds posts for several authors,
 // checks the author chips are grouped + ranked by post count, that the author
 // search filters them (ignoring a leading "@"), and that clicking an author chip
@@ -57,7 +57,7 @@ const evalJs = `(async () => {
   const waitFor = async (fn, ms = 4000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (fn()) return true; await sleep(40); } return false; };
   await waitFor(() => document.querySelectorAll('[data-slot="post-grid"] [data-slot="post-card"]').length >= 4);
 
-  // 投稿者 editor ("+ フィルタ" flow — the 作者 row flyout is gone since P2③) —
+  // The poster editor (the "+ フィルタ" flow — the old author row flyout is gone since P2③) —
   // posters are listed by post count. Filterbar idioms: see test-app-facetcounts.
   const POP = '[data-slot="popover-content"]:not([data-closed])';
   const byText = (sel, text) => [...document.querySelectorAll(sel)].find((el) => (el.textContent || '').trim() === text) || null;

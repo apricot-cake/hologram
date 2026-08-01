@@ -20,7 +20,7 @@ import { selectionClear, selectionDelete, selectionFolder, selectionGroup, selec
 //
 // Each action shows an icon + a text label (the old inventory: select-all / tag / folder
 // / group / delete / clear). The labels are RESPONSIVE to available width: the full
-// wording ("タグを追加") when there's room, a short form ("タグ") when the bar is squeezed
+// wording ("Add tag") when there's room, a short form ("Tag") when the bar is squeezed
 // (a narrow window, an open inspector, an expanded sidebar) — so it stays readable
 // instead of collapsing to bare icons. Clear (✕) is the one icon-only button (universal).
 // The full wording is always the accessible name.

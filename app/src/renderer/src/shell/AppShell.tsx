@@ -272,7 +272,7 @@ export function AppShell() {
   }, []);
   return (
     // The TooltipProvider is App.tsx's now: tooltip triggers also live in the
-    // body-level overlays that sit OUTSIDE this shell (the 種別 menu's rename button),
+    // body-level overlays that sit OUTSIDE this shell (the kind menu's rename button),
     // and a shared delay is only shared if one provider covers them all.
     <>
       <div className="flex h-svh flex-col overflow-hidden">
@@ -334,12 +334,12 @@ export function AppShell() {
                   <PosterGridSlot hidden={mode === 'posts' || mode === 'trash' || libraryMissing} />
                   {mode !== 'trash' && !libraryMissing && <EmptyState />}
                   {!libraryMissing && <LibraryLoading />}
-                  {/* ゴミ箱 (#268) — the third destination. */}
+                  {/* Trash (#268) — the third destination. */}
                   <div hidden={mode !== 'trash' || libraryMissing}>
                     <TrashView />
                   </div>
                 </div>
-                {/* Image-tab detail view (Eagle 風 fit-to-screen). It draws its own container
+                {/* Image-tab detail view (Eagle-style fit-to-screen). It draws its own container
                     when there is something to show and nothing at all otherwise (P2⑫), so the
                     "which of the two fills the inset" decision is the `hidden` above and this
                     line — no id, no display rules in index.html. */}

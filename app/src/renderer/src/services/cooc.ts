@@ -1,20 +1,20 @@
 // Tag co-occurrence service — the related-tag suggestion math, extracted from
-// viewer.js as the fourth "pure logic → service" slice (最終形B): charCandidatesFor
-// (the strong 作品→キャラ tier), relatedTagCandidates (the generic weak tier), and
-// worksCooccurringWith (the 同名キャラ homonym detector's history probe). A real ES
+// viewer.js as the fourth "pure logic → service" slice (final form B): charCandidatesFor
+// (the strong Work→Character tier), relatedTagCandidates (the generic weak tier), and
+// worksCooccurringWith (the same-name-character homonym detector's history probe). A real ES
 // module (named exports), imported directly by viewer.ts; touches no DOM. Runtime
 // couplings are INJECTED via makeCooc(deps) so this file loads under Node too
 // (scripts/test-cooc-unit.cts).
 
 // deps contract (all functions):
 //   allPosts() — full library (getter — viewer reassigns it)
-//   tagKindOf(tag) — 用語帳 kind ('work'/'character'/null)
+//   tagKindOf(tag) — glossary kind ('work'/'character'/null)
 export function makeCooc(deps: { allPosts(): HologramPost[]; tagKindOf(tag: string): string | null | undefined }) {
   const { allPosts, tagKindOf } = deps;
 
-  // Tag co-occurrence: 作品 → characters that have shared a post with any of these
-  // 作品 tags, most-frequent first. Deterministic + explainable (the count IS the
-  // confidence). 種別 already fixes the two hard guesses (which tags relate, which is
+  // Tag co-occurrence: Work → characters that have shared a post with any of these
+  // Work tags, most-frequent first. Deterministic + explainable (the count IS the
+  // confidence). Kind already fixes the two hard guesses (which tags relate, which is
   // the parent), so what's left — which character belongs to which work — is high
   // precision (a character co-occurs with ~one work).
   function charCandidatesFor(workTags: string[] | null | undefined): Array<[string, number]> {
@@ -29,7 +29,7 @@ export function makeCooc(deps: { allPosts(): HologramPost[]; tagKindOf(tag: stri
     return [...counts.entries()].sort((a, b) => b[1] - a[1]);
   }
 
-  // 同名キャラ（別作品）の検知: the 作品 tags this character has co-occurred with
+  // Detecting a same-name character (different work): the Work tags this character has co-occurred with
   // elsewhere in the library (the current group excluded, so a just-added tag never
   // counts itself as history).
   function worksCooccurringWith(charTag: string, excludeIds?: Set<string> | null): Set<string> {
@@ -44,12 +44,12 @@ export function makeCooc(deps: { allPosts(): HologramPost[]; tagKindOf(tag: stri
   }
 
   // Generic all-tag co-occurrence — the WEAK suggestion tier (charCandidatesFor is
-  // the strong one: there 種別 pins what relates to what). For each non-selected
+  // the strong one: there Kind pins what relates to what). For each non-selected
   // tag Y, find the selected tag X it shares the most posts with; the pair
-  // qualifies only when that count reaches minCount (薄いうちは出さない — one or
-  // two shared posts could be coincidence), so thin libraries stay silent.
+  // qualifies only when that count reaches minCount (don't show it while it's thin —
+  // one or two shared posts could be coincidence), so thin libraries stay silent.
   // Returns [{tag, withTag, count}] count-desc (ja-locale tiebreak), capped at
-  // limit — withTag+count feed the "X と N 件で一緒" tooltip, so every suggestion
+  // limit — withTag+count feed the "shared with X in N post(s)" tooltip, so every suggestion
   // stays explainable. opts.exclude: extra tags to never suggest (e.g. ones the
   // strong tier already offers).
   function relatedTagCandidates(selectedTags: ReadonlyArray<string> | null | undefined, opts?: { minCount?: number; limit?: number; exclude?: Set<string> | null }): Array<{ tag: string; withTag: string | null; count: number }> {

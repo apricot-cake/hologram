@@ -101,7 +101,7 @@ function getPixivCaptureRect(post: Element): PostRect {
 
 // === API ===
 
-// うごイラ (#119 St3): illustType 2 is an animation pixiv delivers as a ZIP of
+// ugoira (#119 St3): illustType 2 is an animation pixiv delivers as a ZIP of
 // frame images plus a separate table of per-frame display times. Neither is in
 // the illust payload — /ugoira_meta carries both — and the archive is saved
 // UNCHANGED (no transcode, so no encoder rides into the distribution and the
@@ -188,7 +188,7 @@ async function fetchPixivIllust(parsed, url): Promise<PostRecord> {
       rec.seriesTitle = il.seriesNavData.title || null;
       rec.seriesOrder = typeof il.seriesNavData.order === 'number' ? il.seriesNavData.order : null;
     }
-    // うごイラ is a silent looping animation — to the person browsing their
+    // ugoira is a silent looping animation — to the person browsing their
     // library that is the same kind of thing as an X animated_gif or a Mastodon
     // gifv, which already label as 'gif'. mediaType is the DISPLAY label (what
     // the post is), media[].type the transport (how it downloads), and the two

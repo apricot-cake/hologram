@@ -1,30 +1,33 @@
 'use strict';
 
-// asset:// のスクリプト封じ（#215）を実 Electron で確かめるハーネス。
+// Harness that verifies the asset:// script lockdown (#215) against real Electron.
 //
 //   node scripts/test-app-asset-csp.cts
 //
-// 何を賭けているか: asset://img/* はライブラリ全体で1オリジンなので、そこに
-// 「文書」が立つと中のスクリプトは同一オリジン fetch で他のファイルを読め、外へ
-// 送れる。窓の sandbox:true は Node/IPC を落とすだけでページ内 JS を止めない。
-// 塞ぎ方は3層で、この harness はその3層を別々に測る。
+// What's at stake: asset://img/* is a single origin across the whole library, so if a
+// "document" stands up there, the script inside it can read other files via same-origin
+// fetch and send them out. The window's sandbox:true only drops Node/IPC — it doesn't
+// stop page-internal JS. The lockdown has 3 layers, and this harness measures each
+// separately.
 //
-//   層1 入口（open-image-window）  : SVG を渡すと窓を作らず false を返す
-//   層2 入口（will-navigate）      : asset:// の SVG へのトップレベル遷移を拒む
-//   層3 応答（CSP ヘッダ）         : それでも文書が立った時にスクリプトを殺す
+//   Layer 1 entry (open-image-window)  : passing an SVG returns false without creating a window
+//   Layer 2 entry (will-navigate)      : refuses a top-level navigation to an SVG on asset://
+//   Layer 3 response (CSP header)      : kills the script if a document still gets made
 //
-// 層3 の測り方＝CDP。層1・層2 を塞いだ後はアプリ内のどの経路からも SVG 文書へ
-// 到達できない＝「到達できないから安全」で終わらせると、将来入口が1つ増えた時に
-// 何も守っていなかったと分かる。そこでデバッガから viewer 窓を直接 SVG へ飛ばし、
-// CSP だけが残った状態を作って測る。
+// How Layer 3 is measured = CDP. Once layers 1 and 2 are blocked, no path inside the
+// app can reach an SVG document = if we stopped at "unreachable, therefore safe", we'd
+// find out nothing was actually protecting it the moment a new entry point appeared. So
+// we use the debugger to send the viewer window straight to the SVG, creating a state
+// where only the CSP is left standing, and measure that.
 //
-// 実行したことの証拠は「ビーコンが1本も来ないこと」で取る。SVG の中の script は
-// ①走ったこと自体 ②ライブラリの別ファイルを読めたこと、をそれぞれ手元の HTTP
-// サーバへ投げるように書いてある＝1本でも届けばスクリプトが動いている。
-// 逆に言えばこの harness は「何も起きない」ことを見る作りなので、CSP を外せば
-// ビーコンが実際に飛ぶ（＝空振りしていない）ことを開発時に確認してある。
+// The evidence that it worked is taken as "not a single beacon arrives". The script
+// inside the SVG is written to fire at our own local HTTP server for ① the fact that it
+// ran at all and ② that it could read another file in the library = if even one beacon
+// arrives, the script ran. Put the other way, this harness is built to watch for
+// "nothing happens", so during development we confirmed that removing the CSP does make
+// a beacon actually fly (i.e. this isn't a false negative).
 //
-// 画面は奪わない: HOLOGRAM_SMOKE=1 では viewer 窓も非表示で作られる。
+// Doesn't take over the screen: under HOLOGRAM_SMOKE=1 the viewer window is also created hidden.
 
 const { spawn } = require('node:child_process');
 const fs = require('node:fs');
@@ -194,17 +197,17 @@ async function main() {
   // harness needs the app alive while it drives CDP against the viewer window.
   const evalJs = `(async () => {
     const h = window.hologram;
-    // 層1: the SVG is refused outright; a raster still opens (hidden under SMOKE).
+    // Layer 1: the SVG is refused outright; a raster still opens (hidden under SMOKE).
     const svgRefused = (await h.openImageWindow(${JSON.stringify(SVG)})) === false;
     const rasterAccepted = (await h.openImageWindow(${JSON.stringify(PNG)})) === true;
 
-    // 層2: a top-level navigation to the SVG is refused by the navigation guard.
+    // Layer 2: a top-level navigation to the SVG is refused by the navigation guard.
     const before = location.href;
     try { location.href = 'asset://img/${SVG}'; } catch (e) {}
     await new Promise((r) => setTimeout(r, 800));
     const navBlocked = location.href === before;
 
-    // 退行チェック: the response CSP binds the document made FROM the response,
+    // Regression check: the response CSP binds the document made FROM the response,
     // so it must not touch these — the renderer embedding the picture is a
     // different document with its own policy.
     const load = (src) => new Promise((r) => {
@@ -246,7 +249,7 @@ async function main() {
   });
   const exited = new Promise<void>((r) => child.on('close', () => r()));
 
-  // --- 層3: reach past both entry gates with a debugger and land a real SVG
+  // --- Layer 3: reach past both entry gates with a debugger and land a real SVG
   // document on asset://, so the CSP is the only thing left standing.
   let cdpReachedSvg = false;
   let cdpDocType = '';

@@ -1,7 +1,7 @@
-// Native Messaging ブリッジのスモークテスト。'save' メッセージをフレーミングして
-// bridge.cts へ流し込み（設定ディレクトリを差し替えて一時保存フォルダを使わせる）、
-// JPEG と inbox エンベロープ（#5 St6 / #299 — sidecar 直書きの後継）が書かれ、
-// ack の形が正しいことを見る。
+// Smoke test for the Native Messaging bridge. Frame a 'save' message and feed it
+// into bridge.cts (swapping the config directory so a temp save folder is used),
+// and check that the JPEG and inbox envelope (#5 St6 / #299 — the successor to
+// writing sidecars directly) are written and that the ack shape is correct.
 
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
@@ -11,7 +11,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { PROTOCOL_VERSION } from '../native-host/protocol.mts';
 import { unpackRawPayload } from '../native-host/raw-payload.mts';
 
-// 最小の 1x1 JPEG
+// Minimal 1x1 JPEG
 const jpegB64 = '/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACP/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AfwH/2Q==';
 
 const captureId = '1717500000000-abcd';
@@ -38,7 +38,7 @@ beforeAll(async () => {
         platform: 'x',
         text: 'hi',
         tags: ['t'],
-        // 拡張は受け取った本文をそのまま渡すだけ＝圧縮・ハッシュ・上限はブリッジ側（#292）
+        // The extension just passes the response body through as-is = compression/hashing/limits are on the bridge side (#292)
         rawPayloads: [{ sourceKind: 'api:x/tweet-result', acquiredAt: '2026-07-28T00:00:00.000Z', contentType: 'application/json', body: RAW_BODY }],
       },
     }),
@@ -73,15 +73,17 @@ test('ack が ok で返る', () => {
   expect(resp.ok).toBe(true);
 });
 
-// #205: 拡張はこの数字だけで「アプリと拡張の版が合っているか」を判断する。
-// 単体では stampProtocol を見れば済むが、それが**実際に線へ出ている**ことは
-// プロセスを起こしてみないと分からない（刻印はハンドラではなく返信の出口にある）。
+// #205: This number is the only thing the extension uses to judge "do the app and
+// extension versions match". In isolation it's enough to look at stampProtocol, but
+// whether it **actually goes out on the wire** can only be known by spinning up the
+// process (the stamp lives at the reply's exit point, not in the handler).
 test('ack は自分のプロトコル版を名乗る（#205）', () => {
   expect(resp.protocolVersion).toBe(PROTOCOL_VERSION);
 });
 
-// 成功だけでなく、失敗と ping の返信にも刻印が乗ること。保存を断るほど古い
-// ホストこそ版が知りたい相手なので、ここが抜けると検知が一番要る場面で効かない。
+// Not just success — the stamp must also ride on failure and ping replies. A host
+// old enough to refuse saves is exactly the one that most wants to know the version,
+// so missing this here means detection fails where it's needed most.
 describe('返信は種類を問わず版を名乗る（#205）', () => {
   let replies: any[];
 
@@ -99,8 +101,8 @@ describe('返信は種類を問わず版を名乗る（#205）', () => {
   });
 });
 
-// 1本のコネクションへ複数フレームを流し込み、返ってきたフレームを全部読む。
-// bridge.cts は stdin を読み切ると自然に終わるので、close を待てば取りこぼさない。
+// Feed multiple frames into a single connection and read back all the returned frames.
+// bridge.cts naturally exits once it finishes reading stdin, so waiting for close won't miss anything.
 async function askHost(configRoot: string, messages: unknown[]): Promise<any[]> {
   const configDir = path.join(configRoot, 'Hologram');
   const frames = messages.map((m) => {
@@ -133,11 +135,13 @@ async function askHost(configRoot: string, messages: unknown[]): Promise<any[]> 
   return parsed;
 }
 
-// #650: 「いまディスクにあるローカルビルド」を全ての返信に乗せる＝拡張はこれを
-// 見て自分をリロードする。実プロセスを起こして見るのは版と同じ理由（刻印は返信の
-// 出口に1か所だけあり、ハンドラを読んでも出ているかは分からない）。加えてここは
-// **ファイルの有無で切り替わる**ので、無い時に何も言わないことがより大事＝
-// 拡張をビルドしたことのない全ユーザーがその状態。
+// #650: "The local build currently on disk" rides on every reply = the extension
+// watches this and reloads itself. Spinning up a real process to check this is for
+// the same reason as the version stamp (the stamp lives at only one place, the
+// reply's exit point, and reading the handler can't tell you whether it's actually
+// going out). On top of that, this **switches depending on whether the file exists**,
+// so saying nothing when it's absent matters even more = that's the state every user
+// who has never built the extension is in.
 describe('ローカルビルドの印（#650）', () => {
   test('印のファイルが無ければ、返信は何も言わない', async () => {
     const bare = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-nostamp-'));
@@ -194,8 +198,9 @@ describe('保存されたもの', () => {
     expect(envelope.record).toMatchObject({ captureId, image: `${captureId}.jpg`, url: 'https://x.com/u/status/1' });
   });
 
-  // #292: 拡張が渡した応答本文は、ブリッジで圧縮・ハッシュされて封筒に載る＝
-  // アプリが後で drain した時に raw_payloads へそのまま着く形になっている。
+  // #292: The response body the extension passed is compressed and hashed by the
+  // bridge and placed into the envelope = arranged so it arrives at raw_payloads
+  // as-is when the app later drains it.
   test('取得原本が畳まれて封筒に載る（本文へ復元できる）', () => {
     const envelope = JSON.parse(fs.readFileSync(path.join(saveFolder, '.hologram-inbox', 'new', `${captureId}.json`), 'utf8'));
     expect(envelope.record.raw).toHaveLength(1);

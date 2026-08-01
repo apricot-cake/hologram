@@ -1,32 +1,36 @@
 'use strict';
 
-// #269 の設計が寄りかかっているプラットフォームの事実を、実ブラウザで測って固定する。
+// Measures, on a real browser, and pins down the platform facts that #269's design leans on.
 //
-// クリック保存は「サービスワーカーが capture.js を注入し、注入されたスクリプトが
-// バナーを描く」構造なので、**注入そのものが失敗すると、失敗を伝える面がページ上に
-// 存在しない**＝押しても完全に無反応になる。残る表示面はワーカーが持つツールバーの
-// action だけ、という前提の上に extension/utils/inject-failure.ts が建っている。
+// A click-to-save works via "the service worker injects capture.js, and the
+// injected script draws the banner", so **if the injection itself fails, there
+// is no surface on the page to communicate the failure** = clicking does
+// absolutely nothing. extension/utils/inject-failure.ts is built on the
+// assumption that the only remaining display surface is the worker's own toolbar action.
 //
-// ⚠️**この台ではアイコンのクリックそのものは駆動できない**（`chrome.action.onClicked`
-// は実クリックでしか発火せず、Playwright にツールバーを押す手段は無い）。だからここが
-// 見るのは配線ではなく**前提**＝配線の側は jsdom の `background-wiring.test.ts` が持つ。
-// 分けているのは、前提が崩れた時に配線のテストは全部緑のまま通るため＝Chrome が
-// 振る舞いを変えたことは、ここでしか分からない。
+// Warning: **actually driving an icon click isn't possible on this rig**
+// (`chrome.action.onClicked` only fires on a real click, and Playwright has no
+// way to press the toolbar). So what this checks isn't the wiring but the
+// **assumptions** — the wiring side is covered by jsdom's
+// `background-wiring.test.ts`. They're kept separate because if the
+// assumptions break, the wiring tests would all still pass green = only this
+// test would notice that Chrome changed its behavior.
 //
-// 測る5つ:
-//   1. action の badge / title はワーカーから追加権限なしで書ける
-//   2. badge は tabId 単位＝他のタブにも全体にも漏れない
-//   3. タブが遷移すると Chrome が自分で badge も title も戻す
-//      （＝こちら側は「何回目か」の記憶だけ捨てればよい）
-//   4. 展開先が消えると executeScript は毎回失敗し、
-//      `fetch(chrome.runtime.getURL(...))` も失敗する（＝生死の唯一の判定手段）
-//      が、**action の API は生きたまま**（＝壊れていても印は出せる）
-//   5. その状態では **chrome-extension://<id>/diag.html が開けない**
-//      ＝診断ページはこの失敗の逃がし先になれない（2026-07-25 の設計確定コメントの
-//      手順4を置き換えた根拠。読めない側の逃がし先は chrome://extensions）
+// The 5 things measured:
+//   1. action's badge / title can be written by the worker with no extra permissions
+//   2. badge is per-tabId = it doesn't leak to other tabs or apply globally
+//   3. when a tab navigates, Chrome resets both badge and title on its own
+//      (= all this side needs to do is discard its "which round" memory)
+//   4. once the unpacked extension's directory disappears, executeScript fails
+//      every time, and so does `fetch(chrome.runtime.getURL(...))` (= the only
+//      way to tell alive from dead), but **the action API stays alive** (= a mark can still be shown even while broken)
+//   5. in that state, **chrome-extension://<id>/diag.html cannot be opened**
+//      = the diagnostics page can't be the fallback destination for this
+//      failure (the basis for replacing step 4 of the 2026-07-25 design
+//      decision comment; the fallback destination for the unreadable side is chrome://extensions)
 //
-// 使い捨ての Chromium と使い捨ての拡張ステージング＝ユーザーのプロファイルにも
-// 本体ツリーの .output にも触らない。
+// Disposable Chromium and disposable extension staging = touches neither the
+// user's profile nor the main tree's .output.
 
 const fs = require('node:fs');
 const { launchExtensionBrowser, stageExtension } = require('./lib-extension-e2e.cts');
@@ -65,8 +69,9 @@ async function tabIdEndingWith(worker: any, suffix: string): Promise<number> {
     const tabB = await tabIdEndingWith(serviceWorker, '/beta');
 
     // --- 1 + 2 -------------------------------------------------------------
-    // ⚠️下の色は「API が解決済みの色文字列を受け取れる」ことを見るためだけの値で、
-    // 出荷する色ではない（出荷値の出どころと妥当性は extension-tokens.test.ts）。
+    // Warning: the color below is only a value to check that "the API can
+    // accept an already-resolved color string" — it isn't the shipped color
+    // (the shipped value's provenance and validity are extension-tokens.test.ts's job).
     const wrote = await sw(
       serviceWorker,
       `(async () => {

@@ -1,25 +1,30 @@
-// チップ帯のインライン入力（#148）＝「タイプ→種別候補→チップ化」の3つ目の面。
+// Inline input for the chip band (#148) = the third face of "type → kind candidates →
+// chip it".
 //
-// 帯の末尾の「＋」を押すとその場に1行の入力欄が開き、打った文字に当たった候補
-// （タグ／投稿者／フォルダ）と、常設最下段の逃げ道「本文を検索: 「…」」が下にポップする。
-// 選ぶとチップが1つ増えて入力欄は閉じ、「＋」に戻る＝帯は1行のまま。帯自体がチップ
-// 1つ以上でしか存在しない（#674）ので、この面はアイコンだけの「＋」以外の顔を持たない
-// ＝空状態の案内は「+ フィルタ」ボタン・検索ボックスのサジェスト・Ctrl+K が担う。
+// Pressing the "+" at the end of the band opens a one-line input field right there, and
+// candidates matching what's typed (tag / poster / folder) pop up below, along with the
+// permanent bottom-row escape hatch "Search body text: "…"". Picking one adds a chip and
+// closes the input field, returning to "+" — the band stays one line. The band itself only
+// exists when it has one or more chips (#674), so this face has no face other than the
+// icon-only "+" — the empty-state guidance is handled by the "+ Filter" button, the search
+// box's suggestions, and Ctrl+K.
 //
-// 候補は services/command-registry.ts の queryEntries から引く＝検索ボックスのサジェスト・
-// コマンドパレットと**同じ1つのエンジン**（ADR 0016）。この面が自分で決めるのは
-// ①どのセクションを何件見せるか ②確定したときの動作、の2つだけで、候補の生成・並び・
-// 種別ラベルは持たない。
+// Candidates are pulled from services/command-registry.ts's queryEntries — **the same one
+// engine** as the search box's suggestions and the command palette (ADR 0016). The only two
+// things this face decides for itself are ① which sections to show how many of, and ② what
+// happens on commit; it owns none of the candidate generation, ordering, or kind labels.
 //
-// 確定は entry.filter → orchestrator の addFilterToCurrentView（＝いま見ているビューの
-// addFilter）。検索ボックスの pick を通さないのは、あちらが「打った文字は絞り込みを
-// 探すためのもの」として入力欄を空にし打ちかけの本文語を捨てるため——チップ帯の入力は
-// 本文検索の欄ではないので、その巻き添えを起こしてはいけない。filter を持たない候補
-// （フォルダへのジャンプ）はエントリ自身の perform() に倒れる。
+// Commit is entry.filter → the orchestrator's addFilterToCurrentView (= the addFilter of
+// whichever view is currently showing). It doesn't go through the search box's pick,
+// because that one empties the input field and discards the half-typed body-text term on
+// the assumption that "what's typed is meant to narrow a search" — the chip band's input is
+// not a body-text-search field, so it must not get caught up in that. Candidates with no
+// filter (jumping to a folder) fall through to the entry's own perform().
 //
-// 器は SearchBox と同じ Base UI Autocomplete（入力欄＋ポータルのポップアップ）。パレットの
-// `inline` モードでないのは、あちらが窓いっぱいに一覧を敷く面で、こちらは1行の入力欄の
-// 下にドロップダウンを出す面だから。
+// The shell is the same Base UI Autocomplete as SearchBox (input field + portal popup).
+// It's not the palette's `inline` mode, because that one is a face that lays the whole
+// list out across the full window, while this one is a face that drops a dropdown below a
+// one-line input field.
 import { Autocomplete } from '@base-ui/react/autocomplete';
 import { Folder, Plus, Search, Tag, User } from 'lucide-react';
 import { useMemo, useRef, useState } from 'react';
@@ -28,15 +33,17 @@ import { t } from '../_shared/i18n.ts';
 import { type CommandSection, type QueryOptions, queryEntries } from '../services/command-registry.ts';
 import { addFilterToCurrentView } from '../services/orchestrator.ts';
 
-// この面の顔ぶれ。件数は検索ボックスと同じ考え方（入力欄直下のドロップダウンは縦に
-// 伸ばせない＝当たった分を全部出すパレットの作法はここでは採れない）。投稿者ビューには
-// 投稿者という候補種別が無い（投稿者そのものが行）ので tag / folder だけになる。
+// This face's lineup. The count follows the same thinking as the search box (a dropdown
+// directly under the input field can't stretch vertically — the palette's convention of
+// showing everything that matched can't be taken here). The poster view has no "poster"
+// candidate kind (a poster is the row itself), so it's just tag / folder.
 const POST_SECTIONS: QueryOptions = { sections: ['tag', 'user', 'folder'], limit: { tag: 6, user: 4, folder: 4 } };
 const POSTER_SECTIONS: QueryOptions = { sections: ['tag', 'folder'], limit: { tag: 6, folder: 4 } };
 
-// 「本文を検索」は registry の候補ではなく、この面の既定動作を行にしたもの＝母集合に
-// 当たらない語でも必ず1つは選べる逃げ道。投稿者ビューには本文が無い（poster の述語に
-// text 型が無い）ので出さない。
+// "Search body text" is not a registry candidate — it's this face's default action turned
+// into a row, an escape hatch you can always pick even for a term that matches nothing in
+// the population. The poster view has no body text (poster's predicates have no text
+// type), so it's not shown there.
 type RowSection = CommandSection | 'text';
 
 interface Row {
@@ -48,8 +55,9 @@ interface Row {
 }
 
 const ROW_ICON: Partial<Record<RowSection, ComponentType<{ className?: string }>>> = { tag: Tag, user: User, folder: Folder, text: Search };
-// 行頭の種別語。1つのポップに複数の種別が混ざるので、アイコンだけだと「タグの猫」と
-// 「投稿者の猫」が読み分けられない（Issue の例そのまま＝「タグ: 抱きしめ」）。
+// The kind word at the head of a row. A single popup mixes multiple kinds, so an icon
+// alone can't distinguish "tag: cat" from "poster: cat" (straight from the Issue's own
+// example — "tag: hug").
 const ROW_LABEL: Partial<Record<RowSection, string>> = { tag: 'paletteSecTag', user: 'paletteSecUser', folder: 'paletteSecFolder' };
 
 export function InlineFilterInput({ posters }: { posters: boolean }) {
@@ -57,9 +65,10 @@ export function InlineFilterInput({ posters }: { posters: boolean }) {
   const [query, setQuery] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // 候補は値から同期的に導出する（SearchBox / パレットと同じ理由＝setState を挟むと
-  // 一覧と入力が1フレームずれる）。この面はライブ絞り込みをしない（打っている間は
-  // 何も適用しない）ので、デバウンスも要らない。
+  // Candidates are derived synchronously from the value (same reason as SearchBox /
+  // palette — interposing a setState makes the list and the input drift by one frame).
+  // This face does no live filtering (nothing is applied while you're typing), so it
+  // needs no debounce either.
   const rows = useMemo<Row[]>(() => {
     const q = query.trim();
     if (!q) return [];
@@ -82,11 +91,13 @@ export function InlineFilterInput({ posters }: { posters: boolean }) {
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
-    // IME 変換中の Enter / Esc は変換の操作であってこの面の操作ではない。Enter は Base UI 側も
-    // which=229 で弾いているが、この handler はそれより先に走るので両方で見る（#28 と同じ罠）。
+    // Enter / Esc while an IME conversion is in progress are conversion operations, not
+    // operations on this face. Base UI also blocks Enter via which=229, but this handler
+    // runs before it does, so both need to check for it (same trap as #28).
     if (e.nativeEvent.isComposing) return;
-    // Esc は候補ポップだけでなく入力欄ごと閉じて「＋」へ戻す（候補が1件も無いときは
-    // ポップが開いていない＝Base UI の dismiss が走らないので、ここが唯一の出口になる）。
+    // Esc closes not just the candidate popup but the whole input field, returning to
+    // "+" (when there isn't a single candidate, the popup isn't open — Base UI's dismiss
+    // never runs — so this is the only way out).
     if (e.key === 'Escape') {
       e.preventDefault();
       close();
@@ -98,9 +109,11 @@ export function InlineFilterInput({ posters }: { posters: boolean }) {
       <button
         type="button"
         data-slot="filter-add-inline"
-        // アイコンだけの「＋」（帯の末尾に置く小さな追加口）。枠は持たない＝この帯の
-        // 破線枠は「〜以外」チップの印なので、追加口が同じ顔をすると除外条件が1つ
-        // 立っているように読める（隣の 検索を保存 と同じ ghost に揃える）。
+        // An icon-only "+" (a small add entry point placed at the end of the band). It
+        // has no border — this band's dashed border is the mark of an "except" chip, so
+        // if the add entry point wore the same face it would read as an exclusion
+        // condition standing there (matched to the same ghost styling as the neighboring
+        // Save search).
         className="inline-flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-accent-foreground"
         aria-label={t('fbAddFilter')}
         title={t('fbAddFilter')}
@@ -112,22 +125,25 @@ export function InlineFilterInput({ posters }: { posters: boolean }) {
 
   return (
     <Autocomplete.Root
-      // mode="none": 絞り込みは queryEntries が済ませてある＝Base UI に再フィルタさせない
-      // （マッチの意味論が二重にならない）。autoHighlight: 打った直後の Enter で先頭が
-      // 走る（パレットと同じ）＝「本文を検索」が常に居るので Enter が空振りしない。
+      // mode="none": narrowing is already done by queryEntries — don't let Base UI
+      // refilter (so the matching semantics don't double up). autoHighlight: an Enter
+      // right after typing runs the first item (same as the palette) — since "Search
+      // body text" is always present, Enter never comes up empty.
       mode="none"
       autoHighlight
       items={rows}
       value={query}
       onValueChange={(v, details) => {
-        // 選んだ項目のラベルが入力欄へ echo される。この面は確定と同時に閉じるので拾わない。
+        // The label of the picked item gets echoed into the input field. This face closes
+        // the instant it commits, so it doesn't pick that up.
         if (details.reason === 'item-press') return;
         setQuery(v);
       }}
       onOpenChange={(open, details) => {
-        // 外側クリック・フォーカス外れ・Esc は入力欄ごと畳む（開けっ放しの空欄を帯に
-        // 残さない）。判定は Base UI に任せる＝ポップアップはポータルの外に居るので、
-        // 自前の blur 判定だと候補クリックとレースする。
+        // An outside click, losing focus, or Esc collapse the whole input field (so an
+        // empty field left hanging open isn't left in the band). The decision is left to
+        // Base UI — the popup lives outside the portal, so a homegrown blur check would
+        // race against clicking a candidate.
         if (open) return;
         if (details.reason === 'outside-press' || details.reason === 'focus-out' || details.reason === 'escape-key') close();
       }}
@@ -142,7 +158,7 @@ export function InlineFilterInput({ posters }: { posters: boolean }) {
         className="h-7 w-44 min-w-0 rounded-md border border-input bg-background px-2 text-base outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 md:text-sm"
       />
       <Autocomplete.Portal>
-        {/* z-[13500]: レガシー z 目盛りの上（shadcn のポータル面が共通で使う段）。 */}
+        {/* z-[13500]: above the legacy z scale (the tier shadcn's portal surfaces share). */}
         <Autocomplete.Positioner side="bottom" align="start" sideOffset={4} collisionPadding={8} className="isolate z-[13500]">
           <Autocomplete.Popup className="max-h-(--available-height) w-72 max-w-[calc(100vw-24px)] origin-(--transform-origin) overflow-y-auto rounded-lg bg-popover p-1 font-sans text-popover-foreground text-sm shadow-md ring-1 ring-foreground/10 outline-hidden duration-100 data-[empty]:hidden data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95">
             <Autocomplete.List>

@@ -45,8 +45,8 @@ import {
   handleSearchQueryStoreChange,
 } from '../services/orchestrator.ts';
 
-// The single React root for the whole renderer — the 最終形B DoD: 島 root 群の1本統合
-// (consolidation of the former independent island roots into one). Components used to be
+// The single React root for the whole renderer — the Final shape B DoD: consolidate the
+// island root group into one (i.e. the former independent island roots into one). Components used to be
 // their own createRoot() calls; they were migrated here in verifiable batches, and each still
 // owns only RENDERING and reads its state from a service module (orchestrator.ts keeps the
 // logic/state). This component is the source of truth for which components live under the
@@ -78,7 +78,7 @@ function AppBoot() {
 // unreachable. A one-shot fetch, not a subscription — get-library-status is a fresh
 // statSync every call and there is no push channel (see main/index.ts's
 // refreshLibraryStatus comment); empty/LibraryMissingState.tsx re-fetches itself after
-// 再試行/repoint. Independent of AppBoot/bootApp: the DB-backed post list loads either
+// Retry/repoint. Independent of AppBoot/bootApp: the DB-backed post list loads either
 // way (the DB does not know or care whether the save folder exists), this effect only
 // decides whether AppShell shows it.
 function LibraryStatusGate() {
@@ -136,7 +136,7 @@ function GlobalShortcuts() {
       // services/panels.ts, and only the registration is here. Plain Ctrl+B stays with
       // SidebarProvider's own listener — the sidebar alone is its business.
       handleShortcutPanelsKey(e);
-      // Ctrl/Cmd+0 = フィット / Ctrl/Cmd+1 = 原寸 while an image view is showing
+      // Ctrl/Cmd+0 = fit / Ctrl/Cmd+1 = actual size while an image view is showing
       // (#150). Same arrangement again: the guard is that a zoomable slide has
       // registered a controller, which only services/image-zoom.ts can know.
       handleShortcutZoomKey(e);
@@ -195,7 +195,7 @@ function DetailDismiss() {
   return null;
 }
 
-// Selected-text right-click (#167): コピー / Googleで検索 / ライブラリ内検索 for the
+// Selected-text right-click (#167): Copy / Search with Google / Search in library for the
 // surfaces that have no context menu of their own — the inspector's body and
 // metadata, chiefly. Electron ships no default menu and the window runs
 // removeMenu(), so without this a right-click there hits nothing at all.
@@ -251,7 +251,7 @@ export function App() {
     // Tooltip now (the singleton .ui-tip host + its document-level [data-tip]
     // delegation are gone, #62), and the provider is what keeps them sharing one
     // delay and one open-at-a-time group. It has to sit above the body-level
-    // overlays too — the 種別 menu's rename button carries a tooltip.
+    // overlays too — the kind menu's rename button carries a tooltip.
     <TooltipProvider delay={0}>
       {/* Triggers the app's initial data load once, on mount. */}
       <AppBoot />
@@ -286,7 +286,7 @@ export function App() {
           inspector's inline field. */}
       <BulkTagDialogHost />
       <LightboxHost />
-      {/* 設定 — a shadcn Dialog, so it portals onto document.body itself. */}
+      {/* Settings — a shadcn Dialog, so it portals onto document.body itself. */}
       <SettingsHost />
       {/* Toast outlet (sonner) — services/ui.ts notify() feeds it. */}
       <Toaster />

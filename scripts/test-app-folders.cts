@@ -9,7 +9,7 @@
 //  - a post joins the CHILD through the card menu, whose rows are labelled by path now
 //    that a bare name no longer identifies a folder
 //  - clicking the PARENT shows the child's post: a folder condition covers its subtree
-//  - 「このフォルダのみ」 narrows it back to the parent's own posts, and the chip says so
+//  - 「このフォルダのみ」 (this folder only) narrows it back to the parent's own posts, and the chip says so
 //  - deleting the parent takes the child with it, and the posts stay in the library
 //
 // The clip half of this suite went away with the clip surfaces themselves (the
@@ -140,7 +140,7 @@ const evalJs = `(async () => {
   await sleep(350);
   out.aggregated = cards();                                         // 1 — held two levels down
 
-  // --- D. 「このフォルダのみ」 narrows it to the root's own posts (it holds none) ---
+  // --- D. 「このフォルダのみ」 (this folder only) narrows it to the root's own posts (it holds none) ---
   click(chips().find(c => c.textContent.includes('一次資料')).querySelector('button'));
   out.editorOpened = await waitFor(() => [...document.querySelectorAll('label')].some(l => l.textContent.includes('このフォルダのみ')));
   click(document.querySelector('[data-slot="switch"]'));

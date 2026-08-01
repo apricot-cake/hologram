@@ -1,12 +1,15 @@
-// ゴミ箱ビューの状態モデル（#268）のユニットテスト。
+// Unit tests for the trash view's state model (#268).
 //
-// 見るのは「ゴミ箱が設定の小型一覧から、カードを持つ行き先になった」ことで増えた側だけ
-// ＝並び・グループ化・選択・一括適用の4つ。IPC そのものは trash.ts の1:1転送なので差し
-// 替えて呼ばれ方だけを見る（何が呼ばれたかが、復元／完全削除の実害の全部）。
+// What's covered is only the part that grew when "trash went from a small settings-page
+// listing to a destination with cards" — the 4 pieces: ordering, grouping, selection, and
+// bulk apply. IPC itself is a 1:1 forwarder in trash.ts, so it's stubbed out and only how
+// it gets called is checked (what got called is the entirety of the real-world effect of
+// restore / permanent delete).
 //
-// グループ化は本物（records.ts の makeGroupRecords）を注入する＝1枚のカードとして削除した
-// 複数画像投稿が、ゴミ箱でも1枚のカードとして戻ってくる、というのが設計の要求（設計確定
-// 「カード選択とプレビューを再利用」）で、そこはモックにすると何も確かめられない。
+// Grouping injects the real implementation (records.ts's makeGroupRecords) — the design
+// requirement is that a multi-image post deleted as a single card comes back as a single
+// card in trash too (the finalized design decision "reuse card selection and preview"), and
+// mocking that would leave nothing actually verified.
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 
 const ipc = vi.hoisted(() => ({
@@ -31,7 +34,7 @@ vi.mock('../app/src/renderer/src/services/trash.ts', () => ({
     return { ok: true };
   },
 }));
-// sonner はブラウザ側の描画先を持つ＝ここでは呼ばれた事実だけあればよい。
+// sonner has a browser-side render target — here it's enough that it was called.
 vi.mock('../app/src/renderer/src/services/ui.ts', () => ({ notify: () => {}, escapeHtml: (s: string) => s }));
 
 import { close as confirmClose, get as confirmGet } from '../app/src/renderer/src/services/confirm';
@@ -48,7 +51,7 @@ trashView.configure({
 });
 
 const rec = (captureId: string, url: string, trashedAt: string) => ({ captureId, url, image: `${captureId}.png`, trashedAt, tags: [] }) as any;
-// a と b は同じ投稿URL＝1枚のカード。c は別の投稿。
+// a and b share the same post URL -> one card. c is a separate post.
 const A = rec('a', 'https://x.com/u/status/1', '2026-07-30T10:00:00Z');
 const B = rec('b', 'https://x.com/u/status/1', '2026-07-30T09:00:00Z');
 const C = rec('c', 'https://x.com/u/status/2', '2026-07-30T11:00:00Z');
@@ -63,13 +66,13 @@ beforeEach(async () => {
   ipc.deleted.length = 0;
   ipc.emptied = 0;
   quickViewed.length = 0;
-  confirmClose(); // 本番では ConfirmHost が押下時に閉じる（Confirm.tsx の doOk）
+  confirmClose(); // in production ConfirmHost closes it on button press (doOk in Confirm.tsx)
   await load([A, B, C]);
   trashView.clearSelection();
 });
 
-// ConfirmHost と同じ順で押す＝先に閉じてから onOk。ここを逆にすると、次の
-// 「開かないはず」の検査が前のダイアログを拾って通ってしまう。
+// Press in the same order as ConfirmHost: close first, then onOk. Reversing this would
+// let the next "shouldn't be open" check pick up the previous dialog and pass by accident.
 function pressOk() {
   const dialog = confirmGet();
   confirmClose();
@@ -79,7 +82,7 @@ function pressOk() {
 describe('ゴミ箱の読み込み', () => {
   test('捨てた順（新しい方が上）に並び、同じ投稿は1枚のカードにまとまる', () => {
     const snap = trashView.getSnapshot();
-    // カードは2枚（c と a+b）。件数バッジは「カード」でなく「捨てた投稿」の数＝3。
+    // There are 2 cards (c and a+b). The count badge is the number of "trashed posts", not "cards" — 3.
     expect(snap.groups.map((g) => g.records.map((r) => r.captureId))).toEqual([['c'], ['a', 'b']]);
     expect(snap.count).toBe(3);
   });
@@ -113,7 +116,7 @@ describe('選択', () => {
   });
 
   test('Shift は直前にクリックしたカードからの範囲（並び順で数える）', () => {
-    trashView.clickCard('c', {}); // 起点
+    trashView.clickCard('c', {}); // starting point
     trashView.clickCard('a', { shift: true });
     expect([...trashView.getSnapshot().selected]).toEqual(['c', 'a']);
   });
@@ -149,7 +152,7 @@ describe('一括適用', () => {
     trashView.selectAll();
     trashView.requestDeleteSelected();
     expect(confirmGet()?.message).toBe('trashDeleteConfirm');
-    expect(ipc.deleted).toEqual([]); // 確認前は何も起きない
+    expect(ipc.deleted).toEqual([]); // nothing happens before confirmation
     pressOk();
     await vi.waitFor(() => expect(ipc.deleted).toEqual(['c', 'a', 'b']));
   });

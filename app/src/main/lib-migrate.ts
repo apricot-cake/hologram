@@ -121,7 +121,7 @@ async function verifyEntry(srcPath, destPath) {
 }
 
 // Post-flip cleanup: for each copied entry, verify it at dest and only then delete
-// it from src ("整合チェック" — never remove what isn't proven to exist elsewhere).
+// it from src ("integrity check" — never remove what isn't proven to exist elsewhere).
 // A mismatch means src changed after its copy (a capture landing mid-move) or the
 // copy is bad — re-copy with force (dest content is our own copy, so overwriting it
 // converges to the newest src state, never clobbers user data) and re-verify; if it

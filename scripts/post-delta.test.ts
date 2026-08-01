@@ -1,6 +1,6 @@
-// app/src/main/lib-post-delta.ts のユニットテスト。
-// レンダラーへ配った分（lastSent）と今回の DB 読み出しを突き合わせて、
-// 追加/更新/削除だけを取り出す純関数。
+// Unit tests for app/src/main/lib-post-delta.ts.
+// A pure function that matches what was already delivered to the renderer (lastSent)
+// against this run's DB read, and extracts only the additions/updates/removals.
 
 import { describe, expect, test } from 'vitest';
 import { computeDelta } from '../app/src/main/lib-post-delta';

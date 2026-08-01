@@ -1,4 +1,4 @@
-// Trash destination state (#268) — the model behind the ゴミ箱 entry in the left
+// Trash destination state (#268) — the model behind the Trash entry in the left
 // nav and the `trash` browse view it opens. The raw IPC calls stay in trash.ts
 // (list/restore/delete/empty, 1:1 forwarding); this owns everything the VIEW needs:
 // the loaded records grouped into cards, its own selection, and the restore /
@@ -6,8 +6,8 @@
 //
 // Its selection is deliberately NOT services/selection.ts's: that set feeds the
 // floating bar's tag / folder / group actions, and those are exactly the edits the
-// trash must not offer (#268 設計確定 — "ゴミ箱内では通常のタグ/フォルダ編集と新規保存
-// を無効"). Two sets that can never be confused is what keeps that true by
+// trash must not offer (#268 design finalized — "normal tag/folder editing and new saves
+// are disabled within the Trash"). Two sets that can never be confused is what keeps that true by
 // construction rather than by a guard in every action.
 //
 // The card MODEL is the library's own (post-grid-builder's cardModel, handed to
@@ -93,7 +93,7 @@ export async function refresh(): Promise<void> {
     records = [];
   }
   // Most recently deleted first — the order every trash is read in (Explorer's
-  // 削除日時, macOS Finder's Date Deleted, digiKam's Deletion Time).
+  // Date deleted, macOS Finder's Date Deleted, digiKam's Deletion Time).
   records.sort((a, b) => String((b as any).trashedAt || '').localeCompare(String((a as any).trashedAt || '')));
   count = records.length;
   groups = deps.groupRecords(records.map(stampPost));
@@ -185,7 +185,7 @@ export function restoreSelected() {
 
 // Permanent deletion is the one action here that cannot be undone by any other
 // screen, so it asks — the same shape as the library's own delete confirm
-// (services/confirm.ts). #105's keyword-gated wipe stays reserved for 空にする.
+// (services/confirm.ts). #105's keyword-gated wipe stays reserved for "Empty".
 export function requestDeleteSelected() {
   const picked = selectedGroups();
   if (!picked.length || !deps) return;
@@ -212,7 +212,7 @@ export function requestDeleteSelected() {
   });
 }
 
-// 全消去 — #105's explicit confirmation, carried over unchanged from the settings
+// Empty all — #105's explicit confirmation, carried over unchanged from the settings
 // section this replaced (same message/description keys, same AlertDialog).
 export function requestEmptyAll() {
   if (!count || !deps) return;

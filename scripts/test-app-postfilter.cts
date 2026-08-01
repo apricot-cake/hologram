@@ -6,7 +6,7 @@
 //    filters the grid, checks the row, and keeps the editor open
 //  - the chip's ✕ clears the facet (chip gone, grid restored)
 // (The search-term text chip is covered by test-app-textleaf.cts; the reset-all
-// affordance is the chip row's planned 全解除 — not built yet, #154.)
+// affordance is the chip row's planned "clear all" — not built yet, #154.)
 // Post-view is the default mode, so no mode switch is needed.
 //
 //   node scripts/test-app-postfilter.cts

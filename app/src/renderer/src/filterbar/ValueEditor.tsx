@@ -1,12 +1,12 @@
-// Value editor for the "+ フィルタ" flow (redesign §3-2 / P2③) — the checklist /
+// Value editor for the "+ Filter" flow (redesign §3-2 / P2③) — the checklist /
 // sectioned-tag two-pane picker for one facet category. Adapted from the retired qf-pop
 // component's body: same buildRows/buildGroups/ValueRow rendering and the two-pane for
-// sectioned tags (種別: 作品/キャラ/未分類), but driven by a FilterCatValues entry
+// sectioned tags (kind: work/character/uncategorized), but driven by a FilterCatValues entry
 // (orchestrator's filterCategories) instead of the qf-pop bridge. The picker stays open so several
 // values can be toggled in a row; each pick re-reads values() so on/count refresh.
 //
-// The old ぴったり/おおまか search-mode segment is gone (要決4再改訂 = single smart
-// search). The find box is a plain substring filter (with a leading @ scoping to a
+// The old exact/loose search-mode segment is gone (pending-decision item 4, revised again =
+// a single smart search). The find box is a plain substring filter (with a leading @ scoping to a
 // poster's screen name, the one convention worth keeping) — it no longer flips the
 // shared search module's mode as a side effect.
 import { CheckIcon } from 'lucide-react';
@@ -20,10 +20,10 @@ import { Switch } from '@/components/ui/switch';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 
-// The facet's operator/exclusion mode (redesign §4-2 B, Linear「is any of / all of /
-// is not」). multi-value facets (tag/hashtag/folder) offer the 3-way どれか/すべて/
-// 〜以外; every other value facet offers the 2-way どれか/〜以外 (すべて is moot when the
-// type never clusters). One vocabulary throughout (どれか/すべて/〜以外) so the segment
+// The facet's operator/exclusion mode (redesign §4-2 B, Linear's "is any of / all of /
+// is not"). multi-value facets (tag/hashtag/folder) offer the 3-way any/all/except;
+// every other value facet offers the 2-way any/except (all is moot when the
+// type never clusters). One vocabulary throughout (any/all/except) so the segment
 // and the chip's mode word read the same. Selecting a side rewrites the facet via setMode.
 function ModeSeg({ cat, mode, onPick }: { cat: FilterCatValues; mode: FacetMode; onPick: (m: FacetMode) => void }) {
   const opts: { m: FacetMode; label: string }[] = cat.multi
@@ -82,7 +82,7 @@ function buildGroups(items: FilterRow[]): Group[] {
   return groups;
 }
 
-// The 種別 colour dot. Its only job is to name the colour on hover, so it is a Tooltip
+// The kind colour dot. Its only job is to name the colour on hover, so it is a Tooltip
 // around a plain span (no trigger button — the row underneath owns the click).
 function KindDot({ kind, title }: { kind: string; title: string }) {
   const dot = <span className={kindDotClass(kind)} />;
@@ -110,7 +110,7 @@ function ValueRow({ it, onPick }: { it: FilterRow; onPick: (it: FilterRow) => vo
 }
 
 export function ValueEditor({ cat, onManage }: { cat: FilterCatValues; onManage: (fn: () => void) => void }) {
-  // One mounted editor = one nav-history entry (#144 確定未決2): bracket the mount
+  // One mounted editor = one nav-history entry (#144 confirmed-pending item 2): bracket the mount
   // so every pick in this session coalesces into the entry the first pick pushed.
   // The parent keys this per category, so switching categories restarts the session.
   useEffect(() => {
@@ -121,7 +121,7 @@ export function ValueEditor({ cat, onManage }: { cat: FilterCatValues; onManage:
   // The parent remounts this per category (key=cat), so lazy init is the fresh read.
   const [items, setItems] = useState<FilterRow[]>(cat.values);
   // The mode is a UI intent that persists across picks (seeded from the live tree at
-  // mount). In 〜以外 mode a fresh pick lands positive, so re-negate the facet to keep
+  // mount). In except mode a fresh pick lands positive, so re-negate the facet to keep
   // the whole thing excluded (setMode is idempotent for already-negated values).
   const [mode, setMode] = useState<FacetMode>(cat.mode());
   const pick = (it: FilterRow) => {
@@ -144,7 +144,7 @@ export function ValueEditor({ cat, onManage }: { cat: FilterCatValues; onManage:
   };
 
   const [query, setQuery] = useState('');
-  const [groupSel, setGroupSel] = useState(-1); // -1 = すべて, else index into groups
+  const [groupSel, setGroupSel] = useState(-1); // -1 = all, else index into groups
   const inputRef = useRef<HTMLInputElement | null>(null);
   useEffect(() => {
     if (!cat.showFind) return;
@@ -176,7 +176,7 @@ export function ValueEditor({ cat, onManage }: { cat: FilterCatValues; onManage:
       {/* Folder facet only (#41). It sits with the mode segment because it shapes what
           the condition MEANS, not which values are in it — a folder covers its
           subfolders unless this says otherwise. A switch rather than a fourth segment:
-          it is orthogonal to どれか/すべて/〜以外, and combines with all three. */}
+          it is orthogonal to any/all/except, and combines with all three. */}
       {cat.only ? (
         <label className="flex cursor-default items-center justify-between gap-2 px-1 text-xs select-none">
           <span>{t('foldOnly')}</span>

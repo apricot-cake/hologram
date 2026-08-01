@@ -1,34 +1,40 @@
 'use strict';
 
-// #594 の再現＝**拡張を実際にリロードして、開いたままのタブを孤児にする**。
+// Reproduction of #594 = **actually reload the extension and orphan a tab that's left open**.
 //
-// 拡張がリロード（リリース後は Chrome による自動更新）されると、既に開いていたタブの
-// 常駐コンテンツスクリプトは拡張との接続を失う。UI はページに残ったまま、`chrome.*` を
-// 呼ぶと同期例外になる。**この状況は使い捨て Chromium で本物を作れる**（`chrome.runtime.reload()`）
-// ので、ここは模擬ではなく現物を測る。
+// When the extension reloads (after release, this happens via Chrome's
+// auto-update), an already-open tab's resident content script loses its
+// connection to the extension. The UI stays on the page, but calling `chrome.*`
+// throws a synchronous exception. **This situation can be produced for real in
+// a disposable Chromium** (`chrome.runtime.reload()`), so this test measures
+// the real thing rather than simulating it.
 //
-// 見るのは2層:
+// Two layers are checked here:
 //
-// **① プラットフォームの前提**（設計がここに寄りかかっている・extension/utils/extension-context.ts）
-//   `chrome.runtime.id` が falsy に変わり、**読んでも投げない**こと。
-//   `sendMessage` / `storage.local.get` は**同期で投げる**こと。
-//   `onMessage.addListener` / `removeListener` は**投げない**こと。
-//   ⚠️これが崩れると検知の口が無くなるが、②の配線テストは全部緑のまま通る＝Chrome が
-//   振る舞いを変えたことはここでしか分からない。#269 の e2e-extension-inject-failure.cts
-//   と同じ役割分担。
-//   孤児側の isolated world を覗くために、**同じ拡張へ計測専用の content script を1本**
-//   ステージング時に足している（同一拡張の content script は isolated world を共有するので、
-//   resident.js が見ているものがそのまま読める）。出荷物には入らない。
+// **(1) the platform's assumptions** (the design leans on these — extension/utils/extension-context.ts)
+//   `chrome.runtime.id` turns falsy, and **reading it doesn't throw**.
+//   `sendMessage` / `storage.local.get` **throw synchronously**.
+//   `onMessage.addListener` / `removeListener` **don't throw**.
+//   Warning: if these break, there's no mouth left to detect it with, but all
+//   of layer (2)'s wiring tests would still pass green = this is the only place
+//   that would notice Chrome changed its behavior. Same division of labor as
+//   #269's e2e-extension-inject-failure.cts.
+//   To peek into the orphaned side's isolated world, **a single content script
+//   dedicated to measurement is added to the same extension** at staging time
+//   (since content scripts of the same extension share an isolated world, what
+//   resident.js sees can be read as-is). This doesn't ship in the release build.
 //
-// **② 壊れ方そのもの**
-//   押した時（タブA）: 例外が積まれないこと・**「保存が終わらないため中止しました」ではなく
-//     「再読み込みしてください」**が出ること・角のコントロールが消えること・
-//     受領期限（SAVE_ACK_MS）を過ぎても遅れて別のバナーが出ないこと。
-//   押していない時（タブB）: スクロールしただけで**黙って**UI が消えること
-//     （バナーを出さない＝#154 憲章2。自動更新のたびに全タブへ通知が出る形を却下した根拠）。
-//   一括取込の走行中（タブC・#646）: 進捗バナーが「再読み込みしてください」に変わって走行が
-//     終わること。**一括取込は分単位で走り続ける**＝自動更新に出くわす確率が最も高い経路で、
-//     しかも #594 の修正はここを通っていなかった。
+// **(2) the failure mode itself**
+//   When clicked (tab A): no exception gets thrown, **"reload this page"
+//     appears — not "the save was aborted because it never finished"** —, the
+//     corner control disappears, and no separate banner shows up late even past the ack deadline (SAVE_ACK_MS).
+//   When not clicked (tab B): the UI disappears **silently** with just a scroll
+//     (no banner shown = #154 charter item 2. This is the basis for rejecting a
+//     design where every tab gets notified on every auto-update).
+//   While a bulk intake is running (tab C, #646): the progress banner switches
+//     to "reload this page" and the run ends. **A bulk intake keeps running for
+//     minutes at a time** = it's the path most likely to run into an
+//     auto-update, and #594's fix hadn't covered this path.
 //
 //   node scripts/e2e-extension-orphan.cts
 
@@ -37,12 +43,13 @@ const path = require('node:path');
 const { launchExtensionBrowser, stageExtension } = require('./lib-extension-e2e.cts');
 const { fixtureHtml } = require('./lib-overlay-e2e.cts');
 
-// i18n.ts の文言そのもの。出るべき方と、出てはいけない方（#594 以前に出ていた誤誘導）。
+// The exact text from i18n.ts. The one that should show up, and the one that shouldn't (the misleading text that used to show before #594).
 const RELOAD_NOTICE = '拡張機能が更新されました。このページを再読み込みしてください';
 const TIMEOUT_NOTICE = '保存が終わらないため中止しました。もう一度お試しください（繰り返す場合は Chrome を再起動）';
 
-// 孤児側の isolated world から、resident.js が見ているのと同じ chrome を触って報告する。
-// 触った結果は <html data-orphan-probe> に載せる＝ページのメインワールドから読める唯一の道。
+// Reports by touching the same chrome that resident.js sees, from the orphaned
+// side's isolated world. The result of touching it is placed on
+// <html data-orphan-probe> = the only path readable from the page's main world.
 const PROBE_JS = `
 (() => {
   const snapshot = () => {

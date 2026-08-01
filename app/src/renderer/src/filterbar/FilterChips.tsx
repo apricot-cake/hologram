@@ -1,17 +1,17 @@
-// Active-filter chips (redesign §3-2 / P2③ タスク2) — the "predicate" made visible.
-// One chip per active facet (Linear型 1 ファセット 1 チップ): a leading category glyph,
-// an optional mode word (すべて/どれか/〜以外), the value list, and a trailing ✕ that
+// Active-filter chips (redesign §3-2 / P2③ task 2) — the "predicate" made visible.
+// One chip per active facet (Linear-style 1 facet 1 chip): a leading category glyph,
+// an optional mode word (all/any/except), the value list, and a trailing ✕ that
 // clears the whole facet. Clicking the chip body reopens THAT facet's editor — the very
-// same ValueEditor / FormEditor the "+ フィルタ" flow uses — in a Popover anchored to the
-// chip. This replaces the retired query-chips component's cluster pills (改訂④ の
-// クラスタ枠＋すべて/どれか seg＋値ごと✕); すべて/どれか and 除外 now live inside the editor.
+// same ValueEditor / FormEditor the "+ Filter" flow uses — in a Popover anchored to the
+// chip. This replaces the retired query-chips component's cluster pills (revision 4's
+// cluster frame + all/any segment + per-value ✕); all/any and exclude now live inside the editor.
 // Free-text terms (the search box's confirmed leaves) are the one exception: one chip
 // per term, ✕ only (no editor) — P2④.
 //
 // Data: orchestrator.activeFilters() derives the chips from the active query tree; the
 // component subscribes to the postQueryTree/posterQueryTree store keys (written on every
 // tree mutation) and recomputes. The editor for a click is looked up from
-// filterCategories() by the chip's `cat` (a fresh read, like the "+ フィルタ" menu).
+// filterCategories() by the chip's `cat` (a fresh read, like the "+ Filter" menu).
 import { Bookmark, X } from 'lucide-react';
 import { useState, useSyncExternalStore } from 'react';
 import { type ActiveFilter, activeFilters, type FilterCat, filterCategories, saveCurrentSearch } from '../services/orchestrator.ts';
@@ -37,8 +37,8 @@ const subActive = (cb: () => void) => {
 };
 const getActive = () => storeGet(storeGet('browseMode') === 'posters' ? 'posterQueryTree' : 'postQueryTree');
 
-// The mode word shown inside the chip: 〜以外 for exclusions, すべて for an AND cluster,
-// どれか for a 2+-value OR cluster. A lone positive value needs no word (「タグ: 猫」).
+// The mode word shown inside the chip: except for exclusions, all for an AND cluster,
+// any for a 2+-value OR cluster. A lone positive value needs no word ("tag: cat").
 function modeWord(f: ActiveFilter): string {
   if (f.mode === 'exclude') return t('fbModeExclude');
   if (f.mode === 'and') return t('qbOptAll');
@@ -49,7 +49,7 @@ function modeWord(f: ActiveFilter): string {
 function Chip({ f }: { f: ActiveFilter }) {
   const [open, setOpen] = useState(false);
   // Resolve the editor category fresh on each open (counts/vocab/mode change between
-  // opens), mirroring the "+ フィルタ" menu. null → the facet has no editor (shouldn't
+  // opens), mirroring the "+ Filter" menu. null → the facet has no editor (shouldn't
   // happen for an emitted chip, but keeps the click a no-op rather than a crash).
   const [cat, setCat] = useState<FilterCat | null>(null);
   const handleOpen = (o: boolean) => {
@@ -91,7 +91,7 @@ function Chip({ f }: { f: ActiveFilter }) {
   );
 }
 
-// 検索を保存 (#40) — the trailing action of the chip row, Linear's「保存ビュー」position.
+// "Save search" (#40) — the trailing action of the chip row, Linear's "save view" position.
 // It rides with the chips: no chips means nothing to save, so the row (and this button)
 // is absent. Post-side only — a saved search is a post query.
 function SaveSearchButton() {
@@ -115,7 +115,7 @@ export function FilterChips() {
   useSyncExternalStore(subActive, getActive);
   const chips = activeFilters ? activeFilters() : [];
   // Zero chips = nothing to draw (#674): the band used to stay mounted with a
-  // 「＋ 絞り込みを追加」hint filling the empty state, but that duplicated the "+ フィルタ"
+  // "+ Add a filter" hint filling the empty state, but that duplicated the "+ Filter"
   // button's job. The other three entry points (AddFilterButton, the search-box suggest,
   // and Ctrl+K) already cover starting a filter from scratch, so with no active filter
   // the band itself has nothing left to show and is unmounted rather than left as an

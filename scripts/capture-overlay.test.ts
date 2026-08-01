@@ -1,14 +1,14 @@
-// extension/utils/capture.ts（Alt+S 単発キャプチャ: 投稿のハイライト矩形とバナーの状態
-// 遷移）の、オフライン純ユニットテスト。capture-mode-select.test.ts と同じ据え方＝ビルド
-// 済みの capture.js を jsdom の中で走らせ、本物の mousemove/click/keydown/runtime メッセージ
-// で駆動する。
+// Offline pure unit test for extension/utils/capture.ts (Alt+S single-shot capture: the post
+// highlight rect and the banner's state transitions). Set up the same way as
+// capture-mode-select.test.ts = runs the built capture.js inside jsdom, driven by real
+// mousemove/click/keydown/runtime messages.
 //
-// capture-mode-select.test.ts が見るのは Alt+S と Alt+Shift+S のどちらのモードに入るかの
-// 分岐だけ。ここが見るのは単発モードに入った後: ハイライト枠が投稿を追い、選択後に
-// バナーが busy → ok/partial/fail のどれへ転ぶか、テキストは何を出すか、Esc/右クリックで
-// 何も保存せずに片付くか。
+// capture-mode-select.test.ts only checks the branching between Alt+S and Alt+Shift+S modes.
+// This checks what happens after entering single-shot mode: whether the highlight box follows
+// the post, which of busy -> ok/partial/fail the banner lands on after selection, what text it
+// shows, and whether Esc/right-click dismisses it cleanly without saving anything.
 //
-// 前提: extension のビルド成果物（extension/.output/chrome-mv3/capture.js）が要る。
+// Prerequisite: the extension's build output (extension/.output/chrome-mv3/capture.js) is needed.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -29,9 +29,9 @@ const HTML = `<!doctype html><html><body>
   </div>
 </body></html>`;
 
-// #323: 投稿を選ぶクリック・答えのボタン・Esc・右クリックは、ユーザーのイベントで
-// しか通らない。ページが投げられる版（合成イベント）は pageEvent 側で、そちらは
-// ガード自身のテストだけが使う。
+// #323: the click that selects a post, the answer buttons, Esc, and right-click only pass
+// through as user events. The version a page can dispatch (synthetic events) is the pageEvent
+// side, used only by the guard's own tests.
 const pageEvent = (ctx: Ctx, type: string) => new ctx.window.Event(type, { bubbles: true, cancelable: true });
 const userEvent = (ctx: Ctx, type: string) => asUser(pageEvent(ctx, type));
 const pageKey = (ctx: Ctx, key: string) => new ctx.window.KeyboardEvent('keydown', { key, bubbles: true });
@@ -47,19 +47,20 @@ interface Ctx {
   bannerButtons: () => any[];
   highlight: () => any;
   settle: (ms?: number) => Promise<void>;
-  // #34 の重複照会にホストが何と答えるか。setup() 直後は「重複なし」＝従来どおり撮る。
+  // What the host answers to #34's duplicate check. Right after setup() it's "no duplicate" = captures as before.
   setDuplicate: (answer: any) => void;
 }
 
-// 新しい jsdom + バンドルを毎回作り直す（capture-mode-select.test.ts の runOn と同じ理由:
-// バナー/ハイライトの状態遷移テストは、前のシナリオの後始末に依存させたくない）。
+// Rebuild a fresh jsdom + bundle each time (same reason as runOn in capture-mode-select.test.ts:
+// banner/highlight state-transition tests shouldn't depend on the previous scenario's cleanup).
 async function setup(): Promise<Ctx> {
   const dom = new JSDOM(HTML, { url: 'https://x.com/home', runScripts: 'outside-only' });
   const { window } = dom;
 
-  // dismissBanner は onfinish の中でしか banner.remove() しない（実ブラウザではアニメ
-  // 終了イベント）。onfinish は代入された次のティックで呼ぶ — capture-mode-select.test.ts
-  // の「呼ばない」スタブだとバナーの片付き（cleanup/dismissBanner）を検証できない。
+  // dismissBanner only calls banner.remove() from inside onfinish (in a real browser, that's
+  // the animation-end event). onfinish fires on the tick after it's assigned — with the "never
+  // call it" stub from capture-mode-select.test.ts, we couldn't verify the banner's cleanup
+  // (cleanup/dismissBanner).
   window.Element.prototype.animate = function () {
     let onfinish: (() => void) | null = null;
     let cancelled = false;
@@ -98,12 +99,12 @@ async function setup(): Promise<Ctx> {
   window.cancelAnimationFrame = () => {};
 
   const sent: any[] = [];
-  // 複数保持する＝Chrome と同じ。単一スロットだったころ、保存の待ち受け
-  // （save-deadline.ts）が自分のリスナーを足した瞬間にキャプチャ本体のリスナーを
-  // 上書きして、notify が誰にも届かなくなった。
+  // Hold multiple = matches Chrome. Back when this was a single slot, the moment the save
+  // watchdog (save-deadline.ts) added its own listener it overwrote the capture body's
+  // listener, and notify stopped reaching anyone.
   const listeners: any[] = [];
-  // #34: capturePost は撮る前に checkDuplicate を1往復する。既定は「重複なし」で、
-  // 3択バナーのシナリオだけ setDuplicate() で答えを差し替える。
+  // #34: capturePost makes one round trip to checkDuplicate before capturing. Defaults to "no
+  // duplicate"; only the three-way-banner scenarios override the answer via setDuplicate().
   let duplicateAnswer: any = { ok: true, duplicate: false };
   window.chrome = {
     storage: { local: { get: (_keys: any, cb: any) => cb({}) } },
@@ -126,10 +127,10 @@ async function setup(): Promise<Ctx> {
 
   window.eval(BUNDLE);
   const settle = (ms = 300) => new Promise((r) => setTimeout(r, ms));
-  await settle(); // createI18n() とリスナー登録が終わるまで
+  await settle(); // Until createI18n() and listener registration finish
 
-  // #44: ページ内 UI は共有の ShadowRoot の中（ui-root.ts）。見た目は components.css が
-  // 持つので、テストが見るのはクラスと data-state＝「どの状態か」だけになった。
+  // #44: the in-page UI lives inside a shared ShadowRoot (ui-root.ts). Appearance is owned by
+  // components.css, so all the tests check now is the class and data-state = just "which state".
   const uiRoot = () => (window.document.querySelector('hologram-extension-ui') as any)?.shadowRoot;
   const banner = () => uiRoot()?.querySelector('[data-hologram-capture-banner]');
   const highlight = () => uiRoot()?.querySelector('.highlight');
@@ -185,7 +186,7 @@ describe('投稿をクリックすると busy バナーになり captureAndSend 
     ctx = await setup();
     const time = ctx.window.document.querySelector('#post1 time');
     time.dispatchEvent(userEvent(ctx, 'click'));
-    await ctx.settle(100); // 二重 requestAnimationFrame を越える
+    await ctx.settle(100); // Past the double requestAnimationFrame
   });
 
   test('選択した投稿の rect と permalink を送る', () => {
@@ -204,8 +205,9 @@ describe('投稿をクリックすると busy バナーになり captureAndSend 
   });
 });
 
-// #34: 保存済みの投稿を Alt+S で撮ろうとすると、撮る前に3択を出す。撮影そのものを
-// 止めるのが要点＝スキップを選んだら captureAndSend は一度も飛ばない。
+// #34: trying to capture an already-saved post with Alt+S shows a three-way choice before
+// capturing. The key point is stopping the capture itself = choosing Skip means captureAndSend
+// is never sent.
 describe('重複保存の警告（保存前の3択）', () => {
   let ctx: Ctx;
 
@@ -258,25 +260,27 @@ describe('重複保存の警告（保存前の3択）', () => {
     expect(ctx.sent.some((m) => m.type === 'captureAndSend')).toBe(true);
   });
 
-  // #158: ゴミ箱に現物が残っている投稿。同じ器（保存前に聞くバナー）だが選択肢は2つ＝
-  // 置換する相手のレコードがライブラリに無い。
+  // #158: a post whose actual record is still sitting in the trash. Same container (the
+  // ask-before-save banner), but only two choices = there's no library record to replace.
   describe('ゴミ箱にある投稿の告知', () => {
     const TRASHED = { ok: true, duplicate: false, trashed: { id: 'cap-gone', deletedAt: '2026-07-01T09:00:00Z' } };
 
     test('告知バナーになり、選択肢は2つ（置換を出さない）', async () => {
       await clickPostWithDuplicate(TRASHED);
-      // 日付は環境のロケール・時間帯で表記が変わるので、前半だけを固定して見る。
-      // 日付は環境のロケール・時間帯で表記が変わるので前後を固定して見る。末尾の
-      // 「戻せる」は文言の要＝「どこにあるか」だけ言って戻し方を言わないと、復元は
-      // アプリ側の操作なので導線がどこにも出ない（バナーにボタンは置けない）。
+      // The date's formatting varies by the environment's locale/timezone, so only pin down the first half.
+      // The date's formatting varies by the environment's locale/timezone, so pin down before/after
+      // it. The trailing "can restore" is the wording's whole point = if it only said "where it
+      // is" without saying how to restore, restoring is an in-app action with no entry point
+      // showing anywhere (the banner can't have a button).
       expect(ctx.bannerLabel().textContent).toMatch(/^This post is in the trash \(deleted .+\)\. You can restore it in Hologram$/);
       expect(ctx.bannerButtons().map((b: any) => b.textContent)).toEqual(['Copy', 'Skip']);
       expect(ctx.sent.some((m) => m.type === 'captureAndSend')).toBe(false);
     });
 
-    // ボタン名は重複の場面と同じ「Copy」なので、**補助文だけ**が場面を語る。ここが
-    // 取り違うと「ライブラリに在るものをもう1件」と読める文がゴミ箱の場面に出る＝
-    // ラベルを見ているテストでは絶対に落ちないので、補助文を直接見る。
+    // The button label is the same "Copy" as the duplicate case, so **only the helper text**
+    // tells the two scenarios apart. Getting this mixed up means the trash scenario shows text
+    // readable as "another copy of something already in the library" = a test that only looks
+    // at the label would never catch that, so this checks the helper text directly.
     test('「コピー」の補助文はゴミ箱用（ゴミ箱の分が残ることまで言う）', async () => {
       await clickPostWithDuplicate(TRASHED);
       expect(ctx.bannerButtons()[0].title).toBe('Save a new record, leaving the trashed one alone');
@@ -329,7 +333,7 @@ describe('notify: 成功', () => {
   });
 
   test('しばらくすると片付く（バナーが消え、再開可能になる）', async () => {
-    await ctx.settle(1700); // 成功の滞留 1500ms を越える
+    await ctx.settle(1700); // Past the 1500ms success dwell time
 
     expect(ctx.banner()?.isConnected ?? false).toBe(false);
     expect(ctx.window.__snsPostSaveActive).toBe(false);
@@ -366,14 +370,15 @@ describe('notify: 部分成功・グループ化・失敗', () => {
 
   test('失敗は成功より長く滞留する', async () => {
     ctx.notify({ type: 'notify', success: false, errorKind: 'host-unavailable' });
-    await ctx.settle(1600); // 成功の滞留(1500ms)は越えたが失敗の滞留(2800ms)にはまだ届かない
+    await ctx.settle(1600); // Past the success dwell time (1500ms) but not yet reaching the failure dwell time (2800ms)
 
     expect(ctx.banner()?.isConnected ?? false).toBe(true);
   });
 
-  // #205: 拡張とアプリの版がずれている。保存は成功しているので緑の「保存しました」に
-  // なりうるが、そのまま流すと更新が要ることに誰も気付かない＝partial（琥珀）の側へ
-  // 倒して、他の成功文面より前に出す。
+  // #205: the extension and app versions have drifted apart. The save itself succeeded, so it
+  // could just show a green "saved", but letting that through as-is means nobody notices an
+  // update is needed = fall to the partial (amber) side instead, and show it before the other
+  // success text.
   test('版のずれは、保存できたことと更新の要求を同時に出す', () => {
     ctx.notify({ type: 'notify', success: true, metaOk: true, grouped: 0, hostSkew: 'host-old' });
 
@@ -406,22 +411,23 @@ describe('パーマリンクが無い投稿は選ぶと即座に失敗する', (
   });
 });
 
-// #323: キャプチャセッションが開いている間、ページ側スクリプトはイベント経路を共有して
-// いる＝合成クリックがこのハンドラにも届いていた。届いた結果は2つとも重い＝①ユーザーの
-// クリック無しに保存が成立する ②投稿に解決しないクリックが失敗ログを1行ずつ出し、その
-// 1行ごとにネイティブホストのプロセスが起動する。どちらもここで止める。
+// #323: while a capture session is open, the page-side script shares the event path = a
+// synthetic click was also reaching this handler. Both outcomes of that were serious =
+// (1) a save could complete without any user click, and (2) a click that doesn't resolve to a
+// post emitted a failure-log line each time, and each one of those lines spun up a native host
+// process. Both are stopped right here.
 describe('#323 ページ由来の合成イベントではセッションが動かない', () => {
   test('合成クリックは保存も失敗ログも起こさない（セッションは開いたまま）', async () => {
     const ctx = await setup();
 
-    // 投稿の上：本物なら保存が始まるクリック。
+    // On a post: a click that would start a save if it were real.
     ctx.window.document.querySelector('#post1 time').dispatchEvent(pageEvent(ctx, 'click'));
-    // 投稿に解決しない場所：本物なら select/fail の行が出るクリック（ホスト起動の経路）。
+    // Somewhere that doesn't resolve to a post: a click that would produce a select/fail line if real (the path that spins up the host).
     ctx.window.document.getElementById('feed').dispatchEvent(pageEvent(ctx, 'click'));
     await ctx.settle(50);
 
-    expect(ctx.sent).toEqual([]); // 保存も診断ログも1件も出ない
-    expect(ctx.bannerState()).toBe('active'); // まだ「投稿をクリック」を待っている
+    expect(ctx.sent).toEqual([]); // Not a single save or diagnostic log came out
+    expect(ctx.bannerState()).toBe('active'); // Still waiting on "click a post"
     expect(ctx.window.__snsPostSaveActive).toBe(true);
   });
 
@@ -433,7 +439,7 @@ describe('#323 ページ由来の合成イベントではセッションが動�
     await ctx.settle(50);
 
     expect(ctx.banner()?.isConnected).toBe(true);
-    expect(ctx.sent).toEqual([]); // cancel の行も出ない＝やめてすらいない
+    expect(ctx.sent).toEqual([]); // Not even a cancel line = it hasn't even been dismissed
   });
 
   test('ユーザーのクリックはそのまま通る（ガードが本物まで止めていないこと）', async () => {
@@ -446,9 +452,9 @@ describe('#323 ページ由来の合成イベントではセッションが動�
   });
 });
 
-// #519 でここは1つだけ増えた＝**やめたことを記録する1行**。保存は当然送らないが、
-// 「何も送らない」だと沈黙になり、固まった保存と同じ記録になってしまう（それが3回の
-// 誤診の原因）。行の中身は save-log.test.ts が見る。
+// #519 added exactly one thing here = **a line recording that it was cancelled**. Of course a
+// save isn't sent, but "sends nothing at all" is silence, and it would leave the same record as
+// a frozen save (that was the cause of 3 separate misdiagnoses). The content of the line is checked by save-log.test.ts.
 describe('Escape / 右クリックでキャンセル', () => {
   const saveMessages = (ctx: any) => ctx.sent.filter((m: any) => m.type !== 'logCapture');
 

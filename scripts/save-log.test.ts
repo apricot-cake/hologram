@@ -1,36 +1,38 @@
-// capture.log が「起動しただけ」と「保存が始まって終わらなかった」を区別できること（#519）。
+// capture.log must be able to distinguish "just launched" from "a save started and never finished" (#519).
 //
-// この2つは同じ記録だった＝どちらも `stage=activate` の1行が在って、その後に何も
-// 続かない。ログを読んだ進捗管理セッションが3回続けて誤診し、うち1回はユーザーへ
-// 誤った警告を出して撤回している。**ログが嘘をついたのではなく、答えを持っていない
-// のに答えを読み取れた**のが原因なので、ここで見るのは「読み取れる答えが在るか」。
+// These two used to leave the same record = both have a single `stage=activate` line
+// with nothing following it. A progress-check session reading the log misdiagnosed this
+// 3 times in a row, and once even gave the user a false warning and had to retract it.
+// **The log wasn't lying — it had no answer, yet an answer could be read out of it**, and
+// that's the root cause, so what's checked here is "is there a readable answer at all".
 //
-// #507（待つ脚すべてに上限）はこの半分を埋めた＝上限に達した保存は失敗として1行
-// 残り、その行が段を名乗る。残っていたのは①**始まりの行が無い**こと（上限に達する
-// 前・プロセスごと消えた場合は今も無音）②行を結ぶ識別子が無いこと ③**やめたことが
-// 記録されない**こと。ここが見るのはその3つ。
+// #507 (a cap on every waiting leg) filled half of this = a save that hit its cap
+// leaves one line as a failure, and that line names the stage. What was left was ①
+// **there's no starting line at all** (still silent if the process disappears before
+// hitting the cap), ② there's no identifier tying lines together, and ③ **cancelling
+// isn't recorded**. This tests those 3.
 //
-// バックグラウンド側（`save`/`begin` の行・失敗の行が運ぶ saveId と reached）は
-// scripts/background-wiring.test.ts。打ち切りが4つの面すべてで記録されること（#507）は
-// scripts/capture-timeout.test.ts。装置は scripts/lib-capture-rig.ts。
+// The background side (the `save`/`begin` lines, and the saveId and reached carried by
+// a failure line) is scripts/background-wiring.test.ts. That an abort is recorded on all
+// 4 surfaces (#507) is scripts/capture-timeout.test.ts. The rig is scripts/lib-capture-rig.ts.
 import { expect, test } from 'vitest';
 import { clickPost, makeRig, pressKey, REPLY_UNTIL_SAVE, settle } from './lib-capture-rig.ts';
 import { asUser } from './lib-user-event.ts';
 
-// --- ① 起動しただけ ------------------------------------------------------------
+// --- ① just launched ------------------------------------------------------------
 
 test('UI を開いて保存せずに閉じた＝やめたことが行として残る（沈黙ではない）', async () => {
   const rig = makeRig(REPLY_UNTIL_SAVE);
   await settle();
 
-  // 投稿を1つもクリックせずに Esc。これが誤読その2の状況そのもの＝ユーザーは
-  // 「UI を見るために起動しただけ」だった。
+  // Esc without clicking a single post. This is exactly misdiagnosis #2's situation = the
+  // user had "just launched it to look at the UI".
   pressKey(rig, 'Escape');
   await settle();
 
   const cancel = rig.logged().find((e) => e.phase === 'cancel');
   expect(cancel, `logCapture entries: ${JSON.stringify(rig.logged())}`).toMatchObject({ stage: 'select', phase: 'cancel' });
-  // 保存は1件も始まっていない＝この行は「対象を選ばないまま閉じた」を意味する。
+  // Not a single save started = this line means "closed without selecting a target".
   expect(rig.sent.some((m) => m.type === 'captureAndSend')).toBe(false);
   expect(cancel.saveId ?? null).toBe(null);
 });
@@ -38,14 +40,14 @@ test('UI を開いて保存せずに閉じた＝やめたことが行として�
 test('対象を選んだあとに閉じた場合は、選択ではなく保存をやめたことが残る', async () => {
   const rig = makeRig(REPLY_UNTIL_SAVE);
   await clickPost(rig);
-  expect(rig.state()).toBe('busy'); // 保存は飛んでいる
+  expect(rig.state()).toBe('busy'); // the save is in flight
 
   pressKey(rig, 'Escape');
   await settle();
 
   const cancel = rig.logged().find((e) => e.phase === 'cancel');
   expect(cancel).toMatchObject({ stage: 'save', phase: 'cancel', url: 'https://x.com/alice/status/111' });
-  // 同じ保存の行として結べる＝これが無いと時刻の近さで推測するしかない。
+  // Can be tied together as lines of the same save = without this, you'd have to guess from how close the timestamps are.
   const sentSave = rig.sent.find((m) => m.type === 'captureAndSend');
   expect(cancel.saveId).toBe(sentSave.saveId);
   expect(typeof cancel.saveId).toBe('string');
@@ -65,17 +67,17 @@ test('重複警告に「やめる」と答えたのは失敗でも沈黙でも�
   expect(rig.sent.some((m) => m.type === 'captureAndSend')).toBe(false);
 });
 
-// --- ② 保存が始まって終わらなかった ---------------------------------------------
+// --- ② a save started and never finished ---------------------------------------------
 
 test('保存が始まって終わらなかった場合は、やめた場合と違う行が残る', async () => {
   const rig = makeRig(REPLY_UNTIL_SAVE);
   await clickPost(rig);
 
-  rig.advance(91_000); // どちらの上限（受領 10 秒・沈黙 40 秒）も越える
+  rig.advance(91_000); // exceeds both caps (10s to acknowledge, 40s of silence)
   await settle();
 
   const entries = rig.logged();
-  // 出るのは result/fail。cancel は出ない＝ユーザーは何もやめていない。
+  // what appears is result/fail. No cancel appears = the user didn't cancel anything.
   expect(entries.some((e) => e.phase === 'cancel')).toBe(false);
   const timeout = entries.find((e) => e.stage === 'result' && e.phase === 'fail');
   expect(timeout, `logCapture entries: ${JSON.stringify(entries)}`).toBeTruthy();
@@ -83,16 +85,17 @@ test('保存が始まって終わらなかった場合は、やめた場合と�
   expect(timeout.saveId).toBe(rig.sent.find((m) => m.type === 'captureAndSend').saveId);
 });
 
-// #507 の調査が答えられなかった問い＝どの脚で詰まったのか。3つの候補（ワーカーの
-// 停止・メタデータの停止・crop の停止）が同じ証跡を残していた。段を通過するたび
-// ワーカーが送る報告をページが覚えておけば、ワーカーごと消えても最後の行が
-// 「どこまで進んで黙ったか」を名乗れる。
+// The question the #507 investigation couldn't answer = which leg got stuck. The 3
+// candidates (the worker stalling, metadata stalling, crop stalling) all left the same
+// evidence behind. If the page remembers the report the worker sends each time it clears
+// a stage, then even if the worker disappears entirely, the last line can still name
+// "how far it got before going silent".
 test('途中まで進んでワーカーが黙った場合、最後の行がどの段まで進んだかを名乗る', async () => {
   const rig = makeRig(REPLY_UNTIL_SAVE);
   await clickPost(rig);
   const saveId = rig.sent.find((m) => m.type === 'captureAndSend').saveId;
 
-  // ワーカーが「スクリーンショットと切り抜きは終わった」と報告し、そこで消える。
+  // The worker reports "screenshot and crop are done" and then disappears right there.
   rig.push({ type: 'saveProgress', saveId, reached: ['capture'] });
   rig.push({ type: 'saveProgress', saveId, reached: ['capture', 'crop'] });
   await settle();
@@ -101,7 +104,7 @@ test('途中まで進んでワーカーが黙った場合、最後の行がど�
   await settle();
 
   const timeout = rig.logged().find((e) => e.stage === 'result' && e.phase === 'fail');
-  // ここが #519 の芯＝「何も来なかった」ではなく「切り抜きの後で黙った」と読める。
+  // This is the heart of #519 = it reads as "went silent after the crop", not "nothing ever arrived".
   expect(timeout.reached).toEqual(['capture', 'crop']);
 });
 
@@ -118,7 +121,7 @@ test('別の保存の進捗報告は取り違えない', async () => {
   expect(timeout.reached).toEqual([]);
 });
 
-// --- 終わった保存には cancel を足さない ----------------------------------------
+// --- a completed save never gets a cancel appended ----------------------------------------
 
 test('保存が終わったあとの片付けは cancel を書かない', async () => {
   const rig = makeRig(REPLY_UNTIL_SAVE);
@@ -128,7 +131,7 @@ test('保存が終わったあとの片付けは cancel を書かない', async 
   await settle();
   expect(rig.state()).toBe('success');
 
-  rig.advance(3000); // 成功の滞留を越えて cleanup が走る
+  rig.advance(3000); // past the success dwell time, cleanup runs
   await settle();
 
   expect(rig.logged().some((e) => e.phase === 'cancel')).toBe(false);
@@ -140,7 +143,7 @@ test('上限で終わったあとの片付けも cancel を書かない（失敗
 
   rig.advance(91_000);
   await settle();
-  rig.advance(3000); // 失敗の滞留を越えて cleanup が走る
+  rig.advance(3000); // past the failure dwell time, cleanup runs
   await settle();
 
   const entries = rig.logged();

@@ -6,7 +6,7 @@ import { toast } from 'sonner';
 // *-builder.ts modules, etc.) consumes the SAME toast + escape implementation instead of
 // hand-rolling their own.
 
-// An optional button on a toast. Today the only one is 「元に戻す」 (#235): a
+// An optional button on a toast. Today the only one is "Undo" (#235): a
 // completed bulk/destructive edit offers the way back right where it reported
 // itself, instead of making you remember Ctrl+Z.
 export type NotifyAction = { label: string; onClick: () => void };

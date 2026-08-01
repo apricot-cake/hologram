@@ -1,14 +1,16 @@
-// 保存フォルダの封じ込め規則（app/src/main/lib-save-folder-path.ts）のユニットテスト。
-// 純ロジック＝ファイルシステムも Electron も要らない（実在しないパスでも答えは決まる）。
+// Unit tests for the save-folder containment rule (app/src/main/lib-save-folder-path.ts).
+// Pure logic = needs neither the filesystem nor Electron (the answer is determined even
+// for a nonexistent path).
 //
-// ここで賭かっているのは「許可を1つ広げたときに、広げすぎていないこと」。#267 で
-// `.trash/<file>` を足したが、これは asset:// が返せる範囲＝ライブラリ全体を1オリジンで
-// 抱えている面（asset-headers.ts の説明）を広げる変更なので、通る形と通らない形を
-// **同じファイルに並べて**固定する。片方だけ書くと、規則を緩めた変更が「通る形」の
-// テストだけ緑にして通過する。
+// What's at stake here is "when one permission is widened, it isn't widened too far".
+// #267 added `.trash/<file>`, and since that widens the range asset:// can serve = the
+// surface where the whole library is held under a single origin (see asset-headers.ts's
+// explanation), the shapes that pass and the shapes that don't are pinned down
+// **side by side in the same file**. Writing only one side would let a change that loosens
+// the rule slip through green on just the "passes" tests.
 //
-// 実 Electron 側（scripts/test-app-asset-csp.cts）が見るのは Chromium が実際に何を
-// 読むかで、こちらは「どのパスを返すと決めているか」。
+// What the real-Electron side (scripts/test-app-asset-csp.cts) checks is what Chromium
+// actually reads; this side checks "which path it's decided to return".
 
 import fs from 'node:fs';
 import os from 'node:os';
@@ -44,8 +46,8 @@ describe('resolveInSaveFolder — 通る3形', () => {
 });
 
 describe('resolveInSaveFolder — 保存フォルダの外へは出さない', () => {
-  // 「潰して直下にする」か「null で断る」かの違いは意味を持たない＝どちらでも
-  // 保存フォルダの外は読まれない。見るのは常に「ROOT の外を指さないこと」。
+  // The difference between "collapse to root" and "refuse with null" carries no meaning
+  // here = either way, nothing outside the save folder gets read. What's always checked is "never points outside ROOT".
   const escapes = ['..', '../secret.jpg', '../../secret.jpg', `${TRASH_SUBDIR}/..`, `${TRASH_SUBDIR}/../..`, `${TRASH_SUBDIR}/../../secret.jpg`, `${AVATAR_SUBDIR}/..`, `${AVATAR_SUBDIR}/../../secret.jpg`, '.', `${TRASH_SUBDIR}/.`];
   for (const name of escapes) {
     test(`${JSON.stringify(name)} は ROOT の外を指さない`, () => {
@@ -83,8 +85,8 @@ describe('resolveInSaveFolder — 許可ディレクトリの広がり方', () =
   });
 
   test('二重エンコードは1回 decode されただけでは区切りにも .. にもならない', () => {
-    // asset:// ハンドラは decodeURIComponent を1回だけ通す。`%252e%252e` はそこで
-    // `%2e%2e` にしかならず、パスの部品としては ただの名前。
+    // The asset:// handler runs decodeURIComponent exactly once. `%252e%252e` only becomes
+    // `%2e%2e` there, which as a path segment is just an ordinary name.
     expect(resolve('%2e%2e')).toBe(at('%2e%2e'));
     expect(resolve(`${TRASH_SUBDIR}/%2e%2e`)).toBe(at(TRASH_SUBDIR, '%2e%2e'));
     expect(resolve(`${TRASH_SUBDIR}%2Fx.jpg`)).toBe(at(`${TRASH_SUBDIR}%2Fx.jpg`));
@@ -104,9 +106,10 @@ describe('resolveInSaveFolder — 入力が無い', () => {
   });
 });
 
-// #267 の原因は独立した2つ（レコードが名乗るパスと、封じ込めの許可リスト）で、片方だけ
-// 直しても画は出ない。だから2つを1本で噛み合わせる＝ゴミ箱の一覧が名乗った名前を、
-// 実際にディスクへ落ちているファイルまで解決できることを見る。
+// #267's cause was 2 independent things (the path a record claims, and the containment
+// allow-list), and fixing only one didn't fix the picture. So the two are meshed
+// together in one test = it verifies that the names the trash listing claims resolve
+// all the way to files that actually exist on disk.
 const tempDirs: string[] = [];
 afterAll(() => {
   for (const d of tempDirs) fs.rmSync(d, { recursive: true, force: true });
@@ -138,7 +141,7 @@ describe('ゴミ箱のレコードが名乗るパスが、そのまま封じ込�
     const [rec] = await listTrashRecords(trashDir);
     const named = [rec.image, rec.video, rec.media[0].file, rec.media[0].posterFile];
 
-    // レンダラが URL を組む前の形＝保存フォルダから見た相対パス。
+    // The shape before the renderer builds a URL = a path relative to the save folder.
     expect(named).toEqual([`${TRASH_SUBDIR}/cap-1.jpg`, `${TRASH_SUBDIR}/cap-1-video.mp4`, `${TRASH_SUBDIR}/cap-1-media-1.mp4`, `${TRASH_SUBDIR}/cap-1-media-1-poster.jpg`]);
     for (const name of named) {
       const resolved = resolveInSaveFolder(folder, name as string);

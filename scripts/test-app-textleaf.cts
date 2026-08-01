@@ -6,7 +6,7 @@
 //   - typing「ねこ」creates ONE text chip in the filter-chip row and the smart
 //     matcher hits the katakana body「ネコかわいい」→ 1 card
 //   - Enter confirms: box clears, the term chip stays
-//   - typing a second term「いぬ」adds a SECOND text chip (両立・AND なので 0 cards)
+//   - typing a second term「いぬ」adds a SECOND text chip (both must hold — it's AND — so 0 cards)
 //   - the chip's ✕ removes just that term
 // OR-drag of two leaves is checked on the real app (drag synthesis is brittle in
 // a smoke harness).
@@ -74,27 +74,27 @@ const evalJs = `(async () => {
     sb.dispatchEvent(new Event('input', { bubbles: true }));
   };
   const r = {};
-  // A: typing「ねこ」→ one text chip + the smart matcher hits カタカナ本文 → 1
+  // A: typing「ねこ」→ one text chip + the smart matcher hits the katakana body text → 1
   setVal('ねこ');
   await wait(240);
   r.chipTyping = textChips();       // 1 (the editing leaf is already a chip)
-  r.cardsKana = cards();            // 1 (単一スマート検索: ひらがな↔カタカナ正規化)
+  r.cardsKana = cards();            // 1 (single smart search: hiragana <-> katakana normalization)
   // B: Enter confirms — box clears, the term chip stays
   sb.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
   await wait(140);
   r.boxAfterEnter = sb.value;       // ''
   r.chipAfterEnter = textChips();   // 1
-  // C: a second term → a second text chip (両立・AND なので 0 cards)
+  // C: a second term → a second text chip (both must hold — it's AND — so 0 cards)
   setVal('いぬ');
   await wait(240);
   r.chips2 = textChips();           // 2
-  r.cardsAnd = cards();             // 0 (ねこ AND いぬ に合う投稿はない)
+  r.cardsAnd = cards();             // 0 (no post matches ねこ AND いぬ)
   // D: the second chip's ✕ removes just that term → back to 1 chip / 1 card
   const xBtns = chipRow().querySelectorAll(':scope > span > button[aria-label]');
   xBtns[xBtns.length - 1].click();
   await wait(240);
   r.chipsAfterX = textChips();      // 1
-  r.cardsAfterX = cards();          // 1 (ねこ だけに戻る)
+  r.cardsAfterX = cards();          // 1 (back to just ねこ)
   return r;
 })()`;
 

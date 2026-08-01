@@ -1,19 +1,21 @@
-// app/src/main/lib-archive.ts#importCompleteZipToDb の Zip-Slip 回帰テスト。
-// エントリ名で保存フォルダの外へ出ようとする悪意ある library ZIP を作る＝Windows の
-// バックスラッシュ区切り・POSIX の `../`・絶対パス／ドライブレター・許可されていない
-// 深さの入れ子。
+// Zip-Slip regression tests for app/src/main/lib-archive.ts#importCompleteZipToDb.
+// Builds malicious library ZIPs whose entry names try to escape the save folder =
+// Windows backslash separators, POSIX `../`, absolute paths / drive letters, and
+// disallowed nesting depth.
 //
-// #485 で読み手が JSZip から yauzl に替わり、防御が2層になった。層ごとに結末が違う:
+// #485 swapped the reader from JSZip to yauzl, giving us two layers of defense. Each
+// layer fails differently:
 //
-//   層1（yauzl.validateFileName）— バックスラッシュを `/` に畳んでから、絶対パス・
-//     ドライブレター始まり・`..` セグメントを拒否する。エントリを1件も yield せずに
-//     書庫まるごと落ちる＝1バイトも書かれない fail-closed。
-//   層2（lib-archive の isSafeLibraryPath / isSafeTrashPath）— yauzl が通す名前を
-//     止める。`library/C:/Windows/…`（畳まれた後は絶対パスでない）や
-//     `library/sub/dir/…` は traversal ではないので層1は素通りする。こちらは
-//     エントリ単位の skip で、同じ書庫の正当なエントリは従来どおり取り込まれる。
+//   Layer 1 (yauzl.validateFileName) — collapses backslashes to `/`, then rejects
+//     absolute paths, entries starting with a drive letter, and `..` segments. Yields
+//     zero entries and drops the whole archive = fail-closed, not a single byte written.
+//   Layer 2 (lib-archive's isSafeLibraryPath / isSafeTrashPath) — stops names that
+//     yauzl lets through. `library/C:/Windows/…` (not absolute once collapsed) or
+//     `library/sub/dir/…` aren't traversal, so layer 1 lets them pass. This layer skips
+//     per entry, so legitimate entries in the same archive are still imported as usual.
 //
-// 層を分けて見ないと、片方のガードを外しても緑のままになりうる。
+// Testing the layers separately matters: dropping one guard could still stay green if
+// they weren't checked in isolation.
 
 import fs from 'node:fs';
 import os from 'node:os';
@@ -24,14 +26,16 @@ import { importCompleteZipToDb, writeCompleteZip } from '../app/src/main/lib-arc
 import { openDatabase } from '../app/src/main/lib-db';
 import { createDbWriter } from '../app/src/main/lib-db-write';
 
-// BOM 耐性（BACKLOG L3）をこの取り込みに相乗りさせる: 他ツールが書き出した zip の
-// org-JSON エントリは BOM 付きで来る。解釈できないと合流で着信側が黙って落ちる。
+// Piggyback BOM tolerance (BACKLOG L3) onto this import: org-JSON entries written by
+// other tools come with a BOM. If it can't be parsed, the incoming side silently drops
+// during the merge.
 const BOM = String.fromCharCode(0xfeff);
 
 let root: string;
 let seq = 0;
-// JSZip は fixture を組む側だけで使う（読むのは yauzl）。中央ディレクトリに生の名前を
-// 載せられるので、実際の攻撃と同じ形が作れる。
+// JSZip is only used on the side that assembles fixtures (yauzl does the reading). It
+// lets us put raw names into the central directory, so we can build the same shape as
+// a real attack.
 async function zipToFile(build: (zip: JSZip) => void) {
   const zip = new JSZip();
   build(zip);
@@ -43,7 +47,7 @@ async function zipToFile(build: (zip: JSZip) => void) {
 const legitEntries = (zip: JSZip) => {
   zip.file('library/cap1.jpg', Buffer.from('JPEGDATA1'));
   zip.file('library/cap2.jpg', Buffer.from('JPEGDATA2'));
-  zip.file('library/avatars/abcd1234.png', Buffer.from('AVATARDATA')); // 共有アバターストア（許可された下位パス）
+  zip.file('library/avatars/abcd1234.png', Buffer.from('AVATARDATA')); // shared avatar store (an allowed sub-path)
   zip.file('library/folders.json', BOM + JSON.stringify({ folders: [{ id: 'f1', name: 'X', items: ['cap1'] }] }));
 };
 
@@ -55,7 +59,7 @@ afterAll(() => {
   fs.rmSync(root, { recursive: true, force: true });
 });
 
-// --- 層1: 名前そのものが不正な書庫は、まるごと拒否される ------------------------
+// --- Layer 1: an archive whose name itself is invalid is rejected wholesale ------------------------
 describe('traversal / 絶対パスを含む書庫は、1バイトも書かずに拒否される', () => {
   const cases: Array<[string, string]> = [
     ['Windows バックスラッシュ traversal', 'library/..\\..\\evil-back.txt'],
@@ -79,14 +83,14 @@ describe('traversal / 絶対パスを含む書庫は、1バイトも書かずに
       await expect(importCompleteZipToDb(handle.sqlite, zipPath, dest)).rejects.toThrow();
       handle.sqlite.close();
 
-      // fail-closed: 宛先の中にも外にも何も落ちていない
+      // fail-closed: nothing lands inside or outside the destination
       expect(fs.readdirSync(dest)).toEqual([]);
       expect(fs.readdirSync(root).filter((n) => /evil/i.test(n))).toEqual([]);
     });
   }
 });
 
-// --- 層2: yauzl が通す名前を lib-archive 側のルールが止める ----------------------
+// --- Layer 2: names yauzl lets through get stopped by lib-archive's own rules ----------------------
 describe('yauzl が通す形は、エントリ単位で skip される', () => {
   let dest: string;
   let handle: any;
@@ -95,18 +99,19 @@ describe('yauzl が通す形は、エントリ単位で skip される', () => {
   beforeAll(async () => {
     dest = path.join(root, 'lib');
     fs.mkdirSync(dest, { recursive: true });
-    // 実ライブラリには .trash/ が実在する。中間フォルダが「たまたま無いから ENOENT で
-    // 落ちる」に頼ると、ガードを外しても緑のままになる＝実在する行き先を1つ用意して、
-    // isSafeLibraryPath が外れたら本当に書けてしまう状況を作る。
+    // In a real library, .trash/ actually exists. Relying on "it happens to not exist so
+    // it fails with ENOENT" would still stay green even with the guard removed = so set
+    // up one real destination, creating a situation where removing isSafeLibraryPath
+    // would actually let a write through.
     fs.mkdirSync(path.join(dest, '.trash'), { recursive: true });
     handle = openDatabase(path.join(root, 'test.db'));
     createDbWriter(handle.sqlite).setFolders({ folders: [{ id: 'pre', name: 'P', kind: 'static', items: [] }] });
 
     const zipPath = await zipToFile((zip) => {
       legitEntries(zip);
-      // どれも yauzl の validateFileName は通る（畳んだ後に `..` も先頭の絶対形も
-      // 無い）＝ここで止めているのは isSafeLibraryPath だけ。
-      zip.file('library/.trash/evil-trash.jpg', 'PWNED-TRASH'); // library/ の名前でゴミ箱へ潜り込む
+      // All of these pass yauzl's validateFileName (no `..` and no leading absolute form
+      // once collapsed) = the only thing stopping them here is isSafeLibraryPath.
+      zip.file('library/.trash/evil-trash.jpg', 'PWNED-TRASH'); // sneaks into the trash under a library/ name
       zip.file('library/C:\\Windows\\evil-abs.txt', 'PWNED-ABS');
       zip.file('library/avatars/deep/evil-deep.txt', 'PWNED-DEEP');
       zip.file('library/sub/dir/evil-nested.jpg', 'PWNED-NESTED');

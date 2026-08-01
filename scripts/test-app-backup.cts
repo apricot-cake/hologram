@@ -1,6 +1,6 @@
 'use strict';
 
-// Verifies the 自動バックアップ (incremental mirror) plumbing end-to-end via IPC:
+// Verifies the automatic backup (incremental mirror) plumbing end-to-end via IPC:
 //  - set-backup rejects an output dir that overlaps the save folder
 //  - run-backup mirrors the library into <dir>/Hologram-mirror/ (individual files)
 //  - a second run is idempotent (immutable assets → nothing new copied)

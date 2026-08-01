@@ -1,4 +1,4 @@
-// Bulk tag dialog bridge — the imperative→declarative bridge for "タグを追加"
+// Bulk tag dialog bridge — the imperative→declarative bridge for "Add tags"
 // on the selection bar (P2⑦). Same shape as prompt.ts/confirm.ts: the renderer
 // side pushes a config, the React component (BulkTagDialog) draws it.
 //

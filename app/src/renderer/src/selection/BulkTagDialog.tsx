@@ -4,7 +4,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { close, get, subscribe } from '../services/bulk-tag.ts';
 import { TagField } from '../inspector/TagField.tsx';
 
-// Bulk tagging for the current selection (P2⑦) — the selection bar's "タグを追加".
+// Bulk tagging for the current selection (P2⑦) — the selection bar's "Add tag".
 // It replaces tag-pop's mode:'bulk': a single-card edit is now a property edit in
 // the inspector (TagField, inline and immediate), so the one tagging flow left that
 // is genuinely a *transaction* — stage a list, then write it to N posts at once —
@@ -23,7 +23,7 @@ const getSnapshot = () => get();
 
 function BulkTagBody({ model }: { model: HologramBulkTagModel }) {
   const [tags, setTags] = useState<string[]>([]);
-  // A kind change (right-click → 種別) re-sections the vocabulary without touching
+  // A kind change (right-click → kind) re-sections the vocabulary without touching
   // the staged list, so it needs its own way to ask for a redraw.
   const [, bumpKind] = useReducer((n: number) => n + 1, 0);
   // No memo: this component re-renders only when the staged tags change or a kind

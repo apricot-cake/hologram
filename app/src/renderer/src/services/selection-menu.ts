@@ -1,4 +1,4 @@
-// Selected-text context menu (#167) — コピー / Googleで検索 / ライブラリ内検索.
+// Selected-text context menu (#167) — Copy / Search on Google / Search the library.
 //
 // Why this exists at all: Electron ships no default context menu and the window
 // runs removeMenu() (app/src/main/index.ts), so Chromium's own "copy / search"
@@ -23,7 +23,7 @@ import { open as menuOpen } from './menu.ts';
 
 // Menu-row glyphs, same 24×24 stroke set the card menu draws (post-grid-builder's
 // CM_IC) — the magnifier is literally the SauceNAO/ascii2d row's icon, since
-// ライブラリ内検索 is the same verb pointed inward.
+// "Search the library" is the same verb pointed inward.
 const SEL_IC = {
   copy: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>',
   web: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a15 15 0 0 1 0 18 15 15 0 0 1 0-18"/></svg>',
@@ -55,7 +55,7 @@ export function searchTermOf(text: string): string {
 //
 // Chromium collapses a selection when you right-click away from it, so a menu
 // keyed on the selection has to ask the same question: without this test, text
-// left selected in the inspector would keep offering コピー while the user
+// left selected in the inspector would keep offering "Copy" while the user
 // right-clicks something else across the app.
 //
 // intersectsNode, NOT containsNode: a right-click lands on the ELEMENT that

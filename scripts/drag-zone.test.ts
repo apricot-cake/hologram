@@ -1,15 +1,18 @@
-// extension/utils/drag.ts（ドラッグ保存のドロップゾーン）の、オフライン純ユニットテスト。
-// overlay.test.ts と同じ据え方＝常駐バンドル（resident.js、overlay.ts + drag.ts が同じ
-// content script として同梱される）を jsdom の中で、実際の注入と同じグローバルのもとで
-// 走らせ、本物の dragstart/dragenter/dragover/dragleave/drop/dragend イベントで駆動する。
+// Offline pure unit test for extension/utils/drag.ts (the drag-save drop zone).
+// Same setup as overlay.test.ts = runs the resident bundle (resident.js,
+// bundling overlay.ts + drag.ts as the same content script) inside jsdom, under
+// the same globals as the real injection, driven by real
+// dragstart/dragenter/dragover/dragleave/drop/dragend events.
 //
-// 見るのは、ドロップゾーンの状態遷移（idle → active → busy → success/partial/error）が
-// 実際に起きること、投稿に同定できない画像（アバター等）はそもそも
-// ゾーンを出さないこと（media-identity.test.ts が見るのは extractIdentity 自体の正しさ、
-// ここが見るのはその結果を drag.ts がどう使うか）、送るメッセージがドラッグ経路
-// （imageDragged）であること。
+// What's checked: that the drop zone's state transitions (idle -> active ->
+// busy -> success/partial/error) actually happen; that an image that can't be
+// identified with a post (an avatar, etc.) never shows the zone in the first
+// place (media-identity.test.ts checks extractIdentity's own correctness —
+// this checks how drag.ts uses that result); and that the message sent is the
+// drag path (imageDragged).
 //
-// 前提: extension のビルド成果物（extension/.output/chrome-mv3/content-scripts/resident.js）が要る。
+// Prerequisite: needs the extension's build artifact
+// (extension/.output/chrome-mv3/content-scripts/resident.js).
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -32,13 +35,14 @@ const { window } = dom;
 
 const sent: any[] = [];
 let sendReply: any = { ok: true, metaOk: true };
-// #34: onDrop は保存の前に checkDuplicate を1往復する。既定は「重複なし」で、
-// 3択のシナリオだけ差し替える。
+// #34: onDrop makes one round trip to checkDuplicate before saving. The
+// default is "no duplicate", and only the 3-choice scenarios swap it out.
 let duplicateAnswer: any = { ok: true, duplicate: false };
 
-// animate() の呼び出し自体は無視してよいが、hideOverlay は onfinish の中でしか display を
-// 戻さない（実ブラウザではアニメ終了イベント）。onfinish はここでは代入された次のティックで
-// 呼ぶ — フェイクタイマーで拾えるよう setTimeout(…,0) 越しに。
+// The animate() call itself can be ignored, but hideOverlay only restores
+// display from inside onfinish (the animation-end event on a real browser).
+// Here, onfinish is called on the next tick after it's assigned — via
+// setTimeout(...,0) so a fake timer can catch it.
 window.Element.prototype.animate = function () {
   let onfinish: (() => void) | null = null;
   let cancelled = false;
@@ -66,8 +70,9 @@ window.IntersectionObserver = class {
   disconnect() {}
 } as any;
 
-// 保存の待ち受け（save-deadline.ts）が自分の分を足して外すので、実際に登録・解除
-// できる入れ物にしておく。数える用途は無い＝居場所があることが要件。
+// Since the save watchdog (save-deadline.ts) adds and removes its own entry,
+// make this a container that can actually register and unregister. It's not
+// used for counting = the requirement is only that a place for it exists.
 const dropListeners: any[] = [];
 
 window.chrome = {
@@ -92,17 +97,18 @@ window.chrome = {
   },
 } as any;
 
-// #44: ページ内 UI は body 直下ではなく共有の ShadowRoot の中にいる（ui-root.ts）。
-// ホストページの CSS がこちらへ届かず、こちらの CSS も漏れないための境界なので、
-// テストも実物と同じく境界の内側を見る。
+// #44: the in-page UI lives inside a shared ShadowRoot (ui-root.ts), not
+// directly under body. Since this boundary is what keeps the host page's CSS
+// from reaching in and this CSS from leaking out, the test also looks inside the boundary, same as the real thing.
 const uiRoot = () => (window.document.querySelector('hologram-extension-ui') as any)?.shadowRoot;
 const zone = () => (uiRoot()?.getElementById('__hologramDropZone') ?? null) as any;
 const ring = () => zone()?.querySelector('.ring') as any;
 const label = () => zone()?.querySelector('.label') as any;
-// 見た目そのものではなく「どの状態か」を見る（#44）＝色・アイコン・アニメの対応は
-// components.css が1か所で持ち、drag.ts が決めるのは状態だけになった。
+// Checks "which state it's in", not the look itself (#44) = the color/icon/
+// animation mapping is now held in one place, components.css, and all drag.ts decides is the state.
 const state = () => zone()?.dataset.state;
-// 要素の存在そのものが開閉状態（入場アニメ付きで mount、退場アニメの後に remove）。
+// The element's mere existence is the open/closed state (mounted with an
+// entrance animation, removed after the exit animation).
 const shown = () => !!zone()?.isConnected;
 // The user's drag, not the page's: the drag that arms the zone and the drop
 // that commits it are both trusted-only since #323 (see lib-user-event.ts).
@@ -114,7 +120,7 @@ const settle = (ms = 20) => new Promise((r) => setTimeout(r, ms));
 
 beforeAll(async () => {
   window.eval(fs.readFileSync(path.join(import.meta.dirname, '..', 'extension', '.output', 'chrome-mv3', 'content-scripts', 'resident.js'), 'utf8'));
-  await settle(300); // startOverlay/startDrag の非同期初期化（createI18n 含む）が終わるまで
+  await settle(300); // wait until startOverlay/startDrag's async init (including createI18n) finishes
 }, 30000);
 
 test('投稿に同定できない画像（アバター）をドラッグしてもゾーンは作られない', () => {
@@ -179,7 +185,7 @@ describe('ドロップ: 成功', () => {
   });
 
   test('しばらくすると隠れる', async () => {
-    await settle(1600); // 成功の滞留 1400ms を越える
+    await settle(1600); // exceeds the success dwell time of 1400ms
 
     expect(shown()).toBe(false);
   });
@@ -215,8 +221,8 @@ describe('ドロップ: グループ化（同じ投稿を2枚目）', () => {
   });
 });
 
-// #205: ドロップ経路も同じ案内を出す＝保存の出口が3本あるのに1本でしか言わないと、
-// 普段ドラッグしか使わない人には更新が要ることが一生届かない。
+// #205: the drop path also shows the same notice = with 3 save exits but the
+// message only spoken by one of them, someone who only ever uses drag would never learn an update is needed.
 describe('ドロップ: 版のずれ（#205）', () => {
   beforeAll(async () => {
     window.document.getElementById('img1')?.dispatchEvent(dragEvent('dragstart'));
@@ -251,14 +257,15 @@ describe('ドロップ: 失敗', () => {
   });
 
   test('失敗表示もしばらくすると隠れる', async () => {
-    await settle(2900); // 失敗の滞留 2600ms を越える
+    await settle(2900); // exceeds the failure dwell time of 2600ms
 
     expect(shown()).toBe(false);
   });
 });
 
-// #34: すでに保存した絵をもう一度ドラッグしたときの3択。ドロップ経路は「ポインタが
-// 運んだ絵」がそのまま保存対象なので、その絵の URL 群が照合の第2軸になる。
+// #34: the 3-way choice when an already-saved picture is dragged again. Since
+// the drop path's save target is exactly "the picture the pointer carried",
+// that picture's set of URLs becomes the second axis of matching.
 describe('重複保存の警告（ドロップ前の3択）', () => {
   const buttons = () => Array.from(zone()?.querySelectorAll('button') || []) as any[];
 
@@ -285,7 +292,7 @@ describe('重複保存の警告（ドロップ前の3択）', () => {
   });
 
   test('スキップ: 保存せずに閉じる', async () => {
-    await settle(2300); // 直前のシナリオの滞留を越えてゾーンを閉じきる
+    await settle(2300); // outlasts the previous scenario's dwell time to fully close the zone
     duplicateAnswer = { ok: true, duplicate: true, captureId: 'cap-old' };
     window.document.getElementById('img1')?.dispatchEvent(dragEvent('dragstart'));
     zone().dispatchEvent(dragEvent('drop'));
@@ -294,17 +301,18 @@ describe('重複保存の警告（ドロップ前の3択）', () => {
     buttons()[2].dispatchEvent(dragEvent('click'));
     await settle();
     expect(sent.slice(before).map((m) => m.type)).not.toContain('imageDragged');
-    // #519: 「やめる」を選んだことが capture.log に残る＝沈黙と区別できる。
+    // #519: choosing "cancel" is recorded in capture.log = it can be told apart from silence.
     expect(sent.at(-1)).toMatchObject({ type: 'logCapture', entry: { stage: 'duplicate', phase: 'skip' } });
     expect(label().textContent).toBe('Not saved');
     duplicateAnswer = { ok: true, duplicate: false };
     await settle(1500);
   });
 
-  // #158: ドラッグ保存もこの器に相乗りする＝文言と選択肢が capture.ts と揃っていること
-  // （揃わないと同じ判断を経路ごとに違う顔で聞くことになる）。
+  // #158: drag-save rides on this same vessel too = the text and choices must
+  // stay aligned with capture.ts (otherwise the same decision would be asked
+  // with a different face depending on the path).
   test('ゴミ箱に在る投稿は2択の告知（置換を出さない）', async () => {
-    await settle(2300); // 直前のシナリオの滞留を越えてゾーンを閉じきる
+    await settle(2300); // outlasts the previous scenario's dwell time to fully close the zone
     duplicateAnswer = { ok: true, duplicate: false, trashed: { id: 'cap-gone', deletedAt: '2026-07-01T09:00:00Z' } };
     window.document.getElementById('img1')?.dispatchEvent(dragEvent('dragstart'));
     zone().dispatchEvent(dragEvent('drop'));
@@ -313,7 +321,7 @@ describe('重複保存の警告（ドロップ前の3択）', () => {
     expect(label().textContent).toMatch(/^This post is in the trash \(deleted .+\)\. You can restore it in Hologram$/);
     expect(state()).toBe('ask');
     expect(buttons().map((b) => b.textContent)).toEqual(['Copy', 'Skip']);
-    // ボタン名は据え置きで補助文だけが場面を語る＝両経路で同じ文が出ること（capture.ts 側と対）。
+    // The button label stays the same and only the helper text tells the scene apart = the same text must appear on both paths (paired with capture.ts's side).
     expect(buttons()[0].title).toBe('Save a new record, leaving the trashed one alone');
 
     const before = sent.length;
@@ -326,12 +334,13 @@ describe('重複保存の警告（ドロップ前の3択）', () => {
   });
 });
 
-// #323: ページ自身が投げた合成イベントでこの経路は1ミリも進まない。ドラッグ保存は
-// 「ユーザーが絵を掴んでゾーンへ落とす」という操作そのものが唯一の関門で、それが
-// isTrusted 未検査だとページ側スクリプトが好きなときに保存を成立させられた。
+// #323: a synthetic event thrown by the page itself makes zero progress
+// through this path. Drag-save's sole gate is the operation itself of "the
+// user grabs a picture and drops it on the zone", and without checking
+// isTrusted, a page-side script could make a save go through whenever it wanted.
 describe('#323 ページ由来の合成イベントでは動かない', () => {
   test('合成 dragstart はゾーンを出さない（保存の入口が開かない）', async () => {
-    await settle(1600); // 直前のシナリオのゾーンが閉じきるまで
+    await settle(1600); // until the previous scenario's zone fully closes
     window.document.getElementById('img1')?.dispatchEvent(pageEvent('dragstart'));
 
     expect(shown()).toBe(false);
@@ -346,7 +355,7 @@ describe('#323 ページ由来の合成イベントでは動かない', () => {
     await settle();
 
     expect(sent.slice(before).map((m) => m.type)).not.toContain('imageDragged');
-    expect(state()).toBe('idle'); // ゾーンはまだユーザーのドロップを待っている
+    expect(state()).toBe('idle'); // the zone is still waiting for the user's drop
 
     window.document.dispatchEvent(dragEvent('dragend'));
     await settle(300);
@@ -359,8 +368,8 @@ test('ゾーンへ落とさず終わったドラッグ（dragend）は保存せ�
   expect(shown()).toBe(true);
 
   window.document.dispatchEvent(dragEvent('dragend'));
-  await settle(300); // フェードの onfinish（スタブは次ティックで呼ぶ）が飛ぶまで余裕を見る
+  await settle(300); // give extra room for the fade's onfinish to fire (the stub calls it on the next tick)
 
   expect(shown()).toBe(false);
-  expect(sent.length).toBe(before); // 新しいメッセージは送られていない
+  expect(sent.length).toBe(before); // no new message was sent
 });

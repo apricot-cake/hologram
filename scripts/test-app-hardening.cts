@@ -3,9 +3,9 @@
 // Hardening regressions for app/main.js, driven through the real IPC handlers via
 // the HOLOGRAM_SMOKE harness. Covers two independent fixes:
 //
-//   件1 delete-post reaps the author avatar (<base>-avatar.<ext>) into .trash/
+//   Case 1: delete-post reaps the author avatar (<base>-avatar.<ext>) into .trash/
 //        instead of leaving it orphaned in the save folder.
-//   件2 navigation lockdown: renderer-initiated window.open is denied
+//   Case 2: navigation lockdown: renderer-initiated window.open is denied
 //        (setWindowOpenHandler), and the renderer's global drop guard
 //        preventDefault()s a file dropped onto the window.
 //
@@ -32,7 +32,7 @@ fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolde
 const jpeg = Buffer.from('/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACP/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AfwH/2Q==', 'base64');
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMBAQDJ/pLvAAAAAElFTkSuQmCC', 'base64');
 
-// 件1: a post WHOSE RECORD names an avatar file + a sibling avatar image on disk.
+// Case 1: a post WHOSE RECORD names an avatar file + a sibling avatar image on disk.
 // delete-post must move BOTH the primary jpg AND the avatar into .trash/.
 const POST = 'dummy-har-0001';
 fs.writeFileSync(path.join(saveFolder, `${POST}.jpg`), jpeg);
@@ -53,14 +53,14 @@ seedLibrary(configDir, [
 ]);
 
 const evalJs = `(async () => {
-  // 件2: window.open must be denied by setWindowOpenHandler (returns null when blocked).
+  // Case 2: window.open must be denied by setWindowOpenHandler (returns null when blocked).
   let openDenied = false;
   try {
     const w = window.open('https://example.com', '_blank');
     openDenied = (w === null);
   } catch { openDenied = true; }
 
-  // 件2: the renderer's global drop guard must preventDefault a window-level drop.
+  // Case 2: the renderer's global drop guard must preventDefault a window-level drop.
   const dropEvt = new Event('drop', { bubbles: true, cancelable: true });
   window.dispatchEvent(dropEvt);
   const dropPrevented = dropEvt.defaultPrevented;
@@ -68,7 +68,7 @@ const evalJs = `(async () => {
   window.dispatchEvent(dragEvt);
   const dragPrevented = dragEvt.defaultPrevented;
 
-  // 件1: delete the post → its files move to .trash/.
+  // Case 1: delete the post → its files move to .trash/.
   await window.hologram.deletePost('${POST}.jpg');
 
   return { openDenied, dropPrevented, dragPrevented };
@@ -98,7 +98,7 @@ child.on('close', () => {
   }
 
   const trashDir = path.join(saveFolder, '.trash');
-  // 件1 assertions (disk state): avatar + primary moved into .trash, none left orphaned.
+  // Case 1 assertions (disk state): avatar + primary moved into .trash, none left orphaned.
   const avatarOrphaned = fs.existsSync(path.join(saveFolder, `${POST}-avatar.png`));
   const avatarInTrash = fs.existsSync(path.join(trashDir, `${POST}-avatar.png`));
   const primaryGone = !fs.existsSync(path.join(saveFolder, `${POST}.jpg`));
@@ -113,12 +113,12 @@ child.on('close', () => {
   };
 
   console.log('\n--- main.js hardening regressions ---\n');
-  // 件1
+  // Case 1
   check('件1 アバターが保存先に孤児化していない', !avatarOrphaned);
   check('件1 アバターが .trash へ回収された', avatarInTrash);
   check('件1 主画像が保存先から消えた', primaryGone);
   check('件1 主画像が .trash へ回収された', primaryInTrash);
-  // 件2
+  // Case 2
   check('件2 window.open が拒否された', r.openDenied === true);
   check('件2 window drop が preventDefault された', r.dropPrevented === true);
   check('件2 window dragover が preventDefault された', r.dragPrevented === true);

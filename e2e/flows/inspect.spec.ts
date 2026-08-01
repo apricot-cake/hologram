@@ -93,8 +93,8 @@ test('カードメニューから削除してもインスペクタが空にな�
   const { page } = await launchHologram();
   const card = page.locator('[data-slot="post-grid"] [data-slot="post-card"]').filter({ hasText: '青い空と海の写真' });
   // The card menu is the route that stands DOWN for a selection (the floating bar owns
-  // bulk actions then), so this whole case has to stay selection-free: 詳細 fills the
-  // panel without selecting, exactly as the menu's own 削除 will delete without one.
+  // bulk actions then), so this whole case has to stay selection-free: "Details" fills the
+  // panel without selecting, exactly as the menu's own "Delete" will delete without one.
   await card.click({ button: 'right' });
   await page.getByRole('menuitem', { name: '詳細' }).click();
   await expect(page.locator('[data-slot="inspector-post"]')).toContainText('海野そら');

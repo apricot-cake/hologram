@@ -69,7 +69,7 @@ function table(boxes: Box[]): string {
 }
 
 /**
- * Prints the採寸表 when the case has collected at least one soft failure. Soft assertions are
+ * Prints the measurement table when the case has collected at least one soft failure. Soft assertions are
  * what let one run report every participant that left the axis — changing one size usually
  * knocks several off at once, and stopping at the first would read as a single stray control.
  */

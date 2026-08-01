@@ -1,6 +1,6 @@
 // Delete → trash → restore. The longest chain a user can walk without typing,
 // and the one whose halves live in different surfaces: the floating selection bar
-// deletes, the ゴミ箱 destination in the left nav restores (#268 moved that half
+// deletes, the trash destination in the left nav restores (#268 moved that half
 // out of the settings dialog). Nothing short of driving both surfaces proves they
 // still meet.
 import fs from 'node:fs';
@@ -14,7 +14,7 @@ test('選択バーから削除するとグリッドから消えてごみ箱に�
   const nav = page.locator('[data-slot="sidebar"]').first();
   const trashEntry = nav.getByRole('button', { name: 'ゴミ箱' });
 
-  // The nav entry is there before anything is deleted (設計確定: 0件でも隠さない),
+  // The nav entry is there before anything is deleted (design decided: don't hide it even at 0 items),
   // and wears no count badge while the trash is empty.
   await expect(trashEntry).toBeVisible();
   await expect(nav.locator('[data-slot="sidebar-menu-badge"]')).toHaveCount(0);
@@ -40,8 +40,8 @@ test('選択バーから削除するとグリッドから消えてごみ箱に�
   // without opening anything.
   await expect(nav.locator('[data-slot="sidebar-menu-badge"]')).toHaveText('1');
 
-  // ゴミ箱 opens as a destination in the content area: the deleted post is a card
-  // there, selecting it arms 復元, and pressing it puts the post back.
+  // The trash opens as a destination in the content area: the deleted post is a card
+  // there, selecting it arms restore, and pressing it puts the post back.
   await trashEntry.click();
   const trashCards = page.locator('[data-slot="trash-grid"] [data-slot="post-card"]');
   await expect(trashCards).toHaveCount(1);

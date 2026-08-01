@@ -84,8 +84,8 @@ protocol.registerSchemesAsPrivileged([{ scheme: 'asset', privileges: { standard:
 // is cheap to re-run (already-applied events cost one indexed SELECT each —
 // lib-db-inbox.ts's module comment), and an inbox filename isn't a safe per-event
 // hint (a rename FROM tmp/, a mid-write partial, or a segment-compaction removal
-// could all fire here). Directory created first (design comment: "起動時にinbox
-// ディレクトリを作ってから watcher を張り") so the watch target always exists.
+// could all fire here). Directory created first (design comment: "at startup,
+// create the inbox directory first, then set up the watcher") so the watch target always exists.
 // Consumes any pending `replaces` marker (#34) — the duplicate-save warning's
 // "replace" answer, which the native host can only write down (write-once) and
 // the app has to carry out. Drains the inbox first, because the record that
@@ -299,8 +299,8 @@ function drainInboxLogged(folder: string, sqlite: any) {
   }
 }
 
-// Idle-time compaction (#5 St6 / #299 design comment, "保持量とコンパクショ
-// ン"): debounced like scheduleSnapshot/scheduleSavedIndexWrite so a burst of
+// Idle-time compaction (#5 St6 / #299 design comment, "retention volume and
+// compaction"): debounced like scheduleSnapshot/scheduleSavedIndexWrite so a burst of
 // saves triggers it once, after things settle, rather than on every single
 // drain. compactInbox itself no-ops below its 1,000-loose-event threshold, so
 // calling this after every drain costs one COUNT-equivalent query in the
@@ -436,7 +436,7 @@ function resolveInFolder(name: string): string | null {
 }
 
 // Every extension a downloaded library file can carry. NOT a "can the viewer
-// show it" list: a pixiv うごイラ archive is a .zip nothing displays directly
+// show it" list: a pixiv ugoira archive is a .zip nothing displays directly
 // (#119 St3), and it belongs here because the sweeps below enumerate a
 // capture's files — one missed extension leaves an orphan behind.
 const LIBRARY_MEDIA_EXTS = ['jpg', 'jpeg', 'jfif', 'png', 'webp', 'gif', 'avif', 'svg', 'mp4', 'webm', 'mov', 'm4v', 'zip'];
@@ -513,7 +513,7 @@ async function purgeOldTrash() {
 // import-complete) were extracted to ./ipc-transfer.js (registered via ipcTransfer.register
 // below); exportStamp moved there too.
 
-// --- バックアップ / 増分ミラー ---
+// --- Backup / incremental mirror ---
 // The mirror engine, its schedule, the destination validators and the #301
 // integrity pass were extracted to ./lib-backup.ts. The engine is instantiated
 // here because it needs the record pipeline above (a mirror run must sync the DB
@@ -696,17 +696,17 @@ if (!gotSingleInstanceLock) {
     // app-closed path works boots in exactly that mode.
     setTimeout(() => void sweepReplacements(), 1500);
     if (!SMOKE) {
-      armBackupSchedule(); // interval スケジュールを起動
-      // 起動時の取り戻し: 前回から間隔以上空いていれば1回だけ実行（閉じている間に逃した分）。
+      armBackupSchedule(); // start the interval schedule
+      // Startup catch-up: run once if more than the interval has passed since last time (the run missed while closed).
       const bk = readBackupConfig();
       if (bk.dir && bk.interval) {
         const last = bk.lastRunAt ? Date.parse(bk.lastRunAt) : 0;
         if (!last || Date.now() - last >= backupIntervalMs(bk)) setTimeout(() => runBackup('startup-overdue'), 4000);
       }
       setTimeout(() => purgeOldTrash(), 6000); // expire old trash entries on startup
-      // 起動時整合チェック（#301）: バックアップ未設定でも動く必要があるため
-      // runBackup とは独立に自分でDBを開く（runBackupは!b.dirで早期return
-      // してDBを開かない）。
+      // Startup integrity check (#301): needs to work even when backup isn't configured, so
+      // it opens the DB itself independent of runBackup (runBackup early-returns on !b.dir
+      // and never opens the DB).
       setTimeout(() => runStartupIntegrityCheck(), 5000);
     }
 

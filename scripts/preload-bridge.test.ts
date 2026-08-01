@@ -1,22 +1,23 @@
-// app/src/preload/index.ts ＝ contextBridge で公開する window.hologram の境界そのもの
-// のユニットテスト（#383）。`electron` を丸ごと差し替えて preload を素の Node で読み込み、
-// 「レンダラーへ渡すコールバックが Electron の生の IpcRendererEvent を受け取らないこと」
-// だけを見る。
+// A unit test (#383) for the boundary itself of window.hologram, exposed via contextBridge in
+// app/src/preload/index.ts. Swaps out `electron` wholesale and loads preload under plain Node,
+// checking only that "callbacks passed to the renderer never receive Electron's raw
+// IpcRendererEvent".
 //
-// このスイートが存在する理由＝**この漏れは無言で、しかも動く**から。`ipcRenderer.on(ch, cb)`
-// と書いてもレンダラー側は第1引数を `_e` として捨てるだけで正しく動いてしまうので、
-// 型でもテストでも押さえていないと「event が越えている」ことは誰の目にも入らない
-// （#383 で実際に3本＝backup-start / backup-done / integrity-check-done が越えていた）。
-// 逆にラップ形（`(_e, x) => cb(x)`）を1本ずつ目で確かめるのも効かない＝公開APIは増える。
-// なので個別の契約に加えて**公開されている on* を全部走査する棚卸しテスト**を置く。
+// Why this suite exists = **this leak is silent, and it still works**. Even if you write
+// `ipcRenderer.on(ch, cb)`, the renderer side just discards the first argument as `_e` and works
+// correctly anyway, so unless it's caught by types or a test, the fact that "the event is leaking
+// through" never becomes visible to anyone (in #383, three of them actually leaked: backup-start /
+// backup-done / integrity-check-done). Conversely, eyeballing the wrapped form (`(_e, x) => cb(x)`)
+// one by one doesn't work either = the public API keeps growing. So on top of the individual
+// contracts, we add **an inventory test that scans every exposed on* method**.
 import { beforeAll, describe, expect, test, vi } from 'vitest';
 
 type IpcListener = (event: unknown, ...args: unknown[]) => void;
 
-// vi.mock のファクトリはファイル先頭へ巻き上げられるので、そこから触る状態は
-// vi.hoisted で先に作る（普通の let だと初期化前アクセスで落ちる）。
+// vi.mock's factory gets hoisted to the top of the file, so state touched from within it must be
+// created beforehand with vi.hoisted (a plain let would throw from pre-initialization access).
 const stub = vi.hoisted(() => ({
-  // channel → その channel へ登録された ipcRenderer リスナー（登録順）
+  // channel → the ipcRenderer listeners registered on that channel (in registration order)
   listeners: new Map<string, IpcListener[]>(),
   exposed: {} as Record<string, unknown>,
 }));
@@ -44,11 +45,11 @@ vi.mock('electron', () => ({
   },
 }));
 
-// 本物の IpcRendererEvent の代役。参照が一意でありさえすればよい（同一性だけを見る）。
+// A stand-in for the real IpcRendererEvent. It only needs a unique reference (we only check identity).
 const IPC_EVENT = { sender: 'ipcRenderer', senderId: 0, ports: [], preventDefault() {} };
 
-// register() を走らせて、その中で新しく増えた ipcRenderer リスナーだけを返す。
-// listeners は積み上がるので前後のスナップショットで差分を取る。
+// Runs register() and returns only the ipcRenderer listeners newly added inside it.
+// Since listeners accumulate, take a before/after snapshot and diff it.
 function listenersAddedBy(register: () => void): { channel: string; listener: IpcListener }[] {
   const before = new Map<string, number>();
   for (const [channel, list] of stub.listeners) before.set(channel, list.length);
@@ -60,8 +61,8 @@ function listenersAddedBy(register: () => void): { channel: string; listener: Ip
   return added;
 }
 
-// 1つの on* API を呼び、その裏で登録されたリスナーを IPC_EVENT 付きで叩いて、
-// 公開側コールバックが実際に受け取った引数列を返す。
+// Calls one on* API, fires the listener registered behind it with IPC_EVENT, and returns the
+// argument list the exposed-side callback actually received.
 function callbackArgsOf(key: string, payload: unknown): unknown[][] {
   const seen: unknown[][] = [];
   const register = stub.exposed[key] as (cb: (...args: unknown[]) => void) => unknown;
@@ -112,9 +113,9 @@ describe('バックアップ通知（#383）', () => {
 });
 
 describe('棚卸し＝公開されている on* すべて', () => {
-  // 「生の ipcRenderer.on へ素通しした on* が1本も残っていない」ことの現物。
-  // 新しい通知 API を素通しで足した瞬間にここが赤くなる（個別テストは増えないので
-  // 走査でしか捕まらない）。
+  // Concrete proof that "not a single on* passes straight through to the raw ipcRenderer.on".
+  // The moment a new notification API is added as a raw pass-through, this goes red (since
+  // individual tests don't grow, only the scan catches it).
   test('どの on* も IpcRendererEvent をコールバックへ渡さない', () => {
     const keys = Object.keys(stub.exposed).filter((k) => k.startsWith('on'));
     expect(keys.length).toBeGreaterThanOrEqual(6);
@@ -125,8 +126,9 @@ describe('棚卸し＝公開されている on* すべて', () => {
   });
 
   test('どの on* のコールバックも、渡されるのは payload 1つ以内', () => {
-    // 生イベントを外しただけで済まさない＝可変長素通し（`(...args) => cb(...args)`）も
-    // 将来 main が第2引数を足した日に境界が広がるので、引数の本数まで縛る。
+    // Don't stop at just excluding the raw event = a variadic pass-through (`(...args) => cb(...args)`)
+    // would also widen the boundary the day main adds a second argument in the future, so we
+    // constrain even the number of arguments.
     for (const key of Object.keys(stub.exposed).filter((k) => k.startsWith('on'))) {
       const seen = callbackArgsOf(key, { probe: key });
       expect(seen[0].length, `${key} がコールバックへ複数の引数を渡している`).toBeLessThanOrEqual(1);

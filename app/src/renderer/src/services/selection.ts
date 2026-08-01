@@ -78,7 +78,7 @@ export function toggle(idx: number, key: string, shiftKey: boolean, groups: Holo
 }
 
 // Plain click (#143): collapse the selection to just this one card and make it
-// the range anchor — Eagle/Explorer 型「クリック＝単一選択」. Ctrl/Shift keep
+// the range anchor — Eagle/Explorer-style "click = single selection". Ctrl/Shift keep
 // using toggle() above (add-remove / range).
 export function selectOnly(idx: number, key: string) {
   anchor = idx;
@@ -96,7 +96,7 @@ export function clear() {
 // rebuilds from the snapshot below rather than accumulating.
 
 // `additive` = Ctrl/Cmd or Shift was held when the drag began (Explorer/Finder
-// 型: the band extends the existing selection instead of replacing it).
+// style: the band extends the existing selection instead of replacing it).
 export function beginMarquee(additive: boolean) {
   marqueeBase = current();
   marqueeAdditive = additive;
@@ -143,7 +143,7 @@ export function selectAll(groups: HologramPostGroup[], postIdKey: PostIdKey) {
   storeSet('selectedSet', next);
 }
 
-// 全選択/全解除 button + toolbar shortcut: flips between everything selected
+// Select-all/deselect-all button + toolbar shortcut: flips between everything selected
 // and nothing selected in one step.
 export function toggleAll(groups: HologramPostGroup[], postIdKey: PostIdKey) {
   if (isAllSelected(groups, postIdKey)) clear();

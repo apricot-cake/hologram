@@ -10,7 +10,7 @@
 // gates it), and prefers-reduced-motion renders a single static frame instead of
 // animating — both per DESIGN.md (GPU thrift + motion opt-out).
 
-// Tweak defaults baked from the design (色相36° / 彩度0.85 / パステル0.2 / 粒度1.2 / 滲み0).
+// Tweak defaults baked from the design (hue 36° / saturation 0.85 / pastel 0.2 / grain 1.2 / bleed 0).
 const P = { hue: 36 / 360, sat: 0.85, pastel: 0.2, grain: 1.2, disp: 0 };
 // Frame shown when motion is reduced — a developed swirl rather than the flat t=0.
 const STATIC_T = 6.0;
