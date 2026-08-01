@@ -126,15 +126,19 @@ const X_HTML = `<!doctype html><html><body>
          against the real DOM 2026-07-31).
          viewerDialog has no data-rect-top by default = zero rect = treated as "not open" and
          ignored. Each test explicitly activates and cleans up the open state via rectTop().
-         top is 9000 = a value that doesn't overlap any other post's rect (the highest being
+         top is 8900-9500 = values that don't overlap any other post's rect (the highest being
          p15's 6400-6700). Since this harness's coordinates are the data-rect-top declaration
          itself rather than real layout, an overlap would make anchorAtPoint()'s "same area,
          first one wins" rule pick the non-viewer element instead
          (this surfaced as a collision with p1's 100-400, and while debugging it looked like
          modalCovers() was wrongly returning true — it was actually just picking up p1). -->
+    <!-- #704: swipe-to-dismiss is the swipe hit target and much larger than the image on real
+         X. Keep the wrapper deliberately larger and offset from the image so the corner test
+         proves that the control is placed at the image, not the wrapper; equal-size fixture
+         geometry would let this overlap regression pass undetected. -->
     <div role="dialog" aria-modal="true" id="viewerDialog">
-      <div data-testid="swipe-to-dismiss" data-rect-top="9000" id="p16">
-        <img src="https://pbs.twimg.com/media/QQQ.jpg?format=jpg&amp;name=large">
+      <div data-testid="swipe-to-dismiss" data-rect-top="8900" data-rect-size="600" id="p16">
+        <img data-rect-top="9000" data-rect-left="150" src="https://pbs.twimg.com/media/QQQ.jpg?format=jpg&amp;name=large">
       </div>
     </div>
 </body></html>`;
@@ -1148,10 +1152,12 @@ describe('テキストのみの投稿（#575）', () => {
 // (swipe-to-dismiss) to unitSelector.
 describe('写真ビューア（拡大表示）でもホバー保存が出る（#659）', () => {
   const viewerBox = () => window.document.getElementById('p16') as any;
+  // #704: メディア box は実体の <img>（ラッパーではない）。ホバーも画像の矩形を狙う。
+  const viewerImg = () => viewerBox().querySelector('img') as any;
   const hoverViewer = () => {
-    const box = viewerBox();
-    const r = box.getBoundingClientRect();
-    pointerMove(box, r.left + r.width / 2, r.top + r.height / 2);
+    const img = viewerImg();
+    const r = img.getBoundingClientRect();
+    pointerMove(img, r.left + r.width / 2, r.top + r.height / 2);
   };
 
   afterAll(async () => {
@@ -1192,7 +1198,24 @@ describe('写真ビューア（拡大表示）でもホバー保存が出る（#
       await settle();
 
       expect(saveButtons()).toHaveLength(1);
+      // controlHost() の IMG 分岐＝mount 先は img.parentElement（ラッパー自身）。
+      // 「どこに置かれて見えるか」は下の位置テストが別に見る（host と矩形は別物）。
       expect(saveButtons()[0].parentElement).toBe(viewerBox());
+    });
+
+    // #704: ラッパー（swipe-to-dismiss）はビューア全体大のスワイプ判定領域なので、
+    // その角に置くとXの閉じる（×）ボタンに重なる。ボタンは画像自身の角に出ること。
+    // host はラッパーなので left/top は「ラッパー左上から画像左上までの差分＋inset」。
+    test('保存ボタンは画像の角に出る（ラッパーの角ではない）（#704）', () => {
+      const [button] = saveButtons();
+      const wrapper = viewerBox().getBoundingClientRect();
+      const img = viewerImg().getBoundingClientRect();
+      // フィクスチャの前提そのものを固定＝ラッパーと画像の角がずれていなければ
+      // このテストは何も区別できていない（#659 の等サイズフィクスチャの穴）。
+      expect(img.left).not.toBe(wrapper.left);
+      expect(img.top).not.toBe(wrapper.top);
+      expect(button.style.left).toBe(`${img.left - wrapper.left + 6}px`); // 106px = (150−50)+CONTROL_INSET
+      expect(button.style.top).toBe(`${img.top - wrapper.top + 6}px`); // 106px = (9000−8900)+CONTROL_INSET
     });
 
     test('押すとパーマリンクは URL の /photo/N を落とした投稿になる（ドラッグ保存経路を再利用）', () => {
