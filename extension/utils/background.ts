@@ -8,28 +8,12 @@
 import { hostExtBuild, protocolSkewOf, readHostResponse, responseId } from '../../native-host/protocol.mts';
 import type { CaptureMetadata, HostRequest, ProtocolSkew, SavedResults, TrashedEntry, TrashedResults } from '../../native-host/protocol.mts';
 import { CROP_TIMEOUT_MS, NATIVE_HOST_TIMEOUT_MS, SAVED_QUERY_TIMEOUT_MS, withDeadline } from './deadline.ts';
-import { DEV_RELOAD_QUIET_MS, DEV_RELOAD_STATE_KEY, DEV_RELOAD_TAB_WINDOW_MS, DEV_RELOAD_WORK_MS, EXT_BUILD_ID, bulkActivity, captureActivity, createDevReloadGate, shouldReloadFor } from './dev-reload.ts';
+import { DEV_RELOAD_QUIET_MS, DEV_RELOAD_STATE_KEY, DEV_RELOAD_WORK_MS, EXT_BUILD_ID, bulkActivity, captureActivity, createDevReloadGate, shouldReloadFor } from './dev-reload.ts';
 import type { DevReloadState } from './dev-reload.ts';
 import { mergeDomMeta } from './extractor/dom-meta.ts';
 import { extractorFor, fetchPostMetadata, getHostname, highResUrlOf, isAllowedSender, mediaKeyOf } from './extractor/index.ts';
 import type { DomMeta, PostRecord } from './extractor/types.ts';
-import type {
-  BridgeAck,
-  CaptureAndSendResponse,
-  CheckSavedResponse,
-  ContentToBackgroundMessage,
-  CropImageMessage,
-  CropImageResponse,
-  DevReloadPingMessage,
-  DevReloadPingResponse,
-  DumpLogsResponse,
-  LogCaptureResponse,
-  NotifyMessage,
-  SavedEntry,
-  SavedUpdateMessage,
-  SaveProgressMessage,
-  SaveResponse,
-} from './messages.ts';
+import type { BridgeAck, CaptureAndSendResponse, CheckSavedResponse, ContentToBackgroundMessage, CropImageMessage, CropImageResponse, DumpLogsResponse, LogCaptureResponse, NotifyMessage, SavedEntry, SavedUpdateMessage, SaveProgressMessage, SaveResponse } from './messages.ts';
 import { classifySaveFailure } from './native-error.ts';
 import { createSaveGate, saveRequestKey } from './host-budget.ts';
 import { clearInjectFailure, escalationUrl, injectFailureKind, showInjectFailure } from './inject-failure.ts';
@@ -57,7 +41,7 @@ export function startBackground(): void {
   // --- Reloading this extension when a new local build lands (#650) -------------
   // The rule for WHEN — and the reason any of this exists — is utils/dev-reload.ts.
   // Here is the wiring: what counts as work that a reload would destroy, how the
-  // reload is actually performed, and how the tabs it orphans are put back.
+  // reload is actually performed.
   //
   // Everything below is inert unless this bundle was built by
   // scripts/build-extension.cts AND the native host finds that build's stamp
@@ -71,10 +55,8 @@ export function startBackground(): void {
   let devReloadTimer: ReturnType<typeof setTimeout> | null = null;
   let devReloadStarted = false;
 
-  // Read the note the previous instance left, put its tabs back, and learn which
-  // token has already been tried. Started at once (not on first use) because the
-  // tabs it reloads are waiting on it — a save happening to arrive first must not
-  // be what triggers the repair.
+  // Read the note the previous instance left and learn which token has already
+  // been tried. Started at once so a reply cannot race the loop-breaker restore.
   const devReloadRestored: Promise<void> = EXT_BUILD_ID ? restoreDevReload() : Promise.resolve();
 
   async function restoreDevReload(): Promise<void> {
@@ -87,17 +69,6 @@ export function startBackground(): void {
     }
     if (!state) return;
     attemptedBuild = state.attempted || null;
-    // Stale notes are dropped rather than acted on: a worker starting half an
-    // hour later (the browser restarted, the extension was toggled by hand) has
-    // no business navigating tabs on the strength of one.
-    const fresh = typeof state.at === 'number' && Date.now() - state.at < DEV_RELOAD_TAB_WINDOW_MS;
-    if (fresh && Array.isArray(state.tabs)) {
-      for (const tabId of state.tabs) {
-        // The tab may have been closed or navigated in the meantime; either way
-        // there is nothing to repair and nothing to report.
-        chrome.tabs.reload(tabId).catch(() => {});
-      }
-    }
     // The attempt is remembered only while it is unproven. Once this bundle IS
     // the build that was asked for, the note has done its job and keeping it
     // would block a future build that happened to reuse the token.
@@ -153,12 +124,11 @@ export function startBackground(): void {
           scheduleDevReload(DEV_RELOAD_QUIET_MS);
           return;
         }
-        const tabs = await liveContentTabs();
-        await chrome.storage.local.set({ [DEV_RELOAD_STATE_KEY]: { attempted: build, tabs, at: Date.now() } satisfies DevReloadState });
+        await chrome.storage.local.set({ [DEV_RELOAD_STATE_KEY]: { attempted: build } satisfies DevReloadState });
         // Not written to capture.log: that line would travel through a native
         // connection this call is about to kill. The service worker console is
         // where a developer watching a reload is already looking.
-        console.info(`[hologram] a newer extension build is on disk (${build}); reloading and putting ${tabs.length} tab(s) back`);
+        console.info(`[hologram] a newer extension build is on disk (${build}); reloading the extension`);
         chrome.runtime.reload();
       })
       .catch(() => {})
@@ -167,11 +137,6 @@ export function startBackground(): void {
       });
   }
 
-  // The tabs holding one of our content scripts, asked one by one because there
-  // is no way to look it up: without the `tabs` permission chrome.tabs.query
-  // hands back every tab with its url scrubbed to null and ignores a url filter
-  // outright (measured on #650). What it DOES hand back is the ids, and a round
-  // trip to our own content script turns those into the answer.
   // What the pages tell the worker anyway, read a second time for #650. The
   // capture.log relay is the ONE channel on which the in-page surfaces already
   // announce themselves — a bulk run's `bulk`/`begin` and its terminal line, and
@@ -189,30 +154,6 @@ export function startBackground(): void {
     // interrupt.
     if (stage === 'select' && (phase === 'cancel' || phase === 'fail')) devReloadGate.end(captureActivity(tabId));
     maybeDevReload();
-  }
-
-  async function liveContentTabs(): Promise<number[]> {
-    let all: chrome.tabs.Tab[];
-    try {
-      all = await chrome.tabs.query({});
-    } catch {
-      return [];
-    }
-    const alive: number[] = [];
-    await Promise.all(
-      all.map(async (tab) => {
-        if (tab.id == null) return;
-        try {
-          // Bounded: a page whose listener answers nothing rejects on its own,
-          // but a reload must not be held up by one that does neither.
-          const answer = await withDeadline<DevReloadPingResponse>(chrome.tabs.sendMessage(tab.id, { type: 'devReloadPing' } satisfies DevReloadPingMessage), 1500, 'devReloadPing');
-          if (answer?.ok) alive.push(tab.id);
-        } catch {
-          /* not one of ours, or gone — either way not a tab to put back */
-        }
-      }),
-    );
-    return alive;
   }
 
   interface StageError extends Error {

@@ -154,26 +154,7 @@ interface SaveProgressMessage {
   reached: SaveStage[];
 }
 
-// "Are you still one of mine?" (#650). Asked of every open tab, by tab id, in
-// the moment before the worker reloads the extension — the answer is the list of
-// pages that will be orphaned by it and therefore have to be put back afterwards.
-//
-// Asked rather than looked up because looking it up is not available: the
-// shipped manifest carries no `tabs` permission, and without it
-// chrome.tabs.query returns every tab with its url scrubbed to null and silently
-// ignores a url filter (measured on #650 against the shipped manifest — the
-// content_scripts match patterns do NOT buy that visibility). A round trip to
-// our own content script answers the same question with the permissions the
-// extension already has.
-interface DevReloadPingMessage {
-  type: 'devReloadPing';
-}
-
-type BackgroundToContentMessage = CropImageMessage | NotifyMessage | SavedUpdateMessage | SaveProgressMessage | DevReloadPingMessage;
-
-// `ok:true` from a live content script of ours; anything else — a rejection, no
-// answer at all — means this tab is not one of ours and must not be reloaded.
-type DevReloadPingResponse = { ok: true } | undefined;
+type BackgroundToContentMessage = CropImageMessage | NotifyMessage | SavedUpdateMessage | SaveProgressMessage;
 
 // === responses ===
 
@@ -252,8 +233,6 @@ export type {
   ContentToBackgroundMessage,
   CropImageMessage,
   CropImageResponse,
-  DevReloadPingMessage,
-  DevReloadPingResponse,
   DumpLogsMessage,
   DumpLogsResponse,
   ImageDraggedMessage,
