@@ -35,6 +35,40 @@ export interface ImageTabBuilderDeps {
   persistTabsDebounced(): void;
 }
 
+type ImageEntry = { kind?: string; state?: { recs?: unknown; idx?: unknown } };
+
+function imageEntryFor(t: HologramTab): ImageEntry | null {
+  const hist = t._navHist;
+  if (!Array.isArray(hist) || !hist.length) return null;
+  const idx = typeof t._navIdx === 'number' ? t._navIdx : hist.length - 1;
+  try {
+    const entry = JSON.parse(hist[idx]) as ImageEntry;
+    return entry?.kind === 'image' && Array.isArray(entry.state?.recs) ? entry : null;
+  } catch (_e) {
+    return null;
+  }
+}
+
+// A tab's image name is a projection of its current image entry, not a saved
+// label. Re-evaluate every open image tab after the library changes so deletion
+// falls back to the neutral name and restoring the record restores its name.
+export function refreshImageTabTitles(tabs: HologramTab[], activeTabId: string | null, activeEntry: HologramNavEntry | null, getPostById: (id: string) => HologramPost | undefined, fallback: string): boolean {
+  let changed = false;
+  for (const t of tabs) {
+    const entry = t.id === activeTabId ? activeEntry : imageEntryFor(t);
+    const state = entry?.state as { recs?: unknown } | undefined;
+    if (entry?.kind !== 'image' || !Array.isArray(state?.recs)) continue;
+    const g = imageTabGroup({ id: t.id, recs: state.recs as string[] }, getPostById);
+    const title = g ? imageTabTitleOf(g, fallback) : fallback;
+    if (t.title !== title || !t._autoTitle) {
+      t.title = title;
+      t._autoTitle = true;
+      changed = true;
+    }
+  }
+  return changed;
+}
+
 export function makeImageTabController(deps: ImageTabBuilderDeps) {
   // recs resolve against the live library on every use (imageTabGroup,
   // records.ts), so deletions degrade to a "missing" empty state instead of a
@@ -61,6 +95,22 @@ export function makeImageTabController(deps: ImageTabBuilderDeps) {
         t._autoTitle = true;
       }
     });
+  }
+
+  function refreshTitlesAfterPostsChange() {
+    const fallback = deps.t('imgTabFallback');
+    const activeEntry = deps.nav.current();
+    let activeTitle: string | null = null;
+    let changed = false;
+    deps.mutateTabs((arr) => {
+      changed = refreshImageTabTitles(arr, deps.getActiveTabId(), activeEntry, deps.getPostById, fallback);
+      const active = arr.find((t) => t.id === deps.getActiveTabId());
+      if (active && activeEntry?.kind === 'image') activeTitle = active.title;
+      return changed ? arr : undefined;
+    });
+    if (!changed) return;
+    if (activeTitle) document.title = activeTitle + ' — Hologram';
+    deps.persistTabsDebounced();
   }
 
   // "Is the image view showing" is React's to draw and services/image-tab.ts's to
@@ -181,6 +231,7 @@ export function makeImageTabController(deps: ImageTabBuilderDeps) {
     toggleImageTabInspector,
     closeImageTab,
     addImageTab,
+    refreshTitlesAfterPostsChange,
     isShowing: () => imageViewShowing, // primitive read — live, not a snapshot
   };
 }
