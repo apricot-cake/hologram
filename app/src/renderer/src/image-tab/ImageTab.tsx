@@ -25,7 +25,7 @@ export interface ImageTabItem {
   src: string;
   video?: boolean;
   alt?: string;
-  // A pixiv うごイラ archive: its library file name plus the frame table it
+  // A pixiv ugoira archive: its library file name plus the frame table it
   // plays from (#119 St3). `poster` stands in until the archive is open.
   ugoira?: { file: string; frames: { file: string; delay: number }[] };
   poster?: string;
@@ -139,7 +139,7 @@ function Zoomable({ src, alt }: { src: string; alt: string }) {
     toggleFitActual();
   };
   // Hand the commands to the toolbar / Ctrl+0 / Ctrl+1 for as long as this slide
-  // is mounted. A video or うごイラ slide renders no Zoomable at all, so "nothing
+  // is mounted. A video or ugoira slide renders no Zoomable at all, so "nothing
   // registered" is exactly "nothing to zoom" (services/image-zoom.ts).
   useEffect(() => registerZoom({ step, toggleFitActual, fit, actual }), [step, toggleFitActual, fit, actual]);
   // Custom wheel zoom, animated by the library's own setTransform (#134). The
@@ -263,7 +263,7 @@ export function ImageTab({ model }: { model: ImageTabModel }) {
   return (
     // The per-slide `key` stays (#241 left the choice to implementation). It is
     // what resets zoom/pan to fit on a step, and it is what stops one slide's
-    // playback state (うごイラ decode loop, <video> position) from bleeding into
+    // playback state (ugoira decode loop, <video> position) from bleeding into
     // the next. Dropping it would mean re-deriving all of that from a src-change
     // effect — a strictly larger surface than the thing being sped up — and it
     // would buy nothing here, because what made the step feel cold was the cold
@@ -280,7 +280,7 @@ export function ImageTab({ model }: { model: ImageTabModel }) {
       {multi && (
         <>
           {/* Tall and narrow, at the stage's own edges — the shape every image viewer
-              (Windows フォト / Eagle / IrfanView) gives these, because the target has to be
+              (Windows Photos / Eagle / IrfanView) gives these, because the target has to be
               hittable without aiming while the eye is on the picture. */}
           <Button data-slot="image-tab-prev" variant="ghost" size="icon" aria-label={labels.prev} onClick={() => step(-1)} className={`-translate-y-1/2 absolute top-1/2 left-3 z-2 h-14 w-10 ${PLATE}`}>
             <ChevronLeft className="size-6" />

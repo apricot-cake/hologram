@@ -1,10 +1,10 @@
-// ゴミ箱ビュー (#268) — the destination the left nav's trash entry opens. It uses the
+// Trash view (#268) — the destination the left nav's trash entry opens. It uses the
 // ordinary library content area (same scroll root, same cards, same quick-view peek);
 // what it adds is the action row above the grid and the empty state.
 //
 // Why the actions live HERE and not in the toolbar band above: that band is the
 // app-wide activebar, shared by every destination, and #150 is rebuilding it. A row
-// scoped to this view keeps the trash's own verbs (復元 / 完全に削除 / 空にする) with
+// scoped to this view keeps the trash's own verbs (restore / delete permanently / empty) with
 // the thing they act on and out of that rebuild's way.
 //
 // Card gestures are the cells' own props now (services/grid.ts's cardActions, filled in
@@ -74,7 +74,7 @@ export function TrashView() {
           mounts) attaches its masonry host in here; the cells lay themselves out from
           the same display shape the library grid uses, so no class says which. */}
       <div ref={setGridSlot} data-slot="trash-grid" />
-      {/* An empty trash still shows the entry in the nav (設計確定: 0件でも隠さない),
+      {/* An empty trash still shows the entry in the nav (design decision: don't hide it even at 0 items),
           so the "where did it go" question is answered here instead of by a missing
           row — including the 30-day rule, which is the only reason an item can leave
           without anyone pressing anything. */}

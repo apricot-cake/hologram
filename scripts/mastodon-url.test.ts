@@ -1,13 +1,14 @@
-// ユニットテスト（fetch を差し替え・ネットワーク非使用）: Mastodon レコードは
-// Mastodon 形式の canonical URL をそのまま持つが、非 Mastodon ソフト（Lemmy/PieFed
-// など）から連合してきた投稿は canonical URL が status として開けないため、取り込み時の
-// インスタンス URL へフォールバックする。
+// Unit tests (fetch stubbed, no network use): a Mastodon record keeps a
+// Mastodon-format canonical URL as-is, but for a post federated in from
+// non-Mastodon software (Lemmy/PieFed, etc.) the canonical URL doesn't open as a
+// status, so it falls back to the instance URL used at ingest time.
 
 import { afterEach, expect, test, vi } from 'vitest';
 import { fetchPostMetadata } from '../extension/utils/extractor/index.ts';
 
-// 本物の Response を返す＝metadata.ts は応答を1度だけ本文として読み、原本層（#292）へ
-// 積んでから JSON.parse する。json() だけを持つ手作りのモックではその経路を通らない。
+// Returns a real Response = metadata.ts reads the response body exactly once, stacks
+// it into the raw-source layer (#292), then JSON.parses it. A hand-rolled mock that
+// only has json() wouldn't go through that path.
 function jsonRes(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 }

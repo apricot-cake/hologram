@@ -1,4 +1,4 @@
-// 種別 (tag-kind) menu bridge — the imperative→declarative bridge for the work/
+// Kind (tag-kind) menu bridge — the imperative→declarative bridge for the work/
 // character/general classification menu (right-click a tag chip in the edit picker /
 // inspector / poster picker). viewer.ts builds the row model (current kind, already-
 // localized labels) and owns the pick/rename actions; the kind-menu React component

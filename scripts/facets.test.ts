@@ -1,10 +1,10 @@
-// facets.ts のロジック単体テスト。facetCounts（バケット集計）と qfValues（15カテゴリの
-// フライアウト行モデル）を、スタブ deps 注入で直接検証する。
+// Logic unit test for facets.ts. Directly verifies facetCounts (bucket
+// aggregation) and qfValues (the 15-category flyout row model) via stub deps injection.
 
 import { describe, expect, test } from 'vitest';
 import { makeFacets } from '../app/src/renderer/src/services/facets';
 
-// --- スタブ環境: 投稿6件（x2・misskey1・mastodon1・pixiv1・PFなし1） ---
+// --- stub environment: 6 posts (x2, misskey1, mastodon1, pixiv1, no-platform1) ---
 const posts = [
   { captureId: 'c1', url: 'https://x.com/a/status/1', platform: 'x', userId: 'u1', screenName: 'alice', displayName: 'アリス', tags: ['風景', '作品A'], hashtags: ['art'], mediaType: 'image', isReply: false, isQuote: false, isThread: false },
   { captureId: 'c2', url: 'https://x.com/b/status/2', platform: 'x', userId: 'u2', screenName: 'bob', displayName: '', tags: ['風景'], hashtags: ['art', 'wip'], mediaType: 'video', isReply: true, isQuote: false, isThread: false },
@@ -13,15 +13,16 @@ const posts = [
   { captureId: 'c5', url: 'https://www.pixiv.net/artworks/9', platform: 'pixiv', userId: 'u5', screenName: 'eve', tags: ['未分類タグ'], hashtags: [], mediaType: 'image', isReply: false, isQuote: false, isThread: false },
   { captureId: 'c6', url: null, platform: null, tags: ['風景'], hashtags: [], mediaType: 'image', isReply: false, isQuote: false, isThread: false },
 ];
-// 現在クエリの母集団＝先頭3件だけに絞れている想定（facet count はこちらで数える）
+// The current query's population = assumed narrowed down to just the first 3 (facet count is counted from these)
 const filtered = posts.slice(0, 3);
 
 const active = new Set(['platform:x', 'tag:風景']);
 const posterActive = new Set(['tag:P趣味']);
 const KIND: Record<string, string> = { 作品A: 'work', キャラX: 'character', P作品: 'work' };
 
-// 投稿者集計は 13 フィールド全部が必須（HologramUserAgg）＝この行が facet の読む分だけを
-// 上書きし、残りは空で埋める。部分オブジェクトを直接置くと deps の契約と合わない。
+// A poster aggregate requires all 13 fields (HologramUserAgg) = this overrides
+// only the parts facet reads, filling the rest with empty values. Placing a
+// partial object directly wouldn't match the deps contract.
 const userAgg = (u: Partial<HologramUserAgg>): HologramUserAgg => ({
   key: '',
   platform: '',
@@ -46,8 +47,9 @@ const posters = [
 ];
 const posterTags: Record<string, string[]> = { 'x:u1': ['P趣味', 'P作品'], 'misskey:u3': ['P趣味'], 'mastodon:u4': [] };
 const posterFolders = [{ id: 'pf1', name: '推し', items: ['x:u1', 'mastodon:u4'] }];
-// 投稿フォルダ（folders.json）は投稿者フォルダとは別の dep。親配下の小計まで数える（#41）
-// ので、親子を1組持たせて「行のラベル＝パス／count＝サブツリー」を見られるようにする。
+// Post folders (folders.json) are a dep separate from poster folders. Since it
+// also counts subtotals under a parent (#41), give it one parent/child pair so
+// "row label = path / count = subtree" can be observed.
 const postFolders = [
   { id: 'f-parent', name: '親', items: ['c1'] },
   { id: 'f-child', name: '子', items: ['c2'], parentId: 'f-parent' },
@@ -112,7 +114,7 @@ describe('facetCounts', () => {
   });
 
   test('pool を渡すと母集団が切り替わる', () => {
-    // 2引数の overload は投稿者プール専用（facets.ts の契約）＝poster-* の行がここを通る。
+    // The 2-argument overload is only for the poster pool (facets.ts's contract) = the poster-* rows go through here.
     const pool = facetCounts((u) => u.platform, posters.slice(1));
     expect(pool.get('misskey')).toBe(1);
     expect(pool.get('mastodon')).toBe(1);
@@ -166,8 +168,8 @@ describe('qfValues: postType / media', () => {
     expect(by).toMatchObject({ post: 1, reply: 1, quote: 1, thread: 0 });
   });
 
-  // 複数画像はサイドバー側の独立トグル行へ移動＝メディアのフライアウトはレコードごとの
-  // メディア種別そのものへ戻った（__multi 撤去）
+  // Multi-image moved to its own independent toggle row on the sidebar side = the
+  // media flyout went back to being just each record's own media type (__multi removed)
   test('media は image/video/gif のみ', () => {
     expect(qfValues('media').map((r) => r.v)).toEqual(['image', 'video', 'gif']);
   });
@@ -179,7 +181,7 @@ describe('qfValues: postType / media', () => {
   });
 });
 
-// 一般タグのみ・種別付き除外・「タグなし」先頭固定・present 先行
+// General tags only, kind-tagged ones excluded, "no tags" pinned first, present ones lead
 describe('qfValues: tag', () => {
   test('種別付きタグは出さない', () => {
     const vs = qfValues('tag').map((r) => r.v);
@@ -191,13 +193,13 @@ describe('qfValues: tag', () => {
     expect(qfValues('tag').every((r) => r.ghead == null)).toBe(true);
   });
 
-  // 連続タグ付けの入口なので count 順に混ぜず先頭へ固定する（P2⑬）
+  // Since it's the entry point for tagging in succession, pin it first instead of mixing it into the count order (P2-13)
   test('「タグなし」が先頭に固定される', () => {
     expect(qfValues('tag')[0]).toMatchObject({ v: '__none', l: 'タグなし' });
   });
 
   test('「タグなし」の count は tags が空の投稿（filtered 由来）', () => {
-    // filtered = 先頭3件。うち tags が空なのは misskey の1件だけ。
+    // filtered = the first 3. Of those, only the one misskey post has empty tags.
     expect(qfValues('tag')[0].count).toBe(1);
   });
 
@@ -253,11 +255,11 @@ describe('qfValues: hashtag / user / instance', () => {
   });
 });
 
-// postFolders は posterFolders とは別の dep。スタブが渡していなかった間ここは一度も
-// 呼ばれておらず、型検査の対象外だったので誰も気づかなかった（#635）。
+// postFolders is a dep separate from posterFolders. While the stub wasn't passing
+// it, this was never called even once, and since it was outside typecheck's reach, no one noticed (#635).
 describe('qfValues: folder（投稿フォルダ）', () => {
   test('ラベルはパス・count はサブツリー小計（#41）', () => {
-    // filtered＝先頭3件（c1/c2/c3）。親は自分の c1 ＋ 子の c2 で 2、子は c2 だけで 1。
+    // filtered = the first 3 (c1/c2/c3). The parent is its own c1 + the child's c2 = 2; the child is just c2 = 1.
     expect(qfValues('folder')).toEqual([expect.objectContaining({ v: 'f-parent', l: '親', count: 2 }), expect.objectContaining({ v: 'f-child', l: '親 / 子', count: 1 })]);
   });
 });
@@ -292,8 +294,9 @@ test('未知のカテゴリは []', () => {
   expect(qfValues('nonsense')).toEqual([]);
 });
 
-// 空振りする行は並べない＝プラットフォームなしと同じ規則。ライブラリ全体を見て決めるので、
-// 別の makeFacets を立てて「全件にタグがある」状態を作る。
+// A row that would come up empty isn't listed = the same rule as "no platform".
+// Since this is decided by looking at the whole library, set up a separate
+// makeFacets to create a state where "every post has a tag".
 test('タグの無い投稿が1件も無ければ「タグなし」を出さない', () => {
   const tagged = posts.map((p) => ({ ...p, tags: p.tags && p.tags.length ? p.tags : ['何かのタグ'] }));
   const { qfValues: qv } = makeFacets({

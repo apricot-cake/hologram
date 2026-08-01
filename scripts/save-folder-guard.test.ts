@@ -1,12 +1,12 @@
-// 保存フォルダのクラウド同期検出（app/src/main/save-folder-guard.ts, #95）の
-// ユニットテスト。純ロジック＝Electron 不要。検出は警告を出すだけなので、求める水準は
-// 「既定のインストール配置を捉える」ことと「普通のフォルダでは黙っている」ことの2点。
+// Unit tests for save-folder cloud-sync detection (app/src/main/save-folder-guard.ts,
+// #95). Pure logic = no Electron needed. Detection only shows a warning, so the bar to
+// clear is 2 things: "catches the default install location" and "stays quiet for an ordinary folder".
 
 import path from 'node:path';
 import { describe, expect, test } from 'vitest';
 import { cloudSyncProviderOf } from '../app/src/main/save-folder-guard';
 
-// win32 でも posix でも意味を持つよう、プラットフォーム native なパスで組む
+// Built with platform-native paths so it makes sense on both win32 and posix
 const home = path.resolve(path.sep === '\\' ? 'C:\\Users\\alice' : '/home/alice');
 const at = (...seg: string[]) => path.join(home, ...seg);
 const NO_ENV = {};
@@ -49,7 +49,7 @@ describe('検出できるプロバイダ', () => {
   });
 });
 
-// 名前を変えた OneDrive フォルダでも %OneDrive% は出ている
+// Even a renamed OneDrive folder still has %OneDrive% set
 describe('環境変数からの検出', () => {
   test('フォルダ名が手がかりにならなくても env のルートで当たる', () => {
     const root = at('CloudStuff');
@@ -71,7 +71,7 @@ describe('環境変数からの検出', () => {
   });
 });
 
-// 誤検出こそがここでのコスト
+// A false positive is exactly the cost being guarded against here
 describe('普通のフォルダでは黙る', () => {
   test('既定のライブラリ位置', () => {
     expect(cloudSyncProviderOf(at('Hologram', 'library'), NO_ENV)).toBeNull();

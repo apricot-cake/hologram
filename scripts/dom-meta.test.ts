@@ -1,21 +1,25 @@
-// 投稿情報の DOM 補完（#202 段1）のオフライン純ユニットテスト。
+// Offline pure unit test for the post info DOM fallback (#202 phase 1).
 //
-// 見るのは2層で、どちらも実サイトへは一切アクセスしない:
+// Two layers are checked, and neither ever accesses a real site:
 //
-//   1. **マージ規則**（extension/utils/extractor/dom-meta.ts）＝「API の値が常に勝ち、
-//      DOM は空いている欄だけを埋める」。ここが本 Issue の唯一の合流点なので、
-//      「API 成功／失敗 × フィールドの有無」の分岐を表で潰す。どの値がどちらから
-//      来たかは戻り値（domFilled）に現れるので、テストから見える。
-//   2. **X の抽出**（extension/utils/extractor/x.ts の extractXDomMeta）＝保存済みの
-//      DOM フィクスチャ（scripts/fixtures/content/x-dom-meta.html）に対して走らせる。
-//      フィクスチャは手書きで、コードが狙っているセレクタ／testid の形と、
-//      実際に揺れると分かっている箇所（いいね済みで testid が変わる・数値の
-//      省略表記が UI 言語で変わる・引用カードが自分の subtree に入る）を再現したもの。
+//   1. **the merge rule** (extension/utils/extractor/dom-meta.ts) = "the API's
+//      value always wins, DOM only fills fields that are empty". Since this is
+//      the sole point where this Issue converges, the "API success/failure x
+//      field present/absent" branches are exhaustively covered in a table.
+//      Which value came from which side shows up in the return value
+//      (domFilled), so the test can observe it.
+//   2. **X's extraction** (extractXDomMeta in extension/utils/extractor/x.ts) =
+//      run against a saved DOM fixture (scripts/fixtures/content/x-dom-meta.html).
+//      The fixture is hand-written, reproducing both the selector/testid shapes
+//      the code targets and the spots known to actually shift (testid changes
+//      once liked, abbreviated number notation changes with the UI language,
+//      a quote card lands inside its own subtree).
 //
-// ここで捕まるのは「自分のコード変更が壊した」退行。「X 側が DOM を変えた」は
-// 捕まらない＝それは content-fixtures.test.ts と同じ線引きで、実サイト e2e の担当。
-// ただし**壊れ方が安全側であること**（セレクタが全滅しても保存は無傷）は、
-// 総取り替えしたフィクスチャ1件でここでも見ている。
+// What this catches is regressions "my own code change broke". It does not
+// catch "X changed its DOM" = that's the same dividing line as
+// content-fixtures.test.ts, and is the real-site e2e's job. However, **that
+// the failure mode is fail-safe** (a save stays intact even if every selector
+// misses) is also checked here, with one fixture that's swapped out entirely.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -26,7 +30,7 @@ import { emptyRecord } from '../extension/utils/extractor/record.ts';
 import type { CaptureSite, DomMeta, PostRecord } from '../extension/utils/extractor/types.ts';
 import x, { extractXDomMeta } from '../extension/utils/extractor/x.ts';
 
-// === 1. マージ規則 ===========================================================
+// === 1. merge rule ===========================================================
 
 function apiRecord(fields: Partial<PostRecord> = {}): PostRecord {
   return Object.assign(emptyRecord('https://x.com/alice/status/111', 'x'), fields);
@@ -53,8 +57,8 @@ describe('mergeDomMeta: API が答えた値は常に勝つ', () => {
     expect(filled).toEqual([]);
   });
 
-  // 0 は「まだ誰も押していない」という API の答え＝欠損ではない。falsy 判定で
-  // 書き換えると、画面側の概数で正確な 0 を上書きしてしまう。
+  // 0 is the API's answer meaning "no one has pressed this yet" = not a
+  // missing value. Rewriting it based on a falsy check would overwrite an exact 0 with the screen's rough count.
   test('API の 0 は欠損ではない＝上書きしない', () => {
     const rec = apiRecord({ likes: 0, replies: 0 });
     const filled = mergeDomMeta(rec, { likes: 12, replies: 34 });
@@ -64,9 +68,9 @@ describe('mergeDomMeta: API が答えた値は常に勝つ', () => {
     expect(filled).toEqual([]);
   });
 
-  // X の埋め込み用 API はリポスト／ブクマ／表示回数を返す口を持たない＝取得が
-  // 成功した投稿でも常に null。「失敗した時だけ DOM を見る」設計だと、この3つは
-  // 永遠に空のまま残る。
+  // X's embed API has no way to return reposts/bookmarks/view count = these are
+  // always null even for a post whose fetch succeeded. With a design of "only
+  // look at the DOM on failure", these three would stay empty forever.
   test('API 取得が成功していても、構造的に返せない欄は埋める', () => {
     const rec = apiRecord({ text: 'API の本文', displayName: 'API の作者', likes: 56, replies: 12 });
     const filled = mergeDomMeta(rec, { text: '画面の本文', likes: 55, reposts: 34, bookmarks: 78, views: 9012 });
@@ -86,8 +90,8 @@ describe('mergeDomMeta: API が答えた値は常に勝つ', () => {
     expect(rec.text).toBe(null);
   });
 
-  // 埋められる欄は明示リスト＝URL・プラットフォーム・メディアのような
-  // 「保存経路と API が決めるもの」を画面側の推測で埋めさせない。
+  // The fields that can be filled are an explicit allowlist = things like URL,
+  // platform, and media, which "the save path and the API decide", are never allowed to be filled by a screen guess.
   test('リストに無い欄は DOM から埋まらない', () => {
     const rec = apiRecord();
     mergeDomMeta(rec, { url: 'https://evil.example/', platform: 'evil', media: [{ url: 'x' }] } as unknown as DomMeta);
@@ -107,8 +111,8 @@ describe('domRescuedEssentials: バナー文言の切り替え条件', () => {
     expect(domRescuedEssentials(['text', 'likes'])).toBe(true);
   });
 
-  // 数値だけが埋まった状態は「レコードが空でなくなった」ではない＝
-  // 「投稿情報は取得できません」の文言のままでよい。
+  // A state where only numbers got filled isn't "the record is no longer
+  // empty" = it's fine for the "post info couldn't be retrieved" text to stay as-is.
   test('数値だけなら偽', () => {
     expect(domRescuedEssentials(['likes', 'views', 'bookmarks'])).toBe(false);
     expect(domRescuedEssentials([])).toBe(false);
@@ -150,7 +154,7 @@ describe('parseCount: 省略表記を概数へ', () => {
   });
 });
 
-// readDomMeta は「サイト側の実装が投げても保存を巻き込まない」ための唯一の壁。
+// readDomMeta is the sole wall for "even if the site-side implementation throws, it doesn't take the save down with it".
 describe('readDomMeta: 例外を外へ出さない', () => {
   const post = { nodeType: 1 } as unknown as Element;
 
@@ -180,11 +184,11 @@ describe('readDomMeta: 例外を外へ出さない', () => {
   });
 });
 
-// === 2. X の抽出 =============================================================
+// === 2. X's extraction =============================================================
 
 const FIXTURES_DIR = path.join(import.meta.dirname, 'fixtures', 'content');
-// content-fixtures.test.ts と同じ据え方＝サイトモジュールは呼び出し時にグローバルから
-// 読むので、フィクスチャごとに差し替えて安全。
+// Same setup as content-fixtures.test.ts = the site module reads from globals
+// at call time, so it's safe to swap them out per fixture.
 const KEYS = ['window', 'document', 'location', 'getComputedStyle', 'Element', 'HTMLElement', 'HTMLAnchorElement', 'HTMLImageElement', 'Node'];
 
 function installFixture(fixtureFile: string, url: string) {
@@ -229,7 +233,7 @@ describe('X: 画面から読む投稿情報', () => {
     });
   });
 
-  // 認証バッジは <svg><title>Verified account</title></svg>＝表示名の一部ではない。
+  // The verification badge is <svg><title>Verified account</title></svg> = it isn't part of the display name.
   test('認証バッジの文字列が表示名に混ざらない', () => {
     expect(read('tweetPlain').displayName).not.toContain('Verified');
   });
@@ -252,7 +256,7 @@ describe('X: 画面から読む投稿情報', () => {
     });
   });
 
-  // 誤マッチで別投稿の言葉を書き込むのが、この機能の唯一の実害ある壊れ方。
+  // A mismatch writing in another post's words is this feature's only failure mode that causes actual harm.
   test('引用は引用した側の本文・作者・日時を取る（被引用カードではない）', () => {
     const meta = read('tweetQuote');
     expect(meta.text).toBe('これは引用した側の本文');
@@ -261,8 +265,9 @@ describe('X: 画面から読む投稿情報', () => {
     expect(meta.date).toBe('2026-03-04T00:00:00.000Z');
   });
 
-  // 本文ノードが無い／数値が 0 で描かれない＝どちらも正常な状態。空文字や 0 を
-  // 書くと「本文を失ったレコード」と区別が付かなくなるので、欄ごと置かない。
+  // No body text node, or a count that renders as 0 and so isn't drawn at all
+  // = both are normal states. Writing an empty string or 0 would make this
+  // indistinguishable from "a record that lost its body text", so the field isn't placed at all.
   test('本文の無い画像投稿は text を置かない（空文字を書かない）', () => {
     const meta = read('tweetNoText');
     expect('text' in meta).toBe(false);
@@ -276,7 +281,7 @@ describe('X: 画面から読む投稿情報', () => {
     expect('replies' in meta).toBe(false);
   });
 
-  // 壊れ方が安全側であること＝段1 の設計上いちばん重要な性質。
+  // That the failure mode is fail-safe = the single most important property of phase 1's design.
   test('セレクタが全滅しても投げず、何も埋めない', () => {
     const el = ctx.document.getElementById('tweetRedesigned') as Element;
     expect(() => extractXDomMeta(el)).not.toThrow();
@@ -284,7 +289,7 @@ describe('X: 画面から読む投稿情報', () => {
     expect(mergeDomMeta(apiRecord(), extractXDomMeta(el))).toEqual([]);
   });
 
-  // 画像拡大表示（#325）は <img> そのものが投稿要素になる＝内側に何も無い。
+  // In the enlarged image view (#325), the <img> itself becomes the post element = there's nothing inside it.
   test('投稿要素の形が想定外でも投げない', () => {
     const img = ctx.document.createElement('img');
     expect(() => extractXDomMeta(img)).not.toThrow();
@@ -292,10 +297,11 @@ describe('X: 画面から読む投稿情報', () => {
   });
 });
 
-// === 3. 合流 =================================================================
+// === 3. convergence =================================================================
 //
-// 実機で最も損の大きい壊れ方（年齢制限＝API が tombstone を返し、画像は見えている
-// のに投稿情報が空）が、フィクスチャの DOM で実際に埋まるところまで通す。
+// Carries the failure mode with the biggest real-world cost (age restriction =
+// the API returns a tombstone, the image is visible but the post info is
+// empty) through to actually being filled in by the fixture's DOM.
 describe('年齢制限の投稿: API が黙っても画面から埋まる', () => {
   let ctx: ReturnType<typeof installFixture>;
 
@@ -305,18 +311,18 @@ describe('年齢制限の投稿: API が黙っても画面から埋まる', () =
   afterAll(() => ctx.restore());
 
   test('本文・作者・日時が入り、metaError はそのまま残る', () => {
-    // x.ts の fetchXTweet が tombstone に対して作るレコードと同じ形＝
-    // URL 由来の screenName と snowflake 由来の日時だけを持つ。
+    // The same shape as the record x.ts's fetchXTweet builds for a tombstone =
+    // it only has a screenName derived from the URL and a date derived from the snowflake.
     const rec = apiRecord({ metaError: 'ageRestricted', screenName: 'alice' });
     const filled = mergeDomMeta(rec, extractXDomMeta(ctx.document.getElementById('tweetPlain') as Element));
 
     expect(rec.text).toBe('Hello 🌸\nworld');
     expect(rec.displayName).toBe('Alice Example');
     expect(rec.likes).toBe(56);
-    // URL から取れていた screenName は API 側の値＝DOM は触らない。
+    // The screenName that was already obtained from the URL is the API-side value = the DOM doesn't touch it.
     expect(rec.screenName).toBe('alice');
     expect(filled).not.toContain('screenName');
-    // metaOk の意味は変えない＝部分保存のままで、バナーの文言だけが変わる。
+    // The meaning of metaOk doesn't change = it stays a partial save, only the banner's text changes.
     expect(rec.metaError).toBe('ageRestricted');
     expect(domRescuedEssentials(filled)).toBe(true);
   });

@@ -1,13 +1,13 @@
 'use strict';
 
-// バックアップ / 増分ミラー (#227) — index.ts's `// --- バックアップ / 増分ミラー ---`
+// Backup / incremental mirror (#227) — index.ts's `// --- Backup / incremental mirror ---`
 // section, moved out whole: the mirror engine, its schedule, the config it reads,
 // the two destination validators that sit in the same block, and the DB<->media
 // integrity pass that piggybacks the same run.
 //
 // The integrity pass is here because it LIVED here, not because it is a backup:
-// #301 put it in this block on purpose ("検出機構は #100の品目1と共用し二重実装しな
-// い"), so runBackup's already-scanned file set can be reused and the daily
+// #301 put it in this block on purpose ("share the detection mechanism with
+// #100's item 1, don't duplicate the implementation"), so runBackup's already-scanned file set can be reused and the daily
 // reconciliation costs no extra readdir. Splitting the two apart would either
 // duplicate that scan or reintroduce the coupling as an import.
 //
@@ -45,11 +45,15 @@ export interface BackupEngineDeps {
 // through an import that would tie two otherwise-independent sweeps together).
 const TRASH_SUBDIR = '.trash';
 
-// 保存先フォルダ自体をクラウド同期フォルダに置くとライブ書き込み中の同期で壊れやすい。
-// ここでは選択した「宛先フォルダ」の中に「写し（remote）」を保持する。
-// アセットは immutable（一度書いたら変わらない）→ 宛先に無いファイルだけコピー(O(new))。
-// 削除は宛先からも伝播（最新ミラー）。ZIP は手動エクスポート専用に残す。
-// 宛先直下にぶちまけない安全策として専用サブフォルダに書く（下記 BACKUP_SUBDIR）。
+// Placing the save folder itself inside a cloud-sync folder makes it fragile to
+// sync happening mid live-write.
+// Here we keep a "copy (remote)" inside the chosen "destination folder".
+// Assets are immutable (never change once written) → copy only files missing at
+// the destination (O(new)).
+// Deletion propagates to the destination too (latest mirror). ZIP stays reserved
+// for manual export only.
+// As a safeguard against dumping straight into the destination root, write to a
+// dedicated subfolder (BACKUP_SUBDIR below).
 const BACKUP_SUBDIR = 'Hologram-mirror';
 function backupDest(dir) {
   return path.join(dir, BACKUP_SUBDIR);
@@ -66,9 +70,9 @@ function dbSnapshotPath(backupDir: string) {
 }
 
 const BACKUP_DEFAULTS = {
-  dir: null, // 出力先（保存先フォルダの内外と重複しないこと）
-  interval: false, // 一定間隔
-  intervalValue: 1, // 間隔の数
+  dir: null, // Output destination (must not overlap with the save folder, inside or out)
+  interval: false, // fixed interval
+  intervalValue: 1, // interval count
   intervalUnit: 'day', // 'day' | 'week' | 'month'
   lastRunAt: null,
   lastResult: null,
@@ -111,7 +115,8 @@ function pathIsInside(child, parent) {
     p = path.resolve(parent);
   return c === p || c.startsWith(p + path.sep);
 }
-// 出力先が保存先と入れ子/同一だと、出力→watch→再エクスポートのループや破壊が起きる。
+// If the output destination is nested inside/identical to the save folder, an
+// output -> watch -> re-export loop or corruption occurs.
 function validateBackupDir(dir) {
   if (!dir) return { ok: true };
   const src = getSaveFolder();
@@ -142,12 +147,13 @@ function validateSaveFolder(dir) {
   return { ok: true };
 }
 
-// Node の setInterval は 2^31-1 ms 超の delay を 1ms にクランプするため、
-// 大きな間隔（week×4 以上・year など）を直接渡すと暴走する。
-// 短い heartbeat（1分）で due を判定し、閾値を超えたときだけ実行する方式に変更。
+// Because Node's setInterval clamps a delay over 2^31-1 ms to 1ms, passing a
+// large interval directly (week×4 or more, year, etc.) causes it to run out of
+// control. Changed to a scheme that judges due-ness with a short heartbeat
+// (1 minute) and only runs once the threshold is exceeded.
 const BACKUP_HEARTBEAT_MS = 60 * 1000;
 function backupIntervalMs(b) {
-  // 'year' は UI から廃止済みだが旧設定値の後方互換として残す
+  // 'year' has been removed from the UI but is kept for backward compatibility with old config values
   const unitMs = { day: 86400000, week: 604800000, month: 2592000000, year: 31536000000 };
   return Math.max(60000, (Number(b.intervalValue) || 1) * (unitMs[b.intervalUnit] || unitMs.day));
 }
@@ -159,10 +165,11 @@ function backupIntervalMs(b) {
  * silently share the "a run is in flight" flag with the first.
  */
 function createBackupEngine({ ensurePostsSynced, scheduleSavedIndexWrite, send }: BackupEngineDeps) {
-  // The one shared DB<->media reconciliation pass (#301 design: "検出機構は
-  // #100の品目1と共用し二重実装しない") — called both at startup (independent
+  // The one shared DB<->media reconciliation pass (#301 design: "share the
+  // detection mechanism with #100's item 1, don't duplicate the implementation")
+  // — called both at startup (independent
   // of any backup config) and from runBackup (piggybacking the interval run as
-  // the "daily照合"). `knownFiles`, when passed, is runBackup's already-scanned
+  // the "daily reconciliation"). `knownFiles`, when passed, is runBackup's already-scanned
   // srcSet — skips a second readdir of the save folder.
   function runIntegrityPass(folder: string, sqlite: any, knownFiles?: Set<string>) {
     let dbOk = true;
@@ -434,8 +441,8 @@ function createBackupEngine({ ensurePostsSynced, scheduleSavedIndexWrite, send }
       // verified + renamed + receipted (lib-db-inbox-compact.ts); mirroring
       // that same ordering here means a loose file's mirror copy is never
       // pruned before the segment that supersedes it is safely at dest too —
-      // design comment: "対応する event を含む検証済み segment が同じミラーに
-      // コピー済みの場合だけ許可する".
+      // design comment: "only allowed once the verified segment containing the
+      // corresponding event has already been copied to the same mirror".
       if ([...srcInboxSegments].every((f) => destInboxSegments.has(f))) {
         for (const f of destInboxNew) {
           if (!srcInboxNew.has(f)) {
@@ -450,8 +457,8 @@ function createBackupEngine({ ensurePostsSynced, scheduleSavedIndexWrite, send }
       // DB snapshot (#301): the ONLY sanctioned way to mirror the live
       // hologram.db — #97 forbids a raw file copy of a live .db (see
       // lib-db-snapshot.ts's module comment). Piggybacks the daily
-      // reconciliation onto this same run (#301 design: "日次照合に
-      // integrity_checkを相乗り"), reusing srcSet this run already
+      // reconciliation onto this same run (#301 design: "piggyback
+      // integrity_check onto the daily reconciliation"), reusing srcSet this run already
       // enumerated so the orphan/missing scan costs no extra readdir.
       try {
         // ensurePostsSynced (not raw ensureDb) so the DB reflects whatever is

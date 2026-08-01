@@ -1,6 +1,7 @@
-// app/src/main/lib-archive.ts の #300 (St7) DB駆動エクスポート側のユニットテスト。
-// writeCompleteZip が生成する ZIP の中身を JSZip で読み返し、投稿サイドカー・
-// 組織レイヤー・tag-parents.json・includeTrash 時の .trash/ 配置を検証する。
+// Unit tests for the DB-driven export side of the #300 (St7) work in
+// app/src/main/lib-archive.ts. Reads back the contents of the ZIP that writeCompleteZip
+// produces with JSZip, and checks the post sidecars, the organizational layer,
+// tag-parents.json, and the .trash/ placement when includeTrash is set.
 
 import fs from 'node:fs';
 import os from 'node:os';
@@ -79,7 +80,7 @@ describe('writeCompleteZip: 投稿サイドカーの再生成', () => {
     expect(rec.text).toBe('hello');
     expect(rec.capturedVia).toBe('bulk-bookmark');
     expect(rec.tags).toEqual(['character:alice']);
-    expect(rec.tagIds).toBeUndefined(); // DB内部専用の並行配列は除去される
+    expect(rec.tagIds).toBeUndefined(); // the DB-internal-only parallel array is stripped
   });
 
   test('スクリーンショットはディスクからそのままコピーされる', async () => {
@@ -131,8 +132,9 @@ describe('writeCompleteZip: tag-parents.json', () => {
   });
 });
 
-// #292: 完全 ZIP は取得原本を既定で同梱する（原本は投稿が消えたら二度と取り直せない＝
-// 落とした ZIP は「完全」ではない）。マニフェストは形式とプライバシー注意を書く。
+// #292: the complete ZIP bundles the raw payload by default (once a post is deleted the
+// raw payload can never be re-fetched = a ZIP that drops it isn't "complete"). The
+// manifest records the format and a privacy note.
 describe('writeCompleteZip: 取得原本（#292）', () => {
   const body = '{"text":"hello","unknown_future_field":42}';
 
@@ -157,7 +159,7 @@ describe('writeCompleteZip: 取得原本（#292）', () => {
     expect(unpackRawPayload({ encoding: rec.raw[0].encoding, sha256: rec.raw[0].sha256, payload: Buffer.from(rec.raw[0].payloadBase64, 'base64') })).toBe(body);
   });
 
-  // 原本を持たないレコード（この層より前の保存分）はサイドカーの形を変えない
+  // A record with no raw payload (saved before this layer existed) doesn't change the sidecar shape
   test('原本の無い投稿のサイドカーには raw を足さない', async () => {
     await writeCompleteZip(handle.sqlite, srcFolder, trashDir, outPath, {});
     const zip = await loadZip(outPath);
@@ -190,7 +192,7 @@ describe('writeCompleteZip: includeTrash', () => {
     const zip = await loadZip(outPath);
     expect(await zip.file('.trash/cap-2.json')?.async('string')).toContain('cap-2');
     expect(await zip.file('.trash/cap-2.jpg')?.async('string')).toBe('TRASHED');
-    // ゴミ箱の中身は library/ 側には漏れない
+    // trash contents don't leak into the library/ side
     expect(zip.file('library/cap-2.json')).toBeNull();
   });
 

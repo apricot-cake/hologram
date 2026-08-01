@@ -70,7 +70,7 @@ function readTagTypes(sqlite: Sqlite) {
     // is therefore non-authoritative rather than a reason to block all tags.
   }
   // Same reasoning for the shape: the only writer is replaceTagTypes, whose
-  // input is the renderer's 種別-label map (TagTypesState.labels, the shared
+  // input is the renderer's kind-label map (TagTypesState.labels, the shared
   // wire type in ipc-payloads.ts) — so an object here IS that map.
   return { types, labels: labels && typeof labels === 'object' ? (labels as Record<string, string>) : null };
 }

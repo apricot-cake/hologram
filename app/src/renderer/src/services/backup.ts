@@ -2,7 +2,7 @@
 // dir, kick a run, start/done events), wrapping the flat hologramIpc.getBackup/
 // setBackup/pickBackupDir/runBackup/onBackupStart/onBackupDone calls. A real ES
 // module (named exports) now — imported directly by the two consumers that share
-// this domain: the MirrorStatus rail component and the Settings > データ component —
+// this domain: the MirrorStatus rail component and the Settings > Data component —
 // pure 1:1 forwarding, no wrapping logic (same as trash).
 import { hologramIpc } from './ipc.ts';
 

@@ -4,7 +4,7 @@
 // onSaveFolderProgress), wrapping the flat hologramIpc calls. A real ES module (named
 // exports) now — imported directly by the consumers that share this domain: viewer.ts
 // (list/delete/tags/import/clearAll/change-watch), App.tsx (onPostsChanged) and the
-// Settings > データ component (save-folder move + export/import ZIP + import media) —
+// Settings > Data component (save-folder move + export/import ZIP + import media) —
 // pure 1:1 forwarding, no wrapping logic (same as trash/backup; distinct from
 // services/records.ts, which owns the record-shape/grouping PURE LOGIC, not the IPC
 // calls).
@@ -19,7 +19,7 @@ export function listPostsDelta(haveBaseline: boolean) {
 export function imageDataUrl(image: string) {
   return hologramIpc.imageDataUrl(image);
 }
-// pixiv うごイラ playback (#506). The archive stays in main — these hand the
+// pixiv ugoira playback (#506). The archive stays in main — these hand the
 // player a yes/no about the frame table and then one frame's bytes at a time.
 export function ugoiraFramesPresent(file: string, names: string[]) {
   return hologramIpc.ugoiraFramesPresent(file, names);

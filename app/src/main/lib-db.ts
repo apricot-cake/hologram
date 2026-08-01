@@ -89,7 +89,7 @@ const MIGRATIONS: Migration[] = [
   // applied to `posts` — the idempotency ledger a re-scan or a replayed
   // segment checks before writing anything (design comment's "apply rules").
   // sourceSegment is NULL for a still-loose event and the segment's id once
-  // compaction folds it in (#299 design comment, "保持量とコンパクション") —
+  // compaction folds it in (#299 design comment, "retention volume and compaction") —
   // recorded so a segment can be proven fully-applied without re-reading it.
   // inbox_segments records one row per compacted segment file actually
   // replayed, so a normal restart can skip re-opening a segment whose events
@@ -152,7 +152,7 @@ const MIGRATIONS: Migration[] = [
         CREATE UNIQUE INDEX idx_raw_payloads_identity ON raw_payloads(postId, sourceKind, sha256);
       `),
   },
-  // #119 St3: a pixiv うごイラ is saved as pixiv's own zip of frame images, and
+  // #119 St3: a pixiv ugoira is saved as pixiv's own zip of frame images, and
   // the per-frame display times live nowhere inside it. JSON in one column
   // rather than a frames table: the list is only ever read whole, for one media
   // item, by the player — nothing queries or joins an individual frame. Null on
@@ -161,7 +161,7 @@ const MIGRATIONS: Migration[] = [
   // #444: give every post a stable FTS row key so the write path stops addressing
   // posts_fts by its UNINDEXED postId column. An FTS5 virtual table has no index
   // but MATCH and rowid, so `WHERE postId = ?` is a full scan of the index — the
-  // per-post write cost therefore grew with the library (1万件 2.2ms -> 3万件 8.0ms
+  // per-post write cost therefore grew with the library (10,000 rows 2.2ms -> 30,000 rows 8.0ms
   // measured on the pre-change tree) and every bulk operation was O(N²).
   //
   // ftsRowid rather than posts' own implicit rowid: an implicit rowid on a table

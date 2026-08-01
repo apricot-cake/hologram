@@ -99,7 +99,7 @@ const MAX_ZIP_ORG_BYTES = 16 * 1024 * 1024; // 16 MiB
 //     full-size library is the complete format's job, and that one streams.
 const MAX_LEGACY_ENTRY_BYTES = 64 * 1024 * 1024; // 64 MiB
 const MAX_LEGACY_TOTAL_BYTES = 1024 * 1024 * 1024; // 1 GiB expanded across the archive
-// A pixiv うごイラ archive (#119 St3) is a third party's file that the player
+// A pixiv ugoira archive (#119 St3) is a third party's file that the player
 // expands ONE FRAME AT A TIME (#506), so it gets a per-frame budget rather than
 // riding the multi-GB media cap: a frame is a single still image, the shape the
 // legacy per-entry cap was already sized for. There is deliberately no
@@ -248,7 +248,7 @@ function mergeFolders(cur, inc) {
 function mergeUngrouped(cur, inc) {
   return { keys: [...new Set([...(cur.keys || []), ...(inc.keys || [])].map(String))] };
 }
-// Tag → kind map (用語帳). Union of entries; the CURRENT library wins on a tag
+// Tag → kind map (vocabulary book). Union of entries; the CURRENT library wins on a tag
 // already classified locally (don't let an import overwrite a deliberate kind).
 function mergeTagTypes(cur, inc) {
   const types = {};
@@ -952,13 +952,13 @@ async function readLegacyFromOpenZip(zipfile: ZipReader): Promise<any[] | null> 
   return posts;
 }
 
-// --- pixiv うごイラ playback (#506) ---------------------------------------------
+// --- pixiv ugoira playback (#506) ---------------------------------------------
 // The player needs frames out of an archive the library stores untouched, and it
 // needs them WITHOUT the archive crossing into the renderer — the rule the export
 // and import paths already follow (ADR 0015). These two were the last renderer-side
 // ZIP reader in the app.
 //
-// Both open the file per call and hold nothing between calls: an うごイラ has tens
+// Both open the file per call and hold nothing between calls: an ugoira has tens
 // of frames, so re-reading the central directory is cheaper than owning an fd's
 // lifetime across IPC round trips.
 //

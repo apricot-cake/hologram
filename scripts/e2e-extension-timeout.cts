@@ -1,16 +1,18 @@
 'use strict';
 
-// 「保存が処理中のまま終わらない」（#507）の、実ブラウザでの再現と回復。
-// 使い捨ての Chromium・使い捨てのネイティブホスト登録・使い捨てのライブラリ＝
-// ユーザーのプロファイルにも実ライブラリにも触らない（e2e-extension-duplicate と同じ台）。
+// Reproduction and recovery, in a real browser, of "a save never finishes and
+// stays stuck processing" (#507).
+// Disposable Chromium, disposable native host registration, disposable library
+// = touches neither the user's profile nor the real library (same setup as e2e-extension-duplicate).
 //
-// jsdom 側（capture-timeout.test.ts）はコンテンツスクリプトの見張りを見る。
-// ここが見るのは**サービスワーカー側の予算**＝報告された症状に一番近い形で、
-// プラットフォームの API が「返らない」ときに保存が終わるか。ルートは fulfill も
-// abort もせず握ったままにする＝拡張から見ると、繋がったまま黙っている相手。
+// The jsdom side (capture-timeout.test.ts) covers the content script's
+// watchdog. What this covers is **the service worker side's budget** — in the
+// shape closest to the reported symptom, does the save finish when a platform
+// API "never returns"? The route is left held, neither fulfilled nor aborted =
+// from the extension's point of view, a peer that's connected but silent.
 //
-// 直す前のこの台では、バナーは busy のまま永久に留まり、capture.log には
-// activate の行だけが残って成功も失敗も記録されなかった（実測）。
+// On this rig before the fix, the banner stayed stuck at busy forever, and
+// capture.log only had the activate line, with neither success nor failure ever recorded (measured directly).
 
 const fs = require('node:fs');
 const path = require('node:path');
@@ -23,7 +25,7 @@ const EXPECTED_EXTENSION_ID = 'keggmjkemfcekcffohnpaojacdakpejh';
 const POST_ID = '1999999999999999997';
 const POST_URL = `https://x.com/hologram/status/${POST_ID}`;
 
-// メタデータの上限は 20 秒。取りこぼしを避けるため、その 2 倍強を待つ。
+// The metadata cap is 20 seconds. To avoid missing it, wait a bit over twice that.
 const WAIT_FOR_END_MS = 45_000;
 
 const POST_HTML = `<!doctype html>
@@ -125,12 +127,13 @@ function captureLogEntries(configDir: string): any[] {
     const state = await bannerState();
     if (state !== 'error') throw new Error(`the save ended in state "${state}", wanted "error"`);
 
-    // 次の一手が読めること＝「保存に失敗しました」で終わらせない（#507 の要求）。
+    // The next move must be legible = don't just leave it at "the save failed" (#507's requirement).
     const shown = (await page.locator('[data-hologram-capture-banner]').textContent()) || '';
     if (!/try again|もう一度/i.test(shown)) throw new Error(`the failure banner offers no next step: ${shown}`);
 
-    // 後から追えること＝止まった脚が capture.log に残る。バナーと同時ではなく
-    // 少し遅れて着く＝この行を書くのはホストで、その起動に Windows で1〜2秒かかる。
+    // It must be traceable afterward = the stuck leg stays in capture.log. It
+    // doesn't land at the same time as the banner but a bit later = it's the
+    // host that writes this line, and starting it up takes 1-2 seconds on Windows.
     let entries: any[] = [];
     let failure: any = null;
     for (const started = Date.now(); Date.now() - started < 15_000; ) {

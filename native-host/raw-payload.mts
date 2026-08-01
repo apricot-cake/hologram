@@ -3,7 +3,7 @@
 // still be recovered from a post saved years ago — including from a post the
 // platform has since deleted.
 //
-// Why the layer exists (#292's "取得の原則"): surfaces (facets, queries, UI) are
+// Why the layer exists (#292's "the acquisition principle"): surfaces (facets, queries, UI) are
 // reversible — not building one costs nothing, because it can be added the day a
 // real need appears. Acquisition is not: a post gets deleted, an account
 // disappears, and whatever was not kept at save time is gone for good. So the
@@ -23,7 +23,7 @@
 import { createHash } from 'node:crypto';
 import { gunzipSync, gzipSync } from 'node:zlib';
 
-// Per-RECORD budget on UNCOMPRESSED bytes (#292: "レコード単位の圧縮前上限").
+// Per-RECORD budget on UNCOMPRESSED bytes (#292: "the per-record pre-compression cap").
 // Two orders of magnitude above a real post payload (a tweet-result body is
 // ~5-20 KB, the largest pixiv illust response ~30 KB), so this never fires on
 // ordinary saves — it exists to bound a pathological response, not to ration.

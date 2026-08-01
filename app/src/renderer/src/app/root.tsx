@@ -4,7 +4,7 @@ import { initI18n } from '../_shared/i18n.ts';
 import { App } from './App.tsx';
 import { ErrorBoundary } from './ErrorBoundary.tsx';
 
-// Mounts the single unified React root (最終形B DoD). A body-appended host div holds the
+// Mounts the single unified React root (Final shape B DoD). A body-appended host div holds the
 // App; the App's children render in place or as fixed overlays (nothing portals into a
 // static container any more — #621). One createRoot() for the whole renderer — components
 // used to be their own createRoot() calls and were migrated under this one in batches (see

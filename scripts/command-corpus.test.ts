@@ -1,20 +1,22 @@
-// command-builder.ts のエントリ生成の単体テスト（#28）。makeCommands にスタブ deps を
-// 注入して登録させ、queryEntries から出てくる顔ぶれを見る。
+// Unit tests for entry generation in command-builder.ts (#28). Injects stub deps into
+// makeCommands to register them, and checks who shows up from queryEntries.
 //
-// 中身の多くは users.ts の buildSuggest から移ってきたもの（タグは SNS 投稿のみ集計・
-// 件数は count・投稿者は displayName 優先で screenName へフォールバック・上限）。
-// #28 の「エンジンは1つ・面は3つ」がここで守られていることが要点で、検索ボックスの面
-// （タグ6件・投稿者4件）とパレットの面（8件・コマンドとタブも出る）が同じ生成から
-// 出ていることを両方から確かめる。並びのスコア自体は command-registry.test.ts の担当。
+// Most of this was moved over from buildSuggest in users.ts (tags are tallied from SNS posts
+// only, counts come from count, posters prefer displayName and fall back to screenName, and
+// there's a limit). The point pinned down here is #28's "one engine, three surfaces" — that the
+// search box surface (6 tags, 4 posters) and the palette surface (8 items, commands and tabs
+// also show up) both come out of the same generation. Ranking scores themselves are the job of
+// command-registry.test.ts.
 
 import { beforeEach, describe, expect, test } from 'vitest';
 import { makeCommands } from '../app/src/renderer/src/services/command-builder';
 import * as R from '../app/src/renderer/src/services/command-registry';
 
-// 検索ボックスの面（SearchBox.tsx と同じ指定）とパレットの面（CommandPalette.tsx と同じ）
+// The search box surface (same options as SearchBox.tsx) and the palette surface (same as CommandPalette.tsx)
 const SEARCHBOX: R.QueryOptions = { sections: ['tag', 'user'], limit: { tag: 6, user: 4 } };
-// パレットは上限を渡さない＝当たった分を全部出してスクロールさせる（アプリ内の候補一覧の
-// 作法に揃えた。「+ フィルタ」バーの一覧が上限なし・ファセット行が100件）。
+// The palette passes no limit = shows every hit and lets you scroll (matches the convention
+// used for candidate lists elsewhere in the app — the "+ filter" bar's list has no limit, and
+// facet rows go up to 100).
 const PALETTE: R.QueryOptions | undefined = undefined;
 
 const BASE_POSTS = () => [
@@ -22,10 +24,10 @@ const BASE_POSTS = () => [
   { url: 'https://x.com/a/status/1', platform: 'x', userId: 'u1', screenName: 'alice', displayName: 'アリス', tags: [] },
   { url: 'https://x.com/a/status/0', platform: 'x', userId: 'u1', screenName: 'alice', displayName: 'アリス', tags: [] },
   { url: 'https://misskey.io/notes/n1', platform: 'misskey', userId: 'u3', screenName: 'carol', displayName: 'キャロル', tags: ['料理'] },
-  { url: null, platform: null, tags: ['取込タグ'] }, // SNS 投稿でない＝タグ集計外
+  { url: null, platform: null, tags: ['取込タグ'] }, // not an SNS post = excluded from tag tallying
 ];
 
-// #148 のチップ帯インライン入力の面（投稿ビュー / 投稿者ビュー）。
+// #148's chip-bar inline input surface (post view / poster view).
 const INLINE_POSTS: R.QueryOptions = { sections: ['tag', 'user', 'folder'], limit: { tag: 6, user: 4, folder: 4 } };
 const INLINE_POSTERS: R.QueryOptions = { sections: ['tag', 'folder'], limit: { tag: 6, folder: 4 } };
 
@@ -36,7 +38,7 @@ let posterFolders: { id: string; name: string }[];
 let performed: string[];
 let mode: string;
 
-// buildUsers のスタブは実物と同じ形（url ありの投稿を投稿者ごとに畳んだ配列）。
+// The buildUsers stub matches the real shape (posts with a url folded per-poster into an array).
 const usersOf = (all: any[]): any[] => {
   const map = new Map<string, any>();
   for (const p of all) {
@@ -77,6 +79,7 @@ beforeEach(() => {
     posterTagRows: () => posterTags,
     posterFolderRows: () => posterFolders,
     posterAddFilter: (f) => performed.push(`posterAddFilter:${f.type}:${f.value}`),
+    startTriage: () => performed.push('startTriage'),
   });
 });
 
@@ -115,7 +118,7 @@ describe('ジャンプ候補（旧 buildSuggest）', () => {
 describe('面ごとの顔ぶれ（同じ生成・別の見せ方）', () => {
   beforeEach(() => {
     posts = [];
-    // 共通0..共通9 を出現回数が階段状になるよう配る（旧 buildSuggest の上限テストと同型）
+    // Distribute 共通0..共通9 with a step-shaped occurrence count (mirrors the old buildSuggest limit test)
     for (let i = 0; i < 10; i++) {
       posts.push({ url: `https://x.com/t/status/${i}`, platform: 'x', userId: 'tagger', screenName: 'tagger', displayName: '', tags: Array.from({ length: 10 }, (_, j) => `共通${j}`).slice(0, 10 - i) });
     }
@@ -138,16 +141,16 @@ describe('面ごとの顔ぶれ（同じ生成・別の見せ方）', () => {
   });
 
   test('パレットの面: 当たった分を全部出す＝生成は1つで上限だけが違う', () => {
-    // 母集合は 共通0..共通9 の10件。パレットは上限を渡さないので全件出る。
+    // The population is 10 items, 共通0..共通9. The palette passes no limit so all of them show up.
     expect(titlesOf(R.queryEntries('共通', PALETTE), 'tag')).toHaveLength(10);
-    // 先頭の顔ぶれは検索ボックスの面と一致する（並びがズレない）
+    // The leading entries match the search box surface (ordering doesn't drift)
     expect(titlesOf(R.queryEntries('共通', PALETTE), 'tag').slice(0, 6)).toEqual(titlesOf(R.queryEntries('共通', SEARCHBOX), 'tag'));
   });
 });
 
 describe('操作系コマンド', () => {
   test('空クエリでも全部出る（まず何ができるかが読める）', () => {
-    expect(titlesOf(R.queryEntries('', PALETTE), 'command')).toEqual(['cmdOpenSettings', 'cmdNewTab', 'cmdClearFilters', 'cmdViewGrid', 'cmdViewList', 'cmdTogglePanels', 'cmdTogglePrivacy', 'cmdBrowsePosts', 'cmdBrowsePosters', 'cmdBrowseTrash']);
+    expect(titlesOf(R.queryEntries('', PALETTE), 'command')).toEqual(['cmdOpenSettings', 'cmdNewTab', 'cmdClearFilters', 'cmdViewGrid', 'cmdViewList', 'cmdTogglePanels', 'cmdTogglePrivacy', 'cmdBrowsePosts', 'cmdBrowsePosters', 'cmdBrowseTrash', 'cmdTriageStart']);
   });
 
   const run = (title: string) => {
@@ -171,7 +174,7 @@ describe('操作系コマンド', () => {
   test('投稿 / 投稿者 / ゴミ箱の切替', () => {
     run('cmdBrowsePosts');
     run('cmdBrowsePosters');
-    // ゴミ箱も他の2つと同じ browseTo の行き先（#268）＝パレット側に専用の経路を作らない。
+    // Trash also goes through the same browseTo destination as the other two (#268) = don't build a dedicated path on the palette side.
     run('cmdBrowseTrash');
     expect(performed).toEqual(['browseTo:posts', 'browseTo:posters', 'browseTo:trash']);
   });
@@ -180,10 +183,16 @@ describe('操作系コマンド', () => {
     itemsOf(R.queryEntries('お気に入り', PALETTE), 'folder')[0].perform();
     expect(performed).toEqual(['applyFolderFilter:f1']);
   });
+
+  test('高速トリアージの開始（#46）は startTriage を通る', () => {
+    run('cmdTriageStart');
+    expect(performed).toEqual(['startTriage']);
+  });
 });
 
-// #148: 3つ目の面（チップ帯のインライン入力）。生成は同じ queryEntries を通り、面が
-// 変えるのは「どのセクションを何件見せるか」と「確定したときの動作」だけ、が要点。
+// #148: the third surface (chip-bar inline input). The point is that generation still goes
+// through the same queryEntries, and all a surface changes is "which sections, how many items"
+// and "what happens on confirm".
 describe('チップ帯インライン入力の面（#148）', () => {
   test('タグ・投稿者の候補は filter（＝足す条件そのもの）を持つ', () => {
     expect(itemsOf(R.queryEntries('風景', INLINE_POSTS), 'tag')[0].filter).toEqual({ type: 'tag', value: '風景' });

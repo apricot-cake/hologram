@@ -1,6 +1,6 @@
 // Grid geometry service — pure column/size/slider-track math, extracted 1:1
 // from viewer.js as the tenth "pure logic → service" slice of the viewer
-// decomposition (最終形B). The post tile slider and the poster size slider
+// decomposition (final form B). The post tile slider and the poster size slider
 // each carried a private copy of the same formulas (pColsFor/tileColsFor,
 // pSizeFor/tileSizeFor, and the nBig/nSmall/invert track derivation) — this
 // module is the single owner. A real ES module (named exports), imported

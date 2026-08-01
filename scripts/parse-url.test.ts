@@ -1,6 +1,7 @@
-// parsePostUrl（extension/utils/extractor/index.ts）の回帰テスト: 投稿 URL → プラットフォーム
-// 同定。取り込みのたび最初に走る関数であり、プラットフォーム側の URL 体系変更で最初に
-// 壊れる場所。純関数（DOM もネットワークも要らない）。
+// Regression tests for parsePostUrl (extension/utils/extractor/index.ts): post URL →
+// platform identification. This function runs first on every ingest, and is the first
+// thing to break when a platform changes its URL scheme. A pure function (needs
+// neither DOM nor network).
 
 import { describe, expect, test } from 'vitest';
 import { parsePostUrl } from '../extension/utils/extractor/index.ts';
@@ -25,7 +26,7 @@ describe('Bluesky', () => {
     expect(parsePostUrl(url)).toEqual(expected);
   });
 
-  // メディアタブはプロフィールの下位ページであって投稿ではない
+  // The media tab is a sub-page of the profile, not a post
   test.each(['https://bsky.app/profile/alice.bsky.social/media', 'https://bsky.app/profile/alice.bsky.social'])('投稿でない: %s', (url) => {
     expect(parsePostUrl(url)).toBeNull();
   });
@@ -48,15 +49,16 @@ describe('Misskey / pixiv', () => {
 
   test.each([
     ['https://www.pixiv.net/artworks/12345', { platform: 'pixiv', id: '12345' }],
-    ['https://www.pixiv.net/en/artworks/67890', { platform: 'pixiv', id: '67890' }], // ロケール接頭辞つき
+    ['https://www.pixiv.net/en/artworks/67890', { platform: 'pixiv', id: '67890' }], // with a locale prefix
     ['https://pixiv.net/artworks/24680', { platform: 'pixiv', id: '24680' }],
   ])('pixiv 作品 %s', (url, expected) => {
     expect(parsePostUrl(url)).toEqual(expected);
   });
 });
 
-// 投稿でないもの・壊れた入力は null（null レコードは platform:null で保存され
-// ビューアで隠れる。content.js はその前に打ち切るが、パーサ自体は null と言う契約）
+// Non-posts and broken input get null (a null record gets saved with platform:null
+// and hidden in the viewer. content.js short-circuits before this point, but the
+// parser itself has a contract of returning null)
 describe('非投稿・不正入力は null', () => {
   test.each([['https://example.com/foo'], ['https://x.com/alice'], ['not a url'], [''], [null]])('%s', (url) => {
     expect(parsePostUrl(url)).toBeNull();

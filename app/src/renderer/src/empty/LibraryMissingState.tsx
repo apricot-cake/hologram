@@ -17,7 +17,7 @@ import { get as storeGet, set as storeSet, subscribe as storeSubscribe } from '.
 // happened. hologramStore's 'libraryMissing'/'libraryMissingPath' are seeded by
 // App.tsx's LibraryStatusGate on boot (services/library-path.ts's getLibraryStatus,
 // a fresh statSync every call — there is no push channel, see index.ts's
-// refreshLibraryStatus comment) and refreshed here after 再試行/repoint.
+// refreshLibraryStatus comment) and refreshed here after Retry/repoint.
 const subMissing = (cb: () => void) => storeSubscribe('libraryMissing', cb);
 const getMissing = () => !!storeGet('libraryMissing');
 const subPath = (cb: () => void) => storeSubscribe('libraryMissingPath', cb);

@@ -313,7 +313,7 @@ function xSnowflakeDate(id) {
 // nothing once the redirect dies. expanded_url is used, never display_url:
 // X truncates the latter for on-screen width ("en.wikipedia.org/wiki/…"),
 // which is the one thing that must NOT happen to a value being saved for
-// full-text search and URL probing (#189's own wording — 元URL・元ドメイン).
+// full-text search and URL probing (#189's own wording — original URL / original domain).
 //
 // A plain split/join on the literal t.co string, not entities.urls[].indices:
 // the indices are Twitter's own character offsets into the ORIGINAL text and

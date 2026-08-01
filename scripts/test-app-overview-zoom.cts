@@ -1,11 +1,12 @@
 'use strict';
 
-// 俯瞰ズーム (#141) の挙動を隔離インスタンスで検証する。Ctrl+ホイールがサイズ軸を
-// 1ノッチ動かし、下限側までセルが縮み、停止後に確定して gridSize が永続化されるか。
-// 下限側では ×N バッジ等のチロームが落ちる（サムネを覆わない）。あわせて、ズームがカーソル下の投稿を
-// 画面の同じ高さに留めるか (#282) も測る。実機ではなく HOLOGRAM_SMOKE の別
-// プロセス・別 config なので、ユーザーが本体アプリを操作していても混ざらない
-// （docs/build.md）。test-app-tagtypes.cts と同じハーネス。
+// Verifies overview zoom (#141) behavior in an isolated instance. Does Ctrl+wheel move the
+// size axis by one notch, do cells shrink all the way down to the floor, and does gridSize
+// get finalized and persisted once it settles? At the floor, chrome like the ×N badge drops
+// away (so it doesn't cover the thumbnail). Also measures whether zooming keeps the post
+// under the cursor at the same height on screen (#282). This isn't the real app but a
+// separate HOLOGRAM_SMOKE process with a separate config, so it doesn't collide even while
+// the user is operating the main app (docs/build.md). Same harness as test-app-tagtypes.cts.
 //
 //   node scripts/test-app-overview-zoom.cts
 
@@ -25,15 +26,17 @@ const configDir = path.join(tmp, 'Hologram');
 const saveFolder = path.join(tmp, 'saves');
 fs.mkdirSync(configDir, { recursive: true });
 fs.mkdirSync(saveFolder, { recursive: true });
-// 正方形サムネ・情報なしのグリッドで起動する（下限48まで数ノッチ分の余地がある位置から）。
-// 情報を表示 ON だと下限が 200px なので、俯瞰の下限そのものが測れない（#618）。
+// Boot with square thumbnails, a grid with no info shown (starting from a position with a
+// few notches of room down to the floor of 48). With "show info" ON the floor is 200px, so
+// the overview floor itself can't be measured (#618).
 fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolder, extensionId: 'x', layoutMode: 'grid', squareThumbs: true, showInfo: false, gridSize: 180 }));
 
 const jpegB64 = '/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0a' + 'HBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAA' + 'AAAAAAAAAAAACP/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AfwH/2Q==';
 
-// 列数トラックは1ノッチ=1列なので、サイズ軸そのものは何枚あっても効く。枚数が要るのは
-// アンカー維持 (#282) の方＝1画面に収まってしまうとスクロール位置が動かず、留まったのか
-// そもそも動きようが無かったのかを区別できない。180px タイルで数十行になる枚数を置く。
+// The column-count track is 1 notch = 1 column, so the size axis itself works no matter how
+// many items there are. What needs a large count is anchor preservation (#282) — if
+// everything fits on one screen the scroll position never moves, and there's no way to tell
+// whether it stayed in place or simply had nowhere to go. Seed enough that 180px tiles run to dozens of rows.
 const records: any[] = [];
 for (let i = 0; i < 200; i++) {
   const captureId = `171750000000${i}-abcd`;
@@ -52,14 +55,15 @@ for (let i = 0; i < 200; i++) {
 }
 seedLibrary(configDir, records);
 
-// ホイールはグリッドの上で発火させる（ハンドラはスクロール面の内側だけを見る）。
-// window 直撃だと target が window になり、スクロール外として無視される。
+// Fire the wheel event over the grid (the handler only looks inside the scroll surface).
+// Firing straight at window makes target === window, which gets ignored as outside the scroll area.
 const evalJs = `(async () => {
   const grid = document.querySelector('[data-slot="post-grid"]');
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-  // サイズ軸は「セルがどれだけ大きいか」でしか外から見えない（CSS 変数を書く経路は
-  // #618 で消えた）＝実際に描かれたカードの幅を測る。列は幅いっぱいに伸びるので、
-  // 最小列幅そのものではなく「その設定で何列入るか」の結果を見ていることになる。
+  // The size axis is only observable from outside as "how big are the cells" (the path
+  // that wrote a CSS variable was removed in #618) — measure the width of an actually
+  // rendered card. Columns stretch to fill the width, so this ends up reading the result
+  // of "how many columns fit at that setting" rather than the raw minimum column width.
   const size = () => { const c = grid.querySelector('[data-slot="post-card"]'); return c ? Math.round(c.getBoundingClientRect().width) : Number.NaN; };
   const fire = (deltaY, x, y) => {
     const r = grid.getBoundingClientRect();
@@ -67,19 +71,21 @@ const evalJs = `(async () => {
   };
   const start = size();
 
-  // --- アンカー維持 (#282) ---
-  // 見ていた投稿が、ズームの前後で画面の同じ高さに残るか。位置合わせはグリッド島が
-  // 自分のレイアウトを読んで行うので、ここで測るのは結果＝カードの画面上の top だけ。
+  // --- Anchor preservation (#282) ---
+  // Does the post that was being looked at stay at the same height on screen before and
+  // after zooming? Alignment is done by the grid island reading its own layout, so what's
+  // measured here is only the result — the card's on-screen top.
   //
-  // 待ち方に注意: 固定の sleep では初回レイアウトが終わる前に測ってしまい、まだ低い
-  // コンテンツの上でスクロールした（＝そもそも動きようが無かった）状態を「ずれなかった」
-  // と読んでしまう。実際 sleep 固定版は3回中2回それで壊れた。だから状態を待つ。
+  // Careful with how you wait: a fixed sleep would measure before the first layout pass
+  // finishes, and would misread a state where the scroll happened over still-short content
+  // (i.e. it had nowhere to go anyway) as "didn't drift". In practice the fixed-sleep
+  // version broke this way 2 times out of 3. So wait for the state instead.
   const waitFor = async (fn, ms) => {
     for (let i = 0; i * 50 < ms; i++) { if (fn()) return true; await sleep(50); }
     return false;
   };
-  // スクロール位置が動かなくなるまで待つ（適用は rAF、確定は 150ms 後、その後さらに
-  // 再レイアウトと実測ぶんの確定合わせが入る）。
+  // Wait until the scroll position stops moving (the change applies on an rAF, finalizes
+  // 150ms later, and after that another relayout-and-settle pass follows for the measurement).
   const settle = async () => {
     let last = Number.NaN, stable = 0;
     for (let i = 0; i < 60 && stable < 3; i++) {
@@ -89,57 +95,73 @@ const evalJs = `(async () => {
       else { stable = 0; last = s; }
     }
   };
+  // Twin of settle() above, but for the SIZE axis instead of scrollTop: a size
+  // commit goes through the same rAF-then-150ms-settle pipeline (see
+  // grid-density-builder.ts's handleZoomWheel), and on a loaded machine that
+  // pipeline can take meaningfully longer than a fixed sleep budgets for — the
+  // same trap the comment above already called out for scrollTop (a fixed 300ms
+  // sleep here read the pre-commit value on a slow CI runner's nightly run).
+  const settleSize = async (ms) => {
+    let last = Number.NaN, stable = 0;
+    for (let i = 0; i * 50 < ms && stable < 3; i++) {
+      await sleep(50);
+      const s = size();
+      if (s === last) stable++;
+      else { stable = 0; last = s; }
+    }
+    return size();
+  };
   const scroller = document.querySelector('[data-slot="content-scroll"]');
-  // 全件ぶんの高さが立つまで＝仮想グリッドが最初のレイアウトを終えるまで待つ。
+  // Wait until the full-content height stands up, i.e. until the virtual grid finishes its first layout pass.
   const laidOut = await waitFor(() => scroller.scrollHeight > scroller.clientHeight * 4, 8000);
   scroller.scrollTop = 2000;
   const scrolled = await waitFor(() => Math.abs(scroller.scrollTop - 2000) < 2, 3000);
   const sr = scroller.getBoundingClientRect();
   const seen = () => [...grid.querySelectorAll('[data-slot="post-card"]')].map((c) => [c, c.getBoundingClientRect()]).filter(([, r]) => r.bottom > sr.top && r.top < sr.bottom);
-  // scrollTop への直代入は「大ジャンプ」＝仮想グリッドは描画窓を作り直すまで、まだ前の
-  // 場所のセルを持っている。scrollTop が落ち着いた**だけ**で読むと画面が空に見える
-  // （#282 本文の罠。実測で3回中2回それを踏んだ）ので、セルが実際に見えるまで待つ。
+  // Assigning scrollTop directly is a "big jump" — until the virtual grid rebuilds its
+  // render window, it still holds cells from the previous location. Reading right after
+  // scrollTop **alone** settles can see an empty screen (the trap called out in #282's own
+  // body; measured hitting it 2 times out of 3), so wait until cells are actually visible.
   const windowed = await waitFor(() => seen().length > 0, 8000);
   await settle();
   const scrolledTo = Math.round(scroller.scrollTop);
   const midY = sr.top + sr.height / 2;
-  // 画面に見えているカードのうち、ビューポート中央にいちばん近いものを狙う。
+  // Among the cards visible on screen, target the one closest to the viewport center.
   const visible = seen();
   visible.sort((a, b) => Math.abs(a[1].top + a[1].height / 2 - midY) - Math.abs(b[1].top + b[1].height / 2 - midY));
   const target = visible.length ? visible[0][0] : null;
   const r0 = visible.length ? visible[0][1] : null;
-  // 情報を表示 OFF のセルは文字を持たないので、掴んだ1枚は「出ている画像」で見分ける
-  // （cells carry no key attribute — #618）。
-  // サムネ幅はサイズ軸で変わる＝URL のクエリは落として、どのファイルかだけで見る。
+  // With "show info" off, cells carry no text, so the one grabbed is identified by the
+  // "displayed image" instead (cells carry no key attribute — #618).
+  // Thumbnail width changes with the size axis, so drop the URL query and compare only which file it is.
   const srcOf = (c) => { const el = c && c.querySelector('[data-slot="post-card-media"]'); return el ? (el.getAttribute('src') || '').split('?')[0] : null; };
   const anchorKey = srcOf(target);
-  if (target) fire(-120, r0.left + r0.width / 2, r0.top + r0.height / 2); // 1ノッチ拡大
+  if (target) fire(-120, r0.left + r0.width / 2, r0.top + r0.height / 2); // zoom in one notch
   await settle();
-  const moved = Math.round(scroller.scrollTop) !== scrolledTo; // 位置合わせが実際に働いたか
+  const moved = Math.round(scroller.scrollTop) !== scrolledTo; // did alignment actually kick in
   const held = anchorKey ? [...grid.querySelectorAll('[data-slot="post-card"]')].find(c => srcOf(c) === anchorKey) : null;
   const drift = held && r0 ? Math.round(held.getBoundingClientRect().top - r0.top) : 9999;
   const anchorReady = laidOut && scrolled && windowed && !!anchorKey;
-  // 元の大きさへ戻してから下の系列に入る（start は上で読み終えている）。
+  // Return to the original size before entering the series below (start was already read above).
   fire(120);
   await settle();
 
-  // 下限まで引き切る（トラックの端で止まる＝それ以上は no-op）。ノッチは1フレームに
-  // まとめて適用されるので、同期読みでは反映前を読む＝確定(150ms)まで待ってから読む。
+  // Pull all the way down to the floor (stops at the track's end — further notches are
+  // no-ops beyond that). Notches are applied batched in a single frame, so reading
+  // synchronously would read the pre-change value — wait for the 150ms settle before reading.
   for (let i = 0; i < 40; i++) fire(120);
-  await sleep(300);
-  const small = size();
+  const small = await settleSize(5000);
   const prefs = await window.hologram.getPrefs();
-  // 端に張り付いた状態でさらに回してもサイズは動かない。**確定を走らせないこと**は
-  // ここでは検証できない＝この規模（200件）だと確定がほぼ無コストで、DOM ノードの
-  // 張り替えもサムネの再要求も起きないため、通っても意味のない assertion になる
-  // （両方の実装で緑になることを確認済み）。実ライブラリ規模での目視・計測が正。
+  // Turning it further while pinned to the edge doesn't move the size any more. **Not
+  // running the finalize step** can't actually be verified here — at this scale (200
+  // records) finalizing is nearly free and triggers neither a DOM node swap nor a thumbnail
+  // re-request, so passing would be a meaningless assertion (confirmed green under both
+  // implementations). Eyeballing and measuring at real-library scale is the authority here.
   for (let i = 0; i < 10; i++) fire(120);
-  await sleep(400);
-  const stableAtLimit = size() === small;
-  // 戻す（ズームインは deltaY<0）
+  const stableAtLimit = (await settleSize(5000)) === small;
+  // Zoom back in (zoom-in is deltaY<0)
   for (let i = 0; i < 3; i++) fire(-120);
-  await sleep(300);
-  const back = size();
+  const back = await settleSize(5000);
   return [start, small, prefs.gridSize, back, stableAtLimit, anchorReady ? 1 : 0, drift, moved ? 1 : 0].join(',');
 })()`;
 
@@ -173,8 +195,9 @@ child.on('close', () => {
     ['停止後に gridSize が確定・永続化', Number(persisted) >= 48 && Number(persisted) < 96],
     ['端で回し続けてもサイズが動かない', stableAtLimit === 'true'],
     ['Ctrl+ホイール上でズームインして戻る', Number(back) > Number(small)],
-    // #282: 掴んだ投稿が生き残り、画面上のほぼ同じ高さに残る。8px はタイルの溝1つぶん＝
-    // 「1行ぶんずれた」なら必ず落ちる幅で、丸めの1〜2pxは通す。
+    // #282: the grabbed post survives and stays at nearly the same height on screen. 8px is
+    // one tile-gap's worth — wide enough to always fail a "drifted by a whole row", while
+    // letting a 1-2px rounding difference through.
     ['アンカー計測の前提が整っている（レイアウト完了・スクロール成立・掴めた）', anchored === '1'],
     ['掴んだ投稿がズーム後も同じ高さに残る', Math.abs(Number(drift)) <= 8],
     ['位置合わせが実際にスクロールを動かしている', moved === '1'],

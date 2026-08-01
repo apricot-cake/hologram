@@ -1,6 +1,6 @@
 'use strict';
 
-// Verifies the インスタンス filter (Misskey/Mastodon hosts), now served by the
+// Verifies the instance filter (Misskey/Mastodon hosts), now served by the
 // sidebar row → flyout: the flyout lists every host across both platforms,
 // picking one filters the grid (and lights the row badge), picking it again
 // clears it. (The old platform-chip-expands-servers UI was retired.)
@@ -57,8 +57,8 @@ const evalJs = `(async () => {
   const cards = () => document.querySelectorAll('[data-slot="post-grid"] [data-slot="post-card"]').length;
   await waitFor(() => cards() >= 5);
 
-  // プラットフォーム editor ("+ フィルタ" flow) → Misskey/Mastodon の直下にインスタンスが
-  // インデント付きサブ行 (pl-6) で並ぶ。Filterbar idioms: see test-app-facetcounts.
+  // The platform editor ("+ フィルタ" flow) -> instances are listed as indented sub-rows
+  // (pl-6) directly under Misskey/Mastodon. Filterbar idioms: see test-app-facetcounts.
   const POP = '[data-slot="popover-content"]:not([data-closed])';
   const byText = (sel, text) => [...document.querySelectorAll(sel)].find((el) => (el.textContent || '').trim() === text) || null;
   const edRows = () => [...document.querySelectorAll(POP + ' div.cursor-default')];
@@ -73,14 +73,14 @@ const evalJs = `(async () => {
   const hosts = subRows().map(rowName).sort();
   const subIndented = subRows().some((r) => rowName(r) === 'misskey.io');
 
-  // mastodon.social を選ぶ → 2件・チップが立つ・エディタは開いたまま
+  // Pick mastodon.social -> 2 items, chip appears, editor stays open
   rowByName('mastodon.social').click();
   await sleep(200);
   const socialCount = cards();
   const chipOn = chipsText().includes('mastodon.social');
   const stillOpen = !!document.querySelector(POP);
 
-  // もう一度クリックで解除 → 全5件・チップ消滅
+  // Click again to clear -> all 5 items, chip disappears
   rowByName('mastodon.social').click();
   await sleep(200);
   const cleared = cards();

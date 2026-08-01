@@ -38,7 +38,7 @@ const VIDEO_MIME_EXT: Record<string, string> = {
   'video/webm': 'webm',
   'video/quicktime': 'mov',
 };
-// Archive content types (#119 St3: a pixiv うごイラ IS a zip of frame images —
+// Archive content types (#119 St3: a pixiv ugoira IS a zip of frame images —
 // the animation has no single-file form short of transcoding it, which would
 // mean carrying an encoder). Its own table so a zip can never land on a still
 // or video entry, where nothing could display it.
@@ -55,7 +55,7 @@ const SNIFF_BYTES = 16; // enough for every signature below
 const MAX_MEDIA = 12; // cap attachments per post
 const MAX_MEDIA_BYTES = 25 * 1024 * 1024; // skip anything larger (still images)
 const MAX_VIDEO_BYTES = 200 * 1024 * 1024; // videos run far bigger than photos
-// An original-size うごイラ archive is dozens of full-resolution frames, so it
+// An original-size ugoira archive is dozens of full-resolution frames, so it
 // sits with the videos rather than the stills.
 const MAX_ARCHIVE_BYTES = 200 * 1024 * 1024;
 // Byte budget for ONE save operation, on top of the per-file caps (#389). Those

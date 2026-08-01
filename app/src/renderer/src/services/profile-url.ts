@@ -1,5 +1,5 @@
 // Author profile URL — the external, ORIGIN-SITE user page (#663). Distinct from
-// 「この投稿者の投稿を見る」(posterViewPosts), which stays inside Hologram and
+// "View this poster's posts" (posterViewPosts), which stays inside Hologram and
 // filters the library to this poster; this one hands shell.openExternal a URL on
 // the platform itself. One place for all five platforms because each needs a
 // different shape and handing the wrong piece to the wrong platform would build a

@@ -1,17 +1,20 @@
-// 選択テキストの右クリックメニュー（#167）の純ユニットテスト。
+// Pure unit tests for the selection-text right-click menu (#167).
 //
-// 見るのは4つ:
-//  ① ウェブ検索 URL の組み立て — 切替設定を作らない代わりに「1箇所に寄せる」と決めた
-//     seam（webSearchUrl）が、実際にエスケープと長さ上限を持っていること
-//  ② 選択語の正規化 — 選択は文書であって検索語ではないので、改行・連続空白が潰れること
-//  ③ 出し分け — 右クリックが選択の**外**で起きたら空を返す（Chromium と同じ挙動）。
-//     ここが抜けると、別の場所で選択したテキスト向けの行が app 中どこでも出続ける
-//  ④ 行の振り分け — 自分の3行だけ引き取り、他メニューの行（カードメニューに差し込まれた
-//     状態で来る）は素通しして false を返すこと
+// There are 4 things being checked:
+//  ① Building the web-search URL — instead of adding a toggle setting, we decided to
+//     consolidate into one seam (webSearchUrl), and that seam actually has escaping and
+//     a length cap
+//  ② Normalizing the selected term — a selection is prose, not a search term, so
+//     newlines and runs of whitespace get collapsed
+//  ③ Branching — a right-click that happens **outside** the selection returns empty
+//     (same behavior as Chromium). Miss this and the row meant for text selected
+//     elsewhere keeps showing up everywhere in the app
+//  ④ Sorting rows — takes only its own 3 rows, and passes through rows belonging to
+//     other menus (arriving already spliced into the card menu), returning false
 //
-// DOM は jsdom を globalThis に据えて本物の Selection / MouseEvent で駆動する
-// （selectionTextAt はグローバルの window.getSelection() を読む）。IPC は
-// window.hologram のスパイに差し替える＝外部サイトも実クリップボードも触らない。
+// The DOM is driven with jsdom set on globalThis, using real Selection / MouseEvent
+// (selectionTextAt reads the global window.getSelection()). IPC is swapped for a spy on
+// window.hologram = it never touches an external site or the real clipboard.
 
 import { JSDOM } from 'jsdom';
 import { afterAll, beforeAll, describe, expect, test, vi } from 'vitest';
@@ -86,9 +89,9 @@ describe('selectionTextAt', () => {
     dom.window.getSelection()?.removeAllRanges();
     expect(selectionTextAt(dom.window.document.getElementById('body'))).toBe('');
   });
-  // 実際の右クリックはテキストノードでなく**それを載せている要素**に落ちる。
-  // Range から見るとその要素は「含まれても部分的に含まれてもいない」ので、
-  // containsNode で判定すると主経路がまるごと死ぬ（実装時に踏んだ）。
+  // A real right-click lands not on the text node but on **the element carrying it**.
+  // Seen from the Range, that element is neither "contained" nor "partially contained",
+  // so judging by containsNode kills the main path entirely (hit this during implementation).
   test('文中を部分選択して、その段落を右クリックしても拾える', () => {
     const el = dom.window.document.getElementById('body') as HTMLElement;
     const sel = dom.window.getSelection() as Selection;
@@ -119,7 +122,7 @@ describe('rows', () => {
     menu.pick('ある\n本文', { act: 'selCopy' });
     menu.pick('ある\n本文', { act: 'selWeb' });
     menu.pick('ある\n本文', { act: 'selLibrary' });
-    // どの経路にも正規化後の語だけが渡る
+    // only the normalized term is passed down every path
     expect(ipc.copyText).toHaveBeenCalledWith('ある 本文');
     expect(ipc.openExternal).toHaveBeenCalledWith('https://www.google.com/search?q=' + encodeURIComponent('ある 本文'));
     expect(searchInLibrary).toHaveBeenCalledWith('ある 本文');
@@ -146,7 +149,7 @@ describe('handleContextmenu', () => {
     const el = selectNode('body');
     dom.window.document.addEventListener('contextmenu', menu.handleContextmenu as EventListener);
     const ev = new dom.window.MouseEvent('contextmenu', { bubbles: true, cancelable: true });
-    // カード/タブ/フォルダ側のハンドラが先に引き取った状態を作る
+    // Set up a state where the card/tab/folder-side handler already claimed it first
     el.addEventListener('contextmenu', (e) => e.preventDefault(), { once: true });
     el.dispatchEvent(ev);
     dom.window.document.removeEventListener('contextmenu', menu.handleContextmenu as EventListener);

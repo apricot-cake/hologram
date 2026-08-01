@@ -80,7 +80,7 @@ export function makeUndo(deps: { appliers: UndoAppliers }) {
   /**
    * Record an edit. Returns the entry (so a toast can hold on to its id), or null
    * when nothing survived normalization — null is the caller's signal that there is
-   * nothing to offer 「元に戻す」 for.
+   * nothing to offer "Undo" for.
    */
   function push(changes: readonly UndoChange[] | null | undefined): UndoEntry | null {
     const normalized = normalize(changes);
@@ -110,7 +110,7 @@ export function makeUndo(deps: { appliers: UndoAppliers }) {
     }
   }
 
-  /** The entry Ctrl+Z would take next — the toast's 「元に戻す」 checks this to stay honest. */
+  /** The entry Ctrl+Z would take next — the toast's "Undo" checks this to stay honest. */
   function peek(): UndoEntry | null {
     return undoStack.length ? undoStack[undoStack.length - 1] : null;
   }
@@ -135,7 +135,7 @@ export function makeUndo(deps: { appliers: UndoAppliers }) {
   }
 
   /**
-   * The toast's 「元に戻す」: undo the entry that toast was raised for, and only while
+   * The toast's "Undo": undo the entry that toast was raised for, and only while
    * it is still the newest one. A toast outlives its operation by a few seconds, so
    * without this guard a click landing after one more edit would revert that other
    * edit instead — the exact "undo destroyed something else" failure the diff model

@@ -142,7 +142,7 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
       storeSet('libraryLoaded', true);
       allPosts = [..._postsById.values()];
       markPostsMutated();
-      stickyRecs.clear(); // 画面更新（再読込）でミューテーション生存分を整理
+      stickyRecs.clear(); // on a screen refresh (reload), clean out the mutation-survivor entries
       if (deps.getBrowseMode() === 'posters') deps.renderPosters(keepLimit);
       else renderPosts(keepLimit);
       reconcileFolders();
@@ -322,7 +322,7 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
       // the empty state decides from the SAME store keys whether it has something to
       // say (empty/EmptyState.tsx) — both used to be shown and hidden from this
       // function by hand, against elements it found by id.
-      if (!inPlace) deps.syncTitleAndPersist(); // 0件の状態もタイトル・永続化を同期
+      if (!inPlace) deps.syncTitleAndPersist(); // the zero-result state syncs the title/persistence too
       return;
     }
 
@@ -344,12 +344,12 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
   // Folder picker flyout (destinations) — React-owned glass menu (menu.ts);
   // viewer owns the items + actions. A folder row toggles membership and CLOSES (the old
   // foldMenu hid after each toggle — preserved). Opened from the card menu and the bulk
-  // 「フォルダに追加」 button.
+  // "Add to folder" button.
   function foldMenuItems(g: HologramPostGroup) {
     const list = CF() ? CF().staticFolders() : []; // destinations only — a saved search holds no posts
     const rep = g.rep.captureId;
     // Nested folders are labelled by their path (#41): out here, away from the tree,
-    // two subfolders called 「資料」 are indistinguishable by name. The checkmark
+    // two subfolders called "Materials" are indistinguishable by name. The checkmark
     // answers "is it in THIS folder", never "somewhere below it" — you drop a post
     // into one folder, not into a subtree.
     const items = list.map((f) => ({ label: CF().pathOf(f.id), act: 'fold', fid: f.id, checked: CF().has(f.id, rep) })) as HologramMenuItem[];
@@ -368,7 +368,7 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
       if (deps.postShadow().some((f: { type: string }) => f.type === 'folder')) renderPosts(true);
     }
   }
-  // `at` is the cursor for the card menu's フォルダ row and the clicked button for the
+  // `at` is the cursor for the card menu's folder row and the clicked button for the
   // selection bar's — see HologramMenuAnchor. Passed straight through; no arithmetic.
   function showFoldMenu(g: HologramPostGroup, at: HologramMenuAnchor) {
     if (!CF()) return;
@@ -406,7 +406,7 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
     items.push({ label: deps.t('ctxOpenNewTab'), act: 'newtab', icon: CM_IC.newtab });
     items.push({ label: deps.t('tipFolder'), act: 'folder', icon: CM_IC.folder });
     items.push({ label: deps.t('tipInfo'), act: 'info', icon: CM_IC.info });
-    // タグを編集 is the card's route into tagging since the hover 🏷 (and the popover it
+    // "Edit tags" is the card's route into tagging since the hover 🏷 (and the popover it
     // opened) went away in P2⑦ — it opens the inspector with the caret in the tag field.
     items.push({ label: deps.t('ctxEditTags'), act: 'tags', icon: CM_IC.tag });
     if (canPoster) items.push({ label: deps.t('ctxViewPoster'), act: 'poster', icon: CM_IC.poster });
@@ -487,7 +487,7 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
       message: g.records.length > 1 ? deps.t('confirmDeleteGroup', [g.records.length]) : deps.t('confirmDeletePost'),
       okLabel: deps.t('confirmOk'),
       cancelLabel: deps.t('confirmCancel'),
-      skipLabel: deps.t('confirmSkip'), // "次回から確認しない"
+      skipLabel: deps.t('confirmSkip'), // "don't confirm next time"
       onOk: async ({ skip }) => {
         if (skip) setSkipDeleteConfirm(true);
         await executeDeleteGroup(g);
@@ -528,7 +528,7 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
   // Delete every record of the group (a group IS one post in the UI).
   // Nothing here has to think about the inspector any more (#633): it used to dismiss the
   // panel itself when the inspected post was among the records, which left every OTHER way
-  // a record can vanish (the floating bar's bulk delete, the wipe, an import 置換) free to
+  // a record can vanish (the floating bar's bulk delete, the wipe, an import replace) free to
   // strand it. inspector-builder.ts watches posts-data.ts for disappearance instead — one
   // answer for all of them, reached through the markPostsMutated() below.
   async function executeDeleteGroup(g: HologramPostGroup) {
@@ -543,13 +543,13 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
     allPosts = [..._postsById.values()]; // rebuild once (O(N), not O(records×N) findIndex+splice); order is irrelevant — getFilteredPosts re-sorts
     markPostsMutated(); // a deleted author/instance must drop out of the sidebar
     renderPosts(true);
-    reconcileFolders(); // 削除した captureId をフォルダから即時掃除
-    trashRefresh(); // the nav's ゴミ箱 badge counts what just landed there (#268)
+    reconcileFolders(); // immediately sweep the deleted captureId out of folders
+    trashRefresh(); // the nav's Trash badge counts what just landed there (#268)
     notify(deps.t('deleted'));
   }
 
   return {
-    // Handed out so the ゴミ箱 grid (#268) can draw the SAME card, so a deleted post
+    // Handed out so the Trash grid (#268) can draw the SAME card, so a deleted post
     // is recognizable as the post it was.
     cardModel,
     loadPosts,

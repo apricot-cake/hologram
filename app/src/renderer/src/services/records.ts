@@ -1,7 +1,7 @@
 // Record service — record-shape helpers (media/screenshot/artwork/density image),
 // normalization (postKeyOf / stampPost), grouping (groupRecords) and the per-platform
 // likes percentile, extracted 1:1 from viewer.js as the second "pure logic → service"
-// slice of the viewer decomposition (最終形B), plus (P4 "IPC→service" domain-grouping
+// slice of the viewer decomposition (final form B), plus (P4 "IPC→service" domain-grouping
 // follow-up) the manual-groups.json / ungrouped.json load/persist pairs for the two
 // stores makeGroupRecords already consumes. A real ES module (named exports)
 // imported directly by viewer.ts / image-tab.ts and the FloatingBar component
@@ -32,7 +32,7 @@ const SS_EXT = /\.jpe?g$/i;
 // pick the gallery's <video> vs Zoomable branch (below) and, here, to keep a
 // raw video file out of an <img src> (artworkFile prefers its poster instead).
 const isVideoFile = (f: string | null | undefined) => /\.(mp4|webm|mov|m4v)$/i.test(f || '');
-// A pixiv うごイラ archive (#119 St3). Like a video file it can never be an
+// A pixiv ugoira archive (#119 St3). Like a video file it can never be an
 // <img src> — its poster stands in wherever a still is required.
 const isUgoiraFile = (f: string | null | undefined) => /\.zip$/i.test(f || '');
 // p.media entries are a loose JSON shape (same pragmatics as HologramPost itself).
@@ -73,9 +73,9 @@ export const artworkFile = (p: HologramPost): string => {
  * in only when there is no artwork (a text-only post). The list used to invert this
  * and lead with the screenshot; at row-thumbnail size that is a shrunk picture of
  * text, unreadable and doubled by the row's own text column, so the rule is now the
- * same everywhere (2026-07-19 確定, #154). Deciding it here also keeps the gallery's
- * 「サムネに表示されているものが最初に表示される」 rule true by construction — the
- * gallery列 leads with artwork too (#143).
+ * same everywhere (2026-07-19 finalized, #154). Deciding it here also keeps the gallery's
+ * "what's shown in the thumbnail is what's shown first" rule true by construction — the
+ * gallery column leads with artwork too (#143).
  */
 export function densityImage(p: HologramPost): string {
   return artworkFile(p) || captureFile(p);
@@ -127,7 +127,7 @@ export function imageTabGroup(view: { id?: string; recs: string[] | null | undef
   return { key: 'imgtab:' + (view.id || ''), records, rep, files: records.flatMap(groupFilesOf) };
 }
 // Image-tab title: the rep's title/text trimmed to ≤24 chars, else its author, else the
-// caller-supplied 無題 fallback (i18n-owned by the caller).
+// caller-supplied "Untitled" fallback (i18n-owned by the caller).
 export function imageTabTitleOf(g: HologramPostGroup, fallback: string): string {
   const p = g.rep;
   const raw = (p.title || p.text || '').trim().replace(/\s+/g, ' ');
@@ -161,7 +161,7 @@ export function makeGroupRecords(deps: { manualGroups(): string[][]; ungrouped()
       return { p, key };
     });
     // Self-reply chains: a record replying (replyToId) to another record IN THE
-    // LIBRARY by the SAME author joins that record's group, so リプ元＋セルフリプ
+    // LIBRARY by the SAME author joins that record's group, so the reply-source and self-reply
     // render as one card. The platform-local own-id is the last segment of the
     // post key (tweet id / rkey / note id / status id). Opt-outs (ungrouped)
     // suppress the merge for either side.
@@ -214,7 +214,7 @@ export function makeGroupRecords(deps: { manualGroups(): string[][]; ungrouped()
     // top-to-bottom even when its posts were saved out of order), then post date
     // ascending, then captureId as a stable tiebreak. The old plain-captureId sort
     // put self-replies and re-captures in save order — frequently the reverse of how
-    // they should read (#89 めくり順バグ). Imported records carry no replyToId, so
+    // they should read (#89 page-flip order bug). Imported records carry no replyToId, so
     // they fall through to date/captureId (a known v1 limit).
     for (const g of order) {
       // Reply-chain depth = hops up replyToId to an in-group ancestor by the SAME
@@ -315,7 +315,7 @@ export function makeGallery(deps: { fileSrc(file: string): string }) {
       for (const m of p.media as HologramMediaItem[]) {
         if (!m || !m.file) continue;
         const ugoira = m.type === 'ugoira' && Array.isArray(m.frames) && m.frames.length ? { file: m.file, frames: m.frames } : undefined;
-        // An うごイラ whose frame table didn't survive is not playable — fall
+        // An ugoira whose frame table didn't survive is not playable — fall
         // back to its poster, the same still the card already shows.
         if (isUgoiraFile(m.file) && !ugoira) {
           if (m.posterFile) items.push({ src: fileSrc(m.posterFile), alt: m.alt || '', video: false });
@@ -448,7 +448,7 @@ export function makeCardModel(deps: {
     if (p.isReply) flags.push(t('qfReply'));
     if (p.isQuote) flags.push(t('qfQuote'));
     // 'image' is the default media type for the vast majority of cards — an
-    // always-on "画像" label is pure noise there (#110: mark exceptions only).
+    // always-on "Image" label is pure noise there (#110: mark exceptions only).
     const mediaLabel = p.mediaType === 'video' ? t('qfVideo') : p.mediaType === 'gif' ? t('qfGif') : '';
     const leadMedia = mediaItemsOf(p)[0];
     // An mp4-backed GIF (X animated_gif / Mastodon gifv) is a GIF to the reader —
@@ -460,10 +460,10 @@ export function makeCardModel(deps: {
     // length and must not start itself, 'ugoira' needs the zip unpacked first
     // (#119 St3) — neither of those autoplays anywhere.
     //   The SQUARE grid stays on the still, and that is the shape axis carrying
-    // playback with it (2026-07-19 確定): squares are the even lattice you scan, and
+    // playback with it (2026-07-19 finalized): squares are the even lattice you scan, and
     // the back-stack sheets of a group are stills by construction (background-image),
     // so a looping front face would be the odd one out. imgSrc below is left as the
-    // still either way, so the context menu's 画像をコピー / フォルダに表示 still
+    // still either way, so the context menu's "Copy image" / "Show in folder" still
     // name a real image file.
     const gifVideo = !view.square && leadMedia && leadMedia.type === 'gif' && leadMedia.file ? leadMedia : null;
     // Full size, never the thumbnailer: it hands back a single flattened frame.

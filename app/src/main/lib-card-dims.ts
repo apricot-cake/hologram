@@ -21,7 +21,7 @@ import path from 'node:path';
 import { imageSize } from './lib-imgsize.ts';
 
 const IMG_EXT = /\.(jpe?g|png|gif|webp)$/i;
-// Media files that carry no measurable still: a video, and a pixiv うごイラ
+// Media files that carry no measurable still: a video, and a pixiv ugoira
 // archive (#119 St3). Mirrors records.ts's isVideoFile/isUgoiraFile.
 const UNMEASURABLE_EXT = /\.(mp4|webm|mov|m4v|zip)$/i;
 const HEADER_BYTES = 65536; // covers a JPEG SOF past JFIF/short EXIF, plus PNG/GIF/WebP

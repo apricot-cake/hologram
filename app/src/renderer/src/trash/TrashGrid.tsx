@@ -1,4 +1,4 @@
-// Virtualized trash grid (#268) — the ゴミ箱 destination's cells, on the same
+// Virtualized trash grid (#268) — the trash destination's cells, on the same
 // foundation as the post grid (_shared/VirtualGrid's GridMount + VirtualGridHost)
 // and rendering the same cells: a deleted post has to be recognizable as the
 // post it was, so the card is the library's card, not a smaller stand-in — including

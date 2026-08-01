@@ -1,19 +1,21 @@
 'use strict';
 
-// pixiv うごイラの再生（#119 St3）を実レンダラで確かめる。
+// Verifies pixiv ugoira playback (#119 St3) in the real renderer.
 //
-// うごイラはライブラリに pixiv 配布のままの zip（コマ画像の詰め合わせ）として入り、
-// 再生できる単一ファイル形式は存在しない＝アプリ側が zip を開いてコマを canvas へ
-// 描く。ここで見るのはその経路そのもので、ユニットテストでは触れない部分:
+// An ugoira enters the library as the zip pixiv distributes it in (a bundle of frame
+// images), and there's no single-file format that can play it directly — the app side
+// opens the zip and draws the frames to a canvas. What's covered here is that path itself,
+// the part unit tests never touch:
 //
-//   - main が書庫を開き、コマ表との突き合わせと1コマぶんのバイトを IPC で返す
-//     （ugoira-frames-present / ugoira-frame・#506）
-//   - レンダラが受け取ったバイトから Blob を作り、canvas へ描ける
-//   - canvas がコマ表の delay どおりに進む（画素が実際に変わる）
-//   - 一時停止でコマが止まり、再生で再び進む
+//   - main opens the archive, matches it against the frame table, and returns one frame's
+//     worth of bytes over IPC (ugoira-frames-present / ugoira-frame, #506)
+//   - the renderer builds a Blob from the bytes it received and can draw it to a canvas
+//   - the canvas advances at the rate given by the frame table's delay (the pixels actually change)
+//   - pausing stops the frames, and playing resumes them
 //
-// 3コマの zip を PNG から組み立て、各コマを別色にして「今どのコマか」を画素1点で
-// 判別する。ダブルクリックで画像タブへ入るのは test-app-click-model と同じ形。
+// Assembles a 3-frame zip from PNGs, giving each frame a different color so "which frame is
+// this" can be told apart from a single pixel. Double-click to enter the image tab follows
+// the same shape as test-app-click-model.
 //
 //   node scripts/test-app-ugoira.cts
 
@@ -39,7 +41,7 @@ fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolde
 
 const jpeg = Buffer.from('/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACP/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AfwH/2Q==', 'base64');
 
-// --- 1x1 PNG をその場で組み立てる（色でコマを見分けるので、既製の1枚では足りない） ---
+// --- Assemble a 1x1 PNG on the fly (frames are told apart by color, so one ready-made image isn't enough) ---
 function crc32(buf: Buffer): number {
   let c = ~0;
   for (const b of buf) {
@@ -65,7 +67,7 @@ function png1x1(r: number, g: number, b: number): Buffer {
   return Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), chunk('IHDR', ihdr), chunk('IDAT', zlib.deflateSync(Buffer.from([0, r, g, b]))), chunk('IEND', Buffer.alloc(0))]);
 }
 
-// --- STORE(無圧縮)だけの最小 ZIP ライタ（実 zip を1本作れれば足りる） ---
+// --- Minimal ZIP writer, STORE (uncompressed) only (enough to produce one real zip) ---
 function zipOf(entries: { name: string; data: Buffer }[]): Buffer {
   const locals: Buffer[] = [];
   const centrals: Buffer[] = [];
@@ -107,7 +109,7 @@ function zipOf(entries: { name: string; data: Buffer }[]): Buffer {
 }
 
 const ID = 'dummy-ugo1';
-// 赤 → 緑 → 青。canvas の画素1点でどのコマかが分かる
+// Red -> green -> blue. A single canvas pixel tells you which frame it is
 const FRAME_COLORS = [
   [255, 0, 0],
   [0, 255, 0],
@@ -141,7 +143,7 @@ const evalJs = `(async () => {
 
   const card = await waitFor(() => document.querySelector('[data-slot="post-grid"] [data-slot="post-card"]'));
   out.cardFound = !!card;
-  // ▶ バッジ: 「クリックしないと動かない」印は動画と同じく出る
+  // Play badge: the "won't move until clicked" indicator shows up just like it does for video
   out.playBadge = !!document.querySelector('[data-slot="post-card-play"]');
 
   card.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
@@ -151,7 +153,7 @@ const evalJs = `(async () => {
   out.canvasFound = !!canvas;
   if (!canvas) return JSON.stringify(out);
 
-  // 最初のコマが描かれるまで（IPC → Blob → createImageBitmap）
+  // Wait until the first frame is drawn (IPC -> Blob -> createImageBitmap)
   const px = () => {
     try {
       const d = canvas.getContext('2d').getImageData(0, 0, 1, 1).data;
@@ -160,12 +162,12 @@ const evalJs = `(async () => {
   };
   out.firstPixel = await waitFor(() => { const p = px(); return p !== '0,0,0' && !p.startsWith('ERR') ? p : null; });
 
-  // コマが実際に進む＝ delay ごとに別の色になる
+  // The frames actually advance = the color changes on each delay tick
   const seen = new Set();
   for (let i = 0; i < 40; i++) { seen.add(px()); await sleep(25); }
   out.colorsSeen = [...seen].sort();
 
-  // 一時停止で止まる
+  // Stops when paused
   const toggle = document.querySelector('[data-slot="ugoira-toggle"]');
   out.toggleFound = !!toggle;
   if (toggle) {

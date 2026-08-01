@@ -1,19 +1,19 @@
-// フォルダ階層（#41）のロジック単体テスト。二層を直接検証する:
-//  - app/src/main/lib-folder-tree.ts … 読み込み時の形正規化と親エッジの修復
-//    （孤児の昇格・自己親・循環の切断・保存した検索は入れ子にしない）
-//  - app/src/renderer/src/services/folders.ts … 派生ツリーの意味論
-//    （子孫を含む所属判定・「このフォルダのみ」・連鎖削除と葉掃除・移動ガード）
-// どちらも DOM も Electron も要らない純ロジック層。UI（サイドバーのツリーと DnD）は
-// 実機スイート test-app-folders 側で見る。
+// Logic unit tests for the folder hierarchy (#41). Directly verifies two layers:
+//  - app/src/main/lib-folder-tree.ts ... shape normalization and parent-edge repair on load
+//    (orphan promotion, self-parenting, cutting cycles, not nesting saved searches)
+//  - app/src/renderer/src/services/folders.ts ... semantics of the derived tree
+//    (membership including descendants, "this folder only", cascade delete and leaf cleanup, move guard)
+// Both are pure logic layers that need neither DOM nor Electron. The UI (sidebar tree and DnD)
+// is covered by the real-app suite test-app-folders instead.
 //
-// レンダラ側ストアのテストは1つのストアを順に育てるので、宣言順に意味がある。
+// The renderer-side store test grows a single store step by step, so the declaration order matters.
 
 import { beforeAll, describe, expect, test } from 'vitest';
 import { normFolders } from '../app/src/main/lib-folder-tree';
 
-// folders.ts は変更のたび preload ブリッジ越しに永続化する。スタブの受け皿がその代わりを
-// し、同時に「ストアが書き出す形に parentId が残っているか」の検査も兼ねる（このフィールドは
-// 往復のために3か所へ書く必要があり、どこかで落ちるとフォルダが黙ってルートへ戻る）。
+// folders.ts persists over the preload bridge on every change. The stub receiver stands in for
+// that, and doubles as a check that "does the shape the store writes out still have parentId" —
+// this field has to be written to three places for the round trip, and if it drops anywhere the folder silently falls back to root.
 let lastWritten: any = null;
 let F: any;
 
@@ -67,8 +67,8 @@ describe('normFolders: 形の正規化と親エッジの修復（読み込み時
   });
 });
 
-// 循環は「歩いて戻ってきた辺」で切る。切ったあとは全員がルートまで辿れる＝木として
-// 成立していること自体を検査する（どの辺が切れたかは実装の自由）。
+// Cycles are cut at "the edge walked back to". After cutting, everyone must be able to reach
+// the root — this test checks that fact of tree-ness itself (which edge got cut is left to the implementation).
 describe('normFolders: 循環の切断', () => {
   const out = normFolders([
     { id: 'x', name: 'X', parentId: 'z' },
@@ -94,8 +94,8 @@ describe('normFolders: 循環の切断', () => {
   });
 });
 
-// createFolder / removeFolder は本番の経路そのまま。persist() は IPC 不在時に何もしないので、
-// ストアの中身だけが動く。
+// createFolder / removeFolder go through the real production path unchanged. persist() does
+// nothing when there's no IPC, so only the store's contents are actually exercised.
 describe('派生ツリーの意味論（レンダラ側ストア）', () => {
   let parent: any;
   let child: any;
@@ -146,14 +146,14 @@ describe('派生ツリーの意味論（レンダラ側ストア）', () => {
     expect(lastWritten.folders.find((f: any) => f.id === grand.id).parentId).toBe(child.id);
   });
 
-  // ツリーの外に並ぶ面（カードの「フォルダに追加」・フィルタの値行）はパスで名乗る
+  // Surfaces that list folders outside the tree (the card's "add to folder", filter value rows) identify by path
   test('pathOf は祖先を辿ってパスにする', () => {
     expect(F.pathOf(grand.id)).toBe('親 / 子 / 孫');
     expect(F.pathOf(parent.id)).toBe('親');
   });
 
-  // 移動ガード: 自分・自分の子孫の下へは入れない（UI 側の無効化と同じ判断をストア側にも
-  // 持たせてある＝二重の歯止め）
+  // Move guard: can't move under yourself or your own descendants (the store side carries the
+  // same judgment as the UI-side disabling — a double safeguard)
   describe('移動（reparentFolder）', () => {
     test('自分自身の下・自分の子孫の下へは移動できず、親も変わらない', () => {
       expect(F.reparentFolder(parent.id, parent.id)).toBe(false);
@@ -173,8 +173,8 @@ describe('派生ツリーの意味論（レンダラ側ストア）', () => {
     });
   });
 
-  // 連鎖削除: 子孫ごと消え、保存した検索に残った葉も一緒に掃除される
-  // （葉が1つでも残ると、その保存検索は以後だまって0件を返し続ける）
+  // Cascade delete: descendants are removed together, and any leaf left in a saved search is cleaned up along with them
+  // (if even one leaf remains, that saved search will silently keep returning 0 results from then on)
   describe('連鎖削除', () => {
     let saved: any;
     let gone: Set<string>;
@@ -217,13 +217,13 @@ describe('派生ツリーの意味論（レンダラ側ストア）', () => {
   });
 });
 
-// 兄弟順は配列順そのものなので、「A の前へ」は結果の並びで検証する
+// Sibling order is just the array order, so "before A" is verified by the resulting order
 describe('ツリー DnD の着地（placeFolder）: 1ドロップ＝1書き込み', () => {
   let a: any;
   let b: any;
   let c: any;
 
-  // 前段のテストが作ったフォルダも同じルートに並ぶので、この3つだけを見る
+  // Folders created by earlier tests also line up at the same root, so only look at these three
   const rootOrder = () =>
     F.childrenOf(null)
       .map((f: any) => f.name)
@@ -249,7 +249,7 @@ describe('ツリー DnD の着地（placeFolder）: 1ドロップ＝1書き込�
     expect(F.placeFolder(c.id, a.id, 'into')).toBe(false);
   });
 
-  // 「隣へ」は落とした先の親を引き継ぐ＝親の変更と並べ替えが同時に起きる
+  // "Next to" inherits the parent of the drop target — the parent change and the reordering happen at the same time
   test('行の上端へのドロップ＝その手前の兄弟になる', () => {
     expect(F.placeFolder(c.id, b.id, 'before')).toBe(true);
     expect(F.byId(c.id).parentId).toBeNull();

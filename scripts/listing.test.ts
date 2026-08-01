@@ -1,23 +1,23 @@
-// listing.ts の純ユニットテスト（viewer.js 抽出の7スライス目）。getFilteredPosts
-// （中身ゲート → クエリ木 → sticky 合流 → 並べ替え）・namedPosters/filteredPosters・
-// フォルダ側の導出（動的マッチ／1パスごとのレコードキャッシュ／サムネ／件数／条件チップ／
-// filteredFolders）を、スタブ deps 注入で駆動する。
+// Pure unit tests for listing.ts (7th slice extracted from viewer.js). Drives getFilteredPosts
+// (content gate → query tree → sticky merge → sorting), namedPosters/filteredPosters,
+// and the folder-side derivation (dynamic matching / per-pass record cache / thumbnails /
+// counts / condition chips / filteredFolders) with stub deps injected.
 
 import { beforeEach, describe, expect, test } from 'vitest';
 import { makeListing } from '../app/src/renderer/src/services/listing';
 
-// --- スタブ環境 ---
-// 投稿: p1..p3 は中身あり、p4 は空（ゲートで落ちる）、p5 はテキストのみ。
+// --- Stub environment ---
+// Posts: p1..p3 have content, p4 is empty (dropped by the gate), p5 is text-only.
 const posts = [
   { captureId: 'p1', platform: 'x', image: 'a.jpg', likes: 10, pct: 0.2, _dateMs: 300, _capturedMs: 30, text: 'cat post' },
   { captureId: 'p2', platform: 'pixiv', media: ['m.jpg'], likes: 50, pct: 0.9, _dateMs: 100, _capturedMs: 10 },
   { captureId: 'p3', platform: 'x', image: 'b.jpg', likes: 30, pct: 0.5, _dateMs: 200, _capturedMs: 20, text: 'dog post' },
-  { captureId: 'p4', platform: 'x' }, // image/media/text/title が無い＝中身ゲートで落ちる
+  { captureId: 'p4', platform: 'x' }, // no image/media/text/title = dropped by the content gate
   { captureId: 'p5', platform: 'bluesky', text: 'text only' },
 ];
 const postsById = new Map(posts.map((p) => [p.captureId, p]));
 
-// 投稿者: u3 は同定できる名前を持たない（グリッドから外れる）
+// Posters: u3 has no identifiable name (excluded from the grid)
 const users = [
   { key: 'x:1', platform: 'x', displayName: 'Alice', screenName: 'alice', count: 5, latest: '2026-03-01', authorCreatedAt: '2020-01-01' },
   { key: 'x:2', platform: 'x', displayName: 'Bob', screenName: 'bob', count: 5, latest: '2026-01-01', authorCreatedAt: '' },
@@ -32,7 +32,7 @@ const BAD_TREE = {
   },
 };
 
-// AND だけの最小の木ウォーカーと葉の述語（木の形はこちらが全部作る）
+// Minimal AND-only tree walker and leaf predicates (the tree shape is entirely built here)
 const postPredOf = (f: any) => {
   if (f.type === 'platform') return (p: any) => p.platform === f.value;
   if (f.type === 'text') return (p: any) => String(p.text || '').includes(f.value);
@@ -134,19 +134,19 @@ describe('getFilteredPosts: クエリ木と sticky', () => {
 
 describe('getFilteredPosts: 並べ替え', () => {
   test.each([
-    ['date-desc', 'p1,p3,p2,p5'], // _dateMs 欠落は 0 扱いで最後
+    ['date-desc', 'p1,p3,p2,p5'], // missing _dateMs is treated as 0 and sorts last
     ['date-asc', 'p5,p2,p3,p1'],
     ['likes-desc', 'p2,p3,p1,p5'],
     ['captured-desc', 'p1,p3,p2,p5'], // _capturedMs
-    ['likes-pct', 'p2,p3,p1,p5'], // 注入した percentileFn 経由
+    ['likes-pct', 'p2,p3,p1,p5'], // via the injected percentileFn
   ])('%s', (sort, expected) => {
     state.sort = sort;
     expect(ids(api.getFilteredPosts())).toBe(expected);
   });
 });
 
-// #118: 並びは (シード, レコードキー) の純関数＝シードごとに安定し、シードが変われば
-// 変わり、入力の並び順に依存しない
+// #118: the order is a pure function of (seed, record key) = stable per seed, changes
+// when the seed changes, and does not depend on the input order
 describe('getFilteredPosts: ランダム並べ替え（#118）', () => {
   beforeEach(() => {
     state.sort = 'random';
@@ -168,7 +168,7 @@ describe('getFilteredPosts: ランダム並べ替え（#118）', () => {
     expect(ids(api.getFilteredPosts())).toBe(rndA);
   });
 
-  // その場シャッフルの偏りが無いことの確認
+  // Confirms the in-place shuffle has no bias
   test('入力の並び順に依存しない', () => {
     const rndA = ids(api.getFilteredPosts());
     posts.reverse();

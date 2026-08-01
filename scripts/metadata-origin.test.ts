@@ -1,8 +1,9 @@
-// metadata.ts#fetchPostMetadata の expectedHost オプション＝オリジン制約（SSRF）テスト。
-// Misskey/Mastodon は API のホストを投稿 URL から導くので、敵対的なページが拡張の特権
-// fetch を任意のホストへ向けられてしまう。expectedHost を渡した時、インスタンスのホストが
-// 食い違えば fetch してはいけない。一致した場合（および API ホストが固定の
-// X/Bluesky/pixiv）は進む。fetch は差し替え・ネットワーク不要。
+// Tests for metadata.ts#fetchPostMetadata's expectedHost option = origin constraint
+// (SSRF) tests. Misskey/Mastodon derive the API host from the post URL, so a
+// malicious page could point the extension's privileged fetch at an arbitrary host.
+// When expectedHost is passed, fetch must not proceed if the instance's host doesn't
+// match it. It proceeds if they match (and also for X/Bluesky/pixiv, whose API host
+// is fixed). fetch is stubbed; no network needed.
 
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { fetchPostMetadata } from '../extension/utils/extractor/index.ts';

@@ -1,10 +1,10 @@
-// app/src/main/lib-archive.ts のフォルダストア合流層のユニットテスト:
-//  - mergeFolders: items は id で和集合／name・kind・created・tree はローカル優先／
-//    activeId は有効な限りローカルのまま
-//  - mergePosterFolders: 素の { folders:[{id,name,items}] } の id 和集合（投稿者フォルダ）
-//  - mergeManualGroups: メンバーの union-find
-//  - 完全ZIPの取り込み: folders.json 入り ZIP がライブラリのフォルダ層（DB）へ合流する
-//    （項目を落とさず、名前はローカル優先）
+// Unit tests for the folder store merge layer in app/src/main/lib-archive.ts:
+//  - mergeFolders: items are unioned by id / name, kind, created, and tree prefer local /
+//    activeId stays local as long as it's still valid
+//  - mergePosterFolders: id union of the plain { folders:[{id,name,items}] } shape (poster folders)
+//  - mergeManualGroups: union-find over members
+//  - Complete ZIP import: a ZIP containing folders.json merges into the library's folder layer (DB)
+//    (no items are dropped, names prefer local)
 
 import fs from 'node:fs';
 import os from 'node:os';
@@ -16,8 +16,8 @@ import { openDatabase } from '../app/src/main/lib-db';
 import { createDbWriter } from '../app/src/main/lib-db-write';
 import { makeTagResolver, preparePostStmts, writePost } from '../app/src/main/lib-db-record-writer';
 
-// importCompleteZipToDb は PATH を取る（#485 — main が yauzl で開く）。JSZip は fixture を
-// 組む側だけで使う。
+// importCompleteZipToDb takes a PATH (#485 — main opens it with yauzl). JSZip is only used
+// on the side that builds the fixture.
 let zipSeq = 0;
 async function zipToFile(zip: JSZip, near: string) {
   const p = path.join(path.dirname(near), `fixture-${zipSeq++}.zip`);
@@ -27,7 +27,7 @@ async function zipToFile(zip: JSZip, near: string) {
 
 const roots: string[] = [];
 const handles: any[] = [];
-// ライブラリの「現在のフォルダ層」は DB 側にある（#302 以降ディスクに folders.json は無い）。
+// The library's "current folder layer" lives on the DB side (no folders.json on disk since #302).
 function freshLib(prefix: string, folders: unknown, memberIds: string[] = []) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
   roots.push(root);
@@ -35,8 +35,8 @@ function freshLib(prefix: string, folders: unknown, memberIds: string[] = []) {
   fs.mkdirSync(dest, { recursive: true });
   const handle = openDatabase(path.join(root, 'test.db'));
   handles.push(handle);
-  // folder_items は posts への外部キー＝行の無い captureId は落ちる。フォルダ membership の
-  // 和集合を見たいので、テストが使う投稿はあらかじめ実在させておく。
+  // folder_items is a foreign key into posts = a captureId with no row gets dropped. Since we
+  // want to test the union of folder membership, pre-create the posts the test uses.
   const stmts = preparePostStmts(handle.sqlite);
   const resolveTagId = makeTagResolver(handle.sqlite);
   for (const captureId of memberIds) writePost(stmts, resolveTagId, { captureId, capturedAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z' } as any);
@@ -85,7 +85,7 @@ describe('mergeFolders（純関数）', () => {
     expect(merged.activeId).toBe('c-x');
   });
 
-  // ツリー上の置き場所はローカルの整理なので、別マシンの ZIP が違う親を名乗っても動かない（#41）
+  // Placement in the tree is a local arrangement, so a ZIP from another machine claiming a different parent has no effect (#41)
   test('parentId はローカルが勝ち、取り込み側のルートはルートのまま', () => {
     expect(byId('f-1').parentId).toBe('c-x');
     expect(byId('f-2').parentId).toBeNull();
@@ -116,7 +116,7 @@ describe('完全ZIPの取り込み: folders.json の合流', () => {
 
     const zip = new JSZip();
     zip.file('library/capY.jpg', Buffer.from('JPEGY'));
-    // ZIP 側は kind を持たない素のフォルダ＝ストア側の合流が static を補う
+    // The ZIP side has plain folders with no kind = the store's merge fills in static
     zip.file('library/folders.json', JSON.stringify({ folders: [{ id: 'f-imp', name: 'Imported', items: ['y'] }] }));
     await importCompleteZipToDb(sqlite, await zipToFile(zip, dest), dest);
 
@@ -180,8 +180,8 @@ describe('完全ZIPの取り込み: 同じ id での名前ローカル優先・i
   });
 });
 
-// 不変条件＝1つの captureId は1グループ。交差するグループは畳まなければならない＝
-// 素の重複排除だと [A,B] と [B,C] が両方残り、B が2グループに属してしまう（BACKLOG L4）
+// Invariant: one captureId belongs to one group. Intersecting groups must be collapsed = with
+// plain dedup, [A,B] and [B,C] would both remain, leaving B in two groups (BACKLOG L4)
 describe('mergeManualGroups（union-find）', () => {
   test('交差するグループは推移的に畳まれ、交わらないグループはそのまま', () => {
     const m = mergeManualGroups(
@@ -202,7 +202,7 @@ describe('mergeManualGroups（union-find）', () => {
     expect(m.groups.map((g: string[]) => g.slice().sort().join(',')).sort()).toEqual(['a,b,c', 'p,q', 'x,y']);
   });
 
-  // ローカルの [a,b]+[c,d] を、取り込み側の [b,c] が橋渡しして4件がつながる
+  // Local's [a,b]+[c,d] get bridged by the incoming side's [b,c], linking all 4 members together
   test('橋渡しのグループが連鎖を1つにまとめる', () => {
     const chain = mergeManualGroups(
       {
@@ -233,7 +233,7 @@ describe('mergeManualGroups（union-find）', () => {
   });
 });
 
-// unionById を土台にした合流の契約（リファクタのガード）
+// The merge contract built on top of unionById (a guard against refactors)
 describe('mergePosterFolders', () => {
   const f = mergePosterFolders(
     { folders: [{ id: 'f1', name: 'Local', items: ['a'] }], defaultId: 'f1' },

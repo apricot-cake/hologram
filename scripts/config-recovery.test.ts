@@ -1,6 +1,6 @@
-// 保存フォルダの復旧と破壊的操作のゲート（native-host/config-recovery.cts）の
-// ユニットテスト。2026-06-23 のライブラリ消失事故を受けて追加したもの。純ロジック＝
-// Electron 不要。
+// Unit tests for save-folder recovery and the destructive-operation gate
+// (native-host/config-recovery.cts). Added in response to the 2026-06-23 library loss incident.
+// Pure logic — no Electron needed.
 
 import { describe, expect, test } from 'vitest';
 import { clearAllBlockReason, libraryIsMissing, resolveSaveFolder } from '../native-host/config-recovery.cts';

@@ -61,7 +61,7 @@ function PlatformTag({ platform, pfName, className }: { platform?: string | null
 }
 
 /**
- * The grid cell: an avatar-led card. With 情報を表示 off it is the avatar and nothing
+ * The grid cell: an avatar-led card. With "Show info" off it is the avatar and nothing
  * else — that IS the overview (#141), the poster-side twin of a bare thumbnail grid,
  * and the reason the layout can call the cell square.
  */

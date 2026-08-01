@@ -1,6 +1,6 @@
 // Facet service — facetCounts (bucket aggregation) + qfValues (the sidebar value-
 // flyout row models, 15 categories), extracted 1:1 from viewer.js as the third
-// "pure logic → service" slice of the viewer decomposition (最終形B). A real ES
+// "pure logic → service" slice of the viewer decomposition (final form B). A real ES
 // module (named exports), imported directly by viewer.ts; touches no DOM. Every
 // runtime coupling is INJECTED via makeFacets(deps) — reassigned viewer lets
 // (allPosts) come in as getter functions, and consts declared after
@@ -17,7 +17,7 @@ export const PF_ORDER = ['x', 'bluesky', 'misskey', 'mastodon', 'pixiv'];
 //   allPosts() — full library (facet vocabulary; getter — viewer reassigns it)
 //   hostOf(url) / userKey(p) — from query.js (wrapped: destructured after wiring)
 //   t(key,subs?) — message lookup / PF_NAME (value) — label table (const by the wiring point)
-//   tagKindOf(tag) — 用語帳 kind ('work'/'character'/undefined)
+//   tagKindOf(tag) — glossary kind ('work'/'character'/undefined)
 //   posterTagsOf(key) / filteredPosters() / posterFilterVocab() / namedPosters()
 //   posterFolders() — pfStore.all() (wrapped: pfStore is declared later)
 //   buildUsers() — user facet source (cached in viewer)
@@ -78,7 +78,7 @@ export function makeFacets(deps: {
           ['image', t('kindImage')],
         ].map(([v, l]) => ({ v, l, on: act('kind', v) }));
       case 'platform': {
-        // Misskey/Mastodon の直下に各インスタンスをサブ行で展開（独立に選択可）
+        // Expand each instance as a sub-row directly under Misskey/Mastodon (independently selectable)
         const hostsOf = (plat: string) => {
           const set = new Set<string>();
           for (const p of allPosts())
@@ -97,8 +97,8 @@ export function makeFacets(deps: {
             for (const h of hostsOf(v)) out.push({ v: h, l: h, on: act('instance', h), type: 'instance', sub: true, count: icnt.get(h) || 0 });
           }
         }
-        // 「プラットフォームなし」= platform 未設定の投稿（取り込み画像など）。
-        // 該当が1件もなければ出さない（空振りする項目を並べない）。
+        // "No platform" = posts with no platform set (e.g. imported images).
+        // Not shown if there are none (don't list an entry that would come up empty).
         if (allPosts().some((p) => !p.platform)) out.push({ v: '__none', l: t('qfPlatformNone'), on: act('platform', '__none'), count: pcnt.get('__none') || 0 });
         return out;
       }
@@ -125,14 +125,14 @@ export function makeFacets(deps: {
           ['video', t('qfVideo')],
           ['gif', t('qfGif')],
         ].map(([v, l]) => ({ v, l, on: act('media', v), count: cnt.get(v) || 0 }));
-        // (複数画像 was folded in here as __multi; it's now a first-class sidebar
-        //  toggle row — setupMultiSidebar in viewer.js — so the メディア flyout is
+        // ("Multiple images" was folded in here as __multi; it's now a first-class sidebar
+        //  toggle row — setupMultiSidebar in viewer.js — so the Media flyout is
         //  back to just the per-record media types image/video/gif.)
         return out;
       }
       case 'poster-tag': {
         // Poster-mode sidebar tag filter: lists GENERAL (non-kinded) tags applied to
-        // posters. 作品/キャラ live in their own rows. Picking one adds/removes a tag leaf
+        // posters. Work/Character live in their own rows. Picking one adds/removes a tag leaf
         // in the poster query tree (posterQB), NOT the post query. "on" = already chosen.
         const cnt = facetCounts((u) => posterTagsOf(u.key), filteredPosters());
         return posterFilterVocab()
@@ -142,8 +142,8 @@ export function makeFacets(deps: {
       }
       case 'poster-work':
       case 'poster-character': {
-        // 作品/キャラ rows: the poster tags whose 種別 matches. They map to the same tag
-        // leaf type as the general タグ row; the kind only scopes which this flyout offers.
+        // Work/Character rows: the poster tags whose Kind matches. They map to the same tag
+        // leaf type as the general Tags row; the kind only scopes which this flyout offers.
         const kind = cat === 'poster-work' ? 'work' : 'character';
         const cnt = facetCounts((u) => posterTagsOf(u.key), filteredPosters());
         return posterFilterVocab()
@@ -179,7 +179,7 @@ export function makeFacets(deps: {
       }
       case 'work':
       case 'character': {
-        // 用語帳 (Phase 2 ②): a 作品/キャラ section lists the tags whose 種別 matches.
+        // Glossary (Phase 2 ②): a Work/Character section lists the tags whose Kind matches.
         // They ARE tags (type:'tag'), so picking one adds an ordinary tag filter —
         // the kind only scopes which tags this flyout offers.
         const cnt = facetCounts((p) => p.tags);
@@ -194,20 +194,21 @@ export function makeFacets(deps: {
       }
       case 'tag': {
         // Include tags from all posts (incl. imported url-less images), not just SNS posts.
-        // 用語帳: kinded tags live in the 作品/キャラ rows — the タグ flyout is general-only.
+        // Glossary: kinded tags live in the Work/Character rows — the Tags flyout is general-only.
         // A post with no tags at all buckets under the '__none' sentinel — same shape as
-        // プラットフォームなし above, and query.ts special-cases the value the same way.
+        // "No platform" above, and query.ts special-cases the value the same way.
         const cnt = facetCounts((p) => ((p.tags || []).length ? p.tags : '__none'));
         const item = (t: string) => ({ v: t, l: t, on: act('tag', t), count: cnt.get(t) || 0, facetDim: true });
         // Present values (count desc) precede absent ones.
         const byCount = (a: { count: number; l: string }, b: { count: number; l: string }) => b.count - a.count || a.l.localeCompare(b.l, 'ja');
         const allTags = [...new Set<string>(allPosts().flatMap((p) => p.tags || []))].filter((t) => !tagKindOf(t)).sort();
         const out = allTags.map(item).sort(byCount);
-        // 「タグなし」= tags が空の投稿。連続タグ付けの入口なので、count 順の並びには
-        // 混ぜず先頭に固定する（GitHub の Labels ドロップダウンが Unlabeled を先頭に
-        // 置くのと同型。プラットフォームなしを末尾に置いているのは、あちらが縁の
-        // ケースで入口にならないため）。該当が1件もなければ出さない＝空振りする項目を
-        // 並べない、はプラットフォーム側と同じ。
+        // "No tags" = posts whose tags are empty. It's the entry point for chained
+        // tagging, so it's pinned at the front rather than mixed into the count-order
+        // ranking (the same shape as GitHub's Labels dropdown putting Unlabeled at the
+        // front; "No platform" is placed at the end instead because there it's an edge
+        // case, not an entry point). Not shown if there are none — i.e. don't list an
+        // entry that would come up empty — same as on the platform side.
         if (allPosts().some((p) => !(p.tags || []).length)) out.unshift({ v: '__none', l: t('qfTagNone'), on: act('tag', '__none'), count: cnt.get('__none') || 0, facetDim: true });
         return out;
       }

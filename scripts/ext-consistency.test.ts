@@ -1,24 +1,30 @@
-// 生成された manifest と、それを前提に書かれたコードの突合ガード（#130）。
+// A guard that cross-checks the generated manifest against the code that's written assuming it (#130).
 //
-// WXT 移行（#198）と extractor 登録簿（#212）で、manifest は手書きではなく
-// wxt.config.ts ＋ 各サイトモジュールから**生成**されるようになった。だから
-// 「manifest の match とコードの対応表を手で揃える」類のズレは構造的に消えている
-// （登録簿そのものの不変条件は extractor-registry.test.ts が見る）。それでも
-// **生成物とそれを前提に書かれたコード**の間には、型でも lint でも捕まらず、実機で
-// 動かして初めて分かる約束が残っている:
+// With the WXT migration (#198) and the extractor registry (#212), the manifest
+// is no longer hand-written; it's **generated** from wxt.config.ts plus each
+// site module. So the kind of drift where "the manifest's match and the code's
+// correspondence table need to be kept in sync by hand" has structurally gone
+// away (the registry's own invariants are covered by
+// extractor-registry.test.ts). Even so, some promises remain between **the
+// generated artifact and the code written assuming it** that neither the type
+// system nor lint can catch — they only surface when actually run on a real
+// device:
 //
-//   1. 生成された match / host_permissions が、登録簿の宣言そのままか
-//      （生成の途中で落ちても、拡張は「そのサイトで静かに何もしない」だけになる）
-//   2. manifest が名指しするファイルと、コードが名指しして注入するファイルが
-//      出力に実在するか（`files: ['capture.js']` は文字列＝リネームで無言に壊れる）
-//   3. manifest の commands と、それを待ち受けるコードのコマンド名が一致するか
-//   4. `key` から決まる拡張IDが、それを許可する側（Native Messaging の
-//      allowed_origins を組む e2e ハーネス）の想定と一致するか
-//   5. `__MSG_*` と getMessage のキーが、実在する文言か（i18n-parity.test.ts は
-//      「日英テーブル同士」を見るだけで、「使う側との突合」がここにしか無い）
+//   1. Whether the generated match / host_permissions exactly match the registry's declarations
+//      (if generation silently breaks partway through, the extension just
+//      "silently does nothing" on that site)
+//   2. Whether files that the manifest names, and files that the code names and injects,
+//      actually exist in the output (`files: ['capture.js']` is a string = a rename breaks it silently)
+//   3. Whether the manifest's commands match the command names the code listens for
+//   4. Whether the extension ID derived from `key` matches what the side that
+//      allows it (the e2e harness that assembles Native Messaging's
+//      allowed_origins) expects
+//   5. Whether the `__MSG_*` and getMessage keys correspond to text that
+//      actually exists (i18n-parity.test.ts only checks "the Japanese and
+//      English tables against each other" — the check against "what's actually used" only lives here)
 //
-// 読むのはビルド出力。古い出力を読まないよう、`npm test` は走り出す前に必要なら
-// build:ext を回す（scripts/vitest.global-setup.ts）。
+// This reads the build output. So it doesn't read stale output, `npm test`
+// runs build:ext before starting if needed (scripts/vitest.global-setup.ts).
 
 import crypto from 'node:crypto';
 import fs from 'node:fs';
@@ -34,7 +40,7 @@ const OUT = path.join(EXT, '.output', 'chrome-mv3');
 const manifest = JSON.parse(fs.readFileSync(path.join(OUT, 'manifest.json'), 'utf8'));
 const backgroundSrc = fs.readFileSync(path.join(EXT, 'utils', 'background.ts'), 'utf8');
 
-// 拡張のソース全部（生成物は除く）。走査対象を1箇所で決める。
+// All of the extension's source (excluding generated artifacts). Decides the scan target in one place.
 function extensionSources(): string[] {
   const files: string[] = [];
   const walk = (dir: string) => {
@@ -53,11 +59,12 @@ function extensionSources(): string[] {
 
 const SOURCES = extensionSources().map((file) => fs.readFileSync(file, 'utf8'));
 
-// === 呼び出しからキーを拾う ==================================================
+// === picking keys out of calls ==================================================
 
-// `<callee>(` から対応する `)` までの引数テキスト。文字列の中の括弧は数えない。
-// リテラル1つを決め打ちで取らずに引数の範囲を返すのは、キーを三項演算子で選ぶ書き方
-// （i18n.ts の partialSaveText / saveFailureText）を1つの呼び出しとして拾うため。
+// The argument text from `<callee>(` to its matching `)`. Parentheses inside a
+// string aren't counted. This returns the argument's whole range rather than
+// hard-coding a single literal, so it can pick up a call that selects its key
+// with a ternary (i18n.ts's partialSaveText / saveFailureText) as one call.
 function callArgs(src: string, callee: RegExp): string[] {
   const args: string[] = [];
   for (const match of src.matchAll(callee)) {
@@ -81,12 +88,13 @@ function callArgs(src: string, callee: RegExp): string[] {
 
 const literalsIn = (text: string): string[] => [...text.matchAll(/'([^'\\]*)'|"([^"\\]*)"/g)].map((m) => m[1] ?? m[2]);
 
-// 比較の相手はキーではなく判定値（`getMessage(reason === 'protected' ? 'a' : 'b')`
-// の 'protected'）＝先に落としてから拾う。残るのは三項演算子のどの枝に置かれた
-// キーも含む「キー位置のリテラル」だけになる。
+// What's compared against isn't a key, it's the value being tested (the
+// 'protected' in `getMessage(reason === 'protected' ? 'a' : 'b')`) = drop it
+// first, then pick up. What's left is only "literals in the key position",
+// including whichever ternary branch a key sits in.
 const withoutComparisons = (text: string): string => text.replace(/[\w$.]+\s*[!=]==?\s*('[^']*'|"[^"]*")/g, '').replace(/('[^']*'|"[^"]*")\s*[!=]==?\s*[\w$.]+/g, '');
 
-// 引数のキー位置に現れた文字列リテラルを、その呼び出しが使うキーとして集める。
+// Collects string literals appearing in an argument's key position as keys that call uses.
 function keysPassedTo(callee: RegExp): Set<string> {
   const keys = new Set<string>();
   for (const src of SOURCES) {
@@ -97,11 +105,11 @@ function keysPassedTo(callee: RegExp): Set<string> {
   return keys;
 }
 
-// === 1. 生成された manifest ↔ extractor 登録簿 ===============================
+// === 1. generated manifest <-> extractor registry ===============================
 
 describe('生成された manifest は登録簿の宣言どおり', () => {
   test('常駐コンテンツスクリプトの matches は RESIDENT_MATCHES と一致する', () => {
-    // 集合で比べる＝WXT は match を並べ替えて出力するので、順序は仕様ではない。
+    // Compared as sets = WXT re-orders match when it outputs, so order isn't part of the spec.
     const matches = manifest.content_scripts.flatMap((script: any) => script.matches);
     expect([...matches].sort()).toEqual([...RESIDENT_MATCHES].sort());
   });
@@ -111,20 +119,20 @@ describe('生成された manifest は登録簿の宣言どおり', () => {
   });
 });
 
-// === 2. 名指しされたファイルが出力に実在する =================================
+// === 2. files that are named actually exist in the output =================================
 
 describe('manifest とコードが名指しするファイルは出力に在る', () => {
   test('manifest が指すバンドル・ページ・画像が全部在る', () => {
-    // manifest 内の「ファイルに見える文字列」を全部拾う＝将来 manifest に増えた
-    // ファイル参照も、この一覧を書き換えずに検査対象へ入る。
+    // Picks up every "string that looks like a file" in the manifest = any file
+    // reference added to the manifest in the future also enters this check without editing this list.
     const referenced = [...JSON.stringify(manifest).matchAll(/"([\w./-]+\.(?:js|html|css|png|json))"/g)].map((m) => m[1]);
     expect(referenced.length).toBeGreaterThan(5);
     expect(referenced.filter((file) => !fs.existsSync(path.join(OUT, file)))).toEqual([]);
   });
 
   test('background が注入するファイル名が出力に在る', () => {
-    // activeTab で流し込む capture エントリは manifest に載らない＝WXT の出力
-    // ファイル名を文字列で名指ししている。リネームすると Alt+S だけが静かに死ぬ。
+    // The capture entry injected via activeTab isn't listed in the manifest =
+    // it names WXT's output file name as a string. A rename kills only Alt+S, silently.
     const injected = callArgs(backgroundSrc, /executeScript\(/g).flatMap((args) => {
       const files = args.match(/files:\s*\[([^\]]*)\]/);
       return files ? literalsIn(files[1]) : [];
@@ -138,23 +146,24 @@ describe('manifest とコードが名指しするファイルは出力に在る'
   });
 });
 
-// === 3. commands ↔ 待ち受け ==================================================
+// === 3. commands <-> listeners ==================================================
 
 describe('manifest の commands は待ち受けと一致する', () => {
   test('宣言したコマンドだけを、全部待ち受けている', () => {
-    // 宣言だけあって待ち受けが無いショートカットは、押しても何も起きない。逆に
-    // 待ち受けだけあって宣言が無いコマンドは、Chrome が二度と配らない。
+    // A shortcut that's declared but has no listener does nothing when pressed.
+    // Conversely, a command that's listened for but never declared is one Chrome will never deliver again.
     const handled = new Set([...backgroundSrc.matchAll(/command\s*[!=]==\s*'([^']+)'/g)].map((m) => m[1]));
     expect(handled.size).toBeGreaterThan(0);
     expect([...handled].sort()).toEqual(Object.keys(manifest.commands).sort());
   });
 });
 
-// === 4. key から決まる拡張ID ================================================
+// === 4. extension ID derived from key ================================================
 
-// Chrome の拡張ID＝公開鍵(DER)の SHA-256 の先頭16バイトを、ニブルごとに a-p へ
-// 写したもの。`key` を manifest に固定してあるのは、この ID を開発機でも配布物でも
-// 同じにするため（native-host の allowed_origins がこの ID を許可する）。
+// Chrome's extension ID = the first 16 bytes of the public key (DER)'s SHA-256,
+// with each nibble mapped to a-p. `key` is pinned in the manifest so this ID
+// stays the same on both the dev machine and distributed builds (native-host's
+// allowed_origins allows this ID).
 function extensionIdFrom(key: string): string {
   const digest = crypto.createHash('sha256').update(Buffer.from(key, 'base64')).digest();
   return [...digest.subarray(0, 16)].flatMap((byte) => [byte >> 4, byte & 0xf]).reduce((id, nibble) => id + String.fromCharCode(97 + nibble), '');
@@ -162,16 +171,17 @@ function extensionIdFrom(key: string): string {
 
 describe('拡張の固定ID', () => {
   test('key が manifest に載っている', () => {
-    // 落ちると ID がインストールごとに変わる＝native-host が origin を拒否し、
-    // 保存が「設定が一致していません」で全部失敗する。
+    // If this breaks, the ID changes per install = native-host rejects the
+    // origin, and every save fails with "settings don't match".
     expect(typeof manifest.key).toBe('string');
   });
 
   test('key から決まる ID を、それを許可する側も同じ値で持っている', () => {
     const expected = extensionIdFrom(manifest.key);
-    // ID の綴りを持っているのは e2e ハーネス（一時 Native Messaging ホストの
-    // allowed_origins を組む側）。ID 形（a-p の32文字）の文字列リテラルを
-    // scripts/ から拾って突き合わせる＝どのファイルが持っているかを列挙しない。
+    // The e2e harness (the side that assembles the temporary Native Messaging
+    // host's allowed_origins) is what holds the ID's spelling. Pick up string
+    // literals shaped like an ID (32 characters of a-p) from scripts/ and
+    // cross-check them = doesn't enumerate which file holds it.
     const declared: string[] = [];
     for (const file of fs.readdirSync(path.join(ROOT, 'scripts')).filter((f) => f.endsWith('.cts'))) {
       const src = fs.readFileSync(path.join(ROOT, 'scripts', file), 'utf8');
@@ -182,20 +192,20 @@ describe('拡張の固定ID', () => {
   });
 });
 
-// === 5. 文言キーの突合 ======================================================
+// === 5. cross-checking text keys ======================================================
 
 const locales = Object.fromEntries(['en', 'ja'].map((lang) => [lang, JSON.parse(fs.readFileSync(path.join(EXT, 'public', '_locales', lang, 'messages.json'), 'utf8'))]));
 
 describe('_locales（Chrome i18n）と使う側の突合', () => {
-  // 使う側は2経路だけ: 生成された manifest の `__MSG_*__` と、拡張ページの
-  // chrome.i18n.getMessage。options ページはキーを変数で渡す（setText(id, key)）
-  // ので、その第2引数も同じ「使った」として拾う。
+  // The user side has only two paths: the generated manifest's `__MSG_*__`, and
+  // the extension pages' chrome.i18n.getMessage. Since the options page passes
+  // the key as a variable (setText(id, key)), its second argument is also picked up as a "use" the same way.
   const fromManifest = new Set([...JSON.stringify(manifest).matchAll(/__MSG_([A-Za-z0-9_]+)__/g)].map((m) => m[1]));
   const fromCode = new Set([...keysPassedTo(/chrome\.i18n\.getMessage\(/g), ...SOURCES.flatMap((src) => [...src.matchAll(/setText\(\s*'[^']*'\s*,\s*'([^']+)'\s*\)/g)].map((m) => m[1]))]);
   const used = new Set([...fromManifest, ...fromCode]);
 
   test('走査が空振りしていない', () => {
-    // キーが1つも拾えていない状態でも下の2本は緑になる＝走査の当たりを先に見る。
+    // Even with zero keys picked up, the two tests below would still pass = check the scan actually hit something first.
     expect(fromManifest.size).toBeGreaterThan(0);
     expect(fromCode.size).toBeGreaterThan(0);
   });
@@ -216,10 +226,11 @@ describe('_locales（Chrome i18n）と使う側の突合', () => {
 });
 
 describe('コンテンツスクリプトの文言テーブル（utils/i18n.ts）と使う側の突合', () => {
-  // _locales はコンテンツスクリプトから確実に読めないので、ページ内 UI の文言は
-  // utils/i18n.ts のテーブルに埋め込んである（そのファイル冒頭が理由）。
-  // 参照は `getMessage(...)` か、その別名 `t(...)`（drag / overlay / bulk-capture が
-  // 分割代入で付ける名前）の2つ＝3つ目の別名を作ったらここへ足す。
+  // Since _locales can't be reliably read from a content script, the in-page UI
+  // text is embedded in utils/i18n.ts's table instead (see the reason at the top
+  // of that file). References come through only two names: `getMessage(...)`, or
+  // its alias `t(...)` (the name drag / overlay / bulk-capture give it via
+  // destructuring) = if a third alias is ever created, add it here too.
   const used = new Set([...keysPassedTo(/(?<![\w$.])getMessage\(/g), ...keysPassedTo(/(?<![\w$.])t\(/g)]);
 
   test('走査が空振りしていない', () => {

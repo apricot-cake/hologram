@@ -8,7 +8,7 @@ export default defineConfig({
   // a guard: if `wxt` is ever invoked directly (by hand, outside the npm
   // scripts), its output still lands in the one path the daily Chrome loads
   // instead of silently forking into an unread `chrome-mv3-dev` folder
-  // (docs/build.md「拡張機能の開発・配布」).
+  // (docs/build.md's "Extension development & distribution" section).
   outDirTemplate: '{{browser}}-mv{{manifestVersion}}',
   // Never let WXT auto-launch a browser via web-ext-run: that dependency
   // carries known-vulnerable transitives (shell-quote, tmp, adm-zip). The

@@ -9,7 +9,7 @@
 // on either side subscribe.
 //
 // "No controller registered" is the single source for "there is nothing to zoom" —
-// it covers a video slide and an うごイラ slide (neither renders a Zoomable) without
+// it covers a video slide and an ugoira slide (neither renders a Zoomable) without
 // either of them having to say so.
 import { get as confirmGet } from './confirm.ts';
 import { isOpen as lightboxIsOpen } from './lightbox.ts';
@@ -69,7 +69,7 @@ export interface ImageZoomController {
 }
 
 export interface ImageZoomState {
-  // null ⟺ the current slide has no zoom (video / うごイラ / no image tab at all).
+  // null ⟺ the current slide has no zoom (video / ugoira / no image tab at all).
   readonly controller: ImageZoomController | null;
   readonly percent: number | null;
   readonly atFit: boolean;
@@ -124,7 +124,7 @@ export function publish(view: ImageZoomView): void {
   notify();
 }
 
-// Ctrl+0 = fit, Ctrl+1 = actual size (the browser / Photoshop / Windows フォト
+// Ctrl+0 = fit, Ctrl+1 = actual size (the browser / Photoshop / Windows Photos app
 // convention). Registered in App.tsx's GlobalShortcuts.
 //
 // The registered controller IS the guard for "an image is on screen": it only exists

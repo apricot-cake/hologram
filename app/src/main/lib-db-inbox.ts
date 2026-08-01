@@ -13,19 +13,19 @@
 //     (lib-db-inbox-compact.ts's output). A segment whose inbox_segments
 //     receipt already exists is skipped WITHOUT opening it (the normal case
 //     once the DB is healthy); one with no receipt is replayed line-by-line —
-//     the DB-loss recovery path (#299 acceptance criterion: "空DBへの
-//     loose+segment replayで1,500件を再構成できる"), since segments hold the
+//     the DB-loss recovery path (#299 acceptance criterion: "can reconstruct
+//     1,500 items via loose+segment replay to an empty DB"), since segments hold the
 //     bulk of an established library's history once compaction has run.
 //
 // Electron-free (better-sqlite3 + node builtins only) so it unit-tests in
 // plain node, mirroring lib-db-import.ts. Loose files are never deleted here
-// — the inbox is retained after import (#299 design comment, "保持") as the
+// — the inbox is retained after import (#299 design comment, "retention") as the
 // replay source; compaction into segments (lib-db-inbox-compact.ts) is the
 // only thing that ever removes a loose file, and only once its content is
 // durably folded into a verified segment.
 //
 // Idempotency and conflict rules are #299's confirmed design (2026-07-25
-// comment, "アプリ側 consumer と冪等性"):
+// comment, "app-side consumer and idempotency"):
 //   - a receipt for this eventId+hash already exists: no-op (already applied).
 //   - a receipt for this eventId exists with a DIFFERENT hash: conflict,
 //     report, leave both the existing post and the file alone.

@@ -112,7 +112,7 @@ export function makeUndoController(deps: UndoBuilderDeps) {
   /**
    * Record an edit and hand back the way to take it back, or null when the edit
    * turned out to be a no-op for every target. Callers put the returned function
-   * behind a toast's 「元に戻す」; it only fires while this entry is still the newest
+   * behind a toast's "Undo"; it only fires while this entry is still the newest
    * one (undo.ts's undoIfTop), so a stale toast cannot revert someone else's edit.
    */
   function pushUndo(changes: readonly UndoChange[] | null | undefined): (() => void) | null {
@@ -123,7 +123,7 @@ export function makeUndoController(deps: UndoBuilderDeps) {
     };
   }
 
-  /** The 「元に戻す」 button a toast should carry for `undoFn`, or nothing when there is none. */
+  /** The "Undo" button a toast should carry for `undoFn`, or nothing when there is none. */
   function undoAction(undoFn: (() => void) | null) {
     return undoFn ? { label: deps.t('undoAction'), onClick: undoFn } : null;
   }

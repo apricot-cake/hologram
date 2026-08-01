@@ -1,7 +1,7 @@
 'use strict';
 
 // Organization-layer IPC handlers. These get/set channels persist the
-// per-library organization state (tag 種別, ungrouped set, manual groups,
+// per-library organization state (tag kind, ungrouped set, manual groups,
 // folders, poster folders/tags) — all DB-backed via getDbWriter (#298/St5
 // truth-source flip moved these off the org-JSON files they used to live in;
 // see lib-db-write.ts). Every handler needs only getSaveFolder + getDbWriter,
@@ -13,10 +13,10 @@ import type { FoldersState, ManualGroupsState, OkResult, PosterFoldersState, Pos
 function register(ctx: IpcContext) {
   const { getSaveFolder, getDbWriter } = ctx;
 
-  // Tag "vocabulary book" (用語帳): a tag's 種別 (kind) is an attribute of the TAG,
+  // Tag "vocabulary book": a tag's kind is an attribute of the TAG,
   // not of any post — so classifying a few hundred distinct tags needs zero post
   // migration. Lives as <saveFolder>/tag-types.json: { types: { "<tag>": "work"|
-  // "character" } }. Tags absent from the map are implicitly 一般 (general). The
+  // "character" } }. Tags absent from the map are implicitly general. The
   // renamable work⊃character pair powers the (later) copyright/character sections;
   // `labels` is reserved/pass-through for that phase.
   ipcMain.handle('get-tag-types', (): TagTypesState => {

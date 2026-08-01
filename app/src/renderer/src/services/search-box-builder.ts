@@ -65,7 +65,7 @@ export function makeSearchBox(deps: SearchBoxDeps) {
   // _liveToken brackets every search-editing render (typing sync / Enter confirm /
   // suggestion pick): while a render runs, tabs-builder's navCoalesceKey reads the
   // burst's token, so one typing burst collapses into ONE history entry (#144
-  // 確定未決2 — the confirm/pick lands as a rewrite of that same entry and ENDS
+  // the now-resolved pending decision 2 — the confirm/pick lands as a rewrite of that same entry and ENDS
   // the burst; the next burst gets a fresh token = a fresh entry).
   let _liveToken: object | null = null;
   let _liveSearch = false;
@@ -114,9 +114,10 @@ export function makeSearchBox(deps: SearchBoxDeps) {
     focusSearchBox(); // show WHERE the term landed, and leave the caret in it
   }
 
-  // --- リアルタイム検索サジェスト -------------------------------------------
-  // タイプのたびに、本文検索と並行してタグ/作者の候補を検索ボックス直下に表示。
-  // クリック/Enter でそのままフィルタ化（タイプした文字は消す）。
+  // --- Real-time search suggestions -------------------------------------------
+  // On every keystroke, tag/author candidates are shown just below the search box,
+  // alongside the full-text search. A click/Enter turns it directly into a filter
+  // (the typed text is cleared).
   // The searchbox component (Base UI Autocomplete) owns the input + dropdown UI:
   // rendering, keyboard nav, open/close, positioning. The suggestion DATA is the
   // command registry's now (#28) — the component reads queryEntries() directly, so

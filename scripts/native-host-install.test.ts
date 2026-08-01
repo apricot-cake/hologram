@@ -1,6 +1,7 @@
-// native-host/install.cts の純ユニットガード。リンク worktree の Electron は使い捨てで
-// あり、ユーザー共有の Native Messaging ランチャーへ永続化される実行体になってはいけない。
-// 本体ツリーと、明示的に隔離された設定ディレクトリは登録元として有効なまま。
+// Pure unit guards for native-host/install.cts. A linked worktree's Electron is
+// disposable, and must never become an executable that gets persisted into the
+// user-shared Native Messaging launcher. The main tree, and an explicitly isolated
+// config directory, remain valid registration sources.
 
 import fs from 'node:fs';
 import os from 'node:os';

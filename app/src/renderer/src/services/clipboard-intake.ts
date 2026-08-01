@@ -71,7 +71,7 @@ export function handleShortcutClipboardKey(e: KeyboardEvent): void {
   // The single-image view is its own screen with its own keys — same exclusion as
   // Ctrl+C / Space (selection-builder.ts).
   if (imageViewIsActive()) return;
-  // ゴミ箱 (#268): a paste is a new save, and the trash is the one destination where
+  // Trash (#268): a paste is a new save, and the trash is the one destination where
   // saving into the library is off. Pasting there would silently drop the image into
   // a grid the user is not looking at. Asked of the store, like every other guard
   // above asks its own module — reading a body class would be the DOM sniffing #153

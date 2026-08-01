@@ -11,7 +11,7 @@ import { About } from './About.tsx';
 // section is a one-line change here. titleKey is an i18n key (reused from the
 // vanilla app). Order mirrors the original panel.
 //
-// ゴミ箱 is deliberately NOT here (#268): its contents are library records, and
+// Trash is deliberately NOT here (#268): its contents are library records, and
 // looking through them / restoring one is browsing, not configuring. It is a
 // destination in the left nav now, and the entry point is that one only — a
 // second one here would mean two doors to the same destructive actions.

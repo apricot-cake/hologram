@@ -1,7 +1,7 @@
 // Post-inspector (persistent right-column detail panel) builder — extracted from
 // the old viewer.ts monolith. Mirrors post-grid-builder.ts / poster-grid-builder.ts:
 // open/close chrome, the always-live inline tag editor (add/toggle/adopt-source-tag
-// + the 同名キャラ homonym check), the group dissolve/regroup buttons shown in the
+// + the same-name-character homonym check), the group dissolve/regroup buttons shown in the
 // panel, and the Esc/outside-click dismiss guards all move here. inspector.ts (the
 // open/refresh/close/get/subscribe bridge to the React component) stays untouched —
 // this module is one of its two consumers (Inspector.tsx is the other).
@@ -37,7 +37,7 @@ export interface InspectorBuilderDeps {
   tagKindOf(tag: string): string | null | undefined;
   worksCooccurringWith(tag: string, exclude: Set<string>): Set<string>;
   jumpToPoster(post: HologramPost): void;
-  // Peek this group in the quick-view lightbox (#143 未決事項3) — the inspector
+  // Peek this group in the quick-view lightbox (#143 pending item 3) — the inspector
   // preview thumbnail is one of its two entries (the other = Space on the card).
   openQuickView(g: HologramPostGroup): void;
   pushUndo(changes: readonly UndoChange[]): (() => void) | null;
@@ -110,21 +110,21 @@ export function makeInspector(deps: InspectorBuilderDeps) {
   // that stops existing left the panel answering for a record that is gone — with its
   // inline tag editor still writing to it. The image view made that visible because its
   // stage IS live (services/image-tab.ts resolves the group against the library on every
-  // notify): the picture fell to「ライブラリにありません」while the column beside it kept
+  // notify): the picture fell to "not in the library" while the column beside it kept
   // showing the post.
   //
   // ONE place asks the question, for every way a subject can vanish — the same move #617
   // made for "is the panel on screen" (isVisible) and #619 for "is the image view showing"
   // (isActive). Before this, each delete path had to remember on its own: the card menu's
   // delete did, the floating bar's bulk delete did not, and neither did the library wipe,
-  // the ZIP import's 置換, or anything else that can drop a record. Deletion is not the
+  // the ZIP import's Replace (duplicate mode), or anything else that can drop a record. Deletion is not the
   // interesting event — DISAPPEARANCE is, and posts-data.ts is where the library announces
   // it (markPostsMutated is the single choke point every mutation already goes through).
   //
   // What it lands on is dismissDetail(), not a new "this post was deleted" panel state:
   // the inspector is defined as the detail OF a selection (#143/#244), so with the subject
   // gone there is no selection, and the placeholder that already means that is the honest
-  // answer. A second「削除されました」empty state would also say what the stage is already
+  // answer. A second "Deleted" empty state would also say what the stage is already
   // saying, one column over.
   function inspectedSubjectExists(key: string): boolean {
     // Poster keys are the roll-up's own (poster-grid-builder stamps 'poster:' + u.key);
@@ -199,7 +199,7 @@ export function makeInspector(deps: InspectorBuilderDeps) {
   // Opt a post key out of (or back into) auto-grouping — persisted in ungrouped.json.
   function setGroupKey(key: string, ungroup: boolean) {
     if (!key) return;
-    deps.keepCurrentVisible(); // 複数画像のみ等のフィルタから外れても即消えしない
+    deps.keepCurrentVisible(); // doesn't vanish immediately even if it drops out of a filter like "Multiple images only"
     const ungrouped = deps.getUngrouped();
     if (ungroup) ungrouped.add(key);
     else ungrouped.delete(key);
@@ -279,7 +279,7 @@ export function makeInspector(deps: InspectorBuilderDeps) {
   const freshGroup = (g: HologramPostGroup) => deps.getViewGroups().find((gg) => postIdKey(gg.rep) === deps.getInspectedKey()) || g;
 
   // Add (typed input / picker click) or toggle (picker click only) a tag on the
-  // inspected group, then check for a 同名キャラ homonym ONLY when the tag was newly
+  // inspected group, then check for a same-name-character homonym ONLY when the tag was newly
   // added (only a new tag can be a homonym of a character already in the vocabulary).
   async function addInspectorTag(g: HologramPostGroup, tag: string) {
     const adding = !(freshGroup(g).rep.tags || []).includes(tag);
@@ -290,15 +290,15 @@ export function makeInspector(deps: InspectorBuilderDeps) {
     await applyInspectorTagChange(freshGroup(g), (prev) => prev.filter((t) => t !== tag));
   }
 
-  // When a キャラ tag joins a 作品-bearing card whose 作品 differs from every 作品
+  // When a Character tag joins a Work-bearing card whose Work differs from every Work
   // this character was seen with before, it's likely a same-name character from
-  // another work. Offer the danbooru-style freeform distinction キャラ（作品）.
-  // Deterministic + confirm-gated + silent until there's history (薄いうちは沈黙).
+  // another work. Offer the danbooru-style freeform distinction Character (Work).
+  // Deterministic + confirm-gated + silent until there's history (stay silent while it's thin).
   function maybeDistinguishHomonym(g: HologramPostGroup | null | undefined, addedTag: string) {
     if (!g || deps.tagKindOf(addedTag) !== 'character') return;
     const cardTags: string[] = g.rep && Array.isArray(g.rep.tags) ? g.rep.tags : [];
     const worksNow = cardTags.filter((t) => deps.tagKindOf(t) === 'work');
-    if (!worksNow.length) return; // no 作品 context to distinguish by
+    if (!worksNow.length) return; // no Work context to distinguish by
     const exclude = new Set<string>((g.records || [g.rep]).map((r) => r && r.captureId).filter(Boolean));
     const past = deps.worksCooccurringWith(addedTag, exclude);
     if (!past.size) return; // no history → stay silent
@@ -317,7 +317,7 @@ export function makeInspector(deps: InspectorBuilderDeps) {
       cancelLabel: deps.t('confirmCancel'),
       okDestructive: false,
       onOk: async () => {
-        // The distinguished string stays a character (danbooru-style); record its 種別.
+        // The distinguished string stays a character (danbooru-style); record its Kind.
         if (!deps.tagKindOf(distinguished)) {
           await tagsSetTagKind(distinguished, 'character');
         }
@@ -328,13 +328,13 @@ export function makeInspector(deps: InspectorBuilderDeps) {
   }
 
   // opts.focusTags: open the panel with the caret already in the tag field. It is
-  // the card context menu's タグを編集 route — the replacement for the card's 🏷
+  // the card context menu's "Edit tags" route — the replacement for the card's 🏷
   // button, which used to open a popover of its own (P2⑦). A plain card click must
   // never take focus, so this is per-open rather than a property of the panel.
   //
   // It is also the one route here that OPENS a closed panel, and the exception proves
   // #243's rule rather than breaking it: selecting a card is not a request for the panel,
-  // but invoking a command that only exists inside it is. Without this, タグを編集 on a
+  // but invoking a command that only exists inside it is. Without this, "Edit tags" on a
   // closed panel silently did nothing — it filled a surface the user could not see. Eagle
   // and Lightroom reveal their inspector for the same reason.
   function showDetail(g: HologramPostGroup, opts?: { focusTags?: boolean }) {
@@ -357,7 +357,7 @@ export function makeInspector(deps: InspectorBuilderDeps) {
     // inspector keeps its "label: value" rhythm while adding a face to the name.
     const avatarSrc = p.avatarFile ? deps.fileSrc(p.avatarFile) : null;
     // The poster exists in the poster view only for SNS posts (buildUsers skips url-less
-    // migrations); when it does, the name+avatar links to it (双方向ナビ: posts ↔ posters).
+    // migrations); when it does, the name+avatar links to it (bidirectional nav: posts ↔ posters).
     const jumpUser = p.url ? deps.buildUsers().find((u) => u.key === userKey(p)) : null;
     // Same platform → instance rule buildUsers uses for HologramUserAgg.instance
     // (services/users.ts): only misskey/mastodon posts carry an arbitrary instance
@@ -365,7 +365,7 @@ export function makeInspector(deps: InspectorBuilderDeps) {
     const posterInstance = p.platform === 'misskey' || p.platform === 'mastodon' ? hostOf(p.url) : null;
     const posterProfileHref = posterProfileUrl({ platform: p.platform, screenName: p.screenName, instance: posterInstance });
     // #676: the heading is a NAME (title), not a body — a title-less SNS post shows
-    // no heading at all rather than borrowing the post text (the 投稿者 row directly
+    // no heading at all rather than borrowing the post text (the Poster row directly
     // below already carries identity, so there is nothing to fall back to). The body
     // gets its own section (bodyText, below) instead of masquerading as a heading.
     const heading = p.title || '';

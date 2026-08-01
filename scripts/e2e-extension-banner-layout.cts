@@ -97,8 +97,8 @@ window.__measure = (labelText, choiceNames) => {
 };
 </script>`;
 
-// __measure は上の PAGE がページ側に置くので、こちら（node 側）の window 型には
-// 無い。evaluate に渡すコールバックはページで動くため、その中でだけ形を名乗る。
+// __measure is placed on the page side by the PAGE above, so it doesn't exist
+// on this (node-side) window type. Since the callback passed to evaluate runs on the page, it only declares its shape there.
 interface Box {
   w: number;
   h: number;
@@ -126,8 +126,8 @@ function check(ok: boolean, message: string) {
   const cases: Array<{ name: string; label: string; choices: string[] }> = [
     { name: 'ゴミ箱の告知（2択・#158）', label: TRASH_LABEL, choices: TWO },
     { name: '重複の警告（3択・#34）', label: DUP_LABEL, choices: THREE },
-    // 現実的にありうる最長＝告知の文言に3択が付いた形。実際には同時に起きない組み
-    // 合わせだが、ここが1行に収まるなら本物の2つは余裕を持って収まる。
+    // The realistic worst case = the notice text with 3 choices attached. This
+    // combination never actually happens at the same time, but if this fits on one line, the real two cases fit with room to spare.
     { name: '最長の組み合わせ（告知の文言＋3択）', label: TRASH_LABEL, choices: THREE },
   ];
 
@@ -136,17 +136,18 @@ function check(ok: boolean, message: string) {
     const tops = m.buttons.map((b) => Math.round(b.top));
     const oneRow = new Set(tops).size === 1;
     check(oneRow, `${c.name}: 選択肢が1行に収まっていない（各ボタンの top=${tops.join(',')}）`);
-    // 選択肢が縮められていない自己検査＝取り消しのチェックボックスの行が折り返して
-    // いないこと。ボタンだけを見ると、行が縮んでもボタン自身は nowrap なので気付けない。
+    // Self-check that the choices weren't shrunk = the opt-out checkbox's line
+    // hasn't wrapped. Looking only at the buttons wouldn't catch this, since
+    // the buttons themselves stay nowrap even if the row shrinks.
     check(m.optOut.h < 24, `${c.name}: 「今後この確認を出さない」が折り返している（h=${Math.round(m.optOut.h)}）＝選択肢の側が縮められている`);
-    // 中央寄せは維持されているか（直し方を transform から margin へ替えたので）。
+    // Is centering still maintained (since the fix was changed from transform to margin)?
     const centred = Math.abs(m.surface.left - (m.viewport - m.surface.w) / 2) <= 1;
     check(centred, `${c.name}: 中央寄せが崩れている（left=${Math.round(m.surface.left)} w=${Math.round(m.surface.w)} viewport=${m.viewport}）`);
     console.log(`  ${c.name}: pill ${Math.round(m.surface.w)}x${Math.round(m.surface.h)} / ボタン ${m.buttons.length}個 ${oneRow ? '1行' : `${new Set(tops).size}行`}`);
   }
 
-  // 半分の壁が無いこと＝旧 centring が黙って課していた上限。ここが 480 付近で
-  // 止まるなら、`left: 50%` 方式へ戻っている。
+  // No half-viewport ceiling = the upper bound the old centering used to
+  // silently impose. If this caps out around 480, it's regressed back to the `left: 50%` approach.
   const long: Measured = await page.evaluate(([l, ch]) => (window as unknown as MeasureWindow).__measure(l as string, ch as string[]), [DUP_LABEL + 'あ'.repeat(200), THREE] as [string, string[]]);
   const half = long.viewport / 2;
   check(long.surface.w > half + 1, `長い文言でも幅がビューポートの半分（${half}px）を超えられない（w=${Math.round(long.surface.w)}）＝shrink-to-fit の使える幅が left の位置から右端に限られている`);

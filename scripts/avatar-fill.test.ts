@@ -1,8 +1,8 @@
-// backfill --avatars: アバター URL はあるがローカルファイルが無いレコードについて、
-// 共有ストア（avatars/<urlhash>.<ext>）へ落として avatarFile を立てる。すでに埋まっている
-// ものとアバターが無いものは飛ばす。実スクリプトを本当に spawn し、fetch スタブを
-// `node -r` で先読みさせる（SSRF ガードが localhost を拒むのでローカルサーバでは代用
-// できない）。pixivRefererFor のユニットテストも兼ねる。
+// backfill --avatars: for records that have an avatar URL but no local file,
+// download it into the shared store (avatars/<urlhash>.<ext>) and set avatarFile. Records that
+// already have one filled in, and records without an avatar, are skipped. Actually spawns the real script and
+// preloads the fetch stub via `node -r` (the SSRF guard rejects localhost, so a local server
+// can't substitute for it). Also doubles as the unit test for pixivRefererFor.
 
 import { spawnSync } from 'node:child_process';
 import crypto from 'node:crypto';
@@ -26,8 +26,8 @@ describe('pixivRefererFor（純関数）', () => {
 });
 
 describe('backfill --avatars（実スクリプトを spawn）', () => {
-  // A: アバター URL あり・ファイル無し → 埋まるべき / B: すでに avatarFile あり → 飛ばす /
-  // C: アバター無し → 飛ばす
+  // A: has avatar URL, no file → should get filled / B: already has avatarFile → skipped /
+  // C: no avatar → skipped
   const A = '1717500000000-aaaa';
   const B = '1717500000000-bbbb';
   const C = '1717500000000-cccc';
@@ -46,7 +46,7 @@ describe('backfill --avatars（実スクリプトを spawn）', () => {
     fs.mkdirSync(saveFolder, { recursive: true });
     fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolder }));
 
-    // レコードはライブラリのDBに置く（#302 以降、保存フォルダにサイドカーは無い）。
+    // Records live in the library DB (since #302, there's no sidecar in the save folder).
     dbFile = path.join(configDir, 'hologram.db');
     const seed = openDatabase(dbFile);
     const stmts = preparePostStmts(seed.sqlite);
@@ -56,7 +56,7 @@ describe('backfill --avatars（実スクリプトを spawn）', () => {
     writePost(stmts, resolveTagId, { captureId: C, url: 'https://x/3' } as any);
     seed.sqlite.close();
 
-    // スクリプトが動き出す前に global.fetch を差し替える preload（ネットワークも TLS も無し）
+    // Preload that replaces global.fetch before the script starts running (no network, no TLS)
     const stub = path.join(tmp, 'stub-fetch.js');
     fs.writeFileSync(
       stub,

@@ -305,7 +305,7 @@
    The selector list IS the coverage checklist #88 left to implementation — every place a
    library image, avatar or video paints: grid/list cards (post-card-media, its multi-image
    stack peek, and every avatar), the inspector's post/poster thumbnails, the image-tab
-   stage (still/video/ugoira canvas) and the quick-view lightbox. Deliberately excludes app
+   stage (still/video/ugoira canvas), the quick-view lightbox and the triage stage (#46). Deliberately excludes app
    chrome that happens to be <img>/<canvas> too (the settings About logo) — this hides LIBRARY
    CONTENT, not app decoration, so the list is an allow-list of data-slot names rather than a
    blanket `img, video, canvas` selector. blur() over saturate() (not opacity/visibility): the
@@ -319,7 +319,8 @@
 :root[data-privacy-mode='true'] [data-slot='viewer-image'],
 :root[data-privacy-mode='true'] [data-slot='viewer-video'],
 :root[data-privacy-mode='true'] [data-slot='viewer-canvas'],
-:root[data-privacy-mode='true'] [data-slot='lightbox-media'] {
+:root[data-privacy-mode='true'] [data-slot='lightbox-media'],
+:root[data-privacy-mode='true'] [data-slot='triage-media'] {
   filter: blur(22px) saturate(0.85);
   transition: filter var(--motion-duration-fast) var(--motion-ease-in);
 }

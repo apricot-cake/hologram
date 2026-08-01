@@ -44,7 +44,7 @@ export interface TagFieldProps {
   onAdd: (tag: string) => void;
   onRemove: (tag: string) => void;
   onContextMenu: (tag: string, x: number, y: number) => void;
-  /** Put the caret in the field on mount — the card/poster context menu's タグを編集. */
+  /** Put the caret in the field on mount — the card/poster context menu's "Edit tag". */
   autoFocus?: boolean;
 }
 
@@ -56,7 +56,7 @@ export function TagField({ tags, vocabGroups, coocGroups, srcTags, labels, onAdd
   // dismisses the panel; without registering, the first Esc would close the whole
   // panel out from under an open tag popup.
   const popupId = useRef(Symbol('inspector-tag-field'));
-  // The タグを編集 route has to land the caret in the field. Focus the node itself
+  // The "Edit tag" route has to land the caret in the field. Focus the node itself
   // rather than relying on React's autoFocus reaching the <input> through
   // Combobox.Input — the primitive owns that ref, and whether it forwards the prop
   // is its business, not a thing this component should assume. Queried out of the
@@ -147,7 +147,7 @@ export function TagField({ tags, vocabGroups, coocGroups, srcTags, labels, onAdd
             // A press anywhere in the InputGroup focuses the input and opens the
             // suggestions (Base UI's own behaviour, and what you want from a click on
             // the box). A right-click is not that press: it is aimed at this chip's
-            // 種別 menu, and letting it through left the suggestion list hanging open
+            // kind menu, and letting it through left the suggestion list hanging open
             // behind that menu. Base UI has no precedent to copy here — its own Chip
             // carries no button guard, because upstream chips have no context menu.
             onMouseDown={(e) => {
