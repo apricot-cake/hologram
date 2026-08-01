@@ -120,14 +120,18 @@ const X_HTML = `<!doctype html><html><body>
          data-testid="swipe-to-dismiss" が表示中のスライドを包む（実 DOM 監査 2026-07-31）。
          viewerDialog は既定で data-rect-top を持たない＝矩形ゼロ＝「開いていない」ものとして
          無視される。開いた状態は各テストが rectTop() で明示的に有効化・後始末する。
-         top は 9000＝他のどの投稿の矩形（最大でも p15 の 6400〜6700）とも重ならない値。
+         top は 8900〜9500＝他のどの投稿の矩形（最大でも p15 の 6400〜6700）とも重ならない値。
          このハーネスの座標は実レイアウトでなく data-rect-top の宣言そのものなので、
          重なると anchorAtPoint() が「同面積なら先勝ち」でビューアでない方を拾ってしまう
          （p1 の 100〜400 と衝突して顕在化・デバッグ時に modalCovers() が誤って true を
          返しているように見えた——実際は p1 を拾っていただけだった）。 -->
+    <!-- #704: swipe-to-dismiss はスワイプ判定領域で、実際のXでは画像よりずっと大きい
+         （ビューア全体に近い）。ここでも意図的にラッパーを画像より大きく・別位置に宣言し、
+         「ボタンはラッパーでなく画像の角に出る」を位置のテストで固定する＝等サイズの
+         フィクスチャに戻すと #704 の重なりバグを検出できなくなる。 -->
     <div role="dialog" aria-modal="true" id="viewerDialog">
-      <div data-testid="swipe-to-dismiss" data-rect-top="9000" id="p16">
-        <img src="https://pbs.twimg.com/media/QQQ.jpg?format=jpg&amp;name=large">
+      <div data-testid="swipe-to-dismiss" data-rect-top="8900" data-rect-size="600" id="p16">
+        <img data-rect-top="9000" data-rect-left="150" src="https://pbs.twimg.com/media/QQQ.jpg?format=jpg&amp;name=large">
       </div>
     </div>
 </body></html>`;
@@ -1109,10 +1113,12 @@ describe('テキストのみの投稿（#575）', () => {
 // （swipe-to-dismiss）を足した。
 describe('写真ビューア（拡大表示）でもホバー保存が出る（#659）', () => {
   const viewerBox = () => window.document.getElementById('p16') as any;
+  // #704: メディア box は実体の <img>（ラッパーではない）。ホバーも画像の矩形を狙う。
+  const viewerImg = () => viewerBox().querySelector('img') as any;
   const hoverViewer = () => {
-    const box = viewerBox();
-    const r = box.getBoundingClientRect();
-    pointerMove(box, r.left + r.width / 2, r.top + r.height / 2);
+    const img = viewerImg();
+    const r = img.getBoundingClientRect();
+    pointerMove(img, r.left + r.width / 2, r.top + r.height / 2);
   };
 
   afterAll(async () => {
@@ -1153,7 +1159,24 @@ describe('写真ビューア（拡大表示）でもホバー保存が出る（#
       await settle();
 
       expect(saveButtons()).toHaveLength(1);
+      // controlHost() の IMG 分岐＝mount 先は img.parentElement（ラッパー自身）。
+      // 「どこに置かれて見えるか」は下の位置テストが別に見る（host と矩形は別物）。
       expect(saveButtons()[0].parentElement).toBe(viewerBox());
+    });
+
+    // #704: ラッパー（swipe-to-dismiss）はビューア全体大のスワイプ判定領域なので、
+    // その角に置くとXの閉じる（×）ボタンに重なる。ボタンは画像自身の角に出ること。
+    // host はラッパーなので left/top は「ラッパー左上から画像左上までの差分＋inset」。
+    test('保存ボタンは画像の角に出る（ラッパーの角ではない）（#704）', () => {
+      const [button] = saveButtons();
+      const wrapper = viewerBox().getBoundingClientRect();
+      const img = viewerImg().getBoundingClientRect();
+      // フィクスチャの前提そのものを固定＝ラッパーと画像の角がずれていなければ
+      // このテストは何も区別できていない（#659 の等サイズフィクスチャの穴）。
+      expect(img.left).not.toBe(wrapper.left);
+      expect(img.top).not.toBe(wrapper.top);
+      expect(button.style.left).toBe(`${img.left - wrapper.left + 6}px`); // 106px = (150−50)+CONTROL_INSET
+      expect(button.style.top).toBe(`${img.top - wrapper.top + 6}px`); // 106px = (9000−8900)+CONTROL_INSET
     });
 
     test('押すとパーマリンクは URL の /photo/N を落とした投稿になる（ドラッグ保存経路を再利用）', () => {
