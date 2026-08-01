@@ -23,7 +23,7 @@ import type { BrowserWindow } from 'electron';
 import type Database from 'better-sqlite3';
 import type { createDbWriter } from './lib-db-write.ts';
 import type { relocateLibrary } from './lib-migrate.ts';
-import type { BackupConfig, BackupRunResult, IntegrityStatus, LibraryStatus, OrphanRecoveryResult, PostsDelta, PostsSnapshot, ValidationResult } from './ipc-payloads.ts';
+import type { BackupConfig, BackupRunResult, IntegrityStatus, LibraryStatus, OrphanRecoveryResult, PostsDelta, PostsSnapshot, ValidationResult, WatchImportConfig, WatchImportFolder } from './ipc-payloads.ts';
 
 /** The organization-state writer every DB-backed handler goes through. */
 export type DbWriter = ReturnType<typeof createDbWriter>;
@@ -116,6 +116,10 @@ export interface IpcContext {
   relocateLibrary: typeof relocateLibrary;
   /** (Re-)points the inbox watcher at the current save folder. */
   watchInboxFolder(): void;
+  /** #84: refreshes chokidar after a config change or at startup. */
+  watchImportFolders(): Promise<void>;
+  getWatchImportConfig(): WatchImportConfig;
+  setWatchImportFolders(folders: WatchImportFolder[], markExisting?: string[]): Promise<WatchImportConfig>;
   /** Drops the delta baseline so the renderer full-resyncs. */
   resetDelta(): void;
 

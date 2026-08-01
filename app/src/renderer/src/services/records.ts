@@ -49,7 +49,7 @@ export const mediaFilesOf = (p: HologramPost): string[] => mediaItemsOf(p).map((
 // (#85) writes PNG, so the extension test already excludes it — it is named anyway,
 // because "which sources are artwork" is the question this line answers, and leaving
 // one out silently changes how that door's items sort into the facets.
-export const isScreenshot = (p: HologramPost): boolean => !!p.image && SS_EXT.test(p.image) && p.source !== 'drag' && p.source !== 'clipboard' && p.source !== 'eagle-migration';
+export const isScreenshot = (p: HologramPost): boolean => !!p.image && SS_EXT.test(p.image) && p.source !== 'drag' && p.source !== 'clipboard' && p.source !== 'watch' && p.source !== 'eagle-migration';
 export const captureFile = (p: HologramPost): string => (isScreenshot(p) ? p.image : '');
 // The leading media item's THUMBNAIL file — its poster when it's a video/gif
 // (a raw video can't be an <img src>), else the file itself. Falls back to the
