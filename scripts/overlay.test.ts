@@ -120,6 +120,12 @@ const X_HTML = `<!doctype html><html><body>
       <a href="/mia/status/1515"><time datetime="2026-07-01T00:00:00Z">15h</time></a>
       <div data-testid="tweetPhoto" data-rect-top="6400" id="p15a"><img src="https://pbs.twimg.com/media/PPP.jpg"></div>
     </article>
+    <!-- A small timeline picture behind the viewer. Its rectangle crosses the
+         viewer picture at the hover point, but the open dialog covers it. -->
+    <article data-testid="tweet" id="p17">
+      <a href="/olivia/status/1717"><time datetime="2026-07-01T00:00:00Z">17h</time></a>
+      <div data-testid="tweetPhoto" data-rect-top="9100" data-rect-left="250" data-rect-size="100" id="p17a"><img src="https://pbs.twimg.com/media/RRR.jpg"></div>
+    </article>
   </div>
     <!-- #659: the photo viewer (lightbox). An independent modal layer outside the article,
          where data-testid="swipe-to-dismiss" wraps the slide currently being shown (verified
@@ -312,7 +318,7 @@ beforeAll(async () => {
 }, 30000);
 
 test('初回走査で全ての投稿が観測される', () => {
-  expect(observed.size).toBe(16); // p1-p16 (added p12/p13 in #576, p14 in #575, p15 in #594, p16 in #659)
+  expect(observed.size).toBe(17); // p1-p17 (added p12/p13 in #576, p14 in #575, p15 in #594, p16 in #659, p17 in #704)
 });
 
 describe('問い合わせは見えている投稿だけ・1バッチで', () => {
@@ -1164,7 +1170,7 @@ describe('写真ビューア（拡大表示）でもホバー保存が出る（#
   afterAll(async () => {
     dom.reconfigure({ url: 'https://x.com/home' });
     window.document.getElementById('viewerDialog')?.removeAttribute('data-rect-top');
-    intersect(['p16'], false);
+    intersect(['p16', 'p17'], false);
     hoverAway();
     await settle();
   });
@@ -1191,6 +1197,7 @@ describe('写真ビューア（拡大表示）でもホバー保存が出る（#
       // fire once the viewer actually mounts its slide.
       intersect(['p16'], false);
       intersect(['p16'], true);
+      intersect(['p17'], true);
       await settle();
     });
 
@@ -1202,6 +1209,7 @@ describe('写真ビューア（拡大表示）でもホバー保存が出る（#
       // controlHost() の IMG 分岐＝mount 先は img.parentElement（ラッパー自身）。
       // 「どこに置かれて見えるか」は下の位置テストが別に見る（host と矩形は別物）。
       expect(saveButtons()[0].parentElement).toBe(viewerBox());
+      expect(controlOf('p17a')).toHaveLength(0);
     });
 
     // #704: The viewer's swipe wrapper is the full-slide hit target, so its

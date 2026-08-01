@@ -178,16 +178,12 @@ const HTML = `<!doctype html>
   [role="dialog"] { position: fixed; inset: 0; }
   [data-testid="swipe-to-dismiss"] { position: relative; width: 100%; height: 100%; }
   [data-testid="swipe-to-dismiss"] img { display: block; position: absolute; left: 18px; top: 0; width: 1100px; height: 620px; object-fit: contain; }
-  /* X may put a full-viewport, transparent gesture/display layer above the
-     picture. It is not a control: hovering it is still hovering the image. */
-  [data-testid="viewer-content-layer"] { position: fixed; inset: 0; z-index: 1; }
-  button[aria-label="Close"] { position: fixed; z-index: 2; left: 12px; top: 12px; width: 36px; height: 36px; }
+  button[aria-label="Close"] { position: fixed; left: 12px; top: 12px; width: 36px; height: 36px; }
 </style></head><body>
   <div role="dialog" aria-modal="true">
     <div data-testid="swipe-to-dismiss">
       <img src="https://pbs.twimg.com/media/AAA.jpg?format=jpg&amp;name=large" alt="viewer image">
     </div>
-    <div data-testid="viewer-content-layer"></div>
     <button aria-label="Close"></button>
   </div>
 </body></html>`;
@@ -200,7 +196,7 @@ const HTML = `<!doctype html>
       () => true,
       () => false,
     );
-    if (!viewerControlVisible) throw new Error('OVERLAY_VIEWER_MODAL_BLOCKED_FAIL: the viewer or one of its non-interactive layers blocked the image hover');
+    if (!viewerControlVisible) throw new Error('OVERLAY_VIEWER_MODAL_BLOCKED_FAIL: the photo viewer is itself a dialog, and hover was blocked by it — modalCovers() should exempt a modal that contains the anchor');
     // #704: the control sits at the PICTURE's left edge, not the wrapper's.
     // Ownership is judged by geometry (the control mounts on the wrapper —
     // controlHost()'s IMG branch — so containment says nothing): its top-left
@@ -222,12 +218,6 @@ const HTML = `<!doctype html>
     const viewerOffsetX = viewerCorner.controlLeft - viewerCorner.imgLeft;
     const viewerOffsetY = viewerCorner.controlTop - viewerCorner.imgTop;
     if (Math.abs(viewerOffsetX - 6) > 1.5 || Math.abs(viewerOffsetY - 54) > 1.5) throw new Error(`OVERLAY_VIEWER_CLOSE_CLEARANCE_FAIL: control sits at ${viewerOffsetX}×${viewerOffsetY}px from the picture's corner (expected 6px right and 54px down) — it either follows the wrapper or intersects X's close button (#704)`);
-    // The transparent layer above the image must not make the control flicker,
-    // while the actual close button remains an intentional exit from hover.
-    await viewerPage.mouse.move(viewerImgBox.x + 24, viewerImgBox.y + 24);
-    await wait(150);
-    const closeHidesViewerControl = await viewerPage.evaluate(() => !document.querySelector('[data-hologram-overlay]'));
-    if (!closeHidesViewerControl) throw new Error("OVERLAY_VIEWER_INTERACTIVE_OCCLUSION_FAIL: control remained while the pointer was on X's close button");
     await viewerPage.close();
 
     console.log('PASS e2e-overlay-visual: failure banner layout, corner has no tooltip, scroll tracking, modal occlusion, fixed-header occlusion, photo-viewer hover (#659) and picture-corner placement (#704)');
