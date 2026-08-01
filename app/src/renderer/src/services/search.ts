@@ -46,6 +46,13 @@ export function normalize(s: unknown) {
   return kataToHira(t.toLowerCase());
 }
 
+// Strict short-vocabulary match: normalize both sides, then require a contiguous
+// substring. Unlike compile(), this deliberately does not accept subsequences or
+// typos, so pickers stay precise while sharing the app-wide glyph rules.
+export function includesNormalized(haystack: unknown, query: unknown) {
+  return normalize(haystack).includes(normalize(query));
+}
+
 // Whether each character of needle appears in hay in order (they need not be contiguous = subsequence match, A).
 export function isSubsequence(hay: string, needle: string) {
   let i = 0;

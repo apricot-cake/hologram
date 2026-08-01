@@ -117,37 +117,31 @@ describe('posterTagsOf / posterFilterVocab', () => {
 
 describe('groupedTagVocab（post スコープ）', () => {
   test('種別セクションが先、末尾に未分類', () => {
-    expect(api.groupedTagVocab('').map((g) => g.name)).toEqual(['作品', 'キャラ', '未分類']);
+    expect(api.groupedTagVocab().map((g) => g.name)).toEqual(['作品', 'キャラ', '未分類']);
   });
 
   test('作品セクションは種別つきの作品を全部載せる', () => {
-    expect(api.groupedTagVocab('')[0].tags).toEqual(['WorkA', 'WorkB'].sort(ja));
+    expect(api.groupedTagVocab()[0].tags).toEqual(['WorkA', 'WorkB'].sort(ja));
   });
 
   test('未分類プールは「実際に付いている一般タグ」だけ（種別つきは除外）', () => {
-    expect(api.groupedTagVocab('')[2].tags).toEqual(['俯瞰', '自由帳'].sort(ja));
-  });
-
-  test('クエリは大小文字を区別せず絞り込む', () => {
-    const out = api.groupedTagVocab('work');
-    expect(out).toHaveLength(1);
-    expect(out[0]).toMatchObject({ name: '作品', tags: ['WorkA', 'WorkB'] });
+    expect(api.groupedTagVocab()[2].tags).toEqual(['俯瞰', '自由帳'].sort(ja));
   });
 
   test('セクション見出しはカスタムラベルを使う', () => {
     state.tagLabels = { work: 'シリーズ' };
-    expect(api.groupedTagVocab('')[0].name).toBe('シリーズ');
+    expect(api.groupedTagVocab()[0].name).toBe('シリーズ');
   });
 });
 
 describe('groupedTagVocab（poster スコープ）', () => {
   test('セクション構成は post と共通', () => {
-    expect(api.groupedTagVocab('', { scope: 'poster' }).map((g) => g.name)).toEqual(['作品', 'キャラ', '未分類']);
+    expect(api.groupedTagVocab({ scope: 'poster' }).map((g) => g.name)).toEqual(['作品', 'キャラ', '未分類']);
   });
 
   // The general pool comes from posterTags (資料/あんず), not from the post-side pool
   test('一般プールは posterTags 由来', () => {
-    const out = api.groupedTagVocab('', { scope: 'poster' });
+    const out = api.groupedTagVocab({ scope: 'poster' });
     const general = out.find((g) => g.name === '未分類');
     expect(general?.tags).toEqual(['あんず', '資料'].sort(ja));
   });
@@ -257,7 +251,7 @@ test('live getter: ストアの丸ごと差し替えが反映される', () => {
   state.allPosts = [{ captureId: 'q1', tags: ['新規タグ'] }];
   state.tagTypes = {};
 
-  const out = api.groupedTagVocab('');
+  const out = api.groupedTagVocab();
   expect(out).toHaveLength(1);
   expect(out[0].tags).toEqual(['新規タグ']);
 });

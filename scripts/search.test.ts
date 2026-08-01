@@ -63,6 +63,17 @@ describe('B 経由のマッチ（ひらがなクエリ↔カタカナ本文）',
   });
 });
 
+describe('短語彙用の正規化部分一致', () => {
+  test('全角半角・カナかな・濁点のゆれを吸収する', () => {
+    expect(S.includesNormalized('ﾊﾞｯｸﾞ一覧', 'はっく')).toBe(true);
+  });
+
+  test('空のクエリは一致し、飛び石一致はしない', () => {
+    expect(S.includesNormalized('ネコかわいい', '')).toBe(true);
+    expect(S.includesNormalized('ネコかわいい', 'ねわ')).toBe(false);
+  });
+});
+
 describe('A: サブシーケンス（順序一致・飛び石OK）', () => {
   test('"ねこわ" が "ねこかわいい" に一致（飛び石）', () => {
     expect(S.compile('ねこわ')('ねこかわいい')).toBe(true);

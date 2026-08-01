@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { KeyboardEvent } from 'react';
 import { setSelectOpen } from '../services/open-select-registry.ts';
 import { normalizeTagName } from '../../../../../native-host/tag-normalize.mts';
+import { includesNormalized } from '../services/search.ts';
 
 // Inline tag editing, in the inspector (P2⑦). Editing used to live in a popover
 // anchored to a ✎ / 🏷 button (Issue #22); it is now part of the panel that
@@ -72,8 +73,8 @@ export function TagField({ tags, vocabGroups, coocGroups, srcTags, labels, onAdd
   }, []);
 
   const groups = useMemo<Group[]>(() => {
-    const q = query.trim().toLowerCase();
-    const matches = (t: string) => !q || t.toLowerCase().includes(q);
+    const q = query.trim();
+    const matches = (t: string) => includesNormalized(t, q);
     const out: Group[] = [];
     // Context hints only while the field is untouched — see the note above.
     if (!q) for (const g of coocGroups || []) if (g.items.length) out.push({ value: g.name, items: g.items });

@@ -224,6 +224,13 @@ describe('namedPosters / filteredPosters', () => {
     state.search = 'ali';
     expect(ukeys(api.filteredPosters())).toBe('x:1');
   });
+
+  test('検索は字形ゆれを吸収する', () => {
+    users[0].displayName = 'ﾊﾞｯｸﾞ';
+    state.search = 'はっく';
+    expect(ukeys(api.filteredPosters())).toBe('x:1');
+    users[0].displayName = 'Alice';
+  });
 });
 
 describe('dynamicMatches / folderRecords / キャッシュ', () => {
@@ -305,6 +312,12 @@ describe('filteredFolders', () => {
   test('検索は名前に大小無視で当たる', () => {
     state.search = 'gam';
     expect(cnames(api.filteredFolders())).toBe('Gamma');
+  });
+
+  test('検索は名前の字形ゆれを吸収する', () => {
+    state.folders[2].name = 'ﾊﾞｯｸﾞ';
+    state.search = 'はっく';
+    expect(cnames(api.filteredFolders())).toBe('ﾊﾞｯｸﾞ');
   });
 
   test('元のリストの並びを壊さない', () => {
