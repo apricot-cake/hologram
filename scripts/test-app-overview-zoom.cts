@@ -95,6 +95,22 @@ const evalJs = `(async () => {
       else { stable = 0; last = s; }
     }
   };
+  // Twin of settle() above, but for the SIZE axis instead of scrollTop: a size
+  // commit goes through the same rAF-then-150ms-settle pipeline (see
+  // grid-density-builder.ts's handleZoomWheel), and on a loaded machine that
+  // pipeline can take meaningfully longer than a fixed sleep budgets for — the
+  // same trap the comment above already called out for scrollTop (a fixed 300ms
+  // sleep here read the pre-commit value on a slow CI runner's nightly run).
+  const settleSize = async (ms) => {
+    let last = Number.NaN, stable = 0;
+    for (let i = 0; i * 50 < ms && stable < 3; i++) {
+      await sleep(50);
+      const s = size();
+      if (s === last) stable++;
+      else { stable = 0; last = s; }
+    }
+    return size();
+  };
   const scroller = document.querySelector('[data-slot="content-scroll"]');
   // Wait until the full-content height stands up, i.e. until the virtual grid finishes its first layout pass.
   const laidOut = await waitFor(() => scroller.scrollHeight > scroller.clientHeight * 4, 8000);
@@ -134,8 +150,7 @@ const evalJs = `(async () => {
   // no-ops beyond that). Notches are applied batched in a single frame, so reading
   // synchronously would read the pre-change value — wait for the 150ms settle before reading.
   for (let i = 0; i < 40; i++) fire(120);
-  await sleep(300);
-  const small = size();
+  const small = await settleSize(5000);
   const prefs = await window.hologram.getPrefs();
   // Turning it further while pinned to the edge doesn't move the size any more. **Not
   // running the finalize step** can't actually be verified here — at this scale (200
@@ -143,12 +158,10 @@ const evalJs = `(async () => {
   // re-request, so passing would be a meaningless assertion (confirmed green under both
   // implementations). Eyeballing and measuring at real-library scale is the authority here.
   for (let i = 0; i < 10; i++) fire(120);
-  await sleep(400);
-  const stableAtLimit = size() === small;
+  const stableAtLimit = (await settleSize(5000)) === small;
   // Zoom back in (zoom-in is deltaY<0)
   for (let i = 0; i < 3; i++) fire(-120);
-  await sleep(300);
-  const back = size();
+  const back = await settleSize(5000);
   return [start, small, prefs.gridSize, back, stableAtLimit, anchorReady ? 1 : 0, drift, moved ? 1 : 0].join(',');
 })()`;
 
