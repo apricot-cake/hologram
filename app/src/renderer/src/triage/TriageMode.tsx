@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty';
 import { t } from '../_shared/i18n.ts';
+import { includesNormalized } from '../services/search.ts';
 import * as triage from '../services/triage.ts';
 import { triageApplyFolder, triageApplyTag, triageCloseTriage, triageCurrentMedia, triageListFolders, triageSkip, triageUndoLast } from '../services/orchestrator.ts';
 
@@ -94,7 +95,7 @@ function PinSlot({ slot, tag }: { slot: number; tag: string }) {
 
 function FolderPopover({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
   const [query, setQuery] = useState('');
-  const folders = triageListFolders().filter((f) => !query.trim() || f.name.toLowerCase().includes(query.trim().toLowerCase()));
+  const folders = triageListFolders().filter((f) => includesNormalized(f.name, query.trim()));
   return (
     <Popover
       open={open}

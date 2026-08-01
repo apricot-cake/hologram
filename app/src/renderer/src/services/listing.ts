@@ -27,6 +27,7 @@
 //   allFolders() — CF().allFolders() or [] before folders load
 //   filterLabel(f) — leaf pill label (tab-state.ts makeTabLabels product)
 import { shuffleRank } from './shuffle.ts';
+import { includesNormalized } from './search.ts';
 
 export interface ListingDeps {
   allPosts(): HologramPost[];
@@ -126,13 +127,13 @@ export function makeListing(deps: ListingDeps) {
     return buildUsers().filter((u) => u.displayName || u.screenName);
   }
   function filteredPosters() {
-    const q = searchQuery().trim().toLowerCase();
+    const q = searchQuery().trim();
     let list = namedPostersImpl();
     // Boolean query tree (platform / instance / tag / folder / date).
     const root = posterQBTree();
     if (root.children.length) list = list.filter((u) => posterQBEval(u));
     // Search is kept OUT of the tree (same approach as the post side).
-    if (q) list = list.filter((u) => (u.displayName || '').toLowerCase().includes(q) || (u.screenName || '').toLowerCase().includes(q));
+    if (q) list = list.filter((u) => includesNormalized(u.displayName, q) || includesNormalized(u.screenName, q));
     const nameOf = (u: HologramUserAgg) => (u.displayName || u.screenName || '').toLowerCase();
     list = list.slice();
     // Sort: 'count' | 'name' | 'date-desc' | 'date-asc'. The date axis (dim) comes from the
@@ -222,9 +223,9 @@ export function makeListing(deps: ListingDeps) {
     return chips; // React renders the .folder-cond chips from these labels
   }
   function filteredFolders() {
-    const q = searchQuery().trim().toLowerCase();
+    const q = searchQuery().trim();
     let list = allFolders().slice();
-    if (q) list = list.filter((c) => (c.name || '').toLowerCase().includes(q));
+    if (q) list = list.filter((c) => includesNormalized(c.name, q));
     const cSort = folderSort();
     if (cSort === 'recent') list.sort((a, b) => (b.created || 0) - (a.created || 0) || (a.name || '').localeCompare(b.name || ''));
     else if (cSort === 'count') list.sort((a, b) => folderItemCount(b) - folderItemCount(a) || (a.name || '').localeCompare(b.name || ''));
