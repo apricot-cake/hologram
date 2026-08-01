@@ -274,6 +274,24 @@ function isWriteTool(input) {
   return String(input.tool_input?.command || '').includes('apply_patch');
 }
 
+function writeTarget(input) {
+  const target = input?.tool_input?.file_path || input?.tool_input?.notebook_path;
+  return typeof target === 'string' && target.length > 0 ? target : null;
+}
+
+// The guard exists to keep repository edits out of the main tree, so it must
+// not speak for files that are not in the repository at all. Fixed-path config
+// (~/.claude, ~/.agents) is read from its real location, so it can only be
+// edited from wherever the session already is.
+function governedByPreview(worktrees, target) {
+  if (!target) return true;
+  const file = normalize(target);
+  return worktrees.some((worktree) => {
+    const root = normalize(worktree);
+    return file === root || file.startsWith(`${root}/`);
+  });
+}
+
 function hookDeny(reason) {
   process.stdout.write(
     JSON.stringify({
@@ -314,6 +332,7 @@ async function hookCheck() {
   const root = input.cwd || ROOT;
   try {
     const context = worktreeContext(root);
+    if (!governedByPreview(context.worktrees, writeTarget(input))) return;
     if (normalize(context.sourceRoot) === normalize(context.mainRoot)) {
       hookDeny('本体ツリーは読み取り専用です。専用worktreeへ移ってから編集してください。');
       return;
@@ -386,6 +405,7 @@ module.exports = {
   alive,
   claimPreview,
   claimTransition,
+  governedByPreview,
   normalize,
   readDevStatus,
   readSelection,

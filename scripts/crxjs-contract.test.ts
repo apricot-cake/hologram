@@ -10,6 +10,7 @@ const viteConfig = fs.readFileSync(path.join(import.meta.dirname, '..', 'extensi
 const preview = require('./extension-preview-control.cts') as {
   PreviewBusyError: new (state: Record<string, unknown>) => Error;
   claimTransition(existing: Record<string, unknown> | null, request: Record<string, string>): Record<string, unknown>;
+  governedByPreview(worktrees: string[], target: string | null): boolean;
   releaseTransition(existing: Record<string, unknown> | null, request: Record<string, string | boolean>): Record<string, unknown>;
 };
 const patch = require('./patch-crxjs-runtime-reload.cts') as {
@@ -75,6 +76,17 @@ describe('extension preview ownership', () => {
   test('does not let another session steal the shared Chrome preview', () => {
     const first = preview.claimTransition(null, request);
     expect(() => preview.claimTransition(first, { ...request, ownerId: 'session-b' })).toThrow(preview.PreviewBusyError);
+  });
+
+  test('governs repository writes only', () => {
+    const worktrees = [request.mainRoot, request.sourceRoot];
+    expect(preview.governedByPreview(worktrees, 'C:\\repo\\scripts\\extension-dev-supervisor.cts')).toBe(true);
+    expect(preview.governedByPreview(worktrees, 'C:\\repo-wt-a\\extension\\entrypoints\\capture.ts')).toBe(true);
+    expect(preview.governedByPreview(worktrees, 'C:\\Users\\dev\\.claude\\CLAUDE.md')).toBe(false);
+    // A sibling directory that merely starts with the repository path is outside it.
+    expect(preview.governedByPreview(worktrees, 'C:\\repo-notes\\todo.md')).toBe(false);
+    // Bash apply_patch carries no path, so it stays governed.
+    expect(preview.governedByPreview(worktrees, null)).toBe(true);
   });
 
   test('only the owner can return the preview to main', () => {
