@@ -1,16 +1,21 @@
-// 拡張のデザイントークン（#270）のガード。
+// Guard for the extension's design tokens (#270).
 //
-// アプリの globals.css を正として生成した extension/utils/tokens.generated.css が、
-// ①手で編集されていないか ②拡張のコードが実在するトークンだけを参照しているか
-// ③拡張側に色のベタ書きが復活していないか ④両テーマ × 参照4下地で読めるか、を見る。
+// extension/utils/tokens.generated.css, generated with the app's globals.css as
+// source of truth, is checked for: (1) whether it was hand-edited (2) whether
+// the extension's code only references tokens that actually exist (3) whether
+// hardcoded colors have crept back into the extension side (4) whether it's
+// readable across both themes x 4 reference backdrops.
 //
-// ④が本題。拡張の面は「アプリが選んだ背景」ではなく**任意のページ**の上に乗るので、
-// アプリ内なら成立する組み合わせ（サーフェス色に近い髪の毛のような境界線など）が
-// そのままでは成立しない。純黒・X の dim・pixiv の暗色・白の4つを参照下地に固定し、
-// 「境界は下地と塗りの両方に対して 3:1」「本文は 4.5:1」を数値で押さえる。
+// (4) is the main point. Since the extension's surfaces sit on top of **any
+// page**, not "a background the app chose", a combination that works fine
+// inside the app (like a hairline border close to the surface color) doesn't
+// necessarily work as-is out there. Four reference backdrops are fixed — pure
+// black, X's dim theme, pixiv's dark theme, and white — and the numeric bars
+// "borders need 3:1 against both the backdrop and the fill" and "body text needs 4.5:1" are enforced.
 //
-// 半透明のトークンは下地の上に合成してから測る＝画像の上に乗る小型コントロールは
-// 最悪ケース（真っ黒な写真／真っ白な写真）の両方で本文ティアを満たす必要がある。
+// Semi-transparent tokens are measured after compositing over the backdrop =
+// small controls that sit on top of images have to satisfy the body-text tier
+// against both worst cases (an all-black photo / an all-white photo).
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -25,7 +30,7 @@ const { tokens, css, ts } = build();
 const light = new Map(tokens.map((t: any) => [t.name, t.light as string]));
 const dark = new Map(tokens.map((t: any) => [t.name, t.dark as string]));
 
-// === 色の計算 ===============================================================
+// === color calculations ===============================================================
 
 interface Rgb {
   r: number;
@@ -40,7 +45,7 @@ const rgb = (value: string): Rgb => {
   return c;
 };
 
-// 半透明を下地の上に合成する（source-over）。
+// Composites a semi-transparent color over a backdrop (source-over).
 const over = (value: string, bg: Rgb): Rgb => {
   const c = parseColor(value);
   if (!c) throw new Error(`色として読めない: ${value}`);
@@ -64,8 +69,8 @@ const ratio = (a: Rgb, b: Rgb): number => {
   return Number(((hi + 0.05) / (lo + 0.05)).toFixed(2));
 };
 
-// 参照下地4種。拡張の面はこの4つ「すべての上」で成立しなければならない
-// （ユーザーのブラウザテーマと、見ているサイトの明暗は独立に決まる）。
+// The 4 reference backdrops. The extension's surfaces must hold up "on top of all four" of these
+// (the user's browser theme and the light/dark mode of the site they're viewing are decided independently).
 const HOSTS: Record<string, Rgb> = {
   純黒: { r: 0, g: 0, b: 0 },
   'X dim': { r: 21, g: 32, b: 43 },
@@ -78,17 +83,18 @@ const THEMES: [string, Map<string, string>][] = [
   ['dark', dark],
 ];
 
-// === ①生成物が最新か =========================================================
+// === (1) is the generated artifact up to date =========================================================
 
 describe('生成物', () => {
   test('tokens.generated.css は入力と一致している（手編集・生成漏れが無い）', () => {
-    // 落ちたら: node scripts/gen-extension-tokens.cts
+    // If this fails: node scripts/gen-extension-tokens.cts
     expect(fs.readFileSync(OUT_CSS, 'utf8')).toBe(css);
   });
 
-  // TS 側の生成物も同じ検査に入れる（#269）。⚠️ここが無いと下の「色のベタ書き」検査から
-  // tokens.generated.ts を外した瞬間、このファイルだけ手編集し放題になる＝バッジの色が
-  // アプリのトークンから外れても誰も気付かない。
+  // Put the TS-side generated artifact through the same check too (#269).
+  // Warning: without this, the moment tokens.generated.ts is excluded from the
+  // "hardcoded color" check below, this file alone becomes free to hand-edit =
+  // the badge's color could drift from the app's tokens without anyone noticing.
   test('tokens.generated.ts は入力と一致している', () => {
     expect(fs.readFileSync(OUT_TS, 'utf8')).toBe(ts);
   });
@@ -98,11 +104,13 @@ describe('生成物', () => {
   });
 });
 
-// === ②③拡張コードとの噛み合わせ ==============================================
+// === (2)(3) fitting together with the extension code ==============================================
 
-// トークンの入力（拡張固有の定義）と生成物そのものは対象外＝ここに色リテラルが在るのが
-// 正しい2ファイル。それ以外の .css は #44 で入った部品シートで、状態→色の対応を持つのは
-// もうそこなので、スキャンから外すと「使われていないトークン」の判定が嘘になる。
+// The token input (the extension-specific definitions) and the generated
+// artifact itself are out of scope = these are the two files where having
+// color literals is correct. The other .css files are the component sheet
+// that came in with #44, and since that's where the state->color mapping now
+// lives, excluding it from the scan would make the "unused token" judgment a lie.
 const TOKEN_FILES = new Set(['tokens.source.css', 'tokens.generated.css']);
 
 const SOURCES = [
@@ -133,23 +141,26 @@ describe('拡張コードとの噛み合わせ', () => {
     expect([...light.keys()].filter((n) => !used.has(n)).sort()).toEqual([]);
   });
 
-  // #270 の受け入れ条件: 拡張側の色リテラルは token source と生成物だけ。
+  // #270's acceptance criterion: the only place color literals belong on the extension side is the token source and the generated artifact.
   test('拡張のコードに色のベタ書きが無い', () => {
-    // 白と黒だけは例外にしない: 「白なら安全」がライトテーマで白い面に白を置く
-    // 事故の入口だった（#136 が根絶したはずの、片テーマだけ壊れる系統）。
+    // White and black aren't made exceptions: "white must be safe" has been the
+    // entry point for the bug of putting white on a white surface in the light
+    // theme (the kind of bug #136 was supposed to have wiped out — only one theme breaks).
     const COLOR = /#[0-9a-fA-F]{3,8}\b|\b(?:rgba?|hsla?|oklch|oklab|color-mix)\s*\(/g;
     const offenders: string[] = [];
-    // 生成された .ts は SOURCES に残したまま、この検査からだけ外す＝ツールバーの
-    // バッジ（#269）はブラウザが解決済みの色文字列から描くので var() を渡せず、
-    // 生成物が色リテラルを持つのが正しい。SOURCES から外すと、この生成物だけが
-    // 名指ししているトークン（モーション4種）が「使われていない」に転ぶ。
+    // Keep the generated .ts in SOURCES, and only exclude it from this
+    // particular check = the toolbar badge (#269) draws from already-resolved
+    // color strings since a service worker can't pass var(), so it's correct
+    // for the generated artifact to have color literals. Excluding it from
+    // SOURCES would make the tokens only this generated file names (the 4
+    // motion tokens) fall over into "unused".
     for (const rel of SOURCES.filter((f) => path.basename(f) !== 'tokens.generated.ts')) {
       const text = read(rel)
         .replace(/\/\*[\s\S]*?\*\//g, '')
         .replace(/^\s*\/\/.*$/gm, '')
-        // HTML のコメントも落とす＝拡張ページの .html は3種類目のコメント様式を
-        // 持つ。落とさないと Issue 番号（`#269`）が16進の色として引っかかり、
-        // 「色をベタ書きした」と読めるメッセージで落ちる。
+        // Strip HTML comments too = the extension pages' .html files have a
+        // third comment style. Without stripping it, the issue number (`#269`)
+        // would trip as a hex color, failing with a message that reads like "a color was hardcoded".
         .replace(/<!--[\s\S]*?-->/g, '');
       for (const [hit] of text.matchAll(COLOR)) offenders.push(`${rel}: ${hit}`);
     }
@@ -157,7 +168,7 @@ describe('拡張コードとの噛み合わせ', () => {
   });
 });
 
-// === ④コントラスト ==========================================================
+// === (4) contrast ==========================================================
 
 describe.each(THEMES)('コントラスト（%s テーマ）', (_name, v) => {
   const surface = () => rgb(v.get('--hologram-surface') as string);
@@ -176,8 +187,8 @@ describe.each(THEMES)('コントラスト（%s テーマ）', (_name, v) => {
     expect(ratio(border, surface())).toBeGreaterThanOrEqual(3);
   });
 
-  // Alt+S の選択フレームとドラッグ中の枠。カードの上ではなくページに直接乗るので、
-  // 4下地すべてに対して見えなければならない。
+  // Alt+S's selection frame and the drag-in-progress outline. Since these sit
+  // directly on the page rather than on a card, they must be visible against all 4 backdrops.
   test.each(Object.entries(HOSTS))('選択フレームのアクセントが %s の上で 3:1 以上', (_host, bg) => {
     expect(ratio(rgb(v.get('--hologram-accent') as string), bg)).toBeGreaterThanOrEqual(3);
   });
@@ -186,7 +197,7 @@ describe.each(THEMES)('コントラスト（%s テーマ）', (_name, v) => {
     expect(ratio(rgb(v.get('--hologram-on-accent') as string), rgb(v.get('--hologram-accent') as string))).toBeGreaterThanOrEqual(4.5);
   });
 
-  // ドラッグ中の破線リングはアクセントそのもの＝カードの上で見えること。
+  // The dashed ring during a drag is the accent color itself = it must be visible on top of a card.
   test('アクセントがカードの上で 3:1 以上', () => {
     expect(ratio(rgb(v.get('--hologram-accent') as string), surface())).toBeGreaterThanOrEqual(3);
   });
@@ -201,15 +212,17 @@ describe.each(THEMES)('コントラスト（%s テーマ）', (_name, v) => {
     expect(ratio(fill, surface())).toBeGreaterThanOrEqual(3);
   });
 
-  // 小型コントロール（保存ボタン）のホバー時の塗り。カードと同じ面を使うので、
-  // ホバーで面が変わってもインクが読めなくなってはいけない。
+  // The fill of a small control's (the save button's) hover state. Since it
+  // uses the same surface as the card, the ink must stay readable even when the surface changes on hover.
   test('ホバー時の面の上でもインクが 4.5:1 以上', () => {
     expect(ratio(rgb(v.get('--hologram-ink') as string), rgb(v.get('--hologram-hover') as string))).toBeGreaterThanOrEqual(4.5);
   });
 
-  // 保存済みマークと保存中の面は半透明＝下地は「任意の写真」なので、最悪ケースの
-  // 両端（真っ黒な写真／真っ白な写真）で本文ティアを満たすこと。ここがアルファの
-  // 上限を決めている＝透かすほど下地が混ざり、いずれ字が読めなくなる。
+  // The saved mark and the saving-in-progress surface are semi-transparent =
+  // since the backdrop is "any photo", they must satisfy the body-text tier at
+  // both worst-case extremes (an all-black photo / an all-white photo). This is
+  // what sets the upper bound on alpha = the more see-through it is, the more
+  // the backdrop bleeds in, and eventually the text becomes unreadable.
   test.each([
     ['真っ黒な写真', { r: 0, g: 0, b: 0 }],
     ['真っ白な写真', { r: 255, g: 255, b: 255 }],
@@ -218,8 +231,9 @@ describe.each(THEMES)('コントラスト（%s テーマ）', (_name, v) => {
     expect(ratio(rgb(v.get('--hologram-ink') as string), disc)).toBeGreaterThanOrEqual(4.5);
   });
 
-  // ホバー保存ボタンも同じ半透明のディスクに乗る（ユーザー判断・2026-07-29）。
-  // ホバーで色だけ持ち上げるので、持ち上げた先でもグリフが読めなければならない。
+  // The hover save button also sits on the same semi-transparent disc (user's
+  // call, 2026-07-29). Since hover only lifts the color, the glyph must stay
+  // readable at that lifted color too.
   test.each([
     ['真っ黒な写真', { r: 0, g: 0, b: 0 }],
     ['真っ白な写真', { r: 255, g: 255, b: 255 }],
@@ -228,17 +242,18 @@ describe.each(THEMES)('コントラスト（%s テーマ）', (_name, v) => {
     expect(ratio(rgb(v.get('--hologram-ink') as string), disc)).toBeGreaterThanOrEqual(4.5);
   });
 
-  // リングはカードの内側なので、下地はホストページではなくカードの塗り。
+  // Since the ring is inside the card, the backdrop is the card's fill, not the host page.
   test('ドロップ先の破線リングがカードの上で 3:1 以上', () => {
     expect(ratio(over(v.get('--hologram-ring') as string, surface()), surface())).toBeGreaterThanOrEqual(3);
   });
 });
 
-// === ⑤ツールバーのバッジ（#269） ============================================
+// === (5) the toolbar badge (#269) ============================================
 
-// ブラウザが描く唯一の面＝サービスワーカーにはテーマを問う手段が無いので、
-// ライト行の値をそのまま両テーマのツールバーへ出す。丸はその値で塗り潰される
-// （ツールバーの色は透けない）ので、成立が要るのは「塗りと文字」の対だけ。
+// The only surface the browser itself draws = since a service worker has no
+// way to query the theme, the light row's values go straight to the toolbar
+// for both themes as-is. Since the circle is filled solid with that value (the
+// toolbar's color doesn't show through), all that needs to hold is the "fill vs. text" pair.
 describe('ツールバーのバッジ', () => {
   const badge = generatedActionBadge as { background: string; text: string };
 

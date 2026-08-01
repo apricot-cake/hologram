@@ -1,20 +1,20 @@
 'use strict';
 
-// #565 の回帰ハーネス。**同じ config ディレクトリで実 Electron を2回起動**して、
-// 再起動をまたいでタブが「本数・順序・タイトル」より先まで戻ることを見る＝
-// タブ内の戻る/進むの履歴（#144）とスクロール位置。1回起動の
-// test-app-tabs.cts はセッション中の記憶（メモリ上）しか触れないので、
-// DB へ書かれずに落ちていた3フィールドをまるごと見逃していた。
+// Regression harness for #565. **Launches the real Electron app twice against the same
+// config directory** and checks that tabs come back after a restart with more than just
+// "count / order / title" restored — the in-tab back/forward history (#144) and the scroll
+// position too. The single-launch test-app-tabs.cts only touches in-session (in-memory)
+// state, so it completely missed 3 fields that were silently failing to reach the DB.
 //
-// 2本のタブに役割を分ける（1本には同居できない）:
-//   タブ1 = 絞り込まずに深くスクロール → 起動時に復元されるスクロール位置
-//   タブ2 = フィルタを1つ足して履歴を1コマ積む → 復元後に「戻る」が効くか
-// 絞り込むとグリッドが短くなってスクロール位置が 0 に潰れるため、同じタブで
-// 両方は測れない。
+// Splits the work across two tabs (they can't coexist in one tab):
+//   Tab 1 = scroll deep with no filter -> the scroll position restored on launch
+//   Tab 2 = add one filter to push one entry onto the history -> does "back" work after restore
+// Applying a filter shortens the grid and collapses the scroll position to 0, so both
+// can't be measured in the same tab.
 //
-// 画像タブの見出し（autoTitle）はここでは触らない＝画像ビューを開く操作は
-// 実レンダラだと手数が多くて壊れやすい。保存経路そのものは
-// scripts/tabs-persist-roundtrip.test.ts が純ユニットで往復まで見ている。
+// The image tab's heading (autoTitle) isn't touched here — opening the image view takes
+// too many steps in the real renderer and is fragile. The save path itself is covered
+// round-trip as a pure unit test by scripts/tabs-persist-roundtrip.test.ts.
 //
 //   node scripts/test-app-tab-restart.cts
 
@@ -38,9 +38,10 @@ fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolde
 
 const jpegB64 = '/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0a' + 'HBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAA' + 'AAAAAAAAAAAACP/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AfwH/2Q==';
 
-// スクロール位置の検証には「1画面に収まらない」ことが要る＝収まっていると、
-// 位置が戻ったのか動きようが無かったのかを区別できない（test-app-overview-zoom
-// と同じ理由）。タグ alpha は先頭2件だけに付け、フィルタ後は短いグリッドになる。
+// Verifying the scroll position requires that it "doesn't fit on one screen" — if it does
+// fit, there's no way to tell whether the position was restored or simply had nowhere to
+// go (same reason as test-app-overview-zoom). Tag alpha is applied to only the first 2
+// records, so the grid gets short after filtering.
 const records: any[] = [];
 for (let i = 0; i < 200; i++) {
   const captureId = `171760000000${i}-abcd`;
@@ -62,7 +63,7 @@ seedLibrary(configDir, records);
 
 const TARGET_SCROLL = 800;
 
-// 両方の起動で使う小道具。テンプレートに埋め込むので関数宣言のまま文字列で持つ。
+// Helpers shared by both launches. Kept as a string (rather than function declarations) so it can be embedded in the template.
 const PRELUDE = `
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const waitFor = async (fn, ms = 8000) => { for (let i = 0; i * 50 < ms; i++) { if (fn()) return true; await sleep(50); } return false; };
@@ -73,7 +74,7 @@ const PRELUDE = `
   const cardCount = () => document.querySelectorAll('[data-slot="post-grid"] [data-slot="post-card"]').length;
   const backBtn = () => document.querySelector('button[aria-label="戻る"]');
   const key = (k, opts = {}) => document.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true, ...opts }));
-  // スクロール位置が動かなくなるまで待つ（仮想グリッドは描画窓を作り直す）。
+  // Wait until the scroll position stops moving (the virtual grid rebuilds its render window).
   const settle = async () => {
     let last = Number.NaN, stable = 0;
     for (let i = 0; i < 60 && stable < 3; i++) {
@@ -88,9 +89,9 @@ const PRELUDE = `
   };
 `;
 
-// 1回目: タブ1を深くスクロールし、タブ2でフィルタを1つ足してから、タブ1を
-// アクティブにして終了する。永続化は 400ms(スクロール) + 800ms(タブ) の二段
-// デバウンス越しなので、最後にその分待つ。
+// First launch: scroll tab 1 deep, add one filter in tab 2, then make tab 1 active before
+// exiting. Persistence goes through a two-stage debounce of 400ms (scroll) + 800ms (tabs),
+// so wait that long at the end.
 const evalBoot1 = `(async () => {
   ${PRELUDE}
   const laidOut = await ready();
@@ -99,7 +100,7 @@ const evalBoot1 = `(async () => {
   await settle();
   const savedScroll = Math.round(scroller().scrollTop);
 
-  // タブ2: フィルタを足す＝タブ内履歴に1コマ積まれ、「戻る」が生える。
+  // Tab 2: add a filter -> pushes one entry onto the in-tab history, so "back" appears.
   key('t', { ctrlKey: true });
   await sleep(400);
   byText('button', 'フィルタ').click();
@@ -114,10 +115,10 @@ const evalBoot1 = `(async () => {
   const filteredCards = cardCount();
   const canBackLive = !backBtn().disabled;
 
-  // スクロールしていたタブへ戻してから終了（＝再起動後のアクティブタブ）。
+  // Switch back to the scrolled tab before exiting (= the active tab after restart).
   tabItems()[0].click();
   await sleep(500);
-  await sleep(1400); // 400ms(scroll) + 800ms(tabs) デバウンスを越える
+  await sleep(1400); // outlast the 400ms (scroll) + 800ms (tabs) debounce
 
   let blob = null;
   try {
@@ -135,17 +136,17 @@ const evalBoot1 = `(async () => {
   return { laidOut, scrolled, savedScroll, tabCount: tabItems().length, filteredTitle, filteredCards, canBackLive, blob };
 })()`;
 
-// 2回目: 同じ config を読ませて起動し、復元された側だけを見る。
+// Second launch: boot against the same config and only check the restored side.
 const evalBoot2 = `(async () => {
   ${PRELUDE}
   const laidOut = await ready();
-  // アクティブタブ（1回目にスクロールしていた方）の位置が戻るか。復元は初回
-  // 描画後の rAF×2 なので、値そのものを待つ。
+  // Does the active tab (the one scrolled in the first launch) get its position back?
+  // Restore happens 2 rAFs after the first render, so wait for the actual value.
   const scrollRestored = await waitFor(() => Math.abs(scroller().scrollTop - ${TARGET_SCROLL}) < 12, 8000);
   const restoredScroll = Math.round(scroller().scrollTop);
   const tabCount = tabItems().length;
 
-  // フィルタタブへ切り替え＝永続化された履歴を adopt する経路。
+  // Switch to the filtered tab = the path that adopts the persisted history.
   tabItems()[1].click();
   await sleep(700);
   const restoredTitle = activeTitle();
@@ -196,19 +197,20 @@ function boot(evalJs: string): Promise<Record<string, any>> {
   };
 
   console.log('\n--- Tab restart restore (#565) ---\n');
-  // 1回目が土台を作れたか（ここが崩れると2回目の判定に意味が無い）
+  // Did the first launch build the foundation (if this breaks, the second launch's checks are meaningless)
   check('① 1回目: グリッドが1画面に収まらない', !!r1.laidOut && !!r1.scrolled);
   check(`① 1回目: ${TARGET_SCROLL}px までスクロールした`, Math.abs((r1.savedScroll ?? -1) - TARGET_SCROLL) < 4);
   check('① 1回目: 2タブになり、2つ目は alpha で絞り込まれている', r1.tabCount === 2 && r1.filteredCards === 2);
   check('① 1回目: 絞り込んだ直後は「戻る」が押せる', r1.canBackLive === true);
-  // 永続化された塊の形（#565 の本体）
+  // The shape of the persisted blob (the heart of #565)
   check('② DB へ 2タブが載り、アクティブはスクロールしていた方', !!r1.blob && r1.blob.tabs === 2 && r1.blob.activeIsFirst === true);
-  // main が返す形＝列3つ＋塊1つ。塊の中身は下の2行で見る（レンダラーの払い出し側で
-  // 兄弟が増えていないことは scripts/tabstate.test.ts が見る）。
+  // The shape main returns = 3 columns + 1 blob. The blob's contents are checked in the
+  // next 2 lines (that no siblings got added on the renderer's unpacking side is covered
+  // by scripts/tabstate.test.ts).
   check('② DB から返るタブは id/pinned/state/title の4つ', !!r1.blob && r1.blob.siblings === 'id,pinned,state,title');
   check('② スクロール位置が塊の中に入っている', !!r1.blob && Math.abs((r1.blob.scrollTop ?? -1) - TARGET_SCROLL) < 40);
   check('② 戻る/進むの履歴が塊の中に入っている（2コマ）', !!r1.blob && r1.blob.navLen >= 2);
-  // 再起動後＝実際に戻るか
+  // After restart = does it actually come back
   check('③ 2回目: タブが2本とも戻る', r2.tabCount === 2);
   check(`③ 2回目: アクティブタブのスクロール位置が戻る (${r2.restoredScroll})`, r2.scrollRestored === true);
   check('③ 2回目: フィルタタブのタイトルが1回目と同じ', !!r2.restoredTitle && r2.restoredTitle === r1.filteredTitle);

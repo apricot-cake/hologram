@@ -1,12 +1,13 @@
-// cooc.ts のロジック単体テスト。charCandidatesFor（強＝作品→キャラ）・
-// worksCooccurringWith（同名キャラ検知の履歴照会）・relatedTagCandidates
-// （弱＝全タグ共起の関連提案）を、スタブ deps 注入で直接検証する。
+// Unit tests for cooc.ts logic. Tests charCandidatesFor (strong tier = work -> character),
+// worksCooccurringWith (history lookup for same-name-character detection), and
+// relatedTagCandidates (weak tier = related suggestions from all-tag co-occurrence)
+// directly, via stub deps injection.
 
 import { describe, expect, test } from 'vitest';
 import { makeCooc } from '../app/src/renderer/src/services/cooc';
 
-// スタブ環境: 共起パターンを作り込んだ投稿8件
-// 風景↔夜=3件 / 風景↔作品A=3件 / 風景↔キャラX=2件（閾値3未満） / 作品B は1件のみ
+// Stub environment: 8 posts with deliberately constructed co-occurrence patterns
+// 風景<->夜=3 posts / 風景<->作品A=3 posts / 風景<->キャラX=2 posts (below the threshold of 3) / 作品B has only 1 post
 const KIND: Record<string, string> = { 作品A: 'work', 作品B: 'work', キャラX: 'character', キャラY: 'character' };
 const posts = [
   { captureId: 'c1', tags: ['作品A', 'キャラX', '風景'] },
@@ -16,7 +17,7 @@ const posts = [
   { captureId: 'c5', tags: ['風景', '夜'] },
   { captureId: 'c6', tags: ['風景', '夜'] },
   { captureId: 'c7', tags: ['風景', '夜'] },
-  { captureId: 'c8', tags: null }, // 欠損 tags は無視される
+  { captureId: 'c8', tags: null }, // missing tags is ignored
 ];
 
 const { charCandidatesFor, worksCooccurringWith, relatedTagCandidates } = makeCooc({
@@ -58,7 +59,7 @@ describe('worksCooccurringWith（同名キャラ検知の履歴照会）', () =>
 
 describe('relatedTagCandidates（弱ティア＝全タグ共起）', () => {
   test('既定閾値3: 夜・作品A のみ（キャラX=2 は沈黙）', () => {
-    // 夜=3・作品A=3 は閾値(既定3)を満たす。キャラX=2・キャラY=1 は「薄い」ので沈黙。
+    // 夜=3, 作品A=3 meet the threshold (default 3). キャラX=2, キャラY=1 are "thin" so they stay silent.
     const tags = relatedTagCandidates(['風景'], {}).map((x) => x.tag);
     expect(tags.sort()).toEqual(['作品A', '夜'].sort());
   });
@@ -75,7 +76,7 @@ describe('relatedTagCandidates（弱ティア＝全タグ共起）', () => {
     expect(relatedTagCandidates(['風景'], { minCount: 2 })).toContainEqual(expect.objectContaining({ tag: 'キャラX', count: 2 }));
   });
 
-  // count はペア最大値であって合算ではない（風景と3件・夜と0件→3のまま）
+  // count is the max value across pairs, not a sum (3 with 風景, 0 with 夜 -> stays 3)
   test('count は最強ペアの値（合算しない）', () => {
     const workA = relatedTagCandidates(['風景', '夜'], { minCount: 1 }).find((x) => x.tag === '作品A');
     expect(workA).toMatchObject({ count: 3, withTag: '風景' });

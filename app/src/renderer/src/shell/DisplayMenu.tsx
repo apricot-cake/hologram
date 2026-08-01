@@ -1,17 +1,17 @@
 // Display popover — the "how do I see it" axis of the new IA (redesign §3-3, P2②).
 // Linear's "Display" popover: one surface collecting ordering + view + view options,
-// opened from the toolbar's 表示 button. Mode-aware (browseMode): each grid gets its
+// opened from the toolbar's Display button. Mode-aware (browseMode): each grid gets its
 // own sort and its own display axes. Anchors: Linear Display, Notion view options.
 //
 // Both sides are ORTHOGONAL store keys now, not a 3-value enum: three for posts
 // (#618 — layout plus two grid switches), two for posters (#630 — layout plus one,
-// since every platform serves a square avatar and a 正方形 switch there would do
+// since every platform serves a square avatar and a square switch there would do
 // nothing). P2② shipped this popover as a facade over a single value, which is what
-// made 情報を表示 quietly change the thumbnail's shape as well; services/display.ts
+// made "Show Info" quietly change the thumbnail's shape as well; services/display.ts
 // holds the real axes and this surface is exactly a view of them.
 //
-// The rows differ by mode, and only by SUBTRACTION: the layout toggle, 情報を表示 and
-// サイズ sit at the same height in both modes, and posts add 正方形のサムネ between the
+// The rows differ by mode, and only by SUBTRACTION: the layout toggle, Show Info and
+// Size sit at the same height in both modes, and posts add the square-thumbnail toggle between the
 // first two. Nothing is renamed or reordered across the switch.
 import type { ReactNode } from 'react';
 import { LayoutGrid, List, Shuffle, SlidersHorizontal } from 'lucide-react';
@@ -153,7 +153,7 @@ function SortSelect_({ storeKey, apply, options }: { storeKey: string; apply?: (
   );
 }
 
-// Post grid: sort, then the display axes — layout (グリッド/リスト) plus, for the grid,
+// Post grid: sort, then the display axes — layout (grid/list) plus, for the grid,
 // two independent switches. All five combinations are legal on purpose (#618); the two
 // switches go inert in the list, where a row IS its own information.
 function PostControls() {
@@ -187,8 +187,8 @@ function PostControls() {
         </ToggleGroupItem>
       </ToggleGroup>
       {/* Only the square side is named: leaving it off means "keep each picture's own
-          proportions", which needs no term (2026-07-19 確定). Mac 写真.app calls the
-          same switch 「正方形のサムネール」. */}
+          proportions", which needs no term (2026-07-19, finalized). Mac Photos.app calls the
+          same switch "square thumbnail". */}
       <Row label={t('displaySquare')}>
         <Switch checked={shape.square} onCheckedChange={setSquare} disabled={shape.list} />
       </Row>
@@ -207,7 +207,7 @@ function PostControls() {
   );
 }
 
-// Poster grid: sort, then its two display axes (#630). No 形 row — an avatar is
+// Poster grid: sort, then its two display axes (#630). No shape row — an avatar is
 // already square everywhere Hologram reads one, so the switch would be a no-op wearing
 // a control (see services/display.ts). Everything else lines up with the post side.
 function PosterControls() {
@@ -244,7 +244,7 @@ function PosterControls() {
 
 // Panel visibility (#245) — the bulk hide, plus the line that teaches the key pair.
 //
-// It belongs in this popover and not in the toolbar proper: 表示 is the "how do I see it"
+// It belongs in this popover and not in the toolbar proper: Display is the "how do I see it"
 // axis, and "is the grid boxed in by two panels" is an answer to that question, whereas the
 // toolbar itself holds PREDICATES (search / filter / display) and a panel is not one — the
 // split InspectorToggle's header describes, applied one level in.

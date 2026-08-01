@@ -11,7 +11,7 @@
 //   - the vocabulary popup offers tags already used elsewhere in the library
 //   - that popup lines up with the whole field, not with the bare input beside
 //     the chips (which shifts right and narrows as chips are added)
-//   - the card context menu's タグを編集 opens the panel with the caret in the field
+//   - the card context menu's タグを編集 (edit tags) opens the panel with the caret in the field
 //
 // Editing used to live in a popover anchored to a ✎ button (tag-pop, Issue #22);
 // this suite is the behavioural contract for its replacement. Assertions are on
@@ -94,10 +94,10 @@ const evalJs = `(async () => {
 
   await waitFor(() => document.querySelectorAll('[data-slot="post-grid"] [data-slot="post-card"]').length >= 2);
 
-  // A. タグを編集 in the card context menu is the route from a card into tagging
-  // since the hover 🏷 (and the popover it opened) went away in P2⑦. It opens the
-  // panel for that card AND puts the caret in the field — otherwise it would just be
-  // an alias for 詳細 and the user would still have to go find the input.
+  // A. タグを編集 (edit tags) in the card context menu is the route from a card into
+  // tagging since the hover 🏷 (and the popover it opened) went away in P2⑦. It opens
+  // the panel for that card AND puts the caret in the field — otherwise it would just
+  // be an alias for 詳細 (details) and the user would still have to go find the input.
   cardOf(1).dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 40, clientY: 40 }));
   const menuItems = () => [...document.querySelectorAll('[data-slot="dropdown-menu-item"]')];
   out.menuOpened = await waitFor(() => menuItems().some(r => r.textContent.includes('タグを編集')));
@@ -180,8 +180,8 @@ const evalJs = `(async () => {
   out.chipsFinal = chips().join(',');
 
   // G. arrows inside the tag input belong to the CARET, not to the grid. This is the
-  // 連続タグ付け loop's load-bearing guard: arrow to the next card, type, arrow within
-  // what you typed — if the grid ate those the selection would jump mid-word.
+  // consecutive-tagging (連続タグ付け) loop's load-bearing guard: arrow to the next card,
+  // type, arrow within what you typed — if the grid ate those the selection would jump mid-word.
   const el3 = input();
   el3.focus();
   setInput(el3, 'あいう');

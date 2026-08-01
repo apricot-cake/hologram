@@ -6,8 +6,8 @@
 // capture a torn mid-write state. better-sqlite3's Database#backup() wraps
 // sqlite3_backup_init/step/finish directly (confirmed on 13.0.1: it is the
 // SQLite C API, not an app-level copy loop), so this is the ONLY sanctioned
-// way to mirror the live database — see #97's "生きた.dbの生ファイルコピー
-// は禁止" and index.ts's runBackup, the sole caller.
+// way to mirror the live database — see #97's "raw file copy of a live .db is
+// prohibited" and index.ts's runBackup, the sole caller.
 //
 // Electron-free (better-sqlite3 + node builtins only), mirroring lib-db.ts.
 

@@ -1,5 +1,5 @@
-// native-host/inbox.mts のユニットテスト＝耐久取込キューの envelope 形式とアトミック
-// 書き込み（#5 St6 / #299）。素の Node で動く（Electron 不要）。
+// Unit test for native-host/inbox.mts, the durable intake queue's envelope format
+// and atomic writes (#5 St6 / #299). Runs on plain Node (no Electron needed).
 
 import fs from 'node:fs';
 import os from 'node:os';
@@ -85,13 +85,15 @@ describe('writeInboxEvent', () => {
     const envelope = buildEnvelope(rec);
     await writeInboxEvent(folder, envelope);
 
-    // 同じ eventId で "new" 側に既にファイルがある状態からの再書き込みは
-    // tmp ファイル自体は別名（pid+random）なので wx 自体には引っかからないが、
-    // rename 先の new/<eventId>.json は上書きされる（fs.rename の既定動作）。
-    // 二重発行の防止は呼び出し側（bridge.cts の uniqueBase）の責務であり、この
-    // 層は「一度 commit された内容を無言で破壊しない」ことだけを保証しない —
-    // 実際に検証すべきは tmp ファイル名の排他性（同時に2つ書いても両方成功する
-    // か、片方が失敗してもオーファンを残さないか）。
+    // Re-writing with the same eventId when a file already exists on the "new" side:
+    // the tmp file itself has a different name (pid+random), so it doesn't trip the wx
+    // flag itself, but the rename destination new/<eventId>.json does get overwritten
+    // (fs.rename's default behavior). Preventing double-issuance is the caller's
+    // responsibility (bridge.cts's uniqueBase); this layer does not guarantee that
+    // "content already committed once is never silently destroyed" —
+    // what actually needs verifying is the exclusivity of the tmp file name (do both
+    // succeed when two are written concurrently, and does neither leave an orphan
+    // if one fails).
     const envelope2 = buildEnvelope({ ...rec, text: 'edited' });
     await writeInboxEvent(folder, envelope2);
     const finalPath = path.join(inboxNewDir(folder), `${rec.captureId}.json`);

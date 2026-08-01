@@ -1,16 +1,17 @@
-// tags.ts の純ユニットテスト（viewer.js 抽出の8スライス目）。tagKindOf/kindLabel
-// （カスタムラベルのフォールバック）・posterTagsOf/posterFilterVocab（種別順の並び）・
-// groupedTagVocab（種別セクション・post と poster で別の一般タグプール・クエリ絞り込み）・
-// inspectorTagPickerData（vocab の形・取り込み元ハッシュタグ・共起提案のティア）・
-// sameTags を、スタブ deps 注入で検証する。
+// Pure unit tests for tags.ts (the 8th slice extracted from viewer.js). Verifies
+// tagKindOf/kindLabel (fallback for custom labels), posterTagsOf/posterFilterVocab
+// (ordering by kind), groupedTagVocab (kind sections, separate general tag pools for
+// post vs poster, query filtering), inspectorTagPickerData (vocab shape, imported
+// hashtag source, co-occurrence suggestion tiers), and sameTags, all via stub deps
+// injection.
 
 import { beforeEach, describe, expect, test } from 'vitest';
 import { makeTags, sameTags } from '../app/src/renderer/src/services/tags';
 
 const ja = (a: string, b: string) => a.localeCompare(b, 'ja');
 
-// --- スタブ環境 ---
-// getters 経由で読むので、テスト内で state を差し替えると api 側にも即反映される。
+// --- stub environment ---
+// Read via getters, so swapping state inside a test is immediately reflected on the api side.
 let state: {
   tagTypes: Record<string, string>;
   tagLabels: Record<string, any>;
@@ -24,7 +25,7 @@ let api: ReturnType<typeof makeTags>;
 const posterTags = {
   'x:1': ['WorkA', '資料'],
   'x:2': ['CharX', 'あんず'],
-  'x:3': 'not-an-array', // 壊れたエントリ — throw してはいけない
+  'x:3': 'not-an-array', // broken entry — must not throw
 };
 
 const STATIC_MSG: Record<string, string> = {
@@ -46,9 +47,9 @@ beforeEach(() => {
     tagTypes: { WorkA: 'work', WorkB: 'work', CharX: 'character' },
     tagLabels: {},
     allPosts: [
-      { captureId: 'p1', tags: ['俯瞰', '自由帳'] }, // どちらも一般タグ → 未分類プール
-      { captureId: 'p2', tags: ['WorkA'] }, // 種別つき → 未分類プールに入らない
-      { captureId: 'p3' }, // tags 無し — throw してはいけない
+      { captureId: 'p1', tags: ['俯瞰', '自由帳'] }, // both are general tags → uncategorized pool
+      { captureId: 'p2', tags: ['WorkA'] }, // has a kind → does not go into the uncategorized pool
+      { captureId: 'p3' }, // no tags — must not throw
     ],
     charCands: [],
     relatedCands: [],
@@ -87,7 +88,7 @@ describe('tagKindOf / kindLabel', () => {
   test('カスタムラベルが勝つ（live getter）', () => {
     state.tagLabels = { work: 'シリーズ' };
     expect(api.kindLabel('work')).toBe('シリーズ');
-    expect(api.kindLabel('character')).toBe('キャラ'); // 他の種別は組み込みのまま
+    expect(api.kindLabel('character')).toBe('キャラ'); // other kinds stay built-in
   });
 
   test('未知の種別は空文字', () => {
@@ -108,7 +109,7 @@ describe('posterTagsOf / posterFilterVocab', () => {
     expect(api.posterTagsOf('zzz')).toEqual([]);
   });
 
-  // 順位: work (WorkA) → character (CharX) → 一般（あんず/資料は ja 照合順）
+  // Order: work (WorkA) → character (CharX) → general (あんず/資料 in ja collation order)
   test('種別順の並び', () => {
     expect(api.posterFilterVocab()).toEqual(['WorkA', 'CharX', ...['あんず', '資料'].sort(ja)]);
   });
@@ -144,7 +145,7 @@ describe('groupedTagVocab（poster スコープ）', () => {
     expect(api.groupedTagVocab('', { scope: 'poster' }).map((g) => g.name)).toEqual(['作品', 'キャラ', '未分類']);
   });
 
-  // 一般プールは posterTags 由来（資料/あんず）で、post 側のプールではない
+  // The general pool comes from posterTags (資料/あんず), not from the post-side pool
   test('一般プールは posterTags 由来', () => {
     const out = api.groupedTagVocab('', { scope: 'poster' });
     const general = out.find((g) => g.name === '未分類');
@@ -251,7 +252,7 @@ describe('sameTags', () => {
   });
 });
 
-// ストアごと差し替えても getters 経由なので見える
+// Visible even when the whole store is swapped, because it's read via getters
 test('live getter: ストアの丸ごと差し替えが反映される', () => {
   state.allPosts = [{ captureId: 'q1', tags: ['新規タグ'] }];
   state.tagTypes = {};

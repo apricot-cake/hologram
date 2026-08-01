@@ -1,8 +1,8 @@
 'use strict';
 
 // Local intake — the one definition of what a record made from a LOCAL image
-// looks like, shared by every door that isn't the browser extension (#84 の
-// 2026-07-16 実装設計コメントの共通ヘルパ `importLocalImage`).
+// looks like, shared by every door that isn't the browser extension (#84's
+// 2026-07-16 implementation design comment's shared helper `importLocalImage`).
 //
 // The doors, and what each one supplies:
 //   * the file dialog (`import-images`, ipc-transfer.ts) — a path, `drag-`/'drag'
@@ -14,7 +14,7 @@
 // lands, that the card dimensions are measured before the row is written — is the
 // same, and is stated once here.
 //
-// #84's design comment describes this helper as "sidecar 合成" because it was
+// #84's design comment describes this helper as "sidecar composition" because it was
 // written while sidecars were still the library's storage. They are gone (#299/
 // #300/#302): the record goes straight into the DB through the shared writer
 // (lib-db-record-writer.ts) and only the media file lands in the save folder.
@@ -41,13 +41,13 @@ import type { PostRecordInput } from '../../../native-host/post-record.mts';
 // Import arbitrary media files as library items (the user's own files are fine).
 // Also serves as the import path for Hologram's media-only export. Lives here
 // rather than in ipc-transfer.ts because every local-intake door filters by the
-// same list (#84 の設計コメント「対象拡張子は IMPORTABLE_MEDIA を流用」).
+// same list (#84's design comment: "reuse IMPORTABLE_MEDIA for target extensions").
 export const IMPORTABLE_IMG = ['jpg', 'jpeg', 'jfif', 'png', 'webp', 'gif', 'avif', 'bmp', 'tiff', 'svg'];
 export const IMPORTABLE_VID = ['mp4', 'webm', 'mov', 'm4v'];
 export const IMPORTABLE_MEDIA = IMPORTABLE_IMG.concat(IMPORTABLE_VID);
 
 /**
- * A captureId for a locally-imported item: `<prefix>-<stamp>-<4桁の連番>`.
+ * A captureId for a locally-imported item: `<prefix>-<stamp>-<4-digit sequence>`.
  * `stamp` is per BATCH (one dialog selection, one watch-folder sweep) so a batch's
  * ids sort together; `seq` orders within it.
  */

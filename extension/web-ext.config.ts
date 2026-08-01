@@ -9,7 +9,7 @@ import { defineWebExtConfig } from 'wxt';
 // started the browser.
 //
 // The dev target is the user's own daily Chrome, launched normally, loading
-// .output/chrome-mv3 (docs/build.md「拡張機能の開発・配布」). `disabled`
+// .output/chrome-mv3 (docs/build.md's "Extension development & distribution" section). `disabled`
 // keeps the dev server and hot reload and skips only the launch. No
 // --remote-debugging-port on that browser either: a TCP debugging port is
 // unauthenticated, so any local process could lift the signed-in session out

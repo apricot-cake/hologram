@@ -6,9 +6,9 @@ import * as ipc from '../ipc.ts';
 
 const cleanPref = (p: unknown) => (p === 'light' || p === 'dark' ? p : 'auto');
 
-// 外観: theme (auto/light/dark).
+// Appearance: theme (auto/light/dark).
 //
-// 「タイルに情報を表示」 used to sit here too. It is gone (#618): 情報を表示 is one of
+// "Show info on tiles" used to sit here too. It is gone (#618): "Show Info" is one of
 // the display popover's two grid switches now, and the same answer must not be asked
 // twice on two surfaces.
 export function Appearance() {

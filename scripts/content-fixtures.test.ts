@@ -1,16 +1,18 @@
-// extension/utils/extractor/ 各サイトモジュールの DOM 相（プラットフォーム判定・投稿要素の特定・
-// パーマリンク抽出）の、オフライン純ユニットテスト。jsdom 上で手書きの HTML フィクスチャ
-// （scripts/fixtures/content/*.html）に対して走らせる。
+// Offline pure unit tests for the DOM-facing pieces (platform detection, locating the post
+// element, permalink extraction) of each site module under extension/utils/extractor/. Run
+// against hand-written HTML fixtures (scripts/fixtures/content/*.html) on top of jsdom.
 //
-// フィクスチャは X/Bluesky/Misskey/Mastodon/pixiv の実採取物ではない（どれもログイン済みの
-// 生セッションが要り、このスイートは意図的にそれを避ける）。コードが狙っているセレクタ／
-// testid の形を最小限で再現し、監査で直したきわどいケース（引用 vs 被引用・返信 vs 親・
-// グリッドの隣・アバター vs 作品。サイトモジュールの "(audit 2026-06-11)" コメント参照）を
-// 覆うもの。ここで捕まるのは「自分のコード変更が解析ロジックを壊した」退行で、
-// 「サイト側が DOM を変えた」は捕まらない＝それは実サイト e2e（scripts/e2e-capture-test.cts）の担当。
+// The fixtures are not real captures from X/Bluesky/Misskey/Mastodon/pixiv (all of those would
+// require a logged-in live session, which this suite deliberately avoids). They minimally
+// reproduce the selector/testid shapes the code targets, covering the tricky cases fixed during
+// audits (quote vs. quoted-post, reply vs. parent, grid neighbor, avatar vs. artwork — see the
+// "(audit 2026-06-11)" comments in the site modules). What this catches is a regression where
+// "my own code change broke the parsing logic"; it does not catch "the site changed its DOM" —
+// that's the job of the real-site e2e suite (scripts/e2e-capture-test.cts).
 //
-// 撮影範囲の関数（getMisskeyCaptureRect / getPixivCaptureRect）はここでは見ない＝
-// getBoundingClientRect に依存し、jsdom はレイアウトしない（常にゼロ矩形）ため。
+// The capture-rect functions (getMisskeyCaptureRect / getPixivCaptureRect) are not covered
+// here, since they depend on getBoundingClientRect and jsdom doesn't do layout (always returns
+// a zero rect).
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -22,9 +24,9 @@ import { findMisskeyPostElement } from '../extension/utils/extractor/misskey.ts'
 
 const FIXTURES_DIR = path.join(import.meta.dirname, 'fixtures', 'content');
 
-// フィクスチャの DOM を、コンテンツスクリプトの実行文脈と同じグローバル（window・document・
-// location・…）として据える。site-detect.ts の関数は呼び出し時にグローバルから読むので
-// （モジュール読み込み時には DOM を触らない）、フィクスチャごとに差し替えて安全。
+// Install the fixture DOM as the same globals (window, document, location, ...) the content
+// script's execution context uses. site-detect.ts's functions read from globals at call time
+// (they don't touch the DOM at module-load time), so it's safe to swap these per fixture.
 const KEYS = ['window', 'document', 'location', 'getComputedStyle', 'Element', 'HTMLElement', 'HTMLAnchorElement', 'HTMLImageElement', 'Node'];
 
 function installFixture(fixtureFile: string, url: string) {
@@ -40,8 +42,8 @@ function installFixture(fixtureFile: string, url: string) {
   return { dom, document: dom.window.document, restore };
 }
 
-// ドキュメントを読み直さずに location だけ差し替える＝1つのフィクスチャで同じ
-// プラットフォームの複数のページ遷移を代表させる
+// Swap out only location without reloading the document = one fixture can represent multiple
+// page transitions on the same platform
 function setLocation(dom: JSDOM, url: string) {
   dom.reconfigure({ url });
   (global as any).location = dom.window.location;
@@ -79,8 +81,9 @@ describe('X (Twitter)', () => {
   });
 });
 
-// #325: 画像拡大表示（lightbox）＝X が /<user>/status/<id>/photo/<n> で開く別レイヤー。
-// 記事の子孫にならないので通常の祖先探索では投稿要素が見つからず、Alt+S が無反応に見えていた。
+// #325: the image lightbox — a separate layer X opens at /<user>/status/<id>/photo/<n>.
+// It isn't a descendant of the article, so a normal ancestor search can't find the post element,
+// and Alt+S appeared to do nothing.
 describe('X: 画像拡大表示（lightbox）', () => {
   let ctx: ReturnType<typeof installFixture>;
   let config: any;

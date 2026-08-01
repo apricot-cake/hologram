@@ -1,27 +1,29 @@
-// extension/utils/background.ts の chrome API 配線（メッセージ / ポート）のテスト。
-// #127 が chrome.* に依存しない純関数を切り出し済みなので、ここが見るのは残りの配線——
-//   - chrome.runtime.onMessage のルーティング（送信元ガード・型ごとの排他・非同期 sendResponse）
-//   - bridgeSend / queryBridge が chrome.runtime.connectNative の返す Port とやりとりする
-//     経路（タイムアウト・切断・エラー応答・正常応答）
-//   - ホスト未到達時の診断ログのフォールバック（stashLogLocally のリングバッファと間引き）
-// を、自前の chrome スタブで検証する。
+// Tests for the chrome API wiring (messages / ports) in extension/utils/background.ts.
+// #127 already extracted the pure functions that don't depend on chrome.*, so what this file
+// covers is the remaining wiring——
+//   - chrome.runtime.onMessage routing (sender guard, per-type exclusivity, async sendResponse)
+//   - the path bridgeSend / queryBridge use to talk to the Port returned by
+//     chrome.runtime.connectNative (timeout, disconnect, error response, normal response)
+//   - the diagnostic-log fallback when the host is unreachable (stashLogLocally's ring buffer and thinning)
+// verified against our own chrome stub.
 //
-// スタブ方針（#128 決定コメント）: ライブラリは使わない。connectNative を動く Port として
-// モックできる既存ライブラリは無かった（fake-browser / jest-chrome / sinon-chrome 等いずれも
-// 未実装）ため、ここは自前スタブのみで賄う。Port の参照実装は tab-stash の MockPort だが、
-// このスイートはテストコード自身が常に「ホスト側」を演じる片側だけでよく、双方向ペアは組まない
-// （postMessage が disconnect 後に throw する、という参照実装の性質だけは踏襲する）。
+// Stub policy (#128 decision comment): no library. There was no existing library
+// (fake-browser / jest-chrome / sinon-chrome, etc.) that could mock connectNative as a working
+// Port (none of them implement it), so this file relies solely on a hand-rolled stub. The reference
+// implementation for Port is tab-stash's MockPort, but this suite only ever needs the test code
+// itself to play the "host side," a single side — it never wires up a bidirectional pair
+// (the only trait carried over from the reference implementation is that postMessage throws after disconnect).
 //
-// bridgeSend/queryBridge は startBackground() の閉包内にあり外から直接は呼べないため、
-// 実際に savePost / checkSaved メッセージを流して onMessage 経由で駆動する。fetchPostMetadata
-// は実装（extension/utils/extractor/）をそのまま使うが、ネットワークに触れないよう
-// postUrl にはどのプラットフォームの URL パターンにも一致しない文字列を使う
-// （parsePostUrl が null を返し、fetchPostMetadata は fetch を呼ばず空レコードで即解決する）。
+// bridgeSend/queryBridge live inside startBackground()'s closure and can't be called directly from
+// outside, so they're driven by actually sending savePost / checkSaved messages through onMessage.
+// fetchPostMetadata uses the real implementation (extension/utils/extractor/) as-is, but to avoid
+// touching the network, postUrl uses a string that doesn't match any platform's URL pattern
+// (parsePostUrl returns null, so fetchPostMetadata resolves immediately with an empty record without calling fetch).
 
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { startBackground } from '../extension/utils/background';
 
-// --- 自前 chrome スタブ ---------------------------------------------------------
+// --- hand-rolled chrome stub ---------------------------------------------------------
 
 function createPortController(onDisconnectSetLastError: (msg: string | undefined) => void) {
   const messageListeners: Array<(msg: any) => void> = [];
@@ -48,7 +50,7 @@ function createPortController(onDisconnectSetLastError: (msg: string | undefined
     emitMessage(msg: any) {
       for (const fn of messageListeners) fn(msg);
     },
-    // lastErrorMessage: undefined ならホスト側が正常終了した切断（chrome.runtime.lastError は立たない）
+    // lastErrorMessage: undefined means the host side disconnected normally (chrome.runtime.lastError is not set)
     emitDisconnect(lastErrorMessage?: string) {
       disconnected = true;
       onDisconnectSetLastError(lastErrorMessage);
@@ -67,8 +69,8 @@ function setupBackground() {
   let connectNativeImpl: (name: string) => any = () => {
     throw new Error('Specified native messaging host not found.');
   };
-  // #269 の面（ツールバーの action・注入・タブの一生）。既定は「注入は通る／
-  // 拡張のファイルは読める」＝ここを差し替えたテストだけが失敗経路に入る。
+  // The #269 surface (toolbar action, injection, tab lifecycle). The default is "injection
+  // succeeds / the extension's files are readable" = only tests that override this go down the failure path.
   const actionCalls: Array<{ call: string; arg: any }> = [];
   const createdTabs: Array<{ url: string }> = [];
   const clickListeners: Array<(tab: any) => void> = [];
@@ -148,9 +150,9 @@ function setupBackground() {
   };
 
   (globalThis as any).chrome = chromeStub;
-  // 拡張が自分のファイルを読めるかの実測（#269・inject-failure.ts）。ここを
-  // 偽ではなく fetch そのもので差し替える＝本番でもこの1本の返事だけが
-  // 「拡張が壊れているのか、そのページが断ったのか」を決めている。
+  // A real measurement of whether the extension can read its own files (#269 / inject-failure.ts).
+  // We replace fetch itself here rather than faking it = in production too, this single response
+  // is what decides "is the extension broken, or did the page refuse it."
   (globalThis as any).fetch = async (url: string) => {
     if (!String(url).startsWith('chrome-extension://')) throw new Error(`unexpected fetch in this suite: ${url}`);
     if (!packageReadable) throw new Error('Failed to fetch');
@@ -159,9 +161,10 @@ function setupBackground() {
   startBackground();
 
   function dispatch(message: any, sender: any = {}) {
-    // #519: 保存経路のメッセージは必ず saveId を運ぶ（ページが振る＝その保存の行を3つの
-    // プロセス横断で結ぶ識別子）。テストごとに書かずに済むよう、明示が無ければ固定値を
-    // 入れる — id が実際にホストまで渡ることを見る側はこの値で照合する。
+    // #519: messages on the save path always carry a saveId (assigned by the page = the identifier
+    // that ties that save's log lines together across the three processes). So we don't have to write
+    // it in every test, we fill in a fixed value when none is given — tests that check the id actually
+    // reaches the host verify against this value.
     const isSave = message?.type === 'savePost' || message?.type === 'captureAndSend' || message?.type === 'imageDragged';
     const msg = isSave && message.saveId === undefined ? { ...message, saveId: 'trace-1' } : message;
     let respond!: (r: any) => void;
@@ -178,10 +181,11 @@ function setupBackground() {
     localStore,
     actionCalls,
     createdTabs,
-    // ツールバーのアイコンを押す（#269）。onClicked は tab をそのまま渡すので、
-    // テスト側も id と url だけの最小の tab を渡す。**待つのは待ち合わせの回数を
-    // 数えてではなく、リスナーが返した Promise 自身**＝注入・生死の実測・action の
-    // 呼び出しがすべてその中にあるので、途中に await が1つ増えても壊れない。
+    // Click the toolbar icon (#269). onClicked passes the tab through as-is, so the test side
+    // also passes a minimal tab with just id and url. **What we wait on is not a count of
+    // synchronization points but the Promise the listener itself returns** = the injection,
+    // liveness measurement, and action calls are all inside it, so it doesn't break even if
+    // one more await gets added along the way.
     clickAction: async (tab: any) => {
       await Promise.all(clickListeners.map((fn) => fn(tab)));
     },
@@ -220,14 +224,14 @@ function setupBackground() {
   };
 }
 
-// メッセージ本文に使う postUrl: どのプラットフォームの正規表現にも一致しない
-// （parsePostUrl → null → fetchPostMetadata は fetch を呼ばず空レコードで即解決する）。
+// postUrl used in the message body: doesn't match any platform's regex
+// (parsePostUrl → null → fetchPostMetadata resolves immediately with an empty record without calling fetch).
 const UNPARSEABLE_POST_URL = 'https://misskey.example/not-a-known-post-shape';
 const MISSKEY_SENDER = { tab: { id: 7, url: 'https://misskey.example/notes/1' } };
 
-// #519 以降、保存は最初に「開始」の行を capture.log へ書く＝そのための接続が保存用の
-// Port より先に開く。テストが動かしたいのは保存そのものの Port なので、作られた順番では
-// なく**何を送ったか**で選ぶ（`createdPorts[0]` は今はログ用の接続）。
+// Since #519, a save writes the "started" line to capture.log first = the connection for that
+// opens before the save's own Port. What the test wants to drive is the save's own Port, so we
+// select it **by what it sent**, not by creation order (`createdPorts[0]` is now the log connection).
 async function portThatSent(createdPorts: any[], type: string) {
   let found: any;
   await vi.waitFor(() => {
@@ -237,7 +241,7 @@ async function portThatSent(createdPorts: any[], type: string) {
   return found;
 }
 
-// capture.log 用に開かれた接続の数（保存用の Port と数え分けるため）。
+// Number of connections opened for capture.log (kept separate from the save Port's count).
 const logPortCount = (createdPorts: any[]) => createdPorts.filter((p: any) => p.sent.some((m: any) => m.type === 'log')).length;
 
 describe('chrome.runtime.onMessage ルーティング', () => {
@@ -269,26 +273,26 @@ describe('chrome.runtime.onMessage ルーティング', () => {
   test('checkSaved: 全 URL がキャッシュ済みなら同期で応答し、ネイティブホストには繋がない', async () => {
     const createdPorts = env.connectAsControllablePort();
 
-    // まず savePost を1件成功させ、markSaved 経由でキャッシュへ載せる。
+    // First, succeed one savePost so it lands in the cache via markSaved.
     const save = env.dispatch({ type: 'savePost', platform: 'misskey', postUrl: UNPARSEABLE_POST_URL }, MISSKEY_SENDER);
     (await portThatSent(createdPorts, 'savePost')).emitMessage({ ok: true, captureId: 'saved-capture-id', file: 'saved-file-id.jpg', media: ['https://misskey.example/files/aaa.png'] });
     const saveResult = await save.responseP;
     expect(saveResult.ok).toBe(true);
 
-    // 次に checkSaved で同じ URL を尋ねる — キャッシュヒットなので新しい Port は作られない。
+    // Next, ask checkSaved for the same URL — it's a cache hit, so no new Port is created.
     const { returns, responseP } = env.dispatch({ type: 'checkSaved', urls: [UNPARSEABLE_POST_URL] }, {});
-    expect(returns).not.toContain(true); // 同期応答
-    // 応答は投稿ごとに captureId ＋その投稿の保存済みの絵（#334）と、絵ごとの持ち主（#34）。
+    expect(returns).not.toContain(true); // synchronous response
+    // The response carries, per post, captureId + that post's saved image (#334), and the owner per image (#34).
     // id is the ack's captureId, never its `file` — the badge only needs "some
     // id", but #34's "replace" reads it as the record to retire.
     await expect(responseP).resolves.toEqual({ ok: true, results: { [UNPARSEABLE_POST_URL]: { id: 'saved-capture-id', media: ['https://misskey.example/files/aaa.png'], owners: ['saved-capture-id'] } } });
-    expect(createdPorts.some((p: any) => p.sent.some((m: any) => m.type === 'query'))).toBe(false); // queryBridge は呼ばれていない
+    expect(createdPorts.some((p: any) => p.sent.some((m: any) => m.type === 'query'))).toBe(false); // queryBridge was not called
   });
 });
 
-// #34 の重複保存の警告が拠って立つ照会。ここで見るのは「警告を出すか」の判定そのもの
-// （2軸＝投稿 URL と絵の重なり）と、置換が名指しするレコード。UI（3択バナー）は
-// capture.ts / drag.ts 側で、この答えを受け取るだけ。
+// The query that #34's duplicate-save warning stands on. What this checks is the "whether to
+// show a warning" decision itself (two axes = post URL and image overlap) and the record that a
+// replace names. The UI (the 3-way banner) is on the capture.ts / drag.ts side and just receives this answer.
 describe('checkDuplicate — 重複保存の警告の判定', () => {
   let env: ReturnType<typeof setupBackground>;
   const X_SENDER = { tab: { id: 3, url: 'https://x.com/home' } };
@@ -300,14 +304,14 @@ describe('checkDuplicate — 重複保存の警告の判定', () => {
     env = setupBackground();
   });
 
-  // ホストの答えを1回分だけ用意する。checkDuplicate は保存前に1往復するだけなので、
-  // Port を1つ作って results を返せばよい。
+  // Prepare a single round of the host's answer. checkDuplicate does only one round-trip
+  // before saving, so it's enough to create one Port and return results.
   async function answerQueryWith(entry: any, trashed?: any) {
     const createdPorts = env.connectAsControllablePort();
     const asked = env.dispatch({ type: 'checkDuplicate', platform: 'x', url: POST, imageUrls: [P0] }, X_SENDER);
     await vi.waitFor(() => expect(createdPorts.length).toBe(1));
     const sent = createdPorts[0].sent.find((m: any) => m.type === 'query');
-    // trashed を渡さない呼び出し＝#158 より前のホスト（そのフィールドを送らない）。
+    // A call that doesn't pass trashed = a pre-#158 host (one that doesn't send that field).
     createdPorts[0].emitMessage({ id: sent.id, ok: true, results: { [POST]: entry }, ...(trashed === undefined ? {} : { trashed: { [POST]: trashed } }) });
     return asked.responseP;
   }
@@ -317,8 +321,8 @@ describe('checkDuplicate — 重複保存の警告の判定', () => {
   });
 
   test('同じ絵が保存済みなら重複＝置換はその絵を持つレコードを名指しする', async () => {
-    // 2枚目だけを別レコードで保存した状態。エントリの id（最初に鍵を取ったレコード）は
-    // cap-a だが、いま保存しようとしている絵 P0 を持つのは cap-b。
+    // A state where only the 2nd image was saved as a separate record. The entry's id (the
+    // record that first grabbed the key) is cap-a, but it's cap-b that holds the P0 image being saved now.
     await expect(answerQueryWith({ id: 'cap-a', media: [P1, P0], owners: ['cap-a', 'cap-b'] })).resolves.toEqual({ ok: true, duplicate: true, captureId: 'cap-b' });
   });
 
@@ -347,8 +351,8 @@ describe('checkDuplicate — 重複保存の警告の判定', () => {
     await expect(responseP).resolves.toEqual({ ok: false });
   });
 
-  // #158: ライブラリには無いが、ゴミ箱に現物が残っている投稿。重複ではない（置換する相手が
-  // 無い）ので duplicate は false のまま、告知だけを別のフィールドで返す。
+  // #158: a post that isn't in the library, but whose actual file remains in the trash. It's not
+  // a duplicate (there's no counterpart to replace), so duplicate stays false, and only the notice comes back in a separate field.
   test('ゴミ箱に在る投稿は duplicate:false のまま告知を返す', async () => {
     await expect(answerQueryWith(null, { id: 'cap-gone', deletedAt: '2026-07-01T09:00:00Z' })).resolves.toEqual({
       ok: true,
@@ -357,8 +361,8 @@ describe('checkDuplicate — 重複保存の警告の判定', () => {
     });
   });
 
-  // 保存済みが勝つのはホスト側で決まっている（両方には載らない）が、判定がその前提に
-  // 寄りかかっていないことを押さえる＝重複の答えに告知が混ざると、バナーが置換を隠す。
+  // The host side already decides that "saved" wins (it never carries both), but this pins down
+  // that the judgment doesn't lean on that assumption = if a notice got mixed into the duplicate answer, the banner would hide the replace.
   test('保存済みなら告知は返さない（重複の答えが勝つ）', async () => {
     await expect(answerQueryWith({ id: 'cap-a', media: [P0], owners: ['cap-a'] }, { id: 'cap-gone', deletedAt: '2026-07-01T09:00:00Z' })).resolves.toEqual({
       ok: true,
@@ -403,8 +407,8 @@ describe('bridgeSend — 保存経路のネイティブホスト Port 配線', (
       await vi.advanceTimersByTimeAsync(30_000);
       const result = await responseP;
 
-      // metaReason は null＝ホストが落ちたのは投稿の事情ではない（#505）。
-      // ここに理由が乗ると、取れない投稿の文面へ誤って倒れる。
+      // metaReason is null = the host going down is not the post's fault (#505).
+      // If a reason rides along here, it wrongly falls into the "post couldn't be fetched" wording.
       expect(result).toEqual({ ok: false, errorKind: 'host-unavailable', metaReason: null, error: 'Native host timed out' });
     } finally {
       vi.useRealTimers();
@@ -437,22 +441,22 @@ describe('bridgeSend — 保存経路のネイティブホスト Port 配線', (
 
     const { responseP } = env.dispatch({ type: 'savePost', platform: 'misskey', postUrl: UNPARSEABLE_POST_URL }, MISSKEY_SENDER);
     const portCtl = await portThatSent(createdPorts, 'savePost');
-    // #519: saveId も一緒にホストへ渡る＝ホストが書く行を拡張側の行と結べる。
+    // #519: saveId is passed to the host along with it = so the line the host writes can be tied to the extension side's line.
     expect(portCtl.sent).toEqual([expect.objectContaining({ type: 'savePost', captureId: expect.any(String), saveId: 'trace-1' })]);
 
     portCtl.emitMessage({ ok: true, file: 'saved-file-id' });
     const result = await responseP;
 
     expect(result).toMatchObject({ ok: true, file: 'saved-file-id' });
-    expect(portCtl.isDisconnected()).toBe(true); // finish() が port.disconnect() を呼ぶ
+    expect(portCtl.isDisconnected()).toBe(true); // finish() calls port.disconnect()
     expect(() => portCtl.port.postMessage({ type: 'late' })).toThrow();
-    // markSaved がこの送信元タブへ savedUpdate を通知している。
+    // markSaved has notified this sender tab with savedUpdate.
     expect(env.tabsSent.some((s) => s.tabId === MISSKEY_SENDER.tab.id && s.message.type === 'savedUpdate')).toBe(true);
   });
 
-  // #334: 通知が運ぶのは「保存された」だけでなく「どの絵が」＝ホストが実際に記録した
-  // ものをそのまま渡す。これが欠けると、複数枚投稿の1枚を保存した直後だけ残りの絵の
-  // 保存ボタンが消える（オーバーレイが投稿まるごと保存済みと読むため）。
+  // #334: what the notification carries is not just "saved" but "which image" = it passes through
+  // exactly what the host actually recorded. If this is missing, right after saving one image of a
+  // multi-image post, the save buttons for the remaining images disappear (because the overlay reads the whole post as saved).
   test('savedUpdate はホストが記録した絵の URL を運ぶ', async () => {
     const env = setupBackground();
     const createdPorts = env.connectAsControllablePort();
@@ -499,11 +503,11 @@ describe('queryBridge — checkSaved の常駐 Port 配線', () => {
     const firstResult = await first.responseP;
     expect(firstResult).toEqual({ ok: false, error: 'Native host has exited.', results: {} });
 
-    // 次の問い合わせは新しい Port を張り直す（古い切断済み Port は再利用しない）。
+    // The next query re-establishes a new Port (the old disconnected Port is not reused).
     const second = env.dispatch({ type: 'checkSaved', urls: ['https://x.com/a/status/1'] }, {});
     await vi.waitFor(() => expect(createdPorts.length).toBe(2));
-    // nextQueryId は張り直しても引き継がれる（1件目の失敗リクエストが使った id を再利用しない）ので、
-    // 実際に送られた id を読み取って返す。
+    // nextQueryId carries over even across a re-establish (it won't reuse the id the first,
+    // failed request used), so we read the id that was actually sent and return that.
     const sentId = createdPorts[1].sent[0].id;
     createdPorts[1].emitMessage({ id: sentId, ok: true, results: { 'https://x.com/a/status/1': { id: 'file-1', media: [] } } });
     await expect(second.responseP).resolves.toEqual({ ok: true, results: { 'https://x.com/a/status/1': { id: 'file-1', media: [] } } });
@@ -517,9 +521,9 @@ describe('queryBridge — checkSaved の常駐 Port 配線', () => {
     const second = env.dispatch({ type: 'checkSaved', urls: ['https://x.com/b/status/2'] }, {});
     await vi.waitFor(() => expect(createdPorts[0].sent.length).toBe(2));
 
-    expect(createdPorts.length).toBe(1); // 同じポートを使い回す
+    expect(createdPorts.length).toBe(1); // reuses the same port
 
-    // 応答順を入れ替えて返す — id で正しい呼び出し元へ届くことを確認する。
+    // Return the responses out of order — confirm they reach the correct caller by id.
     const [reqA, reqB] = createdPorts[0].sent;
     createdPorts[0].emitMessage({ id: reqB.id, ok: true, results: { 'https://x.com/b/status/2': { id: 'file-b', media: [] } } });
     createdPorts[0].emitMessage({ id: reqA.id, ok: true, results: { 'https://x.com/a/status/1': { id: 'file-a', media: [] } } });
@@ -529,11 +533,12 @@ describe('queryBridge — checkSaved の常駐 Port 配線', () => {
   });
 });
 
-// #519: 保存の一生を capture.log に残す。ここで見るのはサービスワーカー側の3点＝
-// ①保存が**始まったことを名乗る**（これが無いと「起動しただけ」と区別できない）
-// ②失敗の行が saveId ＋ captureId ＋ 到達した段を運ぶ（時刻の近さで結ばずに済む）
-// ③段を通過するたびページへ報告する（ワーカーごと消えた時にページ側が名乗れる）。
-// ページ側の受け取りと cancel の行は scripts/save-log.test.ts。
+// #519: leave a save's whole life in capture.log. What this checks is 3 things on the service
+// worker side =
+// ① a save **declares that it started** (without this, "it merely started up" can't be told apart)
+// ② a failure line carries saveId + captureId + the stage it reached (so lines don't have to be tied together by close timestamps)
+// ③ each stage passed reports to the page (so the page side can speak up even if the worker itself disappears).
+// The page side's receiving and the cancel lines are in scripts/save-log.test.ts.
 describe('保存の記録（#519）', () => {
   let env: ReturnType<typeof setupBackground>;
 
@@ -541,12 +546,13 @@ describe('保存の記録（#519）', () => {
     env = setupBackground();
   });
 
-  // 上限に達する前・プロセスごと消えた場合にも残る唯一の行なので、待つ脚より
-  // 先に出ていることが要件。ホストがまだ何も答えていない時点で見る。
-  // 3経路すべてを見る。`imageDragged` は**常駐スクリプトの面**（ホバー保存ボタンと
-  // ドロップゾーン）が使う唯一の保存経路で、そこは `activate` の行を出さない＝
-  // 「開始」の行が無ければその面の保存は記録の上に一切現れない。ユーザーが実際に
-  // 固まりを踏んだのがこの面なので、ここが欠けると #519 は目的を果たさない。
+  // The one line that remains even before hitting the cap, and even if the whole process
+  // disappears, so the requirement is that it comes out before any waiting leg. This checks the
+  // point where the host hasn't answered anything yet.
+  // Checks all 3 paths. `imageDragged` is the only save path used by **the resident-script surface**
+  // (the hover save button and drop zone), and that surface doesn't emit an `activate` line = without
+  // the "started" line, a save on that surface never appears in the record at all. Since that's the
+  // surface where the user actually hit the freeze, missing this defeats #519's whole purpose.
   test.each([
     ['savePost', { type: 'savePost', platform: 'misskey', postUrl: UNPARSEABLE_POST_URL }],
     ['save', { type: 'captureAndSend', platform: 'misskey', postUrl: UNPARSEABLE_POST_URL, rect: { x: 0, y: 0, width: 10, height: 10 } }],
@@ -558,8 +564,8 @@ describe('保存の記録（#519）', () => {
 
     const logPort = await portThatSent(createdPorts, 'log');
     expect(logPort.sent[0].entry).toMatchObject({ stage: 'save', phase: 'begin', type, saveId: 'trace-1', url: UNPARSEABLE_POST_URL, captureId: expect.any(String) });
-    // ログ用の接続は保存用とは別＝1保存につきホストのプロセスが1つ増える。
-    // 「開始」を上限より先にディスクへ置くための代償で、意図した設計。
+    // The log connection is separate from the save connection = one host process for each save.
+    // This is the tradeoff for getting "started" onto disk before the cap — it's the intended design.
     expect(logPortCount(createdPorts)).toBe(1);
   });
 
@@ -576,7 +582,7 @@ describe('保存の記録（#519）', () => {
       phase: 'fail',
       saveId: 'trace-1',
       captureId: expect.any(String),
-      // メタデータは通過してブリッジで落ちた＝どこまで進んだかが行に載る。
+      // The metadata stage passed and it fell at the bridge = how far it got rides on the line.
       reached: ['metadata'],
     });
   });
@@ -589,9 +595,9 @@ describe('保存の記録（#519）', () => {
     await responseP;
 
     const progress = env.tabsSent.filter((s) => s.message.type === 'saveProgress').map((s) => s.message);
-    // 先頭の空配列は「受け取った」の合図＝まだ1段も通っていない。ページ側の上限は
-    // これが来るまで「そもそも動いているのか」を、来てからは「黙っていないか」を
-    // 測る（save-deadline.ts）ので、段の報告と同じ経路で最初に1本必要になる。
+    // The leading empty array is the "received" signal = no stage has passed yet. Until this
+    // arrives, the page side's deadline measures "is it even running at all," and once it has
+    // arrived, "has it gone silent" (save-deadline.ts), so it needs one to come first over the same path as the stage reports.
     expect(progress.map((m) => m.reached)).toEqual([[], ['metadata'], ['metadata', 'bridge']]);
     expect(progress.every((m) => m.saveId === 'trace-1')).toBe(true);
   });
@@ -599,8 +605,8 @@ describe('保存の記録（#519）', () => {
   test('保存を受け取った時点で、まだ何も通っていなくても1本押す（居るかどうかが先に分かる）', async () => {
     const createdPorts = env.connectAsControllablePort();
 
-    // ポートには何も答えさせない＝ホストの手前で止まった保存。それでも受領だけは
-    // 先に届いている、というのがこの合図の役目。
+    // Let the port answer nothing = a save that stopped just short of the host. Even so, the
+    // receipt alone has already arrived first — that's this signal's job.
     env.dispatch({ type: 'savePost', platform: 'misskey', postUrl: UNPARSEABLE_POST_URL }, MISSKEY_SENDER);
     await portThatSent(createdPorts, 'savePost');
 
@@ -609,16 +615,18 @@ describe('保存の記録（#519）', () => {
   });
 });
 
-// === 注入そのものが失敗した時（#269） =========================================
+// === When injection itself fails (#269) =========================================
 //
-// クリック保存は「background が capture.js を注入し、注入されたスクリプトがバナーを描く」
-// 構造なので、**注入が失敗するとその失敗を伝える面がページ上に存在しない**＝押しても
-// 完全に無反応になる。ページを持たない側＝ツールバーの action だけが残る表示面で、
-// ここが見るのはその面の配線。ドラッグ保存は常駐スクリプトが自前で描くので無関係。
+// Click-to-save has the structure "background injects capture.js, and the injected script draws
+// the banner," so **if injection fails, no surface on the page exists to report that failure** =
+// clicking becomes completely unresponsive. Since the page has no surface of its own, only the
+// toolbar action remains as a display surface, and what this checks is that surface's wiring.
+// Drag-to-save is unrelated since the resident script draws its own banner.
 //
-// ⚠️「拡張が壊れた」と「そのページが断った」を分けているのは Chrome の例外文言ではなく
-// **拡張が自分のファイルを読めるかの実測**（fetch(chrome.runtime.getURL(...))）。文言は
-// 契約ではないので、そちらで分岐すると Chrome の言い回しが変わった日に案内が反転する。
+// ⚠️What separates "the extension is broken" from "the page refused it" is not Chrome's exception
+// wording but **an actual measurement of whether the extension can read its own files**
+// (fetch(chrome.runtime.getURL(...))). Wording is not a contract, so branching on it would flip the
+// guidance the day Chrome's phrasing changes.
 describe('注入が失敗した時のツールバー表示（#269）', () => {
   let env: ReturnType<typeof setupBackground>;
   const TAB = { id: 42, url: 'https://x.com/someone/status/1' };
@@ -639,7 +647,7 @@ describe('注入が失敗した時のツールバー表示（#269）', () => {
     env.failInjection("Could not load file: 'capture.js'.");
     await env.clickAction(TAB);
     expect(badgeText(env.actionCalls)).toEqual([{ text: '!', tabId: 42 }]);
-    // 色は生成トークン由来＝ここに色リテラルは無い（#270）。
+    // The color comes from a generated token = there's no color literal here (#270).
     expect(env.actionCalls.filter((c) => c.call === 'setBadgeBackgroundColor')).toHaveLength(1);
     expect(env.actionCalls.every((c) => c.arg.tabId === 42)).toBe(true);
   });
@@ -665,10 +673,10 @@ describe('注入が失敗した時のツールバー表示（#269）', () => {
     expect(env.createdTabs).toEqual([{ url: 'chrome-extension://test-extension-id/diag.html?issue=inject' }]);
   });
 
-  // 実測（2026-07-31・使い捨て Chromium）: 拡張の展開先が消えると
-  // chrome-extension://<id>/diag.html は ERR_FILE_NOT_FOUND で開けない＝
-  // **この Issue を起こした失敗そのものでは診断ページへ逃がせない**。
-  // 唯一まだ描ける面が chrome://extensions で、そこの「再読み込み」が修理そのもの。
+  // Measured (2026-07-31, disposable Chromium): once the extension's unpacked directory is gone,
+  // chrome-extension://<id>/diag.html can't be opened — it's ERR_FILE_NOT_FOUND = **the very failure
+  // that caused this Issue means we can't escape to the diagnostic page**.
+  // The only surface that can still be drawn is chrome://extensions, and its "reload" is the fix itself.
   test('拡張が読めない側の2回目は chrome://extensions（診断ページはそもそも開けない）', async () => {
     env.failInjection("Could not load file: 'capture.js'.");
     env.setPackageReadable(false);
@@ -773,14 +781,14 @@ describe('診断ログのフォールバック（stashLogLocally のリングバ
 
       for (let i = 0; i < 55; i++) {
         env.dispatch({ type: 'logCapture', entry: { stage: 'bridge', phase: 'fail', seq: i } }, { tab: { url: 'https://x.com/a' } });
-        vi.advanceTimersByTime(1); // ts を1msずつ進め、間引き順の判定を決定的にする
+        vi.advanceTimersByTime(1); // advance ts by 1ms each time to make the thinning-order judgment deterministic
       }
 
       const { responseP } = env.dispatch({ type: 'dumpLogs' }, {});
       const { entries } = await responseP;
 
       expect(entries).toHaveLength(50);
-      expect(entries[0].seq).toBe(5); // 古い5件（seq 0-4）が間引かれた
+      expect(entries[0].seq).toBe(5); // the 5 oldest (seq 0-4) were thinned out
       expect(entries[49].seq).toBe(54);
     } finally {
       vi.useRealTimers();
@@ -788,9 +796,10 @@ describe('診断ログのフォールバック（stashLogLocally のリングバ
   });
 });
 
-// #450: ページが動画投稿について渡せるのはポスターだけで、それ1枚を作品として保存しても
-// ライブラリに置く意味が無い。動画・GIF 投稿は、プラットフォームが申告した原本を落とす
-// 投稿保存の経路（#119 段1 で動画本体に対応済み）へ回す＝ここで見るのはその振り分け。
+// #450: for a video post, all the page can hand over is the poster, and saving just that single
+// image as a work has no point putting it in the library. Video/GIF posts are routed to the post-save
+// path that downloads the original the platform declared (support for the video itself landed at
+// #119 stage 1) = what this checks is that routing.
 describe('imageDragged の振り分け（#450）', () => {
   const X_SENDER = { tab: { id: 3, url: 'https://x.com/alice/status/1' } };
   const X_POST_URL = 'https://x.com/alice/status/1';
@@ -838,7 +847,7 @@ describe('imageDragged の振り分け（#450）', () => {
     expect(sent.metadata.media[0]).toMatchObject({ type: 'gif', url: 'https://video.twimg.com/g.mp4' });
   });
 
-  // 静止画は従来どおり＝指した絵そのものが記録の主画像になる作品記録の形を崩さない。
+  // A still image works as before = doesn't disturb the shape of a work record where the image pointed to itself becomes the record's main image.
   test('静止画の投稿は従来のドラッグ保存のまま', async () => {
     const stillUrl = 'https://pbs.twimg.com/media/AAA.jpg';
     const env = setupBackground();
@@ -856,10 +865,10 @@ describe('imageDragged の振り分け（#450）', () => {
   });
 });
 
-// #323 の後半。ページ側のガード（isTrusted）が塞ぐのは「今在る経路」だけなので、
-// ホストのプロセスを起こす側にも上限を置く。connectNative 1本につきホストのプロセスが
-// 1つ起動する（設計どおり＝アプリが閉じていても保存できる理由）ので、「何本開けるか」は
-// そのまま「何プロセス起こせるか」になる。
+// The latter half of #323. Since the page-side guard (isTrusted) only blocks "the path that
+// exists today," we also put a cap on the side that spawns the host process. Each connectNative
+// starts one host process (by design = this is why saving works even while the app is closed),
+// so "how many can be opened" becomes exactly "how many processes can be spawned."
 describe('ネイティブホストの起動を有界にする（#323）', () => {
   const MISSKEY_TAB = { tab: { id: 7, url: 'https://misskey.example/notes/1' } };
   const postUrl = (n: number) => `https://misskey.example/not-a-known-post-shape-${n}`;
@@ -875,7 +884,7 @@ describe('ネイティブホストの起動を有界にする（#323）', () => 
     const portCtl = await portThatSent(createdPorts, 'savePost');
     portCtl.emitMessage({ ok: true, captureId: 'cap-1', file: 'one.jpg' });
 
-    // saveId が違っても「同じタブの同じ投稿」＝同じ保存。2本目のホスト接続は開かない。
+    // Even with different saveIds, "the same post from the same tab" = the same save. No 2nd host connection is opened.
     expect(savePorts(createdPorts)).toHaveLength(1);
     await expect(first.responseP).resolves.toMatchObject({ ok: true, captureId: 'cap-1' });
     await expect(second.responseP).resolves.toMatchObject({ ok: true, captureId: 'cap-1' });
@@ -885,13 +894,13 @@ describe('ネイティブホストの起動を有界にする（#323）', () => 
     const env = setupBackground();
     const createdPorts = env.connectAsControllablePort();
 
-    // どれも答えない＝全部が在庫を握ったまま。人の操作では届かない数（上限は8）。
+    // None of them answer = they all hold onto their slot. A count no human operation could reach (the cap is 8).
     for (let i = 0; i < 8; i++) env.dispatch({ type: 'savePost', platform: 'misskey', postUrl: postUrl(i), saveId: `s${i}` }, MISSKEY_TAB);
     await vi.waitFor(() => expect(savePorts(createdPorts)).toHaveLength(8));
 
     const refused = env.dispatch({ type: 'savePost', platform: 'misskey', postUrl: postUrl(99), saveId: 's99' }, MISSKEY_TAB);
 
-    // 断りは同期で返る＝ホストへは触れていない。
+    // The refusal returns synchronously = the host was never touched.
     expect(refused.returns).not.toContain(true);
     await expect(refused.responseP).resolves.toMatchObject({ ok: false, errorKind: 'busy' });
     expect(savePorts(createdPorts)).toHaveLength(8);
@@ -905,25 +914,26 @@ describe('ネイティブホストの起動を有界にする（#323）', () => 
     for (let i = 0; i < 8; i++) running.push(env.dispatch({ type: 'savePost', platform: 'misskey', postUrl: postUrl(i), saveId: `s${i}` }, MISSKEY_TAB));
     await vi.waitFor(() => expect(savePorts(createdPorts)).toHaveLength(8));
     savePorts(createdPorts)[0].emitMessage({ ok: true, captureId: 'cap-0', file: 'zero.jpg' });
-    // 応答が返った時点で枠は返っている（在庫の解放は sendResponse より先に走る）。
+    // The slot has already been returned by the time the response comes back (releasing the slot runs before sendResponse).
     await expect(running[0].responseP).resolves.toMatchObject({ ok: true });
 
     const next = env.dispatch({ type: 'savePost', platform: 'misskey', postUrl: postUrl(100), saveId: 's100' }, MISSKEY_TAB);
     await vi.waitFor(() => expect(savePorts(createdPorts)).toHaveLength(9));
-    expect(next.returns).toContain(true); // busy ではなく本物の保存として受け付けた
+    expect(next.returns).toContain(true); // accepted as a real save, not busy
   });
 
-  // 本件の発端そのもの＝投稿に解決しないクリックが1行ずつ診断ログを出し、その1行ごとに
-  // 接続が開いていた。行は捨てず、接続だけをまとめる。
+  // The very origin of this Issue = a click that doesn't resolve to a post emits a diagnostic log
+  // line one at a time, and a connection was being opened for each one of those lines. Lines
+  // aren't dropped, only the connections get batched together.
   //
-  // 1行目は待たせない（先端で出す）＝#519 の「保存が始まった」行は、その後に続く待ちが
-  // 詰まるより先にディスクへ置く必要がある。まとめるのはその1本が開いている間に積まれた
-  // 分で、20行でも接続は2本＝行数に比例しない。
+  // Don't make the first line wait (emit it at the front) = #519's "save started" line needs to
+  // get onto disk before any subsequent waiting gets backed up. What gets batched is what
+  // accumulated while that one connection was open, so even with 20 lines, only 2 connections are opened = it doesn't scale with the line count.
   test('失敗ログが連続しても、接続は行数に比例しない（開いている1本にまとめる）', async () => {
     const env = setupBackground();
     const createdPorts = env.connectAsControllablePort();
-    // 接続は「この20行のどれかを運んだか」で数える。前のテストが立てたワーカーの
-    // タイマーがこちらの stub へ紛れ込みうる（テスト環境だけの話＝実物はワーカー1つ）。
+    // Count connections by "did it carry any of these 20 lines." A timer from a worker the
+    // previous test spun up can leak into this stub (only happens in the test environment = in reality there's just one worker).
     const ourLines = (port: any) => port.sent.filter((m: any) => m.type === 'log' && typeof m.entry?.seq === 'number');
     const ourPorts = () => createdPorts.filter((p: any) => ourLines(p).length);
 
@@ -932,11 +942,11 @@ describe('ネイティブホストの起動を有界にする（#323）', () => 
     }
 
     await vi.waitFor(() => expect(ourPorts()).toHaveLength(1));
-    expect(ourLines(ourPorts()[0])).toHaveLength(1); // 先頭の1行はすぐ出る＝残り19行では接続が増えない
+    expect(ourLines(ourPorts()[0])).toHaveLength(1); // the first line comes out right away = connections don't increase for the remaining 19 lines
 
-    ourPorts()[0].emitMessage({ ok: true }); // この接続は用済み＝溜まった分が次の1本で出る
+    ourPorts()[0].emitMessage({ ok: true }); // this connection is now spent = what piled up comes out in the next single connection
     await vi.waitFor(() => expect(ourPorts()).toHaveLength(2), { timeout: 3000 });
-    expect(ourLines(ourPorts()[1])).toHaveLength(19); // どの行も捨てていない
-    expect(ourPorts()).toHaveLength(2); // 20行で接続2本
+    expect(ourLines(ourPorts()[1])).toHaveLength(19); // no line was dropped
+    expect(ourPorts()).toHaveLength(2); // 2 connections for 20 lines
   });
 });

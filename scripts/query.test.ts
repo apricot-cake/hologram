@@ -1,6 +1,7 @@
-// query.ts のロジック単体テスト。条件ツリーの評価（evalNode）・各葉の述語
-// （makePostPredOf / makePosterPredOf）・日付のローカル日境界（localDayRange）・
-// 移行用 facetTreeFrom・木の変異ドメイン・ファセットのドメインを直接検証する。
+// Logic unit tests for query.ts. Directly verifies evaluating the condition tree
+// (evalNode), each leaf's predicate (makePostPredOf / makePosterPredOf), the local-day
+// date boundary (localDayRange), the migration helper facetTreeFrom, the tree-mutation
+// domain, and the facet domain.
 
 import { beforeEach, describe, expect, test } from 'vitest';
 import * as Q from '../app/src/renderer/src/services/query';
@@ -8,7 +9,7 @@ import * as R from '../app/src/renderer/src/services/records';
 
 const leaf = (type: string, value?: unknown, extra?: object) => Object.assign({ kind: 'cond', type, value }, extra);
 const group = (op: string, children: any[], neg?: boolean) => ({ kind: 'group', op, neg: !!neg, children });
-const dLocal = (s: string) => new Date(s); // ローカル解釈の Date で投稿を作る
+const dLocal = (s: string) => new Date(s); // build a post with a Date interpreted as local time
 
 const post = (over?: object) =>
   Object.assign(
@@ -33,7 +34,7 @@ const post = (over?: object) =>
     over || {},
   );
 
-// 依存はスタブ注入（フォルダ所属／スマート照合）
+// Dependencies are injected as stubs (folder membership / smart matching)
 const folders = new Map([['col-1', new Set(['cap-in'])]]);
 let fuzzyCalls: string[];
 let predOf: (leaf: any) => (p: any) => boolean;
@@ -42,8 +43,8 @@ beforeEach(() => {
   fuzzyCalls = [];
   predOf = Q.makePostPredOf({
     isInFolder: (id: string, cap: string) => !!folders.get(id)?.has(cap),
-    // 簡易スマートマッチのスタブ: 'ﾈｺ' だけ 'ネコ' へ正規化する部分一致＝素の includes では
-    // 当たらないクエリで、経路が本当に注入側を通った証明に使う
+    // A simplified smart-match stub: a partial match that normalizes only 'ﾈｺ' to 'ネコ' =
+    // used with a query that a plain includes would never hit, as proof the path really went through the injected side
     fuzzyCompile: (q: string) => {
       fuzzyCalls.push(q);
       const nq = q === 'ﾈｺ' ? 'ネコ' : q;
@@ -90,14 +91,14 @@ describe('葉の述語', () => {
     expect(predOf({ type: 'tag', value: '作画' })(post({ tags: undefined }))).toBe(false);
   });
 
-  // 「タグなし」（P2⑬）＝タグの名前ではなく「tags が空か」を見る番兵値
+  // "no tag" (P2⑬) = a sentinel value that checks not a tag's name but "is tags empty"
   test('tag: __none は tags が空の投稿だけ', () => {
     expect(predOf({ type: 'tag', value: '__none' })(post({ tags: [] }))).toBe(true);
     expect(predOf({ type: 'tag', value: '__none' })(post({ tags: undefined }))).toBe(true);
     expect(predOf({ type: 'tag', value: '__none' })(post())).toBe(false);
   });
 
-  // tagId 経路より先に答える＝'__none' という名前のタグを探しにいかない
+  // Answers before reaching the tagId path = never goes looking for a tag literally named '__none'
   test('tag: __none は tagIdOf を引かない', () => {
     const calls: string[] = [];
     const p = Q.makePostPredOf({
@@ -117,7 +118,7 @@ describe('葉の述語', () => {
   });
 });
 
-// #42: 廃止した葉の型を読み込み時に直す
+// #42: fix a retired leaf type on load
 describe('normalizeLeaf / normalizeTree', () => {
   test('collection→folder、未知の型は素通し', () => {
     expect(Q.normalizeLeaf({ kind: 'cond', type: 'collection', value: 'x' }).type).toBe('folder');
@@ -138,7 +139,7 @@ describe('normalizeLeaf / normalizeTree', () => {
   });
 });
 
-// to は翌日0時「未満」＝単日レンジがその日全体を覆う
+// to is "before" the next day's midnight = a single-day range covers the whole of that day
 describe('date: ローカル日境界', () => {
   const may10 = { type: 'date', from: '2026-05-10', to: '2026-05-10' };
 
@@ -173,7 +174,7 @@ describe('engagement', () => {
   });
 });
 
-// P2④: mode は撤去され、常に注入された compile を通る
+// P2④: mode has been retired, and it always goes through the injected compile
 describe('text: 単一スマートマッチとメモ化', () => {
   test('本文に当たり、注入した matcher が呼ばれる', () => {
     expect(predOf({ type: 'text', value: 'こんにちは' })(post())).toBe(true);
@@ -226,16 +227,16 @@ describe('text: 単一スマートマッチとメモ化', () => {
   test('_compiledKey が残っていても _compiled が欠けていれば再コンパイルする', () => {
     const node: any = { type: 'text', value: 'ﾈｺ' };
     predOf(node)(post({ text: 'ネコ' }));
-    node._compiled = null; // JSON 往復（保存/タブ復元）で関数だけ落ちた状態
+    node._compiled = null; // the state after a JSON round trip (save/tab restore) has dropped just the function
 
     expect(predOf(node)(post({ text: 'ネコ' }))).toBe(true);
     expect(fuzzyCalls).toHaveLength(2);
   });
 });
 
-// URL 形のクエリだけ・postKeyOf 正規化・quotedUrl・smart matcher は通さない
+// URL-shaped queries only, postKeyOf normalization, quotedUrl, doesn't go through the smart matcher
 describe('text: URL 照合', () => {
-  // 絶対に当たらない matcher スタブ＝URL ヒットが（本文照合でなく）OR 経路である証明
+  // A matcher stub that never matches = proof a URL hit comes through the OR path (not text matching)
   const predOfU = Q.makePostPredOf({ isInFolder: () => false, fuzzyCompile: () => () => false, postKeyOf: R.postKeyOf });
   const xPost = R.stampPost(post({ url: 'https://x.com/foo/status/123', platform: 'x' }));
   const misskeyPost = R.stampPost(post());
@@ -266,7 +267,7 @@ describe('text: URL 照合', () => {
   });
 });
 
-// post 側 makePostPredOf の対称。deps＝posterTagsOf（key→タグ配列）/ folderById（id→{items}）
+// The counterpart to makePostPredOf on the post side. deps = posterTagsOf (key→tag array) / folderById (id→{items})
 describe('makePosterPredOf', () => {
   const posterTags = new Map([['x:@aaa', ['作画', 'Ave Mujica']]]);
   const posterFolders = new Map([['fo-1', { items: ['x:@aaa', 'x:@bbb'] }]]);
@@ -296,7 +297,7 @@ describe('makePosterPredOf', () => {
     expect(posterPredOf({ type: 'folder', value: 'fo-none' })(poster())).toBe(false);
   });
 
-  // 既定フィールドは latest、to は翌日0時未満（post 側と同じ localDayRange 規約）
+  // The default field is latest, and to is before the next day's midnight (the same localDayRange convention as the post side)
   describe('date', () => {
     const pMay10 = { type: 'date', from: '2026-05-10', to: '2026-05-10' };
 
@@ -411,7 +412,7 @@ describe('純ヘルパ', () => {
   });
 });
 
-// 第9スライス: createQueryBuilder から抽出した純ロジック
+// 9th slice: pure logic extracted from createQueryBuilder
 describe('木の変異ドメイン', () => {
   test('treeParentMap / nodeContains / detachNode', () => {
     const a = leaf('tag', 'a');
@@ -429,7 +430,7 @@ describe('木の変異ドメイン', () => {
     Q.detachNode(a, pmap);
     expect(inner.children).toEqual([b]);
 
-    Q.detachNode(t, pmap); // 親なし（root）は no-op
+    Q.detachNode(t, pmap); // no parent (root) = no-op
     expect(t.children).toHaveLength(1);
   });
 
@@ -554,7 +555,7 @@ describe('木の変異ドメイン', () => {
   });
 });
 
-// 改訂④: UI が作る形をファセット CNF に固定する純ロジック
+// Revision ④: pure logic that pins down the shape the UI builds as facet CNF
 describe('ファセットのドメイン', () => {
   const OPTS = { multiValueTypes: ['tag'], standaloneTypes: ['date', 'text'] };
 
@@ -624,21 +625,21 @@ describe('ファセットのドメイン', () => {
     expect(t.children[0].kind).toBe('cond');
 
     Q.facetAdd(t, leaf('tag', 'b'), OPTS);
-    expect(t.children[0]).toMatchObject({ kind: 'group', op: 'and' }); // tag の既定は and
+    expect(t.children[0]).toMatchObject({ kind: 'group', op: 'and' }); // tag's default is and
     expect(t.children[0].children).toHaveLength(2);
 
-    t.children[0].op = 'or'; // ユーザーが「どれか」へ切り替え
+    t.children[0].op = 'or'; // the user switches to "any of"
     Q.facetAdd(t, leaf('tag', 'c'), OPTS);
     expect(t.children[0].children).toHaveLength(3);
-    expect(t.children[0].op).toBe('or'); // 合流しても op は維持
+    expect(t.children[0].op).toBe('or'); // op is kept even after merging
 
     Q.facetAdd(t, leaf('platform', 'x'), OPTS);
     Q.facetAdd(t, leaf('platform', 'misskey'), OPTS);
-    expect(t.children[1]).toMatchObject({ kind: 'group', op: 'or' }); // platform の既定は or
+    expect(t.children[1]).toMatchObject({ kind: 'group', op: 'or' }); // platform's default is or
 
     Q.facetAdd(t, leaf('text', 'hey'), OPTS);
     Q.facetAdd(t, leaf('text', 'yo'), OPTS);
-    expect(t.children.filter((c: any) => c.kind === 'cond' && c.type === 'text')).toHaveLength(2); // 単独型はグループ化しない
+    expect(t.children.filter((c: any) => c.kind === 'cond' && c.type === 'text')).toHaveLength(2); // a standalone type is never grouped
   });
 
   test('facetSetOp は該当グループの op を書き換え、無ければ false', () => {
@@ -670,7 +671,7 @@ describe('ファセットのドメイン', () => {
       Q.facetSetNeg(t, a, true, OPTS);
       expect(t.children[0]).toBe(c);
 
-      expect(Q.facetSetNeg(t, a, true, OPTS)).toBe(false); // neg 不変
+      expect(Q.facetSetNeg(t, a, true, OPTS)).toBe(false); // neg unchanged
     });
 
     test('戻し先に同値の陽性があれば、冗長な葉は消える', () => {

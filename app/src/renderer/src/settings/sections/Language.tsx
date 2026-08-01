@@ -4,7 +4,7 @@ import { Hint } from '../components/Hint.tsx';
 import { t } from '../../_shared/i18n.ts';
 import * as ipc from '../ipc.ts';
 
-// 言語: viewer display language. Changing it persists then reloads the renderer
+// Language: viewer display language. Changing it persists then reloads the renderer
 // (so all static i18n re-applies) — same behavior as the vanilla select.
 export function Language() {
   const [lang, setLang] = useState('auto');

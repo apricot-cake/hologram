@@ -1,4 +1,4 @@
-// "+ フィルタ" entry point (redesign §3-2 / P2③) — the Linear-style add-filter flow
+// "+ Filter" entry point (redesign §3-2 / P2③) — the Linear-style add-filter flow
 // that restores the ability to ADD filters after P1 removed the sidebar facet rows
 // (which used to open qf-pop/filter-popover; both are now unreachable). A Popover with
 // two steps: a Command list of the current mode's facet categories, then that
@@ -18,7 +18,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 // The chip's leading glyph carries the category cue (same idiom as the filter chips).
 // Poster-* categories share the base icon (poster-tag → Tag, etc.).
 const ICONS: Record<string, LucideIcon> = { kind: Link2, platform: Globe, postType: MessageSquare, media: Image, tag: Tag, work: BookMarked, character: Drama, hashtag: Hash, user: User, instance: Server, folder: Folder, date: Calendar, engagement: Heart, text: Search };
-// Shared by the "+ フィルタ" category list and the active-filter chips (FilterChips).
+// Shared by the "+ Filter" category list and the active-filter chips (FilterChips).
 // Accepts either a category key ('poster-tag') or a leaf type ('tag') — both resolve
 // to the same base glyph.
 export function CatIcon({ cat }: { cat: string }) {

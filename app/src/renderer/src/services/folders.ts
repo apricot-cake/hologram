@@ -7,8 +7,8 @@
 // A real ES module (named exports) now: load, all, byId, has, toggleIn, reconcile,
 // toast, onChange, isLoaded, allFolders, createFolder, updateFolder, renameFolder,
 // removeFolder — plus the hologramPosterFolderStore() factory (orchestrator.ts's
-// poster-folder store). There is no management-modal state any more (#6 残1): both the
-// library folder tree (#41/確定D) and the poster-folder sidebar group read/write their
+// poster-folder store). There is no management-modal state any more (#6, remaining item 1): both the
+// library folder tree (#41/confirmed D) and the poster-folder sidebar group read/write their
 // stores directly (createPersistedFolderStore's own subscribe(), for the poster store).
 import { notify as uiNotify, type NotifyAction } from './ui.ts';
 import { hologramI18n } from './i18n.ts';
@@ -82,7 +82,7 @@ function createFolderStore({ idPrefix, persist, isLibrary }: { idPrefix: string;
   }
   // Membership including descendants (`only` asks for the folder's own items).
   // Nesting without aggregation would leave a flat list plus tags doing the same
-  // job, so aggregation is what the default query means; 「このフォルダのみ」 opts out.
+  // job, so aggregation is what the default query means; "This folder only" opts out.
   function hasDeep(id: string | null | undefined, key: string, only?: boolean) {
     if (only) return has(id, key);
     for (const fid of subtreeIds(id)) {
@@ -91,9 +91,9 @@ function createFolderStore({ idPrefix, persist, isLibrary }: { idPrefix: string;
     }
     return false;
   }
-  // "親 / 子 / 孫" — for the surfaces that show a folder OUT of the tree, where the
+  // "parent / child / grandchild" — for the surfaces that show a folder OUT of the tree, where the
   // name alone stopped being an identifier the moment folders could nest (two
-  // 「資料」 under different parents are a normal thing to have).
+  // "Documents" folders under different parents are a normal thing to have).
   function pathOf(id: string | null | undefined) {
     const parts: string[] = [];
     const seen = new Set<string>();
@@ -120,7 +120,7 @@ function createFolderStore({ idPrefix, persist, isLibrary }: { idPrefix: string;
     return true;
   }
   // One drop = one write. A tree drag can change BOTH the parent and the position
-  // among siblings ("put it under 資料, third from the top"), and doing that as a
+  // among siblings ("put it under Documents, third from the top"), and doing that as a
   // reparent followed by a reorder would persist twice and let subscribers see the
   // folder in a place the user never dropped it.
   //   into   — make it a child of targetId (null = the root)
@@ -309,7 +309,7 @@ function createFolderStore({ idPrefix, persist, isLibrary }: { idPrefix: string;
 // closure + a manual getPosterFolders/setAll block in boot — both now live here).
 function createPersistedFolderStore({ idPrefix, get, set }: { idPrefix: string; get: () => Promise<{ folders?: unknown[] } | null>; set: (data: { folders: HologramFolder[] }) => Promise<unknown> }): HologramFolderStore & { load: () => Promise<void>; subscribe: (cb: () => void) => () => void } {
   let loadPromise: Promise<void> | null = null;
-  // Its own change channel (#6 残1): the poster-folder sidebar group has no manager
+  // Its own change channel (#6, remaining item 1): the poster-folder sidebar group has no manager
   // modal to read a shared mgrModel from any more, so each persisted store notifies its
   // own subscribers directly — on every mutation (via persist()) and on a completed
   // load(), the two moments the list a subscriber is holding can go stale.
@@ -409,7 +409,7 @@ export const byId = store.byId;
 export const has = store.has;
 // Nesting (#41). hasDeep is what the query engine asks (a parent stands for its
 // subtree); plain `has` stays for the surfaces that mean this folder literally —
-// the per-post 「フォルダに追加」 checkmarks, which answer "is it in THIS one".
+// the per-post "Add to folder" checkmarks, which answer "is it in THIS one".
 export const hasDeep = store.hasDeep;
 export const childrenOf = store.childrenOf;
 export const pathOf = store.pathOf;
@@ -437,7 +437,7 @@ export function reconcile(existing: Set<string>) {
 // Membership changes go on the in-session undo stack (#235). The stack itself is
 // built by orchestrator.ts (undo-builder.ts), long after this leaf module loads, so
 // the recorder is injected rather than imported. It hands back the way to undo the
-// change it just recorded — that is what the toast's 「元に戻す」 runs — or null when
+// change it just recorded — that is what the toast's "Undo" runs — or null when
 // there is nothing to offer.
 export type FolderUndoRecorder = (folderId: string, added: string[], removed: string[]) => (() => void) | null;
 let undoRecorder: FolderUndoRecorder | null = null;
@@ -488,18 +488,18 @@ export function all() {
 export const isSavedSearch = (f: HologramFolder) => f.kind === 'dynamic';
 // Only static folders can hold posts, so every surface that offers a folder as a
 // DESTINATION reads staticFolders(): the sidebar flyout rows (facets.ts), the
-// per-post 「フォルダに追加」 menu (post-grid-builder.ts) and the folder manager.
+// per-post "Add to folder" menu (post-grid-builder.ts) and the folder manager.
 // Auditing those three is enough — they are the only callers that enumerate the
 // store to pick a target.
 export function staticFolders() {
   return store.allRaw().filter((f) => !isSavedSearch(f));
 }
-// Saved searches — the sidebar's own 保存した検索 group (never mixed in with folders).
+// Saved searches — the sidebar's own "Saved searches" group (never mixed in with folders).
 export function dynamicFolders() {
   return store.allRaw().filter(isSavedSearch);
 }
 
-// Folder view (第3モード): expose the store's CRUD so the grid can list every
+// Folder view (the 3rd mode): expose the store's CRUD so the grid can list every
 // folder and create/rename/delete from cards. Thin wrappers persist + notify so
 // all views refresh (store.create/remove/rename persist).
 export function allFolders() {

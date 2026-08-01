@@ -41,7 +41,7 @@ type TrashGridConfig = Omit<PostGridConfig, 'onAspect'>;
 //    unset so masonic treats columnWidth as a MINIMUM and stretches columns to fill
 //    (the same math as the old CSS auto-fill minmax).
 //  - `square` tells the host a cell is exactly one column wide AND high, which makes
-//    its height estimate exact. True only for a BARE square grid — with 情報を表示 on
+//    its height estimate exact. True only for a BARE square grid — with "Show info" on
 //    the metadata block hangs below the square, so the height is measured, not known.
 //  - itemHeightEstimate is only ever a first guess (masonic measures what it renders);
 //    it decides how far a deep-scroll restore lands before the real heights arrive.
@@ -143,7 +143,7 @@ export const hologramPostGridSource = makePostGridSource();
 // (#630) plus its one size. Twin of postLayout above, one axis shorter.
 //
 //  - `square` is true for the BARE grid: a cell is exactly the avatar, so its height
-//    is its column width and masonic needs no measurement. With 情報を表示 on, the
+//    is its column width and masonic needs no measurement. With "Show info" on, the
 //    metadata block hangs below and the height is measured.
 //  - the list pins to one full-width column, like the post side's.
 function posterLayout(shape: PosterShape, gridSize: number) {
@@ -216,12 +216,12 @@ function makePosterGridSource() {
 }
 export const hologramPosterGridSource = makePosterGridSource();
 
-// Trash grid model source (#268) — the ゴミ箱 destination draws the SAME cards the
+// Trash grid model source (#268) — the Trash destination draws the SAME cards the
 // library does, so it takes the post side's modelOf/keyOf/labels verbatim
 // (orchestrator hands over post-grid-builder's cardModel) and derives its layout
 // from the same density keys. Its items come from 'trashGroups', which
 // services/trash-view.ts writes; nothing else differs, and deliberately so — a
-// second card vocabulary for deleted posts is exactly the "二重 UI" the design
+// second card vocabulary for deleted posts is exactly the "duplicate UI" the design
 // rejected. No onAspect (the learned-aspect cache belongs to the library's own
 // masonry pass), no live column width / zoom anchor (Ctrl+wheel zoom and the size
 // slider drag both aim at the post grid).

@@ -1,27 +1,32 @@
 'use strict';
 
-// #44 の完了条件2つを、実ブラウザで数値にする。
+// Turns #44's two completion criteria into numbers, on a real browser.
 //
-//   1. ホスト CSS の影響を受けない — ページ側が `* { all: unset !important }` 相当の
-//      敵対的な規則を置いても、拡張の UI は設計どおりの見た目のまま
-//   2. 拡張 CSS がホストへ漏れない — ページ自身の要素が拡張のクラス名を持っていても、
-//      拡張のスタイルは当たらない
+//   1. Not affected by host CSS — even if the page places a hostile rule
+//      equivalent to `* { all: unset !important }`, the extension's UI keeps its designed look
+//   2. Extension CSS doesn't leak to the host — even if the page's own elements
+//      carry the extension's class names, the extension's styles don't apply to them
 //
-// これは ShadowRoot（extension/utils/ui-root.ts）が在る理由そのもので、境界が
-// 外れても普通のテストは全部緑のまま通る＝ここで押さえないと静かに壊れる。
+// This is exactly the reason ShadowRoot (extension/utils/ui-root.ts) exists,
+// and if that boundary comes loose the ordinary tests would all still pass
+// green = without pinning this down it breaks silently.
 //
-// 3つ目に、ホストが inline のスタイルを禁じる CSP を返す場合も見る。#270 の実測どおり、
-// 構築済みシート（adoptedStyleSheets）は CSP の検査対象ではないので、トークンは
-// 解決されなければならない。x.com が実際に出しているのがこの種のポリシー。
+// Third, this also checks the case where the host returns a CSP that forbids
+// inline styles. As measured for #270, constructed sheets (adoptedStyleSheets)
+// aren't subject to CSP inspection, so the tokens must still resolve. This is
+// exactly the kind of policy x.com actually sends.
 //
-// ⚠️敵対 CSS は**外部シートで配る**（`<style>` ではなく `<link>`）。`style-src 'none'` は
-// ページ自身の `<style>` と `style=` 属性も等しく殺すので、`<style>` に敵対規則を書くと
-// **その規則ごと効かなくなり、1と2が空振りのまま緑になる**（2026-07-30 実測。同じ理由で
-// フィクスチャ側の寸法もインライン属性では書けない）。`style-src 'self'` なら同一オリジンの
-// 外部シートだけが通る＝敵対 CSS は実際に当たり、inline を当てにできない状況は保たれる。
+// Warning: hostile CSS is **delivered as an external sheet** (`<link>`, not
+// `<style>`). `style-src 'none'` equally kills the page's own `<style>` and
+// `style=` attributes, so writing the hostile rules in a `<style>` tag would
+// **disable that whole rule set, letting checks 1 and 2 pass green while
+// testing nothing** (measured directly on 2026-07-30; for the same reason, the
+// fixture's own dimensions can't be written as inline attributes either).
+// `style-src 'self'` lets only same-origin external sheets through = the
+// hostile CSS actually applies, while the situation of not being able to rely on inline is preserved.
 //
-// 使い捨ての Chromium と使い捨ての拡張ステージング＝ユーザーのプロファイルにも
-// 実ライブラリにも触らない（e2e-overlay-visual と同じ台）。
+// Disposable Chromium and disposable extension staging = touches neither the
+// user's profile nor the real library (same rig as e2e-overlay-visual).
 
 const { launchOverlayBrowser, wait } = require('./lib-overlay-e2e.cts');
 
@@ -29,7 +34,7 @@ const POST_ID = '1999999999999999996';
 const POST_URL = `https://x.com/hologram/status/${POST_ID}`;
 const CSS_URL = 'https://x.com/hostile.css';
 
-// ページ側の敵対的な CSS。拡張が使う要素・クラス名を名指しで潰しにいく。
+// The page-side hostile CSS. Targets the elements/class names the extension uses by name, to crush them.
 const HOSTILE = `
   *, *::before, *::after { all: unset !important; }
   div, button, svg, span, input, label { all: unset !important; display: inline !important; }
@@ -41,8 +46,8 @@ const HOSTILE = `
     border: 0 !important;
   }
   hologram-extension-ui { display: none !important; position: static !important; opacity: 0 !important; }
-  /* 写真の角のコントロール（#310）。固定レイヤーではなく投稿の部分木に居るので、
-     ページの CSS からは名指しできる位置にある＝ここを潰しにいく。 */
+  /* The photo's corner control (#310). It lives in the post's subtree rather
+     than a fixed layer, so it's at a position the page's CSS can target by name = crush it here. */
   hologram-corner-control { display: none !important; position: static !important; width: auto !important; height: auto !important; }
   article, .media { display: block !important; }
 `;
@@ -51,9 +56,11 @@ const PAGE_CSS = `
   article { width: 640px; min-height: 360px; margin: 80px auto; padding: 32px; }
   .media { margin-top: 24px; background: #888; }
   ${HOSTILE}
-  /* 全消しの後にページが自分の写真枠を寸法づけ直す（特異度で上の * に勝つ）。
-     実サイトでも普通の形であり、これが無いと枠が 0 高さになって「小さすぎる枠」として
-     角のコントロールが最初から出ない＝下の検査が空振りする。 */
+  /* After the wipe-everything rule, the page re-dimensions its own photo frame
+     (wins over the * above by specificity). This is a normal shape on real
+     sites too, and without it the frame collapses to 0 height, making the
+     corner control never appear in the first place as a "too-small frame" =
+     the check below would test nothing. */
   #capture-target .media { display: block !important; width: 480px !important; height: 220px !important; }
 `;
 
@@ -76,10 +83,10 @@ const POST_HTML = `<!doctype html>
 
 declare const chrome: any;
 
-// 1x1 の透明 PNG。中身は問われない＝「壊れていない画像」であることだけが要る。
+// A 1x1 transparent PNG. Its content doesn't matter = all that's needed is that it's "a working image".
 const PIXEL = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
 
-// 数値で押さえるもの。敵対的な CSS が効いてしまうと、どれか必ず外れる。
+// What's pinned down numerically. If the hostile CSS actually takes effect, at least one of these is guaranteed to fail.
 interface Measured {
   found: boolean;
   display: string;
@@ -132,11 +139,12 @@ interface Measured {
     await page.goto(POST_URL, { waitUntil: 'domcontentloaded' });
     await page.locator('#capture-target').waitFor();
 
-    // === 写真の角のコントロール（#310）=====================================
-    // ドロップゾーンと違って固定レイヤーには居ない＝投稿の部分木に残したまま、各自の
-    // 小さな ShadowRoot で隔離している。だから見るものが2つある: ①ホスト要素の箱が
-    // ページの `!important` に勝って残っているか（ここだけはページから名指しできる）
-    // ②円そのものがページの `button { all: unset !important }` に触られていないか。
+    // === the photo's corner control (#310) =====================================
+    // Unlike the drop zone, this doesn't live in a fixed layer = it stays in
+    // the post's subtree, isolated in its own small ShadowRoot. So there are
+    // two things to check here: (1) does the host element's box survive
+    // against the page's `!important` (this is the only part the page can
+    // target by name) (2) is the circle itself untouched by the page's `button { all: unset !important }`.
     const media = await page.locator('.media').boundingBox();
     await page.mouse.move(media.x + media.width / 2, media.y + media.height / 2);
     await page.waitForSelector('[data-hologram-overlay][data-hologram-face="save"]', { timeout: 5000 });
@@ -163,8 +171,9 @@ interface Measured {
         glyphs: disc.querySelectorAll('svg').length,
         label: disc.getAttribute('aria-label'),
         titled: el.hasAttribute('title') || disc.hasAttribute('title'),
-        // 角に居ること＝借りた containing block（ページ要素の position: relative）が
-        // ページの `position: static !important` に負けていないことの、唯一の観測点。
+        // Sitting at the corner = the only observable point proving that the
+        // borrowed containing block (the page element's position: relative)
+        // hasn't lost to the page's `position: static !important`.
         offsetLeft: r.left - boxRect.left,
         offsetTop: r.top - boxRect.top,
       };
@@ -181,7 +190,7 @@ interface Measured {
     if (corner.radius !== '50%') cornerFail(`the disc radius is ${corner.radius}, wanted 50%`);
     if (corner.background === 'rgba(0, 0, 0, 0)' || corner.background === 'rgb(255, 0, 255)') cornerFail(`the disc fill is ${corner.background}`);
     if (corner.borderTopWidth !== '1px') cornerFail(`the disc outline is ${corner.borderTopWidth}, wanted 1px`);
-    // 影は 24px 専用トークン（#310）＝カード用の 36px ぼかしを共有していない。
+    // The shadow is a token dedicated to 24px (#310) = it doesn't share the 36px blur used for cards.
     if (!/\b2px\b/.test(corner.boxShadow) || /3[0-9]px/.test(corner.boxShadow)) cornerFail(`the disc shadow is "${corner.boxShadow}", wanted the compact control shadow`);
     if (corner.glyphs !== 1) cornerFail(`the disc holds ${corner.glyphs} glyphs, wanted 1`);
     if (!corner.label) cornerFail('the pressable face has no accessible name');
@@ -261,10 +270,12 @@ interface Measured {
       throw new Error(`HOSTILE_CSS_FAIL: ${why} — ${JSON.stringify(m)}`);
     };
 
-    // 前提の自己検査＝敵対 CSS が実際に当たっていること。`.surface { background: #ff00ff }`
-    // はページ自身の規則なので、これがマゼンタでなければシートが読まれていない＝以降の
-    // 判定は全部空振りで緑になる。#44 の初版はまさにその状態だった（`<style>` を
-    // `style-src 'none'` が殺していた・2026-07-30 に #310 で発見）。
+    // Self-check on the premise = that the hostile CSS is actually applying.
+    // Since `.surface { background: #ff00ff }` is the page's own rule, if this
+    // isn't magenta then the sheet was never loaded = every check that follows
+    // would pass green without testing anything. #44's first version was
+    // exactly in that state (`style-src 'none'` was killing the `<style>` tag
+    // — discovered on 2026-07-30 during #310).
     if (m.impostorBackground !== 'rgb(255, 0, 255)') fail(`the hostile sheet did not apply (the page's own .surface is ${m.impostorBackground}, wanted magenta) — every check below would pass vacuously`);
     if (!m.found) fail('the drop zone is not in the shared root at all');
     // 1. The host's `display:none !important` on our tag and our classes must not

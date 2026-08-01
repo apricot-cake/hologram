@@ -72,7 +72,7 @@ const evalJs = `(async () => {
   const initTitle     = activeTitle();
 
   // ② Add alpha filter via the "+ フィルタ" flow (filterbar component — the qf-pop
-  //    flyout is gone since P2③): open the popover, pick タグ, click the alpha row.
+  //    flyout is gone since P2③): open the popover, pick "タグ" (tags), click the alpha row.
   const byText = (sel, text) => [...document.querySelectorAll(sel)].find((el) => (el.textContent || '').trim() === text) || null;
   byText('button', 'フィルタ').click();
   await waitFor(() => !!byText('[data-slot="command-item"]', 'タグ'));

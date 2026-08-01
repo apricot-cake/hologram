@@ -13,7 +13,7 @@
 // follows the selection down to its placeholder.
 //
 // What it cannot cover: the feel of the real gesture and auto-scroll — synthetic
-// events step through the frames instantly. That needs a real pointer (#484 本文).
+// events step through the frames instantly. That needs a real pointer (per #484's own body).
 //
 //   node scripts/test-app-marquee.cts
 
@@ -130,8 +130,9 @@ const evalJs = `(async () => {
   await drag(x0, cy - 5, x1, cy + 5);
   out.gotA = selectedKeys();
   out.scrolledA = scroller.scrollTop; // the band stayed clear of the auto-scroll edges
-  // 「選択モードに入った」は、底部フローティングバーが出ていることで見る（グリッド
-  // 側の .selecting クラスは、隠すべきホバー部品ごと無くなった＝#618 確定A）。
+  // "Entered selection mode" is checked by whether the bottom floating bar is shown (the
+  // grid-side .selecting class disappeared along with the hover parts it was meant to
+  // hide — #618 finalized decision A).
   out.selectingClass = document.querySelector('[data-slot="selection-bar"]')?.getAttribute('aria-hidden') === 'false';
   out.bandRemovedA = !band();
 
@@ -214,7 +215,7 @@ const evalJs = `(async () => {
   await sleep(80);
   out.gotHShift = selectedKeys();
 
-  // I. the empty space BELOW the last row is background too (#242 確定した設計 3):
+  // I. the empty space BELOW the last row is background too (#242 finalized design 3):
   //    the grid is only as tall as its cards, so this is the biggest click target
   //    of all and the one a rect-of-the-grid hit test would miss.
   scroller.scrollTop = scroller.scrollHeight;

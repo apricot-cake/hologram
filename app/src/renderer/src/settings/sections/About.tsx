@@ -5,7 +5,7 @@ import { t } from '../../_shared/i18n.ts';
 import * as ipc from '../ipc.ts';
 import { mount as mountAboutIcon } from '../../services/about-icon.ts';
 
-// このアプリについて: the live holographic icon over name / version / build meta.
+// About this app: the live holographic icon over name / version / build meta.
 interface AppInfo {
   version?: string;
   electron?: string;

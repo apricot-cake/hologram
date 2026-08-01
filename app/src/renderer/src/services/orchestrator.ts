@@ -141,7 +141,7 @@ export let setPostSort: (value: string) => void;
 // Import a library from a ZIP. The settings panel's button and the first-run empty
 // state's CTA are the two entry points.
 export let runZipImport: () => Promise<void>;
-// Go to a browse destination (投稿グリッド / 投稿者グリッド) from the left sidebar.
+// Go to a browse destination (post grid / poster grid) from the left sidebar.
 // The sidebar is the "go to another place" axis (browser address bar / bookmarks),
 // so choosing a destination while the image view is up LEAVES it and lands on that
 // grid — even when the mode is unchanged (#312). Off the image view it is the plain
@@ -153,11 +153,11 @@ export let browseTo: (mode: string) => void;
 // folder facet with the clicked folder, then re-render. The new left sidebar's
 // folder rows call this directly (no qf-pop flyout).
 export let applyFolderFilter: (id: string) => void;
-// Poster-folder sidebar group (#6 残1): the flat CRUD surface LeftSidebar's poster-mode
+// Poster-folder sidebar group (#6, remaining item 1): the flat CRUD surface LeftSidebar's poster-mode
 // folder rows call directly (create goes straight through posterFolderStore.create —
 // rename/reorder likewise — delete goes through removePosterFolder so a dangling filter
 // leaf is cleaned up too). No manager modal for posters any more (FolderManagerModal
-// retired) — the sidebar list IS the manager, the way #41/確定D already made
+// retired) — the sidebar list IS the manager, the way #41/confirmed D already made
 // it for library folders. Assigned once posterGrid/posterQB exist (TDZ-safe: read only
 // after mount, same pattern as applyFolderFilter above).
 export let posterFolderStore: HologramPersistedFolderStore;
@@ -190,15 +190,15 @@ interface FilterCatBase {
   label: string;
 }
 // The operator/exclusion mode of one facet (redesign §4-2 B, Linear「is any of /
-// is all of / is not」). 'and'/'or' = positive すべて/どれか; 'exclude' = 「〜以外」
+// is all of / is not」). 'and'/'or' = positive "all"/"any"; 'exclude' = "is not"
 // (every value of the facet negated). 'and' is only offered for multi-value types.
 export type FacetMode = 'and' | 'or' | 'exclude';
 // A category whose editor is a value list (checklist / grouped-tag two-pane).
 export interface FilterCatValues extends FilterCatBase {
   editor: 'values';
   showFind: boolean;
-  // multi = a すべて/どれか-capable type (multiValueTypes): the editor offers the
-  // 3-way どれか/すべて/〜以外; other value types offer the 2-way 含む/〜以外.
+  // multi = an "all"/"any"-capable type (multiValueTypes): the editor offers the
+  // 3-way "any"/"all"/"is not"; other value types offer the 2-way "include"/"is not".
   multi: boolean;
   values(): FilterRow[];
   pick(it: FilterRow): void;
@@ -207,10 +207,10 @@ export interface FilterCatValues extends FilterCatBase {
   mode(): FacetMode;
   setMode(m: FacetMode): void;
   manage?: () => void;
-  // Folder facet only (#41): 「このフォルダのみ」. A folder condition covers the
+  // Folder facet only (#41): "This folder only". A folder condition covers the
   // subtree by default, and this narrows it to the folder's own posts. It is a
   // property of the condition, not a mode — hence its own switch rather than a
-  // fourth segment next to どれか/すべて/〜以外.
+  // fourth segment next to "any"/"all"/"is not".
   only?: { get(): boolean; set(v: boolean): void };
 }
 // A category whose editor is the date-range form (post date or the 3-dim poster date).
@@ -219,7 +219,7 @@ export interface FilterCatDate extends FilterCatBase {
   dimOptions: Array<{ value: string; label: string }>;
   apply(f: { dateField?: string; from?: string; to?: string }): void;
 }
-// A category whose editor is the engagement form (type + 以上/以下 + min).
+// A category whose editor is the engagement form (type + at-least/at-most + min).
 export interface FilterCatEng extends FilterCatBase {
   editor: 'eng';
   typeOptions: Array<{ value: string; label: string }>;
@@ -228,12 +228,12 @@ export interface FilterCatEng extends FilterCatBase {
   apply(f: { engType?: string; min?: string; op?: string }): void;
 }
 export type FilterCat = FilterCatValues | FilterCatDate | FilterCatEng;
-// The "+ フィルタ" menu: the facet categories the current browse mode offers,
+// The "+ Filter" menu: the facet categories the current browse mode offers,
 // each carrying its own live value/apply closures (the component only renders +
 // routes). Recomputed per open so counts/labels/vocab are fresh.
 export let filterCategories: () => FilterCat[];
 
-// One active-filter chip (redesign §3-2 / P2③ タスク2) — a facet currently in the
+// One active-filter chip (redesign §3-2 / P2③ task 2) — a facet currently in the
 // query tree, rendered Linear-style (1 facet = 1 chip). `cat` matches a
 // filterCategories() entry so a chip click reopens that facet's editor; `remove`
 // clears the whole facet. Recomputed from the active QB tree on every tree change.
@@ -242,7 +242,7 @@ export interface ActiveFilter {
   type: string; // leaf type (icon cue)
   label: string; // category label
   editor: 'values' | 'date' | 'eng';
-  mode: FacetMode; // positive すべて/どれか, or 「〜以外」
+  mode: FacetMode; // positive "all"/"any", or "is not"
   values: string[]; // per-value labels shown inside the chip
   remove(): void; // clear the whole facet (all its leaves)
 }
@@ -271,8 +271,8 @@ export let triageCurrentMedia: () => import('./triage-builder.ts').TriageMedia |
 export let triageListFolders: () => HologramFolder[];
 export let triageQueueCount: () => number;
 
-// One open facet-editor popup = one nav-history entry (#144 確定未決2: エディタ
-// 1セッション1エントリ). The filterbar's ValueEditor/FormEditor bracket their
+// One open facet-editor popup = one nav-history entry (#144 confirmed (pending item 2): editor
+// one session, one entry). The filterbar's ValueEditor/FormEditor bracket their
 // mount with these; while a session token is live, tabs-builder coalesces the
 // per-pick records into the entry the first pick pushed.
 let _filterEditSession: object | null = null;
@@ -358,12 +358,12 @@ export function endFilterEditSession(): void {
 
   const PF_NAME: Record<string, string> = { x: 'X', bluesky: 'Bluesky', misskey: 'Misskey', mastodon: 'Mastodon', pixiv: 'pixiv' };
 
-  // 全フィルタを一括リセット（アクティブフィルタバーの「リセット」）。検索・フォルダ・
-  // 日付・エンゲージも含めて消す。afterQueryChange() が sidebar の active 状態も同期。
+  // Bulk-resets every filter (the active filter bar's "Reset"). Clears search, folder,
+  // date, and engagement too. afterQueryChange() also syncs the sidebar's active state.
   // Assigned (not a hoisted declaration) so the module-scope `export let` above is what
   // gets set — Activebar.tsx imports it directly now.
   resetAllFilters = function () {
-    // No poster bounce anymore (#144 確定未決4: posterReturn 撤去) — a drill-in is a
+    // No poster bounce anymore (#144 confirmed (pending item 4): posterReturn removed) — a drill-in is a
     // history push now, so "back to the poster grid" is the ← button / Alt+←.
     postQB.resetTree();
     searchEditing.clear(); // the editing text leaf is gone with the tree
@@ -372,7 +372,7 @@ export function endFilterEditSession(): void {
     setSearchBoxValue('');
     afterQueryChange();
   };
-  // The リセット / 戻る / 進む buttons import resetAllFilters/navBack/navForward directly
+  // The Reset / Back / Forward buttons import resetAllFilters/navBack/navForward directly
   // (no pushed model callbacks) — they are React-owned, in the toolbar.
   //
   // Back/forward through the per-tab view history (nav's state machine, the Alt+←/→ +
@@ -385,16 +385,16 @@ export function endFilterEditSession(): void {
   // calling resetAllFilters / resetPosterFilters / runZipImport through the module-scope
   // exports below — the delegated listener that matched them by element id is gone.
 
-  // --- カテゴリ値フライアウト: サイドバーの行/タググループボタンの横に開く。
-  // State (どのカテゴリが開いているか) + row-model building (qfValues — bespoke facet
+  // --- Category value flyout: opens next to the sidebar's row / tag-group buttons.
+  // State (which category is open) + row-model building (qfValues — bespoke facet
   // logic, unchanged) + pick routing moved to qf-pop-builder.ts during the
   // viewer.ts decomposition — the makeQfPop() call lives further down,
   // once postQB/posterQB/pfStore/buildUsers all exist (see near posterQB below).
-  // Tag vocabulary / 種別 domain (tagKindOf/kindLabel/groupedTagVocab/
+  // Tag vocabulary / Kind domain (tagKindOf/kindLabel/groupedTagVocab/
   // inspectorTagPickerData/posterTagsOf/posterFilterVocab) moved to tags.ts
   // (imported) — 8th extraction slice. The tag stores themselves
   // (tagTypes/tagLabels/posterTags) also live in tags.ts now (P4
-  // "状態→store" tags slice) — its own getters go in where viewer.js's local
+  // "state→store" tags slice) — its own getters go in where viewer.js's local
   // `let`s used to. Wired BEFORE the facets/cooc wiring below, which passes
   // tagKindOf/posterTagsOf/posterFilterVocab as direct refs.
   // charCandidatesFor/relatedTagCandidates are consts from the cooc
@@ -414,7 +414,7 @@ export function endFilterEditSession(): void {
   // implementation to drift.
   bindTagKindOf(tagKindOf);
   bindPosterFilterVocab(posterFilterVocab);
-  // Shared 種別 (kind) menu (right-click a tag chip in the edit picker /
+  // Shared Kind menu (right-click a tag chip in the edit picker /
   // inspector / poster picker) — row model + pick/rename actions moved to
   // kind-menu-builder.ts (a viewer.ts decomposition slice). Wired here (not
   // where it's first used) so tagKindOf/kindLabel/getMessage are all already in
@@ -441,7 +441,7 @@ export function endFilterEditSession(): void {
     posterFilterVocab,
     namedPosters: () => namedPosters(),
     posterFolders: () => pfStore.all(),
-    postFolders: () => (CF() ? CF().staticFolders() : []), // library folders (folders.json) for the フォルダ flyout — saved searches are not a place to put posts
+    postFolders: () => (CF() ? CF().staticFolders() : []), // library folders (folders.json) for the Folder flyout — saved searches are not a place to put posts
     // Deferred wrapper: buildUsers becomes a const (users.js wiring) declared
     // after this point — a direct ref here would hit TDZ at wiring time.
     buildUsers: () => buildUsers(),
@@ -455,12 +455,12 @@ export function endFilterEditSession(): void {
   // exposed as qfPop.pickValue for the filter bar — see the makeQfPop() call near
   // posterQB below (the flyout render/anchor half retired with its component, P2③).
 
-  // The ⓘ クエリビルダの使い方 hover popover is the activebar component now (HelpPop) — its
+  // The ⓘ "How to use the query builder" hover popover is the activebar component now (HelpPop) — its
   // content (title + 5 rows) rides the model's `help` field; hover/positioning live there.
 
   // The date/engagement/poster-date-range popovers (the retired filter-popover flyout)
-  // were removed with their component (P2③ タスク3); adding a date/engagement filter is the
-  // "+ フィルタ" bar's FormEditor now, and editing a chip re-opens it (P2③).
+  // were removed with their component (P2③ task 3); adding a date/engagement filter is the
+  // "+ Filter" bar's FormEditor now, and editing a chip re-opens it (P2③).
   // The single 'text' leaf bound to the search box (post mode only) is owned by
   // search-editing.ts, wired together with the rest of the search-box plumbing
   // in search-box-builder.ts now (a viewer.ts decomposition slice) —
@@ -468,22 +468,22 @@ export function endFilterEditSession(): void {
 
   // --- Sidebar filter controls ---
   // (#filterRows row labels are rendered by the sidebar component, self-deriving from
-  // hologramPostSidebarSource. No static setText for プラットフォーム / 投稿 /
-  // メディア / 日付 / エンゲージメント here.)
+  // hologramPostSidebarSource. No static setText for Platform / Post /
+  // Media / Date / Engagement here.)
 
-  // (The delegated #filterRows listener lived here — the last委譲 listener of the old
+  // (The delegated #filterRows listener lived here — the last delegated listener of the old
   // facet-row column. Its container went with the shell cutover and the column itself
   // with P3 #6, so every row it routed is either the filter bar's (adding filters) or
   // gone. multiOnly survives as tab state only; see setMultiOnly below.)
 
-  // --- Tag area: the タグ row opens ONE flyout listing every general tag
-  // (種別なし). The 作品/キャラ kinded tags get their own rows; general tags stay a
+  // --- Tag area: the Tags row opens ONE flyout listing every general tag
+  // (no Kind). The Work/Character kinded tags get their own rows; general tags stay a
   // flat, count-ordered list inside the scrollable flyout.
-  // tagTypes/tagLabels (種別語彙) + tagKindOf/kindLabel moved
-  // to tags.js (hologramTags wiring above) — the P4 "状態→store" tags slice.
-  // (Possibly custom) 作品/キャラ names + which tags carry a 種別 are read live by
+  // tagTypes/tagLabels (Kind vocabulary) + tagKindOf/kindLabel moved
+  // to tags.js (hologramTags wiring above) — the P4 "state→store" tags slice.
+  // (Possibly custom) Work/Character names + which tags carry a Kind are read live by
   // services/sidebar.ts's sources now (hologramTags.onChange / posts-data.ts's
-  // subscribe), so a 種別 rename or classification no longer needs an explicit
+  // subscribe), so a Kind rename or classification no longer needs an explicit
   // re-derive here; the rest (palette section headers, kind menu, dot tooltips) already
   // read kindLabel() live too. Mutation + persistence for the kind menu itself
   // live in kind-menu-builder.ts now; tagsSetTagKind below is only
@@ -493,7 +493,7 @@ export function endFilterEditSession(): void {
   // Records the DIFF each library edit actually produced — post tags, poster tags and
   // folder membership (both views) — so a bulk mistake can be taken back with Ctrl+Z /
   // Ctrl+Shift+Z, or straight from the toast the operation raised. Linear stack, cleared
-  // on restart. Deleting a post is NOT on the stack yet (ゴミ箱 is its rescue path) — the
+  // on restart. Deleting a post is NOT on the stack yet (Trash is its rescue path) — the
   // remaining coverage is tracked in #235.
   // Stack semantics + the orchestrator-owned apply callbacks/shortcut handler live in
   // undo-builder.ts. Constructed here (its original spot) so pushUndo is ready in time
@@ -521,7 +521,7 @@ export function endFilterEditSession(): void {
   const { pushUndo, undoAction } = undoCtl;
   handleShortcutUndoKey = undoCtl.handleShortcutUndoKey;
   // folders.ts fires its own toast for a membership toggle, so it also owns putting
-  // 「元に戻す」 on it — the stack is injected because that leaf module loads long
+  // "Undo" on it — the stack is injected because that leaf module loads long
   // before this controller exists.
   folders.setUndoRecorder((folderId, added, removed) => pushUndo([{ kind: 'folder-items', target: folderId, added, removed }]), getMessage('undoAction'));
 
@@ -529,7 +529,7 @@ export function endFilterEditSession(): void {
   // allPosts/_postsById/loadPosts/renderPosts and the render-reuse guard moved to
   // post-grid-builder.ts (the "allPosts ownership transfer") — postGrid is
   // constructed below, after buildUsers/postQB are in scope.
-  let browseMode = 'posts'; // 'posts' | 'posters' (what the content area browses) — per-tab now: the tab's current history entry decides (#144 確定未決3)
+  let browseMode = 'posts'; // 'posts' | 'posters' (what the content area browses) — per-tab now: the tab's current history entry decides (#144 confirmed (pending item 3))
   let multiOnly = false; // show only items with more than one image
   // SMOKE capture: the hidden screenshot instance never has anything "on-screen",
   // so content-visibility:auto skips painting every card and loading=lazy images
@@ -586,7 +586,7 @@ export function endFilterEditSession(): void {
   // services/selection.ts — hologramStore's
   // 'selectedSet' key IS the state; the grid component's cells read it reactively.
   // --- Query builder: a boolean condition tree is the single source of truth ---
-  // (改訂③: flat conditions you drag into parenthesised
+  // (revision 3: flat conditions you drag into parenthesised
   // groups; no auto type-grouping). BOTH views (posts / posters) share ONE builder
   // implementation via the createQueryBuilder(ctx) factory below; ctx carries the
   // per-view differences (leaf predicate, facet schema, callbacks). The tree is
@@ -600,7 +600,7 @@ export function endFilterEditSession(): void {
   // Runtime couplings are injected here: collections resolve through CF()
   // lazily (folders.js registers after this closure is built, and predicates only
   // run post-init), fuzzy text matching through search.ts's compile.
-  // The shared facet builder (改訂④) lives in query-chips.ts: tree state and the
+  // The shared facet builder (revision 4) lives in query-chips.ts: tree state and the
   // mutation helpers moved there. It renders nothing — the chips on screen come
   // from activeFilters() (below) via the filterbar component, which recomputes
   // off the postQueryTree/posterQueryTree store keys the builder mirrors on every
@@ -704,7 +704,7 @@ export function endFilterEditSession(): void {
   // (The content area's back-to-top button was wired here. Its element went with the
   // shell cutover, so the listener has bound to nothing since — P3 #6.)
 
-  // --- Authors (作者 row → flyout; derived from post author fields, no fetching) ---
+  // --- Authors (Author row → flyout; derived from post author fields, no fetching) ---
   // buildUsers (generation-cached poster roll-up) moved to users.ts (imported
   // above) — 5th extraction slice. Reassigned lets (allPosts / _allPostsGeneration)
   // are injected as getters; userKey/hostOf are consts already initialized at this
@@ -870,7 +870,7 @@ export function endFilterEditSession(): void {
     renderPosters: () => renderPosters(),
     showImageView: (recs, idx) => imageTabCtl.showImageView(recs, idx), // imageTabCtl is constructed just below — deferred
     hideImageView: () => imageTabCtl.hideImageView(),
-    // Coalescing hint (#144 確定未決2): an open facet-editor session, else a live
+    // Coalescing hint (#144 confirmed (pending item 2)): an open facet-editor session, else a live
     // search-typing burst (searchBox is constructed far below — deferred read).
     navCoalesceKey: () => _filterEditSession || searchBox.liveSearchKey(),
   });
@@ -889,7 +889,7 @@ export function endFilterEditSession(): void {
   showTabMenu = tabsCtl.showTabMenu;
   handleGlobalTabShortcut = tabsCtl.handleGlobalTabShortcut;
 
-  // --- Image view ('image' history entries) — fit-to-screen detail view (Eagle 風) ---
+  // --- Image view ('image' history entries) — fit-to-screen detail view (Eagle-style) ---
   // The view/state cluster (showImageView/hideImageView/openImageEntry/
   // setImageTabIndex/toggleImageTabInspector/closeImageTab/addImageTab) lives in
   // image-tab-builder.ts (a viewer.ts decomposition slice; #144
@@ -980,7 +980,7 @@ export function endFilterEditSession(): void {
   triageListFolders = triageCtl.listFolders;
   triageQueueCount = triageCtl.queueCount;
 
-  // ゴミ箱 (#268). The trash draws the library's OWN cards — post-grid-builder's
+  // Trash (#268). The trash draws the library's OWN cards — post-grid-builder's
   // cardModel and its label set go over verbatim — and groups its records with the
   // library's grouping, so a multi-image post deleted as one card comes back as one
   // card. Wired here rather than at the trash's own module scope because both halves
@@ -1004,8 +1004,8 @@ export function endFilterEditSession(): void {
   // forward-refs, since none of these run before a real gesture.
   //
   // #143 P2⑥: a plain click single-selects the card AND shows it in the inspector
-  // (Eagle/Explorer 型「シングル＝選択して詳細」); Ctrl adds/removes, Shift range-selects
-  // — neither touches the inspector (確定 未決事項2). Double-click opens the image view
+  // (Eagle/Explorer style — "single = select and show detail"); Ctrl adds/removes, Shift range-selects
+  // — neither touches the inspector (confirmed, pending item 2). Double-click opens the image view
   // as an in-tab history destination (#144).
   // Did the gesture land on the card's picture (as opposed to its text or metadata)?
   // The two middle-click behaviours below are about the image specifically.
@@ -1053,17 +1053,17 @@ export function endFilterEditSession(): void {
   });
 
   // Sidebar folder chips (shared folders.json): count + ★default. Like tag chips
-  // they cycle 解除→いずれか(OR)→＋すべて含む(AND)→解除 and join the same
-  // かつ/または expression as the tags.
+  // they cycle off→any (OR)→+include all (AND)→off and join the same
+  // AND/OR expression as the tags.
   // postFolderChips was retired (collections moved to the collections view); the
-  // 複数画像 row entry (active state) is self-derived now by
+  // "Multiple images" row entry (active state) is self-derived now by
   // services/sidebar.ts's hologramPostSidebarSource — no orchestrator-side
   // re-render call needed after a multi/folder mutation.
-  // フォルダ管理は左サイドバーのツリー（ライブラリ／投稿者とも）に統一（#41・#6 残1）。
-  // 旧 #postFolderManage ボタン・フォルダ管理モーダル（qf-pop フッターの管理ボタン）は
-  // どちらもコードから撤去済み。
+  // Folder management is unified into the left sidebar's tree (both library and poster)
+  // (#41, #6 remaining item 1). The old #postFolderManage button and the folder-management
+  // modal (the manage button in the qf-pop footer) have both been removed from the code.
 
-  // 複数画像 sidebar row: reflects the group-level multiOnly flag as the row's active
+  // "Multiple images" sidebar row: reflects the group-level multiOnly flag as the row's active
   // state (accent icon) via the model. The click that flips it is handled by the
   // delegated #filterRows listener.
 
@@ -1142,9 +1142,10 @@ export function endFilterEditSession(): void {
   // Selection is driven entirely by the unified card gesture above (plain =
   // single-select + inspector, Ctrl = add/remove, Shift = range). The old hover
   // ○ ring (the former only way INTO the selection) and the capture-phase "any
-  // click toggles while selecting" handler are gone — Eagle 純型・ホバー部品ゼロ
-  // (確定A) と単一クリック選択（確定 未決事項2）に一本化。The ℹ button is likewise
-  // retired; the inspector is reached by a plain click (or the card's 詳細
+  // click toggles while selecting" handler are gone — unified into the Eagle pure form
+  // with zero hover parts (confirmed A) and single-click selection (confirmed, pending
+  // item 2). The ℹ button is likewise
+  // retired; the inspector is reached by a plain click (or the card's "Details"
   // context-menu item), not a dedicated hover button.
   handleShortcutSelectAllKey = selectionCtl.handleShortcutSelectAllKey;
   handleShortcutCopyKey = selectionCtl.handleShortcutCopyKey;
@@ -1202,7 +1203,7 @@ export function endFilterEditSession(): void {
   // subscribe registration (StoreSubscriptions, App.tsx) to it.
   handleDisplayStoreChange = gridDensity.handleDisplayStoreChange;
 
-  // === Browse-mode toggle: 投稿グリッド ↔ 投稿者グリッド ↔ ゴミ箱 ===
+  // === Browse-mode toggle: post grid ↔ poster grid ↔ Trash ===
   // The three destinations the left nav offers. 'trash' (#268) joined the pair as a
   // real browse mode rather than a modal, because it IS a place in the library — but
   // it is NOT a per-tab view: nothing records it on the tab's back/forward stack, so
@@ -1214,7 +1215,7 @@ export function endFilterEditSession(): void {
   // WITHOUT rendering. applyEntry (tabs-builder) uses this so a history restore
   // renders exactly once — its own kind-specific render right after.
   // No pref write anywhere: mode is per-tab state on the history entry now (#144
-  // 確定未決3 — the old global browseMode pref is retired; a new tab opens posts).
+  // confirmed (pending item 3) — the old global browseMode pref is retired; a new tab opens posts).
   function setBrowseModeLite(mode: string) {
     mode = normalizeBrowseMode(mode);
     if (browseMode === mode) return;
@@ -1278,7 +1279,7 @@ export function endFilterEditSession(): void {
     setBrowseMode(m);
   };
 
-  // --- Poster grid (投稿者ビュー) ------------------------------------------
+  // --- Poster grid (Poster view) ------------------------------------------
   // Cards derived from post author fields (buildUsers — no fetching). Click =
   // inspector (poster profile), double-click = jump to that poster's posts.
   // posterList itself is now poster-grid-builder.ts-internal state (exposed via
@@ -1291,7 +1292,7 @@ export function endFilterEditSession(): void {
   // above. This just bridges React's subscribe registration (StoreSubscriptions,
   // App.tsx) to it.
   handlePosterDisplayStoreChange = gridDensity.handlePosterDisplayStoreChange;
-  // Poster browse filters (platform / tag / instance / folder / date範囲) live
+  // Poster browse filters (platform / tag / instance / folder / date range) live
   // in the posterQB query tree (createQueryBuilder + posterPredOf), not separate Sets.
 
   // Poster grid/filter/inspector/folder cluster (posterWorkGroups, the named
@@ -1340,15 +1341,15 @@ export function endFilterEditSession(): void {
   removePosterFolder = deletePosterFolder;
   // --- Poster query builder: the SAME builder (createQueryBuilder), evaluated
   // against poster (user) objects instead of posts. Leaf types: platform / instance /
-  // tag(作品/キャラ含む) / folder / date(範囲). Its chips are the shared filter bar
-  // (FilterChips reads the active mode's tree); "+ フィルタ" is the entry point. ---
+  // tag (including Work/Character) / folder / date (range). Its chips are the shared filter bar
+  // (FilterChips reads the active mode's tree); "+ Filter" is the entry point. ---
   // Poster leaf predicate — query.ts's makePosterPredOf (the mirror of postPredOf)
   // is now called inside query-builder.ts's makePosterQueryBuilder;
   // posterTagsOf (tags.js) and posterFolderById (pfStore) are passed in as deps,
   // both declared above so a direct ref is TDZ-safe. posterFilterLabel lives in
   // tab-state.js's makeTabLabels (destructured near filterLabel).
   // The poster date-range popover (and its editingPosterDateNode state) retired with
-  // the filter-popover component (P2③ タスク3); a poster date chip re-opens the filterbar
+  // the filter-popover component (P2③ task 3); a poster date chip re-opens the filterbar
   // FormEditor now.
   // The poster-side builder instance (predOf/instance construction moved to
   // query-builder.ts — see that file's makePosterQueryBuilder).
@@ -1381,7 +1382,7 @@ export function endFilterEditSession(): void {
 
   // qf-pop value-pick routing — a viewer.ts decomposition slice, now just
   // the headless pick router for the filter bar (the value flyout + date/eng popover
-  // retired with their components, P2③ タスク3). Wired here (not where first used) so
+  // retired with their components, P2③ task 3). Wired here (not where first used) so
   // postQB/posterQB/buildUsers are already real consts — no deferred-getter indirection,
   // same reasoning as makeSearchBox() being wired late (search-box-builder.ts).
   const qfPop = makeQfPop({
@@ -1394,7 +1395,7 @@ export function endFilterEditSession(): void {
     buildUsers: () => buildUsers(),
   });
 
-  // The "+ フィルタ" category menu (redesign §3-2 / P2③): the facet categories the
+  // The "+ Filter" category menu (redesign §3-2 / P2③): the facet categories the
   // current browse mode offers, each carrying its own live value/apply closures. The
   // routing is REUSED — value picks go through qfPop.pickValue (= onQfPick, run headless
   // with no open flyout), date/engagement writes go straight to the QB (mirroring the
@@ -1402,12 +1403,12 @@ export function endFilterEditSession(): void {
   // never rebuilds this logic. Recomputed per open so counts/vocab/labels stay fresh.
   filterCategories = function (): FilterCat[] {
     const pick = (cat: string) => (it: FilterRow) => qfPop.pickValue(cat, it as HologramQfPopItem);
-    // 種別 dot: a tag row carrying it.kind ('work'/'character') wears the shared category
+    // Kind dot: a tag row carrying it.kind ('work'/'character') wears the shared category
     // dot — resolve its (possibly custom) label here so the component only draws (this is
     // exactly what renderQfPop did before the flyout was retired).
     const dot = (it: FilterRow) => (it.kind ? { ...it, dotTitle: kindLabel(it.kind as string) } : it);
     // Mode accessors (redesign §4-2 B) bound to one view's QB + facet schema: read /
-    // write a facet's すべて/どれか/〜以外 against the live tree. mode() derives from the
+    // write a facet's "all"/"any"/"is not" against the live tree. mode() derives from the
     // tree (all-negated → 'exclude', else the cluster op / default op); setMode() negates
     // or un-negates every value of the type and sets the group op, then refreshes.
     const modeFor = (qb: typeof postQB, opts: typeof POST_FACET_OPTS) => (type: string) => ({
@@ -1430,8 +1431,8 @@ export function endFilterEditSession(): void {
       },
     });
     // A value-list category. `type` = the leaf type it writes (drives multi + mode);
-    // `valuesFn` overrides the default qfValues(cat) read (the combined タグ merges its
-    // 作品/キャラ kin — they share the one 'tag' leaf type and its single op, so one chip).
+    // `valuesFn` overrides the default qfValues(cat) read (the combined Tags merges its
+    // Work/Character kin — they share the one 'tag' leaf type and its single op, so one chip).
     const valuesCat =
       (qb: typeof postQB, opts: typeof POST_FACET_OPTS) =>
       (cat: string, label: string, type: string, showFind: boolean, extra?: { manage?: () => void; valuesFn?: () => FilterRow[]; only?: FilterCatValues['only'] }): FilterCatValues => {
@@ -1450,8 +1451,8 @@ export function endFilterEditSession(): void {
           only: extra?.only,
         };
       };
-    // The combined タグ editor values: general tags (種別なし, count-ordered)
-    // followed by 作品/キャラ groups — all one 'tag' facet, so one chip + one op.
+    // The combined Tags editor values: general tags (no Kind, count-ordered)
+    // followed by Work/Character groups — all one 'tag' facet, so one chip + one op.
     const combinedTagValues = (tagCat: string, workCat: string, charCat: string) => (): FilterRow[] => {
       const general = (qfValues(tagCat) as FilterRow[]).map(dot);
       const work = (qfValues(workCat) as FilterRow[]).map(dot);
@@ -1469,7 +1470,7 @@ export function endFilterEditSession(): void {
       const vc = valuesCat(posterQB, POSTER_FACET_OPTS);
       const cats: FilterCat[] = [vc('poster-platform', getMessage('sbPosterPlatformTitle'), 'platform', false), vc('poster-tag', getMessage('sbPosterTagsTitle'), 'tag', true, { valuesFn: combinedTagValues('poster-tag', 'poster-work', 'poster-character') })];
       if (qfValues('poster-instance').length) cats.push(vc('poster-instance', getMessage('qfInstance'), 'instance', true));
-      // No manage() footer here any more (#6 残1): poster folders get their own
+      // No manage() footer here any more (#6, remaining item 1): poster folders get their own
       // sidebar tree now (LeftSidebar, posterFolderStore/applyPosterFolderFilter), the
       // same way library folders' 'folder' facet below has none — the tree IS the manager.
       cats.push(vc('poster-folder', getMessage('sbPosterFoldersTitle'), 'folder', false));
@@ -1499,11 +1500,11 @@ export function endFilterEditSession(): void {
       vc('tag', getMessage('qfTag'), 'tag', true, { valuesFn: combinedTagValues('tag', 'work', 'character') }),
       vc('hashtag', getMessage('tabTags'), 'hashtag', true),
       vc('user', getMessage('sidebarAuthors'), 'user', true),
-      // No 「フォルダを管理…」 here: the sidebar tree IS the manager now (#41 / 確定D).
-      // The poster-side facet below is symmetric with this one now too (#6 残1) — its own
+      // No "Manage folders…" here: the sidebar tree IS the manager now (#41 / confirmed D).
+      // The poster-side facet below is symmetric with this one now too (#6, remaining item 1) — its own
       // sidebar tree (LeftSidebar) replaced the poster-folder manager modal, which is gone.
       vc('folder', getMessage('qfCatFolder'), 'folder', false, {
-        // 「このフォルダのみ」 is one switch for the whole facet, not one per value:
+        // "This folder only" is one switch for the whole facet, not one per value:
         // the chip is per-facet, so a per-value flag could not be read back off it.
         only: {
           get: () => treeLeaves(postQB.getTree()).some((c) => c.type === 'folder' && c.only),
@@ -1547,10 +1548,10 @@ export function endFilterEditSession(): void {
     return cats;
   };
 
-  // Active-filter chips (redesign §3-2 / P2③ タスク2): the query tree's facets, one
-  // chip per facet (Linear型), derived from facetViewOf. `cat` matches a
+  // Active-filter chips (redesign §3-2 / P2③ task 2): the query tree's facets, one
+  // chip per facet (Linear-style), derived from facetViewOf. `cat` matches a
   // filterCategories() entry so a chip click reopens that facet's editor; negated
-  // leaves collect per type into a 「〜以外」 chip (要決 A案). Recomputed on every tree
+  // leaves collect per type into an "is not" chip (pending decision, option A). Recomputed on every tree
   // change — the component subscribes to the postQueryTree/posterQueryTree store keys.
   activeFilters = function (): ActiveFilter[] {
     const posters = browseMode === 'posters';
@@ -1558,7 +1559,7 @@ export function endFilterEditSession(): void {
     const opts = posters ? POSTER_FACET_OPTS : POST_FACET_OPTS;
     const labelOf = posters ? posterFilterLabel : filterLabel;
     // leaf type → { editor category, chip label, editor kind }. instance has no
-    // standalone category (it lives as sub-rows under プラットフォーム), so its chip
+    // standalone category (it lives as sub-rows under Platform), so its chip
     // reopens the platform editor.
     const map: Record<string, { cat: string; label: string; editor: 'values' | 'date' | 'eng' }> = posters
       ? {
@@ -1618,10 +1619,10 @@ export function endFilterEditSession(): void {
   // to avoid shadowing it.
   resetPosterFilters = posterGrid.resetPosterFilters;
   // Poster card gesture (#143 P2⑥): a plain click shows the poster in the
-  // inspector (シングル＝インスペクタ, matching post cards); double-click drills into
-  // their posts (下の dblclick). The ℹ and 🏷 buttons are both retired — the
+  // inspector (single = inspector, matching post cards); double-click drills into
+  // their posts (the dblclick below). The ℹ and 🏷 buttons are both retired — the
   // inspector is the single-click destination, and tagging is its inline field,
-  // reached from the context menu's タグを編集 (P2⑦).
+  // reached from the context menu's "Edit tags" (P2⑦).
   // The same props-not-delegation shape the post cards got (#618): the poster cell hands
   // its own poster back, so nothing parses a `data-index` off the DOM.
   // posterMenuItems/onPosterMenuPick/showPosterMenu moved to poster-grid-builder.ts —
@@ -1629,7 +1630,7 @@ export function endFilterEditSession(): void {
   hologramPosterGridSource.configureActions({
     onClick: (u: HologramUserAgg) => showPosterDetail(u),
     // Double-click a poster → drill into that poster's posts (posts mode + user
-    // filter). ドリルイン＝#143 確定のダブルクリック割当（#24 の旧「シングル＝切替」を上書き）。
+    // filter). Drill-in = #143's confirmed double-click assignment (overrides #24's old "single = toggle").
     onDoubleClick: (u: HologramUserAgg) => openPosterPosts(u),
     onContextMenu: (u: HologramUserAgg, e) => {
       e.preventDefault();
@@ -1640,11 +1641,11 @@ export function endFilterEditSession(): void {
   // Select writes it on pick); re-render when it changes — one trigger, no dual source.
   storeSubscribe('sortPoster', () => {
     if (tabsCtl.isRestoring()) return; // applyEntry/initTabs wrote the store — they drive their own render
-    // A sort change rewrites the current history entry instead of pushing (#144 確定未決2).
+    // A sort change rewrites the current history entry instead of pushing (#144 confirmed (pending item 2)).
     tabsCtl.setNavReplaceNext();
     renderPosters();
   });
-  // Poster query reset (bar右の「リセット」): empty the poster tree + the shared search box.
+  // Poster query reset (the bar's right-side "Reset"): empty the poster tree + the shared search box.
   // The button that calls it is the filter bar's, which imports resetPosterFilters directly.
 
   // Collections are a sidebar folder list now (renderCollectionSidebar), not a
@@ -1715,7 +1716,7 @@ export function endFilterEditSession(): void {
     t: (key) => getMessage(key),
     allPosts: () => postGrid.getAllPosts(),
     buildUsers,
-    // 置き先になれるのは静的フォルダだけ（保存した検索はクエリの置き換え＝別の動作）。
+    // Only static folders can be a destination (a saved search means replacing the query — a different action).
     listFolders: () => folders.staticFolders(),
     folderPath: (id) => folders.pathOf(id),
     getBrowseMode: () => browseMode,
@@ -1725,24 +1726,26 @@ export function endFilterEditSession(): void {
     resetPosterFilters: () => resetPosterFilters(),
     browseTo: (mode) => browseTo(mode),
     applyFolderFilter: (id) => applyFolderFilter(id),
-    // 投稿者ビューの語彙。タグは一般タグと作品/キャラを1つに畳む（クエリ上はどれも
-    // 同じ 'tag' 葉で、種別は「+ フィルタ」の一覧を分けるためだけのもの）。
+    // The poster view's vocabulary. Tags fold general tags and Work/Character into one
+    // (in the query they're all the same 'tag' leaf — Kind is only used to split the "+ Filter" listing).
     posterTagRows: () => (['poster-tag', 'poster-work', 'poster-character'] as const).flatMap((cat) => (qfValues(cat) as FilterRow[]).map((r) => ({ value: String(r.v), count: Number(r.count) || 0 }))),
     posterFolderRows: () => (qfValues('poster-folder') as FilterRow[]).map((r) => ({ id: String(r.v), name: String(r.l ?? r.v) })),
     posterAddFilter: (filter) => posterQB.addFilter(filter),
     startTriage: () => openTriage(),
   });
 
-  // #148 のチップ帯インライン入力の commit 口＝いま見ているビューの絞り込みへ条件を
-  // 1つ足す。検索ボックスの pick（searchEditing.pick）を通さないのが要点で、あちらは
-  // 「打った文字は絞り込みを探すためのもの」という前提で入力欄を空にし打ちかけの本文語を
-  // 捨てる。チップ帯の入力は本文検索の欄ではないので、その巻き添えを起こしてはいけない。
+  // #148's chip-band inline input commit port = adds one condition to the narrowing of
+  // whichever view is on screen. The key point is that it does NOT go through the search
+  // box's pick (searchEditing.pick) — that one empties the input and discards the
+  // in-progress body-text term, on the premise that "what was typed was only for finding
+  // the filter". The chip-band input is not the full-text search field, so it must never
+  // get caught up in that.
   addFilterToCurrentView = (filter) => (browseMode === 'posters' ? posterQB.addFilter(filter) : addFilter(filter));
 
   // The display popover's sort Select calls this. Sort lives in the tab state (persisted
   // per tab via renderPosts→persist), not a separate global pref — that double-storage
   // raced on load. A sort change rewrites the current history entry instead of pushing
-  // (#144 確定未決2). Picking 'random' with no seed yet mints one, so the first pick
+  // (#144 confirmed (pending item 2)). Picking 'random' with no seed yet mints one, so the first pick
   // already shuffles (#118); an existing seed is kept, which is what makes leaving and
   // coming back to random show the same order until the user re-rolls.
   setPostSort = (v: string) => {
@@ -1759,10 +1762,11 @@ export function endFilterEditSession(): void {
   };
 
   // --- Import from ZIP ---
-  // ZIP の読み取りはどちらの形式でも main が担当する（完全形式は #485・旧形式
-  // metadata.json + images/ は #322）。レンダラが受け取るのは結果と、旧形式のとき
-  // だけ書庫のパスで、バイト列も展開後のレコードも流れてこない。設定画面の
-  // 取り込みボタンと空状態の CTA の両方がここを通る。
+  // main handles reading the ZIP either way (the full format is #485, the legacy
+  // metadata.json + images/ format is #322). The renderer only gets back the result, and —
+  // only for the legacy format — the archive's path; neither the raw bytes nor the
+  // unpacked records ever flow over here. Both the settings panel's import button and the
+  // empty state's CTA go through this.
   async function runZipImportImpl() {
     try {
       const res = await importComplete();
@@ -1776,9 +1780,9 @@ export function endFilterEditSession(): void {
       if (res && res.legacy && res.path) {
         // Bound once: the callbacks below outlive the narrowing on res.path.
         const zipPath = res.path;
-        // #34: 取り込む投稿が既にライブラリにあるとき、コピー／置換／スキップを
-        // 1回だけ聞く（1件ずつ聞くと数百回になるため、バッチ単位）。重複が無ければ
-        // main 側が即座に取り込むので、この確認は出ない。
+        // #34: when an imported post is already in the library, ask Copy/Replace/Skip
+        // just once (asking per-item would mean hundreds of prompts, so it's batched).
+        // If there's no duplicate, main imports it immediately and this confirmation never appears.
         const first = await importLegacyZip(zipPath);
         if (!first || first.error) {
           notify(getMessage('importFailed'));
@@ -1846,7 +1850,7 @@ export function endFilterEditSession(): void {
   // mounts once for the app's lifetime like every other App.tsx-level effect); this
   // stays the guard + action logic.
   handleFolderChange = function (kind?: string) {
-    // 絞り込み中のフォルダが削除されたらそのフィルタを除去（一覧が原因不明に空になるのを防ぐ）。
+    // Removes the filter if the folder currently being filtered by is deleted (prevents the list from going mysteriously empty).
     const dangling = (c: HologramQueryLeaf) => c.type === 'folder' && !CF().byId(c.value);
     // syncShadow is the whole repaint: it pushes the pruned tree into the store,
     // which is what the chips and the sidebar badges read.
@@ -1909,7 +1913,7 @@ export function endFilterEditSession(): void {
     // can't stack onto the adopted history.
     await tabsCtl.initTabs();
     await loadPosts();
-    // The nav's ゴミ箱 badge (#268) is a count of .trash/, so it needs one read at
+    // The nav's Trash badge (#268) is a count of .trash/, so it needs one read at
     // boot; every later change goes through a delete / restore / empty that refreshes
     // it itself. Not awaited — nothing below depends on it and the badge appearing a
     // tick late is invisible.

@@ -1,6 +1,6 @@
 // Value-pick routing for the redesign filter bar — the headless remnant of the
 // retired qf-pop value flyout. The flyout UI (open/close/render/anchor highlight)
-// was removed with its component (P2③ タスク3); what survives is onQfPick, the
+// was removed with its component (P2③ task 3); what survives is onQfPick, the
 // add/remove routing that maps a picked value to the right query-builder mutation.
 // The filterbar component (filterbar/ValueEditor) calls pickValue() from its
 // own Popover, so this stays the single source of the "a value was picked → mutate
@@ -23,8 +23,8 @@ export function makeQfPop(deps: QfPopDeps) {
   // drives the re-render, so there is nothing to re-render here.
   function onQfPick(cat: string, it: HologramQfPopItem) {
     const v = it.v;
-    // Poster flyouts toggle a top-level leaf in the poster query tree. 作品/キャラ/タグ
-    // all map to one tag leaf type (種別 only scopes which the row offers).
+    // Poster flyouts toggle a top-level leaf in the poster query tree. Work/Character/Tag
+    // all map to one tag leaf type (kind only scopes which the row offers).
     if (cat === 'poster-tag' || cat === 'poster-work' || cat === 'poster-character') {
       if (deps.posterQHasValue('tag', v)) deps.posterRemoveByLeaf('tag', v);
       else deps.posterAddFilter({ type: 'tag', value: v });

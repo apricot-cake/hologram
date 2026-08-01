@@ -2,7 +2,7 @@
 // instead of a sidecar JSON, and the app's main process is the only reader/
 // writer of hologram.db (lib-db.ts's single-writer invariant) — it drains this
 // queue into the DB at startup and on change. Confirmed design: issue #299's
-// 2026-07-25 comment ("ディスク形式" / "native-host の発行手順").
+// 2026-07-25 comment ("disk format" / "native-host's publishing procedure").
 //
 // Kept Electron-free (node builtins only) so both native-host/bridge.cts
 // (CJS, via require) and app/src/main's inbox consumer (ESM) share ONE
@@ -13,7 +13,7 @@
 // Disk layout, under <saveFolder>/.hologram-inbox/:
 //   tmp/       in-progress writes. Never read by the consumer or the mirror.
 //   new/       one JSON envelope per capture, kept after import (the
-//              "保持" the design comment requires — see the module comment
+//              "retain" the design comment requires — see the module comment
 //              this file's consumer half will carry).
 //   segments/  compacted JSON-Lines bundles of already-imported envelopes
 //              (this file just knows the directory; segment writing is the
@@ -125,7 +125,7 @@ type ParsedEnvelope = { ok: true; envelope: InboxEnvelope } | { ok: false; reaso
 
 // Validates a raw new/<eventId>.json file's contents for the consumer side.
 // Never throws — every failure mode is a reason the caller can report and
-// skip (the design comment's "他イベントは続行する"), not a crash.
+// skip (the design comment's "other events continue"), not a crash.
 function parseInboxEnvelope(raw: string): ParsedEnvelope {
   let obj: any;
   try {

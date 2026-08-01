@@ -1,10 +1,12 @@
-// 左サイドバーの既定ラベル付きレール（#678）— 実クリック/実キーで確かめる。
+// The left sidebar's default labeled rail (#678) — confirmed with a real pointer/real keys.
 //
-// #628 のジオメトリ不変条件（shell-axes.spec.ts）と #245 の一括トグル
-// （scripts/panels-pref.test.ts の Ctrl+Shift+B 判定）はここでは重複させない——既存の
-// スイートがそのまま通ることを別途確認する（実施は step 9・生の `npm run test:e2e` 実行）。
-// ここが見るのは #678 に固有のもの: 新規プロファイルの初回描画・ホバー無しの発見性・
-// ユーザー生成グループのレール非表示・Ctrl+B の往復。
+// #628's geometry invariants (shell-axes.spec.ts) and #245's bulk toggle
+// (scripts/panels-pref.test.ts's Ctrl+Shift+B check) are not duplicated here — that the
+// existing suites still pass is confirmed separately (done at step 9, running raw
+// `npm run test:e2e`).
+// What this file looks at is specific to #678: a fresh profile's first render,
+// discoverability without hovering, user-generated groups being hidden on the rail, and
+// Ctrl+B round-tripping.
 import path from 'node:path';
 import { expect, test } from '../lib/harness.ts';
 
@@ -21,15 +23,15 @@ function seedFolderAndSavedSearch({ configDir }: { configDir: string }) {
   sqlite.close();
 }
 
-// harness.ts の launch() は毎回 config.json に sidebarOpen を書かない（saveFolder /
-// extensionId / theme の3キーだけ）ので、素の launchHologram() は「一度もトグルしていな
-// い新規プロファイル」の代役として成立する。
+// harness.ts's launch() never writes sidebarOpen into config.json (only the three keys
+// saveFolder / extensionId / theme), so a plain launchHologram() stands in for "a fresh
+// profile that has never been toggled".
 test('新規プロファイルの初回起動はラベル付きレール（受け入れ条件1・2）', async ({ launchHologram }) => {
   const { page } = await launchHologram();
 
   await expect(page.locator('[data-slot="sidebar"]')).toHaveAttribute('data-state', 'collapsed');
 
-  // ホバーは一切行わない — ラベルが最初から読めることが受け入れ条件2の本体。
+  // No hovering at all — the labels being readable from the start IS acceptance criterion 2.
   const expectedLabels: Record<string, string> = {
     browsePosts: 'ライブラリ',
     browsePosters: '投稿者',
@@ -51,14 +53,14 @@ test('ユーザー生成グループはレールで隠れ、展開すると出�
   const folderRow = page.locator('[data-folder-id="f-a"]');
   const savedRow = page.locator('[data-slot="sidebar-menu-button"]', { hasText: '保存検索テスト' });
 
-  // レール（既定）: DOM には居るが見えない。
+  // Rail (default): present in the DOM but not visible.
   await expect(page.locator('[data-slot="sidebar"]')).toHaveAttribute('data-state', 'collapsed');
   await expect(folderRow).toBeAttached();
   await expect(folderRow).not.toBeVisible();
   await expect(savedRow).toBeAttached();
   await expect(savedRow).not.toBeVisible();
 
-  // 展開: 両方見える。
+  // Expanded: both are visible.
   await page.keyboard.press('Control+b');
   await expect(page.locator('[data-slot="sidebar"]')).toHaveAttribute('data-state', 'expanded');
   await expect(folderRow).toBeVisible();

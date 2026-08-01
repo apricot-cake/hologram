@@ -1,6 +1,6 @@
 // User aggregation service — buildUsers (per-poster roll-up over allPosts, cached
 // behind the library generation), extracted 1:1 from viewer.js as the fifth
-// "pure logic → service" slice of the viewer decomposition (最終形B). A real ES
+// "pure logic → service" slice of the viewer decomposition (final form B). A real ES
 // module (named exports), imported directly by viewer.ts; touches no DOM.
 // Runtime couplings are injected via makeUsers(deps) — reassigned viewer lets
 // (allPosts / _allPostsGeneration) come in as getter functions.
@@ -50,7 +50,7 @@ export function makeUsers(deps: { allPosts(): HologramPost[]; generation(): numb
         if (h) u.instance = h;
       }
       // Aggregate date range across this poster's posts (ISO strings compare lexically).
-      // latest/firstPost = 最終/初回投稿日; lastCapture/firstCapture = 最終/初回取得日.
+      // latest/firstPost = latest/first post date; lastCapture/firstCapture = latest/first capture date.
       if (p.date && (!u.latest || p.date > u.latest)) u.latest = p.date;
       if (p.date && (!u.firstPost || p.date < u.firstPost)) u.firstPost = p.date;
       if (p.capturedAt && (!u.lastCapture || p.capturedAt > u.lastCapture)) u.lastCapture = p.capturedAt;

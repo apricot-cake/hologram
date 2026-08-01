@@ -15,7 +15,7 @@
 // NOTE: opening is a user action only. Selecting a card fills the panel's CONTENT
 // (inspector.ts) but never re-opens a panel the user closed — the same courtesy Eagle /
 // Lightroom / VS Code extend to a dismissed panel. A command that only makes sense
-// INSIDE the panel (タグを編集, the image view's inspector toggle) is not a selection and
+// INSIDE the panel ("Edit tags", the image view's inspector toggle) is not a selection and
 // does open it — see setOpen's callers.
 //
 // This module also owns "is the panel on screen right now" (isVisible), which is not the

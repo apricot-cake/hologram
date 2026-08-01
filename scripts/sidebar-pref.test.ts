@@ -1,17 +1,21 @@
-// サイドバー開閉（`sidebarOpen`）の既定値とconfig.json往復のユニットテスト（#678）。
+// Unit tests for the sidebar open/close (`sidebarOpen`) default value and its round trip
+// through config.json (#678).
 //
-// 保存の側は inspector-pref.test.ts の形をそのまま写している（docs/testing.md「新しい
-// プリファレンスを足す時はこの形を写す」）＝`electron` を差し替えて本物の ipc-config.ts を
-// 登録し、その `set-pref` / `get-prefs` をレンダラーの `window.hologram` スタブへ配線して、
-// レンダラーが送るキー名と main の許可キー（PREF_KEYS）を1本の線でつなげて見る。
+// The saving side copies the shape of inspector-pref.test.ts exactly (docs/testing.md:
+// "copy this shape when adding a new preference") = swaps out `electron`, registers the
+// real ipc-config.ts, wires its `set-pref` / `get-prefs` to the renderer's `window.hologram`
+// stub, and watches the key name the renderer sends and main's allow-list (PREF_KEYS)
+// connected end to end on one line.
 //
-// sidebar-pref.ts は inspector-panel.ts よりずっと薄い（モジュール所有の状態も isVisible
-// も無い、純粋な read/write の対）ので、この一本化テストも軽く作る。main 側の一般的な
-// accept/reject 配線は panels-pref.test.ts が sidebarOpen キー込みで既に薄く見ている
-// （`各パネルの状態と同時に持てる`）ので、ここでは重複させない。
+// sidebar-pref.ts is much thinner than inspector-panel.ts (no module-owned state, no
+// isVisible, just a pure read/write pair), so this integration test is kept light too.
+// main's general accept/reject wiring is already thinly covered by panels-pref.test.ts,
+// sidebarOpen key included (`each panel's state can be held at the same time`), so it is
+// not duplicated here.
 //
-// 焦点は #678 固有のもの: DEFAULT_OPEN の値そのもの（新規プロファイルの初回描画が
-// レールか展開かを決める唯一の仕掛け）と、cachedOpen/persistOpen/loadOpen の往復。
+// The focus is what's specific to #678: the DEFAULT_OPEN value itself (the sole
+// mechanism deciding whether a new profile's first render is the rail or expanded), and
+// the round trip of cachedOpen/persistOpen/loadOpen.
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { IpcContext } from '../app/src/main/ipc-context';
 import { register as registerConfigIpc } from '../app/src/main/ipc-config';
@@ -29,8 +33,9 @@ vi.mock('electron', () => ({
   app: { getVersion: () => '0.0.0-test' },
 }));
 
-// config.json そのものの代役。文字列で持つ＝ハンドラが読み書きするたびに本当に
-// シリアライズを1往復するので、「オブジェクトを共有しているから通っただけ」が起きない。
+// A stand-in for config.json itself. Held as a string = each time a handler reads or
+// writes it, a real serialize round trip happens, so a test can't pass merely because it
+// shares an object reference.
 let configJson = '{}';
 const readStoredConfig = () => JSON.parse(configJson) as Record<string, unknown>;
 
@@ -50,7 +55,7 @@ registerConfigIpc(ctx);
 const setPref = (key: string, value: unknown) => stub.handlers.get('set-pref')?.(null, key, value);
 const getPrefs = () => stub.handlers.get('get-prefs')?.(null);
 
-// --- localStorage / window.hologram の代役 -------------------------------
+// --- stand-ins for localStorage / window.hologram -------------------------------
 const cache = new Map<string, string>();
 const localStorageStub = {
   getItem: (k: string) => (cache.has(k) ? (cache.get(k) as string) : null),
@@ -84,9 +89,10 @@ const freshPref = (): Promise<PrefModule> => import('../app/src/renderer/src/ser
 
 const CACHE_KEY = 'hologram-sidebar-open';
 
-// #678 の本体: 新規プロファイル（cachedOpen() が null）の初回描画は AppShell が
-// `cachedOpen() ?? DEFAULT_OPEN` で決める。ここが false へ回帰すると、新規プロファイルの
-// 初回起動が黙って展開カラムへ戻る——受け入れ条件1がこの値1つにかかっている。
+// The heart of #678: for a new profile (cachedOpen() is null), the first render is
+// decided by AppShell's `cachedOpen() ?? DEFAULT_OPEN`. If this regresses to false, a new
+// profile's first launch silently falls back to the expanded column — acceptance
+// criterion 1 hinges on this single value.
 describe('既定値', () => {
   test('DEFAULT_OPEN は false（新規プロファイルの初回描画はレール）', async () => {
     const pref = await freshPref();
@@ -118,7 +124,7 @@ describe('config.json / localStorage の往復', () => {
   });
 });
 
-// load() の突き合わせ（config.json が勝つ）＝ inspector-pref.test.ts の同型ケースを写す。
+// load()'s reconciliation (config.json wins) = mirrors the same-shape case from inspector-pref.test.ts.
 describe('loadOpen（起動時の突き合わせ）', () => {
   test('config.json の値が返り、キャッシュへ反映される', async () => {
     configJson = JSON.stringify({ sidebarOpen: true });

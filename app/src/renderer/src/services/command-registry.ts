@@ -1,49 +1,55 @@
-// コマンドパレット（#28）の供給源＝候補の唯一のレジストリ。
+// Command palette (#28)'s supply source — the single registry of candidates.
 //
-// 「タイプ→種別候補」のエンジンは1つ・面は3つ（検索ボックスのサジェスト／パレット／
-// #148 のチップ帯インライン入力）という方針の土台。候補の生成はここに集約し、面ごとに
-// 変えるのは「どのセクションを何件見せるか」と「確定したときの既定動作」だけ＝顔ぶれ・
-// 並び・種別ラベルが面ごとにズレない。
+// The foundation for the "type → kind candidates" policy: one engine, three surfaces (the
+// search box's suggestions / the palette / #148's chip-band inline input). Candidate
+// generation is consolidated here; what varies per surface is only "which sections to show
+// how many of" and "the default action on confirm" — so the lineup, ordering, and kind
+// labels never drift between surfaces.
 //
-// 形は settings.ts / searchbox.ts と同じ real ES module（named exports）で、window 経由に
-// しない。開閉状態もこのモジュールが持つ（純状態＝open / close / isOpen / subscribe。
-// callback はストアに置かないという既存規約に従う）。島は useSyncExternalStore で購読する。
+// Shaped as a real ES module (named exports) same as settings.ts / searchbox.ts, not routed
+// through window. This module also owns the open/closed state (pure state = open / close /
+// isOpen / subscribe. Follows the existing convention of not putting callbacks in the store).
+// Islands subscribe via useSyncExternalStore.
 //
-// フィルタ系（タグ・投稿者・フォルダへのジャンプ）も操作系（設定・新規タブ・…）も
-// perform() 1本に正規化してあり、型を分けず差は section だけにしてある。perform の実体は
-// アプリ起動後に依存注入済みクロージャとして command-builder.ts が登録する。
+// Both the filter-type entries (jumping to a tag / poster / folder) and the action-type
+// entries (settings, new tab, …) are normalized down to one perform() — no separate types,
+// the only difference is section. perform's actual body is registered by command-builder.ts
+// as a dependency-injected closure after the app boots.
 import { get as confirmGet } from './confirm.ts';
 import { isOpen as lightboxIsOpen } from './lightbox.ts';
 import { compile, normalize } from './search.ts';
 import { isOpen as settingsIsOpen } from './settings.ts';
 
-// section は「見出し」であり、種別で挙動を分けるための型ではない。
-// 'folder' は設計コメントが 'collection' と書いていた枠＝コレクションがサイドバーの
-// フォルダ一覧になった（2026-07-04）後もそのまま残っていた旧名で、コード側の語彙
-// （applyFolderFilter / staticFolders / クエリ葉の type:'folder'）に合わせてある。
+// section is a "heading", not a type meant to branch behavior by kind.
+// 'folder' is the slot the design comments used to call 'collection' — an old name that
+// stuck around even after collections became the sidebar's folder list (2026-07-04); it's
+// now aligned with the code-side vocabulary (applyFolderFilter / staticFolders / the query
+// leaf's type:'folder').
 export type CommandSection = 'command' | 'tab' | 'tag' | 'user' | 'folder';
 
 export interface CommandEntry {
   id: string;
   section: CommandSection;
   title: string;
-  /** title 以外にマッチさせたい文字列（投稿者のスクリーンネーム等）。 */
+  /** A string to match against besides title (e.g. a poster's screen name). */
   keywords?: string;
-  /** 行の右端に薄字で出す補助表示（ショートカット表記・件数・パス）。 */
+  /** Faint auxiliary text shown at the right edge of the row (shortcut notation, count, path). */
   hint?: string;
-  /** 同じスコア帯での順位付け（タグの使用回数・投稿者の投稿数）。 */
+  /** Ranking within the same score band (a tag's use count, a poster's post count). */
   weight?: number;
   /**
-   * この候補が意味する「絞り込み条件」そのもの。**面が自分の確定動作を持つときの材料**で、
-   * 候補の生成（顔ぶれ・並び・種別ラベル）は分岐させない＝ADR 0016 の「面が決めるのは
-   * どの section を何件見せるかと、確定したときの既定動作だけ」。
+   * The "narrowing condition" this candidate itself means. **The material for when a surface
+   * has its own confirm action** — candidate generation (lineup / ordering / kind label) never
+   * branches on it — per ADR 0016: "what a surface decides is only which sections to show how
+   * many of, and the default action on confirm."
    *
-   * 実際の使い分け: 検索ボックスとパレットは `perform()`（現在のタブに AND 追加＝
-   * 打ちかけの本文語を捨てて置き換える、検索ボックス由来の作法）を走らせる。#148 の
-   * チップ帯インライン入力はこちらを読んで `addFilter` へ直接渡す＝**検索ボックスの
-   * 打ちかけを巻き込まない**（あの面は「チップを1つ足す」だけの入力で、本文検索の
-   * 入力欄ではない）。持たないエントリ（操作系・タブ・フォルダジャンプ）はどの面でも
-   * `perform()` に倒れる。
+   * How it's actually split: the search box and the palette both run `perform()` (AND-add to
+   * the current tab — the search-box-derived convention of discarding the in-progress body
+   * text and replacing it). #148's chip-band inline input reads this field and hands it
+   * straight to `addFilter` instead — **it never drags the search box's in-progress text
+   * along** (that surface is just a "add one chip" input, not a full-text search field).
+   * Entries that don't carry this (action-type / tab / folder-jump) fall through to
+   * `perform()` on every surface.
    */
   filter?: { type: string; value: string; label?: string };
   perform(): void;
@@ -52,10 +58,11 @@ export interface CommandEntry {
 export interface CommandProvider {
   id: string;
   /**
-   * その時点の候補を返す。パレットを開いた瞬間に呼ばれるので鮮度管理は持たない。
-   * query を受け取るのは「空クエリでは列挙しない」を provider 側で決められるようにするため
-   * （タグ・投稿者は数千件あり、開いた瞬間に全部出す面は無い）。絞り込み自体は
-   * queryEntries が一手に引き受けるので、provider は母集合を返すだけでよい。
+   * Returns the candidates as of right now. Called the instant the palette opens, so it
+   * carries no freshness management of its own. It takes query so the provider itself can
+   * decide "don't enumerate on an empty query" (tags and posters run into the thousands, and
+   * no surface shows them all the instant it opens). Narrowing itself is entirely
+   * queryEntries's job, so the provider only has to return the base population.
    */
   entries(query: string): CommandEntry[];
 }
@@ -65,29 +72,31 @@ export interface CommandGroup {
   items: CommandEntry[];
 }
 
-// 見出しの並び順。スコアはセクション内の順位付けで、セクション同士は入れ替わらない
-// （操作系がタグの下に潜り込むと「まず何ができるか」が読めなくなる）。
+// The order the headings appear in. Score ranks WITHIN a section — sections themselves never
+// swap places (if the action-type section slid under tags, "what can I even do here" would
+// stop being readable).
 const SECTION_ORDER: readonly CommandSection[] = ['command', 'tab', 'tag', 'user', 'folder'];
 
-// 並びの重み: 完全一致 > 前方一致 > 部分一致 > あいまい。あいまいの判定だけは既存 search の
-// compile() をそのまま使う＝アプリ全体で1つのマッチ意味論（表記ゆれ正規化・サブシーケンス・
-// 編集距離）を共有し、パレットが独自のスコアラを持たない。
+// Ordering weight: exact match > prefix match > substring match > fuzzy. Only the fuzzy
+// judgment reuses the existing search's compile() as-is — the whole app shares one matching
+// semantics (spelling-variant normalization, subsequence, edit distance), and the palette
+// doesn't carry its own scorer.
 const SCORE_EXACT = 4;
 const SCORE_PREFIX = 3;
 const SCORE_SUBSTRING = 2;
 const SCORE_FUZZY = 1;
-const SCORE_ANY = 0; // 空クエリ＝全件同点
+const SCORE_ANY = 0; // empty query = every entry ties
 const NO_MATCH = -1;
 
 const providers = new Map<string, CommandProvider>();
 
-/** 固定エントリ（アプリの寿命の間ずっと同じ顔ぶれ）をまとめて登録する。 */
+/** Registers a batch of fixed entries (the same lineup for the app's whole lifetime). */
 export function registerCommands(id: string, entries: readonly CommandEntry[]): () => void {
   const frozen = [...entries];
   return registerProvider({ id, entries: () => frozen });
 }
 
-/** 動的エントリ（タブ・タグ・投稿者・フォルダ）を provider として登録する。 */
+/** Registers dynamic entries (tabs / tags / posters / folders) as a provider. */
 export function registerProvider(provider: CommandProvider): () => void {
   providers.set(provider.id, provider);
   return () => {
@@ -95,14 +104,14 @@ export function registerProvider(provider: CommandProvider): () => void {
   };
 }
 
-/** テスト用: 登録を全部落とす（プロダクトコードからは呼ばない）。 */
+/** For tests: drops every registration (never called from product code). */
 export function resetProviders(): void {
   providers.clear();
 }
 
 /**
- * 1エントリのスコア。title と keywords のうち最も良く当たった方を採る。
- * nq / matcher は呼び出し側で1回だけ作る（描画ごとに compile し直さない）。
+ * The score for one entry. Takes whichever of title and keywords matches best.
+ * nq / matcher are built once by the caller (not re-compiled on every render).
  */
 export function scoreEntry(entry: CommandEntry, nq: string, matcher: (hay: string) => boolean): number {
   if (!nq) return SCORE_ANY;
@@ -117,20 +126,21 @@ export function scoreEntry(entry: CommandEntry, nq: string, matcher: (hay: strin
 }
 
 export interface QueryOptions {
-  /** 見たいセクション（面ごとの顔ぶれ）。省略＝全部。 */
+  /** The sections to show (the per-surface lineup). Omit = all. */
   sections?: readonly CommandSection[];
-  /** セクションごとの上限（面ごとの件数）。省略＝無制限。 */
+  /** The cap per section (the per-surface count). Omit = unlimited. */
   limit?: Partial<Record<CommandSection, number>>;
 }
 
 /**
- * 候補をセクションごとに束ねて返す。どの面もこれ1本を通る＝並びとマッチ意味論が共通。
+ * Returns candidates bundled by section. Every surface routes through this one function —
+ * ordering and matching semantics are shared.
  */
 export function queryEntries(query: string, opts?: QueryOptions): CommandGroup[] {
   const nq = normalize(query).trim();
   const matcher = compile(query);
   const wanted = opts?.sections;
-  // 登録順を同点時の最終タイブレークに使う（同じ入力なら毎回同じ並び）。
+  // Registration order is used as the final tiebreak on a tie (the same input always gets the same order).
   const buckets = new Map<CommandSection, { entry: CommandEntry; score: number; seq: number }[]>();
   let seq = 0;
   for (const provider of providers.values()) {
@@ -154,7 +164,7 @@ export function queryEntries(query: string, opts?: QueryOptions): CommandGroup[]
   return groups;
 }
 
-// --- 開閉状態（純状態・settings.ts と同じ形） ---------------------------------
+// --- Open/closed state (pure state — same shape as settings.ts) ---------------------------------
 let open_ = false;
 let openSeq = 0;
 const subs = new Set<() => void>();
@@ -164,8 +174,9 @@ export function isOpen(): boolean {
 }
 
 /**
- * 開いた回数。島がこれを key に使うと、閉じるアニメーションの途中で開き直しても
- * 打ちかけのクエリを持ち越さない（ConfirmHost / BulkTagDialogHost と同じ作法）。
+ * The number of times it has been opened. If an island uses this as its key, reopening it
+ * mid-close-animation never carries over the in-progress query (the same convention as
+ * ConfirmHost / BulkTagDialogHost).
  */
 export function openId(): number {
   return openSeq;
@@ -195,10 +206,12 @@ export function subscribe(cb: () => void): () => void {
 }
 
 /**
- * エントリの実行。**閉じてから perform する**のがこの関数の存在理由で、順番は2つの理由で
- * 逆にできない: ①Base UI Dialog は閉じるときに開く前のフォーカス位置へ戻すので、perform が
- * 先だと復帰先が perform 後の DOM になる ②perform が別のモーダル（設定・確認）を開く場合、
- * 閉じ処理と開き処理が同じフレームで競合する。呼び出し側で忘れられないよう1箇所に閉じ込める。
+ * Runs an entry. **Closing before running perform** is the whole reason this function
+ * exists, and the order can't be reversed, for two reasons: ①Base UI Dialog restores focus
+ * to where it was before opening when it closes, so if perform ran first the restore target
+ * would be the DOM AFTER perform ran ②if perform opens a different modal (settings /
+ * confirm), the close handling and the open handling would race within the same frame.
+ * Closed off in one place so a caller can't forget it.
  */
 export function runEntry(entry: CommandEntry): void {
   close();
@@ -206,19 +219,19 @@ export function runEntry(entry: CommandEntry): void {
 }
 
 // --- Ctrl/Cmd+K ---------------------------------------------------------------
-// 役割分担は確定済み: `/` は検索ボックスへのフォーカス（search-box-builder.ts）、
-// Ctrl/Cmd+K はパレット。登録は GlobalShortcuts（app/App.tsx）が持ち、ガード＋動作は
-// 他の全域ショートカットと同じくこちら側に置く＝開いているかどうかを知っているのは
-// このモジュールなので、判定もここが持つのが自然。
+// The division of roles is settled: `/` focuses the search box (search-box-builder.ts),
+// Ctrl/Cmd+K is the palette. Registration lives in GlobalShortcuts (app/App.tsx); the guard +
+// action sit here, same as every other app-wide shortcut — this module is the one that knows
+// whether it's open, so it's the natural place to hold that check too.
 //
-// 入力欄の中でも効かせる（他の全域ショートカットは INPUT/TEXTAREA から手を引くが、
-// Ctrl+K は検索ボックスの隣のバッジが入口を教える＝そこから押せないと嘘になる。
-// Windows のテキスト入力に Ctrl+K の既定動作は無く、Chrome 自身も Ctrl+K を
-// アドレスバーの検索に使っている）。
+// Kept live even inside input fields (other app-wide shortcuts stand down inside
+// INPUT/TEXTAREA, but Ctrl+K's badge next to the search box advertises it as an entry point —
+// it would be a lie if you couldn't press it from there. Windows text input has no default
+// behavior bound to Ctrl+K, and Chrome itself uses Ctrl+K for the address-bar search).
 export function handleShortcutPaletteKey(e: KeyboardEvent): void {
   if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return;
   if ((e.key || '').toLowerCase() !== 'k') return;
-  // 開いている間は素通り＝閉じる手段は Esc と背景クリック（Base UI の dismiss）に一本化する。
+  // Passes through while already open — the only way to close is unified to Esc and a background click (Base UI's dismiss).
   if (open_) return;
   if (confirmGet() || lightboxIsOpen()) return;
   if (settingsIsOpen()) return;

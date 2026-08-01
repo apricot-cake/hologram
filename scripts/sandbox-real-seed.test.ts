@@ -182,17 +182,17 @@ describe('実ライブラリからのシード', () => {
   });
 
   test('スタンドインは DB が持つ縦横比で生成される', () => {
-    // 画面キャプチャがカード画像＝shotW/shotH がそのまま比率になる。
+    // The screenshot is the card image = shotW/shotH becomes the ratio directly.
     expect(pngDims(path.join(sandboxLibrary, '1780000000000-a001.jpg'))).toEqual({ width: 341, height: 512 });
-    // ダウンロード済みメディア＝media.width/height（4000x3000 → 512x384）。
+    // Downloaded media = media.width/height (4000x3000 → 512x384).
     expect(pngDims(path.join(sandboxLibrary, '1780000000001-a002-media-0.jpg'))).toEqual({ width: 512, height: 384 });
-    // 動画のポスターはメディア行の寸法を使う（動画自体は生成できない）。
+    // A video's poster uses the media row's dimensions (the video itself can't be generated).
     expect(pngDims(path.join(sandboxLibrary, '1780000000002-a003-poster.jpg'))).toEqual({ width: 512, height: 288 });
   });
 
   test('寸法が無い参照は共通プレースホルダになる', () => {
-    // カード画像が media 側にある投稿の画面キャプチャ（a002・a003）と、共有アバター
-    // ＝DB がサイズを持たない3件。
+    // The screenshots of posts whose card image lives on the media side (a002, a003), plus
+    // the shared avatar = the 3 cases the DB holds no size for.
     expect(pngDims(path.join(sandboxLibrary, '1780000000001-a002.jpg'))).toEqual({ width: 400, height: 400 });
     expect(pngDims(path.join(sandboxLibrary, 'avatars', 'deadbeef.jpg'))).toEqual({ width: 400, height: 400 });
     expect(report.standins.placeholders).toBe(3);
@@ -240,7 +240,7 @@ describe('隔離チェックは実パスの残留を捕まえる', () => {
     const sandboxLibrary = path.join(sandboxRoot, 'library');
     await seedRealSandbox({ realConfigDir: real.configDir, realSaveFolder: real.saveFolder, sandboxConfigDir: sandboxConfig, sandboxLibrary });
 
-    // シード後に config を実ライブラリへ向け直す＝起動すれば実ライブラリへ書く。
+    // After seeding, redirect config to point at the real library = launching it would write to the real library.
     fs.writeFileSync(path.join(sandboxConfig, 'config.json'), JSON.stringify({ saveFolder: real.saveFolder, backup: { dir: path.join(real.root, 'mirror') } }));
     const res = verifyIsolation({
       dbFile: path.join(sandboxConfig, 'hologram.db'),
@@ -263,7 +263,7 @@ describe('隔離チェックは実パスの残留を捕まえる', () => {
 
     const dbFile = path.join(sandboxConfig, 'hologram.db');
     const { sqlite } = openDatabase(dbFile);
-    // 実ライブラリの絶対パスを DB 内に持ち込む（将来そういう列が生えた時の検知）。
+    // Smuggle the real library's absolute path into the DB (catches it if such a column is ever added in the future).
     sqlite.prepare('UPDATE posts SET description = ? WHERE captureId = ?').run(path.join(real.saveFolder, 'x.jpg'), '1780000000000-a001');
     sqlite.close();
 
@@ -290,9 +290,9 @@ describe('特定投稿だけ実物をピンポイントコピー', () => {
 
     expect(report.realMedia.files.sort()).toEqual(['1780000000001-a002-media-0.jpg', '1780000000001-a002.jpg', 'avatars/deadbeef.jpg']);
     expect(fs.readFileSync(path.join(sandboxLibrary, '1780000000001-a002-media-0.jpg')).equals(real.realBytes)).toBe(true);
-    // 指定していない投稿は生成画像のまま。
+    // A post that wasn't specified stays as the generated image.
     expect(fs.readFileSync(path.join(sandboxLibrary, '1780000000000-a001.jpg')).equals(real.realBytes)).toBe(false);
-    expect(hashTree(real.root)).toBe(realHashBefore); // コピー元は読むだけ
+    expect(hashTree(real.root)).toBe(realHashBefore); // the copy source is only read
   });
 
   test('存在しない captureId は黙って通さず報告する', async () => {
@@ -333,7 +333,7 @@ describe('planStandins: DB の参照だけを対象にする', () => {
     sqlite.prepare('UPDATE posts SET image = ? WHERE captureId = ?').run('../escaped.jpg', '1780000000000-a001');
     const res = copyRealMedia(sqlite, ['1780000000000-a001'], real.saveFolder, sandboxLibrary);
     sqlite.close();
-    // basename へ畳まれた上で実ファイルが無い＝missing 扱い。親ディレクトリには何も書かれない。
+    // Collapsed to basename, and the real file doesn't exist there = treated as missing. Nothing is written to the parent directory.
     expect(res.copied).not.toContain('../escaped.jpg');
     expect(fs.existsSync(path.join(path.dirname(sandboxLibrary), 'escaped.jpg'))).toBe(false);
   });

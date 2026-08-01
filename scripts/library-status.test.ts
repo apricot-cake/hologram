@@ -1,15 +1,16 @@
-// services/library-status.ts の純ユニットテスト（#682）。
+// Pure unit tests for services/library-status.ts (#682).
 //
-// 核となる主張は1つ＝「読み込み未着（libraryLoaded=false）」の間は、postGroups/
-// posterGroups の値が何であっても空状態を一切返さないこと。#682 の実際のバグは
-// これが守られておらず、`hologramIpc.getPrefs().then(...)` がライブラリ本体の
-// 読み込み（loadPosts）より先に解決すると、allPosts=[] のまま renderPosts() が
-// postGroups=null を書いてしまい、「投稿がありません」の初回案内が起動直後に
-// 一瞬表示されていた（services/orchestrator.ts の bootApp/getPrefs 競合）。
+// There's one core claim = while loading hasn't landed yet (libraryLoaded=false),
+// never return an empty state regardless of what postGroups/posterGroups hold.
+// #682's actual bug was this guarantee being violated: when
+// `hologramIpc.getPrefs().then(...)` resolved before the library itself finished
+// loading (loadPosts), renderPosts() would write postGroups=null while allPosts was
+// still [], and the "No posts" first-run message would flash briefly right after
+// startup (a bootApp/getPrefs race in services/orchestrator.ts).
 import { describe, expect, test } from 'vitest';
 import { libraryEmptyVariant } from '../app/src/renderer/src/services/library-status';
 
-// 全フィールドを埋めた既定値から、各テストは違いだけを上書きする。
+// Starting from defaults with every field filled in, each test overrides only what differs.
 const base = {
   mode: 'posts',
   libraryLoaded: true,

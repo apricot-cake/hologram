@@ -3,10 +3,10 @@
 // Verifies the durable inbox queue's app-side consumer end-to-end (#5 St6 / #299):
 //   - a post saved to .hologram-inbox/new WHILE THE APP IS CLOSED is drained into
 //     the DB and rendered at the next launch (no sidecar involved at all — the
-//     "アプリ未起動で保存→次回起動で取り込まれる" acceptance criterion)
+//     "saved while the app isn't running -> picked up on the next launch" acceptance criterion)
 //   - a post saved to .hologram-inbox/new WHILE THE APP IS RUNNING is picked up by
 //     watchInboxFolder's fs.watch (400ms debounce) without a restart (the
-//     "app 起動中の保存が watcher から反映され" criterion)
+//     "a save while the app is running is reflected via the watcher" criterion)
 // Idempotent re-apply of the same envelope is covered by the unit suite
 // (scripts/db-inbox.test.ts) — this harness only proves the two are wired
 // together through a real Electron boot + fs.watch, which a unit test cannot.

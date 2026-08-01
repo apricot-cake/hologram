@@ -20,7 +20,7 @@ import { postKeyOf } from './records.ts';
 import * as folders from './folders.ts';
 import { set as storeSet } from './store.ts';
 
-// Facet type schemas (改訂④) — the すべて/どれか-capable multi-value types and the
+// Facet type schemas (revision ④) — the "All"/"Any"-capable multi-value types and the
 // standalone (never-clustered) types, per view. Exported so the redesign filter bar
 // (orchestrator's activeFilters / filterCategories mode logic) reads the SAME schema
 // facetViewOf is built with here, rather than re-declaring it and drifting.
@@ -51,10 +51,10 @@ export function makePostQueryBuilder(deps: PostQueryBuilderDeps) {
     onLeafMutated: deps.onLeafMutated,
     singleValueTypes: ['date', 'kind'],
     noDupTypes: ['engagement', 'text'],
-    // Facet schema (改訂④): tags/hashtags/collections are multi-value per post
-    // (both すべて/どれか meaningful, default すべて); date/engagement/text
+    // Facet schema (revision ④): tags/hashtags/collections are multi-value per post
+    // (both "All"/"Any" meaningful, default "All"); date/engagement/text
     // stay standalone chips. Everything else
-    // (platform/user/instance/kind/media/postType) clusters as a silent どれか.
+    // (platform/user/instance/kind/media/postType) clusters as a silent "Any".
     multiValueTypes: POST_FACET_OPTS.multiValueTypes,
     standaloneTypes: POST_FACET_OPTS.standaloneTypes,
   });
@@ -83,9 +83,9 @@ export function makePosterQueryBuilder(deps: PosterQueryBuilderDeps) {
     storeKey: 'posterQueryTree',
     predOf,
     onChange: deps.onChange,
-    singleValueTypes: ['date', 'folder'], // 択一: 1つ選ぶと既存を置換
+    singleValueTypes: ['date', 'folder'], // single choice: picking one replaces the existing one
     noDupTypes: [],
-    // Poster facet schema: a poster aggregates many tags (すべて/どれか both
+    // Poster facet schema: a poster aggregates many tags ("All"/"Any" both
     // meaningful); date stays a standalone chip.
     multiValueTypes: POSTER_FACET_OPTS.multiValueTypes,
     standaloneTypes: POSTER_FACET_OPTS.standaloneTypes,

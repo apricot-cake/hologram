@@ -1,11 +1,14 @@
-// app/src/main/lib-db-inbox-compact.ts のユニットテスト＝耐久取込キューのコンパクション
-// と、その後の DB 消失復元（#5 St6 / #299 の受け入れ条件そのもの）:
-//   - 1,000 件未満の receipted loose event ではコンパクションが発火しない
-//   - 1,000 件到達で1 segment（JSON Lines・SHA-256 名）へ束ね、loose を削除する
-//   - 1,500 event の コンパクション後、loose は 1,000 件未満になり、空 DB への
-//     loose+segment replay で 1,500 件を再構成できる（Issue #299 本文の受け入れ条件）
-//   - segment 発行後・loose 削除前に落ちても（オーファン loose）、次回の呼び出しで
-//     安全に一掃される — receipt が既に有効なので二重には数えない
+// Unit tests for app/src/main/lib-db-inbox-compact.ts = compaction of the durable intake
+// queue, and the subsequent restore-after-DB-loss (this is the acceptance criteria of #5 St6 /
+// #299 itself):
+//   - Compaction does not fire while receipted loose events are under 1,000
+//   - Once 1,000 is reached, they're bundled into 1 segment (JSON Lines, SHA-256 named) and the
+//     loose files are deleted
+//   - After compacting 1,500 events, loose stays under 1,000, and replaying loose+segment into
+//     an empty DB can reconstruct all 1,500 (the acceptance criteria stated in Issue #299's body)
+//   - Even if the process crashes after the segment is written but before loose is deleted
+//     (orphaned loose), the next call safely sweeps it up — since the receipt is already
+//     recorded, it isn't double-counted
 
 import fs from 'node:fs';
 import os from 'node:os';
@@ -92,7 +95,7 @@ describe('compactInbox', () => {
     expect(segmentFiles(saveFolder)).toHaveLength(1);
     expect(looseCount(saveFolder)).toBe(0);
 
-    // segment ファイル名は payloadSha256 と一致し、中身は JSON Lines
+    // The segment file name matches payloadSha256, and its contents are JSON Lines
     const segFile = segmentFiles(saveFolder)[0];
     expect(segFile).toBe(`${report.segmentId}.jsonl`);
     const lines = fs
@@ -102,7 +105,7 @@ describe('compactInbox', () => {
     expect(lines).toHaveLength(SEGMENT_EVENT_CAP);
     expect(JSON.parse(lines[0])).toMatchObject({ format: 'hologram-inbox', version: 1 });
 
-    // inbox_events.sourceSegment が埋まっている
+    // inbox_events.sourceSegment is populated
     const row = handle.sqlite.prepare('SELECT sourceSegment FROM inbox_events WHERE eventId = ?').get(`${BASE_EPOCH}-aaaa`) as any;
     expect(row.sourceSegment).toBe(report.segmentId);
     const segRow = handle.sqlite.prepare('SELECT payloadSha256 FROM inbox_segments WHERE segmentId = ?').get(report.segmentId) as any;
@@ -115,9 +118,9 @@ describe('compactInbox', () => {
     const handle = openDatabase(path.join(mkTempDir('hologram-inbox-compact-orphan-db-'), 'test.db'));
     await seedEvents(saveFolder, SEGMENT_EVENT_CAP);
     drainInbox(saveFolder, handle.sqlite);
-    compactInbox(saveFolder, handle.sqlite); // 正常経路でまず1回コンパクション
+    compactInbox(saveFolder, handle.sqlite); // First compact once via the normal path
 
-    // クラッシュを模す: receipt はもう sourceSegment 済みなのに loose を1件だけ復活させる
+    // Simulate a crash: revive a single loose file even though its receipt already has sourceSegment set
     const orphanCaptureId = `${BASE_EPOCH}-aaaa`;
     const rec = normalizePostRecord({ captureId: orphanCaptureId, url: `https://x.com/u/status/0` });
     fs.writeFileSync(path.join(inboxNewDir(saveFolder), `${orphanCaptureId}.json`), JSON.stringify(buildEnvelope(rec)));
@@ -162,7 +165,7 @@ describe('1,500 event: コンパクション後の loose 上限と、空 DB へ�
     expect(report.applied.length + report.receiptOnly.length).toBe(1500);
     const dbCount = (freshHandle.sqlite.prepare('SELECT COUNT(*) AS n FROM posts').get() as any).n;
     expect(dbCount).toBe(1500);
-    // 本文・作者込みで再構成できることを1件サンプル確認
+    // Sample-check one record to confirm it reconstructs with body and author intact
     const sample = freshHandle.sqlite.prepare('SELECT url FROM posts WHERE captureId = ?').get(`${BASE_EPOCH}-aaaa`) as any;
     expect(sample.url).toBe('https://x.com/u/status/0');
 
@@ -175,7 +178,7 @@ describe('1,500 event: コンパクション後の loose 上限と、空 DB へ�
 
     const report2 = drainInbox(saveFolder, handle.sqlite);
 
-    expect(report2.segmentsReplayed).toEqual([]); // receipt があるので開かない
+    expect(report2.segmentsReplayed).toEqual([]); // Not opened, since a receipt already exists
     expect(report2.applied).toEqual([]);
     const dbCount = (handle.sqlite.prepare('SELECT COUNT(*) AS n FROM posts').get() as any).n;
     expect(dbCount).toBe(1500);

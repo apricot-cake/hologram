@@ -1,8 +1,8 @@
-// The image view's toolbar (#150) — ズーム − / % / ＋ と フィット⇄原寸.
+// The image view's toolbar (#150) — zoom −/%/+ and fit⇄actual size.
 //
 // Why a toolbar at all: zoom was wheel-only and the fit toggle was double-click-only,
 // so neither was visible anywhere. Every image viewer this app measures against
-// (Windows フォト / Eagle / IrfanView) keeps zoom and fit on a permanent toolbar; the
+// (Windows Photos / Eagle / IrfanView) keeps zoom and fit on a permanent toolbar; the
 // gestures stay, as the shortcuts they always were.
 //
 // It renders in the app's toolbar band (shell/AppToolbar.tsx), not over the picture:
@@ -36,7 +36,7 @@ function ToolButton({ label, slot, disabled, onClick, children }: { label: strin
 export function ViewerToolbar() {
   const { controller, percent, atFit, canZoomIn, canZoomOut } = useSyncExternalStore(subscribe, getState);
   // No controller ⟺ this slide has no zoom (video plays through its native controls,
-  // うごイラ through its own canvas). The cluster stays PUT and goes disabled rather
+  // ugoira through its own canvas). The cluster stays PUT and goes disabled rather
   // than disappearing — a toolbar that loses buttons as you page through a post reads
   // as breakage, and #80's flip/grayscale toggles will apply to those slides too.
   const off = !controller;
@@ -58,7 +58,7 @@ export function ViewerToolbar() {
       <ToolButton slot="viewer-fit-toggle" label={atFit ? t('itvActualSize') : t('itvFitToWindow')} disabled={off} onClick={() => controller?.toggleFitActual()}>
         {atFit ? <Expand /> : <Shrink />}
       </ToolButton>
-      {/* #80 (左右反転 / グリッド / グレースケール) lands here as a second cluster,
+      {/* #80 (flip horizontal / grid / grayscale) lands here as a second cluster,
           right of this one and behind a separator. Nothing is drawn for it yet —
           this Issue only owed it a place to live. */}
     </div>

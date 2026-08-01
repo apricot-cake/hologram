@@ -1,5 +1,5 @@
-// posterProfileUrl（#663）の純ユニット: 5PF分のURL組み立て。misskey/mastodonは
-// ローカル/リモート（screenNameの@host有無）両方を固定する。
+// Pure unit tests for posterProfileUrl (#663): builds URLs for 5 platforms. For
+// misskey/mastodon, pins down both the local and remote cases (whether screenName has an @host).
 
 import { describe, expect, test } from 'vitest';
 import { posterProfileUrl } from '../app/src/renderer/src/services/profile-url';

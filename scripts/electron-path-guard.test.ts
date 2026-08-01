@@ -1,8 +1,10 @@
-// 実 Electron 起動ハーネスのビルド成果物チェック（scripts/lib-electron-path.cts）の
-// ユニットテスト。成果物の無い作業ツリーで `electron .` を spawn すると、Electron 自身が
-// OS のモーダルを最前面に出し、ケースごとに起動する分だけ出続けてユーザーの操作を奪う
-// （2026-07-28 に実際に発生）。spawn する前に止めるのがこのガード（#460）。
-// 判定部分は副作用なし＝Electron も一時プロセスも起こさずに検証できる。
+// Unit test for the real-Electron launch harness's build-artifact check
+// (scripts/lib-electron-path.cts). If you spawn `electron .` in a work tree
+// with no build artifacts, Electron itself brings an OS modal to the front, and
+// it keeps appearing once per launched case, stealing the user's input (this
+// actually happened on 2026-07-28). This guard (#460) stops it before spawning.
+// The judgment part has no side effects = it can be verified without spinning
+// up Electron or any temporary process.
 
 import fs from 'node:fs';
 import os from 'node:os';
@@ -12,7 +14,7 @@ import { appEntryPath, buildArtifactError } from './lib-electron-path.cts';
 
 let root: string;
 
-// 本物の app/ と同じ形（package.json の main がビルド成果物を指す）を temp に作る
+// Builds the same shape as the real app/ (package.json's main points at a build artifact) under temp
 const makeAppDir = (name: string, main?: string | number) => {
   const dir = path.join(root, name);
   fs.mkdirSync(dir, { recursive: true });
@@ -41,7 +43,7 @@ describe('appEntryPath', () => {
     expect(appEntryPath(dir)).toBe(path.resolve(dir, 'out/main/index.js'));
   });
 
-  // main の値を焼き付けず package.json から読むので、出力先を変えても追随する
+  // Since the main value isn't hardcoded and is read from package.json, it tracks changes to the output location
   test('main が既定と違ってもその値に従う', () => {
     const dir = makeAppDir('custom-main', './dist/electron/main.js');
     expect(appEntryPath(dir)).toBe(path.resolve(dir, 'dist/electron/main.js'));
@@ -71,14 +73,13 @@ describe('buildArtifactError', () => {
     expect(message).toContain(path.resolve(dir, 'out/main/index.js'));
   });
 
-  // app/out ごと無い＝新しい作業ツリーの初期状態。ここで止まらないと
-  // ハーネスがケース数だけモーダルを出す
+  // app/out doesn't exist at all = the initial state of a fresh work tree. If this doesn't stop it, the harness pops a modal per case.
   test('out/ ディレクトリごと無い場合も止める', () => {
     const dir = makeAppDir('no-out-dir', './out/main/index.js');
     expect(buildArtifactError(dir)).not.toBeNull();
   });
 
-  // main だけ作られていて中身が別物、のような部分ビルドは対象外＝存在確認だけ行う
+  // Partial builds, like where only main exists but with different contents, are out of scope = only an existence check is done
   test('main が別の場所を指していればそちらを見る', () => {
     const dir = makeAppDir('custom-built', './dist/electron/main.js');
     expect(buildArtifactError(dir)).not.toBeNull();

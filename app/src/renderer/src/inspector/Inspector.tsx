@@ -70,7 +70,7 @@ function ActionLink({ onClick, children }: { onClick?: () => void; children: Rea
 
 // Tags are edited in place (P2⑦) — the ✎/🏷-to-popover route is gone, so this is
 // both the display and the editor. Right-click on a chip still opens the
-// kind-menu. m.focusTags is set only when the panel was opened BY the タグを編集
+// kind-menu. m.focusTags is set only when the panel was opened BY the "Edit tag"
 // context-menu item, so a plain card click never steals focus from the grid.
 function TagsSection({ m }: { m: HologramInspectorModel }) {
   return (

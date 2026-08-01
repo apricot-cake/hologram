@@ -1,6 +1,6 @@
 // Thin service seam over the raw preload IPC surface (window.hologram / HologramPreload).
-// viewer.js is being decomposed away from touching window.hologram directly (最終形B P4
-// 「IPC→service」・BACKLOG「手書き .jsゼロ ＋ React 実プロダクト化」) — this module is
+// viewer.js is being decomposed away from touching window.hologram directly (final form B P4
+// "IPC→service" — BACKLOG "hand-written .js zero + turn into a real React product") — this module is
 // the one place that still calls the raw bridge; every other caller goes through here.
 // Each export just forwards to window.hologram, so this slice was a pure rename with zero
 // behavior change. Grouping the calls by domain into the sibling services that already

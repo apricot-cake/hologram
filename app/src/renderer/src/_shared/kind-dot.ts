@@ -1,6 +1,6 @@
-// The 種別 (tag-kind) colour dot, shared by the filter bar's value list and the 種別
+// The kind (tag-kind) colour dot, shared by the filter bar's value list and the kind
 // context menu. Kind colours are app DOMAIN, not ui-kit styling — the two hues follow
-// danbooru's tag-category convention (copyright/作品 = purple, character/キャラ = green),
+// danbooru's tag-category convention (copyright/work = purple, character = green),
 // which is what a user coming from an image booru already reads.
 //
 // A class-string helper rather than a component: both call sites wrap the span in

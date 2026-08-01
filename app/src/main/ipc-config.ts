@@ -42,8 +42,8 @@ const PREF_KEYS = [
 // `viewMode` / `posterViewMode` (card/tile/list) and their per-density size keys are
 // no longer written by anyone; these read a config.json left by an older build so the
 // app opens on the display the user last chose. Pre-release scaffolding: delete these
-// four, and their call sites in get-prefs, before 1.0 (CLAUDE.md「リリース前につき
-// 『他人のライブラリ』は存在しない」).
+// four, and their call sites in get-prefs, before 1.0 (CLAUDE.md "pre-release,
+// there is no such thing as 'someone else's library'").
 const legacyDensity = (cfg: HologramConfig): string => (['card', 'tile', 'list'].includes(cfg.viewMode) ? cfg.viewMode : 'card');
 const legacyGridSize = (cfg: HologramConfig): number | null => {
   const px = legacyDensity(cfg) === 'tile' ? cfg.imageTileSize : cfg.cardSize;
@@ -162,13 +162,13 @@ function register(ctx: IpcContext) {
       skipDeleteConfirm: !!cfg.skipDeleteConfirm,
       gridSize: Number.isFinite(cfg.gridSize) ? cfg.gridSize : legacyGridSize(cfg), // grid: column width px
       listThumb: Number.isFinite(cfg.listThumb) ? cfg.listThumb : null, // list: thumbnail width px
-      theme: ['auto', 'light', 'dark'].includes(cfg.theme) ? cfg.theme : 'auto', // システム / ライト / ダーク
-      browseMode: cfg.browseMode === 'posters' ? 'posters' : 'posts', // ライブラリ / 投稿者（起動時に復元）
+      theme: ['auto', 'light', 'dark'].includes(cfg.theme) ? cfg.theme : 'auto', // System / Light / Dark
+      browseMode: cfg.browseMode === 'posters' ? 'posters' : 'posts', // library / poster (restored at startup)
       // #630: the poster grid's own two axes. `legacyPoster*` reads the retired
       // 3-value density (card/tile/list) once, the same one-off the post side does.
       posterLayoutMode: ['grid', 'list'].includes(cfg.posterLayoutMode) ? cfg.posterLayoutMode : legacyPosterDensity(cfg) === 'list' ? 'list' : 'grid',
       posterShowInfo: typeof cfg.posterShowInfo === 'boolean' ? cfg.posterShowInfo : legacyPosterDensity(cfg) !== 'tile',
-      posterGridSize: Number.isFinite(cfg.posterGridSize) ? cfg.posterGridSize : legacyPosterGridSize(cfg), // 投稿者グリッドの列幅px
+      posterGridSize: Number.isFinite(cfg.posterGridSize) ? cfg.posterGridSize : legacyPosterGridSize(cfg), // poster grid column width px
       sidebarOpen: typeof cfg.sidebarOpen === 'boolean' ? cfg.sidebarOpen : null, // sidebar expanded/collapsed; null = never toggled
       sidebarWidth: Number.isFinite(cfg.sidebarWidth) ? cfg.sidebarWidth : null, // dragged column width px; null = never resized
       inspectorOpen: typeof cfg.inspectorOpen === 'boolean' ? cfg.inspectorOpen : null, // inspector panel shown/hidden; null = never toggled

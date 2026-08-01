@@ -1,16 +1,17 @@
-// users.ts のロジック単体テスト。buildUsers（投稿者ロールアップ＋世代キャッシュ）を
-// スタブ deps 注入で検証する。
+// Unit tests for the logic in users.ts. Verifies buildUsers (poster rollup + generation
+// cache) with stub deps injected.
 //
-// buildSuggest（検索サジェスト＝タグ上位＋投稿者マッチ）はここから出て行った＝#28 で
-// コマンドレジストリの corpus provider に合流したので、その分の検証は
-// command-corpus.test.ts にある。
+// buildSuggest (search suggestions = top tags + poster matches) has moved out of here —
+// it merged into the command registry's corpus provider in #28, so its tests live in
+// command-corpus.test.ts.
 
 import { beforeEach, describe, expect, test } from 'vitest';
 import { makeUsers } from '../app/src/renderer/src/services/users';
 
-// --- スタブ環境: newest-first の投稿列（先頭が最新） ---
-// u1(x) は3投稿＝最初の非空値が勝つ（displayName は2投稿目で補完）・日付範囲を集計。
-// u3(misskey) はインスタンス抽出。url 無しはスキップ。
+// --- Stub environment: a newest-first post list (the front is the most recent) ---
+// u1(x) has 3 posts — the first non-empty value wins (displayName gets filled in from the
+// 2nd post) — and their date range is aggregated.
+// u3(misskey) has its instance extracted. Posts with no url are skipped.
 const BASE_POSTS = () => [
   { url: 'https://x.com/a/status/3', platform: 'x', userId: 'u1', screenName: 'alice', displayName: '', avatarFile: '', followers: null, date: '2026-03-03', capturedAt: '2026-06-03' },
   { url: 'https://x.com/a/status/2', platform: 'x', userId: 'u1', screenName: 'alice', displayName: 'アリス', avatarFile: 'ava1.jpg', followers: 120, date: '2026-03-01', capturedAt: '2026-06-01' },
@@ -51,7 +52,7 @@ describe('buildUsers（ロールアップ）', () => {
     expect(a.count).toBe(3);
   });
 
-  // newest-first なので「最初の非空値」＝最新の値
+  // Since it's newest-first, "the first non-empty value" is the most recent value
   test('displayName / avatarFile / followers は最初の非空値', () => {
     const a = buildUsers().find((u) => u.key === 'x:u1');
     expect({ displayName: a.displayName, avatarFile: a.avatarFile, followers: a.followers }).toEqual({ displayName: 'アリス', avatarFile: 'ava1.jpg', followers: 120 });

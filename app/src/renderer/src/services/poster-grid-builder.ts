@@ -112,7 +112,7 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
     if (deps.posterQBRemoveCondsMatching((c) => c.type === 'tag' && !present.has(c.value))) deps.posterQBSyncShadow();
   }
 
-  // Poster query reset — the filter bar's リセット imports this live binding directly.
+  // Poster query reset — the filter bar's "Reset" imports this live binding directly.
   function resetPosterFilters() {
     deps.posterQBResetTree();
     deps.setSearchBoxValue('');
@@ -122,8 +122,9 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
   function renderPosters(keepLimit?: boolean) {
     prunePosterTagFilters();
     posterList = deps.filteredPosters();
-    // 件数とリセットはツールバーのフィルタバーが 'posterGroups'/'posterQueryTree'/
-    // 'searchQuery' から自己派生する（下の hologramStore.set('posterGroups', …) を購読）。
+    // The count and reset are self-derived by the toolbar's filter bar from
+    // 'posterGroups'/'posterQueryTree'/'searchQuery' (it subscribes to the
+    // hologramStore.set('posterGroups', …) below).
     // Display: nothing here decides how a cell is drawn. The shape rides the masonic
     // model (services/grid.ts derives it from the poster display keys) and each cell
     // lays itself out from it — no density class on any container (#630).
@@ -135,7 +136,7 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
       // same laziness, not a new cost).
       storeSet('allUsersCount', deps.buildUsers().length);
       storeSet('posterGroups', posterList); // [] — React renders an empty grid (no cards)
-      if (!keepLimit) deps.onPosterRendered(); // 0件 state also records/persists (mirrors the post grid)
+      if (!keepLimit) deps.onPosterRendered(); // the zero-result state also records/persists (mirrors the post grid)
       return;
     }
     storeSet('posterGroups', posterList);
@@ -186,7 +187,7 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
     deps.addFilter({ type: 'user', value: u.key, label: u.displayName || u.screenName || u.key });
   }
 
-  // Jump from a post to its poster (双方向ナビ: posts → posters): switch to the poster
+  // Jump from a post to its poster (bidirectional nav: posts → posters): switch to the poster
   // view and open that poster's inspector. Only SNS posts have a poster in buildUsers()
   // (url-less Eagle migrations don't), so callers guard on existence before offering it.
   function jumpToPoster(p: HologramPost) {
@@ -237,7 +238,7 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
     refreshPosterTagFields(key);
   }
   // opts.focusTags: see showDetail in inspector-builder.ts — the poster context
-  // menu's タグを編集, replacing the poster card's own 🏷 button (P2⑦). Opening a
+  // menu's "Edit tags", replacing the poster card's own 🏷 button (P2⑦). Opening a
   // closed panel is that route's doing, and only that route's; see the note there.
   function showPosterDetail(u: HologramUserAgg, opts?: { focusTags?: boolean }) {
     if (!u) return;
@@ -318,7 +319,7 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
     deps.setInspectedKey('poster:' + u.key); // post + poster cards clear/set their ring reactively (hologramStore subscribe)
   }
 
-  // Poster context menu (right-click a poster card): jump to その投稿者の投稿 + assign to
+  // Poster context menu (right-click a poster card): jump to that poster's posts + assign to
   // poster-folders (toggle, stays open). React-owned glass popup via
   // menu.ts; viewer owns the items + actions here.
   function posterMenuItems(u: HologramUserAgg) {

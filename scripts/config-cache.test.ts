@@ -1,21 +1,21 @@
-// config.json のメモリキャッシュ（app/src/main/lib-config.ts, #61）のユニットテスト。
+// Unit tests for the in-memory cache of config.json (app/src/main/lib-config.ts, #61).
 //
-// キャッシュを入れる変更で怖いのは速度ではなく**古い値を返し続けること**なので、
-// このスイートが押さえるのは「速いこと」ではなく「嘘をつかないこと」。とくに
-// lib-config.ts の書き手はすべて read-modify-write ＝ 読みが古いと、次の書き込みが
-// その古い値をディスクへ書き戻して**外の変更を消す**（保存先を失った 2026-06-23 の
-// 事故と同じ壊れ方）。だから次の4つを固定する。
-//   ① 書いた直後に読むと新しい値が返る（write-through）
-//   ② 同じ値を何度読んでもファイルを開き直さない（キャッシュが実際に効いている）
-//   ③ アプリの外でファイルが書き換わったら、次の読みで反映される
-//      ＝rename で置き換えられた場合（エディタ・原子的書き込み）と、
-//        同じバイト数で上書きされた場合の両方
-//   ④ 書き込みに失敗したらキャッシュは動かない（ディスクに無い値を返さない）
+// What's scary about adding a cache isn't speed, it's **continuing to return a stale value**,
+// so this suite isn't about "is it fast" but "does it lie". In particular, every writer in
+// lib-config.ts does read-modify-write — if a read is stale, the next write writes that stale
+// value back to disk and **erases the outside change** (the same failure mode as the
+// 2026-06-23 incident where the save location was lost). So we pin down these four things:
+//   1. Reading right after a write returns the new value (write-through)
+//   2. Reading the same value repeatedly doesn't reopen the file (the cache is actually working)
+//   3. If the file is rewritten outside the app, the next read picks it up
+//      = both when it's replaced via rename (editors, atomic writes)
+//        and when it's overwritten in place with the same byte count
+//   4. If a write fails, the cache doesn't move (never returns a value that isn't on disk)
 //
-// Electron は使わないが lib-config.ts は native-host.ts 経由で electron を引くので、
-// そこだけ差し替える（configDir をテスト用の一時フォルダに向ける役目も兼ねる）。
-// CONFIG_PATH はモジュール読み込み時に確定するため、テストごとに
-// vi.resetModules() + 動的 import で「起動し直し」を作る。
+// We don't use Electron, but lib-config.ts pulls it in via native-host.ts, so only that gets
+// swapped out (it also doubles as pointing configDir at a temp folder for the test). Since
+// CONFIG_PATH is fixed at module load time, each test creates a "fresh boot" via
+// vi.resetModules() + dynamic import.
 
 import fs from 'node:fs';
 import os from 'node:os';
@@ -25,7 +25,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 const env = vi.hoisted(() => ({ dir: '' }));
 
 vi.mock('../app/src/main/native-host.ts', async () => {
-  // 保存先の解決ロジックは本物を使う（getSaveFolder の復旧経路まで通したい）。
+  // Use the real save-folder resolution logic (we want to exercise getSaveFolder's recovery path too).
   const { resolveSaveFolder } = await import('../native-host/config-recovery.cts');
   return {
     configDir: () => env.dir,
@@ -40,7 +40,7 @@ let dir: string;
 let configPath: string;
 let reads: number;
 
-// config.json を「開いた」回数だけ数える（saveFolder.path など他のファイル読みは無視）。
+// Count only how many times config.json was "opened" (ignore reads of other files like saveFolder.path).
 function countConfigReads() {
   reads = 0;
   const real = fs.readFileSync;
@@ -55,7 +55,7 @@ async function freshModule(): Promise<LibConfig> {
   return import('../app/src/main/lib-config');
 }
 
-/** アプリの外からの書き換え。rename＝エディタや原子的書き込みが取る経路。 */
+/** A rewrite from outside the app. rename = the path taken by editors or atomic writes. */
 function writeOutside(text: string, { viaRename = false } = {}) {
   if (viaRename) {
     const tmp = `${configPath}.outside`;
@@ -66,7 +66,7 @@ function writeOutside(text: string, { viaRename = false } = {}) {
   }
 }
 
-/** ファイルの mtime だけを進める＝「しばらく後に手で直した」を決定的に作る。 */
+/** Advance only the file's mtime = deterministically simulate "manually fixed a while later". */
 function ageMtime(ms: number) {
   const when = new Date(Date.now() + ms);
   fs.utimesSync(configPath, when, when);
@@ -98,7 +98,7 @@ describe('書いた直後に読む', () => {
     writeConfig({ saveFolder: 'D:\\two' });
     expect(getSaveFolder()).toBe('D:\\two');
     expect(readConfig().saveFolder).toBe('D:\\two');
-    // ディスクにも同じものが載っている＝キャッシュだけが進んでいるのではない。
+    // The same value is on disk too = it's not just the cache moving ahead on its own.
     expect(JSON.parse(fs.readFileSync(configPath, 'utf8')).saveFolder).toBe('D:\\two');
   });
 
@@ -139,7 +139,7 @@ describe('キャッシュが実際に効いている', () => {
     const { readConfig } = await freshModule();
     countConfigReads();
     for (let i = 0; i < 5; i++) expect(readConfig()).toEqual({});
-    expect(reads).toBe(1); // 「無い」も1回で確定し、以後は開きにいかない
+    expect(reads).toBe(1); // "Doesn't exist" is also settled in one read, and never opened again after that
   });
 });
 
@@ -149,9 +149,10 @@ describe('アプリの外で書き換わったら次の読みで反映される'
     writeConfig({ saveFolder: 'D:\\lib' });
     const before = fs.statSync(configPath).size;
     writeOutside(JSON.stringify({ saveFolder: 'E:\\moved-somewhere-else', theme: 'dark' }));
-    // このテストが見ているのはサイズ違いでの検出なので、サイズが本当に違うことを先に固定する。
-    // 同じになった瞬間、その場書き換え＋同一 ino のまま時計だけが頼りになり、テストが
-    // NTFS の刻み次第で落ちるようになる（#625 で実際に起きた壊れ方）。
+    // This test is checking detection via a size difference, so first pin down that the size
+    // really is different. The moment it's the same, we'd be relying solely on the clock with an
+    // in-place rewrite and the same ino, and the test would start failing depending on NTFS's
+    // timestamp granularity (this is the actual failure mode that occurred in #625).
     expect(fs.statSync(configPath).size).not.toBe(before);
     expect(readConfig()).toEqual({ saveFolder: 'E:\\moved-somewhere-else', theme: 'dark' });
   });
@@ -160,22 +161,23 @@ describe('アプリの外で書き換わったら次の読みで反映される'
     const { readConfig, writeConfig } = await freshModule();
     writeConfig({ theme: 'dark' });
     const before = fs.readFileSync(configPath, 'utf8');
-    const after = before.replace('dark', 'auto'); // 同じ長さ
+    const after = before.replace('dark', 'auto'); // Same length
     expect(after.length).toBe(before.length);
     writeOutside(after, { viaRename: true });
     expect(readConfig().theme).toBe('auto');
   });
 
-  // 上のテストだけでは「たまたま時計が進んだから気づけた」のか区別できない。NTFS が
-  // mtime を刻むのは約15ms のシステムクロック単位（実測: 立て続けの書き込み199組のうち
-  // 112組が同一 mtime）なので、同じ長さの書き換えを速く繰り返すと時刻では見分けられない
-  // 組がほぼ確実に混ざる。それでも全部拾えることを見る＝支えているのはファイルの同一性
-  // （ino）であって時計ではない、を1本で固定する。
+  // The test above alone can't distinguish "it was detected because the clock happened to
+  // advance" from real detection. NTFS ticks mtime at roughly a 15ms system-clock granularity
+  // (measured: 112 of 199 back-to-back writes shared the same mtime), so repeating same-length
+  // rewrites quickly is almost certain to produce pairs that the clock can't tell apart. Pin down
+  // in one test that everything still gets caught anyway = what backs this is file identity
+  // (ino), not the clock.
   test('立て続けの外部書き換えを1つも取りこぼさない（時刻の粒度より速い連続書き換え）', async () => {
     const { readConfig, writeConfig } = await freshModule();
     writeConfig({ marker: '0000' });
     for (let i = 1; i <= 30; i++) {
-      const want = String(i).padStart(4, '0'); // 常に同じバイト数
+      const want = String(i).padStart(4, '0'); // Always the same byte count
       writeOutside(JSON.stringify({ marker: want }), { viaRename: true });
       expect(readConfig().marker).toBe(want);
     }
@@ -186,7 +188,7 @@ describe('アプリの外で書き換わったら次の読みで反映される'
     writeConfig({ theme: 'dark' });
     const after = fs.readFileSync(configPath, 'utf8').replace('dark', 'auto');
     writeOutside(after);
-    ageMtime(5000); // NTFS の時刻の粒度（約15ms）より確実に先へ
+    ageMtime(5000); // Well past NTFS's timestamp granularity (roughly 15ms)
     expect(readConfig().theme).toBe('auto');
   });
 
@@ -203,8 +205,8 @@ describe('アプリの外で書き換わったら次の読みで反映される'
     expect(getSaveFolder()).toBe('D:\\lib');
     const before = fs.statSync(configPath).size;
     writeOutside(JSON.stringify({ saveFolder: 'E:\\elsewhere' }));
-    // 上と同じ理由でサイズ違いを明示的に固定する（同サイズのその場書き換えになると
-    // 時計頼みになり #625 の揺れが戻る）。
+    // Same reason as above: explicitly pin down the size difference (a same-size in-place
+    // rewrite would fall back on the clock and bring back the #625 flakiness).
     expect(fs.statSync(configPath).size).not.toBe(before);
     expect(getSaveFolder()).toBe('E:\\elsewhere');
   });
@@ -215,7 +217,7 @@ describe('キャッシュはディスクより先に進まない', () => {
     const { readConfig, writeConfig } = await freshModule();
     writeConfig({ saveFolder: 'D:\\lib' });
     const circular: any = { saveFolder: 'D:\\lib' };
-    circular.self = circular; // JSON.stringify が投げる＝ファイルは書かれない
+    circular.self = circular; // JSON.stringify throws = the file is never written
     expect(() => writeConfig(circular)).toThrow();
     expect(readConfig()).toEqual({ saveFolder: 'D:\\lib' });
     expect(JSON.parse(fs.readFileSync(configPath, 'utf8'))).toEqual({ saveFolder: 'D:\\lib' });
@@ -225,8 +227,8 @@ describe('キャッシュはディスクより先に進まない', () => {
     const { readConfig, writeConfig, getSaveFolder } = await freshModule();
     writeConfig({ saveFolder: 'D:\\lib', backup: { dir: 'E:\\mirror' } });
     const mine = readConfig();
-    mine.saveFolder = 'Z:\\typo'; // writeConfig へ渡さないまま捨てる
-    mine.backup.dir = 'Z:\\typo'; // 入れ子も同じこと
+    mine.saveFolder = 'Z:\\typo'; // Discarded without ever being passed to writeConfig
+    mine.backup.dir = 'Z:\\typo'; // Same goes for nested values
     expect(readConfig()).toEqual({ saveFolder: 'D:\\lib', backup: { dir: 'E:\\mirror' } });
     expect(getSaveFolder()).toBe('D:\\lib');
   });
@@ -241,8 +243,8 @@ describe('キャッシュはディスクより先に進まない', () => {
 });
 
 describe('invalidateConfigCache', () => {
-  // 逃げ道の存在意義: 拡張機能IDの登録（native-host/install.cts）のように、
-  // writeConfig を通らずに config.json を書く経路があるため。
+  // Why this escape hatch exists: there are paths that write config.json without going through
+  // writeConfig, such as registering the extension ID (native-host/install.cts).
   test('無効化したあとは外の書き換えが必ず出てくる', async () => {
     const { readConfig, writeConfig, invalidateConfigCache } = await freshModule();
     writeConfig({ theme: 'dark' });
@@ -264,7 +266,7 @@ describe('invalidateConfigCache', () => {
 });
 
 describe('壊れた config', () => {
-  const GARBAGE = '{"saveFolder": "D:\\\\lib"'; // 途中で切れている
+  const GARBAGE = '{"saveFolder": "D:\\\\lib"'; // Cut off partway through
 
   test('壊れている間はその判定が保たれ、読み直しもしない', async () => {
     writeOutside(GARBAGE);
@@ -274,7 +276,7 @@ describe('壊れた config', () => {
       expect(readConfig()).toEqual({});
       expect(isConfigCorrupt()).toBe(true);
     }
-    expect(reads).toBe(1); // 退避コピーも1回きり
+    expect(reads).toBe(1); // The quarantine copy is also made only once
     expect(fs.readdirSync(dir).filter((n) => n.includes('.corrupt-')).length).toBe(1);
   });
 
@@ -282,13 +284,15 @@ describe('壊れた config', () => {
     writeOutside(GARBAGE);
     const { readConfig, isConfigCorrupt } = await freshModule();
     expect(isConfigCorrupt()).toBe(true);
-    // 直す側は rename で置き換える＝エディタの原子的保存と同じ経路で、必ず新しい ino が
-    // 載るので検出は時計に依存しない。その場書き換えに戻してはいけない: GARBAGE と修復後は
-    // たまたま同じ 24 バイトなので、2回の書き込みが NTFS の約15ms 刻みに収まると
-    // (size, mtimeNs, ino) が3つとも一致し、キャッシュが修復を見落とす（実測で 200 回中
-    // 156 回が同一指紋＝マシンの速さ次第で落ちたり落ちなかったりする・#625）。
-    // その場書き換えの検出そのものは上の「アプリの外で書き換わったら〜」の2本
-    // （バイト数が変わる／時刻が進む）が担保しているので、ここは経路を固定してよい。
+    // The fix is applied via rename = the same path as an editor's atomic save, which always
+    // gets a fresh ino, so detection doesn't depend on the clock. Don't switch this back to an
+    // in-place rewrite: GARBAGE and the fixed content happen to both be 24 bytes, so if the two
+    // writes land within NTFS's roughly-15ms tick, all three of (size, mtimeNs, ino) end up
+    // matching and the cache misses the fix (measured: 156 of 200 runs shared an identical
+    // fingerprint = it would pass or fail depending on how fast the machine is — #625).
+    // Detection of in-place rewrites itself is already covered by the two tests above under
+    // "reflected on the next read when rewritten outside the app" (size change / clock advance),
+    // so it's fine to pin down this path here.
     writeOutside(JSON.stringify({ saveFolder: 'D:\\lib' }), { viaRename: true });
     expect(isConfigCorrupt()).toBe(false);
     expect(readConfig().saveFolder).toBe('D:\\lib');

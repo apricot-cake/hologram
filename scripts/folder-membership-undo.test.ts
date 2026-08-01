@@ -1,9 +1,10 @@
-// フォルダ所属の変更が「実際に動いた分だけ」を報告するかのテスト（#235）。
-// 取り消しスタックはこの報告をそのまま差分として積むので、ここが多めに答えると
-// 取り消しが元から入っていた投稿までフォルダから外す＝実データを壊す。
+// Tests whether folder membership changes report "only what actually changed" (#235).
+// The undo stack stacks this report as-is for the diff, so if this over-reports,
+// undoing would kick posts that were already in the folder back out = corrupting real data.
 //
-// 検証対象は app/src/renderer/src/services/folders.ts のライブラリ側ストア（DOM も
-// Electron も要らない層）。スタックそのものの意味論は undo.test.ts。
+// What's under test is the library-side store in
+// app/src/renderer/src/services/folders.ts (a layer that needs neither DOM nor
+// Electron). The semantics of the stack itself belong to undo.test.ts.
 
 import { beforeAll, beforeEach, expect, test } from 'vitest';
 
@@ -22,7 +23,7 @@ beforeAll(async () => {
   F = await import('../app/src/renderer/src/services/folders');
 });
 
-// 各テストは自分のフォルダを作る（モジュールはシングルトンのストアを持つ）。
+// Each test creates its own folder (the module holds a singleton store).
 let fid = '';
 beforeEach(() => {
   F.setUndoRecorder(null);
@@ -31,9 +32,9 @@ beforeEach(() => {
 });
 
 test('toggleIn は追加した captureId だけを返す（元から入っていた分は含めない）', () => {
-  F.toggleIn(fid, ['c1'], 'c1'); // c1 だけ先に入れておく
+  F.toggleIn(fid, ['c1'], 'c1'); // put only c1 in first
 
-  const res = F.toggleIn(fid, ['c1', 'c2', 'c3'], 'c2'); // アンカー c2 は未所属＝追加方向
+  const res = F.toggleIn(fid, ['c1', 'c2', 'c3'], 'c2'); // anchor c2 is not yet a member = add direction
 
   expect(res).toEqual({ op: 'added', keys: ['c2', 'c3'] });
   expect(F.byId(fid).items).toEqual(['c1', 'c2', 'c3']);
@@ -42,7 +43,7 @@ test('toggleIn は追加した captureId だけを返す（元から入ってい
 test('toggleIn は削除した captureId だけを返す（入っていなかった分は含めない）', () => {
   F.toggleIn(fid, ['c1', 'c2'], 'c1');
 
-  const res = F.toggleIn(fid, ['c1', 'c2', 'c9'], 'c1'); // アンカー c1 は所属済み＝削除方向
+  const res = F.toggleIn(fid, ['c1', 'c2', 'c9'], 'c1'); // anchor c1 is already a member = remove direction
 
   expect(res).toEqual({ op: 'removed', keys: ['c1', 'c2'] });
   expect(F.byId(fid).items).toEqual([]);
@@ -55,7 +56,7 @@ test('往復: 報告された差分を applyFolderItems で逆適用すると元
   const res = F.toggleIn(fid, ['c1', 'c2', 'c3'], 'c2');
   expect(F.byId(fid).items).not.toEqual(before);
 
-  F.applyFolderItems(fid, [], res.keys); // 取り消し＝追加分だけを外す
+  F.applyFolderItems(fid, [], res.keys); // undo = remove only the added ones
 
   expect(F.byId(fid).items).toEqual(before);
 });
@@ -64,7 +65,7 @@ test('applyFolderItems は実際に動いた分だけを返し、何も動かな
   F.toggleIn(fid, ['c1'], 'c1');
   lastWritten = null;
 
-  const moved = F.applyFolderItems(fid, ['c1'], ['c9']); // c1 は既に在り、c9 は元から無い
+  const moved = F.applyFolderItems(fid, ['c1'], ['c9']); // c1 is already there, c9 was never there to begin with
 
   expect(moved).toEqual({ added: [], removed: [] });
   expect(lastWritten).toBeNull();
@@ -85,7 +86,7 @@ test('取り消しの記録役には、実際に動いた分だけが渡る', ()
   });
   F.toggleIn(fid, ['c1'], 'c1');
 
-  F.toggleIn(fid, ['c1', 'c2'], 'c2'); // c1 は既に所属＝この操作で動くのは c2 だけ
+  F.toggleIn(fid, ['c1', 'c2'], 'c2'); // c1 is already a member = only c2 moves in this operation
 
   expect(seen[1]).toEqual({ folderId: fid, added: ['c2'], removed: [] });
 });

@@ -5,7 +5,7 @@
 // between a producing service module and its consuming component(s), kept
 // ambient (no import needed) rather than exported+imported per call site. Most
 // producing modules used to be plain-JS push bridges with no ambient/tsc
-// coverage at all (TypeScript stage 1, BACKLOG 採用#1); that migration finished
+// coverage at all (TypeScript stage 1, BACKLOG adoption #1); that migration finished
 // module-by-module, and by 2026-07 every one of them was a real ES module. The
 // per-module "already converted, ambient no longer needed" tombstone comments
 // that migration left behind were removed 2026-07-30 (#231) along with the
@@ -254,7 +254,7 @@ declare global {
     onTagAdd(tag: string): void;
     onTagRemove(tag: string): void;
     onTagContextMenu(tag: string, x: number, y: number): void;
-    /** Open with the caret already in the tag field — the context menu's タグを編集. */
+    /** Open with the caret already in the tag field — the context menu's "Edit Tags". */
     focusTags?: boolean;
     // Post-only (Inspector.tsx renders these when present).
     onThumbClick?(): void; // preview thumbnail → quick-view peek (#143)
@@ -315,7 +315,7 @@ declare global {
   interface HologramPromptModel extends HologramPromptConfig {
     openId: number;
   }
-  // Bulk tag dialog (bulk-tag.ts + BulkTagDialog) — "タグを追加" on the selection
+  // Bulk tag dialog (bulk-tag.ts + BulkTagDialog) — "Add Tags" on the selection
   // bar (P2⑦), the replacement for the retired tag-pop's bulk mode. The staged tags
   // are the dialog's own React state, so nothing here carries them: the renderer
   // supplies only what it alone knows (the vocabulary, the kind menu, the write),

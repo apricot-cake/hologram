@@ -1,21 +1,22 @@
 'use strict';
 
-// 画像ビューのツールバー（#150）を実レンダラで検証する。
+// Verifies the image view's toolbar (#150) in the real renderer.
 //
-// 純ユニット（scripts/image-zoom.test.ts）が持つのは倍率の算術とコントローラ登録の
-// 帳簿だけで、「ツールバーがトップの帯に出ているか」「ボタンが本当にビューアを動かすか」
-// 「動画スライドで disabled になるか」は React のツリーとストアが全部つながって初めて
-// 決まる＝そこがここの受け持ち。
+// The pure unit test (scripts/image-zoom.test.ts) only covers the zoom-factor arithmetic
+// and the controller-registration bookkeeping. Whether "the toolbar actually shows up in
+// the top band", "the buttons actually drive the viewer", and "it goes disabled on a video
+// slide" only get decided once the React tree and the store are all wired together — that's
+// what this covers.
 //
-//   - グリッドタブではツールバーが存在しない／画像ビューを開くと出る
-//   - 画像ビュー中は検索欄（グリッドの述語）が引っ込む
-//   - ＋ / − が表示%を1段ずつ動かし、フィットでは − が disabled
-//   - フィット⇄原寸トグルと Ctrl+1 / Ctrl+0 が同じ場所へ飛ぶ
-//   - 動画スライドではズーム系が disabled（クラスタごと消えるのではない）
-//     → 次の画像スライドへ送ると戻る
+//   - the toolbar doesn't exist on the grid tab / appears once the image view is opened
+//   - the search field (the grid's predicate) retracts while in the image view
+//   - + / - move the displayed % one step at a time, and - is disabled at fit
+//   - the fit<->actual-size toggle and Ctrl+1 / Ctrl+0 land at the same place
+//   - the zoom controls go disabled on a video slide (not the whole cluster hidden)
+//     -> come back once you step to the next image slide
 //
-// 見た目そのもの（％の読みやすさ・アイコンの意味）は実 Electron の目視の領分。
-// 自前のサンドボックス Electron を起動する（HOLOGRAM_SMOKE）。
+// The look itself (how readable the % is, what the icons mean) belongs to eyeballing the
+// real Electron app. This boots its own sandboxed Electron instance (HOLOGRAM_SMOKE).
 //
 //   node scripts/test-app-image-zoom.cts
 
@@ -40,11 +41,13 @@ fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolde
 
 const jpeg = Buffer.from('/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACP/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AfwH/2Q==', 'base64');
 
-// z1: 画像1枚だけの投稿。1x1 の JPEG なので「枠より小さい画像」＝フィットが既に原寸
-// （表示 100%）で、原寸ジャンプは固定倍率 2.5x（=250%）になる分岐を踏む。倍率の
-// 算術そのものの網羅は純ユニット側。
-// z2: 先頭が動画のギャラリー（原寸 mp4 → スクショ jpg の順に並ぶ）＝1枚目で
-// ズーム系が disabled、2枚目へ送ると生き返ることを見るための材料。
+// z1: a post with a single image. It's a 1x1 JPEG, so it's "an image smaller than the
+// frame" — fit is already at actual size (100% shown), which hits the branch where jumping
+// to actual size uses the fixed 2.5x (=250%) multiplier. Full coverage of the zoom-factor
+// arithmetic itself belongs to the pure unit test.
+// z2: a gallery that starts with a video (ordered actual-size mp4 -> screenshot jpg) —
+// material for checking that the zoom controls are disabled on slide 1 and come back to
+// life once you step to slide 2.
 fs.writeFileSync(path.join(saveFolder, 'dummy-z1.jpg'), jpeg);
 fs.writeFileSync(path.join(saveFolder, 'dummy-z2.jpg'), jpeg);
 fs.writeFileSync(path.join(saveFolder, 'dummy-z2-orig.mp4'), Buffer.from('not a real clip'));
@@ -93,7 +96,7 @@ const evalJs = `(async () => {
   const btn = (slot) => q('[data-slot="' + slot + '"]');
   const press = (slot) => { const b = btn(slot); if (b) b.click(); };
   const disabled = (slot) => { const b = btn(slot); return !!(b && b.disabled); };
-  // ズームは 180-200ms の easeOut で寄るので、値が落ち着くまで待ってから読む。
+  // Zoom eases in over 180-200ms, so wait for the value to settle before reading it.
   const settled = async (want) => { await waitFor(() => zoomLevel() === want, 3000); return zoomLevel(); };
   const chord = (key, mods) => document.dispatchEvent(new KeyboardEvent('keydown', Object.assign({ key: key, bubbles: true, cancelable: true }, mods)));
   const searchShown = () => { const el = q('[data-slot="toolbar-search"]'); return !!(el && el.getClientRects().length); };
@@ -103,47 +106,47 @@ const evalJs = `(async () => {
 
   await waitFor(() => document.querySelectorAll('[data-slot="post-grid"] [data-slot="post-card"]').length >= 2);
 
-  // A. グリッドタブ: ツールバーは存在しない（検索欄は出ている）
+  // A. Grid tab: the toolbar doesn't exist (the search field is shown)
   out.toolbarInGrid = !!q('[data-slot="viewer-toolbar"]');
   out.searchInGrid = searchShown();
 
-  // B. 画像ビューを開く → ツールバーが帯に出て、検索欄は引っ込む
+  // B. Open the image view -> the toolbar appears in the band, the search field retracts
   dblclick(cardOf('ズーム対象'));
   out.imageViewActive = await waitFor(() => !!q('[data-slot="image-tab-view"]'));
   out.toolbarInImageView = await waitFor(() => !!q('[data-slot="viewer-toolbar"]'));
   out.searchInImageView = searchShown();
 
-  // C. フィット中の表示%と − の disabled（これ以上縮まない）
+  // C. The displayed % while at fit, and - being disabled (can't shrink further)
   out.percentAtFit = await settled('100%');
   out.zoomOutDisabledAtFit = disabled('viewer-zoom-out');
   out.zoomInEnabledAtFit = !disabled('viewer-zoom-in');
 
-  // D. ＋ で1段（1.25倍）、− で戻る
+  // D. + moves one step (1.25x), - moves back
   press('viewer-zoom-in');
   out.percentAfterZoomIn = await settled('125%');
   out.zoomOutEnabledAfterIn = !disabled('viewer-zoom-out');
   press('viewer-zoom-out');
   out.percentAfterZoomOut = await settled('100%');
 
-  // E. フィット⇄原寸トグル（1x1 画像なので原寸側は固定倍率 2.5x = 250%）
+  // E. Fit<->actual-size toggle (a 1x1 image, so actual-size uses the fixed 2.5x = 250% multiplier)
   press('viewer-fit-toggle');
   out.percentAfterToggleOut = await settled('250%');
   press('viewer-fit-toggle');
   out.percentAfterToggleBack = await settled('100%');
 
-  // F. Ctrl+1 = 原寸 / Ctrl+0 = フィット（トグルと同じ関数を叩く）
+  // F. Ctrl+1 = actual size / Ctrl+0 = fit (calls the same function as the toggle)
   chord('1', { ctrlKey: true });
   out.percentAfterCtrl1 = await settled('250%');
   chord('0', { ctrlKey: true });
   out.percentAfterCtrl0 = await settled('100%');
 
-  // G. グリッドへ戻る（Alt+←）→ ツールバーは消え、検索欄が戻る
+  // G. Back to the grid (Alt+<-) -> the toolbar disappears, the search field returns
   chord('ArrowLeft', { altKey: true });
   out.leftImageView = await waitFor(() => !q('[data-slot="image-tab-view"]'));
   out.toolbarAfterBack = !!q('[data-slot="viewer-toolbar"]');
   out.searchAfterBack = searchShown();
 
-  // H. 先頭が動画の投稿 → ズーム系は disabled のまま「そこに在る」
+  // H. A post that starts with a video -> the zoom controls stay "present but disabled"
   dblclick(cardOf('動画つき'));
   out.videoViewActive = await waitFor(() => !!q('[data-slot="image-tab-view"]'));
   await waitFor(() => !!q('[data-slot="viewer-toolbar"]'));
@@ -154,23 +157,24 @@ const evalJs = `(async () => {
   out.videoFitDisabled = disabled('viewer-fit-toggle');
   out.videoPercent = zoomLevel();
 
-  // I. 次のスライド（スクショ画像）へ送ると生き返る
+  // I. Comes back to life once you step to the next slide (the screenshot image)
   const next = q('[data-slot="image-tab-next"]');
   if (next) next.click();
   out.zoomBackAfterStep = await waitFor(() => !disabled('viewer-zoom-in'), 5000);
   out.percentAfterStep = await settled('100%');
 
-  // J. 回帰: ダブルクリックのフィット切替（トグルボタンと同じ関数を共用させたので、
-  //    ジェスチャ側が巻き添えで壊れていないことを見る）
+  // J. Regression: double-click fit switching (it shares the same function as the toggle
+  //    button, so check the gesture side wasn't broken as collateral damage)
   const media = q('[data-slot="viewer-image"]');
   if (media) media.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
   out.percentAfterDblclick = await settled('250%');
   if (media) media.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
   out.percentAfterDblclickBack = await settled('100%');
 
-  // K. 回帰（#134）: ホイールを速く4ノッチ回すと 1.25^4 = 2.44… ぶん効く。
-  //    累積ターゲットを共有し損ねて live scale から計算し直すと、tween 途中の値を
-  //    基準にする分だけ回した量が飲まれてここが小さくなる。
+  // K. Regression (#134): spinning the wheel fast through 4 notches applies 1.25^4 = 2.44x
+  //    worth of zoom. If the cumulative target fails to be shared and gets recomputed from
+  //    the live scale instead, using an in-tween value as the basis eats part of the amount
+  //    turned, and this number comes out smaller.
   const wrap = q('[data-slot="viewer-zoom-wrapper"]');
   if (wrap) {
     const wr = wrap.getBoundingClientRect();
