@@ -663,17 +663,30 @@ export async function startOverlay(): Promise<void> {
   // Layers are only counted until the picture itself is reached, and only
   // fixed/sticky ones: a site's OWN control drawn over the media (Bluesky's ALT
   // badge, pixiv's bookmark heart) is an absolutely-positioned sibling inside
-  // the same stack, and hovering it is still hovering the picture (#338).
+  // the same stack, and hovering it is still hovering the picture (#338). X's
+  // viewer also mounts non-interactive fixed layers inside its own modal while
+  // the pointer moves. They are part of that viewer's picture, not something
+  // covering it; treating them as an outside layer made the control flicker.
   function pointerIsOccluded(anchor: Anchor): boolean {
     if (!pointerPosition) return false;
     if (typeof document.elementsFromPoint !== 'function') return false;
+    const viewerModal = xViewerModal(anchor);
     for (const el of document.elementsFromPoint(pointerPosition.x, pointerPosition.y)) {
       if (el === anchor.box || anchor.box.contains(el) || el.contains(anchor.box)) return false;
       if (anchor.el && (el === anchor.el || anchor.el.contains(el))) return false;
+      // Keep native buttons and links as occluders: the pointer genuinely left
+      // the picture for an X action. Only its non-interactive viewer layers
+      // share the image hover state.
+      if (viewerModal?.contains(el) && !el.closest('a[href], button, input, select, textarea, summary, [role="button"], [contenteditable="true"]')) continue;
       const position = getComputedStyle(el).position;
       if (position === 'fixed' || position === 'sticky') return true;
     }
     return false;
+  }
+
+  function xViewerModal(anchor: Anchor): HTMLElement | null {
+    const viewer = anchor.box.closest('[data-testid="swipe-to-dismiss"]');
+    return viewer?.closest<HTMLElement>('dialog[open], [role="dialog"], [aria-modal="true"]') || null;
   }
 
   function repaintAnchor(anchor: Anchor) {
