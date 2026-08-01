@@ -45,6 +45,7 @@ import { makeBulkTag } from './bulk-tag-builder.ts';
 import { makeTabsController } from './tabs-builder.ts';
 import { makeImageTabController } from './image-tab-builder.ts';
 import { hologramImageTabSource } from './image-tab.ts';
+import { subscribe as subscribePostsData } from './posts-data.ts';
 import { makeTriage } from './triage-builder.ts';
 import { get as storeGet, set as storeSet, subscribe as storeSubscribe } from './store.ts';
 import { hologramIpc } from './ipc.ts';
@@ -914,6 +915,7 @@ export function endFilterEditSession(): void {
     persistTabsDebounced,
   });
   const { openImageEntry, setImageTabIndex, toggleImageTabInspector, closeImageTab, addImageTab } = imageTabCtl;
+  subscribePostsData(() => imageTabCtl.refreshTitlesAfterPostsChange());
 
   // initTabs/showTabMenu/the tab CRUD actions/the Ctrl+T/W/Tab shortcut all live in
   // tabsCtl now; the module-scope export assignment for the ones the strip calls

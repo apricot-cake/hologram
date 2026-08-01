@@ -23,17 +23,13 @@ install が済めば `npm test`・`npm run typecheck`・アプリ起動ハーネ
 
 ## worktree から拡張機能を実機検証する
 
-**自動反映は worktree に届かない。** `npm run build:ext` が更新するのは**自分が実行されたツリーの `.output`** で、日常の Chrome に読み込まれているのは**本体ツリーの `.output/chrome-mv3`**（docs/build.md）。worktree でビルドしても本体の拡張には反映されない。ここで「手で読み込み直してもらおう」はグローバル CLAUDE.md が名指しで禁じている（渡す手順は人でないと不可能な部分まで切り詰める）。
+日常の Chrome が読むのは本体ツリーの固定出力だが、#718 以降は supervisor の Vite cwd を対象 worktree へ切り替え、開発出力だけを固定パスへ書く。**本体ツリーの detach、手動コピー、Chrome の再読み込み、先行マージは不要。**
 
-**正しい手順＝本体ツリー自身を対象コミットへ動かしてビルドする**（`build:ext` 一本目的地＝クリック不要。ユーザーの手作業は Alt+S などの検証操作だけになる）:
-
-1. 並行セッションの稼働と本体ツリーが clean かを確認（`list_sessions` / `git -C <本体> status`）。拡張のリロードは worktree で隔離されない共有装置（docs/build.md）。
-2. `git -C <本体> checkout --detach <対象コミット>`。**ブランチ名では checkout できない**＝worktree が掴んでいるので必ずコミット SHA を指定する。
-3. 本体ツリーで `npm run build:ext`。拡張は次の往復で自分をリロードする（#650・skill `verify-extension`）。
-4. ビルドに変更が入ったことを確認してから検証する（**バンドルの grep は識別子で**＝正規表現リテラルは偽の空振りを起こす・下記）。
-5. 検証後は同じ順で戻す（`checkout main` → `npm run build:ext`＝#650 以降 production ビルドは拡張が自分で載せるのでクリックは要らない。skill `verify-extension`）。掴んだままにしない。
-
-急ぐ／本体を detach したくない時は、worktree で `npm run build:ext` して出力を本体の `chrome-mv3` へ上書きする代替経路もある（skill `verify-extension`）＝ただし worktree のビルドは識別子を告知しないため、この経路は自己リロードの対象外でユーザーへ手動リロードを1回依頼することになる。
+1. fresh worktree は `npm run setup` を済ませる。選択した worktree 自身の `extension/node_modules` が Vite に必要。
+2. Claude Code は SessionStart hook が自動取得する。Codex は対象 worktree で `npm run ext:preview:acquire`。別セッションが所有中なら横取りせず止まる。
+3. `npm run ext:preview:check` または `npm run ext:status` で、`sourceRoot` が対象 worktree、state が `ready` であることを確認する。
+4. 以後は対象 worktree の保存が CRXJS HMR へ直接届く。background 更新時も拡張自身の runtime reload に任せ、日常タブは reload しない。
+5. 終了時は Claude Code の SessionEnd hook、Codex は `npm run ext:preview:release` で main へ戻す。クラッシュ後の復旧だけ `npm run ext:preview:main`。
 
 **バンドルの grep は正規表現リテラルのエスケープで偽の空振りを起こす**。ソースの `/^\/i\/bookmarks(\/|$)/` はバンドル上も `i\/bookmarks` と出るため `i/bookmarks` で grep すると 0 件＝「ビルドされていない」と誤読する。空振りはまず自分の検索式を疑う。
 

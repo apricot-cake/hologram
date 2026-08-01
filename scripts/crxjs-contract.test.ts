@@ -6,6 +6,12 @@ import { describe, expect, test } from 'vitest';
 const require = createRequire(import.meta.url);
 const registrationScript = fs.readFileSync(path.join(import.meta.dirname, 'register-extension-dev-task.ps1'), 'utf8');
 const supervisorScript = fs.readFileSync(path.join(import.meta.dirname, 'extension-dev-supervisor.cts'), 'utf8');
+const viteConfig = fs.readFileSync(path.join(import.meta.dirname, '..', 'extension', 'vite.config.ts'), 'utf8');
+const preview = require('./extension-preview-control.cts') as {
+  PreviewBusyError: new (state: Record<string, unknown>) => Error;
+  claimTransition(existing: Record<string, unknown> | null, request: Record<string, string>): Record<string, unknown>;
+  releaseTransition(existing: Record<string, unknown> | null, request: Record<string, string | boolean>): Record<string, unknown>;
+};
 const patch = require('./patch-crxjs-runtime-reload.cts') as {
   verify(): void;
   expectedVersion: string;
@@ -34,6 +40,58 @@ describe('extension development logon task', () => {
   });
 
   test('recognizes session-zero S4U processes as alive', () => {
-    expect(supervisorScript).toContain("error.code === 'EPERM'");
+    expect(supervisorScript).toContain("error.code !== 'EPERM'");
+    expect(supervisorScript).toContain("'tasklist.exe'");
+    expect(supervisorScript).toContain("'schtasks.exe'");
+    expect(supervisorScript).toContain('isDescendant(collision, orphanAncestorPid)');
+  });
+
+  test('keeps the Chrome output fixed while serving the selected worktree', () => {
+    expect(supervisorScript).toContain('HOLOGRAM_EXTENSION_DEV_OUTPUT');
+    expect(supervisorScript).toContain('sourceRoot');
+    expect(viteConfig).toContain('process.env.HOLOGRAM_EXTENSION_DEV_OUTPUT');
+  });
+});
+
+describe('extension preview ownership', () => {
+  const request = {
+    ownerId: 'session-a',
+    mainRoot: 'C:\\repo',
+    sourceRoot: 'C:\\repo-wt-a',
+    now: '2026-08-01T00:00:00.000Z',
+  };
+
+  test('is idempotent for the same session and worktree', () => {
+    const first = preview.claimTransition(null, request);
+    expect(preview.claimTransition(first, { ...request, now: '2026-08-01T00:01:00.000Z' })).toMatchObject({
+      ownerId: 'session-a',
+      sourceRoot: request.sourceRoot,
+      acquiredAt: request.now,
+    });
+  });
+
+  test('does not let another session steal the shared Chrome preview', () => {
+    const first = preview.claimTransition(null, request);
+    expect(() => preview.claimTransition(first, { ...request, ownerId: 'session-b' })).toThrow(preview.PreviewBusyError);
+  });
+
+  test('only the owner can return the preview to main', () => {
+    const first = preview.claimTransition(null, request);
+    expect(() =>
+      preview.releaseTransition(first, {
+        ownerId: 'session-b',
+        mainRoot: request.mainRoot,
+        force: false,
+        now: request.now,
+      }),
+    ).toThrow(preview.PreviewBusyError);
+    expect(
+      preview.releaseTransition(first, {
+        ownerId: 'session-a',
+        mainRoot: request.mainRoot,
+        force: false,
+        now: request.now,
+      }),
+    ).toMatchObject({ ownerId: null, sourceRoot: request.mainRoot });
   });
 });

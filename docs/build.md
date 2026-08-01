@@ -44,7 +44,18 @@ Dependabot（#395）の更新 PR で新バージョンが来たときも、確�
 | **静的 release** | `npm run build:ext` | Chrome／Firefox を別出力へ生成・検証。日常パスは上書きしない |
 | **静的復旧** | `npm run ext:recover` | server を止め、検証済み Chrome release を日常パスへ配備 |
 
-開発サーバーは `127.0.0.1:51731` の固定 loopback だけで待ち受け、別 port へ逃げず、ブラウザを起動しない。`npm run ext:status` で状態・PID・競合 PID・ログを読み、`npm run ext:restart` で復旧する。初回登録は `npm run ext:register`。ログオンタスクは通常ユーザー権限の非対話（S4U）プロセスとして動くため、空の Windows Terminal は表示されない。supervisor は一重起動・readiness probe・指数 backoff を持ち、連続失敗は一度だけ画面にも通知する。
+開発サーバーは `127.0.0.1:51731` の固定 loopback だけで待ち受け、別 port へ逃げず、ブラウザを起動しない。`npm run ext:status` で状態・PID・競合 PID・ログ・現在の配信元を読み、`npm run ext:restart` で復旧する。初回登録は `npm run ext:register`。ログオンタスクは通常ユーザー権限の非対話（S4U）プロセスとして動くため、空の Windows Terminal は表示されない。supervisor は一重起動・readiness probe・指数 backoff を持ち、連続失敗は一度だけ画面にも通知する。
+
+### worktree の変更を日常 Chrome へ反映する（#718）
+
+Chrome が読む本体ツリーの `extension/.output/chrome-mv3` と port は固定したまま、supervisor が起動する Vite の cwd だけを検証対象 worktree へ切り替える。選ばれた worktree の Vite は環境変数 `HOLOGRAM_EXTENSION_DEV_OUTPUT` により本体の固定出力へ bootstrap を書き、以後の保存は同じプロセスの HMR で反映する。release build の出力先は変えない。
+
+- Claude Code は SessionStart で現在の worktree を取得し、書き込み前に所有を検査し、SessionEnd で main へ戻す。
+- Codex は対象 worktree で編集前に `npm run ext:preview:acquire`、終了処理で `npm run ext:preview:release` を実行する。所有 ID は `CODEX_THREAD_ID` を使う。
+- 別セッションが所有している間は横取りしない。所有者と配信元は `npm run ext:status`、選択状態は `npm run ext:preview:check` で読める。
+- 終了フックが走らなかった時の明示解放は `npm run ext:preview:main`。所有確認を飛ばす復旧操作なので、他セッションが検証中でないことを確認してから使う。
+
+worktree は依存を独立して持つ。選択先の `extension/node_modules` が無い状態では Vite を起動できないため、fresh worktree は先に `npm run setup` を済ませる。
 
 ### CRXJS の反映と release 検証（#714）
 
@@ -63,10 +74,7 @@ Dependabot（#395）の更新 PR で新バージョンが来たときも、確�
 - **ブラウザを自動起動しない**。普段使い Chrome の既存セッションへ固定 unpacked path だけで接続する。
 - **デバッグポートは開けない**: TCP のデバッグポートは無認証で、ローカルの任意プロセスがブラウザを乗っ取りサインイン中のセッションを抜けられる（Chrome 136 が既定プロファイルで同スイッチを拒否するのも同じ理由）。
 
-**読み込むのは本体ツリーのパスに限る。**worktree の `.output` を読み込むと、その worktree を撤去した時点で拡張が壊れる。`npm run build:ext` は**自分が実行されたツリーの `.output` だけ**を更新するので、worktree で拡張を直している間は本体ツリーの拡張に自動では反映されない。worktree の変更を実ブラウザで見る手段は2つ:
-
-- 本体ツリーを対象コミットへ detach してから本体の supervisor を再起動する（手順は skill `test-in-worktree`）
-- worktree の変更を本体へ統合し、本体の dev server に反映する（手順は skill `verify-extension`）
+**読み込むのは本体ツリーのパスに限る。**worktree の `.output` を直接読み込むと、その worktree を撤去した時点で拡張が壊れる。実ブラウザ検証では上記の preview 所有を取得し、worktree の Vite から本体の固定出力へ配信する。本体ツリーの detach、worktree 出力の手動コピー、Chrome での再読み込み、先行マージは行わない。
 
 固定IDを保つ `key` は `extension/manifest.config.ts` にある。ID・Native Messaging 保存・5プラットフォームのクリック/ドラッグ保存は実機確認の対象である。
 
