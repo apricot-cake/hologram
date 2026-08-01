@@ -72,6 +72,15 @@ describe('短語彙用の正規化部分一致', () => {
     expect(S.includesNormalized('ネコかわいい', '')).toBe(true);
     expect(S.includesNormalized('ネコかわいい', 'ねわ')).toBe(false);
   });
+
+  test('ローマ字の派生かなクエリと元クエリを OR で照合する', () => {
+    expect(S.includesNormalized('ねこの写真', 'neko')).toBe(true);
+    expect(S.includesNormalized('neko photos', 'neko')).toBe(true);
+  });
+
+  test('入力途中の n は IME モードのまま扱う', () => {
+    expect(S.includesNormalized('しn', 'shin')).toBe(true);
+  });
 });
 
 describe('A: サブシーケンス（順序一致・飛び石OK）', () => {
