@@ -13,6 +13,8 @@
 // A real ES module (named exports) — imported directly by the orchestrator and
 // query-builder.ts.
 
+import { toKana } from 'wanakana';
+
 // Katakana (U+30A1..U+30F6) → hiragana (U+3041..U+3096). The long vowel mark ー etc. is left as-is.
 function kataToHira(s: string) {
   let out = '';
@@ -50,7 +52,11 @@ export function normalize(s: unknown) {
 // substring. Unlike compile(), this deliberately does not accept subsequences or
 // typos, so pickers stay precise while sharing the app-wide glyph rules.
 export function includesNormalized(haystack: unknown, query: unknown) {
-  return normalize(haystack).includes(normalize(query));
+  const hay = normalize(haystack);
+  const rawQuery = String(query ?? '');
+  const normalizedQuery = normalize(rawQuery);
+  const kanaQuery = normalize(toKana(rawQuery, { IMEMode: true }));
+  return hay.includes(normalizedQuery) || hay.includes(kanaQuery);
 }
 
 // Whether each character of needle appears in hay in order (they need not be contiguous = subsequence match, A).
