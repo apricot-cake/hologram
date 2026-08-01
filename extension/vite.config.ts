@@ -18,7 +18,7 @@ export default defineConfig(({ command, mode }) => {
           server.middlewares.use('/manifest.json', async (_request, response) => {
             try {
               response.setHeader('Content-Type', 'application/json; charset=utf-8');
-              response.end(await readFile(resolve(import.meta.dirname, '.output/chrome-mv3/manifest.json')));
+              response.end(await readFile(resolve(developmentOutput, 'manifest.json')));
             } catch {
               response.statusCode = 503;
               response.end('{"error":"manifest-not-ready"}');
