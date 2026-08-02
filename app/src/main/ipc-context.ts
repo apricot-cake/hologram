@@ -23,7 +23,7 @@ import type { BrowserWindow } from 'electron';
 import type Database from 'better-sqlite3';
 import type { createDbWriter } from './lib-db-write.ts';
 import type { relocateLibrary } from './lib-migrate.ts';
-import type { BackupConfig, BackupRunResult, FullTextHit, IntegrityStatus, LibraryStatus, OrphanRecoveryResult, PostsDelta, PostsSnapshot, ValidationResult, WatchImportConfig, WatchImportFolder } from './ipc-payloads.ts';
+import type { BackupConfig, BackupRunResult, DbGeneration, DbRollbackResult, FullTextHit, IntegrityStatus, LibraryStatus, OrphanRecoveryResult, PostsDelta, PostsSnapshot, ValidationResult, WatchImportConfig, WatchImportFolder } from './ipc-payloads.ts';
 
 /** The organization-state writer every DB-backed handler goes through. */
 export type DbWriter = ReturnType<typeof createDbWriter>;
@@ -111,6 +111,9 @@ export interface IpcContext {
   validateBackupDir(dir: string | null | undefined): ValidationResult;
   armBackupSchedule(): void;
   runBackup(reason: string): Promise<BackupRunResult>;
+  /** #233: the DB generation store, annotated with destination presence. */
+  listDbGenerations(): DbGeneration[];
+  rollbackDbGeneration(name: unknown): Promise<DbRollbackResult>;
   readIntegrityStatus(): IntegrityStatus;
   runOrphanRecovery(): Promise<OrphanRecoveryResult>;
 

@@ -18,6 +18,14 @@ export function pickBackupDir() {
 export function runBackup() {
   return hologramIpc.runBackup();
 }
+// #233's restore half: the dated list of DB generations, and the rollback that
+// picks one. Main reloads every window a moment after the rollback answers.
+export function listDbGenerations() {
+  return hologramIpc.listDbGenerations();
+}
+export function rollbackDbGeneration(name: string) {
+  return hologramIpc.rollbackDbGeneration(name);
+}
 // The preload bridge unwraps the IPC event (#383): a start notification carries
 // nothing, a done notification carries only the backup result.
 export function onBackupStart(cb: () => void) {

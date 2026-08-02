@@ -41,9 +41,11 @@ import { INBOX_DIRNAME } from '../../../native-host/inbox.mts';
 import { configDir } from './native-host.ts';
 import { readConfig, writeConfig, getSaveFolder } from './lib-config.ts';
 import { BACKUP_SUBDIR, backupRoot, createLocalFolderDestination, TMP_RE } from './lib-backup-destination.ts';
+import { ensureLibraryId } from './lib-db-write.ts';
 import { groupOf, planBackup } from './lib-backup-plan.ts';
 import type { SourceFile } from './lib-backup-plan.ts';
 import { GENERATIONS_DIRNAME, createGeneration, latestGeneration, listGenerations, pruneGenerations } from './lib-db-generations.ts';
+import { listWithDestination, rollbackToGeneration } from './lib-db-rollback.ts';
 import { checkOrphans, recoverOrphanRecords } from './lib-db-integrity.ts';
 import type { DbHandle } from './ipc-context.ts';
 
@@ -54,12 +56,23 @@ export interface BackupEngineDeps {
   scheduleSavedIndexWrite(handle: { sqlite: Database.Database }): void;
   /** Pushes to the main window's renderer; a no-op when the window is gone. */
   send(channel: string, ...args: unknown[]): void;
+  /** Absolute path of the live database — the file a rollback replaces. */
+  dbFile(): string;
+  /** Drops the live handle so the next ensurePostsSynced reopens from disk. */
+  closeDb(): void;
 }
 
 // The library's trash bucket. Mirrored since #233 (it used to be skipped), so a
 // restore brings back the pending deletions as pending deletions instead of
 // resurrecting them as live posts with their trashed-at time lost.
 const TRASH_SUBDIR = '.trash';
+// The live database and its WAL sidecars, never carried by the media lane: a
+// file-level copy of a database being written to is inconsistent by
+// construction (#97), and the consistent copy already exists as the generation
+// store. They are named here rather than found, because #176 moves the database
+// INTO the library folder and the root sweep below would otherwise pick it up
+// the day that lands.
+const LIVE_DB_NAMES = new Set(['hologram.db', 'hologram.db-wal', 'hologram.db-shm']);
 // (LIBRARY_SUBDIR — the named subfolder for a relocated library — lives in
 // ./ipc-transfer.ts with the pick-save-folder handler that owns it.)
 
@@ -214,7 +227,7 @@ async function collectLibraryFiles(src: string): Promise<Map<string, SourceFile>
     rootNames = [];
   }
   for (const f of rootNames) {
-    if (TMP_RE.test(f)) continue;
+    if (TMP_RE.test(f) || LIVE_DB_NAMES.has(f)) continue;
     await add(f, path.join(src, f));
   }
   // Shared stores, single level and write-once, mirrored under their own names
@@ -236,7 +249,7 @@ async function collectLibraryFiles(src: string): Promise<Map<string, SourceFile>
  * closure's state rather than module-level, so a second engine cannot silently
  * share them with the first.
  */
-function createBackupEngine({ ensurePostsSynced, scheduleSavedIndexWrite, send }: BackupEngineDeps) {
+function createBackupEngine({ ensurePostsSynced, scheduleSavedIndexWrite, send, dbFile, closeDb }: BackupEngineDeps) {
   // The one shared DB<->media reconciliation pass (#301 design: "share the
   // detection mechanism with #100's item 1, don't duplicate the implementation")
   // — called both at startup (independent of any backup config) and from
@@ -330,17 +343,76 @@ function createBackupEngine({ ensurePostsSynced, scheduleSavedIndexWrite, send }
     if (generationRunning) return { ok: false, error: 'busy' };
     if (!force && !generationDue(folder)) return { ok: false, error: 'not-due' };
     generationRunning = true;
+    const startedAt = Date.now();
     try {
       const handle = await ensurePostsSynced();
       if (!handle) return { ok: false, error: 'not-configured' };
       const file = await createGeneration(handle.sqlite, folder);
       mutationsSinceGeneration = 0;
       const removed = await pruneGenerations(folder);
-      log.info(`db generation written (${reason}): ${path.basename(file)}${removed.length ? ` — thinned ${removed.length}` : ''}`);
+      // Timed for the same reason the media run is (see runBackup's closing
+      // log): the boundaries are provisional numbers waiting on real use.
+      log.info(`db generation written (${reason}) in ${Date.now() - startedAt}ms: ${path.basename(file)}${removed.length ? ` — thinned ${removed.length}` : ''}`);
       return { ok: true, file, thinned: removed.length };
     } catch (err: any) {
       log.error('db generation failed:', err);
       return { ok: false, error: err?.message || 'failed' };
+    } finally {
+      generationRunning = false;
+    }
+  }
+
+  /**
+   * #176's requirement, enforced here because #233 owns the destinations: a
+   * destination records which library it belongs to, and a run against a
+   * different library is refused OUTRIGHT rather than left to backup-guard.
+   *
+   * The guard has to sit in front, not inside: the destination of library A
+   * holding library B's much smaller (or merely different) content is not a
+   * "source collapsed" shape, so the shrink ratio would let the prune through
+   * and A's backup would be pruned down to B. A destination with no id yet is
+   * adopted — the mechanism postdates the destinations it protects.
+   */
+  async function claimDestination(destination: ReturnType<typeof createLocalFolderDestination>): Promise<{ ok: true; libraryId: string } | { ok: false; error: string }> {
+    const handle = await ensurePostsSynced();
+    if (!handle) return { ok: false, error: 'not-configured' };
+    const libraryId = ensureLibraryId(handle.sqlite);
+    const identity = await destination.readIdentity();
+    if (identity && identity.libraryId !== libraryId) {
+      log.warn(`backup refused: ${destination.location} belongs to another library (${identity.libraryId})`);
+      return { ok: false, error: 'library-mismatch' };
+    }
+    if (!identity) await destination.writeIdentity({ libraryId, lastRunAt: null });
+    return { ok: true, libraryId };
+  }
+
+  /**
+   * The restore UI's list (#233): the local store, plus whether the configured
+   * destination holds each generation. The distinction is the point — a
+   * generation that exists only here still rolls the library back, but it is
+   * not a copy that survives this machine.
+   */
+  function listDbGenerations() {
+    const b = readBackupConfig();
+    return listWithDestination(getSaveFolder(), b.dir ? backupRoot(b.dir) : null);
+  }
+
+  /**
+   * The user-facing rollback. Held against the same two flags the lanes use, so
+   * a scheduled run cannot be writing (or snapshotting) the database while it
+   * is being replaced underneath.
+   */
+  async function rollbackDbGeneration(name: unknown) {
+    const folder = getSaveFolder();
+    if (!folder) return { ok: false, error: 'not-configured' };
+    if (backupRunning || generationRunning) return { ok: false, error: 'busy' };
+    generationRunning = true;
+    try {
+      const result = await rollbackToGeneration(name, { saveFolder: getSaveFolder, dbFile, ensurePostsSynced, closeDb });
+      // The stash IS this library's newest generation, so the change counter
+      // starts over whether or not the sweep behind it succeeded.
+      if (result.stash) mutationsSinceGeneration = 0;
+      return result;
     } finally {
       generationRunning = false;
     }
@@ -364,16 +436,22 @@ function createBackupEngine({ ensurePostsSynced, scheduleSavedIndexWrite, send }
     // "looks fine, quietly starts over" failure this Issue closes.
     if (!fs.existsSync(b.dir)) return { ok: false, error: 'dest-missing' };
     if (backupRunning) return { ok: false, error: 'busy' };
+    migrateLegacyDestinationFolder(b.dir);
+    const destination = createLocalFolderDestination(b.dir);
+    // Before the run is even announced: a refusal here must not read as a
+    // backup that started, and nothing may be written to a destination that
+    // turns out to belong to someone else.
+    const claim = await claimDestination(destination);
+    if (!claim.ok) return { ok: false, error: claim.error };
     backupRunning = true;
     send('backup-start'); // sidebar status → running
+    const startedAt = Date.now();
     const result: any = { ok: true, reason: reason || 'manual', fileCount: 0, written: 0, moved: 0, pruned: 0 };
     try {
-      migrateLegacyDestinationFolder(b.dir);
       // The DB lane runs first when a boundary is due, so the generation it
       // writes is part of what this same pass carries to the destination.
       await runDbGeneration(reason || 'manual');
 
-      const destination = createLocalFolderDestination(b.dir);
       const source = await collectLibraryFiles(src);
       const present = await destination.list();
       const prevSummary = b.lastResult || {};
@@ -466,6 +544,17 @@ function createBackupEngine({ ensurePostsSynced, scheduleSavedIndexWrite, send }
     } catch {
       /* ignore */
     }
+    try {
+      await destination.writeIdentity({ libraryId: claim.libraryId, lastRunAt: at });
+    } catch {
+      /* the claim already stands; only its timestamp is behind */
+    }
+    // #233 (2026-08-02): the interval and the change threshold ship at their v1
+    // numbers and get tuned by how they FEEL, so how long a run took and how
+    // long since the last one has to be readable somewhere. The log is that
+    // somewhere — without it there is no way to tell which number to move.
+    const sinceLast = b.lastRunAt ? Math.round((startedAt - Date.parse(b.lastRunAt)) / 1000) : null;
+    log.info(`backup run (${summary.reason}) took ${Date.now() - startedAt}ms${sinceLast === null ? '' : `, ${sinceLast}s since the last run`} — ${summary.fileCount} file(s), +${summary.written} copied, ${summary.moved} moved, ${summary.pruned} pruned${summary.ok ? '' : ` — FAILED: ${summary.error}`}`);
     send('backup-done', Object.assign({}, result, { at: at }));
     return result;
   }
@@ -514,7 +603,7 @@ function createBackupEngine({ ensurePostsSynced, scheduleSavedIndexWrite, send }
     }, BACKUP_HEARTBEAT_MS);
   }
 
-  return { runBackup, runDbGeneration, armBackupSchedule, runStartupIntegrityCheck, runOrphanRecovery, noteLibraryMutation };
+  return { runBackup, runDbGeneration, listDbGenerations, rollbackDbGeneration, armBackupSchedule, runStartupIntegrityCheck, runOrphanRecovery, noteLibraryMutation };
 }
 
 /**

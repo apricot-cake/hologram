@@ -12,11 +12,11 @@ import { Highlight } from '../components/Highlight.tsx';
 import { toast } from 'sonner';
 import { t } from '../../_shared/i18n.ts';
 import { notify } from '../../services/ui.ts';
-import { getBackup, setBackup as setBackupConfig, pickBackupDir, onBackupDone, getIntegrityStatus, runOrphanRecovery, onIntegrityCheckDone } from '../../services/backup.ts';
+import { getBackup, setBackup as setBackupConfig, pickBackupDir, onBackupDone, getIntegrityStatus, runOrphanRecovery, onIntegrityCheckDone, listDbGenerations, rollbackDbGeneration } from '../../services/backup.ts';
 import { onExportProgress, onSaveFolderProgress, pickSaveFolder, moveSaveFolder, exportComplete, importComplete, importLegacyZip, importImages, getWatchImport, pickWatchImportFolder, setWatchImport } from '../../services/posts.ts';
 import { open as confirmOpen } from '../../services/confirm.ts';
 import { loadPosts } from '../../services/post-grid-builder.ts';
-import type { BackupConfig, BackupRunResult, IntegrityStatus, SaveFolderProgress, WatchImportFolder } from '../../../../main/ipc-payloads.ts';
+import type { BackupConfig, BackupRunResult, DbGeneration, IntegrityStatus, SaveFolderProgress, WatchImportFolder } from '../../../../main/ipc-payloads.ts';
 
 // Missing-bridge calls throw and land in the callers' try/catch, same as the
 // untyped original — the {} fallback only exists for the bare dev server.
@@ -92,6 +92,10 @@ const backupErr = (code?: string | null) => {
       return t('backupErrDestMissing');
     case 'src-missing':
       return t('backupErrSrcMissing');
+    // #233/#176: the destination is claimed by another library, so the run was
+    // refused before anything at the destination could be touched.
+    case 'library-mismatch':
+      return t('backupErrLibraryMismatch');
     default:
       return code || '';
   }
@@ -121,6 +125,9 @@ export function Data() {
 
   // --- backup ---
   const [backup, setBackup] = useState<BackupConfig | null>(null);
+  // --- restore points (#233's DB generations) ---
+  const [generations, setGenerations] = useState<DbGeneration[]>([]);
+  const [rollingBack, setRollingBack] = useState(false);
 
   // --- integrity (#301) ---
   const [integrity, setIntegrity] = useState<IntegrityStatus | null>(null);
@@ -145,6 +152,9 @@ export function Data() {
         setWatchFolders(v?.folders || []);
         setWatchImported(v?.status?.imported || 0);
       })
+      .catch(() => {});
+    Promise.resolve(listDbGenerations())
+      .then((g) => setGenerations(g || []))
       .catch(() => {});
   }, []);
 
@@ -387,6 +397,11 @@ export function Data() {
     const onDone = (r: BackupRunResult) => {
       if (!r) return;
       setBackup((b) => (b ? Object.assign({}, b, { lastResult: r }) : b));
+      // A run can add a generation and carry it to the destination, so both the
+      // list and the per-row "also at the destination" badge are stale now.
+      Promise.resolve(listDbGenerations())
+        .then((g) => setGenerations(g || []))
+        .catch(() => {});
     };
     backupSubs.add(onDone);
     return () => {
@@ -445,6 +460,30 @@ export function Data() {
     } catch {
       /* ignore */
     }
+  };
+
+  // Rolling back to one generation (#233). Confirmed first because it replaces
+  // the whole organization layer, and because main reloads every window a moment
+  // after it answers — the toast below is the only report the user gets.
+  const rollBackTo = (g: DbGeneration) => {
+    confirmOpen({
+      message: t('backupRestoreConfirm', [fmtTime(g.at)]),
+      description: t('backupRestoreConfirmDesc'),
+      okLabel: t('backupRestoreOk'),
+      cancelLabel: t('confirmCancel'),
+      onOk: async () => {
+        setRollingBack(true);
+        try {
+          const res = await rollbackDbGeneration(g.name);
+          if (res && res.ok) notify(t('backupRestoreDone', [fmtTime(g.at), res.reregistered ?? 0]));
+          else notify(res && res.error === 'busy' ? t('backupRestoreBusy') : t('backupRestoreFailed'));
+        } catch {
+          notify(t('backupRestoreFailed'));
+        } finally {
+          setRollingBack(false);
+        }
+      },
+    });
   };
 
   // Status line, simplified from viewer.js renderStatus (the rail keeps the icons).
@@ -606,6 +645,37 @@ export function Data() {
             <span className="text-sm">{t('backupIntervalUnit')}</span>
           </div>
           {renderBackupStatus()}
+
+          <Separator />
+
+          {/* Restore points: the DB generations the engine keeps locally (#233).
+              Media is write-once and never rolled back, so this is the
+              organization layer only — the wording says so rather than leaving
+              "restore" to imply the posts go away too. */}
+          <div>
+            <div className="text-sm font-medium">
+              <Highlight text={t('backupRestoreSubTitle')} />
+            </div>
+            {generations.length === 0 ? (
+              <div className="text-muted-foreground mt-2.5 text-[0.8rem]">{t('backupRestoreNone')}</div>
+            ) : (
+              <div className="mt-2.5 space-y-1.5">
+                {generations.map((g) => (
+                  <div key={g.name} className="flex flex-wrap items-center gap-2.5">
+                    <span className="min-w-40 text-sm tabular-nums">{fmtTime(g.at)}</span>
+                    {/* Fixed width so the buttons line up down the column: the
+                        two location labels are different lengths, and a ragged
+                        edge reads as an unrelated control per row. */}
+                    <span className="text-muted-foreground min-w-36 text-xs">{g.atDestination ? t('backupRestoreBoth') : t('backupRestoreHere')}</span>
+                    <Button variant="outline" size="sm" onClick={() => rollBackTo(g)} disabled={rollingBack}>
+                      {t('backupRestoreBtn')}
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <Hint text={t('hintBackupRestore')} />
+          </div>
 
           <Separator />
 

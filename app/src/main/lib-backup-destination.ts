@@ -15,6 +15,14 @@
 // the destination root and always use '/' as the separator, so the same
 // relative name addresses a folder entry and a cloud object.
 //
+// The fifth pair — read/write the destination's IDENTITY — is #176's
+// requirement: the destination records which library it belongs to, and the
+// engine refuses to run when that does not match the library currently open.
+// Without it, opening library B while A's destination is still configured lets
+// the "delete what the source no longer has" rule prune A's backup down to B's
+// contents. restic does the same thing (its repository config carries a unique
+// id that identifies the repository "regardless of local or remote").
+//
 // v1 ships the local-folder adapter only. The OAuth adapters are #233's later
 // stage; registering an OAuth client is not something this code can do for the
 // user, so nothing here pretends the cloud kinds exist yet.
@@ -30,6 +38,12 @@ export interface DestinationEntry {
   mtimeMs: number;
 }
 
+/** Whose backup this is, as recorded at the destination root. */
+export interface DestinationIdentity {
+  libraryId: string;
+  lastRunAt: string | null;
+}
+
 export interface BackupDestination {
   /** Discriminator for logs and status; 'local-folder' is the only v1 value. */
   readonly kind: string;
@@ -42,6 +56,9 @@ export interface BackupDestination {
   /** Relocates an existing entry without moving its bytes twice. */
   move(fromRel: string, toRel: string): Promise<void>;
   remove(rel: string): Promise<void>;
+  /** null when the destination has never been claimed (or is unreadable). */
+  readIdentity(): Promise<DestinationIdentity | null>;
+  writeIdentity(identity: DestinationIdentity): Promise<void>;
 }
 
 // Backups go into a named subfolder of the folder the user picked, never into
@@ -49,6 +66,11 @@ export interface BackupDestination {
 // documents folder with the user's own files in it, and the engine deletes
 // entries it does not recognise.
 const BACKUP_SUBDIR = 'Hologram-backup';
+
+// The destination's own bookkeeping, at its root. Deliberately NOT reported by
+// list(): the engine deletes destination entries the library does not have, and
+// this one has no counterpart in the library by design.
+const IDENTITY_FILE = '.hologram-backup.json';
 
 /** The tmp artifacts the engine's own writes leave behind mid-copy. */
 const TMP_RE = /\.tmp(-\d+)?$/i;
@@ -70,6 +92,7 @@ function createLocalFolderDestination(dir: string): BackupDestination {
     }
     for (const e of entries) {
       if (TMP_RE.test(e.name)) continue;
+      if (!sub && e.name === IDENTITY_FILE) continue;
       const rel = sub ? `${sub}/${e.name}` : e.name;
       if (e.isDirectory()) {
         await walk(rel, into);
@@ -123,7 +146,24 @@ function createLocalFolderDestination(dir: string): BackupDestination {
     async remove(rel) {
       await fs.promises.unlink(abs(rel));
     },
+    async readIdentity() {
+      try {
+        const parsed = JSON.parse(await fs.promises.readFile(path.join(root, IDENTITY_FILE), 'utf8'));
+        const libraryId = parsed?.libraryId;
+        // A file we cannot make sense of reads as "unclaimed" rather than as a
+        // mismatch: refusing every future run over a corrupt byte would be a
+        // worse failure than adopting the destination again.
+        if (typeof libraryId !== 'string' || !libraryId) return null;
+        return { libraryId, lastRunAt: typeof parsed.lastRunAt === 'string' ? parsed.lastRunAt : null };
+      } catch {
+        return null;
+      }
+    },
+    async writeIdentity(identity) {
+      await fs.promises.mkdir(root, { recursive: true });
+      await commitFileAtomic(path.join(root, IDENTITY_FILE), (tmp) => fs.promises.writeFile(tmp, `${JSON.stringify(identity, null, 2)}\n`), { tmpSuffix: `.tmp-${Date.now()}` });
+    },
   };
 }
 
-export { BACKUP_SUBDIR, TMP_RE, backupRoot, createLocalFolderDestination };
+export { BACKUP_SUBDIR, IDENTITY_FILE, TMP_RE, backupRoot, createLocalFolderDestination };

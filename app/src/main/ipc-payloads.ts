@@ -428,6 +428,29 @@ export interface BackupRunResult {
   at?: string;
 }
 
+/** One entry of the DB generation store, as the restore list shows it (#233). */
+export interface DbGeneration {
+  name: string;
+  /** ISO instant decoded from the file name (the store names in local time). */
+  at: string;
+  size: number;
+  /** False when this restore point exists on this PC only. */
+  atDestination: boolean;
+}
+
+/**
+ * rollback-db-generation's answer. `stash` names the automatic snapshot of the
+ * state that was left behind, and `reregistered` counts the posts carried
+ * forward because the generation predates them (#233).
+ */
+export interface DbRollbackResult {
+  ok: boolean;
+  error?: string;
+  generation?: string;
+  stash?: string;
+  reregistered?: number;
+}
+
 /**
  * get-integrity-status, and the payload of the pushed `integrity-check-done`
  * event (#383). `dbOk: null` = never checked.

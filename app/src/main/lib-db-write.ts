@@ -5,6 +5,7 @@
 // the replacement operations here so every IPC handler shares the same
 // transaction boundary instead of each rebuilding a different subset of tables.
 
+import { randomUUID } from 'node:crypto';
 import type Database from 'better-sqlite3';
 import { normFolders } from './lib-folder-tree.ts';
 import { normalizeTagName, normalizeTagNames } from '../../../native-host/tag-normalize.mts';
@@ -40,6 +41,29 @@ function stateGet(sqlite: Sqlite, key: string): string | null {
 
 function stateSet(sqlite: Sqlite, key: string, value: string) {
   sqlite.prepare('INSERT INTO store_state (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(key, value);
+}
+
+/** store_state key holding this library's identity (#176 / #233). */
+const LIBRARY_ID_KEY = 'libraryId';
+
+/**
+ * This library's own id, minted on first read.
+ *
+ * The id lives in the DATABASE rather than in config.json or a marker file
+ * because the database is what a library IS (#176: "DB 自体が目印") — copy the
+ * folder and the copy carries the same identity; point the app at a different
+ * folder and the id changes with it, which is exactly the signal a backup
+ * destination needs to refuse a run against the wrong library (#233).
+ *
+ * Written lazily instead of at CREATE time so a library that predates this
+ * acquires one on the next launch rather than needing a migration to backfill.
+ */
+function ensureLibraryId(sqlite: Sqlite): string {
+  const existing = stateGet(sqlite, LIBRARY_ID_KEY);
+  if (existing) return existing;
+  const id = randomUUID();
+  stateSet(sqlite, LIBRARY_ID_KEY, id);
+  return id;
 }
 
 function existingPostIds(sqlite: Sqlite): Set<string> {
@@ -564,4 +588,4 @@ function createDbWriter(sqlite: Sqlite) {
   };
 }
 
-export { createDbWriter };
+export { createDbWriter, ensureLibraryId, LIBRARY_ID_KEY };
