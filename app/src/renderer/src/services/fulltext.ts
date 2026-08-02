@@ -26,7 +26,7 @@ import { hologramIpc } from './ipc.ts';
 // one (the acceptance criterion is that a tag/hashtag hit must not read as a
 // body hit — #29's design comment on the surprise this avoids). Body-ish
 // fields first, tag/hashtag last.
-export type FullTextFieldKey = 'text' | 'title' | 'description' | 'seriesTitle' | 'alt' | 'quoted' | 'displayName' | 'screenName' | 'eagleName' | 'tag' | 'hashtag';
+export type FullTextFieldKey = 'text' | 'title' | 'memo' | 'seriesTitle' | 'alt' | 'quoted' | 'displayName' | 'screenName' | 'eagleName' | 'tag' | 'hashtag';
 
 function fieldsOf(p: HologramPost): { key: FullTextFieldKey; value: string }[] {
   const out: { key: FullTextFieldKey; value: string }[] = [];
@@ -35,7 +35,7 @@ function fieldsOf(p: HologramPost): { key: FullTextFieldKey; value: string }[] {
   };
   push('text', p.text);
   push('title', p.title);
-  push('description', p.description);
+  push('memo', p.memo); // #36: user's free-text note (absorbed the Eagle-migration `description` field)
   push('seriesTitle', p.seriesTitle); // #188: pixiv series name
   for (const m of p.media || []) push('alt', (m as { alt?: unknown } | null | undefined)?.alt);
   // #180: a quote/reply's own sub-record isn't independently searchable — a hit

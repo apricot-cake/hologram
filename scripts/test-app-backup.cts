@@ -1,18 +1,22 @@
 'use strict';
 
-// Verifies the automatic backup (incremental mirror) plumbing end-to-end via IPC:
+// Verifies the automatic backup plumbing end-to-end via IPC:
 //  - set-backup rejects an output dir that overlaps the save folder
-//  - run-backup mirrors the library into <dir>/Hologram-mirror/ (individual files)
+//  - run-backup copies the library into <dir>/Hologram-backup/ (individual files)
 //  - a second run is idempotent (immutable assets → nothing new copied)
 //  - a file that APPEARS in the library after the first backup is picked up by the
-//    next run (the mirror is not frozen at its first snapshot)
-//  - everything the mirror carries from the library is write-once since #302, so a
+//    next run (the destination is not frozen at its first pass)
+//  - everything a backup carries from the library is write-once since #302, so a
 //    file already at the destination is never re-copied. What used to change in
-//    place — the organization JSON — lives in the DB now and reaches the mirror as
-//    the snapshot below, not as a tracked file.
-//  - deleting a post propagates: the file is pruned from the mirror
+//    place — the organization JSON — lives in the DB now and reaches the
+//    destination as the DB generation below, not as a tracked file.
+//  - the DB lane (#233) writes a generation into the library's OWN
+//    .db-generations/ store, and the destination gets a copy of that store
+//  - deleting a post is a MOVE at the destination (#233): the file lands under
+//    .trash/ instead of being deleted and copied over again
 //  - the prune-safety guard holds the prune when src collapses (clear-all → empty),
-//    leaving the mirror intact (regression for the 2026-06-23 library-loss incident)
+//    leaving the destination intact (regression for the 2026-06-23 library-loss
+//    incident)
 //
 //   node scripts/test-app-backup.cts
 
@@ -39,9 +43,11 @@ fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolde
 const jpeg = Buffer.from('/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACP/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AfwH/2Q==', 'base64');
 const ids: any[] = [];
 const records: any[] = [];
-// 4 posts: enough that the clear-all collapse drops src well below the prune-guard's
-// 50% shrink ratio, so the guard-held assertion stays unambiguous.
-for (let i = 0; i < 4; i++) {
+// 8 posts: enough that the clear-all collapse drops src well below the prune-guard's
+// 50% shrink ratio even though the post trashed earlier in the run keeps its files
+// (under .trash/, which #233 backs up too), so the guard-held assertion stays
+// unambiguous.
+for (let i = 0; i < 8; i++) {
   const id = '170000000000' + i + '-bk' + i;
   ids.push(id);
   fs.writeFileSync(path.join(saveFolder, id + '.jpg'), jpeg);
@@ -63,16 +69,26 @@ for (let i = 0; i < 4; i++) {
 }
 seedLibrary(configDir, records);
 
-const mirror = path.join(outDir, 'Hologram-mirror');
-const countMirror = () => {
+const backupDir = path.join(outDir, 'Hologram-backup');
+const countBackupRoot = () => {
   try {
-    // hologram-db/ (#301's DB snapshot) is a standing subfolder unrelated to
-    // post-asset pruning — exclude it so the prune-intact assertions below
-    // keep comparing like with like (post files only), same reasoning that
-    // already applies to .hologram-inbox in runBackup itself.
-    return fs.readdirSync(mirror).filter((n) => !/\.tmp(-\d+)?$/i.test(n) && n !== 'hologram-db').length;
+    // Top-level FILES only: .db-generations/, .trash/ and the shared stores are
+    // standing subfolders unrelated to post-asset pruning, so counting them would
+    // stop the prune-intact assertions below from comparing like with like (post
+    // files only) — the same reasoning that already applied to .hologram-inbox.
+    return fs.readdirSync(backupDir, { withFileTypes: true }).filter((e) => e.isFile() && !/\.tmp(-\d+)?$/i.test(e.name)).length;
   } catch {
     return -1;
+  }
+};
+// The single generation file inside a store directory (the library's own, or a
+// destination's copy of it), or null when there is none.
+const oneGeneration = (root: string): string | null => {
+  try {
+    const names = fs.readdirSync(path.join(root, '.db-generations')).filter((n) => /^hologram-\d{8}-\d{6}\.db$/.test(n));
+    return names.length ? names[0] : null;
+  } catch {
+    return null;
   }
 };
 
@@ -117,9 +133,11 @@ const lateFilePath = path.join(saveFolder, LATE_FILE);
     const good = await window.hologram.setBackup({ dir: ${JSON.stringify(outDir)} });
     const dirSet = !!(good && good.backup && good.backup.dir);
 
-    // Don't hardcode the count — metadata files count too; assert written === fileCount.
+    // Don't hardcode the count — assert against fileCount, which is the media lane's
+    // own tally. The one extra write is the DB lane's first generation (#233), which
+    // the same run creates and carries over.
     const r1 = await window.hologram.runBackup();
-    const run1 = !!(r1 && r1.ok && r1.written >= 4 && r1.written === r1.fileCount && r1.pruned === 0 && !r1.pruneSkipped);
+    const run1 = !!(r1 && r1.ok && r1.fileCount >= 8 && r1.written === r1.fileCount + 1 && r1.pruned === 0 && !r1.pruneSkipped);
 
     // idempotent — assets are immutable, nothing new to copy or prune
     const r2 = await window.hologram.runBackup();
@@ -127,19 +145,24 @@ const lateFilePath = path.join(saveFolder, LATE_FILE);
 
     return { overlapRejected, dirSet, run1, run2 };
   })()`;
-  const dbSnapshotFile = path.join(outDir, 'Hologram-mirror', 'hologram-db', 'hologram.db');
   const rA = await launch(evalA);
 
-  // DB snapshot (#301): run1 must have produced a hologram-db/hologram.db via
-  // the backup API, not a raw copy of the live (and here, out-of-tree) DB file.
-  let dbSnapshotWritten = false;
-  try {
-    dbSnapshotWritten = fs.statSync(dbSnapshotFile).size > 0;
-  } catch {
-    /* missing → stays false */
+  // DB lane (#301 / #233): run1 must have written a generation through the SQLite
+  // backup API into the LIBRARY's own store — never a raw copy of the live (and
+  // here, out-of-tree) DB file — and carried that same generation to the destination.
+  const localGeneration = oneGeneration(saveFolder);
+  let dbGenerationWritten = false;
+  let dbGenerationCopied = false;
+  if (localGeneration) {
+    try {
+      dbGenerationWritten = fs.statSync(path.join(saveFolder, '.db-generations', localGeneration)).size > 0;
+    } catch {
+      /* missing → stays false */
+    }
+    dbGenerationCopied = fs.existsSync(path.join(backupDir, '.db-generations', localGeneration));
   }
 
-  // The mirror must not freeze at its first snapshot: a file that appears later is
+  // The destination must not freeze at its first pass: a file that appears later is
   // still picked up by the next run.
   fs.writeFileSync(lateFilePath, JSON.stringify({ notes: ['A'] }, null, 2));
 
@@ -150,7 +173,7 @@ const lateFilePath = path.join(saveFolder, LATE_FILE);
   })()`;
   const rB = await launch(evalB);
 
-  // Change it in place. Nothing the mirror carries changes after it is written, so
+  // Change it in place. Nothing a backup carries changes after it is written, so
   // a run after this must copy nothing — write-once is the contract, not an
   // oversight (see runBackup's comment).
   fs.writeFileSync(lateFilePath, JSON.stringify({ notes: ['A', 'B'] }, null, 2));
@@ -161,36 +184,42 @@ const lateFilePath = path.join(saveFolder, LATE_FILE);
     const e3 = await window.hologram.runBackup();
     const editIdempotent = !!(e3 && e3.ok && e3.written === 0 && !e3.pruneSkipped);
 
-    // delete one post → next run prunes its file from the mirror. Since #302 a post
-    // is one file in the library (its record is in the DB), so exactly one goes.
-    // Baseline is e3.fileCount (after the late file was added), not r2.
+    // delete one post → since #233 the destination MOVES its file under .trash/
+    // instead of deleting it: a backup keeps a pending deletion pending. The trash
+    // sidecar the delete writes is new, so the same run copies that one over.
     await window.hologram.deletePost(${JSON.stringify(ids[0] + '.jpg')});
     const r3 = await window.hologram.runBackup();
-    const pruneWorks = !!(r3 && r3.ok && r3.pruned === 1 && r3.fileCount === e3.fileCount - 1 && !r3.pruneSkipped);
+    const trashMoved = !!(r3 && r3.ok && r3.moved === 1 && r3.pruned === 0 && !r3.pruneSkipped);
 
     // collapse src (clear-all wipes every post asset) → guard MUST hold the prune
-    // and leave the mirror untouched. Reason is shrink/empty depending on what is
-    // left at the root; either is a valid trip.
+    // and leave the destination untouched. Reason is shrink/empty depending on what
+    // is left at the root; either is a valid trip.
     await window.hologram.clearAll();
     const r4 = await window.hologram.runBackup();
     const guardHeld = !!(r4 && r4.ok && r4.pruned === 0 && (r4.pruneSkipped === 'empty' || r4.pruneSkipped === 'shrink'));
 
-    // mirror should still hold exactly what r3 left (guard prevented any deletion)
-    return { writeOnce, editIdempotent, pruneWorks, guardHeld, expectMirror: r3.fileCount };
+    // The destination root should still hold what r3 left there (the guard stopped
+    // every deletion). r3.fileCount counts the whole media lane, so the two entries
+    // that live under .trash/ come off to get the root's own count.
+    return { writeOnce, editIdempotent, trashMoved, guardHeld, expectRoot: r3.fileCount - 2 };
   })()`;
   const rC = await launch(evalC);
 
   const r = Object.assign({}, rA, rB, rC);
 
-  // filesystem-side verification: the guarded collapse run left the mirror exactly
-  // as r3 did (no files deleted) — proof the prune was truly held back on disk.
-  const mirrorAfter = countMirror();
-  const mirrorIntact = typeof r.expectMirror === 'number' && mirrorAfter === r.expectMirror;
-  // filesystem-side verification of write-once: the mirrored copy holds the file as
-  // it was when it was first copied (1 note), NOT the later in-place edit.
+  // filesystem-side verification: the guarded collapse run left the destination
+  // exactly as r3 did (no files deleted) — proof the prune was truly held back on
+  // disk.
+  const rootAfter = countBackupRoot();
+  const backupIntact = typeof r.expectRoot === 'number' && rootAfter === r.expectRoot;
+  // filesystem-side verification of the trash move: the trashed post's file sits
+  // under .trash/ at the destination and no longer at its root.
+  const trashedOnDisk = fs.existsSync(path.join(backupDir, '.trash', ids[0] + '.jpg')) && !fs.existsSync(path.join(backupDir, ids[0] + '.jpg'));
+  // filesystem-side verification of write-once: the copy at the destination holds the
+  // file as it was when it was first copied (1 note), NOT the later in-place edit.
   let writeOnceOnDisk = false;
   try {
-    const mj = JSON.parse(fs.readFileSync(path.join(mirror, LATE_FILE), 'utf8'));
+    const mj = JSON.parse(fs.readFileSync(path.join(backupDir, LATE_FILE), 'utf8'));
     writeOnceOnDisk = Array.isArray(mj.notes) && mj.notes.length === 1;
   } catch {
     /* missing/unreadable → stays false */
@@ -206,9 +235,9 @@ const lateFilePath = path.join(saveFolder, LATE_FILE);
     /* unreadable → stays false */
   }
   fs.rmSync(tmp, { recursive: true, force: true });
-  const ok = r.overlapRejected && r.dirSet && r.run1 && r.run2 && r.edit1 && r.writeOnce && r.editIdempotent && writeOnceOnDisk && r.pruneWorks && r.guardHeld && mirrorIntact && clearSweptAssets && dbSnapshotWritten;
+  const ok = r.overlapRejected && r.dirSet && r.run1 && r.run2 && r.edit1 && r.writeOnce && r.editIdempotent && writeOnceOnDisk && r.trashMoved && trashedOnDisk && r.guardHeld && backupIntact && clearSweptAssets && dbGenerationWritten && dbGenerationCopied;
   console.log(
-    `overlap=${r.overlapRejected} dirSet=${r.dirSet} run1=${r.run1} run2=${r.run2} lateFile=${r.edit1} writeOnce=${r.writeOnce} idem=${r.editIdempotent} writeOnceOnDisk=${writeOnceOnDisk} prune=${r.pruneWorks} guard=${r.guardHeld} mirror=${mirrorAfter}/${mirrorIntact} clearSweptAssets=${clearSweptAssets} dbSnapshot=${dbSnapshotWritten}`,
+    `overlap=${r.overlapRejected} dirSet=${r.dirSet} run1=${r.run1} run2=${r.run2} lateFile=${r.edit1} writeOnce=${r.writeOnce} idem=${r.editIdempotent} writeOnceOnDisk=${writeOnceOnDisk} trashMoved=${r.trashMoved}/${trashedOnDisk} guard=${r.guardHeld} root=${rootAfter}/${backupIntact} clearSweptAssets=${clearSweptAssets} dbGeneration=${dbGenerationWritten}/${dbGenerationCopied}`,
   );
   console.log(ok ? 'BACKUP_TEST_PASS' : 'BACKUP_TEST_FAIL');
   process.exit(ok ? 0 : 1);

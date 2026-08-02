@@ -13,6 +13,7 @@ import { newShuffleSeed } from './shuffle.ts';
 import { formatCount, formatShortDate } from './format.ts';
 import { makeUndoController } from './undo-builder.ts';
 import { makeUsers } from './users.ts';
+import * as aliases from './aliases.ts';
 import { notify } from './ui.ts';
 import { makeQfPop } from './qf-pop-builder.ts';
 import { makeFacets } from './facets.ts';
@@ -427,6 +428,7 @@ export function endFilterEditSession(): void {
     t: getMessage,
     charCandidatesFor: (w) => charCandidatesFor(w),
     relatedTagCandidates: (sel, opts) => relatedTagCandidates(sel, opts),
+    membersOf: (key) => aliases.membersOf(key), // #23 St1: a merged poster's tags read as the union across its group
   });
   // Bound onto tags.ts's live bindings so services/sidebar.ts's pull sources can read
   // the SAME tagKindOf/posterFilterVocab this orchestrator instance uses —
@@ -453,6 +455,8 @@ export function endFilterEditSession(): void {
     allPosts: () => postGrid.getAllPosts(),
     hostOf: (u: string | null | undefined) => hostOf(u),
     userKey: (p: HologramPost) => userKey(p),
+    resolve: (key: string) => aliases.resolve(key), // #23 St1
+    membersOf: (key: string) => aliases.membersOf(key), // #23 St1
     t: getMessage,
     PF_NAME,
     tagKindOf,
@@ -537,6 +541,7 @@ export function endFilterEditSession(): void {
       postGrid.renderPosts(true); // unconditional here: an undo is rare and deliberate, so pay one repaint rather than re-derive whether a folder filter is live
     },
     onPosterFolderMembershipChanged: () => posterGrid.refreshPosterFolderViews(),
+    onPosterAliasChanged: () => posterGrid.refreshAfterAliasChange(), // posterGrid is declared far below — deferred
   });
   const { pushUndo, undoAction } = undoCtl;
   handleShortcutUndoKey = undoCtl.handleShortcutUndoKey;
@@ -736,6 +741,7 @@ export function endFilterEditSession(): void {
     generation: () => postGrid.getGeneration(),
     userKey,
     hostOf,
+    resolve: (key) => aliases.resolve(key), // #23 St1 — identity when the poster isn't merged
   });
 
   // --- Image source (served from the save folder via the asset:// protocol) ---
@@ -779,6 +785,7 @@ export function endFilterEditSession(): void {
     postShadow: () => postQB.shadow(),
     getFilteredPosts: () => getFilteredPosts(),
     buildUsers: () => buildUsers(),
+    resolve: (key) => aliases.resolve(key), // #23 St1
     snapshotState: () => tabsCtl.snapshotState(), // tabsCtl is constructed below — deferred forward reference
     syncTitleAndPersist: () => tabsCtl.syncTitleAndPersist(),
     getBrowseMode: () => browseMode,
@@ -1149,6 +1156,7 @@ export function endFilterEditSession(): void {
     showToast: notify,
     showKindMenu,
     buildUsers,
+    resolve: (key) => aliases.resolve(key), // #23 St1
     tagKindOf,
     worksCooccurringWith,
     jumpToPoster: (post) => jumpToPoster(post), // jumpToPoster (posterGrid) is declared far below — deferred
@@ -1168,6 +1176,11 @@ export function endFilterEditSession(): void {
     getActiveTabId,
     closeTab,
     imageTabShowing: () => imageTabCtl.isShowing(), // primitive read — live, not a snapshot
+    // #180: quoted/reply-to card click-through drill-in (see inspector-builder.ts's
+    // deps interface comment) — postQB is already constructed above (line ~632),
+    // so this is a direct wrapper, not a deferred forward reference like jumpToPoster.
+    postQBResetTree: () => postQB.resetTree(),
+    addFilter: (filter) => addFilter(filter),
   });
   // closeDetail (the one that STORES "panel off") is deliberately not pulled in here:
   // outside the panel's own ×, nothing in the orchestrator should be able to disable
@@ -1381,6 +1394,9 @@ export function endFilterEditSession(): void {
     buildUsers,
     getAllPosts: postGrid.getAllPosts,
     groupRecords: postGrid.groupRecords,
+    getInspectedKey: () => inspectedKey, // #23 St1
+    markPostsMutated: () => postGrid.markPostsMutated(), // #23 St1
+    namedPosters, // #23 St1 — the merge picker's candidate population
     posterQBGetTree: () => posterQB.getTree(),
     posterQBResetTree: () => posterQB.resetTree(),
     posterQBRemoveByLeaf: (type, value) => posterQB.removeByLeaf(type, value),
@@ -2016,6 +2032,7 @@ export function endFilterEditSession(): void {
     // Grouping persistence (shared with the old image-view): manual groups + opt-outs.
     postGrid.setUngrouped(await loadUngrouped());
     await pfStore.load();
+    await aliases.load(); // #23 St1: poster name-merge groups — before first render so buildUsers folds correctly
     postGrid.setManualGroups(await loadManualGroups());
     await loadTags();
     // No sidebar seeding call needed here — services/sidebar.ts's sources compute their

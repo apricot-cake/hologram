@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { ArrowUpRight, PanelRight, Plus, X } from 'lucide-react';
 import { get, subscribe } from '../services/inspector.ts';
 import { t } from '../_shared/i18n.ts';
@@ -6,7 +6,9 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty';
 import { Separator } from '@/components/ui/separator';
+import { Textarea } from '@/components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { QuotedPostCard } from './QuotedPostCard.tsx';
 import { TagField } from './TagField.tsx';
 import type { ReactNode } from 'react';
 
@@ -81,6 +83,51 @@ function TagsSection({ m }: { m: HologramInspectorModel }) {
   );
 }
 
+// Free-text note (#36) — the only per-post field with no card-face representation
+// (design decision on #36: "カードには出さない"). Local state so keystrokes render
+// instantly; the write itself is debounced (so a fast typist isn't sending one
+// IPC call per keystroke) and also flushed on blur (so navigating away right
+// after typing never drops the last unsent burst). Uncontrolled from the
+// model's point of view once mounted — m.memo only seeds the initial value, the
+// same shape TagField's own input state already has for the same reason.
+function MemoSection({ m }: { m: HologramInspectorModel }) {
+  const [text, setText] = useState(m.memo || '');
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const commit = (value: string) => {
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = null;
+    m.onMemoChange?.(value);
+  };
+  // Cancels a pending debounce on unmount (a fresh subject remounts this
+  // component, keyed on openId by PostInspector below) — the blur that
+  // precedes any focus-losing navigation already committed the latest text,
+  // so this is only a safety net against a stray timer firing against a
+  // subject that is no longer the one on screen.
+  useEffect(
+    () => () => {
+      if (timer.current) clearTimeout(timer.current);
+    },
+    [],
+  );
+  return (
+    <section data-slot="inspector-memo" className="flex flex-col gap-1.5">
+      <span className="text-xs text-muted-foreground">{m.labels.memo}</span>
+      <Textarea
+        value={text}
+        placeholder={m.labels.memoPlaceholder}
+        rows={3}
+        onChange={(e) => {
+          const value = e.target.value;
+          setText(value);
+          if (timer.current) clearTimeout(timer.current);
+          timer.current = setTimeout(() => commit(value), 600);
+        }}
+        onBlur={() => commit(text)}
+      />
+    </section>
+  );
+}
+
 // The post's own text (#676). A full-width labeled section — the same shape as
 // TagsSection/SourceTagsSection below — rather than a Fields row: the 2-column
 // grid's value column is too narrow for prose, and cramming it in there was the
@@ -135,6 +182,16 @@ function PostInspector({ m }: { m: HologramInspectorModel }) {
       </div>
       {m.thumbSrc ? <img data-slot="inspector-thumb" data-peek={m.onThumbClick ? 'true' : undefined} className={'block w-full rounded-lg border border-border' + (m.onThumbClick ? ' cursor-zoom-in' : '')} src={m.thumbSrc} alt="" onClick={m.onThumbClick ?? undefined} /> : null}
       {m.bodyText ? <TextSection text={m.bodyText} label={m.labels.text} /> : null}
+      {/* #180: quoted/renoted or (Misskey-only) replied-to post, nested directly
+          under the post's own text — same placement a quoted-tweet/renote card
+          sits in on the source platforms. */}
+      {m.quotedCards && m.quotedCards.length ? (
+        <div className="flex flex-col gap-1.5">
+          {m.quotedCards.map((c: HologramQuotedCardModel, i: number) => (
+            <QuotedPostCard key={i} m={c} />
+          ))}
+        </div>
+      ) : null}
       <Fields>
         <Field k={m.labels.platform} v={m.platformLabel} />
         {hasAuthor ? (
@@ -178,6 +235,9 @@ function PostInspector({ m }: { m: HologramInspectorModel }) {
       </Divided>
       <Divided>
         <TagsSection m={m} />
+      </Divided>
+      <Divided>
+        <MemoSection m={m} />
       </Divided>
       {m.srcTagsView.length ? (
         <Divided>
@@ -278,6 +338,36 @@ function PosterInspector({ m }: { m: HologramInspectorModel }) {
                 }
               />
               <TooltipContent side="top">{m.labels.newFolderPlaceholder}</TooltipContent>
+            </Tooltip>
+          </div>
+        </section>
+      </Divided>
+      {/* #23 St1 (poster name-merging): 同一人物 section — every OTHER posterKey
+          this poster's alias group bundles, each removable, plus a "+" that
+          opens the merge picker regardless of whether a group already exists
+          (same anatomy as the folders section above it). */}
+      <Divided>
+        <section className="flex flex-col gap-1.5">
+          <span className="text-xs text-muted-foreground">{m.labels.sameAuthor}</span>
+          <div className="flex flex-wrap gap-1">
+            {(m.sameAuthor || []).map((o: { key: string; label: string; platformLabel: string }) => (
+              <Badge key={o.key} variant="outline" className="gap-1 pr-1">
+                <span className="max-w-40 truncate">{o.label}</span>
+                {o.platformLabel ? <span className="text-muted-foreground">{o.platformLabel}</span> : null}
+                <button type="button" aria-label={m.labels.sameAuthorUnlink} className="-mr-0.5 rounded-full p-0.5 hover:bg-muted" onClick={() => m.onSameAuthorUnlink?.(o.key)}>
+                  <X className="size-3" aria-hidden="true" />
+                </button>
+              </Badge>
+            ))}
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Badge variant="outline" className="cursor-pointer text-muted-foreground hover:bg-muted" aria-label={m.labels.sameAuthorMerge} render={<button type="button" onClick={m.onSameAuthorMerge} />}>
+                    <Plus aria-hidden="true" />
+                  </Badge>
+                }
+              />
+              <TooltipContent side="top">{m.labels.sameAuthorMerge}</TooltipContent>
             </Tooltip>
           </div>
         </section>

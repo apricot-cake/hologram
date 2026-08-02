@@ -68,7 +68,7 @@
   //       un-built under Node's type stripping, which only erases) or a second project
   //       on nodenext for the suites that import them.
   //   (b) imports extension/ sources whose Chrome/Vite ambient types are not part
-  //       of this Node-oriented test project (10 suites).
+  //       of this Node-oriented test project (11 suites).
   //   (c) imports app/src/main modules and so needs the REAL electron types (4 suites).
   //       The `electron` alias above points at the renderer's shim on purpose (it keeps
   //       Node globals from shadowing the DOM lib), which is exactly wrong for the
@@ -90,6 +90,9 @@
     "background-wiring.test.ts",
     "bridge-query.test.ts",
     "bridge-ssrf.test.ts",
+    // #751: calls the real buildRecord() (extension/utils/background.ts) so
+    // its chrome.* references hit this project the same way background-unit.test.ts's do.
+    "buildrecord-quoted-reply.test.ts",
     "bulk-capture.test.ts",
     "capture-overlay.test.ts",
     "capture-timeout.test.ts",
@@ -134,6 +137,9 @@
     "save-folder-guard.test.ts",
     "save-post-empty.test.ts",
     "save-post-video.test.ts",
+    // #203: imports extension/utils/save-queue.ts, which uses chrome.storage.local
+    // directly — cause (b) above (Chrome/Vite ambient types aren't part of this project).
+    "save-queue.test.ts",
     "saved-index.test.ts",
     "schema-canary.test.ts",
     "sidebar-pref.test.ts",

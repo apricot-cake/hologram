@@ -136,6 +136,10 @@ export interface AppPrefs {
   privacyMode: boolean | null;
   /** #46: triage mode's manually-pinned number-key (1-9) quick tags, in slot order. */
   triagePinnedTags: string[];
+  /** #207: web-search popover - which site rows "まとめて開く" targets (site ids), remembered across sessions. null = never set (defaults to every adopted site). */
+  webSearchChecked: string[] | null;
+  /** #207: home instance per fediverse platform - which host to open Misskey/Mastodon search on (search there is login-gated, so it must be a host the user can log into). null = never set. */
+  fediverseHomeHosts: { misskey: string | null; mastodon: string | null } | null;
 }
 
 // --- Organization layer (DB-backed, ipc-organize.ts) ---------------------
@@ -228,6 +232,20 @@ export interface PosterTagsState {
   tags: Record<string, string[]>;
 }
 
+// --- Poster aliases (#23 St1) --------------------------------------------
+/** One name-merge group. `primary` is the canonical key every reader folds
+ *  onto (facets/predicates/buildUsers); `members` includes `primary` itself. */
+export interface PosterAliasGroupRecord {
+  id: string;
+  primary: string;
+  members: string[];
+}
+
+/** get/set-poster-aliases. */
+export interface PosterAliasesState {
+  groups: PosterAliasGroupRecord[];
+}
+
 // --- Tabs ---------------------------------------------------------------
 /**
  * One persisted tab. Exactly these four fields cross the boundary: three the DB
@@ -250,11 +268,13 @@ export interface TabsState {
   activeTabId: string | null;
 }
 
-// --- Backup mirror + integrity (ipc-backup.ts) --------------------------
+// --- Backup + integrity (ipc-backup.ts) ---------------------------------
 /** The `lastResult` summary readBackupConfig hands back with the config. */
 export interface BackupSummary {
   fileCount: number;
   written: number;
+  /** Entries relocated at the destination — a post moving in or out of the trash (#233). */
+  moved: number;
   pruned: number;
   reason: string;
   ok: boolean;
@@ -300,6 +320,7 @@ export interface BackupRunResult {
   reason?: string;
   fileCount?: number;
   written?: number;
+  moved?: number;
   pruned?: number;
   pruneSkipped?: string | null;
   baselineCount?: number;

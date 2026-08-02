@@ -1104,3 +1104,78 @@ describe('URL ブックマーク保存（#195）', () => {
     await expect(responseP).resolves.toMatchObject({ ok: true, duplicate: true, captureId: 'bm-capture-id' });
   });
 });
+
+// #203: the retry queue. save-queue.ts's own suite (scripts/save-queue.test.ts)
+// covers stash/eviction/degrade/idempotency/serial-stop directly; what this
+// block checks is the WIRING — that background.ts's bridgeSend actually tags
+// an unreachable rejection, that the stash lands in chrome.storage.local
+// through the real imageDragged route, and that a resend genuinely happens
+// end-to-end through one of the four triggers (the checkSaved badge query).
+describe('退避キュー（#203）', () => {
+  let env: ReturnType<typeof setupBackground>;
+  const DRAG = { type: 'imageDragged', platform: 'misskey', postUrl: UNPARSEABLE_POST_URL, imageUrls: ['https://misskey.example/files/a.png'] };
+
+  beforeEach(() => {
+    env = setupBackground();
+  });
+
+  test('imageDragged: ホスト未導入（connectNative 同期 throw）→ queued:true でキューに1件積まれる', async () => {
+    env.connectAsUnavailable('Specified native messaging host not found.');
+
+    const { responseP } = env.dispatch(DRAG, MISSKEY_SENDER);
+    const result = await responseP;
+
+    expect(result.ok).toBe(false);
+    expect(result.errorKind).toBe('host-missing');
+    expect(result.queued).toBe(true);
+    expect([...env.localStore.keys()].filter((k) => k.startsWith('savequeue_'))).toHaveLength(1);
+  });
+
+  test('ホストが答えた上での拒否（post unavailable）は queued が付かない（退避しない）', async () => {
+    const createdPorts = env.connectAsControllablePort();
+
+    const { responseP } = env.dispatch(DRAG, MISSKEY_SENDER);
+    (await portThatSent(createdPorts, 'saveDragged')).emitMessage({ ok: false, error: 'Post unavailable: deleted' });
+    const result = await responseP;
+
+    expect(result.errorKind).toBe('post-unavailable');
+    expect(result.queued).toBeUndefined();
+    expect([...env.localStore.keys()].filter((k) => k.startsWith('savequeue_'))).toHaveLength(0);
+  });
+
+  // The end-to-end shape of trigger 4 (#203 design comment #4): the saved-badge's
+  // own query port answering is what wakes the sweep, without any dedicated
+  // polling of its own. Exercises stash → idempotency pre-check → resend →
+  // dequeue through the SAME background.ts wiring a real Chrome session uses.
+  test('checkSaved のクエリ成功が引き金になり、退避済みの保存が再送されて消える', async () => {
+    // 1) A save fails while the host cannot be reached at all, and is stashed.
+    env.connectAsUnavailable('Specified native messaging host not found.');
+    const failed = env.dispatch(DRAG, MISSKEY_SENDER);
+    const failResult = await failed.responseP;
+    expect(failResult.queued).toBe(true);
+    expect([...env.localStore.keys()].some((k) => k.startsWith('savequeue_'))).toBe(true);
+
+    // 2) The host becomes reachable.
+    const createdPorts = env.connectAsControllablePort();
+
+    // 3) The timeline's badge asks about an unrelated post — its query port
+    //    answering is trigger 4.
+    const check = env.dispatch({ type: 'checkSaved', urls: ['https://misskey.example/notes/other'] }, {});
+    const queryPort = await portThatSent(createdPorts, 'query');
+    const badgeReq = queryPort.sent.find((m: any) => m.type === 'query');
+    queryPort.emitMessage({ id: badgeReq.id, ok: true, results: {} });
+    await check.responseP;
+
+    // 4) The sweep's own idempotency pre-check (#34) reuses the SAME
+    //    persistent query port with a second 'query' message.
+    await vi.waitFor(() => expect(queryPort.sent.filter((m: any) => m.type === 'query').length).toBe(2));
+    const idempotencyReq = queryPort.sent.filter((m: any) => m.type === 'query')[1];
+    queryPort.emitMessage({ id: idempotencyReq.id, ok: true, results: {} }); // not landed yet
+
+    // 5) Only now does the resend open its own one-shot port and succeed.
+    const resendPort = await portThatSent(createdPorts, 'saveDragged');
+    resendPort.emitMessage({ ok: true, file: 'resent.jpg', media: [] });
+
+    await vi.waitFor(() => expect([...env.localStore.keys()].some((k) => k.startsWith('savequeue_'))).toBe(false));
+  });
+});

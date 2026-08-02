@@ -6,7 +6,7 @@
 // declaration the bridge's parse produces, so a renamed or missing field is a
 // compile error on this side rather than a save that fails on disk.
 import { hostExtBuild, protocolSkewOf, readHostResponse, responseId } from '../../native-host/protocol.mts';
-import type { CaptureMetadata, HostRequest, ProtocolSkew, SavedResults, TrashedEntry, TrashedResults } from '../../native-host/protocol.mts';
+import type { CaptureMetadata, HostRequest, ProtocolSkew, SaveDraggedRequest, SaveRequest, SavedResults, TrashedEntry, TrashedResults } from '../../native-host/protocol.mts';
 import { CROP_TIMEOUT_MS, NATIVE_HOST_TIMEOUT_MS, SAVED_QUERY_TIMEOUT_MS, withDeadline } from './deadline.ts';
 import { NATIVE_HOST } from './native-host.ts';
 import { DEV_RELOAD_QUIET_MS, DEV_RELOAD_STATE_KEY, DEV_RELOAD_WORK_MS, EXT_BUILD_ID, bulkActivity, captureActivity, createDevReloadGate, shouldReloadFor } from './dev-reload.ts';
@@ -16,11 +16,12 @@ import type { OgpResult } from './bookmark.ts';
 import { mergeDomMeta } from './extractor/dom-meta.ts';
 import { extractorFor, fetchPostMetadata, getHostname, highResUrlOf, isAllowedSender, mediaKeyOf } from './extractor/index.ts';
 import type { DomMeta, PostRecord } from './extractor/types.ts';
-import type { BridgeAck, CaptureAndSendResponse, CheckSavedResponse, ContentToBackgroundMessage, CropImageMessage, CropImageResponse, DumpLogsResponse, LogCaptureResponse, NotifyMessage, SavedEntry, SavedUpdateMessage, SaveProgressMessage, SaveResponse } from './messages.ts';
+import type { BridgeAck, CaptureAndSendResponse, CheckSavedResponse, ContentToBackgroundMessage, CropImageMessage, CropImageResponse, DumpLogsResponse, LogCaptureResponse, NotifyMessage, QueueStatsResponse, ResendQueueResponse, SavedEntry, SavedUpdateMessage, SaveProgressMessage, SaveResponse } from './messages.ts';
 import { classifySaveFailure, saveFailureConsoleLevel } from './native-error.ts';
 import { createSaveGate, saveRequestKey } from './host-budget.ts';
 import { clearInjectFailure, escalationUrl, injectFailureKind, showInjectFailure } from './inject-failure.ts';
 import type { SaveLogEntry, SaveStage } from './capture-log.ts';
+import { saveQueueStats, stashFailedSave, sweepSaveQueue } from './save-queue.ts';
 import { installUncaughtReporting } from './uncaught-report.ts';
 
 export function startBackground(): void {
@@ -167,6 +168,12 @@ export function startBackground(): void {
     saveId?: string | null;
     captureId?: string | null;
     reached?: SaveStage[];
+    // #203: set on a 'bridge' failure whose send was tagged unreachable, once
+    // the stash into save-queue.ts has been attempted — true if the entry is
+    // now queued for retry, false if nothing could be kept. Absent on every
+    // other failure (a route this queue never covers, an answer the host
+    // actually gave, a stage before 'bridge').
+    queued?: boolean;
   }
 
   // Tag an error with the pipeline stage it failed at, so the single catch in the
@@ -470,6 +477,8 @@ export function startBackground(): void {
     }
     trace.passed('bridge');
     markSaved([record.url, tab.url], ack?.captureId || captureId, savedMediaUrls(ack), tab.id);
+    // ついで掃き出し (#203): this save reaching the host is evidence it is reachable right now.
+    triggerQueueSweep();
     await bumpRecentSave(record.url);
     return ack;
   }
@@ -543,6 +552,8 @@ export function startBackground(): void {
     }
     trace.passed('bridge');
     markSaved([record.url, postUrl], ack?.captureId || captureId, savedMediaUrls(ack), tab.id);
+    // ついで掃き出し (#203).
+    triggerQueueSweep();
     const grouped = await bumpRecentSave(record.url);
     return { ...ack, metaOk, metaReason: meta.metaError || null, grouped, hostSkew: skewNote() };
   }
@@ -582,7 +593,9 @@ export function startBackground(): void {
         // console.error piles them up in the extensions error console (#580).
         console[saveFailureConsoleLevel(errorKind)](error);
         logSaveFailure(error, { saveId: message.saveId, platform: message.platform, host: senderHost, url: message.postUrl });
-        chrome.tabs.sendMessage(tabId, { type: 'notify', success: false, errorKind } satisfies NotifyMessage).catch(() => {});
+        // queued (#203): present only when the bridge send was tagged
+        // unreachable and this save's stash into save-queue.ts was attempted.
+        chrome.tabs.sendMessage(tabId, { type: 'notify', success: false, errorKind, queued: error?.queued } satisfies NotifyMessage).catch(() => {});
         sendResponse({ ok: false, errorKind } satisfies CaptureAndSendResponse);
       });
 
@@ -657,14 +670,22 @@ export function startBackground(): void {
     });
 
     const metaOk = metaFetched(meta);
+    // Built once so a failed send and its retry-queue stash (#203) share the
+    // exact same object — 'save' is one of the two request shapes save-queue.ts
+    // ever queues (see its header comment for why the third, 'savePost', is not).
+    const saveReq: SaveRequest = { type: 'save', captureId, saveId, image: jpegBase64, metadata: record, metaOk, metaReason: meta.metaError || null };
     let ack: BridgeAck;
     try {
-      ack = await sendToBridge(captureId, jpegBase64, record, metaOk, meta.metaError || null, saveId);
-    } catch (err) {
-      throw trace.fail('bridge', err?.message || 'bridge save failed');
+      ack = await bridgeSend(saveReq);
+    } catch (err: any) {
+      const failErr = trace.fail('bridge', err?.message || 'bridge save failed');
+      if (err?.unreachable) failErr.queued = await stashFailedSave(saveReq, logCapture);
+      throw failErr;
     }
     trace.passed('bridge');
     markSaved([record.url, postUrl], ack?.captureId || captureId, savedMediaUrls(ack), tab.id); // light this post's TL badge now
+    // ついで掃き出し (#203): this save reaching the host is evidence it is reachable right now.
+    triggerQueueSweep();
     // grouped = prior saves of this post this session → the banner says the save
     // merged with them (the app folds same-URL records into one card).
     const grouped = await bumpRecentSave(record.url);
@@ -705,6 +726,14 @@ export function startBackground(): void {
   // into the user's save folder) and resolve with its ack. The host is short-lived:
   // Chrome spawns it per connection, so this works even when the desktop app is not
   // running.
+  // Tags an error so save-queue.ts can tell "the host never answered at all"
+  // apart from "the host answered and said no" (#203). This is a MECHANISM
+  // tag, not a text match — deliberately, so retry eligibility never inherits
+  // native-error.ts's own narrow, Chrome-wording-brittle classification.
+  function unreachableError(message: string): Error {
+    return Object.assign(new Error(message), { unreachable: true });
+  }
+
   function bridgeSend(message: HostRequest): Promise<BridgeAck> {
     return new Promise((resolve, reject) => {
       let settled = false;
@@ -727,11 +756,11 @@ export function startBackground(): void {
       try {
         port = chrome.runtime.connectNative(NATIVE_HOST);
       } catch (error: any) {
-        reject(new Error(`Native host unavailable: ${error?.message || error}`));
+        reject(unreachableError(`Native host unavailable: ${error?.message || error}`));
         return;
       }
 
-      timer = setTimeout(() => finish(new Error('Native host timed out')), NATIVE_HOST_TIMEOUT_MS);
+      timer = setTimeout(() => finish(unreachableError('Native host timed out')), NATIVE_HOST_TIMEOUT_MS);
 
       // Read through the shared contract rather than each caller's own idea of
       // what a reply looks like (#400): before this, "did that work?" and "whose
@@ -744,38 +773,32 @@ export function startBackground(): void {
         noteHostProtocol(res.protocolVersion);
         // Same reason, different stamp: which local build is on disk (#650).
         noteHostBuild(res.extBuild);
+        // NOT unreachableError below: the host DID answer, just with a refusal
+        // (#492's post-unavailable and friends) — save-queue.ts must never
+        // retry an answer that would only repeat itself (#203).
         if (res.ok) finish(null, res.ack);
         else finish(new Error(res.error));
       });
 
       port.onDisconnect.addListener(() => {
-        finish(new Error(chrome.runtime.lastError?.message || 'Native host disconnected (is it installed?)'));
+        finish(unreachableError(chrome.runtime.lastError?.message || 'Native host disconnected (is it installed?)'));
       });
 
       port.postMessage(message);
     });
   }
 
-  // Post-click save: screenshot (base64 JPEG) + metadata. metaOk (whether the post
-  // API returned info) rides along so the host's capture.log records partial saves,
-  // and metaReason with it — WHY the info is missing is what tells a deleted or
-  // protected post apart from a broken fetch when reading the log afterwards.
-  // saveId rides along too, on every route: the host writes its own capture.log
-  // lines, and without the id those lines could not be tied to the extension's
-  // (#519).
-  function sendToBridge(captureId: string, jpegBase64: string, record: CaptureMetadata, metaOk: boolean, metaReason: string | null, saveId: string | null) {
-    return bridgeSend({ type: 'save', captureId, saveId, image: jpegBase64, metadata: record, metaOk, metaReason });
-  }
-
   // Bulk-intake save (#362): metadata only, no screenshot — the host downloads
   // the post's own media and the first one becomes the record's image.
+  //
+  // Deliberately the only save-request wrapper left (#203): the 'save' and
+  // 'saveDragged' requests are now built directly in captureAndSave and
+  // captureAndSaveDragged, because a failed send has to stash into
+  // save-queue.ts's retry queue the EXACT object bridgeSend was given — this
+  // request shape ('savePost') is never queued (see save-queue.ts's header),
+  // so it keeps its own thin wrapper.
   function sendPostToBridge(captureId: string, record: CaptureMetadata, metaOk: boolean, metaReason: string | null, saveId: string | null) {
     return bridgeSend({ type: 'savePost', captureId, saveId, metadata: record, metaOk, metaReason });
-  }
-
-  // Image-drag save: the host downloads the dragged image itself (no screenshot).
-  function sendDraggedToBridge(captureId: string, imageUrl: string, imageReferer: string | null, record: CaptureMetadata, metaOk: boolean, metaReason: string | null, saveId: string | null) {
-    return bridgeSend({ type: 'saveDragged', captureId, saveId, imageUrl, imageReferer, metadata: record, metaOk, metaReason });
   }
 
   // The pictures the host says it actually recorded for a save (positional, see
@@ -877,6 +900,39 @@ export function startBackground(): void {
       }
     });
   }
+
+  // --- Retry queue (#203 — save-queue.ts owns the storage format and the
+  // stash/eviction/degrade rules; this is only the wiring) ---------------
+  //
+  // A single URL lookup built on queryBridge, for save-queue.ts's idempotency
+  // check (#34 already landed): a FRESH read, never the badge's cache — an
+  // entry sitting in the queue is exactly the case a minute-old negative
+  // could be wrong about.
+  function queryForResend(url: string): Promise<SavedEntry | null> {
+    return queryBridge([url]).then((r) => r.results[url] ?? null);
+  }
+
+  // Fire-and-forget from every trigger below: a sweep's own errors are
+  // already handled inside sweepSaveQueue (a failed send updates `tries` and
+  // stops the pass; nothing here needs to react to it), so this only exists
+  // to keep `.catch(() => {})` out of every call site.
+  function triggerQueueSweep(): void {
+    void sweepSaveQueue({ send: bridgeSend, query: queryForResend, log: logCapture }).catch(() => {});
+  }
+
+  // Triggers (#203 design comment #4 — the reasoning for exactly these four
+  // and not a chrome.alarms poll lives there): Chrome restart, an
+  // install/update, the moment right after a save succeeds (below, in
+  // captureAndSave/captureAndSaveDragged/savePostByUrl/doSaveBookmark), and
+  // the moment right after the saved-badge's query port answers (the
+  // checkSaved handler below) — never the service worker merely starting,
+  // which a badge query provokes every few seconds on its own.
+  //
+  // `?.`: onStartup/onInstalled need no manifest permission in real Chrome
+  // and are always present there; the guard is only for this suite's own
+  // chrome stub, which models neither (background-wiring.test.ts).
+  chrome.runtime.onStartup?.addListener(() => triggerQueueSweep());
+  chrome.runtime.onInstalled?.addListener(() => triggerQueueSweep());
 
   // Answers already known, so scrolling back over a post costs nothing.
   // BOTH answers expire. A "not saved" goes stale the moment the user saves that
@@ -985,6 +1041,12 @@ export function startBackground(): void {
           results[u] = entry;
         }
         sendResponse({ ok: true, results } satisfies CheckSavedResponse);
+        // Trigger 4 (#203 design comment #4): the query port just proved the
+        // host answers RIGHT NOW, without costing a connection of its own —
+        // this port is already open and asking on its own schedule while a
+        // timeline is on screen. sweepSaveQueue itself is a no-op the instant
+        // it finds nothing queued for the current host.
+        triggerQueueSweep();
       })
       // Unreachable host → report the failure instead of a page full of
       // "not saved": badge.js leaves those posts unmarked and retries later.
@@ -1282,7 +1344,7 @@ export function startBackground(): void {
         // console.error piles them up in the extensions error console (#580).
         console[saveFailureConsoleLevel(errorKind)](error);
         logSaveFailure(error, { saveId: message.saveId, platform: message.platform, host: senderHost, url: message.postUrl });
-        sendResponse({ ok: false, errorKind, metaReason: error?.metaReason || null } satisfies SaveResponse);
+        sendResponse({ ok: false, errorKind, metaReason: error?.metaReason || null, queued: error?.queued } satisfies SaveResponse);
       });
     return true; // async response
   });
@@ -1306,6 +1368,23 @@ export function startBackground(): void {
           .map((k) => all[k]);
         sendResponse({ ok: true, entries } satisfies DumpLogsResponse);
       });
+      return true; // async
+    }
+    // #203: the diag page's read-only inventory of the retry queue — no
+    // sweep, so loading the page never itself provokes a connectNative
+    // attempt (see resendQueue below for the one that does).
+    if (message.type === 'queueStats') {
+      saveQueueStats().then((stats) => sendResponse({ ok: true, stats } satisfies QueueStatsResponse));
+      return true; // async
+    }
+    // #203: the diag page's "今すぐ再送" button — run one sweep now (its own
+    // errors are swallowed the same way triggerQueueSweep's callers accept),
+    // then answer with whatever the queue looks like afterward.
+    if (message.type === 'resendQueue') {
+      sweepSaveQueue({ send: bridgeSend, query: queryForResend, log: logCapture })
+        .catch(() => {})
+        .then(() => saveQueueStats())
+        .then((stats) => sendResponse({ ok: true, stats } satisfies ResendQueueResponse));
       return true; // async
     }
     return false;
@@ -1336,6 +1415,11 @@ export function startBackground(): void {
     // that was pointed at IS what the user asked to save.
     let record: any;
     let send: () => Promise<BridgeAck>;
+    // Set only in the branch below whose bridgeSend call is ever retried
+    // (#203): the 'saveDragged' request. The playable-media branch sends
+    // 'savePost' instead, which save-queue.ts's header comment excludes from
+    // the retry queue on purpose, so it is left null there.
+    let queueable: SaveDraggedRequest | null = null;
     if (isPlayableMedia(meta.mediaType)) {
       // capturedVia stays null — an ordinary save, not an intake route (#362).
       record = buildRecord(meta, { captureId, capturedAt, postUrl, sendPlatform, replaces, extra: { mediaType: meta.mediaType, media: meta.media, capturedVia: null } });
@@ -1359,17 +1443,23 @@ export function startBackground(): void {
           // image + media[] are set by the bridge (image = downloaded original, media = [])
         },
       });
-      send = () => sendDraggedToBridge(captureId, primary.url, primary.referer, record, metaOk, meta.metaError || null, saveId);
+      const draggedReq: SaveDraggedRequest = { type: 'saveDragged', captureId, saveId, imageUrl: primary.url, imageReferer: primary.referer, metadata: record, metaOk, metaReason: meta.metaError || null };
+      queueable = draggedReq;
+      send = () => bridgeSend(draggedReq);
     }
 
     let ack: BridgeAck;
     try {
       ack = await send();
-    } catch (err) {
-      throw trace.fail('bridge', err?.message || 'bridge save failed', meta.metaError || null);
+    } catch (err: any) {
+      const failErr = trace.fail('bridge', err?.message || 'bridge save failed', meta.metaError || null);
+      if (err?.unreachable && queueable) failErr.queued = await stashFailedSave(queueable, logCapture);
+      throw failErr;
     }
     trace.passed('bridge');
     markSaved([record.url, postUrl], ack?.captureId || captureId, savedMediaUrls(ack), tab.id); // light this post's TL badge now
+    // ついで掃き出し (#203): this save reaching the host is evidence it is reachable right now.
+    triggerQueueSweep();
     // Surface metadata-fetch failure to the drop overlay (same partial-success
     // signal as the click-save banner) so a screenshot-less illustration that
     // saved without post info isn't shown as a plain success. grouped = prior
@@ -1427,6 +1517,11 @@ function buildRecord(meta, { captureId, capturedAt, postUrl, sendPlatform, repla
       sensitive: meta.sensitive,
       quotedUrl: meta.quotedUrl,
       replyToId: meta.replyToId,
+      // #180's sidecar sub-records (the extractors build them; this was the
+      // missing wire-up — see #751). Undefined (not null) on the bookmark
+      // path, whose meta object has no such fields at all.
+      quotedPost: meta.quotedPost,
+      replyToPost: meta.replyToPost,
       seriesId: meta.seriesId,
       seriesTitle: meta.seriesTitle,
       seriesOrder: meta.seriesOrder,

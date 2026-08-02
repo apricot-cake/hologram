@@ -27,7 +27,10 @@ const MIN_AHEAD = 3; // always keep this many decoded, however large the frames
 const MIN_DELAY_MS = 10;
 const MAX_DELAY_MS = 10000;
 
-export function UgoiraPlayer({ file, frames, poster, alt, labels }: { file: string; frames: UgoiraFrame[]; poster?: string; alt?: string; labels: Record<string, string> }) {
+// flip/gray (#80): the SAME two overlay toggles the still image and <video> slides get
+// (image-tab/ImageTab.tsx), applied here to whichever of canvas/poster is on screen. Grid
+// stays out — v1 is Zoomable-only (no pan/zoom surface exists here to hang it on).
+export function UgoiraPlayer({ file, frames, poster, alt, labels, flip, gray }: { file: string; frames: UgoiraFrame[]; poster?: string; alt?: string; labels: Record<string, string>; flip: boolean; gray: boolean }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [playing, setPlaying] = useState(true);
@@ -200,13 +203,13 @@ export function UgoiraPlayer({ file, frames, poster, alt, labels }: { file: stri
           ImageTab.tsx's data-slot="viewer-image"/"viewer-video" — the toggle button
           below is deliberately its own sibling, not inside this stage's blur, so it
           stays legible/clickable while the frame it controls is hidden. */}
-      <canvas ref={canvasRef} data-slot="viewer-canvas" className="m-auto max-h-full max-w-full object-contain" role="img" aria-label={alt || labels.ugoira || ''} style={status === 'ready' ? undefined : { display: 'none' }} />
+      <canvas ref={canvasRef} data-slot="viewer-canvas" className={`m-auto max-h-full max-w-full object-contain ${flip ? 'scale-x-[-1]' : ''} ${gray ? 'grayscale' : ''}`} role="img" aria-label={alt || labels.ugoira || ''} style={status === 'ready' ? undefined : { display: 'none' }} />
       {/* decoding="async" like the rest of the viewer surface (#241) — the
           archive is being unzipped and decoded on the same thread's tasks, so
           the poster must not add a blocking decode on top of that. Shares
           data-slot="viewer-image" with the still frame below — it's the same
           "still image standing in for this work" role privacy mode blurs there. */}
-      {status !== 'ready' && poster && <img data-slot="viewer-image" className="m-auto max-h-full max-w-full object-contain" src={poster} alt={alt || ''} decoding="async" />}
+      {status !== 'ready' && poster && <img data-slot="viewer-image" className={`m-auto max-h-full max-w-full object-contain ${flip ? 'scale-x-[-1]' : ''} ${gray ? 'grayscale' : ''}`} src={poster} alt={alt || ''} decoding="async" />}
       {/* Bottom-left, where a <video> puts its own play button — the same corner the
           browser's native controls use for the neighbouring slide type. Same translucent
           plate as the stage's other floating controls (P2⑫). */}

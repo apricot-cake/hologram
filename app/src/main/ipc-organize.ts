@@ -8,7 +8,7 @@
 // both arriving via ctx.
 import { ipcMain } from 'electron';
 import type { IpcContext } from './ipc-context.ts';
-import type { FoldersState, ManualGroupsState, OkResult, PosterFoldersState, PosterTagsState, TagTypesState, UngroupedState } from './ipc-payloads.ts';
+import type { FoldersState, ManualGroupsState, OkResult, PosterAliasesState, PosterFoldersState, PosterTagsState, TagTypesState, UngroupedState } from './ipc-payloads.ts';
 
 function register(ctx: IpcContext) {
   const { getSaveFolder, getDbWriter } = ctx;
@@ -78,6 +78,27 @@ function register(ctx: IpcContext) {
     if (!folder || !data || typeof data.tags !== 'object' || !data.tags) return { ok: false };
     try {
       getDbWriter().setPosterTags(data);
+      return { ok: true };
+    } catch {
+      return { ok: false };
+    }
+  });
+
+  // Poster name-merging (#23 St1): non-destructive, reversible groups of
+  // posterKeys naming the same real-world author/account. { groups: [{ id,
+  // primary, members:[posterKey] }] } — every reader (buildUsers, the 'user'
+  // query leaf, poster-tag/-folder union reads) folds a member key onto its
+  // group's primary; nothing here ever touches a post record. A group
+  // needs 2+ members; lib-db-write.ts's replacePosterAliases drops anything
+  // smaller rather than accept a value that could never resolve() usefully.
+  ipcMain.handle('get-poster-aliases', (): PosterAliasesState => {
+    return getSaveFolder() ? getDbWriter().getPosterAliases() : { groups: [] };
+  });
+  ipcMain.handle('set-poster-aliases', (_e, data): OkResult => {
+    const folder = getSaveFolder();
+    if (!folder || !data || !Array.isArray(data.groups)) return { ok: false };
+    try {
+      getDbWriter().setPosterAliases(data);
       return { ok: true };
     } catch {
       return { ok: false };

@@ -32,6 +32,35 @@ test('タグ用語帳が往復する', () => {
   expect(writer.getTagTypes()).toEqual({ types: { alice: 'character' }, labels: { character: 'Character' } });
 });
 
+// #23 St1: poster-alias groups (non-destructive name-merging). Round-trips the
+// same replace-whole-thing shape as poster folders/tags above.
+describe('poster-aliases（#23 St1）', () => {
+  test('グループが往復する', () => {
+    writer.setPosterAliases({ groups: [{ id: 'al-1', primary: 'x:alice', members: ['x:alice', 'misskey:alice2'] }] });
+
+    expect(writer.getPosterAliases()).toEqual({ groups: [{ id: 'al-1', primary: 'x:alice', members: ['x:alice', 'misskey:alice2'] }] });
+  });
+
+  test('メンバー1件以下のグループは落ちる', () => {
+    writer.setPosterAliases({ groups: [{ id: 'al-lonely', primary: 'x:solo', members: ['x:solo'] }] });
+
+    expect(writer.getPosterAliases()).toEqual({ groups: [] });
+  });
+
+  test('primary が members に無ければ先頭のメンバーへ落ちる', () => {
+    writer.setPosterAliases({ groups: [{ id: 'al-2', primary: 'x:not-a-member', members: ['x:a', 'x:b'] }] });
+
+    expect(writer.getPosterAliases().groups[0]).toMatchObject({ primary: 'x:a', members: ['x:a', 'x:b'] });
+  });
+
+  test('置き換え全消し＝空にすると全グループが消える', () => {
+    writer.setPosterAliases({ groups: [{ id: 'al-3', primary: 'x:c', members: ['x:c', 'x:d'] }] });
+    writer.setPosterAliases({ groups: [] });
+
+    expect(writer.getPosterAliases()).toEqual({ groups: [] });
+  });
+});
+
 // #197: since setPostTags / setPosterTags / setTagTypes all go through the
 // shared tagResolver, glyph normalization (NFKC + trim) is checked here in one
 // batch rather than separately per entry point = writing through any entry point converges on the same tags row.

@@ -59,6 +59,9 @@ export interface PostGridBuilderDeps {
   postShadow(): { type: string; value?: string }[];
   getFilteredPosts(): HologramPost[];
   buildUsers(): HologramUserAgg[];
+  // #23 St1: folds a raw posterKey onto its name-merge group's primary —
+  // identity when ungrouped. buildUsers() rows are keyed by primary.
+  resolve(key: string): string;
   snapshotState(): unknown;
   syncTitleAndPersist(): void;
   getBrowseMode(): string;
@@ -422,7 +425,9 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
   // spot; the bridge's transition guard keeps that open instead of closing it.
   function cardMenuItems(g: HologramPostGroup, selText = '') {
     // SNS posts have a poster in the poster view (buildUsers skips url-less migrations).
-    const canPoster = !!(g.rep.url && deps.buildUsers().some((u) => u.key === userKey(g.rep)));
+    // #23 St1: userKey(g.rep) is the post's own raw key; resolve() finds it under
+    // a merged group's primary too.
+    const canPoster = !!(g.rep.url && deps.buildUsers().some((u) => u.key === deps.resolve(userKey(g.rep))));
     const srcUrl = (g.records.flatMap((r) => (Array.isArray(r.media) ? r.media : [])).find((m: { url?: string }) => m && m.url) || {}).url || '';
     const items: any[] = [];
     // Text rows lead when the right-click landed inside a selection — the gesture

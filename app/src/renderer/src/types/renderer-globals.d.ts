@@ -123,6 +123,14 @@ interface HologramUserAgg {
   lastCapture: string;
   firstCapture: string;
   count: number;
+  // #23 St1 (name-merging): every posterKey this agg folds together (this
+  // poster's own key when ungrouped — buildUsers' 2nd pass, services/users.ts)
+  // and the union of platform/instance across them (posterPredOf's platform/
+  // instance leaves match against these, not the singular fields above, so a
+  // poster merged from two platforms is found under either).
+  members: string[];
+  platforms: string[];
+  instances: string[];
 }
 // ---- services/tab-state.ts — tab titles + nav history + tabs.json shape. A real
 // ES module (named exports) now; only the HologramTabSnapshot / HologramTab data shapes

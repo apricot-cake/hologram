@@ -72,6 +72,11 @@ export type SaveStage =
   | 'result'
   // A whole bookmark-intake run (#362), which holds many saves.
   | 'bulk'
+  // The retry queue's own bookkeeping (#203 — save-queue.ts): evicting an
+  // entry for space, giving up on one past its retry limit, or dropping one
+  // the host answered rather than merely failed to reach. Not tied to a
+  // single save's saveId, same reason 'bulk' above is not.
+  | 'queue'
   // An exception that carried no stage of its own.
   | 'unknown';
 
@@ -90,7 +95,14 @@ export type SavePhase =
   | 'cancel'
   // Nothing to do here: a tab that is not http(s), or a duplicate warning
   // answered "don't save".
-  | 'skip';
+  | 'skip'
+  // 'queue' stage only (#203): an entry was dropped to keep the retry queue
+  // under its byte/count budget, oldest first.
+  | 'evict'
+  // 'queue' stage only (#203): an entry hit SAVE_QUEUE_MAX_TRIES and will not
+  // be retried again — left in storage (so the diagnostics page can still
+  // count it), just no longer resent.
+  | 'giveup';
 
 // Which on-page surface was waiting. `stage` says how far the save got; this
 // says who was showing a spinner while that happened, which is what tells an

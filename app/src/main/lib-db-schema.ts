@@ -287,7 +287,7 @@ CREATE VIRTUAL TABLE posts_fts USING fts5(
   displayName,
   screenName,
   eagleName,
-  description,
+  memo,
   hashtags,
   tagsText,
   reading,
@@ -298,4 +298,7 @@ CREATE VIRTUAL TABLE posts_fts USING fts5(
 
 // The posts_fts column list in write order, shared by the migration's reindex and
 // the shared record writer's INSERT so the two cannot drift.
-export const POSTS_FTS_COLUMNS = 'postId, text, title, displayName, screenName, eagleName, description, hashtags, tagsText, reading, cw';
+// #36: renamed from `description` — the rename-description-to-memo migration
+// (lib-db.ts) is now the one that gets to call itself "current" for this pair,
+// taking over that role from add-post-cw-sensitive.
+export const POSTS_FTS_COLUMNS = 'postId, text, title, displayName, screenName, eagleName, memo, hashtags, tagsText, reading, cw';

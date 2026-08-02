@@ -127,6 +127,12 @@ declare global {
   // interface needed for it (HologramImageTabModel stays: the shared data shape
   // between image-tab.ts and this component).
   interface HologramImageTabModel {
+    // The active tab's own id (#80) — image-tab/index.tsx keys the ImageTab component on
+    // this, so switching straight from one image tab to another (both already showing
+    // their own image view, so this host never unmounts) remounts the component instead
+    // of reusing it — which is what resets the overlay toggles (services/image-overlay.ts)
+    // instead of leaking them into the new tab's picture.
+    tabId: string;
     items: { src: string; alt?: string; video?: boolean }[];
     idx: number;
     missing?: boolean;
@@ -265,15 +271,49 @@ declare global {
     focusTags?: boolean;
     // Post-only (Inspector.tsx renders these when present).
     onThumbClick?(): void; // preview thumbnail → quick-view peek (#143)
+    // #36: free-text memo — MemoSection's initial value + its blur/debounce commit.
+    memo?: string;
+    onMemoChange?(text: string): void;
     onOpenExternal?(): void;
     onSauce?(): void;
     onAscii?(): void;
     onPosterJump?(): void;
+    // #180: embedded card(s) for a quoted/renoted or (Misskey-only) replied-to
+    // post, rendered from the saved sidecar sub-record (QuotedPostCard.tsx) —
+    // never a live network fetch (v1 stays metadata-only, media stays URL-only,
+    // no remote image src). Empty/absent when the post neither quotes nor
+    // replies to anything the extractor could build one from.
+    quotedCards?: HologramQuotedCardModel[];
     // Poster-only.
     onPosterPosts?(): void;
     onFolderToggle(id: string): void;
     onFolderCreate?(): void;
+    // #23 St1 (poster name-merging): the「同一人物」section — every OTHER
+    // posterKey this poster's alias group bundles (empty when ungrouped).
+    sameAuthor?: Array<{ key: string; label: string; platformLabel: string }>;
+    onSameAuthorMerge?(): void; // opens the merge picker
+    onSameAuthorUnlink?(key: string): void; // removes ONE member from the group
     [extra: string]: any;
+  }
+  // #180: one embedded quote/reply-to card, built by inspector-builder.ts's
+  // showDetail() from the post's quotedPost/replyToPost sidecar sub-record.
+  // onOpen navigates in-app to the saved independent record when one exists
+  // (2026-07-27 design comment on #180: same-post identity via postKeyOf),
+  // else opens the sub-record's own URL externally — onOpen is always present
+  // when the sub-record carries a url, absent for the (rare) url-less case.
+  interface HologramQuotedCardModel {
+    kind: 'quote' | 'reply';
+    label: string;
+    displayName: string;
+    screenNameLabel: string;
+    avatarSrc: string | null;
+    monogram: string | null;
+    monoHue: number | null;
+    dateLabel: string;
+    cw: string;
+    text: string;
+    mediaCountLabel: string;
+    onOpen?(): void;
   }
   // ---- Empty-state variant — EmptyState.tsx derives this itself from hologramStore
   // instead of a pushed bridge (the old renderer/empty.js bridge was deleted — no

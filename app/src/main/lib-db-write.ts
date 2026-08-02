@@ -212,13 +212,58 @@ function readPosterTags(sqlite: Sqlite) {
   return { tags };
 }
 
-// Post-level edit: tag assignment (post_tags) + the tagging-wizard's userKind/
-// tagReviewed flags. These two columns were added by the add-store-state
-// migration specifically because they had no St2 home (lib-db.ts's migration
-// comment) — normalizePostRecord's PostRecordShape deliberately excludes them
-// (native-host/post-record.mts), so they are DB-only and never round-trip
-// through a sidecar. Returns false without writing if postId isn't a known
-// post, mirroring the old sidecar handler's "jsonPath missing -> ok:false".
+// #23 St1: poster-alias groups — non-destructive, reversible name-merging.
+// Same replace-whole-thing shape as poster folders/tags above: the renderer
+// owns the union-find bookkeeping (services/aliases.ts) and hands back the
+// full group list on every mutation. A group needs 2+ members (a lone
+// "group" is not a merge); `primary` must be one of `members` or the first
+// member wins — both defensive against a hand-edited or corrupted import.
+function replacePosterAliases(sqlite: Sqlite, data: any) {
+  sqlite.prepare('DELETE FROM poster_alias_group_members').run();
+  sqlite.prepare('DELETE FROM poster_alias_groups').run();
+  const insertGroup = sqlite.prepare('INSERT INTO poster_alias_groups (id, primaryKey) VALUES (?, ?)');
+  const insertMember = sqlite.prepare('INSERT OR IGNORE INTO poster_alias_group_members (groupId, posterKey) VALUES (?, ?)');
+  const claimed = new Set<string>(); // one group per posterKey (the UNIQUE index enforces it too) — first group wins a key claimed twice
+  for (const entry of Array.isArray(data?.groups) ? data.groups : []) {
+    if (!entry || typeof entry.id !== 'string' || !entry.id) continue;
+    const members = strings(entry.members).filter((key) => !claimed.has(key));
+    if (members.length < 2) continue;
+    const primary = typeof entry.primary === 'string' && members.includes(entry.primary) ? entry.primary : members[0];
+    insertGroup.run(entry.id, primary);
+    for (const key of members) {
+      claimed.add(key);
+      insertMember.run(entry.id, key);
+    }
+  }
+}
+
+function readPosterAliases(sqlite: Sqlite) {
+  const members = new Map<string, string[]>();
+  for (const row of sqlite.prepare('SELECT groupId, posterKey FROM poster_alias_group_members ORDER BY rowid').all() as Array<{ groupId: string; posterKey: string }>) {
+    let list = members.get(row.groupId);
+    if (!list) members.set(row.groupId, (list = []));
+    list.push(row.posterKey);
+  }
+  return {
+    groups: (sqlite.prepare('SELECT id, primaryKey FROM poster_alias_groups ORDER BY rowid').all() as Array<{ id: string; primaryKey: string }>)
+      .map((row) => ({ id: row.id, primary: row.primaryKey, members: members.get(row.id) || [] }))
+      // Defensive: a group whose members all vanished (e.g. a hand-edited DB) is not worth surfacing.
+      .filter((g) => g.members.length >= 2),
+  };
+}
+
+// Post-level edit: tag assignment (post_tags) + a patch of loose per-post
+// fields. userKind/tagReviewed (the tagging-wizard's flags) were added by the
+// add-store-state migration specifically because they had no St2 home
+// (lib-db.ts's migration comment) — normalizePostRecord's PostRecordShape
+// deliberately excludes them (native-host/post-record.mts), so they are
+// DB-only and never round-trip through a sidecar. memo (#36) is different: it
+// IS part of PostRecordShape and travels with the record (export ZIP, trash
+// restore) like any other field — this is just its one in-app EDIT path,
+// chosen over a new IPC because this one already had the allowlist/atomic-write/
+// updatedAt-bump plumbing a sidecar-backed field needs. Returns false without
+// writing if postId isn't a known post, mirroring the old sidecar handler's
+// "jsonPath missing -> ok:false".
 function replacePostTags(sqlite: Sqlite, postId: string, tags: unknown, patch: unknown): boolean {
   const post = sqlite.prepare('SELECT ftsRowid FROM posts WHERE captureId = ?').get(postId) as { ftsRowid: number | null } | undefined;
   if (!post) return false;
@@ -240,6 +285,18 @@ function replacePostTags(sqlite: Sqlite, postId: string, tags: unknown, patch: u
     if ('tagReviewed' in (patch as Record<string, unknown>)) {
       sets.push('tagReviewed = ?');
       params.push((patch as Record<string, unknown>).tagReviewed ? 1 : 0);
+    }
+    // #36: the inspector's memo textarea. Unlike the two flags above this
+    // column also feeds posts_fts (add-post-cw-sensitive's rebuild recipe) —
+    // but that index has no live reader yet (query.ts's textHaystackOf is the
+    // only wired-up free-text search path, same module comment as eagleName/
+    // description before it), so this patch does not also rewrite the FTS row;
+    // whichever stage wires posts_fts up gets it from the next writePost pass,
+    // same as every other column this function doesn't touch.
+    if ('memo' in (patch as Record<string, unknown>)) {
+      sets.push('memo = ?');
+      const memo = (patch as Record<string, unknown>).memo;
+      params.push(typeof memo === 'string' && memo ? memo : null);
     }
   }
   sqlite.prepare(`UPDATE posts SET ${sets.join(', ')} WHERE captureId = ?`).run(...params, postId);
@@ -399,6 +456,8 @@ function createDbWriter(sqlite: Sqlite) {
     setPosterFolders: (data: unknown) => transaction(() => replacePosterFolders(sqlite, data)),
     getPosterTags: () => readPosterTags(sqlite),
     setPosterTags: (data: unknown) => transaction(() => replacePosterTags(sqlite, data)),
+    getPosterAliases: () => readPosterAliases(sqlite),
+    setPosterAliases: (data: unknown) => transaction(() => replacePosterAliases(sqlite, data)),
     getTabs: () => readTabs(sqlite),
     setTabs: (data: unknown) => transaction(() => replaceTabs(sqlite, data)),
     setPostTags: (postId: string, tags: unknown, patch: unknown) => transaction(() => replacePostTags(sqlite, postId, tags, patch)),

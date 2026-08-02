@@ -335,7 +335,14 @@ export const hostOf = (url: string | null | undefined): string => {
   }
 };
 // Stable per-author key: prefer the platform user id, fall back to the handle.
-export const userKey = (p: HologramPost): string => p.platform + ':' + (p.userId || '@' + (p.screenName || ''));
+// A platform-less record (#195's bookmark, #253's domain-row candidates) has no
+// fixed platform namespace to key into — closing the key on the URL's host
+// instead keeps same-named authors on DIFFERENT sites from colliding into one
+// poster (#760: two 'null:@alice's used to be indistinguishable). A bookmark
+// itself never reaches this branch's identity half (no userId/screenName —
+// buildUsers' own identity gate in users.ts keeps it out of the poster grid
+// entirely), but a future platform-less record WITH an author (#239) will.
+export const userKey = (p: HologramPost): string => (p.platform ? p.platform + ':' + (p.userId || '@' + (p.screenName || '')) : 'web:' + hostOf(p.url) + ':' + (p.userId || '@' + (p.screenName || '')));
 // The 'kind' facet's three values (#195): a bookmark is source-marked
 // (source:'bookmark') rather than derived from url presence — it HAS a url
 // (the link it bookmarks), same as an SNS post, so source has to be checked
@@ -343,7 +350,7 @@ export const userKey = (p: HologramPost): string => p.platform + ':' + (p.userId
 // everything that isn't a bookmark (#195's 2026-08-02 design comment #6).
 export const kindOf = (p: HologramPost): 'bookmark' | 'post' | 'image' => (p.source === 'bookmark' ? 'bookmark' : p.url ? 'post' : 'image');
 // Every text-ish field a free-text query can match against.
-// (p.description = Eagle-migration annotation — real prose, so it belongs here.)
+// (p.memo = free-text note, #36 — includes the Eagle-migration annotation it absorbed.)
 // media[].alt (#288): saved ALT text — X `ext_alt_text` / Bluesky `alt` / Misskey
 // file `comment` / Mastodon attachment `description`, already captured on save.
 // pixiv has no ALT concept (media[].alt is always null there) so this is a no-op
@@ -363,7 +370,7 @@ export const kindOf = (p: HologramPost): 'bookmark' | 'post' | 'image' => (p.sou
 // neither (the overwhelming majority), same graceful-absence convention as
 // every other field here.
 export function textHaystackOf(p: HologramPost): string[] {
-  return [p.text, p.title, p.eagleName, p.screenName, p.displayName, p.description, p.seriesTitle]
+  return [p.text, p.title, p.eagleName, p.screenName, p.displayName, p.memo, p.seriesTitle]
     .concat(p.tags || [])
     .concat(p.hashtags || [])
     .concat((p.media || []).map((m: any) => m?.alt))
@@ -403,12 +410,20 @@ export function normalizeTree(node: any): any {
 //   tagIdOf(name) → the DB tag id for a tag name (#5 2026-07-18 comment — tags
 //     are an ID entity; a saved leaf that only has a name lazily resolves and
 //     caches its id the first time it's evaluated post-DB-migration, below)
+//   membersOf(key) → every posterKey a name-merge group bundles (#23 St1,
+//     aliases.ts) — absent means "no aliasing", so a leaf falls back to exact
+//     match (the pre-#23 behavior; every existing caller/test keeps working
+//     unmodified). NOT memoized on the leaf the way tagId/text are: group
+//     membership changes live during a session (merge/unlink), and those two
+//     never do once resolved — see the 'user' case below for why a stale Set
+//     would be a correctness bug here, not just a missed optimization.
 export function makePostPredOf(deps: {
   /** `only` = the leaf's "This folder only" flag; without it a folder stands for its subtree (#41). */
   isInFolder(id: string, captureId: string, only?: boolean): boolean;
   fuzzyCompile?(q: string): ((hay: string) => boolean) | null;
   postKeyOf?(url: string | null | undefined): string | null;
   tagIdOf?(name: string): number | undefined;
+  membersOf?(key: string): string[];
 }): (f: HologramQueryLeaf) => (p: HologramPost) => boolean {
   return function postPredOf(f) {
     switch (f.type) {
@@ -417,8 +432,18 @@ export function makePostPredOf(deps: {
         return (p) => kindOf(p) === f.value;
       case 'platform':
         return (p) => (f.value === '__none' ? !p.platform : p.platform === f.value);
-      case 'user':
-        return (p) => userKey(p) === f.value;
+      // A saved leaf's value may be any posterKey a group has ever bundled (the
+      // primary at save time, since renamed by setPrimary; or a member from
+      // before a merge) — matching by group membership rather than exact
+      // equality is what keeps a leaf saved before a merge still meaning "this
+      // author" after one (#23 St1 design: "canonical key = primary, no new id
+      // namespace"). deps.membersOf is looked up fresh per post rather than
+      // compiled once onto the leaf (see the module comment above).
+      case 'user': {
+        const members = deps.membersOf ? deps.membersOf(f.value) : [f.value];
+        const set = new Set(members);
+        return (p) => set.has(userKey(p));
+      }
       case 'instance':
         return (p) => (p.platform === 'misskey' || p.platform === 'mastodon') && hostOf(p.url) === f.value;
       case 'postType':
@@ -530,10 +555,17 @@ export function makePostPredOf(deps: {
 export function makePosterPredOf(deps: { posterTagsOf(key: string): string[]; folderById(id: string): { items: string[] } | null | undefined }): (f: HologramQueryLeaf) => (u: HologramUserAgg) => boolean {
   return function posterPredOf(f) {
     switch (f.type) {
+      // u.platforms/u.instances (users.ts's buildUsers, #23 St1) are the union
+      // across every posterKey a merged poster's group bundles — a poster
+      // merged from an X account and a Bluesky one must match BOTH platform
+      // leaves (design: "platformフィルタ＝メンバーのいずれかが一致"). Falls
+      // back to the singular field when the plural one is absent (a fixture
+      // built before #23, or a poster with no group — buildUsers always sets
+      // both today, but a leaf predicate should not assume its caller's shape).
       case 'platform':
-        return (u) => u.platform === f.value;
+        return (u) => (u.platforms || [u.platform]).includes(f.value);
       case 'instance':
-        return (u) => u.instance === f.value;
+        return (u) => (u.instances || [u.instance]).includes(f.value);
       case 'tag':
         return (u) => deps.posterTagsOf(u.key).includes(f.value); // Work/Character use the same tag type too
       case 'folder': {
@@ -542,7 +574,10 @@ export function makePosterPredOf(deps: { posterTagsOf(key: string): string[]; fo
         return (u) => set.has(u.key);
       }
       case 'date': {
-        const field = (f.dateField || 'latest') as keyof HologramUserAgg; // latest | lastCapture | authorCreatedAt
+        // Narrower than keyof HologramUserAgg on purpose (#23 St1 added members/
+        // platforms/instances, which are string[] — new Date() cannot take one):
+        // a date leaf only ever names one of these three string-valued fields.
+        const field = (f.dateField || 'latest') as 'latest' | 'lastCapture' | 'authorCreatedAt';
         const { from, to } = localDayRange(f.from, f.to); // local-day bounds (see localDayRange)
         return (u) => {
           const v = u[field];
