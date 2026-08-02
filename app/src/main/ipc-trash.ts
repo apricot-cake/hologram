@@ -17,6 +17,7 @@ import { ipcMain } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fillCardDims } from './lib-card-dims.ts';
+import { fillMediaDims } from './lib-media-dims.ts';
 import { parseJsonLoose } from './lib-json.ts';
 import { postRawPayloads, postsByIds } from './lib-db-query.ts';
 import { makeTagResolver, preparePostStmts, writePost } from './lib-db-record-writer.ts';
@@ -119,7 +120,7 @@ function register(ctx: IpcContext) {
         const resolveTagId = makeTagResolver(sqlite);
         sqlite.exec('BEGIN');
         try {
-          writePost(stmts, resolveTagId, fillCardDims(folder, restored));
+          writePost(stmts, resolveTagId, fillMediaDims(folder, fillCardDims(folder, restored)));
           sqlite.exec('COMMIT');
         } catch (err) {
           sqlite.exec('ROLLBACK');

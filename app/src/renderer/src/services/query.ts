@@ -135,6 +135,9 @@ export function sameLeaf(c: HologramQueryLeaf, f: { type: string; [k: string]: a
   if (c.type !== f.type) return false;
   if (f.type === 'date') return true; // single date condition
   if (f.type === 'engagement') return c.engType === f.engType;
+  // #162: a dimension leaf is unique by axis (width/height/long/bytes), not by
+  // value — two leaves of the same axis never coexist (the editor replaces).
+  if (f.type === 'dimension') return c.axis === f.axis;
   return c.value === f.value;
 }
 // The flat (deduped) leaf shadow — what the sidebar highlight / row badges /
@@ -144,7 +147,7 @@ export function buildShadow(tree: HologramQueryGroup): Array<{ type: string; [k:
   const seen = new Set<string>();
   const out: Array<{ type: string; [k: string]: any }> = [];
   for (const c of treeLeaves(tree)) {
-    if (c.type === 'date' || c.type === 'engagement') {
+    if (c.type === 'date' || c.type === 'engagement' || c.type === 'dimension') {
       const f: Record<string, any> = Object.assign({}, c);
       delete f.kind;
       delete f.neg;
@@ -454,6 +457,22 @@ export function makePostPredOf(deps: {
       case 'engagement': {
         if (!(f.min > 0)) return () => true;
         return (p) => (f.op === 'lte' ? (p[f.engType] || 0) <= f.min : (p[f.engType] || 0) >= f.min);
+      }
+      // #162: dimension/file-size facet. axis reads the per-record aggregate
+      // #162's design comment introduced (mediaMaxW/H/Bytes — media[]'s max,
+      // falling back to the card image when there is no media[]); 'long' is
+      // the larger of width/height (a portrait 2000×3000 satisfies "長辺
+      // ≥2000" the same as a landscape 3000×2000 would). 0/missing (never
+      // measured, or measured and unsizable — a video with no media[]
+      // dimension) is the design's own decision: absent data never satisfies
+      // a dimension condition, positive or negated (欠損＝条件不成立).
+      case 'dimension': {
+        if (!(f.value > 0)) return () => true;
+        return (p) => {
+          const v = f.axis === 'width' ? p.mediaMaxW || 0 : f.axis === 'height' ? p.mediaMaxH || 0 : f.axis === 'long' ? Math.max(p.mediaMaxW || 0, p.mediaMaxH || 0) : p.mediaMaxBytes || 0;
+          if (!(v > 0)) return false;
+          return f.op === 'lte' ? v <= f.value : v >= f.value;
+        };
       }
       // Free-text leaf: the search-box term, now a first-class tree citizen,
       // matched by the single smart matcher (deps.fuzzyCompile; the per-leaf

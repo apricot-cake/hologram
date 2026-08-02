@@ -48,6 +48,11 @@ beforeAll(async () => {
     // #180: a quote/renote sub-record rides the same posts row as every other
     // optional field here.
     quotedPost: { url: 'https://x.example/quoted', displayName: 'Bob', screenName: 'bob', userId: '9', avatar: null, text: 'the original', date: '2025-12-31T00:00:00Z', cw: null, media: [] },
+    // #162: dimension/file-size facet aggregates — written directly here (this
+    // test drives writePost, not fillMediaDims) just to check the column round-trips.
+    mediaMaxW: 3000,
+    mediaMaxH: 4000,
+    mediaMaxBytes: 12582912,
     capturedAt: '2026-01-01T00:00:00Z',
     updatedAt: '2026-01-01T00:00:00Z',
   });
@@ -173,6 +178,15 @@ describe('postsFromDb: 形と並び', () => {
   // #180: the JSON-column sub-record round-trips through writePost -> DB ->
   // postsFromDb the same way hashtags/domFilled do, and a post with none reads
   // back null rather than an empty object.
+  test('mediaMaxW / mediaMaxH / mediaMaxBytes が往復する（#162）', async () => {
+    const posts = await postsFromDb(handle.sqlite);
+    const cap1 = posts.find((p) => p.captureId === 'cap-1');
+    const cap2 = posts.find((p) => p.captureId === 'cap-2');
+    expect({ mediaMaxW: cap1.mediaMaxW, mediaMaxH: cap1.mediaMaxH, mediaMaxBytes: cap1.mediaMaxBytes }).toEqual({ mediaMaxW: 3000, mediaMaxH: 4000, mediaMaxBytes: 12582912 });
+    // cap-2 never set them — same "null on rows nothing filled" convention as seriesId etc.
+    expect({ mediaMaxW: cap2.mediaMaxW, mediaMaxH: cap2.mediaMaxH, mediaMaxBytes: cap2.mediaMaxBytes }).toEqual({ mediaMaxW: null, mediaMaxH: null, mediaMaxBytes: null });
+  });
+
   test('quotedPost が往復する（#180）', async () => {
     const cap1 = (await postsFromDb(handle.sqlite)).find((p: any) => p.captureId === 'cap-1');
     expect(cap1.quotedPost).toEqual({ url: 'https://x.example/quoted', displayName: 'Bob', screenName: 'bob', userId: '9', avatar: null, text: 'the original', date: '2025-12-31T00:00:00Z', cw: null, media: [] });

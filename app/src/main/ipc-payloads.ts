@@ -118,6 +118,8 @@ export interface AppPrefs {
   /** List: thumbnail width px. */
   listThumb: number | null;
   theme: string;
+  /** #137: user-chosen interface font, prepended to --font-sans. '' = default stack. */
+  uiFontFamily: string;
   browseMode: string;
   /** #630: the poster grid's own axes — layout, then one switch (an avatar has no aspect to choose). */
   posterLayoutMode: string;
@@ -433,4 +435,19 @@ export interface ExportProgress {
   total?: number;
   pct?: number;
   done?: boolean;
+}
+
+/**
+ * search-full-text (#29): one posts_fts MATCH row. `postId` is actually the
+ * post's captureId (the FTS table's UNINDEXED column is named postId — see
+ * lib-db-schema.ts), `rank` is SQLite's bm25() score (more negative = more
+ * relevant, so callers sort it ascending). The renderer decides WHICH posts
+ * match (services/fulltext.ts runs the same in-tab matcher the quick search
+ * uses, over every field including ones posts_fts does not index yet — #288's
+ * ALT-column homework); this channel supplies relevance ORDER only, for
+ * whichever of those hits it also covers.
+ */
+export interface FullTextHit {
+  postId: string;
+  rank: number;
 }

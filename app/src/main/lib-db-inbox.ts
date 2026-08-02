@@ -47,6 +47,7 @@ import { SAFE_EVENT_ID, inboxNewDir, inboxSegmentsDir, parseInboxEnvelope } from
 import type { InboxEnvelope } from '../../../native-host/inbox.mts';
 import type { PostRecordShape } from '../../../native-host/post-record.mts';
 import { fillCardDims } from './lib-card-dims.ts';
+import { fillMediaDims } from './lib-media-dims.ts';
 import { makeTagResolver, preparePostStmts, writePost } from './lib-db-record-writer.ts';
 import { resolveInSaveFolder } from './lib-save-folder-path.ts';
 
@@ -173,7 +174,7 @@ function applyEnvelope(ctx: InboxApplyCtx, envelope: InboxEnvelope, sourceSegmen
 
   ctx.sqlite.exec('BEGIN');
   try {
-    writePost(ctx.stmts, ctx.resolveTagId, fillCardDims(ctx.saveFolder, envelope.record));
+    writePost(ctx.stmts, ctx.resolveTagId, fillMediaDims(ctx.saveFolder, fillCardDims(ctx.saveFolder, envelope.record)));
     ctx.insertReceipt.run(envelope.eventId, envelope.record.captureId, envelope.payloadSha256, now, sourceSegment);
     ctx.sqlite.exec('COMMIT');
   } catch (err) {

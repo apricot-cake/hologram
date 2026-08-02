@@ -350,7 +350,20 @@ declare global {
     onConfirmText(): void;
   }
 
+  // ---- Local Font Access API (services/ui-font-api.ts, #137) — Chromium ships
+  // window.queryLocalFonts()/FontData, but TypeScript's bundled lib.dom.d.ts does not carry
+  // its types (checked node_modules/@typescript/typescript-win32-x64/lib/lib.dom.d.ts,
+  // TS 7.0.2: no match for queryLocalFonts or FontData), so the ambient is hand-written here.
+  // Optional: older Electron/non-Chromium builds simply lack the member, which the font
+  // picker treats as "unsupported" and falls back to the free-text-only input the Issue's design allows.
+  interface FontData {
+    readonly family: string;
+    readonly fullName: string;
+    readonly postscriptName: string;
+    readonly style: string;
+  }
   interface Window {
     hologram: HologramPreload;
+    queryLocalFonts?(options?: { postscriptNames?: string[] }): Promise<FontData[]>;
   }
 }

@@ -33,6 +33,7 @@ import { normalizePostRecord, recordHoldsContent } from '../../../native-host/po
 import { missingMediaReason } from './lib-db-inbox.ts';
 import { resolveInSaveFolder } from './lib-save-folder-path.ts';
 import { fillCardDims } from './lib-card-dims.ts';
+import { fillMediaDims } from './lib-media-dims.ts';
 import { makeTagResolver, preparePostStmts, writePost } from './lib-db-record-writer.ts';
 import { parseJsonLoose } from './lib-json.ts';
 
@@ -262,7 +263,7 @@ function recoverOrphanRecords(saveFolder: string, sqlite: Database.Database): Re
           capturedAt: capturedAtFromId(o.captureId),
           source: 'orphan-recovery',
         });
-      writePost(stmts, resolveTagId, fillCardDims(saveFolder, record));
+      writePost(stmts, resolveTagId, fillMediaDims(saveFolder, fillCardDims(saveFolder, record)));
       written.push({ ...o, via: adopted ? 'sidecar' : 'synthesized' });
     }
     sqlite.exec('COMMIT');

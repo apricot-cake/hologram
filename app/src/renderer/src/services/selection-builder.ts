@@ -170,6 +170,7 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
     if (confirmGet() || lightboxIsOpen()) return;
     if (settingsIsOpen()) return;
+    if (imageViewIsActive()) return; // the grid's selection is not on screen (#656) — same guard as Ctrl+C/Space/arrow nav below
     if (deps.getBrowseMode() !== 'posts') return; // select-all is post-grid only (posters/collections excluded)
     if (deps.getViewGroups().length === 0) return;
     e.preventDefault();

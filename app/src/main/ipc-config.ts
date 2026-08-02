@@ -25,6 +25,7 @@ const PREF_KEYS = [
   'gridSize',
   'listThumb',
   'theme',
+  'uiFontFamily',
   'browseMode',
   'posterLayoutMode',
   'posterShowInfo',
@@ -163,6 +164,7 @@ function register(ctx: IpcContext) {
       gridSize: Number.isFinite(cfg.gridSize) ? cfg.gridSize : legacyGridSize(cfg), // grid: column width px
       listThumb: Number.isFinite(cfg.listThumb) ? cfg.listThumb : null, // list: thumbnail width px
       theme: ['auto', 'light', 'dark'].includes(cfg.theme) ? cfg.theme : 'auto', // System / Light / Dark
+      uiFontFamily: typeof cfg.uiFontFamily === 'string' ? cfg.uiFontFamily : '', // #137: interface font override; '' = default stack
       browseMode: cfg.browseMode === 'posters' ? 'posters' : 'posts', // library / poster (restored at startup)
       // #630: the poster grid's own two axes. `legacyPoster*` reads the retired
       // 3-value density (card/tile/list) once, the same one-off the post side does.

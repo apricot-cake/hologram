@@ -7,7 +7,7 @@
 // Add-only here (the "+ Filter" flow never edits an existing leaf — that's the
 // chip-click path, P2③ second half), so there is no remove button.
 import { useEffect, useMemo, useState } from 'react';
-import { beginFilterEditSession, endFilterEditSession, type FilterCatDate, type FilterCatEng } from '../services/orchestrator.ts';
+import { beginFilterEditSession, endFilterEditSession, type FilterCatDate, type FilterCatEng, type FilterCatDim } from '../services/orchestrator.ts';
 import { t } from '../_shared/i18n.ts';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -102,12 +102,42 @@ function EngForm({ cat, onClose }: { cat: FilterCatEng; onClose: () => void }) {
   );
 }
 
-export function FormEditor({ cat, onClose }: { cat: FilterCatDate | FilterCatEng; onClose: () => void }) {
+// #162: axis (幅/高さ/長辺/ファイルサイズ) + at-least/at-most + a number in the
+// axis's own display unit — px for the first three, MB for file size (the
+// category's apply() converts MB to the stored bytes; this component only
+// ever handles the display unit, same altitude as EngForm above).
+function DimForm({ cat, onClose }: { cat: FilterCatDim; onClose: () => void }) {
+  const [axis, setAxis] = useState(cat.axisOptions[0]?.value ?? 'width');
+  const [value, setValue] = useState('');
+  const [op, setOp] = useState('gte');
+  const opOptions: Option[] = [
+    { value: 'gte', label: cat.opGte },
+    { value: 'lte', label: cat.opLte },
+  ];
+  const unit = axis === 'bytes' ? 'MB' : 'px';
+  const apply = () => {
+    cat.apply({ axis, value, op });
+    onClose();
+  };
+  return (
+    <div className="flex w-64 flex-col gap-2 p-2">
+      <OptionSelect value={axis} onChange={setAxis} options={cat.axisOptions} />
+      <div className="flex items-center gap-1.5">
+        <Input type="number" min="0" step={axis === 'bytes' ? '0.1' : '1'} placeholder="0" className="flex-1" value={value} onChange={(e) => setValue(e.target.value)} />
+        <span className="shrink-0 text-xs text-muted-foreground">{unit}</span>
+        <OptionSelect value={op} onChange={setOp} options={opOptions} triggerClassName="shrink-0" />
+      </div>
+      <ApplyRow onApply={apply} />
+    </div>
+  );
+}
+
+export function FormEditor({ cat, onClose }: { cat: FilterCatDate | FilterCatEng | FilterCatDim; onClose: () => void }) {
   // One mounted editor = one nav-history entry (#144 confirmed-pending item 2) — same bracket as
   // ValueEditor (the form applies once, but an edit-reopen replaces in place).
   useEffect(() => {
     beginFilterEditSession();
     return endFilterEditSession;
   }, []);
-  return cat.editor === 'date' ? <DateForm cat={cat} onClose={onClose} /> : <EngForm cat={cat} onClose={onClose} />;
+  return cat.editor === 'date' ? <DateForm cat={cat} onClose={onClose} /> : cat.editor === 'eng' ? <EngForm cat={cat} onClose={onClose} /> : <DimForm cat={cat} onClose={onClose} />;
 }

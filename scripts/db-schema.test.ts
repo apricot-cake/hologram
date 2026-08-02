@@ -66,9 +66,9 @@ describe('マイグレーションが通り、テーブルが揃う', () => {
   );
   sqlite.close();
 
-  test('user_version は 22（v1 DDL ＋ #178 add-post-cw-sensitive・#188 add-post-series-fields・#180 add-post-quoted-refs・#36 rename-description-to-memo までの追加21本）', () => {
+  test('user_version は 23（v1 DDL ＋ #178 add-post-cw-sensitive・#188 add-post-series-fields・#180 add-post-quoted-refs・#162 add-media-max-dims・#36 rename-description-to-memo までの追加22本）', () => {
     const { sqlite } = openDatabase(mkdb());
-    expect(sqlite.pragma('user_version', { simple: true })).toBe(22);
+    expect(sqlite.pragma('user_version', { simple: true })).toBe(23);
     sqlite.close();
   });
 
@@ -247,6 +247,34 @@ describe('add-post-cw-sensitive の移行（#178）', () => {
   });
 });
 
+describe('add-media-max-dims の移行（#162）', () => {
+  const file = mkdb();
+  const before = new Database(file);
+  runMigrations(
+    before,
+    MIGRATIONS.slice(
+      0,
+      MIGRATIONS.findIndex((m) => m.name === 'add-media-max-dims'),
+    ),
+  );
+  before.prepare('INSERT INTO posts (captureId, capturedAt, updatedAt, hashtags) VALUES (?,?,?,?)').run('cap-1', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z', '[]');
+  before.close();
+
+  const { sqlite } = openDatabase(file); // this is where add-media-max-dims runs
+  afterAll(() => sqlite.close());
+
+  test('posts.mediaMaxW / mediaMaxH / mediaMaxBytes 列ができる', () => {
+    const cols = (sqlite.prepare('PRAGMA table_info(posts)').all() as Array<{ name: string }>).map((c) => c.name);
+    expect(cols).toContain('mediaMaxW');
+    expect(cols).toContain('mediaMaxH');
+    expect(cols).toContain('mediaMaxBytes');
+  });
+
+  test('移行前の行は NULL のまま（バックフィルしない — #162 の書き込み時のみ測る設計）', () => {
+    expect(sqlite.prepare("SELECT mediaMaxW, mediaMaxH, mediaMaxBytes FROM posts WHERE captureId = 'cap-1'").get()).toEqual({ mediaMaxW: null, mediaMaxH: null, mediaMaxBytes: null });
+  });
+});
+
 // #36: that an existing library doesn't break. Builds a real DB advanced to just
 // before rename-description-to-memo — posts.description is still real at this
 // point (only this migration renames it) — then reopens it all the way through
@@ -419,7 +447,7 @@ describe('既存 v1 データベースの開き直しは no-op', () => {
   const second = openDatabase(file);
 
   test('マイグレーションを再実行しない', () => {
-    expect(second.sqlite.pragma('user_version', { simple: true })).toBe(22);
+    expect(second.sqlite.pragma('user_version', { simple: true })).toBe(23);
   });
 
   test('前回のデータが残る', () => {

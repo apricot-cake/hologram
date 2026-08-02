@@ -328,6 +328,22 @@ const MIGRATIONS: Migration[] = [
         ALTER TABLE posts ADD COLUMN replyToPost TEXT;
       `),
   },
+  // #162: per-record media-size aggregates for the dimension/file-size facet —
+  // see native-host/post-record.mts's PostRecordShape.mediaMaxW/H/Bytes and
+  // app/src/main/lib-media-dims.ts for the write-time measurement. Null on
+  // every row written before this migration (same "ride the existing
+  // write-time mechanism, no backfill scan" decision as shotW/shotH — #162's
+  // 2026-07-18 design comment) until that record is next written for any
+  // other reason.
+  {
+    name: 'add-media-max-dims',
+    up: (db) =>
+      db.exec(`
+        ALTER TABLE posts ADD COLUMN mediaMaxW INTEGER;
+        ALTER TABLE posts ADD COLUMN mediaMaxH INTEGER;
+        ALTER TABLE posts ADD COLUMN mediaMaxBytes INTEGER;
+      `),
+  },
   // #36: a free-text memo the user attaches to a post, unifying the Eagle-migration
   // `description` field into the same column instead of keeping two synonymous
   // fields (see PostRecordShape.memo / the acceptance note on #36 — "description
@@ -519,6 +535,10 @@ interface PostsTable {
   // convention as hashtags/domFilled. See PostRecordShape.quotedPost/replyToPost.
   quotedPost: string | null;
   replyToPost: string | null;
+  // add-media-max-dims migration (#162) — see PostRecordShape.mediaMaxW/H/Bytes.
+  mediaMaxW: number | null;
+  mediaMaxH: number | null;
+  mediaMaxBytes: number | null;
 }
 interface MediaTable {
   id: Generated<number>;

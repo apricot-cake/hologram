@@ -118,3 +118,71 @@ describe('AND 結合 + 全角スペース', () => {
 test('空クエリは常に一致', () => {
   expect(S.compile('   ')('なんでも')).toBe(true);
 });
+
+// #29: full-text search snippet extraction. Runs on the RAW (non-normalized)
+// string on purpose — see search.ts's header comment on why NFKC-normalized
+// positions cannot be mapped back to the original.
+describe('#29 matchSpan: 原文側での位置探索', () => {
+  test('ぴったり一致は小文字化 indexOf', () => {
+    expect(S.matchSpan('Hello World', 'world')).toEqual({ start: 6, end: 11 });
+  });
+
+  test('大文字小文字を無視する', () => {
+    expect(S.matchSpan('こんにちは World です', 'WORLD')).toEqual({ start: 6, end: 11 });
+  });
+
+  test('厳密一致が無ければ近似位置へフォールバック（1文字の置換ミス）', () => {
+    const span = S.matchSpan('こんにとは世界', 'こんにちは');
+    if (!span) throw new Error('expected an approximate match');
+    expect(span.end).toBeLessThanOrEqual(7);
+  });
+
+  test('短語（編集距離0）で一致が無ければ null', () => {
+    expect(S.matchSpan('いぬのさんぽ', 'ねこ')).toBeNull();
+  });
+
+  test('空クエリは null', () => {
+    expect(S.matchSpan('なんでも', '')).toBeNull();
+  });
+});
+
+describe('#29 approxSubstringEnd: 最良一致の終端位置', () => {
+  test('編集距離0では indexOf と同じ終端', () => {
+    expect(S.approxSubstringEnd('ねこがすき', 'ねこ', 0)).toBe(2);
+  });
+
+  test('予算内の置換ミスなら終端を返す', () => {
+    expect(S.approxSubstringEnd('こんにとは世界', 'こんにちは', 1)).not.toBeNull();
+  });
+
+  test('予算を超えると null', () => {
+    expect(S.approxSubstringEnd('いぬのさんぽ', 'ねこかわいい', 1)).toBeNull();
+  });
+});
+
+describe('#29 snippetOf: 結果行のスニペット', () => {
+  test('一致箇所をハイライトオフセットとして返す', () => {
+    const snip = S.snippetOf('今日は天気が良くて猫と散歩した', '猫と散歩');
+    expect(snip.matchStart).toBeGreaterThanOrEqual(0);
+    expect(snip.text.slice(snip.matchStart, snip.matchEnd)).toBe('猫と散歩');
+  });
+
+  test('一致が無ければハイライト無しの頭出し', () => {
+    const snip = S.snippetOf('まったく関係の無い本文がここに続く', 'ねこ');
+    expect(snip.matchStart).toBe(-1);
+    expect(snip.matchEnd).toBe(-1);
+    expect(snip.text.length).toBeGreaterThan(0);
+  });
+
+  test('改行・連続空白は1行に畳む', () => {
+    const snip = S.snippetOf('一行目\n\n  二行目です', '二行目');
+    expect(snip.text).not.toMatch(/\n/);
+  });
+
+  test('長文は前後を… で切り詰める', () => {
+    const long = 'あ'.repeat(100) + '猫' + 'い'.repeat(100);
+    const snip = S.snippetOf(long, '猫', 10);
+    expect(snip.text.startsWith('…')).toBe(true);
+    expect(snip.text.endsWith('…')).toBe(true);
+  });
+});

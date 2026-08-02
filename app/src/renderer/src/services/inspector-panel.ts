@@ -25,6 +25,7 @@
 // and the renderer modules outside React answered the same question by reading
 // #postDetail.hidden off the DOM (P2⑦ / #153: no cross-boundary DOM sniffing). Both now
 // read this one copy.
+import { isActive as imageViewIsActive } from './image-tab.ts';
 import { hologramIpc } from './ipc.ts';
 import { isWide, subscribe as layoutSubscribe } from './layout-mode.ts';
 import { isHidden as panelsAreHidden, subscribe as panelsSubscribe } from './panels.ts';
@@ -116,6 +117,20 @@ export function subscribeVisible(cb: () => void): () => void {
   return () => {
     for (const off of offs) off();
   };
+}
+
+// === Docked vs overlay ===
+//
+// Whether the panel is a column (relative, holds its own place in the flex row) or a
+// floating slide-over (fixed, waved away by Esc / an outside click / its own ×) used to be
+// two independent half-formulas: AppShell's className ternary asked "wide OR the image
+// view showing" (the Eagle-style detail screen docks the panel at any width — a floating
+// slide-over would cover the very picture being inspected), while ×/Esc/outside-click each
+// asked layout-mode's isWide() alone. Narrow width + the image view showing was DOCKED to
+// the shell and OVERLAY to the dismiss guards, so a persistent column could still be waved
+// away as if it were the transient narrow slide-over (#656). One formula now, read by both.
+export function isDocked(): boolean {
+  return isWide() || imageViewIsActive();
 }
 
 // The panel's own element, handed over by the shell's ref rather than looked up by id
