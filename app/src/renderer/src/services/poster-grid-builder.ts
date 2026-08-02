@@ -39,10 +39,12 @@ export interface PosterGridBuilderDeps {
   showToast(msg: unknown, action?: NotifyAction | null): void;
   pushUndo(changes: readonly UndoChange[]): (() => void) | null;
   undoAction(undoFn: (() => void) | null): NotifyAction | null;
-  showKindMenu(tag: string, x: number, y: number, onChange: () => void): void;
+  showKindMenu(tag: string, x: number, y: number, onChange: () => void, entityId?: number | null): void;
   buildGroupGalleryItems(g: HologramPostGroup): any[];
   posterTagsOf(key: string): string[];
-  posterFilterVocab(): string[];
+  // #810: the entity vocabulary the poster filter offers — one entry per
+  // tags-table row, not per name.
+  posterFilterVocab(): HologramTagEntry[];
   inspectorTagPickerData(tags: string[], recordsForSource: any[], kind: string): any;
   filteredPosters(): HologramUserAgg[];
   buildUsers(): HologramUserAgg[];
@@ -126,8 +128,14 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
   // column existed and this was its re-render hook; the column is gone (P3 #6) and the
   // prune is all that was ever left of it.
   function prunePosterTagFilters() {
-    const present = new Set(deps.posterFilterVocab());
-    if (deps.posterQBRemoveCondsMatching((c) => c.type === 'tag' && !present.has(c.value))) deps.posterQBSyncShadow();
+    // #810: a leaf that knows its entity is checked against the entity vocabulary —
+    // a tag whose NAME survives on some other poster must not keep a chip alive for
+    // the entity that is gone. Leaves with no id fall back to the name check, the
+    // same two-tier match the predicate itself uses.
+    const vocab = deps.posterFilterVocab();
+    const ids = new Set(vocab.map((e) => e.id).filter((id): id is number => id != null));
+    const names = new Set(vocab.map((e) => e.name));
+    if (deps.posterQBRemoveCondsMatching((c) => c.type === 'tag' && (c.tagId != null ? !ids.has(c.tagId) : !names.has(c.value)))) deps.posterQBSyncShadow();
   }
 
   // Poster query reset — the filter bar's "Reset" imports this live binding directly.

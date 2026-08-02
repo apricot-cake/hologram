@@ -23,17 +23,19 @@ function register(ctx: IpcContext) {
 
   // Tag "vocabulary book": a tag's kind is an attribute of the TAG,
   // not of any post — so classifying a few hundred distinct tags needs zero post
-  // migration. Lives as <saveFolder>/tag-types.json: { types: { "<tag>": "work"|
-  // "character" } }. Tags absent from the map are implicitly general. The
-  // renamable work⊃character pair powers the (later) copyright/character sections;
-  // `labels` is reserved/pass-through for that phase.
+  // migration. #810 keyed it by tag ENTITY (`types` is one row per kinded tag,
+  // not a name map): `kind` is a column of the tags row, so two tags sharing a
+  // name can carry different kinds, and a name-keyed payload lost one of them on
+  // every round trip. Tags absent from the list are implicitly general. The
+  // renamable work⊃character pair powers the copyright/character sections;
+  // `labels` is the rename table for those two kind NAMES (unaffected by #810).
   ipcMain.handle('get-tag-types', (): TagTypesState => {
-    return getSaveFolder() ? getDbWriter().getTagTypes() : { types: {}, labels: null };
+    return getSaveFolder() ? getDbWriter().getTagTypes() : { types: [], labels: null };
   });
 
   ipcMain.handle('set-tag-types', (_e, types, labels): OkResult => {
     const folder = getSaveFolder();
-    if (!folder || !types || typeof types !== 'object') return { ok: false };
+    if (!folder || !Array.isArray(types)) return { ok: false };
     try {
       getDbWriter().setTagTypes(types, labels);
       sendExcept(_e.sender.id, 'org-changed', 'tag-types');
@@ -78,9 +80,12 @@ function register(ctx: IpcContext) {
     }
   });
 
-  // Per-poster tags (poster view). { tags: { "<posterKey>": ["tag", …] } } — the
-  // poster-level peer of poster-folders. Shares the post tag
-  // vocabulary (tag-types) but is keyed by poster, NOT stored on posts.
+  // Per-poster tags (poster view) — the poster-level peer of poster-folders.
+  // Shares the post tag vocabulary (the same tags table) but is keyed by poster,
+  // NOT stored on posts. Asymmetric since #810: the READ hands back tag entities
+  // (names + ids + #774's effective set, so poster filtering matches by id and
+  // parent relationships reach posters too), the WRITE is still the plain
+  // { tags: { "<posterKey>": ["tag", …] } } name map the editor produces.
   ipcMain.handle('get-poster-tags', (): PosterTagsState => {
     return getSaveFolder() ? getDbWriter().getPosterTags() : { tags: {} };
   });

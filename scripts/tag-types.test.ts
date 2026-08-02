@@ -52,7 +52,7 @@ describe('完全ZIPの取り込みが tag-types.json を合流させる', () => 
     handle = openDatabase(path.join(root, 'test.db'));
 
     // The existing library has already classified アリス=character, ブルアカ=work
-    createDbWriter(handle.sqlite).setTagTypes({ アリス: 'character', ブルアカ: 'work' }, null);
+    createDbWriter(handle.sqlite).fillTagKindsByName({ アリス: 'character', ブルアカ: 'work' }, null);
 
     // The ZIP being imported: adds アロナ=character, and tries to flip アリス→work (which should lose)
     const zip = new JSZip();
@@ -71,6 +71,18 @@ describe('完全ZIPの取り込みが tag-types.json を合流させる', () => 
   });
 
   test('ローカルの分類が保たれ、取り込み分が足される', () => {
-    expect(createDbWriter(handle.sqlite).getTagTypes().types).toEqual({ アリス: 'character', ブルアカ: 'work', アロナ: 'character' });
+    expect(createDbWriter(handle.sqlite).getTagTypeNames().types).toEqual({ アリス: 'character', ブルアカ: 'work', アロナ: 'character' });
+  });
+
+  // #810: the import fills kinds in, it no longer replaces the whole map — so an
+  // entity the name-keyed format cannot even mention (the second tag sharing a
+  // name) keeps whatever kind it had.
+  test('同名2実体の Kind が取り込みで消えない', () => {
+    const dbw = createDbWriter(handle.sqlite);
+    handle.sqlite.prepare("INSERT INTO tags (name, kind) VALUES ('アリス', 'work')").run();
+    dbw.fillTagKindsByName({ アリス: 'character' }, null);
+
+    const rows = handle.sqlite.prepare("SELECT kind FROM tags WHERE name = 'アリス' ORDER BY id").all();
+    expect(rows.map((r: any) => r.kind)).toEqual(['character', 'work']);
   });
 });

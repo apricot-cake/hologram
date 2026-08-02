@@ -54,12 +54,22 @@ function launch(evalJs): Promise<Record<string, any>> {
   });
 }
 
-// set kinds + renamed type labels, then read both maps back in the SAME process
-// first (the rename UI persists via the same setTagTypes(types, labels) path).
+// set kinds + renamed type labels, then read both back in the SAME process first
+// (the rename UI persists via the same setTagTypes(types, labels) path).
+//
+// #810: a kind is written to a tags row ID, so the tags have to exist before they
+// can be classified — which is also true of the real UI (you classify a tag from
+// a chip, and a chip exists because something carries the tag). set-poster-tags
+// is the cheapest way to create two from here: it is name-keyed and needs no
+// post, and its read hands back the ids in a parallel array, so this also covers
+// the poster-tag entity read #810 added.
 const setEvalJs = `(async () => {
-  await window.hologram.setTagTypes({ 'ブルアカ': 'work', 'アロナ': 'character' }, { work: 'シリーズ', character: '登場人物' });
+  await window.hologram.setPosterTags({ tags: { 'x:1': ['ブルアカ', 'アロナ'] } });
+  const ids = (await window.hologram.getPosterTags()).tags['x:1'].tagIds;
+  await window.hologram.setTagTypes([{ id: ids[0], kind: 'work' }, { id: ids[1], kind: 'character' }], { work: 'シリーズ', character: '登場人物' });
   const r = await window.hologram.getTagTypes();
-  return { types: r.types['ブルアカ'] + ',' + r.types['アロナ'], labels: r.labels.work + ',' + r.labels.character };
+  const kindOf = Object.fromEntries(r.types.map((t) => [t.name, t.kind]));
+  return { types: kindOf['ブルアカ'] + ',' + kindOf['アロナ'], labels: r.labels.work + ',' + r.labels.character };
 })()`;
 
 // launch 2 opens a fresh Electron process against the same configDir/DB and
@@ -67,7 +77,8 @@ const setEvalJs = `(async () => {
 // launch 1 can't leak here, so a match proves real persistence.
 const getEvalJs = `(async () => {
   const r = await window.hologram.getTagTypes();
-  return { types: r.types['ブルアカ'] + ',' + r.types['アロナ'], labels: (r.labels && r.labels.work + ',' + r.labels.character) || null };
+  const kindOf = Object.fromEntries(r.types.map((t) => [t.name, t.kind]));
+  return { types: kindOf['ブルアカ'] + ',' + kindOf['アロナ'], labels: (r.labels && r.labels.work + ',' + r.labels.character) || null };
 })()`;
 
 (async () => {

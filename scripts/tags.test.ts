@@ -1,19 +1,40 @@
 // Pure unit tests for tags.ts (the 8th slice extracted from viewer.js). Verifies
-// tagKindOf/kindLabel (fallback for custom labels), posterTagsOf/posterFilterVocab
-// (ordering by kind), groupedTagVocab (kind sections, separate general tag pools for
-// post vs poster, query filtering), inspectorTagPickerData (vocab shape, imported
-// hashtag source, co-occurrence suggestion tiers), and sameTags, all via stub deps
-// injection.
+// tagKindOf/tagKindOfName/kindLabel (entity vs name lookup, fallback for custom
+// labels), posterTagsOf/posterTagEntriesOf/posterFilterVocab (raw names vs the
+// effective entities, ordering by kind), groupedTagVocab (kind sections, separate
+// general tag pools for post vs poster, query filtering), inspectorTagPickerData
+// (vocab shape, imported hashtag source, co-occurrence suggestion tiers), and
+// sameTags, all via stub deps injection.
 
 import { beforeEach, describe, expect, test } from 'vitest';
+import type { PosterTagRow, TagTypeRow } from '../app/src/main/ipc-payloads';
 import { makeTags, sameTags } from '../app/src/renderer/src/services/tags';
 
 const ja = (a: string, b: string) => a.localeCompare(b, 'ja');
 
+// #810: the Kind store is keyed by tags.id, and a poster's tags are a row (names +
+// ids + the effective set) rather than a name array. These two builders keep the
+// fixtures readable.
+const ID = { WorkA: 1, WorkB: 2, CharX: 3, siryo: 4, anzu: 5 };
+const kinded = (rows: Array<[number, string, string, string?]>): Record<number, TagTypeRow> => {
+  const out: Record<number, TagTypeRow> = {};
+  for (const [id, name, kind, label] of rows) out[id] = { id, name, kind, label: label ?? name };
+  return out;
+};
+// A poster row whose effective set is just its raw tags — the shape
+// lib-db-write.ts hands back for a library with no parent rules at all.
+const posterRow = (pairs: Array<[number, string]>): PosterTagRow => ({
+  tags: pairs.map(([, name]) => name),
+  tagIds: pairs.map(([id]) => id),
+  effectiveTagIds: pairs.map(([id]) => id),
+  effectiveTags: pairs.map(([, name]) => name),
+  effectiveTagLabels: pairs.map(([, name]) => name),
+});
+
 // --- stub environment ---
 // Read via getters, so swapping state inside a test is immediately reflected on the api side.
 let state: {
-  tagTypes: Record<string, string>;
+  tagTypes: Record<number, TagTypeRow>;
   tagLabels: Record<string, any>;
   allPosts: any[];
   charCands: any[];
@@ -22,10 +43,16 @@ let state: {
 };
 let api: ReturnType<typeof makeTags>;
 
-const posterTags = {
-  'x:1': ['WorkA', '資料'],
-  'x:2': ['CharX', 'あんず'],
-  'x:3': 'not-an-array', // broken entry — must not throw
+const posterTags: Record<string, PosterTagRow> = {
+  'x:1': posterRow([
+    [ID.WorkA, 'WorkA'],
+    [ID.siryo, '資料'],
+  ]),
+  'x:2': posterRow([
+    [ID.CharX, 'CharX'],
+    [ID.anzu, 'あんず'],
+  ]),
+  'x:3': {} as PosterTagRow, // broken entry (no arrays at all) — must not throw
 };
 
 const STATIC_MSG: Record<string, string> = {
@@ -44,7 +71,11 @@ const t = (key: string, subs: any[]) => {
 
 beforeEach(() => {
   state = {
-    tagTypes: { WorkA: 'work', WorkB: 'work', CharX: 'character' },
+    tagTypes: kinded([
+      [ID.WorkA, 'WorkA', 'work'],
+      [ID.WorkB, 'WorkB', 'work'],
+      [ID.CharX, 'CharX', 'character'],
+    ]),
     tagLabels: {},
     allPosts: [
       { captureId: 'p1', tags: ['俯瞰', '自由帳'] }, // both are general tags → uncategorized pool
@@ -72,13 +103,29 @@ beforeEach(() => {
   });
 });
 
-describe('tagKindOf / kindLabel', () => {
-  test('種別つきタグ', () => {
-    expect(api.tagKindOf('WorkA')).toBe('work');
+describe('tagKindOf / tagKindOfName / kindLabel', () => {
+  test('種別つきタグ（実体キー）', () => {
+    expect(api.tagKindOf(ID.WorkA)).toBe('work');
   });
 
   test('一般タグは null', () => {
-    expect(api.tagKindOf('俯瞰')).toBeNull();
+    expect(api.tagKindOf(999)).toBeNull();
+    expect(api.tagKindOfName('俯瞰')).toBeNull();
+  });
+
+  test('id が無ければ null（名前しか無い面は名前引きを使う）', () => {
+    expect(api.tagKindOf(null)).toBeNull();
+    expect(api.tagKindOfName('WorkA')).toBe('work');
+  });
+
+  // #810: two entities can share a name. The entity lookup tells them apart; the
+  // name lookup deliberately does not — it answers "is a tag called this kinded",
+  // which is the only question a typed string can ask.
+  test('同名2実体は実体キーでだけ区別される', () => {
+    state.tagTypes = kinded([[10, 'alice', 'character', 'alice(東方)']]);
+    expect(api.tagKindOf(10)).toBe('character');
+    expect(api.tagKindOf(11)).toBeNull(); // the same-named entity carrying no kind
+    expect(api.tagKindOfName('alice')).toBe('character');
   });
 
   test('組み込みラベルへのフォールバック', () => {
@@ -96,13 +143,57 @@ describe('tagKindOf / kindLabel', () => {
   });
 });
 
-describe('posterTagsOf / posterFilterVocab', () => {
+describe('posterTagsOf / posterTagEntriesOf / posterFilterVocab', () => {
   test('配列はそのまま', () => {
     expect(api.posterTagsOf('x:1')).toEqual(['WorkA', '資料']);
   });
 
   test('壊れたエントリは []', () => {
     expect(api.posterTagsOf('x:3')).toEqual([]);
+    expect(api.posterTagEntriesOf('x:3')).toEqual([]);
+  });
+
+  // #810: the entity read is what the poster filter and its facet rows use.
+  test('実体エントリは id とラベルを持つ', () => {
+    expect(api.posterTagEntriesOf('x:1')).toEqual([
+      { id: ID.WorkA, name: 'WorkA', label: 'WorkA' },
+      { id: ID.siryo, name: '資料', label: '資料' },
+    ]);
+  });
+
+  // The optimistic row a tag edit leaves behind (ids unknown until the write comes
+  // back) still reads — as names with no entity, which is what makes the predicate
+  // fall back to name matching instead of matching nothing.
+  test('id がまだ無い行は名前だけのエントリになる', () => {
+    const pending = makeTags({
+      tagTypes: () => state.tagTypes,
+      tagLabels: () => state.tagLabels,
+      posterTags: () => ({ 'x:9': { tags: ['新規'], tagIds: [], effectiveTagIds: [], effectiveTags: [], effectiveTagLabels: [] } }),
+      allPosts: () => state.allPosts,
+      t,
+      charCandidatesFor: () => [],
+      relatedTagCandidates: () => [],
+    });
+    expect(pending.posterTagEntriesOf('x:9')).toEqual([{ id: null, name: '新規', label: '新規' }]);
+  });
+
+  // #774 on the poster side: the effective set is what a filter matches, so a
+  // poster tagged only with a child answers to its parent's row too — while the
+  // raw list the editor shows stays exactly what the user typed.
+  test('実効集合には親タグが含まれる（生タグは変わらない）', () => {
+    const withParent = makeTags({
+      tagTypes: () => state.tagTypes,
+      tagLabels: () => state.tagLabels,
+      posterTags: () => ({
+        'x:9': { tags: ['レミリア'], tagIds: [20], effectiveTagIds: [20, 21], effectiveTags: ['レミリア', '東方'], effectiveTagLabels: ['レミリア', '東方'] },
+      }),
+      allPosts: () => state.allPosts,
+      t,
+      charCandidatesFor: () => [],
+      relatedTagCandidates: () => [],
+    });
+    expect(withParent.posterTagsOf('x:9')).toEqual(['レミリア']);
+    expect(withParent.posterTagEntriesOf('x:9').map((e) => e.id)).toEqual([20, 21]);
   });
 
   test('キーが無ければ []', () => {
@@ -131,7 +222,26 @@ describe('posterTagsOf / posterFilterVocab', () => {
 
   // Order: work (WorkA) → character (CharX) → general (あんず/資料 in ja collation order)
   test('種別順の並び', () => {
-    expect(api.posterFilterVocab()).toEqual(['WorkA', 'CharX', ...['あんず', '資料'].sort(ja)]);
+    expect(api.posterFilterVocab().map((e) => e.name)).toEqual(['WorkA', 'CharX', ...['あんず', '資料'].sort(ja)]);
+  });
+
+  // #810: one row per ENTITY, so two same-named poster tags are two entries.
+  test('同名2実体は2エントリになる', () => {
+    const homonyms = makeTags({
+      tagTypes: () => state.tagTypes,
+      tagLabels: () => state.tagLabels,
+      posterTags: () => ({ 'x:1': posterRow([[30, 'alice']]), 'x:2': posterRow([[31, 'alice']]) }),
+      allPosts: () => state.allPosts,
+      t,
+      charCandidatesFor: () => [],
+      relatedTagCandidates: () => [],
+    });
+    expect(
+      homonyms
+        .posterFilterVocab()
+        .map((e) => e.id)
+        .sort(),
+    ).toEqual([30, 31]);
   });
 });
 

@@ -224,6 +224,10 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     kindGeneral: '一般（種別なし）',
     tagKindSet: '種別を「$1」に',
     tagKindCleared: '種別を解除しました',
+    // #810: the Kind is an attribute of one tag ENTITY, so a chip whose entity
+    // this window cannot name (its record's tag ids failed to load) has nothing
+    // to write to.
+    tagKindUnknown: 'このタグの実体を特定できませんでした',
     tagKindRename: '表示名を変更',
     tagKindRenamePrompt: 'この種別の表示名',
     tagKindRenamed: '種別の表示名を変更しました',
@@ -943,6 +947,7 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     kindGeneral: 'General (no kind)',
     tagKindSet: 'Kind: $1',
     tagKindCleared: 'Kind cleared',
+    tagKindUnknown: 'Could not identify this tag',
     tagKindRename: 'Rename',
     tagKindRenamePrompt: 'Label for this kind',
     tagKindRenamed: 'Kind label updated',

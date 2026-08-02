@@ -429,7 +429,7 @@ export function endFilterEditSession(): void {
   // tagKindOf/posterTagsOf/posterFilterVocab as direct refs.
   // charCandidatesFor/relatedTagCandidates are consts from the cooc
   // destructure below, so they enter as deferred arrows.
-  const { tagKindOf, kindLabel, inspectorTagPickerData, posterTagsOf, posterFilterVocab } = makeTags({
+  const { tagKindOf, tagKindOfName, kindLabel, inspectorTagPickerData, posterTagsOf, posterTagEntriesOf, posterFilterVocab } = makeTags({
     tagTypes: getTagTypes,
     tagLabels: getTagLabels,
     posterTags: getPosterTags,
@@ -450,7 +450,7 @@ export function endFilterEditSession(): void {
   // kind-menu-builder.ts (a viewer.ts decomposition slice). Wired here (not
   // where it's first used) so tagKindOf/kindLabel/getMessage are all already in
   // scope — no TDZ workaround needed, unlike the old taggingApi indirection.
-  const { showKindMenu } = makeKindMenu({ tagKindOf, kindLabel, t: getMessage });
+  const { showKindMenu } = makeKindMenu({ tagKindOf, tagKindOfName, tagIdOf: (name) => tagIdOf(name), kindLabel, t: getMessage });
   // Facet aggregation (facetCounts) + value-flyout row models (qfValues) moved to
   // facets.ts — 3rd extraction slice. Runtime couplings are injected: reassigned
   // lets (allPosts/multiOnly) as getters, and
@@ -462,6 +462,7 @@ export function endFilterEditSession(): void {
     qHasValue,
     qHasTag: (tagId: number | null, name: string) => postQB.qHasTag(tagId, name),
     posterQHasValue: (type: string, v: string) => posterQB.qHasValue(type, v),
+    posterQHasTag: (tagId: number | null, name: string) => posterQB.qHasTag(tagId, name),
     allPosts: () => postGrid.getAllPosts(),
     hostOf: (u: string | null | undefined) => hostOf(u),
     userKey: (p: HologramPost) => userKey(p),
@@ -470,7 +471,8 @@ export function endFilterEditSession(): void {
     t: getMessage,
     PF_NAME,
     tagKindOf,
-    posterTagsOf,
+    tagKindOfName,
+    posterTagEntriesOf,
     filteredPosters: () => filteredPosters(),
     posterFilterVocab,
     namedPosters: () => namedPosters(),
@@ -484,7 +486,9 @@ export function endFilterEditSession(): void {
   // relatedTagCandidates) moved to cooc.ts — 4th extraction slice. Same deferred-
   // getter wiring as facets above (allPosts is a reassigned let; the getters only
   // run when a picker or homonym check fires).
-  const { charCandidatesFor, worksCooccurringWith, relatedTagCandidates } = makeCooc({ allPosts: () => postGrid.getAllPosts(), tagKindOf });
+  // #810: the suggestion tiers stay in NAME space — their input is a tag the user
+  // typed and their output is a tag to type, neither of which names an entity.
+  const { charCandidatesFor, worksCooccurringWith, relatedTagCandidates } = makeCooc({ allPosts: () => postGrid.getAllPosts(), tagKindOfName });
   // onQfPick (value-pick → tree mutation) lives in qf-pop-builder.ts,
   // exposed as qfPop.pickValue for the filter bar — see the makeQfPop() call near
   // posterQB below (the flyout render/anchor half retired with its component, P2③).
@@ -649,26 +653,37 @@ export function endFilterEditSession(): void {
   // onShadow callback; that global was a pure duplicate of postQB.shadow() (the
   // instance already exposes the same cached array) — every read site now calls
   // postQB.shadow() directly instead of maintaining a second copy.
+  // name → the tags-table id, over everything this window has loaded. Two
+  // consumers: a saved tag leaf from before the DB migration (#297) carries only
+  // a name and query.ts's tag case resolves it here on first evaluation, and the
+  // Kind menu needs the ENTITY behind a right-clicked chip (#810).
+  //
+  // Scans the loaded records' parallel arrays rather than fetching a vocabulary —
+  // it runs once per legacy leaf (the leaf caches its own resolved id) or once
+  // per menu open, not once per post. The EFFECTIVE pair is read first because it
+  // is a superset: a tag that no post carries directly (a pure intermediate in a
+  // parent chain) has no entry in any raw tags[], so resolving from raw alone
+  // would leave its leaf on name matching and match nothing at all — the exact
+  // opposite of what applying the parent relationship is for. Poster tags are
+  // searched too (#810), or a tag that only ever lived on a poster would have no
+  // resolvable entity and could not be classified.
+  function tagIdOf(name: string): number | undefined {
+    for (const p of postGrid.getAllPosts()) {
+      const e = (p.effectiveTags || []).indexOf(name);
+      if (e >= 0 && p.effectiveTagIds) return p.effectiveTagIds[e];
+      const i = (p.tags || []).indexOf(name);
+      if (i >= 0 && p.tagIds) return p.tagIds[i];
+    }
+    for (const row of Object.values(getPosterTags())) {
+      const e = (row.effectiveTags || []).indexOf(name);
+      if (e >= 0 && row.effectiveTagIds) return row.effectiveTagIds[e];
+      const i = (row.tags || []).indexOf(name);
+      if (i >= 0 && row.tagIds) return row.tagIds[i];
+    }
+    return undefined;
+  }
   const { qb: postQB, predOf: postPredOf } = makePostQueryBuilder({
-    // A saved tag leaf from before the DB migration (#297) carries only a name;
-    // query.ts's tag case resolves and caches its tagId on first evaluation via
-    // this. Scans the loaded posts' parallel tags/tagIds arrays rather than a
-    // separate vocabulary fetch — only runs once per legacy leaf (the leaf
-    // caches its own resolved tagId), not once per post.
-    // #774: the EFFECTIVE pair is read first because it is a superset — a tag
-    // that no post carries directly (a pure intermediate in a parent chain) has
-    // no entry in any raw tags[], so resolving from raw alone would leave its
-    // leaf on name matching and match nothing at all, which is the exact
-    // opposite of what applying the parent relationship is for.
-    tagIdOf: (name) => {
-      for (const p of postGrid.getAllPosts()) {
-        const e = (p.effectiveTags || []).indexOf(name);
-        if (e >= 0 && p.effectiveTagIds) return p.effectiveTagIds[e];
-        const i = (p.tags || []).indexOf(name);
-        if (i >= 0 && p.tagIds) return p.tagIds[i];
-      }
-      return undefined;
-    },
+    tagIdOf,
     onChange: () => {
       renderPosts();
     },
@@ -1193,6 +1208,7 @@ export function endFilterEditSession(): void {
     buildUsers,
     resolve: (key) => aliases.resolve(key), // #23 St1
     tagKindOf,
+    tagKindOfName,
     worksCooccurringWith,
     jumpToPoster: (post) => jumpToPoster(post), // jumpToPoster (posterGrid) is declared far below — deferred
     openQuickView: (g) => lightboxOpen(buildGroupGalleryItems(g)[0]), // inspector thumb → quick-view peek (single image, #143)
@@ -1476,7 +1492,7 @@ export function endFilterEditSession(): void {
     onChange: () => {
       renderPosters();
     },
-    posterTagsOf,
+    posterTagEntriesOf,
     folderById: posterFolderById,
   });
 
@@ -1499,9 +1515,11 @@ export function endFilterEditSession(): void {
   // same reasoning as makeSearchBox() being wired late (search-box-builder.ts).
   const qfPop = makeQfPop({
     postShadow: () => postQB.shadow(),
+    posterShadow: () => posterQB.shadow(),
     posterQHasValue: (type, v) => posterQB.qHasValue(type, v),
     posterAddFilter: (filter) => posterQB.addFilter(filter),
     posterRemoveByLeaf: (type, v) => posterQB.removeByLeaf(type, v),
+    posterRemoveFilter: (i) => posterQB.removeFilter(i),
     addFilter,
     removeFilter,
     buildUsers: () => buildUsers(),

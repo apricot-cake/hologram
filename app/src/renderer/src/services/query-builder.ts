@@ -92,7 +92,7 @@ export function makePostQueryBuilder(deps: PostQueryBuilderDeps) {
 
 export interface PosterQueryBuilderDeps {
   onChange: () => void;
-  posterTagsOf: (key: string) => string[];
+  posterTagEntriesOf: (key: string) => HologramTagEntry[];
   folderById: (id: string) => { items: string[] } | null | undefined;
 }
 
@@ -101,7 +101,7 @@ export interface PosterQueryBuilderDeps {
 // tabs / nav history for posters); onChange → renderPosters.
 export function makePosterQueryBuilder(deps: PosterQueryBuilderDeps) {
   const predOf = makePosterPredOf({
-    posterTagsOf: deps.posterTagsOf,
+    posterTagEntriesOf: deps.posterTagEntriesOf,
     folderById: deps.folderById,
   });
   const qb = createQueryBuilder({

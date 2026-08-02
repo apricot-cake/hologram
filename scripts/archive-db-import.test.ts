@@ -71,7 +71,7 @@ describe('importCompleteZipToDb: 空DBへの完全インポート', () => {
     await importCompleteZipToDb(handle.sqlite, zipPath, destFolder);
     const dbw = createDbWriter(handle.sqlite);
     expect(dbw.getFolders().folders.map((f: any) => f.id)).toEqual(['f1']);
-    expect(dbw.getTagTypes().types.a).toBe('character');
+    expect(dbw.getTagTypeNames().types.a).toBe('character');
   });
 
   test('tag-parents.json がDBへ反映される（importTagParents経由）', async () => {

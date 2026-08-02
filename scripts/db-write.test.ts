@@ -26,10 +26,105 @@ afterAll(() => {
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
-test('タグ用語帳が往復する', () => {
-  writer.setTagTypes({ alice: 'character' }, { character: 'Character' });
+// #810: the Kind store is keyed by tags.id. The read carries name/label along so
+// the renderer can list a kinded tag no post carries; the write reads id/kind only.
+describe('タグ用語帳（Kind・実体キー #810）', () => {
+  const tagId = (name: string) => (sqlite.prepare('SELECT id FROM tags WHERE name = ? ORDER BY id').get(name) as { id: number }).id;
 
-  expect(writer.getTagTypes()).toEqual({ types: { alice: 'character' }, labels: { character: 'Character' } });
+  test('実体キーで往復する', () => {
+    sqlite.prepare("INSERT INTO tags (name) VALUES ('alice')").run();
+    const id = tagId('alice');
+    writer.setTagTypes([{ id, kind: 'character', name: 'alice', label: 'alice' }], { character: 'Character' });
+
+    expect(writer.getTagTypes()).toEqual({ types: [{ id, kind: 'character', name: 'alice', label: 'alice' }], labels: { character: 'Character' } });
+  });
+
+  // The loss #810 is about: the name-keyed store folded two same-named entities
+  // into one entry on read, and the whole-map write then re-applied the kind to
+  // only one of them — so editing ANY tag's kind erased the other one's.
+  test('同名2実体はそれぞれの Kind を保ち、片方の書き込みでもう片方が消えない', () => {
+    sqlite.prepare("INSERT INTO tags (name) VALUES ('nick'), ('nick')").run();
+    const [a, b] = (sqlite.prepare("SELECT id FROM tags WHERE name = 'nick' ORDER BY id").all() as Array<{ id: number }>).map((r) => r.id);
+    writer.setTagTypes(
+      [
+        { id: a, kind: 'character', name: 'nick', label: 'nick' },
+        { id: b, kind: 'work', name: 'nick', label: 'nick' },
+      ],
+      null,
+    );
+
+    const kinds = writer.getTagTypes().types.filter((r) => r.name === 'nick');
+    expect(kinds.map((r) => [r.id, r.kind])).toEqual([
+      [a, 'character'],
+      [b, 'work'],
+    ]);
+  });
+
+  // #774's display-name rule: the label is what tells two same-named entities
+  // apart in a picker, so it is computed on the read rather than stored.
+  test('表示親を持つ実体のラベルは name(表示親名) になる', () => {
+    sqlite.prepare("INSERT INTO tags (name) VALUES ('レミリア'), ('東方')").run();
+    const child = tagId('レミリア');
+    const parent = tagId('東方');
+    sqlite.prepare('INSERT INTO tag_parents (tagId, parentTagId, isDisplay) VALUES (?, ?, 1)').run(child, parent);
+    writer.setTagTypes([{ id: child, kind: 'character', name: 'レミリア', label: '' }], null);
+
+    expect(writer.getTagTypes().types.find((r) => r.id === child)?.label).toBe('レミリア(東方)');
+    sqlite.prepare('DELETE FROM tag_parents').run();
+  });
+});
+
+// #810: a poster's tags read as entities, with #774's effective set applied — the
+// poster-side half of "filter by the parent tag, get the children too".
+describe('ポスタータグの実体読み（#810）', () => {
+  let pdir: string;
+  let pdb: any;
+  let pw: ReturnType<typeof createDbWriter>;
+
+  beforeAll(() => {
+    pdir = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-db-write-poster-'));
+    ({ sqlite: pdb } = openDatabase(path.join(pdir, 'test.db')));
+    pw = createDbWriter(pdb);
+  });
+
+  afterAll(() => {
+    pdb.close();
+    fs.rmSync(pdir, { recursive: true, force: true });
+  });
+
+  const idOf = (name: string) => (pdb.prepare('SELECT id FROM tags WHERE name = ? ORDER BY id').get(name) as { id: number }).id;
+
+  test('名前と並行して id を返す', () => {
+    pw.setPosterTags({ tags: { 'x:1': ['レミリア'] } });
+
+    const row = pw.getPosterTags().tags['x:1'];
+    expect(row.tags).toEqual(['レミリア']);
+    expect(row.tagIds).toEqual([idOf('レミリア')]);
+  });
+
+  test('親タグは実効集合に入り、生タグには入らない', () => {
+    pdb.prepare("INSERT INTO tags (name) VALUES ('東方')").run();
+    pdb.prepare('INSERT INTO tag_parents (tagId, parentTagId, isDisplay) VALUES (?, ?, 1)').run(idOf('レミリア'), idOf('東方'));
+
+    const row = pw.getPosterTags().tags['x:1'];
+    expect(row.tags).toEqual(['レミリア']);
+    expect(row.effectiveTagIds).toEqual([idOf('レミリア'), idOf('東方')]);
+    expect(row.effectiveTags).toEqual(['レミリア', '東方']);
+    expect(row.effectiveTagLabels).toEqual(['レミリア(東方)', '東方']);
+  });
+
+  // The reversibility #21 requires and #774 kept: nothing is burned into the
+  // poster's data, so deleting the rule removes its effect at the next read.
+  test('ルールを消すと次の読み込みで反映も消える', () => {
+    pdb.prepare('DELETE FROM tag_parents').run();
+
+    const row = pw.getPosterTags().tags['x:1'];
+    expect(row.effectiveTagIds).toEqual([idOf('レミリア')]);
+  });
+
+  test('ZIP 用の名前だけの読みは並行配列を持たない', () => {
+    expect(pw.getPosterTagNames()).toEqual({ tags: { 'x:1': ['レミリア'] } });
+  });
 });
 
 // #23 St1: poster-alias groups (non-destructive name-merging). Round-trips the
@@ -97,16 +192,30 @@ describe('タグ名の字形正規化（#197）', () => {
   test('setPosterTags も同じ正規化を通る', () => {
     own.setPosterTags({ tags: { 'poster:1': ['ＶＴｕｂｅｒ', '  猫  '] } });
 
-    expect(own.getPosterTags()).toEqual({ tags: { 'poster:1': ['VTuber', '猫'] } });
+    expect(own.getPosterTags().tags['poster:1'].tags).toEqual(['VTuber', '猫']);
   });
 
-  test('setTagTypes もキー（タグ名）を正規化してから解決する', () => {
-    own.setTagTypes({ ＶＴｕｂｅｒ: 'character' }, {});
+  // #810 moved the IPC kind write to ids; the by-NAME path survives only for the
+  // ZIP import (tag-types.json is an interchange format between libraries), and it
+  // is the one that still has to normalize.
+  test('fillTagKindsByName もキー（タグ名）を正規化してから解決する', () => {
+    own.fillTagKindsByName({ ＶＴｕｂｅｒ: 'character' }, {});
     // Converges as the same tags row, onto the same half-width-form name that another entry point (setPostTags) already created.
     own.setPostTags('tn-post', ['VTuber'], null);
 
     expect(db.prepare("SELECT COUNT(*) n FROM tags WHERE name = 'VTuber'").get().n).toBe(1);
-    expect(own.getTagTypes()).toEqual({ types: { VTuber: 'character' }, labels: {} });
+    expect(own.getTagTypeNames()).toEqual({ types: { VTuber: 'character' }, labels: {} });
+  });
+
+  // Fill, never replace: an incoming archive must not reset a kind this library
+  // already carries — least of all one on a same-name entity the name-keyed
+  // format cannot even mention.
+  test('fillTagKindsByName は既存の Kind を上書きしない', () => {
+    db.prepare("INSERT INTO tags (name, kind) VALUES ('doppel', 'work'), ('doppel', NULL)").run();
+    own.fillTagKindsByName({ doppel: 'character' }, {});
+
+    const rows = db.prepare("SELECT kind FROM tags WHERE name = 'doppel' ORDER BY id").all() as Array<{ kind: string | null }>;
+    expect(rows.map((r) => r.kind)).toEqual(['work', 'character']);
   });
 
   test('大小文字・カナ⇔かなは畳まない', () => {

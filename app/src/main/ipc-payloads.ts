@@ -172,8 +172,38 @@ export interface AppPrefs {
 }
 
 // --- Organization layer (DB-backed, ipc-organize.ts) ---------------------
-/** get/set-tag-types: tag name -> kind, plus the renamable work/character labels. */
+/**
+ * One kinded tag ENTITY (#810). `kind` hangs off the tags row, so two tags
+ * sharing a name can legitimately carry different kinds — which is exactly what
+ * the old `Record<name, kind>` shape could not express (it folded them, and the
+ * whole-map write then erased the fold's loser from the DB).
+ *
+ * `name`/`label` are read-side decoration: they let the renderer list a kinded
+ * tag no post carries (the picker's Work/Character sections) without a second
+ * vocabulary fetch. `label` is #774's display-name rule — "name" normally,
+ * "name(displayParentName)" when the tag has a display parent, which is the only
+ * thing telling two same-named entities apart on sight. The write ignores both.
+ */
+export interface TagTypeRow {
+  id: number;
+  kind: string;
+  name: string;
+  label: string;
+}
+
+/** get/set-tag-types: the kinded tag entities, plus the renamable work/character labels. */
 export interface TagTypesState {
+  types: TagTypeRow[];
+  labels: Record<string, string> | null;
+}
+
+/**
+ * The name-keyed kind map — the `tag-types.json` interchange shape, NOT an IPC
+ * payload. A tag id is library-local, so it means nothing inside an archive that
+ * gets imported somewhere else; the ZIP therefore stays keyed by name and
+ * lib-archive.ts reads/writes it through the by-name accessors on the DB writer.
+ */
+export interface TagTypeNamesState {
   types: Record<string, string>;
   labels: Record<string, string> | null;
 }
@@ -265,8 +295,37 @@ export interface PosterFoldersState {
   folders: PosterFolderRecord[];
 }
 
-/** get/set-poster-tags: posterKey -> tags. */
+/**
+ * One poster's tags (#810), in the same PARALLEL-ARRAY shape a post record
+ * already carries (same index = same tag): names for what the editor shows and
+ * writes back, ids for matching (a rename doesn't change the id, and one name
+ * can belong to two entities).
+ *
+ * The effective* trio is #774's query-time application of tag parent
+ * relationships, derived on every read and stored in no table — so deleting a
+ * rule removes its effect from every poster at the next read, the same
+ * reversibility posts have.
+ */
+export interface PosterTagRow {
+  tags: string[];
+  tagIds: number[];
+  effectiveTagIds: number[];
+  effectiveTags: string[];
+  effectiveTagLabels: string[];
+}
+
+/** get-poster-tags: posterKey -> that poster's tag entities. */
 export interface PosterTagsState {
+  tags: Record<string, PosterTagRow>;
+}
+
+/**
+ * set-poster-tags, and the `poster-tags.json` interchange shape: posterKey ->
+ * tag NAMES. The write stays by name for the same reason post tags do — a tag
+ * typed just now has no id until the write creates it — and the archive stays by
+ * name for the same reason tag-types.json does (ids are library-local).
+ */
+export interface PosterTagNamesState {
   tags: Record<string, string[]>;
 }
 

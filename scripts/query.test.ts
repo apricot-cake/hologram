@@ -407,12 +407,16 @@ describe('text: URL 照合', () => {
   });
 });
 
-// The counterpart to makePostPredOf on the post side. deps = posterTagsOf (key→tag array) / folderById (id→{items})
+// The counterpart to makePostPredOf on the post side. deps = posterTagEntriesOf
+// (key→the poster's effective tag ENTITIES, #810) / folderById (id→{items})
 describe('makePosterPredOf', () => {
-  const posterTags = new Map([['x:@aaa', ['作画', 'Ave Mujica']]]);
+  const entry = (id: number | null, name: string, label = name): HologramTagEntry => ({ id, name, label });
+  // 作画 carries no id — the shape a poster row has between a tag edit and its
+  // write coming back. Ave Mujica is an ordinary entity.
+  const posterTags = new Map([['x:@aaa', [entry(null, '作画'), entry(7, 'Ave Mujica')]]]);
   const posterFolders = new Map([['fo-1', { items: ['x:@aaa', 'x:@bbb'] }]]);
   const posterPredOf = Q.makePosterPredOf({
-    posterTagsOf: (key: string) => posterTags.get(key) || [],
+    posterTagEntriesOf: (key: string) => posterTags.get(key) || [],
     folderById: (id: string) => posterFolders.get(id) || null,
   });
   const poster = (over?: object) => Object.assign({ key: 'x:@aaa', platform: 'x', instance: '', latest: '2026-05-10T12:00:00Z', lastCapture: '2026-06-01T00:00:00Z', authorCreatedAt: '2020-01-01T00:00:00Z' }, over || {});
@@ -444,9 +448,41 @@ describe('makePosterPredOf', () => {
     });
   });
 
-  test('tag は注入した posterTagsOf 経由（タグ無しでも落ちない）', () => {
+  test('tag は注入した posterTagEntriesOf 経由（タグ無しでも落ちない）', () => {
     expect(posterPredOf({ type: 'tag', value: 'Ave Mujica' })(poster())).toBe(true);
     expect(posterPredOf({ type: 'tag', value: '作画' })(poster({ key: 'x:@none' }))).toBe(false);
+  });
+
+  // #810: the poster side matches by entity first, for the same two reasons the
+  // post side does — a rename keeps the id, and two entities can share a name.
+  describe('tag の実体一致（#810）', () => {
+    const A = 11;
+    const B = 12;
+    const homonymPredOf = Q.makePosterPredOf({
+      posterTagEntriesOf: (key: string) => (key === 'p:a' ? [entry(A, 'alice', 'alice(東方)')] : [entry(B, 'alice', 'alice(紅魔郷)')]),
+      folderById: () => null,
+    });
+    const p = (key: string) => Object.assign({ key }, { platform: '', instance: '', latest: '', lastCapture: '', authorCreatedAt: '' });
+
+    test('id を持つリーフは同名のもう一方に当たらない', () => {
+      expect(homonymPredOf({ type: 'tag', value: 'alice', tagId: A })(p('p:a'))).toBe(true);
+      expect(homonymPredOf({ type: 'tag', value: 'alice', tagId: A })(p('p:b'))).toBe(false);
+    });
+
+    test('id の無いリーフは名前で両方に当たる（移行前の保存検索）', () => {
+      expect(homonymPredOf({ type: 'tag', value: 'alice' })(p('p:a'))).toBe(true);
+      expect(homonymPredOf({ type: 'tag', value: 'alice' })(p('p:b'))).toBe(true);
+    });
+
+    test('リーフの id は実効集合と照合される（親タグで子だけのポスターが当たる）', () => {
+      const child = 21;
+      const parent = 22;
+      const withParent = Q.makePosterPredOf({
+        posterTagEntriesOf: () => [entry(child, 'レミリア'), entry(parent, '東方')],
+        folderById: () => null,
+      });
+      expect(withParent({ type: 'tag', value: '東方', tagId: parent })(p('p:c'))).toBe(true);
+    });
   });
 
   test('folder はメンバーだけ一致し、未知フォルダは空集合', () => {

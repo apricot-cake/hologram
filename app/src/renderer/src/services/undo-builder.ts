@@ -88,8 +88,10 @@ export function makeUndoController(deps: UndoBuilderDeps) {
   // inspector is refreshed (mirrors applyPostTags's inspector refresh). The bulk
   // mutation + single persist live in tags.ts.
   function applyPosterTags(changes: DirectedChange[]) {
+    // #810: the store keys a poster to a row (names + ids + the effective set);
+    // an undo only ever restores the RAW names, which is the half the user edited.
     const current = getPosterTags();
-    applyPosterTagRecords(changes.map((c) => ({ key: c.target, tags: nextList(current[c.target], c) })));
+    applyPosterTagRecords(changes.map((c) => ({ key: c.target, tags: nextList(current[c.target]?.tags, c) })));
     const inspectedKey = deps.getInspectedKey();
     if (panelIsVisible() && typeof inspectedKey === 'string' && inspectedKey.indexOf('poster:') === 0) {
       deps.refreshPosterTagFields(inspectedKey.slice('poster:'.length));

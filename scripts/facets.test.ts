@@ -21,8 +21,16 @@ const posts = [
 const filtered = posts.slice(0, 3);
 
 const active = new Set(['platform:x', 'tag:風景']);
-const posterActive = new Set(['tag:P趣味']);
+// #810: a poster tag row stands for one tags-table row, so the poster tree's
+// "is this on" is keyed by entity too — same shape as the post side's tag#<id>.
+const PID = { P趣味: 101, P作品: 102 };
+const posterActive = new Set([`tag#${PID.P趣味}`]);
+// The post fixtures below carry no tagIds, so their rows fall back to name
+// matching and read their kind by NAME; the poster fixtures are entities and read
+// theirs by id (#810 — facets.ts's entryKind picks per row).
 const KIND: Record<string, string> = { 作品A: 'work', キャラX: 'character', P作品: 'work' };
+const KIND_BY_ID: Record<number, string> = { [PID.P作品]: 'work' };
+const entry = (id: number | null, name: string, label = name): HologramTagEntry => ({ id, name, label });
 
 // A poster aggregate requires all 13 fields (HologramUserAgg) = this overrides
 // only the parts facet reads, filling the rest with empty values. Placing a
@@ -52,7 +60,12 @@ const posters = [
   userAgg({ key: 'misskey:u3', platform: 'misskey', instance: 'misskey.io', screenName: 'carol', count: 2 }),
   userAgg({ key: 'mastodon:u4', platform: 'mastodon', instance: 'mstdn.jp', screenName: 'dan', count: 1 }),
 ];
-const posterTags: Record<string, string[]> = { 'x:u1': ['P趣味', 'P作品'], 'misskey:u3': ['P趣味'], 'mastodon:u4': [] };
+const posterTagEntries: Record<string, HologramTagEntry[]> = {
+  'x:u1': [entry(PID.P趣味, 'P趣味'), entry(PID.P作品, 'P作品')],
+  'misskey:u3': [entry(PID.P趣味, 'P趣味')],
+  'mastodon:u4': [],
+};
+const posterVocab = [entry(PID.P作品, 'P作品'), entry(PID.P趣味, 'P趣味')];
 const posterFolders = [{ id: 'pf1', name: '推し', items: ['x:u1', 'mastodon:u4'] }];
 // Post folders (folders.json) are a dep separate from poster folders. Since it
 // also counts subtotals under a parent (#41), give it one parent/child pair so
@@ -90,6 +103,7 @@ function makeFacetsWith(pop: any[]) {
     // matched by id, and only a leaf without one falls back to the name.
     qHasTag: (id, name) => (id != null && active.has(`tag#${id}`)) || active.has(`tag:${name}`),
     posterQHasValue: (t, v) => posterActive.has(`${t}:${v}`),
+    posterQHasTag: (id, name) => (id != null && posterActive.has(`tag#${id}`)) || posterActive.has(`tag:${name}`),
     allPosts: () => posts,
     hostOf: (url) => {
       try {
@@ -101,10 +115,11 @@ function makeFacetsWith(pop: any[]) {
     userKey: (p) => `${p.platform}:${p.userId || `@${p.screenName || ''}`}`,
     t: (key: string) => LABELS[key],
     PF_NAME: { x: 'X', bluesky: 'Bluesky', misskey: 'Misskey', mastodon: 'Mastodon', pixiv: 'pixiv' },
-    tagKindOf: (t: string) => KIND[t],
-    posterTagsOf: (key: string) => posterTags[key] || [],
+    tagKindOf: (id) => (id != null ? KIND_BY_ID[id] : undefined),
+    tagKindOfName: (t: string) => KIND[t],
+    posterTagEntriesOf: (key: string) => posterTagEntries[key] || [],
     filteredPosters: () => posters,
-    posterFilterVocab: () => ['P趣味', 'P作品'],
+    posterFilterVocab: () => posterVocab,
     namedPosters: () => posters,
     posterFolders: () => posterFolders,
     postFolders: () => postFolders,
@@ -211,6 +226,7 @@ describe('qfValues: platform のドメイン行（#253）', () => {
     qHasValue: () => false,
     qHasTag: () => false,
     posterQHasValue: () => false,
+    posterQHasTag: () => false,
     allPosts: () => domainPosts,
     hostOf: (url) => {
       try {
@@ -223,7 +239,8 @@ describe('qfValues: platform のドメイン行（#253）', () => {
     t: (key: string) => LABELS[key],
     PF_NAME: { x: 'X', bluesky: 'Bluesky', misskey: 'Misskey', mastodon: 'Mastodon', pixiv: 'pixiv' },
     tagKindOf: () => undefined,
-    posterTagsOf: () => [],
+    tagKindOfName: () => undefined,
+    posterTagEntriesOf: () => [],
     filteredPosters: () => [],
     posterFilterVocab: () => [],
     namedPosters: () => [],
@@ -306,13 +323,15 @@ describe('qfValues: postType / media', () => {
         qHasValue: () => false,
         qHasTag: () => false,
         posterQHasValue: () => false,
+        posterQHasTag: () => false,
         allPosts: () => withText,
         hostOf: () => '',
         userKey: (p) => String(p.platform),
         t: (key: string) => LABELS[key],
         PF_NAME: { x: 'X', bluesky: 'Bluesky', misskey: 'Misskey', mastodon: 'Mastodon', pixiv: 'pixiv' },
         tagKindOf: () => undefined,
-        posterTagsOf: () => [],
+        tagKindOfName: () => undefined,
+        posterTagEntriesOf: () => [],
         filteredPosters: () => [],
         posterFilterVocab: () => [],
         namedPosters: () => [],
@@ -397,13 +416,15 @@ describe('qfValues: tag（実体キー・親子適用）', () => {
     qHasValue: (t, v) => entityActive.has(`${t}:${v}`),
     qHasTag: (id, name) => (id != null && entityActive.has(`tag#${id}`)) || entityActive.has(`tag:${name}`),
     posterQHasValue: () => false,
+    posterQHasTag: () => false,
     allPosts: () => entityPosts,
     hostOf: () => '',
     userKey: () => '',
     t: (key: string) => LABELS[key],
     PF_NAME: {},
     tagKindOf: () => undefined,
-    posterTagsOf: () => [],
+    tagKindOfName: () => undefined,
+    posterTagEntriesOf: () => [],
     filteredPosters: () => [],
     posterFilterVocab: () => [],
     namedPosters: () => [],
@@ -445,6 +466,39 @@ describe('qfValues: tag（実体キー・親子適用）', () => {
     } finally {
       entityActive.delete('tag:alice');
     }
+  });
+
+  // #810: Kind hangs off the tags row, so the same name can be a Work on one
+  // entity and uncategorized on the other — the row that lands in the Work
+  // section is the entity's, not the name's.
+  test('同名2実体は別々の Kind を持てる（片方だけが作品セクションに出る）', () => {
+    const { qfValues: qk } = makeFacets({
+      getFilteredPosts: () => entityPosts,
+      qHasValue: () => false,
+      qHasTag: () => false,
+      posterQHasValue: () => false,
+      posterQHasTag: () => false,
+      allPosts: () => entityPosts,
+      hostOf: () => '',
+      userKey: () => '',
+      t: (key: string) => LABELS[key],
+      PF_NAME: {},
+      tagKindOf: (id) => (id === ID.aliceA ? 'work' : undefined),
+      tagKindOfName: () => undefined,
+      posterTagEntriesOf: () => [],
+      filteredPosters: () => [],
+      posterFilterVocab: () => [],
+      namedPosters: () => [],
+      posterFolders: () => [],
+      postFolders: () => [],
+      buildUsers: () => [],
+      resolve: (key: string) => key,
+      membersOf: (key: string) => [key],
+    });
+    expect(qk('work').map((r) => r.tagId)).toEqual([ID.aliceA]);
+    // …and the other one is still a general tag, so the Tags row keeps it.
+    expect(qk('tag').map((r) => r.tagId)).toContain(ID.aliceB);
+    expect(qk('tag').map((r) => r.tagId)).not.toContain(ID.aliceA);
   });
 
   test('行は v=名前 / tagId=実体を運ぶ（選択時にリーフへ渡すため）', () => {
@@ -491,11 +545,50 @@ describe('qfValues: folder（投稿フォルダ）', () => {
 
 describe('qfValues: poster-*', () => {
   test('poster-tag は一般のみ＋poster 側のクエリ状態を反映', () => {
-    expect(qfValues('poster-tag')).toEqual([expect.objectContaining({ v: 'P趣味', on: true, count: 2 })]);
+    expect(qfValues('poster-tag')).toEqual([expect.objectContaining({ v: 'P趣味', tagId: PID.P趣味, on: true, count: 2 })]);
   });
 
   test('poster-work は種別スコープ', () => {
-    expect(qfValues('poster-work')).toEqual([expect.objectContaining({ v: 'P作品', kind: 'work' })]);
+    expect(qfValues('poster-work')).toEqual([expect.objectContaining({ v: 'P作品', tagId: PID.P作品, kind: 'work' })]);
+  });
+
+  // #810: the poster rows are per ENTITY now, exactly like the post-side tag rows
+  // above — two same-named poster tags are two rows, and a row's "on" follows the
+  // leaf's id, not its name.
+  test('ポスター側も同名2実体が2行になり、リーフの実体だけが on になる', () => {
+    const A = 201;
+    const B = 202;
+    const entries = [entry(A, 'alice', 'alice(東方)'), entry(B, 'alice', 'alice(紅魔郷)')];
+    const on = new Set([`tag#${A}`]);
+    const { qfValues: qv } = makeFacets({
+      getFilteredPosts: () => [],
+      qHasValue: () => false,
+      qHasTag: () => false,
+      posterQHasValue: () => false,
+      posterQHasTag: (id) => id != null && on.has(`tag#${id}`),
+      allPosts: () => [],
+      hostOf: () => '',
+      userKey: () => '',
+      t: (key: string) => LABELS[key],
+      PF_NAME: {},
+      tagKindOf: () => undefined,
+      tagKindOfName: () => undefined,
+      posterTagEntriesOf: (key: string) => (key === 'p1' ? [entries[0]] : [entries[1]]),
+      filteredPosters: () => [userAgg({ key: 'p1' }), userAgg({ key: 'p2' })],
+      posterFilterVocab: () => entries,
+      namedPosters: () => [],
+      posterFolders: () => [],
+      postFolders: () => [],
+      buildUsers: () => [],
+      resolve: (key: string) => key,
+      membersOf: (key: string) => [key],
+    });
+    // Row ORDER is the facet's own (count desc, then ja collation on the label) —
+    // what matters here is that both entities are present and told apart.
+    const rows = qv('poster-tag');
+    expect(new Set(rows.map((r) => r.l))).toEqual(new Set(['alice(東方)', 'alice(紅魔郷)']));
+    expect(rows.find((r) => r.tagId === A)).toMatchObject({ v: 'alice', on: true, count: 1 });
+    expect(rows.find((r) => r.tagId === B)).toMatchObject({ v: 'alice', on: false, count: 1 });
   });
 
   test('poster-platform は PF_ORDER 順（x が先頭）', () => {
@@ -530,6 +623,7 @@ describe('名寄せ（resolve/membersOf, #23 St1）', () => {
     qHasValue: () => false,
     qHasTag: () => false,
     posterQHasValue: () => false,
+    posterQHasTag: () => false,
     allPosts: () => posts,
     hostOf: (url) => {
       try {
@@ -541,10 +635,11 @@ describe('名寄せ（resolve/membersOf, #23 St1）', () => {
     userKey: (p) => `${p.platform}:${p.userId || `@${p.screenName || ''}`}`,
     t: (key: string) => LABELS[key],
     PF_NAME: { x: 'X', bluesky: 'Bluesky', misskey: 'Misskey', mastodon: 'Mastodon', pixiv: 'pixiv' },
-    tagKindOf: (t: string) => KIND[t],
-    posterTagsOf: (key: string) => posterTags[key] || [],
+    tagKindOf: (id) => (id != null ? KIND_BY_ID[id] : undefined),
+    tagKindOfName: (t: string) => KIND[t],
+    posterTagEntriesOf: (key: string) => posterTagEntries[key] || [],
     filteredPosters: () => mergedPosters,
-    posterFilterVocab: () => ['P趣味', 'P作品'],
+    posterFilterVocab: () => posterVocab,
     namedPosters: () => mergedPosters,
     // A folder recorded under the SECONDARY key only (misskey:u3) — the shape a
     // pre-merge library would have: the toggle happened before x:u1/misskey:u3
@@ -581,13 +676,15 @@ test('タグの無い投稿が1件も無ければ「タグなし」を出さな�
     qHasValue: () => false,
     qHasTag: () => false,
     posterQHasValue: () => false,
+    posterQHasTag: () => false,
     allPosts: () => tagged,
     hostOf: () => '',
     userKey: (p) => String(p.platform),
     t: (key: string) => LABELS[key],
     PF_NAME: { x: 'X', bluesky: 'Bluesky', misskey: 'Misskey', mastodon: 'Mastodon', pixiv: 'pixiv' },
-    tagKindOf: (t: string) => KIND[t],
-    posterTagsOf: () => [],
+    tagKindOf: (id) => (id != null ? KIND_BY_ID[id] : undefined),
+    tagKindOfName: (t: string) => KIND[t],
+    posterTagEntriesOf: () => [],
     filteredPosters: () => [],
     posterFilterVocab: () => [],
     namedPosters: () => [],

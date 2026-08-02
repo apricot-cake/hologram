@@ -31,14 +31,17 @@ export interface InspectorBuilderDeps {
   t(key: string, subs?: ReadonlyArray<string | number | null | undefined>): string;
   fileSrc(file: string, w?: number): string;
   showToast(msg: unknown): void;
-  showKindMenu(tag: string, x: number, y: number, onChange: () => void): void;
+  showKindMenu(tag: string, x: number, y: number, onChange: () => void, entityId?: number | null): void;
   buildUsers(): HologramUserAgg[];
   // #23 St1 (name-merging): folds a posterKey onto its group's canonical
   // (primary) key — identity when the poster isn't merged. buildUsers() rows
   // are already keyed by primary, so any raw userKey(p) has to go through this
   // before comparing against u.key.
   resolve(key: string): string;
-  tagKindOf(tag: string): string | null | undefined;
+  // #810: by entity where the record names one, by name where the tag is still
+  // just a string the user typed (see maybeDistinguishHomonym).
+  tagKindOf(tagId: number | null | undefined): string | null | undefined;
+  tagKindOfName(tag: string): string | null | undefined;
   worksCooccurringWith(tag: string, exclude: Set<string>): Set<string>;
   jumpToPoster(post: HologramPost): void;
   // Peek this group in the quick-view lightbox (#143 pending item 3) — the inspector
@@ -340,9 +343,11 @@ export function makeInspector(deps: InspectorBuilderDeps) {
   // another work. Offer the danbooru-style freeform distinction Character (Work).
   // Deterministic + confirm-gated + silent until there's history (stay silent while it's thin).
   function maybeDistinguishHomonym(g: HologramPostGroup | null | undefined, addedTag: string) {
-    if (!g || deps.tagKindOf(addedTag) !== 'character') return;
+    // Name space (#810): every tag here is a string the user typed into the tag
+    // field, and the one this ends up writing does not exist yet at all.
+    if (!g || deps.tagKindOfName(addedTag) !== 'character') return;
     const cardTags: string[] = g.rep && Array.isArray(g.rep.tags) ? g.rep.tags : [];
-    const worksNow = cardTags.filter((t) => deps.tagKindOf(t) === 'work');
+    const worksNow = cardTags.filter((t) => deps.tagKindOfName(t) === 'work');
     if (!worksNow.length) return; // no Work context to distinguish by
     const exclude = new Set<string>((g.records || [g.rep]).map((r) => r && r.captureId).filter(Boolean));
     const past = deps.worksCooccurringWith(addedTag, exclude);
@@ -362,11 +367,18 @@ export function makeInspector(deps: InspectorBuilderDeps) {
       cancelLabel: deps.t('confirmCancel'),
       okDestructive: false,
       onOk: async () => {
-        // The distinguished string stays a character (danbooru-style); record its Kind.
-        if (!deps.tagKindOf(distinguished)) {
-          await tagsSetTagKind(distinguished, 'character');
-        }
+        // Rename FIRST, classify second (#810). A Kind is written to a tags row
+        // id, and the distinguished name has no row until this write creates one
+        // — the old order set the kind through a name-keyed map that created the
+        // tag as a side effect, which the entity-keyed store cannot do. The write
+        // hands the ids back onto the record (services/posts.ts's applyTagWrite),
+        // so the new entity is nameable immediately afterwards.
         await applyInspectorTagChange(g, (prev) => prev.map((t) => (t === addedTag ? distinguished : t)));
+        const fresh = freshGroup(g);
+        const i = (fresh.rep.tags || []).indexOf(distinguished);
+        const tagId = i >= 0 ? fresh.rep.tagIds?.[i] : undefined;
+        // The distinguished string stays a character (danbooru-style); record its Kind.
+        if (tagId != null && !deps.tagKindOf(tagId)) await tagsSetTagKind(tagId, 'character');
         deps.showToast(deps.t('homonymDistinguished', [distinguished]));
       },
     });
@@ -642,10 +654,21 @@ export function makeInspector(deps: InspectorBuilderDeps) {
       onAscii: srcImageUrl ? () => hologramIpc.openExternal('https://ascii2d.net/search/url/' + encodeURIComponent(srcImageUrl)) : null,
       onPosterJump: jumpUser ? () => deps.jumpToPoster(p) : null,
       onTagContextMenu: (tag: string, x: number, y: number) => {
-        deps.showKindMenu(tag, x, y, () => {
-          const g2 = deps.getViewGroups().find((gg) => postIdKey(gg.rep) === deps.getInspectedKey());
-          if (g2) refreshInspectorTagFields(g2);
-        });
+        // #810: this card's own tags/tagIds are parallel, so the chip names its
+        // ENTITY exactly — no name lookup, and no chance of classifying the other
+        // tag that happens to share the string.
+        const i = (p.tags || []).indexOf(tag);
+        const tagId = i >= 0 ? p.tagIds?.[i] : undefined;
+        deps.showKindMenu(
+          tag,
+          x,
+          y,
+          () => {
+            const g2 = deps.getViewGroups().find((gg) => postIdKey(gg.rep) === deps.getInspectedKey());
+            if (g2) refreshInspectorTagFields(g2);
+          },
+          tagId ?? null,
+        );
       },
     });
     // Selecting a card fills the panel; it does NOT open one the user has closed (#243).
