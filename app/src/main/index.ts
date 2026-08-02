@@ -29,7 +29,7 @@ import { configDir, defaultLibraryDir, installer, pixivRefererFor, downloadAvata
 import { readConfig, writeConfig, getSaveFolder, readSavePointer, initSaveFolderRedundancy, isConfigCorrupt, invalidateConfigCache, saveFolderStatus } from './lib-config.ts';
 import { mimeForFile, registerImageProtocol } from './lib-thumbnails.ts';
 import { backupIntervalMs, createBackupEngine, latestRestorableSnapshot, readBackupConfig, readIntegrityStatus, validateBackupDir, validateSaveFolder, writeBackupConfig } from './lib-backup.ts';
-import { APP_ICON, DEV_ORIGIN, DEV_SERVER_URL, createWindow, devServer, getWin, installNavigationGuards, sendToWin, sendWindowToBack } from './lib-window.ts';
+import { APP_ICON, DEV_ORIGIN, DEV_SERVER_URL, createWindow, devServer, getWin, installNavigationGuards, sendToOtherWins, sendToWin, sendWindowToBack } from './lib-window.ts';
 import { installDevRendererCsp, registerAppProtocol } from './app-protocol.ts';
 // IPC handler modules, extracted from this file (mechanical move — logic unchanged).
 // Each exposes register(ctx); ctx is built after the core functions below and passed
@@ -386,13 +386,26 @@ async function listPosts() {
 // this branched on an fs-watch filename hint, because the alternative was
 // re-reading tens of thousands of sidecars to find out what moved — the hint
 // existed to avoid a cost the DB doesn't have.
-let _deltaFolder: string | null = null;
-let _lastSent = new Map<string, unknown>(); // captureId -> updatedAt last delivered to the renderer
-async function listPostsDelta(haveBaseline: boolean) {
+//
+// #32 St1 (highest-priority correctness fix in the design doc): this baseline used
+// to be ONE `_deltaFolder`/`_lastSent` pair for the whole process, which was fine
+// while there was only ever one renderer calling in. With a second window it silently
+// broke — window B's delta call would overwrite window A's "what did I last see"
+// bookkeeping, so A's NEXT call computed its delta against B's baseline instead of
+// its own and could drop updates it was never actually shown. Keyed by the calling
+// webContents' id instead, so two windows polling in the same tick can never step on
+// each other; an entry is dropped when its window closes (see the
+// 'web-contents-created' listener below) so this never grows unbounded across a
+// session with many opened/closed windows.
+interface DeltaBaseline {
+  folder: string | null;
+  lastSent: Map<string, unknown>; // captureId -> updatedAt last delivered to THIS renderer
+}
+const _deltaBySender = new Map<number, DeltaBaseline>();
+async function listPostsDelta(haveBaseline: boolean, senderId: number) {
   const folder = getSaveFolder();
   if (!folder) {
-    _deltaFolder = null;
-    _lastSent = new Map();
+    _deltaBySender.delete(senderId);
     return { saveFolder: null, full: true, posts: [] };
   }
   const handle = ensurePostsSynced();
@@ -400,15 +413,21 @@ async function listPostsDelta(haveBaseline: boolean) {
 
   const posts = await postsFromDb(handle.sqlite);
   const stamps = new Map<string, unknown>(posts.map((p: any) => [p.captureId, p.updatedAt]));
-  if (!haveBaseline || _deltaFolder !== folder) {
-    _deltaFolder = folder;
-    _lastSent = stamps;
+  const baseline = _deltaBySender.get(senderId);
+  if (!haveBaseline || !baseline || baseline.folder !== folder) {
+    _deltaBySender.set(senderId, { folder, lastSent: stamps });
     return { saveFolder: folder, full: true, posts };
   }
-  const { added, removed } = computeDelta(_lastSent, posts, stamps);
-  _lastSent = stamps;
+  const { added, removed } = computeDelta(baseline.lastSent, posts, stamps);
+  _deltaBySender.set(senderId, { folder, lastSent: stamps });
   return { saveFolder: folder, full: false, added, removed };
 }
+// Every webContents this process ever creates (every window, plus the standalone
+// image-viewer popup — harmless, it never calls list-posts-delta) is watched here so
+// a closed window's entry above is dropped rather than kept forever.
+app.on('web-contents-created', (_e, contents) => {
+  contents.once('destroyed', () => _deltaBySender.delete(contents.id));
+});
 
 // #29: cross-tab full-text search. Read-only over the same synced DB listPosts
 // uses — no separate sync path, so a hit is never staler than the grid itself.
@@ -622,10 +641,17 @@ function registerExtractedIpc() {
     getWin,
     isConfigCorrupt,
     resetDelta: () => {
-      _deltaFolder = null;
-      _lastSent = new Map();
+      _deltaBySender.clear();
     },
     send: sendToWin,
+    sendExcept: sendToOtherWins,
+    // #32 St1: the tabs.json guard (ipc-config.ts's get-tabs/set-tabs) — only the
+    // PRIMARY window's sender may read or write it, so this is a no-op check, not a
+    // per-call-site branch a future caller could forget.
+    isPrimarySender: (webContentsId) => getWin()?.webContents.id === webContentsId,
+    openNewWindow: () => {
+      createWindow(true, { secondary: true });
+    },
   };
   ipcOrganize.register(ctx);
   ipcPosts.register(ctx);
@@ -673,12 +699,23 @@ if (!gotSingleInstanceLock) {
 } else {
   if (!SMOKE) {
     app.on('second-instance', () => {
-      const w = getWin();
-      if (w) {
-        if (w.isMinimized()) w.restore();
-        w.show();
-        w.focus();
+      // #32 St1: a second launch opens ANOTHER window rather than only focusing the
+      // first one (design: "2回目起動＝新規ウィンドウを開く") — UNLESS this run was
+      // itself started minimized/inactive (a verification harness restart), where the
+      // old "surface what's already running" behavior is still what is wanted: a new
+      // window would leave the original invisible and defeat the harness's "did the
+      // restart bring the window back" check.
+      const launchedHidden = process.env.HOLOGRAM_START_MINIMIZED === '1' || process.env.HOLOGRAM_START_INACTIVE === '1';
+      if (launchedHidden) {
+        const w = getWin();
+        if (w) {
+          if (w.isMinimized()) w.restore();
+          w.show();
+          w.focus();
+        }
+        return;
       }
+      createWindow(true, { secondary: true });
     });
   }
 

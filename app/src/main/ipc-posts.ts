@@ -18,7 +18,9 @@ function register(ctx: IpcContext) {
   const { listPosts, listPostsDelta, searchFullText, resolveInFolder, mimeForFile } = ctx;
 
   ipcMain.handle('list-posts', () => listPosts());
-  ipcMain.handle('list-posts-delta', (_e, haveBaseline) => listPostsDelta(!!haveBaseline));
+  // senderId (#32 St1): main keeps the delta baseline PER RENDERER now — see
+  // ipc-context.ts's listPostsDelta doc comment.
+  ipcMain.handle('list-posts-delta', (_e, haveBaseline) => listPostsDelta(!!haveBaseline, _e.sender.id));
   // #29: cross-tab full-text search — bm25() rank per posts_fts hit (relevance
   // order only; the renderer decides which posts match, see fulltext.ts).
   ipcMain.handle('search-full-text', (_e, query, limit) => searchFullText(typeof query === 'string' ? query : '', typeof limit === 'number' ? limit : undefined));

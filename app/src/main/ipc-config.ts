@@ -11,7 +11,7 @@
 // header) rather than going through ctx: it is a plain existence check with no
 // dependency on any mutable main-process state, so it imports the path helper
 // directly the same way lib-config.ts / lib-thumbnails.ts do.
-import { ipcMain, app } from 'electron';
+import { ipcMain, app, BrowserWindow } from 'electron';
 import fs from 'node:fs';
 import { extensionContactPath } from './native-host.ts';
 import type { HologramConfig, IpcContext } from './ipc-context.ts';
@@ -66,7 +66,7 @@ const legacyPosterGridSize = (cfg: HologramConfig): number | null => {
 };
 
 function register(ctx: IpcContext) {
-  const { readConfig, writeConfig, getSaveFolder, getDbWriter, getWin, getLibraryStatus } = ctx;
+  const { readConfig, writeConfig, getSaveFolder, getDbWriter, getLibraryStatus, isPrimarySender } = ctx;
 
   ipcMain.handle('get-config', (): ConfigSummary => {
     const cfg = readConfig();
@@ -87,8 +87,12 @@ function register(ctx: IpcContext) {
   // Window controls. The min/max/close buttons are drawn by the app (renderer DOM), not by
   // the OS overlay, so the window commands they used to carry natively come over IPC now.
   // See the AppShell WindowControls component for why they are app-drawn.
+  //
+  // #32 St1: resolved from the CALLING window (BrowserWindow.fromWebContents(e.sender)),
+  // not ctx.getWin() (the primary) — a secondary window's own min/max/close buttons must
+  // act on itself, not silently reach across to window A.
   ipcMain.handle('window-control', (_e, action): boolean | null => {
-    const win = getWin();
+    const win = BrowserWindow.fromWebContents(_e.sender);
     if (!win) return null;
     if (action === 'minimize') win.minimize();
     else if (action === 'toggle-maximize') {
@@ -100,16 +104,25 @@ function register(ctx: IpcContext) {
 
   // The maximize button's glyph follows the real window state, which changes without us
   // (snap, double-click on the drag strip, Win+Up, the taskbar). Push it instead of making
-  // the renderer poll.
-  ipcMain.handle('window-is-maximized', () => {
-    const win = getWin();
+  // the renderer poll. Same per-caller resolution as window-control above.
+  ipcMain.handle('window-is-maximized', (_e) => {
+    const win = BrowserWindow.fromWebContents(_e.sender);
     return !!win && win.isMaximized();
   });
 
-  ipcMain.handle('get-tabs', (): TabsState | null => {
+  // #32 St1: tabs.json guard — the PRIMARY window's sender is the only one allowed to
+  // read or write it (design: "他窓は読み書きとも遮断＝タブ喪失防止"). A secondary
+  // window's get-tabs answers null (the renderer's initTabs already treats null the
+  // same as "nothing saved yet" and seeds one empty tab — see tabs-builder.ts), and its
+  // set-tabs is a silent no-op (persistTabs()'s caller already treats {ok:false} as
+  // best-effort). Enforced here, once, rather than at every future call site that could
+  // forget the check.
+  ipcMain.handle('get-tabs', (_e): TabsState | null => {
+    if (!isPrimarySender(_e.sender.id)) return null;
     return getSaveFolder() ? getDbWriter().getTabs() : null;
   });
   ipcMain.handle('set-tabs', (_e, data): OkResult => {
+    if (!isPrimarySender(_e.sender.id)) return { ok: false };
     if (!getSaveFolder()) return { ok: false };
     try {
       getDbWriter().setTabs(data);

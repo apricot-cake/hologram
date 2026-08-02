@@ -10,8 +10,10 @@
 // copyLibraryInto, watchSaveFolder, the config/pointer layer, clearAllBlockReason,
 // avatar fetch) live outside this module (#227: lib-backup.ts, lib-migrate.ts,
 // lib-config.ts, native-host.ts) and arrive via ctx; mutable state is reached through
-// getWin/send/isConfigCorrupt/resetDelta accessors.
-import { ipcMain, dialog, clipboard } from 'electron';
+// send/isConfigCorrupt/resetDelta accessors. Every dialog is parented to whichever
+// window called it (#32 St1: BrowserWindow.fromWebContents(e.sender)), not a shared
+// "the" window.
+import { ipcMain, dialog, clipboard, BrowserWindow } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -25,7 +27,6 @@ import { IMPORTABLE_MEDIA, buildLocalRecord, importLocalFile, localCaptureId } f
 import { TRASH_SUBDIR } from './lib-save-folder-path.ts';
 import { INBOX_DIRNAME } from '../../../native-host/inbox.mts';
 import type { PostRecordInput } from '../../../native-host/post-record.mts';
-import type { BrowserWindow } from 'electron';
 import type { IpcContext } from './ipc-context.ts';
 import type { ClearAllResult, ClipboardImportResult, CompleteImportResult, ExportCompleteResult, ExportSaveResult, LegacyImportResult, MediaImportResult, RepointApplyResult, RepointPickResult, SaveFolderMoveResult, SaveFolderPickResult } from './ipc-payloads.ts';
 
@@ -75,7 +76,6 @@ function register(ctx: IpcContext) {
     getDbWriter,
     pixivRefererFor,
     downloadAvatar,
-    getWin,
     send,
     validateSaveFolder,
     relocateLibrary,
@@ -395,10 +395,10 @@ function register(ctx: IpcContext) {
   });
 
   ipcMain.handle('export-save', async (_e, filename, bytes): Promise<ExportSaveResult> => {
-    // Every dialog below is parented to the main window, whose renderer is where
-    // the call came from — so getWin() is non-null here, which is what Electron's
-    // parent parameter requires.
-    const res = await dialog.showSaveDialog(getWin() as BrowserWindow, { defaultPath: filename });
+    // #32 St1: every dialog below is parented to whichever window called
+    // (BrowserWindow.fromWebContents(e.sender)), not ctx.getWin() (the primary) —
+    // a secondary window's own dialog must not pop up behind it.
+    const res = await dialog.showSaveDialog(BrowserWindow.fromWebContents(_e.sender) as BrowserWindow, { defaultPath: filename });
     if (res.canceled || !res.filePath) return { saved: false };
     try {
       await fs.promises.writeFile(res.filePath, Buffer.from(bytes));
@@ -434,14 +434,19 @@ function register(ctx: IpcContext) {
       handle = await ensurePostsSynced();
       if (!handle) return { saved: false, error: 'no-folder' };
     }
-    const res = await dialog.showSaveDialog(getWin() as BrowserWindow, { defaultPath: `hologram-${imagesOnly ? 'images' : 'export'}-${exportStamp()}.zip` });
+    // #32 St1: parented to whichever window called, not ctx.getWin() (the primary).
+    const res = await dialog.showSaveDialog(BrowserWindow.fromWebContents(_e.sender) as BrowserWindow, { defaultPath: `hologram-${imagesOnly ? 'images' : 'export'}-${exportStamp()}.zip` });
     if (res.canceled || !res.filePath) return { saved: false };
     // Stream the archive straight to the chosen path (yazl: bounded memory + ZIP64) —
     // the whole library never sits in memory and a >4 GiB archive stays valid. Progress
     // drives the Windows taskbar (BrowserWindow.setProgressBar) AND an 'export-progress'
     // IPC event for the in-app %; throttled to whole-percent changes so we don't spam.
     // On any failure, drop the partial file so a half-written ZIP is never left behind.
-    const win = getWin();
+    // The taskbar progress is the CALLING window's own (setProgressBar is per-window);
+    // export-progress stays a broadcast (send, unchanged) since it is cheap and no other
+    // window is tracking an export that isn't its own — the renderer ignores an event for
+    // a different in-flight operation.
+    const win = BrowserWindow.fromWebContents(_e.sender);
     let lastPct = -1;
     const onProgress = (written: number, total: number) => {
       const frac = total > 0 ? Math.min(1, written / total) : 0;
@@ -504,11 +509,12 @@ function register(ctx: IpcContext) {
   // second call: the #34 duplicate question is UI policy and has to sit between
   // reading and writing. What crosses IPC is the PATH main picked — never the
   // archive's bytes, and never the expanded records.
-  ipcMain.handle('import-complete', async (): Promise<CompleteImportResult> => {
+  ipcMain.handle('import-complete', async (_e): Promise<CompleteImportResult> => {
     // #37: checked before the picker even opens — restoring a ZIP into a folder
     // that is not there any more would recreate it as a fresh empty library.
     if (getLibraryStatus().missing) return { ok: false, error: 'library-missing' };
-    const res = await dialog.showOpenDialog(getWin() as BrowserWindow, {
+    // #32 St1: parented to whichever window called, not ctx.getWin() (the primary).
+    const res = await dialog.showOpenDialog(BrowserWindow.fromWebContents(_e.sender) as BrowserWindow, {
       properties: ['openFile'],
       filters: [{ name: 'ZIP', extensions: ['zip'] }],
     });
@@ -579,8 +585,9 @@ function register(ctx: IpcContext) {
     });
   }
 
-  ipcMain.handle('pick-save-folder', async (): Promise<SaveFolderPickResult> => {
-    const res = await dialog.showOpenDialog(getWin() as BrowserWindow, { properties: ['openDirectory', 'createDirectory'] });
+  ipcMain.handle('pick-save-folder', async (_e): Promise<SaveFolderPickResult> => {
+    // #32 St1: parented to whichever window called, not ctx.getWin() (the primary).
+    const res = await dialog.showOpenDialog(BrowserWindow.fromWebContents(_e.sender) as BrowserWindow, { properties: ['openDirectory', 'createDirectory'] });
     if (res.canceled || !res.filePaths || !res.filePaths[0]) return { ok: false, canceled: true };
     const chosen = res.filePaths[0];
     // Treat the picked folder as a PARENT and put the library in a named subfolder
@@ -617,8 +624,9 @@ function register(ctx: IpcContext) {
   // library, so the renderer can ask "start empty?" first when it does not;
   // apply-repoint does the actual (copy-free) write once the user has accepted
   // whatever the renderer needed to ask.
-  ipcMain.handle('pick-repoint-folder', async (): Promise<RepointPickResult> => {
-    const res = await dialog.showOpenDialog(getWin() as BrowserWindow, { properties: ['openDirectory', 'createDirectory'] });
+  ipcMain.handle('pick-repoint-folder', async (_e): Promise<RepointPickResult> => {
+    // #32 St1: parented to whichever window called, not ctx.getWin() (the primary).
+    const res = await dialog.showOpenDialog(BrowserWindow.fromWebContents(_e.sender) as BrowserWindow, { properties: ['openDirectory', 'createDirectory'] });
     if (res.canceled || !res.filePaths || !res.filePaths[0]) return { ok: false, canceled: true };
     const dest = res.filePaths[0];
     // Reuses validateSaveFolder's path-safety + writability checks (same rules a
@@ -648,7 +656,7 @@ function register(ctx: IpcContext) {
   // #299: same rationale as importPostRecords above — write straight into the DB (a real
   // video field now, not the `(rec as any).video` escape hatch this used pre-
   // #299) instead of a sidecar the DB would have to re-derive from later.
-  ipcMain.handle('import-images', async (): Promise<MediaImportResult> => {
+  ipcMain.handle('import-images', async (_e): Promise<MediaImportResult> => {
     const folder = getSaveFolder();
     if (!folder) return { imported: 0, skipped: 0, error: 'no-folder' };
     // #37: see importPostRecords's identical guard — the mkdirSync a few lines
@@ -657,7 +665,8 @@ function register(ctx: IpcContext) {
     // #236: two filters, Media first (the default the picker pre-selects) and
     // an All Files escape hatch — collection no longer stops at IMPORTABLE_MEDIA,
     // it just decides assetClass from it (buildLocalRecord below).
-    const res = await dialog.showOpenDialog(getWin() as BrowserWindow, {
+    // #32 St1: parented to whichever window called, not ctx.getWin() (the primary).
+    const res = await dialog.showOpenDialog(BrowserWindow.fromWebContents(_e.sender) as BrowserWindow, {
       properties: ['openFile', 'multiSelections'],
       filters: [
         { name: 'Media', extensions: IMPORTABLE_MEDIA },

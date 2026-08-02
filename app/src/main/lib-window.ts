@@ -1,15 +1,22 @@
 'use strict';
 
-// The main window (#227): its icon, its persisted bounds, the navigation
-// lockdown every web-contents gets, and the creation itself — index.ts's
-// `// --- Window size/position persistence ---`, the navigation-guard block and
-// `// --- Window ---` sections, moved out whole.
+// The app's windows (#32 St1: single-window → 1 process / N windows): their icon,
+// their persisted bounds, the navigation lockdown every web-contents gets, and the
+// creation itself — index.ts's `// --- Window size/position persistence ---`, the
+// navigation-guard block and `// --- Window ---` sections, moved out whole.
 //
-// This module OWNS the `win` binding. It has to: createWindow assigns it, and an
-// importer cannot assign to an imported binding. Everything else reads it
-// through getWin() / sendToWin(), which is what index.ts's ctx already handed the
-// IPC handlers — so the window stopped being a file-scoped variable the whole
-// main process could touch and became one module's state.
+// This module OWNS the window collection. It has to: createWindow adds to it, and
+// an importer cannot assign to an imported binding. Everything else reads it
+// through getWin() / getWindows() / sendToWin(), which is what index.ts's ctx
+// already handed the IPC handlers — so the window(s) stopped being a file-scoped
+// variable the whole main process could touch and became one module's state.
+//
+// getWin() keeps meaning "the PRIMARY window" (the first one created this run) —
+// every single-window-shaped concept that survives #32 (bounds persistence, tabs.json,
+// the SMOKE/SANDBOX harnesses, which always run with exactly one window) reads it.
+// A handler that has to act on WHICHEVER window called it (window-control, a file
+// dialog's parent) reads BrowserWindow.fromWebContents(event.sender) at its own call
+// site instead — see ipc-config.ts / ipc-transfer.ts / ipc-backup.ts / ipc-watch-import.ts.
 //
 // The dev-server URL lives here too (it is what createWindow loads and what the
 // navigation guard's allow-list is derived from), but the warning about a
@@ -38,28 +45,53 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // relative depth from the package root).
 const APP_ICON = path.join(__dirname, '..', '..', 'assets', 'icon.png');
 
-let win: BrowserWindow | null = null;
+// Every live BrowserWindow this process owns, insertion order (the primary window
+// — the first one created this run — is always windows[0]). A Set would lose that
+// order on nothing in particular; an array is simplest and this collection is never
+// more than a handful of entries.
+const windows: BrowserWindow[] = [];
 
-/** The main window, or null before it is created / after it is gone. */
+/** The primary window (the first one created this run), or null before/after it. */
 function getWin(): BrowserWindow | null {
-  return win;
+  return windows[0] || null;
 }
 
-/** Pushes to the main window's renderer; a no-op when the window is gone. */
+/** Every live window, oldest first. */
+function getWindows(): BrowserWindow[] {
+  return windows.filter((w) => !w.isDestroyed());
+}
+
+/** Pushes to EVERY window's renderer (#32 St1: single-window's sendToWin, broadcast). */
 function sendToWin(channel: string, ...args: unknown[]) {
-  if (win && !win.isDestroyed()) win.webContents.send(channel, ...args);
+  for (const w of getWindows()) w.webContents.send(channel, ...args);
+}
+
+/**
+ * Pushes to every window EXCEPT the one `exceptWebContentsId` names (#32 St2: an
+ * organize-layer change is relayed to every OTHER window, not echoed back to the one
+ * that just wrote it — that window's own store is already current, and re-applying
+ * its own write as an external change would be, at best, a wasted round trip and at
+ * worst a reset of in-progress local UI state the write itself did not touch).
+ */
+function sendToOtherWins(exceptWebContentsId: number, channel: string, ...args: unknown[]) {
+  for (const w of getWindows()) {
+    if (w.webContents.id === exceptWebContentsId) continue;
+    w.webContents.send(channel, ...args);
+  }
 }
 
 // --- Window size/position persistence ---
-// The window was fixed at 1100x820 every launch. Save bounds to config.json
-// (`windowBounds`) and restore them, clamped to a visible display so a
+// The PRIMARY window only (#32 St1 design: "新窓の bounds は +24px カスケード" — a
+// secondary window is positioned FROM the primary's bounds, not persisted itself;
+// there is one windowBounds key in config.json, same as before #32). Save bounds to
+// config.json (`windowBounds`) and restore them, clamped to a visible display so a
 // disconnected monitor can't reopen the window off-screen.
 let _boundsSaveTimer: any = null;
-function persistWindowBounds() {
+function persistWindowBounds(win: BrowserWindow) {
   clearTimeout(_boundsSaveTimer);
-  _boundsSaveTimer = setTimeout(saveWindowBoundsNow, 400);
+  _boundsSaveTimer = setTimeout(() => saveWindowBoundsNow(win), 400);
 }
-function saveWindowBoundsNow() {
+function saveWindowBoundsNow(win: BrowserWindow) {
   if (!win || win.isDestroyed()) return;
   try {
     const b = win.getNormalBounds ? win.getNormalBounds() : win.getBounds();
@@ -106,7 +138,9 @@ const DEV_SERVER_URL = devServer.url;
 // dev-only CSP is pinned to (#381). null in prod, which makes both a no-op there.
 const DEV_ORIGIN = DEV_SERVER_URL ? new URL(DEV_SERVER_URL).origin : null;
 
-// Navigation lockdown for every web-contents the app creates. Without it, a file
+// Navigation lockdown for every web-contents the app creates (every window, #32
+// St1 — this listens on 'web-contents-created', which fires for each new
+// BrowserWindow the same way it always fired for the one). Without it, a file
 // (e.g. a local .html) dropped onto a window would make the top frame navigate to
 // file://…, which inherits the same preload and could call destructive IPC
 // (clear-all / import-complete / …). We:
@@ -114,6 +148,11 @@ const DEV_ORIGIN = DEV_SERVER_URL ? new URL(DEV_SERVER_URL).origin : null;
 //     (app://bundle/index.html) or a raster image on the asset:// viewer scheme.
 //     The initial loadURL does NOT fire will-navigate, so this never blocks
 //     startup — a reload of the image window is what actually passes through here.
+//     ADR 0012 (#215): asset:// may become a top-level document for raster formats
+//     ONLY — isViewerImageName is the one predicate every entry point that can turn
+//     a library file into a document (this guard's asset: branch, and
+//     ipc-window.ts's open-image-window) shares, so a new window never grows a
+//     second, looser allow-list of its own.
 //   - deny window.open / target=_blank entirely; external links are funneled
 //     through the open-external IPC (shell.openExternal), which this leaves intact.
 function installNavigationGuards() {
@@ -158,7 +197,25 @@ function installNavigationGuards() {
 }
 
 // --- Window ---
-function createWindow(show = true) {
+// show — same meaning as before #32 (create hidden, then show without activating —
+//   SMOKE/HOLOGRAM_START_MINIMIZED/HOLOGRAM_START_INACTIVE, all single-window paths).
+// opts.secondary — #32 St1: a window opened from Ctrl+Shift+N, the second-launch
+//   entry point, or the "open a new window" menu action, as opposed to the app's own
+//   first window this run (index.ts's boot call, always the primary). A secondary
+//   window:
+//     - is cascaded +24px from the LAST window's bounds instead of reading/writing
+//       the single `windowBounds` config key (there is one persisted position, the
+//       primary's — see the size/position persistence comment above).
+//     - never persists its own bounds (same reason).
+//     - is otherwise an identical window: same preload, same nav guards (installed
+//       once, app-wide, above), same renderer bundle. What makes it "secondary" is
+//       state the RENDERER reads back off its own boot query (`secondary=1`, the
+//       same channel `theme` already travels through) — ipc-config.ts's tabs guard
+//       reads the window's identity from the main-process side instead (its
+//       webContents.id against the primary's), so the renderer-side flag is
+//       advisory only and never a security boundary.
+function createWindow(show = true, opts?: { secondary?: boolean }) {
+  const secondary = !!(opts && opts.secondary);
   // Resolve the theme from config up front so the first paint (and the window's
   // backdrop) match it — no flash, and SMOKE captures reflect it. We pass the
   // PREF (auto/light/dark) to the page as a ?theme= query that theme.js reads
@@ -168,11 +225,32 @@ function createWindow(show = true) {
   const theme = ['auto', 'light', 'dark'].includes(cfgTheme) ? cfgTheme : 'auto';
   const dark = theme === 'dark' || (theme === 'auto' && nativeTheme.shouldUseDarkColors);
   const smoke = process.env.HOLOGRAM_SMOKE === '1';
-  const sb = smoke ? null : savedWindowBounds();
-  win = new BrowserWindow({
+  // A secondary window never reads the persisted primary bounds — it cascades off
+  // whichever window opened it instead (below), so `sb` here is primary-only.
+  const sb = smoke || secondary ? null : savedWindowBounds();
+  const opener = secondary ? windows[windows.length - 1] : null;
+  let cascadeBounds: { x: number; y: number } | null = null;
+  if (opener && !opener.isDestroyed()) {
+    try {
+      const ob = opener.getBounds();
+      // Clamp onto the opener's own display so a long chain of Ctrl+Shift+N never
+      // walks a window off-screen — cascade within that display, then wrap.
+      const display = screen.getDisplayMatching(ob);
+      const area = display.workArea;
+      const cascaded = { x: ob.x + 24, y: ob.y + 24 };
+      cascadeBounds = {
+        x: cascaded.x + 1100 <= area.x + area.width ? cascaded.x : area.x + 24,
+        y: cascaded.y + 820 <= area.y + area.height ? cascaded.y : area.y + 24,
+      };
+    } catch {
+      /* primary display APIs unavailable this early — fall back to OS placement */
+    }
+  }
+  const win = new BrowserWindow({
     width: (sb && sb.width) || 1100,
     height: (sb && sb.height) || 820,
     ...(sb && Number.isFinite(sb.x) ? { x: sb.x, y: sb.y } : {}),
+    ...(cascadeBounds ? cascadeBounds : {}),
     minWidth: 720,
     minHeight: 480,
     show,
@@ -197,36 +275,47 @@ function createWindow(show = true) {
       backgroundThrottling: false,
     },
   });
+  windows.push(win);
+  win.on('closed', () => {
+    const i = windows.indexOf(win);
+    if (i >= 0) windows.splice(i, 1);
+  });
   win.removeMenu();
   // The app-drawn maximize button mirrors the real window state, which also changes without
   // the button (snap, double-click on the drag strip, Win+arrow, the taskbar), so push every
-  // change rather than have the renderer poll.
+  // change rather than have the renderer poll. Closes over THIS window (not the shared
+  // primary binding — #32 St1: every window pushes its own maximize state to itself only).
   const sendMaximized = () => {
-    if (!win || win.isDestroyed()) return;
+    if (win.isDestroyed()) return;
     win.webContents.send('window-maximized-changed', win.isMaximized());
   };
   win.on('maximize', sendMaximized);
   win.on('unmaximize', sendMaximized);
-  if (!smoke) {
+  if (!smoke && !secondary) {
     if (sb && sb.isMaximized) win.maximize();
     // Remember size/position across launches (debounced on resize/move; flushed on close).
-    win.on('resize', persistWindowBounds);
-    win.on('move', persistWindowBounds);
-    win.on('maximize', persistWindowBounds);
-    win.on('unmaximize', persistWindowBounds);
-    win.on('close', saveWindowBoundsNow);
+    // Primary only — see the size/position persistence comment above.
+    win.on('resize', () => persistWindowBounds(win));
+    win.on('move', () => persistWindowBounds(win));
+    win.on('maximize', () => persistWindowBounds(win));
+    win.on('unmaximize', () => persistWindowBounds(win));
+    win.on('close', () => saveWindowBoundsNow(win));
   }
   // Pass smoke=1 so the renderer disables the offscreen render optimizations
   // (content-visibility / lazy images) that leave the hidden capture window blank.
+  // secondary=1 (#32 St1) is read by the renderer the same way theme/smoke are
+  // (a boot-time query param — services/window-role.ts reads it); the tabs.json
+  // guard itself is enforced main-side (ipc-config.ts), not by this flag.
+  const query = { theme, ...(smoke ? { smoke: '1' } : {}), ...(secondary ? { secondary: '1' } : {}) };
   if (DEV_SERVER_URL) {
     // Dev: load the renderer from electron-vite's Vite dev server (HMR + Fast Refresh).
     // Built through URL rather than string concatenation so the query lands in the
     // query slot whatever shape the (already validated) dev URL has.
     const devUrl = new URL(DEV_SERVER_URL);
-    devUrl.search = new URLSearchParams({ theme, ...(smoke ? { smoke: '1' } : {}) }).toString();
+    devUrl.search = new URLSearchParams(query).toString();
     win.loadURL(devUrl.href);
   } else {
-    win.loadURL(appIndexUrl({ theme, ...(smoke ? { smoke: '1' } : {}) }));
+    win.loadURL(appIndexUrl(query));
   }
   return win;
 }
@@ -256,4 +345,4 @@ function sendWindowToBack(w: BrowserWindow): void {
   }
 }
 
-export { APP_ICON, DEV_ORIGIN, DEV_SERVER_URL, devServer, createWindow, getWin, sendToWin, installNavigationGuards, sendWindowToBack };
+export { APP_ICON, DEV_ORIGIN, DEV_SERVER_URL, devServer, createWindow, getWin, getWindows, installNavigationGuards, sendToOtherWins, sendToWin, sendWindowToBack };
