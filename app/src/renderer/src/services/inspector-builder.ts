@@ -194,7 +194,7 @@ export function makeInspector(deps: InspectorBuilderDeps) {
     if (panelIsDocked()) return; // wide, or the image view at any width — a docked column, nothing to dismiss
     if (!panelIsVisible()) return;
     if (panelContains(e.target)) return;
-    if (!closestOf(e, '#mode-post')) return; // sidebar/overlays: leave it open
+    if (!closestOf(e, '[data-slot="content-scroll"]')) return; // sidebar/overlays: leave it open
     if (closestOf(e, '[data-slot="post-card"], [data-slot="poster-card"]')) return; // a cell click = swap the inspector to it (#143)
     e.preventDefault();
     e.stopPropagation();
