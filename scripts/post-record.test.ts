@@ -69,6 +69,9 @@ describe('既定値', () => {
     'views',
     'shotW',
     'shotH',
+    'mediaMaxW',
+    'mediaMaxH',
+    'mediaMaxBytes',
     'imageIndex',
     'imageCount',
   ])('%s の既定は null', (k) => {

@@ -231,7 +231,18 @@ export interface FilterCatEng extends FilterCatBase {
   opLte: string;
   apply(f: { engType?: string; min?: string; op?: string }): void;
 }
-export type FilterCat = FilterCatValues | FilterCatDate | FilterCatEng;
+// #162: the dimension/file-size facet's editor — axis (width/height/long/bytes)
+// + at-least/at-most + a numeric value (px for the first three, MB for bytes —
+// the form converts to bytes before apply(), same "editor unit differs from
+// stored unit" shape the engagement form doesn't need).
+export interface FilterCatDim extends FilterCatBase {
+  editor: 'dim';
+  axisOptions: Array<{ value: string; label: string }>;
+  opGte: string;
+  opLte: string;
+  apply(f: { axis?: string; value?: string; op?: string }): void;
+}
+export type FilterCat = FilterCatValues | FilterCatDate | FilterCatEng | FilterCatDim;
 // The "+ Filter" menu: the facet categories the current browse mode offers,
 // each carrying its own live value/apply closures (the component only renders +
 // routes). Recomputed per open so counts/labels/vocab are fresh.
@@ -245,7 +256,7 @@ export interface ActiveFilter {
   cat: string; // matches a filterCategories() entry (editor to reopen on click)
   type: string; // leaf type (icon cue)
   label: string; // category label
-  editor: 'values' | 'date' | 'eng';
+  editor: 'values' | 'date' | 'eng' | 'dim';
   mode: FacetMode; // positive "all"/"any", or "is not"
   values: string[]; // per-value labels shown inside the chip
   remove(): void; // clear the whole facet (all its leaves)
@@ -1579,6 +1590,32 @@ export function endFilterEditSession(): void {
         addFilter({ type: 'engagement', engType, min: n, op }); // numeric — the predicate compares p[engType] >= min
       },
     });
+    // #162: dimension/file-size facet. The editor collects a plain number in
+    // the axis's own display unit (px, or MB for size); apply() converts MB
+    // to bytes (the DB/predicate's unit — query.ts's makePostPredOf compares
+    // against mediaMaxBytes directly) before writing the leaf, and — same "no
+    // gte+lte on one type" rule engagement enforces above — replaces any
+    // existing leaf on the SAME axis rather than letting two coexist.
+    cats.push({
+      cat: 'dimension',
+      label: getMessage('qfDimension'),
+      editor: 'dim',
+      axisOptions: [
+        { value: 'width', label: getMessage('qfDimWidth') },
+        { value: 'height', label: getMessage('qfDimHeight') },
+        { value: 'long', label: getMessage('qfDimLong') },
+        { value: 'bytes', label: getMessage('qfDimBytes') },
+      ],
+      opGte: getMessage('qfEngGte'),
+      opLte: getMessage('qfEngLte'),
+      apply: ({ axis, value, op }) => {
+        const n = Number(value);
+        if (!(n > 0)) return;
+        const raw = axis === 'bytes' ? Math.round(n * 1024 * 1024) : Math.round(n);
+        removeCondsMatching((c) => c.type === 'dimension' && c.axis === axis);
+        addFilter({ type: 'dimension', axis, value: raw, op });
+      },
+    });
     return cats;
   };
 
@@ -1595,7 +1632,7 @@ export function endFilterEditSession(): void {
     // leaf type → { editor category, chip label, editor kind }. instance has no
     // standalone category (it lives as sub-rows under Platform), so its chip
     // reopens the platform editor.
-    const map: Record<string, { cat: string; label: string; editor: 'values' | 'date' | 'eng' }> = posters
+    const map: Record<string, { cat: string; label: string; editor: 'values' | 'date' | 'eng' | 'dim' }> = posters
       ? {
           platform: { cat: 'poster-platform', label: getMessage('sbPosterPlatformTitle'), editor: 'values' },
           tag: { cat: 'poster-tag', label: getMessage('sbPosterTagsTitle'), editor: 'values' },
@@ -1619,6 +1656,7 @@ export function endFilterEditSession(): void {
           folder: { cat: 'folder', label: getMessage('qfCatFolder'), editor: 'values' },
           date: { cat: 'date', label: getMessage('qfDate'), editor: 'date' },
           engagement: { cat: 'engagement', label: getMessage('qfEngagement'), editor: 'eng' },
+          dimension: { cat: 'dimension', label: getMessage('qfDimension'), editor: 'dim' },
         };
     const view = facetViewOf(qb.getTree(), opts);
     if (!view) return []; // non-facet persisted tree → no chips (read-only fallback dropped for the trial)

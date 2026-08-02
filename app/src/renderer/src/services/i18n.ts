@@ -557,6 +557,12 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     qfEngViews: '閲覧数（Xのみ）',
     qfEngGte: '以上',
     qfEngLte: '以下',
+    // #162: 寸法・ファイルサイズファセット
+    qfDimension: '寸法・サイズ',
+    qfDimWidth: '幅',
+    qfDimHeight: '高さ',
+    qfDimLong: '長辺',
+    qfDimBytes: 'ファイルサイズ',
     // viewer: window tabs
     tabNew: '新しいタブ',
     tabClose: 'タブを閉じる',
@@ -1082,6 +1088,12 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     qfEngViews: 'Views (X only)',
     qfEngGte: '\u2265',
     qfEngLte: '\u2264',
+    // #162: dimension/file-size facet
+    qfDimension: 'Dimensions & size',
+    qfDimWidth: 'Width',
+    qfDimHeight: 'Height',
+    qfDimLong: 'Long side',
+    qfDimBytes: 'File size',
     // viewer: window tabs
     tabNew: 'New tab',
     tabClose: 'Close tab',

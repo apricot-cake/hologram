@@ -174,6 +174,45 @@ describe('engagement', () => {
   });
 });
 
+// #162: 寸法・ファイルサイズファセット。value<=0 は素通し（engagement の min<=0 と同じ規約）、
+// 欠損（0/null）は positive/negated どちらでも不一致 — 「確かに満たすものだけ」が安全側。
+describe('dimension', () => {
+  test('width: 既定は gte', () => {
+    expect(predOf({ type: 'dimension', axis: 'width', value: 2000 })(post({ mediaMaxW: 3000, mediaMaxH: 2000 }))).toBe(true);
+    expect(predOf({ type: 'dimension', axis: 'width', value: 2000 })(post({ mediaMaxW: 1000, mediaMaxH: 2000 }))).toBe(false);
+  });
+
+  test('height: lte', () => {
+    expect(predOf({ type: 'dimension', axis: 'height', value: 2000, op: 'lte' })(post({ mediaMaxW: 3000, mediaMaxH: 2000 }))).toBe(true);
+    expect(predOf({ type: 'dimension', axis: 'height', value: 2000, op: 'lte' })(post({ mediaMaxW: 3000, mediaMaxH: 3000 }))).toBe(false);
+  });
+
+  test('long: 幅・高さの大きい方（縦長・横長どちらも同じ長辺で当たる）', () => {
+    expect(predOf({ type: 'dimension', axis: 'long', value: 3000 })(post({ mediaMaxW: 2000, mediaMaxH: 3000 }))).toBe(true);
+    expect(predOf({ type: 'dimension', axis: 'long', value: 3000 })(post({ mediaMaxW: 3000, mediaMaxH: 2000 }))).toBe(true);
+    expect(predOf({ type: 'dimension', axis: 'long', value: 3001 })(post({ mediaMaxW: 3000, mediaMaxH: 2000 }))).toBe(false);
+  });
+
+  test('bytes: mediaMaxBytes を参照する', () => {
+    expect(predOf({ type: 'dimension', axis: 'bytes', value: 10485760 })(post({ mediaMaxBytes: 20971520 }))).toBe(true);
+    expect(predOf({ type: 'dimension', axis: 'bytes', value: 10485760 })(post({ mediaMaxBytes: 1048576 }))).toBe(false);
+  });
+
+  test('value<=0 は素通し', () => {
+    expect(predOf({ type: 'dimension', axis: 'width', value: 0 })(post({ mediaMaxW: 0 }))).toBe(true);
+  });
+
+  test('欠損（0/null）は不一致 — gte 側', () => {
+    expect(predOf({ type: 'dimension', axis: 'width', value: 2000 })(post({ mediaMaxW: 0 }))).toBe(false);
+    expect(predOf({ type: 'dimension', axis: 'width', value: 2000 })(post({ mediaMaxW: null }))).toBe(false);
+    expect(predOf({ type: 'dimension', axis: 'width', value: 2000 })(post({}))).toBe(false);
+  });
+
+  test('欠損（0/null）は不一致 — lte 側も含め条件不成立（「不明を含める」扱いにしない）', () => {
+    expect(predOf({ type: 'dimension', axis: 'width', value: 2000, op: 'lte' })(post({ mediaMaxW: 0 }))).toBe(false);
+  });
+});
+
 // P2④: mode has been retired, and it always goes through the injected compile
 describe('text: 単一スマートマッチとメモ化', () => {
   test('本文に当たり、注入した matcher が呼ばれる', () => {
@@ -487,8 +526,15 @@ describe('木の変異ドメイン', () => {
     expect(Q.sameLeaf(leaf('tag', 'a'), { type: 'tag', value: 'b' })).toBe(false);
   });
 
+  // #162: dimension は axis 一致（value ではない — 幅2000px と 幅2000MB相当のバイト数が
+  // たまたま等しくなることはないが、規約としては axis 一致が正しい単位）
+  test('sameLeaf: dimension は axis', () => {
+    expect(Q.sameLeaf(leaf('dimension', undefined, { axis: 'width' }), { type: 'dimension', axis: 'width' })).toBe(true);
+    expect(Q.sameLeaf(leaf('dimension', undefined, { axis: 'width' }), { type: 'dimension', axis: 'height' })).toBe(false);
+  });
+
   describe('buildShadow', () => {
-    const t = group('and', [leaf('tag', 'a', { label: 'ラベル' }), group('or', [leaf('tag', 'a'), leaf('date', undefined, { neg: true, from: '2026-01-01', to: '2026-01-02' })]), leaf('engagement', undefined, { engType: 'likes', min: 5 })]);
+    const t = group('and', [leaf('tag', 'a', { label: 'ラベル' }), group('or', [leaf('tag', 'a'), leaf('date', undefined, { neg: true, from: '2026-01-01', to: '2026-01-02' })]), leaf('engagement', undefined, { engType: 'likes', min: 5 }), leaf('dimension', undefined, { axis: 'width', value: 2000, op: 'gte' })]);
     const sh = Q.buildShadow(t);
 
     test('type+value で重複排除し、label は保つ', () => {
@@ -502,6 +548,10 @@ describe('木の変異ドメイン', () => {
       expect(dt.kind).toBeUndefined();
       expect(dt.neg).toBeUndefined();
       expect(sh.some((f: any) => f.type === 'engagement' && f.min === 5)).toBe(true);
+    });
+
+    test('dimension も kind・neg を落として素通し（axis+value+op がそのまま残る）', () => {
+      expect(sh.some((f: any) => f.type === 'dimension' && f.axis === 'width' && f.value === 2000 && f.op === 'gte')).toBe(true);
     });
   });
 
