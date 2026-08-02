@@ -550,6 +550,23 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     triagePinClear: '外す',
     triageHint: '1-9 クイックタグ ／ F フォルダへ ／ Space スキップ ／ Backspace 取り消す ／ Esc 終了',
 
+    // viewer: クロッキー/スライドショー練習モード（#103）
+    practiceToolbarLabel: '練習モード',
+    practiceEmptyTitle: '出題できる画像がありません',
+    practiceEmptyDesc: '動画・うごイラを除く、現在のフィルタ結果の静止画が対象です。フィルタを変えてお試しください。',
+    practiceClose: '閉じる',
+    practiceProgress: '$1 / $2',
+    practicePause: '一時停止',
+    practiceResume: '再開',
+    practicePrev: '前へ',
+    practiceNext: '次へ',
+    practiceDurationTitle: '出題間隔',
+    practiceDuration30: '30秒',
+    practiceDuration60: '1分',
+    practiceDuration120: '2分',
+    practiceDuration300: '5分',
+    practiceHint: 'Space 一時停止・再開 ／ ←/→ 前後 ／ Esc 終了',
+
     // viewer: post card
     tipOpen: '投稿を開く',
     lbPrev: '前へ',
@@ -1125,6 +1142,23 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     triagePinSave: 'Pin',
     triagePinClear: 'Clear',
     triageHint: '1-9 quick tag / F to folder / Space skip / Backspace undo / Esc close',
+
+    // viewer: croquis/slideshow practice mode (#103)
+    practiceToolbarLabel: 'Practice mode',
+    practiceEmptyTitle: 'No images to draw from',
+    practiceEmptyDesc: 'Only still images (no video/ugoira) from the current filter count -- try a different filter.',
+    practiceClose: 'Close',
+    practiceProgress: '$1 / $2',
+    practicePause: 'Pause',
+    practiceResume: 'Resume',
+    practicePrev: 'Previous',
+    practiceNext: 'Next',
+    practiceDurationTitle: 'Pace',
+    practiceDuration30: '30s',
+    practiceDuration60: '1m',
+    practiceDuration120: '2m',
+    practiceDuration300: '5m',
+    practiceHint: 'Space pause/resume / left/right previous/next / Esc close',
 
     tipOpen: 'Open post',
     lbPrev: 'Previous',
