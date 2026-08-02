@@ -14,7 +14,7 @@
 // FilterChips) use lucide icons via filterbar's CatIcon, so the table went with
 // the render path in #230.
 import { createQueryBuilder } from './query-chips.ts';
-import { makePostPredOf, makePosterPredOf } from './query.ts';
+import { makePostPredOf, makePosterPredOf, hostOf } from './query.ts';
 import { compile as searchCompile } from './search.ts';
 import { postKeyOf } from './records.ts';
 import * as folders from './folders.ts';
@@ -38,12 +38,27 @@ export interface PostQueryBuilderDeps {
 // The post-side builder instance. predOf is also returned — viewer.ts's
 // listing.ts wiring (getFilteredPosts) needs the same predicate function.
 export function makePostQueryBuilder(deps: PostQueryBuilderDeps) {
-  const predOf = makePostPredOf({
+  const basePredOf = makePostPredOf({
     isInFolder: (id, cap, only) => folders.hasDeep(id, cap, only),
     fuzzyCompile: (q) => searchCompile(q),
     postKeyOf,
     tagIdOf: deps.tagIdOf,
   });
+  // #253 "サイト" facet — the two leaf shapes facets.ts's unsupported-domain rows
+  // add (see qfValues 'platform' case) are composed on TOP of query.ts's factory
+  // here rather than inside it: this round's file split keeps #180 off
+  // query.ts/extension/, and this wiring layer is where the post/poster predicate
+  // construction already lives (see the module comment above).
+  //   - 'domain': a platform-less post whose (www.-stripped) host matches.
+  //   - 'platform'/'__none': narrowed from "no platform" to "no origin at all"
+  //     (no resolvable host either) now that platform-less-but-domained posts
+  //     get their own 'domain' leaf instead of falling into '__none'.
+  const stripWww = (h: string) => h.replace(/^www\./, '');
+  const predOf = (f: HologramQueryLeaf): ((p: HologramPost) => boolean) => {
+    if (f.type === 'domain') return (p: HologramPost) => !p.platform && stripWww(hostOf(p.url)) === f.value;
+    if (f.type === 'platform' && f.value === '__none') return (p: HologramPost) => !p.platform && !hostOf(p.url);
+    return basePredOf(f);
+  };
   const qb = createQueryBuilder({
     storeKey: 'postQueryTree',
     predOf,

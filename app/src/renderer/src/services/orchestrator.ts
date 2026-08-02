@@ -1496,7 +1496,7 @@ export function endFilterEditSession(): void {
     const vc = valuesCat(postQB, POST_FACET_OPTS);
     const cats: FilterCat[] = [
       vc('kind', getMessage('fbCatKind'), 'kind', false),
-      vc('platform', getMessage('qfPlatform'), 'platform', false),
+      vc('platform', getMessage('qfSite'), 'platform', false),
       vc('postType', getMessage('qfPostType'), 'postType', false),
       vc('media', getMessage('qfMediaTitle'), 'media', false),
       vc('tag', getMessage('qfTag'), 'tag', true, { valuesFn: combinedTagValues('tag', 'work', 'character') }),
@@ -1573,8 +1573,12 @@ export function endFilterEditSession(): void {
         }
       : {
           kind: { cat: 'kind', label: getMessage('fbCatKind'), editor: 'values' },
-          platform: { cat: 'platform', label: getMessage('qfPlatform'), editor: 'values' },
+          platform: { cat: 'platform', label: getMessage('qfSite'), editor: 'values' },
           instance: { cat: 'platform', label: getMessage('qfInstance'), editor: 'values' },
+          // #253: an unsupported-domain row picks a 'domain' leaf — it has no
+          // standalone category either (same shape as 'instance' above), so its
+          // chip reopens the same "サイト" (platform) editor.
+          domain: { cat: 'platform', label: getMessage('qfSite'), editor: 'values' },
           postType: { cat: 'postType', label: getMessage('qfPostType'), editor: 'values' },
           media: { cat: 'media', label: getMessage('qfMediaTitle'), editor: 'values' },
           tag: { cat: 'tag', label: getMessage('qfTag'), editor: 'values' },

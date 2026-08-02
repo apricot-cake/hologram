@@ -71,7 +71,7 @@ const evalJs = `(async () => {
   // add a platform filter via the value editor
   byText('button', 'フィルタ').click();
   await waitFor(() => !!document.querySelector(POP + ' [data-slot="command-item"]'));
-  byText(POP + ' [data-slot="command-item"]', 'プラットフォーム').click();
+  byText(POP + ' [data-slot="command-item"]', 'サイト').click(); // #253: renamed from プラットフォーム
   await waitFor(() => !!rowEl('X'));
   rowEl('X').click();
   await sleep(220);

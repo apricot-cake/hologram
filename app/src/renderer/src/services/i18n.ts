@@ -497,8 +497,11 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
 
     // viewer: query/sidebar filters
     fbCatKind: '種別',
-    qfPlatform: 'プラットフォーム',
-    qfPlatformNone: 'プラットフォームなし',
+    // #253: 対応外ドメインを列挙するため「プラットフォーム」から「サイト」へ改名。
+    // qfSiteNone は「出自が無い」（URL を持たないレコード）専用になった —
+    // 対応外ドメインを持つレコードは qfSiteNone ではなく個々のドメイン行に入る。
+    qfSite: 'サイト',
+    qfSiteNone: '出自なし',
     qfPostType: '投稿タイプ',
     qfMediaTitle: 'メディアタイプ',
     qfDate: '日付',
@@ -993,8 +996,8 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     captured: 'Captured $1',
 
     fbCatKind: 'Kind',
-    qfPlatform: 'Platform',
-    qfPlatformNone: 'No platform',
+    qfSite: 'Site',
+    qfSiteNone: 'No origin',
     qfPostType: 'Post type',
     qfMediaTitle: 'Media type',
     qfDate: 'Date',

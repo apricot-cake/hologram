@@ -19,7 +19,8 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 
 // The chip's leading glyph carries the category cue (same idiom as the filter chips).
 // Poster-* categories share the base icon (poster-tag → Tag, etc.).
-const ICONS: Record<string, LucideIcon> = { kind: Link2, platform: Globe, postType: MessageSquare, media: Image, tag: Tag, work: BookMarked, character: Drama, hashtag: Hash, user: User, instance: Server, folder: Folder, date: Calendar, engagement: Heart, text: Search };
+// #253: 'domain' (an unsupported-site row's leaf) shares the 'platform' glyph — both are rows of the same "サイト" facet.
+const ICONS: Record<string, LucideIcon> = { kind: Link2, platform: Globe, domain: Globe, postType: MessageSquare, media: Image, tag: Tag, work: BookMarked, character: Drama, hashtag: Hash, user: User, instance: Server, folder: Folder, date: Calendar, engagement: Heart, text: Search };
 // Shared by the "+ Filter" category list and the active-filter chips (FilterChips).
 // Accepts either a category key ('poster-tag') or a leaf type ('tag') — both resolve
 // to the same base glyph.
