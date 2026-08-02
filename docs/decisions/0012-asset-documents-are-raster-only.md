@@ -31,6 +31,7 @@
 - **`asset://` へのトップレベル遷移も同じ許可リストで絞られる。** 以前は `asset:` なら何でも通っていた
 - **今後この窓を使う機能（[#79](https://github.com/apricot-cake/hologram/issues/79) ピン留め・[#32](https://github.com/apricot-cake/hologram/issues/32) 複数ウィンドウ）は、この制約の中で設計する。** 独自の UI を持つビューアを作るなら、それはレンダラの文書であって `asset://` の文書ではない
 - **[#7](https://github.com/apricot-cake/hologram/issues/7)（`app://` への移行）に条件がひとつ増える。** レンダラを独自スキームへ移すと、レンダラとライブラリのオリジンの関係が変わる＝移行時にこの決定を読み直す
+  - **2026-08-02 に読み直し済み＝この決定は無改修のまま成立している**（[ADR 0022](0022-renderer-served-from-app-scheme.md)）。レンダラは `app://bundle` になり、以前の「`file://` のページは `asset://` を fetch できない」という依存は、**別オリジンであること＋`asset://` に `corsEnabled` が無いこと＋レンダラ CSP の `connect-src` に `asset:` が無いこと**の3つに置き換わった。入口の許可リストも応答 CSP も変えていない
 
 ## 却下した案
 

@@ -3,6 +3,11 @@ import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import path from 'node:path';
 
+// The renderer CSP lives in main (app/src/main/renderer-csp.ts) because main is
+// what delivers it. Dev is the one place Vite has to be let past it, so the
+// nonce is read from there rather than written down twice.
+import { DEV_CSP_NONCE } from './src/main/renderer-csp.ts';
+
 const r = (...segs: string[]) => path.resolve(__dirname, ...segs);
 
 // The CJS 'use-sync-external-store' shim (react-aria / react-stately transitive
@@ -49,6 +54,10 @@ export default defineConfig({
         input: r('src/renderer/index.html'),
       },
     },
-    plugins: [react(), tailwindcss()],
+    // Dev only: nonce every tag Vite emits, so the Fast Refresh preamble (an
+    // INLINE module script) runs under the same CSP the packaged app uses.
+    // renderer-csp.ts has the why; `apply: "serve"` keeps it out of the build,
+    // where the policy carries no nonce and nothing needs one.
+    plugins: [react(), tailwindcss(), { name: 'hologram:dev-csp-nonce', apply: 'serve', config: () => ({ html: { cspNonce: DEV_CSP_NONCE } }) }],
   },
 });

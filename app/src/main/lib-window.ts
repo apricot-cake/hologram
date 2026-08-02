@@ -23,6 +23,7 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 
+import { appIndexUrl, isAppRendererUrl } from './renderer-files.ts';
 import { readConfig, writeConfig } from './lib-config.ts';
 import { resolveDevServerUrl } from './dev-server-guard.ts';
 import { isViewerImageName } from './library-files.ts';
@@ -90,8 +91,8 @@ function savedWindowBounds() {
 // electron-vite's dev server (HMR + React Fast Refresh for the renderer). Set
 // automatically by `electron-vite dev`; absent under `electron-vite build` (and
 // under Claude's own build→relaunch verification loop, which never runs
-// `electron-vite dev` — see docs/build.md). null in prod, so loadFile + the
-// file:// navigation guard stand unchanged.
+// `electron-vite dev` — see docs/build.md). null in prod, where the renderer
+// is served from app:// instead (#7).
 //
 // The value is an environment variable and this window's preload hands out
 // destructive IPC, so it goes through dev-server-guard rather than straight into
@@ -100,22 +101,22 @@ function savedWindowBounds() {
 // `devServer.rejected` is reported by index.ts — see this module's header.
 const devServer = resolveDevServerUrl(process.env.ELECTRON_RENDERER_URL, app.isPackaged);
 const DEV_SERVER_URL = devServer.url;
+// Derived from the guard's OUTPUT, never from the raw environment variable, so
+// a rejected value cannot widen what the navigation guard accepts, nor what the
+// dev-only CSP is pinned to (#381). null in prod, which makes both a no-op there.
+const DEV_ORIGIN = DEV_SERVER_URL ? new URL(DEV_SERVER_URL).origin : null;
 
 // Navigation lockdown for every web-contents the app creates. Without it, a file
 // (e.g. a local .html) dropped onto a window would make the top frame navigate to
 // file://…, which inherits the same preload and could call destructive IPC
 // (clear-all / import-complete / …). We:
-//   - deny will-navigate to anything other than our own renderer (file://…/
-//     renderer/index.html) or a raster image on the asset:// viewer scheme. The
-//     initial loadFile/loadURL does NOT fire will-navigate, so this never blocks
+//   - deny will-navigate to anything other than our own renderer
+//     (app://bundle/index.html) or a raster image on the asset:// viewer scheme.
+//     The initial loadURL does NOT fire will-navigate, so this never blocks
 //     startup — a reload of the image window is what actually passes through here.
 //   - deny window.open / target=_blank entirely; external links are funneled
 //     through the open-external IPC (shell.openExternal), which this leaves intact.
 function installNavigationGuards() {
-  const indexFile = path.resolve(__dirname, '..', 'renderer', 'index.html');
-  // Derived from the guard's output, never from the raw environment variable, so a
-  // rejected value cannot widen what will-navigate accepts (#381).
-  const devOrigin = DEV_SERVER_URL ? new URL(DEV_SERVER_URL).origin : null;
   const isAllowedNavigation = (rawUrl) => {
     let u: URL;
     try {
@@ -137,16 +138,13 @@ function installNavigationGuards() {
     }
     // Dev only: allow navigations within the Vite dev server — its HMR client does
     // a full location.reload() on non-Fast-Refreshable edits, which would otherwise
-    // be blocked here. devOrigin is null in prod, so this is a no-op there.
-    if (devOrigin && u.origin === devOrigin) return true;
-    // Our own renderer, reached by file path (ignore query/hash differences).
-    if (u.protocol === 'file:') {
-      try {
-        return path.resolve(decodeURIComponent(u.pathname).replace(/^\//, '')) === indexFile;
-      } catch {
-        return false;
-      }
-    }
+    // be blocked here. DEV_ORIGIN is null in prod, so this is a no-op there.
+    if (DEV_ORIGIN && u.origin === DEV_ORIGIN) return true;
+    // Our own renderer — its ENTRY document only, query/hash ignored. The
+    // scheme is not waved through wholesale: app://bundle/anything-else would
+    // be a second document on the origin that carries the preload bridge,
+    // which is the same blanket-pass mistake ADR 0012 records for asset://.
+    if (u.protocol === 'app:') return isAppRendererUrl(u);
     return false;
   };
   app.on('web-contents-created', (_e, contents) => {
@@ -228,7 +226,7 @@ function createWindow(show = true) {
     devUrl.search = new URLSearchParams({ theme, ...(smoke ? { smoke: '1' } : {}) }).toString();
     win.loadURL(devUrl.href);
   } else {
-    win.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'), { query: { theme, ...(smoke ? { smoke: '1' } : {}) } });
+    win.loadURL(appIndexUrl({ theme, ...(smoke ? { smoke: '1' } : {}) }));
   }
   return win;
 }
@@ -258,4 +256,4 @@ function sendWindowToBack(w: BrowserWindow): void {
   }
 }
 
-export { APP_ICON, DEV_SERVER_URL, devServer, createWindow, getWin, sendToWin, installNavigationGuards, sendWindowToBack };
+export { APP_ICON, DEV_ORIGIN, DEV_SERVER_URL, devServer, createWindow, getWin, sendToWin, installNavigationGuards, sendWindowToBack };

@@ -28,7 +28,8 @@ import { configDir, defaultLibraryDir, installer, pixivRefererFor, downloadAvata
 import { readConfig, writeConfig, getSaveFolder, readSavePointer, initSaveFolderRedundancy, isConfigCorrupt, invalidateConfigCache, saveFolderStatus } from './lib-config.ts';
 import { mimeForFile, registerImageProtocol } from './lib-thumbnails.ts';
 import { backupIntervalMs, createBackupEngine, dbSnapshotPath, readBackupConfig, readIntegrityStatus, validateBackupDir, validateSaveFolder, writeBackupConfig } from './lib-backup.ts';
-import { APP_ICON, DEV_SERVER_URL, createWindow, devServer, getWin, installNavigationGuards, sendToWin, sendWindowToBack } from './lib-window.ts';
+import { APP_ICON, DEV_ORIGIN, DEV_SERVER_URL, createWindow, devServer, getWin, installNavigationGuards, sendToWin, sendWindowToBack } from './lib-window.ts';
+import { installDevRendererCsp, registerAppProtocol } from './app-protocol.ts';
 // IPC handler modules, extracted from this file (mechanical move — logic unchanged).
 // Each exposes register(ctx); ctx is built after the core functions below and passed
 // in at the top-level registration site (see registerExtractedIpc, before whenReady).
@@ -65,10 +66,19 @@ if (process.env.ELECTRON_RENDERER_URL && devServer.rejected) {
   log.warn('Ignoring ELECTRON_RENDERER_URL, loading the bundled renderer', { reason: devServer.rejected });
 }
 
-// Custom scheme to serve images from the (arbitrary) save folder. Lets the
-// renderer lazy-load images by filename without disabling webSecurity or
-// loading every image into JS memory.
-protocol.registerSchemesAsPrivileged([{ scheme: 'asset', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } }]);
+// The two custom schemes this app serves, declared in ONE call: Electron
+// requires registerSchemesAsPrivileged to run before ready and to be called only
+// once, so a second registration site is not an option (a new scheme goes in
+// this array).
+//   asset:// — images and video from the (arbitrary) save folder, so the
+//     renderer can lazy-load them by filename without disabling webSecurity or
+//     holding every image in JS memory. Handler: lib-thumbnails.ts.
+//   app://   — the built renderer itself (#7). Handler: app-protocol.ts, which
+//     also says why neither scheme gets corsEnabled.
+protocol.registerSchemesAsPrivileged([
+  { scheme: 'asset', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } },
+  { scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true } },
+]);
 
 // --- Config ---
 // config.json reads/writes, the corruption guard and the redundant save-folder
@@ -681,7 +691,12 @@ if (!gotSingleInstanceLock) {
     // Dev server and sandbox runs never capture, so skip host registration —
     // no HKCU writes and no native-host copy into the shared ~/.hologram.
     if (!SMOKE && !SANDBOX && !DEV_SERVER_URL) ensureHostRegistered();
+    // Before createWindow: the window's very first load IS an app:// request.
+    registerAppProtocol();
     registerImageProtocol({ resolveInFolder });
+    // Prod serves the renderer's CSP on the app:// response itself; dev gets the
+    // same policy pinned onto the Vite dev server's responses (renderer-csp.ts).
+    installDevRendererCsp(DEV_ORIGIN);
     installNavigationGuards();
     const startMin = !SMOKE && process.env.HOLOGRAM_START_MINIMIZED === '1';
     // Verification launches (the sandbox second instance, a restart driven from a

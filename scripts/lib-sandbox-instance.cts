@@ -12,16 +12,27 @@
 //   1. the base port is derived from the tree's path, so a tree comes back to
 //      the same port and two trees do not start from the same number. This is
 //      convenience only — a hash collision or a busy port still walks.
-//   2. the live instance says which tree it was launched from, independently of
-//      any file we wrote: its page target is loaded out of <tree>/app/out, so
-//      the target's file:// URL names the tree. scripts/cdp-verify.cts refuses a
-//      sandbox port whose app came from somewhere else.
+//   2. the process actually LISTENING on the port is compared with the pid this
+//      tree recorded when it started its instance. scripts/cdp-verify.cts
+//      refuses a sandbox port held by anyone else.
+//
+// Mechanism 2 used to read the identity out of the CDP page target's URL: the
+// renderer was loaded from <tree>/app/out/renderer/index.html, so a file:// URL
+// named its tree. #7 moved the renderer onto app://bundle/index.html, which is
+// the same string in every tree — that identification would have gone silently
+// blind, which is exactly the failure mode #640 is about. The listening pid is
+// not derived from what the app loads at all, so it survives the move (and it
+// answers for an `electron-vite dev` instance too, which the URL never could).
+//
+// Windows-only lookup, which costs this module nothing it did not already owe:
+// the verify harness around it already shells out to user32 (cdp-verify.cts).
+// Everywhere else the lookup returns null = "cannot tell", and callers must not
+// read null as "fine" without saying why in their message.
 
 const crypto = require('node:crypto');
+const cp = require('node:child_process');
 const fs = require('node:fs');
-const http = require('node:http');
 const path = require('node:path');
-const { fileURLToPath } = require('node:url');
 
 // :9222 is the real app (docs/build.md, "Verification Rules" section), so sandboxes live above it.
 const PORT_MIN = 9333;
@@ -77,69 +88,42 @@ function clearInstance(tree: string): void {
   }
 }
 
-// The local path a CDP page target was loaded from, or null when the target is
-// not a file (an `electron-vite dev` renderer is served over http, and there is
-// nothing in an http URL that names a tree).
-function targetFilePath(url: string): string | null {
-  if (typeof url !== 'string') return null;
-  let parsed: URL;
+// The pid holding a LISTENING TCP socket on `port`, or null when there is none
+// (or the platform offers no lookup). netstat rather than PowerShell because
+// this runs on every sandbox start/stop/connect and a pwsh launch is ~half a
+// second of it. The state column is matched loosely — a row whose remote end is
+// the null address is a listener whatever the OS calls that state.
+function listeningPid(port: number): number | null {
+  if (process.platform !== 'win32') return null;
+  let out: string;
   try {
-    parsed = new URL(url);
+    out = cp.execFileSync('netstat', ['-ano', '-p', 'TCP'], { encoding: 'utf8', windowsHide: true, timeout: 5000 });
   } catch {
     return null;
   }
-  if (parsed.protocol !== 'file:') return null;
-  try {
-    return path.normalize(fileURLToPath(parsed));
-  } catch {
-    return null;
+  for (const line of out.split(/\r?\n/)) {
+    const m = line.trim().match(/^TCP\s+(\S+)\s+(\S+)\s+(\S+)\s+(\d+)$/);
+    if (!m) continue;
+    const [, local, remote, state, pid] = m;
+    if (!/^LISTEN/i.test(state) && !/:0$/.test(remote) && !/\*$/.test(remote)) continue;
+    if (Number(local.slice(local.lastIndexOf(':') + 1)) !== port) continue;
+    return Number(pid);
   }
+  return null;
 }
 
-// true = this tree's, false = someone else's, null = cannot tell (see above).
-// Callers must not read null as "fine" without saying why in their message.
-function targetBelongsToTree(url: string, tree: string): boolean | null {
-  const file = targetFilePath(url);
-  if (!file) return null;
-  const rel = path.relative(path.resolve(tree), file);
-  return rel !== '' && !rel.startsWith('..') && !path.isAbsolute(rel);
-}
-
-function listTargets(port: number, timeout = 1500): Promise<any[] | null> {
-  return new Promise((resolve) => {
-    const req = http.get({ host: '127.0.0.1', port, path: '/json/list', timeout }, (res) => {
-      let body = '';
-      res.on('data', (c) => (body += c));
-      res.on('end', () => {
-        try {
-          const list = JSON.parse(body);
-          resolve(Array.isArray(list) ? list : null);
-        } catch {
-          resolve(null);
-        }
-      });
-    });
-    req.on('error', () => resolve(null));
-    req.on('timeout', () => {
-      req.destroy();
-      resolve(null);
-    });
-  });
-}
-
-function pageTargetOf(targets: any[]): any | null {
-  return targets.find((t) => t.type === 'page' && String(t.url).includes('index.html')) || targets.find((t) => t.type === 'page') || null;
-}
-
-// The path a sandbox on this port was launched from, when it is NOT this tree.
-// null means "no reason to refuse": nothing is listening, it answers nothing we
-// can identify, or it is ours.
-async function foreignSandboxAt(port: number, tree: string): Promise<string | null> {
-  const targets = await listTargets(port);
-  if (!targets) return null;
-  const page = pageTargetOf(targets);
-  if (!page) return null;
-  return targetBelongsToTree(page.url, tree) === false ? targetFilePath(page.url) : null;
+// The pid holding `port` when it is NOT the instance this tree recorded. null
+// means "no reason to refuse": this tree has no record, nothing is listening,
+// the lookup is unavailable, or the holder is ours.
+//
+// `lookup` is injectable so the comparison can be unit-tested without a live
+// socket (and on a platform where listeningPid always answers null).
+function foreignSandboxAt(port: number, tree: string, lookup: (p: number) => number | null = listeningPid): number | null {
+  const inst = readInstance(tree);
+  if (!inst) return null;
+  const pid = lookup(port);
+  if (pid === null || pid === inst.pid) return null;
+  return pid;
 }
 
 module.exports = {
@@ -152,9 +136,6 @@ module.exports = {
   readInstance,
   writeInstance,
   clearInstance,
-  targetFilePath,
-  targetBelongsToTree,
-  listTargets,
-  pageTargetOf,
+  listeningPid,
   foreignSandboxAt,
 };
