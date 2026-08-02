@@ -247,7 +247,7 @@ export async function startDrag(): Promise<() => void> {
       grouped = !partial && !replaced && res.grouped > 0; // same post saved earlier → merges into one card in the app
       text = skewText ?? (partial ? partialSaveText(res.metaReason) : replaced ? t('dupReplaced') : grouped ? t('bannerSavedGrouped', [res.grouped + 1]) : t('bannerSaved'));
     } else {
-      text = timedOut ? saveFailureText('timeout') : saveFailureText(res?.errorKind, res?.metaReason);
+      text = timedOut ? saveFailureText('timeout') : saveFailureText(res?.errorKind, res?.metaReason, res?.queued);
     }
     const attention = partial || !!skewText;
     z.setState(attention ? 'partial' : ok ? 'success' : 'error', text);

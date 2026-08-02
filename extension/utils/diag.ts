@@ -18,6 +18,8 @@
 import { PROTOCOL_VERSION, hostProtocolVersion, protocolSkewOf } from '../../native-host/protocol.mts';
 import type { HostRequest } from '../../native-host/protocol.mts';
 import { NATIVE_HOST } from './native-host.ts';
+import type { QueueStatsResponse, ResendQueueResponse } from './messages.ts';
+import type { SaveQueueStats } from './save-queue.ts';
 
 export function startDiagnostics(): void {
   const DIAG_PREFIX = 'diaglog_';
@@ -104,14 +106,41 @@ export function startDiagnostics(): void {
     };
   }
 
+  // #203: the retry queue's inventory. Read-only (the {type:'queueStats'}
+  // handler never sweeps) so this page's own load never provokes a
+  // connectNative attempt on top of testNative()'s ping — resendQueue below
+  // is the one action that does.
+  function readQueueStats(): Promise<SaveQueueStats | null> {
+    return new Promise((resolve) => {
+      try {
+        chrome.runtime.sendMessage({ type: 'queueStats' }, (res?: QueueStatsResponse) => {
+          void chrome.runtime.lastError;
+          resolve(res?.ok ? res.stats : null);
+        });
+      } catch {
+        resolve(null);
+      }
+    });
+  }
+
+  // Re-render just the queue section without re-running the whole
+  // diagnostics pass (testNative launches the host — no reason to do that
+  // again just to show fresher queue numbers).
+  let lastOut: Record<string, unknown> | null = null;
+  function renderOut(out: Record<string, unknown>) {
+    lastOut = out;
+    window.__hologramDiag = out; // readable via the page console
+    const outEl = document.getElementById('out');
+    if (outEl) outEl.textContent = JSON.stringify(out, null, 2);
+  }
+
   async function run() {
     const out: Record<string, unknown> = { id: chrome.runtime.id, ts: new Date().toISOString() };
     out.storedLogs = await readStoredLogs();
     out.nativeTest = await testNative(); // launches the host if Chrome can find it
     out.protocol = protocolReport(out.nativeTest as Record<string, unknown>);
-    window.__hologramDiag = out; // readable via the page console
-    const outEl = document.getElementById('out');
-    if (outEl) outEl.textContent = JSON.stringify(out, null, 2);
+    out.saveQueue = await readQueueStats();
+    renderOut(out);
     return out;
   }
 
@@ -129,6 +158,20 @@ export function startDiagnostics(): void {
       const keys = Object.keys(all).filter((k) => k.startsWith(DIAG_PREFIX));
       chrome.storage.local.remove(keys, run);
     });
+  });
+  // #203: run one sweep of the retry queue now, then redraw with the numbers
+  // it leaves behind — the whole diagnostics pass is not re-run, so this
+  // does not also re-ping the host via testNative.
+  document.getElementById('resend-queue')?.addEventListener('click', () => {
+    try {
+      chrome.runtime.sendMessage({ type: 'resendQueue' }, (res?: ResendQueueResponse) => {
+        void chrome.runtime.lastError;
+        const stats = res?.ok ? res.stats : null;
+        renderOut({ ...(lastOut || {}), saveQueue: stats });
+      });
+    } catch {
+      /* extension context gone under this page — nothing to recover here */
+    }
   });
   run();
 }

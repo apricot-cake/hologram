@@ -285,6 +285,11 @@ export interface HologramTabPersist {
   autoTitle?: boolean;
   scrollTop?: number;
   nav?: { hist: HologramNavEntry[]; idx?: number };
+  // #21: a tag-management tab (see HologramTab.specialKind). Inside the blob,
+  // NOT a HologramPersistedTab sibling -- #565 (comment below) is exactly why:
+  // main's INSERT only carries id/pinned/title/state, so anything else at that
+  // level is silently dropped rather than persisted.
+  specialKind?: 'tags';
 }
 // One persisted tab. id / pinned / title are the ONLY siblings of the blob —
 // they are the columns main indexes (position comes from the array order).
@@ -316,6 +321,9 @@ export function serializeTabs(tabs: HologramTab[], activeTabId: string | null): 
         autoTitle: t._autoTitle || undefined,
         scrollTop: t._scrollTop,
         nav: Array.isArray(t._navHist) && t._navHist.length ? { hist: t._navHist.map((s) => JSON.parse(s)), idx: t._navIdx } : undefined,
+        // #21: inside the blob, not a HologramPersistedTab sibling -- see that
+        // interface's comment (the #565 guard this file's own test enforces).
+        specialKind: t.specialKind,
       },
     })),
   };
@@ -379,6 +387,7 @@ export function sanitizeSavedTabs(saved: unknown, genId: () => string): { tabs: 
       }
     }
     return {
+      specialKind: p.specialKind === 'tags' ? 'tags' : undefined,
       id: t.id || genId(),
       pinned: !!t.pinned,
       title: t.title || null,

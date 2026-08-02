@@ -16,6 +16,7 @@ import type { CropRect } from './crop.ts';
 import type { DomMeta } from './extractor/types.ts';
 import type { SaveFailureKind } from './native-error.ts';
 import type { SaveLogEntry, SaveStage } from './capture-log.ts';
+import type { SaveQueueStats } from './save-queue.ts';
 
 // === content script -> background ===
 
@@ -90,7 +91,20 @@ interface DumpLogsMessage {
   type: 'dumpLogs';
 }
 
-type ContentToBackgroundMessage = CaptureAndSendMessage | SavePostMessage | ImageDraggedMessage | CheckSavedMessage | CheckDuplicateMessage | LogCaptureMessage | DumpLogsMessage;
+// diag.ts reads the retry queue's inventory (#203) without side effects —
+// separate from ResendQueueMessage below so the page's initial load never
+// itself triggers a connectNative attempt.
+interface QueueStatsMessage {
+  type: 'queueStats';
+}
+
+// The diag page's "今すぐ再送" button: run one sweep of the retry queue now,
+// then answer with the stats a resend leaves behind (#203).
+interface ResendQueueMessage {
+  type: 'resendQueue';
+}
+
+type ContentToBackgroundMessage = CaptureAndSendMessage | SavePostMessage | ImageDraggedMessage | CheckSavedMessage | CheckDuplicateMessage | LogCaptureMessage | DumpLogsMessage | QueueStatsMessage | ResendQueueMessage;
 
 // === background -> content script ===
 
@@ -131,6 +145,10 @@ interface NotifyFailureMessage {
   type: 'notify';
   success: false;
   errorKind?: SaveFailureKind;
+  // See ErrorResponse's `queued` — this is the captureAndSend route's own
+  // carrier for the same fact (#203), since that route's outcome travels to
+  // the tab on this message rather than on the sendResponse.
+  queued?: boolean;
 }
 
 type NotifyMessage = NotifySuccessMessage | NotifyFailureMessage;
@@ -167,6 +185,15 @@ interface ErrorResponse {
   // 'fetchFailed'), so the banner can name the cause instead of the family
   // (#505). Absent for every other failure, which is about our own plumbing.
   metaReason?: string | null;
+  // #203: whether this failed 'save'/'saveDragged' was stashed in the retry
+  // queue (save-queue.ts) — true once it is in storage awaiting a resend,
+  // false when the host was unreachable but nothing could be kept (over
+  // budget even degraded, or the write itself failed), absent for every
+  // failure that never reached the unreachable check at all (busy, a
+  // 'savePost' route, an answer the host actually gave). The banner's wording
+  // (i18n.ts's saveFailureText) reads this to decide whether it may promise
+  // an automatic resend.
+  queued?: boolean;
 }
 
 // captureAndSend's outcome rides back to the tab on a separate {type:'notify'}
@@ -219,6 +246,20 @@ interface DumpLogsResponse {
   entries: unknown[];
 }
 
+// #203: the retry queue's inventory, as read by save-queue.ts's
+// saveQueueStats — shared shape for both the read-only query and the
+// resend-then-report round trip, since the two only differ in whether a
+// sweep ran first.
+interface QueueStatsResponse {
+  ok: true;
+  stats: SaveQueueStats;
+}
+
+interface ResendQueueResponse {
+  ok: true;
+  stats: SaveQueueStats;
+}
+
 type CropImageResponse = { croppedDataUrl: string } | null;
 
 export type {
@@ -243,6 +284,10 @@ export type {
   NotifyMessage,
   NotifySuccessMessage,
   ProtocolSkew,
+  QueueStatsMessage,
+  QueueStatsResponse,
+  ResendQueueMessage,
+  ResendQueueResponse,
   SavedEntry,
   SavedResults,
   SavedUpdateMessage,

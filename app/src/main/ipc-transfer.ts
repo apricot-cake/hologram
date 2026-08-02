@@ -34,7 +34,7 @@ function exportStamp() {
 }
 
 // Named subfolder for a relocated library, so picking a folder never dumps
-// sidecars/images flat into it (parallel to BACKUP_SUBDIR's Hologram-mirror).
+// sidecars/images flat into it (parallel to BACKUP_SUBDIR's Hologram-backup).
 const LIBRARY_SUBDIR = 'Hologram-library';
 
 // #37: does `dir` look like it already holds a Hologram library — a .trash or
@@ -413,7 +413,7 @@ function register(ctx: IpcContext) {
   // (jpg/media) PLUS DB-regenerated sidecars and the organization layer (#300/St7 —
   // lib-archive.ts's module comment explains why these can't be a disk copy
   // anymore). Excludes config.json (machine-specific).
-  // Manual-only: the scheduled path is the incremental mirror (runBackup), which
+  // Manual-only: the scheduled path is the backup engine (runBackup), which
   // replaced the old scheduled-ZIP idea — ZIP stays as the hand-carried snapshot.
   ipcMain.handle('export-complete', async (_e, mode, includeTrash): Promise<ExportCompleteResult> => {
     const imagesOnly = mode === 'images';

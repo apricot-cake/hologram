@@ -19,7 +19,10 @@ export interface HologramI18nApi {
   // save is still partial but no longer empty, and the wording has to say so —
   // "post info unavailable" would be flatly untrue of a record that has both.
   partialSaveText: (reason?: string | null, domFilled?: readonly string[] | null) => string;
-  saveFailureText: (kind?: SaveFailureKind | null, reason?: string | null) => string;
+  // queued (#203): true appends bannerQueued, false appends bannerNotQueued,
+  // absent/undefined appends nothing — see ErrorResponse's own `queued` doc
+  // (messages.ts) for which failures carry which value.
+  saveFailureText: (kind?: SaveFailureKind | null, reason?: string | null, queued?: boolean | null) => string;
   // null when there is nothing to say, so a caller can write
   // `skewText(x) ?? <its usual success wording>` (#205).
   skewSaveText: (skew?: ProtocolSkew | null) => string | null;
@@ -93,6 +96,14 @@ export const MESSAGES = {
     // you wait, so this does not point to the diagnostics page.
     bannerBusy: '保存が立て込んでいます。少し待ってからもう一度お試しください',
     bannerFailedUnknown: '保存に失敗しました。拡張機能の設定から診断ページを確認してください',
+    // #203: appended to a failure banner when (and only when) the save was
+    // actually stashed in the retry queue — never promised on a guess.
+    bannerQueued: '接続が回復したら自動で保存します',
+    // #203: the companion for when the save could NOT be queued (over the
+    // retry queue's byte budget even after dropping the acquisition
+    // originals, or the write itself failed) — said so the "will save
+    // automatically" promise above is never implied when it isn't true.
+    bannerNotQueued: 'この保存は退避できず、自動では保存されません',
     // The extension was updated (or reloaded), and the script left behind in
     // this tab got detached from the extension (#594). ⚠️Unlike every other
     // failure, this one **is not broken** = the new version is fine, only
@@ -215,6 +226,10 @@ export const MESSAGES = {
     // See the ja note: too many saves at once, nothing broken, no diagnostics.
     bannerBusy: 'Too many saves at once. Wait a moment and try again.',
     bannerFailedUnknown: 'Save failed. Open the diagnostics page from the extension settings.',
+    // See the ja notes: appended only when the save was actually queued for
+    // retry (#203).
+    bannerQueued: 'Will save automatically once the connection is back.',
+    bannerNotQueued: "This save could not be queued and won't be retried automatically.",
     // See the ja note: nothing is broken — this tab was left behind by an
     // update. One repair, no retry, no diagnostics page.
     bannerExtensionReloaded: 'The extension was updated. Please reload this page.',
@@ -298,10 +313,20 @@ export function createI18n(): Promise<HologramI18nApi> {
     // are our own plumbing breaking, which the post has no say in (#505).
     const postUnavailableText = (reason) => getMessage(reason === 'protected' ? 'bannerPostUnavailableProtected' : reason === 'ageRestricted' ? 'bannerPostUnavailableAgeRestricted' : 'bannerPostUnavailable');
 
-    const saveFailureText = (kind, reason?) =>
-      kind === 'post-unavailable'
-        ? postUnavailableText(reason)
-        : getMessage(kind === 'host-missing' ? 'bannerHostMissing' : kind === 'host-unavailable' ? 'bannerHostUnavailable' : kind === 'origin-rejected' ? 'bannerOriginRejected' : kind === 'timeout' ? 'bannerTimedOut' : kind === 'busy' ? 'bannerBusy' : 'bannerFailedUnknown');
+    const saveFailureText = (kind, reason?, queued?) => {
+      const base =
+        kind === 'post-unavailable'
+          ? postUnavailableText(reason)
+          : getMessage(kind === 'host-missing' ? 'bannerHostMissing' : kind === 'host-unavailable' ? 'bannerHostUnavailable' : kind === 'origin-rejected' ? 'bannerOriginRejected' : kind === 'timeout' ? 'bannerTimedOut' : kind === 'busy' ? 'bannerBusy' : 'bannerFailedUnknown');
+      // #203: layered on top of the base reason, never in place of it — a
+      // save can be both "the host timed out" AND "queued for retry" at
+      // once. queued is undefined for every failure that never reached the
+      // retry queue's own check at all (busy, a route that isn't queueable,
+      // an answer the host actually gave), and then nothing is appended.
+      if (queued === true) return `${base} ${getMessage('bannerQueued')}`;
+      if (queued === false) return `${base} ${getMessage('bannerNotQueued')}`;
+      return base;
+    };
 
     // The save worked; the halves it travelled between did not match (#205).
     // Returns null for 'match' and for no answer yet, so this can be tried

@@ -1,15 +1,31 @@
 'use strict';
 
-// Backup / incremental mirror (#227) — index.ts's `// --- Backup / incremental mirror ---`
-// section, moved out whole: the mirror engine, its schedule, the config it reads,
-// the two destination validators that sit in the same block, and the DB<->media
-// integrity pass that piggybacks the same run.
+// The backup engine (#227 moved it out of index.ts; #233 re-shaped it).
+//
+// One engine, two lanes, and a destination adapter underneath:
+//
+//   media lane  every file the library owns — root, avatars/, emoji/ and, since
+//               #233, .trash/ as well. Write-once, so an incremental pass only
+//               has to carry what is not at the destination yet. It runs right
+//               after a save too (noteLibraryMutation), because a post that is
+//               gone from the web cannot be fetched again: the loss window for
+//               media is meant to be zero, not one interval.
+//   DB lane     the live database is never copied as a file (#97). It reaches a
+//               backup as a generation written through SQLite's Online Backup
+//               API into the LOCAL generation store (lib-db-generations.ts),
+//               which is the source of truth; the destination just gets the
+//               same store.
+//
+// Both lanes end in the same place: build the picture of what the destination
+// should contain, ask the destination what it does contain, and write the
+// difference (lib-backup-plan.ts). #233 splits "what to back up" from "how to
+// write it" (lib-backup-destination.ts) so the OAuth cloud destinations are a
+// second adapter rather than a second engine.
 //
 // The integrity pass is here because it LIVED here, not because it is a backup:
 // #301 put it in this block on purpose ("share the detection mechanism with
-// #100's item 1, don't duplicate the implementation"), so runBackup's already-scanned file set can be reused and the daily
-// reconciliation costs no extra readdir. Splitting the two apart would either
-// duplicate that scan or reintroduce the coupling as an import.
+// #100's item 1, don't duplicate the implementation"), so a run's already-scanned
+// file set can be reused and the daily reconciliation costs no extra readdir.
 //
 // What the engine cannot own is the record pipeline: it must sync the DB before
 // it snapshots or counts orphans, and that pipeline stays in index.ts. Those
@@ -24,13 +40,14 @@ import type Database from 'better-sqlite3';
 import { INBOX_DIRNAME } from '../../../native-host/inbox.mts';
 import { configDir } from './native-host.ts';
 import { readConfig, writeConfig, getSaveFolder } from './lib-config.ts';
-import { commitFileAtomic } from './lib-atomic.ts';
-import { pruneDecision, nextBaseline } from './backup-guard.ts';
-import { snapshotDatabase } from './lib-db-snapshot.ts';
+import { BACKUP_SUBDIR, backupRoot, createLocalFolderDestination, TMP_RE } from './lib-backup-destination.ts';
+import { groupOf, planBackup } from './lib-backup-plan.ts';
+import type { SourceFile } from './lib-backup-plan.ts';
+import { GENERATIONS_DIRNAME, createGeneration, latestGeneration, listGenerations, pruneGenerations } from './lib-db-generations.ts';
 import { checkOrphans, recoverOrphanRecords } from './lib-db-integrity.ts';
 import type { DbHandle } from './ipc-context.ts';
 
-/** What the mirror engine needs from the record pipeline index.ts owns. */
+/** What the engine needs from the record pipeline index.ts owns. */
 export interface BackupEngineDeps {
   /** Opens the DB and drains the intake queue; null when no save folder is set. */
   ensurePostsSynced(): DbHandle | null;
@@ -39,34 +56,28 @@ export interface BackupEngineDeps {
   send(channel: string, ...args: unknown[]): void;
 }
 
-// The library's trash bucket, skipped when collecting source files. Named again
-// here rather than shared: lib-db-integrity.ts already keeps its own copy for the
-// same reason (a one-token layout constant is cheaper to restate than to route
-// through an import that would tie two otherwise-independent sweeps together).
+// The library's trash bucket. Mirrored since #233 (it used to be skipped), so a
+// restore brings back the pending deletions as pending deletions instead of
+// resurrecting them as live posts with their trashed-at time lost.
 const TRASH_SUBDIR = '.trash';
-
-// Placing the save folder itself inside a cloud-sync folder makes it fragile to
-// sync happening mid live-write.
-// Here we keep a "copy (remote)" inside the chosen "destination folder".
-// Assets are immutable (never change once written) → copy only files missing at
-// the destination (O(new)).
-// Deletion propagates to the destination too (latest mirror). ZIP stays reserved
-// for manual export only.
-// As a safeguard against dumping straight into the destination root, write to a
-// dedicated subfolder (BACKUP_SUBDIR below).
-const BACKUP_SUBDIR = 'Hologram-mirror';
-function backupDest(dir) {
-  return path.join(dir, BACKUP_SUBDIR);
-}
 // (LIBRARY_SUBDIR — the named subfolder for a relocated library — lives in
 // ./ipc-transfer.ts with the pick-save-folder handler that owns it.)
 
-// Where runBackup's DB snapshot lands (#301) — a dedicated subfolder under the
-// mirror root, same "don't dump into dest's top level" convention INBOX_DIRNAME
-// already follows there. Read by index.ts (restore) and written in runBackup
-// (snapshot); kept as one function so the two never drift apart.
-function dbSnapshotPath(backupDir: string) {
-  return path.join(backupDest(backupDir), 'hologram-db', 'hologram.db');
+// Pre-release only: the destination folder was called Hologram-mirror until
+// #233 retired the word "mirror". Rename it in place rather than let a second
+// tree grow beside it — no data is read from the old name, so this can go once
+// no dev machine has one.
+function migrateLegacyDestinationFolder(dir: string): void {
+  const legacy = path.join(dir, 'Hologram-mirror');
+  const current = backupRoot(dir);
+  try {
+    if (fs.existsSync(legacy) && !fs.existsSync(current)) {
+      fs.renameSync(legacy, current);
+      log.info(`renamed backup folder ${legacy} -> ${current}`);
+    }
+  } catch (err) {
+    log.warn('could not rename the legacy backup folder:', err);
+  }
 }
 
 const BACKUP_DEFAULTS = {
@@ -90,10 +101,10 @@ function writeBackupConfig(patch) {
 
 // Integrity-check status (#301) — kept OUT of BACKUP_DEFAULTS/backup config on
 // purpose: the startup orphan/integrity_check pass must run and be visible
-// even when no mirror `dir` is configured (that's the whole point of it being
-// separate from the "daily reconciliation" pass that piggybacks on runBackup),
-// so it cannot live inside a config object whose UI treats `dir` as the
-// feature's on/off switch.
+// even when no destination `dir` is configured (that's the whole point of it
+// being separate from the "daily reconciliation" pass that piggybacks on a
+// backup run), so it cannot live inside a config object whose UI treats `dir`
+// as the feature's on/off switch.
 const INTEGRITY_DEFAULTS = {
   lastCheckAt: null,
   dbOk: null, // null = never checked yet
@@ -127,7 +138,7 @@ function validateBackupDir(dir) {
 // --- Save-folder relocation ---
 // Reject a destination that would corrupt the library or loop: the current
 // folder itself, anything nested with it (can't move a folder into its own
-// child), the config dir, or the backup mirror. Last, prove it's writable.
+// child), the config dir, or the backup destination. Last, prove it's writable.
 function validateSaveFolder(dir) {
   if (!dir || typeof dir !== 'string' || !dir.trim()) return { ok: false, error: 'invalid' };
   const cur = getSaveFolder();
@@ -158,19 +169,80 @@ function backupIntervalMs(b) {
   return Math.max(60000, (Number(b.intervalValue) || 1) * (unitMs[b.intervalUnit] || unitMs.day));
 }
 
+// A save settles into the media lane this long after the last library change.
+// Long enough that a bulk import fires one run instead of hundreds, short
+// enough that "backed up right after saving" is true in the way the user means.
+const IMMEDIATE_BACKUP_DELAY_MS = 15 * 1000;
+// The DB lane's non-time trigger ("変更N件"): how many library changes may
+// accumulate before the next generation is written regardless of the clock.
+const GENERATION_CHANGE_THRESHOLD = 50;
+// …and its time trigger: one generation a day is #233's "日次" boundary.
+const GENERATION_INTERVAL_MS = 24 * 60 * 60 * 1000;
+
 /**
- * The mirror engine and the integrity pass it shares a run with. Called once,
- * from index.ts's ctx assembly — `backupRunning` and the heartbeat timer are
- * this closure's state rather than module-level, so a second engine cannot
- * silently share the "a run is in flight" flag with the first.
+ * Everything the library offers a backup, keyed by destination-relative path.
+ * Directory names are the library's own, so a destination is a readable copy of
+ * the library rather than a repacked format.
+ */
+async function collectLibraryFiles(src: string): Promise<Map<string, SourceFile>> {
+  const out = new Map<string, SourceFile>();
+  const add = async (rel: string, abs: string, mutable?: boolean) => {
+    try {
+      const st = await fs.promises.stat(abs);
+      if (st.isFile()) out.set(rel, { abs, size: st.size, mtimeMs: st.mtimeMs, mutable });
+    } catch {
+      /* skip inaccessible entries */
+    }
+  };
+  const collectDir = async (sub: string, mutable?: (name: string) => boolean) => {
+    let names: string[];
+    try {
+      names = await fs.promises.readdir(path.join(src, ...sub.split('/')));
+    } catch {
+      return; // absent (a library that never grew that folder)
+    }
+    for (const f of names) {
+      if (TMP_RE.test(f)) continue;
+      await add(`${sub}/${f}`, path.join(src, ...sub.split('/'), f), mutable ? mutable(f) : undefined);
+    }
+  };
+
+  let rootNames: string[];
+  try {
+    rootNames = await fs.promises.readdir(src);
+  } catch {
+    rootNames = [];
+  }
+  for (const f of rootNames) {
+    if (TMP_RE.test(f)) continue;
+    await add(f, path.join(src, f));
+  }
+  // Shared stores, single level and write-once, mirrored under their own names
+  // so a restore keeps author icons (#290 added emoji/ in the same shape).
+  await collectDir('avatars');
+  await collectDir('emoji');
+  // The trash's sidecar JSON gains a `trashedAt` when the post lands there, so
+  // it is the one file in the library that is not write-once.
+  await collectDir(TRASH_SUBDIR, (f) => /\.json$/i.test(f));
+  await collectDir(`${INBOX_DIRNAME}/new`);
+  await collectDir(`${INBOX_DIRNAME}/segments`);
+  await collectDir(GENERATIONS_DIRNAME);
+  return out;
+}
+
+/**
+ * The engine and the integrity pass it shares a run with. Called once, from
+ * index.ts's ctx assembly — the in-flight flags and the heartbeat timer are this
+ * closure's state rather than module-level, so a second engine cannot silently
+ * share them with the first.
  */
 function createBackupEngine({ ensurePostsSynced, scheduleSavedIndexWrite, send }: BackupEngineDeps) {
   // The one shared DB<->media reconciliation pass (#301 design: "share the
   // detection mechanism with #100's item 1, don't duplicate the implementation")
-  // — called both at startup (independent
-  // of any backup config) and from runBackup (piggybacking the interval run as
-  // the "daily reconciliation"). `knownFiles`, when passed, is runBackup's already-scanned
-  // srcSet — skips a second readdir of the save folder.
+  // — called both at startup (independent of any backup config) and from
+  // runBackup (piggybacking the interval run as the "daily reconciliation").
+  // `knownFiles`, when passed, is the run's already-collected library listing,
+  // which skips a second readdir of the save folder.
   function runIntegrityPass(folder: string, sqlite: any, knownFiles?: Set<string>) {
     let dbOk = true;
     try {
@@ -188,7 +260,7 @@ function createBackupEngine({ ensurePostsSynced, scheduleSavedIndexWrite, send }
   }
 
   // Standalone startup check (armBackupSchedule() call site) — must work with no
-  // backup mirror configured, so it opens the DB itself rather than piggybacking
+  // destination configured, so it opens the DB itself rather than piggybacking
   // on runBackup (which early-returns before opening anything when `!b.dir`).
   async function runStartupIntegrityCheck() {
     const folder = getSaveFolder();
@@ -234,6 +306,47 @@ function createBackupEngine({ ensurePostsSynced, scheduleSavedIndexWrite, send }
     return { ok: true, recovered: written.length, adopted };
   }
 
+  // --- DB lane ------------------------------------------------------------
+  let generationRunning = false;
+  let mutationsSinceGeneration = 0;
+
+  /** Has a boundary passed since the newest generation was written? */
+  function generationDue(folder: string): boolean {
+    const list = listGenerations(folder);
+    if (!list.length) return true;
+    if (mutationsSinceGeneration >= GENERATION_CHANGE_THRESHOLD) return true;
+    return Date.now() - Date.parse(list[0].at) >= GENERATION_INTERVAL_MS;
+  }
+
+  /**
+   * Writes one generation into the local store and thins the store afterwards.
+   * `force` is the manual "make a restore point now" path; without it the
+   * boundaries (a day elapsed, or enough changes piled up) decide.
+   */
+  async function runDbGeneration(reason: string, force = false) {
+    const folder = getSaveFolder();
+    if (!folder) return { ok: false, error: 'not-configured' };
+    if (!fs.existsSync(folder)) return { ok: false, error: 'src-missing' };
+    if (generationRunning) return { ok: false, error: 'busy' };
+    if (!force && !generationDue(folder)) return { ok: false, error: 'not-due' };
+    generationRunning = true;
+    try {
+      const handle = await ensurePostsSynced();
+      if (!handle) return { ok: false, error: 'not-configured' };
+      const file = await createGeneration(handle.sqlite, folder);
+      mutationsSinceGeneration = 0;
+      const removed = await pruneGenerations(folder);
+      log.info(`db generation written (${reason}): ${path.basename(file)}${removed.length ? ` — thinned ${removed.length}` : ''}`);
+      return { ok: true, file, thinned: removed.length };
+    } catch (err: any) {
+      log.error('db generation failed:', err);
+      return { ok: false, error: err?.message || 'failed' };
+    } finally {
+      generationRunning = false;
+    }
+  }
+
+  // --- media lane ---------------------------------------------------------
   let backupRunning = false;
   async function runBackup(reason) {
     const b = readBackupConfig();
@@ -243,239 +356,84 @@ function createBackupEngine({ ensurePostsSynced, scheduleSavedIndexWrite, send }
     // #37: never let a missing library read as "an empty library backed up
     // successfully" — refuse instead of collecting 0 files and writing that
     // as this run's lastResult (backup-guard's prune-skip only protects the
-    // MIRROR's existing files; it does not stop this misleading "ok" outcome).
+    // DESTINATION's existing files; it does not stop this misleading "ok"
+    // outcome).
     if (!fs.existsSync(src)) return { ok: false, error: 'src-missing' };
     // #37: the destination's PARENT is gone (drive unplugged, folder renamed).
-    // mkdir({recursive:true}) below would silently recreate the whole chain —
-    // exactly the "looks fine, quietly starts over" failure this Issue closes.
+    // The adapter's mkdir would silently recreate the whole chain — exactly the
+    // "looks fine, quietly starts over" failure this Issue closes.
     if (!fs.existsSync(b.dir)) return { ok: false, error: 'dest-missing' };
     if (backupRunning) return { ok: false, error: 'busy' };
     backupRunning = true;
-    send('backup-start'); // sidebar sync icon → syncing
-    // written = new files copied; pruned = files deleted (propagated deletions)
-    const result: any = { ok: true, reason: reason || 'manual', fileCount: 0, written: 0, pruned: 0 };
+    send('backup-start'); // sidebar status → running
+    const result: any = { ok: true, reason: reason || 'manual', fileCount: 0, written: 0, moved: 0, pruned: 0 };
     try {
-      const dest = backupDest(b.dir);
-      await fs.promises.mkdir(dest, { recursive: true });
+      migrateLegacyDestinationFolder(b.dir);
+      // The DB lane runs first when a boundary is due, so the generation it
+      // writes is part of what this same pass carries to the destination.
+      await runDbGeneration(reason || 'manual');
 
-      // Collect source files, skipping the trash bucket and transient write artifacts.
-      // Keep each file's mtime so the mirror copy can carry it over.
-      let srcFiles: string[];
-      try {
-        srcFiles = await fs.promises.readdir(src);
-      } catch {
-        srcFiles = [];
-      }
-      const srcSet = new Set<string>();
-      const srcStat = new Map<string, any>(); // name -> { size, mtimeMs }
-      for (const f of srcFiles) {
-        if (f === TRASH_SUBDIR) continue;
-        if (/\.tmp(-\d+)?$/i.test(f)) continue;
+      const destination = createLocalFolderDestination(b.dir);
+      const source = await collectLibraryFiles(src);
+      const present = await destination.list();
+      const prevSummary = b.lastResult || {};
+      const baseline = Number(prevSummary.lastGoodCount) || Number(prevSummary.fileCount) || 0;
+      const plan = planBackup(source, present, baseline);
+
+      // Moves first: a relocation frees the name a copy would otherwise land
+      // on, and it is the operation that must never turn into re-transferring
+      // the bytes.
+      for (const m of plan.move) {
         try {
-          const st = await fs.promises.stat(path.join(src, f));
-          if (st.isFile()) {
-            srcSet.add(f);
-            srcStat.set(f, { size: st.size, mtimeMs: st.mtimeMs });
-          }
-        } catch {
-          /* skip inaccessible entries */
-        }
-      }
-      // Shared avatar store (avatars/<urlhash>.<ext> — write-once, single level):
-      // mirror it under the same relative names so a restore keeps author icons.
-      // Collected as 'avatars/<f>' entries; path.join resolves the '/' on Windows.
-      const collectSubdir = async (root, sub, into, stats) => {
-        let names: string[] = [];
-        try {
-          names = await fs.promises.readdir(path.join(root, sub));
-        } catch {
-          return; // subfolder absent (pre-avatars library)
-        }
-        for (const f of names) {
-          if (/\.tmp(-\d+)?$/i.test(f)) continue;
-          try {
-            const st = await fs.promises.stat(path.join(root, sub, f));
-            if (st.isFile()) {
-              into.add(`${sub}/${f}`);
-              if (stats) stats.set(`${sub}/${f}`, { size: st.size, mtimeMs: st.mtimeMs });
-            }
-          } catch {
-            /* skip inaccessible entries */
-          }
-        }
-      };
-      await collectSubdir(src, 'avatars', srcSet, srcStat);
-      // #290: the shared custom-emoji store, same write-once/single-level shape as avatars/.
-      await collectSubdir(src, 'emoji', srcSet, srcStat);
-      result.fileCount = srcSet.size;
-
-      // Collect destination files
-      // (.hologram-inbox mirroring happens further below, deliberately OUTSIDE
-      // srcSet/destSet — see the comment there for why.)
-      let destFiles: string[];
-      try {
-        destFiles = await fs.promises.readdir(dest);
-      } catch {
-        destFiles = [];
-      }
-      const destSet = new Set<string>(destFiles.filter((f) => !/\.tmp(-\d+)?$/i.test(f)));
-      await collectSubdir(dest, 'avatars', destSet, null);
-      await collectSubdir(dest, 'emoji', destSet, null);
-
-      // .hologram-inbox/{new,segments} (#5 St6 / #299): mirrored separately from
-      // srcSet/destSet, NOT folded into the general file-count pruneDecision()
-      // guard above — compaction can legitimately shrink the loose event count
-      // by >50% in one run (1,000 loose -> 1 segment), which must never look
-      // like the "src collapsed" signal that guard exists to catch
-      // (backup-guard.ts's module comment, the 2026-06-23 library-loss
-      // incident). tmp/ is excluded; both new/ and segments/ entries are
-      // immutable (write-once, like avatars/) so "present at dest" is proof
-      // enough — no drift-refresh needed.
-      const srcInboxNew = new Set<string>();
-      const destInboxNew = new Set<string>();
-      const srcInboxSegments = new Set<string>();
-      const destInboxSegments = new Set<string>();
-      const collectInboxSubdir = async (root: string, sub: string, into: Set<string>) => {
-        let names: string[] = [];
-        try {
-          names = await fs.promises.readdir(path.join(root, INBOX_DIRNAME, sub));
-        } catch {
-          return; // no inbox (or that subdir) yet
-        }
-        for (const f of names) {
-          if (/\.tmp(-\d+)?$/i.test(f)) continue;
-          try {
-            const st = await fs.promises.stat(path.join(root, INBOX_DIRNAME, sub, f));
-            if (st.isFile()) into.add(f);
-          } catch {
-            /* skip inaccessible entries */
-          }
-        }
-      };
-      await collectInboxSubdir(src, 'new', srcInboxNew);
-      await collectInboxSubdir(src, 'segments', srcInboxSegments);
-      await collectInboxSubdir(dest, 'new', destInboxNew);
-      await collectInboxSubdir(dest, 'segments', destInboxSegments);
-
-      const copyInboxMissing = async (sub: string, srcNames: Set<string>, destNames: Set<string>) => {
-        if (!srcNames.size) return;
-        await fs.promises.mkdir(path.join(dest, INBOX_DIRNAME, sub), { recursive: true });
-        for (const f of srcNames) {
-          if (destNames.has(f)) continue;
-          const destFile = path.join(dest, INBOX_DIRNAME, sub, f);
-          try {
-            await commitFileAtomic(destFile, (tmp) => fs.promises.copyFile(path.join(src, INBOX_DIRNAME, sub, f), tmp), { tmpSuffix: `.tmp-${Date.now()}` });
-            destNames.add(f);
-            result.written++;
-          } catch (e: any) {
-            if (!result.firstError) result.firstError = e.message;
-          }
-        }
-      };
-      // segments first: the loose prune below depends on knowing which segments
-      // already landed at dest THIS run.
-      await copyInboxMissing('segments', srcInboxSegments, destInboxSegments);
-      await copyInboxMissing('new', srcInboxNew, destInboxNew);
-
-      // Copy files missing at dest; presence is proof enough. Everything the mirror
-      // carries from the library is write-once — media, screenshots, avatars, inbox
-      // segments — so a file that exists at dest can never have a newer version at
-      // src. Until #302 this also had to re-copy the organization JSON on size/mtime
-      // drift, because that layer was rewritten in place on every edit; it lives in
-      // the DB now and reaches the mirror as the snapshot runBackup takes below.
-      // The copy is atomic (tmp + rename) so a reader never sees a half-written file.
-      if ([...srcSet].some((f) => f.startsWith('avatars/'))) {
-        await fs.promises.mkdir(path.join(dest, 'avatars'), { recursive: true });
-      }
-      // #290: same on-demand mkdir for the shared emoji/ store.
-      if ([...srcSet].some((f) => f.startsWith('emoji/'))) {
-        await fs.promises.mkdir(path.join(dest, 'emoji'), { recursive: true });
-      }
-      for (const f of srcSet) {
-        if (destSet.has(f)) continue;
-        try {
-          await commitFileAtomic(
-            path.join(dest, f),
-            async (tmp) => {
-              await fs.promises.copyFile(path.join(src, f), tmp);
-              // Preserve mtime (floored to ms, the granularity utimes can set) so a
-              // mirror restored back into place keeps the library's own timestamps.
-              try {
-                const s = srcStat.get(f);
-                if (s) {
-                  const t = new Date(Math.floor(s.mtimeMs));
-                  await fs.promises.utimes(tmp, t, t);
-                }
-              } catch {
-                /* best-effort */
-              }
-            },
-            { tmpSuffix: `.tmp-${Date.now()}` },
-          );
-          result.written++;
-        } catch (e) {
-          // Surface the first copy error but keep going for the rest
+          await destination.move(m.from, m.to);
+          result.moved++;
+        } catch (e: any) {
+          // A move that failed is not data loss — the next pass copies the file
+          // and prunes the stale name.
           if (!result.firstError) result.firstError = e.message;
         }
       }
-
-      // Prune files present in dest but gone from src (deleted posts propagate) —
-      // but refuse to mirror a suspicious collapse of src (backup-guard.js).
-      // Baseline = the src count from the last run we TRUSTED (carried forward when
-      // a run skipped, so one empty/partial blip can't poison the threshold).
-      const prevSummary = b.lastResult || {};
-      const baseline = Number(prevSummary.lastGoodCount) || Number(prevSummary.fileCount) || 0;
-      const decision = pruneDecision({ srcCount: srcSet.size, destCount: destSet.size, baseline });
-      if (decision.skip) {
-        result.pruneSkipped = decision.reason;
-        result.baselineCount = baseline;
-      } else {
-        for (const f of destSet) {
-          if (!srcSet.has(f)) {
-            try {
-              await fs.promises.unlink(path.join(dest, f));
-              result.pruned++;
-            } catch {}
-          }
+      let segmentCopyFailed = false;
+      for (const c of plan.copy) {
+        try {
+          await destination.put(c.rel, c.abs, c.mtimeMs);
+          result.written++;
+        } catch (e: any) {
+          // Surface the first copy error but keep going for the rest
+          if (!result.firstError) result.firstError = e.message;
+          if (groupOf(c.rel) === 'inbox-segments') segmentCopyFailed = true;
         }
       }
-      result.lastGoodCount = nextBaseline(decision.skip, srcSet.size, baseline);
-
-      // Inbox loose prune: only once every currently-known src segment is ALSO
-      // at dest this run — independent of the general pruneDecision() guard
-      // above (which is scoped to srcSet/destSet and never sees inbox entries).
-      // Local compaction only deletes a loose file after its segment is
-      // verified + renamed + receipted (lib-db-inbox-compact.ts); mirroring
-      // that same ordering here means a loose file's mirror copy is never
-      // pruned before the segment that supersedes it is safely at dest too —
-      // design comment: "only allowed once the verified segment containing the
-      // corresponding event has already been copied to the same mirror".
-      if ([...srcInboxSegments].every((f) => destInboxSegments.has(f))) {
-        for (const f of destInboxNew) {
-          if (!srcInboxNew.has(f)) {
-            try {
-              await fs.promises.unlink(path.join(dest, INBOX_DIRNAME, 'new', f));
-              result.pruned++;
-            } catch {}
-          }
+      const toPrune = segmentCopyFailed ? plan.prune : [...plan.prune, ...plan.pruneLoose];
+      for (const rel of toPrune) {
+        try {
+          await destination.remove(rel);
+          result.pruned++;
+        } catch {
+          /* already gone, or held by something else */
         }
       }
 
-      // DB snapshot (#301): the ONLY sanctioned way to mirror the live
-      // hologram.db — #97 forbids a raw file copy of a live .db (see
-      // lib-db-snapshot.ts's module comment). Piggybacks the daily
-      // reconciliation onto this same run (#301 design: "piggyback
-      // integrity_check onto the daily reconciliation"), reusing srcSet this run already
-      // enumerated so the orphan/missing scan costs no extra readdir.
+      result.fileCount = plan.mediaCount;
+      result.pruneSkipped = plan.pruneSkipped;
+      result.baselineCount = plan.baselineCount;
+      result.lastGoodCount = plan.lastGoodCount;
+
+      // The daily reconciliation piggybacks this run (#301), reusing the
+      // listing it already collected so the orphan/missing scan costs no extra
+      // readdir. ensurePostsSynced (not raw ensureDb) so the DB reflects what is
+      // actually on disk before orphans are computed against it — otherwise a
+      // backup firing before the renderer's first listPosts() could see an empty
+      // posts table and flag every file as orphaned.
       try {
-        // ensurePostsSynced (not raw ensureDb) so the DB reflects whatever is
-        // actually on disk right now before orphans are computed against it —
-        // otherwise a backup firing before the renderer's first listPosts() ever
-        // ran could see an empty posts table and flag every file as orphaned.
         const handle = await ensurePostsSynced();
         if (!handle) throw new Error('save folder unavailable');
-        await snapshotDatabase(handle.sqlite, dbSnapshotPath(b.dir));
-        const pass = runIntegrityPass(src, handle.sqlite, srcSet);
+        // Root-level names only: findOrphanMedia's contract is the library
+        // root (a trashed capture still has its posts row, and the shared
+        // stores are not per-capture artifacts), so the subfolder entries this
+        // run collected are not its business.
+        const known = new Set([...source.keys()].filter((rel) => !rel.includes('/')));
+        const pass = runIntegrityPass(src, handle.sqlite, known);
         result.orphanCount = pass.orphanMedia.length;
         result.missingCount = pass.missingMedia.length;
       } catch (e: any) {
@@ -491,6 +449,7 @@ function createBackupEngine({ ensurePostsSynced, scheduleSavedIndexWrite, send }
     const summary = {
       fileCount: result.fileCount,
       written: result.written,
+      moved: result.moved,
       pruned: result.pruned,
       reason: result.reason,
       ok: result.ok,
@@ -511,23 +470,71 @@ function createBackupEngine({ ensurePostsSynced, scheduleSavedIndexWrite, send }
     return result;
   }
 
+  // Called by the record pipeline whenever the library changed. Two jobs: keep
+  // the DB lane's change counter, and start the countdown that gives the media
+  // lane its "right after the save" pass. Both are debounced by construction —
+  // a bulk import calls this hundreds of times and gets one run.
+  let immediateTimer: any = null;
+  function noteLibraryMutation(count = 1) {
+    mutationsSinceGeneration += Math.max(1, Number(count) || 1);
+    // Nothing schedules itself until the engine has been armed — the smoke
+    // harnesses boot the app without arming it, and a backup starting on its
+    // own behind a test's back is exactly the flake that would follow.
+    if (!scheduleArmed) return;
+    if (mutationsSinceGeneration >= GENERATION_CHANGE_THRESHOLD) void runDbGeneration('changes');
+    if (!readBackupConfig().dir) return;
+    clearTimeout(immediateTimer);
+    immediateTimer = setTimeout(() => {
+      void runBackup('changed');
+    }, IMMEDIATE_BACKUP_DELAY_MS);
+  }
+
   let backupIntervalTimer: any = null;
+  let scheduleArmed = false;
   function armBackupSchedule() {
+    scheduleArmed = true;
     if (backupIntervalTimer) {
       clearInterval(backupIntervalTimer);
       backupIntervalTimer = null;
     }
-    const b = readBackupConfig();
-    if (!b.dir || !b.interval) return;
+    // The heartbeat is unconditional now: the DB lane's daily boundary has to
+    // pass even with no destination configured, because the local generation
+    // store is what a rollback reads (#233) and it must exist before the user
+    // ever picks a backup folder.
     backupIntervalTimer = setInterval(() => {
       const cur = readBackupConfig();
-      if (!cur.dir || !cur.interval) return;
-      const last = cur.lastRunAt ? Date.parse(cur.lastRunAt) : 0;
-      if (Date.now() - last >= backupIntervalMs(cur)) runBackup('interval');
+      if (cur.dir && cur.interval) {
+        const last = cur.lastRunAt ? Date.parse(cur.lastRunAt) : 0;
+        if (Date.now() - last >= backupIntervalMs(cur)) {
+          void runBackup('interval');
+          return; // the run writes its own generation
+        }
+      }
+      void runDbGeneration('daily');
     }, BACKUP_HEARTBEAT_MS);
   }
 
-  return { runBackup, armBackupSchedule, runStartupIntegrityCheck, runOrphanRecovery };
+  return { runBackup, runDbGeneration, armBackupSchedule, runStartupIntegrityCheck, runOrphanRecovery, noteLibraryMutation };
 }
 
-export { backupDest, dbSnapshotPath, readBackupConfig, writeBackupConfig, readIntegrityStatus, validateBackupDir, validateSaveFolder, backupIntervalMs, createBackupEngine };
+/**
+ * The newest database copy available to restore from, or null. The local
+ * generation store wins; a destination's copy of it is the fallback for the
+ * case the store is meant for — this machine's library is gone.
+ */
+function latestRestorableSnapshot(): string | null {
+  const folder = getSaveFolder();
+  if (folder) {
+    const local = latestGeneration(folder);
+    if (local) return local;
+  }
+  const b = readBackupConfig();
+  if (!b.dir) return null;
+  // listGenerations takes the folder that CONTAINS the store, which at a
+  // destination is its root — the destination holds a copy of the store under
+  // the same name the library uses.
+  const list = listGenerations(backupRoot(b.dir));
+  return list.length ? list[0].file : null;
+}
+
+export { BACKUP_SUBDIR, backupRoot, collectLibraryFiles, latestRestorableSnapshot, readBackupConfig, writeBackupConfig, readIntegrityStatus, validateBackupDir, validateSaveFolder, backupIntervalMs, createBackupEngine };

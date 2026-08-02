@@ -21,7 +21,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupAction, SidebarGroupContent, SidebarGroupLabel, SidebarHeader, SidebarMenu, SidebarMenuBadge, SidebarMenuButton, SidebarMenuItem, SidebarMenuSub, SidebarRail, SidebarTrigger } from '@/components/ui/sidebar';
 import type { PanelResize } from './use-panel-resize.ts';
-import { MirrorStatus } from '../mirror/MirrorStatus.tsx';
+import { BackupStatus } from '../backup/BackupStatus.tsx';
 import { t } from '../_shared/i18n.ts';
 import { get as storeGet, subscribe as storeSubscribe } from '../services/store.ts';
 import { open as openSettings } from '../services/settings.ts';
@@ -46,7 +46,7 @@ const getBrowse = (): string => (storeGet('browseMode') as string) || 'posts';
 // channel (onChange); load() resolves once the file is read. React mounts before
 // bootApp calls load(), so an initial list read can be empty — kick load() and
 // re-read on both its resolve and any later mutation. (No unsubscribe from onChange,
-// same as MirrorStatus: this component never unmounts in the single-page app.)
+// same as BackupStatus: this component never unmounts in the single-page app.)
 function useFolders(): HologramFolder[] {
   const [list, setList] = useState<HologramFolder[]>(() => folderAll());
   useEffect(() => {
@@ -618,7 +618,7 @@ export function LeftSidebar({ resize }: { resize?: PanelResize }) {
         </SidebarMenu>
         {/* Backup / mirror status rail. It draws its own root (P3 #6) — this used to be a
             host <span> the component wrote a status class onto from a layout effect. */}
-        <MirrorStatus />
+        <BackupStatus />
       </SidebarFooter>
       {/* The column's drag edge (#30). Passed in rather than read from context: only
           the shell knows whether the sidebar is a column right now or a slide-over,

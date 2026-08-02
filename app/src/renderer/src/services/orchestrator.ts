@@ -51,6 +51,7 @@ import { makeImageTabController } from './image-tab-builder.ts';
 import { hologramImageTabSource } from './image-tab.ts';
 import { subscribe as subscribePostsData } from './posts-data.ts';
 import { makeTriage } from './triage-builder.ts';
+import { makePractice } from './practice-builder.ts';
 import { get as storeGet, set as storeSet, subscribe as storeSubscribe } from './store.ts';
 import { hologramIpc } from './ipc.ts';
 
@@ -212,6 +213,11 @@ export interface FilterCatValues extends FilterCatBase {
   mode(): FacetMode;
   setMode(m: FacetMode): void;
   manage?: () => void;
+  // Footer label shown when manage is set (2026-08-02, #21): distinct categories
+  // need distinct wording (フォルダを管理… vs タグを管理…) -- falls back to the
+  // folder-era generic string (ctxManage) so a category that sets manage without
+  // this stays exactly as before.
+  manageLabel?: string;
   // Folder facet only (#41): "This folder only". A folder condition covers the
   // subtree by default, and this narrows it to the folder's own posts. It is a
   // property of the condition, not a mode — hence its own switch rather than a
@@ -286,6 +292,13 @@ export let triageHandleKey: (e: KeyboardEvent) => void;
 export let triageCurrentMedia: () => import('./triage-builder.ts').TriageMedia | null;
 export let triageListFolders: () => HologramFolder[];
 export let triageQueueCount: () => number;
+
+// Practice mode (#103) -- bindings for the toolbar button and practice/PracticeMode.tsx,
+// same deferred-assignment shape as the triage bindings above. State/pure actions live
+// in services/practice.ts (imported directly by the component); these are the
+// deps-requiring half (services/practice-builder.ts).
+export let startPractice: () => void;
+export let practiceClosePractice: () => void;
 
 // One open facet-editor popup = one nav-history entry (#144 confirmed (pending item 2): editor
 // one session, one entry). The filterbar's ValueEditor/FormEditor bracket their
@@ -1020,6 +1033,18 @@ export function endFilterEditSession(): void {
   triageListFolders = triageCtl.listFolders;
   triageQueueCount = triageCtl.queueCount;
 
+  // --- Practice mode (#103) ---
+  // Reads postGrid.getViewGroups() -- the SAME filtered/sorted/grouped card list the
+  // library grid renders right now, no separate re-filter -- and the same gallery
+  // instance (buildGroupGalleryItems) triage/lightbox/image-tab already read, so a
+  // practice image is pixel-identical to its card thumbnail.
+  const practiceCtl = makePractice({
+    buildGroupGalleryItems,
+    getViewGroups: () => postGrid.getViewGroups(),
+  });
+  startPractice = practiceCtl.startPractice;
+  practiceClosePractice = practiceCtl.closePractice;
+
   // Trash (#268). The trash draws the library's OWN cards — post-grid-builder's
   // cardModel and its label set go over verbatim — and groups its records with the
   // library's grouping, so a multi-image post deleted as one card comes back as one
@@ -1507,7 +1532,7 @@ export function endFilterEditSession(): void {
     // Work/Character kin — they share the one 'tag' leaf type and its single op, so one chip).
     const valuesCat =
       (qb: typeof postQB, opts: typeof POST_FACET_OPTS) =>
-      (cat: string, label: string, type: string, showFind: boolean, extra?: { manage?: () => void; valuesFn?: () => FilterRow[]; only?: FilterCatValues['only'] }): FilterCatValues => {
+      (cat: string, label: string, type: string, showFind: boolean, extra?: { manage?: () => void; manageLabel?: string; valuesFn?: () => FilterRow[]; only?: FilterCatValues['only'] }): FilterCatValues => {
         const mo = modeFor(qb, opts)(type);
         return {
           cat,
@@ -1520,6 +1545,7 @@ export function endFilterEditSession(): void {
           mode: mo.mode,
           setMode: mo.setMode,
           manage: extra?.manage,
+          manageLabel: extra?.manageLabel,
           only: extra?.only,
         };
       };
@@ -1569,7 +1595,7 @@ export function endFilterEditSession(): void {
       vc('platform', getMessage('qfSite'), 'platform', false),
       vc('postType', getMessage('qfPostType'), 'postType', false),
       vc('media', getMessage('qfMediaTitle'), 'media', false),
-      vc('tag', getMessage('qfTag'), 'tag', true, { valuesFn: combinedTagValues('tag', 'work', 'character') }),
+      vc('tag', getMessage('qfTag'), 'tag', true, { valuesFn: combinedTagValues('tag', 'work', 'character'), manage: () => tabsCtl.openTagManagementTab(), manageLabel: getMessage('ctxManageTags') }),
       vc('hashtag', getMessage('tabTags'), 'hashtag', true),
       vc('user', getMessage('sidebarAuthors'), 'user', true),
       // No "Manage folders…" here: the sidebar tree IS the manager now (#41 / confirmed D).
@@ -1824,6 +1850,7 @@ export function endFilterEditSession(): void {
     folderPath: (id) => folders.pathOf(id),
     getBrowseMode: () => browseMode,
     addTab: () => tabsCtl.addTab(),
+    openTagManagementTab: () => tabsCtl.openTagManagementTab(),
     switchTab: (id) => tabsCtl.switchTab(id),
     resetAllFilters: () => resetAllFilters(),
     resetPosterFilters: () => resetPosterFilters(),

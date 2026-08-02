@@ -10,6 +10,7 @@ import { CompareHost } from '../compare/index.tsx';
 import { SettingsHost } from '../settings/index.tsx';
 import { BulkTagDialogHost } from '../selection/BulkTagDialog.tsx';
 import { TriageHost } from '../triage/index.tsx';
+import { PracticeHost } from '../practice/index.tsx';
 import { AliasPickerHost } from '../posters/AliasPicker.tsx';
 import { Toaster } from '@/components/ui/sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -298,6 +299,9 @@ export function App() {
           of the shell's content-column swap (AppShell), so it composes cleanly with
           whatever mode/tab was showing underneath when it closes. */}
       <TriageHost />
+      {/* Practice mode (#103) -- croquis/gesture-drawing practice off the current
+          filter results, a full-screen dialog same shape as TriageHost above. */}
+      <PracticeHost />
       <LightboxHost />
       <CompareHost />
       {/* Settings — a shadcn Dialog, so it portals onto document.body itself. */}
