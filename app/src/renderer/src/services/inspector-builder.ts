@@ -13,8 +13,7 @@ import { hostOf, userKey } from './query.ts';
 import { posterProfileUrl } from './profile-url.ts';
 import { formatCount, localeDate, localeDateTime } from './format.ts';
 import { open as inspectorOpen, refresh as inspectorRefresh, close as inspectorClose } from './inspector.ts';
-import { isOpen as panelIsOpen, isVisible as panelIsVisible, panelContains, setOpen as panelSetOpen, subscribe as panelSubscribe } from './inspector-panel.ts';
-import { isWide as isWideLayout } from './layout-mode.ts';
+import { isDocked as panelIsDocked, isOpen as panelIsOpen, isVisible as panelIsVisible, panelContains, setOpen as panelSetOpen, subscribe as panelSubscribe } from './inspector-panel.ts';
 import { get as confirmGet, open as confirmOpen } from './confirm.ts';
 import { get as kindMenuGet } from './kind-menu.ts';
 import { isOpen as lightboxIsOpen } from './lightbox.ts';
@@ -155,7 +154,7 @@ export function makeInspector(deps: InspectorBuilderDeps) {
   // after one × on a narrow window, clicking cards stopped opening the inspector at all
   // and only the tab-band toggle brought it back.
   function closeOrDismissDetail() {
-    if (isWideLayout()) closeDetail();
+    if (panelIsDocked()) closeDetail();
     else dismissDetail();
   }
   // Outside-click dismissal for the narrow overlay. Restored from the pre-#243 handler,
@@ -171,7 +170,7 @@ export function makeInspector(deps: InspectorBuilderDeps) {
   // which rides on nothing but "is something covering the grid" — waving an overlay away
   // is not a selection act, and the docked column at wide width has nothing to wave away.
   function handleOutsideClickDismissDetail(e: MouseEvent) {
-    if (isWideLayout()) return; // wide = a docked column; nothing to dismiss
+    if (panelIsDocked()) return; // wide, or the image view at any width — a docked column, nothing to dismiss
     if (!panelIsVisible()) return;
     if (panelContains(e.target)) return;
     if (!closestOf(e, '#mode-post')) return; // sidebar/overlays: leave it open
@@ -500,7 +499,7 @@ export function makeInspector(deps: InspectorBuilderDeps) {
     // Narrow overlay only (#259). Something laid OVER the grid is expected to answer Esc,
     // and the pre-#243 slide-over did. The docked column still does not: #143/#242 ruled
     // Esc out there, where it would dismiss nothing the user can see covering anything.
-    if (!isWideLayout() && panelIsVisible()) dismissDetail();
+    if (!panelIsDocked() && panelIsVisible()) dismissDetail();
   }
 
   return {

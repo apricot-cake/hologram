@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { cn } from '@/lib/utils';
 import { t } from '../_shared/i18n.ts';
+import { hologramImageTabSource, isActive as imageViewIsActive } from '../services/image-tab.ts';
 import { postIdKey } from '../services/records.ts';
 import { isAllSelected, selectedGroups } from '../services/selection.ts';
 import { get as storeGet, subscribe as storeSubscribe } from '../services/store.ts';
@@ -97,12 +98,19 @@ export function FloatingBar() {
   const wrapRef = useRef<HTMLDivElement>(null);
   const showFull = useFitsFullLabels(wrapRef);
   const inspectorOverlay = useSyncExternalStore(subInspectorOverlay, getInspectorOverlay);
+  // The image view (#656): its stage has no way to show WHICH cards a bulk action would
+  // hit (no filmstrip, unlike Lightroom's Loupe), so the bar has to be off screen there —
+  // the grid's selection stays exactly as it was underneath (this component doesn't
+  // touch it), and the bar reappears on the way back out. Same subscribed predicate
+  // AppToolbar reads for its own content/stage swap (image-tab.ts's isActive(), #619's
+  // single answer to "is the image view showing").
+  const imageView = useSyncExternalStore(hologramImageTabSource.subscribe, imageViewIsActive);
 
   const count = selectedSet ? selectedSet.size : 0;
   // ...and in the trash (#268), which carries its OWN selection and its own two
   // verbs: this bar's tag / folder / group actions all write to the library, which
   // is exactly what a deleted post must not accept until it is restored.
-  const shown = count > 0 && mode !== 'posters' && mode !== 'trash';
+  const shown = count > 0 && mode !== 'posters' && mode !== 'trash' && !imageView;
   const groups = postGroups || [];
   const allSelected = isAllSelected(groups, postIdKey);
   // Manual grouping needs at least two selected cards (groups).
