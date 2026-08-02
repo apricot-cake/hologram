@@ -37,6 +37,7 @@ import { hologramImageTabSource, isActive as imageViewIsActive } from '../servic
 import { isWide as isWideLayout, subscribe as layoutSubscribe } from '../services/layout-mode.ts';
 import { isHidden as panelsAreHidden, load as panelsLoad, reveal as panelsReveal, subscribe as panelsSubscribe } from '../services/panels.ts';
 import { load as privacyModeLoad } from '../services/privacy-mode.ts';
+import { load as shortcutOverridesLoad } from '../services/shortcut-registry.ts';
 import { get as storeGet, set as storeSet, subscribe as storeSubscribe } from '../services/store.ts';
 import { DEFAULT_OPEN, cachedOpen, loadOpen, persistOpen } from '../services/sidebar-pref.ts';
 import { signalShellReady } from '../services/shell-ready.ts';
@@ -236,6 +237,10 @@ export function AppShell() {
     // #88: reconciles the cache privacy-mode.ts's module-eval already painted the
     // <html> attribute from against config.json — same two-tier pattern, same reason.
     privacyModeLoad();
+    // #246: reconciles this app's rebindable shortcuts with whatever config.json holds —
+    // no cache tier (unlike the two above), since nothing needs an answer before first
+    // paint here; a rebind only matters the next time a key is actually pressed.
+    shortcutOverridesLoad();
   }, []);
   // The sidebar's open/closed state, as the shell actually paints it. The bulk mask wins
   // over both the saved preference and the narrow-width one; a toggle aimed at the sidebar

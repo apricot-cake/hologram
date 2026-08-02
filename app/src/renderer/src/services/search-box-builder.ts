@@ -12,6 +12,7 @@ import { isOpen as lightboxIsOpen } from './lightbox.ts';
 import { makeSearchEditing } from './search-editing.ts';
 import { focusSearchBox, init as initSearchBox } from './searchbox.ts';
 import { isOpen as settingsIsOpen } from './settings.ts';
+import { isTypingTarget, registerShortcut, tryRun } from './shortcut-registry.ts';
 
 export interface SearchBoxDeps {
   storeGet(key: string): unknown;
@@ -152,15 +153,27 @@ export function makeSearchBox(deps: SearchBoxDeps) {
   // services/command-registry.ts). The split is deliberate and fixed: `/` = focus
   // this field, Ctrl+K = open the palette. The field's right-edge badge is what
   // teaches it.
+  // #246: the chord (/, Shift ignored — the original didn't check e.shiftKey either, see
+  // shortcut-registry.ts's ignoreShift doc) now lives in the registry; this keeps the
+  // guard chain and the action.
+  function canExecuteSearchFocus(e: KeyboardEvent) {
+    if (isTypingTarget(e)) return false;
+    if (confirmGet() || lightboxIsOpen()) return false;
+    if (settingsIsOpen()) return false;
+    return true;
+  }
+  registerShortcut({
+    id: 'search.focus',
+    titleKey: 'shortcutSearchFocus',
+    defaultCombo: '/',
+    ignoreShift: true,
+    canExecute: canExecuteSearchFocus,
+    // the component's registered focus callback (no-op until it mounts) — the #searchBox id contract is gone (P2④)
+    perform: focusSearchBox,
+  });
+
   function handleShortcutSearchFocusKey(e: KeyboardEvent) {
-    const slash = e.key === '/' && !e.ctrlKey && !e.metaKey && !e.altKey;
-    if (!slash) return;
-    const t = e.target as HTMLElement | null;
-    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
-    if (confirmGet() || lightboxIsOpen()) return;
-    if (settingsIsOpen()) return;
-    e.preventDefault();
-    focusSearchBox(); // the component's registered focus callback (no-op until it mounts) — the #searchBox id contract is gone (P2④)
+    tryRun('search.focus', e);
   }
 
   return {

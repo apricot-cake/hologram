@@ -26,6 +26,7 @@ import { isOpen as paletteIsOpen } from './command-registry.ts';
 import { isOpen as lightboxIsOpen } from './lightbox.ts';
 import { isActive as imageViewIsActive } from './image-tab.ts';
 import { isOpen as settingsIsOpen } from './settings.ts';
+import { isTypingTarget, registerShortcut, tryRun } from './shortcut-registry.ts';
 import { get as storeGet } from './store.ts';
 import { importClipboard } from './posts.ts';
 import { formatDate } from './format.ts';
@@ -54,29 +55,39 @@ export async function importFromClipboard(): Promise<void> {
 /**
  * Ctrl/Cmd+V. Registration lives in the GlobalShortcuts component (app/App.tsx).
  *
- * Shift/Alt are left alone: Ctrl+Shift+V is "paste without formatting" in most
- * editors, so claiming it here would break the one paste variant a user is most
- * likely to reach for inside a field this handler has already stepped back from.
+ * #246: Shift is a real (non-ignoreShift) part of this chord — Ctrl+Shift+V is "paste
+ * without formatting" in most editors, so claiming it here would break the one paste
+ * variant a user is most likely to reach for inside a field this handler has already
+ * stepped back from. The key itself now lives in the registry; this keeps the guard chain
+ * (#85 calls the input-focus check its most important) and the action.
  */
-export function handleShortcutClipboardKey(e: KeyboardEvent): void {
-  if (!(e.ctrlKey || e.metaKey) || e.shiftKey || e.altKey) return;
-  if ((e.key || '').toLowerCase() !== 'v') return;
+function canExecutePaste(e: KeyboardEvent): boolean {
   // The one guard #85 calls its most important: while the caret is in a field,
   // Ctrl+V is the ordinary paste and this handler does not exist.
-  const target = e.target as HTMLElement | null;
-  if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return;
-  if (confirmGet() || lightboxIsOpen()) return;
-  if (settingsIsOpen()) return;
-  if (paletteIsOpen()) return;
+  if (isTypingTarget(e)) return false;
+  if (confirmGet() || lightboxIsOpen()) return false;
+  if (settingsIsOpen()) return false;
+  if (paletteIsOpen()) return false;
   // The single-image view is its own screen with its own keys — same exclusion as
   // Ctrl+C / Space (selection-builder.ts).
-  if (imageViewIsActive()) return;
+  if (imageViewIsActive()) return false;
   // Trash (#268): a paste is a new save, and the trash is the one destination where
   // saving into the library is off. Pasting there would silently drop the image into
   // a grid the user is not looking at. Asked of the store, like every other guard
   // above asks its own module — reading a body class would be the DOM sniffing #153
   // rules out, and it made the class exist for no other reader.
-  if (storeGet('browseMode') === 'trash') return;
-  e.preventDefault();
-  void importFromClipboard();
+  if (storeGet('browseMode') === 'trash') return false;
+  return true;
+}
+
+registerShortcut({
+  id: 'clipboard.paste',
+  titleKey: 'shortcutPasteImage',
+  defaultCombo: 'Ctrl+v',
+  canExecute: canExecutePaste,
+  perform: () => void importFromClipboard(),
+});
+
+export function handleShortcutClipboardKey(e: KeyboardEvent): void {
+  tryRun('clipboard.paste', e);
 }

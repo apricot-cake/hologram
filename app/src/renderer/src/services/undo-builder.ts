@@ -16,6 +16,7 @@ import { makeUndo, type DirectedChange, type UndoChange } from './undo.ts';
 import { isVisible as panelIsVisible } from './inspector-panel.ts';
 import { postIdKey } from './records.ts';
 import { applyTagWrite, updateTags as postsUpdateTags } from './posts.ts';
+import { registerShortcut, tryRun } from './shortcut-registry.ts';
 import { applyPosterTagRecords, getPosterTags } from './tags.ts';
 import { applyFolderItems as applyLibraryFolderItems } from './folders.ts';
 import { restore as restorePosterAliases, type PosterAliasGroup } from './aliases.ts';
@@ -166,13 +167,18 @@ export function makeUndoController(deps: UndoBuilderDeps) {
     if (await _undo.redo()) deps.showToast(deps.t('redoDone'));
   }
 
+  // #246: Ctrl+Z / Ctrl+Shift+Z now live in the registry as separate, independently-
+  // rebindable commands (undo / redo); this keeps the shared guard and the two actions.
+  function canExecuteUndo() {
+    return !(document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA'));
+  }
+  registerShortcut({ id: 'undo', titleKey: 'shortcutUndo', defaultCombo: 'Ctrl+z', canExecute: canExecuteUndo, perform: doUndo });
+  registerShortcut({ id: 'redo', titleKey: 'shortcutRedo', defaultCombo: 'Ctrl+Shift+z', canExecute: canExecuteUndo, perform: doRedo });
+
   // Registration lives in the GlobalShortcuts component (app/App.tsx).
   function handleShortcutUndoKey(e: KeyboardEvent) {
-    if (!((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z')) return;
-    if (document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA')) return;
-    e.preventDefault();
-    if (e.shiftKey) doRedo();
-    else doUndo();
+    if (tryRun('undo', e)) return;
+    tryRun('redo', e);
   }
 
   return { pushUndo, undoAction, doUndo, doRedo, handleShortcutUndoKey };

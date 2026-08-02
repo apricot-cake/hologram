@@ -167,6 +167,8 @@ export interface AppPrefs {
   webSearchChecked: string[] | null;
   /** #207: home instance per fediverse platform - which host to open Misskey/Mastodon search on (search there is login-gated, so it must be a host the user can log into). null = never set. */
   fediverseHomeHosts: { misskey: string | null; mastodon: string | null } | null;
+  /** #246: shortcut id -> custom key combo ("Ctrl+Shift+F" style string). Missing id = still on its default. */
+  shortcutOverrides: Record<string, string>;
 }
 
 // --- Organization layer (DB-backed, ipc-organize.ts) ---------------------

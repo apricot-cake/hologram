@@ -25,6 +25,7 @@ import { isOpen as lightboxIsOpen } from './lightbox.ts';
 import { cloneTree, facetTreeFrom } from './query.ts';
 import { open as menuOpen } from './menu.ts';
 import { isOpen as settingsIsOpen } from './settings.ts';
+import { isTypingTarget, registerShortcut, tryRun } from './shortcut-registry.ts';
 import { get as storeGet, set as storeSet } from './store.ts';
 import { hologramTabsSource } from './tabs.ts';
 
@@ -267,15 +268,23 @@ export function makeTabsController(deps: TabsBuilderDeps) {
   // while typing, with an overlay open, or in poster mode (mirrors the Ctrl+A guard convention).
   // Registration lives in the GlobalShortcuts component (app/App.tsx); this
   // stays the handler + guard logic (viewer keeps the orchestration, React owns the wiring).
+  //
+  // #246: the two chords now live in the registry as separate, independently-rebindable
+  // commands (nav back / nav forward) — not the arrow-key GRID navigation cluster
+  // (selection-builder.ts's handleShortcutArrowNav), which stays out of the registry
+  // entirely: that one is six keys (Left/Right/Up/Down/Home/End) moving a cursor, not a
+  // single named action, the same reason no file manager lets you "reassign" arrow-key
+  // navigation. Mouse back/forward (handleShortcutMouseNav below) stays outside the
+  // registry too — it has no key to rebind — but shares navBack/navForward/navAllowed.
+  function canExecuteNav(e: KeyboardEvent) {
+    return !isTypingTarget(e) && navAllowed();
+  }
+  registerShortcut({ id: 'nav.back', titleKey: 'shortcutNavBack', defaultCombo: 'Alt+ArrowLeft', canExecute: canExecuteNav, perform: navBack });
+  registerShortcut({ id: 'nav.forward', titleKey: 'shortcutNavForward', defaultCombo: 'Alt+ArrowRight', canExecute: canExecuteNav, perform: navForward });
+
   function handleShortcutNavKey(e: KeyboardEvent) {
-    if (!e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
-    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
-    const t = e.target as HTMLElement | null;
-    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
-    if (!navAllowed()) return;
-    e.preventDefault();
-    if (e.key === 'ArrowLeft') navBack();
-    else navForward();
+    if (tryRun('nav.back', e)) return;
+    tryRun('nav.forward', e);
   }
   // Mouse back/forward (buttons 3/4). DOM events fire in the renderer on most
   // platforms; preventDefault stops any stray in-page navigation.
@@ -614,27 +623,32 @@ export function makeTabsController(deps: TabsBuilderDeps) {
     const t = getTabs().find((x) => x.id === id);
     if (t && !t.pinned && getTabs().length > 1) closeTab(t.id);
   }
+  // #246: the four chords now live in the registry as separate, independently-rebindable
+  // commands — Ctrl+T / Ctrl+W (Shift ignored, the original didn't check it either) and
+  // Ctrl+Tab / Ctrl+Shift+Tab (Shift is what tells the two directions apart, so it stays a
+  // real part of those two chords). Unlike every other global shortcut here, none of these
+  // check whether the target is an input field — tabs keep opening/closing/cycling even
+  // while typing (only the palette itself, #28's acceptance criteria, stands them down).
+  function canExecuteTabShortcut() {
+    return !paletteIsOpen();
+  }
+  function switchTabByOffset(dir: 1 | -1) {
+    const tabsNow = getTabs();
+    const idx = tabsNow.findIndex((t) => t.id === getActiveTabId());
+    if (idx < 0) return;
+    const n = dir < 0 ? (idx - 1 + tabsNow.length) % tabsNow.length : (idx + 1) % tabsNow.length;
+    switchTab(tabsNow[n].id);
+  }
+  registerShortcut({ id: 'tabs.new', titleKey: 'shortcutNewTab', defaultCombo: 'Ctrl+t', ignoreShift: true, canExecute: canExecuteTabShortcut, perform: addTab });
+  registerShortcut({ id: 'tabs.close', titleKey: 'shortcutCloseTab', defaultCombo: 'Ctrl+w', ignoreShift: true, canExecute: canExecuteTabShortcut, perform: () => closeTab(getActiveTabId()) });
+  registerShortcut({ id: 'tabs.next', titleKey: 'shortcutNextTab', defaultCombo: 'Ctrl+Tab', canExecute: canExecuteTabShortcut, perform: () => switchTabByOffset(1) });
+  registerShortcut({ id: 'tabs.prev', titleKey: 'shortcutPrevTab', defaultCombo: 'Ctrl+Shift+Tab', canExecute: canExecuteTabShortcut, perform: () => switchTabByOffset(-1) });
+
   function handleGlobalTabShortcut(e: KeyboardEvent) {
-    if (!e.ctrlKey || e.altKey) return;
-    // Don't let these pass through while the palette is open (#28's acceptance criteria).
-    // Unlike other global shortcuts, Ctrl+T/W/Tab don't check whether the target is an
-    // input field — meaning tabs would keep getting added or closed even while typing
-    // in the palette's input field.
-    if (paletteIsOpen()) return;
-    if (e.key === 't') {
-      e.preventDefault();
-      addTab();
-    } else if (e.key === 'w') {
-      e.preventDefault();
-      closeTab(getActiveTabId());
-    } else if (e.key === 'Tab') {
-      e.preventDefault();
-      const tabsNow = getTabs();
-      const idx = tabsNow.findIndex((t) => t.id === getActiveTabId());
-      if (idx < 0) return;
-      const n = e.shiftKey ? (idx - 1 + tabsNow.length) % tabsNow.length : (idx + 1) % tabsNow.length;
-      switchTab(tabsNow[n].id);
-    }
+    if (tryRun('tabs.new', e)) return;
+    if (tryRun('tabs.close', e)) return;
+    if (tryRun('tabs.next', e)) return;
+    tryRun('tabs.prev', e);
   }
 
   return {

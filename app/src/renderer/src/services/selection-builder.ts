@@ -18,6 +18,7 @@ import { deletePost } from './posts.ts';
 import { refresh as trashRefresh } from './trash-view.ts';
 import { get as confirmGet, open as confirmOpen } from './confirm.ts';
 import { isOpen as settingsIsOpen } from './settings.ts';
+import { isTypingTarget, registerShortcut, tryRun } from './shortcut-registry.ts';
 
 export interface SelectionBarDeps {
   t(key: string, subs?: ReadonlyArray<string | number | null | undefined>): string;
@@ -164,18 +165,32 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
   // Ctrl/Cmd+A selects every visible (filtered) card. Left to the browser when
   // typing in a field or when a modal/overlay is open (native select-all there).
   // Registration lives in the GlobalShortcuts component (app/App.tsx).
-  function handleShortcutSelectAllKey(e: KeyboardEvent) {
-    if (!(e.ctrlKey || e.metaKey) || (e.key || '').toLowerCase() !== 'a') return;
-    const t = e.target as HTMLElement | null;
-    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
-    if (confirmGet() || lightboxIsOpen()) return;
-    if (settingsIsOpen()) return;
-    if (imageViewIsActive()) return; // the grid's selection is not on screen (#656) — same guard as Ctrl+C/Space/arrow nav below
-    if (deps.getBrowseMode() !== 'posts') return; // select-all is post-grid only (posters/collections excluded)
-    if (deps.getViewGroups().length === 0) return;
-    e.preventDefault();
+  //
+  // #246: the chord (Ctrl+A, Shift ignored — see shortcut-registry.ts's ignoreShift doc)
+  // now lives in the registry; this keeps the guard chain and the action.
+  function canExecuteSelectAll() {
+    if (confirmGet() || lightboxIsOpen()) return false;
+    if (settingsIsOpen()) return false;
+    if (imageViewIsActive()) return false; // the grid's selection is not on screen (#656) — same guard as Ctrl+C/Space/arrow nav below
+    if (deps.getBrowseMode() !== 'posts') return false; // select-all is post-grid only (posters/collections excluded)
+    if (deps.getViewGroups().length === 0) return false;
+    return true;
+  }
+  function doSelectAll() {
     selection.selectAll(deps.getViewGroups(), postIdKey);
     deps.renderPosts(true);
+  }
+  registerShortcut({
+    id: 'selection.selectAll',
+    titleKey: 'shortcutSelectAll',
+    defaultCombo: 'Ctrl+a',
+    ignoreShift: true,
+    canExecute: (e) => !isTypingTarget(e) && canExecuteSelectAll(),
+    perform: doSelectAll,
+  });
+
+  function handleShortcutSelectAllKey(e: KeyboardEvent) {
+    tryRun('selection.selectAll', e);
   }
 
   // Ctrl/Cmd+C copies the selected image (#132). Single selection only: the
@@ -184,19 +199,26 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
   // selection stays the browser's to copy, and the image tab / quick view own
   // their copy gesture (v1 = the grid only). Registration lives in the
   // GlobalShortcuts component (app/App.tsx).
-  function handleShortcutCopyKey(e: KeyboardEvent) {
-    if (!(e.ctrlKey || e.metaKey) || (e.key || '').toLowerCase() !== 'c') return;
-    const t = e.target as HTMLElement | null;
-    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
-    if (confirmGet() || lightboxIsOpen()) return;
-    if (settingsIsOpen()) return;
-    if (imageViewIsActive()) return;
-    if (deps.getBrowseMode() !== 'posts') return;
-    if (String(window.getSelection() || '')) return; // the user highlighted post text — that's what they mean to copy
+  //
+  // #246: the chord (Ctrl+C, Shift ignored) now lives in the registry; this keeps the
+  // guard chain and the action.
+  function canExecuteCopy(e: KeyboardEvent) {
+    if (isTypingTarget(e)) return false;
+    if (confirmGet() || lightboxIsOpen()) return false;
+    if (settingsIsOpen()) return false;
+    if (imageViewIsActive()) return false;
+    if (deps.getBrowseMode() !== 'posts') return false;
+    if (String(window.getSelection() || '')) return false; // the user highlighted post text — that's what they mean to copy
+    return selection.selectedGroups(deps.getViewGroups(), postIdKey).length === 1;
+  }
+  function doCopy() {
     const groups = selection.selectedGroups(deps.getViewGroups(), postIdKey);
-    if (groups.length !== 1) return;
-    e.preventDefault();
-    deps.copyGroupImage(groups[0]);
+    if (groups.length === 1) deps.copyGroupImage(groups[0]);
+  }
+  registerShortcut({ id: 'selection.copyImage', titleKey: 'shortcutCopyImage', defaultCombo: 'Ctrl+c', ignoreShift: true, canExecute: canExecuteCopy, perform: doCopy });
+
+  function handleShortcutCopyKey(e: KeyboardEvent) {
+    tryRun('selection.copyImage', e);
   }
 
   // Space peeks the selected card in the quick-view lightbox (#143 pending decision 3 —
@@ -204,19 +226,27 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
   // guard shape as the copy key above, plus: a lightbox already open owns Space
   // (its own paging), and a text field / the image view keep the key. Registration
   // lives in the GlobalShortcuts component (app/App.tsx).
-  function handleShortcutQuickView(e: KeyboardEvent) {
-    if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return;
-    if (e.key !== ' ' && e.code !== 'Space') return;
-    const t = e.target as HTMLElement | null;
-    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
-    if (confirmGet() || lightboxIsOpen()) return;
-    if (settingsIsOpen()) return;
-    if (imageViewIsActive()) return;
-    if (deps.getBrowseMode() !== 'posts') return;
+  //
+  // #246: the chord (Space, no modifiers) now lives in the registry; this keeps the guard
+  // chain and the action. The original also checked e.code === 'Space' as a fallback
+  // alongside e.key === ' ' — dropped here (combo matching is e.key-only, matching every
+  // other entry in the registry); a documented, narrow simplification (#246 PR).
+  function canExecuteQuickView(e: KeyboardEvent) {
+    if (isTypingTarget(e)) return false;
+    if (confirmGet() || lightboxIsOpen()) return false;
+    if (settingsIsOpen()) return false;
+    if (imageViewIsActive()) return false;
+    if (deps.getBrowseMode() !== 'posts') return false;
+    return selection.selectedGroups(deps.getViewGroups(), postIdKey).length === 1;
+  }
+  function doQuickView() {
     const groups = selection.selectedGroups(deps.getViewGroups(), postIdKey);
-    if (groups.length !== 1) return;
-    e.preventDefault();
-    deps.openQuickView(groups[0]);
+    if (groups.length === 1) deps.openQuickView(groups[0]);
+  }
+  registerShortcut({ id: 'selection.quickView', titleKey: 'shortcutQuickView', defaultCombo: 'Space', canExecute: canExecuteQuickView, perform: doQuickView });
+
+  function handleShortcutQuickView(e: KeyboardEvent) {
+    tryRun('selection.quickView', e);
   }
 
   // Arrow keys move the selection through the grid (redesign P2⑥, the last piece of
