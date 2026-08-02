@@ -573,14 +573,13 @@ export function stampPost(p: HologramPost): HologramPost {
 // injected deps). Only called from the browser (viewer.js); never invoked by
 // the Node unit test.
 //
-// #32 St2: main relays an `org-changed` event for these two (kinds 'manual-groups'
-// / 'ungrouped') the same as the other organize-layer channels, but nothing here
-// reloads on it yet — unlike folders.ts/tags.ts/aliases.ts, the live state these
-// feed (post-grid-builder.ts's manualGroups/ungrouped) is owned by the post-grid
-// closure, not a standalone subscribable module, so wiring a cross-window reload
-// means threading it through that render-reuse-guarded closure rather than adding
-// one listener here. Left as a follow-up; a second window's manual grouping edits
-// do not cross-sync live until it is picked up.
+// #32 St2 / #803: main relays an `org-changed` event for these two (kinds
+// 'manual-groups' / 'ungrouped') the same as the other organize-layer channels,
+// but nothing here reloads on it yet — unlike folders.ts/tags.ts/aliases.ts, the
+// live state these feed (post-grid-builder.ts's manualGroups/ungrouped) is owned
+// by the post-grid closure, not a standalone subscribable module. #803 has the
+// design for wiring a cross-window reload through that closure; a second
+// window's manual grouping edits do not cross-sync live until it lands.
 export async function loadManualGroups() {
   try {
     const r = await hologramIpc.getManualGroups();
