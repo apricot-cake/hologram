@@ -201,6 +201,46 @@ function readPosterTags(sqlite: Sqlite) {
   return { tags };
 }
 
+// #23 St1: poster-alias groups — non-destructive, reversible name-merging.
+// Same replace-whole-thing shape as poster folders/tags above: the renderer
+// owns the union-find bookkeeping (services/aliases.ts) and hands back the
+// full group list on every mutation. A group needs 2+ members (a lone
+// "group" is not a merge); `primary` must be one of `members` or the first
+// member wins — both defensive against a hand-edited or corrupted import.
+function replacePosterAliases(sqlite: Sqlite, data: any) {
+  sqlite.prepare('DELETE FROM poster_alias_group_members').run();
+  sqlite.prepare('DELETE FROM poster_alias_groups').run();
+  const insertGroup = sqlite.prepare('INSERT INTO poster_alias_groups (id, primaryKey) VALUES (?, ?)');
+  const insertMember = sqlite.prepare('INSERT OR IGNORE INTO poster_alias_group_members (groupId, posterKey) VALUES (?, ?)');
+  const claimed = new Set<string>(); // one group per posterKey (the UNIQUE index enforces it too) — first group wins a key claimed twice
+  for (const entry of Array.isArray(data?.groups) ? data.groups : []) {
+    if (!entry || typeof entry.id !== 'string' || !entry.id) continue;
+    const members = strings(entry.members).filter((key) => !claimed.has(key));
+    if (members.length < 2) continue;
+    const primary = typeof entry.primary === 'string' && members.includes(entry.primary) ? entry.primary : members[0];
+    insertGroup.run(entry.id, primary);
+    for (const key of members) {
+      claimed.add(key);
+      insertMember.run(entry.id, key);
+    }
+  }
+}
+
+function readPosterAliases(sqlite: Sqlite) {
+  const members = new Map<string, string[]>();
+  for (const row of sqlite.prepare('SELECT groupId, posterKey FROM poster_alias_group_members ORDER BY rowid').all() as Array<{ groupId: string; posterKey: string }>) {
+    let list = members.get(row.groupId);
+    if (!list) members.set(row.groupId, (list = []));
+    list.push(row.posterKey);
+  }
+  return {
+    groups: (sqlite.prepare('SELECT id, primaryKey FROM poster_alias_groups ORDER BY rowid').all() as Array<{ id: string; primaryKey: string }>)
+      .map((row) => ({ id: row.id, primary: row.primaryKey, members: members.get(row.id) || [] }))
+      // Defensive: a group whose members all vanished (e.g. a hand-edited DB) is not worth surfacing.
+      .filter((g) => g.members.length >= 2),
+  };
+}
+
 // Post-level edit: tag assignment (post_tags) + a patch of loose per-post
 // fields. userKind/tagReviewed (the tagging-wizard's flags) were added by the
 // add-store-state migration specifically because they had no St2 home
@@ -405,6 +445,8 @@ function createDbWriter(sqlite: Sqlite) {
     setPosterFolders: (data: unknown) => transaction(() => replacePosterFolders(sqlite, data)),
     getPosterTags: () => readPosterTags(sqlite),
     setPosterTags: (data: unknown) => transaction(() => replacePosterTags(sqlite, data)),
+    getPosterAliases: () => readPosterAliases(sqlite),
+    setPosterAliases: (data: unknown) => transaction(() => replacePosterAliases(sqlite, data)),
     getTabs: () => readTabs(sqlite),
     setTabs: (data: unknown) => transaction(() => replaceTabs(sqlite, data)),
     setPostTags: (postId: string, tags: unknown, patch: unknown) => transaction(() => replacePostTags(sqlite, postId, tags, patch)),

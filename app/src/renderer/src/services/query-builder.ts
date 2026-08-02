@@ -18,6 +18,7 @@ import { makePostPredOf, makePosterPredOf, hostOf } from './query.ts';
 import { compile as searchCompile } from './search.ts';
 import { postKeyOf } from './records.ts';
 import * as folders from './folders.ts';
+import { membersOf as aliasMembersOf } from './aliases.ts';
 import { set as storeSet } from './store.ts';
 
 // Facet type schemas (revision ④) — the "All"/"Any"-capable multi-value types and the
@@ -43,6 +44,10 @@ export function makePostQueryBuilder(deps: PostQueryBuilderDeps) {
     fuzzyCompile: (q) => searchCompile(q),
     postKeyOf,
     tagIdOf: deps.tagIdOf,
+    // #23 St1: a saved 'user' leaf matches by name-merge group membership, not
+    // exact posterKey equality — see query.ts's 'user' case for why this is a
+    // fresh per-call lookup rather than a leaf-level compile-time memo.
+    membersOf: (key) => aliasMembersOf(key),
   });
   // #253 "サイト" facet — the two leaf shapes facets.ts's unsupported-domain rows
   // add (see qfValues 'platform' case) are composed on TOP of query.ts's factory

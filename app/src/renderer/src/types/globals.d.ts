@@ -276,6 +276,11 @@ declare global {
     onPosterPosts?(): void;
     onFolderToggle(id: string): void;
     onFolderCreate?(): void;
+    // #23 St1 (poster name-merging): the「同一人物」section — every OTHER
+    // posterKey this poster's alias group bundles (empty when ungrouped).
+    sameAuthor?: Array<{ key: string; label: string; platformLabel: string }>;
+    onSameAuthorMerge?(): void; // opens the merge picker
+    onSameAuthorUnlink?(key: string): void; // removes ONE member from the group
     [extra: string]: any;
   }
   // ---- Empty-state variant — EmptyState.tsx derives this itself from hologramStore

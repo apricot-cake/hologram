@@ -188,6 +188,20 @@ export interface PosterTagsState {
   tags: Record<string, string[]>;
 }
 
+// --- Poster aliases (#23 St1) --------------------------------------------
+/** One name-merge group. `primary` is the canonical key every reader folds
+ *  onto (facets/predicates/buildUsers); `members` includes `primary` itself. */
+export interface PosterAliasGroupRecord {
+  id: string;
+  primary: string;
+  members: string[];
+}
+
+/** get/set-poster-aliases. */
+export interface PosterAliasesState {
+  groups: PosterAliasGroupRecord[];
+}
+
 // --- Tabs ---------------------------------------------------------------
 /**
  * One persisted tab. Exactly these four fields cross the boundary: three the DB
