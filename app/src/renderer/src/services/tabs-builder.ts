@@ -49,7 +49,10 @@ export interface TabsBuilderDeps {
   getBrowseMode(): string;
   // Flip the mode WITHOUT rendering / recording (browseMode let + store mirror +
   // closeDetail only) — applyEntry runs the right render itself right after.
-  setBrowseModeLite(mode: 'posts' | 'posters'): void;
+  // #183: 'timeline' rides the same per-tab history as 'posts' (same postQB
+  // state shape, see snapshotState/applyState) — it is a third value here, not
+  // a fourth deps method, for exactly that reason.
+  setBrowseModeLite(mode: 'posts' | 'posters' | 'timeline'): void;
   contentScrollTop(): number;
   scrollContentTo(y: number): void;
   // Poster-side view state for 'posters' entries (#144 pending decision 3 — mode is per-tab now,
@@ -114,6 +117,10 @@ export function makeTabsController(deps: TabsBuilderDeps) {
     const iv = storeGet('activeImageTab');
     if (iv) return entryOf('image', { recs: iv.recs, idx: iv.idx });
     if (deps.getBrowseMode() === 'posters') return entryOf('posters', snapshotPosterState());
+    // #183: timeline's state is the SAME snapshotState() posts uses (postQB
+    // tree/search/sort/shuffleSeed/multi) — only the entry's `kind` differs, so
+    // applyEntry below can tell which mode to restore into.
+    if (deps.getBrowseMode() === 'timeline') return entryOf('timeline', snapshotState());
     return entryOf('posts', snapshotState());
   }
   // push/replace router around nav.record: a one-shot replace flag (sort changes —
@@ -145,12 +152,16 @@ export function makeTabsController(deps: TabsBuilderDeps) {
   }
   function syncTitleAndPersist() {
     if (storeGet('activeImageTab')) return; // grid renders under the image view are background refreshes
-    if (deps.getBrowseMode() !== 'posts') return; // hidden-grid render while browsing posters
+    // #183: renderPosts() (post-grid-builder.ts) is now the render path for BOTH
+    // posts and timeline — this guard has to let both through, and the
+    // recordEntry below tags the entry with whichever one is actually live.
+    const mode = deps.getBrowseMode();
+    if (mode !== 'posts' && mode !== 'timeline') return; // hidden-grid render while browsing posters
     if (onTagsTab()) return;
     const snap = snapshotState();
     deps.setLastRenderedState(JSON.stringify(snap));
     if (restoringState) return;
-    recordEntry(entryOf('posts', snap));
+    recordEntry(entryOf(mode === 'timeline' ? 'timeline' : 'posts', snap));
     clearAutoTitle();
     document.title = deps.tabTitleOf(snap, { allCount: deps.getAllPostsCount() }).text + ' — Hologram';
     persistTabsDebounced();
@@ -192,7 +203,11 @@ export function makeTabsController(deps: TabsBuilderDeps) {
       return;
     }
     deps.hideImageView();
-    deps.setBrowseModeLite(e.kind === 'posters' ? 'posters' : 'posts');
+    // #183: 'timeline' passes straight through to setBrowseModeLite (a third
+    // value it now accepts) and then falls into the SAME applyState() the
+    // 'posts' branch below uses — the two kinds share one state shape, so
+    // there is nothing to add past the mode flip itself.
+    deps.setBrowseModeLite(e.kind === 'posters' ? 'posters' : e.kind === 'timeline' ? 'timeline' : 'posts');
     if (e.kind === 'posters') {
       const st = e.state as { tree?: any; sort?: string; search?: string };
       restoringState = true;
@@ -335,7 +350,9 @@ export function makeTabsController(deps: TabsBuilderDeps) {
     // t.state stays the posts-side snapshot (title fallback + pre-#144 shape);
     // under a posters/image entry the grid state isn't the current view — keep
     // the last posts snapshot instead of overwriting it with a stale read.
-    if (!cur || cur.kind === 'posts') {
+    // #183: timeline's state IS the posts-side snapshot (same shape), so it
+    // qualifies here too.
+    if (!cur || cur.kind === 'posts' || cur.kind === 'timeline') {
       t.state = snapshotState();
       t._scrollTop = deps.contentScrollTop(); // remember content scroll per tab (persisted too)
     }
@@ -571,6 +588,11 @@ export function makeTabsController(deps: TabsBuilderDeps) {
         deps.setSortValue(at.state.sort || 'date-desc');
         deps.setShuffleSeed(at.state.shuffleSeed || ''); // #118 — restore the shuffle order with its sort
         deps.setMultiOnly(!!at.state.multi);
+        // #183: timeline's state fields are identical to posts' (loaded above) —
+        // the ONLY thing left to restore is which mode a tab last showed. Default
+        // (browseMode's own initial value) is already 'posts', so this only has
+        // work to do on the timeline branch.
+        if (cur && cur.kind === 'timeline') deps.setBrowseModeLite('timeline');
       }
       nav.adopt(at); // adopt the persisted stack (or seed from the restored view)
     } catch (err) {

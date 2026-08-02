@@ -261,6 +261,9 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     // viewer: library/poster view switching, poster view
     browsePosts: 'ライブラリ',
     browsePosters: '投稿者',
+    // #183: 疑似タイムライン — browseMode の第4値。左ナビのレールラベルとタブ
+    // ストリップ双方で使う1語ラベル。
+    browseTimeline: 'タイムライン',
     // Sidebar/inspector width drag (#30) — the handle's screen-reader name.
     resizeSidebar: 'サイドバーの幅を変更',
     resizeInspector: 'インスペクタの幅を変更',
@@ -558,6 +561,8 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     displaySquare: '正方形のサムネ',
     displayShowInfo: '情報を表示',
     displayShowAvatar: '投稿者アイコンを表示',
+    // #183: タイムラインの本文 clamp を解く「続きを読む」ボタン(展開は非永続)。
+    timelineReadMore: '続きを読む',
     displaySize: 'サイズ',
     displayPanels: 'サイドバーと詳細パネル',
     displayPanelsHint: 'サイドバーだけなら Ctrl+B、両方まとめてなら Ctrl+Shift+B',
@@ -982,6 +987,7 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     // viewer: Library/Posters view toggle + poster view
     browsePosts: 'Library',
     browsePosters: 'Posters',
+    browseTimeline: 'Timeline',
     // Sidebar / inspector drag-resize (#30) — the handles' accessible names.
     resizeSidebar: 'Resize sidebar',
     resizeInspector: 'Resize inspector',
@@ -1262,6 +1268,7 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     displaySquare: 'Square thumbnails',
     displayShowInfo: 'Show info',
     displayShowAvatar: 'Show avatar',
+    timelineReadMore: 'Show more',
     displaySize: 'Size',
     displayPanels: 'Sidebar and details panel',
     displayPanelsHint: 'Ctrl+B for the sidebar alone, Ctrl+Shift+B for both',

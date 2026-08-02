@@ -10,11 +10,13 @@
 // create/rename/delete (#41).
 //
 // #678: the default is now the collapsed labeled rail, not the expanded column. Its
-// scope is deliberately the 5 fixed destinations only (posts/posters/trash/command palette/
-// settings) — the 3 user-grown groups below (library folders, saved searches, poster
-// folders) carry `group-data-[collapsible=icon]:hidden` and show only when expanded.
-// See docs/decisions/0018-labeled-navigation-rail-default.md for the design.
-import { ChevronRight, Folder, LayoutGrid, Plus, Search, Settings, Terminal, Trash2, Users } from 'lucide-react';
+// scope is deliberately the fixed destinations only (posts/posters/timeline/trash/
+// command palette/settings — #183 added timeline as a 6th, still inside M3's
+// 3-7 destination guideline) — the 3 user-grown groups below (library folders,
+// saved searches, poster folders) carry `group-data-[collapsible=icon]:hidden`
+// and show only when expanded. See docs/decisions/0018-labeled-navigation-rail-default.md
+// for the design.
+import { ChevronRight, Folder, LayoutGrid, Plus, Rss, Search, Settings, Terminal, Trash2, Users } from 'lucide-react';
 import type { DragEvent, MouseEvent } from 'react';
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
@@ -262,6 +264,7 @@ export function LeftSidebar({ resize }: { resize?: PanelResize }) {
   const mode = useSyncExternalStore(subBrowse, getBrowse);
   const isPosters = mode === 'posters';
   const isTrash = mode === 'trash';
+  const isTimeline = mode === 'timeline';
   const trashN = useSyncExternalStore(trashSubscribe, trashCount);
   const panelsHidden = useSyncExternalStore(panelsSubscribe, panelsAreHidden);
   const allFolders = useFolders();
@@ -460,7 +463,7 @@ export function LeftSidebar({ resize }: { resize?: PanelResize }) {
           <SidebarGroupContent>
             <SidebarMenu>
               <SidebarMenuItem>
-                <SidebarMenuButton isActive={!isPosters && !isTrash} tooltip={t('browsePosts')} onClick={() => browseTo('posts')}>
+                <SidebarMenuButton isActive={!isPosters && !isTrash && !isTimeline} tooltip={t('browsePosts')} onClick={() => browseTo('posts')}>
                   <LayoutGrid />
                   <span data-slot="menu-label">{t('browsePosts')}</span>
                 </SidebarMenuButton>
@@ -469,6 +472,16 @@ export function LeftSidebar({ resize }: { resize?: PanelResize }) {
                 <SidebarMenuButton isActive={isPosters} tooltip={t('browsePosters')} onClick={() => browseTo('posters')}>
                   <Users />
                   <span data-slot="menu-label">{t('browsePosters')}</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              {/* Timeline (#183) — the SNS-feed reading mode: same post population,
+                  pinned to post-date descending, no layout/sort controls of its own
+                  (DisplayMenu.tsx's TimelineControls). Sits with posts/posters (the
+                  other content destinations), above trash. */}
+              <SidebarMenuItem>
+                <SidebarMenuButton isActive={isTimeline} tooltip={t('browseTimeline')} onClick={() => browseTo('timeline')}>
+                  <Rss />
+                  <span data-slot="menu-label">{t('browseTimeline')}</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
             </SidebarMenu>

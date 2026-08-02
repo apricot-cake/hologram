@@ -57,6 +57,9 @@ declare global {
     labels?: any;
     /** The display shape this model was derived from (#618) — cells lay themselves out from it. */
     shape?: import('../services/display').DisplayShape;
+    /** #183: the browse mode this model was built for (post grid only) — Grid.tsx's
+     * PostCell reads it to pick the timeline's FeedCard over PostCard/ListRow. */
+    mode?: string;
     /** The poster grid's own shape (#630) — two axes, since an avatar has no aspect to choose. */
     posterShape?: import('../services/display').PosterShape;
     /** The small end of the size axis (#141) — cells drop their chrome there. */

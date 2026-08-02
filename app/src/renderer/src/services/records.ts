@@ -20,6 +20,7 @@ import { hologramIpc } from './ipc.ts';
 import { postKeyOf } from '../../../../../native-host/post-key.mts';
 export { postKeyOf };
 import type { DisplayShape } from './display.ts';
+import { localeDateTime } from './format.ts';
 import { hasVisualMedia, userKey } from './query.ts';
 
 // A post may carry both a capture (screenshot) and real media/artwork. Artwork
@@ -394,6 +395,37 @@ export function monoHue(seed: string): number {
     h = Math.imul(h, 0x01000193);
   }
   return (h >>> 0) % 360;
+}
+
+// #180/#183: the embedded quoted/reply-to card model — a pure mapping from the
+// saved sidecar sub-record (p.quotedPost / p.replyToPost) to what
+// inspector/QuotedPostCard.tsx renders. Shared by the inspector
+// (services/inspector-builder.ts, which adds its own onOpen — jumping to the
+// post if it is ALSO independently saved) and the timeline card (#183's
+// FeedCard, which draws it inline with no jump target). Kept here rather than
+// duplicated so a quote/reply always reads identically wherever it appears.
+export function quotedCardModelOf(sub: any, kind: 'quote' | 'reply', t: (key: string, subs?: ReadonlyArray<string | number | null | undefined>) => string): HologramQuotedCardModel | null {
+  if (!sub) return null;
+  const displayName = sub.displayName || sub.screenName || '';
+  const media = Array.isArray(sub.media) ? sub.media : [];
+  return {
+    kind,
+    label: kind === 'reply' ? t('quotedCardReply') : t('quotedCardQuote'),
+    displayName,
+    screenNameLabel: sub.screenName ? '@' + sub.screenName : '',
+    // #290/#181's line, reaffirmed for quotes by the 2026-07-27 design comment on
+    // #180: library viewing never reads a remote URL, so the sub-record's own
+    // avatar URL (sub.avatar) is never used as a src — the monogram fallback
+    // (Avatar, _shared/PostCard.tsx) is the only avatar a quoted/replied-to
+    // author ever gets.
+    avatarSrc: null,
+    monogram: displayName ? displayName[0].toUpperCase() : '?',
+    monoHue: monoHue(sub.userId ? String(sub.userId) : sub.screenName || displayName || 'quoted'),
+    dateLabel: localeDateTime(sub.date),
+    cw: sub.cw || '',
+    text: sub.text || '',
+    mediaCountLabel: media.length ? t('imagesCount', [media.length]) : '',
+  };
 }
 
 // --- Card view model (per-card presentation derivation) ---------------------

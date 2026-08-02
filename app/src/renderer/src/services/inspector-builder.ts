@@ -20,7 +20,7 @@ import { isOpen as lightboxIsOpen } from './lightbox.ts';
 import { get as menuGet } from './menu.ts';
 import { isAnySelectOpen } from './open-select-registry.ts';
 import { subscribe as subscribePostsData } from './posts-data.ts';
-import { postIdKey, postKeyOf, captureFile, persistManualGroups, persistUngrouped, monoHue } from './records.ts';
+import { postIdKey, postKeyOf, captureFile, persistManualGroups, persistUngrouped, quotedCardModelOf } from './records.ts';
 import { isOpen as settingsIsOpen } from './settings.ts';
 import { sameTags, setTagKind as tagsSetTagKind } from './tags.ts';
 import { applyTagWrite, updateTags as postsUpdateTags } from './posts.ts';
@@ -388,38 +388,23 @@ export function makeInspector(deps: InspectorBuilderDeps) {
   // embedded card built straight from the saved sidecar sub-record (never a
   // live fetch — v1 stays metadata-only). Two independent slots rather than
   // one 'the quoted card', since a post can both quote something and (on
-  // Misskey) carry a reply-to at once.
+  // Misskey) carry a reply-to at once. The field mapping itself lives in
+  // records.ts's quotedCardModelOf (#183 shares it with the timeline card) —
+  // this wrapper adds the one thing only the inspector has a use for: jumping
+  // to the quoted post if it is ALSO saved as its own independent record.
   function quotedCardOf(sub: any, kind: 'quote' | 'reply'): HologramQuotedCardModel | null {
-    if (!sub) return null;
-    const displayName = sub.displayName || sub.screenName || '';
-    const media = Array.isArray(sub.media) ? sub.media : [];
+    const base = quotedCardModelOf(sub, kind, deps.t);
+    if (!base) return null;
     const url: string | null = sub.url || null;
+    if (!url) return base;
     // Same-post identity: is this permalink ALSO saved as its own independent
     // record? (2026-07-27 design comment on #180) — postKeyOf is the one
     // URL→identity normalization every duplicate-detection path in the app
     // already shares (records.ts), so a quote and its independently-saved
     // target agree with the grid's own grouping about what counts as "the same post".
-    const key = url ? postKeyOf(url) : null;
-    const savedRec = key ? deps.getAllPosts().find((q) => postKeyOf(q.url) === key) : undefined;
-    return {
-      kind,
-      label: kind === 'reply' ? deps.t('quotedCardReply') : deps.t('quotedCardQuote'),
-      displayName,
-      screenNameLabel: sub.screenName ? '@' + sub.screenName : '',
-      // #290/#181's line, reaffirmed for quotes by the 2026-07-27 design comment on
-      // #180: library viewing never reads a remote URL, so the sub-record's own
-      // avatar URL (sub.avatar) is never used as a src — the monogram fallback
-      // (Avatar, _shared/PostCard.tsx) is the only avatar a quoted/replied-to
-      // author ever gets.
-      avatarSrc: null,
-      monogram: displayName ? displayName[0].toUpperCase() : '?',
-      monoHue: monoHue(sub.userId ? String(sub.userId) : sub.screenName || displayName || 'quoted'),
-      dateLabel: localeDateTime(sub.date),
-      cw: sub.cw || '',
-      text: sub.text || '',
-      mediaCountLabel: media.length ? deps.t('imagesCount', [media.length]) : '',
-      onOpen: url ? () => jumpToQuotedPost(savedRec, url) : undefined,
-    };
+    const key = postKeyOf(url);
+    const savedRec = deps.getAllPosts().find((q) => postKeyOf(q.url) === key);
+    return { ...base, onOpen: () => jumpToQuotedPost(savedRec, url) };
   }
 
   // #179: the post's poll, as the inspector shows it. Read-only by design --
