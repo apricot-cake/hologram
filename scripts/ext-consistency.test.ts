@@ -1,7 +1,7 @@
 // A guard that cross-checks the generated manifest against the code that's written assuming it (#130).
 //
-// With the CRXJS migration (#714) and the extractor registry (#212), the manifest
-// is no longer hand-written; it's generated from manifest.config.ts plus each
+// With WXT and the extractor registry (#212), the manifest is no longer
+// hand-written; it's generated from wxt.config.ts plus each
 // site module. So the kind of drift where "the manifest's match and the code's
 // correspondence table need to be kept in sync by hand" has structurally gone
 // away (the registry's own invariants are covered by

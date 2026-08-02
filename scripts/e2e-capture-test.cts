@@ -240,7 +240,7 @@ async function waitForNewSidecar(newDir, before, timeoutMs = 25000) {
 }
 
 (async () => {
-  // Always rebuild first so the staged CRXJS release reflects the current source.
+  // Always rebuild first so the staged release reflects the current source.
   execFileSync('npm run build:ext', {
     stdio: 'inherit',
     cwd: path.join(__dirname, '..'),

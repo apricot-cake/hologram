@@ -313,7 +313,7 @@ beforeAll(async () => {
     },
   } as any;
 
-  // The resident content script bundle is the exact same CRXJS release output that Chrome reads
+  // The resident content script bundle is the exact same release output that Chrome reads
   window.eval(fs.readFileSync(path.join(import.meta.dirname, '..', 'extension', '.output', 'chrome-mv3-release', 'content-scripts', 'resident.js'), 'utf8'));
 }, 30000);
 

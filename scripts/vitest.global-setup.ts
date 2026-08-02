@@ -6,8 +6,8 @@ import path from 'node:path';
 // the current source" (#130).
 //
 // The jsdom suites (overlay / drag-zone / capture-overlay / capture-mode-select /
-// bulk-capture) and ext-consistency read the build output at extension/.output/chrome-mv3
-// directly — not the source. Forgetting to run `npm run build:ext` by hand silently
+// bulk-capture) and ext-consistency read the verified release output at
+// extension/.output/chrome-mv3-release directly — not the source. Forgetting to run `npm run build:ext` by hand silently
 // reproduces "should be fixed but isn't fixed", and on a fresh worktree it fails with ENOENT.
 // Rather than checking freshness and failing, run the build only when needed and make the
 // problem itself disappear.
@@ -60,5 +60,5 @@ export function setup(): void {
   // On Windows, spawning npm.cmd without a shell throws EINVAL (skill windows-scripting).
   execFileSync('npm run build:ext', { cwd: ROOT, shell: true, stdio: 'inherit' });
   const missing = REQUIRED.filter((name) => !fs.existsSync(path.join(OUT, name)));
-  if (missing.length) throw new Error(`build:ext は成功したのに CRXJS 出力が揃っていない: ${missing.join(', ')}`);
+  if (missing.length) throw new Error(`build:ext は成功したのに release 出力が揃っていない: ${missing.join(', ')}`);
 }

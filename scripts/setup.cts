@@ -42,7 +42,7 @@
 //
 //   The flag is blunt: it disables EVERY root package install script. Electron's
 //   runtime is therefore restored explicitly below; the extension is installed
-//   separately and its CRXJS patch runs through its own postinstall.
+//   separately and its `wxt prepare` runs through its own postinstall.
 //
 // (2) --legacy-peer-deps — electron-vite's peer range vs vite 8
 //   electron-vite@5 declares `peer vite: ^5 || ^6 || ^7` while app/ builds on

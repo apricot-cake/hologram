@@ -23,13 +23,14 @@ install が済めば `npm test`・`npm run typecheck`・アプリ起動ハーネ
 
 ## worktree から拡張機能を実機検証する
 
-日常の Chrome が読むのは本体ツリーの固定出力だが、#718 以降は supervisor の Vite cwd を対象 worktree へ切り替え、開発出力だけを固定パスへ書く。**本体ツリーの detach、手動コピー、Chrome の再読み込み、先行マージは不要。**
+**取り合いは無い**（#732）。拡張の開発は日常利用とは別の Chrome プロファイルで行い、開発ビルドの出力先はツリー外の固定パス（`~/.hologram-dev/chrome-mv3-dev`）なので、どの worktree から起動しても同じ場所へ出る。日常の Chrome は開発サーバーを一切見ない。
 
-1. fresh worktree は `npm run setup` を済ませる。選択した worktree 自身の `extension/node_modules` が Vite に必要。
-2. Claude Code は SessionStart hook が自動取得する。Codex は対象 worktree で `npm run ext:preview:acquire`。別セッションが所有中なら横取りせず止まる。
-3. `npm run ext:preview:check` または `npm run ext:status` で、`sourceRoot` が対象 worktree、state が `ready` であることを確認する。
-4. 以後は対象 worktree の保存が CRXJS HMR へ直接届く。background 更新時も拡張自身の runtime reload に任せ、日常タブは reload しない。
-5. 終了時は Claude Code の SessionEnd hook、Codex は `npm run ext:preview:release` で main へ戻す。クラッシュ後の復旧だけ `npm run ext:preview:main`。
+1. fresh worktree は `npm run setup` を済ませる。その worktree 自身の `extension/node_modules` が WXT に必要。
+2. `npm run dev:ext` を起動する（常駐しない＝検証が終わったら止める）。
+3. 開発プロファイルの Chrome で確認する。保存した変更は拡張リロード＋タブリロードで入る。
+4. 開発プロファイルからの保存は `~/.hologram-dev/library` へ行き、実ライブラリには入らない（初回だけ `npm run ext:dev:register`）。
+
+**日常の Chrome へ何かを載せたい時は `npm run deploy:ext` だけ**＝検証済み release を `.output/chrome-mv3` へ差し替え、拡張が自分でリロードする。ふだんは本体ツリーの `post-merge` フックが自動で走らせるので、手で打つのは復旧の時だけ。
 
 **バンドルの grep は正規表現リテラルのエスケープで偽の空振りを起こす**。ソースの `/^\/i\/bookmarks(\/|$)/` はバンドル上も `i\/bookmarks` と出るため `i/bookmarks` で grep すると 0 件＝「ビルドされていない」と誤読する。空振りはまず自分の検索式を疑う。
 
