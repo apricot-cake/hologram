@@ -57,19 +57,45 @@ function shouldPublish(): boolean {
   }
 }
 
-// Staged next to the destination and renamed into place, so the browser never
-// sees a folder mid-copy. The old folder is moved aside first and removed after,
-// because a rename onto an existing directory fails on Windows.
+// Replaced IN PLACE, file by file, rather than by renaming a staged folder
+// into position. Renaming is the usual way to make a swap atomic and it CANNOT
+// be used here: the daily Chrome holds an open handle on this directory for as
+// long as the unpacked extension is loaded, so Windows fails the rename with
+// EPERM (measured 2026-08-02). Un-loading the extension to free the handle would
+// cost exactly the click this whole path exists to remove.
+//
+// In-place is safe because nothing reads this folder until it is told to. Chrome
+// does not watch an unpacked extension for changes; it re-reads it only on
+// chrome.runtime.reload(), and the only thing that asks for one is the
+// announcement below — published after the copy has finished. The window where
+// the folder is inconsistent is a window in which no reader exists.
+//
+// Files that the previous build had and this one does not are removed, so a
+// renamed entrypoint cannot linger and be injected by name.
+function listFiles(root: string, base = root): string[] {
+  const files: string[] = [];
+  for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
+    const absolute = path.join(root, entry.name);
+    if (entry.isDirectory()) files.push(...listFiles(absolute, base));
+    else files.push(path.relative(base, absolute));
+  }
+  return files;
+}
+
 function swapIn(source: string): void {
-  const staged = `${DAILY}-staged-${process.pid}`;
-  const retired = `${DAILY}-retired-${process.pid}`;
-  fs.rmSync(staged, { recursive: true, force: true });
-  fs.rmSync(retired, { recursive: true, force: true });
-  fs.cpSync(source, staged, { recursive: true });
-  fs.mkdirSync(path.dirname(DAILY), { recursive: true });
-  if (fs.existsSync(DAILY)) fs.renameSync(DAILY, retired);
-  fs.renameSync(staged, DAILY);
-  fs.rmSync(retired, { recursive: true, force: true });
+  fs.mkdirSync(DAILY, { recursive: true });
+  const wanted = new Set(listFiles(source));
+  for (const stale of listFiles(DAILY)) {
+    if (!wanted.has(stale)) fs.rmSync(path.join(DAILY, stale), { force: true });
+  }
+  fs.cpSync(source, DAILY, { recursive: true, force: true });
+  // Directories the previous layout had and this one does not (CRXJS put the
+  // entrypoints under their own folders); harmless to leave, confusing to keep.
+  for (const entry of fs.readdirSync(DAILY, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    const absolute = path.join(DAILY, entry.name);
+    if (!listFiles(absolute, DAILY).length) fs.rmSync(absolute, { recursive: true, force: true });
+  }
 }
 
 // Temp file plus rename, so a reader never sees a half-written stamp: the bridge
