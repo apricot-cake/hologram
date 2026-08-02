@@ -20,6 +20,7 @@ import { open as inspectorOpen, refresh as inspectorRefresh } from './inspector.
 import { setOpen as panelSetOpen } from './inspector-panel.ts';
 import { open as lightboxOpen } from './lightbox.ts';
 import { open as menuOpen } from './menu.ts';
+import { open as webSearchContextOpen } from '../websearch/context-panel.ts';
 import { promptName } from '../prompt/Prompt.tsx';
 import { captureFile, monoHue } from './records.ts';
 import { setPosterTags } from './tags.ts';
@@ -364,7 +365,7 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
   // poster-folders (toggle, stays open). React-owned glass popup via
   // menu.ts; viewer owns the items + actions here.
   function posterMenuItems(u: HologramUserAgg) {
-    const items = [{ label: deps.t('posterViewPosts'), act: 'posts' }, { label: deps.t('ctxEditTags'), act: 'tags' }, { sep: true }] as HologramMenuItem[];
+    const items = [{ label: deps.t('posterViewPosts'), act: 'posts' }, { label: deps.t('ctxEditTags'), act: 'tags' }, { label: deps.t('websearchToolbarLabel'), act: 'websearch' }, { sep: true }] as HologramMenuItem[];
     for (const f of pfStore.all()) {
       items.push({ label: f.name, act: 'folder', fid: f.id, checked: posterFolderHasResolved(f.id, u.key) });
     }
@@ -375,13 +376,20 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
     if (aliases.groupOf(u.key)) items.push({ label: deps.t('ctxSamePersonUnlink'), act: 'samePersonUnlink' });
     return items;
   }
-  function onPosterMenuPick(u: HologramUserAgg, item: HologramMenuItem) {
+  function onPosterMenuPick(u: HologramUserAgg, item: HologramMenuItem, x: number, y: number) {
     if (item.act === 'posts') {
       openPosterPosts(u);
       return;
     } // close
     if (item.act === 'tags') {
       showPosterDetail(u, { focusTags: true });
+      return;
+    } // close
+    if (item.act === 'websearch') {
+      // #207: this poster's own entry point into the "ウェブで探す" panel — a one-off
+      // tree holding just a 'user' leaf for this poster (same leaf shape openPosterPosts
+      // above uses for its own single-poster filter).
+      webSearchContextOpen({ kind: 'group', op: 'and', neg: false, children: [{ kind: 'cond', type: 'user', value: u.key, label: u.displayName || u.screenName || u.key }] }, x, y);
       return;
     } // close
     if (item.act === 'newfolder') {
@@ -405,7 +413,7 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
     } // close
   }
   function showPosterMenu(u: HologramUserAgg, x: number, y: number) {
-    menuOpen({ items: posterMenuItems(u), x, y }, (item) => onPosterMenuPick(u, item));
+    menuOpen({ items: posterMenuItems(u), x, y }, (item) => onPosterMenuPick(u, item, x, y));
   }
 
   // --- Name-merging (#23 St1) ------------------------------------------------

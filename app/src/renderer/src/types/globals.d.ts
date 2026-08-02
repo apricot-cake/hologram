@@ -233,6 +233,11 @@ declare global {
     rows: HologramKindMenuRow[];
     onPick(kind: string): void;
     onRename(kind: string): void;
+    // #207: an optional extra row below a separator, outside the work/character/general
+    // radio group — this menu doubles as "the tag's context menu" (the only right-click
+    // surface a tag chip has), so "ウェブで探す" rides along here rather than growing a
+    // second menu surface just for one more action.
+    websearch?: { label: string; onPick(): void } | null;
   }
 
   // ---- renderer/filter-popover.js — date / engagement / poster-date forms ----
