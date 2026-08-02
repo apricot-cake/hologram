@@ -12,6 +12,26 @@
 export function makeCooc(deps: { allPosts(): HologramPost[]; tagKindOf(tag: string): string | null | undefined }) {
   const { allPosts, tagKindOf } = deps;
 
+  // #774 splits what a post "carries" into two readings, and this file needs both:
+  //
+  //   effTags(p) — the EFFECTIVE names (raw plus every ancestor the tag_parents
+  //     edges imply, computed in lib-db-query.ts). This is the right answer to
+  //     "does this post belong under tag X", because that is exactly the question
+  //     query-time application redefines: a post tagged only with a child belongs
+  //     under the parent too.
+  //   rawTags(p) — what the user actually typed. This is the right answer to
+  //     "which tag should we OFFER next", because an ancestor is never worth
+  //     suggesting: every post carrying the child already carries the parent, so
+  //     adding it narrows nothing.
+  //
+  // The split is why relatedTagCandidates below stays entirely raw while the two
+  // kind-scoped probes read effective on their membership tests. Records whose
+  // effective array is unavailable (a failed tag write dropped it — see
+  // services/posts.ts's applyTagWrite) fall back to raw, which is what this whole
+  // file used before #774.
+  const rawTags = (p: HologramPost): string[] => (Array.isArray(p.tags) ? p.tags : []);
+  const effTags = (p: HologramPost): string[] => (Array.isArray(p.effectiveTags) ? p.effectiveTags : rawTags(p));
+
   // Tag co-occurrence: Work → characters that have shared a post with any of these
   // Work tags, most-frequent first. Deterministic + explainable (the count IS the
   // confidence). Kind already fixes the two hard guesses (which tags relate, which is
@@ -22,9 +42,12 @@ export function makeCooc(deps: { allPosts(): HologramPost[]; tagKindOf(tag: stri
     const works = new Set(workTags);
     const counts = new Map<string, number>();
     for (const p of allPosts()) {
-      const tags = Array.isArray(p.tags) ? p.tags : [];
-      if (!tags.some((t) => works.has(t))) continue;
-      for (const t of tags) if (tagKindOf(t) === 'character') counts.set(t, (counts.get(t) || 0) + 1);
+      // Membership reads effective (#774): asking for a parent Work's characters
+      // has to reach the posts that only carry one of its child Works. The
+      // characters themselves come from the raw list — a suggestion is something
+      // to type, and an implied ancestor is not.
+      if (!effTags(p).some((t) => works.has(t))) continue;
+      for (const t of rawTags(p)) if (tagKindOf(t) === 'character') counts.set(t, (counts.get(t) || 0) + 1);
     }
     return [...counts.entries()].sort((a, b) => b[1] - a[1]);
   }
@@ -36,7 +59,11 @@ export function makeCooc(deps: { allPosts(): HologramPost[]; tagKindOf(tag: stri
     const works = new Set<string>();
     for (const p of allPosts()) {
       if (excludeIds && excludeIds.has(p.captureId)) continue;
-      const tags = Array.isArray(p.tags) ? p.tags : [];
+      // Both halves read effective (#774) — unlike the two suggestion tiers, this
+      // one's result is not a list of tags to offer but a membership set the
+      // homonym check tests against, so an implied parent Work is real history
+      // and leaving it out would report a same-name character as unseen.
+      const tags = effTags(p);
       if (!tags.includes(charTag)) continue;
       for (const t of tags) if (tagKindOf(t) === 'work') works.add(t);
     }
@@ -61,7 +88,11 @@ export function makeCooc(deps: { allPosts(): HologramPost[]; tagKindOf(tag: stri
     const exclude = o.exclude || null;
     const pair = new Map<string, Map<string, number>>(); // candidate Y -> Map(selected X -> shared-post count)
     for (const p of allPosts()) {
-      const tags = Array.isArray(p.tags) ? p.tags : [];
+      // Deliberately raw on BOTH sides (#774): this tier's contract is "these two
+      // were typed together N times, and the count IS the confidence". Pairing
+      // through effective sets would rank a selected tag's own ancestors at the
+      // top of its suggestions, and every one of them is a no-op to add.
+      const tags = rawTags(p);
       if (tags.length < 2) continue;
       const present = tags.filter((t) => sel.has(t));
       if (!present.length) continue;

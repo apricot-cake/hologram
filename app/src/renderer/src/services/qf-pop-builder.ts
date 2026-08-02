@@ -8,7 +8,7 @@
 // during its decomposition; the flyout half retired 2026-07-18.
 
 export interface QfPopDeps {
-  postShadow(): { type: string; value?: string }[];
+  postShadow(): { type: string; value?: string; tagId?: number }[];
   posterQHasValue(type: string, value: string): boolean;
   posterAddFilter(filter: { type: string; value: string }): void;
   posterRemoveByLeaf(type: string, value: string): void;
@@ -47,9 +47,21 @@ export function makeQfPop(deps: QfPopDeps) {
       return;
     }
     const vtype = it.type || cat; // sub-rows (instances) override the type
-    const i = deps.postShadow().findIndex((f) => f.type === vtype && f.value === v);
+    // #774: a tag row stands for one tags-table row, and two of them can share a
+    // name — so both halves of this toggle key off the id when the row carries
+    // one. Without it, picking the second "alice" would toggle the first one's
+    // leaf, and the id would never reach the leaf that query.ts matches with.
+    const isEntityTag = vtype === 'tag' && it.tagId != null;
+    const i = deps.postShadow().findIndex((f) => (isEntityTag ? f.type === 'tag' && f.tagId === it.tagId : f.type === vtype && f.value === v));
     if (i >= 0) {
       deps.removeFilter(i);
+    } else if (isEntityTag) {
+      // The row's label rides along when it says more than the name does — two
+      // same-named entities differ only by their display parent ("alice(東方)"),
+      // and a chip reading plain "alice" twice would not tell them apart. Same
+      // shape as the 'user' leaf below; tab-state's filterLabel prefers f.label.
+      const label = typeof it.l === 'string' && it.l !== v ? it.l : undefined;
+      deps.addFilter(label ? { type: 'tag', value: v, tagId: it.tagId, label } : { type: 'tag', value: v, tagId: it.tagId });
     } else if (vtype === 'tag' || vtype === 'hashtag') {
       deps.addFilter({ type: vtype, value: v });
     } else if (vtype === 'user') {

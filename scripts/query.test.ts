@@ -167,6 +167,21 @@ describe('葉の述語', () => {
     expect(calls).toEqual([]);
   });
 
+  // #774: the id match reads the EFFECTIVE set, which is what makes "search the
+  // parent, get the children too" true — the record below never carries the
+  // parent's id in its own tagIds.
+  test('tag: 親タグのリーフが、子タグだけの投稿に当たる', () => {
+    const child = post({ tags: ['レミリア'], tagIds: [11], effectiveTagIds: [11, 22] });
+    expect(predOf({ type: 'tag', value: '東方', tagId: 22 })(child)).toBe(true);
+    expect(predOf({ type: 'tag', value: '東方', tagId: 22 })(post({ tags: ['風景'], tagIds: [33], effectiveTagIds: [33] }))).toBe(false);
+  });
+
+  test('tag: 実効配列が無い記録は生の tagIds へ落ちる', () => {
+    // A failed tag write drops the derived arrays (services/posts.ts applyTagWrite).
+    expect(predOf({ type: 'tag', value: '東方', tagId: 22 })(post({ tags: ['東方'], tagIds: [22] }))).toBe(true);
+    expect(predOf({ type: 'tag', value: '東方', tagId: 22 })(post({ tags: ['レミリア'], tagIds: [11] }))).toBe(false);
+  });
+
   test('folder: 注入した依存で判定する', () => {
     expect(predOf({ type: 'folder', value: 'col-1' })(post({ captureId: 'cap-in' }))).toBe(true);
     expect(predOf({ type: 'folder', value: 'col-1' })(post())).toBe(false);
@@ -620,6 +635,42 @@ describe('木の変異ドメイン', () => {
 
     test('一致が無ければ false', () => {
       expect(Q.removeCondsMatching(t, (c: any) => c.type === 'nope')).toBe(false);
+    });
+  });
+
+  // #774: two tag entities can share a name (#5's ID model), so a tag leaf that
+  // knows its id is identified BY that id — the name is only the fallback.
+  describe('sameLeaf / hasSameLeaf: タグは実体で同一視する', () => {
+    test('同名でも tagId が違えば別のリーフ', () => {
+      const a = { kind: 'cond', type: 'tag', value: 'alice', tagId: 1 } as any;
+      expect(Q.sameLeaf(a, { type: 'tag', value: 'alice', tagId: 2 })).toBe(false);
+      expect(Q.sameLeaf(a, { type: 'tag', value: 'alice', tagId: 1 })).toBe(true);
+    });
+
+    test('どちらかが id を持たなければ名前へ落ちる', () => {
+      const noId = { kind: 'cond', type: 'tag', value: 'alice' } as any;
+      expect(Q.sameLeaf(noId, { type: 'tag', value: 'alice', tagId: 2 })).toBe(true);
+      expect(Q.sameLeaf(noId, { type: 'tag', value: 'bob', tagId: 2 })).toBe(false);
+    });
+
+    test('hasSameLeaf は入れ子の実体も見つける', () => {
+      const t2 = group('and', [leaf('platform', 'x'), group('or', [{ kind: 'cond', type: 'tag', value: 'alice', tagId: 2 } as any])]);
+      expect(Q.hasSameLeaf(t2, { type: 'tag', value: 'alice', tagId: 2 })).toBe(true);
+      expect(Q.hasSameLeaf(t2, { type: 'tag', value: 'alice', tagId: 9 })).toBe(false);
+    });
+  });
+
+  describe('buildShadow: 同名2実体が1件へ潰れない', () => {
+    test('tagId 違いは別エントリとして残り、id を持ち帰る', () => {
+      const t2 = group('and', [{ kind: 'cond', type: 'tag', value: 'alice', tagId: 1 } as any, { kind: 'cond', type: 'tag', value: 'alice', tagId: 2 } as any]);
+      const sh = Q.buildShadow(t2);
+      expect(sh).toHaveLength(2);
+      expect(sh.map((f: any) => f.tagId)).toEqual([1, 2]);
+    });
+
+    test('id の無いタグは従来どおり type+value で重複排除', () => {
+      const t2 = group('and', [leaf('tag', 'alice'), leaf('tag', 'alice')]);
+      expect(Q.buildShadow(t2)).toHaveLength(1);
     });
   });
 

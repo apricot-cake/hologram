@@ -16,6 +16,8 @@ export const PF_ORDER = ['x', 'bluesky', 'misskey', 'mastodon', 'pixiv'];
 // deps contract (all functions unless noted):
 //   getFilteredPosts() — current-query post population (default counting pool)
 //   qHasValue(type,v) / posterQHasValue(type,v) — "is this value active" per tree
+//   qHasTag(tagId,name) — the tag-leaf variant of qHasValue (#774): a tag row is
+//     active when the tree holds a leaf for that ENTITY, not merely that name
 //   allPosts() — full library (facet vocabulary; getter — viewer reassigns it)
 //   hostOf(url) / userKey(p) — from query.js (wrapped: destructured after wiring)
 //   t(key,subs?) — message lookup / PF_NAME (value) — label table (const by the wiring point)
@@ -28,6 +30,7 @@ export const PF_ORDER = ['x', 'bluesky', 'misskey', 'mastodon', 'pixiv'];
 export function makeFacets(deps: {
   getFilteredPosts(): HologramPost[];
   qHasValue(type: string, v: string): boolean;
+  qHasTag(tagId: number | null, name: string): boolean;
   posterQHasValue(type: string, v: string): boolean;
   allPosts(): HologramPost[];
   hostOf(url: string | null | undefined): string;
@@ -45,7 +48,48 @@ export function makeFacets(deps: {
   resolve(key: string): string;
   membersOf(key: string): string[];
 }) {
-  const { getFilteredPosts, qHasValue, posterQHasValue, allPosts, hostOf, userKey, t, PF_NAME, tagKindOf, posterTagsOf, filteredPosters, posterFilterVocab, namedPosters, posterFolders, postFolders, buildUsers, resolve, membersOf } = deps;
+  const { getFilteredPosts, qHasValue, qHasTag, posterQHasValue, allPosts, hostOf, userKey, t, PF_NAME, tagKindOf, posterTagsOf, filteredPosters, posterFilterVocab, namedPosters, posterFolders, postFolders, buildUsers, resolve, membersOf } = deps;
+
+  // --- Tag rows are per ENTITY, not per name (#774 / #5's ID model) -----------
+  // A tag row stands for one tags-table row: `name` is what a pick writes into
+  // the query leaf, `label` is what the row shows (two entities sharing a name
+  // are only told apart by their display parent — "alice(東方)"), and `key` is
+  // the counting bucket.
+  //
+  // The entries come from the record's EFFECTIVE arrays, so a parent tag gets a
+  // row (and a count) from posts that only carry its children — the whole point
+  // of applying parent relationships at query time. A record without them (a
+  // failed tag write dropped its ids — services/posts.ts's applyTagWrite) falls
+  // back to its raw names, which is what these rows were keyed on before #774:
+  // less precise, never wrong for a library with no same-name pair.
+  interface TagEntry {
+    key: string;
+    id: number | null;
+    name: string;
+    label: string;
+  }
+  function tagEntriesOf(p: HologramPost): TagEntry[] {
+    const ids = p.effectiveTagIds;
+    if (Array.isArray(ids) && ids.length) {
+      const names: string[] = Array.isArray(p.effectiveTags) ? p.effectiveTags : [];
+      const labels: string[] = Array.isArray(p.effectiveTagLabels) ? p.effectiveTagLabels : [];
+      return ids.map((id: number, i: number) => {
+        const name = names[i] != null ? names[i] : '';
+        return { key: 'i:' + id, id, name, label: labels[i] || name };
+      });
+    }
+    return (p.tags || []).map((name: string) => ({ key: 'n:' + name, id: null, name, label: name }));
+  }
+  // The library-wide tag vocabulary, first occurrence wins (every occurrence of
+  // one id carries the same name/label — they all come from the same tags row).
+  function tagVocab(): TagEntry[] {
+    const m = new Map<string, TagEntry>();
+    for (const p of allPosts()) for (const e of tagEntriesOf(p)) if (!m.has(e.key)) m.set(e.key, e);
+    return [...m.values()];
+  }
+  const tagRow = (e: TagEntry, cnt: Map<string, number>, extra?: Record<string, unknown>): HologramQfRow => ({ v: e.name, l: e.label, tagId: e.id ?? undefined, on: qHasTag(e.id, e.name), count: cnt.get(e.key) || 0, facetDim: true, ...extra });
+  // Present values (count desc) precede absent ones; ja-locale name tiebreak.
+  const byTagCount = (a: HologramQfRow, b: HologramQfRow) => (b.count || 0) - (a.count || 0) || (a.l || '').localeCompare(b.l || '', 'ja');
 
   // Facet counts: how many CURRENT-QUERY matches fall under each value of a facet.
   // Population = getFilteredPosts() (every active condition incl. the search term),
@@ -238,14 +282,17 @@ export function makeFacets(deps: {
         // Glossary (Phase 2 ②): a Work/Character section lists the tags whose Kind matches.
         // They ARE tags (type:'tag'), so picking one adds an ordinary tag filter —
         // the kind only scopes which tags this flyout offers.
-        const cnt = facetCounts((p) => p.tags);
+        // Kind is looked up by NAME (services/tags.ts keys it that way), so two
+        // entities sharing a name necessarily share a Kind — an id-keyed Kind store
+        // is #5's remaining scope, not this one's. The ROWS are still per entity.
+        const cnt = facetCounts((p) => tagEntriesOf(p).map((e) => e.key));
         return (
-          [...new Set<string>(allPosts().flatMap((p) => p.tags || []))]
-            .filter((t) => tagKindOf(t) === cat)
-            .map((t) => ({ v: t, l: t, on: act('tag', t), type: 'tag', count: cnt.get(t) || 0, facetDim: true }))
+          tagVocab()
+            .filter((e) => tagKindOf(e.name) === cat)
+            .map((e) => tagRow(e, cnt, { type: 'tag' }))
             // Facet order: values present in the current results first (count desc),
             // absent ones sink to the bottom (greyed but still pickable).
-            .sort((a, b) => b.count - a.count || a.l.localeCompare(b.l, 'ja'))
+            .sort(byTagCount)
         );
       }
       case 'tag': {
@@ -253,12 +300,14 @@ export function makeFacets(deps: {
         // Glossary: kinded tags live in the Work/Character rows — the Tags flyout is general-only.
         // A post with no tags at all buckets under the '__none' sentinel — same shape as
         // "No platform" above, and query.ts special-cases the value the same way.
-        const cnt = facetCounts((p) => ((p.tags || []).length ? p.tags : '__none'));
-        const item = (t: string) => ({ v: t, l: t, on: act('tag', t), count: cnt.get(t) || 0, facetDim: true });
-        // Present values (count desc) precede absent ones.
-        const byCount = (a: { count: number; l: string }, b: { count: number; l: string }) => b.count - a.count || a.l.localeCompare(b.l, 'ja');
-        const allTags = [...new Set<string>(allPosts().flatMap((p) => p.tags || []))].filter((t) => !tagKindOf(t)).sort();
-        const out = allTags.map(item).sort(byCount);
+        const cnt = facetCounts((p) => {
+          const entries = tagEntriesOf(p);
+          return entries.length ? entries.map((e) => e.key) : '__none';
+        });
+        const out = tagVocab()
+          .filter((e) => !tagKindOf(e.name))
+          .map((e) => tagRow(e, cnt))
+          .sort(byTagCount);
         // "No tags" = posts whose tags are empty. It's the entry point for chained
         // tagging, so it's pinned at the front rather than mixed into the count-order
         // ranking (the same shape as GitHub's Labels dropdown putting Unlabeled at the

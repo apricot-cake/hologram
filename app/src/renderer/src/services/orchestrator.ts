@@ -460,6 +460,7 @@ export function endFilterEditSession(): void {
   const { qfValues } = makeFacets({
     getFilteredPosts: () => getFilteredPosts(),
     qHasValue,
+    qHasTag: (tagId: number | null, name: string) => postQB.qHasTag(tagId, name),
     posterQHasValue: (type: string, v: string) => posterQB.qHasValue(type, v),
     allPosts: () => postGrid.getAllPosts(),
     hostOf: (u: string | null | undefined) => hostOf(u),
@@ -654,8 +655,15 @@ export function endFilterEditSession(): void {
     // this. Scans the loaded posts' parallel tags/tagIds arrays rather than a
     // separate vocabulary fetch — only runs once per legacy leaf (the leaf
     // caches its own resolved tagId), not once per post.
+    // #774: the EFFECTIVE pair is read first because it is a superset — a tag
+    // that no post carries directly (a pure intermediate in a parent chain) has
+    // no entry in any raw tags[], so resolving from raw alone would leave its
+    // leaf on name matching and match nothing at all, which is the exact
+    // opposite of what applying the parent relationship is for.
     tagIdOf: (name) => {
       for (const p of postGrid.getAllPosts()) {
+        const e = (p.effectiveTags || []).indexOf(name);
+        if (e >= 0 && p.effectiveTagIds) return p.effectiveTagIds[e];
         const i = (p.tags || []).indexOf(name);
         if (i >= 0 && p.tagIds) return p.tagIds[i];
       }

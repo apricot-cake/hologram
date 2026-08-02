@@ -170,6 +170,73 @@ function parseHashtags(raw: unknown): string[] {
   }
 }
 
+// #774: the query-time application of tag parent relationships (#21's confirmed
+// 2026-07-18 method -- rules are never burned into post data, so deleting one
+// removes its effect from every post at the next read). This builds the two
+// lookups a post record's derived tag arrays need, from tag_parents:
+//
+//   closureOf(id) -- id plus every ancestor reachable by walking tagId ->
+//     parentTagId, so a post tagged with a child effectively carries the parent.
+//   nameOf(id)    -- the tag's own name.
+//   labelOf(id)   -- the display name rule lib-db-tag-vocab.ts's tagVocabOverview
+//     uses: "name" normally, "name(displayParentName)" when the tag has an
+//     isDisplay parent (the disambiguation two same-named entities get).
+//
+// Returns null when tag_parents is empty -- the library has no rules, so the
+// effective set IS the raw set and assemble() below skips the extra tags-table
+// read entirely.
+//
+// Cycles cannot be written through lib-db-tag-vocab.ts (addTagParent/mergeTags
+// both reject them), but a foreign or damaged database could hold one, and this
+// runs over the app's ENTIRE post list -- so the walk carries a seen-set and
+// terminates with a partial answer rather than hanging the load.
+function tagClosureResolver(sqlite: Database.Database): { closureOf(id: number): number[]; nameOf(id: number): string; labelOf(id: number): string } | null {
+  const edges = sqlite.prepare('SELECT tagId, parentTagId, isDisplay FROM tag_parents').all() as Array<{ tagId: number; parentTagId: number; isDisplay: number }>;
+  if (!edges.length) return null;
+  const parentsOf = new Map<number, number[]>();
+  const displayParentOf = new Map<number, number>();
+  for (const e of edges) {
+    const list = parentsOf.get(e.tagId);
+    if (list) list.push(e.parentTagId);
+    else parentsOf.set(e.tagId, [e.parentTagId]);
+    if (e.isDisplay) displayParentOf.set(e.tagId, e.parentTagId);
+  }
+  const nameById = new Map((sqlite.prepare('SELECT id, name FROM tags').all() as Array<{ id: number; name: string }>).map((t) => [t.id, t.name]));
+  const nameOf = (id: number): string => nameById.get(id) || '';
+  const labels = new Map<number, string>();
+  const labelOf = (id: number): string => {
+    const hit = labels.get(id);
+    if (hit != null) return hit;
+    const dp = displayParentOf.get(id);
+    const label = dp != null ? nameOf(id) + '(' + nameOf(dp) + ')' : nameOf(id);
+    labels.set(id, label);
+    return label;
+  };
+  // Memoized per tag id: a library has far fewer tags than posts, so every
+  // closure is walked once no matter how many posts carry the tag.
+  const closures = new Map<number, number[]>();
+  const closureOf = (id: number): number[] => {
+    const hit = closures.get(id);
+    if (hit) return hit;
+    const out: number[] = [];
+    const seen = new Set<number>();
+    let frontier = [id];
+    while (frontier.length) {
+      const next: number[] = [];
+      for (const cur of frontier) {
+        if (seen.has(cur)) continue;
+        seen.add(cur);
+        out.push(cur);
+        for (const p of parentsOf.get(cur) || []) next.push(p);
+      }
+      frontier = next;
+    }
+    closures.set(id, out);
+    return out;
+  };
+  return { closureOf, nameOf, labelOf };
+}
+
 // Assembles complete post records from already-fetched `posts` rows plus their
 // media/tags, grouped by postId. Shared by postsFromDb (all rows) and
 // postsByIds (a captureId subset) so both produce the exact same shape.
@@ -197,9 +264,39 @@ function assemble(sqlite: Database.Database, postRows: any[]): any[] {
     list.push(t);
   }
 
+  const closure = tagClosureResolver(sqlite);
+
   return postRows.map((r) => {
     const media = (mediaByPost.get(r.captureId) || []).map((m) => ({ url: m.url, alt: m.alt, width: m.width, height: m.height, file: m.file, type: m.type, posterFile: m.posterFile, frames: parseFrames(m.frames) }));
     const tags = tagsByPost.get(r.captureId) || [];
+    // #774: the effective tag set -- the raw tags plus every ancestor the
+    // tag_parents edges imply, deduped, raw tags first. THREE parallel arrays
+    // (same index = same tag), the same shape tags/tagIds already are:
+    // ids for matching (query.ts's tag leaf), names for the value a picked
+    // facet row writes into a leaf, labels for what that row SHOWS (two
+    // same-named entities are only telling apart by their display parent).
+    // Derived on every SELECT and stored in no table -- #21's 2026-07-18
+    // comment: "the post data is always only what the user tagged".
+    const effectiveTagIds: number[] = [];
+    const effectiveTags: string[] = [];
+    const effectiveTagLabels: string[] = [];
+    if (closure) {
+      const seen = new Set<number>();
+      for (const t of tags)
+        for (const id of closure.closureOf(t.id)) {
+          if (seen.has(id)) continue;
+          seen.add(id);
+          effectiveTagIds.push(id);
+          effectiveTags.push(closure.nameOf(id));
+          effectiveTagLabels.push(closure.labelOf(id));
+        }
+    } else {
+      for (const t of tags) {
+        effectiveTagIds.push(t.id);
+        effectiveTags.push(t.name);
+        effectiveTagLabels.push(t.name);
+      }
+    }
     return {
       captureId: r.captureId,
       assetClass: r.assetClass,
@@ -249,6 +346,10 @@ function assemble(sqlite: Database.Database, postRows: any[]): any[] {
       hashtags: parseHashtags(r.hashtags),
       tags: tags.map((t) => t.name),
       tagIds: tags.map((t) => t.id),
+      // #774 (derived, never stored -- see the effective-set comment above).
+      effectiveTagIds,
+      effectiveTags,
+      effectiveTagLabels,
       media,
       eagleName: r.eagleName,
       memo: r.memo,

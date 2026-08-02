@@ -15,7 +15,7 @@
 import { makeUndo, type DirectedChange, type UndoChange } from './undo.ts';
 import { isVisible as panelIsVisible } from './inspector-panel.ts';
 import { postIdKey } from './records.ts';
-import { updateTags as postsUpdateTags } from './posts.ts';
+import { applyTagWrite, updateTags as postsUpdateTags } from './posts.ts';
 import { applyPosterTagRecords, getPosterTags } from './tags.ts';
 import { applyFolderItems as applyLibraryFolderItems } from './folders.ts';
 import { restore as restorePosterAliases, type PosterAliasGroup } from './aliases.ts';
@@ -63,12 +63,13 @@ export function makeUndoController(deps: UndoBuilderDeps) {
       // is nothing to diff against, so skip rather than write a guess.
       if (!rec) continue;
       const next = nextList(rec.tags, c);
+      let res: Awaited<ReturnType<typeof postsUpdateTags>> | null = null;
       try {
-        await postsUpdateTags(c.image || rec.image || rec.video || rec.file || '', next); // #236: rec.file is a collected item's IPC identifier
+        res = await postsUpdateTags(c.image || rec.image || rec.video || rec.file || '', next);
       } catch {
         /* keep going — one failed write must not strand the rest of the entry */
       }
-      rec.tags = next;
+      applyTagWrite(rec, next, res);
     }
     deps.markPostsMutated();
     deps.renderPosts(true);

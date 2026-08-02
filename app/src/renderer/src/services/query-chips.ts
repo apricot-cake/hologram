@@ -17,7 +17,7 @@
 //
 // ctx: { storeKey?, predOf, onChange, singleValueTypes?, noDupTypes?,
 //        multiValueTypes?, standaloneTypes?, onLeafMutated? }
-import { emptyTree, hasLeafValue, removeCondsMatching as removeCondsMatchingQ, buildShadow, canonicalizeFacet, facetViewOf, facetAdd, cleanupTree, sameLeaf, detachNode, treeParentMap, evalNode } from './query.ts';
+import { emptyTree, hasLeafValue, hasSameLeaf, removeCondsMatching as removeCondsMatchingQ, buildShadow, canonicalizeFacet, facetViewOf, facetAdd, cleanupTree, sameLeaf, detachNode, treeParentMap, evalNode } from './query.ts';
 import { set as storeSet } from './store.ts';
 
 // Local shape for the ctx contract documented in the file-top comment
@@ -49,6 +49,10 @@ export function createQueryBuilder(ctx: QbCtx) {
   // --- Tree mutation domain lives in query.ts (imported above, 9th extraction slice); the
   // bindings below close over THIS instance's tree.
   const qHasValue = (type: string, value: unknown) => hasLeafValue(tree, type, value);
+  // #774: the tag-leaf variant. A facet row stands for one tags-table row, so it
+  // is lit by a leaf holding that ENTITY — sameLeaf compares ids when both sides
+  // know one, and only falls back to the name when either doesn't.
+  const qHasTag = (tagId: number | null | undefined, value: string) => hasSameLeaf(tree, { type: 'tag', value, tagId });
   const removeCondsMatching = (pred: (c: HologramQueryLeaf) => boolean) => removeCondsMatchingQ(tree, pred);
   // Rebuild the flat (deduped) leaf shadow that `.shadow()` exposes below.
   // Also mirror the tree into hologramStore under ctx.storeKey, a fresh deep
@@ -78,7 +82,9 @@ export function createQueryBuilder(ctx: QbCtx) {
     // Single-valued types (single choice): a new one replaces the existing anywhere.
     if (singleValueTypes.includes(filter.type)) removeCondsMatching((c) => c.type === filter.type);
     // Prevent exact duplicates (anywhere in the tree), except for multi types.
-    else if (!noDupTypes.includes(filter.type) && qHasValue(filter.type, filter.value)) return null;
+    // Identity is sameLeaf's, not bare type+value: a tag leaf carrying a tagId is
+    // the ENTITY, so the second of two same-named tags is not a duplicate (#774).
+    else if (!noDupTypes.includes(filter.type) && hasSameLeaf(tree, filter)) return null;
     const node = Object.assign({ kind: 'cond' as const }, filter);
     if (facetViewOf(tree, facetOpts)) facetAdd(tree, node, facetOpts);
     else tree.children.push(node);
@@ -136,6 +142,7 @@ export function createQueryBuilder(ctx: QbCtx) {
     },
     removeCondsMatching,
     qHasValue,
+    qHasTag,
     refresh,
     syncShadow,
     eval: (item: unknown) => evalNode(tree, item, ctx.predOf),

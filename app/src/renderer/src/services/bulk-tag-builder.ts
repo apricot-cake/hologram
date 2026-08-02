@@ -12,7 +12,7 @@
 // filter to "No tags", arrow through the results, edit tags in the inspector. This
 // Dialog is only the shortcut for "same tags, all of these at once".
 import { open as bulkTagOpen } from './bulk-tag.ts';
-import { updateTags as postsUpdateTags } from './posts.ts';
+import { applyTagWrite, updateTags as postsUpdateTags } from './posts.ts';
 import type { UndoChange } from './undo.ts';
 import type { NotifyAction } from './ui.ts';
 
@@ -45,15 +45,16 @@ export function makeBulkTag(deps: BulkTagBuilderDeps) {
       const added = [...new Set(applyTags)].filter((tag) => !prev.includes(tag));
       if (!added.length) continue;
       const next = [...prev, ...added];
+      let res: Awaited<ReturnType<typeof postsUpdateTags>> | null = null;
       try {
         // #236: r.file is the third leg — a collected item's IPC identifier
         // (main's baseOf() strips whichever extension it carries the same way).
-        await postsUpdateTags(r.image || r.video || r.file, next);
+        res = await postsUpdateTags(r.image || r.video || r.file, next);
       } catch {
         /* keep going */
       }
       const rec = deps.getPostById(r.captureId); // O(1) lookup; allPosts shares the same record refs
-      if (rec) rec.tags = next.slice();
+      if (rec) applyTagWrite(rec, next, res);
       changes.push({ kind: 'post-tags', target: r.captureId, image: r.image || r.video || r.file, added, removed: [] });
     }
     const undoFn = deps.pushUndo(changes);

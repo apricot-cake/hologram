@@ -60,6 +60,24 @@ export interface OkResult {
   ok: boolean;
 }
 
+/**
+ * update-tags: the acknowledgement plus the record's tag arrays as the write
+ * left them (#774). The renderer edits tags in place on the loaded record
+ * rather than re-reading the library, and the id-keyed arrays cannot be derived
+ * renderer-side from names alone — a new tag has no id yet, and two entities can
+ * share a name. Handing them back is what keeps tags/tagIds/effective* parallel
+ * after an edit, so the facet list and the tag leaves keep matching the entity
+ * the user picked. Absent (write failed, or the DB is not open) means the caller
+ * must DROP its stale copies, not keep them.
+ */
+export interface UpdateTagsResult extends OkResult {
+  tags?: string[];
+  tagIds?: number[];
+  effectiveTagIds?: number[];
+  effectiveTags?: string[];
+  effectiveTagLabels?: string[];
+}
+
 /** A guard's verdict (validateSaveFolder / validateBackupDir). */
 export interface ValidationResult {
   ok: boolean;
