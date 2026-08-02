@@ -1,13 +1,20 @@
 import type { ReactNode } from 'react';
 import { useSyncExternalStore } from 'react';
-import { Images, SearchX, Users } from 'lucide-react';
+import { Images, Puzzle, SearchX, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty';
 import { t } from '../_shared/i18n.ts';
 import { importFromClipboard } from '../services/clipboard-intake.ts';
+import { hologramIpc } from '../services/ipc.ts';
 import { libraryEmptyVariant } from '../services/library-status.ts';
 import { resetAllFilters, resetPosterFilters, runZipImport } from '../services/orchestrator.ts';
 import { get as storeGet, subscribe as storeSubscribe } from '../services/store.ts';
+
+// #71: the store submission does not exist yet (pre-release — see Issue #71's
+// release-order note: this Issue ships last, after the extension is public).
+// Replace with the real Chrome Web Store listing URL once it does; until then
+// this points at the store's own home rather than a fabricated listing page.
+const EXTENSION_STORE_URL = 'https://chrome.google.com/webstore/category/extensions'; // TODO(#71): real listing URL
 
 // Empty-state placeholder for the two library grids: the "no posts yet" first-run
 // message, the "no results" filtered-empty message, or the poster first-run message. It
@@ -45,6 +52,10 @@ const subMode = (cb: () => void) => storeSubscribe('browseMode', cb);
 const getMode = () => (storeGet('browseMode') as string | undefined) ?? 'posts';
 const subLibraryLoaded = (cb: () => void) => storeSubscribe('libraryLoaded', cb);
 const getLibraryLoaded = () => !!storeGet('libraryLoaded');
+// #71: seeded once at boot by App.tsx's LibraryStatusGate (get-extension-contact) —
+// see library-status.ts's libraryEmptyVariant for how this splits firstRun in two.
+const subExtensionContacted = (cb: () => void) => storeSubscribe('extensionContacted', cb);
+const getExtensionContacted = () => !!storeGet('extensionContacted');
 
 export function EmptyState() {
   const mode = useSyncExternalStore(subMode, getMode);
@@ -54,8 +65,31 @@ export function EmptyState() {
   const allUsersCount = useSyncExternalStore(subAllUsersCount, getAllUsersCount);
   const query = useSyncExternalStore(subSearchQuery, getSearchQuery);
   const libraryLoaded = useSyncExternalStore(subLibraryLoaded, getLibraryLoaded);
-  const variant = libraryEmptyVariant({ mode, libraryLoaded, postGroups, posterGroups, allPostsCount, allUsersCount, query });
+  const extensionContacted = useSyncExternalStore(subExtensionContacted, getExtensionContacted);
+  const variant = libraryEmptyVariant({ mode, libraryLoaded, postGroups, posterGroups, allPostsCount, allUsersCount, query, extensionContacted });
   if (!variant) return null;
+  // #71: the extension has never talked to the host at all — install comes
+  // before anything else this screen could say, so it pre-empts the ordinary
+  // firstRun/posterFirstRun copy below for BOTH modes (the guide is about
+  // installing the extension, not about posts vs. posters).
+  if (variant === 'extensionGuide') {
+    return (
+      <Frame>
+        <EmptyHeader>
+          <EmptyMedia variant="icon">
+            <Puzzle />
+          </EmptyMedia>
+          <EmptyTitle>{t('extGuideTitle')}</EmptyTitle>
+          <EmptyDescription>{t('extGuideDesc')}</EmptyDescription>
+        </EmptyHeader>
+        <EmptyContent>
+          <Button variant="outline" onClick={() => hologramIpc.openExternal(EXTENSION_STORE_URL)}>
+            {t('extGuideInstallBtn')}
+          </Button>
+        </EmptyContent>
+      </Frame>
+    );
+  }
   // A filter or a search ate everything → the one honest next action is to undo it.
   // No made-up second button here: the grid is empty BECAUSE of a predicate the user
   // set, and "reset" is the whole of what can be done about it from this spot.

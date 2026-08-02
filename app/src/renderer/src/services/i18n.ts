@@ -303,6 +303,13 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     emptyResetBtn: 'フィルタをリセット',
     emptyImportClipboard: 'クリップボードから取り込む',
 
+    // viewer: extension install guide (#71) — shown instead of the ordinary
+    // firstRun/posterFirstRun copy when the extension has NEVER made contact
+    // with this app (services/library-status.ts's libraryEmptyVariant).
+    extGuideTitle: '拡張機能がまだ入っていません',
+    extGuideDesc: 'SNSの投稿を保存するには、Chrome拡張機能のインストールが必要です。',
+    extGuideInstallBtn: 'Chromeウェブストアで拡張機能を入手',
+
     // viewer: library missing (#37) — the save folder itself is gone from disk
     libraryMissingTitle: '保存先が見つかりません',
     libraryMissingDesc: '以前の保存先フォルダが見つかりません。外部で移動・削除されたか、ドライブが接続されていない可能性があります。',
@@ -959,6 +966,12 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     emptyCaptureHint: 'Press <kbd>Alt</kbd>+<kbd>S</kbd> in your browser, then click a post to save it.',
     emptyResetBtn: 'Reset filters',
     emptyImportClipboard: 'Import from clipboard',
+
+    // extension install guide (#71) — shown instead of the ordinary
+    // firstRun/posterFirstRun copy when the extension has NEVER made contact.
+    extGuideTitle: "The extension isn't installed yet",
+    extGuideDesc: 'Saving posts from SNS requires the Hologram Chrome extension.',
+    extGuideInstallBtn: 'Get the extension from the Chrome Web Store',
 
     // library missing (#37) — the save folder itself is gone from disk
     libraryMissingTitle: 'Save folder not found',

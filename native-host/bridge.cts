@@ -27,7 +27,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const _os = require('node:os');
 
-const { configDir, defaultLibraryDir, extensionBuildStampPath } = require('./paths.cts');
+const { configDir, defaultLibraryDir, extensionBuildStampPath, extensionContactPath } = require('./paths.cts');
 // Best-effort remote-image download (original media + avatars) lives in a shared
 // module so the SSRF guard / size caps are identical across capture, import and
 // backfill. See media-download.cts.
@@ -100,6 +100,22 @@ function readExtBuild(): string | null {
     return raw && typeof raw.build === 'string' && raw.build ? raw.build : null;
   } catch {
     return null;
+  }
+}
+
+// --- Extension contact marker (#71) ---------------------------------------
+// Touched (best-effort) whenever this process handles a check ({type:'query'})
+// or a save, so the app can tell "the extension has never talked to us" apart
+// from "it has, but the library is still empty" (empty/EmptyState.tsx's
+// firstRun variant). Only the file's EXISTENCE is ever read back — see
+// paths.cts's extensionContactPath — so a failure here is swallowed like every
+// other diagnostic write in this file rather than risking a save.
+function touchExtensionContact(): void {
+  try {
+    fs.mkdirSync(configDir(), { recursive: true });
+    fs.writeFileSync(extensionContactPath(), new Date().toISOString(), 'utf8');
+  } catch {
+    /* best-effort — a missed touch just delays the guide's dismissal by one save */
   }
 }
 
@@ -855,6 +871,11 @@ if (require.main === module) {
       // signal. Everything else still logs — a save that never arrives is the
       // failure this log exists for.
       if (req.type !== 'query') logLine(`recv type=${req.type}`);
+      // #71: a check or a save is exactly "the extension talked to the host" —
+      // touch the contact marker for every request type that reaches this far
+      // (ping/log excluded: they carry no capture activity, so they say nothing
+      // about whether the extension is doing its job).
+      if (req.type === 'query' || req.type === 'save' || req.type === 'savePost' || req.type === 'saveDragged') touchExtensionContact();
       // A save's ack is sent once its downloads settle; the process drains
       // naturally, so the pending fetch keeps it alive. `save-failed` is the
       // handler's own refusal — the message inside it is what the extension
@@ -910,4 +931,4 @@ if (require.main === module) {
 // _resetSavedIndex is a test seam: the index caches for the life of the process,
 // which is right for a real host (one process per port) and wrong for a test file
 // that walks several save folders in a row.
-module.exports = { handleSave, handleSavePost, handleSaveDragged, downloadMedia, downloadAvatar, saveStillImage, createByteBudget, appendLog, handleQuery, noteSaved, _resetSavedIndex: () => (savedIndexCache = null) };
+module.exports = { handleSave, handleSavePost, handleSaveDragged, downloadMedia, downloadAvatar, saveStillImage, createByteBudget, appendLog, handleQuery, noteSaved, touchExtensionContact, _resetSavedIndex: () => (savedIndexCache = null) };

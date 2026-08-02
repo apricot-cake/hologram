@@ -7,6 +7,12 @@
 // the trash with its own `loaded` boolean; this mirrors that shape for the
 // two grids that share the same underlying `allPosts` cache (post-grid-builder.ts).
 //
+// #71: a first-run library ALSO splits in two — the extension has never talked
+// to the host at all (show the install guide) vs. it has, and the library is
+// simply still empty (the ordinary firstRun/posterFirstRun copy). One shared
+// 'extensionGuide' variant covers both modes: the guide is about installing the
+// extension, not about posts vs. posters, so there is nothing to say twice.
+//
 // A plain function, not inlined in empty/EmptyState.tsx: this repo's `npm test`
 // (vitest.config.ts) only picks up scripts/**/*.test.ts — renderer .tsx has no
 // JSX rendering harness — so the decision has to live in a plain .ts module to
@@ -23,6 +29,10 @@ export function libraryEmptyVariant(input: {
   allPostsCount: number;
   allUsersCount: number;
   query: string;
+  // #71: has the bridge EVER touched its contact marker (App.tsx's boot-time
+  // fetch of get-extension-contact)? Only read on the "would otherwise be a
+  // firstRun" branch below — a populated or filtered library never checks it.
+  extensionContacted: boolean;
 }): HologramEmptyVariant | null {
   // Never claim "empty" before the first load has actually landed — a grid
   // mid-load and a grid that finished loading empty are not the same state,
@@ -30,11 +40,15 @@ export function libraryEmptyVariant(input: {
   if (!input.libraryLoaded) return null;
   if (input.mode === 'trash') return null;
   if (input.mode === 'posts') {
-    if (input.postGroups === null) return input.allPostsCount === 0 && !input.query.trim() ? 'firstRun' : 'filtered';
+    if (input.postGroups === null) {
+      if (input.allPostsCount !== 0 || input.query.trim()) return 'filtered';
+      return input.extensionContacted ? 'firstRun' : 'extensionGuide';
+    }
     return null;
   }
   if (input.posterGroups !== undefined && input.posterGroups.length === 0) {
-    return input.allUsersCount === 0 && !input.query.trim() ? 'posterFirstRun' : 'filtered';
+    if (input.allUsersCount !== 0 || input.query.trim()) return 'filtered';
+    return input.extensionContacted ? 'posterFirstRun' : 'extensionGuide';
   }
   return null;
 }

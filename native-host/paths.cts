@@ -72,4 +72,17 @@ function extensionBuildStampPath(): string {
   return path.join(configDir(), 'extension-build.json');
 }
 
-module.exports = { configDir, defaultLibraryDir, extensionBuildStampPath, APP_NAME };
+// #71: the ONE signal the app has that the extension is installed and has ever
+// talked to it. A native-messaging host is a one-shot process Chrome spawns per
+// connection (see bridge.cts's header) — there is no live heartbeat to ask "is
+// it connected right now", so the bridge instead touches this marker whenever it
+// processes a check ({type:'query'}) or a save, and the app treats the file's
+// mere PRESENCE as "has ever made contact" (empty/EmptyState.tsx's firstRun vs.
+// the install-guide variant, #71). The content is a bare ISO timestamp and nothing
+// else is ever written into it — no extension id, browser name, or URL — because
+// the app never reads the content, only checks existence.
+function extensionContactPath(): string {
+  return path.join(configDir(), 'extension-contact.json');
+}
+
+module.exports = { configDir, defaultLibraryDir, extensionBuildStampPath, extensionContactPath, APP_NAME };

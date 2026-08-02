@@ -25,7 +25,7 @@ import type {
   ExportCompleteResult,
   ExportProgress,
   ExportSaveResult,
-  ExtensionIdResult,
+  ExtensionContactStatus,
   FoldersState,
   FullTextHit,
   IntegrityStatus,
@@ -67,7 +67,10 @@ import type {
 // renderer's DOM-only program can reach it through HologramPreload.
 const api = {
   getConfig: (): Promise<ConfigSummary> => ipcRenderer.invoke('get-config'),
-  setExtensionId: (id: string): Promise<ExtensionIdResult> => ipcRenderer.invoke('set-extension-id', id),
+  // #71: whether the bridge has EVER touched its contact marker — see
+  // ipc-config.ts's get-extension-contact and empty/EmptyState.tsx's install-guide
+  // variant. A one-shot fetch, not a push (nothing invalidates it mid-session).
+  getExtensionContact: (): Promise<ExtensionContactStatus> => ipcRenderer.invoke('get-extension-contact'),
   listPosts: (): Promise<PostsSnapshot> => ipcRenderer.invoke('list-posts'),
   // Delta refresh: pass true once a full snapshot is held; main returns either a
   // full { full:true, posts:[] } or an incremental { full:false, added, removed }.
