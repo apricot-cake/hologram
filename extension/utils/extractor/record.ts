@@ -45,6 +45,10 @@ function emptyRecord(url: string | null | undefined, platform: string | null | u
     // id). Lets the viewer group a self-reply with its parent when both are in
     // the library.
     replyToId: null,
+    // #180: quote/renote and Misskey-reply sidecar sub-records. See
+    // types.ts's PostRecord.quotedPost/replyToPost for the per-platform rule.
+    quotedPost: null,
+    replyToPost: null,
     seriesId: null,
     seriesTitle: null,
     seriesOrder: null,

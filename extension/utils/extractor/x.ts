@@ -496,6 +496,20 @@ async function fetchXTweet(parsed, url): Promise<PostRecord> {
       if (qt.user && qt.user.screen_name && qt.id_str) {
         rec.quotedUrl = `https://x.com/${qt.user.screen_name}/status/${qt.id_str}`;
       }
+      // #180: the quoted tweet is the SAME shape as the top-level tweet in this
+      // response (mirrors mediaDetails/entities/user), so the sidecar sub-record
+      // is built with the exact same helpers as the parent, at no extra cost.
+      rec.quotedPost = {
+        url: rec.quotedUrl,
+        displayName: (qt.user && qt.user.name) || null,
+        screenName: (qt.user && qt.user.screen_name) || null,
+        userId: (qt.user && qt.user.id_str) || null,
+        avatar: qt.user && qt.user.profile_image_url_https ? qt.user.profile_image_url_https.replace(/_normal(\.[a-z]+)(?=$|\?)/i, '_400x400$1') : null,
+        text: qt.text ? xExpandUrls(qt.text, qt.entities) : null,
+        date: toIso(qt.created_at),
+        cw: null, // no free-text CW field on this endpoint (see rec.sensitive above)
+        media: xMedia(qt.mediaDetails),
+      };
     }
   } catch {
     // network/parse failure — keep what we have (URL + screenName)

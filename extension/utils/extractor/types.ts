@@ -58,6 +58,34 @@ interface RawAcquisition {
 // files on disk and only the host can fill in.
 type MediaItem = AnnouncedMedia;
 
+// A quoted/replied-to post, saved alongside the parent as a sidecar sub-record
+// (#180). Only the platforms whose already-fetched API response bundles the
+// other post's full content produce one -- quoting is bundled on all four
+// (X quoted_tweet / Bluesky embed.record / Misskey note.renote / Mastodon
+// quoted_status when the shape carries it); reply-to content is bundled only
+// on Misskey (note.reply). X's in_reply_to_* and Mastodon's in_reply_to_id
+// carry no post body, and Bluesky's getPostThread now asks parentHeight=0
+// (#292/ADR 0011), so none of the three can fill this without a request this
+// Issue's own scope excludes (additional-request fetches are judged
+// individually, out of v1) -- those keep the existing id/URL-only fields
+// (replyToId/quotedUrl) and never gain this richer sub-record.
+//
+// v1 is metadata-only (#180 scope): media only ever carries the OTHER post's
+// media URLs as already announced by the same response, never downloaded --
+// same URL-recorded-not-fetched line #290 draws for every non-owned adjacent
+// post.
+interface QuotedPost {
+  url: string | null;
+  displayName: string | null;
+  screenName: string | null;
+  userId: string | null;
+  avatar: string | null;
+  text: string | null;
+  date: string | null;
+  cw: string | null;
+  media: MediaItem[];
+}
+
 // The normalized sidecar record shape. Declared explicitly (not just inferred
 // from the emptyRecord() literal) because every field initializes to `null`
 // — under TS strict mode a `return { text: null, ... }` with no explicit
@@ -123,6 +151,12 @@ interface PostRecord {
   sensitive: boolean | null;
   quotedUrl: string | null;
   replyToId: string | null;
+  // #180: the full sidecar sub-record when this post is a quote/renote (all
+  // four platforms) or a Misskey reply (the only reply-to bundled with its
+  // full content). null on every other reply-to, and on a quote/renote whose
+  // API response gave no usable target (deleted, shallow ShallowQuote, ...).
+  quotedPost: QuotedPost | null;
+  replyToPost: QuotedPost | null;
   // pixiv series membership (#188): which series this work belongs to and its
   // 1-based position in it, from the illust payload's seriesNavData. All three
   // stay null on a work that isn't part of a series (seriesNavData itself is
@@ -330,4 +364,4 @@ interface Extractor {
   apiHostPermissions?: readonly string[];
 }
 
-export type { CaptureSite, DomMeta, Extractor, MediaIdentity, MediaIdentitySite, MediaItem, OverlaySite, ParsedPost, PostMediaElement, PostRecord, PostRect, RawAcquisition };
+export type { CaptureSite, DomMeta, Extractor, MediaIdentity, MediaIdentitySite, MediaItem, OverlaySite, ParsedPost, PostMediaElement, PostRecord, PostRect, QuotedPost, RawAcquisition };

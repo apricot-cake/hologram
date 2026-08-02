@@ -77,6 +77,8 @@ const POST_COLUMNS = [
   'imageIndex',
   'imageCount',
   'domFilled',
+  'quotedPost',
+  'replyToPost',
 ] as const;
 
 const UPSERT_POST_SQL = `INSERT INTO posts (${POST_COLUMNS.join(',')}) VALUES (${POST_COLUMNS.map(() => '?').join(',')})
@@ -139,6 +141,13 @@ function postParams(n: PostRecordShape): unknown[] {
     imageCount: n.imageCount,
     // Same storage as hashtags above: a JSON string[] in one TEXT column (#202).
     domFilled: JSON.stringify(n.domFilled),
+    // #180: 0-or-1 sub-record, JSON-serialized like the arrays above; null stays
+    // null rather than the string "null" (JSON.stringify(null) === 'null' would
+    // read back as a truthy non-empty column) -- lib-db-query.ts's parser
+    // treats an empty column as "no sub-record", the same convention parseFrames
+    // uses for a missing frame table.
+    quotedPost: n.quotedPost ? JSON.stringify(n.quotedPost) : null,
+    replyToPost: n.replyToPost ? JSON.stringify(n.replyToPost) : null,
   };
   return POST_COLUMNS.map((c) => byName[c]);
 }

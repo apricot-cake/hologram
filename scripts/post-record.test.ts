@@ -50,6 +50,8 @@ describe('既定値', () => {
     'lang',
     'quotedUrl',
     'replyToId',
+    'quotedPost',
+    'replyToPost',
     'seriesId',
     'seriesTitle',
     'seriesOrder',
@@ -239,6 +241,31 @@ describe('シリーズ情報（#188）', () => {
   test('seriesOrder は数値以外を落とす（他の number フィールドと同じ規約）', () => {
     const rec = normalizePostRecord({ captureId: 'cap-5', seriesOrder: '3' as any }, fixedNow);
     expect(rec.seriesOrder).toBeNull();
+  });
+});
+
+// #180: quoted/renoted and (Misskey-only) reply-to sidecar sub-records — this
+// is the ONE gate every producer's raw extension output passes through, so
+// it's what decides whether a malformed sub-record reaches the DB writer as
+// something other than a clean QuotedPostShape or null.
+describe('quotedPost / replyToPost（#180）', () => {
+  const sample = { url: 'https://x.com/bob/status/9', displayName: 'Bob', screenName: 'bob', userId: '2', avatar: null, text: 'hi', date: '2026-01-01T00:00:00.000Z', cw: null, media: [] };
+
+  test('妥当なサブレコードはそのまま通る', () => {
+    const rec = normalizePostRecord({ captureId: 'cap-6', quotedPost: sample, replyToPost: sample }, fixedNow);
+    expect(rec.quotedPost).toEqual(sample);
+    expect(rec.replyToPost).toEqual(sample);
+  });
+
+  test('media[] も他フィールドと同じ正規化を通る（不正エントリは落ちる）', () => {
+    const withBadMedia = { ...sample, media: [{ url: 'https://x.com/a.jpg', alt: null, width: null, height: null, file: '' }, 'not an object' as any] };
+    const rec = normalizePostRecord({ captureId: 'cap-7', quotedPost: withBadMedia }, fixedNow);
+    expect(rec.quotedPost?.media).toEqual([{ url: 'https://x.com/a.jpg', alt: null, width: null, height: null, file: '', type: null, posterFile: null, frames: null }]);
+  });
+
+  test.each([undefined, null, 'not an object', 42, []])('オブジェクトでない値は %p でも null に落ちる（all-or-nothing）', (bad) => {
+    const rec = normalizePostRecord({ captureId: 'cap-8', quotedPost: bad as any }, fixedNow);
+    expect(rec.quotedPost).toBeNull();
   });
 });
 

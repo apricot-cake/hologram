@@ -312,6 +312,22 @@ const MIGRATIONS: Migration[] = [
         ALTER TABLE posts ADD COLUMN seriesOrder INTEGER;
       `),
   },
+  // #180: quote/renote and (Misskey-only) reply-to sidecar sub-records — see
+  // native-host/post-record.mts's QuotedPostShape for the field set. Stored as
+  // JSON text (same convention as hashtags/domFilled): each is 0-or-1 per post,
+  // not a fan-out worth its own table. Not added to posts_fts: that FTS5 index
+  // has no live caller yet (lib-db-query.ts's module comment — the renderer's
+  // in-memory textHaystackOf is the only wired-up free-text search path), so
+  // rebuilding it for a column nothing reads would be migration cost with no
+  // present payoff; the eventual FTS consumer picks this up when it lands.
+  {
+    name: 'add-post-quoted-refs',
+    up: (db) =>
+      db.exec(`
+        ALTER TABLE posts ADD COLUMN quotedPost TEXT;
+        ALTER TABLE posts ADD COLUMN replyToPost TEXT;
+      `),
+  },
 ];
 
 interface Migration {
@@ -465,6 +481,10 @@ interface PostsTable {
   seriesId: string | null;
   seriesTitle: string | null;
   seriesOrder: number | null;
+  // add-post-quoted-refs migration (#180) — JSON QuotedPostShape, same storage
+  // convention as hashtags/domFilled. See PostRecordShape.quotedPost/replyToPost.
+  quotedPost: string | null;
+  replyToPost: string | null;
 }
 interface MediaTable {
   id: Generated<number>;
