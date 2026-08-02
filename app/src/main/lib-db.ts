@@ -328,6 +328,40 @@ const MIGRATIONS: Migration[] = [
         ALTER TABLE posts ADD COLUMN replyToPost TEXT;
       `),
   },
+  // #36: a free-text memo the user attaches to a post, unifying the Eagle-migration
+  // `description` field into the same column instead of keeping two synonymous
+  // fields (see PostRecordShape.memo / the acceptance note on #36 — "description
+  // を参照するコードが残っていない"). RENAME COLUMN is used rather than
+  // add-then-copy-then-drop: it is already relied on elsewhere in this file
+  // (drop-source-mtime uses the newer DROP COLUMN, which needs the same SQLite
+  // version support), and it keeps every existing row's content without a second
+  // pass.
+  //
+  // posts_fts has no ALTER (same FTS5 limitation fts-rowid-addressing/
+  // add-post-cw-sensitive above worked around) so it is dropped and rebuilt here
+  // too, reusing each post's ftsRowid — the identical rebuild recipe those two
+  // migrations used, just reading the newly-renamed posts.memo column instead of
+  // posts.description. This migration is now the one that gets to call itself
+  // "current" for POSTS_FTS_SQL/POSTS_FTS_COLUMNS (add-post-cw-sensitive held that
+  // role until now): nothing runs after it in this append-only list that still
+  // expects a `description` column, on a fresh database or an existing one alike.
+  {
+    name: 'rename-description-to-memo',
+    up: (db) =>
+      db.exec(`
+        ALTER TABLE posts RENAME COLUMN description TO memo;
+        DROP TABLE posts_fts;
+        ${POSTS_FTS_SQL}
+        INSERT INTO posts_fts (rowid, ${POSTS_FTS_COLUMNS})
+          SELECT
+            p.ftsRowid, p.captureId, p.text, p.title, p.displayName, p.screenName, p.eagleName, p.memo,
+            COALESCE(CASE WHEN json_valid(p.hashtags) THEN (SELECT group_concat(h.value, ' ' ORDER BY h.key) FROM json_each(p.hashtags) h) END, ''),
+            COALESCE((SELECT group_concat(t.name, ' ' ORDER BY pt.rowid) FROM post_tags pt JOIN tags t ON t.id = pt.tagId WHERE pt.postId = p.captureId), ''),
+            NULL,
+            p.cw
+          FROM posts p;
+      `),
+  },
 ];
 
 interface Migration {
@@ -452,7 +486,7 @@ interface PostsTable {
   replyToId: string | null;
   hashtags: string; // JSON string[] — non-tag leaves stay plain text (#5 2026-07-18 comment)
   eagleName: string | null;
-  description: string | null;
+  memo: string | null; // rename-description-to-memo migration (#36) — see PostRecordShape.memo
   source: string | null;
   shotW: number | null;
   shotH: number | null;
@@ -609,7 +643,7 @@ interface PostsFtsTable {
   displayName: string | null;
   screenName: string | null;
   eagleName: string | null;
-  description: string | null;
+  memo: string | null; // rename-description-to-memo migration (#36)
   hashtags: string | null; // space-joined tokens, NOT the posts.hashtags JSON
   tagsText: string | null; // resolved tag names, space-joined (post_tags has no text to index directly)
   reading: string | null; // #164 backfills this; empty at every row until then

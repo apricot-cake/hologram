@@ -9,7 +9,8 @@
 //     ~30 fields, found (2026-07-18 codebase pass, #5 comment) to already be
 //     missing media[] and replyToId that the other two producers carry
 //   - the Eagle-migration converter (external tool, not in this repo) that
-//     originates eagleName/description
+//     originates eagleName/memo (that field was named `description` until #36
+//     renamed and merged it into the general free-text memo)
 // A field added to one and not the others silently drops on whichever path
 // didn't get the memo. normalizePostRecord is that memo, machine-enforced.
 //
@@ -179,7 +180,11 @@ export interface PostRecordShape {
   // app-internal image import, the one-time legacy migration).
   raw: RawPayloadShape[];
   eagleName: string | null;
-  description: string | null;
+  // #36: a free-text note the user attaches to this post. Also the landing
+  // spot for the legacy Eagle-migration `description` annotation (renamed and
+  // merged here rather than kept as a second field) — normalizePostRecord
+  // below reads the old key as a fallback for a record that still has one.
+  memo: string | null;
   source: string | null;
   shotW: number | null;
   shotH: number | null;
@@ -371,7 +376,9 @@ export function normalizePostRecord(input: PostRecordInput, now: () => string = 
     imageCount: normNum(input.imageCount),
     raw: normalizeRawPayloads(input.raw),
     eagleName: normStr(input.eagleName),
-    description: normStr(input.description),
+    // #36: memo wins when a record has both (the rename direction is
+    // memo-first); a pre-rename record with only the old key still lands.
+    memo: normStr(input.memo) || normStr((input as unknown as { description?: unknown }).description),
     source: normStr(input.source),
     shotW: normNum(input.shotW),
     shotH: normNum(input.shotH),

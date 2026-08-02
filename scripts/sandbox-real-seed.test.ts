@@ -264,7 +264,7 @@ describe('隔離チェックは実パスの残留を捕まえる', () => {
     const dbFile = path.join(sandboxConfig, 'hologram.db');
     const { sqlite } = openDatabase(dbFile);
     // Smuggle the real library's absolute path into the DB (catches it if such a column is ever added in the future).
-    sqlite.prepare('UPDATE posts SET description = ? WHERE captureId = ?').run(path.join(real.saveFolder, 'x.jpg'), '1780000000000-a001');
+    sqlite.prepare('UPDATE posts SET memo = ? WHERE captureId = ?').run(path.join(real.saveFolder, 'x.jpg'), '1780000000000-a001');
     sqlite.close();
 
     const res = verifyIsolation({ dbFile, configPath: path.join(sandboxConfig, 'config.json'), sandboxLibrary, realConfigDir: real.configDir, realSaveFolder: real.saveFolder });

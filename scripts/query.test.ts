@@ -194,8 +194,8 @@ describe('text: 単一スマートマッチとメモ化', () => {
     expect(fuzzyCalls).toHaveLength(0);
   });
 
-  test('description（Eagle 注釈）にも当たる', () => {
-    expect(predOf({ type: 'text', value: '注釈テキスト' })(post({ description: 'ここに注釈テキストがある' }))).toBe(true);
+  test('memo（#36, 旧 description の統合）にも当たる', () => {
+    expect(predOf({ type: 'text', value: '注釈テキスト' })(post({ memo: 'ここに注釈テキストがある' }))).toBe(true);
   });
 
   test('media[].alt（画像ALT）にしか無い語にも当たる（#288）', () => {

@@ -58,7 +58,7 @@ describe('既定値', () => {
     'editedAt',
     'cw',
     'eagleName',
-    'description',
+    'memo',
     'source',
     'trashedAt',
     'followers',
@@ -211,6 +211,24 @@ describe('素通しと変換', () => {
   test('数でない imageIndex / imageCount は null になる', () => {
     const bad = normalizePostRecord({ captureId: 'cap-3', imageIndex: '2', imageCount: Number.NaN } as never, fixedNow);
     expect({ imageIndex: bad.imageIndex, imageCount: bad.imageCount }).toEqual({ imageIndex: null, imageCount: null });
+  });
+});
+
+// #36: memo replaces the Eagle-migration `description` field. A record built
+// fresh carries it under the new key; a record from before the rename (a
+// pre-#36 sidecar/ZIP export, or the external Eagle-migration converter,
+// which still writes `description`) has to keep reading as a memo too.
+describe('memo（#36, 旧 description の統合）', () => {
+  test('memo で渡せばそのまま通る', () => {
+    expect(normalizePostRecord({ captureId: 'cap-memo-1', memo: 'ここに注釈' } as never, fixedNow).memo).toBe('ここに注釈');
+  });
+
+  test('旧 description しか無いレコードは memo として読める', () => {
+    expect(normalizePostRecord({ captureId: 'cap-memo-2', description: '旧フィールドの注釈' } as never, fixedNow).memo).toBe('旧フィールドの注釈');
+  });
+
+  test('両方あれば memo を優先する', () => {
+    expect(normalizePostRecord({ captureId: 'cap-memo-3', memo: '新', description: '旧' } as never, fixedNow).memo).toBe('新');
   });
 });
 

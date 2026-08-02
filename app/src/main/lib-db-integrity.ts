@@ -225,7 +225,7 @@ function capturedAtFromId(captureId: string): string {
 //                   decoded from the id. It shows up as "Imported images" (kind=image,
 //                   since url stays null — see i18n.ts's kindImage), and
 //                   source:'orphan-recovery' marks the provenance the same way
-//                   eagleName/description do for the Eagle-migration path — a
+//                   eagleName/memo do for the Eagle-migration path — a
 //                   plain free-text field, not a schema flag, so no migration is
 //                   needed to add it. This is the case #301 designed for: the
 //                   ZIP-import and drag-import handlers write posts directly via

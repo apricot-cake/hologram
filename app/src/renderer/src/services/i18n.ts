@@ -92,6 +92,10 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     detailSeries: 'シリーズ',
     detailSeriesOrder: '話数',
     detailTags: 'タグ',
+    // #36: free-text note attached to a post. Card face never shows it (design
+    // decision on #36) — inspector-only.
+    detailMemo: 'メモ',
+    memoPlaceholder: 'メモを入力…',
     tagsEmpty: 'タグなし',
     tipEditTags: 'タグを編集',
     detailSourceTags: 'ソースタグ',
@@ -615,6 +619,10 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     detailSeries: 'Series',
     detailSeriesOrder: 'Installment',
     detailTags: 'Tags',
+    // #36: free-text note attached to a post. Never shown on the card face
+    // (design decision on #36) — inspector-only.
+    detailMemo: 'Memo',
+    memoPlaceholder: 'Add a memo…',
     tagsEmpty: 'No tags',
     tipEditTags: 'Edit tags',
     detailSourceTags: 'Source tags',
