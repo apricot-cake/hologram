@@ -31,6 +31,7 @@
     "build:ext": "node scripts/build-extension.cts",
     "deploy:ext": "node scripts/deploy-extension.cts",
     "dev:ext": "node scripts/dev-extension.cts",
+    "ext:dev:browser": "node scripts/open-dev-profile.cts",
     "ext:dev:register": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/register-dev-native-host.ps1",
     "tokens:ext": "node scripts/gen-extension-tokens.cts",
     "test:overlay-visual": "npm run build:ext && node scripts/e2e-overlay-visual.cts",

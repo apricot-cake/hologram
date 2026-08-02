@@ -23,7 +23,7 @@ description: 拡張機能（extension/）の変更を実ブラウザで確かめ
 
 1. fresh worktree は `npm run setup` を済ませる。
 2. 対象 worktree で `npm run dev:ext`。常駐しないので、検証が終わったら止める。二重起動はポート衝突で落ちる（黙って別ポートへ逃げない）。
-3. 開発プロファイルの Chrome で対象 SNS のタブを開く。保存した変更は拡張リロード＋タブリロードで入るので、**確認直前にそのタブを更新する**。
+3. `npm run ext:dev:browser` で開発プロファイルの Chrome を開き、対象 SNS のタブを開く（初回だけ `chrome://extensions` から `~/.hologram-dev/chrome-mv3-dev` を Load unpacked＝ここだけは人の手が要る）。保存した変更は拡張リロード＋タブリロードで入るので、**確認直前にそのタブを更新する**。
 4. **反映されない時に手でリロードを頼まない**＝dev サーバーのログと、拡張が `~/.hologram-dev/chrome-mv3-dev` を読んでいるかを先に見る。
 5. **Claude の自動確認は使い捨て環境で行う**＝`scripts/lib-extension-e2e.cts` 系（同梱 Chromium・一時プロファイル・モック native host。`npm run test:e2e-extension` / 実サイトカナリアは `e2e-capture-test.cts`）。Playwright はポート未指定ならパイプで喋るのでどこにも listen しない。
    **ログイン済みアカウントでの挙動は自動化しない**＝この拡張は「X から自動化に見えないこと」を設計原則に持ち（#362）、同じ制約が検証にもかかる。自動化スタックからのサインインはボット検知にも当たる（2026-07-26 実測）。ログインが要る確認は人間がブラウザで行い、Claude は結果・スクショを受け取る。

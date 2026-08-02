@@ -27,7 +27,7 @@ install が済めば `npm test`・`npm run typecheck`・アプリ起動ハーネ
 
 1. fresh worktree は `npm run setup` を済ませる。その worktree 自身の `extension/node_modules` が WXT に必要。
 2. `npm run dev:ext` を起動する（常駐しない＝検証が終わったら止める）。
-3. 開発プロファイルの Chrome で確認する。保存した変更は拡張リロード＋タブリロードで入る。
+3. `npm run ext:dev:browser` で開発プロファイルの Chrome を開いて確認する。保存した変更は拡張リロード＋タブリロードで入る。
 4. 開発プロファイルからの保存は `~/.hologram-dev/library` へ行き、実ライブラリには入らない（初回だけ `npm run ext:dev:register`）。
 
 **日常の Chrome へ何かを載せたい時は `npm run deploy:ext` だけ**＝検証済み release を `.output/chrome-mv3` へ差し替え、拡張が自分でリロードする。ふだんは本体ツリーの `post-merge` フックが自動で走らせるので、手で打つのは復旧の時だけ。
