@@ -42,7 +42,7 @@
 //
 //   The flag is blunt: it disables EVERY root package install script. Electron's
 //   runtime is therefore restored explicitly below; the extension is installed
-//   separately and its CRXJS patch runs through its own postinstall.
+//   separately and its `wxt prepare` runs through its own postinstall.
 //
 // (2) --legacy-peer-deps — electron-vite's peer range vs vite 8
 //   electron-vite@5 declares `peer vite: ^5 || ^6 || ^7` while app/ builds on
@@ -170,10 +170,10 @@ function main() {
   run(['npm install', ...flags].join(' '), repoRoot);
 
   // extension/ is a separate npm project with its own lockfile (deliberately —
-  // it is a standalone CRXJS/Vite build), so a root install does not cover it. Fresh
+  // it is a standalone WXT build), so a root install does not cover it. Fresh
   // worktrees need this or the extension build and its type check both fail.
-  // Its own postinstall applies the pinned CRXJS 2.7.1 page-reload patch. Its own
-  // tree has no peer conflict and takes no install flags.
+  // Its own postinstall runs `wxt prepare`, which generates the .wxt/ types its
+  // tsconfig extends. Its own tree has no peer conflict and takes no install flags.
   const extDir = path.join(repoRoot, 'extension');
   run('npm install', extDir);
 
@@ -182,6 +182,17 @@ function main() {
   // Building here rather than teaching those suites to build themselves keeps the
   // cost at one build per setup instead of one per suite.
   run('npm run build:ext', repoRoot);
+
+  // Where the repository keeps its git hooks (#732). One of them promotes a
+  // merged extension into the daily Chrome, which is the only thing that keeps
+  // the browser the author uses on the code that actually landed — a hook nobody
+  // enabled would look like it was working and quietly do nothing.
+  console.log('\n$ git config core.hooksPath .githooks');
+  try {
+    execFileSync('git', ['config', 'core.hooksPath', '.githooks'], { cwd: repoRoot, stdio: 'inherit' });
+  } catch {
+    console.log('  (not a git checkout — skipped)');
+  }
 
   // electron's published package.json carries no postinstall script (checked on
   // the exact pinned version, 43.2.0: neither the registry manifest nor the

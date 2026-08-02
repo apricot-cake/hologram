@@ -240,7 +240,7 @@ async function waitForNewSidecar(newDir, before, timeoutMs = 25000) {
 }
 
 (async () => {
-  // Always rebuild first so the staged CRXJS release reflects the current source.
+  // Always rebuild first so the staged release reflects the current source.
   execFileSync('npm run build:ext', {
     stdio: 'inherit',
     cwd: path.join(__dirname, '..'),
@@ -413,7 +413,7 @@ async function waitForNewSidecar(newDir, before, timeoutMs = 25000) {
             const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
             if (!tab) return { ok: false, err: 'no active tab' };
             try {
-              await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['entrypoints/capture.js'] });
+              await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['capture.js'] });
               return { ok: true, url: tab.url };
             } catch (e) {
               return { ok: false, url: tab.url, err: String(e) };

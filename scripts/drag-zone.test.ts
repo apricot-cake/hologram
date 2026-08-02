@@ -119,7 +119,7 @@ const dragEvent = (type: string) => asUser(pageEvent(type));
 const settle = (ms = 20) => new Promise((r) => setTimeout(r, ms));
 
 beforeAll(async () => {
-  window.eval(fs.readFileSync(path.join(import.meta.dirname, '..', 'extension', '.output', 'chrome-mv3-release', 'entrypoints', 'resident.content.js'), 'utf8'));
+  window.eval(fs.readFileSync(path.join(import.meta.dirname, '..', 'extension', '.output', 'chrome-mv3-release', 'content-scripts', 'resident.js'), 'utf8'));
   await settle(300); // wait until startOverlay/startDrag's async init (including createI18n) finishes
 }, 30000);
 

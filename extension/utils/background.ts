@@ -5,10 +5,12 @@
 // (#400 — native-host/protocol.mts). A save request built here is the same
 // declaration the bridge's parse produces, so a renamed or missing field is a
 // compile error on this side rather than a save that fails on disk.
-import { protocolSkewOf, readHostResponse, responseId } from '../../native-host/protocol.mts';
+import { hostExtBuild, protocolSkewOf, readHostResponse, responseId } from '../../native-host/protocol.mts';
 import type { CaptureMetadata, HostRequest, ProtocolSkew, SavedResults, TrashedEntry, TrashedResults } from '../../native-host/protocol.mts';
-import captureScript from '../entrypoints/capture.ts?script';
 import { CROP_TIMEOUT_MS, NATIVE_HOST_TIMEOUT_MS, SAVED_QUERY_TIMEOUT_MS, withDeadline } from './deadline.ts';
+import { NATIVE_HOST } from './native-host.ts';
+import { DEV_RELOAD_QUIET_MS, DEV_RELOAD_STATE_KEY, DEV_RELOAD_WORK_MS, EXT_BUILD_ID, bulkActivity, captureActivity, createDevReloadGate, shouldReloadFor } from './dev-reload.ts';
+import type { DevReloadState } from './dev-reload.ts';
 import { mergeDomMeta } from './extractor/dom-meta.ts';
 import { extractorFor, fetchPostMetadata, getHostname, highResUrlOf, isAllowedSender, mediaKeyOf } from './extractor/index.ts';
 import type { DomMeta, PostRecord } from './extractor/types.ts';
@@ -20,8 +22,6 @@ import type { SaveLogEntry, SaveStage } from './capture-log.ts';
 import { installUncaughtReporting } from './uncaught-report.ts';
 
 export function startBackground(): void {
-  const NATIVE_HOST = 'com.hologram.host';
-
   // --- Capture diagnostics ------------------------------------------------------
   // Fallback ring buffer for log entries that couldn't reach the native host's
   // capture.log (the host failing to launch is exactly the failure we most want
@@ -37,6 +37,124 @@ export function startBackground(): void {
   // user to repair — the only way a person reaches it is by saving faster than
   // the host can finish, and waiting is the whole of the advice.
   const BUSY_ERROR = 'Too many saves in flight for this tab';
+
+  // --- Reloading this extension when a new local build lands (#650) -------------
+  // The rule for WHEN — and the reason any of this exists — is utils/dev-reload.ts.
+  // Here is the wiring: what counts as work that a reload would destroy, how the
+  // reload is actually performed.
+  //
+  // Everything below is inert unless this bundle was built by
+  // scripts/build-extension.cts AND the native host finds that build's stamp
+  // file, so a released install never reaches past noteHostBuild's first line.
+  const devReloadGate = createDevReloadGate({ now: () => Date.now(), savesInFlight: () => saveGate.inFlight() });
+  // The build the host last reported, when it is not the one running here.
+  let pendingBuild: string | null = null;
+  // The build a reload has already been spent on, restored from storage before
+  // any decision is taken — see DevReloadState.attempted for what it prevents.
+  let attemptedBuild: string | null = null;
+  let devReloadTimer: ReturnType<typeof setTimeout> | null = null;
+  let devReloadStarted = false;
+
+  // Read the note the previous instance left and learn which token has already
+  // been tried. Started at once so a reply cannot race the loop-breaker restore.
+  const devReloadRestored: Promise<void> = EXT_BUILD_ID ? restoreDevReload() : Promise.resolve();
+
+  async function restoreDevReload(): Promise<void> {
+    let state: DevReloadState | null = null;
+    try {
+      const got = await chrome.storage.local.get(DEV_RELOAD_STATE_KEY);
+      state = (got?.[DEV_RELOAD_STATE_KEY] as DevReloadState | undefined) || null;
+    } catch {
+      return; // nothing to restore, and nothing that can be done about it
+    }
+    if (!state) return;
+    attemptedBuild = state.attempted || null;
+    // The attempt is remembered only while it is unproven. Once this bundle IS
+    // the build that was asked for, the note has done its job and keeping it
+    // would block a future build that happened to reuse the token.
+    try {
+      if (attemptedBuild && attemptedBuild !== EXT_BUILD_ID) await chrome.storage.local.set({ [DEV_RELOAD_STATE_KEY]: { attempted: attemptedBuild } satisfies DevReloadState });
+      else {
+        attemptedBuild = null;
+        await chrome.storage.local.remove(DEV_RELOAD_STATE_KEY);
+      }
+    } catch {
+      /* best effort — the in-memory copy above is what the decision reads */
+    }
+  }
+
+  // Every host reply passes through here (acks, query answers, relayed-log acks
+  // and failures alike), which is the whole point of stamping every reply rather
+  // than only the successful ones: the carrier is whatever round trip happens to
+  // be made next.
+  function noteHostBuild(build: string | null): void {
+    if (!EXT_BUILD_ID || !build || build === EXT_BUILD_ID) return;
+    pendingBuild = build;
+    maybeDevReload();
+  }
+
+  function scheduleDevReload(ms: number): void {
+    if (devReloadTimer !== null) clearTimeout(devReloadTimer);
+    // Capped: blockedUntil never looks further ahead than one work window, and a
+    // timer beyond it would only outlive the worker that set it.
+    devReloadTimer = setTimeout(
+      () => {
+        devReloadTimer = null;
+        maybeDevReload();
+      },
+      Math.min(Math.max(ms, 0), DEV_RELOAD_WORK_MS) + 50,
+    );
+  }
+
+  function maybeDevReload(): void {
+    if (!pendingBuild || devReloadStarted) return;
+    const wait = devReloadGate.blockedUntil() - Date.now();
+    if (wait > 0) {
+      scheduleDevReload(wait);
+      return;
+    }
+    devReloadStarted = true;
+    void devReloadRestored
+      .then(async () => {
+        const build = pendingBuild;
+        if (!build || !shouldReloadFor(build, EXT_BUILD_ID, attemptedBuild)) return;
+        // Asked again after the await: restoring the note is a round trip to
+        // storage, and a save can have started inside it.
+        if (devReloadGate.blockedUntil() > Date.now()) {
+          scheduleDevReload(DEV_RELOAD_QUIET_MS);
+          return;
+        }
+        await chrome.storage.local.set({ [DEV_RELOAD_STATE_KEY]: { attempted: build } satisfies DevReloadState });
+        // Not written to capture.log: that line would travel through a native
+        // connection this call is about to kill. The service worker console is
+        // where a developer watching a reload is already looking.
+        console.info(`[hologram] a newer extension build is on disk (${build}); reloading the extension`);
+        chrome.runtime.reload();
+      })
+      .catch(() => {})
+      .finally(() => {
+        devReloadStarted = false;
+      });
+  }
+
+  // What the pages tell the worker anyway, read a second time for #650. The
+  // capture.log relay is the ONE channel on which the in-page surfaces already
+  // announce themselves — a bulk run's `bulk`/`begin` and its terminal line, and
+  // a capture UI closed without choosing anything (`select`/`cancel` and
+  // `select`/`fail`). Reading it here means the reload gate needs no message of
+  // its own and cannot fall out of step with the log a person reads afterwards.
+  function noteDevReloadActivity(tabId: number | null, stage: unknown, phase: unknown): void {
+    if (tabId == null) return;
+    if (stage === 'bulk') {
+      if (phase === 'begin') devReloadGate.begin(bulkActivity(tabId));
+      else devReloadGate.end(bulkActivity(tabId));
+    }
+    // The user closed the capture UI, or clicked something that is not a post
+    // and the UI came down with it. Either way there is no selection left to
+    // interrupt.
+    if (stage === 'select' && (phase === 'cancel' || phase === 'fail')) devReloadGate.end(captureActivity(tabId));
+    maybeDevReload();
+  }
 
   interface StageError extends Error {
     stage: SaveStage;
@@ -139,6 +257,20 @@ export function startBackground(): void {
   function admitSave(message: { type: string; saveId?: string | null; platform: string; postUrl: string }, tabId: number, host: string | null, imageUrls: readonly string[], start: () => Promise<any>): Promise<any> | null {
     const admitted = saveGate.admit(saveRequestKey(tabId, message.type, message.postUrl, imageUrls), tabId, start);
     if (admitted) {
+      // A save is under way on this tab (#650). The save itself is already
+      // counted (the gate reads saveGate.inFlight()); what this adds is the
+      // evidence that a bulk run on the tab is still alive — it saves a post a
+      // second, and without this its hold would time out mid-run. Asked again
+      // once the save settles, because that is the moment a reload deferred by
+      // it becomes possible.
+      devReloadGate.refresh(bulkActivity(tabId));
+      const settled = () => {
+        // The in-page capture UI's job is over once its save has answered — a
+        // bulk run's is not, which is why only this one is closed here.
+        devReloadGate.end(captureActivity(tabId));
+        maybeDevReload();
+      };
+      admitted.then(settled, settled);
       // "Taken" — the page's deadline waits for this before it starts measuring
       // silence instead of absence (save-deadline.ts). Pushed HERE rather than
       // from beginSave because this is the one funnel every route passes through,
@@ -179,9 +311,15 @@ export function startBackground(): void {
   chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
     if (changeInfo.status !== 'loading') return;
     injectFailedTabs.delete(tabId);
+    // A navigating tab takes its in-page UI and any running intake with it, so
+    // nothing on it is work a reload could still destroy (#650).
+    devReloadGate.dropTab(tabId);
+    maybeDevReload();
   });
   chrome.tabs.onRemoved.addListener((tabId) => {
     injectFailedTabs.delete(tabId);
+    devReloadGate.dropTab(tabId);
+    maybeDevReload();
   });
 
   async function activateOnTab(tab, auto = false) {
@@ -197,6 +335,11 @@ export function startBackground(): void {
       logCapture({ stage: 'activate', phase: 'skip', url: tab.url || '(no url)' });
       return;
     }
+    // BEFORE the log line, which is itself a native round trip and therefore a
+    // carrier for "a newer build is on disk" (#650). Reloading the extension
+    // between here and the injection below would leave the press doing nothing
+    // at all — the exact failure #269 exists to make visible.
+    devReloadGate.begin(captureActivity(tab.id));
     logCapture({ stage: 'activate', phase: 'ok', host: getHostname(tab.url), url: tab.url, auto });
     try {
       // Auto capture (#362) is asked for by its OWN gesture, so the choice
@@ -215,10 +358,10 @@ export function startBackground(): void {
       }
       await chrome.scripting.executeScript({
         target: { tabId: tab.id },
-        // CRXJS turns the imported entrypoint into one self-contained IIFE and
-        // gives this bundle its generated output name. Keeping the reference in
-        // the module graph removes the old fixed-filename contract.
-        files: [captureScript],
+        // WXT emits the unlisted capture entrypoint with this stable filename.
+        // It bundles its ESM dependencies, so activeTab injection remains one
+        // script without relying on execution order between global files.
+        files: ['capture.js'],
       });
       // The UI is on the page, so whatever alert an earlier press left on the
       // toolbar is answered (#269). Also the only moment a badge left behind
@@ -231,6 +374,7 @@ export function startBackground(): void {
       // and the diagnostics page reads the local ring buffer — a save that
       // never started has no other place to be read back from (#269).
       logCapture({ stage: 'activate', phase: 'fail', host: getHostname(tab.url), url: tab.url, error: (error as Error)?.message }, true);
+      devReloadGate.end(captureActivity(tab.id)); // no UI went up, so none is owed protection
       await alertInjectFailure(tab.id);
     }
   }
@@ -512,6 +656,8 @@ export function startBackground(): void {
         // Read off every reply, the failures included (#205): a host far enough
         // behind to be refusing saves is the one whose version matters most.
         noteHostProtocol(res.protocolVersion);
+        // Same reason, different stamp: which local build is on disk (#650).
+        noteHostBuild(res.extBuild);
         if (res.ok) finish(null, res.ack);
         else finish(new Error(res.error));
       });
@@ -627,6 +773,9 @@ export function startBackground(): void {
           // timeline asks before anything is saved), so this is usually where a
           // skew is noticed — in time for the first save's banner to say so.
           noteHostProtocol(res.protocolVersion);
+          // …and, for the same reason, the fastest carrier for a new local
+          // build (#650): this port stays open for a whole browsing session.
+          noteHostBuild(res.extBuild);
           resolve(res.ok ? { results: res.ack.results || {}, trashed: res.ack.trashed || {} } : { results: {}, trashed: {} });
         },
         reject,
@@ -948,8 +1097,12 @@ export function startBackground(): void {
       done();
       return;
     }
-    port.onMessage.addListener((_msg: unknown) => {
+    port.onMessage.addListener((msg: unknown) => {
       acked++;
+      // These acks carry the local build's stamp too (#650), and they are the
+      // one round trip that happens on a page nobody is saving from — the
+      // `activate` line goes out the moment the UI is asked for.
+      noteHostBuild(hostExtBuild(msg));
       if (acked >= batch.length) done();
     });
     port.onDisconnect.addListener(done);
@@ -1054,6 +1207,7 @@ export function startBackground(): void {
   chrome.runtime.onMessage.addListener((message: ContentToBackgroundMessage, sender, sendResponse) => {
     if (message.type === 'logCapture') {
       const entry = Object.assign({ host: getHostname(sender.tab?.url) }, message.entry || {});
+      noteDevReloadActivity(sender.tab?.id ?? null, entry.stage, entry.phase);
       logCapture(entry, entry.phase === 'fail');
       sendResponse({ ok: true } satisfies LogCaptureResponse);
       return false;

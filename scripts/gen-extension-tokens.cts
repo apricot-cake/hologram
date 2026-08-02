@@ -359,7 +359,7 @@ function build(): { tokens: GeneratedToken[]; css: string; ts: string } {
     '// the browser from a resolved colour string.',
     '//',
     '// Exported under distinct names and re-exported as `motion` / `actionBadge` from',
-    '// tokens.ts: CRXJS/Vite bundles only imported modules, and two of them exporting',
+    '// tokens.ts: Vite bundles only imported modules, and two of them exporting',
     '// the same symbol makes it warn on every build about which one it dropped.',
     'export const generatedMotion = {',
     ...MOTION_MS.map((n) => `  ${camel(n)}: ${ms(value(n))}, // ${n}`),

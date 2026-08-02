@@ -1,7 +1,7 @@
 // A guard that cross-checks the generated manifest against the code that's written assuming it (#130).
 //
-// With the CRXJS migration (#714) and the extractor registry (#212), the manifest
-// is no longer hand-written; it's generated from manifest.config.ts plus each
+// With WXT and the extractor registry (#212), the manifest is no longer
+// hand-written; it's generated from wxt.config.ts plus each
 // site module. So the kind of drift where "the manifest's match and the code's
 // correspondence table need to be kept in sync by hand" has structurally gone
 // away (the registry's own invariants are covered by
@@ -46,7 +46,10 @@ function extensionSources(): string[] {
   const walk = (dir: string) => {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
       if (entry.isDirectory()) {
-        if (['node_modules', '.output'].includes(entry.name)) continue;
+        // .wxt is WXT's generated type surface: it names every predefined i18n key
+        // (@@bidi_dir and friends) and every message key, so scanning it would read
+        // the generator's vocabulary as \"keys this extension uses\".
+        if (['node_modules', '.output', '.wxt'].includes(entry.name)) continue;
         walk(path.join(dir, entry.name));
       } else if (entry.name.endsWith('.ts') && !entry.name.startsWith('tokens.generated')) {
         files.push(path.join(dir, entry.name));
@@ -130,11 +133,26 @@ describe('manifest とコードが名指しするファイルは出力に在る'
     expect(referenced.filter((file) => !fs.existsSync(path.join(OUT, file)))).toEqual([]);
   });
 
-  test('background の ?script import が standalone capture IIFE を指す', () => {
-    expect(backgroundSrc).toContain('../entrypoints/capture.ts?script');
-    const capture = manifest.web_accessible_resources.flatMap((group: any) => group.resources).find((file: string) => /(?:^|\/)capture\.js$/.test(file));
-    expect(capture).toBe('entrypoints/capture.js');
-    expect(fs.existsSync(path.join(OUT, capture))).toBe(true);
+  // capture.js is not in the manifest at all: the background injects it BY NAME
+  // through chrome.scripting.executeScript, so the only thing holding the two
+  // ends together is that this string matches that file name. WXT emits the
+  // unlisted script at the output root under its entrypoint name.
+  test('background が名指しする capture.js が出力に在る', () => {
+    expect(backgroundSrc).toContain("files: ['capture.js']");
+    expect(fs.existsSync(path.join(OUT, 'capture.js'))).toBe(true);
+    expect(fs.statSync(path.join(OUT, 'capture.js')).size).toBeGreaterThan(0);
+  });
+
+  // The release must ask for the REAL native messaging host and must not carry
+  // the development one (#732). The development host resolves to a sandbox
+  // config dir, so a release carrying that name would save where the user
+  // cannot see it — and the extension E2E harness isolates itself by rewriting
+  // the release name in this bundle, which only works while there is exactly
+  // one name in there to rewrite.
+  test('release のバンドルは本物のネイティブホスト名だけを持つ', () => {
+    const worker = fs.readFileSync(path.join(OUT, 'background.js'), 'utf8');
+    expect(worker).toContain('com.hologram.host');
+    expect(worker).not.toContain('com.hologram.host.dev');
   });
 
   test('default_locale の _locales が出力に在る', () => {

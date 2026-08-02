@@ -1,29 +1,33 @@
 ---
 name: verify-extension
-description: 拡張機能（extension/）の変更を実ブラウザで確かめる手順＝対象 worktree を日常 Chrome の HMR 配信元として取得し、固定の `.output/chrome-mv3` と拡張 ID を維持したまま検証する。「拡張を実機で確認して」「Alt+S を試して」など実ブラウザで拡張の動きを見る依頼で使う。
+description: 拡張機能（extension/）の変更を実ブラウザで確かめる手順＝開発専用の Chrome プロファイルで WXT の開発ビルドを動かし、日常の Chrome と実ライブラリには触れずに検証する。「拡張を実機で確認して」「Alt+S を試して」など実ブラウザで拡張の動きを見る依頼で使う。
 ---
 
 # verify-extension — 拡張の変更を実ブラウザで確かめる
 
 正本は `docs/build.md`「拡張機能の開発・配布」。矛盾があればそちらが勝つ。
 
-## 土台: ブラウザは日常の Chrome 1本、出力も1箇所
+## 土台: 開発は専用プロファイル、日常の Chrome は触らない
 
-日常の Chrome が読むのは**本体ツリーの `extension/.output/chrome-mv3` だけ**。**拡張の削除→再追加は決してしない**（`chrome.storage.local` の設定とショートカット割当が消える）。
+**ブラウザは2本ある**（#732）。日常の Chrome は本体ツリーの `extension/.output/chrome-mv3` を読み、そこには `npm run deploy:ext` を通った検証済み release だけが入る。**検証で日常の Chrome を使わない**＝開いているタブも、載っている拡張も触らない。
 
-**リロードのクリックは要らない**（#714・#718）。通常の content 変更は CRXJS HMR、background 更新と server reconnect は `chrome.runtime.reload()` で反映する。**開いている日常タブは再読み込みしない**。実機検証タブだけを検証側から必要時に更新する。
+開発プロファイルは専用の user-data-dir で、`~/.hologram-dev/chrome-mv3-dev` を一度だけ Load unpacked してある。出力先はツリー外の固定パスなので、**どの worktree から起動しても同じ場所に出る**＝配信元の取り合いも、拡張の削除→再追加も起きない（`chrome.storage.local` の設定とショートカット割当は保たれる）。
 
-**ブラウザを自動化スタックで起動しない。** web-ext / chrome-launcher / Playwright 経由の起動は自動化フラグの指紋が付き、X・Google がボット判定してサインインを弾く（2026-07-26 実測）。
+**このプロファイルの保存は実ライブラリに入らない**＝開発ビルドは別のネイティブホスト名 `com.hologram.host.dev` に繋ぎ、`~/.hologram-dev/library` へ書く。初回だけ `npm run ext:dev:register`（一度きりのスケジュールタスク経由＝コンテナ内から `reg add` しても実 Chrome には見えないため）。**`reg query` では確認できない**＝確認は保存の成否と `~/.hologram-dev/bridge.log` で取る。保存したものを見るのは `node scripts/sandbox-app.cts`。
+
+**反映はタブのリロードを伴う**＝WXT の開発モードは拡張をリロードし content script を入れ直す（in-place HMR ではない。自前 ShadowRoot の UI は WXT の HMR 対象外）。守るべき日常タブが同じプロファイルに居ないので、これでよくなったのが分離の要点。
+
+**ブラウザを自動化スタックで起動しない。** web-ext / chrome-launcher / Playwright 経由の起動は自動化フラグの指紋が付き、X・Google がボット判定してサインインを弾く（2026-07-26 実測）。開発プロファイルは普通に起動する。
 
 ## 手順（既定）
 
-1. fresh worktree は `npm run setup` を済ませ、対象 worktree で preview 所有を取得する（Claude Code は hook、Codex は `npm run ext:preview:acquire`）。
-2. `npm run ext:status` で state が `ready`、`sourceRoot` が対象 worktree であることを確認する。
-3. **ページ側を確認する時は、エージェントが対応SNSの検証タブを新規に用意する**。background reload 後、または確認直前に、**その検証タブだけ**を再読み込みして新しい常駐スクリプトを注入する。既に開いている日常タブを列挙・更新してはならない。目視が必要なら、この検証タブだけを対象に依頼する。
-4. **反映されない時に手でリロードを頼まない**＝`npm run ext:status` の `sourceRoot`・server PID・ログを確認する。別 worktree が所有していれば横取りしない。
+1. fresh worktree は `npm run setup` を済ませる。
+2. 対象 worktree で `npm run dev:ext`。常駐しないので、検証が終わったら止める。二重起動はポート衝突で落ちる（黙って別ポートへ逃げない）。
+3. 開発プロファイルの Chrome で対象 SNS のタブを開く。保存した変更は拡張リロード＋タブリロードで入るので、**確認直前にそのタブを更新する**。
+4. **反映されない時に手でリロードを頼まない**＝dev サーバーのログと、拡張が `~/.hologram-dev/chrome-mv3-dev` を読んでいるかを先に見る。
 5. **Claude の自動確認は使い捨て環境で行う**＝`scripts/lib-extension-e2e.cts` 系（同梱 Chromium・一時プロファイル・モック native host。`npm run test:e2e-extension` / 実サイトカナリアは `e2e-capture-test.cts`）。Playwright はポート未指定ならパイプで喋るのでどこにも listen しない。
-   **ログイン済みアカウントでの挙動は自動化しない**＝この拡張は「X から自動化に見えないこと」を設計原則に持ち（#362）、同じ制約が検証にもかかる。自動化スタックからのサインインはボット検知にも当たる（2026-07-26 実測）。ログインが要る確認は人間が日常の Chrome で行い、Claude は結果・スクショを受け取る。
-6. 人でないと不可能な操作（ログインが要る確認・実キー入力）だけユーザーへ依頼する。終了時は preview を解放して main 配信へ戻す。
+   **ログイン済みアカウントでの挙動は自動化しない**＝この拡張は「X から自動化に見えないこと」を設計原則に持ち（#362）、同じ制約が検証にもかかる。自動化スタックからのサインインはボット検知にも当たる（2026-07-26 実測）。ログインが要る確認は人間がブラウザで行い、Claude は結果・スクショを受け取る。
+6. 人でないと不可能な操作（ログインが要る確認・実キー入力）だけユーザーへ依頼する。
 
 ## Claude から見えないもの（実測 2026-07-26）
 

@@ -75,7 +75,7 @@ const START_BULK_JS = `
   const [tab] = await chrome.tabs.query({ url: 'https://x.com/i/bookmarks*' });
   if (!tab || !tab.id) throw new Error('the bookmarks tab is not visible to the worker');
   await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: () => { window.__hologramAutoCapture = true; } });
-  await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['entrypoints/capture.js'] });
+  await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['capture.js'] });
   return tab.id;
 })()
 `;

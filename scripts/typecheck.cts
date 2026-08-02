@@ -18,7 +18,7 @@
 //      no DOM; runs un-built via the same Node type-stripping)
 //   4. extension/tsconfig.json    — the Chrome extension (MV3) browser layer,
 //      stage 2/3; a FOURTH runtime (real browser, no type-stripping) — the one
-//      layer is built by CRXJS/Vite.
+//      layer is built by WXT/Vite.
 //   5. scripts/tsconfig.json      — the dev-tooling / CLI layer (app-harness
 //      Electron smoke + capture/verify CLIs), stage 2/3; a FIFTH standalone-Node
 //      runtime, .cts, no build step — the runtime the original TS-scope

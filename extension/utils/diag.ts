@@ -17,6 +17,7 @@
 // stay unique across it. drag.ts/i18n.ts use the same IIFE convention.
 import { PROTOCOL_VERSION, hostProtocolVersion, protocolSkewOf } from '../../native-host/protocol.mts';
 import type { HostRequest } from '../../native-host/protocol.mts';
+import { NATIVE_HOST } from './native-host.ts';
 
 export function startDiagnostics(): void {
   const DIAG_PREFIX = 'diaglog_';
@@ -32,7 +33,7 @@ export function startDiagnostics(): void {
       };
       let port: chrome.runtime.Port;
       try {
-        port = chrome.runtime.connectNative('com.hologram.host');
+        port = chrome.runtime.connectNative(NATIVE_HOST);
       } catch (e: any) {
         done({ ok: false, where: 'connect-threw', error: String((e && e.message) || e) });
         return;

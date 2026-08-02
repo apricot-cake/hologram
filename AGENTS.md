@@ -10,6 +10,6 @@ Hologram リポジトリまたはその worktree を対象に作業するとき�
 
 再照合で関係する項目があれば、その本体を読んでから、当該論点の設計判断・編集・検証方針の決定へ進む。索引だけで「読んだ」とは扱わない。
 
-# 拡張の実機HMR
+# 拡張の実機検証
 
-専用 worktree で拡張または拡張開発基盤を編集する時は、最初の編集前にその worktree で `npm run ext:preview:acquire` を実行する。所有 ID は `CODEX_THREAD_ID` が使われ、別セッションが日常 Chrome を検証中なら横取りせず止まる。終了処理では、成功・失敗にかかわらず同じ worktree から `npm run ext:preview:release` を実行して main 配信へ戻す。手順と実機検証は skill `test-in-worktree` / `verify-extension` が正本。
+拡張の開発は日常利用とは別の Chrome プロファイルで行う（#732）。専用 worktree から開発サーバーを起動しても日常の Chrome には影響しないので、配信元の取り合いは無い。日常の Chrome に載るのは `npm run deploy:ext` を通った検証済み release だけで、昇格は本体ツリーの `post-merge` フックが行う。手順と実機検証は skill `test-in-worktree` / `verify-extension` が正本。

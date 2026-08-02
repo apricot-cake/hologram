@@ -1,3 +1,5 @@
 import { startBackground } from '../utils/background.ts';
 
-startBackground();
+export default defineBackground(() => {
+  startBackground();
+});

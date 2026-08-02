@@ -16,7 +16,7 @@ import { JSDOM } from 'jsdom';
 import { beforeEach, describe, expect, test } from 'vitest';
 import { asUser } from './lib-user-event.ts';
 
-const BUNDLE = fs.readFileSync(path.join(import.meta.dirname, '..', 'extension', '.output', 'chrome-mv3-release', 'entrypoints', 'capture.js'), 'utf8');
+const BUNDLE = fs.readFileSync(path.join(import.meta.dirname, '..', 'extension', '.output', 'chrome-mv3-release', 'capture.js'), 'utf8');
 
 const HTML = `<!doctype html><html><body>
   <div id="feed">

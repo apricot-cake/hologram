@@ -24,10 +24,10 @@
 
 ### `extension/` — Chrome拡張一式（MV3）
 
-CRXJS 2.7.1 + Vite でビルドする TypeScript ソース。日常 Chrome は `extension/.output/chrome-mv3/` を Load unpacked し、ログオン常駐の dev server が HMR と background reload を担う。Chrome／Firefox release は別の自己完結出力へ生成する。`manifest.config.ts` の `key` が固定IDを保つため、Native Messaging の許可元は変わらない。
+WXT でビルドする TypeScript ソース。**開発と日常利用はプロファイルごと分かれている**（#732）＝日常 Chrome は `extension/.output/chrome-mv3/` を Load unpacked し、そこには検証済み release だけが `npm run deploy:ext` で入る。開発は専用プロファイル＋ツリー外の固定出力で、開発セッション中だけ立てる dev サーバーが担う。`wxt.config.ts` の `key` が両方で固定IDを保つため、Native Messaging の許可元は変わらない。開発ビルドだけは別のホスト名（`com.hologram.host.dev`）へ繋ぎ、保存が実ライブラリへ入らないようにしている。
 
-- `manifest.config.ts` / `vite.config.ts` — 固定 `key`、権限、action、commands、Chrome/Firefox target、固定 loopback dev server、出力分離
-- `entrypoints/background.ts` — Service Worker。タブキャプチャ → クロップ → `utils/extractor/` でAPI取得 → Native Messaging 送信。動的なクリック保存は CRXJS `?script` が生成する standalone capture IIFE を注入し、`activeTab` のモデルを維持する
+- `wxt.config.ts` — 固定 `key`、権限、action、commands、Chrome/Firefox target、固定 loopback dev サーバー、開発／release／日常の3出力の分離、ネイティブホスト名の define
+- `entrypoints/background.ts` — Service Worker。タブキャプチャ → クロップ → `utils/extractor/` でAPI取得 → Native Messaging 送信。動的なクリック保存は WXT の unlisted script が出力する `capture.js` を名指しで注入し、`activeTab` のモデルを維持する
 - `entrypoints/resident.content.ts` — X/Bluesky/pixiv/misskey.io に常駐する統合コンテンツスクリプト（ドラッグ保存とTLオーバーレイ）
 - `options.html` / `diag.html` — 設定・内部診断ページ。`options.html` はタブで開く
 - `utils/` — 通常の ESM 共有モジュール。`drag.ts`、`overlay.ts`、`capture.ts`、`bulk-capture.ts`、`glass-ui.ts`、`i18n.ts` など**サイトに依らない**層を置く。
@@ -39,7 +39,7 @@ CRXJS 2.7.1 + Vite でビルドする TypeScript ソース。日常 Chrome は `
 `post-key.mts` / `post-record.mts` / `inbox.mts` / `raw-payload.mts` / `protocol.mts` を除き全ファイル `.cts`（CJS維持）＝ESM なのはディレクトリの外から ES import される共有モジュールだけ。`install.cts` はアプリが生ソースのまま require（Node 型消去）。`bridge.cts` とその依存は **`dist/bridge.js` へバンドル**され（`app/build-native-host-bridge.mjs`・node 組み込みのみ external）、`install.cts` が `~/.hologram` へ配備するのはこのバンドル1ファイル＝配備物に実行時のモジュール解決が残らない（配備漏れが起きえない・host 側で npm 依存を使える）。
 
 - `bridge.cts` — 保存先に jpg と原寸メディアを書き込み専用で生成し、レコードは取込キュー（`.hologram-inbox/new`）へ追記する（#299）。`media[]`（API由来の原寸URL）と著者アバターを**ベストエフォートでDL**し `<id>-media-N.<ext>` / `<id>-avatar.<ext>` に保存。加えて「保存済みか」の照会（`{type:'query'}`）に答える＝アプリが DB から書き出す `~/.hologram/bridge-saved-index.json`（postKey→captureId の表）を常駐させ、**スナップショットが取りこぼす分を2枚で補う**（①自分が保存した分を `~/.hologram/bridge-journal.jsonl` に追記＝アプリ未起動中の保存をカバー ②まだ取り込まれていないキューの分を見る）。同じファイルは**ゴミ箱に在る投稿の表（`trashed`）も別マップで持つ**（#158）＝保存済みの表と混ぜない（TLバッジは「表に在る＝ライブラリが持っている」と読むので、混ぜるとゴミ箱の投稿でバッジが点く）。同じ投稿が両方に該当するなら保存済みが勝つ。ゴミ箱側は後追いの2枚を持たない＝ゴミ箱が動くのはアプリ稼働中だけなので、アプリが書き直せば足りる
-- `protocol.mts` — **拡張⇄ホストのメッセージ契約の唯一の宣言**（#400）。リクエスト6種・応答・エラーコード・captureId・リクエストid・プロトコル版番号を持つ。**拡張側がこのファイルを import し、CRXJS/Vite がバンドルへ取り込む**。プロトコル版は検知と案内だけに使い、ずれていても保存は最後まで試す。
+- `protocol.mts` — **拡張⇄ホストのメッセージ契約の唯一の宣言**（#400）。リクエスト6種・応答・エラーコード・captureId・リクエストid・プロトコル版番号を持つ。**拡張側がこのファイルを import し、WXT/Vite がバンドルへ取り込む**。プロトコル版は検知と案内だけに使い、ずれていても保存は最後まで試す。
 - `raw-payload.mts` — 取得原本の詰め込みと検証（[ADR 0011](decisions/0011-preserve-acquisition-payloads.md)）。拡張が渡した応答本文を gzip・sha256 し、レコード単位の上限を当てて封筒へ載せる。`post-key.mts` と同じくアプリ側も ES import する共有モジュール
 - `post-key.mts` — URL→投稿の同一性キー（`postKeyOf`）の**唯一の実装**。レンダラのグループ化（`app/src/renderer/src/services/records.ts` が再exportして使用）とバッジ判定が同じ規則でなければ、アプリが同一視する投稿をバッジが取りこぼす。拡張側は正規化せず permalink を渡すだけ。ここだけ ESM（`.mts`）＝レンダラが ES import する唯一のファイルで、`.cts` では tsc から export が見えないため（理由は `tsconfig.json` 冒頭）
 - `media-download.cts` — **メディアDLの共有モジュール**（SSRFガード・静止画25MB/12s・動画200MB/60s・12件上限・https限定・手動リダイレクト・失敗時dropで保存を失敗させない）。応答本文は**同じフォルダの一時ファイルへストリームしてから rename で確定**＝上限は `Content-Length` の申告でなく**実受信バイト**で強制し、失敗した取得は完成扱いのファイルも一時ファイルも残さない。加えて**1回の保存全体で 512MB の合計バイト予算**を持ち（`createByteBudget` を保存操作ごとに1つ作り、その保存の全DLへ渡す）、**同時取得は2件まで**＝メモリ・ソケット・ディスクのどれも添付点数に比例しない（#389）。`saveStillImage`/`downloadMedia`/`downloadAvatar`/`createByteBudget`/`pixivRefererFor` を export し、bridge・app（旧形式ZIPの取り込み）・`backfill-metadata.cts` で同一ロジックを共有（ガードが経路ごとにズレないように一箇所へ集約）

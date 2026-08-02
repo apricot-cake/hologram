@@ -27,7 +27,7 @@ before/after は同 Issue の 2026-07-23（旧経路）と 2026-07-28（DB経路
 - **照合の判定規則そのものの単体は `verify-record.test.ts`**（ネットワークもDBも使わない）＝何を FAIL と呼ぶかがここに固定される。とくに①レコードが指す保存ファイルは `image` だけでなく `media[]` の原寸・ポスター・アバターまで全部見ること（#377 以降、投稿の原寸の家は `media[]` なので `image` 
 だけを見ると1枚もディスクに無いレコードが PASS する）②**API に届かなかったことを届いたと読み違えないこと**（extractor はネットワークに出る前に URL から screenName を組むので、失敗した応答も screenName だけは持って返る＝それを「取れた」の根拠にすると、レコードの投稿者をそのレコード自身の url と突き合わせて PASS 
 と印字する）の2点は、実行して目で見た人だけが気付ける類なのでテストが正本。
-- `e2e-capture-test.cts` は検証済み CRXJS Chrome release を Playwright Chromium へ読み込む実サイトカナリア（ユーザーChrome・Alt+S 不要）。画面を出さない隔離実行はプラットフォーム名と `--headless` を渡す（例: `node scripts/e2e-capture-test.cts bluesky --headless`）
+- `e2e-capture-test.cts` は検証済み Chrome release を Playwright Chromium へ読み込む実サイトカナリア（ユーザーChrome・Alt+S 不要）。画面を出さない隔離実行はプラットフォーム名と `--headless` を渡す（例: `node scripts/e2e-capture-test.cts bluesky --headless`）
 。X はログインなしでは投稿DOMを出さないため、検証時だけ閉じた Chrome のプロファイルを `--user-data-dir` で渡す。ブラウザE2Eの初回実行前にリポジトリ直下で `npx playwright install chromium` を実行する。
 - `npm run test:e2e-extension` は固定fixture・モックAPI・一時Native Messagingホスト・一時ライブラリで `content → background → native-host → ファイル着地` をネットワークなしに確認する。同じ土台の `npm run test:e2e-duplicate` は重複保存の警告（#34）＝
 同じ投稿を2度撮ると3択が出ること・「スキップ」で何も書かれないこと・「置換」の封筒が `replaces` に旧 captureId を載せることを見る（本物のブリッジが答えるので、保存済み判定がジャーナル越しに効いていることまで含む）。
@@ -52,7 +52,7 @@ falsy判定に転ぶと正確な0を画面の概数で潰す。逆に**取得が
 が変わっても読めること、省略表記（`1.2万`/`1.2K`）が概数へ落ちること、**セレクタが全滅しても投げず何も埋めないこと**。
 - ⚠️「X側がDOMを変えた」はここでは捕まらない＝実サイトe2eの担当。サイト別モジュールを束ねる**登録簿そのものの不変条件**（platform の一意性・DOM 相と API 相が同じ platform を名乗ること・インスタンス型サイトが並びの後ろに来ること・manifest の match/host_permissions が登録簿から組み上がること）は 
 `extractor-registry.test.ts`（#212）。
-- TL上のオーバーレイ（#54/#94/#309/#334）は `overlay.test.ts`（CRXJSの生成した Chrome release の resident bundle をjsdomで実行）と `bridge-query.test.ts` に分かれる。前者は照会のバッチ化・マークの3値設定・ホバー保存ボタンの表示・`imageDragged` 経路の再利用・失敗の表示と復帰・投稿DOM非変更を確認する。
+- TL上のオーバーレイ（#54/#94/#309/#334）は `overlay.test.ts`（Chrome release の resident bundle をjsdomで実行）と `bridge-query.test.ts` に分かれる。前者は照会のバッチ化・マークの3値設定・ホバー保存ボタンの表示・`imageDragged` 経路の再利用・失敗の表示と復帰・投稿DOM非変更を確認する。
 - **上部バナーの緊急度2段（#367）もここ**＝失敗は割り込む `role="alert"`、但し書き（保存はできたが記録に欠けがある）は割り込まない `role="status"` で、押せるものを載せない（自動で消える面に操作を持たせない）こと、そして**但し書きが空のまま DOM へ入り、文はその後で入ること**を見る。
 - ⚠️最後の1つが本体＝`status` のライブリージョンは登録された後の変化しか読まれないので、文を入れたまま挿すと読み上げには一生届かない（title に書いてあった頃と同じ＝#367 が直した状態へ黙って戻る）。見た目は同じなので、この検査以外に気付く手段が無い。
 - 保存済み判定は投稿単位でなく**画像単位**（#334）で、その3層＝画像 URL の同一性規則が `media-identity.test.ts`（extractor の `mediaKey`／`mediaKeyOf`＝サムネ/原寸/`name=orig`/`@jpeg` の表記ゆれを畳む唯一の規則）、DB からスナップショットを組む側が 
@@ -69,7 +69,7 @@ null のまま・`trashed` を持たない古いスナップショットでも�
 - **サンプルは `expect: "tombstone"` で「投稿は在るのに中身が配信されない応答が正解」と宣言できる**（#588）＝これが無いと、X の tombstone は「サンプルが消えた」と同じ箱に入って恒久的に不通扱いになり、`tombstone.text` の文言（#505 の理由の出し分けが依存している）を一度も記録できない。
 宣言したサンプルに普通の投稿が返ってきたら警報＝鍵が外れた・年齢制限が消えた側の検知で、このときスナップショットは触らない（別物の本体で基準を上書きしないため）。応答は `fetchPostMetadata` が #292 で原本ごと返すようになったのでそれを読む＝拡張が実際に叩く経路そのものを観測する。鳴った後に実物を見るのは `--dry-run` ではなく 
 `--payloads`（保存済みの原本と基準を突き合わせる・DBは読み取り専用）。判定部の単体は `schema-canary.test.ts`。
-- X ブックマークの一括取込（#362・追いかけ型）は `bulk-capture.test.ts`（CRXJSが生成した Chrome release の capture IIFE をjsdomで実行）で、機械が自らスクロールしないこと・保存済みのスキップ・見送り（撮り逃し）の検知と再開・進捗/中断バナーの文言を確認する。
+- X ブックマークの一括取込（#362・追いかけ型）は `bulk-capture.test.ts`（Chrome release の capture バンドルをjsdomで実行）で、機械が自らスクロールしないこと・保存済みのスキップ・見送り（撮り逃し）の検知と再開・進捗/中断バナーの文言を確認する。
 - **投稿を1つも取得できなかった保存が「保存済み」にならないこと**（#492）は両端で押さえる＝書く側が `save-post-empty.test.ts`（`handleSavePost` が殻レコードを断り、エンベロープもバッジのジャーナルも残さない）、答える側が `saved-index.test.ts`（中身を持たない投稿はスナップショットに載らない）。
 判定規則そのもの（`recordHoldsContent`）の網羅は `post-record.test.ts` で、この3本がずれると殻レコードにバッジが点いたまま残る。
 - **拡張⇄ホストのメッセージ契約は `host-protocol.test.ts`**（#400）＝拡張とホストは別の TS プロジェクトなので、型検査は「同じ宣言を import しているか」しか見られない。ここは `startBackground()` を実際に動かして**線に載ったメッセージそのもの**を共有 
@@ -77,7 +77,7 @@ parse（`native-host/protocol.mts`）に通す＝フィールドを片側だけ�
 - **プロトコル版のハンドシェイク**（#205）も同じファイルで、①比較が整数比較だけであること ②版を名乗らない返信が `host-old` になること ③**ずれていても保存が完走し、結果に更新案内だけが乗ること**を見る。
 - ⚠️③が本体＝「検知して止める」に転ぶと投稿を落とす。刻印が**実際に線へ出ている**ことは `bridge.test.ts` が受け持つ（ホストのプロセスを起こして stdout のフレームを読む＝刻印はハンドラでなく返信の出口にあるので、単体では見えない）。画面まで届くかは `capture-overlay.test.ts` と 
 `drag-zone.test.ts`（保存の出口が3本あるので、1本でしか案内しないと普段その経路を使わない人には届かない）。
-- **CRXJS の reload 契約は `crxjs-contract.test.ts`**（#714）＝pinned 2.7.1 の worker `chrome.runtime.reload()` と content HMR forwarding は残し、host page の `location.reload()` だけを2経路とも抑止する。postinstall patch の seam が上流更新で変わった場合も黙って外れず install/build が失敗する。**開いているSNSタブを列挙・ping・再読み込みする経路は持たない**。実ブラウザ検証でページ更新が必要なら、エージェント所有の検証タブだけを外から更新する。
+- **日常 Chrome への昇格と自己リロードの契約は `dev-reload.test.ts` と `bridge.test.ts`**（#650 / #732）＝前者は「いつリロードしてよいか」だけを見る（保存・一括取込・キャプチャUIが動いている間は待つ・静けさの窓・同じトークンで二度リロードしない）。後者はホストのプロセスを実際に起こし、**印が返信の線に出ていること**と、印のファイルが無い／壊れている時にホストが黙ることを見る＝拡張を持っていない人が踏む既定の状態がそれ。
 - ⚠️**「ビーコンが届いたら実際に入れ替わるか」はここでは見えない**＝`chrome.runtime.reload()` は使い捨て Chromium でも `--load-extension` 経由だと拡張を**無効化**するので（#650 実測・#657）、実物は CDP `Extensions.loadUnpacked` で読み込んだ拡張でしか測れない。
 
 ### スモーク／退行・セキュリティ・正しさ
@@ -124,8 +124,8 @@ harness が `<img>` 原寸／サムネ（`?w=`）／SVG を絵として／CSS ba
 - **拡張のデザイントークンは `extension-tokens.test.ts`**（#270）＝アプリの `globals.css` から生成した `extension/utils/tokens.generated.*` が最新か・拡張のコードが実在するトークンだけを参照しているか・色のベタ書きが復活していないか・
 **両テーマ × 参照4下地（純黒 / X dim / pixiv dark / 白）でコントラストが足りているか**を見る。4下地を固定するのは、拡張の面がアプリの選んだ背景ではなく任意のページの上に乗るため＝アプリ内なら成立する「サーフェス色に近い細い境界線」がそのままでは成立しない。アプリ自身のトークン側のガードは `token-parity.test.ts`／
 `contrast-parity.test.ts` で、こちらとは別物。
-- **生成された manifest とそれを前提に書いたコードの突合は `ext-consistency.test.ts`**（#130）＝CRXJS 移行（#714）と extractor 登録簿（#212）で manifest は生成物になったので「手書きの対応表がずれる」型の事故は構造的に消えたが、**生成物とコードの間の約束**は型でも lint
-でも捕まらず実機でしか分からない。ここが見るのは①生成された match / host_permissions が登録簿の宣言そのままか ②manifest の全 resource と CRXJS `?script` が生成する capture IIFE が出力に実在するか ③`commands`
+- **生成された manifest とそれを前提に書いたコードの突合は `ext-consistency.test.ts`**（#130）＝ビルド基盤の移行と extractor 登録簿（#212）で manifest は生成物になったので「手書きの対応表がずれる」型の事故は構造的に消えたが、**生成物とコードの間の約束**は型でも lint
+でも捕まらず実機でしか分からない。ここが見るのは①生成された match / host_permissions が登録簿の宣言そのままか ②manifest の全 resource と、コードが名指しする `capture.js`（unlisted script）が出力に実在するか、そして release のワーカーが本物のネイティブホスト名だけを持つか ③`commands`
 と待ち受けのコマンド名が一致するか ④`key` から決まる拡張IDを、それを許可する側（e2e ハーネスが組む Native Messaging の `allowed_origins`）も同じ値で持っているか ⑤`__MSG_*` と `getMessage` のキーが実在する文言か（**使う側との突合はここだけ**＝`i18n-parity.test.ts` 
 は日英テーブル同士しか見ない）。⑤は逆向き＝**どこからも呼ばれないキーが残っていること**も落とす。
 - **外から来たレコードの「形」を信じてよい境界は `hostile-record-shape.test.ts`**（#324）＝レンダラは `tags` を配列・`title` を文字列として読むので、形の違うレコードが1件でも届くと描画が例外になり、React のルートが1本な以上ツリー全体（グリッド・サイドバー・インスペクタ・設定・ゴミ箱）が同時に消える。
@@ -166,7 +166,7 @@ CLI（`test-metadata.cts`／`test-select-posts.cts`／`test-watch-verify.cts`）
 そこだけは隔離の運用でなく、CJS を読む側を別プロジェクト（nodenext）へ分ける工事が要る。
   - 開発中は `npx vitest`（watch）・1本だけなら `npx vitest run scripts/query.test.ts`・カバレッジは `npx vitest run --coverage`。
   - **サーバー側で自動で回る範囲**（#15）: push ごとに `.github/workflows/ci.yml`（Linux）が `npm run check` を回す。実 Electron 起動系（`test-app-*.cts`・`e2e/flows`）と拡張のブラウザE2E（`e2e-extension-offline`／
-`e2e-extension-duplicate`／`e2e-extension-timeout`／`e2e-extension-save-log`／`e2e-extension-inject-failure`／`e2e-extension-orphan`／`e2e-extension-hmr-reconnect`／`e2e-overlay-visual`／`e2e-overlay-flicker`）は 
+`e2e-extension-duplicate`／`e2e-extension-timeout`／`e2e-extension-save-log`／`e2e-extension-inject-failure`／`e2e-extension-orphan`／`e2e-overlay-visual`／`e2e-overlay-flicker`）は 
 `.github/workflows/app-tests.yml`（Windows）が1日1回だけ回す＝**push では走らない**ので、触った直後の確認は手元で行う（手動起動は `gh workflow run app-tests.yml`）。実サイトカナリア（`e2e-capture-test.cts`）はどちらにも載っていない＝X 
 がログインなしでは投稿DOMを出さないため、ランナー上では常にログイン壁を報告するだけになる。**API スキーマカナリア（`schema-canary.cts`）は3本目のワークフロー `.github/workflows/schema-canary.yml`（Linux）が1日1回（03:07 JST）＋手動起動（`gh workflow run schema-canary.yml`）で回す**（#465）
 ＝相乗りでなく専用にしたのは、①Windows も Electron も要らず**`npm install` すら不要**（require するのはリポジトリ内のファイルと Node 組み込みだけ）②赤の意味が「自分のコードが壊れた」でなく「プラットフォームが応答の形を変えた」で、再実行が外部APIへの再取得になる③後述のコミット権限を、第三者パッケージを展開するジョブから切り離すため
@@ -205,12 +205,6 @@ before/after 検査（overlay-visual）では見えない領域を受け持つ�
 停止ボタンごと走行が終わること（例外0件）を見る。①は孤児側の isolated world を読むために計測専用の content script を1本ステージング時に足している（同一拡張の content script は isolated world を共有する）。⚠️**③のホバー判定は「今画面に映っている写真」を狙うこと**＝先頭の写真を狙うと、
 スクロール後はビューポートの上に出ていてポインタが何にも乗らず、直っていなくても緑になる（初版がこの状態だった）。⚠️**④の引き金は「行がひとつ増えること」でなければならない**＝一括取込の入力はそれだけ（行が現れた瞬間にパーマリンクを読み、ライブラリへ問い合わせる）で、スクロールやクリックでは何も起きない。走行の開始も**サービスワーカー側から** 
 background.ts と同じ2段の注入で行う＝Alt+Shift+S はブラウザのアクセラレータでページ入力からは押せず、そのためだけにステージング時の manifest へ `<all_urls>` を足している（`stageExtension({ allUrls: true })`）。
-
-- **開発サーバーを再起動したあと HMR が戻ること（#726）**: `npm run test:e2e-hmr-reconnect`（`e2e-extension-hmr-reconnect.cts`）＝**自分専用の dev サーバーを空きポートで立てて**（`HOLOGRAM_EXTENSION_DEV_PORT`／出力は一時ディレクトリ）使い捨て Chromium にその開発ビルドを読ませ、
-サーバーを本当に落として立て直す。判定は**サーバー側**＝Vite が数える HMR クライアント数（`/@hologram/dev-status`。ソケットを自分で持つのはサービスワーカーだけで、content script は chrome.runtime の port 越し）と、ワーカーのコンソールに `[crx] runtime reload` が出ること。
-守るのは**沈黙する壊れ方**＝プレースホルダの取り残しでワーカーが再接続の直前に落ちても、固定出力へのビルドは通り続けるので、編集は効いているように見えたまま HMR だけが死ぬ。⚠️**最後の一歩＝再接続そのものはこの台では測れない**（駆動しているブラウザの性質で、直っているかとは無関係）＝
-`--load-extension` で入れた拡張は `chrome.runtime.reload()` で**二度と戻らない**（以後は自分の options ページすら `ERR_BLOCKED_BY_CLIENT`・2026-08-02 実測）。だからここは「CRXJS 自身の復帰呼び出しへ到達するか」までを見て、その先は実 Chrome で `npm run ext:status` の `hmrConnected` を読む。
-⚠️**ワーカーの未捕捉例外は Playwright に届かない**（Worker に `pageerror` は来ない・同日実測）＝ReferenceError そのものは見えないので、判定は必ず「到達したか」の側で書く。
 
 ## キャプチャテスト手順（半自動フロー）
 
