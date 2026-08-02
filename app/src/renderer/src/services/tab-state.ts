@@ -42,7 +42,7 @@ export function makeTabLabels(deps: {
   function filterLabel(f: { type: string; [k: string]: any }): string {
     switch (f.type) {
       case 'kind':
-        return f.value === 'post' ? t('kindPost') : t('kindImage');
+        return f.value === 'post' ? t('kindPost') : f.value === 'bookmark' ? t('kindBookmark') : t('kindImage');
       case 'platform':
         return f.value === '__none' ? t('qfSiteNone') : platformName(f.value);
       // #253: an unsupported-domain row's leaf — the host itself is the label

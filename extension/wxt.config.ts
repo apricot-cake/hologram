@@ -92,7 +92,11 @@ export default defineConfig({
     name: '__MSG_extName__',
     description: '__MSG_extDesc__',
     default_locale: 'en',
-    permissions: ['activeTab', 'scripting', 'nativeMessaging', 'storage'],
+    // contextMenus (#195): the page right-click "bookmark" item. Warning-free
+    // (no install-time permission prompt, no host_permissions) — see #195's
+    // 2026-08-02 design comment #5 for why this is the only permission the
+    // feature adds.
+    permissions: ['activeTab', 'scripting', 'nativeMessaging', 'storage', 'contextMenus'],
     // The API hosts whose CORS the background fetch needs, declared by the
     // extractors that call them (#212) — adding a site does not touch this file.
     host_permissions: API_HOST_PERMISSIONS,

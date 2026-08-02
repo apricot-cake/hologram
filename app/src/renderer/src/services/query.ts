@@ -333,6 +333,12 @@ export const hostOf = (url: string | null | undefined): string => {
 };
 // Stable per-author key: prefer the platform user id, fall back to the handle.
 export const userKey = (p: HologramPost): string => p.platform + ':' + (p.userId || '@' + (p.screenName || ''));
+// The 'kind' facet's three values (#195): a bookmark is source-marked
+// (source:'bookmark') rather than derived from url presence — it HAS a url
+// (the link it bookmarks), same as an SNS post, so source has to be checked
+// first. 'post' vs 'image' keeps its original rule (url presence) for
+// everything that isn't a bookmark (#195's 2026-08-02 design comment #6).
+export const kindOf = (p: HologramPost): 'bookmark' | 'post' | 'image' => (p.source === 'bookmark' ? 'bookmark' : p.url ? 'post' : 'image');
 // Every text-ish field a free-text query can match against.
 // (p.description = Eagle-migration annotation — real prose, so it belongs here.)
 // media[].alt (#288): saved ALT text — X `ext_alt_text` / Bluesky `alt` / Misskey
@@ -403,9 +409,9 @@ export function makePostPredOf(deps: {
 }): (f: HologramQueryLeaf) => (p: HologramPost) => boolean {
   return function postPredOf(f) {
     switch (f.type) {
-      // 'post' = an SNS post (has a link) / 'image' = a captured image (no link). What matters is whether url is set.
+      // 'post' = an SNS post (has a link) / 'image' = a captured image (no link) / 'bookmark' = a source-marked URL bookmark (#195, also has a link — see kindOf).
       case 'kind':
-        return (p) => (f.value === 'post') === !!p.url;
+        return (p) => kindOf(p) === f.value;
       case 'platform':
         return (p) => (f.value === '__none' ? !p.platform : p.platform === f.value);
       case 'user':

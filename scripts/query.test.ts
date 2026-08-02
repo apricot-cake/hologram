@@ -71,6 +71,23 @@ describe('葉の述語', () => {
     expect(predOf({ type: 'kind', value: 'image' })(post({ url: '' }))).toBe(true);
   });
 
+  // #195: bookmark は source 印優先＝url を持っていても post/image どちらにも
+  // 一致しない（kindOf の導出ルール、query.ts 側の単体確認）。
+  describe('kind: bookmark（source 印優先）', () => {
+    test('source=bookmark は url があっても kind=bookmark', () => {
+      const bm = post({ source: 'bookmark', url: 'https://example.com/a' });
+      expect(predOf({ type: 'kind', value: 'bookmark' })(bm)).toBe(true);
+      expect(predOf({ type: 'kind', value: 'post' })(bm)).toBe(false);
+      expect(predOf({ type: 'kind', value: 'image' })(bm)).toBe(false);
+    });
+
+    test('kindOf はエクスポートされ、post/image/bookmark の3値を排他に返す', () => {
+      expect(Q.kindOf(post({ url: 'https://x.com/a/status/1' }))).toBe('post');
+      expect(Q.kindOf(post({ url: '' }))).toBe('image');
+      expect(Q.kindOf(post({ source: 'bookmark', url: 'https://example.com/a' }))).toBe('bookmark');
+    });
+  });
+
   test('platform: __none はプラットフォーム無し', () => {
     expect(predOf({ type: 'platform', value: '__none' })(post({ platform: '' }))).toBe(true);
   });
