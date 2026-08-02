@@ -103,4 +103,8 @@ function fillCardDims<T extends { shotW?: number | null; shotH?: number | null }
   return rec;
 }
 
-export { cardImageFile, fillCardDims, readImageDims };
+// IMG_EXT/resolveWithin are also reused by lib-media-dims.ts (#162's
+// mediaMaxW/H/Bytes) — same "measurable still image" gate and the same
+// zip-slip guard against an attacker-influenced record field, not a second
+// copy of either.
+export { cardImageFile, fillCardDims, readImageDims, resolveWithin, IMG_EXT };

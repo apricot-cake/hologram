@@ -59,6 +59,12 @@ export function makeTabLabels(deps: {
       }
       case 'engagement':
         return `${engTypeLabels[f.engType] || f.engType} ${f.op === 'lte' ? '≤' : '≥'} ${formatCount(f.min)}`;
+      // #162: px for width/height/long, MB (from the stored bytes) for the size axis.
+      case 'dimension': {
+        const axisName = f.axis === 'width' ? t('qfDimWidth') : f.axis === 'height' ? t('qfDimHeight') : f.axis === 'long' ? t('qfDimLong') : t('qfDimBytes');
+        const valueStr = f.axis === 'bytes' ? `${(f.value / 1048576).toFixed(1)}MB` : `${f.value}px`;
+        return `${axisName} ${f.op === 'lte' ? '≤' : '≥'} ${valueStr}`;
+      }
       // '__none' = "No tags" (facets.ts) — the chip has to spell it out, or it would
       // read as a tag whose name is '__none'.
       case 'tag':
@@ -120,6 +126,7 @@ export function makeTabLabels(deps: {
     if (multi && !byType.media) add(t('qfMultiImage'), 'media');
     if (byType.date) byType.date.forEach((f) => add(filterLabel(f), 'date'));
     if (byType.engagement) byType.engagement.forEach((f) => add(filterLabel(f), 'engagement'));
+    if (byType.dimension) byType.dimension.forEach((f) => add(filterLabel(f), 'dimension'));
     if (byType.kind) byType.kind.forEach((f) => add(filterLabel(f), 'kind'));
     filters.filter((f) => f.type === 'folder').forEach((f) => add(filterLabel(f), f.type));
 

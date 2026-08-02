@@ -24,7 +24,7 @@ import { set as storeSet } from './store.ts';
 // standalone (never-clustered) types, per view. Exported so the redesign filter bar
 // (orchestrator's activeFilters / filterCategories mode logic) reads the SAME schema
 // facetViewOf is built with here, rather than re-declaring it and drifting.
-export const POST_FACET_OPTS = { multiValueTypes: ['tag', 'hashtag', 'folder'], standaloneTypes: ['date', 'engagement', 'text'] };
+export const POST_FACET_OPTS = { multiValueTypes: ['tag', 'hashtag', 'folder'], standaloneTypes: ['date', 'engagement', 'text', 'dimension'] };
 export const POSTER_FACET_OPTS = { multiValueTypes: ['tag'], standaloneTypes: ['date'] };
 
 // Callbacks/state still owned by viewer.ts (render, tab restore) — injected the
@@ -65,7 +65,12 @@ export function makePostQueryBuilder(deps: PostQueryBuilderDeps) {
     onChange: deps.onChange,
     onLeafMutated: deps.onLeafMutated,
     singleValueTypes: ['date', 'kind'],
-    noDupTypes: ['engagement', 'text'],
+    // #162: 'dimension' joins engagement/text here for the same reason
+    // engagement does — addFilter's exact-duplicate guard keys on `value`
+    // alone, which would misfire across axes (two different-axis leaves can
+    // share a numeric value by coincidence); the dimension editor's apply()
+    // instead replaces same-axis leaves itself (removeCondsMatching by axis).
+    noDupTypes: ['engagement', 'text', 'dimension'],
     // Facet schema (revision ④): tags/hashtags/collections are multi-value per post
     // (both "All"/"Any" meaningful, default "All"); date/engagement/text
     // stay standalone chips. Everything else
