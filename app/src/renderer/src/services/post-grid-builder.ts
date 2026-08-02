@@ -12,7 +12,8 @@
 import { notify } from './ui.ts';
 import { open as confirmOpen } from './confirm.ts';
 import { open as menuOpen } from './menu.ts';
-import { formatCount, formatDate, compactDate } from './format.ts';
+import { formatCount, formatDate, compactDate, monthLabel } from './format.ts';
+import { dateFieldForSort, buildSections } from './date-sections.ts';
 import { densityImage, dragFilesOf, postIdKey, makeGroupRecords, makeCardModel, stampPost } from './records.ts';
 import type { DisplayShape } from './display.ts';
 import { hologramPostGridSource } from './grid.ts';
@@ -24,6 +25,25 @@ import { set as storeSet } from './store.ts';
 import { userKey } from './query.ts';
 import * as folders from './folders.ts';
 import * as selection from './selection.ts';
+
+// #47: month sections for the grid's own display (date-sections.ts stays pure —
+// no Intl, no i18n — so the locale label is composed here, the one place that
+// already has both `t()` and monthLabel). Null when the current sort has no
+// date axis. `groups` is the FLAT post-grid array (viewGroups) — the same one
+// pushed to hologramStore's 'postGroups', so a section's startIndex indexes it
+// directly (both the grid host and selection/nav math share that one array).
+function buildDateSections(groups: HologramPostGroup[], sort: string, t: (key: string, subs?: ReadonlyArray<string | number | null | undefined>) => string): HologramDateSection[] | null {
+  const field = dateFieldForSort(sort);
+  if (!field) return null;
+  const raw = buildSections(groups, (g) => g.rep[field === 'dateMs' ? '_dateMs' : '_capturedMs'] || 0);
+  return raw.map((s) => ({
+    key: s.key,
+    ms: s.ms,
+    startIndex: s.startIndex,
+    count: s.count,
+    label: t('dateSectionHeader', [s.key === 'unknown' ? t('dateSectionUnknown') : monthLabel(s.ms), s.count]),
+  }));
+}
 
 // Callbacks/state still owned by viewer.ts — injected the same way
 // query-builder.ts/qf-pop-builder.ts's ctx objects are.
@@ -208,6 +228,7 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
   let _lastRenderGen = -1; // _allPostsGeneration at the last FULL grid build (fast card-grow guard)
   let _lastViewGroups: HologramPostGroup[] | null = null; // groups from the last FULL build, reused on a pure load-more (no re-filter/group)
   let _lastStickySize = 0; // stickyRecs.size at that build — part of the group-reuse signature
+  let _lastSections: HologramDateSection[] | null = null; // #47 month sections from that same build — reused in lockstep with _lastViewGroups
   function setLastRenderedState(sig: string) {
     lastRenderedState = sig;
   }
@@ -303,11 +324,14 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
     // groupRecords (manual grouping bumps the generation via markPostsMutated).
     // Any mismatch falls through to a fresh build.
     const canReuseGroups = inPlace && _lastViewGroups !== null && lastRenderedState !== null && stateSig === lastRenderedState && _allPostsGeneration === _lastRenderGen && stickyRecs.size === _lastStickySize;
+    let sections: HologramDateSection[] | null;
     if (canReuseGroups) {
       viewGroups = _lastViewGroups as HologramPostGroup[];
+      sections = _lastSections; // same build → same buckets, no need to re-walk it
     } else {
       viewGroups = groupRecords(deps.getFilteredPosts());
       if (deps.multiOnly()) viewGroups = viewGroups.filter((g) => g.files.length > 1 || g.records.some((r) => stickyRecs.has(r.captureId)));
+      sections = buildDateSections(viewGroups, deps.sortValue(), deps.t);
     }
 
     if (viewGroups.length === 0) {
@@ -318,6 +342,7 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
       // The EmptyState component derives 'firstRun'/'filtered' itself from this same key +
       // 'allPostsCount' + 'searchQuery' — one less push.
       storeSet('postGroups', null);
+      storeSet('postSections', null); // #47: no rows, no month sections either
       // Nothing else to do here. The grid host unmounts itself on the null push, and
       // the empty state decides from the SAME store keys whether it has something to
       // say (empty/EmptyState.tsx) — both used to be shown and hidden from this
@@ -335,8 +360,10 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
     // reference (in-place reuse) is a no-op via the store's identity guard,
     // matching the old itemsKey-doesn't-bump behavior.
     storeSet('postGroups', viewGroups);
+    storeSet('postSections', sections); // #47 — null when the sort has no date axis
     _lastRenderGen = _allPostsGeneration; // mark the generation of this build
     _lastViewGroups = viewGroups;
+    _lastSections = sections;
     _lastStickySize = stickyRecs.size; // snapshot for in-place group reuse
     if (!inPlace) deps.syncTitleAndPersist(); // keep the tab title + persistence in sync
   }

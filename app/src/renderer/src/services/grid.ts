@@ -86,7 +86,7 @@ function makePostGridSource() {
   // Store-key listeners are wired ONCE (not per subscribe() caller) — there's a
   // single consumer (GridMount) in practice, but this avoids stacking duplicate
   // hologramStore subscriptions (and duplicate notify() fan-out) if that changes.
-  for (const k of ['postGroups', ...DISPLAY_KEYS, 'gridSize', 'listThumb']) storeSubscribe(k, notify);
+  for (const k of ['postGroups', 'postSections', ...DISPLAY_KEYS, 'gridSize', 'listThumb']) storeSubscribe(k, notify);
   function computeModel(): HologramGridModel | null {
     if (!config) return null;
     const items = storeGet('postGroups');
@@ -107,6 +107,10 @@ function makePostGridSource() {
       columnWidth: liveColumnWidth ?? layout.columnWidth,
       zoomAnchor,
       onAspect: config.onAspect,
+      // #47 — month sections for a date sort (null otherwise). post-grid-builder.ts
+      // computes this alongside `items` and pushes it to the SAME store, so it is
+      // already in lockstep with itemsKey — no separate bump needed here.
+      sections: (storeGet('postSections') as HologramDateSection[] | null) ?? null,
       paint: ++paintSeq,
     } as HologramGridModel;
   }

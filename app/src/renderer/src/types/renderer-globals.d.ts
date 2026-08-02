@@ -70,6 +70,21 @@ interface HologramPostGroup {
   [k: string]: any;
 }
 
+// ---- services/date-sections.ts — month-section grouping (#47). A real ES
+// module; only the display-ready shape (post-grid-builder.ts adds the locale
+// `label` date-sections.ts itself never computes) is shared ambiently, the
+// same split as HologramPostGroup above. Pushed to hologramStore's
+// 'postSections' key (services/grid.ts reads it onto the grid model; the jump
+// rail component reads it directly) — null whenever the active sort has no
+// date axis (dateFieldForSort) or the grid is empty. ----
+interface HologramDateSection {
+  key: string;
+  ms: number;
+  label: string;
+  startIndex: number;
+  count: number;
+}
+
 // ---- services/selection.ts — the post-grid multi-select Set + shift-range
 // anchor. hologramStore's 'selectedSet' key IS the state (no
 // closure copy); the anchor is a private module variable (no subscribers). A
