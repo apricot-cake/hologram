@@ -1,0 +1,109 @@
+<!--
+  Hand-authored reproduction of a misskey.io note's DOM shape for #202 stage
+  2 (not a literal scraped capture — a live capture would carry hashed
+  CSS-Modules class names, e.g. "xoIiV", instead of anything readable). Every
+  tag/attribute used below — tabindex, <header>/<footer>, the <a> without a
+  <time> child, the leading-'@' text block, the Tabler ti-* icon classes — is
+  a real, version-stable signal confirmed against MisskeyIO/misskey's
+  MkNote.vue / MkNoteHeader.vue source (main branch, read 2026-08-03). See
+  extension/utils/extractor/misskey.ts's extractMisskeyDomMeta for the full
+  citations, including why no body text or date is extracted here at all.
+-->
+<!DOCTYPE html>
+<html style="--MI_THEME-accent: #86b300;">
+<head></head>
+<body>
+
+  <!-- A plain note: reply/renote/reaction counts all shown (the reaction
+       count only when showReactionsCount has been opted into, or the note's
+       reactionAcceptance is likeOnly — both real, common states). -->
+  <div tabindex="0" id="noteNormal">
+    <article>
+      <header>
+        <a href="/@alice"><span>Alice Example</span></a>
+        <div>@alice@misskey.example</div>
+        <div>
+          <a href="/notes/9normal"><time title="2026/1/2 3:04:05">3分前</time></a>
+        </div>
+      </header>
+      <div>Hello <img alt="🌸">world</div>
+      <footer>
+        <button><i class="ti ti-arrow-back-up"></i><p>12</p></button>
+        <button><i class="ti ti-repeat"></i><p>34</p></button>
+        <button><i class="ti ti-plus"></i><p>56</p></button>
+      </footer>
+    </article>
+  </div>
+
+  <!-- A local user (no host segment) whose reaction count is hidden — the
+       showReactionsCount default. The reply/renote buttons still render with
+       zero pressed (no <p> at all, same "not drawn = null" convention as X's
+       hidden-zero counts). -->
+  <div tabindex="0" id="noteNoCounts">
+    <article>
+      <header>
+        <a href="/@bob"><span>Bob</span></a>
+        <div>@bob</div>
+        <div><a href="/notes/9nocounts"><time>1時間前</time></a></div>
+      </header>
+      <div>ふつうの投稿</div>
+      <footer>
+        <button><i class="ti ti-arrow-back-up"></i></button>
+        <button><i class="ti ti-repeat"></i></button>
+        <button><i class="ti ti-heart"></i></button>
+      </footer>
+    </article>
+  </div>
+
+  <!-- The fork's own "already reacted, likeOnly" icon shape:
+       class="ti-filled ti-filled-heart" — two tokens, neither of which is
+       literally "ti-heart". -->
+  <div tabindex="0" id="noteAlreadyReacted">
+    <article>
+      <header>
+        <a href="/@carol"><span>Carol</span></a>
+        <div>@carol</div>
+        <div><a href="/notes/9reacted"><time>5時間前</time></a></div>
+      </header>
+      <div>いいね済み</div>
+      <footer>
+        <button><i class="ti ti-arrow-back-up"></i><p>3</p></button>
+        <button><i class="ti ti-repeat"></i><p>1</p></button>
+        <button><i class="ti-filled ti-filled-heart"></i><p>9</p></button>
+      </footer>
+    </article>
+  </div>
+
+  <!-- Reply with a parent-note preview (MkNoteSub) rendered BEFORE the
+       reply's own <article> — same shape misskey.html already covers for
+       getMisskeyPermalink. The preview's own header/footer-shaped content
+       must never leak into the reply's own extracted meta. -->
+  <div tabindex="0" id="noteReply">
+    <div class="reply-parent-preview" tabindex="0">
+      <a href="/@parent-author"><span>Not This One</span></a>
+      <a href="/notes/9parent"><time>1時間前</time></a>
+    </div>
+    <article>
+      <header>
+        <a href="/@dave"><span>Dave</span></a>
+        <div>@dave</div>
+        <div><a href="/notes/9reply"><time>2分前</time></a></div>
+      </header>
+      <div>Reply note text</div>
+      <footer>
+        <button><i class="ti ti-arrow-back-up"></i></button>
+      </footer>
+    </article>
+  </div>
+
+  <!-- Selectors miss entirely (a redesign, or a note shape this was never
+       written for): no <header>, no <footer>. Must not throw, must fill
+       nothing. -->
+  <div tabindex="0" id="noteRedesigned">
+    <article>
+      <p>Something unrecognizable</p>
+    </article>
+  </div>
+
+</body>
+</html>
