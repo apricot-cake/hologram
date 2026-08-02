@@ -60,10 +60,11 @@ function get(): HologramImageTabModel | null {
   if (!active || !gallery || !labels) return null;
   const byId = byIdMap();
   const g = imageTabGroup({ id: active.id, recs: active.recs }, (id) => byId.get(id));
-  if (!g) return { items: [], idx: 0, missing: true, labels, onCloseTab: dispatchClose };
+  if (!g) return { tabId: active.id, items: [], idx: 0, missing: true, labels, onCloseTab: dispatchClose };
   const items = gallery.buildGroupGalleryItems(g);
-  if (!items.length) return { items: [], idx: 0, missing: true, labels, onCloseTab: dispatchClose };
+  if (!items.length) return { tabId: active.id, items: [], idx: 0, missing: true, labels, onCloseTab: dispatchClose };
   return {
+    tabId: active.id,
     items,
     idx: Math.max(0, Math.min(active.idx, items.length - 1)),
     inspectorOpen: storeGet('inspectedKey') != null,
