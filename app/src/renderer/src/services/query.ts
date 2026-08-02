@@ -576,11 +576,7 @@ export function makePostPredOf(deps: {
           const qKey = urlish && deps.postKeyOf ? deps.postKeyOf(q) : null;
           const urlHit: ((p: HologramPost) => boolean) | null = !urlish
             ? null
-            : (p: HologramPost) =>
-                (qKey != null && (p._postKey === qKey || p._quotedKey === qKey)) ||
-                (p.url || '').toLowerCase().includes(lq) ||
-                (p.quotedUrl || '').toLowerCase().includes(lq) ||
-                ((p.linkCard as any)?.url || '').toLowerCase().includes(lq);
+            : (p: HologramPost) => (qKey != null && (p._postKey === qKey || p._quotedKey === qKey)) || (p.url || '').toLowerCase().includes(lq) || (p.quotedUrl || '').toLowerCase().includes(lq) || ((p.linkCard as any)?.url || '').toLowerCase().includes(lq);
           const m = deps.fuzzyCompile ? deps.fuzzyCompile(q) : null;
           if (m) {
             f._compiled = (p: HologramPost) => m(textHaystackOf(p).join(' ')) || (urlHit != null && urlHit(p));

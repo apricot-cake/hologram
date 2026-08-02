@@ -80,12 +80,7 @@ describe('X', () => {
   });
 
   test('poll カードは linkCard にしない（#179 の同じカード機構と排他）', async () => {
-    mockFetch([
-      [
-        'cdn.syndication.twimg.com',
-        { text: 'vote', mediaDetails: [], user: { screen_name: 'alice', id_str: '1' }, card: { name: 'poll2choice_text_only', binding_values: { choice1_label: { string_value: 'Yes', type: 'STRING' }, choice2_label: { string_value: 'No', type: 'STRING' } } } },
-      ],
-    ]);
+    mockFetch([['cdn.syndication.twimg.com', { text: 'vote', mediaDetails: [], user: { screen_name: 'alice', id_str: '1' }, card: { name: 'poll2choice_text_only', binding_values: { choice1_label: { string_value: 'Yes', type: 'STRING' }, choice2_label: { string_value: 'No', type: 'STRING' } } } }]]);
 
     expect((await fetchXTweet(ID, URL_)).linkCard).toBeNull();
   });
@@ -108,12 +103,7 @@ describe('Mastodon', () => {
   const URL_ = 'https://mastodon.social/@alice/1';
 
   test('status.card から url・タイトル・説明文・サムネを取る', async () => {
-    mockFetch([
-      [
-        '/api/v1/statuses/',
-        { content: '<p>read this</p>', card: { url: 'https://example.com/article', title: 'A great article', description: 'It explains things.', type: 'link', image: 'https://mastodon.social/system/preview_cards/images/1/original.jpg' } },
-      ],
-    ]);
+    mockFetch([['/api/v1/statuses/', { content: '<p>read this</p>', card: { url: 'https://example.com/article', title: 'A great article', description: 'It explains things.', type: 'link', image: 'https://mastodon.social/system/preview_cards/images/1/original.jpg' } }]]);
 
     const rec = await fetchMastodonStatus(ID, URL_);
     expect(rec.linkCard).toEqual({
@@ -181,10 +171,7 @@ describe('Bluesky', () => {
   test('画像埋め込みの投稿（images embed）は linkCard が null', async () => {
     mockFetch([
       ['resolveHandle', { did: 'did:plc:alice' }],
-      [
-        'getPostThread',
-        { thread: { post: { author: { handle: 'alice.bsky.social', did: 'did:plc:alice' }, record: { text: 'a pic', createdAt: '2026-01-01T00:00:00Z' }, embed: { $type: 'app.bsky.embed.images#view', images: [{ fullsize: 'https://cdn.bsky.app/img/1.jpg' }] } } } },
-      ],
+      ['getPostThread', { thread: { post: { author: { handle: 'alice.bsky.social', did: 'did:plc:alice' }, record: { text: 'a pic', createdAt: '2026-01-01T00:00:00Z' }, embed: { $type: 'app.bsky.embed.images#view', images: [{ fullsize: 'https://cdn.bsky.app/img/1.jpg' }] } } } }],
     ]);
 
     const rec = await fetchBlueskyPost({ platform: 'bluesky', handle: 'alice.bsky.social', rkey: 'rk' }, 'https://bsky.app/profile/alice.bsky.social/post/rk');
@@ -192,7 +179,10 @@ describe('Bluesky', () => {
   });
 
   test('埋め込みの無い投稿は linkCard が null', async () => {
-    mockFetch([['resolveHandle', { did: 'did:plc:alice' }], ['getPostThread', { thread: { post: { author: { handle: 'alice.bsky.social', did: 'did:plc:alice' }, record: { text: 'plain', createdAt: '2026-01-01T00:00:00Z' } } } }]]);
+    mockFetch([
+      ['resolveHandle', { did: 'did:plc:alice' }],
+      ['getPostThread', { thread: { post: { author: { handle: 'alice.bsky.social', did: 'did:plc:alice' }, record: { text: 'plain', createdAt: '2026-01-01T00:00:00Z' } } } }],
+    ]);
 
     expect((await fetchBlueskyPost({ platform: 'bluesky', handle: 'alice.bsky.social', rkey: 'rk' }, 'https://bsky.app/profile/alice.bsky.social/post/rk')).linkCard).toBeNull();
   });
