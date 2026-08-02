@@ -118,6 +118,8 @@ export interface AppPrefs {
   /** List: thumbnail width px. */
   listThumb: number | null;
   theme: string;
+  /** #137: user-chosen interface font, prepended to --font-sans. '' = default stack. */
+  uiFontFamily: string;
   browseMode: string;
   /** #630: the poster grid's own axes — layout, then one switch (an avatar has no aspect to choose). */
   posterLayoutMode: string;

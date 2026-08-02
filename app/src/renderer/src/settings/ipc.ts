@@ -4,6 +4,7 @@
 // just routed through the same seam every other renderer service uses now.
 
 import { get as themeGet, set as themeSet } from '../services/theme-api.ts';
+import { get as uiFontGet, apply as uiFontApply, set as uiFontSet } from '../services/ui-font-api.ts';
 import { hologramIpc } from '../services/ipc.ts';
 import type { AppPrefs } from '../../../main/ipc-payloads.ts';
 
@@ -21,5 +22,18 @@ export const theme = {
   get: themeGet,
   set: (v: string) => {
     themeSet(v);
+  },
+};
+
+// #137: uiFont splits preview from commit — the font combobox applies every keystroke
+// live (preview, uncommitted, services/ui-font-api.ts's apply()) but only writes to
+// config.json once the user settles on a value (commit, that module's set()).
+export const uiFont = {
+  get: uiFontGet,
+  preview: (v: string) => {
+    uiFontApply(v);
+  },
+  commit: (v: string) => {
+    uiFontSet(v);
   },
 };
