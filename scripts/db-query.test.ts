@@ -48,6 +48,8 @@ beforeAll(async () => {
     // #180: a quote/renote sub-record rides the same posts row as every other
     // optional field here.
     quotedPost: { url: 'https://x.example/quoted', displayName: 'Bob', screenName: 'bob', userId: '9', avatar: null, text: 'the original', date: '2025-12-31T00:00:00Z', cw: null, media: [] },
+    // #290: the post's own custom emoji.
+    customEmojis: [{ shortcode: 'ha_to', url: 'https://x.example/ha_to.png', file: 'emoji/abc123.png' }],
     // #162: dimension/file-size facet aggregates — written directly here (this
     // test drives writePost, not fillMediaDims) just to check the column round-trips.
     mediaMaxW: 3000,
@@ -193,6 +195,15 @@ describe('postsFromDb: 形と並び', () => {
     expect(cap1.replyToPost).toBeNull();
     const cap2 = (await postsFromDb(handle.sqlite)).find((p: any) => p.captureId === 'cap-2');
     expect({ quotedPost: cap2.quotedPost, replyToPost: cap2.replyToPost }).toEqual({ quotedPost: null, replyToPost: null });
+  });
+
+  // #290: same JSON-column round trip, but empty-array (not null) is the
+  // "nothing here" convention — see lib-db-query.ts's parseCustomEmojis comment.
+  test('customEmojis が往復する（#290）', async () => {
+    const cap1 = (await postsFromDb(handle.sqlite)).find((p: any) => p.captureId === 'cap-1');
+    expect(cap1.customEmojis).toEqual([{ shortcode: 'ha_to', url: 'https://x.example/ha_to.png', file: 'emoji/abc123.png' }]);
+    const cap2 = (await postsFromDb(handle.sqlite)).find((p: any) => p.captureId === 'cap-2');
+    expect(cap2.customEmojis).toEqual([]);
   });
 
   // #560: if a column is known only to the writer and never queried by the reader, the inspector's

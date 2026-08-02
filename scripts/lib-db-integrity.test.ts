@@ -94,6 +94,17 @@ describe('findOrphanMedia / findMissingMedia', () => {
     expect(orphans.some((o) => o.file === 'folders.json')).toBe(false);
   });
 
+  // #290: same shared-store exclusion as avatars/ — a file referenced by zero
+  // posts there is a different question than per-capture orphan detection asks.
+  test('emoji/ も同じ理由で無視される', () => {
+    fs.mkdirSync(path.join(saveFolder, 'emoji'), { recursive: true });
+    fs.writeFileSync(path.join(saveFolder, 'emoji', 'deadbeef.png'), 'x');
+
+    const orphans = findOrphanMedia(saveFolder, handle.sqlite);
+
+    expect(orphans.some((o) => o.file.includes('emoji'))).toBe(false);
+  });
+
   test('knownFilesを渡すとreaddirせずそれを使う（runBackupのsrcSet相乗り）', () => {
     // Include a captureId with nothing corresponding on saveFolder, only in knownFiles.
     const orphans = findOrphanMedia(saveFolder, handle.sqlite, new Set(['1700000000099-ab99.jpg']));

@@ -86,6 +86,24 @@ interface QuotedPost {
   media: MediaItem[];
 }
 
+// One `:shortcode:` custom emoji the post's own text uses (#290), as announced
+// by the platform's API response -- Misskey's note.emojis (shortcode -> URL
+// map) and Mastodon's status.emojis[] ({shortcode, url, static_url}) are the
+// only two sources (confirmed against a live instance of each, 2026-08-02);
+// X/Bluesky/pixiv have no custom-emoji concept and never produce one. `url` is
+// always the ANIMATED original where the platform has one (Mastodon's `url`,
+// never `static_url`) -- an animated emoji is meant to move, same as #119's
+// video/gif media never downgrading to its poster by default.
+//
+// Scoped to the SAVED post's own text only: a quoted/replied-to sub-record's
+// text may itself carry :shortcode: strings, but QuotedPost above has no
+// customEmojis field -- the same "URL-recorded metadata only, nothing of an
+// adjacent post fetched" line #180's own QuotedPost.media comment draws.
+interface CustomEmoji {
+  shortcode: string;
+  url: string;
+}
+
 // The normalized sidecar record shape. Declared explicitly (not just inferred
 // from the emptyRecord() literal) because every field initializes to `null`
 // — under TS strict mode a `return { text: null, ... }` with no explicit
@@ -166,6 +184,10 @@ interface PostRecord {
   seriesOrder: number | null;
   hashtags: string[];
   tags: string[];
+  // The post's own :shortcode: custom emoji (#290) -- see CustomEmoji above
+  // for sourcing and scope. Empty on every non-Misskey/Mastodon platform and
+  // on any Misskey/Mastodon post that used none.
+  customEmojis: CustomEmoji[];
   // Every response body this record's acquisition received, in the order it
   // arrived. Grows as the fetch chain runs; buildRecord() forwards it to the
   // native host, which packs it into the record's raw_payloads rows (#292).
@@ -364,4 +386,4 @@ interface Extractor {
   apiHostPermissions?: readonly string[];
 }
 
-export type { CaptureSite, DomMeta, Extractor, MediaIdentity, MediaIdentitySite, MediaItem, OverlaySite, ParsedPost, PostMediaElement, PostRecord, PostRect, QuotedPost, RawAcquisition };
+export type { CaptureSite, CustomEmoji, DomMeta, Extractor, MediaIdentity, MediaIdentitySite, MediaItem, OverlaySite, ParsedPost, PostMediaElement, PostRecord, PostRect, QuotedPost, RawAcquisition };

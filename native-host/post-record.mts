@@ -55,6 +55,19 @@ export interface MediaItemShape {
   frames: { file: string; delay: number }[] | null;
 }
 
+// #290: one `:shortcode:` custom emoji the post's own text used. Mirrors
+// extension/utils/extractor/types.ts's CustomEmoji, plus `file` -- the ONE
+// field the extension cannot fill (only the host, having downloaded the
+// image into the shared emoji/ store, knows the resulting filename; same
+// split as MediaItemShape.file / avatarFile above). null when the download
+// failed (best-effort, same convention as every other media file here) --
+// the viewer falls back to the bare :shortcode: text.
+export interface CustomEmojiShape {
+  shortcode: string;
+  url: string;
+  file: string | null;
+}
+
 // #180: a quoted/renoted or (Misskey-only) replied-to post, saved as a
 // sidecar sub-record. Mirrors extension/utils/extractor/types.ts's QuotedPost
 // -- same fields, same "URL recorded, media never downloaded" v1 scope.
@@ -145,6 +158,10 @@ export interface PostRecordShape {
   seriesOrder: number | null;
   hashtags: string[];
   tags: string[];
+  // #290: the post's own :shortcode: custom emoji (Misskey/Mastodon only) --
+  // see CustomEmojiShape above. Empty on every other platform and on any
+  // Misskey/Mastodon post that used none.
+  customEmojis: CustomEmojiShape[];
   // Which of this record's fields came from the PAGE rather than from the
   // platform API (#202) — e.g. ['text','displayName','views']. Empty on every
   // record the API answered in full, which is the overwhelming majority.
@@ -275,6 +292,24 @@ function normFrames(v: unknown): { file: string; delay: number }[] | null {
   return out;
 }
 
+// #290: each entry is all-or-nothing like normFrames above -- a malformed
+// entry (no shortcode or no url) is dropped rather than kept half-filled,
+// since a shortcode with no image URL is worth nothing (the viewer has no
+// picture to show for it either way). `file` is left whatever the producer
+// gave (null on every extension-built input; the bridge fills it after
+// downloading, same split as MediaItemShape.file).
+function normCustomEmojis(v: unknown): CustomEmojiShape[] {
+  if (!Array.isArray(v)) return [];
+  const out: CustomEmojiShape[] = [];
+  for (const e of v) {
+    if (!e || typeof e !== 'object') continue;
+    const { shortcode, url, file } = e as Record<string, unknown>;
+    if (typeof shortcode !== 'string' || !shortcode || typeof url !== 'string' || !url) continue;
+    out.push({ shortcode, url, file: normStr(file) });
+  }
+  return out;
+}
+
 // Filename extensions the library stores a MOVING picture in — a file no
 // <img src> can ever render. The renderer keeps its own copy of this list
 // (records.ts's isVideoFile) rather than importing it: this module reaches
@@ -374,6 +409,7 @@ export function normalizePostRecord(input: PostRecordInput, now: () => string = 
     // stays on plain normStrArray: those are field-name identifiers, not tag text.
     hashtags: normalizeTagNames(input.hashtags),
     tags: normalizeTagNames(input.tags),
+    customEmojis: normCustomEmojis(input.customEmojis),
     domFilled: normStrArray(input.domFilled),
     media: normMedia(input.media),
     imageIndex: normNum(input.imageIndex),

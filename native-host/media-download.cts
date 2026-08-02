@@ -521,6 +521,70 @@ async function downloadAvatar(avatar: unknown, referer: unknown, dir: string, bu
   return got ? got.file : null;
 }
 
+interface CustomEmojiEntry {
+  shortcode: string;
+  url: string;
+}
+// What downloadCustomEmojis leaves behind for one entry: the announced
+// shortcode/url plus the shared store's folder-relative filename, or null on
+// that one emoji's own failure (never fails the whole save — same best-effort
+// contract as downloadAvatar/downloadMedia).
+interface CustomEmojiDescriptor {
+  shortcode: string;
+  url: string;
+  file: string | null;
+}
+const MAX_EMOJI = 30; // cap distinct :shortcode: emoji per post
+
+// Download a post's own `:shortcode:` custom emoji (#290 — Misskey/Mastodon
+// only) into the SHARED store <dir>/emoji/, one file per emoji URL, exactly
+// like downloadAvatar's avatars/ store above (same reasoning: the same emoji
+// is reused across many posts on the same instance, so a re-save of a common
+// one reuses the existing file instead of writing another copy). Keyed by a
+// hash of the URL for the same reason — content-addressed by convention on
+// every platform this feature supports (a shortcode is instance-local and can
+// be reused for a DIFFERENT image across instances, so the shortcode itself is
+// never part of the key).
+//
+// Animated formats (gif/webp — an animated PNG also serves as image/png) need
+// no separate poster-frame step the way downloadOneMedia's video path does:
+// STILL_LIMITS/MEDIA_MIME_EXT already covers every type an emoji image arrives
+// as, and #290 says to keep the moving picture as-is rather than downgrade it.
+//
+// One emoji failing to download never drops the others or the save (per-entry
+// try/catch) — file stays null and the viewer falls back to the bare
+// :shortcode: text, same convention as a failed avatar or media item.
+const EMOJI_SUBDIR = 'emoji';
+async function downloadCustomEmojis(list: unknown, dir: string, budget: ByteBudget = createByteBudget()): Promise<CustomEmojiDescriptor[]> {
+  if (!Array.isArray(list) || !list.length) return [];
+  const sub = path.join(dir, EMOJI_SUBDIR);
+  const out: CustomEmojiDescriptor[] = [];
+  for (const raw of list.slice(0, MAX_EMOJI) as CustomEmojiEntry[]) {
+    if (!raw || typeof raw.shortcode !== 'string' || !raw.shortcode || typeof raw.url !== 'string' || !raw.url) continue;
+    let file: string | null = null;
+    try {
+      const hash = crypto.createHash('sha1').update(raw.url).digest('hex').slice(0, 16);
+      // The extension is only known from the response content-type, so probe
+      // every supported one first — a hit means this exact URL was already
+      // downloaded (see downloadAvatar's identical probe).
+      for (const ext of new Set(Object.values(MEDIA_MIME_EXT))) {
+        if (fs.existsSync(path.join(sub, `${hash}.${ext}`))) {
+          file = `${EMOJI_SUBDIR}/${hash}.${ext}`;
+          break;
+        }
+      }
+      if (!file) {
+        const got = await saveStillImage(raw.url, undefined, dir, `${EMOJI_SUBDIR}/${hash}`, budget);
+        file = got ? got.file : null;
+      }
+    } catch {
+      file = null;
+    }
+    out.push({ shortcode: raw.shortcode, url: raw.url, file });
+  }
+  return out;
+}
+
 // pixiv avatars on i.pximg.net 403 without a pixiv Referer. When a caller has an
 // avatar URL but no stored referer (legacy import data predates avatarReferer),
 // derive it from the host so the download isn't rejected.
@@ -539,8 +603,10 @@ module.exports = {
   downloadOneMedia,
   downloadMedia,
   downloadAvatar,
+  downloadCustomEmojis,
   createByteBudget,
   AVATAR_SUBDIR,
+  EMOJI_SUBDIR,
   pixivRefererFor,
   checkMediaUrl,
   sniffMagic,

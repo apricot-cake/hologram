@@ -4,11 +4,13 @@
 // record, an `asset://` URL or an IPC argument is allowed to resolve to inside
 // the save folder.
 //
-// Three shapes are accepted, and they are ENUMERATED rather than generalized to
+// Four shapes are accepted, and they are ENUMERATED rather than generalized to
 // "any subdirectory" — a subfolder joins this list by being written into it:
 //
 //   <file>          captures and downloaded media, which live flat in the folder
 //   avatars/<file>  the shared avatar store (one file per avatar URL)
+//   emoji/<file>    the shared custom-emoji store (#290 — one file per
+//                   :shortcode: emoji image URL, same reasoning as avatars/)
 //   .trash/<file>   the soft-delete holding area (#267 — the trash view draws the
 //                   library's own cards, so its files have to be servable too)
 //
@@ -28,10 +30,12 @@ import path from 'node:path';
 
 /** Shared avatar store — one file per avatar URL, referenced by every capture of that author. */
 export const AVATAR_SUBDIR = 'avatars';
+/** Shared custom-emoji store (#290) — one file per :shortcode: emoji image URL. */
+export const EMOJI_SUBDIR = 'emoji';
 /** Soft-delete holding area. `getTrashDir()` must name this one — hence the shared constant. */
 export const TRASH_SUBDIR = '.trash';
 
-const ALLOWED_SUBDIRS: readonly string[] = [AVATAR_SUBDIR, TRASH_SUBDIR];
+const ALLOWED_SUBDIRS: readonly string[] = [AVATAR_SUBDIR, EMOJI_SUBDIR, TRASH_SUBDIR];
 
 /**
  * Resolve `name` to an absolute path strictly inside `saveFolder`, or null if it

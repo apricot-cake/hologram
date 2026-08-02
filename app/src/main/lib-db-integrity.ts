@@ -45,6 +45,10 @@ const SAFE_ID = /^([0-9]{1,20})-[0-9a-f]{1,8}$/i;
 
 const TRASH_SUBDIR = '.trash';
 const AVATAR_SUBDIR = 'avatars';
+// #290: the shared custom-emoji store — same shared-store exclusion as
+// AVATAR_SUBDIR (a file referenced by zero posts is a different question than
+// this module's per-capture orphan detection asks).
+const EMOJI_SUBDIR = 'emoji';
 const VIDEO_EXTS = new Set(['mp4', 'webm', 'mov']);
 
 interface OrphanMedia {
@@ -72,7 +76,7 @@ function listRootFiles(saveFolder: string): string[] {
   }
   const out: string[] = [];
   for (const name of names) {
-    if (name === TRASH_SUBDIR || name === AVATAR_SUBDIR) continue;
+    if (name === TRASH_SUBDIR || name === AVATAR_SUBDIR || name === EMOJI_SUBDIR) continue;
     if (name.startsWith('.')) continue; // .hologram-inbox, .trash, dotfiles
     if (/\.tmp(-\d+)?$/i.test(name)) continue;
     try {

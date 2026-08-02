@@ -16,20 +16,24 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterAll, describe, expect, test } from 'vitest';
-import { AVATAR_SUBDIR, TRASH_SUBDIR, resolveInSaveFolder } from '../app/src/main/lib-save-folder-path';
+import { AVATAR_SUBDIR, EMOJI_SUBDIR, TRASH_SUBDIR, resolveInSaveFolder } from '../app/src/main/lib-save-folder-path';
 import { listTrashRecords } from '../app/src/main/lib-trash-capture';
 
 const ROOT = path.resolve(path.sep === '\\' ? 'C:\\lib\\Hologram\\library' : '/lib/Hologram/library');
 const at = (...parts: string[]) => path.join(ROOT, ...parts);
 const resolve = (name: string | null | undefined) => resolveInSaveFolder(ROOT, name);
 
-describe('resolveInSaveFolder — 通る3形', () => {
+describe('resolveInSaveFolder — 通る4形', () => {
   test('ルート直下のファイル名', () => {
     expect(resolve('1700000000100-aa01.jpg')).toBe(at('1700000000100-aa01.jpg'));
   });
 
   test('avatars/<file>（共有アバター置き場）', () => {
     expect(resolve(`${AVATAR_SUBDIR}/abc123.png`)).toBe(at(AVATAR_SUBDIR, 'abc123.png'));
+  });
+
+  test('emoji/<file>（共有カスタム絵文字置き場＝#290）', () => {
+    expect(resolve(`${EMOJI_SUBDIR}/abc123.png`)).toBe(at(EMOJI_SUBDIR, 'abc123.png'));
   });
 
   test('.trash/<file>（ゴミ箱＝#267 で足した許可）', () => {
@@ -48,7 +52,7 @@ describe('resolveInSaveFolder — 通る3形', () => {
 describe('resolveInSaveFolder — 保存フォルダの外へは出さない', () => {
   // The difference between "collapse to root" and "refuse with null" carries no meaning
   // here = either way, nothing outside the save folder gets read. What's always checked is "never points outside ROOT".
-  const escapes = ['..', '../secret.jpg', '../../secret.jpg', `${TRASH_SUBDIR}/..`, `${TRASH_SUBDIR}/../..`, `${TRASH_SUBDIR}/../../secret.jpg`, `${AVATAR_SUBDIR}/..`, `${AVATAR_SUBDIR}/../../secret.jpg`, '.', `${TRASH_SUBDIR}/.`];
+  const escapes = ['..', '../secret.jpg', '../../secret.jpg', `${TRASH_SUBDIR}/..`, `${TRASH_SUBDIR}/../..`, `${TRASH_SUBDIR}/../../secret.jpg`, `${AVATAR_SUBDIR}/..`, `${AVATAR_SUBDIR}/../../secret.jpg`, `${EMOJI_SUBDIR}/..`, `${EMOJI_SUBDIR}/../../secret.jpg`, '.', `${TRASH_SUBDIR}/.`];
   for (const name of escapes) {
     test(`${JSON.stringify(name)} は ROOT の外を指さない`, () => {
       const resolved = resolve(name);
@@ -56,10 +60,11 @@ describe('resolveInSaveFolder — 保存フォルダの外へは出さない', (
     });
   }
 
-  test('親を名指しする形（.. と .trash/..）は null で断る', () => {
+  test('親を名指しする形（.. と .trash/.. と emoji/..）は null で断る', () => {
     expect(resolve('..')).toBeNull();
     expect(resolve(`${TRASH_SUBDIR}/..`)).toBeNull();
     expect(resolve(`${AVATAR_SUBDIR}/..`)).toBeNull();
+    expect(resolve(`${EMOJI_SUBDIR}/..`)).toBeNull();
   });
 
   test('絶対パスは basename まで畳まれる（別ドライブ・別フォルダを読ませない）', () => {
@@ -77,6 +82,7 @@ describe('resolveInSaveFolder — 許可ディレクトリの広がり方', () =
   test('許可ディレクトリでも2階層目は通さない（単一階層だけ）', () => {
     expect(resolve(`${TRASH_SUBDIR}/sub/x.jpg`)).toBe(at('x.jpg'));
     expect(resolve(`${AVATAR_SUBDIR}/sub/x.png`)).toBe(at('x.png'));
+    expect(resolve(`${EMOJI_SUBDIR}/sub/x.png`)).toBe(at('x.png'));
   });
 
   test('許可ディレクトリの名前を含むだけの1階層目は別物', () => {

@@ -173,21 +173,32 @@ export interface AnnouncedMedia {
   frames?: { file: string; delay: number }[];
 }
 
+// One `:shortcode:` custom emoji as the extension announces it (#290): the
+// URL to download, no `file` — the same "what it is asked to fetch" vs "what
+// the host produced" split AnnouncedMedia/MediaItemShape draws above.
+export interface AnnouncedCustomEmoji {
+  shortcode: string;
+  url: string;
+}
+
 // The `metadata` a save request carries: the post record as the EXTENSION
 // assembled it, before the host normalizes it (normalizePostRecord) and writes
 // the inbox envelope. DERIVED from the shared PostRecordShape (#295 / #299)
 // rather than re-listed, so a field added there is a field this wire can carry
 // and neither side can drift from the record the database finally stores.
 //
-// Three fields differ from the stored shape, because they are what the extension
+// Four fields differ from the stored shape, because they are what the extension
 // HAS rather than what the library ends up with:
-//   media[]     — announced (URLs to fetch), not saved (files on disk).
-//   rawPayloads — #292's originals as plain text; the host compresses, hashes
-//                 and caps them into the record's `raw`.
-//   avatarFile  — omitted: only the host, having downloaded the avatar, can
-//                 name the file.
-export interface CaptureMetadata extends Partial<Omit<PostRecordShape, 'captureId' | 'media' | 'raw' | 'avatarFile'>> {
+//   media[]        — announced (URLs to fetch), not saved (files on disk).
+//   customEmojis[] — announced (URL to fetch), not saved (#290: the shared
+//                    emoji/ store's filename is the host's to name).
+//   rawPayloads    — #292's originals as plain text; the host compresses, hashes
+//                    and caps them into the record's `raw`.
+//   avatarFile     — omitted: only the host, having downloaded the avatar, can
+//                    name the file.
+export interface CaptureMetadata extends Partial<Omit<PostRecordShape, 'captureId' | 'media' | 'customEmojis' | 'raw' | 'avatarFile'>> {
   media?: AnnouncedMedia[];
+  customEmojis?: AnnouncedCustomEmoji[];
   rawPayloads?: RawPayloadInput[];
   // Referer the avatar has to be fetched with (pixiv rejects fetches without
   // one). Not a stored field — it is fetch instructions, spent by the host.

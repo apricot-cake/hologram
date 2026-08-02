@@ -54,6 +54,9 @@ function emptyRecord(url: string | null | undefined, platform: string | null | u
     seriesOrder: null,
     hashtags: [],
     tags: [],
+    // #290: the post's own :shortcode: custom emoji, filled by misskey.ts /
+    // mastodon.ts only.
+    customEmojis: [],
     raw: [],
     metaError: null,
   };

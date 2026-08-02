@@ -305,6 +305,8 @@ function createBackupEngine({ ensurePostsSynced, scheduleSavedIndexWrite, send }
         }
       };
       await collectSubdir(src, 'avatars', srcSet, srcStat);
+      // #290: the shared custom-emoji store, same write-once/single-level shape as avatars/.
+      await collectSubdir(src, 'emoji', srcSet, srcStat);
       result.fileCount = srcSet.size;
 
       // Collect destination files
@@ -318,6 +320,7 @@ function createBackupEngine({ ensurePostsSynced, scheduleSavedIndexWrite, send }
       }
       const destSet = new Set<string>(destFiles.filter((f) => !/\.tmp(-\d+)?$/i.test(f)));
       await collectSubdir(dest, 'avatars', destSet, null);
+      await collectSubdir(dest, 'emoji', destSet, null);
 
       // .hologram-inbox/{new,segments} (#5 St6 / #299): mirrored separately from
       // srcSet/destSet, NOT folded into the general file-count pruneDecision()
@@ -383,6 +386,10 @@ function createBackupEngine({ ensurePostsSynced, scheduleSavedIndexWrite, send }
       // The copy is atomic (tmp + rename) so a reader never sees a half-written file.
       if ([...srcSet].some((f) => f.startsWith('avatars/'))) {
         await fs.promises.mkdir(path.join(dest, 'avatars'), { recursive: true });
+      }
+      // #290: same on-demand mkdir for the shared emoji/ store.
+      if ([...srcSet].some((f) => f.startsWith('emoji/'))) {
+        await fs.promises.mkdir(path.join(dest, 'emoji'), { recursive: true });
       }
       for (const f of srcSet) {
         if (destSet.has(f)) continue;
