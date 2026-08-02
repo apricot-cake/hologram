@@ -31,7 +31,7 @@ import { t } from '../_shared/i18n.ts';
 import { InspectorRail } from './InspectorRail.tsx';
 import { type PanelResize, resolveCssLength, usePanelResize } from './use-panel-resize.ts';
 import { LIMITS, type PanelKey, cachedWidth, clampWidth, loadWidth, persistWidth } from '../services/panel-width-pref.ts';
-import { isVisible as inspectorIsVisible, load as inspectorLoad, registerPanelEl, subscribeVisible as subscribeInspectorVisible } from '../services/inspector-panel.ts';
+import { isDocked as inspectorIsDocked, isVisible as inspectorIsVisible, load as inspectorLoad, registerPanelEl, subscribeVisible as subscribeInspectorVisible } from '../services/inspector-panel.ts';
 import { registerScroller } from '../services/content-area.ts';
 import { hologramImageTabSource, isActive as imageViewIsActive } from '../services/image-tab.ts';
 import { isWide as isWideLayout, subscribe as layoutSubscribe } from '../services/layout-mode.ts';
@@ -357,7 +357,10 @@ export function AppShell() {
                   screen): a slide-over would cover the very picture being inspected. That
                   used to be a `body.image-tab-active .inspector--overlay` override that
                   undid the overlay's own rules one by one; picking the docked form outright
-                  is the same result with one decision instead of two. */}
+                  is the same result with one decision instead of two. inspectorIsDocked()
+                  is that one decision (inspector-panel.ts) — ×/Esc/outside-click read the
+                  same function now, so a column docked here can't be waved away as if it
+                  were the narrow overlay (#656). */}
               {/* [&[hidden]]:hidden is required, not belt-and-braces: `display: flex` from
                   this element's own class beats the UA sheet's [hidden] { display: none },
                   so the attribute alone would leave the panel on screen. */}
@@ -369,7 +372,7 @@ export function AppShell() {
                 data-slot="inspector"
                 ref={registerPanelEl}
                 className={`z-25 flex h-full w-[var(--inspector-w)] shrink-0 flex-col border-l border-border bg-[var(--surface)] text-[12px] [&[hidden]]:hidden ${
-                  wide || imageView
+                  inspectorIsDocked()
                     ? 'relative'
                     : // Narrow widths (#259): the same panel floats over the grid instead of
                       // taking a column out of it. --content-top is measured by the effect
