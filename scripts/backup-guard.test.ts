@@ -1,4 +1,4 @@
-// Unit tests for the mirror's prune safety valve (app/src/main/backup-guard.ts).
+// Unit tests for the backup's prune safety valve (app/src/main/backup-guard.ts).
 // Added in response to the 2026-06-23 library loss incident. Pure logic = no Electron needed.
 
 import { describe, expect, test } from 'vitest';
