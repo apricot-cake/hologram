@@ -328,6 +328,15 @@ const MIGRATIONS: Migration[] = [
         ALTER TABLE posts ADD COLUMN replyToPost TEXT;
       `),
   },
+  // #290: the post's own :shortcode: custom emoji (Misskey/Mastodon only) —
+  // see native-host/post-record.mts's CustomEmojiShape. Stored as JSON text,
+  // same convention as quotedPost/replyToPost just above (a small per-post
+  // array, not worth its own table). Null on every row written before this
+  // migration and on every non-Misskey/Mastodon post.
+  {
+    name: 'add-post-custom-emojis',
+    up: (db) => db.exec(`ALTER TABLE posts ADD COLUMN customEmojis TEXT;`),
+  },
 ];
 
 interface Migration {
@@ -485,6 +494,9 @@ interface PostsTable {
   // convention as hashtags/domFilled. See PostRecordShape.quotedPost/replyToPost.
   quotedPost: string | null;
   replyToPost: string | null;
+  // add-post-custom-emojis migration (#290) — JSON CustomEmojiShape[], same
+  // storage convention as hashtags/domFilled. See PostRecordShape.customEmojis.
+  customEmojis: string | null;
 }
 interface MediaTable {
   id: Generated<number>;

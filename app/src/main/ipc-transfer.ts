@@ -280,6 +280,15 @@ function register(ctx: IpcContext) {
         // touched doesn't quietly drop them.
         quotedPost: p.quotedPost || null,
         replyToPost: p.replyToPost || null,
+        // #290: carried through like quotedPost/replyToPost above, for the same
+        // reason -- a legacy-ZIP re-import of a post this feature already
+        // touched must not quietly drop it. No producer of this legacy shape
+        // can populate it today (the field postdates every export this reader
+        // knows), so this is forward-safety only, not a live path: unlike
+        // avatarFile above it is not re-fetched here (this importer's job is
+        // reconstructing a record from a URL-only legacy shape, not running
+        // the save pipeline's shared-store downloads a second time).
+        customEmojis: Array.isArray(p.customEmojis) ? p.customEmojis : [],
         seriesId: p.seriesId || null,
         seriesTitle: p.seriesTitle || null,
         seriesOrder: p.seriesOrder ?? null,

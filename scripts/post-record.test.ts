@@ -28,7 +28,7 @@ describe('既定値', () => {
   });
 
   test('配列フィールドの既定は []', () => {
-    expect({ hashtags: rec.hashtags, tags: rec.tags, media: rec.media }).toEqual({ hashtags: [], tags: [], media: [] });
+    expect({ hashtags: rec.hashtags, tags: rec.tags, media: rec.media, customEmojis: rec.customEmojis }).toEqual({ hashtags: [], tags: [], media: [], customEmojis: [] });
   });
 
   test.each([
@@ -266,6 +266,34 @@ describe('quotedPost / replyToPost（#180）', () => {
   test.each([undefined, null, 'not an object', 42, []])('オブジェクトでない値は %p でも null に落ちる（all-or-nothing）', (bad) => {
     const rec = normalizePostRecord({ captureId: 'cap-8', quotedPost: bad as any }, fixedNow);
     expect(rec.quotedPost).toBeNull();
+  });
+});
+
+describe('customEmojis（#290）', () => {
+  test('妥当なエントリはそのまま通る（file はブリッジが後から埋める、入力時は null のまま）', () => {
+    const rec = normalizePostRecord({ captureId: 'cap-9', customEmojis: [{ shortcode: 'ha_to', url: 'https://x.example/ha_to.png' }] }, fixedNow);
+    expect(rec.customEmojis).toEqual([{ shortcode: 'ha_to', url: 'https://x.example/ha_to.png', file: null }]);
+  });
+
+  test('ブリッジが埋めた file は保たれる', () => {
+    const rec = normalizePostRecord({ captureId: 'cap-10', customEmojis: [{ shortcode: 'ha_to', url: 'https://x.example/ha_to.png', file: 'emoji/abc123.png' }] }, fixedNow);
+    expect(rec.customEmojis).toEqual([{ shortcode: 'ha_to', url: 'https://x.example/ha_to.png', file: 'emoji/abc123.png' }]);
+  });
+
+  test('shortcode か url が欠けたエントリは（他が妥当でも）1件ずつ落ちる — quotedPost の all-or-nothing と違い配列全体は諦めない', () => {
+    const rec = normalizePostRecord(
+      {
+        captureId: 'cap-11',
+        customEmojis: [{ shortcode: 'ok', url: 'https://x.example/ok.png' }, { shortcode: 'no-url' }, { url: 'https://x.example/no-shortcode.png' }, 'not an object' as any, null as any],
+      },
+      fixedNow,
+    );
+    expect(rec.customEmojis).toEqual([{ shortcode: 'ok', url: 'https://x.example/ok.png', file: null }]);
+  });
+
+  test.each([undefined, null, 'not an array', 42, {}])('配列でない値は %p でも [] に落ちる', (bad) => {
+    const rec = normalizePostRecord({ captureId: 'cap-12', customEmojis: bad as any }, fixedNow);
+    expect(rec.customEmojis).toEqual([]);
   });
 });
 

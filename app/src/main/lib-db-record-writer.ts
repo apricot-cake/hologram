@@ -79,6 +79,7 @@ const POST_COLUMNS = [
   'domFilled',
   'quotedPost',
   'replyToPost',
+  'customEmojis',
 ] as const;
 
 const UPSERT_POST_SQL = `INSERT INTO posts (${POST_COLUMNS.join(',')}) VALUES (${POST_COLUMNS.map(() => '?').join(',')})
@@ -148,6 +149,12 @@ function postParams(n: PostRecordShape): unknown[] {
     // uses for a missing frame table.
     quotedPost: n.quotedPost ? JSON.stringify(n.quotedPost) : null,
     replyToPost: n.replyToPost ? JSON.stringify(n.replyToPost) : null,
+    // #290: JSON string, empty array stored as '[]' rather than null -- unlike
+    // quotedPost/replyToPost (a 0-or-1 sub-record where absence IS the
+    // meaningful state), an empty customEmojis[] and "no column value" mean the
+    // exact same thing here (same reasoning as hashtags/domFilled above, which
+    // also never distinguish [] from absent).
+    customEmojis: JSON.stringify(n.customEmojis),
   };
   return POST_COLUMNS.map((c) => byName[c]);
 }

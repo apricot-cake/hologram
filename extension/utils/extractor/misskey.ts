@@ -231,6 +231,20 @@ function misskeyQuotedRef(note, host): { url: string | null; displayName: string
   };
 }
 
+// #290: note.emojis is a shortcode->URL map -- packedNoteSchema's own
+// 'emojis' property, distinct from reactionEmojis (reaction picker icons) and
+// user.emojis (the author's name-field emoji). Confirmed live against
+// misskey.io's local-timeline, 2026-08-02: a note using :shortcode: text
+// carries e.g. {"ha_to":"https://media.niri.la/misskey/....png"}; a note that
+// used none omits the key entirely rather than sending an empty object,
+// hence the typeof guard (Object.entries on undefined throws).
+function misskeyCustomEmojis(emojis) {
+  if (!emojis || typeof emojis !== 'object') return [];
+  return Object.entries(emojis)
+    .filter(([shortcode, emojiUrl]) => shortcode && typeof emojiUrl === 'string' && emojiUrl)
+    .map(([shortcode, emojiUrl]) => ({ shortcode, url: emojiUrl as string }));
+}
+
 async function fetchMisskeyNote(parsed, url): Promise<PostRecord> {
   const rec = emptyRecord(url, 'misskey');
   // Canonical permalink: the saved URL may carry a query/hash; rebuild the bare
@@ -245,6 +259,7 @@ async function fetchMisskeyNote(parsed, url): Promise<PostRecord> {
     if (!res.ok) return rec;
     const note = await readJsonKeepingRaw(rec, 'api:misskey/notes-show', res);
     rec.text = note.text || null;
+    rec.customEmojis = misskeyCustomEmojis(note.emojis);
     // #178: the CW text the author wrote (misskey.io, real note, 2026-07-30 —
     // scripts/canary/snapshots/misskey.json's 'cw' source). No note-level
     // sensitivity boolean exists on this endpoint (only a per-file isSensitive
@@ -411,5 +426,5 @@ const misskey: Extractor = {
 };
 
 export default misskey;
-export { extractMisskeyIdentity, fetchMisskeyNote, findMisskeyPostElement, getMisskeyPermalink, isMisskeyPostMedia, looksLikeMisskey, misskeyMedia, parseMisskeyNoteLink };
+export { extractMisskeyIdentity, fetchMisskeyNote, findMisskeyPostElement, getMisskeyPermalink, isMisskeyPostMedia, looksLikeMisskey, misskeyCustomEmojis, misskeyMedia, parseMisskeyNoteLink };
 export type { MisskeyNoteLink };

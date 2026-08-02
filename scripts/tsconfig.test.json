@@ -115,6 +115,7 @@
     "lib-db-integrity.test.ts",
     "listing.test.ts",
     "mastodon-url.test.ts",
+    "media-download-custom-emoji.test.ts",
     "media-limits.test.ts",
     "media.test.ts",
     "metadata-correctness.test.ts",

@@ -85,15 +85,17 @@ describe('libraryFilePath（持ち出しの解決）', () => {
   // as the same rule. #267 made .trash/ and avatars/ resolvable = that's why cards can render
   // thumbnails there, but handing them out is a separate call (trash = restore comes first
   // and it's purged after 30 days / avatars = not the post's own media).
-  test.each(['.trash/a.jpg', '.trash\\a.jpg', 'avatars/a.png', 'avatars\\a.png'])('許可サブフォルダでも持ち出しは弾く: %s', (name) => {
+  test.each(['.trash/a.jpg', '.trash\\a.jpg', 'avatars/a.png', 'avatars\\a.png', 'emoji/a.png', 'emoji\\a.png'])('許可サブフォルダでも持ち出しは弾く: %s', (name) => {
     expect(libraryFilePath(name, save)).toBeNull();
   });
 
   test('同じ名前が「読めるが出せない」＝2つの規則の差はここにしかない', () => {
     expect(resolveInSaveFolder(save, '.trash/a.jpg')).toBe(at(path.join('.trash', 'a.jpg')));
     expect(resolveInSaveFolder(save, 'avatars/a.png')).toBe(at(path.join('avatars', 'a.png')));
+    expect(resolveInSaveFolder(save, 'emoji/a.png')).toBe(at(path.join('emoji', 'a.png')));
     expect(libraryFilePath('.trash/a.jpg', save)).toBeNull();
     expect(libraryFilePath('avatars/a.png', save)).toBeNull();
+    expect(libraryFilePath('emoji/a.png', save)).toBeNull();
   });
 
   test.each([['', null, undefined, 0, 42, {}, [], true]].flat())('文字列でない・空を弾く: %s', (v) => {
@@ -113,8 +115,8 @@ describe('libraryFilePaths（ドラッグアウトの一括解決）', () => {
   // If even one trash entity is mixed in, only that one is dropped and the rest can still be
   // handed out = the whole drag isn't stopped (same handling as a missing file. Trash cards
   // don't accept drag in the first place = TrashView.tsx).
-  test('ゴミ箱・アバターの実体は一括でも落とす', () => {
-    expect(libraryFilePaths(['a.jpg', '.trash/deleted.jpg', 'avatars/who.png', 'b.jpg'], save, existsAll)).toEqual([at('a.jpg'), at('b.jpg')]);
+  test('ゴミ箱・アバター・絵文字の実体は一括でも落とす', () => {
+    expect(libraryFilePaths(['a.jpg', '.trash/deleted.jpg', 'avatars/who.png', 'emoji/e.png', 'b.jpg'], save, existsAll)).toEqual([at('a.jpg'), at('b.jpg')]);
   });
 
   test('消えたファイルは落とす（隣が1つ消えただけでドラッグを中止させない）', () => {
