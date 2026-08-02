@@ -93,6 +93,10 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     detailSeries: 'シリーズ',
     detailSeriesOrder: '話数',
     detailTags: 'タグ',
+    // #36: free-text note attached to a post. Card face never shows it (design
+    // decision on #36) — inspector-only.
+    detailMemo: 'メモ',
+    memoPlaceholder: 'メモを入力…',
     tagsEmpty: 'タグなし',
     tipEditTags: 'タグを編集',
     detailSourceTags: 'ソースタグ',
@@ -455,7 +459,7 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     paletteFulltextBack: 'コマンドに戻る',
     ftFieldText: '本文',
     ftFieldTitle: 'タイトル',
-    ftFieldDescription: '説明',
+    ftFieldMemo: 'メモ',
     ftFieldSeries: 'シリーズ名',
     ftFieldAlt: '代替テキスト',
     ftFieldQuoted: '引用元',
@@ -657,6 +661,10 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     detailSeries: 'Series',
     detailSeriesOrder: 'Installment',
     detailTags: 'Tags',
+    // #36: free-text note attached to a post. Never shown on the card face
+    // (design decision on #36) — inspector-only.
+    detailMemo: 'Memo',
+    memoPlaceholder: 'Add a memo…',
     tagsEmpty: 'No tags',
     tipEditTags: 'Edit tags',
     detailSourceTags: 'Source tags',
@@ -1001,7 +1009,7 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     paletteFulltextBack: 'Back to commands',
     ftFieldText: 'Body',
     ftFieldTitle: 'Title',
-    ftFieldDescription: 'Description',
+    ftFieldMemo: 'Memo',
     ftFieldSeries: 'Series name',
     ftFieldAlt: 'Alt text',
     ftFieldQuoted: 'Quoted post',

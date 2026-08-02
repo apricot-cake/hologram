@@ -66,9 +66,9 @@ describe('マイグレーションが通り、テーブルが揃う', () => {
   );
   sqlite.close();
 
-  test('user_version は 23（v1 DDL ＋ #178 add-post-cw-sensitive・#188 add-post-series-fields・#180 add-post-quoted-refs・#162 add-media-max-dims・#290 add-post-custom-emojis までの追加22本）', () => {
+  test('user_version は 24（v1 DDL ＋ #178 add-post-cw-sensitive・#188 add-post-series-fields・#180 add-post-quoted-refs・#162 add-media-max-dims・#290 add-post-custom-emojis・#36 rename-description-to-memo までの追加23本）', () => {
     const { sqlite } = openDatabase(mkdb());
-    expect(sqlite.pragma('user_version', { simple: true })).toBe(23);
+    expect(sqlite.pragma('user_version', { simple: true })).toBe(24);
     sqlite.close();
   });
 
@@ -90,7 +90,7 @@ describe('マイグレーションが通り、テーブルが揃う', () => {
 // Items finalized in #5 on 2026-07-17/18
 describe('posts_fts のクエリ契約', () => {
   const { sqlite } = openDatabase(mkdb());
-  const ins = sqlite.prepare('INSERT INTO posts_fts (postId, text, title, displayName, screenName, eagleName, description, hashtags, tagsText, reading) VALUES (?,?,?,?,?,?,?,?,?,?)');
+  const ins = sqlite.prepare('INSERT INTO posts_fts (postId, text, title, displayName, screenName, eagleName, memo, hashtags, tagsText, reading) VALUES (?,?,?,?,?,?,?,?,?,?)');
   ins.run('cap-1', '吾輩は猫である名前はまだ無い', null, null, null, null, null, null, null, 'わがはいはねこであるなまえはまだない');
   ins.run('cap-2', '犬も歩けば棒に当たる', null, null, null, null, null, null, null, 'いぬもあるけばぼうにあたる');
 
@@ -275,6 +275,46 @@ describe('add-media-max-dims の移行（#162）', () => {
   });
 });
 
+// #36: that an existing library doesn't break. Builds a real DB advanced to just
+// before rename-description-to-memo — posts.description is still real at this
+// point (only this migration renames it) — then reopens it all the way through
+// the rename. posts_fts is NOT hand-seeded here the way the add-post-cw-sensitive
+// block above seeds it: this migration drops and fully rebuilds posts_fts from
+// `posts` regardless of whatever it held before (same as that migration did for
+// cw), so the only fixture that matters is the posts row + its ftsRowid.
+describe('rename-description-to-memo の移行（#36）', () => {
+  const file = mkdb();
+  const before = new Database(file);
+  runMigrations(
+    before,
+    MIGRATIONS.slice(
+      0,
+      MIGRATIONS.findIndex((m) => m.name === 'rename-description-to-memo'),
+    ),
+  );
+  before.prepare('INSERT INTO posts (captureId, capturedAt, updatedAt, text, description) VALUES (?,?,?,?,?)').run('cap-1', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z', '吾輩は猫である', 'Eagle 由来の旧い注釈');
+  before.exec("UPDATE posts SET ftsRowid = 1 WHERE captureId = 'cap-1'");
+  before.close();
+
+  const { sqlite } = openDatabase(file); // this is where rename-description-to-memo runs
+  afterAll(() => sqlite.close());
+
+  test('posts.description は posts.memo に改名され、内容はそのまま残る', () => {
+    const cols = (sqlite.prepare('PRAGMA table_info(posts)').all() as Array<{ name: string }>).map((c) => c.name);
+    expect(cols).not.toContain('description');
+    expect(cols).toContain('memo');
+    expect(sqlite.prepare("SELECT memo FROM posts WHERE captureId = 'cap-1'").get()).toEqual({ memo: 'Eagle 由来の旧い注釈' });
+  });
+
+  test('posts_fts も memo 列として再構築され、内容が引き継がれる', () => {
+    expect(sqlite.prepare("SELECT memo FROM posts_fts WHERE postId = 'cap-1'").get()).toEqual({ memo: 'Eagle 由来の旧い注釈' });
+  });
+
+  test('ftsRowid は引き継がれる', () => {
+    expect(sqlite.prepare('SELECT ftsRowid FROM posts WHERE captureId = ?').get('cap-1')).toEqual({ ftsRowid: 1 });
+  });
+});
+
 describe('tags: id が実体・名前は一意でない・多親＋表示用の親は1つ', () => {
   const { sqlite } = openDatabase(mkdb());
   const insTag = sqlite.prepare('INSERT INTO tags (name) VALUES (?)');
@@ -407,7 +447,7 @@ describe('既存 v1 データベースの開き直しは no-op', () => {
   const second = openDatabase(file);
 
   test('マイグレーションを再実行しない', () => {
-    expect(second.sqlite.pragma('user_version', { simple: true })).toBe(23);
+    expect(second.sqlite.pragma('user_version', { simple: true })).toBe(24);
   });
 
   test('前回のデータが残る', () => {

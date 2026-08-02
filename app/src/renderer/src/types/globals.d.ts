@@ -265,6 +265,9 @@ declare global {
     focusTags?: boolean;
     // Post-only (Inspector.tsx renders these when present).
     onThumbClick?(): void; // preview thumbnail → quick-view peek (#143)
+    // #36: free-text memo — MemoSection's initial value + its blur/debounce commit.
+    memo?: string;
+    onMemoChange?(text: string): void;
     onOpenExternal?(): void;
     onSauce?(): void;
     onAscii?(): void;

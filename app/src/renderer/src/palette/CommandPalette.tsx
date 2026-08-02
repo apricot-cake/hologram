@@ -51,7 +51,7 @@ const SECTION_LABEL: Record<CommandSection, string> = {
 const FIELD_LABEL: Record<FullTextMatch['field'], string> = {
   text: 'ftFieldText',
   title: 'ftFieldTitle',
-  description: 'ftFieldDescription',
+  memo: 'ftFieldMemo',
   seriesTitle: 'ftFieldSeries',
   alt: 'ftFieldAlt',
   quoted: 'ftFieldQuoted',

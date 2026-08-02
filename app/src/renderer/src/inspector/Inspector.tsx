@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { ArrowUpRight, PanelRight, Plus, X } from 'lucide-react';
 import { get, subscribe } from '../services/inspector.ts';
 import { t } from '../_shared/i18n.ts';
@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty';
 import { Separator } from '@/components/ui/separator';
+import { Textarea } from '@/components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { TagField } from './TagField.tsx';
 import type { ReactNode } from 'react';
@@ -77,6 +78,51 @@ function TagsSection({ m }: { m: HologramInspectorModel }) {
     <section data-slot="inspector-tags" className="flex flex-col gap-1.5">
       <span className="text-xs text-muted-foreground">{m.labels.tags}</span>
       <TagField tags={m.tags} vocabGroups={m.vocabGroups} coocGroups={m.coocGroups} srcTags={m.srcTagsForPicker} labels={m.tagLabels} onAdd={m.onTagAdd} onRemove={m.onTagRemove} onContextMenu={m.onTagContextMenu} autoFocus={m.focusTags} />
+    </section>
+  );
+}
+
+// Free-text note (#36) — the only per-post field with no card-face representation
+// (design decision on #36: "カードには出さない"). Local state so keystrokes render
+// instantly; the write itself is debounced (so a fast typist isn't sending one
+// IPC call per keystroke) and also flushed on blur (so navigating away right
+// after typing never drops the last unsent burst). Uncontrolled from the
+// model's point of view once mounted — m.memo only seeds the initial value, the
+// same shape TagField's own input state already has for the same reason.
+function MemoSection({ m }: { m: HologramInspectorModel }) {
+  const [text, setText] = useState(m.memo || '');
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const commit = (value: string) => {
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = null;
+    m.onMemoChange?.(value);
+  };
+  // Cancels a pending debounce on unmount (a fresh subject remounts this
+  // component, keyed on openId by PostInspector below) — the blur that
+  // precedes any focus-losing navigation already committed the latest text,
+  // so this is only a safety net against a stray timer firing against a
+  // subject that is no longer the one on screen.
+  useEffect(
+    () => () => {
+      if (timer.current) clearTimeout(timer.current);
+    },
+    [],
+  );
+  return (
+    <section data-slot="inspector-memo" className="flex flex-col gap-1.5">
+      <span className="text-xs text-muted-foreground">{m.labels.memo}</span>
+      <Textarea
+        value={text}
+        placeholder={m.labels.memoPlaceholder}
+        rows={3}
+        onChange={(e) => {
+          const value = e.target.value;
+          setText(value);
+          if (timer.current) clearTimeout(timer.current);
+          timer.current = setTimeout(() => commit(value), 600);
+        }}
+        onBlur={() => commit(text)}
+      />
     </section>
   );
 }
@@ -178,6 +224,9 @@ function PostInspector({ m }: { m: HologramInspectorModel }) {
       </Divided>
       <Divided>
         <TagsSection m={m} />
+      </Divided>
+      <Divided>
+        <MemoSection m={m} />
       </Divided>
       {m.srcTagsView.length ? (
         <Divided>

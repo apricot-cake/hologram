@@ -17,6 +17,7 @@ UI に出さない開発用語は日本語の欄を `—` にする。
 | — | extractor | サイト別のメタデータ抽出モジュールの総称。和訳語（「抽出器」等）は立てず英語のまま書き、和文では初出でだけ「サイト別のメタデータ抽出モジュール」と補う。ユーザーが読む面には出さず「対応サイト」で表す | [#212](https://github.com/apricot-cake/hologram/issues/212#issuecomment-5020507758) |
 | 正方形のサムネ | squareThumbs | 投稿グリッドのサムネを正方形に切り抜いて均質な格子にする ON/OFF。Mac 写真.app の表示メニュー「正方形のサムネール」と同語 | [#618](https://github.com/apricot-cake/hologram/issues/618) |
 | 情報を表示 | showInfo | 投稿グリッドのセルに投稿者・抜粋・メタのブロックを付ける ON/OFF。「正方形のサムネ」とは独立で、4通りすべてが正規 | [#618](https://github.com/apricot-cake/hologram/issues/618) |
+| メモ | memo | 画像に紐付ける自由記述の注釈（sidecar/DB の `memo` 欄）。Eagle 移行由来の `description` フィールドを統合・改称したもので、旧フィールドは廃止済み | [#36](https://github.com/apricot-cake/hologram/issues/36#issuecomment-5014844858) |
 
 ## 固有名を付けない領域
 

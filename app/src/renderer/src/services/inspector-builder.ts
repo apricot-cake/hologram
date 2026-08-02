@@ -269,6 +269,33 @@ export function makeInspector(deps: InspectorBuilderDeps) {
     refreshInspectorTagFields(fresh);
   }
 
+  // #36: the inspector's memo textarea (blur/debounce commit — MemoSection in
+  // Inspector.tsx owns the timing, this just applies one already-settled value).
+  // Group-wide like a tag edit, not per-record: a group is the same content
+  // shown once (duplicates/siblings), so a note about it applies to all of them,
+  // the same reach applyInspectorTagChange already has. No undo entry (unlike
+  // tags) — the design decision on #36 doesn't call for one, and there is no
+  // natural "diff" for free text the way added/removed tag names have.
+  async function applyInspectorMemo(g: HologramPostGroup | null | undefined, memo: string) {
+    if (!g) return;
+    const recs = g.records && g.records.length ? g.records : [g.rep];
+    let changed = false;
+    for (const r of recs) {
+      if ((r.memo || '') === memo) continue;
+      changed = true;
+      try {
+        await postsUpdateTags(r.image || r.video, r.tags || [], { memo });
+      } catch {
+        /* keep going — same best-effort contract as applyInspectorTagChange */
+      }
+      const rec = deps.getPostById(r.captureId);
+      if (rec) rec.memo = memo;
+    }
+    if (!changed) return;
+    deps.markPostsMutated();
+    deps.renderPosts(true); // a memo edit can change what an active free-text search matches
+  }
+
   // Every tag mutation has to start from the CURRENT group, not the one captured
   // when the panel was opened: renderPosts rebuilds the view groups after each
   // change, so a captured group's records go stale as soon as one edit lands. A
@@ -422,6 +449,10 @@ export function makeInspector(deps: InspectorBuilderDeps) {
       tagLabels: tagLabels(),
       onTagAdd: (tag: string) => addInspectorTag(g, tag),
       onTagRemove: (tag: string) => removeInspectorTag(g, tag),
+      // #36: free-text memo, editable in place like the tags above (MemoSection
+      // in Inspector.tsx). Absent from card face by design (#36 decision comment).
+      memo: p.memo || '',
+      onMemoChange: (text: string) => applyInspectorMemo(g, text),
       groupBtn,
       labels: {
         platform: deps.t('detailPlatform'),
@@ -441,6 +472,8 @@ export function makeInspector(deps: InspectorBuilderDeps) {
         tags: deps.t('detailTags'),
         tagsEmpty: deps.t('tagsEmpty'),
         editTags: deps.t('tipEditTags'),
+        memo: deps.t('detailMemo'),
+        memoPlaceholder: deps.t('memoPlaceholder'),
         sourceTags: deps.t('detailSourceTags'),
         viewPoster: deps.t('ctxViewPoster'),
         open: deps.t('detailOpen'),

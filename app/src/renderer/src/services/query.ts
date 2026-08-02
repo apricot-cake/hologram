@@ -343,7 +343,7 @@ export const userKey = (p: HologramPost): string => p.platform + ':' + (p.userId
 // everything that isn't a bookmark (#195's 2026-08-02 design comment #6).
 export const kindOf = (p: HologramPost): 'bookmark' | 'post' | 'image' => (p.source === 'bookmark' ? 'bookmark' : p.url ? 'post' : 'image');
 // Every text-ish field a free-text query can match against.
-// (p.description = Eagle-migration annotation — real prose, so it belongs here.)
+// (p.memo = free-text note, #36 — includes the Eagle-migration annotation it absorbed.)
 // media[].alt (#288): saved ALT text — X `ext_alt_text` / Bluesky `alt` / Misskey
 // file `comment` / Mastodon attachment `description`, already captured on save.
 // pixiv has no ALT concept (media[].alt is always null there) so this is a no-op
@@ -363,7 +363,7 @@ export const kindOf = (p: HologramPost): 'bookmark' | 'post' | 'image' => (p.sou
 // neither (the overwhelming majority), same graceful-absence convention as
 // every other field here.
 export function textHaystackOf(p: HologramPost): string[] {
-  return [p.text, p.title, p.eagleName, p.screenName, p.displayName, p.description, p.seriesTitle]
+  return [p.text, p.title, p.eagleName, p.screenName, p.displayName, p.memo, p.seriesTitle]
     .concat(p.tags || [])
     .concat(p.hashtags || [])
     .concat((p.media || []).map((m: any) => m?.alt))

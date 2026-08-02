@@ -67,7 +67,7 @@ const POST_COLUMNS = [
   'seriesOrder',
   'hashtags',
   'eagleName',
-  'description',
+  'memo',
   'source',
   'shotW',
   'shotH',
@@ -134,7 +134,7 @@ function postParams(n: PostRecordShape): unknown[] {
     seriesOrder: n.seriesOrder,
     hashtags: JSON.stringify(n.hashtags),
     eagleName: n.eagleName,
-    description: n.description,
+    memo: n.memo,
     source: n.source,
     shotW: n.shotW,
     shotH: n.shotH,
@@ -222,7 +222,7 @@ function writePost(stmts: PostStmts, resolveTagId: (name: string) => number, rec
   // column, since ftsRowid is deliberately not in POST_COLUMNS.
   const ftsRowid = (stmts.selectFtsRowid.get(n.captureId) as { ftsRowid: number | null } | undefined)?.ftsRowid ?? null;
   if (ftsRowid != null) stmts.deleteFts.run(ftsRowid);
-  const ftsInsert = stmts.insertFts.run(ftsRowid, n.captureId, n.text, n.title, n.displayName, n.screenName, n.eagleName, n.description, n.hashtags.join(' '), n.tags.join(' '), null, n.cw);
+  const ftsInsert = stmts.insertFts.run(ftsRowid, n.captureId, n.text, n.title, n.displayName, n.screenName, n.eagleName, n.memo, n.hashtags.join(' '), n.tags.join(' '), null, n.cw);
   if (ftsRowid == null) stmts.claimFtsRowid.run(Number(ftsInsert.lastInsertRowid), n.captureId);
   // Acquisition originals (#292), in the SAME transaction the caller opened for
   // the post — the design's "finalize the reference in the same transaction as the post save". A
