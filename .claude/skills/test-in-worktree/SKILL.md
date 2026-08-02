@@ -32,7 +32,7 @@ install が済めば `npm test`・`npm run typecheck`・アプリ起動ハーネ
 
 **日常の Chrome へ何かを載せたい時は `npm run deploy:ext` だけ**＝検証済み release を `.output/chrome-mv3` へ差し替え、拡張が自分でリロードする。ふだんは本体ツリーの `post-merge` フックが自動で走らせるので、手で打つのは復旧の時だけ。
 
-**バンドルの grep は正規表現リテラルのエスケープで偽の空振りを起こす**。ソースの `/^\/i\/bookmarks(\/|$)/` はバンドル上も `i\/bookmarks` と出るため `i/bookmarks` で grep すると 0 件＝「ビルドされていない」と誤読する。空振りはまず自分の検索式を疑う。
+**バンドルの grep は正規表現リテラルのエスケープで偽の空振りを起こす**（skill `browser-extension-verify`）＝空振りはまず自分の検索式を疑う。
 
 ## 検証の粒度
 

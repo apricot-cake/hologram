@@ -7,14 +7,14 @@ description: Hologram を CDP（Chrome DevTools Protocol）で計測・撮影・
 
 前提は2つとも別の場所が正本。**変更が反映される状態か**（`npm run build --workspace=app` 等）と**どのインスタンスを使うか**（隔離4段構え）は skill `run-hologram` と `docs/build.md`「検証ルール（隔離4段構え）」。ここはその上で踏む罠だけを持つ。
 
+**拡張の診断はユーザースコープの skill `browser-extension-verify` が共通分の正本**（isolated world・`isTrusted`・背面タブ・X 固有の観測・ビルド出力の grep）。下の「拡張を診断する」は Hologram の実装に依存する分だけを持つ。
+
 ## 駆動する
 
 - **⛔ 合成マウスで Base UI 部品を触らない**（実害 2026-07-18）。Base UI の Select / Popover トリガー / Slider は floating-ui の pointer 経路で動くため、`Input.dispatchMouseEvent` は発火しないだけでなく**それ自体がハングし、ポインタキャプチャが残ってレンダラごと固まる**（CDP 完全無応答＝curl が `http_code=000`／復帰は `restart-app.ps1`）。
   - 代わりに**キーボード**（トリガーへ focus → Enter で開く／スライダーは thumb へ focus → Arrow）か、プレーンな `<button>` なら evaluate 内 `el.click()`（React の onClick は発火する）。値の読み取りは `evaluate` のみ。
   - ポップオーバーをキーボードで開くのは**再起動直後だけフレークする**ので数回リトライ。
-- **ページへ合成ポインタを投げるなら `new PointerEvent`。`new Event('pointermove')` に座標を後付けした形は届かない**（実測 2026-07-28・bsky.app）。同じ要素・同じ座標・同じ瞬間で A/B すると、`new PointerEvent('pointermove',{clientX,clientY})` は拡張のホバーオーバーレイを動かし、`Object.assign(new Event('pointermove'),{clientX,clientY})` は何も起こさない。**`isTrusted` は無関係**＝構築した `PointerEvent` は `isTrusted:false` でも動くので、「本物のマウスでないと駄目」と誤診しない。理由は未特定だが、`clientX` はハンドラ側から読み戻せるので値の欠落ではない。
-  - **罠になるのは `scripts/overlay.test.ts`（jsdom）が後者の書き方で緑になること**＝ハーネスの癖をそのまま実機の検証へ持ち込むと、何も起きないのを「機能が壊れている」と読む。2026-07-28 に #372 の検証で実際にそう誤診し、拡張の設定・ビルド・保存済み照会を順に疑って往復した。
-  - 実マウスに近い経路が要るなら CDP の `Input.dispatchMouseEvent`（claude-in-chrome なら `computer` の `hover`）。こちらも同じ結果になる。
+- **ページへ合成ポインタを投げるなら `new PointerEvent`**（座標を後付けした `new Event('pointermove')` は届かない・skill `browser-extension-verify`）。**この罠が Hologram で効く形＝`scripts/overlay.test.ts`（jsdom）が届かない書き方で緑になる**＝ハーネスの癖をそのまま実機の検証へ持ち込むと、何も起きないのを「機能が壊れている」と読む。2026-07-28 に #372 の検証で実際にそう誤診し、拡張の設定・ビルド・保存済み照会を順に疑って往復した。
 - **Base UI の `ComboboxInput` は素の `new Event('input')` では開かない**（実害 2026-07-31・#148）。入力が「本物のタイプ」に見える時だけポップアップを開くガード（`inputType` を持ち、かつ `insertReplacementText` でない＝オートフィル避け）が入っているため、**値は入り `onValueChange` も発火するのにリストだけ開かない**＝その面が壊れているように見える。正しい駆動は `new InputEvent('input', { inputType: 'insertText' })`。**検索ボックスとコマンドパレットにも同じことが効く**（同じ部品系）。
 - **ホバーを測る前にスクロールを終わらせる**。プログラム的なスクロールの直後はオーバーレイ側の追跡（IntersectionObserver → 描画 → ホバー対象の登録）が追いつかず、直前まで出ていたボタンが出なくなる。スクロールと計測は別の呼び出しに分け、計測中は一切スクロールしない。
 - **駆動は1フロー1起動**。多数のフローを1スクリプトに詰めると相互に絡んで解析不能になり、自分の駆動残留を「ユーザーが触った」と誤診する（docs/build.md「実機で異常を見たら、まず自分の駆動の残留を疑う」）。
@@ -64,11 +64,8 @@ description: Hologram を CDP（Chrome DevTools Protocol）で計測・撮影・
 
 - **実機の Chrome が読んでいるのは本体ツリーの `extension/.output/chrome-mv3`**（`outDirTemplate`＝docs/build.md）。挙動を検証する前に**今のビルドがいつのものか**を確認する＝`chrome-extension://<id>/diag.html` の `devBuild`（`running` / `onDisk`）かファイルの更新時刻を見る（確認を怠って1時間、旧バンドルの挙動を「修正後のコード」として推測し外した・2026-07-26＝当時は dev:ext と production の2ビルドが同一フォルダを取り合っていたが、dev:ext 自体は #675 で撤去済み）。
 - resident.js は自己完結バンドルなので**ページ側からビルドの新旧は判別できない**。判別できるのは `chrome://extensions` のロード元・更新時刻か diag.html の `devBuild` だけ。
-- **拡張側のグローバルは isolated world**＝ページの JS コンソール（`javascript_tool`／DevTools）からは常に `undefined`/`false` に見える。`false` を「拡張が動いていない」根拠にしない。
-- **⛔ 注入の生死を `dispatchEvent` で作ったイベントで判定しない**（実害 2026-07-31）。`utils/user-gesture.ts` の `userOnly`（#323 の信頼境界）が**保存を開始・応答・終了させる全ハンドラ**（投稿を選ぶクリック・重複警告の3つの答え・ドロップゾーンを出す `dragstart` とコミットする `drop`・ホバーの保存ボタン・取込の停止・セッションを捨てるキーと右クリック）に掛かっていて、**`isTrusted !== true` を設計どおり無言で捨てる**。`dispatchEvent` は定義上 `isTrusted:false` を付けるので、**届かないのが正常**＝「反応しない」を「注入されていない」と読むと切り分けが丸ごと壊れる（この日、権限・プロファイル・ビルド・ブラウザ再起動まで疑って往復した末、ユーザーが実際にドラッグしたら一発で出た）。
-  - **trusted なイベントを作れるのは CDP の `Input.*` だけ**（`user-gesture.ts` の冒頭コメントが明記）＝`Input.dispatchMouseEvent`／claude-in-chrome なら `computer` の `hover`・`left_click_drag`。`page.dispatchEvent` はページ側と同じ扱いになる。
+- **⛔ 注入の生死を `dispatchEvent` で作ったイベントで判定しない**（実害 2026-07-31・共通分は skill `browser-extension-verify`）。**Hologram でこれが効く範囲**＝`utils/user-gesture.ts` の `userOnly`（#323 の信頼境界）が**保存を開始・応答・終了させる全ハンドラ**（投稿を選ぶクリック・重複警告の3つの答え・ドロップゾーンを出す `dragstart` とコミットする `drop`・ホバーの保存ボタン・取込の停止・セッションを捨てるキーと右クリック）に掛かっていて、`isTrusted !== true` を設計どおり無言で捨てる。trusted なイベントを作れるのは CDP の `Input.*` だけ（`user-gesture.ts` の冒頭コメントが明記）。
   - **「痕跡ゼロ」も注入の否定にならない**＝`hologram-extension-ui` を作るのは `ui-root.ts` の `ensureUiRoot()` だけで、唯一の呼び出し元は `status-surface.ts`（出すものが無い間は生成されない）。`<hologram-corner-control>` は画像ごとに、保存済みの印かホバー時の保存ボタンとしてだけ挿入される。**素のタイムラインで custom element 0 は健全な状態。**
-  - **注入の生死を非破壊で見たいなら、まず他の拡張と比べる**＝同じ x.com を見ている別の content script（Control Panel for Twitter 等）の痕跡も同時に消えているなら、疑うのはそのタブやプロファイルであって Hologram ではない。
 - **アイコン無反応の一次診断は `~/.hologram/capture.log`**: click 行なし＝クリックが SW に届いていない（別ウィンドウ/別アイコンの疑い）／`phase:"skip"`＝非 http タブ／`phase:"fail"`＝executeScript のエラー内容つき。
 - **全自動テストは `scripts/e2e-capture-test.cts`**（使い捨て Chrome＋SW evaluate で activateOnTab 相当 → バナー → 保存 → API 照合 → 掃除）。⚠️SW 注入の files リストは `background.ts` と**手動同期**＝本体の注入リストを変えたら e2e も直す。
 - 拡張 ID は manifest `key` から決定的に計算できる: `SHA256(base64decode(key))` の先頭16バイトを a〜p の16進アルファベットへ。
@@ -79,7 +76,6 @@ description: Hologram を CDP（Chrome DevTools Protocol）で計測・撮影・
 
 奪ってはいけないのはフォーカスだけで、実 Chrome での検証自体は歓迎（グローバル CLAUDE.md「Chrome のフォーカスを奪わない」）。背面タブのまま CDP で読む／JS を走らせるのを既定にする。ヘッドレス（`scripts/e2e-capture-test.cts`）で足りるならそちら。
 
-- **スクロール検証は `document.visibilityState` を先に読む**（2026-07-26）。**背面タブでは X の仮想リストがそもそも動かない**（hidden のまま `window.scrollBy` で 5824px 進めても投稿件数もページ高も不変）。可視タブなら合成スクロール（`scrollIntoView`＋`scrollBy`）でもメディア画像は読み込まれた。「合成スクロールだから読まれない」と結論する前に「背面だから何も動いていない」を潰す。
-- **X で `performance.getEntriesByType('resource')` を件数の根拠にしない**（実地被弾 2026-07-26）。X 自身が `clearResourceTimings()` を定期的に呼ぶのでバッファは直近の消去以降しか残らない。**画像が読めたかの判定は `img.complete && img.naturalWidth>0`**。
+背面タブでの X の挙動・`performance.getEntriesByType('resource')` の罠は skill `browser-extension-verify`。
+
 - 合成 Alt+S は CDP Input ゆえ `chrome.commands` を発火しない。代わりに常駐 content_script の drag 経路を使う＝投稿画像に `dragstart` → `#__hologramDropZone` へ `dragover`/`drop`。**⚠️この経路は CDP の `Input.*` で駆動すること**＝`page.dispatchEvent` で合成したものは `userOnly`（上の「拡張を診断する」参照）に弾かれて何も起きない。2026-07-31 より前のこの行は「main world からの dispatch でも届く」と書いていたが、それは #323 の信頼境界が入る前の事実。到達確認は overlay の `textContent` と bridge.log の `launched` 行。
-- `javascript_tool` の返り値に URL やクエリ文字列が混じると `[BLOCKED: Cookie/query string data]` で落ちる＝boolean かサニタイズ（`replace(/https?:\/\/\S+/g,'<url>')`）して返す。
