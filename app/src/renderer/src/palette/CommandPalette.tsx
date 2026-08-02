@@ -56,6 +56,7 @@ const FIELD_LABEL: Record<FullTextMatch['field'], string> = {
   alt: 'ftFieldAlt',
   quoted: 'ftFieldQuoted',
   poll: 'ftFieldPoll',
+  linkCard: 'ftFieldLinkCard',
   displayName: 'ftFieldAuthor',
   screenName: 'ftFieldAuthor',
   eagleName: 'ftFieldEagle',

@@ -27,17 +27,18 @@ export function LinkCard({ m }: { m: HologramLinkCardModel }) {
         }
       }}
     >
+      {/* Icon + heading row, the same shape PollCard.tsx gives its own card, so
+          the two sub-record cards under the body text read as one family. */}
+      <div className="flex items-center gap-1 text-[11px] text-muted-foreground">
+        <LinkIcon aria-hidden="true" className="size-3" />
+        <span>{m.label}</span>
+      </div>
       <div className="flex min-w-0 items-center gap-3">
         {m.thumbSrc ? <img data-slot="link-card-thumb" className="size-12 shrink-0 rounded-md border border-border object-cover" src={m.thumbSrc} alt="" /> : null}
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
           <span className="line-clamp-2 text-[13px] leading-snug font-medium break-words">{m.title}</span>
           {m.description ? <span className="line-clamp-2 text-[12px] leading-snug text-muted-foreground break-words">{m.description}</span> : null}
-          {m.domainLabel ? (
-            <span className="mt-0.5 flex items-center gap-1 text-[11px] text-muted-foreground">
-              <LinkIcon aria-hidden="true" className="size-3" />
-              {m.domainLabel}
-            </span>
-          ) : null}
+          {m.domainLabel ? <span className="mt-0.5 text-[11px] text-muted-foreground">{m.domainLabel}</span> : null}
         </div>
       </div>
     </div>

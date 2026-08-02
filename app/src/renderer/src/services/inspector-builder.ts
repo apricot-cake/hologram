@@ -463,6 +463,7 @@ export function makeInspector(deps: InspectorBuilderDeps) {
   function linkCardOf(card: any): HologramLinkCardModel | null {
     if (!card || !card.url) return null;
     return {
+      label: deps.t('linkCardLabel'),
       title: card.title || card.url,
       description: card.description || '',
       domainLabel: hostOf(card.url) || '',

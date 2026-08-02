@@ -330,6 +330,9 @@ declare global {
   // with no url does not reach the renderer at all (native-host/
   // post-record.mts's normLinkCard drops it).
   interface HologramLinkCardModel {
+    // Section heading above the card, already localized here (the component
+    // renders strings only) — same split HologramPollCardModel.label uses.
+    label: string;
     title: string;
     description: string;
     domainLabel: string;
