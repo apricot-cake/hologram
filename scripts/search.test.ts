@@ -83,6 +83,32 @@ describe('短語彙用の正規化部分一致', () => {
   });
 });
 
+describe('ローマ字クエリのかな派生（#761: compile() 側）', () => {
+  test('"neko" がタグ・本文の "ねこ" に一致する', () => {
+    expect(S.compile('neko')('ねこの写真')).toBe(true);
+    expect(S.compile('neko')('タグ: ねこ')).toBe(true);
+  });
+
+  test('サジェスト等の候補判定と同じ compile() が使うタグ表記にも一致する', () => {
+    expect(S.compile('neko')('ねこ')).toBe(true);
+  });
+
+  test('英語のタグ・本文への到達は失わない（OR 並走）', () => {
+    expect(S.compile('neko')('neko photos')).toBe(true);
+  });
+
+  test('"neko" は「ね」と「こ」を離れて含むだけの本文に不一致（かな派生は部分列ではなく厳密部分一致）', () => {
+    // If the kana-derived term were checked with isSubsequence() instead of a
+    // contiguous substring, this would wrongly match ("ね" then "こ" appear in
+    // order but are not adjacent).
+    expect(S.compile('neko')('ねをこ')).toBe(false);
+  });
+
+  test('離れた「ね」「こ」を含む長文にも不一致（同上）', () => {
+    expect(S.compile('neko')('ねずみとうさぎとこどもたち')).toBe(false);
+  });
+});
+
 describe('A: サブシーケンス（順序一致・飛び石OK）', () => {
   test('"ねこわ" が "ねこかわいい" に一致（飛び石）', () => {
     expect(S.compile('ねこわ')('ねこかわいい')).toBe(true);
