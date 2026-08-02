@@ -1,6 +1,7 @@
 'use strict';
 
 import { app, BrowserWindow, protocol } from 'electron';
+import chokidar, { type FSWatcher } from 'chokidar';
 import log from 'electron-log/main';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -121,15 +122,20 @@ async function sweepReplacements() {
   }
 }
 
-let inboxWatcher: import('node:fs').FSWatcher | null = null;
+let inboxWatcher: FSWatcher | null = null;
 let inboxWatchDebounce: any = null;
+// chokidar (#11), not fs.watch: cross-platform normalization and a single
+// rename-detection story instead of chasing platform-specific fs.watch quirks
+// ourselves. This directory only ever holds files arriving into the inbox, so
+// depth: 0 (this dir's own entries, no recursion) is enough, and
+// ignoreInitial matches fs.watch's behavior of never firing for what was
+// already there when the watch started.
 function watchInboxFolder() {
   if (inboxWatcher) {
-    try {
-      inboxWatcher.close();
-    } catch {
+    const closing = inboxWatcher;
+    void closing.close().catch(() => {
       /* already closed */
-    }
+    });
     inboxWatcher = null;
   }
   const folder = getSaveFolder();
@@ -147,7 +153,8 @@ function watchInboxFolder() {
   }
   try {
     ensureInboxDirs(folder);
-    inboxWatcher = fs.watch(inboxNewDir(folder), () => {
+    inboxWatcher = chokidar.watch(inboxNewDir(folder), { depth: 0, ignoreInitial: true });
+    inboxWatcher.on('all', () => {
       clearTimeout(inboxWatchDebounce);
       inboxWatchDebounce = setTimeout(() => {
         // The sweep runs BEFORE the event so the renderer's refetch already

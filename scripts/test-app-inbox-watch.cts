@@ -5,11 +5,12 @@
 //     the DB and rendered at the next launch (no sidecar involved at all — the
 //     "saved while the app isn't running -> picked up on the next launch" acceptance criterion)
 //   - a post saved to .hologram-inbox/new WHILE THE APP IS RUNNING is picked up by
-//     watchInboxFolder's fs.watch (400ms debounce) without a restart (the
+//     watchInboxFolder's chokidar watcher (400ms debounce) without a restart (the
 //     "a save while the app is running is reflected via the watcher" criterion)
 // Idempotent re-apply of the same envelope is covered by the unit suite
 // (scripts/db-inbox.test.ts) — this harness only proves the two are wired
-// together through a real Electron boot + fs.watch, which a unit test cannot.
+// together through a real Electron boot + the chokidar watcher, which a unit
+// test cannot.
 //
 //   node scripts/test-app-inbox-watch.cts
 
