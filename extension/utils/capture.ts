@@ -55,7 +55,10 @@ export async function startCapture(): Promise<void> {
   // am about to click" everywhere, the bookmarks list included. Scoped to the
   // bookmarks list for now; anywhere else the request is simply ignored and
   // the single-shot flow below runs.
-  if (wantsAuto && site.isBulkCapturePage?.()) {
+  // Awaited (#280): a site whose ownership check needs a network round trip
+  // (pixiv's bookmark list) returns a Promise here, and a Promise is always
+  // truthy — checking it unawaited would enter bulk mode unconditionally.
+  if (wantsAuto && (await site.isBulkCapturePage?.())) {
     startBulkCapture(site, i18n);
     return;
   }

@@ -136,10 +136,15 @@ export const MESSAGES = {
     // sentence and can point at the diagnostics page.
     cornerRetry: '保存に失敗しました。押すと再試行します',
 
-    // bulk-capture.ts: X bookmarks chase-mode intake banner (#362)
+    // bulk-capture.ts: chase-mode intake banner (#362, generalized beyond X by #280)
     bulkStop: '中断',
     // $1 = saved count, $2 = already-saved (skipped) count
     bulkProgress: '保存 $1件・保存済みスキップ $2件',
+    // Sites whose list is fully loaded up front (#280 — pixiv) show a total
+    // instead of the plain running count above. $1 = total in the list right
+    // now, $2 = how many of those have reached a final outcome, $3 = saved
+    // count, $4 = already-saved (skipped) count.
+    bulkProgressTotal: '対象 $1件中 $2件処理（保存 $3件・保存済みスキップ $4件）',
     bulkStopped: '取込を中断しました',
     bulkFinished: '取込が完了しました',
     bulkSummarySaved: '保存 $1件',
@@ -244,9 +249,12 @@ export const MESSAGES = {
     cornerSaving: 'Saving',
     cornerRetry: 'Save failed. Press to retry',
 
-    // bulk-capture.ts: X bookmarks chase-mode intake banner (#362)
+    // bulk-capture.ts: chase-mode intake banner (#362, generalized beyond X by #280)
     bulkStop: 'Stop',
     bulkProgress: 'Saved $1 · already saved $2',
+    // $1 = total in the list right now, $2 = how many of those have reached a
+    // final outcome, $3 = saved count, $4 = already-saved (skipped) count.
+    bulkProgressTotal: '$2 of $1 processed (saved $3 · already saved $4)',
     bulkStopped: 'Import stopped',
     bulkFinished: 'Import finished',
     bulkSummarySaved: '$1 saved',

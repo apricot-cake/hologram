@@ -696,6 +696,12 @@ const x: Extractor = {
       return prepareScopedCaptureState('__snsCaptureXNoHover', [post, post.parentElement, post.closest('[data-testid="cellInnerDiv"]')]);
     },
     isBulkCapturePage: isXBookmarksPage,
+    capturedVia: 'x-bookmarks',
+    // The virtual list only mounts a row once it is scrolled to, so intake
+    // cannot call itself done just because nothing is queued right now — more
+    // of the list may still be below the fold (#280 split off from
+    // bulk-capture.ts's former hardcoded checkEnd).
+    bulkAtBottom: () => window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 100,
     extractDomMeta: extractXDomMeta,
   },
 
