@@ -132,7 +132,7 @@ function usePanelWidth(key: PanelKey, defaultWidth: () => number): { width: numb
 // Wire one panel's width to a handle. `write` is the live channel — the CSS variable
 // the panel's width actually reads — and is called on every frame of a drag, so it must
 // stay off React state (see use-panel-resize).
-function usePanelWidthResize(key: PanelKey, label: string, side: 'left' | 'right', defaultWidth: () => number, write: (px: number) => void, onGesture?: (active: boolean) => void): { width: number; resize: PanelResize } {
+function usePanelWidthResize(key: PanelKey, label: string, side: 'left' | 'right', defaultWidth: () => number, write: (px: number) => void): { width: number; resize: PanelResize } {
   const { width, fallback, commit } = usePanelWidth(key, defaultWidth);
   const clamp = useCallback((px: number) => clampWidth(key, px, window.innerWidth), [key]);
   // The committed width is React's, but the CSS variable is written by hand during a
@@ -152,7 +152,6 @@ function usePanelWidthResize(key: PanelKey, label: string, side: 'left' | 'right
     onLive: write,
     onCommit: commit,
     onReset: () => commit(clamp(fallback)),
-    onGesture,
   });
   return { width, resize };
 }
@@ -167,13 +166,10 @@ export function AppShell() {
   const writeSidebarWidth = useCallback((px: number) => {
     shellRef.current?.style.setProperty('--sidebar-width', `${px}px`);
   }, []);
-  const markResizing = useCallback((active: boolean) => {
-    if (shellRef.current) shellRef.current.dataset.resizing = String(active);
-  }, []);
   const writeInspectorWidth = useCallback((px: number) => {
     document.documentElement.style.setProperty('--inspector-w', `${px}px`);
   }, []);
-  const sidebar = usePanelWidthResize('sidebarWidth', t('resizeSidebar'), 'left', () => resolveCssLength(SIDEBAR_WIDTH), writeSidebarWidth, markResizing);
+  const sidebar = usePanelWidthResize('sidebarWidth', t('resizeSidebar'), 'left', () => resolveCssLength(SIDEBAR_WIDTH), writeSidebarWidth);
   // The inspector's default is its token's own value, measured before anything here has
   // had a chance to write over it.
   const inspector = usePanelWidthResize('inspectorWidth', t('resizeInspector'), 'right', () => resolveCssLength(getComputedStyle(document.documentElement).getPropertyValue('--inspector-w')), writeInspectorWidth);
@@ -364,13 +360,15 @@ export function AppShell() {
                   is the same result with one decision instead of two. */}
               {/* [&[hidden]]:hidden is required, not belt-and-braces: `display: flex` from
                   this element's own class beats the UA sheet's [hidden] { display: none },
-                  so the attribute alone would leave the panel on screen. The enter
-                  animation replays on every reveal because the element goes through
-                  display:none in between. */}
+                  so the attribute alone would leave the panel on screen. */}
+              {/* No enter animation (#583): revealing this panel is instant, in the docked
+                  form AND in the floating one below — one control must not have two
+                  speeds, and Ctrl+Shift+B moves it in step with the sidebar, which is
+                  instant too. docs/decisions/0017 carries the reasoning. */}
               <aside
                 data-slot="inspector"
                 ref={registerPanelEl}
-                className={`z-25 flex h-full w-[var(--inspector-w)] shrink-0 flex-col border-l border-border bg-[var(--surface)] text-[12px] duration-[var(--dur-panel)] ease-[var(--ease-out)] animate-in fade-in slide-in-from-right-[18px] [&[hidden]]:hidden ${
+                className={`z-25 flex h-full w-[var(--inspector-w)] shrink-0 flex-col border-l border-border bg-[var(--surface)] text-[12px] [&[hidden]]:hidden ${
                   wide || imageView
                     ? 'relative'
                     : // Narrow widths (#259): the same panel floats over the grid instead of

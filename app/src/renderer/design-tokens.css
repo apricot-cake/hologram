@@ -364,7 +364,6 @@
   /* Motion-study vocabulary (canvas 2026-07-05): one crisp system on --ease-out. */
   --dur-hover: 0.18s;
   --dur-pop: 0.2s;
-  --dur-panel: 0.26s;
 
   /* ---- Floating-surface materials (#136 readability policy) ----
      Every floating surface is one of THREE materials:
