@@ -135,6 +135,29 @@ describe('葉の述語', () => {
   });
 });
 
+// #23 St1: the 'user' leaf matches by group membership (deps.membersOf), not
+// exact equality, so a leaf saved before a merge still means "this author"
+// afterwards.
+describe('user: 名寄せ（membersOf）', () => {
+  test('membersOf 未注入なら完全一致のまま（既存動作の据え置き）', () => {
+    const p = Q.makePostPredOf({ isInFolder: () => false });
+    expect(p({ type: 'user', value: 'misskey:u123' })(post())).toBe(true);
+    expect(p({ type: 'user', value: 'x:@other' })(post())).toBe(false);
+  });
+
+  test('membersOf が返す集合のどれかに一致すれば真', () => {
+    const p = Q.makePostPredOf({ isInFolder: () => false, membersOf: (key) => (key === 'x:primary' ? ['x:primary', 'misskey:u123'] : [key]) });
+    // The leaf was saved with the group's primary key, but this post's own raw
+    // userKey is the OTHER member (misskey:u123) — still a match.
+    expect(p({ type: 'user', value: 'x:primary' })(post())).toBe(true);
+  });
+
+  test('自分がメンバーでないグループには当たらない', () => {
+    const p = Q.makePostPredOf({ isInFolder: () => false, membersOf: (key) => (key === 'x:primary' ? ['x:primary', 'x:@someone-else'] : [key]) });
+    expect(p({ type: 'user', value: 'x:primary' })(post())).toBe(false); // post()'s own key is misskey:u123, not in this group
+  });
+});
+
 // #42: fix a retired leaf type on load
 describe('normalizeLeaf / normalizeTree', () => {
   test('collection→folder、未知の型は素通し', () => {
@@ -340,6 +363,24 @@ describe('makePosterPredOf', () => {
 
   test('instance の一致', () => {
     expect(posterPredOf({ type: 'instance', value: 'misskey.io' })(poster({ instance: 'misskey.io' }))).toBe(true);
+  });
+
+  // #23 St1: a merged poster's group can span platforms/instances — buildUsers
+  // (services/users.ts) sets the plural fields to the union across every
+  // folded posterKey, and the leaf must match ANY of them (design: "platform
+  // フィルタ＝メンバーのいずれかが一致").
+  describe('名寄せ（platforms/instances の和集合、#23 St1）', () => {
+    test('platforms に含まれていれば、単数の platform と食い違っても一致', () => {
+      expect(posterPredOf({ type: 'platform', value: 'bluesky' })(poster({ platform: 'x', platforms: ['x', 'bluesky'] }))).toBe(true);
+    });
+
+    test('platforms が無ければ単数の platform にフォールバックする', () => {
+      expect(posterPredOf({ type: 'platform', value: 'x' })(poster({ platforms: undefined }))).toBe(true);
+    });
+
+    test('instances も同様に和集合で一致', () => {
+      expect(posterPredOf({ type: 'instance', value: 'mastodon.social' })(poster({ instance: 'misskey.io', instances: ['misskey.io', 'mastodon.social'] }))).toBe(true);
+    });
   });
 
   test('tag は注入した posterTagsOf 経由（タグ無しでも落ちない）', () => {

@@ -33,6 +33,11 @@ export interface InspectorBuilderDeps {
   showToast(msg: unknown): void;
   showKindMenu(tag: string, x: number, y: number, onChange: () => void): void;
   buildUsers(): HologramUserAgg[];
+  // #23 St1 (name-merging): folds a posterKey onto its group's canonical
+  // (primary) key — identity when the poster isn't merged. buildUsers() rows
+  // are already keyed by primary, so any raw userKey(p) has to go through this
+  // before comparing against u.key.
+  resolve(key: string): string;
   tagKindOf(tag: string): string | null | undefined;
   worksCooccurringWith(tag: string, exclude: Set<string>): Set<string>;
   jumpToPoster(post: HologramPost): void;
@@ -131,7 +136,10 @@ export function makeInspector(deps: InspectorBuilderDeps) {
     // recomputes (cached behind the library generation, so this costs nothing extra on a
     // notify that already invalidated it).
     if (key.indexOf('poster:') === 0) {
-      const uk = key.slice('poster:'.length);
+      // #23 St1: the stored key was the primary AT THE TIME the inspector opened —
+      // a later setPrimary()/unlink() on that group can leave it pointing at a
+      // now-non-primary member, which resolve() still finds.
+      const uk = deps.resolve(key.slice('poster:'.length));
       return deps.buildUsers().some((u) => u.key === uk);
     }
     // postIdKey IS the captureId for every stored record, so the map lookup answers in
@@ -384,7 +392,10 @@ export function makeInspector(deps: InspectorBuilderDeps) {
     const avatarSrc = p.avatarFile ? deps.fileSrc(p.avatarFile) : null;
     // The poster exists in the poster view only for SNS posts (buildUsers skips url-less
     // migrations); when it does, the name+avatar links to it (bidirectional nav: posts ↔ posters).
-    const jumpUser = p.url ? deps.buildUsers().find((u) => u.key === userKey(p)) : null;
+    // #23 St1: userKey(p) is the post's own RAW key; buildUsers() rows are
+    // keyed by the group's primary, so a merged poster's post only finds its
+    // (folded) row through resolve().
+    const jumpUser = p.url ? deps.buildUsers().find((u) => u.key === deps.resolve(userKey(p))) : null;
     // Same platform → instance rule buildUsers uses for HologramUserAgg.instance
     // (services/users.ts): only misskey/mastodon posts carry an arbitrary instance
     // host, taken from the post's own captured URL.

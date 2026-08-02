@@ -22,11 +22,13 @@ const BASE_POSTS = () => [
 
 let posts: any[];
 let gen: number;
+let aliasResolve: (key: string) => string;
 let buildUsers: ReturnType<typeof makeUsers>['buildUsers'];
 
 beforeEach(() => {
   posts = BASE_POSTS();
   gen = 1;
+  aliasResolve = (key) => key; // no aliasing by default — identity, same as an ungrouped poster
 
   ({ buildUsers } = makeUsers({
     allPosts: () => posts,
@@ -39,6 +41,7 @@ beforeEach(() => {
         return '';
       }
     },
+    resolve: (key) => aliasResolve(key),
   }));
 });
 
@@ -76,6 +79,52 @@ describe('buildUsers（ロールアップ）', () => {
     const users = buildUsers();
     expect(users.find((u) => u.key === 'x:u1').instance).toBe('');
     expect(users.find((u) => u.key === 'misskey:u3').instance).toBe('misskey.io');
+  });
+});
+
+// #23 St1: the fold pass onto resolve(key). aliasResolve stands in for
+// services/aliases.ts here — a real merge always resolves every member to the
+// SAME primary, which is what these stubs mimic.
+describe('buildUsers（名寄せの畳み込み）', () => {
+  test('resolve が同じ primary を返す2キーは1件へ畳まれ、件数が合算される', () => {
+    aliasResolve = (key) => (key === 'x:u1' || key === 'misskey:u3' ? 'x:u1' : key);
+
+    const merged = buildUsers().find((u) => u.key === 'x:u1');
+    expect(merged).toBeTruthy();
+    expect(merged.count).toBe(4); // 3 (x:u1) + 1 (misskey:u3)
+    expect(buildUsers().find((u) => u.key === 'misskey:u3')).toBeUndefined(); // folded away, not a separate row any more
+  });
+
+  test('期間は union（latest/firstPost が畳んだ側にも広がる）', () => {
+    aliasResolve = (key) => (key === 'x:u1' || key === 'misskey:u3' ? 'x:u1' : key);
+
+    const merged = buildUsers().find((u) => u.key === 'x:u1');
+    // x:u1 alone is 2026-03-01..03; misskey:u3's 2026-02-01 post extends firstPost earlier.
+    expect(merged.firstPost).toBe('2026-02-01');
+    expect(merged.latest).toBe('2026-03-03');
+  });
+
+  test('表示系（displayName 等）は primary 側の agg を採る（畳む順序に依存しない）', () => {
+    // primary = misskey:u3 this time (the OTHER direction) — its own displayName
+    // must win even though x:u1's raw entries are scanned first in allPosts() order.
+    aliasResolve = (key) => (key === 'x:u1' || key === 'misskey:u3' ? 'misskey:u3' : key);
+
+    const merged = buildUsers().find((u) => u.key === 'misskey:u3');
+    expect(merged.displayName).toBe('キャロル');
+    expect(merged.platform).toBe('misskey');
+  });
+
+  test('members / platforms に畳んだ全キー・全プラットフォームが載る', () => {
+    aliasResolve = (key) => (key === 'x:u1' || key === 'misskey:u3' ? 'x:u1' : key);
+
+    const merged = buildUsers().find((u) => u.key === 'x:u1');
+    expect(merged.members.slice().sort()).toEqual(['misskey:u3', 'x:u1']);
+    expect(merged.platforms.slice().sort()).toEqual(['misskey', 'x']);
+  });
+
+  test('resolve が恒等写像なら通常どおり畳まれない', () => {
+    expect(buildUsers()).toHaveLength(2);
+    expect(buildUsers().find((u) => u.key === 'x:u1').members).toEqual(['x:u1']);
   });
 });
 

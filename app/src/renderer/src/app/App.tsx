@@ -10,6 +10,7 @@ import { CompareHost } from '../compare/index.tsx';
 import { SettingsHost } from '../settings/index.tsx';
 import { BulkTagDialogHost } from '../selection/BulkTagDialog.tsx';
 import { TriageHost } from '../triage/index.tsx';
+import { AliasPickerHost } from '../posters/AliasPicker.tsx';
 import { Toaster } from '@/components/ui/sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { handleShortcutFullTextKey, handleShortcutPaletteKey } from '../services/command-registry.ts';
@@ -290,6 +291,8 @@ export function App() {
       {/* Bulk tagging for the selection (bulk-tag.ts bridge, P2⑦) — the one tagging
           flow that stages before it writes, so it gets a Dialog rather than the
           inspector's inline field. */}
+      {/* "同一人物にする" poster picker (#23 St1) — the inspector/card-menu merge flow's search dialog. */}
+      <AliasPickerHost />
       <BulkTagDialogHost />
       {/* Fast triage mode (#46) — a full-screen dialog like the ones above, not part
           of the shell's content-column swap (AppShell), so it composes cleanly with

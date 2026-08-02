@@ -27,7 +27,7 @@
 const UNDO_MAX = 50;
 
 /** What a recorded change is about: which set of values, on which kind of target. */
-export type UndoKind = 'post-tags' | 'poster-tags' | 'folder-items' | 'poster-folder-items';
+export type UndoKind = 'post-tags' | 'poster-tags' | 'folder-items' | 'poster-folder-items' | 'poster-alias';
 
 /**
  * One target's share of an edit. `target` is a captureId (post-tags), a poster key
@@ -35,6 +35,18 @@ export type UndoKind = 'post-tags' | 'poster-tags' | 'folder-items' | 'poster-fo
  * because update-tags is keyed by file name rather than captureId. `added`/`removed`
  * are the values the edit REALLY moved — an empty pair is not a change.
  */
+// 'poster-alias' (#23 St1) does not fit the per-target value-diff shape the
+// other three kinds share: a merge/unlink is a structural edit on GROUPS, not
+// a value in one target's list (merging a 3rd poster into an already-merged
+// pair has to restore BOTH sides' full prior membership on undo, not just the
+// one key named in the UI). Its `added`/`removed` each hold exactly one
+// element: a JSON-stringified { keys, groups } snapshot — `removed` is the
+// state to restore to on undo, `added` the state to restore to on redo (both
+// are FULL snapshots, so the applier only ever needs the one direction is
+// asking for — see services/aliases.ts's snapshotFor/restore and
+// undo-builder.ts's applyPosterAlias). `target` carries no meaning of its own
+// here (kept non-empty only because normalize() requires one); it's the
+// affected keys inside the payload that the applier actually reads.
 export type UndoChange = {
   kind: UndoKind;
   target: string;

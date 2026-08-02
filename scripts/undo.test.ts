@@ -32,6 +32,11 @@ function setup(initial: Record<string, string[]> = {}) {
       'poster-tags': applierFor('poster-tags'),
       'folder-items': applierFor('folder-items'),
       'poster-folder-items': applierFor('poster-folder-items'),
+      // 'poster-alias' (#23 St1) is snapshot-based, not a value diff (see
+      // undo.ts's UndoChange comment) — the generic diff stub above is still a
+      // fine stand-in here since this file only exercises the STACK semantics
+      // (push/undo/redo/cap/direction), not any one kind's real apply logic.
+      'poster-alias': applierFor('poster-alias'),
     },
   });
   return { undo, state, calls };

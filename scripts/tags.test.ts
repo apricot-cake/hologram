@@ -109,6 +109,26 @@ describe('posterTagsOf / posterFilterVocab', () => {
     expect(api.posterTagsOf('zzz')).toEqual([]);
   });
 
+  // #23 St1: membersOf union — a merged poster's tags are the union across every
+  // posterKey its group bundles, not just the primary's own entry.
+  test('membersOf 注入時は複数キーのタグを和集合で返す（#23 St1）', () => {
+    const merged = makeTags({
+      tagTypes: () => state.tagTypes,
+      tagLabels: () => state.tagLabels,
+      posterTags: () => posterTags,
+      allPosts: () => state.allPosts,
+      t,
+      charCandidatesFor: () => [],
+      relatedTagCandidates: () => [],
+      membersOf: (key) => (key === 'x:1' ? ['x:1', 'x:2'] : [key]),
+    });
+    expect(merged.posterTagsOf('x:1').slice().sort()).toEqual(['CharX', 'WorkA', 'あんず', '資料'].sort());
+  });
+
+  test('membersOf 未注入なら単一キーのまま（既定・後方互換）', () => {
+    expect(api.posterTagsOf('x:1')).toEqual(['WorkA', '資料']);
+  });
+
   // Order: work (WorkA) → character (CharX) → general (あんず/資料 in ja collation order)
   test('種別順の並び', () => {
     expect(api.posterFilterVocab()).toEqual(['WorkA', 'CharX', ...['あんず', '資料'].sort(ja)]);

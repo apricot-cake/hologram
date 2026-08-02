@@ -331,6 +331,36 @@ function PosterInspector({ m }: { m: HologramInspectorModel }) {
           </div>
         </section>
       </Divided>
+      {/* #23 St1 (poster name-merging): 同一人物 section — every OTHER posterKey
+          this poster's alias group bundles, each removable, plus a "+" that
+          opens the merge picker regardless of whether a group already exists
+          (same anatomy as the folders section above it). */}
+      <Divided>
+        <section className="flex flex-col gap-1.5">
+          <span className="text-xs text-muted-foreground">{m.labels.sameAuthor}</span>
+          <div className="flex flex-wrap gap-1">
+            {(m.sameAuthor || []).map((o: { key: string; label: string; platformLabel: string }) => (
+              <Badge key={o.key} variant="outline" className="gap-1 pr-1">
+                <span className="max-w-40 truncate">{o.label}</span>
+                {o.platformLabel ? <span className="text-muted-foreground">{o.platformLabel}</span> : null}
+                <button type="button" aria-label={m.labels.sameAuthorUnlink} className="-mr-0.5 rounded-full p-0.5 hover:bg-muted" onClick={() => m.onSameAuthorUnlink?.(o.key)}>
+                  <X className="size-3" aria-hidden="true" />
+                </button>
+              </Badge>
+            ))}
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Badge variant="outline" className="cursor-pointer text-muted-foreground hover:bg-muted" aria-label={m.labels.sameAuthorMerge} render={<button type="button" onClick={m.onSameAuthorMerge} />}>
+                    <Plus aria-hidden="true" />
+                  </Badge>
+                }
+              />
+              <TooltipContent side="top">{m.labels.sameAuthorMerge}</TooltipContent>
+            </Tooltip>
+          </div>
+        </section>
+      </Divided>
       <Divided>
         <TagsSection m={m} />
       </Divided>

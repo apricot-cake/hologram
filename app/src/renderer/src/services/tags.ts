@@ -32,6 +32,14 @@ import { hologramIpc } from './ipc.ts';
 //     this file uses bare `t` pervasively as a tag-string loop variable)
 //   charCandidatesFor(workTags) / relatedTagCandidates(sel, opts) — cooc.js
 //     products (deferred arrows — consts declared after the wiring point)
+//   membersOf(key) — services/aliases.ts (#23 St1), optional. A merged
+//     poster's tags read as the UNION across every posterKey its group
+//     bundles (design: "poster-tags は読みは membersOf の union・書きは
+//     primary へ一本化") — the write side needs no change here: every caller
+//     already passes buildUsers()'s u.key, which is always the primary once
+//     #23's buildUsers fold lands, so a plain setPosterTags(key, …) already
+//     lands on the primary. Absent/default = identity ([key] alone), so a
+//     poster with no group reads exactly as before.
 export function makeTags(deps: {
   tagTypes(): Record<string, string>;
   tagLabels(): Record<string, string>;
@@ -40,8 +48,9 @@ export function makeTags(deps: {
   t(key: string, subs?: ReadonlyArray<string | number | null | undefined>): string;
   charCandidatesFor(workTags: string[]): Array<[string, number]>;
   relatedTagCandidates(selectedTags: string[], opts?: { exclude?: Set<string> | null }): Array<{ tag: string; withTag: string | null; count: number }>;
+  membersOf?(key: string): string[];
 }) {
-  const { tagTypes, tagLabels, posterTags, allPosts, t: t18n, charCandidatesFor, relatedTagCandidates } = deps;
+  const { tagTypes, tagLabels, posterTags, allPosts, t: t18n, charCandidatesFor, relatedTagCandidates, membersOf } = deps;
   const KIND_LABEL: Record<string, string> = { work: t18n('kindWork'), character: t18n('kindCharacter') }; // resolved once at load
 
   function tagKindOf(tag: string): string | null {
@@ -53,8 +62,14 @@ export function makeTags(deps: {
   }
 
   function posterTagsOf(key: string): string[] {
-    const t = posterTags()[key];
-    return Array.isArray(t) ? t : [];
+    const members = membersOf ? membersOf(key) : [key];
+    if (members.length === 1) {
+      const t = posterTags()[members[0]];
+      return Array.isArray(t) ? t : [];
+    }
+    const set = new Set<string>();
+    for (const m of members) for (const t of posterTags()[m] || []) set.add(t);
+    return [...set];
   }
   // Tags actually applied to at least one poster — the vocabulary the filter offers.
   // Kinded (Work/Character) tags stay in (kind dots distinguish them); order is by kind

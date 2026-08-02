@@ -57,7 +57,7 @@ import { importTagParents, makeTagResolver, preparePostStmts, writePost } from '
 // config.json is machine-specific (paths, extension id) and lives in configDir
 // anyway; a pre-#5 library can still have a stale copy sitting in the folder.
 const EXPORT_SKIP = new Set(['config.json']);
-const ORG_MERGE = ['folders.json', 'tag-types.json', 'ungrouped.json', 'manual-groups.json', 'poster-favorites.json', 'poster-folders.json', 'poster-tags.json'];
+const ORG_MERGE = ['folders.json', 'tag-types.json', 'ungrouped.json', 'manual-groups.json', 'poster-favorites.json', 'poster-folders.json', 'poster-tags.json', 'poster-aliases.json'];
 
 function isVolatile(name) {
   return /\.tmp(-|$)/i.test(name) || /\.bak$/i.test(name);
@@ -320,6 +320,63 @@ function mergePosterTags(cur, inc) {
   for (const [k, set] of Object.entries(out)) tags[k] = [...(set as any[])];
   return { tags };
 }
+// Poster-alias groups (#23 St1): { groups:[{id, primary, members:[posterKey]}] }.
+// Union-find over MEMBERS (not ids) — two groups from either side that share a
+// posterKey are the same real-world merge and collapse into one, same shape as
+// mergeManualGroups' "ONE-group-per-member" invariant above. cur is added
+// first, so it wins both the surviving id and the surviving primary when a
+// merged component pulls in more than one source group (local-wins, the same
+// convention every other merger here follows).
+function mergePosterAliases(cur, inc) {
+  const parent = new Map();
+  const find = (x) => {
+    while (parent.get(x) !== x) {
+      parent.set(x, parent.get(parent.get(x)));
+      x = parent.get(x);
+    }
+    return x;
+  };
+  const order: any[] = [];
+  const sourceGroups: any[] = []; // cur-then-inc order — first match wins ties below
+  const addGroup = (g) => {
+    if (!g || !Array.isArray(g.members)) return;
+    const members = [...new Set(g.members.map(String).filter(Boolean))];
+    if (members.length < 2) return;
+    const primary = typeof g.primary === 'string' && members.includes(g.primary) ? g.primary : members[0];
+    const id = typeof g.id === 'string' && g.id ? g.id : null;
+    sourceGroups.push({ members, primary, id });
+    for (const m of members) {
+      if (!parent.has(m)) {
+        parent.set(m, m);
+        order.push(m);
+      }
+    }
+    for (let i = 1; i < members.length; i++) {
+      const ra = find(members[0]);
+      const rb = find(members[i]);
+      if (ra !== rb) parent.set(ra, rb);
+    }
+  };
+  for (const g of (cur && cur.groups) || []) addGroup(g);
+  for (const g of (inc && inc.groups) || []) addGroup(g);
+  const byRoot = new Map();
+  for (const m of order) {
+    const r = find(m);
+    if (!byRoot.has(r)) byRoot.set(r, []);
+    byRoot.get(r).push(m);
+  }
+  const groups: any[] = [];
+  for (const members of byRoot.values()) {
+    if (members.length < 2) continue;
+    const memberSet = new Set(members);
+    const winner = sourceGroups.find((sg) => sg.members.some((m) => memberSet.has(m)));
+    const primary = winner && memberSet.has(winner.primary) ? winner.primary : members[0];
+    const id = (winner && winner.id) || 'al-' + members[0];
+    groups.push({ id, primary, members });
+  }
+  return { groups };
+}
+
 const MERGERS = {
   'folders.json': mergeFolders, // the library folder store
   'tag-types.json': mergeTagTypes,
@@ -328,6 +385,7 @@ const MERGERS = {
   'poster-favorites.json': mergeUngrouped, // same { keys } shape → union merge
   'poster-folders.json': mergePosterFolders, // plain { folders } shape → id-union merge
   'poster-tags.json': mergePosterTags, // { tags:{posterKey:[…]} } → per-key union
+  'poster-aliases.json': mergePosterAliases, // { groups:[{id,primary,members}] } → union-find over members
 };
 
 // --- Build ---------------------------------------------------------------------
@@ -486,6 +544,7 @@ async function writeCompleteZip(sqlite: Database.Database, srcFolder: string, tr
   addJson(dbw.getManualGroups(), 'library/manual-groups.json');
   addJson(dbw.getPosterFolders(), 'library/poster-folders.json');
   addJson(dbw.getPosterTags(), 'library/poster-tags.json');
+  addJson(dbw.getPosterAliases(), 'library/poster-aliases.json');
   const tabs = dbw.getTabs();
   if (tabs) addJson(tabs, 'library/tabs.json');
   // poster-favorites.json: feature retired, no DB table backs it — dropped from
@@ -862,6 +921,10 @@ async function importFromOpenZip(sqlite: Database.Database, zipfile: ZipReader, 
       const inc = (await parseOrgEntry(orgEntries['poster-tags.json'])) ?? {};
       dbWriter.setPosterTags(mergePosterTags(dbWriter.getPosterTags(), inc));
     }
+    if (orgEntries['poster-aliases.json']) {
+      const inc = (await parseOrgEntry(orgEntries['poster-aliases.json'])) ?? {};
+      dbWriter.setPosterAliases(mergePosterAliases(dbWriter.getPosterAliases(), inc));
+    }
     if (orgEntries['tag-types.json']) {
       const inc = (await parseOrgEntry(orgEntries['tag-types.json'])) ?? {};
       const merged = mergeTagTypes(dbWriter.getTagTypes(), inc);
@@ -1056,6 +1119,7 @@ export {
   mergeUngrouped,
   mergeManualGroups,
   mergePosterTags,
+  mergePosterAliases,
   buildTagParentsJson,
   toSidecarJson,
 };
