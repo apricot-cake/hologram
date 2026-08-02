@@ -49,6 +49,10 @@ export function createQueryBuilder(ctx: QbCtx) {
   // --- Tree mutation domain lives in query.ts (imported above, 9th extraction slice); the
   // bindings below close over THIS instance's tree.
   const qHasValue = (type: string, value: unknown) => hasLeafValue(tree, type, value);
+  // #774: the tag-leaf variant. A facet row stands for one tags-table row, so it
+  // is lit by a leaf holding that ENTITY — sameLeaf compares ids when both sides
+  // know one, and only falls back to the name when either doesn't.
+  const qHasTag = (tagId: number | null | undefined, value: string) => hasSameLeaf(tree, { type: 'tag', value, tagId });
   const removeCondsMatching = (pred: (c: HologramQueryLeaf) => boolean) => removeCondsMatchingQ(tree, pred);
   // Rebuild the flat (deduped) leaf shadow that `.shadow()` exposes below.
   // Also mirror the tree into hologramStore under ctx.storeKey, a fresh deep
@@ -138,6 +142,7 @@ export function createQueryBuilder(ctx: QbCtx) {
     },
     removeCondsMatching,
     qHasValue,
+    qHasTag,
     refresh,
     syncShadow,
     eval: (item: unknown) => evalNode(tree, item, ctx.predOf),

@@ -15,7 +15,7 @@
 import { makeUndo, type DirectedChange, type UndoChange } from './undo.ts';
 import { isVisible as panelIsVisible } from './inspector-panel.ts';
 import { postIdKey } from './records.ts';
-import { applyTagWrite, type updateTags as postsUpdateTags } from './posts.ts';
+import { applyTagWrite, updateTags as postsUpdateTags } from './posts.ts';
 import { applyPosterTagRecords, getPosterTags } from './tags.ts';
 import { applyFolderItems as applyLibraryFolderItems } from './folders.ts';
 import { restore as restorePosterAliases, type PosterAliasGroup } from './aliases.ts';

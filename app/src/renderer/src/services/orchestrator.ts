@@ -460,6 +460,7 @@ export function endFilterEditSession(): void {
   const { qfValues } = makeFacets({
     getFilteredPosts: () => getFilteredPosts(),
     qHasValue,
+    qHasTag: (tagId: number | null, name: string) => postQB.qHasTag(tagId, name),
     posterQHasValue: (type: string, v: string) => posterQB.qHasValue(type, v),
     allPosts: () => postGrid.getAllPosts(),
     hostOf: (u: string | null | undefined) => hostOf(u),

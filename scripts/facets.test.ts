@@ -86,6 +86,9 @@ function makeFacetsWith(pop: any[]) {
   return makeFacets({
     getFilteredPosts: () => pop,
     qHasValue: (t, v) => active.has(`${t}:${v}`),
+    // Mirrors the real sameLeaf rule (#774): a leaf that knows its entity is
+    // matched by id, and only a leaf without one falls back to the name.
+    qHasTag: (id, name) => (id != null && active.has(`tag#${id}`)) || active.has(`tag:${name}`),
     posterQHasValue: (t, v) => posterActive.has(`${t}:${v}`),
     allPosts: () => posts,
     hostOf: (url) => {
@@ -206,6 +209,7 @@ describe('qfValues: platform のドメイン行（#253）', () => {
   const { qfValues: qv } = makeFacets({
     getFilteredPosts: () => domainFiltered,
     qHasValue: () => false,
+    qHasTag: () => false,
     posterQHasValue: () => false,
     allPosts: () => domainPosts,
     hostOf: (url) => {
@@ -300,6 +304,7 @@ describe('qfValues: postType / media', () => {
       const { qfValues: qf2 } = makeFacets({
         getFilteredPosts: () => withText,
         qHasValue: () => false,
+        qHasTag: () => false,
         posterQHasValue: () => false,
         allPosts: () => withText,
         hostOf: () => '',
@@ -370,6 +375,84 @@ describe('qfValues: work / character（用語帳）', () => {
 
   test('character も種別スコープ（filtered 外は count 0）', () => {
     expect(qfValues('character')).toEqual([expect.objectContaining({ v: 'キャラX', count: 0 })]);
+  });
+});
+
+// #774: once records carry the effective arrays, a tag row stands for one
+// tags-table row rather than for a name — the count includes posts that only
+// carry a descendant, and two entities sharing a name get two rows.
+describe('qfValues: tag（実体キー・親子適用）', () => {
+  const ID = { 東方: 1, レミリア: 2, aliceA: 3, aliceB: 4 };
+  // effective* are the three parallel arrays lib-db-query.ts derives.
+  const entityPosts = [
+    { captureId: 'e1', tags: ['レミリア'], tagIds: [ID.レミリア], effectiveTagIds: [ID.レミリア, ID.東方], effectiveTags: ['レミリア', '東方'], effectiveTagLabels: ['レミリア', '東方'] },
+    { captureId: 'e2', tags: ['東方'], tagIds: [ID.東方], effectiveTagIds: [ID.東方], effectiveTags: ['東方'], effectiveTagLabels: ['東方'] },
+    { captureId: 'e3', tags: ['alice'], tagIds: [ID.aliceA], effectiveTagIds: [ID.aliceA], effectiveTags: ['alice'], effectiveTagLabels: ['alice(東方)'] },
+    { captureId: 'e4', tags: ['alice'], tagIds: [ID.aliceB], effectiveTagIds: [ID.aliceB], effectiveTags: ['alice'], effectiveTagLabels: ['alice(紅魔郷)'] },
+    { captureId: 'e5', tags: [], tagIds: [], effectiveTagIds: [], effectiveTags: [], effectiveTagLabels: [] },
+  ];
+  const entityActive = new Set<string>();
+  const { qfValues: qf } = makeFacets({
+    getFilteredPosts: () => entityPosts,
+    qHasValue: (t, v) => entityActive.has(`${t}:${v}`),
+    qHasTag: (id, name) => (id != null && entityActive.has(`tag#${id}`)) || entityActive.has(`tag:${name}`),
+    posterQHasValue: () => false,
+    allPosts: () => entityPosts,
+    hostOf: () => '',
+    userKey: () => '',
+    t: (key: string) => LABELS[key],
+    PF_NAME: {},
+    tagKindOf: () => undefined,
+    posterTagsOf: () => [],
+    filteredPosters: () => [],
+    posterFilterVocab: () => [],
+    namedPosters: () => [],
+    posterFolders: () => [],
+    postFolders: () => [],
+    buildUsers: () => [],
+    resolve: (key: string) => key,
+    membersOf: (key: string) => [key],
+  });
+  const rowFor = (tagId: number) => qf('tag').find((r) => r.tagId === tagId);
+
+  test('親タグの件数に、子タグだけの投稿が数えられる', () => {
+    // e1 carries only レミリア, e2 carries 東方 itself → the parent row counts both.
+    expect(rowFor(ID.東方)).toMatchObject({ v: '東方', count: 2 });
+    expect(rowFor(ID.レミリア)).toMatchObject({ v: 'レミリア', count: 1 });
+  });
+
+  test('同名2実体は2行になり、ラベルで区別される', () => {
+    const alices = qf('tag').filter((r) => r.v === 'alice');
+    expect(alices).toHaveLength(2);
+    expect(new Set(alices.map((r) => r.l))).toEqual(new Set(['alice(東方)', 'alice(紅魔郷)']));
+  });
+
+  test('リーフが持つ実体だけが on になる（同名のもう一方は消灯）', () => {
+    entityActive.add(`tag#${ID.aliceA}`);
+    try {
+      expect(rowFor(ID.aliceA)?.on).toBe(true);
+      expect(rowFor(ID.aliceB)?.on).toBe(false);
+    } finally {
+      entityActive.delete(`tag#${ID.aliceA}`);
+    }
+  });
+
+  test('id を持たないリーフ（移行前の保存検索）は名前で両方を灯す', () => {
+    entityActive.add('tag:alice');
+    try {
+      expect(rowFor(ID.aliceA)?.on).toBe(true);
+      expect(rowFor(ID.aliceB)?.on).toBe(true);
+    } finally {
+      entityActive.delete('tag:alice');
+    }
+  });
+
+  test('行は v=名前 / tagId=実体を運ぶ（選択時にリーフへ渡すため）', () => {
+    expect(rowFor(ID.東方)).toMatchObject({ v: '東方', tagId: ID.東方 });
+  });
+
+  test('「タグなし」は生タグが空の投稿だけを数える（親の含意で埋まらない）', () => {
+    expect(qf('tag')[0]).toMatchObject({ v: '__none', count: 1 });
   });
 });
 
@@ -445,6 +528,7 @@ describe('名寄せ（resolve/membersOf, #23 St1）', () => {
   const { qfValues: qv } = makeFacets({
     getFilteredPosts: () => filtered,
     qHasValue: () => false,
+    qHasTag: () => false,
     posterQHasValue: () => false,
     allPosts: () => posts,
     hostOf: (url) => {
@@ -495,6 +579,7 @@ test('タグの無い投稿が1件も無ければ「タグなし」を出さな�
   const { qfValues: qv } = makeFacets({
     getFilteredPosts: () => tagged,
     qHasValue: () => false,
+    qHasTag: () => false,
     posterQHasValue: () => false,
     allPosts: () => tagged,
     hostOf: () => '',

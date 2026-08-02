@@ -88,6 +88,8 @@ export function makeFacets(deps: {
     return [...m.values()];
   }
   const tagRow = (e: TagEntry, cnt: Map<string, number>, extra?: Record<string, unknown>): HologramQfRow => ({ v: e.name, l: e.label, tagId: e.id ?? undefined, on: qHasTag(e.id, e.name), count: cnt.get(e.key) || 0, facetDim: true, ...extra });
+  // Present values (count desc) precede absent ones; ja-locale name tiebreak.
+  const byTagCount = (a: HologramQfRow, b: HologramQfRow) => (b.count || 0) - (a.count || 0) || (a.l || '').localeCompare(b.l || '', 'ja');
 
   // Facet counts: how many CURRENT-QUERY matches fall under each value of a facet.
   // Population = getFilteredPosts() (every active condition incl. the search term),
@@ -280,14 +282,17 @@ export function makeFacets(deps: {
         // Glossary (Phase 2 ②): a Work/Character section lists the tags whose Kind matches.
         // They ARE tags (type:'tag'), so picking one adds an ordinary tag filter —
         // the kind only scopes which tags this flyout offers.
-        const cnt = facetCounts((p) => p.tags);
+        // Kind is looked up by NAME (services/tags.ts keys it that way), so two
+        // entities sharing a name necessarily share a Kind — an id-keyed Kind store
+        // is #5's remaining scope, not this one's. The ROWS are still per entity.
+        const cnt = facetCounts((p) => tagEntriesOf(p).map((e) => e.key));
         return (
-          [...new Set<string>(allPosts().flatMap((p) => p.tags || []))]
-            .filter((t) => tagKindOf(t) === cat)
-            .map((t) => ({ v: t, l: t, on: act('tag', t), type: 'tag', count: cnt.get(t) || 0, facetDim: true }))
+          tagVocab()
+            .filter((e) => tagKindOf(e.name) === cat)
+            .map((e) => tagRow(e, cnt, { type: 'tag' }))
             // Facet order: values present in the current results first (count desc),
             // absent ones sink to the bottom (greyed but still pickable).
-            .sort((a, b) => b.count - a.count || a.l.localeCompare(b.l, 'ja'))
+            .sort(byTagCount)
         );
       }
       case 'tag': {
@@ -295,12 +300,14 @@ export function makeFacets(deps: {
         // Glossary: kinded tags live in the Work/Character rows — the Tags flyout is general-only.
         // A post with no tags at all buckets under the '__none' sentinel — same shape as
         // "No platform" above, and query.ts special-cases the value the same way.
-        const cnt = facetCounts((p) => ((p.tags || []).length ? p.tags : '__none'));
-        const item = (t: string) => ({ v: t, l: t, on: act('tag', t), count: cnt.get(t) || 0, facetDim: true });
-        // Present values (count desc) precede absent ones.
-        const byCount = (a: { count: number; l: string }, b: { count: number; l: string }) => b.count - a.count || a.l.localeCompare(b.l, 'ja');
-        const allTags = [...new Set<string>(allPosts().flatMap((p) => p.tags || []))].filter((t) => !tagKindOf(t)).sort();
-        const out = allTags.map(item).sort(byCount);
+        const cnt = facetCounts((p) => {
+          const entries = tagEntriesOf(p);
+          return entries.length ? entries.map((e) => e.key) : '__none';
+        });
+        const out = tagVocab()
+          .filter((e) => !tagKindOf(e.name))
+          .map((e) => tagRow(e, cnt))
+          .sort(byTagCount);
         // "No tags" = posts whose tags are empty. It's the entry point for chained
         // tagging, so it's pinned at the front rather than mixed into the count-order
         // ranking (the same shape as GitHub's Labels dropdown putting Unlabeled at the
