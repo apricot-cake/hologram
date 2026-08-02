@@ -56,7 +56,12 @@ export function makeQfPop(deps: QfPopDeps) {
     if (i >= 0) {
       deps.removeFilter(i);
     } else if (isEntityTag) {
-      deps.addFilter({ type: 'tag', value: v, tagId: it.tagId });
+      // The row's label rides along when it says more than the name does — two
+      // same-named entities differ only by their display parent ("alice(東方)"),
+      // and a chip reading plain "alice" twice would not tell them apart. Same
+      // shape as the 'user' leaf below; tab-state's filterLabel prefers f.label.
+      const label = typeof it.l === 'string' && it.l !== v ? it.l : undefined;
+      deps.addFilter(label ? { type: 'tag', value: v, tagId: it.tagId, label } : { type: 'tag', value: v, tagId: it.tagId });
     } else if (vtype === 'tag' || vtype === 'hashtag') {
       deps.addFilter({ type: vtype, value: v });
     } else if (vtype === 'user') {

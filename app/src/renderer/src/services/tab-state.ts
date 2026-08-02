@@ -67,8 +67,11 @@ export function makeTabLabels(deps: {
       }
       // '__none' = "No tags" (facets.ts) — the chip has to spell it out, or it would
       // read as a tag whose name is '__none'.
+      // #774: a leaf that stands for one tag ENTITY carries the disambiguating
+      // label the facet row showed ("alice(東方)"); without it two same-named
+      // entities wear the same chip. Same fallback shape as 'user' below.
       case 'tag':
-        return f.value === '__none' ? t('qfTagNone') : f.value;
+        return f.value === '__none' ? t('qfTagNone') : f.label || f.value;
       case 'hashtag':
         return `#${f.value}`;
       // A folder chip stands for the folder AND its subfolders (#41), so the one that
