@@ -15,6 +15,7 @@ const preview = require('./extension-preview-control.cts') as {
 };
 const patch = require('./patch-crxjs-runtime-reload.cts') as {
   verify(): void;
+  verifySubstitutions(source: string): void;
   expectedVersion: string;
   packageFile: string;
   bundleFile: string;
@@ -29,6 +30,20 @@ describe('CRXJS development client contract', () => {
   test('the pinned patch is applied automatically after install', () => {
     expect(patch.packageFile).toContain('@crxjs');
     expect(patch.bundleFile).toContain('dist');
+  });
+
+  test('the service worker keeps its live-reload flag after a server restart', () => {
+    // The second occurrence sits in the socket close handler, so an unsubstituted
+    // one only shows up when the dev server is restarted (#726).
+    const bundle = fs.readFileSync(patch.bundleFile, 'utf8');
+    expect(bundle).toContain('.replaceAll("__LIVE_RELOAD__"');
+    expect(bundle).not.toContain('.replace("__LIVE_RELOAD__"');
+  });
+
+  test('rejects any client placeholder that a single replace would leave behind', () => {
+    const bundle = ['var brokenClient = "if (!__FLAG__) {}\\nif (__FLAG__) {}";', 'code.replace("__FLAG__", JSON.stringify(flag));'].join('\n');
+    expect(() => patch.verifySubstitutions(bundle)).toThrow(/__FLAG__/);
+    expect(() => patch.verifySubstitutions(bundle.replace('.replace(', '.replaceAll('))).not.toThrow();
   });
 });
 
@@ -45,6 +60,17 @@ describe('extension development logon task', () => {
     expect(supervisorScript).toContain("'tasklist.exe'");
     expect(supervisorScript).toContain("'schtasks.exe'");
     expect(supervisorScript).toContain('isDescendant(collision, orphanAncestorPid)');
+  });
+
+  test('reports whether the extension is still attached to HMR', () => {
+    expect(viteConfig).toContain("server.middlewares.use('/@hologram/dev-status'");
+    expect(viteConfig).toContain('server.ws.clients.size');
+    expect(supervisorScript).toContain('/@hologram/dev-status');
+    expect(supervisorScript).toContain('hmrConnected');
+    // Chrome being closed is not a server fault, so readiness must not read it.
+    const readiness = supervisorScript.slice(supervisorScript.indexOf('async function ready()'), supervisorScript.indexOf('function acquire()'));
+    expect(readiness).toContain('/manifest.json');
+    expect(readiness).not.toContain('hmrClients');
   });
 
   test('keeps the Chrome output fixed while serving the selected worktree', () => {

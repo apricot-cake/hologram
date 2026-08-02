@@ -44,7 +44,9 @@ Dependabot（#395）の更新 PR で新バージョンが来たときも、確�
 | **静的 release** | `npm run build:ext` | Chrome／Firefox を別出力へ生成・検証。日常パスは上書きしない |
 | **静的復旧** | `npm run ext:recover` | server を止め、検証済み Chrome release を日常パスへ配備 |
 
-開発サーバーは `127.0.0.1:51731` の固定 loopback だけで待ち受け、別 port へ逃げず、ブラウザを起動しない。`npm run ext:status` で状態・PID・競合 PID・ログ・現在の配信元を読み、`npm run ext:restart` で復旧する。初回登録は `npm run ext:register`。ログオンタスクは通常ユーザー権限の非対話（S4U）プロセスとして動くため、空の Windows Terminal は表示されない。supervisor は一重起動・readiness probe・指数 backoff を持ち、連続失敗は一度だけ画面にも通知する。
+開発サーバーは `127.0.0.1:51731` の固定 loopback だけで待ち受け、別 port へ逃げず、ブラウザを起動しない（`HOLOGRAM_EXTENSION_DEV_PORT` は #726 の回帰テストが自分専用のサーバーを隣に立てるためだけの逃げ道で、日常経路では使わない）。`npm run ext:status` で状態・PID・競合 PID・ログ・現在の配信元を読み、`npm run ext:restart` で復旧する。
+
+**`ext:status` は拡張が繋がっているかも見る**（#726）＝サーバーがリソースを返せることと、拡張の HMR が生きていることは別物で、後者だけ死ぬ壊れ方が実在する。`hmrClients`（Vite が数えるソケット保持クライアント数。持つのはサービスワーカーだけで、content script は chrome.runtime の port 越し）が0なら `hmrConnected: false` として緑にしない。**0 は「Chrome が起きていない」でも出る**＝サーバー側の異常とは限らないが、いずれにせよ「今このサーバーの HMR は誰にも届いていない」という意味では正しい。supervisor の readiness 判定はこれを見ない（Chrome を閉じているだけで再起動ループに入るため）。初回登録は `npm run ext:register`。ログオンタスクは通常ユーザー権限の非対話（S4U）プロセスとして動くため、空の Windows Terminal は表示されない。supervisor は一重起動・readiness probe・指数 backoff を持ち、連続失敗は一度だけ画面にも通知する。
 
 ### worktree の変更を日常 Chrome へ反映する（#718）
 
@@ -68,6 +70,7 @@ worktree は依存を独立して持つ。選択先の `extension/node_modules` 
 
 - **background と server reconnect** は CRXJS 標準の `chrome.runtime.reload()` を使う。Native Messaging のビルド印や保存ゲートには接続しない。
 - **日常タブは reload しない**。CRXJS 2.7.1 の content client が行う `location.reload()` だけを pinned postinstall patch で抑止し、契約テストが runtime reload と通常 HMR の存続を同時に守る。実機検証タブの再読み込みは検証側が外から行う。
+- **同じ patch が `__LIVE_RELOAD__` の置換も直す**（#726）＝CRXJS はこのプレースホルダを文字列パターンの `replace` で差し込むので**先頭の1個しか置き換わらない**。残る方はソケットの close ハンドラ（＝サーバー再起動でしか通らない道）に居るため、再起動のたびにワーカーが `ReferenceError` で落ち、`chrome.runtime.reload()` へ到達しない＝以後 HMR が黙って死ぬ。上流（2.7.1・main とも）未修正。契約テストは名指しの検査に加えて「2回以上出るプレースホルダを単一 `replace` で差し込んでいないか」という不変条件で、上流更新時の同型再発も見る。
 - resident は global owner を1世代だけ持ち、HMR dispose で listener、observer、timer、UI を除去する。component/token CSS は constructed stylesheet を差し替える。
 
 - **拡張の色はアプリのトークンから生成される**（#270）。各 build は Vite の前に `scripts/gen-extension-tokens.cts` を走らせる。
