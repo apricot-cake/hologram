@@ -457,7 +457,7 @@ export async function startOverlay(): Promise<() => void> {
     const onAnswer = (res?: SaveResponse) => {
       if (!deadline.settle()) return; // a late answer to a press already given up on
       if (chrome.runtime.lastError || !res || !res.ok) {
-        failSave(unit, state, anchor, saveFailureText(res && !res.ok ? res.errorKind : undefined, res && !res.ok ? res.metaReason : undefined));
+        failSave(unit, state, anchor, saveFailureText(res && !res.ok ? res.errorKind : undefined, res && !res.ok ? res.metaReason : undefined, res && !res.ok ? res.queued : undefined));
         return;
       }
       // Mark the PICTURE here rather than waiting for background.js's
