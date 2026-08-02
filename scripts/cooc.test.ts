@@ -22,7 +22,7 @@ const posts = [
 
 const { charCandidatesFor, worksCooccurringWith, relatedTagCandidates } = makeCooc({
   allPosts: () => posts,
-  tagKindOf: (t: string) => KIND[t] || null,
+  tagKindOfName: (t: string) => KIND[t] || null,
 });
 
 describe('charCandidatesFor（強ティア＝作品→キャラ・頻度降順）', () => {
@@ -112,7 +112,7 @@ describe('実効タグの適用範囲（#774）', () => {
     { captureId: 'e2', tags: ['東方', '咲夜'], effectiveTags: ['東方', '咲夜'] },
     { captureId: 'e3', tags: ['レミリア'], effectiveTags: ['レミリア', '紅魔郷', '東方'] },
   ];
-  const c = makeCooc({ allPosts: () => effPosts, tagKindOf: (t: string) => effKind[t] || null });
+  const c = makeCooc({ allPosts: () => effPosts, tagKindOfName: (t: string) => effKind[t] || null });
 
   test('charCandidatesFor: 親作品で引くと、子作品しか付いていない投稿のキャラも出る', () => {
     // 東方 is only named on e2, but e1/e3 reach it through 紅魔郷.
@@ -151,7 +151,7 @@ describe('実効タグの適用範囲（#774）', () => {
   });
 
   test('実効配列を持たない記録は生タグへ落ちる', () => {
-    const legacy = makeCooc({ allPosts: () => [{ captureId: 'l1', tags: ['レミリア', '月'] }], tagKindOf: (t: string) => effKind[t] || null });
+    const legacy = makeCooc({ allPosts: () => [{ captureId: 'l1', tags: ['レミリア', '月'] }], tagKindOfName: (t: string) => effKind[t] || null });
     expect(legacy.worksCooccurringWith('レミリア')).toEqual(new Set());
   });
 });

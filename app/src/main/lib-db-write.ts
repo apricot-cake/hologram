@@ -8,6 +8,8 @@
 import type Database from 'better-sqlite3';
 import { normFolders } from './lib-folder-tree.ts';
 import { normalizeTagName, normalizeTagNames } from '../../../native-host/tag-normalize.mts';
+import { effectiveTagsOf, tagClosureResolver } from './lib-db-query.ts';
+import type { PosterTagNamesState, PosterTagRow, PosterTagsState, TagTypeNamesState, TagTypeRow, TagTypesState } from './ipc-payloads.ts';
 import {
   addTagParent as addTagParentImpl,
   deleteOrphanTags as deleteOrphanTagsImpl,
@@ -57,35 +59,81 @@ function tagResolver(sqlite: Sqlite) {
   };
 }
 
+// #810: the Kind store is keyed by tag ENTITY. The renderer hands back the same
+// rows readTagTypes gave it, so a kind lands on the id the user classified — no
+// name resolution, and therefore no same-name fold to lose one of them in.
+//
+// Still a whole-map replace (the renderer owns the map and re-sends it on every
+// change, the same shape every other setter in this module has), but the reset
+// is now safe: NULLing every kind and re-applying by id restores exactly what
+// the sender holds, whereas the name-keyed version re-applied only ONE entity
+// per name and left the other permanently kindless.
 function replaceTagTypes(sqlite: Sqlite, types: unknown, labels: unknown) {
-  const normalized = types && typeof types === 'object' ? (types as Record<string, unknown>) : {};
-  const resolve = tagResolver(sqlite);
   sqlite.prepare('UPDATE tags SET kind = NULL').run();
   const setKind = sqlite.prepare('UPDATE tags SET kind = ? WHERE id = ?');
-  for (const [rawName, kind] of Object.entries(normalized)) {
-    const name = normalizeTagName(rawName);
-    if (!name) continue;
-    setKind.run(typeof kind === 'string' ? kind : null, resolve(name));
+  for (const row of Array.isArray(types) ? types : []) {
+    if (!row || typeof row !== 'object') continue;
+    const { id, kind } = row as { id?: unknown; kind?: unknown };
+    if (!Number.isInteger(id) || typeof kind !== 'string' || !kind) continue;
+    setKind.run(kind, id);
   }
   stateSet(sqlite, 'tagTypeLabels', JSON.stringify(labels && typeof labels === 'object' ? labels : null));
 }
 
-function readTagTypes(sqlite: Sqlite) {
-  const types: Record<string, string> = {};
-  for (const row of sqlite.prepare('SELECT name, kind FROM tags WHERE kind IS NOT NULL ORDER BY id').all() as Array<{ name: string; kind: string }>) {
-    if (!(row.name in types)) types[row.name] = row.kind;
-  }
+// The renamable work/character label table, shared by both readers below. The
+// value is DB-owned and only written by this module, so a malformed one is
+// non-authoritative rather than a reason to block all tags — and an object here
+// IS the renderer's kind-label map (TagTypesState.labels in ipc-payloads.ts),
+// since replaceTagTypes is its only writer.
+function readTagTypeLabels(sqlite: Sqlite): Record<string, string> | null {
   let labels: unknown = null;
   try {
     labels = JSON.parse(stateGet(sqlite, 'tagTypeLabels') || 'null');
   } catch {
-    // The value is DB-owned and only written by this module. A malformed value
-    // is therefore non-authoritative rather than a reason to block all tags.
+    /* see above */
   }
-  // Same reasoning for the shape: the only writer is replaceTagTypes, whose
-  // input is the renderer's kind-label map (TagTypesState.labels, the shared
-  // wire type in ipc-payloads.ts) — so an object here IS that map.
-  return { types, labels: labels && typeof labels === 'object' ? (labels as Record<string, string>) : null };
+  return labels && typeof labels === 'object' ? (labels as Record<string, string>) : null;
+}
+
+function readTagTypes(sqlite: Sqlite): TagTypesState {
+  // labelOf is #774's display-name rule; a library with no parent edges has no
+  // resolver at all, and then a tag's label is just its name.
+  const closure = tagClosureResolver(sqlite);
+  const rows = sqlite.prepare('SELECT id, name, kind FROM tags WHERE kind IS NOT NULL ORDER BY id').all() as Array<{ id: number; name: string; kind: string }>;
+  const types: TagTypeRow[] = rows.map((row) => ({ id: row.id, kind: row.kind, name: row.name, label: closure ? closure.labelOf(row.id) : row.name }));
+  return { types, labels: readTagTypeLabels(sqlite) };
+}
+
+// --- The name-keyed pair, for the ZIP interchange only (#810) ---------------
+// tag-types.json crosses between LIBRARIES, where a tag id means nothing, so the
+// archive keeps the name-keyed shape this module used to expose everywhere. Two
+// same-named entities necessarily collapse into one entry here (first/lowest id
+// wins) — that is a property of a name-keyed format, not a bug to fix in it.
+function readTagTypeNames(sqlite: Sqlite): TagTypeNamesState {
+  const types: Record<string, string> = {};
+  for (const row of sqlite.prepare('SELECT name, kind FROM tags WHERE kind IS NOT NULL ORDER BY id').all() as Array<{ name: string; kind: string }>) {
+    if (!(row.name in types)) types[row.name] = row.kind;
+  }
+  return { types, labels: readTagTypeLabels(sqlite) };
+}
+
+// The import half. Deliberately NOT a replace: it fills a kind in only where the
+// named entity has none, so importing an archive can never erase a kind a local
+// same-name entity already carries. That is also exactly lib-archive.ts's
+// mergeTagTypes rule ("cur wins") expressed against entities instead of names —
+// the caller passes the already-merged map, and every entry that came from the
+// local side is a no-op here by construction.
+function fillTagKindsByName(sqlite: Sqlite, types: unknown, labels: unknown) {
+  const normalized = types && typeof types === 'object' ? (types as Record<string, unknown>) : {};
+  const resolve = tagResolver(sqlite);
+  const setKind = sqlite.prepare('UPDATE tags SET kind = ? WHERE name = ? AND kind IS NULL');
+  for (const [rawName, kind] of Object.entries(normalized)) {
+    const name = normalizeTagName(rawName);
+    if (!name || typeof kind !== 'string' || !kind) continue;
+    resolve(name); // an incoming kind may name a tag this library has never seen
+    setKind.run(kind, name);
+  }
+  stateSet(sqlite, 'tagTypeLabels', JSON.stringify(labels && typeof labels === 'object' ? labels : null));
 }
 
 function replaceUngrouped(sqlite: Sqlite, keys: unknown) {
@@ -196,6 +244,9 @@ function readPosterFolders(sqlite: Sqlite) {
   return { folders: (sqlite.prepare('SELECT id, name FROM poster_folders ORDER BY rowid').all() as Array<{ id: string; name: string }>).map((row) => ({ ...row, items: items.get(row.id) || [] })) };
 }
 
+// The write stays keyed by NAME even though the read hands back entities (#810):
+// the poster tag editor is a text field, and a tag typed just now has no id until
+// this resolve() creates it — exactly the asymmetry replacePostTags already has.
 function replacePosterTags(sqlite: Sqlite, data: any) {
   sqlite.prepare('DELETE FROM poster_tags').run();
   const resolve = tagResolver(sqlite);
@@ -206,7 +257,31 @@ function replacePosterTags(sqlite: Sqlite, data: any) {
   }
 }
 
-function readPosterTags(sqlite: Sqlite) {
+// #810: a poster's tags read as ENTITIES, in the same parallel-array shape a post
+// record carries, plus #774's effective set — the raw tags and every ancestor the
+// tag_parents edges imply. Without the ids the renderer could only match posters
+// by name, which is the method #774 explicitly rejected (a name-keyed closure
+// reaches only one of two same-named entities and miscounts the display name);
+// without the effective set, filtering posters by a parent tag would miss the
+// posters carrying only its children, while the post side found them.
+function readPosterTags(sqlite: Sqlite): PosterTagsState {
+  const rowsByPoster = new Map<string, Array<{ id: number; name: string }>>();
+  for (const row of sqlite.prepare('SELECT pt.posterKey AS posterKey, t.id AS id, t.name AS name FROM poster_tags pt JOIN tags t ON t.id = pt.tagId ORDER BY pt.rowid').all() as Array<{ posterKey: string; id: number; name: string }>) {
+    let list = rowsByPoster.get(row.posterKey);
+    if (!list) rowsByPoster.set(row.posterKey, (list = []));
+    list.push({ id: row.id, name: row.name });
+  }
+  const closure = tagClosureResolver(sqlite);
+  const tags: Record<string, PosterTagRow> = {};
+  for (const [posterKey, list] of rowsByPoster) {
+    tags[posterKey] = { tags: list.map((t) => t.name), tagIds: list.map((t) => t.id), ...effectiveTagsOf(closure, list) };
+  }
+  return { tags };
+}
+
+// The name-only projection, for the ZIP interchange — same reasoning as
+// readTagTypeNames above (poster-tags.json travels between libraries, ids do not).
+function readPosterTagNames(sqlite: Sqlite): PosterTagNamesState {
   const tags: Record<string, string[]> = {};
   for (const row of sqlite.prepare('SELECT pt.posterKey, t.name FROM poster_tags pt JOIN tags t ON t.id = pt.tagId ORDER BY pt.rowid').all() as Array<{ posterKey: string; name: string }>) {
     (tags[row.posterKey] || (tags[row.posterKey] = [])).push(row.name);
@@ -448,6 +523,9 @@ function createDbWriter(sqlite: Sqlite) {
     stateSet: (key: string, value: string) => transaction(() => stateSet(sqlite, key, value)),
     getTagTypes: () => readTagTypes(sqlite),
     setTagTypes: (types: unknown, labels: unknown) => transaction(() => replaceTagTypes(sqlite, types, labels)),
+    // #810: the by-name pair below is lib-archive.ts's, and only lib-archive.ts's.
+    getTagTypeNames: () => readTagTypeNames(sqlite),
+    fillTagKindsByName: (types: unknown, labels: unknown) => transaction(() => fillTagKindsByName(sqlite, types, labels)),
     getUngrouped: () => readUngrouped(sqlite),
     setUngrouped: (keys: unknown) => transaction(() => replaceUngrouped(sqlite, keys)),
     getFolders: () => readFolders(sqlite),
@@ -457,6 +535,7 @@ function createDbWriter(sqlite: Sqlite) {
     getPosterFolders: () => readPosterFolders(sqlite),
     setPosterFolders: (data: unknown) => transaction(() => replacePosterFolders(sqlite, data)),
     getPosterTags: () => readPosterTags(sqlite),
+    getPosterTagNames: () => readPosterTagNames(sqlite),
     setPosterTags: (data: unknown) => transaction(() => replacePosterTags(sqlite, data)),
     getPosterAliases: () => readPosterAliases(sqlite),
     setPosterAliases: (data: unknown) => transaction(() => replacePosterAliases(sqlite, data)),

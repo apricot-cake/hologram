@@ -9,9 +9,11 @@
 
 export interface QfPopDeps {
   postShadow(): { type: string; value?: string; tagId?: number }[];
+  posterShadow(): { type: string; value?: string; tagId?: number }[];
   posterQHasValue(type: string, value: string): boolean;
-  posterAddFilter(filter: { type: string; value: string }): void;
+  posterAddFilter(filter: { type: string; [k: string]: any }): void;
   posterRemoveByLeaf(type: string, value: string): void;
+  posterRemoveFilter(index: number): void;
   addFilter(filter: { type: string; [k: string]: any }): void;
   removeFilter(index: number): void;
   buildUsers(): HologramUserAgg[];
@@ -26,6 +28,23 @@ export function makeQfPop(deps: QfPopDeps) {
     // Poster flyouts toggle a top-level leaf in the poster query tree. Work/Character/Tag
     // all map to one tag leaf type (kind only scopes which the row offers).
     if (cat === 'poster-tag' || cat === 'poster-work' || cat === 'poster-character') {
+      // #810: a poster tag row stands for one tags-table row too, so the toggle
+      // keys off the id when the row carries one — the same treatment the post
+      // side below has had since #774, and the only way the id reaches the leaf
+      // query.ts matches with. The label rides along when it says more than the
+      // name does (two same-named entities differ only by their display parent).
+      if (it.tagId != null) {
+        // Removal goes through the shadow index, exactly like the post branch
+        // below: removeFilter matches by sameLeaf (id when both sides have one)
+        // AND refreshes, which a bare removeCondsMatching does not.
+        const i = deps.posterShadow().findIndex((f) => f.type === 'tag' && f.tagId === it.tagId);
+        if (i >= 0) deps.posterRemoveFilter(i);
+        else {
+          const label = typeof it.l === 'string' && it.l !== v ? it.l : undefined;
+          deps.posterAddFilter(label ? { type: 'tag', value: v, tagId: it.tagId, label } : { type: 'tag', value: v, tagId: it.tagId });
+        }
+        return;
+      }
       if (deps.posterQHasValue('tag', v)) deps.posterRemoveByLeaf('tag', v);
       else deps.posterAddFilter({ type: 'tag', value: v });
       return;

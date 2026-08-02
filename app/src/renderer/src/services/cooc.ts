@@ -8,9 +8,19 @@
 
 // deps contract (all functions):
 //   allPosts() — full library (getter — viewer reassigns it)
-//   tagKindOf(tag) — glossary kind ('work'/'character'/null)
-export function makeCooc(deps: { allPosts(): HologramPost[]; tagKindOf(tag: string): string | null | undefined }) {
-  const { allPosts, tagKindOf } = deps;
+//   tagKindOfName(tag) — glossary kind ('work'/'character'/null) BY NAME.
+//
+// #810 keyed the Kind store by tag entity and split the lookup in two (tags.ts's
+// header), and this file deliberately takes the name-space half. Both ends of
+// what it computes are names: the caller hands in the tags currently selected in
+// a tag FIELD (strings the user typed — the picker has no entity to hand over),
+// and every suggestion it returns is a string to type back into that same field.
+// A tag written into a post resolves to one entity by name anyway
+// (lib-db-write.ts's tagResolver), so "is the tag named X a Work" is the question
+// this file actually has, and asking it per entity would only split one
+// suggestion into two identical ones.
+export function makeCooc(deps: { allPosts(): HologramPost[]; tagKindOfName(tag: string): string | null | undefined }) {
+  const { allPosts, tagKindOfName: tagKindOf } = deps;
 
   // #774 splits what a post "carries" into two readings, and this file needs both:
   //

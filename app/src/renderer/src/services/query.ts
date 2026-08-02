@@ -598,9 +598,12 @@ export function makePostPredOf(deps: {
 // an asymmetry with the extracted post side). Poster facets are a subset
 // (platform / instance / tag / folder / date). deps carry the poster-only
 // couplings the engine must not own:
-//   posterTagsOf(key) → string[]           — tags.ts (Work/Character share 'tag')
+//   posterTagEntriesOf(key) → HologramTagEntry[] — tags.ts (Work/Character share
+//     the one 'tag' leaf type). The poster's EFFECTIVE tag entities (#810): the
+//     mirror of a post record's effectiveTagIds/effectiveTags, so the two sides
+//     of the library answer a tag leaf the same way.
 //   folderById(id) → {items:string[]}|null — poster-folders.js state
-export function makePosterPredOf(deps: { posterTagsOf(key: string): string[]; folderById(id: string): { items: string[] } | null | undefined }): (f: HologramQueryLeaf) => (u: HologramUserAgg) => boolean {
+export function makePosterPredOf(deps: { posterTagEntriesOf(key: string): HologramTagEntry[]; folderById(id: string): { items: string[] } | null | undefined }): (f: HologramQueryLeaf) => (u: HologramUserAgg) => boolean {
   return function posterPredOf(f) {
     switch (f.type) {
       // u.platforms/u.instances (users.ts's buildUsers, #23 St1) are the union
@@ -614,8 +617,20 @@ export function makePosterPredOf(deps: { posterTagsOf(key: string): string[]; fo
         return (u) => (u.platforms || [u.platform]).includes(f.value);
       case 'instance':
         return (u) => (u.instances || [u.instance]).includes(f.value);
+      // Work/Character use the same tag type too. Matched by tagId first (#810),
+      // for the same two reasons the post-side leaf is: a rename changes the name
+      // but never the id, and two entities can share a name — a poster carrying
+      // one of them must not answer for the other. The ids come from the poster's
+      // EFFECTIVE set, which is what makes 'filter by the parent tag, get the
+      // posters tagged only with its children' true (#774, now on both sides).
+      // Falls back to name matching for a leaf with no id (a poster tag row whose
+      // write has not come back yet, or a saved leaf from before the DB
+      // migration), exactly as the post side does.
       case 'tag':
-        return (u) => deps.posterTagsOf(u.key).includes(f.value); // Work/Character use the same tag type too
+        return (u) => {
+          const entries = deps.posterTagEntriesOf(u.key);
+          return f.tagId != null ? entries.some((e) => e.id === f.tagId) : entries.some((e) => e.name === f.value);
+        };
       case 'folder': {
         const fo = deps.folderById(f.value);
         const set = new Set(fo ? fo.items : []);

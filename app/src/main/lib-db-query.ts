@@ -191,7 +191,12 @@ function parseHashtags(raw: unknown): string[] {
 // both reject them), but a foreign or damaged database could hold one, and this
 // runs over the app's ENTIRE post list -- so the walk carries a seen-set and
 // terminates with a partial answer rather than hanging the load.
-function tagClosureResolver(sqlite: Database.Database): { closureOf(id: number): number[]; nameOf(id: number): string; labelOf(id: number): string } | null {
+interface TagClosure {
+  closureOf(id: number): number[];
+  nameOf(id: number): string;
+  labelOf(id: number): string;
+}
+function tagClosureResolver(sqlite: Database.Database): TagClosure | null {
   const edges = sqlite.prepare('SELECT tagId, parentTagId, isDisplay FROM tag_parents').all() as Array<{ tagId: number; parentTagId: number; isDisplay: number }>;
   if (!edges.length) return null;
   const parentsOf = new Map<number, number[]>();
@@ -238,6 +243,48 @@ function tagClosureResolver(sqlite: Database.Database): { closureOf(id: number):
   return { closureOf, nameOf, labelOf };
 }
 
+// The effective tag set of ONE tagged thing: the raw tags plus every ancestor
+// the tag_parents edges imply, deduped, raw tags first. THREE parallel arrays
+// (same index = same tag), the same shape tags/tagIds already are: ids for
+// matching (query.ts's tag leaf), names for the value a picked facet row writes
+// into a leaf, labels for what that row SHOWS (two same-named entities are only
+// told apart by their display parent).
+//
+// Shared rather than inlined because posters carry tags too (#810): poster_tags
+// is a second junction table over the SAME tags/tag_parents, so applying the
+// parent relationships there has to mean bit-for-bit what it means for a post —
+// two implementations of one derivation would drift into the asymmetry #810 is
+// closing. A null closure (no rules in the library) makes the effective set the
+// raw set, and the labels the plain names.
+interface EffectiveTags {
+  effectiveTagIds: number[];
+  effectiveTags: string[];
+  effectiveTagLabels: string[];
+}
+function effectiveTagsOf(closure: TagClosure | null, tags: ReadonlyArray<{ id: number; name: string }>): EffectiveTags {
+  const effectiveTagIds: number[] = [];
+  const effectiveTags: string[] = [];
+  const effectiveTagLabels: string[] = [];
+  if (!closure) {
+    for (const t of tags) {
+      effectiveTagIds.push(t.id);
+      effectiveTags.push(t.name);
+      effectiveTagLabels.push(t.name);
+    }
+    return { effectiveTagIds, effectiveTags, effectiveTagLabels };
+  }
+  const seen = new Set<number>();
+  for (const t of tags)
+    for (const id of closure.closureOf(t.id)) {
+      if (seen.has(id)) continue;
+      seen.add(id);
+      effectiveTagIds.push(id);
+      effectiveTags.push(closure.nameOf(id));
+      effectiveTagLabels.push(closure.labelOf(id));
+    }
+  return { effectiveTagIds, effectiveTags, effectiveTagLabels };
+}
+
 // Assembles complete post records from already-fetched `posts` rows plus their
 // media/tags, grouped by postId. Shared by postsFromDb (all rows) and
 // postsByIds (a captureId subset) so both produce the exact same shape.
@@ -270,34 +317,10 @@ function assemble(sqlite: Database.Database, postRows: any[]): any[] {
   return postRows.map((r) => {
     const media = (mediaByPost.get(r.captureId) || []).map((m) => ({ url: m.url, alt: m.alt, width: m.width, height: m.height, file: m.file, type: m.type, posterFile: m.posterFile, frames: parseFrames(m.frames) }));
     const tags = tagsByPost.get(r.captureId) || [];
-    // #774: the effective tag set -- the raw tags plus every ancestor the
-    // tag_parents edges imply, deduped, raw tags first. THREE parallel arrays
-    // (same index = same tag), the same shape tags/tagIds already are:
-    // ids for matching (query.ts's tag leaf), names for the value a picked
-    // facet row writes into a leaf, labels for what that row SHOWS (two
-    // same-named entities are only telling apart by their display parent).
-    // Derived on every SELECT and stored in no table -- #21's 2026-07-18
-    // comment: "the post data is always only what the user tagged".
-    const effectiveTagIds: number[] = [];
-    const effectiveTags: string[] = [];
-    const effectiveTagLabels: string[] = [];
-    if (closure) {
-      const seen = new Set<number>();
-      for (const t of tags)
-        for (const id of closure.closureOf(t.id)) {
-          if (seen.has(id)) continue;
-          seen.add(id);
-          effectiveTagIds.push(id);
-          effectiveTags.push(closure.nameOf(id));
-          effectiveTagLabels.push(closure.labelOf(id));
-        }
-    } else {
-      for (const t of tags) {
-        effectiveTagIds.push(t.id);
-        effectiveTags.push(t.name);
-        effectiveTagLabels.push(t.name);
-      }
-    }
+    // #774: the effective tag set (effectiveTagsOf above) -- derived on every
+    // SELECT and stored in no table, per #21's 2026-07-18 comment: "the post
+    // data is always only what the user tagged".
+    const { effectiveTagIds, effectiveTags, effectiveTagLabels } = effectiveTagsOf(closure, tags);
     return {
       captureId: r.captureId,
       assetClass: r.assetClass,
@@ -440,6 +463,9 @@ function searchPostsFts(sqlite: Database.Database, query: string, limit = 200): 
 }
 
 export { postsFromDb, postsByIds, searchPostsFts, POST_COLUMNS };
+// #810: shared with lib-db-write.ts's poster-tag read — see effectiveTagsOf.
+export { tagClosureResolver, effectiveTagsOf };
+export type { TagClosure, EffectiveTags };
 
 // --- #300 (St7) additions: exports these tables have never had a reader for ---
 // (tag_parents is dormant schema for #86/#157; capturedVia was added to the

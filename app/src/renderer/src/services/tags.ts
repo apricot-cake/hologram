@@ -24,6 +24,27 @@
 // bindings (below) that viewer.ts binds at boot, so sidebar.ts reads the same
 // closures. Disk round-trips go through hologramIpc (services/ipc.ts).
 import { hologramIpc } from './ipc.ts';
+import type { PosterTagRow, TagTypeRow } from '../../../main/ipc-payloads.ts';
+
+// #810: the Kind store is keyed by tag ENTITY (tags.id), not by name — `kind` is
+// a column of the tags row, so two tags sharing a name can carry different kinds
+// (#777's split creates exactly that), and the old {name: kind} map both hid the
+// second one on read and erased it on the next write.
+//
+// That split the kind lookup in two, and WHICH one a call site wants follows from
+// the space it is working in:
+//
+//   tagKindOf(tagId)     — entity space. Anything that already knows which tags
+//     row it is holding: the facet rows (#774 made them per entity), the poster
+//     filter vocabulary, a right-clicked chip whose record carries ids.
+//   tagKindOfName(name)  — name space, "does any entity with this name carry a
+//     kind". The tag EDITOR is name space by construction (you type a string, and
+//     the write resolves it to a row), so the picker's vocabulary and the
+//     co-occurrence suggestions — whose input is a typed name and whose output is
+//     a name to type — stay here. Making them entity-precise would list one
+//     string twice in one picker, both rows writing the same name.
+export type TagTypeStore = Record<number, TagTypeRow>;
+export type PosterTagStore = Record<string, PosterTagRow>;
 
 // deps contract:
 //   tagTypes() / tagLabels() / posterTags() / allPosts() —
@@ -41,9 +62,9 @@ import { hologramIpc } from './ipc.ts';
 //     lands on the primary. Absent/default = identity ([key] alone), so a
 //     poster with no group reads exactly as before.
 export function makeTags(deps: {
-  tagTypes(): Record<string, string>;
+  tagTypes(): TagTypeStore;
   tagLabels(): Record<string, string>;
-  posterTags(): Record<string, string[]>;
+  posterTags(): PosterTagStore;
   allPosts(): HologramPost[];
   t(key: string, subs?: ReadonlyArray<string | number | null | undefined>): string;
   charCandidatesFor(workTags: string[]): Array<[string, number]>;
@@ -53,40 +74,106 @@ export function makeTags(deps: {
   const { tagTypes, tagLabels, posterTags, allPosts, t: t18n, charCandidatesFor, relatedTagCandidates, membersOf } = deps;
   const KIND_LABEL: Record<string, string> = { work: t18n('kindWork'), character: t18n('kindCharacter') }; // resolved once at load
 
-  function tagKindOf(tag: string): string | null {
-    return tagTypes()[tag] || null;
+  function tagKindOf(tagId: number | null | undefined): string | null {
+    if (tagId == null) return null;
+    return tagTypes()[tagId]?.kind || null;
+  }
+  // The name-space lookup (see the header): "does ANY entity called this carry a
+  // kind". Memoized on the store OBJECT rather than rebuilt per call, because the
+  // suggestion tiers ask it once per tag per post — every mutator below replaces
+  // the store instead of mutating it in place, which is what makes the identity
+  // check a valid staleness test.
+  let byName: { src: TagTypeStore; map: Map<string, string> } | null = null;
+  function kindByName(): Map<string, string> {
+    const src = tagTypes();
+    if (byName && byName.src === src) return byName.map;
+    const map = new Map<string, string>();
+    for (const row of Object.values(src)) if (row && !map.has(row.name)) map.set(row.name, row.kind);
+    byName = { src, map };
+    return map;
+  }
+  function tagKindOfName(tag: string): string | null {
+    return kindByName().get(tag) || null;
   }
   function kindLabel(kind: string): string {
     const labels = tagLabels();
     return (labels && labels[kind]) || KIND_LABEL[kind] || '';
   }
 
+  // One poster's tag entities as the filter side reads them (#810): the EFFECTIVE
+  // set, so a poster tagged only with a child answers to its parent, exactly as a
+  // post does since #774. A row whose ids are unavailable (the optimistic state
+  // between a tag edit and its write coming back) degrades to its raw names with
+  // no id — readers then match by name, which is the right answer for a poster
+  // whose ids are unknown.
+  function entriesOfRow(row: PosterTagRow | undefined): HologramTagEntry[] {
+    if (!row) return [];
+    const ids = Array.isArray(row.effectiveTagIds) ? row.effectiveTagIds : [];
+    if (ids.length) {
+      const names = Array.isArray(row.effectiveTags) ? row.effectiveTags : [];
+      const labels = Array.isArray(row.effectiveTagLabels) ? row.effectiveTagLabels : [];
+      return ids.map((id, i) => ({ id, name: names[i] || '', label: labels[i] || names[i] || '' }));
+    }
+    return (Array.isArray(row.tags) ? row.tags : []).map((name) => ({ id: null, name, label: name }));
+  }
+
+  // The RAW names a poster carries — what the inspector's tag field shows and
+  // edits. Unaffected by parent relationships on purpose (#21's rule: the data is
+  // always only what the user tagged), so removing a rule removes its effect.
   function posterTagsOf(key: string): string[] {
     const members = membersOf ? membersOf(key) : [key];
     if (members.length === 1) {
-      const t = posterTags()[members[0]];
-      return Array.isArray(t) ? t : [];
+      const row = posterTags()[members[0]];
+      return row && Array.isArray(row.tags) ? row.tags : [];
     }
     const set = new Set<string>();
-    for (const m of members) for (const t of posterTags()[m] || []) set.add(t);
+    for (const m of members) for (const t of posterTags()[m]?.tags || []) set.add(t);
     return [...set];
   }
-  // Tags actually applied to at least one poster — the vocabulary the filter offers.
-  // Kinded (Work/Character) tags stay in (kind dots distinguish them); order is by kind
-  // (Work → Character → General) then ja-collation so the flyout reads like the palette.
-  function posterFilterVocab(): string[] {
-    const set = new Set<string>();
-    for (const arr of Object.values(posterTags())) for (const t of Array.isArray(arr) ? arr : []) set.add(t);
-    const rank = (t: string) => {
-      const k = tagKindOf(t);
+  // The same union read, in entity space — the poster-side counterpart of a post
+  // record's effectiveTagIds/effectiveTags/effectiveTagLabels.
+  function posterTagEntriesOf(key: string): HologramTagEntry[] {
+    const members = membersOf ? membersOf(key) : [key];
+    const out: HologramTagEntry[] = [];
+    const seen = new Set<string>();
+    for (const m of members)
+      for (const e of entriesOfRow(posterTags()[m])) {
+        const k = e.id != null ? 'i:' + e.id : 'n:' + e.name;
+        if (seen.has(k)) continue;
+        seen.add(k);
+        out.push(e);
+      }
+    return out;
+  }
+  // Tag entities effectively applied to at least one poster — the vocabulary the
+  // filter offers. One row per ENTITY (#810): two same-named tags are two rows,
+  // told apart by the label (#774's "name(displayParentName)"). Kinded
+  // (Work/Character) tags stay in (kind dots distinguish them); order is by kind
+  // (Work → Character → General) then ja-collation so the flyout reads like the
+  // palette.
+  function posterFilterVocab(): HologramTagEntry[] {
+    const m = new Map<string, HologramTagEntry>();
+    for (const row of Object.values(posterTags()))
+      for (const e of entriesOfRow(row)) {
+        const k = e.id != null ? 'i:' + e.id : 'n:' + e.name;
+        if (!m.has(k)) m.set(k, e);
+      }
+    const rank = (e: HologramTagEntry) => {
+      const k = e.id != null ? tagKindOf(e.id) : tagKindOfName(e.name);
       return k === 'work' ? 0 : k === 'character' ? 1 : 2;
     };
-    return [...set].sort((a, b) => rank(a) - rank(b) || a.localeCompare(b, 'ja'));
+    return [...m.values()].sort((a, b) => rank(a) - rank(b) || a.label.localeCompare(b.label, 'ja'));
   }
 
   // Tag vocabulary sectioned by kind: the Work/Character kind sections first, then Uncategorized
   // (applied tags carrying no kind). Shared by the inspector's tag field and the bulk
   // tag dialog (via inspectorTagPickerData), which filter locally while typing.
+  //
+  // NAME space throughout (#810): this is the picker's vocabulary, and picking a
+  // row types that string into a tag field — so the list is of strings, one row
+  // per distinct name even where two entities share it (they would be two
+  // identical rows writing the same value). Which entity that write lands on is
+  // the write path's question, not this list's.
   function groupedTagVocab(opts?: { scope?: 'post' | 'poster' } | null): Array<{ name: string; tags: string[] }> {
     const scope = (opts && opts.scope) || 'post';
     const byJa = (a: string, b: string) => a.localeCompare(b, 'ja');
@@ -95,7 +182,7 @@ export function makeTags(deps: {
     // sections ahead of Uncategorized, and pull kinded tags OUT of Uncategorized so each tag shows
     // once (kind takes precedence, danbooru-style).
     const kindSec: Record<string, string[]> = { work: [], character: [] };
-    for (const [t, k] of Object.entries(tagTypes())) if (k === 'work' || k === 'character') kindSec[k].push(t);
+    for (const [t, k] of kindByName()) if (k === 'work' || k === 'character') kindSec[k].push(t);
     for (const [k, name] of [
       ['work', kindLabel('work')],
       ['character', kindLabel('character')],
@@ -109,9 +196,9 @@ export function makeTags(deps: {
     // poster-applied tags instead (posterTags), so people get their own vocabulary.
     const applied = new Set<string>();
     if (scope === 'poster') {
-      for (const arr of Object.values(posterTags())) for (const t of Array.isArray(arr) ? arr : []) if (!tagKindOf(t)) applied.add(t);
+      for (const row of Object.values(posterTags())) for (const t of Array.isArray(row?.tags) ? row.tags : []) if (!tagKindOfName(t)) applied.add(t);
     } else {
-      for (const p of allPosts()) for (const t of Array.isArray(p.tags) ? p.tags : []) if (!tagKindOf(t)) applied.add(t);
+      for (const p of allPosts()) for (const t of Array.isArray(p.tags) ? p.tags : []) if (!tagKindOfName(t)) applied.add(t);
     }
     const general = [...applied].sort(byJa);
     if (general.length) out.push({ name: t18n('tagUncategorized'), tags: general });
@@ -125,11 +212,11 @@ export function makeTags(deps: {
     const sel = new Set<string>(selectedTags || []);
     const vocabGroups = groupedTagVocab({ scope: (scope || 'post') as 'post' | 'poster' }).map((g) => ({
       name: g.name,
-      items: g.tags.map((t) => ({ tag: t, kind: tagKindOf(t) || null })),
+      items: g.tags.map((t) => ({ tag: t, kind: tagKindOfName(t) || null })),
     }));
     const srcSet = new Set<string>();
     for (const r of recordsForSource || []) for (const h of Array.isArray(r.hashtags) ? r.hashtags : []) srcSet.add(h);
-    const srcTagsForPicker = [...srcSet].map((t) => ({ tag: t, kind: tagKindOf(t) || null }));
+    const srcTagsForPicker = [...srcSet].map((t) => ({ tag: t, kind: tagKindOfName(t) || null }));
     // Suggestion groups, strongest first. Tier 1 (kind-scoped): Work on the card →
     // character candidates. Tier 2 (generic, post scope only): tags that often share
     // a post with any selected tag — a weak hint, so it sits below the kinded group,
@@ -138,7 +225,7 @@ export function makeTags(deps: {
     // deliberately separate from post-content descriptors (see groupedTagVocab).
     const coocGroups: any[] = [];
     const strong = new Set<string>();
-    const workTags = [...sel].filter((t) => tagKindOf(t) === 'work');
+    const workTags = [...sel].filter((t) => tagKindOfName(t) === 'work');
     if (workTags.length) {
       const cands = charCandidatesFor(workTags)
         .filter(([t]: [string, number]) => !sel.has(t))
@@ -157,14 +244,14 @@ export function makeTags(deps: {
       if (rel.length) {
         coocGroups.push({
           name: t18n('editCoocRelated'),
-          items: rel.map((r) => ({ tag: r.tag, kind: tagKindOf(r.tag) || null, title: t18n('editCoocWhy', [r.withTag, r.count]) })),
+          items: rel.map((r) => ({ tag: r.tag, kind: tagKindOfName(r.tag) || null, title: t18n('editCoocWhy', [r.withTag, r.count]) })),
         });
       }
     }
     return { vocabGroups, srcTagsForPicker, coocGroups };
   }
 
-  return { tagKindOf, kindLabel, posterTagsOf, posterFilterVocab, groupedTagVocab, inspectorTagPickerData };
+  return { tagKindOf, tagKindOfName, kindLabel, posterTagsOf, posterTagEntriesOf, posterFilterVocab, groupedTagVocab, inspectorTagPickerData };
 }
 
 export function sameTags(a: string[], b: string[]): boolean {
@@ -180,19 +267,22 @@ export function sameTags(a: string[], b: string[]): boolean {
 // no second implementation to drift). null until viewer's binding call runs — a pull
 // that lands before then just sees "no data yet" and recomputes on the next notify.
 // Same live-binding shape as listing.ts's namedPosters.
-export let tagKindOf: ((tag: string) => string | null) | null = null;
-export function bindTagKindOf(fn: (tag: string) => string | null): void {
+export let tagKindOf: ((tagId: number | null | undefined) => string | null) | null = null;
+export function bindTagKindOf(fn: (tagId: number | null | undefined) => string | null): void {
   tagKindOf = fn;
 }
-export let posterFilterVocab: (() => string[]) | null = null;
-export function bindPosterFilterVocab(fn: () => string[]): void {
+export let posterFilterVocab: (() => HologramTagEntry[]) | null = null;
+export function bindPosterFilterVocab(fn: () => HologramTagEntry[]): void {
   posterFilterVocab = fn;
 }
 
-// --- state (the 4 maps, owned here now — see header comment) ---
-let tagTypes = {} as Record<string, string>;
+// --- state (the 3 maps, owned here now — see header comment) ---
+// tagTypes is keyed by tags.id and posterTags by posterKey (#810). Every mutator
+// below REPLACES the map it touches rather than mutating it in place — makeTags'
+// name-space memo uses object identity as its staleness test.
+let tagTypes: TagTypeStore = {};
 let tagLabels = {} as Record<string, string>;
-let posterTags = {} as Record<string, string[]>;
+let posterTags: PosterTagStore = {};
 export const getTagTypes = () => tagTypes;
 export const getTagLabels = () => tagLabels;
 export const getPosterTags = () => posterTags;
@@ -220,24 +310,29 @@ export function onChange(cb: (kind?: string) => void) {
 // tag-types.json / poster-tags.json disk round-trip.
 // Private — only load() and the mutators below call these. Only called
 // from the browser (viewer.js); never invoked by the Node unit test.
-async function readTagTypes() {
+// The wire hands back one row per kinded ENTITY (#810); this module keys them by
+// id so a lookup is O(1) and two same-named rows stay two rows.
+async function readTagTypes(): Promise<{ types: TagTypeStore; labels: Record<string, string> }> {
   try {
     const r = await hologramIpc.getTagTypes();
-    return { types: (r && r.types) || {}, labels: (r && r.labels) || {} };
+    const types: TagTypeStore = {};
+    for (const row of (r && r.types) || []) if (row && Number.isInteger(row.id)) types[row.id] = row;
+    return { types, labels: (r && r.labels) || {} };
   } catch {
     return { types: {}, labels: {} };
   }
 }
 // Always writes BOTH maps so writing one never drops the other (set-tag-types
-// only keeps the labels it receives).
+// only keeps the labels it receives). name/label go back over the wire untouched
+// and main ignores them — the write is (id, kind) pairs.
 async function writeTagTypes() {
   try {
-    await hologramIpc.setTagTypes(tagTypes, tagLabels);
+    await hologramIpc.setTagTypes(Object.values(tagTypes), tagLabels);
   } catch {
     /* best-effort */
   }
 }
-async function readPosterTags() {
+async function readPosterTags(): Promise<PosterTagStore> {
   try {
     const r = await hologramIpc.getPosterTags();
     return (r && r.tags) || {};
@@ -245,12 +340,32 @@ async function readPosterTags() {
     return {};
   }
 }
+// The write is name-keyed (a tag typed just now has no id yet — see
+// lib-db-write.ts's replacePosterTags), so the ids and the #774 effective set the
+// read carries have to come back FROM the write. Re-reading is how they do: the
+// optimistic row a mutator left behind carries names only, and readers fall back
+// to matching by name until this lands. Best-effort, like every call here — a
+// failed re-read just leaves the store on that name-only fallback.
 async function writePosterTags() {
   try {
-    await hologramIpc.setPosterTags({ tags: posterTags });
+    await hologramIpc.setPosterTags({ tags: posterTagNames() });
+    posterTags = await readPosterTags();
+    notify('poster');
   } catch {
     /* best-effort */
   }
+}
+function posterTagNames(): Record<string, string[]> {
+  const out: Record<string, string[]> = {};
+  for (const [key, row] of Object.entries(posterTags)) if (row && row.tags.length) out[key] = row.tags;
+  return out;
+}
+// A poster's row as it looks between an edit and the write coming back: the names
+// the user just set, and no ids. Dropping them rather than keeping the stale ones
+// is the same call services/posts.ts's applyTagWrite makes for posts — arrays that
+// no longer line up are worse than none.
+function pendingPosterRow(tags: string[]): PosterTagRow {
+  return { tags: tags.slice(), tagIds: [], effectiveTagIds: [], effectiveTags: [], effectiveTagLabels: [] };
 }
 
 // Boot-time load into this service's own state (idempotent — safe to call
@@ -291,33 +406,49 @@ try {
 // --- mutators: persist + notify (viewer.js calls these instead of
 // mutating the maps itself; the surrounding business logic — undo
 // recording, inspector refresh, confirm dialogs — stays in viewer.js) ---
-export async function setTagKind(tag: string, kind: string | null) {
-  if (kind) tagTypes[tag] = kind;
-  else delete tagTypes[tag];
+// #810: classifies one tag ENTITY. The caller resolves which entity it means
+// (kind-menu-builder.ts) — a name cannot decide it once two tags can share one.
+// The re-read afterwards is not belt-and-braces: `name`/`label` are the DB's to
+// compute (#774's display-parent rule), and a tag being classified for the first
+// time has neither in this store yet.
+export async function setTagKind(tagId: number, kind: string | null) {
+  const next: TagTypeStore = { ...tagTypes };
+  if (kind) next[tagId] = { id: tagId, kind, name: next[tagId]?.name || '', label: next[tagId]?.label || '' };
+  else delete next[tagId];
+  tagTypes = next;
   await writeTagTypes();
+  const tt = await readTagTypes();
+  tagTypes = tt.types;
+  tagLabels = tt.labels;
   notify('kind');
 }
 export async function setKindLabel(kind: string, label: string | null | undefined) {
   const v = (label || '').trim();
-  if (v) tagLabels[kind] = v;
-  else delete tagLabels[kind];
+  const next = { ...tagLabels };
+  if (v) next[kind] = v;
+  else delete next[kind];
+  tagLabels = next;
   await writeTagTypes();
   notify('kind');
 }
 // Single poster's tag list (applyPosterTagChange in viewer.js); tags===null
 // clears the entry. Fire-and-forget persist, matching the pre-move behavior.
 export function setPosterTags(key: string, tags: string[] | null) {
-  if (tags && tags.length) posterTags[key] = tags;
-  else delete posterTags[key];
+  const next: PosterTagStore = { ...posterTags };
+  if (tags && tags.length) next[key] = pendingPosterRow(tags);
+  else delete next[key];
+  posterTags = next;
   writePosterTags();
   notify('poster');
 }
 // Bulk apply (undo/redo): records = [{key, tags}], persisted once.
 export function applyPosterTagRecords(records: Array<{ key: string; tags?: string[] }>) {
+  const next: PosterTagStore = { ...posterTags };
   for (const r of records) {
-    if (r.tags && r.tags.length) posterTags[r.key] = r.tags.slice();
-    else delete posterTags[r.key];
+    if (r.tags && r.tags.length) next[r.key] = pendingPosterRow(r.tags);
+    else delete next[r.key];
   }
+  posterTags = next;
   writePosterTags();
   notify('poster');
 }

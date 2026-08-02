@@ -55,7 +55,7 @@ beforeEach(() => {
 
   const dbw = createDbWriter(sqlite);
   dbw.setFolders({ folders: [{ id: 'f1', name: 'Favorites', kind: 'static', items: ['cap-1'] }] });
-  dbw.setTagTypes({ 'character:alice': 'character' }, null);
+  dbw.fillTagKindsByName({ 'character:alice': 'character' }, null);
 
   const characterId = resolveTagId('character');
   const aliceId = resolveTagId('character:alice');
@@ -96,6 +96,7 @@ describe('writeCompleteZip: 組織レイヤーの再生成', () => {
     const zip = await loadZip(outPath);
     const folders = JSON.parse(await zip.file('library/folders.json')?.async('string'));
     expect(folders.folders.map((f: any) => f.id)).toEqual(['f1']);
+    // #810: the ZIP stays keyed by NAME — a tag id means nothing in another library.
     const tagTypes = JSON.parse(await zip.file('library/tag-types.json')?.async('string'));
     expect(tagTypes.types['character:alice']).toBe('character');
   });

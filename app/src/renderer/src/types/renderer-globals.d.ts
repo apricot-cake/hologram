@@ -104,7 +104,21 @@ interface HologramQfRow {
 
 // ---- services/tags.ts — tag vocabulary / kind domain. A real ES module
 // (named exports) now; the read-side derivations + disk round-trip carry their own
-// types, so no ambient Window-shaped interface is declared here anymore. ----
+// types, so no ambient Window-shaped interface is declared here anymore.
+//
+// HologramTagEntry is the exception: one tag ENTITY as the read side passes it
+// around (#810/#774) — `name` is what a pick writes into a query leaf, `label` is
+// what a row SHOWS (two same-named entities are only told apart by their display
+// parent, "alice(東方)"), `id` is what a match keys on. It is ambient because
+// facets.ts and query.ts both speak it and neither imports tags.ts (query.ts owns
+// no couplings at all — everything reaches it through injected deps). `id` is
+// null only on the degraded path where a record's ids are unavailable and the
+// reader falls back to matching by name. ----
+interface HologramTagEntry {
+  id: number | null;
+  name: string;
+  label: string;
+}
 
 // ---- services/users.ts — poster roll-up + search-box suggestions. A real ES
 // module (named exports) now — no ambient Window-shaped interface needed, but

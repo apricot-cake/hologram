@@ -544,11 +544,14 @@ async function writeCompleteZip(sqlite: Database.Database, srcFolder: string, tr
   // ipc-organize.ts/ipc-config.ts already use as the live read path.
   const dbw = createDbWriter(sqlite);
   addJson(dbw.getFolders(), 'library/folders.json');
-  addJson(dbw.getTagTypes(), 'library/tag-types.json');
+  // #810: the by-NAME projections, not the id-keyed IPC reads — a tag id is
+  // library-local, so writing one into an archive that gets imported elsewhere
+  // would name a different tag (or none).
+  addJson(dbw.getTagTypeNames(), 'library/tag-types.json');
   addJson(dbw.getUngrouped(), 'library/ungrouped.json');
   addJson(dbw.getManualGroups(), 'library/manual-groups.json');
   addJson(dbw.getPosterFolders(), 'library/poster-folders.json');
-  addJson(dbw.getPosterTags(), 'library/poster-tags.json');
+  addJson(dbw.getPosterTagNames(), 'library/poster-tags.json');
   addJson(dbw.getPosterAliases(), 'library/poster-aliases.json');
   const tabs = dbw.getTabs();
   if (tabs) addJson(tabs, 'library/tabs.json');
@@ -924,7 +927,7 @@ async function importFromOpenZip(sqlite: Database.Database, zipfile: ZipReader, 
     }
     if (orgEntries['poster-tags.json']) {
       const inc = (await parseOrgEntry(orgEntries['poster-tags.json'])) ?? {};
-      dbWriter.setPosterTags(mergePosterTags(dbWriter.getPosterTags(), inc));
+      dbWriter.setPosterTags(mergePosterTags(dbWriter.getPosterTagNames(), inc));
     }
     if (orgEntries['poster-aliases.json']) {
       const inc = (await parseOrgEntry(orgEntries['poster-aliases.json'])) ?? {};
@@ -932,8 +935,13 @@ async function importFromOpenZip(sqlite: Database.Database, zipfile: ZipReader, 
     }
     if (orgEntries['tag-types.json']) {
       const inc = (await parseOrgEntry(orgEntries['tag-types.json'])) ?? {};
-      const merged = mergeTagTypes(dbWriter.getTagTypes(), inc);
-      dbWriter.setTagTypes(merged.types, merged.labels ?? null);
+      const merged = mergeTagTypes(dbWriter.getTagTypeNames(), inc);
+      // #810: fill, don't replace. mergeTagTypes already resolved the collisions
+      // in favour of the local side, so every local entry below is a no-op and
+      // only the incoming names that this library has no kind for take effect —
+      // which also means a same-name entity the name-keyed merge cannot see
+      // keeps the kind it already had, instead of being reset by the write.
+      dbWriter.fillTagKindsByName(merged.types, merged.labels ?? null);
     }
     // poster-favorites.json (legacy MERGERS/ORG_MERGE key, from an old export):
     // no DB table backs the retired feature -- silently dropped if present.
