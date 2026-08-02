@@ -40,6 +40,7 @@ import * as ipcWindow from './ipc-window.ts';
 import * as ipcTrash from './ipc-trash.ts';
 import * as ipcBackup from './ipc-backup.ts';
 import * as ipcTransfer from './ipc-transfer.ts';
+import * as ipcTagVocab from './ipc-tag-vocab.ts';
 import * as ipcWatchImport from './ipc-watch-import.ts';
 import { createWatchImportManager } from './lib-watch-import.ts';
 import type { IpcContext } from './ipc-context.ts';
@@ -619,6 +620,7 @@ function registerExtractedIpc() {
   ipcTrash.register(ctx);
   ipcBackup.register(ctx);
   ipcTransfer.register(ctx);
+  ipcTagVocab.register(ctx);
 }
 registerExtractedIpc();
 

@@ -57,6 +57,7 @@ import { PosterGrid, PosterGridSlot } from '../posters/index.tsx';
 import { TabsHost } from '../tabs/index.tsx';
 import { TrashGrid } from '../trash/TrashGrid.tsx';
 import { TrashView } from '../trash/TrashView.tsx';
+import { TagManagementPage } from '../tag-management/TagManagementPage.tsx';
 import { WindowControls } from './WindowControls.tsx';
 
 // #149 + #243 + #259: the stored state is purely the user's saved choice (sidebar-pref.ts).
@@ -96,6 +97,23 @@ function useSidebarOpen(): [boolean, (open: boolean) => void] {
 // Which of the three destinations the content column shows (posts / posters / trash).
 const subBrowseMode = (cb: () => void) => storeSubscribe('browseMode', cb);
 const getBrowseMode = () => (storeGet('browseMode') as string | undefined) ?? 'posts';
+// #21: a fourth destination, orthogonal to browseMode -- whether the ACTIVE tab
+// is the tag management tab (a per-tab flag, tabs-builder.ts's openTagManagementTab)
+// rather than a browse view. Reads the same 'tabs'/'activeTabId' store keys
+// services/tabs.ts's model already derives its own tab-strip entries from.
+const subIsTagsTab = (cb: () => void) => {
+  const u1 = storeSubscribe('tabs', cb);
+  const u2 = storeSubscribe('activeTabId', cb);
+  return () => {
+    u1();
+    u2();
+  };
+};
+const getIsTagsTab = () => {
+  const tabs = (storeGet('tabs') as HologramTab[] | undefined) || [];
+  const activeId = storeGet('activeTabId');
+  return tabs.find((t) => t.id === activeId)?.specialKind === 'tags';
+};
 // #37: is the save folder missing on disk right now? Seeded by App.tsx's
 // LibraryStatusGate on boot. When true, LibraryMissingState replaces the three
 // destinations below instead of the grids rendering DB-backed posts whose media
@@ -241,6 +259,7 @@ export function AppShell() {
   // Which destination the content column is showing. All three stay mounted (see below),
   // so this only decides which one is `hidden`.
   const mode = useSyncExternalStore(subBrowseMode, getBrowseMode);
+  const isTagsTab = useSyncExternalStore(subIsTagsTab, getIsTagsTab);
   const libraryMissing = useSyncExternalStore(subLibraryMissing, getLibraryMissing);
   // An image tab swaps the browse chrome for the media stage (P2⑫). The swap is a render
   // decision here — a `hidden` on the content column and the stage's own component below —
@@ -327,13 +346,18 @@ export function AppShell() {
                       inactive ones are `hidden` — the virtualized hosts keep their
                       measured layout that way, and "which one is on screen" is one
                       React decision rather than a body class racing an inline style. */}
-                  <PostGridSlot hidden={mode !== 'posts' || libraryMissing} />
-                  <PosterGridSlot hidden={mode === 'posts' || mode === 'trash' || libraryMissing} />
-                  {mode !== 'trash' && !libraryMissing && <EmptyState />}
-                  {!libraryMissing && <LibraryLoading />}
+                  <PostGridSlot hidden={mode !== 'posts' || libraryMissing || isTagsTab} />
+                  <PosterGridSlot hidden={mode === 'posts' || mode === 'trash' || libraryMissing || isTagsTab} />
+                  {mode !== 'trash' && !libraryMissing && !isTagsTab && <EmptyState />}
+                  {!libraryMissing && !isTagsTab && <LibraryLoading />}
                   {/* Trash (#268) — the third destination. */}
-                  <div hidden={mode !== 'trash' || libraryMissing}>
+                  <div hidden={mode !== 'trash' || libraryMissing || isTagsTab}>
                     <TrashView />
+                  </div>
+                  {/* Tag management (#21) — a fourth destination, gated by the active
+                      tab's specialKind rather than browseMode (see subIsTagsTab above). */}
+                  <div hidden={!isTagsTab || libraryMissing}>
+                    <TagManagementPage />
                   </div>
                 </div>
                 {/* Image-tab detail view (Eagle-style fit-to-screen). It draws its own container
