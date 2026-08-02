@@ -284,7 +284,7 @@ export function makeFacets(deps: {
         // the kind only scopes which tags this flyout offers.
         // Kind is looked up by NAME (services/tags.ts keys it that way), so two
         // entities sharing a name necessarily share a Kind — an id-keyed Kind store
-        // is #5's remaining scope, not this one's. The ROWS are still per entity.
+        // is #810, not this one's scope. The ROWS are still per entity.
         const cnt = facetCounts((p) => tagEntriesOf(p).map((e) => e.key));
         return (
           tagVocab()
