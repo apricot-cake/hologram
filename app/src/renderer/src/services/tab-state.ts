@@ -44,7 +44,11 @@ export function makeTabLabels(deps: {
       case 'kind':
         return f.value === 'post' ? t('kindPost') : t('kindImage');
       case 'platform':
-        return f.value === '__none' ? t('qfPlatformNone') : platformName(f.value);
+        return f.value === '__none' ? t('qfSiteNone') : platformName(f.value);
+      // #253: an unsupported-domain row's leaf — the host itself is the label
+      // (same shape as 'instance' below; both are sub-rows of the "サイト" facet).
+      case 'domain':
+        return f.value;
       case 'postType':
         return f.value === 'post' ? t('qfPost') : f.value === 'reply' ? t('qfReply') : f.value === 'quote' ? t('qfQuote') : t('qfThread');
       case 'date': {
@@ -111,7 +115,7 @@ export function makeTabLabels(deps: {
     if (byType.tag) byType.tag.forEach((f) => add(filterLabel(f), 'tag'));
     if (byType.hashtag) byType.hashtag.forEach((f) => add(filterLabel(f), 'hashtag'));
     if (byType.user) byType.user.forEach((f) => add(filterLabel(f), 'user'));
-    filters.filter((f) => f.type === 'platform' || f.type === 'instance').forEach((f) => add(filterLabel(f), f.type));
+    filters.filter((f) => f.type === 'platform' || f.type === 'instance' || f.type === 'domain').forEach((f) => add(filterLabel(f), f.type));
     filters.filter((f) => f.type === 'postType' || f.type === 'media').forEach((f) => add(filterLabel(f), f.type));
     if (multi && !byType.media) add(t('qfMultiImage'), 'media');
     if (byType.date) byType.date.forEach((f) => add(filterLabel(f), 'date'));

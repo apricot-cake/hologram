@@ -66,7 +66,7 @@ const LABELS: Record<string, string> = {
   qfVideo: '動画',
   qfGif: 'GIF',
   qfMultiImage: '複数画像',
-  qfPlatformNone: 'なし',
+  qfSiteNone: 'なし',
   qfTagNone: 'タグなし',
 };
 
@@ -159,6 +159,79 @@ describe('qfValues: kind / platform', () => {
     const subs = qfValues('platform').filter((r) => r.sub);
     expect(subs.find((r) => r.v === 'misskey.io')?.count).toBe(1);
     expect(subs.find((r) => r.v === 'mstdn.jp')?.count).toBe(0);
+  });
+});
+
+// #253: unsupported-domain rows + the narrowed "出自なし" bucket. A separate
+// fixture (isolated makeFacets instance, same pattern as the "no untagged post"
+// test below) since it needs platform-less posts that DO carry a resolvable
+// URL — the main fixture above only has one platform-less post, and it has no
+// URL at all (c6), so it never exercises the domain path.
+describe('qfValues: platform のドメイン行（#253）', () => {
+  const domainPosts = [
+    { captureId: 'd1', url: 'https://x.com/a/status/1', platform: 'x' },
+    { captureId: 'd2', url: 'https://www.youtube.com/watch?v=1', platform: null },
+    { captureId: 'd3', url: 'https://youtube.com/watch?v=2', platform: null },
+    { captureId: 'd4', url: 'https://note.com/a/n/1', platform: null },
+    { captureId: 'd5', url: null, platform: null },
+  ];
+  const domainFiltered = domainPosts.slice(0, 4); // everything but the url-less d5
+  const { qfValues: qv } = makeFacets({
+    getFilteredPosts: () => domainFiltered,
+    qHasValue: () => false,
+    posterQHasValue: () => false,
+    allPosts: () => domainPosts,
+    hostOf: (url) => {
+      try {
+        return new URL(url ?? '').hostname;
+      } catch {
+        return '';
+      }
+    },
+    userKey: (p) => String(p.platform),
+    t: (key: string) => LABELS[key],
+    PF_NAME: { x: 'X', bluesky: 'Bluesky', misskey: 'Misskey', mastodon: 'Mastodon', pixiv: 'pixiv' },
+    tagKindOf: () => undefined,
+    posterTagsOf: () => [],
+    filteredPosters: () => [],
+    posterFilterVocab: () => [],
+    namedPosters: () => [],
+    posterFolders: () => [],
+    postFolders: () => [],
+    buildUsers: () => [],
+  });
+
+  test('www. を畳んで1行に統合する（youtube.com が2件）', () => {
+    const domainRows = qv('platform').filter((r) => r.type === 'domain');
+    expect(domainRows).toHaveLength(2); // youtube.com（2件統合）, note.com
+    expect(domainRows.find((r) => r.v === 'youtube.com')?.count).toBe(2);
+    expect(domainRows.map((r) => r.v)).not.toContain('www.youtube.com');
+  });
+
+  test('件数降順（同数はアルファベット順）', () => {
+    const domainRows = qv('platform').filter((r) => r.type === 'domain');
+    expect(domainRows.map((r) => r.v)).toEqual(['youtube.com', 'note.com']);
+  });
+
+  test('platform 済みレコードのドメインは列挙しない（二重掲載の除外）', () => {
+    const domainRows = qv('platform').filter((r) => r.type === 'domain');
+    expect(domainRows.map((r) => r.v)).not.toContain('x.com');
+  });
+
+  test('facetDim を持つ（他の自由語彙行と同じ扱い）', () => {
+    const domainRows = qv('platform').filter((r) => r.type === 'domain');
+    expect(domainRows.every((r) => r.facetDim)).toBe(true);
+  });
+
+  test('「出自なし」は URL の無いレコードだけ（ドメイン持ちは含まない）', () => {
+    const none = qv('platform').find((r) => r.v === '__none');
+    expect(none).toMatchObject({ l: 'なし', count: 0 }); // d5 は domainFiltered に含まれない
+  });
+
+  test('「出自なし」の label キーは qfSiteNone', () => {
+    // LABELS には qfPlatformNone が無い(renamed) — qfSiteNone だけが解決される。
+    const none = qv('platform').find((r) => r.v === '__none');
+    expect(none?.l).toBe('なし');
   });
 });
 

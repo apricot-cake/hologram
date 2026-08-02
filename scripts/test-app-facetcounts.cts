@@ -98,7 +98,7 @@ const evalJs = `(async () => {
   const r = {};
   // all-platform counts (fixed list — order preserved, counts present)
   await openMenu();
-  await pickCat('プラットフォーム');
+  await pickCat('サイト'); // #253: renamed from プラットフォーム
   r.pfX_all = cntOf('X');           // 3
   r.pfBsky_all = cntOf('Bluesky');  // 1
   r.pfMisskey_all = cntOf('Misskey'); // 1
@@ -118,7 +118,7 @@ const evalJs = `(async () => {
   r.afterCatCards = cards();        // 3 (p0,p2,p3)
   // back to platform — counts now reflect the 猫 query (values() reads the live tree)
   await goBack();
-  await pickCat('プラットフォーム');
+  await pickCat('サイト'); // #253: renamed from プラットフォーム
   r.pfX_cat = cntOf('X');           // 2
   r.pfMisskey_cat = cntOf('Misskey'); // 0
   r.pfMisskey_off = offOf('Misskey'); // false (fixed list: count but no greying)

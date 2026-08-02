@@ -68,7 +68,7 @@ const evalJs = `(async () => {
   const chipsText = () => { const c = document.querySelector('[data-slot="filter-chips"]'); return c ? c.textContent : ''; };
   byText('button', 'フィルタ').click();
   await waitFor(() => !!document.querySelector(POP + ' [data-slot="command-item"]'));
-  byText(POP + ' [data-slot="command-item"]', 'プラットフォーム').click();
+  byText(POP + ' [data-slot="command-item"]', 'サイト').click(); // #253: renamed from プラットフォーム
   await waitFor(() => subRows().length >= 4);
   const hosts = subRows().map(rowName).sort();
   const subIndented = subRows().some((r) => rowName(r) === 'misskey.io');

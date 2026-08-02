@@ -88,7 +88,7 @@ export function makeFacets(deps: {
             }
           return [...set].sort();
         };
-        const pcnt = facetCounts((p) => p.platform || '__none');
+        const pcnt = facetCounts((p) => p.platform);
         const icnt = facetCounts((p) => (p.platform === 'misskey' || p.platform === 'mastodon' ? hostOf(p.url) : null));
         const out: HologramQfRow[] = [];
         for (const v of PF_ORDER) {
@@ -97,9 +97,37 @@ export function makeFacets(deps: {
             for (const h of hostsOf(v)) out.push({ v: h, l: h, on: act('instance', h), type: 'instance', sub: true, count: icnt.get(h) || 0 });
           }
         }
-        // "No platform" = posts with no platform set (e.g. imported images).
-        // Not shown if there are none (don't list an entry that would come up empty).
-        if (allPosts().some((p) => !p.platform)) out.push({ v: '__none', l: t('qfPlatformNone'), on: act('platform', '__none'), count: pcnt.get('__none') || 0 });
+        // #253: "サイト" — platform-less records get a row per resolvable host
+        // instead of one catch-all "no platform" bucket (leading 'www.' folded;
+        // eTLD+1 is NOT folded — that needs a public-suffix list, see the Issue's
+        // rejected-option note). A post counts here only when it has NO platform
+        // (dedup rule: never listed under both an upper-section platform row and
+        // a lower-section domain row).
+        const stripWww = (h: string) => h.replace(/^www\./, '');
+        const domainOf = (p: HologramPost): string => (p.platform ? '' : stripWww(hostOf(p.url)));
+        const dcnt = facetCounts((p) => domainOf(p) || null);
+        const domains = new Set<string>();
+        for (const p of allPosts()) {
+          const d = domainOf(p);
+          if (d) domains.add(d);
+        }
+        for (const d of [...domains].sort((a, b) => (dcnt.get(b) || 0) - (dcnt.get(a) || 0) || a.localeCompare(b))) {
+          out.push({ v: d, l: d, on: act('domain', d), type: 'domain', facetDim: true, count: dcnt.get(d) || 0 });
+        }
+        // "出自なし" = records with NO resolvable origin at all (no URL, or an
+        // unparseable one) — migration-imported images and the like (#85/#84).
+        // Narrower than the old "no platform" bucket now that platform-less-but-
+        // domained records get their own row above; still carried as the
+        // 'platform'/'__none' leaf (this project is pre-release — see CLAUDE.md's
+        // no-backward-compat-for-personal-library rule — so redefining what that
+        // sentinel counts needs no migration). The matching predicate lives in
+        // query-builder.ts (not query.ts) — this round's file split keeps #180 off
+        // query.ts/extension/, so the platform-leaf predicate augmentation for
+        // '__none' and the new 'domain' leaf type both live in that wiring layer.
+        if (allPosts().some((p) => !p.platform && !hostOf(p.url))) {
+          const noneCnt = facetCounts((p) => (!p.platform && !hostOf(p.url) ? '__none' : null));
+          out.push({ v: '__none', l: t('qfSiteNone'), on: act('platform', '__none'), count: noneCnt.get('__none') || 0 });
+        }
         return out;
       }
       case 'postType': {

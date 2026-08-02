@@ -9,7 +9,7 @@ import { makeNavHistory, makeTabLabels, sanitizeSavedTabs, serializeTabs } from 
 const STATIC_MSG: Record<string, string> = {
   kindPost: '投稿',
   kindImage: '画像',
-  qfPlatformNone: 'PFなし',
+  qfSiteNone: 'PFなし',
   qfTagNone: 'タグなし',
   qfPost: 'ポスト',
   qfReply: 'リプライ',
@@ -42,6 +42,8 @@ describe('filterLabel（switch の枝ごとに1ケース）', () => {
     [{ type: 'kind', value: 'post' }, '投稿'],
     [{ type: 'kind', value: 'image' }, '画像'],
     [{ type: 'platform', value: '__none' }, 'PFなし'],
+    // #253: an unsupported-domain row's leaf — label = the host itself (like 'instance' below).
+    [{ type: 'domain', value: 'youtube.com' }, 'youtube.com'],
     [{ type: 'platform', value: 'x' }, 'X'], // via platformName
     [{ type: 'platform', value: 'threads' }, 'threads'], // unknown values pass through unchanged
     [{ type: 'postType', value: 'post' }, 'ポスト'],
@@ -121,6 +123,11 @@ describe('tabTitleOf', () => {
 
   test('media フィルタがあれば multi ラベルを重ねない', () => {
     expect(tabTitleOf({ f: [{ type: 'media', value: 'image' }], multi: true }, { allCount: 1 }).text).toBe('画像のみ');
+  });
+
+  // #253: 'domain'（対応外サイトの行）は 'platform'/'instance' と同じグループでタイトルへ入る。
+  test('domain も platform/instance と同じグループで結合される', () => {
+    expect(tabTitleOf({ f: [{ type: 'domain', value: 'youtube.com' }] }, { allCount: 1 })).toMatchObject({ text: 'youtube.com', iconType: 'domain' });
   });
 });
 
