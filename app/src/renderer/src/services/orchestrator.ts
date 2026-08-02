@@ -347,7 +347,12 @@ export function endFilterEditSession(): void {
   // popover drove with a synthetic 'change' event (#153 category 3); the popover calls
   // setPostSort() below instead, and a tab restore writes the key directly (applyState),
   // which is what keeps a restore from counting as a user sort change.
-  const sortValue = () => (storeGet('sortPost') as string) || 'date-desc';
+  // #183: the timeline mode pins the grid to post-date descending and hides the
+  // sort control entirely — forcing the value here (rather than adding a
+  // 'timeline' case to listing.ts's switch) means every reader of sortValue()
+  // (getFilteredPosts, the month-section builder, the engagement/captured-date
+  // relevance gates) picks it up for free through the existing 'date-desc' path.
+  const sortValue = () => (browseMode === 'timeline' ? 'date-desc' : (storeGet('sortPost') as string) || 'date-desc');
 
   // --- Query Field ---
   const ENG_TYPE_LABELS: Record<string, string> = {
@@ -568,7 +573,7 @@ export function endFilterEditSession(): void {
   // allPosts/_postsById/loadPosts/renderPosts and the render-reuse guard moved to
   // post-grid-builder.ts (the "allPosts ownership transfer") — postGrid is
   // constructed below, after buildUsers/postQB are in scope.
-  let browseMode = 'posts'; // 'posts' | 'posters' (what the content area browses) — per-tab now: the tab's current history entry decides (#144 confirmed (pending item 3))
+  let browseMode = 'posts'; // 'posts' | 'posters' | 'trash' | 'timeline' (what the content area browses) — per-tab now: the tab's current history entry decides (#144 confirmed (pending item 3); #183 added timeline)
   let multiOnly = false; // show only items with more than one image
   // SMOKE capture: the hidden screenshot instance never has anything "on-screen",
   // so content-visibility:auto skips painting every card and loading=lazy images
@@ -1335,7 +1340,7 @@ export function endFilterEditSession(): void {
   // a tab restored after a restart comes back on its grid. Leaving the trash is
   // therefore always a plain move to another destination (or a history step, which
   // applies its own kind through setBrowseModeLite below).
-  const normalizeBrowseMode = (mode: string) => (mode === 'posters' ? 'posters' : mode === 'trash' ? 'trash' : 'posts'); // collections retired (now a sidebar folder list)
+  const normalizeBrowseMode = (mode: string) => (mode === 'posters' ? 'posters' : mode === 'trash' ? 'trash' : mode === 'timeline' ? 'timeline' : 'posts'); // collections retired (now a sidebar folder list)
   // The light half: flip the mode state (let + store mirror + stale-detail close)
   // WITHOUT rendering. applyEntry (tabs-builder) uses this so a history restore
   // renders exactly once — its own kind-specific render right after.

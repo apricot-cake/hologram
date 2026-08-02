@@ -242,6 +242,31 @@ function PosterControls() {
   );
 }
 
+// Timeline (#183): no sort row (pinned to post-date descending, never a user
+// choice — that fixed order is the mode's whole identity), no layout toggle /
+// square switch / size slider (FeedCard.tsx is the one card this mode draws,
+// at its own fixed read width — "which layout" is not a question this surface
+// answers here). What survives is the same pair of density switches the post
+// grid has, reading the SAME store keys (services/display.ts) rather than a
+// second settings axis for what is still the same post population.
+function TimelineControls() {
+  useSyncExternalStore(subscribeShape, shapeSnapshot);
+  const shape = currentShape();
+  return (
+    <>
+      <Row label={t('displayShowInfo')}>
+        <Switch checked={shape.info} onCheckedChange={setShowInfo} />
+      </Row>
+      <Row label={t('displayShowAvatar')}>
+        {/* Disabled on the same condition FeedCard itself gates the author line
+            on: with "Show info" off there is no author line for this switch to
+            act on (see FeedCard.tsx's shape.info branch). */}
+        <Switch checked={shape.avatar} onCheckedChange={setAvatar} disabled={!shape.info} />
+      </Row>
+    </>
+  );
+}
+
 // Panel visibility (#245) — the bulk hide, plus the line that teaches the key pair.
 //
 // It belongs in this popover and not in the toolbar proper: Display is the "how do I see it"
@@ -283,7 +308,7 @@ export function DisplayMenu() {
         }
       />
       <PopoverContent align="end" className="w-72 gap-2">
-        {mode === 'posters' ? <PosterControls /> : <PostControls />}
+        {mode === 'posters' ? <PosterControls /> : mode === 'timeline' ? <TimelineControls /> : <PostControls />}
         <PanelControls />
       </PopoverContent>
     </Popover>

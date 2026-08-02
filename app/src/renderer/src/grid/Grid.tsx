@@ -6,6 +6,7 @@
 // Which cell a row/card is comes from the model's display shape (#618) — one grid, two
 // layouts, no second component tree and no container class deciding it in CSS.
 import { useSyncExternalStore } from 'react';
+import { FeedCard } from '../_shared/FeedCard.tsx';
 import { ListRow } from '../_shared/ListRow.tsx';
 import { PostCard } from '../_shared/PostCard.tsx';
 import { useGridModel, VirtualGridHost } from '../_shared/VirtualGrid.tsx';
@@ -33,6 +34,11 @@ export function PostCell({ index, data }: GridCellProps) {
   const m = model.modelOf(data, index);
   m.inspected = inspectedKey != null && !!model.keyOf && model.keyOf(data, index) === inspectedKey;
   m.selected = selectedSet.has(m.postKey);
+  // #183: the timeline mode picks its own third cell ahead of the grid/list
+  // check below — shape.list still carries whatever the POST mode's own layout
+  // pref last was (the two axes are independent; see DisplayMenu.tsx's
+  // TimelineControls), so it must not leak into this branch.
+  if (model.mode === 'timeline') return <FeedCard m={m} shape={shape as NonNullable<typeof shape>} group={data} actions={model.cardActions} onAspect={model.onAspect} />;
   if (shape?.list) return <ListRow m={m} shape={shape} group={data} actions={model.cardActions} listThumb={model.listThumb} />;
   return <PostCard m={m} shape={shape as NonNullable<typeof shape>} overview={model.overview} group={data} actions={model.cardActions} onAspect={model.onAspect} />;
 }
@@ -63,8 +69,16 @@ export function GridHost({ model }: { model: HologramGridModel }) {
   // date-sections.ts) — model.sections carries that grouping when it applies.
   // Every other sort/browse mode leaves it null/absent and keeps rendering
   // through the single-instance VirtualGridHost completely unchanged.
+  // #183: the timeline reads as body text first — a drag there is a text
+  // selection, not a rubber-band pick (the 2026-08-02 design comment's accept
+  // criteria 8). Omitting the sink (rather than passing a no-op) disables the
+  // gesture at its source: VirtualGridHost/SectionedGridHost only arm the band
+  // when `marquee` is present at all (see _shared/VirtualGrid.tsx). Click
+  // selection, the inspector and the context menu are untouched — none of them
+  // go through this prop.
+  const marquee = model.mode === 'timeline' ? undefined : marqueeSink;
   if (model.sections && model.sections.length) {
-    return <SectionedGridHost model={model} cell={PostCell} nav anchor marquee={marqueeSink} onBackgroundClick={onBackgroundClick} />;
+    return <SectionedGridHost model={model} cell={PostCell} nav anchor marquee={marquee} onBackgroundClick={onBackgroundClick} />;
   }
-  return <VirtualGridHost model={model} cell={PostCell} nav anchor marquee={marqueeSink} onBackgroundClick={onBackgroundClick} />;
+  return <VirtualGridHost model={model} cell={PostCell} nav anchor marquee={marquee} onBackgroundClick={onBackgroundClick} />;
 }

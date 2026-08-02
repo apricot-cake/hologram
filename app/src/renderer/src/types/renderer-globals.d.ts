@@ -161,7 +161,7 @@ interface HologramTabSnapshot {
 // u is derived from it).
 interface HologramNavEntry {
   u: string;
-  kind: 'posts' | 'posters' | 'image';
+  kind: 'posts' | 'posters' | 'image' | 'timeline';
   state: HologramTabSnapshot | { tree?: any; sort?: string; search?: string } | { recs: string[]; idx: number };
 }
 interface HologramTab {

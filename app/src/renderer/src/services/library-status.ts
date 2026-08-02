@@ -39,7 +39,11 @@ export function libraryEmptyVariant(input: {
   // even though both leave postGroups/posterGroups looking "empty" today.
   if (!input.libraryLoaded) return null;
   if (input.mode === 'trash') return null;
-  if (input.mode === 'posts') {
+  // #183: the timeline draws from the SAME postGroups the post grid does (it is
+  // the post pipeline with a pinned sort) — the same empty/filtered/first-run
+  // read applies verbatim, so it rides this branch rather than getting a
+  // fourth copy of the same three checks.
+  if (input.mode === 'posts' || input.mode === 'timeline') {
     if (input.postGroups === null) {
       if (input.allPostsCount !== 0 || input.query.trim()) return 'filtered';
       return input.extensionContacted ? 'firstRun' : 'extensionGuide';

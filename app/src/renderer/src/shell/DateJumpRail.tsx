@@ -27,10 +27,14 @@ export function DateJumpRail() {
   const mode = useSyncExternalStore(subBrowseMode, getBrowseMode);
   // Only worth an index once there is more than one stop to jump between — a
   // single month/one page of results has nothing for the rail to do. Gated on
-  // 'posts' too: 'postSections' only updates on a posts-mode render (post-grid-
-  // builder.ts's renderPosts), so switching to posters/trash would otherwise
-  // leave the rail showing whatever it last had for the post grid.
-  const shown = mode === 'posts' && !!sections && sections.length > 1;
+  // 'posts'/'timeline' too: 'postSections' only updates on a post-grid render
+  // (post-grid-builder.ts's renderPosts, which both modes share), so switching
+  // to posters/trash would otherwise leave the rail showing whatever it last
+  // had for the post grid. #183: the timeline is pinned to a date sort, so it
+  // always has sections to index — the rail is explicitly NOT killed for it
+  // (the 2026-08-02 design comment: no reason to drop the time axis's own
+  // index from the one mode that IS the time axis).
+  const shown = (mode === 'posts' || mode === 'timeline') && !!sections && sections.length > 1;
   const label = t('dateJumpRailTitle');
 
   return (

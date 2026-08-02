@@ -54,14 +54,14 @@ const notify = () => {
 };
 
 // A tab's current view kind (#144: the history entry decides — posts / posters /
-// image). The ACTIVE tab reads the LIVE mode/store instead (its stack is only
-// flushed to the tab object on switch-away).
-function navKindOf(t: HologramTab): 'posts' | 'posters' | 'image' {
+// image / timeline). The ACTIVE tab reads the LIVE mode/store instead (its stack
+// is only flushed to the tab object on switch-away).
+function navKindOf(t: HologramTab): 'posts' | 'posters' | 'image' | 'timeline' {
   if (Array.isArray(t._navHist) && t._navHist.length) {
     const i = Math.max(0, Math.min(typeof t._navIdx === 'number' ? t._navIdx : t._navHist.length - 1, t._navHist.length - 1));
     try {
       const kind = JSON.parse(t._navHist[i]).kind;
-      if (kind === 'posters' || kind === 'image') return kind;
+      if (kind === 'posters' || kind === 'image' || kind === 'timeline') return kind;
     } catch {
       /* fall through to posts */
     }
@@ -97,7 +97,7 @@ function get(): HologramTabsModel | null {
     if (t.specialKind === 'tags') {
       return { id: t.id, title: tagManageTitle, icon: t.pinned ? pinSvg : icons.tag, active: isActive, pinned: !!t.pinned, showClose: !t.pinned && rawTabs.length > 1 };
     }
-    const kind = isActive ? (storeGet('activeImageTab') ? 'image' : storeGet('browseMode') === 'posters' ? 'posters' : storeGet('browseMode') === 'trash' ? 'trash' : 'posts') : navKindOf(t);
+    const kind = isActive ? (storeGet('activeImageTab') ? 'image' : storeGet('browseMode') === 'posters' ? 'posters' : storeGet('browseMode') === 'trash' ? 'trash' : storeGet('browseMode') === 'timeline' ? 'timeline' : 'posts') : navKindOf(t);
     // Trash (#268) — only ever the ACTIVE tab, since the trash records no history
     // entry (navKindOf can never answer 'trash'). The strip says where the tab is
     // looking, and while it is looking at the trash the old grid title would lie.
@@ -111,9 +111,13 @@ function get(): HologramTabsModel | null {
     if (kind === 'posters') {
       return { id: t.id, title: postersTitle, icon: t.pinned ? pinSvg : icons.user, active: isActive, pinned: !!t.pinned, showClose: !t.pinned && rawTabs.length > 1 };
     }
+    // #183: timeline shares posts' own derived title (same postQB/search/sort
+    // state — see tabs-builder.ts's snapshotEntry) rather than a fixed label the
+    // way posters/trash get one — a "3 hits" count is just as meaningful reading
+    // the feed as it is browsing the grid. Only the icon marks it apart.
     const s = isActive ? liveActiveState() : t.state || {};
     const derived = tt(s, { allCount });
-    const icon = t.pinned ? pinSvg : icons[derived.iconType] || icons.all;
+    const icon = t.pinned ? pinSvg : kind === 'timeline' ? icons.date || icons.all : icons[derived.iconType] || icons.all;
     // t.title is never shown on a grid tab: with manual renaming dropped (#621), the
     // only title a tab can carry is the auto one an image entry stamped on it, and on
     // a grid the derived title is the truth (the auto one may be a frame stale, if the

@@ -351,8 +351,12 @@ export function AppShell() {
                       inactive ones are `hidden` — the virtualized hosts keep their
                       measured layout that way, and "which one is on screen" is one
                       React decision rather than a body class racing an inline style. */}
-                  <PostGridSlot hidden={mode !== 'posts' || libraryMissing || isTagsTab} />
-                  <PosterGridSlot hidden={mode === 'posts' || mode === 'trash' || libraryMissing || isTagsTab} />
+                  {/* #183: the timeline reuses the SAME post grid slot/host as posts (it is
+                      the post pipeline with a pinned sort and a different cell — see
+                      services/grid.ts's mode-aware layout and grid/Grid.tsx's PostCell),
+                      so it is on-screen exactly when posts is. */}
+                  <PostGridSlot hidden={(mode !== 'posts' && mode !== 'timeline') || libraryMissing || isTagsTab} />
+                  <PosterGridSlot hidden={mode !== 'posters' || libraryMissing || isTagsTab} />
                   {mode !== 'trash' && !libraryMissing && !isTagsTab && <EmptyState />}
                   {!libraryMissing && !isTagsTab && <LibraryLoading />}
                   {/* Trash (#268) — the third destination. */}

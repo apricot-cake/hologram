@@ -61,6 +61,31 @@ function postLayout(shape: DisplayShape, gridSize: number, listThumb: number) {
   };
 }
 
+// #183: the timeline's own layout — a third shape alongside grid/list, forced
+// regardless of the shape.list/squareThumbs/gridSize prefs those two read (the
+// display popover hides all three controls in this mode; see DisplayMenu.tsx's
+// TimelineControls — "which layout" is not a question this mode answers).
+// columnCount:1 + columnWidth:undefined is the same "let masonic stretch to the
+// container width" pair postLayout's own list branch already uses; FeedCard.tsx
+// caps its OWN read width and centers itself inside that full-bleed column
+// (postLayout's list-view width has no cap to share — see FeedCard's header
+// comment). itemHeightEstimate is a rough first guess only (masonic measures
+// what it actually renders via ResizeObserver) — a feed card carries a variable
+// amount of body text plus an optional image/carousel, so there is no exact
+// figure to reserve the way a square grid cell has.
+function timelineLayout(shape: DisplayShape, listThumb: number) {
+  return {
+    shape,
+    overview: false,
+    columnCount: 1,
+    columnWidth: undefined,
+    square: false,
+    rowGutter: 20,
+    itemHeightEstimate: 320,
+    listThumb,
+  };
+}
+
 // Post grid model source: items come from hologramStore('postGroups'), layout from the
 // display axes plus hologramStore('gridSize'/'listThumb') via postLayout above.
 // configure() sets the invariant callbacks once (modelOf/keyOf/onAspect never change
@@ -86,7 +111,10 @@ function makePostGridSource() {
   // Store-key listeners are wired ONCE (not per subscribe() caller) — there's a
   // single consumer (GridMount) in practice, but this avoids stacking duplicate
   // hologramStore subscriptions (and duplicate notify() fan-out) if that changes.
-  for (const k of ['postGroups', 'postSections', ...DISPLAY_KEYS, 'gridSize', 'listThumb']) storeSubscribe(k, notify);
+  // 'browseMode' is in this list for the timeline's sake (#183): its layout
+  // branch below reads it directly, and a mode switch alone (no display-axis or
+  // size change) must still repaint with the new layout.
+  for (const k of ['postGroups', 'postSections', ...DISPLAY_KEYS, 'gridSize', 'listThumb', 'browseMode']) storeSubscribe(k, notify);
   function computeModel(): HologramGridModel | null {
     if (!config) return null;
     const items = storeGet('postGroups');
@@ -95,9 +123,11 @@ function makePostGridSource() {
       lastItems = items;
       itemsKeySeq++;
     }
-    const layout = postLayout(currentShape(), storeGet('gridSize') || 280, storeGet('listThumb') || 88);
+    const mode = (storeGet('browseMode') as string | undefined) || 'posts';
+    const layout = mode === 'timeline' ? timelineLayout(currentShape(), storeGet('listThumb') || 88) : postLayout(currentShape(), storeGet('gridSize') || 280, storeGet('listThumb') || 88);
     return {
       ...layout,
+      mode,
       items,
       itemsKey: itemsKeySeq,
       modelOf: config.modelOf,
