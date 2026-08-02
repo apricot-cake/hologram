@@ -79,7 +79,16 @@ export interface IpcContext {
   /** Consumes pending `replaces` markers (#34) — no inbox event fires for an in-app write. */
   sweepReplacements(): Promise<void>;
   listPosts(): Promise<PostsSnapshot>;
-  listPostsDelta(haveBaseline: boolean): Promise<PostsDelta>;
+  /**
+   * `senderId` is the calling webContents' id (#32 St1) — main keeps ONE delta
+   * baseline PER RENDERER now (a Map keyed by this), not one for the whole
+   * process, so two windows polling in the same tick can no longer clobber each
+   * other's "what did I last see" bookkeeping (the #466 bug this design doc calls
+   * out as the highest-priority fix: before #32, a second window's delta call
+   * would silently steal the first window's baseline and starve it of the very
+   * next update).
+   */
+  listPostsDelta(haveBaseline: boolean, senderId: number): Promise<PostsDelta>;
   /** #29: cross-tab full-text search — bm25() rank per posts_fts MATCH hit. */
   searchFullText(query: string, limit?: number): Promise<FullTextHit[]>;
 
@@ -114,19 +123,32 @@ export interface IpcContext {
   watchImportFolders(): Promise<void>;
   getWatchImportConfig(): WatchImportConfig;
   setWatchImportFolders(folders: WatchImportFolder[], markExisting?: string[]): Promise<WatchImportConfig>;
-  /** Drops the delta baseline so the renderer full-resyncs. */
+  /** Drops EVERY sender's delta baseline (#32 St1: a Map now) so every window full-resyncs. */
   resetDelta(): void;
 
   // --- Media fetch (native-host layer) ---
   pixivRefererFor(url: unknown): string | undefined;
   downloadAvatar(avatar: unknown, referer: unknown, dir: string): Promise<string | null>;
 
-  // --- Window ---
+  // --- Window (#32 St1: 1 process / N windows) ---
   /**
-   * The main window. Null once it is gone — Electron types a dialog's parent as
-   * non-null, so the handlers that parent one narrow at the call site.
+   * The PRIMARY window (the first one created this run). Null once it is gone —
+   * Electron types a dialog's parent as non-null, so the handlers that parent one
+   * narrow at the call site. A handler acting on WHICHEVER window called it
+   * (window-control, a file-picker's parent) reads
+   * `BrowserWindow.fromWebContents(event.sender)` directly instead of this.
    */
   getWin(): BrowserWindow | null;
-  /** Pushes to the main window's renderer; a no-op when the window is gone. */
+  /** Pushes to EVERY window's renderer; a no-op when none are left. */
   send(channel: string, ...args: unknown[]): void;
+  /** Pushes to every window EXCEPT `exceptWebContentsId` (#32 St2: the org-changed relay). */
+  sendExcept(exceptWebContentsId: number, channel: string, ...args: unknown[]): void;
+  /**
+   * True iff `webContentsId` is the PRIMARY window's — the tabs.json guard
+   * (#32 St1 design: "他窓は読み書きとも遮断＝タブ喪失防止"). Persist is a no-op,
+   * not a per-call-site branch, so a future caller can never forget the check.
+   */
+  isPrimarySender(webContentsId: number): boolean;
+  /** Opens a new secondary window (Ctrl+Shift+N / the second-launch entry point, #32 St1). */
+  openNewWindow(): void;
 }
