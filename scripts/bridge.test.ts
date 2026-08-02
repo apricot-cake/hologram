@@ -208,3 +208,72 @@ describe('保存されたもの', () => {
     expect(unpackRawPayload({ encoding: 'gzip', sha256: envelope.record.raw[0].sha256, payload: Buffer.from(envelope.record.raw[0].payloadBase64, 'base64') })).toBe(RAW_BODY);
   });
 });
+
+// #290: end-to-end wiring through the real bridge process — the extension's
+// announced customEmojis[] (URL only) reaches handleSave, downloadCustomEmojis
+// runs against it, and the envelope's record carries the result. No fetch stub:
+// example.invalid (RFC 2606) never resolves, so this exercises the SAME
+// best-effort failure path a dead emoji host hits in production — ok:true,
+// file: null, save unaffected — without depending on a live server.
+describe('customEmojis のダウンロードが往復する（#290）', () => {
+  const emojiCaptureId = '1717500000000-e001';
+  let emojiTmp: string;
+  let emojiSaveFolder: string;
+  let emojiResp: any;
+
+  beforeAll(async () => {
+    emojiTmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-test-emoji-'));
+    const configDir = path.join(emojiTmp, 'Hologram');
+    emojiSaveFolder = path.join(emojiTmp, 'saves');
+    fs.mkdirSync(configDir, { recursive: true });
+    fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolder: emojiSaveFolder }));
+
+    const msg = Buffer.from(
+      JSON.stringify({
+        type: 'save',
+        captureId: emojiCaptureId,
+        image: jpegB64,
+        metadata: {
+          url: 'https://misskey.io/notes/n1',
+          platform: 'misskey',
+          text: ':ha_to:',
+          customEmojis: [{ shortcode: 'ha_to', url: 'https://emoji.example.invalid/ha_to.png' }],
+        },
+      }),
+      'utf8',
+    );
+    const header = Buffer.alloc(4);
+    header.writeUInt32LE(msg.length, 0);
+
+    const child = spawn(process.execPath, [path.join(import.meta.dirname, '..', 'native-host', 'bridge.cts')], {
+      env: { ...process.env, APPDATA: emojiTmp, HOLOGRAM_CONFIG_DIR: configDir },
+      stdio: ['pipe', 'pipe', 'inherit'],
+    });
+    let out = Buffer.alloc(0);
+    child.stdout.on('data', (d) => {
+      out = Buffer.concat([out, d]);
+    });
+    const closed = new Promise((r) => child.on('close', r));
+    child.stdin.write(Buffer.concat([header, msg]));
+    child.stdin.end();
+    await closed;
+    emojiResp = JSON.parse(out.subarray(4, 4 + out.readUInt32LE(0)).toString('utf8'));
+  });
+
+  afterAll(() => {
+    fs.rmSync(emojiTmp, { recursive: true, force: true });
+  });
+
+  test('取得できない絵文字ホストでも保存自体は成功する（ベストエフォート）', () => {
+    expect(emojiResp.ok).toBe(true);
+  });
+
+  test('封筒の record.customEmojis に shortcode/url は残り、file はダウンロード失敗で null', () => {
+    const envelope = JSON.parse(fs.readFileSync(path.join(emojiSaveFolder, '.hologram-inbox', 'new', `${emojiCaptureId}.json`), 'utf8'));
+    expect(envelope.record.customEmojis).toEqual([{ shortcode: 'ha_to', url: 'https://emoji.example.invalid/ha_to.png', file: null }]);
+  });
+
+  test('emoji/ 共有ストアは作られない（1件も落ちてこなかったため）', () => {
+    expect(fs.existsSync(path.join(emojiSaveFolder, 'emoji'))).toBe(false);
+  });
+});

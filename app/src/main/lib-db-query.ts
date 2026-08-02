@@ -78,6 +78,7 @@ const POST_COLUMNS = [
   'domFilled',
   'quotedPost',
   'replyToPost',
+  'customEmojis',
 ] as const;
 
 function fromDbBool(v: unknown): boolean | null {
@@ -129,6 +130,20 @@ function parseQuotedPost(raw: string | null): any | null {
     return v && typeof v === 'object' ? v : null;
   } catch {
     return null;
+  }
+}
+
+// posts.customEmojis (#290): a JSON CustomEmojiShape[] column. Empty-array
+// convention like parseHashtags below (not parseQuotedPost's null-means-none
+// above) -- an empty array and a NULL column mean the exact same "this post
+// used no custom emoji" here, same as hashtags/domFilled.
+function parseCustomEmojis(raw: unknown): { shortcode: string; url: string; file: string | null }[] {
+  if (typeof raw !== 'string' || !raw) return [];
+  try {
+    const v = JSON.parse(raw);
+    return Array.isArray(v) ? v.filter((e): e is { shortcode: string; url: string; file: string | null } => !!e && typeof e === 'object' && typeof e.shortcode === 'string' && typeof e.url === 'string') : [];
+  } catch {
+    return [];
   }
 }
 
@@ -259,6 +274,10 @@ function assemble(sqlite: Database.Database, postRows: any[]): any[] {
       // #180's viewer stage lands) and the export sidecar both need them.
       quotedPost: parseQuotedPost(r.quotedPost),
       replyToPost: parseQuotedPost(r.replyToPost),
+      // #290: the post's own :shortcode: custom emoji. Read for the inspector
+      // (once its display stage lands, per #290's own scope note) and the
+      // export sidecar.
+      customEmojis: parseCustomEmojis(r.customEmojis),
     };
   });
 }

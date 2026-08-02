@@ -9,6 +9,8 @@
 //   library/<captureId>.json           sidecar, REGENERATED FROM THE DB (#300/St7)
 //   library/<captureId>-media-N.<ext>  original media (disk-truth, copied as-is)
 //   library/avatars/<urlhash>.<ext>    shared avatar store (one file per avatar URL)
+//   library/emoji/<urlhash>.<ext>      shared custom-emoji store (#290 — one file
+//                                       per :shortcode: emoji image URL)
 //   library/folders.json|tag-types.json|ungrouped.json|manual-groups.json|
 //           poster-folders.json|poster-tags.json|tabs.json|tag-parents.json
 //                                       organization layer, all DB-regenerated;
@@ -23,7 +25,7 @@
 // itself holds no per-post JSON (#302), so the export regenerates it from the DB
 // on the way out and the import routes it back into the DB on the way in. That is
 // what makes a ZIP human-readable and portable without giving the on-disk library
-// a second truth source. Binaries (screenshots/media/avatars) stay disk-truth: the
+// a second truth source. Binaries (screenshots/media/avatars/emoji) stay disk-truth: the
 // DB never held their bytes.
 //
 // On import, captures are copied SKIPPING existing files (idempotent /
@@ -164,13 +166,15 @@ function isSafeEntryName(name) {
   if (path.isAbsolute(name)) return false;
   return name === path.basename(name);
 }
-// Library entries are single-segment EXCEPT the shared avatar store, which is
-// exactly 'avatars/<basename>' (forward slash only — ZIP canonical form; one
-// level, each segment held to the same single-segment rule).
+// Library entries are single-segment EXCEPT the two shared stores, which are
+// exactly '<store>/<basename>' (forward slash only — ZIP canonical form; one
+// level, each segment held to the same single-segment rule). avatars/ predates
+// #290; emoji/ is #290's own shared custom-emoji store (media-download.cts's
+// downloadCustomEmojis).
 function isSafeLibraryPath(name) {
   if (isSafeEntryName(name)) return true;
-  const m = /^avatars\/(.+)$/.exec(name);
-  return !!(m && isSafeEntryName(m[1]));
+  const m = /^(avatars|emoji)\/(.+)$/.exec(name);
+  return !!(m && isSafeEntryName(m[2]));
 }
 // .trash/<name> (#300/St7): same single-segment rule as a plain library entry —
 // the export side only ever writes flat filenames under .trash/ (mirrors how
@@ -426,7 +430,7 @@ function toSidecarJson(rec: any, capturedVia: string | null, raw: RawPayloadShap
   return raw.length ? { ...rest, capturedVia, raw } : { ...rest, capturedVia };
 }
 
-// Complete, directly-re-importable snapshot. Binaries (screenshots/media/avatars)
+// Complete, directly-re-importable snapshot. Binaries (screenshots/media/avatars/emoji)
 // are still disk-truth and copied as-is; everything else (per-post sidecars, the
 // organization layer, tag-parents.json) is regenerated from the DB (module comment
 // at the top of this file explains why). Returns the file count (excludes the
@@ -458,6 +462,8 @@ async function writeCompleteZip(sqlite: Database.Database, srcFolder: string, tr
   // shadow the record regenerated from the DB below.
   for (const name of await collectFiles(srcFolder, (n) => !n.toLowerCase().endsWith('.json'))) await addFile(path.join(srcFolder, name), `library/${name}`);
   for (const name of await collectFiles(path.join(srcFolder, 'avatars'))) await addFile(path.join(srcFolder, 'avatars', name), `library/avatars/${name}`);
+  // #290: the shared custom-emoji store, same disk-truth treatment as avatars/.
+  for (const name of await collectFiles(path.join(srcFolder, 'emoji'))) await addFile(path.join(srcFolder, 'emoji', name), `library/emoji/${name}`);
 
   // Per-post records in sidecar shape, regenerated from the DB.
   const posts = await postsFromDb(sqlite);
@@ -551,6 +557,7 @@ async function writeImagesZip(srcFolder, outPath, onProgress?: (written: number,
 async function hasExportableFiles(srcFolder, imagesOnly) {
   if ((await collectFiles(srcFolder, imagesOnly ? (n) => IMAGE_EXT.test(n) : undefined)).length) return true;
   if (!imagesOnly && (await collectFiles(path.join(srcFolder, 'avatars'))).length) return true;
+  if (!imagesOnly && (await collectFiles(path.join(srcFolder, 'emoji'))).length) return true;
   return false;
 }
 
@@ -672,7 +679,7 @@ async function extractLibraryEntries(zipfile: ZipReader) {
     if (libMatch) {
       isComplete = true; // set before the safety filter: a skipped entry still identifies the format
       const name = libMatch[1];
-      if (!isSafeLibraryPath(name)) continue; // Zip-Slip: reject separators / traversal / absolute (avatars/<name> allowed)
+      if (!isSafeLibraryPath(name)) continue; // Zip-Slip: reject separators / traversal / absolute (avatars/<name> and emoji/<name> allowed)
       if (EXPORT_SKIP.has(name)) continue;
       if (name === 'tag-parents.json') tagParentsEntry = entry;
       else if (MERGERS[name]) {
@@ -702,6 +709,8 @@ async function writeCaptureFile(zipfile: ZipReader, entry: ZipEntry, destDir: st
     if (!isWithin(destDir, dest)) return 'skipped'; // defensive Zip-Slip guard
     if (fs.existsSync(dest)) return 'skipped';
     if (name.startsWith('avatars/')) await fs.promises.mkdir(path.join(destDir, 'avatars'), { recursive: true });
+    // #290: the shared custom-emoji store, same treatment as avatars/ above.
+    if (name.startsWith('emoji/')) await fs.promises.mkdir(path.join(destDir, 'emoji'), { recursive: true });
     // Streamed write with a per-entry byte cap: caps even an entry whose declared
     // size lied past the pre-check above. On abort, commitFileAtomic drops the
     // partial tmp file before rethrowing.

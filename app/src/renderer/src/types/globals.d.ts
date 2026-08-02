@@ -63,6 +63,13 @@ declare global {
     overview?: boolean;
     /** List rows: the thumbnail column's width in px (the list's own size axis). */
     listThumb?: number;
+    /** #47 — month sections for a date sort (post grid only; null every other sort/grid).
+     * Grid.tsx dispatches on this: present → SectionedGridHost, absent → the
+     * plain single-instance VirtualGridHost (every other browse mode/sort keeps
+     * that unchanged path). Sections slice `items` by startIndex/count — one
+     * masonic instance per section, not a pseudo full-width item mixed into a
+     * single instance (masonic has no row-spanning concept to make that work). */
+    sections?: HologramDateSection[] | null;
     /** What a gesture ON a cell does. Each grid supplies its own (library / trash). */
     cardActions?: HologramCardActions;
     onAspect?(cap: string, aspectRatio: string): void;

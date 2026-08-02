@@ -48,6 +48,7 @@ const legitEntries = (zip: JSZip) => {
   zip.file('library/cap1.jpg', Buffer.from('JPEGDATA1'));
   zip.file('library/cap2.jpg', Buffer.from('JPEGDATA2'));
   zip.file('library/avatars/abcd1234.png', Buffer.from('AVATARDATA')); // shared avatar store (an allowed sub-path)
+  zip.file('library/emoji/eeee5678.png', Buffer.from('EMOJIDATA')); // #290: shared custom-emoji store (also an allowed sub-path)
   zip.file('library/folders.json', BOM + JSON.stringify({ folders: [{ id: 'f1', name: 'X', items: ['cap1'] }] }));
 };
 
@@ -65,6 +66,7 @@ describe('traversal / 絶対パスを含む書庫は、1バイトも書かずに
     ['Windows バックスラッシュ traversal', 'library/..\\..\\evil-back.txt'],
     ['POSIX traversal', 'library/../../evil-fwd.txt'],
     ['許可された下位パスを抜けようとする形', 'library/avatars\\..\\evil-av.txt'],
+    ['許可された下位パス(emoji)を抜けようとする形', 'library/emoji\\..\\evil-em.txt'],
     ['ドライブレター始まり', 'C:\\Windows\\evil-root.txt'],
     ['ルート始まり', '/tmp/evil-slash.txt'],
   ];
@@ -114,6 +116,7 @@ describe('yauzl が通す形は、エントリ単位で skip される', () => {
       zip.file('library/.trash/evil-trash.jpg', 'PWNED-TRASH'); // sneaks into the trash under a library/ name
       zip.file('library/C:\\Windows\\evil-abs.txt', 'PWNED-ABS');
       zip.file('library/avatars/deep/evil-deep.txt', 'PWNED-DEEP');
+      zip.file('library/emoji/deep/evil-deep-em.txt', 'PWNED-DEEP-EM'); // #290: same nesting attack against the emoji/ sub-path
       zip.file('library/sub/dir/evil-nested.jpg', 'PWNED-NESTED');
     });
     res = (await importCompleteZipToDb(handle.sqlite, zipPath, dest)) as any;
@@ -121,14 +124,15 @@ describe('yauzl が通す形は、エントリ単位で skip される', () => {
 
   afterAll(() => handle.sqlite.close());
 
-  test('正当な capture / avatars は取り込まれる', () => {
+  test('正当な capture / avatars / emoji は取り込まれる', () => {
     expect(fs.existsSync(path.join(dest, 'cap1.jpg'))).toBe(true);
     expect(fs.existsSync(path.join(dest, 'cap2.jpg'))).toBe(true);
     expect(fs.existsSync(path.join(dest, 'avatars', 'abcd1234.png'))).toBe(true);
+    expect(fs.existsSync(path.join(dest, 'emoji', 'eeee5678.png'))).toBe(true);
   });
 
-  test('取り込まれたのは正当な3件だけ', () => {
-    expect(res.imported).toBe(3);
+  test('取り込まれたのは正当な4件だけ', () => {
+    expect(res.imported).toBe(4);
   });
 
   test('library/ 名義で .trash/ へ潜り込むエントリは書かれない', () => {
@@ -138,6 +142,7 @@ describe('yauzl が通す形は、エントリ単位で skip される', () => {
   test('宛先の中にも外にも evil は落ちない', () => {
     expect(fs.readdirSync(dest).filter((n) => /evil|sub|Windows/i.test(n))).toEqual([]);
     expect(fs.readdirSync(path.join(dest, 'avatars')).filter((n) => /evil|deep/i.test(n))).toEqual([]);
+    expect(fs.readdirSync(path.join(dest, 'emoji')).filter((n) => /evil|deep/i.test(n))).toEqual([]);
     expect(fs.readdirSync(root).filter((n) => /evil/i.test(n))).toEqual([]);
   });
 
@@ -151,7 +156,7 @@ describe('yauzl が通す形は、エントリ単位で skip される', () => {
   });
 });
 
-describe('往復: writeCompleteZip が avatars/ を運び、import が戻す', () => {
+describe('往復: writeCompleteZip が avatars/ / emoji/ を運び、import が戻す（#290）', () => {
   let dest2: string;
   let handle2: any;
   let res2: { imported: number };
@@ -159,8 +164,10 @@ describe('往復: writeCompleteZip が avatars/ を運び、import が戻す', (
   beforeAll(async () => {
     const srcLib = path.join(root, 'src');
     fs.mkdirSync(path.join(srcLib, 'avatars'), { recursive: true });
+    fs.mkdirSync(path.join(srcLib, 'emoji'), { recursive: true });
     fs.writeFileSync(path.join(srcLib, 'cap9.jpg'), 'JPEGDATA9');
     fs.writeFileSync(path.join(srcLib, 'avatars', 'ffff0000.webp'), 'AVDATA');
+    fs.writeFileSync(path.join(srcLib, 'emoji', 'eeee9999.png'), 'EMDATA');
 
     const srcHandle = openDatabase(path.join(root, 'src.db'));
     const out = path.join(root, 'roundtrip.zip');
@@ -175,12 +182,13 @@ describe('往復: writeCompleteZip が avatars/ を運び、import が戻す', (
 
   afterAll(() => handle2.sqlite.close());
 
-  test('capture と avatars/ が復元される', () => {
+  test('capture と avatars/ / emoji/ が復元される', () => {
     expect(fs.existsSync(path.join(dest2, 'cap9.jpg'))).toBe(true);
     expect(fs.existsSync(path.join(dest2, 'avatars', 'ffff0000.webp'))).toBe(true);
+    expect(fs.existsSync(path.join(dest2, 'emoji', 'eeee9999.png'))).toBe(true);
   });
 
-  test('2件とも取り込まれる', () => {
-    expect(res2.imported).toBe(2);
+  test('3件とも取り込まれる', () => {
+    expect(res2.imported).toBe(3);
   });
 });

@@ -7,6 +7,8 @@
 // the wiring point (posterQB / pfStore / the hologramQuery destructure) as deferred
 // wrappers — so this file loads under Node too (scripts/test-facets-unit.cts).
 
+import { kindOf } from './query.ts';
+
 // Poster-platform facet sort order (facet rows only — viewer's own PF lists are
 // written inline where they render).
 export const PF_ORDER = ['x', 'bluesky', 'misskey', 'mastodon', 'pixiv'];
@@ -72,11 +74,18 @@ export function makeFacets(deps: {
     // "on" = this value already exists anywhere in the query tree.
     const act = (type: string, v: string): boolean => qHasValue(type, v);
     switch (cat) {
-      case 'kind':
+      case 'kind': {
+        // #195: counted (unlike the pre-bookmark two-value version) — a
+        // library with few/no bookmarks should show that at a glance rather
+        // than presenting an option with nothing behind it as equal to the
+        // other two.
+        const cnt = facetCounts((p) => kindOf(p));
         return [
           ['post', t('kindPost')],
           ['image', t('kindImage')],
-        ].map(([v, l]) => ({ v, l, on: act('kind', v) }));
+          ['bookmark', t('kindBookmark')],
+        ].map(([v, l]) => ({ v, l, on: act('kind', v), count: cnt.get(v) || 0 }));
+      }
       case 'platform': {
         // Expand each instance as a sub-row directly under Misskey/Mastodon (independently selectable)
         const hostsOf = (plat: string) => {

@@ -115,6 +115,17 @@ function mastodonFullStatus(x): any | null {
   return x && typeof x === 'object' && x.content !== undefined ? x : null;
 }
 
+// #290: status.emojis[] is {shortcode, url, static_url, visible_in_picker} —
+// the official CustomEmoji shape (confirmed live against mstdn.jp/pawoo.net/
+// mastodon.cloud, 2026-08-02). `url` is kept, never `static_url`: it is the
+// ANIMATED original whenever the source image is (mstdn.jp's meow_beanbag is
+// a real .webp example) — an emoji is meant to move, the same "keep the
+// moving picture" rule #119's video/gif media follows.
+function mastodonCustomEmojis(emojis) {
+  if (!Array.isArray(emojis)) return [];
+  return emojis.filter((e) => e && typeof e.shortcode === 'string' && e.shortcode && typeof e.url === 'string' && e.url).map((e) => ({ shortcode: e.shortcode as string, url: e.url as string }));
+}
+
 async function fetchMastodonStatus(parsed, url): Promise<PostRecord> {
   const rec = emptyRecord(url, 'mastodon');
   try {
@@ -126,6 +137,7 @@ async function fetchMastodonStatus(parsed, url): Promise<PostRecord> {
     // Mastodon UI), so federated Lemmy/PieFed posts don't become dead links.
     rec.url = s.url && isMastodonStatusUrl(s.url) ? s.url : url;
     rec.text = htmlToText(s.content);
+    rec.customEmojis = mastodonCustomEmojis(s.emojis);
     // #178: spoiler_text is the CW the author wrote (empty string, not null,
     // when they set none — normalized to null here like every other free-text
     // field). sensitive is a real boolean the API always answers (unlike
@@ -257,5 +269,5 @@ const mastodon: Extractor = {
 };
 
 export default mastodon;
-export { fetchMastodonStatus, findMastodonPostElement, getMastodonStatusLink, looksLikeMastodon, mastodonMedia, parseMastodonStatusLink };
+export { fetchMastodonStatus, findMastodonPostElement, getMastodonStatusLink, looksLikeMastodon, mastodonCustomEmojis, mastodonMedia, parseMastodonStatusLink };
 export type { MastodonStatusLink };

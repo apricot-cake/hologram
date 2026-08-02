@@ -28,7 +28,10 @@ export interface GridCellProps {
   width: number;
 }
 
-const ModelCtx = createContext<HologramGridModel | null>(null);
+// Exported (not module-private) so _shared/SectionedGrid.tsx's per-month host
+// (#47) can provide the SAME context — a cell doesn't know or care whether one
+// shared positioner or several per-month ones sit behind it.
+export const ModelCtx = createContext<HologramGridModel | null>(null);
 // Cells read the live model through context so a bridge render()/patch() (paint
 // bump → re-render) lets modelOf re-derive card state (selection/inspected are
 // hologramStore subscriptions inside Cell, not part of this closure-read model).

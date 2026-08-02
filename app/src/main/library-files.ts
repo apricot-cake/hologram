@@ -42,10 +42,11 @@ export const isViewerImageName = (f: unknown): f is string => isLibraryFileName(
 // precisely so the next caller adds to it instead of hand-copying it. What this
 // adds on top is the EXPORT rule, narrower than the read rule in two ways:
 //
-//   - the save folder's own ROOT only. `avatars/<file>` and `.trash/<file>` resolve
-//     fine for reading (the cards draw both), and neither is a file to hand out —
-//     an avatar is the author's shared sidecar rather than the post's media, and a
-//     trashed file is on its way out (see below).
+//   - the save folder's own ROOT only. `avatars/<file>`, `emoji/<file>` (#290) and
+//     `.trash/<file>` all resolve fine for reading (the cards draw them), and none
+//     of the three is a file to hand out — an avatar or emoji image is a shared
+//     sidecar rather than the post's own media, and a trashed file is on its way
+//     out (see below).
 //   - the name AS GIVEN. resolveInSaveFolder deliberately squashes a climbing name
 //     onto its basename (`../secret.json` → `<save>/secret.json`) so a stray name
 //     still reads something inside the folder. For an export that would silently

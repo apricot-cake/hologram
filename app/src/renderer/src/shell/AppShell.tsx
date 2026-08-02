@@ -49,6 +49,7 @@ import { LibraryLoading } from '../empty/LibraryLoading.tsx';
 import { LibraryMissingState } from '../empty/LibraryMissingState.tsx';
 import { FloatingBar } from '../selection/FloatingBar.tsx';
 import { ScrollToTop } from './ScrollToTop.tsx';
+import { DateJumpRail } from './DateJumpRail.tsx';
 import { ImageTabHost } from '../image-tab/index.tsx';
 import { Inspector } from '../inspector/Inspector.tsx';
 import { PostGrid, PostGridSlot } from '../grid/index.tsx';
@@ -348,6 +349,10 @@ export function AppShell() {
                     window level: the inset is what the inspector narrows, so bottom-right
                     of THIS box is bottom-right of the content the user is scrolling. */}
                 <ScrollToTop />
+                {/* Year/month jump rail (#47) — same inset-relative overlay shape as
+                    ScrollToTop above; it hides itself (via the store's postSections)
+                    whenever the grid isn't on a date sort or a poster/trash mode is showing. */}
+                <DateJumpRail />
               </SidebarInset>
               {/* Right inspector — a column under the band, like Chrome's side panel (#518).
                   Visibility is the user's own toggle (#243): it is no longer opened/closed as

@@ -31,7 +31,7 @@ const { configDir, defaultLibraryDir, extensionBuildStampPath } = require('./pat
 // Best-effort remote-image download (original media + avatars) lives in a shared
 // module so the SSRF guard / size caps are identical across capture, import and
 // backfill. See media-download.cts.
-const { downloadMedia, downloadAvatar, saveStillImage, createByteBudget } = require('./media-download.cts');
+const { downloadMedia, downloadAvatar, downloadCustomEmojis, saveStillImage, createByteBudget } = require('./media-download.cts');
 // Same pure resolver the desktop app uses, so the bridge and app pick the SAME
 // save folder — including recovering from the redundant pointer. See readSaveFolder.
 const { resolveSaveFolder } = require('./config-recovery.cts');
@@ -633,12 +633,23 @@ async function handleSave(req: SaveRequest): Promise<CaptureAck> {
     avatarFile = null;
   }
 
+  // #290: the post's own :shortcode: custom emoji, into the shared emoji/
+  // store — same best-effort contract as the avatar just above (one emoji's
+  // fetch failure never fails the save or drops the others).
+  let customEmojis = [];
+  try {
+    customEmojis = await downloadCustomEmojis(meta.customEmojis, saveFolder, budget);
+  } catch {
+    customEmojis = [];
+  }
+
   const record = normalizePostRecord(
     Object.assign({}, meta, {
       captureId: base,
       image: `${base}.jpg`,
       media: savedMedia,
       avatarFile,
+      customEmojis,
       raw: packRawPayloads(meta.rawPayloads),
     }),
   );
@@ -716,12 +727,21 @@ async function handleSavePost(req: SavePostRequest): Promise<BulkAck> {
     avatarFile = null;
   }
 
+  // #290: see handleSave — same shared emoji/ store, same best-effort contract.
+  let customEmojis = [];
+  try {
+    customEmojis = await downloadCustomEmojis(meta.customEmojis, saveFolder, budget);
+  } catch {
+    customEmojis = [];
+  }
+
   const record = normalizePostRecord(
     Object.assign({}, meta, {
       captureId: base,
       image: null,
       media: savedMedia,
       avatarFile,
+      customEmojis,
       raw: packRawPayloads(meta.rawPayloads),
     }),
   );
@@ -768,10 +788,17 @@ async function handleSaveDragged(req: SaveDraggedRequest): Promise<DraggedAck> {
   } catch {
     avatarFile = null;
   }
+  // #290: see handleSave — same shared emoji/ store, same best-effort contract.
+  let customEmojis = [];
+  try {
+    customEmojis = await downloadCustomEmojis(meta.customEmojis, saveFolder, budget);
+  } catch {
+    customEmojis = [];
+  }
   // source:'drag' marks the image as the artwork itself (not a post screenshot),
   // so the image-view shows it. Mirrors the migrated records' source marker.
   const media = [{ url: req.imageUrl, file: imageFile }];
-  const record = normalizePostRecord(Object.assign({}, meta, { captureId: base, image: imageFile, media, source: 'drag', avatarFile, raw: packRawPayloads(meta.rawPayloads) }));
+  const record = normalizePostRecord(Object.assign({}, meta, { captureId: base, image: imageFile, media, source: 'drag', avatarFile, customEmojis, raw: packRawPayloads(meta.rawPayloads) }));
   await writeInboxEvent(saveFolder, buildEnvelope(record));
   noteSaved(record.url, base, record.media); // see handleSave
 

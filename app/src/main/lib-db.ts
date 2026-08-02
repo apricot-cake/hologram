@@ -344,6 +344,15 @@ const MIGRATIONS: Migration[] = [
         ALTER TABLE posts ADD COLUMN mediaMaxBytes INTEGER;
       `),
   },
+  // #290: the post's own :shortcode: custom emoji (Misskey/Mastodon only) —
+  // see native-host/post-record.mts's CustomEmojiShape. Stored as JSON text,
+  // same convention as quotedPost/replyToPost above (a small per-post
+  // array, not worth its own table). Null on every row written before this
+  // migration and on every non-Misskey/Mastodon post.
+  {
+    name: 'add-post-custom-emojis',
+    up: (db) => db.exec(`ALTER TABLE posts ADD COLUMN customEmojis TEXT;`),
+  },
   // #36: a free-text memo the user attaches to a post, unifying the Eagle-migration
   // `description` field into the same column instead of keeping two synonymous
   // fields (see PostRecordShape.memo / the acceptance note on #36 — "description
@@ -539,6 +548,9 @@ interface PostsTable {
   mediaMaxW: number | null;
   mediaMaxH: number | null;
   mediaMaxBytes: number | null;
+  // add-post-custom-emojis migration (#290) — JSON CustomEmojiShape[], same
+  // storage convention as hashtags/domFilled. See PostRecordShape.customEmojis.
+  customEmojis: string | null;
 }
 interface MediaTable {
   id: Generated<number>;

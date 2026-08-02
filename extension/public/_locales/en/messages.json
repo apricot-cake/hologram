@@ -79,5 +79,9 @@
   "optionsDuplicateWarningDesc": {
     "message": "When you save a picture that is already in your library, asks whether to copy, replace or skip. A different picture of the same post (the next page of a comic, say) is not a duplicate and never asks. It also tells you when the post you are saving is sitting in the library’s trash. Turning this off silences that notice too.",
     "description": "Options description for the duplicate-save warning, including when it does NOT ask"
+  },
+  "ctxBookmark": {
+    "message": "Bookmark this page",
+    "description": "Context menu item: bookmark the current page (#195)"
   }
 }

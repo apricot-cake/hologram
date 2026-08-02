@@ -83,6 +83,13 @@ function setupBackground() {
     return Promise.resolve();
   };
 
+  // #195: modeled here (unlike host-protocol.test.ts / background-unit.test.ts's
+  // stubs, which don't) because this file is where the context-menu save route
+  // gets its own coverage below. removeAll's callback fires synchronously —
+  // real Chrome is async, but nothing here depends on the ordering, and a fake
+  // microtask would only add noise.
+  const contextMenuListeners: Array<(info: any, tab: any) => void> = [];
+  const contextMenuCreateCalls: any[] = [];
   const chromeStub: any = {
     runtime: {
       id: 'test-extension-id',
@@ -92,6 +99,14 @@ function setupBackground() {
       getURL: (file: string) => `chrome-extension://test-extension-id/${file}`,
     },
     i18n: { getMessage: (key: string) => `msg:${key}` },
+    contextMenus: {
+      removeAll: (cb?: () => void) => cb?.(),
+      create: (opts: any, cb?: () => void) => {
+        contextMenuCreateCalls.push(opts);
+        cb?.();
+      },
+      onClicked: { addListener: (fn: any) => contextMenuListeners.push(fn) },
+    },
     tabs: {
       sendMessage: (tabId: number, message: any) => {
         tabsSent.push({ tabId, message });
@@ -181,6 +196,19 @@ function setupBackground() {
     localStore,
     actionCalls,
     createdTabs,
+    // #195: the context-menu equivalent of dispatch/clickAction above — fires
+    // the listener startBackground() registered via chrome.contextMenus.onClicked.
+    contextMenuCreateCalls,
+    clickBookmarkMenu(tab: any, infoOverrides: any = {}) {
+      for (const fn of contextMenuListeners) fn({ menuItemId: 'hologram-bookmark', ...infoOverrides }, tab);
+    },
+    // The OGP read chrome.scripting.executeScript's func would return in the
+    // real tab — bookmark tests set this before clicking; every other test
+    // keeps the plain `[]` allowInjection()/default gives the files-only
+    // capture-injection calls, which never read a result.
+    setOgpResult(ogp: any) {
+      executeScriptImpl = async () => [{ result: ogp }];
+    },
     // Click the toolbar icon (#269). onClicked passes the tab through as-is, so the test side
     // also passes a minimal tab with just id and url. **What we wait on is not a count of
     // synchronization points but the Promise the listener itself returns** = the injection,
@@ -990,5 +1018,89 @@ describe('保存失敗の console 振り分け（#580）', () => {
     expect(res).toMatchObject({ ok: false, errorKind: 'host-missing' });
     expect(errorSpy).toHaveBeenCalledTimes(1);
     expect(warnSpy).not.toHaveBeenCalled();
+  });
+});
+
+// URL bookmark intake (#195): the page right-click item. bookmark.ts's own unit
+// test (scripts/bookmark.test.ts) covers extractOgp/buildBookmarkMeta directly;
+// what this suite adds is the wiring only those functions can't exercise —
+// registration and what actually reaches the native-messaging wire.
+describe('URL ブックマーク保存（#195）', () => {
+  let env: ReturnType<typeof setupBackground>;
+  const TAB = { id: 42, url: 'https://news.example/articles/hello' };
+
+  beforeEach(() => {
+    env = setupBackground();
+  });
+
+  test('startBackground() 起動時に contextMenus へ1件だけ登録する（page/selection/video/audio・linkとimageは含まない）', () => {
+    expect(env.contextMenuCreateCalls).toEqual([{ id: 'hologram-bookmark', title: 'msg:ctxBookmark', contexts: ['page', 'selection', 'video', 'audio'] }]);
+  });
+
+  test('別のメニュー項目のクリックや http(s) でないタブは無視する', () => {
+    const createdPorts = env.connectAsControllablePort();
+    env.clickBookmarkMenu(TAB, { menuItemId: 'someone-elses-menu-item' });
+    env.clickBookmarkMenu({ id: 43, url: 'chrome://extensions' });
+    expect(createdPorts).toHaveLength(0);
+  });
+
+  test('og:image あり＝メディア1件を announced media として送り、source:bookmark・platform:null で乗る', async () => {
+    const createdPorts = env.connectAsControllablePort();
+    env.setOgpResult({ title: 'Hello World', description: 'A short description', image: 'https://cdn.example.com/hello.jpg', siteName: 'Example Times', url: 'https://news.example/articles/hello' });
+    env.clickBookmarkMenu(TAB);
+
+    const port = await portThatSent(createdPorts, 'savePost');
+    expect(port.sent).toEqual([
+      expect.objectContaining({
+        type: 'savePost',
+        captureId: expect.any(String),
+        metaOk: true,
+        metadata: expect.objectContaining({
+          url: 'https://news.example/articles/hello',
+          platform: null,
+          title: 'Hello World',
+          text: 'A short description',
+          displayName: 'Example Times',
+          source: 'bookmark',
+          mediaType: 'image',
+          media: [{ url: 'https://cdn.example.com/hello.jpg', alt: null, width: null, height: null }],
+        }),
+      }),
+    ]);
+  });
+
+  test('og:image 無し＝メディア0件でも保存する（recordHoldsContent は title で通る前提— native-host 側は別スイート）', async () => {
+    const createdPorts = env.connectAsControllablePort();
+    env.setOgpResult({ title: null, description: null, image: null, siteName: null, url: null });
+    env.clickBookmarkMenu(TAB);
+
+    const port = await portThatSent(createdPorts, 'savePost');
+    const sent = port.sent[0];
+    expect(sent.metadata.media).toEqual([]);
+    expect(sent.metadata.mediaType).toBe(null);
+    // OGP がまるごと空でも URL 自体が title/displayName に落ちる（#195 の buildBookmarkMeta）。
+    expect(sent.metadata.title).toBe(TAB.url);
+    expect(sent.metadata.displayName).toBe('news.example');
+  });
+
+  test('保存成功で markSaved が走る（TL バッジ相当）＝以後 checkDuplicate が拾える', async () => {
+    const createdPorts = env.connectAsControllablePort();
+    env.setOgpResult({ title: 'Hello', description: null, image: null, siteName: null, url: TAB.url });
+    env.clickBookmarkMenu(TAB);
+    const port = await portThatSent(createdPorts, 'savePost');
+    port.emitMessage({ ok: true, captureId: 'bm-capture-id', file: 'bm-capture-id.jpg', media: [] });
+
+    // markSaved runs a few microtasks after emitMessage (inside doSaveBookmark's
+    // own await chain) — waitFor is the same "poll until it stops throwing"
+    // idiom portThatSent above uses, not a race with real time.
+    // markSaved runs a few microtask hops after emitMessage (inside
+    // doSaveBookmark's own await chain, past bumpRecentSave's storage.session
+    // round trip) — one macrotask tick is enough to flush all of them, and is
+    // simpler than vi.waitFor here: a premature dispatch would fall through to
+    // queryBridge on a cache miss and open a SECOND native connection this test
+    // never answers, hanging rather than merely retrying.
+    await new Promise((r) => setTimeout(r, 0));
+    const { responseP } = env.dispatch({ type: 'checkDuplicate', url: TAB.url, platform: null, imageUrls: [] });
+    await expect(responseP).resolves.toMatchObject({ ok: true, duplicate: true, captureId: 'bm-capture-id' });
   });
 });
