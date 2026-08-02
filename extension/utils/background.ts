@@ -11,6 +11,8 @@ import { CROP_TIMEOUT_MS, NATIVE_HOST_TIMEOUT_MS, SAVED_QUERY_TIMEOUT_MS, withDe
 import { NATIVE_HOST } from './native-host.ts';
 import { DEV_RELOAD_QUIET_MS, DEV_RELOAD_STATE_KEY, DEV_RELOAD_WORK_MS, EXT_BUILD_ID, bulkActivity, captureActivity, createDevReloadGate, shouldReloadFor } from './dev-reload.ts';
 import type { DevReloadState } from './dev-reload.ts';
+import { buildBookmarkMeta, extractOgp } from './bookmark.ts';
+import type { OgpResult } from './bookmark.ts';
 import { mergeDomMeta } from './extractor/dom-meta.ts';
 import { extractorFor, fetchPostMetadata, getHostname, highResUrlOf, isAllowedSender, mediaKeyOf } from './extractor/index.ts';
 import type { DomMeta, PostRecord } from './extractor/types.ts';
@@ -387,6 +389,90 @@ export function startBackground(): void {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (tab) activateOnTab(tab, command === 'activate-auto');
   });
+
+  // --- URL bookmark intake (#195) ------------------------------------------
+  // Page right-click -> a bookmark record built from the DOM the browser
+  // already rendered (OGP), never fetched — see extension/utils/bookmark.ts's
+  // design comment (#195, 2026-08-02 comment is the current record). Registered
+  // on every startBackground() call; a service-worker restart re-registers the
+  // same id, so removeAll() first is what keeps a restart from throwing
+  // "duplicate id" instead of silently leaving two.
+  //
+  // contexts (#195 2026-08-02 comment #1): 'page' + 'selection' + 'video' +
+  // 'audio' — NOT 'link' (its target is a page never opened, so there is no DOM
+  // to read OGP from, and reaching it would need the main-process fetch #195's
+  // 2026-07-19 comment rejected) and NOT 'image' (#122's item). No
+  // documentUrlPatterns — this shows on every site, and (like #122) that costs
+  // no extra permission; contextMenus is the only one this feature adds.
+  //
+  // `?.` throughout: guards test doubles that model chrome.* without
+  // contextMenus (background-wiring.test.ts is the one that DOES model it —
+  // see its own comment for why). Real Chrome always has it once the manifest
+  // permission is granted.
+  const BOOKMARK_MENU_ID = 'hologram-bookmark';
+  chrome.contextMenus?.removeAll(() => {
+    chrome.contextMenus.create({ id: BOOKMARK_MENU_ID, title: chrome.i18n.getMessage('ctxBookmark'), contexts: ['page', 'selection', 'video', 'audio'] }, () => void chrome.runtime.lastError);
+  });
+
+  chrome.contextMenus?.onClicked.addListener((info, tab) => {
+    if (info.menuItemId !== BOOKMARK_MENU_ID || !tab?.id || !/^https?:/i.test(tab.url || '')) return;
+    saveBookmarkForTab(tab).catch(() => {}); // saveBookmarkForTab itself logs a failure; nothing is left to do with a rejection here
+  });
+
+  // Gated and logged through the SAME admitSave/beginSave machinery every other
+  // save route uses (#323's budget, #519's capture.log thread) — a
+  // context-menu click is a save exactly like the other three, just with its
+  // own way of producing metadata (DOM OGP instead of a platform API or a
+  // screenshot).
+  async function saveBookmarkForTab(tab): Promise<void> {
+    const tabId = tab.id;
+    if (tabId == null) return;
+    const admitted = admitSave({ type: 'saveBookmark', platform: 'bookmark', postUrl: tab.url || '' }, tabId, getHostname(tab.url), [], () => doSaveBookmark(tab));
+    if (!admitted) return; // busy — the same silent-no-op UX the other routes' busy path has
+    try {
+      await admitted;
+    } catch (error: any) {
+      // warn for the failures that are outcomes rather than malfunctions —
+      // console.error piles them up in the extensions error console (#580).
+      console[saveFailureConsoleLevel(classifySaveFailure(error?.message))](error);
+      logSaveFailure(error, { saveId: null, platform: 'bookmark', host: getHostname(tab.url), url: tab.url || null });
+    }
+  }
+
+  async function doSaveBookmark(tab): Promise<BridgeAck> {
+    const captureId = generateCaptureId();
+    const capturedAt = new Date().toISOString();
+    const trace = beginSave('savePost', { saveId: null, captureId, platform: 'bookmark', url: tab.url || null, tabId: tab.id ?? null });
+
+    let ogp: OgpResult;
+    try {
+      const results = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: extractOgp });
+      const read = results[0]?.result;
+      if (!read) throw new Error('OGP extraction returned nothing');
+      ogp = read;
+    } catch (err: any) {
+      throw trace.fail('metadata', err?.message || 'OGP extraction threw');
+    }
+    trace.passed('metadata');
+
+    // meta.platform stays null throughout (buildBookmarkMeta / the record built
+    // below) — sendPlatform is null here too, so buildRecord's
+    // `meta.platform || sendPlatform || null` fallback chain lands on null
+    // exactly as #195's 2026-08-02 design comment #2 confirms.
+    const meta = buildBookmarkMeta(ogp, tab.url || '');
+    const record = buildRecord(meta, { captureId, capturedAt, postUrl: meta.url || tab.url || '', sendPlatform: null, extra: { mediaType: meta.mediaType, media: meta.media, source: 'bookmark' } });
+
+    let ack: BridgeAck;
+    try {
+      ack = await sendPostToBridge(captureId, record, true, null, null);
+    } catch (err: any) {
+      throw trace.fail('bridge', err?.message || 'bridge save failed');
+    }
+    trace.passed('bridge');
+    markSaved([record.url, tab.url], ack?.captureId || captureId, savedMediaUrls(ack), tab.id);
+    await bumpRecentSave(record.url);
+    return ack;
+  }
 
   // Bulk intake (#362): save a post from its permalink alone — no screenshot,
   // no DOM image needed. The platform API already carries the originals, so the
@@ -1299,7 +1385,7 @@ export function startBackground(): void {
 // downloaded illustration becomes image, media stays []) and instead records
 // which image of a multi-image post it was. Single source of truth so a new field
 // can't drift between the two paths.
-function buildRecord(meta, { captureId, capturedAt, postUrl, sendPlatform, replaces, extra }: { captureId: string; capturedAt: string; postUrl: string; sendPlatform: string; replaces?: string | null; extra: Record<string, unknown> }): CaptureMetadata {
+function buildRecord(meta, { captureId, capturedAt, postUrl, sendPlatform, replaces, extra }: { captureId: string; capturedAt: string; postUrl: string; sendPlatform: string | null; replaces?: string | null; extra: Record<string, unknown> }): CaptureMetadata {
   return Object.assign(
     {
       captureId,

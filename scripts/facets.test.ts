@@ -58,6 +58,7 @@ const postFolders = [
 const LABELS: Record<string, string> = {
   kindPost: 'SNS投稿',
   kindImage: '画像',
+  kindBookmark: 'ブックマーク',
   qfPost: '投稿',
   qfReply: 'リプライ',
   qfQuote: '引用',
@@ -70,30 +71,36 @@ const LABELS: Record<string, string> = {
   qfTagNone: 'タグなし',
 };
 
-const { facetCounts, qfValues } = makeFacets({
-  getFilteredPosts: () => filtered,
-  qHasValue: (t, v) => active.has(`${t}:${v}`),
-  posterQHasValue: (t, v) => posterActive.has(`${t}:${v}`),
-  allPosts: () => posts,
-  hostOf: (url) => {
-    try {
-      return new URL(url ?? '').hostname;
-    } catch {
-      return '';
-    }
-  },
-  userKey: (p) => `${p.platform}:${p.userId || `@${p.screenName || ''}`}`,
-  t: (key: string) => LABELS[key],
-  PF_NAME: { x: 'X', bluesky: 'Bluesky', misskey: 'Misskey', mastodon: 'Mastodon', pixiv: 'pixiv' },
-  tagKindOf: (t: string) => KIND[t],
-  posterTagsOf: (key: string) => posterTags[key] || [],
-  filteredPosters: () => posters,
-  posterFilterVocab: () => ['P趣味', 'P作品'],
-  namedPosters: () => posters,
-  posterFolders: () => posterFolders,
-  postFolders: () => postFolders,
-  buildUsers: () => posters,
-});
+// Population is injectable (default: `filtered`) so a test can observe a
+// post the base fixture set doesn't have (#195's bookmark-kind count below)
+// without a second hand-written deps object duplicating every other field.
+function makeFacetsWith(pop: any[]) {
+  return makeFacets({
+    getFilteredPosts: () => pop,
+    qHasValue: (t, v) => active.has(`${t}:${v}`),
+    posterQHasValue: (t, v) => posterActive.has(`${t}:${v}`),
+    allPosts: () => posts,
+    hostOf: (url) => {
+      try {
+        return new URL(url ?? '').hostname;
+      } catch {
+        return '';
+      }
+    },
+    userKey: (p) => `${p.platform}:${p.userId || `@${p.screenName || ''}`}`,
+    t: (key: string) => LABELS[key],
+    PF_NAME: { x: 'X', bluesky: 'Bluesky', misskey: 'Misskey', mastodon: 'Mastodon', pixiv: 'pixiv' },
+    tagKindOf: (t: string) => KIND[t],
+    posterTagsOf: (key: string) => posterTags[key] || [],
+    filteredPosters: () => posters,
+    posterFilterVocab: () => ['P趣味', 'P作品'],
+    namedPosters: () => posters,
+    posterFolders: () => posterFolders,
+    postFolders: () => postFolders,
+    buildUsers: () => posters,
+  });
+}
+const { facetCounts, qfValues } = makeFacetsWith(filtered);
 
 describe('facetCounts', () => {
   test('既定の母集団は filtered', () => {
@@ -123,11 +130,21 @@ describe('facetCounts', () => {
 });
 
 describe('qfValues: kind / platform', () => {
-  test('kind は2値でラベルつき', () => {
+  // #195: 3値目の 'bookmark' はソースマーク（source:'bookmark'）優先で導出——
+  // このスタブ集合には bookmark 印の投稿が無いので、行は出るがカウントは0。
+  test('kind は3値（post/image/bookmark）でラベル・カウントつき', () => {
     const rows = qfValues('kind');
-    expect(rows).toHaveLength(2);
-    expect(rows[0].l).toBe('SNS投稿');
-    expect(rows[1].v).toBe('image');
+    expect(rows).toHaveLength(3);
+    expect(rows[0]).toMatchObject({ v: 'post', l: 'SNS投稿' });
+    expect(rows[1]).toMatchObject({ v: 'image', l: '画像' });
+    expect(rows[2]).toMatchObject({ v: 'bookmark', l: 'ブックマーク', count: 0 });
+  });
+
+  test('kind: source=bookmark はカウント上 post/image と排他', () => {
+    const withBookmark = [...filtered, { captureId: 'bm1', url: 'https://example.com/a', source: 'bookmark', platform: null }];
+    const { qfValues: qf2 } = makeFacetsWith(withBookmark);
+    const rows = qf2('kind');
+    expect(rows.find((r) => r.v === 'bookmark')?.count).toBe(1);
   });
 
   test('platform の主行は 5PF + なし', () => {
