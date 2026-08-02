@@ -269,11 +269,37 @@ declare global {
     onSauce?(): void;
     onAscii?(): void;
     onPosterJump?(): void;
+    // #180: embedded card(s) for a quoted/renoted or (Misskey-only) replied-to
+    // post, rendered from the saved sidecar sub-record (QuotedPostCard.tsx) —
+    // never a live network fetch (v1 stays metadata-only, media stays URL-only,
+    // no remote image src). Empty/absent when the post neither quotes nor
+    // replies to anything the extractor could build one from.
+    quotedCards?: HologramQuotedCardModel[];
     // Poster-only.
     onPosterPosts?(): void;
     onFolderToggle(id: string): void;
     onFolderCreate?(): void;
     [extra: string]: any;
+  }
+  // #180: one embedded quote/reply-to card, built by inspector-builder.ts's
+  // showDetail() from the post's quotedPost/replyToPost sidecar sub-record.
+  // onOpen navigates in-app to the saved independent record when one exists
+  // (2026-07-27 design comment on #180: same-post identity via postKeyOf),
+  // else opens the sub-record's own URL externally — onOpen is always present
+  // when the sub-record carries a url, absent for the (rare) url-less case.
+  interface HologramQuotedCardModel {
+    kind: 'quote' | 'reply';
+    label: string;
+    displayName: string;
+    screenNameLabel: string;
+    avatarSrc: string | null;
+    monogram: string | null;
+    monoHue: number | null;
+    dateLabel: string;
+    cw: string;
+    text: string;
+    mediaCountLabel: string;
+    onOpen?(): void;
   }
   // ---- Empty-state variant — EmptyState.tsx derives this itself from hologramStore
   // instead of a pushed bridge (the old renderer/empty.js bridge was deleted — no

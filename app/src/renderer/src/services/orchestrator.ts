@@ -1163,6 +1163,11 @@ export function endFilterEditSession(): void {
     getActiveTabId,
     closeTab,
     imageTabShowing: () => imageTabCtl.isShowing(), // primitive read — live, not a snapshot
+    // #180: quoted/reply-to card click-through drill-in (see inspector-builder.ts's
+    // deps interface comment) — postQB is already constructed above (line ~632),
+    // so this is a direct wrapper, not a deferred forward reference like jumpToPoster.
+    postQBResetTree: () => postQB.resetTree(),
+    addFilter: (filter) => addFilter(filter),
   });
   // closeDetail (the one that STORES "panel off") is deliberately not pulled in here:
   // outside the panel's own ×, nothing in the orchestrator should be able to disable

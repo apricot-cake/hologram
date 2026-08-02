@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty';
 import { Separator } from '@/components/ui/separator';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { QuotedPostCard } from './QuotedPostCard.tsx';
 import { TagField } from './TagField.tsx';
 import type { ReactNode } from 'react';
 
@@ -135,6 +136,16 @@ function PostInspector({ m }: { m: HologramInspectorModel }) {
       </div>
       {m.thumbSrc ? <img data-slot="inspector-thumb" data-peek={m.onThumbClick ? 'true' : undefined} className={'block w-full rounded-lg border border-border' + (m.onThumbClick ? ' cursor-zoom-in' : '')} src={m.thumbSrc} alt="" onClick={m.onThumbClick ?? undefined} /> : null}
       {m.bodyText ? <TextSection text={m.bodyText} label={m.labels.text} /> : null}
+      {/* #180: quoted/renoted or (Misskey-only) replied-to post, nested directly
+          under the post's own text — same placement a quoted-tweet/renote card
+          sits in on the source platforms. */}
+      {m.quotedCards && m.quotedCards.length ? (
+        <div className="flex flex-col gap-1.5">
+          {m.quotedCards.map((c: HologramQuotedCardModel, i: number) => (
+            <QuotedPostCard key={i} m={c} />
+          ))}
+        </div>
+      ) : null}
       <Fields>
         <Field k={m.labels.platform} v={m.platformLabel} />
         {hasAuthor ? (
