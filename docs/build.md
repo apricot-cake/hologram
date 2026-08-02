@@ -58,7 +58,13 @@ Chrome は unpacked 拡張のファイルが変わっても自分では読み直
 
 ### 開発プロファイル
 
-専用の user-data-dir で Chrome を普通に起動し、`~/.hologram-dev/chrome-mv3-dev` を一度だけ Load unpacked する。以後はプロファイルが覚えているので、どの worktree から `npm run dev:ext` を起動しても同じ場所へ出力される。各 SNS へのログインは初回だけ人が行う。
+```
+npm run ext:dev:browser
+```
+
+専用の user-data-dir（既定 `~/.hologram-ext-profile`）で Chrome を普通に起動する。日常の Chrome とは別プロセスなので並べて開いてよい。**初回だけ**、開いた Chrome で `chrome://extensions` → 開発者モード ON → Load unpacked → `~/.hologram-dev/chrome-mv3-dev`。以後はプロファイルが覚えているので、どの worktree から `npm run dev:ext` を起動しても同じ場所へ出力され、読み込み直しは要らない。各 SNS へのログインも初回だけ人が行う。
+
+⚠️**日常プロファイルには開発ビルドを読み込まない**＝両方が同じ拡張 ID を持つので衝突する。`--load-extension` は使わない（Chrome 137+ が無視する＝#657）。
 
 **WXT にブラウザを起動させない**（`webExt.disabled`）。理由は2つとも今も生きている＝①自動化スタック経由で開いたブラウザは自動化フラグの指紋を持ち、X と Google がボットと見なしてサインインを拒む（2026-07-26 実測）②`--load-extension` は Chrome 137+ で無視される（#657・Chrome 151 で実測）。ホットリロードは拡張と dev サーバーの間で成立するので、誰がブラウザを起動したかは関係ない。**デバッグポートも開けない**＝TCP のデバッグポートは無認証で、ローカルの任意プロセスがサインイン中のセッションを抜ける（Chrome 136 が既定プロファイルで同スイッチを拒むのと同じ理由）。
 
