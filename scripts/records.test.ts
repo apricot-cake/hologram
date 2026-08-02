@@ -694,6 +694,50 @@ describe('makeCardModel（カード1枚のビューモデル）', () => {
       expect(m.fileName).toBe('');
     });
   });
+
+  // #365: a text-only post has no image to measure or learn from at all (shotW/H
+  // is always 0, and there's no capture to have populated the aspect cache) — the
+  // original-aspect grid instead reserves height from the body's own length.
+  describe('本文からの高さ予約（テキストのみ、#365）', () => {
+    // image/mediaType cleared, captureId swapped so the stub aspect cache (keyed
+    // on the baseline's 'capX') can't accidentally supply an answer either.
+    const textOnlyBase = { ...p, image: '', mediaType: null, shotW: 0, shotH: 0, captureId: 'noimg' };
+
+    test('image/video/media が無ければ本文の長さから段階的なアスペクト比を選ぶ', () => {
+      expect(model({ ...textOnlyBase, text: 'short' }).aspRatio).toBe('4/3');
+      expect(model({ ...textOnlyBase, text: 'x'.repeat(150) }).aspRatio).toBe('1/1');
+      expect(model({ ...textOnlyBase, text: 'x'.repeat(300) }).aspRatio).toBe('3/4');
+      expect(model({ ...textOnlyBase, text: 'x'.repeat(500) }).aspRatio).toBe('2/3');
+    });
+
+    test('正方形サムネ・リストでは（テキストのみでも）空のまま', () => {
+      withShape({ square: true }, () => expect(model({ ...textOnlyBase, text: 'x'.repeat(500) }).aspRatio).toBe(''));
+      withShape({ list: true }, () => expect(model({ ...textOnlyBase, text: 'x'.repeat(500) }).aspRatio).toBe(''));
+    });
+
+    test('画像がある投稿には適用しない（既存の画像あり表示は変わらない）', () => {
+      expect(model({ ...p, shotW: 0, shotH: 0, captureId: 'noimg' }).aspRatio).toBe('');
+    });
+
+    test('hasThumb は false（PostCard がプレートを描く合図）', () => {
+      expect(model(textOnlyBase).hasThumb).toBe(false);
+    });
+  });
+
+  describe('R.textPlateAspect（#365）', () => {
+    test.each([
+      ['', '4/3'],
+      ['a'.repeat(80), '4/3'],
+      ['a'.repeat(81), '1/1'],
+      ['a'.repeat(220), '1/1'],
+      ['a'.repeat(221), '3/4'],
+      ['a'.repeat(420), '3/4'],
+      ['a'.repeat(421), '2/3'],
+      ['a'.repeat(2000), '2/3'],
+    ])('%s文字 → %s', (text, expected) => {
+      expect(R.textPlateAspect(text)).toBe(expected);
+    });
+  });
 });
 
 // #132: if what was grabbed is inside the selection, take the whole selection; if it's

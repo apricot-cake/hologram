@@ -5,13 +5,17 @@ import { describe, expect, test } from 'vitest';
 import { makeFacets } from '../app/src/renderer/src/services/facets';
 
 // --- stub environment: 6 posts (x2, misskey1, mastodon1, pixiv1, no-platform1) ---
+// Each carries an `image` alongside its mediaType (#365's hasVisualMedia reads the
+// actual media fields, not mediaType — a fixture with mediaType set but no file
+// would misreport as the new "text-only" bucket below; see its own describe block
+// for a fixture post that really has neither).
 const posts = [
-  { captureId: 'c1', url: 'https://x.com/a/status/1', platform: 'x', userId: 'u1', screenName: 'alice', displayName: 'アリス', tags: ['風景', '作品A'], hashtags: ['art'], mediaType: 'image', isReply: false, isQuote: false, isThread: false },
-  { captureId: 'c2', url: 'https://x.com/b/status/2', platform: 'x', userId: 'u2', screenName: 'bob', displayName: '', tags: ['風景'], hashtags: ['art', 'wip'], mediaType: 'video', isReply: true, isQuote: false, isThread: false },
-  { captureId: 'c3', url: 'https://misskey.io/notes/n1', platform: 'misskey', userId: 'u3', screenName: 'carol', tags: [], hashtags: [], mediaType: 'image', isReply: false, isQuote: true, isThread: false },
-  { captureId: 'c4', url: 'https://mstdn.jp/@d/3', platform: 'mastodon', userId: 'u4', screenName: 'dan', tags: ['キャラX'], hashtags: [], mediaType: 'gif', isReply: false, isQuote: false, isThread: true },
-  { captureId: 'c5', url: 'https://www.pixiv.net/artworks/9', platform: 'pixiv', userId: 'u5', screenName: 'eve', tags: ['未分類タグ'], hashtags: [], mediaType: 'image', isReply: false, isQuote: false, isThread: false },
-  { captureId: 'c6', url: null, platform: null, tags: ['風景'], hashtags: [], mediaType: 'image', isReply: false, isQuote: false, isThread: false },
+  { captureId: 'c1', url: 'https://x.com/a/status/1', platform: 'x', userId: 'u1', screenName: 'alice', displayName: 'アリス', tags: ['風景', '作品A'], hashtags: ['art'], mediaType: 'image', image: 'c1.jpg', isReply: false, isQuote: false, isThread: false },
+  { captureId: 'c2', url: 'https://x.com/b/status/2', platform: 'x', userId: 'u2', screenName: 'bob', displayName: '', tags: ['風景'], hashtags: ['art', 'wip'], mediaType: 'video', video: 'c2.mp4', isReply: true, isQuote: false, isThread: false },
+  { captureId: 'c3', url: 'https://misskey.io/notes/n1', platform: 'misskey', userId: 'u3', screenName: 'carol', tags: [], hashtags: [], mediaType: 'image', image: 'c3.jpg', isReply: false, isQuote: true, isThread: false },
+  { captureId: 'c4', url: 'https://mstdn.jp/@d/3', platform: 'mastodon', userId: 'u4', screenName: 'dan', tags: ['キャラX'], hashtags: [], mediaType: 'gif', media: [{ file: 'c4.mp4' }], isReply: false, isQuote: false, isThread: true },
+  { captureId: 'c5', url: 'https://www.pixiv.net/artworks/9', platform: 'pixiv', userId: 'u5', screenName: 'eve', tags: ['未分類タグ'], hashtags: [], mediaType: 'image', image: 'c5.jpg', isReply: false, isQuote: false, isThread: false },
+  { captureId: 'c6', url: null, platform: null, tags: ['風景'], hashtags: [], mediaType: 'image', image: 'c6.jpg', isReply: false, isQuote: false, isThread: false },
 ];
 // The current query's population = assumed narrowed down to just the first 3 (facet count is counted from these)
 const filtered = posts.slice(0, 3);
@@ -69,6 +73,7 @@ const LABELS: Record<string, string> = {
   qfImage: '画像',
   qfVideo: '動画',
   qfGif: 'GIF',
+  qfMediaNone: 'テキストのみ',
   qfMultiImage: '複数画像',
   qfSiteNone: 'なし',
   qfTagNone: 'タグなし',
@@ -275,6 +280,46 @@ describe('qfValues: postType / media', () => {
     const media = qfValues('media');
     expect(media[0].count).toBe(2);
     expect(media[1].count).toBe(1);
+  });
+
+  // #365: a 4th row for records with no media at all — not shown unless the
+  // library actually has one (same "don't list what would come up empty" rule
+  // as "no platform"/"no tags"), and not findable via mediaType alone (a fixture
+  // with mediaType set but no image/video/media file is NOT this bucket — see
+  // the base fixture's own comment). A separate makeFacets instance (same
+  // reasoning as the domain-row block above): allPosts, not just the counted
+  // pool, has to actually contain a text-only record for the row to appear.
+  describe('テキストのみ行（__none, #365）', () => {
+    test('該当レコードが無ければ出ない', () => {
+      expect(qfValues('media').map((r) => r.v)).not.toContain('__none');
+    });
+
+    test('該当レコードがあれば出る。判定は mediaType でなく image/video/media の実体', () => {
+      const textOnly = { captureId: 't1', url: 'https://x.com/a/status/9', platform: 'x', text: 'hello', tags: [], hashtags: [], mediaType: null };
+      const withText = [...posts, textOnly];
+      const { qfValues: qf2 } = makeFacets({
+        getFilteredPosts: () => withText,
+        qHasValue: () => false,
+        posterQHasValue: () => false,
+        allPosts: () => withText,
+        hostOf: () => '',
+        userKey: (p) => String(p.platform),
+        t: (key: string) => LABELS[key],
+        PF_NAME: { x: 'X', bluesky: 'Bluesky', misskey: 'Misskey', mastodon: 'Mastodon', pixiv: 'pixiv' },
+        tagKindOf: () => undefined,
+        posterTagsOf: () => [],
+        filteredPosters: () => [],
+        posterFilterVocab: () => [],
+        namedPosters: () => [],
+        posterFolders: () => [],
+        postFolders: () => [],
+        buildUsers: () => [],
+        resolve: (key: string) => key,
+        membersOf: (key: string) => [key],
+      });
+      const row = qf2('media').find((r) => r.v === '__none');
+      expect(row).toMatchObject({ l: 'テキストのみ', count: 1 });
+    });
   });
 });
 

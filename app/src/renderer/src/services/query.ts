@@ -349,6 +349,14 @@ export const userKey = (p: HologramPost): string => (p.platform ? p.platform + '
 // first. 'post' vs 'image' keeps its original rule (url presence) for
 // everything that isn't a bookmark (#195's 2026-08-02 design comment #6).
 export const kindOf = (p: HologramPost): 'bookmark' | 'post' | 'image' => (p.source === 'bookmark' ? 'bookmark' : p.url ? 'post' : 'image');
+// #365: does this record carry ANY visual media at all — its own image, a video
+// field, or a media[] entry? Deliberately checked from the raw fields rather than
+// `p.mediaType == null`: that null is ambiguous (it also fires when media WAS
+// declared but its type failed to resolve, e.g. a malformed X mediaDetails entry),
+// so it can't stand in for "this post has nothing to show a thumbnail of". A post
+// where this is false is exactly the "text-only" case #365 gives a body-text card
+// face instead of a thumbnail.
+export const hasVisualMedia = (p: HologramPost): boolean => !!p.image || !!p.video || (Array.isArray(p.media) && p.media.some((m: any) => m && m.file));
 // Every text-ish field a free-text query can match against.
 // (p.memo = free-text note, #36 — includes the Eagle-migration annotation it absorbed.)
 // media[].alt (#288): saved ALT text — X `ext_alt_text` / Bluesky `alt` / Misskey
@@ -452,8 +460,11 @@ export function makePostPredOf(deps: {
         return (p) => (p.platform === 'misskey' || p.platform === 'mastodon') && hostOf(p.url) === f.value;
       case 'postType':
         return (p) => (f.value === 'post' ? !p.isReply && !p.isQuote && !p.isThread : f.value === 'reply' ? !!p.isReply : f.value === 'quote' ? !!p.isQuote : !!p.isThread);
+      // '__none' = no media at all (#365's text-only row) — same sentinel shape
+      // as platform/tag's own '__none' leaves above/below. Not resolvable from
+      // mediaType alone (see hasVisualMedia's doc comment).
       case 'media':
-        return (p) => p.mediaType === f.value;
+        return (p) => (f.value === '__none' ? !hasVisualMedia(p) : p.mediaType === f.value);
       // Tag leaves match by tagId when one is available — a rename changes
       // posts[].tags (the display name) but never the id, so a leaf pinned to
       // an id survives it (#5 2026-07-18 comment). A leaf saved before the DB

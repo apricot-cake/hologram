@@ -20,7 +20,7 @@ import { hologramIpc } from './ipc.ts';
 import { postKeyOf } from '../../../../../native-host/post-key.mts';
 export { postKeyOf };
 import type { DisplayShape } from './display.ts';
-import { userKey } from './query.ts';
+import { hasVisualMedia, userKey } from './query.ts';
 
 // A post may carry both a capture (screenshot) and real media/artwork. Artwork
 // leads everywhere; the capture stands in for posts whose original never downloaded
@@ -85,6 +85,27 @@ export const artworkFile = (p: HologramPost): string => {
  */
 export function densityImage(p: HologramPost): string {
   return artworkFile(p) || captureFile(p);
+}
+
+// #365: the original-aspect grid's height reservation for a text-only card (no
+// image to measure, so shotW/H is always 0 and there's no learned-aspect cache
+// entry either). Picked from the body's length in discrete steps rather than a
+// continuous function — in a grid whose COLUMN width is fixed, a step keeps
+// similarly-long posts reading as "the same kind of card" while scanning, the
+// way a continuous height would not. Short text sits wide (a caption reads more
+// like a labeled tile), long text sits tall (room to actually show it). Bounds
+// and thresholds are a first cut — expect these four numbers to move once this
+// is on screen with a real library.
+const TEXT_PLATE_ASPECT_STEPS: [max: number, ratio: string][] = [
+  [80, '4/3'],
+  [220, '1/1'],
+  [420, '3/4'],
+  [Infinity, '2/3'],
+];
+export function textPlateAspect(text: string | null | undefined): string {
+  const len = (text || '').length;
+  for (const [max, ratio] of TEXT_PLATE_ASPECT_STEPS) if (len <= max) return ratio;
+  return TEXT_PLATE_ASPECT_STEPS[TEXT_PLATE_ASPECT_STEPS.length - 1][1];
 }
 
 // --- Grouping (ported from image-view) --------------------------------------
@@ -447,10 +468,12 @@ export function makeCardModel(deps: {
     // (the thumbnailer flattens GIF to a static JPEG).
     const cellW = view.list ? listThumbW() : gridThumbW();
     const imgW = view.square || !/\.gif$/i.test(imgFile || '') ? cellW : 0;
-    // Reserve the image's height up front so the masonry packs right the first time —
-    // pixel size from the index, learned cache fallback. Only the original-aspect grid
-    // needs it: square cells and list rows have a height the layout already knows.
-    const aspRatio = view.list || view.square ? '' : p.shotW > 0 && p.shotH > 0 ? p.shotW + '/' + p.shotH : p.captureId && aspectCache[p.captureId] ? aspectCache[p.captureId] : '';
+    // Reserve the height up front so the masonry packs right the first time — pixel
+    // size from the index, learned cache fallback, and (#365) a text-only post's own
+    // discrete step when there is no image to have sized or learned from at all. Only
+    // the original-aspect grid needs any of this: square cells and list rows have a
+    // height the layout already knows.
+    const aspRatio = view.list || view.square ? '' : p.shotW > 0 && p.shotH > 0 ? p.shotW + '/' + p.shotH : p.captureId && aspectCache[p.captureId] ? aspectCache[p.captureId] : !hasVisualMedia(p) ? textPlateAspect(text) : '';
     // Post-type + media flags. The list row spends its width on the post text and
     // leaves these out (ListRow), so they are grid furniture.
     const flags: string[] = [];
