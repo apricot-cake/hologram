@@ -102,6 +102,8 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     imageCopyFailed: 'この形式の画像はコピーできません',
     ctxShowInFolder: 'ファイルの場所を開く',
     ctxOpenNewTab: '新しいタブで開く',
+    // 比較ビュー (#82) — 複数選択 → 右クリックの一行
+    ctxCompare: '比較',
     // Right-click on selected text (#167). This row sits in the same lineup as "Search with
     // SauceNAO" / "Search with ascii2d", so the wording is aligned to the same "Search with 〜" pattern
     ctxCopyText: 'コピー',
@@ -418,6 +420,9 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     cmdTogglePrivacy: 'プライバシーモードを切り替え',
     // Quick view (#143) — no visible heading is drawn, so this is screen-reader only
     quickViewTitle: 'クイックビュー',
+    // 比較ビュー (#82) — 見出しはスクリーンリーダー専用、閉じるボタンはアイコンのみ
+    compareTitle: '比較ビュー',
+    compareClose: '比較を閉じる',
     // Command palette (#28) — the container's copy, headings, and initial commands
     paletteTitle: 'コマンドパレット',
     paletteDesc: 'コマンドを実行したり、タグ・投稿者・フォルダへ移動します。',
@@ -644,6 +649,8 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     imageCopyFailed: "This image format can't be copied",
     ctxShowInFolder: 'Show in folder',
     ctxOpenNewTab: 'Open in new tab',
+    // Compare view (#82) — multi-select then right-click
+    ctxCompare: 'Compare',
     ctxCopyText: 'Copy',
     ctxSearchWeb: 'Search on Google',
     ctxSearchLibrary: 'Search the library',
@@ -941,6 +948,9 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     cmdTogglePrivacy: 'Toggle privacy mode',
     // Quick view (#143) — no visible heading, so this is the screen-reader name only
     quickViewTitle: 'Quick view',
+    // Compare view (#82) — heading is screen-reader only, close button is icon-only
+    compareTitle: 'Compare view',
+    compareClose: 'Close compare view',
     // Command palette (#28)
     paletteTitle: 'Command palette',
     paletteDesc: 'Run a command, or jump to a tag, poster or folder.',
