@@ -6,8 +6,8 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterAll, beforeAll, describe, expect, test } from 'vitest';
-import { isLinkedWorktreeRuntime, shouldPreserveSharedRegistration } from '../native-host/install.cts';
+import { afterAll, afterEach, beforeAll, describe, expect, test } from 'vitest';
+import { HOST_NAME, isLinkedWorktreeRuntime, shouldPreserveSharedRegistration, unixManifestDirs, windowsRegistryKeys } from '../native-host/install.cts';
 
 let root: string;
 let mainExe: string;
@@ -57,5 +57,41 @@ describe('shouldPreserveSharedRegistration', () => {
 
   test('素の Node CLI からの登録は従来どおり許す', () => {
     expect(shouldPreserveSharedRegistration({ exe: linkedExe, runAsNode: false })).toBe(false);
+  });
+});
+
+// #210: Brave/Vivaldi は Chrome/Edge/Chromium と同じ「1ブラウザ1登録先」の並びに
+// 追加された行であって、既存3件を置き換えたり順序を変えたりしないことを固定する。
+describe('windowsRegistryKeys / unixManifestDirs（#210 Brave・Vivaldi）', () => {
+  const originalPlatform = Object.getOwnPropertyDescriptor(process, 'platform');
+  if (!originalPlatform) throw new Error('process.platform descriptor missing');
+  const setPlatform = (value: NodeJS.Platform) => Object.defineProperty(process, 'platform', { value });
+
+  afterEach(() => {
+    Object.defineProperty(process, 'platform', originalPlatform);
+  });
+
+  test('Windows レジストリキーに Brave・Vivaldi が既存3件を保ったまま追加される', () => {
+    setPlatform('win32');
+    const keys = windowsRegistryKeys();
+    expect(keys).toEqual([
+      `HKCU\\Software\\Google\\Chrome\\NativeMessagingHosts\\${HOST_NAME}`,
+      `HKCU\\Software\\Microsoft\\Edge\\NativeMessagingHosts\\${HOST_NAME}`,
+      `HKCU\\Software\\Chromium\\NativeMessagingHosts\\${HOST_NAME}`,
+      `HKCU\\Software\\BraveSoftware\\Brave-Browser\\NativeMessagingHosts\\${HOST_NAME}`,
+      `HKCU\\Software\\Vivaldi\\NativeMessagingHosts\\${HOST_NAME}`,
+    ]);
+  });
+
+  test('macOS のマニフェスト配置先も同じベンダー名の並びで増える', () => {
+    setPlatform('darwin');
+    const dirs = unixManifestDirs();
+    expect(dirs).toEqual(['Google/Chrome', 'Microsoft Edge', 'Chromium', 'BraveSoftware/Brave-Browser', 'Vivaldi'].map((vendor) => path.join(os.homedir(), 'Library/Application Support', vendor, 'NativeMessagingHosts')));
+  });
+
+  test('Linux のマニフェスト配置先も同じベンダー名の並びで増える', () => {
+    setPlatform('linux');
+    const dirs = unixManifestDirs();
+    expect(dirs).toEqual(['google-chrome', 'microsoft-edge', 'chromium', 'BraveSoftware/Brave-Browser', 'vivaldi'].map((vendor) => path.join(os.homedir(), '.config', vendor, 'NativeMessagingHosts')));
   });
 });
