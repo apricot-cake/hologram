@@ -22,6 +22,8 @@ import type {
   ClipboardImportResult,
   CompleteImportResult,
   ConfigSummary,
+  DbGeneration,
+  DbRollbackResult,
   ExportCompleteResult,
   ExportProgress,
   ExportSaveResult,
@@ -175,6 +177,10 @@ const api = {
   setBackup: (patch: unknown): Promise<BackupWriteResult> => ipcRenderer.invoke('set-backup', patch),
   pickBackupDir: (): Promise<BackupDirPickResult> => ipcRenderer.invoke('pick-backup-dir'),
   runBackup: (): Promise<BackupRunResult> => ipcRenderer.invoke('run-backup'),
+  listDbGenerations: (): Promise<DbGeneration[]> => ipcRenderer.invoke('list-db-generations'),
+  // Rolls the library's organization back to one generation. Main reloads every
+  // window shortly after answering — the whole renderer state is stale by then.
+  rollbackDbGeneration: (name: string): Promise<DbRollbackResult> => ipcRenderer.invoke('rollback-db-generation', name),
   importImages: (): Promise<MediaImportResult> => ipcRenderer.invoke('import-images'),
   // Ctrl+V in the app window (#85). `title` is built renderer-side because it is
   // a localized, user-visible label and main holds no message table.

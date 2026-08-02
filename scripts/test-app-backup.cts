@@ -17,6 +17,9 @@
 //  - the prune-safety guard holds the prune when src collapses (clear-all → empty),
 //    leaving the destination intact (regression for the 2026-06-23 library-loss
 //    incident)
+//  - the destination records which library it belongs to (#233/#176) and a run
+//    against a destination claimed by ANOTHER library is refused before anything
+//    is written or pruned
 //
 //   node scripts/test-app-backup.cts
 
@@ -76,7 +79,9 @@ const countBackupRoot = () => {
     // standing subfolders unrelated to post-asset pruning, so counting them would
     // stop the prune-intact assertions below from comparing like with like (post
     // files only) — the same reasoning that already applied to .hologram-inbox.
-    return fs.readdirSync(backupDir, { withFileTypes: true }).filter((e) => e.isFile() && !/\.tmp(-\d+)?$/i.test(e.name)).length;
+    // .hologram-backup.json is out for the same reason: it is the destination's
+    // own record of which library owns it (#233/#176), never a copied asset.
+    return fs.readdirSync(backupDir, { withFileTypes: true }).filter((e) => e.isFile() && e.name !== '.hologram-backup.json' && !/\.tmp(-\d+)?$/i.test(e.name)).length;
   } catch {
     return -1;
   }
@@ -234,10 +239,34 @@ const lateFilePath = path.join(saveFolder, LATE_FILE);
   } catch {
     /* unreadable → stays false */
   }
+  // #233/#176: the destination carries the id of the library it belongs to, and
+  // the first run above adopted it. Rewrite that id to a stranger's — the state
+  // a user reaches by opening a different library with this destination still
+  // configured — and the next run must refuse OUTRIGHT. The prune guard would
+  // not save them here: another library is not a "collapsed source", it is a
+  // different one, so the mirror would happily prune this backup down to it.
+  const identityFile = path.join(backupDir, '.hologram-backup.json');
+  const identityAdopted = fs.existsSync(identityFile);
+  fs.writeFileSync(identityFile, JSON.stringify({ libraryId: 'another-library', lastRunAt: null }));
+  const rootBeforeMismatch = countBackupRoot();
+  const evalD = `(async () => {
+    const r = await window.hologram.runBackup();
+    return { mismatchRefused: !!(r && r.ok === false && r.error === 'library-mismatch') };
+  })()`;
+  const rD = await launch(evalD);
+  // Refused means refused: nothing copied, nothing pruned, and the claim itself
+  // left alone (a refused run must not quietly re-adopt the destination).
+  let mismatchLeftAlone = false;
+  try {
+    mismatchLeftAlone = countBackupRoot() === rootBeforeMismatch && JSON.parse(fs.readFileSync(identityFile, 'utf8')).libraryId === 'another-library';
+  } catch {
+    /* unreadable → stays false */
+  }
+
   fs.rmSync(tmp, { recursive: true, force: true });
-  const ok = r.overlapRejected && r.dirSet && r.run1 && r.run2 && r.edit1 && r.writeOnce && r.editIdempotent && writeOnceOnDisk && r.trashMoved && trashedOnDisk && r.guardHeld && backupIntact && clearSweptAssets && dbGenerationWritten && dbGenerationCopied;
+  const ok = r.overlapRejected && r.dirSet && r.run1 && r.run2 && r.edit1 && r.writeOnce && r.editIdempotent && writeOnceOnDisk && r.trashMoved && trashedOnDisk && r.guardHeld && backupIntact && clearSweptAssets && dbGenerationWritten && dbGenerationCopied && identityAdopted && rD.mismatchRefused && mismatchLeftAlone;
   console.log(
-    `overlap=${r.overlapRejected} dirSet=${r.dirSet} run1=${r.run1} run2=${r.run2} lateFile=${r.edit1} writeOnce=${r.writeOnce} idem=${r.editIdempotent} writeOnceOnDisk=${writeOnceOnDisk} trashMoved=${r.trashMoved}/${trashedOnDisk} guard=${r.guardHeld} root=${rootAfter}/${backupIntact} clearSweptAssets=${clearSweptAssets} dbGeneration=${dbGenerationWritten}/${dbGenerationCopied}`,
+    `overlap=${r.overlapRejected} dirSet=${r.dirSet} run1=${r.run1} run2=${r.run2} lateFile=${r.edit1} writeOnce=${r.writeOnce} idem=${r.editIdempotent} writeOnceOnDisk=${writeOnceOnDisk} trashMoved=${r.trashMoved}/${trashedOnDisk} guard=${r.guardHeld} root=${rootAfter}/${backupIntact} clearSweptAssets=${clearSweptAssets} dbGeneration=${dbGenerationWritten}/${dbGenerationCopied} identity=${identityAdopted}/${rD.mismatchRefused}/${mismatchLeftAlone}`,
   );
   console.log(ok ? 'BACKUP_TEST_PASS' : 'BACKUP_TEST_FAIL');
   process.exit(ok ? 0 : 1);

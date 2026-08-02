@@ -230,9 +230,25 @@ function isLibraryMissing() {
 }
 
 let dbHandle: { db: any; sqlite: any } | null = null;
+// One name for the live database file, because more than one caller needs it now
+// (#233's rollback replaces it wholesale).
+function dbFile() {
+  return path.join(configDir(), 'hologram.db');
+}
+// Closes the live handle and forgets it, so the next ensureDb() opens whatever
+// is on disk. Only #233's rollback calls this mid-session: it swaps the file
+// underneath, which an open connection would neither see nor tolerate.
+function closeDb() {
+  try {
+    dbHandle?.sqlite.close();
+  } catch (err) {
+    log.warn('could not close the database cleanly:', err);
+  }
+  dbHandle = null;
+}
 function ensureDb() {
   if (dbHandle) return dbHandle;
-  const file = path.join(configDir(), 'hologram.db');
+  const file = dbFile();
   if (!fs.existsSync(file)) restoreFromSnapshotIfAvailable(file);
   try {
     dbHandle = openDatabase(file);
@@ -577,7 +593,7 @@ async function purgeOldTrash() {
 // integrity pass were extracted to ./lib-backup.ts. The engine is instantiated
 // here because it needs the record pipeline above (a run must sync the DB
 // before it snapshots it or counts orphans against it).
-const { runBackup, armBackupSchedule, runStartupIntegrityCheck, runOrphanRecovery, noteLibraryMutation } = createBackupEngine({ ensurePostsSynced, scheduleSavedIndexWrite, send: sendToWin });
+const { runBackup, listDbGenerations, rollbackDbGeneration, armBackupSchedule, runStartupIntegrityCheck, runOrphanRecovery, noteLibraryMutation } = createBackupEngine({ ensurePostsSynced, scheduleSavedIndexWrite, send: sendToWin, dbFile, closeDb });
 onLibraryMutation = noteLibraryMutation;
 const watchImport = createWatchImportManager({ readConfig, writeConfig, getSaveFolder, isLibraryMissing, ensurePostsSynced, send: sendToWin });
 
@@ -621,6 +637,8 @@ function registerExtractedIpc() {
     validateBackupDir,
     armBackupSchedule,
     runBackup,
+    listDbGenerations,
+    rollbackDbGeneration,
     readIntegrityStatus,
     runOrphanRecovery,
     readSavePointer,
