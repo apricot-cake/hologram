@@ -6,6 +6,7 @@ import { PromptHost } from '../prompt/Prompt.tsx';
 import { ContextMenuHost } from '../context-menu/ContextMenu.tsx';
 import { KindMenuHost } from '../kind-menu/KindMenu.tsx';
 import { LightboxHost } from '../lightbox/index.tsx';
+import { CompareHost } from '../compare/index.tsx';
 import { SettingsHost } from '../settings/index.tsx';
 import { BulkTagDialogHost } from '../selection/BulkTagDialog.tsx';
 import { TriageHost } from '../triage/index.tsx';
@@ -291,6 +292,7 @@ export function App() {
           whatever mode/tab was showing underneath when it closes. */}
       <TriageHost />
       <LightboxHost />
+      <CompareHost />
       {/* Settings — a shadcn Dialog, so it portals onto document.body itself. */}
       <SettingsHost />
       {/* Toast outlet (sonner) — services/ui.ts notify() feeds it. */}

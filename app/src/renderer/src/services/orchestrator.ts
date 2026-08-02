@@ -25,6 +25,8 @@ import { open as confirmOpen } from './confirm.ts';
 import { hologramI18n } from './i18n.ts';
 import * as folders from './folders.ts';
 import { open as lightboxOpen } from './lightbox.ts';
+import { open as compareOpen, type CompareItem } from './compare.ts';
+import { open as menuOpen } from './menu.ts';
 import { shellReady } from './shell-ready.ts';
 import { scroller as contentScroller } from './content-area.ts';
 import { currentShape } from './display.ts';
@@ -955,6 +957,23 @@ export function endFilterEditSession(): void {
     onCloseTab: closeImageTab,
   });
 
+  // Compare view (#82): 2-4 selected posts, one representative image each — the
+  // same resolution openQuickView already uses for a single card peek
+  // (buildGroupGalleryItems(g)[0]). Video-first groups keep their video; an
+  // ugoira substitutes its poster rather than playing in place (#82 left the
+  // finer behavior to implementation, and the compare grid has no controller to
+  // drive UgoiraPlayer the way the single image view does).
+  function openCompareView() {
+    const groups = selection.selectedGroups(postGrid.getViewGroups(), postIdKey);
+    const items: CompareItem[] = [];
+    for (const g of groups) {
+      const gi = buildGroupGalleryItems(g)[0];
+      if (!gi) continue;
+      items.push({ src: gi.ugoira ? gi.poster || gi.src : gi.src, alt: gi.alt, video: gi.video });
+    }
+    compareOpen(items);
+  }
+
   // --- Fast triage mode (#46) ---
   // Constructed here: needs postGrid (getAllPosts/groupRecords/getPostById/
   // markPostsMutated/renderPosts, all built above), pushUndo (undoCtl, built even
@@ -1035,7 +1054,19 @@ export function endFilterEditSession(): void {
     // showCardMenu live in post-grid-builder.ts (postGrid above).
     onContextMenu: (g: HologramPostGroup, e) => {
       e.preventDefault();
-      if (selection.size() > 0) return; // the selection bar owns bulk actions
+      if (selection.size() > 0) {
+        // 2-4 selected (#82): the one bulk row compare needs, opened right here
+        // rather than added to the floating selection bar — #82's accepted launch
+        // path is the context menu specifically. Outside that count there is
+        // nothing to offer and the selection bar keeps owning every bulk action,
+        // unchanged from before #82.
+        if (selection.size() >= 2 && selection.size() <= 4) {
+          menuOpen({ items: [{ label: getMessage('ctxCompare'), act: 'compare' }], x: e.clientX, y: e.clientY }, (item) => {
+            if (item.act === 'compare') openCompareView();
+          });
+        }
+        return;
+      }
       // A card's body text is selectable, so the same click can be a text gesture —
       // the rows get spliced into this menu rather than opening a second one (#167).
       showCardMenu(g, e.clientX, e.clientY, selectionTextAt(e.target));
