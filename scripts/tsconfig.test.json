@@ -108,6 +108,8 @@
     "db.test.ts",
     "drag.test.ts",
     "electron-path-guard.test.ts",
+    // #71: imports native-host/paths.cts + bridge.cts (module.exports) — cause (a).
+    "extension-contact.test.ts",
     "extension-tokens.test.ts",
     "folder-nesting.test.ts",
     "folders-merge.test.ts",

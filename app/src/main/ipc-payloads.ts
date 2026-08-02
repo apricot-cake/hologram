@@ -86,9 +86,18 @@ export interface LibraryStatus {
   path: string | null;
 }
 
-/** set-extension-id — the id as stored, i.e. '' when the input was refused. */
-export interface ExtensionIdResult {
-  extensionId: string;
+/**
+ * get-extension-contact (#71): whether the native-messaging bridge has EVER
+ * touched its contact marker (native-host/paths.cts's extensionContactPath) —
+ * i.e. the extension is installed and has processed at least one check/save.
+ * The renderer's only use for this is empty/EmptyState.tsx's firstRun variant:
+ * no contact yet means "show the install guide instead" (services/
+ * library-status.ts's libraryEmptyVariant). A one-shot fetch like
+ * get-library-status, not a push — nothing invalidates it mid-session, so a
+ * boot-time read is all today's only caller needs.
+ */
+export interface ExtensionContactStatus {
+  contacted: boolean;
 }
 
 /** app-info — the settings "About" panel's build info. */

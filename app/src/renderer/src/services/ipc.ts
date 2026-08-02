@@ -27,7 +27,7 @@ const bridge = () => window.hologram;
 // no per-parameter annotations needed for a pure pass-through layer.
 export const hologramIpc: HologramPreload = {
   getConfig: () => bridge().getConfig(),
-  setExtensionId: (id) => bridge().setExtensionId(id),
+  getExtensionContact: () => bridge().getExtensionContact(),
   listPosts: () => bridge().listPosts(),
   listPostsDelta: (haveBaseline) => bridge().listPostsDelta(haveBaseline),
   searchFullText: (query, limit) => bridge().searchFullText(query, limit),

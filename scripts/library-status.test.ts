@@ -19,6 +19,7 @@ const base = {
   allPostsCount: 0,
   allUsersCount: 0,
   query: '',
+  extensionContacted: true, // #71: the pre-existing suite covers the "already contacted" half; see the dedicated describe block below for the guide
 };
 
 describe('libraryEmptyVariant: 読み込み未着は「0件」と別物', () => {
@@ -77,5 +78,30 @@ describe('libraryEmptyVariant: trash は対象外', () => {
   test('trash モードは常に null（trash 自身の空状態を持つ）', () => {
     expect(libraryEmptyVariant({ ...base, mode: 'trash', libraryLoaded: false })).toBeNull();
     expect(libraryEmptyVariant({ ...base, mode: 'trash', libraryLoaded: true, postGroups: null, allPostsCount: 0 })).toBeNull();
+  });
+});
+
+// #71: firstRun/posterFirstRun split further on whether the extension has EVER
+// made contact — no contact at all means the install guide, not the ordinary
+// "no posts yet" copy.
+describe('libraryEmptyVariant: 拡張ガイド（#71）', () => {
+  test('postGroups=null・allPostsCount=0・コンタクト無し → extensionGuide（firstRun ではない）', () => {
+    expect(libraryEmptyVariant({ ...base, postGroups: null, allPostsCount: 0, extensionContacted: false })).toBe('extensionGuide');
+  });
+
+  test('posters: posterGroups=[]・allUsersCount=0・コンタクト無し → extensionGuide', () => {
+    expect(libraryEmptyVariant({ ...base, mode: 'posters', posterGroups: [], allUsersCount: 0, extensionContacted: false })).toBe('extensionGuide');
+  });
+
+  test('フィルタで0件（filtered）はコンタクトの有無を見ない', () => {
+    expect(libraryEmptyVariant({ ...base, postGroups: null, allPostsCount: 42, extensionContacted: false })).toBe('filtered');
+  });
+
+  test('検索語あり（filtered）もコンタクトの有無を見ない', () => {
+    expect(libraryEmptyVariant({ ...base, postGroups: null, allPostsCount: 0, query: 'cat', extensionContacted: false })).toBe('filtered');
+  });
+
+  test('未読込のうちはコンタクト無しでも何も返さない（#682 の核心と同じ理由）', () => {
+    expect(libraryEmptyVariant({ ...base, libraryLoaded: false, postGroups: null, extensionContacted: false })).toBeNull();
   });
 });

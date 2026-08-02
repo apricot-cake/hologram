@@ -335,7 +335,7 @@ declare global {
   // instead of a pushed bridge (the old renderer/empty.js bridge was deleted — no
   // callers left), and owns its own container and visibility (the static #emptyState
   // div two render pipelines wrote `hidden` on went with it). ----
-  type HologramEmptyVariant = 'firstRun' | 'filtered' | 'posterFirstRun';
+  type HologramEmptyVariant = 'firstRun' | 'filtered' | 'posterFirstRun' | 'extensionGuide';
 
   // ---- services/confirm.ts — shared confirm modal (shadcn AlertDialog). Callers open it
   // with a message + optional skip/keyword gate + callbacks; the component renders it. ----

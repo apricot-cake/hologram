@@ -9,6 +9,13 @@ import { hologramIpc } from './ipc.ts';
 export function getLibraryStatus() {
   return hologramIpc.getLibraryStatus();
 }
+// #71: whether the extension has EVER made contact (installed + processed a
+// check/save at least once) — App.tsx's boot-time gate seeds hologramStore's
+// 'extensionContacted' from this, which empty/EmptyState.tsx reads to decide
+// between the install-guide and the ordinary firstRun variant.
+export function getExtensionContact() {
+  return hologramIpc.getExtensionContact();
+}
 // Opens a directory picker and validates it as a repoint destination WITHOUT writing
 // anything — `hasEvidence` says whether it looks like an existing Hologram library
 // (see ipc-transfer.ts's looksLikeLibrary), which decides whether the caller confirms

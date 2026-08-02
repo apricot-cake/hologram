@@ -24,7 +24,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const nativeHostDir = app.isPackaged ? path.join(process.resourcesPath, 'native-host') : path.join(__dirname, '..', '..', '..', 'native-host');
 
-const { configDir, defaultLibraryDir } = nodeRequire(path.join(nativeHostDir, 'paths.cts'));
+const { configDir, defaultLibraryDir, extensionContactPath } = nodeRequire(path.join(nativeHostDir, 'paths.cts'));
 const installer = nodeRequire(path.join(nativeHostDir, 'install.cts'));
 
 // Best-effort avatar download for the legacy ZIP import (same SSRF guard/caps as capture,
@@ -45,4 +45,4 @@ const { pixivRefererFor, downloadAvatar } = nodeRequire(mediaDownloadPath);
 // must resolve the SAME save folder), so it lives alongside paths.cts in native-host/.
 const { resolveSaveFolder, clearAllBlockReason } = nodeRequire(path.join(nativeHostDir, 'config-recovery.cts'));
 
-export { configDir, defaultLibraryDir, installer, pixivRefererFor, downloadAvatar, resolveSaveFolder, clearAllBlockReason };
+export { configDir, defaultLibraryDir, extensionContactPath, installer, pixivRefererFor, downloadAvatar, resolveSaveFolder, clearAllBlockReason };
