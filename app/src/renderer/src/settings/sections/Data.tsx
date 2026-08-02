@@ -663,7 +663,10 @@ export function Data() {
                 {generations.map((g) => (
                   <div key={g.name} className="flex flex-wrap items-center gap-2.5">
                     <span className="min-w-40 text-sm tabular-nums">{fmtTime(g.at)}</span>
-                    <span className="text-muted-foreground text-xs">{g.atDestination ? t('backupRestoreBoth') : t('backupRestoreHere')}</span>
+                    {/* Fixed width so the buttons line up down the column: the
+                        two location labels are different lengths, and a ragged
+                        edge reads as an unrelated control per row. */}
+                    <span className="text-muted-foreground min-w-36 text-xs">{g.atDestination ? t('backupRestoreBoth') : t('backupRestoreHere')}</span>
                     <Button variant="outline" size="sm" onClick={() => rollBackTo(g)} disabled={rollingBack}>
                       {t('backupRestoreBtn')}
                     </Button>
