@@ -198,6 +198,15 @@ export interface DeleteOrphanTagsResult {
   ok: boolean;
   deletedIds: number[];
 }
+/** One post in the split-review thumbnail grid (get-tag-split-preview) — #777. */
+export interface TagSplitPost {
+  postId: string;
+  thumbFile: string | null;
+  /** Co-occurs with the candidate display parent — seeds the "moves to the new entity" selection. */
+  suggestedToNew: boolean;
+}
+/** split-tag's answer — the new entity's id on success. */
+export type SplitTagResult = { ok: true; newTagId: number } | { ok: false; error: string };
 
 export interface UngroupedState {
   keys: string[];

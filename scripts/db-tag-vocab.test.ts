@@ -8,7 +8,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 import { openDatabase } from '../app/src/main/lib-db';
-import { addTagParent, deleteOrphanTags, keepSeparateRename, mergeTags, removeTagParent, renameTag, setTagKind, tagParentEdges, tagVocabOverview, wouldCreateCycle } from '../app/src/main/lib-db-tag-vocab';
+import { addTagParent, deleteOrphanTags, keepSeparateRename, mergeTags, removeTagParent, renameTag, setTagKind, splitTag, tagParentEdges, tagSplitPreview, tagVocabOverview, wouldCreateCycle } from '../app/src/main/lib-db-tag-vocab';
 
 const dirs: string[] = [];
 function mkTempDir(prefix: string) {
@@ -32,6 +32,9 @@ function tagPoster(posterKey: string, tagId: number) {
 }
 function addParentRow(tagId: number, parentTagId: number, isDisplay = false) {
   handle.sqlite.prepare('INSERT INTO tag_parents (tagId, parentTagId, isDisplay) VALUES (?, ?, ?)').run(tagId, parentTagId, isDisplay ? 1 : 0);
+}
+function insMedia(postId: string, file: string, seq = 0) {
+  handle.sqlite.prepare('INSERT INTO media (postId, seq, file) VALUES (?, ?, ?)').run(postId, seq, file);
 }
 
 beforeEach(() => {
@@ -205,6 +208,78 @@ describe('setTagKind', () => {
     const rows = tagVocabOverview(handle.sqlite);
     expect(rows.find((r) => r.id === a)?.kind).toBe('work');
     expect(rows.find((r) => r.id === b)?.kind).toBe('character');
+  });
+});
+
+describe('tagSplitPreview / splitTag', () => {
+  test('preview reports each thumbnail and pre-selects posts co-occurring with the candidate parent', () => {
+    const alice = insTag('alice', 'character');
+    const touhou = insTag('touhou', 'work');
+    const other = insTag('other-work');
+    insPost('p1');
+    insPost('p2');
+    insPost('p3'); // no media -> falls back to posts.image
+    handle.sqlite.prepare("UPDATE posts SET image = 'shot.jpg' WHERE captureId = 'p3'").run();
+    insMedia('p1', 'p1.jpg');
+    insMedia('p2', 'p2.mp4'); // a raw video file -- not usable as an <img src>
+    tagPost('p1', alice);
+    tagPost('p1', touhou); // co-occurs with the candidate parent
+    tagPost('p2', alice);
+    tagPost('p2', other); // does NOT co-occur with touhou
+    tagPost('p3', alice);
+
+    const preview = tagSplitPreview(handle.sqlite, alice, touhou);
+    expect(preview).toHaveLength(3);
+    const byId = new Map(preview.map((p) => [p.postId, p]));
+    expect(byId.get('p1')).toEqual({ postId: 'p1', thumbFile: 'p1.jpg', suggestedToNew: true });
+    expect(byId.get('p2')).toEqual({ postId: 'p2', thumbFile: null, suggestedToNew: false }); // video file, no poster -> no thumb
+    expect(byId.get('p3')).toEqual({ postId: 'p3', thumbFile: 'shot.jpg', suggestedToNew: false });
+  });
+
+  test('preview is empty for a tag with no posts', () => {
+    const alice = insTag('alice');
+    const touhou = insTag('touhou');
+    expect(tagSplitPreview(handle.sqlite, alice, touhou)).toEqual([]);
+  });
+
+  test('splitTag creates a same-name entity with the display parent, moves only the chosen posts, and copies the kind', () => {
+    const alice = insTag('alice', 'character');
+    const touhouA = insTag('touhou');
+    const touhouB = insTag('another-work');
+    insPost('p1');
+    insPost('p2');
+    tagPost('p1', alice);
+    tagPost('p2', alice);
+    tagPoster('poster-1', alice); // poster_tags is untouched by a split (#777 scope note)
+
+    const result = splitTag(handle.sqlite, alice, touhouB, ['p1']);
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error('expected ok');
+    const newTagId = result.newTagId;
+
+    const rows = tagVocabOverview(handle.sqlite);
+    const sourceRow = rows.find((r) => r.id === alice);
+    const newRow = rows.find((r) => r.id === newTagId);
+    if (!sourceRow || !newRow) throw new Error('expected both entities to exist');
+    expect(sourceRow.postCount).toBe(1); // p2 stayed
+    expect(sourceRow.posterCount).toBe(1); // poster_tags untouched
+    expect(newRow.postCount).toBe(1); // p1 moved
+    expect(newRow.posterCount).toBe(0);
+    expect(newRow.name).toBe('alice'); // same name -- the same-name entity the design calls for
+    expect(newRow.kind).toBe('character'); // copied from source
+    expect(newRow.displayName).toBe('alice(another-work)');
+    expect(newRow.parents.find((p) => p.isDisplay)?.id).toBe(touhouB);
+
+    // touhouA is untouched -- sanity that only the intended edge was written.
+    expect(tagParentEdges(handle.sqlite).some((e) => e.parentTagId === touhouA)).toBe(false);
+  });
+
+  test('rejects an unknown tag and an empty selection', () => {
+    const alice = insTag('alice');
+    const work = insTag('work');
+    expect(splitTag(handle.sqlite, 999, work, ['p1'])).toEqual({ ok: false, error: 'not-found' });
+    expect(splitTag(handle.sqlite, alice, 999, ['p1'])).toEqual({ ok: false, error: 'not-found' });
+    expect(splitTag(handle.sqlite, alice, work, [])).toEqual({ ok: false, error: 'empty-selection' });
   });
 });
 

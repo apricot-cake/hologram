@@ -7,7 +7,7 @@
 // extracted ipc-*.ts modules (#228).
 import { ipcMain } from 'electron';
 import type { IpcContext } from './ipc-context.ts';
-import type { DeleteOrphanTagsResult, RenameTagResult, TagParentRowResolved, TagVocabRow, TagWriteResult } from './ipc-payloads.ts';
+import type { DeleteOrphanTagsResult, RenameTagResult, SplitTagResult, TagParentRowResolved, TagSplitPost, TagVocabRow, TagWriteResult } from './ipc-payloads.ts';
 
 function register(ctx: IpcContext) {
   const { getSaveFolder, getDbWriter } = ctx;
@@ -84,6 +84,31 @@ function register(ctx: IpcContext) {
       return getDbWriter().deleteOrphanTags(tagIds.filter((id: unknown): id is number => typeof id === 'number'));
     } catch {
       return { ok: false, deletedIds: [] };
+    }
+  });
+
+  // #777: the split-review screen's data source and its confirm action. See
+  // lib-db-tag-vocab.ts's tagSplitPreview/splitTag for the shape and the
+  // one-face (post_tags only) write.
+  ipcMain.handle('get-tag-split-preview', (_e, tagId, candidateParentTagId): TagSplitPost[] => {
+    if (!getSaveFolder() || typeof tagId !== 'number' || typeof candidateParentTagId !== 'number') return [];
+    try {
+      return getDbWriter().tagSplitPreview(tagId, candidateParentTagId);
+    } catch {
+      return [];
+    }
+  });
+
+  ipcMain.handle('split-tag', (_e, sourceTagId, displayParentTagId, postIds): SplitTagResult => {
+    if (!getSaveFolder() || typeof sourceTagId !== 'number' || typeof displayParentTagId !== 'number' || !Array.isArray(postIds)) return { ok: false, error: 'invalid' };
+    try {
+      return getDbWriter().splitTag(
+        sourceTagId,
+        displayParentTagId,
+        postIds.filter((id: unknown): id is string => typeof id === 'string'),
+      );
+    } catch {
+      return { ok: false, error: 'invalid' };
     }
   });
 }
