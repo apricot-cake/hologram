@@ -20,7 +20,7 @@ import { isOpen as lightboxIsOpen } from './lightbox.ts';
 import { get as menuGet } from './menu.ts';
 import { isAnySelectOpen } from './open-select-registry.ts';
 import { subscribe as subscribePostsData } from './posts-data.ts';
-import { postIdKey, postKeyOf, captureFile, persistManualGroups, persistUngrouped } from './records.ts';
+import { postIdKey, postKeyOf, captureFile, persistManualGroups, persistUngrouped, monoHue } from './records.ts';
 import { isOpen as settingsIsOpen } from './settings.ts';
 import { sameTags, setTagKind as tagsSetTagKind } from './tags.ts';
 import { updateTags as postsUpdateTags } from './posts.ts';
@@ -63,6 +63,16 @@ export interface InspectorBuilderDeps {
   // imageTabShowing is a viewer.ts `let` (image-tab.ts consumer) — a
   // getter since its value changes over the module's lifetime.
   imageTabShowing(): boolean;
+  // #180: quoted/reply-to card click-through — "navigate to the saved
+  // independent record" is implemented as the SAME drill-in idiom
+  // jumpToPoster/openPosterPosts already use (postQBResetTree + a single
+  // addFilter), not a new nav mechanism. Reusing the query tree's own
+  // 'text' leaf (which already matches a pasted permalink by postKeyOf — see
+  // query.ts's urlHit) means the resulting view + a fresh showDetail also ride
+  // the EXISTING push-on-render nav-history hookup (tabs-builder.ts's
+  // syncTitleAndPersist), so back/forward (#144) works with no new code there.
+  postQBResetTree(): void;
+  addFilter(filter: { type: string; [k: string]: any }): void;
 }
 
 export function makeInspector(deps: InspectorBuilderDeps) {
@@ -361,6 +371,61 @@ export function makeInspector(deps: InspectorBuilderDeps) {
     });
   }
 
+  // #180: quoted/renoted or (Misskey-only) replied-to post, rendered as an
+  // embedded card built straight from the saved sidecar sub-record (never a
+  // live fetch — v1 stays metadata-only). Two independent slots rather than
+  // one 'the quoted card', since a post can both quote something and (on
+  // Misskey) carry a reply-to at once.
+  function quotedCardOf(sub: any, kind: 'quote' | 'reply'): HologramQuotedCardModel | null {
+    if (!sub) return null;
+    const displayName = sub.displayName || sub.screenName || '';
+    const media = Array.isArray(sub.media) ? sub.media : [];
+    const url: string | null = sub.url || null;
+    // Same-post identity: is this permalink ALSO saved as its own independent
+    // record? (2026-07-27 design comment on #180) — postKeyOf is the one
+    // URL→identity normalization every duplicate-detection path in the app
+    // already shares (records.ts), so a quote and its independently-saved
+    // target agree with the grid's own grouping about what counts as "the same post".
+    const key = url ? postKeyOf(url) : null;
+    const savedRec = key ? deps.getAllPosts().find((q) => postKeyOf(q.url) === key) : undefined;
+    return {
+      kind,
+      label: kind === 'reply' ? deps.t('quotedCardReply') : deps.t('quotedCardQuote'),
+      displayName,
+      screenNameLabel: sub.screenName ? '@' + sub.screenName : '',
+      // #290/#181's line, reaffirmed for quotes by the 2026-07-27 design comment on
+      // #180: library viewing never reads a remote URL, so the sub-record's own
+      // avatar URL (sub.avatar) is never used as a src — the monogram fallback
+      // (Avatar, _shared/PostCard.tsx) is the only avatar a quoted/replied-to
+      // author ever gets.
+      avatarSrc: null,
+      monogram: displayName ? displayName[0].toUpperCase() : '?',
+      monoHue: monoHue(sub.userId ? String(sub.userId) : sub.screenName || displayName || 'quoted'),
+      dateLabel: localeDateTime(sub.date),
+      cw: sub.cw || '',
+      text: sub.text || '',
+      mediaCountLabel: media.length ? deps.t('imagesCount', [media.length]) : '',
+      onOpen: url ? () => jumpToQuotedPost(savedRec, url) : undefined,
+    };
+  }
+
+  // Click-through (2026-07-27 design comment on #180): an independently-saved
+  // copy navigates in-app; nothing saved opens the sub-record's own URL
+  // externally (the existing https-only open-external route). The in-app
+  // route is the SAME drill-in idiom jumpToPoster/openPosterPosts already use
+  // (reset the tree, add ONE filter) — see the deps interface comment for why
+  // that also gets #144's back/forward for free, with no new nav-history code.
+  function jumpToQuotedPost(rec: HologramPost | undefined, url: string) {
+    if (!rec) {
+      hologramIpc.openExternal(url);
+      return;
+    }
+    deps.postQBResetTree();
+    deps.addFilter({ type: 'text', value: rec.url || url });
+    const g = deps.getViewGroups().find((gg) => postIdKey(gg.rep) === postIdKey(rec));
+    if (g) showDetail(g);
+  }
+
   // opts.focusTags: open the panel with the caret already in the tag field. It is
   // the card context menu's "Edit tags" route — the replacement for the card's 🏷
   // button, which used to open a popover of its own (P2⑦). A plain card click must
@@ -407,6 +472,9 @@ export function makeInspector(deps: InspectorBuilderDeps) {
     // gets its own section (bodyText, below) instead of masquerading as a heading.
     const heading = p.title || '';
     const bodyText = (p.text || '').trim();
+    // #180: rendered directly under the post's own bodyText (Inspector.tsx) —
+    // the same nesting a quoted-tweet/renote card sits in on the source platforms.
+    const quotedCards = [quotedCardOf(p.quotedPost, 'quote'), quotedCardOf(p.replyToPost, 'reply')].filter((c): c is HologramQuotedCardModel => !!c);
     const thumbFile = g.files[0] || captureFile(p);
     // Reverse image search needs a PUBLIC image URL. media[].url keeps the
     // original CDN URL (pbs.twimg.com / cdn.bsky.app / instance media / pximg);
@@ -435,6 +503,7 @@ export function makeInspector(deps: InspectorBuilderDeps) {
       bodyText,
       thumbSrc: thumbFile ? deps.fileSrc(thumbFile, 480) : null,
       onThumbClick: thumbFile ? () => deps.openQuickView(g) : null,
+      quotedCards,
       platformLabel: (p.platform || '').toUpperCase(),
       avatarSrc,
       authorName: p.displayName || '',
