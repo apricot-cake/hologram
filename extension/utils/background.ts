@@ -1522,6 +1522,9 @@ function buildRecord(meta, { captureId, capturedAt, postUrl, sendPlatform, repla
       // path, whose meta object has no such fields at all.
       quotedPost: meta.quotedPost,
       replyToPost: meta.replyToPost,
+      // #179: the post's poll, when it has one (X / Misskey / Mastodon).
+      // Undefined (not null) on the bookmark path, like the two above.
+      poll: meta.poll,
       seriesId: meta.seriesId,
       seriesTitle: meta.seriesTitle,
       seriesOrder: meta.seriesOrder,

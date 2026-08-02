@@ -412,6 +412,19 @@ const MIGRATIONS: Migration[] = [
         CREATE UNIQUE INDEX idx_poster_alias_members_posterKey ON poster_alias_group_members(posterKey);
       `),
   },
+  // #179: the poll attached to a post (X / Misskey / Mastodon) — see
+  // native-host/post-record.mts's PollShape. Stored as JSON text in ONE column,
+  // the same convention quotedPost/replyToPost use and for the same reason: it
+  // is 0-or-1 per post with a handful of choices inside, not a fan-out worth
+  // its own table. Null on every row written before this migration and on every
+  // post that carries no poll (the overwhelming majority). Not added to
+  // posts_fts for the same reason add-post-quoted-refs gives — that index still
+  // has no live caller, so rebuilding it for a column nothing reads would be
+  // migration cost with no present payoff.
+  {
+    name: 'add-post-poll',
+    up: (db) => db.exec(`ALTER TABLE posts ADD COLUMN poll TEXT;`),
+  },
 ];
 
 interface Migration {
@@ -576,6 +589,9 @@ interface PostsTable {
   // add-post-custom-emojis migration (#290) — JSON CustomEmojiShape[], same
   // storage convention as hashtags/domFilled. See PostRecordShape.customEmojis.
   customEmojis: string | null;
+  // add-post-poll migration (#179) — JSON PollShape, same storage convention as
+  // quotedPost/replyToPost. See PostRecordShape.poll.
+  poll: string | null;
 }
 interface MediaTable {
   id: Generated<number>;

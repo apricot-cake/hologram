@@ -52,6 +52,7 @@ describe('既定値', () => {
     'replyToId',
     'quotedPost',
     'replyToPost',
+    'poll',
     'seriesId',
     'seriesTitle',
     'seriesOrder',
@@ -262,6 +263,38 @@ describe('シリーズ情報（#188）', () => {
   test('seriesOrder は数値以外を落とす（他の number フィールドと同じ規約）', () => {
     const rec = normalizePostRecord({ captureId: 'cap-5', seriesOrder: '3' as any }, fixedNow);
     expect(rec.seriesOrder).toBeNull();
+  });
+});
+
+// #179: the poll (extension/utils/extractor/{x,misskey,mastodon}.ts) passes the
+// same single gate every other producer field does, so this is where a
+// malformed one is stopped before it reaches the DB writer.
+describe('アンケート（#179）', () => {
+  test('選択肢を保ち、ラベルの無い選択肢だけを落とす', () => {
+    const rec = normalizePostRecord(
+      {
+        captureId: 'cap-poll-1',
+        poll: { choices: [{ text: 'Yes', votes: 3 }, { text: '', votes: 9 }, null, { text: 'No', votes: '1' }], multiple: true, expiresAt: '2026-01-02T00:00:00Z', votersCount: 4 },
+      } as any,
+      fixedNow,
+    );
+    expect(rec.poll).toEqual({
+      // votes: '1' is a string, so it normalizes to null the same way every
+      // other number field here does — never coerced.
+      choices: [
+        { text: 'Yes', votes: 3 },
+        { text: 'No', votes: null },
+      ],
+      multiple: true,
+      expiresAt: '2026-01-02T00:00:00Z',
+      votersCount: 4,
+    });
+  });
+
+  test('選択肢が1つも無ければ poll ごと null', () => {
+    expect(normalizePostRecord({ captureId: 'cap-poll-2', poll: { choices: [] } } as any, fixedNow).poll).toBeNull();
+    expect(normalizePostRecord({ captureId: 'cap-poll-3', poll: { multiple: true } } as any, fixedNow).poll).toBeNull();
+    expect(normalizePostRecord({ captureId: 'cap-poll-4', poll: 'yes' } as any, fixedNow).poll).toBeNull();
   });
 });
 

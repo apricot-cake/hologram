@@ -8,6 +8,7 @@ import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empt
 import { Separator } from '@/components/ui/separator';
 import { Textarea } from '@/components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { PollCard } from './PollCard.tsx';
 import { QuotedPostCard } from './QuotedPostCard.tsx';
 import { TagField } from './TagField.tsx';
 import type { ReactNode } from 'react';
@@ -192,6 +193,10 @@ function PostInspector({ m }: { m: HologramInspectorModel }) {
           ))}
         </div>
       ) : null}
+      {/* #179: the post's poll, in the place the platforms themselves put it —
+          under the post's own text, which IS the question (no platform carries
+          a separate question field). */}
+      {m.pollCard ? <PollCard m={m.pollCard} /> : null}
       <Fields>
         <Field k={m.labels.platform} v={m.platformLabel} />
         {hasAuthor ? (

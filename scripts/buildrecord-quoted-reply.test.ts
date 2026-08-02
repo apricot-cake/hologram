@@ -8,6 +8,11 @@
 // bridge.test.ts), so a regression in either wiring point fails here rather than
 // passing silently again.
 //
+// #179's poll rides along here for exactly the same reason: it is another
+// extractor-built sub-structure whose only route to the record is one line in
+// buildRecord, and the per-layer unit tests around it would all stay green if
+// that line were missing.
+//
 // Kept out of bridge.test.ts itself and quarantined in tsconfig.test.json (same
 // reason as background-unit.test.ts): importing extension/utils/background.ts
 // pulls its chrome.* references into this Node-oriented Vitest project, which has
@@ -23,7 +28,7 @@ import { buildRecord } from '../extension/utils/background';
 // Minimal 1x1 JPEG (same fixture bridge.test.ts uses).
 const jpegB64 = '/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACP/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AfwH/2Q==';
 
-describe('quotedPost/replyToPost が buildRecord から bridge.cts まで往復する（#751）', () => {
+describe('quotedPost/replyToPost/poll が buildRecord から bridge.cts まで往復する（#751 / #179）', () => {
   const quoteCaptureId = '1717500000000-a001';
   let quoteTmp: string;
   let quoteSaveFolder: string;
@@ -51,6 +56,16 @@ describe('quotedPost/replyToPost が buildRecord から bridge.cts まで往復�
     cw: null,
     media: [],
   };
+  // #179: the poll shape an extractor produces (x.ts / misskey.ts / mastodon.ts).
+  const poll = {
+    choices: [
+      { text: 'きのこ', votes: 12 },
+      { text: 'たけのこ', votes: 34 },
+    ],
+    multiple: false,
+    expiresAt: '2026-01-03T00:00:00.000Z',
+    votersCount: null,
+  };
 
   beforeAll(async () => {
     quoteTmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-test-quote-'));
@@ -63,7 +78,7 @@ describe('quotedPost/replyToPost が buildRecord から bridge.cts まで往復�
     // #180 sidecars. Routed through the real buildRecord(), not hand-typed as the
     // wire message — that's what makes this catch a regression in buildRecord
     // itself rather than only in bridge.cts's marshalling.
-    const meta = { url: 'https://x.com/alice/status/1', platform: 'x', text: 'hi, quoting and replying', quotedPost, replyToPost };
+    const meta = { url: 'https://x.com/alice/status/1', platform: 'x', text: 'hi, quoting and replying', quotedPost, replyToPost, poll };
     const metadata = buildRecord(meta, { captureId: quoteCaptureId, capturedAt: '2026-08-02T00:00:00.000Z', postUrl: meta.url, sendPlatform: 'x', extra: { image: `${quoteCaptureId}.jpg` } });
 
     const msg = Buffer.from(JSON.stringify({ type: 'save', captureId: quoteCaptureId, image: jpegB64, metadata }), 'utf8');
@@ -97,5 +112,10 @@ describe('quotedPost/replyToPost が buildRecord から bridge.cts まで往復�
     const envelope = JSON.parse(fs.readFileSync(path.join(quoteSaveFolder, '.hologram-inbox', 'new', `${quoteCaptureId}.json`), 'utf8'));
     expect(envelope.record.quotedPost).toMatchObject(quotedPost);
     expect(envelope.record.replyToPost).toMatchObject(replyToPost);
+  });
+
+  test('封筒の record.poll に抽出器のアンケートがそのまま乗る（#179）', () => {
+    const envelope = JSON.parse(fs.readFileSync(path.join(quoteSaveFolder, '.hologram-inbox', 'new', `${quoteCaptureId}.json`), 'utf8'));
+    expect(envelope.record.poll).toEqual(poll);
   });
 });

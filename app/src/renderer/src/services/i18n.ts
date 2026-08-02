@@ -133,6 +133,14 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     quotedCardQuote: '引用',
     quotedCardReply: 'リプライ先',
     quotedCardCw: '閲覧注意',
+    // #179: アンケートカード。投票はできない＝保存時点の結果の静的表示。
+    // pollResultsHidden は票数を伏せている投稿（Mastodon）用。
+    pollCardLabel: 'アンケート',
+    pollVotes: '$1 票',
+    pollVoters: '投票者 $1 人',
+    pollMultiple: '複数選択可',
+    pollDeadline: '締切 $1',
+    pollResultsHidden: '票数非公開',
     // pixiv シリーズ情報（#188）。シリーズに属さない作品では両方とも空
     detailSeries: 'シリーズ',
     detailSeriesOrder: '話数',
@@ -526,6 +534,7 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     ftFieldSeries: 'シリーズ名',
     ftFieldAlt: '代替テキスト',
     ftFieldQuoted: '引用元',
+    ftFieldPoll: 'アンケート',
     ftFieldAuthor: '投稿者名',
     ftFieldEagle: 'Eagle注釈',
     ftFieldTag: 'タグ',
@@ -788,6 +797,12 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     quotedCardQuote: 'Quote',
     quotedCardReply: 'In reply to',
     quotedCardCw: 'Content warning',
+    pollCardLabel: 'Poll',
+    pollVotes: '$1 votes',
+    pollVoters: '$1 voters',
+    pollMultiple: 'Multiple choice',
+    pollDeadline: 'Closes $1',
+    pollResultsHidden: 'Results hidden',
     // pixiv series info (#188). Both blank when the work isn't in a series
     detailSeries: 'Series',
     detailSeriesOrder: 'Installment',
@@ -1162,6 +1177,7 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     ftFieldSeries: 'Series name',
     ftFieldAlt: 'Alt text',
     ftFieldQuoted: 'Quoted post',
+    ftFieldPoll: 'Poll',
     ftFieldAuthor: 'Author',
     ftFieldEagle: 'Eagle note',
     ftFieldTag: 'Tag',

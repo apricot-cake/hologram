@@ -86,6 +86,56 @@ interface QuotedPost {
   media: MediaItem[];
 }
 
+// One choice of a poll (#179), in the platform's own order. `votes` is null
+// only where the platform withholds the tally: Mastodon documents
+// PollOption.votes_count as null while a poll hides its results, which is a
+// different fact from zero votes and must not read as one.
+interface PollChoice {
+  text: string;
+  votes: number | null;
+}
+
+// The poll (survey) attached to a post (#179). None of the platforms that have
+// polls carry a separate QUESTION field -- the post's own text is the question
+// -- so this holds the choices and the surrounding conditions only.
+//
+// Sources, each confirmed against a live response rather than documentation
+// alone: Misskey's note.poll ({multiple, expiresAt, choices[{text,votes}]}) and
+// Mastodon's status.poll ({multiple, expires_at, options[{title,votes_count}],
+// voters_count}) are both registered canary samples
+// (scripts/canary/snapshots/{misskey,mastodon}.json's 'poll' label), and X
+// delivers one as a legacy CARD on the syndication endpoint -- card.name
+// 'poll<N>choice_text_only' with choice<N>_label / choice<N>_count /
+// end_datetime_utc binding values (measured 2026-08-02 against
+// cdn.syndication.twimg.com; see x.ts's xPoll). Bluesky has NO poll of its own:
+// the app.bsky.feed.post lexicon's embed union is images / video / gallery /
+// external / record / recordWithMedia and nothing else (bluesky-social/atproto
+// lexicons, read 2026-08-02), so that extractor never fills this -- correcting
+// this Issue's own opening line, which listed Bluesky among the four.
+//
+// A vote is never CAST from here and the choices are never rendered as
+// controls (#179 scope: the voting UI is not reproduced) -- this is a snapshot
+// of what the poll said at save time, the same read-only treatment every other
+// engagement number in the record gets.
+interface Poll {
+  choices: PollChoice[];
+  // May a voter pick more than one choice? null where the platform's payload
+  // has no such field (X's poll card carries no multi-select flag) -- the same
+  // null-means-no-signal convention isReply/isEdited use, never a guessed false.
+  multiple: boolean | null;
+  // ISO 8601 deadline, or null when the poll has none (Misskey allows an
+  // open-ended poll). Whether the poll is CLOSED is deliberately NOT a stored
+  // field: it is this timestamp compared against the moment being asked about,
+  // and the record's own capturedAt already says whether the saved tallies were
+  // still moving when they were taken.
+  expiresAt: string | null;
+  // Distinct voters, as opposed to votes cast -- the two differ on a
+  // multiple-choice poll, and only Mastodon reports it (voters_count). null
+  // elsewhere. The number of VOTES is always the sum of choices[].votes, so it
+  // is not stored a second time.
+  votersCount: number | null;
+}
+
 // One `:shortcode:` custom emoji the post's own text uses (#290), as announced
 // by the platform's API response -- Misskey's note.emojis (shortcode -> URL
 // map) and Mastodon's status.emojis[] ({shortcode, url, static_url}) are the
@@ -175,6 +225,10 @@ interface PostRecord {
   // API response gave no usable target (deleted, shallow ShallowQuote, ...).
   quotedPost: QuotedPost | null;
   replyToPost: QuotedPost | null;
+  // #179: the post's poll, when it has one. See Poll above for the per-platform
+  // sourcing. null on every post without a poll and on every pixiv/Bluesky
+  // record (neither platform has the concept).
+  poll: Poll | null;
   // pixiv series membership (#188): which series this work belongs to and its
   // 1-based position in it, from the illust payload's seriesNavData. All three
   // stay null on a work that isn't part of a series (seriesNavData itself is
@@ -386,4 +440,4 @@ interface Extractor {
   apiHostPermissions?: readonly string[];
 }
 
-export type { CaptureSite, CustomEmoji, DomMeta, Extractor, MediaIdentity, MediaIdentitySite, MediaItem, OverlaySite, ParsedPost, PostMediaElement, PostRecord, PostRect, QuotedPost, RawAcquisition };
+export type { CaptureSite, CustomEmoji, DomMeta, Extractor, MediaIdentity, MediaIdentitySite, MediaItem, OverlaySite, ParsedPost, Poll, PollChoice, PostMediaElement, PostRecord, PostRect, QuotedPost, RawAcquisition };
