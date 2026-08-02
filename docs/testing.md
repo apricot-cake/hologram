@@ -18,6 +18,7 @@
 - `gen-dummy-library.cts` — 規模を指定した合成ライブラリ（プレースホルダ画像＋`hologram.db`）を repo 外の任意フォルダへ生成（#175）。`bench-baseline.cts` の計測対象で、実データを使わずに件数・分布の偏りを再現できる
 - `bench-baseline.cts` — 性能計測ハーネス（#293）。`<libraryDir>` とその `hologram.db` に対して cold/warm/差分書き込み/検索/ファセット/FTS/IPC相当を測り、環境ブロックごと JSON で出す。**数値は1回の記録の中でだけ比較可能**（マシンと負荷状態が同じである必要があるため）。#5 の 
 before/after は同 Issue の 2026-07-23（旧経路）と 2026-07-28（DB経路）のコメント
+- `probe-gpu-reload.cts` — リロード蓄積プローブ（#66）。同じ種入りライブラリに対して `--mode=prod`（`app/out` を `electron .` で）／`--mode=dev`（`electron-vite dev`）／`--mode=hmr`（リロードせずマウント済みコンポーネントを編集して hot update を待つ）を回し、GPUプロセスの private bytes・アイドルFPS・レンダラのDOMカウンタを毎回サンプリングする。**隔離は他ハーネスと同じ**＝専用の `HOLOGRAM_CONFIG_DIR`・:9222 とサンドボックス帯（9333-）の外の :9500 帯・`HOLOGRAM_START_INACTIVE=1`。⚠️プロセスは**起動した pid の子孫**として数える（コマンドラインの一致で選ばない＝Electron は userData を実行時に `app.setPath` で決めるので設定ディレクトリは子プロセスの argv に出ない）。**親子マップは毎回引き直す**＝リロードでレンダラの pid が変わり、古いマップだと「レンダラ0個・0MB」と静かに嘘をつく
 - `backfill-metadata.cts`（欠損メタを保存URLから再取得してDBへ書き戻す・`--all`＝アバターも・`--avatars`＝アバターのみ。**単一ライターなのでアプリを閉じて実行**）／`make-icons.cjs`（`assets/icon-master.png` から全アイコンを再生成・手順は docs/build.md。electron 
 直起動のため `.cjs`＝`.cts` だと `require('electron')` が壊れる）
 
