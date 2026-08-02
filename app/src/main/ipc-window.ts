@@ -12,7 +12,12 @@ import { isOpenAllowed } from './lib-open-gate.ts';
 import type { IpcContext } from './ipc-context.ts';
 
 function register(ctx: IpcContext) {
-  const { getSaveFolder, APP_ICON } = ctx;
+  const { getSaveFolder, APP_ICON, openNewWindow } = ctx;
+
+  // Ctrl+Shift+N (#32 St1): `on`, not `handle` — the renderer forwards a keyboard
+  // gesture with nothing to wait on, the same "no response needed" shape drag-out
+  // uses below.
+  ipcMain.on('open-new-window', () => openNewWindow());
   // Every handler below hands a library file to something OUTSIDE the app, so
   // they all resolve through the one export gate (library-files.ts) rather than
   // joining a path themselves.

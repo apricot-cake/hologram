@@ -6,12 +6,20 @@
 // truth-source flip moved these off the org-JSON files they used to live in;
 // see lib-db-write.ts). Every handler needs only getSaveFolder + getDbWriter,
 // both arriving via ctx.
+//
+// #32 St2: every successful set-* below also relays an `org-changed` event to
+// every OTHER window (ctx.sendExcept) — the sender's own in-memory store is
+// already current (it wrote optimistically before this call), so echoing its own
+// write back would be at best a wasted round trip and at worst a reset of
+// in-progress local UI state the write itself did not touch. `kind` matches the
+// channel's own domain name (renderer/services/*.ts's org-changed subscribers key
+// off it to reload only the store that actually changed).
 import { ipcMain } from 'electron';
 import type { IpcContext } from './ipc-context.ts';
 import type { FoldersState, ManualGroupsState, OkResult, PosterAliasesState, PosterFoldersState, PosterTagsState, TagTypesState, UngroupedState } from './ipc-payloads.ts';
 
 function register(ctx: IpcContext) {
-  const { getSaveFolder, getDbWriter } = ctx;
+  const { getSaveFolder, getDbWriter, sendExcept } = ctx;
 
   // Tag "vocabulary book": a tag's kind is an attribute of the TAG,
   // not of any post — so classifying a few hundred distinct tags needs zero post
@@ -28,6 +36,7 @@ function register(ctx: IpcContext) {
     if (!folder || !types || typeof types !== 'object') return { ok: false };
     try {
       getDbWriter().setTagTypes(types, labels);
+      sendExcept(_e.sender.id, 'org-changed', 'tag-types');
       return { ok: true };
     } catch {
       return { ok: false };
@@ -45,6 +54,7 @@ function register(ctx: IpcContext) {
     if (!folder) return { ok: false };
     try {
       getDbWriter().setUngrouped(keys);
+      sendExcept(_e.sender.id, 'org-changed', 'ungrouped');
       return { ok: true };
     } catch {
       return { ok: false };
@@ -61,6 +71,7 @@ function register(ctx: IpcContext) {
     if (!folder || !data || !Array.isArray(data.folders)) return { ok: false };
     try {
       getDbWriter().setPosterFolders(data);
+      sendExcept(_e.sender.id, 'org-changed', 'poster-folders');
       return { ok: true };
     } catch {
       return { ok: false };
@@ -78,6 +89,7 @@ function register(ctx: IpcContext) {
     if (!folder || !data || typeof data.tags !== 'object' || !data.tags) return { ok: false };
     try {
       getDbWriter().setPosterTags(data);
+      sendExcept(_e.sender.id, 'org-changed', 'poster-tags');
       return { ok: true };
     } catch {
       return { ok: false };
@@ -99,6 +111,7 @@ function register(ctx: IpcContext) {
     if (!folder || !data || !Array.isArray(data.groups)) return { ok: false };
     try {
       getDbWriter().setPosterAliases(data);
+      sendExcept(_e.sender.id, 'org-changed', 'poster-aliases');
       return { ok: true };
     } catch {
       return { ok: false };
@@ -116,6 +129,7 @@ function register(ctx: IpcContext) {
     if (!folder) return { ok: false };
     try {
       getDbWriter().setManualGroups(groups);
+      sendExcept(_e.sender.id, 'org-changed', 'manual-groups');
       return { ok: true };
     } catch {
       return { ok: false };
@@ -135,6 +149,7 @@ function register(ctx: IpcContext) {
     if (!getSaveFolder()) return { ok: false };
     try {
       getDbWriter().setFolders(data);
+      sendExcept(_e.sender.id, 'org-changed', 'folders');
       return { ok: true };
     } catch {
       return { ok: false };

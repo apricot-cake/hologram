@@ -107,4 +107,6 @@ export const hologramIpc: HologramPreload = {
   windowControl: (action) => bridge().windowControl(action),
   windowIsMaximized: () => bridge().windowIsMaximized(),
   onWindowMaximizedChanged: (cb) => bridge().onWindowMaximizedChanged(cb),
+  openNewWindow: () => bridge().openNewWindow(),
+  onOrgChanged: (cb) => bridge().onOrgChanged(cb),
 };

@@ -216,6 +216,19 @@ const api = {
   onWindowMaximizedChanged: (cb: (maximized: boolean) => void): void => {
     ipcRenderer.on('window-maximized-changed', (_e, maximized) => cb(maximized));
   },
+  // Ctrl+Shift+N / the "New window" affordance (#32 St1). `send`, not `invoke`:
+  // nothing to wait on — main creates the window and this call is done.
+  openNewWindow: (): void => ipcRenderer.send('open-new-window'),
+  // #32 St2: fired after another window's organize-layer write (tag kind, poster
+  // folders/tags/aliases, manual groups, ungrouped, library folders) succeeds — see
+  // ipc-organize.ts. `kind` matches the get/set-* domain (e.g. 'folders',
+  // 'poster-tags') so a subscriber can reload only the store that actually
+  // changed. Returns an unsubscribe, the same shape onExportProgress uses.
+  onOrgChanged: (cb: (kind: string) => void): (() => void) => {
+    const h = (_e: unknown, kind: string) => cb(kind);
+    ipcRenderer.on('org-changed', h);
+    return () => ipcRenderer.removeListener('org-changed', h);
+  },
 };
 
 // The full contextBridge IPC surface (window.hologram) — typeof the implementation,

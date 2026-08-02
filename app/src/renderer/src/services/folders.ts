@@ -307,7 +307,20 @@ function createFolderStore({ idPrefix, persist, isLibrary }: { idPrefix: string;
 // store's own load()/persist() below, generalized). Currently used for the poster
 // folder store (viewer.js pfStore used to hand-assemble this: its own persist()
 // closure + a manual getPosterFolders/setAll block in boot — both now live here).
-function createPersistedFolderStore({ idPrefix, get, set }: { idPrefix: string; get: () => Promise<{ folders?: unknown[] } | null>; set: (data: { folders: HologramFolder[] }) => Promise<unknown> }): HologramFolderStore & { load: () => Promise<void>; subscribe: (cb: () => void) => () => void } {
+function createPersistedFolderStore({
+  idPrefix,
+  get,
+  set,
+  orgChangedKind,
+}: {
+  idPrefix: string;
+  get: () => Promise<{ folders?: unknown[] } | null>;
+  set: (data: { folders: HologramFolder[] }) => Promise<unknown>;
+  // #32 St2: the org-changed kind this store reloads on (see ipc-organize.ts) — a
+  // window that did not make the write re-reads disk and re-notifies its own
+  // subscribers, the same "reload + notify" doLoad() already does at boot.
+  orgChangedKind?: string;
+}): HologramFolderStore & { load: () => Promise<void>; reload: () => Promise<void>; subscribe: (cb: () => void) => () => void } {
   let loadPromise: Promise<void> | null = null;
   // Its own change channel (#6, remaining item 1): the poster-folder sidebar group has no manager
   // modal to read a shared mgrModel from any more, so each persisted store notifies its
@@ -338,19 +351,38 @@ function createPersistedFolderStore({ idPrefix, get, set }: { idPrefix: string; 
     if (!loadPromise) loadPromise = doLoad();
     return loadPromise;
   }
+  // Force a re-read regardless of the load() cache — another window's write already
+  // landed on disk by the time org-changed fires, so this always wins the race.
+  function reload() {
+    loadPromise = doLoad();
+    return loadPromise;
+  }
   function subscribe(cb: () => void) {
     subs.add(cb);
     return () => {
       subs.delete(cb);
     };
   }
-  return { ...store, load, subscribe };
+  if (orgChangedKind) {
+    // Best-effort: under Node (unit tests), window.hologram is absent or a
+    // minimal stub with no onOrgChanged — same "no window under Node" swallow
+    // this module's persist()/doLoad() already use.
+    try {
+      hologramIpc.onOrgChanged((kind) => {
+        if (kind === orgChangedKind) reload();
+      });
+    } catch {
+      /* no bridge (Node unit test) */
+    }
+  }
+  return { ...store, load, reload, subscribe };
 }
 export function hologramPosterFolderStore(): HologramPersistedFolderStore {
   return createPersistedFolderStore({
     idPrefix: 'pf',
     get: () => hologramIpc.getPosterFolders(),
     set: (data) => hologramIpc.setPosterFolders(data),
+    orgChangedKind: 'poster-folders',
   });
 }
 
@@ -403,6 +435,20 @@ async function doLoad() {
 export function load() {
   if (!loadPromise) loadPromise = doLoad();
   return loadPromise;
+}
+
+// #32 St2: another window's set-folders landed — re-read the DB (already current on
+// disk by the time org-changed fires) and tell every subscriber (the sidebar's folder
+// tree) to re-render. This is the concrete acceptance case (design: "コレクション作成
+// が org-changed 経由で他窓のサイドバーに反映"). Best-effort: no bridge under Node
+// (unit tests) — same swallow every hologramIpc call in this module already uses.
+try {
+  hologramIpc.onOrgChanged((kind) => {
+    if (kind !== 'folders') return;
+    loadPromise = doLoad().then(() => notify('list'));
+  });
+} catch {
+  /* no bridge (Node unit test) */
 }
 
 export const byId = store.byId;

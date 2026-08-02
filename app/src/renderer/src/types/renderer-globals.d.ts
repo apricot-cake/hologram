@@ -256,7 +256,7 @@ interface HologramFolderStore {
  * change channel — every mutation (via persist()) and every completed load() notifies —
  * so a React list (the poster-folder sidebar group) can useSyncExternalStore off it directly,
  * with no manager-modal model in between (that model, and the modal itself, are retired). */
-type HologramPersistedFolderStore = HologramFolderStore & { load(): Promise<void>; subscribe(cb: () => void): () => void };
+type HologramPersistedFolderStore = HologramFolderStore & { load(): Promise<void>; reload(): Promise<void>; subscribe(cb: () => void): () => void };
 
 // services/store.ts is a real ES module now — get/set/subscribe are
 // imported directly by every consumer; no ambient HologramStore/Window merge

@@ -73,6 +73,20 @@ export function load(): Promise<void> {
   return loadPromise;
 }
 
+// #32 St2: another window's set-poster-aliases landed — re-read (already current on
+// disk by the time org-changed fires) and notify this window's own subscribers, same
+// "reload + notify" shape folders.ts's / tags.ts's org-changed listeners use.
+// Best-effort: no bridge under Node (unit tests) — same swallow this module's
+// readAliases()/writeAliases() already use.
+try {
+  hologramIpc.onOrgChanged((kind) => {
+    if (kind !== 'poster-aliases') return;
+    loadPromise = doLoad().then(() => notify());
+  });
+} catch {
+  /* no bridge (Node unit test) */
+}
+
 // --- subscribers (this module's own change channel — mirrors tags.ts; nobody
 // bumps the shared post-generation counter here, that stays the caller's job
 // exactly like tags.ts's mutators leave markPostsMutated to viewer.ts) ---
