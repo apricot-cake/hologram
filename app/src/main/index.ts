@@ -29,7 +29,7 @@ import { configDir, defaultLibraryDir, installer, pixivRefererFor, downloadAvata
 import { readConfig, writeConfig, getSaveFolder, readSavePointer, initSaveFolderRedundancy, isConfigCorrupt, invalidateConfigCache, saveFolderStatus } from './lib-config.ts';
 import { mimeForFile, registerImageProtocol } from './lib-thumbnails.ts';
 import { backupIntervalMs, createBackupEngine, latestRestorableSnapshot, readBackupConfig, readIntegrityStatus, validateBackupDir, validateSaveFolder, writeBackupConfig } from './lib-backup.ts';
-import { APP_ICON, DEV_ORIGIN, DEV_SERVER_URL, createWindow, devServer, getWin, getWindows, installNavigationGuards, sendToOtherWins, sendToWin, sendWindowToBack } from './lib-window.ts';
+import { APP_ICON, DEV_ORIGIN, DEV_SERVER_URL, createWindow, devServer, getWin, installNavigationGuards, sendToOtherWins, sendToWin, sendWindowToBack } from './lib-window.ts';
 import { installDevRendererCsp, registerAppProtocol } from './app-protocol.ts';
 // IPC handler modules, extracted from this file (mechanical move — logic unchanged).
 // Each exposes register(ctx); ctx is built after the core functions below and passed
@@ -699,12 +699,23 @@ if (!gotSingleInstanceLock) {
 } else {
   if (!SMOKE) {
     app.on('second-instance', () => {
-      const w = getWin();
-      if (w) {
-        if (w.isMinimized()) w.restore();
-        w.show();
-        w.focus();
+      // #32 St1: a second launch opens ANOTHER window rather than only focusing the
+      // first one (design: "2回目起動＝新規ウィンドウを開く") — UNLESS this run was
+      // itself started minimized/inactive (a verification harness restart), where the
+      // old "surface what's already running" behavior is still what is wanted: a new
+      // window would leave the original invisible and defeat the harness's "did the
+      // restart bring the window back" check.
+      const launchedHidden = process.env.HOLOGRAM_START_MINIMIZED === '1' || process.env.HOLOGRAM_START_INACTIVE === '1';
+      if (launchedHidden) {
+        const w = getWin();
+        if (w) {
+          if (w.isMinimized()) w.restore();
+          w.show();
+          w.focus();
+        }
+        return;
       }
+      createWindow(true, { secondary: true });
     });
   }
 

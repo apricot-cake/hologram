@@ -19,6 +19,7 @@ import { handleShortcutPanelsKey } from '../services/panels.ts';
 import { handleShortcutZoomKey } from '../services/image-zoom.ts';
 import { handleShortcutClipboardKey } from '../services/clipboard-intake.ts';
 import { handleShortcutPrivacyKey } from '../services/privacy-mode.ts';
+import { handleShortcutNewWindowKey } from '../services/window-actions.ts';
 import { onPostsChanged } from '../services/posts.ts';
 import { getLibraryStatus, getExtensionContact } from '../services/library-path.ts';
 import { subscribePosterShape as subscribePosterDisplay, subscribeShape as subscribeDisplay } from '../services/display.ts';
@@ -176,6 +177,9 @@ function GlobalShortcuts() {
       // comment for why a "hide everything right now" reflex key has to keep working
       // no matter what else is on screen.
       handleShortcutPrivacyKey(e);
+      // Ctrl/Cmd+Shift+N = open a new window (#32 St1). Same arrangement as the
+      // other Ctrl+Shift+ keys above: guard + action live in services/window-actions.ts.
+      handleShortcutNewWindowKey(e);
     };
     const onMouseup = (e: MouseEvent) => handleShortcutMouseNav(e);
     // Ctrl+wheel = content size (#141). Non-passive on purpose: the handler

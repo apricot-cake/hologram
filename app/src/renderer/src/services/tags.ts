@@ -267,6 +267,27 @@ export function load() {
   return loadPromise;
 }
 
+// #32 St2: another window's set-tag-types / set-poster-tags landed — re-read the
+// domain that actually changed (already current on disk by the time org-changed
+// fires) and notify this window's own subscribers, same "reload + notify" shape
+// folders.ts's org-changed listener uses. Best-effort: no bridge under Node (unit
+// tests) — same swallow every hologramIpc call in this module already uses.
+try {
+  hologramIpc.onOrgChanged(async (kind) => {
+    if (kind === 'tag-types') {
+      const tt = await readTagTypes();
+      tagTypes = tt.types;
+      tagLabels = tt.labels;
+      notify('kind');
+    } else if (kind === 'poster-tags') {
+      posterTags = await readPosterTags();
+      notify('poster');
+    }
+  });
+} catch {
+  /* no bridge (Node unit test) */
+}
+
 // --- mutators: persist + notify (viewer.js calls these instead of
 // mutating the maps itself; the surrounding business logic — undo
 // recording, inspector refresh, confirm dialogs — stays in viewer.js) ---
