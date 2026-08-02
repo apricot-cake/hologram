@@ -40,6 +40,42 @@
   color: var(--hologram-ink);
 }
 
+/* ================================================================= stacking */
+
+/* The ONE place every surface this root draws is given its place in front of
+ * or behind the others (#581). Before this, order came from whichever element
+ * happened to be appended to the shared root last — capture.ts adds the
+ * selection frame right after the banner, so the frame simply painted on top
+ * of it, and a post that fills the viewport (a photo viewer, #325) drew the
+ * frame's edge straight through the banner's explanation. Two named layers
+ * here, rather than a z-index bumped ad hoc at whichever call site collides
+ * with something next:
+ *
+ *   --z-locate   the selection frame — says WHERE, nothing else
+ *   --z-explain  the banner / drop zone — says what to do or what happened
+ *
+ * Explanation outranks location: a label you cannot read is useless even when
+ * the thing it labels is drawn perfectly. Both numbers live in this one
+ * :host block so a THIRD surface added later has somewhere to look before
+ * reaching for a bare z-index of its own. Deliberately NOT `--hologram-*`:
+ * that prefix names the app's design tokens (colours, motion — everything
+ * scripts/extension-tokens.test.ts cross-checks against tokens.generated.css),
+ * and a stacking order is neither generated from there nor a colour, so
+ * giving it that prefix would make the token guard treat it as a dangling
+ * reference.
+ *
+ * Corner controls (overlay.ts's saved mark / hover-save button) are not part
+ * of this table and need no number here: they are absolutely-positioned
+ * children of the POST they annotate, planted in the page's own subtree, not
+ * this root — and this whole root already draws above the entire page via
+ * its own host element's z-index (ui-root.ts, 2147483647). Giving them a rank
+ * among locate/explain would rank them against surfaces they can never
+ * actually contend with. */
+:host {
+  --z-locate: 1;
+  --z-explain: 2;
+}
+
 /* ============================================================ status surface */
 
 /* The shared floating surface. Both faces are the same component: an opaque,
@@ -47,6 +83,7 @@
  * (tokens.source.css explains why the outline sits where it does). */
 .surface {
   position: fixed;
+  z-index: var(--z-explain);
   box-sizing: border-box;
   display: flex;
   align-items: center;
@@ -323,9 +360,14 @@
 /* ====================================================== selection highlight */
 
 /* Alt+S's aim: geometry over the post, never a surface. Only JS's job here is
- * the rectangle — position, and nothing else, is written inline. */
+ * the rectangle — position, and nothing else, is written inline. Ranked
+ * below the surfaces (the "stacking" block above, #581): it used to draw
+ * over the banner whenever the two boxes overlapped (a post that fills the
+ * viewport, #325) simply because capture.ts appends it right after the
+ * banner in the shared root. */
 .highlight {
   position: fixed;
+  z-index: var(--z-locate);
   pointer-events: none;
   box-sizing: border-box;
   border: 2px solid var(--hologram-accent);
