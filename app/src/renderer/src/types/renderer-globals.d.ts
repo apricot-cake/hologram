@@ -151,6 +151,12 @@ interface HologramNavEntry {
   state: HologramTabSnapshot | { tree?: any; sort?: string; search?: string } | { recs: string[]; idx: number };
 }
 interface HologramTab {
+  // #21: a tab dedicated to the tag management page (opened via openTagManagementTab,
+  // tabs-builder.ts) instead of a browse view. Such a tab carries no query state and
+  // no nav history -- every switch/close/duplicate path short-circuits on this flag
+  // before touching postQB/browseMode/nav (kept additive on purpose: zero risk to the
+  // existing posts/posters/image dispatch).
+  specialKind?: 'tags';
   id: string;
   pinned: boolean;
   title: string | null;

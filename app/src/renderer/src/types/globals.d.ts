@@ -284,6 +284,9 @@ declare global {
     // no remote image src). Empty/absent when the post neither quotes nor
     // replies to anything the extractor could build one from.
     quotedCards?: HologramQuotedCardModel[];
+    // #179: the post's poll, rendered from the saved `poll` sub-structure
+    // (PollCard.tsx). Absent when the post carried none.
+    pollCard?: HologramPollCardModel;
     // Poster-only.
     onPosterPosts?(): void;
     onFolderToggle(id: string): void;
@@ -301,6 +304,19 @@ declare global {
   // (2026-07-27 design comment on #180: same-post identity via postKeyOf),
   // else opens the sub-record's own URL externally — onOpen is always present
   // when the sub-record carries a url, absent for the (rare) url-less case.
+  // #179: the post's poll as the inspector shows it, built by
+  // inspector-builder.ts's showDetail(). Every number is already formatted
+  // here (the component renders strings only, same split as
+  // HologramQuotedCardModel below) except `percent`, which is a bar WIDTH and
+  // so has to stay numeric — null when the platform withheld the tallies, in
+  // which case no bar is drawn at all rather than an empty one.
+  interface HologramPollCardModel {
+    label: string;
+    choices: Array<{ text: string; votesLabel: string; percentLabel: string; percent: number | null }>;
+    // "複数選択可 ・ 1,234票 ・ 締切 …" — the conditions around the poll, joined
+    // into one line. Empty when the platform reported none of them.
+    metaLabel: string;
+  }
   interface HologramQuotedCardModel {
     kind: 'quote' | 'reply';
     label: string;
@@ -319,7 +335,7 @@ declare global {
   // instead of a pushed bridge (the old renderer/empty.js bridge was deleted — no
   // callers left), and owns its own container and visibility (the static #emptyState
   // div two render pipelines wrote `hidden` on went with it). ----
-  type HologramEmptyVariant = 'firstRun' | 'filtered' | 'posterFirstRun';
+  type HologramEmptyVariant = 'firstRun' | 'filtered' | 'posterFirstRun' | 'extensionGuide';
 
   // ---- services/confirm.ts — shared confirm modal (shadcn AlertDialog). Callers open it
   // with a message + optional skip/keyword gate + callbacks; the component renders it. ----

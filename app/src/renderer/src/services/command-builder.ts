@@ -30,6 +30,8 @@ export interface CommandDeps {
   folderPath(id: string): string;
   getBrowseMode(): string;
   addTab(): void;
+  /** #21: opens (or focuses) the tag management page tab. */
+  openTagManagementTab(): void;
   switchTab(id: string): void;
   resetAllFilters(): void;
   resetPosterFilters(): void;
@@ -55,6 +57,7 @@ export function makeCommands(deps: CommandDeps): void {
   const commands: CommandEntry[] = [
     { id: 'cmd:settings', section: 'command', title: t('cmdOpenSettings'), perform: () => openSettings() },
     { id: 'cmd:new-tab', section: 'command', title: t('cmdNewTab'), hint: 'Ctrl+T', perform: () => deps.addTab() },
+    { id: 'cmd:manage-tags', section: 'command', title: t('cmdManageTags'), perform: () => deps.openTagManagementTab() },
     {
       id: 'cmd:clear-filters',
       section: 'command',

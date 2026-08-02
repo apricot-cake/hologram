@@ -411,7 +411,7 @@ export function VirtualGridHost({ model, cell, nav, anchor, marquee, onBackgroun
         pointerX: e.clientX,
         pointerY: e.clientY,
         active: false,
-        lastHits: ' ', // no real signature equals this, so the first frame always pushes
+        lastHits: '\0', // no real signature equals this, so the first frame always pushes
         raf: 0,
       };
       e.preventDefault(); // otherwise the press starts a native text selection across the cards

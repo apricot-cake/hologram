@@ -80,6 +80,7 @@ const POST_COLUMNS = [
   'quotedPost',
   'replyToPost',
   'customEmojis',
+  'poll',
 ] as const;
 
 function fromDbBool(v: unknown): boolean | null {
@@ -118,13 +119,16 @@ function parseFrames(raw: string | null): { file: string; delay: number }[] | nu
   }
 }
 
-// posts.quotedPost/replyToPost (#180): a JSON QuotedPostShape object, same
-// all-or-nothing read as parseFrames above -- a row with none (the
-// overwhelming majority: no quote/renote, or a reply-to on a platform this
-// Issue's scope excludes) stores NULL and reads back as null, and a value
+// posts.quotedPost/replyToPost (#180) and posts.poll (#179): a JSON object in
+// one TEXT column, with the same all-or-nothing read parseFrames above uses --
+// a row with none (the overwhelming majority: no quote/renote, no poll, or a
+// reply-to on a platform #180's scope excludes) stores NULL and reads back as
+// null, and a value
 // that no longer parses as an object reads the same way rather than reaching
-// the renderer as something its `.text`/`.media` readers can't use.
-function parseQuotedPost(raw: string | null): any | null {
+// the renderer as something its `.text`/`.media`/`.choices` readers can't use.
+// One reader for both because the read is identical -- neither shape is
+// inspected here beyond "is it still an object".
+function parseJsonObject(raw: string | null): any | null {
   if (!raw) return null;
   try {
     const v = JSON.parse(raw);
@@ -135,7 +139,7 @@ function parseQuotedPost(raw: string | null): any | null {
 }
 
 // posts.customEmojis (#290): a JSON CustomEmojiShape[] column. Empty-array
-// convention like parseHashtags below (not parseQuotedPost's null-means-none
+// convention like parseHashtags below (not parseJsonObject's null-means-none
 // above) -- an empty array and a NULL column mean the exact same "this post
 // used no custom emoji" here, same as hashtags/domFilled.
 function parseCustomEmojis(raw: unknown): { shortcode: string; url: string; file: string | null }[] {
@@ -274,8 +278,11 @@ function assemble(sqlite: Database.Database, postRows: any[]): any[] {
       // #180: quote/renote and (Misskey-only) reply-to sidecar sub-records.
       // Read for the same reasons quotedUrl/replyToId are — the inspector (once
       // #180's viewer stage lands) and the export sidecar both need them.
-      quotedPost: parseQuotedPost(r.quotedPost),
-      replyToPost: parseQuotedPost(r.replyToPost),
+      quotedPost: parseJsonObject(r.quotedPost),
+      replyToPost: parseJsonObject(r.replyToPost),
+      // #179: the post's poll. Read for the inspector's poll card and the
+      // export sidecar, the same two consumers quotedPost has.
+      poll: parseJsonObject(r.poll),
       // #290: the post's own :shortcode: custom emoji. Read for the inspector
       // (once its display stage lands, per #290's own scope note) and the
       // export sidecar.

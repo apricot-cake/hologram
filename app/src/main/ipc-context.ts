@@ -50,13 +50,6 @@ export interface HologramConfig {
   [key: string]: any;
 }
 
-/** The native-messaging host installer, as far as set-extension-id uses it. */
-export interface NativeHostInstaller {
-  manifestPath(): string;
-  updateAllowedOrigin(extensionId: unknown): void;
-  install(options: { exe?: string; runAsNode?: boolean; extensionId?: string | null }): unknown;
-}
-
 export interface IpcContext {
   // --- Library location + records ---
   /** Never null: a fresh install resolves to the default library dir. */
@@ -102,7 +95,6 @@ export interface IpcContext {
   isConfigCorrupt(): boolean;
   /** Why a wipe must be refused on a degraded config, or null. */
   clearAllBlockReason(args: { configCorrupt: boolean; hasExplicitSaveFolder: boolean; hasPointer: boolean; libraryMissing: boolean }): string | null;
-  installer: NativeHostInstaller;
 
   // --- Backup mirror + integrity ---
   readBackupConfig(): BackupConfig;

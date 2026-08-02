@@ -25,7 +25,7 @@ import type {
   ExportCompleteResult,
   ExportProgress,
   ExportSaveResult,
-  ExtensionIdResult,
+  ExtensionContactStatus,
   FoldersState,
   FullTextHit,
   IntegrityStatus,
@@ -48,6 +48,11 @@ import type {
   SaveFolderMoveResult,
   SaveFolderPickResult,
   SaveFolderProgress,
+  TagVocabRow,
+  TagParentRowResolved,
+  RenameTagResult,
+  TagWriteResult,
+  DeleteOrphanTagsResult,
   TabsState,
   TagTypesState,
   UngroupedState,
@@ -62,7 +67,10 @@ import type {
 // renderer's DOM-only program can reach it through HologramPreload.
 const api = {
   getConfig: (): Promise<ConfigSummary> => ipcRenderer.invoke('get-config'),
-  setExtensionId: (id: string): Promise<ExtensionIdResult> => ipcRenderer.invoke('set-extension-id', id),
+  // #71: whether the bridge has EVER touched its contact marker — see
+  // ipc-config.ts's get-extension-contact and empty/EmptyState.tsx's install-guide
+  // variant. A one-shot fetch, not a push (nothing invalidates it mid-session).
+  getExtensionContact: (): Promise<ExtensionContactStatus> => ipcRenderer.invoke('get-extension-contact'),
   listPosts: (): Promise<PostsSnapshot> => ipcRenderer.invoke('list-posts'),
   // Delta refresh: pass true once a full snapshot is held; main returns either a
   // full { full:true, posts:[] } or an incremental { full:false, added, removed }.
@@ -73,6 +81,17 @@ const api = {
   searchFullText: (query: string, limit?: number): Promise<FullTextHit[]> => ipcRenderer.invoke('search-full-text', query, limit),
   getTagTypes: (): Promise<TagTypesState> => ipcRenderer.invoke('get-tag-types'),
   setTagTypes: (types: unknown, labels?: unknown): Promise<OkResult> => ipcRenderer.invoke('set-tag-types', types, labels),
+  // #21 tag management page (ipc-tag-vocab.ts) — row-scoped writes, not the
+  // whole-map get/set-tag-types above (see that module's setTagKind comment).
+  getTagVocab: (): Promise<TagVocabRow[]> => ipcRenderer.invoke('get-tag-vocab'),
+  getTagParentEdges: (): Promise<TagParentRowResolved[]> => ipcRenderer.invoke('get-tag-parent-edges'),
+  renameTag: (tagId: number, newName: string): Promise<RenameTagResult> => ipcRenderer.invoke('rename-tag', tagId, newName),
+  keepSeparateRenameTag: (tagId: number, newName: string, displayParentTagId: number): Promise<TagWriteResult> => ipcRenderer.invoke('keep-separate-rename-tag', tagId, newName, displayParentTagId),
+  mergeTags: (sourceTagId: number, targetTagId: number): Promise<TagWriteResult> => ipcRenderer.invoke('merge-tags', sourceTagId, targetTagId),
+  addTagParent: (tagId: number, parentTagId: number, isDisplay: boolean): Promise<TagWriteResult> => ipcRenderer.invoke('add-tag-parent', tagId, parentTagId, isDisplay),
+  removeTagParent: (tagId: number, parentTagId: number): Promise<TagWriteResult> => ipcRenderer.invoke('remove-tag-parent', tagId, parentTagId),
+  setTagKind: (tagId: number, kind: string | null): Promise<TagWriteResult> => ipcRenderer.invoke('set-tag-kind', tagId, kind),
+  deleteOrphanTags: (tagIds: number[]): Promise<DeleteOrphanTagsResult> => ipcRenderer.invoke('delete-orphan-tags', tagIds),
   getUngrouped: (): Promise<UngroupedState> => ipcRenderer.invoke('get-ungrouped'),
   setUngrouped: (keys: unknown): Promise<OkResult> => ipcRenderer.invoke('set-ungrouped', keys),
   getPosterFolders: (): Promise<PosterFoldersState> => ipcRenderer.invoke('get-poster-folders'),

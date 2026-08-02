@@ -86,9 +86,18 @@ export interface LibraryStatus {
   path: string | null;
 }
 
-/** set-extension-id — the id as stored, i.e. '' when the input was refused. */
-export interface ExtensionIdResult {
-  extensionId: string;
+/**
+ * get-extension-contact (#71): whether the native-messaging bridge has EVER
+ * touched its contact marker (native-host/paths.cts's extensionContactPath) —
+ * i.e. the extension is installed and has processed at least one check/save.
+ * The renderer's only use for this is empty/EmptyState.tsx's firstRun variant:
+ * no contact yet means "show the install guide instead" (services/
+ * library-status.ts's libraryEmptyVariant). A one-shot fetch like
+ * get-library-status, not a push — nothing invalidates it mid-session, so a
+ * boot-time read is all today's only caller needs.
+ */
+export interface ExtensionContactStatus {
+  contacted: boolean;
 }
 
 /** app-info — the settings "About" panel's build info. */
@@ -150,6 +159,46 @@ export interface TagTypesState {
 }
 
 /** get/set-ungrouped: post keys opted out of auto-grouping. */
+// --- Tag vocabulary layer (#21, DB-backed, ipc-tag-vocab.ts) --------------
+/** One row of the tag management page's overview table. */
+export interface TagVocabRow {
+  id: number;
+  name: string;
+  kind: string | null;
+  reading: string | null;
+  postCount: number;
+  posterCount: number;
+  parents: { id: number; name: string; isDisplay: boolean }[];
+  displayName: string;
+  isReferencedAsParent: boolean;
+  isOrphan: boolean;
+}
+/** One (child, parent) edge, name-resolved — backs the "parent tags" left view. */
+export interface TagParentRowResolved {
+  tagId: number;
+  tagName: string;
+  parentTagId: number;
+  parentName: string;
+  isDisplay: boolean;
+}
+/** rename-tag's answer when the new name collides with a distinct tag entity — the caller resolves via merge-tags or keep-separate-rename-tag (2026-07-18 confirmed 2-way branch). */
+export interface RenameCollision {
+  tagId: number;
+  name: string;
+  postCount: number;
+  posterCount: number;
+}
+export type RenameTagResult = { ok: true } | { ok: false; error: 'empty' } | { ok: false; collision: RenameCollision };
+/** A tag-vocab write's plain result (add/remove-tag-parent, merge-tags, keep-separate-rename-tag, set-tag-kind). */
+export interface TagWriteResult {
+  ok: boolean;
+  error?: string;
+}
+export interface DeleteOrphanTagsResult {
+  ok: boolean;
+  deletedIds: number[];
+}
+
 export interface UngroupedState {
   keys: string[];
 }

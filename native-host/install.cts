@@ -240,17 +240,43 @@ function persistExtensionId(id: string | null): void {
   }
 }
 
-// Browsers that read native messaging host manifests.
+// Browsers that read native messaging host manifests. Brave/Vivaldi (#210) are
+// Chromium forks with their own vendor-branded profile directories on every
+// platform (BraveSoftware/Brave-Browser, Vivaldi) — the same convention this
+// list already follows for Chromium itself. KeePassXC's own installer
+// (src/browser/NativeMessageInstaller.cpp) additionally has both browsers read
+// Chrome's own Windows registry key as an alias, but that isn't confirmed
+// current behavior for every build, so the dedicated keys are added rather
+// than relied on as a substitute — they're inert, not harmful, if a given
+// build only ever reads Chrome's key.
 function windowsRegistryKeys(): string[] {
-  return [`HKCU\\Software\\Google\\Chrome\\NativeMessagingHosts\\${HOST_NAME}`, `HKCU\\Software\\Microsoft\\Edge\\NativeMessagingHosts\\${HOST_NAME}`, `HKCU\\Software\\Chromium\\NativeMessagingHosts\\${HOST_NAME}`];
+  return [
+    `HKCU\\Software\\Google\\Chrome\\NativeMessagingHosts\\${HOST_NAME}`,
+    `HKCU\\Software\\Microsoft\\Edge\\NativeMessagingHosts\\${HOST_NAME}`,
+    `HKCU\\Software\\Chromium\\NativeMessagingHosts\\${HOST_NAME}`,
+    `HKCU\\Software\\BraveSoftware\\Brave-Browser\\NativeMessagingHosts\\${HOST_NAME}`,
+    `HKCU\\Software\\Vivaldi\\NativeMessagingHosts\\${HOST_NAME}`,
+  ];
 }
 
 function unixManifestDirs(): string[] {
   const home = os.homedir();
   if (process.platform === 'darwin') {
-    return [path.join(home, 'Library/Application Support/Google/Chrome/NativeMessagingHosts'), path.join(home, 'Library/Application Support/Microsoft Edge/NativeMessagingHosts'), path.join(home, 'Library/Application Support/Chromium/NativeMessagingHosts')];
+    return [
+      path.join(home, 'Library/Application Support/Google/Chrome/NativeMessagingHosts'),
+      path.join(home, 'Library/Application Support/Microsoft Edge/NativeMessagingHosts'),
+      path.join(home, 'Library/Application Support/Chromium/NativeMessagingHosts'),
+      path.join(home, 'Library/Application Support/BraveSoftware/Brave-Browser/NativeMessagingHosts'),
+      path.join(home, 'Library/Application Support/Vivaldi/NativeMessagingHosts'),
+    ];
   }
-  return [path.join(home, '.config/google-chrome/NativeMessagingHosts'), path.join(home, '.config/microsoft-edge/NativeMessagingHosts'), path.join(home, '.config/chromium/NativeMessagingHosts')];
+  return [
+    path.join(home, '.config/google-chrome/NativeMessagingHosts'),
+    path.join(home, '.config/microsoft-edge/NativeMessagingHosts'),
+    path.join(home, '.config/chromium/NativeMessagingHosts'),
+    path.join(home, '.config/BraveSoftware/Brave-Browser/NativeMessagingHosts'),
+    path.join(home, '.config/vivaldi/NativeMessagingHosts'),
+  ];
 }
 
 interface InstallOptions {
@@ -364,6 +390,8 @@ module.exports = {
   manifestPath,
   isLinkedWorktreeRuntime,
   shouldPreserveSharedRegistration,
+  windowsRegistryKeys,
+  unixManifestDirs,
 };
 
 if (require.main === module) {

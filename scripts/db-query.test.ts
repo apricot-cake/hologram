@@ -50,6 +50,16 @@ beforeAll(async () => {
     quotedPost: { url: 'https://x.example/quoted', displayName: 'Bob', screenName: 'bob', userId: '9', avatar: null, text: 'the original', date: '2025-12-31T00:00:00Z', cw: null, media: [] },
     // #290: the post's own custom emoji.
     customEmojis: [{ shortcode: 'ha_to', url: 'https://x.example/ha_to.png', file: 'emoji/abc123.png' }],
+    // #179: the post's poll — one more JSON column on the same row.
+    poll: {
+      choices: [
+        { text: 'Yes', votes: 3 },
+        { text: 'No', votes: 1 },
+      ],
+      multiple: false,
+      expiresAt: '2026-01-02T00:00:00Z',
+      votersCount: null,
+    },
     // #162: dimension/file-size facet aggregates — written directly here (this
     // test drives writePost, not fillMediaDims) just to check the column round-trips.
     mediaMaxW: 3000,
@@ -195,6 +205,23 @@ describe('postsFromDb: 形と並び', () => {
     expect(cap1.replyToPost).toBeNull();
     const cap2 = (await postsFromDb(handle.sqlite)).find((p: any) => p.captureId === 'cap-2');
     expect({ quotedPost: cap2.quotedPost, replyToPost: cap2.replyToPost }).toEqual({ quotedPost: null, replyToPost: null });
+  });
+
+  // #179: same 0-or-1 JSON-column round trip quotedPost has (null, not an
+  // empty object, on a post that carried no poll).
+  test('poll が往復する（#179）', async () => {
+    const cap1 = (await postsFromDb(handle.sqlite)).find((p: any) => p.captureId === 'cap-1');
+    expect(cap1.poll).toEqual({
+      choices: [
+        { text: 'Yes', votes: 3 },
+        { text: 'No', votes: 1 },
+      ],
+      multiple: false,
+      expiresAt: '2026-01-02T00:00:00Z',
+      votersCount: null,
+    });
+    const cap2 = (await postsFromDb(handle.sqlite)).find((p: any) => p.captureId === 'cap-2');
+    expect(cap2.poll).toBeNull();
   });
 
   // #290: same JSON-column round trip, but empty-array (not null) is the

@@ -16,7 +16,9 @@
     "Misskey の動画: misskey.io の @ai（1200件超を走査）に現存せず未登録。",
     "Bluesky の record.tags[]（tag ファセットとは別のタグ欄・#177 はこことも合流する）: bsky.app と",
     "  atproto.com の公開投稿200件に1件も無く未登録。公式クライアントから設定できない欄のため。",
-    "Mastodon の投票は #464 で登録済み（@Gargron）＝この穴は埋まった。"
+    "Mastodon の投票は #464 で登録済み（@Gargron）＝この穴は埋まった。",
+    "X の投票（poll カード）は #179 で登録済み＝ただし候補1本。Bluesky には投票機能そのものが無い",
+    "  （app.bsky.feed.post の embed は images/video/gallery/external/record/recordWithMedia のみ・2026-08-02 確認）＝穴ではない。"
   ],
   "platforms": {
     "x": [
@@ -54,6 +56,15 @@
           { "url": "https://x.com/JAXA_jp/status/1943219646368460881", "note": "entities.hashtags の観測点（#177）＝4個・全角混じり" },
           { "url": "https://x.com/tnsc_JAXA/status/1885944672390168845", "note": "4個・全角混じり" },
           { "url": "https://x.com/TheEllenShow/status/440322224407314432", "note": "2014年・英字1個" }
+        ]
+      },
+      {
+        "label": "poll",
+        "candidates": [
+          {
+            "url": "https://x.com/elonmusk/status/1604617643973124097",
+            "note": "投票は X ではツイートの欄でなく legacy カード（card.name='poll2choice_text_only'・binding_values に choiceN_label/choiceN_count/end_datetime_utc）＝#179 の観測点。候補が1本しかない＝X には公開の投稿一覧APIが無く、投票付き投稿だけを機械的に探す手段が無い（quote と同じ事情）。見つけ次第足す"
+          }
         ]
       },
       {

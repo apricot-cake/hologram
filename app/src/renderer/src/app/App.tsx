@@ -10,6 +10,7 @@ import { CompareHost } from '../compare/index.tsx';
 import { SettingsHost } from '../settings/index.tsx';
 import { BulkTagDialogHost } from '../selection/BulkTagDialog.tsx';
 import { TriageHost } from '../triage/index.tsx';
+import { PracticeHost } from '../practice/index.tsx';
 import { AliasPickerHost } from '../posters/AliasPicker.tsx';
 import { Toaster } from '@/components/ui/sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -19,7 +20,7 @@ import { handleShortcutZoomKey } from '../services/image-zoom.ts';
 import { handleShortcutClipboardKey } from '../services/clipboard-intake.ts';
 import { handleShortcutPrivacyKey } from '../services/privacy-mode.ts';
 import { onPostsChanged } from '../services/posts.ts';
-import { getLibraryStatus } from '../services/library-path.ts';
+import { getLibraryStatus, getExtensionContact } from '../services/library-path.ts';
 import { subscribePosterShape as subscribePosterDisplay, subscribeShape as subscribeDisplay } from '../services/display.ts';
 import { onChange as foldersOnChange } from '../services/folders.ts';
 import { set as storeSet, subscribe as storeSubscribe } from '../services/store.ts';
@@ -84,6 +85,14 @@ function AppBoot() {
 // Retry/repoint. Independent of AppBoot/bootApp: the DB-backed post list loads either
 // way (the DB does not know or care whether the save folder exists), this effect only
 // decides whether AppShell shows it.
+//
+// Also seeds 'extensionContacted' (#71), the same one-shot shape: whether the
+// native-messaging bridge has EVER touched its contact marker. Folded into this
+// gate rather than a second component — both are boot-time reads with no push
+// channel behind them, and empty/EmptyState.tsx's firstRun decision (services/
+// library-status.ts's libraryEmptyVariant) needs both this and libraryLoaded to
+// have landed before it can tell the install-guide state apart from an ordinary
+// empty library.
 function LibraryStatusGate() {
   useEffect(() => {
     getLibraryStatus()
@@ -93,6 +102,12 @@ function LibraryStatusGate() {
       })
       .catch(() => {
         /* leave the default (not missing) — the normal grid still tries to load */
+      });
+    getExtensionContact()
+      .then((status) => storeSet('extensionContacted', !!(status && status.contacted)))
+      .catch(() => {
+        /* leave the default (undefined/falsy) — reads as "no contact yet", the
+         * safer of the two wrong guesses (worst case: the guide flashes once). */
       });
   }, []);
   return null;
@@ -298,6 +313,9 @@ export function App() {
           of the shell's content-column swap (AppShell), so it composes cleanly with
           whatever mode/tab was showing underneath when it closes. */}
       <TriageHost />
+      {/* Practice mode (#103) -- croquis/gesture-drawing practice off the current
+          filter results, a full-screen dialog same shape as TriageHost above. */}
+      <PracticeHost />
       <LightboxHost />
       <CompareHost />
       {/* Settings — a shadcn Dialog, so it portals onto document.body itself. */}

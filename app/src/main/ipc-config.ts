@@ -1,14 +1,21 @@
 'use strict';
 
 // Config / preferences / tabs IPC handlers, extracted from main.js (mechanical move —
-// logic unchanged). These touch config.json (get-config/set-extension-id/get-prefs/
-// set-pref), the tabs.json org file (get/set-tabs), the window title-bar overlay, and
-// static build info (app-info). Core helpers arrive via ctx; the pref key
-// allow-list lives here (used only by these handlers).
+// logic unchanged). These touch config.json (get-config/get-prefs/set-pref), the
+// tabs.json org file (get/set-tabs), the window title-bar overlay, and static build
+// info (app-info). Core helpers arrive via ctx; the pref key allow-list lives here
+// (used only by these handlers).
+//
+// get-extension-contact (#71) reads a marker OUTSIDE config.json (native-host/
+// paths.cts's extensionContactPath, touched by the bridge — see that module's
+// header) rather than going through ctx: it is a plain existence check with no
+// dependency on any mutable main-process state, so it imports the path helper
+// directly the same way lib-config.ts / lib-thumbnails.ts do.
 import { ipcMain, app } from 'electron';
 import fs from 'node:fs';
+import { extensionContactPath } from './native-host.ts';
 import type { HologramConfig, IpcContext } from './ipc-context.ts';
-import type { AppInfo, AppPrefs, ConfigSummary, ExtensionIdResult, LibraryStatus, OkResult, TabsState } from './ipc-payloads.ts';
+import type { AppInfo, AppPrefs, ConfigSummary, ExtensionContactStatus, LibraryStatus, OkResult, TabsState } from './ipc-payloads.ts';
 
 // --- Preferences (language / layoutMode / skipDeleteConfirm / …) ---
 // Post sort is NOT here: it lives in the per-tab state (tabs-builder.ts's
@@ -58,13 +65,8 @@ const legacyPosterGridSize = (cfg: HologramConfig): number | null => {
   return Number.isFinite(px) ? px : null;
 };
 
-// Chrome extension ids are exactly 32 chars of a–p. The id crosses a trust
-// boundary (IPC arg → native-messaging manifest allowed_origins), so anything
-// else is coerced to '' — same handling as an empty id (see install.js).
-const VALID_EXT_ID = /^[a-p]{32}$/;
-
 function register(ctx: IpcContext) {
-  const { readConfig, writeConfig, invalidateConfigCache, getSaveFolder, getDbWriter, installer, getWin, getLibraryStatus } = ctx;
+  const { readConfig, writeConfig, getSaveFolder, getDbWriter, getWin, getLibraryStatus } = ctx;
 
   ipcMain.handle('get-config', (): ConfigSummary => {
     const cfg = readConfig();
@@ -76,31 +78,11 @@ function register(ctx: IpcContext) {
   // see empty/LibraryMissingState.tsx. Always a fresh check, not a cached push.
   ipcMain.handle('get-library-status', (): LibraryStatus => getLibraryStatus());
 
-  ipcMain.handle('set-extension-id', (_event, id): ExtensionIdResult => {
-    const cfg = readConfig();
-    const trimmed = typeof id === 'string' ? id.trim() : '';
-    cfg.extensionId = VALID_EXT_ID.test(trimmed) ? trimmed : '';
-    writeConfig(cfg);
-    try {
-      // Update only the manifest's allowed origin; keep the existing launcher.
-      if (fs.existsSync(installer.manifestPath())) {
-        installer.updateAllowedOrigin(cfg.extensionId);
-      } else {
-        installer.install({ exe: process.execPath, runAsNode: true, extensionId: cfg.extensionId });
-      }
-    } catch (err) {
-      console.error('Failed to update native host origin:', err);
-    } finally {
-      // install() persists extensionId into config.json ITSELF (install.cts
-      // persistExtensionId) instead of coming back through writeConfig, so the
-      // config cache cannot know the file moved. Today it writes the same id we
-      // just wrote and the file does not change — drop the cache anyway rather
-      // than let that coincidence be what keeps the cache honest. In `finally`
-      // because a throw partway through still leaves the file possibly rewritten.
-      invalidateConfigCache();
-    }
-    return { extensionId: cfg.extensionId };
-  });
+  // #71: whether the bridge has EVER touched its contact marker — see this
+  // file's header and paths.cts's extensionContactPath. A fresh existence
+  // check every call, same shape as get-library-status above; nothing writes
+  // this file from the app side, so there is no cache to invalidate.
+  ipcMain.handle('get-extension-contact', (): ExtensionContactStatus => ({ contacted: fs.existsSync(extensionContactPath()) }));
 
   // Window controls. The min/max/close buttons are drawn by the app (renderer DOM), not by
   // the OS overlay, so the window commands they used to carry natively come over IPC now.

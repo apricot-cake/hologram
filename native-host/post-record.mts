@@ -84,6 +84,20 @@ export interface QuotedPostShape {
   media: MediaItemShape[];
 }
 
+// #179: one choice of a post's poll, and the poll itself. Mirrors
+// extension/utils/extractor/types.ts's PollChoice / Poll -- same fields, same
+// "snapshot of what the poll said at save time, no vote is ever cast" scope.
+export interface PollChoiceShape {
+  text: string;
+  votes: number | null;
+}
+export interface PollShape {
+  choices: PollChoiceShape[];
+  multiple: boolean | null;
+  expiresAt: string | null;
+  votersCount: number | null;
+}
+
 export interface PostRecordShape {
   captureId: string;
   assetClass: string;
@@ -157,6 +171,10 @@ export interface PostRecordShape {
   // gave the extractor nothing to build one from.
   quotedPost: QuotedPostShape | null;
   replyToPost: QuotedPostShape | null;
+  // #179: the poll attached to this post (X / Misskey / Mastodon), null on
+  // every post without one. See PollShape above and
+  // extension/utils/extractor/types.ts's Poll for the per-platform sourcing.
+  poll: PollShape | null;
   // pixiv series membership (#188) — see extension/utils/extractor/types.ts's
   // PostRecord.seriesId/seriesTitle/seriesOrder for the sourcing. All three
   // null on every non-pixiv record and on a pixiv work that isn't in a series.
@@ -271,6 +289,27 @@ function normQuotedPost(v: unknown): QuotedPostShape | null {
     cw: normStr(q.cw),
     media: normMedia(q.media),
   };
+}
+
+// #179: all-or-nothing like normQuotedPost above -- a poll with no readable
+// choice list is not a poll, and an empty one would render as a survey nobody
+// could have answered. A single malformed CHOICE is dropped rather than
+// failing the whole poll (unlike normFrames, where one bad entry desynchronizes
+// every later frame; choices carry no such cross-entry dependency), but a
+// choice with no text is dropped rather than kept as an unlabelled bar.
+function normPoll(v: unknown): PollShape | null {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return null;
+  const p = v as Record<string, unknown>;
+  if (!Array.isArray(p.choices)) return null;
+  const choices: PollChoiceShape[] = [];
+  for (const c of p.choices) {
+    if (!c || typeof c !== 'object') continue;
+    const { text, votes } = c as Record<string, unknown>;
+    if (typeof text !== 'string' || !text) continue;
+    choices.push({ text, votes: normNum(votes) });
+  }
+  if (!choices.length) return null;
+  return { choices, multiple: normBool(p.multiple), expiresAt: normStr(p.expiresAt), votersCount: normNum(p.votersCount) };
 }
 
 function normMedia(v: unknown): MediaItemShape[] {
@@ -413,6 +452,7 @@ export function normalizePostRecord(input: PostRecordInput, now: () => string = 
     replyToId: normStr(input.replyToId),
     quotedPost: normQuotedPost(input.quotedPost),
     replyToPost: normQuotedPost(input.replyToPost),
+    poll: normPoll(input.poll),
     seriesId: normStr(input.seriesId),
     seriesTitle: normStr(input.seriesTitle),
     seriesOrder: normNum(input.seriesOrder),

@@ -409,6 +409,47 @@ export function makeInspector(deps: InspectorBuilderDeps) {
     };
   }
 
+  // #179: the post's poll, as the inspector shows it. Read-only by design --
+  // the choices are results, never controls (see PollCard.tsx).
+  //
+  // The percentage denominator is the number of PEOPLE where the platform says
+  // it (Mastodon's votersCount) and the number of VOTES otherwise: on a
+  // multiple-choice poll those differ, and dividing by total votes would make
+  // the bars sum to 100% while telling nobody what share of voters picked each
+  // choice. Mastodon's own client draws it the same way.
+  //
+  // Every choice with a null tally (Mastodon hides results until the viewer
+  // votes; we never vote) yields no number and no bar, rather than a 0 that
+  // would read as "nobody picked this".
+  function pollCardOf(poll: any): HologramPollCardModel | null {
+    const choices = poll && Array.isArray(poll.choices) ? poll.choices.filter((c: any) => c && typeof c.text === 'string') : [];
+    if (!choices.length) return null;
+    const counted = choices.filter((c: any) => typeof c.votes === 'number');
+    const totalVotes = counted.reduce((s: number, c: any) => s + c.votes, 0);
+    const denom = typeof poll.votersCount === 'number' && poll.votersCount > 0 ? poll.votersCount : totalVotes;
+    const meta: string[] = [];
+    if (poll.multiple) meta.push(deps.t('pollMultiple'));
+    if (counted.length) meta.push(deps.t('pollVotes', [formatCount(totalVotes)]));
+    else meta.push(deps.t('pollResultsHidden'));
+    if (typeof poll.votersCount === 'number') meta.push(deps.t('pollVoters', [formatCount(poll.votersCount)]));
+    const deadline = localeDateTime(poll.expiresAt);
+    if (deadline) meta.push(deps.t('pollDeadline', [deadline]));
+    return {
+      label: deps.t('pollCardLabel'),
+      choices: choices.map((c: any) => {
+        const votes: number | null = typeof c.votes === 'number' ? c.votes : null;
+        const percent = votes != null && denom > 0 ? Math.round((votes / denom) * 1000) / 10 : null;
+        return {
+          text: c.text,
+          votesLabel: votes != null ? deps.t('pollVotes', [formatCount(votes)]) : '',
+          percentLabel: percent != null ? `${percent}%` : '',
+          percent,
+        };
+      }),
+      metaLabel: meta.join('  ・  '),
+    };
+  }
+
   // Click-through (2026-07-27 design comment on #180): an independently-saved
   // copy navigates in-app; nothing saved opens the sub-record's own URL
   // externally (the existing https-only open-external route). The in-app
@@ -475,6 +516,10 @@ export function makeInspector(deps: InspectorBuilderDeps) {
     // #180: rendered directly under the post's own bodyText (Inspector.tsx) —
     // the same nesting a quoted-tweet/renote card sits in on the source platforms.
     const quotedCards = [quotedCardOf(p.quotedPost, 'quote'), quotedCardOf(p.replyToPost, 'reply')].filter((c): c is HologramQuotedCardModel => !!c);
+    // #179: rendered right after those, still directly under the post's own
+    // text — the post text IS the poll's question on every platform that has
+    // polls, so nothing may come between them.
+    const pollCard = pollCardOf(p.poll);
     const thumbFile = g.files[0] || captureFile(p);
     // Reverse image search needs a PUBLIC image URL. media[].url keeps the
     // original CDN URL (pbs.twimg.com / cdn.bsky.app / instance media / pximg);
@@ -504,6 +549,7 @@ export function makeInspector(deps: InspectorBuilderDeps) {
       thumbSrc: thumbFile ? deps.fileSrc(thumbFile, 480) : null,
       onThumbClick: thumbFile ? () => deps.openQuickView(g) : null,
       quotedCards,
+      pollCard: pollCard || undefined,
       platformLabel: (p.platform || '').toUpperCase(),
       avatarSrc,
       authorName: p.displayName || '',

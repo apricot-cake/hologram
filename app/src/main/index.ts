@@ -41,6 +41,7 @@ import * as ipcWindow from './ipc-window.ts';
 import * as ipcTrash from './ipc-trash.ts';
 import * as ipcBackup from './ipc-backup.ts';
 import * as ipcTransfer from './ipc-transfer.ts';
+import * as ipcTagVocab from './ipc-tag-vocab.ts';
 import * as ipcWatchImport from './ipc-watch-import.ts';
 import { createWatchImportManager } from './lib-watch-import.ts';
 import type { IpcContext } from './ipc-context.ts';
@@ -447,8 +448,8 @@ function ensureHostRegistered() {
 // below, which takes resolveInFolder from here).
 
 // --- IPC ---
-// Config / prefs / tabs handlers (get-config / set-extension-id / get-prefs / set-pref /
-// app-info / get-tabs / set-tabs / window-control) were extracted to
+// Config / prefs / tabs handlers (get-config / get-extension-contact / get-prefs /
+// set-pref / app-info / get-tabs / set-tabs / window-control) were extracted to
 // ./ipc-config.js (registered via ipcConfig.register below).
 
 // Posts handlers (list-posts / list-posts-delta / image-data-url) were extracted to
@@ -592,7 +593,6 @@ function registerExtractedIpc() {
     readConfig,
     writeConfig,
     invalidateConfigCache,
-    installer,
     APP_ICON,
     getTrashDir,
     baseOf,
@@ -635,6 +635,7 @@ function registerExtractedIpc() {
   ipcTrash.register(ctx);
   ipcBackup.register(ctx);
   ipcTransfer.register(ctx);
+  ipcTagVocab.register(ctx);
 }
 registerExtractedIpc();
 

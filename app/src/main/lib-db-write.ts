@@ -8,6 +8,17 @@
 import type Database from 'better-sqlite3';
 import { normFolders } from './lib-folder-tree.ts';
 import { normalizeTagName, normalizeTagNames } from '../../../native-host/tag-normalize.mts';
+import {
+  addTagParent as addTagParentImpl,
+  deleteOrphanTags as deleteOrphanTagsImpl,
+  keepSeparateRename as keepSeparateRenameImpl,
+  mergeTags as mergeTagsImpl,
+  removeTagParent as removeTagParentImpl,
+  renameTag as renameTagImpl,
+  setTagKind as setTagKindImpl,
+  tagParentEdges as tagParentEdgesImpl,
+  tagVocabOverview as tagVocabOverviewImpl,
+} from './lib-db-tag-vocab.ts';
 
 type Sqlite = Database.Database;
 
@@ -454,6 +465,19 @@ function createDbWriter(sqlite: Sqlite) {
     restorePostFlags: (postId: string, rec: { userKind?: unknown; tagReviewed?: unknown; folders?: unknown; manualGroups?: unknown }) => transaction(() => applyPostFlagsFromRecord(sqlite, postId, rec)),
     deletePost: (postId: string) => transaction(() => deletePost(sqlite, postId)),
     deleteAllPosts: () => transaction(() => deleteAllPosts(sqlite)),
+    // #21 tag-vocabulary layer (lib-db-tag-vocab.ts). Reads run outside a
+    // transaction (better-sqlite3 read statements do not need one); every
+    // write below wraps its own multi-statement work in lib-db-tag-vocab.ts
+    // itself (mergeTags/keepSeparateRename), so this layer just forwards.
+    tagVocabOverview: () => tagVocabOverviewImpl(sqlite),
+    tagParentEdges: () => tagParentEdgesImpl(sqlite),
+    renameTag: (tagId: number, newName: string) => renameTagImpl(sqlite, tagId, newName),
+    keepSeparateRenameTag: (tagId: number, newName: string, displayParentTagId: number) => keepSeparateRenameImpl(sqlite, tagId, newName, displayParentTagId),
+    mergeTags: (sourceTagId: number, targetTagId: number) => mergeTagsImpl(sqlite, sourceTagId, targetTagId),
+    addTagParent: (tagId: number, parentTagId: number, isDisplay: boolean) => addTagParentImpl(sqlite, tagId, parentTagId, isDisplay),
+    removeTagParent: (tagId: number, parentTagId: number) => removeTagParentImpl(sqlite, tagId, parentTagId),
+    setTagKind: (tagId: number, kind: string | null) => setTagKindImpl(sqlite, tagId, kind),
+    deleteOrphanTags: (tagIds: number[]) => deleteOrphanTagsImpl(sqlite, tagIds),
   };
 }
 
