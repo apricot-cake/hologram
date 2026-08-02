@@ -1,0 +1,113 @@
+<!--
+  Hand-authored reproduction of a Mastodon timeline card's DOM shape for
+  #202 stage 2 (not a literal scraped capture). Unlike Misskey, Mastodon's
+  web client does not hash its class names — every class below
+  (.status__display-name, .display-name__html, .display-name__account,
+  .status__content, .status__relative-time, .status__action-bar__button,
+  .icon-reply/.icon-retweet/.icon-star, .icon-button__counter) is a literal,
+  version-stable string confirmed against mastodon/mastodon's own source
+  (main branch, read 2026-08-03: display_name/*.tsx, status/header.tsx,
+  status_action_bar/index.jsx, icon_button.tsx, relative_timestamp/index.tsx).
+  See extension/utils/extractor/mastodon.ts's extractMastodonDomMeta for the
+  full citations, including why this only covers the TIMELINE shape and not
+  the permalink page's differently-named .detailed-status__* tree.
+-->
+<!DOCTYPE html>
+<html>
+<head>
+  <meta name="application-name" content="Mastodon">
+</head>
+<body>
+
+  <!-- A plain status: text, author, ISO date, and all three countable
+       actions. -->
+  <div class="status" id="statusNormal">
+    <a class="status__display-name" title="@alice" href="/@alice">
+      <bdi><strong class="display-name__html">Alice Example</strong></bdi>
+      <span class="display-name__account">@alice</span>
+    </a>
+    <a href="/@alice/109252111" class="status__relative-time">
+      <time datetime="2026-01-02T03:04:05.000Z">10h</time>
+    </a>
+    <div class="status__content">Hello <img class="emojione" alt="🌸">world</div>
+    <div class="status__action-bar">
+      <button class="status__action-bar__button" title="Reply"><svg class="icon icon-reply"></svg></button>
+      <button class="status__action-bar__button" title="Boost"><svg class="icon icon-retweet"></svg><span class="icon-button__counter">34</span></button>
+      <button class="status__action-bar__button star-icon" title="Favourite"><svg class="icon icon-star"></svg><span class="icon-button__counter">56</span></button>
+      <button class="status__action-bar__button bookmark-icon" title="Bookmark"><svg class="icon icon-bookmark"></svg></button>
+    </div>
+  </div>
+
+  <!-- A federated remote author (acct carries @host), and a reply button
+       whose count DID render (repliesCount > 0). -->
+  <div class="status" id="statusRemoteAuthor">
+    <a class="status__display-name" title="@bob@example.social" href="/@bob@example.social">
+      <bdi><strong class="display-name__html">Bob</strong></bdi>
+      <span class="display-name__account">@bob@example.social</span>
+    </a>
+    <a href="/@bob@example.social/2002" class="status__relative-time">
+      <time datetime="2026-02-03T00:00:00.000Z">1d</time>
+    </a>
+    <div class="status__content">ふつうの投稿</div>
+    <div class="status__action-bar">
+      <button class="status__action-bar__button" title="Reply"><svg class="icon icon-reply"></svg><span class="icon-button__counter">1.2K</span></button>
+      <button class="status__action-bar__button" title="Boost"><svg class="icon icon-retweet"></svg></button>
+      <button class="status__action-bar__button star-icon" title="Favourite"><svg class="icon icon-star"></svg></button>
+      <button class="status__action-bar__button bookmark-icon" title="Bookmark"><svg class="icon icon-bookmark"></svg></button>
+    </div>
+  </div>
+
+  <!-- A reply thread's OWN reply icon variant (icon-reply-all), which must
+       still be found by the substring match. -->
+  <div class="status" id="statusReplyAll">
+    <a class="status__display-name" title="@carol" href="/@carol">
+      <bdi><strong class="display-name__html">Carol</strong></bdi>
+      <span class="display-name__account">@carol</span>
+    </a>
+    <a href="/@carol/3003" class="status__relative-time">
+      <time datetime="2026-03-04T00:00:00.000Z">5h</time>
+    </a>
+    <div class="status__content">reply-all shape</div>
+    <div class="status__action-bar">
+      <button class="status__action-bar__button" title="Reply all"><svg class="icon icon-reply-all"></svg><span class="icon-button__counter">2</span></button>
+    </div>
+  </div>
+
+  <!-- 4.4+ inline quote: a full nested .status renders INSIDE the quoting
+       post's own .status__content (quote_content.jsx's quote-inline
+       placeholder swap). Reading text/name/counts must resolve to the
+       QUOTING post, never the quoted one nested inside it — the one failure
+       mode with real cost. -->
+  <div class="status" id="statusQuote">
+    <a class="status__display-name" title="@dave" href="/@dave">
+      <bdi><strong class="display-name__html">Dave</strong></bdi>
+      <span class="display-name__account">@dave</span>
+    </a>
+    <a href="/@dave/4004" class="status__relative-time">
+      <time datetime="2026-04-05T00:00:00.000Z">2h</time>
+    </a>
+    <div class="status__content">
+      check this quote
+      <div class="status__quote">
+        <div class="status" id="statusQuoteInner">
+          <a class="status__display-name" title="@erin" href="/@erin">
+            <bdi><strong class="display-name__html">Erin</strong></bdi>
+            <span class="display-name__account">@erin</span>
+          </a>
+          <div class="status__content">quoted content, must not leak out</div>
+        </div>
+      </div>
+    </div>
+    <div class="status__action-bar">
+      <button class="status__action-bar__button" title="Reply"><svg class="icon icon-reply"></svg></button>
+    </div>
+  </div>
+
+  <!-- Selectors miss entirely (a redesign): no recognizable classes at all.
+       Must not throw, must fill nothing. -->
+  <div class="status" id="statusRedesigned">
+    <p>Something unrecognizable</p>
+  </div>
+
+</body>
+</html>

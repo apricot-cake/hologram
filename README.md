@@ -83,7 +83,7 @@ The text, author, date and engagement counts come from the platform's own API, f
 
 What that means depends on how you save:
 
-- **`Alt+S`** — the screenshot is saved either way, and the text and author are filled in from what the page is showing (X only so far). Counts read off the page are the rounded ones the page displays, not the exact figures the API gives.
+- **`Alt+S`** — the screenshot is saved either way, and some of what's missing is filled in from what the page is showing. Counts read off the page are the rounded ones the page displays, not the exact figures the API gives.
 - **The other ways of saving** — the picture you pointed at is saved, without the post's text and author.
 - If nothing about the post can be obtained and there is no picture to keep either — a post that has been deleted, or a video whose file only the platform's answer would name — **nothing is written at all**, rather than an empty entry.
 

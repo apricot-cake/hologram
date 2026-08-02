@@ -4,9 +4,10 @@
 // instance is an arbitrary host taken from the post URL, hence derivedApiHost.
 
 import { prepareScopedCaptureState } from './dom.ts';
+import { parseCount } from './dom-meta.ts';
 import { fileBasenameKey } from './media.ts';
 import { emptyRecord, htmlToText, normalizeHashtags, readJsonKeepingRaw, toIso } from './record.ts';
-import type { Extractor, LinkCard, Poll, PostRecord } from './types.ts';
+import type { DomMeta, Extractor, LinkCard, Poll, PostRecord } from './types.ts';
 
 // === DOM ===
 
@@ -60,6 +61,110 @@ function findMastodonPostElement(target: EventTarget | null): Element | null {
     el = el.parentElement;
   }
   return null;
+}
+
+// #202 stage 2: what the page itself shows for this status, so the fields
+// the instance's public API left null (a followers-only status, or an
+// instance with anonymous API access closed — see the module header) can
+// still be saved. Grounded in mastodon/mastodon's own source (main branch,
+// read 2026-08-03), not guesswork: unlike Misskey, Mastodon's web client
+// does NOT hash its class names — status_action_bar/index.jsx,
+// display_name/*.tsx and relative_timestamp/index.tsx all emit the literal
+// BEM-style classes matched below, the same kind of stable contract the
+// existing .status__quote / .detailed-status__datetime selectors already
+// lean on elsewhere in this file.
+//
+// SCOPED TO THE TIMELINE CARD SHAPE ONLY (.status__*): the permalink page's
+// OWN component (features/status/components/detailed_status.tsx) renders a
+// parallel but differently-named tree (.detailed-status__display-name, and
+// reblog/favourite/quote counts as plain .detailed-status__reblogs/
+// __favorites/__quotes links rather than the action bar's icon buttons) that
+// this does not target. Capturing a post from ITS OWN permalink page (still
+// possible — findMastodonPostElement's selector includes .detailed-status)
+// degrades to the same "selector missed, nothing filled" safe outcome as a
+// genuine redesign; it is not a crash risk either way.
+function mastodonReadText(el: Element): string {
+  let out = '';
+  for (const node of el.childNodes) {
+    if (node.nodeType === 3) {
+      out += node.nodeValue ?? '';
+      continue;
+    }
+    if (node.nodeType !== 1) continue;
+    const child = node as Element;
+    // Mastodon 4.4+ can render a quote INLINE inside the quoting post's own
+    // .status__content (a `quote-inline` placeholder token gets replaced by a
+    // full nested .status__quote box — status_content.jsx's own
+    // handleElement) — unlike X, where the quote card is a sibling of the
+    // text node and never a descendant, so this guard has no equivalent
+    // there. Skipping the subtree here is the only thing standing between a
+    // captured quote and this feature's one real failure mode: writing
+    // someone else's words into the quoting post's own text.
+    if (child.classList.contains('status__quote')) continue;
+    const tag = child.tagName.toLowerCase();
+    if (tag === 'img') out += child.getAttribute('alt') || '';
+    else if (tag === 'br') out += '\n';
+    else out += mastodonReadText(child);
+  }
+  return out;
+}
+
+// The first match that is not inside an embedded quote's own subtree — same
+// shape as x.ts's xOwn, needed for the same reason (a quoted status renders
+// its own .status__display-name / .status__content of its own).
+function mastodonOwn(post: Element, selector: string): Element | null {
+  for (const el of post.querySelectorAll(selector)) {
+    if (!el.closest('.status__quote')) return el;
+  }
+  return null;
+}
+
+// icon_button.tsx renders the pressable count as <span
+// class="icon-button__counter"><AnimatedNumber .../></span>, and
+// AnimatedNumber's own display value is ShortNumber — the same K/M/B (and,
+// per-locale, 万/億) abbreviated notation dom-meta.ts's parseCount already
+// exists to read, so no separate parsing is needed here.
+function mastodonActionCount(post: Element, iconClass: string): number | null {
+  const btn = mastodonOwn(post, `.status__action-bar__button:has([class*="${iconClass}"])`);
+  const counter = btn?.querySelector('.icon-button__counter');
+  return counter ? parseCount(mastodonReadText(counter)) : null;
+}
+
+function extractMastodonDomMeta(post: Element): DomMeta {
+  const meta: DomMeta = {};
+  if (!(post instanceof Element)) return meta;
+
+  // LinkedDisplayName (display_name/index.tsx) sets the wrapping <a>'s own
+  // title to "@acct" — reading the attribute is one step shorter than
+  // digging out .display-name__account's text and cannot be disturbed by
+  // custom-emoji markup the way the name itself can.
+  const nameLink = mastodonOwn(post, '.status__display-name');
+  if (nameLink) {
+    const acct = nameLink.getAttribute('title') || '';
+    if (acct.startsWith('@')) meta.screenName = acct.slice(1);
+    const nameEl = nameLink.querySelector('.display-name__html');
+    if (nameEl) meta.displayName = mastodonReadText(nameEl);
+  }
+
+  const textEl = mastodonOwn(post, '.status__content');
+  if (textEl) meta.text = mastodonReadText(textEl);
+
+  // relative_timestamp/index.tsx's <time dateTime> is the API's own
+  // created_at passed straight through — genuinely ISO, unlike Misskey's.
+  const timeEl = mastodonOwn(post, '.status__relative-time time[datetime]');
+  if (timeEl) meta.date = toIso(timeEl.getAttribute('datetime'));
+
+  const replies = mastodonActionCount(post, 'icon-reply'); // matches icon-reply AND icon-reply-all
+  if (replies != null) meta.replies = replies;
+  const reposts = mastodonActionCount(post, 'icon-retweet'); // boost_button.tsx's own icon id — reblogs + quotes combined, same as the API field
+  if (reposts != null) meta.reposts = reposts;
+  const likes = mastodonActionCount(post, 'icon-star');
+  if (likes != null) meta.likes = likes;
+  // No bookmark count exists to read (Mastodon never publishes one) and no
+  // view count exists in the UI at all — both stay permanently unset here,
+  // same as they are on every other platform this Issue does not name.
+
+  return meta;
 }
 
 // === API ===
@@ -304,9 +409,10 @@ const mastodon: Extractor = {
     prepareForCapture(post: Element) {
       return prepareScopedCaptureState('__snsCaptureMastodonNoHover', [post, post.parentElement]);
     },
+    extractDomMeta: extractMastodonDomMeta,
   },
 };
 
 export default mastodon;
-export { fetchMastodonStatus, findMastodonPostElement, getMastodonStatusLink, looksLikeMastodon, mastodonCustomEmojis, mastodonMedia, parseMastodonStatusLink };
+export { extractMastodonDomMeta, fetchMastodonStatus, findMastodonPostElement, getMastodonStatusLink, looksLikeMastodon, mastodonCustomEmojis, mastodonMedia, parseMastodonStatusLink };
 export type { MastodonStatusLink };

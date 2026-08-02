@@ -5,9 +5,10 @@
 // declares derivedApiHost — see the SSRF guard in index.ts.
 
 import { normalizeRect, prepareScopedCaptureState } from './dom.ts';
+import { parseCount } from './dom-meta.ts';
 import { fileBasenameKey } from './media.ts';
 import { emptyRecord, normalizeHashtags, readJsonKeepingRaw, toIso } from './record.ts';
-import type { Extractor, MediaIdentity, Poll, PostMediaElement, PostRect, PostRecord } from './types.ts';
+import type { DomMeta, Extractor, MediaIdentity, Poll, PostMediaElement, PostRect, PostRecord } from './types.ts';
 
 // === DOM ===
 
@@ -133,6 +134,123 @@ function parseMisskeyNoteLink(href: string): MisskeyNoteLink | null {
   } catch {
     return null;
   }
+}
+
+// #202 stage 2: what the page itself shows for this note, so the fields
+// misskey.io's API left null (a followers-only note, or an instance with
+// anonymous API access turned off) can still be saved. See dom-meta.ts's
+// header for the merge rule this feeds into — the site's only job is finding
+// the right elements.
+//
+// UNLIKE X, this can only cover author + engagement counts, never the note's
+// OWN TEXT: misskey.io's build (MisskeyIO/misskey, main branch, read
+// 2026-08-03) renders every note's style as Vue CSS Modules — MkNote.vue
+// writes `:class="$style.text"` on the body div, which compiles to an opaque
+// hashed token (confirmed live against misskey.io on the same date: an
+// unrelated widget's class names came back as "xoIiV"/"xBHTS", not anything
+// resembling the source's own names). There is no OTHER attribute or tag
+// that marks the text div apart from its siblings (the CW paragraph, the
+// media list, the poll, an embedded quote) — every one of them is an
+// unmarked <div>, and guessing by position risks the exact cross-post
+// mismatch this feature exists to avoid. Author name and engagement counts
+// avoid this because MkNoteHeader.vue's <header> and MkNote.vue's <footer>
+// are plain semantic elements, and the count buttons carry Tabler icon
+// classes (ti-arrow-back-up / ti-repeat / ti-heart / ti-plus / ti-minus) —
+// bundled as a versioned icon font, not hashed per build.
+//
+// Also unlike X, no date is extracted: MkTime.vue's <time> carries no
+// datetime attribute at all (only a `title` holding an Intl-formatted,
+// viewer-locale string, and relative/absolute text in the same vein) — the
+// same "never parse a human-readable date" rule dom-meta.ts's own header
+// states for X's <time> face applies here with no ISO attribute to fall
+// back on.
+const MISSKEY_REPLY_ICON = 'ti-arrow-back-up';
+const MISSKEY_RENOTE_ICON = 'ti-repeat';
+// Every icon the react button can show while anonymous cannot react on its
+// behalf: the default (ti-plus / ti-heart for a likeOnly note), and — since
+// the note being captured may be the viewer's OWN, already reacted to —
+// ti-minus (either build) and the fork's two-token "ti-filled ti-filled-heart"
+// (matched by the bare "heart" substring, since "ti-heart" itself is not a
+// substring of "ti-filled-heart").
+const MISSKEY_REACT_ICON_HINTS = ['heart', 'ti-plus', 'ti-minus'];
+
+function misskeyReadText(el: Element): string {
+  let out = '';
+  for (const node of el.childNodes) {
+    if (node.nodeType === 3) {
+      out += node.nodeValue ?? '';
+      continue;
+    }
+    if (node.nodeType !== 1) continue;
+    const child = node as Element;
+    const tag = child.tagName.toLowerCase();
+    if (tag === 'img') out += child.getAttribute('alt') || '';
+    else if (tag === 'br') out += '\n';
+    else out += misskeyReadText(child);
+  }
+  return out;
+}
+
+// The footer button whose own icon carries one of the given hints as a
+// substring — never a class EQUALITY check, since a hint like "ti-plus" must
+// also match a multi-class attribute value and "heart" must match both
+// "ti-heart" and "ti-filled-heart".
+function misskeyFooterButton(article: Element, iconHints: readonly string[]): Element | null {
+  for (const btn of article.querySelectorAll('footer button')) {
+    const icon = btn.querySelector('i');
+    const cls = icon?.className || '';
+    if (iconHints.some((hint) => cls.includes(hint))) return btn;
+  }
+  return null;
+}
+
+function misskeyFooterCount(article: Element, iconHints: readonly string[]): number | null {
+  const p = misskeyFooterButton(article, iconHints)?.querySelector('p');
+  return p ? parseCount(p.textContent) : null;
+}
+
+function extractMisskeyDomMeta(post: Element): DomMeta {
+  const meta: DomMeta = {};
+  const article = getMisskeyPrimaryArticle(post);
+  if (!(article instanceof Element)) return meta;
+
+  const header = article.querySelector('header');
+  if (header) {
+    // The name link: MkNoteHeader.vue renders exactly two <a> in this
+    // element, the author's (wrapping MkUserName) and the permalink's
+    // (wrapping MkTime) — the one WITHOUT a <time> child is the author's.
+    for (const link of header.querySelectorAll('a')) {
+      if (link.querySelector('time')) continue;
+      const label = misskeyReadText(link).trim();
+      if (label) meta.displayName ??= label;
+    }
+    // MkAcct.vue renders "@user" then, federated, a second "@host" span — the
+    // WRAPPING element's own text is the two concatenated ("@user@host"),
+    // which document order visits before either child span, so the first
+    // element anywhere in the header whose text starts with '@' is always
+    // that wrapper, never a lone span. Stripping the one leading '@' leaves
+    // exactly the "user@host" / "user" shape fetchMisskeyNote's own
+    // screenName already uses.
+    for (const el of header.querySelectorAll('div, span')) {
+      const label = misskeyReadText(el).trim();
+      if (label.startsWith('@')) {
+        meta.screenName ??= label.slice(1);
+        break;
+      }
+    }
+  }
+
+  const replies = misskeyFooterCount(article, [MISSKEY_REPLY_ICON]);
+  if (replies != null) meta.replies = replies;
+  const reposts = misskeyFooterCount(article, [MISSKEY_RENOTE_ICON]);
+  if (reposts != null) meta.reposts = reposts;
+  // Reaction counts default to HIDDEN on misskey.io (showReactionsCount's own
+  // documented default is false) — null here far more often than not is the
+  // correct, unforced answer, not a missed selector.
+  const likes = misskeyFooterCount(article, MISSKEY_REACT_ICON_HINTS);
+  if (likes != null) meta.likes = likes;
+
+  return meta;
 }
 
 // === Media identity (#238 — drag save + hover save on misskey.io) ===
@@ -411,6 +529,7 @@ const misskey: Extractor = {
     prepareForCapture(post: Element) {
       return prepareScopedCaptureState('__snsCaptureMisskeyNoHover', [post, getMisskeyPrimaryArticle(post)]);
     },
+    extractDomMeta: extractMisskeyDomMeta,
   },
 
   mediaIdentity: {
@@ -444,5 +563,5 @@ const misskey: Extractor = {
 };
 
 export default misskey;
-export { extractMisskeyIdentity, fetchMisskeyNote, findMisskeyPostElement, getMisskeyPermalink, isMisskeyPostMedia, looksLikeMisskey, misskeyCustomEmojis, misskeyMedia, parseMisskeyNoteLink };
+export { extractMisskeyDomMeta, extractMisskeyIdentity, fetchMisskeyNote, findMisskeyPostElement, getMisskeyPermalink, isMisskeyPostMedia, looksLikeMisskey, misskeyCustomEmojis, misskeyMedia, parseMisskeyNoteLink };
 export type { MisskeyNoteLink };
