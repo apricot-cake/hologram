@@ -84,6 +84,35 @@ describe('extractOgp: ページ自身の DOM から読む（fetch なし）', ()
   });
 });
 
+// #759: extractOgp is chrome.scripting.executeScript's `func` (background.ts).
+// Chrome serializes `func` to a source string and evaluates it with NO closure
+// over this module's scope (Chrome docs, chrome.scripting: "any bound
+// parameters and execution context will be lost") — a helper the function
+// merely closes over (module-scope metaContent/absolutize, before this fix)
+// disappears on the injected side even though every test above, which calls
+// extractOgp() directly, still sees it and passes. Reproduce that detachment
+// for real: pull the function's own source out with toString() and evaluate
+// it with `new Function`, which — like the real injection — builds a
+// function with no lexical access to this module's top-level bindings, only
+// the global object (document/location/URL, which installFixture puts there
+// same as above).
+describe('extractOgp: chrome.scripting.executeScript の直列化を通しても読める（#759）', () => {
+  let restore: () => void;
+  afterEach(() => restore?.());
+
+  test('関数ソースを new Function で評価した直列化コピーが、直接呼んだ結果と一致する', () => {
+    restore = installFixture('bookmark-ogp.html', 'https://example.com/some/page?ref=x');
+    const serialized = new Function(`return (${extractOgp.toString()})`)() as typeof extractOgp;
+    expect(serialized()).toEqual(extractOgp());
+  });
+
+  test('og:image が無いページでも直列化コピーが直接呼んだ結果と一致する', () => {
+    restore = installFixture('bookmark-plain.html', 'https://plain.example/some/path');
+    const serialized = new Function(`return (${extractOgp.toString()})`)() as typeof extractOgp;
+    expect(serialized()).toEqual(extractOgp());
+  });
+});
+
 describe('buildBookmarkMeta: OGP の読みを保存レコードへ合成する', () => {
   test('platform は常に null（#195 2026-08-02 設計コメント #2）', () => {
     const rec = buildBookmarkMeta({ title: 'T', description: 'D', image: 'https://cdn.example.com/i.jpg', siteName: 'Site', url: 'https://example.com/a' }, 'https://example.com/a');

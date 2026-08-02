@@ -35,31 +35,36 @@ export interface OgpResult {
   url: string | null;
 }
 
-function metaContent(prop: string): string | null {
-  const el = (document.querySelector(`meta[property="${prop}"]`) as HTMLMetaElement | null) || (document.querySelector(`meta[name="${prop}"]`) as HTMLMetaElement | null);
-  const v = el?.getAttribute('content');
-  return v && v.trim() ? v.trim() : null;
-}
-
-// og:image is routinely a relative or protocol-relative URL in the wild — the
-// native host's media downloader (like every save path's media[]) expects an
-// absolute one. Resolved against the page's own base, which also folds a
-// protocol-relative "//host/path" onto the page's own scheme.
-function absolutize(u: string | null): string | null {
-  if (!u) return null;
-  try {
-    return new URL(u, document.baseURI).href;
-  } catch {
-    return null;
-  }
-}
-
-// Runs INSIDE the tab (chrome.scripting.executeScript's `func`, background.ts),
-// so it must be self-contained: no closures over anything outside the page's
-// own globals. Reads only whatever the browser already rendered — no fetch, no
-// network, so an untrusted page can make this read only its own document, the
-// same access any content script already has.
+// Runs INSIDE the tab (chrome.scripting.executeScript's `func`, background.ts).
+// chrome.scripting serializes `func` to a source string and evaluates it with
+// NO closure over this module's scope (Chrome docs, chrome.scripting: "any
+// bound parameters and execution context will be lost") — so metaContent()
+// and absolutize() are declared INSIDE this function, not at module scope, or
+// the injected copy throws ReferenceError before it reads anything (#759). The
+// same self-containment requirement is why this function still takes no
+// arguments and touches only the page's own globals (document/location): no
+// fetch, no network, so an untrusted page can make this read only its own
+// document, the same access any content script already has.
 export function extractOgp(): OgpResult {
+  function metaContent(prop: string): string | null {
+    const el = (document.querySelector(`meta[property="${prop}"]`) as HTMLMetaElement | null) || (document.querySelector(`meta[name="${prop}"]`) as HTMLMetaElement | null);
+    const v = el?.getAttribute('content');
+    return v && v.trim() ? v.trim() : null;
+  }
+
+  // og:image is routinely a relative or protocol-relative URL in the wild —
+  // the native host's media downloader (like every save path's media[])
+  // expects an absolute one. Resolved against the page's own base, which also
+  // folds a protocol-relative "//host/path" onto the page's own scheme.
+  function absolutize(u: string | null): string | null {
+    if (!u) return null;
+    try {
+      return new URL(u, document.baseURI).href;
+    } catch {
+      return null;
+    }
+  }
+
   const canonical = (document.querySelector('link[rel="canonical"]') as HTMLLinkElement | null)?.href || null;
   return {
     title: metaContent('og:title') || document.title || null,
