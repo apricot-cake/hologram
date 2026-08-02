@@ -27,6 +27,7 @@
 // React ancestor cheap to re-render on every toggle — the same reasoning that already put
 // data-theme on <html> rather than a className prop drilled through every themed component.
 import { hologramIpc } from './ipc.ts';
+import { isTypingTarget, registerShortcut, tryRun } from './shortcut-registry.ts';
 
 const KEY = 'hologram-privacy-mode';
 const ATTR = 'data-privacy-mode';
@@ -136,11 +137,22 @@ export async function load(): Promise<void> {
 // input/textarea/contentEditable check every other shortcut here starts with — a real dialog
 // input (the command palette's search field, the "DELETE ALL" confirm keyword) is itself an
 // INPUT, so it is already covered without a paletteIsOpen()/confirmGet() check.
+// #246: the key itself (P, no modifier — Shift ignored, see shortcut-registry.ts's
+// ignoreShift doc) now lives in the registry; this keeps only the guard (still the loosest
+// of any global shortcut — no confirm/lightbox/settings/palette check, see above) and the action.
+function canExecutePrivacyToggle(e: KeyboardEvent): boolean {
+  return !isTypingTarget(e);
+}
+
+registerShortcut({
+  id: 'privacy.toggle',
+  titleKey: 'shortcutPrivacyToggle',
+  defaultCombo: 'p',
+  ignoreShift: true,
+  canExecute: canExecutePrivacyToggle,
+  perform: toggle,
+});
+
 export function handleShortcutPrivacyKey(e: KeyboardEvent): void {
-  if (e.ctrlKey || e.metaKey || e.altKey) return;
-  if ((e.key || '').toLowerCase() !== 'p') return;
-  const t = e.target as HTMLElement | null;
-  if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
-  e.preventDefault();
-  toggle();
+  tryRun('privacy.toggle', e);
 }

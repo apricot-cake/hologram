@@ -46,6 +46,7 @@ const PREF_KEYS = [
   'triagePinnedTags',
   'webSearchChecked',
   'fediverseHomeHosts',
+  'shortcutOverrides',
 ];
 
 // --- One-off read of the retired 3-value densities (#618 posts / #630 posters) ---
@@ -179,6 +180,10 @@ function register(ctx: IpcContext) {
       // #207: web-search popover prefs - both null when never set (the popover itself supplies the default checked set / no home instance).
       webSearchChecked: Array.isArray(cfg.webSearchChecked) ? cfg.webSearchChecked.filter((v: unknown): v is string => typeof v === 'string') : null,
       fediverseHomeHosts: cfg.fediverseHomeHosts && typeof cfg.fediverseHomeHosts === 'object' ? { misskey: typeof cfg.fediverseHomeHosts.misskey === 'string' ? cfg.fediverseHomeHosts.misskey : null, mastodon: typeof cfg.fediverseHomeHosts.mastodon === 'string' ? cfg.fediverseHomeHosts.mastodon : null } : null,
+      // #246: per-command key overrides (command id -> "Ctrl+Shift+F" style combo string).
+      // Only overridden ids appear here; everything else stays on its registered default —
+      // see services/shortcut-registry.ts, the single source of truth for the key data itself.
+      shortcutOverrides: cfg.shortcutOverrides && typeof cfg.shortcutOverrides === 'object' ? cfg.shortcutOverrides : {},
     };
   });
 

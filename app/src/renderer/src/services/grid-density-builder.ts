@@ -15,6 +15,7 @@
 import { clampGridSize, clampPosterGridSize, currentPosterShape, currentShape, GRID_MAX, gridMin, gutterFor, LIST_MAX, LIST_MIN, POSTER_GRID_MAX, posterGridMin, posterGutterFor, posterShapeSnapshot, shapeSnapshot } from './display.ts';
 import { gridWidth, scroller } from './content-area.ts';
 import { sizeFor, sliderTrack, trackCols, thumbW } from './geometry.ts';
+import { isTypingTarget, registerShortcut, tryRun } from './shortcut-registry.ts';
 import { set as storeSet } from './store.ts';
 import { resolveZoomAnchor } from './zoom-anchor.ts';
 import type { ZoomAnchor } from './zoom-anchor.ts';
@@ -158,20 +159,35 @@ export function makeGridDensity(deps: GridDensityDeps) {
   // (the post grid or the poster grid). It steps the same track the
   // display popover's Slider reads — there is no slider element to poke anymore.
   // Registration lives in the GlobalShortcuts component (app/App.tsx).
-  function handleShortcutSizeKey(e: KeyboardEvent) {
-    if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
-    if (e.key !== '-' && e.key !== '=' && e.key !== '+') return;
-    const t = e.target as HTMLElement | null;
-    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
-    e.preventDefault();
+  //
+  // #246: the two chords now live in the registry as separate, independently-rebindable
+  // commands (size up / size down); this keeps the guard + the step logic. Both chords are
+  // ignoreShift (the original didn't check e.shiftKey either) — '+' normalizes onto '=' in
+  // shortcut-registry.ts's normalizeKey, so a physical Numpad+ or a Shift+= both still land
+  // on the size-up command, same as before.
+  //
+  // preventDefault fires as soon as the input-focus guard passes, same as the original —
+  // whether the step actually moves anything (there IS a size axis here, and this isn't
+  // already the min/max stop) is decided inside the action, not the guard.
+  function stepSize(dir: 1 | -1) {
     const posters = deps.getBrowseMode() === 'posters';
     const tr = posters ? computePosterSizeTrack() : computeSizeTrack();
     // No size axis here (poster list view), or only one stop is geometrically possible.
     if (!tr || tr.single) return;
-    const next = Math.max(tr.min, Math.min(tr.max, tr.value + (e.key === '-' ? -tr.step : tr.step)));
+    const next = Math.max(tr.min, Math.min(tr.max, tr.value + dir * tr.step));
     if (next === tr.value) return;
     if (posters) setPosterSizeFromSlider(next, tr.min, tr.max);
     else setSizeFromSlider(next, tr.min, tr.max, true);
+  }
+  function canExecuteSizeStep(e: KeyboardEvent) {
+    return !isTypingTarget(e);
+  }
+  registerShortcut({ id: 'grid.sizeIncrease', titleKey: 'shortcutSizeIncrease', defaultCombo: 'Ctrl+=', ignoreShift: true, canExecute: canExecuteSizeStep, perform: () => stepSize(1) });
+  registerShortcut({ id: 'grid.sizeDecrease', titleKey: 'shortcutSizeDecrease', defaultCombo: 'Ctrl+-', ignoreShift: true, canExecute: canExecuteSizeStep, perform: () => stepSize(-1) });
+
+  function handleShortcutSizeKey(e: KeyboardEvent) {
+    if (tryRun('grid.sizeIncrease', e)) return;
+    tryRun('grid.sizeDecrease', e);
   }
 
   // Ctrl+wheel steps the same track by one notch (Explorer standard; a trackpad pinch

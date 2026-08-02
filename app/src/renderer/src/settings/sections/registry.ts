@@ -1,9 +1,10 @@
 import type { ComponentType } from 'react';
-import { Palette, Languages, Database, TriangleAlert, Info } from 'lucide-react';
+import { Palette, Languages, Database, Keyboard, TriangleAlert, Info } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { Appearance } from './Appearance.tsx';
 import { Language } from './Language.tsx';
 import { Data } from './Data.tsx';
+import { Shortcuts } from './Shortcuts.tsx';
 import { Danger } from './Danger.tsx';
 import { About } from './About.tsx';
 
@@ -19,6 +20,7 @@ export const SECTIONS: { id: string; titleKey: string; Icon: LucideIcon; Compone
   { id: 'appearance', titleKey: 'themeTitle', Icon: Palette, Component: Appearance },
   { id: 'language', titleKey: 'langTitle', Icon: Languages, Component: Language },
   { id: 'data', titleKey: 'dataTitle', Icon: Database, Component: Data },
+  { id: 'shortcuts', titleKey: 'shortcutsSectionTitle', Icon: Keyboard, Component: Shortcuts },
   { id: 'danger', titleKey: 'dangerTitle', Icon: TriangleAlert, Component: Danger },
   { id: 'about', titleKey: 'aboutTitle', Icon: Info, Component: About },
 ];

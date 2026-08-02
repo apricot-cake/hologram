@@ -14,6 +14,7 @@
 import { get as confirmGet } from './confirm.ts';
 import { isOpen as lightboxIsOpen } from './lightbox.ts';
 import { isOpen as settingsIsOpen } from './settings.ts';
+import { isTypingTarget, registerShortcut, tryRun } from './shortcut-registry.ts';
 
 // Wheel-zoom tuning, now shared by the toolbar's ± (#134 → #150): one wheel notch
 // and one button press are the SAME multiplicative step, so the two inputs cannot
@@ -130,15 +131,34 @@ export function publish(view: ImageZoomView): void {
 // The registered controller IS the guard for "an image is on screen": it only exists
 // while a zoomable slide is mounted. The overlay checks mirror the ←/→ handler in
 // image-tab/index.tsx — a dialog over the image view owns the keyboard.
+// #246: the two chords (Ctrl+0 / Ctrl+1) now live in the registry as separate,
+// independently-rebindable commands; this keeps the shared guard chain and the two actions.
+// canExecute's `!state.controller` check IS #246's acceptance criterion for "registered but
+// nothing to run" ("実行可否の判定が偽を返し、例外を投げずに何も起きない") in the flesh —
+// it was already exactly this shape before the registry existed.
+function canExecuteZoom(e: KeyboardEvent): boolean {
+  if (!state.controller) return false;
+  if (isTypingTarget(e)) return false;
+  if (lightboxIsOpen() || settingsIsOpen() || confirmGet()) return false;
+  return true;
+}
+
+registerShortcut({
+  id: 'zoom.fit',
+  titleKey: 'shortcutZoomFit',
+  defaultCombo: 'Ctrl+0',
+  canExecute: canExecuteZoom,
+  perform: () => state.controller?.fit(),
+});
+registerShortcut({
+  id: 'zoom.actual',
+  titleKey: 'shortcutZoomActual',
+  defaultCombo: 'Ctrl+1',
+  canExecute: canExecuteZoom,
+  perform: () => state.controller?.actual(),
+});
+
 export function handleShortcutZoomKey(e: KeyboardEvent): void {
-  if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return;
-  if (e.key !== '0' && e.key !== '1') return;
-  const ctl = state.controller;
-  if (!ctl) return;
-  const t = e.target as HTMLElement | null;
-  if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
-  if (lightboxIsOpen() || settingsIsOpen() || confirmGet()) return;
-  e.preventDefault();
-  if (e.key === '0') ctl.fit();
-  else ctl.actual();
+  if (tryRun('zoom.fit', e)) return;
+  tryRun('zoom.actual', e);
 }

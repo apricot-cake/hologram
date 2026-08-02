@@ -38,6 +38,7 @@ import { isOpen as paletteIsOpen } from './command-registry.ts';
 import { hologramIpc } from './ipc.ts';
 import { isOpen as lightboxIsOpen } from './lightbox.ts';
 import { isOpen as settingsIsOpen } from './settings.ts';
+import { isTypingTarget, registerShortcut, tryRun } from './shortcut-registry.ts';
 
 const KEY = 'hologram-panels-hidden';
 const DEFAULT_HIDDEN = false;
@@ -141,14 +142,27 @@ export async function load(): Promise<void> {
 //
 // Ctrl+B without Shift belongs to the sidebar alone and is handled by SidebarProvider's own
 // listener (components/ui/sidebar.tsx), which turns Shift away for this one.
+// #246: the chord itself (Ctrl+Shift+B) now lives in the registry; this keeps only the guard
+// (still the house convention — selection-builder.ts's Ctrl+A) and the action.
+function canExecutePanelsToggle(e: KeyboardEvent): boolean {
+  if (isTypingTarget(e)) return false;
+  if (confirmGet() || lightboxIsOpen()) return false;
+  if (settingsIsOpen()) return false;
+  if (paletteIsOpen()) return false;
+  return true;
+}
+
+// Plain Ctrl+B belongs to the sidebar alone (SidebarProvider's own listener,
+// components/ui/sidebar.tsx) — Shift is what tells the two apart, so it stays a real
+// (non-ignoreShift) part of this chord.
+registerShortcut({
+  id: 'panels.toggle',
+  titleKey: 'shortcutTogglePanels',
+  defaultCombo: 'Ctrl+Shift+b',
+  canExecute: canExecutePanelsToggle,
+  perform: toggle,
+});
+
 export function handleShortcutPanelsKey(e: KeyboardEvent): void {
-  if (!(e.ctrlKey || e.metaKey) || !e.shiftKey || e.altKey) return;
-  if ((e.key || '').toLowerCase() !== 'b') return;
-  const t = e.target as HTMLElement | null;
-  if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
-  if (confirmGet() || lightboxIsOpen()) return;
-  if (settingsIsOpen()) return;
-  if (paletteIsOpen()) return;
-  e.preventDefault();
-  toggle();
+  tryRun('panels.toggle', e);
 }

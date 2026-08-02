@@ -19,6 +19,7 @@ import { get as confirmGet } from './confirm.ts';
 import { isOpen as lightboxIsOpen } from './lightbox.ts';
 import { compile, normalize } from './search.ts';
 import { isOpen as settingsIsOpen } from './settings.ts';
+import { registerShortcut, tryRun } from './shortcut-registry.ts';
 
 // section is a "heading", not a type meant to branch behavior by kind.
 // 'folder' is the slot the design comments used to call 'collection' — an old name that
@@ -252,26 +253,41 @@ export function runEntry(entry: CommandEntry): void {
 // INPUT/TEXTAREA, but Ctrl+K's badge next to the search box advertises it as an entry point —
 // it would be a lie if you couldn't press it from there. Windows text input has no default
 // behavior bound to Ctrl+K, and Chrome itself uses Ctrl+K for the address-bar search).
-export function handleShortcutPaletteKey(e: KeyboardEvent): void {
-  if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return;
-  if ((e.key || '').toLowerCase() !== 'k') return;
+// #246: the chord (Ctrl+K) now lives in the registry; this keeps the guard + action.
+function canExecuteOpenPalette(): boolean {
   // Passes through while already open — the only way to close is unified to Esc and a background click (Base UI's dismiss).
-  if (open_) return;
-  if (confirmGet() || lightboxIsOpen()) return;
-  if (settingsIsOpen()) return;
-  e.preventDefault();
-  open();
+  if (open_) return false;
+  if (confirmGet() || lightboxIsOpen()) return false;
+  if (settingsIsOpen()) return false;
+  return true;
+}
+
+registerShortcut({
+  id: 'palette.open',
+  titleKey: 'shortcutOpenPalette',
+  defaultCombo: 'Ctrl+k',
+  canExecute: canExecuteOpenPalette,
+  perform: open,
+});
+
+export function handleShortcutPaletteKey(e: KeyboardEvent): void {
+  tryRun('palette.open', e);
 }
 
 // #29: Ctrl/Cmd+Shift+F opens the palette straight into full-text search mode —
 // the design's second entry point, next to the palette's own "本文を検索" footer
 // row. Same guard shape as handleShortcutPaletteKey above.
+// #246: the chord (Ctrl+Shift+F) now lives in the registry; this keeps the guard + action.
+// Same canExecute as the palette-open command above — opening either face is blocked by the
+// exact same "already open / a modal owns the screen" conditions.
+registerShortcut({
+  id: 'palette.openFulltext',
+  titleKey: 'shortcutOpenFulltextSearch',
+  defaultCombo: 'Ctrl+Shift+f',
+  canExecute: canExecuteOpenPalette,
+  perform: openFulltext,
+});
+
 export function handleShortcutFullTextKey(e: KeyboardEvent): void {
-  if (!(e.ctrlKey || e.metaKey) || e.altKey || !e.shiftKey) return;
-  if ((e.key || '').toLowerCase() !== 'f') return;
-  if (open_) return;
-  if (confirmGet() || lightboxIsOpen()) return;
-  if (settingsIsOpen()) return;
-  e.preventDefault();
-  openFulltext();
+  tryRun('palette.openFulltext', e);
 }
