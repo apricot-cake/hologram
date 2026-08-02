@@ -64,7 +64,7 @@ export function makeUndoController(deps: UndoBuilderDeps) {
       if (!rec) continue;
       const next = nextList(rec.tags, c);
       try {
-        await postsUpdateTags(c.image || rec.image || rec.video || '', next);
+        await postsUpdateTags(c.image || rec.image || rec.video || rec.file || '', next); // #236: rec.file is a collected item's IPC identifier
       } catch {
         /* keep going — one failed write must not strand the rest of the entry */
       }

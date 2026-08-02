@@ -49,6 +49,9 @@ async function ownedFiles(folder: string, captureId: string, record: any | null,
   if (record) {
     if (record.image) targets.add(path.basename(record.image));
     if (record.video) targets.add(path.basename(record.video));
+    // #236: a collected (assetClass:'file') record's own file — the third
+    // slot alongside image/video, never filled at the same time as either.
+    if (record.file) targets.add(path.basename(record.file));
     if (record.avatarFile && !/^avatars[\\/]/.test(record.avatarFile)) targets.add(path.basename(record.avatarFile));
     for (const m of record.media || []) {
       if (m?.file) targets.add(path.basename(m.file));
@@ -125,6 +128,9 @@ function rebaseOntoTrash(rec: PostRecordShape): PostRecordShape {
     ...rec,
     image: rec.image ? inTrash(rec.image) : rec.image,
     video: rec.video ? inTrash(rec.video) : rec.video,
+    // #236: same rebase as image/video — a trashed collected item's card still
+    // has to resolve its file (generic-card fallback aside) through .trash/.
+    file: rec.file ? inTrash(rec.file) : rec.file,
     avatarFile: rec.avatarFile && !sharedAvatar ? inTrash(rec.avatarFile) : rec.avatarFile,
     media: rec.media.map((m) => ({ ...m, file: m.file ? inTrash(m.file) : m.file, posterFile: m.posterFile ? inTrash(m.posterFile) : m.posterFile })),
   };

@@ -1,13 +1,15 @@
 'use strict';
 
-// Local intake — the one definition of what a record made from a LOCAL image
+// Local intake — the one definition of what a record made from a LOCAL file
 // looks like, shared by every door that isn't the browser extension (#84's
-// 2026-07-16 implementation design comment's shared helper `importLocalImage`).
+// 2026-07-16 implementation design comment's shared helper, then named
+// `importLocalImage`; renamed `importLocalFile` by #236's 2026-08-02 comment
+// once the helper stopped being image-only).
 //
 // The doors, and what each one supplies:
 //   * the file dialog (`import-images`, ipc-transfer.ts) — a path, `drag-`/'drag'
 //   * the clipboard (`import-clipboard`, #85)            — bytes, `clip-`/'clipboard'
-//   * a watch folder (#84, not built yet)                — a path, `watch-`/'watch'
+//   * a watch folder (#84)                                — a path, `watch-`/'watch'
 //   * drag & drop onto the window (#234, not built yet)  — a path, `drag-`/'drag'
 // They differ in where the pixels come from and in three field values; everything
 // else about the record — url:null, the timestamps, mediaType, where the file
@@ -27,6 +29,12 @@
 // the reason #85 dropped "pull a URL out of the clipboard's text/html" and #234
 // dropped the same for drops — see #85's 2026-07-16 comment.
 //
+// #236 (2026-08-02 comment): a file outside IMPORTABLE_MEDIA is not rejected —
+// it lands as assetClass:'file' with its name in posts.file instead of
+// image/video (buildLocalRecord below is the one place that decides which of
+// the three gets filled). Every door funnels through here, so none of them has
+// to carry that branch itself.
+//
 // Electron-free (fs/path + better-sqlite3 only), like lib-card-dims.ts, so it
 // unit-tests in plain node.
 
@@ -36,16 +44,18 @@ import path from 'node:path';
 import { fillCardDims } from './lib-card-dims.ts';
 import { fillMediaDims } from './lib-media-dims.ts';
 import { makeTagResolver, preparePostStmts, writePost } from './lib-db-record-writer.ts';
+import { IMPORTABLE_IMG, IMPORTABLE_VID, IMPORTABLE_MEDIA } from '../../../native-host/importable-media.mts';
 import type Database from 'better-sqlite3';
 import type { PostRecordInput } from '../../../native-host/post-record.mts';
 
-// Import arbitrary media files as library items (the user's own files are fine).
-// Also serves as the import path for Hologram's media-only export. Lives here
-// rather than in ipc-transfer.ts because every local-intake door filters by the
-// same list (#84's design comment: "reuse IMPORTABLE_MEDIA for target extensions").
-export const IMPORTABLE_IMG = ['jpg', 'jpeg', 'jfif', 'png', 'webp', 'gif', 'avif', 'bmp', 'tiff', 'svg'];
-export const IMPORTABLE_VID = ['mp4', 'webm', 'mov', 'm4v'];
-export const IMPORTABLE_MEDIA = IMPORTABLE_IMG.concat(IMPORTABLE_VID);
+// Which extensions are MEDIA (assetClass:'media') vs everything else
+// (assetClass:'file', #236) — native-host/importable-media.mts now, re-exported
+// here so every existing caller of this module keeps importing it from where
+// it always has. Also serves as the import path for Hologram's media-only
+// export. Lives here rather than in ipc-transfer.ts because every local-intake
+// door filters by the same list (#84's design comment: "reuse IMPORTABLE_MEDIA
+// for target extensions").
+export { IMPORTABLE_IMG, IMPORTABLE_VID, IMPORTABLE_MEDIA };
 
 /**
  * A captureId for a locally-imported item: `<prefix>-<stamp>-<4-digit sequence>`.
@@ -60,7 +70,7 @@ export interface LocalRecordArgs {
   captureId: string;
   /** The file's name INSIDE the save folder (`<captureId>.<ext>`). */
   file: string;
-  /** Lower-case, no dot. Decides image vs video. */
+  /** Lower-case, no dot. Decides image vs video vs assetClass:'file' (#236). */
   ext: string;
   /** `'drag'` / `'clipboard'` / `'watch'` — see the module comment. */
   source: string;
@@ -77,13 +87,20 @@ export interface LocalRecordArgs {
 }
 
 /**
- * The record a local image becomes. Split out from importLocalImage so a batch
+ * The record a local file becomes. Split out from importLocalFile so a batch
  * door (the dialog import) can build many and write them in ONE transaction,
  * while a single-item door (the clipboard) takes the whole helper below.
+ *
+ * #236: assetClass is the one branch every door shares — IMPORTABLE_MEDIA
+ * decides 'media' (image/video/mediaType filled, the pre-#236 shape exactly)
+ * vs 'file' (the collected item's name goes in `file`, and image/video/
+ * mediaType all stay null — a card's "which slot is this" check never has to
+ * ask assetClass on top of checking the field itself).
  */
 export function buildLocalRecord(args: LocalRecordArgs): PostRecordInput {
   const nowIso = args.now || new Date().toISOString();
   const isVid = IMPORTABLE_VID.includes(args.ext);
+  const isMedia = IMPORTABLE_MEDIA.includes(args.ext);
   return {
     captureId: args.captureId,
     source: args.source,
@@ -94,19 +111,21 @@ export function buildLocalRecord(args: LocalRecordArgs): PostRecordInput {
     text: null,
     displayName: null,
     screenName: null,
-    mediaType: isVid ? 'video' : 'image',
+    assetClass: isMedia ? 'media' : 'file',
+    mediaType: isMedia ? (isVid ? 'video' : 'image') : null,
     capturedAt: nowIso,
     date: args.date || nowIso,
     updatedAt: nowIso,
     media: [],
     tags: [],
     hashtags: [],
-    image: isVid ? null : args.file,
-    video: isVid ? args.file : null,
+    image: isMedia && !isVid ? args.file : null,
+    video: isMedia && isVid ? args.file : null,
+    file: isMedia ? null : args.file,
   };
 }
 
-export interface ImportLocalImageArgs extends Omit<LocalRecordArgs, 'captureId' | 'file'> {
+export interface ImportLocalFileArgs extends Omit<LocalRecordArgs, 'captureId' | 'file'> {
   folder: string;
   sqlite: Database.Database;
   /** captureId prefix — `clip` / `watch` / `drag`. */
@@ -120,19 +139,20 @@ export interface ImportLocalImageArgs extends Omit<LocalRecordArgs, 'captureId' 
 }
 
 /**
- * Land ONE local image in the library: the media file into the save folder, the
- * record into the DB. Rejects rather than half-finishing — the row is only written
+ * Land ONE local file in the library: the file itself into the save folder, the
+ * record into the DB (assetClass 'media' or 'file', decided by buildLocalRecord
+ * above from `ext`). Rejects rather than half-finishing — the row is only written
  * once the file is on disk, so a failed import never leaves a record pointing at
  * nothing (the reverse, a file with no record, is what orphan recovery is for).
  */
-export async function importLocalImage(args: ImportLocalImageArgs): Promise<{ captureId: string; file: string }> {
+export async function importLocalFile(args: ImportLocalFileArgs): Promise<{ captureId: string; file: string }> {
   const captureId = localCaptureId(args.idPrefix, args.stamp ?? Date.now(), args.seq ?? 0);
-  const file = `${captureId}.${args.ext}`;
+  const file = args.ext ? `${captureId}.${args.ext}` : captureId;
   const dest = path.join(args.folder, file);
   await fs.promises.mkdir(args.folder, { recursive: true });
   if (args.bytes) await fs.promises.writeFile(dest, args.bytes);
   else if (args.srcPath) await fs.promises.copyFile(args.srcPath, dest);
-  else throw new Error('importLocalImage: neither bytes nor srcPath');
+  else throw new Error('importLocalFile: neither bytes nor srcPath');
 
   const rec = buildLocalRecord({ captureId, file, ext: args.ext, source: args.source, title: args.title, date: args.date, now: args.now });
   const stmts = preparePostStmts(args.sqlite);

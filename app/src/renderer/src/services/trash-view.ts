@@ -173,7 +173,7 @@ export function restoreSelected() {
     for (const g of picked) {
       for (const r of g.records) {
         try {
-          await restorePost((r.image || r.video || r.captureId) as string);
+          await restorePost((r.image || r.video || r.file || r.captureId) as string); // #236: r.file is a collected item's IPC identifier
         } catch {
           /* keep going — one bad record must not strand the rest */
         }

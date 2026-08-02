@@ -111,6 +111,10 @@ const api = {
   // SVG there would be a scripted document on the library's own origin.
   openImageWindow: (image: string): Promise<boolean> => ipcRenderer.invoke('open-image-window', image),
   showInFolder: (file: string): Promise<void> => ipcRenderer.invoke('show-in-folder', file),
+  // #236: "開く" on a collected (assetClass:'file') card — main re-checks the
+  // allowlist at click time and opens with the OS default app, or falls back
+  // to reveal-in-folder (opened:false) when it refuses. See lib-open-gate.ts.
+  openPostFile: (file: string): Promise<{ opened: boolean }> => ipcRenderer.invoke('open-post-file', file),
   // send, not invoke: the OS drag has to start inside the dragstart the renderer
   // is still holding open — a promise round-trip lands after the gesture is over.
   dragOut: (files: string[]): void => ipcRenderer.send('drag-out', files),

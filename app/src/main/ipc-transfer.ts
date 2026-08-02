@@ -21,7 +21,7 @@ import { cloudSyncProviderOf } from './save-folder-guard.ts';
 import { fillCardDims } from './lib-card-dims.ts';
 import { fillMediaDims } from './lib-media-dims.ts';
 import { makeTagResolver, preparePostStmts, writePost } from './lib-db-record-writer.ts';
-import { IMPORTABLE_MEDIA, buildLocalRecord, importLocalImage, localCaptureId } from './lib-local-intake.ts';
+import { IMPORTABLE_MEDIA, buildLocalRecord, importLocalFile, localCaptureId } from './lib-local-intake.ts';
 import { TRASH_SUBDIR } from './lib-save-folder-path.ts';
 import { INBOX_DIRNAME } from '../../../native-host/inbox.mts';
 import type { PostRecordInput } from '../../../native-host/post-record.mts';
@@ -654,9 +654,15 @@ function register(ctx: IpcContext) {
     // #37: see importPostRecords's identical guard — the mkdirSync a few lines
     // below would otherwise recreate a missing save folder from scratch.
     if (getLibraryStatus().missing) return { imported: 0, skipped: 0, error: 'library-missing' };
+    // #236: two filters, Media first (the default the picker pre-selects) and
+    // an All Files escape hatch — collection no longer stops at IMPORTABLE_MEDIA,
+    // it just decides assetClass from it (buildLocalRecord below).
     const res = await dialog.showOpenDialog(getWin() as BrowserWindow, {
       properties: ['openFile', 'multiSelections'],
-      filters: [{ name: 'Media', extensions: IMPORTABLE_MEDIA }],
+      filters: [
+        { name: 'Media', extensions: IMPORTABLE_MEDIA },
+        { name: 'All Files', extensions: ['*'] },
+      ],
     });
     if (res.canceled || !res.filePaths || !res.filePaths.length) return { imported: 0, skipped: 0, canceled: true };
     fs.mkdirSync(folder, { recursive: true });
@@ -670,11 +676,10 @@ function register(ctx: IpcContext) {
     const toWrite: PostRecordInput[] = [];
     for (const fp of res.filePaths) {
       try {
-        const ext = (path.extname(fp).slice(1) || 'png').toLowerCase();
-        if (!IMPORTABLE_MEDIA.includes(ext)) {
-          skipped++;
-          continue;
-        }
+        // No IMPORTABLE_MEDIA gate any more (#236 — every extension is collectable,
+        // the extension only decides assetClass). 'bin' is the extension-less
+        // fallback (not 'png' — an extension-less pick is not a picture).
+        const ext = (path.extname(fp).slice(1) || 'bin').toLowerCase();
         const st = await fs.promises.stat(fp);
         if (!st.isFile()) {
           skipped++;
@@ -735,7 +740,7 @@ function register(ctx: IpcContext) {
   ipcMain.handle('import-clipboard', async (_e, title): Promise<ClipboardImportResult> => {
     const folder = getSaveFolder();
     if (!folder) return { imported: 0, error: 'no-folder' };
-    // #37: importLocalImage (lib-local-intake.ts) mkdirs the save folder before
+    // #37: importLocalFile (lib-local-intake.ts) mkdirs the save folder before
     // writing — refuse here so a paste never recreates a missing one.
     if (getLibraryStatus().missing) return { imported: 0, error: 'library-missing' };
     let bytes: Buffer | null = null;
@@ -755,7 +760,7 @@ function register(ctx: IpcContext) {
     const handle = await ensurePostsSynced();
     if (!handle) return { imported: 0, error: 'no-folder' };
     try {
-      await importLocalImage({
+      await importLocalFile({
         folder,
         sqlite: handle.sqlite,
         source: 'clipboard',

@@ -310,7 +310,7 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
         // Bulk delete selected groups — every record of each selected group.
         const toDelete = selection.selectedRecords(deps.getViewGroups(), postIdKey);
         const count = toDelete.length;
-        for (const p of toDelete) await deletePost(p.image || p.video);
+        for (const p of toDelete) await deletePost(p.image || p.video || p.file); // #236: p.file is a collected item's IPC identifier
         selection.clear();
         await deps.loadPosts(true);
         trashRefresh(); // the nav's Trash badge counts what just landed there (#268)

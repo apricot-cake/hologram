@@ -158,6 +158,10 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     imageCopied: '画像をコピーしました',
     imageCopyFailed: 'この形式の画像はコピーできません',
     ctxShowInFolder: 'ファイルの場所を開く',
+    // #236: 収蔵ファイル（assetClass:'file'）カードの「開く」— 許可リスト外は
+    // main が実際にはフォルダ表示へ降格するので、ラベルもそちらに合わせる。
+    ctxOpenFile: '開く',
+    ctxOpenFileInFolder: 'フォルダで表示',
     ctxOpenNewTab: '新しいタブで開く',
     // 比較ビュー (#82) — 複数選択 → 右クリックの一行
     ctxCompare: '比較',
@@ -827,6 +831,11 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     imageCopied: 'Image copied',
     imageCopyFailed: "This image format can't be copied",
     ctxShowInFolder: 'Show in folder',
+    // #236: the collected-item (assetClass:'file') card's "Open" — main
+    // downgrades to reveal-in-folder for anything outside the allowlist, so
+    // the label matches whichever that will actually be.
+    ctxOpenFile: 'Open',
+    ctxOpenFileInFolder: 'Show in folder',
     ctxOpenNewTab: 'Open in new tab',
     // Compare view (#82) — multi-select then right-click
     ctxCompare: 'Compare',

@@ -92,8 +92,27 @@ function runThumbJob(fn) {
   });
 }
 
+// #236 §4: a collected item (assetClass:'file' — pdf/zip/psd/…) has no
+// THUMB_EXT decode path, but its OS very likely has a registered thumbnail
+// handler for it already (Explorer/Finder show one). nativeImage.
+// createThumbnailFromPath asks for exactly that — Electron 43, win32/darwin —
+// so this is the second path getThumbnail tries instead of the plain "no
+// thumbnail" null it returned before #236. Windows ignores requestedSize.height
+// and derives it from width (the type's own doc note); passing {width:w,
+// height:w} is still the right call, just not a promise about the result's
+// aspect.
+async function getOsShellThumbnail(resolved: string, w: number): Promise<Buffer | null> {
+  try {
+    const img = await nativeImage.createThumbnailFromPath(resolved, { width: w, height: w });
+    if (img.isEmpty()) return null;
+    return img.toJPEG(90);
+  } catch {
+    return null; // no handler registered for this format on this OS — not an error
+  }
+}
+
 async function getThumbnail(resolved, name, w) {
-  if (!THUMB_EXT.has(path.extname(name).toLowerCase())) return null;
+  const isImageExt = THUMB_EXT.has(path.extname(name).toLowerCase());
   let st: any;
   try {
     st = await fs.promises.stat(resolved);
@@ -106,7 +125,13 @@ async function getThumbnail(resolved, name, w) {
   const key = `${name}.${Math.round(st.mtimeMs)}.w${w}.q3.jpg`.replace(/[^\w.-]/g, '_');
   const cachePath = path.join(thumbCacheDir(), key);
   try {
-    return await fs.promises.readFile(cachePath);
+    const cached = await fs.promises.readFile(cachePath);
+    // A cached NEGATIVE result (#236): the OS was already asked once for this
+    // exact name+mtime+width and had nothing — an empty file is the sentinel,
+    // so a card that never gets a thumbnail doesn't re-trigger the OS shell
+    // call on every scroll-back. Only meaningful for the non-image path below;
+    // a real image thumbnail is never zero bytes.
+    return cached.length ? cached : null;
   } catch {
     /* cache miss */
   }
@@ -115,20 +140,31 @@ async function getThumbnail(resolved, name, w) {
   // visible tiles while the first decode is in flight).
   const pending = _thumbInflight.get(cachePath);
   if (pending) return pending;
-  const job = runThumbJob(() => {
-    let img = nativeImage.createFromPath(resolved);
-    if (img.isEmpty()) return null;
-    const sz = img.getSize();
-    if (Math.min(sz.width, sz.height) > w) {
-      img = sz.width >= sz.height ? img.resize({ height: w, quality: 'good' }) : img.resize({ width: w, quality: 'good' });
+  const job = runThumbJob(async () => {
+    let buf: Buffer | null = null;
+    if (isImageExt) {
+      let img = nativeImage.createFromPath(resolved);
+      if (!img.isEmpty()) {
+        const sz = img.getSize();
+        if (Math.min(sz.width, sz.height) > w) {
+          img = sz.width >= sz.height ? img.resize({ height: w, quality: 'good' }) : img.resize({ width: w, quality: 'good' });
+        }
+        buf = img.toJPEG(90);
+      }
+    } else {
+      // #236: not a format this handler decodes itself — ask the OS's own
+      // registered thumbnail handler (Explorer/Finder's own source of truth
+      // for what a .psd/.pdf/.zip/… "looks like").
+      buf = await getOsShellThumbnail(resolved, w);
     }
-    const buf = img.toJPEG(90);
-    fs.promises
-      .mkdir(thumbCacheDir(), { recursive: true })
-      .then(() => fs.promises.writeFile(cachePath, buf))
-      .catch(() => {
-        /* cache best-effort */
-      });
+    await fs.promises.mkdir(thumbCacheDir(), { recursive: true }).catch(() => {
+      /* cache best-effort */
+    });
+    // buf===null caches as a zero-byte sentinel (see the read-side comment
+    // above) rather than skipping the write — that's the whole point.
+    await fs.promises.writeFile(cachePath, buf || Buffer.alloc(0)).catch(() => {
+      /* cache best-effort */
+    });
     return buf;
   });
   _thumbInflight.set(cachePath, job);

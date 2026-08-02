@@ -15,6 +15,11 @@ import { open as menuOpen } from './menu.ts';
 import { formatCount, formatDate, compactDate, monthLabel } from './format.ts';
 import { dateFieldForSort, buildSections } from './date-sections.ts';
 import { densityImage, dragFilesOf, postIdKey, makeGroupRecords, makeCardModel, stampPost } from './records.ts';
+// #236: the same pure allowlist judgment the main-process gate uses
+// (lib-open-gate.ts) — renderer-safe (no Electron/better-sqlite3), so the
+// context menu can label "開く"/"フォルダで表示" without a round trip. The
+// FULL gate (extension + magic bytes) still runs main-side at click time.
+import { extensionAllowed } from '../../../../../native-host/open-allowlist.mts';
 import type { DisplayShape } from './display.ts';
 import { hologramPostGridSource } from './grid.ts';
 import { listPostsDelta, deletePost, clearAll } from './posts.ts';
@@ -444,7 +449,12 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
     if (canPoster) items.push({ label: deps.t('ctxViewPoster'), act: 'poster', icon: CM_IC.poster });
     // The file the card is showing right now (capture or artwork per density).
     const cardFile = densityImage(g.rep) || g.rep.image || '';
-    if (srcUrl || cardFile) items.push({ sep: true });
+    // #236: a collected item (assetClass:'file') has no cardFile above (image/
+    // video are both null on those rows) — its own file is the thing to reveal
+    // or open instead. Never both at once: buildLocalRecord never fills image
+    // and file on the same record.
+    const collectedFile = g.rep.assetClass === 'file' ? g.rep.file || '' : '';
+    if (srcUrl || cardFile || collectedFile) items.push({ sep: true });
     if (srcUrl) {
       items.push({ label: deps.t('detailSauce'), act: 'sauce', icon: CM_IC.sauce });
       items.push({ label: deps.t('detailAscii'), act: 'ascii', icon: CM_IC.sauce });
@@ -453,6 +463,12 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
     // bitmap, and dragging out is the path for a whole multi-image group (#132).
     if (cardFile) items.push({ label: deps.t('ctxCopyImage'), act: 'copyImage', icon: CM_IC.copy });
     if (cardFile) items.push({ label: deps.t('ctxShowInFolder'), act: 'reveal', icon: CM_IC.reveal });
+    // #236 §3: the label previews the allowlist's extension-only half so the
+    // button never promises more than main will actually do (the FULL check —
+    // extension + magic bytes — runs again at click time in lib-open-gate.ts;
+    // a mismatch there just silently reveals-in-folder instead of opening,
+    // never opens something the label said wouldn't).
+    if (collectedFile) items.push({ label: extensionAllowed(collectedFile) ? deps.t('ctxOpenFile') : deps.t('ctxOpenFileInFolder'), act: 'openFile', icon: CM_IC.reveal });
     items.push({ sep: true });
     items.push({ label: deps.t('tipDelete'), act: 'delete', icon: CM_IC.del, danger: true });
     return { items, srcUrl };
@@ -476,6 +492,11 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
     else if (act === 'reveal') {
       const file = densityImage(g.rep) || g.rep.image;
       if (file && hologramIpc.showInFolder) hologramIpc.showInFolder(file);
+    } else if (act === 'openFile') {
+      // #236: the label already previewed the extension-only half; main
+      // re-checks the full allowlist (+ magic bytes) at THIS moment and opens
+      // or reveals-in-folder accordingly — see lib-open-gate.ts.
+      if (g.rep.file) hologramIpc.openPostFile(g.rep.file);
     } else if (act === 'copyImage') copyGroupImage(g);
     else if (act === 'delete') requestDeleteGroup(g);
   }
@@ -566,7 +587,7 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
   async function executeDeleteGroup(g: HologramPostGroup) {
     for (const r of g.records) {
       try {
-        await deletePost(r.image || r.video);
+        await deletePost(r.image || r.video || r.file); // #236: r.file is a collected item's IPC identifier
       } catch {
         /* keep going */
       }
