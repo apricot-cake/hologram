@@ -219,7 +219,7 @@ export function ValueEditor({ cat, onManage }: { cat: FilterCatValues; onManage:
       {cat.manage ? (
         <div className="shrink-0 border-t border-border pt-1">
           <Button variant="ghost" size="sm" className="w-full justify-start text-primary" onClick={() => onManage(cat.manage as () => void)}>
-            {t('ctxManage')}
+            {cat.manageLabel || t('ctxManage')}
           </Button>
         </div>
       ) : null}

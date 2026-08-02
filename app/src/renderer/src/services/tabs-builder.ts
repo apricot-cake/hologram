@@ -132,9 +132,20 @@ export function makeTabsController(deps: TabsBuilderDeps) {
   // Called from every fresh renderPosts(): keep the tab title + persistence in sync
   // with the current state, record it for the stickyRecs change-detection below,
   // and record it onto the per-tab back/forward history (see recordEntry).
+  // #21: neither sync below may run while a tag-management tab is active. The
+  // grid/poster hosts stay mounted (and rendering) in the background even then
+  // -- browseMode is a GLOBAL leftover from whatever real browse tab was last
+  // active, so one of these two WOULD otherwise fire, stamping document.title
+  // back to the hidden grid/poster view and pushing a stray entry into `nav`
+  // (which nothing ever saves onto a tab while a tags tab is active, but a
+  // later switch to a real tab could pick it up via saveActiveTabState/adopt).
+  function onTagsTab(): boolean {
+    return activeTab()?.specialKind === 'tags';
+  }
   function syncTitleAndPersist() {
     if (storeGet('activeImageTab')) return; // grid renders under the image view are background refreshes
     if (deps.getBrowseMode() !== 'posts') return; // hidden-grid render while browsing posters
+    if (onTagsTab()) return;
     const snap = snapshotState();
     deps.setLastRenderedState(JSON.stringify(snap));
     if (restoringState) return;
@@ -149,6 +160,7 @@ export function makeTabsController(deps: TabsBuilderDeps) {
   function syncPosterTitleAndPersist() {
     if (storeGet('activeImageTab')) return;
     if (deps.getBrowseMode() !== 'posters') return;
+    if (onTagsTab()) return;
     if (restoringState) return;
     recordEntry(entryOf('posters', snapshotPosterState()));
     clearAutoTitle();
@@ -244,6 +256,10 @@ export function makeTabsController(deps: TabsBuilderDeps) {
     if (confirmGet() || lightboxIsOpen()) return false;
     if (settingsIsOpen()) return false;
     if (paletteIsOpen()) return false;
+    // #21: a tag-management tab has no back/forward stack of its own -- Alt+Left/
+    // Right and the mouse side buttons must not tunnel through to the grid
+    // history a real browse tab left behind (see saveActiveTabState's guard).
+    if (activeTab()?.specialKind === 'tags') return false;
     return true;
   }
   // Back/forward through the per-tab view history: Alt+←/→ + mouse side buttons (the bar
@@ -302,7 +318,10 @@ export function makeTabsController(deps: TabsBuilderDeps) {
   }
   function saveActiveTabState() {
     const t = getTabs().find((t) => t.id === getActiveTabId());
-    if (!t) return;
+    // #21: a tag-management tab has nothing grid-side to snapshot -- and MUST
+    // NOT get one, since nav's closure still holds whichever real browse tab
+    // was active before it (see activateTab's specialKind guard below).
+    if (!t || t.specialKind === 'tags') return;
     const cur = nav.current();
     // t.state stays the posts-side snapshot (title fallback + pre-#144 shape);
     // under a posters/image entry the grid state isn't the current view — keep
@@ -328,13 +347,31 @@ export function makeTabsController(deps: TabsBuilderDeps) {
   // tab's derived title), so nothing here builds a model or pushes one. The
   // pin glyph + close/new i18n strings it needs are handed over once below.
   const TAB_PIN_SVG = '<svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor" stroke="none"><path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z"/></svg>';
-  hologramTabsSource.configure({ tabTitleOf: deps.tabTitleOf, tabIcons: TAB_ICONS, pinSvg: TAB_PIN_SVG, closeTitle: deps.t('tabClose'), newTitle: deps.t('tabNew'), postersTitle: deps.t('browsePosters'), trashTitle: deps.t('trashTitle'), imageFallbackTitle: deps.t('imgTabFallback') });
+  hologramTabsSource.configure({
+    tabTitleOf: deps.tabTitleOf,
+    tabIcons: TAB_ICONS,
+    pinSvg: TAB_PIN_SVG,
+    closeTitle: deps.t('tabClose'),
+    newTitle: deps.t('tabNew'),
+    postersTitle: deps.t('browsePosters'),
+    trashTitle: deps.t('trashTitle'),
+    imageFallbackTitle: deps.t('imgTabFallback'),
+    tagManageTitle: deps.t('tagManageTitle'),
+  });
   // Activate a tab object: adopt its history and re-apply its current entry
   // (the stack knows which view — posts/posters/image — the tab was on). Tabs
   // without a usable stack (fresh tab, or every persisted nav row dropped as
   // invalid) fall back to the plain state path, then seed a fresh history from
   // the applied view.
   function activateTab(t: HologramTab) {
+    // #21: switching TO a tag-management tab touches none of the grid/nav
+    // machinery below -- AppShell reacts to activeTabId/tabs directly. The
+    // window title still needs a stamp here: nothing else in this tab kind's
+    // path calls syncTitleAndPersist (which only fires from a grid render).
+    if (t.specialKind === 'tags') {
+      document.title = deps.t('tagManageTitle') + ' — Hologram';
+      return;
+    }
     if (Array.isArray(t._navHist) && t._navHist.length) {
       nav.adopt(t);
       nav.applyCurrent();
@@ -393,6 +430,27 @@ export function makeTabsController(deps: TabsBuilderDeps) {
     requestAnimationFrame(() => deps.scrollContentTo(0));
     persistTabsDebounced();
   }
+  // #21: opens the tag management page as its own tab (design's confirmed
+  // "VS Code settings tab" shape) -- a singleton, so a second call just
+  // focuses the one already open instead of stacking duplicates. Shares
+  // addTab()/openTextSearchTab()'s "new tab, current tab untouched" shape,
+  // but skips applyState/renderPosts entirely: a tags tab has no grid state.
+  function openTagManagementTab() {
+    const existing = getTabs().find((t) => t.specialKind === 'tags');
+    if (existing) {
+      switchTab(existing.id);
+      return;
+    }
+    saveActiveTabState();
+    deps.hideImageView();
+    const id = genTabId();
+    mutateTabs((arr) => {
+      arr.push({ id, pinned: false, title: null, specialKind: 'tags', state: null });
+    });
+    setActiveTabId(id);
+    document.title = deps.t('tagManageTitle') + ' — Hologram';
+    persistTabsDebounced();
+  }
   function closeTab(id: string | null | undefined) {
     if (getTabs().length <= 1) {
       // Last tab: a window always keeps one tab — whatever view it was on
@@ -431,7 +489,9 @@ export function makeTabsController(deps: TabsBuilderDeps) {
   function duplicateTab(id: string) {
     saveActiveTabState(); // flushes the live history into src if src is active
     const src = getTabs().find((t) => t.id === id);
-    if (!src) return;
+    // #21: a tag-management tab is a singleton (openTagManagementTab focuses the
+    // existing one instead of opening a second) -- duplicating it makes no sense.
+    if (!src || src.specialKind === 'tags') return;
     const idx = getTabs().indexOf(src);
     const nt: HologramTab = {
       id: genTabId(),
@@ -473,6 +533,13 @@ export function makeTabsController(deps: TabsBuilderDeps) {
         setActiveTabId(id);
       }
       const at = getTabs().find((t) => t.id === getActiveTabId());
+      // #21: a tag-management active tab has no grid/poster state to restore
+      // (and no nav stack worth adopting -- nav.adopt would just seed one from
+      // whatever the live postQB/browseMode default to at boot, never read).
+      if (at && at.specialKind === 'tags') {
+        document.title = deps.t('tagManageTitle') + ' — Hologram';
+        return;
+      }
       // Restore the active tab's view state WITHOUT rendering (bootApp's
       // loadPosts runs the first render). The current history entry decides the
       // view (#144 mode per-tab): posters restores the poster tree + mode; an
@@ -596,6 +663,7 @@ export function makeTabsController(deps: TabsBuilderDeps) {
     switchTab,
     addTab,
     openTextSearchTab,
+    openTagManagementTab,
     closeTab,
     closeTabByGesture,
     pinTab,

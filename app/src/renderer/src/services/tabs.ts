@@ -30,7 +30,7 @@ import { buildShadow } from './query.ts';
 import { get as storeGet, subscribe as storeSubscribe } from './store.ts';
 
 type TabTitleOf = (state: any, ctx: { allCount?: number | null }) => { text: string; iconType: string };
-type TabsConfig = { tabTitleOf: TabTitleOf; tabIcons: Record<string, string>; pinSvg: string; closeTitle?: string; newTitle?: string; postersTitle?: string; trashTitle?: string; imageFallbackTitle?: string };
+type TabsConfig = { tabTitleOf: TabTitleOf; tabIcons: Record<string, string>; pinSvg: string; closeTitle?: string; newTitle?: string; postersTitle?: string; trashTitle?: string; imageFallbackTitle?: string; tagManageTitle?: string };
 
 let tabTitleOf: TabTitleOf | null = null;
 let tabIcons: Record<string, string> | null = null;
@@ -40,6 +40,7 @@ let newTitle = '';
 let postersTitle = '';
 let trashTitle = '';
 let imageFallbackTitle = '';
+let tagManageTitle = '';
 
 const subs = new Set<() => void>();
 const notify = () => {
@@ -90,6 +91,12 @@ function get(): HologramTabsModel | null {
   const allCount = storeGet('allPostsCount') || 0;
   const tabs = rawTabs.map((t) => {
     const isActive = t.id === activeTabId;
+    // #21: a tag-management tab has no query state and no "current view" to
+    // derive a title from -- checked first, active or not, since (unlike
+    // trash) this is a per-tab flag rather than a global mode.
+    if (t.specialKind === 'tags') {
+      return { id: t.id, title: tagManageTitle, icon: t.pinned ? pinSvg : icons.tag, active: isActive, pinned: !!t.pinned, showClose: !t.pinned && rawTabs.length > 1 };
+    }
     const kind = isActive ? (storeGet('activeImageTab') ? 'image' : storeGet('browseMode') === 'posters' ? 'posters' : storeGet('browseMode') === 'trash' ? 'trash' : 'posts') : navKindOf(t);
     // Trash (#268) — only ever the ACTIVE tab, since the trash records no history
     // entry (navKindOf can never answer 'trash'). The strip says where the tab is
@@ -126,6 +133,7 @@ export const hologramTabsSource = {
     postersTitle = cfg.postersTitle || '';
     trashTitle = cfg.trashTitle || '';
     imageFallbackTitle = cfg.imageFallbackTitle || '';
+    tagManageTitle = cfg.tagManageTitle || '';
   },
   get,
   subscribe(cb: () => void): () => void {

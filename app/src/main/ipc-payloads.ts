@@ -150,6 +150,46 @@ export interface TagTypesState {
 }
 
 /** get/set-ungrouped: post keys opted out of auto-grouping. */
+// --- Tag vocabulary layer (#21, DB-backed, ipc-tag-vocab.ts) --------------
+/** One row of the tag management page's overview table. */
+export interface TagVocabRow {
+  id: number;
+  name: string;
+  kind: string | null;
+  reading: string | null;
+  postCount: number;
+  posterCount: number;
+  parents: { id: number; name: string; isDisplay: boolean }[];
+  displayName: string;
+  isReferencedAsParent: boolean;
+  isOrphan: boolean;
+}
+/** One (child, parent) edge, name-resolved — backs the "parent tags" left view. */
+export interface TagParentRowResolved {
+  tagId: number;
+  tagName: string;
+  parentTagId: number;
+  parentName: string;
+  isDisplay: boolean;
+}
+/** rename-tag's answer when the new name collides with a distinct tag entity — the caller resolves via merge-tags or keep-separate-rename-tag (2026-07-18 confirmed 2-way branch). */
+export interface RenameCollision {
+  tagId: number;
+  name: string;
+  postCount: number;
+  posterCount: number;
+}
+export type RenameTagResult = { ok: true } | { ok: false; error: 'empty' } | { ok: false; collision: RenameCollision };
+/** A tag-vocab write's plain result (add/remove-tag-parent, merge-tags, keep-separate-rename-tag, set-tag-kind). */
+export interface TagWriteResult {
+  ok: boolean;
+  error?: string;
+}
+export interface DeleteOrphanTagsResult {
+  ok: boolean;
+  deletedIds: number[];
+}
+
 export interface UngroupedState {
   keys: string[];
 }
