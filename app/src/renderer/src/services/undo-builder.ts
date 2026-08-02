@@ -63,13 +63,9 @@ export function makeUndoController(deps: UndoBuilderDeps) {
       // is nothing to diff against, so skip rather than write a guess.
       if (!rec) continue;
       const next = nextList(rec.tags, c);
-      const res: Awaited<ReturnType<typeof postsUpdateTags>> | null = null;
+      let res: Awaited<ReturnType<typeof postsUpdateTags>> | null = null;
       try {
-<<<<<<< HEAD
-        await postsUpdateTags(c.image || rec.image || rec.video || rec.file || '', next); // #236: rec.file is a collected item's IPC identifier
-=======
-        res = await postsUpdateTags(c.image || rec.image || rec.video || '', next);
->>>>>>> cd7de5b0 (WIP for #774: worker cut short by the 5-hour usage limit)
+        res = await postsUpdateTags(c.image || rec.image || rec.video || rec.file || '', next);
       } catch {
         /* keep going — one failed write must not strand the rest of the entry */
       }
