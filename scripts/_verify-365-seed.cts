@@ -18,7 +18,19 @@ const base = Date.parse('2026-08-01T09:00:00Z');
 const posts = [
   { captureId: 'txt-short', url: 'https://x.com/tester/status/9001', platform: 'x', text: short, displayName: 'テキスト太郎', screenName: 'txt_taro', userId: '9001', mediaType: null, date: new Date(base).toISOString(), capturedAt: new Date(base + 60000).toISOString(), tags: [] },
   { captureId: 'txt-medium', url: 'https://x.com/tester/status/9002', platform: 'x', text: medium, displayName: 'テキスト太郎', screenName: 'txt_taro', userId: '9001', mediaType: null, date: new Date(base - 86400000).toISOString(), capturedAt: new Date(base - 86400000 + 60000).toISOString(), tags: [] },
-  { captureId: 'txt-long', url: 'https://bsky.app/profile/tester.bsky.social/post/txt003', platform: 'bluesky', text: long, displayName: 'ながぶん', screenName: 'nagabun.bsky.social', userId: 'did:plc:txt003', mediaType: null, date: new Date(base - 2 * 86400000).toISOString(), capturedAt: new Date(base - 2 * 86400000 + 60000).toISOString(), tags: [] },
+  {
+    captureId: 'txt-long',
+    url: 'https://bsky.app/profile/tester.bsky.social/post/txt003',
+    platform: 'bluesky',
+    text: long,
+    displayName: 'ながぶん',
+    screenName: 'nagabun.bsky.social',
+    userId: 'did:plc:txt003',
+    mediaType: null,
+    date: new Date(base - 2 * 86400000).toISOString(),
+    capturedAt: new Date(base - 2 * 86400000 + 60000).toISOString(),
+    tags: [],
+  },
   { captureId: 'txt-verylong', url: 'https://misskey.io/notes/txt004', platform: 'misskey', text: veryLong, displayName: 'まいまい', screenName: 'maimai', userId: 'txt004', mediaType: null, date: new Date(base - 3 * 86400000).toISOString(), capturedAt: new Date(base - 3 * 86400000 + 60000).toISOString(), tags: [] },
 ];
 
