@@ -25,7 +25,7 @@ const os = require('node:os');
 const path = require('node:path');
 const cp = require('node:child_process');
 const WebSocket = require('ws');
-const { instanceFile, isSandboxPort, readInstance, targetBelongsToTree, targetFilePath } = require('./lib-sandbox-instance.cts');
+const { foreignSandboxAt, instanceFile, isSandboxPort, readInstance } = require('./lib-sandbox-instance.cts');
 
 const repoRoot = path.join(__dirname, '..');
 
@@ -48,18 +48,21 @@ const PORT = resolvePort();
 // A sandbox port belongs to exactly ONE tree, and the whole failure mode of #640
 // is that talking to the wrong tree's instance SUCCEEDS: the eval returns, the
 // screenshot is written, and the answer is about someone else's app. So the
-// identity is checked against the live target (its renderer is loaded out of
-// <tree>/app/out) before a single command goes out. The real app on :9222 is
-// outside this check — it is launched from the main tree by design (docs/build.md).
-function assertOwnSandbox(pageUrl: string) {
+// identity is checked before a single command goes out: the process holding the
+// port has to be the pid this tree recorded when it started its instance. The
+// real app on :9222 is outside this check — it is launched from the main tree by
+// design (docs/build.md).
+function assertOwnSandbox() {
   if (!isSandboxPort(PORT)) return;
   const inst = readInstance(repoRoot);
   if (!inst) throw new Error(`:${PORT} is a sandbox port, but this tree records no instance (${instanceFile(repoRoot)}). Start one with 'node scripts/sandbox-app.cts', or run cdp-verify from the tree that owns :${PORT}.`);
   if (inst.port !== PORT) throw new Error(`this tree's sandbox is on :${inst.port}, not :${PORT} — use CDP_PORT=${inst.port} (or CDP_PORT=sandbox).`);
-  const mine = targetBelongsToTree(pageUrl, repoRoot);
-  if (mine === false) throw new Error(`:${PORT} is serving ANOTHER tree's sandbox (${targetFilePath(pageUrl)}) — this tree's record is stale. Drive it from its own tree; 'node scripts/sandbox-app.cts' here will take a fresh port.`);
-  // mine === null: a dev-server renderer (http) carries no tree in its URL, so
-  // the record above is all we have. Nothing else to check.
+  const foreign = foreignSandboxAt(PORT, repoRoot);
+  if (foreign !== null) throw new Error(`:${PORT} is held by pid ${foreign}, not this tree's recorded pid ${inst.pid} — ANOTHER tree's sandbox is on it and this tree's record is stale. Drive it from its own tree; 'node scripts/sandbox-app.cts' here will take a fresh port.`);
+  // foreign === null can also mean "cannot tell" (nothing listening yet, or a
+  // platform without the pid lookup — lib-sandbox-instance.cts). The port did
+  // answer /json/list to get here, so the first case is already excluded; on the
+  // second, the record checked above is all there is.
 }
 
 // OS-level window control for the Electron window. This Electron build's CDP has
@@ -94,7 +97,7 @@ function getTarget() {
             const list = JSON.parse(body);
             const page = list.find((t) => t.type === 'page' && t.url.includes('index.html')) || list.find((t) => t.type === 'page');
             if (!page) return reject(new Error('no page target — is the app running with --remote-debugging-port?'));
-            assertOwnSandbox(String(page.url));
+            assertOwnSandbox();
             resolve(page.webSocketDebuggerUrl);
           } catch (e) {
             reject(e);

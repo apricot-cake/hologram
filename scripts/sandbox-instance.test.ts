@@ -3,14 +3,17 @@
 // The bug this covers returns a SUCCESS — a session drives another worktree's
 // sandbox and every call answers — so the two properties that make it
 // detectable are asserted directly: a tree's port is a function of the tree,
-// and a live target's URL says which tree it came from.
+// and the process holding that port is compared with the pid the tree recorded.
+//
+// The identity used to be read out of the CDP target URL, which named the tree
+// while the renderer was a file:// document. #7 put it on app://bundle/index.html
+// — one string for every tree — so the check moved to the listening pid.
 
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
 import { afterAll, describe, expect, test } from 'vitest';
-import { PORT_MIN, PORT_SPAN, clearInstance, instanceFile, isSandboxPort, pageTargetOf, readInstance, sandboxPortBase, targetBelongsToTree, targetFilePath, writeInstance } from './lib-sandbox-instance.cts';
+import { PORT_MIN, PORT_SPAN, clearInstance, foreignSandboxAt, instanceFile, isSandboxPort, listeningPid, readInstance, sandboxPortBase, writeInstance } from './lib-sandbox-instance.cts';
 
 const dirs: string[] = [];
 function mkdir() {
@@ -27,8 +30,6 @@ afterAll(() => {
     }
   }
 });
-
-const rendererUrl = (tree: string) => `${pathToFileURL(path.join(tree, 'app', 'out', 'renderer', 'index.html')).href}?theme=auto`;
 
 describe('port assignment', () => {
   test('a tree always gets the same port, inside the sandbox range', () => {
@@ -60,32 +61,36 @@ describe('port assignment', () => {
   });
 });
 
-describe('target identity', () => {
-  test("a renderer loaded from another tree is recognisable as another tree's", () => {
-    const mine = mkdir();
-    const theirs = mkdir();
-    expect(targetBelongsToTree(rendererUrl(mine), mine)).toBe(true);
-    expect(targetBelongsToTree(rendererUrl(theirs), mine)).toBe(false);
-    expect(targetFilePath(rendererUrl(theirs))).toBe(path.join(theirs, 'app', 'out', 'renderer', 'index.html'));
-  });
+describe('port ownership', () => {
+  // The port is only ever compared against a pid this tree wrote down, so the
+  // lookup is injected: the comparison is what has to hold, on every platform.
+  const held = (pid: number | null) => () => pid;
 
-  test('a non-file target answers "cannot tell" rather than "fine"', () => {
-    // `electron-vite dev` serves the renderer over http; there is no tree in the URL.
-    expect(targetBelongsToTree('http://localhost:5173/index.html', mkdir())).toBeNull();
-    expect(targetFilePath('http://localhost:5173/index.html')).toBeNull();
-    expect(targetBelongsToTree('', mkdir())).toBeNull();
-  });
-
-  test('the page target is picked over devtools/worker targets', () => {
+  test('the recorded pid holding the port is ours', () => {
     const tree = mkdir();
-    const url = rendererUrl(tree);
-    expect(
-      pageTargetOf([
-        { type: 'service_worker', url: 'x' },
-        { type: 'page', url },
-      ]),
-    ).toMatchObject({ url });
-    expect(pageTargetOf([{ type: 'service_worker', url: 'x' }])).toBeNull();
+    writeInstance(tree, { pid: 4242, port: 9350 });
+    expect(foreignSandboxAt(9350, tree, held(4242))).toBeNull();
+  });
+
+  test("another process on the port is reported as another tree's", () => {
+    const tree = mkdir();
+    writeInstance(tree, { pid: 4242, port: 9350 });
+    expect(foreignSandboxAt(9350, tree, held(777))).toBe(777);
+  });
+
+  test('nothing listening, or no record, is "no reason to refuse"', () => {
+    const tree = mkdir();
+    // No record at all: a tree that never started an instance has nothing to defend.
+    expect(foreignSandboxAt(9350, tree, held(777))).toBeNull();
+    writeInstance(tree, { pid: 4242, port: 9350 });
+    // Lookup unavailable (non-Windows) or the port is free — cannot tell, do not accuse.
+    expect(foreignSandboxAt(9350, tree, held(null))).toBeNull();
+  });
+
+  test('a free port has no listener', () => {
+    // 1 is never a sandbox port and nothing can be listening on it here; on a
+    // platform without the lookup this is the same null for the other reason.
+    expect(listeningPid(1)).toBeNull();
   });
 });
 

@@ -328,9 +328,25 @@ const MIGRATIONS: Migration[] = [
         ALTER TABLE posts ADD COLUMN replyToPost TEXT;
       `),
   },
+  // #162: per-record media-size aggregates for the dimension/file-size facet —
+  // see native-host/post-record.mts's PostRecordShape.mediaMaxW/H/Bytes and
+  // app/src/main/lib-media-dims.ts for the write-time measurement. Null on
+  // every row written before this migration (same "ride the existing
+  // write-time mechanism, no backfill scan" decision as shotW/shotH — #162's
+  // 2026-07-18 design comment) until that record is next written for any
+  // other reason.
+  {
+    name: 'add-media-max-dims',
+    up: (db) =>
+      db.exec(`
+        ALTER TABLE posts ADD COLUMN mediaMaxW INTEGER;
+        ALTER TABLE posts ADD COLUMN mediaMaxH INTEGER;
+        ALTER TABLE posts ADD COLUMN mediaMaxBytes INTEGER;
+      `),
+  },
   // #290: the post's own :shortcode: custom emoji (Misskey/Mastodon only) —
   // see native-host/post-record.mts's CustomEmojiShape. Stored as JSON text,
-  // same convention as quotedPost/replyToPost just above (a small per-post
+  // same convention as quotedPost/replyToPost above (a small per-post
   // array, not worth its own table). Null on every row written before this
   // migration and on every non-Misskey/Mastodon post.
   {
@@ -494,6 +510,10 @@ interface PostsTable {
   // convention as hashtags/domFilled. See PostRecordShape.quotedPost/replyToPost.
   quotedPost: string | null;
   replyToPost: string | null;
+  // add-media-max-dims migration (#162) — see PostRecordShape.mediaMaxW/H/Bytes.
+  mediaMaxW: number | null;
+  mediaMaxH: number | null;
+  mediaMaxBytes: number | null;
   // add-post-custom-emojis migration (#290) — JSON CustomEmojiShape[], same
   // storage convention as hashtags/domFilled. See PostRecordShape.customEmojis.
   customEmojis: string | null;

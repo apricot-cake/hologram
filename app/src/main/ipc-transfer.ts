@@ -19,6 +19,7 @@ import * as archive from './lib-archive.ts';
 import { parseJsonLoose } from './lib-json.ts';
 import { cloudSyncProviderOf } from './save-folder-guard.ts';
 import { fillCardDims } from './lib-card-dims.ts';
+import { fillMediaDims } from './lib-media-dims.ts';
 import { makeTagResolver, preparePostStmts, writePost } from './lib-db-record-writer.ts';
 import { IMPORTABLE_MEDIA, buildLocalRecord, importLocalImage, localCaptureId } from './lib-local-intake.ts';
 import { TRASH_SUBDIR } from './lib-save-folder-path.ts';
@@ -329,7 +330,7 @@ function register(ctx: IpcContext) {
       const resolveTagId = makeTagResolver(sqlite);
       sqlite.exec('BEGIN');
       try {
-        for (const rec of toWrite) writePost(stmts, resolveTagId, fillCardDims(folder, rec));
+        for (const rec of toWrite) writePost(stmts, resolveTagId, fillMediaDims(folder, fillCardDims(folder, rec)));
         sqlite.exec('COMMIT');
       } catch (err) {
         sqlite.exec('ROLLBACK');
@@ -704,7 +705,7 @@ function register(ctx: IpcContext) {
       const resolveTagId = makeTagResolver(sqlite);
       sqlite.exec('BEGIN');
       try {
-        for (const rec of toWrite) writePost(stmts, resolveTagId, fillCardDims(folder, rec));
+        for (const rec of toWrite) writePost(stmts, resolveTagId, fillMediaDims(folder, fillCardDims(folder, rec)));
         sqlite.exec('COMMIT');
       } catch (err) {
         sqlite.exec('ROLLBACK');

@@ -200,6 +200,15 @@ export interface PostRecordShape {
   source: string | null;
   shotW: number | null;
   shotH: number | null;
+  // #162: per-record media-size aggregates (max across media[], falling back to
+  // the card image when media[] is empty — see app/src/main/lib-media-dims.ts
+  // for the write-time measurement this mirrors shotW/shotH's own convention).
+  // Null until a producer that has the save folder in hand measures it; 0 means
+  // "measured, nothing sizable" (a video-only record, or an unreadable header),
+  // the same sentinel as shotW/shotH.
+  mediaMaxW: number | null;
+  mediaMaxH: number | null;
+  mediaMaxBytes: number | null;
   trashedAt: string | null;
   // The captureId this record REPLACES (#34). Written when the user answers the
   // duplicate-save warning with "replace"; null on every ordinary save.
@@ -411,6 +420,9 @@ export function normalizePostRecord(input: PostRecordInput, now: () => string = 
     source: normStr(input.source),
     shotW: normNum(input.shotW),
     shotH: normNum(input.shotH),
+    mediaMaxW: normNum(input.mediaMaxW),
+    mediaMaxH: normNum(input.mediaMaxH),
+    mediaMaxBytes: normNum(input.mediaMaxBytes),
     trashedAt: normStr(input.trashedAt),
     replaces: normStr(input.replaces),
   };

@@ -21,6 +21,7 @@ const appDir = path.join(__dirname, '..', 'app');
 const { openDatabase } = require(path.join(appDir, 'src', 'main', 'lib-db.ts'));
 const { makeTagResolver, preparePostStmts, writePost } = require(path.join(appDir, 'src', 'main', 'lib-db-record-writer.ts'));
 const { fillCardDims } = require(path.join(appDir, 'src', 'main', 'lib-card-dims.ts'));
+const { fillMediaDims } = require(path.join(appDir, 'src', 'main', 'lib-media-dims.ts'));
 
 function saveFolderOf(configDir: string): string | null {
   try {
@@ -38,7 +39,7 @@ function seedLibrary(configDir: string, records: any[], opts: { close?: boolean 
   const saveFolder = saveFolderOf(configDir);
   const stmts = preparePostStmts(handle.sqlite);
   const resolveTagId = makeTagResolver(handle.sqlite);
-  for (const rec of records) writePost(stmts, resolveTagId, fillCardDims(saveFolder, rec));
+  for (const rec of records) writePost(stmts, resolveTagId, fillMediaDims(saveFolder, fillCardDims(saveFolder, rec)));
   if (opts.close !== false) handle.sqlite.close();
   return handle;
 }

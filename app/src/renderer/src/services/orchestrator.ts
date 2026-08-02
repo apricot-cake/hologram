@@ -25,6 +25,8 @@ import { open as confirmOpen } from './confirm.ts';
 import { hologramI18n } from './i18n.ts';
 import * as folders from './folders.ts';
 import { open as lightboxOpen } from './lightbox.ts';
+import { open as compareOpen, type CompareItem } from './compare.ts';
+import { open as menuOpen } from './menu.ts';
 import { shellReady } from './shell-ready.ts';
 import { scroller as contentScroller } from './content-area.ts';
 import { currentShape } from './display.ts';
@@ -35,6 +37,7 @@ import { makePostQueryBuilder, makePosterQueryBuilder, POST_FACET_OPTS, POSTER_F
 import { makeKindMenu } from './kind-menu-builder.ts';
 import { makeSearchBox } from './search-box-builder.ts';
 import { makeCommands } from './command-builder.ts';
+import { initFullTextBridge } from './fulltext.ts';
 import { makePostGridBuilder, bindLoadPosts, bindConfirmClearAll, bindGetSkipDeleteConfirm, bindSetSkipDeleteConfirm } from './post-grid-builder.ts';
 import { makePosterGridBuilder } from './poster-grid-builder.ts';
 import { makeGridDensity, type HologramSizeTrack } from './grid-density-builder.ts';
@@ -228,7 +231,18 @@ export interface FilterCatEng extends FilterCatBase {
   opLte: string;
   apply(f: { engType?: string; min?: string; op?: string }): void;
 }
-export type FilterCat = FilterCatValues | FilterCatDate | FilterCatEng;
+// #162: the dimension/file-size facet's editor — axis (width/height/long/bytes)
+// + at-least/at-most + a numeric value (px for the first three, MB for bytes —
+// the form converts to bytes before apply(), same "editor unit differs from
+// stored unit" shape the engagement form doesn't need).
+export interface FilterCatDim extends FilterCatBase {
+  editor: 'dim';
+  axisOptions: Array<{ value: string; label: string }>;
+  opGte: string;
+  opLte: string;
+  apply(f: { axis?: string; value?: string; op?: string }): void;
+}
+export type FilterCat = FilterCatValues | FilterCatDate | FilterCatEng | FilterCatDim;
 // The "+ Filter" menu: the facet categories the current browse mode offers,
 // each carrying its own live value/apply closures (the component only renders +
 // routes). Recomputed per open so counts/labels/vocab are fresh.
@@ -242,7 +256,7 @@ export interface ActiveFilter {
   cat: string; // matches a filterCategories() entry (editor to reopen on click)
   type: string; // leaf type (icon cue)
   label: string; // category label
-  editor: 'values' | 'date' | 'eng';
+  editor: 'values' | 'date' | 'eng' | 'dim';
   mode: FacetMode; // positive "all"/"any", or "is not"
   values: string[]; // per-value labels shown inside the chip
   remove(): void; // clear the whole facet (all its leaves)
@@ -955,6 +969,23 @@ export function endFilterEditSession(): void {
     onCloseTab: closeImageTab,
   });
 
+  // Compare view (#82): 2-4 selected posts, one representative image each — the
+  // same resolution openQuickView already uses for a single card peek
+  // (buildGroupGalleryItems(g)[0]). Video-first groups keep their video; an
+  // ugoira substitutes its poster rather than playing in place (#82 left the
+  // finer behavior to implementation, and the compare grid has no controller to
+  // drive UgoiraPlayer the way the single image view does).
+  function openCompareView() {
+    const groups = selection.selectedGroups(postGrid.getViewGroups(), postIdKey);
+    const items: CompareItem[] = [];
+    for (const g of groups) {
+      const gi = buildGroupGalleryItems(g)[0];
+      if (!gi) continue;
+      items.push({ src: gi.ugoira ? gi.poster || gi.src : gi.src, alt: gi.alt, video: gi.video });
+    }
+    compareOpen(items);
+  }
+
   // --- Fast triage mode (#46) ---
   // Constructed here: needs postGrid (getAllPosts/groupRecords/getPostById/
   // markPostsMutated/renderPosts, all built above), pushUndo (undoCtl, built even
@@ -1035,7 +1066,19 @@ export function endFilterEditSession(): void {
     // showCardMenu live in post-grid-builder.ts (postGrid above).
     onContextMenu: (g: HologramPostGroup, e) => {
       e.preventDefault();
-      if (selection.size() > 0) return; // the selection bar owns bulk actions
+      if (selection.size() > 0) {
+        // 2-4 selected (#82): the one bulk row compare needs, opened right here
+        // rather than added to the floating selection bar — #82's accepted launch
+        // path is the context menu specifically. Outside that count there is
+        // nothing to offer and the selection bar keeps owning every bulk action,
+        // unchanged from before #82.
+        if (selection.size() >= 2 && selection.size() <= 4) {
+          menuOpen({ items: [{ label: getMessage('ctxCompare'), act: 'compare' }], x: e.clientX, y: e.clientY }, (item) => {
+            if (item.act === 'compare') openCompareView();
+          });
+        }
+        return;
+      }
       // A card's body text is selectable, so the same click can be a text gesture —
       // the rows get spliced into this menu rather than opening a second one (#167).
       showCardMenu(g, e.clientX, e.clientY, selectionTextAt(e.target));
@@ -1547,6 +1590,32 @@ export function endFilterEditSession(): void {
         addFilter({ type: 'engagement', engType, min: n, op }); // numeric — the predicate compares p[engType] >= min
       },
     });
+    // #162: dimension/file-size facet. The editor collects a plain number in
+    // the axis's own display unit (px, or MB for size); apply() converts MB
+    // to bytes (the DB/predicate's unit — query.ts's makePostPredOf compares
+    // against mediaMaxBytes directly) before writing the leaf, and — same "no
+    // gte+lte on one type" rule engagement enforces above — replaces any
+    // existing leaf on the SAME axis rather than letting two coexist.
+    cats.push({
+      cat: 'dimension',
+      label: getMessage('qfDimension'),
+      editor: 'dim',
+      axisOptions: [
+        { value: 'width', label: getMessage('qfDimWidth') },
+        { value: 'height', label: getMessage('qfDimHeight') },
+        { value: 'long', label: getMessage('qfDimLong') },
+        { value: 'bytes', label: getMessage('qfDimBytes') },
+      ],
+      opGte: getMessage('qfEngGte'),
+      opLte: getMessage('qfEngLte'),
+      apply: ({ axis, value, op }) => {
+        const n = Number(value);
+        if (!(n > 0)) return;
+        const raw = axis === 'bytes' ? Math.round(n * 1024 * 1024) : Math.round(n);
+        removeCondsMatching((c) => c.type === 'dimension' && c.axis === axis);
+        addFilter({ type: 'dimension', axis, value: raw, op });
+      },
+    });
     return cats;
   };
 
@@ -1563,7 +1632,7 @@ export function endFilterEditSession(): void {
     // leaf type → { editor category, chip label, editor kind }. instance has no
     // standalone category (it lives as sub-rows under Platform), so its chip
     // reopens the platform editor.
-    const map: Record<string, { cat: string; label: string; editor: 'values' | 'date' | 'eng' }> = posters
+    const map: Record<string, { cat: string; label: string; editor: 'values' | 'date' | 'eng' | 'dim' }> = posters
       ? {
           platform: { cat: 'poster-platform', label: getMessage('sbPosterPlatformTitle'), editor: 'values' },
           tag: { cat: 'poster-tag', label: getMessage('sbPosterTagsTitle'), editor: 'values' },
@@ -1587,6 +1656,7 @@ export function endFilterEditSession(): void {
           folder: { cat: 'folder', label: getMessage('qfCatFolder'), editor: 'values' },
           date: { cat: 'date', label: getMessage('qfDate'), editor: 'date' },
           engagement: { cat: 'engagement', label: getMessage('qfEngagement'), editor: 'eng' },
+          dimension: { cat: 'dimension', label: getMessage('qfDimension'), editor: 'dim' },
         };
     const view = facetViewOf(qb.getTree(), opts);
     if (!view) return []; // non-facet persisted tree → no chips (read-only fallback dropped for the trial)
@@ -1738,6 +1808,27 @@ export function endFilterEditSession(): void {
     posterFolderRows: () => (qfValues('poster-folder') as FilterRow[]).map((r) => ({ id: String(r.v), name: String(r.l ?? r.v) })),
     posterAddFilter: (filter) => posterQB.addFilter(filter),
     startTriage: () => openTriage(),
+  });
+
+  // --- Full-text search (#29) -----------------------------------------------------
+  // The palette's "本文を検索" mode reads the library + jumps through this bridge
+  // (services/fulltext.ts's lazy-pull registration, same shape as searchbox.ts's
+  // handlers()/init() — CommandPalette.tsx mounts before this wiring runs).
+  // "Jump" opens a NEW tab scoped to just that text leaf (tabsCtl.openTextSearchTab
+  // — never touches the active tab, #29's design/acceptance criteria) and shows the
+  // inspector on the specific hit: openTextSearchTab's applyState() renders the new
+  // tab SYNCHRONOUSLY (post-grid-builder's renderPosts pushes 'postGroups'
+  // synchronously too), so the freshly-grouped set is already in the store by the
+  // time this reads it back.
+  initFullTextBridge({
+    allPosts: () => postGrid.getAllPosts(),
+    fileSrc,
+    openResult: (query, captureId) => {
+      tabsCtl.openTextSearchTab(query);
+      const groups = storeGet('postGroups') as HologramPostGroup[] | null;
+      const g = groups?.find((gr) => gr.records.some((r) => r.captureId === captureId));
+      if (g) showDetail(g);
+    },
   });
 
   // #148's chip-band inline input commit port = adds one condition to the narrowing of

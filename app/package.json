@@ -53,6 +53,9 @@
       "**/node_modules/better-sqlite3/**/*"
     ],
     "npmRebuild": false,
+    "electronFuses": {
+      "grantFileProtocolExtraPrivileges": false
+    },
     "extraResources": [
       {
         "from": "../native-host",

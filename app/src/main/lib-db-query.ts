@@ -67,6 +67,9 @@ const POST_COLUMNS = [
   'source',
   'shotW',
   'shotH',
+  'mediaMaxW',
+  'mediaMaxH',
+  'mediaMaxBytes',
   'trashedAt',
   'userKind',
   'tagReviewed',
@@ -246,6 +249,12 @@ function assemble(sqlite: Database.Database, postRows: any[]): any[] {
       source: r.source,
       shotW: r.shotW,
       shotH: r.shotH,
+      // #162: per-record media-size aggregates (dimension/file-size facet).
+      // Null on rows written before the add-media-max-dims migration, same
+      // as every other column added by a migration nothing backfills.
+      mediaMaxW: r.mediaMaxW,
+      mediaMaxH: r.mediaMaxH,
+      mediaMaxBytes: r.mediaMaxBytes,
       trashedAt: r.trashedAt,
       userKind: r.userKind,
       tagReviewed: fromDbBool(r.tagReviewed),

@@ -48,6 +48,7 @@ import type Database from 'better-sqlite3';
 import type { RawPayloadShape } from '../../../native-host/raw-payload.mts';
 import { commitFileAtomic } from './lib-atomic.ts';
 import { fillCardDims } from './lib-card-dims.ts';
+import { fillMediaDims } from './lib-media-dims.ts';
 import { parseJsonLoose } from './lib-json.ts';
 import { postCapturedVia, postRawPayloads, postsFromDb, tagParentsFromDb, tagsFromDb } from './lib-db-query.ts';
 import { createDbWriter } from './lib-db-write.ts';
@@ -833,7 +834,7 @@ async function importFromOpenZip(sqlite: Database.Database, zipfile: ZipReader, 
         skipped++;
         continue;
       }
-      writePost(stmts, resolveTagId, fillCardDims(destFolder, rec));
+      writePost(stmts, resolveTagId, fillMediaDims(destFolder, fillCardDims(destFolder, rec)));
       dbWriter.restorePostFlags(rec.captureId, rec); // userKind/tagReviewed: writePost doesn't carry these (lib-db-write.ts's module comment)
       existingIds.add(rec.captureId);
       imported++;

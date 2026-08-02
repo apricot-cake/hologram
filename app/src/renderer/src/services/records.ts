@@ -289,7 +289,8 @@ export function percentileFn(list: HologramPost[]): (p: HologramPost) => number 
 // protocol knowledge isn't duplicated here.
 // `ugoira` is the archive's library FILE NAME plus its frame table (#119 St3):
 // an archive can only be played with the table, and the player reads it over
-// IPC rather than from `src` (a file:// page cannot fetch the asset:// scheme).
+// IPC rather than from `src` (the renderer is app://bundle, a different origin
+// from asset://, which is registered without corsEnabled on purpose — ADR 0012).
 // `poster` is what stands in until the archive opens. Both absent otherwise.
 export type GalleryItem = { src: string; alt: string; video: boolean; capture?: boolean; ugoira?: { file: string; frames: { file: string; delay: number }[] }; poster?: string };
 // deps: fileSrc(file) — renderer media URL builder (viewer.js).

@@ -34,6 +34,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import { fillCardDims } from './lib-card-dims.ts';
+import { fillMediaDims } from './lib-media-dims.ts';
 import { makeTagResolver, preparePostStmts, writePost } from './lib-db-record-writer.ts';
 import type Database from 'better-sqlite3';
 import type { PostRecordInput } from '../../../native-host/post-record.mts';
@@ -138,7 +139,7 @@ export async function importLocalImage(args: ImportLocalImageArgs): Promise<{ ca
   const resolveTagId = makeTagResolver(args.sqlite);
   args.sqlite.exec('BEGIN');
   try {
-    writePost(stmts, resolveTagId, fillCardDims(args.folder, rec));
+    writePost(stmts, resolveTagId, fillMediaDims(args.folder, fillCardDims(args.folder, rec)));
     args.sqlite.exec('COMMIT');
   } catch (err) {
     args.sqlite.exec('ROLLBACK');

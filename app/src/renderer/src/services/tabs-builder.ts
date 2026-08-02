@@ -370,6 +370,29 @@ export function makeTabsController(deps: TabsBuilderDeps) {
     requestAnimationFrame(() => deps.scrollContentTo(0)); // new tab starts at the top
     persistTabsDebounced();
   }
+  // #29: opens a NEW tab whose only condition is a text leaf for `query` — the
+  // full-text search palette's "jump" action. Deliberately does not touch the
+  // active tab (the whole point of a library-wide full-text search is that it
+  // must not disturb whatever the user was narrowed to) — same shape as
+  // addTab(), swapping the empty state for one text leaf. Passing `tree: null`
+  // and letting applyState derive it via facetTreeFrom(s.f, …) reuses the same
+  // path a pre-#5-migration restored tab already takes, rather than
+  // hand-building the group/leaf nodes here too.
+  function openTextSearchTab(query: string) {
+    saveActiveTabState();
+    deps.hideImageView();
+    deps.setBrowseModeLite('posts');
+    const id = genTabId();
+    const state: HologramTabSnapshot = { f: [{ type: 'text', value: query }], ops: {}, tree: null, search: query, sort: 'date-desc', multi: false };
+    mutateTabs((arr) => {
+      arr.push({ id, pinned: false, title: null, state });
+    });
+    setActiveTabId(id);
+    applyState(state);
+    nav.adopt(getTabs().find((t) => t.id === id));
+    requestAnimationFrame(() => deps.scrollContentTo(0));
+    persistTabsDebounced();
+  }
   function closeTab(id: string | null | undefined) {
     if (getTabs().length <= 1) {
       // Last tab: a window always keeps one tab — whatever view it was on
@@ -572,6 +595,7 @@ export function makeTabsController(deps: TabsBuilderDeps) {
     restoreTabView,
     switchTab,
     addTab,
+    openTextSearchTab,
     closeTab,
     closeTabByGesture,
     pinTab,
