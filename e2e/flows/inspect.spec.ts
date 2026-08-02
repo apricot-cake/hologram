@@ -48,9 +48,8 @@ test('カードをダブルクリックすると画像ビューが開く', async
 // #633. The panel holds a SNAPSHOT of what was inspected, so a subject that stops
 // existing has to be noticed from the library side — otherwise the picture is gone
 // and the detail of it is still there, with a live tag editor writing to a record
-// that no longer exists. Both cases go through the floating bar, which is the delete
-// the user can actually reach from either place (the image view has no card menu,
-// and the bar floats over the stage).
+// that no longer exists. The grid cases go through the floating bar, which is the
+// delete a selection can actually reach.
 async function deleteSelectionViaBar(page: import('@playwright/test').Page) {
   await page.getByRole('button', { name: '削除' }).click();
   const confirm = page.locator('[data-slot="alert-dialog-content"]');
@@ -58,16 +57,30 @@ async function deleteSelectionViaBar(page: import('@playwright/test').Page) {
   await confirm.getByRole('button', { name: '削除する' }).click();
 }
 
-test('画像ビューを開いたまま削除するとステージもインスペクタも投稿を手放す', async ({ launchHologram }) => {
+test('画像ビューを開いたまま別タブで削除するとステージもインスペクタも投稿を手放す', async ({ launchHologram }) => {
   const { page } = await launchHologram();
-  // A double click both selects the card and opens the image view, so the floating
-  // bar is on screen over the stage with exactly this post selected.
+  // A double click both selects the card and opens the image view.
   await page.locator('[data-slot="post-grid"] [data-slot="post-card"]').filter({ hasText: '猫が机の上で寝ている' }).dblclick();
   await expect(page.locator('[data-slot="image-tab-view"]')).toBeVisible();
   await expect(page.locator('[data-slot="inspector-post"]')).toContainText('猫沢みけ');
 
-  await deleteSelectionViaBar(page);
+  // #656 took the floating bar off the image view (the stage cannot show WHICH cards a
+  // bulk action would hit), so the delete this case needs no longer starts here — asserted
+  // rather than assumed, because that change is exactly what silently turned this test red:
+  // it kept clicking a bar that had stopped being reachable.
+  await expect(page.locator('[data-slot="selection-bar"]')).toHaveAttribute('aria-hidden', 'true');
 
+  // A second tab is the route that stays open: same library, its own grid and its own
+  // selection, and the image view keeps holding the post it was opened on.
+  await page.locator('[data-slot="tab-new"]').click();
+  const grid = page.locator('[data-slot="post-grid"] [data-slot="post-card"]');
+  await expect(grid).toHaveCount(4);
+  await grid.filter({ hasText: '猫が机の上で寝ている' }).click();
+  await deleteSelectionViaBar(page);
+  await expect(grid).toHaveCount(3);
+
+  await page.locator('[data-slot="tab"]').first().click();
+  await expect(page.locator('[data-slot="image-tab-view"]')).toBeVisible();
   // The stage says the post is gone…
   await expect(page.getByText('この画像はライブラリにありません')).toBeVisible();
   // …and the right column must not keep answering for it. No post detail, no tag

@@ -52,6 +52,15 @@ const HTML = `<!doctype html>
     // #44: the failure banner is in the shared ShadowRoot; Playwright's CSS
     // selectors pierce open shadow roots, page.evaluate's querySelector does not.
     await page.waitForSelector('[data-hologram-save-banner]', { timeout: 5000 });
+    // The banner ENTERS with a Web Animation (status-surface.ts's frames(): translateY(-14px)
+    // scale(0.96) → none), and every number read below is a getBoundingClientRect. Measured
+    // mid-flight they are the tween's numbers, not the layout's — which is exactly what the
+    // nightly runner reported (top=11.02 against a `top: 12px` that never moved, #818). A
+    // fixed sleep would only move the odds, so wait on the animation itself.
+    await page.evaluate(async () => {
+      const banner = document.querySelector('hologram-extension-ui')?.shadowRoot?.querySelector('[data-hologram-save-banner]');
+      if (banner) await Promise.all(banner.getAnimations().map((animation) => animation.finished.catch(() => {})));
+    });
     await wait(100); // chrome.storage.local logging is best-effort and asynchronous
     const diagnosticEntries = await overlay.browser.serviceWorkers()[0].evaluate(async () => {
       const all = await (globalThis as any).chrome.storage.local.get(null);
@@ -89,7 +98,11 @@ const HTML = `<!doctype html>
     // which is the failure this fixture provokes on any machine. The corner says
     // cornerRetry instead: the long recovery sentence belongs to the surface that
     // has room for it (#310).
-    if (failureUi.text !== 'Hologram の保存先に接続できません。Chrome を再起動してください' || failureUi.retryLabel !== '保存に失敗しました。押すと再試行します') {
+    // #203 appends bannerQueued to it: a save the host never answered is now held for
+    // retry, and the banner has to say so or the user reads "it failed" and saves again by
+    // hand. Both halves are asserted, because the reason alone and the promise alone are
+    // each a different (and wrong) thing to tell someone.
+    if (failureUi.text !== 'Hologram の保存先に接続できません。Chrome を再起動してください 接続が回復したら自動で保存します' || failureUi.retryLabel !== '保存に失敗しました。押すと再試行します') {
       throw new Error(`OVERLAY_FAILURE_BANNER_LOCALE_FAIL: ${JSON.stringify({ failureUi, diagnosticEntries })}`);
     }
     const rawFailure = diagnosticEntries.find((entry) => entry?.phase === 'fail' && typeof entry?.error === 'string');

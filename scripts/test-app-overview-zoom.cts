@@ -69,7 +69,6 @@ const evalJs = `(async () => {
     const r = grid.getBoundingClientRect();
     grid.dispatchEvent(new WheelEvent('wheel', { deltaY, ctrlKey: true, clientX: x == null ? r.left + 20 : x, clientY: y == null ? r.top + 20 : y, bubbles: true, cancelable: true }));
   };
-  const start = size();
 
   // --- Anchor preservation (#282) ---
   // Does the post that was being looked at stay at the same height on screen before and
@@ -154,6 +153,15 @@ const evalJs = `(async () => {
   // body; measured hitting it 2 times out of 3), so wait until cells are actually visible.
   const windowed = await waitFor(() => seen().length > 0, 8000);
   await settle();
+  // THE BASELINE IS TAKEN HERE, not at the top of this script. A card's box only carries the
+  // size axis once the virtual grid has laid out for real; before that first pass it is a
+  // couple of pixels wide, and reading the baseline there hands every later comparison a
+  // number the grid never had. That is what the runner reported on 8/2 (start=2), so
+  // "cells shrink" compared 51 against 2 and failed while the zoom itself had worked (#818).
+  // Local runs never saw it because the layout landed before the first statement ran; the
+  // runner is simply slower, which is the same reason the waits above exist at all.
+  const sized = await waitFor(() => { const s = size(); return Number.isFinite(s) && s >= 48; }, 8000);
+  const start = size();
   const scrolledTo = Math.round(scroller.scrollTop);
   const midY = sr.top + sr.height / 2;
   // Among the cards visible on screen, target the one closest to the viewport center.
@@ -212,7 +220,7 @@ const evalJs = `(async () => {
   // Zoom back in (zoom-in is deltaY<0)
   for (let i = 0; i < 3; i++) fire(-120);
   const back = await settleFrom(small, 8000);
-  return [start, small, persistedSize, back, stableAtLimit, anchorReady ? 1 : 0, drift, moved ? 1 : 0].join(',');
+  return [start, small, persistedSize, back, stableAtLimit, anchorReady ? 1 : 0, drift, moved ? 1 : 0, sized ? 1 : 0].join(',');
 })()`;
 
 const env = Object.assign({}, process.env, {
@@ -236,8 +244,12 @@ child.on('close', () => {
     console.log('OVERVIEW_ZOOM_TEST_FAIL (no EVAL_RESULT)');
     process.exit(1);
   }
-  const [start, small, persisted, back, stableAtLimit, anchored, drift, moved] = m[1].split(',');
+  const [start, small, persisted, back, stableAtLimit, anchored, drift, moved, sized] = m[1].split(',');
   const checks = [
+    // Stated separately from the value checks below: "the grid never laid out" and "the grid
+    // laid out at the wrong size" are different failures, and only the second one is about
+    // the feature. Without this line the first one arrives disguised as the second (#818).
+    ['開始サイズの採寸前提が整っている（グリッドの初回レイアウト完了）', sized === '1'],
     ['開始サイズは復元された180あたり', Number(start) >= 180],
     ['Ctrl+ホイール下でセルが縮む', Number(small) < Number(start)],
     ['下限は48（それ以下へ落ちない）', Number(small) >= 48],
@@ -257,7 +269,7 @@ child.on('close', () => {
     console.log(`${ok ? 'ok  ' : 'FAIL'} ${name}`);
     if (!ok) failed++;
   }
-  console.log(`values: start=${start} small=${small} persisted=${persisted} back=${back} drift=${drift} moved=${moved}`);
+  console.log(`values: start=${start} small=${small} persisted=${persisted} back=${back} drift=${drift} moved=${moved} sized=${sized}`);
   console.log(failed ? 'OVERVIEW_ZOOM_TEST_FAIL' : 'OVERVIEW_ZOOM_TEST_PASS');
   process.exit(failed ? 1 : 0);
 });
