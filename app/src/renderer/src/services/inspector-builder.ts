@@ -451,6 +451,26 @@ export function makeInspector(deps: InspectorBuilderDeps) {
     };
   }
 
+  // #181: the post's OGP preview card, when it has one. thumbSrc reads the
+  // downloaded file through the same asset:// helper the post's own thumbnail
+  // uses (deps.fileSrc) — never the card's original remote URL (#181 scope:
+  // the thumbnail is downloaded at save time, same "no live network fetch on
+  // display" rule #180's quoted-post card follows). onOpen always goes
+  // through the existing https-only open-external route: unlike a
+  // quoted/renoted post (#180's jumpToQuotedPost), a link card never points
+  // at another SAVED record to navigate to in-app — it names an external
+  // page this library has no independent entry for.
+  function linkCardOf(card: any): HologramLinkCardModel | null {
+    if (!card || !card.url) return null;
+    return {
+      title: card.title || card.url,
+      description: card.description || '',
+      domainLabel: hostOf(card.url) || '',
+      thumbSrc: card.thumbnailFile ? deps.fileSrc(card.thumbnailFile) : null,
+      onOpen: () => hologramIpc.openExternal(card.url),
+    };
+  }
+
   // Click-through (2026-07-27 design comment on #180): an independently-saved
   // copy navigates in-app; nothing saved opens the sub-record's own URL
   // externally (the existing https-only open-external route). The in-app
@@ -521,6 +541,11 @@ export function makeInspector(deps: InspectorBuilderDeps) {
     // text — the post text IS the poll's question on every platform that has
     // polls, so nothing may come between them.
     const pollCard = pollCardOf(p.poll);
+    // #181: rendered alongside quotedCards/pollCard, directly under the
+    // post's own text — the same slot a link-share embed occupies on the
+    // source platforms (mutually exclusive with a quote/poll in practice, but
+    // not enforced here).
+    const linkCard = linkCardOf(p.linkCard);
     const thumbFile = g.files[0] || captureFile(p);
     // Reverse image search needs a PUBLIC image URL. media[].url keeps the
     // original CDN URL (pbs.twimg.com / cdn.bsky.app / instance media / pximg);
@@ -551,6 +576,7 @@ export function makeInspector(deps: InspectorBuilderDeps) {
       onThumbClick: thumbFile ? () => deps.openQuickView(g) : null,
       quotedCards,
       pollCard: pollCard || undefined,
+      linkCard: linkCard || undefined,
       platformLabel: (p.platform || '').toUpperCase(),
       avatarSrc,
       authorName: p.displayName || '',

@@ -153,6 +153,8 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     pollMultiple: '複数選択可',
     pollDeadline: '締切 $1',
     pollResultsHidden: '票数非公開',
+    // #181: リンク共有投稿のOGPプレビューカード。ラベルはドメイン名の前に付く小見出し。
+    linkCardLabel: 'リンク先',
     // pixiv シリーズ情報（#188）。シリーズに属さない作品では両方とも空
     detailSeries: 'シリーズ',
     detailSeriesOrder: '話数',
@@ -839,6 +841,8 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     pollMultiple: 'Multiple choice',
     pollDeadline: 'Closes $1',
     pollResultsHidden: 'Results hidden',
+    // #181: a link-share post's OGP preview card.
+    linkCardLabel: 'Link',
     // pixiv series info (#188). Both blank when the work isn't in a series
     detailSeries: 'Series',
     detailSeriesOrder: 'Installment',

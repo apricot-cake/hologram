@@ -136,6 +136,34 @@ interface Poll {
   votersCount: number | null;
 }
 
+// #181: the OGP preview card a link-share post carries. The platform's own
+// API bundles this alongside the post it belongs to (Bluesky's
+// app.bsky.embed.external view, Mastodon's status.card, X's link-preview
+// card -- see bluesky.ts/mastodon.ts/x.ts for the per-platform sourcing), so
+// -- like QuotedPost -- no extra request is spent building it.
+//
+// Distinct from a #195 bookmark record: a bookmark's OWN og:image/title/
+// description ARE the record (rec.title/rec.text/rec.media[0]), because the
+// record itself IS the bookmarked page. Here the card describes something
+// OTHER than the post (an external article), so it needs a slot of its own
+// rather than overwriting the post's own title/text.
+//
+// v1 scope (#181): unlike QuotedPost.media (URL-recorded, never fetched),
+// `thumbnail` IS downloaded -- see native-host/post-record.mts's
+// LinkCardShape.thumbnailFile, the field the host fills in after fetching it.
+interface LinkCard {
+  // The external page's own URL -- the destination, so a search for the
+  // shared article's URL surfaces the post that shared it (#181's Why).
+  url: string | null;
+  title: string | null;
+  description: string | null;
+  // Already absolutized (mirrors bookmark.ts's extractOgp) where a platform
+  // could conceivably hand back a relative one; every platform observed here
+  // always serves an absolute CDN URL already. null when the platform's card
+  // carried no image.
+  thumbnail: string | null;
+}
+
 // One `:shortcode:` custom emoji the post's own text uses (#290), as announced
 // by the platform's API response -- Misskey's note.emojis (shortcode -> URL
 // map) and Mastodon's status.emojis[] ({shortcode, url, static_url}) are the
@@ -229,6 +257,11 @@ interface PostRecord {
   // sourcing. null on every post without a poll and on every pixiv/Bluesky
   // record (neither platform has the concept).
   poll: Poll | null;
+  // #181: the OGP preview card of a link-share post -- see LinkCard above.
+  // null on every post that isn't sharing a link (the overwhelming majority)
+  // and, in v1, on every Misskey/pixiv post (out of #181's scope -- Misskey's
+  // API bundles no card, and pixiv posts have no link-card concept).
+  linkCard: LinkCard | null;
   // pixiv series membership (#188): which series this work belongs to and its
   // 1-based position in it, from the illust payload's seriesNavData. All three
   // stay null on a work that isn't part of a series (seriesNavData itself is
@@ -440,4 +473,4 @@ interface Extractor {
   apiHostPermissions?: readonly string[];
 }
 
-export type { CaptureSite, CustomEmoji, DomMeta, Extractor, MediaIdentity, MediaIdentitySite, MediaItem, OverlaySite, ParsedPost, Poll, PollChoice, PostMediaElement, PostRecord, PostRect, QuotedPost, RawAcquisition };
+export type { CaptureSite, CustomEmoji, DomMeta, Extractor, LinkCard, MediaIdentity, MediaIdentitySite, MediaItem, OverlaySite, ParsedPost, Poll, PollChoice, PostMediaElement, PostRecord, PostRect, QuotedPost, RawAcquisition };

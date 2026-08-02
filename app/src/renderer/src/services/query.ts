@@ -394,6 +394,11 @@ export const hasVisualMedia = (p: HologramPost): boolean => !!p.image || !!p.vid
 // p.poll (#179): the poll's choice labels, so a saved survey is findable by
 // what it asked about. Author-written words, same as the post text — null on
 // every post without a poll, same graceful-absence convention as the rest.
+// p.linkCard (#181): a link-share post's OGP preview card — its title and
+// description are connected into the same search text bundle as the post's
+// own words (#181's Why: "専用構文は増やさない"), null on every post that
+// isn't sharing a link. The card's own URL is handled separately, by the
+// 'text' leaf's URL probe below (matching quotedUrl's own treatment).
 export function textHaystackOf(p: HologramPost): string[] {
   return [p.text, p.title, p.eagleName, p.screenName, p.displayName, p.memo, p.seriesTitle]
     .concat(p.tags || [])
@@ -401,6 +406,7 @@ export function textHaystackOf(p: HologramPost): string[] {
     .concat((p.media || []).map((m: any) => m?.alt))
     .concat([p.quotedPost, p.replyToPost].flatMap((q: any) => (q ? [q.text, q.displayName, q.screenName].concat((q.media || []).map((m: any) => m?.alt)) : [])))
     .concat(((p.poll as any)?.choices || []).map((c: any) => c?.text))
+    .concat(p.linkCard ? [(p.linkCard as any).title, (p.linkCard as any).description] : [])
     .map((x) => (x == null ? '' : String(x)));
 }
 
@@ -554,16 +560,27 @@ export function makePostPredOf(deps: {
         const key = q;
         if (f._compiledKey !== key || !f._compiled) {
           f._compiledKey = key;
-          // URL probe: url/quotedUrl are matched only for URL-shaped queries
-          // (contains '.' or '/') and always as plain substrings — never fuzzy,
-          // because subsequence-matching short latin terms against long URLs
-          // hits almost everything. A full pasted URL additionally matches by
-          // normalized post key (deps.postKeyOf) so x.com⇄twitter.com and
-          // tracking-param variants of a saved post still hit.
+          // URL probe: url/quotedUrl/linkCard.url are matched only for
+          // URL-shaped queries (contains '.' or '/') and always as plain
+          // substrings — never fuzzy, because subsequence-matching short
+          // latin terms against long URLs hits almost everything. A full
+          // pasted URL additionally matches by normalized post key
+          // (deps.postKeyOf) so x.com⇄twitter.com and tracking-param variants
+          // of a saved post still hit. linkCard.url gets the plain substring
+          // check only (#181's Why: "記事URLで検索→それを共有した投稿が出
+          // る") — it names an arbitrary external page, not a supported
+          // platform's own post, so postKeyOf's SNS-specific normalization
+          // has nothing to normalize there.
           const lq = q.toLowerCase();
           const urlish = /[./]/.test(q);
           const qKey = urlish && deps.postKeyOf ? deps.postKeyOf(q) : null;
-          const urlHit: ((p: HologramPost) => boolean) | null = !urlish ? null : (p: HologramPost) => (qKey != null && (p._postKey === qKey || p._quotedKey === qKey)) || (p.url || '').toLowerCase().includes(lq) || (p.quotedUrl || '').toLowerCase().includes(lq);
+          const urlHit: ((p: HologramPost) => boolean) | null = !urlish
+            ? null
+            : (p: HologramPost) =>
+                (qKey != null && (p._postKey === qKey || p._quotedKey === qKey)) ||
+                (p.url || '').toLowerCase().includes(lq) ||
+                (p.quotedUrl || '').toLowerCase().includes(lq) ||
+                ((p.linkCard as any)?.url || '').toLowerCase().includes(lq);
           const m = deps.fuzzyCompile ? deps.fuzzyCompile(q) : null;
           if (m) {
             f._compiled = (p: HologramPost) => m(textHaystackOf(p).join(' ')) || (urlHit != null && urlHit(p));

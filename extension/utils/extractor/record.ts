@@ -51,6 +51,9 @@ function emptyRecord(url: string | null | undefined, platform: string | null | u
     replyToPost: null,
     // #179: the post's poll, filled by x.ts / misskey.ts / mastodon.ts only.
     poll: null,
+    // #181: the OGP preview card of a link-share post, filled by bluesky.ts /
+    // mastodon.ts / x.ts only.
+    linkCard: null,
     seriesId: null,
     seriesTitle: null,
     seriesOrder: null,

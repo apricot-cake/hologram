@@ -1525,6 +1525,9 @@ function buildRecord(meta, { captureId, capturedAt, postUrl, sendPlatform, repla
       // #179: the post's poll, when it has one (X / Misskey / Mastodon).
       // Undefined (not null) on the bookmark path, like the two above.
       poll: meta.poll,
+      // #181: the OGP preview card of a link-share post (Bluesky / Mastodon /
+      // X). Undefined (not null) on the bookmark path, like the two above.
+      linkCard: meta.linkCard,
       seriesId: meta.seriesId,
       seriesTitle: meta.seriesTitle,
       seriesOrder: meta.seriesOrder,

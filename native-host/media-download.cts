@@ -521,6 +521,26 @@ async function downloadAvatar(avatar: unknown, referer: unknown, dir: string, bu
   return got ? got.file : null;
 }
 
+// #181: the OGP card's thumbnail. Same best-effort, no-Referer contract as
+// downloadAvatar just above -- but per-record (`<base>-linkcard.<ext>`), not
+// a shared content-addressed store: a card thumbnail is keyed to the LINKED
+// article, not to a person (downloadAvatar) or a per-instance emoji
+// (downloadCustomEmojis below), so the cross-record reuse those two exist for
+// does not apply here.
+//
+// No Referer is ever passed (unlike pixiv's mediaReferer): #181's card data
+// comes from the PLATFORM's own already-fetched API response (Bluesky
+// external embed / Mastodon status.card / X's card mechanism), never from
+// fetching the external page itself, so this URL is always the platform's
+// own CDN (cdn.bsky.app / the instance's own media host / pbs.twimg.com) —
+// never the linked article's origin. The 2026-07-27 security review's
+// cross-origin-Referer concern (recorded on #181, addressed to a page-fetch
+// design like #122's) therefore does not arise for this download.
+async function downloadLinkCardThumbnail(url: unknown, dir: string, base: string, budget: ByteBudget = createByteBudget()): Promise<string | null> {
+  const got = await saveStillImage(url, undefined, dir, `${base}-linkcard`, budget);
+  return got ? got.file : null;
+}
+
 interface CustomEmojiEntry {
   shortcode: string;
   url: string;
@@ -604,6 +624,7 @@ module.exports = {
   downloadMedia,
   downloadAvatar,
   downloadCustomEmojis,
+  downloadLinkCardThumbnail,
   createByteBudget,
   AVATAR_SUBDIR,
   EMOJI_SUBDIR,

@@ -26,7 +26,7 @@ import { hologramIpc } from './ipc.ts';
 // one (the acceptance criterion is that a tag/hashtag hit must not read as a
 // body hit — #29's design comment on the surprise this avoids). Body-ish
 // fields first, tag/hashtag last.
-export type FullTextFieldKey = 'text' | 'title' | 'memo' | 'seriesTitle' | 'alt' | 'quoted' | 'poll' | 'displayName' | 'screenName' | 'eagleName' | 'tag' | 'hashtag';
+export type FullTextFieldKey = 'text' | 'title' | 'memo' | 'seriesTitle' | 'alt' | 'quoted' | 'poll' | 'linkCard' | 'displayName' | 'screenName' | 'eagleName' | 'tag' | 'hashtag';
 
 function fieldsOf(p: HologramPost): { key: FullTextFieldKey; value: string }[] {
   const out: { key: FullTextFieldKey; value: string }[] = [];
@@ -46,6 +46,14 @@ function fieldsOf(p: HologramPost): { key: FullTextFieldKey; value: string }[] {
   // post text and the CW — searchable, and reported as their own field so a hit
   // on a choice does not read as a body hit.
   for (const c of (p.poll as { choices?: { text?: unknown }[] } | null | undefined)?.choices || []) push('poll', c?.text);
+  // #181: a link-share post's OGP card title/description — the same
+  // author-adjacent words the quoted-post text gets, reported as their own
+  // field so a hit there does not read as a body hit either.
+  const card = p.linkCard as { title?: unknown; description?: unknown } | null | undefined;
+  if (card) {
+    push('linkCard', card.title);
+    push('linkCard', card.description);
+  }
   push('displayName', p.displayName);
   push('screenName', p.screenName);
   push('eagleName', p.eagleName);

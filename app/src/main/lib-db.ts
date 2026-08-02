@@ -432,6 +432,18 @@ const MIGRATIONS: Migration[] = [
   // lib-local-intake.ts's buildLocalRecord for the one place that decides
   // which of the three gets filled.
   { name: 'add-post-file', up: (db) => db.exec('ALTER TABLE posts ADD COLUMN file TEXT') },
+  // #181: the OGP preview card a link-share post embeds (Bluesky external
+  // embed / Mastodon status.card / X's own card mechanism) — see
+  // native-host/post-record.mts's LinkCardShape. Stored as JSON text, same
+  // convention as quotedPost/replyToPost/poll: 0-or-1 per post, not a fan-out
+  // worth its own table. Not added to posts_fts for the same reason those
+  // give — that index has no live caller yet (services/query.ts's
+  // textHaystackOf / services/fulltext.ts are the wired-up search paths and
+  // both read this straight off the in-memory post).
+  {
+    name: 'add-post-link-card',
+    up: (db) => db.exec(`ALTER TABLE posts ADD COLUMN linkCard TEXT;`),
+  },
 ];
 
 interface Migration {
@@ -603,6 +615,9 @@ interface PostsTable {
   // assetClass:'file' records (image/video/mediaType stay null on those rows).
   // See PostRecordShape.file.
   file: string | null;
+  // add-post-link-card migration (#181) — JSON LinkCardShape, same storage
+  // convention as quotedPost/replyToPost/poll. See PostRecordShape.linkCard.
+  linkCard: string | null;
 }
 interface MediaTable {
   id: Generated<number>;

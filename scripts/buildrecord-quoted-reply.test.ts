@@ -66,6 +66,12 @@ describe('quotedPost/replyToPost/poll が buildRecord から bridge.cts まで�
     expiresAt: '2026-01-03T00:00:00.000Z',
     votersCount: null,
   };
+  // #181: the announced link-card shape an extractor produces (bluesky.ts /
+  // mastodon.ts / x.ts). thumbnail stays null so this test never spends a
+  // real network fetch — downloadSavedLinkCard's own best-effort branch skips
+  // the download entirely when there is nothing to fetch, same as the
+  // no-media/no-avatar case this test already exercises.
+  const linkCard = { url: 'https://example.com/article', title: 'A great article', description: 'It explains things.', thumbnail: null };
 
   beforeAll(async () => {
     quoteTmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-test-quote-'));
@@ -78,7 +84,7 @@ describe('quotedPost/replyToPost/poll が buildRecord から bridge.cts まで�
     // #180 sidecars. Routed through the real buildRecord(), not hand-typed as the
     // wire message — that's what makes this catch a regression in buildRecord
     // itself rather than only in bridge.cts's marshalling.
-    const meta = { url: 'https://x.com/alice/status/1', platform: 'x', text: 'hi, quoting and replying', quotedPost, replyToPost, poll };
+    const meta = { url: 'https://x.com/alice/status/1', platform: 'x', text: 'hi, quoting and replying', quotedPost, replyToPost, poll, linkCard };
     const metadata = buildRecord(meta, { captureId: quoteCaptureId, capturedAt: '2026-08-02T00:00:00.000Z', postUrl: meta.url, sendPlatform: 'x', extra: { image: `${quoteCaptureId}.jpg` } });
 
     const msg = Buffer.from(JSON.stringify({ type: 'save', captureId: quoteCaptureId, image: jpegB64, metadata }), 'utf8');
@@ -117,5 +123,10 @@ describe('quotedPost/replyToPost/poll が buildRecord から bridge.cts まで�
   test('封筒の record.poll に抽出器のアンケートがそのまま乗る（#179）', () => {
     const envelope = JSON.parse(fs.readFileSync(path.join(quoteSaveFolder, '.hologram-inbox', 'new', `${quoteCaptureId}.json`), 'utf8'));
     expect(envelope.record.poll).toEqual(poll);
+  });
+
+  test('封筒の record.linkCard に抽出器のリンクカードが url/title/description ごと乗る（#181）', () => {
+    const envelope = JSON.parse(fs.readFileSync(path.join(quoteSaveFolder, '.hologram-inbox', 'new', `${quoteCaptureId}.json`), 'utf8'));
+    expect(envelope.record.linkCard).toEqual({ url: linkCard.url, title: linkCard.title, description: linkCard.description, thumbnailFile: null });
   });
 });

@@ -7,7 +7,7 @@
 import { anySrc, findAncestorContainerLink, hostnameMatches, parseMediaUrlPath, prepareScopedCaptureState } from './dom.ts';
 import { parseCount } from './dom-meta.ts';
 import { emptyRecord, normalizeHashtags, readJsonKeepingRaw, toIso } from './record.ts';
-import type { DomMeta, Extractor, MediaIdentity, MediaItem, Poll, PostMediaElement, PostRecord } from './types.ts';
+import type { DomMeta, Extractor, LinkCard, MediaIdentity, MediaItem, Poll, PostMediaElement, PostRecord } from './types.ts';
 
 const HOSTS = ['x.com', 'twitter.com'];
 
@@ -386,6 +386,55 @@ function xPoll(card): Poll | null {
   return { choices, multiple: null, expiresAt: toIso(xCardString(bindings, 'end_datetime_utc')), votersCount: null };
 }
 
+// #181: a link-preview card is the non-poll sibling of the same legacy card
+// mechanism xPoll reads (see that function's comment) -- X has never
+// published this format, so this is cross-checked against several independent
+// open-source readers of the SAME cdn.syndication.twimg.com endpoint this
+// file calls (github.com/FxEmbed/FxEmbed, github.com/zernonia/tweetic,
+// github.com/vladkens/twscrape, github.com/dimdenGD/OldTwitter, read
+// 2026-08-02 -- all five agree on every key below). card.name is one of a
+// fixed set of "website" card templates, disjoint from X_POLL_CARD's
+// 'poll<N>choice...' names and from the broadcast/player cards other tweet
+// kinds carry (a live NASA broadcast card, sampled 2026-08-02, has
+// card.name '<id>:broadcast' and none of these bindings).
+const X_LINK_CARD_NAMES = new Set(['summary', 'summary_large_image', 'summary_photo_image', 'promo_image', 'summary_large_image_app']);
+// The still-image binding's own name has changed across X's card history;
+// every value the five readers above recognize is tried in the same
+// most-specific-first order tweetic's own BindingValues type lists, so an
+// older or newer tweet's card is read the same way regardless of which key
+// its card actually carries.
+const X_LINK_CARD_IMAGE_KEYS = [
+  'summary_photo_image_large',
+  'photo_image_full_size_large',
+  'summary_photo_image',
+  'photo_image_full_size',
+  'summary_photo_image_x_large',
+  'photo_image_full_size_x_large',
+  'thumbnail_image_large',
+  'thumbnail_image',
+  'thumbnail_image_original',
+  'summary_photo_image_original',
+  'photo_image_full_size_original',
+];
+function xCardImage(bindings, key: string): string | null {
+  const v = bindings && bindings[key];
+  const img = v && v.image_value;
+  return img && typeof img.url === 'string' && img.url ? img.url : null;
+}
+function xLinkCard(card): LinkCard | null {
+  if (!card || typeof card.name !== 'string' || !X_LINK_CARD_NAMES.has(card.name)) return null;
+  const bindings = card.binding_values;
+  if (!bindings || typeof bindings !== 'object') return null;
+  const url = xCardString(bindings, 'card_url');
+  if (!url) return null;
+  let thumbnail: string | null = null;
+  for (const key of X_LINK_CARD_IMAGE_KEYS) {
+    thumbnail = xCardImage(bindings, key);
+    if (thumbnail) break;
+  }
+  return { url, title: xCardString(bindings, 'title'), description: xCardString(bindings, 'description'), thumbnail };
+}
+
 function xMediaType(details) {
   const t = details && details[0] && details[0].type;
   if (t === 'video') return 'video';
@@ -507,6 +556,7 @@ async function fetchXTweet(parsed, url): Promise<PostRecord> {
     // No free-text CW field exists on this endpoint — rec.cw stays null.
     rec.sensitive = typeof j.possibly_sensitive === 'boolean' ? j.possibly_sensitive : null;
     rec.poll = xPoll(j.card);
+    rec.linkCard = xLinkCard(j.card);
     if (j.user) {
       rec.displayName = j.user.name || null;
       rec.screenName = j.user.screen_name || rec.screenName;

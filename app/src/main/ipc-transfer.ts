@@ -294,6 +294,16 @@ function register(ctx: IpcContext) {
         // reconstructing a record from a URL-only legacy shape, not running
         // the save pipeline's shared-store downloads a second time).
         customEmojis: Array.isArray(p.customEmojis) ? p.customEmojis : [],
+        // #181: carried through like quotedPost/replyToPost/poll above -- a
+        // legacy-ZIP re-import of a post this feature already touched must
+        // not quietly drop its link card. No producer of this legacy shape
+        // can populate it today (forward-safety only, same note as
+        // customEmojis above), and unlike the top-level avatar just above,
+        // thumbnailFile is NOT re-fetched here: this importer's job is
+        // reconstructing a record from a URL-only legacy shape, not running
+        // the save pipeline's downloads a second time (same reasoning
+        // customEmojis' own comment gives for not re-fetching those files).
+        linkCard: p.linkCard || null,
         seriesId: p.seriesId || null,
         seriesTitle: p.seriesTitle || null,
         seriesOrder: p.seriesOrder ?? null,

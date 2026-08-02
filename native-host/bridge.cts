@@ -31,7 +31,7 @@ const { configDir, defaultLibraryDir, extensionBuildStampPath, extensionContactP
 // Best-effort remote-image download (original media + avatars) lives in a shared
 // module so the SSRF guard / size caps are identical across capture, import and
 // backfill. See media-download.cts.
-const { downloadMedia, downloadAvatar, downloadCustomEmojis, saveStillImage, createByteBudget } = require('./media-download.cts');
+const { downloadMedia, downloadAvatar, downloadCustomEmojis, downloadLinkCardThumbnail, saveStillImage, createByteBudget } = require('./media-download.cts');
 // Same pure resolver the desktop app uses, so the bridge and app pick the SAME
 // save folder — including recovering from the redundant pointer. See readSaveFolder.
 const { resolveSaveFolder } = require('./config-recovery.cts');
@@ -598,6 +598,27 @@ function handleQuery(req: QueryRequest): QueryAck {
   return { ok: true, results, trashed };
 }
 
+// #181: resolve one save's link-card thumbnail into the saved shape
+// (post-record.mts's LinkCardShape) -- same best-effort contract as the
+// avatarFile block every handler below already carries (a download failure
+// leaves thumbnailFile null and never fails the save). null input (no card,
+// or a card with no destination url -- normLinkCard's own gate re-checks this
+// regardless) yields null. Shared by all three handlers so the three copies
+// of this logic cannot drift the way the pre-existing avatarFile/customEmojis
+// blocks already do by convention in this file.
+async function downloadSavedLinkCard(linkCard: any, saveFolder: string, base: string, budget): Promise<any> {
+  if (!linkCard || !linkCard.url) return null;
+  let thumbnailFile = null;
+  if (linkCard.thumbnail) {
+    try {
+      thumbnailFile = await downloadLinkCardThumbnail(linkCard.thumbnail, saveFolder, base, budget);
+    } catch {
+      thumbnailFile = null;
+    }
+  }
+  return { url: linkCard.url, title: linkCard.title || null, description: linkCard.description || null, thumbnailFile };
+}
+
 async function handleSave(req: SaveRequest): Promise<CaptureAck> {
   // Re-checked, not merely trusted: parseHostRequest has already applied
   // CAPTURE_ID_PATTERN, but this id becomes a FILENAME, and a path-escape guard
@@ -659,6 +680,10 @@ async function handleSave(req: SaveRequest): Promise<CaptureAck> {
     customEmojis = [];
   }
 
+  // #181: the link-share post's OGP card, when it has one — see
+  // downloadSavedLinkCard's comment for the best-effort contract.
+  const linkCard = await downloadSavedLinkCard(meta.linkCard, saveFolder, base, budget);
+
   const record = normalizePostRecord(
     Object.assign({}, meta, {
       captureId: base,
@@ -666,6 +691,7 @@ async function handleSave(req: SaveRequest): Promise<CaptureAck> {
       media: savedMedia,
       avatarFile,
       customEmojis,
+      linkCard,
       raw: packRawPayloads(meta.rawPayloads),
     }),
   );
@@ -751,6 +777,9 @@ async function handleSavePost(req: SavePostRequest): Promise<BulkAck> {
     customEmojis = [];
   }
 
+  // #181: see handleSave — same best-effort contract.
+  const linkCard = await downloadSavedLinkCard(meta.linkCard, saveFolder, base, budget);
+
   const record = normalizePostRecord(
     Object.assign({}, meta, {
       captureId: base,
@@ -758,6 +787,7 @@ async function handleSavePost(req: SavePostRequest): Promise<BulkAck> {
       media: savedMedia,
       avatarFile,
       customEmojis,
+      linkCard,
       raw: packRawPayloads(meta.rawPayloads),
     }),
   );
@@ -811,10 +841,16 @@ async function handleSaveDragged(req: SaveDraggedRequest): Promise<DraggedAck> {
   } catch {
     customEmojis = [];
   }
+  // #181: see handleSave — same best-effort contract. A dragged picture's own
+  // post carrying a link card is not a shape any supported platform actually
+  // produces (an embed slot is either the post's media or its external-link
+  // card, never both), but the field is threaded through regardless rather
+  // than silently dropped if that ever changes.
+  const linkCard = await downloadSavedLinkCard(meta.linkCard, saveFolder, base, budget);
   // source:'drag' marks the image as the artwork itself (not a post screenshot),
   // so the image-view shows it. Mirrors the migrated records' source marker.
   const media = [{ url: req.imageUrl, file: imageFile }];
-  const record = normalizePostRecord(Object.assign({}, meta, { captureId: base, image: imageFile, media, source: 'drag', avatarFile, customEmojis, raw: packRawPayloads(meta.rawPayloads) }));
+  const record = normalizePostRecord(Object.assign({}, meta, { captureId: base, image: imageFile, media, source: 'drag', avatarFile, customEmojis, linkCard, raw: packRawPayloads(meta.rawPayloads) }));
   await writeInboxEvent(saveFolder, buildEnvelope(record));
   noteSaved(record.url, base, record.media); // see handleSave
 
