@@ -4,13 +4,46 @@
 // kind/orphan-cleanup channels. All DB-backed via getDbWriter (lib-db-write.ts,
 // which forwards to lib-db-tag-vocab.ts) — see that module for the write-order
 // and cycle/collision rules. Registered from index.ts alongside the other
-// extracted ipc-*.ts modules (#228).
+// extracted ipc-*.ts modules (#228). Every successful write here ends in
+// notifyTagVocabChanged() below — the #815 fix, and the reason this module needs
+// resetDelta/send at all.
 import { ipcMain } from 'electron';
 import type { IpcContext } from './ipc-context.ts';
 import type { DeleteOrphanTagsResult, RenameTagResult, SplitTagResult, TagParentRowResolved, TagSplitPost, TagVocabRow, TagWriteResult } from './ipc-payloads.ts';
 
 function register(ctx: IpcContext) {
-  const { getSaveFolder, getDbWriter } = ctx;
+  const { getSaveFolder, getDbWriter, resetDelta, send } = ctx;
+
+  // #815: every write below changes what posts and posters EFFECTIVELY carry,
+  // and not one of them touches a `posts` row. That combination is what made
+  // this page look inert until a restart:
+  //
+  //   - the effective set is derived on every read and stored in no table
+  //     (#774), so the records the renderer is already holding go stale the
+  //     moment an edge moves — nothing in them was written to disk to notice;
+  //   - list-posts-delta answers "what changed since you last looked" from
+  //     posts.updatedAt, which a tag_parents / post_tags / tags write leaves
+  //     untouched. Asking for a refresh alone would therefore hand back an
+  //     EMPTY delta and change nothing.
+  //
+  // So the baseline has to go first: dropping it makes the next refresh a full
+  // resend, the same "either side lacks a baseline" path a folder switch takes
+  // (index.ts's listPostsDelta). posts-changed is then what asks for it.
+  //
+  // The two org-changed relays cover the derived state that does NOT ride on
+  // post records: poster_tags rows carry the same effective arrays since #810
+  // (one derivation, two faces — they have to go stale and recover together),
+  // and the kind store is keyed by tag entity, which set-tag-kind writes and
+  // splitTag copies onto a brand-new one. Unlike ipc-organize.ts's relays these
+  // go to EVERY window including the sender: this page edits the vocabulary
+  // through main and keeps no optimistic copy of either store, so excluding
+  // itself would leave the window that did the work as the only stale one.
+  function notifyTagVocabChanged() {
+    resetDelta();
+    send('posts-changed', null);
+    send('org-changed', 'poster-tags');
+    send('org-changed', 'tag-types');
+  }
 
   ipcMain.handle('get-tag-vocab', (): TagVocabRow[] => {
     return getSaveFolder() ? getDbWriter().tagVocabOverview() : [];
@@ -23,7 +56,9 @@ function register(ctx: IpcContext) {
   ipcMain.handle('rename-tag', (_e, tagId, newName): RenameTagResult => {
     if (!getSaveFolder() || typeof tagId !== 'number' || typeof newName !== 'string') return { ok: false, error: 'empty' };
     try {
-      return getDbWriter().renameTag(tagId, newName);
+      const res = getDbWriter().renameTag(tagId, newName);
+      if (res.ok) notifyTagVocabChanged();
+      return res;
     } catch {
       return { ok: false, error: 'empty' };
     }
@@ -32,7 +67,9 @@ function register(ctx: IpcContext) {
   ipcMain.handle('keep-separate-rename-tag', (_e, tagId, newName, displayParentTagId): TagWriteResult => {
     if (!getSaveFolder() || typeof tagId !== 'number' || typeof newName !== 'string' || typeof displayParentTagId !== 'number') return { ok: false, error: 'invalid' };
     try {
-      return getDbWriter().keepSeparateRenameTag(tagId, newName, displayParentTagId);
+      const res = getDbWriter().keepSeparateRenameTag(tagId, newName, displayParentTagId);
+      if (res.ok) notifyTagVocabChanged();
+      return res;
     } catch {
       return { ok: false, error: 'invalid' };
     }
@@ -41,7 +78,9 @@ function register(ctx: IpcContext) {
   ipcMain.handle('merge-tags', (_e, sourceTagId, targetTagId): TagWriteResult => {
     if (!getSaveFolder() || typeof sourceTagId !== 'number' || typeof targetTagId !== 'number') return { ok: false, error: 'invalid' };
     try {
-      return getDbWriter().mergeTags(sourceTagId, targetTagId);
+      const res = getDbWriter().mergeTags(sourceTagId, targetTagId);
+      if (res.ok) notifyTagVocabChanged();
+      return res;
     } catch {
       return { ok: false, error: 'invalid' };
     }
@@ -50,7 +89,9 @@ function register(ctx: IpcContext) {
   ipcMain.handle('add-tag-parent', (_e, tagId, parentTagId, isDisplay): TagWriteResult => {
     if (!getSaveFolder() || typeof tagId !== 'number' || typeof parentTagId !== 'number') return { ok: false, error: 'invalid' };
     try {
-      return getDbWriter().addTagParent(tagId, parentTagId, !!isDisplay);
+      const res = getDbWriter().addTagParent(tagId, parentTagId, !!isDisplay);
+      if (res.ok) notifyTagVocabChanged();
+      return res;
     } catch {
       return { ok: false, error: 'invalid' };
     }
@@ -59,7 +100,9 @@ function register(ctx: IpcContext) {
   ipcMain.handle('remove-tag-parent', (_e, tagId, parentTagId): TagWriteResult => {
     if (!getSaveFolder() || typeof tagId !== 'number' || typeof parentTagId !== 'number') return { ok: false, error: 'invalid' };
     try {
-      return getDbWriter().removeTagParent(tagId, parentTagId);
+      const res = getDbWriter().removeTagParent(tagId, parentTagId);
+      if (res.ok) notifyTagVocabChanged();
+      return res;
     } catch {
       return { ok: false, error: 'invalid' };
     }
@@ -72,7 +115,9 @@ function register(ctx: IpcContext) {
   ipcMain.handle('set-tag-kind', (_e, tagId, kind): TagWriteResult => {
     if (!getSaveFolder() || typeof tagId !== 'number') return { ok: false, error: 'invalid' };
     try {
-      return getDbWriter().setTagKind(tagId, typeof kind === 'string' ? kind : null);
+      const res = getDbWriter().setTagKind(tagId, typeof kind === 'string' ? kind : null);
+      if (res.ok) notifyTagVocabChanged();
+      return res;
     } catch {
       return { ok: false, error: 'invalid' };
     }
@@ -81,7 +126,11 @@ function register(ctx: IpcContext) {
   ipcMain.handle('delete-orphan-tags', (_e, tagIds): DeleteOrphanTagsResult => {
     if (!getSaveFolder() || !Array.isArray(tagIds)) return { ok: false, deletedIds: [] };
     try {
-      return getDbWriter().deleteOrphanTags(tagIds.filter((id: unknown): id is number => typeof id === 'number'));
+      const res = getDbWriter().deleteOrphanTags(tagIds.filter((id: unknown): id is number => typeof id === 'number'));
+      // An orphan carries no post by definition, but the sweep it runs can drop
+      // query leaves and folder rules that named one — so the same re-read.
+      if (res.ok && res.deletedIds.length) notifyTagVocabChanged();
+      return res;
     } catch {
       return { ok: false, deletedIds: [] };
     }
@@ -102,11 +151,13 @@ function register(ctx: IpcContext) {
   ipcMain.handle('split-tag', (_e, sourceTagId, displayParentTagId, postIds): SplitTagResult => {
     if (!getSaveFolder() || typeof sourceTagId !== 'number' || typeof displayParentTagId !== 'number' || !Array.isArray(postIds)) return { ok: false, error: 'invalid' };
     try {
-      return getDbWriter().splitTag(
+      const res = getDbWriter().splitTag(
         sourceTagId,
         displayParentTagId,
         postIds.filter((id: unknown): id is string => typeof id === 'string'),
       );
+      if (res.ok) notifyTagVocabChanged();
+      return res;
     } catch {
       return { ok: false, error: 'invalid' };
     }

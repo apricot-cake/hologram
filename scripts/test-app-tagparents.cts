@@ -15,6 +15,12 @@
 //     3. 紅魔郷 gets its own row even though no post carries it directly
 //     4. removing the rule collapses the effective set at the next read
 //        (reversibility, observed live through listPosts)
+//     5. #815: an edit made WHILE the app runs reaches the SCREEN — the grid and
+//        the facet follow an add/remove/split with no restart. Everything above
+//        either seeds the edges before launch or reads main directly, so the
+//        renderer's own copy of the records was never on trial; that is exactly
+//        where #815 hid (a tag_parents write moves no posts row, so the
+//        list-posts-delta baseline reported nothing changed).
 //
 //   node scripts/test-app-tagparents.cts
 
@@ -113,6 +119,38 @@ const evalJs = `(async () => {
   const after = await window.hologram.listPosts();
   r.effTouhouAfter = effOf(after, '東方');    // 1 — only the post that names it
   r.effScarletAfter = effOf(after, '紅魔郷'); // 2 — the レミリア→紅魔郷 edge survives
+
+  // --- #815: the same edits, judged by the SCREEN rather than by main ---
+  // The removal above happened with the app already running, which is the case
+  // no test covered: main re-derives on every read, so it was never wrong — what
+  // went stale were the records the RENDERER holds, and a tag_parents write
+  // moves no posts row for list-posts-delta to notice. A card count is the
+  // honest witness here: it needs no popover, so it cannot look fresh merely
+  // because the surface was rebuilt when it opened.
+  const settle = async (want) => { await waitFor(() => cards() === want); return cards(); };
+  byText('button', 'フィルタ').click();
+  await waitFor(() => !!document.querySelector(POP + ' [data-slot="command-item"]'));
+  byText(POP + ' [data-slot="command-item"]', 'タグ').click();
+  await waitFor(() => edRows().length > 0);
+  rowEl('東方').click(); await wait(260);      // leaf on
+  r.liveRemovedCards = await settle(1);        // 1 — the live removal reached the grid
+  await window.hologram.addTagParent(${scarletId}, ${touhouId}, false);
+  r.liveAddedCards = await settle(3);          // 3 — p0/p1 reach 東方 through 紅魔郷 again
+  rowEl('東方').click(); await wait(260);      // leaf off
+  await waitFor(() => cntOf('東方') === '3');
+  r.liveTouhouCount = cntOf('東方');           // 3 — the facet's own number follows too
+
+  // #777: a split mints a NEW tag entity, and it has to reach the facet without
+  // a restart as well. p0 moves off レミリア onto a same-named entity displayed
+  // under 紅魔郷, so the ORIGINAL レミリア leaf drops from 2 cards to 1 and a
+  // second row appears beside it.
+  rowEl('レミリア').click(); await wait(260);  // leaf on
+  r.liveSplitBefore = await settle(2);
+  await window.hologram.splitTag(${remiliaId}, ${scarletId}, ['${records[0].captureId}']);
+  r.liveSplitCards = await settle(1);
+  rowEl('レミリア').click(); await wait(260);  // leaf off — read the whole vocabulary
+  await waitFor(() => !!rowEl('レミリア(紅魔郷)'));
+  r.liveSplitRows = edRows().map((el) => { const n = el.querySelector('span.truncate'); return n ? n.textContent : null; }).filter(Boolean);
   return r;
 })()`;
 
@@ -138,11 +176,16 @@ child.on('close', () => {
   const picking = r.touhouCards === 3 && r.backCards === 5;
   const vocab = Array.isArray(r.rows) && r.rows.includes('紅魔郷');
   const reversible = r.sawEdge === true && r.effTouhouBefore === 3 && r.effTouhouAfter === 1 && r.effScarletAfter === 2;
-  const ok = counts && picking && vocab && reversible;
+  // #815: the edits made after launch, judged on screen.
+  const live = r.liveRemovedCards === 1 && r.liveAddedCards === 3 && r.liveTouhouCount === '3';
+  const liveSplit = r.liveSplitBefore === 2 && r.liveSplitCards === 1 && Array.isArray(r.liveSplitRows) && r.liveSplitRows.includes('レミリア(紅魔郷)');
+  const ok = counts && picking && vocab && reversible && live && liveSplit;
   console.log(`counts: 東方=${r.touhou} 紅魔郷=${r.scarlet} レミリア=${r.remilia} 風景=${r.scenery}`);
   console.log(`picking: parentCards=${r.touhouCards} back=${r.backCards}`);
   console.log(`vocab: rows=${JSON.stringify(r.rows)}`);
   console.log(`reversible: sawEdge=${r.sawEdge} before=${r.effTouhouBefore} after=${r.effTouhouAfter} scarletAfter=${r.effScarletAfter}`);
+  console.log(`live edit: removed=${r.liveRemovedCards} added=${r.liveAddedCards} facet東方=${r.liveTouhouCount}`);
+  console.log(`live split: before=${r.liveSplitBefore} after=${r.liveSplitCards} rows=${JSON.stringify(r.liveSplitRows)}`);
   console.log(ok ? 'TAGPARENTS_TEST_PASS' : 'TAGPARENTS_TEST_FAIL');
   process.exit(ok ? 0 : 1);
 });
