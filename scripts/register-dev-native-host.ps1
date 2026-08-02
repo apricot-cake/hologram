@@ -19,7 +19,10 @@ $arguments = if ($args.Count -gt 0) { '"{0}" {1}' -f $script, ($args -join ' ') 
 
 $action = New-ScheduledTaskAction -Execute $node -Argument $arguments -WorkingDirectory $repo
 $settings = New-ScheduledTaskSettingsSet -Hidden -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Minutes 5)
-$principal = New-ScheduledTaskPrincipal -UserId ([System.Security.Principal.WindowsIdentity]::GetCurrent().Name) -LogonType S4U -RunLevel Limited
+# Interactive, not S4U: S4U needs the batch-logon right and Register-ScheduledTask
+# returns Access denied without it here (measured 2026-08-02). This task is only
+# ever started by hand while the user is logged on, so Interactive is what it is.
+$principal = New-ScheduledTaskPrincipal -UserId ([System.Security.Principal.WindowsIdentity]::GetCurrent().Name) -LogonType Interactive -RunLevel Limited
 
 Register-ScheduledTask -TaskName $taskName -Action $action -Settings $settings -Principal $principal -Description 'One-shot: registers the Hologram development native messaging host outside the MSIX container.' -Force | Out-Null
 Start-ScheduledTask -TaskName $taskName
