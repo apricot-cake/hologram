@@ -28,7 +28,7 @@ import { relocateLibrary } from './lib-migrate.ts';
 import { configDir, defaultLibraryDir, installer, pixivRefererFor, downloadAvatar, clearAllBlockReason } from './native-host.ts';
 import { readConfig, writeConfig, getSaveFolder, readSavePointer, initSaveFolderRedundancy, isConfigCorrupt, invalidateConfigCache, saveFolderStatus } from './lib-config.ts';
 import { mimeForFile, registerImageProtocol } from './lib-thumbnails.ts';
-import { backupIntervalMs, createBackupEngine, dbSnapshotPath, readBackupConfig, readIntegrityStatus, validateBackupDir, validateSaveFolder, writeBackupConfig } from './lib-backup.ts';
+import { backupIntervalMs, createBackupEngine, latestRestorableSnapshot, readBackupConfig, readIntegrityStatus, validateBackupDir, validateSaveFolder, writeBackupConfig } from './lib-backup.ts';
 import { APP_ICON, DEV_ORIGIN, DEV_SERVER_URL, createWindow, devServer, getWin, installNavigationGuards, sendToWin, sendWindowToBack } from './lib-window.ts';
 import { installDevRendererCsp, registerAppProtocol } from './app-protocol.ts';
 // IPC handler modules, extracted from this file (mechanical move — logic unchanged).
@@ -188,23 +188,22 @@ function watchInboxFolder() {
 // assumption on day one. thumb-cache sits in configDir for the same "local,
 // not portable with the library" reason.
 
-// Copies the latest DB snapshot over `file` if one exists — called only when
+// Copies the newest DB generation over `file` if one exists — called only when
 // `file` is about to be created fresh (missing, or corrupt-and-just-deleted) so a
 // real restore point wins over an empty database. There is no on-disk fallback
-// truth source to re-derive from any more, so a snapshot — when one exists — is
+// truth source to re-derive from any more, so a generation — when one exists — is
 // strictly better than empty. #299's inbox replay (ensurePostsSynced's
 // drainInboxLogged) then catches up whatever happened after the snapshot, and
 // #301's orphan synthesis (run-orphan-recovery) can recover what neither the
-// snapshot nor the inbox saw. (dbSnapshotPath is lib-backup.ts's: it names a
-// place inside the mirror, and runBackup is what writes there.)
+// snapshot nor the inbox saw. (latestRestorableSnapshot is lib-backup.ts's: it
+// prefers the library's own generation store and falls back to a backup
+// destination's copy of it — #233.)
 function restoreFromSnapshotIfAvailable(file: string): boolean {
-  const b = readBackupConfig();
-  if (!b.dir) return false;
-  const snapshot = dbSnapshotPath(b.dir);
-  if (!fs.existsSync(snapshot)) return false;
+  const snapshot = latestRestorableSnapshot();
+  if (!snapshot || !fs.existsSync(snapshot)) return false;
   try {
     fs.copyFileSync(snapshot, file);
-    log.warn(`restored hologram.db from mirror snapshot: ${snapshot}`);
+    log.warn(`restored hologram.db from DB generation: ${snapshot}`);
     return true;
   } catch (err) {
     log.error('failed to restore DB snapshot:', err);
@@ -269,7 +268,16 @@ let savedIndexTimer: any = null;
 // saved-status queries from its journal + loose-inbox fallback indefinitely
 // even though the DB itself has the record.
 let savedIndexPrimed = false;
+// Wired to the backup engine's noteLibraryMutation once that exists (further
+// down — it needs this pipeline, so it cannot be constructed above it). This
+// function is the single funnel every library change already passes through
+// (an inbox drain, a trash operation, an import, an orphan recovery), which
+// makes it the honest place for the backup lanes to learn that something
+// changed: the media lane starts its "right after the save" countdown and the
+// DB lane counts toward its next generation (#233).
+let onLibraryMutation: (() => void) | null = null;
 function scheduleSavedIndexWrite(handle: { sqlite: any }) {
+  onLibraryMutation?.();
   clearTimeout(savedIndexTimer);
   savedIndexTimer = setTimeout(async () => {
     try {
@@ -544,12 +552,13 @@ async function purgeOldTrash() {
 // import-complete) were extracted to ./ipc-transfer.js (registered via ipcTransfer.register
 // below); exportStamp moved there too.
 
-// --- Backup / incremental mirror ---
-// The mirror engine, its schedule, the destination validators and the #301
+// --- Backup ---
+// The two-lane engine, its schedule, the destination validators and the #301
 // integrity pass were extracted to ./lib-backup.ts. The engine is instantiated
-// here because it needs the record pipeline above (a mirror run must sync the DB
+// here because it needs the record pipeline above (a run must sync the DB
 // before it snapshots it or counts orphans against it).
-const { runBackup, armBackupSchedule, runStartupIntegrityCheck, runOrphanRecovery } = createBackupEngine({ ensurePostsSynced, scheduleSavedIndexWrite, send: sendToWin });
+const { runBackup, armBackupSchedule, runStartupIntegrityCheck, runOrphanRecovery, noteLibraryMutation } = createBackupEngine({ ensurePostsSynced, scheduleSavedIndexWrite, send: sendToWin });
+onLibraryMutation = noteLibraryMutation;
 const watchImport = createWatchImportManager({ readConfig, writeConfig, getSaveFolder, isLibraryMissing, ensurePostsSynced, send: sendToWin });
 
 // --- Window ---

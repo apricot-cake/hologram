@@ -228,11 +228,13 @@ export interface TabsState {
   activeTabId: string | null;
 }
 
-// --- Backup mirror + integrity (ipc-backup.ts) --------------------------
+// --- Backup + integrity (ipc-backup.ts) ---------------------------------
 /** The `lastResult` summary readBackupConfig hands back with the config. */
 export interface BackupSummary {
   fileCount: number;
   written: number;
+  /** Entries relocated at the destination — a post moving in or out of the trash (#233). */
+  moved: number;
   pruned: number;
   reason: string;
   ok: boolean;
@@ -278,6 +280,7 @@ export interface BackupRunResult {
   reason?: string;
   fileCount?: number;
   written?: number;
+  moved?: number;
   pruned?: number;
   pruneSkipped?: string | null;
   baselineCount?: number;

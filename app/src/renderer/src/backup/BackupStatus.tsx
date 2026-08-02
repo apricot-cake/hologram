@@ -46,7 +46,7 @@ const TONE: Record<string, string> = {
   done: '',
 };
 
-type MirrorModel = { kind: 'syncing' | 'error' | 'done'; text: string; title?: string; time?: string } | null;
+type BackupModel = { kind: 'syncing' | 'error' | 'done'; text: string; title?: string; time?: string } | null;
 
 // Human explanation of a held-back prune (empty vs sharp shrink), counts appended.
 function pruneSkipTip(r: any): string {
@@ -61,33 +61,33 @@ function pruneSkipTip(r: any): string {
 // viewer updateMirrorStatus). No backup folder → null (progressive disclosure: the rail
 // stays empty). The today/yesterday relative-time words are i18n-owned here and passed to
 // fmtBackupTime as labels.
-function deriveModel(cfg: any, syncing: boolean): MirrorModel {
+function deriveModel(cfg: any, syncing: boolean): BackupModel {
   if (!cfg || !cfg.dir) return null;
-  if (syncing) return { kind: 'syncing', text: t('mirrorSyncingShort'), title: t('backupSyncing') };
+  if (syncing) return { kind: 'syncing', text: t('backupStateRunning'), title: t('backupRunning') };
   const r = cfg.lastResult;
   if (!r) return null;
-  if (r.ok === false && r.error) return { kind: 'error', text: t('mirrorFailed'), title: r.error };
-  if (r.pruneSkipped) return { kind: 'error', text: t('mirrorGuarded'), title: pruneSkipTip(r) };
+  if (r.ok === false && r.error) return { kind: 'error', text: t('backupStateFailed'), title: r.error };
+  if (r.pruneSkipped) return { kind: 'error', text: t('backupStateGuarded'), title: pruneSkipTip(r) };
   const ts = fmtBackupTime(r.at, { today: t('timeToday'), yesterday: t('timeYesterday') });
   let tip = `${t('backupLastLabel')} ${fmtTime(r.at)}`;
   if (r.written) tip += `（+${r.written}${t('backupItemsUnit')}）`;
   else if (r.fileCount) tip += `（${r.fileCount}${t('backupItemsUnit')}）`;
-  return { kind: 'done', text: t('mirrorDone'), time: ts, title: tip };
+  return { kind: 'done', text: t('backupStateDone'), time: ts, title: tip };
 }
 
 // DB<->media integrity model (#301) — independent of backup config (the
-// startup check runs with no mirror `dir` set), so it is derived separately
+// startup check runs with no backup `dir` set), so it is derived separately
 // from deriveModel and takes priority over it (same precedence the existing
 // pruneSkipped warning already gets over a plain 'done' state) whenever
 // there is something to report. null = nothing wrong (or never checked yet).
-function deriveIntegrityModel(integrity: any): MirrorModel {
+function deriveIntegrityModel(integrity: any): BackupModel {
   if (!integrity) return null;
-  if (integrity.dbOk === false) return { kind: 'error', text: t('mirrorDbCorrupt'), title: t('integrityDbBad') };
-  if (integrity.orphanCount > 0) return { kind: 'error', text: t('mirrorOrphanFound'), title: t('mirrorOrphanTip', [integrity.orphanCount]) };
+  if (integrity.dbOk === false) return { kind: 'error', text: t('backupStateDbCorrupt'), title: t('integrityDbBad') };
+  if (integrity.orphanCount > 0) return { kind: 'error', text: t('backupStateOrphanFound'), title: t('backupStateOrphanTip', [integrity.orphanCount]) };
   return null;
 }
 
-export function MirrorStatus() {
+export function BackupStatus() {
   // cfgRef / syncingRef mirror the old viewer closure vars (cfg / mirrorSyncing) 1:1 — the
   // config object is mutated in place (cfg.lastResult = r), so a ref (not a store key) is the
   // faithful home; tick() forces the re-render the old updateMirrorStatus() push used to.
@@ -162,8 +162,8 @@ export function MirrorStatus() {
     };
   }, []);
 
-  // An orphan/DB-integrity warning wins over the ordinary mirror state (and shows even
-  // with no mirror `dir` configured — the startup check runs independent of backup config).
+  // An orphan/DB-integrity warning wins over the ordinary backup state (and shows even
+  // with no backup `dir` configured — the startup check runs independent of backup config).
   const m = deriveIntegrityModel(integrityRef.current) || deriveModel(cfgRef.current, syncingRef.current);
   if (!m) return null;
   return (
@@ -175,7 +175,7 @@ export function MirrorStatus() {
     // for icon + status word (+ sometimes a relative-timestamp second line) without
     // clutter, and a labelless icon-only stand-in would itself contradict #678's own rule
     // against unlabeled rail icons. So: expanded column only.
-    <span data-slot="mirror-status" title={m.title || ''} className={`ml-2 inline-flex max-w-[150px] items-center gap-[5px] overflow-hidden px-2 text-[11px] whitespace-nowrap text-[var(--text-muted)] group-data-[collapsible=icon]:hidden ${TONE[m.kind]}`}>
+    <span data-slot="backup-status" title={m.title || ''} className={`ml-2 inline-flex max-w-[150px] items-center gap-[5px] overflow-hidden px-2 text-[11px] whitespace-nowrap text-[var(--text-muted)] group-data-[collapsible=icon]:hidden ${TONE[m.kind]}`}>
       {m.kind === 'done' ? <IconDone /> : m.kind === 'syncing' ? <IconSync /> : <IconWarn />}
       {m.kind === 'done' ? (
         // "Done" alone carries a second line (when it ran), so it stacks; the other two are

@@ -237,10 +237,15 @@ export function Data() {
     }
   };
 
-  // --- export ---
-  const [exportMode, setExportMode] = useState('full');
+  // --- writing an archive out ---
+  // Two buttons over one main-side call, because #233 separates the two words
+  // the old single "Export ZIP" control conflated: a BACKUP file is the whole
+  // library plus its organization, made to be restored; an EXPORT is media
+  // handed to something else. `mode` is what main already took ('full' /
+  // 'images'), so the split is UI vocabulary, not a second code path (#57's
+  // "the manual complete ZIP moves under backup, implementation untouched").
   const [exportIncludeTrash, setExportIncludeTrash] = useState(false); // #300/St7: opt-in, default off
-  const exportZip = async () => {
+  const writeArchive = async (mode: 'full' | 'images') => {
     // A sticky loading toast shows the live % streamed to disk (fed by main's
     // 'export-progress' via onExportProgress); it also covers the save-dialog wait.
     const id = 'hologram-export';
@@ -250,7 +255,7 @@ export function Data() {
       toast.loading(t('exporting'), { id, description: `${p.pct ?? 0}%` });
     });
     try {
-      const res = await exportComplete(exportMode, exportMode === 'full' && exportIncludeTrash);
+      const res = await exportComplete(mode, mode === 'full' && exportIncludeTrash);
       off();
       toast.dismiss(id);
       if (res && res.saved) notify(t('exported'));
@@ -526,35 +531,18 @@ export function Data() {
         </CardContent>
       </Card>
 
-      {/* Export / Import ZIP + import media */}
+      {/* Export / import media — handing files to something else, not a backup */}
       <Card>
+        <CardHeader>
+          <CardTitle className="text-sm">
+            <Highlight text={t('exportSubTitle')} />
+          </CardTitle>
+        </CardHeader>
         <CardContent className="space-y-4">
           <div>
-            <div className="flex flex-wrap items-center gap-2.5">
-              <Select items={{ full: t('exportModeFull'), images: t('exportModeImages') }} value={exportMode} onValueChange={(v) => v !== null && setExportMode(v)}>
-                <SelectTrigger size="sm" className="w-auto">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="full">{t('exportModeFull')}</SelectItem>
-                  <SelectItem value="images">{t('exportModeImages')}</SelectItem>
-                </SelectContent>
-              </Select>
-              <Button variant="outline" onClick={exportZip}>
-                {t('exportZip')}
-              </Button>
-              <Button variant="outline" onClick={importZip}>
-                {t('importZip')}
-              </Button>
-              {exportMode === 'full' && (
-                <div className="flex items-center gap-1.5">
-                  <Checkbox id="export-include-trash" checked={exportIncludeTrash} onCheckedChange={(v) => setExportIncludeTrash(v === true)} />
-                  <Label htmlFor="export-include-trash" className="font-normal">
-                    {t('exportIncludeTrash')}
-                  </Label>
-                </div>
-              )}
-            </div>
+            <Button variant="outline" onClick={() => void writeArchive('images')}>
+              {t('exportZip')}
+            </Button>
             <Hint text={t('hintZip')} />
           </div>
           <Separator />
@@ -567,7 +555,9 @@ export function Data() {
         </CardContent>
       </Card>
 
-      {/* Auto backup */}
+      {/* Backup: the automatic destination, and the manual backup file beside it
+          (#57 — the two halves of "backup" belong on the same surface, one
+          continuous to a destination and one a single file made by hand). */}
       <Card>
         <CardHeader>
           <CardTitle className="text-sm">
@@ -616,6 +606,29 @@ export function Data() {
             <span className="text-sm">{t('backupIntervalUnit')}</span>
           </div>
           {renderBackupStatus()}
+
+          <Separator />
+
+          <div>
+            <div className="text-sm font-medium">
+              <Highlight text={t('backupFileSubTitle')} />
+            </div>
+            <div className="mt-2.5 flex flex-wrap items-center gap-2.5">
+              <Button variant="outline" onClick={() => void writeArchive('full')}>
+                {t('backupFileCreate')}
+              </Button>
+              <Button variant="outline" onClick={importZip}>
+                {t('importZip')}
+              </Button>
+              <div className="flex items-center gap-1.5">
+                <Checkbox id="export-include-trash" checked={exportIncludeTrash} onCheckedChange={(v) => setExportIncludeTrash(v === true)} />
+                <Label htmlFor="export-include-trash" className="font-normal">
+                  {t('exportIncludeTrash')}
+                </Label>
+              </div>
+            </div>
+            <Hint text={t('hintBackupFile')} />
+          </div>
         </CardContent>
       </Card>
 

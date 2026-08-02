@@ -67,7 +67,7 @@ electron-vite で main・preload・renderer の3面をバンドルする標準�
 - `src/renderer/index.html`＋`src/renderer/public/`（`theme.js`＝pre-paint、`<script>`で直読み。CSP は main が応答ヘッダで配るのでこのファイルには持たせない（ADR 0022）。`app/build-theme-boot.mjs`が`theme.ts`から再生成＝バンドル外の同期スクリプトという制約は変わらない）
 - `src/renderer/src/services/`（旧 `renderer/*.ts`）＝`orchestrator.ts`（2026-07-11に`viewer.ts`から改名。boot orchestration層として意図的に独立モジュールのまま残す設計）が状態/オーケストレーション/IPC呼び出しの中核、`store.ts`ほか単機能サービス（`tags.ts`/`selection.ts`/`query.ts`/`records.ts`等）に段階抽出済み。`design-tokens.css`は`src/renderer/`直下（index.htmlの`<link>`が参照）
 - `src/renderer/src/`直下 — React（`.tsx`）コンポーネント群（旧 `islands/`）。`services/store.ts`をESM importで直接購読して連携（push型のモデル注入・`window.hologramXxx`ブリッジは全廃済み＝Window拡張はpreloadの`window.hologram`のみ）
-- 機能: DB クエリで閲覧、拡張ID設定・ホスト自動登録、指定フォルダへの定期バックアップ（増分ミラー・`Hologram-mirror`＋DBのスナップショット）。**レンダラ自身は `app://bundle/index.html` から配る**（製品版・#7）＝`file://` の追加特権に依存せず、CSP（`frame-ancestors` 込み）を応答ヘッダで配れる。配布バイナリには `grantFileProtocolExtraPrivileges: false` を焼いてある。画像は `asset://` プロトコルで遅延読込＝応答は必ず CSP（`default-src 'none'` 基底）と `nosniff` を載せ、この スキームのトップレベル文書になれるのはラスタ画像だけ（窓を開く経路と `will-navigate` が `library-files.ts` の同じ述語を通る。理由は [ADR 0012](decisions/0012-asset-documents-are-raster-only.md)）。
+- 機能: DB クエリで閲覧、拡張ID設定・ホスト自動登録、指定フォルダへのバックアップ（宛先アダプタ経由の増分コピー・`Hologram-backup`＋DB世代）。**レンダラ自身は `app://bundle/index.html` から配る**（製品版・#7）＝`file://` の追加特権に依存せず、CSP（`frame-ancestors` 込み）を応答ヘッダで配れる。配布バイナリには `grantFileProtocolExtraPrivileges: false` を焼いてある。画像は `asset://` プロトコルで遅延読込＝応答は必ず CSP（`default-src 'none'` 基底）と `nosniff` を載せ、この スキームのトップレベル文書になれるのはラスタ画像だけ（窓を開く経路と `will-navigate` が `library-files.ts` の同じ述語を通る。理由は [ADR 0012](decisions/0012-asset-documents-are-raster-only.md)）。
 
 ## ビューア機能（内部実装メモ）
 
@@ -90,8 +90,11 @@ electron-vite で main・preload・renderer の3面をバンドルする標準�
 - **編集の取り消し `Ctrl/Cmd+Z`（やり直しは `Ctrl/Cmd+Shift+Z`）**（#235）＝アプリを閉じるまでの揮発型スタックで、投稿ごとの恒久的な変更履歴は持たない。積むのは操作前後のスナップショットではなく**その操作が実際に動かした分の差分**（対象・欄・足した値／外した値）で、取り消しは今の値に対してその差分を逆に当てる＝①一括タグ付けで元からそのタグを持っていた項目からはタグを外さない ②取り消すまでの間に入った別の編集を巻き込まない。スタックの意味論は `services/undo.ts`、実際に書く側と Ctrl+Z の受け口は `services/undo-builder.ts`（`orchestrator.ts` が組み立てる）。入口は2つ＝Ctrl+Z で1手ずつ遡るのと、一括・破壊操作のトーストに出る「元に戻す」（`services/ui.ts` の `notify` が sonner の action として載せる）。後者は**その操作がスタックの最新のときだけ**効く＝トーストは操作より数秒長く残るので、押した頃に別の編集が入っていたらそちらを戻してしまう。対象は投稿タグ・投稿者タグ・フォルダ所属（ライブラリ／投稿者の両方）。**投稿の削除はまだスタックに載っていない**（救済はゴミ箱）＝残りの対象は #235。
 - **コマンドパレット `Ctrl/Cmd+K`**（#28・[ADR 0016](decisions/0016-one-candidate-engine-three-faces.md)）＝操作（設定・新規タブ・タブ切替・フィルタ全解除・表示切替）とジャンプ（タグ・投稿者・フォルダ）を1つの入力から引く。候補の供給源は `services/command-registry.ts` の1本で、検索ボックス直下のサジェストも同じレジストリから引く（面ごとに違うのは見せるセクションと件数、そして確定したときの動作だけ）。エントリの中身と perform クロージャは `services/command-builder.ts`、器は `palette/CommandPalette.tsx`（shadcn Dialog ＋ Base UI Autocomplete の `inline`）。`/` は検索ボックスへのフォーカスで、Ctrl+K とは役割が分かれている。見える入口はサイドバーのフッター項目と検索ボックス右端の `Ctrl+K` バッジの2つ
 - 言語切替（auto/ja/en）
-- エクスポート: ZIP（画像+JSON）／インポート: ZIP から復元
-- 指定フォルダへの定期バックアップ（増分ミラー・`Hologram-mirror`・間隔スケジュール可・起動時の遅れ取り戻し）
+- エクスポート: 画像・動画の ZIP（人・他アプリへ渡す用）／バックアップファイル: 全情報を1ファイルに作成・そこから復元（#57 の語彙分離＝UI では「エクスポート」と「バックアップ」を別の面に置く）
+- **バックアップ**（#233）＝単一エンジン＋宛先アダプタ。宛先は現状ローカルフォルダの1種（`app/src/main/lib-backup-destination.ts`＝`list/put/move/remove` の4操作。クラウド直結 OAuth は同じ口を実装する後段）。エンジンは二車線:
+  - **メディア車線**＝ライブラリのファイル（ルート・`avatars/`・`emoji/`・`.trash/`）を増分コピー。保存直後（15秒デバウンス）・間隔・起動時の遅れ取り戻しで走る＝取り直せない投稿の損失窓をゼロに寄せる。**ゴミ箱もミラーする**＝ゴミ箱入り／復元は宛先では *move*（削除→再アップロードではない）で、復元するとゴミ箱の状態ごと戻る
+  - **DB 車線**＝生きた `.db` は決してコピーしない（#97）。SQLite Online Backup API の静止スナップショットを**ライブラリ内の世代置き場 `.db-generations/`** に書き（これが正本）、宛先はその置き場を写す。区切りは日次と変更N件。保持は日次7・週次4・月次6の階層間引き（restic の `--keep-*` と同型）で、全滅する方針は実行しない安全弁つき
+  - 削除の判断は `lib-backup-plan.ts` の純関数に閉じている（2026-06-23 の消失事故と同種の規則なので、fs を伴わずテストできる形にしてある）。`backup-guard.ts` の急減ガードは続投＝止まったときは move も止める
 
 ## i18n
 
