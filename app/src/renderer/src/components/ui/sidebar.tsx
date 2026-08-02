@@ -252,6 +252,13 @@ function Sidebar({
 // the rail too, to hold a label — without this the trigger would be the one 32px-wide
 // control above a column of ~56px-wide rows, and the #628 axis (same left edge, same
 // width, same centre x) would break again the same way the 28-vs-32 mismatch did.
+// #818 addendum: `transition` (Tailwind's default property list — colour, shadow,
+// transform) instead of Button's `transition-all`, so the width above is NOT animated.
+// The collapse is instant everywhere else (the column, and the nav rows since #583), so
+// `transition-all` left this one control easing from 32 to the rail's width over 150ms:
+// on every collapse the trigger visibly lagged behind the rows it is supposed to share
+// an edge and a width with, and the #628 axis test measured whatever the tween happened
+// to be at (53 / 54 / 55 across runs — that spread is what made app-tests.yml flaky).
 function SidebarTrigger({ className, onClick, ...props }: React.ComponentProps<typeof Button>) {
   const { toggleSidebar } = useSidebar();
 
@@ -261,7 +268,7 @@ function SidebarTrigger({ className, onClick, ...props }: React.ComponentProps<t
       data-slot="sidebar-trigger"
       variant="ghost"
       size="icon"
-      className={cn('group-data-[collapsible=icon]:w-full!', className)}
+      className={cn('transition group-data-[collapsible=icon]:w-full!', className)}
       onClick={(event) => {
         onClick?.(event);
         toggleSidebar();
