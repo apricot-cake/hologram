@@ -141,6 +141,14 @@ async function waitForCapture(libraryDir: string, timeoutMs = 20_000): Promise<{
         { timeout: 30000 },
       )
       .then((handle: any) => handle.jsonValue());
+    // This promise is created here but only awaited far below, so anything that
+    // throws in between reaches the finally, closes the browser, and makes THIS
+    // reject with "Target page, context or browser has been closed" — which is
+    // what gets reported, hiding the failure that actually happened. Park a
+    // no-op handler on it now: the await below still sees the real outcome, and
+    // a browser torn down by an earlier error no longer speaks for it. (The
+    // nightly run of 2026-08-01 reported exactly that masked shape.)
+    bannerSettled.catch(() => {});
     const landed = await waitForCapture(nativeHost.libraryDir);
     const envelope = JSON.parse(fs.readFileSync(path.join(nativeHost.libraryDir, '.hologram-inbox', 'new', landed.envelope), 'utf8'));
     const jpeg = fs.readFileSync(path.join(nativeHost.libraryDir, landed.jpg));

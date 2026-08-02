@@ -95,13 +95,31 @@ const evalJs = `(async () => {
       else { stable = 0; last = s; }
     }
   };
-  // Twin of settle() above, but for the SIZE axis instead of scrollTop: a size
-  // commit goes through the same rAF-then-150ms-settle pipeline (see
-  // grid-density-builder.ts's handleZoomWheel), and on a loaded machine that
-  // pipeline can take meaningfully longer than a fixed sleep budgets for — the
-  // same trap the comment above already called out for scrollTop (a fixed 300ms
-  // sleep here read the pre-commit value on a slow CI runner's nightly run).
-  const settleSize = async (ms) => {
+  // Twin of settle() above, but for the SIZE axis instead of scrollTop — and unlike
+  // a plain stability poll it must never read "the value has not moved yet" as
+  // "settled", which is the trap this harness kept falling into.
+  //
+  // A burst of notches only becomes visible once its 150ms commit fires AND the
+  // grid has re-rendered at the new column width (grid-density-builder.ts's
+  // handleZoomWheel). The frames before that carry the live column width, but this
+  // harness's window is hidden, so it paints nothing and the rAF that would apply
+  // them does not run: measured here, the rAF for one notch fired 422ms after the
+  // wheel while the size moved at 165ms — through the commit's setTimeout, never
+  // through the frame. So the wait is 150ms plus a full re-layout of the render
+  // window, and on a loaded runner that re-layout is not free.
+  //
+  // Before #618 the size was read off a CSS variable the state layer wrote, so only
+  // the commit had to be waited out and a fixed ~300ms sleep covered it; reading a
+  // real card's box added the re-render on top, which is what put the nightly
+  // Windows runner over the edge (green 7/30, red 7/31 and 8/1 at identical values).
+  // Replacing that sleep with a stability poll did not help, because a poll returns
+  // FASTEST when nothing has happened yet.
+  //
+  // So: wait for the size to LEAVE the value it had before the wheel, then wait for
+  // it to stop moving.
+  const settleFrom = async (from, ms) => {
+    const moved = await waitFor(() => { const s = size(); return Number.isFinite(s) && s !== from; }, ms);
+    if (!moved) return from;
     let last = Number.NaN, stable = 0;
     for (let i = 0; i * 50 < ms && stable < 3; i++) {
       await sleep(50);
@@ -110,6 +128,18 @@ const evalJs = `(async () => {
       else { stable = 0; last = s; }
     }
     return size();
+  };
+  // The opposite assertion — that a notch does NOT move the size — cannot be a
+  // settle at all: "unchanged" is exactly what a settle reports fastest, so it would
+  // pass without ever outliving the commit. Hold for the whole window instead and
+  // report the moment the size leaves.
+  const holdSize = async (from, ms) => {
+    for (let i = 0; i * 50 < ms; i++) {
+      await sleep(50);
+      const s = size();
+      if (Number.isFinite(s) && s !== from) return false;
+    }
+    return true;
   };
   const scroller = document.querySelector('[data-slot="content-scroll"]');
   // Wait until the full-content height stands up, i.e. until the virtual grid finishes its first layout pass.
@@ -137,32 +167,52 @@ const evalJs = `(async () => {
   const srcOf = (c) => { const el = c && c.querySelector('[data-slot="post-card-media"]'); return el ? (el.getAttribute('src') || '').split('?')[0] : null; };
   const anchorKey = srcOf(target);
   if (target) fire(-120, r0.left + r0.width / 2, r0.top + r0.height / 2); // zoom in one notch
+  // The alignment rides on the very commit that applies the size, so wait for the
+  // size to actually move before letting the scroll position settle — otherwise
+  // "moved" is read while the burst has not been applied at all.
+  if (target) await settleFrom(start, 8000);
   await settle();
   const moved = Math.round(scroller.scrollTop) !== scrolledTo; // did alignment actually kick in
   const held = anchorKey ? [...grid.querySelectorAll('[data-slot="post-card"]')].find(c => srcOf(c) === anchorKey) : null;
   const drift = held && r0 ? Math.round(held.getBoundingClientRect().top - r0.top) : 9999;
   const anchorReady = laidOut && scrolled && windowed && !!anchorKey;
   // Return to the original size before entering the series below (start was already read above).
+  const zoomed = size();
   fire(120);
+  await settleFrom(zoomed, 8000);
   await settle();
 
   // Pull all the way down to the floor (stops at the track's end — further notches are
   // no-ops beyond that). Notches are applied batched in a single frame, so reading
   // synchronously would read the pre-change value — wait for the 150ms settle before reading.
+  const beforePull = size();
   for (let i = 0; i < 40; i++) fire(120);
-  const small = await settleSize(5000);
-  const prefs = await window.hologram.getPrefs();
+  const small = await settleFrom(beforePull, 8000);
+  // Persisting gridSize is a SEPARATE, later event than the size becoming visible:
+  // the cells reach their new width on the live column width, the pref is only
+  // written when the burst settles. Reading it once right after the size lands
+  // therefore reads the value from before the pull on a slow runner. Wait for the
+  // pref to catch up with what is on screen instead (they agree to within the 1px
+  // the stretch rounds away).
+  let persistedSize = Number.NaN;
+  for (let i = 0; i * 50 < 8000; i++) {
+    persistedSize = (await window.hologram.getPrefs()).gridSize;
+    if (Math.abs(persistedSize - small) <= 1) break;
+    await sleep(50);
+  }
   // Turning it further while pinned to the edge doesn't move the size any more. **Not
   // running the finalize step** can't actually be verified here — at this scale (200
   // records) finalizing is nearly free and triggers neither a DOM node swap nor a thumbnail
   // re-request, so passing would be a meaningless assertion (confirmed green under both
   // implementations). Eyeballing and measuring at real-library scale is the authority here.
   for (let i = 0; i < 10; i++) fire(120);
-  const stableAtLimit = (await settleSize(5000)) === small;
+  // 1.5s outlives the 150ms commit plus a re-layout even on a loaded runner, so a
+  // notch that DID move the size cannot hide inside the window.
+  const stableAtLimit = await holdSize(small, 1500);
   // Zoom back in (zoom-in is deltaY<0)
   for (let i = 0; i < 3; i++) fire(-120);
-  const back = await settleSize(5000);
-  return [start, small, prefs.gridSize, back, stableAtLimit, anchorReady ? 1 : 0, drift, moved ? 1 : 0].join(',');
+  const back = await settleFrom(small, 8000);
+  return [start, small, persistedSize, back, stableAtLimit, anchorReady ? 1 : 0, drift, moved ? 1 : 0].join(',');
 })()`;
 
 const env = Object.assign({}, process.env, {
