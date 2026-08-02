@@ -4,6 +4,19 @@
 // extension support requires its bundled Chromium and a persistent context;
 // keeping that setup here prevents the live-site canary, offline fixture, and
 // overlay regressions from drifting into different browser stacks.
+//
+// #657: Chrome 137+ dropped the `--load-extension` command-line switch. In the
+// bundled Chromium it still appears to work on first load (the extension gets
+// `location=COMMAND_LINE`), but the moment `chrome.runtime.reload()` runs,
+// Chrome disables it with `DISABLE_UNSUPPORTED_DEVELOPER_EXTENSION` instead of
+// actually reloading it — a disabled extension and an orphaned tab look
+// identical to a page, so tests built on `chrome.runtime.reload()` (the orphan
+// repro) stayed green while measuring the wrong failure. The replacement
+// (confirmed against this repo's #650 investigation and re-verified while
+// building this fix) is the combination below: CDP's `Extensions.loadUnpacked`
+// gives the extension `location=UNPACKED` (the same state "Load unpacked" in
+// chrome://extensions produces), which is the one location `runtime.reload()`
+// actually reloads instead of disabling.
 
 const fs = require('node:fs');
 const os = require('node:os');
@@ -70,6 +83,48 @@ function stageExtension(options: StageExtensionOptions = {}): string {
   return directory;
 }
 
+// chrome://extensions is a Polymer/Lit page: every meaningful control lives
+// behind nested shadow roots, so it has to be reached with a script, not a
+// visible-DOM selector. Writing "devMode" into Preferences directly is not
+// enough — Chrome only honors the real UI toggle (confirmed while building
+// this fix: loading unpacked with the toggle left off still ends with the
+// extension disabled the instant `runtime.reload()` runs).
+const DEV_MODE_TOGGLE_JS = `
+  document.querySelector('extensions-manager')?.shadowRoot
+    ?.querySelector('extensions-toolbar')?.shadowRoot
+    ?.querySelector('#devMode') ?? null
+`;
+
+async function ensureDeveloperModeOn(context: any): Promise<void> {
+  const page = await context.newPage();
+  try {
+    await page.goto('chrome://extensions');
+    await page.waitForFunction(`!!(${DEV_MODE_TOGGLE_JS})`, { timeout: 10_000 });
+    const alreadyOn = await page.evaluate(`(${DEV_MODE_TOGGLE_JS}).checked`);
+    if (!alreadyOn) {
+      await page.evaluate(`(${DEV_MODE_TOGGLE_JS}).click()`);
+      await page.waitForFunction(`(${DEV_MODE_TOGGLE_JS}).checked === true`, { timeout: 5_000 });
+    }
+  } finally {
+    await page.close();
+  }
+}
+
+// The browser-level CDP session this needs (`Extensions` is a browser domain,
+// not a page domain) can be detached right after the call returns — the
+// extension stays loaded and, later, `chrome.runtime.reload()` still keeps it
+// enabled (confirmed while building this fix). No session needs to be kept
+// alive for the life of the browser.
+async function loadUnpacked(context: any, extensionDir: string): Promise<string> {
+  const cdp = await context.browser().newBrowserCDPSession();
+  try {
+    const { id } = await cdp.send('Extensions.loadUnpacked', { path: extensionDir });
+    return id;
+  } finally {
+    await cdp.detach().catch(() => {});
+  }
+}
+
 interface LaunchExtensionOptions {
   extensionDir: string;
   userDataDir?: string | null;
@@ -103,16 +158,22 @@ async function launchExtensionBrowser(options: LaunchExtensionOptions): Promise<
       headless: options.headless ?? true,
       viewport: options.viewport === undefined ? { width: 1280, height: 960 } : options.viewport,
       locale: options.locale,
-      args: [`--disable-extensions-except=${options.extensionDir}`, `--load-extension=${options.extensionDir}`, '--no-first-run', '--no-default-browser-check', ...(options.args || [])],
+      // `--enable-unsafe-extension-debugging` is what makes the `Extensions`
+      // CDP domain available at all. Playwright's own default args include
+      // `--disable-extensions`, which would make an unpacked load a no-op, so
+      // it has to be dropped via ignoreDefaultArgs rather than overridden.
+      args: ['--enable-unsafe-extension-debugging', '--no-first-run', '--no-default-browser-check', ...(options.args || [])],
+      ignoreDefaultArgs: ['--disable-extensions'],
     });
-    let serviceWorker = context.serviceWorkers().find((worker: any) => worker.url().startsWith('chrome-extension://'));
+    await ensureDeveloperModeOn(context);
+    const extensionId = await loadUnpacked(context, options.extensionDir);
+    let serviceWorker = context.serviceWorkers().find((worker: any) => worker.url().startsWith(`chrome-extension://${extensionId}/`));
     if (!serviceWorker) {
       serviceWorker = await context.waitForEvent('serviceworker', {
-        predicate: (worker: any) => worker.url().startsWith('chrome-extension://'),
+        predicate: (worker: any) => worker.url().startsWith(`chrome-extension://${extensionId}/`),
         timeout: 20_000,
       });
     }
-    const extensionId = new URL(serviceWorker.url()).host;
     return {
       context,
       serviceWorker,

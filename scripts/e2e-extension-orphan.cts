@@ -187,6 +187,24 @@ const bulkState = (page: any) =>
     await browser.serviceWorker.evaluate('chrome.runtime.reload()').catch(() => {});
     await wait(2500);
 
+    // --- #657: the platform actually RELOADED, it didn't just disable ------
+    // A disabled extension produces the exact same orphaning symptoms this
+    // file checks below (no live extension left to talk to from the old
+    // tabs), so without this check the whole file would go green whether
+    // Chrome reloaded the extension or silently disabled it instead — which
+    // is exactly what happened before #657 (Chrome 137+ dropped
+    // `--load-extension`, and the disposable Chromium this test drives
+    // disabled the extension on `reload()` rather than reloading it). A new,
+    // enabled service worker for the same extension ID is the one signal that
+    // tells the two apart.
+    const isReplacementWorker = (worker: any) => worker.url().startsWith(`chrome-extension://${browser.extensionId}/`) && worker !== browser.serviceWorker;
+    const reloaded = browser.context.serviceWorkers().find(isReplacementWorker) || (await browser.context.waitForEvent('serviceworker', { predicate: isReplacementWorker, timeout: 5000 }).catch(() => null));
+    check(!!reloaded, 'a new service worker started after reload() — chrome.runtime.reload() reloaded the extension rather than disabling it (#657)');
+    if (reloaded) {
+      const self = await reloaded.evaluate('chrome.management.getSelf()').catch((error: any) => ({ error: String(error) }));
+      check(self?.enabled === true, `the reloaded extension reports enabled:true — it was not left disabled (${JSON.stringify(self)})`);
+    }
+
     // --- ① the platform premises --------------------------------------------
     const probe = JSON.parse((await pressTab.evaluate(() => document.documentElement.getAttribute('data-orphan-probe'))) || '{}');
     check(probe.runtime === 'object', `chrome.runtime is still an object in the orphaned world (got ${probe.runtime})`);
