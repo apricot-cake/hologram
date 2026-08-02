@@ -6,7 +6,7 @@
 
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { parsePostUrl } from '../extension/utils/extractor/index.ts';
-import { fetchPixivIllust, pixivMedia } from '../extension/utils/extractor/pixiv.ts';
+import { fetchPixivIllust, pixivBookmarksUserIdFromUrl, pixivMedia } from '../extension/utils/extractor/pixiv.ts';
 
 // Returns a real Response = metadata.ts reads the response body exactly once, stacks
 // it into the raw-source layer (#292), then JSON.parses it. A hand-rolled mock that
@@ -34,6 +34,32 @@ describe('parsePostUrl', () => {
 
   test('作品でない（/users）は null', () => {
     expect(parsePostUrl('https://www.pixiv.net/users/1')).toBeNull();
+  });
+});
+
+describe('pixivBookmarksUserIdFromUrl（#280、ブックマーク一覧のURL判定）', () => {
+  test('/users/<id>/bookmarks/artworks からidを読む', () => {
+    expect(pixivBookmarksUserIdFromUrl('/users/12345/bookmarks/artworks')).toBe('12345');
+  });
+
+  test('/en/ ロケール接頭辞つきでも読む', () => {
+    expect(pixivBookmarksUserIdFromUrl('/en/users/12345/bookmarks/artworks')).toBe('12345');
+  });
+
+  test('末尾スラッシュがあっても読む', () => {
+    expect(pixivBookmarksUserIdFromUrl('/users/12345/bookmarks/artworks/')).toBe('12345');
+  });
+
+  test('ブックマーク一覧でないパスは null（作品ページ）', () => {
+    expect(pixivBookmarksUserIdFromUrl('/artworks/12345')).toBeNull();
+  });
+
+  test('ブックマーク一覧でないパスは null（プロフィール本体）', () => {
+    expect(pixivBookmarksUserIdFromUrl('/users/12345')).toBeNull();
+  });
+
+  test('小説のブックマーク一覧（/novels）は対象外', () => {
+    expect(pixivBookmarksUserIdFromUrl('/users/12345/bookmarks/novels')).toBeNull();
   });
 });
 

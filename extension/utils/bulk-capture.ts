@@ -1,11 +1,16 @@
-// X bookmarks auto capture (#362).
+// Bookmark/list-page auto capture (#362 for X, #280 generalized it to any
+// site that implements CaptureSite's isBulkCapturePage — pixiv is the second).
 //
-// THE MACHINE NEVER SCROLLS. The user scrolls the bookmark list at their own
-// pace and this follows along, saving the posts that are not in the library
-// yet. Machine-driven scrolling was rejected: X locks accounts that show
-// automated behaviour (scroll cadence and input timing are among the signals it
-// reads), and the account at stake is the user's. Every request X sees here is
-// one the user's own scrolling already caused.
+// THE MACHINE NEVER SCROLLS OR PAGES. The user drives the list at their own
+// pace (scrolling on X, clicking the pager on pixiv) and this follows along,
+// saving the posts that are not in the library yet. Machine-driven navigation
+// was rejected for X specifically: X locks accounts that show automated
+// behaviour (scroll cadence and input timing are among the signals it reads),
+// and the account at stake is the user's. Every request a site sees here is
+// one the user's own scrolling/paging already caused. pixiv carries no such
+// documented risk, but #280 kept the same rule rather than re-litigate it
+// per site: freezing "does the machine ever drive" as a per-site knob would
+// invite the next site to quietly answer differently.
 //
 // NO SCREENSHOT IS TAKEN. An earlier version shot the viewport and cropped to
 // the post, and the crop kept slipping off it — a virtual list re-lays out
@@ -19,19 +24,19 @@
 //
 // What remains: read each post's permalink as its row appears, ask the library
 // whether it is already saved (that answer comes from the native host's index —
-// it never touches X, which is why re-running over covered ground is free), and
-// save the rest one at a time. Because a permalink is read the instant a row
-// mounts, nothing is lost to fast scrolling: the row's own arrival is the
-// event, not its position.
-// The bookmarks-list check lives with the rest of X's page knowledge (#212);
-// this module is the intake FLOW, which is X-specific only because X is the
-// one site with such a list so far.
+// it never touches the site, which is why re-running over covered ground is
+// free), and save the rest one at a time. Because a permalink is read the
+// instant a row mounts, nothing is lost to fast scrolling: the row's own
+// arrival is the event, not its position.
+// Whether this is the right page, and under what marker its saves are
+// recorded, live with the rest of each site's own page knowledge
+// (CaptureSite.isBulkCapturePage / capturedVia, #212); this module is only
+// the intake FLOW, shared across every site that plugs into it.
 import { logSaveEvent, newSaveId, reportSaveTimeout } from './capture-log.ts';
 import { SAVED_QUERY_TIMEOUT_MS } from './deadline.ts';
 import { extensionAlive, noteExtensionGone, onExtensionGone } from './extension-context.ts';
 import { startSaveDeadline } from './save-deadline.ts';
 import type { CaptureSite } from './extractor/types.ts';
-import { isXBookmarksPage } from './extractor/x.ts';
 import { ICONS } from './icons.ts';
 import { StatusSurface } from './status-surface.ts';
 import { userOnly } from './user-gesture.ts';
@@ -41,7 +46,9 @@ import type { CheckSavedMessage, CheckSavedResponse, SavePostMessage, SaveRespon
 type EntryState = 'unknown' | 'queued' | 'saving' | 'saved' | 'skipped' | 'deferred' | 'unavailable' | 'ageRestricted' | 'failed';
 
 // One save at a time, and no faster than this. The metadata fetch and the media
-// download are the only things X sees, and this keeps them at a human cadence.
+// download are the only things the site sees, and this keeps them at a human
+// cadence (Issue #280's "同時1接続・1件/秒級" throttling requirement applies
+// this same constant to every site, not just X).
 const MIN_SAVE_PERIOD_MS = 1000;
 const END_QUIET_MS = 4000;
 
@@ -95,9 +102,20 @@ export function startBulkCapture(site: CaptureSite, i18n: HologramI18nApi): void
   banner.mount();
   banner.enter();
 
+  // Terminal states only — 'unknown'/'queued'/'saving' are still in flight.
+  function processedCount(): number {
+    let n = 0;
+    for (const state of entries.values()) if (state !== 'unknown' && state !== 'queued' && state !== 'saving') n++;
+    return n;
+  }
+
   function paint() {
     if (stopped) return;
-    banner.setState('busy', t('bulkProgress', [savedCount, skippedCount]));
+    // A total is only meaningful on a site whose list is fully in the DOM up
+    // front (#280) — X's virtual list can always grow, so showing "N of M" on
+    // it would misreport M as final when scrolling further would raise it.
+    const text = site.bulkKnowsTotal ? t('bulkProgressTotal', [entries.size, processedCount(), savedCount, skippedCount]) : t('bulkProgress', [savedCount, skippedCount]);
+    banner.setState('busy', text);
     banner.slot(stopButton);
   }
   paint();
@@ -300,7 +318,9 @@ export function startBulkCapture(site: CaptureSite, i18n: HologramI18nApi): void
           saveId,
           // Marks the record's intake route so a bulk-imported post can be told
           // apart from an ordinary one-at-a-time save (native-host/post-record).
-          capturedVia: 'x-bookmarks',
+          // Every site reaching this point has isBulkCapturePage, and is
+          // expected to set this alongside it (#280).
+          capturedVia: site.capturedVia ?? null,
         } satisfies SavePostMessage,
         onAnswer,
       );
@@ -319,7 +339,10 @@ export function startBulkCapture(site: CaptureSite, i18n: HologramI18nApi): void
 
   function checkEnd() {
     if (stopped) return;
-    const atBottom = window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 100;
+    // Absent (pixiv, #280) means the list is not virtualized, so nothing
+    // further can ever mount below a fold that does not exist — quiet-and-
+    // empty is already the whole story.
+    const atBottom = site.bulkAtBottom ? site.bulkAtBottom() : true;
     const quiet = Date.now() - lastGrowthAt >= END_QUIET_MS;
     const nothingLeft = ![...entries.values()].some((s) => s === 'unknown' || s === 'queued');
     if (atBottom && quiet && nothingLeft) finish(false);
@@ -422,10 +445,15 @@ export function startBulkCapture(site: CaptureSite, i18n: HologramI18nApi): void
   // Esc is the user's, the same way the stop button is (#323).
   const onUserKeyDown = userOnly(onKeyDown);
 
-  const observer = new MutationObserver((records) => {
-    // x.com is an SPA: leaving the bookmarks list swaps the feed in place and
-    // fires no unload, so nothing else would ever tear this mode down.
-    if (!isXBookmarksPage()) {
+  const observer = new MutationObserver(async (records) => {
+    // Every site this runs on is an SPA in the relevant sense: leaving the
+    // list swaps content in place and fires no unload, so nothing else would
+    // ever tear this mode down (#212's isBulkCapturePage is the same check
+    // the entry gate used, asked again here for exactly that reason). Awaited
+    // because pixiv's answer needs a network round trip the first time — see
+    // isPixivOwnBookmarksPage's memoization, which keeps every call after the
+    // first one free.
+    if (!(await site.isBulkCapturePage?.())) {
       finish(true);
       return;
     }

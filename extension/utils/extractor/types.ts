@@ -341,7 +341,28 @@ interface CaptureSite {
   prepareForCapture?(post: Element): (() => void) | null;
   // The site has a list page the chase-mode intake (Alt+Shift+S) can walk, and
   // we are on it right now. Absent on every site that has no such page (#362).
-  isBulkCapturePage?(): boolean;
+  // May resolve asynchronously (#280): confirming "this is OUR OWN list" can
+  // take a network round trip on a page whose own DOM does not carry the
+  // viewer's identity (pixiv's bookmark list is one such page).
+  isBulkCapturePage?(): boolean | Promise<boolean>;
+  // The intake route stamped on every post this mode saves, so a bulk-imported
+  // post can be told apart from an ordinary one-at-a-time save
+  // (native-host/post-record's capturedVia). Every site that implements
+  // isBulkCapturePage must also set this (#280 split it off x-bookmarks, the
+  // only value that existed before).
+  capturedVia?: string;
+  // Whether the list this mode walks is fully present in the DOM from the
+  // start, so a run can show a total against it (#280). Absent (X's bookmark
+  // list is a virtual list) means no total can ever be known.
+  bulkKnowsTotal?: boolean;
+  // An extra "has the run reached the end of the list" condition, checked
+  // alongside "nothing left queued and the DOM has been quiet for a while".
+  // Absent means that quiet-and-empty condition is enough on its own (true
+  // for a list that is not virtualized, like pixiv's). X sets this to require
+  // having scrolled to the bottom too, since its virtual list only mounts
+  // rows as they are scrolled to (#280 split this off bulk-capture.ts, which
+  // used to assume every site needed it).
+  bulkAtBottom?(): boolean;
   // Read what the page is showing for this post, so the fields the platform
   // API could not answer can still be saved (#202). Absent on the sites this
   // has not been written for yet — the save is unchanged where it is.

@@ -25,6 +25,12 @@ const PXIMG_ARTWORK_ID = /\/(\d+)_p\d+(?:_|\.)/;
 const PXIMG_MEDIA_KEY = /\/(\d+_p\d+)(?:[._]|$)/;
 const PXIMG_PAGE_INDEX = /\/\d+_p(\d+)[._]/;
 const ARTWORK_PATH = /^\/(?:[a-z]+\/)?artworks\/(\d+)/;
+// /users/<id>/bookmarks/artworks, with an optional /<locale>/ prefix pixiv adds
+// for a non-Japanese browser (e.g. /en/users/123/bookmarks/artworks). A tag
+// filter or the public/private toggle rides along as a query string (?tag=…,
+// ?rest=hide), which this never looks at — the pathname alone says whose
+// bookmark list this is (#280).
+const BOOKMARKS_PATH = /^\/(?:[a-z]{2}\/)?users\/(\d+)\/bookmarks\/artworks(?:\/|$)/;
 
 // === DOM ===
 
@@ -89,6 +95,60 @@ function findPixivPostElement(target: EventTarget | null): Element | null {
 function getPixivPermalink(post: Element): string {
   const r = resolvePixivTarget(post);
   return r ? `https://www.pixiv.net/artworks/${r.id}` : '';
+}
+
+// === bookmark list (bulk intake, #280) ===
+
+// The user id the URL claims this bookmark list belongs to, or null off that
+// list entirely. Pure and synchronous — the ongoing "did the user navigate
+// away" check inside bulk-capture.ts calls this on every DOM mutation, and it
+// must never itself reach the network (isPixivOwnBookmarksPage below is the
+// one place that does, and only once per run).
+function pixivBookmarksUserIdFromUrl(pathname: string = location.pathname): string | null {
+  return (pathname.match(BOOKMARKS_PATH) || [])[1] || null;
+}
+
+// Memoized for the run's lifetime: the logged-in user's own id cannot change
+// while this page is open, and re-injection (Alt+Shift+S again) gets a fresh
+// module scope anyway (see the PXIMG_* comment above), so there is no path
+// that would ever need to invalidate this early.
+let selfUserIdPromise: Promise<string | null> | null = null;
+
+// pixiv serves the SAME URL shape for any user's public bookmarks — reading
+// the list therefore has to confirm whose it is before this mode may act, or
+// it would auto-save a stranger's curation under the user's own account
+// (#280 Why: the feature's whole justification is re-materializing bookmarks
+// the user themself pressed one at a time). The bookmark list page's own DOM
+// carries no logged-in-user id to compare against (no #meta-global-data here,
+// confirmed on a live capture, 2026-08-02) — pixiv's own personal-settings
+// endpoint is the one place that still answers it for the session's cookies.
+async function fetchPixivSelfUserId(): Promise<string | null> {
+  if (!selfUserIdPromise) {
+    selfUserIdPromise = (async () => {
+      try {
+        const res = await fetch('https://www.pixiv.net/ajax/settings/self', { credentials: 'include' });
+        if (!res.ok) return null;
+        const data = await res.json();
+        if (data.error) return null;
+        const id = data.body && data.body.user_status && data.body.user_status.user_id;
+        return typeof id === 'string' && id ? id : null;
+      } catch {
+        return null;
+      }
+    })();
+  }
+  return selfUserIdPromise;
+}
+
+// The isBulkCapturePage gate (#280): true only on the viewer's OWN bookmark
+// list. A tag filter or the public/private toggle doesn't change this — both
+// are still the same person's list, just narrowed (Issue #280's design:
+// "取込元の値はどれも pixiv-bookmarks とし、タグやページごとに分けない").
+async function isPixivOwnBookmarksPage(): Promise<boolean> {
+  const urlUserId = pixivBookmarksUserIdFromUrl();
+  if (!urlUserId) return false;
+  const selfId = await fetchPixivSelfUserId();
+  return selfId != null && selfId === urlUserId;
 }
 
 // Capture the artwork image itself, not an oversized enclosing <figure>.
@@ -299,6 +359,19 @@ const pixiv: Extractor = {
     prepareForCapture(post: Element) {
       return prepareScopedCaptureState('__snsCapturePixivNoHover', [post, post.parentElement]);
     },
+    // Bulk intake only (#280) — the single-shot path above never reads this
+    // (findPostElement/getPermalink resolve from the click target via
+    // closest(), not by scanning for this selector). A bookmark card carries
+    // two /artworks/ anchors (thumbnail + title); harvestFrom dedupes by the
+    // permalink they resolve to, so both being matched here is harmless.
+    postSelector: 'a[href*="/artworks/"]',
+    isBulkCapturePage: isPixivOwnBookmarksPage,
+    capturedVia: 'pixiv-bookmarks',
+    // Unlike X's virtual bookmark list, every card here is in the DOM from
+    // the moment the list finishes its initial render (confirmed on a live
+    // capture, 2026-08-02 — see Issue #280), so a run can show what fraction
+    // of the list it has gotten through.
+    bulkKnowsTotal: true,
   },
 
   mediaIdentity: {
@@ -354,4 +427,4 @@ const pixiv: Extractor = {
 };
 
 export default pixiv;
-export { fetchPixivIllust, findPixivPostElement, getPixivCaptureRect, getPixivPermalink, pixivMedia, resolvePixivTarget, PIXIV_REFERER };
+export { fetchPixivIllust, findPixivPostElement, getPixivCaptureRect, getPixivPermalink, pixivBookmarksUserIdFromUrl, pixivMedia, resolvePixivTarget, PIXIV_REFERER };
