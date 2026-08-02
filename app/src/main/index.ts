@@ -7,7 +7,7 @@ import path from 'node:path';
 
 import { openDatabase, DatabaseCorruptError } from './lib-db.ts';
 import { computeDelta } from './lib-post-delta.ts';
-import { postsFromDb } from './lib-db-query.ts';
+import { postsFromDb, searchPostsFts } from './lib-db-query.ts';
 import { createDbWriter } from './lib-db-write.ts';
 import { buildSavedIndex, SAVED_INDEX_FILE } from './lib-saved-index.ts';
 import { listTrashRecords } from './lib-trash-capture.ts';
@@ -384,6 +384,18 @@ async function listPostsDelta(haveBaseline: boolean) {
   return { saveFolder: folder, full: false, added, removed };
 }
 
+// #29: cross-tab full-text search. Read-only over the same synced DB listPosts
+// uses — no separate sync path, so a hit is never staler than the grid itself.
+// The renderer decides which posts match (services/fulltext.ts runs the same
+// matcher the in-tab quick search uses, over fields posts_fts does not index
+// yet — #288); this only supplies bm25() relevance order for whichever of
+// those hits posts_fts also covers.
+async function searchFullText(query: string, limit?: number) {
+  const handle = ensurePostsSynced();
+  if (!handle) return [];
+  return searchPostsFts(handle.sqlite, query, limit);
+}
+
 // --- Native host registration (idempotent, on each launch) ---
 function ensureHostRegistered() {
   try {
@@ -548,6 +560,7 @@ function registerExtractedIpc() {
     sweepReplacements,
     listPosts,
     listPostsDelta,
+    searchFullText,
     resolveInFolder,
     mimeForFile,
     readConfig,

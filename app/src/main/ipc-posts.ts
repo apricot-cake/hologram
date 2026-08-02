@@ -15,10 +15,13 @@ import { readUgoiraFrame, ugoiraFramesPresent } from './lib-archive.ts';
 import type { IpcContext } from './ipc-context.ts';
 
 function register(ctx: IpcContext) {
-  const { listPosts, listPostsDelta, resolveInFolder, mimeForFile } = ctx;
+  const { listPosts, listPostsDelta, searchFullText, resolveInFolder, mimeForFile } = ctx;
 
   ipcMain.handle('list-posts', () => listPosts());
   ipcMain.handle('list-posts-delta', (_e, haveBaseline) => listPostsDelta(!!haveBaseline));
+  // #29: cross-tab full-text search — bm25() rank per posts_fts hit (relevance
+  // order only; the renderer decides which posts match, see fulltext.ts).
+  ipcMain.handle('search-full-text', (_e, query, limit) => searchFullText(typeof query === 'string' ? query : '', typeof limit === 'number' ? limit : undefined));
 
   ipcMain.handle('image-data-url', async (_e, image) => {
     const p = resolveInFolder(image);

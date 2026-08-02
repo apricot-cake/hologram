@@ -35,6 +35,7 @@ import { makePostQueryBuilder, makePosterQueryBuilder, POST_FACET_OPTS, POSTER_F
 import { makeKindMenu } from './kind-menu-builder.ts';
 import { makeSearchBox } from './search-box-builder.ts';
 import { makeCommands } from './command-builder.ts';
+import { initFullTextBridge } from './fulltext.ts';
 import { makePostGridBuilder, bindLoadPosts, bindConfirmClearAll, bindGetSkipDeleteConfirm, bindSetSkipDeleteConfirm } from './post-grid-builder.ts';
 import { makePosterGridBuilder } from './poster-grid-builder.ts';
 import { makeGridDensity, type HologramSizeTrack } from './grid-density-builder.ts';
@@ -1738,6 +1739,27 @@ export function endFilterEditSession(): void {
     posterFolderRows: () => (qfValues('poster-folder') as FilterRow[]).map((r) => ({ id: String(r.v), name: String(r.l ?? r.v) })),
     posterAddFilter: (filter) => posterQB.addFilter(filter),
     startTriage: () => openTriage(),
+  });
+
+  // --- Full-text search (#29) -----------------------------------------------------
+  // The palette's "本文を検索" mode reads the library + jumps through this bridge
+  // (services/fulltext.ts's lazy-pull registration, same shape as searchbox.ts's
+  // handlers()/init() — CommandPalette.tsx mounts before this wiring runs).
+  // "Jump" opens a NEW tab scoped to just that text leaf (tabsCtl.openTextSearchTab
+  // — never touches the active tab, #29's design/acceptance criteria) and shows the
+  // inspector on the specific hit: openTextSearchTab's applyState() renders the new
+  // tab SYNCHRONOUSLY (post-grid-builder's renderPosts pushes 'postGroups'
+  // synchronously too), so the freshly-grouped set is already in the store by the
+  // time this reads it back.
+  initFullTextBridge({
+    allPosts: () => postGrid.getAllPosts(),
+    fileSrc,
+    openResult: (query, captureId) => {
+      tabsCtl.openTextSearchTab(query);
+      const groups = storeGet('postGroups') as HologramPostGroup[] | null;
+      const g = groups?.find((gr) => gr.records.some((r) => r.captureId === captureId));
+      if (g) showDetail(g);
+    },
   });
 
   // #148's chip-band inline input commit port = adds one condition to the narrowing of

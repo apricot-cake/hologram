@@ -134,3 +134,94 @@ export function compile(query: string) {
     return true;
   };
 }
+
+// --- Snippet extraction for the full-text search UX (#29) --------------------
+// compile()/isSubsequence/approxSubstring above judge MATCH/NO-MATCH on the
+// NORMALIZED string (NFKC etc.) — normalization changes character counts, so a
+// position found in normalized text cannot be mapped back to the original
+// (design comment on #29: "正規化後オフセットを原文へ逆写像してはいけない").
+// Snippets therefore re-search the RAW field text directly, independent of the
+// match decision above, in the order the design calls for: ①exact contiguous
+// substring (lowercased indexOf) ②approximate substring within the same error
+// budget as compile() uses ③give up and hand back a plain head excerpt with no
+// highlight.
+
+// The Sellers' DP from approxSubstring, but keeping WHERE the best window ends
+// instead of discarding it — approxSubstring only needed a yes/no answer, but a
+// snippet needs a position. Runs on the RAW (non-normalized) string on purpose
+// (see header comment above); scans left-to-right so a tie keeps the leftmost
+// (earliest, most stable) match.
+export function approxSubstringEnd(hay: string, needle: string, maxErr: number): number | null {
+  const n = needle.length,
+    h = hay.length;
+  if (n === 0) return null;
+  if (maxErr <= 0) {
+    const idx = hay.indexOf(needle);
+    return idx === -1 ? null : idx + n;
+  }
+  let prev = new Array(h + 1).fill(0);
+  for (let i = 1; i <= n; i++) {
+    const cur = new Array(h + 1);
+    cur[0] = i;
+    const nc = needle[i - 1];
+    for (let j = 1; j <= h; j++) {
+      const cost = nc === hay[j - 1] ? 0 : 1;
+      let v = prev[j - 1] + cost;
+      const del = prev[j] + 1;
+      const ins = cur[j - 1] + 1;
+      if (del < v) v = del;
+      if (ins < v) v = ins;
+      cur[j] = v;
+    }
+    prev = cur;
+  }
+  let bestEnd: number | null = null;
+  let bestCost = maxErr + 1;
+  for (let j = 0; j <= h; j++) {
+    if (prev[j] < bestCost) {
+      bestCost = prev[j];
+      bestEnd = j;
+    }
+  }
+  return bestCost <= maxErr ? bestEnd : null;
+}
+
+/** The [start,end) span of the best match of `query` inside raw `hay`, or null
+ * if neither the exact nor the approximate pass found one within budget (the
+ * "取れなければ" case — the caller falls back to a plain head excerpt). */
+export function matchSpan(hay: string, query: string): { start: number; end: number } | null {
+  const q = query.trim();
+  if (!q) return null;
+  const lq = q.toLowerCase();
+  const idx = hay.toLowerCase().indexOf(lq);
+  if (idx !== -1) return { start: idx, end: idx + q.length };
+  const err = errBudget(q.length);
+  if (err <= 0) return null;
+  const end = approxSubstringEnd(hay, q, err);
+  if (end == null) return null;
+  return { start: Math.max(0, end - q.length - err), end };
+}
+
+export interface Snippet {
+  text: string;
+  /** Offsets INTO `text` (already adjusted for the leading ellipsis/window cut). -1/-1 = no match was found — `text` is a plain head excerpt with nothing to highlight. */
+  matchStart: number;
+  matchEnd: number;
+}
+
+/** A windowed excerpt of `raw` around the first match of `query`, for full-text
+ * search result rows (#29). Collapses whitespace so a multi-line post body
+ * reads as one line in a result row. */
+export function snippetOf(raw: string, query: string, radius = 40): Snippet {
+  const s = raw.replace(/\s+/g, ' ').trim();
+  const span = matchSpan(s, query);
+  if (!span) {
+    const head = s.slice(0, radius * 2);
+    return { text: head + (s.length > head.length ? '…' : ''), matchStart: -1, matchEnd: -1 };
+  }
+  const start = Math.max(0, span.start - radius);
+  const end = Math.min(s.length, span.end + radius);
+  const prefix = start > 0 ? '…' : '';
+  const suffix = end < s.length ? '…' : '';
+  return { text: prefix + s.slice(start, end) + suffix, matchStart: span.start - start + prefix.length, matchEnd: span.end - start + prefix.length };
+}

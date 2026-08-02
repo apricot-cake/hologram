@@ -161,6 +161,28 @@ describe('開閉状態', () => {
   });
 });
 
+// #29: which face opened — 'commands' (open()) vs 'fulltext' (openFulltext(),
+// Ctrl/Cmd+Shift+F / the palette's own footer row).
+describe('#29 openMode: どちらの面を開いたか', () => {
+  test('open() は commands、openFulltext() は fulltext', () => {
+    R.open();
+    expect(R.openMode()).toBe('commands');
+    R.close();
+    R.openFulltext();
+    expect(R.openMode()).toBe('fulltext');
+    R.close();
+  });
+
+  test('既に開いている間は渡す（Ctrl+K の既存挙動と同じ既定）', () => {
+    R.open();
+    expect(R.openMode()).toBe('commands');
+    R.openFulltext(); // already open — a no-op per set()'s early return
+    expect(R.openMode()).toBe('commands');
+    expect(R.isOpen()).toBe(true);
+    R.close();
+  });
+});
+
 describe('runEntry は閉じてから実行する', () => {
   test('perform の中から見て、もう閉じている', () => {
     let openInsidePerform: boolean | null = null;
