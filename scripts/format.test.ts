@@ -85,6 +85,20 @@ describe('compactDate / formatDate', () => {
   });
 });
 
+describe('monthLabel: 月見出し（#47）', () => {
+  test('同じ年月なら日が違っても同じラベル', () => {
+    expect(F.monthLabel(+new Date(2026, 6, 1))).toBe(F.monthLabel(+new Date(2026, 6, 28)));
+  });
+
+  test('年が違えばラベルも変わる', () => {
+    expect(F.monthLabel(+new Date(2026, 6, 1))).not.toBe(F.monthLabel(+new Date(2025, 6, 1)));
+  });
+
+  test('月が違えばラベルも変わる', () => {
+    expect(F.monthLabel(+new Date(2026, 6, 1))).not.toBe(F.monthLabel(+new Date(2026, 7, 1)));
+  });
+});
+
 describe('fmtTime: ゼロ埋め Y/M/D HH:MM（ロケール非依存＝バイト検証可）', () => {
   test('空は空', () => {
     expect(F.fmtTime('')).toBe('');

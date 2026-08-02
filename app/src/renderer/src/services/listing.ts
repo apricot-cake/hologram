@@ -88,7 +88,12 @@ export function makeListing(deps: ListingDeps) {
         posts.sort((a, b) => (b._dateMs || 0) - (a._dateMs || 0));
         break;
       case 'date-asc':
-        posts.sort((a, b) => (a._dateMs || 0) - (b._dateMs || 0));
+        // Unknown-date records (sentinel 0 — stampPost) sort to the TAIL here
+        // regardless of direction (#47's month-section headers put them in one
+        // trailing "date unknown" section rather than wherever 0 lands as a
+        // plain number — for -desc that was already the tail; -asc needed this
+        // Infinity flip to match, since 0 is the smallest value ascending).
+        posts.sort((a, b) => (a._dateMs || Number.POSITIVE_INFINITY) - (b._dateMs || Number.POSITIVE_INFINITY));
         break;
       case 'likes-desc':
         posts.sort((a, b) => (b.likes || 0) - (a.likes || 0));

@@ -165,6 +165,11 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     sortLikesPct: '人気順（SNS内）',
     sortRandom: 'ランダム',
     sortReroll: 'シャッフルし直す',
+    // 月別セクション見出し + 年月ジャンプレール（#47）。$1=月ラベル（services/format.ts
+    // monthLabel）、$2=件数。「日付不明」は投稿日の無いレコードの末尾セクション名。
+    dateSectionHeader: '$1・$2件',
+    dateSectionUnknown: '日付不明',
+    dateJumpRailTitle: '月へジャンプ',
     filterAll: 'すべて',
     reset: 'リセット',
     close: '閉じる',
@@ -719,6 +724,12 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     sortLikesPct: 'Top (within SNS)',
     sortRandom: 'Random',
     sortReroll: 'Shuffle again',
+    // Month section headers + the year/month jump rail (#47). $1=month label
+    // (services/format.ts monthLabel), $2=count. "Unknown date" is the trailing
+    // section for records with no post date.
+    dateSectionHeader: '$1 · $2 items',
+    dateSectionUnknown: 'Unknown date',
+    dateJumpRailTitle: 'Jump to month',
     filterAll: 'All',
     reset: 'Reset',
     close: 'Close',

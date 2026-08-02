@@ -35,6 +35,15 @@ export function compactDate(ds: string | number | Date): string {
   return d.getFullYear() === new Date().getFullYear() ? _compactFmt.format(d) : _compactFmtY.format(d);
 }
 
+// Month-section heading (#47): "July 2026" / "2026年7月" — locale gives each
+// language its own word order for free, unlike compactDate's day-level format
+// (which has no year in it at all, wrong shape for a section spanning a whole
+// month). ms is any timestamp inside the target month; only year+month are read.
+const _monthFmt = new Intl.DateTimeFormat(undefined, { year: 'numeric', month: 'long' });
+export function monthLabel(ms: number): string {
+  return _monthFmt.format(new Date(ms));
+}
+
 // Full date + time for the card hover tooltip. Cached Intl formatters: a fresh
 // toLocaleDateString/TimeString per call dominated render time (2×/card × 150).
 const _dateFmt = new Intl.DateTimeFormat(undefined, { year: 'numeric', month: 'numeric', day: 'numeric' });

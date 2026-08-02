@@ -135,7 +135,7 @@ describe('getFilteredPosts: クエリ木と sticky', () => {
 describe('getFilteredPosts: 並べ替え', () => {
   test.each([
     ['date-desc', 'p1,p3,p2,p5'], // missing _dateMs is treated as 0 and sorts last
-    ['date-asc', 'p5,p2,p3,p1'],
+    ['date-asc', 'p2,p3,p1,p5'], // #47: unknown-date (p5) sorts to the tail here too, not first
     ['likes-desc', 'p2,p3,p1,p5'],
     ['captured-desc', 'p1,p3,p2,p5'], // _capturedMs
     ['likes-pct', 'p2,p3,p1,p5'], // via the injected percentileFn

@@ -10,6 +10,7 @@ import { ListRow } from '../_shared/ListRow.tsx';
 import { PostCard } from '../_shared/PostCard.tsx';
 import { useGridModel, VirtualGridHost } from '../_shared/VirtualGrid.tsx';
 import type { GridCellProps } from '../_shared/VirtualGrid.tsx';
+import { SectionedGridHost } from '../_shared/SectionedGrid.tsx';
 import { selectionClickBackground, selectionMarquee } from '../services/orchestrator.ts';
 import { get as storeGet, subscribe as storeSubscribe } from '../services/store.ts';
 
@@ -57,5 +58,13 @@ export function GridHost({ model }: { model: HologramGridModel }) {
   // and scroll geometry to services/grid-nav.ts (the poster grid has no selection).
   // anchor: and it is the grid Ctrl+wheel zoom holds a position in (#282) — the
   // poster grid's zoom path commits per tick and never anchors.
+  //
+  // #47: a date sort groups the grid into month sections (post-grid-builder.ts /
+  // date-sections.ts) — model.sections carries that grouping when it applies.
+  // Every other sort/browse mode leaves it null/absent and keeps rendering
+  // through the single-instance VirtualGridHost completely unchanged.
+  if (model.sections && model.sections.length) {
+    return <SectionedGridHost model={model} cell={PostCell} nav anchor marquee={marqueeSink} onBackgroundClick={onBackgroundClick} />;
+  }
   return <VirtualGridHost model={model} cell={PostCell} nav anchor marquee={marqueeSink} onBackgroundClick={onBackgroundClick} />;
 }
