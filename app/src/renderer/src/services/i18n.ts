@@ -153,6 +153,8 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     pollMultiple: '複数選択可',
     pollDeadline: '締切 $1',
     pollResultsHidden: '票数非公開',
+    // #181: リンク共有投稿のOGPプレビューカード。カード先頭の小見出し（pollCardLabel と同じ位置）。
+    linkCardLabel: 'リンク先',
     // pixiv シリーズ情報（#188）。シリーズに属さない作品では両方とも空
     detailSeries: 'シリーズ',
     detailSeriesOrder: '話数',
@@ -558,6 +560,9 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     ftFieldAlt: '代替テキスト',
     ftFieldQuoted: '引用元',
     ftFieldPoll: 'アンケート',
+    // #181: same wording as linkCardLabel (the inspector's own heading for the
+    // card), kept as its own key the way ftFieldPoll sits beside pollCardLabel.
+    ftFieldLinkCard: 'リンク先',
     ftFieldAuthor: '投稿者名',
     ftFieldEagle: 'Eagle注釈',
     ftFieldTag: 'タグ',
@@ -839,6 +844,8 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     pollMultiple: 'Multiple choice',
     pollDeadline: 'Closes $1',
     pollResultsHidden: 'Results hidden',
+    // #181: a link-share post's OGP preview card.
+    linkCardLabel: 'Link',
     // pixiv series info (#188). Both blank when the work isn't in a series
     detailSeries: 'Series',
     detailSeriesOrder: 'Installment',
@@ -1225,6 +1232,7 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     ftFieldAlt: 'Alt text',
     ftFieldQuoted: 'Quoted post',
     ftFieldPoll: 'Poll',
+    ftFieldLinkCard: 'Link',
     ftFieldAuthor: 'Author',
     ftFieldEagle: 'Eagle note',
     ftFieldTag: 'Tag',

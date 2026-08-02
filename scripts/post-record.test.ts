@@ -54,6 +54,7 @@ describe('既定値', () => {
     'quotedPost',
     'replyToPost',
     'poll',
+    'linkCard',
     'seriesId',
     'seriesTitle',
     'seriesOrder',
@@ -299,6 +300,32 @@ describe('アンケート（#179）', () => {
   });
 });
 
+// #181: the OGP preview card (extension/utils/extractor/{bluesky,mastodon,x}.ts)
+// passes the same single gate every other producer field does — this is
+// where a card with no destination url is dropped before it reaches the DB
+// writer, same all-or-nothing shape as quotedPost below (but gated on `url`
+// alone, not on every field being present: title/description/thumbnailFile
+// are each independently optional).
+describe('リンクカード（#181）', () => {
+  test('妥当なカードはそのまま通る（thumbnailFile はブリッジが後から埋める）', () => {
+    const rec = normalizePostRecord({ captureId: 'cap-card-1', linkCard: { url: 'https://example.com/article', title: 'A great article', description: 'It explains things.', thumbnailFile: 'cap-card-1-linkcard.jpg' } }, fixedNow);
+    expect(rec.linkCard).toEqual({ url: 'https://example.com/article', title: 'A great article', description: 'It explains things.', thumbnailFile: 'cap-card-1-linkcard.jpg' });
+  });
+
+  test('サムネが無い（未取得/取得失敗）カードもテキストは残る', () => {
+    const rec = normalizePostRecord({ captureId: 'cap-card-2', linkCard: { url: 'https://example.com/no-image', title: 'No image', description: null, thumbnailFile: null } }, fixedNow);
+    expect(rec.linkCard).toEqual({ url: 'https://example.com/no-image', title: 'No image', description: null, thumbnailFile: null });
+  });
+
+  test('url の無いカードは丸ごと null（url だけが必須のゲート）', () => {
+    expect(normalizePostRecord({ captureId: 'cap-card-3', linkCard: { title: 'no url', description: null, thumbnailFile: null } } as any, fixedNow).linkCard).toBeNull();
+  });
+
+  test.each([undefined, null, 'not an object', 42, []])('オブジェクトでない値は %p でも null に落ちる', (bad) => {
+    expect(normalizePostRecord({ captureId: 'cap-card-4', linkCard: bad as any }, fixedNow).linkCard).toBeNull();
+  });
+});
+
 // #180: quoted/renoted and (Misskey-only) reply-to sidecar sub-records — this
 // is the ONE gate every producer's raw extension output passes through, so
 // it's what decides whether a malformed sub-record reaches the DB writer as
@@ -374,6 +401,7 @@ describe('recordHoldsContent — 投稿の中身を持っているか', () => {
     ['タイトル（pixiv）', { title: '作品名' }],
     ['投稿者名だけ取れた', { displayName: 'Someone' }],
     ['メディアが落ちている', { media: [{ url: 'https://x/1.jpg', file: '1.jpg' }] }],
+    ['リンクカードのみ（#181, コメント無しのリンク共有）', { linkCard: { url: 'https://example.com/article', title: null, description: null, thumbnailFile: null } }],
   ])('%s は true', (_label, extra) => {
     expect(recordHoldsContent(normalizePostRecord({ ...shell, ...extra }, fixedNow))).toBe(true);
   });

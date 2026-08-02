@@ -287,6 +287,9 @@ declare global {
     // #179: the post's poll, rendered from the saved `poll` sub-structure
     // (PollCard.tsx). Absent when the post carried none.
     pollCard?: HologramPollCardModel;
+    // #181: the post's OGP preview card, rendered from the saved `linkCard`
+    // sub-structure (LinkCard.tsx). Absent when the post isn't sharing a link.
+    linkCard?: HologramLinkCardModel;
     // Poster-only.
     onPosterPosts?(): void;
     onFolderToggle(id: string): void;
@@ -316,6 +319,25 @@ declare global {
     // "複数選択可 ・ 1,234票 ・ 締切 …" — the conditions around the poll, joined
     // into one line. Empty when the platform reported none of them.
     metaLabel: string;
+  }
+  // #181: the post's OGP preview card, built by inspector-builder.ts's
+  // showDetail() from the saved `linkCard` sub-record (title/description/
+  // thumbnail file/destination url). thumbSrc is a local asset:// path (the
+  // thumbnail is downloaded at save time, #181 scope — never a remote src),
+  // null when the card carried no image or the download failed. onOpen is
+  // always present when the card has a url (the same https-only
+  // open-external route every other outbound link on a post uses) — a card
+  // with no url does not reach the renderer at all (native-host/
+  // post-record.mts's normLinkCard drops it).
+  interface HologramLinkCardModel {
+    // Section heading above the card, already localized here (the component
+    // renders strings only) — same split HologramPollCardModel.label uses.
+    label: string;
+    title: string;
+    description: string;
+    domainLabel: string;
+    thumbSrc: string | null;
+    onOpen(): void;
   }
   interface HologramQuotedCardModel {
     kind: 'quote' | 'reply';

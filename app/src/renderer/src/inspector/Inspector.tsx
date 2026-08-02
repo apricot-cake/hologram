@@ -8,6 +8,7 @@ import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empt
 import { Separator } from '@/components/ui/separator';
 import { Textarea } from '@/components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { LinkCard } from './LinkCard.tsx';
 import { PollCard } from './PollCard.tsx';
 import { QuotedPostCard } from './QuotedPostCard.tsx';
 import { TagField } from './TagField.tsx';
@@ -197,6 +198,9 @@ function PostInspector({ m }: { m: HologramInspectorModel }) {
           under the post's own text, which IS the question (no platform carries
           a separate question field). */}
       {m.pollCard ? <PollCard m={m.pollCard} /> : null}
+      {/* #181: the post's OGP preview card, same placement as the
+          quote/poll cards just above — directly under the post's own text. */}
+      {m.linkCard ? <LinkCard m={m.linkCard} /> : null}
       <Fields>
         <Field k={m.labels.platform} v={m.platformLabel} />
         {hasAuthor ? (

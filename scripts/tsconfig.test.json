@@ -121,6 +121,10 @@
     "listing.test.ts",
     "mastodon-url.test.ts",
     "media-download-custom-emoji.test.ts",
+    // #181: named-imports downloadLinkCardThumbnail from native-host/media-download.cts
+    // (module.exports) — cause (a), exactly like media-download-custom-emoji.test.ts
+    // right above, which unit-tests the neighbouring downloader the same way.
+    "media-download-link-card.test.ts",
     "media-limits.test.ts",
     "media.test.ts",
     "metadata-correctness.test.ts",

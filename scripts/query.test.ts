@@ -390,6 +390,14 @@ describe('text: URL 照合', () => {
     expect(predOfU({ type: 'text', value: 'https://twitter.com/bar/status/999' })(quoter)).toBe(true);
   });
 
+  // #181: linkCard.url names an arbitrary external page, not a supported
+  // platform's own post — plain substring only, no postKeyOf normalization
+  // (unlike quotedUrl just above, which also matches by normalized key).
+  test('リンクカードの行き先 URL の貼り付けが、共有した投稿に当たる', () => {
+    const sharer = R.stampPost(post({ linkCard: { url: 'https://example.com/some/article', title: 'A', description: null } } as any));
+    expect(predOfU({ type: 'text', value: 'https://example.com/some/article' })(sharer)).toBe(true);
+  });
+
   test('URL 形でない語は URL 一致では当たらない', () => {
     expect(predOfU({ type: 'text', value: 'notes' })(misskeyPost)).toBe(false);
   });
@@ -577,6 +585,17 @@ describe('純ヘルパ', () => {
   test('quotedPost/replyToPost が無い投稿でも textHaystackOf は例外にならない（#180）', () => {
     expect(Q.textHaystackOf({ text: null }).every((s: unknown) => typeof s === 'string')).toBe(true);
     expect(Q.textHaystackOf({ text: null, quotedPost: null, replyToPost: null }).every((s: unknown) => typeof s === 'string')).toBe(true);
+  });
+
+  // #181: リンクカードのタイトル・説明文は投稿本文と同列に連結する（専用構文は
+  // 増やさない、#181's Why）。行き先 URL 自体は 'text' 葉の URL プローブ側で扱う
+  // （scripts/query.test.ts の「text: URL 照合」ブロック参照）。
+  test('textHaystackOf はリンクカードのタイトル・説明文を連結する（#181）', () => {
+    expect(Q.textHaystackOf({ text: null, linkCard: { title: 'A great article', description: 'It explains things.' } })).toEqual(expect.arrayContaining(['A great article', 'It explains things.']));
+  });
+
+  test('linkCard が無い投稿でも textHaystackOf は例外にならない（#181）', () => {
+    expect(Q.textHaystackOf({ text: null, linkCard: null }).every((s: unknown) => typeof s === 'string')).toBe(true);
   });
 
   test('localDayRange の to は翌日ローカル0時（排他）で、空は null', () => {

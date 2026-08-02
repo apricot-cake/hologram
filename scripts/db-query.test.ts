@@ -60,6 +60,8 @@ beforeAll(async () => {
       expiresAt: '2026-01-02T00:00:00Z',
       votersCount: null,
     },
+    // #181: the post's OGP preview card — one more JSON column on the same row.
+    linkCard: { url: 'https://example.com/article', title: 'A great article', description: 'It explains things.', thumbnailFile: 'cap-1-linkcard.jpg' },
     // #162: dimension/file-size facet aggregates — written directly here (this
     // test drives writePost, not fillMediaDims) just to check the column round-trips.
     mediaMaxW: 3000,
@@ -222,6 +224,15 @@ describe('postsFromDb: 形と並び', () => {
     });
     const cap2 = (await postsFromDb(handle.sqlite)).find((p: any) => p.captureId === 'cap-2');
     expect(cap2.poll).toBeNull();
+  });
+
+  // #181: same 0-or-1 JSON-column round trip quotedPost/poll have (null, not
+  // an empty object, on a post that isn't sharing a link).
+  test('linkCard が往復する（#181）', async () => {
+    const cap1 = (await postsFromDb(handle.sqlite)).find((p: any) => p.captureId === 'cap-1');
+    expect(cap1.linkCard).toEqual({ url: 'https://example.com/article', title: 'A great article', description: 'It explains things.', thumbnailFile: 'cap-1-linkcard.jpg' });
+    const cap2 = (await postsFromDb(handle.sqlite)).find((p: any) => p.captureId === 'cap-2');
+    expect(cap2.linkCard).toBeNull();
   });
 
   // #290: same JSON-column round trip, but empty-array (not null) is the

@@ -6,7 +6,7 @@
 
 import { anySrc, findAncestorContainerLink, hostnameMatches, parseMediaUrlPath, prepareScopedCaptureState } from './dom.ts';
 import { emptyRecord, normalizeHashtags, readJsonKeepingRaw, toIso } from './record.ts';
-import type { Extractor, MediaIdentity, MediaItem, PostMediaElement, PostRecord } from './types.ts';
+import type { Extractor, LinkCard, MediaIdentity, MediaItem, PostMediaElement, PostRecord } from './types.ts';
 
 const HOSTS = ['bsky.app'];
 const POST_CONTAINER = '[data-testid^="feedItem-by-"], [data-testid^="postThreadItem-by-"]';
@@ -263,6 +263,24 @@ function bskyQuotedMedia(vr): MediaItem[] {
   return out;
 }
 
+// #181: app.bsky.embed.external's resolved VIEW (recordWithMedia nests it the
+// same one level bskyMedia already unwraps). Confirmed against the official
+// lexicon (bluesky-social/atproto, lexicons/app/bsky/embed/external.json,
+// read 2026-08-02): the record-side external.thumb is a blob ref, but the
+// AppView resolves it to a plain https URL before this ever sees it (the
+// view's own external.thumb is documented as a URL string), so this never
+// touches a blob ref the way bskyMedia's video path resolves a PDS for.
+function bskyLinkCard(post): LinkCard | null {
+  const e = post.embed || (post.record && post.record.embed);
+  if (!e) return null;
+  const type = e.$type || '';
+  let ext: any = null;
+  if (type.includes('app.bsky.embed.external')) ext = e.external;
+  else if (type.includes('recordWithMedia') && e.media && (e.media.$type || '').includes('app.bsky.embed.external')) ext = e.media.external;
+  if (!ext || typeof ext.uri !== 'string' || !ext.uri) return null;
+  return { url: ext.uri, title: ext.title || null, description: ext.description || null, thumbnail: ext.thumb || null };
+}
+
 async function fetchBlueskyPost(parsed, url): Promise<PostRecord> {
   const rec = emptyRecord(url, 'bluesky');
   rec.screenName = parsed.handle;
@@ -331,6 +349,7 @@ async function fetchBlueskyPost(parsed, url): Promise<PostRecord> {
         rec.isReply = null;
       }
     }
+    rec.linkCard = bskyLinkCard(post);
     const embType = (post.embed && post.embed.$type) || (record.embed && record.embed.$type) || '';
     if (embType.includes('app.bsky.embed.record')) {
       const rec2 = (post.embed && post.embed.record) || {};

@@ -98,6 +98,18 @@ export interface PollShape {
   votersCount: number | null;
 }
 
+// #181: the OGP preview card a link-share post carries. Mirrors
+// extension/utils/extractor/types.ts's LinkCard, plus `thumbnailFile` -- the
+// ONE field the extension cannot fill (only the host, having downloaded the
+// image, knows the resulting filename; same split as MediaItemShape.file /
+// avatarFile above).
+export interface LinkCardShape {
+  url: string | null;
+  title: string | null;
+  description: string | null;
+  thumbnailFile: string | null;
+}
+
 export interface PostRecordShape {
   captureId: string;
   assetClass: string;
@@ -175,6 +187,11 @@ export interface PostRecordShape {
   // every post without one. See PollShape above and
   // extension/utils/extractor/types.ts's Poll for the per-platform sourcing.
   poll: PollShape | null;
+  // #181: the OGP preview card of a link-share post — see LinkCardShape above
+  // and extension/utils/extractor/types.ts's PostRecord.linkCard for the
+  // per-platform sourcing (Bluesky/Mastodon/X only in v1). null on every post
+  // that isn't sharing a link.
+  linkCard: LinkCardShape | null;
   // pixiv series membership (#188) — see extension/utils/extractor/types.ts's
   // PostRecord.seriesId/seriesTitle/seriesOrder for the sourcing. All three
   // null on every non-pixiv record and on a pixiv work that isn't in a series.
@@ -312,6 +329,20 @@ function normPoll(v: unknown): PollShape | null {
   return { choices, multiple: normBool(p.multiple), expiresAt: normStr(p.expiresAt), votersCount: normNum(p.votersCount) };
 }
 
+// #181: all-or-nothing on `url` like normQuotedPost -- a card with no
+// destination link is not a link card (the whole point is the linked-to
+// article, #181's Why). title/description/thumbnailFile are each
+// independently optional though: a thumbnail download failure is best-effort
+// (same convention as media/avatar/customEmojis) and must not drop the
+// card's own searchable text.
+function normLinkCard(v: unknown): LinkCardShape | null {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return null;
+  const c = v as Record<string, unknown>;
+  const url = normStr(c.url);
+  if (!url) return null;
+  return { url, title: normStr(c.title), description: normStr(c.description), thumbnailFile: normStr(c.thumbnailFile) };
+}
+
 function normMedia(v: unknown): MediaItemShape[] {
   if (!Array.isArray(v)) return [];
   return v
@@ -384,10 +415,16 @@ export function isVideoFileName(name: string | null | undefined): boolean {
 // A text-only post is NOT empty (#365): its text is the content. Neither is a
 // post whose media all failed to download but whose author and text arrived —
 // what was obtained is still worth keeping and re-saving can add the rest.
+//
+// #181: a link-share post's own linkCard also counts. A bare link share with
+// no added commentary (text null, no attached media — the card IS the whole
+// post, #181's Why: "カードが投稿の見た目の主役なのにデータとして何も残らな
+// い") must not read as an empty shell just because nothing else filled.
 export function recordHoldsContent(record: Partial<PostRecordShape> | null | undefined): boolean {
   if (!record) return false;
   if (normStr(record.image) || normStr(record.video) || normStr(record.file) || normStr(record.text) || normStr(record.title) || normStr(record.displayName)) return true;
-  return Array.isArray(record.media) && record.media.length > 0;
+  if (Array.isArray(record.media) && record.media.length > 0) return true;
+  return !!(record.linkCard && normStr(record.linkCard.url));
 }
 
 // Fills every field of `input` with its documented default. now is injectable
@@ -453,6 +490,7 @@ export function normalizePostRecord(input: PostRecordInput, now: () => string = 
     quotedPost: normQuotedPost(input.quotedPost),
     replyToPost: normQuotedPost(input.replyToPost),
     poll: normPoll(input.poll),
+    linkCard: normLinkCard(input.linkCard),
     seriesId: normStr(input.seriesId),
     seriesTitle: normStr(input.seriesTitle),
     seriesOrder: normNum(input.seriesOrder),

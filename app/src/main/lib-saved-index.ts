@@ -107,6 +107,7 @@ function buildSavedIndex(sqlite: Database.Database, trash: readonly TrashedInput
             OR IFNULL(p.text, '') <> ''
             OR IFNULL(p.title, '') <> ''
             OR IFNULL(p.displayName, '') <> ''
+            OR IFNULL(p.linkCard, '') <> ''
             OR EXISTS (SELECT 1 FROM media m WHERE m.postId = p.captureId))`,
     )
     .all() as Array<{ captureId: string; url: string }>;

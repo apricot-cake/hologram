@@ -81,6 +81,7 @@ const POST_COLUMNS = [
   'replyToPost',
   'customEmojis',
   'poll',
+  'linkCard',
 ] as const;
 
 function fromDbBool(v: unknown): boolean | null {
@@ -388,6 +389,10 @@ function assemble(sqlite: Database.Database, postRows: any[]): any[] {
       // (once its display stage lands, per #290's own scope note) and the
       // export sidecar.
       customEmojis: parseCustomEmojis(r.customEmojis),
+      // #181: the OGP preview card of a link-share post. Read for the
+      // inspector's link-card row and the export sidecar, the same two
+      // consumers quotedPost/poll have.
+      linkCard: parseJsonObject(r.linkCard),
     };
   });
 }

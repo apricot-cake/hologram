@@ -67,6 +67,9 @@ beforeAll(() => {
   writePost(stmts, resolveTagId, { ...base, captureId: 'cap-e', url: 'https://x.com/gina/status/777', screenName: 'gina', date: '2026-06-23T11:15:10.728Z', image: null, media: [] });
   // A text-only post (#365) is not a shell = its text is present in the library.
   writePost(stmts, resolveTagId, { ...base, captureId: 'cap-f', url: 'https://x.com/hana/status/888', text: '本文だけの投稿', image: null, media: [] });
+  // A bare link share (#181) is not a shell either = its OGP card is present in
+  // the library even though it carries no text/title/displayName/media of its own.
+  writePost(stmts, resolveTagId, { ...base, captureId: 'cap-g', url: 'https://x.com/iris/status/9099', image: null, media: [], linkCard: { url: 'https://example.com/article', title: 'A great article', description: null, thumbnailFile: null } });
 
   // Trash records aren't in the DB (their posts row is gone entirely), so the caller passes them in = #158.
   // In production, listTrashRecords reads these from `.trash/*.json`.
@@ -85,7 +88,7 @@ describe('スナップショットの形', () => {
   });
 
   test('鍵は postKey＝URL の表記ゆれを畳んだもの', () => {
-    expect(Object.keys(index.entries).sort()).toEqual([postKeyOf(MULTI), postKeyOf('https://x.com/erin/status/555'), postKeyOf('https://x.com/hana/status/888')].sort());
+    expect(Object.keys(index.entries).sort()).toEqual([postKeyOf(MULTI), postKeyOf('https://x.com/erin/status/555'), postKeyOf('https://x.com/hana/status/888'), postKeyOf('https://x.com/iris/status/9099')].sort());
   });
 });
 
@@ -101,6 +104,12 @@ describe('中身を持たない投稿は「保存済み」と答えない', () =
 
   test('テキストのみ投稿は載る（本文がライブラリに在る＝殻ではない）', () => {
     expect(index.entries[postKeyOf('https://x.com/hana/status/888') as string]).toEqual({ id: 'cap-f', media: [], owners: [] });
+  });
+
+  // #181: recordHoldsContent の SQL 側にも linkCard の条件を足した回帰（足す前
+  // はこの投稿が殻扱いされ、バッジが点かず再取込のたびに再保存されていた）。
+  test('リンクカードのみの投稿も載る（カードがライブラリに在る＝殻ではない）', () => {
+    expect(index.entries[postKeyOf('https://x.com/iris/status/9099') as string]).toEqual({ id: 'cap-g', media: [], owners: [] });
   });
 });
 

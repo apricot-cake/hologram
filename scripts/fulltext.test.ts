@@ -41,6 +41,15 @@ describe('matchPost: フィールドの優先順位', () => {
     expect(m?.post).toBe(p); // ヒットは常に親投稿を指す（#180）
   });
 
+  // #181: a link-share post's OGP card title/description are searchable,
+  // reported as their own field (same "field priority, not a body hit"
+  // treatment as quoted/poll just above).
+  test('リンクカードのタイトルにもヒットする', () => {
+    const p = post({ text: '見て', linkCard: { title: '猫カフェ特集記事', description: null } });
+    const m = matchPost('猫', p);
+    expect(m?.field).toBe('linkCard');
+  });
+
   test('どのフィールドにも無ければ null', () => {
     const p = post({ text: '今日は良い天気だった', tags: ['犬'] });
     expect(matchPost('猫', p)).toBeNull();

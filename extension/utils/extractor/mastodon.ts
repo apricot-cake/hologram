@@ -6,7 +6,7 @@
 import { prepareScopedCaptureState } from './dom.ts';
 import { fileBasenameKey } from './media.ts';
 import { emptyRecord, htmlToText, normalizeHashtags, readJsonKeepingRaw, toIso } from './record.ts';
-import type { Extractor, Poll, PostRecord } from './types.ts';
+import type { Extractor, LinkCard, Poll, PostRecord } from './types.ts';
 
 // === DOM ===
 
@@ -149,6 +149,20 @@ function mastodonCustomEmojis(emojis) {
   return emojis.filter((e) => e && typeof e.shortcode === 'string' && e.shortcode && typeof e.url === 'string' && e.url).map((e) => ({ shortcode: e.shortcode as string, url: e.url as string }));
 }
 
+// #181: status.card is the OGP preview the INSTANCE's own server fetched for
+// a URL in the post text -- the official PreviewCard entity (docs.
+// joinmastodon.org/entities/PreviewCard, read 2026-08-02: url/title/
+// description/image, `type` one of link/photo/video/rich). Every `type`
+// carries the same url/title/description/image shape, so nothing here
+// branches on it -- a photo/video oEmbed preview (e.g. an embedded YouTube
+// link) is just as much "a card describing a link this post shared" as a
+// plain article link is. image is documented nullable (a linked page with no
+// og:image still gets a card, just a textless-thumbnail one).
+function mastodonLinkCard(card): LinkCard | null {
+  if (!card || typeof card.url !== 'string' || !card.url) return null;
+  return { url: card.url, title: card.title || null, description: card.description || null, thumbnail: card.image || null };
+}
+
 async function fetchMastodonStatus(parsed, url): Promise<PostRecord> {
   const rec = emptyRecord(url, 'mastodon');
   try {
@@ -169,6 +183,7 @@ async function fetchMastodonStatus(parsed, url): Promise<PostRecord> {
     rec.cw = s.spoiler_text || null;
     rec.sensitive = typeof s.sensitive === 'boolean' ? s.sensitive : null;
     rec.poll = mastodonPoll(s.poll);
+    rec.linkCard = mastodonLinkCard(s.card);
     rec.date = toIso(s.created_at);
     if (s.account) {
       rec.displayName = s.account.display_name || s.account.username || null;
