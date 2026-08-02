@@ -26,7 +26,7 @@ import { hologramIpc } from './ipc.ts';
 // one (the acceptance criterion is that a tag/hashtag hit must not read as a
 // body hit — #29's design comment on the surprise this avoids). Body-ish
 // fields first, tag/hashtag last.
-export type FullTextFieldKey = 'text' | 'title' | 'memo' | 'seriesTitle' | 'alt' | 'quoted' | 'displayName' | 'screenName' | 'eagleName' | 'tag' | 'hashtag';
+export type FullTextFieldKey = 'text' | 'title' | 'memo' | 'seriesTitle' | 'alt' | 'quoted' | 'poll' | 'displayName' | 'screenName' | 'eagleName' | 'tag' | 'hashtag';
 
 function fieldsOf(p: HologramPost): { key: FullTextFieldKey; value: string }[] {
   const out: { key: FullTextFieldKey; value: string }[] = [];
@@ -42,6 +42,10 @@ function fieldsOf(p: HologramPost): { key: FullTextFieldKey; value: string }[] {
   // on ITS text surfaces the PARENT post (same convention as textHaystackOf).
   const q = p.quotedPost || p.replyToPost;
   if (q) push('quoted', (q as { text?: unknown }).text);
+  // #179: the poll's choice labels are words the author wrote, the same as the
+  // post text and the CW — searchable, and reported as their own field so a hit
+  // on a choice does not read as a body hit.
+  for (const c of (p.poll as { choices?: { text?: unknown }[] } | null | undefined)?.choices || []) push('poll', c?.text);
   push('displayName', p.displayName);
   push('screenName', p.screenName);
   push('eagleName', p.eagleName);

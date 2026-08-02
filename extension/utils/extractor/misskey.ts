@@ -7,7 +7,7 @@
 import { normalizeRect, prepareScopedCaptureState } from './dom.ts';
 import { fileBasenameKey } from './media.ts';
 import { emptyRecord, normalizeHashtags, readJsonKeepingRaw, toIso } from './record.ts';
-import type { Extractor, MediaIdentity, PostMediaElement, PostRect, PostRecord } from './types.ts';
+import type { Extractor, MediaIdentity, Poll, PostMediaElement, PostRect, PostRecord } from './types.ts';
 
 // === DOM ===
 
@@ -231,6 +231,23 @@ function misskeyQuotedRef(note, host): { url: string | null; displayName: string
   };
 }
 
+// #179: note.poll is {multiple, expiresAt, choices[{text, votes, isVoted}]}
+// (confirmed live -- scripts/canary/snapshots/misskey.json's 'poll' source).
+// choices[].isVoted is the VIEWER's own state and we are always anonymous, so
+// it is dropped rather than saved as a permanent "not voted" that says nothing
+// about the poll. expiresAt is null on a poll with no deadline, which Misskey
+// allows.
+function misskeyPoll(poll): Poll | null {
+  if (!poll || !Array.isArray(poll.choices)) return null;
+  return {
+    choices: poll.choices.filter((c) => c && typeof c.text === 'string').map((c) => ({ text: c.text as string, votes: typeof c.votes === 'number' ? c.votes : null })),
+    multiple: typeof poll.multiple === 'boolean' ? poll.multiple : null,
+    expiresAt: toIso(poll.expiresAt),
+    // Misskey has no distinct-voter count -- only the per-choice tallies.
+    votersCount: null,
+  };
+}
+
 // #290: note.emojis is a shortcode->URL map -- packedNoteSchema's own
 // 'emojis' property, distinct from reactionEmojis (reaction picker icons) and
 // user.emojis (the author's name-field emoji). Confirmed live against
@@ -265,6 +282,7 @@ async function fetchMisskeyNote(parsed, url): Promise<PostRecord> {
     // sensitivity boolean exists on this endpoint (only a per-file isSensitive
     // on individual attachments, a different fact) — rec.sensitive stays null.
     rec.cw = note.cw || null;
+    rec.poll = misskeyPoll(note.poll);
     rec.date = toIso(note.createdAt);
     if (note.user) {
       rec.displayName = note.user.name || null;

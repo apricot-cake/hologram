@@ -83,6 +83,7 @@ const POST_COLUMNS = [
   'quotedPost',
   'replyToPost',
   'customEmojis',
+  'poll',
 ] as const;
 
 const UPSERT_POST_SQL = `INSERT INTO posts (${POST_COLUMNS.join(',')}) VALUES (${POST_COLUMNS.map(() => '?').join(',')})
@@ -161,6 +162,9 @@ function postParams(n: PostRecordShape): unknown[] {
     // exact same thing here (same reasoning as hashtags/domFilled above, which
     // also never distinguish [] from absent).
     customEmojis: JSON.stringify(n.customEmojis),
+    // #179: 0-or-1 sub-structure, so the same null-stays-null rule
+    // quotedPost/replyToPost use above (not customEmojis' always-an-array one).
+    poll: n.poll ? JSON.stringify(n.poll) : null,
   };
   return POST_COLUMNS.map((c) => byName[c]);
 }

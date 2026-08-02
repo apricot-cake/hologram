@@ -6,7 +6,7 @@
 import { prepareScopedCaptureState } from './dom.ts';
 import { fileBasenameKey } from './media.ts';
 import { emptyRecord, htmlToText, normalizeHashtags, readJsonKeepingRaw, toIso } from './record.ts';
-import type { Extractor, PostRecord } from './types.ts';
+import type { Extractor, Poll, PostRecord } from './types.ts';
 
 // === DOM ===
 
@@ -115,6 +115,29 @@ function mastodonFullStatus(x): any | null {
   return x && typeof x === 'object' && x.content !== undefined ? x : null;
 }
 
+// #179: status.poll is {id, expires_at, expired, multiple, votes_count,
+// voters_count, options[{title, votes_count}], emojis[]} (confirmed live --
+// scripts/canary/snapshots/mastodon.json's 'poll' source). Only the parts that
+// describe the poll itself are kept:
+//   - `expired` is dropped: it is expires_at against "now", which the viewer
+//     can ask for itself at any later moment (see types.ts's Poll.expiresAt).
+//   - `votes_count` is dropped: it is the sum of the options' own tallies.
+//   - `emojis[]` is dropped: poll options can carry :shortcode: custom emoji,
+//     but #290 scoped the emoji store to the post's OWN text and a
+//     sub-structure's emoji is the same out-of-scope case QuotedPost.media is.
+//     The shortcode text survives verbatim in the choice label either way.
+// A per-option votes_count of null (results hidden until the viewer votes) is
+// carried through as null rather than folded to 0 -- see types.ts's PollChoice.
+function mastodonPoll(poll): Poll | null {
+  if (!poll || !Array.isArray(poll.options)) return null;
+  return {
+    choices: poll.options.filter((o) => o && typeof o.title === 'string').map((o) => ({ text: o.title as string, votes: typeof o.votes_count === 'number' ? o.votes_count : null })),
+    multiple: typeof poll.multiple === 'boolean' ? poll.multiple : null,
+    expiresAt: toIso(poll.expires_at),
+    votersCount: typeof poll.voters_count === 'number' ? poll.voters_count : null,
+  };
+}
+
 // #290: status.emojis[] is {shortcode, url, static_url, visible_in_picker} —
 // the official CustomEmoji shape (confirmed live against mstdn.jp/pawoo.net/
 // mastodon.cloud, 2026-08-02). `url` is kept, never `static_url`: it is the
@@ -145,6 +168,7 @@ async function fetchMastodonStatus(parsed, url): Promise<PostRecord> {
     // kept, not folded into null.
     rec.cw = s.spoiler_text || null;
     rec.sensitive = typeof s.sensitive === 'boolean' ? s.sensitive : null;
+    rec.poll = mastodonPoll(s.poll);
     rec.date = toIso(s.created_at);
     if (s.account) {
       rec.displayName = s.account.display_name || s.account.username || null;

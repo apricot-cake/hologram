@@ -49,6 +49,8 @@ function emptyRecord(url: string | null | undefined, platform: string | null | u
     // types.ts's PostRecord.quotedPost/replyToPost for the per-platform rule.
     quotedPost: null,
     replyToPost: null,
+    // #179: the post's poll, filled by x.ts / misskey.ts / mastodon.ts only.
+    poll: null,
     seriesId: null,
     seriesTitle: null,
     seriesOrder: null,

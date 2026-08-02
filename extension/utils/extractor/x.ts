@@ -7,7 +7,7 @@
 import { anySrc, findAncestorContainerLink, hostnameMatches, parseMediaUrlPath, prepareScopedCaptureState } from './dom.ts';
 import { parseCount } from './dom-meta.ts';
 import { emptyRecord, normalizeHashtags, readJsonKeepingRaw, toIso } from './record.ts';
-import type { DomMeta, Extractor, MediaIdentity, MediaItem, PostMediaElement, PostRecord } from './types.ts';
+import type { DomMeta, Extractor, MediaIdentity, MediaItem, Poll, PostMediaElement, PostRecord } from './types.ts';
 
 const HOSTS = ['x.com', 'twitter.com'];
 
@@ -340,6 +340,52 @@ function xWasEdited(editControl): boolean {
   return !!ids && ids.length > 1;
 }
 
+// A poll on X is not a field of the tweet: it is a legacy CARD, the same
+// mechanism link previews use. card.name is 'poll<N>choice_text_only' (also an
+// '_image' variant in X's own card catalogue, matched by the same prefix), and
+// every value lives in card.binding_values as a typed box --
+// {string_value|boolean_value, type} -- so each read here unwraps one box.
+// Measured against cdn.syndication.twimg.com on 2026-08-02 (tweet
+// 1604617643973124097): choice1_label/choice1_count ... choiceN_*,
+// end_datetime_utc, counts_are_final, duration_minutes, last_updated_datetime_utc.
+//
+// The counts arrive as decimal STRINGS ("10063044"), not numbers -- Number() is
+// applied here so the record holds the same numeric type every other platform's
+// tally does.
+//
+// Two fields X reports that this deliberately does not store:
+//   - counts_are_final: "the tallies stopped moving", which end_datetime_utc
+//     against the record's capturedAt already answers (types.ts's Poll.expiresAt).
+//   - duration_minutes: the poll's length, recoverable from its end time and the
+//     post's own date.
+// X has no multi-select poll field at all, so `multiple` stays null (no signal),
+// and no distinct-voter count, so votersCount stays null.
+const X_POLL_CARD = /^poll\d+choice/;
+
+function xCardString(bindings, key: string): string | null {
+  const v = bindings && bindings[key];
+  return v && typeof v.string_value === 'string' && v.string_value ? v.string_value : null;
+}
+
+function xPoll(card): Poll | null {
+  if (!card || typeof card.name !== 'string' || !X_POLL_CARD.test(card.name)) return null;
+  const bindings = card.binding_values;
+  if (!bindings || typeof bindings !== 'object') return null;
+  const choices: { text: string; votes: number | null }[] = [];
+  // The card names its choices choice1..choiceN with no count field to bound
+  // the loop; stop at the first missing label rather than trusting the digit in
+  // card.name, which describes the card TEMPLATE and not what it carries.
+  for (let i = 1; ; i++) {
+    const label = xCardString(bindings, `choice${i}_label`);
+    if (label === null) break;
+    const count = xCardString(bindings, `choice${i}_count`);
+    const votes = count === null ? null : Number(count);
+    choices.push({ text: label, votes: Number.isFinite(votes as number) ? votes : null });
+  }
+  if (!choices.length) return null;
+  return { choices, multiple: null, expiresAt: toIso(xCardString(bindings, 'end_datetime_utc')), votersCount: null };
+}
+
 function xMediaType(details) {
   const t = details && details[0] && details[0].type;
   if (t === 'video') return 'video';
@@ -460,6 +506,7 @@ async function fetchXTweet(parsed, url): Promise<PostRecord> {
     // favorite_count, not the null-means-no-signal convention isEdited uses).
     // No free-text CW field exists on this endpoint — rec.cw stays null.
     rec.sensitive = typeof j.possibly_sensitive === 'boolean' ? j.possibly_sensitive : null;
+    rec.poll = xPoll(j.card);
     if (j.user) {
       rec.displayName = j.user.name || null;
       rec.screenName = j.user.screen_name || rec.screenName;

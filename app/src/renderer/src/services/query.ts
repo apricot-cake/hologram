@@ -369,12 +369,16 @@ export const kindOf = (p: HologramPost): 'bookmark' | 'post' | 'image' => (p.sou
 // 引用先の本文は親の検索テキスト束へ連結する"). null on every post with
 // neither (the overwhelming majority), same graceful-absence convention as
 // every other field here.
+// p.poll (#179): the poll's choice labels, so a saved survey is findable by
+// what it asked about. Author-written words, same as the post text — null on
+// every post without a poll, same graceful-absence convention as the rest.
 export function textHaystackOf(p: HologramPost): string[] {
   return [p.text, p.title, p.eagleName, p.screenName, p.displayName, p.memo, p.seriesTitle]
     .concat(p.tags || [])
     .concat(p.hashtags || [])
     .concat((p.media || []).map((m: any) => m?.alt))
     .concat([p.quotedPost, p.replyToPost].flatMap((q: any) => (q ? [q.text, q.displayName, q.screenName].concat((q.media || []).map((m: any) => m?.alt)) : [])))
+    .concat(((p.poll as any)?.choices || []).map((c: any) => c?.text))
     .map((x) => (x == null ? '' : String(x)));
 }
 

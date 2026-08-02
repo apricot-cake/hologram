@@ -281,6 +281,10 @@ function register(ctx: IpcContext) {
         // touched doesn't quietly drop them.
         quotedPost: p.quotedPost || null,
         replyToPost: p.replyToPost || null,
+        // #179: carried through for the same reason as the two above — a
+        // legacy-ZIP re-import of a post this feature already touched must not
+        // quietly drop its poll.
+        poll: p.poll || null,
         // #290: carried through like quotedPost/replyToPost above, for the same
         // reason -- a legacy-ZIP re-import of a post this feature already
         // touched must not quietly drop it. No producer of this legacy shape
