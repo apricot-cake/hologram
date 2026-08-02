@@ -8,8 +8,18 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import { configDir } from './native-host.ts';
-import { IMPORTABLE_MEDIA, importLocalImage } from './lib-local-intake.ts';
+import { importLocalFile } from './lib-local-intake.ts';
 import type { DbHandle, HologramConfig } from './ipc-context.ts';
+
+// #236: names a watch folder must never pick up, even though collection is no
+// longer limited to IMPORTABLE_MEDIA. OS/cloud-sync litter, not user files —
+// picking one up would create a library record for a file the user never chose.
+const EXCLUDED_NAMES = new Set(['desktop.ini', 'thumbs.db', '.ds_store']);
+// A download still being written (Chrome/Firefox/Edge conventions). chokidar's
+// awaitWriteFinish (below) already waits for a file to stop growing before
+// firing 'add' — this excludes the IN-PROGRESS name outright so a stale partial
+// left behind by a cancelled download is never picked up by a directory scan either.
+const PARTIAL_EXTS = new Set(['crdownload', 'part', 'tmp', 'download']);
 
 export interface WatchImportFolder {
   path: string;
@@ -57,8 +67,18 @@ function writeState(state: Seen) {
   fs.mkdirSync(configDir(), { recursive: true });
   fs.writeFileSync(STATE_PATH(), JSON.stringify(state, null, 2));
 }
+// #236: a watch folder collects any file now (not just IMPORTABLE_MEDIA — that
+// list still decides assetClass, in buildLocalRecord via importLocalFile below).
+// Dotfiles and the fixed OS/cloud-sync litter names above are excluded outright;
+// 0-byte files are excluded in processFile (needs a stat, which this — called
+// from a plain filename in the initial scan too — does not always have handy).
 function supported(file: string) {
-  return IMPORTABLE_MEDIA.includes(path.extname(file).slice(1).toLowerCase());
+  const base = path.basename(file);
+  if (base.startsWith('.')) return false;
+  if (EXCLUDED_NAMES.has(base.toLowerCase())) return false;
+  const ext = path.extname(file).slice(1).toLowerCase();
+  if (PARTIAL_EXTS.has(ext)) return false;
+  return true;
 }
 
 export interface WatchImportDeps {
@@ -90,6 +110,7 @@ export function createWatchImportManager(deps: WatchImportDeps) {
       return false;
     }
     if (!stat.isFile()) return false;
+    if (stat.size === 0) return false; // #236: an empty file (still being created) is not a collectable item
     const key = path.basename(file);
     const current = fingerprint(stat);
     if (same(seenFor(folder)[key], current)) return false;
@@ -97,7 +118,7 @@ export function createWatchImportManager(deps: WatchImportDeps) {
     const handle = deps.ensurePostsSynced();
     if (!handle) return false;
     const ext = path.extname(file).slice(1).toLowerCase();
-    await importLocalImage({
+    await importLocalFile({
       folder: deps.getSaveFolder(),
       sqlite: handle.sqlite,
       srcPath: file,

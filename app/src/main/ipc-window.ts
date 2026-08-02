@@ -8,6 +8,7 @@
 import { ipcMain, shell, BrowserWindow, clipboard, nativeImage, screen } from 'electron';
 import fs from 'node:fs';
 import { isViewerImageName, libraryFilePath, libraryFilePaths } from './library-files.ts';
+import { isOpenAllowed } from './lib-open-gate.ts';
 import type { IpcContext } from './ipc-context.ts';
 
 function register(ctx: IpcContext) {
@@ -27,6 +28,25 @@ function register(ctx: IpcContext) {
   ipcMain.handle('show-in-folder', (_event, file) => {
     const p = exportPath(file);
     if (p) shell.showItemInFolder(p);
+  });
+
+  // "開く" on a collected-item card (#236, assetClass:'file'): hand the file to
+  // its OS default app ONLY when the allowlist (extension + magic bytes for
+  // the formats that carry one, lib-open-gate.ts) says yes at THIS moment —
+  // not what importLocalFile decided when the file was collected, since it
+  // could have been swapped on disk since. Anything else degrades to reveal-
+  // in-folder rather than refusing outright (the button never promises more
+  // than that either — see records.ts's fileOpenLabel). Returns which one it
+  // did, so the renderer can tell the user which happened.
+  ipcMain.handle('open-post-file', async (_event, file): Promise<{ opened: boolean }> => {
+    const p = exportPath(file);
+    if (!p) return { opened: false };
+    if (await isOpenAllowed(p)) {
+      shell.openPath(p);
+      return { opened: true };
+    }
+    shell.showItemInFolder(p);
+    return { opened: false };
   });
 
   // Open one library image in its own frameless-ish window (middle-click on a

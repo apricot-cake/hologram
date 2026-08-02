@@ -46,13 +46,15 @@ export function makeBulkTag(deps: BulkTagBuilderDeps) {
       if (!added.length) continue;
       const next = [...prev, ...added];
       try {
-        await postsUpdateTags(r.image || r.video, next);
+        // #236: r.file is the third leg — a collected item's IPC identifier
+        // (main's baseOf() strips whichever extension it carries the same way).
+        await postsUpdateTags(r.image || r.video || r.file, next);
       } catch {
         /* keep going */
       }
       const rec = deps.getPostById(r.captureId); // O(1) lookup; allPosts shares the same record refs
       if (rec) rec.tags = next.slice();
-      changes.push({ kind: 'post-tags', target: r.captureId, image: r.image || r.video, added, removed: [] });
+      changes.push({ kind: 'post-tags', target: r.captureId, image: r.image || r.video || r.file, added, removed: [] });
     }
     const undoFn = deps.pushUndo(changes);
     deps.markPostsMutated();

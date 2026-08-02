@@ -124,7 +124,7 @@ const ctx = {
 registerTransferIpc(ctx);
 
 const importClipboard = (title?: unknown) => stub.handlers.get('import-clipboard')?.(null, title);
-const rows = () => sqlite.prepare('SELECT captureId, source, url, title, image, video, mediaType, date, capturedAt, shotW, shotH FROM posts').all() as any[];
+const rows = () => sqlite.prepare('SELECT captureId, source, url, title, image, video, file, assetClass, mediaType, date, capturedAt, shotW, shotH FROM posts').all() as any[];
 
 function resetLibrary() {
   saveFolder = folder;
@@ -234,11 +234,11 @@ describe('main: 共通ヘルパ（lib-local-intake）', () => {
   beforeEach(resetLibrary);
 
   test('監視フォルダ／ドロップが乗る形＝ファイルのコピー＋元の日付を date に持てる', async () => {
-    const { importLocalImage } = await import('../app/src/main/lib-local-intake');
+    const { importLocalFile } = await import('../app/src/main/lib-local-intake');
     const src = path.join(dir, 'source.png');
     fs.writeFileSync(src, makePng(16, 32));
 
-    const out = await importLocalImage({
+    const out = await importLocalFile({
       folder,
       sqlite,
       source: 'watch',
@@ -269,10 +269,52 @@ describe('main: 共通ヘルパ（lib-local-intake）', () => {
   });
 
   test('バイト列もファイルも渡されない呼び出しは断り、何も残さない', async () => {
-    const { importLocalImage } = await import('../app/src/main/lib-local-intake');
-    await expect(importLocalImage({ folder, sqlite, source: 'watch', idPrefix: 'watch', ext: 'png', title: null })).rejects.toThrow();
+    const { importLocalFile } = await import('../app/src/main/lib-local-intake');
+    await expect(importLocalFile({ folder, sqlite, source: 'watch', idPrefix: 'watch', ext: 'png', title: null })).rejects.toThrow();
     expect(rows()).toHaveLength(0);
     expect(fs.readdirSync(folder)).toHaveLength(0);
+  });
+
+  // #236: the assetClass branch every door shares — IMPORTABLE_MEDIA decides
+  // 'media' (unchanged pre-#236 shape) vs 'file' (posts.file filled, image/
+  // video/mediaType all null). Fixed here so it can't silently drift per door.
+  test('IMPORTABLE_MEDIA 外の拡張子は assetClass:file＝file 列に入り image/video/mediaType は null', async () => {
+    const { buildLocalRecord } = await import('../app/src/main/lib-local-intake');
+    const rec = buildLocalRecord({ captureId: 'drag-1-0000', file: 'drag-1-0000.pdf', ext: 'pdf', source: 'drag', title: 'report' });
+
+    expect(rec.assetClass).toBe('file');
+    expect(rec.file).toBe('drag-1-0000.pdf');
+    expect(rec.image).toBeNull();
+    expect(rec.video).toBeNull();
+    expect(rec.mediaType).toBeNull();
+  });
+
+  test('IMPORTABLE_MEDIA 内の拡張子は assetClass:media のまま＝file 列は null', async () => {
+    const { buildLocalRecord } = await import('../app/src/main/lib-local-intake');
+    const rec = buildLocalRecord({ captureId: 'drag-1-0000', file: 'drag-1-0000.png', ext: 'png', source: 'drag', title: null });
+
+    expect(rec.assetClass).toBe('media');
+    expect(rec.file).toBeNull();
+    expect(rec.image).toBe('drag-1-0000.png');
+  });
+
+  test('収蔵ファイル（PDF）は importLocalFile を通しても assetClass:file で DB に残る', async () => {
+    const { importLocalFile } = await import('../app/src/main/lib-local-intake');
+    const src = path.join(dir, 'doc.pdf');
+    fs.writeFileSync(src, Buffer.from('%PDF-1.4\n%fake'));
+
+    const out = await importLocalFile({ folder, sqlite, source: 'drag', idPrefix: 'drag', ext: 'pdf', srcPath: src, title: 'doc' });
+
+    const rec = rows()[0];
+    expect(rec.assetClass).toBe('file');
+    expect(rec.file).toBe(out.file);
+    expect(rec.image).toBeNull();
+    expect(rec.video).toBeNull();
+    // A non-image file has nothing fillCardDims can measure — the 0/0 sentinel,
+    // same as an unsizable video (lib-card-dims.ts's fillCardDims).
+    expect(rec.shotW).toBe(0);
+    expect(rec.shotH).toBe(0);
+    fs.rmSync(src, { force: true });
   });
 });
 

@@ -110,13 +110,13 @@ export function makeTriage(deps: TriageBuilderDeps) {
       if (prev.includes(clean)) continue; // already carries it somehow — nothing to add
       const next = [...prev, clean];
       try {
-        await postsUpdateTags(r.image || r.video, next);
+        await postsUpdateTags(r.image || r.video || r.file, next);
       } catch {
         /* keep going — one failed write must not strand the rest of the group */
       }
       const rec = deps.getPostById(r.captureId);
       if (rec) rec.tags = next;
-      changes.push({ kind: 'post-tags', target: r.captureId, image: r.image || r.video, added: [clean], removed: [] });
+      changes.push({ kind: 'post-tags', target: r.captureId, image: r.image || r.video || r.file, added: [clean], removed: [] });
     }
     if (!changes.length) return;
     const undo = deps.pushUndo(changes);

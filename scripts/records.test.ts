@@ -76,6 +76,19 @@ describe('レコード形状ヘルパ', () => {
     expect(R.groupFilesOf(eagle)).toEqual(['c.png']);
   });
 
+  // #236: media も artwork も無い収蔵ファイルは自分の file へ落ちる（ドラッグ
+  // アウト/#132 が持ち出す先）。
+  test('groupFilesOf は media も artwork も無ければ収蔵ファイル自身（#236）', () => {
+    expect(R.groupFilesOf({ assetClass: 'file', file: 'doc.pdf', image: null, video: null })).toEqual(['doc.pdf']);
+    expect(R.groupFilesOf({})).toEqual([]);
+  });
+
+  test('isFileAsset は assetClass:file の判定だけを持つ', () => {
+    expect(R.isFileAsset({ assetClass: 'file' })).toBe(true);
+    expect(R.isFileAsset({ assetClass: 'media' })).toBe(false);
+    expect(R.isFileAsset({})).toBe(false);
+  });
+
   test('postIdKey は captureId 優先＋フォールバック', () => {
     expect(R.postIdKey({ captureId: 'c1' })).toBe('c1');
     expect(R.postIdKey({ url: 'u', capturedAt: 't' })).toBe('u|t');
@@ -648,6 +661,38 @@ describe('makeCardModel（カード1枚のビューモデル）', () => {
 
   test('shotW/H が無ければ学習したアスペクト比のキャッシュへ落ちる（元比率グリッドのみ）', () => {
     expect(model({ ...p, shotW: 0, shotH: 0 }).aspRatio).toBe('4/3');
+  });
+
+  // #236: a collected item (assetClass:'file') has no image/video/media — the
+  // card still needs a thumb slot (asset://…?w= is tried, same route as any
+  // other card; CardThumb falls back to the generic icon+name+ext on error)
+  // plus the fields that fallback reads.
+  describe('収蔵ファイル（assetClass:file、#236）', () => {
+    const fileP = { ...p, assetClass: 'file', image: null, video: null, mediaType: null, media: [], title: 'my-report', file: 'drag-1-0000.pdf' };
+
+    test('imgSrc は file を fileSrc に通したもの＝hasThumb は true', () => {
+      const mFile = model(fileP, []);
+      expect(mFile.imgSrc).toBe('drag-1-0000.pdf@200');
+      expect(mFile.hasThumb).toBe(true);
+      expect(mFile.isFileCard).toBe(true);
+    });
+
+    test('fileExt は拡張子を大文字化したもの、fileName は拡張子を除いたタイトル', () => {
+      const mFile = model(fileP, []);
+      expect(mFile.fileExt).toBe('PDF');
+      expect(mFile.fileName).toBe('my-report');
+    });
+
+    test('タイトルが無ければ fileName はファイル名（拡張子抜き）へ落ちる', () => {
+      const mFile = model({ ...fileP, title: '' }, []);
+      expect(mFile.fileName).toBe('drag-1-0000');
+    });
+
+    test('メディア投稿では isFileCard / fileExt / fileName は立たない', () => {
+      expect(m.isFileCard).toBeFalsy();
+      expect(m.fileExt).toBe('');
+      expect(m.fileName).toBe('');
+    });
   });
 });
 

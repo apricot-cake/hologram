@@ -50,6 +50,12 @@ export const mediaFilesOf = (p: HologramPost): string[] => mediaItemsOf(p).map((
 // because "which sources are artwork" is the question this line answers, and leaving
 // one out silently changes how that door's items sort into the facets.
 export const isScreenshot = (p: HologramPost): boolean => !!p.image && SS_EXT.test(p.image) && p.source !== 'drag' && p.source !== 'clipboard' && p.source !== 'watch' && p.source !== 'eagle-migration' && p.source !== 'bookmark';
+// #236: a collected item (an arbitrary local file — pdf/zip/psd/… — that isn't
+// IMPORTABLE_MEDIA). image/video/mediaType are all null on these rows
+// (lib-local-intake.ts's buildLocalRecord); `file` is the one place its own
+// name lives. Every reader that branches card vs generic-file UI checks this,
+// not the field directly, so the "which slot is this" rule stays in one place.
+export const isFileAsset = (p: HologramPost): boolean => p.assetClass === 'file';
 export const captureFile = (p: HologramPost): string => (isScreenshot(p) ? p.image : '');
 // The leading media item's THUMBNAIL file — its poster when it's a video/gif
 // (a raw video can't be an <img src>), else the file itself. Falls back to the
@@ -86,12 +92,15 @@ export function densityImage(p: HologramPost): string {
 // one post) collapse into one card. Manual groups (manual-groups.json) win
 // over auto. ungrouped.json opts individual post keys out.
 export const postIdKey = (p: HologramPost): string => p.captureId || (p.url || '') + '|' + (p.capturedAt || '');
-// The "artwork pages" of one record: original media, else the dragged/migrated image.
+// The "artwork pages" of one record: original media, else the dragged/migrated
+// image, else — #236 — a collected item's own file (so drag-out/#132 still
+// has something to hand the OS even though it never enters the gallery).
 export const groupFilesOf = (p: HologramPost): string[] => {
   const m = mediaFilesOf(p);
   if (m.length) return m;
   const a = artworkFile(p);
-  return a ? [a] : [];
+  if (a) return [a];
+  return p.file ? [p.file] : [];
 };
 
 // What dragging a card hands to the OS (#132), given what's selected right now:
@@ -483,13 +492,25 @@ export function makeCardModel(deps: {
     // thumbnails — motion-study canvas 2026-07-05). Downscaled like the front
     // image (GIFs too: a static flattened thumb is right for a back sheet).
     const stackSrcs = g.files.length > 1 ? g.files.slice(1, 3).map((f) => fileSrc(f, cellW)) : [];
+    // #236: a collected item has no image/video (densityImage/imgFile above is
+    // always '' for these — image/video/media[] are all empty on a 'file' row),
+    // so it needs its own thumb branch: request the SAME asset://…?w= route
+    // everything else uses (the OS-shell/negative-cache path in
+    // lib-thumbnails.ts's getThumbnail answers it, or answers null and the
+    // card falls back to its generic icon+name+ext — CardThumb's onError).
+    const fileAsset = isFileAsset(p);
+    const fileName = fileAsset && p.file ? (p.title || p.file).replace(/\.[^./\\]+$/, '') : '';
+    const fileExt = fileAsset && p.file ? (p.file.match(/\.([^./\\]+)$/)?.[1] || '').toUpperCase() : '';
     return {
       index: i,
       postKey,
       // videoSrc counts: a gif whose poster download failed AND whose post has no
       // capture has no still to show, but it still has something to play.
-      hasThumb: !!(imgFile || p.video || videoSrc),
-      imgSrc: imgFile ? fileSrc(imgFile, imgW) : '',
+      hasThumb: !!(imgFile || p.video || videoSrc || (fileAsset && p.file)),
+      imgSrc: imgFile ? fileSrc(imgFile, imgW) : fileAsset && p.file ? fileSrc(p.file, imgW) : '',
+      isFileCard: fileAsset,
+      fileName,
+      fileExt,
       videoSrc,
       videoPoster,
       videoBadge,

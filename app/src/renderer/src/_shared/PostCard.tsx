@@ -15,6 +15,7 @@
 //    The gestures are props now and close over the group itself, so those attributes
 //    have nothing left to answer. `data-slot` stays — that is shadcn's own marker for
 //    "which part of the component is this", and it is what the tests read.
+import { useState } from 'react';
 import type { CSSProperties, DragEvent as ReactDragEvent, MouseEvent as ReactMouseEvent, ReactNode, Ref } from 'react';
 import { cn } from '@/lib/utils';
 import type { DisplayShape } from '../services/display.ts';
@@ -37,6 +38,12 @@ export interface PostCardModel {
   videoPoster?: string | null;
   /** Video/gif(mp4) lead media: overlay a ▶ badge on the poster thumbnail (#119 St1). */
   videoBadge?: boolean;
+  /** #236: a collected item (assetClass:'file') — the generic icon+name+ext card, not a gallery thumbnail. */
+  isFileCard?: boolean;
+  /** #236: the collected file's name without its extension (title, when set, else the filename). */
+  fileName?: string;
+  /** #236: the collected file's extension, upper-cased, for the generic card's badge. */
+  fileExt?: string;
   captureId?: string;
   aspRatio?: string | null;
   eager?: boolean;
@@ -224,21 +231,53 @@ export function MetaFoot({ m, className }: { m: PostCardModel; className?: strin
   );
 }
 
+// #236: a collected item's generic card body — an icon, its extension as a
+// small badge, and its name. Stands in for a thumbnail two ways: OS ハンドラの
+// 無い形式 never gets an imgSrc to try in the first place (records.ts leaves it
+// falling through to fileSrc(p.file) regardless, so this is reached through the
+// onError branch below instead), and any src that DOES 404/fail to decode
+// (getThumbnail returned null and the raw bytes aren't a browser-decodable
+// image either) falls back here the same way.
+function FileCardFallback({ m, className }: { m: PostCardModel; className?: string }) {
+  return (
+    <div data-slot="post-card-media" className={cn('flex flex-col items-center justify-center gap-1.5 overflow-hidden bg-[var(--surface-2)] p-3 text-[var(--text-muted)]', className)} draggable>
+      <svg viewBox="0 0 24 24" width="34" height="34" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <path d="M6 2h9l5 5v15a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1Z" />
+        <path d="M15 2v5h5" />
+      </svg>
+      {m.fileExt && <span className="rounded bg-[var(--surface-3)] px-1.5 py-0.5 font-semibold text-[10px] tracking-wide">{m.fileExt}</span>}
+      {m.fileName && <span className="max-w-full truncate text-[11px]">{m.fileName}</span>}
+    </div>
+  );
+}
+
 /**
  * The thumbnail. An mp4-backed GIF takes the same slot as a still and loops there;
  * a post whose media never downloaded gets a ▶ placeholder rather than a hole.
  * `muted` is what makes autoplay legal at all (Chromium never blocks a silent one);
  * `loop`+`playsInline` and no `controls` keep it reading as the GIF it is. Only the
  * scrolled window is mounted, so what plays is bounded by the viewport.
+ *
+ * A collected item (#236, m.isFileCard) tries the SAME asset://…?w= src as any
+ * other card — OS shell thumbnails ride this exact route (lib-thumbnails.ts) —
+ * and falls back to FileCardFallback above the moment that src either doesn't
+ * exist or fails to load (onError), rather than a broken-image icon.
  */
 export function CardThumb({ m, shape, onAspect, className, imgClassName, style: boxStyle }: { m: PostCardModel; shape: DisplayShape; onAspect?: (captureId: string, aspectRatio: string) => void; className?: string; imgClassName?: string; style?: CSSProperties }) {
   const style = m.aspRatio ? { aspectRatio: m.aspRatio } : undefined;
+  // Keyed by the src it failed on (not a plain boolean) so a recycled cell that
+  // gets handed a DIFFERENT model — same DOM node, virtualization reusing it —
+  // doesn't keep showing yesterday's failure for today's file.
+  const [erroredSrc, setErroredSrc] = useState<string | null>(null);
+  const showFileFallback = !!m.isFileCard && (!m.imgSrc || erroredSrc === m.imgSrc);
   return (
     <div data-slot="post-card-thumb" className={cn('relative block leading-[0]', className)} style={boxStyle}>
       {m.videoSrc ? (
         // draggable is spelled out: <video> is not draggable by default, and the
         // drag-out gesture (#132) is armed on the media itself.
         <video data-slot="post-card-media" className={imgClassName} src={m.videoSrc} poster={m.videoPoster || undefined} style={style} autoPlay muted loop playsInline draggable disablePictureInPicture />
+      ) : showFileFallback ? (
+        <FileCardFallback m={m} className={imgClassName} />
       ) : m.imgSrc ? (
         <>
           <img
@@ -249,6 +288,7 @@ export function CardThumb({ m, shape, onAspect, className, imgClassName, style: 
             style={style}
             loading={m.eager ? 'eager' : 'lazy'}
             decoding="async"
+            onError={m.isFileCard ? () => setErroredSrc(m.imgSrc || null) : undefined}
             onLoad={
               // Only cells that reserved NO height have anything to learn (original-aspect-ratio
               // grid with no shotW/H and no cached aspect); the rest already know.

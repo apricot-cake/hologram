@@ -7,7 +7,7 @@
 // Renderer services are migrating off a shared global bridge to real ES modules
 // one wave at a time; the ones imported below are converted, the rest are still
 // read via that bridge at call time.
-import { treeLeaves, evalNode, hostOf, userKey, kindOf, facetViewOf, facetSetOp, facetSetNeg, facetDefaultOp, removeCondsMatching as removeCondsMatchingIn } from './query.ts';
+import { treeLeaves, evalNode, hostOf, userKey, facetViewOf, facetSetOp, facetSetNeg, facetDefaultOp, removeCondsMatching as removeCondsMatchingIn } from './query.ts';
 import { makeListing, bindNamedPosters } from './listing.ts';
 import { newShuffleSeed } from './shuffle.ts';
 import { formatCount, formatShortDate } from './format.ts';
@@ -1055,12 +1055,16 @@ export function endFilterEditSession(): void {
       if (selectionCtl.clickSelect(g, e) && g) showDetail(g);
     },
     // #195: a bookmark's "picture" is only ever its optional og:image — there is
-    // no post to view full-size the way an SNS capture has. Without one, the
-    // gesture that would otherwise push an (empty) image-view entry falls back
-    // to the same destination a single click already reaches (the inspector)
-    // instead of opening nothing.
+    // no post to view full-size the way an SNS capture has. #236 (collected
+    // items, assetClass:'file') is the same shape: image/video/media are all
+    // null, so there is nothing a gallery could show either. Both fall back to
+    // the same destination a single click already reaches (the inspector)
+    // instead of opening an empty image view. Gated on the gallery itself
+    // (not g.files, which now also carries a collected item's OWN file for
+    // drag-out/#132 — that's a "what can leave the app" list, not "what can
+    // this view show").
     onDoubleClick: (g: HologramPostGroup) => {
-      if (kindOf(g.rep) === 'bookmark' && !g.files.length) {
+      if (!buildGroupGalleryItems(g).length) {
         showDetail(g);
         return;
       }

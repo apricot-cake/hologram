@@ -98,6 +98,12 @@ export interface PostRecordShape {
   // video-equivalent of `image`. The renderer's `image || video` UI contract
   // (records.ts et al.) predates this field; this is that contract's other half.
   video: string | null;
+  // #236: the collected-item's own file, for assetClass:'file' records only —
+  // a third slot alongside image/video, not a replacement for either. A record
+  // is EITHER assetClass:'media' (image/video/mediaType filled, file null) OR
+  // assetClass:'file' (file filled, image/video/mediaType null): see
+  // lib-local-intake.ts's buildLocalRecord, the one place that decides which.
+  file: string | null;
   url: string | null;
   platform: string | null;
   text: string | null;
@@ -341,7 +347,7 @@ export function isVideoFileName(name: string | null | undefined): boolean {
 // what was obtained is still worth keeping and re-saving can add the rest.
 export function recordHoldsContent(record: Partial<PostRecordShape> | null | undefined): boolean {
   if (!record) return false;
-  if (normStr(record.image) || normStr(record.video) || normStr(record.text) || normStr(record.title) || normStr(record.displayName)) return true;
+  if (normStr(record.image) || normStr(record.video) || normStr(record.file) || normStr(record.text) || normStr(record.title) || normStr(record.displayName)) return true;
   return Array.isArray(record.media) && record.media.length > 0;
 }
 
@@ -374,6 +380,7 @@ export function normalizePostRecord(input: PostRecordInput, now: () => string = 
     // An explicit `video` wins: a producer that filled both told us which file
     // it means, and the misplaced one is not a still either way.
     video: normStr(input.video) || (imageIsVideo ? rawImage : null),
+    file: normStr(input.file),
     url: normStr(input.url),
     platform: normStr(input.platform),
     text: normStr(input.text),

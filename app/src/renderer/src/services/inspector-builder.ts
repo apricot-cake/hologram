@@ -264,7 +264,7 @@ export function makeInspector(deps: InspectorBuilderDeps) {
       const next = mutate(prev.slice());
       if (!next || sameTags(prev, next)) continue;
       try {
-        await postsUpdateTags(r.image || r.video, next);
+        await postsUpdateTags(r.image || r.video || r.file, next);
       } catch {
         /* keep going */
       }
@@ -274,7 +274,7 @@ export function makeInspector(deps: InspectorBuilderDeps) {
       changes.push({
         kind: 'post-tags',
         target: r.captureId,
-        image: r.image || r.video,
+        image: r.image || r.video || r.file,
         added: next.filter((tag) => !prev.includes(tag)),
         removed: prev.filter((tag) => !next.includes(tag)),
       });
@@ -302,7 +302,7 @@ export function makeInspector(deps: InspectorBuilderDeps) {
       if ((r.memo || '') === memo) continue;
       changed = true;
       try {
-        await postsUpdateTags(r.image || r.video, r.tags || [], { memo });
+        await postsUpdateTags(r.image || r.video || r.file, r.tags || [], { memo });
       } catch {
         /* keep going — same best-effort contract as applyInspectorTagChange */
       }

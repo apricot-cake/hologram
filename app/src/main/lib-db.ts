@@ -412,6 +412,13 @@ const MIGRATIONS: Migration[] = [
         CREATE UNIQUE INDEX idx_poster_alias_members_posterKey ON poster_alias_group_members(posterKey);
       `),
   },
+  // #236: arbitrary-file intake ("収蔵"). assetClass already existed (v1 DDL,
+  // default 'media') with nothing writing 'file' yet — this is the other half,
+  // the collected-item's own filename, on the same footing as image/video
+  // (null on every 'media' row, filled on every 'file' row). See
+  // lib-local-intake.ts's buildLocalRecord for the one place that decides
+  // which of the three gets filled.
+  { name: 'add-post-file', up: (db) => db.exec('ALTER TABLE posts ADD COLUMN file TEXT') },
 ];
 
 interface Migration {
@@ -576,6 +583,10 @@ interface PostsTable {
   // add-post-custom-emojis migration (#290) — JSON CustomEmojiShape[], same
   // storage convention as hashtags/domFilled. See PostRecordShape.customEmojis.
   customEmojis: string | null;
+  // add-post-file migration (#236) — the collected-item's own file for
+  // assetClass:'file' records (image/video/mediaType stay null on those rows).
+  // See PostRecordShape.file.
+  file: string | null;
 }
 interface MediaTable {
   id: Generated<number>;

@@ -50,6 +50,7 @@ export const hologramIpc: HologramPreload = {
   openExternal: (url) => bridge().openExternal(url),
   openImageWindow: (image) => bridge().openImageWindow(image),
   showInFolder: (file) => bridge().showInFolder(file),
+  openPostFile: (file) => bridge().openPostFile(file),
   dragOut: (files) => bridge().dragOut(files),
   copyImage: (file) => bridge().copyImage(file),
   copyText: (text) => bridge().copyText(text),
