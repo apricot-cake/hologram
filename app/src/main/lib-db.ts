@@ -387,6 +387,31 @@ const MIGRATIONS: Migration[] = [
           FROM posts p;
       `),
   },
+  // #23 St1: poster name-merging — non-destructive, reversible grouping of
+  // posterKeys that name the same real-world author/account (design confirmed
+  // 2026-07-11/07-16/07-19/07-20 on the issue). A group's `primaryKey` is the
+  // canonical posterKey every reader folds onto (facets/predicates/buildUsers);
+  // `members` (poster_alias_group_members) carries every posterKey the group
+  // bundles, primaryKey included. The UNIQUE index on posterKey is the "one
+  // group per key" invariant the renderer's resolve()/membersOf() rely on for
+  // an unambiguous answer — a key in two groups would make "the" canonical key
+  // undefined.
+  {
+    name: 'add-poster-aliases',
+    up: (db) =>
+      db.exec(`
+        CREATE TABLE poster_alias_groups (
+          id TEXT PRIMARY KEY,
+          primaryKey TEXT NOT NULL
+        );
+        CREATE TABLE poster_alias_group_members (
+          groupId TEXT NOT NULL REFERENCES poster_alias_groups(id) ON DELETE CASCADE,
+          posterKey TEXT NOT NULL,
+          PRIMARY KEY (groupId, posterKey)
+        );
+        CREATE UNIQUE INDEX idx_poster_alias_members_posterKey ON poster_alias_group_members(posterKey);
+      `),
+  },
 ];
 
 interface Migration {
@@ -609,6 +634,15 @@ interface PosterTagsTable {
   posterKey: string;
   tagId: number;
 }
+// add-poster-aliases migration (#23 St1).
+interface PosterAliasGroupsTable {
+  id: string;
+  primaryKey: string;
+}
+interface PosterAliasGroupMembersTable {
+  groupId: string;
+  posterKey: string;
+}
 interface ManualGroupsTable {
   id: Generated<number>;
 }
@@ -694,6 +728,8 @@ interface Schema {
   poster_folders: PosterFoldersTable;
   poster_folder_items: PosterFolderItemsTable;
   poster_tags: PosterTagsTable;
+  poster_alias_groups: PosterAliasGroupsTable;
+  poster_alias_group_members: PosterAliasGroupMembersTable;
   manual_groups: ManualGroupsTable;
   manual_group_items: ManualGroupItemsTable;
   ungrouped_keys: UngroupedKeysTable;

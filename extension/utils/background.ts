@@ -1517,6 +1517,11 @@ function buildRecord(meta, { captureId, capturedAt, postUrl, sendPlatform, repla
       sensitive: meta.sensitive,
       quotedUrl: meta.quotedUrl,
       replyToId: meta.replyToId,
+      // #180's sidecar sub-records (the extractors build them; this was the
+      // missing wire-up — see #751). Undefined (not null) on the bookmark
+      // path, whose meta object has no such fields at all.
+      quotedPost: meta.quotedPost,
+      replyToPost: meta.replyToPost,
       seriesId: meta.seriesId,
       seriesTitle: meta.seriesTitle,
       seriesOrder: meta.seriesOrder,

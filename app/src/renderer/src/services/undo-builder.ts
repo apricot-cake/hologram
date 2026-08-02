@@ -18,6 +18,7 @@ import { postIdKey } from './records.ts';
 import { updateTags as postsUpdateTags } from './posts.ts';
 import { applyPosterTagRecords, getPosterTags } from './tags.ts';
 import { applyFolderItems as applyLibraryFolderItems } from './folders.ts';
+import { restore as restorePosterAliases, type PosterAliasGroup } from './aliases.ts';
 
 export interface UndoBuilderDeps {
   showToast(msg: unknown): void;
@@ -39,6 +40,11 @@ export interface UndoBuilderDeps {
   // views that draw from it have to be told, exactly as the toggle itself does.
   onFolderMembershipChanged(): void;
   onPosterFolderMembershipChanged(): void;
+  // #23 St1: a name-merge undo/redo can change which poster the currently
+  // inspected one folds onto (or dissolve/grow its group), so the poster grid
+  // + an open poster inspector both need telling, same shape as the two
+  // membership callbacks above.
+  onPosterAliasChanged(): void;
 }
 
 /** current − remove + (add it does not already hold), order-preserving. */
@@ -100,12 +106,35 @@ export function makeUndoController(deps: UndoBuilderDeps) {
     deps.onPosterFolderMembershipChanged();
   }
 
+  // #23 St1: a poster-alias change is a full before/after GROUP SNAPSHOT, not a
+  // value diff (see undo.ts's UndoChange comment for why) — `c.add` always
+  // holds the snapshot to restore TO for whichever direction (undo/redo)
+  // undo.ts is currently applying, so this applier only ever reads that one
+  // field. A malformed payload (should not happen — this module is the only
+  // writer) is skipped rather than thrown, matching every other applier's
+  // "missing target -> skip" tolerance.
+  function applyPosterAlias(changes: DirectedChange[]) {
+    for (const c of changes) {
+      const raw = c.add[0];
+      if (!raw) continue;
+      try {
+        const payload = JSON.parse(raw) as { keys: string[]; groups: PosterAliasGroup[] };
+        restorePosterAliases(payload.keys, payload.groups);
+      } catch {
+        /* malformed payload — nothing to restore */
+      }
+    }
+    deps.markPostsMutated(); // invalidates buildUsers' generation-cached fold
+    deps.onPosterAliasChanged();
+  }
+
   const _undo = makeUndo({
     appliers: {
       'post-tags': applyPostTags,
       'poster-tags': applyPosterTags,
       'folder-items': applyFolderItems,
       'poster-folder-items': applyPosterFolderItems,
+      'poster-alias': applyPosterAlias,
     },
   });
 

@@ -37,6 +37,9 @@ const userAgg = (u: Partial<HologramUserAgg>): HologramUserAgg => ({
   lastCapture: '',
   firstCapture: '',
   count: 0,
+  members: [],
+  platforms: [],
+  instances: [],
   ...u,
 });
 
@@ -98,6 +101,8 @@ function makeFacetsWith(pop: any[]) {
     posterFolders: () => posterFolders,
     postFolders: () => postFolders,
     buildUsers: () => posters,
+    resolve: (key: string) => key, // #23 St1
+    membersOf: (key: string) => [key], // #23 St1
   });
 }
 const { facetCounts, qfValues } = makeFacetsWith(filtered);
@@ -216,6 +221,8 @@ describe('qfValues: platform のドメイン行（#253）', () => {
     posterFolders: () => [],
     postFolders: () => [],
     buildUsers: () => [],
+    resolve: (key: string) => key,
+    membersOf: (key: string) => [key],
   });
 
   test('www. を畳んで1行に統合する（youtube.com が2件）', () => {
@@ -380,6 +387,57 @@ describe('qfValues: poster-*', () => {
   });
 });
 
+// #23 St1: resolve/membersOf fold a merged poster's raw posterKeys onto its
+// group's primary — a separate makeFacets instance with a non-identity
+// resolve, mirroring how the other isolated fixtures above (#253 domain rows,
+// the empty-"no tag" row) each get their own instance rather than mutate the shared one.
+describe('名寄せ（resolve/membersOf, #23 St1）', () => {
+  // x:u1 and misskey:u3 are merged (x:u1 is primary) — mirrors buildUsers()
+  // already folding them into one HologramUserAgg row keyed 'x:u1'.
+  const groupMembers: Record<string, string[]> = { 'x:u1': ['x:u1', 'misskey:u3'], 'misskey:u3': ['x:u1', 'misskey:u3'] };
+  const resolveAlias = (key: string) => (key === 'misskey:u3' ? 'x:u1' : key);
+  const mergedPosters = [posters[0], posters[2]]; // x:u1 (folded) + mastodon:u4; misskey:u3 no longer its own row
+  const { qfValues: qv } = makeFacets({
+    getFilteredPosts: () => filtered,
+    qHasValue: () => false,
+    posterQHasValue: () => false,
+    allPosts: () => posts,
+    hostOf: (url) => {
+      try {
+        return new URL(url ?? '').hostname;
+      } catch {
+        return '';
+      }
+    },
+    userKey: (p) => `${p.platform}:${p.userId || `@${p.screenName || ''}`}`,
+    t: (key: string) => LABELS[key],
+    PF_NAME: { x: 'X', bluesky: 'Bluesky', misskey: 'Misskey', mastodon: 'Mastodon', pixiv: 'pixiv' },
+    tagKindOf: (t: string) => KIND[t],
+    posterTagsOf: (key: string) => posterTags[key] || [],
+    filteredPosters: () => mergedPosters,
+    posterFilterVocab: () => ['P趣味', 'P作品'],
+    namedPosters: () => mergedPosters,
+    // A folder recorded under the SECONDARY key only (misskey:u3) — the shape a
+    // pre-merge library would have: the toggle happened before x:u1/misskey:u3
+    // were the same row.
+    posterFolders: () => [{ id: 'pf-old', name: '旧', items: ['misskey:u3'] }],
+    postFolders: () => postFolders,
+    buildUsers: () => mergedPosters,
+    resolve: resolveAlias,
+    membersOf: (key: string) => groupMembers[key] || [key],
+  });
+
+  test("'user' の count は resolve 後のキーへ畳まれる（c1=x:u1 と c3=misskey:u3 が合算）", () => {
+    expect(qv('user').find((r) => r.v === 'x:u1')?.count).toBe(2);
+  });
+
+  test('poster-folder は membersOf の和集合で読む（secondary key 側の所属だけの旧フォルダが x:u1 で1件と数える）', () => {
+    // qv('poster-folder') is counted over filteredPosters() (mergedPosters, keyed 'x:u1');
+    // pf-old only lists 'misskey:u3' directly, so a plain items.includes(u.key) would miss it.
+    expect(qv('poster-folder').find((r) => r.v === 'pf-old')?.count).toBe(1);
+  });
+});
+
 test('未知のカテゴリは []', () => {
   expect(qfValues('nonsense')).toEqual([]);
 });
@@ -406,6 +464,8 @@ test('タグの無い投稿が1件も無ければ「タグなし」を出さな�
     posterFolders: () => [],
     postFolders: () => [],
     buildUsers: () => [],
+    resolve: (key: string) => key,
+    membersOf: (key: string) => [key],
   });
   expect(qv('tag').map((r) => r.v)).not.toContain('__none');
 });

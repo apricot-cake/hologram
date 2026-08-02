@@ -48,6 +48,15 @@ export function normalize(s: unknown) {
   return kataToHira(t.toLowerCase());
 }
 
+// Romaji-query kana derivation (#199), shared by every entry point below so the
+// same input always produces the same kana (#761 — compile() used to skip this
+// entirely). wanakana's toKana() reads romaji (and passes kana/IME input through
+// mostly unchanged), then normalize() applies the same glyph rules as everything
+// else (NFKC, katakana→hiragana, lowercasing).
+function toKanaVariant(s: string) {
+  return normalize(toKana(s, { IMEMode: true }));
+}
+
 // Strict short-vocabulary match: normalize both sides, then require a contiguous
 // substring. Unlike compile(), this deliberately does not accept subsequences or
 // typos, so pickers stay precise while sharing the app-wide glyph rules.
@@ -55,7 +64,7 @@ export function includesNormalized(haystack: unknown, query: unknown) {
   const hay = normalize(haystack);
   const rawQuery = String(query ?? '');
   const normalizedQuery = normalize(rawQuery);
-  const kanaQuery = normalize(toKana(rawQuery, { IMEMode: true }));
+  const kanaQuery = toKanaVariant(rawQuery);
   return hay.includes(normalizedQuery) || hay.includes(kanaQuery);
 }
 
@@ -118,7 +127,7 @@ export function compile(query: string) {
   const terms = nq
     .split(/\s+/)
     .filter(Boolean)
-    .map((t) => ({ t, k: errBudget(t.length) }));
+    .map((t) => ({ t, k: errBudget(t.length), kana: toKanaVariant(t) }));
   if (!terms.length)
     return function () {
       return true;
@@ -129,6 +138,11 @@ export function compile(query: string) {
       const term = terms[i];
       if (isSubsequence(H, term.t)) continue; // A: loose in-order match
       if (term.k > 0 && approxSubstring(H, term.t, term.k)) continue; // C: tolerates typos
+      // #761: romaji→kana derived term, substring ONLY (no subsequence/edit
+      // distance) — kana carries no word-boundary signal like kanji does, so
+      // compile()'s usual looseness would make e.g. "neko" match any long text
+      // that merely contains あいうえお-order ね and こ apart.
+      if (term.kana && term.kana !== term.t && H.includes(term.kana)) continue;
       return false;
     }
     return true;

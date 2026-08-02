@@ -135,6 +135,29 @@ describe('葉の述語', () => {
   });
 });
 
+// #23 St1: the 'user' leaf matches by group membership (deps.membersOf), not
+// exact equality, so a leaf saved before a merge still means "this author"
+// afterwards.
+describe('user: 名寄せ（membersOf）', () => {
+  test('membersOf 未注入なら完全一致のまま（既存動作の据え置き）', () => {
+    const p = Q.makePostPredOf({ isInFolder: () => false });
+    expect(p({ type: 'user', value: 'misskey:u123' })(post())).toBe(true);
+    expect(p({ type: 'user', value: 'x:@other' })(post())).toBe(false);
+  });
+
+  test('membersOf が返す集合のどれかに一致すれば真', () => {
+    const p = Q.makePostPredOf({ isInFolder: () => false, membersOf: (key) => (key === 'x:primary' ? ['x:primary', 'misskey:u123'] : [key]) });
+    // The leaf was saved with the group's primary key, but this post's own raw
+    // userKey is the OTHER member (misskey:u123) — still a match.
+    expect(p({ type: 'user', value: 'x:primary' })(post())).toBe(true);
+  });
+
+  test('自分がメンバーでないグループには当たらない', () => {
+    const p = Q.makePostPredOf({ isInFolder: () => false, membersOf: (key) => (key === 'x:primary' ? ['x:primary', 'x:@someone-else'] : [key]) });
+    expect(p({ type: 'user', value: 'x:primary' })(post())).toBe(false); // post()'s own key is misskey:u123, not in this group
+  });
+});
+
 // #42: fix a retired leaf type on load
 describe('normalizeLeaf / normalizeTree', () => {
   test('collection→folder、未知の型は素通し', () => {
@@ -342,6 +365,24 @@ describe('makePosterPredOf', () => {
     expect(posterPredOf({ type: 'instance', value: 'misskey.io' })(poster({ instance: 'misskey.io' }))).toBe(true);
   });
 
+  // #23 St1: a merged poster's group can span platforms/instances — buildUsers
+  // (services/users.ts) sets the plural fields to the union across every
+  // folded posterKey, and the leaf must match ANY of them (design: "platform
+  // フィルタ＝メンバーのいずれかが一致").
+  describe('名寄せ（platforms/instances の和集合、#23 St1）', () => {
+    test('platforms に含まれていれば、単数の platform と食い違っても一致', () => {
+      expect(posterPredOf({ type: 'platform', value: 'bluesky' })(poster({ platform: 'x', platforms: ['x', 'bluesky'] }))).toBe(true);
+    });
+
+    test('platforms が無ければ単数の platform にフォールバックする', () => {
+      expect(posterPredOf({ type: 'platform', value: 'x' })(poster({ platforms: undefined }))).toBe(true);
+    });
+
+    test('instances も同様に和集合で一致', () => {
+      expect(posterPredOf({ type: 'instance', value: 'mastodon.social' })(poster({ instance: 'misskey.io', instances: ['misskey.io', 'mastodon.social'] }))).toBe(true);
+    });
+  });
+
   test('tag は注入した posterTagsOf 経由（タグ無しでも落ちない）', () => {
     expect(posterPredOf({ type: 'tag', value: 'Ave Mujica' })(poster())).toBe(true);
     expect(posterPredOf({ type: 'tag', value: '作画' })(poster({ key: 'x:@none' }))).toBe(false);
@@ -443,6 +484,15 @@ describe('純ヘルパ', () => {
   test('userKey は userId 優先で handle へフォールバック', () => {
     expect(Q.userKey({ platform: 'x', userId: 'u1', screenName: 's' })).toBe('x:u1');
     expect(Q.userKey({ platform: 'x', screenName: 's' })).toBe('x:@s');
+  });
+
+  // #760: platform-less レコードは platform 名前空間を持たないので、URL のホストで閉じる
+  // （同名の著者でも別ドメインなら別キー＝投稿者グリッドで1人に統合されない）。
+  test('userKey は platform 無しのレコードをホストで閉じる（#760）', () => {
+    expect(Q.userKey({ platform: null, userId: 'u1', url: 'https://sitea.example/p' })).toBe('web:sitea.example:u1');
+    expect(Q.userKey({ platform: null, screenName: 'alice', url: 'https://sitea.example/p' })).toBe('web:sitea.example:@alice');
+    // 同じ screenName でもホストが違えば別キー（同名別人の統合ミスを防ぐ）
+    expect(Q.userKey({ platform: null, screenName: 'alice', url: 'https://siteb.example/p' })).toBe('web:siteb.example:@alice');
   });
 
   test('textHaystackOf は null 安全に文字列化する', () => {

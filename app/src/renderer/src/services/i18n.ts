@@ -89,6 +89,11 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     detailImageOf: '元投稿の画像',
     imageOf: '$1 / $2 枚目',
     detailText: '本文',
+    // #180: 引用元/リプライ先の埋め込みカード。見出しは quotedCardQuote/quotedCardReply、
+    // CW（閲覧注意）は quotedCardCw。media 実体は保存しないので枚数のみ imagesCount を流用。
+    quotedCardQuote: '引用',
+    quotedCardReply: 'リプライ先',
+    quotedCardCw: '閲覧注意',
     // pixiv シリーズ情報（#188）。シリーズに属さない作品では両方とも空
     detailSeries: 'シリーズ',
     detailSeriesOrder: '話数',
@@ -123,6 +128,10 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     itvZoomIn: 'ズームイン',
     itvFitToWindow: 'ウィンドウに合わせる (Ctrl+0)',
     itvActualSize: '原寸 (Ctrl+1)',
+    // 作画支援オーバーレイ（#80）: 左右反転・グリッド・グレースケール
+    itvFlip: '左右反転',
+    itvGrid: 'グリッド',
+    itvGrayscale: 'グレースケール',
     // Ugoira playback (#119 St3). Uses pixiv's own name for it as-is (no coined terms)
     ugoiraLabel: 'うごイラ',
     ugoiraPlay: '再生',
@@ -215,6 +224,19 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     posterMenuNewFolder: '新しいフォルダへ追加…',
     ivPosterFolders: 'フォルダ',
     ivPosterTags: 'タグ',
+    // #23 St1: poster name-merging — the inspector's「同一人物」section, the
+    // card context menu's merge/unlink pair, and the merge picker + confirm gate.
+    ivSamePerson: '同一人物',
+    samePersonMerge: '同一人物にする',
+    samePersonUnlink: '解除',
+    samePersonPickerTitle: '同一人物として束ねる投稿者を選ぶ',
+    samePersonPickerPh: '投稿者を検索',
+    samePersonPickerEmpty: '一致する投稿者がありません',
+    samePersonConfirm: '「$1」と「$2」を同一人物として束ねますか？\n投稿データは変更されません（いつでも解除できます）。',
+    samePersonMerged: '同一人物として束ねました',
+    samePersonUnlinked: '同一人物の束ねを解除しました',
+    ctxSamePerson: '同一人物にする…',
+    ctxSamePersonUnlink: '同一人物から外す',
     posterFolderAdded: '「$1」に追加',
     posterFolderRemoved: '「$1」から外す',
     sbPosterTagsTitle: 'タグ',
@@ -580,6 +602,14 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     tabUnpin: 'ピン解除',
     tabDuplicate: '複製',
     tabCloseOthers: '他のタブを閉じる',
+    // #207: web-search popover ("ウェブで探す")
+    websearchToolbarLabel: 'ウェブで探す',
+    websearchOpenChecked: 'まとめて開く',
+    websearchGoogleFallback: 'Googleで代替検索',
+    websearchHomeMisskey: 'Misskey',
+    websearchHomeMastodon: 'Mastodon',
+    websearchNoHost: 'ホームインスタンス未設定',
+    websearchNothingToSearch: '翻訳できる条件がありません',
   },
 
   en: {
@@ -657,6 +687,9 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     detailImageOf: 'In original post',
     imageOf: '$1 of $2',
     detailText: 'Text',
+    quotedCardQuote: 'Quote',
+    quotedCardReply: 'In reply to',
+    quotedCardCw: 'Content warning',
     // pixiv series info (#188). Both blank when the work isn't in a series
     detailSeries: 'Series',
     detailSeriesOrder: 'Installment',
@@ -688,6 +721,10 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     itvZoomIn: 'Zoom in',
     itvFitToWindow: 'Fit to window (Ctrl+0)',
     itvActualSize: 'Actual size (Ctrl+1)',
+    // Drawing-aid overlay (#80): flip horizontal, grid, grayscale
+    itvFlip: 'Flip horizontal',
+    itvGrid: 'Grid',
+    itvGrayscale: 'Grayscale',
     ugoiraLabel: 'Ugoira animation',
     ugoiraPlay: 'Play',
     ugoiraPause: 'Pause',
@@ -780,6 +817,18 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     posterMenuNewFolder: 'Add to new folder…',
     ivPosterFolders: 'Folders',
     ivPosterTags: 'Tags',
+    // #23 St1: poster name-merging.
+    ivSamePerson: 'Same person',
+    samePersonMerge: 'Mark as same person',
+    samePersonUnlink: 'Unlink',
+    samePersonPickerTitle: 'Choose a poster to merge as the same person',
+    samePersonPickerPh: 'Search posters',
+    samePersonPickerEmpty: 'No matching posters',
+    samePersonConfirm: 'Merge "$1" and "$2" as the same person?\nPost data is not changed (you can unlink any time).',
+    samePersonMerged: 'Merged as the same person',
+    samePersonUnlinked: 'Unlinked',
+    ctxSamePerson: 'Mark as same person…',
+    ctxSamePersonUnlink: 'Remove from same-person group',
     posterFolderAdded: 'Added to "$1"',
     posterFolderRemoved: 'Removed from "$1"',
     sbPosterTagsTitle: 'Tags',
@@ -1122,6 +1171,14 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     tabUnpin: 'Unpin',
     tabDuplicate: 'Duplicate',
     tabCloseOthers: 'Close others',
+    // #207: web-search popover ("Search the web")
+    websearchToolbarLabel: 'Search the web',
+    websearchOpenChecked: 'Open checked',
+    websearchGoogleFallback: 'Search via Google instead',
+    websearchHomeMisskey: 'Misskey',
+    websearchHomeMastodon: 'Mastodon',
+    websearchNoHost: 'Home instance not set',
+    websearchNothingToSearch: 'Nothing translatable to search for',
   },
 };
 

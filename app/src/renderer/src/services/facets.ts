@@ -23,6 +23,8 @@ export const PF_ORDER = ['x', 'bluesky', 'misskey', 'mastodon', 'pixiv'];
 //   posterTagsOf(key) / filteredPosters() / posterFilterVocab() / namedPosters()
 //   posterFolders() — pfStore.all() (wrapped: pfStore is declared later)
 //   buildUsers() — user facet source (cached in viewer)
+//   resolve(key) / membersOf(key) — services/aliases.ts (#23 St1); identity /
+//     [key] when the poster isn't merged
 export function makeFacets(deps: {
   getFilteredPosts(): HologramPost[];
   qHasValue(type: string, v: string): boolean;
@@ -40,8 +42,10 @@ export function makeFacets(deps: {
   posterFolders(): HologramFolder[];
   postFolders(): HologramFolder[];
   buildUsers(): HologramUserAgg[];
+  resolve(key: string): string;
+  membersOf(key: string): string[];
 }) {
-  const { getFilteredPosts, qHasValue, posterQHasValue, allPosts, hostOf, userKey, t, PF_NAME, tagKindOf, posterTagsOf, filteredPosters, posterFilterVocab, namedPosters, posterFolders, postFolders, buildUsers } = deps;
+  const { getFilteredPosts, qHasValue, posterQHasValue, allPosts, hostOf, userKey, t, PF_NAME, tagKindOf, posterTagsOf, filteredPosters, posterFilterVocab, namedPosters, posterFolders, postFolders, buildUsers, resolve, membersOf } = deps;
 
   // Facet counts: how many CURRENT-QUERY matches fall under each value of a facet.
   // Population = getFilteredPosts() (every active condition incl. the search term),
@@ -210,8 +214,15 @@ export function makeFacets(deps: {
         return [...hosts].map((h) => ({ v: h, l: h, on: posterQHasValue('instance', h), count: cnt.get(h) || 0, facetDim: true })).sort((a, b) => b.count - a.count || a.l.localeCompare(b.l));
       }
       case 'poster-folder': {
+        // #23 St1: read as the union across every posterKey the poster's group
+        // bundles (design: "poster-folders も同型" as poster-tags' union read) —
+        // a folder toggle recorded under a since-merged secondary key, before
+        // this poster existed as one row, still counts.
         const folders = posterFolders();
-        const cnt = facetCounts((u) => folders.filter((f) => f.items.includes(u.key)).map((f) => f.id), filteredPosters());
+        const cnt = facetCounts((u) => {
+          const keys = membersOf(u.key);
+          return folders.filter((f) => keys.some((k) => f.items.includes(k))).map((f) => f.id);
+        }, filteredPosters());
         return folders.map((f) => ({ v: f.id, l: f.name, on: posterQHasValue('folder', f.id), count: cnt.get(f.id) || 0 }));
       }
       case 'work':
@@ -304,7 +315,10 @@ export function makeFacets(deps: {
           .sort((a, b) => b.count - a.count);
       }
       case 'user': {
-        const cnt = facetCounts((p) => userKey(p));
+        // #23 St1: buildUsers() already folds onto the primary key, so the count
+        // bucket has to key off the SAME resolved value or a merged poster's
+        // count would only ever show its own raw posts, not the group's total.
+        const cnt = facetCounts((p) => resolve(userKey(p)));
         return buildUsers()
           .sort((a, b) => b.count - a.count)
           .slice(0, 100)

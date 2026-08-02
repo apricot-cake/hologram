@@ -25,6 +25,9 @@ import { captureFile, monoHue } from './records.ts';
 import { setPosterTags } from './tags.ts';
 import { hologramPosterGridSource } from './grid.ts';
 import * as folders from './folders.ts';
+import * as aliases from './aliases.ts';
+import { open as confirmOpen } from './confirm.ts';
+import { open as aliasPickerOpen } from '../services/alias-picker.ts';
 import { set as storeSet } from './store.ts';
 import type { UndoChange } from './undo.ts';
 import type { NotifyAction } from './ui.ts';
@@ -59,6 +62,12 @@ export interface PosterGridBuilderDeps {
   setBrowseMode(mode: string, opts?: { silent?: boolean }): void;
   closeDetail(): void;
   setInspectedKey(key: string | null): void;
+  // #23 St1: name-merging — same-person section, card-menu merge/unlink, undo.
+  // getInspectedKey mirrors inspector-builder.ts's own accessor (a viewer.ts
+  // `let` read/written outside this cluster too).
+  getInspectedKey(): string | null;
+  markPostsMutated(): void;
+  namedPosters(): HologramUserAgg[];
   // Fresh poster render → tabs-builder records a 'posters' entry on the per-tab
   // history + persists (#144) — the poster-mode mirror of the post grid's
   // syncTitleAndPersist dep. Not called on keepLimit (in-place) refreshes.
@@ -79,6 +88,15 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
   const pfStore = folders.hologramPosterFolderStore();
   const posterFolderById = pfStore.byId;
   const posterFolderHas = pfStore.has;
+  // #23 St1: read as the union across every posterKey the poster's alias group
+  // bundles (design: "poster-folders も同型" as poster-tags' union read) — a
+  // folder toggle recorded under a since-merged secondary key, from before this
+  // poster existed as one row, still counts. The plain posterFolderHas above
+  // stays for writes (togglePosterFolderMember always toggles the literal key
+  // it's given, which is always u.key/primary from every call site here).
+  function posterFolderHasResolved(id: string, key: string) {
+    return aliases.membersOf(key).some((k) => posterFolderHas(id, k));
+  }
   function createPosterFolder(name: string | null) {
     return pfStore.create(name);
   }
@@ -192,7 +210,9 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
   // (url-less Eagle migrations don't), so callers guard on existence before offering it.
   function jumpToPoster(p: HologramPost) {
     if (!p || !p.url) return;
-    const u = deps.buildUsers().find((x) => x.key === userKey(p));
+    // #23 St1: userKey(p) is the post's own RAW key; buildUsers() rows are keyed
+    // by the group's primary, so resolve() is what finds a merged poster's row.
+    const u = deps.buildUsers().find((x) => x.key === aliases.resolve(userKey(p)));
     if (!u) return;
     deps.setBrowseMode('posters'); // clears any stale detail, then we open the poster's
     showPosterDetail(u);
@@ -207,7 +227,7 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
     inspectorRefresh({ tags, ...deps.inspectorTagPickerData(tags, [], 'poster') });
   }
   function refreshPosterFolderFields(key: string) {
-    inspectorRefresh({ folders: pfStore.all().map((f) => ({ id: f.id, name: f.name, on: posterFolderHas(f.id, key) })) });
+    inspectorRefresh({ folders: pfStore.all().map((f) => ({ id: f.id, name: f.name, on: posterFolderHasResolved(f.id, key) })) });
   }
   // Tag-field labels — mirrors inspector-builder.ts's own tagLabels() (same strings,
   // duplicated rather than shared: two 7-line closures, not worth a module for).
@@ -248,8 +268,12 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
     const name = u.displayName || (u.screenName ? '@' + u.screenName : '(unknown)');
     // Recent works: group this poster's posts (newest first) and preview the lead
     // image of each. Click → open that work in the gallery (over the inspector).
+    // #23 St1: membersOf(u.key), not a bare === u.key — a merged poster's works
+    // span every posterKey its group bundles (design acceptance criterion: "その
+    // ユーザーで絞ると両SNSの投稿が出る").
+    const memberKeys = new Set(aliases.membersOf(u.key));
     posterWorkGroups = deps
-      .groupRecords(deps.getAllPosts().filter((p: HologramPost) => userKey(p) === u.key))
+      .groupRecords(deps.getAllPosts().filter((p: HologramPost) => memberKeys.has(userKey(p))))
       .sort((a: HologramPostGroup, b: HologramPostGroup) => String(b.rep.date || '').localeCompare(String(a.rep.date || '')))
       .slice(0, 6);
     const works = posterWorkGroups
@@ -277,7 +301,13 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
       tagLabels: tagLabels(),
       onTagAdd: (tag: string) => applyPosterTagChange(u.key, (prev) => (prev.includes(tag) ? prev : [...prev, tag])),
       onTagRemove: (tag: string) => applyPosterTagChange(u.key, (prev) => prev.filter((t) => t !== tag)),
-      folders: pfStore.all().map((f) => ({ id: f.id, name: f.name, on: posterFolderHas(f.id, u.key) })),
+      folders: pfStore.all().map((f) => ({ id: f.id, name: f.name, on: posterFolderHasResolved(f.id, u.key) })),
+      // #23 St1: the「同一人物」section — every OTHER posterKey this poster's
+      // group bundles (empty when ungrouped), each removable; "統合" opens the
+      // merge picker regardless of whether a group already exists.
+      sameAuthor: sameAuthorSection(u),
+      onSameAuthorMerge: () => openAliasPicker(u),
+      onSameAuthorUnlink: (key: string) => unlinkAlias(key),
       labels: {
         user: deps.t('detailUser'),
         platform: deps.t('detailPlatform'),
@@ -291,6 +321,9 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
         tags: deps.t('ivPosterTags'),
         tagsEmpty: deps.t('tagsEmpty'),
         editTags: deps.t('tipEditTags'),
+        sameAuthor: deps.t('ivSamePerson'),
+        sameAuthorMerge: deps.t('samePersonMerge'),
+        sameAuthorUnlink: deps.t('samePersonUnlink'),
       },
       onClose: deps.closeDetail,
       onPosterPosts: () => openPosterPosts(u),
@@ -325,9 +358,13 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
   function posterMenuItems(u: HologramUserAgg) {
     const items = [{ label: deps.t('posterViewPosts'), act: 'posts' }, { label: deps.t('ctxEditTags'), act: 'tags' }, { sep: true }] as HologramMenuItem[];
     for (const f of pfStore.all()) {
-      items.push({ label: f.name, act: 'folder', fid: f.id, checked: posterFolderHas(f.id, u.key) });
+      items.push({ label: f.name, act: 'folder', fid: f.id, checked: posterFolderHasResolved(f.id, u.key) });
     }
     items.push({ label: deps.t('posterMenuNewFolder'), act: 'newfolder', manage: true });
+    // #23 St1: "同一人物にする" always offered; "同一人物から外す" only when this
+    // poster is currently grouped (design: card-menu merge/unlink pair).
+    items.push({ sep: true }, { label: deps.t('ctxSamePerson'), act: 'samePerson' });
+    if (aliases.groupOf(u.key)) items.push({ label: deps.t('ctxSamePersonUnlink'), act: 'samePersonUnlink' });
     return items;
   }
   function onPosterMenuPick(u: HologramUserAgg, item: HologramMenuItem) {
@@ -350,9 +387,126 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
       togglePosterFolderMember(item.fid, u.key);
       return posterMenuItems(u); // keep open to assign more
     }
+    if (item.act === 'samePerson') {
+      openAliasPicker(u);
+      return;
+    } // close
+    if (item.act === 'samePersonUnlink') {
+      unlinkAlias(u.key);
+      return;
+    } // close
   }
   function showPosterMenu(u: HologramUserAgg, x: number, y: number) {
     menuOpen({ items: posterMenuItems(u), x, y }, (item) => onPosterMenuPick(u, item));
+  }
+
+  // --- Name-merging (#23 St1) ------------------------------------------------
+  //
+  // Per-member display info for the inspector's「同一人物」section. A merged
+  // NON-primary member no longer has its own HologramUserAgg row (users.ts's
+  // fold absorbed it into the primary's) — its label/platform are read off the
+  // first post carrying that raw key instead, the same "first non-empty value"
+  // idiom users.ts's own pass 1 uses. Run on demand for the handful of members
+  // a group ever has (not a hot per-frame path).
+  function memberDisplay(u: HologramUserAgg, key: string): { label: string; platformLabel: string } {
+    if (key === u.key) return { label: u.displayName || (u.screenName ? '@' + u.screenName : key), platformLabel: u.platform ? deps.PF_NAME[u.platform] || u.platform : '' };
+    const p = deps.getAllPosts().find((post: HologramPost) => userKey(post) === key);
+    return { label: p ? p.displayName || (p.screenName ? '@' + p.screenName : key) : key, platformLabel: p && p.platform ? deps.PF_NAME[p.platform] || p.platform : '' };
+  }
+  function sameAuthorSection(u: HologramUserAgg) {
+    return aliases
+      .membersOf(u.key)
+      .filter((key) => key !== u.key)
+      .map((key) => ({ key, ...memberDisplay(u, key) }));
+  }
+
+  // Full before/after GROUP SNAPSHOT undo — see undo.ts's UndoChange comment
+  // for why a merge/unlink doesn't fit the shared stack's per-target value-diff
+  // shape. `keys` is every posterKey the action touches (BOTH sides' full
+  // membership, not just the one or two keys named in the UI) — merging a
+  // poster that already has its own multi-member group has to carry that whole
+  // group's undo/redo along, or an undo would only detach the one named key
+  // and silently strand its groupmates in the merged group.
+  function pushAliasUndo(keys: string[], before: aliases.PosterAliasGroup[]) {
+    const after = aliases.snapshotFor(keys);
+    return deps.pushUndo([{ kind: 'poster-alias', target: 'poster-alias:' + keys[0], added: [JSON.stringify({ keys, groups: after })], removed: [JSON.stringify({ keys, groups: before })] }]);
+  }
+
+  // Re-render the grid and, if the inspector is showing an affected poster,
+  // refresh it against the poster's (possibly changed) resolved row. Shared by
+  // this module's own merge/unlink and by the undo/redo applier's callback
+  // (orchestrator.ts wires undo-builder.ts's onPosterAliasChanged to this).
+  function refreshAfterAliasChange() {
+    renderPosters(true);
+    const key = deps.getInspectedKey();
+    if (typeof key !== 'string' || key.indexOf('poster:') !== 0) return;
+    const resolved = aliases.resolve(key.slice('poster:'.length));
+    const u = deps.buildUsers().find((x) => x.key === resolved);
+    if (u) showPosterDetail(u);
+    else deps.setInspectedKey(null); // every post this key ever named is gone — mirrors inspector-builder.ts's inspectedSubjectExists dismissal (that subscription only watches post data, not alias structure, so this is its own guard)
+  }
+
+  // Manual merge (#23 St1 UI): confirm ("post data doesn't change"), then union
+  // u's whole group with otherKey's whole group, defaulting primary to
+  // whichever side currently has more posts (2026-07-11 design; changeable
+  // later from the inspector via aliases.setPrimary — no UI for that yet in
+  // this stage, deliberately: the default covers the common case and #23's
+  // checklist keeps "確認強化" for stage ③).
+  function mergeAliasWith(u: HologramUserAgg, otherKey: string) {
+    const other = deps.buildUsers().find((x) => x.key === otherKey);
+    const otherLabel = other ? other.displayName || (other.screenName ? '@' + other.screenName : otherKey) : otherKey;
+    const selfLabel = u.displayName || (u.screenName ? '@' + u.screenName : u.key);
+    confirmOpen({
+      message: deps.t('samePersonConfirm', [selfLabel, otherLabel]),
+      okLabel: deps.t('samePersonMerge'),
+      cancelLabel: deps.t('confirmCancel'),
+      okDestructive: false,
+      onOk: () => {
+        const keys = [...new Set([...aliases.membersOf(u.key), ...aliases.membersOf(otherKey)])];
+        const before = aliases.snapshotFor(keys);
+        const primary = other && other.count > u.count ? otherKey : u.key;
+        if (!aliases.merge(u.key, otherKey, { primary })) return;
+        deps.markPostsMutated();
+        const undoFn = pushAliasUndo(keys, before);
+        deps.showToast(deps.t('samePersonMerged'), deps.undoAction(undoFn));
+        refreshAfterAliasChange();
+      },
+    });
+  }
+
+  // "同一人物にする" (inspector button + card menu): search every named poster
+  // (buildUsers already excludes url-less/(unknown) posters — deps.namedPosters
+  // additionally drops the nameless bucket, the structural guard #23's design
+  // calls for), excluding u's own current group, and merge the pick into it.
+  function openAliasPicker(u: HologramUserAgg) {
+    const excluded = new Set(aliases.membersOf(u.key));
+    const candidates = deps
+      .namedPosters()
+      .filter((x) => !excluded.has(x.key))
+      .map((x) => ({ key: x.key, label: x.displayName || (x.screenName ? '@' + x.screenName : x.key), sub: x.screenName ? '@' + x.screenName : x.platform ? deps.PF_NAME[x.platform] || x.platform : '' }));
+    aliasPickerOpen({
+      title: deps.t('samePersonPickerTitle'),
+      placeholder: deps.t('samePersonPickerPh'),
+      emptyLabel: deps.t('samePersonPickerEmpty'),
+      candidates,
+      onPick: (key: string) => mergeAliasWith(u, key),
+    });
+  }
+
+  // Remove memberKey from ITS group. The inspector's per-member × passes an
+  // OTHER member's key; the card menu's「同一人物から外す」passes the inspected
+  // poster's own key (u.key) — both call through here. refreshAfterAliasChange()
+  // reads the currently-inspected key itself, so the caller's `u` never has to
+  // be threaded in here.
+  function unlinkAlias(memberKey: string) {
+    const keys = aliases.membersOf(memberKey);
+    if (keys.length < 2) return; // not actually grouped
+    const before = aliases.snapshotFor(keys);
+    if (!aliases.unlink(memberKey)) return;
+    deps.markPostsMutated();
+    const undoFn = pushAliasUndo(keys, before);
+    deps.showToast(deps.t('samePersonUnlinked'), deps.undoAction(undoFn));
+    refreshAfterAliasChange();
   }
 
   return {
@@ -374,5 +528,6 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
     applyPosterTagChange,
     showPosterDetail,
     showPosterMenu,
+    refreshAfterAliasChange,
   };
 }

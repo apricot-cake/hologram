@@ -23,6 +23,8 @@ scripts/_*.jpg
 scripts/_*.png
 # Per-tree sandbox verify instance (scripts/sandbox-app.cts): config + seeded library
 .sandbox/
+# Per-run reload probe instances (scripts/probe-gpu-reload.cts): config + seeded library + samples.json
+.probe66/
 # Playwright の実行成果物（失敗時のトレース・レポート）。ベースライン画像
 # (e2e/**/*-snapshots/) はコミット対象なので除外しない。
 test-results/

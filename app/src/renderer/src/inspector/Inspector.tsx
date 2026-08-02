@@ -8,6 +8,7 @@ import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empt
 import { Separator } from '@/components/ui/separator';
 import { Textarea } from '@/components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { QuotedPostCard } from './QuotedPostCard.tsx';
 import { TagField } from './TagField.tsx';
 import type { ReactNode } from 'react';
 
@@ -181,6 +182,16 @@ function PostInspector({ m }: { m: HologramInspectorModel }) {
       </div>
       {m.thumbSrc ? <img data-slot="inspector-thumb" data-peek={m.onThumbClick ? 'true' : undefined} className={'block w-full rounded-lg border border-border' + (m.onThumbClick ? ' cursor-zoom-in' : '')} src={m.thumbSrc} alt="" onClick={m.onThumbClick ?? undefined} /> : null}
       {m.bodyText ? <TextSection text={m.bodyText} label={m.labels.text} /> : null}
+      {/* #180: quoted/renoted or (Misskey-only) replied-to post, nested directly
+          under the post's own text — same placement a quoted-tweet/renote card
+          sits in on the source platforms. */}
+      {m.quotedCards && m.quotedCards.length ? (
+        <div className="flex flex-col gap-1.5">
+          {m.quotedCards.map((c: HologramQuotedCardModel, i: number) => (
+            <QuotedPostCard key={i} m={c} />
+          ))}
+        </div>
+      ) : null}
       <Fields>
         <Field k={m.labels.platform} v={m.platformLabel} />
         {hasAuthor ? (
@@ -327,6 +338,36 @@ function PosterInspector({ m }: { m: HologramInspectorModel }) {
                 }
               />
               <TooltipContent side="top">{m.labels.newFolderPlaceholder}</TooltipContent>
+            </Tooltip>
+          </div>
+        </section>
+      </Divided>
+      {/* #23 St1 (poster name-merging): 同一人物 section — every OTHER posterKey
+          this poster's alias group bundles, each removable, plus a "+" that
+          opens the merge picker regardless of whether a group already exists
+          (same anatomy as the folders section above it). */}
+      <Divided>
+        <section className="flex flex-col gap-1.5">
+          <span className="text-xs text-muted-foreground">{m.labels.sameAuthor}</span>
+          <div className="flex flex-wrap gap-1">
+            {(m.sameAuthor || []).map((o: { key: string; label: string; platformLabel: string }) => (
+              <Badge key={o.key} variant="outline" className="gap-1 pr-1">
+                <span className="max-w-40 truncate">{o.label}</span>
+                {o.platformLabel ? <span className="text-muted-foreground">{o.platformLabel}</span> : null}
+                <button type="button" aria-label={m.labels.sameAuthorUnlink} className="-mr-0.5 rounded-full p-0.5 hover:bg-muted" onClick={() => m.onSameAuthorUnlink?.(o.key)}>
+                  <X className="size-3" aria-hidden="true" />
+                </button>
+              </Badge>
+            ))}
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Badge variant="outline" className="cursor-pointer text-muted-foreground hover:bg-muted" aria-label={m.labels.sameAuthorMerge} render={<button type="button" onClick={m.onSameAuthorMerge} />}>
+                    <Plus aria-hidden="true" />
+                  </Badge>
+                }
+              />
+              <TooltipContent side="top">{m.labels.sameAuthorMerge}</TooltipContent>
             </Tooltip>
           </div>
         </section>

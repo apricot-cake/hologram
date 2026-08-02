@@ -11,7 +11,7 @@ import os from 'node:os';
 import path from 'node:path';
 import JSZip from 'jszip';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
-import { importCompleteZipToDb, mergeFolders, mergeManualGroups, mergePosterFolders } from '../app/src/main/lib-archive';
+import { importCompleteZipToDb, mergeFolders, mergeManualGroups, mergePosterAliases, mergePosterFolders } from '../app/src/main/lib-archive';
 import { openDatabase } from '../app/src/main/lib-db';
 import { createDbWriter } from '../app/src/main/lib-db-write';
 import { makeTagResolver, preparePostStmts, writePost } from '../app/src/main/lib-db-record-writer';
@@ -254,5 +254,49 @@ describe('mergePosterFolders', () => {
 
   test('defaultId は生きている限りローカルが勝つ', () => {
     expect(f.defaultId).toBe('f1');
+  });
+});
+
+// #23 St1: poster-alias groups — union-find over MEMBERS (a shared posterKey
+// bridges two groups into one), same invariant mergeManualGroups enforces
+// above but for name-merges instead of image groups.
+describe('mergePosterAliases（union-find, #23 St1）', () => {
+  test('メンバーが交差する2グループは1つへ畳まれる', () => {
+    const m = mergePosterAliases({ groups: [{ id: 'al-1', primary: 'x:a', members: ['x:a', 'x:b'] }] }, { groups: [{ id: 'al-2', primary: 'x:b', members: ['x:b', 'x:c'] }] });
+
+    expect(m.groups).toHaveLength(1);
+    expect(m.groups[0].members.slice().sort()).toEqual(['x:a', 'x:b', 'x:c']);
+  });
+
+  test('交差しないグループはそのまま2件残る', () => {
+    const m = mergePosterAliases({ groups: [{ id: 'al-1', primary: 'x:a', members: ['x:a', 'x:b'] }] }, { groups: [{ id: 'al-2', primary: 'x:p', members: ['x:p', 'x:q'] }] });
+
+    expect(m.groups.map((g: any) => g.members.slice().sort().join(','))).toEqual(expect.arrayContaining(['x:a,x:b', 'x:p,x:q']));
+  });
+
+  test('primary/id はローカル（cur）側が勝つ', () => {
+    const m = mergePosterAliases({ groups: [{ id: 'al-local', primary: 'x:a', members: ['x:a', 'x:b'] }] }, { groups: [{ id: 'al-remote', primary: 'x:b', members: ['x:b', 'x:c'] }] });
+
+    expect(m.groups[0]).toMatchObject({ id: 'al-local', primary: 'x:a' });
+  });
+
+  test('メンバー1件以下のグループは無視される', () => {
+    const m = mergePosterAliases({ groups: [{ id: 'al-lonely', primary: 'x:solo', members: ['x:solo'] }] }, { groups: [] });
+
+    expect(m.groups).toHaveLength(0);
+  });
+});
+
+describe('完全ZIPの取り込み: poster-aliases.json の合流（#23 St1）', () => {
+  test('ローカルのグループを保ったまま、取り込んだグループが足される', async () => {
+    const { dest, sqlite } = freshLib('hologram-aliasmerge-', { folders: [], activeId: null });
+    createDbWriter(sqlite).setPosterAliases({ groups: [{ id: 'al-local', primary: 'x:a', members: ['x:a', 'x:b'] }] });
+
+    const zip = new JSZip();
+    zip.file('library/poster-aliases.json', JSON.stringify({ groups: [{ id: 'al-imp', primary: 'x:p', members: ['x:p', 'x:q'] }] }));
+    await importCompleteZipToDb(sqlite, await zipToFile(zip, dest), dest);
+
+    const aliases = createDbWriter(sqlite).getPosterAliases();
+    expect(aliases.groups.map((g: any) => g.members.slice().sort().join(','))).toEqual(expect.arrayContaining(['x:a,x:b', 'x:p,x:q']));
   });
 });
