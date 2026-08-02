@@ -46,3 +46,4 @@
 | [0018](0018-labeled-navigation-rail-default.md) | 左サイドバーの既定をラベル付きナビゲーションレールにする | 採用 |
 | [0019](0019-detect-missing-save-and-backup-paths.md) | 保存先・バックアップ先はパスの実在を検証し、消失を静かに再作成しない | 採用 |
 | [0020](0020-triage-mode-reuses-235-undo-and-a-client-side-queue.md) | 高速トリアージモードはフルスクリーン Dialog・キューはクライアント側計算・undo は #235 のスタックを再利用する | 採用 |
+| [0021](0021-panel-toggles-are-instant.md) | パネルの開閉も即時にする（サイドバー・詳細パネル） | 採用 |

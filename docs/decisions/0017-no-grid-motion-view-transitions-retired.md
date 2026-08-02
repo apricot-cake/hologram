@@ -1,7 +1,7 @@
 # 0017. グリッドの切替はすべて即時にし、View Transitions を使わない
 
 - 状態: 採用（2026-07-30）
-- 関連: #252・[0014](0014-motion-is-css-view-transitions-only-for-grid-density.md)（置き換え元）・#19（モーションライブラリの棄却）
+- 関連: #252・[0014](0014-motion-is-css-view-transitions-only-for-grid-density.md)（置き換え元）・#19（モーションライブラリの棄却）・[0021](0021-panel-toggles-are-instant.md)（同じ物差しをサイドバー・詳細パネルへ広げた後続）
 
 ## 背景
 

@@ -430,8 +430,8 @@ export function LeftSidebar({ resize }: { resize?: PanelResize }) {
   return (
     // Ctrl+B collapses to the icon rail; Ctrl+Shift+B takes the rail too (#245) — half a
     // panel left standing is not what "use the grid wide" asks for. Same component either
-    // way: shadcn's two collapse forms differ only in this attribute, so the rail sliding
-    // out is the same 200ms motion as the columns narrowing.
+    // way: shadcn's two collapse forms differ only in this attribute, and since #583 both
+    // land instantly — so this key no longer overlaps two 200ms motions with each other.
     <Sidebar collapsible={panelsHidden ? 'offcanvas' : 'icon'}>
       {/* Titlebar-height drag strip (Obsidian-type shell, #154): the sidebar starts at
           the window top now, so its header row IS the left half of the titlebar — the

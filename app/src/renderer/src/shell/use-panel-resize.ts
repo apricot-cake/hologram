@@ -53,9 +53,6 @@ export type PanelResizeOptions = {
   onCommit: (px: number) => void;
   /** Double-click: back to the component's own default width. */
   onReset: () => void;
-  /** True while a pointer drag is in progress. The shell uses it to take the panels'
-   *  width transition off, which otherwise leaves them 200ms behind the pointer. */
-  onGesture?: (active: boolean) => void;
 };
 
 export function usePanelResize(opts: PanelResizeOptions): PanelResize {
@@ -86,7 +83,6 @@ export function usePanelResize(opts: PanelResizeOptions): PanelResize {
     if (e.button !== 0) return;
     drag.current = { startX: e.clientX, startW: o.current.width, moved: false, frame: 0, next: o.current.width };
     e.currentTarget.setPointerCapture(e.pointerId);
-    o.current.onGesture?.(true);
   }, []);
 
   const onPointerMove = useCallback(
@@ -100,7 +96,6 @@ export function usePanelResize(opts: PanelResizeOptions): PanelResize {
     const d = drag.current;
     drag.current = null;
     if (!d) return;
-    o.current.onGesture?.(false);
     if (d.frame) cancelAnimationFrame(d.frame);
     try {
       e.currentTarget.releasePointerCapture(e.pointerId);
