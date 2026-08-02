@@ -134,6 +134,9 @@
     "save-folder-guard.test.ts",
     "save-post-empty.test.ts",
     "save-post-video.test.ts",
+    // #203: imports extension/utils/save-queue.ts, which uses chrome.storage.local
+    // directly — cause (b) above (Chrome/Vite ambient types aren't part of this project).
+    "save-queue.test.ts",
     "saved-index.test.ts",
     "schema-canary.test.ts",
     "sidebar-pref.test.ts",

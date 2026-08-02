@@ -554,7 +554,7 @@ export async function startCapture(): Promise<void> {
       if (!msg.success) {
         // The background keeps the raw diagnostic detail out of the page and
         // passes only a classified reason suitable for localized recovery advice.
-        text = saveFailureText(msg.errorKind);
+        text = saveFailureText(msg.errorKind, undefined, msg.queued);
       } else {
         // grouped > 0: this post was already saved this session — the app folds
         // same-post saves into one stacked card, so say so instead of a plain
