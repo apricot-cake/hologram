@@ -19,6 +19,7 @@ import { makeQfPop } from './qf-pop-builder.ts';
 import { makeFacets } from './facets.ts';
 import { makeCooc } from './cooc.ts';
 import { mediaFilesOf, densityImage, percentileFn, makeGallery, loadUngrouped, loadManualGroups, postIdKey } from './records.ts';
+import { fileSrc } from './asset-src.ts';
 import { makeTags, bindTagKindOf, bindPosterFilterVocab, getTagTypes, getTagLabels, getPosterTags, load as loadTags } from './tags.ts';
 import { makeTabLabels } from './tab-state.ts';
 import { importComplete, importLegacyZip } from './posts.ts';
@@ -754,7 +755,9 @@ export function endFilterEditSession(): void {
 
   // --- Image source (served from the save folder via the asset:// protocol) ---
   // asset URL for a bare filename; w>0 asks main for a downscaled thumbnail (tiles).
-  const fileSrc = (file: string, w?: number) => (file ? 'asset://img/' + encodeURIComponent(file) + (w ? '?w=' + w : '') : '');
+  // Implementation lives in asset-src.ts (#777 pulled it out to share with the
+  // tag-split review screen) — kept as a local name here since every builder in
+  // this closure already takes `fileSrc` injected by name via deps.
 
   // Record-shape helpers (mediaFilesOf/isScreenshot/captureFile/artworkFile/
   // densityImage), normalization (postIdKey/postKeyOf), grouping (groupRecords)

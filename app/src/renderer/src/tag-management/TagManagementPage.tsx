@@ -13,7 +13,7 @@
 // switch from raw tagIds to a computed closure) tracked as a follow-up. The
 // in-page hint (tagMgmtHint) says so; nothing here overclaims it.
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Plus, Trash2 } from 'lucide-react';
+import { MoreHorizontal, Plus, Trash2 } from 'lucide-react';
 import { t } from '../_shared/i18n.ts';
 import { hologramIpc } from '../services/ipc.ts';
 import { open as kindMenuOpen } from '../services/kind-menu.ts';
@@ -24,7 +24,9 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { includesNormalized } from '../services/search.ts';
+import { TagSplitDialog } from './TagSplitDialog.tsx';
 import type { TagParentRowResolved, TagVocabRow } from '../../../main/ipc-payloads.ts';
 
 type ViewKey = 'all' | 'unclassified' | 'orphan' | 'parents';
@@ -117,6 +119,7 @@ export function TagManagementPage() {
   const [query, setQuery] = useState('');
   const [selectedOrphans, setSelectedOrphans] = useState<Set<number>>(new Set());
   const [collision, setCollision] = useState<{ tagId: number; name: string; postCount: number; posterCount: number; renamedTagId: number } | null>(null);
+  const [splitTagRow, setSplitTagRow] = useState<{ id: number; name: string } | null>(null);
   const [addChild, setAddChild] = useState('');
   const [addParent, setAddParent] = useState('');
   const [addDisplay, setAddDisplay] = useState(false);
@@ -297,12 +300,13 @@ export function TagManagementPage() {
                     <th className="p-2 text-right">{t('tagMgmtColPosts')}</th>
                     <th className="p-2 text-right">{t('tagMgmtColPosters')}</th>
                     <th className="p-2 text-left">{t('tagMgmtColParent')}</th>
+                    <th className="w-8 p-2" />
                   </tr>
                 </thead>
                 <tbody>
                   {filteredRows.length === 0 && (
                     <tr>
-                      <td colSpan={6} className="p-4 text-center text-muted-foreground">
+                      <td colSpan={7} className="p-4 text-center text-muted-foreground">
                         {view === 'orphan' ? t('tagMgmtOrphanEmpty') : t('tagMgmtEmpty')}
                       </td>
                     </tr>
@@ -337,6 +341,20 @@ export function TagManagementPage() {
                           >
                             {displayParent ? displayParent.name : t('tagMgmtSetParent')}
                           </button>
+                        </td>
+                        <td className="p-2 text-right">
+                          <DropdownMenu>
+                            <DropdownMenuTrigger
+                              render={
+                                <Button variant="ghost" size="icon-sm" aria-label={t('tagMgmtRowMenuLabel')}>
+                                  <MoreHorizontal className="size-4" />
+                                </Button>
+                              }
+                            />
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem onClick={() => setSplitTagRow({ id: row.id, name: row.name })}>{t('tagMgmtSplitMenuItem')}</DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
                         </td>
                       </tr>
                     );
@@ -421,6 +439,7 @@ export function TagManagementPage() {
       </div>
 
       <RenameCollisionDialog key={collision?.tagId ?? 'none'} open={!!collision} collision={collision} allTags={rows} onMerge={handleMerge} onKeepSeparate={handleKeepSeparate} onClose={() => setCollision(null)} />
+      {splitTagRow && <TagSplitDialog key={splitTagRow.id} tagId={splitTagRow.id} tagName={splitTagRow.name} allTags={rows} onClose={() => setSplitTagRow(null)} onDone={refresh} />}
     </div>
   );
 }

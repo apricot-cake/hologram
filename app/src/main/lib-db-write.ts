@@ -16,7 +16,9 @@ import {
   removeTagParent as removeTagParentImpl,
   renameTag as renameTagImpl,
   setTagKind as setTagKindImpl,
+  splitTag as splitTagImpl,
   tagParentEdges as tagParentEdgesImpl,
+  tagSplitPreview as tagSplitPreviewImpl,
   tagVocabOverview as tagVocabOverviewImpl,
 } from './lib-db-tag-vocab.ts';
 
@@ -478,6 +480,8 @@ function createDbWriter(sqlite: Sqlite) {
     removeTagParent: (tagId: number, parentTagId: number) => removeTagParentImpl(sqlite, tagId, parentTagId),
     setTagKind: (tagId: number, kind: string | null) => setTagKindImpl(sqlite, tagId, kind),
     deleteOrphanTags: (tagIds: number[]) => deleteOrphanTagsImpl(sqlite, tagIds),
+    tagSplitPreview: (tagId: number, candidateParentTagId: number) => tagSplitPreviewImpl(sqlite, tagId, candidateParentTagId),
+    splitTag: (sourceTagId: number, displayParentTagId: number, postIds: string[]) => splitTagImpl(sqlite, sourceTagId, displayParentTagId, postIds),
   };
 }
 

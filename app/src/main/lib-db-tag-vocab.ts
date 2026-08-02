@@ -259,6 +259,78 @@ export function mergeTags(sqlite: Sqlite, sourceTagId: number, targetTagId: numb
   return { ok: true };
 }
 
+// #777: the tag-split review screen's data. One row per post carrying
+// sourceTagId, with a thumbnail file (media's first row, poster-still for a
+// video/ugoira entry, falling back to the post's own screenshot when there is
+// no downloaded media at all) and whether that post ALSO carries the
+// candidate display-parent tag -- the "共起する表示親タグを持つ投稿が初期選択
+// される" acceptance line (2026-08-02 comment): the caller seeds its selection
+// set from suggestedToNew, the user only has to flip the exceptions.
+export interface TagSplitPost {
+  postId: string;
+  thumbFile: string | null;
+  suggestedToNew: boolean;
+}
+
+const VIDEO_EXT = /\.(mp4|webm|mov|m4v)$/i;
+
+export function tagSplitPreview(sqlite: Sqlite, sourceTagId: number, candidateParentTagId: number): TagSplitPost[] {
+  const postIds = (sqlite.prepare('SELECT postId FROM post_tags WHERE tagId = ? ORDER BY postId').all(sourceTagId) as Array<{ postId: string }>).map((r) => r.postId);
+  if (!postIds.length) return [];
+  const placeholders = postIds.map(() => '?').join(',');
+  const mediaRows = sqlite.prepare(`SELECT postId, seq, file, posterFile FROM media WHERE postId IN (${placeholders}) ORDER BY postId, seq`).all(...postIds) as Array<{ postId: string; seq: number; file: string | null; posterFile: string | null }>;
+  const firstMedia = new Map<string, { file: string | null; posterFile: string | null }>();
+  for (const row of mediaRows) if (!firstMedia.has(row.postId)) firstMedia.set(row.postId, row);
+  const postRows = sqlite.prepare(`SELECT captureId, image FROM posts WHERE captureId IN (${placeholders})`).all(...postIds) as Array<{ captureId: string; image: string | null }>;
+  const imageByPost = new Map(postRows.map((r) => [r.captureId, r.image]));
+  const coocRows = sqlite.prepare(`SELECT postId FROM post_tags WHERE tagId = ? AND postId IN (${placeholders})`).all(candidateParentTagId, ...postIds) as Array<{ postId: string }>;
+  const coocSet = new Set(coocRows.map((r) => r.postId));
+  return postIds.map((postId) => {
+    const media = firstMedia.get(postId);
+    // posterFile first (a video/gif/ugoira's still), then the media file itself
+    // UNLESS it's a raw video (can't be an <img src>) -- mirrors records.ts's
+    // artworkFile, reduced to what a review thumbnail needs (no gallery/lightbox
+    // branch here).
+    let thumbFile: string | null = (media && (media.posterFile || (media.file && !VIDEO_EXT.test(media.file) ? media.file : null))) || null;
+    if (!thumbFile) {
+      const img = imageByPost.get(postId);
+      thumbFile = img && !VIDEO_EXT.test(img) ? img : null;
+    }
+    return { postId, thumbFile, suggestedToNew: coocSet.has(postId) };
+  });
+}
+
+export type SplitTagResult = { ok: true; newTagId: number } | { ok: false; error: string };
+
+// The inverse of mergeTags -- but only one face (post_tags), not the six-step
+// list merge owns: a split only ever moves a hand-reviewed SUBSET of posts, and
+// poster_tags is keyed by posterKey (an account), not by post, so there is
+// nothing there for a per-post review to select (#777 scope note -- the
+// acceptance criteria and the review screen are both post-only; poster_tags
+// stays on the source entity untouched).
+//
+// Creates a new tag entity sharing sourceTagId's name (the "同名実体" the
+// design calls for) and kind (same conceptual entity type; editable after via
+// the reused kind-menu), points it at displayParentTagId as its display parent
+// (a brand-new tag has no existing edges, so unlike addTagParent this never
+// needs a cycle check), then repoints the chosen posts' post_tags rows from
+// source to the new id.
+export function splitTag(sqlite: Sqlite, sourceTagId: number, displayParentTagId: number, postIdsToNew: string[]): SplitTagResult {
+  if (!tagExists(sqlite, sourceTagId) || !tagExists(sqlite, displayParentTagId)) return { ok: false, error: 'not-found' };
+  const ids = [...new Set(postIdsToNew.filter((id): id is string => typeof id === 'string' && !!id))];
+  if (!ids.length) return { ok: false, error: 'empty-selection' };
+  const source = sqlite.prepare('SELECT name, kind FROM tags WHERE id = ?').get(sourceTagId) as { name: string; kind: string | null };
+  let newTagId = 0;
+  const tx = sqlite.transaction(() => {
+    newTagId = Number(sqlite.prepare('INSERT INTO tags (name, kind) VALUES (?, ?)').run(source.name, source.kind).lastInsertRowid);
+    upsertTagParent(sqlite, newTagId, displayParentTagId, true);
+    const move = sqlite.prepare('UPDATE post_tags SET tagId = ? WHERE tagId = ? AND postId = ?');
+    for (const postId of ids) move.run(newTagId, sourceTagId, postId);
+  });
+  tx();
+  return { ok: true, newTagId };
+}
+
 export interface DeleteOrphansResult {
   ok: true;
   deletedIds: number[];
