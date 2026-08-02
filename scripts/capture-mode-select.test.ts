@@ -14,7 +14,7 @@ import path from 'node:path';
 import { JSDOM } from 'jsdom';
 import { expect, test } from 'vitest';
 
-const BUNDLE = fs.readFileSync(path.join(import.meta.dirname, '..', 'extension', '.output', 'chrome-mv3-release', 'entrypoints', 'capture.js'), 'utf8');
+const BUNDLE = fs.readFileSync(path.join(import.meta.dirname, '..', 'extension', '.output', 'chrome-mv3-release', 'capture.js'), 'utf8');
 
 const HTML = `<!doctype html><html><body>
   <div id="feed">

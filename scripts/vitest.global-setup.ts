@@ -24,7 +24,7 @@ const EXT = path.join(ROOT, 'extension');
 const OUT = path.join(EXT, '.output', 'chrome-mv3-release');
 
 // Files the suites actually read. If even one is missing, a build is needed.
-const REQUIRED = ['manifest.json', path.join('entrypoints', 'capture.js'), path.join('entrypoints', 'resident.content.js')];
+const REQUIRED = ['manifest.json', path.join('capture.js'), path.join('content-scripts', 'resident.js')];
 
 // Build output and dependencies are not source.
 const NOT_SOURCE = new Set(['node_modules', '.output']);

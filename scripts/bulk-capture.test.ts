@@ -143,7 +143,7 @@ beforeAll(async () => {
   // the same bundle on the same page runs the single-shot path instead (checked by capture-mode-select.test.ts).
   (window as any).__hologramAutoCapture = true;
 
-  window.eval(fs.readFileSync(path.join(import.meta.dirname, '..', 'extension', '.output', 'chrome-mv3-release', 'entrypoints', 'capture.js'), 'utf8'));
+  window.eval(fs.readFileSync(path.join(import.meta.dirname, '..', 'extension', '.output', 'chrome-mv3-release', 'capture.js'), 'utf8'));
   await settle(1300); // Until p2's save finishes, past i18n's async wrapper and MIN_SAVE_PERIOD_MS
 }, 30000);
 

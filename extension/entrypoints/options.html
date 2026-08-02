@@ -1,6 +1,9 @@
 <!doctype html>
 <html lang="ja">
 <meta charset="utf-8">
+<!-- WXT reads the options-page manifest fields from here. Opened as a full tab,
+     not the small embedded panel: the settings are prose-heavy (#44). -->
+<meta name="manifest.open_in_tab" content="true">
 <title>Hologram 設定</title>
 <body>
   <main class="page">
@@ -49,6 +52,6 @@
 
     <p class="foot"><a href="diag.html" target="_blank" id="diagLink">診断ページを開く</a></p>
   </main>
-  <script type="module" src="./pages/options.ts"></script>
+  <script type="module" src="../pages/options.ts"></script>
 </body>
 </html>

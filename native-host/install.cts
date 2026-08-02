@@ -17,7 +17,15 @@ const { execFileSync } = require('node:child_process');
 
 const { configDir } = require('./paths.cts');
 
-const HOST_NAME = 'com.hologram.host';
+// The registered host name. Environment-driven for exactly the same reason
+// configDir() is (paths.cts): the DEVELOPMENT registration (#732) is this same
+// installer pointed at a different name and a different config dir, and the
+// manifest path, the registry key and allowed_origins all have to move together
+// or the pair silently half-registers. Native messaging routes on this name, so
+// it — not a second extension id — is what keeps a capture made while developing
+// out of the real library.
+const DEFAULT_HOST_NAME = 'com.hologram.host';
+const HOST_NAME = process.env.HOLOGRAM_NATIVE_HOST_NAME || DEFAULT_HOST_NAME;
 // The bundle (bridge.cts + its local modules in one file), not the sources —
 // built by app/build-native-host-bridge.mjs. See deployBridge().
 const BRIDGE_PATH = path.join(__dirname, 'dist', 'bridge.js');
@@ -153,11 +161,17 @@ function writeLauncher({ exe, runAsNode, bridgePath }: WriteLauncherArgs): strin
   if (process.platform === 'win32') {
     const exeRef = asciiExeRef(exe);
     const lines = ['@echo off'];
+    // Chrome spawns this launcher with the browser's environment, not the one
+    // the installer ran in, so an isolated installation has to BAKE its config
+    // dir in — otherwise the development host would start a bridge that resolves
+    // the real ~/.hologram and writes into the real library (#732).
+    if (process.env.HOLOGRAM_CONFIG_DIR) lines.push(`set "HOLOGRAM_CONFIG_DIR=${configDir()}"`);
     if (runAsNode) lines.push('set ELECTRON_RUN_AS_NODE=1');
     lines.push(`"${exeRef}" "${bridgePath}" %*`);
     fs.writeFileSync(p, lines.join('\r\n') + '\r\n', 'utf8');
   } else {
     const lines = ['#!/bin/sh'];
+    if (process.env.HOLOGRAM_CONFIG_DIR) lines.push(`export HOLOGRAM_CONFIG_DIR="${configDir()}"`);
     if (runAsNode) lines.push('export ELECTRON_RUN_AS_NODE=1');
     lines.push(`exec "${exe}" "${bridgePath}" "$@"`);
     fs.writeFileSync(p, lines.join('\n') + '\n', { mode: 0o755 });
@@ -339,6 +353,7 @@ function deployedBridgePath(): string {
 
 module.exports = {
   install,
+  DEFAULT_HOST_NAME,
   uninstall,
   updateAllowedOrigin,
   readExtensionId,

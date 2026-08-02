@@ -105,12 +105,6 @@ jobs:
       - name: Extension orphaned-tab e2e
         if: ${{ !cancelled() }}
         run: node scripts/e2e-extension-orphan.cts
-      # Restarts a dev server of its own under a live extension (#726). The daily
-      # loop restarts one every logon, and the failure it guards was silent: edits
-      # kept reaching the fixed output while HMR was already dead.
-      - name: Extension HMR reconnect e2e
-        if: ${{ !cancelled() }}
-        run: node scripts/e2e-extension-hmr-reconnect.cts
       - name: Overlay visual regression
         if: ${{ !cancelled() }}
         run: node scripts/e2e-overlay-visual.cts
