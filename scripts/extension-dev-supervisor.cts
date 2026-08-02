@@ -401,15 +401,44 @@ function restart() {
   console.log(`Hologram extension dev supervisor restarted (PID ${pid}).`);
 }
 
-function status() {
+// Readiness deliberately stays blind to this: with Chrome closed there is nobody
+// to connect, and restarting the server over that would loop forever. `status`
+// is a diagnostic a human or a skill reads, so only that one turns red.
+async function hmrClients() {
+  try {
+    const response = await fetch(`http://127.0.0.1:${PORT}/@hologram/dev-status`, { signal: AbortSignal.timeout(1500) });
+    if (!response.ok) return null;
+    const body = await response.json();
+    return Number.isInteger(body?.hmrClients) ? body.hmrClients : null;
+  } catch {
+    return null;
+  }
+}
+
+async function status() {
   const value = readStatus();
   if (!value) {
     console.log(JSON.stringify({ state: 'stopped', port: PORT }, null, 2));
     process.exitCode = 1;
     return;
   }
-  console.log(JSON.stringify({ ...value, supervisorAlive: alive(Number(value.supervisorPid)), serverAlive: alive(Number(value.serverPid)), log: LOG }, null, 2));
-  if (value.state !== 'ready') process.exitCode = 1;
+  const clients = value.state === 'ready' ? await hmrClients() : null;
+  const hmrConnected = Number.isInteger(clients) && clients > 0;
+  console.log(
+    JSON.stringify(
+      {
+        ...value,
+        hmrClients: clients,
+        hmrConnected,
+        supervisorAlive: alive(Number(value.supervisorPid)),
+        serverAlive: alive(Number(value.serverPid)),
+        log: LOG,
+      },
+      null,
+      2,
+    ),
+  );
+  if (value.state !== 'ready' || !hmrConnected) process.exitCode = 1;
 }
 
 function recover() {
@@ -447,5 +476,9 @@ if (command === 'run')
 else if (command === 'restart') restart();
 else if (command === 'recover') recover();
 else if (command === 'cleanup-orphan') requestOrphanCleanup();
-else if (command === 'status') status();
+else if (command === 'status')
+  status().catch((error) => {
+    console.error(error?.stack || String(error));
+    process.exitCode = 1;
+  });
 else throw new Error(`unknown command: ${command}`);

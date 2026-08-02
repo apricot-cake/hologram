@@ -8,11 +8,16 @@ export default defineConfig(({ command, mode }) => {
   const browser = mode === 'firefox' ? 'firefox' : 'chrome';
   const development = command === 'serve';
   const developmentOutput = process.env.HOLOGRAM_EXTENSION_DEV_OUTPUT ? resolve(process.env.HOLOGRAM_EXTENSION_DEV_OUTPUT) : resolve(import.meta.dirname, '.output/chrome-mv3');
+  // The daily server owns 51731 and never wanders off it. The override exists so
+  // the HMR reconnect regression test can run a second server of its own next to
+  // it; CRXJS bakes this port into the bootstrap it writes, so a test build
+  // points its disposable browser at the test server and nothing else.
+  const developmentPort = Number(process.env.HOLOGRAM_EXTENSION_DEV_PORT) || 51731;
 
   return {
     plugins: [
       {
-        name: 'hologram-dev-manifest-probe',
+        name: 'hologram-dev-probe',
         apply: 'serve',
         configureServer(server) {
           server.middlewares.use('/manifest.json', async (_request, response) => {
@@ -23,6 +28,14 @@ export default defineConfig(({ command, mode }) => {
               response.statusCode = 503;
               response.end('{"error":"manifest-not-ready"}');
             }
+          });
+          // The service worker is the only client holding an HMR socket of its
+          // own (content scripts reach it through a chrome.runtime port), so
+          // this count answers whether the extension is still attached to this
+          // server. Serving the manifest proves nothing about that.
+          server.middlewares.use('/@hologram/dev-status', (_request, response) => {
+            response.setHeader('Content-Type', 'application/json; charset=utf-8');
+            response.end(JSON.stringify({ hmrClients: server.ws.clients.size }));
           });
         },
       },
@@ -40,7 +53,7 @@ export default defineConfig(({ command, mode }) => {
     publicDir: 'public',
     server: {
       host: '127.0.0.1',
-      port: 51731,
+      port: developmentPort,
       strictPort: true,
       open: false,
       cors: {
@@ -48,7 +61,7 @@ export default defineConfig(({ command, mode }) => {
       },
       hmr: {
         host: '127.0.0.1',
-        port: 51731,
+        port: developmentPort,
       },
     },
     build: {

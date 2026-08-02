@@ -166,7 +166,7 @@ CLI（`test-metadata.cts`／`test-select-posts.cts`／`test-watch-verify.cts`）
 そこだけは隔離の運用でなく、CJS を読む側を別プロジェクト（nodenext）へ分ける工事が要る。
   - 開発中は `npx vitest`（watch）・1本だけなら `npx vitest run scripts/query.test.ts`・カバレッジは `npx vitest run --coverage`。
   - **サーバー側で自動で回る範囲**（#15）: push ごとに `.github/workflows/ci.yml`（Linux）が `npm run check` を回す。実 Electron 起動系（`test-app-*.cts`・`e2e/flows`）と拡張のブラウザE2E（`e2e-extension-offline`／
-`e2e-extension-duplicate`／`e2e-extension-timeout`／`e2e-extension-save-log`／`e2e-extension-inject-failure`／`e2e-extension-orphan`／`e2e-overlay-visual`／`e2e-overlay-flicker`）は 
+`e2e-extension-duplicate`／`e2e-extension-timeout`／`e2e-extension-save-log`／`e2e-extension-inject-failure`／`e2e-extension-orphan`／`e2e-extension-hmr-reconnect`／`e2e-overlay-visual`／`e2e-overlay-flicker`）は 
 `.github/workflows/app-tests.yml`（Windows）が1日1回だけ回す＝**push では走らない**ので、触った直後の確認は手元で行う（手動起動は `gh workflow run app-tests.yml`）。実サイトカナリア（`e2e-capture-test.cts`）はどちらにも載っていない＝X 
 がログインなしでは投稿DOMを出さないため、ランナー上では常にログイン壁を報告するだけになる。**API スキーマカナリア（`schema-canary.cts`）は3本目のワークフロー `.github/workflows/schema-canary.yml`（Linux）が1日1回（03:07 JST）＋手動起動（`gh workflow run schema-canary.yml`）で回す**（#465）
 ＝相乗りでなく専用にしたのは、①Windows も Electron も要らず**`npm install` すら不要**（require するのはリポジトリ内のファイルと Node 組み込みだけ）②赤の意味が「自分のコードが壊れた」でなく「プラットフォームが応答の形を変えた」で、再実行が外部APIへの再取得になる③後述のコミット権限を、第三者パッケージを展開するジョブから切り離すため
@@ -205,6 +205,12 @@ before/after 検査（overlay-visual）では見えない領域を受け持つ�
 停止ボタンごと走行が終わること（例外0件）を見る。①は孤児側の isolated world を読むために計測専用の content script を1本ステージング時に足している（同一拡張の content script は isolated world を共有する）。⚠️**③のホバー判定は「今画面に映っている写真」を狙うこと**＝先頭の写真を狙うと、
 スクロール後はビューポートの上に出ていてポインタが何にも乗らず、直っていなくても緑になる（初版がこの状態だった）。⚠️**④の引き金は「行がひとつ増えること」でなければならない**＝一括取込の入力はそれだけ（行が現れた瞬間にパーマリンクを読み、ライブラリへ問い合わせる）で、スクロールやクリックでは何も起きない。走行の開始も**サービスワーカー側から** 
 background.ts と同じ2段の注入で行う＝Alt+Shift+S はブラウザのアクセラレータでページ入力からは押せず、そのためだけにステージング時の manifest へ `<all_urls>` を足している（`stageExtension({ allUrls: true })`）。
+
+- **開発サーバーを再起動したあと HMR が戻ること（#726）**: `npm run test:e2e-hmr-reconnect`（`e2e-extension-hmr-reconnect.cts`）＝**自分専用の dev サーバーを空きポートで立てて**（`HOLOGRAM_EXTENSION_DEV_PORT`／出力は一時ディレクトリ）使い捨て Chromium にその開発ビルドを読ませ、
+サーバーを本当に落として立て直す。判定は**サーバー側**＝Vite が数える HMR クライアント数（`/@hologram/dev-status`。ソケットを自分で持つのはサービスワーカーだけで、content script は chrome.runtime の port 越し）と、ワーカーのコンソールに `[crx] runtime reload` が出ること。
+守るのは**沈黙する壊れ方**＝プレースホルダの取り残しでワーカーが再接続の直前に落ちても、固定出力へのビルドは通り続けるので、編集は効いているように見えたまま HMR だけが死ぬ。⚠️**最後の一歩＝再接続そのものはこの台では測れない**（駆動しているブラウザの性質で、直っているかとは無関係）＝
+`--load-extension` で入れた拡張は `chrome.runtime.reload()` で**二度と戻らない**（以後は自分の options ページすら `ERR_BLOCKED_BY_CLIENT`・2026-08-02 実測）。だからここは「CRXJS 自身の復帰呼び出しへ到達するか」までを見て、その先は実 Chrome で `npm run ext:status` の `hmrConnected` を読む。
+⚠️**ワーカーの未捕捉例外は Playwright に届かない**（Worker に `pageerror` は来ない・同日実測）＝ReferenceError そのものは見えないので、判定は必ず「到達したか」の側で書く。
 
 ## キャプチャテスト手順（半自動フロー）
 
