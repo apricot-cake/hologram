@@ -138,7 +138,16 @@ export function sameLeaf(c: HologramQueryLeaf, f: { type: string; [k: string]: a
   // #162: a dimension leaf is unique by axis (width/height/long/bytes), not by
   // value — two leaves of the same axis never coexist (the editor replaces).
   if (f.type === 'dimension') return c.axis === f.axis;
+  // #774: two tag entities can share a name (#5's ID model), so a tag leaf that
+  // knows its id is identified BY that id — otherwise picking the second "alice"
+  // would read as the first one already being in the tree. Leaves without an id
+  // (a saved search from before the DB migration) still compare by name.
+  if (f.type === 'tag' && c.tagId != null && f.tagId != null) return c.tagId === f.tagId;
   return c.value === f.value;
+}
+/** Does the tree already hold a leaf sameLeaf-identical to `f`? (addFilter's dedup gate.) */
+export function hasSameLeaf(tree: HologramQueryGroup, f: { type: string; [k: string]: any }): boolean {
+  return treeLeaves(tree).some((c) => sameLeaf(c, f));
 }
 // The flat (deduped) leaf shadow — what the sidebar highlight / row badges /
 // tab title consume. date/engagement pass through whole (minus tree-only
@@ -154,11 +163,16 @@ export function buildShadow(tree: HologramQueryGroup): Array<{ type: string; [k:
       out.push(f as { type: string; [k: string]: any });
       continue;
     }
-    const k = c.type + ' ' + c.value;
+    // #774: a tag leaf's identity is its tagId when it has one — same reason
+    // sameLeaf above prefers it. Without this, two same-named tag entities
+    // collapse into one shadow entry and the second one's facet row could never
+    // be toggled off.
+    const k = c.type + ' ' + (c.type === 'tag' && c.tagId != null ? '#' + c.tagId : c.value);
     if (seen.has(k)) continue;
     seen.add(k);
     const f: { type: string; [k: string]: any } = { type: c.type, value: c.value };
     if (c.label) f.label = c.label;
+    if (c.type === 'tag' && c.tagId != null) f.tagId = c.tagId;
     out.push(f);
   }
   return out;
@@ -481,7 +495,13 @@ export function makePostPredOf(deps: {
         // platform's '__none' above.
         if (f.value === '__none') return (p) => !(p.tags || []).length;
         if (f.tagId == null && deps.tagIdOf) f.tagId = deps.tagIdOf(f.value);
-        return (p) => (f.tagId != null ? (p.tagIds || []).includes(f.tagId) : (p.tags || []).includes(f.value));
+        // #774: the id match reads the EFFECTIVE set (the record's own tags plus
+        // every ancestor its tag_parents edges imply — lib-db-query.ts), which is
+        // what makes "search for the parent, get the children too" true. Falls
+        // back to the raw ids for a record whose effective array is unavailable
+        // (a failed tag write dropped them — services/posts.ts's applyTagWrite),
+        // then to name matching, same as before.
+        return (p) => (f.tagId != null ? (p.effectiveTagIds || p.tagIds || []).includes(f.tagId) : (p.tags || []).includes(f.value));
       }
       case 'hashtag':
         return (p) => (p.hashtags || []).includes(f.value);

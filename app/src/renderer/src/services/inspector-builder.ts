@@ -23,7 +23,7 @@ import { subscribe as subscribePostsData } from './posts-data.ts';
 import { postIdKey, postKeyOf, captureFile, persistManualGroups, persistUngrouped, monoHue } from './records.ts';
 import { isOpen as settingsIsOpen } from './settings.ts';
 import { sameTags, setTagKind as tagsSetTagKind } from './tags.ts';
-import { updateTags as postsUpdateTags } from './posts.ts';
+import { applyTagWrite, updateTags as postsUpdateTags } from './posts.ts';
 import { hologramIpc } from './ipc.ts';
 import type { UndoChange } from './undo.ts';
 
@@ -263,13 +263,14 @@ export function makeInspector(deps: InspectorBuilderDeps) {
       const prev: string[] = (r.tags || []).slice();
       const next = mutate(prev.slice());
       if (!next || sameTags(prev, next)) continue;
+      let res: Awaited<ReturnType<typeof postsUpdateTags>> | null = null;
       try {
-        await postsUpdateTags(r.image || r.video || r.file, next);
+        res = await postsUpdateTags(r.image || r.video || r.file, next);
       } catch {
         /* keep going */
       }
       const rec = deps.getPostById(r.captureId); // O(1) lookup; allPosts shares the same record refs
-      if (rec) rec.tags = next.slice();
+      if (rec) applyTagWrite(rec, next, res);
       // The recorded change is the difference, not the two lists (#235).
       changes.push({
         kind: 'post-tags',

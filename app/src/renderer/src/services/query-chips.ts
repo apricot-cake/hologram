@@ -17,7 +17,7 @@
 //
 // ctx: { storeKey?, predOf, onChange, singleValueTypes?, noDupTypes?,
 //        multiValueTypes?, standaloneTypes?, onLeafMutated? }
-import { emptyTree, hasLeafValue, removeCondsMatching as removeCondsMatchingQ, buildShadow, canonicalizeFacet, facetViewOf, facetAdd, cleanupTree, sameLeaf, detachNode, treeParentMap, evalNode } from './query.ts';
+import { emptyTree, hasLeafValue, hasSameLeaf, removeCondsMatching as removeCondsMatchingQ, buildShadow, canonicalizeFacet, facetViewOf, facetAdd, cleanupTree, sameLeaf, detachNode, treeParentMap, evalNode } from './query.ts';
 import { set as storeSet } from './store.ts';
 
 // Local shape for the ctx contract documented in the file-top comment
@@ -78,7 +78,9 @@ export function createQueryBuilder(ctx: QbCtx) {
     // Single-valued types (single choice): a new one replaces the existing anywhere.
     if (singleValueTypes.includes(filter.type)) removeCondsMatching((c) => c.type === filter.type);
     // Prevent exact duplicates (anywhere in the tree), except for multi types.
-    else if (!noDupTypes.includes(filter.type) && qHasValue(filter.type, filter.value)) return null;
+    // Identity is sameLeaf's, not bare type+value: a tag leaf carrying a tagId is
+    // the ENTITY, so the second of two same-named tags is not a duplicate (#774).
+    else if (!noDupTypes.includes(filter.type) && hasSameLeaf(tree, filter)) return null;
     const node = Object.assign({ kind: 'cond' as const }, filter);
     if (facetViewOf(tree, facetOpts)) facetAdd(tree, node, facetOpts);
     else tree.children.push(node);

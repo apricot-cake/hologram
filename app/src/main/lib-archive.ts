@@ -476,10 +476,15 @@ function buildTagParentsJson(sqlite: Database.Database) {
 // A DB post record (lib-db-query.ts's postsFromDb/postsByIds shape) -> the sidecar
 // JSON shape a ZIP's library/<captureId>.json has always had. tagIds is a
 // DB-internal parallel array (query.ts's tag-leaf id matching) with no meaning
-// outside this one database, so it's dropped; capturedVia is merged in separately
-// because postsFromDb's column list doesn't select it (lib-db-query.ts comment).
+// outside this one database, so it's dropped; the effective* trio (#774) goes with
+// it for a second reason on top of that one -- those are DERIVED from tag_parents,
+// and a sidecar carries only what the user actually tagged (#21's 2026-07-18
+// comment). The rules themselves travel in tag-parents.json, so an export ->
+// import round trip recomputes the same effective sets on the other side.
+// capturedVia is merged in separately because postsFromDb's column list doesn't
+// select it (lib-db-query.ts comment).
 function toSidecarJson(rec: any, capturedVia: string | null, raw: RawPayloadShape[]) {
-  const { tagIds, ...rest } = rec;
+  const { tagIds, effectiveTagIds, effectiveTags, effectiveTagLabels, ...rest } = rec;
   // raw: the post's acquisition originals (#292), included by default because a
   // complete export that dropped them would not be complete — the originals are
   // the one part of a record that cannot be re-fetched once a post is deleted.

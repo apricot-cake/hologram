@@ -16,6 +16,8 @@ export const PF_ORDER = ['x', 'bluesky', 'misskey', 'mastodon', 'pixiv'];
 // deps contract (all functions unless noted):
 //   getFilteredPosts() — current-query post population (default counting pool)
 //   qHasValue(type,v) / posterQHasValue(type,v) — "is this value active" per tree
+//   qHasTag(tagId,name) — the tag-leaf variant of qHasValue (#774): a tag row is
+//     active when the tree holds a leaf for that ENTITY, not merely that name
 //   allPosts() — full library (facet vocabulary; getter — viewer reassigns it)
 //   hostOf(url) / userKey(p) — from query.js (wrapped: destructured after wiring)
 //   t(key,subs?) — message lookup / PF_NAME (value) — label table (const by the wiring point)
@@ -28,6 +30,7 @@ export const PF_ORDER = ['x', 'bluesky', 'misskey', 'mastodon', 'pixiv'];
 export function makeFacets(deps: {
   getFilteredPosts(): HologramPost[];
   qHasValue(type: string, v: string): boolean;
+  qHasTag(tagId: number | null, name: string): boolean;
   posterQHasValue(type: string, v: string): boolean;
   allPosts(): HologramPost[];
   hostOf(url: string | null | undefined): string;
@@ -45,7 +48,46 @@ export function makeFacets(deps: {
   resolve(key: string): string;
   membersOf(key: string): string[];
 }) {
-  const { getFilteredPosts, qHasValue, posterQHasValue, allPosts, hostOf, userKey, t, PF_NAME, tagKindOf, posterTagsOf, filteredPosters, posterFilterVocab, namedPosters, posterFolders, postFolders, buildUsers, resolve, membersOf } = deps;
+  const { getFilteredPosts, qHasValue, qHasTag, posterQHasValue, allPosts, hostOf, userKey, t, PF_NAME, tagKindOf, posterTagsOf, filteredPosters, posterFilterVocab, namedPosters, posterFolders, postFolders, buildUsers, resolve, membersOf } = deps;
+
+  // --- Tag rows are per ENTITY, not per name (#774 / #5's ID model) -----------
+  // A tag row stands for one tags-table row: `name` is what a pick writes into
+  // the query leaf, `label` is what the row shows (two entities sharing a name
+  // are only told apart by their display parent — "alice(東方)"), and `key` is
+  // the counting bucket.
+  //
+  // The entries come from the record's EFFECTIVE arrays, so a parent tag gets a
+  // row (and a count) from posts that only carry its children — the whole point
+  // of applying parent relationships at query time. A record without them (a
+  // failed tag write dropped its ids — services/posts.ts's applyTagWrite) falls
+  // back to its raw names, which is what these rows were keyed on before #774:
+  // less precise, never wrong for a library with no same-name pair.
+  interface TagEntry {
+    key: string;
+    id: number | null;
+    name: string;
+    label: string;
+  }
+  function tagEntriesOf(p: HologramPost): TagEntry[] {
+    const ids = p.effectiveTagIds;
+    if (Array.isArray(ids) && ids.length) {
+      const names: string[] = Array.isArray(p.effectiveTags) ? p.effectiveTags : [];
+      const labels: string[] = Array.isArray(p.effectiveTagLabels) ? p.effectiveTagLabels : [];
+      return ids.map((id: number, i: number) => {
+        const name = names[i] != null ? names[i] : '';
+        return { key: 'i:' + id, id, name, label: labels[i] || name };
+      });
+    }
+    return (p.tags || []).map((name: string) => ({ key: 'n:' + name, id: null, name, label: name }));
+  }
+  // The library-wide tag vocabulary, first occurrence wins (every occurrence of
+  // one id carries the same name/label — they all come from the same tags row).
+  function tagVocab(): TagEntry[] {
+    const m = new Map<string, TagEntry>();
+    for (const p of allPosts()) for (const e of tagEntriesOf(p)) if (!m.has(e.key)) m.set(e.key, e);
+    return [...m.values()];
+  }
+  const tagRow = (e: TagEntry, cnt: Map<string, number>, extra?: Record<string, unknown>): HologramQfRow => ({ v: e.name, l: e.label, tagId: e.id ?? undefined, on: qHasTag(e.id, e.name), count: cnt.get(e.key) || 0, facetDim: true, ...extra });
 
   // Facet counts: how many CURRENT-QUERY matches fall under each value of a facet.
   // Population = getFilteredPosts() (every active condition incl. the search term),

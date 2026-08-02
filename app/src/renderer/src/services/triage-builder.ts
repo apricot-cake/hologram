@@ -27,7 +27,7 @@
 // applyFolder push through the one shared pushUndo.
 import { applyFolderItems, notifyChanged as notifyFolderChanged, onChange as foldersOnChange, staticFolders } from './folders.ts';
 import { subscribe as subscribePostsData } from './posts-data.ts';
-import { updateTags as postsUpdateTags } from './posts.ts';
+import { applyTagWrite, updateTags as postsUpdateTags } from './posts.ts';
 import * as triage from './triage.ts';
 import type { UndoChange } from './undo.ts';
 
@@ -109,13 +109,14 @@ export function makeTriage(deps: TriageBuilderDeps) {
       const prev: string[] = (r.tags || []).slice();
       if (prev.includes(clean)) continue; // already carries it somehow — nothing to add
       const next = [...prev, clean];
+      let res: Awaited<ReturnType<typeof postsUpdateTags>> | null = null;
       try {
-        await postsUpdateTags(r.image || r.video || r.file, next);
+        res = await postsUpdateTags(r.image || r.video || r.file, next);
       } catch {
         /* keep going — one failed write must not strand the rest of the group */
       }
       const rec = deps.getPostById(r.captureId);
-      if (rec) rec.tags = next;
+      if (rec) applyTagWrite(rec, next, res);
       changes.push({ kind: 'post-tags', target: r.captureId, image: r.image || r.video || r.file, added: [clean], removed: [] });
     }
     if (!changes.length) return;

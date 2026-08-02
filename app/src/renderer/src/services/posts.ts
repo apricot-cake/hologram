@@ -33,6 +33,33 @@ export function deletePost(image: string) {
 export function updateTags(image: string, tags: unknown, patch?: unknown) {
   return hologramIpc.updateTags(image, tags, patch);
 }
+// #774: write the result of a tag edit onto the loaded record. Every tag-mutation
+// path (inspector / bulk / triage / undo) edits allPosts in place instead of
+// re-reading the library, and since #5 a record carries id-keyed tag arrays that
+// names alone cannot rebuild -- a tag typed just now has no id until the write
+// creates it, and one name can belong to two entities. So the ids come back from
+// the write (updateTags' UpdateTagsResult) and land here, together, keeping the
+// four arrays parallel.
+//
+// When the write answered without them (it failed, or the DB is not open), the
+// stale ones are DROPPED rather than kept: a tags[] that no longer lines up with
+// tagIds[] is worse than none at all -- readers that find no ids fall back to
+// matching by name, which is exactly the right answer for a record whose ids are
+// unknown.
+export function applyTagWrite(rec: any, next: string[], res: { tags?: string[]; tagIds?: number[]; effectiveTagIds?: number[]; effectiveTags?: string[]; effectiveTagLabels?: string[] } | null | undefined) {
+  rec.tags = res?.tags ? res.tags.slice() : next.slice();
+  if (res?.tagIds && res.effectiveTagIds && res.effectiveTags && res.effectiveTagLabels) {
+    rec.tagIds = res.tagIds.slice();
+    rec.effectiveTagIds = res.effectiveTagIds.slice();
+    rec.effectiveTags = res.effectiveTags.slice();
+    rec.effectiveTagLabels = res.effectiveTagLabels.slice();
+    return;
+  }
+  rec.tagIds = undefined;
+  rec.effectiveTagIds = undefined;
+  rec.effectiveTags = undefined;
+  rec.effectiveTagLabels = undefined;
+}
 // Legacy-format ZIP import (#322): main reads the archive at the path
 // importComplete handed back. Without a mode it answers { needsChoice, duplicates }
 // instead of importing (#34); call again with the answer.

@@ -37,6 +37,7 @@ import type {
   WatchImportConfig,
   WatchImportFolder,
   OkResult,
+  UpdateTagsResult,
   OrphanRecoveryResult,
   PostsDelta,
   PostsSnapshot,
@@ -139,7 +140,7 @@ const api = {
   // straight to a Blob, and BlobPart refuses a possibly-shared backing buffer.
   ugoiraFrame: (file: string, name: string): Promise<Uint8Array<ArrayBuffer> | null> => ipcRenderer.invoke('ugoira-frame', file, name),
   deletePost: (image: string): Promise<OkResult> => ipcRenderer.invoke('delete-post', image),
-  updateTags: (image: string, tags: unknown, patch?: unknown): Promise<OkResult> => ipcRenderer.invoke('update-tags', image, tags, patch),
+  updateTags: (image: string, tags: unknown, patch?: unknown): Promise<UpdateTagsResult> => ipcRenderer.invoke('update-tags', image, tags, patch),
   // Legacy-format ZIP import, second half: main reads the archive at `zipPath`
   // (the path import-complete handed back), so neither its bytes nor the records
   // it expands to cross this boundary (#322). Call once without a mode to learn

@@ -23,7 +23,7 @@ import { postRawPayloads, postsByIds } from './lib-db-query.ts';
 import { makeTagResolver, preparePostStmts, writePost } from './lib-db-record-writer.ts';
 import { listTrashRecords, trashCapture } from './lib-trash-capture.ts';
 import type { IpcContext } from './ipc-context.ts';
-import type { OkResult } from './ipc-payloads.ts';
+import type { OkResult, UpdateTagsResult } from './ipc-payloads.ts';
 
 function register(ctx: IpcContext) {
   const { getSaveFolder, getTrashDir, baseOf, LIBRARY_MEDIA_EXTS, getDbWriter, ensurePostsSynced, scheduleSavedIndexWrite, send } = ctx;
@@ -185,13 +185,22 @@ function register(ctx: IpcContext) {
   // #298/St5: tag edits are an in-app write, so they go straight to the DB
   // (post_tags + posts.userKind/tagReviewed) — see lib-db-write.ts's
   // replacePostTags.
-  ipcMain.handle('update-tags', async (_e, image, tags, patch): Promise<OkResult> => {
+  ipcMain.handle('update-tags', async (_e, image, tags, patch): Promise<UpdateTagsResult> => {
     const captureId = baseOf(image);
     if (!captureId) return { ok: false };
     try {
-      ensurePostsSynced(); // the captureId needs a posts row before this edit can attach to it
+      const handle = ensurePostsSynced(); // the captureId needs a posts row before this edit can attach to it
       const ok = getDbWriter().setPostTags(captureId, tags, patch && typeof patch === 'object' ? patch : null);
-      return { ok };
+      if (!ok || !handle) return { ok };
+      // #774: hand back the post's tag arrays as this write left them. The
+      // renderer patches the loaded record in place (no library re-read), and
+      // only the DB knows the ids -- a tag typed just now was created by the
+      // line above, and a name can belong to two entities. Re-reading the one
+      // row through the same assembler every other read uses also means the
+      // effective set here is computed by exactly one piece of code.
+      const rec: any = (await postsByIds(handle.sqlite, [captureId]))[0] || null;
+      if (!rec) return { ok };
+      return { ok, tags: rec.tags, tagIds: rec.tagIds, effectiveTagIds: rec.effectiveTagIds, effectiveTags: rec.effectiveTags, effectiveTagLabels: rec.effectiveTagLabels };
     } catch {
       return { ok: false };
     }
