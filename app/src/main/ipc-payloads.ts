@@ -136,6 +136,10 @@ export interface AppPrefs {
   privacyMode: boolean | null;
   /** #46: triage mode's manually-pinned number-key (1-9) quick tags, in slot order. */
   triagePinnedTags: string[];
+  /** #207: web-search popover - which site rows "まとめて開く" targets (site ids), remembered across sessions. null = never set (defaults to every adopted site). */
+  webSearchChecked: string[] | null;
+  /** #207: home instance per fediverse platform - which host to open Misskey/Mastodon search on (search there is login-gated, so it must be a host the user can log into). null = never set. */
+  fediverseHomeHosts: { misskey: string | null; mastodon: string | null } | null;
 }
 
 // --- Organization layer (DB-backed, ipc-organize.ts) ---------------------

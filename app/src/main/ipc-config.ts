@@ -37,6 +37,8 @@ const PREF_KEYS = [
   'panelsHidden',
   'privacyMode',
   'triagePinnedTags',
+  'webSearchChecked',
+  'fediverseHomeHosts',
 ];
 
 // --- One-off read of the retired 3-value densities (#618 posts / #630 posters) ---
@@ -179,6 +181,9 @@ function register(ctx: IpcContext) {
       privacyMode: typeof cfg.privacyMode === 'boolean' ? cfg.privacyMode : null, // #88 one-key blur; null = never toggled
       // #46: up to 9 manually-pinned tags for triage mode's number-key quick tagging.
       triagePinnedTags: Array.isArray(cfg.triagePinnedTags) ? cfg.triagePinnedTags.filter((v: unknown): v is string => typeof v === 'string').slice(0, 9) : [],
+      // #207: web-search popover prefs - both null when never set (the popover itself supplies the default checked set / no home instance).
+      webSearchChecked: Array.isArray(cfg.webSearchChecked) ? cfg.webSearchChecked.filter((v: unknown): v is string => typeof v === 'string') : null,
+      fediverseHomeHosts: cfg.fediverseHomeHosts && typeof cfg.fediverseHomeHosts === 'object' ? { misskey: typeof cfg.fediverseHomeHosts.misskey === 'string' ? cfg.fediverseHomeHosts.misskey : null, mastodon: typeof cfg.fediverseHomeHosts.mastodon === 'string' ? cfg.fediverseHomeHosts.mastodon : null } : null,
     };
   });
 

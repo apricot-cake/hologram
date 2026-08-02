@@ -602,6 +602,14 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     tabUnpin: 'ピン解除',
     tabDuplicate: '複製',
     tabCloseOthers: '他のタブを閉じる',
+    // #207: web-search popover ("ウェブで探す")
+    websearchToolbarLabel: 'ウェブで探す',
+    websearchOpenChecked: 'まとめて開く',
+    websearchGoogleFallback: 'Googleで代替検索',
+    websearchHomeMisskey: 'Misskey',
+    websearchHomeMastodon: 'Mastodon',
+    websearchNoHost: 'ホームインスタンス未設定',
+    websearchNothingToSearch: '翻訳できる条件がありません',
   },
 
   en: {
@@ -1163,6 +1171,14 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     tabUnpin: 'Unpin',
     tabDuplicate: 'Duplicate',
     tabCloseOthers: 'Close others',
+    // #207: web-search popover ("Search the web")
+    websearchToolbarLabel: 'Search the web',
+    websearchOpenChecked: 'Open checked',
+    websearchGoogleFallback: 'Search via Google instead',
+    websearchHomeMisskey: 'Misskey',
+    websearchHomeMastodon: 'Mastodon',
+    websearchNoHost: 'Home instance not set',
+    websearchNothingToSearch: 'Nothing translatable to search for',
   },
 };
 
