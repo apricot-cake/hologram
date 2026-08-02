@@ -486,6 +486,15 @@ describe('純ヘルパ', () => {
     expect(Q.userKey({ platform: 'x', screenName: 's' })).toBe('x:@s');
   });
 
+  // #760: platform-less レコードは platform 名前空間を持たないので、URL のホストで閉じる
+  // （同名の著者でも別ドメインなら別キー＝投稿者グリッドで1人に統合されない）。
+  test('userKey は platform 無しのレコードをホストで閉じる（#760）', () => {
+    expect(Q.userKey({ platform: null, userId: 'u1', url: 'https://sitea.example/p' })).toBe('web:sitea.example:u1');
+    expect(Q.userKey({ platform: null, screenName: 'alice', url: 'https://sitea.example/p' })).toBe('web:sitea.example:@alice');
+    // 同じ screenName でもホストが違えば別キー（同名別人の統合ミスを防ぐ）
+    expect(Q.userKey({ platform: null, screenName: 'alice', url: 'https://siteb.example/p' })).toBe('web:siteb.example:@alice');
+  });
+
   test('textHaystackOf は null 安全に文字列化する', () => {
     expect(Q.textHaystackOf({ text: null, tags: ['t'] }).every((s: unknown) => typeof s === 'string')).toBe(true);
   });

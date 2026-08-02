@@ -44,7 +44,15 @@ export function makeUsers(deps: { allPosts(): HologramPost[]; generation(): numb
     if (_buildUsersGen === generation() && _cachedUsers) return _cachedUsers;
     const map = new Map<string, any>();
     for (const p of allPosts()) {
-      if (!p.url) continue; // SNS posts only — match the post-view dataset
+      // #760: a poster only exists when the post carries an author identity
+      // (userId or screenName) — a platform-less bookmark (#195, url present but
+      // no author at all, only a site-name displayName) used to pass the OLD
+      // 'has url' gate and collapse every bookmark on earth into one poster
+      // (userKey's fallback '@' + '' is the same string for all of them). A real
+      // SNS post always has one or the other, so this is not a behavior change
+      // for the 5 existing platforms — only platform-less identity-less records
+      // newly drop out.
+      if (!p.userId && !p.screenName) continue;
       const key = userKey(p);
       let u = map.get(key);
       if (!u) {

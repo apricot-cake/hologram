@@ -335,7 +335,14 @@ export const hostOf = (url: string | null | undefined): string => {
   }
 };
 // Stable per-author key: prefer the platform user id, fall back to the handle.
-export const userKey = (p: HologramPost): string => p.platform + ':' + (p.userId || '@' + (p.screenName || ''));
+// A platform-less record (#195's bookmark, #253's domain-row candidates) has no
+// fixed platform namespace to key into — closing the key on the URL's host
+// instead keeps same-named authors on DIFFERENT sites from colliding into one
+// poster (#760: two 'null:@alice's used to be indistinguishable). A bookmark
+// itself never reaches this branch's identity half (no userId/screenName —
+// buildUsers' own identity gate in users.ts keeps it out of the poster grid
+// entirely), but a future platform-less record WITH an author (#239) will.
+export const userKey = (p: HologramPost): string => (p.platform ? p.platform + ':' + (p.userId || '@' + (p.screenName || '')) : 'web:' + hostOf(p.url) + ':' + (p.userId || '@' + (p.screenName || '')));
 // The 'kind' facet's three values (#195): a bookmark is source-marked
 // (source:'bookmark') rather than derived from url presence — it HAS a url
 // (the link it bookmarks), same as an SNS post, so source has to be checked

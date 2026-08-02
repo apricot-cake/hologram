@@ -50,6 +50,18 @@ describe('buildUsers（ロールアップ）', () => {
     expect(buildUsers()).toHaveLength(2);
   });
 
+  // #760: 判定条件は「url の有無」ではなく「著者の同一性（userId/screenName）の有無」。
+  // #195 のブックマークは url を持つが著者情報を一切持たない（displayName は
+  // og:site_name）ので、旧条件（url があれば数える）だとブックマークが全部
+  // buildUsers に入り、userKey の '@'+'' フォールバックで1つの投稿者に潰れていた。
+  test('url はあっても著者情報（userId/screenName）が無いレコードは投稿者を作らない（#760）', () => {
+    posts.push({ url: 'https://sitea.example/article', platform: null, userId: null, screenName: '', displayName: 'サイトA', date: '2026-04-01' });
+    posts.push({ url: 'https://siteb.example/article', platform: null, userId: null, screenName: '', displayName: 'サイトB', date: '2026-04-02' });
+    gen = 2;
+
+    expect(buildUsers()).toHaveLength(2); // 2件のブックマークは1人も増やさない
+  });
+
   test('同一投稿者の3投稿を1件へ畳む', () => {
     const a = buildUsers().find((u) => u.key === 'x:u1');
     expect(a.count).toBe(3);
