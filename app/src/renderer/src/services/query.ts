@@ -346,11 +346,19 @@ export const userKey = (p: HologramPost): string => p.platform + ':' + (p.userId
 // p.seriesTitle (#188): pixiv series name, so "シリーズ名で検索" finds every
 // saved work in that series — null on everything else (no series, or a
 // non-pixiv post), same graceful-absence convention as the other fields here.
+// p.quotedPost/p.replyToPost (#180): the quoted/renoted or (Misskey-only)
+// replied-to post's own sidecar sub-record — a search hit on ITS text or
+// author surfaces the PARENT post, since the sub-record is not independently
+// listed (2026-07-27 design comment on #180: "単体では検索にヒットしない…
+// 引用先の本文は親の検索テキスト束へ連結する"). null on every post with
+// neither (the overwhelming majority), same graceful-absence convention as
+// every other field here.
 export function textHaystackOf(p: HologramPost): string[] {
   return [p.text, p.title, p.eagleName, p.screenName, p.displayName, p.description, p.seriesTitle]
     .concat(p.tags || [])
     .concat(p.hashtags || [])
     .concat((p.media || []).map((m: any) => m?.alt))
+    .concat([p.quotedPost, p.replyToPost].flatMap((q: any) => (q ? [q.text, q.displayName, q.screenName].concat((q.media || []).map((m: any) => m?.alt)) : [])))
     .map((x) => (x == null ? '' : String(x)));
 }
 

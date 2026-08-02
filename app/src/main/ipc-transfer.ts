@@ -275,6 +275,11 @@ function register(ctx: IpcContext) {
         sensitive: p.sensitive ?? null,
         quotedUrl: p.quotedUrl || null,
         replyToId: p.replyToId || null,
+        // #180: sidecar sub-records, carried through the same as every other
+        // field here so a legacy-ZIP re-import of a post this feature already
+        // touched doesn't quietly drop them.
+        quotedPost: p.quotedPost || null,
+        replyToPost: p.replyToPost || null,
         seriesId: p.seriesId || null,
         seriesTitle: p.seriesTitle || null,
         seriesOrder: p.seriesOrder ?? null,

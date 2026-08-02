@@ -404,6 +404,22 @@ describe('純ヘルパ', () => {
     expect(Q.textHaystackOf({ text: null, seriesTitle: null }).every((s: unknown) => typeof s === 'string')).toBe(true);
   });
 
+  // #180: 引用元/リプライ先サブレコードの本文・投稿者名で検索すると、サブレコード
+  // 自体でなく親が見つかる（単体では検索にヒットしない設計 — 2026-07-27 design
+  // comment）。alt も同じ理由で他の media[].alt と同列に連結する。
+  test('textHaystackOf は quotedPost/replyToPost の本文・投稿者・media alt を連結する（#180）', () => {
+    const withQuote = { text: null, quotedPost: { text: '元の投稿', displayName: 'ボブ', screenName: 'bob', media: [{ alt: '引用先の画像' }] } };
+    expect(Q.textHaystackOf(withQuote)).toEqual(expect.arrayContaining(['元の投稿', 'ボブ', 'bob', '引用先の画像']));
+
+    const withReply = { text: null, replyToPost: { text: 'リプ先の本文', displayName: null, screenName: 'carol', media: [] } };
+    expect(Q.textHaystackOf(withReply)).toEqual(expect.arrayContaining(['リプ先の本文', 'carol']));
+  });
+
+  test('quotedPost/replyToPost が無い投稿でも textHaystackOf は例外にならない（#180）', () => {
+    expect(Q.textHaystackOf({ text: null }).every((s: unknown) => typeof s === 'string')).toBe(true);
+    expect(Q.textHaystackOf({ text: null, quotedPost: null, replyToPost: null }).every((s: unknown) => typeof s === 'string')).toBe(true);
+  });
+
   test('localDayRange の to は翌日ローカル0時（排他）で、空は null', () => {
     const ldr = Q.localDayRange('2026-05-10', '2026-05-10');
     expect(ldr.to.getTime() - ldr.from.getTime()).toBe(24 * 3600 * 1000);

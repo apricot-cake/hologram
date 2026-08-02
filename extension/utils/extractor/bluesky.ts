@@ -6,7 +6,7 @@
 
 import { anySrc, findAncestorContainerLink, hostnameMatches, parseMediaUrlPath, prepareScopedCaptureState } from './dom.ts';
 import { emptyRecord, normalizeHashtags, readJsonKeepingRaw, toIso } from './record.ts';
-import type { Extractor, MediaIdentity, PostMediaElement, PostRecord } from './types.ts';
+import type { Extractor, MediaIdentity, MediaItem, PostMediaElement, PostRecord } from './types.ts';
 
 const HOSTS = ['bsky.app'];
 const POST_CONTAINER = '[data-testid^="feedItem-by-"], [data-testid^="postThreadItem-by-"]';
@@ -237,6 +237,32 @@ function bskySensitive(record): boolean {
   return values.some((v) => v && BLUESKY_SENSITIVE_LABELS.has(v.val));
 }
 
+// #180: media for a quoted ViewRecord. Deliberately NOT bskyMedia (the
+// top-level extractor) -- that function reads post.embed/post.record.embed,
+// but a ViewRecord's resolved media lives one level flatter, at .embeds[]
+// (an array, because recordWithMedia can carry an images embed alongside a
+// video one). Video is read straight off the view's own .playlist -- no PDS
+// round trip like the top-level path takes, because that trip exists only to
+// build a downloadable blob URL and #180 v1 never downloads quoted media
+// (URL recorded, file not fetched -- same line #290 draws elsewhere).
+function bskyQuotedMedia(vr): MediaItem[] {
+  const embeds = Array.isArray(vr && vr.embeds) ? vr.embeds : [];
+  const out: MediaItem[] = [];
+  for (const e of embeds) {
+    if (!e) continue;
+    const type = e.$type || '';
+    if (type.includes('images') && Array.isArray(e.images)) {
+      for (const im of e.images) {
+        if (!im || !im.fullsize) continue;
+        out.push({ url: im.fullsize, alt: im.alt || null, width: (im.aspectRatio && im.aspectRatio.width) || null, height: (im.aspectRatio && im.aspectRatio.height) || null });
+      }
+    } else if (type.includes('video') && e.playlist) {
+      out.push({ url: e.playlist, alt: e.alt || null, width: (e.aspectRatio && e.aspectRatio.width) || null, height: (e.aspectRatio && e.aspectRatio.height) || null, type: 'video' as const, poster: e.thumbnail || null });
+    }
+  }
+  return out;
+}
+
 async function fetchBlueskyPost(parsed, url): Promise<PostRecord> {
   const rec = emptyRecord(url, 'bluesky');
   rec.screenName = parsed.handle;
@@ -317,8 +343,27 @@ async function fetchBlueskyPost(parsed, url): Promise<PostRecord> {
         rec.isQuote = true;
         // recordWithMedia nests the quoted ViewRecord one level deeper
         // (embed.record.record) — read the handle from whichever level has it.
-        const qhandle = (rec2.author && rec2.author.handle) || (rec2.record && rec2.record.author && rec2.record.author.handle);
-        rec.quotedUrl = `https://bsky.app/profile/${qhandle || qm[1]}/post/${qm[2]}`;
+        // Same nesting applies to the WHOLE ViewRecord (author/value/embeds),
+        // not just the handle — vr below is that one true ViewRecord either way.
+        const vr = rec2.uri ? rec2 : rec2.record || {};
+        const qhandle = (vr.author && vr.author.handle) || qm[1];
+        rec.quotedUrl = `https://bsky.app/profile/${qhandle}/post/${qm[2]}`;
+        // #180: everything the sub-record needs is already in this ViewRecord —
+        // .value is the quoted record itself (text/createdAt), .embeds is the
+        // AppView's ALREADY-RESOLVED media for it (fullsize image URLs / a video
+        // view's playlist), so no second request is spent building this.
+        const qval = vr.value || {};
+        rec.quotedPost = {
+          url: rec.quotedUrl,
+          displayName: (vr.author && vr.author.displayName) || null,
+          screenName: (vr.author && vr.author.handle) || null,
+          userId: (vr.author && vr.author.did) || null,
+          avatar: (vr.author && vr.author.avatar) || null,
+          text: qval.text || null,
+          date: toIso(qval.createdAt),
+          cw: null, // Bluesky has no free-text CW field (see rec.sensitive above)
+          media: bskyQuotedMedia(vr),
+        };
       }
     }
   } catch {

@@ -73,6 +73,8 @@ const POST_COLUMNS = [
   'imageIndex',
   'imageCount',
   'domFilled',
+  'quotedPost',
+  'replyToPost',
 ] as const;
 
 function fromDbBool(v: unknown): boolean | null {
@@ -106,6 +108,22 @@ function parseFrames(raw: string | null): { file: string; delay: number }[] | nu
   try {
     const v = JSON.parse(raw);
     return Array.isArray(v) && v.length ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+// posts.quotedPost/replyToPost (#180): a JSON QuotedPostShape object, same
+// all-or-nothing read as parseFrames above -- a row with none (the
+// overwhelming majority: no quote/renote, or a reply-to on a platform this
+// Issue's scope excludes) stores NULL and reads back as null, and a value
+// that no longer parses as an object reads the same way rather than reaching
+// the renderer as something its `.text`/`.media` readers can't use.
+function parseQuotedPost(raw: string | null): any | null {
+  if (!raw) return null;
+  try {
+    const v = JSON.parse(raw);
+    return v && typeof v === 'object' ? v : null;
   } catch {
     return null;
   }
@@ -227,6 +245,11 @@ function assemble(sqlite: Database.Database, postRows: any[]): any[] {
       // as one the API vouched for. Same JSON string[] storage as hashtags, so
       // the same all-or-nothing parse.
       domFilled: parseHashtags(r.domFilled),
+      // #180: quote/renote and (Misskey-only) reply-to sidecar sub-records.
+      // Read for the same reasons quotedUrl/replyToId are — the inspector (once
+      // #180's viewer stage lands) and the export sidecar both need them.
+      quotedPost: parseQuotedPost(r.quotedPost),
+      replyToPost: parseQuotedPost(r.replyToPost),
     };
   });
 }

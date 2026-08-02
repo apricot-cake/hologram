@@ -212,6 +212,25 @@ function misskeyMedia(files) {
     });
 }
 
+// #180: a renote/reply target arrives as a FULL Note object on this endpoint
+// (note.renote / note.reply), the same shape as the top-level note -- so the
+// sidecar sub-record is built with the exact same field reads as the parent,
+// at no extra request.
+function misskeyQuotedRef(note, host): { url: string | null; displayName: string | null; screenName: string | null; userId: string | null; avatar: string | null; text: string | null; date: string | null; cw: string | null; media: ReturnType<typeof misskeyMedia> } | null {
+  if (!note) return null;
+  return {
+    url: note.url || note.uri || `https://${host}/notes/${note.id}`,
+    displayName: (note.user && note.user.name) || null,
+    screenName: note.user ? (note.user.host ? `${note.user.username}@${note.user.host}` : note.user.username) : null,
+    userId: (note.user && note.user.id) || null,
+    avatar: (note.user && note.user.avatarUrl) || null,
+    text: note.text || null,
+    date: toIso(note.createdAt),
+    cw: note.cw || null,
+    media: misskeyMedia(note.files),
+  };
+}
+
 async function fetchMisskeyNote(parsed, url): Promise<PostRecord> {
   const rec = emptyRecord(url, 'misskey');
   // Canonical permalink: the saved URL may carry a query/hash; rebuild the bare
@@ -284,6 +303,10 @@ async function fetchMisskeyNote(parsed, url): Promise<PostRecord> {
         rec.isThread = true;
         rec.isReply = null;
       }
+      // #180: the only platform whose reply target arrives with full content
+      // already in this response (note.reply) -- see types.ts's
+      // PostRecord.replyToPost for why the other three platforms don't get one.
+      rec.replyToPost = misskeyQuotedRef(note.reply, parsed.host);
     }
     // A renote counts as a QUOTE when it adds anything of its own — text, CW,
     // files or a poll (misskey-js isPureRenote semantics). Text-only checks
@@ -295,6 +318,7 @@ async function fetchMisskeyNote(parsed, url): Promise<PostRecord> {
       // to the local-host permalink.
       if (note.renote) {
         rec.quotedUrl = note.renote.url || note.renote.uri || `https://${parsed.host}/notes/${note.renoteId}`;
+        rec.quotedPost = misskeyQuotedRef(note.renote, parsed.host);
       }
     }
   } catch {

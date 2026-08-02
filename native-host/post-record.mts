@@ -55,6 +55,21 @@ export interface MediaItemShape {
   frames: { file: string; delay: number }[] | null;
 }
 
+// #180: a quoted/renoted or (Misskey-only) replied-to post, saved as a
+// sidecar sub-record. Mirrors extension/utils/extractor/types.ts's QuotedPost
+// -- same fields, same "URL recorded, media never downloaded" v1 scope.
+export interface QuotedPostShape {
+  url: string | null;
+  displayName: string | null;
+  screenName: string | null;
+  userId: string | null;
+  avatar: string | null;
+  text: string | null;
+  date: string | null;
+  cw: string | null;
+  media: MediaItemShape[];
+}
+
 export interface PostRecordShape {
   captureId: string;
   assetClass: string;
@@ -115,6 +130,13 @@ export interface PostRecordShape {
   sensitive: boolean | null;
   quotedUrl: string | null;
   replyToId: string | null;
+  // #180: the full sub-record, when the platform's own already-fetched
+  // response bundled it (see QuotedPostShape / extension/utils/extractor/
+  // types.ts's PostRecord.quotedPost for the per-platform rule). null on
+  // every reply-to except Misskey's, and on any quote/renote whose target
+  // gave the extractor nothing to build one from.
+  quotedPost: QuotedPostShape | null;
+  replyToPost: QuotedPostShape | null;
   // pixiv series membership (#188) — see extension/utils/extractor/types.ts's
   // PostRecord.seriesId/seriesTitle/seriesOrder for the sourcing. All three
   // null on every non-pixiv record and on a pixiv work that isn't in a series.
@@ -194,6 +216,26 @@ function normBool(v: unknown): boolean | null {
 function normStrArray(v: unknown): string[] {
   return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [];
 }
+// #180: a QuotedPostShape is all-or-nothing, like normFrames's frame table
+// below -- a malformed sub-record (not an object) becomes null rather than a
+// half-filled one, since a partial sub-record with no text AND no author is
+// worth less than admitting the platform gave nothing usable.
+function normQuotedPost(v: unknown): QuotedPostShape | null {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return null;
+  const q = v as Record<string, unknown>;
+  return {
+    url: normStr(q.url),
+    displayName: normStr(q.displayName),
+    screenName: normStr(q.screenName),
+    userId: normStr(q.userId),
+    avatar: normStr(q.avatar),
+    text: normStr(q.text),
+    date: normStr(q.date),
+    cw: normStr(q.cw),
+    media: normMedia(q.media),
+  };
+}
+
 function normMedia(v: unknown): MediaItemShape[] {
   if (!Array.isArray(v)) return [];
   return v
@@ -313,6 +355,8 @@ export function normalizePostRecord(input: PostRecordInput, now: () => string = 
     sensitive: normBool(input.sensitive),
     quotedUrl: normStr(input.quotedUrl),
     replyToId: normStr(input.replyToId),
+    quotedPost: normQuotedPost(input.quotedPost),
+    replyToPost: normQuotedPost(input.replyToPost),
     seriesId: normStr(input.seriesId),
     seriesTitle: normStr(input.seriesTitle),
     seriesOrder: normNum(input.seriesOrder),

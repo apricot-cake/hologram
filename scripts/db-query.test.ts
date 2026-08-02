@@ -45,6 +45,9 @@ beforeAll(async () => {
     editedAt: '2026-01-01T12:00:00Z',
     cw: 'spider photo inside',
     sensitive: true,
+    // #180: a quote/renote sub-record rides the same posts row as every other
+    // optional field here.
+    quotedPost: { url: 'https://x.example/quoted', displayName: 'Bob', screenName: 'bob', userId: '9', avatar: null, text: 'the original', date: '2025-12-31T00:00:00Z', cw: null, media: [] },
     capturedAt: '2026-01-01T00:00:00Z',
     updatedAt: '2026-01-01T00:00:00Z',
   });
@@ -165,6 +168,17 @@ describe('postsFromDb: 形と並び', () => {
     expect({ seriesId: cap3.seriesId, seriesTitle: cap3.seriesTitle, seriesOrder: cap3.seriesOrder }).toEqual({ seriesId: '12345', seriesTitle: 'ある冒険', seriesOrder: 3 });
     const cap2 = (await postsFromDb(handle.sqlite)).find((p: any) => p.captureId === 'cap-2');
     expect({ seriesId: cap2.seriesId, seriesTitle: cap2.seriesTitle, seriesOrder: cap2.seriesOrder }).toEqual({ seriesId: null, seriesTitle: null, seriesOrder: null });
+  });
+
+  // #180: the JSON-column sub-record round-trips through writePost -> DB ->
+  // postsFromDb the same way hashtags/domFilled do, and a post with none reads
+  // back null rather than an empty object.
+  test('quotedPost が往復する（#180）', async () => {
+    const cap1 = (await postsFromDb(handle.sqlite)).find((p: any) => p.captureId === 'cap-1');
+    expect(cap1.quotedPost).toEqual({ url: 'https://x.example/quoted', displayName: 'Bob', screenName: 'bob', userId: '9', avatar: null, text: 'the original', date: '2025-12-31T00:00:00Z', cw: null, media: [] });
+    expect(cap1.replyToPost).toBeNull();
+    const cap2 = (await postsFromDb(handle.sqlite)).find((p: any) => p.captureId === 'cap-2');
+    expect({ quotedPost: cap2.quotedPost, replyToPost: cap2.replyToPost }).toEqual({ quotedPost: null, replyToPost: null });
   });
 
   // #560: if a column is known only to the writer and never queried by the reader, the inspector's

@@ -107,6 +107,14 @@ function isMastodonStatusUrl(u) {
   }
 }
 
+// #180: is this a full Status object, or just a quote stub that names one
+// (ShallowQuote: {state, quoted_status_id})? A real Status always carries
+// .content (even an empty-text post has the key, htmlToText just returns
+// null for it) -- the one field a stub never has.
+function mastodonFullStatus(x): any | null {
+  return x && typeof x === 'object' && x.content !== undefined ? x : null;
+}
+
 async function fetchMastodonStatus(parsed, url): Promise<PostRecord> {
   const rec = emptyRecord(url, 'mastodon');
   try {
@@ -169,6 +177,27 @@ async function fetchMastodonStatus(parsed, url): Promise<PostRecord> {
     if (q && (q.url || q.uri || q.quoted_status || q.quoted_status_id)) {
       rec.isQuote = true;
       rec.quotedUrl = q.url || q.uri || (q.quoted_status && (q.quoted_status.url || q.quoted_status.uri)) || null;
+      // #180: only the two FULL-status shapes (fork's bare `quote`, mainline's
+      // `quote.quoted_status`) carry anything to build a sub-record from -- a
+      // shallow ShallowQuote ({state, quoted_status_id}) names the quoted post
+      // but does not include it, and fetching it is a second request this
+      // Issue's v1 scope excludes (same reasoning as the reply-to platforms
+      // that get no sub-record). Detected the same way #178/#189 tell a full
+      // Status from an id-only stub: a real Status always has .content.
+      const qStatus = mastodonFullStatus(q) || mastodonFullStatus(q.quoted_status);
+      if (qStatus) {
+        rec.quotedPost = {
+          url: (qStatus.url && isMastodonStatusUrl(qStatus.url) ? qStatus.url : qStatus.url || qStatus.uri || null) || rec.quotedUrl,
+          displayName: (qStatus.account && (qStatus.account.display_name || qStatus.account.username)) || null,
+          screenName: (qStatus.account && (qStatus.account.acct || qStatus.account.username)) || null,
+          userId: (qStatus.account && qStatus.account.id) || null,
+          avatar: (qStatus.account && (qStatus.account.avatar || qStatus.account.avatar_static)) || null,
+          text: htmlToText(qStatus.content),
+          date: toIso(qStatus.created_at),
+          cw: qStatus.spoiler_text || null,
+          media: mastodonMedia(qStatus.media_attachments),
+        };
+      }
     }
   } catch {
     // keep partial
