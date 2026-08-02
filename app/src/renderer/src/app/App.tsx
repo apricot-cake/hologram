@@ -5,6 +5,7 @@ import { PaletteHost } from '../palette/CommandPalette.tsx';
 import { PromptHost } from '../prompt/Prompt.tsx';
 import { ContextMenuHost } from '../context-menu/ContextMenu.tsx';
 import { KindMenuHost } from '../kind-menu/KindMenu.tsx';
+import { WebSearchContextPanelHost } from '../websearch/WebSearchPanel.tsx';
 import { LightboxHost } from '../lightbox/index.tsx';
 import { CompareHost } from '../compare/index.tsx';
 import { SettingsHost } from '../settings/index.tsx';
@@ -301,6 +302,9 @@ export function App() {
           root. Neither needs a static container in index.html any more (#621). */}
       <ContextMenuHost />
       <KindMenuHost />
+      {/* #207: the poster/tag context-menu entry points into "ウェブで探す" — one
+          always-mounted instance, same shape as the two above. */}
+      <WebSearchContextPanelHost />
       <ConfirmHost />
       {/* Command palette (#28) — Ctrl+K. */}
       <PaletteHost />

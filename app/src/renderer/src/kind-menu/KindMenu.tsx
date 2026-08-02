@@ -2,7 +2,7 @@ import { PencilIcon } from 'lucide-react';
 import { useMemo, useSyncExternalStore } from 'react';
 import { close, get, subscribe } from '../services/kind-menu.ts';
 import { kindDotClass } from '../_shared/kind-dot.ts';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuLabel, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 // kind (tag-kind) menu — ONE always-mounted instance that renders whatever
@@ -77,6 +77,19 @@ export function KindMenuHost() {
             ),
           )}
         </DropdownMenuRadioGroup>
+        {menu.websearch && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              onClick={() => {
+                close();
+                menu.websearch?.onPick();
+              }}
+            >
+              {menu.websearch.label}
+            </DropdownMenuItem>
+          </>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   );

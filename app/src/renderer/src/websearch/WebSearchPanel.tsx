@@ -1,11 +1,13 @@
 // #207 - "ウェブで探す" popover: translates the current condition tree into a search URL
 // per adopted site (X/Bluesky/Misskey/Mastodon/pixiv) and lets the user open one or
 // several at once. `tree` defaults to the live post query tree (services/store.ts's
-// 'postQueryTree' key) so the toolbar entry point needs no extra wiring; a future
-// context-menu entry point (poster/tag rows - #207's own scope, not part of this slice,
-// see the Issue/PR for why) can reuse this same component by passing a one-off tree.
+// 'postQueryTree' key) so the toolbar entry point needs no extra wiring. The rows/host-
+// inputs/open-checked content is factored into WebSearchPanelBody so the poster/tag
+// context-menu entry points (below, WebSearchContextPanelHost) can render the SAME
+// content anchored at a click point, fed by websearch/context-panel.ts's one-off tree
+// instead of a PopoverTrigger of their own.
 import { ExternalLink, Globe, TriangleAlert } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
@@ -17,6 +19,7 @@ import { hologramIpc } from '../services/ipc.ts';
 import { treeLeaves } from '../services/query.ts';
 import { get as storeGet } from '../services/store.ts';
 import { buildWebSearchState } from './adapter.ts';
+import { close as contextClose, get as contextGet, subscribe as contextSubscribe } from './context-panel.ts';
 import { buildGoogleFallback } from './googleFallback.ts';
 import { ALL_PLATFORMS } from './platforms/index.ts';
 import { type FediverseHomeHosts, loadFediverseHomeHosts, loadWebSearchChecked, saveFediverseHomeHosts, saveWebSearchChecked, suggestHomeHost } from './prefs.ts';
@@ -169,18 +172,16 @@ function Row({ row, state, checked, onToggle, hosts }: { row: ResolvedRow; state
   );
 }
 
-export function WebSearchPanel({ tree }: { tree?: HologramQueryGroup | null }) {
-  const [open, setOpen] = useState(false);
-  const activeTree = (tree ?? (storeGet('postQueryTree') as HologramQueryGroup | undefined)) || null;
+function WebSearchPanelBody({ tree }: { tree: HologramQueryGroup | null }) {
   const { checked, toggle } = useCheckedSites();
   const { hosts, setHost } = useHomeHosts();
-  const resolveUser = useUserResolver(activeTree);
+  const resolveUser = useUserResolver(tree);
 
   const { state, rows } = useMemo(() => {
-    const built = buildWebSearchState(activeTree, { resolveUser });
+    const built = buildWebSearchState(tree, { resolveUser });
     const resolvedRows = resolveAll(built.state, ALL_PLATFORMS, (p) => ctxFor(p.id, hosts), built.treeDrops);
     return { state: built.state, rows: resolvedRows };
-  }, [activeTree, resolveUser, hosts]);
+  }, [tree, resolveUser, hosts]);
 
   const openChecked = () => {
     for (const row of rows) {
@@ -190,32 +191,65 @@ export function WebSearchPanel({ tree }: { tree?: HologramQueryGroup | null }) {
   const anyOpenable = rows.some((r) => checked.has(r.platform.id) && r.url);
 
   return (
+    <>
+      <div className="flex flex-col">
+        {rows.map((row) => (
+          <Row key={row.platform.id} row={row} state={state} checked={checked.has(row.platform.id)} onToggle={() => toggle(row.platform.id)} hosts={hosts} />
+        ))}
+      </div>
+      <Separator />
+      <div className="space-y-1.5">
+        <div className="flex items-center gap-1.5">
+          <span className="w-20 shrink-0 text-xs text-muted-foreground">{t('websearchHomeMisskey')}</span>
+          <Input value={hosts.misskey ?? ''} placeholder="misskey.io" onChange={(e) => setHost('misskey', e.target.value)} className="h-7 text-xs" />
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className="w-20 shrink-0 text-xs text-muted-foreground">{t('websearchHomeMastodon')}</span>
+          <Input value={hosts.mastodon ?? ''} placeholder="mastodon.social" onChange={(e) => setHost('mastodon', e.target.value)} className="h-7 text-xs" />
+        </div>
+      </div>
+      <Separator />
+      <Button size="sm" disabled={!anyOpenable} onClick={openChecked}>
+        {t('websearchOpenChecked')}
+      </Button>
+    </>
+  );
+}
+
+export function WebSearchPanel({ tree }: { tree?: HologramQueryGroup | null }) {
+  const [open, setOpen] = useState(false);
+  const activeTree = (tree ?? (storeGet('postQueryTree') as HologramQueryGroup | undefined)) || null;
+
+  return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger render={<Button variant="outline" size="sm" />}>
         <Globe />
         <span>{t('websearchToolbarLabel')}</span>
       </PopoverTrigger>
       <PopoverContent align="end" className="w-80 gap-2">
-        <div className="flex flex-col">
-          {rows.map((row) => (
-            <Row key={row.platform.id} row={row} state={state} checked={checked.has(row.platform.id)} onToggle={() => toggle(row.platform.id)} hosts={hosts} />
-          ))}
-        </div>
-        <Separator />
-        <div className="space-y-1.5">
-          <div className="flex items-center gap-1.5">
-            <span className="w-20 shrink-0 text-xs text-muted-foreground">{t('websearchHomeMisskey')}</span>
-            <Input value={hosts.misskey ?? ''} placeholder="misskey.io" onChange={(e) => setHost('misskey', e.target.value)} className="h-7 text-xs" />
-          </div>
-          <div className="flex items-center gap-1.5">
-            <span className="w-20 shrink-0 text-xs text-muted-foreground">{t('websearchHomeMastodon')}</span>
-            <Input value={hosts.mastodon ?? ''} placeholder="mastodon.social" onChange={(e) => setHost('mastodon', e.target.value)} className="h-7 text-xs" />
-          </div>
-        </div>
-        <Separator />
-        <Button size="sm" disabled={!anyOpenable} onClick={openChecked}>
-          {t('websearchOpenChecked')}
-        </Button>
+        <WebSearchPanelBody tree={activeTree} />
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+// Poster/tag context-menu entry points (#207 "投稿者・タグの文脈メニュー...パネル1個・入口複数"):
+// ONE always-mounted instance mirroring KindMenuHost's shape — renders whatever
+// websearch/context-panel.ts currently holds (or nothing), anchored at the click point via
+// a virtual element (Base UI Popover's `anchor` accepts one, same trick KindMenuHost uses
+// for its DropdownMenu). poster-grid-builder.ts / kind-menu-builder.ts are the callers.
+export function WebSearchContextPanelHost() {
+  const menu = useSyncExternalStore(contextSubscribe, contextGet);
+  const anchor = useMemo(() => {
+    if (!menu) return null;
+    const { x, y } = menu;
+    return { getBoundingClientRect: () => new DOMRect(x, y, 0, 0) };
+  }, [menu]);
+  if (!menu) return null;
+  return (
+    <Popover open onOpenChange={(o) => !o && contextClose()}>
+      <PopoverContent anchor={anchor} align="start" className="w-80 gap-2">
+        <WebSearchPanelBody tree={menu.tree} />
       </PopoverContent>
     </Popover>
   );

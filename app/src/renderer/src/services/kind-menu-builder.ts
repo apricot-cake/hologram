@@ -9,6 +9,7 @@ import { open as kindMenuOpen } from './kind-menu.ts';
 import { promptName } from '../prompt/Prompt.tsx';
 import { setTagKind, setKindLabel } from './tags.ts';
 import { notify } from './ui.ts';
+import { open as webSearchContextOpen } from '../websearch/context-panel.ts';
 
 export interface KindMenuDeps {
   tagKindOf: (tagId: number | null | undefined) => string | null;
@@ -64,6 +65,13 @@ export function makeKindMenu(deps: KindMenuDeps) {
           if (onChanged) onChanged();
           notify(t('tagKindRenamed'));
         });
+      },
+      // #207: this tag's own entry point into the "ウェブで探す" panel — a one-off tree
+      // holding just this tag leaf (tagId when the chip named its entity, #810; falls
+      // back to a name-only leaf otherwise, same as every other tag leaf in the app).
+      websearch: {
+        label: t('websearchToolbarLabel'),
+        onPick: () => webSearchContextOpen({ kind: 'group', op: 'and', neg: false, children: [{ kind: 'cond', type: 'tag', value: tag, tagId }] }, x, y),
       },
     });
   }
