@@ -57,16 +57,17 @@ electron-vite で main・preload・renderer の3面をバンドルする標準�
 - `src/main/lib-backup.ts` — 増分ミラーのエンジンと定期実行、出力先の検証、#301 の整合チェック。整合チェックが同居するのは同じ走査結果を使い回すため（二重実装しない）。DBを同期してからでないと写しも孤児検出も成立しないので、その部分だけ index.ts から注入で受け取る
 - `src/main/lib-window.ts` — メインウィンドウ（生成・位置とサイズの永続化・ナビゲーション封じ）。`win` を所有するのはこのモジュールだけで、他は `getWin()` / `sendToWin()` 経由
 - `src/main/lib-thumbnails.ts` — `asset://` ハンドラと、その `?w=N` が使うサムネイル生成プール・ディスクキャッシュ
+- `src/main/app-protocol.ts` — **製品版のレンダラを配る `app://bundle` ハンドラ**（#7・[ADR 0022](decisions/0022-renderer-served-from-app-scheme.md)）。dev（Vite の http）へ同じ CSP を載せる `onHeadersReceived` もここ。`src/main/renderer-files.ts` がアドレスと content-type とルート外判定（Electron 非依存＝node でテスト可）、`src/main/renderer-csp.ts` がポリシー文字列そのもの（`index.html` に `<meta>` の CSP は無い）
 - `src/main/ipc-*.ts` — チャンネル別のハンドラ群。IPC境界の型は2つに分かれる（#228）＝`ipc-context.ts` の `IpcContext` が index.ts から各 `register(ctx)` へ渡す依存の契約（main専用。BrowserWindow や DB writer を名前で持つ）、`ipc-payloads.ts` が**実際にIPCを渡るペイロードの形**。後者は import を1つも持たない＝renderer 側の DOM-only プログラムが `HologramPreload` 経由で辿り着くため。ハンドラ側の戻り値にも同じ型を注釈してあるので、片端だけの変更はビルドで落ちる（チャンネル名で両端を突き合わせる仕組みは #10 の集中ラッパーの担当で、まだ無い）
 - `src/main/lib-archive.ts` — ZIP入出力
 - `src/main/lib-db*.ts` — SQLite 層（エンジン/スキーマ/クエリ/書き込み/取込キュー/整合チェック）。取得原本（`raw_payloads`・[ADR 0011](decisions/0011-preserve-acquisition-payloads.md)）は共有 writer が投稿と同じトランザクションで書き、追記のみで消さない。いずれも Electron 非依存＝node でテスト可。`listPosts` は DB への1クエリで、更新は差分IPC（list-posts-delta）＝`lib-post-delta.ts` が「前回配った分」と突き合わせて追加/削除だけ返す（#302 でファイル走査は消え、ヒントの受け渡しも不要になった）
 - `src/main/lib-card-dims.ts` — カード画像の実寸（`shotW`/`shotH`）をヘッダだけ読んで測る。masonry のカード高さを画像ロード前に確保するため、**レコードを書く時に**測って DB に入れる
 - `src/main/lib-local-intake.ts` — **SNS 由来でないローカル画像がレコードになる形の唯一の定義**（ファイルダイアログ・クリップボード #85・監視フォルダ #84・ウィンドウへのドロップ #234 が共有）。入口ごとに違うのは captureId の接頭辞・`source`・`date` の3つだけで、残りは全部ここが決める。**`url` は必ず null**＝`kind` は保存されず url の有無から導出されるので、url を立てるとローカル画像が「SNS投稿」に化ける（クリップボードや D&D から URL を拾う経路を見送った理由の実体）
 - `src/preload/index.ts` — contextBridge の実装。公開APIの型は実装から`HologramPreload`としてexportし、rendererはそれを型エイリアスで参照（手書き型ミラーなし・Issue #17）
-- `src/renderer/index.html`＋`src/renderer/public/`（`theme.js`＝pre-paint、`<script>`で直読み。`app/build-theme-boot.mjs`が`theme.ts`から再生成＝バンドル外の同期スクリプトという制約は変わらない）
+- `src/renderer/index.html`＋`src/renderer/public/`（`theme.js`＝pre-paint、`<script>`で直読み。CSP は main が応答ヘッダで配るのでこのファイルには持たせない（ADR 0022）。`app/build-theme-boot.mjs`が`theme.ts`から再生成＝バンドル外の同期スクリプトという制約は変わらない）
 - `src/renderer/src/services/`（旧 `renderer/*.ts`）＝`orchestrator.ts`（2026-07-11に`viewer.ts`から改名。boot orchestration層として意図的に独立モジュールのまま残す設計）が状態/オーケストレーション/IPC呼び出しの中核、`store.ts`ほか単機能サービス（`tags.ts`/`selection.ts`/`query.ts`/`records.ts`等）に段階抽出済み。`design-tokens.css`は`src/renderer/`直下（index.htmlの`<link>`が参照）
 - `src/renderer/src/`直下 — React（`.tsx`）コンポーネント群（旧 `islands/`）。`services/store.ts`をESM importで直接購読して連携（push型のモデル注入・`window.hologramXxx`ブリッジは全廃済み＝Window拡張はpreloadの`window.hologram`のみ）
-- 機能: DB クエリで閲覧、拡張ID設定・ホスト自動登録、指定フォルダへの定期バックアップ（増分ミラー・`Hologram-mirror`＋DBのスナップショット）。画像は `asset://` プロトコルで遅延読込＝応答は必ず CSP（`default-src 'none'` 基底）と `nosniff` を載せ、この スキームのトップレベル文書になれるのはラスタ画像だけ（窓を開く経路と `will-navigate` が `library-files.ts` の同じ述語を通る。理由は [ADR 0012](decisions/0012-asset-documents-are-raster-only.md)）。
+- 機能: DB クエリで閲覧、拡張ID設定・ホスト自動登録、指定フォルダへの定期バックアップ（増分ミラー・`Hologram-mirror`＋DBのスナップショット）。**レンダラ自身は `app://bundle/index.html` から配る**（製品版・#7）＝`file://` の追加特権に依存せず、CSP（`frame-ancestors` 込み）を応答ヘッダで配れる。配布バイナリには `grantFileProtocolExtraPrivileges: false` を焼いてある。画像は `asset://` プロトコルで遅延読込＝応答は必ず CSP（`default-src 'none'` 基底）と `nosniff` を載せ、この スキームのトップレベル文書になれるのはラスタ画像だけ（窓を開く経路と `will-navigate` が `library-files.ts` の同じ述語を通る。理由は [ADR 0012](decisions/0012-asset-documents-are-raster-only.md)）。
 
 ## ビューア機能（内部実装メモ）
 

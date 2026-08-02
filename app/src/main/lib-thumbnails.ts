@@ -39,7 +39,7 @@ const EXT_MIME = {
   '.webm': 'video/webm',
   '.mov': 'video/quicktime',
   '.m4v': 'video/x-m4v',
-  '.zip': 'application/zip', // pixiv うごイラ archive (#119 St3) — fetched by the player, never rendered
+  '.zip': 'application/zip', // pixiv うごイラ archive (#119 St3) — read by main and handed to the player over IPC, never rendered
 };
 function mimeForFile(name) {
   return EXT_MIME[path.extname(name || '').toLowerCase()] || 'application/octet-stream';
