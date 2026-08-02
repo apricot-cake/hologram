@@ -32,7 +32,13 @@ export function ImageTabHost() {
   // (P2⑫ / #153 ⑥).
   return model ? (
     <div data-slot="image-tab-view" className="flex min-h-0 min-w-0 flex-1">
-      <ImageTab model={model} />
+      {/* key={model.tabId} (#80): switching straight from one image tab to another (both
+          already showing their own image view) never unmounts THIS host — only `model`'s
+          identity changes — so without this key React would reuse the same ImageTab
+          instance and its overlay toggle state (services/image-overlay.ts) would leak from
+          the old tab's picture into the new one's. The key forces a fresh mount, whose
+          effect calls image-overlay.ts's reset(). */}
+      <ImageTab key={model.tabId} model={model} />
     </div>
   ) : null;
 }

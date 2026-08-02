@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useSyncExternalStore } from 'react';
 import type { HTMLAttributes, PointerEvent as ReactPointerEvent } from 'react';
 import { ChevronLeft, ChevronRight, ImageOff, Info } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -10,6 +10,7 @@ import { createNeighborPreloader, neighborPreloadSources, type NeighborPreloader
 import { TransformComponent, TransformWrapper } from 'react-zoom-pan-pinch';
 import type { ReactZoomPanPinchRef } from 'react-zoom-pan-pinch';
 import { MAX_SCALE, MIN_SCALE, ZOOM_MS, FIT_MS, actualScaleOf, actualTarget, fitToggleTarget, isAtFit, publish as publishZoom, register as registerZoom, steppedScale, zoomPercentOf } from '../services/image-zoom.ts';
+import { getState as getOverlayState, reset as resetOverlay, subscribe as subscribeOverlay } from '../services/image-overlay.ts';
 
 // Wheel-zoom tuning (#134): one mouse-wheel notch (deltaY~100) MULTIPLIES the
 // scale by ZOOM_STEP. Multiplicative so a notch feels equally strong at 1x
@@ -31,6 +32,11 @@ export interface ImageTabItem {
   poster?: string;
 }
 export interface ImageTabModel {
+  // The active tab's own id (#80) — image-tab/index.tsx keys <ImageTab> on this, so a
+  // switch straight from one image tab to another (both already showing their image
+  // view) remounts this component instead of reusing it, which is what resets the
+  // overlay toggles (services/image-overlay.ts) instead of leaking them across tabs.
+  tabId: string;
   items: ImageTabItem[];
   idx: number;
   missing?: boolean;
@@ -44,7 +50,16 @@ export interface ImageTabModel {
 // One image with Eagle-style zoom/pan (react-zoom-pan-pinch): wheel = zoom at
 // the cursor, drag = pan, double-click = actual pixels ⇄ fit. The parent keys
 // this on src so a slide change remounts at fit scale.
-function Zoomable({ src, alt }: { src: string; alt: string }) {
+// Rule-of-thirds grid (#80). One overlay element (design's "重ねる線1要素"), drawn as two
+// gradient layers rather than four separate line divs. mix-blend-mode: difference inverts
+// against whatever the image shows under each line, so a single near-white line reads on
+// both a black night sky and a white page — no per-image color choice needed.
+const THIRDS_GRID_LINES = [
+  'linear-gradient(to right, transparent calc(100%/3 - 0.5px), rgba(255,255,255,0.85) calc(100%/3 - 0.5px), rgba(255,255,255,0.85) calc(100%/3 + 0.5px), transparent calc(100%/3 + 0.5px), transparent calc(200%/3 - 0.5px), rgba(255,255,255,0.85) calc(200%/3 - 0.5px), rgba(255,255,255,0.85) calc(200%/3 + 0.5px), transparent calc(200%/3 + 0.5px))',
+  'linear-gradient(to bottom, transparent calc(100%/3 - 0.5px), rgba(255,255,255,0.85) calc(100%/3 - 0.5px), rgba(255,255,255,0.85) calc(100%/3 + 0.5px), transparent calc(100%/3 + 0.5px), transparent calc(200%/3 - 0.5px), rgba(255,255,255,0.85) calc(200%/3 - 0.5px), rgba(255,255,255,0.85) calc(200%/3 + 0.5px), transparent calc(200%/3 + 0.5px))',
+].join(', ');
+
+function Zoomable({ src, alt, flip, gray, grid }: { src: string; alt: string; flip: boolean; gray: boolean; grid: boolean }) {
   const twRef = useRef<ReactZoomPanPinchRef | null>(null);
   const imgRef = useRef<HTMLImageElement | null>(null);
   // Double-click fit-toggle guard (#134 follow-up): two quick pan strokes can
@@ -217,7 +232,35 @@ function Zoomable({ src, alt }: { src: string; alt: string }) {
             any layered utility no matter how specific — the important modifier is what a
             third-party rule written that way leaves available. Receiving the events is
             safe here because the image is draggable={false} in the first place. */}
-        <img ref={imgRef} data-slot="viewer-image" className="pointer-events-auto! max-h-full max-w-full cursor-grab object-contain active:cursor-grabbing" src={src} alt={alt} decoding="async" draggable={false} onLoad={publish} onDoubleClick={onDouble} onPointerDown={onPointerDown} onPointerUp={onPointerUp} />
+        {/* #80's grid lives in this extra wrapper, not on TransformComponent's own content
+            div: img and the overlay share one grid cell (`display:grid` + the same
+            gridArea), so the overlay STRETCHES to exactly the img's own rendered box —
+            object-contain can letterbox inside a larger box, and this wrapper is sized to
+            the img's OWN content box (max-h/max-w, no explicit size), not the stage — with
+            no separate measurement needed. Grid is Zoomable-only (v1 design, #80's
+            2026-07-17 fix #2): video/ugoira have no Zoomable to hang it on, so the toolbar
+            disables the grid button whenever this component isn't mounted (image-zoom.ts's
+            `off`, already the same "no Zoomable this slide" signal). Flip/grayscale land
+            directly on the <img> itself instead — the picture, not the stage around it —
+            so they stay correct under pan/zoom without fighting the library's own
+            transform on the wrapper/content divs above. */}
+        <div className="grid max-h-full max-w-full">
+          <img
+            ref={imgRef}
+            data-slot="viewer-image"
+            style={{ gridArea: '1 / 1' }}
+            className={`pointer-events-auto! max-h-full max-w-full cursor-grab object-contain active:cursor-grabbing ${flip ? 'scale-x-[-1]' : ''} ${gray ? 'grayscale' : ''}`}
+            src={src}
+            alt={alt}
+            decoding="async"
+            draggable={false}
+            onLoad={publish}
+            onDoubleClick={onDouble}
+            onPointerDown={onPointerDown}
+            onPointerUp={onPointerUp}
+          />
+          {grid && <div aria-hidden data-slot="viewer-grid-overlay" style={{ gridArea: '1 / 1', mixBlendMode: 'difference', backgroundImage: THIRDS_GRID_LINES }} className="pointer-events-none" />}
+        </div>
       </TransformComponent>
     </TransformWrapper>
   );
@@ -239,6 +282,17 @@ export function ImageTab({ model }: { model: ImageTabModel }) {
     preloader.current.sync(neighborPreloadSources(items, i));
   }, [items, i]);
   useEffect(() => () => preloader.current?.clear(), []);
+  // #80's flip/grid/grayscale toggles — read here so every slide type below can apply
+  // them, written by image-tab/ViewerToolbar.tsx (services/image-overlay.ts is the
+  // shared layer, same event-half shape as image-zoom.ts). Reset once per mount: this
+  // component is keyed on model.tabId (image-tab/index.tsx), so a mount here always
+  // means either a genuinely fresh image view or a switch to a DIFFERENT tab — never a
+  // page turn within the same one (that only changes `idx`, not the key) — matching
+  // #80's confirmed lifetime (ephemeral per tab, never carried into another).
+  const overlay = useSyncExternalStore(subscribeOverlay, getOverlayState);
+  useEffect(() => {
+    resetOverlay();
+  }, []);
   if (missing || !items.length) {
     return (
       <Empty>
@@ -271,11 +325,11 @@ export function ImageTab({ model }: { model: ImageTabModel }) {
     // remounted <img> hits a warm resource and a warm decode.
     <div data-slot="image-tab-stage" className="relative flex min-w-0 flex-1 overflow-hidden">
       {item.ugoira ? (
-        <UgoiraPlayer key={item.src} file={item.ugoira.file} frames={item.ugoira.frames} poster={item.poster} alt={item.alt} labels={labels} />
+        <UgoiraPlayer key={item.src} file={item.ugoira.file} frames={item.ugoira.frames} poster={item.poster} alt={item.alt} labels={labels} flip={overlay.flip} gray={overlay.gray} />
       ) : item.video ? (
-        <video key={item.src} data-slot="viewer-video" className="m-auto max-h-full max-w-full object-contain" src={item.src} controls playsInline preload="metadata" />
+        <video key={item.src} data-slot="viewer-video" className={`m-auto max-h-full max-w-full object-contain ${overlay.flip ? 'scale-x-[-1]' : ''} ${overlay.gray ? 'grayscale' : ''}`} src={item.src} controls playsInline preload="metadata" />
       ) : (
-        <Zoomable key={item.src} src={item.src} alt={item.alt || ''} />
+        <Zoomable key={item.src} src={item.src} alt={item.alt || ''} flip={overlay.flip} gray={overlay.gray} grid={overlay.grid} />
       )}
       {multi && (
         <>

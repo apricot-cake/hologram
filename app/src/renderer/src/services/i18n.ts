@@ -119,6 +119,10 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     itvZoomIn: 'ズームイン',
     itvFitToWindow: 'ウィンドウに合わせる (Ctrl+0)',
     itvActualSize: '原寸 (Ctrl+1)',
+    // 作画支援オーバーレイ（#80）: 左右反転・グリッド・グレースケール
+    itvFlip: '左右反転',
+    itvGrid: 'グリッド',
+    itvGrayscale: 'グレースケール',
     // Ugoira playback (#119 St3). Uses pixiv's own name for it as-is (no coined terms)
     ugoiraLabel: 'うごイラ',
     ugoiraPlay: '再生',
@@ -680,6 +684,10 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     itvZoomIn: 'Zoom in',
     itvFitToWindow: 'Fit to window (Ctrl+0)',
     itvActualSize: 'Actual size (Ctrl+1)',
+    // Drawing-aid overlay (#80): flip horizontal, grid, grayscale
+    itvFlip: 'Flip horizontal',
+    itvGrid: 'Grid',
+    itvGrayscale: 'Grayscale',
     ugoiraLabel: 'Ugoira animation',
     ugoiraPlay: 'Play',
     ugoiraPause: 'Pause',

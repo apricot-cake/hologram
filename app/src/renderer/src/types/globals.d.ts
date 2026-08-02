@@ -127,6 +127,12 @@ declare global {
   // interface needed for it (HologramImageTabModel stays: the shared data shape
   // between image-tab.ts and this component).
   interface HologramImageTabModel {
+    // The active tab's own id (#80) — image-tab/index.tsx keys the ImageTab component on
+    // this, so switching straight from one image tab to another (both already showing
+    // their own image view, so this host never unmounts) remounts the component instead
+    // of reusing it — which is what resets the overlay toggles (services/image-overlay.ts)
+    // instead of leaking them into the new tab's picture.
+    tabId: string;
     items: { src: string; alt?: string; video?: boolean }[];
     idx: number;
     missing?: boolean;
