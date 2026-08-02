@@ -23,7 +23,7 @@ import type { BrowserWindow } from 'electron';
 import type Database from 'better-sqlite3';
 import type { createDbWriter } from './lib-db-write.ts';
 import type { relocateLibrary } from './lib-migrate.ts';
-import type { BackupConfig, BackupRunResult, IntegrityStatus, LibraryStatus, OrphanRecoveryResult, PostsDelta, PostsSnapshot, ValidationResult, WatchImportConfig, WatchImportFolder } from './ipc-payloads.ts';
+import type { BackupConfig, BackupRunResult, FullTextHit, IntegrityStatus, LibraryStatus, OrphanRecoveryResult, PostsDelta, PostsSnapshot, ValidationResult, WatchImportConfig, WatchImportFolder } from './ipc-payloads.ts';
 
 /** The organization-state writer every DB-backed handler goes through. */
 export type DbWriter = ReturnType<typeof createDbWriter>;
@@ -87,6 +87,8 @@ export interface IpcContext {
   sweepReplacements(): Promise<void>;
   listPosts(): Promise<PostsSnapshot>;
   listPostsDelta(haveBaseline: boolean): Promise<PostsDelta>;
+  /** #29: cross-tab full-text search — bm25() rank per posts_fts MATCH hit. */
+  searchFullText(query: string, limit?: number): Promise<FullTextHit[]>;
 
   // --- Config ---
   readConfig(): HologramConfig;

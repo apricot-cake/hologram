@@ -11,7 +11,7 @@ import { BulkTagDialogHost } from '../selection/BulkTagDialog.tsx';
 import { TriageHost } from '../triage/index.tsx';
 import { Toaster } from '@/components/ui/sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
-import { handleShortcutPaletteKey } from '../services/command-registry.ts';
+import { handleShortcutFullTextKey, handleShortcutPaletteKey } from '../services/command-registry.ts';
 import { handleShortcutPanelsKey } from '../services/panels.ts';
 import { handleShortcutZoomKey } from '../services/image-zoom.ts';
 import { handleShortcutClipboardKey } from '../services/clipboard-intake.ts';
@@ -132,6 +132,10 @@ function GlobalShortcuts() {
       // opening the palette is pure UI state (guard + action live in
       // services/command-registry.ts, next to the state they read).
       handleShortcutPaletteKey(e);
+      // Ctrl/Cmd+Shift+F = the palette's full-text search mode (#29) — the design's
+      // second entry point next to the palette's own footer row. Same arrangement
+      // as the palette key above (guard + action live next to the state they read).
+      handleShortcutFullTextKey(e);
       // Ctrl/Cmd+Shift+B = hide the sidebar and the inspector together (#245). Same
       // arrangement as the palette key above: guard + action sit next to the state in
       // services/panels.ts, and only the registration is here. Plain Ctrl+B stays with

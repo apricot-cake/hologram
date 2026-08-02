@@ -167,6 +167,11 @@ export function queryEntries(query: string, opts?: QueryOptions): CommandGroup[]
 // --- Open/closed state (pure state — same shape as settings.ts) ---------------------------------
 let open_ = false;
 let openSeq = 0;
+// #29: which face opened. Read once by PaletteBody at mount (keyed on openSeq,
+// same as the query-reset convention below) — never mutated while open, same
+// as the rest of this state (the only way to close is Esc / a background
+// click, unified in runEntry/PaletteHost).
+let openMode_: 'commands' | 'fulltext' = 'commands';
 const subs = new Set<() => void>();
 
 export function isOpen(): boolean {
@@ -182,16 +187,35 @@ export function openId(): number {
   return openSeq;
 }
 
-function set(v: boolean) {
+/** Which face the CURRENT (or most recent) opening was for — 'fulltext' after
+ * openFulltext() (Ctrl/Cmd+Shift+F, or the palette's own footer row), 'commands'
+ * otherwise. */
+export function openMode(): 'commands' | 'fulltext' {
+  return openMode_;
+}
+
+// `mode` is only applied on an actual closed→open transition (guarded by the
+// same `next === open_` early return as everything else here) — a redundant
+// open()/openFulltext() call while already open must NOT silently flip
+// openMode_ out from under whatever is currently showing.
+function set(v: boolean, mode?: 'commands' | 'fulltext') {
   const next = !!v;
   if (next === open_) return;
   open_ = next;
-  if (next) openSeq++;
+  if (next) {
+    openSeq++;
+    openMode_ = mode ?? 'commands';
+  }
   for (const cb of [...subs]) cb();
 }
 
 export function open(): void {
-  set(true);
+  set(true, 'commands');
+}
+
+/** #29: opens the palette straight into full-text search mode (Ctrl/Cmd+Shift+F). */
+export function openFulltext(): void {
+  set(true, 'fulltext');
 }
 
 export function close(): void {
@@ -237,4 +261,17 @@ export function handleShortcutPaletteKey(e: KeyboardEvent): void {
   if (settingsIsOpen()) return;
   e.preventDefault();
   open();
+}
+
+// #29: Ctrl/Cmd+Shift+F opens the palette straight into full-text search mode —
+// the design's second entry point, next to the palette's own "本文を検索" footer
+// row. Same guard shape as handleShortcutPaletteKey above.
+export function handleShortcutFullTextKey(e: KeyboardEvent): void {
+  if (!(e.ctrlKey || e.metaKey) || e.altKey || !e.shiftKey) return;
+  if ((e.key || '').toLowerCase() !== 'f') return;
+  if (open_) return;
+  if (confirmGet() || lightboxIsOpen()) return;
+  if (settingsIsOpen()) return;
+  e.preventDefault();
+  openFulltext();
 }

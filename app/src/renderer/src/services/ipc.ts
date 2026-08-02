@@ -30,6 +30,7 @@ export const hologramIpc: HologramPreload = {
   setExtensionId: (id) => bridge().setExtensionId(id),
   listPosts: () => bridge().listPosts(),
   listPostsDelta: (haveBaseline) => bridge().listPostsDelta(haveBaseline),
+  searchFullText: (query, limit) => bridge().searchFullText(query, limit),
   getTagTypes: () => bridge().getTagTypes(),
   setTagTypes: (types, labels) => bridge().setTagTypes(types, labels),
   getUngrouped: () => bridge().getUngrouped(),

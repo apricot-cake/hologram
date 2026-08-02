@@ -27,6 +27,7 @@ import type {
   ExportSaveResult,
   ExtensionIdResult,
   FoldersState,
+  FullTextHit,
   IntegrityStatus,
   IpcPostRecord,
   LegacyImportResult,
@@ -65,6 +66,10 @@ const api = {
   // Delta refresh: pass true once a full snapshot is held; main returns either a
   // full { full:true, posts:[] } or an incremental { full:false, added, removed }.
   listPostsDelta: (haveBaseline: boolean): Promise<PostsDelta> => ipcRenderer.invoke('list-posts-delta', haveBaseline),
+  // #29: cross-tab full-text search — bm25() relevance order for the palette's
+  // full-text mode (services/fulltext.ts decides which posts match; this only
+  // ranks them).
+  searchFullText: (query: string, limit?: number): Promise<FullTextHit[]> => ipcRenderer.invoke('search-full-text', query, limit),
   getTagTypes: (): Promise<TagTypesState> => ipcRenderer.invoke('get-tag-types'),
   setTagTypes: (types: unknown, labels?: unknown): Promise<OkResult> => ipcRenderer.invoke('set-tag-types', types, labels),
   getUngrouped: (): Promise<UngroupedState> => ipcRenderer.invoke('get-ungrouped'),
