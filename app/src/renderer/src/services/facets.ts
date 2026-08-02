@@ -7,7 +7,7 @@
 // the wiring point (posterQB / pfStore / the hologramQuery destructure) as deferred
 // wrappers — so this file loads under Node too (scripts/test-facets-unit.cts).
 
-import { kindOf } from './query.ts';
+import { hasVisualMedia, kindOf } from './query.ts';
 
 // Poster-platform facet sort order (facet rows only — viewer's own PF lists are
 // written inline where they render).
@@ -169,6 +169,14 @@ export function makeFacets(deps: {
         // ("Multiple images" was folded in here as __multi; it's now a first-class sidebar
         //  toggle row — setupMultiSidebar in viewer.js — so the Media flyout is
         //  back to just the per-record media types image/video/gif.)
+        // #365: a 4th row for records with no media at all (a text-only post) —
+        // '__none' sentinel, same shape as "no platform"/"no tags" above, and same
+        // "only list it if it would come up populated" rule. mediaType can't find
+        // these on its own (see hasVisualMedia's doc comment in query.ts).
+        if (allPosts().some((p) => !hasVisualMedia(p))) {
+          const noneCnt = facetCounts((p) => (!hasVisualMedia(p) ? '__none' : null));
+          out.push({ v: '__none', l: t('qfMediaNone'), on: act('media', '__none'), count: noneCnt.get('__none') || 0 });
+        }
         return out;
       }
       case 'poster-tag': {

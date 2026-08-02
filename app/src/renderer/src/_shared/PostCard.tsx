@@ -315,6 +315,49 @@ export function CardThumb({ m, shape, onAspect, className, imgClassName, style: 
   );
 }
 
+// #365: how many lines of body text the plate shows before it clips, one bucket
+// per discrete height step records.ts's textPlateAspect assigns. A square crop
+// gets its own fixed count — its height ignores the step entirely (the step only
+// drives the ORIGINAL-aspect grid's reserved height; square crops every cell to
+// the column width regardless of aspRatio).
+const PLATE_LINES: Record<string, string> = {
+  '4/3': 'line-clamp-3',
+  '1/1': 'line-clamp-6',
+  '3/4': 'line-clamp-[10]',
+  '2/3': 'line-clamp-[14]',
+};
+
+/** ¶-style glyph for the overview zoom (#141): body text is unreadable at that
+ * scale (same reasoning as the ×N badge going quiet there, just below this in
+ * PostCard), so the plate falls back to a bare mark instead of a paragraph
+ * nobody can read anyway. */
+function PlateGlyph() {
+  return (
+    <svg viewBox="0 0 24 24" width="30%" height="30%" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" aria-hidden="true">
+      <path d="M6 7h12M6 12h12M6 17h8" />
+    </svg>
+  );
+}
+
+/**
+ * The face a text-only post shows in the thumbnail's own slot (#365): the body
+ * text itself, on a surface one step back from the card (`--surface-2`), standing
+ * in for a card with no image or video to lead with. No quote marks, no speech
+ * bubble, no per-platform styling — the same "one card, no platform mimicry"
+ * rule the rest of the card already follows. PostCard renders exactly one of this
+ * or CardThumb per card (never both — see `m.hasThumb` at the call site) and
+ * skips the info block's own body-text line whenever this is showing, so no card
+ * ever says the same paragraph twice.
+ */
+export function TextPlate({ m, shape, overview, className, style: boxStyle }: { m: PostCardModel; shape: DisplayShape; overview?: boolean; className?: string; style?: CSSProperties }) {
+  const style = m.aspRatio ? { aspectRatio: m.aspRatio, ...boxStyle } : boxStyle;
+  return (
+    <div data-slot="post-card-plate" className={cn('flex items-center justify-center bg-[var(--surface-2)] p-3 text-[var(--text-muted)]', className)} style={style}>
+      {overview ? <PlateGlyph /> : <p className={cn('w-full text-[13px] text-[var(--text)] leading-snug whitespace-pre-wrap', shape.square ? 'line-clamp-6' : (PLATE_LINES[m.aspRatio || ''] ?? 'line-clamp-6'))}>{m.text}</p>}
+    </div>
+  );
+}
+
 /** Turns the grid model's action set into the props a cell root spreads. */
 export function cellHandlers(actions: HologramCardActions | undefined, group: unknown) {
   if (!actions) return {};
@@ -378,7 +421,10 @@ export function PostCard({ m, shape, overview, group, actions, cellRef, onAspect
           {m.mediaLabel && <span>{m.mediaLabel}</span>}
         </div>
       )}
-      {m.text && <div className={cn('mb-1.5 text-[13px] text-[var(--text)]', shape.square ? 'line-clamp-1' : 'line-clamp-3')}>{m.text}</div>}
+      {/* #365: a text-only card already says its body ONCE, on the plate below —
+          this line would be the same paragraph twice, so it only draws when
+          there IS a real thumbnail for the plate to have stood in for. */}
+      {m.text && m.hasThumb && <div className={cn('mb-1.5 text-[13px] text-[var(--text)]', shape.square ? 'line-clamp-1' : 'line-clamp-3')}>{m.text}</div>}
       {/* Pinned to the bottom edge so the date lines up across a row of cards of
           different text lengths. */}
       <MetaFoot m={m} className="mt-auto pt-1.5" />
@@ -396,7 +442,7 @@ export function PostCard({ m, shape, overview, group, actions, cellRef, onAspect
   return (
     <div ref={cellRef} data-slot="post-card" data-selected={m.selected || undefined} data-inspected={m.inspected || undefined} className={cn(cellChrome(m, grouped), 'flex w-full flex-col rounded-lg')} style={grouped ? { paddingTop: g.deck } : undefined} {...cellHandlers(actions, group)}>
       {grouped && <StackSheets shape={shape} srcs={stack} imgBox={shape.square ? 'inset-0' : 'inset-x-0 top-0 bottom-[44%]'} />}
-      {m.hasThumb && (
+      {m.hasThumb ? (
         <CardThumb
           m={m}
           shape={shape}
@@ -404,6 +450,8 @@ export function PostCard({ m, shape, overview, group, actions, cellRef, onAspect
           className={cn('overflow-hidden', shape.square && 'aspect-square w-full', shape.info ? 'rounded-t-lg' : 'rounded-lg')}
           imgClassName={cn('block w-full cursor-zoom-in object-cover transition-transform duration-500 ease-[var(--ease-out)] group-hover:scale-[1.055] motion-reduce:transform-none', shape.square ? 'h-full max-h-none' : 'max-h-[300px]')}
         />
+      ) : (
+        <TextPlate m={m} shape={shape} overview={overview} className={cn('overflow-hidden', shape.square && 'aspect-square w-full', shape.info ? 'rounded-t-lg' : 'rounded-lg')} />
       )}
       {showBadge && <CountBadge n={m.nImg as number} top={(grouped ? g.deck : 0) + 8} />}
       {info}

@@ -71,6 +71,44 @@ describe('葉の述語', () => {
     expect(predOf({ type: 'kind', value: 'image' })(post({ url: '' }))).toBe(true);
   });
 
+  // #365: 'media' の '__none' は「文字だけの投稿」— mediaType 単体では作れない
+  // (null は「無い」と「取れなかった」の両方を意味しうる) ので image/video/media
+  // の実体を見る。
+  describe("media: '__none'（#365 テキストのみ）", () => {
+    test('image/video/media のいずれも無ければ真', () => {
+      expect(predOf({ type: 'media', value: '__none' })(post({ mediaType: null }))).toBe(true);
+    });
+
+    test('mediaType が無くても image があれば偽', () => {
+      expect(predOf({ type: 'media', value: '__none' })(post({ mediaType: null, image: 'a.jpg' }))).toBe(false);
+    });
+
+    test('media[] にファイルがあれば偽', () => {
+      expect(predOf({ type: 'media', value: '__none' })(post({ mediaType: null, media: [{ file: 'a.mp4' }] }))).toBe(false);
+    });
+
+    test('通常の media 一致は影響を受けない', () => {
+      expect(predOf({ type: 'media', value: 'image' })(post({ mediaType: 'image', image: 'a.jpg' }))).toBe(true);
+    });
+  });
+
+  describe('Q.hasVisualMedia（#365）', () => {
+    test('image/video/media[].file のいずれかがあれば真', () => {
+      expect(Q.hasVisualMedia(post({ image: 'a.jpg' }))).toBe(true);
+      expect(Q.hasVisualMedia(post({ video: 'a.mp4' }))).toBe(true);
+      expect(Q.hasVisualMedia(post({ media: [{ file: 'a.jpg' }] }))).toBe(true);
+    });
+
+    test('どれも無ければ偽（mediaType が残っていても見ない）', () => {
+      expect(Q.hasVisualMedia(post({ mediaType: 'image' }))).toBe(false);
+    });
+
+    test('media[] はファイルを持つ要素が無ければ偽', () => {
+      expect(Q.hasVisualMedia(post({ media: [{ alt: 'no file' }] }))).toBe(false);
+      expect(Q.hasVisualMedia(post({ media: [] }))).toBe(false);
+    });
+  });
+
   // #195: bookmark は source 印優先＝url を持っていても post/image どちらにも
   // 一致しない（kindOf の導出ルール、query.ts 側の単体確認）。
   describe('kind: bookmark（source 印優先）', () => {
