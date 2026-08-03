@@ -270,6 +270,11 @@ export interface PostRecordShape {
   source: string | null;
   shotW: number | null;
   shotH: number | null;
+  // #8: is the card image (the same file shotW/shotH describe) an animated
+  // webp — see app/src/main/lib-card-dims.ts's fillCardDims and records.ts's
+  // imgW carve-out. Null on every row written before the add-post-shot-animated
+  // migration, same convention as shotW/shotH itself.
+  shotAnimated: boolean | null;
   // #162: per-record media-size aggregates (max across media[], falling back to
   // the card image when media[] is empty — see app/src/main/lib-media-dims.ts
   // for the write-time measurement this mirrors shotW/shotH's own convention).
@@ -556,6 +561,7 @@ export function normalizePostRecord(input: PostRecordInput, now: () => string = 
     source: normStr(input.source),
     shotW: normNum(input.shotW),
     shotH: normNum(input.shotH),
+    shotAnimated: normBool(input.shotAnimated),
     mediaMaxW: normNum(input.mediaMaxW),
     mediaMaxH: normNum(input.mediaMaxH),
     mediaMaxBytes: normNum(input.mediaMaxBytes),
