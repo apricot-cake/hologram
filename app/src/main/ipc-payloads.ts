@@ -365,6 +365,33 @@ export interface TabsState {
   activeTabId: string | null;
 }
 
+// --- Global history (#145, ipc-history.ts) --------------------------------
+/** One row of the history table. `state` is the #144 nav entry's kind-specific restore state, verbatim. */
+export interface HistoryRow {
+  id: number;
+  ts: number;
+  u: string;
+  kind: string;
+  title: string;
+  state: unknown;
+}
+
+/** query-history's cursor for the next page — the last row's (ts, id) keyset pair. */
+export interface HistoryCursor {
+  ts: number;
+  id: number;
+}
+
+export interface HistoryQueryOptions {
+  search?: string;
+  before?: HistoryCursor | null;
+}
+
+export interface HistoryQueryResult {
+  rows: HistoryRow[];
+  hasMore: boolean;
+}
+
 // --- Backup + integrity (ipc-backup.ts) ---------------------------------
 /** The `lastResult` summary readBackupConfig hands back with the config. */
 export interface BackupSummary {

@@ -30,6 +30,8 @@ import type {
   ExtensionContactStatus,
   FoldersState,
   FullTextHit,
+  HistoryQueryOptions,
+  HistoryQueryResult,
   IntegrityStatus,
   IpcPostRecord,
   LegacyImportResult,
@@ -114,6 +116,13 @@ const api = {
   setFolders: (data: unknown): Promise<OkResult> => ipcRenderer.invoke('set-folders', data),
   getTabs: (): Promise<TabsState | null> => ipcRenderer.invoke('get-tabs'),
   setTabs: (data: unknown): Promise<OkResult> => ipcRenderer.invoke('set-tabs', data),
+  // #145: global history page. append is fire-and-forget from the renderer's
+  // push-time hook (services/history.ts); query pages by (ts, id) keyset, not
+  // OFFSET (see lib-db-write.ts's queryHistory comment).
+  appendHistory: (row: unknown): Promise<OkResult> => ipcRenderer.invoke('append-history', row),
+  queryHistory: (opts: HistoryQueryOptions): Promise<HistoryQueryResult> => ipcRenderer.invoke('query-history', opts),
+  deleteHistoryRow: (id: number): Promise<OkResult> => ipcRenderer.invoke('delete-history-row', id),
+  clearHistory: (): Promise<OkResult> => ipcRenderer.invoke('clear-history'),
   openExternal: (url: string): Promise<void> => ipcRenderer.invoke('open-external', url),
   // false = refused. The standalone viewer shows raster images only (#215): an
   // SVG there would be a scripted document on the library's own origin.

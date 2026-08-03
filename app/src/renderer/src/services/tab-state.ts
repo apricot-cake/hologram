@@ -180,8 +180,13 @@ export function navEntryUrl(kind: HologramNavEntry['kind'], state: any): string 
 //   snapshot() — current view entry (seeds a fresh history on adopt)
 //   apply(entry) — restores a view entry (its restoring guard stops the re-push)
 //   onChange() — fired after every hist/idx mutation (viewer syncs the nav buttons)
-export function makeNavHistory(deps: { cap: number; enabled(): boolean; snapshot(): HologramNavEntry; apply(e: HologramNavEntry): void; onChange(): void }) {
-  const { cap, enabled, snapshot, apply, onChange } = deps;
+//   onPush(entry) — #145: fired from push() ONLY (never replace()), after the
+//                   no-op-duplicate check passes — the exact "a fresh view was
+//                   actually visited" signal the global history page records
+//                   (replace — live typing / gallery paging / sort — is deliberately
+//                   invisible to it, per the Issue's confirmed record-grain design).
+export function makeNavHistory(deps: { cap: number; enabled(): boolean; snapshot(): HologramNavEntry; apply(e: HologramNavEntry): void; onChange(): void; onPush?(e: HologramNavEntry): void }) {
+  const { cap, enabled, snapshot, apply, onChange, onPush } = deps;
   let hist: string[] = [];
   let idx = -1;
   // Coalescing state for record(): while the caller keeps handing the same
@@ -202,6 +207,7 @@ export function makeNavHistory(deps: { cap: number; enabled(): boolean; snapshot
     if (hist.length > cap) hist = hist.slice(hist.length - cap);
     idx = hist.length - 1;
     onChange();
+    onPush?.(e);
   }
   // Rewrite the current entry in place (live typing / gallery paging / sort —
   // the settled replace list). When the rewrite makes it a duplicate of the

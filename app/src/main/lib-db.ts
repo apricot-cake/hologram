@@ -444,6 +444,31 @@ const MIGRATIONS: Migration[] = [
     name: 'add-post-link-card',
     up: (db) => db.exec(`ALTER TABLE posts ADD COLUMN linkCard TEXT;`),
   },
+  // #145: the global history page's backing store. Rows are library-scoped (not
+  // ~/.hologram — a captureId/folder/tag reference only resolves against ITS
+  // library, see the Issue's 2026-08-02 design comment §3), one row per #144
+  // PUSH entry (replace entries — live typing, gallery paging, sort — are never
+  // recorded; the renderer decides push vs replace before appending). `state` is
+  // the entry's kind-specific restore state, THINNED (no multi-select, no scroll
+  // position — see the design comment's §3 "state は間引く") so 5万行 stays in
+  // the tens-of-MB range. `u`/`title` are the pseudo-URL and display label
+  // tab-state.ts already derives (navEntryUrl / tabTitleOf) — this table adds no
+  // label-generation logic of its own.
+  {
+    name: 'add-history-table',
+    up: (db) =>
+      db.exec(`
+        CREATE TABLE history (
+          id INTEGER PRIMARY KEY,
+          ts INTEGER NOT NULL,
+          u TEXT NOT NULL,
+          kind TEXT NOT NULL,
+          title TEXT NOT NULL,
+          state TEXT NOT NULL
+        );
+        CREATE INDEX idx_history_ts ON history(ts, id);
+      `),
+  },
 ];
 
 interface Migration {
@@ -758,6 +783,18 @@ interface PostsFtsTable {
   cw: string | null; // add-post-cw-sensitive migration (#178) — the author's own CW text
 }
 
+// add-history-table migration (#145) — see the MIGRATIONS entry. state is JSON,
+// the same "opaque replay blob" convention TabsTable.state uses (not queried by
+// column — kind decides how the row's own restore dispatch reads it).
+interface HistoryTable {
+  id: Generated<number>;
+  ts: number;
+  u: string;
+  kind: string;
+  title: string;
+  state: string;
+}
+
 interface Schema {
   posts: PostsTable;
   media: MediaTable;
@@ -777,6 +814,7 @@ interface Schema {
   ungrouped_keys: UngroupedKeysTable;
   tabs: TabsTable;
   tab_windows: TabWindowsTable;
+  history: HistoryTable;
   store_state: StoreStateTable;
   posts_fts: PostsFtsTable;
   inbox_events: InboxEventsTable;

@@ -16,6 +16,7 @@ import { AliasPickerHost } from '../posters/AliasPicker.tsx';
 import { Toaster } from '@/components/ui/sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { handleShortcutFullTextKey, handleShortcutPaletteKey } from '../services/command-registry.ts';
+import { handleShortcutHistoryKey } from '../services/history-panel.ts';
 import { handleShortcutPanelsKey } from '../services/panels.ts';
 import { handleShortcutZoomKey } from '../services/image-zoom.ts';
 import { handleShortcutClipboardKey } from '../services/clipboard-intake.ts';
@@ -155,6 +156,10 @@ function GlobalShortcuts() {
       // second entry point next to the palette's own footer row. Same arrangement
       // as the palette key above (guard + action live next to the state they read).
       handleShortcutFullTextKey(e);
+      // Ctrl/Cmd+H = the global history page (#145) — third entry point next to
+      // the sidebar footer row and the palette's cmd:history. Same arrangement
+      // as the palette key above.
+      handleShortcutHistoryKey(e);
       // Ctrl/Cmd+Shift+B = hide the sidebar and the inspector together (#245). Same
       // arrangement as the palette key above: guard + action sit next to the state in
       // services/panels.ts, and only the registration is here. Plain Ctrl+B stays with

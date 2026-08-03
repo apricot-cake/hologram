@@ -540,6 +540,69 @@ function readTabs(sqlite: Sqlite) {
   return { tabs, activeTabId: active?.activeTabId || null };
 }
 
+// #145: the global history page's store. One row per #144 push entry (the
+// renderer decides push-vs-replace before calling append — see
+// services/history.ts's recordPush); state travels verbatim (HologramNavEntry's
+// state never carries selection or scroll position — those live on the TAB
+// object, not the nav entry — so there is nothing to thin here beyond what the
+// renderer already omits).
+const HISTORY_PAGE_SIZE = 200;
+const HISTORY_MAX_ROWS = 50000;
+const HISTORY_MAX_AGE_MS = 90 * 24 * 60 * 60 * 1000;
+
+function appendHistory(sqlite: Sqlite, row: { ts?: unknown; u?: unknown; kind?: unknown; title?: unknown; state?: unknown }): void {
+  const ts = typeof row.ts === 'number' ? row.ts : Date.now();
+  const u = typeof row.u === 'string' ? row.u : '';
+  const kind = typeof row.kind === 'string' ? row.kind : '';
+  const title = typeof row.title === 'string' ? row.title : '';
+  if (!u || !kind) return;
+  sqlite.prepare('INSERT INTO history (ts, u, kind, title, state) VALUES (?, ?, ?, ?, ?)').run(ts, u, kind, title, JSON.stringify(row.state ?? null));
+}
+
+// Keyset paging (ts, id) DESC — not OFFSET, so a row deleted mid-scroll never
+// shifts the rest of the page (#145 design §5). `search` matches title/u by
+// substring; history tops out at 5万 rows, so posts_fts's trigram index would
+// be overkill for a table this small.
+function queryHistory(sqlite: Sqlite, opts: { search?: unknown; before?: unknown } = {}): { rows: { id: number; ts: number; u: string; kind: string; title: string; state: unknown }[]; hasMore: boolean } {
+  const search = typeof opts.search === 'string' ? opts.search.trim() : '';
+  const beforeRaw = opts.before && typeof opts.before === 'object' ? (opts.before as { ts?: unknown; id?: unknown }) : null;
+  const before = beforeRaw && typeof beforeRaw.ts === 'number' && typeof beforeRaw.id === 'number' ? (beforeRaw as { ts: number; id: number }) : null;
+  const clauses: string[] = [];
+  const params: unknown[] = [];
+  if (search) {
+    clauses.push('(title LIKE ? OR u LIKE ?)');
+    const like = `%${search}%`;
+    params.push(like, like);
+  }
+  if (before) {
+    clauses.push('(ts < ? OR (ts = ? AND id < ?))');
+    params.push(before.ts, before.ts, before.id);
+  }
+  const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
+  const rows = sqlite.prepare(`SELECT id, ts, u, kind, title, state FROM history ${where} ORDER BY ts DESC, id DESC LIMIT ?`).all(...params, HISTORY_PAGE_SIZE + 1) as { id: number; ts: number; u: string; kind: string; title: string; state: string }[];
+  const hasMore = rows.length > HISTORY_PAGE_SIZE;
+  const page = hasMore ? rows.slice(0, HISTORY_PAGE_SIZE) : rows;
+  return { rows: page.map((r) => ({ id: r.id, ts: r.ts, u: r.u, kind: r.kind, title: r.title, state: JSON.parse(r.state) })), hasMore };
+}
+
+function deleteHistoryRow(sqlite: Sqlite, id: unknown): void {
+  if (typeof id !== 'number') return;
+  sqlite.prepare('DELETE FROM history WHERE id = ?').run(id);
+}
+
+function clearHistory(sqlite: Sqlite): void {
+  sqlite.prepare('DELETE FROM history').run();
+}
+
+// 90 days OR a 5万-row cap, whichever trims more — run once per DB open
+// (index.ts's ensurePostsSynced), not per append: an append-time DELETE would
+// turn every push into an O(rows) scan (#145 design §5 "掃除＝DB を開いた時に1回").
+function pruneHistory(sqlite: Sqlite): void {
+  const cutoff = Date.now() - HISTORY_MAX_AGE_MS;
+  sqlite.prepare('DELETE FROM history WHERE ts < ?').run(cutoff);
+  sqlite.prepare('DELETE FROM history WHERE id NOT IN (SELECT id FROM history ORDER BY ts DESC, id DESC LIMIT ?)').run(HISTORY_MAX_ROWS);
+}
+
 function createDbWriter(sqlite: Sqlite) {
   const transaction = <T>(fn: () => T) => sqlite.transaction(fn)();
   return {
@@ -565,6 +628,11 @@ function createDbWriter(sqlite: Sqlite) {
     setPosterAliases: (data: unknown) => transaction(() => replacePosterAliases(sqlite, data)),
     getTabs: () => readTabs(sqlite),
     setTabs: (data: unknown) => transaction(() => replaceTabs(sqlite, data)),
+    appendHistory: (row: { ts?: unknown; u?: unknown; kind?: unknown; title?: unknown; state?: unknown }) => transaction(() => appendHistory(sqlite, row)),
+    queryHistory: (opts: { search?: unknown; before?: unknown }) => queryHistory(sqlite, opts),
+    deleteHistoryRow: (id: unknown) => transaction(() => deleteHistoryRow(sqlite, id)),
+    clearHistory: () => transaction(() => clearHistory(sqlite)),
+    pruneHistory: () => transaction(() => pruneHistory(sqlite)),
     setPostTags: (postId: string, tags: unknown, patch: unknown) => transaction(() => replacePostTags(sqlite, postId, tags, patch)),
     getPostFlags: (postId: string) => readPostFlags(sqlite, postId),
     restorePostFlags: (postId: string, rec: { userKind?: unknown; tagReviewed?: unknown; folders?: unknown; manualGroups?: unknown }) => transaction(() => applyPostFlagsFromRecord(sqlite, postId, rec)),
