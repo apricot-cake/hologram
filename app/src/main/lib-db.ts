@@ -444,6 +444,118 @@ const MIGRATIONS: Migration[] = [
     name: 'add-post-link-card',
     up: (db) => db.exec(`ALTER TABLE posts ADD COLUMN linkCard TEXT;`),
   },
+  // #145: the global history page's backing store. Rows are library-scoped (not
+  // ~/.hologram — a captureId/folder/tag reference only resolves against ITS
+  // library, see the Issue's 2026-08-02 design comment §3), one row per #144
+  // PUSH entry (replace entries — live typing, gallery paging, sort — are never
+  // recorded; the renderer decides push vs replace before appending). `state` is
+  // the entry's kind-specific restore state, THINNED (no multi-select, no scroll
+  // position — see the design comment's §3 "state は間引く") so 5万行 stays in
+  // the tens-of-MB range. `u`/`title` are the pseudo-URL and display label
+  // tab-state.ts already derives (navEntryUrl / tabTitleOf) — this table adds no
+  // label-generation logic of its own.
+  {
+    name: 'add-history-table',
+    up: (db) =>
+      db.exec(`
+        CREATE TABLE history (
+          id INTEGER PRIMARY KEY,
+          ts INTEGER NOT NULL,
+          u TEXT NOT NULL,
+          kind TEXT NOT NULL,
+          title TEXT NOT NULL,
+          state TEXT NOT NULL
+        );
+        CREATE INDEX idx_history_ts ON history(ts, id);
+      `),
+  },
+  // #289: the poster-profile snapshot store — a CURRENT row per poster plus a
+  // history table that gains a row only when the poster's own "appearance"
+  // (displayName/screenName/bio/links/avatar(+File)/banner(+File)) actually
+  // changed, confirmed against a content hash (lib-poster-profile.ts's
+  // posterAppearanceHash). This is the system-versioned temporal-table shape
+  // (a current table plus a mirrored-schema history table) SQL:2011 describes
+  // and SQL Server implements natively — SQLite has no built-in equivalent, so
+  // this migration hand-rolls the pair (#289's 2026-08-02 design comment).
+  //
+  // followers/authorCreatedAt ride along on BOTH tables but are deliberately
+  // OUTSIDE the content hash: they are point-in-time counters that would
+  // otherwise mint a new history row on nearly every save of a popular
+  // poster's posts, defeating "a row only when something changed". They are
+  // still recorded on the row a hash change created, and updated on the
+  // CURRENT row on every observation regardless of whether the hash moved.
+  //
+  // posterKey is the PRIMARY KEY, not a foreign key to anything — it is the
+  // same string services/query.ts's userKey() already produces and
+  // poster_folders/poster_tags already key by, but no posts column names one
+  // (a poster's key is derived from a post row, not stored on it), so there is
+  // nothing here to reference. A poster whose every post is later deleted
+  // keeps its row (same "no active cleanup" convention poster_folders/
+  // poster_tags already follow) — intentional: the whole point of this store
+  // is to outlive the posts that once evidenced it.
+  //
+  // Written by lib-db-record-writer.ts's writePost, in the SAME transaction as
+  // the post it observed (no separate write path, so a poster can never be
+  // "half updated" relative to the post that triggered it).
+  //
+  // No data backfill runs here: computing an existing library's poster rows
+  // from its posts table needs node:crypto for the content hash, which the
+  // narrow MigrationDb (exec/pragma only, this file's own module comment)
+  // cannot reach — lib-backfill-poster-profiles.ts does that lazily, once,
+  // gated by store_state, the same "acquires it on the next launch rather
+  // than needing a migration" shape lib-db-write.ts's ensureLibraryId and
+  // lib-migrate-poster-key-host.ts's one-time rewrite both already use.
+  {
+    name: 'add-poster-profiles',
+    up: (db) =>
+      db.exec(`
+        CREATE TABLE poster_profiles (
+          posterKey TEXT PRIMARY KEY,
+          platform TEXT NOT NULL,
+          userId TEXT,
+          instance TEXT,
+          displayName TEXT,
+          screenName TEXT,
+          bio TEXT,
+          links TEXT,
+          avatar TEXT,
+          avatarFile TEXT,
+          banner TEXT,
+          bannerFile TEXT,
+          followers INTEGER,
+          authorCreatedAt TEXT,
+          contentHash TEXT NOT NULL,
+          provenance TEXT NOT NULL,
+          firstObservedAt TEXT NOT NULL,
+          lastObservedAt TEXT NOT NULL
+        );
+        CREATE TABLE poster_profile_snapshots (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          posterKey TEXT NOT NULL REFERENCES poster_profiles(posterKey) ON DELETE CASCADE,
+          observedAt TEXT NOT NULL,
+          displayName TEXT,
+          screenName TEXT,
+          bio TEXT,
+          links TEXT,
+          avatar TEXT,
+          avatarFile TEXT,
+          banner TEXT,
+          bannerFile TEXT,
+          followers INTEGER,
+          authorCreatedAt TEXT,
+          contentHash TEXT NOT NULL,
+          provenance TEXT NOT NULL
+        );
+        CREATE UNIQUE INDEX idx_poster_profile_snapshots_identity ON poster_profile_snapshots(posterKey, contentHash, observedAt);
+        CREATE INDEX idx_poster_profile_snapshots_key ON poster_profile_snapshots(posterKey, observedAt);
+      `),
+  },
+  // #8: whether the card image (the same file shotW/shotH describe) is an
+  // ANIMATED webp — see app/src/main/lib-card-dims.ts's fillCardDims and
+  // records.ts's imgW carve-out. Null on every row written before this
+  // migration, same "ride the existing write-time mechanism" convention as
+  // shotW/shotH/mediaMaxW itself.
+  { name: 'add-post-shot-animated', up: (db) => db.exec('ALTER TABLE posts ADD COLUMN shotAnimated INTEGER') },
 ];
 
 interface Migration {
@@ -618,6 +730,8 @@ interface PostsTable {
   // add-post-link-card migration (#181) — JSON LinkCardShape, same storage
   // convention as quotedPost/replyToPost/poll. See PostRecordShape.linkCard.
   linkCard: string | null;
+  // add-post-shot-animated migration (#8) — see PostRecordShape.shotAnimated.
+  shotAnimated: number | null;
 }
 interface MediaTable {
   id: Generated<number>;
@@ -739,6 +853,47 @@ interface RawPayloadsTable {
   byteLength: number;
   payload: Buffer | null;
 }
+// add-poster-profiles migration (#289) — see the MIGRATIONS entry for the
+// current/history table split and why followers/authorCreatedAt ride along
+// outside contentHash. links is a JSON string (ProfileLinkShape[] | null),
+// same storage convention as posts.hashtags/domFilled.
+interface PosterProfilesTable {
+  posterKey: string;
+  platform: string;
+  userId: string | null;
+  instance: string | null;
+  displayName: string | null;
+  screenName: string | null;
+  bio: string | null;
+  links: string | null;
+  avatar: string | null;
+  avatarFile: string | null;
+  banner: string | null;
+  bannerFile: string | null;
+  followers: number | null;
+  authorCreatedAt: string | null;
+  contentHash: string;
+  provenance: string;
+  firstObservedAt: string;
+  lastObservedAt: string;
+}
+interface PosterProfileSnapshotsTable {
+  id: Generated<number>;
+  posterKey: string;
+  observedAt: string;
+  displayName: string | null;
+  screenName: string | null;
+  bio: string | null;
+  links: string | null;
+  avatar: string | null;
+  avatarFile: string | null;
+  banner: string | null;
+  bannerFile: string | null;
+  followers: number | null;
+  authorCreatedAt: string | null;
+  contentHash: string;
+  provenance: string;
+}
 // postsFts is FTS5 (posts_fts): a virtual table, not a normal one, so Kysely's
 // typed insert/select work but its DDL helpers do not apply — it is created as
 // raw SQL in lib-db-schema.ts. postId is UNINDEXED (match results carry it
@@ -756,6 +911,18 @@ interface PostsFtsTable {
   tagsText: string | null; // resolved tag names, space-joined (post_tags has no text to index directly)
   reading: string | null; // #164 backfills this; empty at every row until then
   cw: string | null; // add-post-cw-sensitive migration (#178) — the author's own CW text
+}
+
+// add-history-table migration (#145) — see the MIGRATIONS entry. state is JSON,
+// the same "opaque replay blob" convention TabsTable.state uses (not queried by
+// column — kind decides how the row's own restore dispatch reads it).
+interface HistoryTable {
+  id: Generated<number>;
+  ts: number;
+  u: string;
+  kind: string;
+  title: string;
+  state: string;
 }
 
 interface Schema {
@@ -777,11 +944,14 @@ interface Schema {
   ungrouped_keys: UngroupedKeysTable;
   tabs: TabsTable;
   tab_windows: TabWindowsTable;
+  history: HistoryTable;
   store_state: StoreStateTable;
   posts_fts: PostsFtsTable;
   inbox_events: InboxEventsTable;
   inbox_segments: InboxSegmentsTable;
   raw_payloads: RawPayloadsTable;
+  poster_profiles: PosterProfilesTable;
+  poster_profile_snapshots: PosterProfileSnapshotsTable;
 }
 
 export { openDatabase, runMigrations, DatabaseCorruptError, MIGRATIONS };

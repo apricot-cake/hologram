@@ -45,8 +45,9 @@ const { configDir, defaultLibraryDir } = require('../native-host/paths.cts');
 const POLL_MS = 2000;
 
 // Read-only handle: never take the writer role away from the running app.
+// #176: hologram.db lives inside the save folder now, not configDir (ADR 0025).
 function openReadOnly() {
-  const file = path.join(configDir(), 'hologram.db');
+  const file = path.join(saveFolder(), 'hologram.db');
   if (!fs.existsSync(file)) {
     console.error('ライブラリのデータベースが見つかりません: ' + file);
     process.exit(1);
@@ -249,7 +250,7 @@ if (require.main === module) {
       process.exit(okAll ? 0 : 1);
     }
 
-    console.log(`監視中: ${path.join(configDir(), 'hologram.db')}`);
+    console.log(`監視中: ${path.join(saveFolder(), 'hologram.db')}`);
     console.log('キャプチャすると自動で検証します（Ctrl+C で終了）\n');
     const seen = new Set(readRecords(db, 1000).map((r: any) => r.captureId));
     setInterval(async () => {

@@ -18,6 +18,7 @@
 import { normalizePostRecord } from '../../../native-host/post-record.mts';
 import { normalizeTagName } from '../../../native-host/tag-normalize.mts';
 import { POSTS_FTS_COLUMNS } from './lib-db-schema.ts';
+import { hasPosterIdentity, posterAppearanceHash, posterInstanceOf, posterKeyOf } from './lib-poster-profile.ts';
 import type Database from 'better-sqlite3';
 import type { PostRecordInput, PostRecordShape } from '../../../native-host/post-record.mts';
 
@@ -86,6 +87,7 @@ const POST_COLUMNS = [
   'customEmojis',
   'poll',
   'linkCard',
+  'shotAnimated',
 ] as const;
 
 const UPSERT_POST_SQL = `INSERT INTO posts (${POST_COLUMNS.join(',')}) VALUES (${POST_COLUMNS.map(() => '?').join(',')})
@@ -171,6 +173,9 @@ function postParams(n: PostRecordShape): unknown[] {
     // #181: 0-or-1 sub-structure, same null-stays-null rule as quotedPost/
     // replyToPost/poll above.
     linkCard: n.linkCard ? JSON.stringify(n.linkCard) : null,
+    // #8: 1 when the card image is an animated webp — see lib-card-dims.ts's
+    // fillCardDims.
+    shotAnimated: toDbBool(n.shotAnimated),
   };
   return POST_COLUMNS.map((c) => byName[c]);
 }
@@ -187,6 +192,10 @@ interface PostStmts {
   claimFtsRowid: Database.Statement;
   deletePost: Database.Statement;
   insertRawPayload: Database.Statement;
+  selectPosterProfile: Database.Statement;
+  insertPosterProfile: Database.Statement;
+  updatePosterProfileCurrent: Database.Statement;
+  insertPosterProfileSnapshot: Database.Statement;
 }
 
 function preparePostStmts(sqlite: Database.Database): PostStmts {
@@ -210,7 +219,58 @@ function preparePostStmts(sqlite: Database.Database): PostStmts {
     // the same post), and idx_raw_payloads_identity turns a replayed write of
     // the same acquisition into a no-op instead of a duplicate row.
     insertRawPayload: sqlite.prepare('INSERT OR IGNORE INTO raw_payloads (postId, sourceKind, acquiredAt, contentType, encoding, sha256, byteLength, payload) VALUES (?,?,?,?,?,?,?,?)'),
+    // #289: poster_profiles/poster_profile_snapshots — see writePosterProfile.
+    selectPosterProfile: sqlite.prepare('SELECT contentHash, lastObservedAt FROM poster_profiles WHERE posterKey = ?'),
+    insertPosterProfile: sqlite.prepare('INSERT INTO poster_profiles (posterKey, platform, userId, instance, displayName, screenName, bio, links, avatar, avatarFile, banner, bannerFile, followers, authorCreatedAt, contentHash, provenance, firstObservedAt, lastObservedAt) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'),
+    updatePosterProfileCurrent: sqlite.prepare('UPDATE poster_profiles SET displayName=?, screenName=?, bio=?, links=?, avatar=?, avatarFile=?, banner=?, bannerFile=?, followers=?, authorCreatedAt=?, contentHash=?, provenance=?, lastObservedAt=? WHERE posterKey=?'),
+    // OR IGNORE: idx_poster_profile_snapshots_identity (posterKey, contentHash,
+    // observedAt) turns a replayed write of the same observation into a no-op,
+    // same convention insertRawPayload above already uses for raw_payloads.
+    insertPosterProfileSnapshot: sqlite.prepare('INSERT OR IGNORE INTO poster_profile_snapshots (posterKey, observedAt, displayName, screenName, bio, links, avatar, avatarFile, banner, bannerFile, followers, authorCreatedAt, contentHash, provenance) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)'),
   };
+}
+
+// #289: one poster observation per post write, in the SAME transaction the
+// caller wraps writePost() in below — the post row and the poster snapshot it
+// evidences commit or roll back together, never one without the other.
+//
+// Skipped entirely for a record with no author identity (hasPosterIdentity) —
+// see that function's comment for why a bookmark/platform-less record must
+// not fall through to posterKeyOf's hostless fallback key.
+function writePosterProfile(stmts: PostStmts, n: PostRecordShape): void {
+  if (!hasPosterIdentity(n)) return;
+  const posterKey = posterKeyOf(n);
+  // links travels as JSON text, same storage convention as hashtags/domFilled
+  // — null (not '[]') when the platform/post carries none, so an absent field
+  // and an empty list are never confused the way #290's customEmojis note
+  // warns against for a DIFFERENT kind of field.
+  const links = n.profileLinks && n.profileLinks.length ? JSON.stringify(n.profileLinks) : null;
+  const contentHash = posterAppearanceHash({ displayName: n.displayName, screenName: n.screenName, bio: n.bio, links, avatar: n.avatar, avatarFile: n.avatarFile, banner: n.banner, bannerFile: n.bannerFile });
+  const provenance = `api:${n.platform || 'unknown'}`;
+  const observedAt = n.capturedAt;
+  const existing = stmts.selectPosterProfile.get(posterKey) as { contentHash: string; lastObservedAt: string } | undefined;
+
+  if (!existing) {
+    stmts.insertPosterProfile.run(posterKey, n.platform, n.userId, posterInstanceOf(n), n.displayName, n.screenName, n.bio, links, n.avatar, n.avatarFile, n.banner, n.bannerFile, n.followers, n.authorCreatedAt, contentHash, provenance, observedAt, observedAt);
+    stmts.insertPosterProfileSnapshot.run(posterKey, observedAt, n.displayName, n.screenName, n.bio, links, n.avatar, n.avatarFile, n.banner, n.bannerFile, n.followers, n.authorCreatedAt, contentHash, provenance);
+    return;
+  }
+
+  // A history row is earned only when the "appearance" hash actually moved —
+  // followers/authorCreatedAt intentionally play no part in that comparison
+  // (see posterAppearanceHash's own comment).
+  if (contentHash !== existing.contentHash) {
+    stmts.insertPosterProfileSnapshot.run(posterKey, observedAt, n.displayName, n.screenName, n.bio, links, n.avatar, n.avatarFile, n.banner, n.bannerFile, n.followers, n.authorCreatedAt, contentHash, provenance);
+  }
+  // #289 design comment #4: a STRICTLY OLDER observation (a replayed inbox
+  // segment, a re-imported ZIP carrying an observedAt from before this run)
+  // must not rewind the "current" row, even though it still earned a history
+  // row above if its content differed from what's there now. Equal
+  // timestamps (two posts by the same poster captured in the same
+  // millisecond) fall through and DO update current — there is nothing to
+  // protect against there.
+  if (observedAt < existing.lastObservedAt) return;
+  stmts.updatePosterProfileCurrent.run(n.displayName, n.screenName, n.bio, links, n.avatar, n.avatarFile, n.banner, n.bannerFile, n.followers, n.authorCreatedAt, contentHash, provenance, observedAt, posterKey);
 }
 
 // Writes (or overwrites) everything derived from ONE record: the posts row,
@@ -244,27 +304,44 @@ function writePost(stmts: PostStmts, resolveTagId: (name: string) => number, rec
     const payload = r.payloadBase64 ? Buffer.from(r.payloadBase64, 'base64') : null;
     stmts.insertRawPayload.run(n.captureId, r.sourceKind, r.acquiredAt, r.contentType, r.encoding, r.sha256, r.byteLength, payload);
   }
+  // #289: the poster-profile snapshot this post's author info evidences, in
+  // the same transaction as everything above.
+  writePosterProfile(stmts, n);
   return n;
 }
 
 // Tags are get-or-create BY NAME, never wiped. Deleting and reinserting a tag
 // would mint a new AUTOINCREMENT id and cascade away any tag_parents/tag_aliases
-// rows curated against the old one (#86/#157 territory), so once a name has a
-// row, that row's id is permanent as far as any producer here is concerned.
+// rows curated against the old one (#157 territory / #86 -- see below), so
+// once a name has a row, that row's id is permanent as far as any producer
+// here is concerned.
 //
 // resolveTagId normalizes (NFKC + trim, #197) before every lookup/insert — a
 // second gate behind normalizePostRecord's (writePost's tags already arrive
 // normalized, so this is idempotent there), and the ONLY gate for
 // importTagParents below, whose tag-parents.json names never pass through
 // normalizePostRecord.
+//
+// #86: an alias hit short-circuits BEFORE the by-name cache lookup — this is
+// the save pipeline's half of the "single gate" every tag write passes
+// through (lib-db-write.ts's tagResolver is the other half, for the
+// IPC-driven writes). A ZIP re-import and a legacy/Eagle migration import both
+// go through writePost/importTagParents's shared resolver, so an alias
+// registered in THIS library also redirects incoming tag names during import.
 function makeTagResolver(sqlite: Database.Database) {
   const cache = new Map<string, number>();
   for (const row of sqlite.prepare('SELECT id, name FROM tags').all() as Array<{ id: number; name: string }>) {
     if (!cache.has(row.name)) cache.set(row.name, row.id);
   }
+  const aliasCache = new Map<string, number>();
+  for (const row of sqlite.prepare('SELECT alias, tagId FROM tag_aliases').all() as Array<{ alias: string; tagId: number }>) {
+    aliasCache.set(row.alias, row.tagId);
+  }
   const insertTag = sqlite.prepare('INSERT INTO tags (name) VALUES (?)');
   return function resolveTagId(rawName: string): number {
     const name = normalizeTagName(rawName) || rawName;
+    const aliased = aliasCache.get(name);
+    if (aliased != null) return aliased;
     const existing = cache.get(name);
     if (existing != null) return existing;
     const id = Number(insertTag.run(name).lastInsertRowid);

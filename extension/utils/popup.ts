@@ -47,7 +47,7 @@ export function startPopup(): void {
     const title = chrome.i18n && chrome.i18n.getMessage('popupTitle');
     if (title) document.title = title;
     setText('save', 'popupSave');
-    setText('saveHint', 'popupSaveHint');
+    setText('bulk', 'popupBulk');
     setText('statusText', 'popupStatusChecking');
     setText('statusDiag', 'popupOpenDiag');
     setText('historyTitle', 'popupHistoryTitle');
@@ -124,6 +124,94 @@ export function startPopup(): void {
     ?.query({ active: true, currentWindow: true })
     .then(([tab]) => {
       if (tab && !/^https?:/i.test(tab.url || '')) refuse('not-http');
+    })
+    .catch(() => {});
+
+  // The shortcut hint, read the same way as the bulk hint below (#851): the
+  // ACTUAL binding rather than naming Alt+S outright, so a user who reassigned
+  // it is never shown a combination that no longer does anything. Absent
+  // entirely when Chrome reports no shortcut assigned.
+  chrome.commands
+    ?.getAll()
+    .then((commands) => {
+      const shortcut = commands.find((c) => c.name === 'activate')?.shortcut;
+      if (!shortcut) return;
+      const el = byId('saveHint');
+      const text = chrome.i18n && chrome.i18n.getMessage('popupSaveHint', [shortcut]);
+      if (el && text) {
+        el.textContent = text;
+        show('saveHint', true);
+      }
+    })
+    .catch(() => {});
+
+  // --- the bulk-import item (#793) --------------------------------------------
+
+  const bulkButton = byId('bulk') as HTMLButtonElement | null;
+
+  // Why this reads the same as saveButton's refuse: activateOnTab is the SAME
+  // injection either button asks for, only the auto flag differs (#793's
+  // design §2 — one entrance for the shortcut, one more here). A failure at
+  // this point is the rare race (extension reloaded between the check below
+  // and this press), not the page-unsupported case, which never gets this far
+  // because checkBulkSupport() keeps the button disabled until it hears yes.
+  function refuseBulk(reason: PopupActivateReason) {
+    const el = byId('bulkReason');
+    const message = chrome.i18n && chrome.i18n.getMessage(reason === 'package-unreadable' ? 'popupRefusedUnreadable' : reason === 'page-refused' ? 'popupRefusedPage' : reason === 'not-http' ? 'popupRefusedNotHttp' : 'popupRefusedNoTab');
+    if (el && message) el.textContent = message;
+    show('bulkReason', true);
+    if (bulkButton) bulkButton.disabled = true;
+  }
+
+  bulkButton?.addEventListener('click', () => {
+    bulkButton.disabled = true;
+    chrome.runtime.sendMessage({ type: 'popupActivate', auto: true }, (res?: PopupActivateResponse) => {
+      void chrome.runtime.lastError;
+      // Same reasoning as the save button: #795's wait-to-start banner is now
+      // up on the page, so the panel has nothing left to add.
+      if (res?.ok) {
+        window.close();
+        return;
+      }
+      refuseBulk(res?.reason ?? 'no-tab');
+    });
+  });
+
+  // The disabled-by-default state in popup.html is the safe answer while this
+  // is in flight. Asks background rather than the page directly (the popup
+  // has no DOM of its own to judge with) — background's own gateway forwards
+  // to the RESIDENT content script already on the page, so no activeTab
+  // injection happens just to answer a question (#793 design §1).
+  chrome.runtime?.sendMessage({ type: 'popupCheckBulk' }, (res?: { supported: boolean }) => {
+    void chrome.runtime.lastError;
+    if (!bulkButton) return;
+    if (res?.supported) {
+      bulkButton.disabled = false;
+      return;
+    }
+    const el = byId('bulkReason');
+    const message = chrome.i18n && chrome.i18n.getMessage('popupBulkUnsupported');
+    if (el && message) el.textContent = message;
+    show('bulkReason', true);
+  });
+
+  // The shortcut hint (#793 design §4): read the ACTUAL binding rather than
+  // naming Alt+Shift+S outright, so a user who reassigned it is never shown a
+  // combination that no longer does anything. Absent entirely (rather than
+  // guessed at) when Chrome reports no shortcut assigned — the ordinary state
+  // for a fresh install, since suggested_key can lose the assignment to
+  // another extension (#793's Why).
+  chrome.commands
+    ?.getAll()
+    .then((commands) => {
+      const shortcut = commands.find((c) => c.name === 'activate-auto')?.shortcut;
+      if (!shortcut) return;
+      const el = byId('bulkHint');
+      const text = chrome.i18n && chrome.i18n.getMessage('popupBulkHint', [shortcut]);
+      if (el && text) {
+        el.textContent = text;
+        show('bulkHint', true);
+      }
     })
     .catch(() => {});
 

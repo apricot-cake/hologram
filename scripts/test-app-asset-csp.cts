@@ -298,7 +298,7 @@ async function main() {
   // Disk-side evidence for the CSS background (see the eval's comment).
   let cssBg = false;
   try {
-    cssBg = fs.readdirSync(path.join(configDir, 'thumb-cache')).some((f) => f.endsWith(`.w${BG_W}.q3.jpg`));
+    cssBg = fs.readdirSync(path.join(configDir, 'thumb-cache')).some((f) => f.endsWith(`.w${BG_W}.q4.jpg`));
   } catch {
     /* no cache dir at all = nothing was served = fail */
   }

@@ -499,9 +499,15 @@ export function makeCardModel(deps: {
     const imgFile = densityImage(p); // artwork, capture only as its stand-in
     // A square cell is a crop, so it always takes a thumbnail; anything showing the
     // image at its own proportions keeps a real .gif full-size, or it stops animating
-    // (the thumbnailer flattens GIF to a static JPEG).
+    // (the thumbnailer flattens GIF to a static JPEG). #8: an animated webp needs the
+    // SAME carve-out — the delegated thumbnailer flattens it exactly like any other
+    // still, so without this it would silently stop animating outside the square
+    // grid. shotAnimated is only ever set on the file imgFile itself resolves to
+    // (fillCardDims measures the same "card image" densityImage() picks), so gating
+    // on it here never mismatches which file it describes. A STILL webp is not
+    // exempted — thumbnailing it is the whole point of #8.
     const cellW = view.list ? listThumbW() : gridThumbW();
-    const imgW = view.square || !/\.gif$/i.test(imgFile || '') ? cellW : 0;
+    const imgW = view.square || (!/\.gif$/i.test(imgFile || '') && !p.shotAnimated) ? cellW : 0;
     // Reserve the height up front so the masonry packs right the first time — pixel
     // size from the index, learned cache fallback, and (#365) a text-only post's own
     // discrete step when there is no image to have sized or learned from at all. Only

@@ -82,6 +82,7 @@ const POST_COLUMNS = [
   'customEmojis',
   'poll',
   'linkCard',
+  'shotAnimated',
 ] as const;
 
 function fromDbBool(v: unknown): boolean | null {
@@ -416,6 +417,10 @@ function assemble(sqlite: Database.Database, postRows: any[]): any[] {
       // inspector's link-card row and the export sidecar, the same two
       // consumers quotedPost/poll have.
       linkCard: parseJsonObject(r.linkCard),
+      // #8: the card image is an animated webp — see lib-card-dims.ts's
+      // fillCardDims and records.ts's imgW carve-out (the same treatment a
+      // real .gif already gets by extension alone).
+      shotAnimated: fromDbBool(r.shotAnimated),
     };
   });
 }

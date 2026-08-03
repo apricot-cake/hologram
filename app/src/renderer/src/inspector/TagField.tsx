@@ -26,6 +26,10 @@ export interface TagPickItem {
   tag: string;
   kind?: string | null;
   title?: string;
+  /** #86: alias strings resolving to this canonical tag — lets a typed alias surface this item even though its own `tag` text doesn't match. */
+  aliases?: string[];
+  /** #86: set client-side (not from services/tags.ts) when a filter pass matched via one of `aliases` rather than `tag` itself — the "←ねこ" annotation. */
+  viaAlias?: string;
 }
 export interface TagPickGroup {
   name: string;
@@ -41,6 +45,8 @@ export interface TagFieldProps {
   vocabGroups?: TagPickGroup[] | null;
   coocGroups?: TagPickGroup[] | null;
   srcTags?: TagPickItem[] | null;
+  /** #86: alias -> canonical name, for the free-text Enter path (services/tags.ts's inspectorTagPickerData). */
+  aliasMap?: Record<string, string> | null;
   labels: Record<string, string>;
   onAdd: (tag: string) => void;
   onRemove: (tag: string) => void;
@@ -49,7 +55,7 @@ export interface TagFieldProps {
   autoFocus?: boolean;
 }
 
-export function TagField({ tags, vocabGroups, coocGroups, srcTags, labels, onAdd, onRemove, onContextMenu, autoFocus }: TagFieldProps) {
+export function TagField({ tags, vocabGroups, coocGroups, srcTags, aliasMap, labels, onAdd, onRemove, onContextMenu, autoFocus }: TagFieldProps) {
   const [query, setQuery] = useState('');
   const highlightedRef = useRef<string | undefined>(undefined);
   // The popup lies ON the inspector, so Esc has to close it and stop there. The
@@ -80,8 +86,21 @@ export function TagField({ tags, vocabGroups, coocGroups, srcTags, labels, onAdd
     if (!q) for (const g of coocGroups || []) if (g.items.length) out.push({ value: g.name, items: g.items });
     const src = (srcTags || []).filter((it) => matches(it.tag));
     if (src.length) out.push({ value: labels.adoptSource, items: src });
+    // #86: an item also matches when the query hits one of ITS aliases (not
+    // just its own canonical text) — the hit is still shown under the
+    // canonical name (viaAlias only adds an annotation), never as a
+    // separately-pickable alias row, so picking it always adds the canonical
+    // string (design: "確定するチップは正規名").
     for (const g of vocabGroups || []) {
-      const items = g.items.filter((it) => matches(it.tag));
+      const items: TagPickItem[] = [];
+      for (const it of g.items) {
+        if (matches(it.tag)) {
+          items.push(it);
+          continue;
+        }
+        const viaAlias = (it.aliases || []).find((a) => matches(a));
+        if (viaAlias) items.push({ ...it, viaAlias });
+      }
       if (items.length) out.push({ value: g.name, items });
     }
     return out;
@@ -110,7 +129,11 @@ export function TagField({ tags, vocabGroups, coocGroups, srcTags, labels, onAdd
     const typed = normalizeTagName(query);
     if (!typed) return;
     e.preventDefault();
-    onAdd(typed); // free text: a tag that isn't in the vocabulary yet
+    // #86: a typed alias snaps to its canonical name before it ever becomes a
+    // tag — "別名のままチップ化するのは不採用" (the design's own rejected
+    // alternative). Free text that matches nothing here still falls through
+    // to onAdd(typed) unchanged, same as before this tag existed.
+    onAdd((aliasMap && aliasMap[typed]) || typed);
     setQuery('');
   };
 
@@ -192,6 +215,7 @@ export function TagField({ tags, vocabGroups, coocGroups, srcTags, labels, onAdd
                       {it.kind ? <span className={'tag-pal-kind tk-' + it.kind} /> : null}
                       <span className="min-w-0 flex-1 truncate" title={it.title}>
                         {it.tag}
+                        {it.viaAlias && <span className="text-muted-foreground"> (←{it.viaAlias})</span>}
                       </span>
                     </Combobox.Item>
                   ))}

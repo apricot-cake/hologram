@@ -53,15 +53,17 @@
 
 // Navigation hardening: a file dropped onto the window would otherwise make the
 // top frame navigate to file://…, which inherits this same preload and could
-// invoke destructive IPC (clearAll/importComplete/…). The app has no
-// drop-a-file-to-import affordance — media import goes through the OS file
-// picker (importImages button → dialog) — so blocking the browser's default
-// drop/dragover everywhere is safe. The app's own internal drag-and-drop
-// (folder reordering, query-builder pills) is element-scoped and already calls
-// preventDefault() in its own bubble-phase handlers, so those keep working; this
-// document-level guard only neutralizes drops that no element handled. Lives in the
-// pre-paint boot (not the app.js runtime) so it's armed before the window can be dropped
-// onto.
+// invoke destructive IPC (clearAll/importComplete/…). #234 added a drop-to-import
+// affordance (DropOverlay.tsx, app/App.tsx) on top of this guard, not instead of
+// it — that overlay is an element-scoped receiver that shows only while an OS
+// file drag is over the window and calls its own preventDefault(); this
+// window-level guard stays armed underneath it and is what still neutralizes a
+// file dropped anywhere the overlay (or the app's own internal drag-and-drop —
+// folder reordering, query-builder pills, also element-scoped and already
+// calling preventDefault() in their own bubble-phase handlers) did not handle.
+// Lives in the pre-paint boot (not the app.js runtime) so it's armed before the
+// window can be dropped onto — including before DropOverlay's own listeners
+// exist yet.
 (function () {
   const stop = function (e: Event) {
     e.preventDefault();

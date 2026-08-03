@@ -12,6 +12,8 @@
 import { type CommandEntry, registerCommands, registerProvider } from './command-registry.ts';
 import { handlers as searchBoxHandlers } from './searchbox.ts';
 import { setLayout, setPosterLayout } from './display.ts';
+import { recentHistory } from './history.ts';
+import { open as openHistoryPanel } from './history-panel.ts';
 import { toggle as togglePanels } from './panels.ts';
 import { toggle as togglePrivacyMode } from './privacy-mode.ts';
 import { open as openSettings } from './settings.ts';
@@ -32,6 +34,8 @@ export interface CommandDeps {
   addTab(): void;
   /** #21: opens (or focuses) the tag management page tab. */
   openTagManagementTab(): void;
+  /** #145: jumps straight to a history row's view (the palette's history section — jump only, no delete/date headings, those stay the panel's job). */
+  openHistoryEntry(e: HologramNavEntry): void;
   switchTab(id: string): void;
   resetAllFilters(): void;
   resetPosterFilters(): void;
@@ -58,6 +62,8 @@ export function makeCommands(deps: CommandDeps): void {
     { id: 'cmd:settings', section: 'command', title: t('cmdOpenSettings'), perform: () => openSettings() },
     { id: 'cmd:new-tab', section: 'command', title: t('cmdNewTab'), hint: 'Ctrl+T', perform: () => deps.addTab() },
     { id: 'cmd:manage-tags', section: 'command', title: t('cmdManageTags'), perform: () => deps.openTagManagementTab() },
+    // #145: opens the history PANEL (the 3rd of its 3 entry points — sidebar footer row / Ctrl+H / this row).
+    { id: 'cmd:history', section: 'command', title: t('cmdOpenHistory'), hint: 'Ctrl+H', perform: () => openHistoryPanel() },
     {
       id: 'cmd:clear-filters',
       section: 'command',
@@ -113,6 +119,27 @@ export function makeCommands(deps: CommandDeps): void {
           title: tab.title,
           perform: () => deps.switchTab(tab.id),
         }));
+    },
+  });
+
+  // --- History quick-jump (#145, Chrome omnibox's @history equivalent) --------------
+  // Gated on a non-empty query, same reason 'corpus' below is: recentHistory() only
+  // holds THIS session's visits (services/history.ts's ring buffer, capped — no DB
+  // round trip from a synchronous provider), so listing it unconditionally would be
+  // an arbitrary, incomplete slice rather than a deliberate "recent" list. The
+  // Issue's 2026-08-02 addendum is explicit that deletion and date headings stay the
+  // panel's job — this section is a jump-only shortcut, nothing else.
+  registerProvider({
+    id: 'history',
+    entries: (query) => {
+      if (!query.trim()) return [];
+      return recentHistory().map((row) => ({
+        id: `history:${row.id}`,
+        section: 'history' as const,
+        title: row.title,
+        keywords: row.u,
+        perform: () => deps.openHistoryEntry({ u: row.u, kind: row.kind as HologramNavEntry['kind'], state: row.state as HologramNavEntry['state'] }),
+      }));
     },
   });
 

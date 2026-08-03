@@ -299,4 +299,95 @@ describe('relocateLibrary（全体の統率）', () => {
     expect(read(dest, 'late.jpg')).toBe('LATE');
     expect(fs.existsSync(src)).toBe(false);
   });
+
+  // #176: hologram.db now lives INSIDE the library folder, so it travels
+  // through copyLibraryInto like any other file — these pin the close/reopen
+  // ordering around that copy (lib-migrate.ts's step 0 / step 2.5).
+  describe('#176: closeDb/openDb ordering around the copy', () => {
+    test('closeDb runs before the copy, openDb after the flip but before cleanup deletes src', async () => {
+      const { src, dest } = mkroot();
+      seed(src, { 'hologram.db': 'DBBYTES', 'a.jpg': 'AAA' });
+      let cfg: any = { saveFolder: src };
+      const calls: string[] = [];
+
+      const res = await relocateLibrary(src, dest, {
+        readConfig: () => ({ ...cfg }),
+        writeConfig: (c: any) => {
+          cfg = c;
+        },
+        emit: () => {},
+        afterFlip: () => {
+          calls.push('afterFlip');
+        },
+        stillCurrent: () => true,
+        sweepDelayMs: 50,
+        closeDb: () => {
+          calls.push('closeDb');
+          expect(fs.existsSync(path.join(dest, 'hologram.db'))).toBe(false); // not copied yet
+        },
+        openDb: () => {
+          calls.push('openDb');
+          expect(cfg.saveFolder).toBe(dest); // pointer already flipped
+          expect(fs.existsSync(src)).toBe(true); // src not yet cleaned up — still the fallback if this throws
+        },
+      });
+
+      expect(res).toMatchObject({ ok: true });
+      expect(calls).toEqual(['closeDb', 'openDb', 'afterFlip']);
+      expect(fs.readFileSync(path.join(dest, 'hologram.db'), 'utf8')).toBe('DBBYTES');
+    });
+
+    test('a database that will not open at dest rolls the pointer back to src and leaves src intact', async () => {
+      const { src, dest } = mkroot();
+      seed(src, { 'hologram.db': 'DBBYTES', 'a.jpg': 'AAA' });
+      let cfg: any = { saveFolder: src };
+      let reopenedOldDb = false;
+
+      const res = await relocateLibrary(src, dest, {
+        readConfig: () => ({ ...cfg }),
+        writeConfig: (c: any) => {
+          cfg = c;
+        },
+        emit: () => {},
+        afterFlip: () => {
+          throw new Error('afterFlip must not run when the new database never opened');
+        },
+        stillCurrent: () => true,
+        sweepDelayMs: 50,
+        closeDb: () => {},
+        openDb: () => {
+          if (cfg.saveFolder === src) {
+            reopenedOldDb = true;
+            return; // the rollback's own reopen — let it succeed
+          }
+          throw new Error('simulated corrupt copy');
+        },
+      });
+
+      expect(res).toMatchObject({ ok: false, error: 'db-open-failed' });
+      expect(cfg.saveFolder).toBe(src); // rolled back
+      expect(reopenedOldDb).toBe(true); // the library is left open and usable, not just pointed at
+      expect(fs.existsSync(path.join(src, 'a.jpg'))).toBe(true); // src never touched
+      expect(fs.existsSync(path.join(src, 'hologram.db'))).toBe(true);
+    });
+
+    test('closeDb/openDb are both optional — omitting them behaves exactly like before #176', async () => {
+      const { src, dest } = mkroot();
+      seed(src, { 'a.jpg': 'AAA' });
+      let cfg: any = { saveFolder: src };
+
+      const res = await relocateLibrary(src, dest, {
+        readConfig: () => ({ ...cfg }),
+        writeConfig: (c: any) => {
+          cfg = c;
+        },
+        emit: () => {},
+        afterFlip: () => {},
+        stillCurrent: () => true,
+        sweepDelayMs: 50,
+      });
+
+      expect(res).toMatchObject({ ok: true, saveFolder: dest });
+    });
+  });
 });

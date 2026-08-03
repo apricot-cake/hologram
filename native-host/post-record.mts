@@ -110,6 +110,17 @@ export interface LinkCardShape {
   thumbnailFile: string | null;
 }
 
+// #289: one entry of a poster's profile link field (Mastodon/Misskey
+// `fields[]`, pixiv `webpage`/`social.*.url`). Mirrors
+// extension/utils/extractor/types.ts's ProfileLink. verifiedAt is Mastodon's
+// own `verified_at` (the instance itself checked the link back-references the
+// account) -- null on every platform/field that carries no such signal.
+export interface ProfileLinkShape {
+  name: string;
+  value: string;
+  verifiedAt: string | null;
+}
+
 export interface PostRecordShape {
   captureId: string;
   assetClass: string;
@@ -139,6 +150,19 @@ export interface PostRecordShape {
   userId: string | null;
   avatar: string | null;
   avatarFile: string | null;
+  // #289: the poster's own profile bio, link-field entries and banner image --
+  // snapshotted into poster_profiles/poster_profile_snapshots (a per-POSTER
+  // table, not a posts column) rather than displayed anywhere on this record
+  // itself. See extension/utils/extractor/types.ts's PostRecord.bio/
+  // profileLinks/banner for the per-platform sourcing (X carries none of the
+  // three -- its syndication endpoint exposes no bio/links/banner at all).
+  bio: string | null;
+  profileLinks: ProfileLinkShape[] | null;
+  banner: string | null;
+  // The shared avatars/ store's filename for the downloaded banner (#289's
+  // "2026-08-02 バナーは実体保存する" decision) -- same avatarFile split as
+  // above: only the host, having downloaded it, can name the file.
+  bannerFile: string | null;
   followers: number | null;
   authorCreatedAt: string | null;
   likes: number | null;
@@ -246,6 +270,11 @@ export interface PostRecordShape {
   source: string | null;
   shotW: number | null;
   shotH: number | null;
+  // #8: is the card image (the same file shotW/shotH describe) an animated
+  // webp — see app/src/main/lib-card-dims.ts's fillCardDims and records.ts's
+  // imgW carve-out. Null on every row written before the add-post-shot-animated
+  // migration, same convention as shotW/shotH itself.
+  shotAnimated: boolean | null;
   // #162: per-record media-size aggregates (max across media[], falling back to
   // the card image when media[] is empty — see app/src/main/lib-media-dims.ts
   // for the write-time measurement this mirrors shotW/shotH's own convention).
@@ -341,6 +370,22 @@ function normLinkCard(v: unknown): LinkCardShape | null {
   const url = normStr(c.url);
   if (!url) return null;
   return { url, title: normStr(c.title), description: normStr(c.description), thumbnailFile: normStr(c.thumbnailFile) };
+}
+
+// #289: all-or-nothing per ENTRY (like normCustomEmojis below) -- a link with
+// no name or no value is not a link. The whole field is null (not []) when
+// empty, matching links' own "absent field, not an empty list" convention on
+// poster_profiles (a JSON null column, not '[]').
+function normProfileLinks(v: unknown): ProfileLinkShape[] | null {
+  if (!Array.isArray(v) || !v.length) return null;
+  const out: ProfileLinkShape[] = [];
+  for (const e of v) {
+    if (!e || typeof e !== 'object') continue;
+    const { name, value, verifiedAt } = e as Record<string, unknown>;
+    if (typeof name !== 'string' || !name || typeof value !== 'string' || !value) continue;
+    out.push({ name, value, verifiedAt: normStr(verifiedAt) });
+  }
+  return out.length ? out : null;
 }
 
 function normMedia(v: unknown): MediaItemShape[] {
@@ -466,6 +511,10 @@ export function normalizePostRecord(input: PostRecordInput, now: () => string = 
     userId: normStr(input.userId),
     avatar: normStr(input.avatar),
     avatarFile: normStr(input.avatarFile),
+    bio: normStr(input.bio),
+    profileLinks: normProfileLinks(input.profileLinks),
+    banner: normStr(input.banner),
+    bannerFile: normStr(input.bannerFile),
     followers: normNum(input.followers),
     authorCreatedAt: normStr(input.authorCreatedAt),
     likes: normNum(input.likes),
@@ -512,6 +561,7 @@ export function normalizePostRecord(input: PostRecordInput, now: () => string = 
     source: normStr(input.source),
     shotW: normNum(input.shotW),
     shotH: normNum(input.shotH),
+    shotAnimated: normBool(input.shotAnimated),
     mediaMaxW: normNum(input.mediaMaxW),
     mediaMaxH: normNum(input.mediaMaxH),
     mediaMaxBytes: normNum(input.mediaMaxBytes),

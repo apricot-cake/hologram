@@ -9,7 +9,7 @@
 // resetDelta/send at all.
 import { ipcMain } from 'electron';
 import type { IpcContext } from './ipc-context.ts';
-import type { DeleteOrphanTagsResult, RenameTagResult, SplitTagResult, TagParentRowResolved, TagSplitPost, TagVocabRow, TagWriteResult } from './ipc-payloads.ts';
+import type { AddTagAliasResult, DeleteOrphanTagsResult, RenameTagResult, SplitTagResult, TagAliasRow, TagParentRowResolved, TagSplitPost, TagVocabRow, TagWriteResult } from './ipc-payloads.ts';
 
 function register(ctx: IpcContext) {
   const { getSaveFolder, getDbWriter, resetDelta, send } = ctx;
@@ -75,10 +75,12 @@ function register(ctx: IpcContext) {
     }
   });
 
-  ipcMain.handle('merge-tags', (_e, sourceTagId, targetTagId): TagWriteResult => {
+  // keepOldNameAsAlias (#86): the rename-collision dialog's "旧名を別名として
+  // 残す" checkbox -- see lib-db-tag-vocab.ts's mergeTags doc comment.
+  ipcMain.handle('merge-tags', (_e, sourceTagId, targetTagId, keepOldNameAsAlias): TagWriteResult => {
     if (!getSaveFolder() || typeof sourceTagId !== 'number' || typeof targetTagId !== 'number') return { ok: false, error: 'invalid' };
     try {
-      const res = getDbWriter().mergeTags(sourceTagId, targetTagId);
+      const res = getDbWriter().mergeTags(sourceTagId, targetTagId, !!keepOldNameAsAlias);
       if (res.ok) notifyTagVocabChanged();
       return res;
     } catch {
@@ -156,6 +158,34 @@ function register(ctx: IpcContext) {
         displayParentTagId,
         postIds.filter((id: unknown): id is string => typeof id === 'string'),
       );
+      if (res.ok) notifyTagVocabChanged();
+      return res;
+    } catch {
+      return { ok: false, error: 'invalid' };
+    }
+  });
+
+  // #86: tag_aliases CRUD -- see lib-db-tag-vocab.ts's addTagAlias for the
+  // collision/cycle guards this just forwards to.
+  ipcMain.handle('get-tag-aliases', (): TagAliasRow[] => {
+    return getSaveFolder() ? getDbWriter().listTagAliases() : [];
+  });
+
+  ipcMain.handle('add-tag-alias', (_e, tagId, alias): AddTagAliasResult => {
+    if (!getSaveFolder() || typeof tagId !== 'number' || typeof alias !== 'string') return { ok: false, error: 'empty' };
+    try {
+      const res = getDbWriter().addTagAlias(tagId, alias);
+      if (res.ok) notifyTagVocabChanged();
+      return res;
+    } catch {
+      return { ok: false, error: 'empty' };
+    }
+  });
+
+  ipcMain.handle('remove-tag-alias', (_e, aliasId): TagWriteResult => {
+    if (!getSaveFolder() || typeof aliasId !== 'number') return { ok: false, error: 'invalid' };
+    try {
+      const res = getDbWriter().removeTagAlias(aliasId);
       if (res.ok) notifyTagVocabChanged();
       return res;
     } catch {
