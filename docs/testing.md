@@ -83,6 +83,8 @@ parse（`native-host/protocol.mts`）に通す＝フィールドを片側だけ�
 
 ### スモーク／退行・セキュリティ・正しさ
 
+- **ローカル推論ランタイム（#831）は `test-ml-runtime.cts`＝`npm test` にも `run-app-tests.cts` にも入っていない**。初回だけ huggingface.co からスモークモデル（`Xenova/all-MiniLM-L6-v2`・コミット固定・約23MB）を取るので、オフラインで毎晩回す群に混ぜると第三者の可用性に依存してしまう＝上の「ネットワークが要る」組。1回の実行で3通り起動し、①`ai.enabled` が無い間は推論そのものが始まらない（#830 のゲート）②onnxruntime-node で推論が通る③`HOLOGRAM_ML_FORCE_WASM=1` の WASM が**同じ埋め込みを返す**、を見る。**「main が詰まらない」は数字で見る**＝推論中の main のイベントループ停止時間と、レンダラから `listPosts` を回し続けた往復時間を測って上限と比べる（utilityProcess をやめて main へ戻したらここが跳ねる）。`--exe <path>` を渡すとパッケージ済みの `Hologram.exe` に対して同じ3通りを走らせる＝配布形の確認はこれで、`npm run check` では何も分からない。純ユニット側は `ml-runtime.test.ts`（バックエンド選択・asar パスの読み替え・結果の直列化・**配布設定と worker のソースの突き合わせ**）。
+
 - 実Electron main は `HOLOGRAM_SMOKE` harness で起動。`scripts/test-*.cts` 群がカバーする領域＝ブリッジ・原寸メディア・IPC・ハッシュタグ・自動更新・ユーザー/インスタンス・タグ用語帳・クエリビルダー（text 葉化／保存検索）・
 - クエリエンジン純ユニット（`query.test.ts`＝`src/renderer/src/services/query.ts` の述語/ツリー評価/日付境界/ファセット・ドメイン＝改訂④）・
 - 保存先移行エンジン純ユニット（`migrate.test.ts`＝`src/main/lib-migrate.ts` の差分追いコピー/検証付き削除/落ち穂拾いスイープ/crash-safe順序）・

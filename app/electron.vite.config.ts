@@ -35,7 +35,25 @@ export default defineConfig({
     // by the HOLOGRAM_START_INACTIVE verify path, so it must stay out of the
     // shipped app. Bundling it would both break (it is a native addon) and drag
     // a dev-only dependency into dist.
-    plugins: [externalizeDepsPlugin({ include: ['koffi'] })],
+    //
+    // The two ONNX Runtime packages are named for the same "not a direct
+    // dependency, must not be bundled" reason: ml-worker.ts loads them itself to
+    // decide which backend it got (#831), but they belong to
+    // @huggingface/transformers, so the plugin's package.json scan does not see
+    // them. Bundled, onnxruntime-node's require of
+    // bin/napi-v6/<platform>/<arch>/onnxruntime_binding.node is rewritten
+    // relative to out/main and never finds the addon.
+    plugins: [externalizeDepsPlugin({ include: ['koffi', 'onnxruntime-node', 'onnxruntime-web'] })],
+    build: {
+      // TWO entries, not one: ml-worker.ts is forked as a utilityProcess by
+      // lib-ml-runtime.ts (#831), so it has to exist as its own file next to
+      // index.js. This extends electron-vite's own lib-mode entry rather than
+      // setting rollupOptions.input, which replaces lib mode entirely and
+      // silently flips the output to ESM .mjs with the npm deps inlined
+      // (measured: index 272kB CJS -> 886kB ESM). `index` must keep its name —
+      // package.json's "main" points at out/main/index.js.
+      lib: { entry: { index: r('src/main/index.ts'), 'ml-worker': r('src/main/ml-worker.ts') } },
+    },
   },
   preload: {
     // electron-log must be BUNDLED into the preload output (not required at

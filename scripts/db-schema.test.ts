@@ -56,6 +56,9 @@ const EXPECTED_TABLES = [
   'inbox_events',
   'inbox_segments',
   'raw_payloads',
+  'history',
+  'poster_profiles',
+  'poster_profile_snapshots',
 ];
 
 describe('マイグレーションが通り、テーブルが揃う', () => {
@@ -68,9 +71,9 @@ describe('マイグレーションが通り、テーブルが揃う', () => {
   );
   sqlite.close();
 
-  test('user_version は 29（v1 DDL ＋ #178 add-post-cw-sensitive・#188 add-post-series-fields・#180 add-post-quoted-refs・#162 add-media-max-dims・#290 add-post-custom-emojis・#36 rename-description-to-memo・#23 add-poster-aliases・#179 add-post-poll・#236 add-post-file・#181 add-post-link-card・#239 add-post-meta-source までの追加28本）', () => {
+  test('user_version は 31（v1 DDL ＋ #178 add-post-cw-sensitive・#188 add-post-series-fields・#180 add-post-quoted-refs・#162 add-media-max-dims・#290 add-post-custom-emojis・#36 rename-description-to-memo・#23 add-poster-aliases・#179 add-post-poll・#236 add-post-file・#181 add-post-link-card・#145 add-history-table・#289 add-poster-profiles・#239 add-post-meta-source までの追加30本）', () => {
     const { sqlite } = openDatabase(mkdb());
-    expect(sqlite.pragma('user_version', { simple: true })).toBe(29);
+    expect(sqlite.pragma('user_version', { simple: true })).toBe(31);
     sqlite.close();
   });
 
@@ -449,7 +452,7 @@ describe('既存 v1 データベースの開き直しは no-op', () => {
   const second = openDatabase(file);
 
   test('マイグレーションを再実行しない', () => {
-    expect(second.sqlite.pragma('user_version', { simple: true })).toBe(29);
+    expect(second.sqlite.pragma('user_version', { simple: true })).toBe(31);
   });
 
   test('前回のデータが残る', () => {

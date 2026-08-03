@@ -213,6 +213,23 @@ function pixivMedia(il) {
   return out;
 }
 
+// #289: the user response's `webpage` (a single freeform URL) plus
+// `social.<key>.url` (one entry per linked service — twitter/pixiv-fanbox/
+// etc., a plain object keyed by service name). No verification concept on
+// pixiv, unlike Mastodon's fields[].verified_at.
+function pixivProfileLinks(body: any): { name: string; value: string; verifiedAt: string | null }[] | null {
+  const out: { name: string; value: string; verifiedAt: string | null }[] = [];
+  if (typeof body.webpage === 'string' && body.webpage) out.push({ name: 'webpage', value: body.webpage, verifiedAt: null });
+  const social = body.social && typeof body.social === 'object' ? body.social : null;
+  if (social) {
+    for (const [key, entry] of Object.entries(social)) {
+      const socialUrl = entry && typeof entry === 'object' ? (entry as any).url : null;
+      if (typeof socialUrl === 'string' && socialUrl) out.push({ name: key, value: socialUrl, verifiedAt: null });
+    }
+  }
+  return out.length ? out : null;
+}
+
 async function fetchPixivIllust(parsed, url): Promise<PostRecord> {
   const rec = emptyRecord(url, 'pixiv');
   try {
@@ -293,6 +310,10 @@ async function fetchPixivIllust(parsed, url): Promise<PostRecord> {
             rec.avatar = udata.body.imageBig || udata.body.image || null;
             // i.pximg.net 403s without a pixiv Referer — tell the bridge to send one.
             if (rec.avatar) rec.avatarReferer = PIXIV_REFERER;
+            // #289: bio/links ride the SAME user response above -- no extra
+            // request. No banner concept on pixiv (rec.banner stays null).
+            rec.bio = udata.body.commentHtml ? htmlToText(udata.body.commentHtml) : typeof udata.body.comment === 'string' && udata.body.comment ? udata.body.comment : null;
+            rec.profileLinks = pixivProfileLinks(udata.body);
           }
         }
       } catch {

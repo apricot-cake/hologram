@@ -8,15 +8,19 @@
 // text is data shown in a tooltip, not chrome, so it does not go through the message
 // table the way the popover's own labels do).
 //
-// Confidence note (read before trusting a platform's operator table): the Issue's
-// design called for verifying every operator against the frozen dialect repo via an
-// equivalence harness (scripts/check-websearch-equivalence - see resolve.ts's sibling).
-// That repo does not exist on this machine (no DIALECT_REPO), so the harness auto-skips
-// and nothing here has been machine-checked against dialect's measured tables. Each
-// platform module documents, per operator, whether it rests on well-documented public
-// syntax or is a lower-confidence guess - and errs toward DROPPING a concept rather than
-// guessing wrong (the Issue's own conservative-translation principle). Re-verify against
-// dialect's packages/core/src/platforms/*.ts once DIALECT_REPO is reachable.
+// Confidence note (read before trusting a platform's operator table): #822 (2026-08-03)
+// ran the equivalence harness (scripts/check-websearch-equivalence.cts - see resolve.ts's
+// sibling) against a real clone of the frozen dialect repo (DIALECT_REPO), fuzzing every
+// concept the two engines share across 5000+ generated cases per platform with zero
+// mismatches. Every platform module below has been machine-checked against dialect's
+// measured operator tables (packages/core/src/platforms/*.ts) - the fixes that pass
+// found are documented in each module's own header comment (wrong encoding, missing
+// operators, a forced pixiv URL shape that broke on pixiv's own error page, etc.).
+// Concepts a module supports beyond dialect's own model for that site (a Hologram-only
+// extension - e.g. X's videoOnly/repliesOnly, pixiv's fromUser artist-page jump) are
+// called out explicitly in that module's header, since the harness cannot check those
+// against anything. Re-run the harness after touching any operator table - see this
+// file's own comment in check-websearch-equivalence.cts for the DIALECT_REPO setup.
 
 /** The five sites Hologram saves from - the same set the popover offers as rows. Matches
  * services/facets.ts PF_ORDER literal strings exactly (p.platform's own values). */

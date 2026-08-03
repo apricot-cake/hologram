@@ -72,6 +72,7 @@ beforeEach(() => {
     getBrowseMode: () => mode,
     addTab: () => performed.push('addTab'),
     openTagManagementTab: () => performed.push('openTagManagementTab'),
+    openHistoryEntry: (e) => performed.push(`openHistoryEntry:${e.u}`),
     switchTab: (id) => performed.push(`switchTab:${id}`),
     resetAllFilters: () => performed.push('resetAllFilters'),
     resetPosterFilters: () => performed.push('resetPosterFilters'),
@@ -151,7 +152,7 @@ describe('面ごとの顔ぶれ（同じ生成・別の見せ方）', () => {
 
 describe('操作系コマンド', () => {
   test('空クエリでも全部出る（まず何ができるかが読める）', () => {
-    expect(titlesOf(R.queryEntries('', PALETTE), 'command')).toEqual(['cmdOpenSettings', 'cmdNewTab', 'cmdManageTags', 'cmdClearFilters', 'cmdViewGrid', 'cmdViewList', 'cmdTogglePanels', 'cmdTogglePrivacy', 'cmdBrowsePosts', 'cmdBrowsePosters', 'cmdBrowseTrash', 'cmdTriageStart']);
+    expect(titlesOf(R.queryEntries('', PALETTE), 'command')).toEqual(['cmdOpenSettings', 'cmdNewTab', 'cmdManageTags', 'cmdOpenHistory', 'cmdClearFilters', 'cmdViewGrid', 'cmdViewList', 'cmdTogglePanels', 'cmdTogglePrivacy', 'cmdBrowsePosts', 'cmdBrowsePosters', 'cmdBrowseTrash', 'cmdTriageStart']);
   });
 
   const run = (title: string) => {

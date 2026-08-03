@@ -365,6 +365,33 @@ export interface TabsState {
   activeTabId: string | null;
 }
 
+// --- Global history (#145, ipc-history.ts) --------------------------------
+/** One row of the history table. `state` is the #144 nav entry's kind-specific restore state, verbatim. */
+export interface HistoryRow {
+  id: number;
+  ts: number;
+  u: string;
+  kind: string;
+  title: string;
+  state: unknown;
+}
+
+/** query-history's cursor for the next page — the last row's (ts, id) keyset pair. */
+export interface HistoryCursor {
+  ts: number;
+  id: number;
+}
+
+export interface HistoryQueryOptions {
+  search?: string;
+  before?: HistoryCursor | null;
+}
+
+export interface HistoryQueryResult {
+  rows: HistoryRow[];
+  hasMore: boolean;
+}
+
 // --- Backup + integrity (ipc-backup.ts) ---------------------------------
 /** The `lastResult` summary readBackupConfig hands back with the config. */
 export interface BackupSummary {
@@ -530,6 +557,30 @@ export interface MediaImportResult {
   skipped: number;
   error?: string;
   canceled?: boolean;
+}
+
+/** A file resolved by the window-drop door's recursive walk (#234) —
+ * collect-dropped-paths' list, sent back unchanged to import-dropped-paths so
+ * the import never re-walks. */
+export interface DroppedFile {
+  path: string;
+  ext: string;
+}
+
+/** collect-dropped-paths — the pre-count; nothing is written yet. */
+export interface DropCollectResult {
+  files: DroppedFile[];
+  mediaCount: number;
+  otherCount: number;
+  error?: string;
+}
+
+/** import-dropped-paths — the confirmed write. Same shape as MediaImportResult
+ * minus `canceled` (there is no dialog here to cancel). */
+export interface DropImportResult {
+  imported: number;
+  skipped: number;
+  error?: string;
 }
 
 /** #84: directories watched for non-destructive local-media intake. */

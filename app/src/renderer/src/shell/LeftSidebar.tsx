@@ -16,18 +16,21 @@
 // saved searches, poster folders) carry `group-data-[collapsible=icon]:hidden`
 // and show only when expanded. See docs/decisions/0018-labeled-navigation-rail-default.md
 // for the design.
-import { ChevronRight, Folder, LayoutGrid, Plus, Rss, Search, Settings, Terminal, Trash2, Users } from 'lucide-react';
+import { ChevronRight, Folder, History, LayoutGrid, Plus, Rss, Search, Settings, Terminal, Trash2, Users } from 'lucide-react';
 import type { DragEvent, MouseEvent } from 'react';
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupAction, SidebarGroupContent, SidebarGroupLabel, SidebarHeader, SidebarMenu, SidebarMenuBadge, SidebarMenuButton, SidebarMenuItem, SidebarMenuSub, SidebarRail, SidebarTrigger } from '@/components/ui/sidebar';
 import type { PanelResize } from './use-panel-resize.ts';
 import { BackupStatus } from '../backup/BackupStatus.tsx';
+import { HistoryPanelBody } from '../history/HistoryPanel.tsx';
 import { t } from '../_shared/i18n.ts';
 import { get as storeGet, subscribe as storeSubscribe } from '../services/store.ts';
 import { open as openSettings } from '../services/settings.ts';
 import { open as openPalette } from '../services/command-registry.ts';
+import { anchor as historyAnchor, close as closeHistory, isOpen as historyIsOpen, open as openHistory, subscribe as historySubscribe } from '../services/history-panel.ts';
 import { all as folderAll, createFolder, placeFolder, isSavedSearch, load as folderLoad, onChange as folderOnChange, removeFolder, renameFolder, toast, updateFolder } from '../services/folders.ts';
 import { open as confirmOpen } from '../services/confirm.ts';
 import { cloneTree } from '../services/query.ts';
@@ -262,6 +265,10 @@ interface FolderTreeCtx {
 
 export function LeftSidebar({ resize }: { resize?: PanelResize }) {
   const mode = useSyncExternalStore(subBrowse, getBrowse);
+  // #145: the history panel's open state lives in services/history-panel.ts (not
+  // component state) so Ctrl+H and the palette's cmd:history can open it too —
+  // this component only owns the Popover's Trigger/anchor.
+  const historyOpen = useSyncExternalStore(historySubscribe, historyIsOpen);
   const isPosters = mode === 'posters';
   const isTrash = mode === 'trash';
   const isTimeline = mode === 'timeline';
@@ -621,6 +628,29 @@ export function LeftSidebar({ resize }: { resize?: PanelResize }) {
                   effectively invisible there before this change, now made explicit. */}
               <span className="ml-auto text-xs text-muted-foreground group-data-[collapsible=icon]:hidden">Ctrl+K</span>
             </SidebarMenuButton>
+          </SidebarMenuItem>
+          {/* Global history page (#145) — the sidebar footer row is the anchor the
+              panel's Popover positions against; Ctrl+H and the palette's cmd:history
+              (services/history-panel.ts) open the SAME controlled Popover from
+              outside this component. Non-modal Base UI Popover is used as-is
+              (its `modal` prop defaults to false — see popover.tsx): the design's
+              stated requirement is that the grid stays scrollable and visible
+              behind it, unlike Settings' Dialog. */}
+          <SidebarMenuItem>
+            <Popover open={historyOpen} onOpenChange={(next) => (next ? openHistory() : closeHistory())}>
+              <PopoverTrigger
+                render={
+                  <SidebarMenuButton tooltip={`${t('historyTitle')} (Ctrl+H)`}>
+                    <History />
+                    <span data-slot="menu-label">{t('historyTitle')}</span>
+                    <span className="ml-auto text-xs text-muted-foreground group-data-[collapsible=icon]:hidden">Ctrl+H</span>
+                  </SidebarMenuButton>
+                }
+              />
+              <PopoverContent anchor={historyAnchor() ?? undefined} align="start" side="top" sideOffset={8} className="flex h-[min(70vh,28rem)] w-[360px] flex-col gap-2">
+                <HistoryPanelBody />
+              </PopoverContent>
+            </Popover>
           </SidebarMenuItem>
           <SidebarMenuItem>
             <SidebarMenuButton tooltip={t('tabSettings')} onClick={() => openSettings()}>

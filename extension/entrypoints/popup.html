@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="ja">
+<meta charset="utf-8">
+<!-- The toolbar action's panel (#124). WXT adds action.default_popup to the
+     manifest from this file's presence alone.
+     ⚠️It ALSO takes this document's <title> as action.default_title, which would
+     quietly replace wxt.config.ts's __MSG_actionTitle__ with a literal — and that
+     message is what #269 restores the tooltip to after an injection failure, so
+     the two would disagree. The <title> IS that field (WXT offers no separate
+     override for it), so it carries the message token; Chrome localises it in
+     the manifest, and popup.ts sets this document's own title at runtime. -->
+<title>__MSG_actionTitle__</title>
+<body class="popup">
+  <section class="act">
+    <button id="save" class="primary" type="button">この投稿を保存</button>
+    <p class="hint" id="saveHint">Alt+S でも直接保存できます</p>
+    <p class="alert" id="saveReason" hidden></p>
+    <button id="saveRepair" class="repair" type="button" hidden></button>
+  </section>
+
+  <section class="state">
+    <p class="line"><span class="dot" id="statusDot"></span><span id="statusText">接続を確認しています…</span></p>
+    <p class="sub" id="statusDetail" hidden></p>
+    <button id="statusDiag" class="repair" type="button" hidden>診断を開く</button>
+    <!-- #203: only shown when something is actually waiting. The action that
+         drains the queue lives on the diagnostics page, so this row says the
+         fact and the footer says where to act on it. -->
+    <p class="sub" id="queueRow" hidden></p>
+    <p class="line" id="todayRow">今日の保存: 0 件</p>
+  </section>
+
+  <section class="recent">
+    <h2 id="historyTitle">直近の保存</h2>
+    <ul class="history" id="history"></ul>
+    <p class="sub" id="historyEmpty" hidden>まだありません</p>
+  </section>
+
+  <p class="foot">
+    <a href="options.html" id="openOptions" target="_blank">設定を開く</a>
+    <a href="diag.html" id="openDiag" target="_blank">診断を開く</a>
+  </p>
+  <script type="module" src="../pages/popup.ts"></script>
+</body>
+</html>

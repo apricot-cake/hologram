@@ -33,11 +33,32 @@ describe('xPlatform', () => {
 });
 
 describe('blueskyPlatform', () => {
-  test('supports from:/since:/until:/hashtag-as-text; drops OR and exclude', () => {
+  test('supports from:/since:/until:/hashtag-as-text/exclude; drops keywordsOr only', () => {
     const state = { ...emptyPlatformQueryState(), terms: ['cat'], hashtag: ['photo'], fromUser: 'alice.bsky.social', keywordsOr: ['a', 'b'], exclude: ['spoiler'] };
     const r = blueskyPlatform.build(state, {});
     expect(r.url).toContain('bsky.app/search');
-    expect(r.dropped.length).toBeGreaterThan(0); // OR + exclude both unsupported
+    const q = decodeURIComponent(new URL(r.url as string).searchParams.get('q') as string);
+    expect(q).toContain('-spoiler');
+    expect(r.dropped.length).toBeGreaterThan(0); // keywordsOr is the only unsupported concept here
+  });
+
+  // #822: dialect's own GUI capture (issue #27) confirmed hashtagOr IS real on Bluesky
+  // via &tag= - the suspicion the Issue recorded, previously dropped out of caution.
+  test('hashtagOr translates via &tag= (confirmed real on Bluesky, not dropped)', () => {
+    const r = blueskyPlatform.build({ ...emptyPlatformQueryState(), hashtagOr: ['cat', 'dog'] }, {});
+    expect(new URL(r.url as string).searchParams.get('tag')).toBe('cat dog');
+    expect(r.applied).toContain('ハッシュタグ（いずれか）');
+  });
+
+  test('excludeUser/excludeHashtag/mediaOnly/videoOnly/replies all translate to their own params', () => {
+    const state = { ...emptyPlatformQueryState(), terms: ['cat'], excludeUser: ['bob'], excludeHashtag: ['spoiler'], mediaOnly: true, videoOnly: true, repliesOnly: true };
+    const r = blueskyPlatform.build(state, {});
+    const url = new URL(r.url as string);
+    expect(url.searchParams.get('excludeAuthor')).toBe('bob');
+    expect(url.searchParams.get('excludeTag')).toBe('spoiler');
+    expect(url.searchParams.get('media')).toBe('true');
+    expect(url.searchParams.get('video')).toBe('true');
+    expect(url.searchParams.get('replies')).toBe('only');
   });
 });
 
@@ -50,15 +71,24 @@ describe('misskey/mastodon: needsInstanceHost', () => {
 
   test('misskey with a host builds a plain-text query URL', () => {
     const r = misskeyPlatform.build({ ...emptyPlatformQueryState(), terms: ['a'] }, { instanceHost: 'misskey.io' });
-    expect(r.url).toBe('https://misskey.io/search?q=a');
+    expect(r.url).toBe('https://misskey.io/search?q=a&type=note');
   });
 
-  test('mastodon: from:/has:media/hashtag applied; OR/exclude/min-likes dropped', () => {
-    const state = { ...emptyPlatformQueryState(), fromUser: 'alice@mastodon.social', mediaOnly: true, hashtag: ['art'], minLikes: 10 };
+  test('misskey: exclude and a remote author both translate (#822 - dialect confirmed both work)', () => {
+    const r = misskeyPlatform.build({ ...emptyPlatformQueryState(), terms: ['a'], exclude: ['b'], fromUser: 'neko@misskey.io' }, { instanceHost: 'misskey.io' });
+    expect(r.url).toBe('https://misskey.io/search?q=a%20-b&type=note&username=neko&host=misskey.io');
+  });
+
+  test('mastodon: from:/has:media/hashtag/exclude applied; OR/min-likes dropped', () => {
+    const state = { ...emptyPlatformQueryState(), fromUser: 'alice@mastodon.social', exclude: ['spoiler'], mediaOnly: true, hashtag: ['art'], minLikes: 10 };
     const r = mastodonPlatform.build(state, { instanceHost: 'mastodon.social' });
     const q = decodeURIComponent((new URL(r.url as string).searchParams.get('q') as string).replace(/\+/g, ' '));
-    expect(q).toContain('from:@alice@mastodon.social');
+    // #822: dialect's own GUI capture found from:user@host has no leading @ (unlike
+    // this module's previous from:@user@host, which was never machine-checked).
+    expect(q).toContain('from:alice@mastodon.social');
+    expect(q).not.toContain('from:@alice');
     expect(q).toContain('has:media');
+    expect(q).toContain('-spoiler');
     expect(r.dropped.length).toBeGreaterThan(0);
   });
 });

@@ -119,7 +119,20 @@ interface PageMetaExtractedMessage {
   result: WebMetaResult;
 }
 
-type ContentToBackgroundMessage = CaptureAndSendMessage | SavePostMessage | ImageDraggedMessage | CheckSavedMessage | CheckDuplicateMessage | LogCaptureMessage | DumpLogsMessage | QueueStatsMessage | ResendQueueMessage | PageMetaExtractedMessage;
+// The toolbar popup's save button (#124). Putting a popup on the action means
+// chrome.action.onClicked never fires again, so this message is what replaces
+// it: the popup asks, the worker finds the active tab and runs the SAME
+// activation the keyboard shortcuts run.
+//
+// `auto` mirrors the two commands (Alt+S / Alt+Shift+S) rather than inventing a
+// second operation — it is the bulk-intake mode of the same activation (#362),
+// and #793 adds the popup item that asks for it.
+interface PopupActivateMessage {
+  type: 'popupActivate';
+  auto?: boolean;
+}
+
+type ContentToBackgroundMessage = CaptureAndSendMessage | SavePostMessage | ImageDraggedMessage | CheckSavedMessage | CheckDuplicateMessage | LogCaptureMessage | DumpLogsMessage | QueueStatsMessage | ResendQueueMessage | PageMetaExtractedMessage | PopupActivateMessage;
 
 // === background -> content script ===
 
@@ -135,10 +148,12 @@ interface CropImageMessage {
 // The save's own outcome, plus one thing that is not about this save at all:
 // hostSkew says the extension and the native host were built from different
 // versions of their shared contract (#205), which is a standing condition of the
-// installation rather than an event. It rides on the save because the save's
-// banner is the only surface a person actually looks at — the extension has no
-// popup yet (#124) — and it is reported on a SUCCESS because a skew does not
-// stop a save: the record is on disk, and the note is about the next one.
+// installation rather than an event. It is reported on a SUCCESS because a skew
+// does not stop a save: the record is on disk, and the note is about the next
+// one. Since #124 the standing place to read it is the toolbar popup, so this
+// carrier fires only ONCE per browser session (background.ts's
+// skewNoteForBanner) — enough that someone who never opens the popup still
+// finds out, without saying it on every save.
 interface NotifySuccessMessage {
   type: 'notify';
   success: true;
@@ -275,6 +290,21 @@ interface ResendQueueResponse {
   stats: SaveQueueStats;
 }
 
+// Why the popup's press did not start a save (#124). The toolbar icon used to
+// have nowhere to say this — a click that could not inject was inert, and #269
+// had to paint a badge to leave any trace at all. The popup is a surface that
+// is already open and looking at the user, so it says the reason itself and
+// offers the page that repairs it, instead of opening one behind its back.
+//
+//   'no-tab'             — no active tab to act on (nothing to repair)
+//   'not-http'           — the tab is chrome://, a file, the Web Store's own
+//                          page: nothing can be injected there by anyone
+//   'page-refused'       — the extension is healthy and this page said no
+//   'package-unreadable' — the extension cannot read its own files
+type PopupActivateReason = 'no-tab' | 'not-http' | 'page-refused' | 'package-unreadable';
+
+type PopupActivateResponse = { ok: true } | { ok: false; reason: PopupActivateReason };
+
 type CropImageResponse = { croppedDataUrl: string } | null;
 
 export type {
@@ -299,6 +329,9 @@ export type {
   NotifyMessage,
   NotifySuccessMessage,
   PageMetaExtractedMessage,
+  PopupActivateMessage,
+  PopupActivateReason,
+  PopupActivateResponse,
   ProtocolSkew,
   QueueStatsMessage,
   QueueStatsResponse,

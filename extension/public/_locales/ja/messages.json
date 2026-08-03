@@ -83,5 +83,108 @@
   "ctxBookmark": {
     "message": "ページをブックマーク保存",
     "description": "Context menu item: bookmark the current page (#195)"
+  },
+  "popupTitle": {
+    "message": "Hologram",
+    "description": "Toolbar popup document title (#124)"
+  },
+  "popupSave": {
+    "message": "この投稿を保存",
+    "description": "Popup primary button: start capturing the post on the active tab"
+  },
+  "popupSaveHint": {
+    "message": "Alt+S でも直接保存できます",
+    "description": "Popup hint pointing frequent savers at the one-press keyboard route"
+  },
+  "popupRefusedNotHttp": {
+    "message": "このページは保存できません（ウェブページを開いてから押してください）",
+    "description": "Popup reason: the active tab is not an http(s) page, so nothing can be injected into it"
+  },
+  "popupRefusedNoTab": {
+    "message": "保存する対象のタブが見つかりませんでした",
+    "description": "Popup reason: no active tab could be found"
+  },
+  "popupRefusedPage": {
+    "message": "このページでは保存を開始できませんでした。多くはそのページ側の事情です。",
+    "description": "Popup reason: the extension is healthy and this page refused the injection"
+  },
+  "popupRefusedUnreadable": {
+    "message": "拡張機能が自分のファイルを読めません。chrome://extensions で「再読み込み」してください。",
+    "description": "Popup reason: the extension's own files can no longer be read"
+  },
+  "popupOpenExtensions": {
+    "message": "拡張機能ページを開く",
+    "description": "Popup button that opens chrome://extensions filtered to this extension"
+  },
+  "popupOpenDiag": {
+    "message": "診断を開く",
+    "description": "Popup link/button that opens the diagnostics page"
+  },
+  "popupOpenOptions": {
+    "message": "設定を開く",
+    "description": "Popup link that opens the settings page"
+  },
+  "popupStatusChecking": {
+    "message": "接続を確認しています…",
+    "description": "Popup connection row while the native-host ping is still in flight"
+  },
+  "popupStatusConnected": {
+    "message": "Hologram アプリとつながっています",
+    "description": "Popup connection row: the native host answered and both halves match"
+  },
+  "popupStatusDisconnected": {
+    "message": "Hologram アプリとつながっていません",
+    "description": "Popup connection row: the native host did not answer"
+  },
+  "popupStatusHostOld": {
+    "message": "Hologram アプリが古いバージョンです。アプリを更新してください。",
+    "description": "Popup connection row: the host is older than this extension (#205)"
+  },
+  "popupStatusExtensionOld": {
+    "message": "拡張機能が古いバージョンです。拡張機能を更新してください。",
+    "description": "Popup connection row: this extension is older than the host (#205)"
+  },
+  "popupHostNotRegistered": {
+    "message": "保存機能が登録されていません（Hologram アプリのインストールが必要です）",
+    "description": "Popup connection detail: Chrome could not find the native messaging host's registration"
+  },
+  "popupHostNoAnswer": {
+    "message": "応答がありませんでした",
+    "description": "Popup connection detail: the host was launched but did not answer in time"
+  },
+  "popupHostDisconnected": {
+    "message": "接続が切断されました",
+    "description": "Popup connection detail: the host process ended before answering"
+  },
+  "popupHostRejected": {
+    "message": "この拡張機能からの接続が許可されていません（Hologram アプリの再インストールで直ります）",
+    "description": "Popup connection detail: the host refused this extension's origin"
+  },
+  "popupQueued": {
+    "message": "再送を待っている保存が $COUNT$ 件あります",
+    "description": "Popup row: saves stashed in the retry queue while the host was unreachable (#203)",
+    "placeholders": { "count": { "content": "$1", "example": "3" } }
+  },
+  "popupToday": {
+    "message": "今日の保存: $COUNT$ 件",
+    "description": "Popup row: how many saves landed today",
+    "placeholders": { "count": { "content": "$1", "example": "12" } }
+  },
+  "popupHistoryTitle": {
+    "message": "直近の保存",
+    "description": "Popup section heading above the recent-saves list"
+  },
+  "popupHistoryEmpty": {
+    "message": "まだありません",
+    "description": "Popup recent-saves list when nothing has been saved yet"
+  },
+  "popupRunCount": {
+    "message": "×$COUNT$",
+    "description": "Popup recent-saves row: how many saves one folded bulk-intake run stands for",
+    "placeholders": { "count": { "content": "$1", "example": "24" } }
+  },
+  "popupSaveFailed": {
+    "message": "失敗",
+    "description": "Popup recent-saves row mark for a save that did not land"
   }
 }

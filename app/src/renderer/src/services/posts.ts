@@ -9,6 +9,7 @@
 // services/records.ts, which owns the record-shape/grouping PURE LOGIC, not the IPC
 // calls).
 import { hologramIpc } from './ipc.ts';
+import type { DroppedFile } from '../../../main/ipc-payloads.ts';
 
 export function listPosts() {
   return hologramIpc.listPosts();
@@ -68,6 +69,19 @@ export function importLegacyZip(zipPath: string, duplicateMode?: string) {
 }
 export function importImages() {
   return hologramIpc.importImages();
+}
+// Window drop-to-import (#234). Two steps: collect walks + counts (nothing is
+// written yet), import writes the SAME list back once the caller has a "yes" —
+// see services/drop-intake.ts for the confirm wired between them.
+export function collectDroppedPaths(paths: string[]) {
+  return hologramIpc.collectDroppedPaths(paths);
+}
+export function importDroppedPaths(files: DroppedFile[]) {
+  return hologramIpc.importDroppedPaths(files);
+}
+// The real fs path behind a File dragged onto the window from the OS (#234).
+export function getPathForFile(file: File): string {
+  return hologramIpc.getPathForFile(file);
 }
 // Ctrl+V (#85). `title` is the card label the record gets — built by the caller
 // because it is localized text and main has no message table.
