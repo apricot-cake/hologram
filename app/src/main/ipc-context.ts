@@ -24,7 +24,7 @@ import type Database from 'better-sqlite3';
 import type { createDbWriter } from './lib-db-write.ts';
 import type { relocateLibrary } from './lib-migrate.ts';
 import type { LibraryClassification } from './lib-switch-library.ts';
-import type { BackupConfig, BackupRunResult, DbGeneration, DbRollbackResult, FullTextHit, IntegrityStatus, LibraryStatus, OrphanRecoveryResult, PostsDelta, PostsSnapshot, RecentLibraryEntry, SwitchLibraryResult, ValidationResult, WatchImportConfig, WatchImportFolder } from './ipc-payloads.ts';
+import type { BackupConfig, BackupRunResult, DbGeneration, DbRollbackResult, FullTextHit, IntegrityStatus, LibraryStatus, OrphanRecoveryResult, PinItem, PostsDelta, PostsSnapshot, RecentLibraryEntry, SwitchLibraryResult, ValidationResult, WatchImportConfig, WatchImportFolder } from './ipc-payloads.ts';
 
 /** The organization-state writer every DB-backed handler goes through. */
 export type DbWriter = ReturnType<typeof createDbWriter>;
@@ -173,4 +173,12 @@ export interface IpcContext {
   isPrimarySender(webContentsId: number): boolean;
   /** Opens a new secondary window (Ctrl+Shift+N / the second-launch entry point, #32 St1). */
   openNewWindow(): void;
+
+  // --- Pin windows (#79: floating mini-viewer) ---
+  /** Relays `items` to the last-focused pin window, or opens a fresh one (`newWindow`). */
+  pinSend(items: PinItem[], newWindow: boolean): void;
+  /** The CALLING pin window's own boot payload (its webContents id), consumed once. */
+  pinGetInitial(webContentsId: number): PinItem[];
+  /** Toggles the CALLING pin window's always-on-top; returns the new state. */
+  pinToggleAlwaysOnTop(webContentsId: number): boolean;
 }

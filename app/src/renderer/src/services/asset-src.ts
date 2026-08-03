@@ -8,3 +8,17 @@
 export function fileSrc(file: string, w?: number): string {
   return file ? 'asset://img/' + encodeURIComponent(file) + (w ? '?w=' + w : '') : '';
 }
+
+// The inverse of fileSrc's bare (no `?w=`) form — pulls the library filename
+// back out of an already-built asset:// URL. Pin's toolbar entry point (#79)
+// is the one caller: the image tab only hands out finished src strings
+// (services/image-tab.ts), never the bare filename a PinItem needs.
+export function fileOfSrc(src: string): string {
+  const m = /^asset:\/\/img\/([^?]+)/.exec(src);
+  if (!m) return '';
+  try {
+    return decodeURIComponent(m[1]);
+  } catch {
+    return '';
+  }
+}

@@ -732,3 +732,17 @@ export interface FullTextHit {
   postId: string;
   rank: number;
 }
+
+/**
+ * One tile in a pin (floating mini-viewer) window's set (#79). `captureId` is
+ * best-effort identity (the owning post's, or the source tab's when a single
+ * exact record can't be named — e.g. the toolbar's "pin what's on screen"
+ * entry point) used only to highlight an already-pinned tile on a duplicate
+ * add; the tile itself is keyed by `file`, which is unique in the library.
+ * Window-local state only — nothing here is ever written back to a post record.
+ */
+export interface PinItem {
+  captureId: string;
+  file: string;
+  video: boolean;
+}

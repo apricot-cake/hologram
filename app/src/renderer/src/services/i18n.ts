@@ -129,6 +129,7 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     // Folder hierarchy (#41): direct tree editing in the sidebar
     foldNew: 'フォルダを作成',
     foldNewSub: 'サブフォルダを作成',
+    foldPinOpen: 'ピンで開く',
     foldToggleSubs: 'サブフォルダの表示',
     foldDeleteCascade: 'サブフォルダ $1 件も一緒に削除されます。投稿はライブラリに残ります。',
     foldOnly: 'このフォルダのみ',
@@ -201,6 +202,8 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     ctxOpenFile: '開く',
     ctxOpenFileInFolder: 'フォルダで表示',
     ctxOpenNewTab: '新しいタブで開く',
+    // 最前面の参照ウィンドウ（ピン留めミニビューア、#79）
+    ctxPin: 'ピン留めへ送る',
     // 比較ビュー (#82) — 複数選択 → 右クリックの一行
     ctxCompare: '比較',
     // Right-click on selected text (#167). This row sits in the same lineup as "Search with
@@ -221,6 +224,14 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     itvFlip: '左右反転',
     itvGrid: 'グリッド',
     itvGrayscale: 'グレースケール',
+    itvPin: 'ピン留めへ送る',
+    // 最前面の参照ウィンドウ（ピン留めミニビューア、#79）— ウィンドウ自身のUI
+    pinAlwaysOnTop: '最前面固定',
+    pinSaveFolder: 'セットをフォルダとして保存…',
+    pinSaveFolderPrompt: 'フォルダ名',
+    pinClose: '閉じる',
+    pinBackToGrid: '一覧へ戻る',
+    pinEmpty: '画像を右クリックして「ピン留めへ送る」を選ぶと、ここに表示されます。',
     // Ugoira playback (#119 St3). Uses pixiv's own name for it as-is (no coined terms)
     ugoiraLabel: 'うごイラ',
     ugoiraPlay: '再生',
@@ -934,6 +945,7 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     // Folder nesting (#41): the sidebar tree edited in place
     foldNew: 'New folder',
     foldNewSub: 'New subfolder',
+    foldPinOpen: 'Open in pin window',
     foldToggleSubs: 'Toggle subfolders',
     foldDeleteCascade: 'Its $1 subfolder(s) are deleted too. The posts stay in your library.',
     foldOnly: 'This folder only',
@@ -1003,6 +1015,8 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     ctxOpenFile: 'Open',
     ctxOpenFileInFolder: 'Show in folder',
     ctxOpenNewTab: 'Open in new tab',
+    // Pinned floating mini-viewer (#79)
+    ctxPin: 'Send to pin window',
     // Compare view (#82) — multi-select then right-click
     ctxCompare: 'Compare',
     ctxCopyText: 'Copy',
@@ -1020,6 +1034,14 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     itvFlip: 'Flip horizontal',
     itvGrid: 'Grid',
     itvGrayscale: 'Grayscale',
+    itvPin: 'Send to pin window',
+    // Pinned floating mini-viewer (#79) — the window's own UI
+    pinAlwaysOnTop: 'Always on top',
+    pinSaveFolder: 'Save set as folder…',
+    pinSaveFolderPrompt: 'Folder name',
+    pinClose: 'Close',
+    pinBackToGrid: 'Back to grid',
+    pinEmpty: 'Right-click an image and choose "Send to pin window" to see it here.',
     ugoiraLabel: 'Ugoira animation',
     ugoiraPlay: 'Play',
     ugoiraPause: 'Pause',

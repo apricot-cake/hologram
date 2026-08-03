@@ -214,16 +214,25 @@ function installNavigationGuards() {
 //       reads the window's identity from the main-process side instead (its
 //       webContents.id against the primary's), so the renderer-side flag is
 //       advisory only and never a security boundary.
+// Resolve the theme from config up front so a window's first paint (and its
+// backdrop) match it — no flash, and SMOKE captures reflect it. Shared by
+// createWindow and lib-pin-window.ts's createPinWindow (#79): both pass the
+// PREF (auto/light/dark) to their page as a ?theme= query that theme.js reads
+// synchronously during <head>; 'auto' is resolved there via prefers-color-scheme
+// (which follows nativeTheme). For the BrowserWindow backdrop, 'auto' is
+// resolved here too (isDarkTheme), before the page has painted anything.
+function resolveTheme(): 'auto' | 'light' | 'dark' {
+  const cfgTheme = readConfig().theme;
+  return ['auto', 'light', 'dark'].includes(cfgTheme) ? cfgTheme : 'auto';
+}
+function isDarkTheme(theme: 'auto' | 'light' | 'dark'): boolean {
+  return theme === 'dark' || (theme === 'auto' && nativeTheme.shouldUseDarkColors);
+}
+
 function createWindow(show = true, opts?: { secondary?: boolean }) {
   const secondary = !!(opts && opts.secondary);
-  // Resolve the theme from config up front so the first paint (and the window's
-  // backdrop) match it — no flash, and SMOKE captures reflect it. We pass the
-  // PREF (auto/light/dark) to the page as a ?theme= query that theme.js reads
-  // synchronously during <head>; 'auto' is resolved there via prefers-color-scheme
-  // (which follows nativeTheme). For the backdrop we resolve 'auto' here too.
-  const cfgTheme = readConfig().theme;
-  const theme = ['auto', 'light', 'dark'].includes(cfgTheme) ? cfgTheme : 'auto';
-  const dark = theme === 'dark' || (theme === 'auto' && nativeTheme.shouldUseDarkColors);
+  const theme = resolveTheme();
+  const dark = isDarkTheme(theme);
   const smoke = process.env.HOLOGRAM_SMOKE === '1';
   // A secondary window never reads the persisted primary bounds — it cascades off
   // whichever window opened it instead (below), so `sb` here is primary-only.
@@ -345,4 +354,4 @@ function sendWindowToBack(w: BrowserWindow): void {
   }
 }
 
-export { APP_ICON, DEV_ORIGIN, DEV_SERVER_URL, devServer, createWindow, getWin, getWindows, installNavigationGuards, sendToOtherWins, sendToWin, sendWindowToBack };
+export { APP_ICON, DEV_ORIGIN, DEV_SERVER_URL, devServer, createWindow, getWin, getWindows, installNavigationGuards, isDarkTheme, resolveTheme, sendToOtherWins, sendToWin, sendWindowToBack };

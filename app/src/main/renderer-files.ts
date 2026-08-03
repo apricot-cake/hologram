@@ -11,9 +11,17 @@ import path from 'node:path';
 const APP_SCHEME = 'app';
 /** One host. `app://anything-else/…` is not ours. */
 const APP_HOST = 'bundle';
-/** The ONE document this scheme is allowed to make: the renderer's entry. */
+/** The renderer's own entry. */
 const APP_INDEX_PATH = '/index.html';
 const APP_INDEX_URL = `${APP_SCHEME}://${APP_HOST}${APP_INDEX_PATH}`;
+/** The pin (floating mini-viewer) window's entry (#79) — a second document on
+ * this scheme, deliberately: it shares the renderer's build output and preload,
+ * but draws its own shell-less UI rather than mounting AppShell. */
+const APP_PIN_PATH = '/pin.html';
+const APP_PIN_URL = `${APP_SCHEME}://${APP_HOST}${APP_PIN_PATH}`;
+/** Every top-level document this scheme is allowed to make (ADR 0012's asset://
+ * raster-only rule has its own, separate allow-list — isViewerImageName). */
+const APP_ENTRY_PATHS: readonly string[] = [APP_INDEX_PATH, APP_PIN_PATH];
 
 // Build products only. Deliberately NOT the asset:// mime table
 // (lib-thumbnails.ts): that one serves library media, this one serves a compiled
@@ -76,9 +84,16 @@ function appIndexUrl(query: Record<string, string>): string {
   return u.href;
 }
 
-/** true only for the renderer's own entry document (query/hash ignored). */
-function isAppRendererUrl(u: URL): boolean {
-  return u.protocol === `${APP_SCHEME}:` && u.hostname === APP_HOST && u.pathname === APP_INDEX_PATH;
+/** The pin window's entry (#79), carrying the boot query the same way appIndexUrl does. */
+function pinIndexUrl(query: Record<string, string>): string {
+  const u = new URL(APP_PIN_URL);
+  u.search = new URLSearchParams(query).toString();
+  return u.href;
 }
 
-export { APP_HOST, APP_INDEX_PATH, APP_INDEX_URL, APP_SCHEME, appIndexUrl, isAppRendererUrl, mimeForBundleFile, resolveInRenderer };
+/** true for either of this scheme's own entry documents (query/hash ignored). */
+function isAppRendererUrl(u: URL): boolean {
+  return u.protocol === `${APP_SCHEME}:` && u.hostname === APP_HOST && APP_ENTRY_PATHS.includes(u.pathname);
+}
+
+export { APP_HOST, APP_INDEX_PATH, APP_INDEX_URL, APP_PIN_PATH, APP_PIN_URL, APP_SCHEME, appIndexUrl, isAppRendererUrl, mimeForBundleFile, pinIndexUrl, resolveInRenderer };

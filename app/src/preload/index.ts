@@ -47,6 +47,7 @@ import type {
   UpdateTagsResult,
   OrphanRecoveryResult,
   PickLibraryFolderResult,
+  PinItem,
   PostsDelta,
   PostsSnapshot,
   PosterAliasesState,
@@ -289,6 +290,23 @@ const api = {
     ipcRenderer.on('org-changed', h);
     return () => ipcRenderer.removeListener('org-changed', h);
   },
+  // #79 (pin window): send, not invoke — fire-and-forget the same way
+  // open-new-window is, and opts.newWindow (the folder "ピンで開く" entry
+  // point) should feel instant rather than await a round trip.
+  pinSend: (items: PinItem[], opts?: { newWindow?: boolean }): void => ipcRenderer.send('pin-send', items, opts),
+  // The pin window's own first read of what it was opened with — main never
+  // pushes it at loadURL time (see lib-pin-window.ts's takeInitial comment).
+  pinGetInitial: (): Promise<PinItem[]> => ipcRenderer.invoke('pin-get-initial'),
+  onPinItemsAdded: (cb: (items: PinItem[]) => void): (() => void) => {
+    const h = (_e: unknown, items: PinItem[]) => cb(items);
+    ipcRenderer.on('pin-items-added', h);
+    return () => ipcRenderer.removeListener('pin-items-added', h);
+  },
+  // Returns the NEW state (main resolves it from the calling window itself —
+  // BrowserWindow.fromWebContents(event.sender) — same per-caller resolution
+  // window-control already uses).
+  pinToggleAlwaysOnTop: (): Promise<boolean> => ipcRenderer.invoke('pin-toggle-always-on-top'),
+  pinSaveAsFolder: (name: string, captureIds: string[]): Promise<OkResult> => ipcRenderer.invoke('pin-save-as-folder', name, captureIds),
 };
 
 // The full contextBridge IPC surface (window.hologram) — typeof the implementation,

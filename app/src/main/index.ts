@@ -34,6 +34,7 @@ import { backupIntervalMs, createBackupEngine, latestRestorableSnapshot, readBac
 import { classifyLibraryFolder } from './lib-switch-library.ts';
 import { ensureLibraryId } from './lib-db-write.ts';
 import { APP_ICON, DEV_ORIGIN, DEV_SERVER_URL, createWindow, devServer, getWin, getWindows, installNavigationGuards, sendToOtherWins, sendToWin, sendWindowToBack } from './lib-window.ts';
+import { pinSend, takeInitial as pinTakeInitial, toggleAlwaysOnTop as pinToggleAlwaysOnTopImpl } from './lib-pin-window.ts';
 import { installDevRendererCsp, registerAppProtocol } from './app-protocol.ts';
 import { runMlSmoke } from './ml-smoke.ts';
 import { stopMlRuntime } from './lib-ml-runtime.ts';
@@ -44,6 +45,7 @@ import * as ipcOrganize from './ipc-organize.ts';
 import * as ipcPosts from './ipc-posts.ts';
 import * as ipcConfig from './ipc-config.ts';
 import * as ipcWindow from './ipc-window.ts';
+import * as ipcPin from './ipc-pin.ts';
 import * as ipcTrash from './ipc-trash.ts';
 import * as ipcBackup from './ipc-backup.ts';
 import * as ipcTransfer from './ipc-transfer.ts';
@@ -863,11 +865,15 @@ function registerExtractedIpc() {
     openNewWindow: () => {
       createWindow(true, { secondary: true });
     },
+    pinSend: (items, newWindow) => pinSend(items, newWindow),
+    pinGetInitial: (webContentsId) => pinTakeInitial(webContentsId),
+    pinToggleAlwaysOnTop: (webContentsId) => pinToggleAlwaysOnTopImpl(webContentsId),
   };
   ipcOrganize.register(ctx);
   ipcPosts.register(ctx);
   ipcConfig.register(ctx);
   ipcWindow.register(ctx);
+  ipcPin.register(ctx);
   ipcWatchImport.register(ctx);
   ipcTrash.register(ctx);
   ipcBackup.register(ctx);

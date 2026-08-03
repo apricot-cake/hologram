@@ -125,4 +125,9 @@ export const hologramIpc: HologramPreload = {
   onWindowMaximizedChanged: (cb) => bridge().onWindowMaximizedChanged(cb),
   openNewWindow: () => bridge().openNewWindow(),
   onOrgChanged: (cb) => bridge().onOrgChanged(cb),
+  pinSend: (items, opts) => bridge().pinSend(items, opts),
+  pinGetInitial: () => bridge().pinGetInitial(),
+  onPinItemsAdded: (cb) => bridge().onPinItemsAdded(cb),
+  pinToggleAlwaysOnTop: () => bridge().pinToggleAlwaysOnTop(),
+  pinSaveAsFolder: (name, captureIds) => bridge().pinSaveAsFolder(name, captureIds),
 };
