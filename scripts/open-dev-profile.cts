@@ -16,9 +16,25 @@
 // chrome://extensions is remembered by the profile. That first load is the only
 // part of this that a person has to do.
 //
+// Two things happen before anything opens (#857):
+//
+//   1. If the profile is already up, this stops and says so. The window is
+//      long-lived — the sign-ins, the loaded unpacked extension and whatever
+//      timelines are open all live in it — so "already running" is the common
+//      case, not the exception. Opening a browser takes the screen and the
+//      keyboard away from whoever is using the machine, and paying that to
+//      reach a window that is already there is pure cost.
+//   2. Otherwise it launches through a one-shot scheduled task instead of
+//      spawning chrome.exe as a child, for the reason HologramLaunch exists:
+//      a process started from inside the MSIX-packaged desktop app runs in the
+//      container, where registry and filesystem writes go to a per-package
+//      copy. A Chrome started there could fork the profile it is supposed to
+//      reuse. The task scheduler starts the action from the service, i.e. as
+//      if a person had double-clicked it.
+//
 //   node scripts/open-dev-profile.cts
 
-const { execFileSync, spawn } = require('node:child_process');
+const { execFileSync, spawnSync } = require('node:child_process');
 const fs = require('node:fs');
 const { homedir } = require('node:os');
 const path = require('node:path');
@@ -50,24 +66,66 @@ function chromePath(): string {
 
 const chrome = process.env.HOLOGRAM_CHROME || chromePath();
 
+// The process that owns the window for a given --user-data-dir, if there is
+// one. Chrome's helper processes (--type=renderer and friends) repeat the same
+// --user-data-dir, so they are filtered out — otherwise a profile whose window
+// was closed but whose crashpad handler lingers would read as running.
+function runningPid(profile: string): number | null {
+  let processes: { ProcessId: number; CommandLine: string | null }[];
+  try {
+    const json = execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', 'Get-CimInstance Win32_Process -Filter "Name=\'chrome.exe\'" | Select-Object ProcessId,CommandLine | ConvertTo-Json -Compress'], { encoding: 'utf8' }).trim();
+    if (!json) return null;
+    const parsed = JSON.parse(json);
+    processes = Array.isArray(parsed) ? parsed : [parsed];
+  } catch {
+    // No process list means no answer, not "nothing is running" — say so by
+    // returning null and let the caller open a window it may not have needed,
+    // rather than silently skipping a launch that was actually required.
+    return null;
+  }
+  const want = path.resolve(profile).toLowerCase();
+  for (const proc of processes) {
+    const cmd = proc.CommandLine || '';
+    if (cmd.includes('--type=')) continue;
+    const match = /--user-data-dir=(?:"([^"]*)"|(\S+))/.exec(cmd);
+    const dir = match?.[1] ?? match?.[2];
+    if (dir && path.resolve(dir).toLowerCase() === want) return proc.ProcessId;
+  }
+  return null;
+}
+
 // `--print` resolves everything and opens nothing. Opening a browser window
 // takes the screen and the keyboard away from whoever is using the machine, so
 // checking that the paths are right must not require paying that — including
 // when the checker is an agent (which is how this flag came to exist: the first
 // run of this script stole focus for a check that needed no window at all).
 if (process.argv.includes('--print')) {
+  const pid = runningPid(PROFILE);
   console.log(`chrome:  ${chrome}`);
   console.log(`profile: ${PROFILE}`);
+  console.log(`running: ${pid === null ? 'no' : `yes (pid ${pid})`}`);
   console.log(`build:   ${OUTPUT}${fs.existsSync(path.join(OUTPUT, 'manifest.json')) ? '' : '  (not built yet)'}`);
+  process.exit(0);
+}
+
+const alreadyOpen = runningPid(PROFILE);
+if (alreadyOpen !== null) {
+  console.log(`[hologram] the development Chrome profile is already open (pid ${alreadyOpen}): ${PROFILE}`);
+  console.log('[hologram] nothing to do — switch to that window. Pass --print to see the paths.');
   process.exit(0);
 }
 
 fs.mkdirSync(PROFILE, { recursive: true });
 
-// Detached: this command opens a browser and returns, rather than owning it for
-// as long as it is up. Closing the terminal must not close the browser.
-const child = spawn(chrome, [`--user-data-dir=${PROFILE}`], { detached: true, stdio: 'ignore' });
-child.unref();
+// Through the scheduled task, so the browser lands outside the MSIX container
+// (see the header). The task is one-shot and its action is `cmd /c start`, so
+// it completes immediately and the browser it opened outlives it — verified
+// 2026-08-03: the task returns to Ready with exit 0 while Chrome keeps running,
+// and unregistering it does not take the browser down.
+const launched = spawnSync('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', path.join(__dirname, 'open-dev-profile.ps1'), chrome, PROFILE], { stdio: 'inherit' });
+if (launched.status !== 0) {
+  throw new Error(`open-dev-profile.ps1 exited with ${launched.status}. The browser was not opened.`);
+}
 
 console.log(`[hologram] opened the development Chrome profile: ${PROFILE}`);
 if (fs.existsSync(path.join(OUTPUT, 'manifest.json'))) {
