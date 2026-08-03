@@ -39,7 +39,7 @@ import type Database from 'better-sqlite3';
 
 import { INBOX_DIRNAME } from '../../../native-host/inbox.mts';
 import { configDir } from './native-host.ts';
-import { readConfig, writeConfig, getSaveFolder } from './lib-config.ts';
+import { getSaveFolder, readLibraryBackupConfig, writeLibraryBackupConfig, readLibraryIntegrityStatus, writeLibraryIntegrityStatus } from './lib-config.ts';
 import { BACKUP_SUBDIR, backupRoot, createLocalFolderDestination, TMP_RE } from './lib-backup-destination.ts';
 import { ensureLibraryId } from './lib-db-write.ts';
 import { groupOf, planBackup } from './lib-backup-plan.ts';
@@ -69,9 +69,9 @@ const TRASH_SUBDIR = '.trash';
 // The live database and its WAL sidecars, never carried by the media lane: a
 // file-level copy of a database being written to is inconsistent by
 // construction (#97), and the consistent copy already exists as the generation
-// store. They are named here rather than found, because #176 moves the database
-// INTO the library folder and the root sweep below would otherwise pick it up
-// the day that lands.
+// store. Named here rather than found, because #176 put the database INSIDE
+// the library folder — without this exclusion the root sweep below would pick
+// it up and ship an inconsistent copy alongside the real one.
 const LIVE_DB_NAMES = new Set(['hologram.db', 'hologram.db-wal', 'hologram.db-shm']);
 // (LIBRARY_SUBDIR — the named subfolder for a relocated library — lives in
 // ./ipc-transfer.ts with the pick-save-folder handler that owns it.)
@@ -93,46 +93,15 @@ function migrateLegacyDestinationFolder(dir: string): void {
   }
 }
 
-const BACKUP_DEFAULTS = {
-  dir: null, // Output destination (must not overlap with the save folder, inside or out)
-  interval: false, // fixed interval
-  intervalValue: 1, // interval count
-  intervalUnit: 'day', // 'day' | 'week' | 'month'
-  lastRunAt: null,
-  lastResult: null,
-};
-function readBackupConfig() {
-  const b = readConfig().backup || {};
-  return Object.assign({}, BACKUP_DEFAULTS, b);
-}
-function writeBackupConfig(patch) {
-  const cfg = readConfig();
-  cfg.backup = Object.assign({}, BACKUP_DEFAULTS, cfg.backup || {}, patch || {});
-  writeConfig(cfg);
-  return cfg.backup;
-}
-
-// Integrity-check status (#301) — kept OUT of BACKUP_DEFAULTS/backup config on
-// purpose: the startup orphan/integrity_check pass must run and be visible
-// even when no destination `dir` is configured (that's the whole point of it
-// being separate from the "daily reconciliation" pass that piggybacks on a
-// backup run), so it cannot live inside a config object whose UI treats `dir`
-// as the feature's on/off switch.
-const INTEGRITY_DEFAULTS = {
-  lastCheckAt: null,
-  dbOk: null, // null = never checked yet
-  orphanCount: 0,
-  missingCount: 0,
-};
-function readIntegrityStatus() {
-  return Object.assign({}, INTEGRITY_DEFAULTS, readConfig().integrity || {});
-}
-function writeIntegrityStatus(patch) {
-  const cfg = readConfig();
-  cfg.integrity = Object.assign({}, INTEGRITY_DEFAULTS, cfg.integrity || {}, patch || {});
-  writeConfig(cfg);
-  return cfg.integrity;
-}
+// Backup destination + integrity status used to be ONE flat key each on
+// config.json; #176 moved both under the current library's libraries[] entry
+// (lib-config.ts) so a switch carries its own destination and status rather
+// than sharing the whole app's. The no-argument call shape here is unchanged —
+// every caller already meant "the current library".
+const readBackupConfig = readLibraryBackupConfig;
+const writeBackupConfig = writeLibraryBackupConfig;
+const readIntegrityStatus = readLibraryIntegrityStatus;
+const writeIntegrityStatus = writeLibraryIntegrityStatus;
 
 function pathIsInside(child, parent) {
   const c = path.resolve(child),
@@ -603,7 +572,13 @@ function createBackupEngine({ ensurePostsSynced, scheduleSavedIndexWrite, send, 
     }, BACKUP_HEARTBEAT_MS);
   }
 
-  return { runBackup, runDbGeneration, listDbGenerations, rollbackDbGeneration, armBackupSchedule, runStartupIntegrityCheck, runOrphanRecovery, noteLibraryMutation };
+  // #176's switchLibrary waits for both lanes to go idle before it closes the
+  // live DB out from under them (a close mid-run is what runDbGeneration's own
+  // `generationRunning` guard against rollback already protects against —
+  // switching reuses the same two flags rather than inventing a third).
+  const isBusy = () => backupRunning || generationRunning;
+
+  return { runBackup, runDbGeneration, listDbGenerations, rollbackDbGeneration, armBackupSchedule, runStartupIntegrityCheck, runOrphanRecovery, noteLibraryMutation, isBusy };
 }
 
 /**

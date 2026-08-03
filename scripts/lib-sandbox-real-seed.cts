@@ -295,6 +295,12 @@ function verifyIsolation(input: IsolationInput): { ok: boolean; problems: string
   const norm = (p: string) => path.resolve(p).replace(/\\/g, '/').toLowerCase();
   if (!cfg.saveFolder || norm(cfg.saveFolder) !== norm(input.sandboxLibrary)) problems.push(`config saveFolder is not the sandbox library: ${cfg.saveFolder}`);
   if (cfg.backup && cfg.backup.dir) problems.push(`config carries a backup destination: ${cfg.backup.dir}`);
+  // #176: hologram.db lives inside the library folder now (ADR 0025) — the
+  // meaningful check is that the sandbox's OWN db is not itself the real
+  // library's copy (checked against realSaveFolder). The realConfigDir check
+  // stays too: configDir still holds machine-local state (logs, thumb-cache)
+  // nothing here should nest inside.
+  if (norm(input.dbFile).startsWith(norm(input.realSaveFolder) + '/')) problems.push(`sandbox database sits inside the real library: ${input.dbFile}`);
   if (norm(input.dbFile).startsWith(norm(input.realConfigDir) + '/')) problems.push(`sandbox database sits inside the real config dir: ${input.dbFile}`);
   if (norm(input.sandboxLibrary).startsWith(norm(input.realSaveFolder) + '/')) problems.push(`sandbox library sits inside the real library: ${input.sandboxLibrary}`);
 
@@ -346,13 +352,17 @@ interface SeedOptions {
 
 async function seedRealSandbox(opts: SeedOptions) {
   const log = opts.log || (() => {});
-  const dbFile = path.join(opts.sandboxConfigDir, 'hologram.db');
+  // #176: hologram.db lives INSIDE the library folder now (ADR 0025), on both
+  // ends — the source (the real library's own database) and the destination
+  // (this is where the sandboxed app's own ensureDb()/dbFile() will look, once
+  // it launches against config.saveFolder = opts.sandboxLibrary below).
+  const dbFile = path.join(opts.sandboxLibrary, 'hologram.db');
   const configPath = path.join(opts.sandboxConfigDir, 'config.json');
 
   fs.mkdirSync(opts.sandboxConfigDir, { recursive: true });
   fs.mkdirSync(opts.sandboxLibrary, { recursive: true });
 
-  const snap = await snapshotDatabaseFile(path.join(opts.realConfigDir, 'hologram.db'), dbFile);
+  const snap = await snapshotDatabaseFile(path.join(opts.realSaveFolder, 'hologram.db'), dbFile);
   log(`snapshot: ${(snap.bytes / 1048576).toFixed(1)} MB via SQLite backup API`);
 
   const handle = openDatabase(dbFile, { readonly: true });

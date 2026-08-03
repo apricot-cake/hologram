@@ -343,10 +343,18 @@ async function runCanary(platforms: string[], dryRun: boolean): Promise<number> 
 // endpoint. Rough on purpose (baselines are per post type, the stored payloads
 // are whatever was saved) — it points at the field, it does not judge.
 function inspectPayloads(filter: string | null, limit: number) {
-  const { configDir } = require('../native-host/paths.cts');
+  const { configDir, defaultLibraryDir } = require('../native-host/paths.cts');
   const { openDatabase } = require('../app/src/main/lib-db.ts');
   const { unpackRawPayload } = require('../native-host/raw-payload.mts');
-  const dbFile = path.join(configDir(), 'hologram.db');
+  // #176: hologram.db lives inside the save folder now, not configDir (ADR 0025).
+  let folder = defaultLibraryDir();
+  try {
+    const cfg = JSON.parse(fs.readFileSync(path.join(configDir(), 'config.json'), 'utf8'));
+    if (typeof cfg.saveFolder === 'string' && cfg.saveFolder) folder = cfg.saveFolder;
+  } catch {
+    /* no config yet — fall back to the default library dir */
+  }
+  const dbFile = path.join(folder, 'hologram.db');
   if (!fs.existsSync(dbFile)) {
     console.log('データベースが無い:', dbFile);
     return 2;

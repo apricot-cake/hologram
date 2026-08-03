@@ -24,12 +24,29 @@ import { fillCardDims } from './lib-card-dims.ts';
 import { fillMediaDims } from './lib-media-dims.ts';
 import { makeTagResolver, preparePostStmts, writePost } from './lib-db-record-writer.ts';
 import { IMPORTABLE_MEDIA, buildLocalRecord, importLocalFile, localCaptureId } from './lib-local-intake.ts';
+import { classifyLibraryFolder } from './lib-switch-library.ts';
 import { collectDroppedPaths } from './lib-drop-import.ts';
-import { TRASH_SUBDIR } from './lib-save-folder-path.ts';
-import { INBOX_DIRNAME } from '../../../native-host/inbox.mts';
 import type { PostRecordInput } from '../../../native-host/post-record.mts';
 import type { IpcContext } from './ipc-context.ts';
-import type { ClearAllResult, ClipboardImportResult, CompleteImportResult, DropCollectResult, DroppedFile, DropImportResult, ExportCompleteResult, ExportSaveResult, LegacyImportResult, MediaImportResult, RepointApplyResult, RepointPickResult, SaveFolderMoveResult, SaveFolderPickResult } from './ipc-payloads.ts';
+import type {
+  ClearAllResult,
+  ClipboardImportResult,
+  CompleteImportResult,
+  DropCollectResult,
+  DroppedFile,
+  DropImportResult,
+  ExportCompleteResult,
+  ExportSaveResult,
+  LegacyImportResult,
+  MediaImportResult,
+  PickLibraryFolderResult,
+  RecentLibraryEntry,
+  RepointApplyResult,
+  RepointPickResult,
+  SaveFolderMoveResult,
+  SaveFolderPickResult,
+  SwitchLibraryResult,
+} from './ipc-payloads.ts';
 
 function exportStamp() {
   return new Date().toISOString().replace(/[:.]/g, '-').replace('T', '_').slice(0, 19);
@@ -38,26 +55,6 @@ function exportStamp() {
 // Named subfolder for a relocated library, so picking a folder never dumps
 // sidecars/images flat into it (parallel to BACKUP_SUBDIR's Hologram-backup).
 const LIBRARY_SUBDIR = 'Hologram-library';
-
-// #37: does `dir` look like it already holds a Hologram library — a .trash or
-// .hologram-inbox subfolder, or at least one library media file directly
-// inside it? This is repoint's ONLY signal (there is no per-post sidecar or
-// index file inside a save folder any more since #302 — the DB is the truth
-// source), and it exists purely to pick which confirmation the renderer shows:
-// evidence found → repoint silently; none found → ask "start as an empty new
-// library?" first. It never blocks repoint outright — an unreadable or empty
-// folder is a legitimate destination too.
-function looksLikeLibrary(dir: string): boolean {
-  let names: string[];
-  try {
-    names = fs.readdirSync(dir);
-  } catch {
-    return false;
-  }
-  if (names.includes(TRASH_SUBDIR) || names.includes(INBOX_DIRNAME)) return true;
-  const mediaRe = new RegExp('\\.(' + IMPORTABLE_MEDIA.join('|') + ')$', 'i');
-  return names.some((f) => mediaRe.test(f));
-}
 
 // The extension lists and the record shape a locally-imported file becomes now live
 // in lib-local-intake.ts — the dialog below is one of four doors that share them
@@ -80,6 +77,11 @@ function register(ctx: IpcContext) {
     send,
     validateSaveFolder,
     relocateLibrary,
+    switchLibrary,
+    listRecentLibraries,
+    removeRecentLibrary,
+    closeDb,
+    openDb,
     watchInboxFolder,
     resetDelta,
     ensurePostsSynced,
@@ -591,12 +593,15 @@ function register(ctx: IpcContext) {
     const v = validateSaveFolder(dest);
     if (!v.ok) return { ok: false, error: v.error };
 
-    // Whole crash-safe sequence lives in lib-migrate (copy+catch-up → flip →
-    // verified cleanup → shell removal → delayed straggler sweep).
+    // Whole crash-safe sequence lives in lib-migrate (close DB → copy+catch-up →
+    // flip → reopen DB → verified cleanup → shell removal → delayed straggler
+    // sweep — #176 added the DB close/reopen around the copy+flip).
     return relocateLibrary(src, dest, {
       readConfig,
       writeConfig,
       emit: (payload) => send('save-folder-progress', payload),
+      closeDb,
+      openDb,
       // Re-point the inbox watcher and drop the delta baseline so the renderer full-resyncs.
       afterFlip: () => {
         watchInboxFolder();
@@ -636,16 +641,20 @@ function register(ctx: IpcContext) {
     return moveLibraryTo(dest);
   });
 
-  // --- Repoint: point config.saveFolder at an already-existing library, with NO
-  // copy (#37). The relocation flow above assumes the CURRENT folder is readable
-  // (it copies from it); repoint is for the opposite situation — the current
+  // --- Repoint: point config.saveFolder at an already-existing library (#37).
+  // The relocation flow above assumes the CURRENT folder is readable (it
+  // copies from it); repoint is for the opposite situation — the current
   // folder is missing, and the real library is sitting somewhere else (a
   // different drive letter, a folder the user moved by hand outside the app).
-  // Split the same way pick/move-save-folder are: pick-repoint-folder resolves +
-  // validates a destination and reports whether it looks like an existing
-  // library, so the renderer can ask "start empty?" first when it does not;
-  // apply-repoint does the actual (copy-free) write once the user has accepted
-  // whatever the renderer needed to ask.
+  // #176 folded repoint's actual work into switchLibrary (below) — since the
+  // database now lives INSIDE the library folder, "point config.saveFolder at
+  // a different existing library" and "close the old DB, open the one at the
+  // new folder" are the same operation, not a copy-free pointer flip plus a
+  // separate DB story. This pair keeps its own name/copy for the missing-
+  // library recovery screen (LibraryMissingState.tsx) rather than merging into
+  // pick-library-folder/switch-library below, which are Settings' deliberate
+  // "switch to a different library" flow — same underlying switchLibrary call,
+  // different entry point and wording.
   ipcMain.handle('pick-repoint-folder', async (_e): Promise<RepointPickResult> => {
     // #32 St1: parented to whichever window called, not ctx.getWin() (the primary).
     const res = await dialog.showOpenDialog(BrowserWindow.fromWebContents(_e.sender) as BrowserWindow, { properties: ['openDirectory', 'createDirectory'] });
@@ -657,22 +666,50 @@ function register(ctx: IpcContext) {
     // is a no-op when `dest` already exists, which is the expected case here.
     const v = validateSaveFolder(dest);
     if (!v.ok) return { ok: false, error: v.error };
-    return { ok: true, dest, hasEvidence: looksLikeLibrary(dest) };
+    const classification = classifyLibraryFolder(dest);
+    // #176: a folder with no sign of ever being a library, and something in it
+    // that is not ours, is refused here outright rather than offered as a
+    // silent "start empty?" choice (looksLikeLibrary's old two-way split let
+    // this through; the four-way classification introduced by #176 does not).
+    if (classification === 'reject') return { ok: false, error: 'not-a-library' };
+    return { ok: true, dest, hasEvidence: classification !== 'empty' };
   });
 
-  ipcMain.handle('apply-repoint', (_e, dest): RepointApplyResult => {
+  ipcMain.handle('apply-repoint', async (_e, dest): Promise<RepointApplyResult> => {
     if (!dest || typeof dest !== 'string') return { ok: false, error: 'invalid' };
+    return switchLibrary(dest);
+  });
+
+  // --- Settings "ライブラリ" section (#176): 切り替え / 新規作成 / 最近使った
+  // ライブラリ. pick-library-folder resolves + classifies a destination WITHOUT
+  // opening anything, so the renderer can show the confirm its classification
+  // calls for (none / "start new?" / "recover?") before calling switch-library
+  // to actually commit. A "最近使ったライブラリ" row is already known-good (it
+  // was opened before), so it skips the pick step and calls switch-library
+  // directly.
+  ipcMain.handle('pick-library-folder', async (_e): Promise<PickLibraryFolderResult> => {
+    // #32 St1: parented to whichever window called, not ctx.getWin() (the primary).
+    const res = await dialog.showOpenDialog(BrowserWindow.fromWebContents(_e.sender) as BrowserWindow, { properties: ['openDirectory', 'createDirectory'] });
+    if (res.canceled || !res.filePaths || !res.filePaths[0]) return { ok: false, canceled: true };
+    const dest = res.filePaths[0];
     const v = validateSaveFolder(dest);
     if (!v.ok) return { ok: false, error: v.error };
-    const cfg = readConfig();
-    cfg.saveFolder = dest;
-    writeConfig(cfg);
-    // Re-point the inbox watcher (a real folder now — this arms it, it does not
-    // create anything) and drop the delta baseline so the renderer full-resyncs
-    // against whatever the DB already knows, same as a relocation's afterFlip.
-    watchInboxFolder();
-    resetDelta();
-    return { ok: true, saveFolder: dest };
+    const classification = classifyLibraryFolder(dest);
+    if (classification === 'reject') return { ok: false, error: 'not-a-library' };
+    return { ok: true, dest, classification };
+  });
+
+  ipcMain.handle('switch-library', async (_e, dest): Promise<SwitchLibraryResult> => {
+    if (!dest || typeof dest !== 'string') return { ok: false, error: 'invalid' };
+    return switchLibrary(dest);
+  });
+
+  ipcMain.handle('get-recent-libraries', (): RecentLibraryEntry[] => listRecentLibraries());
+
+  ipcMain.handle('remove-recent-library', (_e, folder): { ok: boolean } => {
+    if (!folder || typeof folder !== 'string') return { ok: false };
+    removeRecentLibrary(folder);
+    return { ok: true };
   });
 
   // #299: same rationale as importPostRecords above — write straight into the DB (a real

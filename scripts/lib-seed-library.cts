@@ -34,9 +34,16 @@ function saveFolderOf(configDir: string): string | null {
 
 // Returns the open handle so a caller can keep seeding (folders, tag types) with
 // createDbWriter before closing it. Pass `close: false` to keep it open.
+//
+// #176: hologram.db lives INSIDE the save folder now, not configDir (ADR 0025)
+// — the app's own dbFile() resolves off config.saveFolder, so a harness that
+// wrote to configDir/hologram.db here would seed a file the app never opens.
+// Callers must therefore write config.json (with an explicit saveFolder) BEFORE
+// calling this — every existing harness already does, for the media files.
 function seedLibrary(configDir: string, records: any[], opts: { close?: boolean } = {}) {
-  const handle = openDatabase(path.join(configDir, 'hologram.db'));
   const saveFolder = saveFolderOf(configDir);
+  if (!saveFolder) throw new Error('seedLibrary: config.json has no saveFolder yet — write it first (the harness needs a folder to put hologram.db in)');
+  const handle = openDatabase(path.join(saveFolder, 'hologram.db'));
   const stmts = preparePostStmts(handle.sqlite);
   const resolveTagId = makeTagResolver(handle.sqlite);
   for (const rec of records) writePost(stmts, resolveTagId, fillMediaDims(saveFolder, fillCardDims(saveFolder, rec)));

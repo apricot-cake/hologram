@@ -396,7 +396,33 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
 
     // viewer: settings > data / danger
     dataTitle: 'データ',
-    saveFolderSubTitle: 'ライブラリの保存先',
+
+    // #176: switching between multiple libraries — separate from "保存先の変更"
+    // (saveFolderSubTitle below), which MOVES the current library; this OPENS a
+    // different one, leaving the current one untouched where it is.
+    libraryCardTitle: 'ライブラリ',
+    libraryCardHint: '複数のライブラリ（保存フォルダ）を切り替えて使えます。「移動」は今のライブラリを別の場所へ運びますが、「切り替え」は別のライブラリを開くだけで、今のライブラリはそのまま残ります。',
+    libraryBackupPrefix: 'このライブラリのバックアップ: ',
+    libraryBackupNone: '未設定',
+    librarySwitch: '切り替え…',
+    libraryCreateNew: '新規作成…',
+    libraryChanging: '切り替え中…',
+    librarySwitched: 'ライブラリを切り替えました',
+    libraryRecentTitle: '最近使ったライブラリ',
+    libraryRecentDead: '見つかりません',
+    libraryRecentForget: '一覧から削除',
+    librarySwitchTo: 'このライブラリに切り替え',
+    libraryEmptyConfirm: '空のフォルダです',
+    libraryEmptyConfirmDesc: 'このフォルダを新しいライブラリとして開始しますか。',
+    libraryEmptyConfirmOk: '新しいライブラリとして開始',
+    libraryRecoverConfirm: 'このフォルダにライブラリのデータベースが見つかりません',
+    libraryRecoverConfirmDesc: '取込キューとバックアップから復旧を試みます。復旧できなかった投稿は失われる場合があります。ライブラリを移動した先のフォルダを選んだ場合のみ続けてください。',
+    libraryRecoverConfirmOk: 'このまま開く',
+    libraryErrNotALibrary: 'Hologram のライブラリではありません',
+    libraryErrBusy: '切り替え中です。しばらく待ってから再度お試しください。',
+    libraryErrOpenFailed: 'このライブラリを開けませんでした（元のライブラリに戻しました）',
+
+    saveFolderSubTitle: 'ライブラリの保存先（移動）',
     saveFolderChange: '変更',
     saveFolderHint: '投稿の保存場所。変更すると、選んだフォルダの中に Hologram-library フォルダを作り、既存ライブラリをそこへ移動します（移動完了まで元データを保持＝安全）。',
     saveFolderMoving: '移行中…',
@@ -1158,7 +1184,33 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     hintShortcut: 'Opens the extension shortcuts page. Default: Alt+S (capture). If shortcuts stop working after reinstall, they may have been unassigned. Use the link above to reassign them.',
 
     dataTitle: 'Data',
-    saveFolderSubTitle: 'Library location',
+
+    // #176: switching between multiple libraries — separate from "保存先の変更"
+    // (saveFolderSubTitle below), which MOVES the current library; this OPENS a
+    // different one, leaving the current one untouched where it is.
+    libraryCardTitle: 'Library',
+    libraryCardHint: 'Switch between multiple libraries (save folders). "Move" carries the current library to a new place; "Switch" just opens a different one, leaving the current one where it is.',
+    libraryBackupPrefix: "This library's backup: ",
+    libraryBackupNone: 'Not set',
+    librarySwitch: 'Switch…',
+    libraryCreateNew: 'Create new…',
+    libraryChanging: 'Switching…',
+    librarySwitched: 'Switched libraries',
+    libraryRecentTitle: 'Recent libraries',
+    libraryRecentDead: 'Not found',
+    libraryRecentForget: 'Remove from list',
+    librarySwitchTo: 'Switch to this library',
+    libraryEmptyConfirm: 'This folder is empty',
+    libraryEmptyConfirmDesc: 'Start this folder as a new library?',
+    libraryEmptyConfirmOk: 'Start a new library',
+    libraryRecoverConfirm: "This folder's library database was not found",
+    libraryRecoverConfirmDesc: "Hologram will try to recover from the import queue and backup. Posts it can't recover may be lost. Only continue if this is really where you moved the library.",
+    libraryRecoverConfirmOk: 'Open it anyway',
+    libraryErrNotALibrary: 'Not a Hologram library',
+    libraryErrBusy: 'A switch is already in progress — try again in a moment.',
+    libraryErrOpenFailed: 'Could not open that library (switched back to the previous one)',
+
+    saveFolderSubTitle: 'Library location (move)',
     saveFolderChange: 'Change',
     saveFolderHint: 'Where posts are stored. Changing it creates a Hologram-library folder inside the folder you pick and moves the existing library there (your data is kept until the move completes).',
     saveFolderMoving: 'Moving…',
