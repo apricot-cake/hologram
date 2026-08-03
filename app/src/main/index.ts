@@ -45,6 +45,7 @@ import * as ipcTrash from './ipc-trash.ts';
 import * as ipcBackup from './ipc-backup.ts';
 import * as ipcTransfer from './ipc-transfer.ts';
 import * as ipcTagVocab from './ipc-tag-vocab.ts';
+import * as ipcHistory from './ipc-history.ts';
 import * as ipcWatchImport from './ipc-watch-import.ts';
 import { createWatchImportManager } from './lib-watch-import.ts';
 import type { IpcContext } from './ipc-context.ts';
@@ -268,6 +269,14 @@ function ensureDb() {
     dbHandle = openDatabase(file);
   }
   migratePosterKeyHost(dbHandle.sqlite);
+  // #145 design §5: "掃除＝DB を開いた時に1回" — ensureDb is memoized (the early
+  // return above), so this only runs on an actual fresh open: app launch, and
+  // #176's library switch (closeDb() clears dbHandle, the next call reopens here).
+  try {
+    createDbWriter(dbHandle.sqlite).pruneHistory();
+  } catch (err) {
+    log.warn('history prune failed:', err);
+  }
   return dbHandle;
 }
 
@@ -684,6 +693,7 @@ function registerExtractedIpc() {
   ipcBackup.register(ctx);
   ipcTransfer.register(ctx);
   ipcTagVocab.register(ctx);
+  ipcHistory.register(ctx);
 }
 registerExtractedIpc();
 

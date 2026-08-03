@@ -21,9 +21,11 @@
 import { genTabId, makeNavHistory, navEntryUrl, sanitizeSavedTabs, loadTabs, persistTabs } from './tab-state.ts';
 import { isOpen as paletteIsOpen } from './command-registry.ts';
 import { get as confirmGet } from './confirm.ts';
+import { recordPush } from './history.ts';
 import { isOpen as lightboxIsOpen } from './lightbox.ts';
 import { cloneTree, facetTreeFrom } from './query.ts';
 import { open as menuOpen } from './menu.ts';
+import { imageTabGroup, imageTabTitleOf } from './records.ts';
 import { isOpen as settingsIsOpen } from './settings.ts';
 import { isTypingTarget, registerShortcut, tryRun } from './shortcut-registry.ts';
 import { get as storeGet, set as storeSet } from './store.ts';
@@ -66,6 +68,10 @@ export interface TabsBuilderDeps {
   // anymore (#144 pending decision 1: unifying the image tab).
   showImageView(recs: string[], idx: number): void;
   hideImageView(): void;
+  // #145: resolves an image entry's recs to their live post records, for the
+  // global history page's title (imageTabTitleOf) — the same lookup
+  // image-tab-builder.ts's own showImageView/openImageEntry already use.
+  getPostById(id: string): HologramPost | undefined;
   // Coalescing hint for record(): a stable non-null key while one editing burst
   // is in progress (live search typing / an open facet editor session) makes
   // follow-up records replace instead of push — "1 session, 1 entry" (pending decision 2).
@@ -240,6 +246,21 @@ export function makeTabsController(deps: TabsBuilderDeps) {
     });
   }
 
+  // #145: the global history page's display label for one entry — reuses the
+  // SAME title-derivation logic the tab title / document.title already use
+  // (tabTitleOf for posts/timeline, the fixed posters label, imageTabTitleOf for
+  // image) rather than inventing a history-specific label generator, per the
+  // Issue's confirmed design ("表示ラベルは u とタブタイトル導出ロジックを流用する").
+  function entryTitleOf(e: HologramNavEntry): string {
+    if (e.kind === 'image') {
+      const st = e.state as { recs: string[]; idx: number };
+      const g = imageTabGroup({ id: getActiveTabId() || '', recs: st.recs }, deps.getPostById);
+      return g ? imageTabTitleOf(g, deps.t('imgTabFallback')) : deps.t('imgTabFallback');
+    }
+    if (e.kind === 'posters') return deps.t('browsePosters');
+    return deps.tabTitleOf(e.state as HologramTabSnapshot, { allCount: deps.getAllPostsCount() }).text;
+  }
+
   // --- View history (browser-style back/forward) ---
   // The state machine (hist/idx/cap/dedupe/forward-branch drop/adopt/replace/
   // coalescing) lives in tab-state.ts (makeNavHistory); this module keeps the
@@ -251,6 +272,10 @@ export function makeTabsController(deps: TabsBuilderDeps) {
     snapshot: snapshotEntry,
     apply: applyEntry,
     onChange: updateNavButtons,
+    // #145: the ONLY hook point that fires on a genuine push (never a replace) —
+    // see tab-state.ts's onPush doc. recordPush itself dedups consecutive same-u
+    // visits app-wide (services/history.ts).
+    onPush: (e) => recordPush(e, entryTitleOf(e)),
   });
   // The nav Back/Forward disabled state used to be part of a pushed activebar model; the
   // activebar component now self-derives everything else from hologramStore, but
@@ -456,6 +481,43 @@ export function makeTabsController(deps: TabsBuilderDeps) {
     requestAnimationFrame(() => deps.scrollContentTo(0));
     persistTabsDebounced();
   }
+  // #145: a history row's left click — "現在タブで復元してパネルを閉じる". Restoring
+  // is deliberately treated as a FRESH visit, not a back/forward traversal:
+  // applyEntry() alone (under its own restoringState guard) would restore the view
+  // WITHOUT recording anything, the same as switching tabs — but the design's
+  // acceptance criteria says a restore is itself a push ("復元による遷移は当然
+  // push＝履歴にも1行増える"), so recordEntry() runs explicitly right after,
+  // once restoringState has dropped back to false.
+  function openHistoryEntry(e: HologramNavEntry) {
+    applyEntry(e);
+    recordEntry(e);
+    persistTabsDebounced();
+  }
+  // #145: a history row's middle click — "バックグラウンド新タブ" (Chrome's
+  // middle-click-a-link convention). Deliberately does NOT go through addTab()/
+  // switchTab(): those always activate the new tab, and activating one mid-click
+  // would yank focus off whatever the user was looking at. The tab is built with
+  // its nav stack already seeded (_navHist/_navIdx), the same shape
+  // duplicateTab() constructs — activateTab() picks it up via nav.adopt() the
+  // first time the user actually switches to it, so nothing here touches the
+  // live `nav` closure (which belongs to the CURRENTLY active tab).
+  function openHistoryEntryInBackgroundTab(e: HologramNavEntry, title: string) {
+    const isGrid = e.kind === 'posts' || e.kind === 'timeline';
+    const t: HologramTab = {
+      id: genTabId(),
+      pinned: false,
+      title: e.kind === 'image' ? title : null,
+      _autoTitle: e.kind === 'image',
+      state: isGrid ? (e.state as HologramTabSnapshot) : null,
+      _navHist: [JSON.stringify(e)],
+      _navIdx: 0,
+    };
+    mutateTabs((arr) => {
+      arr.push(t);
+    });
+    persistTabsDebounced();
+  }
+
   // #21: opens the tag management page as its own tab (design's confirmed
   // "VS Code settings tab" shape) -- a singleton, so a second call just
   // focuses the one already open instead of stacking duplicates. Shares
@@ -699,6 +761,8 @@ export function makeTabsController(deps: TabsBuilderDeps) {
     switchTab,
     addTab,
     openTextSearchTab,
+    openHistoryEntry,
+    openHistoryEntryInBackgroundTab,
     openTagManagementTab,
     closeTab,
     closeTabByGesture,

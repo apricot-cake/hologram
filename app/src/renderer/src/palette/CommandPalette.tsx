@@ -20,7 +20,7 @@
 // async search against services/fulltext.ts) — entered via the palette's own footer row
 // or Ctrl/Cmd+Shift+F (command-registry.ts's openFulltext()).
 import { Autocomplete } from '@base-ui/react/autocomplete';
-import { AppWindow, FileSearch, Folder, Tag, Terminal, User } from 'lucide-react';
+import { AppWindow, FileSearch, Folder, History, Tag, Terminal, User } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { ComponentType } from 'react';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -31,6 +31,7 @@ import { type FullTextMatch, fullTextBridge, runFullTextSearch } from '../servic
 const SECTION_ICON: Record<CommandSection, ComponentType<{ className?: string }>> = {
   command: Terminal,
   tab: AppWindow,
+  history: History,
   tag: Tag,
   user: User,
   folder: Folder,
@@ -39,6 +40,7 @@ const SECTION_ICON: Record<CommandSection, ComponentType<{ className?: string }>
 const SECTION_LABEL: Record<CommandSection, string> = {
   command: 'paletteSecCommand',
   tab: 'paletteSecTab',
+  history: 'paletteSecHistory',
   tag: 'paletteSecTag',
   user: 'paletteSecUser',
   folder: 'paletteSecFolder',

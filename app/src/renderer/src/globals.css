@@ -320,7 +320,8 @@
 :root[data-privacy-mode='true'] [data-slot='viewer-video'],
 :root[data-privacy-mode='true'] [data-slot='viewer-canvas'],
 :root[data-privacy-mode='true'] [data-slot='lightbox-media'],
-:root[data-privacy-mode='true'] [data-slot='triage-media'] {
+:root[data-privacy-mode='true'] [data-slot='triage-media'],
+:root[data-privacy-mode='true'] [data-slot='history-thumb'] {
   filter: blur(22px) saturate(0.85);
   transition: filter var(--motion-duration-fast) var(--motion-ease-in);
 }
