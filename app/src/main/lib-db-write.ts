@@ -353,6 +353,108 @@ function readPosterAliases(sqlite: Sqlite) {
   };
 }
 
+// #289: poster_profiles/poster_profile_snapshots, for lib-archive.ts's ZIP
+// boundary (library/poster-profiles.json) — the same get/set-a-whole-table
+// shape readPosterAliases/replacePosterAliases above use, not the live save
+// path (lib-db-record-writer.ts's writePost owns that one; see its
+// writePosterProfile). The JSON shape carries the FULL history per poster
+// (not just "current") so an import can merge histories losslessly — see
+// lib-archive.ts's mergePosterProfiles, which recomputes "current" from
+// whichever merged history entry has the latest observedAt.
+interface PosterProfileHistoryEntryJson {
+  observedAt: string;
+  displayName: string | null;
+  screenName: string | null;
+  bio: string | null;
+  links: string | null;
+  avatar: string | null;
+  avatarFile: string | null;
+  banner: string | null;
+  bannerFile: string | null;
+  followers: number | null;
+  authorCreatedAt: string | null;
+  contentHash: string;
+  provenance: string;
+}
+interface PosterProfileJson {
+  posterKey: string;
+  platform: string;
+  userId: string | null;
+  instance: string | null;
+  history: PosterProfileHistoryEntryJson[];
+}
+
+function readPosterProfiles(sqlite: Sqlite): { profiles: PosterProfileJson[] } {
+  const identityRows = sqlite.prepare('SELECT posterKey, platform, userId, instance FROM poster_profiles ORDER BY posterKey').all() as Array<{ posterKey: string; platform: string; userId: string | null; instance: string | null }>;
+  if (!identityRows.length) return { profiles: [] };
+  const historyByKey = new Map<string, PosterProfileHistoryEntryJson[]>();
+  const historyRows = sqlite.prepare('SELECT posterKey, observedAt, displayName, screenName, bio, links, avatar, avatarFile, banner, bannerFile, followers, authorCreatedAt, contentHash, provenance FROM poster_profile_snapshots ORDER BY posterKey, observedAt').all() as Array<
+    PosterProfileHistoryEntryJson & { posterKey: string }
+  >;
+  for (const row of historyRows) {
+    const { posterKey, ...entry } = row;
+    let list = historyByKey.get(posterKey);
+    if (!list) historyByKey.set(posterKey, (list = []));
+    list.push(entry);
+  }
+  return {
+    profiles: identityRows.map((r) => ({ posterKey: r.posterKey, platform: r.platform, userId: r.userId, instance: r.instance, history: historyByKey.get(r.posterKey) || [] })),
+  };
+}
+
+// Wholesale replace, same as replacePosterAliases/replaceFolders above — the
+// caller (lib-archive.ts's importFromOpenZip) always reads the current state
+// FIRST and folds it into the incoming data via mergePosterProfiles before
+// calling this, so nothing already in the database is lost by the delete.
+// "current" (poster_profiles) is recomputed from whichever history entry has
+// the latest observedAt, never taken from the JSON directly — the same rule
+// the live write path (lib-db-record-writer.ts's writePosterProfile) applies,
+// so an imported poster looks exactly like one this database observed itself.
+// A poster entry with no history entries at all is skipped: there is nothing
+// to seed "current" from.
+function replacePosterProfiles(sqlite: Sqlite, data: unknown): void {
+  sqlite.prepare('DELETE FROM poster_profile_snapshots').run();
+  sqlite.prepare('DELETE FROM poster_profiles').run();
+  const profiles = Array.isArray((data as { profiles?: unknown })?.profiles) ? (data as { profiles: unknown[] }).profiles : [];
+  const insertProfile = sqlite.prepare('INSERT INTO poster_profiles (posterKey, platform, userId, instance, displayName, screenName, bio, links, avatar, avatarFile, banner, bannerFile, followers, authorCreatedAt, contentHash, provenance, firstObservedAt, lastObservedAt) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
+  const insertSnapshot = sqlite.prepare('INSERT OR IGNORE INTO poster_profile_snapshots (posterKey, observedAt, displayName, screenName, bio, links, avatar, avatarFile, banner, bannerFile, followers, authorCreatedAt, contentHash, provenance) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
+  for (const entry of profiles) {
+    const p = entry as Partial<PosterProfileJson> | null;
+    if (!p || typeof p.posterKey !== 'string' || !p.posterKey) continue;
+    const history = (Array.isArray(p.history) ? p.history : []).filter((h): h is PosterProfileHistoryEntryJson => !!h && typeof h.observedAt === 'string' && typeof h.contentHash === 'string' && typeof h.provenance === 'string');
+    if (!history.length) continue;
+    let latest = history[0];
+    let earliest = history[0].observedAt;
+    for (const h of history) {
+      if (h.observedAt > latest.observedAt) latest = h;
+      if (h.observedAt < earliest) earliest = h.observedAt;
+    }
+    insertProfile.run(
+      p.posterKey,
+      typeof p.platform === 'string' ? p.platform : '',
+      p.userId ?? null,
+      p.instance ?? null,
+      latest.displayName ?? null,
+      latest.screenName ?? null,
+      latest.bio ?? null,
+      latest.links ?? null,
+      latest.avatar ?? null,
+      latest.avatarFile ?? null,
+      latest.banner ?? null,
+      latest.bannerFile ?? null,
+      latest.followers ?? null,
+      latest.authorCreatedAt ?? null,
+      latest.contentHash,
+      latest.provenance,
+      earliest,
+      latest.observedAt,
+    );
+    for (const h of history) {
+      insertSnapshot.run(p.posterKey, h.observedAt, h.displayName ?? null, h.screenName ?? null, h.bio ?? null, h.links ?? null, h.avatar ?? null, h.avatarFile ?? null, h.banner ?? null, h.bannerFile ?? null, h.followers ?? null, h.authorCreatedAt ?? null, h.contentHash, h.provenance);
+    }
+  }
+}
+
 // Post-level edit: tag assignment (post_tags) + a patch of loose per-post
 // fields. userKind/tagReviewed (the tagging-wizard's flags) were added by the
 // add-store-state migration specifically because they had no St2 home
@@ -626,6 +728,8 @@ function createDbWriter(sqlite: Sqlite) {
     setPosterTags: (data: unknown) => transaction(() => replacePosterTags(sqlite, data)),
     getPosterAliases: () => readPosterAliases(sqlite),
     setPosterAliases: (data: unknown) => transaction(() => replacePosterAliases(sqlite, data)),
+    getPosterProfiles: () => readPosterProfiles(sqlite),
+    setPosterProfiles: (data: unknown) => transaction(() => replacePosterProfiles(sqlite, data)),
     getTabs: () => readTabs(sqlite),
     setTabs: (data: unknown) => transaction(() => replaceTabs(sqlite, data)),
     appendHistory: (row: { ts?: unknown; u?: unknown; kind?: unknown; title?: unknown; state?: unknown }) => transaction(() => appendHistory(sqlite, row)),

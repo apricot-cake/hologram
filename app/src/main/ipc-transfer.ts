@@ -249,6 +249,17 @@ function register(ctx: IpcContext) {
         userId: p.userId || null,
         avatar: p.avatar || null,
         avatarFile: null,
+        // #289: carried through like quotedPost/poll/customEmojis below -- no
+        // producer of this legacy shape can populate them today (the fields
+        // postdate every export this reader knows), so this is forward-safety
+        // only, not a live path. bannerFile is NOT re-fetched here, same
+        // reasoning as avatarFile's own re-fetch note below (this importer
+        // reconstructs a record from a URL-only legacy shape, not the save
+        // pipeline's downloads).
+        bio: p.bio || null,
+        profileLinks: Array.isArray(p.profileLinks) ? p.profileLinks : null,
+        banner: p.banner || null,
+        bannerFile: null,
         followers: p.followers ?? null,
         authorCreatedAt: p.authorCreatedAt || null,
         likes: p.likes ?? null,

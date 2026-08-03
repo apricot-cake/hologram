@@ -164,6 +164,17 @@ interface LinkCard {
   thumbnail: string | null;
 }
 
+// #289: one entry of a poster's profile link field (Mastodon/Misskey
+// `fields[]`, pixiv `webpage`/`social.*.url`). verifiedAt is Mastodon's own
+// `verified_at` (the instance checked the link back-references the account) --
+// null on every platform/field with no such signal (Misskey's fields[] has no
+// verification concept; pixiv's webpage/social entries are plain URLs).
+interface ProfileLink {
+  name: string;
+  value: string;
+  verifiedAt: string | null;
+}
+
 // One `:shortcode:` custom emoji the post's own text uses (#290), as announced
 // by the platform's API response -- Misskey's note.emojis (shortcode -> URL
 // map) and Mastodon's status.emojis[] ({shortcode, url, static_url}) are the
@@ -199,6 +210,16 @@ interface PostRecord {
   userId: string | null;
   avatar: string | null;
   avatarReferer: string | null;
+  // #289: the poster's own profile bio, link-field entries and banner image --
+  // read straight off the SAME already-fetched profile/status response that
+  // supplies avatar/followers/authorCreatedAt above (no extra request on any
+  // platform, per #289's 2026-08-02 design comment). null on every platform
+  // whose response has no such concept (Bluesky: no link field. pixiv: no
+  // banner. X: none of the three -- its syndication endpoint carries only
+  // displayName/screenName/avatar).
+  bio: string | null;
+  profileLinks: ProfileLink[] | null;
+  banner: string | null;
   followers: number | null;
   authorCreatedAt: string | null;
   likes: number | null;
@@ -494,4 +515,4 @@ interface Extractor {
   apiHostPermissions?: readonly string[];
 }
 
-export type { CaptureSite, CustomEmoji, DomMeta, Extractor, LinkCard, MediaIdentity, MediaIdentitySite, MediaItem, OverlaySite, ParsedPost, Poll, PollChoice, PostMediaElement, PostRecord, PostRect, QuotedPost, RawAcquisition };
+export type { CaptureSite, CustomEmoji, DomMeta, Extractor, LinkCard, MediaIdentity, MediaIdentitySite, MediaItem, OverlaySite, ParsedPost, Poll, PollChoice, PostMediaElement, PostRecord, PostRect, ProfileLink, QuotedPost, RawAcquisition };

@@ -366,6 +366,15 @@ function misskeyPoll(poll): Poll | null {
   };
 }
 
+// #289: users/show's fields[] is {name, value} pairs (no verification concept
+// on Misskey, unlike Mastodon's fields[].verified_at) -- confirmed live
+// against misskey.io, 2026-08-02.
+function misskeyProfileLinks(fields: unknown): { name: string; value: string; verifiedAt: string | null }[] | null {
+  if (!Array.isArray(fields) || !fields.length) return null;
+  const out = fields.filter((f) => f && typeof f.name === 'string' && f.name && typeof f.value === 'string' && f.value).map((f) => ({ name: f.name as string, value: f.value as string, verifiedAt: null }));
+  return out.length ? out : null;
+}
+
 // #290: note.emojis is a shortcode->URL map -- packedNoteSchema's own
 // 'emojis' property, distinct from reactionEmojis (reaction picker icons) and
 // user.emojis (the author's name-field emoji). Confirmed live against
@@ -427,6 +436,11 @@ async function fetchMisskeyNote(parsed, url): Promise<PostRecord> {
           rec.avatar = u.avatarUrl || rec.avatar;
           rec.followers = u.followersCount ?? null;
           rec.authorCreatedAt = toIso(u.createdAt);
+          // #289: bio/links/banner ride the SAME users/show response already
+          // fetched for followers/authorCreatedAt above -- no extra request.
+          rec.bio = u.description || null;
+          rec.profileLinks = misskeyProfileLinks(u.fields);
+          rec.banner = u.bannerUrl || null;
         }
       } catch {
         /* keep avatar from note.user */
