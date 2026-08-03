@@ -40,6 +40,11 @@ test('新規プロファイルの初回起動はラベル付きレール（受�
     browseTimeline: 'タイムライン',
     trashTitle: 'ゴミ箱',
     paletteTitle: 'コマンドパレット',
+    // #145's global history row is an unconditional footer entry between the
+    // palette and Settings (shell/LeftSidebar.tsx) — the rail grows whenever an
+    // app-level entry point is added, and this list is what states which ones
+    // acceptance criterion 3 considers legitimate.
+    historyTitle: '履歴',
     tabSettings: '設定',
   };
   for (const text of Object.values(expectedLabels)) {

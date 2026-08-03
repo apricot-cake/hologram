@@ -390,12 +390,35 @@ async function writeSavedIndexNow(handle: { sqlite: any }) {
     /* best-effort — the bridge falls back to journal + loose-inbox scanning */
   }
 }
+// What the debounce is still holding, so quitting can finish it (below). Two
+// separate states, because a write is lost either way: `pending` is a change
+// whose timer has not fired yet, `inFlight` is a fired timer whose write has
+// not landed yet (the trash half reads `.trash/` asynchronously).
+let savedIndexPending: { sqlite: any } | null = null;
+let savedIndexInFlight: Promise<void> | null = null;
 function scheduleSavedIndexWrite(handle: { sqlite: any }) {
   onLibraryMutation?.();
   clearTimeout(savedIndexTimer);
+  savedIndexPending = handle;
   savedIndexTimer = setTimeout(() => {
-    void writeSavedIndexNow(handle);
+    savedIndexPending = null;
+    savedIndexInFlight = writeSavedIndexNow(handle).finally(() => {
+      savedIndexInFlight = null;
+    });
   }, 1500);
+}
+// Deleting a post and closing the app inside the 1.5s debounce used to drop the
+// rewrite entirely: the timer dies with the process, so the extension kept
+// answering "saved" for a post sitting in the trash until the next launch —
+// exactly the stale badge #158 exists to prevent. Awaited from before-quit.
+async function flushSavedIndexWrite() {
+  clearTimeout(savedIndexTimer);
+  const handle = savedIndexPending;
+  savedIndexPending = null;
+  // In-flight first: it was scheduled earlier, and the file must end up holding
+  // the LATER of the two states.
+  if (savedIndexInFlight) await savedIndexInFlight;
+  if (handle) await writeSavedIndexNow(handle);
 }
 
 // Drains .hologram-inbox/new into the DB (#5 St6 / #299) — one receipted,
@@ -769,6 +792,12 @@ async function switchLibrary(dest: string): Promise<{ ok: true; saveFolder: stri
     watchInboxFolder();
     void watchImport.refresh();
     _deltaBySender.clear();
+    // A debounce still holding the PREVIOUS library's handle is dropped rather
+    // than flushed: the write below supersedes it, and letting it land
+    // afterwards — on its own timer, or through the quit flush — would put the
+    // library the user just left back into the index the extension reads.
+    clearTimeout(savedIndexTimer);
+    savedIndexPending = null;
     const synced = ensurePostsSynced();
     // Immediate, not the debounced scheduleSavedIndexWrite — see
     // writeSavedIndexNow's comment.
@@ -1122,7 +1151,22 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
 
-app.on('before-quit', () => {
+// Set once the pending saved-index write has been flushed, so the re-issued
+// quit below falls through to the teardown instead of holding the app again.
+let quitFlushed = false;
+
+app.on('before-quit', (e) => {
+  // Hold the quit for one round trip, the way Electron's own docs have async
+  // shutdown work done (preventDefault, finish, quit again). The flush reads the
+  // database, so it has to happen before the close below. Capped: the trash half
+  // touches the save folder, which can be a network path, and a quit must not be
+  // hostage to it — a dropped write is only a stale badge, a stuck quit is worse.
+  if (!quitFlushed && (savedIndexPending || savedIndexInFlight)) {
+    e.preventDefault();
+    quitFlushed = true;
+    void Promise.race([flushSavedIndexWrite(), new Promise((r) => setTimeout(r, 2000))]).finally(() => app.quit());
+    return;
+  }
   try {
     dbHandle?.sqlite.close();
   } catch {
