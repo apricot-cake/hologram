@@ -47,7 +47,6 @@ export function startPopup(): void {
     const title = chrome.i18n && chrome.i18n.getMessage('popupTitle');
     if (title) document.title = title;
     setText('save', 'popupSave');
-    setText('saveHint', 'popupSaveHint');
     setText('bulk', 'popupBulk');
     setText('statusText', 'popupStatusChecking');
     setText('statusDiag', 'popupOpenDiag');
@@ -125,6 +124,24 @@ export function startPopup(): void {
     ?.query({ active: true, currentWindow: true })
     .then(([tab]) => {
       if (tab && !/^https?:/i.test(tab.url || '')) refuse('not-http');
+    })
+    .catch(() => {});
+
+  // The shortcut hint, read the same way as the bulk hint below (#851): the
+  // ACTUAL binding rather than naming Alt+S outright, so a user who reassigned
+  // it is never shown a combination that no longer does anything. Absent
+  // entirely when Chrome reports no shortcut assigned.
+  chrome.commands
+    ?.getAll()
+    .then((commands) => {
+      const shortcut = commands.find((c) => c.name === 'activate')?.shortcut;
+      if (!shortcut) return;
+      const el = byId('saveHint');
+      const text = chrome.i18n && chrome.i18n.getMessage('popupSaveHint', [shortcut]);
+      if (el && text) {
+        el.textContent = text;
+        show('saveHint', true);
+      }
     })
     .catch(() => {});
 

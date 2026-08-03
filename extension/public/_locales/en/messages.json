@@ -93,8 +93,9 @@
     "description": "Popup primary button: start capturing the post on the active tab"
   },
   "popupSaveHint": {
-    "message": "Alt+S saves in one press",
-    "description": "Popup hint pointing frequent savers at the one-press keyboard route"
+    "message": "$SHORTCUT$ saves in one press",
+    "description": "Popup hint pointing frequent savers at the one-press keyboard route, shown only when one is actually assigned (#851)",
+    "placeholders": { "shortcut": { "content": "$1", "example": "Alt+S" } }
   },
   "popupBulk": {
     "message": "Import this list",
