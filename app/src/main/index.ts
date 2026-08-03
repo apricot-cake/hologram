@@ -858,7 +858,12 @@ if (!gotSingleInstanceLock) {
       // eval scripts carry their own waitFor timeouts, so a real hang still ends here
       // while a legitimately long flow (multi-step UI harnesses) is not cut off
       // mid-run — which reads as "no eval result" and is easy to misread as a bug.
-      setTimeout(() => quit('SMOKE_TIMEOUT'), 25000);
+      // 25s was too close to be that backstop: the nightly Windows runner put
+      // test-app-import-dedup (3.6s locally, no waits of its own — just ZIP imports over
+      // the runner's disk) straight into SMOKE_TIMEOUT, and test-app-image-zoom against
+      // the same wall (#818). A hang still ends well inside run-app-tests.cts's own 120s
+      // spawn timeout; the slow-but-honest run now finishes instead of being cut off.
+      setTimeout(() => quit('SMOKE_TIMEOUT'), 60000);
       return;
     }
 

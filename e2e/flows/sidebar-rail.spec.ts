@@ -44,7 +44,12 @@ test('新規プロファイルの初回起動はラベル付きレール（受�
     await expect(label).toBeVisible();
     await expect(label).toHaveText(text);
   }
-  await expect(page.locator('[data-slot="menu-label"]')).toHaveCount(Object.keys(expectedLabels).length);
+  // Nothing else may be on the rail — a user-generated group leaking in is what
+  // acceptance criterion 3 forbids. Asserted as the ordered list rather than as a count:
+  // the nightly runner reported "6, wanted 5" and there was no way to tell WHICH row had
+  // appeared (#818). A text match prints the list it actually found, so the next failure
+  // names the intruder instead of only counting it.
+  await expect(page.locator('[data-slot="menu-label"]')).toHaveText(Object.values(expectedLabels));
 });
 
 test('ユーザー生成グループはレールで隠れ、展開すると出る（受け入れ条件3）', async ({ launchHologram }) => {
