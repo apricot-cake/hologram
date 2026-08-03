@@ -117,6 +117,15 @@ const evalJs = `(async () => {
   out.searchInImageView = searchShown();
 
   // C. The displayed % while at fit, and - being disabled (can't shrink further)
+  // The toolbar shows the placeholder until the picture has decoded, and settled()'s
+  // budget is the zoom easing (~200ms), not a picture load. On the nightly Windows
+  // runner the decode outlived it and this read "—" while every later step passed
+  // (#818) — the wait for the picture is its own step now, and its own check below,
+  // so "the picture never arrived" cannot arrive disguised as "fit is not 100%".
+  out.pictureReady = await waitFor(() => {
+    const z = zoomLevel();
+    return !!z && z !== '—';
+  }, 15000);
   out.percentAtFit = await settled('100%');
   out.zoomOutDisabledAtFit = disabled('viewer-zoom-out');
   out.zoomInEnabledAtFit = !disabled('viewer-zoom-in');
@@ -213,6 +222,7 @@ child.on('close', () => {
     ['ダブルクリックで画像ビューが開く', r.imageViewActive === true],
     ['画像ビューでツールバーが帯に出る', r.toolbarInImageView === true],
     ['画像ビュー中は検索欄が引っ込む', r.searchInImageView === false],
+    ['画像が読み込まれ、表示%がプレースホルダを抜けている', r.pictureReady === true],
     ['フィット時の表示は 100%（原寸=100% に正規化されている）', r.percentAtFit === '100%'],
     ['フィットではズームアウトが disabled', r.zoomOutDisabledAtFit === true],
     ['フィットでもズームインは押せる', r.zoomInEnabledAtFit === true],
