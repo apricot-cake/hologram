@@ -15,7 +15,14 @@ import type { DbHandle, HologramConfig } from './ipc-context.ts';
 // #236: names a watch folder must never pick up, even though collection is no
 // longer limited to IMPORTABLE_MEDIA. OS/cloud-sync litter, not user files —
 // picking one up would create a library record for a file the user never chose.
-const EXCLUDED_NAMES = new Set(['desktop.ini', 'thumbs.db', '.ds_store']);
+export const EXCLUDED_NAMES = new Set(['desktop.ini', 'thumbs.db', '.ds_store']);
+
+// Shared with the window-drop door's recursive walk (#234's lib-drop-import.ts) —
+// one definition of "hidden file or OS/cloud-sync litter" for every local-file
+// door that has to filter a folder's CONTENTS rather than take an explicit pick.
+export function isHiddenOrJunk(name: string): boolean {
+  return name.startsWith('.') || EXCLUDED_NAMES.has(name.toLowerCase());
+}
 // A download still being written (Chrome/Firefox/Edge conventions). chokidar's
 // awaitWriteFinish (below) already waits for a file to stop growing before
 // firing 'add' — this excludes the IN-PROGRESS name outright so a stale partial
@@ -82,9 +89,7 @@ function writeState(state: SeenByLibrary) {
 // 0-byte files are excluded in processFile (needs a stat, which this — called
 // from a plain filename in the initial scan too — does not always have handy).
 function supported(file: string) {
-  const base = path.basename(file);
-  if (base.startsWith('.')) return false;
-  if (EXCLUDED_NAMES.has(base.toLowerCase())) return false;
+  if (isHiddenOrJunk(path.basename(file))) return false;
   const ext = path.extname(file).slice(1).toLowerCase();
   if (PARTIAL_EXTS.has(ext)) return false;
   return true;

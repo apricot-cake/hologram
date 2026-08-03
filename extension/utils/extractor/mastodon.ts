@@ -249,6 +249,32 @@ function mastodonPoll(poll): Poll | null {
 // ANIMATED original whenever the source image is (mstdn.jp's meow_beanbag is
 // a real .webp example) — an emoji is meant to move, the same "keep the
 // moving picture" rule #119's video/gif media follows.
+// #289: status.account.fields[] is {name, value, verified_at} -- the official
+// Account.Field entity (docs.joinmastodon.org/entities/Account/#Field, read
+// 2026-08-02). `value` is documented as HTML (the instance auto-links a bare
+// URL into an <a href>), so a field whose value IS a link is read off that
+// href rather than the rendered text, which can be a shortened display form
+// ("example.com/…") that differs from the real destination; a value with no
+// anchor (e.g. "Pronouns: she/her") falls back to its stripped text via
+// htmlToText, same as `note` below.
+function mastodonFieldValue(html: unknown): string {
+  if (typeof html !== 'string' || !html) return '';
+  const m = html.match(/<a\s+[^>]*href="([^"]+)"/i);
+  if (m?.[1]) return m[1];
+  return htmlToText(html) || '';
+}
+function mastodonProfileLinks(fields: unknown): { name: string; value: string; verifiedAt: string | null }[] | null {
+  if (!Array.isArray(fields) || !fields.length) return null;
+  const out: { name: string; value: string; verifiedAt: string | null }[] = [];
+  for (const f of fields) {
+    if (!f || typeof f.name !== 'string' || !f.name) continue;
+    const value = mastodonFieldValue(f.value);
+    if (!value) continue;
+    out.push({ name: f.name, value, verifiedAt: f.verified_at ? toIso(f.verified_at) : null });
+  }
+  return out.length ? out : null;
+}
+
 function mastodonCustomEmojis(emojis) {
   if (!Array.isArray(emojis)) return [];
   return emojis.filter((e) => e && typeof e.shortcode === 'string' && e.shortcode && typeof e.url === 'string' && e.url).map((e) => ({ shortcode: e.shortcode as string, url: e.url as string }));
@@ -299,6 +325,12 @@ async function fetchMastodonStatus(parsed, url): Promise<PostRecord> {
       rec.avatar = s.account.avatar || s.account.avatar_static || null;
       rec.followers = s.account.followers_count ?? null;
       rec.authorCreatedAt = toIso(s.account.created_at);
+      // #289: bio/links ride the SAME full Account object above -- no extra
+      // request. No banner: this Issue's acceptance scope names only
+      // Misskey/Bluesky for banner (rec.banner stays emptyRecord()'s null)
+      // even though Mastodon's Account also carries one (header/header_static).
+      rec.bio = htmlToText(s.account.note);
+      rec.profileLinks = mastodonProfileLinks(s.account.fields);
     }
     rec.likes = s.favourites_count ?? null;
     rec.reposts = s.reblogs_count ?? null;

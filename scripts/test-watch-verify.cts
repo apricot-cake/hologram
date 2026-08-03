@@ -45,7 +45,7 @@ const { configDir, defaultLibraryDir } = require('../native-host/paths.cts');
 const POLL_MS = 2000;
 
 // Read-only handle: never take the writer role away from the running app.
-// #176: hologram.db lives inside the save folder now, not configDir (ADR 0023).
+// #176: hologram.db lives inside the save folder now, not configDir (ADR 0024).
 function openReadOnly() {
   const file = path.join(saveFolder(), 'hologram.db');
   if (!fs.existsSync(file)) {

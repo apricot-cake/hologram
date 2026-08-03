@@ -116,7 +116,7 @@ child.stdout.on('data', (d) => {
 child.on('close', () => {
   const evalOk = /EVAL_RESULT "restored"/.test(out);
 
-  // #176: hologram.db lives inside the save folder now, not configDir (ADR 0023).
+  // #176: hologram.db lives inside the save folder now, not configDir (ADR 0024).
   const db = openDatabase(path.join(saveFolder, 'hologram.db'), { readonly: true }).sqlite;
   const post = db.prepare('SELECT captureId, trashedAt FROM posts WHERE captureId = ?').get(CAPTURE_ID);
   const folders = (db.prepare('SELECT folderId FROM folder_items WHERE postId = ? ORDER BY folderId').all(CAPTURE_ID) as Array<{ folderId: string }>).map((r) => r.folderId);

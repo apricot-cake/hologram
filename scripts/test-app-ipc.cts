@@ -86,7 +86,7 @@ child.on('close', () => {
   // #302: the library folder holds media only — an edit must not put a record there.
   const noLibraryJsonOk = fs.readdirSync(saveFolder).filter((f) => f.toLowerCase().endsWith('.json')).length === 0;
 
-  // #176: hologram.db lives inside the save folder now, not configDir (ADR 0023).
+  // #176: hologram.db lives inside the save folder now, not configDir (ADR 0024).
   const { sqlite } = openDatabase(path.join(saveFolder, 'hologram.db'), { readonly: true });
   const tagsOf = (id) =>
     sqlite

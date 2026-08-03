@@ -209,7 +209,8 @@ export interface AnnouncedLinkCard {
 //                    and caps them into the record's `raw`.
 //   avatarFile     — omitted: only the host, having downloaded the avatar, can
 //                    name the file.
-export interface CaptureMetadata extends Partial<Omit<PostRecordShape, 'captureId' | 'media' | 'customEmojis' | 'raw' | 'avatarFile' | 'linkCard'>> {
+//   bannerFile     — #289: same split as avatarFile, for the banner image.
+export interface CaptureMetadata extends Partial<Omit<PostRecordShape, 'captureId' | 'media' | 'customEmojis' | 'raw' | 'avatarFile' | 'bannerFile' | 'linkCard'>> {
   media?: AnnouncedMedia[];
   customEmojis?: AnnouncedCustomEmoji[];
   // #181: announced (thumbnail URL to fetch), not saved (thumbnailFile) — same

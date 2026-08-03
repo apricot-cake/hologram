@@ -41,8 +41,14 @@
     "skipLibCheck": true,
     // Same both-candidates typeRoots as scripts/tsconfig.json — npm is free to hoist
     // @types to the repo root or nest it under app/, and a missing entry is ignored.
-    "typeRoots": ["../node_modules/@types", "../app/node_modules/@types"],
-    "types": ["node"],
+    // extension/node_modules/@types is here for "chrome" below: a suite that
+    // imports an extension util (save-history.test.ts) pulls chrome.* in with it,
+    // and without the ambient declarations that read as `Cannot find name 'chrome'`
+    // — cause (b) in the exclusion list below, which is why several suites are
+    // quarantined there. This does not un-quarantine them (they stay excluded for
+    // their own reasons), it just stops the cause from applying to new ones.
+    "typeRoots": ["../node_modules/@types", "../app/node_modules/@types", "../extension/node_modules/@types"],
+    "types": ["node", "chrome"],
     // Mirrors app/tsconfig.web.json's aliases; paths are relative to THIS file.
     "paths": {
       "@/*": ["../app/src/renderer/src/*"],
@@ -107,6 +113,9 @@
     "db-write.test.ts",
     "db.test.ts",
     "drag.test.ts",
+    // #234: imports app/src/main/ipc-transfer.ts (+ lib-drop-import.ts, lib-db.ts)
+    // — cause (c), same as clipboard-intake.test.ts above.
+    "drop-import.test.ts",
     "electron-path-guard.test.ts",
     // #71: imports native-host/paths.cts + bridge.cts (module.exports) — cause (a).
     "extension-contact.test.ts",

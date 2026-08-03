@@ -670,6 +670,16 @@ async function handleSave(req: SaveRequest): Promise<CaptureAck> {
     avatarFile = null;
   }
 
+  // #289: the poster's banner image, into the SAME shared avatars/ store as
+  // the avatar just above (2026-08-02 "バナーは実体保存する" decision) — same
+  // best-effort contract, same URL-hash dedup, no separate store.
+  let bannerFile = null;
+  try {
+    bannerFile = await downloadAvatar(meta.banner, undefined, saveFolder, budget);
+  } catch {
+    bannerFile = null;
+  }
+
   // #290: the post's own :shortcode: custom emoji, into the shared emoji/
   // store — same best-effort contract as the avatar just above (one emoji's
   // fetch failure never fails the save or drops the others).
@@ -690,6 +700,7 @@ async function handleSave(req: SaveRequest): Promise<CaptureAck> {
       image: `${base}.jpg`,
       media: savedMedia,
       avatarFile,
+      bannerFile,
       customEmojis,
       linkCard,
       raw: packRawPayloads(meta.rawPayloads),
@@ -769,6 +780,14 @@ async function handleSavePost(req: SavePostRequest): Promise<BulkAck> {
     avatarFile = null;
   }
 
+  // #289: see handleSave — same shared avatars/ store, same best-effort contract.
+  let bannerFile = null;
+  try {
+    bannerFile = await downloadAvatar(meta.banner, undefined, saveFolder, budget);
+  } catch {
+    bannerFile = null;
+  }
+
   // #290: see handleSave — same shared emoji/ store, same best-effort contract.
   let customEmojis = [];
   try {
@@ -786,6 +805,7 @@ async function handleSavePost(req: SavePostRequest): Promise<BulkAck> {
       image: null,
       media: savedMedia,
       avatarFile,
+      bannerFile,
       customEmojis,
       linkCard,
       raw: packRawPayloads(meta.rawPayloads),
@@ -834,6 +854,13 @@ async function handleSaveDragged(req: SaveDraggedRequest): Promise<DraggedAck> {
   } catch {
     avatarFile = null;
   }
+  // #289: see handleSave — same shared avatars/ store, same best-effort contract.
+  let bannerFile = null;
+  try {
+    bannerFile = await downloadAvatar(meta.banner, undefined, saveFolder, budget);
+  } catch {
+    bannerFile = null;
+  }
   // #290: see handleSave — same shared emoji/ store, same best-effort contract.
   let customEmojis = [];
   try {
@@ -850,7 +877,7 @@ async function handleSaveDragged(req: SaveDraggedRequest): Promise<DraggedAck> {
   // source:'drag' marks the image as the artwork itself (not a post screenshot),
   // so the image-view shows it. Mirrors the migrated records' source marker.
   const media = [{ url: req.imageUrl, file: imageFile }];
-  const record = normalizePostRecord(Object.assign({}, meta, { captureId: base, image: imageFile, media, source: 'drag', avatarFile, customEmojis, linkCard, raw: packRawPayloads(meta.rawPayloads) }));
+  const record = normalizePostRecord(Object.assign({}, meta, { captureId: base, image: imageFile, media, source: 'drag', avatarFile, bannerFile, customEmojis, linkCard, raw: packRawPayloads(meta.rawPayloads) }));
   await writeInboxEvent(saveFolder, buildEnvelope(record));
   noteSaved(record.url, base, record.media); // see handleSave
 

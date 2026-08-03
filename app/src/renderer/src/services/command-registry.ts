@@ -26,7 +26,11 @@ import { registerShortcut, tryRun } from './shortcut-registry.ts';
 // stuck around even after collections became the sidebar's folder list (2026-07-04); it's
 // now aligned with the code-side vocabulary (applyFolderFilter / staticFolders / the query
 // leaf's type:'folder').
-export type CommandSection = 'command' | 'tab' | 'tag' | 'user' | 'folder';
+// 'history' (#145): a quick-jump row for a past visit (Chrome omnibox's @history
+// equivalent) — see command-builder.ts's history provider. Deletion and date
+// headings stay the panel's job (services/history-panel.ts's Ctrl+H); this
+// section is only ever a fast "jump straight there" shortcut.
+export type CommandSection = 'command' | 'tab' | 'history' | 'tag' | 'user' | 'folder';
 
 export interface CommandEntry {
   id: string;
@@ -76,7 +80,7 @@ export interface CommandGroup {
 // The order the headings appear in. Score ranks WITHIN a section — sections themselves never
 // swap places (if the action-type section slid under tags, "what can I even do here" would
 // stop being readable).
-const SECTION_ORDER: readonly CommandSection[] = ['command', 'tab', 'tag', 'user', 'folder'];
+const SECTION_ORDER: readonly CommandSection[] = ['command', 'tab', 'history', 'tag', 'user', 'folder'];
 
 // Ordering weight: exact match > prefix match > substring match > fuzzy. Only the fuzzy
 // judgment reuses the existing search's compile() as-is — the whole app shares one matching

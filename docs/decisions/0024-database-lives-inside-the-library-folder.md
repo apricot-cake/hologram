@@ -1,4 +1,4 @@
-# 0023. データベースはライブラリ（保存フォルダ）の中に置く
+# 0024. データベースはライブラリ（保存フォルダ）の中に置く
 
 - 状態: 採用（2026-08-03）／[0010](0010-sqlite-as-the-metadata-truth-source.md)「データベースは保存フォルダの外（設定ディレクトリ）に置く」条項の置き換え
 - 関連: [#176](https://github.com/apricot-cake/hologram/issues/176)（複数ライブラリの切り替え）・[#233](https://github.com/apricot-cake/hologram/issues/233)（バックアップ基盤の再編）・[#37](https://github.com/apricot-cake/hologram/issues/37)（パス変更検知・repoint）

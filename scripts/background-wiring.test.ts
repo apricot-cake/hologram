@@ -73,7 +73,13 @@ function setupBackground() {
   // succeeds / the extension's files are readable" = only tests that override this go down the failure path.
   const actionCalls: Array<{ call: string; arg: any }> = [];
   const createdTabs: Array<{ url: string }> = [];
+  // Kept even though #124 removed the listener: an empty array is what the
+  // "the action must not register onClicked" test below reads.
   const clickListeners: Array<(tab: any) => void> = [];
+  const commandListeners: Array<(command: string) => Promise<void> | void> = [];
+  // What chrome.tabs.query({active:true}) answers with — the tab both the
+  // keyboard commands and the popup route act on.
+  let activeTab: any = null;
   const tabUpdatedListeners: Array<(tabId: number, changeInfo: any) => void> = [];
   const tabRemovedListeners: Array<(tabId: number) => void> = [];
   let executeScriptImpl: (arg: any) => Promise<any> = async () => [];
@@ -112,7 +118,7 @@ function setupBackground() {
         tabsSent.push({ tabId, message });
         return Promise.resolve();
       },
-      query: async () => [],
+      query: async () => (activeTab ? [activeTab] : []),
       create: async (arg: any) => {
         createdTabs.push(arg);
         return { id: 999 };
@@ -131,23 +137,33 @@ function setupBackground() {
       setBadgeTextColor: recordAction('setBadgeTextColor'),
       setTitle: recordAction('setTitle'),
     },
-    commands: { onCommand: { addListener: () => {} } },
+    commands: { onCommand: { addListener: (fn: any) => commandListeners.push(fn) } },
     storage: {
+      // Both call shapes, because the code under test uses both: the older
+      // readers pass a callback, and save-history.ts awaits the promise MV3
+      // returns when none is given. A stub that only did callbacks would let
+      // every history read silently answer "empty".
       local: {
-        get: (keys: any, cb: (r: any) => void) => {
+        get: (keys: any, cb?: (r: any) => void) => {
           let result: Record<string, any>;
           if (keys == null) result = Object.fromEntries(localStore);
           else if (typeof keys === 'string') result = localStore.has(keys) ? { [keys]: localStore.get(keys) } : {};
           else result = Object.fromEntries((keys as string[]).filter((k) => localStore.has(k)).map((k) => [k, localStore.get(k)]));
+          if (!cb) return Promise.resolve(result);
           cb(result);
+          return undefined;
         },
         set: (items: Record<string, any>, cb?: () => void) => {
           for (const [k, v] of Object.entries(items)) localStore.set(k, v);
-          cb?.();
+          if (!cb) return Promise.resolve();
+          cb();
+          return undefined;
         },
         remove: (keys: string | string[], cb?: () => void) => {
           for (const k of Array.isArray(keys) ? keys : [keys]) localStore.delete(k);
-          cb?.();
+          if (!cb) return Promise.resolve();
+          cb();
+          return undefined;
         },
       },
       session: {
@@ -196,7 +212,7 @@ function setupBackground() {
     localStore,
     actionCalls,
     createdTabs,
-    // #195: the context-menu equivalent of dispatch/clickAction above — fires
+    // #195: the context-menu equivalent of dispatch/pressShortcut above — fires
     // the listener startBackground() registered via chrome.contextMenus.onClicked.
     contextMenuCreateCalls,
     clickBookmarkMenu(tab: any, infoOverrides: any = {}) {
@@ -209,13 +225,25 @@ function setupBackground() {
     setOgpResult(ogp: any) {
       executeScriptImpl = async () => [{ result: ogp }];
     },
-    // Click the toolbar icon (#269). onClicked passes the tab through as-is, so the test side
-    // also passes a minimal tab with just id and url. **What we wait on is not a count of
-    // synchronization points but the Promise the listener itself returns** = the injection,
-    // liveness measurement, and action calls are all inside it, so it doesn't break even if
-    // one more await gets added along the way.
-    clickAction: async (tab: any) => {
-      await Promise.all(clickListeners.map((fn) => fn(tab)));
+    // The two ways an activation can now be asked for (#124 replaced the third,
+    // chrome.action.onClicked, with the popup message below).
+    //
+    // Both find their own tab through chrome.tabs.query, so the test says which
+    // tab is active rather than handing one in. **What we wait on is not a count
+    // of synchronization points but the Promise the entry point itself returns**
+    // = the injection, liveness measurement, and action calls are all inside it,
+    // so it doesn't break even if one more await gets added along the way.
+    onClickedListenerCount: () => clickListeners.length,
+    pressShortcut: async (tab: any, auto = false) => {
+      activeTab = tab;
+      await Promise.all(commandListeners.map((fn) => fn(auto ? 'activate-auto' : 'activate')));
+    },
+    // The popup's save button. Answers with the {ok} / {reason} the panel reads
+    // to decide what to say — the thing the toolbar had no way to tell anyone.
+    popupSave: async (tab: any) => {
+      activeTab = tab;
+      const { responseP } = dispatch({ type: 'popupActivate' });
+      return await responseP;
     },
     navigateTab(tabId: number) {
       for (const fn of tabUpdatedListeners) fn(tabId, { status: 'loading' });
@@ -645,9 +673,9 @@ describe('保存の記録（#519）', () => {
 
 // === When injection itself fails (#269) =========================================
 //
-// Click-to-save has the structure "background injects capture.js, and the injected script draws
+// Save-by-activation has the structure "background injects capture.js, and the injected script draws
 // the banner," so **if injection fails, no surface on the page exists to report that failure** =
-// clicking becomes completely unresponsive. Since the page has no surface of its own, only the
+// the press becomes completely unresponsive. Since the page has no surface of its own, only the
 // toolbar action remains as a display surface, and what this checks is that surface's wiring.
 // Drag-to-save is unrelated since the resident script draws its own banner.
 //
@@ -655,6 +683,10 @@ describe('保存の記録（#519）', () => {
 // wording but **an actual measurement of whether the extension can read its own files**
 // (fetch(chrome.runtime.getURL(...))). Wording is not a contract, so branching on it would flip the
 // guidance the day Chrome's phrasing changes.
+//
+// Driven through the KEYBOARD route (#124): the icon no longer activates
+// anything — it opens the popup — so Alt+S is where the escalation described
+// here still lives. The popup's own route is the block after this one.
 describe('注入が失敗した時のツールバー表示（#269）', () => {
   let env: ReturnType<typeof setupBackground>;
   const TAB = { id: 42, url: 'https://x.com/someone/status/1' };
@@ -666,14 +698,14 @@ describe('注入が失敗した時のツールバー表示（#269）', () => {
   });
 
   test('注入が通れば何も出さない（正常時にノイズを足さない）', async () => {
-    await env.clickAction(TAB);
+    await env.pressShortcut(TAB);
     expect(badgeText(env.actionCalls)).toEqual([{ text: '', tabId: 42 }]);
     expect(env.createdTabs).toEqual([]);
   });
 
   test('失敗したら押したタブにだけ `!` が点く（他タブへ漏れない）', async () => {
     env.failInjection("Could not load file: 'capture.js'.");
-    await env.clickAction(TAB);
+    await env.pressShortcut(TAB);
     expect(badgeText(env.actionCalls)).toEqual([{ text: '!', tabId: 42 }]);
     // The color comes from a generated token = there's no color literal here (#270).
     expect(env.actionCalls.filter((c) => c.call === 'setBadgeBackgroundColor')).toHaveLength(1);
@@ -683,21 +715,21 @@ describe('注入が失敗した時のツールバー表示（#269）', () => {
   test('拡張のファイルが読めないなら「再読み込みして」と言う', async () => {
     env.failInjection("Could not load file: 'capture.js'.");
     env.setPackageReadable(false);
-    await env.clickAction(TAB);
+    await env.pressShortcut(TAB);
     expect(titles(env.actionCalls)).toEqual([{ title: 'msg:actionInjectUnreadable', tabId: 42 }]);
   });
 
   test('拡張が健全ならページ側の事情として言う（直すものが無いのに再読み込みを勧めない）', async () => {
     env.failInjection('The extensions gallery cannot be scripted.');
-    await env.clickAction(TAB);
+    await env.pressShortcut(TAB);
     expect(titles(env.actionCalls)).toEqual([{ title: 'msg:actionInjectRefused', tabId: 42 }]);
   });
 
   test('1回目はバッジだけ・同じタブで2回目に初めてページが開く', async () => {
     env.failInjection('The extensions gallery cannot be scripted.');
-    await env.clickAction(TAB);
+    await env.pressShortcut(TAB);
     expect(env.createdTabs).toEqual([]);
-    await env.clickAction(TAB);
+    await env.pressShortcut(TAB);
     expect(env.createdTabs).toEqual([{ url: 'chrome-extension://test-extension-id/diag.html?issue=inject' }]);
   });
 
@@ -708,59 +740,187 @@ describe('注入が失敗した時のツールバー表示（#269）', () => {
   test('拡張が読めない側の2回目は chrome://extensions（診断ページはそもそも開けない）', async () => {
     env.failInjection("Could not load file: 'capture.js'.");
     env.setPackageReadable(false);
-    await env.clickAction(TAB);
-    await env.clickAction(TAB);
+    await env.pressShortcut(TAB);
+    await env.pressShortcut(TAB);
     expect(env.createdTabs).toEqual([{ url: 'chrome://extensions/?id=test-extension-id' }]);
   });
 
   test('別タブの1回目は別に数える（1つのタブの失敗が他タブを飛ばさない）', async () => {
     env.failInjection('The extensions gallery cannot be scripted.');
-    await env.clickAction(TAB);
-    await env.clickAction({ id: 43, url: 'https://x.com/other/status/2' });
+    await env.pressShortcut(TAB);
+    await env.pressShortcut({ id: 43, url: 'https://x.com/other/status/2' });
     expect(env.createdTabs).toEqual([]);
   });
 
   test('ページが遷移したら数え直す（バッジはブラウザが消すので、こちらは記憶を捨てる）', async () => {
     env.failInjection('The extensions gallery cannot be scripted.');
-    await env.clickAction(TAB);
+    await env.pressShortcut(TAB);
     env.navigateTab(42);
-    await env.clickAction(TAB);
+    await env.pressShortcut(TAB);
     expect(env.createdTabs).toEqual([]);
   });
 
   test('タブが閉じたら数え直す', async () => {
     env.failInjection('The extensions gallery cannot be scripted.');
-    await env.clickAction(TAB);
+    await env.pressShortcut(TAB);
     env.closeTab(42);
-    await env.clickAction(TAB);
+    await env.pressShortcut(TAB);
     expect(env.createdTabs).toEqual([]);
   });
 
   test('注入が通ったら印を消し、次の失敗はまた1回目から', async () => {
     env.failInjection('The extensions gallery cannot be scripted.');
-    await env.clickAction(TAB);
+    await env.pressShortcut(TAB);
     env.allowInjection();
-    await env.clickAction(TAB);
+    await env.pressShortcut(TAB);
     expect(badgeText(env.actionCalls).at(-1)).toEqual({ text: '', tabId: 42 });
     expect(titles(env.actionCalls).at(-1)).toEqual({ title: 'msg:actionTitle', tabId: 42 });
     env.failInjection('The extensions gallery cannot be scripted.');
-    await env.clickAction(TAB);
+    await env.pressShortcut(TAB);
     expect(env.createdTabs).toEqual([]);
   });
 
   test('http(s) でないタブは今までどおり黙って抜ける（失敗ではない）', async () => {
     env.failInjection("Could not load file: 'capture.js'.");
-    await env.clickAction({ id: 44, url: 'chrome://newtab/' });
+    await env.pressShortcut({ id: 44, url: 'chrome://newtab/' });
     expect(env.actionCalls).toEqual([]);
     expect(env.createdTabs).toEqual([]);
   });
 
   test('無反応だった押下は退避ログにも残る（診断ページが読み戻せる唯一の記録）', async () => {
     env.failInjection("Could not load file: 'capture.js'.");
-    await env.clickAction(TAB);
+    await env.pressShortcut(TAB);
     const stashed = [...env.localStore.values()].filter((e: any) => e.stage === 'activate' && e.phase === 'fail');
     expect(stashed).toHaveLength(1);
     expect(stashed[0].error).toBe("Could not load file: 'capture.js'.");
+  });
+});
+
+// === The popup's save button (#124) ==============================================
+//
+// Putting a panel on the toolbar action costs chrome.action.onClicked — Chrome
+// does not deliver it to an action that has a popup — so the press that used to
+// inject now arrives as a message. Two things have to hold: the injection is
+// still ONE implementation (the popup does not grow its own), and the popup's
+// press does NOT open a repair tab behind the panel the way #269's second press
+// does, because the panel itself is the surface #269 never had.
+describe('ポップアップからの保存（#124）', () => {
+  let env: ReturnType<typeof setupBackground>;
+  const TAB = { id: 42, url: 'https://x.com/someone/status/1' };
+  const badgeText = (calls: Array<{ call: string; arg: any }>) => calls.filter((c) => c.call === 'setBadgeText').map((c) => c.arg);
+
+  beforeEach(() => {
+    env = setupBackground();
+  });
+
+  // The listener would never fire (Chrome: "This event will not fire if the
+  // action has a popup"), so one left registered is not harmless — it is a
+  // second, dead route that reads like a live one.
+  test('chrome.action.onClicked は登録しない（発火しない登録を残さない）', () => {
+    expect(env.onClickedListenerCount()).toBe(0);
+  });
+
+  test('アクティブタブへ注入して ok を返す', async () => {
+    const res = await env.popupSave(TAB);
+    expect(res).toEqual({ ok: true });
+    expect(badgeText(env.actionCalls)).toEqual([{ text: '', tabId: 42 }]);
+  });
+
+  test('注入できなかった理由を返す（ポップアップが自分で言えるようにする）', async () => {
+    env.failInjection('The extensions gallery cannot be scripted.');
+    expect(await env.popupSave(TAB)).toEqual({ ok: false, reason: 'page-refused' });
+    env.setPackageReadable(false);
+    expect(await env.popupSave({ id: 43, url: 'https://x.com/other/status/2' })).toEqual({ ok: false, reason: 'package-unreadable' });
+  });
+
+  test('http(s) でないタブは押す前に理由が付く', async () => {
+    expect(await env.popupSave({ id: 44, url: 'chrome://newtab/' })).toEqual({ ok: false, reason: 'not-http' });
+    expect(env.actionCalls).toEqual([]);
+  });
+
+  test('アクティブタブが無ければ no-tab', async () => {
+    expect(await env.popupSave(null)).toEqual({ ok: false, reason: 'no-tab' });
+  });
+
+  // The mark stays — it outlives the panel, which closes — but no tab opens:
+  // the panel is open, being read, and offers the same page as a button.
+  test('2回目でもタブを勝手に開かない（バッジは点く）', async () => {
+    env.failInjection('The extensions gallery cannot be scripted.');
+    await env.popupSave(TAB);
+    await env.popupSave(TAB);
+    expect(env.createdTabs).toEqual([]);
+    expect(badgeText(env.actionCalls)).toEqual([
+      { text: '!', tabId: 42 },
+      { text: '!', tabId: 42 },
+    ]);
+  });
+
+  // The per-tab count is shared between the two routes on purpose: what the
+  // popup changes is whether a tab is opened, not what counts as a failure.
+  test('Alt+S 側の意味は変わらない（同じタブの2回目は今までどおり開く）', async () => {
+    env.failInjection('The extensions gallery cannot be scripted.');
+    await env.popupSave(TAB);
+    await env.pressShortcut(TAB);
+    expect(env.createdTabs).toEqual([{ url: 'chrome-extension://test-extension-id/diag.html?issue=inject' }]);
+  });
+});
+
+// === What the popup reads (#124) =================================================
+//
+// The panel shows two things the worker has to write for it, and both are
+// written from the one funnel every save route passes through (admitSave):
+// the ring of recent saves, and — for the version note — the fact that the
+// banner has already said it once this browser session.
+describe('保存履歴と版ずれ通知（#124）', () => {
+  let env: ReturnType<typeof setupBackground>;
+
+  beforeEach(() => {
+    env = setupBackground();
+  });
+
+  const history = () => env.localStore.get('saveHistory.v1') as any[] | undefined;
+
+  // Selects the nth save Port by WHAT IT SENT, like portThatSent, but the nth
+  // rather than the first: this suite drives two saves in a row.
+  async function answerSave(createdPorts: any[], index: number, ack: any) {
+    let port: any;
+    await vi.waitFor(() => {
+      const found = createdPorts.filter((p: any) => p.sent.some((m: any) => m.type === 'savePost'));
+      expect(found.length).toBeGreaterThan(index);
+      port = found[index];
+    });
+    port.emitMessage(ack);
+  }
+
+  test('保存が済んだら1行残る（ホストが名乗った captureId ごと）', async () => {
+    const createdPorts = env.connectAsControllablePort();
+    const save = env.dispatch({ type: 'savePost', platform: 'misskey', postUrl: UNPARSEABLE_POST_URL }, MISSKEY_SENDER);
+    await answerSave(createdPorts, 0, { ok: true, captureId: 'cap-1' });
+    await save.responseP;
+    await vi.waitFor(() => expect(history()?.[0]).toMatchObject({ ok: true, type: 'savePost', url: UNPARSEABLE_POST_URL, captureId: 'cap-1' }));
+  });
+
+  // The list is read to answer "did it go in", so the answer "no" has to be in it.
+  test('入らなかった保存も1行残る', async () => {
+    env.connectAsUnavailable('Specified native messaging host not found.');
+    const save = env.dispatch({ type: 'savePost', platform: 'misskey', postUrl: UNPARSEABLE_POST_URL }, MISSKEY_SENDER);
+    await save.responseP;
+    await vi.waitFor(() => expect(history()?.[0]).toMatchObject({ ok: false, type: 'savePost' }));
+    expect(history()?.[0].error).toBeTruthy();
+  });
+
+  // The standing place to read a skew is the popup now. The banner keeps one
+  // shot per browser session so someone who never opens the popup still learns
+  // of it — and exactly one, so it stops being noise on every save.
+  test('版ずれの通知はブラウザセッション中1回だけ', async () => {
+    const createdPorts = env.connectAsControllablePort();
+    const first = env.dispatch({ type: 'savePost', platform: 'misskey', postUrl: UNPARSEABLE_POST_URL }, MISSKEY_SENDER);
+    await answerSave(createdPorts, 0, { ok: true, captureId: 'cap-1', protocolVersion: 2 });
+    expect((await first.responseP).hostSkew).toBe('host-new');
+
+    const second = env.dispatch({ type: 'savePost', platform: 'misskey', postUrl: `${UNPARSEABLE_POST_URL}-2` }, MISSKEY_SENDER);
+    await answerSave(createdPorts, 1, { ok: true, captureId: 'cap-2', protocolVersion: 2 });
+    expect((await second.responseP).hostSkew).toBeNull();
   });
 });
 

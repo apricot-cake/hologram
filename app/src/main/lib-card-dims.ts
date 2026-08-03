@@ -20,7 +20,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { imageSize } from './lib-imgsize.ts';
 
-const IMG_EXT = /\.(jpe?g|png|gif|webp)$/i;
+// jfif is a plain JPEG under a different extension (local intake's
+// IMPORTABLE_IMG accepts it, importable-media.mts) — imageSize()'s jpegSize()
+// already reads it fine by magic bytes, this gate just needs to let it through (#12).
+const IMG_EXT = /\.(jpe?g|jfif|png|gif|webp)$/i;
 // Media files that carry no measurable still: a video, and a pixiv ugoira
 // archive (#119 St3). Mirrors records.ts's isVideoFile/isUgoiraFile.
 const UNMEASURABLE_EXT = /\.(mp4|webm|mov|m4v|zip)$/i;

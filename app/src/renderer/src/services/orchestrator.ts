@@ -97,6 +97,12 @@ export let handleSelectionContextmenu: (e: MouseEvent) => void;
 // the DOM contract that forced the strip to keep emitting those class names.
 export let switchTab: (id: string) => void;
 export let addTab: () => void;
+// #145: a history row's click — current tab (fresh visit, pushes) / middle
+// click (background tab, seeded nav stack). See tabs-builder.ts's doc on each.
+export let openHistoryEntry: (e: HologramNavEntry) => void;
+export let openHistoryEntryInBackgroundTab: (e: HologramNavEntry, title: string) => void;
+/** #145: the history panel's thumbnail lookup for an image-kind row. */
+export let getPostById: (id: string) => HologramPost | undefined;
 export let closeTab: (id: string) => void;
 /** Middle-click close: no-ops on a pinned tab and on the last remaining one. */
 export let closeTabByGesture: (id: string) => void;
@@ -936,6 +942,7 @@ export function endFilterEditSession(): void {
     renderPosters: () => renderPosters(),
     showImageView: (recs, idx) => imageTabCtl.showImageView(recs, idx), // imageTabCtl is constructed just below — deferred
     hideImageView: () => imageTabCtl.hideImageView(),
+    getPostById: postGrid.getPostById, // #145: title lookup for a recorded image entry
     // Coalescing hint (#144 confirmed (pending item 2)): an open facet-editor session, else a live
     // search-typing burst (searchBox is constructed far below — deferred read).
     navCoalesceKey: () => _filterEditSession || searchBox.liveSearchKey(),
@@ -950,6 +957,9 @@ export function endFilterEditSession(): void {
   handleShortcutMouseNav = tabsCtl.handleShortcutMouseNav;
   switchTab = tabsCtl.switchTab;
   addTab = tabsCtl.addTab;
+  openHistoryEntry = tabsCtl.openHistoryEntry;
+  openHistoryEntryInBackgroundTab = tabsCtl.openHistoryEntryInBackgroundTab;
+  getPostById = postGrid.getPostById;
   closeTab = tabsCtl.closeTab;
   closeTabByGesture = tabsCtl.closeTabByGesture;
   showTabMenu = tabsCtl.showTabMenu;
@@ -1889,6 +1899,7 @@ export function endFilterEditSession(): void {
     getBrowseMode: () => browseMode,
     addTab: () => tabsCtl.addTab(),
     openTagManagementTab: () => tabsCtl.openTagManagementTab(),
+    openHistoryEntry: (e) => tabsCtl.openHistoryEntry(e),
     switchTab: (id) => tabsCtl.switchTab(id),
     resetAllFilters: () => resetAllFilters(),
     resetPosterFilters: () => resetPosterFilters(),

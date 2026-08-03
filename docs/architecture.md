@@ -11,7 +11,7 @@
 - [0003](decisions/0003-build-vs-borrow-boundary.md) 自前で持つものと委ねるものの線引き
 - [0005](decisions/0005-no-visual-change-during-migration.md) 移行作業では見た目を意図的に変えない
 - [0006](decisions/0006-plain-shadcn-look.md) 素の shadcn ルックを採る（[0004](decisions/0004-own-styling-headless-behaviour.md)「見た目は自前」を置き換え）
-- [0010](decisions/0010-sqlite-as-the-metadata-truth-source.md) メタデータの正本を SQLite に置き、ファイルは実体だけを持つ（DB配置の条項は [0023](decisions/0023-database-lives-inside-the-library-folder.md) が置き換え）
+- [0010](decisions/0010-sqlite-as-the-metadata-truth-source.md) メタデータの正本を SQLite に置き、ファイルは実体だけを持つ（DB配置の条項は [0024](decisions/0024-database-lives-inside-the-library-folder.md) が置き換え）
 - [0011](decisions/0011-preserve-acquisition-payloads.md) 取得したペイロードを原本として残し、正規化フィールドへの昇格だけを実需で絞る
 
 ## 全体フロー
@@ -63,6 +63,7 @@ electron-vite で main・preload・renderer の3面をバンドルする標準�
 - `src/main/lib-db*.ts` — SQLite 層（エンジン/スキーマ/クエリ/書き込み/取込キュー/整合チェック）。取得原本（`raw_payloads`・[ADR 0011](decisions/0011-preserve-acquisition-payloads.md)）は共有 writer が投稿と同じトランザクションで書き、追記のみで消さない。いずれも Electron 非依存＝node でテスト可。`listPosts` は DB への1クエリで、更新は差分IPC（list-posts-delta）＝`lib-post-delta.ts` が「前回配った分」と突き合わせて追加/削除だけ返す（#302 でファイル走査は消え、ヒントの受け渡しも不要になった）
 - `src/main/lib-card-dims.ts` — カード画像の実寸（`shotW`/`shotH`）をヘッダだけ読んで測る。masonry のカード高さを画像ロード前に確保するため、**レコードを書く時に**測って DB に入れる
 - `src/main/lib-local-intake.ts` — **SNS 由来でないローカル画像がレコードになる形の唯一の定義**（ファイルダイアログ・クリップボード #85・監視フォルダ #84・ウィンドウへのドロップ #234 が共有）。入口ごとに違うのは captureId の接頭辞・`source`・`date` の3つだけで、残りは全部ここが決める。**`url` は必ず null**＝`kind` は保存されず url の有無から導出されるので、url を立てるとローカル画像が「SNS投稿」に化ける（クリップボードや D&D から URL を拾う経路を見送った理由の実体）
+- `src/main/lib-ml-runtime.ts`＋`src/main/ml-worker.ts` — ローカル推論（#831・親 #98）。`ml-worker.ts` は **main と並ぶ2本目のエントリ**で（`electron.vite.config.ts` の `build.lib.entry`）、`utilityProcess` として起動する＝ONNX のセッション生成とテンソル整形は同期的に長く走るので main に置くと IPC とウィンドウが止まる（サムネ生成プールが2枠で足りるのに対し、こちらは桁が違う）。ネイティブ層のクラッシュがアプリごと落とさないのも同じ理由。ランタイムは `@huggingface/transformers`（transformers.js）越しの onnxruntime-node で、読み込めない時だけ onnxruntime-web の WASM へ落ちる（落ちた事実は `main.log` に warn で残る）。**モデルの取得はしない**＝渡されるのは絶対パスのモデルディレクトリだけで、`env.allowRemoteModels = false` を立ててライブラリ側の通信を封じてある（取得は #832 の担当・起動そのものが `ai.enabled` のゲート越し＝#830）
 - `src/preload/index.ts` — contextBridge の実装。公開APIの型は実装から`HologramPreload`としてexportし、rendererはそれを型エイリアスで参照（手書き型ミラーなし・Issue #17）
 - `src/renderer/index.html`＋`src/renderer/public/`（`theme.js`＝pre-paint、`<script>`で直読み。CSP は main が応答ヘッダで配るのでこのファイルには持たせない（ADR 0022）。`app/build-theme-boot.mjs`が`theme.ts`から再生成＝バンドル外の同期スクリプトという制約は変わらない）
 - `src/renderer/src/services/`（旧 `renderer/*.ts`）＝`orchestrator.ts`（2026-07-11に`viewer.ts`から改名。boot orchestration層として意図的に独立モジュールのまま残す設計）が状態/オーケストレーション/IPC呼び出しの中核、`store.ts`ほか単機能サービス（`tags.ts`/`selection.ts`/`query.ts`/`records.ts`等）に段階抽出済み。`design-tokens.css`は`src/renderer/`直下（index.htmlの`<link>`が参照）

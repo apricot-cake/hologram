@@ -356,7 +356,22 @@ export const hostOf = (url: string | null | undefined): string => {
 // itself never reaches this branch's identity half (no userId/screenName —
 // buildUsers' own identity gate in users.ts keeps it out of the poster grid
 // entirely), but a future platform-less record WITH an author (#239) will.
-export const userKey = (p: HologramPost): string => (p.platform ? p.platform + ':' + (p.userId || '@' + (p.screenName || '')) : 'web:' + hostOf(p.url) + ':' + (p.userId || '@' + (p.screenName || '')));
+// #791: misskey/mastodon actor ids (and the screenName fallback) are only
+// unique WITHIN an instance, unlike X/Bluesky/pixiv's global id space, so
+// those two platforms fold the URL's host into the key too — same idiom as
+// the platform-less branch above. Falls back to the hostless form when the
+// URL doesn't yield a host, so a missing host can't collapse every such
+// poster onto one key.
+const INSTANCE_SCOPED_PLATFORMS = new Set(['misskey', 'mastodon']);
+export const userKey = (p: HologramPost): string => {
+  const id = p.userId || '@' + (p.screenName || '');
+  if (!p.platform) return 'web:' + hostOf(p.url) + ':' + id;
+  if (INSTANCE_SCOPED_PLATFORMS.has(p.platform)) {
+    const host = hostOf(p.url);
+    if (host) return p.platform + ':' + host + ':' + id;
+  }
+  return p.platform + ':' + id;
+};
 // The 'kind' facet's three values (#195): a bookmark is source-marked
 // (source:'bookmark') rather than derived from url presence — it HAS a url
 // (the link it bookmarks), same as an SNS post, so source has to be checked

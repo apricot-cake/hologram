@@ -18,7 +18,7 @@ const SAVED_SEARCHES = [{ id: 's-a', name: '保存検索テスト', kind: 'dynam
 function seedFolderAndSavedSearch({ saveFolder }: { saveFolder: string }) {
   const { openDatabase } = require(path.join(appDir, 'src', 'main', 'lib-db.ts'));
   const { createDbWriter } = require(path.join(appDir, 'src', 'main', 'lib-db-write.ts'));
-  // #176: hologram.db lives inside the save folder now, not configDir (ADR 0023).
+  // #176: hologram.db lives inside the save folder now, not configDir (ADR 0024).
   const { sqlite } = openDatabase(path.join(saveFolder, 'hologram.db'));
   createDbWriter(sqlite).setFolders({ folders: [...FOLDERS, ...SAVED_SEARCHES], activeId: null });
   sqlite.close();

@@ -1,10 +1,27 @@
 'use strict';
 
-// Parse image pixel dimensions from a file's leading bytes — no decode, no deps.
-// Used by lib-index.js to record each card image's size (shotW/shotH) so the
-// renderer can reserve a masonry card's height BEFORE its (lazy) image loads,
-// which removes the load-time settle/jitter. Header-only: callers pass the first
-// ~64KB of the file. Electron-free, so it unit-tests in plain node.
+import ExifReader from 'exifreader';
+
+// Parse image pixel dimensions from a file's leading bytes — no full decode.
+// Used by lib-card-dims.ts/lib-media-dims.ts to record each card image's size
+// (shotW/shotH) and the dimension facet (mediaMaxW/H, #162) so the renderer can
+// reserve a masonry card's height BEFORE its (lazy) image loads, which removes
+// the load-time settle/jitter, and so the facet answers with the pixel size the
+// browser actually renders. Header-only: callers pass the first ~64KB of the
+// file (see lib-card-dims.ts's two-stage read window).
+//
+// #12: Chromium's default `image-orientation: from-image` means it renders a
+// JPEG rotated per its EXIF Orientation tag, but the SOF/IHDR/etc. parsers
+// below only ever returned the UNROTATED frame size — so a portrait photo
+// (Orientation 5-8) got a landscape shotW/shotH, misreporting its own aspect
+// ratio and (once #162 shipped) its answer to the dimension facet. imageSize()
+// now reads Orientation via exifreader (the same buffer window, no extra file
+// read) and swaps width/height for 5-8 so callers always get the DISPLAYED
+// size. exifreader also throws on unparseable input, so any failure to read
+// Orientation (no EXIF, corrupt EXIF, non-JPEG) silently keeps the frame size
+// as-is — orientation is a best-effort refinement, not a requirement.
+//
+// Electron-free, so it unit-tests in plain node.
 
 // JPEG: scan marker segments until a Start-Of-Frame (SOFn) carries height/width.
 function jpegSize(buf) {
@@ -86,10 +103,37 @@ function webpSize(buf) {
   return null;
 }
 
+// No real photo, screen, or scan legitimately exceeds this on either axis;
+// PNG's IHDR (32-bit) and WebP VP8X (24-bit) width/height fields can otherwise
+// claim billions of pixels from a few attacker-controlled bytes. Treat that as
+// "couldn't measure" rather than propagating it — the save-folder path
+// containment (resolveWithin, lib-card-dims.ts) applies the same "don't trust
+// record-derived input" rule to paths; this is the same rule for numbers.
+const MAX_DIMENSION = 65535;
+
+// EXIF Orientation (tag 0x0112): 1 = normal, 5-8 = the frame is rotated 90°,
+// so width/height must swap to match what's actually displayed. Reads from the
+// SAME buffer already passed to imageSize() — Orientation lives in IFD0, right
+// after the TIFF header, so it's always within the header window callers pass
+// in, even for the big-EXIF retry case. No-EXIF and corrupt-EXIF images throw
+// or return no tag, either way this falls back to null (unrotated).
+function readOrientation(buf) {
+  try {
+    const tags = ExifReader.load(buf, { includeTags: { exif: ['Orientation'] } });
+    const value = tags?.Orientation?.value;
+    return typeof value === 'number' && value >= 1 && value <= 8 ? value : null;
+  } catch {
+    return null;
+  }
+}
+
 // Detect format by signature and return { width, height } or null.
 function imageSize(buf) {
   if (!buf || buf.length < 10) return null;
-  return jpegSize(buf) || pngSize(buf) || gifSize(buf) || webpSize(buf) || null;
+  const dim = jpegSize(buf) || pngSize(buf) || gifSize(buf) || webpSize(buf) || null;
+  if (!dim || dim.width > MAX_DIMENSION || dim.height > MAX_DIMENSION) return null;
+  const orientation = readOrientation(buf);
+  return orientation && orientation >= 5 ? { width: dim.height, height: dim.width } : dim;
 }
 
 export { imageSize, jpegSize, pngSize, gifSize, webpSize };

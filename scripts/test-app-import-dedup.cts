@@ -147,7 +147,7 @@ buildFixtures().then((zips) => {
     // trashed, so its row was deleted by ipc-trash.ts's explicit deletePost).
     let diskOk = false;
     try {
-      // #176: hologram.db lives inside the save folder now, not configDir (ADR 0023).
+      // #176: hologram.db lives inside the save folder now, not configDir (ADR 0024).
       const { sqlite } = openDatabase(path.join(saveFolder, 'hologram.db'), { readonly: true });
       // A, B, D, E plus F's REPLACEMENT (F's first import was retired by it).
       diskOk = sqlite.prepare("SELECT COUNT(*) AS n FROM posts WHERE captureId LIKE 'import-%'").get().n === 5;

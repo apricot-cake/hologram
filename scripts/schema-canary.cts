@@ -346,7 +346,7 @@ function inspectPayloads(filter: string | null, limit: number) {
   const { configDir, defaultLibraryDir } = require('../native-host/paths.cts');
   const { openDatabase } = require('../app/src/main/lib-db.ts');
   const { unpackRawPayload } = require('../native-host/raw-payload.mts');
-  // #176: hologram.db lives inside the save folder now, not configDir (ADR 0023).
+  // #176: hologram.db lives inside the save folder now, not configDir (ADR 0024).
   let folder = defaultLibraryDir();
   try {
     const cfg = JSON.parse(fs.readFileSync(path.join(configDir(), 'config.json'), 'utf8'));
