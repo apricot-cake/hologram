@@ -7,6 +7,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import { openDatabase, DatabaseCorruptError } from './lib-db.ts';
+import { migratePosterKeyHost } from './lib-migrate-poster-key-host.ts';
 import { computeDelta } from './lib-post-delta.ts';
 import { postsFromDb, searchPostsFts } from './lib-db-query.ts';
 import { createDbWriter } from './lib-db-write.ts';
@@ -264,6 +265,7 @@ function ensureDb() {
     restoreFromSnapshotIfAvailable(file);
     dbHandle = openDatabase(file);
   }
+  migratePosterKeyHost(dbHandle.sqlite);
   return dbHandle;
 }
 

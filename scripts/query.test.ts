@@ -57,7 +57,7 @@ describe('葉の述語', () => {
   test.each([
     ['kind: post は url あり', { type: 'kind', value: 'post' }, {}],
     ['platform: 一致', { type: 'platform', value: 'misskey' }, {}],
-    ['user: userId 優先キー', { type: 'user', value: 'misskey:u123' }, {}],
+    ['user: userId 優先キー', { type: 'user', value: 'misskey:misskey.io:u123' }, {}],
     ['instance: misskey/mastodon は host 照合', { type: 'instance', value: 'misskey.io' }, {}],
     ['postType: 素の投稿', { type: 'postType', value: 'post' }, {}],
     ['media: 一致', { type: 'media', value: 'image' }, {}],
@@ -194,20 +194,20 @@ describe('葉の述語', () => {
 describe('user: 名寄せ（membersOf）', () => {
   test('membersOf 未注入なら完全一致のまま（既存動作の据え置き）', () => {
     const p = Q.makePostPredOf({ isInFolder: () => false });
-    expect(p({ type: 'user', value: 'misskey:u123' })(post())).toBe(true);
+    expect(p({ type: 'user', value: 'misskey:misskey.io:u123' })(post())).toBe(true);
     expect(p({ type: 'user', value: 'x:@other' })(post())).toBe(false);
   });
 
   test('membersOf が返す集合のどれかに一致すれば真', () => {
-    const p = Q.makePostPredOf({ isInFolder: () => false, membersOf: (key) => (key === 'x:primary' ? ['x:primary', 'misskey:u123'] : [key]) });
+    const p = Q.makePostPredOf({ isInFolder: () => false, membersOf: (key) => (key === 'x:primary' ? ['x:primary', 'misskey:misskey.io:u123'] : [key]) });
     // The leaf was saved with the group's primary key, but this post's own raw
-    // userKey is the OTHER member (misskey:u123) — still a match.
+    // userKey is the OTHER member (misskey:misskey.io:u123) — still a match.
     expect(p({ type: 'user', value: 'x:primary' })(post())).toBe(true);
   });
 
   test('自分がメンバーでないグループには当たらない', () => {
     const p = Q.makePostPredOf({ isInFolder: () => false, membersOf: (key) => (key === 'x:primary' ? ['x:primary', 'x:@someone-else'] : [key]) });
-    expect(p({ type: 'user', value: 'x:primary' })(post())).toBe(false); // post()'s own key is misskey:u123, not in this group
+    expect(p({ type: 'user', value: 'x:primary' })(post())).toBe(false); // post()'s own key is misskey:misskey.io:u123, not in this group
   });
 });
 
@@ -581,6 +581,20 @@ describe('純ヘルパ', () => {
   test('userKey は userId 優先で handle へフォールバック', () => {
     expect(Q.userKey({ platform: 'x', userId: 'u1', screenName: 's' })).toBe('x:u1');
     expect(Q.userKey({ platform: 'x', screenName: 's' })).toBe('x:@s');
+  });
+
+  // #791: misskey/mastodon の actor id (と screenName フォールバック) はインスタンス
+  // 局所なので、他の3プラットフォームと違いホストをキーへ挟む。
+  test('userKey は misskey/mastodon をホストで閉じる（#791）', () => {
+    expect(Q.userKey({ platform: 'misskey', userId: 'u3', url: 'https://misskey.io/notes/n1' })).toBe('misskey:misskey.io:u3');
+    expect(Q.userKey({ platform: 'mastodon', screenName: 'alice', url: 'https://instance-a.example/@alice' })).toBe('mastodon:instance-a.example:@alice');
+    // 別インスタンスの同じ screenName は別キー（#791 の受け入れ条件）
+    expect(Q.userKey({ platform: 'mastodon', screenName: 'alice', url: 'https://instance-b.example/@alice' })).toBe('mastodon:instance-b.example:@alice');
+  });
+
+  test('userKey はホストが取れない misskey/mastodon レコードをホスト無しの旧形へ落とす（#791）', () => {
+    expect(Q.userKey({ platform: 'misskey', userId: 'u3', url: null })).toBe('misskey:u3');
+    expect(Q.userKey({ platform: 'mastodon', screenName: 'alice', url: 'not a url' })).toBe('mastodon:@alice');
   });
 
   // #760: platform-less レコードは platform 名前空間を持たないので、URL のホストで閉じる
