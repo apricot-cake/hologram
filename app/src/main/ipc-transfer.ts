@@ -24,11 +24,12 @@ import { fillCardDims } from './lib-card-dims.ts';
 import { fillMediaDims } from './lib-media-dims.ts';
 import { makeTagResolver, preparePostStmts, writePost } from './lib-db-record-writer.ts';
 import { IMPORTABLE_MEDIA, buildLocalRecord, importLocalFile, localCaptureId } from './lib-local-intake.ts';
+import { collectDroppedPaths } from './lib-drop-import.ts';
 import { TRASH_SUBDIR } from './lib-save-folder-path.ts';
 import { INBOX_DIRNAME } from '../../../native-host/inbox.mts';
 import type { PostRecordInput } from '../../../native-host/post-record.mts';
 import type { IpcContext } from './ipc-context.ts';
-import type { ClearAllResult, ClipboardImportResult, CompleteImportResult, ExportCompleteResult, ExportSaveResult, LegacyImportResult, MediaImportResult, RepointApplyResult, RepointPickResult, SaveFolderMoveResult, SaveFolderPickResult } from './ipc-payloads.ts';
+import type { ClearAllResult, ClipboardImportResult, CompleteImportResult, DropCollectResult, DroppedFile, DropImportResult, ExportCompleteResult, ExportSaveResult, LegacyImportResult, MediaImportResult, RepointApplyResult, RepointPickResult, SaveFolderMoveResult, SaveFolderPickResult } from './ipc-payloads.ts';
 
 function exportStamp() {
   return new Date().toISOString().replace(/[:.]/g, '-').replace('T', '_').slice(0, 19);
@@ -732,6 +733,80 @@ function register(ctx: IpcContext) {
           now: nowIso,
         });
         await fs.promises.copyFile(fp, path.join(folder, file));
+        toWrite.push(rec);
+        imported++;
+      } catch {
+        skipped++;
+      }
+    }
+
+    if (toWrite.length) {
+      const stmts = preparePostStmts(sqlite);
+      const resolveTagId = makeTagResolver(sqlite);
+      sqlite.exec('BEGIN');
+      try {
+        for (const rec of toWrite) writePost(stmts, resolveTagId, fillMediaDims(folder, fillCardDims(folder, rec)));
+        sqlite.exec('COMMIT');
+      } catch (err) {
+        sqlite.exec('ROLLBACK');
+        throw err;
+      }
+    }
+    return { imported, skipped };
+  });
+
+  // --- Window drop-to-import (#234): drag local files/folders from the OS onto
+  // the window. Two IPC round trips so the recursive walk (a folder can pull in
+  // far more than a dialog pick ever would) runs to completion BEFORE the
+  // renderer asks "N 件を取り込みますか？" — collect-dropped-paths only walks
+  // and counts; nothing lands until import-dropped-paths is called back with the
+  // SAME list (no re-walk, and a "いいえ" answer never reaches this second call
+  // at all). source/idPrefix stay 'drag' — the same value the file-dialog door
+  // above already uses; see lib-local-intake.ts's module comment for why the
+  // two doors share it.
+  ipcMain.handle('collect-dropped-paths', async (_e, paths): Promise<DropCollectResult> => {
+    if (!getSaveFolder()) return { files: [], mediaCount: 0, otherCount: 0, error: 'no-folder' };
+    if (getLibraryStatus().missing) return { files: [], mediaCount: 0, otherCount: 0, error: 'library-missing' };
+    if (!Array.isArray(paths) || !paths.length) return { files: [], mediaCount: 0, otherCount: 0 };
+    return collectDroppedPaths(paths);
+  });
+
+  ipcMain.handle('import-dropped-paths', async (_e, files): Promise<DropImportResult> => {
+    const folder = getSaveFolder();
+    if (!folder) return { imported: 0, skipped: 0, error: 'no-folder' };
+    // #37: see importPostRecords's identical guard.
+    if (getLibraryStatus().missing) return { imported: 0, skipped: 0, error: 'library-missing' };
+    if (!Array.isArray(files) || !files.length) return { imported: 0, skipped: 0 };
+    fs.mkdirSync(folder, { recursive: true });
+    const handle = await ensurePostsSynced();
+    if (!handle) return { imported: 0, skipped: 0, error: 'no-folder' };
+    const { sqlite } = handle;
+    let imported = 0,
+      skipped = 0,
+      seq = 0;
+    const stamp = Date.now();
+    const toWrite: PostRecordInput[] = [];
+    for (const f of files as DroppedFile[]) {
+      try {
+        const st = await fs.promises.stat(f.path);
+        if (!st.isFile()) {
+          skipped++;
+          continue;
+        }
+        const captureId = localCaptureId('drag', stamp, seq++);
+        const file = `${captureId}.${f.ext}`;
+        const nowIso = new Date().toISOString();
+        const mtimeIso = st.mtime && !Number.isNaN(st.mtime.getTime()) ? st.mtime.toISOString() : nowIso;
+        const rec: PostRecordInput = buildLocalRecord({
+          captureId,
+          file,
+          ext: f.ext,
+          source: 'drag',
+          title: path.basename(f.path, path.extname(f.path)) || null,
+          date: mtimeIso,
+          now: nowIso,
+        });
+        await fs.promises.copyFile(f.path, path.join(folder, file));
         toWrite.push(rec);
         imported++;
       } catch {

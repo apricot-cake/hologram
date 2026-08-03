@@ -10,7 +10,7 @@
 //   * the file dialog (`import-images`, ipc-transfer.ts) — a path, `drag-`/'drag'
 //   * the clipboard (`import-clipboard`, #85)            — bytes, `clip-`/'clipboard'
 //   * a watch folder (#84)                                — a path, `watch-`/'watch'
-//   * drag & drop onto the window (#234, not built yet)  — a path, `drag-`/'drag'
+//   * drag & drop onto the window (#234)                  — a path, `drag-`/'drag'
 // They differ in where the pixels come from and in three field values; everything
 // else about the record — url:null, the timestamps, mediaType, where the file
 // lands, that the card dimensions are measured before the row is written — is the

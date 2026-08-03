@@ -113,6 +113,9 @@
     "db-write.test.ts",
     "db.test.ts",
     "drag.test.ts",
+    // #234: imports app/src/main/ipc-transfer.ts (+ lib-drop-import.ts, lib-db.ts)
+    // — cause (c), same as clipboard-intake.test.ts above.
+    "drop-import.test.ts",
     "electron-path-guard.test.ts",
     // #71: imports native-host/paths.cts + bridge.cts (module.exports) — cause (a).
     "extension-contact.test.ts",

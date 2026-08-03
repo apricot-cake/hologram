@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { AppShell } from '../shell/AppShell.tsx';
+import { DropOverlay } from '../drop/DropOverlay.tsx';
 import { ConfirmHost } from '../confirm/Confirm.tsx';
 import { PaletteHost } from '../palette/CommandPalette.tsx';
 import { PromptHost } from '../prompt/Prompt.tsx';
@@ -302,6 +303,11 @@ export function App() {
           with the shell-embedded components (tabs / grids / inspector / image-tab / search /
           chips / empty / mirror) rendered in place (redesign §3, P1-2..P1-5). */}
       <AppShell />
+      {/* Window drop-to-import (#234) — the drag/drop listeners are window-wide, but
+          the accepting element only exists (and only shows) while a file drag is
+          over the window, so it renders here rather than in one of the always-
+          mounted effect components above. */}
+      <DropOverlay />
       {/* Body-level overlays. Menus / confirm / dialogs / toaster / tooltip / quick-view peek
           self-portal onto document.body; the folder modal is a fixed-positioned child of this
           root. Neither needs a static container in index.html any more (#621). */}

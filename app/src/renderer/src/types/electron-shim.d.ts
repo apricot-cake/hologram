@@ -18,3 +18,9 @@ export const ipcRenderer: {
 export const contextBridge: {
   exposeInMainWorld(apiKey: string, api: unknown): void;
 };
+// #234: weak on purpose, same as the two above — preload/index.ts annotates its
+// own getPathForFile(file: File): string explicitly, so this stub's param type
+// does not need to (and cannot, without pulling DOM's File into this file too).
+export const webUtils: {
+  getPathForFile(file: unknown): string;
+};

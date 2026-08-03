@@ -559,6 +559,30 @@ export interface MediaImportResult {
   canceled?: boolean;
 }
 
+/** A file resolved by the window-drop door's recursive walk (#234) —
+ * collect-dropped-paths' list, sent back unchanged to import-dropped-paths so
+ * the import never re-walks. */
+export interface DroppedFile {
+  path: string;
+  ext: string;
+}
+
+/** collect-dropped-paths — the pre-count; nothing is written yet. */
+export interface DropCollectResult {
+  files: DroppedFile[];
+  mediaCount: number;
+  otherCount: number;
+  error?: string;
+}
+
+/** import-dropped-paths — the confirmed write. Same shape as MediaImportResult
+ * minus `canceled` (there is no dialog here to cancel). */
+export interface DropImportResult {
+  imported: number;
+  skipped: number;
+  error?: string;
+}
+
 /** #84: directories watched for non-destructive local-media intake. */
 export interface WatchImportFolder {
   path: string;
