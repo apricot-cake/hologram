@@ -65,6 +65,12 @@ function listedFiles(manifest): Set<string> {
   add(manifest.background?.service_worker);
   for (const value of manifest.background?.scripts || []) add(value);
   add(manifest.options_ui?.page);
+  // #124: the toolbar popup. Named by the manifest like the options page, and
+  // missing from this tally until the popup existed — a manifest that names a
+  // file the output does not have is exactly the DISABLE_RELOAD state this
+  // script exists to catch (see the header), so the check has to grow with the
+  // manifest.
+  add(manifest.action?.default_popup);
   for (const script of manifest.content_scripts || []) {
     for (const value of script.js || []) add(value);
     for (const value of script.css || []) add(value);
