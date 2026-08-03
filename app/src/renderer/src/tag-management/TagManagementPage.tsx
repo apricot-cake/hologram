@@ -13,7 +13,7 @@
 // switch from raw tagIds to a computed closure) tracked as a follow-up. The
 // in-page hint (tagMgmtHint) says so; nothing here overclaims it.
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { MoreHorizontal, Plus, Trash2 } from 'lucide-react';
+import { MoreHorizontal, Plus, Trash2, X } from 'lucide-react';
 import { t } from '../_shared/i18n.ts';
 import { hologramIpc } from '../services/ipc.ts';
 import { open as kindMenuOpen } from '../services/kind-menu.ts';
@@ -27,7 +27,8 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { includesNormalized } from '../services/search.ts';
 import { TagSplitDialog } from './TagSplitDialog.tsx';
-import type { TagParentRowResolved, TagVocabRow } from '../../../main/ipc-payloads.ts';
+import { TagAliasDialog } from './TagAliasDialog.tsx';
+import type { TagAliasRow, TagParentRowResolved, TagVocabRow } from '../../../main/ipc-payloads.ts';
 
 type ViewKey = 'all' | 'unclassified' | 'orphan' | 'parents';
 
@@ -40,10 +41,27 @@ function kindLabel(kind: string): string {
 // The rename-collision dialog: merge into the existing entity, or keep this
 // one as a separate (same-name) tag with a required display parent -- the
 // confirmed 2-way branch (2026-07-18 comment item 2).
-function RenameCollisionDialog({ open, collision, allTags, onMerge, onKeepSeparate, onClose }: { open: boolean; collision: { tagId: number; name: string; postCount: number; posterCount: number } | null; allTags: TagVocabRow[]; onMerge: () => void; onKeepSeparate: (parentTagId: number) => void; onClose: () => void }) {
+function RenameCollisionDialog({
+  open,
+  collision,
+  allTags,
+  onMerge,
+  onKeepSeparate,
+  onClose,
+}: {
+  open: boolean;
+  collision: { tagId: number; name: string; postCount: number; posterCount: number; oldName: string } | null;
+  allTags: TagVocabRow[];
+  onMerge: (keepOldNameAsAlias: boolean) => void;
+  onKeepSeparate: (parentTagId: number) => void;
+  onClose: () => void;
+}) {
   // Reset via remount, not an effect: the caller keys this component on
   // collision?.tagId (below), so a NEW collision always gets fresh local state.
   const [parentId, setParentId] = useState<string>('');
+  // #86: only meaningful for the merge branch (keepSeparate keeps BOTH names as
+  // real tag entities -- there is nothing to alias).
+  const [keepOldName, setKeepOldName] = useState(false);
   if (!collision) return null;
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
@@ -64,6 +82,12 @@ function RenameCollisionDialog({ open, collision, allTags, onMerge, onKeepSepara
               </option>
             ))}
           </select>
+          {collision.oldName && collision.oldName !== collision.name && (
+            <label className="flex items-center gap-1.5 pt-1 text-sm">
+              <Checkbox checked={keepOldName} onCheckedChange={(v) => setKeepOldName(!!v)} />
+              {t('tagMgmtKeepOldNameAsAlias', [collision.oldName])}
+            </label>
+          )}
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>
@@ -72,7 +96,7 @@ function RenameCollisionDialog({ open, collision, allTags, onMerge, onKeepSepara
           <Button variant="outline" disabled={!parentId} onClick={() => parentId && onKeepSeparate(Number(parentId))}>
             {t('tagMgmtKeepSeparateConfirm')}
           </Button>
-          <Button onClick={onMerge}>{t('tagMgmtMergeBtn')}</Button>
+          <Button onClick={() => onMerge(keepOldName)}>{t('tagMgmtMergeBtn')}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -115,24 +139,54 @@ function NameCell({ row, onRename }: { row: TagVocabRow; onRename: (tagId: numbe
 export function TagManagementPage() {
   const [rows, setRows] = useState<TagVocabRow[] | null>(null);
   const [edges, setEdges] = useState<TagParentRowResolved[] | null>(null);
+  const [aliases, setAliases] = useState<TagAliasRow[] | null>(null);
   const [view, setView] = useState<ViewKey>('all');
   const [query, setQuery] = useState('');
   const [selectedOrphans, setSelectedOrphans] = useState<Set<number>>(new Set());
-  const [collision, setCollision] = useState<{ tagId: number; name: string; postCount: number; posterCount: number; renamedTagId: number } | null>(null);
+  const [collision, setCollision] = useState<{ tagId: number; name: string; postCount: number; posterCount: number; renamedTagId: number; oldName: string } | null>(null);
   const [splitTagRow, setSplitTagRow] = useState<{ id: number; name: string } | null>(null);
+  const [aliasTagRow, setAliasTagRow] = useState<{ id: number; name: string } | null>(null);
   const [addChild, setAddChild] = useState('');
   const [addParent, setAddParent] = useState('');
   const [addDisplay, setAddDisplay] = useState(false);
 
   const refresh = useCallback(async () => {
-    const [v, e] = await Promise.all([hologramIpc.getTagVocab(), hologramIpc.getTagParentEdges()]);
+    const [v, e, a] = await Promise.all([hologramIpc.getTagVocab(), hologramIpc.getTagParentEdges(), hologramIpc.getTagAliases()]);
     setRows(v);
     setEdges(e);
+    setAliases(a);
   }, []);
 
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  // #86: alias rows grouped by their canonical tag id, for the overview
+  // table's own "別名" column -- one lookup, shared by every row's cell.
+  const aliasesByTag = useMemo(() => {
+    const m = new Map<number, TagAliasRow[]>();
+    for (const a of aliases || []) {
+      const list = m.get(a.tagId);
+      if (list) list.push(a);
+      else m.set(a.tagId, [a]);
+    }
+    return m;
+  }, [aliases]);
+
+  const removeAlias = useCallback(
+    (row: TagAliasRow) => {
+      confirmOpen({
+        message: t('tagMgmtAliasRemoveConfirm', [row.alias]),
+        okLabel: t('tagMgmtDelete'),
+        cancelLabel: t('tagMgmtCancel'),
+        async onOk() {
+          await hologramIpc.removeTagAlias(row.id);
+          refresh();
+        },
+      });
+    },
+    [refresh],
+  );
 
   const filteredRows = useMemo(() => {
     if (!rows) return [];
@@ -145,27 +199,34 @@ export function TagManagementPage() {
 
   const handleRename = useCallback(
     async (tagId: number, name: string) => {
+      // #86: the row's name BEFORE this attempt -- renameTag never applies the
+      // new name when it reports a collision (lib-db-tag-vocab.ts), so the row
+      // still carries it; captured here for the "旧名を別名として残す" checkbox.
+      const oldName = rows?.find((r) => r.id === tagId)?.name ?? '';
       const result = await hologramIpc.renameTag(tagId, name);
       if (result.ok) {
         refresh();
         return;
       }
       if ('collision' in result) {
-        setCollision({ ...result.collision, renamedTagId: tagId });
+        setCollision({ ...result.collision, renamedTagId: tagId, oldName });
       } else {
         notify(t('tagMgmtErrorGeneric'));
       }
     },
-    [refresh],
+    [rows, refresh],
   );
 
-  const handleMerge = useCallback(async () => {
-    if (!collision) return;
-    const res = await hologramIpc.mergeTags(collision.renamedTagId, collision.tagId);
-    setCollision(null);
-    if (!res.ok) notify(t('tagMgmtErrorGeneric'));
-    refresh();
-  }, [collision, refresh]);
+  const handleMerge = useCallback(
+    async (keepOldNameAsAlias: boolean) => {
+      if (!collision) return;
+      const res = await hologramIpc.mergeTags(collision.renamedTagId, collision.tagId, keepOldNameAsAlias);
+      setCollision(null);
+      if (!res.ok) notify(t('tagMgmtErrorGeneric'));
+      refresh();
+    },
+    [collision, refresh],
+  );
 
   const handleKeepSeparate = useCallback(
     async (parentTagId: number) => {
@@ -300,19 +361,21 @@ export function TagManagementPage() {
                     <th className="p-2 text-right">{t('tagMgmtColPosts')}</th>
                     <th className="p-2 text-right">{t('tagMgmtColPosters')}</th>
                     <th className="p-2 text-left">{t('tagMgmtColParent')}</th>
+                    <th className="p-2 text-left">{t('tagMgmtColAliases')}</th>
                     <th className="w-8 p-2" />
                   </tr>
                 </thead>
                 <tbody>
                   {filteredRows.length === 0 && (
                     <tr>
-                      <td colSpan={7} className="p-4 text-center text-muted-foreground">
+                      <td colSpan={8} className="p-4 text-center text-muted-foreground">
                         {view === 'orphan' ? t('tagMgmtOrphanEmpty') : t('tagMgmtEmpty')}
                       </td>
                     </tr>
                   )}
                   {filteredRows.map((row) => {
                     const displayParent = row.parents.find((p) => p.isDisplay);
+                    const rowAliases = aliasesByTag.get(row.id) || [];
                     return (
                       <tr key={row.id} className="border-t border-border hover:bg-accent/30">
                         {view === 'orphan' && (
@@ -342,6 +405,22 @@ export function TagManagementPage() {
                             {displayParent ? displayParent.name : t('tagMgmtSetParent')}
                           </button>
                         </td>
+                        <td className="max-w-[16rem] p-2">
+                          {rowAliases.length === 0 ? (
+                            <span className="text-xs text-muted-foreground">{t('tagMgmtAliasNone')}</span>
+                          ) : (
+                            <div className="flex flex-wrap gap-1">
+                              {rowAliases.map((a) => (
+                                <span key={a.id} className="inline-flex h-5 items-center gap-1 rounded-4xl bg-secondary px-2 text-xs font-medium text-secondary-foreground">
+                                  {a.alias}
+                                  <button type="button" className="-mr-0.5 cursor-pointer rounded-full text-muted-foreground hover:text-foreground" aria-label={t('tagMgmtAliasRemoveLabel')} onClick={() => removeAlias(a)}>
+                                    <X className="size-3" aria-hidden="true" />
+                                  </button>
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </td>
                         <td className="p-2 text-right">
                           <DropdownMenu>
                             <DropdownMenuTrigger
@@ -352,6 +431,7 @@ export function TagManagementPage() {
                               }
                             />
                             <DropdownMenuContent align="end">
+                              <DropdownMenuItem onClick={() => setAliasTagRow({ id: row.id, name: row.name })}>{t('tagMgmtAddAliasMenuItem')}</DropdownMenuItem>
                               <DropdownMenuItem onClick={() => setSplitTagRow({ id: row.id, name: row.name })}>{t('tagMgmtSplitMenuItem')}</DropdownMenuItem>
                             </DropdownMenuContent>
                           </DropdownMenu>
@@ -440,6 +520,7 @@ export function TagManagementPage() {
 
       <RenameCollisionDialog key={collision?.tagId ?? 'none'} open={!!collision} collision={collision} allTags={rows} onMerge={handleMerge} onKeepSeparate={handleKeepSeparate} onClose={() => setCollision(null)} />
       {splitTagRow && <TagSplitDialog key={splitTagRow.id} tagId={splitTagRow.id} tagName={splitTagRow.name} allTags={rows} onClose={() => setSplitTagRow(null)} onDone={refresh} />}
+      {aliasTagRow && <TagAliasDialog key={aliasTagRow.id} tagId={aliasTagRow.id} tagName={aliasTagRow.name} onClose={() => setAliasTagRow(null)} onDone={refresh} />}
     </div>
   );
 }

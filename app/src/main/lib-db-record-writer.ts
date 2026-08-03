@@ -312,22 +312,36 @@ function writePost(stmts: PostStmts, resolveTagId: (name: string) => number, rec
 
 // Tags are get-or-create BY NAME, never wiped. Deleting and reinserting a tag
 // would mint a new AUTOINCREMENT id and cascade away any tag_parents/tag_aliases
-// rows curated against the old one (#86/#157 territory), so once a name has a
-// row, that row's id is permanent as far as any producer here is concerned.
+// rows curated against the old one (#157 territory / #86 -- see below), so
+// once a name has a row, that row's id is permanent as far as any producer
+// here is concerned.
 //
 // resolveTagId normalizes (NFKC + trim, #197) before every lookup/insert — a
 // second gate behind normalizePostRecord's (writePost's tags already arrive
 // normalized, so this is idempotent there), and the ONLY gate for
 // importTagParents below, whose tag-parents.json names never pass through
 // normalizePostRecord.
+//
+// #86: an alias hit short-circuits BEFORE the by-name cache lookup — this is
+// the save pipeline's half of the "single gate" every tag write passes
+// through (lib-db-write.ts's tagResolver is the other half, for the
+// IPC-driven writes). A ZIP re-import and a legacy/Eagle migration import both
+// go through writePost/importTagParents's shared resolver, so an alias
+// registered in THIS library also redirects incoming tag names during import.
 function makeTagResolver(sqlite: Database.Database) {
   const cache = new Map<string, number>();
   for (const row of sqlite.prepare('SELECT id, name FROM tags').all() as Array<{ id: number; name: string }>) {
     if (!cache.has(row.name)) cache.set(row.name, row.id);
   }
+  const aliasCache = new Map<string, number>();
+  for (const row of sqlite.prepare('SELECT alias, tagId FROM tag_aliases').all() as Array<{ alias: string; tagId: number }>) {
+    aliasCache.set(row.alias, row.tagId);
+  }
   const insertTag = sqlite.prepare('INSERT INTO tags (name) VALUES (?)');
   return function resolveTagId(rawName: string): number {
     const name = normalizeTagName(rawName) || rawName;
+    const aliased = aliasCache.get(name);
+    if (aliased != null) return aliased;
     const existing = cache.get(name);
     if (existing != null) return existing;
     const id = Number(insertTag.run(name).lastInsertRowid);

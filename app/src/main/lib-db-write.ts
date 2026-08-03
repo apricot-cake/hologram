@@ -12,10 +12,13 @@ import { normalizeTagName, normalizeTagNames } from '../../../native-host/tag-no
 import { effectiveTagsOf, tagClosureResolver } from './lib-db-query.ts';
 import type { PosterTagNamesState, PosterTagRow, PosterTagsState, TagTypeNamesState, TagTypeRow, TagTypesState } from './ipc-payloads.ts';
 import {
+  addTagAlias as addTagAliasImpl,
   addTagParent as addTagParentImpl,
   deleteOrphanTags as deleteOrphanTagsImpl,
   keepSeparateRename as keepSeparateRenameImpl,
+  listTagAliases as listTagAliasesImpl,
   mergeTags as mergeTagsImpl,
+  removeTagAlias as removeTagAliasImpl,
   removeTagParent as removeTagParentImpl,
   renameTag as renameTagImpl,
   setTagKind as setTagKindImpl,
@@ -73,11 +76,22 @@ function existingPostIds(sqlite: Sqlite): Set<string> {
 // Normalizes (NFKC + trim, #197) before every lookup/insert — the choke point
 // for every IPC-driven tag write below (tag types, poster tags, post tags),
 // same role makeTagResolver plays for the save pipeline (lib-db-record-writer.ts).
+//
+// #86: an alias check runs BEFORE the get-or-create lookup — the single gate
+// every one of those writes passes through, so typing a registered alias
+// always lands on its canonical tag's id instead of minting a second entity
+// under that spelling. Safe unconditionally: the shared-namespace invariant
+// (this module's own addTagAlias/renameTag guards in lib-db-tag-vocab.ts)
+// guarantees a name can never simultaneously BE a real tag's name and point
+// away from it as someone else's alias.
 function tagResolver(sqlite: Sqlite) {
+  const selectAlias = sqlite.prepare('SELECT tagId FROM tag_aliases WHERE alias = ?');
   const select = sqlite.prepare('SELECT id FROM tags WHERE name = ? ORDER BY id LIMIT 1');
   const insert = sqlite.prepare('INSERT INTO tags (name) VALUES (?)');
   return (rawName: string) => {
     const name = normalizeTagName(rawName) || rawName;
+    const aliased = selectAlias.get(name) as { tagId: number } | undefined;
+    if (aliased) return aliased.tagId;
     const row = select.get(name) as { id: number } | undefined;
     return row?.id ?? Number(insert.run(name).lastInsertRowid);
   };
@@ -750,13 +764,16 @@ function createDbWriter(sqlite: Sqlite) {
     tagParentEdges: () => tagParentEdgesImpl(sqlite),
     renameTag: (tagId: number, newName: string) => renameTagImpl(sqlite, tagId, newName),
     keepSeparateRenameTag: (tagId: number, newName: string, displayParentTagId: number) => keepSeparateRenameImpl(sqlite, tagId, newName, displayParentTagId),
-    mergeTags: (sourceTagId: number, targetTagId: number) => mergeTagsImpl(sqlite, sourceTagId, targetTagId),
+    mergeTags: (sourceTagId: number, targetTagId: number, keepOldNameAsAlias?: boolean) => mergeTagsImpl(sqlite, sourceTagId, targetTagId, keepOldNameAsAlias),
     addTagParent: (tagId: number, parentTagId: number, isDisplay: boolean) => addTagParentImpl(sqlite, tagId, parentTagId, isDisplay),
     removeTagParent: (tagId: number, parentTagId: number) => removeTagParentImpl(sqlite, tagId, parentTagId),
     setTagKind: (tagId: number, kind: string | null) => setTagKindImpl(sqlite, tagId, kind),
     deleteOrphanTags: (tagIds: number[]) => deleteOrphanTagsImpl(sqlite, tagIds),
     tagSplitPreview: (tagId: number, candidateParentTagId: number) => tagSplitPreviewImpl(sqlite, tagId, candidateParentTagId),
     splitTag: (sourceTagId: number, displayParentTagId: number, postIds: string[]) => splitTagImpl(sqlite, sourceTagId, displayParentTagId, postIds),
+    listTagAliases: () => listTagAliasesImpl(sqlite),
+    addTagAlias: (tagId: number, alias: string) => addTagAliasImpl(sqlite, tagId, alias),
+    removeTagAlias: (aliasId: number) => removeTagAliasImpl(sqlite, aliasId),
   };
 }
 

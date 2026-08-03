@@ -418,7 +418,7 @@ declare global {
     tagLabels: Record<string, string>; // TagField's labels bundle
     labels: { title: string; additiveHint: string; apply: string; cancel: string };
     /** Vocabulary/co-occurrence/source-tag groups for the picker, given the tags staged so far. */
-    pickerData(tags: string[]): { vocabGroups?: any; coocGroups?: any; srcTagsForPicker?: any };
+    pickerData(tags: string[]): { vocabGroups?: any; coocGroups?: any; srcTagsForPicker?: any; aliasMap?: Record<string, string> };
     /** Right-click a tag → kind menu. onChange re-derives pickerData (a kind change re-sections the vocabulary). */
     onKindMenu(tag: string, x: number, y: number, onChange: () => void): void;
     /** Persist the staged tags onto the selection. The host closes the dialog first. */

@@ -13,8 +13,25 @@
 // AND sweeps the query-leaf tagId references those changes could orphan
 // (folders.tree, tabs.state -- lib-tag-tree-sweep.ts) inside the SAME
 // transaction, per the 2026-07-19/07-23 design comments' confirmed write order:
-// post junction -> poster junction -> parent edges -> query leaves -> (alias,
-// #86, not yet implemented) -> entity delete.
+// post junction -> poster junction -> parent edges -> query leaves -> alias
+// repoint (#86) -> entity delete.
+//
+// #86 (tag aliases): addTagAlias/removeTagAlias/listTagAliases below are the
+// tag_aliases CRUD; the actual apply-time resolution (an alias redirects a
+// write to its canonical tag) lives in the two get-or-create resolvers this
+// module does NOT own -- lib-db-write.ts's tagResolver and
+// lib-db-record-writer.ts's makeTagResolver -- since those are the confirmed
+// "single gate" every tag write (post/poster/import) already passes through.
+//
+// Precedence decision (the schema DDL comment's flagged open question,
+// resolved here 2026-08-03): an alias and a real tag name share ONE
+// namespace. addTagAlias refuses an alias string that already names a real
+// tag (findCollision reuse), and renameTag/keepSeparateRename refuse a new
+// name that is already registered as someone else's alias (aliasCollision) --
+// symmetric guards, so a string can never simultaneously BE a tag's name and
+// point away from it as an alias. Given that invariant, a write-path lookup
+// checking tag_aliases before the tags table is unambiguous and needs no
+// separate "which wins" rule at read time.
 
 import type Database from 'better-sqlite3';
 import { normalizeTagName } from '../../../native-host/tag-normalize.mts';
@@ -172,13 +189,20 @@ function findCollision(sqlite: Sqlite, tagId: number, name: string): number | nu
   return row ? row.id : null;
 }
 
+// #86: true if `name` is already registered as an alias (of ANY tag) -- the
+// other half of the shared-namespace invariant addTagAlias's own
+// name-collision check enforces (see the header comment's precedence note).
+function aliasCollision(sqlite: Sqlite, name: string): boolean {
+  return !!sqlite.prepare('SELECT 1 FROM tag_aliases WHERE alias = ?').get(name);
+}
+
 export interface RenameCollision {
   tagId: number;
   name: string;
   postCount: number;
   posterCount: number;
 }
-export type RenameResult = { ok: true } | { ok: false; error: 'empty' } | { ok: false; collision: RenameCollision };
+export type RenameResult = { ok: true } | { ok: false; error: 'empty' | 'alias-collision' } | { ok: false; collision: RenameCollision };
 
 // Plain rename -- the no-collision path. A collision (another tag entity
 // already has this exact name) is reported back rather than applied; the
@@ -194,6 +218,7 @@ export function renameTag(sqlite: Sqlite, tagId: number, newName: string): Renam
     const u = sqlite.prepare('SELECT COUNT(*) AS c FROM poster_tags WHERE tagId = ?').get(collisionId) as { c: number };
     return { ok: false, collision: { tagId: collisionId, name, postCount: p.c, posterCount: u.c } };
   }
+  if (aliasCollision(sqlite, name)) return { ok: false, error: 'alias-collision' };
   sqlite.prepare('UPDATE tags SET name = ? WHERE id = ?').run(name, tagId);
   return { ok: true };
 }
@@ -207,6 +232,7 @@ export function keepSeparateRename(sqlite: Sqlite, tagId: number, newName: strin
   if (!displayParentTagId) return { ok: false, error: 'parent-required' };
   if (!tagExists(sqlite, displayParentTagId)) return { ok: false, error: 'not-found' };
   if (wouldCreateCycle(sqlite, tagId, displayParentTagId)) return { ok: false, error: 'cycle' };
+  if (aliasCollision(sqlite, name)) return { ok: false, error: 'alias-collision' };
   const tx = sqlite.transaction(() => {
     sqlite.prepare('UPDATE tags SET name = ? WHERE id = ?').run(name, tagId);
     upsertTagParent(sqlite, tagId, displayParentTagId, true);
@@ -215,15 +241,94 @@ export function keepSeparateRename(sqlite: Sqlite, tagId: number, newName: strin
   return { ok: true };
 }
 
+// --- tag_aliases CRUD (#86) --------------------------------------------------
+export interface TagAliasRow {
+  id: number;
+  alias: string;
+  tagId: number;
+  canonicalName: string;
+}
+
+export function listTagAliases(sqlite: Sqlite): TagAliasRow[] {
+  const sql = 'SELECT ta.id AS id, ta.alias AS alias, ta.tagId AS tagId, t.name AS canonicalName FROM tag_aliases ta JOIN tags t ON t.id = ta.tagId ORDER BY ta.alias';
+  return sqlite.prepare(sql).all() as TagAliasRow[];
+}
+
+export type AddTagAliasResult = { ok: true; id: number } | { ok: false; error: 'empty' | 'not-found' | 'self' | 'name-collision' | 'conflict' };
+
+// Registers `aliasRaw` (NFKC + trim, #197) as an alternate spelling of tagId.
+// Guards (in order): the alias must resolve to non-empty text; the target tag
+// must exist; the alias must not equal the target's OWN current name (a
+// self-alias is a no-op, not a real registration); the alias must not already
+// be the exact name of a DIFFERENT real tag (the shared-namespace invariant --
+// use mergeTags for that case instead of silently shadowing an existing
+// entity); and if the alias text is already registered, this call is
+// idempotent when it already points at the same tag, otherwise it is a
+// conflict (two tags cannot both claim the same alias spelling). There is no
+// separate "reject a cycle" check beyond these: aliases resolve to a tag id in
+// a single hop (never chain through another alias row), so a multi-node loop
+// cannot form structurally once the two collision guards above hold.
+//
+// excludeTagId: internal-only, used by mergeTags' keepOldNameAsAlias step. The
+// text being registered there is literally the SOURCE tag's own (still
+// undeleted, mid-transaction) name, which would otherwise self-collide against
+// its own row every single time -- excluding it from the name-collision
+// lookup is what lets that step ever succeed. Every other caller (the IPC
+// handler included) leaves this unset.
+export function addTagAlias(sqlite: Sqlite, tagId: number, aliasRaw: string, excludeTagId?: number): AddTagAliasResult {
+  const alias = normalizeTagName(aliasRaw);
+  if (!alias) return { ok: false, error: 'empty' };
+  const tag = sqlite.prepare('SELECT name FROM tags WHERE id = ?').get(tagId) as { name: string } | undefined;
+  if (!tag) return { ok: false, error: 'not-found' };
+  if (alias === tag.name) return { ok: false, error: 'self' };
+  if (sqlite.prepare('SELECT 1 FROM tags WHERE name = ? AND id != ?').get(alias, excludeTagId ?? -1)) return { ok: false, error: 'name-collision' };
+  const existing = sqlite.prepare('SELECT id, tagId FROM tag_aliases WHERE alias = ?').get(alias) as { id: number; tagId: number } | undefined;
+  if (existing) return existing.tagId === tagId ? { ok: true, id: existing.id } : { ok: false, error: 'conflict' };
+  const id = Number(sqlite.prepare('INSERT INTO tag_aliases (alias, tagId) VALUES (?, ?)').run(alias, tagId).lastInsertRowid);
+  return { ok: true, id };
+}
+
+export function removeTagAlias(sqlite: Sqlite, aliasId: number): TagWriteResult {
+  sqlite.prepare('DELETE FROM tag_aliases WHERE id = ?').run(aliasId);
+  return { ok: true };
+}
+
+// mergeTags step 5: existing aliases pointing at the about-to-be-deleted
+// source must move to target FIRST -- tag_aliases.tagId has ON DELETE CASCADE,
+// which would otherwise silently drop them the moment the source row goes
+// (the "連鎖の平坦化" the design calls for: an alias never double-hops through
+// a merged-away entity). A straggler (the same alias text already pointing at
+// target) is dropped rather than left to violate nothing -- the table carries
+// no UNIQUE constraint on alias, but two rows saying the same thing is not a
+// state worth keeping either.
+function repointAliases(sqlite: Sqlite, sourceTagId: number, targetTagId: number): void {
+  for (const row of sqlite.prepare('SELECT id, alias FROM tag_aliases WHERE tagId = ?').all(sourceTagId) as Array<{ id: number; alias: string }>) {
+    const dup = sqlite.prepare('SELECT 1 FROM tag_aliases WHERE alias = ? AND tagId = ?').get(row.alias, targetTagId);
+    if (dup) sqlite.prepare('DELETE FROM tag_aliases WHERE id = ?').run(row.id);
+    else sqlite.prepare('UPDATE tag_aliases SET tagId = ? WHERE id = ?').run(targetTagId, row.id);
+  }
+}
+
 // Merge sourceTagId into targetTagId -- confirmed write order (2026-07-19,
-// updated 2026-07-23 to drop the group-membership face #315 retired):
-// post junction -> poster junction -> parent edges -> query leaves ->
-// (alias, #86, not implemented) -> entity delete. Every step is dedupe-safe
-// (UPDATE OR IGNORE / ON CONFLICT) since the target may already hold some of
-// what the source held.
-export function mergeTags(sqlite: Sqlite, sourceTagId: number, targetTagId: number): TagWriteResult {
+// updated 2026-07-23 to drop the group-membership face #315 retired, 2026-08-03
+// to land the alias step): post junction -> poster junction -> parent edges ->
+// query leaves -> alias repoint (#86) -> entity delete. Every step is
+// dedupe-safe (UPDATE OR IGNORE / ON CONFLICT) since the target may already
+// hold some of what the source held.
+//
+// keepOldNameAsAlias: the rename-collision dialog's "旧名を別名として残す"
+// checkbox (mergeTags is reached ONLY from that dialog's merge branch today --
+// TagManagementPage.tsx has no standalone "merge these two tags" action). When
+// true, source's CURRENT name (read below, before any write touches it -- a
+// rename that collides never applies the new name to the source row, see
+// renameTag) is registered as an alias of target. Best-effort: a collision
+// against some unrelated third tag's name is possible but rare, and should
+// not fail a merge the user already confirmed -- addTagAliasImpl's result is
+// intentionally not checked.
+export function mergeTags(sqlite: Sqlite, sourceTagId: number, targetTagId: number, keepOldNameAsAlias?: boolean): TagWriteResult {
   if (sourceTagId === targetTagId) return { ok: false, error: 'self' };
-  if (!tagExists(sqlite, sourceTagId) || !tagExists(sqlite, targetTagId)) return { ok: false, error: 'not-found' };
+  const source = sqlite.prepare('SELECT name FROM tags WHERE id = ?').get(sourceTagId) as { name: string } | undefined;
+  if (!source || !tagExists(sqlite, targetTagId)) return { ok: false, error: 'not-found' };
   const tx = sqlite.transaction(() => {
     // 1. post_tags: repoint source's rows to target, dropping any that would
     // duplicate a row the target already has (composite PK conflict -> ignore),
@@ -250,7 +355,11 @@ export function mergeTags(sqlite: Sqlite, sourceTagId: number, targetTagId: numb
     // 4. query leaves: every saved-search/tab tag leaf pinned to source now
     // points at target (folders.tree + tabs.state -- lib-tag-tree-sweep.ts).
     sweepFoldersAndTabs(sqlite, (id) => (id === sourceTagId ? targetTagId : id));
-    // 5. alias face (#86) intentionally not touched -- not yet implemented.
+    // 5. tag_aliases (#86): repoint first (see repointAliases -- must run
+    // before the entity delete below, ON DELETE CASCADE would otherwise drop
+    // them), then optionally register the pre-merge name itself as an alias.
+    repointAliases(sqlite, sourceTagId, targetTagId);
+    if (keepOldNameAsAlias) addTagAlias(sqlite, targetTagId, source.name, sourceTagId);
     // 6. the source entity itself. ON DELETE CASCADE mops up any straggler row
     // this function's explicit moves above already emptied.
     sqlite.prepare('DELETE FROM tags WHERE id = ?').run(sourceTagId);

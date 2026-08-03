@@ -8,7 +8,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 import { openDatabase } from '../app/src/main/lib-db';
-import { addTagParent, deleteOrphanTags, keepSeparateRename, mergeTags, removeTagParent, renameTag, setTagKind, splitTag, tagParentEdges, tagSplitPreview, tagVocabOverview, wouldCreateCycle } from '../app/src/main/lib-db-tag-vocab';
+import { addTagAlias, addTagParent, deleteOrphanTags, keepSeparateRename, listTagAliases, mergeTags, removeTagAlias, removeTagParent, renameTag, setTagKind, splitTag, tagParentEdges, tagSplitPreview, tagVocabOverview, wouldCreateCycle } from '../app/src/main/lib-db-tag-vocab';
 
 const dirs: string[] = [];
 function mkTempDir(prefix: string) {
@@ -141,6 +141,117 @@ describe('renameTag / keepSeparateRename', () => {
     if (!row) throw new Error('expected the row to exist');
     expect(row.name).toBe('alice');
     expect(row.displayName).toBe('alice(touhou)');
+  });
+
+  test("#86: rejects renaming into a name already registered as someone else's alias", () => {
+    const cat = insTag('cat');
+    const bob = insTag('bob');
+    const work = insTag('touhou');
+    expect(addTagAlias(handle.sqlite, cat, 'kitty')).toEqual({ ok: true, id: expect.any(Number) });
+    expect(renameTag(handle.sqlite, bob, 'kitty')).toEqual({ ok: false, error: 'alias-collision' });
+    expect(keepSeparateRename(handle.sqlite, bob, 'kitty', work)).toEqual({ ok: false, error: 'alias-collision' });
+    expect(tagVocabOverview(handle.sqlite).find((r) => r.id === bob)?.name).toBe('bob'); // untouched
+  });
+});
+
+describe('addTagAlias / removeTagAlias / listTagAliases', () => {
+  test('registers an alias resolving to the canonical tag', () => {
+    const cat = insTag('cat');
+    const result = addTagAlias(handle.sqlite, cat, 'kitty');
+    expect(result).toEqual({ ok: true, id: expect.any(Number) });
+    const rows = listTagAliases(handle.sqlite);
+    expect(rows).toEqual([{ id: (result as { ok: true; id: number }).id, alias: 'kitty', tagId: cat, canonicalName: 'cat' }]);
+  });
+
+  test('normalizes (NFKC + trim) the alias text before storing it', () => {
+    const cat = insTag('cat');
+    // full-width "ｋｉｔｔｙ" + stray whitespace -> NFKC-folded "kitty".
+    addTagAlias(handle.sqlite, cat, '  ｋｉｔｔｙ  ');
+    expect(listTagAliases(handle.sqlite)[0].alias).toBe('kitty');
+  });
+
+  test('rejects empty text and an unknown tag', () => {
+    const cat = insTag('cat');
+    expect(addTagAlias(handle.sqlite, cat, '   ')).toEqual({ ok: false, error: 'empty' });
+    expect(addTagAlias(handle.sqlite, 999, 'kitty')).toEqual({ ok: false, error: 'not-found' });
+  });
+
+  test("rejects an alias equal to the tag's own current name", () => {
+    const cat = insTag('cat');
+    expect(addTagAlias(handle.sqlite, cat, 'cat')).toEqual({ ok: false, error: 'self' });
+  });
+
+  test('rejects an alias that names a distinct real tag (shared-namespace invariant)', () => {
+    const cat = insTag('cat');
+    insTag('kitty'); // a real, distinct tag entity already has this name
+    expect(addTagAlias(handle.sqlite, cat, 'kitty')).toEqual({ ok: false, error: 'name-collision' });
+  });
+
+  test('is idempotent when the same (alias, tag) pair is registered twice, but conflicts across tags', () => {
+    const cat = insTag('cat');
+    const dog = insTag('dog');
+    const first = addTagAlias(handle.sqlite, cat, 'kitty');
+    expect(addTagAlias(handle.sqlite, cat, 'kitty')).toEqual(first); // same tag, same id back
+    expect(addTagAlias(handle.sqlite, dog, 'kitty')).toEqual({ ok: false, error: 'conflict' }); // a different tag can't claim it too
+    expect(listTagAliases(handle.sqlite)).toHaveLength(1);
+  });
+
+  test('removeTagAlias deletes exactly the given row', () => {
+    const cat = insTag('cat');
+    const a = addTagAlias(handle.sqlite, cat, 'kitty');
+    const b = addTagAlias(handle.sqlite, cat, 'neko');
+    if (!a.ok || !b.ok) throw new Error('expected both aliases to register');
+    expect(removeTagAlias(handle.sqlite, a.id)).toEqual({ ok: true });
+    expect(listTagAliases(handle.sqlite).map((r) => r.id)).toEqual([b.id]);
+  });
+});
+
+describe('mergeTags alias handling (#86)', () => {
+  test("repoints the source's existing aliases to the target instead of losing them to the entity delete", () => {
+    const source = insTag('alice-dup');
+    const target = insTag('alice');
+    const a = addTagAlias(handle.sqlite, source, 'ally');
+    if (!a.ok) throw new Error('expected the alias to register');
+
+    expect(mergeTags(handle.sqlite, source, target)).toEqual({ ok: true });
+
+    const rows = listTagAliases(handle.sqlite);
+    expect(rows).toEqual([{ id: a.id, alias: 'ally', tagId: target, canonicalName: 'alice' }]);
+  });
+
+  test('drops a straggler alias that already points at the target under the same text', () => {
+    const source = insTag('alice-dup');
+    const target = insTag('alice');
+    addTagAlias(handle.sqlite, source, 'ally');
+    addTagAlias(handle.sqlite, target, 'ally2'); // unrelated, distinguishes "target's own" from "moved from source"
+    // Both source and target end up claiming the SAME alias text via two separate registrations.
+    handle.sqlite.prepare('INSERT INTO tag_aliases (alias, tagId) VALUES (?, ?)').run('shared', target);
+    handle.sqlite.prepare('INSERT INTO tag_aliases (alias, tagId) VALUES (?, ?)').run('shared', source);
+
+    expect(mergeTags(handle.sqlite, source, target)).toEqual({ ok: true });
+
+    const rows = listTagAliases(handle.sqlite);
+    expect(rows.filter((r) => r.alias === 'shared')).toHaveLength(1); // the straggler was dropped, not duplicated
+    expect(rows.find((r) => r.alias === 'ally')?.tagId).toBe(target); // the source's own alias still moved over
+  });
+
+  test('keepOldNameAsAlias registers the pre-merge name as an alias of the survivor', () => {
+    const source = insTag('nekko'); // the collided-from name (renameTag never applied the new name -- see its own comment)
+    const target = insTag('neko');
+
+    expect(mergeTags(handle.sqlite, source, target, true)).toEqual({ ok: true });
+
+    const rows = listTagAliases(handle.sqlite);
+    expect(rows).toEqual([{ id: expect.any(Number), alias: 'nekko', tagId: target, canonicalName: 'neko' }]);
+  });
+
+  test('keepOldNameAsAlias is best-effort: does not fail the merge if the old name collides with an unrelated tag', () => {
+    const source = insTag('nekko');
+    const target = insTag('neko');
+    insTag('nekko'); // a THIRD, unrelated entity already has the exact old name -- addTagAlias's name-collision guard fires
+
+    expect(mergeTags(handle.sqlite, source, target, true)).toEqual({ ok: true }); // merge itself still succeeds
+    expect(listTagAliases(handle.sqlite)).toEqual([]); // but no alias was silently created
   });
 });
 

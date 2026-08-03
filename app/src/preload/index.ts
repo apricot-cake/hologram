@@ -63,6 +63,8 @@ import type {
   DeleteOrphanTagsResult,
   TagSplitPost,
   SplitTagResult,
+  TagAliasRow,
+  AddTagAliasResult,
   TabsState,
   TagTypesState,
   UngroupedState,
@@ -113,7 +115,7 @@ const api = {
   getTagParentEdges: (): Promise<TagParentRowResolved[]> => ipcRenderer.invoke('get-tag-parent-edges'),
   renameTag: (tagId: number, newName: string): Promise<RenameTagResult> => ipcRenderer.invoke('rename-tag', tagId, newName),
   keepSeparateRenameTag: (tagId: number, newName: string, displayParentTagId: number): Promise<TagWriteResult> => ipcRenderer.invoke('keep-separate-rename-tag', tagId, newName, displayParentTagId),
-  mergeTags: (sourceTagId: number, targetTagId: number): Promise<TagWriteResult> => ipcRenderer.invoke('merge-tags', sourceTagId, targetTagId),
+  mergeTags: (sourceTagId: number, targetTagId: number, keepOldNameAsAlias?: boolean): Promise<TagWriteResult> => ipcRenderer.invoke('merge-tags', sourceTagId, targetTagId, keepOldNameAsAlias),
   addTagParent: (tagId: number, parentTagId: number, isDisplay: boolean): Promise<TagWriteResult> => ipcRenderer.invoke('add-tag-parent', tagId, parentTagId, isDisplay),
   removeTagParent: (tagId: number, parentTagId: number): Promise<TagWriteResult> => ipcRenderer.invoke('remove-tag-parent', tagId, parentTagId),
   setTagKind: (tagId: number, kind: string | null): Promise<TagWriteResult> => ipcRenderer.invoke('set-tag-kind', tagId, kind),
@@ -121,6 +123,10 @@ const api = {
   // #777: split -- the review screen's data source and its confirm action.
   getTagSplitPreview: (tagId: number, candidateParentTagId: number): Promise<TagSplitPost[]> => ipcRenderer.invoke('get-tag-split-preview', tagId, candidateParentTagId),
   splitTag: (sourceTagId: number, displayParentTagId: number, postIds: string[]): Promise<SplitTagResult> => ipcRenderer.invoke('split-tag', sourceTagId, displayParentTagId, postIds),
+  // #86: tag_aliases CRUD.
+  getTagAliases: (): Promise<TagAliasRow[]> => ipcRenderer.invoke('get-tag-aliases'),
+  addTagAlias: (tagId: number, alias: string): Promise<AddTagAliasResult> => ipcRenderer.invoke('add-tag-alias', tagId, alias),
+  removeTagAlias: (aliasId: number): Promise<TagWriteResult> => ipcRenderer.invoke('remove-tag-alias', aliasId),
   getUngrouped: (): Promise<UngroupedState> => ipcRenderer.invoke('get-ungrouped'),
   setUngrouped: (keys: unknown): Promise<OkResult> => ipcRenderer.invoke('set-ungrouped', keys),
   getPosterFolders: (): Promise<PosterFoldersState> => ipcRenderer.invoke('get-poster-folders'),

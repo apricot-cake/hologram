@@ -238,7 +238,8 @@ export interface RenameCollision {
   postCount: number;
   posterCount: number;
 }
-export type RenameTagResult = { ok: true } | { ok: false; error: 'empty' } | { ok: false; collision: RenameCollision };
+/** 'alias-collision' (#86): the attempted name is already registered as someone else's alias -- remove that alias first, or pick another name. */
+export type RenameTagResult = { ok: true } | { ok: false; error: 'empty' | 'alias-collision' } | { ok: false; collision: RenameCollision };
 /** A tag-vocab write's plain result (add/remove-tag-parent, merge-tags, keep-separate-rename-tag, set-tag-kind). */
 export interface TagWriteResult {
   ok: boolean;
@@ -257,6 +258,15 @@ export interface TagSplitPost {
 }
 /** split-tag's answer — the new entity's id on success. */
 export type SplitTagResult = { ok: true; newTagId: number } | { ok: false; error: string };
+/** One row of the tag management page's alias list (#86) — an alternate spelling that resolves to a canonical tag. */
+export interface TagAliasRow {
+  id: number;
+  alias: string;
+  tagId: number;
+  canonicalName: string;
+}
+/** add-tag-alias's answer. 'self' = the alias text is the tag's own current name (redundant). 'name-collision' = a distinct tag already has that exact name (use merge-tags instead). 'conflict' = the alias text is already registered pointing at a different tag. */
+export type AddTagAliasResult = { ok: true; id: number } | { ok: false; error: 'empty' | 'not-found' | 'self' | 'name-collision' | 'conflict' };
 
 export interface UngroupedState {
   keys: string[];
