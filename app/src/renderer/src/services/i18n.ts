@@ -400,6 +400,11 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     importImages: 'メディアをインポート',
     hintZip: '画像・動画ファイルだけをZIPにまとめます。他のアプリや人に渡す用です（整理の情報は含みません）。',
     hintMedia: '手持ちの画像・動画をライブラリに取り込みます。',
+    // #234: window drop-to-import
+    dropOverlayHint: 'ドロップしてライブラリに取り込む',
+    dropImportConfirm: '$1 件を取り込みますか？（メディア $2 件・その他 $3 件）',
+    dropImportOk: '取り込む',
+    dropNothingToImport: '取り込めるファイルがありませんでした',
     exportIncludeTrash: 'ゴミ箱を含める',
     backupSubTitle: '自動バックアップ',
     exportSubTitle: 'エクスポート',
@@ -1131,6 +1136,11 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     importImages: 'Import media',
     hintZip: 'Packs just the image/video files into a ZIP — for handing them to another app or another person (none of your organization travels with it).',
     hintMedia: 'Bring your own images/videos into the library.',
+    // #234: window drop-to-import
+    dropOverlayHint: 'Drop to import into your library',
+    dropImportConfirm: 'Import $1 items? (media $2, other $3)',
+    dropImportOk: 'Import',
+    dropNothingToImport: 'Nothing importable was found',
     exportIncludeTrash: 'Include trash',
     backupSubTitle: 'Auto backup',
     exportSubTitle: 'Export',

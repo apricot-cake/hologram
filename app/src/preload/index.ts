@@ -9,7 +9,7 @@
 // mapping — see that file), so the type can never drift from what the bridge
 // actually exposes. This file itself is type-checked against the REAL electron
 // types by tsconfig.node.json.
-import { contextBridge, ipcRenderer } from 'electron';
+import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import 'electron-log/preload';
 import type {
   AppInfo,
@@ -24,6 +24,9 @@ import type {
   ConfigSummary,
   DbGeneration,
   DbRollbackResult,
+  DropCollectResult,
+  DroppedFile,
+  DropImportResult,
   ExportCompleteResult,
   ExportProgress,
   ExportSaveResult,
@@ -62,6 +65,22 @@ import type {
   TagTypesState,
   UngroupedState,
 } from '../main/ipc-payloads.ts';
+
+// webUtils.getPathForFile(file: File) (electron.d.ts) references the ambient
+// global `File`, normally satisfied by the "DOM" lib. tsconfig.node.json
+// deliberately omits DOM — main + preload share that project, and DOM's
+// setTimeout/Buffer-adjacent globals would shadow @types/node's across the
+// whole main process (the same class of collision types/electron-shim.d.ts
+// avoids in the other direction, on the renderer side). This declares just
+// enough of `File` for that one call (#234) to type-check here; the renderer
+// program that builds the real File objects handed through
+// window.hologram.getPathForFile already has the true DOM lib
+// (tsconfig.web.json), so it never needs this.
+declare global {
+  interface File {
+    readonly name: string;
+  }
+}
 
 // Every method below states what its channel resolves to (#228). `invoke` is
 // Promise<any> by construction, so these annotations are the ONLY description
@@ -182,6 +201,16 @@ const api = {
   // window shortly after answering — the whole renderer state is stale by then.
   rollbackDbGeneration: (name: string): Promise<DbRollbackResult> => ipcRenderer.invoke('rollback-db-generation', name),
   importImages: (): Promise<MediaImportResult> => ipcRenderer.invoke('import-images'),
+  // #234: window drop-to-import — two calls so the recursive folder walk
+  // finishes (and its count is confirmed) before anything writes. The same
+  // DroppedFile[] collect-dropped-paths returns crosses back unchanged on the
+  // second call so main never re-walks.
+  collectDroppedPaths: (paths: string[]): Promise<DropCollectResult> => ipcRenderer.invoke('collect-dropped-paths', paths),
+  importDroppedPaths: (files: DroppedFile[]): Promise<DropImportResult> => ipcRenderer.invoke('import-dropped-paths', files),
+  // #234: the real fs path behind a File dragged onto the window from the OS —
+  // Electron 32 removed File.path; webUtils.getPathForFile (Electron 43) is the
+  // replacement.
+  getPathForFile: (file: File): string => webUtils.getPathForFile(file),
   // Ctrl+V in the app window (#85). `title` is built renderer-side because it is
   // a localized, user-visible label and main holds no message table.
   importClipboard: (title: string): Promise<ClipboardImportResult> => ipcRenderer.invoke('import-clipboard', title),
