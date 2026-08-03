@@ -16,6 +16,14 @@
     <p class="hint" id="saveHint">Alt+S でも直接保存できます</p>
     <p class="alert" id="saveReason" hidden></p>
     <button id="saveRepair" class="repair" type="button" hidden></button>
+
+    <!-- #793: one item, directly under the save button — the popup's other
+         entrance into 一括取込 (Alt+Shift+S). Disabled by default until
+         popup.ts's checkBulkSupport() hears back from the active tab; a page
+         with nothing to walk keeps it disabled and says why via bulkReason. -->
+    <button id="bulk" class="secondary" type="button" disabled>この一覧を取り込む</button>
+    <p class="hint" id="bulkHint" hidden></p>
+    <p class="alert" id="bulkReason" hidden></p>
   </section>
 
   <section class="state">

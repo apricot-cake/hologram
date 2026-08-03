@@ -96,6 +96,19 @@
     "message": "Alt+S saves in one press",
     "description": "Popup hint pointing frequent savers at the one-press keyboard route"
   },
+  "popupBulk": {
+    "message": "Import this list",
+    "description": "Popup item (#793): start bulk-intake (chase-mode) on the active tab's list"
+  },
+  "popupBulkHint": {
+    "message": "$SHORTCUT$ also starts it",
+    "description": "Popup hint pointing at the bulk-intake keyboard shortcut, shown only when one is actually assigned (#793)",
+    "placeholders": { "shortcut": { "content": "$1", "example": "Alt+Shift+S" } }
+  },
+  "popupBulkUnsupported": {
+    "message": "This page has no list to bulk-import",
+    "description": "Popup reason: the active tab has no list the bulk-intake mode can walk (#793)"
+  },
   "popupRefusedNotHttp": {
     "message": "Nothing to save on this page — open a web page first.",
     "description": "Popup reason: the active tab is not an http(s) page, so nothing can be injected into it"

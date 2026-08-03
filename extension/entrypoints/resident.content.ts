@@ -1,6 +1,7 @@
 import { extensionOrigin, logSaveEvent } from '../utils/capture-log.ts';
 import { startDrag } from '../utils/drag.ts';
-import { RESIDENT_MATCHES } from '../utils/extractor/index.ts';
+import { getCaptureSite, RESIDENT_MATCHES } from '../utils/extractor/index.ts';
+import type { BackgroundToContentMessage } from '../utils/messages.ts';
 import { startOverlay } from '../utils/overlay.ts';
 import { installUncaughtReporting } from '../utils/uncaught-report.ts';
 import { refreshUiRootStyles } from '../utils/ui-root.ts';
@@ -43,6 +44,21 @@ export default defineContentScript({
       },
     };
     scope[OWNER] = owner;
+
+    // #793: the toolbar popup's "この一覧を取り込む" item asks THIS (resident,
+    // already-injected) script rather than being injected itself — no activeTab
+    // round trip needed, just the extractor's own answer. Registered outside the
+    // async block below: the popup can open, and ask, before startOverlay's
+    // await settles.
+    const onBulkCapturePageCheck = (message: BackgroundToContentMessage, _sender: chrome.runtime.MessageSender, sendResponse: (response: { supported: boolean }) => void) => {
+      if (message?.type !== 'checkBulkCapturePage') return false;
+      Promise.resolve(getCaptureSite()?.isBulkCapturePage?.() ?? false)
+        .then((supported) => sendResponse({ supported }))
+        .catch(() => sendResponse({ supported: false }));
+      return true; // async response
+    };
+    chrome.runtime.onMessage.addListener(onBulkCapturePageCheck);
+    cleanups.push(() => chrome.runtime.onMessage.removeListener(onBulkCapturePageCheck));
 
     void (async () => {
       refreshUiRootStyles();
