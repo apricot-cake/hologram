@@ -8,6 +8,7 @@ import path from 'node:path';
 
 import { openDatabase, DatabaseCorruptError } from './lib-db.ts';
 import { migratePosterKeyHost } from './lib-migrate-poster-key-host.ts';
+import { backfillPosterProfiles } from './lib-backfill-poster-profiles.ts';
 import { computeDelta } from './lib-post-delta.ts';
 import { postsFromDb, searchPostsFts } from './lib-db-query.ts';
 import { createDbWriter } from './lib-db-write.ts';
@@ -269,6 +270,7 @@ function ensureDb() {
     dbHandle = openDatabase(file);
   }
   migratePosterKeyHost(dbHandle.sqlite);
+  backfillPosterProfiles(dbHandle.sqlite);
   // #145 design §5: "掃除＝DB を開いた時に1回" — ensureDb is memoized (the early
   // return above), so this only runs on an actual fresh open: app launch, and
   // #176's library switch (closeDb() clears dbHandle, the next call reopens here).

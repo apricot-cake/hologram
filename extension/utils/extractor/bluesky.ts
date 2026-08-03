@@ -324,6 +324,13 @@ async function fetchBlueskyPost(parsed, url): Promise<PostRecord> {
           rec.avatar = prof.avatar || rec.avatar;
           rec.followers = prof.followersCount ?? null;
           rec.authorCreatedAt = toIso(prof.createdAt);
+          // #289: bio + banner ride the SAME getProfile response already
+          // fetched for followers/authorCreatedAt above (app.bsky.actor.defs's
+          // profileViewDetailed -- description/banner, confirmed against the
+          // official lexicon). No profileLinks: Bluesky has no link-field
+          // concept at all (rec.profileLinks stays emptyRecord()'s null).
+          rec.bio = prof.description || null;
+          rec.banner = prof.banner || null;
         }
       } catch {
         /* keep avatar from the author view */

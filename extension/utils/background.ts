@@ -1609,6 +1609,12 @@ function buildRecord(meta, { captureId, capturedAt, postUrl, sendPlatform, repla
       userId: meta.userId,
       avatar: meta.avatar,
       avatarReferer: meta.avatarReferer,
+      // #289: the poster-profile snapshot fields (bio/profileLinks/banner) --
+      // undefined (not null) on the bookmark path, like quotedPost/poll/
+      // linkCard above, whose meta object has no such fields at all.
+      bio: meta.bio,
+      profileLinks: meta.profileLinks,
+      banner: meta.banner,
       followers: meta.followers,
       authorCreatedAt: meta.authorCreatedAt,
       likes: meta.likes,

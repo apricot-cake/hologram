@@ -22,6 +22,12 @@ function emptyRecord(url: string | null | undefined, platform: string | null | u
     // needs one (i.pximg.net is Referer-gated) — the bridge honors it on download.
     avatar: null,
     avatarReferer: null,
+    // #289: bio/profileLinks/banner, filled by bluesky.ts / misskey.ts /
+    // mastodon.ts / pixiv.ts only -- see types.ts's PostRecord for the
+    // per-platform sourcing (X never fills any of the three).
+    bio: null,
+    profileLinks: null,
+    banner: null,
     followers: null,
     authorCreatedAt: null,
     likes: null,

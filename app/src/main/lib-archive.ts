@@ -57,7 +57,7 @@ import { importTagParents, makeTagResolver, preparePostStmts, writePost } from '
 // config.json is machine-specific (paths, extension id) and lives in configDir
 // anyway; a pre-#5 library can still have a stale copy sitting in the folder.
 const EXPORT_SKIP = new Set(['config.json']);
-const ORG_MERGE = ['folders.json', 'tag-types.json', 'ungrouped.json', 'manual-groups.json', 'poster-favorites.json', 'poster-folders.json', 'poster-tags.json', 'poster-aliases.json'];
+const ORG_MERGE = ['folders.json', 'tag-types.json', 'ungrouped.json', 'manual-groups.json', 'poster-favorites.json', 'poster-folders.json', 'poster-tags.json', 'poster-aliases.json', 'poster-profiles.json'];
 
 function isVolatile(name) {
   return /\.tmp(-|$)/i.test(name) || /\.bak$/i.test(name);
@@ -377,6 +377,48 @@ function mergePosterAliases(cur, inc) {
   return { groups };
 }
 
+// #289: poster_profiles/poster_profile_snapshots — { profiles:[{posterKey,
+// platform, userId, instance, history:[…]}] } (lib-db-write.ts's
+// readPosterProfiles/replacePosterProfiles). Union by posterKey (identity
+// fields fill from whichever side has them, cur preferred on a conflict, the
+// same local-wins convention every other merger here uses); history is a
+// UNION deduped by (observedAt, contentHash) — the same pair
+// idx_poster_profile_snapshots_identity enforces as a database constraint, so
+// importing the same ZIP twice can never double a history row. "current" is
+// NOT carried in this JSON shape at all — replacePosterProfiles recomputes it
+// from whichever merged history entry has the latest observedAt, which is
+// what makes importing an OLDER snapshot never rewind what the live library
+// already observed (same protection lib-db-record-writer.ts's
+// writePosterProfile gives the live write path).
+function mergePosterProfiles(cur, inc) {
+  const byKey = new Map();
+  const add = (list) => {
+    for (const p of list || []) {
+      if (!p || typeof p.posterKey !== 'string' || !p.posterKey) continue;
+      let entry = byKey.get(p.posterKey);
+      if (!entry) byKey.set(p.posterKey, (entry = { posterKey: p.posterKey, platform: '', userId: null, instance: null, historyByKey: new Map() }));
+      if (!entry.platform && p.platform) entry.platform = String(p.platform);
+      if (entry.userId == null && p.userId != null) entry.userId = p.userId;
+      if (entry.instance == null && p.instance != null) entry.instance = p.instance;
+      for (const h of Array.isArray(p.history) ? p.history : []) {
+        if (!h || typeof h.observedAt !== 'string' || typeof h.contentHash !== 'string') continue;
+        const hk = h.observedAt + ' ' + h.contentHash;
+        if (!entry.historyByKey.has(hk)) entry.historyByKey.set(hk, h);
+      }
+    }
+  };
+  add(cur && cur.profiles);
+  add(inc && inc.profiles);
+  const profiles = [...byKey.values()].map((e) => ({
+    posterKey: e.posterKey,
+    platform: e.platform,
+    userId: e.userId,
+    instance: e.instance,
+    history: [...e.historyByKey.values()].sort((a, b) => (a.observedAt < b.observedAt ? -1 : a.observedAt > b.observedAt ? 1 : 0)),
+  }));
+  return { profiles };
+}
+
 const MERGERS = {
   'folders.json': mergeFolders, // the library folder store
   'tag-types.json': mergeTagTypes,
@@ -386,6 +428,7 @@ const MERGERS = {
   'poster-folders.json': mergePosterFolders, // plain { folders } shape → id-union merge
   'poster-tags.json': mergePosterTags, // { tags:{posterKey:[…]} } → per-key union
   'poster-aliases.json': mergePosterAliases, // { groups:[{id,primary,members}] } → union-find over members
+  'poster-profiles.json': mergePosterProfiles, // { profiles:[{posterKey,…,history:[…]}] } → union by posterKey, history deduped by (observedAt,contentHash)
 };
 
 // --- Build ---------------------------------------------------------------------
@@ -553,6 +596,11 @@ async function writeCompleteZip(sqlite: Database.Database, srcFolder: string, tr
   addJson(dbw.getPosterFolders(), 'library/poster-folders.json');
   addJson(dbw.getPosterTagNames(), 'library/poster-tags.json');
   addJson(dbw.getPosterAliases(), 'library/poster-aliases.json');
+  // #289: omitted when empty, same convention as tag-parents.json/tabs.json
+  // below (a library with no posters carrying a snapshot yet has nothing to
+  // write, and an absent entry reads identically to an empty one on import).
+  const posterProfiles = dbw.getPosterProfiles();
+  if (posterProfiles.profiles.length) addJson(posterProfiles, 'library/poster-profiles.json');
   const tabs = dbw.getTabs();
   if (tabs) addJson(tabs, 'library/tabs.json');
   // poster-favorites.json: feature retired, no DB table backs it — dropped from
@@ -933,6 +981,10 @@ async function importFromOpenZip(sqlite: Database.Database, zipfile: ZipReader, 
       const inc = (await parseOrgEntry(orgEntries['poster-aliases.json'])) ?? {};
       dbWriter.setPosterAliases(mergePosterAliases(dbWriter.getPosterAliases(), inc));
     }
+    if (orgEntries['poster-profiles.json']) {
+      const inc = (await parseOrgEntry(orgEntries['poster-profiles.json'])) ?? {};
+      dbWriter.setPosterProfiles(mergePosterProfiles(dbWriter.getPosterProfiles(), inc));
+    }
     if (orgEntries['tag-types.json']) {
       const inc = (await parseOrgEntry(orgEntries['tag-types.json'])) ?? {};
       const merged = mergeTagTypes(dbWriter.getTagTypeNames(), inc);
@@ -1133,6 +1185,7 @@ export {
   mergeManualGroups,
   mergePosterTags,
   mergePosterAliases,
+  mergePosterProfiles,
   buildTagParentsJson,
   toSidecarJson,
 };
