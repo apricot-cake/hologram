@@ -42,7 +42,7 @@ Dependabot（#395）の更新 PR で新バージョンが来たときも、確�
 
 | 出力 | 作るコマンド | 読む側 |
 | --- | --- | --- |
-| **開発** | `npm run dev:ext`（開発セッション中だけ・常駐しない） | 専用プロファイルの Chrome。`~/.hologram-dev/chrome-mv3-dev` を一度だけ Load unpacked する |
+| **開発** | `npm run dev:ext`（検証中は動かしたまま） | 専用プロファイルの Chrome。`~/.hologram-dev/chrome-mv3-dev` を一度だけ Load unpacked する |
 | **release** | `npm run build:ext` | 誰も直接は読まない。Chrome／Firefox を `.output/<browser>-mv3-release` へ生成して検証するところまで |
 | **日常** | `npm run deploy:ext` | 日常の Chrome。検証済み Chrome release を `.output/chrome-mv3` へ差し替え、拡張へ告知する |
 
@@ -78,6 +78,8 @@ npm run ext:dev:browser
 反映は **拡張のリロード＋タブのリロード**で、in-place HMR ではない（WXT の Shadow Root UI は HMR 非対応で、この拡張の常駐 UI は自前 ShadowRoot＝#44）。守るべき日常タブが同じプロファイルに居ないので、これが許容できるようになったのが分離の要点。
 
 dev サーバーは `127.0.0.1:51731` 固定。二重起動は別 port へ逃げずに落ちる。
+
+**サーバーが落ちていても拡張は壊れた顔をしない**（#861）＝popup.html 等は `http://localhost:51731/...` を直接指しており、繋がらなければスクリプトも CSS も読めないまま HTML の骨だけが素のまま縦一列に潰れて出る（CSS・レイアウトのバグに見えるが原因はサーバー未起動）。`node scripts/open-dev-profile.cts --print` の `dev server:` 行、または `npm run ext:dev:browser` 実行時の警告で気付ける。
 
 ### 開発プロファイルの保存を実ライブラリから隔離する
 

@@ -36,11 +36,34 @@
 
 const { execFileSync, spawnSync } = require('node:child_process');
 const fs = require('node:fs');
+const net = require('node:net');
 const { homedir } = require('node:os');
 const path = require('node:path');
 
 const PROFILE = process.env.HOLOGRAM_EXTENSION_DEV_PROFILE || path.join(homedir(), '.hologram-ext-profile');
 const OUTPUT = process.env.HOLOGRAM_EXTENSION_DEV_OUTPUT || path.join(homedir(), '.hologram-dev', 'chrome-mv3-dev');
+
+// dev サーバーの既定ポート（docs/build.md）。二重起動は別 port へ逃げずに落ちるので固定と見なせる。
+const DEV_SERVER_PORT = 51731;
+
+// dev ビルドは自己完結していない（#861）＝popup.html 等はスクリプトと CSS を
+// http://localhost:51731 から直接読む。サーバーが落ちていても拡張は壊れた顔を
+// しない＝ポップアップは開くが、素の HTML が縦一列に潰れて出る（CSS/レイアウトの
+// バグに見えるが原因はサーバー未起動）。窓を開く前にここを確かめておく。
+function devServerAlive(): Promise<boolean> {
+  return new Promise((resolve) => {
+    const socket = net.createConnection({ port: DEV_SERVER_PORT, host: '127.0.0.1' });
+    const finish = (alive: boolean) => {
+      socket.removeAllListeners();
+      socket.destroy();
+      resolve(alive);
+    };
+    socket.setTimeout(500);
+    socket.once('connect', () => finish(true));
+    socket.once('timeout', () => finish(false));
+    socket.once('error', () => finish(false));
+  });
+}
 
 // Where Chrome actually is, asked of Windows rather than guessed: the 32-bit
 // install path exists on plenty of machines and a hardcoded 64-bit path would
@@ -94,44 +117,61 @@ function runningPid(profile: string): number | null {
   return null;
 }
 
-// `--print` resolves everything and opens nothing. Opening a browser window
-// takes the screen and the keyboard away from whoever is using the machine, so
-// checking that the paths are right must not require paying that — including
-// when the checker is an agent (which is how this flag came to exist: the first
-// run of this script stole focus for a check that needed no window at all).
-if (process.argv.includes('--print')) {
-  const pid = runningPid(PROFILE);
-  console.log(`chrome:  ${chrome}`);
-  console.log(`profile: ${PROFILE}`);
-  console.log(`running: ${pid === null ? 'no' : `yes (pid ${pid})`}`);
-  console.log(`build:   ${OUTPUT}${fs.existsSync(path.join(OUTPUT, 'manifest.json')) ? '' : '  (not built yet)'}`);
-  process.exit(0);
+async function main() {
+  const devServerUp = await devServerAlive();
+
+  // `--print` resolves everything and opens nothing. Opening a browser window
+  // takes the screen and the keyboard away from whoever is using the machine, so
+  // checking that the paths are right must not require paying that — including
+  // when the checker is an agent (which is how this flag came to exist: the first
+  // run of this script stole focus for a check that needed no window at all).
+  if (process.argv.includes('--print')) {
+    const pid = runningPid(PROFILE);
+    console.log(`chrome:  ${chrome}`);
+    console.log(`profile: ${PROFILE}`);
+    console.log(`running: ${pid === null ? 'no' : `yes (pid ${pid})`}`);
+    console.log(`dev server (127.0.0.1:${DEV_SERVER_PORT}): ${devServerUp ? 'up' : 'down — popup/options/diag will render as bare unstyled HTML until "npm run dev:ext" is running'}`);
+    console.log(`build:   ${OUTPUT}${fs.existsSync(path.join(OUTPUT, 'manifest.json')) ? '' : '  (not built yet)'}`);
+    process.exit(0);
+  }
+
+  if (!devServerUp) {
+    console.log(`[hologram] warning: the dev server (127.0.0.1:${DEV_SERVER_PORT}) is not responding.`);
+    console.log('[hologram] the dev build is not self-contained — popup.html etc. pull their script and CSS straight from it.');
+    console.log('[hologram] without it the popup still opens, but as bare unstyled HTML crushed into one column (looks like a layout bug — it is not).');
+    console.log('[hologram] run "npm run dev:ext" and leave it running while you verify.');
+  }
+
+  const alreadyOpen = runningPid(PROFILE);
+  if (alreadyOpen !== null) {
+    console.log(`[hologram] the development Chrome profile is already open (pid ${alreadyOpen}): ${PROFILE}`);
+    console.log('[hologram] nothing to do — switch to that window. Pass --print to see the paths.');
+    process.exit(0);
+  }
+
+  fs.mkdirSync(PROFILE, { recursive: true });
+
+  // Through the scheduled task, so the browser lands outside the MSIX container
+  // (see the header). The task is one-shot and its action is `cmd /c start`, so
+  // it completes immediately and the browser it opened outlives it — verified
+  // 2026-08-03: the task returns to Ready with exit 0 while Chrome keeps running,
+  // and unregistering it does not take the browser down.
+  const launched = spawnSync('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', path.join(__dirname, 'open-dev-profile.ps1'), chrome, PROFILE], { stdio: 'inherit' });
+  if (launched.status !== 0) {
+    throw new Error(`open-dev-profile.ps1 exited with ${launched.status}. The browser was not opened.`);
+  }
+
+  console.log(`[hologram] opened the development Chrome profile: ${PROFILE}`);
+  if (fs.existsSync(path.join(OUTPUT, 'manifest.json'))) {
+    console.log(`[hologram] development build to load: ${OUTPUT}`);
+  } else {
+    console.log(`[hologram] no development build yet — run "npm run dev:ext" first (it writes ${OUTPUT})`);
+  }
+  console.log('[hologram] first time only: chrome://extensions → Developer mode → Load unpacked → the folder above.');
+  console.log('[hologram] do NOT load it into the daily profile: both builds carry the same extension id.');
 }
 
-const alreadyOpen = runningPid(PROFILE);
-if (alreadyOpen !== null) {
-  console.log(`[hologram] the development Chrome profile is already open (pid ${alreadyOpen}): ${PROFILE}`);
-  console.log('[hologram] nothing to do — switch to that window. Pass --print to see the paths.');
-  process.exit(0);
-}
-
-fs.mkdirSync(PROFILE, { recursive: true });
-
-// Through the scheduled task, so the browser lands outside the MSIX container
-// (see the header). The task is one-shot and its action is `cmd /c start`, so
-// it completes immediately and the browser it opened outlives it — verified
-// 2026-08-03: the task returns to Ready with exit 0 while Chrome keeps running,
-// and unregistering it does not take the browser down.
-const launched = spawnSync('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', path.join(__dirname, 'open-dev-profile.ps1'), chrome, PROFILE], { stdio: 'inherit' });
-if (launched.status !== 0) {
-  throw new Error(`open-dev-profile.ps1 exited with ${launched.status}. The browser was not opened.`);
-}
-
-console.log(`[hologram] opened the development Chrome profile: ${PROFILE}`);
-if (fs.existsSync(path.join(OUTPUT, 'manifest.json'))) {
-  console.log(`[hologram] development build to load: ${OUTPUT}`);
-} else {
-  console.log(`[hologram] no development build yet — run "npm run dev:ext" first (it writes ${OUTPUT})`);
-}
-console.log('[hologram] first time only: chrome://extensions → Developer mode → Load unpacked → the folder above.');
-console.log('[hologram] do NOT load it into the daily profile: both builds carry the same extension id.');
+main().catch((err) => {
+  console.error(err instanceof Error ? err.message : err);
+  process.exit(1);
+});
