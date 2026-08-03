@@ -26,8 +26,6 @@ import { makeTagResolver, preparePostStmts, writePost } from './lib-db-record-wr
 import { IMPORTABLE_MEDIA, buildLocalRecord, importLocalFile, localCaptureId } from './lib-local-intake.ts';
 import { classifyLibraryFolder } from './lib-switch-library.ts';
 import { collectDroppedPaths } from './lib-drop-import.ts';
-import { TRASH_SUBDIR } from './lib-save-folder-path.ts';
-import { INBOX_DIRNAME } from '../../../native-host/inbox.mts';
 import type { PostRecordInput } from '../../../native-host/post-record.mts';
 import type { IpcContext } from './ipc-context.ts';
 import type {

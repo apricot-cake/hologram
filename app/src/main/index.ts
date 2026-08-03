@@ -451,6 +451,16 @@ function scheduleInboxCompaction(folder: string, sqlite: any) {
 function ensurePostsSynced() {
   const folder = getSaveFolder();
   if (!folder) return null;
+  // #176: a switchLibrary() is mid-flight (between closing the old database
+  // and opening the new one) — a stray caller here (most concretely, the
+  // startup-scheduled sweepReplacements/purgeOldTrash/integrity-check timers,
+  // which are not part of switchLibrary's own "stop writes" phase because
+  // they are one-shot rather than something with a flag to check) must not
+  // call ensureDb() itself: it would either reopen the OLD library a moment
+  // before switchLibrary's own writeConfig flips the pointer, or race the
+  // close/reopen pair outright. Treating this exactly like "no library" is
+  // what every caller already handles.
+  if (switching) return null;
   const handle = ensureDb();
   // Prime the snapshot regardless of whether this pass finds anything to
   // drain — buildSavedIndex is two indexed SELECTs, cheap enough to run
@@ -742,10 +752,16 @@ async function switchLibrary(dest: string): Promise<{ ok: true; saveFolder: stri
       } catch {
         /* leaves dbHandle null — LibraryMissingState/empty-state UI takes over */
       }
+      switching = false;
       watchInboxFolder();
       void watchImport.refresh();
       return { ok: false, error: 'open-failed' };
     }
+    // The new database is open and stable from here on — drop the guard now
+    // rather than in the outer finally, so ensurePostsSynced() below (and
+    // anything a startup timer fires concurrently) sees the new library
+    // immediately instead of being held off until this whole function returns.
+    switching = false;
 
     // Re-wire everything that was stopped above, against the NEW library.
     watchInboxFolder();
