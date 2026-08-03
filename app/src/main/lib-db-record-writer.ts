@@ -87,6 +87,7 @@ const POST_COLUMNS = [
   'customEmojis',
   'poll',
   'linkCard',
+  'shotAnimated',
 ] as const;
 
 const UPSERT_POST_SQL = `INSERT INTO posts (${POST_COLUMNS.join(',')}) VALUES (${POST_COLUMNS.map(() => '?').join(',')})
@@ -172,6 +173,9 @@ function postParams(n: PostRecordShape): unknown[] {
     // #181: 0-or-1 sub-structure, same null-stays-null rule as quotedPost/
     // replyToPost/poll above.
     linkCard: n.linkCard ? JSON.stringify(n.linkCard) : null,
+    // #8: 1 when the card image is an animated webp — see lib-card-dims.ts's
+    // fillCardDims.
+    shotAnimated: toDbBool(n.shotAnimated),
   };
   return POST_COLUMNS.map((c) => byName[c]);
 }

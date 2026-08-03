@@ -11,7 +11,7 @@
 // this handler's own), so registerImageProtocol takes it as a dependency rather
 // than reaching back for it.
 
-import { protocol, nativeImage } from 'electron';
+import { protocol, nativeImage, BrowserWindow } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -52,6 +52,12 @@ function mimeForFile(name) {
 // (keyed by name + mtime + width, so re-migration invalidates it). The
 // full-resolution original is still served when no ?w= is given (lightbox/viewer).
 const THUMB_EXT = new Set(['.jpg', '.jpeg', '.jfif', '.png', '.webp', '.gif', '.avif', '.svg']);
+// #8: nativeImage only documents PNG/JPEG (+ICO on Windows) — webp/avif decode
+// as an empty image, which used to fall through to the un-resized original
+// (see registerImageProtocol's "fall through" comment). These two route to
+// getDelegatedThumbnail below instead; every other THUMB_EXT entry keeps the
+// nativeImage path unchanged.
+const DELEGATED_DECODE_EXT = new Set(['.webp', '.avif']);
 // thumb-cache sits in configDir, not the save folder, for the same "local, not
 // portable with the library" reason hologram.db does (index.ts's Posts comment).
 function thumbCacheDir() {
@@ -92,6 +98,115 @@ function runThumbJob(fn) {
   });
 }
 
+// #8: renderer-delegated decode for the formats nativeImage can't read.
+// Rather than relying on the OS's own installed codecs (unavailable for avif
+// on most machines, per the issue's design comment) or a new wasm/native
+// dependency (wasm-vips, rejected in the same comment), a hidden BrowserWindow
+// asks Chromium itself to decode — the same engine already rendering these
+// files in <img> tags elsewhere in the app — and hands back a flattened JPEG.
+//
+// win.webContents.executeJavaScript() does the whole "main -> IPC -> decode ->
+// IPC -> main" round trip in one call (Electron ships this over its own
+// internal CDP-like channel): no preload/contextBridge wiring is needed since
+// nothing is exposed to page-authored script, only to code main itself injects.
+let _decodeWin: BrowserWindow | null = null;
+let _decodeWinIdleTimer: NodeJS.Timeout | null = null;
+// THUMB_POOL runs up to 2 decode jobs concurrently — without this, two webp/
+// avif requests arriving before the first window finishes its about:blank
+// load would each see _decodeWin still null and stand up their own
+// BrowserWindow, leaking whichever one loses the race (only the last one
+// assigned to _decodeWin is ever reachable for disposal).
+let _decodeWinCreating: Promise<BrowserWindow> | null = null;
+// Reclaim the hidden window's GPU/compositor resources once nothing has asked
+// it to decode for a while, rather than keeping it alive for the app's whole
+// session. Distinct from (and not to be confused with, when reading GPU/memory
+// traces) #66's separate idle-window observations.
+const DECODE_WIN_IDLE_MS = 30_000;
+
+async function getDecodeWindow(): Promise<BrowserWindow> {
+  if (_decodeWinIdleTimer) {
+    clearTimeout(_decodeWinIdleTimer);
+    _decodeWinIdleTimer = null;
+  }
+  if (_decodeWin && !_decodeWin.isDestroyed()) return _decodeWin;
+  if (!_decodeWinCreating) {
+    _decodeWinCreating = (async () => {
+      const win = new BrowserWindow({
+        show: false,
+        webPreferences: { sandbox: true, nodeIntegration: false, contextIsolation: true, offscreen: false },
+      });
+      await win.loadURL('about:blank');
+      _decodeWin = win;
+      return win;
+    })();
+  }
+  try {
+    return await _decodeWinCreating;
+  } finally {
+    _decodeWinCreating = null;
+  }
+}
+
+function scheduleDecodeWinDispose() {
+  if (_decodeWinIdleTimer) clearTimeout(_decodeWinIdleTimer);
+  _decodeWinIdleTimer = setTimeout(() => {
+    _decodeWinIdleTimer = null;
+    const win = _decodeWin;
+    _decodeWin = null;
+    if (win && !win.isDestroyed()) win.destroy();
+  }, DECODE_WIN_IDLE_MS);
+}
+
+// Resize-by-short-edge, same rule getThumbnail's nativeImage branch uses (q3
+// comment below) — square tiles + object-fit:cover map the short edge to the
+// tile, so that's the edge that must not exceed `w`.
+function delegatedDecodeScript(b64: string, w: number): string {
+  return `(async () => {
+    try {
+      const bytes = Uint8Array.from(atob(${JSON.stringify(b64)}), (c) => c.charCodeAt(0));
+      const bitmap = await createImageBitmap(new Blob([bytes]));
+      const shortEdge = Math.min(bitmap.width, bitmap.height);
+      const scale = shortEdge > ${w} ? ${w} / shortEdge : 1;
+      const dw = Math.max(1, Math.round(bitmap.width * scale));
+      const dh = Math.max(1, Math.round(bitmap.height * scale));
+      const canvas = new OffscreenCanvas(dw, dh);
+      const ctx = canvas.getContext('2d');
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(bitmap, 0, 0, dw, dh);
+      const blob = await canvas.convertToBlob({ type: 'image/jpeg', quality: 0.9 });
+      return await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = () => reject(reader.error);
+        reader.readAsDataURL(blob);
+      });
+    } catch (e) {
+      return null;
+    }
+  })()`;
+}
+
+async function getDelegatedThumbnail(resolved: string, w: number): Promise<Buffer | null> {
+  let bytes: Buffer;
+  try {
+    bytes = await fs.promises.readFile(resolved);
+  } catch {
+    return null;
+  }
+  try {
+    const win = await getDecodeWindow();
+    const dataUrl = await win.webContents.executeJavaScript(delegatedDecodeScript(bytes.toString('base64'), w));
+    scheduleDecodeWinDispose();
+    if (typeof dataUrl !== 'string') return null;
+    const comma = dataUrl.indexOf(',');
+    if (comma < 0) return null;
+    return Buffer.from(dataUrl.slice(comma + 1), 'base64');
+  } catch {
+    scheduleDecodeWinDispose();
+    return null; // decode failed (corrupt file, unsupported variant) — caller falls back to the original
+  }
+}
+
 // #236 §4: a collected item (assetClass:'file' — pdf/zip/psd/…) has no
 // THUMB_EXT decode path, but its OS very likely has a registered thumbnail
 // handler for it already (Explorer/Finder show one). nativeImage.
@@ -112,7 +227,9 @@ async function getOsShellThumbnail(resolved: string, w: number): Promise<Buffer 
 }
 
 async function getThumbnail(resolved, name, w) {
-  const isImageExt = THUMB_EXT.has(path.extname(name).toLowerCase());
+  const ext = path.extname(name).toLowerCase();
+  const isImageExt = THUMB_EXT.has(ext);
+  const isDelegated = DELEGATED_DECODE_EXT.has(ext);
   let st: any;
   try {
     st = await fs.promises.stat(resolved);
@@ -122,15 +239,20 @@ async function getThumbnail(resolved, name, w) {
   // q3: resize by the SHORT edge (not width). Tiles are square + object-fit:cover, so the
   // short edge is what maps to the tile. Resizing by width made wide images (e.g. 1920x1080)
   // become 180x101, which then got upscaled vertically into the square tile → heavy blur.
-  const key = `${name}.${Math.round(st.mtimeMs)}.w${w}.q3.jpg`.replace(/[^\w.-]/g, '_');
+  // q4 (#8): generation bump — webp/avif used to cache a zero-byte NEGATIVE
+  // sentinel under q3 (nativeImage couldn't decode either), which would
+  // otherwise keep answering "no thumbnail" forever even after the delegated
+  // decoder below can actually produce one.
+  const key = `${name}.${Math.round(st.mtimeMs)}.w${w}.q4.jpg`.replace(/[^\w.-]/g, '_');
   const cachePath = path.join(thumbCacheDir(), key);
   try {
     const cached = await fs.promises.readFile(cachePath);
-    // A cached NEGATIVE result (#236): the OS was already asked once for this
-    // exact name+mtime+width and had nothing — an empty file is the sentinel,
-    // so a card that never gets a thumbnail doesn't re-trigger the OS shell
-    // call on every scroll-back. Only meaningful for the non-image path below;
-    // a real image thumbnail is never zero bytes.
+    // A cached NEGATIVE result (#236, extended by #8 to the delegated decode
+    // path): generation was already tried once for this exact name+mtime+width
+    // and produced nothing — an empty file is the sentinel, so a card that
+    // never gets a thumbnail doesn't re-trigger the OS shell call or the
+    // hidden-window decode on every scroll-back. Never meaningful for the
+    // plain nativeImage path — a real image thumbnail is never zero bytes.
     return cached.length ? cached : null;
   } catch {
     /* cache miss */
@@ -142,7 +264,11 @@ async function getThumbnail(resolved, name, w) {
   if (pending) return pending;
   const job = runThumbJob(async () => {
     let buf: Buffer | null = null;
-    if (isImageExt) {
+    if (isDelegated) {
+      // #8: nativeImage can't decode webp/avif — Chromium itself can, via a
+      // hidden renderer window (getDelegatedThumbnail above).
+      buf = await getDelegatedThumbnail(resolved, w);
+    } else if (isImageExt) {
       let img = nativeImage.createFromPath(resolved);
       if (!img.isEmpty()) {
         const sz = img.getSize();

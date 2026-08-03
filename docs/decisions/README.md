@@ -49,3 +49,4 @@
 | [0021](0021-panel-toggles-are-instant.md) | パネルの開閉も即時にする（サイドバー・詳細パネル） | 採用 |
 | [0022](0022-renderer-served-from-app-scheme.md) | レンダラは `app://` で配り、CSP は応答ヘッダで配る | 採用 |
 | [0023](0023-global-history-page.md) | グローバル履歴ページ（ブラウザの chrome://history 相当） | 採用 |
+| [0024](0024-thumbnail-webp-avif-via-renderer-delegated-decode.md) | webp/avif のサムネイルはレンダラ委譲デコードで作る（wasm-vips・OS シェル委譲は不採用） | 採用 |
