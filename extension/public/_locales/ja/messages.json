@@ -96,6 +96,19 @@
     "message": "Alt+S でも直接保存できます",
     "description": "Popup hint pointing frequent savers at the one-press keyboard route"
   },
+  "popupBulk": {
+    "message": "この一覧を取り込む",
+    "description": "Popup item (#793): start bulk-intake (chase-mode) on the active tab's list"
+  },
+  "popupBulkHint": {
+    "message": "$SHORTCUT$ でも開始できます",
+    "description": "Popup hint pointing at the bulk-intake keyboard shortcut, shown only when one is actually assigned (#793)",
+    "placeholders": { "shortcut": { "content": "$1", "example": "Alt+Shift+S" } }
+  },
+  "popupBulkUnsupported": {
+    "message": "このページには一括で取り込める一覧がありません",
+    "description": "Popup reason: the active tab has no list the bulk-intake mode can walk (#793)"
+  },
   "popupRefusedNotHttp": {
     "message": "このページは保存できません（ウェブページを開いてから押してください）",
     "description": "Popup reason: the active tab is not an http(s) page, so nothing can be injected into it"
