@@ -36,6 +36,10 @@ import { isHidden as panelsAreHidden, subscribe as panelsSubscribe } from '../se
 import { promptName } from '../prompt/Prompt.tsx';
 import { applyFolderFilter, applyPosterFolderFilter, applySavedSearch, browseTo, posterFolderStore, removePosterFolder, viewerReady } from '../services/orchestrator.ts';
 import { getCount as trashCount, subscribe as trashSubscribe } from '../services/trash-view.ts';
+import { get as getPostsData } from '../services/posts-data.ts';
+import { pinItemOfPost } from '../services/pin-items.ts';
+import { hologramIpc } from '../services/ipc.ts';
+import type { PinItem } from '../../../main/ipc-payloads.ts';
 
 // browseMode is the single source of truth for the active destination. Writing
 // the store IS the interface — orchestrator.ts subscribes and runs the heavy
@@ -318,12 +322,36 @@ export function LeftSidebar({ resize }: { resize?: PanelResize }) {
       onOk: () => removeFolder(f.id),
     });
   };
+  // #79 導線③: every capture in the folder becomes one pin tile (its own cover
+  // image, same rule pin-items.ts uses everywhere else) and always opens a
+  // FRESH pin window — unlike the card menu/toolbar entry points, "flowing a
+  // whole folder in" is never meant to pile onto whatever pin window happens
+  // to be active.
+  const pinOpenFolder = (f: HologramFolder) => {
+    if (!f.items.length) return;
+    const byId = new Map(getPostsData().map((p) => [p.captureId, p]));
+    const pins = f.items
+      .map((cid) => byId.get(cid))
+      .filter((p): p is HologramPost => !!p)
+      .map(pinItemOfPost)
+      .filter((it): it is PinItem => !!it);
+    if (pins.length) hologramIpc.pinSend(pins, { newWindow: true });
+  };
   const folderMenu = (e: MouseEvent, f: HologramFolder) => {
     e.preventDefault();
-    const items = [{ label: t('foldNewSub'), act: 'new' }, { label: t('foldRename'), act: 'rename' }, { sep: true }, { label: t('foldDelete'), act: 'delete', danger: true }];
+    const items = [
+      { label: t('foldNewSub'), act: 'new' },
+      { label: t('foldRename'), act: 'rename' },
+      // Saved searches (isSavedSearch) hold no items of their own (a live
+      // query, not a post set), so there is nothing here to pin.
+      ...(!isSavedSearch(f) ? [{ label: t('foldPinOpen'), act: 'pinOpen' }] : []),
+      { sep: true },
+      { label: t('foldDelete'), act: 'delete', danger: true },
+    ];
     menuOpen({ x: e.clientX, y: e.clientY, items }, (item) => {
       if (item.act === 'new') newFolder(f.id);
       else if (item.act === 'rename') promptName(t('foldRenamePrompt'), f.name, (name) => renameFolder(f.id, name));
+      else if (item.act === 'pinOpen') pinOpenFolder(f);
       else if (item.act === 'delete') deleteFolder(f);
     });
   };

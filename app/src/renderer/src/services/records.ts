@@ -32,7 +32,9 @@ const SS_EXT = /\.jpe?g$/i;
 // A downloaded media file is a video/animated-loop, not a still — used both to
 // pick the gallery's <video> vs Zoomable branch (below) and, here, to keep a
 // raw video file out of an <img src> (artworkFile prefers its poster instead).
-const isVideoFile = (f: string | null | undefined) => /\.(mp4|webm|mov|m4v)$/i.test(f || '');
+// Exported for services/pin-items.ts (#79), which needs the same test to decide
+// how a pinned tile plays back.
+export const isVideoFile = (f: string | null | undefined) => /\.(mp4|webm|mov|m4v)$/i.test(f || '');
 // A pixiv ugoira archive (#119 St3). Like a video file it can never be an
 // <img src> — its poster stands in wherever a still is required.
 const isUgoiraFile = (f: string | null | undefined) => /\.zip$/i.test(f || '');
