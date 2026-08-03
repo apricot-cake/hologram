@@ -43,7 +43,7 @@ function BulkTagBody({ model }: { model: HologramBulkTagModel }) {
         <DialogTitle>{model.labels.title}</DialogTitle>
         <DialogDescription>{model.labels.additiveHint}</DialogDescription>
       </DialogHeader>
-      <TagField tags={tags} vocabGroups={picker.vocabGroups} coocGroups={picker.coocGroups} srcTags={picker.srcTagsForPicker} labels={model.tagLabels} onAdd={add} onRemove={remove} onContextMenu={(tag, x, y) => model.onKindMenu(tag, x, y, bumpKind)} />
+      <TagField tags={tags} vocabGroups={picker.vocabGroups} coocGroups={picker.coocGroups} srcTags={picker.srcTagsForPicker} aliasMap={picker.aliasMap} labels={model.tagLabels} onAdd={add} onRemove={remove} onContextMenu={(tag, x, y) => model.onKindMenu(tag, x, y, bumpKind)} />
       <DialogFooter>
         <Button variant="ghost" onClick={() => close()}>
           {model.labels.cancel}

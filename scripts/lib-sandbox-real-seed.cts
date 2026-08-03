@@ -295,7 +295,7 @@ function verifyIsolation(input: IsolationInput): { ok: boolean; problems: string
   const norm = (p: string) => path.resolve(p).replace(/\\/g, '/').toLowerCase();
   if (!cfg.saveFolder || norm(cfg.saveFolder) !== norm(input.sandboxLibrary)) problems.push(`config saveFolder is not the sandbox library: ${cfg.saveFolder}`);
   if (cfg.backup && cfg.backup.dir) problems.push(`config carries a backup destination: ${cfg.backup.dir}`);
-  // #176: hologram.db lives inside the library folder now (ADR 0024) — the
+  // #176: hologram.db lives inside the library folder now (ADR 0025) — the
   // meaningful check is that the sandbox's OWN db is not itself the real
   // library's copy (checked against realSaveFolder). The realConfigDir check
   // stays too: configDir still holds machine-local state (logs, thumb-cache)
@@ -352,7 +352,7 @@ interface SeedOptions {
 
 async function seedRealSandbox(opts: SeedOptions) {
   const log = opts.log || (() => {});
-  // #176: hologram.db lives INSIDE the library folder now (ADR 0024), on both
+  // #176: hologram.db lives INSIDE the library folder now (ADR 0025), on both
   // ends — the source (the real library's own database) and the destination
   // (this is where the sandboxed app's own ensureDb()/dbFile() will look, once
   // it launches against config.saveFolder = opts.sandboxLibrary below).

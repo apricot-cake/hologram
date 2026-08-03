@@ -135,7 +135,7 @@ function readSeed(): any | null {
 }
 
 function libraryIsSeeded(): boolean {
-  // #176: hologram.db lives inside the save folder now, not configDir (ADR 0024).
+  // #176: hologram.db lives inside the save folder now, not configDir (ADR 0025).
   if (fs.existsSync(path.join(saveFolder, 'hologram.db'))) return true;
   try {
     return fs.readdirSync(saveFolder).length > 0;
@@ -146,7 +146,7 @@ function libraryIsSeeded(): boolean {
 
 // --reseed: the sandbox is disposable by design, so this drops the whole seeded
 // state (library, database, config) rather than trying to merge two seeds.
-// #176: hologram.db (+ -wal/-shm) now lives INSIDE saveFolder (ADR 0024), so
+// #176: hologram.db (+ -wal/-shm) now lives INSIDE saveFolder (ADR 0025), so
 // the recursive removal below already takes it out — no separate db removal needed.
 function wipeSeed() {
   fs.rmSync(saveFolder, { recursive: true, force: true });
@@ -169,7 +169,7 @@ function resolveRealLibrary(): { configDir: string; saveFolder: string } {
     /* fall through to the default */
   }
   if (!folder) folder = defaultLibraryDir();
-  // #176: hologram.db lives inside the save folder now, not configDir (ADR 0024).
+  // #176: hologram.db lives inside the save folder now, not configDir (ADR 0025).
   if (!fs.existsSync(path.join(folder, 'hologram.db'))) throw new Error(`no real library on this machine (${path.join(folder, 'hologram.db')} not found). Use the fixture seed, or generate one with scripts/gen-dummy-library.cts`);
   return { configDir: dir, saveFolder: folder };
 }

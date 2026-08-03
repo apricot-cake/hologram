@@ -659,6 +659,23 @@ describe('makeCardModel（カード1枚のビューモデル）', () => {
     expect(model({ ...p, image: 'anim.gif' }, ['anim.gif']).imgSrc).toBe('anim.gif@0');
   });
 
+  // #8: an animated webp needs the same carve-out .gif gets — the delegated
+  // thumbnailer would otherwise flatten it to a static JPEG like any other webp.
+  test('animated webp（shotAnimated）も原寸のまま（w=0）でアニメーションを保つ', () => {
+    expect(model({ ...p, image: 'anim.webp', shotAnimated: true }, ['anim.webp']).imgSrc).toBe('anim.webp@0');
+  });
+
+  // A STILL webp is exactly what #8 wants thumbnailed — no exemption for it.
+  test('静止 webp（shotAnimated なし）はサムネイル化される（#8 の本題）', () => {
+    expect(model({ ...p, image: 'still.webp' }, ['still.webp']).imgSrc).toBe('still.webp@200');
+  });
+
+  test('正方形グリッドは shotAnimated でもサムネイル化する（再生軸は正方形の外側だけ）', () => {
+    withShape({ square: true }, () => {
+      expect(model({ ...p, image: 'anim.webp', shotAnimated: true }, ['anim.webp']).imgSrc).toBe('anim.webp@200');
+    });
+  });
+
   test('shotW/H が無ければ学習したアスペクト比のキャッシュへ落ちる（元比率グリッドのみ）', () => {
     expect(model({ ...p, shotW: 0, shotH: 0 }).aspRatio).toBe('4/3');
   });

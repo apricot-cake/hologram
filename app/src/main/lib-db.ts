@@ -550,6 +550,12 @@ const MIGRATIONS: Migration[] = [
         CREATE INDEX idx_poster_profile_snapshots_key ON poster_profile_snapshots(posterKey, observedAt);
       `),
   },
+  // #8: whether the card image (the same file shotW/shotH describe) is an
+  // ANIMATED webp — see app/src/main/lib-card-dims.ts's fillCardDims and
+  // records.ts's imgW carve-out. Null on every row written before this
+  // migration, same "ride the existing write-time mechanism" convention as
+  // shotW/shotH/mediaMaxW itself.
+  { name: 'add-post-shot-animated', up: (db) => db.exec('ALTER TABLE posts ADD COLUMN shotAnimated INTEGER') },
 ];
 
 interface Migration {
@@ -724,6 +730,8 @@ interface PostsTable {
   // add-post-link-card migration (#181) — JSON LinkCardShape, same storage
   // convention as quotedPost/replyToPost/poll. See PostRecordShape.linkCard.
   linkCard: string | null;
+  // add-post-shot-animated migration (#8) — see PostRecordShape.shotAnimated.
+  shotAnimated: number | null;
 }
 interface MediaTable {
   id: Generated<number>;

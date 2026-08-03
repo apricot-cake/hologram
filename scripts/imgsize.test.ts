@@ -3,7 +3,7 @@
 // header for each supported format and also checks rejection of broken input.
 
 import { describe, expect, test } from 'vitest';
-import { imageSize } from '../app/src/main/lib-imgsize';
+import { imageSize, webpIsAnimated } from '../app/src/main/lib-imgsize';
 
 // JPEG: SOI + SOF0 (precision, height, width, ...).
 function jpeg(w: number, h: number) {
@@ -56,11 +56,12 @@ function gif(w: number, h: number) {
   return b;
 }
 
-function webpVP8X(w: number, h: number) {
+function webpVP8X(w: number, h: number, animated = false) {
   const b = Buffer.alloc(30);
   b.write('RIFF', 0, 'ascii');
   b.write('WEBP', 8, 'ascii');
   b.write('VP8X', 12, 'ascii');
+  if (animated) b[20] = 0x02; // Animation flag — bit 1 of the VP8X flags byte
   b[24] = (w - 1) & 0xff;
   b[25] = ((w - 1) >> 8) & 0xff;
   b[26] = ((w - 1) >> 16) & 0xff;
@@ -68,6 +69,30 @@ function webpVP8X(w: number, h: number) {
   b[28] = ((h - 1) >> 8) & 0xff;
   b[29] = ((h - 1) >> 16) & 0xff;
   return b;
+}
+
+// AVIF: ftyp(brand) + meta[FullBox] > iprp > ipco > ispe[FullBox](width,height).
+// Minimal ISOBMFF box tree, built the same "just enough bytes" way the other
+// synthetic fixtures in this file are.
+function isobmffBox(type: string, payload: Buffer): Buffer {
+  const head = Buffer.alloc(8);
+  head.writeUInt32BE(8 + payload.length, 0);
+  head.write(type, 4, 'ascii');
+  return Buffer.concat([head, payload]);
+}
+function fullBoxPayload(inner: Buffer): Buffer {
+  return Buffer.concat([Buffer.alloc(4), inner]); // version+flags, both 0
+}
+function avif(w: number, h: number, brand = 'avif') {
+  const ftyp = isobmffBox('ftyp', Buffer.concat([Buffer.from(brand, 'ascii'), Buffer.alloc(4)]));
+  const ispePayload = Buffer.alloc(8);
+  ispePayload.writeUInt32BE(w, 0);
+  ispePayload.writeUInt32BE(h, 4);
+  const ispe = isobmffBox('ispe', fullBoxPayload(ispePayload));
+  const ipco = isobmffBox('ipco', ispe);
+  const iprp = isobmffBox('iprp', ipco);
+  const meta = isobmffBox('meta', fullBoxPayload(iprp));
+  return Buffer.concat([ftyp, meta]);
 }
 
 describe('ヘッダから寸法を読む', () => {
@@ -89,6 +114,46 @@ describe('ヘッダから寸法を読む', () => {
 
   test('webp VP8X canvas', () => {
     expect(imageSize(webpVP8X(1024, 768))).toEqual({ width: 1024, height: 768 });
+  });
+
+  test('avif ftyp/meta/iprp/ipco/ispe', () => {
+    expect(imageSize(avif(1200, 900))).toEqual({ width: 1200, height: 900 });
+  });
+});
+
+describe('#8: webp の Animation フラグ（VP8X flags バイトの bit1）', () => {
+  test('フラグが立っていれば animated', () => {
+    expect(webpIsAnimated(webpVP8X(100, 100, true))).toBe(true);
+  });
+
+  test('フラグが立っていなければ静止画', () => {
+    expect(webpIsAnimated(webpVP8X(100, 100, false))).toBe(false);
+  });
+
+  test('VP8X コンテナでない webp（単純な VP8/VP8L）は animated になりようがない', () => {
+    const b = Buffer.alloc(21);
+    b.write('RIFF', 0, 'ascii');
+    b.write('WEBP', 8, 'ascii');
+    b.write('VP8 ', 12, 'ascii');
+    expect(webpIsAnimated(b)).toBe(false);
+  });
+
+  test('webp ですらないバイト列', () => {
+    expect(webpIsAnimated(Buffer.from('not a webp at all'))).toBe(false);
+  });
+});
+
+describe('#8: avif の ftyp brand', () => {
+  test('avif ブランドは測れる', () => {
+    expect(imageSize(avif(640, 480, 'avif'))).toEqual({ width: 640, height: 480 });
+  });
+
+  test('avis（アニメーション avif）ブランドも測れる', () => {
+    expect(imageSize(avif(640, 480, 'avis'))).toEqual({ width: 640, height: 480 });
+  });
+
+  test('heic 等 AVIF 以外の ftyp ブランドは null（同じ ISOBMFF コンテナを共有するだけ）', () => {
+    expect(imageSize(avif(640, 480, 'heic'))).toBeNull();
   });
 });
 

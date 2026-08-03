@@ -11,7 +11,7 @@
 - [0003](decisions/0003-build-vs-borrow-boundary.md) 自前で持つものと委ねるものの線引き
 - [0005](decisions/0005-no-visual-change-during-migration.md) 移行作業では見た目を意図的に変えない
 - [0006](decisions/0006-plain-shadcn-look.md) 素の shadcn ルックを採る（[0004](decisions/0004-own-styling-headless-behaviour.md)「見た目は自前」を置き換え）
-- [0010](decisions/0010-sqlite-as-the-metadata-truth-source.md) メタデータの正本を SQLite に置き、ファイルは実体だけを持つ（DB配置の条項は [0024](decisions/0024-database-lives-inside-the-library-folder.md) が置き換え）
+- [0010](decisions/0010-sqlite-as-the-metadata-truth-source.md) メタデータの正本を SQLite に置き、ファイルは実体だけを持つ（DB配置の条項は [0025](decisions/0025-database-lives-inside-the-library-folder.md) が置き換え）
 - [0011](decisions/0011-preserve-acquisition-payloads.md) 取得したペイロードを原本として残し、正規化フィールドへの昇格だけを実需で絞る
 
 ## 全体フロー

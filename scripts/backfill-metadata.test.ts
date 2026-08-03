@@ -51,7 +51,7 @@ beforeAll(() => {
   fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolder }));
 
   // Records live in the library DB (since #302, there's no sidecar in the save folder).
-  // #176: hologram.db lives inside the save folder now, not configDir (ADR 0024).
+  // #176: hologram.db lives inside the save folder now, not configDir (ADR 0025).
   dbFile = path.join(saveFolder, 'hologram.db');
   const seed = openDatabase(dbFile);
   const stmts = preparePostStmts(seed.sqlite);

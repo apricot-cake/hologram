@@ -83,6 +83,12 @@ function setupBackground() {
   const tabUpdatedListeners: Array<(tabId: number, changeInfo: any) => void> = [];
   const tabRemovedListeners: Array<(tabId: number) => void> = [];
   let executeScriptImpl: (arg: any) => Promise<any> = async () => [];
+  // What the RESIDENT content script would answer chrome.tabs.sendMessage
+  // with (#793's popupCheckBulk gateway). Matches production's default for
+  // every OTHER caller in this suite — none of them read the resolved value,
+  // they fire-and-forget with .catch() — so leaving this unresolved-to-undefined
+  // changes nothing for them.
+  let tabsSendMessageImpl: (tabId: number, message: any) => Promise<any> = async () => undefined;
   let packageReadable = true;
   const recordAction = (call: string) => (arg: any) => {
     actionCalls.push({ call, arg });
@@ -116,7 +122,7 @@ function setupBackground() {
     tabs: {
       sendMessage: (tabId: number, message: any) => {
         tabsSent.push({ tabId, message });
-        return Promise.resolve();
+        return tabsSendMessageImpl(tabId, message);
       },
       query: async () => (activeTab ? [activeTab] : []),
       create: async (arg: any) => {
@@ -244,6 +250,21 @@ function setupBackground() {
       activeTab = tab;
       const { responseP } = dispatch({ type: 'popupActivate' });
       return await responseP;
+    },
+    // The popup's "この一覧を取り込む" item (#793): asks background, which asks
+    // the RESIDENT content script (chrome.tabs.sendMessage, not injection) —
+    // setResidentBulkAnswer below stands in for that script's own answer.
+    popupCheckBulk: async (tab: any) => {
+      activeTab = tab;
+      const { responseP } = dispatch({ type: 'popupCheckBulk' });
+      return await responseP;
+    },
+    setResidentBulkAnswer(answer: { supported: boolean } | 'no-listener') {
+      tabsSendMessageImpl = async (_tabId, message) => {
+        if (message?.type !== 'checkBulkCapturePage') return undefined;
+        if (answer === 'no-listener') throw new Error('Could not establish connection. Receiving end does not exist.');
+        return answer;
+      };
     },
     navigateTab(tabId: number) {
       for (const fn of tabUpdatedListeners) fn(tabId, { status: 'loading' });
@@ -862,6 +883,49 @@ describe('ポップアップからの保存（#124）', () => {
     await env.popupSave(TAB);
     await env.pressShortcut(TAB);
     expect(env.createdTabs).toEqual([{ url: 'chrome-extension://test-extension-id/diag.html?issue=inject' }]);
+  });
+});
+
+// === The popup's bulk-import item (#793) ==========================================
+//
+// Unlike the save button, this route never injects to answer — it asks the
+// RESIDENT content script (already on the page for every matched site) via
+// chrome.tabs.sendMessage, so a page with nothing listening (chrome://, an
+// unmatched site) is read the same way as the site's own extractor saying no:
+// both come back as {supported: false}, never a thrown error the panel would
+// have to handle specially.
+describe('ポップアップの一括取込判定（#793）', () => {
+  let env: ReturnType<typeof setupBackground>;
+  const TAB = { id: 42, url: 'https://x.com/i/bookmarks' };
+
+  beforeEach(() => {
+    env = setupBackground();
+  });
+
+  test('常駐スクリプトが対応ページだと答えたら supported:true', async () => {
+    env.setResidentBulkAnswer({ supported: true });
+    expect(await env.popupCheckBulk(TAB)).toEqual({ supported: true });
+  });
+
+  test('常駐スクリプトが非対応だと答えたら supported:false', async () => {
+    env.setResidentBulkAnswer({ supported: false });
+    expect(await env.popupCheckBulk(TAB)).toEqual({ supported: false });
+  });
+
+  // chrome://, 拡張の管理ページ等 — マッチする常駐スクリプトが無いタブ。
+  test('待ち受けが無いタブ（chrome:// 等）は supported:false', async () => {
+    env.setResidentBulkAnswer('no-listener');
+    expect(await env.popupCheckBulk(TAB)).toEqual({ supported: false });
+  });
+
+  test('http(s) でないタブは常駐スクリプトへ聞きに行かず supported:false', async () => {
+    env.setResidentBulkAnswer({ supported: true }); // still configured — must not be reached
+    expect(await env.popupCheckBulk({ id: 44, url: 'chrome://newtab/' })).toEqual({ supported: false });
+    expect(env.tabsSent.some((s) => s.message?.type === 'checkBulkCapturePage')).toBe(false);
+  });
+
+  test('アクティブタブが無ければ supported:false', async () => {
+    expect(await env.popupCheckBulk(null)).toEqual({ supported: false });
   });
 });
 

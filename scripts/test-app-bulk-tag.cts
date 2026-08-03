@@ -160,7 +160,7 @@ child.on('close', () => {
   let a: string[] = [];
   let b: string[] = [];
   try {
-    // #176: hologram.db lives inside the save folder now, not configDir (ADR 0024).
+    // #176: hologram.db lives inside the save folder now, not configDir (ADR 0025).
     const { sqlite } = openDatabase(path.join(saveFolder, 'hologram.db'), { readonly: true });
     const tagsOf = (id: string) =>
       sqlite

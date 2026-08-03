@@ -117,7 +117,15 @@ interface PopupActivateMessage {
   auto?: boolean;
 }
 
-type ContentToBackgroundMessage = CaptureAndSendMessage | SavePostMessage | ImageDraggedMessage | CheckSavedMessage | CheckDuplicateMessage | LogCaptureMessage | DumpLogsMessage | QueueStatsMessage | ResendQueueMessage | PopupActivateMessage;
+// The popup's disabled-state check for the "この一覧を取り込む" item (#793):
+// "does the active tab have a list this mode can walk?" Kept separate from
+// PopupActivateMessage because this one only asks, never injects — the panel
+// sends it on open, before activeTab would even matter.
+interface PopupCheckBulkMessage {
+  type: 'popupCheckBulk';
+}
+
+type ContentToBackgroundMessage = CaptureAndSendMessage | SavePostMessage | ImageDraggedMessage | CheckSavedMessage | CheckDuplicateMessage | LogCaptureMessage | DumpLogsMessage | QueueStatsMessage | ResendQueueMessage | PopupActivateMessage | PopupCheckBulkMessage;
 
 // === background -> content script ===
 
@@ -187,7 +195,16 @@ interface SaveProgressMessage {
   reached: SaveStage[];
 }
 
-type BackgroundToContentMessage = CropImageMessage | NotifyMessage | SavedUpdateMessage | SaveProgressMessage;
+// Background asks the resident content script (#793): is THIS page one the
+// active extractor site says can be walked in bulk right now? Answered off
+// the SAME site.isBulkCapturePage() startCapture's auto branch already
+// checks (extractor/types.ts) — a site #790 adds later needs no change here
+// or in background.ts, only in its own extractor module.
+interface CheckBulkCapturePageMessage {
+  type: 'checkBulkCapturePage';
+}
+
+type BackgroundToContentMessage = CropImageMessage | NotifyMessage | SavedUpdateMessage | SaveProgressMessage | CheckBulkCapturePageMessage;
 
 // === responses ===
 
@@ -290,6 +307,13 @@ type PopupActivateReason = 'no-tab' | 'not-http' | 'page-refused' | 'package-unr
 
 type PopupActivateResponse = { ok: true } | { ok: false; reason: PopupActivateReason };
 
+// #793: whether the bulk-import item may be pressed. No reason vocabulary of
+// its own — every "no" (no tab, not http, no resident script on this tab, the
+// site's own isBulkCapturePage saying no) reads the same to the panel: the
+// item stays disabled and the one line of copy is generic, not itemized like
+// PopupActivateReason.
+type PopupCheckBulkResponse = { supported: boolean };
+
 type CropImageResponse = { croppedDataUrl: string } | null;
 
 export type {
@@ -297,6 +321,7 @@ export type {
   BridgeAck,
   CaptureAndSendMessage,
   CaptureAndSendResponse,
+  CheckBulkCapturePageMessage,
   CheckDuplicateMessage,
   CheckDuplicateResponse,
   CheckSavedMessage,
@@ -316,6 +341,8 @@ export type {
   PopupActivateMessage,
   PopupActivateReason,
   PopupActivateResponse,
+  PopupCheckBulkMessage,
+  PopupCheckBulkResponse,
   ProtocolSkew,
   QueueStatsMessage,
   QueueStatsResponse,

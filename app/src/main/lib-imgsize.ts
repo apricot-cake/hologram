@@ -103,6 +103,84 @@ function webpSize(buf) {
   return null;
 }
 
+// WebP 'Animation' flag: bit 1 of the VP8X flags byte (offset 20), per the
+// container spec's `Rsv|I|L|E|X|A|R` layout — set only when the file carries
+// ANIM/ANMF chunks, not merely wrapped in VP8X for alpha/ICC/Exif/XMP. A plain
+// VP8/VP8L file (no VP8X container at all) can never be an animation. #8: this
+// is what tells an animated webp apart from a static one so records.ts can give
+// only the former the same "skip the thumbnail, keep it playing" treatment
+// .gif already gets — a static webp is exactly the case this issue wants
+// thumbnailed.
+function webpIsAnimated(buf) {
+  if (!buf || buf.length < 21) return false;
+  if (buf.toString('ascii', 0, 4) !== 'RIFF' || buf.toString('ascii', 8, 12) !== 'WEBP') return false;
+  if (buf.toString('ascii', 12, 16) !== 'VP8X') return false;
+  return (buf[20] & 0x02) !== 0;
+}
+
+// AVIF: an ISOBMFF (box) container, the same family as HEIF/MP4. Width/height
+// live in the 'ispe' (Image Spatial Extents) property, reached by walking
+// ftyp -> meta -> iprp -> ipco -> ispe. Bounded, defensive box walk (mirrors
+// this file's own style for the other formats): any box whose declared size
+// doesn't fit the buffer, or a size <= 0, stops the walk and reports "couldn't
+// measure" rather than looping or reading out of bounds.
+function readBoxHeader(buf, off, limit) {
+  if (off + 8 > limit) return null;
+  let size = buf.readUInt32BE(off);
+  const type = buf.toString('ascii', off + 4, off + 8);
+  let headerLen = 8;
+  if (size === 1) {
+    // 64-bit extended size — only the low 32 bits matter for a header-window
+    // read this small; a box that large could never fit anyway.
+    if (off + 16 > limit) return null;
+    size = buf.readUInt32BE(off + 12);
+    headerLen = 16;
+  } else if (size === 0) {
+    size = limit - off; // "extends to the end of the enclosing box"
+  }
+  if (size < headerLen) return null;
+  return { type, headerLen, size };
+}
+function findBox(buf, start, end, targetType) {
+  let off = start;
+  while (off + 8 <= end) {
+    const box = readBoxHeader(buf, off, end);
+    if (!box) return null;
+    if (box.type === targetType) return { start: off + box.headerLen, end: Math.min(off + box.size, end) };
+    if (box.size <= 0) return null; // guard against an infinite loop on corrupt input
+    off += box.size;
+  }
+  return null;
+}
+function avifSize(buf) {
+  if (!buf || buf.length < 12 || buf.toString('ascii', 4, 8) !== 'ftyp') return null;
+  const brand = buf.toString('ascii', 8, 12);
+  if (brand !== 'avif' && brand !== 'avis') return null; // not AVIF's ftyp — HEIC/HEIF share this container
+  const meta = findBox(buf, 0, buf.length, 'meta');
+  if (!meta) return null;
+  const iprp = findBox(buf, meta.start + 4, meta.end, 'iprp'); // meta is a FullBox: 4-byte version+flags before its children
+  if (!iprp) return null;
+  const ipco = findBox(buf, iprp.start, iprp.end, 'ipco');
+  if (!ipco) return null;
+  // Multiple 'ispe' boxes can exist (thumbnail + primary item, an alpha plane);
+  // the first one is the primary image's in every encoder this was checked
+  // against (libavif) — good enough for a best-effort header sniff.
+  let off = ipco.start;
+  while (off + 8 <= ipco.end) {
+    const box = readBoxHeader(buf, off, ipco.end);
+    if (!box) break;
+    if (box.type === 'ispe' && off + box.headerLen + 12 <= ipco.end) {
+      // ispe is a FullBox (4-byte version+flags) then image_width/image_height, big-endian uint32.
+      const w = buf.readUInt32BE(off + box.headerLen + 4);
+      const h = buf.readUInt32BE(off + box.headerLen + 8);
+      return w && h ? { width: w, height: h } : null;
+    }
+    if (box.size <= 0) break;
+    off += box.size;
+  }
+  return null;
+}
+
 // No real photo, screen, or scan legitimately exceeds this on either axis;
 // PNG's IHDR (32-bit) and WebP VP8X (24-bit) width/height fields can otherwise
 // claim billions of pixels from a few attacker-controlled bytes. Treat that as
@@ -130,10 +208,10 @@ function readOrientation(buf) {
 // Detect format by signature and return { width, height } or null.
 function imageSize(buf) {
   if (!buf || buf.length < 10) return null;
-  const dim = jpegSize(buf) || pngSize(buf) || gifSize(buf) || webpSize(buf) || null;
+  const dim = jpegSize(buf) || pngSize(buf) || gifSize(buf) || webpSize(buf) || avifSize(buf) || null;
   if (!dim || dim.width > MAX_DIMENSION || dim.height > MAX_DIMENSION) return null;
   const orientation = readOrientation(buf);
   return orientation && orientation >= 5 ? { width: dim.height, height: dim.width } : dim;
 }
 
-export { imageSize, jpegSize, pngSize, gifSize, webpSize };
+export { imageSize, jpegSize, pngSize, gifSize, webpSize, avifSize, webpIsAnimated };
