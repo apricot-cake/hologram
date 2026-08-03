@@ -32,9 +32,11 @@ test('新規プロファイルの初回起動はラベル付きレール（受�
   await expect(page.locator('[data-slot="sidebar"]')).toHaveAttribute('data-state', 'collapsed');
 
   // No hovering at all — the labels being readable from the start IS acceptance criterion 2.
+  // In DOM order — the list below is also the ordered assertion at the end of this test.
   const expectedLabels: Record<string, string> = {
     browsePosts: 'ライブラリ',
     browsePosters: '投稿者',
+    browseTimeline: 'タイムライン',
     trashTitle: 'ゴミ箱',
     paletteTitle: 'コマンドパレット',
     tabSettings: '設定',
