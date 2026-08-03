@@ -44,6 +44,13 @@
 //   runtime is therefore restored explicitly below; the extension is installed
 //   separately and its `wxt prepare` runs through its own postinstall.
 //
+//   One of the scripts it currently suppresses is worth knowing about before the
+//   flag goes away (#831): onnxruntime-node's install step downloads the CUDA 12
+//   execution provider from NuGet — but ONLY on linux/x64, which is exactly what
+//   CI runs on. Everything Windows needs is already inside the npm package, so
+//   dropping --ignore-scripts should come with either
+//   `--onnxruntime-node-install=skip` or a measurement of what it costs CI.
+//
 // (2) --legacy-peer-deps — electron-vite's peer range vs vite 8
 //   electron-vite@5 declares `peer vite: ^5 || ^6 || ^7` while app/ builds on
 //   vite 8, so npm's resolver refuses the tree outright. No stable electron-vite
