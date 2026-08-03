@@ -64,6 +64,7 @@ function emptyRecord(url: string | null | undefined, platform: string | null | u
     customEmojis: [],
     raw: [],
     metaError: null,
+    metaSource: null,
   };
 }
 

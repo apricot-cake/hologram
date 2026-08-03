@@ -86,6 +86,7 @@ const POST_COLUMNS = [
   'customEmojis',
   'poll',
   'linkCard',
+  'metaSource',
 ] as const;
 
 const UPSERT_POST_SQL = `INSERT INTO posts (${POST_COLUMNS.join(',')}) VALUES (${POST_COLUMNS.map(() => '?').join(',')})
@@ -171,6 +172,9 @@ function postParams(n: PostRecordShape): unknown[] {
     // #181: 0-or-1 sub-structure, same null-stays-null rule as quotedPost/
     // replyToPost/poll above.
     linkCard: n.linkCard ? JSON.stringify(n.linkCard) : null,
+    // #239: 0-or-1 provenance map, same null-stays-null rule as quotedPost/
+    // replyToPost/poll/linkCard above.
+    metaSource: n.metaSource ? JSON.stringify(n.metaSource) : null,
   };
   return POST_COLUMNS.map((c) => byName[c]);
 }

@@ -268,6 +268,14 @@ export interface PostRecordShape {
   // coexist, which is the same state the library would be in without the
   // feature at all.
   replaces: string | null;
+  // #239: which regard (schema.org format / OGP / Dublin Core / Highwire /
+  // plain HTML fallback) filled title/description/author/published/siteName/
+  // url on the generic web-page extraction path (the bookmark save route,
+  // #195) — see extension/utils/extractor/web-meta.ts's WebMetaResult for the
+  // value vocabulary. null on every platform-extractor record (their fields
+  // come from that platform's own API, not a fallback chain). v1 stores this
+  // only — no UI reads it yet (design comment 7).
+  metaSource: Record<string, string> | null;
 }
 
 // Every field a producer may hand in, all optional — the builder supplies
@@ -287,6 +295,18 @@ function normBool(v: unknown): boolean | null {
 }
 function normStrArray(v: unknown): string[] {
   return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [];
+}
+// #239: a plain field-name -> source-string map (not a sub-record like
+// quotedPost/poll/linkCard) — a malformed input becomes null (no provenance
+// record at all) rather than a filtered-down object, since a metaSource with
+// only some of its keys able to be trusted is no safer than having none.
+function normMetaSource(v: unknown): Record<string, string> | null {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return null;
+  const out: Record<string, string> = {};
+  for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
+    if (typeof val === 'string' && val) out[k] = val;
+  }
+  return Object.keys(out).length ? out : null;
 }
 // #180: a QuotedPostShape is all-or-nothing, like normFrames's frame table
 // below -- a malformed sub-record (not an object) becomes null rather than a
@@ -517,5 +537,6 @@ export function normalizePostRecord(input: PostRecordInput, now: () => string = 
     mediaMaxBytes: normNum(input.mediaMaxBytes),
     trashedAt: normStr(input.trashedAt),
     replaces: normStr(input.replaces),
+    metaSource: normMetaSource(input.metaSource),
   };
 }

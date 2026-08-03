@@ -82,6 +82,7 @@ const POST_COLUMNS = [
   'customEmojis',
   'poll',
   'linkCard',
+  'metaSource',
 ] as const;
 
 function fromDbBool(v: unknown): boolean | null {
@@ -416,6 +417,11 @@ function assemble(sqlite: Database.Database, postRows: any[]): any[] {
       // inspector's link-card row and the export sidecar, the same two
       // consumers quotedPost/poll have.
       linkCard: parseJsonObject(r.linkCard),
+      // #239: which regard filled title/description/author/published/
+      // siteName/url on the generic web-page extraction path. Read for the
+      // export sidecar's sake only — v1 has no inspector/UI consumer (design
+      // comment 7).
+      metaSource: parseJsonObject(r.metaSource),
     };
   });
 }

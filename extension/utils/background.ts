@@ -7,16 +7,33 @@
 // compile error on this side rather than a save that fails on disk.
 import { hostExtBuild, protocolSkewOf, readHostResponse, responseId } from '../../native-host/protocol.mts';
 import type { CaptureMetadata, HostRequest, ProtocolSkew, SaveDraggedRequest, SaveRequest, SavedResults, TrashedEntry, TrashedResults } from '../../native-host/protocol.mts';
-import { CROP_TIMEOUT_MS, NATIVE_HOST_TIMEOUT_MS, SAVED_QUERY_TIMEOUT_MS, withDeadline } from './deadline.ts';
+import { CROP_TIMEOUT_MS, METADATA_TIMEOUT_MS, NATIVE_HOST_TIMEOUT_MS, SAVED_QUERY_TIMEOUT_MS, withDeadline } from './deadline.ts';
 import { NATIVE_HOST } from './native-host.ts';
 import { DEV_RELOAD_QUIET_MS, DEV_RELOAD_STATE_KEY, DEV_RELOAD_WORK_MS, EXT_BUILD_ID, bulkActivity, captureActivity, createDevReloadGate, shouldReloadFor } from './dev-reload.ts';
 import type { DevReloadState } from './dev-reload.ts';
-import { buildBookmarkMeta, extractOgp } from './bookmark.ts';
-import type { OgpResult } from './bookmark.ts';
+import { buildWebMeta } from './extractor/web-meta.ts';
+import type { WebMetaResult } from './extractor/web-meta.ts';
 import { mergeDomMeta } from './extractor/dom-meta.ts';
 import { extractorFor, fetchPostMetadata, getHostname, highResUrlOf, isAllowedSender, mediaKeyOf } from './extractor/index.ts';
 import type { DomMeta, PostRecord } from './extractor/types.ts';
-import type { BridgeAck, CaptureAndSendResponse, CheckSavedResponse, ContentToBackgroundMessage, CropImageMessage, CropImageResponse, DumpLogsResponse, LogCaptureResponse, NotifyMessage, QueueStatsResponse, ResendQueueResponse, SavedEntry, SavedUpdateMessage, SaveProgressMessage, SaveResponse } from './messages.ts';
+import type {
+  BridgeAck,
+  CaptureAndSendResponse,
+  CheckSavedResponse,
+  ContentToBackgroundMessage,
+  CropImageMessage,
+  CropImageResponse,
+  DumpLogsResponse,
+  LogCaptureResponse,
+  NotifyMessage,
+  PageMetaExtractedMessage,
+  QueueStatsResponse,
+  ResendQueueResponse,
+  SavedEntry,
+  SavedUpdateMessage,
+  SaveProgressMessage,
+  SaveResponse,
+} from './messages.ts';
 import { classifySaveFailure, saveFailureConsoleLevel } from './native-error.ts';
 import { createSaveGate, saveRequestKey } from './host-budget.ts';
 import { clearInjectFailure, escalationUrl, injectFailureKind, showInjectFailure } from './inject-failure.ts';
@@ -397,10 +414,11 @@ export function startBackground(): void {
     if (tab) activateOnTab(tab, command === 'activate-auto');
   });
 
-  // --- URL bookmark intake (#195) ------------------------------------------
+  // --- URL bookmark intake (#195, metadata extraction absorbed by #239) ----
   // Page right-click -> a bookmark record built from the DOM the browser
-  // already rendered (OGP), never fetched — see extension/utils/bookmark.ts's
-  // design comment (#195, 2026-08-02 comment is the current record). Registered
+  // already rendered (schema.org/OGP/DC/Highwire), never fetched — see
+  // extension/utils/extractor/web-meta.ts's header comment and #239's
+  // 2026-08-03 "設計クローズ" comment (the current design record). Registered
   // on every startBackground() call; a service-worker restart re-registers the
   // same id, so removeAll() first is what keeps a restart from throwing
   // "duplicate id" instead of silently leaving two.
@@ -446,27 +464,54 @@ export function startBackground(): void {
     }
   }
 
+  // #239: waits for extension/entrypoints/read-meta.ts's report, matching it
+  // to THIS call by sender.tab.id (only one such read is ever in flight per
+  // tab — a second bookmark save on the same tab can't start until the first
+  // resolves, same as every other save route's per-tab admission). The
+  // listener is registered and executeScript is called SYNCHRONOUSLY, before
+  // this function's first await — the listener is already live by the time
+  // control returns to the caller, which matters for the test harness (it
+  // drives the reply through the same onMessage registration).
+  function readPageMeta(tab): Promise<WebMetaResult> {
+    return new Promise((resolve, reject) => {
+      const tabId = tab.id;
+      function listener(message: PageMetaExtractedMessage, sender: chrome.runtime.MessageSender) {
+        if (message?.type !== 'pageMetaExtracted' || sender.tab?.id !== tabId) return undefined;
+        chrome.runtime.onMessage.removeListener(listener);
+        resolve(message.result);
+        return undefined;
+      }
+      chrome.runtime.onMessage.addListener(listener);
+      chrome.scripting.executeScript({ target: { tabId }, files: ['read-meta.js'] }).catch((err) => {
+        chrome.runtime.onMessage.removeListener(listener);
+        reject(err);
+      });
+    });
+  }
+
   async function doSaveBookmark(tab): Promise<BridgeAck> {
     const captureId = generateCaptureId();
     const capturedAt = new Date().toISOString();
     const trace = beginSave('savePost', { saveId: null, captureId, platform: 'bookmark', url: tab.url || null, tabId: tab.id ?? null });
 
-    let ogp: OgpResult;
+    let webMeta: WebMetaResult;
     try {
-      const results = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: extractOgp });
-      const read = results[0]?.result;
-      if (!read) throw new Error('OGP extraction returned nothing');
-      ogp = read;
+      // #759: read-meta.js is a `files:` unlisted-script injection, not `func:`
+      // — its result cannot ride back on executeScript()'s own return value the
+      // way #195's OGP-only read once did, so this bounds SILENCE on the
+      // message it reports over instead (same withDeadline idiom the crop leg
+      // above uses).
+      webMeta = await withDeadline(readPageMeta(tab), METADATA_TIMEOUT_MS, 'page metadata');
     } catch (err: any) {
-      throw trace.fail('metadata', err?.message || 'OGP extraction threw');
+      throw trace.fail('metadata', err?.message || 'page metadata extraction failed');
     }
     trace.passed('metadata');
 
-    // meta.platform stays null throughout (buildBookmarkMeta / the record built
+    // meta.platform stays null throughout (buildWebMeta / the record built
     // below) — sendPlatform is null here too, so buildRecord's
     // `meta.platform || sendPlatform || null` fallback chain lands on null
     // exactly as #195's 2026-08-02 design comment #2 confirms.
-    const meta = buildBookmarkMeta(ogp, tab.url || '');
+    const meta = buildWebMeta(webMeta, tab.url || '');
     const record = buildRecord(meta, { captureId, capturedAt, postUrl: meta.url || tab.url || '', sendPlatform: null, extra: { mediaType: meta.mediaType, media: meta.media, source: 'bookmark' } });
 
     let ack: BridgeAck;
@@ -1543,6 +1588,12 @@ function buildRecord(meta, { captureId, capturedAt, postUrl, sendPlatform, repla
       // Carried on every save path, including a partial one: a response that
       // yielded no usable fields is precisely the one whose body has to survive.
       rawPayloads: meta.raw || [],
+      // #239: which regard (schema.org format / OGP / DC / Highwire / HTML
+      // fallback) filled title/description/author/published/siteName/url on
+      // the bookmark path. Undefined (not null) on every platform save, whose
+      // meta object has no such field at all — same convention quotedPost/poll
+      // above use.
+      metaSource: meta.metaSource,
     },
     extra,
   );

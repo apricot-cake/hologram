@@ -16,6 +16,9 @@
     "postinstall": "wxt prepare",
     "tokens": "node ../scripts/gen-extension-tokens.cts"
   },
+  "dependencies": {
+    "@marbec/web-auto-extractor": "2.2.1"
+  },
   "devDependencies": {
     "@types/chrome": "^0.2.2",
     "typescript": "^7.0.2",

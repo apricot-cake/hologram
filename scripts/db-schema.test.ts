@@ -68,9 +68,9 @@ describe('マイグレーションが通り、テーブルが揃う', () => {
   );
   sqlite.close();
 
-  test('user_version は 28（v1 DDL ＋ #178 add-post-cw-sensitive・#188 add-post-series-fields・#180 add-post-quoted-refs・#162 add-media-max-dims・#290 add-post-custom-emojis・#36 rename-description-to-memo・#23 add-poster-aliases・#179 add-post-poll・#236 add-post-file・#181 add-post-link-card までの追加27本）', () => {
+  test('user_version は 29（v1 DDL ＋ #178 add-post-cw-sensitive・#188 add-post-series-fields・#180 add-post-quoted-refs・#162 add-media-max-dims・#290 add-post-custom-emojis・#36 rename-description-to-memo・#23 add-poster-aliases・#179 add-post-poll・#236 add-post-file・#181 add-post-link-card・#239 add-post-meta-source までの追加28本）', () => {
     const { sqlite } = openDatabase(mkdb());
-    expect(sqlite.pragma('user_version', { simple: true })).toBe(28);
+    expect(sqlite.pragma('user_version', { simple: true })).toBe(29);
     sqlite.close();
   });
 
@@ -449,7 +449,7 @@ describe('既存 v1 データベースの開き直しは no-op', () => {
   const second = openDatabase(file);
 
   test('マイグレーションを再実行しない', () => {
-    expect(second.sqlite.pragma('user_version', { simple: true })).toBe(28);
+    expect(second.sqlite.pragma('user_version', { simple: true })).toBe(29);
   });
 
   test('前回のデータが残る', () => {

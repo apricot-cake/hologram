@@ -94,7 +94,21 @@ function setupBackground() {
     runtime: {
       id: 'test-extension-id',
       lastError: undefined as { message: string } | undefined,
-      onMessage: { addListener: (fn: any) => messageListeners.push(fn) },
+      // removeListener (#239's readPageMeta registers a one-shot listener per
+      // bookmark save and removes it once answered) — real Chrome has this on
+      // every onMessage; every other listener registered against this stub is
+      // permanent for the test's lifetime and never calls it. Replaced with a
+      // no-op rather than spliced out: dispatch() below is mid-`.map()` over
+      // this same array when a listener calls this (it removes ITSELF upon
+      // matching), and splicing during that map would reindex and skip
+      // whichever listener follows it.
+      onMessage: {
+        addListener: (fn: any) => messageListeners.push(fn),
+        removeListener: (fn: any) => {
+          const i = messageListeners.indexOf(fn);
+          if (i >= 0) messageListeners[i] = () => false;
+        },
+      },
       connectNative: (name: string) => connectNativeImpl(name),
       getURL: (file: string) => `chrome-extension://test-extension-id/${file}`,
     },
@@ -201,13 +215,6 @@ function setupBackground() {
     contextMenuCreateCalls,
     clickBookmarkMenu(tab: any, infoOverrides: any = {}) {
       for (const fn of contextMenuListeners) fn({ menuItemId: 'hologram-bookmark', ...infoOverrides }, tab);
-    },
-    // The OGP read chrome.scripting.executeScript's func would return in the
-    // real tab — bookmark tests set this before clicking; every other test
-    // keeps the plain `[]` allowInjection()/default gives the files-only
-    // capture-injection calls, which never read a result.
-    setOgpResult(ogp: any) {
-      executeScriptImpl = async () => [{ result: ogp }];
     },
     // Click the toolbar icon (#269). onClicked passes the tab through as-is, so the test side
     // also passes a minimal tab with just id and url. **What we wait on is not a count of
@@ -1021,11 +1028,13 @@ describe('保存失敗の console 振り分け（#580）', () => {
   });
 });
 
-// URL bookmark intake (#195): the page right-click item. bookmark.ts's own unit
-// test (scripts/bookmark.test.ts) covers extractOgp/buildBookmarkMeta directly;
-// what this suite adds is the wiring only those functions can't exercise —
-// registration and what actually reaches the native-messaging wire.
-describe('URL ブックマーク保存（#195）', () => {
+// URL bookmark intake (#195, metadata extraction absorbed by #239): the page
+// right-click item. web-meta.test.ts covers chooseWebMeta/buildWebMeta
+// directly, and read-meta-bundle.test.ts covers the built entrypoint against
+// the real parser; what this suite adds is the wiring only those can't
+// exercise — registration, the files:-injection + pageMetaExtracted-message
+// round trip, and what actually reaches the native-messaging wire.
+describe('URL ブックマーク保存（#195、メタデータ抽出は#239へ吸収）', () => {
   let env: ReturnType<typeof setupBackground>;
   const TAB = { id: 42, url: 'https://news.example/articles/hello' };
 
@@ -1046,8 +1055,12 @@ describe('URL ブックマーク保存（#195）', () => {
 
   test('og:image あり＝メディア1件を announced media として送り、source:bookmark・platform:null で乗る', async () => {
     const createdPorts = env.connectAsControllablePort();
-    env.setOgpResult({ title: 'Hello World', description: 'A short description', image: 'https://cdn.example.com/hello.jpg', siteName: 'Example Times', url: 'https://news.example/articles/hello' });
     env.clickBookmarkMenu(TAB);
+    // read-meta.js's report — dispatched AFTER clicking, not before: doSaveBookmark
+    // registers its onMessage listener synchronously inside readPageMeta's Promise
+    // executor, which runs (still synchronously) before doSaveBookmark's own first
+    // await, so the listener is already live by the time clickBookmarkMenu returns.
+    env.dispatch({ type: 'pageMetaExtracted', result: { title: 'Hello World', description: 'A short description', author: null, published: null, siteName: 'Example Times', image: 'https://cdn.example.com/hello.jpg', url: 'https://news.example/articles/hello', metaSource: {} } }, { tab: TAB });
 
     const port = await portThatSent(createdPorts, 'savePost');
     expect(port.sent).toEqual([
@@ -1071,22 +1084,39 @@ describe('URL ブックマーク保存（#195）', () => {
 
   test('og:image 無し＝メディア0件でも保存する（recordHoldsContent は title で通る前提— native-host 側は別スイート）', async () => {
     const createdPorts = env.connectAsControllablePort();
-    env.setOgpResult({ title: null, description: null, image: null, siteName: null, url: null });
     env.clickBookmarkMenu(TAB);
+    env.dispatch({ type: 'pageMetaExtracted', result: { title: null, description: null, author: null, published: null, siteName: null, image: null, url: null, metaSource: {} } }, { tab: TAB });
 
     const port = await portThatSent(createdPorts, 'savePost');
     const sent = port.sent[0];
     expect(sent.metadata.media).toEqual([]);
     expect(sent.metadata.mediaType).toBe(null);
-    // OGP がまるごと空でも URL 自体が title/displayName に落ちる（#195 の buildBookmarkMeta）。
+    // メタデータがまるごと空でも URL 自体が title/displayName に落ちる（web-meta.ts の buildWebMeta）。
     expect(sent.metadata.title).toBe(TAB.url);
     expect(sent.metadata.displayName).toBe('news.example');
   });
 
+  test('著者が取れた＝displayName が著者名になる（#239 の #195 改訂）', async () => {
+    const createdPorts = env.connectAsControllablePort();
+    env.clickBookmarkMenu(TAB);
+    env.dispatch({ type: 'pageMetaExtracted', result: { title: 'An Article', description: null, author: { name: 'Jane Author', url: 'https://news.example/authors/jane' }, published: '2025-07-03T00:00:00Z', siteName: 'Example Times', image: null, url: TAB.url, metaSource: { author: 'jsonld' } } }, { tab: TAB });
+
+    const port = await portThatSent(createdPorts, 'savePost');
+    expect(port.sent[0].metadata).toEqual(
+      expect.objectContaining({
+        displayName: 'Jane Author',
+        userId: 'https://news.example/authors/jane',
+        screenName: null,
+        date: '2025-07-03T00:00:00Z',
+        metaSource: { author: 'jsonld' },
+      }),
+    );
+  });
+
   test('保存成功で markSaved が走る（TL バッジ相当）＝以後 checkDuplicate が拾える', async () => {
     const createdPorts = env.connectAsControllablePort();
-    env.setOgpResult({ title: 'Hello', description: null, image: null, siteName: null, url: TAB.url });
     env.clickBookmarkMenu(TAB);
+    env.dispatch({ type: 'pageMetaExtracted', result: { title: 'Hello', description: null, author: null, published: null, siteName: null, image: null, url: TAB.url, metaSource: {} } }, { tab: TAB });
     const port = await portThatSent(createdPorts, 'savePost');
     port.emitMessage({ ok: true, captureId: 'bm-capture-id', file: 'bm-capture-id.jpg', media: [] });
 
