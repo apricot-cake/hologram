@@ -26,6 +26,38 @@
 import { hologramIpc } from './ipc.ts';
 import type { PosterTagRow, TagTypeRow } from '../../../main/ipc-payloads.ts';
 
+// #86: alias -> canonical-name, loaded once at boot (readTagAliasMap below)
+// and reloaded on the same 'tag-types' org-changed signal writeTagTypes'
+// sibling listener already reacts to (add/remove-tag-alias's IPC handlers
+// send that same kind — see ipc-tag-vocab.ts's notifyTagVocabChanged). Kept as
+// its own module-level store (not folded into tagTypes) because it is NAME
+// space throughout, same reasoning as tagKindOfName: an alias is typed text
+// resolving to typed text, never an entity id.
+let tagAliasMap: Map<string, string> = new Map();
+// The reverse index (canonical name -> every alias pointing at it) the picker
+// needs to annotate a suggestion with WHICH alias matched the user's query —
+// rebuilt alongside tagAliasMap so the two never drift.
+let aliasesByCanonical: Map<string, string[]> = new Map();
+export const getTagAliasMap = () => tagAliasMap;
+function setTagAliasMap(m: Map<string, string>) {
+  tagAliasMap = m;
+  const rev = new Map<string, string[]>();
+  for (const [alias, canonical] of m) {
+    const list = rev.get(canonical);
+    if (list) list.push(alias);
+    else rev.set(canonical, [alias]);
+  }
+  aliasesByCanonical = rev;
+}
+async function readTagAliasMap(): Promise<Map<string, string>> {
+  try {
+    const rows = await hologramIpc.getTagAliases();
+    return new Map(rows.map((r) => [r.alias, r.canonicalName]));
+  } catch {
+    return new Map();
+  }
+}
+
 // #810: the Kind store is keyed by tag ENTITY (tags.id), not by name — `kind` is
 // a column of the tags row, so two tags sharing a name can carry different kinds
 // (#777's split creates exactly that), and the old {name: kind} map both hid the
@@ -200,7 +232,15 @@ export function makeTags(deps: {
     } else {
       for (const p of allPosts()) for (const t of Array.isArray(p.tags) ? p.tags : []) if (!tagKindOfName(t)) applied.add(t);
     }
-    const general = [...applied].sort(byJa);
+    // #86: a tag whose only foothold is an alias (zero direct usage so far)
+    // still belongs in the general pool -- the AI-vocab-bridge case (a model's
+    // English output aliased to a Japanese tag) names a canonical tag that may
+    // not be applied to anything yet, and kinded tags already appear above
+    // regardless of usage (kindByName reads tagTypes, not applied posts) so
+    // this closes the same gap for the unkinded pool.
+    const generalSet = new Set(applied);
+    for (const canonical of tagAliasMap.values()) if (!tagKindOfName(canonical)) generalSet.add(canonical);
+    const general = [...generalSet].sort(byJa);
     if (general.length) out.push({ name: t18n('tagUncategorized'), tags: general });
     return out;
   }
@@ -210,9 +250,13 @@ export function makeTags(deps: {
   // query client-side — so keystrokes never round-trip through here.
   function inspectorTagPickerData(selectedTags: string[] | null | undefined, recordsForSource: HologramPost[] | null | undefined, scope?: string) {
     const sel = new Set<string>(selectedTags || []);
+    // #86: each item carries its OWN alias strings (aliasesByCanonical, kept in
+    // sync with tagAliasMap by setTagAliasMap) so TagField can match a typed
+    // alias against a vocabulary entry it would otherwise never surface, and
+    // annotate the hit ("←ねこ") without a second round trip.
     const vocabGroups = groupedTagVocab({ scope: (scope || 'post') as 'post' | 'poster' }).map((g) => ({
       name: g.name,
-      items: g.tags.map((t) => ({ tag: t, kind: tagKindOfName(t) || null })),
+      items: g.tags.map((t) => ({ tag: t, kind: tagKindOfName(t) || null, aliases: aliasesByCanonical.get(t) })),
     }));
     const srcSet = new Set<string>();
     for (const r of recordsForSource || []) for (const h of Array.isArray(r.hashtags) ? r.hashtags : []) srcSet.add(h);
@@ -248,7 +292,11 @@ export function makeTags(deps: {
         });
       }
     }
-    return { vocabGroups, srcTagsForPicker, coocGroups };
+    // #86: the flat alias map, for TagField's free-text Enter path (typing a
+    // registered alias and confirming it should snap to the canonical name,
+    // same "確定するチップは正規名" rule the picker follows) -- a direct
+    // string lookup, cheaper than scanning the nested vocabGroups shape above.
+    return { vocabGroups, srcTagsForPicker, coocGroups, aliasMap: Object.fromEntries(tagAliasMap) };
   }
 
   return { tagKindOf, tagKindOfName, kindLabel, posterTagsOf, posterTagEntriesOf, posterFilterVocab, groupedTagVocab, inspectorTagPickerData };
@@ -372,10 +420,11 @@ function pendingPosterRow(tags: string[]): PosterTagRow {
 // once from viewer.js's bootApp; a later call reuses the same promise).
 let loadPromise: Promise<void> | null = null;
 async function doLoad() {
-  const [pt, tt] = await Promise.all([readPosterTags(), readTagTypes()]);
+  const [pt, tt, am] = await Promise.all([readPosterTags(), readTagTypes(), readTagAliasMap()]);
   posterTags = pt;
   tagTypes = tt.types;
   tagLabels = tt.labels;
+  setTagAliasMap(am);
 }
 export function load() {
   if (!loadPromise) loadPromise = doLoad();
@@ -390,9 +439,13 @@ export function load() {
 try {
   hologramIpc.onOrgChanged(async (kind) => {
     if (kind === 'tag-types') {
-      const tt = await readTagTypes();
+      // #86: add/remove-tag-alias (ipc-tag-vocab.ts's notifyTagVocabChanged)
+      // relay on this SAME kind as every other tag-vocab write, so the alias
+      // map is re-read right alongside the kind store it already reloads here.
+      const [tt, am] = await Promise.all([readTagTypes(), readTagAliasMap()]);
       tagTypes = tt.types;
       tagLabels = tt.labels;
+      setTagAliasMap(am);
       notify('kind');
     } else if (kind === 'poster-tags') {
       posterTags = await readPosterTags();

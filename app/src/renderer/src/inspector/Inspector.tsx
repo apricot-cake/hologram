@@ -80,7 +80,7 @@ function TagsSection({ m }: { m: HologramInspectorModel }) {
   return (
     <section data-slot="inspector-tags" className="flex flex-col gap-1.5">
       <span className="text-xs text-muted-foreground">{m.labels.tags}</span>
-      <TagField tags={m.tags} vocabGroups={m.vocabGroups} coocGroups={m.coocGroups} srcTags={m.srcTagsForPicker} labels={m.tagLabels} onAdd={m.onTagAdd} onRemove={m.onTagRemove} onContextMenu={m.onTagContextMenu} autoFocus={m.focusTags} />
+      <TagField tags={m.tags} vocabGroups={m.vocabGroups} coocGroups={m.coocGroups} srcTags={m.srcTagsForPicker} aliasMap={m.aliasMap} labels={m.tagLabels} onAdd={m.onTagAdd} onRemove={m.onTagRemove} onContextMenu={m.onTagContextMenu} autoFocus={m.focusTags} />
     </section>
   );
 }
