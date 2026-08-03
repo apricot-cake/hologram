@@ -16,10 +16,29 @@ import type { OgpResult } from './bookmark.ts';
 import { mergeDomMeta } from './extractor/dom-meta.ts';
 import { extractorFor, fetchPostMetadata, getHostname, highResUrlOf, isAllowedSender, mediaKeyOf } from './extractor/index.ts';
 import type { DomMeta, PostRecord } from './extractor/types.ts';
-import type { BridgeAck, CaptureAndSendResponse, CheckSavedResponse, ContentToBackgroundMessage, CropImageMessage, CropImageResponse, DumpLogsResponse, LogCaptureResponse, NotifyMessage, QueueStatsResponse, ResendQueueResponse, SavedEntry, SavedUpdateMessage, SaveProgressMessage, SaveResponse } from './messages.ts';
+import type {
+  BridgeAck,
+  CaptureAndSendResponse,
+  CheckSavedResponse,
+  ContentToBackgroundMessage,
+  CropImageMessage,
+  CropImageResponse,
+  DumpLogsResponse,
+  LogCaptureResponse,
+  NotifyMessage,
+  PopupActivateResponse,
+  QueueStatsResponse,
+  ResendQueueResponse,
+  SavedEntry,
+  SavedUpdateMessage,
+  SaveProgressMessage,
+  SaveResponse,
+} from './messages.ts';
 import { classifySaveFailure, saveFailureConsoleLevel } from './native-error.ts';
 import { createSaveGate, saveRequestKey } from './host-budget.ts';
 import { clearInjectFailure, escalationUrl, injectFailureKind, showInjectFailure } from './inject-failure.ts';
+import type { InjectFailureKind } from './inject-failure.ts';
+import { recordSave } from './save-history.ts';
 import type { SaveLogEntry, SaveStage } from './capture-log.ts';
 import { saveQueueStats, stashFailedSave, sweepSaveQueue } from './save-queue.ts';
 import { installUncaughtReporting } from './uncaught-report.ts';
@@ -263,8 +282,24 @@ export function startBackground(): void {
   // did not happen, and `inFlight` is the only thing that says why. Written
   // through the coalescing queue below, so a page that provokes refusals in a
   // loop cannot turn the record of them back into a connection per line.
-  function admitSave(message: { type: string; saveId?: string | null; platform: string; postUrl: string }, tabId: number, host: string | null, imageUrls: readonly string[], start: () => Promise<any>): Promise<any> | null {
-    const admitted = saveGate.admit(saveRequestKey(tabId, message.type, message.postUrl, imageUrls), tabId, start);
+  function admitSave(message: { type: string; saveId?: string | null; platform: string; postUrl: string; capturedVia?: string | null }, tabId: number, host: string | null, imageUrls: readonly string[], start: () => Promise<any>): Promise<any> | null {
+    // The popup's list of recent saves is written HERE, wrapped around `start`,
+    // because this is the only funnel all four routes pass through and because
+    // the gate JOINS an identical request rather than running it twice — a
+    // joined request never reaches `start`, so wrapping it is what makes one
+    // row mean one save that actually ran (#124 — save-history.ts).
+    const admitted = saveGate.admit(saveRequestKey(tabId, message.type, message.postUrl, imageUrls), tabId, () => {
+      const running = start();
+      // Stamped when the save SETTLES, not when it started: the list is read as
+      // "what has landed, most recent first", and two saves in flight together
+      // can finish in the other order.
+      const row = { type: message.type, platform: message.platform || null, url: message.postUrl || null, tabId, capturedVia: message.capturedVia || null };
+      running.then(
+        (result: any) => void recordSave({ ...row, ts: Date.now(), ok: true, captureId: result?.captureId || null }),
+        (error: any) => void recordSave({ ...row, ts: Date.now(), ok: false, error: error?.message || String(error) }),
+      );
+      return running;
+    });
     if (admitted) {
       // A save is under way on this tab (#650). The save itself is already
       // counted (the gate reads saveGate.inFlight()); what this adds is the
@@ -302,14 +337,24 @@ export function startBackground(): void {
   // quieter of the two mistakes. See utils/inject-failure.ts for what is drawn.
   const injectFailedTabs = new Set<number>();
 
-  async function alertInjectFailure(tabId: number): Promise<void> {
+  // `escalate` is what #124 changed about this. #269's "open the repair page on
+  // the second press in a row" exists because the press had NO surface to
+  // report on — the badge was the whole vocabulary, and a second inert press
+  // meant the badge had failed to be enough. A press made from the popup does
+  // have a surface: the popup is open, it is being looked at, and it names the
+  // reason and offers the same page as a button. Opening a tab behind it would
+  // throw away the surface and take the choice at the same time. So the
+  // keyboard routes keep the automatic escalation and the popup route does not
+  // — the per-tab count is shared either way, so Alt+S's meaning is unchanged.
+  async function alertInjectFailure(tabId: number, escalate: boolean): Promise<InjectFailureKind> {
     const kind = await injectFailureKind();
     const repeated = injectFailedTabs.has(tabId);
     injectFailedTabs.add(tabId);
     showInjectFailure(tabId, kind);
     // Second press in a row on this tab: the toolbar mark evidently was not
     // enough, so open the page that can actually resolve it.
-    if (repeated) chrome.tabs.create({ url: escalationUrl(kind) }).catch(() => {});
+    if (escalate && repeated) chrome.tabs.create({ url: escalationUrl(kind) }).catch(() => {});
+    return kind;
   }
 
   // Chrome drops a tab-scoped badge and title by itself when the tab navigates
@@ -331,7 +376,11 @@ export function startBackground(): void {
     maybeDevReload();
   });
 
-  async function activateOnTab(tab, auto = false) {
+  // Put the capture UI on a tab. Answers WHETHER it went up and, when it did
+  // not, why (#124): the popup is the first surface able to tell the user that,
+  // so the outcome has to travel back rather than only being drawn on the
+  // toolbar. The keyboard routes ignore the answer — nothing is open to read it.
+  async function activateOnTab(tab, auto = false, escalate = true): Promise<PopupActivateResponse> {
     // Log the attempt (and the silent non-http bail) to capture.log: an icon
     // click that "does nothing" is otherwise diagnosable only from the SW
     // DevTools console, which nobody has open when it happens.
@@ -342,7 +391,7 @@ export function startBackground(): void {
     // UI and stopped (#519).
     if (!tab.id || !/^https?:/i.test(tab.url || '')) {
       logCapture({ stage: 'activate', phase: 'skip', url: tab.url || '(no url)' });
-      return;
+      return { ok: false, reason: 'not-http' };
     }
     // BEFORE the log line, which is itself a native round trip and therefore a
     // carrier for "a newer build is on disk" (#650). Reloading the extension
@@ -377,6 +426,7 @@ export function startBackground(): void {
       // by a worker that has since been killed can be taken down.
       clearInjectFailure(tab.id);
       injectFailedTabs.delete(tab.id);
+      return { ok: true };
     } catch (error) {
       console.error('Failed to inject content script:', error);
       // keepLocal: this line is the ONLY record of a click that did nothing,
@@ -384,17 +434,45 @@ export function startBackground(): void {
       // never started has no other place to be read back from (#269).
       logCapture({ stage: 'activate', phase: 'fail', host: getHostname(tab.url), url: tab.url, error: (error as Error)?.message }, true);
       devReloadGate.end(captureActivity(tab.id)); // no UI went up, so none is owed protection
-      await alertInjectFailure(tab.id);
+      return { ok: false, reason: await alertInjectFailure(tab.id, escalate) };
     }
   }
 
-  chrome.action.onClicked.addListener((tab) => activateOnTab(tab));
+  // NO chrome.action.onClicked LISTENER, and this is deliberate rather than an
+  // omission (#124). The action carries a default_popup now, and Chrome does
+  // not fire onClicked for an action that has one ("This event will not fire if
+  // the action has a popup" — chrome.action reference). A listener left here
+  // would be dead code that reads to the next person as "the icon still starts
+  // a save"; the popup's button is that route, through {type:'popupActivate'}
+  // below.
 
   chrome.commands.onCommand.addListener(async (command) => {
     if (command !== 'activate' && command !== 'activate-auto') return;
 
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (tab) activateOnTab(tab, command === 'activate-auto');
+    // Unchanged by the popup (#124): commands never went through onClicked, so
+    // Alt+S still activates in one press and still escalates on the second
+    // failure in a row — there is no open surface to say it any other way.
+    // Awaited only so the listener's own promise settles with the work it
+    // started; nothing reads the answer on this route.
+    if (tab) await activateOnTab(tab, command === 'activate-auto');
+  });
+
+  // The popup's save button (#124). The worker finds the active tab itself
+  // rather than trusting one named by the sender: the popup has no tab of its
+  // own, and "the tab this popup opened over" is exactly what this query
+  // returns. activeTab was granted by the gesture that opened the popup —
+  // Chromium grants it in ExtensionActionRunner::RunAction BEFORE it decides
+  // the action has a popup to show (read from source, 2026-08-03), so the
+  // injection below is as permitted as the one Alt+S makes.
+  chrome.runtime.onMessage.addListener((message: ContentToBackgroundMessage, _sender, sendResponse) => {
+    if (message.type !== 'popupActivate') return false;
+    chrome.tabs
+      .query({ active: true, currentWindow: true })
+      .then(([tab]) => (tab ? activateOnTab(tab, message.auto === true, false) : ({ ok: false, reason: 'no-tab' } satisfies PopupActivateResponse)))
+      .then((result) => sendResponse(result))
+      .catch(() => sendResponse({ ok: false, reason: 'no-tab' } satisfies PopupActivateResponse));
+    return true; // async response
   });
 
   // --- URL bookmark intake (#195) ------------------------------------------
@@ -480,7 +558,7 @@ export function startBackground(): void {
     // ついで掃き出し (#203): this save reaching the host is evidence it is reachable right now.
     triggerQueueSweep();
     await bumpRecentSave(record.url);
-    return ack;
+    return { ...ack, captureId: ack?.captureId || captureId };
   }
 
   // Bulk intake (#362): save a post from its permalink alone — no screenshot,
@@ -555,7 +633,7 @@ export function startBackground(): void {
     // ついで掃き出し (#203).
     triggerQueueSweep();
     const grouped = await bumpRecentSave(record.url);
-    return { ...ack, metaOk, metaReason: meta.metaError || null, grouped, hostSkew: skewNote() };
+    return { ...ack, captureId: ack?.captureId || captureId, metaOk, metaReason: meta.metaError || null, grouped, hostSkew: await skewNoteForBanner() };
   }
 
   chrome.runtime.onMessage.addListener((message: ContentToBackgroundMessage, sender, sendResponse) => {
@@ -689,7 +767,12 @@ export function startBackground(): void {
     // grouped = prior saves of this post this session → the banner says the save
     // merged with them (the app folds same-URL records into one card).
     const grouped = await bumpRecentSave(record.url);
-    chrome.tabs.sendMessage(tab.id, { type: 'notify', success: true, metaOk, metaReason: meta.metaError || null, grouped, hostSkew: skewNote(), domFilled } satisfies NotifyMessage).catch(() => {});
+    chrome.tabs.sendMessage(tab.id, { type: 'notify', success: true, metaOk, metaReason: meta.metaError || null, grouped, hostSkew: await skewNoteForBanner(), domFilled } satisfies NotifyMessage).catch(() => {});
+    // The tab is told the outcome above and never reads this; it is returned so
+    // the save-history row admitSave writes can carry the record's own id, the
+    // way the other three routes' rows already do (#124, for #125's "open in
+    // the app").
+    return { ...ack, captureId: ack?.captureId || captureId };
   }
 
   // --- Protocol version handshake (#205) ----------------------------------------
@@ -720,6 +803,37 @@ export function startBackground(): void {
   // save that never reached the host has its own, better, message.
   function skewNote(): ProtocolSkew | null {
     return hostSkew && hostSkew !== 'match' ? hostSkew : null;
+  }
+
+  // The same note, but ONCE PER BROWSER SESSION (#124).
+  //
+  // The save banner used to say this on every save, because there was nowhere
+  // standing to put it — a skew is a condition of the installation, and the
+  // banner was the only surface anyone looked at. The popup is that standing
+  // place now, so repeating it on every save is noise about something the user
+  // cannot fix mid-save.
+  //
+  // Not dropped from the banner entirely: someone who never opens the popup
+  // would otherwise never learn their halves disagree. Once a session is the
+  // smallest dose that still reaches them.
+  //
+  // chrome.storage.session — the same lifetime (and the same store) as the
+  // grouping hint above: it lasts until the browser closes, and it must NOT
+  // outlive an update that fixes the skew.
+  const SKEW_NOTIFIED_KEY = 'skewNotified';
+
+  async function skewNoteForBanner(): Promise<ProtocolSkew | null> {
+    const skew = skewNote();
+    if (!skew) return null;
+    try {
+      const got = await chrome.storage.session.get(SKEW_NOTIFIED_KEY);
+      if (got?.[SKEW_NOTIFIED_KEY]) return null;
+      await chrome.storage.session.set({ [SKEW_NOTIFIED_KEY]: true });
+    } catch {
+      // Storage unreachable: say it. Repeating the note is the recoverable
+      // mistake; swallowing it is the one that leaves a mismatched pair silent.
+    }
+    return skew;
   }
 
   // Send a message to the native messaging host (which writes the sidecar + image
@@ -1465,7 +1579,7 @@ export function startBackground(): void {
     // saved without post info isn't shown as a plain success. grouped = prior
     // saves of this post this session (the overlay says the save merged).
     const grouped = await bumpRecentSave(record.url);
-    return { ...ack, metaOk, metaReason: meta.metaError || null, grouped, hostSkew: skewNote() };
+    return { ...ack, captureId: ack?.captureId || captureId, metaOk, metaReason: meta.metaError || null, grouped, hostSkew: await skewNoteForBanner() };
   }
 }
 

@@ -1,0 +1,204 @@
+/* The toolbar panel (#124), layered on utils/page.css rather than replacing it.
+ *
+ * page.css's `.page` (a 620px column with tab-sized margins) is the one part
+ * that is about being a TAB, so the popup does not use it; everything else it
+ * sets — color-scheme, the body's typeface and ink, the button, the focus ring,
+ * the forced-colors fallbacks — is the same shell and is inherited as-is.
+ *
+ * A popup is the one surface whose width the page decides: Chrome sizes the
+ * bubble to its content up to 800x600. 320px is the width the rows below were
+ * measured against — narrow enough to read as a panel rather than a window,
+ * wide enough that a permalink is still recognisable in one line.
+ *
+ * Light/dark follows the browser through prefers-color-scheme, like every other
+ * Hologram surface (#270). Colours come only from the generated tokens.
+ */
+
+body.popup {
+  width: 320px;
+  padding: 14px 14px 12px;
+  box-sizing: border-box;
+}
+
+.popup section {
+  margin: 0;
+  padding: 14px 0 0;
+  border-top: 1px solid var(--hologram-border);
+}
+.popup section:first-of-type {
+  padding-top: 0;
+  border-top: 0;
+}
+
+/* The save button leads, at full width: it is the one thing on this panel that
+ * DOES something to the page behind it, and the panel opens because the icon
+ * was pressed. */
+.popup .primary {
+  width: 100%;
+  height: 34px;
+  border-color: transparent;
+  background: var(--hologram-accent);
+  color: var(--hologram-on-accent);
+  font-size: 13px;
+}
+.popup .primary:hover:not(:disabled) {
+  background: var(--hologram-accent);
+  filter: brightness(1.06);
+}
+.popup .primary:disabled {
+  background: var(--hologram-hover);
+  color: var(--hologram-ink-muted);
+  border-color: var(--hologram-border);
+  cursor: default;
+}
+
+/* The one-press route, kept in front of anyone who saves often — the panel
+ * costs them a click, and this is where they learn they need not pay it. */
+.popup .hint {
+  margin: 8px 0 0;
+  color: var(--hologram-ink-muted);
+  font-size: 12px;
+}
+
+/* Why the press did not start a save. Amber, not red: nothing was lost, and the
+ * button under it is what to try. */
+.popup .alert {
+  margin: 10px 0 0;
+  padding: 8px 10px;
+  border: 1px solid var(--hologram-warning);
+  border-radius: 8px;
+  background: var(--hologram-page-surface);
+  font-size: 12px;
+}
+.popup .repair {
+  margin: 8px 0 0;
+}
+
+.popup .line {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  margin: 0;
+}
+.popup .line + .line,
+.popup .sub + .line {
+  margin-top: 8px;
+}
+.popup .sub {
+  margin: 6px 0 0;
+  color: var(--hologram-ink-muted);
+  font-size: 12px;
+}
+
+/* Connection at a glance. The dot carries the state and the sentence beside it
+ * carries the meaning — the dot alone would be unreadable to anyone who cannot
+ * tell the two hues apart, which is why it never appears without the line. */
+.popup .dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--hologram-badge-neutral);
+  transform: translateY(-1px);
+}
+.popup .dot[data-state='ok'] {
+  background: var(--hologram-success);
+}
+.popup .dot[data-state='warn'] {
+  background: var(--hologram-warning);
+}
+.popup .dot[data-state='bad'] {
+  background: var(--hologram-danger);
+}
+
+.popup h2 {
+  margin: 0 0 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--hologram-ink-strong);
+}
+
+.popup .history {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  /* Twenty rows do not fit a bubble Chrome caps at 600px tall, and letting the
+   * whole panel scroll would put the save button out of reach. */
+  max-height: 208px;
+  overflow-y: auto;
+}
+/* `.entry`, not `.row`: page.css already owns `.row` (one setting on the
+ * options page, with a 20px bottom margin), and a list of twenty of those is a
+ * list nobody can see the bottom of. Measured — the class collision put a 20px
+ * gap under every line before this was renamed. */
+.popup .entry {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  padding: 3px 0;
+  font-size: 12px;
+}
+/* A column, not a prefix: the URLs have to start at the same x or the list
+ * reads as a ragged paragraph. Wide enough for both spellings whenOf produces
+ * (a clock and a date), so nothing shifts as rows age past midnight. */
+.popup .when {
+  flex: none;
+  min-width: 2.9em;
+  color: var(--hologram-ink-muted);
+  font-variant-numeric: tabular-nums;
+}
+.popup .where {
+  overflow: hidden;
+  color: var(--hologram-ink);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+a.where {
+  text-decoration: none;
+}
+a.where:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+/* A run of intake saves folded into one row (#362) — the number is what keeps
+ * one run from reading as one save. */
+.popup .count {
+  flex: none;
+  color: var(--hologram-ink-muted);
+  font-variant-numeric: tabular-nums;
+}
+.popup .entry.failed .where {
+  color: var(--hologram-ink-muted);
+}
+.popup .mark {
+  flex: none;
+  color: var(--hologram-danger);
+}
+
+.popup .foot {
+  display: flex;
+  gap: 14px;
+  margin: 14px 0 0;
+  padding-top: 10px;
+  border-top: 1px solid var(--hologram-border);
+  font-size: 12px;
+}
+
+@media (forced-colors: active) {
+  .popup section,
+  .popup .foot,
+  .popup .alert {
+    border-color: CanvasText;
+  }
+  /* The state hues are gone in forced colours, so the dot has to stop being the
+   * only difference: it becomes an outline, and the sentence beside it is what
+   * remains readable. */
+  .popup .dot {
+    background: Canvas;
+    border: 1px solid CanvasText;
+    box-sizing: border-box;
+  }
+  .popup .dot[data-state='bad'] {
+    background: CanvasText;
+  }
+}

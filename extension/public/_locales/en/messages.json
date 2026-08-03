@@ -83,5 +83,108 @@
   "ctxBookmark": {
     "message": "Bookmark this page",
     "description": "Context menu item: bookmark the current page (#195)"
+  },
+  "popupTitle": {
+    "message": "Hologram",
+    "description": "Toolbar popup document title (#124)"
+  },
+  "popupSave": {
+    "message": "Save this post",
+    "description": "Popup primary button: start capturing the post on the active tab"
+  },
+  "popupSaveHint": {
+    "message": "Alt+S saves in one press",
+    "description": "Popup hint pointing frequent savers at the one-press keyboard route"
+  },
+  "popupRefusedNotHttp": {
+    "message": "Nothing to save on this page — open a web page first.",
+    "description": "Popup reason: the active tab is not an http(s) page, so nothing can be injected into it"
+  },
+  "popupRefusedNoTab": {
+    "message": "Couldn't find a tab to save from.",
+    "description": "Popup reason: no active tab could be found"
+  },
+  "popupRefusedPage": {
+    "message": "Couldn't start saving on this page. Usually that is the page's own doing.",
+    "description": "Popup reason: the extension is healthy and this page refused the injection"
+  },
+  "popupRefusedUnreadable": {
+    "message": "The extension can't read its own files. Reload it at chrome://extensions.",
+    "description": "Popup reason: the extension's own files can no longer be read"
+  },
+  "popupOpenExtensions": {
+    "message": "Open the extensions page",
+    "description": "Popup button that opens chrome://extensions filtered to this extension"
+  },
+  "popupOpenDiag": {
+    "message": "Open diagnostics",
+    "description": "Popup link/button that opens the diagnostics page"
+  },
+  "popupOpenOptions": {
+    "message": "Open settings",
+    "description": "Popup link that opens the settings page"
+  },
+  "popupStatusChecking": {
+    "message": "Checking the connection…",
+    "description": "Popup connection row while the native-host ping is still in flight"
+  },
+  "popupStatusConnected": {
+    "message": "Connected to the Hologram app",
+    "description": "Popup connection row: the native host answered and both halves match"
+  },
+  "popupStatusDisconnected": {
+    "message": "Not connected to the Hologram app",
+    "description": "Popup connection row: the native host did not answer"
+  },
+  "popupStatusHostOld": {
+    "message": "The Hologram app is out of date. Please update the app.",
+    "description": "Popup connection row: the host is older than this extension (#205)"
+  },
+  "popupStatusExtensionOld": {
+    "message": "This extension is out of date. Please update the extension.",
+    "description": "Popup connection row: this extension is older than the host (#205)"
+  },
+  "popupHostNotRegistered": {
+    "message": "The saving component isn't registered — the Hologram app needs to be installed.",
+    "description": "Popup connection detail: Chrome could not find the native messaging host's registration"
+  },
+  "popupHostNoAnswer": {
+    "message": "No answer came back.",
+    "description": "Popup connection detail: the host was launched but did not answer in time"
+  },
+  "popupHostDisconnected": {
+    "message": "The connection was dropped.",
+    "description": "Popup connection detail: the host process ended before answering"
+  },
+  "popupHostRejected": {
+    "message": "This extension isn't allowed to connect — reinstalling the Hologram app fixes it.",
+    "description": "Popup connection detail: the host refused this extension's origin"
+  },
+  "popupQueued": {
+    "message": "$COUNT$ saves are waiting to be resent",
+    "description": "Popup row: saves stashed in the retry queue while the host was unreachable (#203)",
+    "placeholders": { "count": { "content": "$1", "example": "3" } }
+  },
+  "popupToday": {
+    "message": "Saved today: $COUNT$",
+    "description": "Popup row: how many saves landed today",
+    "placeholders": { "count": { "content": "$1", "example": "12" } }
+  },
+  "popupHistoryTitle": {
+    "message": "Recent saves",
+    "description": "Popup section heading above the recent-saves list"
+  },
+  "popupHistoryEmpty": {
+    "message": "Nothing yet",
+    "description": "Popup recent-saves list when nothing has been saved yet"
+  },
+  "popupRunCount": {
+    "message": "×$COUNT$",
+    "description": "Popup recent-saves row: how many saves one folded bulk-intake run stands for",
+    "placeholders": { "count": { "content": "$1", "example": "24" } }
+  },
+  "popupSaveFailed": {
+    "message": "failed",
+    "description": "Popup recent-saves row mark for a save that did not land"
   }
 }
