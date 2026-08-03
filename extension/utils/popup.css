@@ -80,7 +80,8 @@ body.popup {
   align-items: baseline;
   margin: 0;
 }
-.popup .line + .line {
+.popup .line + .line,
+.popup .sub + .line {
   margin-top: 8px;
 }
 .popup .sub {
@@ -126,15 +127,23 @@ body.popup {
   max-height: 208px;
   overflow-y: auto;
 }
-.popup .row {
+/* `.entry`, not `.row`: page.css already owns `.row` (one setting on the
+ * options page, with a 20px bottom margin), and a list of twenty of those is a
+ * list nobody can see the bottom of. Measured — the class collision put a 20px
+ * gap under every line before this was renamed. */
+.popup .entry {
   display: flex;
   gap: 8px;
   align-items: baseline;
   padding: 3px 0;
   font-size: 12px;
 }
+/* A column, not a prefix: the URLs have to start at the same x or the list
+ * reads as a ragged paragraph. Wide enough for both spellings whenOf produces
+ * (a clock and a date), so nothing shifts as rows age past midnight. */
 .popup .when {
   flex: none;
+  min-width: 2.9em;
   color: var(--hologram-ink-muted);
   font-variant-numeric: tabular-nums;
 }
@@ -158,7 +167,7 @@ a.where:hover {
   color: var(--hologram-ink-muted);
   font-variant-numeric: tabular-nums;
 }
-.popup .row.failed .where {
+.popup .entry.failed .where {
   color: var(--hologram-ink-muted);
 }
 .popup .mark {

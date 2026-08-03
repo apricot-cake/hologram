@@ -25,6 +25,7 @@ import { escalationUrl } from './inject-failure.ts';
 import type { InjectFailureKind } from './inject-failure.ts';
 import { pingNativeHost, protocolReportOf } from './host-probe.ts';
 import type { PopupActivateReason, PopupActivateResponse, QueueStatsResponse } from './messages.ts';
+import { classifySaveFailure } from './native-error.ts';
 import { SAVE_HISTORY_KEY, countOf, readSaveHistory, savedOn } from './save-history.ts';
 import type { SaveHistoryEntry } from './save-history.ts';
 
@@ -109,12 +110,20 @@ export function startPopup(): void {
 
   // Answer before the press when the answer is already knowable: the active tab
   // is what the save would act on, and a tab nothing can be injected into
-  // should not offer a button that will fail. The tab's url is readable here
-  // because opening this popup granted activeTab for it.
+  // should not offer a button that will fail.
+  //
+  // The test is the WORKER'S OWN (activateOnTab's `/^https?:/` against a url
+  // that may be absent), deliberately spelled the same way, so the panel and
+  // the press cannot disagree. An absent url means the same thing in both
+  // places: chrome.tabs only reveals it for a tab the extension has access to,
+  // and the gesture that opened this popup granted activeTab for the active
+  // tab — so a url that is still missing says that tab could not be granted
+  // (chrome://, another extension's page), which is precisely the tab nothing
+  // can be injected into.
   chrome.tabs
     ?.query({ active: true, currentWindow: true })
     .then(([tab]) => {
-      if (tab && tab.url && !/^https?:/i.test(tab.url)) refuse('not-http');
+      if (tab && !/^https?:/i.test(tab.url || '')) refuse('not-http');
     })
     .catch(() => {});
 
@@ -140,10 +149,16 @@ export function startPopup(): void {
     const ping = await pingNativeHost();
     const protocol = protocolReportOf(ping);
     if (!ping.ok) {
-      // WHERE it failed, in the vocabulary host-probe.ts classifies it with:
-      // "no host is registered" and "the host was there and died" send a person
-      // to different places, and the diagnostics page prints the raw text.
-      const detail = chrome.i18n && chrome.i18n.getMessage(ping.where === 'connect-threw' ? 'popupHostNotRegistered' : ping.where === 'timeout' ? 'popupHostNoAnswer' : ping.where === 'disconnect' ? 'popupHostDisconnected' : 'popupHostSendFailed');
+      // WHY, in the vocabulary native-error.ts already uses for the save
+      // banner. Measured (2026-08-03): an unregistered host does NOT make
+      // connectNative throw — Chrome accepts the connect and then disconnects
+      // with "Specified native messaging host not found", so classifying on
+      // `where` alone would report the commonest failure of all (the desktop
+      // app is not installed) as "the connection dropped". The `where` that
+      // still cannot be told from text is the timeout, which carries no error
+      // at all, so it is asked first.
+      const kind = ping.where === 'timeout' ? 'timeout' : classifySaveFailure(ping.error);
+      const detail = chrome.i18n && chrome.i18n.getMessage(kind === 'host-missing' ? 'popupHostNotRegistered' : kind === 'origin-rejected' ? 'popupHostRejected' : kind === 'timeout' ? 'popupHostNoAnswer' : 'popupHostDisconnected');
       paintStatus('bad', (chrome.i18n && chrome.i18n.getMessage('popupStatusDisconnected')) || null, detail || null);
       return;
     }
@@ -184,16 +199,19 @@ export function startPopup(): void {
     return bare.length > 44 ? `${bare.slice(0, 43)}…` : bare;
   }
 
+  // Today's saves get a clock, older ones get a date — never both. The minute a
+  // save landed matters while "did that just go in?" is still the question; a
+  // day later only the day does, and carrying the time as well widens this
+  // column enough to eat the part of the URL that identifies the post.
   function whenOf(ts: number, now: Date): string {
     const at = new Date(ts);
     const sameDay = at.getFullYear() === now.getFullYear() && at.getMonth() === now.getMonth() && at.getDate() === now.getDate();
-    const time = at.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
-    return sameDay ? time : `${at.toLocaleDateString(undefined, { month: 'numeric', day: 'numeric' })} ${time}`;
+    return sameDay ? at.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' }) : at.toLocaleDateString(undefined, { month: 'numeric', day: 'numeric' });
   }
 
   function rowOf(entry: SaveHistoryEntry, now: Date): HTMLLIElement {
     const li = document.createElement('li');
-    li.className = entry.ok ? 'row' : 'row failed';
+    li.className = entry.ok ? 'entry' : 'entry failed';
 
     const when = document.createElement('span');
     when.className = 'when';

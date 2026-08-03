@@ -156,9 +156,9 @@
     "message": "接続が切断されました",
     "description": "Popup connection detail: the host process ended before answering"
   },
-  "popupHostSendFailed": {
-    "message": "接続はできましたが送信できませんでした",
-    "description": "Popup connection detail: posting the ping to the host threw"
+  "popupHostRejected": {
+    "message": "この拡張機能からの接続が許可されていません（Hologram アプリの再インストールで直ります）",
+    "description": "Popup connection detail: the host refused this extension's origin"
   },
   "popupQueued": {
     "message": "再送を待っている保存が $COUNT$ 件あります",

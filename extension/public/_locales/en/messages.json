@@ -156,9 +156,9 @@
     "message": "The connection was dropped.",
     "description": "Popup connection detail: the host process ended before answering"
   },
-  "popupHostSendFailed": {
-    "message": "Connected, but the request couldn't be sent.",
-    "description": "Popup connection detail: posting the ping to the host threw"
+  "popupHostRejected": {
+    "message": "This extension isn't allowed to connect — reinstalling the Hologram app fixes it.",
+    "description": "Popup connection detail: the host refused this extension's origin"
   },
   "popupQueued": {
     "message": "$COUNT$ saves are waiting to be resent",
