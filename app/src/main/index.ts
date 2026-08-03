@@ -7,6 +7,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import { openDatabase, DatabaseCorruptError } from './lib-db.ts';
+import { migratePosterKeyHost } from './lib-migrate-poster-key-host.ts';
 import { computeDelta } from './lib-post-delta.ts';
 import { postsFromDb, searchPostsFts } from './lib-db-query.ts';
 import { createDbWriter } from './lib-db-write.ts';
@@ -31,6 +32,8 @@ import { mimeForFile, registerImageProtocol } from './lib-thumbnails.ts';
 import { backupIntervalMs, createBackupEngine, latestRestorableSnapshot, readBackupConfig, readIntegrityStatus, validateBackupDir, validateSaveFolder, writeBackupConfig } from './lib-backup.ts';
 import { APP_ICON, DEV_ORIGIN, DEV_SERVER_URL, createWindow, devServer, getWin, installNavigationGuards, sendToOtherWins, sendToWin, sendWindowToBack } from './lib-window.ts';
 import { installDevRendererCsp, registerAppProtocol } from './app-protocol.ts';
+import { runMlSmoke } from './ml-smoke.ts';
+import { stopMlRuntime } from './lib-ml-runtime.ts';
 // IPC handler modules, extracted from this file (mechanical move — logic unchanged).
 // Each exposes register(ctx); ctx is built after the core functions below and passed
 // in at the top-level registration site (see registerExtractedIpc, before whenReady).
@@ -265,6 +268,7 @@ function ensureDb() {
     restoreFromSnapshotIfAvailable(file);
     dbHandle = openDatabase(file);
   }
+  migratePosterKeyHost(dbHandle.sqlite);
   // #145 design §5: "掃除＝DB を開いた時に1回" — ensureDb is memoized (the early
   // return above), so this only runs on an actual fresh open: app launch, and
   // #176's library switch (closeDb() clears dbHandle, the next call reopens here).
@@ -845,6 +849,16 @@ if (!gotSingleInstanceLock) {
       };
       (getWin() as BrowserWindow).webContents.once('did-finish-load', () =>
         setTimeout(async () => {
+          // #831: one local inference through the utilityProcess runtime, with
+          // the window kept busy at the same time. ml-smoke.ts says why the
+          // check has to run inside the real app.
+          if (process.env.HOLOGRAM_ML_SMOKE_MODEL) {
+            try {
+              console.log('ML_SMOKE_RESULT', JSON.stringify(await runMlSmoke(process.env.HOLOGRAM_ML_SMOKE_MODEL, getWin())));
+            } catch (e) {
+              console.log('ML_SMOKE_ERR', e.message);
+            }
+          }
           if (process.env.HOLOGRAM_SMOKE_EVAL) {
             try {
               const r = await (getWin() as BrowserWindow).webContents.executeJavaScript(process.env.HOLOGRAM_SMOKE_EVAL);
@@ -921,4 +935,7 @@ app.on('before-quit', () => {
   } catch {
     /* already closed, or never opened this run */
   }
+  // A utilityProcess is not a child of the app's exit path; left alone it can
+  // outlive the window it was started for (#831).
+  stopMlRuntime();
 });
