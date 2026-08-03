@@ -26,7 +26,7 @@ install が済めば `npm test`・`npm run typecheck`・アプリ起動ハーネ
 **取り合いは無い**（#732）。拡張の開発は日常利用とは別の Chrome プロファイルで行い、開発ビルドの出力先はツリー外の固定パス（`~/.hologram-dev/chrome-mv3-dev`）なので、どの worktree から起動しても同じ場所へ出る。日常の Chrome は開発サーバーを一切見ない。
 
 1. fresh worktree は `npm run setup` を済ませる。その worktree 自身の `extension/node_modules` が WXT に必要。
-2. `npm run dev:ext` を起動する（常駐しない＝検証が終わったら止める）。
+2. `npm run dev:ext` を起動する。**検証中は動かしたまま**にする＝dev ビルドは自己完結していない（詳細は skill `verify-extension`）。止めるのは検証が終わってから。
 3. 開発プロファイルの Chrome で確認する＝`node scripts/open-dev-profile.cts --print` で開いているか見て、開いていなければ `npm run ext:dev:browser`（**自分で実行する**＝ユーザーへ起動を頼まない。詳細は skill `verify-extension` 手順3）。保存した変更は拡張リロード＋タブリロードで入る。
 4. 開発プロファイルからの保存は `~/.hologram-dev/library` へ行き、実ライブラリには入らない（初回だけ `npm run ext:dev:register`）。
 
