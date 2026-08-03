@@ -62,7 +62,8 @@ function hashTree(dir: string): string {
 }
 
 // A synthetic stand-in for the machine's real library: a config dir holding
-// hologram.db, and a save folder holding the media the records reference.
+// machine-local settings, and a save folder holding hologram.db (#176/ADR
+// 0023) plus the media the records reference.
 function buildRealLibrary() {
   const root = mkdir('hologram-real-');
   const configDir = path.join(root, 'config');
@@ -169,7 +170,7 @@ describe('実ライブラリからのシード', () => {
   });
 
   test('スナップショットが全投稿を持つ（backup API 経由）', () => {
-    const dbFile = path.join(sandboxConfig, 'hologram.db');
+    const dbFile = path.join(sandboxLibrary, 'hologram.db');
     expect(fs.existsSync(dbFile)).toBe(true);
     const { sqlite } = openDatabase(dbFile, { readonly: true });
     expect((sqlite.prepare('SELECT count(*) c FROM posts').get() as any).c).toBe(3);
@@ -220,7 +221,7 @@ describe('実ライブラリからのシード', () => {
 
   test('隔離チェックが通る', () => {
     const res = verifyIsolation({
-      dbFile: path.join(sandboxConfig, 'hologram.db'),
+      dbFile: path.join(sandboxLibrary, 'hologram.db'),
       configPath: path.join(sandboxConfig, 'config.json'),
       sandboxLibrary,
       realConfigDir: real.configDir,
@@ -243,7 +244,7 @@ describe('隔離チェックは実パスの残留を捕まえる', () => {
     // After seeding, redirect config to point at the real library = launching it would write to the real library.
     fs.writeFileSync(path.join(sandboxConfig, 'config.json'), JSON.stringify({ saveFolder: real.saveFolder, backup: { dir: path.join(real.root, 'mirror') } }));
     const res = verifyIsolation({
-      dbFile: path.join(sandboxConfig, 'hologram.db'),
+      dbFile: path.join(sandboxLibrary, 'hologram.db'),
       configPath: path.join(sandboxConfig, 'config.json'),
       sandboxLibrary,
       realConfigDir: real.configDir,
@@ -261,7 +262,7 @@ describe('隔離チェックは実パスの残留を捕まえる', () => {
     const sandboxLibrary = path.join(sandboxRoot, 'library');
     await seedRealSandbox({ realConfigDir: real.configDir, realSaveFolder: real.saveFolder, sandboxConfigDir: sandboxConfig, sandboxLibrary });
 
-    const dbFile = path.join(sandboxConfig, 'hologram.db');
+    const dbFile = path.join(sandboxLibrary, 'hologram.db');
     const { sqlite } = openDatabase(dbFile);
     // Smuggle the real library's absolute path into the DB (catches it if such a column is ever added in the future).
     sqlite.prepare('UPDATE posts SET memo = ? WHERE captureId = ?').run(path.join(real.saveFolder, 'x.jpg'), '1780000000000-a001');
@@ -315,7 +316,7 @@ describe('特定投稿だけ実物をピンポイントコピー', () => {
 describe('planStandins: DB の参照だけを対象にする', () => {
   test('ゴミ箱の投稿は飛ばす（.trash 側の JSON レコードは複製できない）', () => {
     const real = buildRealLibrary();
-    const dbFile = path.join(real.configDir, 'hologram.db');
+    const dbFile = path.join(real.saveFolder, 'hologram.db');
     const { sqlite } = openDatabase(dbFile);
     sqlite.prepare('UPDATE posts SET trashedAt = ? WHERE captureId = ?').run('2026-04-05T00:00:00Z', '1780000000000-a001');
     const plan = planStandins(sqlite);
@@ -327,7 +328,7 @@ describe('planStandins: DB の参照だけを対象にする', () => {
 
   test('copyRealMedia は保存フォルダの外へ出ない', () => {
     const real = buildRealLibrary();
-    const dbFile = path.join(real.configDir, 'hologram.db');
+    const dbFile = path.join(real.saveFolder, 'hologram.db');
     const sandboxLibrary = mkdir('hologram-sandbox-escape-');
     const { sqlite } = openDatabase(dbFile);
     sqlite.prepare('UPDATE posts SET image = ? WHERE captureId = ?').run('../escaped.jpg', '1780000000000-a001');

@@ -135,7 +135,8 @@ function readSeed(): any | null {
 }
 
 function libraryIsSeeded(): boolean {
-  if (fs.existsSync(path.join(configDir, 'hologram.db'))) return true;
+  // #176: hologram.db lives inside the save folder now, not configDir (ADR 0023).
+  if (fs.existsSync(path.join(saveFolder, 'hologram.db'))) return true;
   try {
     return fs.readdirSync(saveFolder).length > 0;
   } catch {
@@ -145,10 +146,11 @@ function libraryIsSeeded(): boolean {
 
 // --reseed: the sandbox is disposable by design, so this drops the whole seeded
 // state (library, database, config) rather than trying to merge two seeds.
+// #176: hologram.db (+ -wal/-shm) now lives INSIDE saveFolder (ADR 0023), so
+// the recursive removal below already takes it out — no separate db removal needed.
 function wipeSeed() {
   fs.rmSync(saveFolder, { recursive: true, force: true });
   fs.rmSync(seedFile, { force: true });
-  for (const suffix of ['', '-wal', '-shm']) fs.rmSync(path.join(configDir, 'hologram.db') + suffix, { force: true });
   fs.rmSync(path.join(configDir, 'config.json'), { force: true });
 }
 
@@ -160,7 +162,6 @@ function resolveRealLibrary(): { configDir: string; saveFolder: string } {
   if (process.env.HOLOGRAM_CONFIG_DIR) throw new Error('HOLOGRAM_CONFIG_DIR is set — refusing to treat an already-isolated config dir as the real library');
   const dir = realConfigDir();
   const configPath = path.join(dir, 'config.json');
-  if (!fs.existsSync(path.join(dir, 'hologram.db'))) throw new Error(`no real library on this machine (${path.join(dir, 'hologram.db')} not found). Use the fixture seed, or generate one with scripts/gen-dummy-library.cts`);
   let folder = '';
   try {
     folder = JSON.parse(fs.readFileSync(configPath, 'utf8')).saveFolder || '';
@@ -168,6 +169,8 @@ function resolveRealLibrary(): { configDir: string; saveFolder: string } {
     /* fall through to the default */
   }
   if (!folder) folder = defaultLibraryDir();
+  // #176: hologram.db lives inside the save folder now, not configDir (ADR 0023).
+  if (!fs.existsSync(path.join(folder, 'hologram.db'))) throw new Error(`no real library on this machine (${path.join(folder, 'hologram.db')} not found). Use the fixture seed, or generate one with scripts/gen-dummy-library.cts`);
   return { configDir: dir, saveFolder: folder };
 }
 

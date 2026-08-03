@@ -9,6 +9,7 @@ import path from 'node:path';
 
 import { configDir } from './native-host.ts';
 import { importLocalFile } from './lib-local-intake.ts';
+import { ensureLibraryId } from './lib-db-write.ts';
 import type { DbHandle, HologramConfig } from './ipc-context.ts';
 
 // #236: names a watch folder must never pick up, even though collection is no
@@ -30,6 +31,14 @@ export interface WatchImportStatus {
   at: string | null;
 }
 type Seen = Record<string, Record<string, { size: number; mtimeMs: number }>>;
+// #176: watched folders are device-wide (below), but "already imported" is a
+// per-LIBRARY fact — the same file dropped into a watch folder must be
+// collectable again once you have switched to a different library, and must
+// not be re-collected on switching BACK. Keyed by the current DB's own
+// identity (lib-db-write.ts's ensureLibraryId) rather than by save-folder
+// path, so a folder that was repointed onto the same library (its path
+// changed, its identity did not) keeps its "already seen" history.
+type SeenByLibrary = Record<string, Seen>;
 
 const STATE_PATH = () => path.join(configDir(), 'watch-import-state.json');
 const emptyStatus = (): WatchImportStatus => ({ imported: 0, at: null });
@@ -55,7 +64,7 @@ export function isInside(child: string, parent: string): boolean {
   return c === p || c.startsWith(p + path.sep);
 }
 
-function readState(): Seen {
+function readState(): SeenByLibrary {
   try {
     const parsed = JSON.parse(fs.readFileSync(STATE_PATH(), 'utf8'));
     return parsed && typeof parsed === 'object' ? parsed : {};
@@ -63,7 +72,7 @@ function readState(): Seen {
     return {};
   }
 }
-function writeState(state: Seen) {
+function writeState(state: SeenByLibrary) {
   fs.mkdirSync(configDir(), { recursive: true });
   fs.writeFileSync(STATE_PATH(), JSON.stringify(state, null, 2));
 }
@@ -97,7 +106,7 @@ export function createWatchImportManager(deps: WatchImportDeps) {
   let status = emptyStatus();
 
   const folders = () => watchFoldersOf(deps.readConfig().watchImport);
-  const seenFor = (folder: string) => (state[folder] ||= {});
+  const seenFor = (libraryId: string, folder: string) => ((state[libraryId] ||= {})[folder] ||= {});
   const fingerprint = (st: fs.Stats) => ({ size: st.size, mtimeMs: st.mtimeMs });
   const same = (a: { size: number; mtimeMs: number } | undefined, b: { size: number; mtimeMs: number }) => !!a && a.size === b.size && a.mtimeMs === b.mtimeMs;
 
@@ -111,12 +120,17 @@ export function createWatchImportManager(deps: WatchImportDeps) {
     }
     if (!stat.isFile()) return false;
     if (stat.size === 0) return false; // #236: an empty file (still being created) is not a collectable item
-    const key = path.basename(file);
-    const current = fingerprint(stat);
-    if (same(seenFor(folder)[key], current)) return false;
     if (deps.isLibraryMissing()) return false;
     const handle = deps.ensurePostsSynced();
     if (!handle) return false;
+    // #176: "already imported" is scoped to the CURRENT library — the DB has
+    // to be open to know which one that is, so this check moved after
+    // ensurePostsSynced (it used to run first, as a cheap skip before opening
+    // the DB at all; libraryId is the price of the per-library ledger).
+    const libraryId = ensureLibraryId(handle.sqlite);
+    const key = path.basename(file);
+    const current = fingerprint(stat);
+    if (same(seenFor(libraryId, folder)[key], current)) return false;
     const ext = path.extname(file).slice(1).toLowerCase();
     await importLocalFile({
       folder: deps.getSaveFolder(),
@@ -128,7 +142,7 @@ export function createWatchImportManager(deps: WatchImportDeps) {
       title: path.basename(file, path.extname(file)) || null,
       date: stat.mtime.toISOString(),
     });
-    seenFor(folder)[key] = current;
+    seenFor(libraryId, folder)[key] = current;
     writeState(state);
     return true;
   }
@@ -153,13 +167,22 @@ export function createWatchImportManager(deps: WatchImportDeps) {
     } catch {
       return;
     }
+    // markKnown ("mark these as already imported, don't import them") needs
+    // the current library's id up front — the non-markKnown branch does not,
+    // since enqueue → processFile resolves it per file itself.
+    let libraryId: string | null = null;
+    if (markKnown) {
+      const handle = deps.ensurePostsSynced();
+      if (!handle) return;
+      libraryId = ensureLibraryId(handle.sqlite);
+    }
     for (const name of names) {
       const file = path.join(folder, name);
       if (!supported(file)) continue;
       if (markKnown) {
         try {
           const st = await fs.promises.stat(file);
-          if (st.isFile()) seenFor(folder)[name] = fingerprint(st);
+          if (st.isFile()) seenFor(libraryId as string, folder)[name] = fingerprint(st);
         } catch {
           /* file changed while scanning; the watcher will retry it */
         }

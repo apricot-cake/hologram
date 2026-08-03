@@ -117,7 +117,14 @@
     "hostile-record-shape.test.ts",
     "image-zoom.test.ts",
     "inspector-pref.test.ts",
+    // #176: dynamic-imports native-host/config-recovery.cts (same pattern as
+    // config-cache.test.ts above) — same module-format friction.
+    "lib-config-libraries.test.ts",
     "lib-db-integrity.test.ts",
+    // #176: imports lib-watch-import.ts, which imports native-host.ts and
+    // ipc-context.ts's electron-typed members — the first suite to pull those
+    // into this bundler-resolution project (see this file's header comment).
+    "lib-watch-import-library.test.ts",
     "listing.test.ts",
     "mastodon-url.test.ts",
     "media-download-custom-emoji.test.ts",

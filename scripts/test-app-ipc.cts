@@ -86,7 +86,8 @@ child.on('close', () => {
   // #302: the library folder holds media only — an edit must not put a record there.
   const noLibraryJsonOk = fs.readdirSync(saveFolder).filter((f) => f.toLowerCase().endsWith('.json')).length === 0;
 
-  const { sqlite } = openDatabase(path.join(configDir, 'hologram.db'), { readonly: true });
+  // #176: hologram.db lives inside the save folder now, not configDir (ADR 0023).
+  const { sqlite } = openDatabase(path.join(saveFolder, 'hologram.db'), { readonly: true });
   const tagsOf = (id) =>
     sqlite
       .prepare('SELECT t.name FROM post_tags pt JOIN tags t ON t.id = pt.tagId WHERE pt.postId = ? ORDER BY pt.rowid')

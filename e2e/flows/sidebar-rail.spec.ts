@@ -15,10 +15,11 @@ const appDir = path.join(__dirname, '..', '..', 'app');
 const FOLDERS = [{ id: 'f-a', name: '資料', kind: 'static', created: 1, parentId: null, items: [] }];
 const SAVED_SEARCHES = [{ id: 's-a', name: '保存検索テスト', kind: 'dynamic', created: 2, tree: { children: [] } }];
 
-function seedFolderAndSavedSearch({ configDir }: { configDir: string }) {
+function seedFolderAndSavedSearch({ saveFolder }: { saveFolder: string }) {
   const { openDatabase } = require(path.join(appDir, 'src', 'main', 'lib-db.ts'));
   const { createDbWriter } = require(path.join(appDir, 'src', 'main', 'lib-db-write.ts'));
-  const { sqlite } = openDatabase(path.join(configDir, 'hologram.db'));
+  // #176: hologram.db lives inside the save folder now, not configDir (ADR 0023).
+  const { sqlite } = openDatabase(path.join(saveFolder, 'hologram.db'));
   createDbWriter(sqlite).setFolders({ folders: [...FOLDERS, ...SAVED_SEARCHES], activeId: null });
   sqlite.close();
 }

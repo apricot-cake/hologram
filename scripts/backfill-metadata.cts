@@ -55,7 +55,8 @@ async function ensureAvatarFile(folder, avatarUrl, referer) {
   const folder = saveFolder();
   const all = process.argv.includes('--all');
   const avatarsOnly = process.argv.includes('--avatars');
-  const dbFile = path.join(configDir(), 'hologram.db');
+  // #176: hologram.db lives inside the save folder now, not configDir (ADR 0023).
+  const dbFile = path.join(folder, 'hologram.db');
   if (!fs.existsSync(dbFile)) {
     console.log('No database:', dbFile);
     return;

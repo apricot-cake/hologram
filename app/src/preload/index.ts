@@ -41,13 +41,16 @@ import type {
   OkResult,
   UpdateTagsResult,
   OrphanRecoveryResult,
+  PickLibraryFolderResult,
   PostsDelta,
   PostsSnapshot,
   PosterAliasesState,
   PosterFoldersState,
   PosterTagsState,
+  RecentLibraryEntry,
   RepointApplyResult,
   RepointPickResult,
+  SwitchLibraryResult,
   SaveFolderMoveResult,
   SaveFolderPickResult,
   SaveFolderProgress,
@@ -163,6 +166,13 @@ const api = {
   // move-save-folder above assume the CURRENT folder is there to copy FROM).
   pickRepointFolder: (): Promise<RepointPickResult> => ipcRenderer.invoke('pick-repoint-folder'),
   applyRepoint: (dest: string): Promise<RepointApplyResult> => ipcRenderer.invoke('apply-repoint', dest),
+  // #176: Settings' deliberate "switch to a different library" flow (切り替え /
+  // 新規作成 / 最近使ったライブラリ) — same underlying switchLibrary as repoint
+  // above, different entry point and confirm copy.
+  pickLibraryFolder: (): Promise<PickLibraryFolderResult> => ipcRenderer.invoke('pick-library-folder'),
+  switchLibrary: (dest: string): Promise<SwitchLibraryResult> => ipcRenderer.invoke('switch-library', dest),
+  getRecentLibraries: (): Promise<RecentLibraryEntry[]> => ipcRenderer.invoke('get-recent-libraries'),
+  removeRecentLibrary: (folder: string): Promise<OkResult> => ipcRenderer.invoke('remove-recent-library', folder),
   onSaveFolderProgress: (cb: (p: SaveFolderProgress) => void): void => {
     ipcRenderer.on('save-folder-progress', (_e, p) => cb(p));
   },
