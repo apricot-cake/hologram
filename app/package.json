@@ -47,10 +47,20 @@
     },
     "files": [
       "out/**/*",
-      "assets/**/*"
+      "assets/**/*",
+      "!**/node_modules/onnxruntime-node/bin/napi-v6/darwin/**",
+      "!**/node_modules/onnxruntime-node/bin/napi-v6/linux/**",
+      "!**/node_modules/onnxruntime-node/bin/napi-v6/win32/arm64/**",
+      "!**/node_modules/onnxruntime-web/dist/**",
+      "**/node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.asyncify.wasm",
+      "**/node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.asyncify.mjs"
     ],
     "asarUnpack": [
-      "**/node_modules/better-sqlite3/**/*"
+      "**/node_modules/better-sqlite3/**/*",
+      "**/node_modules/onnxruntime-node/**/*",
+      "**/node_modules/onnxruntime-web/dist/**/*",
+      "**/node_modules/sharp/**/*",
+      "**/node_modules/@img/**/*"
     ],
     "npmRebuild": false,
     "electronFuses": {
@@ -75,6 +85,7 @@
   "dependencies": {
     "@base-ui/react": "^1.6.0",
     "@fontsource-variable/geist": "^5.2.9",
+    "@huggingface/transformers": "^4.2.0",
     "better-sqlite3": "^13.0.1",
     "chokidar": "^4.0.3",
     "class-variance-authority": "^0.7.1",

@@ -30,7 +30,8 @@ const ctsAsTypeScript = (): Plugin => ({
 //
 // Deliberately NOT run here, and the only valid reasons to stay out:
 //   - needs network: scripts/test-metadata.cts, test-select-posts.cts,
-//     test-watch-verify.cts (capture-flow CLIs; see docs/testing.md)
+//     test-watch-verify.cts (capture-flow CLIs; see docs/testing.md), and
+//     test-ml-runtime.cts (fetches the smoke model from huggingface.co once)
 //   - needs Electron: scripts/test-app-*.cts → node scripts/run-app-tests.cts
 // Both groups keep the old `test-*.cts` name, so the include glob below cannot
 // reach them by accident.
