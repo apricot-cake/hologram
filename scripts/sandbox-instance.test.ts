@@ -43,7 +43,12 @@ describe('port assignment', () => {
 
   test('sibling worktrees do not start from the same port', () => {
     // The two trees #640 actually saw collide on 9333 differ only in the leaf.
-    const base = path.join('repo', '.claude', 'worktrees');
+    // Absolute-path literals, not a relative `path.join` — sandboxPortBase
+    // resolves its input, so a relative path mixes the caller's cwd into the
+    // hash and this case goes green or red depending on where `npm test` runs
+    // from (#839). These two currently land on different ports; if
+    // sandboxPortBase's hash ever changes, re-pick a pair that still differs.
+    const base = path.resolve('/', 'repo', '.claude', 'worktrees');
     const a = sandboxPortBase(path.join(base, 'agent-aca6b2840368f2288'));
     const b = sandboxPortBase(path.join(base, 'agent-af0d29123f450f7ca'));
     expect(a).not.toBe(b);
@@ -76,6 +81,21 @@ describe('port ownership', () => {
     const tree = mkdir();
     writeInstance(tree, { pid: 4242, port: 9350 });
     expect(foreignSandboxAt(9350, tree, held(777))).toBe(777);
+  });
+
+  test('a port two trees both land on (a hash collision) still refuses the wrong one', () => {
+    // sandboxPortBase has only PORT_SPAN slots, so two trees computing the
+    // same number is expected, not a bug (#839) — the pid comparison above is
+    // the actual #640 guard, not port uniqueness.
+    const treeA = mkdir();
+    const treeB = mkdir();
+    const sharedPort = 9350;
+    writeInstance(treeA, { pid: 4242, port: sharedPort });
+    writeInstance(treeB, { pid: 5555, port: sharedPort });
+    // treeA's own process is the one actually listening: treeA proceeds...
+    expect(foreignSandboxAt(sharedPort, treeA, held(4242))).toBeNull();
+    // ...but treeB's recorded pid doesn't match it, so treeB is refused.
+    expect(foreignSandboxAt(sharedPort, treeB, held(4242))).toBe(4242);
   });
 
   test('nothing listening, or no record, is "no reason to refuse"', () => {
