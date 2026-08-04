@@ -1182,15 +1182,19 @@ if (!gotSingleInstanceLock) {
       // "the page reloaded underneath the eval" (Refs #917). Losing an eval to a
       // reload is a legitimate outcome — a library switch reloads every window
       // on purpose; taking a minute to say so is not.
+      // 'did-navigate' — a main-frame navigation that COMMITTED — is the signal,
+      // not 'did-start-navigation'. An eval is allowed to start navigations that
+      // go nowhere, and one of them does it on purpose:
+      // test-app-renderer-origin.cts assigns location.href to prove the
+      // navigation guard refuses it, then carries on in the very same frame.
+      // Only a commit replaces the document out from under the script.
       const evalInRenderer = (wc: Electron.WebContents, script: string) =>
         new Promise((resolve, reject) => {
-          const onNav = (details: Electron.Event<Electron.WebContentsDidStartNavigationEventParams>) => {
-            if (details.isMainFrame && !details.isSameDocument) reject(new Error(`the renderer navigated to ${details.url} while the eval was still running`));
-          };
-          wc.on('did-start-navigation', onNav);
+          const onNavigated = (_e: Electron.Event, url: string) => reject(new Error(`the renderer navigated to ${url} while the eval was still running`));
+          wc.on('did-navigate', onNavigated);
           wc.executeJavaScript(script)
             .then(resolve, reject)
-            .finally(() => wc.off('did-start-navigation', onNav));
+            .finally(() => wc.off('did-navigate', onNavigated));
         });
       (getWin() as BrowserWindow).webContents.once('did-finish-load', () =>
         setTimeout(async () => {
