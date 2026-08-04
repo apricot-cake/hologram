@@ -15,18 +15,34 @@ export function get(key: string) {
 }
 
 export function set(key: string, val: unknown) {
-  if (state[key] === val) return; // idempotent: same value => no notify (the loop guard)
-  state[key] = val;
-  const s = keySubs.get(key);
-  if (s)
-    for (const cb of [...s]) {
-      try {
-        cb();
-      } catch (_e) {
-        /* ignore */
-      }
-    }
-  for (const cb of [...allSubs]) {
+  setMany({ [key]: val });
+}
+
+// Writes several keys under ONE notify pass. Needed whenever two keys describe
+// the same thing and a reader would see a torn state between them: writing them
+// with two set() calls fires two synchronous notify passes, and a subscriber to
+// both is rendered once against key A's new value and key B's OLD one (#871 —
+// 'postGroups' + 'postSections' did exactly that, and the grid rendered the new
+// items against the previous build's section ranges, corrupting masonic's
+// position cache). Callbacks are deduplicated across the batch, so a subscriber
+// registered on two of the written keys still runs exactly once.
+export function setMany(entries: Record<string, unknown>) {
+  const changed: string[] = [];
+  for (const [key, val] of Object.entries(entries)) {
+    if (state[key] === val) continue; // idempotent: same value => no notify (the loop guard)
+    state[key] = val;
+    changed.push(key);
+  }
+  if (changed.length === 0) return;
+  // Snapshot into a Set before calling anything: dedupes, and (like the copies
+  // the per-key loop used to make) keeps an unsubscribe DURING the pass safe.
+  const cbs = new Set<() => void>();
+  for (const key of changed) {
+    const s = keySubs.get(key);
+    if (s) for (const cb of s) cbs.add(cb);
+  }
+  for (const cb of allSubs) cbs.add(cb);
+  for (const cb of cbs) {
     try {
       cb();
     } catch (_e) {

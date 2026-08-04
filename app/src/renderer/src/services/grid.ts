@@ -137,9 +137,14 @@ function makePostGridSource() {
       columnWidth: liveColumnWidth ?? layout.columnWidth,
       zoomAnchor,
       onAspect: config.onAspect,
-      // #47 — month sections for a date sort (null otherwise). post-grid-builder.ts
-      // computes this alongside `items` and pushes it to the SAME store, so it is
-      // already in lockstep with itemsKey — no separate bump needed here.
+      // #47 — month sections for a date sort (null otherwise). These index INTO
+      // `items`, so the two must never be read apart: post-grid-builder.ts pushes
+      // them with ONE storeSetMany, which is what makes a single computeModel()
+      // see both halves of the same build. (#871: two separate storeSet calls
+      // meant two synchronous notify passes, and the first one produced a model
+      // carrying the new items with the PREVIOUS build's section ranges. Same
+      // store is not the same push — no itemsKey bump can cover that, because the
+      // second pass leaves `items` identical and only moves the ranges.)
       sections: (storeGet('postSections') as HologramDateSection[] | null) ?? null,
       paint: ++paintSeq,
     } as HologramGridModel;
