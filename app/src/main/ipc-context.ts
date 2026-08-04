@@ -24,7 +24,7 @@ import type Database from 'better-sqlite3';
 import type { createDbWriter } from './lib-db-write.ts';
 import type { relocateLibrary } from './lib-migrate.ts';
 import type { LibraryClassification } from './lib-switch-library.ts';
-import type { BackupConfig, BackupRunResult, DbGeneration, DbRollbackResult, FullTextHit, IntegrityStatus, LibraryStatus, OrphanRecoveryResult, PinItem, PostsDelta, PostsSnapshot, RecentLibraryEntry, SwitchLibraryResult, ValidationResult, WatchImportConfig, WatchImportFolder } from './ipc-payloads.ts';
+import type { AiConfig, BackupConfig, BackupRunResult, DbGeneration, DbRollbackResult, FullTextHit, IntegrityStatus, LibraryStatus, OrphanRecoveryResult, PinItem, PostsDelta, PostsSnapshot, RecentLibraryEntry, SwitchLibraryResult, ValidationResult, WatchImportConfig, WatchImportFolder } from './ipc-payloads.ts';
 
 /** The organization-state writer every DB-backed handler goes through. */
 export type DbWriter = ReturnType<typeof createDbWriter>;
@@ -48,6 +48,8 @@ export interface DbHandle {
 export interface HologramConfig {
   saveFolder?: string;
   extensionId?: string;
+  /** #830: the AI features opt-in gate — absent/false means off. */
+  ai?: { enabled: boolean };
   [key: string]: any;
 }
 
@@ -105,6 +107,10 @@ export interface IpcContext {
   isConfigCorrupt(): boolean;
   /** Why a wipe must be refused on a degraded config, or null. */
   clearAllBlockReason(args: { configCorrupt: boolean; hasExplicitSaveFolder: boolean; hasPointer: boolean; libraryMissing: boolean }): string | null;
+
+  // --- AI features opt-in (#830, parent #98) ---
+  readAiConfig(): AiConfig;
+  writeAiConfig(patch: Partial<AiConfig> | null | undefined): AiConfig;
 
   // --- Backup mirror + integrity ---
   readBackupConfig(): BackupConfig;

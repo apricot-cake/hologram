@@ -181,6 +181,28 @@ const INTEGRITY_DEFAULTS = {
   missingCount: 0,
 };
 
+// --- AI features opt-in (#830, parent #98) ---
+//
+// Machine-local (like extensionId), NOT per-library: enabling AI features is a
+// decision about this install of the app, same standing as digiKam/Firefox's
+// opt-in local-inference settings. lib-ml-runtime.ts's aiFeaturesEnabled() reads
+// this same `cfg.ai.enabled` flag — this module and that one are the ONE
+// implementation the #98 gate design calls for; every future caller (main or
+// renderer) goes through one of the two rather than re-reading config.json.
+const AI_DEFAULTS = { enabled: false };
+
+function readAiConfig(): { enabled: boolean } {
+  const cfg = readConfig();
+  return Object.assign({}, AI_DEFAULTS, cfg.ai || {});
+}
+function writeAiConfig(patch: Record<string, any> | null | undefined): { enabled: boolean } {
+  const cfg = readConfig();
+  const merged = Object.assign({}, AI_DEFAULTS, cfg.ai || {}, patch || {});
+  cfg.ai = merged;
+  writeConfig(cfg);
+  return merged;
+}
+
 function normLibPath(p: unknown): string {
   if (typeof p !== 'string' || !p) return '';
   const r = path.resolve(p);
@@ -393,4 +415,6 @@ export {
   writeLibraryBackupConfig,
   readLibraryIntegrityStatus,
   writeLibraryIntegrityStatus,
+  readAiConfig,
+  writeAiConfig,
 };
