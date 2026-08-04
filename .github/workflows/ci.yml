@@ -4,18 +4,24 @@ name: CI
 # Node and runs on any OS. The Electron-launch harness and Playwright e2e layers
 # land in a later stage alongside #14, on a Windows runner.
 #
-# push only, no `pull_request` trigger yet: branch protection (required for a PR
-# check to mean anything) needs GitHub Pro or a public repo, and this repo is
-# still private (see #15 for the branch-protection follow-up, gated on #75).
+# Both triggers, and the pair is deliberate (#883). `pull_request` is the one the
+# ruleset requires before a merge, because it tests refs/pull/N/merge — the merge
+# result — and that is the only thing that catches two branches which pass alone
+# and break together. `push` is narrowed to main so the same check re-runs on what
+# actually landed, without doubling every run while a PR is open.
 on:
-  push
+  push:
+    branches: [main]
+  pull_request:
 
 # Default token to read-only; no job in this workflow needs to write anything.
 permissions:
   contents: read
 
 # A superseded push cancels its predecessor's run instead of letting both finish
-# — same signal, half the minutes, which matters on the private-repo free tier.
+# — same signal, half the minutes. The repository is public now so the minutes are
+# free, but a queue that clears faster is still worth having when several branches
+# are in flight at once.
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
