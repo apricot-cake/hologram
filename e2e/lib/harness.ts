@@ -132,7 +132,8 @@ async function launch(options: LaunchOptions): Promise<{ hologram: Hologram; clo
     saveFolder,
     readDb(fn) {
       const { openDatabase } = require(path.join(appDir, 'src', 'main', 'lib-db.ts'));
-      const handle = openDatabase(path.join(configDir, 'hologram.db'));
+      // #176: hologram.db lives inside the save folder now, not configDir (ADR 0025).
+      const handle = openDatabase(path.join(saveFolder, 'hologram.db'));
       try {
         return fn(handle.sqlite);
       } finally {

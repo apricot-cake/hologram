@@ -238,7 +238,8 @@ export interface RenameCollision {
   postCount: number;
   posterCount: number;
 }
-export type RenameTagResult = { ok: true } | { ok: false; error: 'empty' } | { ok: false; collision: RenameCollision };
+/** 'alias-collision' (#86): the attempted name is already registered as someone else's alias -- remove that alias first, or pick another name. */
+export type RenameTagResult = { ok: true } | { ok: false; error: 'empty' | 'alias-collision' } | { ok: false; collision: RenameCollision };
 /** A tag-vocab write's plain result (add/remove-tag-parent, merge-tags, keep-separate-rename-tag, set-tag-kind). */
 export interface TagWriteResult {
   ok: boolean;
@@ -257,6 +258,15 @@ export interface TagSplitPost {
 }
 /** split-tag's answer — the new entity's id on success. */
 export type SplitTagResult = { ok: true; newTagId: number } | { ok: false; error: string };
+/** One row of the tag management page's alias list (#86) — an alternate spelling that resolves to a canonical tag. */
+export interface TagAliasRow {
+  id: number;
+  alias: string;
+  tagId: number;
+  canonicalName: string;
+}
+/** add-tag-alias's answer. 'self' = the alias text is the tag's own current name (redundant). 'name-collision' = a distinct tag already has that exact name (use merge-tags instead). 'conflict' = the alias text is already registered pointing at a different tag. */
+export type AddTagAliasResult = { ok: true; id: number } | { ok: false; error: 'empty' | 'not-found' | 'self' | 'name-collision' | 'conflict' };
 
 export interface UngroupedState {
   keys: string[];
@@ -621,11 +631,50 @@ export interface RepointPickResult {
   hasEvidence?: boolean;
 }
 
-/** apply-repoint (#37): rewrites config.saveFolder to `dest` with NO copy. */
+/**
+ * apply-repoint (#37, generalized by #176's switchLibrary): opens `dest` as the
+ * current library — a copy-free pointer flip when the database was outside the
+ * save folder is no longer the whole story once the database is INSIDE it
+ * (#176), so this now closes the old database and opens (or creates, or
+ * restores from a snapshot) one at `dest`. `error: 'busy'` means a switch was
+ * already in flight; `'open-failed'` means the new location's database itself
+ * would not open (rolled back to the previous library automatically).
+ */
 export interface RepointApplyResult {
   ok: boolean;
   error?: string;
   saveFolder?: string;
+}
+
+/**
+ * pick-library-folder (#176): resolves + validates a destination for the
+ * Settings "ライブラリ" section's 切り替え/新規作成 flow, WITHOUT opening
+ * anything — switch-library performs the actual switch once the renderer has
+ * shown whichever confirm `classification` calls for (none for 'has-db', "start
+ * a new library?" for 'empty', "recover from the mirror/inbox?" for
+ * 'evidence-no-db'). A folder that classifies as 'reject' is refused here
+ * outright (`ok:false, error:'not-a-library'`) — never surfaced as a confirm.
+ */
+export interface PickLibraryFolderResult {
+  ok: boolean;
+  canceled?: boolean;
+  error?: string;
+  dest?: string;
+  classification?: 'has-db' | 'empty' | 'evidence-no-db';
+}
+
+/** switch-library (#176): the outcome of an already-confirmed switchLibrary(dest) call. */
+export interface SwitchLibraryResult {
+  ok: boolean;
+  error?: string;
+  saveFolder?: string;
+}
+
+/** get-recent-libraries (#176) — newest first; `exists` is a live statSync, not cached. */
+export interface RecentLibraryEntry {
+  path: string;
+  lastOpenedAt: string | null;
+  exists: boolean;
 }
 
 /** move-save-folder — the relocation's own outcome. */
@@ -682,4 +731,18 @@ export interface ExportProgress {
 export interface FullTextHit {
   postId: string;
   rank: number;
+}
+
+/**
+ * One tile in a pin (floating mini-viewer) window's set (#79). `captureId` is
+ * best-effort identity (the owning post's, or the source tab's when a single
+ * exact record can't be named — e.g. the toolbar's "pin what's on screen"
+ * entry point) used only to highlight an already-pinned tile on a duplicate
+ * add; the tile itself is keyed by `file`, which is unique in the library.
+ * Window-local state only — nothing here is ever written back to a post record.
+ */
+export interface PinItem {
+  captureId: string;
+  file: string;
+  video: boolean;
 }

@@ -19,6 +19,7 @@ import type { DomMeta, PostRecord } from './extractor/types.ts';
 import type {
   BridgeAck,
   CaptureAndSendResponse,
+  CheckBulkCapturePageMessage,
   CheckSavedResponse,
   ContentToBackgroundMessage,
   CropImageMessage,
@@ -28,6 +29,7 @@ import type {
   NotifyMessage,
   PageMetaExtractedMessage,
   PopupActivateResponse,
+  PopupCheckBulkResponse,
   QueueStatsResponse,
   ResendQueueResponse,
   SavedEntry,
@@ -473,6 +475,33 @@ export function startBackground(): void {
       .then(([tab]) => (tab ? activateOnTab(tab, message.auto === true, false) : ({ ok: false, reason: 'no-tab' } satisfies PopupActivateResponse)))
       .then((result) => sendResponse(result))
       .catch(() => sendResponse({ ok: false, reason: 'no-tab' } satisfies PopupActivateResponse));
+    return true; // async response
+  });
+
+  // The popup's "この一覧を取り込む" item (#793): whether the active tab has a
+  // list this mode can walk. Asked of the RESIDENT content script (already on
+  // the page for every matched site, via manifest content_scripts) rather than
+  // injected — no activeTab needed for a mere question. The resident script
+  // delegates to the same extractor gate startCapture's auto branch checks
+  // (site.isBulkCapturePage), so a site #790 adds later needs no change here.
+  // A tab with nothing listening (chrome://, a site with no resident script)
+  // makes chrome.tabs.sendMessage reject with "Receiving end does not exist" —
+  // read below as the same "not supported" answer as the site saying no itself.
+  chrome.runtime.onMessage.addListener((message: ContentToBackgroundMessage, _sender, sendResponse) => {
+    if (message.type !== 'popupCheckBulk') return false;
+    chrome.tabs
+      .query({ active: true, currentWindow: true })
+      .then(async ([tab]): Promise<PopupCheckBulkResponse> => {
+        if (!tab?.id || !/^https?:/i.test(tab.url || '')) return { supported: false };
+        try {
+          const res = await chrome.tabs.sendMessage(tab.id, { type: 'checkBulkCapturePage' } satisfies CheckBulkCapturePageMessage);
+          return { supported: res?.supported === true };
+        } catch {
+          return { supported: false };
+        }
+      })
+      .then((result) => sendResponse(result))
+      .catch(() => sendResponse({ supported: false } satisfies PopupCheckBulkResponse));
     return true; // async response
   });
 

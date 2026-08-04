@@ -241,10 +241,20 @@ async function sweepStragglers(src, dest, opts) {
 // deps: readConfig/writeConfig (config flip), emit (save-folder-progress payloads),
 // afterFlip (re-point watcher + reset delta), stillCurrent (sweep-time guard: the
 // config still points at dest — a second move meanwhile makes the sweep stale),
-// sweepDelayMs (test hook; default 60s).
+// sweepDelayMs (test hook; default 60s), closeDb/openDb (#176, both optional —
+// callers with no live database, like this module's own unit tests, omit them).
 async function relocateLibrary(src, dest, deps) {
-  const { readConfig, writeConfig, emit, afterFlip, stillCurrent } = deps;
+  const { readConfig, writeConfig, emit, afterFlip, stillCurrent, closeDb, openDb } = deps;
   const sweepDelayMs = typeof deps.sweepDelayMs === 'number' ? deps.sweepDelayMs : 60000;
+
+  // 0) #176: hologram.db now lives INSIDE the library folder, so it is one of
+  //    the files copyLibraryInto is about to copy. Close it first — a
+  //    file-level copy of a database still being written to is inconsistent
+  //    by construction (the same reason the backup engine's media lane never
+  //    carries it, lib-backup.ts's LIVE_DB_NAMES). Closing checkpoints the WAL,
+  //    so whatever copies (main file, and -wal/-shm if anything is still
+  //    there) is a matching, openable set.
+  if (closeDb) closeDb();
 
   // 1) Copy the whole library into dest (+catch-up rounds). src stays fully intact.
   //    Throttle copy progress to ~100ms so an 18k-file move doesn't flood IPC.
@@ -266,6 +276,28 @@ async function relocateLibrary(src, dest, deps) {
   const cfg = readConfig();
   cfg.saveFolder = dest;
   writeConfig(cfg);
+
+  // 2.5) #176: reopen the database AT DEST before anything is deleted from
+  //      src below — src is still a full, untouched copy of the library at
+  //      this point, so a database that will not open (a corrupt copy) rolls
+  //      the pointer straight back rather than leaving the library stranded
+  //      mid-move with neither side clearly authoritative.
+  if (openDb) {
+    try {
+      openDb();
+    } catch {
+      cfg.saveFolder = src;
+      writeConfig(cfg);
+      if (closeDb) closeDb();
+      try {
+        openDb();
+      } catch {
+        /* leaves the DB closed — the missing-library/empty-state UI takes over */
+      }
+      emit({ phase: 'error', error: 'db-open-failed' });
+      return { ok: false, error: 'db-open-failed' };
+    }
+  }
 
   // 3) Verify each copied entry at dest, delete it from src only on proof, then
   //    drop the emptied shell folder. From here on, every app write path reads the

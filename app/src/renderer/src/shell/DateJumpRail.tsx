@@ -7,10 +7,18 @@
 // threading it through the grid — this is a sibling overlay, not a grid cell,
 // and the two consumers (the grid host, this rail) share one computation in
 // post-grid-builder.ts either way.
-import { useSyncExternalStore } from 'react';
+//
+// #875: being an overlay, it covers part of the right-hand column of cards for
+// as long as it is up. So it stays out of the way until it is wanted — while
+// scrolling, while the pointer is out at the right edge, or while focus is
+// inside it — which is what Google Photos' web scrubber does as well (absent on
+// arrival, present once you start scrolling). Same "stay mounted, cross with
+// one CSS transition" shape as ScrollToTop, not a mount/unmount.
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import { t } from '../_shared/i18n.ts';
+import { scroller } from '../services/content-area.ts';
 import { scrollSectionToTop } from '../services/section-nav.ts';
 import { get as storeGet, subscribe as storeSubscribe } from '../services/store.ts';
 
@@ -20,6 +28,11 @@ const subInspectorOverlay = (cb: () => void) => storeSubscribe('inspectorOverlay
 const getInspectorOverlay = () => !!storeGet('inspectorOverlay');
 const subBrowseMode = (cb: () => void) => storeSubscribe('browseMode', cb);
 const getBrowseMode = () => (storeGet('browseMode') as string | undefined) ?? 'posts';
+
+/** How long the rail stays up after the last scroll event. */
+const IDLE_MS = 1200;
+/** How far left of the rail still counts as reaching for it. */
+const EDGE_PAD_PX = 24;
 
 export function DateJumpRail() {
   const sections = useSyncExternalStore(subSections, getSections);
@@ -35,15 +48,73 @@ export function DateJumpRail() {
   // (the 2026-08-02 design comment: no reason to drop the time axis's own
   // index from the one mode that IS the time axis).
   const shown = (mode === 'posts' || mode === 'timeline') && !!sections && sections.length > 1;
+
+  const railRef = useRef<HTMLDivElement>(null);
+  const [scrolling, setScrolling] = useState(false);
+  const [nearEdge, setNearEdge] = useState(false);
+  const [focusWithin, setFocusWithin] = useState(false);
+
+  useEffect(() => {
+    // Same timing note as ScrollToTop: refs are attached before effects run, and
+    // the scroll column mounts in the same commit as this component.
+    const el = scroller();
+    if (!el) return;
+    let timer: number | undefined;
+    const onScroll = () => {
+      setScrolling(true);
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => setScrolling(false), IDLE_MS);
+    };
+    // Proximity is measured against the RAIL's own box rather than the scroller's
+    // right edge: the rail shifts left by --inspector-w while the inspector is an
+    // overlay, and its own rect is the one thing that already knows that. Reading
+    // it per move also lets the hit zone follow a resize without an observer of
+    // its own. Because the zone contains the rail, a pointer resting ON the rail
+    // holds it up with no separate hover state — which is what lets the rail keep
+    // `pointer-events: none` while idle, so it can never swallow a click or a
+    // marquee drag (#484) aimed at the card behind it.
+    const onMove = (e: MouseEvent) => {
+      const rail = railRef.current;
+      if (!rail) return;
+      // Horizontal only: the rail is short when a library spans few months, and
+      // "reach for the right edge" should not also require finding its height.
+      setNearEdge(e.clientX >= rail.getBoundingClientRect().left - EDGE_PAD_PX);
+    };
+    // No mousemove arrives once the pointer is outside the window, so the rail
+    // would otherwise stay up behind whatever the user switched to. <html> and
+    // not `document`: mouseleave does not bubble, and the element is the one
+    // that reliably fires it for "left the window".
+    const root = document.documentElement;
+    const onLeave = () => setNearEdge(false);
+    el.addEventListener('scroll', onScroll, { passive: true });
+    // On the document rather than the scroller: the rail is a sibling of the
+    // scrolling column, so listening on the column alone would report "pointer
+    // left" the instant it crossed onto the rail itself.
+    document.addEventListener('mousemove', onMove, { passive: true });
+    root.addEventListener('mouseleave', onLeave);
+    return () => {
+      window.clearTimeout(timer);
+      el.removeEventListener('scroll', onScroll);
+      document.removeEventListener('mousemove', onMove);
+      root.removeEventListener('mouseleave', onLeave);
+    };
+  }, []);
+
+  const visible = shown && (scrolling || nearEdge || focusWithin);
   const label = t('dateJumpRailTitle');
 
   return (
     <div
+      ref={railRef}
+      // `inert` still tracks `shown`, not `visible`: an idle rail is still a
+      // legitimate Tab stop, and landing on it is one of the ways it comes up.
       inert={!shown}
+      onFocus={() => setFocusWithin(true)}
+      onBlur={() => setFocusWithin(false)}
       style={inspectorOverlay ? { right: 'calc(var(--inspector-w) + 1.5rem)' } : undefined}
       className={cn(
         'absolute top-1/2 right-2 z-40 flex max-h-[70vh] -translate-y-1/2 flex-col gap-0.5 overflow-y-auto rounded-lg border bg-popover/90 p-1 shadow-lg backdrop-blur-sm transition-opacity duration-[var(--motion-duration-base)] ease-[var(--motion-ease-out)]',
-        shown ? 'opacity-100' : 'pointer-events-none opacity-0',
+        visible ? 'opacity-100' : 'pointer-events-none opacity-0',
       )}
       aria-label={label}
       role="navigation"

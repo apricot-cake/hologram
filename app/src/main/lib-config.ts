@@ -155,6 +155,147 @@ function dirExists(p) {
   }
 }
 
+// --- Per-library settings (#176) ---
+//
+// config.libraries[] is the "recent libraries" list AND the home for settings
+// that belong to one library rather than to this machine as a whole (backup
+// destination, integrity status). Keyed primarily by path (normalized —
+// case-insensitive on Windows) because that is what callers have in hand
+// BEFORE a database is open (a backup destination must be readable without
+// opening the DB it might be restoring); `libraryId` (the DB's own identity,
+// lib-db-write.ts's ensureLibraryId) is a secondary key that repairs an entry
+// when the folder itself moved or was repointed — see recordLibraryOpened.
+const MAX_LIBRARIES = 5;
+const BACKUP_DEFAULTS = {
+  dir: null, // Output destination (must not overlap with the save folder, inside or out)
+  interval: false, // fixed interval
+  intervalValue: 1, // interval count
+  intervalUnit: 'day', // 'day' | 'week' | 'month'
+  lastRunAt: null,
+  lastResult: null,
+};
+const INTEGRITY_DEFAULTS = {
+  lastCheckAt: null,
+  dbOk: null, // null = never checked yet
+  orphanCount: 0,
+  missingCount: 0,
+};
+
+function normLibPath(p: unknown): string {
+  if (typeof p !== 'string' || !p) return '';
+  const r = path.resolve(p);
+  return process.platform === 'win32' ? r.toLowerCase() : r;
+}
+
+// One-time, pre-release migration: an install that predates #176 has a flat
+// `backup`/`integrity` on config and no `libraries` array. Fold both into ONE
+// libraries[] entry for the current save folder so every reader below can
+// assume the array shape unconditionally — no read site keeps a fallback for
+// the old flat keys. Delete this once no installed copy predates #176 (project
+// convention: a one-time migration is a work step, not part of the design).
+function migrateToLibraries() {
+  const cfg = readConfig();
+  if (Array.isArray(cfg.libraries)) return;
+  const folder = typeof cfg.saveFolder === 'string' && cfg.saveFolder.trim() ? cfg.saveFolder : null;
+  const next = Object.assign({}, cfg);
+  next.libraries = folder ? [{ path: folder, libraryId: null, lastOpenedAt: new Date().toISOString(), backup: cfg.backup || null, integrity: cfg.integrity || null }] : [];
+  delete next.backup;
+  delete next.integrity;
+  writeConfig(next);
+}
+
+function librariesOf(cfg: Record<string, any>): any[] {
+  return Array.isArray(cfg.libraries) ? cfg.libraries : [];
+}
+function findLibraryIndex(libraries: any[], folder: string): number {
+  const key = normLibPath(folder);
+  if (!key) return -1;
+  return libraries.findIndex((e) => e && normLibPath(e.path) === key);
+}
+
+/**
+ * Records that `folder` (with `libraryId` from its just-opened DB, or null
+ * before one has been read) was opened just now: moves/creates its entry at
+ * the front of the list, caps at MAX_LIBRARIES (oldest dropped). A path miss
+ * that still matches an existing `libraryId` means the folder moved or was
+ * repointed onto the same library — that entry is repaired in place (its old
+ * path replaced) rather than left behind as a stale duplicate.
+ */
+function recordLibraryOpened(folder: string, libraryId: string | null) {
+  const cfg = readConfig();
+  const libraries = librariesOf(cfg).slice();
+  let idx = findLibraryIndex(libraries, folder);
+  if (idx === -1 && libraryId) idx = libraries.findIndex((e) => e && e.libraryId && e.libraryId === libraryId);
+  const prev = idx >= 0 ? libraries[idx] : null;
+  const entry = Object.assign({}, prev, { path: folder, libraryId: libraryId || (prev && prev.libraryId) || null, lastOpenedAt: new Date().toISOString() });
+  const rest = idx >= 0 ? libraries.filter((_, i) => i !== idx) : libraries;
+  cfg.libraries = [entry, ...rest].slice(0, MAX_LIBRARIES);
+  writeConfig(cfg);
+}
+
+/** The "recent libraries" list for the UI — newest first, with a live exists() check. */
+function listRecentLibraries(): Array<{ path: string; lastOpenedAt: string | null; exists: boolean }> {
+  return librariesOf(readConfig())
+    .slice()
+    .sort((a, b) => Date.parse((b && b.lastOpenedAt) || 0) - Date.parse((a && a.lastOpenedAt) || 0))
+    .filter((e) => e && typeof e.path === 'string')
+    .map((e) => ({ path: e.path, lastOpenedAt: e.lastOpenedAt || null, exists: dirExists(e.path) }));
+}
+
+/** Drops one entry from the recent list (a dead path the user asked to forget). */
+function removeRecentLibrary(folder: string) {
+  const cfg = readConfig();
+  const key = normLibPath(folder);
+  cfg.libraries = librariesOf(cfg).filter((e) => !e || normLibPath(e.path) !== key);
+  writeConfig(cfg);
+}
+
+// The current library's backup/integrity settings — same no-argument call
+// shape lib-backup.ts already used against a single flat config key, now
+// resolved through the libraries[] entry for getSaveFolder() instead. A
+// library with no entry yet (never opened through recordLibraryOpened) reads
+// as the defaults; a WRITE creates its entry on demand.
+function readLibraryBackupConfig() {
+  const libraries = librariesOf(readConfig());
+  const idx = findLibraryIndex(libraries, getSaveFolder());
+  return Object.assign({}, BACKUP_DEFAULTS, (idx >= 0 && libraries[idx].backup) || {});
+}
+function writeLibraryBackupConfig(patch: Record<string, any> | null | undefined) {
+  const cfg = readConfig();
+  const libraries = librariesOf(cfg).slice();
+  const folder = getSaveFolder();
+  let idx = findLibraryIndex(libraries, folder);
+  if (idx === -1) {
+    libraries.push({ path: folder, libraryId: null, lastOpenedAt: new Date().toISOString() });
+    idx = libraries.length - 1;
+  }
+  const merged = Object.assign({}, BACKUP_DEFAULTS, libraries[idx].backup || {}, patch || {});
+  libraries[idx] = Object.assign({}, libraries[idx], { backup: merged });
+  cfg.libraries = libraries;
+  writeConfig(cfg);
+  return merged;
+}
+function readLibraryIntegrityStatus() {
+  const libraries = librariesOf(readConfig());
+  const idx = findLibraryIndex(libraries, getSaveFolder());
+  return Object.assign({}, INTEGRITY_DEFAULTS, (idx >= 0 && libraries[idx].integrity) || {});
+}
+function writeLibraryIntegrityStatus(patch: Record<string, any> | null | undefined) {
+  const cfg = readConfig();
+  const libraries = librariesOf(cfg).slice();
+  const folder = getSaveFolder();
+  let idx = findLibraryIndex(libraries, folder);
+  if (idx === -1) {
+    libraries.push({ path: folder, libraryId: null, lastOpenedAt: new Date().toISOString() });
+    idx = libraries.length - 1;
+  }
+  const merged = Object.assign({}, INTEGRITY_DEFAULTS, libraries[idx].integrity || {}, patch || {});
+  libraries[idx] = Object.assign({}, libraries[idx], { integrity: merged });
+  cfg.libraries = libraries;
+  writeConfig(cfg);
+  return merged;
+}
+
 // Atomic write: a forced kill or crash mid-write must NEVER leave a truncated
 // config.json. Write to a tmp file, fsync, then rename over the target — readers
 // only ever see the complete old or complete new file. (Non-atomic writeFileSync
@@ -235,4 +376,21 @@ function initSaveFolderRedundancy() {
   }
 }
 
-export { readConfig, writeConfig, getSaveFolder, readSavePointer, initSaveFolderRedundancy, isConfigCorrupt, invalidateConfigCache, saveFolderStatus };
+export {
+  readConfig,
+  writeConfig,
+  getSaveFolder,
+  readSavePointer,
+  initSaveFolderRedundancy,
+  isConfigCorrupt,
+  invalidateConfigCache,
+  saveFolderStatus,
+  migrateToLibraries,
+  recordLibraryOpened,
+  listRecentLibraries,
+  removeRecentLibrary,
+  readLibraryBackupConfig,
+  writeLibraryBackupConfig,
+  readLibraryIntegrityStatus,
+  writeLibraryIntegrityStatus,
+};

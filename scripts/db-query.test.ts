@@ -70,6 +70,8 @@ beforeAll(async () => {
     mediaMaxW: 3000,
     mediaMaxH: 4000,
     mediaMaxBytes: 12582912,
+    // #8: same "written directly, just to check the column round-trips" note as mediaMaxW above.
+    shotAnimated: true,
     capturedAt: '2026-01-01T00:00:00Z',
     updatedAt: '2026-01-01T00:00:00Z',
   });
@@ -202,6 +204,17 @@ describe('postsFromDb: 形と並び', () => {
     expect({ mediaMaxW: cap1.mediaMaxW, mediaMaxH: cap1.mediaMaxH, mediaMaxBytes: cap1.mediaMaxBytes }).toEqual({ mediaMaxW: 3000, mediaMaxH: 4000, mediaMaxBytes: 12582912 });
     // cap-2 never set them — same "null on rows nothing filled" convention as seriesId etc.
     expect({ mediaMaxW: cap2.mediaMaxW, mediaMaxH: cap2.mediaMaxH, mediaMaxBytes: cap2.mediaMaxBytes }).toEqual({ mediaMaxW: null, mediaMaxH: null, mediaMaxBytes: null });
+  });
+
+  // #8: same write->DB->read round trip shotW/shotH themselves get, boolean
+  // rather than numeric (fromDbBool on the read side, same as isReply/sensitive).
+  test('shotAnimated が往復する（#8）', async () => {
+    const posts = await postsFromDb(handle.sqlite);
+    const cap1 = posts.find((p) => p.captureId === 'cap-1');
+    const cap2 = posts.find((p) => p.captureId === 'cap-2');
+    expect(cap1.shotAnimated).toBe(true);
+    // cap-2 never set it — same "null on rows nothing filled" convention as mediaMaxW etc.
+    expect(cap2.shotAnimated).toBeNull();
   });
 
   test('quotedPost が往復する（#180）', async () => {

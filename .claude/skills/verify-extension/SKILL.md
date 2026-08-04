@@ -9,6 +9,8 @@ description: 拡張機能（extension/）の変更を実ブラウザで確かめ
 
 **拡張検証の共通罠はユーザースコープの skill `browser-extension-verify`**（注入の生死の見方・背面タブ・X 固有の観測・自動化スタックでのボット判定・ビルド出力の grep）＝**切り分けに入る前にそちらを読む**。ここは Hologram のプロファイル構成と、この拡張の実装に依存する罠だけを持つ。
 
+**dev サーバーの窓そのものの作法は skill `windows-scripting`**（なぜ可視窓で起こすか・`cmd /k` を使わない理由・失敗時だけ止める方法・窓を外から観測する手段・端末なしで起こすと CLI が即終了する罠）＝`dev-extension.cts` を直す時はそちらが正本。ここは Hologram 固有の値（ポート・出力先・窓の識別子）だけを持つ。
+
 ## 土台: 開発は専用プロファイル、日常の Chrome は触らない
 
 **ブラウザは2本ある**（#732）。日常の Chrome は本体ツリーの `extension/.output/chrome-mv3` を読み、そこには `npm run deploy:ext` を通った検証済み release だけが入る。**検証で日常の Chrome を使わない**＝開いているタブも、載っている拡張も触らない。
@@ -24,8 +26,12 @@ description: 拡張機能（extension/）の変更を実ブラウザで確かめ
 ## 手順（既定）
 
 1. fresh worktree は `npm run setup` を済ませる。
-2. 対象 worktree で `npm run dev:ext`。常駐しないので、検証が終わったら止める。二重起動はポート衝突で落ちる（黙って別ポートへ逃げない）。
-3. `npm run ext:dev:browser` で開発プロファイルの Chrome を開き、対象 SNS のタブを開く（初回だけ `chrome://extensions` から `~/.hologram-dev/chrome-mv3-dev` を Load unpacked＝ここだけは人の手が要る）。保存した変更は拡張リロード＋タブリロードで入るので、**確認直前にそのタブを更新する**。
+2. 対象 worktree で `npm run dev:ext`。**起きているかを先に確かめる必要はない＝コマンド自身が見る**（既に上がっていれば `already up … leaving it alone` と出して何もしない。1本のサーバーが全 worktree に効く）。**そのまま前景で呼ぶ**＝端末のない呼び出しからは**コンソールウィンドウが開いてそちらで走り**、コマンド自体はすぐ戻る（docs/build.md「サーバーは可視のコンソールウィンドウで走る」）。⚠️**生死を自前で確かめるなら `localhost`**＝待ち受けは `::1` なので `127.0.0.1` を叩くと動いていても「落ちている」と出る（判定は `scripts/lib-dev-server.cts` を使う）。**窓はそのままサーバーの生死を表す**＝主が node なのでタスクバーに Node のアイコンで出て、**窓が消えた＝サーバーが止まった**（異常終了の時だけ `pause` で残り、理由が読める）。**見分けは中身でする**＝タイトルは走り出すと npm に上書きされ、先頭の `[hologram] development build folder: …` は小さい窓だとビルド一覧に押し出される。窓の大きさに依らないのは npm ヘッダの `hologram-extension@<version>`・出力パスの `.hologram-dev\chrome-mv3-dev`・ポート `51731`。**バックグラウンド実行にもログのリダイレクトにも回さない**＝そのウィンドウが唯一の出力先で、走っていることが外から見えるのが要点。止めるのはウィンドウを閉じる（または `cmd /k npm run dev:ext` のプロセスを kill する）。**検証中は動かしたまま**にする＝dev ビルドは自己完結していない（popup.html 等がスクリプトと CSS を `127.0.0.1:51731` から直接読む）。落ちていても拡張は壊れた顔をしない＝ポップアップは開くが、素の HTML が縦一列に潰れて出る（CSS/レイアウトのバグに見えるが原因はサーバー未起動、#861）。止めるのは検証が終わってから。二重起動はポート衝突で落ちる（黙って別ポートへ逃げない）。
+3. **開発プロファイルの Chrome は自分で用意する**（規則は共通スキル「起動のしかた」＝頼む前にプロセスを見る）。
+   - 状態だけ見るなら `node scripts/open-dev-profile.cts --print`＝`running: yes (pid …)` を出して**何も開かない**。
+   - 開いていなければ `npm run ext:dev:browser`。起動済みなら pid を出して終わり、未起動なら一度きりのスケジュールタスク `HologramDevBrowser` 経由でコンテナ外に開く（**開いた時は一行添える**）。
+   - 人の手が要るのは**初回の Load unpacked**（`chrome://extensions` → `~/.hologram-dev/chrome-mv3-dev`）と**各 SNS へのログイン**だけ。
+   - 保存した変更は拡張リロード＋タブリロードで入るので、**確認直前にそのタブを更新する**。
 4. **反映されない時に手でリロードを頼まない**＝dev サーバーのログと、拡張が `~/.hologram-dev/chrome-mv3-dev` を読んでいるかを先に見る。
 5. **Claude の自動確認は使い捨て環境で行う**＝`scripts/lib-extension-e2e.cts` 系（同梱 Chromium・一時プロファイル・モック native host。`npm run test:e2e-extension` / 実サイトカナリアは `e2e-capture-test.cts`）。Playwright はポート未指定ならパイプで喋るのでどこにも listen しない。
    **ログイン済みアカウントでの挙動は自動化しない**＝この拡張は「X から自動化に見えないこと」を設計原則に持ち（#362）、同じ制約が検証にもかかる（自動化スタックの指紋については skill `browser-extension-verify`）。ログインが要る確認は人間がブラウザで行い、Claude は結果・スクショを受け取る。

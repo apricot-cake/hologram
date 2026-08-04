@@ -69,7 +69,12 @@ export default defineConfig({
     resolve: { alias: RESOLVE_ALIAS },
     build: {
       rollupOptions: {
-        input: r('src/renderer/index.html'),
+        // TWO entries (#79): pin.html is the floating mini-viewer window's own
+        // document — same build (shared components/preload), separate bundle,
+        // never loaded by the main window. main's lib.entry above uses the same
+        // object-map shape for the same reason (a bare path replaces lib mode's
+        // single-entry default entirely rather than adding to it).
+        input: { index: r('src/renderer/index.html'), pin: r('src/renderer/pin.html') },
       },
     },
     // Dev only: nonce every tag Vite emits, so the Fast Refresh preamble (an

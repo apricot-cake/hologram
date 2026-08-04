@@ -87,8 +87,20 @@ describe('既定値', () => {
   });
 
   // A three-way value (unknown/true/false), not false
-  test.each(['isReply', 'isQuote', 'isThread', 'isEdited', 'sensitive'])('%s の既定は null（三値）', (k) => {
+  test.each(['isReply', 'isQuote', 'isThread', 'isEdited', 'sensitive', 'shotAnimated'])('%s の既定は null（三値）', (k) => {
     expect(rec[k]).toBeNull();
+  });
+});
+
+describe('#8: shotAnimated（カード画像が animated webp か）', () => {
+  test('true が素通しされる', () => {
+    const rec = normalizePostRecord({ captureId: 'cap-anim', shotW: 300, shotH: 200, shotAnimated: true }, fixedNow);
+    expect(rec.shotAnimated).toBe(true);
+  });
+
+  test('false が素通しされる（静止 webp）', () => {
+    const rec = normalizePostRecord({ captureId: 'cap-still', shotW: 300, shotH: 200, shotAnimated: false }, fixedNow);
+    expect(rec.shotAnimated).toBe(false);
   });
 });
 

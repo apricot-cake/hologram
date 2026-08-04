@@ -82,6 +82,7 @@ const POST_COLUMNS = [
   'customEmojis',
   'poll',
   'linkCard',
+  'shotAnimated',
   'metaSource',
 ] as const;
 
@@ -417,6 +418,10 @@ function assemble(sqlite: Database.Database, postRows: any[]): any[] {
       // inspector's link-card row and the export sidecar, the same two
       // consumers quotedPost/poll have.
       linkCard: parseJsonObject(r.linkCard),
+      // #8: the card image is an animated webp — see lib-card-dims.ts's
+      // fillCardDims and records.ts's imgW carve-out (the same treatment a
+      // real .gif already gets by extension alone).
+      shotAnimated: fromDbBool(r.shotAnimated),
       // #239: which regard filled title/description/author/published/
       // siteName/url on the generic web-page extraction path. Read for the
       // export sidecar's sake only — v1 has no inspector/UI consumer (design

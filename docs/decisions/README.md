@@ -35,7 +35,7 @@
 | [0007](0007-horizontal-tabs-not-vertical.md) | タブは上部水平に置く（縦タブを採らない） | 採用 |
 | [0008](0008-single-smart-search.md) | 検索モードの切替を廃し単一のスマート検索にする | 採用 |
 | [0009](0009-bottom-floating-selection-bar.md) | 選択中の操作は底部中央のフローティングバーに置く | 採用 |
-| [0010](0010-sqlite-as-the-metadata-truth-source.md) | メタデータの正本を SQLite に置き、ファイルは実体だけを持つ | 採用 |
+| [0010](0010-sqlite-as-the-metadata-truth-source.md) | メタデータの正本を SQLite に置き、ファイルは実体だけを持つ | 採用（DB配置の条項のみ 0023 へ置き換え） |
 | [0011](0011-preserve-acquisition-payloads.md) | 取得したペイロードを原本として残し、正規化フィールドへの昇格だけを実需で絞る | 採用 |
 | [0012](0012-asset-documents-are-raster-only.md) | ライブラリのファイルを「文書」にしてよいのはラスタ画像だけにし、asset 応答自体にも CSP を載せる | 採用 |
 | [0013](0013-accent-color-scoped-to-selection-and-active-state.md) | アクセント色は選択・作用中の状態表示だけに使う | 採用 |
@@ -49,3 +49,5 @@
 | [0021](0021-panel-toggles-are-instant.md) | パネルの開閉も即時にする（サイドバー・詳細パネル） | 採用 |
 | [0022](0022-renderer-served-from-app-scheme.md) | レンダラは `app://` で配り、CSP は応答ヘッダで配る | 採用 |
 | [0023](0023-global-history-page.md) | グローバル履歴ページ（ブラウザの chrome://history 相当） | 採用 |
+| [0024](0024-thumbnail-webp-avif-via-renderer-delegated-decode.md) | webp/avif のサムネイルはレンダラ委譲デコードで作る（wasm-vips・OS シェル委譲は不採用） | 採用 |
+| [0025](0025-database-lives-inside-the-library-folder.md) | データベースはライブラリ（保存フォルダ）の中に置く（0010 のDB配置条項を置き換え） | 採用 |

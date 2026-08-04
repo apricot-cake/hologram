@@ -550,6 +550,12 @@ const MIGRATIONS: Migration[] = [
         CREATE INDEX idx_poster_profile_snapshots_key ON poster_profile_snapshots(posterKey, observedAt);
       `),
   },
+  // #8: whether the card image (the same file shotW/shotH describe) is an
+  // ANIMATED webp — see app/src/main/lib-card-dims.ts's fillCardDims and
+  // records.ts's imgW carve-out. Null on every row written before this
+  // migration, same "ride the existing write-time mechanism" convention as
+  // shotW/shotH/mediaMaxW itself.
+  { name: 'add-post-shot-animated', up: (db) => db.exec('ALTER TABLE posts ADD COLUMN shotAnimated INTEGER') },
   // #239: which regard (schema.org format / OGP / Dublin Core / Highwire /
   // plain HTML fallback) filled title/description/author/published/siteName/
   // url on the generic web-page extraction path (#195's bookmark save route)
@@ -737,6 +743,8 @@ interface PostsTable {
   // add-post-link-card migration (#181) — JSON LinkCardShape, same storage
   // convention as quotedPost/replyToPost/poll. See PostRecordShape.linkCard.
   linkCard: string | null;
+  // add-post-shot-animated migration (#8) — see PostRecordShape.shotAnimated.
+  shotAnimated: number | null;
   // add-post-meta-source migration (#239) — JSON Record<string,string>, same
   // storage convention as quotedPost/replyToPost/poll/linkCard. See
   // PostRecordShape.metaSource.

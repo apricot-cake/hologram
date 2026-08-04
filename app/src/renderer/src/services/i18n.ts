@@ -100,6 +100,19 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     tagMgmtSplitStay: '元のまま',
     tagMgmtSplitCount: '新しい実体へ $1 件・元のまま $2 件',
     tagMgmtSplitConfirm: '分割する',
+    tagMgmtColAliases: '別名',
+    tagMgmtAliasNone: '—',
+    tagMgmtAddAliasMenuItem: '別名を追加…',
+    tagMgmtAliasDialogTitle: '「$1」の別名を追加',
+    tagMgmtAliasDialogDesc: 'この表記で入力・取込されたタグは自動的に「$1」として保存されます。',
+    tagMgmtAliasPh: '別名を入力…',
+    tagMgmtAliasAdd: '追加',
+    tagMgmtAliasRemoveLabel: 'この別名を削除',
+    tagMgmtAliasRemoveConfirm: '別名「$1」を削除しますか。',
+    tagMgmtKeepOldNameAsAlias: '旧名「$1」を別名として残す',
+    tagMgmtAliasErrorSelf: 'タグ自身の名前と同じです。',
+    tagMgmtAliasErrorNameCollision: '同じ名前のタグが既にあります。統合（リネーム）を利用してください。',
+    tagMgmtAliasErrorConflict: 'その別名は既に別のタグに登録されています。',
     // viewer: the final catch-all for when rendering crashes (app/ErrorBoundary.tsx)
     renderErrorTitle: '画面を表示できませんでした',
     renderErrorBody: 'ライブラリのデータはそのままです。再読み込みすると元に戻ります。',
@@ -116,6 +129,7 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     // Folder hierarchy (#41): direct tree editing in the sidebar
     foldNew: 'フォルダを作成',
     foldNewSub: 'サブフォルダを作成',
+    foldPinOpen: 'ピンで開く',
     foldToggleSubs: 'サブフォルダの表示',
     foldDeleteCascade: 'サブフォルダ $1 件も一緒に削除されます。投稿はライブラリに残ります。',
     foldOnly: 'このフォルダのみ',
@@ -188,6 +202,8 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     ctxOpenFile: '開く',
     ctxOpenFileInFolder: 'フォルダで表示',
     ctxOpenNewTab: '新しいタブで開く',
+    // 最前面の参照ウィンドウ（ピン留めミニビューア、#79）
+    ctxPin: 'ピン留めへ送る',
     // 比較ビュー (#82) — 複数選択 → 右クリックの一行
     ctxCompare: '比較',
     // Right-click on selected text (#167). This row sits in the same lineup as "Search with
@@ -208,6 +224,14 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     itvFlip: '左右反転',
     itvGrid: 'グリッド',
     itvGrayscale: 'グレースケール',
+    itvPin: 'ピン留めへ送る',
+    // 最前面の参照ウィンドウ（ピン留めミニビューア、#79）— ウィンドウ自身のUI
+    pinAlwaysOnTop: '最前面固定',
+    pinSaveFolder: 'セットをフォルダとして保存…',
+    pinSaveFolderPrompt: 'フォルダ名',
+    pinClose: '閉じる',
+    pinBackToGrid: '一覧へ戻る',
+    pinEmpty: '画像を右クリックして「ピン留めへ送る」を選ぶと、ここに表示されます。',
     // Ugoira playback (#119 St3). Uses pixiv's own name for it as-is (no coined terms)
     ugoiraLabel: 'うごイラ',
     ugoiraPlay: '再生',
@@ -383,7 +407,33 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
 
     // viewer: settings > data / danger
     dataTitle: 'データ',
-    saveFolderSubTitle: 'ライブラリの保存先',
+
+    // #176: switching between multiple libraries — separate from "保存先の変更"
+    // (saveFolderSubTitle below), which MOVES the current library; this OPENS a
+    // different one, leaving the current one untouched where it is.
+    libraryCardTitle: 'ライブラリ',
+    libraryCardHint: '複数のライブラリ（保存フォルダ）を切り替えて使えます。「移動」は今のライブラリを別の場所へ運びますが、「切り替え」は別のライブラリを開くだけで、今のライブラリはそのまま残ります。',
+    libraryBackupPrefix: 'このライブラリのバックアップ: ',
+    libraryBackupNone: '未設定',
+    librarySwitch: '切り替え…',
+    libraryCreateNew: '新規作成…',
+    libraryChanging: '切り替え中…',
+    librarySwitched: 'ライブラリを切り替えました',
+    libraryRecentTitle: '最近使ったライブラリ',
+    libraryRecentDead: '見つかりません',
+    libraryRecentForget: '一覧から削除',
+    librarySwitchTo: 'このライブラリに切り替え',
+    libraryEmptyConfirm: '空のフォルダです',
+    libraryEmptyConfirmDesc: 'このフォルダを新しいライブラリとして開始しますか。',
+    libraryEmptyConfirmOk: '新しいライブラリとして開始',
+    libraryRecoverConfirm: 'このフォルダにライブラリのデータベースが見つかりません',
+    libraryRecoverConfirmDesc: '取込キューとバックアップから復旧を試みます。復旧できなかった投稿は失われる場合があります。ライブラリを移動した先のフォルダを選んだ場合のみ続けてください。',
+    libraryRecoverConfirmOk: 'このまま開く',
+    libraryErrNotALibrary: 'Hologram のライブラリではありません',
+    libraryErrBusy: '切り替え中です。しばらく待ってから再度お試しください。',
+    libraryErrOpenFailed: 'このライブラリを開けませんでした（元のライブラリに戻しました）',
+
+    saveFolderSubTitle: 'ライブラリの保存先（移動）',
     saveFolderChange: '変更',
     saveFolderHint: '投稿の保存場所。変更すると、選んだフォルダの中に Hologram-library フォルダを作り、既存ライブラリをそこへ移動します（移動完了まで元データを保持＝安全）。',
     saveFolderMoving: '移行中…',
@@ -866,6 +916,19 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     tagMgmtSplitStay: 'Stays here',
     tagMgmtSplitCount: '$1 to the new entity, $2 staying',
     tagMgmtSplitConfirm: 'Split',
+    tagMgmtColAliases: 'Aliases',
+    tagMgmtAliasNone: '—',
+    tagMgmtAddAliasMenuItem: 'Add alias…',
+    tagMgmtAliasDialogTitle: 'Add an alias for "$1"',
+    tagMgmtAliasDialogDesc: 'A tag typed or imported under this spelling is automatically saved as "$1".',
+    tagMgmtAliasPh: 'Type an alias…',
+    tagMgmtAliasAdd: 'Add',
+    tagMgmtAliasRemoveLabel: 'Remove this alias',
+    tagMgmtAliasRemoveConfirm: 'Remove the alias "$1"?',
+    tagMgmtKeepOldNameAsAlias: 'Keep the old name "$1" as an alias',
+    tagMgmtAliasErrorSelf: "That is the tag's own current name.",
+    tagMgmtAliasErrorNameCollision: 'A tag with that exact name already exists. Use merge (rename) instead.',
+    tagMgmtAliasErrorConflict: 'That alias is already registered for a different tag.',
     // viewer: render-failure fallback (app/ErrorBoundary.tsx)
     renderErrorTitle: 'This screen could not be displayed',
     renderErrorBody: 'Your library data is untouched. Reloading brings the window back.',
@@ -882,6 +945,7 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     // Folder nesting (#41): the sidebar tree edited in place
     foldNew: 'New folder',
     foldNewSub: 'New subfolder',
+    foldPinOpen: 'Open in pin window',
     foldToggleSubs: 'Toggle subfolders',
     foldDeleteCascade: 'Its $1 subfolder(s) are deleted too. The posts stay in your library.',
     foldOnly: 'This folder only',
@@ -951,6 +1015,8 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     ctxOpenFile: 'Open',
     ctxOpenFileInFolder: 'Show in folder',
     ctxOpenNewTab: 'Open in new tab',
+    // Pinned floating mini-viewer (#79)
+    ctxPin: 'Send to pin window',
     // Compare view (#82) — multi-select then right-click
     ctxCompare: 'Compare',
     ctxCopyText: 'Copy',
@@ -968,6 +1034,14 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     itvFlip: 'Flip horizontal',
     itvGrid: 'Grid',
     itvGrayscale: 'Grayscale',
+    itvPin: 'Send to pin window',
+    // Pinned floating mini-viewer (#79) — the window's own UI
+    pinAlwaysOnTop: 'Always on top',
+    pinSaveFolder: 'Save set as folder…',
+    pinSaveFolderPrompt: 'Folder name',
+    pinClose: 'Close',
+    pinBackToGrid: 'Back to grid',
+    pinEmpty: 'Right-click an image and choose "Send to pin window" to see it here.',
     ugoiraLabel: 'Ugoira animation',
     ugoiraPlay: 'Play',
     ugoiraPause: 'Pause',
@@ -1132,7 +1206,33 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     hintShortcut: 'Opens the extension shortcuts page. Default: Alt+S (capture). If shortcuts stop working after reinstall, they may have been unassigned. Use the link above to reassign them.',
 
     dataTitle: 'Data',
-    saveFolderSubTitle: 'Library location',
+
+    // #176: switching between multiple libraries — separate from "保存先の変更"
+    // (saveFolderSubTitle below), which MOVES the current library; this OPENS a
+    // different one, leaving the current one untouched where it is.
+    libraryCardTitle: 'Library',
+    libraryCardHint: 'Switch between multiple libraries (save folders). "Move" carries the current library to a new place; "Switch" just opens a different one, leaving the current one where it is.',
+    libraryBackupPrefix: "This library's backup: ",
+    libraryBackupNone: 'Not set',
+    librarySwitch: 'Switch…',
+    libraryCreateNew: 'Create new…',
+    libraryChanging: 'Switching…',
+    librarySwitched: 'Switched libraries',
+    libraryRecentTitle: 'Recent libraries',
+    libraryRecentDead: 'Not found',
+    libraryRecentForget: 'Remove from list',
+    librarySwitchTo: 'Switch to this library',
+    libraryEmptyConfirm: 'This folder is empty',
+    libraryEmptyConfirmDesc: 'Start this folder as a new library?',
+    libraryEmptyConfirmOk: 'Start a new library',
+    libraryRecoverConfirm: "This folder's library database was not found",
+    libraryRecoverConfirmDesc: "Hologram will try to recover from the import queue and backup. Posts it can't recover may be lost. Only continue if this is really where you moved the library.",
+    libraryRecoverConfirmOk: 'Open it anyway',
+    libraryErrNotALibrary: 'Not a Hologram library',
+    libraryErrBusy: 'A switch is already in progress — try again in a moment.',
+    libraryErrOpenFailed: 'Could not open that library (switched back to the previous one)',
+
+    saveFolderSubTitle: 'Library location (move)',
     saveFolderChange: 'Change',
     saveFolderHint: 'Where posts are stored. Changing it creates a Hologram-library folder inside the folder you pick and moves the existing library there (your data is kept until the move completes).',
     saveFolderMoving: 'Moving…',

@@ -18,10 +18,11 @@ const FOLDERS = [
   { id: 'f-b', name: '参考', kind: 'static', created: 3, parentId: null, items: [] },
 ];
 
-function seedFolders({ configDir }: { configDir: string }) {
+function seedFolders({ saveFolder }: { saveFolder: string }) {
   const { openDatabase } = require(path.join(appDir, 'src', 'main', 'lib-db.ts'));
   const { createDbWriter } = require(path.join(appDir, 'src', 'main', 'lib-db-write.ts'));
-  const { sqlite } = openDatabase(path.join(configDir, 'hologram.db'));
+  // #176: hologram.db lives inside the save folder now, not configDir (ADR 0025).
+  const { sqlite } = openDatabase(path.join(saveFolder, 'hologram.db'));
   createDbWriter(sqlite).setFolders({ folders: FOLDERS, activeId: null });
   sqlite.close();
 }

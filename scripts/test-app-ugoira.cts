@@ -162,9 +162,15 @@ const evalJs = `(async () => {
   };
   out.firstPixel = await waitFor(() => { const p = px(); return p !== '0,0,0' && !p.startsWith('ERR') ? p : null; });
 
-  // The frames actually advance = the color changes on each delay tick
+  // The frames actually advance = the color changes on each delay tick.
+  // Sampled until a second color shows up rather than over a fixed window: every
+  // step from here to a drawn frame 2 is IPC (main reads the frame out of the
+  // zip) plus createImageBitmap, and on a loaded CI runner that first hop alone
+  // outran the old 1s budget — the nightly went red with ["255,0,0"] while the
+  // same build advanced through all three colors locally. What is being asserted
+  // is that the animation moves, not how fast the runner gets there.
   const seen = new Set();
-  for (let i = 0; i < 40; i++) { seen.add(px()); await sleep(25); }
+  await waitFor(() => { seen.add(px()); return seen.size >= 2 ? true : null; }, 10000);
   out.colorsSeen = [...seen].sort();
 
   // Stops when paused

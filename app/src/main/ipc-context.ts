@@ -23,7 +23,8 @@ import type { BrowserWindow } from 'electron';
 import type Database from 'better-sqlite3';
 import type { createDbWriter } from './lib-db-write.ts';
 import type { relocateLibrary } from './lib-migrate.ts';
-import type { BackupConfig, BackupRunResult, DbGeneration, DbRollbackResult, FullTextHit, IntegrityStatus, LibraryStatus, OrphanRecoveryResult, PostsDelta, PostsSnapshot, ValidationResult, WatchImportConfig, WatchImportFolder } from './ipc-payloads.ts';
+import type { LibraryClassification } from './lib-switch-library.ts';
+import type { BackupConfig, BackupRunResult, DbGeneration, DbRollbackResult, FullTextHit, IntegrityStatus, LibraryStatus, OrphanRecoveryResult, PinItem, PostsDelta, PostsSnapshot, RecentLibraryEntry, SwitchLibraryResult, ValidationResult, WatchImportConfig, WatchImportFolder } from './ipc-payloads.ts';
 
 /** The organization-state writer every DB-backed handler goes through. */
 export type DbWriter = ReturnType<typeof createDbWriter>;
@@ -120,6 +121,24 @@ export interface IpcContext {
   // --- Relocation + intake ---
   validateSaveFolder(dir: string | null | undefined): ValidationResult;
   relocateLibrary: typeof relocateLibrary;
+  /**
+   * #176: opens (creating/restoring as needed — see index.ts's ensureDb) the
+   * database at `dest` and makes it the current library — validate, classify,
+   * stop writes, close the old DB, flip the pointer, open the new one, rewire
+   * watchers, reload every window. Refuses outright on 'reject' (no evidence
+   * of a library AND not empty) or while a switch is already in flight.
+   */
+  switchLibrary(dest: string): Promise<SwitchLibraryResult>;
+  /** #176: reads `dir` (never writes) to decide which switchLibrary confirm, if any, applies. */
+  classifyLibraryFolder(dir: string): LibraryClassification;
+  /** #176: the "recent libraries" list — newest first, with a live exists() check. */
+  listRecentLibraries(): RecentLibraryEntry[];
+  /** #176: drops one dead entry from the recent list (never touches the folder itself). */
+  removeRecentLibrary(folder: string): void;
+  /** #176: closes the live DB handle — relocateLibrary uses this before copying the folder. */
+  closeDb(): void;
+  /** #176: opens (or creates) the DB at whatever getSaveFolder() currently resolves to. */
+  openDb(): void;
   /** (Re-)points the inbox watcher at the current save folder. */
   watchInboxFolder(): void;
   /** #84: refreshes chokidar after a config change or at startup. */
@@ -154,4 +173,12 @@ export interface IpcContext {
   isPrimarySender(webContentsId: number): boolean;
   /** Opens a new secondary window (Ctrl+Shift+N / the second-launch entry point, #32 St1). */
   openNewWindow(): void;
+
+  // --- Pin windows (#79: floating mini-viewer) ---
+  /** Relays `items` to the last-focused pin window, or opens a fresh one (`newWindow`). */
+  pinSend(items: PinItem[], newWindow: boolean): void;
+  /** The CALLING pin window's own boot payload (its webContents id), consumed once. */
+  pinGetInitial(webContentsId: number): PinItem[];
+  /** Toggles the CALLING pin window's always-on-top; returns the new state. */
+  pinToggleAlwaysOnTop(webContentsId: number): boolean;
 }

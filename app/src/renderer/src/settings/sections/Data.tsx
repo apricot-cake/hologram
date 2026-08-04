@@ -14,9 +14,10 @@ import { t } from '../../_shared/i18n.ts';
 import { notify } from '../../services/ui.ts';
 import { getBackup, setBackup as setBackupConfig, pickBackupDir, onBackupDone, getIntegrityStatus, runOrphanRecovery, onIntegrityCheckDone, listDbGenerations, rollbackDbGeneration } from '../../services/backup.ts';
 import { onExportProgress, onSaveFolderProgress, pickSaveFolder, moveSaveFolder, exportComplete, importComplete, importLegacyZip, importImages, getWatchImport, pickWatchImportFolder, setWatchImport } from '../../services/posts.ts';
+import { pickLibraryFolder, switchLibrary as switchLibraryIpc, getRecentLibraries, removeRecentLibrary as removeRecentLibraryIpc } from '../../services/library-path.ts';
 import { open as confirmOpen } from '../../services/confirm.ts';
 import { loadPosts } from '../../services/post-grid-builder.ts';
-import type { BackupConfig, BackupRunResult, DbGeneration, IntegrityStatus, SaveFolderProgress, WatchImportFolder } from '../../../../main/ipc-payloads.ts';
+import type { BackupConfig, BackupRunResult, DbGeneration, IntegrityStatus, RecentLibraryEntry, SaveFolderProgress, WatchImportFolder } from '../../../../main/ipc-payloads.ts';
 
 // Missing-bridge calls throw and land in the callers' try/catch, same as the
 // untyped original — the {} fallback only exists for the bare dev server.
@@ -84,6 +85,22 @@ const saveFolderErr = (code?: string) => {
   }
 };
 
+// #176: pick-library-folder / switch-library error codes. 'not-a-library' is
+// new (the four-way classification's 'reject' branch); everything else
+// reuses validateSaveFolder's codes via saveFolderErr.
+const libraryErr = (code?: string) => {
+  switch (code) {
+    case 'not-a-library':
+      return t('libraryErrNotALibrary');
+    case 'busy':
+      return t('libraryErrBusy');
+    case 'open-failed':
+      return t('libraryErrOpenFailed');
+    default:
+      return saveFolderErr(code);
+  }
+};
+
 // #37: backup run failures that are specific ERROR CODES (not an arbitrary
 // exception .message, which falls through to the default and is shown as-is).
 const backupErr = (code?: string | null) => {
@@ -123,6 +140,15 @@ export function Data() {
   const [migrating, setMigrating] = useState(false);
   const [progress, setProgress] = useState<{ pct: number; log: string[] } | null>(null); // while/after a move
 
+  // --- library switch (#176) ---
+  const [switchingLib, setSwitchingLib] = useState(false);
+  const [recentLibraries, setRecentLibraries] = useState<RecentLibraryEntry[]>([]);
+  const refreshRecentLibraries = () => {
+    Promise.resolve(getRecentLibraries())
+      .then((list) => setRecentLibraries(list || []))
+      .catch(() => {});
+  };
+
   // --- backup ---
   const [backup, setBackup] = useState<BackupConfig | null>(null);
   // --- restore points (#233's DB generations) ---
@@ -137,6 +163,7 @@ export function Data() {
 
   // Load both the config save folder and the backup config on mount (the modal
   // remounts each time it opens, so this matches the old "reload on open").
+  // biome-ignore lint/correctness/useExhaustiveDependencies: refreshRecentLibraries is a fresh closure every render — this effect intentionally runs once, on mount only
   useEffect(() => {
     Promise.resolve(hologram().getConfig ? hologram().getConfig() : null)
       .then((cfg) => setSaveFolder((cfg && cfg.saveFolder) || ''))
@@ -156,6 +183,7 @@ export function Data() {
     Promise.resolve(listDbGenerations())
       .then((g) => setGenerations(g || []))
       .catch(() => {});
+    refreshRecentLibraries();
   }, []);
 
   // Live migration progress events. The copy percent only drives the bar; log
@@ -244,6 +272,76 @@ export function Data() {
       notify(t('saveFolderErrGeneric'));
     } finally {
       setMigrating(false);
+    }
+  };
+
+  // --- library switch (#176) — 切り替え / 新規作成 / 最近使ったライブラリ. main
+  // reloads every window itself on success (switchLibrary's whole point — an
+  // organize-layer store that only partially re-synced is exactly the class of
+  // bug a full reload avoids), so there is nothing else to refresh here on ok.
+  const doSwitch = async (dest: string) => {
+    setSwitchingLib(true);
+    try {
+      const res = await switchLibraryIpc(dest);
+      if (res && res.ok) {
+        notify(t('librarySwitched'));
+      } else {
+        notify(libraryErr(res && res.error));
+      }
+    } catch {
+      notify(t('saveFolderErrGeneric'));
+    } finally {
+      setSwitchingLib(false);
+      refreshRecentLibraries();
+    }
+  };
+
+  const pickAndSwitch = async () => {
+    setSwitchingLib(true);
+    try {
+      const res = await pickLibraryFolder();
+      if (!res || res.canceled) return;
+      if (!res.ok || !res.dest) {
+        notify(libraryErr(res && res.error));
+        return;
+      }
+      const dest = res.dest;
+      if (res.classification === 'empty') {
+        confirmOpen({
+          message: t('libraryEmptyConfirm'),
+          description: t('libraryEmptyConfirmDesc'),
+          okLabel: t('libraryEmptyConfirmOk'),
+          cancelLabel: t('confirmCancel'),
+          onOk: () => void doSwitch(dest),
+        });
+        return;
+      }
+      if (res.classification === 'evidence-no-db') {
+        confirmOpen({
+          message: t('libraryRecoverConfirm'),
+          description: t('libraryRecoverConfirmDesc'),
+          okLabel: t('libraryRecoverConfirmOk'),
+          cancelLabel: t('confirmCancel'),
+          onOk: () => void doSwitch(dest),
+        });
+        return;
+      }
+      await doSwitch(dest); // 'has-db' — no confirm needed
+    } finally {
+      setSwitchingLib(false);
+    }
+  };
+
+  // A row in "最近使ったライブラリ" is already known-good (it was opened
+  // before) — no pick, no classify, no confirm.
+  const switchToRecent = (path: string) => void doSwitch(path);
+  const forgetRecent = async (path: string) => {
+    try {
+      await removeRecentLibraryIpc(path);
+    } catch {
+      /* ignore */
+    } finally {
+      refreshRecentLibraries();
     }
   };
 
@@ -506,6 +604,64 @@ export function Data() {
 
   return (
     <div className="space-y-6">
+      {/* #176: switch between libraries — separate from "保存先フォルダ" below,
+          which MOVES the current library rather than opening a different one. */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-sm">
+            <Highlight text={t('libraryCardTitle')} />
+          </CardTitle>
+          <CardDescription>
+            <Highlight text={t('libraryCardHint')} />
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex flex-wrap items-center gap-2.5">
+            <PathChip>{saveFolder}</PathChip>
+          </div>
+          <div className="text-muted-foreground text-[0.8rem]">
+            {t('libraryBackupPrefix')}
+            {(backup && backup.dir) || t('libraryBackupNone')}
+          </div>
+          <div className="flex flex-wrap items-center gap-2.5">
+            <Button variant="outline" onClick={() => void pickAndSwitch()} disabled={switchingLib}>
+              {switchingLib ? t('libraryChanging') : t('librarySwitch')}
+            </Button>
+            <Button variant="outline" onClick={() => void pickAndSwitch()} disabled={switchingLib}>
+              {t('libraryCreateNew')}
+            </Button>
+          </div>
+          {recentLibraries.length > 1 && (
+            <div>
+              <div className="text-sm font-medium">
+                <Highlight text={t('libraryRecentTitle')} />
+              </div>
+              <div className="mt-2 space-y-1.5">
+                {recentLibraries
+                  .filter((r) => r.path !== saveFolder)
+                  .map((r) => (
+                    <div key={r.path} className="flex flex-wrap items-center gap-2.5">
+                      <PathChip>{r.path}</PathChip>
+                      {r.exists ? (
+                        <Button variant="ghost" size="sm" onClick={() => switchToRecent(r.path)} disabled={switchingLib}>
+                          {t('librarySwitchTo')}
+                        </Button>
+                      ) : (
+                        <>
+                          <span className="text-destructive text-xs">{t('libraryRecentDead')}</span>
+                          <Button variant="ghost" size="sm" onClick={() => void forgetRecent(r.path)}>
+                            {t('libraryRecentForget')}
+                          </Button>
+                        </>
+                      )}
+                    </div>
+                  ))}
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
       {/* Save destination folder */}
       <Card>
         <CardHeader>

@@ -28,10 +28,13 @@ import { relocateLibrary } from './lib-migrate.ts';
 // what remains here is the assembly plus the record pipeline every part of it
 // shares (config → DB → inbox → renderer).
 import { configDir, defaultLibraryDir, installer, pixivRefererFor, downloadAvatar, clearAllBlockReason } from './native-host.ts';
-import { readConfig, writeConfig, getSaveFolder, readSavePointer, initSaveFolderRedundancy, isConfigCorrupt, invalidateConfigCache, saveFolderStatus } from './lib-config.ts';
+import { readConfig, writeConfig, getSaveFolder, readSavePointer, initSaveFolderRedundancy, isConfigCorrupt, invalidateConfigCache, saveFolderStatus, migrateToLibraries, recordLibraryOpened, listRecentLibraries, removeRecentLibrary } from './lib-config.ts';
 import { mimeForFile, registerImageProtocol } from './lib-thumbnails.ts';
 import { backupIntervalMs, createBackupEngine, latestRestorableSnapshot, readBackupConfig, readIntegrityStatus, validateBackupDir, validateSaveFolder, writeBackupConfig } from './lib-backup.ts';
-import { APP_ICON, DEV_ORIGIN, DEV_SERVER_URL, createWindow, devServer, getWin, installNavigationGuards, sendToOtherWins, sendToWin, sendWindowToBack } from './lib-window.ts';
+import { classifyLibraryFolder } from './lib-switch-library.ts';
+import { ensureLibraryId } from './lib-db-write.ts';
+import { APP_ICON, DEV_ORIGIN, DEV_SERVER_URL, createWindow, devServer, getWin, getWindows, installNavigationGuards, sendToOtherWins, sendToWin, sendWindowToBack } from './lib-window.ts';
+import { pinSend, takeInitial as pinTakeInitial, toggleAlwaysOnTop as pinToggleAlwaysOnTopImpl } from './lib-pin-window.ts';
 import { installDevRendererCsp, registerAppProtocol } from './app-protocol.ts';
 import { runMlSmoke } from './ml-smoke.ts';
 import { stopMlRuntime } from './lib-ml-runtime.ts';
@@ -42,6 +45,7 @@ import * as ipcOrganize from './ipc-organize.ts';
 import * as ipcPosts from './ipc-posts.ts';
 import * as ipcConfig from './ipc-config.ts';
 import * as ipcWindow from './ipc-window.ts';
+import * as ipcPin from './ipc-pin.ts';
 import * as ipcTrash from './ipc-trash.ts';
 import * as ipcBackup from './ipc-backup.ts';
 import * as ipcTransfer from './ipc-transfer.ts';
@@ -186,13 +190,16 @@ function watchInboxFolder() {
 // picked up is the inbox queue (drainInbox, one indexed SELECT per already-applied
 // event).
 //
-// hologram.db lives in configDir, NOT the save folder: #5's design comments
-// (2026-07-17 orphan-recovery comment, 2026-07-21 cloud-sync-unfriendly note)
-// already assume the live DB is never naively copied by a folder-level sync —
-// putting the single-writer file inside a save folder a user points at a
-// cloud-synced directory (exactly what #95/#101 warn about) would defeat that
-// assumption on day one. thumb-cache sits in configDir for the same "local,
-// not portable with the library" reason.
+// hologram.db lives INSIDE the save folder (ADR 0010, revised by #176): the
+// database is what a library IS now, so a library is a single self-contained
+// folder — copy it and the copy carries its own posts, backup it and the
+// generation store (lib-db-generations.ts) travels with the same folder it
+// restores into. The 2026-07-21 cloud-sync worry ADR 0010's original text
+// raised (a sync client racing a live write) is handled the same way #95/#101
+// already handle it for the rest of the library: a warning at pick time
+// (save-folder-guard.ts's cloudSyncProviderOf), not a special location for one
+// file. thumb-cache stays in configDir — it is genuinely local/not portable,
+// unlike the database.
 
 // Copies the newest DB generation over `file` if one exists — called only when
 // `file` is about to be created fresh (missing, or corrupt-and-just-deleted) so a
@@ -236,13 +243,22 @@ function isLibraryMissing() {
 
 let dbHandle: { db: any; sqlite: any } | null = null;
 // One name for the live database file, because more than one caller needs it now
-// (#233's rollback replaces it wholesale).
+// (#233's rollback replaces it wholesale). Inside the CURRENT save folder
+// (#176) — switching libraries means this resolves somewhere else the moment
+// config.saveFolder is flipped, which is exactly what switchLibrary below relies on.
 function dbFile() {
-  return path.join(configDir(), 'hologram.db');
+  return path.join(getSaveFolder(), 'hologram.db');
 }
+// Whether the CURRENTLY open dbHandle's library has already been recorded into
+// config.libraries[] (#176's "recent libraries" list + per-library backup/
+// integrity home) this open. Reset alongside dbHandle itself in closeDb(), so
+// every distinct open — cold start, a rollback's file swap, a switchLibrary —
+// records exactly once, whichever of those callers triggers the next ensureDb().
+let libraryRecorded = false;
 // Closes the live handle and forgets it, so the next ensureDb() opens whatever
-// is on disk. Only #233's rollback calls this mid-session: it swaps the file
-// underneath, which an open connection would neither see nor tolerate.
+// is on disk. Callers: #233's rollback (swaps the file underneath — an open
+// connection would neither see nor tolerate that) and #176's switchLibrary
+// (the folder itself is about to change).
 function closeDb() {
   try {
     dbHandle?.sqlite.close();
@@ -250,9 +266,21 @@ function closeDb() {
     log.warn('could not close the database cleanly:', err);
   }
   dbHandle = null;
+  libraryRecorded = false;
 }
+// #176: the database is now INSIDE the save folder, so a folder that is
+// missing on disk (moved/renamed/unmounted outside the app, #37) means the
+// database is unreachable too — unlike before #176, where it lived in
+// configDir and every DB-backed handler (get-tabs, get-tag-types, …) kept
+// working regardless of the media folder's state. Refusing cleanly here, with
+// a message that names what happened, is strictly better than letting
+// better-sqlite3's own "Cannot open database because the directory does not
+// exist" (or worse, letting it silently mkdir a fresh empty one) reach the
+// renderer as an opaque IPC rejection — LibraryMissingState.tsx already
+// replaces the whole content column for exactly this state.
 function ensureDb() {
   if (dbHandle) return dbHandle;
+  if (saveFolderStatus().missing) throw new Error('save folder is missing — cannot open the library database');
   const file = dbFile();
   if (!fs.existsSync(file)) restoreFromSnapshotIfAvailable(file);
   try {
@@ -269,6 +297,14 @@ function ensureDb() {
     restoreFromSnapshotIfAvailable(file);
     dbHandle = openDatabase(file);
   }
+  if (!libraryRecorded) {
+    libraryRecorded = true;
+    try {
+      recordLibraryOpened(getSaveFolder(), ensureLibraryId(dbHandle.sqlite));
+    } catch (err) {
+      log.warn('could not record the opened library in the recent list:', err);
+    }
+  }
   migratePosterKeyHost(dbHandle.sqlite);
   backfillPosterProfiles(dbHandle.sqlite);
   // #145 design §5: "掃除＝DB を開いた時に1回" — ensureDb is memoized (the early
@@ -280,6 +316,30 @@ function ensureDb() {
     log.warn('history prune failed:', err);
   }
   return dbHandle;
+}
+
+// One-time, pre-release migration (#176): installs that predate this change
+// have hologram.db sitting in configDir (ADR 0010's original location). Move it
+// — and its WAL/SHM sidecars, so no stale journal is left orphaned — into the
+// save folder before anything opens either path. Only runs when the OLD file
+// exists and the NEW one does not; a fresh install or an already-migrated one
+// no-ops on a single fs.existsSync each. Delete this once no installed copy
+// predates #176 (project convention: a one-time migration is a work step, not
+// part of the design — see ADR 0010's revision note).
+function migrateDbIntoSaveFolder() {
+  const folder = getSaveFolder();
+  if (!folder || !fs.existsSync(folder)) return;
+  const oldBase = path.join(configDir(), 'hologram.db');
+  const newBase = dbFile();
+  if (!fs.existsSync(oldBase) || fs.existsSync(newBase)) return;
+  try {
+    for (const suffix of ['', '-wal', '-shm']) {
+      if (fs.existsSync(oldBase + suffix)) fs.renameSync(oldBase + suffix, newBase + suffix);
+    }
+    log.info('migrated hologram.db from the config directory into the library folder (#176)');
+  } catch (err) {
+    log.error('failed to migrate the database into the library folder — leaving it where it was:', err);
+  }
 }
 
 function getDbWriter() {
@@ -308,26 +368,57 @@ let savedIndexPrimed = false;
 // changed: the media lane starts its "right after the save" countdown and the
 // DB lane counts toward its next generation (#233).
 let onLibraryMutation: (() => void) | null = null;
+// The write itself, factored out so #176's switchLibrary can run it
+// IMMEDIATELY after opening the new library instead of waiting on the
+// debounce below — the extension's "saved" badge has to reflect the new
+// library right away, not up to 1.5s late (during which a re-save of
+// something already in THIS library would misreport as new).
+async function writeSavedIndexNow(handle: { sqlite: any }) {
+  try {
+    // The trash half (#158) comes off the filesystem, not the DB: a trashed
+    // post has no posts row at all. listTrashRecords is what the trash view
+    // itself reads with, so a planted record is normalized here too (#324).
+    // A trash folder that cannot be read yields no notices rather than
+    // failing the whole write — the saved half is the more important one.
+    const trashDir = getTrashDir();
+    const trash = trashDir ? (await listTrashRecords(trashDir)).map((r) => ({ captureId: r.captureId, url: r.url, trashedAt: r.trashedAt })) : [];
+    const data = buildSavedIndex(handle.sqlite, trash);
+    const dir = configDir();
+    fs.mkdirSync(dir, { recursive: true });
+    writeFileAtomicSync(path.join(dir, SAVED_INDEX_FILE), JSON.stringify(data));
+  } catch {
+    /* best-effort — the bridge falls back to journal + loose-inbox scanning */
+  }
+}
+// What the debounce is still holding, so quitting can finish it (below). Two
+// separate states, because a write is lost either way: `pending` is a change
+// whose timer has not fired yet, `inFlight` is a fired timer whose write has
+// not landed yet (the trash half reads `.trash/` asynchronously).
+let savedIndexPending: { sqlite: any } | null = null;
+let savedIndexInFlight: Promise<void> | null = null;
 function scheduleSavedIndexWrite(handle: { sqlite: any }) {
   onLibraryMutation?.();
   clearTimeout(savedIndexTimer);
-  savedIndexTimer = setTimeout(async () => {
-    try {
-      // The trash half (#158) comes off the filesystem, not the DB: a trashed
-      // post has no posts row at all. listTrashRecords is what the trash view
-      // itself reads with, so a planted record is normalized here too (#324).
-      // A trash folder that cannot be read yields no notices rather than
-      // failing the whole write — the saved half is the more important one.
-      const trashDir = getTrashDir();
-      const trash = trashDir ? (await listTrashRecords(trashDir)).map((r) => ({ captureId: r.captureId, url: r.url, trashedAt: r.trashedAt })) : [];
-      const data = buildSavedIndex(handle.sqlite, trash);
-      const dir = configDir();
-      fs.mkdirSync(dir, { recursive: true });
-      writeFileAtomicSync(path.join(dir, SAVED_INDEX_FILE), JSON.stringify(data));
-    } catch {
-      /* best-effort — the bridge falls back to journal + loose-inbox scanning */
-    }
+  savedIndexPending = handle;
+  savedIndexTimer = setTimeout(() => {
+    savedIndexPending = null;
+    savedIndexInFlight = writeSavedIndexNow(handle).finally(() => {
+      savedIndexInFlight = null;
+    });
   }, 1500);
+}
+// Deleting a post and closing the app inside the 1.5s debounce used to drop the
+// rewrite entirely: the timer dies with the process, so the extension kept
+// answering "saved" for a post sitting in the trash until the next launch —
+// exactly the stale badge #158 exists to prevent. Awaited from before-quit.
+async function flushSavedIndexWrite() {
+  clearTimeout(savedIndexTimer);
+  const handle = savedIndexPending;
+  savedIndexPending = null;
+  // In-flight first: it was scheduled earlier, and the file must end up holding
+  // the LATER of the two states.
+  if (savedIndexInFlight) await savedIndexInFlight;
+  if (handle) await writeSavedIndexNow(handle);
 }
 
 // Drains .hologram-inbox/new into the DB (#5 St6 / #299) — one receipted,
@@ -385,6 +476,16 @@ function scheduleInboxCompaction(folder: string, sqlite: any) {
 function ensurePostsSynced() {
   const folder = getSaveFolder();
   if (!folder) return null;
+  // #176: a switchLibrary() is mid-flight (between closing the old database
+  // and opening the new one) — a stray caller here (most concretely, the
+  // startup-scheduled sweepReplacements/purgeOldTrash/integrity-check timers,
+  // which are not part of switchLibrary's own "stop writes" phase because
+  // they are one-shot rather than something with a flag to check) must not
+  // call ensureDb() itself: it would either reopen the OLD library a moment
+  // before switchLibrary's own writeConfig flips the pointer, or race the
+  // close/reopen pair outright. Treating this exactly like "no library" is
+  // what every caller already handles.
+  if (switching) return null;
   const handle = ensureDb();
   // Prime the snapshot regardless of whether this pass finds anything to
   // drain — buildSavedIndex is two indexed SELECTs, cheap enough to run
@@ -608,9 +709,109 @@ async function purgeOldTrash() {
 // integrity pass were extracted to ./lib-backup.ts. The engine is instantiated
 // here because it needs the record pipeline above (a run must sync the DB
 // before it snapshots it or counts orphans against it).
-const { runBackup, listDbGenerations, rollbackDbGeneration, armBackupSchedule, runStartupIntegrityCheck, runOrphanRecovery, noteLibraryMutation } = createBackupEngine({ ensurePostsSynced, scheduleSavedIndexWrite, send: sendToWin, dbFile, closeDb });
+const { runBackup, listDbGenerations, rollbackDbGeneration, armBackupSchedule, runStartupIntegrityCheck, runOrphanRecovery, noteLibraryMutation, isBusy: isBackupEngineBusy } = createBackupEngine({ ensurePostsSynced, scheduleSavedIndexWrite, send: sendToWin, dbFile, closeDb });
 onLibraryMutation = noteLibraryMutation;
 const watchImport = createWatchImportManager({ readConfig, writeConfig, getSaveFolder, isLibraryMissing, ensurePostsSynced, send: sendToWin });
+
+// --- Library switch (#176) ---------------------------------------------
+// Generalizes #37's repoint now that the database moved INTO the library
+// folder (see dbFile()'s comment): repoint used to be a copy-free pointer flip
+// because the database stayed in configDir regardless of what saveFolder
+// pointed at, so nothing else had to happen. Now the database itself has to
+// close, the pointer flips, and a database is opened (or created, or restored
+// from a snapshot — ensureDb() already does all three) at the new location.
+// One function, every caller that changes which library is open goes through
+// it: the Settings "切り替え"/"新規作成" flow, a "最近使ったライブラリ" row,
+// and apply-repoint below (#37's escape hatch for a missing save folder).
+let switching = false;
+async function waitForBackupEngineIdle(maxMs = 15000) {
+  const start = Date.now();
+  while (isBackupEngineBusy() && Date.now() - start < maxMs) {
+    await new Promise((r) => setTimeout(r, 150));
+  }
+}
+async function switchLibrary(dest: string): Promise<{ ok: true; saveFolder: string } | { ok: false; error: string }> {
+  const v = validateSaveFolder(dest);
+  if (!v.ok) return { ok: false, error: v.error || 'invalid' };
+  const classification = classifyLibraryFolder(dest);
+  if (classification === 'reject') return { ok: false, error: 'not-a-library' };
+  if (switching) return { ok: false, error: 'busy' };
+  switching = true;
+  const from = getSaveFolder();
+  try {
+    // Stop everything that writes into the CURRENT library before it closes.
+    // The inbox watcher is closed outright (not re-armed until the new
+    // library is open); the two backup-engine lanes are awaited rather than
+    // interrupted — closeDb() mid-generation-write would tear the very file
+    // the DB lane is snapshotting FROM.
+    if (inboxWatcher) {
+      const closing = inboxWatcher;
+      inboxWatcher = null;
+      await closing.close().catch(() => {});
+    }
+    await waitForBackupEngineIdle();
+
+    closeDb();
+    savedIndexPrimed = false; // the next library primes its own saved-index snapshot
+
+    const cfg = readConfig();
+    cfg.saveFolder = dest;
+    writeConfig(cfg);
+
+    try {
+      // ensureDb() already does everything the classification implied: opens
+      // hologram.db as-is ('has-db'), restores the newest generation snapshot
+      // before opening when the file is missing ('evidence-no-db' — the
+      // existing recovery path, no new machinery), or creates a fresh one
+      // ('empty'). recordLibraryOpened (inside ensureDb) also fires here.
+      ensureDb();
+    } catch (err: any) {
+      // Nothing durable happened before this point that a plain re-point back
+      // can't undo: roll the pointer back and reopen the library we left.
+      log.error(`switchLibrary: could not open the database at ${dest} — rolling back to ${from}:`, err);
+      const back = readConfig();
+      back.saveFolder = from;
+      writeConfig(back);
+      try {
+        ensureDb();
+      } catch {
+        /* leaves dbHandle null — LibraryMissingState/empty-state UI takes over */
+      }
+      switching = false;
+      watchInboxFolder();
+      void watchImport.refresh();
+      return { ok: false, error: 'open-failed' };
+    }
+    // The new database is open and stable from here on — drop the guard now
+    // rather than in the outer finally, so ensurePostsSynced() below (and
+    // anything a startup timer fires concurrently) sees the new library
+    // immediately instead of being held off until this whole function returns.
+    switching = false;
+
+    // Re-wire everything that was stopped above, against the NEW library.
+    watchInboxFolder();
+    void watchImport.refresh();
+    _deltaBySender.clear();
+    // A debounce still holding the PREVIOUS library's handle is dropped rather
+    // than flushed: the write below supersedes it, and letting it land
+    // afterwards — on its own timer, or through the quit flush — would put the
+    // library the user just left back into the index the extension reads.
+    clearTimeout(savedIndexTimer);
+    savedIndexPending = null;
+    const synced = ensurePostsSynced();
+    // Immediate, not the debounced scheduleSavedIndexWrite — see
+    // writeSavedIndexNow's comment.
+    if (synced) await writeSavedIndexNow(synced);
+
+    for (const w of getWindows()) {
+      if (!w.isDestroyed()) w.webContents.reload();
+    }
+
+    return { ok: true, saveFolder: dest };
+  } finally {
+    switching = false;
+  }
+}
 
 // --- Window ---
 // Bounds persistence, the navigation lockdown and createWindow were extracted to
@@ -664,6 +865,14 @@ function registerExtractedIpc() {
     downloadAvatar,
     validateSaveFolder,
     relocateLibrary,
+    switchLibrary,
+    classifyLibraryFolder,
+    listRecentLibraries,
+    removeRecentLibrary,
+    closeDb,
+    openDb: () => {
+      ensureDb();
+    },
     watchInboxFolder,
     watchImportFolders: () => watchImport.refresh(),
     getWatchImportConfig: () => ({ folders: watchImport.folders(), status: watchImport.status() }),
@@ -685,11 +894,15 @@ function registerExtractedIpc() {
     openNewWindow: () => {
       createWindow(true, { secondary: true });
     },
+    pinSend: (items, newWindow) => pinSend(items, newWindow),
+    pinGetInitial: (webContentsId) => pinTakeInitial(webContentsId),
+    pinToggleAlwaysOnTop: (webContentsId) => pinToggleAlwaysOnTopImpl(webContentsId),
   };
   ipcOrganize.register(ctx);
   ipcPosts.register(ctx);
   ipcConfig.register(ctx);
   ipcWindow.register(ctx);
+  ipcPin.register(ctx);
   ipcWatchImport.register(ctx);
   ipcTrash.register(ctx);
   ipcBackup.register(ctx);
@@ -764,6 +977,13 @@ if (!gotSingleInstanceLock) {
     // (watcher, listPosts, native host) sees a config repaired from the pointer rather
     // than the empty default when config was truncated. (2026-06-23 incident.)
     initSaveFolderRedundancy();
+    // #176: fold any pre-#176 flat backup/integrity config into libraries[],
+    // then move a pre-#176 hologram.db from configDir into the save folder.
+    // Order matters — the migration below needs libraries[] to already be an
+    // array (it does not create the entry itself; recordLibraryOpened does
+    // that the first time this library is actually opened, below).
+    migrateToLibraries();
+    migrateDbIntoSaveFolder();
     // #37: log the initial verdict once at boot — refreshLibraryStatus() itself
     // is called again by the renderer's get-library-status on mount, so this is
     // observability only (main.log), not the source of truth the UI reads.
@@ -931,7 +1151,22 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
 
-app.on('before-quit', () => {
+// Set once the pending saved-index write has been flushed, so the re-issued
+// quit below falls through to the teardown instead of holding the app again.
+let quitFlushed = false;
+
+app.on('before-quit', (e) => {
+  // Hold the quit for one round trip, the way Electron's own docs have async
+  // shutdown work done (preventDefault, finish, quit again). The flush reads the
+  // database, so it has to happen before the close below. Capped: the trash half
+  // touches the save folder, which can be a network path, and a quit must not be
+  // hostage to it — a dropped write is only a stale badge, a stuck quit is worse.
+  if (!quitFlushed && (savedIndexPending || savedIndexInFlight)) {
+    e.preventDefault();
+    quitFlushed = true;
+    void Promise.race([flushSavedIndexWrite(), new Promise((r) => setTimeout(r, 2000))]).finally(() => app.quit());
+    return;
+  }
   try {
     dbHandle?.sqlite.close();
   } catch {

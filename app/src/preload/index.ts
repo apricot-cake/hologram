@@ -46,13 +46,17 @@ import type {
   OkResult,
   UpdateTagsResult,
   OrphanRecoveryResult,
+  PickLibraryFolderResult,
+  PinItem,
   PostsDelta,
   PostsSnapshot,
   PosterAliasesState,
   PosterFoldersState,
   PosterTagsState,
+  RecentLibraryEntry,
   RepointApplyResult,
   RepointPickResult,
+  SwitchLibraryResult,
   SaveFolderMoveResult,
   SaveFolderPickResult,
   SaveFolderProgress,
@@ -63,6 +67,8 @@ import type {
   DeleteOrphanTagsResult,
   TagSplitPost,
   SplitTagResult,
+  TagAliasRow,
+  AddTagAliasResult,
   TabsState,
   TagTypesState,
   UngroupedState,
@@ -113,7 +119,7 @@ const api = {
   getTagParentEdges: (): Promise<TagParentRowResolved[]> => ipcRenderer.invoke('get-tag-parent-edges'),
   renameTag: (tagId: number, newName: string): Promise<RenameTagResult> => ipcRenderer.invoke('rename-tag', tagId, newName),
   keepSeparateRenameTag: (tagId: number, newName: string, displayParentTagId: number): Promise<TagWriteResult> => ipcRenderer.invoke('keep-separate-rename-tag', tagId, newName, displayParentTagId),
-  mergeTags: (sourceTagId: number, targetTagId: number): Promise<TagWriteResult> => ipcRenderer.invoke('merge-tags', sourceTagId, targetTagId),
+  mergeTags: (sourceTagId: number, targetTagId: number, keepOldNameAsAlias?: boolean): Promise<TagWriteResult> => ipcRenderer.invoke('merge-tags', sourceTagId, targetTagId, keepOldNameAsAlias),
   addTagParent: (tagId: number, parentTagId: number, isDisplay: boolean): Promise<TagWriteResult> => ipcRenderer.invoke('add-tag-parent', tagId, parentTagId, isDisplay),
   removeTagParent: (tagId: number, parentTagId: number): Promise<TagWriteResult> => ipcRenderer.invoke('remove-tag-parent', tagId, parentTagId),
   setTagKind: (tagId: number, kind: string | null): Promise<TagWriteResult> => ipcRenderer.invoke('set-tag-kind', tagId, kind),
@@ -121,6 +127,10 @@ const api = {
   // #777: split -- the review screen's data source and its confirm action.
   getTagSplitPreview: (tagId: number, candidateParentTagId: number): Promise<TagSplitPost[]> => ipcRenderer.invoke('get-tag-split-preview', tagId, candidateParentTagId),
   splitTag: (sourceTagId: number, displayParentTagId: number, postIds: string[]): Promise<SplitTagResult> => ipcRenderer.invoke('split-tag', sourceTagId, displayParentTagId, postIds),
+  // #86: tag_aliases CRUD.
+  getTagAliases: (): Promise<TagAliasRow[]> => ipcRenderer.invoke('get-tag-aliases'),
+  addTagAlias: (tagId: number, alias: string): Promise<AddTagAliasResult> => ipcRenderer.invoke('add-tag-alias', tagId, alias),
+  removeTagAlias: (aliasId: number): Promise<TagWriteResult> => ipcRenderer.invoke('remove-tag-alias', aliasId),
   getUngrouped: (): Promise<UngroupedState> => ipcRenderer.invoke('get-ungrouped'),
   setUngrouped: (keys: unknown): Promise<OkResult> => ipcRenderer.invoke('set-ungrouped', keys),
   getPosterFolders: (): Promise<PosterFoldersState> => ipcRenderer.invoke('get-poster-folders'),
@@ -191,6 +201,13 @@ const api = {
   // move-save-folder above assume the CURRENT folder is there to copy FROM).
   pickRepointFolder: (): Promise<RepointPickResult> => ipcRenderer.invoke('pick-repoint-folder'),
   applyRepoint: (dest: string): Promise<RepointApplyResult> => ipcRenderer.invoke('apply-repoint', dest),
+  // #176: Settings' deliberate "switch to a different library" flow (切り替え /
+  // 新規作成 / 最近使ったライブラリ) — same underlying switchLibrary as repoint
+  // above, different entry point and confirm copy.
+  pickLibraryFolder: (): Promise<PickLibraryFolderResult> => ipcRenderer.invoke('pick-library-folder'),
+  switchLibrary: (dest: string): Promise<SwitchLibraryResult> => ipcRenderer.invoke('switch-library', dest),
+  getRecentLibraries: (): Promise<RecentLibraryEntry[]> => ipcRenderer.invoke('get-recent-libraries'),
+  removeRecentLibrary: (folder: string): Promise<OkResult> => ipcRenderer.invoke('remove-recent-library', folder),
   onSaveFolderProgress: (cb: (p: SaveFolderProgress) => void): void => {
     ipcRenderer.on('save-folder-progress', (_e, p) => cb(p));
   },
@@ -273,6 +290,23 @@ const api = {
     ipcRenderer.on('org-changed', h);
     return () => ipcRenderer.removeListener('org-changed', h);
   },
+  // #79 (pin window): send, not invoke — fire-and-forget the same way
+  // open-new-window is, and opts.newWindow (the folder "ピンで開く" entry
+  // point) should feel instant rather than await a round trip.
+  pinSend: (items: PinItem[], opts?: { newWindow?: boolean }): void => ipcRenderer.send('pin-send', items, opts),
+  // The pin window's own first read of what it was opened with — main never
+  // pushes it at loadURL time (see lib-pin-window.ts's takeInitial comment).
+  pinGetInitial: (): Promise<PinItem[]> => ipcRenderer.invoke('pin-get-initial'),
+  onPinItemsAdded: (cb: (items: PinItem[]) => void): (() => void) => {
+    const h = (_e: unknown, items: PinItem[]) => cb(items);
+    ipcRenderer.on('pin-items-added', h);
+    return () => ipcRenderer.removeListener('pin-items-added', h);
+  },
+  // Returns the NEW state (main resolves it from the calling window itself —
+  // BrowserWindow.fromWebContents(event.sender) — same per-caller resolution
+  // window-control already uses).
+  pinToggleAlwaysOnTop: (): Promise<boolean> => ipcRenderer.invoke('pin-toggle-always-on-top'),
+  pinSaveAsFolder: (name: string, captureIds: string[]): Promise<OkResult> => ipcRenderer.invoke('pin-save-as-folder', name, captureIds),
 };
 
 // The full contextBridge IPC surface (window.hologram) — typeof the implementation,

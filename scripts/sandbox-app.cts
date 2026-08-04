@@ -93,6 +93,13 @@ const COLORS: Array<[number, number, number]> = [
 const TAGS = [['test'], ['test', '構図'], ['test', '配色'], ['test', '構図', 'ポーズ'], []];
 const TEXTS = ['サンドボックス検証用のダミー投稿です。', '短文。', 'モーション・レイアウト検証のためのフィクスチャ投稿。カードの高さが揃わないよう、本文の長さは投稿ごとに変えてあります。グリッドの詰め方や省略記号の出方はこの投稿で確認できます。', '改行を含む投稿。\n二行目。\n三行目はすこし長めにしてあります。'];
 
+// Spacing between consecutive fixture posts. Deliberately wider than a day so the
+// twelve of them straddle several calendar months: a single-month library has one
+// date section, and both the section headings and the year/month jump rail (#875)
+// switch themselves off with nothing to index — which left the two of them
+// unverifiable in the sandbox.
+const FIXTURE_SPACING_MS = 12 * 86400000;
+
 function seedFixtureLibrary() {
   fs.mkdirSync(saveFolder, { recursive: true });
   if (libraryIsSeeded()) return false;
@@ -101,9 +108,9 @@ function seedFixtureLibrary() {
   for (let i = 0; i < 12; i++) {
     const platform = PLATFORMS[i % PLATFORMS.length];
     const [w, h] = SIZES[i % SIZES.length];
-    const captureId = `${base - i * 86400000}-sb${String(i).padStart(2, '0')}`;
+    const captureId = `${base - i * FIXTURE_SPACING_MS}-sb${String(i).padStart(2, '0')}`;
     fs.writeFileSync(path.join(saveFolder, `${captureId}.png`), makePng(w, h, COLORS[i % COLORS.length]));
-    const date = new Date(base - i * 86400000 - 7200000).toISOString();
+    const date = new Date(base - i * FIXTURE_SPACING_MS - 7200000).toISOString();
     records.push({
       captureId,
       image: `${captureId}.png`,
@@ -116,7 +123,7 @@ function seedFixtureLibrary() {
       reposts: (i * 41) % 800,
       replies: (i * 7) % 60,
       date,
-      capturedAt: new Date(base - i * 86400000).toISOString(),
+      capturedAt: new Date(base - i * FIXTURE_SPACING_MS).toISOString(),
       tags: TAGS[i % TAGS.length],
     });
   }
@@ -135,7 +142,8 @@ function readSeed(): any | null {
 }
 
 function libraryIsSeeded(): boolean {
-  if (fs.existsSync(path.join(configDir, 'hologram.db'))) return true;
+  // #176: hologram.db lives inside the save folder now, not configDir (ADR 0025).
+  if (fs.existsSync(path.join(saveFolder, 'hologram.db'))) return true;
   try {
     return fs.readdirSync(saveFolder).length > 0;
   } catch {
@@ -145,10 +153,11 @@ function libraryIsSeeded(): boolean {
 
 // --reseed: the sandbox is disposable by design, so this drops the whole seeded
 // state (library, database, config) rather than trying to merge two seeds.
+// #176: hologram.db (+ -wal/-shm) now lives INSIDE saveFolder (ADR 0025), so
+// the recursive removal below already takes it out — no separate db removal needed.
 function wipeSeed() {
   fs.rmSync(saveFolder, { recursive: true, force: true });
   fs.rmSync(seedFile, { force: true });
-  for (const suffix of ['', '-wal', '-shm']) fs.rmSync(path.join(configDir, 'hologram.db') + suffix, { force: true });
   fs.rmSync(path.join(configDir, 'config.json'), { force: true });
 }
 
@@ -160,7 +169,6 @@ function resolveRealLibrary(): { configDir: string; saveFolder: string } {
   if (process.env.HOLOGRAM_CONFIG_DIR) throw new Error('HOLOGRAM_CONFIG_DIR is set — refusing to treat an already-isolated config dir as the real library');
   const dir = realConfigDir();
   const configPath = path.join(dir, 'config.json');
-  if (!fs.existsSync(path.join(dir, 'hologram.db'))) throw new Error(`no real library on this machine (${path.join(dir, 'hologram.db')} not found). Use the fixture seed, or generate one with scripts/gen-dummy-library.cts`);
   let folder = '';
   try {
     folder = JSON.parse(fs.readFileSync(configPath, 'utf8')).saveFolder || '';
@@ -168,6 +176,8 @@ function resolveRealLibrary(): { configDir: string; saveFolder: string } {
     /* fall through to the default */
   }
   if (!folder) folder = defaultLibraryDir();
+  // #176: hologram.db lives inside the save folder now, not configDir (ADR 0025).
+  if (!fs.existsSync(path.join(folder, 'hologram.db'))) throw new Error(`no real library on this machine (${path.join(folder, 'hologram.db')} not found). Use the fixture seed, or generate one with scripts/gen-dummy-library.cts`);
   return { configDir: dir, saveFolder: folder };
 }
 

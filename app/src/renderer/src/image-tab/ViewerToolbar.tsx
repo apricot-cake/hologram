@@ -12,13 +12,16 @@
 // nothing here that could hold a ref to it.
 import type { ReactNode } from 'react';
 import { useSyncExternalStore } from 'react';
-import { Contrast, Expand, FlipHorizontal, Grid3x3, Shrink, ZoomIn, ZoomOut } from 'lucide-react';
+import { Contrast, Expand, FlipHorizontal, Grid3x3, Pin, Shrink, ZoomIn, ZoomOut } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { t } from '../_shared/i18n.ts';
 import { getState, subscribe } from '../services/image-zoom.ts';
 import { getState as getOverlayState, subscribe as subscribeOverlay, toggleFlip, toggleGrid, toggleGray } from '../services/image-overlay.ts';
+import { hologramImageTabSource } from '../services/image-tab.ts';
+import { fileOfSrc } from '../services/asset-src.ts';
+import { hologramIpc } from '../services/ipc.ts';
 
 function ToolButton({ label, slot, disabled, pressed, onClick, children }: { label: string; slot: string; disabled: boolean; pressed?: boolean; onClick: () => void; children: ReactNode }) {
   return (
@@ -46,6 +49,20 @@ export function ViewerToolbar() {
   // than disappearing — a toolbar that loses buttons as you page through a post reads
   // as breakage, and #80's flip/grayscale toggles will apply to those slides too.
   const off = !controller;
+  // #79 導線②: pin exactly what's on screen right now — the currently
+  // displayed page of the open tab, not the whole post (that distinction is
+  // what separates this from the card menu's "ピン", which pins the post's
+  // own cover — see services/pin-items.ts). The model only hands out
+  // finished src strings, so the bare filename PinItem needs comes back
+  // through fileOfSrc, fileSrc's inverse.
+  const pinCurrent = () => {
+    const model = hologramImageTabSource.get();
+    if (!model || !model.items.length) return;
+    const item = model.items[model.idx];
+    const file = fileOfSrc(item.src);
+    if (!file) return;
+    hologramIpc.pinSend([{ captureId: model.tabId, file, video: !!item.video }]);
+  };
   return (
     <div data-slot="viewer-toolbar" className="flex items-center gap-0.5">
       <ToolButton slot="viewer-zoom-out" label={t('itvZoomOut')} disabled={off || !canZoomOut} onClick={() => controller?.step(-1)}>
@@ -84,6 +101,13 @@ export function ViewerToolbar() {
       </ToolButton>
       <ToolButton slot="viewer-grayscale" label={t('itvGrayscale')} pressed={overlay.gray} disabled={false} onClick={toggleGray}>
         <Contrast />
+      </ToolButton>
+      <Separator orientation="vertical" className="mx-0.5 h-5" />
+      {/* Not gated on `off` (video/ugoira have no Zoomable but still have a
+          file worth pinning) — ViewerToolbar only renders while a tab is
+          actually open, so there is always something to send. */}
+      <ToolButton slot="viewer-pin" label={t('itvPin')} disabled={false} onClick={pinCurrent}>
+        <Pin />
       </ToolButton>
     </div>
   );

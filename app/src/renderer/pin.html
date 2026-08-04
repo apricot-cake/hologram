@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <!-- No <meta> CSP here — same reason as index.html: the policy is a RESPONSE
+       HEADER (app-protocol.ts), delivered identically to every document this
+       scheme serves, this one included. -->
+  <title>Hologram Pin</title>
+  <!-- Same design tokens as the main window (#79): the pin window shares
+       components (ImageTab/ViewerToolbar) and must match its light/dark theme. -->
+  <link rel="stylesheet" href="design-tokens.css">
+  <script src="theme.js"></script>
+</head>
+<body>
+  <!-- No markup here either — src/pin/index.tsx mounts its own React root
+       (PinApp.tsx), the shell-less peer of src/app/root.tsx + AppShell. -->
+  <script type="module" src="./src/pin/index.tsx"></script>
+</body>
+</html>

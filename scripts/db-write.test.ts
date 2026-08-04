@@ -225,6 +225,69 @@ describe('タグ名の字形正規化（#197）', () => {
   });
 });
 
+// #86: setPostTags / setPosterTags (lib-db-write.ts's tagResolver) and the save
+// pipeline's makeTagResolver (lib-db-record-writer.ts) are the two "single
+// gate" resolvers an alias redirects through — checked here directly rather
+// than only via lib-db-tag-vocab.ts's CRUD, since the CRUD tests never
+// exercise the get-or-create write path an alias is supposed to intercept.
+describe('タグエイリアスの適用時解決（#86）', () => {
+  let ownDir: string;
+  let db: any;
+  let own: ReturnType<typeof createDbWriter>;
+
+  beforeAll(() => {
+    ownDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-db-write-tagalias-'));
+    ({ sqlite: db } = openDatabase(path.join(ownDir, 'test.db')));
+    own = createDbWriter(db);
+    db.prepare("INSERT INTO posts (captureId, capturedAt, updatedAt) VALUES ('ta-post', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')").run();
+  });
+
+  afterAll(() => {
+    db.close();
+    fs.rmSync(ownDir, { recursive: true, force: true });
+  });
+
+  test('tagResolver (setPostTags): a registered alias resolves to its canonical tag instead of minting a new one', () => {
+    const catId = db.prepare("INSERT INTO tags (name) VALUES ('猫')").run().lastInsertRowid;
+    db.prepare('INSERT INTO tag_aliases (alias, tagId) VALUES (?, ?)').run('ねこ', catId);
+
+    own.setPostTags('ta-post', ['ねこ'], null);
+
+    expect(own.getPostFlags('ta-post')?.tags).toEqual(['猫']); // stored under the canonical name, not the alias
+    expect(db.prepare("SELECT COUNT(*) n FROM tags WHERE name = 'ねこ'").get().n).toBe(0); // no second entity minted
+  });
+
+  test('tagResolver (setPosterTags): same alias redirect on the poster-tags write path', () => {
+    db.exec('DELETE FROM tags; DELETE FROM tag_aliases;');
+    const catId = db.prepare("INSERT INTO tags (name) VALUES ('猫')").run().lastInsertRowid;
+    db.prepare('INSERT INTO tag_aliases (alias, tagId) VALUES (?, ?)').run('ねこ', catId);
+
+    own.setPosterTags({ tags: { 'poster:1': ['ねこ'] } });
+
+    expect(own.getPosterTags().tags['poster:1'].tags).toEqual(['猫']);
+  });
+
+  test('an alias is checked NFKC-normalized, same as any tag name', () => {
+    db.exec('DELETE FROM tags; DELETE FROM tag_aliases;');
+    const catId = db.prepare("INSERT INTO tags (name) VALUES ('猫')").run().lastInsertRowid;
+    db.prepare('INSERT INTO tag_aliases (alias, tagId) VALUES (?, ?)').run('cat', catId); // stored already-normalized
+
+    own.setPostTags('ta-post', ['  ｃａｔ  '], null); // full-width + stray whitespace variant of the same alias
+
+    expect(own.getPostFlags('ta-post')?.tags).toEqual(['猫']);
+  });
+
+  test('makeTagResolver (the save/import pipeline): resolves an alias the same way', () => {
+    db.exec('DELETE FROM tags; DELETE FROM tag_aliases;');
+    const catId = db.prepare("INSERT INTO tags (name) VALUES ('猫')").run().lastInsertRowid;
+    db.prepare('INSERT INTO tag_aliases (alias, tagId) VALUES (?, ?)').run('ねこ', catId);
+
+    const resolve = makeTagResolver(db);
+    expect(resolve('ねこ')).toBe(catId);
+    expect(db.prepare("SELECT COUNT(*) n FROM tags WHERE name = 'ねこ'").get().n).toBe(0);
+  });
+});
+
 describe('フォルダ', () => {
   beforeAll(() => {
     writer.setFolders({
