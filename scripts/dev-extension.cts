@@ -52,6 +52,12 @@ if (detach) {
   // One command STRING through a shell, not an argument array: Node escapes array
   // arguments for the child, and the quotes around the title come out escaped, so
   // the window is titled \Hologram dev:ext\ (measured 2026-08-04).
+  //
+  // The title only holds until the server starts: cmd rewrites its console title to
+  // whatever it is currently running, and npm reaches wxt through more cmd layers,
+  // so a RUNNING server sits in a window titled C:\WINDOWS\system32\cmd.exe (also
+  // measured). Which is why the first thing printed above is the build folder —
+  // that line, not the title bar, is what tells two dev-server windows apart.
   const child = spawn('start "Hologram dev:ext" cmd /k npm run dev:ext', {
     cwd: ROOT,
     shell: true,
@@ -62,7 +68,7 @@ if (detach) {
     env: Object.assign({}, process.env, { HOLOGRAM_DEV_EXT_WINDOW: '1' }),
   });
   child.unref();
-  console.log('[hologram] opened a console window titled "Hologram dev:ext" — the server runs THERE.');
+  console.log('[hologram] opened a console window — the server runs THERE, printing the folder above as its first line.');
   console.log('[hologram] close that window to stop it.');
 } else {
   // Windows: npm.cmd spawned without a shell is EINVAL (skill windows-scripting).
