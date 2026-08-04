@@ -184,6 +184,7 @@ CLI（`test-metadata.cts`／`test-select-posts.cts`／`test-watch-verify.cts`）
   - **実起動系ハーネスの言語は `ja` 固定**（`HOLOGRAM_SMOKE` 時に main が `--lang` を立てる。`HOLOGRAM_LANG` を渡せば SMOKE 以外でも効く＝Playwright 層はこちらを使う）＝ハーネスは日本語ラベルで部品を探すので、言語がマシン任せだと英語UIのランナーで「部品が無い」
 ように見える赤になる（2026-07-28・#15 第2段で en-US ランナーが実際にそうなった）
   - アプリ実起動系（`test-app-*.cts`）は含まれないので `node scripts/run-app-tests.cts` で一括実行する（1本≈10秒と重い＝節目で回す。renderer 再構築後の「`npm test` では見えない無音の赤」をここで検出する。引数でサフィックス指定のサブセット実行可）。
+    - **`HOLOGRAM_SMOKE_EVAL` はレンダラのリロードをまたげない**（#917）＝`executeJavaScript` の Promise は走ったフレームに紐づくので、**メインフレームの遷移がコミットした時点で解決も棄却もされなくなる**。main 側がこれを `did-navigate` で捕まえて `EVAL_ERR ... navigated to <url>` に変えるので、**1本だけ所要が 60 秒ぶん跳ねる**（＝旧 SMOKE バックストップ待ち）という読みづらい落ち方はもう起きない。**遷移を起こす操作を eval で叩くなら、その後に IPC を続けない**＝ライブラリ切り替え（#176）と世代ロールバック（#233）は成功時に全ウィンドウをリロードする（返答が届く猶予として `RELOAD_AFTER_LIBRARY_SWAP_MS` ぶん遅らせてある）。**遷移が「拒まれること」を見るのは別**＝`did-start-navigation` は起きるがコミットしないので eval は生き残る（`test-app-renderer-origin.cts` がこれを踏んでいる）。
 - **画面 E2E とビジュアルリグレッション（#14）＝ `npm run test:e2e`（Playwright・`playwright.config.ts` と `e2e/`）**。上の `test-app-*` 層との違いは**入力が本物**であること＝隠しウィンドウへ合成イベントを投げるのではなく、見えているウィンドウを実ポインタ・実キーで駆動する。
 これでしか捕まらないのが「pointer-events・重なり・レイアウト崩れでクリックが届かない」型と、見た目そのものの退行。プロジェクトは2つで、フロー（`e2e/flows`）は CI でも回り、スクリーンショット（`e2e/visual`）は**この開発機だけ**で回す＝正解画像はローカル基準（#14・2026-07-29 決定）。撮り直しは 
 `npm run test:e2e:update`。前提・固定している変動要因・撮る面を絞っている理由は `e2e/README.md`。**ハーネスの幅はレイアウトのブレークポイントから算出する**（`e2e/lib/viewport.ts`・#649）＝境界値を書き写すと動かした時に flow 全体が黙って narrow 側で回るので、追随することを `harness-viewport.test.ts` が見る。
