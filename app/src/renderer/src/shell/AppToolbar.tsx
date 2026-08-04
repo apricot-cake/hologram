@@ -18,6 +18,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { AddFilterButton } from '../filterbar/index.tsx';
 import { FilterChips } from '../filterbar/FilterChips.tsx';
 import { DisplayMenu } from './DisplayMenu.tsx';
+import { IndexingIndicator } from './IndexingIndicator.tsx';
 import { WebSearchPanel } from '../websearch/WebSearchPanel.tsx';
 import { SearchBox } from '../searchbox/SearchBox.tsx';
 import { ViewerToolbar } from '../image-tab/ViewerToolbar.tsx';
@@ -166,6 +167,12 @@ export function AppToolbar() {
           <PaletteBadge />
         </div>
         <div className="flex items-center justify-end gap-1.5">
+          {/* Outside the image-view branch, unlike everything below it: background
+              indexing is about the library, not about what is on screen, so it
+              stays put when the viewer takes over the rest of this cell (#834 —
+              Lightroom's activity area is likewise module-independent). It
+              renders nothing at all unless there is work. */}
+          <IndexingIndicator />
           {/* These two ARE unmounted, on purpose: both are popover triggers, and an
               open popover about the grid has no business surviving into the image
               view. */}

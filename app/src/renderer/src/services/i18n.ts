@@ -418,6 +418,15 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     aiDisclosureNoTrain: 'あなたの画像を学習に使うことはありません',
     aiDisclosureLocalOnly: '解析はこの端末の中だけで行い、ライブラリの中身をどこへも送信しません',
 
+    // viewer: toolbar > 索引の進捗（#834・親 #98）。走っている間だけ出る＝
+    // 待ちが無ければ消える。常設の「どこまで索引済みか」は #100 の担当。
+    indexingProgress: '解析中 $1/$2',
+    indexingScanning: 'ライブラリを調べています',
+    indexingTooltip: 'ライブラリを解析しています（$1/$2）',
+    indexingPaused: '解析を一時停止中',
+    indexingPause: '解析を一時停止',
+    indexingResume: '解析を再開',
+
     // #176: switching between multiple libraries — separate from "保存先の変更"
     // (saveFolderSubTitle below), which MOVES the current library; this OPENS a
     // different one, leaving the current one untouched where it is.
@@ -1226,6 +1235,15 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     aiDisclosureNoGenerate: 'It never generates images.',
     aiDisclosureNoTrain: 'It never uses your images to train anything.',
     aiDisclosureLocalOnly: "Analysis runs entirely on this device — your library's contents are never sent anywhere.",
+
+    // viewer: toolbar > indexing progress (#834, parent #98). Shown only while
+    // there is work; the standing "how much is indexed" figures are #100's.
+    indexingProgress: 'Analyzing $1/$2',
+    indexingScanning: 'Looking through the library',
+    indexingTooltip: 'Analyzing your library ($1/$2)',
+    indexingPaused: 'Analysis paused',
+    indexingPause: 'Pause analysis',
+    indexingResume: 'Resume analysis',
 
     // #176: switching between multiple libraries — separate from "保存先の変更"
     // (saveFolderSubTitle below), which MOVES the current library; this OPENS a

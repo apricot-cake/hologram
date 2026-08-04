@@ -164,6 +164,33 @@ export function purgeDerivedForCapture(sqlite: Database.Database, captureId: str
   }
 }
 
+/**
+ * How far one job kind has gotten through one asset, or undefined if it has
+ * never run. #834's queue asks this per (record, asset, kind) while planning —
+ * it is the ONLY thing that makes the backfill resumable, which is why no
+ * separate cursor exists to disagree with it.
+ */
+export function readDerivedProgress(sqlite: Database.Database, captureId: string, assetRef: string, jobKind: string): { indexedSegments: number; totalSegments: number } | undefined {
+  const row = sqlite.prepare('SELECT indexedSegments, totalSegments FROM derived_progress WHERE captureId = ? AND assetRef = ? AND jobKind = ?').get(captureId, assetRef, jobKind) as { indexedSegments: number; totalSegments: number } | undefined;
+  return row;
+}
+
+/** Upserts the shared progress row a finished job reports (#834 writes it, not the job kind). */
+export function writeDerivedProgress(sqlite: Database.Database, row: { captureId: string; assetRef: string; jobKind: string; modelId: string | null; modelRev: string | null; indexedSegments: number; totalSegments: number; updatedAt?: string }): void {
+  sqlite
+    .prepare(
+      `INSERT INTO derived_progress (captureId, assetRef, jobKind, modelId, modelRev, indexedSegments, totalSegments, updatedAt)
+       VALUES (@captureId, @assetRef, @jobKind, @modelId, @modelRev, @indexedSegments, @totalSegments, @updatedAt)
+       ON CONFLICT(captureId, assetRef, jobKind) DO UPDATE SET
+         modelId = excluded.modelId,
+         modelRev = excluded.modelRev,
+         indexedSegments = excluded.indexedSegments,
+         totalSegments = excluded.totalSegments,
+         updatedAt = excluded.updatedAt`,
+    )
+    .run({ ...row, updatedAt: row.updatedAt ?? new Date().toISOString() });
+}
+
 interface DerivedProgressTable {
   captureId: string;
   assetRef: string;

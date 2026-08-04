@@ -467,7 +467,64 @@ function searchPostsFts(sqlite: Database.Database, query: string, limit = 200): 
   }
 }
 
-export { postsFromDb, postsByIds, searchPostsFts, POST_COLUMNS };
+// #834's read path for the index queue. Deliberately NOT postsByIds: that one
+// assembles the whole renderer-shaped record (tags, tag closure, raw payloads,
+// captured-via) because a renderer is about to draw it, and the queue draws
+// nothing — it needs six columns and the media filenames to decide whether a job
+// has an input. Running the full assembly over the entire library in the
+// background would spend most of the sweep building objects nobody reads.
+interface IndexQueueRecord {
+  captureId: string;
+  assetClass: string;
+  trashedAt: string | null;
+  image: string | null;
+  video: string | null;
+  file: string | null;
+  media: Array<{ seq: number; file: string | null }>;
+}
+
+/**
+ * captureIds that may need indexing, NEWEST first, plus the newest updatedAt
+ * seen. `since` limits the walk to rows that moved after it (the save-delta
+ * path); null walks everything (startup backfill).
+ *
+ * Newest first because a backfill competes with the user's attention: the
+ * records most likely to be looked at during the sweep are the ones just saved.
+ * Trashed rows are excluded here rather than in the planner so the walk itself
+ * skips them (#98 §1) — the planner still refuses them, for a record that lands
+ * in the trash between the scan and the job.
+ */
+function indexCandidateIds(sqlite: Database.Database, since: string | null): { ids: string[]; maxUpdatedAt: string | null } {
+  const rows = (since ? sqlite.prepare('SELECT captureId, updatedAt FROM posts WHERE trashedAt IS NULL AND updatedAt > ? ORDER BY capturedAt DESC').all(since) : sqlite.prepare('SELECT captureId, updatedAt FROM posts WHERE trashedAt IS NULL ORDER BY capturedAt DESC').all()) as Array<{
+    captureId: string;
+    updatedAt: string;
+  }>;
+  let maxUpdatedAt: string | null = null;
+  const ids: string[] = [];
+  for (const r of rows) {
+    ids.push(r.captureId);
+    if (!maxUpdatedAt || r.updatedAt > maxUpdatedAt) maxUpdatedAt = r.updatedAt;
+  }
+  return { ids, maxUpdatedAt };
+}
+
+/** The six columns + media filenames the planner reads, for one chunk of ids. */
+function indexRecordsByIds(sqlite: Database.Database, captureIds: string[]): IndexQueueRecord[] {
+  if (!captureIds.length) return [];
+  const placeholders = captureIds.map(() => '?').join(',');
+  const rows = sqlite.prepare(`SELECT captureId, assetClass, trashedAt, image, video, file FROM posts WHERE captureId IN (${placeholders})`).all(...captureIds) as Array<Omit<IndexQueueRecord, 'media'>>;
+  const mediaRows = sqlite.prepare(`SELECT postId, seq, file FROM media WHERE postId IN (${placeholders}) ORDER BY seq`).all(...captureIds) as Array<{ postId: string; seq: number; file: string | null }>;
+  const byPost = new Map<string, Array<{ seq: number; file: string | null }>>();
+  for (const m of mediaRows) {
+    const list = byPost.get(m.postId);
+    if (list) list.push({ seq: m.seq, file: m.file });
+    else byPost.set(m.postId, [{ seq: m.seq, file: m.file }]);
+  }
+  return rows.map((r) => ({ ...r, media: byPost.get(r.captureId) || [] }));
+}
+
+export { postsFromDb, postsByIds, searchPostsFts, indexCandidateIds, indexRecordsByIds, POST_COLUMNS };
+export type { IndexQueueRecord };
 // #810: shared with lib-db-write.ts's poster-tag read — see effectiveTagsOf.
 export { tagClosureResolver, effectiveTagsOf };
 export type { TagClosure, EffectiveTags };

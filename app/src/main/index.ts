@@ -10,7 +10,7 @@ import { openDatabase, DatabaseCorruptError } from './lib-db.ts';
 import { migratePosterKeyHost } from './lib-migrate-poster-key-host.ts';
 import { backfillPosterProfiles } from './lib-backfill-poster-profiles.ts';
 import { computeDelta } from './lib-post-delta.ts';
-import { postsFromDb, searchPostsFts } from './lib-db-query.ts';
+import { indexCandidateIds, indexRecordsByIds, postsFromDb, searchPostsFts } from './lib-db-query.ts';
 import { createDbWriter } from './lib-db-write.ts';
 import { buildSavedIndex, SAVED_INDEX_FILE } from './lib-saved-index.ts';
 import { listTrashRecords } from './lib-trash-capture.ts';
@@ -29,7 +29,10 @@ import { relocateLibrary } from './lib-migrate.ts';
 // shares (config → DB → inbox → renderer).
 import { configDir, defaultLibraryDir, installer, pixivRefererFor, downloadAvatar, clearAllBlockReason } from './native-host.ts';
 import { readConfig, writeConfig, getSaveFolder, readSavePointer, initSaveFolderRedundancy, isConfigCorrupt, invalidateConfigCache, saveFolderStatus, migrateToLibraries, recordLibraryOpened, listRecentLibraries, removeRecentLibrary, readAiConfig, writeAiConfig } from './lib-config.ts';
-import { mimeForFile, registerImageProtocol } from './lib-thumbnails.ts';
+import { mimeForFile, registerImageProtocol, thumbnailBytes } from './lib-thumbnails.ts';
+import { sharedJobPool } from './lib-job-pool.ts';
+import { clearIndexQueue, notifyRecordsChanged, requestBackfill, startIndexQueue } from './lib-index-queue.ts';
+import { ensureDerivedDb, readDerivedProgress, writeDerivedProgress } from './lib-derived-db.ts';
 import { backupIntervalMs, createBackupEngine, latestRestorableSnapshot, readBackupConfig, readIntegrityStatus, validateBackupDir, validateSaveFolder, writeBackupConfig } from './lib-backup.ts';
 import { classifyLibraryFolder } from './lib-switch-library.ts';
 import { ensureLibraryId } from './lib-db-write.ts';
@@ -53,6 +56,7 @@ import * as ipcTagVocab from './ipc-tag-vocab.ts';
 import * as ipcHistory from './ipc-history.ts';
 import * as ipcWatchImport from './ipc-watch-import.ts';
 import * as ipcAi from './ipc-ai.ts';
+import * as ipcIndexQueue from './ipc-index-queue.ts';
 import { createWatchImportManager } from './lib-watch-import.ts';
 import type { IpcContext } from './ipc-context.ts';
 
@@ -174,13 +178,24 @@ function watchInboxFolder() {
         void sweepReplacements().finally(() => {
           // null = full reconcile — see the function comment for why this
           // watcher never tries to ship a targeted hint.
-          sendToWin('posts-changed', null);
+          broadcast('posts-changed', null);
         });
       }, 400);
     });
   } catch (err) {
     console.error('Failed to watch inbox folder:', err);
   }
+}
+
+// The one funnel for a renderer broadcast. Every module that pushes
+// 'posts-changed' goes through here (ctx.send, the backup engine, the
+// watch-import manager, this file's own inbox watcher), which makes it the
+// single place the index queue (#834) can learn that records may need jobs —
+// rather than five call sites each having to remember to tell it. Every other
+// channel is relayed to sendToWin untouched.
+function broadcast(channel: string, ...args: unknown[]) {
+  if (channel === 'posts-changed') notifyRecordsChanged();
+  sendToWin(channel, ...args);
 }
 
 // --- Posts (DB-backed, #5) ---
@@ -710,9 +725,9 @@ async function purgeOldTrash() {
 // integrity pass were extracted to ./lib-backup.ts. The engine is instantiated
 // here because it needs the record pipeline above (a run must sync the DB
 // before it snapshots it or counts orphans against it).
-const { runBackup, listDbGenerations, rollbackDbGeneration, armBackupSchedule, runStartupIntegrityCheck, runOrphanRecovery, noteLibraryMutation, isBusy: isBackupEngineBusy } = createBackupEngine({ ensurePostsSynced, scheduleSavedIndexWrite, send: sendToWin, dbFile, closeDb });
+const { runBackup, listDbGenerations, rollbackDbGeneration, armBackupSchedule, runStartupIntegrityCheck, runOrphanRecovery, noteLibraryMutation, isBusy: isBackupEngineBusy } = createBackupEngine({ ensurePostsSynced, scheduleSavedIndexWrite, send: broadcast, dbFile, closeDb });
 onLibraryMutation = noteLibraryMutation;
-const watchImport = createWatchImportManager({ readConfig, writeConfig, getSaveFolder, isLibraryMissing, ensurePostsSynced, send: sendToWin });
+const watchImport = createWatchImportManager({ readConfig, writeConfig, getSaveFolder, isLibraryMissing, ensurePostsSynced, send: broadcast });
 
 // --- Library switch (#176) ---------------------------------------------
 // Generalizes #37's repoint now that the database moved INTO the library
@@ -793,6 +808,11 @@ async function switchLibrary(dest: string): Promise<{ ok: true; saveFolder: stri
     watchInboxFolder();
     void watchImport.refresh();
     _deltaBySender.clear();
+    // #834: every captureId the queue was still holding belongs to the library
+    // that just closed. Dropping them (rather than letting them run out) also
+    // resets the scan bound, so the full re-walk below starts from scratch
+    // against the new library's records.
+    clearIndexQueue();
     // A debounce still holding the PREVIOUS library's handle is dropped rather
     // than flushed: the write below supersedes it, and letting it land
     // afterwards — on its own timer, or through the quit flush — would put the
@@ -803,6 +823,7 @@ async function switchLibrary(dest: string): Promise<{ ok: true; saveFolder: stri
     // Immediate, not the debounced scheduleSavedIndexWrite — see
     // writeSavedIndexNow's comment.
     if (synced) await writeSavedIndexNow(synced);
+    requestBackfill({ full: true });
 
     for (const w of getWindows()) {
       if (!w.isDestroyed()) w.webContents.reload();
@@ -846,7 +867,15 @@ function registerExtractedIpc() {
     writeConfig,
     invalidateConfigCache,
     readAiConfig,
-    writeAiConfig,
+    writeAiConfig: (patch) => {
+      const next = writeAiConfig(patch);
+      // #834: a record skipped because AI features were off leaves NO trace —
+      // that is the point (nothing to clean up when the user says no). So the
+      // moment the gate opens, the only way to find those records again is to
+      // walk the library once more.
+      if (next.enabled) requestBackfill({ full: true });
+      return next;
+    },
     APP_ICON,
     getTrashDir,
     baseOf,
@@ -888,7 +917,7 @@ function registerExtractedIpc() {
     resetDelta: () => {
       _deltaBySender.clear();
     },
-    send: sendToWin,
+    send: broadcast,
     sendExcept: sendToOtherWins,
     // #32 St1: the tabs.json guard (ipc-config.ts's get-tabs/set-tabs) — only the
     // PRIMARY window's sender may read or write it, so this is a no-op check, not a
@@ -913,8 +942,53 @@ function registerExtractedIpc() {
   ipcTagVocab.register(ctx);
   ipcHistory.register(ctx);
   ipcAi.register(ctx);
+  ipcIndexQueue.register();
 }
 registerExtractedIpc();
+
+// #834: the index queue's binding to this assembly. Every dependency is a read
+// or a write this file already owns, which is what lets the queue itself stay
+// Electron-free and know nothing about where a record or a file comes from.
+//
+// The database reads go through ensurePostsSynced rather than straight to a
+// handle, for its #176 guard: a scan chunk that fires mid-switchLibrary gets
+// null (treated as "no library") instead of the database that is being closed.
+function startIndexQueueForApp() {
+  startIndexQueue({
+    pool: sharedJobPool,
+    aiEnabled: () => readAiConfig().enabled === true,
+    listCaptureIds: (since) => {
+      const handle = ensurePostsSynced();
+      return handle ? indexCandidateIds(handle.sqlite, since) : { ids: [], maxUpdatedAt: null };
+    },
+    recordsByIds: (ids) => {
+      const handle = ensurePostsSynced();
+      return handle ? indexRecordsByIds(handle.sqlite, ids) : [];
+    },
+    progressOf: (captureId, assetRef, jobKind) => readDerivedProgress(ensureDerivedDb(configDir()).sqlite, captureId, assetRef, jobKind),
+    saveProgress: (row) => writeDerivedProgress(ensureDerivedDb(configDir()).sqlite, row),
+    resolve: {
+      resolveInFolder,
+      stat: async (absPath) => {
+        try {
+          const st = await fs.promises.stat(absPath);
+          return { size: st.size };
+        } catch {
+          return null; // gone from disk since the scan saw the row
+        }
+      },
+      readFile: (absPath) => fs.promises.readFile(absPath),
+      // The grid's own thumbnail cache — #98's design gives the index no
+      // rasterizer of its own, so a visual job reads exactly the picture the
+      // tile does (lib-thumbnails.ts's thumbnailBytes).
+      thumbnail: thumbnailBytes,
+    },
+    onJobError: (candidate, err) => log.warn('[index] job failed', { jobKind: candidate.jobKind, captureId: candidate.record.captureId, assetRef: candidate.asset.ref, error: (err as Error)?.message }),
+    // sendToWin, not broadcast: this is progress about the queue, not a claim
+    // that the library's records changed.
+    onStatusChange: (status) => sendToWin('index-queue-progress', status),
+  });
+}
 
 // Side-effect-free launch check: skips host registration, hides the window,
 // and quits once the renderer has loaded. Run with HOLOGRAM_SMOKE=1.
@@ -1055,6 +1129,12 @@ if (!gotSingleInstanceLock) {
         if (!last || Date.now() - last >= backupIntervalMs(bk)) setTimeout(() => runBackup('startup-overdue'), 4000);
       }
       setTimeout(() => purgeOldTrash(), 6000); // expire old trash entries on startup
+      // #834: the resumable backfill. Deliberately late and deliberately after
+      // the window exists — the first scroll is the moment the pool's priority
+      // rule has to hold, and starting the walk before there is anything to
+      // compete with would prove nothing. Nothing is queued at all until a
+      // feature registers a job kind (#48/#49/#50/#51).
+      setTimeout(() => startIndexQueueForApp(), 8000);
       // Startup integrity check (#301): needs to work even when backup isn't configured, so
       // it opens the DB itself independent of runBackup (runBackup early-returns on !b.dir
       // and never opens the DB).
