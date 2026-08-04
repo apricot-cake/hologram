@@ -51,3 +51,4 @@
 | [0023](0023-global-history-page.md) | グローバル履歴ページ（ブラウザの chrome://history 相当） | 採用 |
 | [0024](0024-thumbnail-webp-avif-via-renderer-delegated-decode.md) | webp/avif のサムネイルはレンダラ委譲デコードで作る（wasm-vips・OS シェル委譲は不採用） | 採用 |
 | [0025](0025-database-lives-inside-the-library-folder.md) | データベースはライブラリ（保存フォルダ）の中に置く（0010 のDB配置条項を置き換え） | 採用 |
+| [0026](0026-local-ml-foundation-boundaries.md) | ローカル ML 基盤の3つの線引き（モデルの置き場と入手経路・派生データと真実源の境・オプトインの掛かる範囲） | 採用 |
