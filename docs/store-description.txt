@@ -13,9 +13,10 @@ Save content you find on the web — image, text, creator, source and all — in
 
 === DETAILED DESCRIPTION ===
 
-Your own personal content library — every save keeps its creator, context, and source.
+No more "where did I see that?"
+Posts and art, saved with who made them. Search it all later.
 
-Hologram saves the posts you come across — not just a screenshot, but the text, author, date, engagement counts, and original URL too — into a library on your own PC, where you can search, tag, and organize them. No more "where did that post go?"
+Hologram saves the posts you come across — not just a screenshot, but the text, author, date, engagement counts, and original URL too — into a library on your own PC, where you can search, tag, and organize them.
 
 YOUR DATA STAYS WITH YOU
 - Everything is saved to a local folder you choose. No data is collected or sent to any server of ours.

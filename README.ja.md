@@ -1,7 +1,7 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="assets/banner-dark.svg">
-    <img src="assets/banner-light.svg" alt="Hologram — スクショで終わらせない。まるごと保存する、あなたのライブラリ。" width="440">
+    <img src="assets/banner-light.svg" alt="Hologram — 「あれどこで見たっけ」を、なくす。投稿もイラストも、誰のものかまで保存。あとからまとめて検索。" width="440">
   </picture>
 </p>
 
@@ -13,7 +13,7 @@
 
 ウェブで出会ったコンテンツを、本文・作者・元URLまでまるごと保存して、あとから自由に探せる——**あなただけのコンテンツライブラリ**です。
 
-「あの投稿、どこいったっけ」をなくします。気に入ったイラストも、残しておきたいテキストも、ひとつの場所に集めて、整理して、いつでも引き出せます。
+「あれどこで見たっけ」をなくします。気に入ったイラストも、残しておきたいテキストも、ひとつの場所に集めて、整理して、いつでも引き出せます。
 
 いまの Hologram は SNS 投稿の保存がいちばん得意です（X・Bluesky・Misskey・Mastodon・pixiv 対応）。ライブラリ自体は、ウェブのコンテンツ全般を受け入れる設計になっています。
 

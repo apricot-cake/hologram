@@ -1,7 +1,7 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="assets/banner-en-dark.svg">
-    <img src="assets/banner-en-light.svg" alt="Hologram — more than screenshots: your whole library" width="440">
+    <img src="assets/banner-en-light.svg" alt="Hologram — no more 'where did I see that?' Posts and art, saved with who made them. Search it all later." width="440">
   </picture>
 </p>
 
@@ -13,7 +13,7 @@
 
 Save the content you come across on the web — and find it again whenever you like. **Your own personal content library — every save keeps its creator, context, and source.**
 
-No more "where did that post go?" Illustrations you loved, text you want to keep — gather them in one place, organize them, and pull them up anytime.
+No more "where did I see that?" Illustrations you loved, text you want to keep — gather them in one place, organize them, and pull them up anytime.
 
 Today Hologram speaks fluent social media (X, Bluesky, Misskey, Mastodon, pixiv); the library itself is built for web content in general.
 
