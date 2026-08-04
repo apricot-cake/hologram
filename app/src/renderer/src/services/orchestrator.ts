@@ -1395,14 +1395,24 @@ export function endFilterEditSession(): void {
   // still renders, and with activeImageTab cleared that render records the entry
   // the store's same-value guard would otherwise swallow, stranding the view on the
   // image). Off the image view the store stays the interface, so its same-value
-  // guard keeps pressing the active destination a genuine no-op (no re-render, no
-  // stray history entry).
+  // guard keeps pressing the active destination a no-op — UNLESS that destination
+  // is filtered (#812): "ライブラリ"/"投稿者" name the whole set, so landing on a
+  // filtered subset reads as broken. Pressing the destination (fresh arrival or a
+  // repeat click on the one already open) resets ONLY that side's filters —
+  // resetAllFilters/resetPosterFilters already record their own history entry, so
+  // Alt+← undoes a reset the same as any other filter change. A destination with
+  // nothing to reset stays the untouched no-op (no stray render/history entry).
   browseTo = (mode) => {
     mode = normalizeBrowseMode(mode);
+    const posters = mode === 'posters';
+    const reset = posters ? resetPosterFilters : mode === 'posts' ? resetAllFilters : null;
+    const hasFilters = !!reset && (treeLeaves((posters ? posterQB : postQB).getTree()).length > 0 || searchQuery().trim() !== '');
     if (imageTabCtl.isShowing()) {
       imageTabCtl.hideImageView();
+      if (hasFilters) reset();
       setBrowseMode(mode);
     } else {
+      if (hasFilters) reset();
       storeSet('browseMode', mode);
     }
   };
