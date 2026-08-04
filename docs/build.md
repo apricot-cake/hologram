@@ -42,7 +42,7 @@ Dependabot（#395）の更新 PR で新バージョンが来たときも、確�
 
 | 出力 | 作るコマンド | 読む側 |
 | --- | --- | --- |
-| **開発** | `npm run dev:ext`（検証中は動かしたまま） | 専用プロファイルの Chrome。`~/.hologram-dev/chrome-mv3-dev` を一度だけ Load unpacked する |
+| **開発** | `npm run dev:ext`（可視のコンソールで走る。検証中は動かしたまま） | 専用プロファイルの Chrome。`~/.hologram-dev/chrome-mv3-dev` を一度だけ Load unpacked する |
 | **release** | `npm run build:ext` | 誰も直接は読まない。Chrome／Firefox を `.output/<browser>-mv3-release` へ生成して検証するところまで |
 | **日常** | `npm run deploy:ext` | 日常の Chrome。検証済み Chrome release を `.output/chrome-mv3` へ差し替え、拡張へ告知する |
 
@@ -78,6 +78,12 @@ npm run ext:dev:browser
 反映は **拡張のリロード＋タブのリロード**で、in-place HMR ではない（WXT の Shadow Root UI は HMR 非対応で、この拡張の常駐 UI は自前 ShadowRoot＝#44）。守るべき日常タブが同じプロファイルに居ないので、これが許容できるようになったのが分離の要点。
 
 dev サーバーは `127.0.0.1:51731` 固定。二重起動は別 port へ逃げずに落ちる。
+
+**サーバーは可視のコンソールウィンドウで走る**（2026-08-04）＝端末を持たない呼び出し（Claude セッション・タスクランナー）から `npm run dev:ext` が起きた時、`scripts/dev-extension.cts` は自分では走らず、`Hologram dev:ext` というタイトルの新しいコンソールを開いてそちらへサーバーを渡し、呼び出した側へは即座に戻る。**人が端末で打った時は分離しない**＝そのまま目の前で走る（Ctrl+C と WXT のキーバインドが効くのはこちら）。`CI` 環境変数がある時と Windows 以外でも分離しない。
+
+- **理由は「走っているかどうかが外から見えること」**＝端末なしで起こすと、出力は呼び出した側が選んだスクラッチファイルへ消え、そのセッションの外からはサーバーが上がっているのかどうかも分からない。見えないサーバーは二重に起こされ、何日も動きっぱなしになる。ウィンドウがあれば、リビルド行・リロード行・ポート衝突がそこに全部出る。
+- **止め方はウィンドウを閉じる**。`cmd /k` で開くのでサーバーが落ちてもウィンドウは残る＝クラッシュやポート衝突のメッセージが後から読める。
+- **ログファイルは作らない**＝ウィンドウが唯一の出力先。ビルドが入ったかは `~/.hologram-dev/chrome-mv3-dev` の更新時刻で、サーバーの生死は `node scripts/open-dev-profile.cts --print` の `dev server:` 行で分かる。
 
 **サーバーが落ちていても拡張は壊れた顔をしない**（#861）＝popup.html 等は `http://localhost:51731/...` を直接指しており、繋がらなければスクリプトも CSS も読めないまま HTML の骨だけが素のまま縦一列に潰れて出る（CSS・レイアウトのバグに見えるが原因はサーバー未起動）。`node scripts/open-dev-profile.cts --print` の `dev server:` 行、または `npm run ext:dev:browser` 実行時の警告で気付ける。
 
