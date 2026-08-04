@@ -31,7 +31,7 @@ const { configDir, defaultLibraryDir, extensionBuildStampPath, extensionContactP
 // Best-effort remote-image download (original media + avatars) lives in a shared
 // module so the SSRF guard / size caps are identical across capture, import and
 // backfill. See media-download.cts.
-const { downloadMedia, downloadAvatar, downloadCustomEmojis, downloadLinkCardThumbnail, saveStillImage, createByteBudget } = require('./media-download.cts');
+const { downloadMedia, downloadAvatar, downloadCustomEmojis, downloadLinkCardThumbnail, saveStillImage, createByteBudget, subscribeMediaFailures } = require('./media-download.cts');
 // Same pure resolver the desktop app uses, so the bridge and app pick the SAME
 // save folder — including recovering from the redundant pointer. See readSaveFolder.
 const { resolveSaveFolder } = require('./config-recovery.cts');
@@ -141,6 +141,24 @@ function appendLog(entry: Record<string, unknown>): void {
     /* ignore — logging is non-essential */
   }
 }
+
+// #894: one capture.log line per media download that did NOT land, carrying the
+// reason (HTTP status / refused by the SSRF guard / unsupported content-type /
+// timeout / the DNS answers the guard saw). Media downloads are best-effort by
+// contract — a failure returns null and the caller drops the file — which until
+// now meant a save killed by "announced media, nothing downloaded" left no clue
+// as to WHY, and #894's Qiita failure could not be told apart from a network
+// blip. The reason rides its own `stage:'media'` line rather than being folded
+// into the save's outcome line because one save can fail several downloads, and
+// because avatars/emoji fail here WITHOUT failing the save at all — precisely
+// the losses no existing line records.
+//
+// Subscribed at module load: this file is the host process's entry point, and a
+// failure can happen before any handler is entered (the guarded DNS lookup runs
+// inside fetch).
+subscribeMediaFailures((info) => {
+  appendLog(Object.assign({ stage: 'media', phase: 'fail' }, info));
+});
 
 // One capture.log line saying this host has RECEIVED a save and started on it
 // (#519). Free, unlike the extension's own lines: this process is already

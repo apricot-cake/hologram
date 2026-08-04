@@ -87,6 +87,35 @@ test('OGP のみのページ＝#195 と同じ内容で保存される（退行�
   expect(result.author).toBe(null);
 });
 
+// #894: the parser returns attribute values verbatim, entities and all. A meta
+// URL with more than one query parameter therefore arrived with `&amp;` between
+// them, so every parameter after the first was renamed `amp;…` — for Qiita's
+// signed imgix og:image that dropped the signature and the CDN answered 403,
+// which failed the whole bookmark save. Pages whose og:image carries no query
+// string never showed it, which is what made it look site-specific.
+test('og:image のクエリ区切りが実体参照で書かれていても壊れない（#894）', async () => {
+  const html = `<!doctype html><html><head>
+    <title>Tom &amp; Jerry</title>
+    <meta property="og:title" content="Tom &amp; Jerry &mdash; Signed Image" />
+    <meta property="og:image" content="https://cdn.example.com/i/base.png?w=1200&amp;fm=jpg&amp;s=b0e948365c411875" />
+  </head><body></body></html>`;
+  const result = await runOn(html, 'https://example.com/articles/signed');
+
+  // The URL the page MEANS — one `&` per separator, no `amp;` parameter names.
+  expect(result.image).toBe('https://cdn.example.com/i/base.png?w=1200&fm=jpg&s=b0e948365c411875');
+  expect([...new URL(result.image).searchParams.keys()]).toEqual(['w', 'fm', 's']);
+  // Text fields decode too — the same defect, just visible rather than fatal.
+  expect(result.title).toBe('Tom & Jerry — Signed Image');
+});
+
+test('<title> フォールバックも実体参照を解いて返す（#894）', async () => {
+  const html = '<!doctype html><html><head><title>Tom &amp; Jerry &mdash; title tag</title></head><body></body></html>';
+  const result = await runOn(html, 'https://example.com/plain');
+
+  expect(result.title).toBe('Tom & Jerry — title tag');
+  expect(result.metaSource.title).toBe('title');
+});
+
 test('canonical が別オリジン＝タブの URL が使われる', async () => {
   const html = `<!doctype html><html><head>
     <link rel="canonical" href="https://syndicate.example/copy/of/this/page" />
