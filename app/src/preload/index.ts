@@ -42,6 +42,8 @@ import type {
   LibraryStatus,
   ManualGroupsState,
   MediaImportResult,
+  ModelDownloadProgress,
+  ModelInfo,
   WatchImportConfig,
   WatchImportFolder,
   OkResult,
@@ -104,6 +106,18 @@ const api = {
   // section is the only writer; every future AI-backed feature is a reader.
   getAiConfig: (): Promise<AiConfig> => ipcRenderer.invoke('get-ai-config'),
   setAiConfig: (patch: Partial<AiConfig>): Promise<AiConfig> => ipcRenderer.invoke('set-ai-config', patch),
+  // #832 (parent #98): the code-registry model list, joined with on-disk
+  // status. Settings' AI Features section is the only caller today.
+  getModelList: (): Promise<ModelInfo[]> => ipcRenderer.invoke('get-model-list'),
+  downloadModel: (id: string): Promise<ModelInfo> => ipcRenderer.invoke('download-model', id),
+  deleteModel: (id: string): Promise<OkResult> => ipcRenderer.invoke('delete-model', id),
+  // Returns an unsubscribe, same shape onExportProgress uses — a download's
+  // progress listener attaches for its duration and detaches when done.
+  onModelDownloadProgress: (cb: (p: ModelDownloadProgress) => void): (() => void) => {
+    const h = (_e: unknown, p: ModelDownloadProgress) => cb(p);
+    ipcRenderer.on('model-download-progress', h);
+    return () => ipcRenderer.removeListener('model-download-progress', h);
+  },
   // #71: whether the bridge has EVER touched its contact marker — see
   // ipc-config.ts's get-extension-contact and empty/EmptyState.tsx's install-guide
   // variant. A one-shot fetch, not a push (nothing invalidates it mid-session).
