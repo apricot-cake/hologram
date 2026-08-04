@@ -36,7 +36,7 @@ import { ensureDerivedDb, readDerivedProgress, writeDerivedProgress } from './li
 import { backupIntervalMs, createBackupEngine, latestRestorableSnapshot, readBackupConfig, readIntegrityStatus, validateBackupDir, validateSaveFolder, writeBackupConfig } from './lib-backup.ts';
 import { classifyLibraryFolder } from './lib-switch-library.ts';
 import { ensureLibraryId } from './lib-db-write.ts';
-import { APP_ICON, DEV_ORIGIN, DEV_SERVER_URL, createWindow, devServer, getWin, getWindows, installNavigationGuards, sendToOtherWins, sendToWin, sendWindowToBack } from './lib-window.ts';
+import { APP_ICON, DEV_ORIGIN, DEV_SERVER_URL, RELOAD_AFTER_LIBRARY_SWAP_MS, createWindow, devServer, getWin, getWindows, installNavigationGuards, sendToOtherWins, sendToWin, sendWindowToBack } from './lib-window.ts';
 import { pinSend, takeInitial as pinTakeInitial, toggleAlwaysOnTop as pinToggleAlwaysOnTopImpl } from './lib-pin-window.ts';
 import { installDevRendererCsp, registerAppProtocol } from './app-protocol.ts';
 import { runMlSmoke } from './ml-smoke.ts';
@@ -297,6 +297,11 @@ function closeDb() {
 // replaces the whole content column for exactly this state.
 function ensureDb() {
   if (dbHandle) return dbHandle;
+  // Teardown has already closed the library (before-quit, bottom of this file).
+  // Timers armed at startup keep firing while the quit runs, and opening a fresh
+  // connection for one of them would run migrations, a history prune and a
+  // recordLibraryOpened against a library nobody is looking at any more.
+  if (quitting) throw new Error('the app is quitting — not reopening the library database');
   if (saveFolderStatus().missing) throw new Error('save folder is missing — cannot open the library database');
   const file = dbFile();
   if (!fs.existsSync(file)) restoreFromSnapshotIfAvailable(file);
@@ -501,8 +506,11 @@ function ensurePostsSynced() {
   // call ensureDb() itself: it would either reopen the OLD library a moment
   // before switchLibrary's own writeConfig flips the pointer, or race the
   // close/reopen pair outright. Treating this exactly like "no library" is
-  // what every caller already handles.
-  if (switching) return null;
+  // what every caller already handles — and so is a quit that has already closed
+  // the database (see ensureDb): those same one-shot timers used to reach the
+  // closed handle and log an "inbox drain failed: TypeError: The database
+  // connection is not open" pair on every single exit.
+  if (switching || quitting) return null;
   const handle = ensureDb();
   // Prime the snapshot regardless of whether this pass finds anything to
   // drain — buildSavedIndex is two indexed SELECTs, cheap enough to run
@@ -826,9 +834,20 @@ async function switchLibrary(dest: string): Promise<{ ok: true; saveFolder: stri
     if (synced) await writeSavedIndexNow(synced);
     requestBackfill({ full: true });
 
-    for (const w of getWindows()) {
-      if (!w.isDestroyed()) w.webContents.reload();
-    }
+    // Reload every window against the new library — but AFTER this call's own
+    // reply has had a chance to land, not inline. Reloading here destroyed the
+    // calling frame first, so the renderer awaiting switch-library got neither a
+    // value nor a rejection (it simply never settled): the "切り替えました" toast
+    // was torn down with it, and anything the caller did next died mid-flight.
+    // #233's rollback already reloads on this delay for exactly this reason —
+    // lib-window.ts owns the constant and the rest of the argument. Found by the
+    // nightly suite, where the harness's post-switch IPC call lost the race on a
+    // slow runner and hung until the 60s smoke backstop (Refs #917).
+    setTimeout(() => {
+      for (const w of getWindows()) {
+        if (!w.isDestroyed()) w.webContents.reload();
+      }
+    }, RELOAD_AFTER_LIBRARY_SWAP_MS);
 
     return { ok: true, saveFolder: dest };
   } finally {
@@ -1155,6 +1174,28 @@ if (!gotSingleInstanceLock) {
         console.log(tag);
         app.quit();
       };
+      // executeJavaScript's promise belongs to the frame the script ran in: let
+      // that frame navigate away mid-eval and the promise never settles — not
+      // resolved, not rejected. The harness then has nothing to wait on but the
+      // 60s backstop below, and reports its checks against a missing
+      // EVAL_RESULT, which reads as "the feature returned undefined" rather than
+      // "the page reloaded underneath the eval" (Refs #917). Losing an eval to a
+      // reload is a legitimate outcome — a library switch reloads every window
+      // on purpose; taking a minute to say so is not.
+      // 'did-navigate' — a main-frame navigation that COMMITTED — is the signal,
+      // not 'did-start-navigation'. An eval is allowed to start navigations that
+      // go nowhere, and one of them does it on purpose:
+      // test-app-renderer-origin.cts assigns location.href to prove the
+      // navigation guard refuses it, then carries on in the very same frame.
+      // Only a commit replaces the document out from under the script.
+      const evalInRenderer = (wc: Electron.WebContents, script: string) =>
+        new Promise((resolve, reject) => {
+          const onNavigated = (_e: Electron.Event, url: string) => reject(new Error(`the renderer navigated to ${url} while the eval was still running`));
+          wc.on('did-navigate', onNavigated);
+          wc.executeJavaScript(script)
+            .then(resolve, reject)
+            .finally(() => wc.off('did-navigate', onNavigated));
+        });
       (getWin() as BrowserWindow).webContents.once('did-finish-load', () =>
         setTimeout(async () => {
           // #831: one local inference through the utilityProcess runtime, with
@@ -1169,7 +1210,7 @@ if (!gotSingleInstanceLock) {
           }
           if (process.env.HOLOGRAM_SMOKE_EVAL) {
             try {
-              const r = await (getWin() as BrowserWindow).webContents.executeJavaScript(process.env.HOLOGRAM_SMOKE_EVAL);
+              const r = await evalInRenderer((getWin() as BrowserWindow).webContents, process.env.HOLOGRAM_SMOKE_EVAL);
               console.log('EVAL_RESULT', JSON.stringify(r));
             } catch (e) {
               console.log('EVAL_ERR', e.message);
@@ -1240,6 +1281,11 @@ app.on('window-all-closed', () => {
 // Set once the pending saved-index write has been flushed, so the re-issued
 // quit below falls through to the teardown instead of holding the app again.
 let quitFlushed = false;
+// Set once the teardown below has closed the library, so nothing reopens or
+// re-uses it while the process winds down (ensureDb / ensurePostsSynced read
+// it). Deliberately NOT set on the first, deferred pass: that one holds the
+// quit open precisely so the pending saved-index write can still read the DB.
+let quitting = false;
 
 app.on('before-quit', (e) => {
   // Hold the quit for one round trip, the way Electron's own docs have async
@@ -1253,11 +1299,14 @@ app.on('before-quit', (e) => {
     void Promise.race([flushSavedIndexWrite(), new Promise((r) => setTimeout(r, 2000))]).finally(() => app.quit());
     return;
   }
-  try {
-    dbHandle?.sqlite.close();
-  } catch {
-    /* already closed, or never opened this run */
-  }
+  quitting = true;
+  // closeDb rather than a bare sqlite.close(): it also FORGETS the handle.
+  // Leaving the closed connection in place made every startup timer that
+  // outlived the quit (the #34 replacement sweep, most visibly) hand
+  // better-sqlite3 a dead connection, and each one logged a TypeError stack on
+  // the way out — noise indistinguishable from a real fault when reading the
+  // tail of a nightly run. Nothing reopens it: `quitting` is set above.
+  closeDb();
   // A utilityProcess is not a child of the app's exit path; left alone it can
   // outlive the window it was started for (#831).
   stopMlRuntime();
