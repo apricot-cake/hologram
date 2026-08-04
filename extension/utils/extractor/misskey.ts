@@ -468,9 +468,10 @@ async function fetchMisskeyNote(parsed, url): Promise<PostRecord> {
         rec.isThread = true;
         rec.isReply = null;
       }
-      // #180: the only platform whose reply target arrives with full content
-      // already in this response (note.reply) -- see types.ts's
-      // PostRecord.replyToPost for why the other three platforms don't get one.
+      // #180: the reply target arrives with full content already in this
+      // response (note.reply) -- see types.ts's PostRecord.replyToPost for
+      // which of the other platforms get one too (X, since #806) and why
+      // Bluesky/Mastodon don't.
       rec.replyToPost = misskeyQuotedRef(note.reply, parsed.host);
     }
     // A renote counts as a QUOTE when it adds anything of its own — text, CW,

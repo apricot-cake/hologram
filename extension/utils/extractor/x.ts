@@ -7,7 +7,7 @@
 import { anySrc, findAncestorContainerLink, hostnameMatches, parseMediaUrlPath, prepareScopedCaptureState } from './dom.ts';
 import { parseCount } from './dom-meta.ts';
 import { emptyRecord, normalizeHashtags, readJsonKeepingRaw, toIso } from './record.ts';
-import type { DomMeta, Extractor, LinkCard, MediaIdentity, MediaItem, Poll, PostMediaElement, PostRecord } from './types.ts';
+import type { DomMeta, Extractor, LinkCard, MediaIdentity, MediaItem, Poll, PostMediaElement, PostRecord, QuotedPost } from './types.ts';
 
 const HOSTS = ['x.com', 'twitter.com'];
 
@@ -511,6 +511,29 @@ function xHashtags(j): string[] {
   return normalizeHashtags([...String((j && j.text) || '').matchAll(X_HASHTAG_IN_TEXT)].map((m) => m[1]));
 }
 
+// #180/#806: the quoted tweet (quoted_tweet) and the reply-parent (parent) --
+// added by #806, same source confirming BOTH -- arrive as the SAME shape as
+// the top-level tweet in this response (mirrors mediaDetails/entities/user),
+// so the sidecar sub-record is built with the exact same field reads for
+// either one, at no extra request.
+function xQuotedRef(t): QuotedPost | null {
+  if (!t) return null;
+  // Guard screen_name: the embedded tweet can carry a user object without a
+  // screen_name, which would otherwise build .../undefined/status/<id>.
+  const url = t.user && t.user.screen_name && t.id_str ? `https://x.com/${t.user.screen_name}/status/${t.id_str}` : null;
+  return {
+    url,
+    displayName: (t.user && t.user.name) || null,
+    screenName: (t.user && t.user.screen_name) || null,
+    userId: (t.user && t.user.id_str) || null,
+    avatar: t.user && t.user.profile_image_url_https ? t.user.profile_image_url_https.replace(/_normal(\.[a-z]+)(?=$|\?)/i, '_400x400$1') : null,
+    text: t.text ? xExpandUrls(t.text, t.entities) : null,
+    date: toIso(t.created_at),
+    cw: null, // no free-text CW field on this endpoint (see rec.sensitive above)
+    media: xMedia(t.mediaDetails),
+  };
+}
+
 async function fetchXTweet(parsed, url): Promise<PostRecord> {
   const rec = emptyRecord(url, 'x');
   rec.screenName = parsed.screenName;
@@ -575,6 +598,16 @@ async function fetchXTweet(parsed, url): Promise<PostRecord> {
     rec.hashtags = xHashtags(j);
     rec.mediaType = xMediaType(j.mediaDetails);
     rec.media = xMedia(j.mediaDetails);
+    if (j.quoted_tweet) {
+      rec.isQuote = true;
+      // Guard screen_name: a quoted_tweet can carry a user object without a
+      // screen_name, which would otherwise build .../undefined/status/<id>.
+      const qt = j.quoted_tweet;
+      if (qt.user && qt.user.screen_name && qt.id_str) {
+        rec.quotedUrl = `https://x.com/${qt.user.screen_name}/status/${qt.id_str}`;
+      }
+      rec.quotedPost = xQuotedRef(qt);
+    }
     if (j.in_reply_to_screen_name) {
       rec.isReply = true;
       rec.replyToId = j.in_reply_to_status_id_str || null;
@@ -584,29 +617,12 @@ async function fetchXTweet(parsed, url): Promise<PostRecord> {
         rec.isThread = true;
         rec.isReply = null;
       }
-    }
-    if (j.quoted_tweet) {
-      rec.isQuote = true;
-      // Guard screen_name: a quoted_tweet can carry a user object without a
-      // screen_name, which would otherwise build .../undefined/status/<id>.
-      const qt = j.quoted_tweet;
-      if (qt.user && qt.user.screen_name && qt.id_str) {
-        rec.quotedUrl = `https://x.com/${qt.user.screen_name}/status/${qt.id_str}`;
-      }
-      // #180: the quoted tweet is the SAME shape as the top-level tweet in this
-      // response (mirrors mediaDetails/entities/user), so the sidecar sub-record
-      // is built with the exact same helpers as the parent, at no extra cost.
-      rec.quotedPost = {
-        url: rec.quotedUrl,
-        displayName: (qt.user && qt.user.name) || null,
-        screenName: (qt.user && qt.user.screen_name) || null,
-        userId: (qt.user && qt.user.id_str) || null,
-        avatar: qt.user && qt.user.profile_image_url_https ? qt.user.profile_image_url_https.replace(/_normal(\.[a-z]+)(?=$|\?)/i, '_400x400$1') : null,
-        text: qt.text ? xExpandUrls(qt.text, qt.entities) : null,
-        date: toIso(qt.created_at),
-        cw: null, // no free-text CW field on this endpoint (see rec.sensitive above)
-        media: xMedia(qt.mediaDetails),
-      };
+      // #806: unlike quoted_tweet's own dedicated flag, a reply carries no
+      // per-tweet signal that a fetch actually attempted to bundle its parent
+      // -- j.parent is simply absent (deleted/protected parent, or the reply
+      // predates syndication adding this field) and xQuotedRef(undefined)
+      // already answers null for that case.
+      rec.replyToPost = xQuotedRef(j.parent);
     }
   } catch {
     // network/parse failure — keep what we have (URL + screenName)

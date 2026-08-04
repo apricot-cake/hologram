@@ -62,13 +62,17 @@ type MediaItem = AnnouncedMedia;
 // (#180). Only the platforms whose already-fetched API response bundles the
 // other post's full content produce one -- quoting is bundled on all four
 // (X quoted_tweet / Bluesky embed.record / Misskey note.renote / Mastodon
-// quoted_status when the shape carries it); reply-to content is bundled only
-// on Misskey (note.reply). X's in_reply_to_* and Mastodon's in_reply_to_id
-// carry no post body, and Bluesky's getPostThread now asks parentHeight=0
-// (#292/ADR 0011), so none of the three can fill this without a request this
-// Issue's own scope excludes (additional-request fetches are judged
-// individually, out of v1) -- those keep the existing id/URL-only fields
-// (replyToId/quotedUrl) and never gain this richer sub-record.
+// quoted_status when the shape carries it); reply-to content is bundled on
+// Misskey (note.reply) and, since #806, on X too -- its syndication response
+// carries a `parent` field of the same shape as the top-level tweet whenever
+// the tweet is a reply (confirmed against the schema canary's `reply` sample,
+// scripts/canary/snapshots/x.json, 2026-07-30 capture). Mastodon's
+// in_reply_to_id carries no post body, and Bluesky's getPostThread now asks
+// parentHeight=0 (#292/ADR 0011), so neither of those two can fill this
+// without a request this Issue's own scope excludes (additional-request
+// fetches are judged individually, out of v1) -- those two keep the existing
+// id/URL-only fields (replyToId/quotedUrl) and never gain this richer
+// sub-record.
 //
 // v1 is metadata-only (#180 scope): media only ever carries the OTHER post's
 // media URLs as already announced by the same response, never downloaded --

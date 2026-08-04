@@ -1,5 +1,5 @@
-// Quote/renote and (Misskey-only) reply-to sidecar sub-records (#180). fetch
-// is swapped out, no network needed — same mocking convention as
+// Quote/renote and reply-to sidecar sub-records (#180, X reply-to added by
+// #806). fetch is swapped out, no network needed — same mocking convention as
 // extractor-hashtags.test.ts.
 //
 // What's checked per platform:
@@ -7,8 +7,8 @@
 //      quotedPost (text/author/date/media), not just the existing quotedUrl.
 //   2. A quote/renote whose target has no usable content leaves quotedPost
 //      null (isQuote may still be true — quotedUrl is unaffected by this Issue).
-//   3. replyToPost stays null everywhere except Misskey, where note.reply
-//      arrives with the same full content as a renote does.
+//   3. replyToPost fills on Misskey (note.reply) and X (parent, #806), and
+//      stays null on Bluesky/Mastodon, whose APIs carry no reply-body field.
 //   4. Bluesky's embed.record gating (list/feed/starter-pack, recordWithMedia)
 //      still excludes non-post targets from quotedPost the same way it
 //      already excludes them from isQuote/quotedUrl.
@@ -70,8 +70,8 @@ describe('X', () => {
       cw: null,
       media: [{ url: 'https://pbs.twimg.com/media/a.jpg?name=orig', alt: null, width: 10, height: 20, type: 'image' }],
     });
-    // #180's own reply-to scope: X's in_reply_to_* names an id only, no body —
-    // replyToPost never fills on this platform.
+    // Not a reply in this fixture (no in_reply_to_screen_name) — replyToPost
+    // stays null regardless of the quote above.
     expect(rec.replyToPost).toBeNull();
   });
 
@@ -81,6 +81,72 @@ describe('X', () => {
     const rec = await fetchXTweet(ID, URL_);
     expect(rec.isQuote).toBeFalsy();
     expect(rec.quotedPost).toBeNull();
+  });
+
+  test('#806: parent からテキスト・投稿者・メディアを取って replyToPost へ入れる', async () => {
+    mockFetch([
+      [
+        'cdn.syndication.twimg.com',
+        {
+          text: 'a reply',
+          mediaDetails: [],
+          user: { screen_name: 'alice', id_str: '1' },
+          in_reply_to_screen_name: 'carol',
+          in_reply_to_status_id_str: '50',
+          in_reply_to_user_id_str: '3',
+          parent: {
+            id_str: '50',
+            text: 'parent text',
+            created_at: 'Wed Jan 01 00:00:00 +0000 2026',
+            user: { screen_name: 'carol', name: 'Carol', id_str: '3', profile_image_url_https: 'https://x.example/carol_normal.jpg' },
+            mediaDetails: [{ media_url_https: 'https://pbs.twimg.com/media/p.jpg', type: 'photo', original_info: { width: 30, height: 40 } }],
+          },
+        },
+      ],
+    ]);
+
+    const rec = await fetchXTweet(ID, URL_);
+    expect(rec.isReply).toBe(true);
+    expect(rec.replyToId).toBe('50');
+    expect(rec.replyToPost).toEqual({
+      url: 'https://x.com/carol/status/50',
+      displayName: 'Carol',
+      screenName: 'carol',
+      userId: '3',
+      avatar: 'https://x.example/carol_400x400.jpg',
+      text: 'parent text',
+      date: expect.any(String),
+      cw: null,
+      media: [{ url: 'https://pbs.twimg.com/media/p.jpg?name=orig', alt: null, width: 30, height: 40, type: 'image' }],
+    });
+  });
+
+  test('#806: parent の無い返信（削除済み・鍵アカウントの親など）では replyToPost は null のまま', async () => {
+    mockFetch([
+      [
+        'cdn.syndication.twimg.com',
+        {
+          text: 'a reply',
+          mediaDetails: [],
+          user: { screen_name: 'alice', id_str: '1' },
+          in_reply_to_screen_name: 'carol',
+          in_reply_to_status_id_str: '50',
+        },
+      ],
+    ]);
+
+    const rec = await fetchXTweet(ID, URL_);
+    expect(rec.isReply).toBe(true);
+    expect(rec.replyToId).toBe('50');
+    expect(rec.replyToPost).toBeNull();
+  });
+
+  test('返信でないツイートは replyToPost が null のまま', async () => {
+    mockFetch([['cdn.syndication.twimg.com', { text: 'solo', mediaDetails: [], user: { screen_name: 'alice', id_str: '1' } }]]);
+
+    const rec = await fetchXTweet(ID, URL_);
+    expect(rec.isReply).toBeFalsy();
+    expect(rec.replyToPost).toBeNull();
   });
 });
 
@@ -125,7 +191,8 @@ describe('Bluesky', () => {
     });
     // #292/ADR 0011: getPostThread now asks parentHeight=0, so a reply's
     // parent never arrives with content — replyToPost stays null even when
-    // this post IS a reply (record.reply set), same as X/Mastodon.
+    // this post IS a reply (record.reply set), same as Mastodon (X gets one
+    // since #806).
     expect(rec.replyToPost).toBeNull();
   });
 
@@ -229,7 +296,7 @@ describe('Misskey', () => {
     expect(rec.quotedPost?.screenName).toBe('bob@remote.example');
   });
 
-  test('note.reply（リプ先）もフル Note から取る — 4PF中ここだけの唯一の返信先サブレコード', async () => {
+  test('note.reply（リプ先）もフル Note から取る', async () => {
     mockFetch([
       [
         '/api/notes/show',
