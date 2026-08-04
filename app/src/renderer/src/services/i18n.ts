@@ -417,6 +417,14 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     aiDisclosureNoGenerate: '画像を生成することはありません',
     aiDisclosureNoTrain: 'あなたの画像を学習に使うことはありません',
     aiDisclosureLocalOnly: '解析はこの端末の中だけで行い、ライブラリの中身をどこへも送信しません',
+    // #832: モデル一覧（取得・削除・ライセンス表示）
+    modelDownload: '取得',
+    modelResume: '続きから取得',
+    modelDownloading: '取得中…',
+    modelDelete: '削除',
+    modelStateComplete: '取得済み',
+    modelUpdateAvailable: '新しいバージョンがあります（取得すると入れ替わります）',
+    modelDownloadFailed: 'モデルの取得に失敗しました：$1',
 
     // viewer: toolbar > 索引の進捗（#834・親 #98）。走っている間だけ出る＝
     // 待ちが無ければ消える。常設の「どこまで索引済みか」は #100 の担当。
@@ -1235,6 +1243,14 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     aiDisclosureNoGenerate: 'It never generates images.',
     aiDisclosureNoTrain: 'It never uses your images to train anything.',
     aiDisclosureLocalOnly: "Analysis runs entirely on this device — your library's contents are never sent anywhere.",
+    // #832: the model list (get / delete / license display)
+    modelDownload: 'Download',
+    modelResume: 'Resume download',
+    modelDownloading: 'Downloading…',
+    modelDelete: 'Delete',
+    modelStateComplete: 'Downloaded',
+    modelUpdateAvailable: 'A newer version is available (downloading replaces it)',
+    modelDownloadFailed: 'Could not download the model: $1',
 
     // viewer: toolbar > indexing progress (#834, parent #98). Shown only while
     // there is work; the standing "how much is indexed" figures are #100's.

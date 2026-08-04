@@ -57,6 +57,7 @@ import * as ipcHistory from './ipc-history.ts';
 import * as ipcWatchImport from './ipc-watch-import.ts';
 import * as ipcAi from './ipc-ai.ts';
 import * as ipcIndexQueue from './ipc-index-queue.ts';
+import * as ipcModel from './ipc-model.ts';
 import { createWatchImportManager } from './lib-watch-import.ts';
 import type { IpcContext } from './ipc-context.ts';
 
@@ -943,6 +944,7 @@ function registerExtractedIpc() {
   ipcHistory.register(ctx);
   ipcAi.register(ctx);
   ipcIndexQueue.register();
+  ipcModel.register(ctx);
 }
 registerExtractedIpc();
 

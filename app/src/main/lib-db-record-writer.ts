@@ -88,6 +88,7 @@ const POST_COLUMNS = [
   'poll',
   'linkCard',
   'shotAnimated',
+  'metaSource',
 ] as const;
 
 const UPSERT_POST_SQL = `INSERT INTO posts (${POST_COLUMNS.join(',')}) VALUES (${POST_COLUMNS.map(() => '?').join(',')})
@@ -176,6 +177,9 @@ function postParams(n: PostRecordShape): unknown[] {
     // #8: 1 when the card image is an animated webp — see lib-card-dims.ts's
     // fillCardDims.
     shotAnimated: toDbBool(n.shotAnimated),
+    // #239: 0-or-1 provenance map, same null-stays-null rule as quotedPost/
+    // replyToPost/poll/linkCard above.
+    metaSource: n.metaSource ? JSON.stringify(n.metaSource) : null,
   };
   return POST_COLUMNS.map((c) => byName[c]);
 }

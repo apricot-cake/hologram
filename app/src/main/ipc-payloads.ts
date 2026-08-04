@@ -429,6 +429,25 @@ export interface IndexQueueStatus {
   currentKind: string | null;
 }
 
+// --- Model manager (ipc-model.ts, #832 / parent #98) ---------------------
+/** get-model-list entry: one code-registry model, joined with its on-disk status. */
+export interface ModelInfo {
+  id: string;
+  rev: string;
+  state: 'absent' | 'partial' | 'complete';
+  bytesDone: number;
+  bytesTotal: number;
+  /** Shown next to the model in Settings' AI Features section. */
+  licenseNote: string;
+  /** A different rev of this model is on disk — informational only, #832 never auto-fetches it. */
+  installedRev: string | null;
+}
+
+/** Pushed `model-download-progress` events while download-model runs; `file` is null on the final event. */
+export interface ModelDownloadProgress extends ModelInfo {
+  file: string | null;
+}
+
 // --- Backup + integrity (ipc-backup.ts) ---------------------------------
 /** The `lastResult` summary readBackupConfig hands back with the config. */
 export interface BackupSummary {

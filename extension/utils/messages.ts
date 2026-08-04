@@ -14,6 +14,7 @@
 import type { HostAckView, ProtocolSkew, SavedEntry, SavedResults, TrashedEntry, TrashedResults } from '../../native-host/protocol.mts';
 import type { CropRect } from './crop.ts';
 import type { DomMeta } from './extractor/types.ts';
+import type { WebMetaResult } from './extractor/web-meta.ts';
 import type { SaveFailureKind } from './native-error.ts';
 import type { SaveLogEntry, SaveStage } from './capture-log.ts';
 import type { SaveQueueStats } from './save-queue.ts';
@@ -104,6 +105,20 @@ interface ResendQueueMessage {
   type: 'resendQueue';
 }
 
+// #239: what the page-side metadata-extraction script read off the tab's own
+// DOM (schema.org JSON-LD/microdata/RDFa, OGP, Dublin Core, Highwire). Sent
+// once, unprompted, the moment extension/entrypoints/read-meta.ts runs — that
+// script is injected with `files:`, never `func:` (#759's serialization trap:
+// `func` loses its module scope, and this module bundles a third-party
+// parser), so its result cannot ride back as an executeScript() return value
+// the way the OGP-only read it replaces once did. doSaveBookmark (background.ts)
+// matches this to its own request by sender.tab.id — only one read is ever in
+// flight per tab, so no separate correlation id is needed.
+interface PageMetaExtractedMessage {
+  type: 'pageMetaExtracted';
+  result: WebMetaResult;
+}
+
 // The toolbar popup's save button (#124). Putting a popup on the action means
 // chrome.action.onClicked never fires again, so this message is what replaces
 // it: the popup asks, the worker finds the active tab and runs the SAME
@@ -125,7 +140,7 @@ interface PopupCheckBulkMessage {
   type: 'popupCheckBulk';
 }
 
-type ContentToBackgroundMessage = CaptureAndSendMessage | SavePostMessage | ImageDraggedMessage | CheckSavedMessage | CheckDuplicateMessage | LogCaptureMessage | DumpLogsMessage | QueueStatsMessage | ResendQueueMessage | PopupActivateMessage | PopupCheckBulkMessage;
+type ContentToBackgroundMessage = CaptureAndSendMessage | SavePostMessage | ImageDraggedMessage | CheckSavedMessage | CheckDuplicateMessage | LogCaptureMessage | DumpLogsMessage | QueueStatsMessage | ResendQueueMessage | PageMetaExtractedMessage | PopupActivateMessage | PopupCheckBulkMessage;
 
 // === background -> content script ===
 
@@ -338,6 +353,7 @@ export type {
   NotifyFailureMessage,
   NotifyMessage,
   NotifySuccessMessage,
+  PageMetaExtractedMessage,
   PopupActivateMessage,
   PopupActivateReason,
   PopupActivateResponse,

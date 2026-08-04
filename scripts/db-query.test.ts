@@ -62,6 +62,9 @@ beforeAll(async () => {
     },
     // #181: the post's OGP preview card — one more JSON column on the same row.
     linkCard: { url: 'https://example.com/article', title: 'A great article', description: 'It explains things.', thumbnailFile: 'cap-1-linkcard.jpg' },
+    // #239: which regard filled title/author/etc on the generic web-page
+    // extraction path — one more JSON column on the same row.
+    metaSource: { title: 'ogp', author: 'jsonld' },
     // #162: dimension/file-size facet aggregates — written directly here (this
     // test drives writePost, not fillMediaDims) just to check the column round-trips.
     mediaMaxW: 3000,
@@ -246,6 +249,15 @@ describe('postsFromDb: 形と並び', () => {
     expect(cap1.linkCard).toEqual({ url: 'https://example.com/article', title: 'A great article', description: 'It explains things.', thumbnailFile: 'cap-1-linkcard.jpg' });
     const cap2 = (await postsFromDb(handle.sqlite)).find((p: any) => p.captureId === 'cap-2');
     expect(cap2.linkCard).toBeNull();
+  });
+
+  // #239: same 0-or-1 JSON-column round trip linkCard/poll have above (null,
+  // not an empty object, on a platform-extractor post that never set it).
+  test('metaSource が往復する（#239）', async () => {
+    const cap1 = (await postsFromDb(handle.sqlite)).find((p: any) => p.captureId === 'cap-1');
+    expect(cap1.metaSource).toEqual({ title: 'ogp', author: 'jsonld' });
+    const cap2 = (await postsFromDb(handle.sqlite)).find((p: any) => p.captureId === 'cap-2');
+    expect(cap2.metaSource).toBeNull();
   });
 
   // #290: same JSON-column round trip, but empty-array (not null) is the

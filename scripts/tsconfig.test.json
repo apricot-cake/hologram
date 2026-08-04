@@ -149,6 +149,10 @@
     "metadata-correctness.test.ts",
     "metadata-origin.test.ts",
     "migrate.test.ts",
+    // #832: imports lib-model-manager.ts, which imports lib-ml-runtime.ts →
+    // native-host.ts — the same electron-typed pull as lib-watch-import-library.test.ts
+    // above, cause (c).
+    "model-manager.test.ts",
     "native-host-install.test.ts",
     "panels-pref.test.ts",
     "panelwidth.test.ts",
