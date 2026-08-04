@@ -27,7 +27,7 @@ import { listPostsDelta, deletePost, clearAll } from './posts.ts';
 import { refresh as trashRefresh } from './trash-view.ts';
 import { hologramIpc } from './ipc.ts';
 import { sync as syncPostsData } from './posts-data.ts';
-import { set as storeSet } from './store.ts';
+import { set as storeSet, setMany as storeSetMany } from './store.ts';
 import { userKey } from './query.ts';
 import * as folders from './folders.ts';
 import * as selection from './selection.ts';
@@ -350,8 +350,8 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
       // removing its own host div — same guarantee the old pushed render(null) call gave).
       // The EmptyState component derives 'firstRun'/'filtered' itself from this same key +
       // 'allPostsCount' + 'searchQuery' — one less push.
-      storeSet('postGroups', null);
-      storeSet('postSections', null); // #47: no rows, no month sections either
+      // ONE notify pass for both keys — see the paired push below (#871).
+      storeSetMany({ postGroups: null, postSections: null }); // #47: no rows, no month sections either
       // Nothing else to do here. The grid host unmounts itself on the null push, and
       // the empty state decides from the SAME store keys whether it has something to
       // say (empty/EmptyState.tsx) — both used to be shown and hidden from this
@@ -368,8 +368,11 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
     // and modelOf/keyOf/onAspect were configured once, above. Pushing the SAME array
     // reference (in-place reuse) is a no-op via the store's identity guard,
     // matching the old itemsKey-doesn't-bump behavior.
-    storeSet('postGroups', viewGroups);
-    storeSet('postSections', sections); // #47 — null when the sort has no date axis
+    // Both keys in ONE notify pass (#871). The sections index INTO viewGroups, so
+    // pushing them separately gives every subscriber a torn intermediate state —
+    // new items measured against the previous build's section ranges, which is
+    // what corrupted masonic's position cache and crashed the grid.
+    storeSetMany({ postGroups: viewGroups, postSections: sections }); // #47 — sections is null when the sort has no date axis
     _lastRenderGen = _allPostsGeneration; // mark the generation of this build
     _lastViewGroups = viewGroups;
     _lastSections = sections;

@@ -410,7 +410,20 @@ export function SectionedGridHost({ model, cell, nav, anchor, marquee, onBackgro
       <div ref={containerRef as React.Ref<HTMLDivElement>} data-slot="sectioned-grid" style={{ width: '100%' }}>
         {sections.map((sec) => (
           <SectionBlock
-            key={sec.key}
+            // The RANGE is part of the identity, not just the month (#871). A
+            // block's masonic instance caches a measured height per index, and
+            // masonic's contract is that `items` never gets shorter without a
+            // reset — hand it a shorter slice with the cache intact and it walks
+            // an index past the end, where items[index] is undefined and its
+            // render memo dies on WeakMap.set(undefined) (the grid's "画面を表示
+            // できませんでした" crash). A remount is what guarantees a clean cache:
+            // usePositioner's deps alone do NOT, because when the container
+            // width changes in the same render as the deps, masonic copies the
+            // old cache into the new positioner (its `optsChanged` branch is not
+            // exclusive with a deps change) — a fresh mount has no previous
+            // instance to copy from. Cost is one section's DOM, and its content
+            // changed anyway if the range moved.
+            key={`${sec.key}:${sec.startIndex}:${sec.count}`}
             sec={sec}
             model={model}
             cell={cell}
@@ -474,6 +487,9 @@ function SectionBlock({
       rowGutter: model.rowGutter,
       columnGutter: model.rowGutter,
     },
+    // Covers "same range, different items" (a rebuild that happens to keep this
+    // month's bucket the same size). A range that MOVED is handled one level up
+    // by remounting the block — see the key the parent gives it (#871).
     [model.itemsKey, sec.key],
   );
   const resizeObserver = useResizeObserver(positioner);
