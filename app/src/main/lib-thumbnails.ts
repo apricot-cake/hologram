@@ -18,6 +18,7 @@ import path from 'node:path';
 import { configDir } from './native-host.ts';
 import { getSaveFolder } from './lib-config.ts';
 import { assetSecurityHeaders } from './asset-headers.ts';
+import { sharedJobPool } from './lib-job-pool.ts';
 
 /** What registerImageProtocol needs from the assembly. */
 export interface ImageProtocolDeps {
@@ -71,31 +72,20 @@ function thumbCacheDir() {
 // stutter). Funnel the heavy generation through a small pool that yields to the
 // event loop (setImmediate) between jobs so the main thread keeps breathing, and
 // coalesce concurrent identical requests so each tile is decoded at most once.
-const THUMB_POOL = 2;
-let _thumbRunning = 0;
-const _thumbQueue: any[] = [];
+//
+// #834 moved the pool itself out to lib-job-pool.ts, where the background index
+// jobs share it. Nothing about a thumbnail's own admission changed: it still
+// enters at up to 2 at a time with a setImmediate yield between jobs. What the
+// shared pool adds is the guarantee in the OTHER direction — index jobs are
+// 'background' and are never STARTED while any thumbnail is queued or running,
+// so a backfill cannot take a slot the grid is about to want.
 const _thumbInflight = new Map(); // cachePath -> Promise<Buffer|null>
-function _pumpThumbs() {
-  while (_thumbRunning < THUMB_POOL && _thumbQueue.length) {
-    const job = _thumbQueue.shift();
-    _thumbRunning++;
-    setImmediate(async () => {
-      try {
-        job.resolve(await job.fn());
-      } catch {
-        job.resolve(null);
-      } finally {
-        _thumbRunning--;
-        _pumpThumbs();
-      }
-    });
-  }
-}
+// The old private pool resolved null on a thrown job; the shared one rejects
+// (an index job has to tell "produced nothing" from "threw"). Restore the old
+// contract here, where "no thumbnail" is a legitimate answer the caller already
+// handles by falling through to the original.
 function runThumbJob(fn) {
-  return new Promise((resolve) => {
-    _thumbQueue.push({ fn, resolve });
-    _pumpThumbs();
-  });
+  return sharedJobPool.run(fn, { priority: 'interactive' }).catch(() => null);
 }
 
 // #8: renderer-delegated decode for the formats nativeImage can't read.
@@ -339,4 +329,13 @@ function registerImageProtocol({ resolveInFolder }: ImageProtocolDeps) {
   });
 }
 
-export { mimeForFile, registerImageProtocol };
+// #834's raster input provider. A visual job kind's `rasterImage` input IS the
+// grid's thumbnail — same cache, same generation path, same negative-result
+// sentinel — because #98's design deliberately gives the index no rasterizer of
+// its own. The index therefore warms the cache the grid reads, instead of
+// decoding the same file a second time at a second size.
+async function thumbnailBytes(absPath: string, width: number): Promise<Buffer | null> {
+  return getThumbnail(absPath, path.basename(absPath), width);
+}
+
+export { mimeForFile, registerImageProtocol, thumbnailBytes };

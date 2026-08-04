@@ -36,6 +36,7 @@ import type {
   FullTextHit,
   HistoryQueryOptions,
   HistoryQueryResult,
+  IndexQueueStatus,
   IntegrityStatus,
   IpcPostRecord,
   LegacyImportResult,
@@ -106,6 +107,20 @@ const api = {
   // section is the only writer; every future AI-backed feature is a reader.
   getAiConfig: (): Promise<AiConfig> => ipcRenderer.invoke('get-ai-config'),
   setAiConfig: (patch: Partial<AiConfig>): Promise<AiConfig> => ipcRenderer.invoke('set-ai-config', patch),
+  // #834 (parent #98): live background-indexing progress + its pause control.
+  // Fetch once at mount, then follow the push — the queue's own status changes
+  // are coalesced main-side, so this is a handful of messages per run.
+  getIndexQueueStatus: (): Promise<IndexQueueStatus> => ipcRenderer.invoke('get-index-queue-status'),
+  pauseIndexQueue: (): Promise<IndexQueueStatus> => ipcRenderer.invoke('pause-index-queue'),
+  resumeIndexQueue: (): Promise<IndexQueueStatus> => ipcRenderer.invoke('resume-index-queue'),
+  // Returns an unsubscribe (the onExportProgress shape) — the indicator mounts
+  // with the shell, but a pin window's own tree does not, and a listener left
+  // behind on a torn-down component would keep calling into it.
+  onIndexQueueProgress: (cb: (s: IndexQueueStatus) => void): (() => void) => {
+    const h = (_e: unknown, s: IndexQueueStatus) => cb(s);
+    ipcRenderer.on('index-queue-progress', h);
+    return () => ipcRenderer.removeListener('index-queue-progress', h);
+  },
   // #832 (parent #98): the code-registry model list, joined with on-disk
   // status. Settings' AI Features section is the only caller today.
   getModelList: (): Promise<ModelInfo[]> => ipcRenderer.invoke('get-model-list'),

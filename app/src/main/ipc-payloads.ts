@@ -408,6 +408,27 @@ export interface AiConfig {
   enabled: boolean;
 }
 
+// --- Index queue (ipc-index-queue.ts, #834 / parent #98) -----------------
+/**
+ * What the toolbar's progress indicator draws, pushed on 'index-queue-progress'
+ * and fetchable once via 'get-index-queue-status'.
+ *
+ * `total` GROWS while `scanning` is true — the library walk decides what needs
+ * work as it goes, so this is a progress bar whose end moves. The indicator says
+ * so by showing an indeterminate bar until the scan is done, rather than
+ * pretending to a percentage that would go backwards.
+ */
+export interface IndexQueueStatus {
+  /** There is work: something queued, running, or still being scanned for. */
+  active: boolean;
+  paused: boolean;
+  scanning: boolean;
+  done: number;
+  total: number;
+  /** The job kind id being worked on, for the label. */
+  currentKind: string | null;
+}
+
 // --- Model manager (ipc-model.ts, #832 / parent #98) ---------------------
 /** get-model-list entry: one code-registry model, joined with its on-disk status. */
 export interface ModelInfo {

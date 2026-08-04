@@ -426,6 +426,15 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     modelUpdateAvailable: '新しいバージョンがあります（取得すると入れ替わります）',
     modelDownloadFailed: 'モデルの取得に失敗しました：$1',
 
+    // viewer: toolbar > 索引の進捗（#834・親 #98）。走っている間だけ出る＝
+    // 待ちが無ければ消える。常設の「どこまで索引済みか」は #100 の担当。
+    indexingProgress: '解析中 $1/$2',
+    indexingScanning: 'ライブラリを調べています',
+    indexingTooltip: 'ライブラリを解析しています（$1/$2）',
+    indexingPaused: '解析を一時停止中',
+    indexingPause: '解析を一時停止',
+    indexingResume: '解析を再開',
+
     // #176: switching between multiple libraries — separate from "保存先の変更"
     // (saveFolderSubTitle below), which MOVES the current library; this OPENS a
     // different one, leaving the current one untouched where it is.
@@ -1242,6 +1251,15 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     modelStateComplete: 'Downloaded',
     modelUpdateAvailable: 'A newer version is available (downloading replaces it)',
     modelDownloadFailed: 'Could not download the model: $1',
+
+    // viewer: toolbar > indexing progress (#834, parent #98). Shown only while
+    // there is work; the standing "how much is indexed" figures are #100's.
+    indexingProgress: 'Analyzing $1/$2',
+    indexingScanning: 'Looking through the library',
+    indexingTooltip: 'Analyzing your library ($1/$2)',
+    indexingPaused: 'Analysis paused',
+    indexingPause: 'Pause analysis',
+    indexingResume: 'Resume analysis',
 
     // #176: switching between multiple libraries — separate from "保存先の変更"
     // (saveFolderSubTitle below), which MOVES the current library; this OPENS a
