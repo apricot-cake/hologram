@@ -534,7 +534,11 @@ function SectionBlock({
 
   return (
     <div data-slot="grid-section">
-      <div ref={headerRef} data-slot="grid-section-header" className="sticky top-0 z-10 -mx-8 flex items-baseline gap-2 bg-[var(--color-background)]/85 px-8 py-2 text-sm font-medium text-foreground backdrop-blur-sm first:pt-0">
+      {/* Scrolls away with its own month rather than sticking to the top of the
+          scroller (#878): the columns of a masonry never line up, so a pinned
+          header always cuts across the middle of SOME card — and the year/month
+          rail (#47) is what answers "which month am I in" while scrolling. */}
+      <div ref={headerRef} data-slot="grid-section-header" className="flex items-baseline gap-2 py-2 text-sm font-medium text-foreground first:pt-0">
         {sec.label}
       </div>
       {gridEl}
