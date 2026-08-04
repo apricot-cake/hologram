@@ -17,8 +17,113 @@ const path = require('node:path');
 const net = require('node:net');
 const dns = require('node:dns');
 const crypto = require('node:crypto');
+const diagnosticsChannel = require('node:diagnostics_channel');
 const { once } = require('node:events');
 const { Agent, setGlobalDispatcher } = require('undici');
+
+// --- Failure diagnostics (#894) -------------------------------------------------
+// Every download here is best-effort: a failure returns null and the caller drops
+// that file. That contract is right — but it also means a save that dies of
+// "announced media, nothing downloaded" (bridge.cts's handleSavePost) used to
+// leave NO trace of WHY: an HTTP 403, a refused DNS answer, an unsupported
+// content-type and a socket reset were all the same `null`. #894 is exactly that
+// dead end, so each failure now publishes a reason on a diagnostics channel and
+// the reason is all that changes — the return values, the caps and the guard are
+// untouched.
+//
+// A channel rather than a logger argument threaded through nine signatures:
+// publishing to node:diagnostics_channel is what a library does to report its own
+// internals without owning where they are written (undici, this module's own HTTP
+// stack, does the same — see its DiagnosticsChannel.md). With no subscriber the
+// publish is a `hasSubscribers` check, so an import that wants nothing pays
+// nothing. bridge.cts subscribes and writes one capture.log line per failure.
+const MEDIA_FAILURE_CHANNEL = 'hologram:media-download:failure';
+type MediaFailureReason =
+  // before any request went out
+  | 'not-https' // not a string / not an https URL
+  | 'no-fetch' // runtime without fetch/AbortController
+  | 'budget-exhausted' // the save's byte budget was already spent
+  | 'url-refused' // checkMediaUrl said no (non-https hop, IP literal in a private range, *.local...)
+  | 'dns-refused' // the guarded lookup saw a private/reserved address among the answers
+  | 'dns-failed' // the resolver itself errored
+  // the response
+  | 'redirect-no-location'
+  | 'redirect-bad-location'
+  | 'too-many-redirects'
+  | 'http-status' // any non-2xx that is not a redirect
+  | 'content-type' // a type this call site does not accept, refused unread
+  | 'declared-too-large' // content-length over the per-file cap
+  | 'declared-over-budget' // content-length over what the save has left
+  // the body
+  | 'body-missing'
+  | 'over-per-file-cap' // the bytes that arrived passed the cap
+  | 'over-save-budget'
+  | 'stream-broken' // disconnect / abort / write failure mid-body
+  | 'empty-body'
+  | 'sniff-unsupported' // application/octet-stream whose bytes are not a type we take
+  | 'threw'; // anything that escaped as an exception (network, rename, mkdir)
+interface MediaFailure {
+  reason: MediaFailureReason;
+  // The URL the caller asked for. Null only when it was not a string at all.
+  url?: string | null;
+  // The redirect hop that actually failed, when it is not `url` itself.
+  hop?: string;
+  // Folder-relative name the file would have taken — carries the captureId, so a
+  // line can be read together with the save's own bridge lines.
+  stem?: string;
+  status?: number;
+  contentType?: string;
+  declared?: number;
+  bytes?: number;
+  sniffed?: string | null;
+  host?: string;
+  addresses?: string[];
+  // The full `cause` chain, flattened (undici reports a network failure as a bare
+  // "fetch failed" whose cause holds the real one).
+  error?: string;
+}
+const mediaFailureChannel = diagnosticsChannel.channel(MEDIA_FAILURE_CHANNEL);
+
+function reportMediaFailure(info: MediaFailure): void {
+  if (!mediaFailureChannel.hasSubscribers) return;
+  mediaFailureChannel.publish(info);
+}
+
+// Subscribe to the failures above. Exported (rather than the channel name) so
+// callers never have to know the transport, and so the shape stays this module's.
+//
+// The handler is wrapped because a throwing subscriber does NOT come back out of
+// publish(): Node re-raises it on the next tick as an UNCAUGHT exception, which
+// in the bridge means the host process dies mid-save. Diagnostics must never be
+// able to cost more than the thing they describe, so a subscriber's failure is
+// swallowed here — the same best-effort rule the log writers already follow.
+function subscribeMediaFailures(onFailure: (info: MediaFailure) => void): () => void {
+  const handler = (msg: unknown) => {
+    try {
+      onFailure(msg as MediaFailure);
+    } catch {
+      /* a subscriber that throws must not break the download it is reporting on */
+    }
+  };
+  mediaFailureChannel.subscribe(handler);
+  return () => mediaFailureChannel.unsubscribe(handler);
+}
+
+// Flatten an error and its `cause` chain into one line. Depth-bounded because a
+// cause chain can be circular, and length-bounded because this ends up in a log
+// line next to a URL that is already long.
+function describeError(err: unknown): string {
+  const parts: string[] = [];
+  let cur: any = err;
+  for (let depth = 0; depth < 4 && cur; depth++) {
+    const name = (cur && cur.name) || 'Error';
+    const message = (cur && cur.message) || String(cur);
+    const code = cur && cur.code ? ` (${cur.code})` : '';
+    parts.push(`${name}: ${message}${code}`.slice(0, 200));
+    cur = cur && cur.cause !== cur ? cur.cause : null;
+  }
+  return parts.join(' <- ');
+}
 
 // --- Original-media download (best-effort) ---
 // Supported still-image content types -> file extension. Anything else (svg,
@@ -212,10 +317,22 @@ function createGuardedLookup(resolveAll = dns.lookup) {
   return (hostname, options, callback) => {
     resolveAll(hostname, { ...options, all: true }, (err, addresses) => {
       if (err) {
+        // #894: a name that does not resolve and a name that resolves to a
+        // refused address both surface as one opaque "fetch failed" upstream.
+        reportMediaFailure({ reason: 'dns-failed', host: hostname, error: describeError(err) });
         callback(err);
         return;
       }
       if (!Array.isArray(addresses) || addresses.length === 0 || addresses.some(({ address }) => !net.isIP(address) || isPrivateIp(address))) {
+        // The answers are reported verbatim: #894's leading hypothesis is a CDN
+        // whose anycast answer set occasionally includes an address this guard
+        // reads as private, which nothing short of the actual addresses can
+        // confirm or rule out.
+        reportMediaFailure({
+          reason: 'dns-refused',
+          host: hostname,
+          addresses: Array.isArray(addresses) ? addresses.map(({ address }) => String(address)) : [],
+        });
         const refused = new Error(`DNS resolution refused for ${hostname}`) as NodeJS.ErrnoException;
         refused.code = 'EHOSTUNREACH';
         callback(refused);
@@ -287,11 +404,15 @@ function sniffMagic(head: Buffer): string | null {
 // early exit, but it is attacker-controlled: a chunked body, an under-declared
 // one, or one that simply never stops is cut here, mid-flight, with only the
 // current chunk in memory. Returns the byte count written plus the leading
-// bytes (for sniffMagic), or null if a cap was hit or the transfer broke — the
-// caller removes the temp file either way.
-async function streamToFile(res: Response, cap: number, budget: ByteBudget, tmpPath: string): Promise<{ bytes: number; head: Buffer } | null> {
+// bytes (for sniffMagic), or the reason it stopped — the caller removes the temp
+// file either way and turns the reason into one diagnostics line (#894), which is
+// why a cap, a broken transfer and an unreadable body are told apart here rather
+// than collapsed into one null.
+type StreamOutcome = { ok: true; bytes: number; head: Buffer } | { ok: false; reason: 'body-missing' | 'over-per-file-cap' | 'over-save-budget' | 'stream-broken'; bytes: number; error?: string };
+
+async function streamToFile(res: Response, cap: number, budget: ByteBudget, tmpPath: string): Promise<StreamOutcome> {
   const body = res.body;
-  if (!body || typeof body.getReader !== 'function') return null;
+  if (!body || typeof body.getReader !== 'function') return { ok: false, reason: 'body-missing', bytes: 0 };
   const reader = body.getReader();
   // 'wx' so a name collision fails instead of overwriting another save's
   // in-progress file. The error listener is attached in the same tick as the
@@ -308,7 +429,10 @@ async function streamToFile(res: Response, cap: number, budget: ByteBudget, tmpP
       const { done, value } = await reader.read();
       if (done) break;
       total += value.length;
-      if (total > cap || !budget.take(value.length)) return null;
+      // Order matters and is unchanged: past the per-file cap the budget is left
+      // alone, because those bytes are refused rather than spent.
+      if (total > cap) return { ok: false, reason: 'over-per-file-cap', bytes: total };
+      if (!budget.take(value.length)) return { ok: false, reason: 'over-save-budget', bytes: total };
       const chunk = Buffer.from(value);
       if (headLen < SNIFF_BYTES) {
         head.push(chunk.subarray(0, SNIFF_BYTES - headLen));
@@ -320,9 +444,9 @@ async function streamToFile(res: Response, cap: number, budget: ByteBudget, tmpP
     // 'close', not 'finish': Windows refuses to rename or delete a file whose
     // handle is still open, and the caller does exactly that next.
     await Promise.race([once(out, 'close'), failed]);
-    return { bytes: total, head: Buffer.concat(head) };
-  } catch {
-    return null; // disconnect mid-body / abort / write failure
+    return { ok: true, bytes: total, head: Buffer.concat(head) };
+  } catch (error) {
+    return { ok: false, reason: 'stream-broken', bytes: total, error: describeError(error) }; // disconnect mid-body / abort / write failure
   } finally {
     reader.cancel().catch(() => {}); // no-op once the body is drained
     if (!out.destroyed) out.destroy();
@@ -343,47 +467,64 @@ async function streamToFile(res: Response, cap: number, budget: ByteBudget, tmpP
 // nor a temp one. Same directory as the target on purpose: a rename is only
 // atomic within one filesystem.
 async function downloadToFile(url: unknown, referer: unknown, limits: FetchLimits, dir: string, stem: string, budget: ByteBudget): Promise<SavedFile | null> {
-  if (typeof url !== 'string' || !/^https:\/\//i.test(url)) return null;
-  if (typeof fetch !== 'function' || typeof AbortController !== 'function') return null;
-  if (budget.blown) return null;
+  // Every `return null` below goes through this, so a failure can never leave
+  // without saying why (#894). The return type is null so the call sites read
+  // exactly as before.
+  const failed = (info: Omit<MediaFailure, 'url' | 'stem'>): null => {
+    reportMediaFailure({ url: typeof url === 'string' ? url : null, stem, ...info });
+    return null;
+  };
+  if (typeof url !== 'string' || !/^https:\/\//i.test(url)) return failed({ reason: 'not-https' });
+  if (typeof fetch !== 'function' || typeof AbortController !== 'function') return failed({ reason: 'no-fetch' });
+  if (budget.blown) return failed({ reason: 'budget-exhausted' });
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), limits.timeoutMs);
   let tmpPath = ''; // set once we have a name to clean up
   let committed = false;
+  // Outside the try so the catch below can still name the hop a network failure
+  // died on — the whole point of the diagnostics is that "fetch failed" alone
+  // does not say WHICH request failed.
+  let current = url;
+  // Only worth reporting when a redirect took us somewhere else.
+  const hopOf = () => (current === url ? {} : { hop: current });
   try {
     const headers = typeof referer === 'string' && /^https:\/\//i.test(referer) ? { Referer: referer } : undefined;
     // Blowing the budget aborts every download of this save, not just the one
     // that overran it.
     const signal = AbortSignal.any([ctrl.signal, budget.signal]);
-    let current = url;
     let res: Response | null = null;
     for (let hop = 0; hop <= MAX_MEDIA_REDIRECTS; hop++) {
-      if (!checkMediaUrl(current)) return null; // SSRF guard, every hop
+      if (!checkMediaUrl(current)) return failed({ reason: 'url-refused', ...hopOf() }); // SSRF guard, every hop
       const request = { signal, redirect: 'manual' as const, headers };
       res = await fetch(current, request);
       if (res.status >= 300 && res.status < 400) {
         const loc = res.headers.get('location');
-        if (!loc) return null;
+        if (!loc) return failed({ reason: 'redirect-no-location', status: res.status, ...hopOf() });
         try {
           current = new URL(loc, current).href;
         } catch {
-          return null;
+          return failed({ reason: 'redirect-bad-location', status: res.status, hop: loc });
         }
         continue;
       }
       break;
     }
-    if (!res || !res.ok) return null;
+    // A chain longer than the cap leaves the loop still holding a redirect —
+    // told apart from a plain error status so "the chain never ended" reads as
+    // itself.
+    if (res && res.status >= 300 && res.status < 400) return failed({ reason: 'too-many-redirects', status: res.status, ...hopOf() });
+    if (!res || !res.ok) return failed({ reason: 'http-status', status: res ? res.status : undefined, ...hopOf() });
     const ct = (res.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
     let ext = limits.mimeExt[ct];
     // An unlisted type is refused before a single body byte is read — unless it
     // is the "I don't know" type, which is settled from the magic bytes after
     // the transfer instead (SNIFFABLE_TYPES).
-    if (!ext && !SNIFFABLE_TYPES.has(ct)) return null;
+    if (!ext && !SNIFFABLE_TYPES.has(ct)) return failed({ reason: 'content-type', status: res.status, contentType: ct, ...hopOf() });
     // Content-Length is a hint, never a guarantee: an honest server saves us the
     // whole transfer here, a lying one is stopped by the byte counter above.
     const declared = Number(res.headers.get('content-length'));
-    if (Number.isFinite(declared) && (declared > limits.maxBytes || declared > budget.remaining())) return null;
+    if (Number.isFinite(declared) && declared > limits.maxBytes) return failed({ reason: 'declared-too-large', declared, ...hopOf() });
+    if (Number.isFinite(declared) && declared > budget.remaining()) return failed({ reason: 'declared-over-budget', declared, ...hopOf() });
     // The final name needs the extension, which a sniffed download only learns
     // after the body — so the temp file is named from the stem alone and the
     // rename below is what picks the extension.
@@ -391,15 +532,20 @@ async function downloadToFile(url: unknown, referer: unknown, limits: FetchLimit
     fs.mkdirSync(path.dirname(stemPath), { recursive: true });
     tmpPath = path.join(path.dirname(stemPath), `.${path.basename(stemPath)}.${process.pid}.${crypto.randomBytes(4).toString('hex')}.tmp`);
     const got = await streamToFile(res, limits.maxBytes, budget, tmpPath);
-    if (!got || !got.bytes) return null; // capped, broken, or an empty body
-    if (!ext) ext = limits.mimeExt[sniffMagic(got.head) || ''];
-    if (!ext) return null; // the bytes are not one of the types this caller takes
+    if (!got.ok) return failed({ reason: got.reason, bytes: got.bytes, error: got.error, ...hopOf() });
+    if (!got.bytes) return failed({ reason: 'empty-body', ...hopOf() });
+    if (!ext) {
+      const sniffed = sniffMagic(got.head);
+      ext = limits.mimeExt[sniffed || ''];
+      // The bytes are not one of the types this caller takes.
+      if (!ext) return failed({ reason: 'sniff-unsupported', contentType: ct, sniffed, bytes: got.bytes, ...hopOf() });
+    }
     const file = `${stem}.${ext}`;
     fs.renameSync(tmpPath, path.join(dir, file)); // commit point
     committed = true;
     return { file, ext };
-  } catch {
-    return null; // network/abort/parse failure
+  } catch (error) {
+    return failed({ reason: 'threw', error: describeError(error), ...hopOf() }); // network/abort/parse failure
   } finally {
     clearTimeout(timer);
     if (!committed) {
@@ -484,7 +630,11 @@ async function downloadMedia(mediaList: unknown, dir: string, base: string, budg
       if (i >= list.length || budget.blown) return;
       try {
         saved[i] = await downloadOneMedia(list[i], dir, base, i, budget);
-      } catch {
+      } catch (error) {
+        // downloadToFile swallows its own failures, so reaching here means the
+        // entry itself was malformed enough to throw — worth its own line
+        // rather than being indistinguishable from a refused download (#894).
+        reportMediaFailure({ reason: 'threw', url: (list[i] && list[i].url) || null, stem: `${base}-media-${i}`, error: describeError(error) });
         saved[i] = null; // one bad attachment never fails the save
       }
     }
@@ -626,6 +776,8 @@ module.exports = {
   downloadCustomEmojis,
   downloadLinkCardThumbnail,
   createByteBudget,
+  subscribeMediaFailures,
+  MEDIA_FAILURE_CHANNEL,
   AVATAR_SUBDIR,
   EMOJI_SUBDIR,
   pixivRefererFor,
