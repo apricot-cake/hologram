@@ -22,6 +22,8 @@ import { parseJsonLoose } from './lib-json.ts';
 import { postRawPayloads, postsByIds } from './lib-db-query.ts';
 import { makeTagResolver, preparePostStmts, writePost } from './lib-db-record-writer.ts';
 import { listTrashRecords, trashCapture } from './lib-trash-capture.ts';
+import { ensureDerivedDb, purgeDerivedForCapture } from './lib-derived-db.ts';
+import { configDir } from './native-host.ts';
 import type { IpcContext } from './ipc-context.ts';
 import type { OkResult, UpdateTagsResult } from './ipc-payloads.ts';
 
@@ -149,9 +151,21 @@ function register(ctx: IpcContext) {
   ipcMain.handle('empty-trash', async (): Promise<OkResult> => {
     const trashDir = getTrashDir();
     if (!trashDir) return { ok: true };
+    // #833: every captureId this permanently removes, read off the trash's own
+    // addressing convention (trashCapture writes `<captureId>.json`) BEFORE the
+    // folder is gone — this is the one signal that tells derived.db a capture
+    // is gone for good rather than merely sitting in the trash.
+    let captureIds: string[] = [];
+    try {
+      captureIds = (await fs.promises.readdir(trashDir)).filter((f) => f.toLowerCase().endsWith('.json')).map((f) => f.replace(/\.json$/i, ''));
+    } catch {}
     try {
       await fs.promises.rm(trashDir, { recursive: true, force: true });
     } catch {}
+    if (captureIds.length) {
+      const { sqlite } = ensureDerivedDb(configDir());
+      for (const captureId of captureIds) purgeDerivedForCapture(sqlite, captureId);
+    }
     // Every trash notice this library had is now about a post that no longer
     // exists anywhere (#158) — emptying the trash is the "forget it all" exit.
     const handle = ensurePostsSynced();
@@ -176,6 +190,10 @@ function register(ctx: IpcContext) {
         } catch {}
       }
     }
+    // #833: this capture is gone for good now (delete-post already dropped its
+    // posts row when it moved into the trash) — derived data survived until
+    // this exact moment, matching hologram.db's own ON DELETE CASCADE timing.
+    purgeDerivedForCapture(ensureDerivedDb(configDir()).sqlite, base);
     // Same as empty-trash, for one post: its notice has to go with its record (#158).
     const handle = ensurePostsSynced();
     if (handle) scheduleSavedIndexWrite(handle);
