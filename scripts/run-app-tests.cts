@@ -36,8 +36,12 @@ for (const f of picked) {
   if (!ok) failed++;
   console.log(`${ok ? 'ok  ' : 'FAIL'} ${f} (${((Date.now() - t0) / 1000).toFixed(1)}s)`);
   if (!ok) {
-    const tail = ((r.stdout || '') + (r.stderr || '')).trim().split(/\r?\n/).slice(-15).join('\n');
-    console.log(tail.replace(/^/gm, '     '));
+    // Tail alone truncates FAIL lines on multi-check harnesses (#829): keep every
+    // `FAIL <check>` line plus the last 15 lines, in original order, no duplicates.
+    const lines = ((r.stdout || '') + (r.stderr || '')).trim().split(/\r?\n/);
+    const tailStart = Math.max(0, lines.length - 15);
+    const kept = lines.filter((line, i) => /^\s*FAIL/.test(line) || i >= tailStart);
+    console.log(kept.join('\n').replace(/^/gm, '     '));
   }
 }
 
