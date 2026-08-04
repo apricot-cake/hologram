@@ -525,7 +525,14 @@ function SectionBlock({
     itemHeightEstimate: heightEstimate,
     overscanBy: 2,
     height: dims.height || scroller.clientHeight,
-    scrollTop: Math.max(0, scrollY - offsetRef.current),
+    // NOT clamped to 0 (#880): a section still below the viewport wants a
+    // NEGATIVE local scrollTop, which is what makes masonic's own
+    // range(max(0, scrollTop - overscan/2), scrollTop + overscan) come back
+    // empty for it. Clamping told every not-yet-reached section that its top
+    // was on screen, so each one rendered a viewport's worth of cells —
+    // 143 cards mounted where 16 were visible, and the style recalc that
+    // :has() forces on every cell insertion then ran over the whole document.
+    scrollTop: scrollY - offsetRef.current,
     isScrolling,
     containerRef: bodyRef as React.MutableRefObject<HTMLElement | null>,
     tabIndex: -1,
