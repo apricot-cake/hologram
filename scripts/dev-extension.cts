@@ -56,11 +56,11 @@ if (detach) {
   // The title only holds until the server starts: cmd rewrites its console title to
   // whatever it is currently running, and npm reaches wxt through more cmd layers,
   // so a RUNNING server sits in a window titled C:\WINDOWS\system32\cmd.exe (also
-  // measured). The lines printed above do not identify the window either — WXT's
-  // first build lists every output file and scrolls them away. What stays on
-  // screen is npm's own `hologram-extension@<version>` header, the .hologram-dev
-  // path repeated down the file list, and the port. That is what tells two
-  // dev-server windows apart (docs/build.md).
+  // measured). Nor do the lines printed above, reliably: WXT's first build lists
+  // fourteen output files, so in a small window they are pushed off the top. What
+  // does not depend on the window size is npm's own `hologram-extension@<version>`
+  // header, the .hologram-dev path repeated down that file list, and the port.
+  // That is what tells two dev-server windows apart (docs/build.md).
   const child = spawn('start "Hologram dev:ext" cmd /k npm run dev:ext', {
     cwd: ROOT,
     shell: true,
