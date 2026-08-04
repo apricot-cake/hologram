@@ -90,6 +90,12 @@ async function authorize(providerId: OAuthProviderId, clientId: string, deps: OA
   try {
     const url = buildAuthorizationUrl(provider, clientId, listener.port, request);
     const waiting = listener.waitForCallback(request.state, deps.timeoutMs);
+    // The wait starts before the browser does (the redirect could arrive that
+    // fast), which means it can also fail before anything awaits it — the
+    // finally below closes the listener, and a closed listener ends the wait.
+    // The no-op handler keeps that from surfacing as an unhandled rejection;
+    // the awaited `waiting` below still throws normally.
+    waiting.catch(() => {});
     await deps.openExternal(url);
     const callback = await waiting;
     // RFC 9207: when the provider names itself in the response, it has to be

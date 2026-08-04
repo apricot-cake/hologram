@@ -146,6 +146,17 @@ describe('失効待ち（切断がオフラインだったとき）', () => {
     expect(pending[0].tokens.refreshToken).toBe('rt-secret');
   });
 
+  test('どのプロバイダのものか分からない失効待ちは捨てる', () => {
+    // Guessing would send a refresh token to the wrong company's endpoint.
+    const dir = tempDir();
+    const vault = createTokenVault(dir, fakeCipher());
+    vault.addPendingRevocation({ providerId: 'google', clientId: 'c', since: '', tokens });
+    const raw = JSON.parse(fs.readFileSync(path.join(dir, VAULT_FILE), 'utf8'));
+    raw.pendingRevocations[0].providerId = 'dropbox';
+    fs.writeFileSync(path.join(dir, VAULT_FILE), JSON.stringify(raw));
+    expect(vault.pendingRevocations()).toEqual([]);
+  });
+
   test('片付けると消える', () => {
     const dir = tempDir();
     const vault = createTokenVault(dir, fakeCipher());

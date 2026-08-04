@@ -107,12 +107,17 @@ async function startLoopbackListener(port: number | null): Promise<LoopbackListe
   const bound = (server.address() as AddressInfo).port;
   let settled = false;
   let closed = false;
+  // Set while a caller is waiting, so closing the listener ENDS that wait
+  // instead of leaving it to time out minutes later. Callers close in a
+  // `finally`, which is exactly the path a cancelled authorization takes.
+  let cancelWait: ((err: Error) => void) | null = null;
 
   const close = () => {
     if (closed) return;
     closed = true;
     server.closeAllConnections?.();
     server.close();
+    cancelWait?.(new Error('the authorization listener was closed'));
   };
 
   return {
@@ -129,6 +134,7 @@ async function startLoopbackListener(port: number | null): Promise<LoopbackListe
           close();
         };
         const timer = setTimeout(() => finish(() => reject(new Error('timed out waiting for the authorization response'))), timeoutMs);
+        cancelWait = (err) => finish(() => reject(err));
 
         server.on('request', (req, res) => {
           // The code arrives in the query string of a GET; anything else is not

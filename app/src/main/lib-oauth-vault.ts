@@ -210,12 +210,15 @@ function createTokenVault(dir: string, cipher: VaultCipher) {
     if (!Array.isArray(list)) return [];
     const out: PendingRevocation[] = [];
     for (const record of list) {
+      const providerId = (record as { providerId?: unknown }).providerId;
       const tokens = decodeTokens(cipher, record?.secret);
       // An unreadable pending revocation can never be retried, so keeping it
-      // would only ever be a token sitting in a file for nothing.
-      if (!tokens || typeof record.clientId !== 'string') continue;
+      // would only ever be a token sitting in a file for nothing. Same for one
+      // that does not say which provider to revoke against — guessing would
+      // send a token to the wrong company.
+      if (!tokens || typeof record.clientId !== 'string' || (providerId !== 'google' && providerId !== 'microsoft')) continue;
       out.push({
-        providerId: (record as { providerId?: OAuthProviderId }).providerId ?? 'google',
+        providerId,
         clientId: record.clientId,
         since: typeof record.connectedAt === 'string' ? record.connectedAt : '',
         tokens,

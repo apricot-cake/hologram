@@ -74,6 +74,17 @@ describe('ループバック待受', () => {
     await expect(fetch(`http://127.0.0.1:${listener.port}/?code=x&state=s`)).rejects.toThrow();
   });
 
+  test('閉じると待ちも終わる（タイムアウトまで宙に浮かない）', async () => {
+    // The cancel path: a caller closes in a finally, and the pending wait has
+    // to fail there and then — otherwise it rejects minutes later with nobody
+    // listening, which is an unhandled rejection in the main process.
+    const listener = await start();
+    const waiting = listener.waitForCallback('s', 60_000);
+    const rejects = expect(waiting).rejects.toThrow(/closed/);
+    listener.close();
+    await rejects;
+  });
+
   test('待ちきれなければタイムアウトし、ポートを手放す', async () => {
     const listener = await start();
     await expect(listener.waitForCallback('s', 30)).rejects.toThrow(/timed out/);

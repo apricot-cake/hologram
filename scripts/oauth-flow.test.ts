@@ -163,6 +163,21 @@ describe('認可（コード交換まで）', () => {
     await expect(authorize('google', 'client-1', { openExternal: browserThatConsents(fake), fetch: routedFetch(fake), timeoutMs: 5000 })).rejects.toThrow(/unexpected issuer/);
   });
 
+  test('ブラウザを開けなかった場合、その理由のまま失敗する', async () => {
+    // And the listener's own wait, which was already running, must not become
+    // an unhandled rejection when the finally closes it.
+    const fake = await startFakeProvider();
+    await expect(
+      authorize('google', 'client-1', {
+        openExternal: async () => {
+          throw new Error('no browser');
+        },
+        fetch: routedFetch(fake),
+        timeoutMs: 60_000,
+      }),
+    ).rejects.toThrow(/no browser/);
+  });
+
   test('同意を閉じただけならタイムアウトで終わる（待ち続けない）', async () => {
     const fake = await startFakeProvider();
     await expect(authorize('google', 'client-1', { openExternal: async () => {}, fetch: routedFetch(fake), timeoutMs: 40 })).rejects.toThrow(/timed out/);
