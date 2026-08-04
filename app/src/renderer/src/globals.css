@@ -325,3 +325,18 @@
   filter: blur(22px) saturate(0.85);
   transition: filter var(--motion-duration-fast) var(--motion-ease-in);
 }
+/* Indeterminate Progress (#834). Base UI's Progress reports the state — it sets
+   data-indeterminate and aria-valuetext="indeterminate" — but the LOOK is the
+   app's, and a value-less indicator is zero pixels wide. Left alone, an
+   indeterminate bar therefore reads as "stuck at 0%", which is worse than
+   showing nothing at all. Give that state the moving segment every platform's
+   indeterminate bar uses instead. Scoped to the attribute, so a bar with a real
+   value is untouched. */
+@keyframes progress-indeterminate {
+  from {
+    transform: translateX(-110%);
+  }
+  to {
+    transform: translateX(410%);
+  }
+}
