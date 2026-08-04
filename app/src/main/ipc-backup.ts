@@ -17,9 +17,7 @@
 import { ipcMain, dialog, BrowserWindow } from 'electron';
 import type { IpcContext } from './ipc-context.ts';
 import type { BackupConfig, BackupDirPickResult, BackupRunResult, BackupWriteResult, DbGeneration, DbRollbackResult, IntegrityStatus, OrphanRecoveryResult } from './ipc-payloads.ts';
-
-/** Long enough for the toast reporting the rollback to be read. */
-const RELOAD_AFTER_ROLLBACK_MS = 2000;
+import { RELOAD_AFTER_LIBRARY_SWAP_MS } from './lib-window.ts';
 
 function register(ctx: IpcContext) {
   const { readBackupConfig, writeBackupConfig, validateBackupDir, armBackupSchedule, runBackup, listDbGenerations, rollbackDbGeneration, readIntegrityStatus, runOrphanRecovery } = ctx;
@@ -56,11 +54,13 @@ function register(ctx: IpcContext) {
     // one step, so every window is now showing a library that no longer exists.
     // Reloading them all is what #176 settled on for the same reason ("部分的な
     // 流し替えは organize 層ストアの取りこぼしが事故になる"); the delay is what
-    // lets the caller's own window show the outcome before it goes.
+    // lets the caller's own window show the outcome before it goes (the constant
+    // and the rest of that reasoning live in lib-window.ts, shared with #176's
+    // switchLibrary — the other operation that swaps the library underneath).
     if (res.ok) {
       setTimeout(() => {
         for (const w of BrowserWindow.getAllWindows()) w.webContents.reload();
-      }, RELOAD_AFTER_ROLLBACK_MS);
+      }, RELOAD_AFTER_LIBRARY_SWAP_MS);
     }
     return res;
   });

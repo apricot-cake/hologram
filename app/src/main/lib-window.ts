@@ -45,6 +45,17 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // relative depth from the package root).
 const APP_ICON = path.join(__dirname, '..', '..', 'assets', 'icon.png');
 
+// How long an operation that swaps the library out from under the windows
+// (#176's switchLibrary, #233's generation rollback) waits before reloading
+// them. The reload itself is deliberate — a partially re-synced organize-layer
+// store is exactly the class of bug it avoids — but issuing it inside the
+// handler tears the CALLING frame down before that call's own reply reaches it:
+// the renderer's `await` then never settles (Electron gives it neither a value
+// nor a rejection), so the toast reporting the outcome is lost and anything the
+// caller does next is cut off mid-flight. This delay is the window in which the
+// caller gets its answer. Long enough for that toast to be read, too.
+const RELOAD_AFTER_LIBRARY_SWAP_MS = 2000;
+
 // Every live BrowserWindow this process owns, insertion order (the primary window
 // — the first one created this run — is always windows[0]). A Set would lose that
 // order on nothing in particular; an array is simplest and this collection is never
@@ -354,4 +365,4 @@ function sendWindowToBack(w: BrowserWindow): void {
   }
 }
 
-export { APP_ICON, DEV_ORIGIN, DEV_SERVER_URL, devServer, createWindow, getWin, getWindows, installNavigationGuards, isDarkTheme, resolveTheme, sendToOtherWins, sendToWin, sendWindowToBack };
+export { APP_ICON, DEV_ORIGIN, DEV_SERVER_URL, RELOAD_AFTER_LIBRARY_SWAP_MS, devServer, createWindow, getWin, getWindows, installNavigationGuards, isDarkTheme, resolveTheme, sendToOtherWins, sendToWin, sendWindowToBack };
