@@ -28,7 +28,7 @@ import { relocateLibrary } from './lib-migrate.ts';
 // what remains here is the assembly plus the record pipeline every part of it
 // shares (config → DB → inbox → renderer).
 import { configDir, defaultLibraryDir, installer, pixivRefererFor, downloadAvatar, clearAllBlockReason } from './native-host.ts';
-import { readConfig, writeConfig, getSaveFolder, readSavePointer, initSaveFolderRedundancy, isConfigCorrupt, invalidateConfigCache, saveFolderStatus, migrateToLibraries, recordLibraryOpened, listRecentLibraries, removeRecentLibrary } from './lib-config.ts';
+import { readConfig, writeConfig, getSaveFolder, readSavePointer, initSaveFolderRedundancy, isConfigCorrupt, invalidateConfigCache, saveFolderStatus, migrateToLibraries, recordLibraryOpened, listRecentLibraries, removeRecentLibrary, readAiConfig, writeAiConfig } from './lib-config.ts';
 import { mimeForFile, registerImageProtocol } from './lib-thumbnails.ts';
 import { backupIntervalMs, createBackupEngine, latestRestorableSnapshot, readBackupConfig, readIntegrityStatus, validateBackupDir, validateSaveFolder, writeBackupConfig } from './lib-backup.ts';
 import { classifyLibraryFolder } from './lib-switch-library.ts';
@@ -52,6 +52,7 @@ import * as ipcTransfer from './ipc-transfer.ts';
 import * as ipcTagVocab from './ipc-tag-vocab.ts';
 import * as ipcHistory from './ipc-history.ts';
 import * as ipcWatchImport from './ipc-watch-import.ts';
+import * as ipcAi from './ipc-ai.ts';
 import { createWatchImportManager } from './lib-watch-import.ts';
 import type { IpcContext } from './ipc-context.ts';
 
@@ -844,6 +845,8 @@ function registerExtractedIpc() {
     readConfig,
     writeConfig,
     invalidateConfigCache,
+    readAiConfig,
+    writeAiConfig,
     APP_ICON,
     getTrashDir,
     baseOf,
@@ -909,6 +912,7 @@ function registerExtractedIpc() {
   ipcTransfer.register(ctx);
   ipcTagVocab.register(ctx);
   ipcHistory.register(ctx);
+  ipcAi.register(ctx);
 }
 registerExtractedIpc();
 

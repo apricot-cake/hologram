@@ -408,6 +408,16 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     // viewer: settings > data / danger
     dataTitle: 'データ',
 
+    // viewer: settings > AI機能（#830・親 #98）。既定オフ＝この節以外に
+    // AI由来のUIは出ない。開示3点は #98 の透明性原則の「使う前」の分。
+    aiTitle: 'AI機能',
+    aiEnableLabel: 'AI機能を有効にする',
+    aiEnableHint: 'タグ付けやOCRなど、この端末上でAIによる解析を行う機能をまとめて有効にします。オフの間はこれらの機能はどこにも表示されず、モデルも取得されません。',
+    aiDisclosureWhat: '有効にすると、機能ごとに必要なモデルをHugging Faceから取得し、この端末上で解析を実行します。',
+    aiDisclosureNoGenerate: '画像を生成することはありません',
+    aiDisclosureNoTrain: 'あなたの画像を学習に使うことはありません',
+    aiDisclosureLocalOnly: '解析はこの端末の中だけで行い、ライブラリの中身をどこへも送信しません',
+
     // #176: switching between multiple libraries — separate from "保存先の変更"
     // (saveFolderSubTitle below), which MOVES the current library; this OPENS a
     // different one, leaving the current one untouched where it is.
@@ -1206,6 +1216,16 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     hintShortcut: 'Opens the extension shortcuts page. Default: Alt+S (capture). If shortcuts stop working after reinstall, they may have been unassigned. Use the link above to reassign them.',
 
     dataTitle: 'Data',
+
+    // viewer: settings > AI Features (#830, parent #98). Off by default — no AI-related
+    // UI appears outside this section. The three disclosures are #98's "before use" points.
+    aiTitle: 'AI Features',
+    aiEnableLabel: 'Enable AI features',
+    aiEnableHint: 'Turns on features that analyze your library on this device using AI, such as tagging and OCR. While off, none of those features appear anywhere, and no model is downloaded.',
+    aiDisclosureWhat: 'Turning this on lets each feature download the model it needs from Hugging Face, and run its analysis on this device.',
+    aiDisclosureNoGenerate: 'It never generates images.',
+    aiDisclosureNoTrain: 'It never uses your images to train anything.',
+    aiDisclosureLocalOnly: "Analysis runs entirely on this device — your library's contents are never sent anywhere.",
 
     // #176: switching between multiple libraries — separate from "保存先の変更"
     // (saveFolderSubTitle below), which MOVES the current library; this OPENS a

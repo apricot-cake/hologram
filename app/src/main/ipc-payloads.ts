@@ -402,6 +402,12 @@ export interface HistoryQueryResult {
   hasMore: boolean;
 }
 
+// --- AI features opt-in (ipc-ai.ts, #830 / parent #98) -------------------
+/** get-ai-config / the return of set-ai-config. Machine-local, off by default. */
+export interface AiConfig {
+  enabled: boolean;
+}
+
 // --- Backup + integrity (ipc-backup.ts) ---------------------------------
 /** The `lastResult` summary readBackupConfig hands back with the config. */
 export interface BackupSummary {

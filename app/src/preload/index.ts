@@ -12,6 +12,7 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import 'electron-log/preload';
 import type {
+  AiConfig,
   AppInfo,
   AppPrefs,
   BackupConfig,
@@ -99,6 +100,10 @@ declare global {
 // renderer's DOM-only program can reach it through HologramPreload.
 const api = {
   getConfig: (): Promise<ConfigSummary> => ipcRenderer.invoke('get-config'),
+  // #830 (parent #98): the AI features opt-in flag. Settings' AI Features
+  // section is the only writer; every future AI-backed feature is a reader.
+  getAiConfig: (): Promise<AiConfig> => ipcRenderer.invoke('get-ai-config'),
+  setAiConfig: (patch: Partial<AiConfig>): Promise<AiConfig> => ipcRenderer.invoke('set-ai-config', patch),
   // #71: whether the bridge has EVER touched its contact marker — see
   // ipc-config.ts's get-extension-contact and empty/EmptyState.tsx's install-guide
   // variant. A one-shot fetch, not a push (nothing invalidates it mid-session).

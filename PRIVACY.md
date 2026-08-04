@@ -30,6 +30,12 @@ Captured posts are **not** stored in the browser. A local companion app on your 
 
 The platform responses listed under **External API Requests** are also kept, compressed and unaltered, in that same local database, so that details a future version of Hologram learns to read are not lost when a post is deleted. Only the response bodies for the post you are saving are kept — never your cookies, credentials, request headers, or the page itself. Because a response is stored as the platform sent it, it can include third-party fragments Hologram does not display (a quoted post's author, a reply's parent, profile details). This matters when you **export** your library: a complete-library ZIP includes these stored responses, and its manifest says so. An images-only export does not include them.
 
+## AI Features (Local Inference)
+
+AI-powered analysis (tagging, OCR, and similar) is **off by default**. Until you turn it on in Settings → AI Features, it never runs, and no related UI appears anywhere else in the app.
+
+Enabling it adds exactly one new network connection: a one-time download of a model's files from `huggingface.co`, made only when a feature that needs that model first runs. The analysis itself always runs locally on this device — never on a server of ours or anyone else's — and nothing about your library (its images, text, or metadata) is ever sent to `huggingface.co` or anywhere else. Downloaded models are cached on your device and are not re-downloaded or updated automatically; that requires your consent again, the same as the first download.
+
 ## Contact
 
 For questions or concerns, please open an issue at https://github.com/apricot-cake/hologram/issues.
