@@ -36,34 +36,18 @@
 
 const { execFileSync, spawnSync } = require('node:child_process');
 const fs = require('node:fs');
-const net = require('node:net');
 const { homedir } = require('node:os');
 const path = require('node:path');
+const { DEV_SERVER_PORT, devServerAlive } = require('./lib-dev-server.cts');
 
 const PROFILE = process.env.HOLOGRAM_EXTENSION_DEV_PROFILE || path.join(homedir(), '.hologram-ext-profile');
 const OUTPUT = process.env.HOLOGRAM_EXTENSION_DEV_OUTPUT || path.join(homedir(), '.hologram-dev', 'chrome-mv3-dev');
 
-// dev サーバーの既定ポート（docs/build.md）。二重起動は別 port へ逃げずに落ちるので固定と見なせる。
-const DEV_SERVER_PORT = 51731;
-
+// ポートと生死判定は scripts/lib-dev-server.cts が持つ（dev-extension.cts と共有）。
 // dev ビルドは自己完結していない（#861）＝popup.html 等はスクリプトと CSS を
 // http://localhost:51731 から直接読む。サーバーが落ちていても拡張は壊れた顔を
 // しない＝ポップアップは開くが、素の HTML が縦一列に潰れて出る（CSS/レイアウトの
 // バグに見えるが原因はサーバー未起動）。窓を開く前にここを確かめておく。
-function devServerAlive(): Promise<boolean> {
-  return new Promise((resolve) => {
-    const socket = net.createConnection({ port: DEV_SERVER_PORT, host: '127.0.0.1' });
-    const finish = (alive: boolean) => {
-      socket.removeAllListeners();
-      socket.destroy();
-      resolve(alive);
-    };
-    socket.setTimeout(500);
-    socket.once('connect', () => finish(true));
-    socket.once('timeout', () => finish(false));
-    socket.once('error', () => finish(false));
-  });
-}
 
 // Where Chrome actually is, asked of Windows rather than guessed: the 32-bit
 // install path exists on plenty of machines and a hardcoded 64-bit path would
@@ -130,13 +114,13 @@ async function main() {
     console.log(`chrome:  ${chrome}`);
     console.log(`profile: ${PROFILE}`);
     console.log(`running: ${pid === null ? 'no' : `yes (pid ${pid})`}`);
-    console.log(`dev server (127.0.0.1:${DEV_SERVER_PORT}): ${devServerUp ? 'up' : 'down — popup/options/diag will render as bare unstyled HTML until "npm run dev:ext" is running'}`);
+    console.log(`dev server (localhost:${DEV_SERVER_PORT}): ${devServerUp ? 'up' : 'down — popup/options/diag will render as bare unstyled HTML until "npm run dev:ext" is running'}`);
     console.log(`build:   ${OUTPUT}${fs.existsSync(path.join(OUTPUT, 'manifest.json')) ? '' : '  (not built yet)'}`);
     process.exit(0);
   }
 
   if (!devServerUp) {
-    console.log(`[hologram] warning: the dev server (127.0.0.1:${DEV_SERVER_PORT}) is not responding.`);
+    console.log(`[hologram] warning: the dev server (localhost:${DEV_SERVER_PORT}) is not responding.`);
     console.log('[hologram] the dev build is not self-contained — popup.html etc. pull their script and CSS straight from it.');
     console.log('[hologram] without it the popup still opens, but as bare unstyled HTML crushed into one column (looks like a layout bug — it is not).');
     console.log('[hologram] run "npm run dev:ext" and leave it running while you verify.');
