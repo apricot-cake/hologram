@@ -93,6 +93,13 @@ const COLORS: Array<[number, number, number]> = [
 const TAGS = [['test'], ['test', '構図'], ['test', '配色'], ['test', '構図', 'ポーズ'], []];
 const TEXTS = ['サンドボックス検証用のダミー投稿です。', '短文。', 'モーション・レイアウト検証のためのフィクスチャ投稿。カードの高さが揃わないよう、本文の長さは投稿ごとに変えてあります。グリッドの詰め方や省略記号の出方はこの投稿で確認できます。', '改行を含む投稿。\n二行目。\n三行目はすこし長めにしてあります。'];
 
+// Spacing between consecutive fixture posts. Deliberately wider than a day so the
+// twelve of them straddle several calendar months: a single-month library has one
+// date section, and both the section headings and the year/month jump rail (#875)
+// switch themselves off with nothing to index — which left the two of them
+// unverifiable in the sandbox.
+const FIXTURE_SPACING_MS = 12 * 86400000;
+
 function seedFixtureLibrary() {
   fs.mkdirSync(saveFolder, { recursive: true });
   if (libraryIsSeeded()) return false;
@@ -101,9 +108,9 @@ function seedFixtureLibrary() {
   for (let i = 0; i < 12; i++) {
     const platform = PLATFORMS[i % PLATFORMS.length];
     const [w, h] = SIZES[i % SIZES.length];
-    const captureId = `${base - i * 86400000}-sb${String(i).padStart(2, '0')}`;
+    const captureId = `${base - i * FIXTURE_SPACING_MS}-sb${String(i).padStart(2, '0')}`;
     fs.writeFileSync(path.join(saveFolder, `${captureId}.png`), makePng(w, h, COLORS[i % COLORS.length]));
-    const date = new Date(base - i * 86400000 - 7200000).toISOString();
+    const date = new Date(base - i * FIXTURE_SPACING_MS - 7200000).toISOString();
     records.push({
       captureId,
       image: `${captureId}.png`,
@@ -116,7 +123,7 @@ function seedFixtureLibrary() {
       reposts: (i * 41) % 800,
       replies: (i * 7) % 60,
       date,
-      capturedAt: new Date(base - i * 86400000).toISOString(),
+      capturedAt: new Date(base - i * FIXTURE_SPACING_MS).toISOString(),
       tags: TAGS[i % TAGS.length],
     });
   }
