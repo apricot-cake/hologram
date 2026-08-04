@@ -81,6 +81,7 @@ describe('既定値', () => {
     'mediaMaxBytes',
     'imageIndex',
     'imageCount',
+    'metaSource',
   ])('%s の既定は null', (k) => {
     expect(rec[k]).toBeNull();
   });
@@ -339,6 +340,31 @@ describe('リンクカード（#181）', () => {
 
   test.each([undefined, null, 'not an object', 42, []])('オブジェクトでない値は %p でも null に落ちる', (bad) => {
     expect(normalizePostRecord({ captureId: 'cap-card-4', linkCard: bad as any }, fixedNow).linkCard).toBeNull();
+  });
+});
+
+// #239: which regard filled title/description/author/published/siteName/url
+// on the generic web-page extraction path (#195's bookmark route) — a plain
+// field-name -> source-string map, not a sub-record with a fixed shape like
+// linkCard above.
+describe('metaSource（#239）', () => {
+  test('妥当な文字列マップはそのまま通る', () => {
+    const rec = normalizePostRecord({ captureId: 'cap-meta-1', metaSource: { title: 'ogp', author: 'jsonld', url: 'canonical' } }, fixedNow);
+    expect(rec.metaSource).toEqual({ title: 'ogp', author: 'jsonld', url: 'canonical' });
+  });
+
+  test('文字列でない値を持つキーは黙って落とす（残りは通す）', () => {
+    const rec = normalizePostRecord({ captureId: 'cap-meta-2', metaSource: { title: 'ogp', author: 42 as any, published: null as any } }, fixedNow);
+    expect(rec.metaSource).toEqual({ title: 'ogp' });
+  });
+
+  test('全キーが文字列でない＝空オブジェクトでなく null', () => {
+    const rec = normalizePostRecord({ captureId: 'cap-meta-3', metaSource: { author: 42 as any } }, fixedNow);
+    expect(rec.metaSource).toBeNull();
+  });
+
+  test.each([undefined, null, 'not an object', 42, []])('オブジェクトでない値は %p でも null に落ちる', (bad) => {
+    expect(normalizePostRecord({ captureId: 'cap-meta-4', metaSource: bad as any }, fixedNow).metaSource).toBeNull();
   });
 });
 

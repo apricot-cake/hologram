@@ -556,6 +556,19 @@ const MIGRATIONS: Migration[] = [
   // migration, same "ride the existing write-time mechanism" convention as
   // shotW/shotH/mediaMaxW itself.
   { name: 'add-post-shot-animated', up: (db) => db.exec('ALTER TABLE posts ADD COLUMN shotAnimated INTEGER') },
+  // #239: which regard (schema.org format / OGP / Dublin Core / Highwire /
+  // plain HTML fallback) filled title/description/author/published/siteName/
+  // url on the generic web-page extraction path (#195's bookmark save route)
+  // — see native-host/post-record.mts's PostRecordShape.metaSource. A JSON
+  // object (field name -> source string) in one TEXT column, same convention
+  // as quotedPost/poll/linkCard: 0-or-1 per post, not a fan-out worth its own
+  // table. Null on every row written before this migration and on every
+  // platform-extractor record (their fields come from that platform's own
+  // API, not a fallback chain a provenance record would describe).
+  {
+    name: 'add-post-meta-source',
+    up: (db) => db.exec(`ALTER TABLE posts ADD COLUMN metaSource TEXT;`),
+  },
 ];
 
 interface Migration {
@@ -732,6 +745,10 @@ interface PostsTable {
   linkCard: string | null;
   // add-post-shot-animated migration (#8) — see PostRecordShape.shotAnimated.
   shotAnimated: number | null;
+  // add-post-meta-source migration (#239) — JSON Record<string,string>, same
+  // storage convention as quotedPost/replyToPost/poll/linkCard. See
+  // PostRecordShape.metaSource.
+  metaSource: string | null;
 }
 interface MediaTable {
   id: Generated<number>;

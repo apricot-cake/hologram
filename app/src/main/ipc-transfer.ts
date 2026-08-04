@@ -318,6 +318,12 @@ function register(ctx: IpcContext) {
         // the save pipeline's downloads a second time (same reasoning
         // customEmojis' own comment gives for not re-fetching those files).
         linkCard: p.linkCard || null,
+        // #239: carried through like quotedPost/replyToPost/poll/linkCard
+        // above -- a legacy-ZIP re-import of a post this feature already
+        // touched must not quietly drop its provenance map. No producer of
+        // this legacy shape can populate it today (forward-safety only, same
+        // note as customEmojis/linkCard above).
+        metaSource: p.metaSource && typeof p.metaSource === 'object' ? p.metaSource : null,
         seriesId: p.seriesId || null,
         seriesTitle: p.seriesTitle || null,
         seriesOrder: p.seriesOrder ?? null,

@@ -310,6 +310,14 @@ interface PostRecord {
   // (and to not count a URL-derived screenName as "metadata fetched");
   // buildRecord() copies explicit fields only, so it never reaches the sidecar.
   metaError: string | null;
+  // #239: which regard (schema.org format / OGP / Dublin Core / Highwire /
+  // plain HTML fallback) filled title/description/author/published/siteName/
+  // url on the generic web-page extraction path — see extractor/web-meta.ts's
+  // WebMetaResult.metaSource for the value vocabulary. null on every
+  // platform-extractor record (X/Bluesky/Misskey/Mastodon/pixiv never set
+  // this — their fields come from the platform's own API, not a fallback
+  // chain that needs a provenance record).
+  metaSource: Record<string, string> | null;
 }
 
 // What one extractor's parseUrl() recognized. `platform` is fixed; everything

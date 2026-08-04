@@ -143,6 +143,15 @@ describe('manifest とコードが名指しするファイルは出力に在る'
     expect(fs.statSync(path.join(OUT, 'capture.js')).size).toBeGreaterThan(0);
   });
 
+  // #239: read-meta.js is injected the same way capture.js is (background's
+  // doSaveBookmark, by file name through chrome.scripting.executeScript) —
+  // same guard, same reasoning.
+  test('background が名指しする read-meta.js が出力に在る', () => {
+    expect(backgroundSrc).toContain("files: ['read-meta.js']");
+    expect(fs.existsSync(path.join(OUT, 'read-meta.js'))).toBe(true);
+    expect(fs.statSync(path.join(OUT, 'read-meta.js')).size).toBeGreaterThan(0);
+  });
+
   // The release must ask for the REAL native messaging host and must not carry
   // the development one (#732). The development host resolves to a sandbox
   // config dir, so a release carrying that name would save where the user

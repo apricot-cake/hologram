@@ -83,6 +83,7 @@ const POST_COLUMNS = [
   'poll',
   'linkCard',
   'shotAnimated',
+  'metaSource',
 ] as const;
 
 function fromDbBool(v: unknown): boolean | null {
@@ -421,6 +422,11 @@ function assemble(sqlite: Database.Database, postRows: any[]): any[] {
       // fillCardDims and records.ts's imgW carve-out (the same treatment a
       // real .gif already gets by extension alone).
       shotAnimated: fromDbBool(r.shotAnimated),
+      // #239: which regard filled title/description/author/published/
+      // siteName/url on the generic web-page extraction path. Read for the
+      // export sidecar's sake only — v1 has no inspector/UI consumer (design
+      // comment 7).
+      metaSource: parseJsonObject(r.metaSource),
     };
   });
 }
