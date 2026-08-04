@@ -7,6 +7,10 @@
 
 <p align="center"><strong>English</strong> · <a href="README.ja.md">日本語</a></p>
 
+> [!WARNING]
+> **Hologram has not had a release yet and is still under active development.**
+> There is no installer to download — running it means building from source. The interface, the stored data format, and the behaviour described below can all still change in ways that break what came before. Keep your own backups of anything you would hate to lose.
+
 Save the content you come across on the web — and find it again whenever you like. **Your own personal content library — every save keeps its creator, context, and source.**
 
 No more "where did that post go?" Illustrations you loved, text you want to keep — gather them in one place, organize them, and pull them up anytime.
