@@ -173,13 +173,13 @@ CLI（`test-metadata.cts`／`test-select-posts.cts`／`test-watch-verify.cts`）
 **⚠️隔離の4理由のうち「`.cts` の `module.exports` を import している」だけは新しいスイートも掴まえ続ける**＝この層では `.ts` のスイートの隣に `.cts` のヘルパが居るのが普通の形なので、新規スイートが即 exclude 行きになることがある（実例＝`sandbox-instance.test.ts`）。
 そこだけは隔離の運用でなく、CJS を読む側を別プロジェクト（nodenext）へ分ける工事が要る。
   - 開発中は `npx vitest`（watch）・1本だけなら `npx vitest run scripts/query.test.ts`・カバレッジは `npx vitest run --coverage`。
-  - **サーバー側で自動で回る範囲**（#15）: push ごとに `.github/workflows/ci.yml`（Linux）が `npm run check` を回す。実 Electron 起動系（`test-app-*.cts`・`e2e/flows`）と拡張のブラウザE2E（`e2e-extension-offline`／
-`e2e-extension-duplicate`／`e2e-extension-timeout`／`e2e-extension-save-log`／`e2e-extension-inject-failure`／`e2e-extension-orphan`／`e2e-overlay-visual`／`e2e-overlay-flicker`）は 
-`.github/workflows/app-tests.yml`（Windows）が1日1回だけ回す＝**push では走らない**ので、触った直後の確認は手元で行う（手動起動は `gh workflow run app-tests.yml`）。実サイトカナリア（`e2e-capture-test.cts`）はどちらにも載っていない＝X 
+  - **サーバー側で自動で回る範囲**（#15・#883）: `.github/workflows/ci.yml`（Linux・`npm run check`）と `.github/workflows/app-tests.yml`（Windows・実 Electron 起動系 `test-app-*.cts`・`e2e/flows`・拡張のブラウザE2E〔`e2e-extension-offline`／
+`e2e-extension-duplicate`／`e2e-extension-timeout`／`e2e-extension-save-log`／`e2e-extension-inject-failure`／`e2e-extension-orphan`／`e2e-overlay-visual`／`e2e-overlay-flicker`〕）が **PR ごとに回り、どちらも `main` の ruleset の必須チェック**＝緑にならないとマージできない（#883・2026-08-04。それ以前は app-tests が1日1回だけで、実起動系はマージ前に一度も走っていなかった）。`app-tests.yml` の夜間実行は
+1日ぶんの変更が積み重なって初めて壊れる類の受け皿として残してある（手動起動は `gh workflow run app-tests.yml`）。実サイトカナリア（`e2e-capture-test.cts`）はどちらにも載っていない＝X 
 がログインなしでは投稿DOMを出さないため、ランナー上では常にログイン壁を報告するだけになる。**API スキーマカナリア（`schema-canary.cts`）は3本目のワークフロー `.github/workflows/schema-canary.yml`（Linux）が1日1回（03:07 JST）＋手動起動（`gh workflow run schema-canary.yml`）で回す**（#465）
 ＝相乗りでなく専用にしたのは、①Windows も Electron も要らず**`npm install` すら不要**（require するのはリポジトリ内のファイルと Node 組み込みだけ）②赤の意味が「自分のコードが壊れた」でなく「プラットフォームが応答の形を変えた」で、再実行が外部APIへの再取得になる③後述のコミット権限を、第三者パッケージを展開するジョブから切り離すため
     - **終了コード1だけが赤**。**2（全候補が落ちたサンプルがある＝その投稿タイプの監視が止まっている）は緑のまま警告注釈とジョブサマリにだけ出す**＝人が `samples.json` に候補を足すまで消えない状態を赤にすると、解消まで毎日赤が立ち、その裏に本物の警報が隠れる。**そのぶん2は能動的には届かない**（気付く経路は run のサマリだけ）
-    - **走ると基準（`scripts/canary/snapshots/*.json`）が書き換わるので、ワークフローがそれを main へコミットして返す**＝持ち越さないと「2回連続で初めて警報」が成立せず、カナリアが機能しない。ただし**警報が出た回（終了コード1）はコミットしない**＝基準を進めると消失した欄が比較対象から落ちて翌日には緑に戻る＝
+    - **走ると基準（`scripts/canary/snapshots/*.json`）が書き換わるので、ワークフローがそれを main へ返す**＝持ち越さないと「2回連続で初めて警報」が成立せず、カナリアが機能しない。**返し方は自動 PR＋auto-merge**（2026-08-04・#883）＝ruleset が直接 push を止めるようになったため。**個人リポジトリの ruleset は bypass に GitHub Actions を指定できない**（organization 限定・API が 422 で拒否）ので、bot も他と同じく PR を通る＝カナリアの PR にも必須チェック2本が走ってから着地する（1日1回なので誰も待たない）。ただし**警報が出た回（終了コード1）はコミットしない**＝基準を進めると消失した欄が比較対象から落ちて翌日には緑に戻る＝
 1日見逃すと警報ごと消える。据え置けば直すまで毎日鳴る。`updatedAt` だけの差分も捨てる（何も起きていない日に main へ1件積まないため）＝committed な `updatedAt` は「最後に形が動いた時刻」を指す
   - **実起動系ハーネスの言語は `ja` 固定**（`HOLOGRAM_SMOKE` 時に main が `--lang` を立てる。`HOLOGRAM_LANG` を渡せば SMOKE 以外でも効く＝Playwright 層はこちらを使う）＝ハーネスは日本語ラベルで部品を探すので、言語がマシン任せだと英語UIのランナーで「部品が無い」
 ように見える赤になる（2026-07-28・#15 第2段で en-US ランナーが実際にそうなった）

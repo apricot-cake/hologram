@@ -49,9 +49,12 @@ jobs:
     name: API schema canary
     runs-on: ubuntu-latest
     # Write is for the baseline commit below, and is the whole reason this job
-    # exists on its own rather than inside app-tests.yml.
+    # exists on its own rather than inside app-tests.yml. The pull-requests scope
+    # is what lets the bot route that commit through a PR (#883 put a ruleset on
+    # the default branch).
     permissions:
       contents: write
+      pull-requests: write
     # The script paces itself at 500ms between samples and takes about a minute for
     # the 27 samples. The ceiling only exists so a hung socket cannot burn six hours.
     timeout-minutes: 15
@@ -113,8 +116,17 @@ jobs:
       # the alarm would exist for exactly one day. Leaving the baseline alone makes
       # it fire every day until someone either fixes the extractor or accepts the
       # new shape by committing the snapshot themselves.
+      #
+      # It goes through a pull request rather than pushing to the branch directly.
+      # Since #883 the default branch carries a ruleset that requires one, and a
+      # personal repository cannot put GitHub Actions in a ruleset's bypass list —
+      # that is an organization-only field, confirmed by the API rejecting it. So
+      # the bot opens a PR and lets auto-merge land it once the required checks are
+      # green. Nobody is waiting on those minutes: this job runs once a day.
       - name: Carry the baseline forward
         if: steps.canary.outputs.code == '0' || steps.canary.outputs.code == '2'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
@@ -124,18 +136,21 @@ jobs:
           # movement — which also makes the committed updatedAt read as "when this
           # platform's shape last changed" rather than "when the job last ran".
           if git diff --cached -U0 -- scripts/canary/snapshots | grep -E '^[+-]' | grep -Ev '^(\+\+\+|---)' | grep -qv '"updatedAt"'; then
+            branch="canary/baselines-${GITHUB_RUN_ID}"
+            git checkout -b "$branch"
             git commit -m 'chore(canary): carry the schema baselines forward'
-            # Push with a rebase retry: main moves under long-running jobs. Only
-            # scripts/canary/snapshots/ is touched, so a real conflict would need a
-            # human editing the same baselines at the same minute.
-            for attempt in 1 2 3; do
-              if git push origin "HEAD:${GITHUB_REF_NAME}"; then
-                exit 0
-              fi
-              git pull --rebase origin "${GITHUB_REF_NAME}"
-            done
-            echo "::error title=基準を push できなかった::3回試して失敗＝次回は古い基準から比較することになる"
-            exit 1
+            git push origin "$branch"
+            gh pr create \
+              --base "${GITHUB_REF_NAME}" \
+              --head "$branch" \
+              --title 'chore(canary): carry the schema baselines forward' \
+              --body 'API スキーマカナリア（#465）の基準スナップショットを持ち越す自動 PR。差分は `scripts/canary/snapshots/` のみで、`updatedAt` だけの回は PR 自体が作られない。必須チェックが緑になり次第 auto-merge が着地させる。'
+            # --auto rather than an immediate merge: the required checks have not
+            # started yet at this point. If auto-merge is ever turned off for the
+            # repository this call fails loudly rather than leaving the PR open and
+            # unnoticed.
+            gh pr merge "$branch" --auto --squash --delete-branch
+            exit 0
           fi
           git reset -- scripts/canary/snapshots
           echo '基準に動きなし（updatedAt だけの差分）＝コミットしない'
