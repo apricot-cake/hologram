@@ -19,6 +19,12 @@
 //              (this file just knows the directory; segment writing is the
 //              app-side consumer's job, since only it decides when 1,000
 //              receipted events have accumulated).
+//   failed/    envelopes whose apply threw (#920). Written only by the
+//              consumer, never by a producer, and never created until the
+//              first failure — so ensureInboxDirs leaves it out. Quarantining
+//              is what keeps ONE poison envelope from stopping the whole
+//              drain forever; the bytes are kept for diagnosis, and moving a
+//              file back into new/ is how a fixed envelope is retried.
 
 import { createHash, randomBytes } from 'node:crypto';
 import fs from 'node:fs';
@@ -58,6 +64,9 @@ function inboxNewDir(saveFolder: string): string {
 }
 function inboxSegmentsDir(saveFolder: string): string {
   return path.join(inboxDir(saveFolder), 'segments');
+}
+function inboxFailedDir(saveFolder: string): string {
+  return path.join(inboxDir(saveFolder), 'failed');
 }
 
 // Called before the first write of a session (and safe to call every time —
@@ -156,5 +165,5 @@ function parseInboxEnvelope(raw: string): ParsedEnvelope {
   };
 }
 
-export { INBOX_DIRNAME, ENVELOPE_FORMAT, ENVELOPE_VERSION, SAFE_EVENT_ID, inboxDir, inboxTmpDir, inboxNewDir, inboxSegmentsDir, ensureInboxDirs, sha256Hex, buildEnvelope, writeInboxEvent, parseInboxEnvelope };
+export { INBOX_DIRNAME, ENVELOPE_FORMAT, ENVELOPE_VERSION, SAFE_EVENT_ID, inboxDir, inboxTmpDir, inboxNewDir, inboxSegmentsDir, inboxFailedDir, ensureInboxDirs, sha256Hex, buildEnvelope, writeInboxEvent, parseInboxEnvelope };
 export type { InboxEnvelope, ParsedEnvelope };

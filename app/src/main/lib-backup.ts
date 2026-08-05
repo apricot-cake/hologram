@@ -208,6 +208,9 @@ async function collectLibraryFiles(src: string): Promise<Map<string, SourceFile>
   await collectDir(TRASH_SUBDIR, (f) => /\.json$/i.test(f));
   await collectDir(`${INBOX_DIRNAME}/new`);
   await collectDir(`${INBOX_DIRNAME}/segments`);
+  // Quarantined envelopes (#920) are saved content that never reached the DB,
+  // so a backup that skipped them would be the one place their bytes are lost.
+  await collectDir(`${INBOX_DIRNAME}/failed`);
   await collectDir(GENERATIONS_DIRNAME);
   return out;
 }

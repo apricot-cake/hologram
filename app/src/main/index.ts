@@ -446,10 +446,12 @@ async function flushSavedIndexWrite() {
 // Drains .hologram-inbox/new into the DB (#5 St6 / #299) — one receipted,
 // transactional apply per envelope, loose files kept afterward (see
 // lib-db-inbox.ts). Logs whatever it skipped (missing media, a hash/post
-// conflict, a corrupt or unknown-version envelope) so a stuck capture is
-// diagnosable; never throws — drainInbox itself never lets one bad file stop
-// the rest, and a synchronous fs error here (folder briefly unavailable) just
-// means this pass found nothing, not a reason to fail the caller's sync.
+// conflict, a corrupt or unknown-version envelope, an apply that threw) so a
+// stuck capture is diagnosable; never throws — drainInbox itself never lets one
+// bad file stop the rest (#920 made that hold for unforeseen exceptions too, by
+// quarantining the envelope into .hologram-inbox/failed/), and a synchronous fs
+// error here (folder briefly unavailable) just means this pass found nothing,
+// not a reason to fail the caller's sync.
 function drainInboxLogged(folder: string, sqlite: any) {
   try {
     const report = drainInbox(folder, sqlite);
@@ -461,7 +463,15 @@ function drainInboxLogged(folder: string, sqlite: any) {
     // therefore readable across them, which is why this stays in main.log
     // rather than being appended to a file another process owns.
     if (report.applied.length) log.info(`inbox applied ${report.applied.length}: ${report.applied.join(' ')}`);
-    for (const s of report.skipped) log.warn(`inbox drain skipped ${s.file}: ${s.reason}${s.detail ? ` (${s.detail})` : ''}`);
+    for (const s of report.skipped) {
+      const line = `inbox drain skipped ${s.file}: ${s.reason}${s.detail ? ` (${s.detail})` : ''}`;
+      // The enumerated skips are expected states (media still syncing, a
+      // conflicting replay); apply-failed is an envelope we could not explain
+      // and quarantined (#920), so it is louder — it appears once, not every
+      // drain, and points at a file that is now sitting in failed/.
+      if (s.reason === 'apply-failed') log.error(line);
+      else log.warn(line);
+    }
     if (report.segmentsReplayed.length) log.info(`inbox replayed ${report.segmentsReplayed.length} segment(s) with no DB receipt yet (DB-loss recovery path)`);
     scheduleInboxCompaction(folder, sqlite);
     return report;

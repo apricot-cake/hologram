@@ -39,11 +39,22 @@
 //     saveFolder, or any filename escapes the folder: skip WITHOUT a receipt
 //     (retried on the next drain — useful when a sync client is still
 //     catching media up), report the reason, and keep going with other files.
+//   - the apply throws anything else at all (#920): skip it the same way, and
+//     QUARANTINE the envelope into .hologram-inbox/failed/. The rules above
+//     enumerate the failures we predicted; this one catches the rest, because
+//     "one envelope stops the whole intake" is the failure that hurts — the
+//     posts queued behind it never appear and every later drain dies on the
+//     same file, so the library simply looks empty. Quarantining (rather than
+//     leaving it in new/) is what makes the skip stick: the poison is not
+//     re-read next drain, so the log records it once instead of every pass.
+//     The exception's type is never inspected — the point is to survive the
+//     failures we did NOT foresee, and a type allowlist would leave the same
+//     hole open for the next one.
 
 import fs from 'node:fs';
 import path from 'node:path';
 import type Database from 'better-sqlite3';
-import { SAFE_EVENT_ID, inboxNewDir, inboxSegmentsDir, parseInboxEnvelope } from '../../../native-host/inbox.mts';
+import { SAFE_EVENT_ID, inboxFailedDir, inboxNewDir, inboxSegmentsDir, parseInboxEnvelope } from '../../../native-host/inbox.mts';
 import type { InboxEnvelope } from '../../../native-host/inbox.mts';
 import type { PostRecordShape } from '../../../native-host/post-record.mts';
 import { fillCardDims } from './lib-card-dims.ts';
@@ -184,6 +195,72 @@ function applyEnvelope(ctx: InboxApplyCtx, envelope: InboxEnvelope, sourceSegmen
   return 'applied';
 }
 
+// applyEnvelope, but an unexpected throw becomes a skip instead of taking the
+// whole drain down with it (#920). `quarantine` runs on exactly that path — it
+// is what makes the skip stick (the envelope leaves new/, so the next drain
+// does not read it again) and returns the note appended to the report's detail.
+function applyEnvelopeIsolated(ctx: InboxApplyCtx, envelope: InboxEnvelope, sourceSegment: string | null, quarantine: () => string): ApplyOutcome {
+  try {
+    return applyEnvelope(ctx, envelope, sourceSegment);
+  } catch (err: any) {
+    // applyEnvelope rolls its own transaction back, but a throw from the
+    // ROLLBACK itself would leave the connection inside a transaction — and
+    // then every LATER envelope fails too, which is exactly the "one bad file
+    // stops the rest" this isolation exists to prevent.
+    if (ctx.sqlite.inTransaction) {
+      try {
+        ctx.sqlite.exec('ROLLBACK');
+      } catch {
+        /* nothing left to undo */
+      }
+    }
+    return { skipped: { reason: 'apply-failed', detail: `${err?.message || String(err)} (${quarantine()})` } };
+  }
+}
+
+// A free name under failed/. A second failure of the same eventId means the
+// file was rewritten between drains, so both sets of bytes are evidence —
+// renaming over the first one would throw the earlier evidence away.
+function freeFailedPath(saveFolder: string, name: string): string {
+  const base = path.join(inboxFailedDir(saveFolder), name);
+  if (!fs.existsSync(base)) return base;
+  for (let n = 2; n < 1000; n++) {
+    const candidate = `${base}.${n}`;
+    if (!fs.existsSync(candidate)) return candidate;
+  }
+  return `${base}.${Date.now()}`;
+}
+
+// Moves a poison loose envelope out of new/, keeping its bytes (a failed
+// envelope is saved content that never reached the DB — it is moved, never
+// deleted). Returns a note for the report's detail; a quarantine that itself
+// fails is reported too, since then the next drain WILL read the file again.
+function quarantineLoose(saveFolder: string, name: string): string {
+  try {
+    fs.mkdirSync(inboxFailedDir(saveFolder), { recursive: true });
+    const dest = freeFailedPath(saveFolder, name);
+    fs.renameSync(path.join(inboxNewDir(saveFolder), name), dest);
+    return `moved to failed/${path.basename(dest)}`;
+  } catch (err: any) {
+    return `quarantine failed: ${err?.message || String(err)}`;
+  }
+}
+
+// The segment equivalent: a line cannot be moved out of its bundle, and the
+// segment's receipt is written once the pass is done, so the failing envelope
+// is copied into failed/ to stay retryable and diagnosable on its own. The
+// segment file itself is untouched — it is the replay source for a DB loss.
+function quarantineSegmentLine(saveFolder: string, eventId: string, line: string): string {
+  try {
+    fs.mkdirSync(inboxFailedDir(saveFolder), { recursive: true });
+    const dest = freeFailedPath(saveFolder, `${eventId}.json`);
+    fs.writeFileSync(dest, line);
+    return `copied to failed/${path.basename(dest)}`;
+  } catch (err: any) {
+    return `quarantine failed: ${err?.message || String(err)}`;
+  }
+}
+
 function recordOutcome(report: InboxDrainReport, file: string, outcome: ApplyOutcome, eventId: string) {
   if (outcome === 'noop') report.noop++;
   else if (outcome === 'applied') report.applied.push(eventId);
@@ -231,7 +308,7 @@ function replaySegments(ctx: InboxApplyCtx, report: InboxDrainReport) {
         report.skipped.push({ file: f, reason: parsed.reason, detail: parsed.detail });
         continue;
       }
-      const outcome = applyEnvelope(ctx, parsed.envelope, segmentId);
+      const outcome = applyEnvelopeIsolated(ctx, parsed.envelope, segmentId, () => quarantineSegmentLine(ctx.saveFolder, parsed.envelope.eventId, line));
       recordOutcome(report, f, outcome, parsed.envelope.eventId);
     }
     insertSegmentReceipt.run(segmentId, segmentId, new Date().toISOString());
@@ -302,7 +379,7 @@ function drainLoose(ctx: InboxApplyCtx, report: InboxDrainReport) {
       report.skipped.push({ file: name, reason: parsed.reason, detail: parsed.detail });
       continue;
     }
-    const outcome = applyEnvelope(ctx, parsed.envelope, null);
+    const outcome = applyEnvelopeIsolated(ctx, parsed.envelope, null, () => quarantineLoose(ctx.saveFolder, name));
     recordOutcome(report, name, outcome, parsed.envelope.eventId);
   }
 }
