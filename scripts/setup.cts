@@ -249,3 +249,4 @@ function main() {
 }
 
 if (require.main === module) main();
+// test: code change to verify #928 detection (no-op)
