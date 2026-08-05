@@ -19,6 +19,13 @@ name: App tests
 # and unit tests, so before this change nothing that boots the real app or the real
 # extension was ever checked BEFORE a merge. The nightly run stays, as the backstop
 # for anything that only breaks with a day's worth of changes stacked up.
+#
+# The layers run as parallel SHARDS (#937). One shard per layer, because the layers
+# were already the natural seam and a job name then says which one is red. The split
+# is deliberately three ways and no finer: preparation costs ~72s per shard and the
+# Free plan allows 20 concurrent jobs across the account, which five or six
+# simultaneous pull requests can already reach — see the shard comments below and
+# .github/actions/setup-app-tests for the measurements behind both numbers.
 on:
   push:
     branches: [main]
@@ -39,8 +46,12 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  windows:
-    name: Electron harnesses / extension e2e
+  # Shard 1 — 72s of the 258s of test time measured on 2026-08-05 (run 30996640294),
+  # after #933 made the 42 harnesses run four at a time. Before that this layer alone
+  # was 278s and sharding would have bought almost nothing, which is why #937 waited
+  # for it.
+  harnesses:
+    name: 'Shard: Electron harnesses'
     runs-on: windows-latest
     # Locally the whole suite is ~2.5 minutes of tests; the ceiling is set well
     # above the expected runner time only to stop a hung Electron from burning the
@@ -49,166 +60,128 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      # docs-only PRs (README, docs/**) don't need any layer this job runs — skip
-      # straight to a pass. Required-check paths filters can't do this: a skipped
-      # required workflow leaves the check "expected" forever and blocks the merge
-      # instead (#928).
-      #
-      # Also decides `fail_fast` here, for the same reason: every later layer's
-      # `if` needs to know whether this run is a pull_request. A PR is fixed and
-      # re-pushed in minutes, so stopping at the first red layer gets a developer
-      # to the fix faster instead of burning runner time on layers they won't read
-      # before they push again. push/schedule/workflow_dispatch keep running every
-      # layer after a failure — see the comment below on the harness step (#936).
-      - name: Detect docs-only change
-        id: docs-only
-        # windows-latest's default shell is pwsh, not bash — this script is POSIX sh.
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            fail_fast=true
-          else
-            fail_fast=false
-          fi
-          echo "fail_fast=$fail_fast" >> "$GITHUB_OUTPUT"
-
-          if [ "$fail_fast" != "true" ]; then
-            echo "docs_only=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          files="$(gh api --paginate "repos/${{ github.repository }}/pulls/${{ github.event.number }}/files" --jq '.[].filename')"
-          docs_only=true
-          if [ -z "$files" ]; then
-            docs_only=false
-          fi
-          while IFS= read -r f; do
-            case "$f" in
-              *.md|docs/*) ;;
-              *) docs_only=false ;;
-            esac
-          done <<< "$files"
-          echo "docs_only=$docs_only" >> "$GITHUB_OUTPUT"
-      - name: Setup Node
-        id: setup-node
-        if: steps.docs-only.outputs.docs_only != 'true'
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - name: Prepare
+        id: prep
+        uses: ./.github/actions/setup-app-tests
         with:
-          node-version-file: package.json
-          cache: npm
-          cache-dependency-path: |
-            package-lock.json
-            extension/package-lock.json
-      # actions/setup-node's cache:npm above only persists npm's download cache,
-      # not the installed tree — every run still walks and links node_modules from
-      # scratch. This restores the tree itself. No restore-keys: a partial match on
-      # a stale lockfile would silently resurrect an old dependency tree on a PR
-      # that changed one, which is worse than the cache miss it saves (#935).
-      - name: Cache node_modules
-        if: steps.docs-only.outputs.docs_only != 'true'
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            node_modules
-            extension/node_modules
-          key: ${{ runner.os }}-node-${{ steps.setup-node.outputs.node-version }}-modules-${{ hashFiles('package-lock.json', 'extension/package-lock.json') }}
-      # Same entry point as ci.yml — see scripts/setup.cts for why a plain
-      # `npm ci` does not produce a working tree. It also builds the extension,
-      # which every browser test below stages from the verified Chrome release output.
-      # Runs even on a cache hit (#935): setup.cts also restores Electron's runtime
-      # and installs extension/'s separate lockfile, neither of which the
-      # node_modules cache above covers on its own. `npm install` against an
-      # already-complete tree returns in seconds, so a hit still pays off.
-      - name: Install dependencies
-        if: steps.docs-only.outputs.docs_only != 'true'
-        run: npm run setup
-      # The harnesses spawn `electron .` in app/, whose main field points at
-      # app/out. A fresh checkout has no build output and `npm run setup` does not
-      # produce any, so without this every harness dies on a missing entry point.
-      - name: Build app bundles
-        if: steps.docs-only.outputs.docs_only != 'true'
-        run: npm run build --workspace=app
-      # Playwright's browser build is tied to the resolved @playwright/test version,
-      # not the ^-range in package.json — read it from the lockfile so the cache key
-      # tracks what actually gets installed.
-      - name: Resolve Playwright version
-        id: playwright-version
-        if: steps.docs-only.outputs.docs_only != 'true'
-        shell: bash
-        run: |
-          version=$(node -p "require('./package-lock.json').packages['node_modules/@playwright/test'].version")
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-      - name: Cache Playwright browsers
-        if: steps.docs-only.outputs.docs_only != 'true'
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~\AppData\Local\ms-playwright
-          key: ${{ runner.os }}-playwright-${{ steps.playwright-version.outputs.version }}
-      # setup installs with --ignore-scripts, so Playwright's postinstall never
-      # runs and no browser is fetched. Chromium only: every browser test here
-      # loads an unpacked MV3 extension, which is Chromium-only anyway. Runs even
-      # on a cache hit — it returns immediately when the browser is already there.
-      - name: Install Playwright Chromium
-        if: steps.docs-only.outputs.docs_only != 'true'
-        run: npx playwright install chromium
+          github-token: ${{ github.token }}
       - name: Electron app harnesses
-        if: steps.docs-only.outputs.docs_only != 'true'
+        if: steps.prep.outputs.docs_only != 'true'
         run: node scripts/run-app-tests.cts
-      # The Playwright layer (#14). Only the `flow` project: the `visual` one
-      # compares committed baselines taken on the development machine, and a
-      # runner's fonts / GPU-less rendering / display settings do not reproduce
-      # them (#14's 2026-07-29 decision). Running it here would report differences
-      # that say nothing about the change under test.
-      - name: Electron E2E (user flows)
-        if: ${{ !cancelled() && steps.docs-only.outputs.docs_only != 'true' && (steps.docs-only.outputs.fail_fast != 'true' || success()) }}
-        run: npx playwright test --project=flow
-      # Each later layer runs even after an earlier one goes red on push/schedule/
-      # workflow_dispatch (`!cancelled()` rather than `success()`): a nightly job
-      # that stops at the first failure costs a whole day to learn what else was
-      # broken (#818 — four consecutive red nights, a different layer each time,
-      # only diagnosable because every layer had run that night). On a pull_request
-      # the same patience just delays the red: a PR is fixed and re-pushed within
-      # minutes, so nothing past the first failure gets read before that push makes
-      # this run moot. `fail_fast` (set above) is `true` only for pull_request, so
-      # the extra `success()` clause below changes behavior only there — everywhere
-      # else it collapses back to the original `!cancelled()`-only check (#936).
+
+  # Shard 2 — 108s, the longest of the three and so the one that sets the wall clock.
+  # Splitting it further (it is six independent scripts) would take the shard to ~66s
+  # but add a fourth Windows runner to every push; not worth the concurrency at the
+  # measured numbers, and easy to revisit if these scripts grow.
+  extension-e2e:
+    name: 'Shard: extension e2e'
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Prepare
+        id: prep
+        uses: ./.github/actions/setup-app-tests
+        with:
+          github-token: ${{ github.token }}
+      # Each later layer in a shard runs even after an earlier one goes red on push/
+      # schedule/workflow_dispatch (`!cancelled()` rather than `success()`): a nightly
+      # job that stops at the first failure costs a whole day to learn what else was
+      # broken (#818 — four consecutive red nights, a different layer each time, only
+      # diagnosable because every layer had run that night). On a pull_request the same
+      # patience just delays the red: a PR is fixed and re-pushed within minutes, so
+      # nothing past the first failure gets read before that push makes this run moot.
+      # `fail_fast` is `true` only for pull_request, so the extra `success()` clause
+      # changes behavior only there — everywhere else it collapses back to the original
+      # `!cancelled()`-only check (#936). Note that this is now per shard: a red harness
+      # no longer stops the extension layers, because they are already running (#937).
       # The scripts are invoked directly rather than through their npm scripts,
       # which would each rebuild the extension that `npm run setup` already built.
       - name: Extension capture e2e (offline fixture)
-        if: ${{ !cancelled() && steps.docs-only.outputs.docs_only != 'true' && (steps.docs-only.outputs.fail_fast != 'true' || success()) }}
+        if: steps.prep.outputs.docs_only != 'true'
         run: node scripts/e2e-extension-offline.cts
       - name: Extension duplicate-warning e2e (offline fixture)
-        if: ${{ !cancelled() && steps.docs-only.outputs.docs_only != 'true' && (steps.docs-only.outputs.fail_fast != 'true' || success()) }}
+        if: ${{ !cancelled() && steps.prep.outputs.docs_only != 'true' && (steps.prep.outputs.fail_fast != 'true' || success()) }}
         run: node scripts/e2e-extension-duplicate.cts
       - name: Extension save-timeout e2e (offline fixture)
-        if: ${{ !cancelled() && steps.docs-only.outputs.docs_only != 'true' && (steps.docs-only.outputs.fail_fast != 'true' || success()) }}
+        if: ${{ !cancelled() && steps.prep.outputs.docs_only != 'true' && (steps.prep.outputs.fail_fast != 'true' || success()) }}
         run: node scripts/e2e-extension-timeout.cts
       - name: Extension save-log e2e (offline fixture)
-        if: ${{ !cancelled() && steps.docs-only.outputs.docs_only != 'true' && (steps.docs-only.outputs.fail_fast != 'true' || success()) }}
+        if: ${{ !cancelled() && steps.prep.outputs.docs_only != 'true' && (steps.prep.outputs.fail_fast != 'true' || success()) }}
         run: node scripts/e2e-extension-save-log.cts
       # Measures the platform premises #269 chose between (which surfaces still
       # work once the extension's own files cannot be read). A Chrome update is
       # exactly what could invalidate them, and nothing else in the suite would
       # go red if it did — which is why this one earns a daily run.
       - name: Extension inject-failure premises
-        if: ${{ !cancelled() && steps.docs-only.outputs.docs_only != 'true' && (steps.docs-only.outputs.fail_fast != 'true' || success()) }}
+        if: ${{ !cancelled() && steps.prep.outputs.docs_only != 'true' && (steps.prep.outputs.fail_fast != 'true' || success()) }}
         run: node scripts/e2e-extension-inject-failure.cts
       # Reloads the extension under two live tabs (#594) — the only way to make a
       # real orphaned content script. Measures both what Chrome does to such a
       # context (the premises the detector rests on) and what the extension then
       # does with the UI it left on the page.
       - name: Extension orphaned-tab e2e
-        if: ${{ !cancelled() && steps.docs-only.outputs.docs_only != 'true' && (steps.docs-only.outputs.fail_fast != 'true' || success()) }}
+        if: ${{ !cancelled() && steps.prep.outputs.docs_only != 'true' && (steps.prep.outputs.fail_fast != 'true' || success()) }}
         run: node scripts/e2e-extension-orphan.cts
+
+  # Shard 3 — 78s (46 + 32). Two layers rather than one because neither fills a shard
+  # on its own and both drive a visible Electron window, so they share a failure mode.
+  flows-overlay:
+    name: 'Shard: E2E flows / overlay'
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Prepare
+        id: prep
+        uses: ./.github/actions/setup-app-tests
+        with:
+          github-token: ${{ github.token }}
+      # The Playwright layer (#14). Only the `flow` project: the `visual` one
+      # compares committed baselines taken on the development machine, and a
+      # runner's fonts / GPU-less rendering / display settings do not reproduce
+      # them (#14's 2026-07-29 decision). Running it here would report differences
+      # that say nothing about the change under test.
+      - name: Electron E2E (user flows)
+        if: steps.prep.outputs.docs_only != 'true'
+        run: npx playwright test --project=flow
       - name: Overlay visual regression
-        if: ${{ !cancelled() && steps.docs-only.outputs.docs_only != 'true' && (steps.docs-only.outputs.fail_fast != 'true' || success()) }}
+        if: ${{ !cancelled() && steps.prep.outputs.docs_only != 'true' && (steps.prep.outputs.fail_fast != 'true' || success()) }}
         run: node scripts/e2e-overlay-visual.cts
       - name: Overlay flicker regression
-        if: ${{ !cancelled() && steps.docs-only.outputs.docs_only != 'true' && (steps.docs-only.outputs.fail_fast != 'true' || success()) }}
+        if: ${{ !cancelled() && steps.prep.outputs.docs_only != 'true' && (steps.prep.outputs.fail_fast != 'true' || success()) }}
         run: node scripts/e2e-overlay-flicker.cts
-      # scripts/e2e-capture-test.cts — the live-site canary — is NOT here. It reads
-      # the real platforms, and X serves no post DOM to a signed-out browser, so on
-      # a runner it can only ever report a login wall (docs/testing.md). The site-DOM
-      # canary this workflow's schedule is meant to host still needs a way to be
-      # signed in from CI; #15 records that as open.
+
+  # The name below is the one main's ruleset requires, and it stays on this job
+  # forever so the shard layout can change without touching the ruleset (#937).
+  # `always()`, not the default: without it a shard that is skipped or cancelled
+  # leaves this job skipped too, and a skipped job reports no failure — the required
+  # check would go green over tests that never ran. So it runs unconditionally and
+  # treats anything other than `success` as red.
+  app-tests:
+    name: Electron harnesses / extension e2e
+    needs: [harnesses, extension-e2e, flows-overlay]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every shard to be green
+        shell: bash
+        env:
+          SHARDS: ${{ toJSON(needs) }}
+        run: |
+          echo "$SHARDS"
+          bad="$(echo "$SHARDS" | jq -r 'to_entries | map(select(.value.result != "success") | "\(.key)=\(.value.result)") | join(", ")')"
+          if [ -n "$bad" ]; then
+            echo "::error::app-tests shard(s) not green: $bad"
+            exit 1
+          fi
+          echo "all shards green"
+
+  # scripts/e2e-capture-test.cts — the live-site canary — is NOT in any shard. It reads
+  # the real platforms, and X serves no post DOM to a signed-out browser, so on a runner
+  # it can only ever report a login wall (docs/testing.md). The site-DOM canary this
+  # workflow's schedule is meant to host still needs a way to be signed in from CI; #15
+  # records that as open.
