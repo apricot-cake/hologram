@@ -299,6 +299,12 @@ function createWindow(show = true, opts?: { secondary?: boolean }) {
     },
   });
   windows.push(win);
+  // A harness window is sized AFTER creation, not by the constructor above: Electron clamps
+  // the constructor's size to the display's work area, and CI runners are 1024x768 — the
+  // requested width silently arrives narrow, which is the layout none of the harness cases
+  // are written against (measured on CI: 1440 asked, 1024 given). setContentSize is not
+  // clamped that way, which is the same route e2e/lib/harness.ts already takes.
+  if (smoke) win.setContentSize(SMOKE_WINDOW.width, SMOKE_WINDOW.height);
   win.on('closed', () => {
     const i = windows.indexOf(win);
     if (i >= 0) windows.splice(i, 1);
