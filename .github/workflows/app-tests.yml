@@ -157,7 +157,7 @@ jobs:
       # canary this workflow's schedule is meant to host still needs a way to be
       # signed in from CI; #15 records that as open.
 
-  # TEMPORARY (#933): measures run-app-tests.cts at 1..4 concurrent harnesses so the
+  # TEMPORARY (#933): measures run-app-tests.cts past the 1..4 round (round 2: 4, 6, 8) so the
   # default is picked from the runner rather than from a guess. Three repetitions of
   # the same commit, each walking the settings in a different order so a warm disk
   # cache cannot favour whichever ran last. REMOVE BEFORE MERGE.
@@ -170,11 +170,11 @@ jobs:
       matrix:
         include:
           - rep: 1
-            order: '1 2 3 4'
+            order: '4 6 8'
           - rep: 2
-            order: '4 3 2 1'
+            order: '8 6 4'
           - rep: 3
-            order: '2 4 1 3'
+            order: '6 4 8'
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
