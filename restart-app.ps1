@@ -85,19 +85,30 @@ if ($drift) {
   }
 }
 
-# Two-stage shutdown of ONLY this repo's electron (leave other Electron apps alone).
+# Two-stage shutdown of ONLY the real instance (leave other Electron apps alone).
 # CloseMainWindow lets the app finish its 'close' handler (which writes config) before exit;
 # a forced kill mid-write used to truncate config.json.
+#
+# Picked by COMMAND LINE, not by executable path: a test harness running in a worktree uses
+# that tree's own node_modules\electron, and worktrees live inside the repo — so a
+# '*hologram*' path match (what this used to do) also swept up whatever a parallel session
+# was testing with. '--remote-debugging-port=9222' is added by the HologramLaunch task and
+# nothing else, so it names the real instance exactly. See docs/build.md.
+function Get-HologramProcs {
+  Get-CimInstance Win32_Process -Filter "Name='electron.exe'" -ErrorAction SilentlyContinue |
+    Where-Object { $_.CommandLine -like '*--remote-debugging-port=9222*' } |
+    ForEach-Object { Get-Process -Id $_.ProcessId -ErrorAction SilentlyContinue }
+}
 Write-Host 'Hologram(electron) を停止しています...' -ForegroundColor Cyan
-$procs = Get-Process electron -ErrorAction SilentlyContinue | Where-Object { $_.Path -like '*hologram*' }
+$procs = Get-HologramProcs
 foreach ($p in $procs) { try { $p.CloseMainWindow() | Out-Null } catch { } }
 
 # Wait up to ~5s for a clean exit, then force-kill only stragglers.
 for ($i = 0; $i -lt 25; $i++) {
   Start-Sleep -Milliseconds 200
-  if (-not (Get-Process electron -ErrorAction SilentlyContinue | Where-Object { $_.Path -like '*hologram*' })) { break }
+  if (-not (Get-HologramProcs)) { break }
 }
-Get-Process electron -ErrorAction SilentlyContinue | Where-Object { $_.Path -like '*hologram*' } | Stop-Process -Force -ErrorAction SilentlyContinue
+Get-HologramProcs | Stop-Process -Force -ErrorAction SilentlyContinue
 
 Start-Sleep -Milliseconds 500
 

@@ -129,9 +129,11 @@ main・preload・renderer のどれを変更した場合も、**`npm run build -
 **再起動は「停止 ＋ タスクスケジューラ経由の起動」で行う**。Claude が実行する最小形:
 
 ```powershell
-Get-Process electron -ErrorAction SilentlyContinue | Where-Object { $_.Path -like '*hologram*' } | Stop-Process -Force
+Get-CimInstance Win32_Process -Filter "Name='electron.exe'" | Where-Object { $_.CommandLine -like '*--remote-debugging-port=9222*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
 Start-ScheduledTask -TaskName 'HologramLaunch'
 ```
+
+**止める相手は実行ファイルのパスでなくコマンドラインで選ぶ**（2026-08-05 修正）。旧版は `Get-Process electron | Where-Object { $_.Path -like '*hologram*' }` だったが、**worktree の検証で起動した Electron も同じ条件に合う**——ハーネスは自分のツリーの `node_modules/electron` を使い（`scripts/lib-electron-path.cts`）、worktree はリポジトリの内側にあるのでパスに `hologram` が入る。並行セッションが `test-app-*.cts` や `e2e/flows` を回している最中に実機を再起動すると、相手のテストを巻き添えで殺して赤にできてしまう（隔離されているのは config とライブラリであって、プロセスの選び方ではない）。`--remote-debugging-port=9222` は `HologramLaunch` タスクだけが付ける引数なので、これで実機だけを名指しできる。
 
 ユーザーのワンクリックは `restart-app.ps1` を右クリック →「PowerShell で実行」（窓は出るが終了時に自動で閉じる）。`restart-app.ps1` は graceful close ＋ `HologramLaunch` タスクの自己修復（無ければ作成）＋起動をまとめてある。
 
