@@ -127,7 +127,10 @@ jobs:
       # that say nothing about the change under test.
       - name: Electron E2E (user flows)
         if: ${{ !cancelled() && steps.docs-only.outputs.docs_only != 'true' && (steps.docs-only.outputs.fail_fast != 'true' || success()) }}
-        run: npx playwright test --project=flow
+        # TEMPORARY (#936 verification): forces this layer red so the PR-vs-nightly
+        # fail-fast branching can be observed live. Revert before merging anything
+        # from this branch — it is not meant to land.
+        run: exit 1
       # Each later layer runs even after an earlier one goes red on push/schedule/
       # workflow_dispatch (`!cancelled()` rather than `success()`): a nightly job
       # that stops at the first failure costs a whole day to learn what else was
