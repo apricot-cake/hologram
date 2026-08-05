@@ -21,12 +21,15 @@ const { spawn } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
 
-// Measured on the CI runner (4 vCPU windows-latest) over three repetitions each of 1,
-// 2, 3 and 4 — see #933 for the numbers. Above this the wall clock stops improving
-// while the slowest harness keeps growing, and every harness carries the app's own 60s
-// in-renderer backstop (app/src/main/index.ts) that a loaded machine eats into (#818,
-// and #514 for the same failure mode in the unit suite).
-const DEFAULT_JOBS = 3;
+// Measured on the CI runner (4 vCPU / 17GB windows-latest) over 37 full runs — see
+// #933 for the numbers. 4 was both the fastest of 1..4 (78s median against 257s
+// sequential) and the steadiest (70-82s, against 85-115s at 3), and it does not move
+// the slowest single harness (24.0s at 4, 24.3s at 3) — which is what matters, because
+// each harness carries the app's own 60s in-renderer backstop
+// (app/src/main/index.ts) that a loaded machine eats into (#818, and #514 for the same
+// failure mode in the unit suite). 6 and 8 were measured too and buy ~15s more, but on
+// three runs each: not enough to spend the margin on.
+const DEFAULT_JOBS = 4;
 // Guards against a hung Electron. Left where it was when this ran sequentially: the
 // in-app smoke backstop is 60s, so this never bites a healthy run however slow.
 const HARNESS_TIMEOUT_MS = 120000;
