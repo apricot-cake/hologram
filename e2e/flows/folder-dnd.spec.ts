@@ -27,11 +27,17 @@ function seedFolders({ saveFolder }: { saveFolder: string }) {
   sqlite.close();
 }
 
+// #981: the folder tree lives in the flyout behind the rail's フォルダ row — the sidebar
+// has no expanded column to show it in any more. Everything below needs the rows on
+// screen and hit-testable, so each case opens the flyout first.
+async function openFolderTree(page: import('@playwright/test').Page): Promise<void> {
+  await page.locator('[data-slot="menu-label"]', { hasText: /^フォルダ$/ }).click();
+  await expect(page.locator('[data-slot="popover-content"]')).toBeVisible();
+}
+
 test('フォルダ行を上端・下端へドロップすると並び順が入れ替わる', async ({ launchHologram }) => {
   const { page } = await launchHologram({ seed: seedFolders });
-  // The library folder group is hidden in the rail, which is now the default (#678) — this
-  // flow needs the rows visible and hit-testable, so expand the column first.
-  await page.keyboard.press('Control+b');
+  await openFolderTree(page);
   const row = (id: string) => page.locator(`[data-folder-id="${id}"]`).first();
 
   // Drag `sourceId` onto `targetId`'s top (before) or bottom (after) edge zone.
@@ -62,8 +68,7 @@ test('フォルダ行を上端・下端へドロップすると並び順が入�
 
 test('親フォルダを開くと子はインデントされ、横スクロールを出さない', async ({ launchHologram }) => {
   const { page } = await launchHologram({ seed: seedFolders });
-  // Same reason as the drag case above: the folder group is rail-hidden by default (#678).
-  await page.keyboard.press('Control+b');
+  await openFolderTree(page);
   const row = (id: string) => page.locator(`[data-folder-id="${id}"]`).first();
 
   await row('f-a').locator('[data-slot="folder-twisty"]').click();
@@ -75,7 +80,7 @@ test('親フォルダを開くと子はインデントされ、横スクロー�
   expect(child?.x).toBeGreaterThan(parent?.x ?? 0);
 
   const overflow = await page
-    .locator('[data-slot="sidebar-content"]')
+    .locator('[data-slot="popover-content"]')
     .first()
     .evaluate((el) => el.scrollWidth - el.clientWidth);
   expect(overflow, 'folder tree has no horizontal overflow').toBeLessThanOrEqual(1);

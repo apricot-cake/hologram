@@ -1,13 +1,13 @@
 // Inspector panel open/closed state (#243) — the panel is opened and closed by the user,
 // and the choice survives a restart.
 //
-// Why this holds the STATE and not just the pref (sidebar-pref.ts only persists, and lets
+// Why this holds the STATE and not just the pref (panel-width-pref.ts only persists, and lets
 // AppShell own the state): the inspector is closed from two sides. React drives the shell
 // toggle and the panel's own ×, but inspector-builder.ts — plain renderer code, no React —
 // also needs to close it. A module-level store both can reach keeps that from becoming a
 // cross-boundary DOM poke at #postDetail.hidden, which is what the old code did.
 //
-// Persistence mirrors theme-api.ts / sidebar-pref.ts: config.json is the durable home
+// Persistence mirrors theme-api.ts / panel-width-pref.ts: config.json is the durable home
 // (setPref over IPC) and localStorage is a synchronous cache, because AppShell needs an
 // answer during React's FIRST render — an IPC round trip could only answer a tick later,
 // painting an open panel and snapping it shut right after boot.

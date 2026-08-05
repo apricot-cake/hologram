@@ -13,9 +13,9 @@
 //   panel. The band is plain Tailwind now (#621) — the #tabBar/#tabBarInner ids, their
 //   legacy CSS and the delegated handlers that needed them are gone; the strip itself is
 //   tabs/Tabs.tsx, which wires its own gestures to the exported tab actions.
-// - The sidebar's own header row is the window's titlebar drag strip and holds the
-//   collapse trigger (moved out of the toolbar). shadcn's fixed sidebar-container now
-//   spans inset-y-0 as-is (the --tabbar-h offset hack is gone).
+// - The sidebar's own header row is the window's titlebar drag strip (it held the collapse
+//   trigger until #981 removed the toggle). shadcn's fixed sidebar-container now spans
+//   inset-y-0 as-is (the --tabbar-h offset hack is gone).
 // - The content column is the scroll root (the page itself never scrolls). It and the
 //   three grid slots inside it are handed to the modules that measure them through
 //   services/content-area.ts — none of the four is looked up by id any more (#618), and
@@ -24,9 +24,8 @@
 //   #143 model (wide = fixed 320px column, narrow = slide-over). Its id is gone (P2⑦):
 //   whether it is on screen is state (inspector-panel.ts), and the element itself reaches
 //   the one handler that needs it by ref, so nothing looks it up by id any more.
-import type { CSSProperties } from 'react';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
-import { SIDEBAR_WIDTH, SidebarInset, SidebarProvider } from '@/components/ui/sidebar';
+import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar';
 import { t } from '../_shared/i18n.ts';
 import { InspectorRail } from './InspectorRail.tsx';
 import { type PanelResize, resolveCssLength, usePanelResize } from './use-panel-resize.ts';
@@ -35,10 +34,9 @@ import { isDocked as inspectorIsDocked, isVisible as inspectorIsVisible, load as
 import { registerScroller } from '../services/content-area.ts';
 import { hologramImageTabSource, isActive as imageViewIsActive } from '../services/image-tab.ts';
 import { isWide as isWideLayout, subscribe as layoutSubscribe } from '../services/layout-mode.ts';
-import { isHidden as panelsAreHidden, load as panelsLoad, reveal as panelsReveal, subscribe as panelsSubscribe } from '../services/panels.ts';
+import { load as panelsLoad } from '../services/panels.ts';
 import { load as shortcutOverridesLoad } from '../services/shortcut-registry.ts';
 import { get as storeGet, set as storeSet, subscribe as storeSubscribe } from '../services/store.ts';
-import { DEFAULT_OPEN, cachedOpen, loadOpen, persistOpen } from '../services/sidebar-pref.ts';
 import { signalShellReady } from '../services/shell-ready.ts';
 import { AppToolbar } from './AppToolbar.tsx';
 import { InspectorToggle } from './InspectorToggle.tsx';
@@ -59,39 +57,12 @@ import { TrashView } from '../trash/TrashView.tsx';
 import { TagManagementPage } from '../tag-management/TagManagementPage.tsx';
 import { WindowControls } from './WindowControls.tsx';
 
-// #149 + #243 + #259: the stored state is purely the user's saved choice (sidebar-pref.ts).
-// #243 removed the old width clamp that forced the rail below 1024px, on the grounds that
-// desktop apps don't reshape themselves by width. #259 puts a narrower version of it back,
-// having found what #243 missed: the products it measured against (Lightroom / VS Code /
-// Obsidian) don't auto-reshape BECAUSE they all pair that with a one-key collapse, and
-// Hologram shipped the first half without the second. At half-screen widths — Hologram beside
-// a browser is a primary way to use it — the two panels take 576px and leave the grid 382.
-//
-// What came back is narrower than what #243 removed, in two ways. The saved preference is
-// never overwritten by width: it is masked while narrow and comes back untouched. And the
-// user can still expand over the mask (narrowOpen below) — width picks the starting form,
-// it does not lock one in.
-function useSidebarOpen(): [boolean, (open: boolean) => void] {
-  const [open, setOpen] = useState(() => cachedOpen() ?? DEFAULT_OPEN);
-  // A user toggle mid-boot must not lose to the reconcile landing a tick later.
-  const toggled = useRef(false);
-
-  // config.json outranks the localStorage cache the initial state was guessed from.
-  useEffect(() => {
-    loadOpen().then((saved) => {
-      if (saved !== null && !toggled.current) setOpen(saved);
-    });
-  }, []);
-
-  // Only an explicit toggle (SidebarTrigger / Ctrl+B / rail) is a preference.
-  const choose = useCallback((v: boolean) => {
-    toggled.current = true;
-    setOpen(v);
-    persistOpen(v);
-  }, []);
-
-  return [open, choose];
-}
+// The sidebar has no open/closed state to keep here any more (#981) — it is the rail, and
+// the only thing that takes it off screen is #245's bulk mask, read below like any other
+// panel state. What used to live here was the #149 saved preference plus #259's
+// width-linked retreat (a transient narrow-width copy of the state, so the preference
+// survived a trip through a small window). Both are gone with the expanded column: see
+// docs/decisions/0027-sidebar-is-a-rail-only.md.
 
 // Which of the three destinations the content column shows (posts / posters / trash).
 const subBrowseMode = (cb: () => void) => storeSubscribe('browseMode', cb);
@@ -175,39 +146,20 @@ function usePanelWidthResize(key: PanelKey, label: string, side: 'left' | 'right
 }
 
 export function AppShell() {
-  const [sidebarOpen, setSidebarOpen] = useSidebarOpen();
-  // --sidebar-width is set inline on the provider's wrapper (shadcn puts it there), so
-  // that element — not :root — is where a drag writes. --inspector-w is a global token
-  // read by the panel AND by the floating bar that keeps clear of it, so that one stays
-  // on the document element.
-  const shellRef = useRef<HTMLDivElement>(null);
-  const writeSidebarWidth = useCallback((px: number) => {
-    shellRef.current?.style.setProperty('--sidebar-width', `${px}px`);
-  }, []);
+  // --inspector-w is a global token read by the panel AND by the floating bar that keeps
+  // clear of it, so it lives on the document element. The sidebar has no width variable
+  // to write any more (#981): the rail's width is the component's own constant, and #30's
+  // drag-resize now applies to the inspector alone.
   const writeInspectorWidth = useCallback((px: number) => {
     document.documentElement.style.setProperty('--inspector-w', `${px}px`);
   }, []);
-  const sidebar = usePanelWidthResize('sidebarWidth', t('resizeSidebar'), 'left', () => resolveCssLength(SIDEBAR_WIDTH), writeSidebarWidth);
   // The inspector's default is its token's own value, measured before anything here has
   // had a chance to write over it.
   const inspector = usePanelWidthResize('inspectorWidth', t('resizeInspector'), 'right', () => resolveCssLength(getComputedStyle(document.documentElement).getPropertyValue('--inspector-w')), writeInspectorWidth);
-  // #245's bulk hide. A mask over the two panels' own state, not a write to it — see
-  // services/panels.ts. Every place below that decides whether a panel is on screen ANDs
-  // it in; nothing below changes what the panels themselves think.
-  const panelsHidden = useSyncExternalStore(panelsSubscribe, panelsAreHidden);
+  // #245's bulk hide is not read here any more: both readers of the mask now ask for
+  // themselves — inspector-panel.ts's isVisible() ANDs it in, and LeftSidebar reads it to
+  // pick its collapsible mode. This file only has to make sure the state is loaded (below).
   const wide = useSyncExternalStore(layoutSubscribe, isWideLayout);
-  // Narrow-width sidebar state: transient, so the saved preference survives a trip
-  // through a small window untouched. Reset on every crossing — widening restores the
-  // preference, narrowing starts from the rail again.
-  // Adjusted during render rather than in an effect — React's own pattern for "reset
-  // state when an input changes", and the honest shape here: the reset has nothing to
-  // do with the DOM, so an effect would only add a render showing the stale value.
-  const [narrowOpen, setNarrowOpen] = useState(false);
-  const [prevWide, setPrevWide] = useState(wide);
-  if (prevWide !== wide) {
-    setPrevWide(wide);
-    setNarrowOpen(false);
-  }
   // At narrow widths the inspector is an overlay that rides on the selection: it appears
   // when a card is inspected and is waved away by a click on the grid (Esc / × too). A
   // floating panel with nothing in it would just be a hole in the view, so the #244
@@ -237,19 +189,6 @@ export function AppShell() {
     // paint here; a rebind only matters the next time a key is actually pressed.
     shortcutOverridesLoad();
   }, []);
-  // The sidebar's open/closed state, as the shell actually paints it. The bulk mask wins
-  // over both the saved preference and the narrow-width one; a toggle aimed at the sidebar
-  // (Ctrl+B / the trigger / the rail) drops the mask first, so the value it computes is a
-  // flip of what the user can SEE, and the inspector comes back to whatever it was.
-  const sidebarShown = panelsHidden ? false : wide ? sidebarOpen : narrowOpen;
-  const chooseSidebar = useCallback(
-    (open: boolean) => {
-      panelsReveal();
-      if (wide) setSidebarOpen(open);
-      else setNarrowOpen(open);
-    },
-    [wide, setSidebarOpen],
-  );
   // Tell the orchestrator its shell DOM is now in the document (it awaits shellReady
   // before wiring the delegated #postGrid/#emptyState/etc. listeners — those elements
   // are React-rendered below, not static index.html markup anymore).
@@ -292,11 +231,8 @@ export function AppShell() {
     // and a shared delay is only shared if one provider covers them all.
     <>
       <div className="flex h-svh flex-col overflow-hidden">
-        <SidebarProvider ref={shellRef} open={sidebarShown} onOpenChange={chooseSidebar} className="min-h-0 flex-1" style={{ '--sidebar-width': `${sidebar.width}px` } as CSSProperties}>
-          {/* The rail is a resize handle only while the sidebar is a column. Below the
-              breakpoint it is a slide-over whose width is the window's, so there is
-              nothing to drag (#30 v1) — and the rail would sit over the grid. */}
-          <LeftSidebar resize={wide ? sidebar.resize : undefined} />
+        <SidebarProvider className="min-h-0 flex-1">
+          <LeftSidebar />
           {/* Everything right of the sidebar: the tab band across the top, and a
               [content | inspector] row beneath it (#518). */}
           <div className="flex min-w-0 flex-1 flex-col">
@@ -310,9 +246,9 @@ export function AppShell() {
                 portaled over; the inspector toggle is a normal child and needs none. */}
             <header data-slot="titlebar-band" className="app-drag sticky top-0 z-50 flex h-[var(--tabbar-h)] shrink-0 items-center bg-[var(--tabbar-bg)] pr-[var(--window-controls-w,138px)]">
               <TabsHost />
-              {/* Inspector toggle (#243) — mirrors the sidebar trigger at the band's left
-                  end. A real child here (not portaled), so it sits just left of the window
-                  buttons and is covered by a modal scrim like everything else. */}
+              {/* Inspector toggle (#243) — the band's right-hand bookend. A real child here
+                  (not portaled), so it sits just left of the window buttons and is covered
+                  by a modal scrim like everything else. */}
               <InspectorToggle />
               {/* The window buttons are ours now (see WindowControls). Mounted here for
                   ownership, but portaled to the window's top-right above the modal scrim —
@@ -413,8 +349,9 @@ export function AppShell() {
                 }`}
                 hidden={!inspectorVisible}
               >
-                {/* Drag edge (#30). Wide layout only, for the same reason the sidebar rail
-                    is: the narrow form is an overlay pinned to the window edge. */}
+                {/* Drag edge (#30) — the inspector is the only panel with one now (#981).
+                    Wide layout only: the narrow form is an overlay pinned to the window
+                    edge, and there is nothing to drag against. */}
                 {wide && <InspectorRail resize={inspector.resize} />}
                 {/* flex-1 gives this a definite height, so the empty-state placeholder can
                     still center itself in the column; a filled panel just overflows it into

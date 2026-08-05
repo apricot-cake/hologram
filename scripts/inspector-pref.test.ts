@@ -130,7 +130,7 @@ describe('main: 許可キーと get-prefs', () => {
     expect(getPrefs().inspectorOpen).toBeNull();
   });
 
-  // config.json can be hand-edited by a person = non-boolean values can end up in there. Fall back to the same handling as sidebarOpen.
+  // config.json can be hand-edited by a person = non-boolean values can end up in there. Fall back to the same handling as the other stored toggles.
   test('真偽値でない値は null へ倒す', () => {
     configJson = JSON.stringify({ inspectorOpen: 'false' });
     expect(getPrefs().inspectorOpen).toBeNull();

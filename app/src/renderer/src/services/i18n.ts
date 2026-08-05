@@ -36,7 +36,6 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     kindImage: '取り込み画像',
     kindBookmark: 'ブックマーク',
     tipInfo: '詳細',
-    toggleSidebar: 'サイドバー',
     toggleInspector: '詳細パネル',
     scrollToTop: '最上部へ戻る',
     inspectorEmpty: '項目を選択してください',
@@ -300,7 +299,6 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     // ストリップ双方で使う1語ラベル。
     browseTimeline: 'タイムライン',
     // Sidebar/inspector width drag (#30) — the handle's screen-reader name.
-    resizeSidebar: 'サイドバーの幅を変更',
     resizeInspector: 'インスペクタの幅を変更',
     // Saved searches (#40) — the sidebar group, the active bar's save button.
     promptOk: 'OK',
@@ -671,7 +669,7 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     timelineReadMore: '続きを読む',
     displaySize: 'サイズ',
     displayPanels: 'サイドバーと詳細パネル',
-    displayPanelsHint: 'サイドバーだけなら Ctrl+B、両方まとめてなら Ctrl+Shift+B',
+    displayPanelsHint: 'Ctrl+Shift+B でまとめて切り替え',
     // Quick view (#143) — no visible heading is drawn, so this is screen-reader only
     quickViewTitle: 'クイックビュー',
     // 比較ビュー (#82) — 見出しはスクリーンリーダー専用、閉じるボタンはアイコンのみ
@@ -858,7 +856,6 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     kindImage: 'Imported images',
     kindBookmark: 'Bookmarks',
     tipInfo: 'Details',
-    toggleSidebar: 'Sidebar',
     toggleInspector: 'Details panel',
     scrollToTop: 'Back to top',
     inspectorEmpty: 'Select an item',
@@ -1111,7 +1108,6 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     browsePosters: 'Posters',
     browseTimeline: 'Timeline',
     // Sidebar / inspector drag-resize (#30) — the handles' accessible names.
-    resizeSidebar: 'Resize sidebar',
     resizeInspector: 'Resize inspector',
     // Saved searches (#40) — the sidebar group + the activebar save button.
     promptOk: 'OK',
@@ -1464,7 +1460,7 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     timelineReadMore: 'Show more',
     displaySize: 'Size',
     displayPanels: 'Sidebar and details panel',
-    displayPanelsHint: 'Ctrl+B for the sidebar alone, Ctrl+Shift+B for both',
+    displayPanelsHint: 'Ctrl+Shift+B toggles both',
     // Quick view (#143) — no visible heading, so this is the screen-reader name only
     quickViewTitle: 'Quick view',
     // Compare view (#82) — heading is screen-reader only, close button is icon-only

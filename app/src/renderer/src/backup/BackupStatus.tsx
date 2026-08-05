@@ -166,27 +166,22 @@ export function BackupStatus() {
   // with no backup `dir` configured — the startup check runs independent of backup config).
   const m = deriveIntegrityModel(integrityRef.current) || deriveModel(cfgRef.current, syncingRef.current);
   if (!m) return null;
+  // The full state (and the second line "done" carries when it has run) goes in the
+  // tooltip, because the rail is the only form the sidebar has now (#981).
+  const full = [m.text, m.time, m.title].filter(Boolean).join(' — ');
   return (
-    // max-w keeps a long state string from widening the sidebar footer; the label
-    // truncates instead. group-data-[collapsible=icon]:hidden keeps this out of the rail
-    // — a deliberate choice (#678), not a space constraint: the rail's scope is the 5
-    // fixed destinations only, and this status readout is ambient state, not a
-    // destination. At 72px there is slightly more room than the old 48px, but not enough
-    // for icon + status word (+ sometimes a relative-timestamp second line) without
-    // clutter, and a labelless icon-only stand-in would itself contradict #678's own rule
-    // against unlabeled rail icons. So: expanded column only.
-    <span data-slot="backup-status" title={m.title || ''} className={`ml-2 inline-flex max-w-[150px] items-center gap-[5px] overflow-hidden px-2 text-[11px] whitespace-nowrap text-[var(--text-muted)] group-data-[collapsible=icon]:hidden ${TONE[m.kind]}`}>
+    // #678 hid this in the rail and showed it in the expanded column: the rail's scope is
+    // the fixed destinations, and a status readout is ambient state, not a destination.
+    // #981 removed the column, so that rule would have made this permanently invisible —
+    // taking the DB-integrity / orphan warning's only surface with it. It shows in the
+    // rail instead, as an icon. That does not reopen #678's ban on unlabeled rail icons:
+    // the ban is about DESTINATIONS, whose names you cannot guess from a glyph and which
+    // you are meant to click; this one is a state light with nowhere to go, and its words
+    // are one hover away. Desktop apps put ambient sync state exactly here — a small
+    // always-visible indicator with the detail on hover (VS Code's and Obsidian's status
+    // bars, the OneDrive / Dropbox tray icon).
+    <span data-slot="backup-status" title={full} aria-label={full} className={`mx-auto inline-flex size-8 shrink-0 items-center justify-center rounded-md text-[var(--text-muted)] ${TONE[m.kind]}`}>
       {m.kind === 'done' ? <IconDone /> : m.kind === 'syncing' ? <IconSync /> : <IconWarn />}
-      {m.kind === 'done' ? (
-        // "Done" alone carries a second line (when it ran), so it stacks; the other two are
-        // one line and sit straight in the row.
-        <span className="flex min-w-0 flex-col leading-[1.2]">
-          <span className="truncate">{m.text}</span>
-          {m.time ? <span className="truncate text-[9.5px] text-[var(--text-subtle)]">{m.time}</span> : null}
-        </span>
-      ) : (
-        <span className="truncate">{m.text}</span>
-      )}
     </span>
   );
 }

@@ -15,9 +15,10 @@
 // should return the original combination — which doesn't hold for an implementation that keeps
 // a separate snapshot in memory. That's what pins down the implementation choice itself here.
 //
-// Key detection (Ctrl+Shift+B) is checked separately because its counterpart Ctrl+B lives in a
-// different file (SidebarProvider in components/ui/sidebar.tsx) — the two handlers end up
-// contending for the same physical key, and whether Shift is held is the only dividing line.
+// Key detection (Ctrl+Shift+B) is checked separately because the plain chord used to be a
+// second handler on the same physical key (SidebarProvider's Ctrl+B, retired with the
+// expanded sidebar in #981). Shift is still the dividing line this guard has to enforce:
+// nothing owns Ctrl+B now, and swallowing it here would silently claim a free key.
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { IpcContext } from '../app/src/main/ipc-context';
 import { register as registerConfigIpc } from '../app/src/main/ipc-config';
@@ -114,12 +115,11 @@ describe('main: 許可キーと get-prefs', () => {
     expect(getPrefs().panelsHidden).toBeNull();
   });
 
-  // The bulk state and each panel's state are saved independently — restoring by looking at only one of them isn't possible.
-  test('各パネルの状態と同時に持てる', () => {
-    setPref('sidebarOpen', true);
+  // The bulk state and the inspector's own state are saved independently — restoring by looking at only one of them isn't possible. (#981: the sidebar no longer has a state of its own; the mask is the only thing that hides it.)
+  test('パネル自身の状態と同時に持てる', () => {
     setPref('inspectorOpen', false);
     setPref('panelsHidden', true);
-    expect(getPrefs()).toMatchObject({ sidebarOpen: true, inspectorOpen: false, panelsHidden: true });
+    expect(getPrefs()).toMatchObject({ inspectorOpen: false, panelsHidden: true });
   });
 });
 
@@ -178,23 +178,21 @@ describe('renderer: 一括状態の保存', () => {
 // state while covering them. An implementation that keeps a separate snapshot loses track of
 // the combination the instant that snapshot evaporates — the "can restore across a restart" test below would fail.
 describe('renderer: マスクは各パネルの状態を書き換えない', () => {
-  // The combination right before covering: sidebar open, detail panel closed (both tipped to
-  // the side opposite their defaults, so a restore that merely fell back to defaults isn't misread as "restored").
+  // The state right before covering: the detail panel closed — tipped to the side opposite
+  // its default, so a restore that merely fell back to the default isn't misread as "restored".
   test('隠している間もパネル自身の保存値はそのまま', async () => {
     const inspector = await freshInspector();
     const panels = await freshPanels();
     inspector.setOpen(false);
-    setPref('sidebarOpen', true);
     panels.setHidden(true);
     expect(inspector.isOpen()).toBe(false);
-    expect(getPrefs()).toMatchObject({ sidebarOpen: true, inspectorOpen: false, panelsHidden: true });
+    expect(getPrefs()).toMatchObject({ inspectorOpen: false, panelsHidden: true });
   });
 
   test('隠す → 再起動 → 戻す で元の組み合わせが返る', async () => {
     const inspector = await freshInspector();
     const panels = await freshPanels();
     inspector.setOpen(false);
-    setPref('sidebarOpen', true);
     panels.setHidden(true);
 
     vi.resetModules(); // Restart (only localStorage and config.json survive)
@@ -207,7 +205,6 @@ describe('renderer: マスクは各パネルの状態を書き換えない', () 
     panels2.reveal();
     expect(panels2.isHidden()).toBe(false);
     expect(inspector2.isOpen()).toBe(false);
-    expect(getPrefs().sidebarOpen).toBe(true);
   });
 });
 
@@ -247,8 +244,8 @@ describe('renderer: 起動時の突き合わせ（config.json が勝つ）', () 
   });
 });
 
-// Ctrl+Shift+B. Its counterpart Ctrl+B lives on the SidebarProvider side, so if the boundary
-// (whether Shift is held) isn't enforced here, the two shortcuts fire at the same time.
+// Ctrl+Shift+B, and only that. The plain chord is nobody's since #981, which makes the
+// boundary easier to lose sight of than when a second handler was there to collide with.
 describe('renderer: Ctrl+Shift+B の判定', () => {
   const key = (init: Partial<KeyboardEvent> & { key: string }) => {
     let prevented = false;
@@ -276,7 +273,7 @@ describe('renderer: Ctrl+Shift+B の判定', () => {
     expect(panels.isHidden()).toBe(true);
   });
 
-  test('Shift 無しは相方（サイドバー単体）のもの＝ここは手を出さない', async () => {
+  test('Shift 無しには手を出さない（#981 以降は誰のものでもない＝黙って奪わない）', async () => {
     const panels = await freshPanels();
     const k = key({ key: 'b', ctrlKey: true });
     panels.handleShortcutPanelsKey(k.ev);

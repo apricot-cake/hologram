@@ -1,12 +1,12 @@
-// The left sidebar's default labeled rail (#678) — confirmed with a real pointer/real keys.
+// The left sidebar — a labeled rail, and nothing else (#678 made it the default, #981 made
+// it the only form). Confirmed with a real pointer/real keys.
 //
 // #628's geometry invariants (shell-axes.spec.ts) and #245's bulk toggle
-// (scripts/panels-pref.test.ts's Ctrl+Shift+B check) are not duplicated here — that the
-// existing suites still pass is confirmed separately (done at step 9, running raw
-// `npm run test:e2e`).
-// What this file looks at is specific to #678: a fresh profile's first render,
-// discoverability without hovering, user-generated groups being hidden on the rail, and
-// Ctrl+B round-tripping.
+// (scripts/panels-pref.test.ts's Ctrl+Shift+B check) are not duplicated here.
+// What this file looks at: the first render, discoverability without hovering, the rail
+// carrying no user-generated list of its own, the flyouts that hold those lists instead,
+// and the absence of every route the expanded column used to have (Ctrl+B, a trigger
+// button, a drag edge, a width-linked reshape).
 import path from 'node:path';
 import { expect, test } from '../lib/harness.ts';
 
@@ -24,10 +24,7 @@ function seedFolderAndSavedSearch({ saveFolder }: { saveFolder: string }) {
   sqlite.close();
 }
 
-// harness.ts's launch() never writes sidebarOpen into config.json (only the three keys
-// saveFolder / extensionId / theme), so a plain launchHologram() stands in for "a fresh
-// profile that has never been toggled".
-test('新規プロファイルの初回起動はラベル付きレール（受け入れ条件1・2）', async ({ launchHologram }) => {
+test('初回起動はラベル付きレール（#678 受け入れ条件1・2）', async ({ launchHologram }) => {
   const { page } = await launchHologram();
 
   await expect(page.locator('[data-slot="sidebar"]')).toHaveAttribute('data-state', 'collapsed');
@@ -65,29 +62,20 @@ test('新規プロファイルの初回起動はラベル付きレール（受�
   await expect(page.locator('[data-slot="menu-label"]')).toHaveText(Object.values(expectedLabels));
 });
 
-test('ユーザー生成グループはレールで隠れ、展開すると出る（受け入れ条件3）', async ({ launchHologram }) => {
+test('ユーザー生成グループはレールに並ばない（#678 受け入れ条件3 / #981）', async ({ launchHologram }) => {
   const { page } = await launchHologram({ seed: seedFolderAndSavedSearch });
 
-  const folderRow = page.locator('[data-folder-id="f-a"]');
-  const savedRow = page.locator('[data-slot="sidebar-menu-button"]', { hasText: '保存検索テスト' });
-
-  // Rail (default): present in the DOM but not visible.
+  // #678 hid these rows behind a CSS switch that the expanded column turned off. With no
+  // column left (#981) they are not rendered at all until a flyout opens — so this asserts
+  // "not in the document", which the old "attached but invisible" could not distinguish.
   await expect(page.locator('[data-slot="sidebar"]')).toHaveAttribute('data-state', 'collapsed');
-  await expect(folderRow).toBeAttached();
-  await expect(folderRow).not.toBeVisible();
-  await expect(savedRow).toBeAttached();
-  await expect(savedRow).not.toBeVisible();
-
-  // Expanded: both are visible.
-  await page.keyboard.press('Control+b');
-  await expect(page.locator('[data-slot="sidebar"]')).toHaveAttribute('data-state', 'expanded');
-  await expect(folderRow).toBeVisible();
-  await expect(savedRow).toBeVisible();
+  await expect(page.locator('[data-folder-id="f-a"]')).toHaveCount(0);
+  await expect(page.locator('[data-slot="sidebar-menu-button"]', { hasText: '保存検索テスト' })).toHaveCount(0);
 });
 
 // #965: hiding the groups (above) is only half the design — the rail keeps a fixed row
-// per group whose flyout carries the list, so no destination is unreachable while the
-// column is collapsed (which a narrow window does on its own, #259).
+// per group whose flyout carries the list, so no destination is out of reach. Since #981
+// this is the ONLY way to the three lists, which is what makes it load-bearing.
 test('レールのフォルダ行はフライアウトでツリーを出し、選ぶと適用して閉じる（#965）', async ({ launchHologram }) => {
   const { page } = await launchHologram({ seed: seedFolderAndSavedSearch });
   const sidebar = page.locator('[data-slot="sidebar"]');
@@ -118,16 +106,9 @@ test('レールのフォルダ行はフライアウトでツリーを出し、�
   await expect(page.locator('[data-slot="filter-chip"]')).toHaveCount(1);
   await expect(flyout).toHaveCount(0);
 
-  // …and the row for the place you are now in reads as selected — in the flyout, and in
-  // the column once it is expanded again.
+  // …and the row for the place you are now in reads as selected.
   await railRow('フォルダ').click();
   await expect(flyout.locator('[data-folder-id="f-a"] [data-slot="sidebar-menu-button"][data-active]')).toBeVisible();
-  await page.keyboard.press('Escape');
-  await expect(flyout).toHaveCount(0);
-  await page.keyboard.press('Control+b');
-  await expect(sidebar).toHaveAttribute('data-state', 'expanded');
-  // Scoped to the column: the flyout renders the same rows, outside the sidebar.
-  await expect(sidebar.locator('[data-folder-id="f-a"] [data-slot="sidebar-menu-button"][data-active]')).toBeVisible();
 });
 
 // The flyout has to be the manager too, not just a picker (#41's finalized decision D:
@@ -149,17 +130,34 @@ test('フライアウトからフォルダを作れる（#965 / #41 確定D）',
   await expect.poll(async () => (await page.evaluate(async () => (await window.hologram.getFolders()).folders.map((f) => f.name))).includes('新しい入れ物')).toBe(true);
 });
 
-test('Ctrl+B は同一セッション内で往復する（受け入れ条件4の往復半分）', async ({ launchHologram }) => {
-  const { page } = await launchHologram();
+// #981's acceptance conditions, stated as the absence of the old routes. Written as one
+// case because they are one claim — there is no second form to reach, by any means.
+test('展開する手段が無い（#981）', async ({ launchHologram }) => {
+  const { app, page } = await launchHologram();
   const sidebar = page.locator('[data-slot="sidebar"]');
+  const railWidth = () => page.locator('[data-slot="sidebar-container"]').evaluate((el) => el.getBoundingClientRect().width);
 
   await expect(sidebar).toHaveAttribute('data-state', 'collapsed');
+  const width = await railWidth();
+
+  // The key that used to expand it, twice — a toggle would show on the second press even
+  // if the first were swallowed.
   await page.keyboard.press('Control+b');
-  await expect(sidebar).toHaveAttribute('data-state', 'expanded');
   await page.keyboard.press('Control+b');
   await expect(sidebar).toHaveAttribute('data-state', 'collapsed');
-  await page.keyboard.press('Control+b');
-  await expect(sidebar).toHaveAttribute('data-state', 'expanded');
+  expect(await railWidth()).toBe(width);
+
+  // The trigger button and the drag edge are gone from the DOM, not merely hidden.
+  await expect(page.locator('[data-slot="sidebar-trigger"]')).toHaveCount(0);
+  await expect(page.locator('[data-slot="sidebar-rail"]')).toHaveCount(0);
+
+  // …and the window's width does not reshape it either way (#259's retreat is gone with
+  // the form it retreated from). 720 is the window's own minimum — below shadcn's `md`,
+  // where upstream would have swapped the panel for a mobile Sheet with no opener.
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setContentSize(720, 800));
+  await expect(sidebar).toBeVisible();
+  await expect(sidebar).toHaveAttribute('data-state', 'collapsed');
+  expect(await railWidth()).toBe(width);
 });
 
 // #812: pressing a destination button resets that side's filters back to the

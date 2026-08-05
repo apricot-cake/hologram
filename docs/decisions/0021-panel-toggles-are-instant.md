@@ -34,7 +34,7 @@
 
 撤去したもの（いずれも「無効化」ではなく削除。半端に残すと次の読者が復活させる）:
 
-- `components/ui/sidebar.tsx`: sidebar-gap の `transition-[width] duration-200 ease-linear`／sidebar-container の `transition-[left,right,width] duration-200 ease-linear`／`SidebarRail` の `transition-all ease-linear`／`SidebarGroupLabel` の `transition-[margin,opacity] duration-200 ease-linear`／`sidebarMenuButtonVariants` の `transition-[width,height,padding]`。
+- `components/ui/sidebar.tsx`: sidebar-gap の `transition-[width] duration-200 ease-linear`／sidebar-container の `transition-[left,right,width] duration-200 ease-linear`／`SidebarRail` の `transition-all ease-linear`／`SidebarGroupLabel` の `transition-[margin,opacity] duration-200 ease-linear`／`sidebarMenuButtonVariants` の `transition-[width,height,padding]`。（`SidebarRail` と `SidebarTrigger` は 2026-08-06 の [ADR 0027](0027-sidebar-is-a-rail-only.md) で部品ごと撤去＝本 ADR の対象から外れた。残りは有効）
 - **ドラッグリサイズ（#30）の `in-data-[resizing=true]:transition-none` 一式**＝アニメーションが無ければドラッグがポインタに遅れようがないので、逃げ道ごと不要になった。連動して `AppShell` の `markResizing`（`data-resizing` の書き込み）と `use-panel-resize.ts` の `onGesture` オプションも削除。
 - `AppShell.tsx` の詳細パネル: `duration-[var(--dur-panel)] ease-[var(--ease-out)] animate-in fade-in slide-in-from-right-[18px]`。
 - `design-tokens.css` の `--dur-panel`＝唯一の参照が上の1行だったので、トークンごと落とした。
