@@ -26,7 +26,7 @@ export function ListRow({ m, shape, group, actions, cellRef, listThumb = 88 }: P
           m={m}
           shape={shape}
           className="relative shrink-0 self-stretch overflow-hidden rounded-l-md"
-          imgClassName="block h-full w-full cursor-zoom-in object-cover"
+          imgClassName="block h-full w-full object-cover"
           // The thumbnail column IS the list's size axis, so its width is the model's,
           // not a class — one number, driven by the display popover's slider. Its
           // height is a crop of that width, NOT the picture's own proportions: a row
