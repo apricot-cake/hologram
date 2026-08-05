@@ -36,7 +36,6 @@ import { registerScroller } from '../services/content-area.ts';
 import { hologramImageTabSource, isActive as imageViewIsActive } from '../services/image-tab.ts';
 import { isWide as isWideLayout, subscribe as layoutSubscribe } from '../services/layout-mode.ts';
 import { isHidden as panelsAreHidden, load as panelsLoad, reveal as panelsReveal, subscribe as panelsSubscribe } from '../services/panels.ts';
-import { load as privacyModeLoad } from '../services/privacy-mode.ts';
 import { load as shortcutOverridesLoad } from '../services/shortcut-registry.ts';
 import { get as storeGet, set as storeSet, subscribe as storeSubscribe } from '../services/store.ts';
 import { DEFAULT_OPEN, cachedOpen, loadOpen, persistOpen } from '../services/sidebar-pref.ts';
@@ -44,7 +43,6 @@ import { signalShellReady } from '../services/shell-ready.ts';
 import { AppToolbar } from './AppToolbar.tsx';
 import { InspectorToggle } from './InspectorToggle.tsx';
 import { LeftSidebar } from './LeftSidebar.tsx';
-import { PrivacyModeToggle } from './PrivacyModeToggle.tsx';
 import { EmptyState } from '../empty/EmptyState.tsx';
 import { LibraryLoading } from '../empty/LibraryLoading.tsx';
 import { LibraryMissingState } from '../empty/LibraryMissingState.tsx';
@@ -234,9 +232,6 @@ export function AppShell() {
   useEffect(() => {
     inspectorLoad();
     panelsLoad();
-    // #88: reconciles the cache privacy-mode.ts's module-eval already painted the
-    // <html> attribute from against config.json — same two-tier pattern, same reason.
-    privacyModeLoad();
     // #246: reconciles this app's rebindable shortcuts with whatever config.json holds —
     // no cache tier (unlike the two above), since nothing needs an answer before first
     // paint here; a rebind only matters the next time a key is actually pressed.
@@ -315,10 +310,6 @@ export function AppShell() {
                 portaled over; the inspector toggle is a normal child and needs none. */}
             <header data-slot="titlebar-band" className="app-drag sticky top-0 z-50 flex h-[var(--tabbar-h)] shrink-0 items-center bg-[var(--tabbar-bg)] pr-[var(--window-controls-w,138px)]">
               <TabsHost />
-              {/* Privacy mode toggle + indicator (#88) — sits left of the inspector toggle so
-                  it reads as its own corner-of-the-band control, and stays on screen (unlike
-                  AppToolbar's controls) no matter which destination or image tab is showing. */}
-              <PrivacyModeToggle />
               {/* Inspector toggle (#243) — mirrors the sidebar trigger at the band's left
                   end. A real child here (not portaled), so it sits just left of the window
                   buttons and is covered by a modal scrim like everything else. */}

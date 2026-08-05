@@ -52,7 +52,6 @@ import { makeImageTabController } from './image-tab-builder.ts';
 import { hologramImageTabSource } from './image-tab.ts';
 import { subscribe as subscribePostsData } from './posts-data.ts';
 import { makeTriage } from './triage-builder.ts';
-import { makePractice } from './practice-builder.ts';
 import { get as storeGet, set as storeSet, subscribe as storeSubscribe } from './store.ts';
 import { hologramIpc } from './ipc.ts';
 
@@ -299,13 +298,6 @@ export let triageHandleKey: (e: KeyboardEvent) => void;
 export let triageCurrentMedia: () => import('./triage-builder.ts').TriageMedia | null;
 export let triageListFolders: () => HologramFolder[];
 export let triageQueueCount: () => number;
-
-// Practice mode (#103) -- bindings for the toolbar button and practice/PracticeMode.tsx,
-// same deferred-assignment shape as the triage bindings above. State/pure actions live
-// in services/practice.ts (imported directly by the component); these are the
-// deps-requiring half (services/practice-builder.ts).
-export let startPractice: () => void;
-export let practiceClosePractice: () => void;
 
 // One open facet-editor popup = one nav-history entry (#144 confirmed (pending item 2): editor
 // one session, one entry). The filterbar's ValueEditor/FormEditor bracket their
@@ -1073,18 +1065,6 @@ export function endFilterEditSession(): void {
   triageCurrentMedia = triageCtl.currentMedia;
   triageListFolders = triageCtl.listFolders;
   triageQueueCount = triageCtl.queueCount;
-
-  // --- Practice mode (#103) ---
-  // Reads postGrid.getViewGroups() -- the SAME filtered/sorted/grouped card list the
-  // library grid renders right now, no separate re-filter -- and the same gallery
-  // instance (buildGroupGalleryItems) triage/lightbox/image-tab already read, so a
-  // practice image is pixel-identical to its card thumbnail.
-  const practiceCtl = makePractice({
-    buildGroupGalleryItems,
-    getViewGroups: () => postGrid.getViewGroups(),
-  });
-  startPractice = practiceCtl.startPractice;
-  practiceClosePractice = practiceCtl.closePractice;
 
   // Trash (#268). The trash draws the library's OWN cards — post-grid-builder's
   // cardModel and its label set go over verbatim — and groups its records with the

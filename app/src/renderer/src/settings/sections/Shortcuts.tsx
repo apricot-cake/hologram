@@ -26,7 +26,6 @@ const ORDER = [
   'zoom.fit',
   'zoom.actual',
   'clipboard.paste',
-  'privacy.toggle',
   'panels.toggle',
   'palette.open',
   'palette.openFulltext',

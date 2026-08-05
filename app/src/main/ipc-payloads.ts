@@ -159,8 +159,6 @@ export interface AppPrefs {
   inspectorWidth: number | null;
   /** #245: both panels above masked away at once. Independent of their own state. */
   panelsHidden: boolean | null;
-  /** #88: one-key blur over every image surface (grid/list/inspector/viewer/lightbox). */
-  privacyMode: boolean | null;
   /** #46: triage mode's manually-pinned number-key (1-9) quick tags, in slot order. */
   triagePinnedTags: string[];
   /** #207: web-search popover - which site rows "まとめて開く" targets (site ids), remembered across sessions. null = never set (defaults to every adopted site). */

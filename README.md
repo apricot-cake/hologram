@@ -58,7 +58,6 @@ Library switches between **grid** and **list**. In the grid, **square thumbnails
 Click a card's image to open a **gallery** bundling the screenshot and the original-resolution images. Multi-image posts page with `←` `→` or the arrow keys, and videos play right there. Zoom and **fit ⇄ actual size** work from the toolbar, the wheel, a double-click, or `Ctrl+0` / `Ctrl+1`.
 
 - **Pin it** — right-click → "Send to pin window" for a small frameless window that stays above everything else. Reference material beside your drawing app.
-- **Practice mode** — deals out the stills in your current filter one at a time on a timer.
 - **History (`Ctrl+H`)** — everywhere you have been, in date order, searchable, one click to go back.
 
 ### 3. Find

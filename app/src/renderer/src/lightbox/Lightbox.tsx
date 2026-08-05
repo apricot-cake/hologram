@@ -68,9 +68,6 @@ function LightboxContent({ item }: { item: LightboxItem }) {
             same arrangement as the command palette. */}
         <DialogTitle className="sr-only">{t('quickViewTitle')}</DialogTitle>
         {item.video ? (
-          // data-slot="lightbox-media" (#88): privacy mode's blur has to reach the
-          // peek too — it's the one overlay #88's hotkey guard deliberately does NOT
-          // back off from (services/privacy-mode.ts's handler comment).
           <video key={item.src} data-slot="lightbox-media" className={media} src={item.src} controls playsInline preload="metadata" />
         ) : (
           // decoding="async" (#241): the peek has no prev/next, so there is no

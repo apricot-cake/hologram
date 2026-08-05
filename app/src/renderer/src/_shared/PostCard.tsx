@@ -124,10 +124,8 @@ export function StackSheets({ shape, srcs, imgBox, imgStyle }: { shape: DisplayS
       {srcs.map((src, k) => (
         <span key={src || k} aria-hidden="true" className={cn('pointer-events-none absolute inset-0 origin-top overflow-hidden border border-[var(--border-strong)] bg-[var(--surface)] shadow-[var(--shadow-md)]', radius, k === 0 ? '-z-[2]' : '-z-[1]')} style={{ transform: k === 0 ? g.s1 : g.s2 }}>
           {src && (
-            // data-slot="post-card-stack-thumb" (#88): this is a saved image too (the
-            // 2nd/3rd peek of a multi-image group), just painted as a CSS background
-            // instead of an <img> — privacy mode's blur selector has to name it
-            // separately, an `img,video,canvas` selector would miss it entirely.
+            // data-slot="post-card-stack-thumb": a saved image too (the 2nd/3rd peek of
+            // a multi-image group), just painted as a CSS background instead of an <img>.
             <span data-slot="post-card-stack-thumb" className={cn('absolute bg-center bg-cover', imgBox, radius)} style={{ backgroundImage: `url("${src}")`, ...imgStyle }}>
               {/* Depth dim on the IMAGE only: a stepped deck of near-white line art
                   needs the tint to read as layers, but a dimmed sheet BODY would show
@@ -171,9 +169,8 @@ export function Avatar({ c, className, discClassName }: { c: AvatarModel; classN
   return (
     <div className={cn('@container flex shrink-0 items-center justify-center overflow-hidden bg-[var(--surface-3)]', className)}>
       {c.avatarSrc ? (
-        // data-slot="avatar-image" (#88): shared by every avatar in the app (post
-        // cards, poster cards, AuthorLine), so privacy mode's blur only needs this
-        // one selector to cover all of them.
+        // data-slot="avatar-image": shared by every avatar in the app (post cards,
+        // poster cards, AuthorLine), so one selector covers all of them.
         <img data-slot="avatar-image" className="block size-full object-cover" src={c.avatarSrc} alt="" loading="lazy" decoding="async" />
       ) : (
         <span
