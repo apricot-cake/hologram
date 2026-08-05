@@ -3,8 +3,7 @@
 // Both used to be `document.getElementById` lookups against ids the shell promised to
 // keep (`#mode-post`, `#postGrid`, `#posterGrid`) — the "byte-for-byte DOM contract"
 // #153 rules out. The shell renders these elements, so it hands them over instead: a
-// ref callback on the React side, a getter on the reader's side. Same shape as
-// inspector-panel.ts's registerPanelEl.
+// ref callback on the React side, a getter on the reader's side.
 //
 // The scroll ROOT is not the window: the page never scrolls, the content column does.
 // Anything that reads or writes a scroll position in the browse area goes through it.

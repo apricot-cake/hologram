@@ -14,6 +14,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, test, vi } from 'vitest';
 import { CONTENT_SIZE, justAbove, justBelow, WIDE_MIN_PX, wideOf } from '../e2e/lib/viewport.ts';
+import { SMOKE_WINDOW } from '../app/src/main/smoke-window-size.ts';
 
 const layoutModeModule = '../app/src/renderer/src/services/layout-mode.ts';
 const e2eDir = path.join(__dirname, '..', 'e2e');
@@ -55,6 +56,15 @@ describe('e2e viewport', () => {
       expect(justAbove(breakpoint) - justBelow(breakpoint)).toBe(1);
       expect(wideOf(breakpoint)).toBeGreaterThan(justAbove(breakpoint));
     }
+  });
+
+  // The app-harness scripts (scripts/test-app-*.cts) read the DOM the virtual grid actually
+  // rendered, so they are written against the wide layout just like the flow suite. Their
+  // window comes from main, which cannot import layout-mode.ts to derive the number — this is
+  // the join that keeps the literal there honest. #975: they used to run at 1100px (narrow),
+  // which only stopped mattering-in-silence once the inspector started taking a column there.
+  test('ハーネスのウィンドウも wide 側にある（#975）', () => {
+    expect(SMOKE_WINDOW.width).toBeGreaterThan(WIDE_MIN_PX);
   });
 
   test('e2e/ にブレークポイントの数値が書かれていない', () => {

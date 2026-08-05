@@ -24,8 +24,6 @@ import { get as storeGet, subscribe as storeSubscribe } from '../services/store.
 
 const subSections = (cb: () => void) => storeSubscribe('postSections', cb);
 const getSections = () => (storeGet('postSections') as HologramDateSection[] | null) ?? null;
-const subInspectorOverlay = (cb: () => void) => storeSubscribe('inspectorOverlay', cb);
-const getInspectorOverlay = () => !!storeGet('inspectorOverlay');
 const subBrowseMode = (cb: () => void) => storeSubscribe('browseMode', cb);
 const getBrowseMode = () => (storeGet('browseMode') as string | undefined) ?? 'posts';
 
@@ -36,7 +34,6 @@ const EDGE_PAD_PX = 24;
 
 export function DateJumpRail() {
   const sections = useSyncExternalStore(subSections, getSections);
-  const inspectorOverlay = useSyncExternalStore(subInspectorOverlay, getInspectorOverlay);
   const mode = useSyncExternalStore(subBrowseMode, getBrowseMode);
   // Only worth an index once there is more than one stop to jump between — a
   // single month/one page of results has nothing for the rail to do. Gated on
@@ -66,10 +63,9 @@ export function DateJumpRail() {
       timer = window.setTimeout(() => setScrolling(false), IDLE_MS);
     };
     // Proximity is measured against the RAIL's own box rather than the scroller's
-    // right edge: the rail shifts left by --inspector-w while the inspector is an
-    // overlay, and its own rect is the one thing that already knows that. Reading
-    // it per move also lets the hit zone follow a resize without an observer of
-    // its own. Because the zone contains the rail, a pointer resting ON the rail
+    // right edge: reading its rect per move lets the hit zone follow a resize
+    // without an observer of its own. Because the zone contains the rail, a
+    // pointer resting ON the rail
     // holds it up with no separate hover state — which is what lets the rail keep
     // `pointer-events: none` while idle, so it can never swallow a click or a
     // marquee drag (#484) aimed at the card behind it.
@@ -111,7 +107,6 @@ export function DateJumpRail() {
       inert={!shown}
       onFocus={() => setFocusWithin(true)}
       onBlur={() => setFocusWithin(false)}
-      style={inspectorOverlay ? { right: 'calc(var(--inspector-w) + 1.5rem)' } : undefined}
       className={cn(
         'absolute top-1/2 right-2 z-40 flex max-h-[70vh] -translate-y-1/2 flex-col gap-0.5 overflow-y-auto rounded-lg border bg-popover/90 p-1 shadow-lg backdrop-blur-sm transition-opacity duration-[var(--motion-duration-base)] ease-[var(--motion-ease-out)]',
         visible ? 'opacity-100' : 'pointer-events-none opacity-0',

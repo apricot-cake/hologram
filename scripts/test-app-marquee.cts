@@ -123,7 +123,12 @@ const evalJs = `(async () => {
   const cy = Math.round((row0[0].r.top + row0[0].r.bottom) / 2);
   const x0 = Math.round(sr.left + 6);          // the scroller's padding: empty space
   const x1 = Math.round((row0[1].r.left + row0[1].r.right) / 2);
-  out.startsOnEmptySpace = document.elementFromPoint(x0, cy) === scroller;
+  // "Not on a card" is the question, and it is the same one the grid's own press recognizer
+  // asks (_shared/VirtualGrid.tsx: a press is background unless it closest()s a cell). This
+  // used to demand the element BE the scroller, which is a stricter contract than the app
+  // has: at some widths the point lands on the grid's own wrapper — still empty space, still
+  // a background press — and the case failed while testing nothing that had changed.
+  out.startsOnEmptySpace = !document.elementFromPoint(x0, cy)?.closest('[data-slot="post-card"], [data-slot="poster-card"]');
 
   // A. plain drag selects what it touched, and nothing else
   out.expectA = expectFor(x0, cy - 5, x1, cy + 5);

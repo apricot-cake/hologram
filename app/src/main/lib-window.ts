@@ -31,6 +31,7 @@ import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 
 import { appIndexUrl, isAppRendererUrl } from './renderer-files.ts';
+import { SMOKE_WINDOW } from './smoke-window-size.ts';
 import { readConfig, writeConfig } from './lib-config.ts';
 import { resolveDevServerUrl } from './dev-server-guard.ts';
 import { isViewerImageName } from './library-files.ts';
@@ -267,8 +268,10 @@ function createWindow(show = true, opts?: { secondary?: boolean }) {
     }
   }
   const win = new BrowserWindow({
-    width: (sb && sb.width) || 1100,
-    height: (sb && sb.height) || 820,
+    // A harness run gets a wide window rather than the ordinary default — see
+    // smoke-window-size.ts for why the size is part of the test contract.
+    width: (sb && sb.width) || (smoke ? SMOKE_WINDOW.width : 1100),
+    height: (sb && sb.height) || (smoke ? SMOKE_WINDOW.height : 820),
     ...(sb && Number.isFinite(sb.x) ? { x: sb.x, y: sb.y } : {}),
     ...(cascadeBounds ? cascadeBounds : {}),
     minWidth: 720,
@@ -296,6 +299,12 @@ function createWindow(show = true, opts?: { secondary?: boolean }) {
     },
   });
   windows.push(win);
+  // A harness window is sized AFTER creation, not by the constructor above: Electron clamps
+  // the constructor's size to the display's work area, and CI runners are 1024x768 — the
+  // requested width silently arrives narrow, which is the layout none of the harness cases
+  // are written against (measured on CI: 1440 asked, 1024 given). setContentSize is not
+  // clamped that way, which is the same route e2e/lib/harness.ts already takes.
+  if (smoke) win.setContentSize(SMOKE_WINDOW.width, SMOKE_WINDOW.height);
   win.on('closed', () => {
     const i = windows.indexOf(win);
     if (i >= 0) windows.splice(i, 1);
