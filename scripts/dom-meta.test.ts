@@ -314,13 +314,13 @@ describe('Misskey: 画面から読む投稿情報', () => {
     expect(typeof misskey.capture.extractDomMeta).toBe('function');
   });
 
-  test('通常のノート＝作者名・fediverse 形式のスクリーンネーム・返信/リノート/リアクション数', () => {
+  test('通常のノート＝作者名・fediverse 形式のスクリーンネーム・返信/リノート/リアクション合計', () => {
     expect(read('noteNormal')).toEqual({
       displayName: 'Alice Example',
       screenName: 'alice@misskey.example',
       replies: 12,
       reposts: 34,
-      likes: 56,
+      likes: 56, // 40 + 10 + 6（うち1件はカスタム絵文字 <img alt> のチップ）
     });
   });
 
@@ -337,7 +337,7 @@ describe('Misskey: 画面から読む投稿情報', () => {
     expect(read('noteNoCounts').screenName).toBe('bob');
   });
 
-  // showReactionsCount の既定は false = 描かれていない数値は 0 ではなく null。
+  // 描かれていない数値・チップの無いリアクションは 0 ではなく null（#916）。
   test('数値が描かれていない欄は置かない', () => {
     const meta = read('noteNoCounts');
     expect('replies' in meta).toBe(false);
@@ -345,9 +345,9 @@ describe('Misskey: 画面から読む投稿情報', () => {
     expect('likes' in meta).toBe(false);
   });
 
-  // フォーク版の「既にリアクション済み」アイコンは class="ti-filled ti-filled-heart" で
-  // リテラルな "ti-heart" を含まない＝部分一致でしか拾えない。
-  test('既にリアクション済みのアイコン（ti-filled ti-filled-heart）でも拾える', () => {
+  // フォーク版の「既にリアクション済み」アイコン（class="ti-filled ti-filled-heart"）は
+  // <i> を持つのでチップと誤認されず合計に混ざらない＝実際のチップ（<i> 無し）1件分だけ拾う（#916）。
+  test('既にリアクション済みのアイコンボタンはチップと誤認しない', () => {
     expect(read('noteAlreadyReacted').likes).toBe(9);
   });
 
