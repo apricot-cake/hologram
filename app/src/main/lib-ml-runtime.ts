@@ -22,7 +22,7 @@ import path from 'node:path';
 
 import { configDir } from './native-host.ts';
 import { readConfig } from './lib-config.ts';
-import type { MlBackendChoice, MlChildMessage, MlRequest } from './lib-ml-protocol.ts';
+import type { MlBackendChoice, MlChildMessage, MlRequest, MlSessionFeed, MlTensorValue } from './lib-ml-protocol.ts';
 
 /** Where the model manager (#832) puts models. Machine-local, never inside the save folder. */
 export function modelsRoot(): string {
@@ -197,15 +197,46 @@ export interface RunMlPipelineOptions {
   skipGate?: boolean;
 }
 
+/**
+ * The one containment rule this module enforces: a caller may only point at a
+ * directory the model manager (#832) owns. Shared by both口 so the bare-session
+ * exception (#50) cannot reach anywhere the pipeline口 could not.
+ */
+function checkedModelDir(modelDir: string, skipGate: boolean | undefined): string {
+  const dir = path.resolve(modelDir);
+  const root = path.resolve(modelsRoot());
+  if (!skipGate && dir !== root && !dir.startsWith(root + path.sep)) {
+    throw new Error(`model directory is outside ${root}`);
+  }
+  return dir;
+}
+
 /** Run one transformers.js pipeline call in the child, starting it if needed. */
 export async function runMlPipeline(opts: RunMlPipelineOptions): Promise<any> {
   await startMlRuntime({ skipGate: opts.skipGate });
-  const dir = path.resolve(opts.modelDir);
-  const root = path.resolve(modelsRoot());
-  if (!opts.skipGate && dir !== root && !dir.startsWith(root + path.sep)) {
-    throw new Error(`model directory is outside ${root}`);
-  }
+  const dir = checkedModelDir(opts.modelDir, opts.skipGate);
   return send({ id: nextId++, kind: 'run', task: opts.task, modelDir: dir, input: opts.input, pipelineOptions: opts.pipelineOptions, callOptions: opts.callOptions });
+}
+
+export interface RunMlSessionOptions {
+  /** Absolute directory under modelsRoot(). */
+  modelDir: string;
+  /** The graph file inside it, e.g. 'model.onnx'. */
+  modelFile: string;
+  feeds: Record<string, MlSessionFeed>;
+  /** Test/verification only: run without the #830 opt-in check. */
+  skipGate?: boolean;
+}
+
+/**
+ * Run one bare ONNX graph in the child. See MlSessionRequest for why this口
+ * exists at all — it is an exception to ADR 0026's "everything goes through
+ * transformers.js", not a second way of doing the same thing.
+ */
+export async function runMlSession(opts: RunMlSessionOptions): Promise<Record<string, MlTensorValue>> {
+  await startMlRuntime({ skipGate: opts.skipGate });
+  const dir = checkedModelDir(opts.modelDir, opts.skipGate);
+  return send({ id: nextId++, kind: 'session', modelDir: dir, modelFile: opts.modelFile, feeds: opts.feeds });
 }
 
 /** Round trip to the child without touching a model — used to show it is answering while a session runs. */

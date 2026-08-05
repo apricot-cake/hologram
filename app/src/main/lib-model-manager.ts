@@ -21,13 +21,14 @@ import path from 'node:path';
 
 import { aiFeaturesEnabled, modelsRoot } from './lib-ml-runtime.ts';
 import { fetchModelFile } from './lib-model-fetch.ts';
-import { findModelEntry, modelDirFor, modelFileUrl, MODEL_REGISTRY, type ModelRegistryEntry } from './lib-model-registry.ts';
+import { findModelEntry, modelDirFor, modelFileUrl, MODEL_REGISTRY, type ModelPurpose, type ModelRegistryEntry } from './lib-model-registry.ts';
 
 export type ModelState = 'absent' | 'partial' | 'complete';
 
 export interface ModelStatus {
   id: string;
   rev: string;
+  purpose: ModelPurpose;
   state: ModelState;
   bytesDone: number;
   bytesTotal: number;
@@ -91,7 +92,7 @@ function statusFor(entry: ModelRegistryEntry, root: string): ModelStatus {
   }
   const bytesTotal = entry.files.reduce((sum, f) => sum + f.bytes, 0);
   const state: ModelState = present === 0 ? 'absent' : present === entry.files.length ? 'complete' : 'partial';
-  return { id: entry.id, rev: entry.rev, state, bytesDone, bytesTotal, licenseNote: entry.licenseNote, installedRev: installedOtherRev(entry, root) };
+  return { id: entry.id, rev: entry.rev, purpose: entry.purpose, state, bytesDone, bytesTotal, licenseNote: entry.licenseNote, installedRev: installedOtherRev(entry, root) };
 }
 
 /** The registry as shipped in code — what Settings' AI Features model list renders. */
@@ -146,6 +147,7 @@ export function downloadModel(id: string, opts: DownloadModelOptions = {}): Prom
         opts.onProgress?.({
           id: entry.id,
           rev: entry.rev,
+          purpose: entry.purpose,
           state: 'partial',
           bytesDone: bytesFromEarlierFiles + p.bytesDone,
           bytesTotal,
