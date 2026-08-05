@@ -715,28 +715,38 @@ describe('makeCardModel（カード1枚のビューモデル）', () => {
   // #365: a text-only post has no image to measure or learn from at all (shotW/H
   // is always 0, and there's no capture to have populated the aspect cache) — the
   // original-aspect grid instead reserves height from the body's own length.
-  describe('本文からの高さ予約（テキストのみ、#365）', () => {
+  // #953 narrows that to the state which still DRAWS the plate: with the info block
+  // on, the body is a line in the card body and the card is exactly as tall as the
+  // text, so there is no picture-shaped box left to reserve.
+  describe('本文からの高さ予約（テキストのみ、#365 → #953）', () => {
     // image/mediaType cleared, captureId swapped so the stub aspect cache (keyed
     // on the baseline's 'capX') can't accidentally supply an answer either.
     const textOnlyBase = { ...p, image: '', mediaType: null, shotW: 0, shotH: 0, captureId: 'noimg' };
 
-    test('image/video/media が無ければ本文の長さから段階的なアスペクト比を選ぶ', () => {
-      expect(model({ ...textOnlyBase, text: 'short' }).aspRatio).toBe('4/3');
-      expect(model({ ...textOnlyBase, text: 'x'.repeat(150) }).aspRatio).toBe('1/1');
-      expect(model({ ...textOnlyBase, text: 'x'.repeat(300) }).aspRatio).toBe('3/4');
-      expect(model({ ...textOnlyBase, text: 'x'.repeat(500) }).aspRatio).toBe('2/3');
+    test('情報表示 OFF（プレートを描く状態）では本文の長さから段階的なアスペクト比を選ぶ', () => {
+      withShape({ info: false }, () => {
+        expect(model({ ...textOnlyBase, text: 'short' }).aspRatio).toBe('4/3');
+        expect(model({ ...textOnlyBase, text: 'x'.repeat(150) }).aspRatio).toBe('1/1');
+        expect(model({ ...textOnlyBase, text: 'x'.repeat(300) }).aspRatio).toBe('3/4');
+        expect(model({ ...textOnlyBase, text: 'x'.repeat(500) }).aspRatio).toBe('2/3');
+      });
+    });
+
+    test('情報表示 ON では空＝本文はカード本体に書かれ、画像枠を予約しない（#953）', () => {
+      expect(model({ ...textOnlyBase, text: 'short' }).aspRatio).toBe('');
+      expect(model({ ...textOnlyBase, text: 'x'.repeat(500) }).aspRatio).toBe('');
     });
 
     test('正方形サムネ・リストでは（テキストのみでも）空のまま', () => {
-      withShape({ square: true }, () => expect(model({ ...textOnlyBase, text: 'x'.repeat(500) }).aspRatio).toBe(''));
-      withShape({ list: true }, () => expect(model({ ...textOnlyBase, text: 'x'.repeat(500) }).aspRatio).toBe(''));
+      withShape({ square: true, info: false }, () => expect(model({ ...textOnlyBase, text: 'x'.repeat(500) }).aspRatio).toBe(''));
+      withShape({ list: true, info: false }, () => expect(model({ ...textOnlyBase, text: 'x'.repeat(500) }).aspRatio).toBe(''));
     });
 
     test('画像がある投稿には適用しない（既存の画像あり表示は変わらない）', () => {
-      expect(model({ ...p, shotW: 0, shotH: 0, captureId: 'noimg' }).aspRatio).toBe('');
+      withShape({ info: false }, () => expect(model({ ...p, shotW: 0, shotH: 0, captureId: 'noimg' }).aspRatio).toBe(''));
     });
 
-    test('hasThumb は false（PostCard がプレートを描く合図）', () => {
+    test('hasThumb は false（PostCard が本文の置き場を選ぶ合図）', () => {
       expect(model(textOnlyBase).hasThumb).toBe(false);
     });
   });
