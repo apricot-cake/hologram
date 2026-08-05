@@ -77,6 +77,7 @@ jobs:
           done <<< "$files"
           echo "docs_only=$docs_only" >> "$GITHUB_OUTPUT"
       - name: Setup Node
+        id: setup-node
         if: steps.docs-only.outputs.docs_only != 'true'
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -85,9 +86,26 @@ jobs:
           cache-dependency-path: |
             package-lock.json
             extension/package-lock.json
+      # actions/setup-node's cache:npm above only persists npm's download cache,
+      # not the installed tree — every run still walks and links node_modules from
+      # scratch. This restores the tree itself. No restore-keys: a partial match on
+      # a stale lockfile would silently resurrect an old dependency tree on a PR
+      # that changed one, which is worse than the cache miss it saves (#935).
+      - name: Cache node_modules
+        if: steps.docs-only.outputs.docs_only != 'true'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            node_modules
+            extension/node_modules
+          key: ${{ runner.os }}-node-${{ steps.setup-node.outputs.node-version }}-modules-${{ hashFiles('package-lock.json', 'extension/package-lock.json') }}
       # Same entry point as ci.yml — see scripts/setup.cts for why a plain
       # `npm ci` does not produce a working tree. It also builds the extension,
       # which every browser test below stages from the verified Chrome release output.
+      # Runs even on a cache hit (#935): setup.cts also restores Electron's runtime
+      # and installs extension/'s separate lockfile, neither of which the
+      # node_modules cache above covers on its own. `npm install` against an
+      # already-complete tree returns in seconds, so a hit still pays off.
       - name: Install dependencies
         if: steps.docs-only.outputs.docs_only != 'true'
         run: npm run setup
@@ -97,9 +115,26 @@ jobs:
       - name: Build app bundles
         if: steps.docs-only.outputs.docs_only != 'true'
         run: npm run build --workspace=app
+      # Playwright's browser build is tied to the resolved @playwright/test version,
+      # not the ^-range in package.json — read it from the lockfile so the cache key
+      # tracks what actually gets installed.
+      - name: Resolve Playwright version
+        id: playwright-version
+        if: steps.docs-only.outputs.docs_only != 'true'
+        shell: bash
+        run: |
+          version=$(node -p "require('./package-lock.json').packages['node_modules/@playwright/test'].version")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: Cache Playwright browsers
+        if: steps.docs-only.outputs.docs_only != 'true'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~\AppData\Local\ms-playwright
+          key: ${{ runner.os }}-playwright-${{ steps.playwright-version.outputs.version }}
       # setup installs with --ignore-scripts, so Playwright's postinstall never
       # runs and no browser is fetched. Chromium only: every browser test here
-      # loads an unpacked MV3 extension, which is Chromium-only anyway.
+      # loads an unpacked MV3 extension, which is Chromium-only anyway. Runs even
+      # on a cache hit — it returns immediately when the browser is already there.
       - name: Install Playwright Chromium
         if: steps.docs-only.outputs.docs_only != 'true'
         run: npx playwright install chromium
