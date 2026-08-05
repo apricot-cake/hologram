@@ -1,10 +1,10 @@
 name: Set up app tests
 description: >-
-  Everything an app-tests shard needs before it can run a test layer: the
-  docs-only / fail-fast decision, the dependency tree, the app bundles and a
-  Playwright Chromium. Extracted from app-tests.yml when that job was split into
-  parallel shards (#937) — the steps below are identical for every shard, so
-  they live here once instead of three times.
+  Everything an app-tests shard needs before it can run its tests: the docs-only
+  decision, the dependency tree, the app bundles and a Playwright Chromium.
+  Extracted from app-tests.yml when that job was split into parallel shards
+  (#937) — the steps below are identical for every shard, so they live here once
+  instead of three times.
 
   Every shard pays this preparation again rather than receiving it as an
   artifact. That is deliberate, and measured (#937, run 30996640294): the only
@@ -32,9 +32,6 @@ outputs:
   docs_only:
     description: '"true" when a pull request touches nothing but *.md and docs/**.'
     value: ${{ steps.docs-only.outputs.docs_only }}
-  fail_fast:
-    description: '"true" on pull_request — later layers in a shard stop at the first red one.'
-    value: ${{ steps.docs-only.outputs.fail_fast }}
 
 runs:
   using: composite
@@ -44,13 +41,11 @@ runs:
     # skipped required workflow leaves the check "expected" forever and blocks
     # the merge instead (#928).
     #
-    # Also decides `fail_fast` here, for the same reason: every later layer's
-    # `if` needs to know whether this run is a pull_request. A PR is fixed and
-    # re-pushed in minutes, so stopping at the first red layer gets a developer
-    # to the fix faster instead of burning runner time on layers they won't read
-    # before they push again. push/schedule/workflow_dispatch keep running every
-    # layer after a failure — see the comment on the shards in app-tests.yml
-    # (#936).
+    # This step also used to decide a `fail_fast` output, which made the later
+    # layers in a shard stop at the first red one on a pull request (#936). #968
+    # removed it: a shard is now a single step — one worker pool, or the
+    # Playwright run — so there is no "later layer" left for it to skip, and the
+    # pool has always run every script it was given regardless (#933).
     - name: Detect docs-only change
       id: docs-only
       # windows-latest's default shell is pwsh, not bash — this script is POSIX sh.
@@ -58,14 +53,7 @@ runs:
       env:
         GH_TOKEN: ${{ inputs.github-token }}
       run: |
-        if [ "${{ github.event_name }}" = "pull_request" ]; then
-          fail_fast=true
-        else
-          fail_fast=false
-        fi
-        echo "fail_fast=$fail_fast" >> "$GITHUB_OUTPUT"
-
-        if [ "$fail_fast" != "true" ]; then
+        if [ "${{ github.event_name }}" != "pull_request" ]; then
           echo "docs_only=false" >> "$GITHUB_OUTPUT"
           exit 0
         fi

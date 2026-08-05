@@ -20,12 +20,27 @@ name: App tests
 # extension was ever checked BEFORE a merge. The nightly run stays, as the backstop
 # for anything that only breaks with a day's worth of changes stacked up.
 #
-# The layers run as parallel SHARDS (#937). One shard per layer, because the layers
-# were already the natural seam and a job name then says which one is red. The split
-# is deliberately three ways and no finer: preparation costs ~72s per shard and the
-# Free plan allows 20 concurrent jobs across the account, which five or six
-# simultaneous pull requests can already reach — see the shard comments below and
+# The work runs as parallel SHARDS (#937), three of them and no finer: preparation
+# costs ~55s per shard and the Free plan allows 20 concurrent jobs across the
+# account, which five or six simultaneous pull requests can already reach — see
 # .github/actions/setup-app-tests for the measurements behind both numbers.
+#
+# #937 drew the shard boundaries along the test LAYERS, because that was the natural
+# seam and a job name then said which layer was red. #968 redrew them, because once
+# the extension and overlay scripts joined the harnesses in one worker pool
+# (scripts/run-app-tests.cts) the layers stopped being the expensive unit: the
+# harness layer alone was then the longest atom, so keeping it whole set the wall
+# clock no matter how the other layers were arranged. The split now is
+#
+#   two shards over the POOLED scripts — the 42 harnesses, the 6 extension e2e and
+#   the 2 overlay tests, taken every other entry so neither shard collects all the
+#   long ones — plus one shard for the Playwright flows, which cannot join a pool
+#   (playwright.config.ts keeps `workers: 1` because those cases drive a visible
+#   window with real pointer input, and that is exactly what a loaded machine
+#   breaks).
+#
+# What a job name no longer says, the log does: the pool prints one `ok`/`FAIL`
+# line per script and repeats the failing names on its last line (#829).
 on:
   push:
     branches: [main]
@@ -46,17 +61,25 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Shard 1 — 72s of the 258s of test time measured on 2026-08-05 (run 30996640294),
-  # after #933 made the 42 harnesses run four at a time. Before that this layer alone
-  # was 278s and sharding would have bought almost nothing, which is why #937 waited
-  # for it.
-  harnesses:
-    name: 'Shard: Electron harnesses'
+  # Shards 1 and 2 — every script that boots its own sandboxed process, four at a
+  # time inside each shard. The scripts are invoked through the aggregator rather
+  # than through their npm scripts, which would each rebuild the extension that
+  # `npm run setup` already built.
+  pooled:
+    name: 'Shard: app + extension tests (${{ matrix.shard }}/2)'
     runs-on: windows-latest
     # Locally the whole suite is ~2.5 minutes of tests; the ceiling is set well
     # above the expected runner time only to stop a hung Electron from burning the
     # 6-hour default.
     timeout-minutes: 30
+    strategy:
+      # Both shards run to the end even when the other one goes red: a nightly job
+      # that stops at the first failure costs a whole day to learn what else was
+      # broken (#818 — four consecutive red nights, a different layer each time,
+      # only diagnosable because every layer had run that night).
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -65,16 +88,17 @@ jobs:
         uses: ./.github/actions/setup-app-tests
         with:
           github-token: ${{ github.token }}
-      - name: Electron app harnesses
+      - name: App harnesses, extension e2e and overlay tests
         if: steps.prep.outputs.docs_only != 'true'
-        run: node scripts/run-app-tests.cts
+        run: node scripts/run-app-tests.cts --shard=${{ matrix.shard }}/2
 
-  # Shard 2 — 108s, the longest of the three and so the one that sets the wall clock.
-  # Splitting it further (it is six independent scripts) would take the shard to ~66s
-  # but add a fourth Windows runner to every push; not worth the concurrency at the
-  # measured numbers, and easy to revisit if these scripts grow.
-  extension-e2e:
-    name: 'Shard: extension e2e'
+  # Shard 3 — the Playwright layer (#14). Only the `flow` project: the `visual` one
+  # compares committed baselines taken on the development machine, and a runner's
+  # fonts / GPU-less rendering / display settings do not reproduce them (#14's
+  # 2026-07-29 decision). Running it here would report differences that say nothing
+  # about the change under test.
+  flows:
+    name: 'Shard: E2E flows'
     runs-on: windows-latest
     timeout-minutes: 30
     steps:
@@ -85,74 +109,9 @@ jobs:
         uses: ./.github/actions/setup-app-tests
         with:
           github-token: ${{ github.token }}
-      # Each later layer in a shard runs even after an earlier one goes red on push/
-      # schedule/workflow_dispatch (`!cancelled()` rather than `success()`): a nightly
-      # job that stops at the first failure costs a whole day to learn what else was
-      # broken (#818 — four consecutive red nights, a different layer each time, only
-      # diagnosable because every layer had run that night). On a pull_request the same
-      # patience just delays the red: a PR is fixed and re-pushed within minutes, so
-      # nothing past the first failure gets read before that push makes this run moot.
-      # `fail_fast` is `true` only for pull_request, so the extra `success()` clause
-      # changes behavior only there — everywhere else it collapses back to the original
-      # `!cancelled()`-only check (#936). Note that this is now per shard: a red harness
-      # no longer stops the extension layers, because they are already running (#937).
-      # The scripts are invoked directly rather than through their npm scripts,
-      # which would each rebuild the extension that `npm run setup` already built.
-      - name: Extension capture e2e (offline fixture)
-        if: steps.prep.outputs.docs_only != 'true'
-        run: node scripts/e2e-extension-offline.cts
-      - name: Extension duplicate-warning e2e (offline fixture)
-        if: ${{ !cancelled() && steps.prep.outputs.docs_only != 'true' && (steps.prep.outputs.fail_fast != 'true' || success()) }}
-        run: node scripts/e2e-extension-duplicate.cts
-      - name: Extension save-timeout e2e (offline fixture)
-        if: ${{ !cancelled() && steps.prep.outputs.docs_only != 'true' && (steps.prep.outputs.fail_fast != 'true' || success()) }}
-        run: node scripts/e2e-extension-timeout.cts
-      - name: Extension save-log e2e (offline fixture)
-        if: ${{ !cancelled() && steps.prep.outputs.docs_only != 'true' && (steps.prep.outputs.fail_fast != 'true' || success()) }}
-        run: node scripts/e2e-extension-save-log.cts
-      # Measures the platform premises #269 chose between (which surfaces still
-      # work once the extension's own files cannot be read). A Chrome update is
-      # exactly what could invalidate them, and nothing else in the suite would
-      # go red if it did — which is why this one earns a daily run.
-      - name: Extension inject-failure premises
-        if: ${{ !cancelled() && steps.prep.outputs.docs_only != 'true' && (steps.prep.outputs.fail_fast != 'true' || success()) }}
-        run: node scripts/e2e-extension-inject-failure.cts
-      # Reloads the extension under two live tabs (#594) — the only way to make a
-      # real orphaned content script. Measures both what Chrome does to such a
-      # context (the premises the detector rests on) and what the extension then
-      # does with the UI it left on the page.
-      - name: Extension orphaned-tab e2e
-        if: ${{ !cancelled() && steps.prep.outputs.docs_only != 'true' && (steps.prep.outputs.fail_fast != 'true' || success()) }}
-        run: node scripts/e2e-extension-orphan.cts
-
-  # Shard 3 — 78s (46 + 32). Two layers rather than one because neither fills a shard
-  # on its own and both drive a visible Electron window, so they share a failure mode.
-  flows-overlay:
-    name: 'Shard: E2E flows / overlay'
-    runs-on: windows-latest
-    timeout-minutes: 30
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Prepare
-        id: prep
-        uses: ./.github/actions/setup-app-tests
-        with:
-          github-token: ${{ github.token }}
-      # The Playwright layer (#14). Only the `flow` project: the `visual` one
-      # compares committed baselines taken on the development machine, and a
-      # runner's fonts / GPU-less rendering / display settings do not reproduce
-      # them (#14's 2026-07-29 decision). Running it here would report differences
-      # that say nothing about the change under test.
       - name: Electron E2E (user flows)
         if: steps.prep.outputs.docs_only != 'true'
         run: npx playwright test --project=flow
-      - name: Overlay visual regression
-        if: ${{ !cancelled() && steps.prep.outputs.docs_only != 'true' && (steps.prep.outputs.fail_fast != 'true' || success()) }}
-        run: node scripts/e2e-overlay-visual.cts
-      - name: Overlay flicker regression
-        if: ${{ !cancelled() && steps.prep.outputs.docs_only != 'true' && (steps.prep.outputs.fail_fast != 'true' || success()) }}
-        run: node scripts/e2e-overlay-flicker.cts
 
   # The name below is the one main's ruleset requires, and it stays on this job
   # forever so the shard layout can change without touching the ruleset (#937).
@@ -162,7 +121,7 @@ jobs:
   # treats anything other than `success` as red.
   app-tests:
     name: Electron harnesses / extension e2e
-    needs: [harnesses, extension-e2e, flows-overlay]
+    needs: [pooled, flows]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
