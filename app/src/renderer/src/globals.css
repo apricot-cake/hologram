@@ -239,13 +239,14 @@
   background: var(--tabbar-bg);
 }
 
-/* Window controls (WindowControls.tsx) sit ABOVE the modal scrim, because window management
-   must keep working while a modal is up — same as the OS-drawn buttons they replaced. Being
-   above the scrim they aren't dimmed by it, so they carry their own dim layer: black at the
-   depth of the scrim being covered, switched by the same data-open/data-closed attributes Base
-   UI puts on the scrim, over the same duration. Both are CSS in one frame, so they cannot drift
-   the way the OS strip did. :has() keeps this stateless — nothing in JS has to track which
-   modals are open.
+/* Window controls (WindowControls.tsx) sit ABOVE the modal scrim for compositing reasons only
+   (WindowControls.tsx says why) — not so they keep working while a modal is up; the block
+   after .wc-dim's own rules disables pointer-events on them for as long as they're dimmed.
+   Being above the scrim they aren't dimmed by it either, so they carry their own dim layer:
+   black at the depth of the scrim being covered, switched by the same data-open/data-closed
+   attributes Base UI puts on the scrim, over the same duration. Both are CSS in one frame, so
+   they cannot drift the way the OS strip did. :has() keeps this stateless — nothing in JS has
+   to track which modals are open.
 
    The depth has to equal the scrim's own alpha, not a fixed 50%: the strip is opaque, so the
    only way it lands on the same color as the band beside it is to composite the same black
@@ -295,6 +296,21 @@
   --tw-exit-opacity: 0;
   opacity: 0.8;
   animation: exit var(--motion-duration-base) var(--motion-ease-out) forwards;
+}
+
+/* A modal blocks window management the same as it blocks everything else behind its scrim:
+   minimize/maximize/close must not answer clicks while they're dimmed. Same :has() list as
+   .wc-dim above, open and closed both, because the buttons stay dimmed through the exit
+   animation too. */
+:root:has([data-slot='dialog-overlay'][data-open]) .wc-strip [data-slot='window-control'],
+:root:has([data-slot='alert-dialog-overlay'][data-open]) .wc-strip [data-slot='window-control'],
+:root:has([data-slot='sheet-overlay'][data-open]) .wc-strip [data-slot='window-control'],
+:root:has([data-slot='lightbox'][data-open]) .wc-strip [data-slot='window-control'],
+:root:has([data-slot='dialog-overlay'][data-closed]) .wc-strip [data-slot='window-control'],
+:root:has([data-slot='alert-dialog-overlay'][data-closed]) .wc-strip [data-slot='window-control'],
+:root:has([data-slot='sheet-overlay'][data-closed]) .wc-strip [data-slot='window-control'],
+:root:has([data-slot='lightbox'][data-closed]) .wc-strip [data-slot='window-control'] {
+  pointer-events: none;
 }
 
 /* Indeterminate Progress (#834). Base UI's Progress reports the state — it sets
