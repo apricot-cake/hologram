@@ -20,16 +20,12 @@
 //
 // This module also owns "is the panel on screen right now" (isVisible), which is not the
 // same question as isOpen: the stored preference says the panel SHOULD be there, while
-// the width mode, #245's bulk hide and — at narrow widths — whether anything is selected
-// all get a say in whether it actually is. That formula used to live in AppShell alone,
-// and the renderer modules outside React answered the same question by reading
-// #postDetail.hidden off the DOM (P2⑦ / #153: no cross-boundary DOM sniffing). Both now
-// read this one copy.
-import { isActive as imageViewIsActive } from './image-tab.ts';
+// #245's bulk hide still gets a say in whether it actually is. That formula used to live
+// in AppShell alone, and the renderer modules outside React answered the same question by
+// reading #postDetail.hidden off the DOM (P2⑦ / #153: no cross-boundary DOM sniffing).
+// Both now read this one copy.
 import { hologramIpc } from './ipc.ts';
-import { isWide, subscribe as layoutSubscribe } from './layout-mode.ts';
 import { isHidden as panelsAreHidden, subscribe as panelsSubscribe } from './panels.ts';
-import { get as storeGet, subscribe as storeSubscribe } from './store.ts';
 
 const KEY = 'hologram-inspector-open';
 const DEFAULT_OPEN = true;
@@ -100,51 +96,26 @@ export function toggle(): void {
 
 // === On screen right now ===
 
-// The three extra inputs, and why each gets a say:
-// - panels.ts's bulk hide (#245) masks both side panels without touching what they think.
-// - At narrow widths the panel is an overlay riding on the selection (#259/#244): with
-//   nothing inspected it would be a floating hole in the view, so it stays away. Docked
-//   at wide widths it shows its placeholder instead.
+// The one extra input: panels.ts's bulk hide (#245) masks both side panels without
+// touching what they think.
+//
+// The panel is a docked column at every width (#975): #259 had it ride on the selection
+// below 1280px, because a floating panel with nothing in it is a hole in the view — but a
+// panel that never floats has no such state to avoid, and the placeholder (#244) is what
+// an empty column shows. Deriving visibility from the selection is what made the form
+// width-dependent in the first place.
 export function isVisible(): boolean {
-  return !panelsAreHidden() && open && (isWide() || storeGet('inspectedKey') != null);
+  return !panelsAreHidden() && open;
 }
 
-// Fan-out subscription for React: any of the four inputs can flip the answer, so a
-// consumer of isVisible() has to hear from all of them. Non-React callers only ask
-// isVisible() at the moment they act and need none of this.
+// Fan-out subscription for React: either input can flip the answer, so a consumer of
+// isVisible() has to hear from both. Non-React callers only ask isVisible() at the moment
+// they act and need none of this.
 export function subscribeVisible(cb: () => void): () => void {
-  const offs = [subscribe(cb), panelsSubscribe(cb), layoutSubscribe(cb), storeSubscribe('inspectedKey', cb)];
+  const offs = [subscribe(cb), panelsSubscribe(cb)];
   return () => {
     for (const off of offs) off();
   };
-}
-
-// === Docked vs overlay ===
-//
-// Whether the panel is a column (relative, holds its own place in the flex row) or a
-// floating slide-over (fixed, waved away by Esc / an outside click / its own ×) used to be
-// two independent half-formulas: AppShell's className ternary asked "wide OR the image
-// view showing" (the Eagle-style detail screen docks the panel at any width — a floating
-// slide-over would cover the very picture being inspected), while ×/Esc/outside-click each
-// asked layout-mode's isWide() alone. Narrow width + the image view showing was DOCKED to
-// the shell and OVERLAY to the dismiss guards, so a persistent column could still be waved
-// away as if it were the transient narrow slide-over (#656). One formula now, read by both.
-export function isDocked(): boolean {
-  return isWide() || imageViewIsActive();
-}
-
-// The panel's own element, handed over by the shell's ref rather than looked up by id
-// (P2⑦ / #153 ④): the outside-click dismissal has to ask "did this press land inside the
-// panel", which is a hit test no store can answer, and #postDetail was the last id
-// contract holding the panel together. Same ref-registration shape as grid-nav.ts.
-let el: HTMLElement | null = null;
-
-export function registerPanelEl(node: HTMLElement | null): void {
-  el = node;
-}
-
-export function panelContains(target: EventTarget | null): boolean {
-  return !!el && target instanceof Node && el.contains(target);
 }
 
 // Reconcile the cache with config.json once at boot: config.json is the durable home, so

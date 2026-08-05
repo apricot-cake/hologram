@@ -83,9 +83,6 @@ export let handleShortcutSearchFocusKey: (e: KeyboardEvent) => void;
 export let handleShortcutSizeKey: (e: KeyboardEvent) => void;
 export let handleZoomWheel: (e: WheelEvent) => void;
 export let handleEscDismissDetail: (e: KeyboardEvent) => void;
-// Outside-click dismissal for the narrow overlay (#259). Back after #243 removed it —
-// this time the width test lives in layout-mode.ts, not in the handler's own media query.
-export let handleOutsideClickDismissDetail: (e: MouseEvent) => void;
 // Document-level right-click fallback for selected text (#167). Registered last in
 // the bubble phase, and it bails on defaultPrevented — every surface with a menu of
 // its own has already claimed the event by then.
@@ -1228,12 +1225,11 @@ export function endFilterEditSession(): void {
     postQBResetTree: () => postQB.resetTree(),
     addFilter: (filter) => addFilter(filter),
   });
-  // closeDetail (the one that STORES "panel off") is deliberately not pulled in here:
-  // outside the panel's own ×, nothing in the orchestrator should be able to disable
-  // the inspector as a side effect. The shell toggle owns that, via inspector-panel.
-  const { dismissDetail, closeOrDismissDetail, showDetail, persistManual } = inspector;
+  // closeDetail (the one that STORES "panel off") is pulled in for one caller only — the
+  // poster inspector's × below. Nothing else in the orchestrator may disable the inspector
+  // as a side effect; the shell toggle owns that, via inspector-panel.
+  const { closeDetail, dismissDetail, showDetail, persistManual } = inspector;
   handleEscDismissDetail = inspector.handleEscDismissDetail;
-  handleOutsideClickDismissDetail = inspector.handleOutsideClickDismissDetail;
 
   // === Selection (click a card to select; the bar appears when 1+ are selected) ===
   // groupSelected needs inspector's persistManual, so this is constructed here
@@ -1463,9 +1459,9 @@ export function endFilterEditSession(): void {
     setSearchBoxValue: (v) => setSearchBoxValue(v), // makeSearchBox() is wired far below — deferred
     setBrowseMode,
     // posterGrid uses this for the poster inspector's ×, so it follows the same
-    // rule as the post panel's: store the preference only where × is the docked
-    // column's one way off the screen.
-    closeDetail: closeOrDismissDetail,
+    // rule as the post panel's: × is the docked column's one way off the screen,
+    // so it stores the preference.
+    closeDetail,
     setInspectedKey,
     onPosterRendered: () => tabsCtl.syncPosterTitleAndPersist(),
   });

@@ -20,10 +20,9 @@
 //   three grid slots inside it are handed to the modules that measure them through
 //   services/content-area.ts — none of the four is looked up by id any more (#618), and
 //   which destination is on screen is a `hidden` this file writes, not a body class.
-// - The right inspector wears the legacy .inspector CSS, which already implements the
-//   #143 model (wide = fixed 320px column, narrow = slide-over). Its id is gone (P2⑦):
-//   whether it is on screen is state (inspector-panel.ts), and the element itself reaches
-//   the one handler that needs it by ref, so nothing looks it up by id any more.
+// - The right inspector is a docked column at every width (#975; #259's narrow slide-over
+//   is gone). Its id went with P2⑦ — whether it is on screen is state (inspector-panel.ts),
+//   not something anyone reads back off the DOM.
 import type { CSSProperties } from 'react';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { SIDEBAR_WIDTH, SidebarInset, SidebarProvider } from '@/components/ui/sidebar';
@@ -31,13 +30,13 @@ import { t } from '../_shared/i18n.ts';
 import { InspectorRail } from './InspectorRail.tsx';
 import { type PanelResize, resolveCssLength, usePanelResize } from './use-panel-resize.ts';
 import { LIMITS, type PanelKey, cachedWidth, clampWidth, loadWidth, persistWidth } from '../services/panel-width-pref.ts';
-import { isDocked as inspectorIsDocked, isVisible as inspectorIsVisible, load as inspectorLoad, registerPanelEl, subscribeVisible as subscribeInspectorVisible } from '../services/inspector-panel.ts';
+import { isVisible as inspectorIsVisible, load as inspectorLoad, subscribeVisible as subscribeInspectorVisible } from '../services/inspector-panel.ts';
 import { registerScroller } from '../services/content-area.ts';
 import { hologramImageTabSource, isActive as imageViewIsActive } from '../services/image-tab.ts';
 import { isWide as isWideLayout, subscribe as layoutSubscribe } from '../services/layout-mode.ts';
 import { isHidden as panelsAreHidden, load as panelsLoad, reveal as panelsReveal, subscribe as panelsSubscribe } from '../services/panels.ts';
 import { load as shortcutOverridesLoad } from '../services/shortcut-registry.ts';
-import { get as storeGet, set as storeSet, subscribe as storeSubscribe } from '../services/store.ts';
+import { get as storeGet, subscribe as storeSubscribe } from '../services/store.ts';
 import { DEFAULT_OPEN, cachedOpen, loadOpen, persistOpen } from '../services/sidebar-pref.ts';
 import { signalShellReady } from '../services/shell-ready.ts';
 import { AppToolbar } from './AppToolbar.tsx';
@@ -64,8 +63,13 @@ import { WindowControls } from './WindowControls.tsx';
 // desktop apps don't reshape themselves by width. #259 puts a narrower version of it back,
 // having found what #243 missed: the products it measured against (Lightroom / VS Code /
 // Obsidian) don't auto-reshape BECAUSE they all pair that with a one-key collapse, and
-// Hologram shipped the first half without the second. At half-screen widths — Hologram beside
-// a browser is a primary way to use it — the two panels take 576px and leave the grid 382.
+// Hologram shipped the first half without the second. At half-screen widths — Hologram
+// beside a browser is a primary way to use it — a 256px column of nav is the expensive half
+// of that, and the rail keeps every destination reachable while costing 72.
+//
+// This is the ONE width-linked reshape left (#975 took the inspector's). Asymmetric on
+// purpose: collapsing to the rail hides nothing (#678/#965 put the labels and the folder
+// entry on it), whereas the inspector's narrow form hid the grid it was supposed to spare.
 //
 // What came back is narrower than what #243 removed, in two ways. The saved preference is
 // never overwritten by width: it is masked while narrow and comes back untouched. And the
@@ -208,24 +212,12 @@ export function AppShell() {
     setPrevWide(wide);
     setNarrowOpen(false);
   }
-  // At narrow widths the inspector is an overlay that rides on the selection: it appears
-  // when a card is inspected and is waved away by a click on the grid (Esc / × too). A
-  // floating panel with nothing in it would just be a hole in the view, so the #244
-  // placeholder stays a wide-layout affair.
-  //
-  // The formula itself moved to inspector-panel.ts (P2⑦): the renderer modules outside
-  // React ask the same question, and they used to answer it by reading this element's
-  // `hidden` back off the DOM. One copy, two readers.
+  // The inspector is a docked column at every width (#975), so its visibility is the
+  // toggle and #245's bulk hide — nothing about the window's size or the selection. The
+  // formula itself lives in inspector-panel.ts (P2⑦): the renderer modules outside React
+  // ask the same question, and they used to answer it by reading this element's `hidden`
+  // back off the DOM. One copy, two readers.
   const inspectorVisible = useSyncExternalStore(subscribeInspectorVisible, inspectorIsVisible);
-  // Published rather than re-derived downstream: the floating selection bar has to hold
-  // back the panel's width while it overlays the grid (as a docked column the panel
-  // narrows the bar's container instead, and the bar needs to do nothing). Deriving this
-  // in one place keeps the three inputs — width, toggle, selection — from being read
-  // twice and drifting.
-  const inspectorOverlay = !wide && inspectorVisible;
-  useEffect(() => {
-    storeSet('inspectorOverlay', inspectorOverlay);
-  }, [inspectorOverlay]);
   // config.json outranks the localStorage cache the panel's first render was guessed from
   // (same two-tier reconcile as the sidebar, but the store owns the state — see
   // inspector-panel.ts for why it has to).
@@ -266,25 +258,12 @@ export function AppShell() {
   // where it used to be `body.image-tab-active` plus three CSS rules in index.html. Same
   // predicate the toolbar swaps its controls on, so the two halves cannot disagree.
   const imageView = useSyncExternalStore(hologramImageTabSource.subscribe, imageViewIsActive);
-  // The narrow overlay covers the content area, not the tab bar and toolbar above it, so
-  // it needs to know where that area starts. Measured rather than computed: the chip row
-  // appears and disappears with the filter, so the toolbar has no fixed height to add up.
-  // Observing the scroll root catches that for free — the toolbar growing shrinks it.
-  const contentRef = useRef<HTMLDivElement>(null);
-  // One ref, two jobs: the measurement below, and handing the element to the modules
-  // outside React that read or write its scroll position (services/content-area.ts).
+  // Hands the scroll root to the modules outside React that read or write its scroll
+  // position (services/content-area.ts). It used to also measure the element's top into
+  // --content-top, for a floating panel that had to start below the toolbar; the docked
+  // column takes its place in the row and needs no such number (#975).
   const setContentEl = useCallback((el: HTMLDivElement | null) => {
-    contentRef.current = el;
     registerScroller(el);
-  }, []);
-  useEffect(() => {
-    const el = contentRef.current;
-    if (!el) return;
-    const sync = () => document.documentElement.style.setProperty('--content-top', `${Math.round(el.getBoundingClientRect().top)}px`);
-    const ro = new ResizeObserver(sync);
-    ro.observe(el);
-    sync();
-    return () => ro.disconnect();
   }, []);
   return (
     // The TooltipProvider is App.tsx's now: tooltip triggers also live in the
@@ -382,40 +361,21 @@ export function AppShell() {
                   Visibility is the user's own toggle (#243): it is no longer opened/closed as
                   a side effect of selecting a card, and the content (Inspector) shows a
                   placeholder while nothing is selected (#244). */}
-              {/* …and an inline column under an image tab at ANY width (Eagle-style detail
-                  screen): a slide-over would cover the very picture being inspected. That
-                  used to be a `body.image-tab-active .inspector--overlay` override that
-                  undid the overlay's own rules one by one; picking the docked form outright
-                  is the same result with one decision instead of two. inspectorIsDocked()
-                  is that one decision (inspector-panel.ts) — ×/Esc/outside-click read the
-                  same function now, so a column docked here can't be waved away as if it
-                  were the narrow overlay (#656). */}
+              {/* A column at EVERY width (#975). #259 floated it over the grid below
+                  1280px to keep the grid from being squeezed, but the covered strip is not
+                  grid the user can use — it is grid they cannot see, so the panel bought
+                  nothing and cost a half-hidden column of cards. The image view relied on
+                  the docked form at any width anyway (a slide-over would cover the very
+                  picture being inspected), which is now simply what the panel is. */}
               {/* [&[hidden]]:hidden is required, not belt-and-braces: `display: flex` from
                   this element's own class beats the UA sheet's [hidden] { display: none },
                   so the attribute alone would leave the panel on screen. */}
-              {/* No enter animation (#583): revealing this panel is instant, in the docked
-                  form AND in the floating one below — one control must not have two
-                  speeds, and Ctrl+Shift+B moves it in step with the sidebar, which is
-                  instant too. docs/decisions/0017 carries the reasoning. */}
-              <aside
-                data-slot="inspector"
-                ref={registerPanelEl}
-                className={`z-25 flex h-full w-[var(--inspector-w)] shrink-0 flex-col border-l border-border bg-[var(--surface)] text-[12px] [&[hidden]]:hidden ${
-                  inspectorIsDocked()
-                    ? 'relative'
-                    : // Narrow widths (#259): the same panel floats over the grid instead of
-                      // taking a column out of it. --content-top is measured by the effect
-                      // above, so the overlay starts exactly at the content area and leaves
-                      // the tab bar + toolbar reachable — React owns the width decision, so
-                      // there is no media query anywhere; layout-mode.ts holds the breakpoint.
-                      // z-9500 = over the content, under modals/lightbox (11000+).
-                      'fixed top-[var(--content-top,var(--tabbar-h))] right-0 bottom-0 z-9500 h-auto border-l-[var(--float-border)] shadow-[var(--shadow-lg)]'
-                }`}
-                hidden={!inspectorVisible}
-              >
-                {/* Drag edge (#30). Wide layout only, for the same reason the sidebar rail
-                    is: the narrow form is an overlay pinned to the window edge. */}
-                {wide && <InspectorRail resize={inspector.resize} />}
+              {/* No enter animation (#583): revealing this panel is instant, and
+                  Ctrl+Shift+B moves it in step with the sidebar, which is instant too.
+                  docs/decisions/0017 carries the reasoning. */}
+              <aside data-slot="inspector" className="relative z-25 flex h-full w-[var(--inspector-w)] shrink-0 flex-col border-l border-border bg-[var(--surface)] text-[12px] [&[hidden]]:hidden" hidden={!inspectorVisible}>
+                {/* Drag edge (#30). */}
+                <InspectorRail resize={inspector.resize} />
                 {/* flex-1 gives this a definite height, so the empty-state placeholder can
                     still center itself in the column; a filled panel just overflows it into
                     the scroll, as before. */}
