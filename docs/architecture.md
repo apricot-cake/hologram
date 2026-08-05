@@ -71,7 +71,7 @@ electron-vite で main・preload・renderer の3面をバンドルする標準�
 - `src/renderer/index.html`＋`src/renderer/public/`（`theme.js`＝pre-paint、`<script>`で直読み。CSP は main が応答ヘッダで配るのでこのファイルには持たせない（ADR 0022）。`app/build-theme-boot.mjs`が`theme.ts`から再生成＝バンドル外の同期スクリプトという制約は変わらない）
 - `src/renderer/src/services/`（旧 `renderer/*.ts`）＝`orchestrator.ts`（2026-07-11に`viewer.ts`から改名。boot orchestration層として意図的に独立モジュールのまま残す設計）が状態/オーケストレーション/IPC呼び出しの中核、`store.ts`ほか単機能サービス（`tags.ts`/`selection.ts`/`query.ts`/`records.ts`等）に段階抽出済み。`design-tokens.css`は`src/renderer/`直下（index.htmlの`<link>`が参照）
 - `src/renderer/src/`直下 — React（`.tsx`）コンポーネント群（旧 `islands/`）。`services/store.ts`をESM importで直接購読して連携（push型のモデル注入・`window.hologramXxx`ブリッジは全廃済み＝Window拡張はpreloadの`window.hologram`のみ）
-- 機能: DB クエリで閲覧、ネイティブメッセージングホストの自動登録（拡張IDは manifest の key で固定済み・#71 で手動設定 IPC は撤去）、指定フォルダへのバックアップ（宛先アダプタ経由の増分コピー・`Hologram-backup`＋DB世代）。**レンダラ自身は `app://bundle/index.html` から配る**（製品版・#7）＝`file://` の追加特権に依存せず、CSP（`frame-ancestors` 込み）を応答ヘッダで配れる。配布バイナリには `grantFileProtocolExtraPrivileges: false` を焼いてある。画像は `asset://` プロトコルで遅延読込＝応答は必ず CSP（`default-src 'none'` 基底）と `nosniff` を載せ、この スキームのトップレベル文書になれるのはラスタ画像だけ（窓を開く経路と `will-navigate` が `library-files.ts` の同じ述語を通る。理由は [ADR 0012](decisions/0012-asset-documents-are-raster-only.md)）。
+- 機能: DB クエリで閲覧、ネイティブメッセージングホストの自動登録（拡張IDは manifest の key で固定済み・#71 で手動設定 IPC は撤去）、バックアップ（宛先アダプタ経由の増分コピー・宛先は指定フォルダ／Google Drive／OneDrive・`Hologram-backup`＋DB世代）。**レンダラ自身は `app://bundle/index.html` から配る**（製品版・#7）＝`file://` の追加特権に依存せず、CSP（`frame-ancestors` 込み）を応答ヘッダで配れる。配布バイナリには `grantFileProtocolExtraPrivileges: false` を焼いてある。画像は `asset://` プロトコルで遅延読込＝応答は必ず CSP（`default-src 'none'` 基底）と `nosniff` を載せ、この スキームのトップレベル文書になれるのはラスタ画像だけ（窓を開く経路と `will-navigate` が `library-files.ts` の同じ述語を通る。理由は [ADR 0012](decisions/0012-asset-documents-are-raster-only.md)）。
 
 ## ビューア機能（内部実装メモ）
 
@@ -95,7 +95,13 @@ electron-vite で main・preload・renderer の3面をバンドルする標準�
 - **コマンドパレット `Ctrl/Cmd+K`**（#28・[ADR 0016](decisions/0016-one-candidate-engine-three-faces.md)）＝操作（設定・新規タブ・タブ切替・フィルタ全解除・表示切替）とジャンプ（タグ・投稿者・フォルダ）を1つの入力から引く。候補の供給源は `services/command-registry.ts` の1本で、検索ボックス直下のサジェストも同じレジストリから引く（面ごとに違うのは見せるセクションと件数、そして確定したときの動作だけ）。エントリの中身と perform クロージャは `services/command-builder.ts`、器は `palette/CommandPalette.tsx`（shadcn Dialog ＋ Base UI Autocomplete の `inline`）。`/` は検索ボックスへのフォーカスで、Ctrl+K とは役割が分かれている。見える入口はサイドバーのフッター項目と検索ボックス右端の `Ctrl+K` バッジの2つ
 - 言語切替（auto/ja/en）
 - エクスポート: 画像・動画の ZIP（人・他アプリへ渡す用）／バックアップファイル: 全情報を1ファイルに作成・そこから復元（#57 の語彙分離＝UI では「エクスポート」と「バックアップ」を別の面に置く）
-- **バックアップ**（#233）＝単一エンジン＋宛先アダプタ。宛先は現状ローカルフォルダの1種（`app/src/main/lib-backup-destination.ts`＝`list/put/move/remove` の4操作。クラウド直結 OAuth は同じ口を実装する後段）。エンジンは二車線:
+- **バックアップ**（#233）＝単一エンジン＋宛先アダプタ。宛先は3種で、**どれも同じ5対**（`list` / `put` / `move` / `remove` / 身元の読み書き）を実装する＝エンジン側に provider 分岐は無い:
+  - **ローカルフォルダ**（`app/src/main/lib-backup-destination.ts`）＝fs コピー。宛先ルートは選んだフォルダの中の `Hologram-backup`
+  - **Google Drive / OneDrive**（#909・`lib-backup-cloud*.ts`）＝素の `fetch` で各社 API へ直接アップロード（SDK は入れない）。認可・トークン保管・失効は `lib-oauth*.ts`（#907）で、**トークンは main プロセスから出ない**。最小権限＝Google は `drive.file`（My Drive の `Hologram-backup` だけ）・OneDrive は `Files.ReadWrite.AppFolder`（アプリ フォルダだけ）。クラウド API はパスでなく id で物を指すので、相対パス↔id の索引を run ごとに1回の走査で作る
+  - どの宛先を使うかは `lib-backup-destinations.ts` が config の `backup.kind` から決め、run を始めてよいか（フォルダが在るか／接続が生きているか）もそこで答える
+  - **宛先は自分の身元を持つ**（#176）＝ルートに `libraryId` を書いた JSON を置き、今開いているライブラリと違えば実行しない。この1件だけは `list()` に出さない（出すと「src に無い」＝刈られる側に回る）
+
+  エンジンは二車線:
   - **メディア車線**＝ライブラリのファイル（ルート・`avatars/`・`emoji/`・`.trash/`）を増分コピー。保存直後（15秒デバウンス）・間隔・起動時の遅れ取り戻しで走る＝取り直せない投稿の損失窓をゼロに寄せる。**ゴミ箱もミラーする**＝ゴミ箱入り／復元は宛先では *move*（削除→再アップロードではない）で、復元するとゴミ箱の状態ごと戻る
   - **DB 車線**＝生きた `.db` は決してコピーしない（#97）。SQLite Online Backup API の静止スナップショットを**ライブラリ内の世代置き場 `.db-generations/`** に書き（これが正本）、宛先はその置き場を写す。区切りは日次と変更N件。保持は日次7・週次4・月次6の階層間引き（restic の `--keep-*` と同型）で、全滅する方針は実行しない安全弁つき
   - 削除の判断は `lib-backup-plan.ts` の純関数に閉じている（2026-06-23 の消失事故と同種の規則なので、fs を伴わずテストできる形にしてある）。`backup-guard.ts` の急減ガードは続投＝止まったときは move も止める
