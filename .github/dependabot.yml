@@ -25,3 +25,20 @@ updates:
         update-types:
           - "minor"
           - "patch"
+
+  # ワークフローの `uses:` は SHA で固定してある（タグは差し替え可能＝
+  # サプライチェーンの穴・GitHub Docs "Security hardening for GitHub Actions"）。
+  # 固定したまま更新を受け取る経路がこれ＝Dependabot が SHA と `# vX.Y.Z`
+  # コメントの両方を書き換える。
+  # `/` が見るのは .github/workflows だけ＝composite action は置き場を名指しする。
+  - package-ecosystem: "github-actions"
+    directories:
+      - "/"
+      - "/.github/actions/setup-app-tests"
+    schedule:
+      interval: "weekly"
+    groups:
+      actions:
+        applies-to: version-updates
+        patterns:
+          - "*"
