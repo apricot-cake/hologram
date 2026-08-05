@@ -47,7 +47,7 @@ concurrency:
 
 jobs:
   # Shard 1 — 72s of the 258s of test time measured on 2026-08-05 (run 30996640294),
-  # after #933 made the 41 harnesses run four at a time. Before that this layer alone
+  # after #933 made the 42 harnesses run four at a time. Before that this layer alone
   # was 278s and sharding would have bought almost nothing, which is why #937 waited
   # for it.
   harnesses:
