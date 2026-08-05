@@ -32,6 +32,7 @@ import { readConfig, writeConfig, getSaveFolder, readSavePointer, initSaveFolder
 import { mimeForFile, registerImageProtocol, thumbnailBytes } from './lib-thumbnails.ts';
 import { sharedJobPool } from './lib-job-pool.ts';
 import { clearIndexQueue, notifyRecordsChanged, requestBackfill, startIndexQueue } from './lib-index-queue.ts';
+import { registerAiTagsJob } from './lib-ai-tags-job.ts';
 import { ensureDerivedDb, readDerivedProgress, writeDerivedProgress } from './lib-derived-db.ts';
 import { backupIntervalMs, createBackupEngine, latestRestorableSnapshot, readBackupConfig, readIntegrityStatus, validateBackupDir, validateSaveFolder, writeBackupConfig } from './lib-backup.ts';
 import { classifyLibraryFolder } from './lib-switch-library.ts';
@@ -40,6 +41,7 @@ import { APP_ICON, DEV_ORIGIN, DEV_SERVER_URL, RELOAD_AFTER_LIBRARY_SWAP_MS, cre
 import { pinSend, takeInitial as pinTakeInitial, toggleAlwaysOnTop as pinToggleAlwaysOnTopImpl } from './lib-pin-window.ts';
 import { installDevRendererCsp, registerAppProtocol } from './app-protocol.ts';
 import { runMlSmoke } from './ml-smoke.ts';
+import { runAiTagsModelSmoke, runAiTagsSmoke } from './ai-tags-smoke.ts';
 import { stopMlRuntime } from './lib-ml-runtime.ts';
 // IPC handler modules, extracted from this file (mechanical move — logic unchanged).
 // Each exposes register(ctx); ctx is built after the core functions below and passed
@@ -985,6 +987,10 @@ registerExtractedIpc();
 // handle, for its #176 guard: a scan chunk that fires mid-switchLibrary gets
 // null (treated as "no library") instead of the database that is being closed.
 function startIndexQueueForApp() {
+  // Registered here rather than at import time so the kinds exist before the
+  // first plan and not a moment earlier. #50's kind declares requiresModel, so
+  // registering it costs nothing while the opt-in is off or the model absent.
+  registerAiTagsJob();
   startIndexQueue({
     pool: sharedJobPool,
     aiEnabled: () => readAiConfig().enabled === true,
@@ -1216,6 +1222,25 @@ if (!gotSingleInstanceLock) {
               console.log('ML_SMOKE_RESULT', JSON.stringify(await runMlSmoke(process.env.HOLOGRAM_ML_SMOKE_MODEL, getWin())));
             } catch (e) {
               console.log('ML_SMOKE_ERR', e.message);
+            }
+          }
+          // #50: the channel order nativeImage actually uses, and the tensor
+          // the real image stack produces. Offline and model-free — see
+          // ai-tags-smoke.ts for why it cannot be a unit test.
+          if (process.env.HOLOGRAM_AI_TAGS_SMOKE === '1') {
+            try {
+              console.log('AI_TAGS_SMOKE_RESULT', JSON.stringify(runAiTagsSmoke()));
+            } catch (e) {
+              console.log('AI_TAGS_SMOKE_ERR', e.message);
+            }
+          }
+          // #50: one real inference, model and all. Needs the network the first
+          // time, so it is the "needs network" group, not run-app-tests.cts.
+          if (process.env.HOLOGRAM_AI_TAGS_SMOKE_IMAGE) {
+            try {
+              console.log('AI_TAGS_MODEL_RESULT', JSON.stringify(await runAiTagsModelSmoke(process.env.HOLOGRAM_AI_TAGS_SMOKE_IMAGE.split(path.delimiter))));
+            } catch (e) {
+              console.log('AI_TAGS_MODEL_ERR', e.message);
             }
           }
           if (process.env.HOLOGRAM_SMOKE_EVAL) {
