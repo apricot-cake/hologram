@@ -16,11 +16,13 @@ Claude のシェルは MSIX パッケージ内で動く。そこから起動し�
 正しい経路は Task Scheduler（コンテナ外のサービス）経由:
 
 ```powershell
-Get-Process electron -ErrorAction SilentlyContinue | Where-Object { $_.Path -like '*hologram*' } | Stop-Process -Force
+Get-CimInstance Win32_Process -Filter "Name='electron.exe'" | Where-Object { $_.CommandLine -like '*--remote-debugging-port=9222*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
 Start-ScheduledTask -TaskName 'HologramLaunch'
 ```
 
 `"task not found"` が返ったら `restart-app.ps1` を一度実行するとタスクが自己作成される。再起動は確認を取らずに行ってよい。
+
+⚠️**止める相手はパスでなくコマンドラインで選ぶ**＝`Path -like '*hologram*'`（旧版）は **worktree の検証で走っている Electron も巻き添えにする**。ハーネスは自分のツリーの `node_modules/electron` を使い（`scripts/lib-electron-path.cts`）、worktree はリポジトリの内側にあるので同じ条件に合う＝並行セッションのテストを黙って赤にできてしまう。`--remote-debugging-port=9222` を付けるのは `HologramLaunch` タスクだけなので、これが実機を名指しする唯一の目印（2026-08-05・docs/build.md が正）。
 
 ## 起動の前に: 変更が反映される状態か
 
