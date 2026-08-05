@@ -421,7 +421,21 @@ function xCardImage(bindings, key: string): string | null {
   const img = v && v.image_value;
   return img && typeof img.url === 'string' && img.url ? img.url : null;
 }
-function xLinkCard(card): LinkCard | null {
+// card_url is the same t.co short link xExpandUrls swaps out of the body text
+// (#189's reasoning applies here too, more so: this URL IS the link, not a
+// mention of one). entities.urls is the same expansion table xExpandUrls
+// reads — no extra request. vanity_url/domain are not used as a fallback:
+// both are hostname-only display strings with no path, so they cannot stand
+// in for the link itself (#915).
+function xExpandCardUrl(url: string, entities): string {
+  const urls = entities && Array.isArray(entities.urls) ? entities.urls : [];
+  for (const u of urls) {
+    if (u && u.url === url && typeof u.expanded_url === 'string') return u.expanded_url;
+  }
+  return url;
+}
+
+function xLinkCard(card, entities): LinkCard | null {
   if (!card || typeof card.name !== 'string' || !X_LINK_CARD_NAMES.has(card.name)) return null;
   const bindings = card.binding_values;
   if (!bindings || typeof bindings !== 'object') return null;
@@ -432,7 +446,7 @@ function xLinkCard(card): LinkCard | null {
     thumbnail = xCardImage(bindings, key);
     if (thumbnail) break;
   }
-  return { url, title: xCardString(bindings, 'title'), description: xCardString(bindings, 'description'), thumbnail };
+  return { url: xExpandCardUrl(url, entities), title: xCardString(bindings, 'title'), description: xCardString(bindings, 'description'), thumbnail };
 }
 
 function xMediaType(details) {
@@ -579,7 +593,7 @@ async function fetchXTweet(parsed, url): Promise<PostRecord> {
     // No free-text CW field exists on this endpoint — rec.cw stays null.
     rec.sensitive = typeof j.possibly_sensitive === 'boolean' ? j.possibly_sensitive : null;
     rec.poll = xPoll(j.card);
-    rec.linkCard = xLinkCard(j.card);
+    rec.linkCard = xLinkCard(j.card, j.entities);
     if (j.user) {
       rec.displayName = j.user.name || null;
       rec.screenName = j.user.screen_name || rec.screenName;
