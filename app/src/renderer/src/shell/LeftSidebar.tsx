@@ -16,8 +16,15 @@
 // saved searches, poster folders) carry `group-data-[collapsible=icon]:hidden`
 // and show only when expanded. See docs/decisions/0018-labeled-navigation-rail-default.md
 // for the design.
-import { ChevronRight, Folder, History, LayoutGrid, Plus, Rss, Search, Settings, Terminal, Trash2, Users } from 'lucide-react';
-import type { DragEvent, MouseEvent } from 'react';
+//
+// #965: that scope is unchanged, but the rail now carries ONE fixed row per user-grown
+// group whose flyout holds the list — #678 hid the groups without leaving a way to
+// reach them, and composed with #259 (narrow windows retreat to the rail on their own)
+// it meant the window's width could take a destination away. Windows draws it this way:
+// WinUI's NavigationView keeps hierarchy in LeftCompact by moving the children into a
+// flyout rather than dropping them.
+import { ChevronRight, Folder, Folders, History, LayoutGrid, Plus, Rss, Search, Settings, Terminal, Trash2, Users } from 'lucide-react';
+import type { DragEvent, MouseEvent, ReactNode } from 'react';
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -102,6 +109,23 @@ const getPostTree = () => storeGet('postQueryTree') as HologramQueryGroup | unde
 // Compare through the persistence clone so a tree that has been to disk and back
 // compares equal to a freshly built one (the compile memos are the only difference).
 const treeKey = (tree: HologramQueryGroup | null | undefined) => (tree?.children?.length ? JSON.stringify(cloneTree(tree)) : '');
+// Which folders the live post query is filtered by. Read off the tree rather than
+// remembered from the last click, so a folder applied from anywhere — this list, the
+// command palette, an edit in the chip bar — lights the same row. Negated nodes are
+// skipped: "not in 資料" is not a place you are in.
+function activeFolderIds(tree: HologramQueryGroup | null | undefined): Set<string> {
+  const out = new Set<string>();
+  const walk = (n: HologramQueryNode) => {
+    if (n.neg) return;
+    if (n.kind === 'group') {
+      for (const c of n.children) walk(c);
+      return;
+    }
+    if (n.type === 'folder' && typeof n.value === 'string') out.add(n.value);
+  };
+  if (tree) walk(tree);
+  return out;
+}
 
 // One row of the folder tree, plus its subtree. Rows look the same at every depth
 // (only the indent changes) — the file-tree grammar of Explorer / Finder / Obsidian,
@@ -168,7 +192,10 @@ function FolderNode({ f, ctx }: { f: HologramFolder; ctx: FolderTreeCtx }) {
         )}
         {/* flex-1 would beat the rail's size-8! sizing on its own (flex-basis wins
             over width in a flex row), so the grow is dropped in icon mode too. */}
-        <SidebarMenuButton className="min-w-0 flex-1 group-data-[collapsible=icon]:flex-none" tooltip={f.name} onClick={() => ctx.apply(f.id)}>
+        {/* No tooltip inside the flyout (#965): the sidebar is still `collapsed` while
+            the flyout is open, so SidebarMenuButton would offer to spell out a name
+            that is already right there in full. */}
+        <SidebarMenuButton className="min-w-0 flex-1 group-data-[collapsible=icon]:flex-none" isActive={ctx.activeIds.has(f.id)} tooltip={ctx.inFlyout ? undefined : f.name} onClick={() => ctx.apply(f.id)}>
           <Folder />
           <span className="truncate">{f.name}</span>
         </SidebarMenuButton>
@@ -203,6 +230,8 @@ interface PosterFolderCtx {
   menu: (e: MouseEvent, f: HologramFolder) => void;
   apply: (id: string) => void;
   place: (t: PosterFolderDropTarget) => void;
+  /** True for the copy inside the rail's flyout (#965) — see FolderNode's tooltip. */
+  inFlyout: boolean;
 }
 function PosterFolderRow({ f, ctx }: { f: HologramFolder; ctx: PosterFolderCtx }) {
   const dragging = ctx.dragId === f.id;
@@ -237,11 +266,41 @@ function PosterFolderRow({ f, ctx }: { f: HologramFolder; ctx: PosterFolderCtx }
       >
         {hint === 'before' && <span className="pointer-events-none absolute inset-x-0 top-0 h-0.5 rounded-full bg-sidebar-ring" />}
         {hint === 'after' && <span className="pointer-events-none absolute inset-x-0 bottom-0 h-0.5 rounded-full bg-sidebar-ring" />}
-        <SidebarMenuButton className="min-w-0 flex-1" tooltip={f.name} onClick={() => ctx.apply(f.id)}>
+        <SidebarMenuButton className="min-w-0 flex-1" tooltip={ctx.inFlyout ? undefined : f.name} onClick={() => ctx.apply(f.id)}>
           <Folder />
           <span className="truncate">{f.name}</span>
         </SidebarMenuButton>
       </div>
+    </SidebarMenuItem>
+  );
+}
+// One rail row that stands in for a whole user-grown group (#965): the row itself is a
+// fixed destination (so #678's "the rail carries only fixed rows" still holds), and the
+// list it stands for opens beside it as a flyout. The same Popover-off-a-sidebar-row
+// shape the global history footer row (#145) has used since before the rail existed.
+//
+// `children` is a function of `close` because a flyout is dismissed by USING it: picking
+// a folder is arriving somewhere, and the panel that got you there should get out of the
+// way. Everything else inside (the twisty, +, the context menu) leaves it open.
+function RailFlyoutRow({ icon, label, children }: { icon: ReactNode; label: string; children: (close: () => void) => ReactNode }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <SidebarMenuItem>
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger
+          render={
+            <SidebarMenuButton>
+              {icon}
+              <span data-slot="menu-label">{label}</span>
+            </SidebarMenuButton>
+          }
+        />
+        {/* Capped and scrollable: a folder tree has no natural height, and the flyout
+            sits against the window edge with the whole column height to fall out of. */}
+        <PopoverContent side="right" align="start" className="max-h-[min(70vh,32rem)] w-64 gap-0 overflow-y-auto p-1.5">
+          {children(() => setOpen(false))}
+        </PopoverContent>
+      </Popover>
     </SidebarMenuItem>
   );
 }
@@ -265,6 +324,10 @@ interface FolderTreeCtx {
   /** False for the dragged folder itself and everything under it — those drops cannot exist. */
   canDropOn: (id: string) => boolean;
   place: (t: DropTarget) => void;
+  /** Folders the live query is filtered by — the row for the place you are in (#965). */
+  activeIds: Set<string>;
+  /** True for the copy inside the rail's flyout (#965) — see FolderNode's tooltip. */
+  inFlyout: boolean;
 }
 
 export function LeftSidebar({ resize }: { resize?: PanelResize }) {
@@ -381,11 +444,15 @@ export function LeftSidebar({ resize }: { resize?: PanelResize }) {
     setDrag(null);
     setDrop(null);
   };
+  // One ctx, two renders (#965): the flyout copy overrides `inFlyout` and folds closing
+  // the panel into `apply` — see folderGroup below.
   const treeCtx: FolderTreeCtx = {
     kidsOf,
     expanded,
     setOpen,
     menu: folderMenu,
+    activeIds: activeFolderIds(currentTree),
+    inFlyout: false,
     apply: (id) => {
       applyFolderFilter(id);
     },
@@ -450,6 +517,7 @@ export function LeftSidebar({ resize }: { resize?: PanelResize }) {
     });
   };
   const posterFolderCtx: PosterFolderCtx = {
+    inFlyout: false,
     dragId: pfDragId,
     setDrag: (id) => {
       setPfDrag(id);
@@ -465,6 +533,137 @@ export function LeftSidebar({ resize }: { resize?: PanelResize }) {
       setPfDrop(null);
     },
   };
+
+  // The three user-grown groups, each written once and rendered twice (#965): in the
+  // column, and inside its own rail flyout. Only two things differ between the two, and
+  // both come in as arguments — the wrapper's own class, and the ctx's `inFlyout` /
+  // closing `apply`. Nothing else needs a fork, because the flyout is portaled OUT of
+  // the sidebar: the rows' `group-data-[collapsible=icon]:*` classes find no matching
+  // ancestor there and draw their expanded form on their own.
+
+  // The folder tree, edited in place (#41 / finalized decision D): + on the group heading makes a
+  // root folder, the row's context menu makes a subfolder, renames or deletes.
+  // There is no management modal to open — the tree IS the manager, the way
+  // Finder / Eagle / Raindrop do it. The group stays mounted even when empty so
+  // the + is always reachable.
+  // group-data-[collapsible=icon]:hidden on this and the next two groups (poster
+  // folders, saved searches): the rail's scope is the fixed destinations only
+  // (#678) — user-grown lists show only when expanded, or in the flyout above.
+  const folderGroup = (inFlyout: boolean, close?: () => void) => {
+    const ctx: FolderTreeCtx = inFlyout
+      ? {
+          ...treeCtx,
+          inFlyout: true,
+          apply: (id) => {
+            applyFolderFilter(id);
+            close?.();
+          },
+        }
+      : treeCtx;
+    return (
+      <SidebarGroup className={inFlyout ? 'p-0' : 'group-data-[collapsible=icon]:hidden'}>
+        {/* The heading doubles as the drop target for "out of every folder": a tree
+            needs somewhere to drop that means the root, and the only other place —
+            empty space below the last row — is not a target you can aim at. */}
+        <SidebarGroupLabel
+          className={dragId ? 'rounded-md ring-1 ring-transparent data-[drop=on]:bg-sidebar-accent data-[drop=on]:ring-sidebar-ring' : undefined}
+          data-drop={drop && drop.id === ROOT_DROP ? 'on' : undefined}
+          onDragOver={(e) => {
+            if (!dragId) return;
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+            setDrop({ id: ROOT_DROP, mode: 'into' });
+          }}
+          onDrop={(e) => {
+            e.preventDefault();
+            placeFolder(dragId, null, 'into');
+            endDrag();
+          }}
+        >
+          {t('qfCatFolder')}
+        </SidebarGroupLabel>
+        <SidebarGroupAction aria-label={t('foldNew')} title={t('foldNew')} onClick={() => newFolder(null)}>
+          <Plus />
+        </SidebarGroupAction>
+        <SidebarGroupContent>
+          <SidebarMenu>
+            {(kidsOf.get(null) || []).map((f) => (
+              <FolderNode key={f.id} f={f} ctx={ctx} />
+            ))}
+          </SidebarMenu>
+        </SidebarGroupContent>
+      </SidebarGroup>
+    );
+  };
+
+  // Poster-mode folders (#6 remainder 1) — only while browsing posters (unlike the library
+  // tree above, which stays reachable from every mode): a flat list, edited in
+  // place the same way — + on the heading creates, the row's context menu
+  // renames/deletes, drag reorders. No management modal for these either now.
+  // Own heading string (sbPosterFoldersSidebarTitle, distinct from the qf-pop
+  // facet's sbPosterFoldersTitle): the two groups sit stacked right on top of
+  // each other here, and both saying plain "folder" read as one group split
+  // in two rather than two different things.
+  const posterFolderGroup = (inFlyout: boolean, close?: () => void) => {
+    const ctx: PosterFolderCtx = inFlyout
+      ? {
+          ...posterFolderCtx,
+          inFlyout: true,
+          apply: (id) => {
+            applyPosterFolderFilter(id);
+            close?.();
+          },
+        }
+      : posterFolderCtx;
+    return (
+      <SidebarGroup className={inFlyout ? 'p-0' : 'group-data-[collapsible=icon]:hidden'}>
+        <SidebarGroupLabel>{t('sbPosterFoldersSidebarTitle')}</SidebarGroupLabel>
+        <SidebarGroupAction aria-label={t('foldNew')} title={t('foldNew')} onClick={newPosterFolder}>
+          <Plus />
+        </SidebarGroupAction>
+        <SidebarGroupContent>
+          <SidebarMenu>
+            {posterFolders.map((f) => (
+              <PosterFolderRow key={f.id} f={f} ctx={ctx} />
+            ))}
+          </SidebarMenu>
+        </SidebarGroupContent>
+      </SidebarGroup>
+    );
+  };
+
+  // Saved Searches (#40) — its own group, never mixed in with the folders above:
+  // a folder is a place you put posts, a saved search is a question you re-ask.
+  // Click REPLACES the current query with the saved one, so every condition
+  // lands in the chip bar ready to be adjusted. No count badge: a saved search
+  // has no cheap size — counting one means scanning the whole library, and a
+  // badge on every row would do that on every render.
+  const savedSearchGroup = (inFlyout: boolean, close?: () => void) => (
+    <SidebarGroup className={inFlyout ? 'p-0' : 'group-data-[collapsible=icon]:hidden'}>
+      <SidebarGroupLabel>{t('savedSearches')}</SidebarGroupLabel>
+      <SidebarGroupContent>
+        <SidebarMenu>
+          {saved.map((f) => (
+            <SidebarMenuItem key={f.id}>
+              <SidebarMenuButton
+                tooltip={inFlyout ? undefined : f.name}
+                isActive={!!currentKey && currentKey === treeKey(f.tree)}
+                onContextMenu={(e) => savedSearchMenu(e, f)}
+                onClick={() => {
+                  applySavedSearch(f.id);
+                  close?.();
+                }}
+              >
+                <Search />
+                <span className="truncate">{f.name}</span>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          ))}
+        </SidebarMenu>
+      </SidebarGroupContent>
+    </SidebarGroup>
+  );
+
   return (
     // Ctrl+B collapses to the icon rail; Ctrl+Shift+B takes the rail too (#245) — half a
     // panel left standing is not what "use the grid wide" asks for. Same component either
@@ -522,99 +721,32 @@ export function LeftSidebar({ resize }: { resize?: PanelResize }) {
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
-        {/* The folder tree, edited in place (#41 / finalized decision D): + on the group heading makes a
-            root folder, the row's context menu makes a subfolder, renames or deletes.
-            There is no management modal to open — the tree IS the manager, the way
-            Finder / Eagle / Raindrop do it. The group stays mounted even when empty so
-            the + is always reachable. */}
-        {/* group-data-[collapsible=icon]:hidden on this and the next two groups (poster
-            folders, saved searches): the rail's scope is the 5 fixed destinations only
-            (#678) — user-grown lists show only when expanded. */}
-        <SidebarGroup className="group-data-[collapsible=icon]:hidden">
-          {/* The heading doubles as the drop target for "out of every folder": a tree
-              needs somewhere to drop that means the root, and the only other place —
-              empty space below the last row — is not a target you can aim at. */}
-          <SidebarGroupLabel
-            className={dragId ? 'rounded-md ring-1 ring-transparent data-[drop=on]:bg-sidebar-accent data-[drop=on]:ring-sidebar-ring' : undefined}
-            data-drop={drop && drop.id === ROOT_DROP ? 'on' : undefined}
-            onDragOver={(e) => {
-              if (!dragId) return;
-              e.preventDefault();
-              e.dataTransfer.dropEffect = 'move';
-              setDrop({ id: ROOT_DROP, mode: 'into' });
-            }}
-            onDrop={(e) => {
-              e.preventDefault();
-              placeFolder(dragId, null, 'into');
-              endDrag();
-            }}
-          >
-            {t('qfCatFolder')}
-          </SidebarGroupLabel>
-          <SidebarGroupAction aria-label={t('foldNew')} title={t('foldNew')} onClick={() => newFolder(null)}>
-            <Plus />
-          </SidebarGroupAction>
+        {/* The rail's stand-ins for the three groups below (#965). The rail's scope is
+            unchanged — these are fixed rows, one per group, not the lists themselves —
+            and each one's flyout holds the real thing. Placed above the groups so the
+            rail reads in the same order the column does. */}
+        <SidebarGroup className="hidden group-data-[collapsible=icon]:flex">
           <SidebarGroupContent>
             <SidebarMenu>
-              {(kidsOf.get(null) || []).map((f) => (
-                <FolderNode key={f.id} f={f} ctx={treeCtx} />
-              ))}
+              <RailFlyoutRow icon={<Folder />} label={t('qfCatFolder')}>
+                {(close) => folderGroup(true, close)}
+              </RailFlyoutRow>
+              {isPosters && (
+                <RailFlyoutRow icon={<Folders />} label={t('sbPosterFoldersSidebarTitle')}>
+                  {(close) => posterFolderGroup(true, close)}
+                </RailFlyoutRow>
+              )}
+              {saved.length > 0 && (
+                <RailFlyoutRow icon={<Search />} label={t('savedSearches')}>
+                  {(close) => savedSearchGroup(true, close)}
+                </RailFlyoutRow>
+              )}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
-        {/* Poster-mode folders (#6 remainder 1) — only while browsing posters (unlike the library
-            tree above, which stays reachable from every mode): a flat list, edited in
-            place the same way — + on the heading creates, the row's context menu
-            renames/deletes, drag reorders. No management modal for these either now.
-            Own heading string (sbPosterFoldersSidebarTitle, distinct from the qf-pop
-            facet's sbPosterFoldersTitle): the two groups sit stacked right on top of
-            each other here, and both saying plain "folder" read as one group split
-            in two rather than two different things. */}
-        {isPosters && (
-          <SidebarGroup className="group-data-[collapsible=icon]:hidden">
-            <SidebarGroupLabel>{t('sbPosterFoldersSidebarTitle')}</SidebarGroupLabel>
-            <SidebarGroupAction aria-label={t('foldNew')} title={t('foldNew')} onClick={newPosterFolder}>
-              <Plus />
-            </SidebarGroupAction>
-            <SidebarGroupContent>
-              <SidebarMenu>
-                {posterFolders.map((f) => (
-                  <PosterFolderRow key={f.id} f={f} ctx={posterFolderCtx} />
-                ))}
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
-        )}
-        {/* Saved Searches (#40) — its own group, never mixed in with the folders above:
-            a folder is a place you put posts, a saved search is a question you re-ask.
-            Click REPLACES the current query with the saved one, so every condition
-            lands in the chip bar ready to be adjusted. No count badge: a saved search
-            has no cheap size — counting one means scanning the whole library, and a
-            badge on every row would do that on every render. */}
-        {saved.length > 0 && (
-          <SidebarGroup className="group-data-[collapsible=icon]:hidden">
-            <SidebarGroupLabel>{t('savedSearches')}</SidebarGroupLabel>
-            <SidebarGroupContent>
-              <SidebarMenu>
-                {saved.map((f) => (
-                  <SidebarMenuItem key={f.id}>
-                    <SidebarMenuButton
-                      tooltip={f.name}
-                      isActive={!!currentKey && currentKey === treeKey(f.tree)}
-                      onContextMenu={(e) => savedSearchMenu(e, f)}
-                      onClick={() => {
-                        applySavedSearch(f.id);
-                      }}
-                    >
-                      <Search />
-                      <span className="truncate">{f.name}</span>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                ))}
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
-        )}
+        {folderGroup(false)}
+        {isPosters && posterFolderGroup(false)}
+        {saved.length > 0 && savedSearchGroup(false)}
         {/* Trash (#268) — a library destination, so it lives here in the nav rather
             than in the footer (which holds the app-level entries) or in Settings, where it
             used to be. Last and always present: digiKam puts the trash as the final
