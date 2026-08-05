@@ -14,12 +14,15 @@
 //     over to next time; other events aren't blocked by it
 //   - none of the skips above add a row to the DB (indirect evidence of the transaction boundary)
 //   - an acquired original (#292) carried in the envelope lands in raw_payloads in the same transaction as posts
+//   - an envelope whose apply THROWS (#920) is skipped and quarantined into
+//     .hologram-inbox/failed/ — the rest of the drain still lands, and the next
+//     drain does not trip over it again (loose files and segment lines alike)
 
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
-import { buildEnvelope, inboxNewDir, writeInboxEvent } from '../native-host/inbox.mts';
+import { buildEnvelope, inboxFailedDir, inboxNewDir, inboxSegmentsDir, writeInboxEvent } from '../native-host/inbox.mts';
 import { normalizePostRecord } from '../native-host/post-record.mts';
 import { packRawPayloads, unpackRawPayload } from '../native-host/raw-payload.mts';
 import { openDatabase } from '../app/src/main/lib-db';
@@ -228,6 +231,75 @@ describe('drainInbox', () => {
       drainInbox(saveFolder, handle.sqlite);
 
       expect(one('SELECT COUNT(*) AS n FROM raw_payloads WHERE postId = ?', other).n).toBe(0);
+    });
+  });
+
+  // #920: the invariant index.ts's drainInboxLogged already claimed ("never
+  // lets one bad file stop the rest") for the failures we enumerated, now held
+  // for the ones we did not. The failure is injected with a BEFORE INSERT
+  // trigger rather than a record shape that happens to violate a constraint
+  // today (#919 was one such shape, and fixing it would quietly retire this
+  // test) — what is under test is "an apply threw", not any one cause.
+  describe('apply-failed（#920）', () => {
+    const poison = '1700000000700-99a1';
+    const healthy = '1700000000700-99a2'; // sorts AFTER the poison, so it only lands if the drain kept going
+    const segPoison = '1700000000800-99b1';
+    const segHealthy = '1700000000800-99b2';
+    const failedPath = (id: string) => path.join(inboxFailedDir(saveFolder), `${id}.json`);
+
+    beforeAll(() => {
+      handle.sqlite.exec(`CREATE TRIGGER poison_apply BEFORE INSERT ON posts WHEN NEW.captureId IN ('${poison}', '${segPoison}') BEGIN SELECT RAISE(ABORT, 'poisoned insert'); END;`);
+    });
+    afterAll(() => {
+      try {
+        handle.sqlite.exec('DROP TRIGGER IF EXISTS poison_apply');
+      } catch {
+        /* the DB is closed by the outer afterAll in some orders */
+      }
+    });
+
+    test('1件が例外を投げても後続は取り込まれ、毒は failed/ へ移る', async () => {
+      await seedEnvelope({ captureId: poison, url: 'https://x.com/u/status/13', image: `${poison}.jpg` }, [`${poison}.jpg`]);
+      const ok = await seedEnvelope({ captureId: healthy, url: 'https://x.com/u/status/14', image: `${healthy}.jpg` }, [`${healthy}.jpg`]);
+
+      const report = drainInbox(saveFolder, handle.sqlite);
+
+      expect(report.applied).toEqual([ok.eventId]);
+      expect(report.skipped.find((s: any) => s.file === `${poison}.json`)).toMatchObject({ reason: 'apply-failed', detail: expect.stringContaining('moved to failed/') });
+      // Rolled back whole: neither the post nor its receipt exists.
+      expect(one('SELECT 1 FROM posts WHERE captureId = ?', poison)).toBeUndefined();
+      expect(one('SELECT 1 FROM inbox_events WHERE eventId = ?', poison)).toBeUndefined();
+      // Moved, not deleted — the envelope's bytes stay readable for diagnosis.
+      expect(fs.existsSync(path.join(inboxNewDir(saveFolder), `${poison}.json`))).toBe(false);
+      expect(JSON.parse(fs.readFileSync(failedPath(poison), 'utf8')).eventId).toBe(poison);
+    });
+
+    test('次の drain は同じ毒を読み直さない（ログが同じ行で埋まらない）', () => {
+      const report = drainInbox(saveFolder, handle.sqlite);
+
+      expect(report.skipped.find((s: any) => s.file === `${poison}.json`)).toBeUndefined();
+      expect(report.applied).toEqual([]);
+    });
+
+    // Same rule on the DB-loss replay path: a segment cannot have one line
+    // pulled out of it, so the failing envelope is copied into failed/ while
+    // the segment itself (the replay source) is left alone.
+    test('セグメント再生でも1行の例外が残りの行を止めない', () => {
+      for (const id of [segPoison, segHealthy]) fs.writeFileSync(path.join(saveFolder, `${id}.jpg`), 'x');
+      const lines = [buildEnvelope(normalizePostRecord({ captureId: segPoison, url: 'https://x.com/u/status/15', image: `${segPoison}.jpg` })), buildEnvelope(normalizePostRecord({ captureId: segHealthy, url: 'https://x.com/u/status/16', image: `${segHealthy}.jpg` }))].map((e) => JSON.stringify(e));
+      fs.mkdirSync(inboxSegmentsDir(saveFolder), { recursive: true });
+      fs.writeFileSync(path.join(inboxSegmentsDir(saveFolder), 'seg99b.jsonl'), `${lines.join('\n')}\n`);
+
+      const report = drainInbox(saveFolder, handle.sqlite);
+
+      expect(report.segmentsReplayed).toEqual(['seg99b']);
+      expect(report.applied).toEqual([segHealthy]);
+      expect(report.skipped.find((s: any) => s.file === 'seg99b.jsonl')).toMatchObject({ reason: 'apply-failed', detail: expect.stringContaining('copied to failed/') });
+      expect(JSON.parse(fs.readFileSync(failedPath(segPoison), 'utf8')).eventId).toBe(segPoison);
+      // The segment is receipted despite the bad line, so the next drain does
+      // not reopen it — the quarantined copy is what stays retryable.
+      expect(one('SELECT 1 FROM inbox_segments WHERE segmentId = ?', 'seg99b')).toBeTruthy();
+      expect(drainInbox(saveFolder, handle.sqlite).segmentsReplayed).toEqual([]);
     });
   });
 });
