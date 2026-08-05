@@ -55,6 +55,8 @@ jobs:
       # instead (#928).
       - name: Detect docs-only change
         id: docs-only
+        # windows-latest's default shell is pwsh, not bash — this script is POSIX sh.
+        shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
