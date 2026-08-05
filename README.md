@@ -1,7 +1,7 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="assets/banner-en-dark.svg">
-    <img src="assets/banner-en-light.svg" alt="Hologram — no more 'where did I see that?' Posts and art, saved with who made them. Search it all later." width="440">
+    <img src="assets/banner-en-light.svg" alt="Hologram — no more 'where did I see that?' Your social media library." width="440">
   </picture>
 </p>
 

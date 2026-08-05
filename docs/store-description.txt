@@ -13,8 +13,7 @@ Save content you find on the web — image, text, creator, source and all — in
 
 === DETAILED DESCRIPTION ===
 
-No more "where did I see that?"
-Posts and art, saved with who made them. Search it all later.
+No more "where did I see that?" — your social media library.
 
 Hologram saves the posts you come across — not just a screenshot, but the text, author, date, engagement counts, and original URL too — into a library on your own PC, where you can search, tag, and organize them.
 

@@ -618,7 +618,7 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     // viewer: about / version
     aboutTitle: 'このアプリについて',
     aboutVersion: 'バージョン $1',
-    aboutTagline: '「あれどこで見たっけ」を、なくす。',
+    aboutTagline: '「アレ、どこで見たっけ」をなくす。あなたのSNSライブラリ。',
     aboutLinkRepo: 'GitHub リポジトリ',
     aboutLinkReleases: 'リリースノート',
     aboutLinkLicense: 'ライセンス（MIT）',
@@ -1444,7 +1444,7 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     // viewer: about / version
     aboutTitle: 'About',
     aboutVersion: 'Version $1',
-    aboutTagline: 'No more "where did I see that?"',
+    aboutTagline: 'No more "where did I see that?" — your social media library.',
     aboutLinkRepo: 'GitHub repository',
     aboutLinkReleases: 'Release notes',
     aboutLinkLicense: 'License (MIT)',
