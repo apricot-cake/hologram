@@ -392,14 +392,14 @@ interface PosterProfileHistoryEntryJson {
 }
 interface PosterProfileJson {
   posterKey: string;
-  platform: string;
+  platform: string | null; // null for a platform-less (bookmark) poster — #919
   userId: string | null;
   instance: string | null;
   history: PosterProfileHistoryEntryJson[];
 }
 
 function readPosterProfiles(sqlite: Sqlite): { profiles: PosterProfileJson[] } {
-  const identityRows = sqlite.prepare('SELECT posterKey, platform, userId, instance FROM poster_profiles ORDER BY posterKey').all() as Array<{ posterKey: string; platform: string; userId: string | null; instance: string | null }>;
+  const identityRows = sqlite.prepare('SELECT posterKey, platform, userId, instance FROM poster_profiles ORDER BY posterKey').all() as Array<{ posterKey: string; platform: string | null; userId: string | null; instance: string | null }>;
   if (!identityRows.length) return { profiles: [] };
   const historyByKey = new Map<string, PosterProfileHistoryEntryJson[]>();
   const historyRows = sqlite.prepare('SELECT posterKey, observedAt, displayName, screenName, bio, links, avatar, avatarFile, banner, bannerFile, followers, authorCreatedAt, contentHash, provenance FROM poster_profile_snapshots ORDER BY posterKey, observedAt').all() as Array<
@@ -445,7 +445,9 @@ function replacePosterProfiles(sqlite: Sqlite, data: unknown): void {
     }
     insertProfile.run(
       p.posterKey,
-      typeof p.platform === 'string' ? p.platform : '',
+      // '' was only ever the NOT NULL placeholder the column used to demand;
+      // the platform-less poster is a real shape now (#919), so it stays null.
+      typeof p.platform === 'string' && p.platform ? p.platform : null,
       p.userId ?? null,
       p.instance ?? null,
       latest.displayName ?? null,

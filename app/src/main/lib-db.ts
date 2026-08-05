@@ -569,6 +569,99 @@ const MIGRATIONS: Migration[] = [
     name: 'add-post-meta-source',
     up: (db) => db.exec(`ALTER TABLE posts ADD COLUMN metaSource TEXT;`),
   },
+  // #919: poster_profiles.platform drops NOT NULL. The write path was already
+  // built for platform-less posters — lib-poster-profile.ts's posterKeyOf has
+  // an explicit `web:<host>:<id>` branch for them (#760) and posterInstanceOf
+  // returns null — but the DDL forbade the row, so every bookmark of a page
+  // that DOES expose an author (#195 saves those with platform: null and the
+  // author page URL as userId: Qiita, YouTube, news sites, tech blogs) hit
+  // "NOT NULL constraint failed: poster_profiles.platform" at ingest and never
+  // became a card. Schema follows the implementation here rather than the
+  // other way round: requiring platform would mean discarding a bookmark's
+  // author, and a 'web' sentinel would make an unknown platform look like a
+  // real one to every platform filter and tally downstream.
+  //
+  // SQLite cannot relax a column constraint in place, so this is the standard
+  // rebuild — with one wrinkle. poster_profile_snapshots carries an
+  // ON DELETE CASCADE reference to poster_profiles, and the migration runner
+  // holds a transaction (so `PRAGMA foreign_keys = OFF`, a no-op inside one,
+  // is not available): dropping the old parent while that child still points
+  // at it would cascade the entire history away. So the child's rows are
+  // parked in an FK-less staging table first and the child is recreated from
+  // its original DDL afterwards, which also leaves no reference dangling at
+  // the moment of the RENAME.
+  {
+    name: 'poster-profile-platform-nullable',
+    up: (db) =>
+      db.exec(`
+        CREATE TABLE poster_profiles_v2 (
+          posterKey TEXT PRIMARY KEY,
+          platform TEXT,
+          userId TEXT,
+          instance TEXT,
+          displayName TEXT,
+          screenName TEXT,
+          bio TEXT,
+          links TEXT,
+          avatar TEXT,
+          avatarFile TEXT,
+          banner TEXT,
+          bannerFile TEXT,
+          followers INTEGER,
+          authorCreatedAt TEXT,
+          contentHash TEXT NOT NULL,
+          provenance TEXT NOT NULL,
+          firstObservedAt TEXT NOT NULL,
+          lastObservedAt TEXT NOT NULL
+        );
+        INSERT INTO poster_profiles_v2 (posterKey, platform, userId, instance, displayName, screenName, bio, links, avatar, avatarFile, banner, bannerFile, followers, authorCreatedAt, contentHash, provenance, firstObservedAt, lastObservedAt)
+          SELECT posterKey, platform, userId, instance, displayName, screenName, bio, links, avatar, avatarFile, banner, bannerFile, followers, authorCreatedAt, contentHash, provenance, firstObservedAt, lastObservedAt FROM poster_profiles;
+        CREATE TABLE poster_profile_snapshots_stage (
+          id INTEGER PRIMARY KEY,
+          posterKey TEXT NOT NULL,
+          observedAt TEXT NOT NULL,
+          displayName TEXT,
+          screenName TEXT,
+          bio TEXT,
+          links TEXT,
+          avatar TEXT,
+          avatarFile TEXT,
+          banner TEXT,
+          bannerFile TEXT,
+          followers INTEGER,
+          authorCreatedAt TEXT,
+          contentHash TEXT NOT NULL,
+          provenance TEXT NOT NULL
+        );
+        INSERT INTO poster_profile_snapshots_stage (id, posterKey, observedAt, displayName, screenName, bio, links, avatar, avatarFile, banner, bannerFile, followers, authorCreatedAt, contentHash, provenance)
+          SELECT id, posterKey, observedAt, displayName, screenName, bio, links, avatar, avatarFile, banner, bannerFile, followers, authorCreatedAt, contentHash, provenance FROM poster_profile_snapshots;
+        DROP TABLE poster_profile_snapshots;
+        DROP TABLE poster_profiles;
+        ALTER TABLE poster_profiles_v2 RENAME TO poster_profiles;
+        CREATE TABLE poster_profile_snapshots (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          posterKey TEXT NOT NULL REFERENCES poster_profiles(posterKey) ON DELETE CASCADE,
+          observedAt TEXT NOT NULL,
+          displayName TEXT,
+          screenName TEXT,
+          bio TEXT,
+          links TEXT,
+          avatar TEXT,
+          avatarFile TEXT,
+          banner TEXT,
+          bannerFile TEXT,
+          followers INTEGER,
+          authorCreatedAt TEXT,
+          contentHash TEXT NOT NULL,
+          provenance TEXT NOT NULL
+        );
+        INSERT INTO poster_profile_snapshots (id, posterKey, observedAt, displayName, screenName, bio, links, avatar, avatarFile, banner, bannerFile, followers, authorCreatedAt, contentHash, provenance)
+          SELECT id, posterKey, observedAt, displayName, screenName, bio, links, avatar, avatarFile, banner, bannerFile, followers, authorCreatedAt, contentHash, provenance FROM poster_profile_snapshots_stage;
+        DROP TABLE poster_profile_snapshots_stage;
+        CREATE UNIQUE INDEX idx_poster_profile_snapshots_identity ON poster_profile_snapshots(posterKey, contentHash, observedAt);
+        CREATE INDEX idx_poster_profile_snapshots_key ON poster_profile_snapshots(posterKey, observedAt);
+      `),
+  },
 ];
 
 interface Migration {
@@ -876,7 +969,10 @@ interface RawPayloadsTable {
 // same storage convention as posts.hashtags/domFilled.
 interface PosterProfilesTable {
   posterKey: string;
-  platform: string;
+  // Nullable since the poster-profile-platform-nullable migration (#919): a
+  // bookmark of a page that exposes an author has no platform, and posterKeyOf
+  // gives it a `web:<host>:<id>` key of its own rather than a sentinel.
+  platform: string | null;
   userId: string | null;
   instance: string | null;
   displayName: string | null;

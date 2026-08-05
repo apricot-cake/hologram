@@ -396,8 +396,11 @@ function mergePosterProfiles(cur, inc) {
     for (const p of list || []) {
       if (!p || typeof p.posterKey !== 'string' || !p.posterKey) continue;
       let entry = byKey.get(p.posterKey);
-      if (!entry) byKey.set(p.posterKey, (entry = { posterKey: p.posterKey, platform: '', userId: null, instance: null, historyByKey: new Map() }));
-      if (!entry.platform && p.platform) entry.platform = String(p.platform);
+      if (!entry) byKey.set(p.posterKey, (entry = { posterKey: p.posterKey, platform: null, userId: null, instance: null, historyByKey: new Map() }));
+      // null, not '' — a platform-less poster (#919, a bookmark whose page
+      // named an author) has to come out of the ZIP the same way the live
+      // write path stores it, or the two produce different rows for one poster.
+      if (entry.platform == null && p.platform != null) entry.platform = String(p.platform);
       if (entry.userId == null && p.userId != null) entry.userId = p.userId;
       if (entry.instance == null && p.instance != null) entry.instance = p.instance;
       for (const h of Array.isArray(p.history) ? p.history : []) {

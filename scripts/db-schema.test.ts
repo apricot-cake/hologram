@@ -71,9 +71,9 @@ describe('マイグレーションが通り、テーブルが揃う', () => {
   );
   sqlite.close();
 
-  test('user_version は 32（v1 DDL ＋ #178 add-post-cw-sensitive・#188 add-post-series-fields・#180 add-post-quoted-refs・#162 add-media-max-dims・#290 add-post-custom-emojis・#36 rename-description-to-memo・#23 add-poster-aliases・#179 add-post-poll・#236 add-post-file・#181 add-post-link-card・#145 add-history-table・#289 add-poster-profiles・#8 add-post-shot-animated・#239 add-post-meta-source までの追加31本）', () => {
+  test('user_version は 33（v1 DDL ＋ #178 add-post-cw-sensitive・#188 add-post-series-fields・#180 add-post-quoted-refs・#162 add-media-max-dims・#290 add-post-custom-emojis・#36 rename-description-to-memo・#23 add-poster-aliases・#179 add-post-poll・#236 add-post-file・#181 add-post-link-card・#145 add-history-table・#289 add-poster-profiles・#8 add-post-shot-animated・#239 add-post-meta-source・#919 poster-profile-platform-nullable までの追加32本）', () => {
     const { sqlite } = openDatabase(mkdb());
-    expect(sqlite.pragma('user_version', { simple: true })).toBe(32);
+    expect(sqlite.pragma('user_version', { simple: true })).toBe(33);
     sqlite.close();
   });
 
@@ -444,6 +444,87 @@ describe('posts.assetClass は意図的に無制約', () => {
   });
 });
 
+// #919. The bug was a schema/implementation mismatch: posterKeyOf has had a
+// `web:<host>:<id>` branch for platform-less posters since #760, but the column
+// refused the row, so every bookmark of a page that names an author threw at
+// ingest. The rebuild that relaxes it has to carry poster_profile_snapshots
+// across a DROP of the table it cascades from, which is the part worth pinning
+// down.
+describe('poster_profiles.platform は null を取れる（#919）', () => {
+  const { sqlite } = openDatabase(mkdb());
+  const insert = (posterKey: string, platform: string | null) =>
+    sqlite.prepare('INSERT INTO poster_profiles (posterKey, platform, userId, instance, contentHash, provenance, firstObservedAt, lastObservedAt) VALUES (?,?,?,NULL,?,?,?,?)').run(posterKey, platform, 'https://qiita.com/Y-Y-dev', 'hash', 'api:unknown', '2026-08-05', '2026-08-05');
+
+  test('platform 無しの行が書ける（ブックマークの著者）', () => {
+    insert('web:qiita.com:https://qiita.com/Y-Y-dev', null);
+    expect(sqlite.prepare("SELECT platform FROM poster_profiles WHERE posterKey = 'web:qiita.com:https://qiita.com/Y-Y-dev'").get().platform).toBeNull();
+  });
+
+  test('platform 付きの行は従来どおり', () => {
+    insert('x:123', 'x');
+    expect(sqlite.prepare("SELECT platform FROM poster_profiles WHERE posterKey = 'x:123'").get().platform).toBe('x');
+  });
+
+  test('他の NOT NULL は緩んでいない', () => {
+    expect(() => sqlite.prepare('INSERT INTO poster_profiles (posterKey, platform, contentHash, provenance, firstObservedAt, lastObservedAt) VALUES (?,NULL,NULL,?,?,?)').run('web:example.com:x', 'api:unknown', '2026-08-05', '2026-08-05')).toThrow(/NOT NULL/);
+  });
+});
+
+describe('poster-profile-platform-nullable のマイグレーションが既存データを保つ（#919）', () => {
+  const file = mkdb();
+  const upto = MIGRATIONS.findIndex((m) => m.name === 'poster-profile-platform-nullable');
+  const before = new Database(file);
+  before.pragma('foreign_keys = ON');
+  runMigrations(before, MIGRATIONS.slice(0, upto)); // the shape a library shipped before #919 is in
+  before.prepare("INSERT INTO poster_profiles (posterKey, platform, userId, instance, displayName, contentHash, provenance, firstObservedAt, lastObservedAt) VALUES ('x:123', 'x', '123', NULL, 'アリス', 'h1', 'api:x', '2026-08-01', '2026-08-03')").run();
+  before.prepare("INSERT INTO poster_profiles (posterKey, platform, userId, instance, displayName, contentHash, provenance, firstObservedAt, lastObservedAt) VALUES ('misskey:misskey.io:9', 'misskey', '9', 'misskey.io', 'ボブ', 'h2', 'api:misskey', '2026-08-02', '2026-08-02')").run();
+  const snap = before.prepare('INSERT INTO poster_profile_snapshots (posterKey, observedAt, displayName, contentHash, provenance) VALUES (?,?,?,?,?)');
+  snap.run('x:123', '2026-08-01', 'アリス（旧）', 'h0', 'api:x');
+  snap.run('x:123', '2026-08-03', 'アリス', 'h1', 'api:x');
+  snap.run('misskey:misskey.io:9', '2026-08-02', 'ボブ', 'h2', 'api:misskey');
+  const idsBefore = before.prepare('SELECT id, posterKey, observedAt FROM poster_profile_snapshots ORDER BY id').all();
+  before.close();
+
+  const { sqlite } = openDatabase(file); // runs the remaining migration
+
+  test('プロフィール行が全部残る', () => {
+    expect(sqlite.prepare('SELECT posterKey, platform, instance, displayName FROM poster_profiles ORDER BY posterKey').all()).toEqual([
+      { posterKey: 'misskey:misskey.io:9', platform: 'misskey', instance: 'misskey.io', displayName: 'ボブ' },
+      { posterKey: 'x:123', platform: 'x', instance: null, displayName: 'アリス' },
+    ]);
+  });
+
+  // The cascade from the parent being dropped mid-rebuild is exactly what would
+  // eat these, so identity (id included) is checked, not just the count.
+  test('履歴行が id ごと残る（親の DROP に巻き込まれない）', () => {
+    expect(sqlite.prepare('SELECT id, posterKey, observedAt FROM poster_profile_snapshots ORDER BY id').all()).toEqual(idsBefore);
+  });
+
+  test('新しい行の id は残った最大値の続きから採られる', () => {
+    sqlite.prepare("INSERT INTO poster_profile_snapshots (posterKey, observedAt, displayName, contentHash, provenance) VALUES ('x:123', '2026-08-04', 'アリス', 'h3', 'api:x')").run();
+    expect(sqlite.prepare("SELECT id FROM poster_profile_snapshots WHERE contentHash = 'h3'").get().id).toBe(4);
+  });
+
+  test('ON DELETE CASCADE が張り直されている', () => {
+    sqlite.prepare("DELETE FROM poster_profiles WHERE posterKey = 'x:123'").run();
+    expect(sqlite.prepare("SELECT COUNT(*) AS n FROM poster_profile_snapshots WHERE posterKey = 'x:123'").get().n).toBe(0);
+    expect(sqlite.prepare("SELECT COUNT(*) AS n FROM poster_profile_snapshots WHERE posterKey = 'misskey:misskey.io:9'").get().n).toBe(1);
+  });
+
+  test('同一観測を弾く UNIQUE 索引が張り直されている', () => {
+    expect(() => sqlite.prepare("INSERT INTO poster_profile_snapshots (posterKey, observedAt, displayName, contentHash, provenance) VALUES ('misskey:misskey.io:9', '2026-08-02', 'ボブ', 'h2', 'api:misskey')").run()).toThrow(/UNIQUE/);
+  });
+
+  test('作業用テーブルを残さない', () => {
+    const names = sqlite
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'poster_profile%'")
+      .all()
+      .map((r: any) => r.name)
+      .sort();
+    expect(names).toEqual(['poster_profile_snapshots', 'poster_profiles']);
+  });
+});
+
 describe('既存 v1 データベースの開き直しは no-op', () => {
   const file = mkdb();
   const first = openDatabase(file);
@@ -452,7 +533,7 @@ describe('既存 v1 データベースの開き直しは no-op', () => {
   const second = openDatabase(file);
 
   test('マイグレーションを再実行しない', () => {
-    expect(second.sqlite.pragma('user_version', { simple: true })).toBe(32);
+    expect(second.sqlite.pragma('user_version', { simple: true })).toBe(33);
   });
 
   test('前回のデータが残る', () => {
