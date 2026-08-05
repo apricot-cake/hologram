@@ -141,6 +141,16 @@ function peerCheck(root: string = repoRoot): Verdict | null {
   return { needed: true, reason: `electron-vite@${ev.version} の peer は ${range}＝使用中の vite ${vite.version} を受け入れません` };
 }
 
+// Passed to every install here, and NOT part of WORKAROUNDS: these are not
+// working around anything, so they have no upstream to outlive. `npm audit` costs
+// a registry round trip on every install — 7s of each app-tests shard's
+// preparation is the root install alone (#967) — and its verdict is read by
+// nobody: vulnerabilities reach this repository through Dependabot's alerts and
+// security updates, which see the committed lockfile without being asked. `npm
+// audit` on demand still works and still says the same thing. --no-fund drops a
+// line of output from a script whose whole job is to be quiet enough to read.
+const QUIET_FLAGS = ['--no-audit', '--no-fund'];
+
 const WORKAROUNDS: Workaround[] = [
   { flag: '--ignore-scripts', label: 'better-sqlite3 の不要な node-gyp ビルド（ロックファイル駆動のインストールでは gypfile:false が届かない）', upstream: 'https://github.com/WiseLibs/better-sqlite3/issues/1503', check: sqliteCheck },
   { flag: '--legacy-peer-deps', label: 'electron-vite の peer 範囲と vite 8 の衝突', upstream: 'https://github.com/alex8088/electron-vite/releases', check: peerCheck },
@@ -174,15 +184,16 @@ function main() {
   // The verdicts from the PREVIOUS install pick this install's flags.
   const flags = decideFlags(WORKAROUNDS.map((w) => w.check()));
 
-  run(['npm install', ...flags].join(' '), repoRoot);
+  run(['npm install', ...flags, ...QUIET_FLAGS].join(' '), repoRoot);
 
   // extension/ is a separate npm project with its own lockfile (deliberately —
   // it is a standalone WXT build), so a root install does not cover it. Fresh
   // worktrees need this or the extension build and its type check both fail.
   // Its own postinstall runs `wxt prepare`, which generates the .wxt/ types its
-  // tsconfig extends. Its own tree has no peer conflict and takes no install flags.
+  // tsconfig extends. Its own tree has no peer conflict, so it takes none of the
+  // workaround flags above — only the quiet ones every install here gets.
   const extDir = path.join(repoRoot, 'extension');
-  run('npm install', extDir);
+  run(['npm install', ...QUIET_FLAGS].join(' '), extDir);
 
   // Three suites read the built extension bundles straight off disk (capture.js,
   // resident.js), so a freshly installed tree fails `npm test` until this runs.
