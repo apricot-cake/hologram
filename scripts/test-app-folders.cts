@@ -81,7 +81,17 @@ for (let i = 0; i < 3; i++) {
 const evalJs = `(async () => {
   const grid = document.querySelector('[data-slot="post-grid"]');
   const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-  const waitFor = async (fn, ms = 3000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (fn()) return true; await sleep(40); } return false; };
+  // One budget for the whole run (#952). Every wait is capped by it, so a broken
+  // step cannot chain timeouts into main's 60s SMOKE_TIMEOUT, which reports "no
+  // eval result" and names nothing.
+  const DEADLINE = Date.now() + 45000;
+  // Bounded but generous: the bound only costs time on a run that is already
+  // broken, while a healthy run leaves the moment the condition holds.
+  const waitFor = async (fn, ms = 6000) => {
+    const until = Math.min(Date.now() + ms, DEADLINE);
+    while (Date.now() < until) { if (fn()) return true; await sleep(40); }
+    return fn();
+  };
   const click = (el) => el && el.dispatchEvent(new MouseEvent('click', { bubbles: true }));
   const rclick = (el) => el && el.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 60, clientY: 60 }));
   const cards = () => grid.querySelectorAll('[data-slot="post-card"]').length;
@@ -103,12 +113,17 @@ const evalJs = `(async () => {
   };
   // The naming dialog. Its OK is matched by LABEL, not position — a layout change
   // must not quietly press Cancel and leave this suite still passing.
+  const okBtn = () => [...document.querySelectorAll('[data-slot="dialog-content"] button')].find(b => b.textContent.trim() === 'OK');
   const nameIt = async (name) => {
     if (!await waitFor(() => !!document.querySelector('[data-slot="dialog-content"] input'))) return false;
     setInput(document.querySelector('[data-slot="dialog-content"] input'), name);
-    await sleep(40);
-    click([...document.querySelectorAll('[data-slot="dialog-content"] button')].find(b => b.textContent.trim() === 'OK'));
-    await sleep(140);
+    // prompt/Prompt.tsx disables OK while the field is blank, so "OK went live" is
+    // the observable proof that React took the value — no guess at commit timing.
+    if (!await waitFor(() => { const b = okBtn(); return !!b && !b.disabled; }, 3000)) return false;
+    click(okBtn());
+    // The dialog unmounts on OK; waiting for it to go is how we know the click
+    // landed before the next step reads the tree.
+    await waitFor(() => !document.querySelector('[data-slot="dialog-content"]'), 3000);
     return true;
   };
 
@@ -137,21 +152,23 @@ const evalJs = `(async () => {
   // --- C. clicking the ROOT shows the grandchild's post: a folder condition
   //        covers its whole subtree (aggregation is the default meaning) ---
   click(rowNamed('一次資料').querySelector('[data-slot="sidebar-menu-button"]'));
-  await sleep(350);
+  // The condition round-trips through the DB and re-renders the grid; wait for the
+  // chip that names it and for the grid to answer, instead of timing the query.
+  await waitFor(() => chips().some(c => c.textContent.includes('一次資料')) && cards() === 1);
   out.aggregated = cards();                                         // 1 — held two levels down
 
   // --- D. 「このフォルダのみ」 (this folder only) narrows it to the root's own posts (it holds none) ---
   click(chips().find(c => c.textContent.includes('一次資料')).querySelector('button'));
   out.editorOpened = await waitFor(() => [...document.querySelectorAll('label')].some(l => l.textContent.includes('このフォルダのみ')));
   click(document.querySelector('[data-slot="switch"]'));
-  await sleep(350);
+  await waitFor(() => chips().some(c => c.textContent.includes('のみ')) && cards() === 0);
   out.onlyCount = cards();                                          // 0
   out.chipSaysOnly = chips().some(c => c.textContent.includes('のみ'));
   document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-  await sleep(120);
+  await waitFor(() => ![...document.querySelectorAll('label')].some(l => l.textContent.includes('このフォルダのみ')), 3000);
   const x = chips().find(c => c.textContent.includes('一次資料'));
   click([...x.querySelectorAll('button')].pop());                   // drop the condition again
-  await sleep(300);
+  await waitFor(() => cards() === 3);
   out.backToAll = cards();                                          // 3
 
   // --- E. deleting the root takes both descendants with it ---
@@ -163,7 +180,9 @@ const evalJs = `(async () => {
   const desc = () => document.querySelector('[data-slot="alert-dialog-description"]');
   out.cascadeWarned = await waitFor(() => !!desc() && desc().textContent.includes('2'));
   click(document.querySelector('[data-slot="alert-dialog-action"]'));
-  await sleep(350);
+  // The sidebar losing every row is the DOM mirror of the cascade landing in the
+  // DB, so it is what getFolders() below can be read against.
+  await waitFor(() => rows().length === 0 && cards() === 3);
   const c2 = await getFolders();
   out.leftAfterDelete = c2.folders.length;                          // 0 — all three went
   out.postsKept = cards();                                          // 3 — the posts stay in the library

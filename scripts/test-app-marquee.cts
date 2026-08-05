@@ -62,7 +62,35 @@ seedLibrary(configDir, records);
 
 const evalJs = `(async () => {
   const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-  const waitFor = async (fn, ms = 5000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (fn()) return true; await sleep(40); } return false; };
+  // One budget for the whole run (#952). Every wait below is capped by it, so a
+  // regression that stalls several steps still returns its per-check report
+  // instead of running into main's 60s SMOKE_TIMEOUT — which reports "no eval
+  // result" and names nothing.
+  const DEADLINE = Date.now() + 45000;
+  // Waits are bounded but generous: the bound only costs time on the run that is
+  // already broken, while a healthy run leaves the moment the condition holds.
+  const waitFor = async (fn, ms = 8000) => {
+    const until = Math.min(Date.now() + ms, DEADLINE);
+    while (Date.now() < until) { if (fn()) return true; await sleep(40); }
+    return fn();
+  };
+  // Masonry layout has no "done" event: masonic measures, commits, and can move
+  // things again on the next commit. The observable post-condition is that a
+  // measurement REPEATS — used wherever this suite used to sleep for a guessed
+  // number of frames.
+  const waitStable = async (read, ms = 6000) => {
+    const until = Math.min(Date.now() + ms, DEADLINE);
+    let prev = null;
+    let repeats = 0;
+    while (Date.now() < until) {
+      const cur = JSON.stringify(read());
+      repeats = cur === prev ? repeats + 1 : 0;
+      if (repeats >= 2) return true;
+      prev = cur;
+      await sleep(50);
+    }
+    return false;
+  };
   const byId = (id) => document.getElementById(id);
   const cards = () => [...document.querySelectorAll('[data-slot="post-grid"] [data-slot="post-card"]')];
   // Cards are identified by their own text (no key attribute — #618).
@@ -73,8 +101,12 @@ const evalJs = `(async () => {
   window.addEventListener('error', (e) => errors.push(String((e && e.message) || e)));
   const out = {};
 
+  const rectsOf = (sel) => [...document.querySelectorAll(sel)].map(c => { const k = c.getBoundingClientRect(); return [Math.round(k.left), Math.round(k.top), Math.round(k.width), Math.round(k.height)]; });
+
   await waitFor(() => cards().length >= 12);
-  await sleep(200); // let masonic settle its measured heights before reading rects
+  // Every expectation below is derived from these rects, so wait for masonic's
+  // measured heights to stop moving rather than for a fixed number of frames.
+  out.gridSettled = await waitStable(() => rectsOf('[data-slot="post-grid"] [data-slot="post-card"]'));
 
   const scroller = document.querySelector('[data-slot="content-scroll"]');
   const sr = scroller.getBoundingClientRect();
@@ -101,14 +133,24 @@ const evalJs = `(async () => {
     return cards().filter(c => { const k = c.getBoundingClientRect(); return l < k.right && r > k.left && t < k.bottom && b > k.top; }).map(nameOf).sort();
   };
   // One full pass: press in the left margin, cross the threshold, drag, release.
-  const drag = async (x0, y0, x1, y1, mods) => {
+  // The expect argument is the answer this drag has to converge on — expectFor's
+  // independent reading of the live rects. Waiting for it beats sleeping through
+  // the gesture, because the two things worth waiting for do not run on a clock:
+  //   - the band is created synchronously by the threshold-crossing move, so
+  //     "the band exists" is the proof the press armed;
+  //   - the release runs one final, SYNCHRONOUS hit test, and the DOM shows its
+  //     answer only once React commits the store write.
+  // No wait for the rAF frames in between: this suite measured them at 0.7-1.0s
+  // apiece in a hidden window, so the sleep(120) that used to sit here never saw
+  // one either — the release is what all four of these drags actually assert.
+  // Case E owns the live-preview path on purpose, with a wait sized for that.
+  const drag = async (x0, y0, x1, y1, mods, expect) => {
     down(x0, y0, mods);
     move(x0 + 8, y0 + 8); // past MARQUEE_THRESHOLD → the band arms itself
-    await sleep(50);
+    await waitFor(() => !!band(), 3000);
     move(x1, y1);
-    await sleep(120); // a few animation frames of hit testing
     up();
-    await sleep(60);
+    if (expect) await waitFor(() => selectedKeys().join(',') === expect.join(','), 4000);
   };
 
   // Rows, top-first: pick a band that cuts through the middle of one row only.
@@ -132,7 +174,7 @@ const evalJs = `(async () => {
 
   // A. plain drag selects what it touched, and nothing else
   out.expectA = expectFor(x0, cy - 5, x1, cy + 5);
-  await drag(x0, cy - 5, x1, cy + 5);
+  await drag(x0, cy - 5, x1, cy + 5, undefined, out.expectA);
   out.gotA = selectedKeys();
   out.scrolledA = scroller.scrollTop; // the band stayed clear of the auto-scroll edges
   // "Entered selection mode" is checked by whether the bottom floating bar is shown (the
@@ -145,10 +187,10 @@ const evalJs = `(async () => {
   //    it leaves the selection completely alone (#242 skips the clear on a modifier)
   down(x0, cy, { ctrlKey: true });
   move(x0 + 1, cy + 1);
-  await sleep(60);
+  await sleep(60); // no post-condition to wait for: the claim is that NO band appears (#952)
   out.bandDuringB = !!band();
   up();
-  await sleep(60);
+  await sleep(60); // same — the claim is that the release leaves the selection untouched
   out.gotB = selectedKeys();
 
   // C. Ctrl held at press time EXTENDS: row 1's first two cards join row 0's
@@ -156,53 +198,52 @@ const evalJs = `(async () => {
   const cy1 = Math.round((row1[0].r.top + row1[0].r.bottom) / 2);
   const x1b = Math.round((row1[1].r.left + row1[1].r.right) / 2);
   out.expectC = [...new Set([...out.gotA, ...expectFor(x0, cy1 - 5, x1b, cy1 + 5)])].sort();
-  await drag(x0, cy1 - 5, x1b, cy1 + 5, { ctrlKey: true });
+  await drag(x0, cy1 - 5, x1b, cy1 + 5, { ctrlKey: true }, out.expectC);
   out.gotC = selectedKeys();
 
   // D. a plain drag over a single card REPLACES everything selected so far
   const only = row0[0];
-  out.expectD = expectFor(x0, cy - 5, Math.round((only.r.left + only.r.right) / 2), cy + 5);
-  await drag(x0, cy - 5, Math.round((only.r.left + only.r.right) / 2), cy + 5);
+  const onlyX = Math.round((only.r.left + only.r.right) / 2);
+  out.expectD = expectFor(x0, cy - 5, onlyX, cy + 5);
+  await drag(x0, cy - 5, onlyX, cy + 5, undefined, out.expectD);
   out.gotD = selectedKeys();
 
   // E. the band paints while dragging, and Esc puts the selection back
   const before = selectedKeys();
   down(x0, cy1 - 5);
   move(x0 + 8, cy1);
-  await sleep(80);
-  out.bandVisibleE = !!band();
+  out.bandVisibleE = await waitFor(() => !!band(), 3000);
   move(x1b, cy1 + 5);
   // Live preview needs an animation frame, and a hidden window throttles rAF hard
   // (the passes above only land because the release does one final synchronous
   // pass) — so wait generously instead of assuming a 60Hz clock.
-  out.changedDuringE = await waitFor(() => selectedKeys().join(',') !== before.join(','), 4000);
+  out.changedDuringE = await waitFor(() => selectedKeys().join(',') !== before.join(','), 6000);
   esc();
-  await sleep(60);
-  out.bandRemovedE = !band();
+  out.bandRemovedE = !band(); // finish('cancel') removes the overlay synchronously
+  await waitFor(() => selectedKeys().join(',') === before.join(','), 4000);
   out.gotE = selectedKeys();
   out.expectE = before;
   up(); // the real gesture still ends with a release; it must not re-apply the band
-  await sleep(60);
+  await sleep(60); // no post-condition: the claim is that the release changes nothing
   out.gotEAfterUp = selectedKeys();
 
   // F. a drag that starts ON a card is not a marquee (cards own the OS drag-out)
   const cardEl = row0[0].el;
-  cardEl.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0, clientX: Math.round((only.r.left + only.r.right) / 2), clientY: cy }));
+  cardEl.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0, clientX: onlyX, clientY: cy }));
   move(x1, cy + 40);
-  await sleep(80);
+  await sleep(80); // no post-condition to wait for: the claim is that no band appears
   out.bandFromCard = !!band();
-  up();
-  await sleep(40);
+  up(); // no listeners are attached (the press never armed a gesture) — nothing to settle
 
   // G. a plain click on empty space clears the selection AND sends the inspector
   //    back to its placeholder (#242). The card click first is what fills the panel.
-  cardEl.dispatchEvent(new MouseEvent('click', { bubbles: true, button: 0, clientX: Math.round((only.r.left + only.r.right) / 2), clientY: cy }));
-  await sleep(120);
+  cardEl.dispatchEvent(new MouseEvent('click', { bubbles: true, button: 0, clientX: onlyX, clientY: cy }));
+  await waitFor(() => selectedKeys().length === 1 && inspectedCards() === 1 && panelFilled(), 4000);
   out.selectedBeforeG = selectedKeys();
   out.inspectedBeforeG = inspectedCards();
   out.panelFilledBeforeG = panelFilled();
   click(x0, cy);
-  await sleep(120);
+  await waitFor(() => selectedKeys().length === 0 && !panelFilled() && panelPlaceholder(), 4000);
   out.gotG = selectedKeys();
   out.inspectedAfterG = inspectedCards();
   out.panelFilledAfterG = panelFilled();
@@ -211,20 +252,22 @@ const evalJs = `(async () => {
 
   // H. the same click with a modifier held changes nothing (Nautilus / Dolphin
   //    both gate their unselect_all on Ctrl/Shift being up)
-  await drag(x0, cy - 5, x1, cy + 5);
+  await drag(x0, cy - 5, x1, cy + 5, undefined, expectFor(x0, cy - 5, x1, cy + 5));
   out.beforeH = selectedKeys();
   click(x0, cy, { ctrlKey: true });
-  await sleep(80);
+  await sleep(80); // no post-condition: the claim is that the modifier makes this a no-op
   out.gotHCtrl = selectedKeys();
   click(x0, cy, { shiftKey: true });
-  await sleep(80);
+  await sleep(80); // same
   out.gotHShift = selectedKeys();
 
   // I. the empty space BELOW the last row is background too (#242 finalized design 3):
   //    the grid is only as tall as its cards, so this is the biggest click target
   //    of all and the one a rect-of-the-grid hit test would miss.
   scroller.scrollTop = scroller.scrollHeight;
-  await sleep(200);
+  // Scrolling to the end rebuilds masonic's render window, so the answer to "where
+  // is the last row" moves for a while — wait for it to stop.
+  out.bottomSettled = await waitStable(() => [Math.round(scroller.scrollTop), rectsOf('[data-slot="post-grid"] [data-slot="post-card"]')]);
   const lowest = Math.max(...cards().map(c => c.getBoundingClientRect().bottom));
   const belowY = Math.round(lowest + 24);
   const belowX = Math.round(sr.left + scroller.clientWidth / 2);
@@ -233,7 +276,7 @@ const evalJs = `(async () => {
   out.beforeI = selectedKeys();
   if (out.belowAvailable) {
     click(belowX, belowY);
-    await sleep(120);
+    await waitFor(() => selectedKeys().length === 0, 4000);
   }
   out.gotI = selectedKeys();
 
@@ -242,17 +285,17 @@ const evalJs = `(async () => {
   //    the panel both grids share back to the placeholder.
   [...document.querySelectorAll('button')].find(b => (b.textContent || '').trim() === '投稿者')?.click();
   out.posterCardsShown = await waitFor(() => document.querySelectorAll('[data-slot="poster-grid"] [data-slot="poster-card"]').length >= 1);
-  await sleep(250); // masonic lays the poster grid out from scratch
+  // masonic lays the poster grid out from scratch — same rect-repeats wait as the
+  // post grid above, since the press point below is read off these rects.
+  out.posterSettled = await waitStable(() => rectsOf('[data-slot="poster-grid"] [data-slot="poster-card"]'));
   const posterCard = document.querySelector('[data-slot="poster-grid"] [data-slot="poster-card"]');
   posterCard?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-  await sleep(150);
-  out.posterFilledBeforeJ = !!document.querySelector('[data-slot="inspector-body"] [data-slot="inspector-poster"]');
+  out.posterFilledBeforeJ = await waitFor(() => !!document.querySelector('[data-slot="inspector-body"] [data-slot="inspector-poster"]'), 4000);
   const pr = posterCard.getBoundingClientRect();
   const py = Math.round((pr.top + pr.bottom) / 2);
   out.posterPressOnEmpty = !(document.elementFromPoint(x0, py) || {}).closest?.('[data-slot="poster-card"]');
   click(x0, py);
-  await sleep(150);
-  out.posterPlaceholderAfterJ = panelPlaceholder();
+  out.posterPlaceholderAfterJ = await waitFor(() => panelPlaceholder(), 4000);
 
   out.errors = errors;
   return JSON.stringify(out);
@@ -281,6 +324,9 @@ child.on('close', () => {
   }
   const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
   const checks: Array<[string, boolean]> = [
+    // Reported rather than assumed: every expectation below is read off rects that
+    // are only meaningful once masonic stopped moving them (#952).
+    ['the grid stopped moving before the rects were read', r.gridSettled === true],
     ['the grid laid out several rows', r.rowCount >= 2 && r.row0Count >= 2],
     ['the press point is empty space, not a card', r.startsOnEmptySpace === true],
     ['a drag selects exactly the cards it touched', same(r.gotA, r.expectA) && r.gotA.length >= 2],
@@ -303,8 +349,8 @@ child.on('close', () => {
     ['a background click leaves no band behind', r.bandDuringG === false],
     ['Ctrl + a background click keeps the selection', same(r.gotHCtrl, r.beforeH) && r.beforeH.length >= 2],
     ['Shift + a background click keeps the selection', same(r.gotHShift, r.beforeH)],
-    ['the space below the last row is background too', r.belowAvailable === true && r.belowIsEmpty === true && r.beforeI.length > 0 && same(r.gotI, [])],
-    ['a poster click fills the inspector', r.posterCardsShown === true && r.posterFilledBeforeJ === true],
+    ['the space below the last row is background too', r.bottomSettled === true && r.belowAvailable === true && r.belowIsEmpty === true && r.beforeI.length > 0 && same(r.gotI, [])],
+    ['a poster click fills the inspector', r.posterCardsShown === true && r.posterSettled === true && r.posterFilledBeforeJ === true],
     ['the poster grid background returns the inspector too', r.posterPressOnEmpty === true && r.posterPlaceholderAfterJ === true],
     ['no handler threw', Array.isArray(r.errors) && r.errors.length === 0],
   ];

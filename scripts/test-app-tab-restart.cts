@@ -66,7 +66,26 @@ const TARGET_SCROLL = 800;
 // Helpers shared by both launches. Kept as a string (rather than function declarations) so it can be embedded in the template.
 const PRELUDE = `
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-  const waitFor = async (fn, ms = 8000) => { for (let i = 0; i * 50 < ms; i++) { if (fn()) return true; await sleep(50); } return false; };
+  // One budget per launch (#952). Every wait is capped by it, so a broken step
+  // cannot chain timeouts into main's 60s SMOKE_TIMEOUT, which reports "no eval
+  // result" and names nothing.
+  const DEADLINE = Date.now() + 45000;
+  // The loop counts wall clock, not iterations: under load a 50ms sleep lands
+  // much later than 50ms, and an iteration-counted loop silently gives up early.
+  const waitFor = async (fn, ms = 8000) => {
+    const until = Math.min(Date.now() + ms, DEADLINE);
+    while (Date.now() < until) { if (fn()) return true; await sleep(50); }
+    return fn();
+  };
+  // Same, for post-conditions that live behind an IPC round trip.
+  const waitForAsync = async (fn, ms = 10000) => {
+    const until = Math.min(Date.now() + ms, DEADLINE);
+    for (;;) {
+      if (await fn()) return true;
+      if (Date.now() >= until) return false;
+      await sleep(100);
+    }
+  };
   const byText = (sel, text) => [...document.querySelectorAll(sel)].find((el) => (el.textContent || '').trim() === text) || null;
   const scroller = () => document.querySelector('[data-slot="content-scroll"]');
   const tabItems = () => document.querySelectorAll('[data-slot="tab"]');
@@ -102,36 +121,49 @@ const evalBoot1 = `(async () => {
 
   // Tab 2: add a filter -> pushes one entry onto the in-tab history, so "back" appears.
   key('t', { ctrlKey: true });
-  await sleep(400);
+  await waitFor(() => tabItems().length === 2, 5000);
   byText('button', 'フィルタ').click();
   await waitFor(() => !!byText('[data-slot="command-item"]', 'タグ'));
   byText('[data-slot="command-item"]', 'タグ').click();
   await waitFor(() => !!byText('[data-slot="popover-content"] span', 'alpha'));
   byText('[data-slot="popover-content"] span', 'alpha').click();
-  await sleep(300);
-  key('Escape'); await sleep(60);
-  document.body.click(); await sleep(300);
+  await waitFor(() => cardCount() === 2);
+  key('Escape');
+  await waitFor(() => !document.querySelector('[data-slot="popover-content"]'), 3000);
+  document.body.click();
+  // The tab's heading is rewritten by the filter it now carries; that rename is the
+  // post-condition of the whole step (and what the second launch compares against).
+  await waitFor(() => !!activeTitle() && !activeTitle().includes('すべて'), 5000);
   const filteredTitle = activeTitle();
   const filteredCards = cardCount();
   const canBackLive = !backBtn().disabled;
 
   // Switch back to the scrolled tab before exiting (= the active tab after restart).
   tabItems()[0].click();
-  await sleep(500);
-  await sleep(1400); // outlast the 400ms (scroll) + 800ms (tabs) debounce
+  await waitFor(() => !!tabItems()[0] && tabItems()[0].hasAttribute('data-active'), 5000);
 
+  // The write goes through a two-stage debounce (400ms scroll + 800ms tabs). Poll
+  // what actually reached the DB rather than outlasting the debounce on a clock:
+  // getTabs() reads SQLite, so the blob below IS the post-condition (#952).
   let blob = null;
-  try {
-    const data = await window.hologram.getTabs();
-    const t0 = data.tabs[0], t1 = data.tabs[1];
-    blob = {
-      tabs: data.tabs.length,
-      activeIsFirst: data.activeTabId === t0.id,
-      siblings: Object.keys(t0).sort().join(','),
-      scrollTop: t0.state && t0.state.scrollTop,
-      navLen: t1 && t1.state && t1.state.nav ? t1.state.nav.hist.length : 0,
-    };
-  } catch (e) {}
+  const readBlob = async () => {
+    try {
+      const data = await window.hologram.getTabs();
+      const t0 = data.tabs[0], t1 = data.tabs[1];
+      return {
+        tabs: data.tabs.length,
+        activeIsFirst: data.activeTabId === t0.id,
+        siblings: Object.keys(t0).sort().join(','),
+        scrollTop: t0.state && t0.state.scrollTop,
+        navLen: t1 && t1.state && t1.state.nav ? t1.state.nav.hist.length : 0,
+      };
+    } catch (e) { return null; }
+  };
+  await waitForAsync(async () => {
+    const b = await readBlob();
+    if (b) blob = b; // keep the last readable shape so a timeout still reports what landed
+    return !!b && b.tabs === 2 && b.activeIsFirst === true && Math.abs((b.scrollTop ?? -1) - ${TARGET_SCROLL}) < 40 && b.navLen >= 2;
+  }, 12000);
 
   return { laidOut, scrolled, savedScroll, tabCount: tabItems().length, filteredTitle, filteredCards, canBackLive, blob };
 })()`;
@@ -148,12 +180,15 @@ const evalBoot2 = `(async () => {
 
   // Switch to the filtered tab = the path that adopts the persisted history.
   tabItems()[1].click();
-  await sleep(700);
+  // The restore is a chain — tab activated, its filter re-queried, its history
+  // adopted — and each link is observable, so wait for all three rather than for
+  // a number that has to cover the slowest machine.
+  await waitFor(() => !!tabItems()[1] && tabItems()[1].hasAttribute('data-active') && cardCount() === 2 && !!backBtn() && !backBtn().disabled);
   const restoredTitle = activeTitle();
   const restoredCards = cardCount();
   const canBack = !backBtn().disabled;
   backBtn().click();
-  await sleep(700);
+  await waitFor(() => activeTitle().includes('すべて') && cardCount() > 2);
   const afterBackTitle = activeTitle();
   const afterBackCards = cardCount();
 
