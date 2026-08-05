@@ -210,6 +210,53 @@ describe('writePost の poster_profiles 書き込み', () => {
     expect((sqlite.prepare('SELECT COUNT(*) AS n FROM poster_profiles').get() as { n: number }).n).toBe(0);
     sqlite.close();
   });
+
+  // #919: the shape that used to throw "NOT NULL constraint failed:
+  // poster_profiles.platform" and took the whole inbox drain down with it — a
+  // bookmark of a page whose JSON-LD/OGP names an author, which #195 saves with
+  // platform: null and the author page URL as userId.
+  test('platform 無しでも著者がいるブックマークは web: キーで行を作る', () => {
+    const { sqlite, stmts, resolveTagId } = mkHandle();
+    sqlite.exec('BEGIN');
+    writePost(stmts, resolveTagId, {
+      captureId: 'cap-6b',
+      platform: null,
+      source: 'bookmark',
+      url: 'https://qiita.com/Y-Y-dev/items/abc',
+      userId: 'https://qiita.com/Y-Y-dev',
+      displayName: 'Y-Y-dev',
+      capturedAt: '2026-08-05T00:00:00Z',
+    } as any);
+    sqlite.exec('COMMIT');
+
+    const key = 'web:qiita.com:https://qiita.com/Y-Y-dev';
+    const row = poster(sqlite, key);
+    expect(row).toBeTruthy();
+    expect(row.platform).toBeNull(); // not '', not a 'web' sentinel — see the migration's comment
+    expect(row.instance).toBeNull();
+    expect(row.displayName).toBe('Y-Y-dev');
+    expect(row.provenance).toBe('api:unknown');
+    expect(snapshots(sqlite, key)).toHaveLength(1);
+    sqlite.close();
+  });
+
+  // Two platform-less posters from different sites must stay two rows (#760's
+  // reason for putting the host in the key), which only matters now that the
+  // rows can exist at all.
+  test('platform 無し同士でもホストが違えば別の行', () => {
+    const { sqlite, stmts, resolveTagId } = mkHandle();
+    sqlite.exec('BEGIN');
+    writePost(stmts, resolveTagId, { captureId: 'cap-6c', platform: null, url: 'https://qiita.com/a/items/1', userId: 'https://qiita.com/a', capturedAt: '2026-08-05T00:00:00Z' } as any);
+    writePost(stmts, resolveTagId, { captureId: 'cap-6d', platform: null, url: 'https://www.youtube.com/watch?v=1', userId: 'http://www.youtube.com/@RickAstleyYT', capturedAt: '2026-08-05T00:00:00Z' } as any);
+    sqlite.exec('COMMIT');
+    expect(
+      sqlite
+        .prepare('SELECT posterKey FROM poster_profiles ORDER BY posterKey')
+        .all()
+        .map((r: any) => r.posterKey),
+    ).toEqual(['web:qiita.com:https://qiita.com/a', 'web:www.youtube.com:http://www.youtube.com/@RickAstleyYT']);
+    sqlite.close();
+  });
 });
 
 describe('lib-backfill-poster-profiles', () => {
@@ -266,9 +313,57 @@ describe('lib-backfill-poster-profiles', () => {
     expect((sqlite.prepare('SELECT COUNT(*) AS n FROM poster_profiles').get() as { n: number }).n).toBe(0);
     sqlite.close();
   });
+
+  // #919: the backfill reads posts written before poster_profiles existed, and
+  // a library's bookmarks with authors are among them.
+  test('platform 無しでも著者がいる投稿は種付けする', () => {
+    const { sqlite, stmts, resolveTagId } = mkHandle();
+    sqlite.exec('BEGIN');
+    writePost(stmts, resolveTagId, { captureId: 'cap-9b', platform: null, source: 'bookmark', url: 'https://qiita.com/a/items/1', userId: 'https://qiita.com/a', displayName: 'a', capturedAt: '2026-01-01T00:00:00Z' } as any);
+    sqlite.exec('COMMIT');
+    sqlite.prepare('DELETE FROM poster_profiles').run(); // as if the post predates #289
+    backfillPosterProfiles(sqlite);
+    const row = poster(sqlite, 'web:qiita.com:https://qiita.com/a');
+    expect(row).toBeTruthy();
+    expect(row.platform).toBeNull();
+    expect(row.provenance).toBe('derived:posts');
+    sqlite.close();
+  });
 });
 
 describe('lib-archive の mergePosterProfiles', () => {
+  // #919: platform-less has to survive the ZIP boundary as null. '' was the
+  // NOT NULL placeholder and would now be a second way to spell "no platform".
+  test('platform 無しは null のまま往復する', () => {
+    const entry = (platform: string | null) => ({
+      profiles: [
+        {
+          posterKey: 'web:qiita.com:https://qiita.com/a',
+          platform,
+          userId: 'https://qiita.com/a',
+          instance: null,
+          history: [{ observedAt: '2026-08-05T00:00:00Z', displayName: 'a', screenName: null, bio: null, links: null, avatar: null, avatarFile: null, banner: null, bannerFile: null, followers: null, authorCreatedAt: null, contentHash: 'h1', provenance: 'api:unknown' }],
+        },
+      ],
+    });
+    expect(mergePosterProfiles(entry(null), entry(null)).profiles[0].platform).toBeNull();
+  });
+
+  test('片方に platform があればそちらを採る', () => {
+    const mk = (platform: string | null) => ({
+      profiles: [
+        {
+          posterKey: 'x:1',
+          platform,
+          userId: '1',
+          instance: null,
+          history: [{ observedAt: '2026-01-01T00:00:00Z', displayName: 'A', screenName: null, bio: null, links: null, avatar: null, avatarFile: null, banner: null, bannerFile: null, followers: null, authorCreatedAt: null, contentHash: 'h1', provenance: 'api:x' }],
+        },
+      ],
+    });
+    expect(mergePosterProfiles(mk(null), mk('x')).profiles[0].platform).toBe('x');
+  });
+
   test('posterKey で union、履歴は (observedAt, contentHash) でデデュープ', () => {
     const cur = {
       profiles: [
