@@ -13,7 +13,7 @@ import { hostOf, userKey } from './query.ts';
 import { posterProfileUrl } from './profile-url.ts';
 import { formatCount, localeDate, localeDateTime } from './format.ts';
 import { open as inspectorOpen, refresh as inspectorRefresh, close as inspectorClose } from './inspector.ts';
-import { isDocked as panelIsDocked, isOpen as panelIsOpen, isVisible as panelIsVisible, panelContains, setOpen as panelSetOpen, subscribe as panelSubscribe } from './inspector-panel.ts';
+import { isOpen as panelIsOpen, setOpen as panelSetOpen, subscribe as panelSubscribe } from './inspector-panel.ts';
 import { get as confirmGet, open as confirmOpen } from './confirm.ts';
 import { get as kindMenuGet } from './kind-menu.ts';
 import { isOpen as lightboxIsOpen } from './lightbox.ts';
@@ -79,10 +79,6 @@ export interface InspectorBuilderDeps {
 }
 
 export function makeInspector(deps: InspectorBuilderDeps) {
-  const closestOf = (e: Event, sel: string) => {
-    const t = e.target as HTMLElement | null;
-    return t instanceof Element ? (t.closest(sel) as HTMLElement | null) : null;
-  };
   // Strings for the inspector's inline tag field (showDetail, below).
   function tagLabels() {
     return {
@@ -104,17 +100,16 @@ export function makeInspector(deps: InspectorBuilderDeps) {
   // the shell toggle and the panel's own × produce identical results.
   //
   // This is the STORED preference — "I don't want this panel", surviving restarts. Only
-  // two things may say that: the shell toggle, and the × of a DOCKED column, where there
-  // is no other way to get the column off the screen.
+  // two things may say that: the shell toggle, and the panel's own ×, which are the only
+  // two ways a docked column gets off the screen.
   function closeDetail() {
     panelSetOpen(false);
   }
 
-  // Narrow-width dismissal (#259) — NOT the same act as closing the panel. At narrow
-  // widths the panel is an overlay that rides on the selection, so waving it away means
-  // "nothing is inspected right now", not "I don't want this panel". Flipping the stored
-  // preference here would make the next card click land on a closed panel, which is the
-  // toggle-hunting the issue exists to remove.
+  // Emptying the panel — NOT the same act as closing it. "Nothing is inspected right now"
+  // (a background click, #242) leaves the column standing on its placeholder; flipping the
+  // stored preference here would make the next card click land on a closed panel, which is
+  // the toggle-hunting #243 exists to remove.
   function dismissDetail() {
     inspectorClose();
     deps.setInspectedKey(null);
@@ -167,39 +162,13 @@ export function makeInspector(deps: InspectorBuilderDeps) {
     dismissDetail();
   });
 
-  // The panel's own × takes whichever meaning its CURRENT form gives it. Docked, × is the
-  // only way off the screen, so it stores the preference. As an overlay it sits beside Esc
-  // and the outside-click, which both already dismiss without storing anything — and the ×
-  // is the most obvious of the three, so having it alone disable the panel for good was
-  // exactly the trap dismissDetail's comment describes. Reported from use (2026-07-27):
-  // after one × on a narrow window, clicking cards stopped opening the inspector at all
-  // and only the tab-band toggle brought it back.
-  function closeOrDismissDetail() {
-    if (panelIsDocked()) closeDetail();
-    else dismissDetail();
-  }
-  // Outside-click dismissal for the narrow overlay. Restored from the pre-#243 handler,
-  // with one change: the width test asks layout-mode instead of carrying its own
-  // `max-width` media query, so there is a single place the breakpoint lives.
-  //
-  // This is NOT the background-click path of #242 — that one lives in the grid's own
-  // press recognizer (_shared/VirtualGrid.tsx), because only the recognizer knows
-  // whether a press became a drag, and it calls dismissDetail() at BOTH widths. The two
-  // overlap on a plain narrow background click and dismissDetail() is idempotent, so the
-  // result is the same either way. They deliberately part on the presses #242 excludes
-  // (a held Ctrl/Shift, a finished marquee): those still dismiss the narrow OVERLAY,
-  // which rides on nothing but "is something covering the grid" — waving an overlay away
-  // is not a selection act, and the docked column at wide width has nothing to wave away.
-  function handleOutsideClickDismissDetail(e: MouseEvent) {
-    if (panelIsDocked()) return; // wide, or the image view at any width — a docked column, nothing to dismiss
-    if (!panelIsVisible()) return;
-    if (panelContains(e.target)) return;
-    if (!closestOf(e, '[data-slot="content-scroll"]')) return; // sidebar/overlays: leave it open
-    if (closestOf(e, '[data-slot="post-card"], [data-slot="poster-card"]')) return; // a cell click = swap the inspector to it (#143)
-    e.preventDefault();
-    e.stopPropagation();
-    dismissDetail();
-  }
+  // The panel's × stores the preference, because a docked column has no other way off the
+  // screen (#975 made that the only form it takes). It used to branch: as the narrow
+  // overlay of #259 the × sat beside Esc and an outside click, both of which dismissed
+  // without storing, and letting the most obvious of the three disable the panel for good
+  // was the trap dismissDetail's comment describes — reported from use on 2026-07-27, when
+  // one × on a narrow window stopped card clicks from opening the inspector at all. With
+  // no transient form left, neither the branch nor the two dismiss paths have a subject.
 
   // A closed panel keeps no content: reopening starts from the placeholder (#244), and the
   // inspected-card ring can't outlive the panel that explains it. The size track needs no
@@ -632,7 +601,7 @@ export function makeInspector(deps: InspectorBuilderDeps) {
         sauce: deps.t('detailSauce'),
         ascii: deps.t('detailAscii'),
       },
-      onClose: closeOrDismissDetail,
+      onClose: closeDetail,
       onOpenExternal: p.url ? () => hologramIpc.openExternal(p.url) : null,
       onOpenProfile: posterProfileHref ? () => hologramIpc.openExternal(posterProfileHref) : null,
       onSauce: srcImageUrl ? () => hologramIpc.openExternal('https://saucenao.com/search.php?url=' + encodeURIComponent(srcImageUrl)) : null,
@@ -666,13 +635,13 @@ export function makeInspector(deps: InspectorBuilderDeps) {
     deps.setInspectedKey(postIdKey(p));
   }
 
-  // Esc leaves the image-tab detail view (Eagle-style), and — since #259 — also waves away
-  // the inspector while it is a narrow-width OVERLAY. It still does not touch the docked
-  // column: #244 scoped Esc to transient surfaces (quick view / popovers / modals) because
-  // a persistent panel is not something Esc dismisses in any product that has one, and
-  // #143/#242 ruled Esc out as a way to clear the selection. Closing the column is the
-  // toggle, the ×, or #245's bulk shortcut. What changed is that the panel now has a
-  // transient form too, and in that form the rule it was exempted from applies.
+  // Esc leaves the image-tab detail view (Eagle-style) and nothing else here. It does not
+  // touch the inspector: #244 scoped Esc to transient surfaces (quick view / popovers /
+  // modals) because a persistent panel is not something Esc dismisses in any product that
+  // has one, and #143/#242 ruled Esc out as a way to clear the selection. Closing the
+  // column is the toggle, the ×, or #245's bulk shortcut. #259 carved out an exception for
+  // the narrow overlay — a transient form Esc rightly answered — and #975 removed that
+  // form, so the exception went with it.
   //
   // Still registered in CAPTURE phase (from the DetailDismiss component in
   // app/App.tsx) so it can check what else is open BEFORE those handlers
@@ -691,19 +660,13 @@ export function makeInspector(deps: InspectorBuilderDeps) {
       deps.closeTab(deps.getActiveTabId());
       return;
     }
-    // Narrow overlay only (#259). Something laid OVER the grid is expected to answer Esc,
-    // and the pre-#243 slide-over did. The docked column still does not: #143/#242 ruled
-    // Esc out there, where it would dismiss nothing the user can see covering anything.
-    if (!panelIsDocked() && panelIsVisible()) dismissDetail();
   }
 
   return {
     closeDetail,
     dismissDetail,
-    closeOrDismissDetail,
     showDetail,
     persistManual,
     handleEscDismissDetail,
-    handleOutsideClickDismissDetail,
   };
 }

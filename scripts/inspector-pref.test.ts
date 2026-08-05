@@ -268,19 +268,20 @@ describe('renderer: 画面に出ているか（isVisible）', () => {
     expect(panel.isVisible()).toBe(true);
   });
 
-  // At narrow widths it's an overlay = it rides on the selection (#259/#244). If
-  // nothing is selected, floating there would just leave a hole in the screen, so it doesn't show.
-  test('狭幅は選択があるときだけ出る', async () => {
+  // #975: the panel is a docked column at every width, so neither the window's size nor
+  // the selection may take it off screen. #259 had both do exactly that below 1280px
+  // (an overlay riding on the selection), and this is the guard against that coming back.
+  test('狭幅でも同じに出る＝幅も選択も表示条件ではない', async () => {
     const { panel, store } = await freshWorld();
     fireWidth(false);
-    expect(panel.isVisible()).toBe(false);
+    expect(panel.isVisible()).toBe(true); // nothing selected: the column stands on its placeholder (#244)
     store.set('inspectedKey', 'post:1');
     expect(panel.isVisible()).toBe(true);
     store.set('inspectedKey', null);
-    expect(panel.isVisible()).toBe(false);
+    expect(panel.isVisible()).toBe(true);
   });
 
-  test('subscribeVisible は4つの入力すべてで起き、解除できる', async () => {
+  test('subscribeVisible は2つの入力で起き、解除できる', async () => {
     const { panel, panels, store } = await freshWorld();
     let notified = 0;
     const off = panel.subscribeVisible(() => {
@@ -288,12 +289,11 @@ describe('renderer: 画面に出ているか（isVisible）', () => {
     });
     panel.setOpen(false); // (1) the panel itself
     panels.setHidden(true); // (2) bulk mask
-    fireWidth(false); // (3) width
-    store.set('inspectedKey', 'post:1'); // (4) selection
-    expect(notified).toBe(4);
+    fireWidth(false); // not an input any more (#975)
+    store.set('inspectedKey', 'post:1'); // nor this one
+    expect(notified).toBe(2);
     off();
     panel.setOpen(true);
-    store.set('inspectedKey', null);
-    expect(notified).toBe(4);
+    expect(notified).toBe(2);
   });
 });

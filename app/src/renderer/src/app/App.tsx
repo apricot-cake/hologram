@@ -42,7 +42,6 @@ import {
   handleShortcutSizeKey,
   handleZoomWheel,
   handleEscDismissDetail,
-  handleOutsideClickDismissDetail,
   handleGlobalTabShortcut,
   handleSelectionContextmenu,
   handleDisplayStoreChange,
@@ -202,18 +201,16 @@ function GlobalShortcuts() {
 // extracted out of orchestrator.ts), imported directly as a live binding, same "cut out and
 // rewire" as GlobalShortcuts.
 //
-// The outside-click listener shares this effect again (#259): the inspector has a
-// slide-over form once more at narrow widths, and waving it away with a click on the
-// grid is the whole point of that form. The handler no-ops at wide widths on its own.
+// The outside-click listener that shared this effect is gone with the narrow slide-over it
+// served (#975): a docked column is not something a click on the grid waves away, and the
+// background click that empties the panel (#242) belongs to the grid's own press
+// recognizer, which is the only thing that knows a press from a drag.
 function DetailDismiss() {
   useEffect(() => {
     const onKeydown = (e: KeyboardEvent) => handleEscDismissDetail(e);
-    const onClick = (e: MouseEvent) => handleOutsideClickDismissDetail(e);
     document.addEventListener('keydown', onKeydown, true);
-    document.addEventListener('click', onClick, true);
     return () => {
       document.removeEventListener('keydown', onKeydown, true);
-      document.removeEventListener('click', onClick, true);
     };
   }, []);
   return null;

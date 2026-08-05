@@ -11,21 +11,14 @@
 // "jump to new posts", not to a library grid.
 //
 // It lives inside the inset (like FloatingBar) rather than being pinned to the window,
-// so the right inspector — a flex sibling at wide widths since #243 — narrows its
-// container and the button follows without a reservation branch of its own. Below the
-// layout breakpoint the panel becomes an overlay instead (#259), and THAT one it has to
-// dodge by hand: same flag, same reason and same shape as FloatingBar's.
-import { useEffect, useState, useSyncExternalStore } from 'react';
+// so the right inspector — a flex sibling at every width (#243/#975) — narrows its
+// container and the button follows without a reservation branch of its own.
+import { useEffect, useState } from 'react';
 import { ArrowUp } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import { t } from '../_shared/i18n.ts';
 import { scroller } from '../services/content-area.ts';
-import { get as storeGet, subscribe as storeSubscribe } from '../services/store.ts';
-
-// Derived once by AppShell (width + toggle + selection); read here, not re-derived.
-const subInspectorOverlay = (cb: () => void) => storeSubscribe('inspectorOverlay', cb);
-const getInspectorOverlay = () => !!storeGet('inspectorOverlay');
 
 // Appear only past ONE full screen of scrolling, measured against the scroller's own
 // height rather than a fixed pixel count. Nielsen Norman Group's back-to-top guidance is
@@ -38,7 +31,6 @@ function isDeep(el: HTMLElement): boolean {
 
 export function ScrollToTop() {
   const [shown, setShown] = useState(false);
-  const inspectorOverlay = useSyncExternalStore(subInspectorOverlay, getInspectorOverlay);
 
   useEffect(() => {
     // The shell's ref callback has run by now: refs attach before effects, and the
@@ -64,11 +56,7 @@ export function ScrollToTop() {
     // directions (ADR 0014 / redesign §3-10a — no exit-presence library). `inert` while
     // hidden so a button nobody can see is also not in the tab order or the a11y tree;
     // it leaves layout alone, which is what keeps the transition playable.
-    <div
-      inert={!shown}
-      style={inspectorOverlay ? { right: 'calc(var(--inspector-w) + 1.5rem)' } : undefined}
-      className={cn('absolute right-6 bottom-6 z-50 transition-[opacity,transform] duration-[var(--motion-duration-base)] ease-[var(--motion-ease-out)]', shown ? 'translate-y-0 opacity-100' : 'pointer-events-none translate-y-3 opacity-0')}
-    >
+    <div inert={!shown} className={cn('absolute right-6 bottom-6 z-50 transition-[opacity,transform] duration-[var(--motion-duration-base)] ease-[var(--motion-ease-out)]', shown ? 'translate-y-0 opacity-100' : 'pointer-events-none translate-y-3 opacity-0')}>
       <Tooltip>
         <TooltipTrigger
           render={
