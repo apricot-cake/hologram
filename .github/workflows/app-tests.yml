@@ -29,8 +29,10 @@ on:
     - cron: '37 18 * * *'
   workflow_dispatch:
 
+# pull-requests: read is for the docs-only detection step's `gh api .../files` call.
 permissions:
   contents: read
+  pull-requests: read
 
 concurrency:
   group: app-tests-${{ github.ref }}
@@ -47,7 +49,35 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # docs-only PRs (README, docs/**) don't need any layer this job runs — skip
+      # straight to a pass. Required-check paths filters can't do this: a skipped
+      # required workflow leaves the check "expected" forever and blocks the merge
+      # instead (#928).
+      - name: Detect docs-only change
+        id: docs-only
+        # windows-latest's default shell is pwsh, not bash — this script is POSIX sh.
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "docs_only=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          files="$(gh api --paginate "repos/${{ github.repository }}/pulls/${{ github.event.number }}/files" --jq '.[].filename')"
+          docs_only=true
+          if [ -z "$files" ]; then
+            docs_only=false
+          fi
+          while IFS= read -r f; do
+            case "$f" in
+              *.md|docs/*) ;;
+              *) docs_only=false ;;
+            esac
+          done <<< "$files"
+          echo "docs_only=$docs_only" >> "$GITHUB_OUTPUT"
       - name: Setup Node
+        if: steps.docs-only.outputs.docs_only != 'true'
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: package.json
@@ -59,18 +89,22 @@ jobs:
       # `npm ci` does not produce a working tree. It also builds the extension,
       # which every browser test below stages from the verified Chrome release output.
       - name: Install dependencies
+        if: steps.docs-only.outputs.docs_only != 'true'
         run: npm run setup
       # The harnesses spawn `electron .` in app/, whose main field points at
       # app/out. A fresh checkout has no build output and `npm run setup` does not
       # produce any, so without this every harness dies on a missing entry point.
       - name: Build app bundles
+        if: steps.docs-only.outputs.docs_only != 'true'
         run: npm run build --workspace=app
       # setup installs with --ignore-scripts, so Playwright's postinstall never
       # runs and no browser is fetched. Chromium only: every browser test here
       # loads an unpacked MV3 extension, which is Chromium-only anyway.
       - name: Install Playwright Chromium
+        if: steps.docs-only.outputs.docs_only != 'true'
         run: npx playwright install chromium
       - name: Electron app harnesses
+        if: steps.docs-only.outputs.docs_only != 'true'
         run: node scripts/run-app-tests.cts
       # The Playwright layer (#14). Only the `flow` project: the `visual` one
       # compares committed baselines taken on the development machine, and a
@@ -78,7 +112,7 @@ jobs:
       # them (#14's 2026-07-29 decision). Running it here would report differences
       # that say nothing about the change under test.
       - name: Electron E2E (user flows)
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.docs-only.outputs.docs_only != 'true' }}
         run: npx playwright test --project=flow
       # Each later layer runs even after an earlier one goes red (`!cancelled()`
       # rather than `success()`): a nightly job that stops at the first failure
@@ -86,36 +120,36 @@ jobs:
       # directly rather than through their npm scripts, which would each rebuild
       # the extension that `npm run setup` already built.
       - name: Extension capture e2e (offline fixture)
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.docs-only.outputs.docs_only != 'true' }}
         run: node scripts/e2e-extension-offline.cts
       - name: Extension duplicate-warning e2e (offline fixture)
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.docs-only.outputs.docs_only != 'true' }}
         run: node scripts/e2e-extension-duplicate.cts
       - name: Extension save-timeout e2e (offline fixture)
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.docs-only.outputs.docs_only != 'true' }}
         run: node scripts/e2e-extension-timeout.cts
       - name: Extension save-log e2e (offline fixture)
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.docs-only.outputs.docs_only != 'true' }}
         run: node scripts/e2e-extension-save-log.cts
       # Measures the platform premises #269 chose between (which surfaces still
       # work once the extension's own files cannot be read). A Chrome update is
       # exactly what could invalidate them, and nothing else in the suite would
       # go red if it did — which is why this one earns a daily run.
       - name: Extension inject-failure premises
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.docs-only.outputs.docs_only != 'true' }}
         run: node scripts/e2e-extension-inject-failure.cts
       # Reloads the extension under two live tabs (#594) — the only way to make a
       # real orphaned content script. Measures both what Chrome does to such a
       # context (the premises the detector rests on) and what the extension then
       # does with the UI it left on the page.
       - name: Extension orphaned-tab e2e
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.docs-only.outputs.docs_only != 'true' }}
         run: node scripts/e2e-extension-orphan.cts
       - name: Overlay visual regression
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.docs-only.outputs.docs_only != 'true' }}
         run: node scripts/e2e-overlay-visual.cts
       - name: Overlay flicker regression
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.docs-only.outputs.docs_only != 'true' }}
         run: node scripts/e2e-overlay-flicker.cts
       # scripts/e2e-capture-test.cts — the live-site canary — is NOT here. It reads
       # the real platforms, and X serves no post DOM to a signed-out browser, so on
