@@ -469,6 +469,9 @@ export interface BackupSummary {
 
 /** get-backup / the `backup` member of a write result. */
 export interface BackupConfig {
+  /** 'local-folder' | 'google-drive' | 'onedrive' (#909). */
+  kind: string;
+  /** The picked folder, for the local kind only. */
   dir: string | null;
   interval: boolean;
   intervalValue: number;

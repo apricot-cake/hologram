@@ -40,7 +40,10 @@ import type Database from 'better-sqlite3';
 import { INBOX_DIRNAME } from '../../../native-host/inbox.mts';
 import { configDir } from './native-host.ts';
 import { getSaveFolder, readLibraryBackupConfig, writeLibraryBackupConfig, readLibraryIntegrityStatus, writeLibraryIntegrityStatus } from './lib-config.ts';
-import { BACKUP_SUBDIR, backupRoot, createLocalFolderDestination, TMP_RE } from './lib-backup-destination.ts';
+import { BACKUP_SUBDIR, backupRoot, TMP_RE } from './lib-backup-destination.ts';
+import type { BackupDestination } from './lib-backup-destination.ts';
+import { isDestinationConfigured, overlaps, pathIsInside, resolveBackupDestination } from './lib-backup-destinations.ts';
+import { createSafeStorageCipher } from './lib-oauth-safe-storage.ts';
 import { ensureLibraryId } from './lib-db-write.ts';
 import { groupOf, planBackup } from './lib-backup-plan.ts';
 import type { SourceFile } from './lib-backup-plan.ts';
@@ -76,23 +79,6 @@ const LIVE_DB_NAMES = new Set(['hologram.db', 'hologram.db-wal', 'hologram.db-sh
 // (LIBRARY_SUBDIR — the named subfolder for a relocated library — lives in
 // ./ipc-transfer.ts with the pick-save-folder handler that owns it.)
 
-// Pre-release only: the destination folder was called Hologram-mirror until
-// #233 retired the word "mirror". Rename it in place rather than let a second
-// tree grow beside it — no data is read from the old name, so this can go once
-// no dev machine has one.
-function migrateLegacyDestinationFolder(dir: string): void {
-  const legacy = path.join(dir, 'Hologram-mirror');
-  const current = backupRoot(dir);
-  try {
-    if (fs.existsSync(legacy) && !fs.existsSync(current)) {
-      fs.renameSync(legacy, current);
-      log.info(`renamed backup folder ${legacy} -> ${current}`);
-    }
-  } catch (err) {
-    log.warn('could not rename the legacy backup folder:', err);
-  }
-}
-
 // Backup destination + integrity status used to be ONE flat key each on
 // config.json; #176 moved both under the current library's libraries[] entry
 // (lib-config.ts) so a switch carries its own destination and status rather
@@ -103,18 +89,17 @@ const writeBackupConfig = writeLibraryBackupConfig;
 const readIntegrityStatus = readLibraryIntegrityStatus;
 const writeIntegrityStatus = writeLibraryIntegrityStatus;
 
-function pathIsInside(child, parent) {
-  const c = path.resolve(child),
-    p = path.resolve(parent);
-  return c === p || c.startsWith(p + path.sep);
-}
-// If the output destination is nested inside/identical to the save folder, an
-// output -> watch -> re-export loop or corruption occurs.
-function validateBackupDir(dir) {
+// The settings UI validates the folder the user picked before it is written to
+// the config; the same rule the resolver applies at run time (a destination
+// nested with the library makes the backup feed itself).
+function validateBackupDir(dir: string | null | undefined) {
   if (!dir) return { ok: true };
-  const src = getSaveFolder();
-  if (src && (pathIsInside(dir, src) || pathIsInside(src, dir))) return { ok: false, error: 'overlap' };
-  return { ok: true };
+  return overlaps(dir, getSaveFolder()) ? { ok: false, error: 'overlap' } : { ok: true };
+}
+
+/** What the destination resolver needs that only the app can supply. */
+function destinationDeps() {
+  return { saveFolder: getSaveFolder(), vaultDir: configDir(), cipher: createSafeStorageCipher() };
 }
 
 // --- Save-folder relocation ---
@@ -345,7 +330,7 @@ function createBackupEngine({ ensurePostsSynced, scheduleSavedIndexWrite, send, 
    * and A's backup would be pruned down to B. A destination with no id yet is
    * adopted — the mechanism postdates the destinations it protects.
    */
-  async function claimDestination(destination: ReturnType<typeof createLocalFolderDestination>): Promise<{ ok: true; libraryId: string } | { ok: false; error: string }> {
+  async function claimDestination(destination: BackupDestination): Promise<{ ok: true; libraryId: string } | { ok: false; error: string }> {
     const handle = await ensurePostsSynced();
     if (!handle) return { ok: false, error: 'not-configured' };
     const libraryId = ensureLibraryId(handle.sqlite);
@@ -366,6 +351,11 @@ function createBackupEngine({ ensurePostsSynced, scheduleSavedIndexWrite, send, 
    */
   function listDbGenerations() {
     const b = readBackupConfig();
+    // Reads the destination as a folder on this machine, so a cloud
+    // destination reports "this PC only" for every generation even when copies
+    // are up there. Telling the two apart over an API is an async listing, and
+    // this handler is synchronous all the way to the renderer — the restore UI
+    // is #911's half of the work.
     return listWithDestination(getSaveFolder(), b.dir ? backupRoot(b.dir) : null);
   }
 
@@ -395,25 +385,33 @@ function createBackupEngine({ ensurePostsSynced, scheduleSavedIndexWrite, send, 
   async function runBackup(reason) {
     const b = readBackupConfig();
     const src = getSaveFolder();
-    if (!src || !b.dir) return { ok: false, error: 'not-configured' };
-    if (!validateBackupDir(b.dir).ok) return { ok: false, error: 'overlap' };
+    if (!src) return { ok: false, error: 'not-configured' };
     // #37: never let a missing library read as "an empty library backed up
     // successfully" — refuse instead of collecting 0 files and writing that
     // as this run's lastResult (backup-guard's prune-skip only protects the
     // DESTINATION's existing files; it does not stop this misleading "ok"
     // outcome).
     if (!fs.existsSync(src)) return { ok: false, error: 'src-missing' };
-    // #37: the destination's PARENT is gone (drive unplugged, folder renamed).
-    // The adapter's mkdir would silently recreate the whole chain — exactly the
-    // "looks fine, quietly starts over" failure this Issue closes.
-    if (!fs.existsSync(b.dir)) return { ok: false, error: 'dest-missing' };
     if (backupRunning) return { ok: false, error: 'busy' };
-    migrateLegacyDestinationFolder(b.dir);
-    const destination = createLocalFolderDestination(b.dir);
+    // Everything that differs between a folder and a cloud account — is it
+    // configured, is the drive there, is the account still connected — is
+    // decided by the resolver (#909). The engine below drives whatever comes
+    // back and has no idea which kind it got.
+    const resolved = resolveBackupDestination(b, destinationDeps());
+    if (!resolved.ok) return { ok: false, error: resolved.error };
+    const destination = resolved.destination;
     // Before the run is even announced: a refusal here must not read as a
     // backup that started, and nothing may be written to a destination that
-    // turns out to belong to someone else.
-    const claim = await claimDestination(destination);
+    // turns out to belong to someone else. A cloud destination reaches the
+    // network to answer, so this is also where "the account cannot be talked
+    // to at all" lands — still with nothing written.
+    let claim: Awaited<ReturnType<typeof claimDestination>>;
+    try {
+      claim = await claimDestination(destination);
+    } catch (err) {
+      log.warn(`backup could not reach ${destination.location}:`, err);
+      return { ok: false, error: 'dest-unreachable' };
+    }
     if (!claim.ok) return { ok: false, error: claim.error };
     backupRunning = true;
     send('backup-start'); // sidebar status → running
@@ -543,7 +541,7 @@ function createBackupEngine({ ensurePostsSynced, scheduleSavedIndexWrite, send, 
     // own behind a test's back is exactly the flake that would follow.
     if (!scheduleArmed) return;
     if (mutationsSinceGeneration >= GENERATION_CHANGE_THRESHOLD) void runDbGeneration('changes');
-    if (!readBackupConfig().dir) return;
+    if (!isDestinationConfigured(readBackupConfig())) return;
     clearTimeout(immediateTimer);
     immediateTimer = setTimeout(() => {
       void runBackup('changed');
@@ -564,7 +562,7 @@ function createBackupEngine({ ensurePostsSynced, scheduleSavedIndexWrite, send, 
     // ever picks a backup folder.
     backupIntervalTimer = setInterval(() => {
       const cur = readBackupConfig();
-      if (cur.dir && cur.interval) {
+      if (isDestinationConfigured(cur) && cur.interval) {
         const last = cur.lastRunAt ? Date.parse(cur.lastRunAt) : 0;
         if (Date.now() - last >= backupIntervalMs(cur)) {
           void runBackup('interval');
@@ -596,6 +594,10 @@ function latestRestorableSnapshot(): string | null {
     if (local) return local;
   }
   const b = readBackupConfig();
+  // Only a folder destination can be read straight off disk at startup. Pulling
+  // the newest generation down from a cloud account is a download with its own
+  // progress and failure modes, which belongs with the restore UI (#911) rather
+  // than in the path that has to decide within a second of launch.
   if (!b.dir) return null;
   // listGenerations takes the folder that CONTAINS the store, which at a
   // destination is its root — the destination holds a copy of the store under
