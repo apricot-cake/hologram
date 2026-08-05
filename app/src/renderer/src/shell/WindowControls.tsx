@@ -84,10 +84,13 @@ export function WindowControls() {
   // grid's), and with it --window-controls-w = 138 that the band reserves on its right.
   const base = 'app-no-drag inline-grid h-[var(--tabbar-h)] w-[46px] place-items-center text-muted-foreground transition-colors duration-75';
   // Portaled to body and z-[13600]: above every modal surface (dialog 13000 / alert 13100 /
-  // sheet 13500) so window management still works while a modal is up, the way the OS buttons
-  // it replaces did. Inside the tab bar this was impossible — the band is its own stacking
-  // context at z-50, so no z-index on a child could clear the scrim. The dim that the scrim
-  // would have applied is painted by .wc-dim instead (globals.css).
+  // sheet 13500) so the strip composites correctly over the scrim (below). Inside the tab bar
+  // this positioning was impossible — the band is its own stacking context at z-50, so no
+  // z-index on a child could clear the scrim. The dim that the scrim would have applied is
+  // painted by .wc-dim instead (globals.css), which also carries the pointer-events block: a
+  // modal must block window management the same as everything else behind its scrim, so
+  // globals.css disables pointer-events on [data-slot='window-control'] for as long as .wc-dim
+  // is showing (open or exiting) — same :has() list, kept in one place instead of duplicated.
   // The strip is opaque: it sits ABOVE the scrim, so without a background the scrim would
   // show through and .wc-dim would darken an already-darkened area — the strip came out
   // visibly deeper than the page around it. Opaque + one dim of its own reproduces exactly
