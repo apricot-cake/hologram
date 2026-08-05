@@ -75,6 +75,21 @@ async function waitForCapture(libraryDir: string, timeoutMs = 20_000): Promise<{
   throw new Error('native host did not land a JPEG and inbox envelope within 20 seconds');
 }
 
+async function waitForLog(configDir: string, file: string, matches: (text: string) => boolean, complaint: string, timeoutMs = 15_000): Promise<void> {
+  const started = Date.now();
+  while (Date.now() - started < timeoutMs) {
+    let text = '';
+    try {
+      text = fs.readFileSync(path.join(configDir, file), 'utf8');
+    } catch {
+      text = ''; // not created yet
+    }
+    if (matches(text)) return;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  throw new Error(`${complaint} (waited ${timeoutMs / 1000}s)`);
+}
+
 (async () => {
   const nativeHost = createNativeHostSandbox(EXPECTED_EXTENSION_ID);
   const extensionDir = stageExtension({
@@ -160,12 +175,14 @@ async function waitForCapture(libraryDir: string, timeoutMs = 20_000): Promise<{
     if (record.image !== landed.jpg) throw new Error(`envelope image mismatch: ${record.image} / ${landed.jpg}`);
     if (jpeg[0] !== 0xff || jpeg[1] !== 0xd8) throw new Error('landed image is not a JPEG');
 
-    const bridgeLog = fs.readFileSync(path.join(nativeHost.configDir, 'bridge.log'), 'utf8');
-    const captureLog = fs.readFileSync(path.join(nativeHost.configDir, 'capture.log'), 'utf8');
-    if (!bridgeLog.includes('recv type=save')) throw new Error('bridge log has no native save message');
-    if (!captureLog.includes('"stage":"bridge"') || !captureLog.includes('"phase":"ok"')) {
-      throw new Error('capture log has no successful bridge outcome');
-    }
+    // Both lines land a little AFTER the files above: the bridge writes the JPEG
+    // and the envelope first and appends its outcome line once that work returned
+    // (native-host/bridge.cts, logSaveOutcome). Reading once therefore races the
+    // host, and a loaded machine loses it — which is how this went red the first
+    // time four of these ran at a time (#968). Same shape, and the same fix, as
+    // the wait e2e-extension-timeout.cts already had.
+    await waitForLog(nativeHost.configDir, 'bridge.log', (text) => text.includes('recv type=save'), 'bridge log has no native save message');
+    await waitForLog(nativeHost.configDir, 'capture.log', (text) => text.includes('"stage":"bridge"') && text.includes('"phase":"ok"'), 'capture log has no successful bridge outcome');
 
     const banner = await bannerSettled;
     // 'partial' is the state a skew is shown in, so a plain 'success' is the
