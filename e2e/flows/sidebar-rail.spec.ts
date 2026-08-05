@@ -38,6 +38,11 @@ test('新規プロファイルの初回起動はラベル付きレール（受�
     browsePosts: 'ライブラリ',
     browsePosters: '投稿者',
     browseTimeline: 'タイムライン',
+    // #965: a FIXED row that opens the folder tree as a flyout — not the folder list
+    // itself, which is what #678's acceptance criterion 3 (asserted below) forbids.
+    // Always present, like the group it stands for: the tree is where a first folder
+    // gets created, so it cannot be gated on already having one.
+    qfCatFolder: 'フォルダ',
     trashTitle: 'ゴミ箱',
     paletteTitle: 'コマンドパレット',
     // #145's global history row is an unconditional footer entry between the
@@ -78,6 +83,70 @@ test('ユーザー生成グループはレールで隠れ、展開すると出�
   await expect(page.locator('[data-slot="sidebar"]')).toHaveAttribute('data-state', 'expanded');
   await expect(folderRow).toBeVisible();
   await expect(savedRow).toBeVisible();
+});
+
+// #965: hiding the groups (above) is only half the design — the rail keeps a fixed row
+// per group whose flyout carries the list, so no destination is unreachable while the
+// column is collapsed (which a narrow window does on its own, #259).
+test('レールのフォルダ行はフライアウトでツリーを出し、選ぶと適用して閉じる（#965）', async ({ launchHologram }) => {
+  const { page } = await launchHologram({ seed: seedFolderAndSavedSearch });
+  const sidebar = page.locator('[data-slot="sidebar"]');
+  const flyout = page.locator('[data-slot="popover-content"]');
+  // Addressed through the label, not the button: Base UI's Trigger stamps its own
+  // data-slot onto whatever it renders, so these rows are `popover-trigger`, not
+  // `sidebar-menu-button`. Anchored regex — plain "フォルダ" also matches 投稿者フォルダ.
+  const railRow = (label: string) => page.locator('[data-slot="menu-label"]', { hasText: new RegExp(`^${label}$`) });
+
+  await expect(sidebar).toHaveAttribute('data-state', 'collapsed');
+  await expect(flyout).toHaveCount(0);
+
+  // The row opens the tree beside the rail, with the folder the column is hiding.
+  await railRow('フォルダ').click();
+  await expect(flyout).toBeVisible();
+  await expect(flyout.locator('[data-folder-id="f-a"]')).toBeVisible();
+  // The saved-search group has its own row, and its own flyout (the seed has one).
+  await expect(railRow('保存した検索')).toBeVisible();
+
+  // Esc dismisses without applying anything.
+  await page.keyboard.press('Escape');
+  await expect(flyout).toHaveCount(0);
+  await expect(page.locator('[data-slot="filter-chip"]')).toHaveCount(0);
+
+  // Picking a folder applies it as a place filter and gets out of the way.
+  await railRow('フォルダ').click();
+  await flyout.locator('[data-folder-id="f-a"] [data-slot="sidebar-menu-button"]').click();
+  await expect(page.locator('[data-slot="filter-chip"]')).toHaveCount(1);
+  await expect(flyout).toHaveCount(0);
+
+  // …and the row for the place you are now in reads as selected — in the flyout, and in
+  // the column once it is expanded again.
+  await railRow('フォルダ').click();
+  await expect(flyout.locator('[data-folder-id="f-a"] [data-slot="sidebar-menu-button"][data-active]')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(flyout).toHaveCount(0);
+  await page.keyboard.press('Control+b');
+  await expect(sidebar).toHaveAttribute('data-state', 'expanded');
+  // Scoped to the column: the flyout renders the same rows, outside the sidebar.
+  await expect(sidebar.locator('[data-folder-id="f-a"] [data-slot="sidebar-menu-button"][data-active]')).toBeVisible();
+});
+
+// The flyout has to be the manager too, not just a picker (#41's finalized decision D:
+// the tree IS the manager, there is no modal behind it) — otherwise collapsing the
+// column would quietly take creating, renaming and deleting away with it.
+test('フライアウトからフォルダを作れる（#965 / #41 確定D）', async ({ launchHologram }) => {
+  const { page } = await launchHologram({ seed: seedFolderAndSavedSearch });
+  const flyout = page.locator('[data-slot="popover-content"]');
+
+  await page.locator('[data-slot="menu-label"]', { hasText: /^フォルダ$/ }).click();
+  await expect(flyout).toBeVisible();
+  await flyout.locator('[data-sidebar="group-action"]').click();
+
+  const dialog = page.locator('[data-slot="dialog-content"]');
+  await expect(dialog).toBeVisible();
+  await dialog.locator('input').fill('新しい入れ物');
+  await dialog.getByRole('button', { name: 'OK' }).click();
+
+  await expect.poll(async () => (await page.evaluate(async () => (await window.hologram.getFolders()).folders.map((f) => f.name))).includes('新しい入れ物')).toBe(true);
 });
 
 test('Ctrl+B は同一セッション内で往復する（受け入れ条件4の往復半分）', async ({ launchHologram }) => {
