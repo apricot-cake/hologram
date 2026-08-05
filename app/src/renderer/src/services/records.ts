@@ -513,7 +513,11 @@ export function makeCardModel(deps: {
     // discrete step when there is no image to have sized or learned from at all. Only
     // the original-aspect grid needs any of this: square cells and list rows have a
     // height the layout already knows.
-    const aspRatio = view.list || view.square ? '' : p.shotW > 0 && p.shotH > 0 ? p.shotW + '/' + p.shotH : p.captureId && aspectCache[p.captureId] ? aspectCache[p.captureId] : !hasVisualMedia(p) ? textPlateAspect(text) : '';
+    //   #953 narrows the text-only step to the state that still DRAWS the plate:
+    // with the info block on, the body is a line in the card body and the card is
+    // exactly as tall as that text, so a reserved picture-shaped box would be
+    // reserving space nothing fills.
+    const aspRatio = view.list || view.square ? '' : p.shotW > 0 && p.shotH > 0 ? p.shotW + '/' + p.shotH : p.captureId && aspectCache[p.captureId] ? aspectCache[p.captureId] : !hasVisualMedia(p) && !view.info ? textPlateAspect(text) : '';
     // Post-type + media flags. The list row spends its width on the post text and
     // leaves these out (ListRow), so they are grid furniture.
     const flags: string[] = [];

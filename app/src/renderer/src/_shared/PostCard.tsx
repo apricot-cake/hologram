@@ -337,14 +337,15 @@ function PlateGlyph() {
 }
 
 /**
- * The face a text-only post shows in the thumbnail's own slot (#365): the body
- * text itself, on a surface one step back from the card (`--surface-2`), standing
- * in for a card with no image or video to lead with. No quote marks, no speech
- * bubble, no per-platform styling — the same "one card, no platform mimicry"
- * rule the rest of the card already follows. PostCard renders exactly one of this
- * or CardThumb per card (never both — see `m.hasThumb` at the call site) and
- * skips the info block's own body-text line whenever this is showing, so no card
- * ever says the same paragraph twice.
+ * The face a text-only post shows in the thumbnail's own slot (#365), now only
+ * where the card has no other surface to say it on: "Show info" off (the info
+ * block that holds the body line is not drawn at all there) and the overview
+ * zoom. With info ON the body is a normal line in the card body instead — the
+ * same place an image-backed card writes it — rather than a paragraph stretched
+ * to fill a picture's frame (#953).
+ *
+ * No quote marks, no speech bubble, no per-platform styling — the same "one
+ * card, no platform mimicry" rule the rest of the card already follows.
  */
 export function TextPlate({ m, shape, overview, className, style: boxStyle }: { m: PostCardModel; shape: DisplayShape; overview?: boolean; className?: string; style?: CSSProperties }) {
   const style = m.aspRatio ? { aspectRatio: m.aspRatio, ...boxStyle } : boxStyle;
@@ -403,12 +404,20 @@ export function PostCard({ m, shape, overview, group, actions, cellRef, onAspect
   const g = deckGeometry(shape);
   const stack = grouped ? (m.stackSrcs ?? []) : [];
   const showBadge = grouped && !overview;
+  // #953: a text-only post writes its body in the card body — the same line an
+  // image-backed card writes it on — instead of a plate filling the thumbnail's
+  // slot. So the card draws NO media box at all here, and its height is just what
+  // the text needs (the masonry packs the rest). The plate only comes back where
+  // the info block itself is gone and the body has nowhere else to go.
+  const bodyInMeta = !m.hasThumb && shape.info;
   const info: ReactNode = shape.info && (
     // Square thumbnails are chosen to get an EVEN lattice, so the block under them is
     // a fixed height (INFO_BLOCK) rather than one that grows with the text — otherwise
     // the squares line up and the cards below them do not. At the original aspect
-    // nothing is even anyway, so there the block just takes what it needs.
-    <div data-slot="post-card-meta" className={cn('relative flex min-w-0 flex-1 flex-col rounded-b-lg bg-[var(--surface)] p-3', shape.square && 'h-24 overflow-hidden')}>
+    // nothing is even anyway, so there the block just takes what it needs. A text-only
+    // card has no square to line up with (#953), so the fixed height is off there too —
+    // it would clip the body down to a single line for no lattice in return.
+    <div data-slot="post-card-meta" className={cn('relative flex min-w-0 flex-1 flex-col rounded-b-lg bg-[var(--surface)] p-3', shape.square && !bodyInMeta && 'h-24 overflow-hidden')}>
       <AuthorLine userName={m.userName} handle={m.handle} avatar={shape.avatar ? m : null} className="mb-1 font-semibold text-[13px]" />
       {(m.flags.length > 0 || m.mediaLabel) && (
         <div className="mb-[3px] flex flex-wrap gap-x-2 gap-y-0.5 text-[10px] text-[var(--text-muted)] leading-[1.6]">
@@ -418,10 +427,10 @@ export function PostCard({ m, shape, overview, group, actions, cellRef, onAspect
           {m.mediaLabel && <span>{m.mediaLabel}</span>}
         </div>
       )}
-      {/* #365: a text-only card already says its body ONCE, on the plate below —
-          this line would be the same paragraph twice, so it only draws when
-          there IS a real thumbnail for the plate to have stood in for. */}
-      {m.text && m.hasThumb && <div className={cn('mb-1.5 text-[13px] text-[var(--text)]', shape.square ? 'line-clamp-1' : 'line-clamp-3')}>{m.text}</div>}
+      {/* The body. On an image-backed card it is a short excerpt under the picture;
+          on a text-only one (#953) it is what the card IS, so it gets more lines and
+          keeps its own line breaks — the same paragraph the inspector shows in full. */}
+      {m.text && <div className={cn('mb-1.5 text-[13px] text-[var(--text)]', bodyInMeta ? 'line-clamp-[12] whitespace-pre-wrap leading-snug' : shape.square ? 'line-clamp-1' : 'line-clamp-3')}>{m.text}</div>}
       {/* Pinned to the bottom edge so the date lines up across a row of cards of
           different text lengths. */}
       <MetaFoot m={m} className="mt-auto pt-1.5" />
@@ -448,7 +457,9 @@ export function PostCard({ m, shape, overview, group, actions, cellRef, onAspect
           imgClassName={cn('block w-full cursor-zoom-in object-cover transition-transform duration-500 ease-[var(--ease-out)] group-hover:scale-[1.055] motion-reduce:transform-none', shape.square ? 'h-full max-h-none' : 'max-h-[300px]')}
         />
       ) : (
-        <TextPlate m={m} shape={shape} overview={overview} className={cn('overflow-hidden', shape.square && 'aspect-square w-full', shape.info ? 'rounded-t-lg' : 'rounded-lg')} />
+        // No thumbnail: with the info block on, the body is already down there and
+        // this slot draws nothing at all (#953). Without it, the plate IS the card.
+        !bodyInMeta && <TextPlate m={m} shape={shape} overview={overview} className={cn('overflow-hidden rounded-lg', shape.square && 'aspect-square w-full')} />
       )}
       {showBadge && <CountBadge n={m.nImg as number} top={(grouped ? g.deck : 0) + 8} />}
       {info}
