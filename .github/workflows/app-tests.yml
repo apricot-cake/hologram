@@ -53,6 +53,13 @@ jobs:
       # straight to a pass. Required-check paths filters can't do this: a skipped
       # required workflow leaves the check "expected" forever and blocks the merge
       # instead (#928).
+      #
+      # Also decides `fail_fast` here, for the same reason: every later layer's
+      # `if` needs to know whether this run is a pull_request. A PR is fixed and
+      # re-pushed in minutes, so stopping at the first red layer gets a developer
+      # to the fix faster instead of burning runner time on layers they won't read
+      # before they push again. push/schedule/workflow_dispatch keep running every
+      # layer after a failure — see the comment below on the harness step (#936).
       - name: Detect docs-only change
         id: docs-only
         # windows-latest's default shell is pwsh, not bash — this script is POSIX sh.
@@ -60,7 +67,14 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if [ "${{ github.event_name }}" != "pull_request" ]; then
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            fail_fast=true
+          else
+            fail_fast=false
+          fi
+          echo "fail_fast=$fail_fast" >> "$GITHUB_OUTPUT"
+
+          if [ "$fail_fast" != "true" ]; then
             echo "docs_only=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -112,44 +126,51 @@ jobs:
       # them (#14's 2026-07-29 decision). Running it here would report differences
       # that say nothing about the change under test.
       - name: Electron E2E (user flows)
-        if: ${{ !cancelled() && steps.docs-only.outputs.docs_only != 'true' }}
+        if: ${{ !cancelled() && steps.docs-only.outputs.docs_only != 'true' && (steps.docs-only.outputs.fail_fast != 'true' || success()) }}
         run: npx playwright test --project=flow
-      # Each later layer runs even after an earlier one goes red (`!cancelled()`
-      # rather than `success()`): a nightly job that stops at the first failure
-      # costs a whole day to learn what else was broken. The scripts are invoked
-      # directly rather than through their npm scripts, which would each rebuild
-      # the extension that `npm run setup` already built.
+      # Each later layer runs even after an earlier one goes red on push/schedule/
+      # workflow_dispatch (`!cancelled()` rather than `success()`): a nightly job
+      # that stops at the first failure costs a whole day to learn what else was
+      # broken (#818 — four consecutive red nights, a different layer each time,
+      # only diagnosable because every layer had run that night). On a pull_request
+      # the same patience just delays the red: a PR is fixed and re-pushed within
+      # minutes, so nothing past the first failure gets read before that push makes
+      # this run moot. `fail_fast` (set above) is `true` only for pull_request, so
+      # the extra `success()` clause below changes behavior only there — everywhere
+      # else it collapses back to the original `!cancelled()`-only check (#936).
+      # The scripts are invoked directly rather than through their npm scripts,
+      # which would each rebuild the extension that `npm run setup` already built.
       - name: Extension capture e2e (offline fixture)
-        if: ${{ !cancelled() && steps.docs-only.outputs.docs_only != 'true' }}
+        if: ${{ !cancelled() && steps.docs-only.outputs.docs_only != 'true' && (steps.docs-only.outputs.fail_fast != 'true' || success()) }}
         run: node scripts/e2e-extension-offline.cts
       - name: Extension duplicate-warning e2e (offline fixture)
-        if: ${{ !cancelled() && steps.docs-only.outputs.docs_only != 'true' }}
+        if: ${{ !cancelled() && steps.docs-only.outputs.docs_only != 'true' && (steps.docs-only.outputs.fail_fast != 'true' || success()) }}
         run: node scripts/e2e-extension-duplicate.cts
       - name: Extension save-timeout e2e (offline fixture)
-        if: ${{ !cancelled() && steps.docs-only.outputs.docs_only != 'true' }}
+        if: ${{ !cancelled() && steps.docs-only.outputs.docs_only != 'true' && (steps.docs-only.outputs.fail_fast != 'true' || success()) }}
         run: node scripts/e2e-extension-timeout.cts
       - name: Extension save-log e2e (offline fixture)
-        if: ${{ !cancelled() && steps.docs-only.outputs.docs_only != 'true' }}
+        if: ${{ !cancelled() && steps.docs-only.outputs.docs_only != 'true' && (steps.docs-only.outputs.fail_fast != 'true' || success()) }}
         run: node scripts/e2e-extension-save-log.cts
       # Measures the platform premises #269 chose between (which surfaces still
       # work once the extension's own files cannot be read). A Chrome update is
       # exactly what could invalidate them, and nothing else in the suite would
       # go red if it did — which is why this one earns a daily run.
       - name: Extension inject-failure premises
-        if: ${{ !cancelled() && steps.docs-only.outputs.docs_only != 'true' }}
+        if: ${{ !cancelled() && steps.docs-only.outputs.docs_only != 'true' && (steps.docs-only.outputs.fail_fast != 'true' || success()) }}
         run: node scripts/e2e-extension-inject-failure.cts
       # Reloads the extension under two live tabs (#594) — the only way to make a
       # real orphaned content script. Measures both what Chrome does to such a
       # context (the premises the detector rests on) and what the extension then
       # does with the UI it left on the page.
       - name: Extension orphaned-tab e2e
-        if: ${{ !cancelled() && steps.docs-only.outputs.docs_only != 'true' }}
+        if: ${{ !cancelled() && steps.docs-only.outputs.docs_only != 'true' && (steps.docs-only.outputs.fail_fast != 'true' || success()) }}
         run: node scripts/e2e-extension-orphan.cts
       - name: Overlay visual regression
-        if: ${{ !cancelled() && steps.docs-only.outputs.docs_only != 'true' }}
+        if: ${{ !cancelled() && steps.docs-only.outputs.docs_only != 'true' && (steps.docs-only.outputs.fail_fast != 'true' || success()) }}
         run: node scripts/e2e-overlay-visual.cts
       - name: Overlay flicker regression
-        if: ${{ !cancelled() && steps.docs-only.outputs.docs_only != 'true' }}
+        if: ${{ !cancelled() && steps.docs-only.outputs.docs_only != 'true' && (steps.docs-only.outputs.fail_fast != 'true' || success()) }}
         run: node scripts/e2e-overlay-flicker.cts
       # scripts/e2e-capture-test.cts — the live-site canary — is NOT here. It reads
       # the real platforms, and X serves no post DOM to a signed-out browser, so on
