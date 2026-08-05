@@ -159,8 +159,6 @@ export interface AppPrefs {
   inspectorWidth: number | null;
   /** #245: both panels above masked away at once. Independent of their own state. */
   panelsHidden: boolean | null;
-  /** #88: one-key blur over every image surface (grid/list/inspector/viewer/lightbox). */
-  privacyMode: boolean | null;
   /** #46: triage mode's manually-pinned number-key (1-9) quick tags, in slot order. */
   triagePinnedTags: string[];
   /** #207: web-search popover - which site rows "まとめて開く" targets (site ids), remembered across sessions. null = never set (defaults to every adopted site). */
@@ -437,6 +435,8 @@ export interface ModelInfo {
   state: 'absent' | 'partial' | 'complete';
   bytesDone: number;
   bytesTotal: number;
+  /** What the model is for, as an i18n key — a repo id does not say what a download buys (#50 §6-4). */
+  purpose: 'tag-suggestions' | 'tag-matching';
   /** Shown next to the model in Settings' AI Features section. */
   licenseNote: string;
   /** A different rev of this model is on disk — informational only, #832 never auto-fetches it. */
@@ -469,6 +469,9 @@ export interface BackupSummary {
 
 /** get-backup / the `backup` member of a write result. */
 export interface BackupConfig {
+  /** 'local-folder' | 'google-drive' | 'onedrive' (#909). */
+  kind: string;
+  /** The picked folder, for the local kind only. */
   dir: string | null;
   interval: boolean;
   intervalValue: number;

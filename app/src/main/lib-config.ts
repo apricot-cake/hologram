@@ -167,6 +167,11 @@ function dirExists(p) {
 // when the folder itself moved or was repointed — see recordLibraryOpened.
 const MAX_LIBRARIES = 5;
 const BACKUP_DEFAULTS = {
+  // Which kind of destination this library backs up to (#909): 'local-folder',
+  // 'google-drive' or 'onedrive'. The local folder keeps `dir`; a cloud kind
+  // needs no reference of its own, because the connection it uses is the one
+  // stored for that provider (lib-backup-destinations.ts owns the mapping).
+  kind: 'local-folder',
   dir: null, // Output destination (must not overlap with the save folder, inside or out)
   interval: false, // fixed interval
   intervalValue: 1, // interval count

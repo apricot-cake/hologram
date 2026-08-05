@@ -10,7 +10,7 @@
 // Linear-style FilterChips — the only chip surface (the hidden #queryChips /
 // #posterQueryChips containers the legacy builders resolved at boot went with
 // their render path in #230).
-import { ChevronLeft, ChevronRight, Inbox, Timer } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Inbox } from 'lucide-react';
 import { useSyncExternalStore } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -27,7 +27,7 @@ import { open as openPalette } from '../services/command-registry.ts';
 import { hologramImageTabSource, isActive as imageViewIsActive } from '../services/image-tab.ts';
 import { subscribeQueueCount } from '../services/triage-builder.ts';
 import { get as storeGet, subscribe as storeSubscribe } from '../services/store.ts';
-import { navBack, navForward, openTriage, startPractice, triageQueueCount } from '../services/orchestrator.ts';
+import { navBack, navForward, openTriage, triageQueueCount } from '../services/orchestrator.ts';
 
 const subKey = (key: string) => (cb: () => void) => storeSubscribe(key, cb);
 const subBack = subKey('navCanBack');
@@ -113,25 +113,6 @@ function TriageButton() {
   );
 }
 
-// Practice mode's entry point (#103) -- a modest single button (the Issue's own
-// scope: "toolbar menu, command palette later"), same spot as TriageButton rather
-// than a popover -- opening starts the session directly off the current filter
-// results, same one-click-and-you're-in shape TriageButton already gives triage.
-function PracticeButton() {
-  return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <Button data-slot="practice-toolbar-button" variant="ghost" size="icon-sm" aria-label={t('practiceToolbarLabel')} onClick={() => startPractice?.()}>
-            <Timer />
-          </Button>
-        }
-      />
-      <TooltipContent>{t('practiceToolbarLabel')}</TooltipContent>
-    </Tooltip>
-  );
-}
-
 export function AppToolbar() {
   const canBack = useSyncExternalStore(subBack, getBack);
   const canForward = useSyncExternalStore(subForward, getForward);
@@ -184,7 +165,6 @@ export function AppToolbar() {
               <WebSearchPanel />
               <AddFilterButton />
               <DisplayMenu />
-              <PracticeButton />
             </>
           )}
         </div>

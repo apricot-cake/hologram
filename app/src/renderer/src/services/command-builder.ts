@@ -15,7 +15,6 @@ import { setLayout, setPosterLayout } from './display.ts';
 import { recentHistory } from './history.ts';
 import { open as openHistoryPanel } from './history-panel.ts';
 import { toggle as togglePanels } from './panels.ts';
-import { toggle as togglePrivacyMode } from './privacy-mode.ts';
 import { open as openSettings } from './settings.ts';
 import { hologramTabsSource } from './tabs.ts';
 
@@ -88,8 +87,6 @@ export function makeCommands(deps: CommandDeps): void {
     // row is never rewritten to match the state at the moment it opened (a row that swaps
     // between "Hide" and "Restore" can't be found by searching for it).
     { id: 'cmd:toggle-panels', section: 'command', title: t('cmdTogglePanels'), hint: 'Ctrl+Shift+B', perform: () => togglePanels() },
-    // #88: 一括ぼかしの切り替え。名前は状態を言わず動作だけを言う＝上の一括表示トグルと同じ理由。
-    { id: 'cmd:toggle-privacy', section: 'command', title: t('cmdTogglePrivacy'), hint: 'P', perform: () => togglePrivacyMode() },
     { id: 'cmd:browse-posts', section: 'command', title: t('cmdBrowsePosts'), perform: () => deps.browseTo('posts') },
     { id: 'cmd:browse-posters', section: 'command', title: t('cmdBrowsePosters'), perform: () => deps.browseTo('posters') },
     // Trash is one more destination too (#268) — same treatment as the two lines above: a

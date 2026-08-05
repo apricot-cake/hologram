@@ -71,6 +71,60 @@ const MIGRATIONS: Migration[] = [
         CREATE INDEX idx_derived_progress_captureId ON derived_progress(captureId);
       `),
   },
+  {
+    // #50's three tables. All keyed by captureId, so purgeDerivedForCapture
+    // picks them up without being told they exist.
+    name: 'ai-tags',
+    up: (db) =>
+      db.exec(`
+        -- Candidates above the model's threshold. Only ever READ by the
+        -- suggestion UI: adopting one goes through the ordinary tag-writing
+        -- path in hologram.db, so nothing here is ever the source of a tag.
+        -- name is the model's own label (underscores already turned into
+        -- spaces); the display name is resolved separately, per #50 §5.
+        CREATE TABLE ai_tags (
+          captureId TEXT NOT NULL,
+          assetRef TEXT NOT NULL,
+          segment INTEGER NOT NULL DEFAULT 0,
+          name TEXT NOT NULL,
+          category INTEGER NOT NULL,
+          score REAL NOT NULL,
+          modelId TEXT NOT NULL,
+          modelRev TEXT NOT NULL,
+          PRIMARY KEY (captureId, assetRef, segment, name)
+        );
+        CREATE INDEX idx_ai_tags_captureId ON ai_tags(captureId);
+
+        -- Recorded, never surfaced (2026-07-11). There is no rating UI and no
+        -- rating filter: how an app should treat explicit content is its own
+        -- decision, and leaving the column readable is not the same as making
+        -- that decision here.
+        CREATE TABLE ai_tag_ratings (
+          captureId TEXT NOT NULL,
+          assetRef TEXT NOT NULL,
+          segment INTEGER NOT NULL DEFAULT 0,
+          rating TEXT NOT NULL,
+          score REAL NOT NULL,
+          modelId TEXT NOT NULL,
+          modelRev TEXT NOT NULL,
+          PRIMARY KEY (captureId, assetRef, segment, rating)
+        );
+        CREATE INDEX idx_ai_tag_ratings_captureId ON ai_tag_ratings(captureId);
+
+        -- "Stop offering me this one." Per RECORD, not per asset: what the user
+        -- rejected is "this tag on this post", not "this tag on this file".
+        -- It lives in the derived store because it is meaningless without
+        -- candidates — removing the AI feature entirely should take it along,
+        -- and doing so must still leave the library itself untouched (#833).
+        CREATE TABLE ai_tag_dismissals (
+          captureId TEXT NOT NULL,
+          name TEXT NOT NULL,
+          dismissedAt TEXT NOT NULL,
+          PRIMARY KEY (captureId, name)
+        );
+        CREATE INDEX idx_ai_tag_dismissals_captureId ON ai_tag_dismissals(captureId);
+      `),
+  },
 ];
 
 interface Migration {
@@ -191,6 +245,90 @@ export function writeDerivedProgress(sqlite: Database.Database, row: { captureId
     .run({ ...row, updatedAt: row.updatedAt ?? new Date().toISOString() });
 }
 
+// --- #50's AI tag candidates ---
+
+export interface AiTagRow {
+  name: string;
+  category: number;
+  score: number;
+}
+
+export interface AiTagWrite {
+  captureId: string;
+  assetRef: string;
+  segment: number;
+  modelId: string;
+  modelRev: string;
+  tags: AiTagRow[];
+  ratings: Array<{ rating: string; score: number }>;
+}
+
+/**
+ * Replaces one asset's candidates wholesale.
+ *
+ * Delete-then-insert rather than upsert: a re-run at a new model revision has
+ * to be able to REMOVE a tag the previous revision produced, and an upsert
+ * would leave it behind forever. One transaction, so a crash halfway cannot
+ * leave an asset with a mixture of two revisions' opinions.
+ */
+export function writeAiTags(sqlite: Database.Database, row: AiTagWrite): void {
+  const delTags = sqlite.prepare('DELETE FROM ai_tags WHERE captureId = ? AND assetRef = ? AND segment = ?');
+  const delRatings = sqlite.prepare('DELETE FROM ai_tag_ratings WHERE captureId = ? AND assetRef = ? AND segment = ?');
+  const insTag = sqlite.prepare('INSERT INTO ai_tags (captureId, assetRef, segment, name, category, score, modelId, modelRev) VALUES (@captureId, @assetRef, @segment, @name, @category, @score, @modelId, @modelRev)');
+  const insRating = sqlite.prepare('INSERT INTO ai_tag_ratings (captureId, assetRef, segment, rating, score, modelId, modelRev) VALUES (@captureId, @assetRef, @segment, @rating, @score, @modelId, @modelRev)');
+  const { captureId, assetRef, segment, modelId, modelRev } = row;
+  sqlite.transaction(() => {
+    delTags.run(captureId, assetRef, segment);
+    delRatings.run(captureId, assetRef, segment);
+    for (const t of row.tags) insTag.run({ captureId, assetRef, segment, modelId, modelRev, ...t });
+    for (const r of row.ratings) insRating.run({ captureId, assetRef, segment, modelId, modelRev, ...r });
+  })();
+}
+
+export interface AiTagCandidateRow extends AiTagRow {
+  assetRef: string;
+  segment: number;
+  modelId: string;
+  modelRev: string;
+}
+
+/**
+ * One record's undecided candidates, strongest first. Dismissed names are
+ * filtered out here rather than deleted, so the same tag stays suppressed
+ * across a re-index (an acceptance condition of #50).
+ */
+export function readAiTagCandidates(sqlite: Database.Database, captureId: string): AiTagCandidateRow[] {
+  return sqlite
+    .prepare(
+      `SELECT assetRef, segment, name, category, score, modelId, modelRev FROM ai_tags
+       WHERE captureId = @captureId
+         AND name NOT IN (SELECT name FROM ai_tag_dismissals WHERE captureId = @captureId)
+       ORDER BY score DESC`,
+    )
+    .all({ captureId }) as AiTagCandidateRow[];
+}
+
+export function dismissAiTag(sqlite: Database.Database, captureId: string, name: string, at = new Date().toISOString()): void {
+  sqlite.prepare('INSERT INTO ai_tag_dismissals (captureId, name, dismissedAt) VALUES (?, ?, ?) ON CONFLICT(captureId, name) DO NOTHING').run(captureId, name, at);
+}
+
+/**
+ * Forgets every candidate this model produced, and the progress rows that say
+ * the work was done.
+ *
+ * Called when the model is deleted: the candidates were only ever a view of a
+ * model that is no longer here, and leaving the progress rows would mean a
+ * later re-download found nothing left to do. Dismissals are NOT cleared —
+ * those are the user's decisions, not the model's output.
+ */
+export function clearAiTagOutput(sqlite: Database.Database, jobKind: string): void {
+  sqlite.transaction(() => {
+    sqlite.prepare('DELETE FROM ai_tags').run();
+    sqlite.prepare('DELETE FROM ai_tag_ratings').run();
+    sqlite.prepare('DELETE FROM derived_progress WHERE jobKind = ?').run(jobKind);
+  })();
+}
+
 interface DerivedProgressTable {
   captureId: string;
   assetRef: string;
@@ -202,8 +340,38 @@ interface DerivedProgressTable {
   updatedAt: string;
 }
 
+interface AiTagsTable {
+  captureId: string;
+  assetRef: string;
+  segment: number;
+  name: string;
+  category: number;
+  score: number;
+  modelId: string;
+  modelRev: string;
+}
+
+interface AiTagRatingsTable {
+  captureId: string;
+  assetRef: string;
+  segment: number;
+  rating: string;
+  score: number;
+  modelId: string;
+  modelRev: string;
+}
+
+interface AiTagDismissalsTable {
+  captureId: string;
+  name: string;
+  dismissedAt: string;
+}
+
 interface DerivedSchema {
   derived_progress: DerivedProgressTable;
+  ai_tags: AiTagsTable;
+  ai_tag_ratings: AiTagRatingsTable;
+  ai_tag_dismissals: AiTagDismissalsTable;
 }
 
 let handle: DerivedDbHandle | null = null;

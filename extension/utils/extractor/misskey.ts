@@ -166,13 +166,6 @@ function parseMisskeyNoteLink(href: string): MisskeyNoteLink | null {
 // back on.
 const MISSKEY_REPLY_ICON = 'ti-arrow-back-up';
 const MISSKEY_RENOTE_ICON = 'ti-repeat';
-// Every icon the react button can show while anonymous cannot react on its
-// behalf: the default (ti-plus / ti-heart for a likeOnly note), and — since
-// the note being captured may be the viewer's OWN, already reacted to —
-// ti-minus (either build) and the fork's two-token "ti-filled ti-filled-heart"
-// (matched by the bare "heart" substring, since "ti-heart" itself is not a
-// substring of "ti-filled-heart").
-const MISSKEY_REACT_ICON_HINTS = ['heart', 'ti-plus', 'ti-minus'];
 
 function misskeyReadText(el: Element): string {
   let out = '';
@@ -207,6 +200,48 @@ function misskeyFooterButton(article: Element, iconHints: readonly string[]): El
 function misskeyFooterCount(article: Element, iconHints: readonly string[]): number | null {
   const p = misskeyFooterButton(article, iconHints)?.querySelector('p');
   return p ? parseCount(p.textContent) : null;
+}
+
+// MkReactionsViewer's per-reaction chip — the one footer button shape with no
+// Tabler icon at all (every ACTION button, reply/renote/react/more, carries
+// one; a chip does not). Reading "no <i>" rather than a testid/class of its
+// own is the same structural-marker approach misskeyFooterButton takes for
+// the icons it DOES have.
+function isMisskeyReactionChip(btn: Element): boolean {
+  return !btn.querySelector('i');
+}
+
+// A chip's own text is "<emoji><count>" — read off the END of the string,
+// never parseCount(button.textContent) from the start: parseCount anchors on
+// ^\d, but a built-in emoji renders as a literal character preceding the
+// digits (a custom one renders as <img alt=":name:">, which contributes
+// nothing to textContent, so only the built-in case needs this at all).
+function misskeyReactionChipCount(btn: Element): number | null {
+  const m = (btn.textContent || '').match(/(\d+)\s*$/);
+  return m ? Number(m[1]) : null;
+}
+
+// The reaction total misskeyFooterCount(REACT button) cannot see: that reads
+// the ti-plus/heart button's OWN <p>, which only shows a number when the
+// viewer has showReactionsCount on (default false) — but the per-reaction
+// chips render regardless of that setting (#916, live on misskey.io
+// 2026-08-05: a note with reactions summing to 113 via the API showed 12 chip
+// buttons reading "84" "11" "4" "3" "2" "2" "2" "1" "1" "1" "1" "1" — the same
+// 113 — while the react button beside them showed no number at all). Summed
+// here so meta.likes carries the same definition fetchMisskeyNote's own
+// reactions-total already uses: one API-absent note must not disagree with
+// another merely because the fetch failed.
+function misskeyReactionTotal(article: Element): number | null {
+  let total = 0;
+  let any = false;
+  for (const btn of article.querySelectorAll('footer button')) {
+    if (!isMisskeyReactionChip(btn)) continue;
+    const n = misskeyReactionChipCount(btn);
+    if (n == null) continue;
+    any = true;
+    total += n;
+  }
+  return any ? total : null;
 }
 
 function extractMisskeyDomMeta(post: Element): DomMeta {
@@ -244,10 +279,7 @@ function extractMisskeyDomMeta(post: Element): DomMeta {
   if (replies != null) meta.replies = replies;
   const reposts = misskeyFooterCount(article, [MISSKEY_RENOTE_ICON]);
   if (reposts != null) meta.reposts = reposts;
-  // Reaction counts default to HIDDEN on misskey.io (showReactionsCount's own
-  // documented default is false) — null here far more often than not is the
-  // correct, unforced answer, not a missed selector.
-  const likes = misskeyFooterCount(article, MISSKEY_REACT_ICON_HINTS);
+  const likes = misskeyReactionTotal(article);
   if (likes != null) meta.likes = likes;
 
   return meta;

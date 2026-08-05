@@ -2,7 +2,7 @@
 //
 // BACKGROUND: before this module, each app-wide shortcut had its key baked in as a literal
 // comparison at the top of its own handler (undo-builder.ts's `e.key.toLowerCase() === 'z'`,
-// privacy-mode.ts's `'p'`, …) — there was no single place that knew "what keys does this app
+// …) — there was no single place that knew "what keys does this app
 // use", so the settings page #246 wants (a list + reassignment) could only be built by reading
 // the key back OUT of every handler, which is exactly the double-bookkeeping #185 already showed
 // the cost of. This module inverts that: a command's key lives HERE (default + optional
@@ -42,9 +42,9 @@ export interface ShortcutEntry {
   defaultCombo: string;
   /**
    * True for the handful of commands whose ORIGINAL guard never looked at e.shiftKey at all
-   * (select-all / copy / privacy-toggle / search-focus / the two content-size steps / new-tab /
+   * (select-all / copy / search-focus / the two content-size steps / new-tab /
    * close-tab) — holding Shift alongside them was always allowed through, generally because
-   * Shift only changes the glyph a key produces (P/p) or is needed on some layout to type it
+   * Shift only changes the glyph a key produces or is needed on some layout to type it
    * (Numpad+ vs Shift+=), not because Shift means something different for that command. Combos
    * are still stored/compared with Shift stripped for these ids (both defaultCombo above and any
    * override) so pressing the key with or without Shift is the same combo. Everything else
@@ -217,7 +217,7 @@ function persist(): void {
   }
 }
 
-/** Reconciles with config.json once at boot — same shape as panels.ts/privacy-mode.ts's load(),
+/** Reconciles with config.json once at boot — same shape as panels.ts's load(),
  * minus the localStorage tier: unlike those, nothing needs an answer before React's first paint
  * (a rebind only matters the next time a key is actually pressed). */
 export async function load(): Promise<void> {

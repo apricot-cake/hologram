@@ -96,6 +96,45 @@ describe('X', () => {
 
     expect((await fetchXTweet(ID, URL_)).linkCard).toBeNull();
   });
+
+  // #915: card_url is a t.co short link on real X responses; entities.urls
+  // carries the same short link's expansion (the JAXA post measured in #843).
+  test('card_url が entities.urls に載っている t.co なら展開先を url に採る（#915）', async () => {
+    const shortenedCard = { ...linkCard, binding_values: { ...linkCard.binding_values, card_url: { string_value: 'https://t.co/uXNG3Y7uHS', type: 'STRING' } } };
+    mockFetch([
+      [
+        'cdn.syndication.twimg.com',
+        {
+          text: 'read this',
+          mediaDetails: [],
+          user: { screen_name: 'alice', id_str: '1' },
+          card: shortenedCard,
+          entities: { urls: [{ url: 'https://t.co/uXNG3Y7uHS', expanded_url: 'https://www.jaxa.jp/press/2026/04/20260424-1_j.html' }] },
+        },
+      ],
+    ]);
+
+    const rec = await fetchXTweet(ID, URL_);
+    expect(rec.linkCard?.url).toBe('https://www.jaxa.jp/press/2026/04/20260424-1_j.html');
+  });
+
+  test('card_url に対応する entities.urls が無ければ card_url のまま（回帰なし）', async () => {
+    mockFetch([
+      [
+        'cdn.syndication.twimg.com',
+        {
+          text: 'read this',
+          mediaDetails: [],
+          user: { screen_name: 'alice', id_str: '1' },
+          card: linkCard,
+          entities: { urls: [{ url: 'https://t.co/unrelated', expanded_url: 'https://example.org/unrelated' }] },
+        },
+      ],
+    ]);
+
+    const rec = await fetchXTweet(ID, URL_);
+    expect(rec.linkCard?.url).toBe('https://example.com/article');
+  });
 });
 
 describe('Mastodon', () => {

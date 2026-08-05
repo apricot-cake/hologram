@@ -9,7 +9,7 @@
 // (3) tryRun()'s three-way outcome (not-this-id / claimed-but-inert / claimed-and-ran) since
 // callers chain several ids on the same physical key (undo-builder.ts's undo/redo pair, etc.),
 // (4) persistence round trip through the same window.hologram.getPrefs/setPref seam other
-// prefs modules use (panels.ts, privacy-mode.ts).
+// prefs modules use (panels.ts).
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { comboFromEvent, comboLabel, currentCombo, findConflict, isTypingTarget, list, load, normalizeKey, registerShortcut, resetShortcuts, resetToDefault, setCustomCombo, subscribe, tryRun, type ShortcutEntry } from '../app/src/renderer/src/services/shortcut-registry';
 

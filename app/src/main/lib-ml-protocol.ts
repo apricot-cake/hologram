@@ -100,12 +100,43 @@ export interface MlRunRequest {
   callOptions?: Record<string, any>;
 }
 
+/** One input tensor on its way TO the worker. Structured clone carries the typed array as-is. */
+export interface MlSessionFeed {
+  type: 'float32';
+  dims: number[];
+  data: Float32Array;
+}
+
+/**
+ * Run a bare ONNX graph — no transformers.js pipeline, no tokenizer, no image
+ * processor. The caller shapes the tensors and reads the raw outputs.
+ *
+ * The exception ADR 0026 decision 1 now carries (#50). transformers.js can only
+ * drive a model it recognises as a Hugging Face one, and a timm/JAX export like
+ * SmilingWolf/wd-vit-tagger-v3 is not: it has no `model_type`, its pipeline
+ * would force a softmax onto multi-label scores, and its preprocessing (white
+ * letterbox, BGR, unnormalised) is not expressible as a standard image
+ * processor. Everything ELSE about such a model stays on the transformers.js
+ * side of the line — same models root, same fetch-and-verify (#832), same
+ * process (#831), same backend choice.
+ */
+export interface MlSessionRequest {
+  id: number;
+  kind: 'session';
+  /** ABSOLUTE directory holding the model files, as for MlRunRequest. */
+  modelDir: string;
+  /** The graph file inside modelDir, e.g. 'model.onnx'. */
+  modelFile: string;
+  /** Input tensors by graph input name. */
+  feeds: Record<string, MlSessionFeed>;
+}
+
 export interface MlPingRequest {
   id: number;
   kind: 'ping';
 }
 
-export type MlRequest = MlRunRequest | MlPingRequest;
+export type MlRequest = MlRunRequest | MlSessionRequest | MlPingRequest;
 
 export interface MlReadyMessage {
   kind: 'ready';
