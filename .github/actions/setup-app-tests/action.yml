@@ -1,0 +1,143 @@
+name: Set up app tests
+description: >-
+  Everything an app-tests shard needs before it can run a test layer: the
+  docs-only / fail-fast decision, the dependency tree, the app bundles and a
+  Playwright Chromium. Extracted from app-tests.yml when that job was split into
+  parallel shards (#937) — the steps below are identical for every shard, so
+  they live here once instead of three times.
+
+  Every shard pays this preparation again rather than receiving it as an
+  artifact. That is deliberate, and measured (#937, run 30996640294): the only
+  step an artifact could replace is `Build app bundles`, which takes 4 seconds.
+  The expensive part is the dependency tree — 18s to restore the cache plus 21s
+  to install — and node_modules is tens of thousands of small files, which
+  upload-artifact/download-artifact move far more slowly on Windows than
+  actions/cache restores them. Passing it around would make every shard start
+  later, not sooner.
+
+inputs:
+  github-token:
+    description: Token for the docs-only detection's `gh api .../files` call.
+    required: true
+
+outputs:
+  docs_only:
+    description: '"true" when a pull request touches nothing but *.md and docs/**.'
+    value: ${{ steps.docs-only.outputs.docs_only }}
+  fail_fast:
+    description: '"true" on pull_request — later layers in a shard stop at the first red one.'
+    value: ${{ steps.docs-only.outputs.fail_fast }}
+
+runs:
+  using: composite
+  steps:
+    # docs-only PRs (README, docs/**) don't need any layer these shards run —
+    # skip straight to a pass. Required-check paths filters can't do this: a
+    # skipped required workflow leaves the check "expected" forever and blocks
+    # the merge instead (#928).
+    #
+    # Also decides `fail_fast` here, for the same reason: every later layer's
+    # `if` needs to know whether this run is a pull_request. A PR is fixed and
+    # re-pushed in minutes, so stopping at the first red layer gets a developer
+    # to the fix faster instead of burning runner time on layers they won't read
+    # before they push again. push/schedule/workflow_dispatch keep running every
+    # layer after a failure — see the comment on the shards in app-tests.yml
+    # (#936).
+    - name: Detect docs-only change
+      id: docs-only
+      # windows-latest's default shell is pwsh, not bash — this script is POSIX sh.
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+      run: |
+        if [ "${{ github.event_name }}" = "pull_request" ]; then
+          fail_fast=true
+        else
+          fail_fast=false
+        fi
+        echo "fail_fast=$fail_fast" >> "$GITHUB_OUTPUT"
+
+        if [ "$fail_fast" != "true" ]; then
+          echo "docs_only=false" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+        files="$(gh api --paginate "repos/${{ github.repository }}/pulls/${{ github.event.number }}/files" --jq '.[].filename')"
+        docs_only=true
+        if [ -z "$files" ]; then
+          docs_only=false
+        fi
+        while IFS= read -r f; do
+          case "$f" in
+            *.md|docs/*) ;;
+            *) docs_only=false ;;
+          esac
+        done <<< "$files"
+        echo "docs_only=$docs_only" >> "$GITHUB_OUTPUT"
+    - name: Setup Node
+      id: setup-node
+      if: steps.docs-only.outputs.docs_only != 'true'
+      uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      with:
+        node-version-file: package.json
+        cache: npm
+        cache-dependency-path: |
+          package-lock.json
+          extension/package-lock.json
+    # actions/setup-node's cache:npm above only persists npm's download cache,
+    # not the installed tree — every run still walks and links node_modules from
+    # scratch. This restores the tree itself. No restore-keys: a partial match on
+    # a stale lockfile would silently resurrect an old dependency tree on a PR
+    # that changed one, which is worse than the cache miss it saves (#935).
+    #
+    # The shards share one cache entry: the key has nothing shard-specific in it,
+    # so the first shard to finish saves it and the rest hit it (#937).
+    - name: Cache node_modules
+      if: steps.docs-only.outputs.docs_only != 'true'
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: |
+          node_modules
+          extension/node_modules
+        key: ${{ runner.os }}-node-${{ steps.setup-node.outputs.node-version }}-modules-${{ hashFiles('package-lock.json', 'extension/package-lock.json') }}
+    # Same entry point as ci.yml — see scripts/setup.cts for why a plain
+    # `npm ci` does not produce a working tree. It also builds the extension,
+    # which every browser test staged from the verified Chrome release output needs.
+    # Runs even on a cache hit (#935): setup.cts also restores Electron's runtime
+    # and installs extension/'s separate lockfile, neither of which the
+    # node_modules cache above covers on its own. `npm install` against an
+    # already-complete tree returns in seconds, so a hit still pays off.
+    - name: Install dependencies
+      if: steps.docs-only.outputs.docs_only != 'true'
+      shell: pwsh
+      run: npm run setup
+    # The harnesses spawn `electron .` in app/, whose main field points at
+    # app/out. A fresh checkout has no build output and `npm run setup` does not
+    # produce any, so without this every harness dies on a missing entry point.
+    - name: Build app bundles
+      if: steps.docs-only.outputs.docs_only != 'true'
+      shell: pwsh
+      run: npm run build --workspace=app
+    # Playwright's browser build is tied to the resolved @playwright/test version,
+    # not the ^-range in package.json — read it from the lockfile so the cache key
+    # tracks what actually gets installed.
+    - name: Resolve Playwright version
+      id: playwright-version
+      if: steps.docs-only.outputs.docs_only != 'true'
+      shell: bash
+      run: |
+        version=$(node -p "require('./package-lock.json').packages['node_modules/@playwright/test'].version")
+        echo "version=$version" >> "$GITHUB_OUTPUT"
+    - name: Cache Playwright browsers
+      if: steps.docs-only.outputs.docs_only != 'true'
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~\AppData\Local\ms-playwright
+        key: ${{ runner.os }}-playwright-${{ steps.playwright-version.outputs.version }}
+    # setup installs with --ignore-scripts, so Playwright's postinstall never
+    # runs and no browser is fetched. Chromium only: every browser test here
+    # loads an unpacked MV3 extension, which is Chromium-only anyway. Runs even
+    # on a cache hit — it returns immediately when the browser is already there.
+    - name: Install Playwright Chromium
+      if: steps.docs-only.outputs.docs_only != 'true'
+      shell: pwsh
+      run: npx playwright install chromium
