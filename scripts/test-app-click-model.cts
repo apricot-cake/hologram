@@ -92,6 +92,10 @@ const evalJs = `(async () => {
   const out = {};
 
   await waitFor(() => postCards().length >= 3);
+  // The layout these cases were written against, reported so a failure says WHICH layout it
+  // failed in (#975): the arrow/Home/End assertions read DOM indices, which only line up
+  // while the whole seeded set is inside the virtual window.
+  out.viewport = { w: innerWidth, h: innerHeight, cards: postCards().length, grid: Math.round(document.querySelector('[data-slot="post-grid"]').getBoundingClientRect().width) };
 
   // A. post cards have no ℹ / ○ hover parts (they were retired in #143)
   // Nothing appears on hover at all now (confirmed as Case A): no ℹ, no 🏷, no ○ ring, no highlight.
