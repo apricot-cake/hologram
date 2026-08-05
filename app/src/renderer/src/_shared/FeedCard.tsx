@@ -117,7 +117,7 @@ export function FeedCard({ m, shape, group, actions, cellRef, onAspect }: PostCe
       )}
       {quoted && <QuotedPostCard m={quoted} />}
       {m.text && <FeedBody text={m.text} />}
-      {grouped ? <FeedCarousel files={g.files} n={m.nImg as number} /> : m.hasThumb && <CardThumb m={m} shape={shape} onAspect={onAspect} className="overflow-hidden rounded-lg" imgClassName="block max-h-[520px] w-full cursor-zoom-in object-cover" />}
+      {grouped ? <FeedCarousel files={g.files} n={m.nImg as number} /> : m.hasThumb && <CardThumb m={m} shape={shape} onAspect={onAspect} className="overflow-hidden rounded-lg" imgClassName="block max-h-[520px] w-full object-cover" />}
       {shape.info && <MetaFoot m={m} />}
       {shape.info && m.tags.length > 0 && (
         <div className="flex flex-wrap gap-[3px]">

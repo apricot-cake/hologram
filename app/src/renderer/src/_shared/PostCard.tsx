@@ -454,7 +454,11 @@ export function PostCard({ m, shape, overview, group, actions, cellRef, onAspect
           shape={shape}
           onAspect={onAspect}
           className={cn('overflow-hidden', shape.square && 'aspect-square w-full', shape.info ? 'rounded-t-lg' : 'rounded-lg')}
-          imgClassName={cn('block w-full cursor-zoom-in object-cover transition-transform duration-500 ease-[var(--ease-out)] group-hover:scale-[1.055] motion-reduce:transform-none', shape.square ? 'h-full max-h-none' : 'max-h-[300px]')}
+          // No zoom-in cursor here: a click on a card selects it and opens the inspector
+          // (#143's gesture model) — the peek is reached from the inspector's own thumbnail
+          // or Space, and both of those advertise it themselves. The cell's cursor-pointer
+          // (cellChrome) is what this slot should show.
+          imgClassName={cn('block w-full object-cover transition-transform duration-500 ease-[var(--ease-out)] group-hover:scale-[1.055] motion-reduce:transform-none', shape.square ? 'h-full max-h-none' : 'max-h-[300px]')}
         />
       ) : (
         // No thumbnail: with the info block on, the body is already down there and
