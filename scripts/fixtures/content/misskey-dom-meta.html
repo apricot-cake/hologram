@@ -8,15 +8,21 @@
   MkNote.vue / MkNoteHeader.vue source (main branch, read 2026-08-03). See
   extension/utils/extractor/misskey.ts's extractMisskeyDomMeta for the full
   citations, including why no body text or date is extracted here at all.
+
+  The footer's reaction CHIPS (MkReactionsViewer, one button per distinct
+  reaction, no <i> icon of its own) are what #916 confirmed live on
+  misskey.io 2026-08-05 — they render regardless of the showReactionsCount
+  setting, unlike the react (ti-plus/heart) button's own <p>, which is why
+  that button never carries a number below.
 -->
 <!DOCTYPE html>
 <html style="--MI_THEME-accent: #86b300;">
 <head></head>
 <body>
 
-  <!-- A plain note: reply/renote/reaction counts all shown (the reaction
-       count only when showReactionsCount has been opted into, or the note's
-       reactionAcceptance is likeOnly — both real, common states). -->
+  <!-- A plain note: reply/renote counts plus three reaction chips (one with
+       a custom emoji rendered as <img alt>, contributing nothing to the
+       chip's own textContent). -->
   <div tabindex="0" id="noteNormal">
     <article>
       <header>
@@ -30,15 +36,17 @@
       <footer>
         <button><i class="ti ti-arrow-back-up"></i><p>12</p></button>
         <button><i class="ti ti-repeat"></i><p>34</p></button>
-        <button><i class="ti ti-plus"></i><p>56</p></button>
+        <button>🌸40</button>
+        <button>🎉10</button>
+        <button><img alt=":custom:">6</button>
+        <button><i class="ti ti-plus"></i></button>
       </footer>
     </article>
   </div>
 
-  <!-- A local user (no host segment) whose reaction count is hidden — the
-       showReactionsCount default. The reply/renote buttons still render with
-       zero pressed (no <p> at all, same "not drawn = null" convention as X's
-       hidden-zero counts). -->
+  <!-- A note with no reactions at all: no chip buttons, and the reply/renote
+       buttons render with zero pressed (no <p> at all, same "not drawn =
+       null" convention as X's hidden-zero counts). -->
   <div tabindex="0" id="noteNoCounts">
     <article>
       <header>
@@ -56,8 +64,9 @@
   </div>
 
   <!-- The fork's own "already reacted, likeOnly" icon shape:
-       class="ti-filled ti-filled-heart" — two tokens, neither of which is
-       literally "ti-heart". -->
+       class="ti-filled ti-filled-heart" — has an <i>, so it must NOT be
+       mistaken for a reaction chip and summed into likes; only the one real
+       chip button (no <i>) counts. -->
   <div tabindex="0" id="noteAlreadyReacted">
     <article>
       <header>
@@ -69,7 +78,8 @@
       <footer>
         <button><i class="ti ti-arrow-back-up"></i><p>3</p></button>
         <button><i class="ti ti-repeat"></i><p>1</p></button>
-        <button><i class="ti-filled ti-filled-heart"></i><p>9</p></button>
+        <button>🌸9</button>
+        <button><i class="ti-filled ti-filled-heart"></i></button>
       </footer>
     </article>
   </div>
