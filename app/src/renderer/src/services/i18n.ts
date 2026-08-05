@@ -603,7 +603,6 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     shortcutZoomFit: '画像をフィット表示',
     shortcutZoomActual: '画像を原寸表示',
     shortcutPasteImage: 'クリップボードから取り込み',
-    shortcutPrivacyToggle: 'プライバシーモードの切り替え',
     shortcutTogglePanels: 'サイドバーと詳細パネルの表示を切り替え',
     shortcutOpenPalette: 'コマンドパレットを開く',
     shortcutOpenFulltextSearch: '本文検索を開く',
@@ -673,9 +672,6 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     displaySize: 'サイズ',
     displayPanels: 'サイドバーと詳細パネル',
     displayPanelsHint: 'サイドバーだけなら Ctrl+B、両方まとめてなら Ctrl+Shift+B',
-    // Privacy mode (#88) — the titlebar's toggle & indicator, hotkey is unmodified P
-    privacyModeToggle: 'プライバシーモード (P)',
-    cmdTogglePrivacy: 'プライバシーモードを切り替え',
     // Quick view (#143) — no visible heading is drawn, so this is screen-reader only
     quickViewTitle: 'クイックビュー',
     // 比較ビュー (#82) — 見出しはスクリーンリーダー専用、閉じるボタンはアイコンのみ
@@ -775,23 +771,6 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     triagePinSave: 'ピン留め',
     triagePinClear: '外す',
     triageHint: '1-9 クイックタグ ／ F フォルダへ ／ Space スキップ ／ Backspace 取り消す ／ Esc 終了',
-
-    // viewer: クロッキー/スライドショー練習モード（#103）
-    practiceToolbarLabel: '練習モード',
-    practiceEmptyTitle: '出題できる画像がありません',
-    practiceEmptyDesc: '動画・うごイラを除く、現在のフィルタ結果の静止画が対象です。フィルタを変えてお試しください。',
-    practiceClose: '閉じる',
-    practiceProgress: '$1 / $2',
-    practicePause: '一時停止',
-    practiceResume: '再開',
-    practicePrev: '前へ',
-    practiceNext: '次へ',
-    practiceDurationTitle: '出題間隔',
-    practiceDuration30: '30秒',
-    practiceDuration60: '1分',
-    practiceDuration120: '2分',
-    practiceDuration300: '5分',
-    practiceHint: 'Space 一時停止・再開 ／ ←/→ 前後 ／ Esc 終了',
 
     // viewer: post card
     tipOpen: '投稿を開く',
@@ -1429,7 +1408,6 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     shortcutZoomFit: 'Fit image to window',
     shortcutZoomActual: 'Actual-size image',
     shortcutPasteImage: 'Import from clipboard',
-    shortcutPrivacyToggle: 'Toggle privacy mode',
     shortcutTogglePanels: 'Toggle the sidebar and details panel',
     shortcutOpenPalette: 'Open command palette',
     shortcutOpenFulltextSearch: 'Open full-text search',
@@ -1487,9 +1465,6 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     displaySize: 'Size',
     displayPanels: 'Sidebar and details panel',
     displayPanelsHint: 'Ctrl+B for the sidebar alone, Ctrl+Shift+B for both',
-    // Privacy mode (#88) — titlebar toggle + indicator; the hotkey is plain P, no modifier
-    privacyModeToggle: 'Privacy mode (P)',
-    cmdTogglePrivacy: 'Toggle privacy mode',
     // Quick view (#143) — no visible heading, so this is the screen-reader name only
     quickViewTitle: 'Quick view',
     // Compare view (#82) — heading is screen-reader only, close button is icon-only
@@ -1584,23 +1559,6 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     triagePinSave: 'Pin',
     triagePinClear: 'Clear',
     triageHint: '1-9 quick tag / F to folder / Space skip / Backspace undo / Esc close',
-
-    // viewer: croquis/slideshow practice mode (#103)
-    practiceToolbarLabel: 'Practice mode',
-    practiceEmptyTitle: 'No images to draw from',
-    practiceEmptyDesc: 'Only still images (no video/ugoira) from the current filter count -- try a different filter.',
-    practiceClose: 'Close',
-    practiceProgress: '$1 / $2',
-    practicePause: 'Pause',
-    practiceResume: 'Resume',
-    practicePrev: 'Previous',
-    practiceNext: 'Next',
-    practiceDurationTitle: 'Pace',
-    practiceDuration30: '30s',
-    practiceDuration60: '1m',
-    practiceDuration120: '2m',
-    practiceDuration300: '5m',
-    practiceHint: 'Space pause/resume / left/right previous/next / Esc close',
 
     tipOpen: 'Open post',
     lbPrev: 'Previous',

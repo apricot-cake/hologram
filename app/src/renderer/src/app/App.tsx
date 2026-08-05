@@ -12,7 +12,6 @@ import { CompareHost } from '../compare/index.tsx';
 import { SettingsHost } from '../settings/index.tsx';
 import { BulkTagDialogHost } from '../selection/BulkTagDialog.tsx';
 import { TriageHost } from '../triage/index.tsx';
-import { PracticeHost } from '../practice/index.tsx';
 import { AliasPickerHost } from '../posters/AliasPicker.tsx';
 import { Toaster } from '@/components/ui/sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -21,7 +20,6 @@ import { handleShortcutHistoryKey } from '../services/history-panel.ts';
 import { handleShortcutPanelsKey } from '../services/panels.ts';
 import { handleShortcutZoomKey } from '../services/image-zoom.ts';
 import { handleShortcutClipboardKey } from '../services/clipboard-intake.ts';
-import { handleShortcutPrivacyKey } from '../services/privacy-mode.ts';
 import { handleShortcutNewWindowKey } from '../services/window-actions.ts';
 import { onPostsChanged } from '../services/posts.ts';
 import { getLibraryStatus, getExtensionContact } from '../services/library-path.ts';
@@ -178,12 +176,6 @@ function GlobalShortcuts() {
       // Ctrl+T / Ctrl+W / Ctrl+Tab — the tab shortcuts act on the window, not on a
       // tab you are pointing at, so they belong here rather than on the strip (#621).
       handleGlobalTabShortcut(e);
-      // P (no modifier) = privacy mode (#88). Deliberately last and deliberately NOT
-      // guarded by confirmGet()/lightboxIsOpen()/settingsIsOpen()/paletteIsOpen() the
-      // way every handler above it is — see services/privacy-mode.ts's handler
-      // comment for why a "hide everything right now" reflex key has to keep working
-      // no matter what else is on screen.
-      handleShortcutPrivacyKey(e);
       // Ctrl/Cmd+Shift+N = open a new window (#32 St1). Same arrangement as the
       // other Ctrl+Shift+ keys above: guard + action live in services/window-actions.ts.
       handleShortcutNewWindowKey(e);
@@ -332,9 +324,6 @@ export function App() {
           of the shell's content-column swap (AppShell), so it composes cleanly with
           whatever mode/tab was showing underneath when it closes. */}
       <TriageHost />
-      {/* Practice mode (#103) -- croquis/gesture-drawing practice off the current
-          filter results, a full-screen dialog same shape as TriageHost above. */}
-      <PracticeHost />
       <LightboxHost />
       <CompareHost />
       {/* Settings — a shadcn Dialog, so it portals onto document.body itself. */}
