@@ -9,11 +9,19 @@ description: >-
   Every shard pays this preparation again rather than receiving it as an
   artifact. That is deliberate, and measured (#937, run 30996640294): the only
   step an artifact could replace is `Build app bundles`, which takes 4 seconds.
-  The expensive part is the dependency tree — 18s to restore the cache plus 21s
+  The expensive part is the dependency tree — 18s to restore the cache plus 16s
   to install — and node_modules is tens of thousands of small files, which
   upload-artifact/download-artifact move far more slowly on Windows than
   actions/cache restores them. Passing it around would make every shard start
   later, not sooner.
+
+  What the remaining time is spent on, measured on the longest shard with every
+  cache warm (#967, run 30998937325, extension e2e, 68s of preparation): Setup
+  Node 8s, node_modules restore 18s, `npm run setup` 16s (7s root install, 2s
+  extension install, 5s `build:ext`, which builds and verifies both the Chrome
+  and the Firefox release), app bundles 4s, Playwright restore 10s plus 2s to
+  install. Nothing in that list is dead weight any more — see the Setup Node
+  step for the one entry that was.
 
 inputs:
   github-token:
@@ -73,21 +81,32 @@ runs:
           esac
         done <<< "$files"
         echo "docs_only=$docs_only" >> "$GITHUB_OUTPUT"
+    # Deliberately WITHOUT `cache: npm`, unlike ci.yml (#967). That option caches
+    # npm's DOWNLOAD cache, and its key is `node-cache-<os>-<arch>-npm-<hash of
+    # the same two lockfiles>` — for npm it is restored with that one key and no
+    # restore-keys (actions/setup-node's src/cache-restore.ts adds a fallback for
+    # yarn berry only). So it hits exactly when the node_modules cache below hits,
+    # and misses exactly when that one misses:
+    #   - lockfiles unchanged: the tree is restored whole, `npm install` never
+    #     needs to fetch a tarball, and the download cache is 255MB restored for
+    #     nothing — 10s of every shard's preparation (run 30998937325).
+    #   - lockfiles changed: both keys are new, so the download cache is empty and
+    #     npm goes to the registry either way. Removing it costs nothing here; it
+    #     also drops a 255MB save from the post step and stops that entry from
+    #     crowding the repository's 10GB cache budget, which is what evicts the
+    #     two entries that do pay for themselves.
+    # ci.yml keeps the option: that job caches no node_modules, so npm's download
+    # cache is the only thing it has.
     - name: Setup Node
       id: setup-node
       if: steps.docs-only.outputs.docs_only != 'true'
       uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
       with:
         node-version-file: package.json
-        cache: npm
-        cache-dependency-path: |
-          package-lock.json
-          extension/package-lock.json
-    # actions/setup-node's cache:npm above only persists npm's download cache,
-    # not the installed tree — every run still walks and links node_modules from
-    # scratch. This restores the tree itself. No restore-keys: a partial match on
-    # a stale lockfile would silently resurrect an old dependency tree on a PR
-    # that changed one, which is worse than the cache miss it saves (#935).
+    # Caches the installed tree itself — without this every run walks and links
+    # node_modules from scratch. No restore-keys: a partial match on a stale
+    # lockfile would silently resurrect an old dependency tree on a PR that
+    # changed one, which is worse than the cache miss it saves (#935).
     #
     # The shards share one cache entry: the key has nothing shard-specific in it,
     # so the first shard to finish saves it and the rest hit it (#937).
@@ -104,8 +123,11 @@ runs:
     # which every browser test staged from the verified Chrome release output needs.
     # Runs even on a cache hit (#935): setup.cts also restores Electron's runtime
     # and installs extension/'s separate lockfile, neither of which the
-    # node_modules cache above covers on its own. `npm install` against an
-    # already-complete tree returns in seconds, so a hit still pays off.
+    # node_modules cache above covers on its own. On a hit this is 16s, not the
+    # "a few seconds" this comment used to claim (#967): 7s for the root install
+    # and 2s for extension/'s even with both trees already complete — npm still
+    # walks and verifies them — and 5s to build the extension, which is real work
+    # and not an install at all.
     - name: Install dependencies
       if: steps.docs-only.outputs.docs_only != 'true'
       shell: pwsh
