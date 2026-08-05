@@ -48,20 +48,17 @@ const DEFAULT_JOBS = 4;
 const HARNESS_TIMEOUT_MS = 120000;
 const BROWSER_TIMEOUT_MS = 240000;
 
-// The two browser scripts that have never been part of app-tests.yml (checked
-// against its whole history) and are still local-only npm scripts. Whether they
-// should join is #972 — until it answers, leaving them out here keeps this
-// catalogue an honest description of what CI runs.
-const LOCAL_ONLY = new Set(['e2e-extension-banner-layout.cts', 'e2e-extension-hostile-css.cts']);
-
 const files = fs.readdirSync(__dirname).sort();
-// Discovered rather than listed, so a new script joins CI by existing. The browser
-// families come first because they are the long ones, and dispatching longest-first
-// keeps the tail of a pooled run short. `e2e-capture-test.cts` matches neither
-// pattern on purpose: it reads the real platforms and can only report a login wall
-// on a runner (docs/testing.md).
+// Discovered rather than listed, so a new script joins CI by existing — with no
+// exception list, since #972 closed the last one (hostile-css and banner-layout had
+// never been in app-tests.yml, but only because the workflow enumerated its e2e
+// steps by hand back when they were written; nothing had decided to keep them out).
+// The browser families come first because they are the long ones, and dispatching
+// longest-first keeps the tail of a pooled run short. `e2e-capture-test.cts` matches
+// neither pattern on purpose: it reads the real platforms and can only report a login
+// wall on a runner (docs/testing.md).
 const all = [
-  ...files.filter((f: string) => /^e2e-(extension|overlay)-.*\.cts$/.test(f) && !LOCAL_ONLY.has(f)).map((f: string) => ({ file: path.join(__dirname, f), name: f, timeoutMs: BROWSER_TIMEOUT_MS })),
+  ...files.filter((f: string) => /^e2e-(extension|overlay)-.*\.cts$/.test(f)).map((f: string) => ({ file: path.join(__dirname, f), name: f, timeoutMs: BROWSER_TIMEOUT_MS })),
   ...files.filter((f: string) => /^test-app-.*\.cts$/.test(f)).map((f: string) => ({ file: path.join(__dirname, f), name: f, timeoutMs: HARNESS_TIMEOUT_MS })),
 ];
 
