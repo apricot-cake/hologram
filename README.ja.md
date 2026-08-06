@@ -1,9 +1,11 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="assets/banner-dark.svg">
-    <img src="assets/banner-light.svg" alt="Hologram — 「アレ、どこで見たっけ」をなくす。あなたのSNSライブラリ。" width="440">
+    <img src="assets/banner-light.svg" alt="Hologram" width="300">
   </picture>
 </p>
+
+<p align="center">「アレ、どこで見たっけ」をなくす。あなたのSNSライブラリ。</p>
 
 <p align="center"><a href="README.md">English</a> ・ <strong>日本語</strong></p>
 
