@@ -34,6 +34,10 @@ Dependabot（#395）の更新 PR で新バージョンが来たときも、確�
 
 （`extension/` 側は独立した npm プロジェクトで、postinstall が `wxt prepare`（tsconfig が extend する `.wxt/` の型を生成する）を走らせるため、プレーンな `npm install` を別途行う。**Electron 本体の手動取得は上記どちらのフラグとも無関係に今も必要**＝pin している electron@43.2.0 自体に postinstall が無い。）
 
+## commit 前の自動整形（#994）
+
+`.githooks/pre-commit` が、ステージ済みファイルに `biome check --write` を掛けて直し直後の内容を自動で再ステージする（有効化は `npm run setup` の `git config core.hooksPath .githooks`＝post-merge と共通）。Biome が自動修正できない違反（parse エラー等）に当たった時だけ commit を止める。緊急時は `git commit --no-verify` で外せる。
+
 ## 拡張機能の開発・配布
 
 依存は `npm run setup` が `extension/` の分もまとめて入れる（`extension/` は独立した npm プロジェクト）。ビルド基盤は **WXT**。
