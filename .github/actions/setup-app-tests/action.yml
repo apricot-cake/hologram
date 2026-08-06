@@ -30,16 +30,23 @@ inputs:
 
 outputs:
   docs_only:
-    description: '"true" when a pull request touches nothing but *.md and docs/**.'
+    description: >-
+      '"true" when a pull request touches nothing but *.md and docs/**. ⚠️ Always
+      "false" since #996 dropped the pull_request trigger — see the step below.'
     value: ${{ steps.docs-only.outputs.docs_only }}
 
 runs:
   using: composite
   steps:
-    # docs-only PRs (README, docs/**) don't need any layer these shards run —
-    # skip straight to a pass. Required-check paths filters can't do this: a
-    # skipped required workflow leaves the check "expected" forever and blocks
-    # the merge instead (#928).
+    # ⚠️ DEAD since #996 removed the `pull_request` trigger: on a push event this
+    # returns docs_only=false unconditionally, so every shard runs its full
+    # preparation and tests no matter what changed. Kept because #993 rewrites
+    # the detection to read the pushed diff instead of a PR number.
+    #
+    # Why it was shaped this way (#928): docs-only PRs (README, docs/**) don't
+    # need any layer these shards run, and a required-check paths filter couldn't
+    # express that — a skipped required workflow leaves the check "expected"
+    # forever and blocks the merge instead.
     #
     # This step also used to decide a `fail_fast` output, which made the later
     # layers in a shard stop at the first red one on a pull request (#936). #968
