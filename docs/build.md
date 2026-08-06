@@ -316,7 +316,7 @@ electron-builder, win/nsis。
 - `app/assets/icon.png`（512）＝Electron ウィンドウ/タスクバーアイコン。`app/package.json` の `build.win.icon` がこれを指し、electron-builder が配布時に `.ico` 化（PNG→ICO 自動変換）。dev では `src/main/lib-window.ts` の `BrowserWindow({icon})`＋`src/main/index.ts` の `app.setAppUserModelId` で反映。
 - `extension/public/icons/icon{16,32,48,128}.png`＝ブラウザ拡張（生成manifest の `icons`/`action.default_icon`）。開発中は WXT が反映する。128 が manifest の最大サイズ＝256 は Chrome 側で使い道が無く同梱しない（#231 で確認・撤去）。
 - `assets/icon.png`（256）＝汎用ブランドラスター/ファビコン。
-- `assets/banner-{light,dark,en-light,en-dark}.svg`＝README バナー。ワードマーク `hologram`＋タグラインは保持し、先頭マークだけ虹色スクエアの埋め込み画像（base64）に差し替え。
+- `assets/banner-{light,dark}.svg`＝README バナー。ワードマーク `Hologram` は保持し、先頭マークだけ虹色スクエアの埋め込み画像（base64）に差し替え。**日英別の 4 本でなく light/dark の 2 本**＝バナーは文字コピーを持たない（タグラインは README 側のテキスト＝#991）ので、言語で分ける理由が無い。
 
 **マスターを差し替えたとき以外は実行しない**: 画素は忠実に再現されるが、PNG の圧縮結果が実行環境（Electron のバージョン）で変わるため、マスターが同じでも全派生アイコンに差分が出る。2026-07-22 の実測では 11 成果物すべてがピクセル単位で一致し、**ファイルサイズだけ 8〜11% 増えた**（バナー SVG は埋め込みラスタもマークアップも一致）。差分に中身が無いうえサイズは悪化するので、再生成は差し替え時に限る。過去のフレームへ戻す場合も再生成でなく git のブロブから復元する（前例は c49aa8e）。
 

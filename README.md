@@ -1,9 +1,11 @@
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="assets/banner-en-dark.svg">
-    <img src="assets/banner-en-light.svg" alt="Hologram — no more 'where did I see that?' Your social media library." width="440">
+    <source media="(prefers-color-scheme: dark)" srcset="assets/banner-dark.svg">
+    <img src="assets/banner-light.svg" alt="Hologram" width="300">
   </picture>
 </p>
+
+<p align="center">No more "where did I see that?" — your social media library.</p>
 
 <p align="center"><strong>English</strong> · <a href="README.ja.md">日本語</a></p>
 
