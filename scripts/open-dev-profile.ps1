@@ -5,7 +5,9 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-# Opens the development Chrome profile OUTSIDE the MSIX container (#857).
+# Opens the development Chrome profile through a one-shot scheduled task (#857).
+# The original reason (getting outside the MSIX container) expired 2026-08-06 (#1003);
+# the detour is kept until someone opens it directly and confirms. See the .cts header.
 #
 # Called by scripts/open-dev-profile.cts, which has already established that the
 # profile is not open yet. A Chrome started from inside the packaged desktop app
@@ -30,7 +32,7 @@ $settings = New-ScheduledTaskSettingsSet -Hidden -MultipleInstances IgnoreNew -E
 # while the user is logged on, so Interactive is what it is.
 $principal = New-ScheduledTaskPrincipal -UserId ([System.Security.Principal.WindowsIdentity]::GetCurrent().Name) -LogonType Interactive -RunLevel Limited
 
-Register-ScheduledTask -TaskName $taskName -Action $action -Settings $settings -Principal $principal -Description 'One-shot: opens the Hologram development Chrome profile outside the MSIX container.' -Force | Out-Null
+Register-ScheduledTask -TaskName $taskName -Action $action -Settings $settings -Principal $principal -Description 'One-shot: opens the Hologram development Chrome profile.' -Force | Out-Null
 Start-ScheduledTask -TaskName $taskName
 
 $deadline = (Get-Date).AddMinutes(1)

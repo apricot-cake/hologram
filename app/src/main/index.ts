@@ -69,8 +69,10 @@ import type { IpcContext } from './ipc-context.ts';
 app.setPath('userData', configDir());
 
 // Keep diagnostics next to the configuration shared with the native host, rather
-// than Electron's AppData default. MSIX storage virtualization can otherwise make
-// the log appear in a different location from the configuration it describes.
+// than Electron's AppData default: a log that lives somewhere other than the config
+// it describes is hard to read together with it. (This was originally about MSIX
+// storage virtualization splitting the two apart — that no longer happens as of
+// 2026-08-06, #1003 — but sitting beside the config is the right place regardless.)
 log.transports.file.resolvePathFn = () => path.join(configDir(), 'logs', 'main.log');
 // We own the preload bridge, so electron-log must not register a second preload
 // script for every session. app/src/preload/index.ts imports electron-log/preload instead.

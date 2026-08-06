@@ -1,19 +1,22 @@
-﻿# Restart the Hologram viewer (Electron) so it ALWAYS runs OUTSIDE the MSIX sandbox.
+﻿# Restart the Hologram viewer (Electron) through a scheduled task, so every launch is
+# identical and carries the CDP port.
 #
 # Why a scheduled task instead of launching electron.exe directly:
-# When this script is run by Claude (whose shell lives inside the MSIX-packaged Claude
-# desktop app), a directly-spawned electron.exe is a CHILD of that container and gets its
-# HKCU + filesystem virtualized. The app would then register the native-messaging host into
-# a private registry hive that the real Chrome can't see -> capture silently breaks.
-# A Task Scheduler task is launched by the Task Scheduler SERVICE (outside any container),
-# so the app sees the REAL HKCU + filesystem. Run by the user directly, the result is the
-# same. (Proven 2026-06-26: a probe task's HKCU writes landed in a hive the container could
-# not see, while the container's own writes stayed in the private hive.)
+#   1. The action carries --remote-debugging-port=9222, so the resident instance is always
+#      CDP-debuggable for the real-machine verify workflow (docs/build.md).
+#   2. That argument is also the ONLY marker that identifies the real instance. The stop
+#      command in docs/build.md selects by it, precisely so a worktree's test Electron is
+#      not killed along with it. An instance started some other way has no marker and
+#      cannot be selected — that happened on 2026-08-06 (#1004).
 #
-# The task action also carries --remote-debugging-port=9222 so the resident instance is
-# CDP-debuggable for the real-machine verify workflow (docs/build.md) WHILE still launching
-# outside the container. (Want port-free normal launches? Drop the port from $desiredArgs
-# and add a separate 'HologramLaunchDebug' task for verification instead.)
+# The ORIGINAL reason was different and has expired (2026-08-06, #1003): Claude's shell
+# used to live inside the MSIX-packaged Claude desktop app, so a directly-spawned
+# electron.exe was a child of that container with HKCU + filesystem virtualized, and the
+# app would register the native-messaging host into a private hive the real Chrome could
+# not see. Claude Code now runs outside the package; FS and HKCU reads and writes were all
+# measured as real (the HKCU write was confirmed by the user in regedit). Direct launches
+# no longer break registration. Note the layout changed once and could change back — the
+# check is whether (Get-Item <path>).Target points into ...\Packages\<pkg>\LocalCache\...
 #
 # Launch: right-click this file -> "Run with PowerShell" (a window shows and closes on
 # success; on a manual launch it stays open on failure). Claude also runs it headlessly.
@@ -78,7 +81,7 @@ if ($drift) {
     $action    = New-ScheduledTaskAction -Execute $electron -Argument $desiredArgs
     $principal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" -LogonType Interactive -RunLevel Limited
     $settings  = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit ([TimeSpan]::Zero) -MultipleInstances Parallel
-    $t = New-ScheduledTask -Action $action -Principal $principal -Settings $settings -Description 'Launch the Hologram Electron app outside the MSIX sandbox (real HKCU/filesystem), CDP on :9222 for verify. On-demand only; triggered by restart-app.ps1.'
+    $t = New-ScheduledTask -Action $action -Principal $principal -Settings $settings -Description 'Launch the Hologram Electron app with CDP on :9222 for verify, from a single known path. On-demand only; triggered by restart-app.ps1.'
     Register-ScheduledTask -TaskName $taskName -InputObject $t -Force -ErrorAction Stop | Out-Null
   } catch {
     Stop-WithError("HologramLaunch タスクの登録に失敗しました: $($_.Exception.Message)")

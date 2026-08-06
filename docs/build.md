@@ -72,7 +72,7 @@ npm run ext:dev:browser
 
 - **起動済みなら何もしない**＝`scripts/open-dev-profile.cts` が先に `--user-data-dir` を照合してブラウザ本体プロセスを探し、居れば pid を出して終わる（ヘルパープロセスは `--type=` で除外＝窓を閉じた後に居残る crashpad を「起動中」と読まない）。**このプロファイルの窓は長寿命**＝ログインも読み込み済みの拡張も開いたタイムラインもそこに載っているので、「もう開いている」が例外でなく通常。開くか尋ねる前に、まずこれで見る。
 - **状態だけ知りたいなら `node scripts/open-dev-profile.cts --print`**＝chrome/profile/build のパスと `running: yes (pid …)` を出して**何も開かない**。
-- **起動は一度きりのスケジュールタスク `HologramDevBrowser` 経由**（`scripts/open-dev-profile.ps1`）＝MSIX コンテナの中から起こした Chrome はコンテナの子になり、FS/レジストリの書き込みがパッケージ private のコピーへ行く＝再利用するはずのプロファイルが分岐しうる。アプリが `HologramLaunch` を通るのと同じ理屈。アクションは `chrome.exe` でなく `cmd /c start`＝即座に返るのでタスクは完了して撤去でき、開いたブラウザはその後も生き続ける（2026-08-03 実測）。
+- **起動は一度きりのスケジュールタスク `HologramDevBrowser` 経由**（`scripts/open-dev-profile.ps1`）。⚠️**この経路の理由（MSIX 仮想化でプロファイルが分岐する）は 2026-08-06 に失効した**（#1003）＝FS は実体で、プロファイル自身も `~/.hologram-ext-profile`＝AppData 外なので二重に分岐しない。**タスクを外して直接起こせるはずだが、実機で確かめるまで触らない**（撤去は別 Issue）。アクションは `chrome.exe` でなく `cmd /c start`＝即座に返るのでタスクは完了して撤去でき、開いたブラウザはその後も生き続ける（2026-08-03 実測）。
 - **窓を開くのはユーザーの画面を奪う**＝だから「起動済みを見てから」であり、本当に必要な時は開いてよい（開いた事実を一行添える。グローバル CLAUDE.md「Chrome のフォーカスを奪わない」）。
 
 ⚠️**日常プロファイルには開発ビルドを読み込まない**＝両方が同じ拡張 ID を持つので衝突する。`--load-extension` は使わない（Chrome 137+ が無視する＝#657）。
@@ -104,7 +104,7 @@ dev サーバーは `localhost:51731` 固定。二重起動は別 port へ逃げ
 npm run ext:dev:register
 ```
 
-これは一度きりのスケジュールタスク経由で走る。**MSIX コンテナの中から `reg add` しても実 Chrome からは見えない**ため（メモリ `sandbox-appdata-registry-divergence`）、アプリ起動が `HologramLaunch` を通るのと同じ理屈。登録先は `~/.hologram-dev/`（ランチャーが `HOLOGRAM_CONFIG_DIR` を固定するので、Chrome が起動した bridge は実ライブラリを見られない）。**`reg query` で確かめることはできない**＝確認は開発プロファイルからの保存成否と `~/.hologram-dev/bridge.log` で取る。保存したものを見るのは #283 のサンドボックスアプリ（`node scripts/sandbox-app.cts`）。
+これは一度きりのスケジュールタスク経由で走る。⚠️**その理由（コンテナ内の `reg add` は実 Chrome から見えない）は 2026-08-06 に失効した**（#1003・メモリ `sandbox-appdata-registry-divergence`）＝HKCU への書きは実体で、ユーザーが regedit で目視確認済み。**直接 `reg add` で足りるはずだが、実機で確かめるまで触らない**（撤去は別 Issue）。同じ理由で **`reg query` での確認も今はできる**（旧記述「確かめることはできない」は失効）。登録先は `~/.hologram-dev/`（ランチャーが `HOLOGRAM_CONFIG_DIR` を固定するので、Chrome が起動した bridge は実ライブラリを見られない）。最終的な裏取りは従来どおり開発プロファイルからの保存成否と `~/.hologram-dev/bridge.log` が確実。保存したものを見るのは #283 のサンドボックスアプリ（`node scripts/sandbox-app.cts`）。
 
 どのホスト名を焼くかは**ビルドのコマンド**で決まる（`wxt` = 開発 / `wxt build` = release）。`import.meta.env.DEV` は NODE_ENV に従うので使わない＝テストランナー経由の release ビルドが開発ホストを向く（実際に起きた。`build-extension.cts` の禁止語検査が捕まえた）。
 
@@ -122,13 +122,27 @@ npm run ext:dev:register
 - 固定IDを保つ `key` は `extension/wxt.config.ts` にある。ID・Native Messaging 保存・5プラットフォームのクリック/ドラッグ保存は実機確認の対象である。
 
 - 手元の実ターミナルから動かすだけなら `npm start`、ワンクリック起動は `restart-app.ps1` を右クリック →「PowerShell で実行」でよい。
-- **Claude（MSIX コンテナ内）や CDP 検証を伴う起動は `HologramLaunch` タスク経由**（下記「コード変更の反映」）。初回／タスク削除後は `restart-app.ps1` を一度実行するとタスクが自己作成される（以後は最小形で再起動可）。
+- **CDP 検証を伴う起動は `HologramLaunch` タスク経由**（下記「コード変更の反映」。旧来ここにあった「Claude は MSIX コンテナ内だから」という理由は失効＝#1003）。初回／タスク削除後は `restart-app.ps1` を一度実行するとタスクが自己作成される（以後は最小形で再起動可）。
 
 ## 開発ルール：コード変更の反映（確認なし再起動）
 
 > **npm スクリプトの置き場**: `build`・`dev`・`typecheck`・`dist`・`start` は `app/package.json`。`app/` は npm ワークスペースなので**リポジトリ直下から** `npm run build --workspace=app`（`-w app` でも可）で実行できる。もちろん `cd app && npm run build` でもよい。リポジトリ直下の package.json が持つ固有のスクリプトは lint 系（`lint`・`lint:fix`・`format`）と `test`・拡張機能の `*:ext` だけ。
 
-main・preload・renderer のどれを変更した場合も、**`npm run build --workspace=app` でビルド → 確認を取らずに再起動**（electron-vite が3面（`src/main`・`src/preload`・`src/renderer`）を `app/out/` へ一括ビルドする。旧来あった「renderer だけは再起動不要」の特例は無い＝`electron-vite dev`（HMR・main 自動再起動）を使わない限り、ビルド出力を読み直すには再起動が要る。Claude 自身の検証は次節のとおり常にビルド→タスク再起動で行い、`electron-vite dev` は使わない）。native-host のブリッジ（Chrome が起動する常駐プロセス）を変更した場合は `npm run build:native-host-bridge --workspace=app` でバンドルを作り直してから `node native-host/install.cts` で `~/.hologram` へ再配備（アプリ再起動は不要）。
+main・preload・renderer のどれを変更した場合も、**`npm run build --workspace=app` でビルド → 確認を取らずに再起動**（electron-vite が3面（`src/main`・`src/preload`・`src/renderer`）を `app/out/` へ一括ビルドする。旧来あった「renderer だけは再起動不要」の特例は無い＝ビルド出力を読む起動である限り、読み直すには再起動が要る）。
+
+**⚠️ ただし `electron-vite dev`（HMR）を使えば、この往復そのものが要らない**（2026-08-06 解禁・#1003）:
+
+```
+REMOTE_DEBUGGING_PORT=9222 npm run dev --workspace=app
+```
+
+renderer は HMR、main は保存で自動再起動。**CDP も同時に使える**＝electron-vite の `startElectron()` がこの環境変数を読んで `--remote-debugging-port` を Electron へ渡すので、`node scripts/cdp-verify.cts eval …` がそのまま通る（実測＝`document.title` と実ライブラリ 10.2K 件を取得できた）。任意の引数を足したいなら `ELECTRON_CLI_ARGS`（JSON 配列）も読まれる。
+
+**使い分け**＝UI を作り込む間は HMR、**キャプチャ経路とホスト登録の確認は `HologramLaunch` タスク**。dev は `ensureHostRegistered()` を呼ばない設計（`app/src/main/index.ts` が `DEV_SERVER_URL` のとき除外）なので、登録の自己修復が働かない。実機とは single-instance lock で排他になる＝同時には起こせない。
+
+⚠️**旧記述「`electron-vite dev` は使わない」の理由（MSIX 仮想化）は失効した**＝下の「なぜ直接 `Start-Process electron.exe` を使わないか」を参照。
+
+native-host のブリッジ（Chrome が起動する常駐プロセス）を変更した場合は `npm run build:native-host-bridge --workspace=app` でバンドルを作り直してから `node native-host/install.cts` で `~/.hologram` へ再配備（アプリ再起動は不要）。native-host のブリッジ（Chrome が起動する常駐プロセス）を変更した場合は `npm run build:native-host-bridge --workspace=app` でバンドルを作り直してから `node native-host/install.cts` で `~/.hologram` へ再配備（アプリ再起動は不要）。
 
 **再起動は「停止 ＋ タスクスケジューラ経由の起動」で行う**。Claude が実行する最小形:
 
@@ -141,7 +155,7 @@ Start-ScheduledTask -TaskName 'HologramLaunch'
 
 ユーザーのワンクリックは `restart-app.ps1` を右クリック →「PowerShell で実行」（窓は出るが終了時に自動で閉じる）。`restart-app.ps1` は graceful close ＋ `HologramLaunch` タスクの自己修復（無ければ作成）＋起動をまとめてある。
 
-- **なぜ直接 `Start-Process electron.exe` を使わないか**: Claude のシェルは MSIX パッケージ（`Claude_pzs8sxrjxfjjc`）内で動くため、そこから直接起動した electron はコンテナの子＝HKCU/FS が仮想化され、ネイティブホスト登録が実 Chrome から見えない私的ハイブに入りキャプチャが壊れる。`HologramLaunch` タスクは Task Scheduler サービス（コンテナ外）が起動する＝**実 HKCU/実 FS で動く**（2026-06-26 にレジストリ probe で実証）。ユーザーが直接起動した場合と同一になる。
+- **なぜ直接 `Start-Process electron.exe` を使わないか**: ⚠️**旧理由（MSIX 仮想化）は 2026-08-06 に失効した**（#1003）＝Claude Code 本体が MSIX パッケージの外（`AppData\Roaming\Claude\claude-code\<version>\claude.exe`）へ移り、そこから起動したシェルはパッケージアイデンティティを持たない。**FS 書き・HKCU 書き・HKCU 読み・dev で起こした Electron の `userData` の4経路すべてで実体を確認済み**（HKCU の書きはユーザーが regedit で目視）。直接起動が登録を壊すことはもう無い。**いまタスクを使う理由は2つ**＝①アクションが `--remote-debugging-port=9222` を固定で付けるので CDP 検証の入口が揃う ②起動経路が1本に揃い、上の停止コマンドがその引数を目印に**実機だけ**を名指しできる（worktree の Electron を巻き添えにしない）。⚠️**この目印はタスク以外で起動された個体には無い**＝2026-08-06 に実際にそういう個体（`electron.exe "<repo>\app"` だけ）が動いていて停止できなかった＝#1004。⚠️**仮想化が復活する可能性は残る**＝今回の発見自体が Claude Desktop の構成が変わったことの証明で、逆方向にも変わりうる。判定は `(Get-Item <path>).Target` が `…\Packages\Claude_pzs8sxrjxfjjc\LocalCache\…` を返すかどうか。
 - `HologramLaunch` タスク定義: `electron.exe "<repo>\app" --remote-debugging-port=9222`（ポートは実機CDP検証用＝下記「検証ルール」）／Interactive（ウィンドウが出る）／Limited（非昇格）／トリガー無し（`Start-ScheduledTask` でのみ起動）。`restart-app.ps1` はアクションのパス/引数が drift したら毎回貼り直す（リポ移動にも追従）。`Start-ScheduledTask` が "task not found" を返したら一度 `restart-app.ps1` を実行して作り直す。
 - `npm start` 経由は cmd ウィンドウが出るため使わない（electron.exe はGUIアプリなのでコンソールは出ない）。
 
@@ -152,7 +166,7 @@ Start-ScheduledTask -TaskName 'HologramLaunch'
 1. **挙動・自動テスト＝SMOKE 隔離**: `HOLOGRAM_SMOKE=1` ＋ `HOLOGRAM_CONFIG_DIR=<tmp>`（雛形は `scripts/test-app-tagtypes.cts`）。隠しウィンドウ・自動終了。別プロセス・別 config なので、**ユーザーが本体アプリを操作していても結果に混ざりようがない**。実機を使う限り、ユーザーの操作が混入したかを事前に防ぐ手段も、事後に検知する手段も無い（2026-07-20 に実測で確認＝CDP `Input.*` で撃ったイベントは人間の操作と同じく `isTrusted: true` になり区別できない。ページ内合成の `el.click()` だけが `false`）。だから防ぐのでなく、混入しても困らない場所へ検証を寄せる。
 2. **見た目・モーション＝サンドボックスインスタンス**: `node scripts/sandbox-app.cts` で**可視・常駐の2台目**を起動する（CSS transition や inline 配置は隠しウィンドウでは再現しないため、従来は実機に頼っていた層）。作業ツリー直下 `.sandbox/`（gitignore）に config・シード済みフィクスチャライブラリを永続化し、CDP ポートは**ツリーのパスから決まる**（9333〜9432 の範囲・起動時に表示・`.sandbox/instance.json` にツリーごと記録）。接続は `CDP_PORT=sandbox node scripts/cdp-verify.cts`（そのツリーの記録から解決＝番号を持ち回らない）、終了は `node scripts/sandbox-app.cts stop`。**cdp-verify はサンドボックスポートに繋ぐ前に、そこで動いているアプリがこのツリーから起動されたものかを突き合わせて、違えば止まる**＝並行 worktree が同じポートを取り合っても、他人のインスタンスを自分のものとして駆動したまま成功する経路が無い（#640。ポートの決定性は「毎回同じ番号へ戻れる」ための便宜で、安全弁は突き合わせの方）。`HOLOGRAM_SANDBOX=1` でホスト登録をスキップするため **HKCU・共有 `~/.hologram` に一切触れない**＝実機と安全に共存でき、worktree ごとに独立するので並行セッションの検証が衝突しない。インスタンスロックは（アプリ名, userData）単位で userData は config dir に固定されている＝2台目の起動をロックは妨げない。**実データでしか出ない問題（実ライブラリの多様性・規模で崩れる表示や性能／特定の実投稿で再現するバグ）は `--real` でシードする**（下記）。
 3. **実入力・実ピクセルの自動テスト＝Playwright（`npm run test:e2e`・#14）**: 上の1と2の間を埋める層。ケースごとに使い捨ての config dir とライブラリを作り、`HOLOGRAM_SANDBOX=1` ＋ `HOLOGRAM_START_INACTIVE=1` で**見えるが最背面のウィンドウ**を起こし、実ポインタ・実キーで駆動して要素単位のスクリーンショットを撮る。1と違って合成イベントではないので「クリックが届かない」型が捕まり、2と違って人手も常駐インスタンスも要らない。**ユーザーの前面は奪わない**（フォーカスを取らずに z 順の最背面へ送る＝入力は CDP 経由でフォーカス不要）。詳細は `e2e/README.md`。
-4. **実機（:9222）**: `HologramLaunch` タスクで起動したウィンドウへ CDP 接続する。アクションには `--remote-debugging-port=9222` を恒久付与してあるので、タスク経由なら常に :9222 でデバッグ可能＝**コンテナ外（実 HKCU/実 FS）かつ CDP 可能**を同時に満たす。直接 `Start-Process electron.exe --remote-debugging-port=…` は使わない（コンテナ内＝仮想化でキャプチャが壊れる）。実機での検証は短く済ませ、混ざった疑いがあれば撮り直す。
+4. **実機（:9222）**: `HologramLaunch` タスクで起動したウィンドウへ CDP 接続する。アクションには `--remote-debugging-port=9222` を恒久付与してあるので、タスク経由なら常に :9222 でデバッグ可能。⚠️**旧記述「直接起動はコンテナ内＝仮想化でキャプチャが壊れる」は失効**（#1003）＝いまタスクを通す理由は、引数が固定されることと、その引数が実機を名指しする唯一の目印になること（#1004）。実機での検証は短く済ませ、混ざった疑いがあれば撮り直す。**HMR で足りる検証は `REMOTE_DEBUGGING_PORT=9222 npm run dev --workspace=app`**＝同じ :9222 で CDP が使え、ビルド→再起動の往復が消える（キャプチャ経路の確認だけは実機で行う）。
 
 **並行セッションで共有のままの装置**（worktree でもサンドボックスでも隔離されない）: `node native-host/install.cts` の再配備・拡張のリロード・実機の再起動の3つ。並行セッションの実行中にこれらを行う時だけは、相手の検証を壊しうるので重ねない（`ccd_session_mgmt` で実態確認）。**この確認先は並行セッションであって、ユーザーではない**＝重なりが無いと分かったらそのまま実行する（可否を尋ねて止まらない）。「共有資源だから」は他セッションを調べる理由であって、検証を保留する理由ではない。
 

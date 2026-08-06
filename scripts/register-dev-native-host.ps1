@@ -1,6 +1,8 @@
 $ErrorActionPreference = 'Stop'
 
-# Runs scripts/register-dev-native-host.cts OUTSIDE the MSIX container (#732).
+# Runs scripts/register-dev-native-host.cts through a one-shot scheduled task (#732).
+# The original reason (getting outside the MSIX container) expired 2026-08-06 (#1003);
+# the detour is kept until someone registers directly and confirms. See the .cts header.
 #
 # Native messaging registration is an HKCU write. A process started from inside
 # the packaged desktop app writes into a per-package virtual hive that the real
@@ -24,7 +26,7 @@ $settings = New-ScheduledTaskSettingsSet -Hidden -MultipleInstances IgnoreNew -E
 # ever started by hand while the user is logged on, so Interactive is what it is.
 $principal = New-ScheduledTaskPrincipal -UserId ([System.Security.Principal.WindowsIdentity]::GetCurrent().Name) -LogonType Interactive -RunLevel Limited
 
-Register-ScheduledTask -TaskName $taskName -Action $action -Settings $settings -Principal $principal -Description 'One-shot: registers the Hologram development native messaging host outside the MSIX container.' -Force | Out-Null
+Register-ScheduledTask -TaskName $taskName -Action $action -Settings $settings -Principal $principal -Description 'One-shot: registers the Hologram development native messaging host.' -Force | Out-Null
 Start-ScheduledTask -TaskName $taskName
 
 $deadline = (Get-Date).AddMinutes(5)
@@ -40,4 +42,4 @@ if ($result -ne 0) {
   throw "$taskName exited with $result. The registration did NOT happen."
 }
 Write-Host "Development native messaging host registration ran outside the container (exit 0)."
-Write-Host "Verify it by capturing from the development Chrome profile and reading ~/.hologram-dev/bridge.log — reading HKCU from in here proves nothing."
+Write-Host "Verify it by capturing from the development Chrome profile and reading ~/.hologram-dev/bridge.log. (Reading HKCU back is also meaningful since 2026-08-06 — see the .cts header.)"

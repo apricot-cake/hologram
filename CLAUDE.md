@@ -5,8 +5,8 @@ Hologram = ウェブのコンテンツ（現対応はSNS投稿）を出自・エ
 射程・機能の採否＝docs/scope.md／詳細=docs/architecture.md／**設計判断とその理由＝docs/decisions/（ADR・1決定1ファイル・実装まで進んだ設計はIssueからここへ昇格）**／ビルド・実機検証=docs/build.md／テスト一覧=docs/testing.md／**確定した用語（UI日本語⇔コード英語）と「固有名を付けない」と決めた領域＝docs/glossary.md（新語をここで作らない）**／機能説明=README.md／残タスク=GitHub Issues＋Project「Hologram Backlog」（apricot-cake/hologram）。実装のhow・私的文脈はメモリ`hologram-backlog`、訴求の物差し（文言を書く前に読む）はメモリ`hologram-positioning`（ともにrepo外）
 
 # ストレージと実行環境
-- 配置は`~/.hologram`(config/ログ)と`saveFolder`(既定`~/Hologram/library`)＝**AppData外必須**（MSIX仮想化でのライブラリ消失事故対策・2026-06-23）
-- この開発機（MSIXコンテナ内）固有の作法＝アプリ起動は`HologramLaunch`タスク経由・レジストリ確認は自分で実行せずユーザーに依頼・テストは`HOLOGRAM_CONFIG_DIR`でサンドボックス化。手順と理由はdocs/build.md「コード変更の反映」「検証ルール」
+- 配置は`~/.hologram`(config/ログ)と`saveFolder`(既定`~/Hologram/library`)＝AppData外（MSIX仮想化でのライブラリ消失事故対策・2026-06-23）。⚠️**「必須」の根拠は 2026-08-06 に失効**＝仮想化はもう起きない（#1003）＝`config` を`%APPDATA%\Hologram`へ戻す設計が#232にある（**ライブラリ側は別**＝#232が既に製品判断へ書き換え済みで、位置は変えない）。**それでも今すぐ戻さない**＝今回の発見自体が Claude Desktop の構成が変わった証明で逆方向にも変わりうる＝戻すなら分岐を検知する仕組みとセット（#232のコメント）
+- **アプリ起動は`HologramLaunch`タスク経由**＝理由はもう仮想化ではなく、①`--remote-debugging-port=9222`が固定で付く②その引数が実機を名指しする唯一の目印（⚠️タスク以外で起動された個体はこの目印を持たない＝#1004）。**UIを作り込む間はHMRを使ってよい**＝`REMOTE_DEBUGGING_PORT=9222 npm run dev --workspace=app`でCDPも同時に使える（#1003・キャプチャ経路の確認だけは実機で）。テストは`HOLOGRAM_CONFIG_DIR`でサンドボックス化。手順はdocs/build.md「コード変更の反映」「検証ルール」
 
 # ルール
 - lint/format＝Biome（`npm run lint`／2.5.6完全固定・設定と固定理由は biome.jsonc）
