@@ -152,29 +152,31 @@ const evalJs = evalSource(async ({ waitFor, waitStable, neverHappens }) => {
     if (expect) await waitFor('the released drag to select exactly the cards it crossed', () => selectedKeys().join(',') === expect.join(','), 4000);
   };
 
-  // Rows, top-first: pick a band that cuts through the middle of one row only.
-  const rows: Record<number, Array<{ el: HTMLElement; r: DOMRect }>> = {};
-  for (const c of cards()) {
-    const k = c.getBoundingClientRect();
-    const key = Math.round(k.top);
-    (rows[key] = rows[key] || []).push({ el: c, r: k });
-  }
-  const rowTops = Object.keys(rows)
-    .map(Number)
-    .sort((a, b) => a - b);
-  const row0 = rows[rowTops[0]].sort((a, b) => a.r.left - b.r.left);
-  out.rowCount = rowTops.length;
+  // Rows, top-first, grouped by their rounded top and ordered left to right — read
+  // fresh on every call rather than snapshotted once. A card reserves its height
+  // before its picture reports an aspect (PostCard's CardThumb → onAspect), so the
+  // masonry can still move after the settle above, and a band placed from a reading
+  // older than the press it belongs to can land where nothing is any more (#1007).
+  const readRows = () => {
+    const byTop: Record<number, Array<{ el: HTMLElement; r: DOMRect }>> = {};
+    for (const c of cards()) {
+      const k = c.getBoundingClientRect();
+      const key = Math.round(k.top);
+      (byTop[key] = byTop[key] || []).push({ el: c, r: k });
+    }
+    return Object.keys(byTop)
+      .map(Number)
+      .sort((a, b) => a - b)
+      .map((t) => byTop[t].sort((a, b) => a.r.left - b.r.left));
+  };
+  // The reading cases A/B/D/F/G/H are written against. Row 0 is the one row whose top
+  // cannot move (it is the container's), which is why a single reading is enough here
+  // and not below — layoutHeldThroughH checks that premise instead of assuming it.
+  const rows0 = readRows();
+  const row0 = rows0[0];
+  const layout0 = JSON.stringify(rectsOf('[data-slot="post-grid"] [data-slot="post-card"]'));
+  out.rowCount = rows0.length;
   out.row0Count = row0.length;
-  // TEMP PROBE (#1007) — remove before the PR.
-  const snap = () =>
-    cards()
-      .map((c) => {
-        const k = c.getBoundingClientRect();
-        return [nameOf(c), Math.round(k.left), Math.round(k.top), Math.round(k.width), Math.round(k.height)];
-      })
-      .sort((a, b) => Number(a[2]) - Number(b[2]) || Number(a[1]) - Number(b[1]));
-  out.snapT0 = snap();
-  out.scrollT0 = scroller.scrollTop;
   // Thin horizontal band through row 0, from the left margin to the middle of the
   // SECOND column — so it must take exactly the first two cards of that row.
   const cy = Math.round((row0[0].r.top + row0[0].r.bottom) / 2);
@@ -211,21 +213,25 @@ const evalJs = evalSource(async ({ waitFor, waitStable, neverHappens }) => {
   await neverHappens('the release under the threshold to disturb the selection', () => selectedKeys().join(',') !== afterA, 200);
   out.gotB = selectedKeys();
 
-  // C. Ctrl held at press time EXTENDS: row 1's first two cards join row 0's
-  const row1 = rows[rowTops[1]].sort((a, b) => a.r.left - b.r.left);
+  // C. Ctrl held at press time EXTENDS: row 1's first two cards join row 0's.
+  // Row 1 is read here rather than up top, and only once the layout has stopped moving
+  // again: the cases above changed the selection, and this is the first band that is
+  // NOT anchored to row 0, so it is the first one a shifted layout can miss (#1007).
+  out.settledBeforeC = await waitStable('the masonry layout to stop moving before the Ctrl+drag places its band', () => rectsOf('[data-slot="post-grid"] [data-slot="post-card"]'));
+  const rowsC = readRows();
+  const row1 = rowsC[1];
+  // Named rather than optional-chained: every coordinate of this case is measured off
+  // these two cards, so a grid that laid out no such row has to stop the run.
+  if (!row1 || row1.length < 2) throw new Error('the grid laid out no second row of two cards for the Ctrl+drag case');
   const cy1 = Math.round((row1[0].r.top + row1[0].r.bottom) / 2);
   const x1b = Math.round((row1[1].r.left + row1[1].r.right) / 2);
-  // TEMP PROBE (#1007) — remove before the PR.
-  out.snapAtC = snap();
-  out.scrollAtC = scroller.scrollTop;
-  out.coordsC = { x0, cy, x1, cy1, x1b, row1Names: row1.map((e) => nameOf(e.el)), row1Tops: row1.map((e) => Math.round(e.r.top)), rowTops };
-  out.bandHitAtC = expectFor(x0, cy1 - 5, x1b, cy1 + 5);
-  out.settledAtC = await waitStable('the layout to be stable when case C derives its band', () => rectsOf('[data-slot="post-grid"] [data-slot="post-card"]'));
-  out.snapAtCSettled = snap();
-  out.bandHitAtCSettled = expectFor(x0, cy1 - 5, x1b, cy1 + 5);
-  // TEMP PROBE (#1007): keep the UNFIXED expectation (pre-settle) so this run still
-  // measures the current failure rate while reporting what a settle would have changed.
-  out.expectC = [...new Set([...out.gotA, ...out.bandHitAtC])].sort();
+  // Kept as its own field, and checked as its own line, because expectC below is a
+  // UNION with what case A left selected: a band that crosses nothing collapses expectC
+  // onto gotA, and the check then asks the release for two contradictory things at once
+  // ("the same cards as before" AND "more cards than before"). No answer satisfies that,
+  // so the case reported a broken Ctrl+drag while Ctrl+drag was working (#1007).
+  out.bandC = expectFor(x0, cy1 - 5, x1b, cy1 + 5);
+  out.expectC = [...new Set([...out.gotA, ...out.bandC])].sort();
   await drag(x0, cy1 - 5, x1b, cy1 + 5, { ctrlKey: true }, out.expectC);
   out.gotC = selectedKeys();
 
@@ -291,6 +297,13 @@ const evalJs = evalSource(async ({ waitFor, waitStable, neverHappens }) => {
   click(x0, cy, { shiftKey: true });
   await neverHappens('Shift + a background click to touch the selection', () => selectedKeys().join(',') !== beforeH, 200);
   out.gotHShift = selectedKeys();
+
+  // The premise every case from A to H rests on: cy / x1 / onlyX were measured once,
+  // off row 0, and stay meaningful only while the masonry has not re-laid itself out
+  // underneath them. Checked here rather than assumed, so a layout that moved is
+  // reported as a layout that moved instead of as a gesture that broke (#1007). Case I
+  // scrolls, so this is the last moment the comparison means anything.
+  out.layoutHeldThroughH = JSON.stringify(rectsOf('[data-slot="post-grid"] [data-slot="post-card"]')) === layout0;
 
   // I. the empty space BELOW the last row is background too (#242 finalized design 3):
   //    the grid is only as tall as its cards, so this is the biggest click target
@@ -369,6 +382,10 @@ child.on('close', () => {
     ['the band is removed on release', r.bandRemovedA === true],
     ['a press under the threshold draws no band', r.bandDuringB === false],
     ['Ctrl + a background click leaves the selection alone', same(r.gotB, r.gotA)],
+    ['the grid stopped moving again before the Ctrl+drag placed its band', r.settledBeforeC === true],
+    // Ahead of the check below because it is what makes that one answerable at all: an
+    // empty band makes "extends the selection" unsatisfiable rather than false (#1007).
+    ["the Ctrl+drag's band crosses cards of its own to add", Array.isArray(r.bandC) && r.bandC.length >= 2],
     ['Ctrl+drag extends the selection', same(r.gotC, r.expectC) && r.gotC.length > r.gotA.length],
     ['a plain drag replaces the selection', same(r.gotD, r.expectD) && r.gotD.length === 1],
     ['the band paints while dragging', r.bandVisibleE === true],
@@ -383,6 +400,7 @@ child.on('close', () => {
     ['a background click leaves no band behind', r.bandDuringG === false],
     ['Ctrl + a background click keeps the selection', same(r.gotHCtrl, r.beforeH) && r.beforeH.length >= 2],
     ['Shift + a background click keeps the selection', same(r.gotHShift, r.beforeH)],
+    ['the layout the row-0 coordinates were read from held through case H', r.layoutHeldThroughH === true],
     ['the space below the last row is background too', r.bottomSettled === true && r.belowAvailable === true && r.belowIsEmpty === true && r.beforeI.length > 0 && same(r.gotI, [])],
     ['a poster click fills the inspector', r.posterCardsShown === true && r.posterSettled === true && r.posterFilledBeforeJ === true],
     ['the poster grid background returns the inspector too', r.posterPressOnEmpty === true && r.posterPlaceholderAfterJ === true],
@@ -393,7 +411,7 @@ child.on('close', () => {
     if (!ok) failed++;
     console.log(`  ${ok ? 'ok  ' : 'FAIL'} ${name}`);
   }
-  console.log('  got: ' + JSON.stringify(r)); // TEMP PROBE (#1007) — restore `if (failed)` before the PR.
+  if (failed) console.log('  got: ' + JSON.stringify(r));
   console.log(failed ? 'MARQUEE_TEST_FAIL' : 'MARQUEE_TEST_PASS');
   process.exit(failed ? 1 : 0);
 });
