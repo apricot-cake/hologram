@@ -165,6 +165,16 @@ const evalJs = evalSource(async ({ waitFor, waitStable, neverHappens }) => {
   const row0 = rows[rowTops[0]].sort((a, b) => a.r.left - b.r.left);
   out.rowCount = rowTops.length;
   out.row0Count = row0.length;
+  // TEMP PROBE (#1007) — remove before the PR.
+  const snap = () =>
+    cards()
+      .map((c) => {
+        const k = c.getBoundingClientRect();
+        return [nameOf(c), Math.round(k.left), Math.round(k.top), Math.round(k.width), Math.round(k.height)];
+      })
+      .sort((a, b) => Number(a[2]) - Number(b[2]) || Number(a[1]) - Number(b[1]));
+  out.snapT0 = snap();
+  out.scrollT0 = scroller.scrollTop;
   // Thin horizontal band through row 0, from the left margin to the middle of the
   // SECOND column — so it must take exactly the first two cards of that row.
   const cy = Math.round((row0[0].r.top + row0[0].r.bottom) / 2);
@@ -205,7 +215,17 @@ const evalJs = evalSource(async ({ waitFor, waitStable, neverHappens }) => {
   const row1 = rows[rowTops[1]].sort((a, b) => a.r.left - b.r.left);
   const cy1 = Math.round((row1[0].r.top + row1[0].r.bottom) / 2);
   const x1b = Math.round((row1[1].r.left + row1[1].r.right) / 2);
-  out.expectC = [...new Set([...out.gotA, ...expectFor(x0, cy1 - 5, x1b, cy1 + 5)])].sort();
+  // TEMP PROBE (#1007) — remove before the PR.
+  out.snapAtC = snap();
+  out.scrollAtC = scroller.scrollTop;
+  out.coordsC = { x0, cy, x1, cy1, x1b, row1Names: row1.map((e) => nameOf(e.el)), row1Tops: row1.map((e) => Math.round(e.r.top)), rowTops };
+  out.bandHitAtC = expectFor(x0, cy1 - 5, x1b, cy1 + 5);
+  out.settledAtC = await waitStable('the layout to be stable when case C derives its band', () => rectsOf('[data-slot="post-grid"] [data-slot="post-card"]'));
+  out.snapAtCSettled = snap();
+  out.bandHitAtCSettled = expectFor(x0, cy1 - 5, x1b, cy1 + 5);
+  // TEMP PROBE (#1007): keep the UNFIXED expectation (pre-settle) so this run still
+  // measures the current failure rate while reporting what a settle would have changed.
+  out.expectC = [...new Set([...out.gotA, ...out.bandHitAtC])].sort();
   await drag(x0, cy1 - 5, x1b, cy1 + 5, { ctrlKey: true }, out.expectC);
   out.gotC = selectedKeys();
 
@@ -373,7 +393,7 @@ child.on('close', () => {
     if (!ok) failed++;
     console.log(`  ${ok ? 'ok  ' : 'FAIL'} ${name}`);
   }
-  if (failed) console.log('  got: ' + JSON.stringify(r));
+  console.log('  got: ' + JSON.stringify(r)); // TEMP PROBE (#1007) — restore `if (failed)` before the PR.
   console.log(failed ? 'MARQUEE_TEST_FAIL' : 'MARQUEE_TEST_PASS');
   process.exit(failed ? 1 : 0);
 });
