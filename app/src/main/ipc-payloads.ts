@@ -153,11 +153,9 @@ export interface AppPrefs {
   posterShowInfo: boolean;
   /** Poster grid: column width px. The poster list has no size axis. */
   posterGridSize: number | null;
-  sidebarOpen: boolean | null;
-  sidebarWidth: number | null;
   inspectorOpen: boolean | null;
   inspectorWidth: number | null;
-  /** #245: both panels above masked away at once. Independent of their own state. */
+  /** #245: the sidebar and the inspector masked away at once. Independent of their own state. */
   panelsHidden: boolean | null;
   /** #46: triage mode's manually-pinned number-key (1-9) quick tags, in slot order. */
   triagePinnedTags: string[];

@@ -49,7 +49,7 @@ export interface ShortcutEntry {
    * are still stored/compared with Shift stripped for these ids (both defaultCombo above and any
    * override) so pressing the key with or without Shift is the same combo. Everything else
    * treats Shift as a real, load-bearing part of the chord (undo Ctrl+Z vs redo Ctrl+Shift+Z;
-   * plain Ctrl+B is the sidebar's own key, Ctrl+Shift+B is this app's).
+   * Ctrl+Shift+B widens the panel toggle rather than shifting a glyph).
    */
   ignoreShift?: boolean;
   /** The rest of the original guard chain (input focus, open overlays, "is there a UI to act on"). */

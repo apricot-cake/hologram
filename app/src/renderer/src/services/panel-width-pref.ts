@@ -1,38 +1,37 @@
-// Sidebar / inspector column widths (#30) — a dragged width survives a restart.
+// Inspector column width (#30) — a dragged width survives a restart.
 //
-// Two tiers, the same split sidebar-pref.ts uses for `sidebarOpen`: config.json is the
-// durable home (setPref over IPC) and localStorage is a synchronous cache. The cache is
-// what makes this work at all — the width has to be known during React's FIRST render,
-// and an IPC round trip can only answer a tick later, which would paint the default
-// width and snap to the saved one right after boot. config.json stays authoritative:
-// load() reconciles the cache with it once, so an out-of-app edit still wins.
+// Two tiers: config.json is the durable home (setPref over IPC) and localStorage is a
+// synchronous cache. The cache is what makes this work at all — the width has to be known
+// during React's FIRST render, and an IPC round trip can only answer a tick later, which
+// would paint the default width and snap to the saved one right after boot. config.json
+// stays authoritative: load() reconciles the cache with it once, so an out-of-app edit
+// still wins.
 //
 // Only a finished gesture (pointerup / a key press / a double-click reset) reaches
 // persist(). Nothing during a drag does: setPref lands in config.json through a
 // fsync'd atomic write, and calling that per pointermove would stall the drag.
-// Separate keys from `sidebarOpen` — "collapsed" and "how wide when expanded" are
-// independent answers, and collapsing must not write a width back.
+//
+// #30 shipped this for both side panels. The sidebar's half is gone with the expanded
+// column (#981) — the rail is one fixed width, so there is no width for a drag to write.
+// The generic shape stays: this module never knew anything panel-specific.
 import { hologramIpc } from './ipc.ts';
 
-export type PanelKey = 'sidebarWidth' | 'inspectorWidth';
+export type PanelKey = 'inspectorWidth';
 
 const CACHE_KEY: Record<PanelKey, string> = {
-  sidebarWidth: 'hologram-sidebar-width',
   inspectorWidth: 'hologram-inspector-width',
 };
 
-// Absolute limits, in px. Lower bounds keep a panel readable rather than letting it
-// shrink into a sliver that has to be dragged back out (the sidebar's own "narrow"
-// answer is the icon rail, which the collapse toggle owns). Upper bounds keep the
-// content column usable at the window's 720px minWidth — hence the viewport cap in
-// clampWidth on top of these, which is what actually bites on a small window.
+// Absolute limits, in px. The lower bound keeps the panel readable rather than letting it
+// shrink into a sliver that has to be dragged back out. The upper bound keeps the content
+// column usable at the window's 720px minWidth — hence the viewport cap in clampWidth on
+// top of it, which is what actually bites on a small window.
 export const LIMITS: Record<PanelKey, { min: number; max: number }> = {
-  sidebarWidth: { min: 200, max: 400 },
   inspectorWidth: { min: 260, max: 560 },
 };
 
-// Share of the window a single panel may take. Both panels can be open at once, so
-// this is deliberately under half.
+// Share of the window the panel may take — deliberately under half, since the rail takes
+// its own slice on the other side.
 const VIEWPORT_CAP = 0.45;
 
 /** Round to whole px and hold inside both the absolute limits and the viewport cap. */

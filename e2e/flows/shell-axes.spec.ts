@@ -84,35 +84,13 @@ async function bandReady(page: Page): Promise<void> {
   await page.locator('[data-slot="tab-new"]').waitFor();
 }
 
-/** Ctrl+B, then wait for the column to actually be the icon rail (the collapse is animated). */
-async function collapseToRail(page: Page): Promise<void> {
-  await page.keyboard.press('Control+b');
-  await expect(page.locator('[data-slot="sidebar"]')).toHaveAttribute('data-state', 'collapsed');
-  await expect.poll(async () => (await measure(page, [['rail', '[data-slot="sidebar"]']]))[0].w, { message: 'サイドバーがアイコンレール幅まで畳まれること' }).toBeLessThan(100);
-}
-
-/**
- * Reach the expanded column regardless of what state launchHologram() started in. Before
- * #678 a fresh launch WAS the expanded column, so the axis test below could just measure —
- * now the default is the rail (services/sidebar-pref.ts's DEFAULT_OPEN), so getting to
- * "expanded" is a step, not a given. This file is about the axis, not about what the
- * default is (that is sidebar-rail.spec.ts's job), so it reaches the state it needs
- * explicitly instead of assuming it.
- */
-async function expandToColumn(page: Page): Promise<void> {
-  const state = await page.locator('[data-slot="sidebar"]').getAttribute('data-state');
-  if (state === 'expanded') return;
-  await page.keyboard.press('Control+b');
-  await expect(page.locator('[data-slot="sidebar"]')).toHaveAttribute('data-state', 'expanded');
-}
-
 const BAND: Target = ['帯', '[data-slot="titlebar-band"]'];
-// The band's icon controls. Three owners: the sidebar's component draws the first, the tab
-// strip the second, the shell the third, and the app-drawn caption strip (portaled to body,
-// outside the band's flex row entirely) the last three. That spread is exactly why the axis
-// needs stating — no single container lays all six out.
+// The band's icon controls. Three owners: the tab strip draws the first, the shell the
+// second, and the app-drawn caption strip (portaled to body, outside the band's flex row
+// entirely) the last three. That spread is exactly why the axis needs stating — no single
+// container lays all five out. The sidebar's collapse trigger used to be the leftmost
+// participant; #981 removed it with the expanded column.
 const BAND_CONTROLS: Target[] = [
-  ['サイドバーのトグル', '[data-sidebar="trigger"]'],
   ['新しいタブ', '[data-slot="tab-new"]'],
   ['詳細パネルのトグル', '[data-slot="inspector-toggle"]'],
   ['最小化', '[data-slot="window-control"]', 0],
@@ -155,33 +133,25 @@ test('帯のアイコン軸: タブ本体は対象外＝帯の下端に接する
   dumpOnFailure('タブ本体の軸 — 採寸', [band, tab]);
 });
 
-test('サイドバー列の軸: トグルとナビ行が列の左端を共有し、レール形では列の中心 x に乗る', async ({ launchHologram }) => {
+test('サイドバー列の軸: ナビ行が左端と幅を共有し、レールの中心 x に乗る', async ({ launchHologram }) => {
   const { page } = await launchHologram();
   await bandReady(page);
 
+  // One form to measure now (#981) — the rail. The axis itself is unchanged: the rows share
+  // a left edge and a width, which is what puts them on the rail's own centre line. What is
+  // gone is the second measurement (the expanded column) and the participant that made the
+  // axis worth stating in the first place — the collapse trigger, which sat 6px off it.
   const NAV: Target[] = [0, 1, 2, 3, 4].map((i) => [`ナビ行[${i}]`, '[data-slot="sidebar-menu-button"]', i]);
-  const TRIGGER: Target = ['サイドバーのトグル', '[data-sidebar="trigger"]'];
 
-  // Expanded first. Here the rows fill the column's width, so the shared thing is the left
-  // edge: the trigger has to start where the rows start.
-  await expandToColumn(page);
-  const expanded = await measure(page, [['列（展開）', '[data-slot="sidebar"]'], TRIGGER, ...NAV]);
-  const [, expandedTrigger, ...expandedNav] = expanded;
-  for (const row of expandedNav) {
-    expect.soft(expandedTrigger.left, `サイドバー列の軸（展開）: 〈トグル〉の左端は〈${row.name}〉の左端 (${row.left}) と一致すること`).toBe(row.left);
+  await expect(page.locator('[data-slot="sidebar"]')).toHaveAttribute('data-state', 'collapsed');
+  const rail = await measure(page, [['レール', '[data-slot="sidebar"]'], ...NAV]);
+  const [railBox, first, ...rest] = rail;
+  for (const row of rest) {
+    expect.soft(row.left, `サイドバー列の軸: 〈${row.name}〉の左端は〈${first.name}〉の左端 (${first.left}) と一致すること`).toBe(first.left);
+    expect.soft(row.w, `サイドバー列の軸: 〈${row.name}〉の幅は〈${first.name}〉の幅 (${first.w}) と一致すること`).toBe(first.w);
   }
-  dumpOnFailure('サイドバー列の軸（展開） — 採寸', expanded);
-
-  // Then the icon rail, where the rows are square and the same statement — same left edge,
-  // same width — is what puts everything on the rail's own centre line.
-  await collapseToRail(page);
-  const rail = await measure(page, [['レール', '[data-slot="sidebar"]'], TRIGGER, ...NAV]);
-  const [railBox, railTrigger, ...railNav] = rail;
-  for (const row of railNav) {
-    expect.soft(railTrigger.left, `サイドバー列の軸（レール）: 〈トグル〉の左端は〈${row.name}〉の左端 (${row.left}) と一致すること`).toBe(row.left);
-    expect.soft(railTrigger.w, `サイドバー列の軸（レール）: 〈トグル〉の幅は〈${row.name}〉の幅 (${row.w}) と一致すること`).toBe(row.w);
-    expect.soft(row.cx, `サイドバー列の軸（レール）: 〈${row.name}〉の中心 x はレールの中心 (${railBox.cx}) と一致すること`).toBe(railBox.cx);
+  for (const row of [first, ...rest]) {
+    expect.soft(row.cx, `サイドバー列の軸: 〈${row.name}〉の中心 x はレールの中心 (${railBox.cx}) と一致すること`).toBe(railBox.cx);
   }
-  expect.soft(railTrigger.cx, `サイドバー列の軸（レール）: 〈トグル〉の中心 x はレールの中心 (${railBox.cx}) と一致すること`).toBe(railBox.cx);
-  dumpOnFailure('サイドバー列の軸（レール） — 採寸', rail);
+  dumpOnFailure('サイドバー列の軸 — 採寸', rail);
 });

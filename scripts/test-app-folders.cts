@@ -87,6 +87,17 @@ const evalJs = `(async () => {
   const cards = () => grid.querySelectorAll('[data-slot="post-card"]').length;
   const rows = () => [...document.querySelectorAll('[data-slot="folder-row"]')];
   const rowNamed = (name) => rows().find(r => r.textContent.trim() === name);
+  // #981: the sidebar is a rail and nothing else, so the folder tree lives in the flyout
+  // behind the rail's フォルダ row — it is not in the document until that row is clicked.
+  // (Base UI's Trigger stamps its own data-slot on whatever it renders, so the rail rows
+  // are popover-triggers rather than sidebar-menu-buttons.) Picking a folder closes the
+  // flyout by design, so this is called again wherever the tree is needed after that.
+  const railRow = (label) => [...document.querySelectorAll('[data-slot="popover-trigger"]')].find(b => (b.textContent || '').trim() === label);
+  const openTree = async () => {
+    if (rows().length) return true;
+    click(railRow('フォルダ'));
+    return await waitFor(() => rows().length > 0);
+  };
   // menu.ts renders every context menu through the shared DropdownMenu component.
   const menuRow = (txt) => [...document.querySelectorAll('[data-slot="dropdown-menu-item"]')].find(r => (r.textContent || '').includes(txt));
   const chips = () => [...document.querySelectorAll('[data-slot="filter-chip"]')];
@@ -116,6 +127,7 @@ const evalJs = `(async () => {
   out.totalBefore = cards();                                        // 3
 
   // --- A. the seeded child is nested: hidden until its parent is opened ---
+  out.treeOpened = await openTree();
   out.parentShown = await waitFor(() => !!rowNamed('一次資料'));
   out.childHiddenAtFirst = !rowNamed('スケッチ');
   click(document.querySelector('[data-slot="folder-twisty"]'));
@@ -155,6 +167,7 @@ const evalJs = `(async () => {
   out.backToAll = cards();                                          // 3
 
   // --- E. deleting the root takes both descendants with it ---
+  out.treeReopened = await openTree();
   rclick(rowNamed('一次資料'));
   await waitFor(() => !!menuRow('削除'));
   click(menuRow('削除'));
@@ -198,6 +211,7 @@ child.on('close', () => {
   fs.rmSync(tmp, { recursive: true, force: true });
   const expect = {
     totalBefore: 3,
+    treeOpened: true,
     parentShown: true,
     childHiddenAtFirst: true,
     childShownAfterTwisty: true,
@@ -210,6 +224,7 @@ child.on('close', () => {
     onlyCount: 0,
     chipSaysOnly: true,
     backToAll: 3,
+    treeReopened: true,
     cascadeWarned: true,
     leftAfterDelete: 0,
     postsKept: 3,

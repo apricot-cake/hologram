@@ -23,14 +23,19 @@
 // it meant the window's width could take a destination away. Windows draws it this way:
 // WinUI's NavigationView keeps hierarchy in LeftCompact by moving the children into a
 // flyout rather than dropping them.
+//
+// #981: the rail is now the sidebar's ONLY form — the expanded column, its toggle, its
+// saved state and its drag-resize are gone (docs/decisions/0027). What that removes here
+// is the second copy: the three user-grown groups used to be written once and rendered
+// twice (in the column, and in the flyout), and only the flyout render is left. The
+// group-data-[collapsible=icon] switches that chose between the two copies are gone with
+// it — a flyout is portaled out of the sidebar, so those selectors never matched there.
 import { ChevronRight, Folder, Folders, History, LayoutGrid, Plus, Rss, Search, Settings, Terminal, Trash2, Users } from 'lucide-react';
 import type { DragEvent, MouseEvent, ReactNode } from 'react';
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupAction, SidebarGroupContent, SidebarGroupLabel, SidebarHeader, SidebarMenu, SidebarMenuBadge, SidebarMenuButton, SidebarMenuItem, SidebarMenuSub, SidebarRail, SidebarTrigger } from '@/components/ui/sidebar';
-import type { PanelResize } from './use-panel-resize.ts';
+import { Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupAction, SidebarGroupContent, SidebarGroupLabel, SidebarHeader, SidebarMenu, SidebarMenuBadge, SidebarMenuButton, SidebarMenuItem, SidebarMenuSub } from '@/components/ui/sidebar';
 import { BackupStatus } from '../backup/BackupStatus.tsx';
 import { HistoryPanelBody } from '../history/HistoryPanel.tsx';
 import { t } from '../_shared/i18n.ts';
@@ -176,26 +181,17 @@ function FolderNode({ f, ctx }: { f: HologramFolder; ctx: FolderTreeCtx }) {
       >
         {hint === 'before' && <span className="pointer-events-none absolute inset-x-0 top-0 h-0.5 rounded-full bg-sidebar-ring" />}
         {hint === 'after' && <span className="pointer-events-none absolute inset-x-0 bottom-0 h-0.5 rounded-full bg-sidebar-ring" />}
-        {/* Both the twisty and the leaf's placeholder go away in the icon rail: at
-            48px there is only room for the folder icon itself, and 20px of indent
-            pushed that icon past the rail's edge, where it was clipped into a
-            sliver. Nothing is lost by hiding them — the subtree they expand is
-            already hidden in this mode (SidebarMenuSub), so the twisty has
-            nothing to reveal and the leaf has no label column to line up with. */}
         {kids.length ? (
-          <CollapsibleTrigger data-slot="folder-twisty" aria-label={t('foldToggleSubs')} className="flex size-5 shrink-0 items-center justify-center rounded-sm text-sidebar-foreground/60 group-data-[collapsible=icon]:hidden hover:bg-sidebar-accent hover:text-sidebar-accent-foreground">
+          <CollapsibleTrigger data-slot="folder-twisty" aria-label={t('foldToggleSubs')} className="flex size-5 shrink-0 items-center justify-center rounded-sm text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground">
             <ChevronRight className={`size-3.5 transition-transform ${isOpen ? 'rotate-90' : ''}`} />
           </CollapsibleTrigger>
         ) : (
           // A leaf keeps the twisty's width so labels line up down the column.
-          <span className="size-5 shrink-0 group-data-[collapsible=icon]:hidden" />
+          <span className="size-5 shrink-0" />
         )}
-        {/* flex-1 would beat the rail's size-8! sizing on its own (flex-basis wins
-            over width in a flex row), so the grow is dropped in icon mode too. */}
-        {/* No tooltip inside the flyout (#965): the sidebar is still `collapsed` while
-            the flyout is open, so SidebarMenuButton would offer to spell out a name
-            that is already right there in full. */}
-        <SidebarMenuButton className="min-w-0 flex-1 group-data-[collapsible=icon]:flex-none" isActive={ctx.activeIds.has(f.id)} tooltip={ctx.inFlyout ? undefined : f.name} onClick={() => ctx.apply(f.id)}>
+        {/* No tooltip (#965): this tree only ever draws inside the flyout, which already
+            shows every name in full — a tooltip would spell out what is right there. */}
+        <SidebarMenuButton className="min-w-0 flex-1" isActive={ctx.activeIds.has(f.id)} onClick={() => ctx.apply(f.id)}>
           <Folder />
           <span className="truncate">{f.name}</span>
         </SidebarMenuButton>
@@ -230,8 +226,6 @@ interface PosterFolderCtx {
   menu: (e: MouseEvent, f: HologramFolder) => void;
   apply: (id: string) => void;
   place: (t: PosterFolderDropTarget) => void;
-  /** True for the copy inside the rail's flyout (#965) — see FolderNode's tooltip. */
-  inFlyout: boolean;
 }
 function PosterFolderRow({ f, ctx }: { f: HologramFolder; ctx: PosterFolderCtx }) {
   const dragging = ctx.dragId === f.id;
@@ -266,7 +260,7 @@ function PosterFolderRow({ f, ctx }: { f: HologramFolder; ctx: PosterFolderCtx }
       >
         {hint === 'before' && <span className="pointer-events-none absolute inset-x-0 top-0 h-0.5 rounded-full bg-sidebar-ring" />}
         {hint === 'after' && <span className="pointer-events-none absolute inset-x-0 bottom-0 h-0.5 rounded-full bg-sidebar-ring" />}
-        <SidebarMenuButton className="min-w-0 flex-1" tooltip={ctx.inFlyout ? undefined : f.name} onClick={() => ctx.apply(f.id)}>
+        <SidebarMenuButton className="min-w-0 flex-1" onClick={() => ctx.apply(f.id)}>
           <Folder />
           <span className="truncate">{f.name}</span>
         </SidebarMenuButton>
@@ -326,11 +320,9 @@ interface FolderTreeCtx {
   place: (t: DropTarget) => void;
   /** Folders the live query is filtered by — the row for the place you are in (#965). */
   activeIds: Set<string>;
-  /** True for the copy inside the rail's flyout (#965) — see FolderNode's tooltip. */
-  inFlyout: boolean;
 }
 
-export function LeftSidebar({ resize }: { resize?: PanelResize }) {
+export function LeftSidebar() {
   const mode = useSyncExternalStore(subBrowse, getBrowse);
   // #145: the history panel's open state lives in services/history-panel.ts (not
   // component state) so Ctrl+H and the palette's cmd:history can open it too —
@@ -444,15 +436,13 @@ export function LeftSidebar({ resize }: { resize?: PanelResize }) {
     setDrag(null);
     setDrop(null);
   };
-  // One ctx, two renders (#965): the flyout copy overrides `inFlyout` and folds closing
-  // the panel into `apply` — see folderGroup below.
+  // The flyout's own `apply` folds closing the panel in on top of this — see folderGroup.
   const treeCtx: FolderTreeCtx = {
     kidsOf,
     expanded,
     setOpen,
     menu: folderMenu,
     activeIds: activeFolderIds(currentTree),
-    inFlyout: false,
     apply: (id) => {
       applyFolderFilter(id);
     },
@@ -517,7 +507,6 @@ export function LeftSidebar({ resize }: { resize?: PanelResize }) {
     });
   };
   const posterFolderCtx: PosterFolderCtx = {
-    inFlyout: false,
     dragId: pfDragId,
     setDrag: (id) => {
       setPfDrag(id);
@@ -534,34 +523,25 @@ export function LeftSidebar({ resize }: { resize?: PanelResize }) {
     },
   };
 
-  // The three user-grown groups, each written once and rendered twice (#965): in the
-  // column, and inside its own rail flyout. Only two things differ between the two, and
-  // both come in as arguments — the wrapper's own class, and the ctx's `inFlyout` /
-  // closing `apply`. Nothing else needs a fork, because the flyout is portaled OUT of
-  // the sidebar: the rows' `group-data-[collapsible=icon]:*` classes find no matching
-  // ancestor there and draw their expanded form on their own.
+  // The three user-grown groups (#965), each the body of one rail row's flyout. They are
+  // portaled OUT of the sidebar, so the rows inside draw their full-width form on their
+  // own — no `group-data-[collapsible=icon]:*` switch reaches them.
 
   // The folder tree, edited in place (#41 / finalized decision D): + on the group heading makes a
   // root folder, the row's context menu makes a subfolder, renames or deletes.
   // There is no management modal to open — the tree IS the manager, the way
   // Finder / Eagle / Raindrop do it. The group stays mounted even when empty so
   // the + is always reachable.
-  // group-data-[collapsible=icon]:hidden on this and the next two groups (poster
-  // folders, saved searches): the rail's scope is the fixed destinations only
-  // (#678) — user-grown lists show only when expanded, or in the flyout above.
-  const folderGroup = (inFlyout: boolean, close?: () => void) => {
-    const ctx: FolderTreeCtx = inFlyout
-      ? {
-          ...treeCtx,
-          inFlyout: true,
-          apply: (id) => {
-            applyFolderFilter(id);
-            close?.();
-          },
-        }
-      : treeCtx;
+  const folderGroup = (close: () => void) => {
+    const ctx: FolderTreeCtx = {
+      ...treeCtx,
+      apply: (id) => {
+        applyFolderFilter(id);
+        close();
+      },
+    };
     return (
-      <SidebarGroup className={inFlyout ? 'p-0' : 'group-data-[collapsible=icon]:hidden'}>
+      <SidebarGroup className="p-0">
         {/* The heading doubles as the drop target for "out of every folder": a tree
             needs somewhere to drop that means the root, and the only other place —
             empty space below the last row — is not a target you can aim at. */}
@@ -604,19 +584,16 @@ export function LeftSidebar({ resize }: { resize?: PanelResize }) {
   // facet's sbPosterFoldersTitle): the two groups sit stacked right on top of
   // each other here, and both saying plain "folder" read as one group split
   // in two rather than two different things.
-  const posterFolderGroup = (inFlyout: boolean, close?: () => void) => {
-    const ctx: PosterFolderCtx = inFlyout
-      ? {
-          ...posterFolderCtx,
-          inFlyout: true,
-          apply: (id) => {
-            applyPosterFolderFilter(id);
-            close?.();
-          },
-        }
-      : posterFolderCtx;
+  const posterFolderGroup = (close: () => void) => {
+    const ctx: PosterFolderCtx = {
+      ...posterFolderCtx,
+      apply: (id) => {
+        applyPosterFolderFilter(id);
+        close();
+      },
+    };
     return (
-      <SidebarGroup className={inFlyout ? 'p-0' : 'group-data-[collapsible=icon]:hidden'}>
+      <SidebarGroup className="p-0">
         <SidebarGroupLabel>{t('sbPosterFoldersSidebarTitle')}</SidebarGroupLabel>
         <SidebarGroupAction aria-label={t('foldNew')} title={t('foldNew')} onClick={newPosterFolder}>
           <Plus />
@@ -638,20 +615,19 @@ export function LeftSidebar({ resize }: { resize?: PanelResize }) {
   // lands in the chip bar ready to be adjusted. No count badge: a saved search
   // has no cheap size — counting one means scanning the whole library, and a
   // badge on every row would do that on every render.
-  const savedSearchGroup = (inFlyout: boolean, close?: () => void) => (
-    <SidebarGroup className={inFlyout ? 'p-0' : 'group-data-[collapsible=icon]:hidden'}>
+  const savedSearchGroup = (close: () => void) => (
+    <SidebarGroup className="p-0">
       <SidebarGroupLabel>{t('savedSearches')}</SidebarGroupLabel>
       <SidebarGroupContent>
         <SidebarMenu>
           {saved.map((f) => (
             <SidebarMenuItem key={f.id}>
               <SidebarMenuButton
-                tooltip={inFlyout ? undefined : f.name}
                 isActive={!!currentKey && currentKey === treeKey(f.tree)}
                 onContextMenu={(e) => savedSearchMenu(e, f)}
                 onClick={() => {
                   applySavedSearch(f.id);
-                  close?.();
+                  close();
                 }}
               >
                 <Search />
@@ -665,33 +641,16 @@ export function LeftSidebar({ resize }: { resize?: PanelResize }) {
   );
 
   return (
-    // Ctrl+B collapses to the icon rail; Ctrl+Shift+B takes the rail too (#245) — half a
-    // panel left standing is not what "use the grid wide" asks for. Same component either
-    // way: shadcn's two collapse forms differ only in this attribute, and since #583 both
-    // land instantly — so this key no longer overlaps two 200ms motions with each other.
+    // Two states, not two forms (#981): the rail, or — under #245's bulk hide — off screen
+    // entirely. Since #583 both land instantly.
     <Sidebar collapsible={panelsHidden ? 'offcanvas' : 'icon'}>
-      {/* Titlebar-height drag strip (Obsidian-type shell, #154): the sidebar starts at
-          the window top now, so its header row IS the left half of the titlebar — the
-          collapse trigger sits here (moved out of the toolbar), the rest is grab space
-          to move the window. No wordmark: chrome stays quiet. */}
-      {/* No px override: the header keeps SidebarHeader's own p-2, which is the same 8px the
-          groups and the footer below it use — so the trigger starts on the column's left edge
-          like every nav row (#628, the sidebar-column axis). The px-1 that used to be here was
-          the only 4 in the column and was what pulled the trigger 4px off that edge. */}
-      <SidebarHeader className="app-drag h-[var(--tabbar-h)] flex-row items-center justify-start">
-        {/* The tooltip is where Ctrl+B is learnable (#245): the shortcut carries no hint of
-            itself, and the target users are not assumed to know editor key conventions. Its
-            partner Ctrl+Shift+B is spelled out next to it in the Display popover, where the two
-            can be read as the pair they are — a tooltip on one button is the wrong place to
-            explain a key that acts on two panels. */}
-        <Tooltip>
-          <TooltipTrigger render={<SidebarTrigger className="app-no-drag text-muted-foreground" aria-label={t('toggleSidebar')} />} />
-          <TooltipContent side="bottom" align="start">
-            {t('toggleSidebar')}
-            <span className="text-background/60">Ctrl+B</span>
-          </TooltipContent>
-        </Tooltip>
-      </SidebarHeader>
+      {/* Titlebar-height drag strip (Obsidian-type shell, #154): the sidebar starts at the
+          window top, so its header row IS the left half of the titlebar. It held the
+          collapse trigger until #981 took the toggle away; what it does now is what it
+          always also did — give the window a grab area above the nav. No wordmark: chrome
+          stays quiet. The height is what keeps the first nav row level with the tab strip
+          across the seam (#628). */}
+      <SidebarHeader className="app-drag h-[var(--tabbar-h)] flex-row items-center justify-start" />
       <SidebarContent>
         <SidebarGroup>
           <SidebarGroupContent>
@@ -721,32 +680,28 @@ export function LeftSidebar({ resize }: { resize?: PanelResize }) {
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
-        {/* The rail's stand-ins for the three groups below (#965). The rail's scope is
-            unchanged — these are fixed rows, one per group, not the lists themselves —
-            and each one's flyout holds the real thing. Placed above the groups so the
-            rail reads in the same order the column does. */}
-        <SidebarGroup className="hidden group-data-[collapsible=icon]:flex">
+        {/* The rail's stand-ins for the three user-grown groups (#965): fixed rows, one
+            per group, whose flyouts hold the lists themselves. The rail's scope is still
+            the fixed destinations only (#678) — a row that opens a list is one of them. */}
+        <SidebarGroup>
           <SidebarGroupContent>
             <SidebarMenu>
               <RailFlyoutRow icon={<Folder />} label={t('qfCatFolder')}>
-                {(close) => folderGroup(true, close)}
+                {folderGroup}
               </RailFlyoutRow>
               {isPosters && (
                 <RailFlyoutRow icon={<Folders />} label={t('sbPosterFoldersSidebarTitle')}>
-                  {(close) => posterFolderGroup(true, close)}
+                  {posterFolderGroup}
                 </RailFlyoutRow>
               )}
               {saved.length > 0 && (
                 <RailFlyoutRow icon={<Search />} label={t('savedSearches')}>
-                  {(close) => savedSearchGroup(true, close)}
+                  {savedSearchGroup}
                 </RailFlyoutRow>
               )}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
-        {folderGroup(false)}
-        {isPosters && posterFolderGroup(false)}
-        {saved.length > 0 && savedSearchGroup(false)}
         {/* Trash (#268) — a library destination, so it lives here in the nav rather
             than in the footer (which holds the app-level entries) or in Settings, where it
             used to be. Last and always present: digiKam puts the trash as the final
@@ -784,9 +739,6 @@ export function LeftSidebar({ resize }: { resize?: PanelResize }) {
             <SidebarMenuButton tooltip={`${t('paletteTitle')} (Ctrl+K)`} onClick={() => openPalette()}>
               <Terminal />
               <span data-slot="menu-label">{t('paletteTitle')}</span>
-              {/* No room for the hint in the rail (~56px content width) — already
-                  effectively invisible there before this change, now made explicit. */}
-              <span className="ml-auto text-xs text-muted-foreground group-data-[collapsible=icon]:hidden">Ctrl+K</span>
             </SidebarMenuButton>
           </SidebarMenuItem>
           {/* Global history page (#145) — the sidebar footer row is the anchor the
@@ -803,7 +755,6 @@ export function LeftSidebar({ resize }: { resize?: PanelResize }) {
                   <SidebarMenuButton tooltip={`${t('historyTitle')} (Ctrl+H)`}>
                     <History />
                     <span data-slot="menu-label">{t('historyTitle')}</span>
-                    <span className="ml-auto text-xs text-muted-foreground group-data-[collapsible=icon]:hidden">Ctrl+H</span>
                   </SidebarMenuButton>
                 }
               />
@@ -819,14 +770,10 @@ export function LeftSidebar({ resize }: { resize?: PanelResize }) {
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
-        {/* Backup / mirror status rail. It draws its own root (P3 #6) — this used to be a
+        {/* Backup / mirror status. It draws its own root (P3 #6) — this used to be a
             host <span> the component wrote a status class onto from a layout effect. */}
         <BackupStatus />
       </SidebarFooter>
-      {/* The column's drag edge (#30). Passed in rather than read from context: only
-          the shell knows whether the sidebar is a column right now or a slide-over,
-          and the handle exists only in the first case. */}
-      {resize && <SidebarRail resize={resize} />}
     </Sidebar>
   );
 }

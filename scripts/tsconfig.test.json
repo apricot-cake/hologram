@@ -171,7 +171,6 @@
     "save-queue.test.ts",
     "saved-index.test.ts",
     "schema-canary.test.ts",
-    "sidebar-pref.test.ts",
     "tabstate.test.ts",
     "tag-types.test.ts",
     "tags.test.ts",
