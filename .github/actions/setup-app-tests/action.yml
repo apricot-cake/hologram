@@ -1,8 +1,8 @@
 name: Set up app tests
 description: >-
-  Everything an app-tests shard needs before it can run its tests: the docs-only
-  decision, the dependency tree, the app bundles and a Playwright Chromium.
-  Extracted from app-tests.yml when that job was split into parallel shards
+  Everything an app-tests shard needs before it can run its tests: the
+  dependency tree, the app bundles and a Playwright Chromium. Extracted from
+  app-tests.yml when that job was split into parallel shards
   (#937) — the steps below are identical for every shard, so they live here once
   instead of three times.
 
@@ -23,59 +23,9 @@ description: >-
   install. Nothing in that list is dead weight any more — see the Setup Node
   step for the one entry that was.
 
-inputs:
-  github-token:
-    description: Token for the docs-only detection's `gh api .../files` call.
-    required: true
-
-outputs:
-  docs_only:
-    description: >-
-      '"true" when a pull request touches nothing but *.md and docs/**. ⚠️ Always
-      "false" since #996 dropped the pull_request trigger — see the step below.'
-    value: ${{ steps.docs-only.outputs.docs_only }}
-
 runs:
   using: composite
   steps:
-    # ⚠️ DEAD since #996 removed the `pull_request` trigger: on a push event this
-    # returns docs_only=false unconditionally, so every shard runs its full
-    # preparation and tests no matter what changed. Kept because #993 rewrites
-    # the detection to read the pushed diff instead of a PR number.
-    #
-    # Why it was shaped this way (#928): docs-only PRs (README, docs/**) don't
-    # need any layer these shards run, and a required-check paths filter couldn't
-    # express that — a skipped required workflow leaves the check "expected"
-    # forever and blocks the merge instead.
-    #
-    # This step also used to decide a `fail_fast` output, which made the later
-    # layers in a shard stop at the first red one on a pull request (#936). #968
-    # removed it: a shard is now a single step — one worker pool, or the
-    # Playwright run — so there is no "later layer" left for it to skip, and the
-    # pool has always run every script it was given regardless (#933).
-    - name: Detect docs-only change
-      id: docs-only
-      # windows-latest's default shell is pwsh, not bash — this script is POSIX sh.
-      shell: bash
-      env:
-        GH_TOKEN: ${{ inputs.github-token }}
-      run: |
-        if [ "${{ github.event_name }}" != "pull_request" ]; then
-          echo "docs_only=false" >> "$GITHUB_OUTPUT"
-          exit 0
-        fi
-        files="$(gh api --paginate "repos/${{ github.repository }}/pulls/${{ github.event.number }}/files" --jq '.[].filename')"
-        docs_only=true
-        if [ -z "$files" ]; then
-          docs_only=false
-        fi
-        while IFS= read -r f; do
-          case "$f" in
-            *.md|docs/*) ;;
-            *) docs_only=false ;;
-          esac
-        done <<< "$files"
-        echo "docs_only=$docs_only" >> "$GITHUB_OUTPUT"
     # Deliberately WITHOUT `cache: npm`, unlike ci.yml (#967). That option caches
     # npm's DOWNLOAD cache, and its key is `node-cache-<os>-<arch>-npm-<hash of
     # the same two lockfiles>` — for npm it is restored with that one key and no
@@ -94,7 +44,6 @@ runs:
     # cache is the only thing it has.
     - name: Setup Node
       id: setup-node
-      if: steps.docs-only.outputs.docs_only != 'true'
       uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
       with:
         node-version-file: package.json
@@ -106,7 +55,6 @@ runs:
     # The shards share one cache entry: the key has nothing shard-specific in it,
     # so the first shard to finish saves it and the rest hit it (#937).
     - name: Cache node_modules
-      if: steps.docs-only.outputs.docs_only != 'true'
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: |
@@ -124,14 +72,12 @@ runs:
     # walks and verifies them — and 5s to build the extension, which is real work
     # and not an install at all.
     - name: Install dependencies
-      if: steps.docs-only.outputs.docs_only != 'true'
       shell: pwsh
       run: npm run setup
     # The harnesses spawn `electron .` in app/, whose main field points at
     # app/out. A fresh checkout has no build output and `npm run setup` does not
     # produce any, so without this every harness dies on a missing entry point.
     - name: Build app bundles
-      if: steps.docs-only.outputs.docs_only != 'true'
       shell: pwsh
       run: npm run build --workspace=app
     # Playwright's browser build is tied to the resolved @playwright/test version,
@@ -139,13 +85,11 @@ runs:
     # tracks what actually gets installed.
     - name: Resolve Playwright version
       id: playwright-version
-      if: steps.docs-only.outputs.docs_only != 'true'
       shell: bash
       run: |
         version=$(node -p "require('./package-lock.json').packages['node_modules/@playwright/test'].version")
         echo "version=$version" >> "$GITHUB_OUTPUT"
     - name: Cache Playwright browsers
-      if: steps.docs-only.outputs.docs_only != 'true'
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: ~\AppData\Local\ms-playwright
@@ -155,6 +99,5 @@ runs:
     # loads an unpacked MV3 extension, which is Chromium-only anyway. Runs even
     # on a cache hit — it returns immediately when the browser is already there.
     - name: Install Playwright Chromium
-      if: steps.docs-only.outputs.docs_only != 'true'
       shell: pwsh
       run: npx playwright install chromium

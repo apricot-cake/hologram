@@ -48,19 +48,38 @@ name: App tests
 # was checked twice — once on refs/pull/N/merge, once on what landed. The cost
 # is that two branches which pass alone and break together now break main and
 # are caught there, not before.
+#
+# `paths` (#993) replaces a hand-written docs-only detection step that called
+# `gh api .../files` on a PR number and went dead the moment #996 dropped the
+# `pull_request` trigger (no PR to look up on push — every push ran every
+# shard). This list is an allow-list, not an exclusion, because what this
+# workflow actually needs to see is narrow: anything not listed here defaults
+# to NOT running. A change that should have triggered this and doesn't will
+# still be caught by the nightly `schedule` run below, which `paths` cannot
+# filter — that run always sees everything.
 on:
   push:
     branches: [main]
+    paths:
+      - 'app/**'
+      - 'extension/**'
+      - 'native-host/**'
+      - 'scripts/**'
+      - '!scripts/make-icons.cjs'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'playwright.config.ts'
+      - 'vitest.config.ts'
+      - '.github/workflows/app-tests.yml'
+      - '.github/actions/setup-app-tests/**'
   schedule:
     # 18:37 UTC = 03:37 JST. Off the hour and outside 22:00-02:00 UTC on purpose:
     # scheduled runs queue behind everyone else's, and those are the peaks.
     - cron: '37 18 * * *'
   workflow_dispatch:
 
-# pull-requests: read is for the docs-only detection step's `gh api .../files` call.
 permissions:
   contents: read
-  pull-requests: read
 
 concurrency:
   group: app-tests-${{ github.ref }}
@@ -90,12 +109,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Prepare
-        id: prep
         uses: ./.github/actions/setup-app-tests
-        with:
-          github-token: ${{ github.token }}
       - name: App harnesses, extension e2e and overlay tests
-        if: steps.prep.outputs.docs_only != 'true'
         run: node scripts/run-app-tests.cts --shard=${{ matrix.shard }}/2
 
   # Shard 3 — the Playwright layer (#14). Only the `flow` project: the `visual` one
@@ -111,12 +126,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Prepare
-        id: prep
         uses: ./.github/actions/setup-app-tests
-        with:
-          github-token: ${{ github.token }}
       - name: Electron E2E (user flows)
-        if: steps.prep.outputs.docs_only != 'true'
         run: npx playwright test --project=flow
 
   # The name below is the one main's ruleset requires, and it stays on this job
