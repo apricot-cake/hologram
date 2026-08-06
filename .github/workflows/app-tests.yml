@@ -110,16 +110,16 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Prepare
         uses: ./.github/actions/setup-app-tests
-      # TEMP PROBE (#1007) — revert to `node scripts/run-app-tests.cts --shard=...` before the PR.
-      - name: Marquee probe x20
+      # TEMP (#1007) — revert to `node scripts/run-app-tests.cts --shard=...` before merging.
+      - name: Marquee x20
         shell: bash
         run: |
           pass=0; fail=0
           for i in $(seq 1 20); do
-            if node scripts/test-app-marquee.cts > "probe-$i.log" 2>&1; then pass=$((pass+1)); echo "== run $i PASS"; else fail=$((fail+1)); echo "== run $i FAIL"; fi
-            grep -a '  got: ' "probe-$i.log" | sed "s/^/run$i /"
+            if node scripts/test-app-marquee.cts > "m-$i.log" 2>&1; then pass=$((pass+1)); else fail=$((fail+1)); echo "== run $i FAIL"; grep -a 'FAIL \|  got: ' "m-$i.log"; fi
           done
           echo "=== pass=$pass fail=$fail ==="
+          test "$fail" -eq 0
 
   # Shard 3 — the Playwright layer (#14). Only the `flow` project: the `visual` one
   # compares committed baselines taken on the development machine, and a runner's
