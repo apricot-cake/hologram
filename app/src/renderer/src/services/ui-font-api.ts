@@ -17,7 +17,7 @@
 // Modeled on services/theme-api.ts, minus that module's pre-paint boot pass: a font swap
 // reflows text but does not invert light/dark contrast, so unlike the theme it does not
 // need to land before first paint — it applies once this module loads, same as every
-// other non-FOUC pref (sidebarWidth, gridSize, …).
+// other non-FOUC pref (inspectorWidth, gridSize, …).
 
 const KEY = 'hologram-ui-font';
 let family = '';

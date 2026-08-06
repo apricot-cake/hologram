@@ -37,8 +37,6 @@ const PREF_KEYS = [
   'posterLayoutMode',
   'posterShowInfo',
   'posterGridSize',
-  'sidebarOpen',
-  'sidebarWidth',
   'inspectorOpen',
   'inspectorWidth',
   'panelsHidden',
@@ -168,11 +166,9 @@ function register(ctx: IpcContext) {
       posterLayoutMode: ['grid', 'list'].includes(cfg.posterLayoutMode) ? cfg.posterLayoutMode : legacyPosterDensity(cfg) === 'list' ? 'list' : 'grid',
       posterShowInfo: typeof cfg.posterShowInfo === 'boolean' ? cfg.posterShowInfo : legacyPosterDensity(cfg) !== 'tile',
       posterGridSize: Number.isFinite(cfg.posterGridSize) ? cfg.posterGridSize : legacyPosterGridSize(cfg), // poster grid column width px
-      sidebarOpen: typeof cfg.sidebarOpen === 'boolean' ? cfg.sidebarOpen : null, // sidebar expanded/collapsed; null = never toggled
-      sidebarWidth: Number.isFinite(cfg.sidebarWidth) ? cfg.sidebarWidth : null, // dragged column width px; null = never resized
       inspectorOpen: typeof cfg.inspectorOpen === 'boolean' ? cfg.inspectorOpen : null, // inspector panel shown/hidden; null = never toggled
       inspectorWidth: Number.isFinite(cfg.inspectorWidth) ? cfg.inspectorWidth : null,
-      panelsHidden: typeof cfg.panelsHidden === 'boolean' ? cfg.panelsHidden : null, // #245 bulk hide over the two panels above; null = never used
+      panelsHidden: typeof cfg.panelsHidden === 'boolean' ? cfg.panelsHidden : null, // #245 bulk hide over the sidebar + inspector; null = never used
       // #46: up to 9 manually-pinned tags for triage mode's number-key quick tagging.
       triagePinnedTags: Array.isArray(cfg.triagePinnedTags) ? cfg.triagePinnedTags.filter((v: unknown): v is string => typeof v === 'string').slice(0, 9) : [],
       // #207: web-search popover prefs - both null when never set (the popover itself supplies the default checked set / no home instance).

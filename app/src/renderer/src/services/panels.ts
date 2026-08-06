@@ -7,17 +7,18 @@
 // panels, Shift+Tab = all of them). The key itself is not borrowed — see #245 for why Tab,
 // backtick and Ctrl+\ were all rejected — only the shape of the pair.
 //
-// WHAT THIS STATE IS: a MASK, not a mutation of the two panels' own state. While it is on,
-// sidebar-pref.ts's saved choice and inspector-panel.ts's state are left exactly as they
-// were and the shell simply paints both panels closed. That IS the restore mechanism, and
-// it is why there is no snapshot object anywhere: the pair to come back to is still sitting
-// in the two panels' own state. It also lets the mask itself persist to config.json — a
-// snapshot held only in memory could not survive a restart, so a persisted mask paired
-// with one would come back unable to say what it was covering.
+// WHAT THIS STATE IS: a MASK, not a mutation of the panels' own state. While it is on,
+// inspector-panel.ts's state is left exactly as it was and the shell simply paints both
+// panels closed. That IS the restore mechanism, and it is why there is no snapshot object
+// anywhere: the pair to come back to is still sitting in the panels' own state. It also
+// lets the mask itself persist to config.json — a snapshot held only in memory could not
+// survive a restart, so a persisted mask paired with one would come back unable to say
+// what it was covering. (The sidebar has no state of its own to preserve since #981: it
+// is a rail, and this mask is the only thing that takes it off screen.)
 //
 // THE INVARIANT THAT MAKES IT WORK: nothing writes a panel's own state while the mask is
-// on. Every explicit individual action — Ctrl+B, the sidebar trigger, the inspector's
-// toggle — calls reveal() FIRST and then applies itself, so the mask drops and the user's
+// on. Every explicit individual action — the inspector's toggle, an image tab opening —
+// calls reveal() FIRST and then applies itself, so the mask drops and the user's
 // action lands on a panel they can see. Hiding two panels and then silently rearranging
 // them behind the mask is the one behavior #245 ruled out ("we don't build behavior where
 // the internal state changes while it stays hidden"), and it is ruled out here rather than at each call site by giving them
@@ -26,7 +27,7 @@
 // Since #244 declined to give the inspector a shortcut of its own, Ctrl+Shift+B is also
 // the only keyboard route to the inspector.
 //
-// Persistence is the two-tier shape sidebar-pref.ts / inspector-panel.ts already use:
+// Persistence is the two-tier shape inspector-panel.ts / panel-width-pref.ts already use:
 // config.json is the durable home (setPref over IPC) and localStorage is a synchronous
 // cache, because the shell needs an answer during React's FIRST render — an IPC round trip
 // could only answer a tick later, painting both panels and snapping them away right after
@@ -140,10 +141,10 @@ export async function load(): Promise<void> {
 // leave the key alone while typing, and while a modal owns the screen — there is nothing
 // to widen behind a dialog.
 //
-// Ctrl+B without Shift belongs to the sidebar alone and is handled by SidebarProvider's own
-// listener (components/ui/sidebar.tsx), which turns Shift away for this one.
 // #246: the chord itself (Ctrl+Shift+B) now lives in the registry; this keeps only the guard
-// (still the house convention — selection-builder.ts's Ctrl+A) and the action.
+// (still the house convention — selection-builder.ts's Ctrl+A) and the action. Shift used to
+// be what told this apart from the sidebar's own Ctrl+B; #981 retired that key with the
+// expanded column, so this chord no longer has a plain-chord partner.
 function canExecutePanelsToggle(e: KeyboardEvent): boolean {
   if (isTypingTarget(e)) return false;
   if (confirmGet() || lightboxIsOpen()) return false;
@@ -152,9 +153,8 @@ function canExecutePanelsToggle(e: KeyboardEvent): boolean {
   return true;
 }
 
-// Plain Ctrl+B belongs to the sidebar alone (SidebarProvider's own listener,
-// components/ui/sidebar.tsx) — Shift is what tells the two apart, so it stays a real
-// (non-ignoreShift) part of this chord.
+// Shift stays a real (non-ignoreShift) part of the chord: it is what the key MEANS here
+// ('widen what this applies to', Lightroom's Tab / Shift+Tab), not a glyph modifier.
 registerShortcut({
   id: 'panels.toggle',
   titleKey: 'shortcutTogglePanels',

@@ -5,43 +5,43 @@ import { mergeProps } from '@base-ui/react/merge-props';
 import { useRender } from '@base-ui/react/use-render';
 import { cva, type VariantProps } from 'class-variance-authority';
 
-import { useIsMobile } from '@/hooks/use-mobile';
 import { cn } from '@/lib/utils';
-import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { PanelLeftIcon } from 'lucide-react';
-import type { PanelResize } from '@/shell/use-panel-resize.ts';
 
-// Upstream persists `open` to a sidebar_state cookie for Next.js to read back during SSR.
-// Dropped here (#149): there is no server, and the renderer is a file:// document, where
-// Chromium refuses cookie writes outright. AppShell owns the state and persists it to
-// config.json instead — see services/sidebar-pref.ts.
-const SIDEBAR_WIDTH = '16rem';
-const SIDEBAR_WIDTH_MOBILE = '18rem';
+// FORKED FROM UPSTREAM (#981): the sidebar has exactly ONE form — the labeled rail.
+//
+// Upstream's Sidebar is an expand/collapse pair: `open` state, a cookie to persist it, a
+// trigger, Ctrl+B, and a mobile Sheet. Hologram had all of that (#149 put the state in
+// config.json instead of the cookie, since the renderer is not served by a Next.js
+// server), then #678 made the rail the DEFAULT and #965 gave the rail a flyout for every
+// user-grown group. At that point the expanded column could do nothing the rail cannot,
+// while the pair of forms cost a second render path, a saved preference the user could
+// not reach from a narrow window, and a width-linked retreat (#259).
+//
+// So the state is gone, not merely defaulted: `state` is the constant 'collapsed' and the
+// only variation left is #245's bulk hide, which takes the whole panel off screen rather
+// than giving it a second shape. Everything below still keys off `data-collapsible=icon`
+// — that IS the rail's styling — so the fork stays close to upstream in every other way.
+// See docs/decisions/0027-sidebar-is-a-rail-only.md.
+//
 // FORKED FROM UPSTREAM (#678): upstream's icon rail is an icon-only square (48px is
-// enough to center a 16px glyph). Hologram's collapsed state is now a LABELED rail —
+// enough to center a 16px glyph). Hologram's rail is a LABELED one —
 // Material Design 3's "Navigation rail" (https://m3.material.io/components/navigation-rail/guidelines):
-// collapsed is the DEFAULT, and each item is an icon over a short 1-word label, never an
-// icon alone — an icon-only rail doesn't read ("Something like the settings icon you can
-// tell just by looking at it, but the grid or person-mark icons for the views are hard to
-// get across, right?", the issue's own reasoning).
+// each item is an icon over a short 1-word label, never an icon alone — an icon-only rail
+// doesn't read ("Something like the settings icon you can tell just by looking at it, but
+// the grid or person-mark icons for the views are hard to get across, right?", #678's own
+// reasoning).
 // 72px is room enough for a stacked icon-over-label row without wrapping onto a third
 // line. See sidebarMenuButtonVariants below for the row layout that actually uses this.
+// It is now the panel's ONLY width, so --sidebar-width (upstream's expanded 16rem) is
+// gone with the expanded form; offcanvas slides the rail out by this width instead.
 const SIDEBAR_WIDTH_ICON = '4.5rem';
-const SIDEBAR_KEYBOARD_SHORTCUT = 'b';
 
 type SidebarContextProps = {
-  state: 'expanded' | 'collapsed';
-  open: boolean;
-  setOpen: (open: boolean) => void;
-  openMobile: boolean;
-  setOpenMobile: (open: boolean) => void;
-  isMobile: boolean;
-  toggleSidebar: () => void;
+  state: 'collapsed';
 };
 
 const SidebarContext = React.createContext<SidebarContextProps | null>(null);
@@ -55,87 +55,19 @@ function useSidebar() {
   return context;
 }
 
-function SidebarProvider({
-  defaultOpen = true,
-  open: openProp,
-  onOpenChange: setOpenProp,
-  className,
-  style,
-  children,
-  ...props
-}: React.ComponentProps<'div'> & {
-  defaultOpen?: boolean;
-  open?: boolean;
-  onOpenChange?: (open: boolean) => void;
-}) {
-  const isMobile = useIsMobile();
-  const [openMobile, setOpenMobile] = React.useState(false);
+// The context is a constant now (#981) — nothing here can change shape. It stays a
+// context rather than a plain constant so the components below read the state the same
+// way upstream's do, and so a future second form (if one is ever justified) has one
+// place to come back to.
+const RAIL_CONTEXT: SidebarContextProps = { state: 'collapsed' };
 
-  // This is the internal state of the sidebar.
-  // We use openProp and setOpenProp for control from outside the component.
-  const [_open, _setOpen] = React.useState(defaultOpen);
-  const open = openProp ?? _open;
-  const setOpen = React.useCallback(
-    (value: boolean | ((value: boolean) => boolean)) => {
-      const openState = typeof value === 'function' ? value(open) : value;
-      if (setOpenProp) {
-        setOpenProp(openState);
-      } else {
-        _setOpen(openState);
-      }
-    },
-    [setOpenProp, open],
-  );
-
-  // Helper to toggle the sidebar.
-  const toggleSidebar = React.useCallback(() => {
-    return isMobile ? setOpenMobile((open) => !open) : setOpen((open) => !open);
-  }, [isMobile, setOpen, setOpenMobile]);
-
-  // Adds a keyboard shortcut to toggle the sidebar.
-  //
-  // FORKED FROM UPSTREAM (#245): Ctrl+SHIFT+B now hides this panel and the inspector
-  // together, so the individual key has to say it wants the plain chord. Upstream's
-  // `event.key === 'b'` already misses the shifted chord — until Caps Lock swaps the pair
-  // and Ctrl+Shift+B arrives as 'b' while plain Ctrl+B arrives as 'B', at which point the
-  // two shortcuts trade places. Comparing case-insensitively and rejecting the modifiers
-  // outright is what makes the pair hold under Caps Lock.
-  React.useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if ((event.key || '').toLowerCase() === SIDEBAR_KEYBOARD_SHORTCUT && (event.metaKey || event.ctrlKey) && !event.shiftKey && !event.altKey) {
-        event.preventDefault();
-        toggleSidebar();
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [toggleSidebar]);
-
-  // We add a state so that we can do data-state="expanded" or "collapsed".
-  // This makes it easier to style the sidebar with Tailwind classes.
-  const state = open ? 'expanded' : 'collapsed';
-
-  const contextValue = React.useMemo<SidebarContextProps>(
-    () => ({
-      state,
-      open,
-      setOpen,
-      isMobile,
-      openMobile,
-      setOpenMobile,
-      toggleSidebar,
-    }),
-    [state, open, setOpen, isMobile, openMobile, setOpenMobile, toggleSidebar],
-  );
-
+function SidebarProvider({ className, style, children, ...props }: React.ComponentProps<'div'>) {
   return (
-    <SidebarContext.Provider value={contextValue}>
+    <SidebarContext.Provider value={RAIL_CONTEXT}>
       <div
         data-slot="sidebar-wrapper"
         style={
           {
-            '--sidebar-width': SIDEBAR_WIDTH,
             '--sidebar-width-icon': SIDEBAR_WIDTH_ICON,
             ...style,
           } as React.CSSProperties
@@ -149,57 +81,29 @@ function SidebarProvider({
   );
 }
 
+// FORKED FROM UPSTREAM (#981): no mobile branch. Upstream swaps the panel for a Sheet
+// below `md` (768px), and this window's minimum is 720 — so shrinking it past 767 used to
+// replace the rail with a Sheet that has no opener left, i.e. the sidebar disappeared.
+// A desktop-only app has no mobile form; the rail is narrow enough to keep at any size
+// the window can reach. `md:block` on the container below goes with it, for the same
+// reason: at 720px it was hiding the panel outright.
 function Sidebar({
   side = 'left',
   variant = 'sidebar',
-  collapsible = 'offcanvas',
+  collapsible = 'icon',
   className,
   children,
-  dir,
   ...props
 }: React.ComponentProps<'div'> & {
   side?: 'left' | 'right';
   variant?: 'sidebar' | 'floating' | 'inset';
-  collapsible?: 'offcanvas' | 'icon' | 'none';
+  /** 'icon' is the rail; 'offcanvas' takes it off screen entirely (#245's bulk hide). */
+  collapsible?: 'offcanvas' | 'icon';
 }) {
-  const { isMobile, state, openMobile, setOpenMobile } = useSidebar();
-
-  if (collapsible === 'none') {
-    return (
-      <div data-slot="sidebar" className={cn('flex h-full w-(--sidebar-width) flex-col bg-sidebar text-sidebar-foreground', className)} {...props}>
-        {children}
-      </div>
-    );
-  }
-
-  if (isMobile) {
-    return (
-      <Sheet open={openMobile} onOpenChange={setOpenMobile} {...props}>
-        <SheetContent
-          dir={dir}
-          data-sidebar="sidebar"
-          data-slot="sidebar"
-          data-mobile="true"
-          className="w-(--sidebar-width) bg-sidebar p-0 text-sidebar-foreground [&>button]:hidden"
-          style={
-            {
-              '--sidebar-width': SIDEBAR_WIDTH_MOBILE,
-            } as React.CSSProperties
-          }
-          side={side}
-        >
-          <SheetHeader className="sr-only">
-            <SheetTitle>Sidebar</SheetTitle>
-            <SheetDescription>Displays the mobile sidebar.</SheetDescription>
-          </SheetHeader>
-          <div className="flex h-full w-full flex-col">{children}</div>
-        </SheetContent>
-      </Sheet>
-    );
-  }
+  const { state } = useSidebar();
 
   return (
-    <div className="group peer hidden text-sidebar-foreground md:block" data-state={state} data-collapsible={state === 'collapsed' ? collapsible : ''} data-variant={variant} data-side={side} data-slot="sidebar">
+    <div className="group peer block text-sidebar-foreground" data-state={state} data-collapsible={collapsible} data-variant={variant} data-side={side} data-slot="sidebar">
       {/* This is what handles the sidebar gap on desktop */}
       <div
         data-slot="sidebar-gap"
@@ -212,10 +116,13 @@ function Sidebar({
           // Retiring the transition also retired the 'in-data-[resizing]:transition-none'
           // escape hatch the drag-resize fork (#30) needed — with nothing animating, a
           // drag cannot trail the pointer, so there is nothing left to switch off.
-          'relative w-(--sidebar-width) bg-transparent',
+          // #981: the rail's width IS the panel's width, so --sidebar-width-icon is what
+          // the gap reserves and what offcanvas slides out by. Upstream's --sidebar-width
+          // (the expanded column) has no meaning here any more.
+          'relative bg-transparent',
           'group-data-[collapsible=offcanvas]:w-0',
           'group-data-[side=right]:rotate-180',
-          variant === 'floating' || variant === 'inset' ? 'group-data-[collapsible=icon]:w-[calc(var(--sidebar-width-icon)+(--spacing(4)))]' : 'group-data-[collapsible=icon]:w-(--sidebar-width-icon)',
+          variant === 'floating' || variant === 'inset' ? 'w-[calc(var(--sidebar-width-icon)+(--spacing(4)))]' : 'w-(--sidebar-width-icon)',
         )}
       />
       <div
@@ -223,9 +130,9 @@ function Sidebar({
         data-side={side}
         className={cn(
           // No 'transition-[left,right,width] duration-200 ease-linear' (#583) — see the gap above.
-          'fixed inset-y-0 z-10 hidden h-svh w-(--sidebar-width) data-[side=left]:left-0 data-[side=left]:group-data-[collapsible=offcanvas]:left-[calc(var(--sidebar-width)*-1)] data-[side=right]:right-0 data-[side=right]:group-data-[collapsible=offcanvas]:right-[calc(var(--sidebar-width)*-1)] md:flex',
+          'fixed inset-y-0 z-10 flex h-svh w-(--sidebar-width-icon) data-[side=left]:left-0 data-[side=left]:group-data-[collapsible=offcanvas]:left-[calc(var(--sidebar-width-icon)*-1)] data-[side=right]:right-0 data-[side=right]:group-data-[collapsible=offcanvas]:right-[calc(var(--sidebar-width-icon)*-1)]',
           // Adjust the padding for floating and inset variants.
-          variant === 'floating' || variant === 'inset' ? 'p-2 group-data-[collapsible=icon]:w-[calc(var(--sidebar-width-icon)+(--spacing(4))+2px)]' : 'group-data-[collapsible=icon]:w-(--sidebar-width-icon) group-data-[side=left]:border-r group-data-[side=right]:border-l',
+          variant === 'floating' || variant === 'inset' ? 'w-[calc(var(--sidebar-width-icon)+(--spacing(4))+2px)] p-2' : 'group-data-[side=left]:border-r group-data-[side=right]:border-l',
           className,
         )}
         {...props}
@@ -238,90 +145,13 @@ function Sidebar({
   );
 }
 
-// FORKED FROM UPSTREAM (#628): the button is `icon` (32), not upstream's `icon-sm` (28).
+// REMOVED FROM UPSTREAM (#981): SidebarTrigger and SidebarRail.
 //
-// 32 is the size this column already agrees on — SidebarMenuButton is size-8 in the icon rail,
-// and the inspector toggle at the other end of the same band is 32 too. Upstream's 28 made the
-// trigger the one 28 in a column of 32s, which put its centre 6px left of the rail's mid-line
-// (the x half of #628). Changed here rather than by a className at the single call site,
-// because "the child decides its own size" is the shape that produced the drift in the first
-// place; the size belongs to the column, and this is the column's component.
-// #678 addendum: `group-data-[collapsible=icon]:w-full!` makes the trigger fill the
-// rail's content width in icon mode, instead of staying the 32px square it is
-// everywhere else. Nav rows (sidebarMenuButtonVariants below) now widen to `w-full` in
-// the rail too, to hold a label — without this the trigger would be the one 32px-wide
-// control above a column of ~56px-wide rows, and the #628 axis (same left edge, same
-// width, same centre x) would break again the same way the 28-vs-32 mismatch did.
-// #818 addendum: `transition` (Tailwind's default property list — colour, shadow,
-// transform) instead of Button's `transition-all`, so the width above is NOT animated.
-// The collapse is instant everywhere else (the column, and the nav rows since #583), so
-// `transition-all` left this one control easing from 32 to the rail's width over 150ms:
-// on every collapse the trigger visibly lagged behind the rows it is supposed to share
-// an edge and a width with, and the #628 axis test measured whatever the tween happened
-// to be at (53 / 54 / 55 across runs — that spread is what made app-tests.yml flaky).
-function SidebarTrigger({ className, onClick, ...props }: React.ComponentProps<typeof Button>) {
-  const { toggleSidebar } = useSidebar();
-
-  return (
-    <Button
-      data-sidebar="trigger"
-      data-slot="sidebar-trigger"
-      variant="ghost"
-      size="icon"
-      className={cn('transition group-data-[collapsible=icon]:w-full!', className)}
-      onClick={(event) => {
-        onClick?.(event);
-        toggleSidebar();
-      }}
-      {...props}
-    >
-      <PanelLeftIcon />
-      <span className="sr-only">Toggle Sidebar</span>
-    </Button>
-  );
-}
-
-// FORKED FROM UPSTREAM (#30): the rail gains drag-to-resize.
-//
-// Upstream ships it as a toggle whose cursor is already `w-resize` — it looks like it
-// resizes the sidebar and does not, because shadcn has no resize story for Sidebar at
-// all (three open discussions, no maintainer answer; no official block does it). Pass
-// `resize` (from usePanelResize) and the rail becomes a window splitter instead:
-// drag = resize, double-click = default width. Without the prop it is upstream's
-// toggle, unchanged.
-//
-// The two roles are not combined, because click-to-toggle and double-click-to-reset
-// fight: a double click delivers two clicks first, so the panel would collapse and
-// reopen before the reset lands. Hologram never mounted the rail as a toggle, so there
-// is nothing to keep — collapsing stays with SidebarTrigger and Ctrl+B, and the rail
-// is the resize edge, as it is in VS Code (sash) and Lightroom.
-function SidebarRail({ className, resize, ...props }: React.ComponentProps<'button'> & { resize?: PanelResize }) {
-  const { toggleSidebar } = useSidebar();
-
-  return (
-    <button
-      data-sidebar="rail"
-      data-slot="sidebar-rail"
-      aria-label="Toggle Sidebar"
-      tabIndex={-1}
-      onClick={resize ? undefined : toggleSidebar}
-      title={resize ? resize.handleProps['aria-label'] : 'Toggle Sidebar'}
-      {...resize?.handleProps}
-      className={cn(
-        // No `transition-all` (#583): this rail rides the panel's edge, so it has to
-        // arrive when the panel does — and the panel is instant now.
-        'absolute inset-y-0 z-20 hidden w-4 group-data-[side=left]:-right-4 group-data-[side=right]:left-0 after:absolute after:inset-y-0 after:start-1/2 after:w-[2px] hover:after:bg-sidebar-border sm:flex ltr:-translate-x-1/2 rtl:-translate-x-1/2',
-        'in-data-[side=left]:cursor-w-resize in-data-[side=right]:cursor-e-resize',
-        '[[data-side=left][data-state=collapsed]_&]:cursor-e-resize [[data-side=right][data-state=collapsed]_&]:cursor-w-resize',
-        'group-data-[collapsible=offcanvas]:translate-x-0 group-data-[collapsible=offcanvas]:after:left-full hover:group-data-[collapsible=offcanvas]:bg-sidebar',
-        '[[data-side=left][data-collapsible=offcanvas]_&]:-right-2',
-        '[[data-side=right][data-collapsible=offcanvas]_&]:-left-2',
-        className,
-      )}
-      {...props}
-    />
-  );
-}
+// The trigger was the collapse button in the sidebar's header (#628 sized it to the
+// column's 32px axis, #678 widened it to the rail); the rail was upstream's edge toggle,
+// forked in #30 into the panel's drag-to-resize splitter. With one form and one width
+// there is nothing for either to do — no state to flip, no width to drag. The inspector
+// keeps its own splitter (shell/InspectorRail.tsx), which was always a separate part.
 
 function SidebarInset({ className, ...props }: React.ComponentProps<'main'>) {
   return (
@@ -453,7 +283,6 @@ function SidebarMenuButton({
     isActive?: boolean;
     tooltip?: string | React.ComponentProps<typeof TooltipContent>;
   } & VariantProps<typeof sidebarMenuButtonVariants>) {
-  const { isMobile, state } = useSidebar();
   const comp = useRender({
     defaultTagName: 'button',
     props: mergeProps<'button'>(
@@ -481,10 +310,13 @@ function SidebarMenuButton({
     };
   }
 
+  // #981: upstream hides the tooltip while the sidebar is expanded (the label is right
+  // there). There is no expanded state left, so the tooltip is simply always available —
+  // the rail's own label is a truncated one word, and the tooltip is the full name.
   return (
     <Tooltip>
       {comp}
-      <TooltipContent side="right" align="center" hidden={state !== 'collapsed' || isMobile} {...tooltip} />
+      <TooltipContent side="right" align="center" {...tooltip} />
     </Tooltip>
   );
 }
@@ -601,9 +433,6 @@ function SidebarMenuSubButton({
 }
 
 export {
-  // #30 reads the default width from here rather than repeating "16rem": the
-  // double-click reset and the component have to mean the same number.
-  SIDEBAR_WIDTH,
   Sidebar,
   SidebarContent,
   SidebarFooter,
@@ -624,8 +453,6 @@ export {
   SidebarMenuSubButton,
   SidebarMenuSubItem,
   SidebarProvider,
-  SidebarRail,
   SidebarSeparator,
-  SidebarTrigger,
   useSidebar,
 };

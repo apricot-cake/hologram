@@ -160,8 +160,7 @@ function GlobalShortcuts() {
       handleShortcutHistoryKey(e);
       // Ctrl/Cmd+Shift+B = hide the sidebar and the inspector together (#245). Same
       // arrangement as the palette key above: guard + action sit next to the state in
-      // services/panels.ts, and only the registration is here. Plain Ctrl+B stays with
-      // SidebarProvider's own listener — the sidebar alone is its business.
+      // services/panels.ts, and only the registration is here.
       handleShortcutPanelsKey(e);
       // Ctrl/Cmd+0 = fit / Ctrl/Cmd+1 = actual size while an image view is showing
       // (#150). Same arrangement again: the guard is that a zoomable slide has

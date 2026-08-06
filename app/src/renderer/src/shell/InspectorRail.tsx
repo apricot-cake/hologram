@@ -1,5 +1,6 @@
 // Resize handle for the right inspector (#30) — the sidebar's rail has an upstream
-// home (SidebarRail); this column has none, so its edge is drawn here.
+// home (shadcn's SidebarRail, forked in #30 and removed with the sidebar's drag in #981);
+// this column has none, so its edge is drawn here.
 //
 // Sits on the panel's left edge, straddling it: the grab zone is wider than the 1px
 // border it appears to be, which is the same trade the sidebar rail makes. Only the

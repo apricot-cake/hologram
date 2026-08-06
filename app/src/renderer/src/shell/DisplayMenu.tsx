@@ -274,12 +274,10 @@ function TimelineControls() {
 // toolbar itself holds PREDICATES (search / filter / display) and a panel is not one — the
 // split InspectorToggle's header describes, applied one level in.
 //
-// One switch, not three. This surface can honestly own the mask (services/panels.ts is its
-// single home), but the sidebar's own open state is React-local to AppShell — it carries a
-// transient narrow-window form on top of the saved choice — so a switch here claiming to be
-// the sidebar would be reading a different answer than the shell paints. The pair is
-// written out below instead, which is what #245 asked this menu for: the two keys side by
-// side, where Ctrl+B → Ctrl+Shift+B reads as "add Shift, take more with it".
+// One switch, and one key to teach. #245 gave this menu a pair — Ctrl+B for the sidebar
+// alone, Ctrl+Shift+B for both — but the sidebar has no open state of its own any more
+// (#981: it is a rail or it is hidden with everything else), so the plain chord is gone
+// and only the mask is left to name.
 //
 // Mode-independent, so it renders outside the posts/posters branch.
 function PanelControls() {

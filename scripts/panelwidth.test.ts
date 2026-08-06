@@ -15,18 +15,6 @@ import { LIMITS, clampWidth } from '../app/src/renderer/src/services/panel-width
 const WIDE = 2560; // a width where the viewport cap never kicks in
 
 describe('絶対的な上下限', () => {
-  test('sidebar: 範囲内はそのまま', () => {
-    expect(clampWidth('sidebarWidth', 300, WIDE)).toBe(300);
-  });
-
-  test('sidebar: 下限未満は引き上げ', () => {
-    expect(clampWidth('sidebarWidth', 40, WIDE)).toBe(LIMITS.sidebarWidth.min);
-  });
-
-  test('sidebar: 上限超えは引き下げ', () => {
-    expect(clampWidth('sidebarWidth', 9999, WIDE)).toBe(LIMITS.sidebarWidth.max);
-  });
-
   test('inspector: 範囲内はそのまま', () => {
     expect(clampWidth('inspectorWidth', 400, WIDE)).toBe(400);
   });
@@ -41,14 +29,9 @@ describe('絶対的な上下限', () => {
 });
 
 describe('ビューポート上限（45%）', () => {
-  // A 1000px window → cap of 450px. Below inspector's max of 560, above sidebar's 400 =
-  // only kicks in for one of them.
+  // A 1000px window → cap of 450px, below the inspector's own max of 560.
   test('inspector: 1000px ウィンドウでは max より先に上限が効く', () => {
     expect(clampWidth('inspectorWidth', 560, 1000)).toBe(450);
-  });
-
-  test('sidebar: 1000px ウィンドウでは依然 max が先に効く', () => {
-    expect(clampWidth('sidebarWidth', 560, 1000)).toBe(LIMITS.sidebarWidth.max);
   });
 
   // The window's own minWidth is 720px. 45% of that is 324, which is above inspector's
@@ -60,29 +43,25 @@ describe('ビューポート上限（45%）', () => {
   test('inspector: 上限が下限を割り込むときは下限が勝つ', () => {
     expect(clampWidth('inspectorWidth', 500, 400)).toBe(LIMITS.inspectorWidth.min);
   });
-
-  test('sidebar: 上限が下限を割り込むときは下限が勝つ', () => {
-    expect(clampWidth('sidebarWidth', 500, 300)).toBe(LIMITS.sidebarWidth.min);
-  });
 });
 
 // Pointer coordinates are fractional; the CSS px written back is an integer
 describe('丸め', () => {
   test('小数は整数 px へ', () => {
-    expect(clampWidth('sidebarWidth', 300.4, WIDE)).toBe(300);
+    expect(clampWidth('inspectorWidth', 300.4, WIDE)).toBe(300);
   });
 
   test('.5 は切り上げ', () => {
-    expect(clampWidth('sidebarWidth', 300.5, WIDE)).toBe(301);
+    expect(clampWidth('inspectorWidth', 300.5, WIDE)).toBe(301);
   });
 });
 
 // A width that's already been clamped doesn't change on a second clamp (a restored config value goes through here on every launch)
 describe('冪等性', () => {
-  test.each(['sidebarWidth', 'inspectorWidth'])('%s', (key) => {
+  test('inspectorWidth', () => {
     for (const w of [0, 250, 400, 9999]) {
-      const once = clampWidth(key, w, 1440);
-      expect(clampWidth(key, once, 1440)).toBe(once);
+      const once = clampWidth('inspectorWidth', w, 1440);
+      expect(clampWidth('inspectorWidth', once, 1440)).toBe(once);
     }
   });
 });
