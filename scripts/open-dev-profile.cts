@@ -16,31 +16,16 @@
 // chrome://extensions is remembered by the profile. That first load is the only
 // part of this that a person has to do.
 //
-// Two things happen before anything opens (#857):
-//
-//   1. If the profile is already up, this stops and says so. The window is
-//      long-lived — the sign-ins, the loaded unpacked extension and whatever
-//      timelines are open all live in it — so "already running" is the common
-//      case, not the exception. Opening a browser takes the screen and the
-//      keyboard away from whoever is using the machine, and paying that to
-//      reach a window that is already there is pure cost.
-//   2. Otherwise it launches through a one-shot scheduled task instead of
-//      spawning chrome.exe as a child, for the reason HologramLaunch exists:
-//      a process started from inside the MSIX-packaged desktop app runs in the
-//      container, where registry and filesystem writes go to a per-package
-//      copy. A Chrome started there could fork the profile it is supposed to
-//      reuse. The task scheduler starts the action from the service, i.e. as
-//      if a person had double-clicked it.
-//
-//      EXPIRED 2026-08-06 (#1003): Claude Code runs outside the package now and
-//      the filesystem is real, and PROFILE below is under the home dir anyway,
-//      so there is nothing left to fork. The task detour can go — kept until
-//      someone actually opens the profile without it and confirms. Tracked
-//      separately; do not remove it as a drive-by.
+// If the profile is already up, this stops and says so (#857). The window is
+// long-lived — the sign-ins, the loaded unpacked extension and whatever
+// timelines are open all live in it — so "already running" is the common case,
+// not the exception. Opening a browser takes the screen and the keyboard away
+// from whoever is using the machine, and paying that to reach a window that is
+// already there is pure cost.
 //
 //   node scripts/open-dev-profile.cts
 
-const { execFileSync, spawnSync } = require('node:child_process');
+const { execFileSync, spawn } = require('node:child_process');
 const fs = require('node:fs');
 const { homedir } = require('node:os');
 const path = require('node:path');
@@ -141,15 +126,29 @@ async function main() {
 
   fs.mkdirSync(PROFILE, { recursive: true });
 
-  // Through the scheduled task (its original MSIX reason expired — see the
-  // header). The task is one-shot and its action is `cmd /c start`, so
-  // it completes immediately and the browser it opened outlives it — verified
-  // 2026-08-03: the task returns to Ready with exit 0 while Chrome keeps running,
-  // and unregistering it does not take the browser down.
-  const launched = spawnSync('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', path.join(__dirname, 'open-dev-profile.ps1'), chrome, PROFILE], { stdio: 'inherit' });
-  if (launched.status !== 0) {
-    throw new Error(`open-dev-profile.ps1 exited with ${launched.status}. The browser was not opened.`);
+  // Straight spawn. This used to go through a one-shot scheduled task, to start
+  // Chrome outside the MSIX container the packaged desktop app put its children
+  // in — where a filesystem write lands in a per-package copy, so the profile
+  // this is meant to reuse could fork. That reason expired 2026-08-06 (#1003):
+  // the filesystem is real, and PROFILE is under the home dir either way.
+  //
+  // What the task's `cmd /c start` action did buy is that the browser outlived
+  // the launcher, and that has to survive the removal — hence detached with no
+  // stdio: Chrome gets its own process group and no inherited handles, so it
+  // stays up after this process exits (measured 2026-08-07, #1006: node returns
+  // in under a second and the window is still there).
+  const child = spawn(chrome, [`--user-data-dir=${PROFILE}`], { detached: true, stdio: 'ignore' });
+  if (child.pid === undefined) {
+    throw new Error(`Chrome did not start: ${chrome}. The browser was not opened.`);
   }
+  // A spawn failure that only Windows can see (a path that exists but will not
+  // execute) arrives as an event, after this function has already returned. Say
+  // so rather than let the success message below stand as the last word.
+  child.on('error', (err: Error) => {
+    console.error(`[hologram] Chrome failed to start: ${err.message}`);
+    process.exitCode = 1;
+  });
+  child.unref();
 
   console.log(`[hologram] opened the development Chrome profile: ${PROFILE}`);
   if (fs.existsSync(path.join(OUTPUT, 'manifest.json'))) {

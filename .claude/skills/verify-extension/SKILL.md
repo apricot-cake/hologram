@@ -17,7 +17,7 @@ description: 拡張機能（extension/）の変更を実ブラウザで確かめ
 
 開発プロファイルは専用の user-data-dir で、`~/.hologram-dev/chrome-mv3-dev` を一度だけ Load unpacked してある。出力先はツリー外の固定パスなので、**どの worktree から起動しても同じ場所に出る**＝配信元の取り合いも、拡張の削除→再追加も起きない（`chrome.storage.local` の設定とショートカット割当は保たれる）。
 
-**このプロファイルの保存は実ライブラリに入らない**＝開発ビルドは別のネイティブホスト名 `com.hologram.host.dev` に繋ぎ、`~/.hologram-dev/library` へ書く。初回だけ `npm run ext:dev:register`（今は一度きりのスケジュールタスク経由。⚠️**その理由「コンテナ内から `reg add` しても実 Chrome には見えない」は 2026-08-06 に失効**＝HKCU への書きは実体＝#1003。タスクを外せるはずだが実機で確かめるまで触らない）。**`reg query` も今は使える**（旧記述「確認できない」は失効）が、端から端までの裏取りは保存の成否と `~/.hologram-dev/bridge.log` が確実。保存したものを見るのは `node scripts/sandbox-app.cts`。
+**このプロファイルの保存は実ライブラリに入らない**＝開発ビルドは別のネイティブホスト名 `com.hologram.host.dev` に繋ぎ、`~/.hologram-dev/library` へ書く。初回だけ `npm run ext:dev:register`＝`node` を直接呼び、**登録後にスクリプト自身が `reg query` で5キーを読み戻して可否を出す**（合わなければ非ゼロ終了）。⚠️**スケジュールタスク経由は 2026-08-07 に撤去**（#1006・理由の失効は #1003）。**読み戻しが緑でも「Chrome がホストを見つけられる」までの証明**＝端から端までの裏取りは保存の成否と `~/.hologram-dev/bridge.log`。**人手なしで経路だけ見たいなら diag ページ**＝`chrome-extension://<拡張ID>/diag.html` を URL 引数で開くと読み込みだけで ping が飛び、`bridge.log` に `recv type=ping` が残る。保存したものを見るのは `node scripts/sandbox-app.cts`。
 
 **反映はタブのリロードを伴う**＝WXT の開発モードは拡張をリロードし content script を入れ直す（in-place HMR ではない。自前 ShadowRoot の UI は WXT の HMR 対象外）。守るべき日常タブが同じプロファイルに居ないので、これでよくなったのが分離の要点。
 
@@ -29,7 +29,7 @@ description: 拡張機能（extension/）の変更を実ブラウザで確かめ
 2. 対象 worktree で `npm run dev:ext`。**起きているかを先に確かめる必要はない＝コマンド自身が見る**（既に上がっていれば `already up … leaving it alone` と出して何もしない。1本のサーバーが全 worktree に効く）。**そのまま前景で呼ぶ**＝端末のない呼び出しからは**コンソールウィンドウが開いてそちらで走り**、コマンド自体はすぐ戻る（docs/build.md「サーバーは可視のコンソールウィンドウで走る」）。⚠️**生死を自前で確かめるなら `localhost`**＝待ち受けは `::1` なので `127.0.0.1` を叩くと動いていても「落ちている」と出る（判定は `scripts/lib-dev-server.cts` を使う）。**窓はそのままサーバーの生死を表す**＝主が node なのでタスクバーに Node のアイコンで出て、**窓が消えた＝サーバーが止まった**（異常終了の時だけ `pause` で残り、理由が読める）。**見分けは中身でする**＝タイトルは走り出すと npm に上書きされ、先頭の `[hologram] development build folder: …` は小さい窓だとビルド一覧に押し出される。窓の大きさに依らないのは npm ヘッダの `hologram-extension@<version>`・出力パスの `.hologram-dev\chrome-mv3-dev`・ポート `51731`。**バックグラウンド実行にもログのリダイレクトにも回さない**＝そのウィンドウが唯一の出力先で、走っていることが外から見えるのが要点。止めるのはウィンドウを閉じる（または `cmd /k npm run dev:ext` のプロセスを kill する）。**検証中は動かしたまま**にする＝dev ビルドは自己完結していない（popup.html 等がスクリプトと CSS を `127.0.0.1:51731` から直接読む）。落ちていても拡張は壊れた顔をしない＝ポップアップは開くが、素の HTML が縦一列に潰れて出る（CSS/レイアウトのバグに見えるが原因はサーバー未起動、#861）。止めるのは検証が終わってから。二重起動はポート衝突で落ちる（黙って別ポートへ逃げない）。
 3. **開発プロファイルの Chrome は自分で用意する**（規則は共通スキル「起動のしかた」＝頼む前にプロセスを見る）。
    - 状態だけ見るなら `node scripts/open-dev-profile.cts --print`＝`running: yes (pid …)` を出して**何も開かない**。
-   - 開いていなければ `npm run ext:dev:browser`。起動済みなら pid を出して終わり、未起動なら一度きりのスケジュールタスク `HologramDevBrowser` 経由で開く（**開いた時は一行添える**）。⚠️タスクを挟む理由（コンテナ外に出す）は 2026-08-06 に失効＝#1003。
+   - 開いていなければ `npm run ext:dev:browser`。起動済みなら pid を出して終わり、未起動なら `chrome.exe` を直接 spawn して開く（**開いた時は一行添える**）＝detached なので node が戻っても窓は生きる。⚠️スケジュールタスク `HologramDevBrowser` 経由は 2026-08-07 に撤去（#1006・理由の失効は #1003）。
    - 人の手が要るのは**初回の Load unpacked**（`chrome://extensions` → `~/.hologram-dev/chrome-mv3-dev`）と**各 SNS へのログイン**だけ。
    - 保存した変更は拡張リロード＋タブリロードで入るので、**確認直前にそのタブを更新する**。
 4. **反映されない時に手でリロードを頼まない**＝dev サーバーのログと、拡張が `~/.hologram-dev/chrome-mv3-dev` を読んでいるかを先に見る。

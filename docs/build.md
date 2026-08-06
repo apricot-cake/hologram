@@ -72,7 +72,7 @@ npm run ext:dev:browser
 
 - **起動済みなら何もしない**＝`scripts/open-dev-profile.cts` が先に `--user-data-dir` を照合してブラウザ本体プロセスを探し、居れば pid を出して終わる（ヘルパープロセスは `--type=` で除外＝窓を閉じた後に居残る crashpad を「起動中」と読まない）。**このプロファイルの窓は長寿命**＝ログインも読み込み済みの拡張も開いたタイムラインもそこに載っているので、「もう開いている」が例外でなく通常。開くか尋ねる前に、まずこれで見る。
 - **状態だけ知りたいなら `node scripts/open-dev-profile.cts --print`**＝chrome/profile/build のパスと `running: yes (pid …)` を出して**何も開かない**。
-- **起動は一度きりのスケジュールタスク `HologramDevBrowser` 経由**（`scripts/open-dev-profile.ps1`）。⚠️**この経路の理由（MSIX 仮想化でプロファイルが分岐する）は 2026-08-06 に失効した**（#1003）＝FS は実体で、プロファイル自身も `~/.hologram-ext-profile`＝AppData 外なので二重に分岐しない。**タスクを外して直接起こせるはずだが、実機で確かめるまで触らない**（撤去は別 Issue）。アクションは `chrome.exe` でなく `cmd /c start`＝即座に返るのでタスクは完了して撤去でき、開いたブラウザはその後も生き続ける（2026-08-03 実測）。
+- **起動は `chrome.exe` を直接 spawn する**（detached・stdio なし）。⚠️**かつては一度きりのスケジュールタスク `HologramDevBrowser` を挟んでいたが、その理由（MSIX 仮想化でプロファイルが分岐する）は 2026-08-06 に失効し**（#1003）、**タスク経路は 2026-08-07 に撤去した**（#1006・実機で確認＝直接起動した Chrome が `~/.hologram-ext-profile` をそのまま使い、Load unpacked 済みの拡張も残っていた）。**タスクが唯一買っていたのは「開いた窓が起動元より長生きする」こと**（アクションが `chrome.exe` でなく `cmd /c start` だったのはそのため）＝これは `detached: true` ＋ `stdio: 'ignore'` ＋ `unref()` が引き継ぐ（同日実測＝node は1秒未満で戻り、窓はその後も生きている）。
 - **窓を開くのはユーザーの画面を奪う**＝だから「起動済みを見てから」であり、本当に必要な時は開いてよい（開いた事実を一行添える。グローバル CLAUDE.md「Chrome のフォーカスを奪わない」）。
 
 ⚠️**日常プロファイルには開発ビルドを読み込まない**＝両方が同じ拡張 ID を持つので衝突する。`--load-extension` は使わない（Chrome 137+ が無視する＝#657）。
@@ -104,7 +104,9 @@ dev サーバーは `localhost:51731` 固定。二重起動は別 port へ逃げ
 npm run ext:dev:register
 ```
 
-これは一度きりのスケジュールタスク経由で走る。⚠️**その理由（コンテナ内の `reg add` は実 Chrome から見えない）は 2026-08-06 に失効した**（#1003・メモリ `sandbox-appdata-registry-divergence`）＝HKCU への書きは実体で、ユーザーが regedit で目視確認済み。**直接 `reg add` で足りるはずだが、実機で確かめるまで触らない**（撤去は別 Issue）。同じ理由で **`reg query` での確認も今はできる**（旧記述「確かめることはできない」は失効）。登録先は `~/.hologram-dev/`（ランチャーが `HOLOGRAM_CONFIG_DIR` を固定するので、Chrome が起動した bridge は実ライブラリを見られない）。最終的な裏取りは従来どおり開発プロファイルからの保存成否と `~/.hologram-dev/bridge.log` が確実。保存したものを見るのは #283 のサンドボックスアプリ（`node scripts/sandbox-app.cts`）。
+これは `node` を直接呼ぶ（解除は `npm run ext:dev:register -- uninstall`）。⚠️**かつては一度きりのスケジュールタスク経由だったが、その理由（コンテナ内の `reg add` は実 Chrome から見えない）は 2026-08-06 に失効し**（#1003・メモリ `sandbox-appdata-registry-divergence`）、**タスク経路は 2026-08-07 に撤去した**（#1006）。**登録の後、スクリプト自身が `reg query` で5つのキーを読み戻して各行の可否を出す**（旧記述「ここから確かめることはできない」は失効＝HKCU への書きも読みも実体）。読み戻しが合わなければ非ゼロ終了する。登録先は `~/.hologram-dev/`（ランチャーが `HOLOGRAM_CONFIG_DIR` を固定するので、Chrome が起動した bridge は実ライブラリを見られない）。
+
+⚠️**読み戻しが緑でも、それは「Chrome がホストを見つけられる」までしか証明しない**＝端から端までの裏取りは開発プロファイルからの保存成否と `~/.hologram-dev/bridge.log`。**人手なしで経路だけ確かめたいなら diag ページ**＝`chrome-extension://<拡張ID>/diag.html` は読み込みだけでネイティブホストへ ping を投げるので、URL を引数に渡して開けば `bridge.log` に `launched argv=[…] saveFolder=C:\…\.hologram-dev\library` と `recv type=ping` が積まれる（2026-08-07 の #1006 の検証はこれで取った）。保存したものを見るのは #283 のサンドボックスアプリ（`node scripts/sandbox-app.cts`）。
 
 どのホスト名を焼くかは**ビルドのコマンド**で決まる（`wxt` = 開発 / `wxt build` = release）。`import.meta.env.DEV` は NODE_ENV に従うので使わない＝テストランナー経由の release ビルドが開発ホストを向く（実際に起きた。`build-extension.cts` の禁止語検査が捕まえた）。
 
