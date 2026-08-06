@@ -13,7 +13,8 @@ name: App tests
 # minutes, and at the 63 pushes this repository saw in a single day (2026-07-28) that
 # would have burned a 2,000 minutes/month allowance in three days. Making the
 # repository public (#75) removed the meter entirely — standard runners are free and
-# unlimited there — so as of #883 this runs per pull request like ci.yml does.
+# unlimited there — so as of #883 this runs on every push to main like ci.yml does
+# (it ran per pull request too until #996 dropped that trigger).
 #
 # That matters more here than the arithmetic ever did: ci.yml only sees lint, types
 # and unit tests, so before this change nothing that boots the real app or the real
