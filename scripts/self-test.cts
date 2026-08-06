@@ -164,7 +164,7 @@ function checkRegistration() {
   }
 }
 
-// --- info: HKCU pointer (win32) — SOFT, because in-container reads see the VIRTUAL hive ---
+// --- info: HKCU pointer (win32) — SOFT; see checkRegistration above for why it is not a hard check ---
 function checkRegistryPointer() {
   if (process.platform !== 'win32') return { name: 'HKCU pointer (info)', ok: true, soft: true, detail: 'skipped (non-win32)' };
   const key = `HKCU\\Software\\Google\\Chrome\\NativeMessagingHosts\\${install.HOST_NAME}`;

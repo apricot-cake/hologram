@@ -48,25 +48,25 @@ function configDir(): string {
   return path.join(base, APP_NAME);
 }
 
-// Default library (capture) folder, used by BOTH the bridge and the app when the
-// user hasn't picked an explicit save folder. Kept SEPARATE from configDir(): the
-// library can grow large (screenshots + original media), so it lives in its own
-// top-level folder, not mixed into the (small) config dir.
+// Default library (capture) folder — ~/Hologram/library on EVERY OS, used by both the
+// bridge and the app until the user picks an explicit save folder. Kept SEPARATE from
+// configDir(): the library can grow large (screenshots + original media), so it lives in
+// its own top-level folder, not mixed into the (small) config dir.
 //
-// Like configDir(), the Windows default is kept OUT of %LOCALAPPDATA% so it isn't
-// subject to MSIX storage virtualization (see above).
-//   Windows : ~/Hologram/library
-//   macOS   : ~/Library/Application Support/Hologram/library
-//   Linux   : $XDG_DATA_HOME/Hologram/library (or ~/.local/share/Hologram/library)
+// Home dir rather than the per-OS app-data area is a PRODUCT decision, not a workaround
+// (#232). The saved files are the user's own content, so they belong somewhere the user
+// opens, moves and backs up — app-data is hidden by default, which says the opposite. The
+// established prior art in collection apps agrees (Zotero uses ~/Zotero on every OS).
+// Documents/Pictures are avoided on purpose: they are what OneDrive-style folder backup
+// targets, and live-writing a library into a syncing folder corrupts it (#95 warns about
+// this when the user picks such a folder).
+//
+// This used to differ per OS — Windows in the home dir, macOS/Linux under app-data — and
+// the Windows case was justified by MSIX storage virtualization (avoid %LOCALAPPDATA%).
+// That reason expired on 2026-08-06 (#1003); the placement stayed and the other two
+// platforms were brought in line with it, on the rationale above.
 function defaultLibraryDir(): string {
-  if (process.platform === 'win32') {
-    return path.join(os.homedir(), APP_NAME, 'library');
-  }
-  if (process.platform === 'darwin') {
-    return path.join(os.homedir(), 'Library', 'Application Support', APP_NAME, 'library');
-  }
-  const base = process.env.XDG_DATA_HOME || path.join(os.homedir(), '.local', 'share');
-  return path.join(base, APP_NAME, 'library');
+  return path.join(os.homedir(), APP_NAME, 'library');
 }
 
 // Where a LOCAL extension build announces itself (#650). Written by
