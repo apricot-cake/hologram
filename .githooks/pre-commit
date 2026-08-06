@@ -1,0 +1,26 @@
+#!/bin/sh
+# Auto-format staged files before commit (#994).
+#
+# `biome check --write` doesn't fail on fixable violations — it fixes them
+# and keeps going, so a commit is never blocked for something Biome can
+# repair itself. Only a violation Biome cannot auto-fix stops the commit.
+# Restricted to staged files so files with unrelated unstaged edits aren't
+# rewritten, and --no-errors-on-unmatched keeps an all-non-Biome commit
+# (e.g. only a .png) from failing just because nothing matched.
+#
+# Enabled by `git config core.hooksPath .githooks`, which scripts/setup.cts does.
+# Skip with `git commit --no-verify` if this gets in the way.
+
+set -u
+
+if [ -z "$(git diff --cached --name-only --diff-filter=ACMR)" ]; then
+  exit 0
+fi
+
+if ! git diff --cached --name-only --diff-filter=ACMR -z |
+  xargs -0 npx biome check --write --no-errors-on-unmatched; then
+  echo "[hologram] biome found a violation it could not auto-fix. Fix it, or commit with --no-verify to skip." >&2
+  exit 1
+fi
+
+git diff --cached --name-only --diff-filter=ACMR -z | xargs -0 git add --
