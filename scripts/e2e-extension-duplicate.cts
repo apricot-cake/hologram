@@ -25,6 +25,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { launchExtensionBrowser, stageExtension } = require('./lib-extension-e2e.cts');
 const { createNativeHostSandbox } = require('./lib-native-host-e2e.cts');
+const { waitFor } = require('./lib-wait.cts');
 
 declare const chrome: any;
 
@@ -78,13 +79,22 @@ function envelopes(libraryDir: string): any[] {
 }
 
 async function waitForEnvelopes(libraryDir: string, want: number, timeoutMs = 20_000): Promise<any[]> {
-  const started = Date.now();
-  while (Date.now() - started < timeoutMs) {
-    const found = envelopes(libraryDir);
-    if (found.length >= want) return found;
-    await new Promise((resolve) => setTimeout(resolve, 100));
+  let found: any[] = [];
+  try {
+    await waitFor(
+      `${want} inbox envelope(s) under ${libraryDir}`,
+      () => {
+        found = envelopes(libraryDir);
+        return found.length >= want;
+      },
+      { timeoutMs, pollMs: 100 },
+    );
+  } catch {
+    // This file's own wording: how many DID arrive is the finding, and the
+    // shared timeout message cannot know that.
+    throw new Error(`only ${envelopes(libraryDir).length} inbox envelope(s) after ${timeoutMs}ms, wanted ${want}`);
   }
-  throw new Error(`only ${envelopes(libraryDir).length} inbox envelope(s) after ${timeoutMs}ms, wanted ${want}`);
+  return found;
 }
 
 (async () => {

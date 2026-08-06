@@ -33,6 +33,7 @@ const { electronPath: resolveElectron } = require('./lib-electron-path.cts');
 
 const electronPath = resolveElectron();
 const { seedLibrary } = require('./lib-seed-library.cts');
+const { rendererWaits } = require('./lib-wait.cts');
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-bk-'));
 const configDir = path.join(tmp, 'Hologram');
@@ -131,8 +132,11 @@ const lateFilePath = path.join(saveFolder, LATE_FILE);
   // launch A: output dir nested inside the save folder must be rejected (overlap);
   // then run 1 (fresh copy of the 4 seed posts) and run 2 (idempotent — nothing changed).
   const evalA = `(async () => {
-    const wait = (ms) => new Promise(r => setTimeout(r, ms));
-    await wait(400);
+    ${rendererWaits()}
+    // The library answering with the seeded posts is what the 400ms that used to
+    // sit here was hoping for: the database is open and holds all 8, which run 1
+    // below counts.
+    await waitFor('the library to report the seeded posts', async () => ((await window.hologram.listPosts()).posts || []).length >= ${records.length});
     const bad = await window.hologram.setBackup({ dir: ${JSON.stringify(path.join(saveFolder, 'nested'))} });
     const overlapRejected = !!(bad && bad.ok === false && bad.error === 'overlap');
     const good = await window.hologram.setBackup({ dir: ${JSON.stringify(outDir)} });

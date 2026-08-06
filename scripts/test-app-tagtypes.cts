@@ -15,6 +15,7 @@ const path = require('node:path');
 
 const appDir = path.join(__dirname, '..', 'app');
 const { electronPath: resolveElectron } = require('./lib-electron-path.cts');
+const { evalSource } = require('./lib-wait.cts');
 
 const electronPath = resolveElectron();
 
@@ -63,23 +64,30 @@ function launch(evalJs): Promise<Record<string, any>> {
 // is the cheapest way to create two from here: it is name-keyed and needs no
 // post, and its read hands back the ids in a parallel array, so this also covers
 // the poster-tag entity read #810 added.
-const setEvalJs = `(async () => {
-  await window.hologram.setPosterTags({ tags: { 'x:1': ['ブルアカ', 'アロナ'] } });
-  const ids = (await window.hologram.getPosterTags()).tags['x:1'].tagIds;
-  await window.hologram.setTagTypes([{ id: ids[0], kind: 'work' }, { id: ids[1], kind: 'character' }], { work: 'シリーズ', character: '登場人物' });
-  const r = await window.hologram.getTagTypes();
+const setEvalJs = evalSource(async () => {
+  const hologram = (window as any).hologram;
+  await hologram.setPosterTags({ tags: { 'x:1': ['ブルアカ', 'アロナ'] } });
+  const ids = (await hologram.getPosterTags()).tags['x:1'].tagIds;
+  await hologram.setTagTypes(
+    [
+      { id: ids[0], kind: 'work' },
+      { id: ids[1], kind: 'character' },
+    ],
+    { work: 'シリーズ', character: '登場人物' },
+  );
+  const r = await hologram.getTagTypes();
   const kindOf = Object.fromEntries(r.types.map((t) => [t.name, t.kind]));
-  return { types: kindOf['ブルアカ'] + ',' + kindOf['アロナ'], labels: r.labels.work + ',' + r.labels.character };
-})()`;
+  return { types: kindOf.ブルアカ + ',' + kindOf.アロナ, labels: r.labels.work + ',' + r.labels.character };
+});
 
 // launch 2 opens a fresh Electron process against the same configDir/DB and
 // reads types back with zero writes of its own — a stale in-memory value from
 // launch 1 can't leak here, so a match proves real persistence.
-const getEvalJs = `(async () => {
-  const r = await window.hologram.getTagTypes();
+const getEvalJs = evalSource(async () => {
+  const r = await (window as any).hologram.getTagTypes();
   const kindOf = Object.fromEntries(r.types.map((t) => [t.name, t.kind]));
-  return { types: kindOf['ブルアカ'] + ',' + kindOf['アロナ'], labels: (r.labels && r.labels.work + ',' + r.labels.character) || null };
-})()`;
+  return { types: kindOf.ブルアカ + ',' + kindOf.アロナ, labels: (r.labels && r.labels.work + ',' + r.labels.character) || null };
+});
 
 (async () => {
   const r1 = await launch(setEvalJs);

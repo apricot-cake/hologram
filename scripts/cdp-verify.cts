@@ -26,6 +26,7 @@ const path = require('node:path');
 const cp = require('node:child_process');
 const WebSocket = require('ws');
 const { foreignSandboxAt, instanceFile, isSandboxPort, readInstance } = require('./lib-sandbox-instance.cts');
+const { waitFor } = require('./lib-wait.cts');
 
 const repoRoot = path.join(__dirname, '..');
 
@@ -191,9 +192,23 @@ async function main() {
         /* ignore */
       }
       if (wasMin) {
-        osShowWindow(9);
-        await new Promise((r) => setTimeout(r, 400));
-      } // SW_RESTORE + repaint
+        osShowWindow(9); // SW_RESTORE
+        // The window leaving the off-screen position a minimized window sits at
+        // is the post-condition, and it is the same reading that decided `wasMin`.
+        // A timeout is swallowed: bringToFront and the capture below still run,
+        // and a blank result there is the honest report.
+        await waitFor(
+          'the restored window to leave its minimized position',
+          async () => {
+            const r = await send('Runtime.evaluate', { expression: 'window.screenX > -30000', returnByValue: true });
+            return !!(r && r.result && r.result.value);
+          },
+          { timeoutMs: 3000, pollMs: 50 },
+        ).catch(() => {});
+        // …and one painted frame at the restored position, which is the other
+        // half of what the fixed 400ms here used to cover.
+        await send('Runtime.evaluate', { expression: 'new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))', awaitPromise: true }).catch(() => {});
+      }
       try {
         await send('Page.bringToFront', {});
       } catch (_e) {

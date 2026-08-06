@@ -1,12 +1,16 @@
 // Biome 設定（lint+format の単一ツール）
 //
-// バージョンは 2.5.5（#18 で 1.9.4 から移行済み）。
+// バージョンは 2.5.6（#18 で 1.9.4 から移行済み・#858 で 2.5.5 から更新）。
 //
 // 方針: Biome を既存コードのスタイルに合わせる（逆ではない）。lineWidth を
 // 大きく取り再折返しチャーンを避ける＝既存のコード参照と git blame を守る。
 {
   "$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
   "vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
+  // #986: no fixed delay may stand in for an observable post-condition. Scoped to
+  // scripts/ because that is where the harnesses live; the rule text in the plugin
+  // says how to keep a delay that is genuinely the specification.
+  "plugins": [{ "path": "./biome-plugins/no-fixed-wait.grit", "includes": ["**/scripts/**"] }],
   "files": {
     "ignoreUnknown": true,
     // .claude is anchored (no leading **/) on purpose. Task worktrees live in

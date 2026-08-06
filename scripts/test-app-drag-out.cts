@@ -30,7 +30,7 @@ const { readEvalResult } = require('./lib-eval-result.cts');
 
 const electronPath = resolveElectron();
 const { seedLibrary } = require('./lib-seed-library.cts');
-const { rendererWaits } = require('./lib-wait.cts');
+const { evalSource } = require('./lib-wait.cts');
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-dragout-'));
 const configDir = path.join(tmp, 'Hologram');
@@ -65,20 +65,37 @@ ids.forEach((id, i) => {
 });
 seedLibrary(configDir, records);
 
-const evalJs = `(async () => {
-  ${rendererWaits()}
+const evalJs = evalSource(async ({ waitFor, neverHappens }) => {
   await waitFor('the grid to show all 3 seeded posts', () => document.querySelectorAll('[data-slot="post-grid"] [data-slot="post-card"]').length >= 3);
   // Addressed by what the card says (the cells carry no key attribute — #618).
-  const postCards = () => [...document.querySelectorAll('[data-slot="post-grid"] [data-slot="post-card"]')];
-  const cardOf = (n) => postCards().find(c => (c.textContent || '').includes('本文' + n));
-  const nameOf = (c) => ((c.textContent || '').match(/本文(\\d)/) || [])[0] || '?';
-  const selectedKeys = () => postCards().filter(c => c.hasAttribute('data-selected')).map(nameOf).sort().join(',');
+  const postCards = () => [...document.querySelectorAll<HTMLElement>('[data-slot="post-grid"] [data-slot="post-card"]')];
+  const cardOf = (n) => postCards().find((c) => (c.textContent || '').includes('本文' + n));
+  // Named + thrown rather than optional-chained: the card and the part of it a drag starts
+  // on ARE the step, so a missing one has to stop the run and say which was gone. `?.`
+  // would skip the gesture and leave a later assertion to report something unrelated.
+  const cardMust = (n) => {
+    const c = cardOf(n);
+    if (!c) throw new Error('the card 本文' + n + ' is missing from the grid');
+    return c;
+  };
+  const partMust = (n, slot) => {
+    const part = cardMust(n).querySelector('[data-slot="' + slot + '"]');
+    if (!part) throw new Error('the ' + slot + ' of card 本文' + n + ' is missing');
+    return part;
+  };
+  const nameOf = (c) => ((c.textContent || '').match(/本文(\d)/) || [])[0] || '?';
+  const selectedKeys = () =>
+    postCards()
+      .filter((c) => c.hasAttribute('data-selected'))
+      .map(nameOf)
+      .sort()
+      .join(',');
   // A handler that throws is the failure mode this suite exists for: dispatchEvent
   // does NOT rethrow, so a dead line after the throw is invisible from the page —
   // it only surfaces as an uncaught error. That's how drag-out shipped broken with
   // this suite green (#132/#185): everything asserted below happened BEFORE the
   // throw, and the hologramIpc.dragOut() after it never ran.
-  const errors = [];
+  const errors: string[] = [];
   window.addEventListener('error', (e) => errors.push(String((e && e.message) || e)));
   // Every case here asserts that a drag CHANGED NOTHING, so there is no post-condition to
   // wait for: a wait would end the moment it was set up and prove nothing. The window is
@@ -90,39 +107,39 @@ const evalJs = `(async () => {
     await neverHappens('the drag to rewrite the selection (expected it to stay ' + (keep || 'empty') + ')', () => selectedKeys() !== keep, 300);
     return ev.defaultPrevented;
   };
-  const out = {};
+  const out: Record<string, any> = {};
 
   // 1. nothing selected: the drag is intercepted and selects NOTHING — an export
   //    gesture leaves the library as it found it
-  out.prevented1 = await dragFrom(cardOf(0).querySelector('[data-slot="post-card-media"]'), '');
+  out.prevented1 = await dragFrom(partMust(0, 'post-card-media'), '');
   out.selAfter1 = selectedKeys();
 
   // 2. build a real selection by hand the way a user does now that the ○ ring is
   //    gone (#143): a plain click single-selects, Ctrl-click adds the second card.
-  cardOf(0).dispatchEvent(new MouseEvent('click', { bubbles: true }));
-  cardOf(1).dispatchEvent(new MouseEvent('click', { bubbles: true, ctrlKey: true }));
+  cardMust(0).dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  cardMust(1).dispatchEvent(new MouseEvent('click', { bubbles: true, ctrlKey: true }));
   // Waits on the SIZE of the selection, then reads which cards are in it — so a pair
   // built out of the wrong cards still fails.
   await waitFor('the two clicked cards to both show as selected', () => selectedKeys().split(',').length === 2);
   out.selBuilt = selectedKeys();
 
   // 3. drag a card INSIDE that selection → selection untouched
-  out.prevented3 = await dragFrom(cardOf(0).querySelector('[data-slot="post-card-media"]'), '本文0,本文1');
+  out.prevented3 = await dragFrom(partMust(0, 'post-card-media'), '本文0,本文1');
   out.selAfter3 = selectedKeys();
 
   // 4. drag a card OUTSIDE it → still untouched. The hand-built working set is not
   //    Explorer's throwaway cursor; dragging one card must not wipe it (which files
   //    actually leave is records.ts's dragFilesOf — test-records-unit).
-  out.prevented4 = await dragFrom(cardOf(2).querySelector('[data-slot="post-card-media"]'), '本文0,本文1');
+  out.prevented4 = await dragFrom(partMust(2, 'post-card-media'), '本文0,本文1');
   out.selAfter4 = selectedKeys();
 
   // 5. a drag started on the post text is NOT ours — the browser keeps it
-  const txt = cardOf(2).querySelector('[data-slot="post-card-meta"]');
+  const txt = partMust(2, 'post-card-meta');
   out.preventedText = await dragFrom(txt, '本文0,本文1');
   out.selAfterText = selectedKeys();
   out.errors = errors;
   return JSON.stringify(out);
-})()`;
+});
 
 const env = Object.assign({}, process.env, {
   APPDATA: tmp,

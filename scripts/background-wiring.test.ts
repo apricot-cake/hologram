@@ -1344,15 +1344,14 @@ describe('URL ブックマーク保存（#195、メタデータ抽出は#239へ�
     const port = await portThatSent(createdPorts, 'savePost');
     port.emitMessage({ ok: true, captureId: 'bm-capture-id', file: 'bm-capture-id.jpg', media: [] });
 
-    // markSaved runs a few microtasks after emitMessage (inside doSaveBookmark's
-    // own await chain) — waitFor is the same "poll until it stops throwing"
-    // idiom portThatSent above uses, not a race with real time.
     // markSaved runs a few microtask hops after emitMessage (inside
     // doSaveBookmark's own await chain, past bumpRecentSave's storage.session
-    // round trip) — one macrotask tick is enough to flush all of them, and is
-    // simpler than vi.waitFor here: a premature dispatch would fall through to
-    // queryBridge on a cache miss and open a SECOND native connection this test
-    // never answers, hanging rather than merely retrying.
+    // round trip) — one macrotask tick flushes all of them, so this yields to the
+    // event loop rather than waiting for real time to pass. It is not vi.waitFor
+    // because there is nothing to retry: a premature dispatch would fall through
+    // to queryBridge on a cache miss and open a SECOND native connection this
+    // test never answers, hanging rather than merely polling again.
+    // biome-ignore lint/plugin: 0ms = yield one macrotask, not a timed wait
     await new Promise((r) => setTimeout(r, 0));
     const { responseP } = env.dispatch({ type: 'checkDuplicate', url: TAB.url, platform: null, imageUrls: [] });
     await expect(responseP).resolves.toMatchObject({ ok: true, duplicate: true, captureId: 'bm-capture-id' });

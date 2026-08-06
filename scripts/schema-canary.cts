@@ -80,9 +80,7 @@ interface Snapshot {
   sources: Record<string, string>;
 }
 
-function sleep(ms: number) {
-  return new Promise((r) => setTimeout(r, ms));
-}
+const { sleep } = require('./lib-wait.cts');
 
 function loadSamples(): Record<string, Sample[]> {
   const raw = JSON.parse(fs.readFileSync(SAMPLES_FILE, 'utf8'));
@@ -249,6 +247,9 @@ async function pickCandidate(platform: string, sample: Sample, previous: string 
     previous,
   )) {
     const obs = await observe(platform, url, sample.expect);
+    // Fixed and deliberate: this is throttling, not a wait for anything. The
+    // canary walks several public endpoints per run and the gap between requests
+    // is what keeps it a well-behaved client.
     await sleep(REQUEST_GAP_MS);
     if (!obs.dead) return { url, obs, skipped };
     skipped.push({ url, reason: obs.reason });

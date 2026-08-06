@@ -28,7 +28,8 @@
 // Disposable Chromium and disposable extension staging = touches neither the
 // user's profile nor the real library (same rig as e2e-overlay-visual).
 
-const { launchOverlayBrowser, wait } = require('./lib-overlay-e2e.cts');
+const { launchOverlayBrowser } = require('./lib-overlay-e2e.cts');
+const { waitFor } = require('./lib-wait.cts');
 
 const POST_ID = '1999999999999999996';
 const POST_URL = `https://x.com/hologram/status/${POST_ID}`;
@@ -213,7 +214,21 @@ interface Measured {
     await page.mouse.move(picture.x + picture.width / 2, picture.y + picture.height / 2);
     await page.mouse.down();
     await page.mouse.move(picture.x + picture.width / 2 + 80, picture.y + picture.height / 2 + 40, { steps: 8 });
-    await wait(600); // the zone's entrance
+    // The zone's entrance, waited on as the zone itself. The timeout is swallowed
+    // because `m.found` below reports "not in the shared root at all", which is
+    // the finding this test exists to make.
+    await waitFor('the drop zone to enter the shared root', () =>
+      page.evaluate(() => {
+        const zone = document.querySelector('hologram-extension-ui')?.shadowRoot?.querySelector('#__hologramDropZone');
+        return !!zone && getComputedStyle(zone as HTMLElement).display !== 'none';
+      }),
+    ).catch(() => {});
+    // Every number read below is a getBoundingClientRect, and an element measured
+    // mid-entrance reports the tween's numbers rather than the layout's (#818).
+    await page.evaluate(async () => {
+      const zone = document.querySelector('hologram-extension-ui')?.shadowRoot?.querySelector('#__hologramDropZone');
+      if (zone) await Promise.all(zone.getAnimations().map((animation) => animation.finished.catch(() => {})));
+    });
 
     const m: Measured = await page.evaluate(() => {
       const root = document.querySelector('hologram-extension-ui')?.shadowRoot;

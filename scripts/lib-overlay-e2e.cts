@@ -17,10 +17,9 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { launchExtensionBrowser, stageExtension } = require('./lib-extension-e2e.cts');
+const { sleep } = require('./lib-wait.cts');
 
 const FIXTURES = path.join(__dirname, 'fixtures', 'overlay');
-
-const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 interface OverlayBrowser {
   browser: any;
@@ -122,12 +121,27 @@ async function openFixture(overlay: OverlayBrowser, url: string, html: string): 
     el.setAttribute('data-hologram-overlay', '');
     document.body.appendChild(el);
     el.remove();
-    await new Promise((resolve) => setTimeout(resolve, 50));
-    const log = (window as any).__overlayRecorder.take();
-    return log.some((e: any) => e.type === 'add') && log.some((e: any) => e.type === 'remove');
+    // The two entries are the post-condition. Polled by frame rather than waited
+    // out: MutationObserver delivers on a microtask checkpoint, and take()
+    // splices, so the entries are accumulated instead of re-read.
+    let sawAdd = false;
+    let sawRemove = false;
+    for (let i = 0; i < 60 && !(sawAdd && sawRemove); i++) {
+      for (const entry of (window as any).__overlayRecorder.take()) {
+        if (entry.type === 'add') sawAdd = true;
+        if (entry.type === 'remove') sawRemove = true;
+      }
+      if (!(sawAdd && sawRemove)) await new Promise((resolve) => requestAnimationFrame(resolve));
+    }
+    return sawAdd && sawRemove;
   });
   if (!alive) throw new Error('overlay recorder self-check failed: synthetic mutations were not observed');
-  await wait(700); // content script's document_idle startup and first scan
+  // Fixed on purpose: the content script's document_idle startup and first scan
+  // put NOTHING in the page — the overlay only draws once a pointer moves — so
+  // there is no post-condition to wait on. Waiting for a control instead would
+  // mean hovering first, which is the thing every caller is here to measure.
+  // biome-ignore lint/plugin: the content script's startup draws nothing to wait on
+  await sleep(700);
   await page.evaluate(() => (window as any).__overlayRecorder.take()); // drop startup noise
   return page;
 }
@@ -152,7 +166,9 @@ async function wheelScroll(page: any, options: { from: { x: number; y: number };
       await page.mouse.move(x, from.y);
     }
     await page.mouse.wheel(0, deltaY);
-    await wait(stepMs);
+    // The gap between notches IS the input being simulated: a hand's wheel comes
+    // in paced notches, and the overlay's settle timer reacts to that pacing.
+    await sleep(stepMs);
   }
 }
 
@@ -204,4 +220,7 @@ function formatTimeline(events: OverlayEvent[]): string {
   return events.map((event) => `${event.t.toFixed(1).padStart(9)}ms  ${event.type}${event.host ? ` ${event.host}` : ''}${event.label ? ` ${event.label}` : ''}`).join('\n');
 }
 
-module.exports = { launchOverlayBrowser, openFixture, fixtureHtml, takeLog, wheelScroll, summarize, formatTimeline, wait };
+// `wait` used to be exported from here and was the only shared wait in the Node
+// half of these tests; it lives in lib-wait.cts now (#986), so callers that need
+// a delay require `sleep` from there directly.
+module.exports = { launchOverlayBrowser, openFixture, fixtureHtml, takeLog, wheelScroll, summarize, formatTimeline };

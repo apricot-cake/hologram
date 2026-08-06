@@ -28,7 +28,7 @@ const { readEvalResult } = require('./lib-eval-result.cts');
 
 const electronPath = resolveElectron();
 const { seedLibrary } = require('./lib-seed-library.cts');
-const { rendererWaits } = require('./lib-wait.cts');
+const { evalSource } = require('./lib-wait.cts');
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-marquee-'));
 const configDir = path.join(tmp, 'Hologram');
@@ -61,38 +61,54 @@ for (let i = 0; i < 12; i++) {
 }
 seedLibrary(configDir, records);
 
-const evalJs = `(async () => {
-  // sleep / waitFor / waitStable / neverHappens + the WAIT_DEADLINE budget (#952),
-  // now shared by every harness instead of living here — scripts/lib-wait.cts.
-  ${rendererWaits()}
-  const byId = (id) => document.getElementById(id);
-  const cards = () => [...document.querySelectorAll('[data-slot="post-grid"] [data-slot="post-card"]')];
+// sleep / waitFor / waitStable / neverHappens + the WAIT_DEADLINE budget (#952)
+// come in as the first argument — scripts/lib-wait.cts. The body is a real
+// function rather than a template literal so Biome's no-fixed-wait plugin and tsc
+// can both read it; it is serialised, so it closes over nothing from this file.
+const evalJs = evalSource(async ({ waitFor, waitStable, neverHappens }) => {
+  const cards = () => [...document.querySelectorAll<HTMLElement>('[data-slot="post-grid"] [data-slot="post-card"]')];
   // Cards are identified by their own text (no key attribute — #618).
-  const nameOf = (c) => ((c.textContent || '').match(/本文\\d+/) || [])[0] || '?';
-  const selectedKeys = () => cards().filter(c => c.hasAttribute('data-selected')).map(nameOf).sort();
+  const nameOf = (c) => ((c.textContent || '').match(/本文\d+/) || [])[0] || '?';
+  const selectedKeys = () =>
+    cards()
+      .filter((c) => c.hasAttribute('data-selected'))
+      .map(nameOf)
+      .sort();
   const band = () => document.querySelector('[data-slot="grid-marquee"]');
-  const errors = [];
+  const errors: string[] = [];
   window.addEventListener('error', (e) => errors.push(String((e && e.message) || e)));
-  const out = {};
+  const out: Record<string, any> = {};
 
-  const rectsOf = (sel) => [...document.querySelectorAll(sel)].map(c => { const k = c.getBoundingClientRect(); return [Math.round(k.left), Math.round(k.top), Math.round(k.width), Math.round(k.height)]; });
+  const rectsOf = (sel) =>
+    [...document.querySelectorAll(sel)].map((c) => {
+      const k = c.getBoundingClientRect();
+      return [Math.round(k.left), Math.round(k.top), Math.round(k.width), Math.round(k.height)];
+    });
 
   await waitFor('the grid to show all 12 seeded posts', () => cards().length >= 12);
   // Every expectation below is derived from these rects, so wait for masonic's
   // measured heights to stop moving rather than for a fixed number of frames.
   out.gridSettled = await waitStable('the masonry layout to stop moving', () => rectsOf('[data-slot="post-grid"] [data-slot="post-card"]'));
 
-  const scroller = document.querySelector('[data-slot="content-scroll"]');
+  // Named rather than optional-chained: every coordinate below is measured off this
+  // element, so a missing scroller has to stop the run and say so.
+  const scroller = document.querySelector<HTMLElement>('[data-slot="content-scroll"]');
+  if (!scroller) throw new Error('the content scroller is missing — the grid never mounted');
   const sr = scroller.getBoundingClientRect();
 
-  const down = (x, y, mods) => scroller.dispatchEvent(new MouseEvent('mousedown', Object.assign({ bubbles: true, button: 0, clientX: x, clientY: y }, mods)));
+  // `mods` is optional: most presses here carry no modifier, and Object.assign with
+  // undefined is a no-op — the same call shape the template-literal version had.
+  const down = (x, y, mods?) => scroller.dispatchEvent(new MouseEvent('mousedown', Object.assign({ bubbles: true, button: 0, clientX: x, clientY: y }, mods)));
   const move = (x, y) => window.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: x, clientY: y }));
   const up = () => window.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
   const esc = () => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
   // Press and release with no movement at all: the click half of the gesture (#242).
   // No 'click' event is synthesized, so the narrow overlay's outside-click dismiss
   // (a separate listener) cannot be what any of this measures.
-  const click = (x, y, mods) => { down(x, y, mods); up(); };
+  const click = (x, y, mods?) => {
+    down(x, y, mods);
+    up();
+  };
   const inspectedCards = () => document.querySelectorAll('[data-slot="post-grid"] [data-slot="post-card"][data-inspected]').length;
   const panelFilled = () => !!document.querySelector('[data-slot="inspector-body"] [data-slot="inspector-tags"]');
   // The panel's "nothing is selected" state (#244). Asserted on its own rather than
@@ -103,8 +119,17 @@ const evalJs = `(async () => {
   // Cards the band would touch, computed from LIVE DOM rects — the independent
   // answer the app's positioner-based hit test has to agree with.
   const expectFor = (x0, y0, x1, y1) => {
-    const l = Math.min(x0, x1), r = Math.max(x0, x1), t = Math.min(y0, y1), b = Math.max(y0, y1);
-    return cards().filter(c => { const k = c.getBoundingClientRect(); return l < k.right && r > k.left && t < k.bottom && b > k.top; }).map(nameOf).sort();
+    const l = Math.min(x0, x1),
+      r = Math.max(x0, x1),
+      t = Math.min(y0, y1),
+      b = Math.max(y0, y1);
+    return cards()
+      .filter((c) => {
+        const k = c.getBoundingClientRect();
+        return l < k.right && r > k.left && t < k.bottom && b > k.top;
+      })
+      .map(nameOf)
+      .sort();
   };
   // One full pass: press in the left margin, cross the threshold, drag, release.
   // The expect argument is the answer this drag has to converge on — expectFor's
@@ -128,16 +153,22 @@ const evalJs = `(async () => {
   };
 
   // Rows, top-first: pick a band that cuts through the middle of one row only.
-  const rows = {};
-  for (const c of cards()) { const k = c.getBoundingClientRect(); const key = Math.round(k.top); (rows[key] = rows[key] || []).push({ el: c, r: k }); }
-  const rowTops = Object.keys(rows).map(Number).sort((a, b) => a - b);
+  const rows: Record<number, Array<{ el: HTMLElement; r: DOMRect }>> = {};
+  for (const c of cards()) {
+    const k = c.getBoundingClientRect();
+    const key = Math.round(k.top);
+    (rows[key] = rows[key] || []).push({ el: c, r: k });
+  }
+  const rowTops = Object.keys(rows)
+    .map(Number)
+    .sort((a, b) => a - b);
   const row0 = rows[rowTops[0]].sort((a, b) => a.r.left - b.r.left);
   out.rowCount = rowTops.length;
   out.row0Count = row0.length;
   // Thin horizontal band through row 0, from the left margin to the middle of the
   // SECOND column — so it must take exactly the first two cards of that row.
   const cy = Math.round((row0[0].r.top + row0[0].r.bottom) / 2);
-  const x0 = Math.round(sr.left + 6);          // the scroller's padding: empty space
+  const x0 = Math.round(sr.left + 6); // the scroller's padding: empty space
   const x1 = Math.round((row0[1].r.left + row0[1].r.right) / 2);
   // "Not on a card" is the question, and it is the same one the grid's own press recognizer
   // asks (_shared/VirtualGrid.tsx: a press is background unless it closest()s a cell). This
@@ -248,11 +279,11 @@ const evalJs = `(async () => {
   // Scrolling to the end rebuilds masonic's render window, so the answer to "where
   // is the last row" moves for a while — wait for it to stop.
   out.bottomSettled = await waitStable('the last row to stop moving after scrolling to the bottom', () => [Math.round(scroller.scrollTop), rectsOf('[data-slot="post-grid"] [data-slot="post-card"]')]);
-  const lowest = Math.max(...cards().map(c => c.getBoundingClientRect().bottom));
+  const lowest = Math.max(...cards().map((c) => c.getBoundingClientRect().bottom));
   const belowY = Math.round(lowest + 24);
   const belowX = Math.round(sr.left + scroller.clientWidth / 2);
   out.belowAvailable = belowY < sr.bottom - 4;
-  out.belowIsEmpty = out.belowAvailable && !(document.elementFromPoint(belowX, belowY) || {}).closest?.('[data-slot="post-card"]');
+  out.belowIsEmpty = out.belowAvailable && !document.elementFromPoint(belowX, belowY)?.closest('[data-slot="post-card"]');
   out.beforeI = selectedKeys();
   if (out.belowAvailable) {
     click(belowX, belowY);
@@ -263,23 +294,26 @@ const evalJs = `(async () => {
   // J. the poster grid rides the same gesture (#242). It has no selection — poster
   //    cards are inspected, never selected — so all its background click does is put
   //    the panel both grids share back to the placeholder.
-  [...document.querySelectorAll('button')].find(b => (b.textContent || '').trim() === '投稿者')?.click();
+  [...document.querySelectorAll('button')].find((b) => (b.textContent || '').trim() === '投稿者')?.click();
   out.posterCardsShown = await waitFor('the poster grid to show its cards', () => document.querySelectorAll('[data-slot="poster-grid"] [data-slot="poster-card"]').length >= 1);
   // masonic lays the poster grid out from scratch — same rect-repeats wait as the
   // post grid above, since the press point below is read off these rects.
   out.posterSettled = await waitStable('the poster grid layout to stop moving', () => rectsOf('[data-slot="poster-grid"] [data-slot="poster-card"]'));
+  // Named rather than optional-chained: this card is both the click target and the
+  // ruler for the press point below, so a missing one has to stop the run.
   const posterCard = document.querySelector('[data-slot="poster-grid"] [data-slot="poster-card"]');
-  posterCard?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  if (!posterCard) throw new Error('the poster grid rendered no poster card to click');
+  posterCard.dispatchEvent(new MouseEvent('click', { bubbles: true }));
   out.posterFilledBeforeJ = await waitFor('the clicked poster to fill the inspector', () => !!document.querySelector('[data-slot="inspector-body"] [data-slot="inspector-poster"]'), 4000);
   const pr = posterCard.getBoundingClientRect();
   const py = Math.round((pr.top + pr.bottom) / 2);
-  out.posterPressOnEmpty = !(document.elementFromPoint(x0, py) || {}).closest?.('[data-slot="poster-card"]');
+  out.posterPressOnEmpty = !document.elementFromPoint(x0, py)?.closest('[data-slot="poster-card"]');
   click(x0, py);
   out.posterPlaceholderAfterJ = await waitFor('the poster grid background click to return the inspector to its placeholder', () => panelPlaceholder(), 4000);
 
   out.errors = errors;
   return JSON.stringify(out);
-})()`;
+});
 
 const env = Object.assign({}, process.env, {
   APPDATA: tmp,

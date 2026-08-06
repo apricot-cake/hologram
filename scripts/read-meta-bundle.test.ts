@@ -16,7 +16,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { JSDOM } from 'jsdom';
-import { expect, test } from 'vitest';
+import { expect, test, vi } from 'vitest';
 
 const BUNDLE = fs.readFileSync(path.join(import.meta.dirname, '..', 'extension', '.output', 'chrome-mv3-release', 'read-meta.js'), 'utf8');
 
@@ -29,7 +29,9 @@ async function runOn(html: string, url: string): Promise<any> {
   const sent: any[] = [];
   window.chrome = { runtime: { sendMessage: (msg: any) => sent.push(msg) } } as any;
   window.eval(BUNDLE);
-  await new Promise((r) => setTimeout(r, 50)); // let any pending microtasks settle
+  // The entrypoint sends exactly one message and then it is done — that message IS the
+  // post-condition, so poll for it rather than guessing how long extraction takes.
+  await vi.waitFor(() => expect(sent.length).toBeGreaterThan(0), { timeout: 5000 });
   expect(sent).toHaveLength(1);
   expect(sent[0].type).toBe('pageMetaExtracted');
   return sent[0].result;

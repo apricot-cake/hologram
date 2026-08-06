@@ -28,6 +28,7 @@ const { createNativeHostSandbox } = require('./lib-native-host-e2e.cts');
 const { fetchXTweet } = require('../extension/utils/extractor/x.ts');
 const { inboxNewDir } = require('../native-host/inbox.mts');
 const { verifyRecord } = require('./test-watch-verify.cts');
+const { sleep, waitFor } = require('./lib-wait.cts');
 
 // sw.evaluate()/page.evaluate() callback bodies below run inside the extension's
 // service-worker / page context (a real browser, via CDP) — `chrome` is the
@@ -204,8 +205,6 @@ async function pickMastodon(cells) {
   }
 }
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-
 // The real sidecar lives at <saveFolder>/.hologram-inbox/new/<captureId>.json
 // since #299's durable intake queue (lib-db-inbox.ts never deletes loose
 // files, so this directory only grows during a run). null means the
@@ -221,22 +220,39 @@ function listInboxNames(newDir) {
   }
 }
 
-async function waitForNewSidecar(newDir, before, timeoutMs = 25000) {
-  const t0 = Date.now();
+// `libraryDir` is the library root the envelope's media names are relative to.
+async function waitForNewSidecar(newDir, libraryDir, before, timeoutMs = 25000): Promise<{ file: string | null; dirSeen: boolean }> {
   let dirSeen = false;
-  while (Date.now() - t0 < timeoutMs) {
-    const names = listInboxNames(newDir);
-    if (names !== null) {
+  let file: string | null = null;
+  await waitFor(
+    `a new sidecar under ${newDir}`,
+    () => {
+      const names = listInboxNames(newDir);
+      if (names === null) return false;
       dirSeen = true;
-      const fresh = names.filter((f) => !before.has(f));
-      if (fresh.length) {
-        await sleep(1500); // bridge writes the envelope before media finishes downloading — settle
-        return { file: fresh[0], dirSeen };
+      file = names.filter((f) => !before.has(f))[0] || null;
+      return file !== null;
+    },
+    { timeoutMs, pollMs: 400 },
+  ).catch(() => {});
+  if (file === null) return { file: null, dirSeen };
+  // #299: the envelope commits BEFORE its media finishes downloading, so the
+  // files it names are the post-condition — not a guessed settling time. A
+  // timeout is swallowed here on purpose: the caller names the individual files
+  // that never landed, which is a better report than this wait could give.
+  await waitFor(
+    `the media named by ${file} to land in the library`,
+    () => {
+      try {
+        const rec = (JSON.parse(fs.readFileSync(path.join(newDir, file as string), 'utf8')) || {}).record || {};
+        return [rec.image, rec.video, ...(rec.media || []).map((m) => m.file)].filter(Boolean).every((name) => fs.existsSync(path.join(libraryDir, name)));
+      } catch {
+        return false; // half-written envelope — ask again on the next poll
       }
-    }
-    await sleep(400);
-  }
-  return { file: null, dirSeen };
+    },
+    { timeoutMs: 15000 },
+  ).catch(() => {});
+  return { file, dirSeen };
 }
 
 (async () => {
@@ -322,6 +338,12 @@ async function waitForNewSidecar(newDir, before, timeoutMs = 25000) {
         // never fires — wait for the post DOM instead.
         await page.goto(cell.url, { waitUntil: 'domcontentloaded', timeout: 45000 });
         await page.waitForSelector(cell.waitSel, { timeout: 30000 });
+        // Fixed: these are live third-party SPAs, which keep hydrating after the
+        // post element mounts and expose no "settled" signal of their own — and
+        // the extension draws nothing on its own to wait for either. Everything
+        // the run actually depends on IS waited on: the banner below for click
+        // cells, the drop zone for drag cells.
+        // biome-ignore lint/plugin: live third-party SPAs expose no "settled" signal
         await sleep(1200);
 
         // Negative regression: dragging a non-post image (profile avatar) must
@@ -333,6 +355,7 @@ async function waitForNewSidecar(newDir, before, timeoutMs = 25000) {
               if (!img) return 'no-img';
               img.scrollIntoView({ block: 'center' });
               img.dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer: new DataTransfer() }));
+              // biome-ignore lint/plugin: window in which the zone that must NOT appear would
               await new Promise((r) => setTimeout(r, 500));
               const z = document.getElementById('__hologramDropZone');
               return !!(z && z.style.display !== 'none');
@@ -340,6 +363,10 @@ async function waitForNewSidecar(newDir, before, timeoutMs = 25000) {
             { sel: cell.dragSel, notWithin: cell.notWithin },
           );
           if (zoneShown === 'no-img') throw new Error('avatar img not found');
+          // Fixed: this cell asserts that NOTHING was saved. Waiting for a
+          // post-condition would mean waiting for the save that must not happen,
+          // so the window is the check.
+          // biome-ignore lint/plugin: window in which the save that must not happen would
           await sleep(2500);
           const leaked = (listInboxNames(newDir) || []).filter((f) => !before.has(f));
           if (zoneShown) throw new Error('ドロップゾーンが表示された（捏造保存の恐れ）');
@@ -381,7 +408,7 @@ async function waitForNewSidecar(newDir, before, timeoutMs = 25000) {
           }
           // Override expected url for the id-match check below
           cell.url = `https://x.com${replyImg.artHref}`;
-          const dragOk = await page.evaluate((articleSel) => {
+          const dragOk = await page.evaluate(async (articleSel) => {
             const articles = [...document.querySelectorAll(articleSel)];
             for (const art of articles.slice(1)) {
               const img = art.querySelector('img[src*="pbs.twimg.com/media"]');
@@ -389,17 +416,21 @@ async function waitForNewSidecar(newDir, before, timeoutMs = 25000) {
                 img.scrollIntoView({ block: 'center' });
                 const dt = new DataTransfer();
                 img.dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer: dt }));
-                return new Promise((res) =>
-                  setTimeout(() => {
+                // The zone appearing is the post-condition. Polled by frame rather
+                // than waited out, so a slow page costs a longer wait instead of a
+                // false "no-zone" (which reads as a broken extension).
+                const shownZone = async () => {
+                  for (let i = 0; i < 180; i++) {
                     const zone = document.getElementById('__hologramDropZone');
-                    if (!zone || zone.style.display === 'none') {
-                      res('no-zone');
-                      return;
-                    }
-                    zone.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt }));
-                    res('ok');
-                  }, 400),
-                );
+                    if (zone && zone.style.display !== 'none') return zone;
+                    await new Promise((r) => requestAnimationFrame(r));
+                  }
+                  return null;
+                };
+                const zone = await shownZone();
+                if (!zone) return 'no-zone';
+                zone.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt }));
+                return 'ok';
               }
             }
             return 'no-reply-img';
@@ -468,10 +499,12 @@ async function waitForNewSidecar(newDir, before, timeoutMs = 25000) {
           // /partial amber/fail red), so a bridge failure isn't lost.
           const banner = await page.evaluate(async () => {
             const find = () => [...document.querySelectorAll('div')].find((d) => d.style.zIndex === '2147483647');
-            for (let i = 0; i < 60; i++) {
+            // Polled by frame: the banner carrying an outcome is the post-condition,
+            // and a slow bridge should cost time rather than turn into "(no banner)".
+            for (let i = 0; i < 360; i++) {
               const b = find();
               if (b && /保存|失敗|Saved|failed/.test(b.textContent)) return b.textContent.trim();
-              await new Promise((r) => setTimeout(r, 100));
+              await new Promise((r) => requestAnimationFrame(r));
             }
             const b = find();
             return b ? b.textContent.trim() : '(no banner)';
@@ -486,16 +519,22 @@ async function waitForNewSidecar(newDir, before, timeoutMs = 25000) {
             img.scrollIntoView({ block: 'center' });
             const dt = new DataTransfer();
             img.dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer: dt }));
-            await new Promise((r) => setTimeout(r, 400));
-            const zone = document.getElementById('__hologramDropZone');
-            if (!zone || zone.style.display === 'none') return 'no-zone';
+            // The zone appearing is the post-condition. Polled by frame so a slow
+            // page costs a longer wait instead of a false "no-zone".
+            let zone: HTMLElement | null = null;
+            for (let i = 0; i < 180 && !zone; i++) {
+              const found = document.getElementById('__hologramDropZone');
+              zone = found && found.style.display !== 'none' ? found : null;
+              if (!zone) await new Promise((r) => requestAnimationFrame(r));
+            }
+            if (!zone) return 'no-zone';
             zone.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt }));
             return 'ok';
           }, cell.dragSel);
           if (ok !== 'ok') throw new Error('drag setup failed: ' + ok);
         }
 
-        const { file, dirSeen } = await waitForNewSidecar(newDir, before);
+        const { file, dirSeen } = await waitForNewSidecar(newDir, dir, before);
         if (!file) {
           // surface the in-page failure message (drop zone / banner text)
           const hint = await page

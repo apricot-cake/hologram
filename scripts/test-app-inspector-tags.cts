@@ -32,7 +32,7 @@ const { readEvalResult } = require('./lib-eval-result.cts');
 const electronPath = resolveElectron();
 const { openDatabase } = require(path.join(appDir, 'src', 'main', 'lib-db.ts'));
 const { seedLibrary } = require('./lib-seed-library.cts');
-const { rendererWaits } = require('./lib-wait.cts');
+const { evalSource } = require('./lib-wait.cts');
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-insptags-'));
 const configDir = path.join(tmp, 'Hologram');
@@ -69,36 +69,51 @@ seed.forEach((s, i) => {
 });
 seedLibrary(configDir, records);
 
-const evalJs = `(async () => {
-  // sleep / waitFor / waitStable / neverHappens — scripts/lib-wait.cts (#986).
-  ${rendererWaits()}
-  const byId = (id) => document.getElementById(id);
+// sleep / waitFor / waitStable / neverHappens come in as the first argument —
+// scripts/lib-wait.cts (#986). The body is a real function rather than a template
+// literal so Biome's no-fixed-wait plugin and tsc can both read it; it is
+// serialised, so it closes over nothing from this file.
+const evalJs = evalSource(async ({ sleep, waitFor, neverHappens }) => {
   const field = () => document.querySelector('[data-slot="inspector"] [data-slot="inspector-tags"]');
-  const chips = () => [...document.querySelectorAll('[data-slot="inspector"] [data-slot="tag-chip"]')].map(c => c.getAttribute('data-tag'));
-  const input = () => document.querySelector('[data-slot="inspector"] [data-slot="tag-input"]');
+  const chips = () => [...document.querySelectorAll('[data-slot="inspector"] [data-slot="tag-chip"]')].map((c) => c.getAttribute('data-tag'));
+  const input = () => document.querySelector<HTMLInputElement>('[data-slot="inspector"] [data-slot="tag-input"]');
   // Addressed by what the card says (no key attribute on the cells — #618).
   const postCards = () => [...document.querySelectorAll('[data-slot="post-grid"] [data-slot="post-card"]')];
-  const cardOf = (n) => postCards().find(c => (c.textContent || '').includes('本文' + n));
-  const nameOf = (c) => ((c.textContent || '').match(/本文\\d+/) || [])[0] || '?';
-  const errors = [];
+  const cardOf = (n) => postCards().find((c) => (c.textContent || '').includes('本文' + n));
+  // Named rather than optional-chained: the card IS what each step below acts on, so
+  // a missing one has to stop the run and say which one, instead of skipping a click
+  // and leaving a later assertion to report something else.
+  const requireCard = (n) => {
+    const c = cardOf(n);
+    if (!c) throw new Error('the grid is missing the seeded card 本文' + n);
+    return c;
+  };
+  const nameOf = (c) => ((c.textContent || '').match(/本文\d+/) || [])[0] || '?';
+  const requireInput = (why) => {
+    const el = input();
+    if (!el) throw new Error('the inspector has no tag input to ' + why);
+    return el;
+  };
+  const errors: string[] = [];
   window.addEventListener('error', (e) => errors.push(String((e && e.message) || e)));
-  const out = {};
+  const out: Record<string, any> = {};
 
   // React owns the input's value, so a plain .value assignment is invisible to it —
   // go through the native setter the way React's own test utils do.
   const setInput = (el, v) => {
-    const proto = Object.getPrototypeOf(el);
-    Object.getOwnPropertyDescriptor(proto, 'value').set.call(el, v);
+    const desc = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el), 'value');
+    if (!desc?.set) throw new Error('the tag input exposes no native value setter to drive');
+    desc.set.call(el, v);
     el.dispatchEvent(new Event('input', { bubbles: true }));
   };
   const key = (el, k) => el.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true }));
-  // TagField's Enter handler commits React's \`query\` state, not the DOM value
+  // TagField's Enter handler commits React's `query` state, not the DOM value
   // (inspector/TagField.tsx), so an Enter dispatched before the input event has
   // rendered is silently a no-op. Re-pressing until the chip lands is the observable
   // form of the fixed 80ms that used to stand in for that render (#986); once the
   // tag is in, the field clears its query, so the repeat presses are no-ops too.
   const typeTag = async (label, text) => {
-    const el = input();
+    const el = requireInput('type a tag into');
     el.focus();
     setInput(el, text);
     return waitFor(label, () => {
@@ -114,35 +129,35 @@ const evalJs = `(async () => {
   // tagging since the hover 🏷 (and the popover it opened) went away in P2⑦. It opens
   // the panel for that card AND puts the caret in the field — otherwise it would just
   // be an alias for 詳細 (details) and the user would still have to go find the input.
-  cardOf(1).dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 40, clientY: 40 }));
+  requireCard(1).dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 40, clientY: 40 }));
   const menuItems = () => [...document.querySelectorAll('[data-slot="dropdown-menu-item"]')];
-  out.menuOpened = await waitFor('the card context menu to offer its edit-tags item', () => menuItems().some(r => r.textContent.includes('タグを編集')));
-  const tagItem = menuItems().find(r => r.textContent.includes('タグを編集'));
+  out.menuOpened = await waitFor('the card context menu to offer its edit-tags item', () => menuItems().some((r) => (r.textContent || '').includes('タグを編集')));
+  const tagItem = menuItems().find((r) => (r.textContent || '').includes('タグを編集'));
   if (tagItem) tagItem.dispatchEvent(new MouseEvent('click', { bubbles: true }));
   out.menuOpenedPanel = await waitFor("the inspector to open showing that card's tags", () => !!field() && chips().includes('既存タグ'));
   out.tagInputFocused = await waitFor('the caret to land in the tag field', () => !!input() && document.activeElement === input());
   key(document.body, 'Escape'); // dismiss the menu before the rest of the flow
 
   // B. selecting a card puts its tags in the field (tag-b already has one)
-  cardOf(1).dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  requireCard(1).dispatchEvent(new MouseEvent('click', { bubbles: true }));
   out.fieldShown = await waitFor('the inspector to show a tag field for the selected card', () => !!field());
   out.chipsForB = chips().join(',');
 
   // C. free text + Enter adds a tag to the inspected card
-  cardOf(0).dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  requireCard(0).dispatchEvent(new MouseEvent('click', { bubbles: true }));
   await waitFor('the inspector to switch to the untagged card', () => !!field() && chips().length === 0);
   out.hasInput = !!input();
   out.chipAdded = await typeTag('the typed tag to be added as a chip', '新規タグ');
   out.chipsAfterAdd = chips().join(',');
   // the typed text is consumed, not left in the field
-  out.inputCleared = await waitFor('the tag field to clear the text it consumed', () => (input() || {}).value === '');
+  out.inputCleared = await waitFor('the tag field to clear the text it consumed', () => input()?.value === '');
 
   // D. the popup offers the un-adopted source hashtag and the library vocabulary
-  const el2 = input();
+  const el2 = requireInput('open the suggestion popup from');
   el2.focus();
   el2.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
   el2.click();
-  const itemTexts = () => [...document.querySelectorAll('[role="option"]')].map(n => n.textContent.trim());
+  const itemTexts = () => [...document.querySelectorAll('[role="option"]')].map((n) => (n.textContent || '').trim());
   // The suggestion popup having rows at all is the post-condition of the press;
   // WHICH rows it offers is asserted separately below, so a popup that opens empty
   // still fails the checks instead of being waited into existence.
@@ -154,18 +169,21 @@ const evalJs = `(async () => {
   // MUI Autocomplete and Ant Design Select follow). Asserted as "closer to the
   // field than to the input" rather than on exact pixels, which are layout noise.
   const leftOf = (el) => Math.round(el.getBoundingClientRect().left);
-  const fieldEl = input().closest('[role="group"]');
+  // The group IS the anchor this check is about, so a field without one has to stop
+  // the run rather than silently compare against nothing.
+  const fieldEl = requireInput('measure the popup anchor from').closest('[role="group"]');
+  if (!fieldEl) throw new Error('the tag input is not inside the [role="group"] the popup anchors to');
   out.anchorField = leftOf(fieldEl);
   out.anchorInput = leftOf(el2);
   const optEl = document.querySelector('[role="option"]');
   const popupEl = optEl && optEl.closest('div[class*="bg-popover"]');
   out.anchorPopup = popupEl ? leftOf(popupEl) : null;
   out.popupTracksField = out.anchorPopup !== null && Math.abs(out.anchorPopup - out.anchorField) < Math.abs(out.anchorPopup - out.anchorInput);
-  out.offersSourceTag = itemTexts().some(t => t.includes('ソースタグ'));
-  out.offersVocab = itemTexts().some(t => t.includes('既存タグ'));
+  out.offersSourceTag = itemTexts().some((t) => t.includes('ソースタグ'));
+  out.offersVocab = itemTexts().some((t) => t.includes('既存タグ'));
 
   // E. picking the source hashtag adopts it
-  const srcItem = [...document.querySelectorAll('[role="option"]')].find(n => n.textContent.trim().includes('ソースタグ'));
+  const srcItem = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find((n) => (n.textContent || '').trim().includes('ソースタグ'));
   if (srcItem) srcItem.click();
   out.adopted = await waitFor('the picked source hashtag to become a chip', () => chips().includes('ソースタグ'));
 
@@ -186,7 +204,7 @@ const evalJs = `(async () => {
 
   // F. the chip's × removes a tag
   out.chipsBeforeRemove = chips().join(',');
-  const chipEl = [...document.querySelectorAll('[data-slot="inspector"] [data-slot="tag-chip"]')].find(c => c.getAttribute('data-tag') === '新規タグ');
+  const chipEl = [...document.querySelectorAll('[data-slot="inspector"] [data-slot="tag-chip"]')].find((c) => c.getAttribute('data-tag') === '新規タグ');
   const removeBtn = chipEl && chipEl.querySelector('button');
   out.hasRemoveBtn = !!removeBtn;
   if (removeBtn) removeBtn.click();
@@ -196,24 +214,30 @@ const evalJs = `(async () => {
   // G. arrows inside the tag input belong to the CARET, not to the grid. This is the
   // consecutive-tagging (連続タグ付け) loop's load-bearing guard: arrow to the next card,
   // type, arrow within what you typed — if the grid ate those the selection would jump mid-word.
-  const el3 = input();
+  const el3 = requireInput('type into while the arrows are pressed');
   el3.focus();
   setInput(el3, 'あいう');
-  const selBefore = postCards().filter(c => c.hasAttribute('data-selected')).map(nameOf).join(',');
+  const selectionNow = () =>
+    postCards()
+      .filter((c) => c.hasAttribute('data-selected'))
+      .map(nameOf)
+      .join(',');
+  const selBefore = selectionNow();
   el3.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }));
   el3.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
   // "The grid does NOT take the arrows" — spending the window is the check (#986).
-  out.selectionHeldWhileTyping = await neverHappens('arrows inside the tag field to move the grid selection', () => postCards().filter(c => c.hasAttribute('data-selected')).map(nameOf).join(',') !== selBefore, 250);
+  out.selectionHeldWhileTyping = await neverHappens('arrows inside the tag field to move the grid selection', () => selectionNow() !== selBefore, 250);
   setInput(el3, '');
   key(el3, 'Escape');
 
   // Fixed on purpose: the tags this suite asserts on are written by MAIN (#298/St5
   // made tag edits a DB write), and the renderer's chips are updated optimistically —
   // so there is nothing here to observe that says the write landed before the app quits.
+  // biome-ignore lint/plugin: the delay IS the spec here — it covers main's DB write, which the renderer cannot observe.
   await sleep(300);
   out.errors = errors;
   return JSON.stringify(out);
-})()`;
+});
 
 const env = Object.assign({}, process.env, {
   APPDATA: tmp,

@@ -31,6 +31,7 @@ const { readEvalResult } = require('./lib-eval-result.cts');
 
 const electronPath = resolveElectron();
 const { seedLibrary } = require('./lib-seed-library.cts');
+const { rendererWaits } = require('./lib-wait.cts');
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-ugoira-'));
 const configDir = path.join(tmp, 'Hologram');
@@ -134,22 +135,23 @@ seedLibrary(configDir, [
 ]);
 
 const evalJs = `(async () => {
-  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-  const waitFor = async (fn, ms = 8000) => {
-    const t0 = Date.now();
-    for (;;) { const v = fn(); if (v) return v; if (Date.now() - t0 > ms) return null; await sleep(40); }
-  };
+  ${rendererWaits()}
   const out = {};
 
-  const card = await waitFor(() => document.querySelector('[data-slot="post-grid"] [data-slot="post-card"]'));
+  const cardEl = () => document.querySelector('[data-slot="post-grid"] [data-slot="post-card"]');
+  await waitFor('the seeded ugoira post to appear as a card', () => !!cardEl());
+  const card = cardEl();
   out.cardFound = !!card;
+  if (!card) return JSON.stringify(out);
   // Play badge: the "won't move until clicked" indicator shows up just like it does for video
   out.playBadge = !!document.querySelector('[data-slot="post-card-play"]');
 
   card.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
-  out.imageTabActive = !!(await waitFor(() => document.querySelector('[data-slot="image-tab-view"]')));
+  out.imageTabActive = await waitFor('the image tab to open on double click', () => !!document.querySelector('[data-slot="image-tab-view"]'));
 
-  const canvas = await waitFor(() => document.querySelector('[data-slot="ugoira-stage"] canvas'));
+  const canvasEl = () => document.querySelector('[data-slot="ugoira-stage"] canvas');
+  await waitFor('the ugoira stage to put up its canvas', () => !!canvasEl());
+  const canvas = canvasEl();
   out.canvasFound = !!canvas;
   if (!canvas) return JSON.stringify(out);
 
@@ -160,7 +162,8 @@ const evalJs = `(async () => {
       return d[0] + ',' + d[1] + ',' + d[2];
     } catch (e) { return 'ERR:' + e.message; }
   };
-  out.firstPixel = await waitFor(() => { const p = px(); return p !== '0,0,0' && !p.startsWith('ERR') ? p : null; });
+  const drawn = await waitFor('the first ugoira frame to be drawn onto the canvas', () => { const p = px(); return p !== '0,0,0' && !p.startsWith('ERR'); });
+  out.firstPixel = drawn ? px() : null;
 
   // The frames actually advance = the color changes on each delay tick.
   // Sampled until a second color shows up rather than over a fixed window: every
@@ -170,7 +173,7 @@ const evalJs = `(async () => {
   // same build advanced through all three colors locally. What is being asserted
   // is that the animation moves, not how fast the runner gets there.
   const seen = new Set();
-  await waitFor(() => { seen.add(px()); return seen.size >= 2 ? true : null; }, 10000);
+  await waitFor('the ugoira to advance far enough to show a second frame colour', () => { seen.add(px()); return seen.size >= 2; }, 10000);
   out.colorsSeen = [...seen].sort();
 
   // Stops when paused
@@ -178,13 +181,17 @@ const evalJs = `(async () => {
   out.toggleFound = !!toggle;
   if (toggle) {
     toggle.click();
+    // Kept as a fixed delay: a frame already in flight when the click landed still
+    // gets drawn afterwards, and that draw is not the animation running. 300ms is
+    // five frame delays (60ms), so the in-flight one has landed by then.
     await sleep(300);
     const held = px();
-    await sleep(500);
-    out.pausedHeld = px() === held;
+    // "Nothing happens" has no post-condition to poll for — the assertion IS the
+    // absence — so this one spends its whole window on purpose; keep it short.
+    out.pausedHeld = await neverHappens('the paused canvas to change frames', () => px() !== held, 500);
     toggle.click();
     const resumeFrom = px();
-    out.resumed = !!(await waitFor(() => (px() !== resumeFrom ? true : null), 3000));
+    out.resumed = await waitFor('the frames to start advancing again after resuming', () => px() !== resumeFrom, 3000);
   }
   return JSON.stringify(out);
 })()`;

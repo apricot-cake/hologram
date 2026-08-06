@@ -19,6 +19,7 @@ const path = require('node:path');
 const appDir = path.join(__dirname, '..', 'app');
 const { electronPath: resolveElectron } = require('./lib-electron-path.cts');
 const { seedLibrary } = require('./lib-seed-library.cts');
+const { evalSource } = require('./lib-wait.cts');
 
 const electronPath = resolveElectron();
 
@@ -59,12 +60,15 @@ const snapshotMissingBeforeLaunch = !fs.existsSync(SNAPSHOT_FILE);
 // so the query wrongly answers "not saved" for a post the library actually has.
 const answerBeforeLaunch = bridge.handleQuery({ type: 'query', urls: [POST_URL] }).results[POST_URL];
 
-const evalJs = `(async () => {
-  await window.hologram.listPosts();
-  // scheduleSavedIndexWrite debounces 1500ms; wait past it before the harness quits.
-  await new Promise((r) => setTimeout(r, 1800));
+const evalJs = evalSource(async ({ sleep }) => {
+  await (window as any).hologram.listPosts();
+  // The debounce IS the specification: scheduleSavedIndexWrite waits 1500ms and
+  // nothing is observable from the renderer until it elapses, so the harness has
+  // to sit past it before it quits.
+  // biome-ignore lint/plugin: the 1500ms saved-index debounce is the spec — nothing is observable until it elapses.
+  await sleep(1800);
   return 'primed';
-})()`;
+});
 
 const env = Object.assign({}, process.env, {
   APPDATA: tmp,

@@ -21,7 +21,7 @@ const { electronPath: resolveElectron } = require('./lib-electron-path.cts');
 
 const electronPath = resolveElectron();
 const { seedLibrary } = require('./lib-seed-library.cts');
-const { rendererWaits } = require('./lib-wait.cts');
+const { evalSource } = require('./lib-wait.cts');
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-pf-'));
 const configDir = path.join(tmp, 'Hologram');
@@ -54,45 +54,62 @@ for (let i = 0; i < 3; i++) {
 }
 seedLibrary(configDir, records);
 
-const evalJs = `(async () => {
-  ${rendererWaits()}
+const evalJs = evalSource(async ({ waitFor }) => {
   const cards = () => document.querySelectorAll('[data-slot="post-grid"] [data-slot="post-card"]').length;
   // Filterbar idioms (see test-app-facetcounts): "+ フィルタ" popover → category →
   // ValueEditor rows, chips in the [data-slot=filter-chips] row.
   const POP = '[data-slot="popover-content"]:not([data-closed])';
   const byText = (sel, text) => [...document.querySelectorAll(sel)].find((el) => (el.textContent || '').trim() === text) || null;
-  const edRows = () => [...document.querySelectorAll(POP + ' div.cursor-default')];
-  const rowEl = (name) => edRows().find((el) => { const n = el.querySelector('span.truncate'); return n && n.textContent === name; }) || null;
+  const edRows = () => [...document.querySelectorAll<HTMLElement>(POP + ' div.cursor-default')];
+  const rowEl = (name) =>
+    edRows().find((el) => {
+      const n = el.querySelector('span.truncate');
+      return n && n.textContent === name;
+    }) || null;
   const chipRow = () => document.querySelector('[data-slot="filter-chips"]');
-  const chipCount = () => (chipRow() ? chipRow().querySelectorAll(':scope > span').length : 0);
+  const chipCount = () => {
+    const row = chipRow();
+    return row ? row.querySelectorAll(':scope > span').length : 0;
+  };
   await waitFor('the grid to show all 3 seeded posts', () => cards() >= 3);
-  const chipsBefore = chipCount();   // 0 — no chip row while nothing is filtered
+  const chipsBefore = chipCount(); // 0 — no chip row while nothing is filtered
   const rowAbsentBefore = chipRow() === null; // #674 — the band is unmounted, not just empty
   // add a platform filter via the value editor
   byText('button', 'フィルタ').click();
   await waitFor('the filter menu to open', () => !!document.querySelector(POP + ' [data-slot="command-item"]'));
   byText(POP + ' [data-slot="command-item"]', 'サイト').click(); // #253: renamed from プラットフォーム
   await waitFor('the site editor to list the X row', () => !!rowEl('X'));
-  rowEl('X').click();
+  // Named rather than optional-chained: this click IS the filter under test, so a
+  // missing row has to stop the run instead of letting the waits below blame the grid.
+  const xRow = rowEl('X');
+  if (!xRow) throw new Error('the X row is missing from the site editor');
+  xRow.click();
   // "the grid moved off 3", not "the grid shows 2" — the chip row, the count and
   // the ✓ below are the assertions and must not double as the wait condition.
   await waitFor('the grid to narrow once the site filter is applied', () => cards() < 3);
   const rowPresentAfter = chipRow() !== null; // #674 — the band mounts once there is a chip
-  const chipShown = chipCount() === 1 && chipRow().textContent.includes('X');
-  const cardsFiltered = cards();                                   // 2 (p0,p1)
-  const rowChecked = !!(rowEl('X') && rowEl('X').querySelector('svg')); // ✓ on the picked row
-  const stillOpen = !!document.querySelector(POP);                 // editor stays open for more picks
+  const chipBand = chipRow();
+  if (!chipBand) throw new Error('the filter chip band is missing after the site filter was applied');
+  const chipShown = chipCount() === 1 && (chipBand.textContent || '').includes('X');
+  const cardsFiltered = cards(); // 2 (p0,p1)
+  const xRowAfter = rowEl('X');
+  const rowChecked = !!(xRowAfter && xRowAfter.querySelector('svg')); // ✓ on the picked row
+  const stillOpen = !!document.querySelector(POP); // editor stays open for more picks
   // close the popover (it is marked [data-closed] the moment it starts closing, so
   // this waits for that and not for the throttled unmount) and clear via the chip ✕
   byText('button', 'フィルタ').click();
   await waitFor('the value editor to start closing', () => !document.querySelector(POP));
-  chipRow().querySelector(':scope > span > button[aria-label]').click();
+  // Re-queried: the band re-renders while the popover closes.
+  const chipBandNow = chipRow();
+  const clearBtn = chipBandNow ? chipBandNow.querySelector<HTMLElement>(':scope > span > button[aria-label]') : null;
+  if (!clearBtn) throw new Error('the ✕ button is missing from the filter chip band');
+  clearBtn.click();
   await waitFor('the grid to widen again once the chip is cleared', () => cards() > cardsFiltered);
-  const chipsAfter = chipCount();   // 0
+  const chipsAfter = chipCount(); // 0
   const rowAbsentAfter = chipRow() === null; // #674 — clearing the last chip unmounts the band again
-  const cardsAfter = cards();       // 3
+  const cardsAfter = cards(); // 3
   return { chipsBefore, rowAbsentBefore, rowPresentAfter, chipShown, cardsFiltered, rowChecked, stillOpen, chipsAfter, rowAbsentAfter, cardsAfter };
-})()`;
+});
 
 const env = Object.assign({}, process.env, { APPDATA: tmp, HOLOGRAM_CONFIG_DIR: path.join(tmp, 'Hologram'), HOLOGRAM_SMOKE: '1', HOLOGRAM_SMOKE_EVAL: evalJs });
 const child = spawn(electronPath, ['.'], { cwd: appDir, env, stdio: ['inherit', 'pipe', 'inherit'] });

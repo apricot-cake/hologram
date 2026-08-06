@@ -33,7 +33,7 @@ const { readEvalResult } = require('./lib-eval-result.cts');
 const electronPath = resolveElectron();
 const { openDatabase } = require(path.join(appDir, 'src', 'main', 'lib-db.ts'));
 const { seedLibrary } = require('./lib-seed-library.cts');
-const { rendererWaits } = require('./lib-wait.cts');
+const { evalSource } = require('./lib-wait.cts');
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-bulktag-'));
 const configDir = path.join(tmp, 'Hologram');
@@ -69,36 +69,53 @@ seed.forEach((s, i) => {
 });
 seedLibrary(configDir, records);
 
-const evalJs = `(async () => {
-  // sleep / waitFor / waitStable / neverHappens — scripts/lib-wait.cts (#986).
-  ${rendererWaits()}
+// sleep / waitFor / waitStable / neverHappens come in as the first argument —
+// scripts/lib-wait.cts (#986). The body is a real function rather than a template
+// literal so Biome's no-fixed-wait plugin and tsc can both read it; it is
+// serialised, so it closes over nothing from this file.
+const evalJs = evalSource(async ({ sleep, waitFor, neverHappens }) => {
   const dialog = () => document.querySelector('[data-slot="dialog-content"]');
-  const chips = () => [...document.querySelectorAll('[data-slot="dialog-content"] [data-slot="tag-chip"]')].map(c => c.getAttribute('data-tag'));
-  const input = () => document.querySelector('[data-slot="dialog-content"] [data-slot="tag-input"]');
-  const btnIn = (root, re) => [...root.querySelectorAll('button')].find(b => re.test(b.textContent.trim()));
+  const chips = () => [...document.querySelectorAll('[data-slot="dialog-content"] [data-slot="tag-chip"]')].map((c) => c.getAttribute('data-tag'));
+  const input = () => document.querySelector<HTMLInputElement>('[data-slot="dialog-content"] [data-slot="tag-input"]');
+  const btnIn = (root, re) => [...root.querySelectorAll('button')].find((b) => re.test((b.textContent || '').trim()));
   const applyBtn = () => dialog() && btnIn(dialog(), /件に適用/);
   const cancelBtn = () => dialog() && btnIn(dialog(), /^キャンセル$/);
-  const barTagBtn = () => document.querySelector('button[aria-label="タグを追加"]');
+  const barTagBtn = () => document.querySelector<HTMLButtonElement>('button[aria-label="タグを追加"]');
+  // Named rather than optional-chained: pressing this button IS the step, so a
+  // missing bar has to stop the run and say so instead of leaving the next wait to
+  // report "the dialog never opened".
+  const pressBarTagBtn = () => {
+    const btn = barTagBtn();
+    if (!btn) throw new Error('the selection bar has no タグを追加 button to press');
+    btn.click();
+  };
   // Addressed by what the card says (no key attribute on the cells — #618).
   const postCards = () => [...document.querySelectorAll('[data-slot="post-grid"] [data-slot="post-card"]')];
-  const cardOf = (n) => postCards().find(c => (c.textContent || '').includes('本文' + n));
-  const errors = [];
+  const cardOf = (n) => postCards().find((c) => (c.textContent || '').includes('本文' + n));
+  const requireCard = (n) => {
+    const c = cardOf(n);
+    if (!c) throw new Error('the grid is missing the seeded card 本文' + n);
+    return c;
+  };
+  const errors: string[] = [];
   window.addEventListener('error', (e) => errors.push(String((e && e.message) || e)));
-  const out = {};
+  const out: Record<string, any> = {};
 
   // React owns the input's value, so a plain .value assignment is invisible to it.
   const setInput = (el, v) => {
-    const proto = Object.getPrototypeOf(el);
-    Object.getOwnPropertyDescriptor(proto, 'value').set.call(el, v);
+    const desc = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el), 'value');
+    if (!desc?.set) throw new Error('the tag input exposes no native value setter to drive');
+    desc.set.call(el, v);
     el.dispatchEvent(new Event('input', { bubbles: true }));
   };
-  // TagField's Enter handler commits React's \`query\` state, not the DOM value
+  // TagField's Enter handler commits React's `query` state, not the DOM value
   // (inspector/TagField.tsx), so an Enter dispatched before the input event has
   // rendered is silently a no-op. Re-pressing until the chip is staged is the
   // observable form of the fixed 50ms that used to stand in for that render (#986);
   // once the tag is staged the field clears its query, so repeats are no-ops too.
   const type = async (label, text) => {
     const el = input();
+    if (!el) throw new Error('the bulk tagging dialog has no tag input to type into');
     el.focus();
     setInput(el, text);
     return waitFor(label, () => {
@@ -111,12 +128,12 @@ const evalJs = `(async () => {
   await waitFor('the grid to show both seeded posts', () => document.querySelectorAll('[data-slot="post-grid"] [data-slot="post-card"]').length >= 2);
 
   // A. select both cards (plain click = single, Ctrl = add) — the bar appears
-  cardOf(0).dispatchEvent(new MouseEvent('click', { bubbles: true }));
-  cardOf(1).dispatchEvent(new MouseEvent('click', { bubbles: true, ctrlKey: true }));
+  requireCard(0).dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  requireCard(1).dispatchEvent(new MouseEvent('click', { bubbles: true, ctrlKey: true }));
   out.barShown = await waitFor('the selection bar to appear for the two picked cards', () => !!barTagBtn());
 
   // B. タグを追加 opens the dialog, and it starts with nothing staged
-  barTagBtn().click();
+  pressBarTagBtn();
   out.dialogOpened = await waitFor('the bulk tagging dialog to open', () => !!dialog());
   out.chipsAtOpen = chips().join(',');
   out.applyLabel = applyBtn() ? applyBtn().textContent.trim() : '';
@@ -133,7 +150,7 @@ const evalJs = `(async () => {
 
   // E. reopening starts clean — the staging is the dialog's own state, so it dies
   //    with the dialog rather than surviving in a renderer module
-  barTagBtn().click();
+  pressBarTagBtn();
   out.reopened = await waitFor('the bulk tagging dialog to open a second time', () => !!dialog());
   // "The discarded tag does NOT come back": a post-condition would pass on its first
   // poll, so this window is spent on purpose (#986).
@@ -148,10 +165,11 @@ const evalJs = `(async () => {
   // Fixed on purpose: the tags this suite asserts on are written by MAIN (#298/St5
   // made tag edits a DB write), and the dialog closes on the renderer's own state —
   // so there is nothing here to observe that says the write landed before the app quits.
+  // biome-ignore lint/plugin: the delay IS the spec here — it covers main's DB write, which the renderer cannot observe.
   await sleep(400);
   out.errors = errors;
   return JSON.stringify(out);
-})()`;
+});
 
 const env = Object.assign({}, process.env, {
   APPDATA: tmp,

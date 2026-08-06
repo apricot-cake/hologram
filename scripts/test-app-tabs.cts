@@ -16,7 +16,7 @@ const { electronPath: resolveElectron } = require('./lib-electron-path.cts');
 
 const electronPath = resolveElectron();
 const { seedLibrary } = require('./lib-seed-library.cts');
-const { rendererWaits } = require('./lib-wait.cts');
+const { evalSource } = require('./lib-wait.cts');
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-tabs-'));
 const configDir = path.join(tmp, 'Hologram');
@@ -47,20 +47,24 @@ addPost('p2', '投稿2', ['alpha', 'beta']);
 addPost('p3', '投稿3', ['beta']);
 seedLibrary(configDir, records);
 
-const evalJs = `(async () => {
-  ${rendererWaits()}
-  const key = (k, opts = {}) =>
-    document.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true, ...opts }));
-  const tabItems  = () => document.querySelectorAll('[data-slot="tab"]');
-  const tabCount  = () => tabItems().length;
-  const tabActiveAt = (i) => { const t = tabItems(); return t.length > i && t[i].hasAttribute('data-active'); };
+const evalJs = evalSource(async ({ sleep, waitFor, waitStable }) => {
+  const key = (k, opts = {}) => document.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true, ...opts }));
+  const tabItems = () => document.querySelectorAll<HTMLElement>('[data-slot="tab"]');
+  const tabCount = () => tabItems().length;
+  const tabActiveAt = (i) => {
+    const t = tabItems();
+    return t.length > i && t[i].hasAttribute('data-active');
+  };
   const activeTitle = () => {
     const el = document.querySelector('[data-slot="tab"][data-active] [data-slot="tab-title"]');
-    return el ? el.textContent.trim() : '';
+    return el ? (el.textContent || '').trim() : '';
   };
   const cardCount = () => document.querySelectorAll('[data-slot="post-grid"] [data-slot="post-card"]').length;
   const chipRow = () => document.querySelector('[data-slot="filter-chips"]');
-  const chipText = () => { const c = chipRow(); return c ? (c.textContent || '') : ''; };
+  const chipText = () => {
+    const c = chipRow();
+    return c ? c.textContent || '' : '';
+  };
   const POP = '[data-slot="popover-content"]:not([data-closed])';
   // A tab switch changes renderer state at once but the grid refills over IPC, so
   // every step below waits for the count to LEAVE the previous tab's value and then
@@ -70,8 +74,8 @@ const evalJs = `(async () => {
   await waitFor('the tab bar to render a title for the active tab', () => activeTitle().length > 0);
 
   // ① Initial state
-  const initTabCount  = tabCount();
-  const initTitle     = activeTitle();
+  const initTabCount = tabCount();
+  const initTitle = activeTitle();
 
   // ② Add alpha filter via the "+ フィルタ" flow (filterbar component — the qf-pop
   //    flyout is gone since P2③): open the popover, pick "タグ" (tags), click the alpha row.
@@ -138,24 +142,35 @@ const evalJs = `(async () => {
 
   // ⑧ The persist is debounced by 800ms in the renderer, so the delay IS the
   // specification here: there is nothing observable to poll until it elapses.
+  // biome-ignore lint/plugin: the 800ms renderer debounce before the write is the spec — nothing is observable until it elapses.
   await sleep(1000);
   let ipcOk = false;
   try {
-    const data = await window.hologram.getTabs();
+    const data = await (window as any).hologram.getTabs();
     ipcOk = !!(data && Array.isArray(data.tabs) && data.tabs.length >= 1);
   } catch {}
 
   return {
-    initTabCount, initTitle,
-    filteredTitle, filteredCards,
-    tab2Count, tab2Title, tab2Cards,
-    restoredTitle, restoredCards,
-    tab2RestoredTitle, tab2RestoredCards,
-    afterCloseCount, afterCloseTitle, afterCloseCards,
-    lastTabCount, lastTabTitle, lastTabCards,
+    initTabCount,
+    initTitle,
+    filteredTitle,
+    filteredCards,
+    tab2Count,
+    tab2Title,
+    tab2Cards,
+    restoredTitle,
+    restoredCards,
+    tab2RestoredTitle,
+    tab2RestoredCards,
+    afterCloseCount,
+    afterCloseTitle,
+    afterCloseCards,
+    lastTabCount,
+    lastTabTitle,
+    lastTabCards,
     ipcOk,
   };
-})()`;
+});
 
 const shot = path.join(appDir, '.smoke-shot.png');
 try {

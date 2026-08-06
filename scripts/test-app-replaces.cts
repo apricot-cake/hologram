@@ -23,6 +23,7 @@ const appDir = path.join(__dirname, '..', 'app');
 const { electronPath: resolveElectron } = require('./lib-electron-path.cts');
 const { buildEnvelope, writeInboxEvent } = require(path.join(__dirname, '..', 'native-host', 'inbox.mts'));
 const { normalizePostRecord } = require(path.join(__dirname, '..', 'native-host', 'post-record.mts'));
+const { evalSource } = require('./lib-wait.cts');
 
 const electronPath = resolveElectron();
 
@@ -48,17 +49,24 @@ async function saveViaInbox(id: string, extra: Record<string, unknown>) {
 // Read the DB back from the renderer instead of opening it a second time: the
 // app is the single writer, and a second better-sqlite3 handle from this
 // process would race the very sweep under test.
-const evalJs = `(async () => {
-  for (let i = 0; i < 60; i++) {
-    const posts = (await window.hologram.listPosts()).posts || [];
-    if (posts.length === 1 && posts[0].captureId === ${JSON.stringify(NEW_ID)}) {
-      return JSON.stringify({ ids: posts.map(p => p.captureId), tags: posts[0].tags.slice().sort() });
-    }
-    await new Promise(r => setTimeout(r, 200));
-  }
-  const posts = (await window.hologram.listPosts()).posts || [];
-  return JSON.stringify({ ids: posts.map(p => p.captureId), tags: [] });
-})()`;
+const evalJs = evalSource(
+  async ({ waitFor }, args) => {
+    const list = async () => (await (window as any).hologram.listPosts()).posts || [];
+    const replaced = await waitFor(
+      'the replacing capture to be the only post left',
+      async () => {
+        const posts = await list();
+        return posts.length === 1 && posts[0].captureId === args.newId;
+      },
+      12_000,
+    );
+    const posts = await list();
+    // Same two shapes as before: the tags are only meaningful once the replace
+    // landed, so a timeout still reports the ids it did see.
+    return JSON.stringify({ ids: posts.map((p: any) => p.captureId), tags: replaced ? posts[0].tags.slice().sort() : [] });
+  },
+  { newId: NEW_ID },
+);
 
 const env = Object.assign({}, process.env, { APPDATA: tmp, HOLOGRAM_CONFIG_DIR: configDir, HOLOGRAM_SMOKE: '1', HOLOGRAM_SMOKE_EVAL: evalJs });
 

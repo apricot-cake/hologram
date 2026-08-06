@@ -136,4 +136,42 @@ function rendererWaits(options: { budgetMs?: number } = {}): string {
 `;
 }
 
-module.exports = { sleep, waitFor, rendererWaits, DEFAULT_TIMEOUT_MS, POLL_MS, RENDERER_BUDGET_MS };
+// The helpers a renderer eval body receives. Declaring them as a parameter (rather
+// than leaving them as free names inside a template literal) is what lets Biome and
+// tsc see the body at all — see evalSource below.
+interface RendererWaits {
+  sleep(ms: number): Promise<void>;
+  waitFor(label: string, fn: () => unknown, ms?: number): Promise<boolean>;
+  waitStable(label: string, read: () => unknown, ms?: number): Promise<boolean>;
+  neverHappens(label: string, fn: () => unknown, ms: number): Promise<boolean>;
+}
+
+// Builds the string handed to HOLOGRAM_SMOKE_EVAL from a REAL function instead of a
+// template literal.
+//
+//   const evalJs = evalSource(async ({ waitFor }, args) => {
+//     await waitFor('the grid to fill', () => cards().length >= args.want);
+//     return { count: cards().length };
+//   }, { want: 12 });
+//
+// Why not keep the body as a string: nothing could read it. Biome's linter parses
+// JavaScript, so a fixed `sleep(60)` inside a template literal is invisible to it
+// (measured on Biome 2.5.6 — the same call one line outside the literal is
+// reported, the one inside is not), and 111 of the 149 fixed waits this issue
+// started from lived inside those literals. A rule that cannot see three quarters
+// of its subject reads as a closed door while standing open. Passing a function
+// makes the body ordinary code: the plugin sees it, tsc sees it, and go-to-
+// definition works on the selectors.
+//
+// This is the shape Playwright chose for page.evaluate for the same reason, and it
+// brings the same constraint: the function is serialised, so it CANNOT close over
+// anything in this file. Everything it needs comes in through `args`, which is
+// JSON-encoded into the source.
+function evalSource<A = null>(body: (waits: RendererWaits, args: A) => unknown, args?: A, options: { budgetMs?: number } = {}): string {
+  return `(async () => {
+${rendererWaits(options)}
+  return await (${body})({ sleep, waitFor, waitStable, neverHappens }, ${JSON.stringify(args ?? null)});
+})()`;
+}
+
+module.exports = { sleep, waitFor, rendererWaits, evalSource, DEFAULT_TIMEOUT_MS, POLL_MS, RENDERER_BUDGET_MS };

@@ -86,7 +86,10 @@ describe('#176: watch-import "already seen" is scoped per library', () => {
     // the ordinary (pre-#176) "already seen" behavior, still intact.
     send.mockClear();
     await manager.refresh();
-    await new Promise((r) => setTimeout(r, 50)); // let any (unwanted) enqueue settle
+    // Proving a NON-event (no second import): there is no post-condition to poll for, so this
+    // window is spent on purpose — it has to be long enough for an unwanted enqueue to surface.
+    // biome-ignore lint/plugin: the window IS the assertion — waiting for "nothing happened"
+    await new Promise((r) => setTimeout(r, 50));
     expect(imported).toHaveLength(1);
     expect(send).not.toHaveBeenCalledWith('intake-imported', expect.anything());
 
@@ -107,6 +110,8 @@ describe('#176: watch-import "already seen" is scoped per library', () => {
     currentLibrary = { __libraryId: 'library-a' };
     send.mockClear();
     await manager.refresh();
+    // Same non-event as above: A's ledger entry must still suppress the import.
+    // biome-ignore lint/plugin: the window IS the assertion — waiting for "nothing happened"
     await new Promise((r) => setTimeout(r, 50));
     expect(imported).toHaveLength(2);
   });
@@ -135,6 +140,8 @@ describe('#176: watch-import "already seen" is scoped per library', () => {
 
     // Library A now treats it as known — a refresh must not import it.
     await manager.refresh();
+    // Non-event again: markExisting must keep this file from ever being enqueued for library A.
+    // biome-ignore lint/plugin: the window IS the assertion — waiting for "nothing happened"
     await new Promise((r) => setTimeout(r, 50));
     expect(imported).toHaveLength(0);
 

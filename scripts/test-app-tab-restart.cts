@@ -26,6 +26,7 @@ const path = require('node:path');
 const appDir = path.join(__dirname, '..', 'app');
 const { electronPath: resolveElectron } = require('./lib-electron-path.cts');
 const { seedLibrary } = require('./lib-seed-library.cts');
+const { rendererWaits } = require('./lib-wait.cts');
 
 const electronPath = resolveElectron();
 
@@ -63,29 +64,10 @@ seedLibrary(configDir, records);
 
 const TARGET_SCROLL = 800;
 
-// Helpers shared by both launches. Kept as a string (rather than function declarations) so it can be embedded in the template.
+// Helpers shared by both launches. Kept as a string (rather than function declarations) so it can be
+// embedded in the template — the same reason lib-wait.cts hands out its renderer half as source text.
 const PRELUDE = `
-  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-  // One budget per launch (#952). Every wait is capped by it, so a broken step
-  // cannot chain timeouts into main's 60s SMOKE_TIMEOUT, which reports "no eval
-  // result" and names nothing.
-  const DEADLINE = Date.now() + 45000;
-  // The loop counts wall clock, not iterations: under load a 50ms sleep lands
-  // much later than 50ms, and an iteration-counted loop silently gives up early.
-  const waitFor = async (fn, ms = 8000) => {
-    const until = Math.min(Date.now() + ms, DEADLINE);
-    while (Date.now() < until) { if (fn()) return true; await sleep(50); }
-    return fn();
-  };
-  // Same, for post-conditions that live behind an IPC round trip.
-  const waitForAsync = async (fn, ms = 10000) => {
-    const until = Math.min(Date.now() + ms, DEADLINE);
-    for (;;) {
-      if (await fn()) return true;
-      if (Date.now() >= until) return false;
-      await sleep(100);
-    }
-  };
+  ${rendererWaits()}
   const byText = (sel, text) => [...document.querySelectorAll(sel)].find((el) => (el.textContent || '').trim() === text) || null;
   const scroller = () => document.querySelector('[data-slot="content-scroll"]');
   const tabItems = () => document.querySelectorAll('[data-slot="tab"]');
@@ -93,54 +75,48 @@ const PRELUDE = `
   const cardCount = () => document.querySelectorAll('[data-slot="post-grid"] [data-slot="post-card"]').length;
   const backBtn = () => document.querySelector('button[aria-label="戻る"]');
   const key = (k, opts = {}) => document.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true, ...opts }));
-  // Wait until the scroll position stops moving (the virtual grid rebuilds its render window).
-  const settle = async () => {
-    let last = Number.NaN, stable = 0;
-    for (let i = 0; i < 60 && stable < 3; i++) {
-      await sleep(50);
-      const s = Math.round(scroller().scrollTop);
-      if (s === last) stable++; else { stable = 0; last = s; }
-    }
-  };
   const ready = async () => {
-    await waitFor(() => cardCount() > 0);
-    return await waitFor(() => scroller().scrollHeight > scroller().clientHeight * 2);
+    await waitFor('the grid to render its first cards', () => cardCount() > 0);
+    return await waitFor('the grid to grow past one screenful so it can be scrolled', () => scroller().scrollHeight > scroller().clientHeight * 2);
   };
 `;
 
 // First launch: scroll tab 1 deep, add one filter in tab 2, then make tab 1 active before
-// exiting. Persistence goes through a two-stage debounce of 400ms (scroll) + 800ms (tabs),
-// so wait that long at the end.
+// exiting. Persistence goes through a two-stage debounce of 400ms (scroll) + 800ms (tabs);
+// the end of this launch polls the DB for what actually landed rather than outlasting that
+// debounce on a clock (see readBlob below).
 const evalBoot1 = `(async () => {
   ${PRELUDE}
   const laidOut = await ready();
   scroller().scrollTop = ${TARGET_SCROLL};
-  const scrolled = await waitFor(() => Math.abs(scroller().scrollTop - ${TARGET_SCROLL}) < 2, 3000);
-  await settle();
+  const scrolled = await waitFor('the scroller to reach the target position', () => Math.abs(scroller().scrollTop - ${TARGET_SCROLL}) < 2, 3000);
+  // The virtual grid rebuilds its render window and can nudge the position again, so the
+  // observable post-condition is that the measurement REPEATS, not that it hit a number.
+  await waitStable('the scroll position to stop moving as the virtual grid rebuilds', () => Math.round(scroller().scrollTop));
   const savedScroll = Math.round(scroller().scrollTop);
 
   // Tab 2: add a filter -> pushes one entry onto the in-tab history, so "back" appears.
   key('t', { ctrlKey: true });
-  await waitFor(() => tabItems().length === 2, 5000);
+  await waitFor('the second tab to open', () => tabItems().length === 2, 5000);
   byText('button', 'フィルタ').click();
-  await waitFor(() => !!byText('[data-slot="command-item"]', 'タグ'));
+  await waitFor('the filter menu to list its categories', () => !!byText('[data-slot="command-item"]', 'タグ'));
   byText('[data-slot="command-item"]', 'タグ').click();
-  await waitFor(() => !!byText('[data-slot="popover-content"] span', 'alpha'));
+  await waitFor('the tag picker to list the alpha tag', () => !!byText('[data-slot="popover-content"] span', 'alpha'));
   byText('[data-slot="popover-content"] span', 'alpha').click();
-  await waitFor(() => cardCount() === 2);
+  await waitFor('the grid to narrow to the 2 alpha posts', () => cardCount() === 2);
   key('Escape');
-  await waitFor(() => !document.querySelector('[data-slot="popover-content"]'), 3000);
+  await waitFor('the tag picker to close', () => !document.querySelector('[data-slot="popover-content"]'), 3000);
   document.body.click();
   // The tab's heading is rewritten by the filter it now carries; that rename is the
   // post-condition of the whole step (and what the second launch compares against).
-  await waitFor(() => !!activeTitle() && !activeTitle().includes('すべて'), 5000);
+  await waitFor('the tab heading to be rewritten by the filter it now carries', () => !!activeTitle() && !activeTitle().includes('すべて'), 5000);
   const filteredTitle = activeTitle();
   const filteredCards = cardCount();
   const canBackLive = !backBtn().disabled;
 
   // Switch back to the scrolled tab before exiting (= the active tab after restart).
   tabItems()[0].click();
-  await waitFor(() => !!tabItems()[0] && tabItems()[0].hasAttribute('data-active'), 5000);
+  await waitFor('the scrolled tab to become the active tab again', () => !!tabItems()[0] && tabItems()[0].hasAttribute('data-active'), 5000);
 
   // The write goes through a two-stage debounce (400ms scroll + 800ms tabs). Poll
   // what actually reached the DB rather than outlasting the debounce on a clock:
@@ -159,7 +135,7 @@ const evalBoot1 = `(async () => {
       };
     } catch (e) { return null; }
   };
-  await waitForAsync(async () => {
+  await waitFor('the two tabs, the scroll position and the back/forward history to reach the database', async () => {
     const b = await readBlob();
     if (b) blob = b; // keep the last readable shape so a timeout still reports what landed
     return !!b && b.tabs === 2 && b.activeIsFirst === true && Math.abs((b.scrollTop ?? -1) - ${TARGET_SCROLL}) < 40 && b.navLen >= 2;
@@ -174,7 +150,7 @@ const evalBoot2 = `(async () => {
   const laidOut = await ready();
   // Does the active tab (the one scrolled in the first launch) get its position back?
   // Restore happens 2 rAFs after the first render, so wait for the actual value.
-  const scrollRestored = await waitFor(() => Math.abs(scroller().scrollTop - ${TARGET_SCROLL}) < 12, 8000);
+  const scrollRestored = await waitFor('the restored tab to show its saved scroll position', () => Math.abs(scroller().scrollTop - ${TARGET_SCROLL}) < 12, 8000);
   const restoredScroll = Math.round(scroller().scrollTop);
   const tabCount = tabItems().length;
 
@@ -183,12 +159,12 @@ const evalBoot2 = `(async () => {
   // The restore is a chain — tab activated, its filter re-queried, its history
   // adopted — and each link is observable, so wait for all three rather than for
   // a number that has to cover the slowest machine.
-  await waitFor(() => !!tabItems()[1] && tabItems()[1].hasAttribute('data-active') && cardCount() === 2 && !!backBtn() && !backBtn().disabled);
+  await waitFor('the filtered tab to activate with its posts and its history restored', () => !!tabItems()[1] && tabItems()[1].hasAttribute('data-active') && cardCount() === 2 && !!backBtn() && !backBtn().disabled);
   const restoredTitle = activeTitle();
   const restoredCards = cardCount();
   const canBack = !backBtn().disabled;
   backBtn().click();
-  await waitFor(() => activeTitle().includes('すべて') && cardCount() > 2);
+  await waitFor('going back to return the tab to the unfiltered view', () => activeTitle().includes('すべて') && cardCount() > 2);
   const afterBackTitle = activeTitle();
   const afterBackCards = cardCount();
 

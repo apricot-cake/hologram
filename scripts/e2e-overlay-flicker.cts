@@ -37,9 +37,19 @@
 // failure the phase's event timeline is printed; that timeline, not the
 // pass/fail bit, is the debugging artifact for the fix loop.
 
-const { launchOverlayBrowser, openFixture, fixtureHtml, takeLog, wheelScroll, summarize, formatTimeline, wait } = require('./lib-overlay-e2e.cts');
+const { launchOverlayBrowser, openFixture, fixtureHtml, takeLog, wheelScroll, summarize, formatTimeline } = require('./lib-overlay-e2e.cts');
+const { sleep } = require('./lib-wait.cts');
 
 // Mirrors overlay.ts's SCROLL_HOVER_SETTLE_MS; waits must outlast it.
+//
+// ⚠️Almost every wait in this file is a fixed one and stays that way (#986).
+// Flicker is a PATTERN OVER TIME — the same host mounting twice, style writes
+// churning — so each phase needs a window in which the pattern would have had
+// room to appear. Every assertion below is of the form "and nothing else
+// happened", and a wait that ends the moment a condition holds gives those
+// assertions no window at all: they would pass instantly and forever. The
+// windows are sized off SETTLE_MS because the settle timer is what used to fire
+// inside them (#347).
 const SETTLE_MS = 100;
 
 // The save FACE, asked for by name rather than by element type. Since #310 the
@@ -132,9 +142,10 @@ async function runPlatform(overlay: any, name: string): Promise<void> {
     await takeLog(page);
     for (let i = 0; i < 8; i++) {
       await page.mouse.wheel(0, i % 2 ? -40 : 40);
-      await wait(60);
+      // biome-ignore lint/plugin: the pacing between notches is the input being simulated
+      await sleep(60);
     }
-    await wait(SETTLE_MS + 250);
+    await sleep(SETTLE_MS + 250); // window: a removal by the settle timer would land in it
     const jiggleEvents = await takeLog(page);
     const jiggle = summarize(jiggleEvents);
     const jiggleRect = await imageRect(page, spec.image, 1);
@@ -160,7 +171,9 @@ async function runPlatform(overlay: any, name: string): Promise<void> {
       for (const stale of fresh.querySelectorAll('[data-hologram-overlay]')) stale.remove();
       box.replaceWith(fresh);
     }, spec.image);
-    await wait(SETTLE_MS + 400);
+    // window, not a wait for the control: the check is "one control, and it did
+    // not flap on the way", and flapping is only visible over a span of time.
+    await sleep(SETTLE_MS + 400);
     const rerenderEvents = await takeLog(page);
     const rerender = summarize(rerenderEvents);
     const rehomed = await overlayCount(page);
@@ -169,14 +182,14 @@ async function runPlatform(overlay: any, name: string): Promise<void> {
     // pointer has not moved, so Playwright's own state is already there).
     await page.mouse.move(target.x + 2, target.y);
     await page.mouse.move(target.x, target.y);
-    await wait(200);
+    await page.waitForSelector(SAVE_FACE, { timeout: 3000 });
 
     // --- still-scroll: stationary pointer, 12 wheel notches. pointermove is
     // the overlay's only hover input, so nothing may mount; the one hovered
     // control may be cleared (settle or occlusion), nothing more.
     await takeLog(page);
     await wheelScroll(page, { from: target, steps: 12, deltaY: 120, stepMs: 50 });
-    await wait(SETTLE_MS + 250);
+    await sleep(SETTLE_MS + 250); // window: a mount by a picture passing under the pointer would land in it
     const stillEvents = await takeLog(page);
     const still = summarize(stillEvents);
     const leftovers = await overlayCount(page);
@@ -188,13 +201,15 @@ async function runPlatform(overlay: any, name: string): Promise<void> {
     // picture mounting twice is flicker, and style churn on page elements
     // (the borrowed host position) is the image-blink symptom.
     await page.evaluate(() => window.scrollTo(0, 0));
-    await wait(SETTLE_MS + 400);
+    // The previous phase's settle timer has to expire BEFORE this phase's log is
+    // taken, or its removals are counted against this phase.
+    await sleep(SETTLE_MS + 400);
     const retarget = await imageCenter(page, spec.image, 1);
     await page.mouse.move(retarget.x, retarget.y);
     await page.waitForSelector(SAVE_FACE, { timeout: 3000 });
     await takeLog(page);
     await wheelScroll(page, { from: retarget, steps: 12, deltaY: 120, stepMs: 50, jitterPx: 2 });
-    await wait(SETTLE_MS + 250);
+    await sleep(SETTLE_MS + 250); // window: a re-mount of the same host, or style churn, would land in it
     const driftEvents = await takeLog(page);
     const drift = summarize(driftEvents);
     const churny = [...drift.byHost].filter(([, s]) => s.styles > 2).map(([host]) => host);
@@ -203,7 +218,7 @@ async function runPlatform(overlay: any, name: string): Promise<void> {
 
     // --- leave: pointer on blank page margin clears everything.
     await page.mouse.move(30, 400);
-    await wait(SETTLE_MS + 250);
+    await sleep(SETTLE_MS + 250); // window: the settle timer is what takes the last control away
     const left = await overlayCount(page);
     report(name, 'leave', left === 0, `controls after leaving the feed: ${left} (want 0)`);
   } finally {

@@ -376,6 +376,9 @@ describe('renderer: Ctrl+V の判定', () => {
   };
 
   // The handler is synchronous, and intake is a Promise it doesn't await = check after letting a microtask cycle pass.
+  // 0ms is a yield to the event loop, not a timed wait: it flushes the already-queued microtasks
+  // and cannot be "too short" on a slow machine, since nothing here waits on real elapsed time.
+  // biome-ignore lint/plugin: 0ms = yield one macrotask, not a timed wait
   const settle = () => new Promise((r) => setTimeout(r, 0));
 
   test('Ctrl+V で取り込む＝見出しに日時が入る', async () => {

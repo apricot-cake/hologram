@@ -26,6 +26,7 @@ const { electronPath: resolveElectron } = require('./lib-electron-path.cts');
 
 const electronPath = resolveElectron();
 const { seedLibrary } = require('./lib-seed-library.cts');
+const { rendererWaits } = require('./lib-wait.cts');
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-rb-'));
 const configDir = path.join(tmp, 'Hologram');
@@ -95,8 +96,10 @@ function launch(evalJs): Promise<Record<string, any>> {
   // has something true to report). Only AFTER that does the library gain the tag
   // the rollback is supposed to undo.
   const evalA = `(async () => {
-    const wait = (ms) => new Promise(r => setTimeout(r, ms));
-    await wait(400);
+    ${rendererWaits()}
+    // The library answering with the seeded posts is what the 400ms that used to
+    // sit here was hoping for: the database is open and holds the seed.
+    await waitFor('the library to report the seeded posts', async () => ((await window.hologram.listPosts()).posts || []).length >= ${seeded.length});
     await window.hologram.setBackup({ dir: ${JSON.stringify(outDir)} });
     const r1 = await window.hologram.runBackup();
     await window.hologram.updateTags(${JSON.stringify(seeded[0].image)}, [${JSON.stringify(TAG_AFTER)}]);
@@ -118,8 +121,10 @@ function launch(evalJs): Promise<Record<string, any>> {
 
   // launch B: list, roll back, and read the library out again afterwards.
   const evalB = `(async () => {
-    const wait = (ms) => new Promise(r => setTimeout(r, ms));
-    await wait(400);
+    ${rendererWaits()}
+    // Same post-condition, one post richer: the late seed above must be visible
+    // before the rollback, or "it survived the rollback" proves nothing.
+    await waitFor('the library to report the seeded posts including the late one', async () => ((await window.hologram.listPosts()).posts || []).length >= ${seeded.length + 1});
     const list = await window.hologram.listDbGenerations();
     const listed = !!(list && list.length === 1 && list[0].name === ${JSON.stringify(generation)} && list[0].atDestination === true && list[0].size > 0);
 

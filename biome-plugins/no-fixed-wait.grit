@@ -1,0 +1,48 @@
+// Closes the door this issue opened (#986): a fixed delay standing in for an
+// observable post-condition is how a test suite becomes flaky one line at a time.
+// 149 of them had accumulated under scripts/ before anyone counted.
+//
+// What this allows, and how to say so:
+//
+//   - A delay that IS the specification (a debounce, a banner's dwell time, a
+//     retry backoff). Keep the `sleep`, write one line above it saying why that
+//     number, and suppress with:
+//       // biome-ignore lint/plugin: <the reason>
+//   - Proving something does NOT happen. Use `neverHappens(label, fn, ms)` from
+//     scripts/lib-wait.cts instead — it spends its whole window on purpose and the
+//     name says as much, so no suppression is needed.
+//
+// Everything else has a post-condition worth naming: use `waitFor(label, fn)`.
+//
+// This rule can only see code Biome parses as JavaScript, which is why the harness
+// evals are written as real functions passed to evalSource() rather than as
+// template literals — a `sleep(60)` inside a template literal is invisible to it
+// (measured on Biome 2.5.6).
+//
+// One root pattern per file, so the two shapes are branches of a single `or`.
+language js
+
+or {
+  // The named helper.
+  `$fn($ms)` where {
+    $fn <: or {
+      `sleep`,
+      `wait`
+    },
+    $ms <: r"[0-9][0-9_]*",
+    register_diagnostic(span=$ms, message="Fixed wait. Use waitFor(label, fn) for an observable post-condition, or neverHappens(label, fn, ms) to prove a non-event. If the delay itself is the spec, keep it with a one-line reason and `// biome-ignore lint/plugin: <reason>`.", severity="error")
+  },
+  // The same delay written inline. Matching only `sleep` would have left the idiom
+  // it replaced wide open — `await new Promise((r) => setTimeout(r, 400))` is what
+  // every one of these files used before lib-wait.cts existed, and three harnesses
+  // still did while this issue was being written.
+  //
+  // Deliberately narrow: it matches only an executor whose WHOLE body is a
+  // setTimeout with a literal delay. A timeout guard — `new Promise((res, rej) => {
+  // const t = setTimeout(() => rej(...), ms); ... })` — is a different thing and is
+  // not reported (verified against both shapes).
+  `new Promise($cb)` where {
+    $cb <: r"\(?\s*\w+\s*\)?\s*=>\s*setTimeout\(\s*\w+\s*,\s*[0-9][0-9_]*\s*\)",
+    register_diagnostic(span=$cb, message="Fixed wait written inline. Use sleep() from scripts/lib-wait.cts if the delay really is the spec (and say why with `// biome-ignore lint/plugin: <reason>`), otherwise waitFor(label, fn) for an observable post-condition.", severity="error")
+  }
+}

@@ -25,6 +25,7 @@ const { buildEnvelope, writeInboxEvent } = require(path.join(__dirname, '..', 'n
 const { normalizePostRecord } = require(path.join(__dirname, '..', 'native-host', 'post-record.mts'));
 
 const electronPath = resolveElectron();
+const { evalSource } = require('./lib-wait.cts');
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-inboxwatch-'));
 const configDir = path.join(tmp, 'Hologram');
@@ -45,13 +46,13 @@ async function saveViaInbox(id) {
 
 // After the renderer has loaded (and rendered the app-closed capture), wait
 // for the grid to reach 2 cards on its own once the second capture lands.
-const evalJs = `(async () => {
-  for (let i = 0; i < 40; i++) {
-    if (document.querySelectorAll('[data-slot="post-card"]').length >= 2) return 2;
-    await new Promise(r => setTimeout(r, 150));
-  }
-  return document.querySelectorAll('[data-slot="post-card"]').length;
-})()`;
+const evalJs = evalSource(async ({ waitFor }) => {
+  const cards = () => document.querySelectorAll('[data-slot="post-card"]').length;
+  await waitFor('the watched inbox capture to arrive as a second card', () => cards() >= 2);
+  // Reported rather than asserted here: a timeout leaves the real count for the
+  // Node side to fail on, which says how far it got.
+  return cards();
+});
 
 const env = Object.assign({}, process.env, { APPDATA: tmp, HOLOGRAM_CONFIG_DIR: configDir, HOLOGRAM_SMOKE: '1', HOLOGRAM_SMOKE_EVAL: evalJs });
 

@@ -28,6 +28,7 @@ const { electronPath: resolveElectron } = require('./lib-electron-path.cts');
 const electronPath = resolveElectron();
 const { createDbWriter } = require(path.join(appDir, 'src', 'main', 'lib-db-write.ts'));
 const { seedLibrary } = require('./lib-seed-library.cts');
+const { rendererWaits } = require('./lib-wait.cts');
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-fold-'));
 const configDir = path.join(tmp, 'Hologram');
@@ -79,28 +80,8 @@ for (let i = 0; i < 3; i++) {
 }
 
 const evalJs = `(async () => {
+  ${rendererWaits()}
   const grid = document.querySelector('[data-slot="post-grid"]');
-  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-  // One budget for the whole run (#952). Every wait is capped by it, so a broken
-  // step cannot chain timeouts into main's 60s SMOKE_TIMEOUT, which reports "no
-  // eval result" and names nothing.
-  const DEADLINE = Date.now() + 45000;
-  // Bounded but generous: the bound only costs time on a run that is already
-  // broken, while a healthy run leaves the moment the condition holds.
-  const waitFor = async (fn, ms = 6000) => {
-    const until = Math.min(Date.now() + ms, DEADLINE);
-    while (Date.now() < until) { if (fn()) return true; await sleep(40); }
-    return fn();
-  };
-  // Same, for post-conditions that live behind an IPC round trip.
-  const waitForAsync = async (fn, ms = 8000) => {
-    const until = Math.min(Date.now() + ms, DEADLINE);
-    for (;;) {
-      if (await fn()) return true;
-      if (Date.now() >= until) return false;
-      await sleep(100);
-    }
-  };
   const click = (el) => el && el.dispatchEvent(new MouseEvent('click', { bubbles: true }));
   const rclick = (el) => el && el.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 60, clientY: 60 }));
   const cards = () => grid.querySelectorAll('[data-slot="post-card"]').length;
@@ -115,7 +96,7 @@ const evalJs = `(async () => {
   const openTree = async () => {
     if (rows().length) return true;
     click(railRow('フォルダ'));
-    return await waitFor(() => rows().length > 0);
+    return await waitFor('the folder tree to open in the rail flyout', () => rows().length > 0);
   };
   // menu.ts renders every context menu through the shared DropdownMenu component.
   const menuRow = (txt) => [...document.querySelectorAll('[data-slot="dropdown-menu-item"]')].find(r => (r.textContent || '').includes(txt));
@@ -135,31 +116,31 @@ const evalJs = `(async () => {
   // must not quietly press Cancel and leave this suite still passing.
   const okBtn = () => [...document.querySelectorAll('[data-slot="dialog-content"] button')].find(b => b.textContent.trim() === 'OK');
   const nameIt = async (name) => {
-    if (!await waitFor(() => !!document.querySelector('[data-slot="dialog-content"] input'))) return false;
+    if (!await waitFor('the naming dialog to show its text field', () => !!document.querySelector('[data-slot="dialog-content"] input'))) return false;
     setInput(document.querySelector('[data-slot="dialog-content"] input'), name);
     // prompt/Prompt.tsx disables OK while the field is blank, so "OK went live" is
     // the observable proof that React took the value — no guess at commit timing.
-    if (!await waitFor(() => { const b = okBtn(); return !!b && !b.disabled; }, 3000)) return false;
+    if (!await waitFor('the OK button to go live once React took the typed name', () => { const b = okBtn(); return !!b && !b.disabled; }, 3000)) return false;
     click(okBtn());
     // The dialog unmounts on OK; waiting for it to go is how we know the click
     // landed before the next step reads the tree.
-    await waitFor(() => !document.querySelector('[data-slot="dialog-content"]'), 3000);
+    await waitFor('the naming dialog to close after OK', () => !document.querySelector('[data-slot="dialog-content"]'), 3000);
     return true;
   };
 
-  await waitFor(() => cards() >= 3);
+  await waitFor('the grid to show all 3 seeded posts', () => cards() >= 3);
   out.totalBefore = cards();                                        // 3
 
   // --- A. the seeded child is nested: hidden until its parent is opened ---
   out.treeOpened = await openTree();
-  out.parentShown = await waitFor(() => !!rowNamed('一次資料'));
+  out.parentShown = await waitFor('the root folder row to appear in the tree', () => !!rowNamed('一次資料'));
   out.childHiddenAtFirst = !rowNamed('スケッチ');
   click(document.querySelector('[data-slot="folder-twisty"]'));
-  out.childShownAfterTwisty = await waitFor(() => !!rowNamed('スケッチ'));
+  out.childShownAfterTwisty = await waitFor('the child folder row to appear once its parent is expanded', () => !!rowNamed('スケッチ'));
 
   // --- B. a row's context menu makes a SUBfolder under it ---
   rclick(rowNamed('スケッチ'));
-  out.rowMenuOpened = await waitFor(() => !!menuRow('サブフォルダを作成'));
+  out.rowMenuOpened = await waitFor('the row context menu to offer creating a subfolder', () => !!menuRow('サブフォルダを作成'));
   click(menuRow('サブフォルダを作成'));
   out.namedSub = await nameIt('線画');
   // The parent opens on create: a new row hidden inside a collapsed parent is
@@ -167,7 +148,7 @@ const evalJs = `(async () => {
   // #981 the flyout goes away with the dialog that closed on top of it, and a
   // flyout that is shut says nothing about where the new folder went.
   out.treeAfterCreate = await openTree();
-  out.newSubShown = await waitFor(() => !!rowNamed('線画'));
+  out.newSubShown = await waitFor('the newly created subfolder row to appear in the tree', () => !!rowNamed('線画'));
   const c1 = await getFolders();
   const made = c1.folders.find(f => f.name === '線画');
   const child = c1.folders.find(f => f.name === 'スケッチ');
@@ -178,37 +159,37 @@ const evalJs = `(async () => {
   click(rowNamed('一次資料').querySelector('[data-slot="sidebar-menu-button"]'));
   // The condition round-trips through the DB and re-renders the grid; wait for the
   // chip that names it and for the grid to answer, instead of timing the query.
-  await waitFor(() => chips().some(c => c.textContent.includes('一次資料')) && cards() === 1);
+  await waitFor('the folder chip to appear and the grid to narrow to the subtree', () => chips().some(c => c.textContent.includes('一次資料')) && cards() === 1);
   out.aggregated = cards();                                         // 1 — held two levels down
 
   // --- D. 「このフォルダのみ」 (this folder only) narrows it to the root's own posts (it holds none) ---
   click(chips().find(c => c.textContent.includes('一次資料')).querySelector('button'));
-  out.editorOpened = await waitFor(() => [...document.querySelectorAll('label')].some(l => l.textContent.includes('このフォルダのみ')));
+  out.editorOpened = await waitFor('the condition editor to offer the このフォルダのみ switch', () => [...document.querySelectorAll('label')].some(l => l.textContent.includes('このフォルダのみ')));
   click(document.querySelector('[data-slot="switch"]'));
-  await waitFor(() => chips().some(c => c.textContent.includes('のみ')) && cards() === 0);
+  await waitFor('the chip to say このフォルダのみ and the grid to empty', () => chips().some(c => c.textContent.includes('のみ')) && cards() === 0);
   out.onlyCount = cards();                                          // 0
   out.chipSaysOnly = chips().some(c => c.textContent.includes('のみ'));
   document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-  await waitFor(() => ![...document.querySelectorAll('label')].some(l => l.textContent.includes('このフォルダのみ')), 3000);
+  await waitFor('the condition editor to close on Escape', () => ![...document.querySelectorAll('label')].some(l => l.textContent.includes('このフォルダのみ')), 3000);
   const x = chips().find(c => c.textContent.includes('一次資料'));
   click([...x.querySelectorAll('button')].pop());                   // drop the condition again
-  await waitFor(() => cards() === 3);
+  await waitFor('the grid to show all 3 posts again once the condition is dropped', () => cards() === 3);
   out.backToAll = cards();                                          // 3
 
   // --- E. deleting the root takes both descendants with it ---
   out.treeReopened = await openTree();
   rclick(rowNamed('一次資料'));
-  await waitFor(() => !!menuRow('削除'));
+  await waitFor('the row context menu to offer 削除', () => !!menuRow('削除'));
   click(menuRow('削除'));
   // The dialog says how many subfolders go too: one folder and nine are different
   // decisions, and the count is the only thing that can tell them apart.
   const desc = () => document.querySelector('[data-slot="alert-dialog-description"]');
-  out.cascadeWarned = await waitFor(() => !!desc() && desc().textContent.includes('2'));
+  out.cascadeWarned = await waitFor('the delete dialog to name how many subfolders go with it', () => !!desc() && desc().textContent.includes('2'));
   click(document.querySelector('[data-slot="alert-dialog-action"]'));
   // Wait on the DB, not on the tree emptying: since #981 the tree lives in a flyout
   // that closes for reasons of its own, so an empty sidebar no longer means the
   // cascade landed. getFolders() is the thing the assertion below reads anyway.
-  await waitForAsync(async () => (await getFolders()).folders.length === 0 && cards() === 3);
+  await waitFor('the cascade delete to empty the folder table while the posts stay', async () => (await getFolders()).folders.length === 0 && cards() === 3);
   const c2 = await getFolders();
   out.leftAfterDelete = c2.folders.length;                          // 0 — all three went
   out.postsKept = cards();                                          // 3 — the posts stay in the library

@@ -31,7 +31,7 @@ const { readEvalResult } = require('./lib-eval-result.cts');
 
 const electronPath = resolveElectron();
 const { seedLibrary } = require('./lib-seed-library.cts');
-const { rendererWaits } = require('./lib-wait.cts');
+const { evalSource } = require('./lib-wait.cts');
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-imagezoom-'));
 const configDir = path.join(tmp, 'Hologram');
@@ -85,27 +85,41 @@ const records = [
 ];
 seedLibrary(configDir, records);
 
-const evalJs = `(async () => {
-  ${rendererWaits()}
-  const q = (sel) => document.querySelector(sel);
+const evalJs = evalSource(async ({ waitFor }) => {
+  const q = (sel) => document.querySelector<HTMLElement>(sel);
   // Addressed by what the card says (no key attribute on the cells — #618).
-  const postCards = () => [...document.querySelectorAll('[data-slot="post-grid"] [data-slot="post-card"]')];
-  const cardOf = (text) => postCards().find(c => (c.textContent || '').includes(text));
+  const postCards = () => [...document.querySelectorAll<HTMLElement>('[data-slot="post-grid"] [data-slot="post-card"]')];
+  const cardOf = (text) => postCards().find((c) => (c.textContent || '').includes(text));
   const dblclick = (el) => el && el.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
-  const zoomLevel = () => { const el = q('[data-slot="viewer-zoom-level"]'); return el ? el.textContent.trim() : null; };
-  const btn = (slot) => q('[data-slot="' + slot + '"]');
-  const press = (slot) => { const b = btn(slot); if (b) b.click(); };
-  const disabled = (slot) => { const b = btn(slot); return !!(b && b.disabled); };
+  const zoomLevel = () => {
+    const el = q('[data-slot="viewer-zoom-level"]');
+    return el ? (el.textContent || '').trim() : null;
+  };
+  const btn = (slot) => document.querySelector<HTMLButtonElement>('[data-slot="' + slot + '"]');
+  const press = (slot) => {
+    const b = btn(slot);
+    if (b) b.click();
+  };
+  const disabled = (slot) => {
+    const b = btn(slot);
+    return !!(b && b.disabled);
+  };
   // Zoom eases in over 180-200ms, so wait for the value to settle before reading it. The
   // wait names the wanted % but does not stand in for the assertion: it RETURNS whatever
   // the toolbar actually reads, so a zoom that lands somewhere else still fails, and now
   // says which step it was.
-  const settled = async (want) => { await waitFor('the zoom level to settle at ' + want, () => zoomLevel() === want, 3000); return zoomLevel(); };
+  const settled = async (want) => {
+    await waitFor('the zoom level to settle at ' + want, () => zoomLevel() === want, 3000);
+    return zoomLevel();
+  };
   const chord = (key, mods) => document.dispatchEvent(new KeyboardEvent('keydown', Object.assign({ key: key, bubbles: true, cancelable: true }, mods)));
-  const searchShown = () => { const el = q('[data-slot="toolbar-search"]'); return !!(el && el.getClientRects().length); };
-  const errors = [];
+  const searchShown = () => {
+    const el = q('[data-slot="toolbar-search"]');
+    return !!(el && el.getClientRects().length);
+  };
+  const errors: string[] = [];
   window.addEventListener('error', (e) => errors.push(String((e && e.message) || e)));
-  const out = {};
+  const out: Record<string, any> = {};
 
   await waitFor('the grid to show both seeded posts', () => document.querySelectorAll('[data-slot="post-grid"] [data-slot="post-card"]').length >= 2);
 
@@ -125,10 +139,14 @@ const evalJs = `(async () => {
   // runner the decode outlived it and this read "—" while every later step passed
   // (#818) — the wait for the picture is its own step now, and its own check below,
   // so "the picture never arrived" cannot arrive disguised as "fit is not 100%".
-  out.pictureReady = await waitFor('the picture to decode and the toolbar % to leave its placeholder', () => {
-    const z = zoomLevel();
-    return !!z && z !== '—';
-  }, 15000);
+  out.pictureReady = await waitFor(
+    'the picture to decode and the toolbar % to leave its placeholder',
+    () => {
+      const z = zoomLevel();
+      return !!z && z !== '—';
+    },
+    15000,
+  );
   out.percentAtFit = await settled('100%');
   out.zoomOutDisabledAtFit = disabled('viewer-zoom-out');
   out.zoomInEnabledAtFit = !disabled('viewer-zoom-in');
@@ -196,7 +214,7 @@ const evalJs = `(async () => {
 
   out.errors = errors;
   return JSON.stringify(out);
-})()`;
+});
 
 const env = Object.assign({}, process.env, {
   APPDATA: tmp,

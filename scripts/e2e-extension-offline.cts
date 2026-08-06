@@ -16,6 +16,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { launchExtensionBrowser, stageExtension } = require('./lib-extension-e2e.cts');
 const { createNativeHostSandbox } = require('./lib-native-host-e2e.cts');
+const { waitFor } = require('./lib-wait.cts');
 
 declare const chrome: any;
 
@@ -60,34 +61,49 @@ const POST_METADATA = {
 
 async function waitForCapture(libraryDir: string, timeoutMs = 20_000): Promise<{ jpg: string; envelope: string }> {
   const inboxNewDir = path.join(libraryDir, '.hologram-inbox', 'new');
-  const started = Date.now();
-  while (Date.now() - started < timeoutMs) {
-    const jpg = fs.readdirSync(libraryDir).find((file) => file.endsWith('.jpg'));
-    let envelope: string | undefined;
-    try {
-      envelope = fs.readdirSync(inboxNewDir).find((file) => file.endsWith('.json'));
-    } catch {
-      envelope = undefined; // inbox dir not created yet
-    }
-    if (jpg && envelope) return { jpg, envelope };
-    await new Promise((resolve) => setTimeout(resolve, 100));
+  let landed: { jpg: string; envelope: string } | null = null;
+  try {
+    await waitFor(
+      'the native host to land a JPEG and its inbox envelope',
+      () => {
+        const jpg = fs.readdirSync(libraryDir).find((file) => file.endsWith('.jpg'));
+        let envelope: string | undefined;
+        try {
+          envelope = fs.readdirSync(inboxNewDir).find((file) => file.endsWith('.json'));
+        } catch {
+          envelope = undefined; // inbox dir not created yet
+        }
+        landed = jpg && envelope ? { jpg, envelope } : null;
+        return landed !== null;
+      },
+      { timeoutMs, pollMs: 100 },
+    );
+  } catch {
+    throw new Error('native host did not land a JPEG and inbox envelope within 20 seconds');
   }
-  throw new Error('native host did not land a JPEG and inbox envelope within 20 seconds');
+  return landed as unknown as { jpg: string; envelope: string };
 }
 
 async function waitForLog(configDir: string, file: string, matches: (text: string) => boolean, complaint: string, timeoutMs = 15_000): Promise<void> {
-  const started = Date.now();
-  while (Date.now() - started < timeoutMs) {
-    let text = '';
-    try {
-      text = fs.readFileSync(path.join(configDir, file), 'utf8');
-    } catch {
-      text = ''; // not created yet
-    }
-    if (matches(text)) return;
-    await new Promise((resolve) => setTimeout(resolve, 100));
+  try {
+    await waitFor(
+      `${file} to say: ${complaint}`,
+      () => {
+        let text = '';
+        try {
+          text = fs.readFileSync(path.join(configDir, file), 'utf8');
+        } catch {
+          text = ''; // not created yet
+        }
+        return matches(text);
+      },
+      { timeoutMs, pollMs: 100 },
+    );
+  } catch {
+    // The caller's own complaint reads better than the generic timeout: it says
+    // what the log was supposed to have recorded.
+    throw new Error(`${complaint} (waited ${timeoutMs / 1000}s)`);
   }
-  throw new Error(`${complaint} (waited ${timeoutMs / 1000}s)`);
 }
 
 (async () => {
