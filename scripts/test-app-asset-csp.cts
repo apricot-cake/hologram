@@ -101,7 +101,7 @@ const freePort = (): Promise<number> =>
     });
   });
 
-const { sleep, waitFor, rendererWaits } = require('./lib-wait.cts');
+const { sleep, waitFor, evalSource } = require('./lib-wait.cts');
 
 // --- CDP (same shape as scripts/cdp-verify.cts, trimmed to what we need) ---
 function cdpList(port: number): Promise<any[]> {
@@ -195,52 +195,57 @@ async function main() {
 
   // Runs in the main renderer. Everything after the assertions is a hold: the
   // harness needs the app alive while it drives CDP against the viewer window.
-  const evalJs = `(async () => {
-    ${rendererWaits()}
-    const h = window.hologram;
-    // Layer 1: the SVG is refused outright; a raster still opens (hidden under SMOKE).
-    const svgRefused = (await h.openImageWindow(${JSON.stringify(SVG)})) === false;
-    const rasterAccepted = (await h.openImageWindow(${JSON.stringify(PNG)})) === true;
+  const evalJs = evalSource(
+    async ({ sleep, neverHappens }, args) => {
+      const h = (window as any).hologram;
+      // Layer 1: the SVG is refused outright; a raster still opens (hidden under SMOKE).
+      const svgRefused = (await h.openImageWindow(args.svg)) === false;
+      const rasterAccepted = (await h.openImageWindow(args.png)) === true;
 
-    // Layer 2: a top-level navigation to the SVG is refused by the navigation guard.
-    const before = location.href;
-    try { location.href = 'asset://img/${SVG}'; } catch (e) {}
-    // The assertion is that this navigation NEVER commits, so the window IS the
-    // check — neverHappens spends all of it on purpose and names the case if it
-    // ever does. (A commit would also reject the eval from main — see #917.)
-    const navBlocked = await neverHappens('a top-level navigation to the asset SVG', () => location.href !== before, 800);
+      // Layer 2: a top-level navigation to the SVG is refused by the navigation guard.
+      const before = location.href;
+      try {
+        location.href = `asset://img/${args.svg}`;
+      } catch {}
+      // The assertion is that this navigation NEVER commits, so the window IS the
+      // check — neverHappens spends all of it on purpose and names the case if it
+      // ever does. (A commit would also reject the eval from main — see #917.)
+      const navBlocked = await neverHappens('a top-level navigation to the asset SVG', () => location.href !== before, 800);
 
-    // Regression check: the response CSP binds the document made FROM the response,
-    // so it must not touch these — the renderer embedding the picture is a
-    // different document with its own policy.
-    const load = (src) => new Promise((r) => {
-      const i = new Image();
-      i.onload = () => r(i.naturalWidth > 0);
-      i.onerror = () => r(false);
-      i.src = src;
-    });
-    const imgPng = await load('asset://img/${PNG}');
-    const imgThumb = await load('asset://img/${PNG}?w=180');
-    const imgSvg = await load('asset://img/${SVG}');
+      // Regression check: the response CSP binds the document made FROM the response,
+      // so it must not touch these — the renderer embedding the picture is a
+      // different document with its own policy.
+      const load = (src: string) =>
+        new Promise<boolean>((r) => {
+          const i = new Image();
+          i.onload = () => r(i.naturalWidth > 0);
+          i.onerror = () => r(false);
+          i.src = src;
+        });
+      const imgPng = await load(`asset://img/${args.png}`);
+      const imgThumb = await load(`asset://img/${args.png}?w=180`);
+      const imgSvg = await load(`asset://img/${args.svg}`);
 
-    // CSS background (PostCard's stack sheet). Nothing in the renderer reports
-    // whether a background image loaded — getComputedStyle echoes the declaration
-    // either way, and resource timing records nothing on this scheme. So the
-    // evidence is taken OUTSIDE: ?w=${BG_W} is a width nothing else here asks for,
-    // and serving it makes main write that thumbnail to the cache directory.
-    const d = document.createElement('div');
-    d.style.cssText = 'position:fixed;left:-9999px;width:10px;height:10px;background-image:url("asset://img/${PNG}?w=${BG_W}")';
-    document.body.appendChild(d);
+      // CSS background (PostCard's stack sheet). Nothing in the renderer reports
+      // whether a background image loaded — getComputedStyle echoes the declaration
+      // either way, and resource timing records nothing on this scheme. So the
+      // evidence is taken OUTSIDE: ?w=<args.bgW> is a width nothing else here asks
+      // for, and serving it makes main write that thumbnail to the cache directory.
+      const d = document.createElement('div');
+      d.style.cssText = `position:fixed;left:-9999px;width:10px;height:10px;background-image:url("asset://img/${args.png}?w=${args.bgW}")`;
+      document.body.appendChild(d);
 
-    // Fixed, and the only wait the background needs: the hold below already
-    // outlasts any time main takes to write that thumbnail (the separate 1500ms
-    // settle that used to sit here was waiting inside this one). The hold itself
-    // is deliberate — the app has to stay alive while the harness drives CDP
-    // against the viewer window, and the harness ends the run, not this eval.
-    // biome-ignore lint/plugin: a hold, sized to outlast the harness's CDP pass
-    await sleep(12000);
-    return { svgRefused, rasterAccepted, navBlocked, imgPng, imgThumb, imgSvg };
-  })()`;
+      // Fixed, and the only wait the background needs: the hold below already
+      // outlasts any time main takes to write that thumbnail (the separate 1500ms
+      // settle that used to sit here was waiting inside this one). The hold itself
+      // is deliberate — the app has to stay alive while the harness drives CDP
+      // against the viewer window, and the harness ends the run, not this eval.
+      // biome-ignore lint/plugin: a hold, sized to outlast the harness's CDP pass
+      await sleep(12000);
+      return { svgRefused, rasterAccepted, navBlocked, imgPng, imgThumb, imgSvg };
+    },
+    { svg: SVG, png: PNG, bgW: BG_W },
+  );
 
   const env = Object.assign({}, process.env, {
     APPDATA: tmp,

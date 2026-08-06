@@ -31,7 +31,7 @@ const { readEvalResult } = require('./lib-eval-result.cts');
 
 const electronPath = resolveElectron();
 const { seedLibrary } = require('./lib-seed-library.cts');
-const { rendererWaits } = require('./lib-wait.cts');
+const { evalSource } = require('./lib-wait.cts');
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-ugoira-'));
 const configDir = path.join(tmp, 'Hologram');
@@ -134,9 +134,8 @@ seedLibrary(configDir, [
   },
 ]);
 
-const evalJs = `(async () => {
-  ${rendererWaits()}
-  const out = {};
+const evalJs = evalSource(async ({ sleep, waitFor, neverHappens }) => {
+  const out: Record<string, any> = {};
 
   const cardEl = () => document.querySelector('[data-slot="post-grid"] [data-slot="post-card"]');
   await waitFor('the seeded ugoira post to appear as a card', () => !!cardEl());
@@ -149,7 +148,7 @@ const evalJs = `(async () => {
   card.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
   out.imageTabActive = await waitFor('the image tab to open on double click', () => !!document.querySelector('[data-slot="image-tab-view"]'));
 
-  const canvasEl = () => document.querySelector('[data-slot="ugoira-stage"] canvas');
+  const canvasEl = () => document.querySelector<HTMLCanvasElement>('[data-slot="ugoira-stage"] canvas');
   await waitFor('the ugoira stage to put up its canvas', () => !!canvasEl());
   const canvas = canvasEl();
   out.canvasFound = !!canvas;
@@ -158,11 +157,20 @@ const evalJs = `(async () => {
   // Wait until the first frame is drawn (IPC -> Blob -> createImageBitmap)
   const px = () => {
     try {
-      const d = canvas.getContext('2d').getImageData(0, 0, 1, 1).data;
+      // Named rather than `!`: a canvas that hands back no 2d context is a real
+      // failure, and it lands in the same 'ERR:' report as a failed read.
+      const ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error('the ugoira canvas has no 2d context');
+      const d = ctx.getImageData(0, 0, 1, 1).data;
       return d[0] + ',' + d[1] + ',' + d[2];
-    } catch (e) { return 'ERR:' + e.message; }
+    } catch (e) {
+      return 'ERR:' + e.message;
+    }
   };
-  const drawn = await waitFor('the first ugoira frame to be drawn onto the canvas', () => { const p = px(); return p !== '0,0,0' && !p.startsWith('ERR'); });
+  const drawn = await waitFor('the first ugoira frame to be drawn onto the canvas', () => {
+    const p = px();
+    return p !== '0,0,0' && !p.startsWith('ERR');
+  });
   out.firstPixel = drawn ? px() : null;
 
   // The frames actually advance = the color changes on each delay tick.
@@ -172,18 +180,26 @@ const evalJs = `(async () => {
   // outran the old 1s budget — the nightly went red with ["255,0,0"] while the
   // same build advanced through all three colors locally. What is being asserted
   // is that the animation moves, not how fast the runner gets there.
-  const seen = new Set();
-  await waitFor('the ugoira to advance far enough to show a second frame colour', () => { seen.add(px()); return seen.size >= 2; }, 10000);
+  const seen = new Set<string>();
+  await waitFor(
+    'the ugoira to advance far enough to show a second frame colour',
+    () => {
+      seen.add(px());
+      return seen.size >= 2;
+    },
+    10000,
+  );
   out.colorsSeen = [...seen].sort();
 
   // Stops when paused
-  const toggle = document.querySelector('[data-slot="ugoira-toggle"]');
+  const toggle = document.querySelector<HTMLElement>('[data-slot="ugoira-toggle"]');
   out.toggleFound = !!toggle;
   if (toggle) {
     toggle.click();
     // Kept as a fixed delay: a frame already in flight when the click landed still
     // gets drawn afterwards, and that draw is not the animation running. 300ms is
     // five frame delays (60ms), so the in-flight one has landed by then.
+    // biome-ignore lint/plugin: drains a frame already in flight — five 60ms frame delays
     await sleep(300);
     const held = px();
     // "Nothing happens" has no post-condition to poll for — the assertion IS the
@@ -194,7 +210,7 @@ const evalJs = `(async () => {
     out.resumed = await waitFor('the frames to start advancing again after resuming', () => px() !== resumeFrom, 3000);
   }
   return JSON.stringify(out);
-})()`;
+});
 
 const env = Object.assign({}, process.env, {
   APPDATA: tmp,
