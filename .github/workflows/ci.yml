@@ -13,15 +13,25 @@ name: CI
 # What this costs: the merge result is no longer checked BEFORE it lands, only
 # after. Two branches that pass alone and break together now break main and get
 # caught there — hence the rule that a red main is fixed before anything else.
+#
+# `paths-ignore` (#993) replaces a hand-written docs-only detection step that
+# called `gh api .../files` on a PR number. It went dead the moment #996 dropped
+# the `pull_request` trigger — a push event has no PR to look up, so it always
+# ran the full suite. Standard GitHub path filtering needs no script and no
+# token. Excluded here rather than enumerated: lint/typecheck touch nearly every
+# file, so a new directory should be checked by default, not silently skipped
+# because nobody added it to an allow-list.
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+      - 'assets/**'
 
 # Default token to read-only; no job in this workflow needs to write anything.
-# pull-requests: read is for the docs-only detection step's `gh api .../files` call.
 permissions:
   contents: read
-  pull-requests: read
 
 # A superseded push cancels its predecessor's run instead of letting both finish
 # — same signal, half the minutes. The repository is public now so the minutes are
@@ -38,39 +48,7 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      # ⚠️ DEAD since #996 removed the `pull_request` trigger: this step returns
-      # docs_only=false unconditionally on a push event, so every push to main
-      # runs the full suite regardless of what changed. It is left in place
-      # because #993 rewrites the detection to work off the pushed diff rather
-      # than a PR number — deleting it now would only mean writing it back.
-      #
-      # Why it was shaped this way (#928): docs-only PRs (README, docs/**) don't
-      # need the Node install or the check suite this job exists for, and a
-      # required-check paths filter couldn't express that — a skipped required
-      # workflow leaves the check "expected" forever and blocks the merge.
-      - name: Detect docs-only change
-        id: docs-only
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          if [ "${{ github.event_name }}" != "pull_request" ]; then
-            echo "docs_only=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          files="$(gh api --paginate "repos/${{ github.repository }}/pulls/${{ github.event.number }}/files" --jq '.[].filename')"
-          docs_only=true
-          if [ -z "$files" ]; then
-            docs_only=false
-          fi
-          while IFS= read -r f; do
-            case "$f" in
-              *.md|docs/*) ;;
-              *) docs_only=false ;;
-            esac
-          done <<< "$files"
-          echo "docs_only=$docs_only" >> "$GITHUB_OUTPUT"
       - name: Setup Node
-        if: steps.docs-only.outputs.docs_only != 'true'
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: package.json
@@ -83,8 +61,6 @@ jobs:
       # entry point for installing already knows which flags are still needed and
       # covers extension/'s separate lockfile too. See scripts/setup.cts.
       - name: Install dependencies
-        if: steps.docs-only.outputs.docs_only != 'true'
         run: npm run setup
       - name: Lint, typecheck, test
-        if: steps.docs-only.outputs.docs_only != 'true'
         run: npm run check
