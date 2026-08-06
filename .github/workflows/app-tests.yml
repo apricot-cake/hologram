@@ -41,10 +41,15 @@ name: App tests
 #
 # What a job name no longer says, the log does: the pool prints one `ok`/`FAIL`
 # line per script and repeats the failing names on its last line (#829).
+#
+# No `pull_request` trigger since #996: the merge-result run it produced was
+# never read once CI stopped being a merge gate (2026-08-06), so every change
+# was checked twice — once on refs/pull/N/merge, once on what landed. The cost
+# is that two branches which pass alone and break together now break main and
+# are caught there, not before.
 on:
   push:
     branches: [main]
-  pull_request:
   schedule:
     # 18:37 UTC = 03:37 JST. Off the hour and outside 22:00-02:00 UTC on purpose:
     # scheduled runs queue behind everyone else's, and those are the peaks.

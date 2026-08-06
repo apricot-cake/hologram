@@ -4,15 +4,18 @@ name: CI
 # Node and runs on any OS. The Electron-launch harness and Playwright e2e layers
 # land in a later stage alongside #14, on a Windows runner.
 #
-# Both triggers, and the pair is deliberate (#883). `pull_request` is the one the
-# ruleset requires before a merge, because it tests refs/pull/N/merge — the merge
-# result — and that is the only thing that catches two branches which pass alone
-# and break together. `push` is narrowed to main so the same check re-runs on what
-# actually landed, without doubling every run while a PR is open.
+# `push` to main only — no `pull_request` (#996). The pair used to be deliberate
+# (#883): `pull_request` tested refs/pull/N/merge, the merge result, and the
+# ruleset required it green before a merge. That gate was removed on 2026-08-06,
+# so nothing waits for that run any more — it produced a result nobody read while
+# the same check ran again on what landed. One change, two identical runs.
+#
+# What this costs: the merge result is no longer checked BEFORE it lands, only
+# after. Two branches that pass alone and break together now break main and get
+# caught there — hence the rule that a red main is fixed before anything else.
 on:
   push:
     branches: [main]
-  pull_request:
 
 # Default token to read-only; no job in this workflow needs to write anything.
 # pull-requests: read is for the docs-only detection step's `gh api .../files` call.
@@ -35,10 +38,16 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      # docs-only PRs (README, docs/**) don't need the Node install or the check
-      # suite this job exists for — skip straight to a pass. Required-check paths
-      # filters can't do this: a skipped required workflow leaves the check
-      # "expected" forever and blocks the merge instead (#928).
+      # ⚠️ DEAD since #996 removed the `pull_request` trigger: this step returns
+      # docs_only=false unconditionally on a push event, so every push to main
+      # runs the full suite regardless of what changed. It is left in place
+      # because #993 rewrites the detection to work off the pushed diff rather
+      # than a PR number — deleting it now would only mean writing it back.
+      #
+      # Why it was shaped this way (#928): docs-only PRs (README, docs/**) don't
+      # need the Node install or the check suite this job exists for, and a
+      # required-check paths filter couldn't express that — a skipped required
+      # workflow leaves the check "expected" forever and blocks the merge.
       - name: Detect docs-only change
         id: docs-only
         env:
