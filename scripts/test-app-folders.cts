@@ -92,6 +92,15 @@ const evalJs = `(async () => {
     while (Date.now() < until) { if (fn()) return true; await sleep(40); }
     return fn();
   };
+  // Same, for post-conditions that live behind an IPC round trip.
+  const waitForAsync = async (fn, ms = 8000) => {
+    const until = Math.min(Date.now() + ms, DEADLINE);
+    for (;;) {
+      if (await fn()) return true;
+      if (Date.now() >= until) return false;
+      await sleep(100);
+    }
+  };
   const click = (el) => el && el.dispatchEvent(new MouseEvent('click', { bubbles: true }));
   const rclick = (el) => el && el.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 60, clientY: 60 }));
   const cards = () => grid.querySelectorAll('[data-slot="post-card"]').length;
@@ -154,7 +163,10 @@ const evalJs = `(async () => {
   click(menuRow('サブフォルダを作成'));
   out.namedSub = await nameIt('線画');
   // The parent opens on create: a new row hidden inside a collapsed parent is
-  // indistinguishable from nothing having happened.
+  // indistinguishable from nothing having happened. Reopen the tree first — since
+  // #981 the flyout goes away with the dialog that closed on top of it, and a
+  // flyout that is shut says nothing about where the new folder went.
+  out.treeAfterCreate = await openTree();
   out.newSubShown = await waitFor(() => !!rowNamed('線画'));
   const c1 = await getFolders();
   const made = c1.folders.find(f => f.name === '線画');
@@ -193,9 +205,10 @@ const evalJs = `(async () => {
   const desc = () => document.querySelector('[data-slot="alert-dialog-description"]');
   out.cascadeWarned = await waitFor(() => !!desc() && desc().textContent.includes('2'));
   click(document.querySelector('[data-slot="alert-dialog-action"]'));
-  // The sidebar losing every row is the DOM mirror of the cascade landing in the
-  // DB, so it is what getFolders() below can be read against.
-  await waitFor(() => rows().length === 0 && cards() === 3);
+  // Wait on the DB, not on the tree emptying: since #981 the tree lives in a flyout
+  // that closes for reasons of its own, so an empty sidebar no longer means the
+  // cascade landed. getFolders() is the thing the assertion below reads anyway.
+  await waitForAsync(async () => (await getFolders()).folders.length === 0 && cards() === 3);
   const c2 = await getFolders();
   out.leftAfterDelete = c2.folders.length;                          // 0 — all three went
   out.postsKept = cards();                                          // 3 — the posts stay in the library
@@ -236,6 +249,7 @@ child.on('close', () => {
     childShownAfterTwisty: true,
     rowMenuOpened: true,
     namedSub: true,
+    treeAfterCreate: true,
     newSubShown: true,
     newSubHasParent: true,
     aggregated: 1,
