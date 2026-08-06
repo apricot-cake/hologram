@@ -29,6 +29,7 @@ const { electronPath: resolveElectron } = require('./lib-electron-path.cts');
 
 const electronPath = resolveElectron();
 const { seedLibrary } = require('./lib-seed-library.cts');
+const { rendererWaits } = require('./lib-wait.cts');
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-ptp-'));
 const configDir = path.join(tmp, 'Hologram');
@@ -77,10 +78,9 @@ sqlite.prepare('INSERT INTO tag_parents (tagId, parentTagId, isDisplay) VALUES (
 sqlite.close();
 
 const evalJs = `(async () => {
-  const wait = (ms) => new Promise(r => setTimeout(r, ms));
+  ${rendererWaits()}
   const cards = () => document.querySelectorAll('[data-slot="post-grid"] [data-slot="post-card"]').length;
   const posterCards = () => document.querySelectorAll('[data-slot="poster-grid"] [data-slot="poster-card"]').length;
-  const waitFor = async (fn, ms = 4000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (fn()) return true; await wait(40); } return false; };
   // Same filterbar idioms as test-app-facetcounts (one popover session; the smoke
   // window throttles exit animations, so never await a full unmount).
   const POP = '[data-slot="popover-content"]:not([data-closed])';
@@ -88,23 +88,30 @@ const evalJs = `(async () => {
   const edRows = () => [...document.querySelectorAll(POP + ' div.cursor-default')];
   const rowEl = (name) => edRows().find((el) => { const n = el.querySelector('span.truncate'); return n && n.textContent === name; }) || null;
   const cntOf = (name) => { const r = rowEl(name); const c = r && r.querySelector('span.tabular-nums'); return c ? c.textContent : null; };
-  await waitFor(() => cards() >= 3);
+  await waitFor('the grid to show all 3 seeded posts', () => cards() >= 3);
   const r = {};
   byText('button', '投稿者').click();
-  await waitFor(() => posterCards() >= 3);
+  await waitFor('the poster view to show all 3 posters', () => posterCards() >= 3);
   byText('button', 'フィルタ').click();
-  await waitFor(() => !!document.querySelector(POP + ' [data-slot="command-item"]'));
+  await waitFor('the filter menu to open', () => !!document.querySelector(POP + ' [data-slot="command-item"]'));
   byText(POP + ' [data-slot="command-item"]', 'タグ').click();
-  await waitFor(() => edRows().length > 0);
+  await waitFor('the tag editor to list the poster tags', () => edRows().length > 0);
   r.rows = edRows().map((el) => { const n = el.querySelector('span.truncate'); return n ? n.textContent : null; }).filter(Boolean);
   r.touhou = cntOf('東方');     // 2 — u1 names it, u0 reaches it through レミリア
   r.remilia = cntOf('レミリア'); // 1
   // Picking the PARENT row must leave the poster tagged only with the child.
-  rowEl('東方').click(); await wait(260);
+  // Both toggles change the poster count, so waiting for the new count observes
+  // the transition instead of the state the click started from.
+  rowEl('東方').click();
+  await waitFor('the poster grid to narrow to the posters that reach 東方', () => posterCards() === 2);
   r.touhouCards = posterCards(); // 2 (u0, u1)
-  rowEl('東方').click(); await wait(260);
+  rowEl('東方').click();
+  await waitFor('the poster grid to show every poster again once the 東方 leaf is off', () => posterCards() === 3);
   r.backCards = posterCards();   // 3
-  byText('button', 'フィルタ').click(); await wait(120);
+  byText('button', 'フィルタ').click();
+  // POP excludes [data-closed], so the popover stops matching as soon as the close
+  // is committed — no need to await the (throttled) exit animation.
+  await waitFor('the filter popover to close', () => !document.querySelector(POP));
   // Reversibility, read live: nothing is stored on the poster, so dropping the
   // edge has to change the next read on its own.
   const effOf = (snap, key, tag) => ((snap.tags[key] || {}).effectiveTags || []).includes(tag);

@@ -17,6 +17,7 @@ const { electronPath: resolveElectron } = require('./lib-electron-path.cts');
 
 const electronPath = resolveElectron();
 const { seedLibrary } = require('./lib-seed-library.cts');
+const { rendererWaits } = require('./lib-wait.cts');
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-ht-'));
 const configDir = path.join(tmp, 'Hologram');
@@ -49,9 +50,9 @@ addPost('p3', 'タグなし投稿', ['zeta', 'eta', 'theta'], ['rust']);
 seedLibrary(configDir, records);
 
 const evalJs = `(async () => {
-  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-  const waitFor = async (fn, ms = 4000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (fn()) return true; await sleep(40); } return false; };
-  await waitFor(() => document.querySelectorAll('[data-slot="post-grid"] [data-slot="post-card"]').length >= 3);
+  ${rendererWaits()}
+  const cards = () => document.querySelectorAll('[data-slot="post-grid"] [data-slot="post-card"]').length;
+  await waitFor('the grid to show all 3 seeded posts', () => cards() >= 3);
 
   // Filterbar idioms (see test-app-facetcounts): one "+ フィルタ" popover session,
   // categories navigated via 戻る, queries scoped to the open popup.
@@ -61,15 +62,18 @@ const evalJs = `(async () => {
   const rowEl = (name) => edRows().find((el) => { const n = el.querySelector('span.truncate'); return n && n.textContent === name; }) || null;
   const openMenu = async () => {
     byText('button', 'フィルタ').click();
-    await waitFor(() => !!document.querySelector(POP + ' [data-slot="command-item"]'));
+    await waitFor('the filter menu to open', () => !!document.querySelector(POP + ' [data-slot="command-item"]'));
   };
   const pickCat = async (label) => {
     byText(POP + ' [data-slot="command-item"]', label).click();
-    await waitFor(() => edRows().length > 0);
+    await waitFor('the ' + label + ' value editor to list its values', () => edRows().length > 0);
+    // The row counts below are the assertions, so wait for the list to stop
+    // growing rather than for a number this test is supposed to be checking.
+    await waitStable('the ' + label + ' value list to stop growing', () => edRows().length);
   };
   const goBack = async () => {
     document.querySelector(POP + ' button[aria-label="戻る"]').click();
-    await waitFor(() => !!document.querySelector(POP + ' [data-slot="command-item"]'));
+    await waitFor('the filter menu to come back', () => !!document.querySelector(POP + ' [data-slot="command-item"]'));
   };
 
   // --- タグ editor: lists all 8 user tags ---
@@ -83,8 +87,8 @@ const evalJs = `(async () => {
   const htFlyCount = edRows().length;
   const tsRow = rowEl('#typescript');
   if (tsRow) tsRow.click();
-  await sleep(220);
-  const htCards = document.querySelectorAll('[data-slot="post-grid"] [data-slot="post-card"]').length;
+  await waitFor('the grid to narrow once #typescript is picked', () => cards() < 3);
+  const htCards = cards();
 
   return { tagFlyCount, htFlyCount, htCards };
 })()`;

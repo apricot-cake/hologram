@@ -28,6 +28,7 @@ const { readEvalResult } = require('./lib-eval-result.cts');
 
 const electronPath = resolveElectron();
 const { seedLibrary } = require('./lib-seed-library.cts');
+const { rendererWaits } = require('./lib-wait.cts');
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-marquee-'));
 const configDir = path.join(tmp, 'Hologram');
@@ -61,36 +62,9 @@ for (let i = 0; i < 12; i++) {
 seedLibrary(configDir, records);
 
 const evalJs = `(async () => {
-  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-  // One budget for the whole run (#952). Every wait below is capped by it, so a
-  // regression that stalls several steps still returns its per-check report
-  // instead of running into main's 60s SMOKE_TIMEOUT — which reports "no eval
-  // result" and names nothing.
-  const DEADLINE = Date.now() + 45000;
-  // Waits are bounded but generous: the bound only costs time on the run that is
-  // already broken, while a healthy run leaves the moment the condition holds.
-  const waitFor = async (fn, ms = 8000) => {
-    const until = Math.min(Date.now() + ms, DEADLINE);
-    while (Date.now() < until) { if (fn()) return true; await sleep(40); }
-    return fn();
-  };
-  // Masonry layout has no "done" event: masonic measures, commits, and can move
-  // things again on the next commit. The observable post-condition is that a
-  // measurement REPEATS — used wherever this suite used to sleep for a guessed
-  // number of frames.
-  const waitStable = async (read, ms = 6000) => {
-    const until = Math.min(Date.now() + ms, DEADLINE);
-    let prev = null;
-    let repeats = 0;
-    while (Date.now() < until) {
-      const cur = JSON.stringify(read());
-      repeats = cur === prev ? repeats + 1 : 0;
-      if (repeats >= 2) return true;
-      prev = cur;
-      await sleep(50);
-    }
-    return false;
-  };
+  // sleep / waitFor / waitStable / neverHappens + the WAIT_DEADLINE budget (#952),
+  // now shared by every harness instead of living here — scripts/lib-wait.cts.
+  ${rendererWaits()}
   const byId = (id) => document.getElementById(id);
   const cards = () => [...document.querySelectorAll('[data-slot="post-grid"] [data-slot="post-card"]')];
   // Cards are identified by their own text (no key attribute — #618).
@@ -103,10 +77,10 @@ const evalJs = `(async () => {
 
   const rectsOf = (sel) => [...document.querySelectorAll(sel)].map(c => { const k = c.getBoundingClientRect(); return [Math.round(k.left), Math.round(k.top), Math.round(k.width), Math.round(k.height)]; });
 
-  await waitFor(() => cards().length >= 12);
+  await waitFor('the grid to show all 12 seeded posts', () => cards().length >= 12);
   // Every expectation below is derived from these rects, so wait for masonic's
   // measured heights to stop moving rather than for a fixed number of frames.
-  out.gridSettled = await waitStable(() => rectsOf('[data-slot="post-grid"] [data-slot="post-card"]'));
+  out.gridSettled = await waitStable('the masonry layout to stop moving', () => rectsOf('[data-slot="post-grid"] [data-slot="post-card"]'));
 
   const scroller = document.querySelector('[data-slot="content-scroll"]');
   const sr = scroller.getBoundingClientRect();
@@ -147,10 +121,10 @@ const evalJs = `(async () => {
   const drag = async (x0, y0, x1, y1, mods, expect) => {
     down(x0, y0, mods);
     move(x0 + 8, y0 + 8); // past MARQUEE_THRESHOLD → the band arms itself
-    await waitFor(() => !!band(), 3000);
+    await waitFor('the band to appear once the drag passed its threshold', () => !!band(), 3000);
     move(x1, y1);
     up();
-    if (expect) await waitFor(() => selectedKeys().join(',') === expect.join(','), 4000);
+    if (expect) await waitFor('the released drag to select exactly the cards it crossed', () => selectedKeys().join(',') === expect.join(','), 4000);
   };
 
   // Rows, top-first: pick a band that cuts through the middle of one row only.
@@ -187,10 +161,13 @@ const evalJs = `(async () => {
   //    it leaves the selection completely alone (#242 skips the clear on a modifier)
   down(x0, cy, { ctrlKey: true });
   move(x0 + 1, cy + 1);
-  await sleep(60); // no post-condition to wait for: the claim is that NO band appears (#952)
-  out.bandDuringB = !!band();
+  // Both windows below are "prove it did NOT happen" checks, so they spend their
+  // whole timeout on purpose (#986) — waiting for a post-condition would make them
+  // pass by construction. Kept short for the same reason.
+  out.bandDuringB = !(await neverHappens('a band to appear from a press under the threshold', () => !!band(), 200));
   up();
-  await sleep(60); // same — the claim is that the release leaves the selection untouched
+  const afterA = out.gotA.join(',');
+  await neverHappens('the release under the threshold to disturb the selection', () => selectedKeys().join(',') !== afterA, 200);
   out.gotB = selectedKeys();
 
   // C. Ctrl held at press time EXTENDS: row 1's first two cards join row 0's
@@ -212,38 +189,38 @@ const evalJs = `(async () => {
   const before = selectedKeys();
   down(x0, cy1 - 5);
   move(x0 + 8, cy1);
-  out.bandVisibleE = await waitFor(() => !!band(), 3000);
+  out.bandVisibleE = await waitFor('the band to be painted while dragging', () => !!band(), 3000);
   move(x1b, cy1 + 5);
   // Live preview needs an animation frame, and a hidden window throttles rAF hard
   // (the passes above only land because the release does one final synchronous
   // pass) — so wait generously instead of assuming a 60Hz clock.
-  out.changedDuringE = await waitFor(() => selectedKeys().join(',') !== before.join(','), 6000);
+  out.changedDuringE = await waitFor('the selection to preview live while the band moves', () => selectedKeys().join(',') !== before.join(','), 6000);
   esc();
   out.bandRemovedE = !band(); // finish('cancel') removes the overlay synchronously
-  await waitFor(() => selectedKeys().join(',') === before.join(','), 4000);
+  await waitFor('Esc to put the pre-drag selection back', () => selectedKeys().join(',') === before.join(','), 4000);
   out.gotE = selectedKeys();
   out.expectE = before;
   up(); // the real gesture still ends with a release; it must not re-apply the band
-  await sleep(60); // no post-condition: the claim is that the release changes nothing
+  // "Nothing happens" again: spending the window is the check (#986).
+  await neverHappens('the release after Esc to re-apply the cancelled band', () => selectedKeys().join(',') !== before.join(','), 200);
   out.gotEAfterUp = selectedKeys();
 
   // F. a drag that starts ON a card is not a marquee (cards own the OS drag-out)
   const cardEl = row0[0].el;
   cardEl.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0, clientX: onlyX, clientY: cy }));
   move(x1, cy + 40);
-  await sleep(80); // no post-condition to wait for: the claim is that no band appears
-  out.bandFromCard = !!band();
+  out.bandFromCard = !(await neverHappens('a band to appear from a drag that started on a card', () => !!band(), 200));
   up(); // no listeners are attached (the press never armed a gesture) — nothing to settle
 
   // G. a plain click on empty space clears the selection AND sends the inspector
   //    back to its placeholder (#242). The card click first is what fills the panel.
   cardEl.dispatchEvent(new MouseEvent('click', { bubbles: true, button: 0, clientX: onlyX, clientY: cy }));
-  await waitFor(() => selectedKeys().length === 1 && inspectedCards() === 1 && panelFilled(), 4000);
+  await waitFor('the clicked card to be selected and fill the inspector', () => selectedKeys().length === 1 && inspectedCards() === 1 && panelFilled(), 4000);
   out.selectedBeforeG = selectedKeys();
   out.inspectedBeforeG = inspectedCards();
   out.panelFilledBeforeG = panelFilled();
   click(x0, cy);
-  await waitFor(() => selectedKeys().length === 0 && !panelFilled() && panelPlaceholder(), 4000);
+  await waitFor('the background click to clear the selection and empty the inspector', () => selectedKeys().length === 0 && !panelFilled() && panelPlaceholder(), 4000);
   out.gotG = selectedKeys();
   out.inspectedAfterG = inspectedCards();
   out.panelFilledAfterG = panelFilled();
@@ -254,11 +231,14 @@ const evalJs = `(async () => {
   //    both gate their unselect_all on Ctrl/Shift being up)
   await drag(x0, cy - 5, x1, cy + 5, undefined, expectFor(x0, cy - 5, x1, cy + 5));
   out.beforeH = selectedKeys();
+  const beforeH = out.beforeH.join(',');
+  // Both are "the modifier makes this a no-op" claims — the window has to be spent,
+  // not short-circuited by a post-condition (#986).
   click(x0, cy, { ctrlKey: true });
-  await sleep(80); // no post-condition: the claim is that the modifier makes this a no-op
+  await neverHappens('Ctrl + a background click to touch the selection', () => selectedKeys().join(',') !== beforeH, 200);
   out.gotHCtrl = selectedKeys();
   click(x0, cy, { shiftKey: true });
-  await sleep(80); // same
+  await neverHappens('Shift + a background click to touch the selection', () => selectedKeys().join(',') !== beforeH, 200);
   out.gotHShift = selectedKeys();
 
   // I. the empty space BELOW the last row is background too (#242 finalized design 3):
@@ -267,7 +247,7 @@ const evalJs = `(async () => {
   scroller.scrollTop = scroller.scrollHeight;
   // Scrolling to the end rebuilds masonic's render window, so the answer to "where
   // is the last row" moves for a while — wait for it to stop.
-  out.bottomSettled = await waitStable(() => [Math.round(scroller.scrollTop), rectsOf('[data-slot="post-grid"] [data-slot="post-card"]')]);
+  out.bottomSettled = await waitStable('the last row to stop moving after scrolling to the bottom', () => [Math.round(scroller.scrollTop), rectsOf('[data-slot="post-grid"] [data-slot="post-card"]')]);
   const lowest = Math.max(...cards().map(c => c.getBoundingClientRect().bottom));
   const belowY = Math.round(lowest + 24);
   const belowX = Math.round(sr.left + scroller.clientWidth / 2);
@@ -276,7 +256,7 @@ const evalJs = `(async () => {
   out.beforeI = selectedKeys();
   if (out.belowAvailable) {
     click(belowX, belowY);
-    await waitFor(() => selectedKeys().length === 0, 4000);
+    await waitFor('the click below the last row to clear the selection', () => selectedKeys().length === 0, 4000);
   }
   out.gotI = selectedKeys();
 
@@ -284,18 +264,18 @@ const evalJs = `(async () => {
   //    cards are inspected, never selected — so all its background click does is put
   //    the panel both grids share back to the placeholder.
   [...document.querySelectorAll('button')].find(b => (b.textContent || '').trim() === '投稿者')?.click();
-  out.posterCardsShown = await waitFor(() => document.querySelectorAll('[data-slot="poster-grid"] [data-slot="poster-card"]').length >= 1);
+  out.posterCardsShown = await waitFor('the poster grid to show its cards', () => document.querySelectorAll('[data-slot="poster-grid"] [data-slot="poster-card"]').length >= 1);
   // masonic lays the poster grid out from scratch — same rect-repeats wait as the
   // post grid above, since the press point below is read off these rects.
-  out.posterSettled = await waitStable(() => rectsOf('[data-slot="poster-grid"] [data-slot="poster-card"]'));
+  out.posterSettled = await waitStable('the poster grid layout to stop moving', () => rectsOf('[data-slot="poster-grid"] [data-slot="poster-card"]'));
   const posterCard = document.querySelector('[data-slot="poster-grid"] [data-slot="poster-card"]');
   posterCard?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-  out.posterFilledBeforeJ = await waitFor(() => !!document.querySelector('[data-slot="inspector-body"] [data-slot="inspector-poster"]'), 4000);
+  out.posterFilledBeforeJ = await waitFor('the clicked poster to fill the inspector', () => !!document.querySelector('[data-slot="inspector-body"] [data-slot="inspector-poster"]'), 4000);
   const pr = posterCard.getBoundingClientRect();
   const py = Math.round((pr.top + pr.bottom) / 2);
   out.posterPressOnEmpty = !(document.elementFromPoint(x0, py) || {}).closest?.('[data-slot="poster-card"]');
   click(x0, py);
-  out.posterPlaceholderAfterJ = await waitFor(() => panelPlaceholder(), 4000);
+  out.posterPlaceholderAfterJ = await waitFor('the poster grid background click to return the inspector to its placeholder', () => panelPlaceholder(), 4000);
 
   out.errors = errors;
   return JSON.stringify(out);

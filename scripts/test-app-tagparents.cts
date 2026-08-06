@@ -34,6 +34,7 @@ const { electronPath: resolveElectron } = require('./lib-electron-path.cts');
 
 const electronPath = resolveElectron();
 const { seedLibrary } = require('./lib-seed-library.cts');
+const { rendererWaits } = require('./lib-wait.cts');
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-tp-'));
 const configDir = path.join(tmp, 'Hologram');
@@ -80,9 +81,8 @@ insEdge.run(scarletId, touhouId, 0);
 sqlite.close();
 
 const evalJs = `(async () => {
-  const wait = (ms) => new Promise(r => setTimeout(r, ms));
+  ${rendererWaits()}
   const cards = () => document.querySelectorAll('[data-slot="post-grid"] [data-slot="post-card"]').length;
-  const waitFor = async (fn, ms = 4000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (fn()) return true; await wait(40); } return false; };
   // Same filterbar idioms as test-app-facetcounts (one popover session, navigate
   // between categories with 戻る — the smoke window throttles exit animations).
   const POP = '[data-slot="popover-content"]:not([data-closed])';
@@ -90,23 +90,30 @@ const evalJs = `(async () => {
   const edRows = () => [...document.querySelectorAll(POP + ' div.cursor-default')];
   const rowEl = (name) => edRows().find((el) => { const n = el.querySelector('span.truncate'); return n && n.textContent === name; }) || null;
   const cntOf = (name) => { const r = rowEl(name); const c = r && r.querySelector('span.tabular-nums'); return c ? c.textContent : null; };
-  await waitFor(() => cards() >= 5);
+  await waitFor('the grid to show all 5 seeded posts', () => cards() >= 5);
   const r = {};
   byText('button', 'フィルタ').click();
-  await waitFor(() => !!document.querySelector(POP + ' [data-slot="command-item"]'));
+  await waitFor('the filter menu to open', () => !!document.querySelector(POP + ' [data-slot="command-item"]'));
   byText(POP + ' [data-slot="command-item"]', 'タグ').click();
-  await waitFor(() => edRows().length > 0);
+  await waitFor('the tag editor to list the vocabulary', () => edRows().length > 0);
   r.rows = edRows().map((el) => { const n = el.querySelector('span.truncate'); return n ? n.textContent : null; }).filter(Boolean);
   r.touhou = cntOf('東方');     // 3 — p2 names it, p0/p1 reach it through 紅魔郷
   r.scarlet = cntOf('紅魔郷');  // 2 — carried by nothing directly, implied by p0/p1
   r.remilia = cntOf('レミリア'); // 2
   r.scenery = cntOf('風景');    // 1
   // Picking the PARENT row must leave the child-tagged posts (the whole point).
-  rowEl('東方').click(); await wait(260);
+  // Every leaf toggle below changes the card count, so waiting for the new count
+  // observes the transition rather than the state the click started from.
+  rowEl('東方').click();
+  await waitFor('the grid to narrow to the posts that reach 東方', () => cards() === 3);
   r.touhouCards = cards();      // 3 (p0,p1,p2)
-  rowEl('東方').click(); await wait(260);
+  rowEl('東方').click();
+  await waitFor('the grid to show every post again once the 東方 leaf is off', () => cards() === 5);
   r.backCards = cards();        // 5
-  byText('button', 'フィルタ').click(); await wait(120);
+  byText('button', 'フィルタ').click();
+  // POP excludes [data-closed], so the popover stops matching as soon as the close
+  // is committed — no need to await the (throttled) exit animation.
+  await waitFor('the filter popover to close', () => !document.querySelector(POP));
   // Reversibility, read live: drop the 紅魔郷→東方 edge and re-read the library.
   // Nothing was ever stored, so the next SELECT alone has to show the change.
   const edges = await window.hologram.getTagParentEdges();
@@ -127,29 +134,29 @@ const evalJs = `(async () => {
   // moves no posts row for list-posts-delta to notice. A card count is the
   // honest witness here: it needs no popover, so it cannot look fresh merely
   // because the surface was rebuilt when it opened.
-  const settle = async (want) => { await waitFor(() => cards() === want); return cards(); };
+  const settle = async (label, want) => { await waitFor(label, () => cards() === want); return cards(); };
   byText('button', 'フィルタ').click();
-  await waitFor(() => !!document.querySelector(POP + ' [data-slot="command-item"]'));
+  await waitFor('the filter menu to open again', () => !!document.querySelector(POP + ' [data-slot="command-item"]'));
   byText(POP + ' [data-slot="command-item"]', 'タグ').click();
-  await waitFor(() => edRows().length > 0);
-  rowEl('東方').click(); await wait(260);      // leaf on
-  r.liveRemovedCards = await settle(1);        // 1 — the live removal reached the grid
+  await waitFor('the tag editor to list the vocabulary again', () => edRows().length > 0);
+  rowEl('東方').click();                       // leaf on
+  r.liveRemovedCards = await settle('the grid to hold only the post that names 東方 itself', 1);
   await window.hologram.addTagParent(${scarletId}, ${touhouId}, false);
-  r.liveAddedCards = await settle(3);          // 3 — p0/p1 reach 東方 through 紅魔郷 again
-  rowEl('東方').click(); await wait(260);      // leaf off
-  await waitFor(() => cntOf('東方') === '3');
+  r.liveAddedCards = await settle('the grid to take the child posts back once the rule is restored', 3);
+  rowEl('東方').click();                       // leaf off
+  await waitFor('the 東方 row to count the child posts again', () => cntOf('東方') === '3');
   r.liveTouhouCount = cntOf('東方');           // 3 — the facet's own number follows too
 
   // #777: a split mints a NEW tag entity, and it has to reach the facet without
   // a restart as well. p0 moves off レミリア onto a same-named entity displayed
   // under 紅魔郷, so the ORIGINAL レミリア leaf drops from 2 cards to 1 and a
   // second row appears beside it.
-  rowEl('レミリア').click(); await wait(260);  // leaf on
-  r.liveSplitBefore = await settle(2);
+  rowEl('レミリア').click();                   // leaf on
+  r.liveSplitBefore = await settle('the grid to narrow to the two レミリア posts', 2);
   await window.hologram.splitTag(${remiliaId}, ${scarletId}, ['${records[0].captureId}']);
-  r.liveSplitCards = await settle(1);
-  rowEl('レミリア').click(); await wait(260);  // leaf off — read the whole vocabulary
-  await waitFor(() => !!rowEl('レミリア(紅魔郷)'));
+  r.liveSplitCards = await settle('the grid to lose the post the split moved onto a new tag', 1);
+  rowEl('レミリア').click();                   // leaf off — read the whole vocabulary
+  await waitFor('the split-off tag to get a row of its own', () => !!rowEl('レミリア(紅魔郷)'));
   r.liveSplitRows = edRows().map((el) => { const n = el.querySelector('span.truncate'); return n ? n.textContent : null; }).filter(Boolean);
   return r;
 })()`;

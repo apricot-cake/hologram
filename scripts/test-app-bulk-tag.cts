@@ -15,8 +15,9 @@
 // and "reopened dialog is empty" checks are what that move has to keep true.
 // Assertions are on chips and on disk, not on the Base UI internals.
 //
-// The eval must stay well inside the smoke harness's 9s hard cap (app/src/main/index.ts), which
-// is why the waits here are trimmed to the minimum each step actually needs.
+// Waits come from scripts/lib-wait.cts (#986): the whole eval is bounded by that
+// module's WAIT_DEADLINE, which sits below main's SMOKE_TIMEOUT so a stall still
+// returns this suite's per-check report instead of "no eval result".
 //
 //   node scripts/test-app-bulk-tag.cts
 
@@ -32,6 +33,7 @@ const { readEvalResult } = require('./lib-eval-result.cts');
 const electronPath = resolveElectron();
 const { openDatabase } = require(path.join(appDir, 'src', 'main', 'lib-db.ts'));
 const { seedLibrary } = require('./lib-seed-library.cts');
+const { rendererWaits } = require('./lib-wait.cts');
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-bulktag-'));
 const configDir = path.join(tmp, 'Hologram');
@@ -68,8 +70,8 @@ seed.forEach((s, i) => {
 seedLibrary(configDir, records);
 
 const evalJs = `(async () => {
-  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-  const waitFor = async (fn, ms = 5000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (fn()) return true; await sleep(40); } return false; };
+  // sleep / waitFor / waitStable / neverHappens — scripts/lib-wait.cts (#986).
+  ${rendererWaits()}
   const dialog = () => document.querySelector('[data-slot="dialog-content"]');
   const chips = () => [...document.querySelectorAll('[data-slot="dialog-content"] [data-slot="tag-chip"]')].map(c => c.getAttribute('data-tag'));
   const input = () => document.querySelector('[data-slot="dialog-content"] [data-slot="tag-input"]');
@@ -90,52 +92,63 @@ const evalJs = `(async () => {
     Object.getOwnPropertyDescriptor(proto, 'value').set.call(el, v);
     el.dispatchEvent(new Event('input', { bubbles: true }));
   };
-  const type = async (text) => {
+  // TagField's Enter handler commits React's \`query\` state, not the DOM value
+  // (inspector/TagField.tsx), so an Enter dispatched before the input event has
+  // rendered is silently a no-op. Re-pressing until the chip is staged is the
+  // observable form of the fixed 50ms that used to stand in for that render (#986);
+  // once the tag is staged the field clears its query, so repeats are no-ops too.
+  const type = async (label, text) => {
     const el = input();
     el.focus();
     setInput(el, text);
-    await sleep(50);
-    el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    return waitFor(label, () => {
+      const box = input();
+      if (box) box.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+      return chips().includes(text);
+    });
   };
 
-  await waitFor(() => document.querySelectorAll('[data-slot="post-grid"] [data-slot="post-card"]').length >= 2);
+  await waitFor('the grid to show both seeded posts', () => document.querySelectorAll('[data-slot="post-grid"] [data-slot="post-card"]').length >= 2);
 
   // A. select both cards (plain click = single, Ctrl = add) — the bar appears
   cardOf(0).dispatchEvent(new MouseEvent('click', { bubbles: true }));
   cardOf(1).dispatchEvent(new MouseEvent('click', { bubbles: true, ctrlKey: true }));
-  out.barShown = await waitFor(() => !!barTagBtn());
+  out.barShown = await waitFor('the selection bar to appear for the two picked cards', () => !!barTagBtn());
 
   // B. タグを追加 opens the dialog, and it starts with nothing staged
   barTagBtn().click();
-  out.dialogOpened = await waitFor(() => !!dialog());
+  out.dialogOpened = await waitFor('the bulk tagging dialog to open', () => !!dialog());
   out.chipsAtOpen = chips().join(',');
   out.applyLabel = applyBtn() ? applyBtn().textContent.trim() : '';
   out.applyDisabledWhenEmpty = !!(applyBtn() && applyBtn().disabled);
 
   // C. staging a tag enables Apply — but writes nothing yet
-  await type('すてるタグ');
-  out.stagedChip = await waitFor(() => chips().includes('すてるタグ'));
+  out.stagedChip = await type('the typed tag to be staged as a chip', 'すてるタグ');
   out.applyEnabledAfterStage = !!(applyBtn() && !applyBtn().disabled);
 
   // D. cancelling discards the staged list (asserted on disk at the end: すてるタグ
   //    must never appear in either sidecar)
   cancelBtn().click();
-  out.dialogClosed = await waitFor(() => !dialog());
+  out.dialogClosed = await waitFor('the cancelled dialog to close', () => !dialog());
 
   // E. reopening starts clean — the staging is the dialog's own state, so it dies
   //    with the dialog rather than surviving in a renderer module
   barTagBtn().click();
-  out.reopened = await waitFor(() => !!dialog());
-  await sleep(100);
+  out.reopened = await waitFor('the bulk tagging dialog to open a second time', () => !!dialog());
+  // "The discarded tag does NOT come back": a post-condition would pass on its first
+  // poll, so this window is spent on purpose (#986).
+  await neverHappens('a chip from the cancelled session to reappear in the reopened dialog', () => chips().length > 0, 250);
   out.chipsAtReopen = chips().join(',');
 
   // F. Apply writes the staged tag onto every selected record
-  await type('まとめタグ');
-  out.stagedChip2 = await waitFor(() => chips().includes('まとめタグ'));
+  out.stagedChip2 = await type('the second typed tag to be staged as a chip', 'まとめタグ');
   applyBtn().click();
-  out.dialogClosedOnApply = await waitFor(() => !dialog());
+  out.dialogClosedOnApply = await waitFor('the dialog to close once Apply was pressed', () => !dialog());
 
-  await sleep(400); // let both sidecar writes land before the harness reads them
+  // Fixed on purpose: the tags this suite asserts on are written by MAIN (#298/St5
+  // made tag edits a DB write), and the dialog closes on the renderer's own state —
+  // so there is nothing here to observe that says the write landed before the app quits.
+  await sleep(400);
   out.errors = errors;
   return JSON.stringify(out);
 })()`;

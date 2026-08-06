@@ -22,6 +22,7 @@ const { electronPath: resolveElectron } = require('./lib-electron-path.cts');
 
 const electronPath = resolveElectron();
 const { seedLibrary } = require('./lib-seed-library.cts');
+const { rendererWaits } = require('./lib-wait.cts');
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-stb-'));
 const configDir = path.join(tmp, 'Hologram');
@@ -55,14 +56,15 @@ for (let i = 0; i < texts.length; i++) {
 seedLibrary(configDir, records);
 
 const evalJs = `(async () => {
-  const wait = (ms) => new Promise(r => setTimeout(r, ms));
+  ${rendererWaits()}
   const cards = () => document.querySelectorAll('[data-slot="post-grid"] [data-slot="post-card"]').length;
   // Filter chips = the FilterChips component ([data-slot=filter-chips], one span per chip).
   // Only text terms are active in this test, so counting all chips counts text chips.
   const chipRow = () => document.querySelector('[data-slot="filter-chips"]');
+  const chipText = () => (chipRow() ? chipRow().textContent || '' : '');
   const textChips = () => (chipRow() ? chipRow().querySelectorAll(':scope > span').length : 0);
-  const waitFor = async (fn, ms = 4000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (fn()) return true; await wait(40); } return false; };
-  await waitFor(() => cards() >= 3);
+  const activeTab = () => { const el = document.querySelector('[data-slot="tab"][data-active]'); return el ? el.dataset.tabId : null; };
+  await waitFor('the grid to show all 3 seeded posts', () => cards() >= 3);
   // The searchbox component's Autocomplete input (no #searchBox id since P2④).
   const sb = document.querySelector('input[placeholder="テキスト・ユーザー名で検索"]');
   // React controlled input: write via the prototype setter + 'input'
@@ -73,22 +75,35 @@ const evalJs = `(async () => {
   const r = {};
 
   // --- editing text leaf survives a tab round-trip without duplicating ---
-  setVal('いぬ'); await wait(240);
+  // What "stable" means here is leaf IDENTITY across a tab round-trip, not that the
+  // screen stops moving — so nothing below needs a fixed delay to be the check. What
+  // it does need is care about WHAT is waited on: every step's chip count is asserted,
+  // and each step starts from a state whose count already equals the expected one
+  // (1 → 1 on the edit), so waiting for that count would return on the PRE state and
+  // pass a duplicated leaf. Each wait therefore watches the chip's TEXT (or the box,
+  // or the active tab) and the count is left to the assertion.
+  setVal('いぬ');
+  await waitFor('the typed term to show as a chip and narrow the grid to its one match', () => chipText().includes('いぬ') && cards() === 1);
   r.aChips = textChips();          // 1 (editing leaf)
   r.aCards = cards();              // 1 (いぬのおさんぽ)
-  const firstTab = (document.querySelector('[data-slot="tab"][data-active]') || {}).dataset.tabId;
-  document.querySelector('[data-slot="tab-new"]').click(); await wait(200);   // addTab → fresh empty tab
+  const firstTab = activeTab();
+  document.querySelector('[data-slot="tab-new"]').click();   // addTab → fresh empty tab
+  await waitFor('the new tab to take over with an unfiltered library', () => activeTab() !== firstTab && !chipRow() && cards() === 3);
   r.newChips = textChips();        // 0 (new tab is empty)
   r.newCards = cards();            // 3 (all)
-  document.querySelector('[data-slot="tab"][data-tab-id="' + firstTab + '"]').click(); await wait(240);  // back
+  document.querySelector('[data-slot="tab"][data-tab-id="' + firstTab + '"]').click();  // back
+  // '>= 1' rather than '=== 1': a duplicated leaf must still reach the assertion below.
+  await waitFor('the first tab to come back with its search term in the box', () => activeTab() === firstTab && sb.value === 'いぬ' && textChips() >= 1 && cards() === 1);
   r.backChips = textChips();       // 1 (restored leaf)
   r.backCards = cards();           // 1
   r.backBox = sb.value;            // 'いぬ'
-  setVal('いぬの'); await wait(240);   // append one more char — must EDIT the rebound leaf
+  setVal('いぬの');                    // append one more char — must EDIT the rebound leaf
+  await waitFor('the chip to follow the appended character', () => chipText().includes('いぬの'));
   r.editChips = textChips();       // 1 (NOT 2 — the headline anti-regression)
   r.editCards = cards();           // 1 (いぬのおさんぽ)
 
-  setVal(''); await wait(240);
+  setVal('');
+  await waitFor('the emptied box to drop the chip row and unfilter the grid', () => !chipRow() && cards() === 3);
   r.resetChips = textChips();      // 0
   r.resetCards = cards();          // 3
   return r;

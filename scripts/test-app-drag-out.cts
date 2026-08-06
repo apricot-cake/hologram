@@ -30,6 +30,7 @@ const { readEvalResult } = require('./lib-eval-result.cts');
 
 const electronPath = resolveElectron();
 const { seedLibrary } = require('./lib-seed-library.cts');
+const { rendererWaits } = require('./lib-wait.cts');
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-dragout-'));
 const configDir = path.join(tmp, 'Hologram');
@@ -65,9 +66,8 @@ ids.forEach((id, i) => {
 seedLibrary(configDir, records);
 
 const evalJs = `(async () => {
-  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-  const waitFor = async (fn, ms = 5000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (fn()) return true; await sleep(40); } return false; };
-  await waitFor(() => document.querySelectorAll('[data-slot="post-grid"] [data-slot="post-card"]').length >= 3);
+  ${rendererWaits()}
+  await waitFor('the grid to show all 3 seeded posts', () => document.querySelectorAll('[data-slot="post-grid"] [data-slot="post-card"]').length >= 3);
   // Addressed by what the card says (the cells carry no key attribute — #618).
   const postCards = () => [...document.querySelectorAll('[data-slot="post-grid"] [data-slot="post-card"]')];
   const cardOf = (n) => postCards().find(c => (c.textContent || '').includes('本文' + n));
@@ -80,39 +80,45 @@ const evalJs = `(async () => {
   // throw, and the hologramIpc.dragOut() after it never ran.
   const errors = [];
   window.addEventListener('error', (e) => errors.push(String((e && e.message) || e)));
-  const dragFrom = async (el) => {
+  // Every case here asserts that a drag CHANGED NOTHING, so there is no post-condition to
+  // wait for: a wait would end the moment it was set up and prove nothing. The window is
+  // spent in full on purpose, giving a wrong selection write (which re-renders the cells
+  // through the hologramStore subscription) time to show up before it is read (#986).
+  const dragFrom = async (el, keep) => {
     const ev = new DragEvent('dragstart', { bubbles: true, cancelable: true });
     el.dispatchEvent(ev);
-    await sleep(80); // selection replacement re-renders the cells (hologramStore subscription)
+    await neverHappens('the drag to rewrite the selection (expected it to stay ' + (keep || 'empty') + ')', () => selectedKeys() !== keep, 300);
     return ev.defaultPrevented;
   };
   const out = {};
 
   // 1. nothing selected: the drag is intercepted and selects NOTHING — an export
   //    gesture leaves the library as it found it
-  out.prevented1 = await dragFrom(cardOf(0).querySelector('[data-slot="post-card-media"]'));
+  out.prevented1 = await dragFrom(cardOf(0).querySelector('[data-slot="post-card-media"]'), '');
   out.selAfter1 = selectedKeys();
 
   // 2. build a real selection by hand the way a user does now that the ○ ring is
   //    gone (#143): a plain click single-selects, Ctrl-click adds the second card.
   cardOf(0).dispatchEvent(new MouseEvent('click', { bubbles: true }));
   cardOf(1).dispatchEvent(new MouseEvent('click', { bubbles: true, ctrlKey: true }));
-  await sleep(80);
+  // Waits on the SIZE of the selection, then reads which cards are in it — so a pair
+  // built out of the wrong cards still fails.
+  await waitFor('the two clicked cards to both show as selected', () => selectedKeys().split(',').length === 2);
   out.selBuilt = selectedKeys();
 
   // 3. drag a card INSIDE that selection → selection untouched
-  out.prevented3 = await dragFrom(cardOf(0).querySelector('[data-slot="post-card-media"]'));
+  out.prevented3 = await dragFrom(cardOf(0).querySelector('[data-slot="post-card-media"]'), '本文0,本文1');
   out.selAfter3 = selectedKeys();
 
   // 4. drag a card OUTSIDE it → still untouched. The hand-built working set is not
   //    Explorer's throwaway cursor; dragging one card must not wipe it (which files
   //    actually leave is records.ts's dragFilesOf — test-records-unit).
-  out.prevented4 = await dragFrom(cardOf(2).querySelector('[data-slot="post-card-media"]'));
+  out.prevented4 = await dragFrom(cardOf(2).querySelector('[data-slot="post-card-media"]'), '本文0,本文1');
   out.selAfter4 = selectedKeys();
 
   // 5. a drag started on the post text is NOT ours — the browser keeps it
   const txt = cardOf(2).querySelector('[data-slot="post-card-meta"]');
-  out.preventedText = await dragFrom(txt);
+  out.preventedText = await dragFrom(txt, '本文0,本文1');
   out.selAfterText = selectedKeys();
   out.errors = errors;
   return JSON.stringify(out);

@@ -32,6 +32,7 @@ const { readEvalResult } = require('./lib-eval-result.cts');
 const electronPath = resolveElectron();
 const { openDatabase } = require(path.join(appDir, 'src', 'main', 'lib-db.ts'));
 const { seedLibrary } = require('./lib-seed-library.cts');
+const { rendererWaits } = require('./lib-wait.cts');
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-insptags-'));
 const configDir = path.join(tmp, 'Hologram');
@@ -69,8 +70,8 @@ seed.forEach((s, i) => {
 seedLibrary(configDir, records);
 
 const evalJs = `(async () => {
-  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-  const waitFor = async (fn, ms = 5000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (fn()) return true; await sleep(40); } return false; };
+  // sleep / waitFor / waitStable / neverHappens — scripts/lib-wait.cts (#986).
+  ${rendererWaits()}
   const byId = (id) => document.getElementById(id);
   const field = () => document.querySelector('[data-slot="inspector"] [data-slot="inspector-tags"]');
   const chips = () => [...document.querySelectorAll('[data-slot="inspector"] [data-slot="tag-chip"]')].map(c => c.getAttribute('data-tag'));
@@ -91,8 +92,23 @@ const evalJs = `(async () => {
     el.dispatchEvent(new Event('input', { bubbles: true }));
   };
   const key = (el, k) => el.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true }));
+  // TagField's Enter handler commits React's \`query\` state, not the DOM value
+  // (inspector/TagField.tsx), so an Enter dispatched before the input event has
+  // rendered is silently a no-op. Re-pressing until the chip lands is the observable
+  // form of the fixed 80ms that used to stand in for that render (#986); once the
+  // tag is in, the field clears its query, so the repeat presses are no-ops too.
+  const typeTag = async (label, text) => {
+    const el = input();
+    el.focus();
+    setInput(el, text);
+    return waitFor(label, () => {
+      const box = input();
+      if (box) key(box, 'Enter');
+      return chips().includes(text);
+    });
+  };
 
-  await waitFor(() => document.querySelectorAll('[data-slot="post-grid"] [data-slot="post-card"]').length >= 2);
+  await waitFor('the grid to show both seeded posts', () => document.querySelectorAll('[data-slot="post-grid"] [data-slot="post-card"]').length >= 2);
 
   // A. タグを編集 (edit tags) in the card context menu is the route from a card into
   // tagging since the hover 🏷 (and the popover it opened) went away in P2⑦. It opens
@@ -100,41 +116,37 @@ const evalJs = `(async () => {
   // be an alias for 詳細 (details) and the user would still have to go find the input.
   cardOf(1).dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 40, clientY: 40 }));
   const menuItems = () => [...document.querySelectorAll('[data-slot="dropdown-menu-item"]')];
-  out.menuOpened = await waitFor(() => menuItems().some(r => r.textContent.includes('タグを編集')));
+  out.menuOpened = await waitFor('the card context menu to offer its edit-tags item', () => menuItems().some(r => r.textContent.includes('タグを編集')));
   const tagItem = menuItems().find(r => r.textContent.includes('タグを編集'));
   if (tagItem) tagItem.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-  out.menuOpenedPanel = await waitFor(() => !!field() && chips().includes('既存タグ'));
-  await sleep(150);
-  out.tagInputFocused = !!input() && document.activeElement === input();
+  out.menuOpenedPanel = await waitFor("the inspector to open showing that card's tags", () => !!field() && chips().includes('既存タグ'));
+  out.tagInputFocused = await waitFor('the caret to land in the tag field', () => !!input() && document.activeElement === input());
   key(document.body, 'Escape'); // dismiss the menu before the rest of the flow
 
   // B. selecting a card puts its tags in the field (tag-b already has one)
   cardOf(1).dispatchEvent(new MouseEvent('click', { bubbles: true }));
-  out.fieldShown = await waitFor(() => !!field());
+  out.fieldShown = await waitFor('the inspector to show a tag field for the selected card', () => !!field());
   out.chipsForB = chips().join(',');
 
   // C. free text + Enter adds a tag to the inspected card
   cardOf(0).dispatchEvent(new MouseEvent('click', { bubbles: true }));
-  await waitFor(() => !!field() && chips().length === 0);
-  const el = input();
-  out.hasInput = !!el;
-  el.focus();
-  setInput(el, '新規タグ');
-  await sleep(80);
-  key(el, 'Enter');
-  out.chipAdded = await waitFor(() => chips().includes('新規タグ'));
+  await waitFor('the inspector to switch to the untagged card', () => !!field() && chips().length === 0);
+  out.hasInput = !!input();
+  out.chipAdded = await typeTag('the typed tag to be added as a chip', '新規タグ');
   out.chipsAfterAdd = chips().join(',');
   // the typed text is consumed, not left in the field
-  await sleep(120);
-  out.inputCleared = (input() || {}).value === '';
+  out.inputCleared = await waitFor('the tag field to clear the text it consumed', () => (input() || {}).value === '');
 
   // D. the popup offers the un-adopted source hashtag and the library vocabulary
   const el2 = input();
   el2.focus();
   el2.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
   el2.click();
-  await sleep(300);
   const itemTexts = () => [...document.querySelectorAll('[role="option"]')].map(n => n.textContent.trim());
+  // The suggestion popup having rows at all is the post-condition of the press;
+  // WHICH rows it offers is asserted separately below, so a popup that opens empty
+  // still fails the checks instead of being waited into existence.
+  out.popupOpened = await waitFor('the tag suggestion popup to open', () => itemTexts().length > 0);
   out.popupItems = itemTexts().join('|');
   // The popup anchors to the field (Combobox.InputGroup), not to the input left of
   // it. With a chip present the two are far apart, so comparing left edges tells
@@ -145,7 +157,8 @@ const evalJs = `(async () => {
   const fieldEl = input().closest('[role="group"]');
   out.anchorField = leftOf(fieldEl);
   out.anchorInput = leftOf(el2);
-  const popupEl = document.querySelector('[role="option"]').closest('div[class*="bg-popover"]');
+  const optEl = document.querySelector('[role="option"]');
+  const popupEl = optEl && optEl.closest('div[class*="bg-popover"]');
   out.anchorPopup = popupEl ? leftOf(popupEl) : null;
   out.popupTracksField = out.anchorPopup !== null && Math.abs(out.anchorPopup - out.anchorField) < Math.abs(out.anchorPopup - out.anchorInput);
   out.offersSourceTag = itemTexts().some(t => t.includes('ソースタグ'));
@@ -154,7 +167,7 @@ const evalJs = `(async () => {
   // E. picking the source hashtag adopts it
   const srcItem = [...document.querySelectorAll('[role="option"]')].find(n => n.textContent.trim().includes('ソースタグ'));
   if (srcItem) srcItem.click();
-  out.adopted = await waitFor(() => chips().includes('ソースタグ'));
+  out.adopted = await waitFor('the picked source hashtag to become a chip', () => chips().includes('ソースタグ'));
 
   // F. Esc with the tag popup open must NOT take the inspector with it. The panel's
   // Esc handler (inspector-builder) defers while a popup is registered as open; the
@@ -167,8 +180,9 @@ const evalJs = `(async () => {
   // input. That half is a real-key check, not a harness one.
   out.popupOpenBeforeEsc = !!document.querySelector('[role="option"]');
   key(input(), 'Escape');
-  await sleep(250);
-  out.inspectorSurvivedEsc = !!field();
+  // "The panel does NOT close" — the window has to be spent, since waiting for the
+  // panel to still be there would pass on its first poll no matter what (#986).
+  out.inspectorSurvivedEsc = await neverHappens('Esc with the tag popup open to close the inspector', () => !field(), 250);
 
   // F. the chip's × removes a tag
   out.chipsBeforeRemove = chips().join(',');
@@ -176,7 +190,7 @@ const evalJs = `(async () => {
   const removeBtn = chipEl && chipEl.querySelector('button');
   out.hasRemoveBtn = !!removeBtn;
   if (removeBtn) removeBtn.click();
-  out.chipRemoved = await waitFor(() => chips().length > 0 && !chips().includes('新規タグ'));
+  out.chipRemoved = await waitFor("the removed tag to disappear from the card's chips", () => chips().length > 0 && !chips().includes('新規タグ'));
   out.chipsFinal = chips().join(',');
 
   // G. arrows inside the tag input belong to the CARET, not to the grid. This is the
@@ -188,13 +202,15 @@ const evalJs = `(async () => {
   const selBefore = postCards().filter(c => c.hasAttribute('data-selected')).map(nameOf).join(',');
   el3.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }));
   el3.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
-  await sleep(120);
-  out.selectionHeldWhileTyping = postCards().filter(c => c.hasAttribute('data-selected')).map(nameOf).join(',') === selBefore;
+  // "The grid does NOT take the arrows" — spending the window is the check (#986).
+  out.selectionHeldWhileTyping = await neverHappens('arrows inside the tag field to move the grid selection', () => postCards().filter(c => c.hasAttribute('data-selected')).map(nameOf).join(',') !== selBefore, 250);
   setInput(el3, '');
   key(el3, 'Escape');
-  await sleep(60);
 
-  await sleep(300); // let the sidecar write land before the harness reads it
+  // Fixed on purpose: the tags this suite asserts on are written by MAIN (#298/St5
+  // made tag edits a DB write), and the renderer's chips are updated optimistically —
+  // so there is nothing here to observe that says the write landed before the app quits.
+  await sleep(300);
   out.errors = errors;
   return JSON.stringify(out);
 })()`;
@@ -240,6 +256,7 @@ child.on('close', () => {
     ['an already-tagged card shows its tag as a chip', r.chipsForB === '既存タグ'],
     ['typing a new tag + Enter adds it', r.chipAdded === true],
     ['the typed text is cleared after adding', r.inputCleared === true],
+    ['the tag suggestion popup opens', r.popupOpened === true],
     ['the popup offers the un-adopted source hashtag', r.offersSourceTag === true],
     ['the popup offers vocabulary from elsewhere in the library', r.offersVocab === true],
     ['the popup lines up with the field, not the input beside the chips', r.popupTracksField === true],

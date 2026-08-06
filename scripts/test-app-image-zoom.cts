@@ -31,6 +31,7 @@ const { readEvalResult } = require('./lib-eval-result.cts');
 
 const electronPath = resolveElectron();
 const { seedLibrary } = require('./lib-seed-library.cts');
+const { rendererWaits } = require('./lib-wait.cts');
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-imagezoom-'));
 const configDir = path.join(tmp, 'Hologram');
@@ -85,8 +86,7 @@ const records = [
 seedLibrary(configDir, records);
 
 const evalJs = `(async () => {
-  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-  const waitFor = async (fn, ms = 5000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (fn()) return true; await sleep(40); } return false; };
+  ${rendererWaits()}
   const q = (sel) => document.querySelector(sel);
   // Addressed by what the card says (no key attribute on the cells — #618).
   const postCards = () => [...document.querySelectorAll('[data-slot="post-grid"] [data-slot="post-card"]')];
@@ -96,15 +96,18 @@ const evalJs = `(async () => {
   const btn = (slot) => q('[data-slot="' + slot + '"]');
   const press = (slot) => { const b = btn(slot); if (b) b.click(); };
   const disabled = (slot) => { const b = btn(slot); return !!(b && b.disabled); };
-  // Zoom eases in over 180-200ms, so wait for the value to settle before reading it.
-  const settled = async (want) => { await waitFor(() => zoomLevel() === want, 3000); return zoomLevel(); };
+  // Zoom eases in over 180-200ms, so wait for the value to settle before reading it. The
+  // wait names the wanted % but does not stand in for the assertion: it RETURNS whatever
+  // the toolbar actually reads, so a zoom that lands somewhere else still fails, and now
+  // says which step it was.
+  const settled = async (want) => { await waitFor('the zoom level to settle at ' + want, () => zoomLevel() === want, 3000); return zoomLevel(); };
   const chord = (key, mods) => document.dispatchEvent(new KeyboardEvent('keydown', Object.assign({ key: key, bubbles: true, cancelable: true }, mods)));
   const searchShown = () => { const el = q('[data-slot="toolbar-search"]'); return !!(el && el.getClientRects().length); };
   const errors = [];
   window.addEventListener('error', (e) => errors.push(String((e && e.message) || e)));
   const out = {};
 
-  await waitFor(() => document.querySelectorAll('[data-slot="post-grid"] [data-slot="post-card"]').length >= 2);
+  await waitFor('the grid to show both seeded posts', () => document.querySelectorAll('[data-slot="post-grid"] [data-slot="post-card"]').length >= 2);
 
   // A. Grid tab: the toolbar doesn't exist (the search field is shown)
   out.toolbarInGrid = !!q('[data-slot="viewer-toolbar"]');
@@ -112,8 +115,8 @@ const evalJs = `(async () => {
 
   // B. Open the image view -> the toolbar appears in the band, the search field retracts
   dblclick(cardOf('ズーム対象'));
-  out.imageViewActive = await waitFor(() => !!q('[data-slot="image-tab-view"]'));
-  out.toolbarInImageView = await waitFor(() => !!q('[data-slot="viewer-toolbar"]'));
+  out.imageViewActive = await waitFor('the image view to open on the double-clicked post', () => !!q('[data-slot="image-tab-view"]'));
+  out.toolbarInImageView = await waitFor('the viewer toolbar to appear in the top band', () => !!q('[data-slot="viewer-toolbar"]'));
   out.searchInImageView = searchShown();
 
   // C. The displayed % while at fit, and - being disabled (can't shrink further)
@@ -122,7 +125,7 @@ const evalJs = `(async () => {
   // runner the decode outlived it and this read "—" while every later step passed
   // (#818) — the wait for the picture is its own step now, and its own check below,
   // so "the picture never arrived" cannot arrive disguised as "fit is not 100%".
-  out.pictureReady = await waitFor(() => {
+  out.pictureReady = await waitFor('the picture to decode and the toolbar % to leave its placeholder', () => {
     const z = zoomLevel();
     return !!z && z !== '—';
   }, 15000);
@@ -151,14 +154,14 @@ const evalJs = `(async () => {
 
   // G. Back to the grid (Alt+<-) -> the toolbar disappears, the search field returns
   chord('ArrowLeft', { altKey: true });
-  out.leftImageView = await waitFor(() => !q('[data-slot="image-tab-view"]'));
+  out.leftImageView = await waitFor('the image view to close on Alt+←', () => !q('[data-slot="image-tab-view"]'));
   out.toolbarAfterBack = !!q('[data-slot="viewer-toolbar"]');
   out.searchAfterBack = searchShown();
 
   // H. A post that starts with a video -> the zoom controls stay "present but disabled"
   dblclick(cardOf('動画つき'));
-  out.videoViewActive = await waitFor(() => !!q('[data-slot="image-tab-view"]'));
-  await waitFor(() => !!q('[data-slot="viewer-toolbar"]'));
+  out.videoViewActive = await waitFor('the image view to open on the post that starts with a video', () => !!q('[data-slot="image-tab-view"]'));
+  await waitFor('the viewer toolbar to appear on the video slide', () => !!q('[data-slot="viewer-toolbar"]'));
   out.videoSlideIsVideo = !!q('[data-slot="image-tab-stage"] video');
   out.videoToolbarPresent = !!q('[data-slot="viewer-toolbar"]');
   out.videoZoomInDisabled = disabled('viewer-zoom-in');
@@ -169,7 +172,7 @@ const evalJs = `(async () => {
   // I. Comes back to life once you step to the next slide (the screenshot image)
   const next = q('[data-slot="image-tab-next"]');
   if (next) next.click();
-  out.zoomBackAfterStep = await waitFor(() => !disabled('viewer-zoom-in'), 5000);
+  out.zoomBackAfterStep = await waitFor('the zoom controls to come back to life on the next (image) slide', () => !disabled('viewer-zoom-in'), 5000);
   out.percentAfterStep = await settled('100%');
 
   // J. Regression: double-click fit switching (it shares the same function as the toggle

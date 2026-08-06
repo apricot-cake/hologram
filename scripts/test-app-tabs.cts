@@ -16,6 +16,7 @@ const { electronPath: resolveElectron } = require('./lib-electron-path.cts');
 
 const electronPath = resolveElectron();
 const { seedLibrary } = require('./lib-seed-library.cts');
+const { rendererWaits } = require('./lib-wait.cts');
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-tabs-'));
 const configDir = path.join(tmp, 'Hologram');
@@ -47,25 +48,26 @@ addPost('p3', '投稿3', ['beta']);
 seedLibrary(configDir, records);
 
 const evalJs = `(async () => {
-  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-  const waitFor = async (fn, ms = 6000) => {
-    const t0 = Date.now();
-    while (Date.now() - t0 < ms) { if (fn()) return true; await sleep(40); }
-    return false;
-  };
+  ${rendererWaits()}
   const key = (k, opts = {}) =>
     document.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true, ...opts }));
   const tabItems  = () => document.querySelectorAll('[data-slot="tab"]');
   const tabCount  = () => tabItems().length;
+  const tabActiveAt = (i) => { const t = tabItems(); return t.length > i && t[i].hasAttribute('data-active'); };
   const activeTitle = () => {
     const el = document.querySelector('[data-slot="tab"][data-active] [data-slot="tab-title"]');
     return el ? el.textContent.trim() : '';
   };
   const cardCount = () => document.querySelectorAll('[data-slot="post-grid"] [data-slot="post-card"]').length;
+  const chipRow = () => document.querySelector('[data-slot="filter-chips"]');
+  const chipText = () => { const c = chipRow(); return c ? (c.textContent || '') : ''; };
+  const POP = '[data-slot="popover-content"]:not([data-closed])';
+  // A tab switch changes renderer state at once but the grid refills over IPC, so
+  // every step below waits for the count to LEAVE the previous tab's value and then
+  // to stop moving — waiting for the expected number instead would assert nothing.
 
-  // Wait for all 3 posts to render
-  await waitFor(() => cardCount() >= 3);
-  await sleep(150);
+  await waitFor('the grid to show all 3 seeded posts', () => cardCount() >= 3);
+  await waitFor('the tab bar to render a title for the active tab', () => activeTitle().length > 0);
 
   // ① Initial state
   const initTabCount  = tabCount();
@@ -75,20 +77,25 @@ const evalJs = `(async () => {
   //    flyout is gone since P2③): open the popover, pick "タグ" (tags), click the alpha row.
   const byText = (sel, text) => [...document.querySelectorAll(sel)].find((el) => (el.textContent || '').trim() === text) || null;
   byText('button', 'フィルタ').click();
-  await waitFor(() => !!byText('[data-slot="command-item"]', 'タグ'));
+  await waitFor('the filter menu to list its categories', () => !!byText('[data-slot="command-item"]', 'タグ'));
   byText('[data-slot="command-item"]', 'タグ').click();
-  await waitFor(() => !!byText('[data-slot="popover-content"] span', 'alpha'));
+  await waitFor('the tag editor to list the alpha tag', () => !!byText('[data-slot="popover-content"] span', 'alpha'));
   byText('[data-slot="popover-content"] span', 'alpha').click();
-  await sleep(250);
-  // close the picker (it stays open by design so several values can be toggled)
-  key('Escape'); await sleep(60);
-  document.body.click(); await sleep(60);
+  await waitFor('the chip row to show the applied alpha tag', () => chipText().includes('alpha'));
+  await waitFor('the grid to narrow once the alpha tag is applied', () => cardCount() < 3);
+  // close the picker (it stays open by design so several values can be toggled):
+  // Escape is the dismissal, the outside click the fallback when it keeps focus
+  key('Escape');
+  document.body.click();
+  await waitFor('the value picker to close', () => !document.querySelector(POP));
   const filteredTitle = activeTitle();
   const filteredCards = cardCount();
 
   // ③ Ctrl+T → new tab
   key('t', { ctrlKey: true });
-  await sleep(250);
+  await waitFor('the new tab to open and take focus', () => tabCount() >= 2 && tabActiveAt(1));
+  await waitFor('the new tab to leave the filtered post count behind', () => cardCount() !== filteredCards);
+  await waitStable('the new tab grid to stop moving', () => cardCount());
   const tab2Count = tabCount();
   const tab2Title = activeTitle();
   const tab2Cards = cardCount();
@@ -96,32 +103,41 @@ const evalJs = `(async () => {
   // ④ Switch back to tab 1 → filter restored
   const t0 = tabItems()[0];
   if (t0) t0.click();
-  await sleep(250);
+  await waitFor('tab 1 to become the active tab again', () => tabActiveAt(0));
+  await waitFor('the grid to leave the unfiltered post count behind', () => cardCount() !== tab2Cards);
+  await waitStable('the restored grid to stop moving', () => cardCount());
   const restoredTitle = activeTitle();
   const restoredCards = cardCount();
 
   // ⑤ Switch to tab 2 → blank state
   const t1 = tabItems()[1];
   if (t1) t1.click();
-  await sleep(250);
+  await waitFor('tab 2 to become the active tab', () => tabActiveAt(1));
+  await waitFor('the grid to leave the filtered post count behind', () => cardCount() !== restoredCards);
+  await waitStable('the grid to stop moving back on tab 2', () => cardCount());
   const tab2RestoredTitle = activeTitle();
   const tab2RestoredCards = cardCount();
 
   // ⑥ Ctrl+W → close tab 2, tab 1 becomes active
   key('w', { ctrlKey: true });
-  await sleep(250);
+  await waitFor('the closed tab to leave a single tab behind', () => tabCount() <= 1);
+  await waitFor('the surviving tab to bring its narrowed grid back', () => cardCount() !== tab2RestoredCards);
+  await waitStable('the grid to stop moving after the tab closes', () => cardCount());
   const afterCloseCount = tabCount();
   const afterCloseTitle = activeTitle();
   const afterCloseCards = cardCount();
 
   // ⑦ Ctrl+W on last tab → resets state, does NOT close window
   key('w', { ctrlKey: true });
-  await sleep(250);
+  await waitFor('the last tab to drop its filter chips on reset', () => chipRow() === null);
+  await waitFor('the reset grid to leave the narrowed post count behind', () => cardCount() !== afterCloseCards);
+  await waitStable('the grid to stop moving after the reset', () => cardCount());
   const lastTabCount = tabCount();
   const lastTabTitle = activeTitle();
   const lastTabCards = cardCount();
 
-  // ⑧ Wait for debounce (800ms) then verify IPC round-trip
+  // ⑧ The persist is debounced by 800ms in the renderer, so the delay IS the
+  // specification here: there is nothing observable to poll until it elapses.
   await sleep(1000);
   let ipcOk = false;
   try {
