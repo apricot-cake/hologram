@@ -16,9 +16,20 @@
 // inside an MSIX-packaged host — e.g. the Claude desktop app — child processes
 // get %APPDATA%/HKCU storage virtualization: writes silently divert to a private
 // per-package LocalCache and diverge from what the user's real app/Chrome see
-// (the 2026-06 save-folder divergence). A dotfile under the (non-virtualized)
-// home dir is the SAME real path for every process. Tests isolate by pointing
-// HOLOGRAM_CONFIG_DIR at a sandbox dir.
+// (the 2026-06 save-folder divergence, ~9082 items). A dotfile under the
+// (non-virtualized) home dir is the SAME real path for every process. Tests
+// isolate by pointing HOLOGRAM_CONFIG_DIR at a sandbox dir.
+//
+// NOTE (2026-08-06, #1003): that virtualization is not happening any more —
+// Claude Code moved outside the package, and FS/HKCU reads and writes were all
+// measured as real. So this is no longer a hard requirement, and #232 plans to
+// move the config default back to %APPDATA%\Hologram. It has not been moved yet
+// on purpose: the very fact that the host's layout changed once means it can
+// change back, and the failure mode is silent (the 2026-06 incident only
+// surfaced as "I saved it but the library does not show it"). #232 pairs the
+// move with a check that detects a LocalCache-redirected path at startup.
+// The LIBRARY default is a separate question and does not move — see #232, where
+// its rationale is already a product decision rather than this one.
 
 const path = require('node:path');
 const os = require('node:os');

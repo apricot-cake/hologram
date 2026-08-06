@@ -1,9 +1,14 @@
 // CDP verify harness for the running Hologram Electron app.
-// The app must already be running with a CDP debug port OUTSIDE the MSIX sandbox. Launch it
-// via the HologramLaunch scheduled task, whose action carries --remote-debugging-port=9222
-// (see docs/build.md): Start-ScheduledTask -TaskName 'HologramLaunch'. Do NOT direct-launch
-// electron.exe from Claude's shell — that runs IN the MSIX container (HKCU/FS virtualized)
-// and diverges from the real Chrome / real app. Then:
+// The app must already be running with a CDP debug port. Two ways to get one:
+//   - the real instance: Start-ScheduledTask -TaskName 'HologramLaunch' — its action
+//     carries --remote-debugging-port=9222 (see docs/build.md). Use this when the
+//     check involves capture or native-host registration.
+//   - HMR: REMOTE_DEBUGGING_PORT=9222 npm run dev --workspace=app — electron-vite
+//     forwards that env var to Electron, so this harness connects the same way (#1003).
+// The old warning here ("never direct-launch, the MSIX container virtualizes HKCU/FS")
+// expired on 2026-08-06: Claude Code now runs outside the package and all four paths
+// (FS/HKCU read and write) were measured as real. What the task still buys is a fixed
+// debug port and a single launch path — see docs/build.md. Then:
 //   node scripts/cdp-verify.cts eval "<js expr; may return a value or a Promise>"
 //   node scripts/cdp-verify.cts shot <out.jpg> [quality]
 //

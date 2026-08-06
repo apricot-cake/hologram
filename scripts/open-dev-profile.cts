@@ -32,6 +32,12 @@
 //      reuse. The task scheduler starts the action from the service, i.e. as
 //      if a person had double-clicked it.
 //
+//      EXPIRED 2026-08-06 (#1003): Claude Code runs outside the package now and
+//      the filesystem is real, and PROFILE below is under the home dir anyway,
+//      so there is nothing left to fork. The task detour can go — kept until
+//      someone actually opens the profile without it and confirms. Tracked
+//      separately; do not remove it as a drive-by.
+//
 //   node scripts/open-dev-profile.cts
 
 const { execFileSync, spawnSync } = require('node:child_process');
@@ -135,8 +141,8 @@ async function main() {
 
   fs.mkdirSync(PROFILE, { recursive: true });
 
-  // Through the scheduled task, so the browser lands outside the MSIX container
-  // (see the header). The task is one-shot and its action is `cmd /c start`, so
+  // Through the scheduled task (its original MSIX reason expired — see the
+  // header). The task is one-shot and its action is `cmd /c start`, so
   // it completes immediately and the browser it opened outlives it — verified
   // 2026-08-03: the task returns to Ready with exit 0 while Chrome keeps running,
   // and unregistering it does not take the browser down.

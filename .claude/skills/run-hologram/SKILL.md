@@ -9,11 +9,13 @@ description: Hologram アプリを起動して動きを確かめる時の経路�
 
 **起動した先で CDP を叩くなら skill `verify-with-cdp` を先に読む**（合成マウスでレンダラを固める・スクショが固着/白紙/ハングする・拡張の診断は観測点を間違えると全部 false に見える、といった罠がまとまっている）。worktree からテストや拡張検証を回すなら skill `test-in-worktree`。
 
-## 絶対の制約: Claude のシェルから electron を直接起動しない
+## 実機（:9222）は `HologramLaunch` タスクで起こす
 
-Claude のシェルは MSIX パッケージ内で動く。そこから起動した electron はコンテナの子になり、HKCU とファイルシステムが仮想化される＝ネイティブホストの登録が実 Chrome から見えない私的ハイブへ入り、**キャプチャが壊れる**。`Start-Process electron.exe` も `npm start` も使わない。
+⚠️**旧理由（MSIX 仮想化）は 2026-08-06 に失効した**＝Claude Code 本体がパッケージ外へ移り、FS も HKCU も読み書きとも実体になった（#1003・4経路を実測。うち HKCU 書きはユーザーが regedit で目視）。**直接起動が登録を壊すことはもう無い**＝メモリ `sandbox-appdata-registry-divergence` が正。
 
-正しい経路は Task Scheduler（コンテナ外のサービス）経由:
+いま**タスクを使う理由は2つだけ**＝①アクションに `--remote-debugging-port=9222` が固定で入っている ②起動経路が1本に揃い、下のコマンドがその引数を目印に実機だけを名指しできる。⚠️**タスク以外で起動された個体はこの目印を持たないので選べない**（2026-08-06 に実際に遭遇＝#1004）。
+
+**HMR で足りるなら `electron-vite dev` を使ってよい**（下の「どのインスタンスで検証するか」4番）。
 
 ```powershell
 Get-CimInstance Win32_Process -Filter "Name='electron.exe'" | Where-Object { $_.CommandLine -like '*--remote-debugging-port=9222*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
@@ -30,7 +32,7 @@ Start-ScheduledTask -TaskName 'HologramLaunch'
 
 | 直した場所 | 必要な操作 |
 | --- | --- |
-| main・preload・renderer のいずれか | `npm run build --workspace=app` → **再起動**（electron-vite が3面を`app/out/`へ一括ビルド。`electron-vite dev`を使わない限り「renderer だけは再起動不要」の特例は無い） |
+| main・preload・renderer のいずれか | `npm run build --workspace=app` → **再起動**（electron-vite が3面を`app/out/`へ一括ビルド。ビルド出力を読む起動では「renderer だけは再起動不要」の特例は無い）。**`electron-vite dev` で起こしている間はこの往復が要らない**＝renderer は HMR、main は自動再起動 |
 | `native-host/` のブリッジ本体 | `npm run build:native-host-bridge --workspace=app` → `node native-host/install.cts` で再配備（アプリ再起動は不要。ビルドを飛ばすと配備は「バンドル未ビルド」で止まる） |
 | 拡張機能 | 本体で `npm run build:ext`＝拡張が自分でリロードするのでクリックは要らない（#650・skill `verify-extension`） |
 
@@ -41,6 +43,7 @@ Start-ScheduledTask -TaskName 'HologramLaunch'
 1. **挙動・自動テスト → SMOKE 隔離**: `HOLOGRAM_SMOKE=1` ＋ `HOLOGRAM_CONFIG_DIR=<tmp>`。隠しウィンドウ・自動終了。雛形は `scripts/test-app-tagtypes.cts`。ユーザーが本体アプリを触っていても結果に混ざらない。
 2. **見た目・モーション → サンドボックス2台目**: `node scripts/sandbox-app.cts` で可視・常駐のインスタンスを起動。CDP ポートはツリーのパスから決まる（起動時に表示・`.sandbox/instance.json`）。**接続は `CDP_PORT=sandbox node scripts/cdp-verify.cts`**＝そのツリーの記録から解決するので番号を持ち回らない。終了は `node scripts/sandbox-app.cts stop`。HKCU も共有 config も触らないので実機と共存でき、worktree ごとに独立する。**他ツリーのサンドボックスへ番号で繋ごうとすると止まる**（#640＝繋がったまま成功するのが唯一の失敗の顔だった）。
 3. **実機（:9222）**: `HologramLaunch` で起動したウィンドウへ CDP 接続。短く済ませ、混ざった疑いがあれば撮り直す。
+4. **UI を作り込む間 → HMR（`electron-vite dev`）**（2026-08-06 解禁・#1003）: `REMOTE_DEBUGGING_PORT=9222 npm run dev --workspace=app`。**CDP も同時に使える**＝electron-vite がこの環境変数を読んで `--remote-debugging-port` を Electron へ渡す（`node scripts/cdp-verify.cts eval …` がそのまま通る・実測で `document.title` と実ライブラリ 10.2K 件を取得）。renderer は HMR、main は保存で自動再起動＝**ビルド→再起動の往復が消える**。⚠️**キャプチャ経路の確認には使わない**＝dev は `ensureHostRegistered()` を呼ばない設計（`app/src/main/index.ts` が `DEV_SERVER_URL` のとき除外）なので、ホスト登録の自己修復が働かない。⚠️実機と同時には起こせない（single-instance lock）。
 
 CSS の transition や inline 配置は隠しウィンドウでは再現しないので、見た目の確認を SMOKE で済ませようとしない。
 

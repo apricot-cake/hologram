@@ -14,15 +14,19 @@
 //   node scripts/register-dev-native-host.cts            register
 //   node scripts/register-dev-native-host.cts uninstall  remove it again
 //
-// ⚠️ ON THIS MACHINE, RUN IT THROUGH THE SCHEDULED TASK, NOT DIRECTLY:
+// ON THIS MACHINE, RUN IT THROUGH THE SCHEDULED TASK:
 //   npm run ext:dev:register
 // Native messaging registration is an HKCU write, and a process running inside
-// the MSIX-packaged desktop app writes to a virtualized hive that the real
-// Chrome never reads (memory: sandbox-appdata-registry-divergence). The task
-// scheduler starts the process OUTSIDE that container, which is the same reason
-// the app itself is launched through HologramLaunch. There is no way to verify
-// the result by reading the registry back from inside; verify it by capturing
-// from the development profile and reading ~/.hologram-dev/bridge.log.
+// the MSIX-packaged desktop app used to write to a virtualized hive that the real
+// Chrome never reads, so the task scheduler was used to get outside that container.
+//
+// EXPIRED 2026-08-06 (#1003): Claude Code runs outside the package now. An HKCU
+// write from this shell lands in the real hive — confirmed by the user in regedit,
+// not just by reading it back. So a direct call should work and reading the
+// registry back IS meaningful now. The task detour can go; kept until someone
+// registers without it and confirms. Tracked separately; not a drive-by removal.
+// End-to-end proof is still a capture from the development profile plus
+// ~/.hologram-dev/bridge.log.
 
 const fs = require('node:fs');
 const os = require('node:os');
