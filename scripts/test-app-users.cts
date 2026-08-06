@@ -18,6 +18,7 @@ const { electronPath: resolveElectron } = require('./lib-electron-path.cts');
 
 const electronPath = resolveElectron();
 const { seedLibrary } = require('./lib-seed-library.cts');
+const { rendererWaits } = require('./lib-wait.cts');
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-users-'));
 const configDir = path.join(tmp, 'Hologram');
@@ -53,9 +54,8 @@ addPost('c1', 'misskey', 'mk1', 'carol', 'Carol', '2026-01-01T00:00:00.000Z');
 seedLibrary(configDir, records);
 
 const evalJs = `(async () => {
-  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-  const waitFor = async (fn, ms = 4000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (fn()) return true; await sleep(40); } return false; };
-  await waitFor(() => document.querySelectorAll('[data-slot="post-grid"] [data-slot="post-card"]').length >= 4);
+  ${rendererWaits()}
+  await waitFor('the grid to show all 4 seeded posts', () => document.querySelectorAll('[data-slot="post-grid"] [data-slot="post-card"]').length >= 4);
 
   // The poster editor (the "+ フィルタ" flow — the old author row flyout is gone since P2③) —
   // posters are listed by post count. Filterbar idioms: see test-app-facetcounts.
@@ -64,18 +64,24 @@ const evalJs = `(async () => {
   const edRows = () => [...document.querySelectorAll(POP + ' div.cursor-default')];
   const nameOf = (r) => { const n = r.querySelector('span.truncate'); return n ? n.textContent : ''; };
   byText('button', 'フィルタ').click();
-  await waitFor(() => !!document.querySelector(POP + ' [data-slot="command-item"]'));
+  await waitFor('the filter menu to open', () => !!document.querySelector(POP + ' [data-slot="command-item"]'));
   byText(POP + ' [data-slot="command-item"]', '投稿者').click();
-  await waitFor(() => edRows().length >= 3);
+  await waitFor('the author editor to list its 3 authors', () => edRows().length >= 3);
   const allNames = edRows().map(nameOf);   // Alice(2), Bob, Carol
 
   // click Alice -> apply a user filter (editor stays open, row shows ✓)
   edRows().find(r => nameOf(r) === 'Alice').click();
-  await sleep(200);
+  // The chip appearing is the observable post-condition of the click. The card
+  // count is read after it but asserted separately, so a filter that lands
+  // without narrowing the grid still fails.
+  await waitFor('the filter chip bar to show the applied user filter', () => {
+    const bar = document.querySelector('[data-slot="filter-chips"]');
+    return !!bar && (bar.textContent || '').includes('Alice');
+  });
   const chips = document.querySelector('[data-slot="filter-chips"]');
   const chipText = chips ? [chips.textContent] : [];
   const cardCount = document.querySelectorAll('[data-slot="post-grid"] [data-slot="post-card"]').length;
-  const aliceActive = await waitFor(() => !!edRows().find(r => nameOf(r) === 'Alice' && r.querySelector('svg')));
+  const aliceActive = await waitFor('the Alice row to show its ✓', () => !!edRows().find(r => nameOf(r) === 'Alice' && r.querySelector('svg')));
   const stillOpen = !!document.querySelector(POP);
 
   return { allNames, chipText, cardCount, aliceActive, stillOpen };
