@@ -29,6 +29,7 @@ const path = require('node:path');
 const appDir = path.join(__dirname, '..', 'app');
 const { electronPath: resolveElectron } = require('./lib-electron-path.cts');
 const { seedLibrary } = require('./lib-seed-library.cts');
+const { evalSource } = require('./lib-wait.cts');
 const { createDbWriter } = require(path.join(appDir, 'src', 'main', 'lib-db-write.ts'));
 const { openDatabase } = require(path.join(appDir, 'src', 'main', 'lib-db.ts'));
 // The real producer and reader of an original. Building the fixture with
@@ -89,15 +90,25 @@ handle.sqlite.close();
 
 // Deleting 'doomed' between the delete and the restore is the whole point: the
 // restore must drop that membership and keep going.
-const evalJs = `(async () => {
-  await window.hologram.listPosts();
-  await window.hologram.deletePost(${JSON.stringify(IMAGE)});
-  const folders = await window.hologram.getFolders();
-  await window.hologram.setFolders({ ...folders, folders: folders.folders.filter((f) => f.id !== 'doomed') });
-  await window.hologram.restorePost(${JSON.stringify(IMAGE)});
-  await new Promise((r) => setTimeout(r, 400));
-  return 'restored';
-})()`;
+const evalJs = evalSource(
+  async ({ sleep }, args) => {
+    const hologram = (window as any).hologram;
+    await hologram.listPosts();
+    await hologram.deletePost(args.image);
+    const folders = await hologram.getFolders();
+    await hologram.setFolders({ ...folders, folders: folders.folders.filter((f) => f.id !== 'doomed') });
+    await hologram.restorePost(args.image);
+    // restore-post has committed its own writes by the time it resolves, but it
+    // also kicks off tail work it does not await (the posts-changed refetch and
+    // the debounced saved-index write, ipc-trash.ts) — this margin keeps the app
+    // from being torn down in the middle of it. Nothing in the renderer reports
+    // when that tail is done.
+    // biome-ignore lint/plugin: no observable post-condition — the window covers main's un-awaited tail work before the app quits.
+    await sleep(400);
+    return 'restored';
+  },
+  { image: IMAGE },
+);
 
 const env = Object.assign({}, process.env, {
   APPDATA: tmp,

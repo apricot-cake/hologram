@@ -24,6 +24,7 @@ const { electronPath: resolveElectron } = require('./lib-electron-path.cts');
 
 const electronPath = resolveElectron();
 const { seedLibrary } = require('./lib-seed-library.cts');
+const { evalSource } = require('./lib-wait.cts');
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-cf-'));
 const configDir = path.join(tmp, 'Hologram');
@@ -57,25 +58,41 @@ for (let i = 0; i < 3; i++) {
 }
 seedLibrary(configDir, records);
 
-const evalJs = `(async () => {
-  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-  const waitFor = async (fn, ms = 4000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (fn()) return true; await sleep(40); } return false; };
+const evalJs = evalSource(async ({ waitFor, waitStable }) => {
   const cards = () => document.querySelectorAll('[data-slot="post-grid"] [data-slot="post-card"]').length;
   const has = (slot) => !!document.querySelector('[data-slot="post-grid"] [data-slot="' + slot + '"]');
-  const byText = (sel, text) => Array.from(document.querySelectorAll(sel)).find((el) => (el.textContent || '').trim() === text) || null;
+  const byText = (sel, text) => Array.from(document.querySelectorAll<HTMLElement>(sel)).find((el) => (el.textContent || '').trim() === text) || null;
+  // The footer's own markup is what every assertion below reads, so none of these waits
+  // may mention it: each one stops on a step BEFORE the footer (the menu, the trigger's
+  // own label, the popover closing) and the last one just waits for the re-render to go
+  // quiet (#986).
+  const gridChurn = () => cards() + ':' + document.querySelector('[data-slot="post-grid"]')?.textContent;
+  const sortTrigger = () => document.querySelector<HTMLElement>('[data-slot="select-trigger"]');
   // Pick a sort the way a person does: 表示 popover → the sort Select → the option.
   const setSort = async (label) => {
-    byText('button', '表示').click();
-    await waitFor(() => !!document.querySelector('[data-slot="select-trigger"]'));
-    document.querySelector('[data-slot="select-trigger"]').click();
-    await waitFor(() => !!byText('[data-slot="select-item"]', label));
-    byText('[data-slot="select-item"]', label).click();
-    await sleep(200);
+    // Each control is named and thrown on rather than optional-chained: it IS the step,
+    // so a missing one has to stop the run and say which control was gone. `?.` would
+    // skip the click and leave a later assertion to report something unrelated.
+    const openDisplay = byText('button', '表示');
+    if (!openDisplay) throw new Error('the 表示 button is missing from the toolbar');
+    openDisplay.click();
+    await waitFor('the 表示 popover to show its sort control', () => !!sortTrigger());
+    const trigger = sortTrigger();
+    if (!trigger) throw new Error('the sort control is missing from the 表示 popover');
+    trigger.click();
+    await waitFor('the sort menu to list ' + label, () => !!byText('[data-slot="select-item"]', label));
+    const option = byText('[data-slot="select-item"]', label);
+    if (!option) throw new Error('the sort option ' + label + ' is missing from the sort menu');
+    option.click();
+    // SelectValue renders the picked option, so the trigger reading it back is the
+    // observable post-condition of the pick — and it is not what the test asserts.
+    await waitFor('the sort control to read back ' + label, () => (sortTrigger()?.textContent || '').includes(label));
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-    await waitFor(() => cards() >= 3);
-    await sleep(160);
+    await waitFor('the 表示 popover to close', () => !document.querySelector('[data-slot="popover-content"]:not([data-closed])'));
+    await waitFor('the grid to still hold all 3 posts after re-sorting', () => cards() >= 3);
+    await waitStable('the re-sorted grid to stop re-rendering', gridChurn);
   };
-  await waitFor(() => cards() >= 3);
+  await waitFor('the grid to show all 3 seeded posts', () => cards() >= 3);
   // at rest: the post date is the only thing in the footer
   const defStats = has('post-card-stats');
   const defCdate = has('post-card-capdate');
@@ -88,7 +105,7 @@ const evalJs = `(async () => {
   const capCdate = has('post-card-capdate');
   const capStats = has('post-card-stats');
   return { defStats, defCdate, defPdate, engStats, capCdate, capStats };
-})()`;
+});
 
 const env = Object.assign({}, process.env, { APPDATA: tmp, HOLOGRAM_CONFIG_DIR: path.join(tmp, 'Hologram'), HOLOGRAM_SMOKE: '1', HOLOGRAM_SMOKE_EVAL: evalJs });
 const child = spawn(electronPath, ['.'], { cwd: appDir, env, stdio: ['inherit', 'pipe', 'inherit'] });

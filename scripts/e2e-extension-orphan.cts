@@ -42,6 +42,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { launchExtensionBrowser, stageExtension } = require('./lib-extension-e2e.cts');
 const { fixtureHtml } = require('./lib-overlay-e2e.cts');
+const { sleep, waitFor } = require('./lib-wait.cts');
 
 // The exact text from i18n.ts. The one that should show up, and the one that shouldn't (the misleading text that used to show before #594).
 const RELOAD_NOTICE = '拡張機能が更新されました。このページを再読み込みしてください';
@@ -96,7 +97,6 @@ const check = (ok: boolean, what: string) => {
   console.log(`${ok ? '  ok  ' : '  FAIL'} ${what}`);
   if (!ok) failures.push(what);
 };
-const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const FIXTURE_URL = 'https://x.com/home';
 // The bulk intake refuses to start anywhere else (isXBookmarksPage), and the
@@ -112,7 +112,11 @@ async function openFeed(context: any, url: string = FIXTURE_URL): Promise<any> {
   });
   await page.goto(url, { waitUntil: 'domcontentloaded' });
   await page.waitForSelector('[data-testid="tweetPhoto"]');
-  await wait(900); // document_idle startup, first scan, first badge query
+  // Fixed on purpose: the resident content script's document_idle startup, first
+  // scan and first badge query put nothing in the page — the overlay only draws
+  // under a pointer — so there is no post-condition here to wait on.
+  // biome-ignore lint/plugin: the content script's startup draws nothing to wait on
+  await sleep(900);
   return page;
 }
 
@@ -185,7 +189,14 @@ const bulkState = (page: any) =>
     // --- orphan every tab for real ------------------------------------------
     // The call kills the worker that is running it, so the evaluate never returns.
     await browser.serviceWorker.evaluate('chrome.runtime.reload()').catch(() => {});
-    await wait(2500);
+    // The orphaning has a post-condition, and the probe already reports it every
+    // 400ms: chrome.runtime.id going falsy in the orphaned isolated world. The
+    // timeout is swallowed — the probe checks below say exactly what was seen.
+    const probeSnapshot = async () => JSON.parse((await pressTab.evaluate(() => document.documentElement.getAttribute('data-orphan-probe'))) || '{}');
+    await waitFor('the tabs to lose chrome.runtime.id — the orphaning itself', async () => {
+      const snapshot = await probeSnapshot();
+      return snapshot.runtime === 'object' && !snapshot.id;
+    }).catch(() => {});
 
     // --- #657: the platform actually RELOADED, it didn't just disable ------
     // A disabled extension produces the exact same orphaning symptoms this
@@ -206,7 +217,7 @@ const bulkState = (page: any) =>
     }
 
     // --- ① the platform premises --------------------------------------------
-    const probe = JSON.parse((await pressTab.evaluate(() => document.documentElement.getAttribute('data-orphan-probe'))) || '{}');
+    const probe = await probeSnapshot();
     check(probe.runtime === 'object', `chrome.runtime is still an object in the orphaned world (got ${probe.runtime})`);
     check(!probe.id && probe.idThrew === null, `chrome.runtime.id went falsy WITHOUT throwing — this is the detector (id ${JSON.stringify(probe.id)}, threw ${JSON.stringify(probe.idThrew)})`);
     check(/invalidated/i.test(probe.sendThrew || ''), `chrome.runtime.sendMessage throws synchronously (${JSON.stringify(probe.sendThrew)})`);
@@ -220,7 +231,9 @@ const bulkState = (page: any) =>
     const control = await pressTab.$('[data-hologram-overlay]');
     if (!control) throw new Error('no corner control to press');
     await control.click();
-    await wait(600);
+    // The press's own answer is the post-condition. Swallowed timeout: the checks
+    // below name which half went wrong (wrong banner, or controls left behind).
+    await waitFor('the press to answer with the reload notice', async () => (await overlayState(pressTab)).banner === RELOAD_NOTICE).catch(() => {});
     const pressed = await overlayState(pressTab);
     check(pageErrors.length === 0, `pressing an orphaned save button throws nothing into the page (${JSON.stringify(pageErrors)})`);
     check(pressed.banner === RELOAD_NOTICE, `the banner names the repair that works — reload THIS page (got ${JSON.stringify(pressed.banner)})`);
@@ -229,7 +242,11 @@ const bulkState = (page: any) =>
     // Past SAVE_ACK_MS (deadline.ts): the timer armed by startSaveDeadline used
     // to be the only survivor of the throw, and it is what reported a timeout on
     // a healthy extension nine seconds later.
-    await wait(12_000);
+    // Fixed on purpose, and sized off SAVE_ACK_MS: this asserts a banner NEVER
+    // arrives. The whole check is the window — end it early and the timer that
+    // used to fire in it has not had its chance yet.
+    // biome-ignore lint/plugin: sized off SAVE_ACK_MS — the window IS the check
+    await sleep(12_000);
     const late = await overlayState(pressTab);
     check(late.banner !== TIMEOUT_NOTICE, `no late timeout banner blames the host for an extension that was merely updated (got ${JSON.stringify(late.banner)})`);
     check(pageErrors.length === 0, `still nothing thrown once the save deadline has passed (${JSON.stringify(pageErrors)})`);
@@ -248,6 +265,11 @@ const bulkState = (page: any) =>
     // viewport — the pointer would land on nothing, no control would be drawn,
     // and this check would pass whether or not anything was fixed (it did, on
     // the first version of this file).
+    // ⚠️The two waits inside are fixed and stay that way: this helper backs BOTH
+    // a positive check (a live overlay still draws) and a negative one (a torn
+    // down overlay draws nothing at all). Waiting for a control to appear would
+    // make the negative check unfalsifiable — it would time out and report zero
+    // whether or not anything was ever fixed.
     const hoverControlCount = async (page: any) => {
       const index = await page.evaluate(() => {
         const boxes = [...document.querySelectorAll('[data-testid="tweetPhoto"]')];
@@ -259,9 +281,11 @@ const bulkState = (page: any) =>
       if (index < 0) throw new Error('no fixture photo is fully on screen to hover');
       const rect = await (await page.$$('[data-testid="tweetPhoto"]'))[index].boundingBox();
       await page.mouse.move(5, 5);
-      await wait(150);
+      // biome-ignore lint/plugin: fixed window — this helper also backs a "draws nothing" check
+      await sleep(150);
       await page.mouse.move(rect.x + rect.width / 2, rect.y + rect.height / 2);
-      await wait(700);
+      // biome-ignore lint/plugin: fixed window — this helper also backs a "draws nothing" check
+      await sleep(700);
       return (await overlayState(page)).controls;
     };
 
@@ -270,9 +294,13 @@ const bulkState = (page: any) =>
     await scrollTab.mouse.move(5, 5);
     for (let i = 0; i < 6; i++) {
       await scrollTab.mouse.wheel(0, 400);
-      await wait(120);
+      // biome-ignore lint/plugin: the pacing between notches is the input being simulated
+      await sleep(120);
     }
-    await wait(1200);
+    // Fixed: what follows asserts the overlay took ITSELF off the page and said
+    // nothing — both are absences, so this is the window they get to occur in.
+    // biome-ignore lint/plugin: window for two absences (nothing drawn, nothing said)
+    await sleep(1200);
     const stillDraws = await hoverControlCount(scrollTab);
     const scrolled = await overlayState(scrollTab);
     check(stillDraws === 0, `after scrolling, the orphaned overlay draws nothing at all — it took itself off the page (${stillDraws} drawn)`);
@@ -293,7 +321,11 @@ const bulkState = (page: any) =>
     // that the run would decline to ask again and nothing would be measured.
     const rows = await bulkTab.evaluate(MOUNT_ROW_JS);
     check(rows > 8, `a new row mounted in the bookmark list, which is the intake's only input (${rows} rows)`);
-    await wait(1500);
+    // The banner turning into the reload notice is the run's answer to that row.
+    // On unfixed code it never comes and the swallowed timeout leaves a LONGER
+    // window than the fixed wait it replaced, so the "threw nothing" check below
+    // is not weakened by ending early on the fixed path.
+    await waitFor('the running intake to end with the reload notice', async () => (await bulkState(bulkTab)).banner === RELOAD_NOTICE).catch(() => {});
     const bulkAfter = await bulkState(bulkTab);
     check(pageErrors.length === 0, `the running intake asks about the new row without throwing into the page (${JSON.stringify(pageErrors)})`);
     check(bulkAfter.banner === RELOAD_NOTICE, `the progress banner became the reload notice — the run was cut off by an update, not by anything the user or the library did (got ${JSON.stringify(bulkAfter.banner)})`);

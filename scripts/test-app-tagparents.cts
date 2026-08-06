@@ -34,6 +34,7 @@ const { electronPath: resolveElectron } = require('./lib-electron-path.cts');
 
 const electronPath = resolveElectron();
 const { seedLibrary } = require('./lib-seed-library.cts');
+const { evalSource } = require('./lib-wait.cts');
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-tp-'));
 const configDir = path.join(tmp, 'Hologram');
@@ -79,80 +80,121 @@ insEdge.run(remiliaId, scarletId, 0);
 insEdge.run(scarletId, touhouId, 0);
 sqlite.close();
 
-const evalJs = `(async () => {
-  const wait = (ms) => new Promise(r => setTimeout(r, ms));
-  const cards = () => document.querySelectorAll('[data-slot="post-grid"] [data-slot="post-card"]').length;
-  const waitFor = async (fn, ms = 4000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (fn()) return true; await wait(40); } return false; };
-  // Same filterbar idioms as test-app-facetcounts (one popover session, navigate
-  // between categories with 戻る — the smoke window throttles exit animations).
-  const POP = '[data-slot="popover-content"]:not([data-closed])';
-  const byText = (sel, text) => [...document.querySelectorAll(sel)].find((el) => (el.textContent || '').trim() === text) || null;
-  const edRows = () => [...document.querySelectorAll(POP + ' div.cursor-default')];
-  const rowEl = (name) => edRows().find((el) => { const n = el.querySelector('span.truncate'); return n && n.textContent === name; }) || null;
-  const cntOf = (name) => { const r = rowEl(name); const c = r && r.querySelector('span.tabular-nums'); return c ? c.textContent : null; };
-  await waitFor(() => cards() >= 5);
-  const r = {};
-  byText('button', 'フィルタ').click();
-  await waitFor(() => !!document.querySelector(POP + ' [data-slot="command-item"]'));
-  byText(POP + ' [data-slot="command-item"]', 'タグ').click();
-  await waitFor(() => edRows().length > 0);
-  r.rows = edRows().map((el) => { const n = el.querySelector('span.truncate'); return n ? n.textContent : null; }).filter(Boolean);
-  r.touhou = cntOf('東方');     // 3 — p2 names it, p0/p1 reach it through 紅魔郷
-  r.scarlet = cntOf('紅魔郷');  // 2 — carried by nothing directly, implied by p0/p1
-  r.remilia = cntOf('レミリア'); // 2
-  r.scenery = cntOf('風景');    // 1
-  // Picking the PARENT row must leave the child-tagged posts (the whole point).
-  rowEl('東方').click(); await wait(260);
-  r.touhouCards = cards();      // 3 (p0,p1,p2)
-  rowEl('東方').click(); await wait(260);
-  r.backCards = cards();        // 5
-  byText('button', 'フィルタ').click(); await wait(120);
-  // Reversibility, read live: drop the 紅魔郷→東方 edge and re-read the library.
-  // Nothing was ever stored, so the next SELECT alone has to show the change.
-  const edges = await window.hologram.getTagParentEdges();
-  const scarletEdge = edges.find((e) => e.parentTagName === '東方' || e.parentTagId === ${touhouId});
-  r.sawEdge = !!scarletEdge;
-  const before = await window.hologram.listPosts();
-  const effOf = (snap, tag) => (snap.posts || snap.records || snap).filter((p) => (p.effectiveTags || []).includes(tag)).length;
-  r.effTouhouBefore = effOf(before, '東方');  // 3
-  await window.hologram.removeTagParent(${scarletId}, ${touhouId});
-  const after = await window.hologram.listPosts();
-  r.effTouhouAfter = effOf(after, '東方');    // 1 — only the post that names it
-  r.effScarletAfter = effOf(after, '紅魔郷'); // 2 — the レミリア→紅魔郷 edge survives
+const evalJs = evalSource(
+  async ({ waitFor }, args) => {
+    // The body is serialised, so nothing here may close over this file — the tag
+    // ids and the seeded captureId arrive through `args`. The bridge is reached
+    // off `window` because scripts/ has no preload typings of its own.
+    const hologram = (window as any).hologram;
+    const cards = () => document.querySelectorAll('[data-slot="post-grid"] [data-slot="post-card"]').length;
+    // Same filterbar idioms as test-app-facetcounts (one popover session, navigate
+    // between categories with 戻る — the smoke window throttles exit animations).
+    const POP = '[data-slot="popover-content"]:not([data-closed])';
+    const byText = (sel, text) => [...document.querySelectorAll(sel)].find((el) => (el.textContent || '').trim() === text) || null;
+    const edRows = () => [...document.querySelectorAll<HTMLElement>(POP + ' div.cursor-default')];
+    const rowEl = (name) =>
+      edRows().find((el) => {
+        const n = el.querySelector('span.truncate');
+        return n && n.textContent === name;
+      }) || null;
+    // Named rather than optional-chained: the row IS what each step is about, so a
+    // missing one has to stop the run and say which row. `?.` would skip the click
+    // and leave the next assertion to report something else.
+    const mustRow = (name) => {
+      const el = rowEl(name);
+      if (!el) throw new Error('the ' + name + ' row is missing from the tag editor');
+      return el;
+    };
+    const cntOf = (name) => {
+      const r = rowEl(name);
+      const c = r && r.querySelector('span.tabular-nums');
+      return c ? c.textContent : null;
+    };
+    await waitFor('the grid to show all 5 seeded posts', () => cards() >= 5);
+    const r: Record<string, any> = {};
+    byText('button', 'フィルタ').click();
+    await waitFor('the filter menu to open', () => !!document.querySelector(POP + ' [data-slot="command-item"]'));
+    byText(POP + ' [data-slot="command-item"]', 'タグ').click();
+    await waitFor('the tag editor to list the vocabulary', () => edRows().length > 0);
+    r.rows = edRows()
+      .map((el) => {
+        const n = el.querySelector('span.truncate');
+        return n ? n.textContent : null;
+      })
+      .filter(Boolean);
+    r.touhou = cntOf('東方'); // 3 — p2 names it, p0/p1 reach it through 紅魔郷
+    r.scarlet = cntOf('紅魔郷'); // 2 — carried by nothing directly, implied by p0/p1
+    r.remilia = cntOf('レミリア'); // 2
+    r.scenery = cntOf('風景'); // 1
+    // Picking the PARENT row must leave the child-tagged posts (the whole point).
+    // Every leaf toggle below changes the card count, so waiting for the new count
+    // observes the transition rather than the state the click started from.
+    mustRow('東方').click();
+    await waitFor('the grid to narrow to the posts that reach 東方', () => cards() === 3);
+    r.touhouCards = cards(); // 3 (p0,p1,p2)
+    mustRow('東方').click();
+    await waitFor('the grid to show every post again once the 東方 leaf is off', () => cards() === 5);
+    r.backCards = cards(); // 5
+    byText('button', 'フィルタ').click();
+    // POP excludes [data-closed], so the popover stops matching as soon as the close
+    // is committed — no need to await the (throttled) exit animation.
+    await waitFor('the filter popover to close', () => !document.querySelector(POP));
+    // Reversibility, read live: drop the 紅魔郷→東方 edge and re-read the library.
+    // Nothing was ever stored, so the next SELECT alone has to show the change.
+    const edges = await hologram.getTagParentEdges();
+    const scarletEdge = edges.find((e) => e.parentTagName === '東方' || e.parentTagId === args.touhouId);
+    r.sawEdge = !!scarletEdge;
+    const before = await hologram.listPosts();
+    const effOf = (snap, tag) => (snap.posts || snap.records || snap).filter((p) => (p.effectiveTags || []).includes(tag)).length;
+    r.effTouhouBefore = effOf(before, '東方'); // 3
+    await hologram.removeTagParent(args.scarletId, args.touhouId);
+    const after = await hologram.listPosts();
+    r.effTouhouAfter = effOf(after, '東方'); // 1 — only the post that names it
+    r.effScarletAfter = effOf(after, '紅魔郷'); // 2 — the レミリア→紅魔郷 edge survives
 
-  // --- #815: the same edits, judged by the SCREEN rather than by main ---
-  // The removal above happened with the app already running, which is the case
-  // no test covered: main re-derives on every read, so it was never wrong — what
-  // went stale were the records the RENDERER holds, and a tag_parents write
-  // moves no posts row for list-posts-delta to notice. A card count is the
-  // honest witness here: it needs no popover, so it cannot look fresh merely
-  // because the surface was rebuilt when it opened.
-  const settle = async (want) => { await waitFor(() => cards() === want); return cards(); };
-  byText('button', 'フィルタ').click();
-  await waitFor(() => !!document.querySelector(POP + ' [data-slot="command-item"]'));
-  byText(POP + ' [data-slot="command-item"]', 'タグ').click();
-  await waitFor(() => edRows().length > 0);
-  rowEl('東方').click(); await wait(260);      // leaf on
-  r.liveRemovedCards = await settle(1);        // 1 — the live removal reached the grid
-  await window.hologram.addTagParent(${scarletId}, ${touhouId}, false);
-  r.liveAddedCards = await settle(3);          // 3 — p0/p1 reach 東方 through 紅魔郷 again
-  rowEl('東方').click(); await wait(260);      // leaf off
-  await waitFor(() => cntOf('東方') === '3');
-  r.liveTouhouCount = cntOf('東方');           // 3 — the facet's own number follows too
+    // --- #815: the same edits, judged by the SCREEN rather than by main ---
+    // The removal above happened with the app already running, which is the case
+    // no test covered: main re-derives on every read, so it was never wrong — what
+    // went stale were the records the RENDERER holds, and a tag_parents write
+    // moves no posts row for list-posts-delta to notice. A card count is the
+    // honest witness here: it needs no popover, so it cannot look fresh merely
+    // because the surface was rebuilt when it opened.
+    const settle = async (label, want) => {
+      await waitFor(label, () => cards() === want);
+      return cards();
+    };
+    byText('button', 'フィルタ').click();
+    await waitFor('the filter menu to open again', () => !!document.querySelector(POP + ' [data-slot="command-item"]'));
+    byText(POP + ' [data-slot="command-item"]', 'タグ').click();
+    await waitFor('the tag editor to list the vocabulary again', () => edRows().length > 0);
+    mustRow('東方').click(); // leaf on
+    r.liveRemovedCards = await settle('the grid to hold only the post that names 東方 itself', 1);
+    await hologram.addTagParent(args.scarletId, args.touhouId, false);
+    r.liveAddedCards = await settle('the grid to take the child posts back once the rule is restored', 3);
+    mustRow('東方').click(); // leaf off
+    await waitFor('the 東方 row to count the child posts again', () => cntOf('東方') === '3');
+    r.liveTouhouCount = cntOf('東方'); // 3 — the facet's own number follows too
 
-  // #777: a split mints a NEW tag entity, and it has to reach the facet without
-  // a restart as well. p0 moves off レミリア onto a same-named entity displayed
-  // under 紅魔郷, so the ORIGINAL レミリア leaf drops from 2 cards to 1 and a
-  // second row appears beside it.
-  rowEl('レミリア').click(); await wait(260);  // leaf on
-  r.liveSplitBefore = await settle(2);
-  await window.hologram.splitTag(${remiliaId}, ${scarletId}, ['${records[0].captureId}']);
-  r.liveSplitCards = await settle(1);
-  rowEl('レミリア').click(); await wait(260);  // leaf off — read the whole vocabulary
-  await waitFor(() => !!rowEl('レミリア(紅魔郷)'));
-  r.liveSplitRows = edRows().map((el) => { const n = el.querySelector('span.truncate'); return n ? n.textContent : null; }).filter(Boolean);
-  return r;
-})()`;
+    // #777: a split mints a NEW tag entity, and it has to reach the facet without
+    // a restart as well. p0 moves off レミリア onto a same-named entity displayed
+    // under 紅魔郷, so the ORIGINAL レミリア leaf drops from 2 cards to 1 and a
+    // second row appears beside it.
+    mustRow('レミリア').click(); // leaf on
+    r.liveSplitBefore = await settle('the grid to narrow to the two レミリア posts', 2);
+    await hologram.splitTag(args.remiliaId, args.scarletId, [args.firstCaptureId]);
+    r.liveSplitCards = await settle('the grid to lose the post the split moved onto a new tag', 1);
+    mustRow('レミリア').click(); // leaf off — read the whole vocabulary
+    await waitFor('the split-off tag to get a row of its own', () => !!rowEl('レミリア(紅魔郷)'));
+    r.liveSplitRows = edRows()
+      .map((el) => {
+        const n = el.querySelector('span.truncate');
+        return n ? n.textContent : null;
+      })
+      .filter(Boolean);
+    return r;
+  },
+  { remiliaId, scarletId, touhouId, firstCaptureId: records[0].captureId },
+);
 
 const env = Object.assign({}, process.env, { APPDATA: tmp, HOLOGRAM_CONFIG_DIR: configDir, HOLOGRAM_SMOKE: '1', HOLOGRAM_SMOKE_EVAL: evalJs });
 const child = spawn(electronPath, ['.'], { cwd: appDir, env, stdio: ['inherit', 'pipe', 'inherit'] });

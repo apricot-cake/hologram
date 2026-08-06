@@ -122,7 +122,11 @@ describe('stashFailedSave — 退避', () => {
     // third of the same size joins them.
     const chunk = 'A'.repeat(Math.floor(SAVE_QUEUE_BUDGET_BYTES / 2.5));
     await stashFailedSave(saveReq({ image: chunk, captureId: '1700000000001-0001' }), noopLog);
-    await new Promise((r) => setTimeout(r, 2)); // ts distinct enough to sort
+    // Eviction order comes from the key, which embeds `new Date().toISOString()` (millisecond
+    // resolution). Two stashes inside the same millisecond are unordered, so the wait is one
+    // tick past that collision — there is no post-condition here, the clock advancing IS the point.
+    // biome-ignore lint/plugin: the ISO-millisecond key resolution is the spec — 2ms clears one tick of it
+    await new Promise((r) => setTimeout(r, 2));
     await stashFailedSave(saveReq({ image: chunk, captureId: '1700000000002-0002' }), noopLog);
     expect(queueKeys(store)).toHaveLength(2);
     const oldestKeyBefore = queueKeys(store)[0];
@@ -140,6 +144,9 @@ describe('stashFailedSave — 退避', () => {
     const store = setupChromeStorage();
     for (let i = 0; i < SAVE_QUEUE_MAX_ENTRIES; i++) {
       await stashFailedSave(draggedReq({ captureId: `170000000${String(i).padStart(4, '0')}-0000` }), noopLog);
+      // Same reason as above: the queue key carries an ISO millisecond, so each entry needs its
+      // own millisecond for "oldest first" to mean anything. 1ms = the smallest distinct tick.
+      // biome-ignore lint/plugin: the ISO-millisecond key resolution is the spec — 1ms is one tick
       await new Promise((r) => setTimeout(r, 1));
     }
     expect(queueKeys(store)).toHaveLength(SAVE_QUEUE_MAX_ENTRIES);
@@ -223,6 +230,9 @@ describe('sweepSaveQueue — 直列再送', () => {
   test('unreachable な失敗は tries を増やして中断し、以降のエントリを試さない', async () => {
     const store = setupChromeStorage();
     await stashFailedSave(draggedReq({ captureId: '1700000000001-0001' }), noopLog);
+    // The sweep walks the queue oldest first, so which of these two is tried first has to be
+    // decided — and the key only records an ISO millisecond.
+    // biome-ignore lint/plugin: the ISO-millisecond key resolution is the spec — 1ms is one tick
     await new Promise((r) => setTimeout(r, 1));
     await stashFailedSave(draggedReq({ captureId: '1700000000002-0002' }), noopLog);
     const send = vi.fn().mockRejectedValue(Object.assign(new Error('Native host timed out'), { unreachable: true }));
@@ -249,6 +259,9 @@ describe('sweepSaveQueue — 直列再送', () => {
   test('ホストが答えた上での拒否（unreachable でない）はその1件だけ捨てて次へ進む', async () => {
     const store = setupChromeStorage();
     await stashFailedSave(draggedReq({ captureId: '1700000000001-0001' }), noopLog);
+    // Same as above: the refused entry must be the one the sweep reaches first, and ordering
+    // lives in the key's ISO millisecond.
+    // biome-ignore lint/plugin: the ISO-millisecond key resolution is the spec — 1ms is one tick
     await new Promise((r) => setTimeout(r, 1));
     await stashFailedSave(draggedReq({ captureId: '1700000000002-0002' }), noopLog);
     const send = vi
@@ -268,7 +281,10 @@ describe('sweepSaveQueue — 直列再送', () => {
     const query = vi.fn().mockResolvedValue(null);
     const first = sweepSaveQueue({ send, query, log: noopLog });
     const second = sweepSaveQueue({ send, query, log: noopLog }); // arrives mid-sweep
-    await new Promise((r) => setTimeout(r, 10)); // let the first sweep's query()/send() microtasks run
+    // The observable state this was waiting for: the first sweep has reached send() (which is
+    // also what assigns resolveSend). The second sweep either no-opped or is still ahead of it —
+    // either way the count below is what decides, and it is checked after both settle.
+    await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(1));
     resolveSend({ ok: true });
     await Promise.all([first, second]);
     expect(send).toHaveBeenCalledTimes(1); // the second call found `sweeping` already true and no-opped
@@ -279,6 +295,8 @@ describe('saveQueueStats — 診断ページの在庫表示', () => {
   test('件数・合計バイト・諦めた件数を数える', async () => {
     const store = setupChromeStorage();
     await stashFailedSave(draggedReq({ captureId: '1700000000001-0001' }), noopLog);
+    // keys[0] below has to be the older of the two, and the key's ISO millisecond is what says so.
+    // biome-ignore lint/plugin: the ISO-millisecond key resolution is the spec — 1ms is one tick
     await new Promise((r) => setTimeout(r, 1));
     await stashFailedSave(draggedReq({ captureId: '1700000000002-0002' }), noopLog);
     const keys = queueKeys(store);

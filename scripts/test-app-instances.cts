@@ -17,6 +17,7 @@ const { electronPath: resolveElectron } = require('./lib-electron-path.cts');
 
 const electronPath = resolveElectron();
 const { seedLibrary } = require('./lib-seed-library.cts');
+const { evalSource } = require('./lib-wait.cts');
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-inst-'));
 const configDir = path.join(tmp, 'Hologram');
@@ -51,43 +52,57 @@ addPost('k1', 'misskey', 'https://misskey.io/notes/aaa', '2026-01-02T00:00:00Z')
 addPost('k2', 'misskey', 'https://nijimiss.moe/notes/bbb', '2026-01-01T00:00:00Z');
 seedLibrary(configDir, records);
 
-const evalJs = `(async () => {
-  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-  const waitFor = async (fn, ms = 4000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (fn()) return true; await sleep(40); } return false; };
+const evalJs = evalSource(async ({ waitFor }) => {
   const cards = () => document.querySelectorAll('[data-slot="post-grid"] [data-slot="post-card"]').length;
-  await waitFor(() => cards() >= 5);
+  await waitFor('the grid to show all 5 seeded posts', () => cards() >= 5);
 
   // The platform editor ("+ フィルタ" flow) -> instances are listed as indented sub-rows
   // (pl-6) directly under Misskey/Mastodon. Filterbar idioms: see test-app-facetcounts.
   const POP = '[data-slot="popover-content"]:not([data-closed])';
   const byText = (sel, text) => [...document.querySelectorAll(sel)].find((el) => (el.textContent || '').trim() === text) || null;
-  const edRows = () => [...document.querySelectorAll(POP + ' div.cursor-default')];
-  const rowName = (r) => { const n = r.querySelector('span.truncate'); return n ? n.textContent : ''; };
+  const edRows = () => [...document.querySelectorAll<HTMLElement>(POP + ' div.cursor-default')];
+  const rowName = (r) => {
+    const n = r.querySelector('span.truncate');
+    return n ? n.textContent : '';
+  };
   const rowByName = (name) => edRows().find((r) => rowName(r) === name) || null;
+  // Re-queried per click: applying a filter re-renders the editor, so a held
+  // reference would click a detached node. A missing row is named rather than
+  // skipped — a skipped click would leave the waits below to report something else.
+  const clickRow = (name) => {
+    const row = rowByName(name);
+    if (!row) throw new Error('the ' + name + ' row is missing from the site editor');
+    row.click();
+  };
   const subRows = () => edRows().filter((r) => r.className.includes('pl-6'));
-  const chipsText = () => { const c = document.querySelector('[data-slot="filter-chips"]'); return c ? c.textContent : ''; };
+  const chipsText = () => {
+    const c = document.querySelector('[data-slot="filter-chips"]');
+    return c ? c.textContent || '' : '';
+  };
   byText('button', 'フィルタ').click();
-  await waitFor(() => !!document.querySelector(POP + ' [data-slot="command-item"]'));
+  await waitFor('the filter menu to open', () => !!document.querySelector(POP + ' [data-slot="command-item"]'));
   byText(POP + ' [data-slot="command-item"]', 'サイト').click(); // #253: renamed from プラットフォーム
-  await waitFor(() => subRows().length >= 4);
+  await waitFor('the site editor to list every instance host', () => subRows().length >= 4);
   const hosts = subRows().map(rowName).sort();
   const subIndented = subRows().some((r) => rowName(r) === 'misskey.io');
 
-  // Pick mastodon.social -> 2 items, chip appears, editor stays open
-  rowByName('mastodon.social').click();
-  await sleep(200);
+  // Pick mastodon.social -> 2 items, chip appears, editor stays open.
+  // The wait is "the grid moved off 5", not "the grid shows 2", so the count,
+  // the chip and the open editor are all still checked below.
+  clickRow('mastodon.social');
+  await waitFor('the grid to narrow once an instance is picked', () => cards() < 5);
   const socialCount = cards();
   const chipOn = chipsText().includes('mastodon.social');
   const stillOpen = !!document.querySelector(POP);
 
   // Click again to clear -> all 5 items, chip disappears
-  rowByName('mastodon.social').click();
-  await sleep(200);
+  clickRow('mastodon.social');
+  await waitFor('the grid to widen again once the instance is cleared', () => cards() > socialCount);
   const cleared = cards();
   const chipOff = !chipsText().includes('mastodon.social');
 
   return { hosts, subIndented, socialCount, chipOn, stillOpen, cleared, chipOff };
-})()`;
+});
 
 const env = Object.assign({}, process.env, { APPDATA: tmp, HOLOGRAM_CONFIG_DIR: path.join(tmp, 'Hologram'), HOLOGRAM_SMOKE: '1', HOLOGRAM_SMOKE_EVAL: evalJs });
 const child = spawn(electronPath, ['.'], { cwd: appDir, env, stdio: ['inherit', 'pipe', 'inherit'] });

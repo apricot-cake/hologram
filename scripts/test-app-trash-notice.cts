@@ -27,6 +27,7 @@ const path = require('node:path');
 const appDir = path.join(__dirname, '..', 'app');
 const { electronPath: resolveElectron } = require('./lib-electron-path.cts');
 const { seedLibrary } = require('./lib-seed-library.cts');
+const { evalSource } = require('./lib-wait.cts');
 
 const electronPath = resolveElectron();
 
@@ -77,21 +78,30 @@ function ask() {
 // scheduleSavedIndexWrite debounces 1500ms, so every step waits past it before
 // the next one moves the library on. The waits are what make the readings below
 // answers about a settled state rather than a race.
-const evalJs = `(async () => {
-  const settle = () => new Promise((r) => setTimeout(r, 1900));
-  await window.hologram.listPosts();
-  await settle();
-  await window.hologram.deletePost(${JSON.stringify(IMAGE)});
-  await settle();
-  window.__afterDelete = (await window.hologram.listTrash()).length;
-  await window.hologram.restorePost(${JSON.stringify(IMAGE)});
-  await settle();
-  await window.hologram.deletePost(${JSON.stringify(IMAGE)});
-  await settle();
-  await window.hologram.emptyTrash();
-  await settle();
-  return 'done ' + window.__afterDelete;
-})()`;
+const evalJs = evalSource(
+  async ({ sleep }, args) => {
+    const w = window as any;
+    // The debounce IS the specification: scheduleSavedIndexWrite waits 1500ms, and
+    // until it elapses there is nothing observable from the renderer that says the
+    // snapshot for THIS step has been written. Every step sits past it so the
+    // harness's poll samples a settled state instead of a race.
+    // biome-ignore lint/plugin: the 1500ms saved-index debounce is the spec — nothing is observable until it elapses.
+    const settle = () => sleep(1900);
+    await w.hologram.listPosts();
+    await settle();
+    await w.hologram.deletePost(args.image);
+    await settle();
+    w.__afterDelete = (await w.hologram.listTrash()).length;
+    await w.hologram.restorePost(args.image);
+    await settle();
+    await w.hologram.deletePost(args.image);
+    await settle();
+    await w.hologram.emptyTrash();
+    await settle();
+    return 'done ' + w.__afterDelete;
+  },
+  { image: IMAGE },
+);
 
 const env = Object.assign({}, process.env, {
   APPDATA: tmp,

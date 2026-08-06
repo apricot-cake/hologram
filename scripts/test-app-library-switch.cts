@@ -18,6 +18,7 @@ const { electronPath: resolveElectron } = require('./lib-electron-path.cts');
 const { seedLibrary } = require('./lib-seed-library.cts');
 const { openDatabase } = require(path.join(appDir, 'src', 'main', 'lib-db.ts'));
 const { makeTagResolver, preparePostStmts, writePost } = require(path.join(appDir, 'src', 'main', 'lib-db-record-writer.ts'));
+const { evalSource } = require('./lib-wait.cts');
 
 const electronPath = resolveElectron();
 
@@ -107,7 +108,9 @@ function seedOneLibrary(root: string, name: string, libDir: string, captureId: s
     });
     legacyDb.sqlite.close();
 
-    const evalJs = `(async () => { return await window.hologram.getConfig(); })()`;
+    const evalJs = evalSource(async () => {
+      return await (window as any).hologram.getConfig();
+    });
     await launch(configDir, evalJs);
 
     check('A1: the old configDir/hologram.db is gone after launch', !fs.existsSync(path.join(configDir, 'hologram.db')), `existsSync=${fs.existsSync(path.join(configDir, 'hologram.db'))}`);
@@ -136,14 +139,17 @@ function seedOneLibrary(root: string, name: string, libDir: string, captureId: s
     seedOneLibrary(tmp, 'b', libB, 'b1', 'library B post');
     fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolder: libA }));
 
-    const evalJs = `(async () => {
-      const before = await window.hologram.listPosts();
-      const sw = await window.hologram.switchLibrary(${JSON.stringify(libB)});
-      const after = await window.hologram.listPosts();
-      const cfg = await window.hologram.getConfig();
-      const recent = await window.hologram.getRecentLibraries();
-      return { before, sw, after, cfg, recent };
-    })()`;
+    const evalJs = evalSource(
+      async (_waits, args) => {
+        const before = await (window as any).hologram.listPosts();
+        const sw = await (window as any).hologram.switchLibrary(args.libB);
+        const after = await (window as any).hologram.listPosts();
+        const cfg = await (window as any).hologram.getConfig();
+        const recent = await (window as any).hologram.getRecentLibraries();
+        return { before, sw, after, cfg, recent };
+      },
+      { libB },
+    );
     const r = await launch(configDir, evalJs);
 
     const beforeIds = ((r.before && r.before.posts) || []).map((p: any) => p.captureId);
@@ -169,11 +175,14 @@ function seedOneLibrary(root: string, name: string, libDir: string, captureId: s
     seedOneLibrary(tmp, 'a', libA, 'a1', 'library A post');
     fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolder: libA }));
 
-    const evalJs = `(async () => {
-      const sw = await window.hologram.switchLibrary(${JSON.stringify(emptyDir)});
-      const after = await window.hologram.listPosts();
-      return { sw, after };
-    })()`;
+    const evalJs = evalSource(
+      async (_waits, args) => {
+        const sw = await (window as any).hologram.switchLibrary(args.emptyDir);
+        const after = await (window as any).hologram.listPosts();
+        return { sw, after };
+      },
+      { emptyDir },
+    );
     const r = await launch(configDir, evalJs);
 
     check('C1: switch-library succeeds against an empty folder', !!(r.sw && r.sw.ok === true), JSON.stringify(r.sw));
@@ -196,11 +205,14 @@ function seedOneLibrary(root: string, name: string, libDir: string, captureId: s
     seedOneLibrary(tmp, 'a', libA, 'a1', 'library A post');
     fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolder: libA }));
 
-    const evalJs = `(async () => {
-      const sw = await window.hologram.switchLibrary(${JSON.stringify(junkDir)});
-      const cfg = await window.hologram.getConfig();
-      return { sw, cfg };
-    })()`;
+    const evalJs = evalSource(
+      async (_waits, args) => {
+        const sw = await (window as any).hologram.switchLibrary(args.junkDir);
+        const cfg = await (window as any).hologram.getConfig();
+        return { sw, cfg };
+      },
+      { junkDir },
+    );
     const r = await launch(configDir, evalJs);
 
     check('D1: switch-library refuses with error="not-a-library"', !!(r.sw && r.sw.ok === false && r.sw.error === 'not-a-library'), JSON.stringify(r.sw));
@@ -223,11 +235,14 @@ function seedOneLibrary(root: string, name: string, libDir: string, captureId: s
     seedOneLibrary(tmp, 'a', libA, 'a1', 'library A post');
     fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolder: libA }));
 
-    const evalJs = `(async () => {
-      const sw = await window.hologram.switchLibrary(${JSON.stringify(recoverDir)});
-      const after = await window.hologram.listPosts();
-      return { sw, after };
-    })()`;
+    const evalJs = evalSource(
+      async (_waits, args) => {
+        const sw = await (window as any).hologram.switchLibrary(args.recoverDir);
+        const after = await (window as any).hologram.listPosts();
+        return { sw, after };
+      },
+      { recoverDir },
+    );
     const r = await launch(configDir, evalJs);
 
     check('E1: switch-library succeeds against an evidence-but-no-db folder (recovery path)', !!(r.sw && r.sw.ok === true), JSON.stringify(r.sw));

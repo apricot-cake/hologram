@@ -21,6 +21,7 @@ const { electronPath: resolveElectron } = require('./lib-electron-path.cts');
 
 const electronPath = resolveElectron();
 const { seedLibrary } = require('./lib-seed-library.cts');
+const { evalSource } = require('./lib-wait.cts');
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-harden-'));
 const configDir = path.join(tmp, 'Hologram');
@@ -52,27 +53,32 @@ seedLibrary(configDir, [
   },
 ]);
 
-const evalJs = `(async () => {
-  // Case 2: window.open must be denied by setWindowOpenHandler (returns null when blocked).
-  let openDenied = false;
-  try {
-    const w = window.open('https://example.com', '_blank');
-    openDenied = (w === null);
-  } catch { openDenied = true; }
+const evalJs = evalSource(
+  async (_waits, args) => {
+    // Case 2: window.open must be denied by setWindowOpenHandler (returns null when blocked).
+    let openDenied = false;
+    try {
+      const w = window.open('https://example.com', '_blank');
+      openDenied = w === null;
+    } catch {
+      openDenied = true;
+    }
 
-  // Case 2: the renderer's global drop guard must preventDefault a window-level drop.
-  const dropEvt = new Event('drop', { bubbles: true, cancelable: true });
-  window.dispatchEvent(dropEvt);
-  const dropPrevented = dropEvt.defaultPrevented;
-  const dragEvt = new Event('dragover', { bubbles: true, cancelable: true });
-  window.dispatchEvent(dragEvt);
-  const dragPrevented = dragEvt.defaultPrevented;
+    // Case 2: the renderer's global drop guard must preventDefault a window-level drop.
+    const dropEvt = new Event('drop', { bubbles: true, cancelable: true });
+    window.dispatchEvent(dropEvt);
+    const dropPrevented = dropEvt.defaultPrevented;
+    const dragEvt = new Event('dragover', { bubbles: true, cancelable: true });
+    window.dispatchEvent(dragEvt);
+    const dragPrevented = dragEvt.defaultPrevented;
 
-  // Case 1: delete the post → its files move to .trash/.
-  await window.hologram.deletePost('${POST}.jpg');
+    // Case 1: delete the post → its files move to .trash/.
+    await (window as any).hologram.deletePost(`${args.post}.jpg`);
 
-  return { openDenied, dropPrevented, dragPrevented };
-})()`;
+    return { openDenied, dropPrevented, dragPrevented };
+  },
+  { post: POST },
+);
 
 const env = Object.assign({}, process.env, {
   APPDATA: tmp,

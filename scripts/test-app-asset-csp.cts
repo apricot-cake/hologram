@@ -101,7 +101,7 @@ const freePort = (): Promise<number> =>
     });
   });
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const { sleep, waitFor, evalSource } = require('./lib-wait.cts');
 
 // --- CDP (same shape as scripts/cdp-verify.cts, trimmed to what we need) ---
 function cdpList(port: number): Promise<any[]> {
@@ -195,44 +195,57 @@ async function main() {
 
   // Runs in the main renderer. Everything after the assertions is a hold: the
   // harness needs the app alive while it drives CDP against the viewer window.
-  const evalJs = `(async () => {
-    const h = window.hologram;
-    // Layer 1: the SVG is refused outright; a raster still opens (hidden under SMOKE).
-    const svgRefused = (await h.openImageWindow(${JSON.stringify(SVG)})) === false;
-    const rasterAccepted = (await h.openImageWindow(${JSON.stringify(PNG)})) === true;
+  const evalJs = evalSource(
+    async ({ sleep, neverHappens }, args) => {
+      const h = (window as any).hologram;
+      // Layer 1: the SVG is refused outright; a raster still opens (hidden under SMOKE).
+      const svgRefused = (await h.openImageWindow(args.svg)) === false;
+      const rasterAccepted = (await h.openImageWindow(args.png)) === true;
 
-    // Layer 2: a top-level navigation to the SVG is refused by the navigation guard.
-    const before = location.href;
-    try { location.href = 'asset://img/${SVG}'; } catch (e) {}
-    await new Promise((r) => setTimeout(r, 800));
-    const navBlocked = location.href === before;
+      // Layer 2: a top-level navigation to the SVG is refused by the navigation guard.
+      const before = location.href;
+      try {
+        location.href = `asset://img/${args.svg}`;
+      } catch {}
+      // The assertion is that this navigation NEVER commits, so the window IS the
+      // check — neverHappens spends all of it on purpose and names the case if it
+      // ever does. (A commit would also reject the eval from main — see #917.)
+      const navBlocked = await neverHappens('a top-level navigation to the asset SVG', () => location.href !== before, 800);
 
-    // Regression check: the response CSP binds the document made FROM the response,
-    // so it must not touch these — the renderer embedding the picture is a
-    // different document with its own policy.
-    const load = (src) => new Promise((r) => {
-      const i = new Image();
-      i.onload = () => r(i.naturalWidth > 0);
-      i.onerror = () => r(false);
-      i.src = src;
-    });
-    const imgPng = await load('asset://img/${PNG}');
-    const imgThumb = await load('asset://img/${PNG}?w=180');
-    const imgSvg = await load('asset://img/${SVG}');
+      // Regression check: the response CSP binds the document made FROM the response,
+      // so it must not touch these — the renderer embedding the picture is a
+      // different document with its own policy.
+      const load = (src: string) =>
+        new Promise<boolean>((r) => {
+          const i = new Image();
+          i.onload = () => r(i.naturalWidth > 0);
+          i.onerror = () => r(false);
+          i.src = src;
+        });
+      const imgPng = await load(`asset://img/${args.png}`);
+      const imgThumb = await load(`asset://img/${args.png}?w=180`);
+      const imgSvg = await load(`asset://img/${args.svg}`);
 
-    // CSS background (PostCard's stack sheet). Nothing in the renderer reports
-    // whether a background image loaded — getComputedStyle echoes the declaration
-    // either way, and resource timing records nothing on this scheme. So the
-    // evidence is taken OUTSIDE: ?w=${BG_W} is a width nothing else here asks for,
-    // and serving it makes main write that thumbnail to the cache directory.
-    const d = document.createElement('div');
-    d.style.cssText = 'position:fixed;left:-9999px;width:10px;height:10px;background-image:url("asset://img/${PNG}?w=${BG_W}")';
-    document.body.appendChild(d);
-    await new Promise((r) => setTimeout(r, 1500));
+      // CSS background (PostCard's stack sheet). Nothing in the renderer reports
+      // whether a background image loaded — getComputedStyle echoes the declaration
+      // either way, and resource timing records nothing on this scheme. So the
+      // evidence is taken OUTSIDE: ?w=<args.bgW> is a width nothing else here asks
+      // for, and serving it makes main write that thumbnail to the cache directory.
+      const d = document.createElement('div');
+      d.style.cssText = `position:fixed;left:-9999px;width:10px;height:10px;background-image:url("asset://img/${args.png}?w=${args.bgW}")`;
+      document.body.appendChild(d);
 
-    await new Promise((r) => setTimeout(r, 12000)); // hold for the CDP pass
-    return { svgRefused, rasterAccepted, navBlocked, imgPng, imgThumb, imgSvg };
-  })()`;
+      // Fixed, and the only wait the background needs: the hold below already
+      // outlasts any time main takes to write that thumbnail (the separate 1500ms
+      // settle that used to sit here was waiting inside this one). The hold itself
+      // is deliberate — the app has to stay alive while the harness drives CDP
+      // against the viewer window, and the harness ends the run, not this eval.
+      // biome-ignore lint/plugin: a hold, sized to outlast the harness's CDP pass
+      await sleep(12000);
+      return { svgRefused, rasterAccepted, navBlocked, imgPng, imgThumb, imgSvg };
+    },
+    { svg: SVG, png: PNG, bgW: BG_W },
+  );
 
   const env = Object.assign({}, process.env, {
     APPDATA: tmp,
@@ -257,15 +270,18 @@ async function main() {
   let rasterRendered = false;
   try {
     let viewer: any = null;
-    for (let i = 0; i < 60 && !viewer; i++) {
-      await sleep(500);
-      try {
-        viewer = (await cdpList(cdpPort)).find((t) => t.type === 'page' && String(t.url).startsWith('asset://'));
-      } catch {
-        /* devtools endpoint not up yet */
-      }
-    }
-    if (!viewer) throw new Error('viewer window target never appeared');
+    await waitFor(
+      'the viewer window to appear as an asset:// target on the debugging port',
+      async () => {
+        try {
+          viewer = (await cdpList(cdpPort)).find((t) => t.type === 'page' && String(t.url).startsWith('asset://'));
+        } catch {
+          /* devtools endpoint not up yet */
+        }
+        return !!viewer;
+      },
+      { timeoutMs: 30_000, pollMs: 500 },
+    );
     const { ws, send } = await cdpConnect(viewer.webSocketDebuggerUrl);
     await send('Page.enable');
     await send('Runtime.enable');
@@ -275,11 +291,19 @@ async function main() {
     const shown = await send('Runtime.evaluate', { expression: 'document.images.length === 1 && document.images[0].naturalWidth', returnByValue: true });
     rasterRendered = Number(shown?.result?.value) > 0;
     await send('Page.navigate', { url: `asset://img/${SVG}` });
+    // Fixed: whether this navigation commits at all is what the next line
+    // MEASURES (層3 reports "reached the SVG document" vs "stopped earlier"), so
+    // there is no post-condition that is guaranteed to arrive — waiting for one
+    // would turn a legitimate outcome into a timeout.
+    // biome-ignore lint/plugin: whether this navigation commits is what is measured
     await sleep(2500);
     const r = await send('Runtime.evaluate', { expression: '[document.contentType, location.href].join(" ")', returnByValue: true });
     cdpDocType = String(r?.result?.value || '');
     cdpReachedSvg = cdpDocType.includes('svg') && cdpDocType.includes(SVG);
-    await sleep(1500); // let any surviving script finish beaconing
+    // Fixed: the assertion is that NO beacon ever arrives, so this window is the
+    // check itself — a surviving script has to be given time to send one.
+    // biome-ignore lint/plugin: window in which a surviving script would beacon
+    await sleep(1500);
     ws.close();
   } catch (e) {
     cdpNote = (e as Error).message;

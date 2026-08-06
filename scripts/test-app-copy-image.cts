@@ -18,6 +18,7 @@ const appDir = path.join(__dirname, '..', 'app');
 const { electronPath: resolveElectron } = require('./lib-electron-path.cts');
 
 const electronPath = resolveElectron();
+const { evalSource } = require('./lib-wait.cts');
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-copyimg-'));
 const configDir = path.join(tmp, 'Hologram');
@@ -33,12 +34,10 @@ fs.writeFileSync(path.join(saveFolder, 'dummy-0002.svg'), '<svg xmlns="http://ww
 
 // true only for the decodable image; every other case must report failure so the
 // renderer can say so instead of implying a copy that didn't happen.
-const evalJs = `(async () => [
-  await window.hologram.copyImage('dummy-0001.jpg'),
-  await window.hologram.copyImage('dummy-0002.svg'),
-  await window.hologram.copyImage('../Hologram/config.json'),
-  await window.hologram.copyImage('nope.jpg'),
-].join(','))()`;
+const evalJs = evalSource(async () => {
+  const h = (window as any).hologram;
+  return [await h.copyImage('dummy-0001.jpg'), await h.copyImage('dummy-0002.svg'), await h.copyImage('../Hologram/config.json'), await h.copyImage('nope.jpg')].join(',');
+});
 
 const env = Object.assign({}, process.env, {
   APPDATA: tmp,

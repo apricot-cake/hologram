@@ -30,6 +30,7 @@ const { electronPath: resolveElectron } = require('./lib-electron-path.cts');
 
 const electronPath = resolveElectron();
 const { seedLibrary } = require('./lib-seed-library.cts');
+const { evalSource } = require('./lib-wait.cts');
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-se-'));
 const configDir = path.join(tmp, 'Hologram');
@@ -95,33 +96,48 @@ for (const dz of dateFixtures) {
 }
 seedLibrary(configDir, records);
 
-const evalJs = `(async () => {
-  const wait = (ms) => new Promise(r => setTimeout(r, ms));
+const evalJs = evalSource(async ({ waitFor, waitStable }) => {
   const cards = () => document.querySelectorAll('[data-slot="post-grid"] [data-slot="post-card"]').length;
-  const waitFor = async (fn, ms = 4000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (fn()) return true; await wait(40); } return false; };
   // React controlled inputs (searchbox component / date form): a bare .value write is
   // invisible to React's value tracker — go through the prototype setter, then 'input'.
-  const setInput = (el, text) => {
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(el, text);
+  const valueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+  if (!valueSetter) throw new Error("HTMLInputElement.prototype has no 'value' setter to drive React's tracker through");
+  const setInput = (el: HTMLInputElement, text: string) => {
+    valueSetter.call(el, text);
     el.dispatchEvent(new Event('input', { bubbles: true }));
   };
   // The searchbox component's Autocomplete input (no #searchBox id since P2④).
-  const searchInput = document.querySelector('input[placeholder="テキスト・ユーザー名で検索"]');
-  const typeSearch = (text) => setInput(searchInput, text);
-  await waitFor(() => cards() >= 7);   // 3 search posts + 4 date-boundary posts; post view loads async
+  const searchInput = document.querySelector<HTMLInputElement>('input[placeholder="テキスト・ユーザー名で検索"]');
+  // Named rather than optional-chained: typing IS what this harness does, so a missing
+  // box has to stop the run and say so instead of letting every later check report a
+  // grid that simply never changed.
+  if (!searchInput) throw new Error('the search box input is missing');
+  const typeSearch = (text: string) => setInput(searchInput, text);
+  // WHICH posts the grid is showing, not just how many. The two smart-search steps
+  // below both land on exactly one card, so a count-based wait would be satisfied
+  // before the second query had been applied at all (1 → 1 is not a change); the
+  // identity of the card is what actually moves between them.
+  const gridKey = () => [...document.querySelectorAll('[data-slot="post-grid"] [data-slot="post-card"]')].map((c) => (c.textContent || '').trim()).join('|');
+  // Type a query, then wait for the result set to become a DIFFERENT one and stop
+  // moving. The searchbox's 150ms debounce needs no delay of its own — the poll
+  // simply keeps looking until it has fired and React has re-rendered.
+  const search = async (label: string, text: string) => {
+    const before = gridKey();
+    typeSearch(text);
+    await waitFor('the grid to leave its previous results behind after searching for ' + label, () => gridKey() !== before);
+    await waitStable('the results for ' + label + ' to stop moving', gridKey);
+  };
+  await waitFor('the grid to show all 7 seeded posts', () => cards() >= 7); // 3 search posts + 4 date-boundary posts; post view loads async
 
   // --- Single smart search (the only behavior — no mode toggle) ---
   // B normalization: a hiragana query hits the katakana body text
-  typeSearch('ねこ');
-  await wait(240);
+  await search('ねこ', 'ねこ');
   const smartKana = cards();
   // C edit distance: 'こんにとは' (a ち→と substitution typo) matches 'こんにちは世界'
-  typeSearch('こんにとは');
-  await wait(240);
+  await search('こんにとは', 'こんにとは');
   const smartTypo = cards();
   // an unrelated term doesn't match
-  typeSearch('存在しない語');
-  await wait(240);
+  await search('存在しない語', '存在しない語');
   const smartMiss = cards();
 
   // --- Date filter: local-day boundary (TZ=Asia/Tokyo, see fixtures) ---
@@ -129,35 +145,46 @@ const evalJs = `(async () => {
   // "+ フィルタ" flow (filterbar component): open the popover, pick 日付 (date), fill the
   // from/to date inputs, click 適用 (apply).
   typeSearch('');
-  await wait(240);
+  await waitFor('the grid to refill once the search term is cleared', () => cards() >= 7);
   // Collect the boundary-fixture ids (dz*) currently in the grid, sorted+joined.
   // Counting alone is too weak: a UTC-anchored bound mis-buckets dz0 (drops it)
   // AND dz2 (adds it), so the COUNT stays 2 while the SET changes — only the set
   // distinguishes correct (dz0,dz1) from buggy (dz1,dz2).
   // Read off the card's own text ('boundary dz0') — the cells carry no data-url (#618).
-  // NOTE: this string is itself inside a backtick template literal, so the regex
-  // backslash MUST be doubled (\\d) to survive into the evaluated code.
-  const dzSet = () => Array.from(document.querySelectorAll('[data-slot="post-grid"] [data-slot="post-card"]'))
-    .map((c) => ((c.textContent || '').match(/boundary (dz\\d)/) || [])[1])
-    .filter(Boolean).sort().join(',');
-  const byText = (sel, text) => Array.from(document.querySelectorAll(sel)).find((el) => (el.textContent || '').trim() === text) || null;
+  const dzSet = () =>
+    Array.from(document.querySelectorAll('[data-slot="post-grid"] [data-slot="post-card"]'))
+      .map((c) => ((c.textContent || '').match(/boundary (dz\d)/) || [])[1])
+      .filter(Boolean)
+      .sort()
+      .join(',');
+  const byText = (sel: string, text: string) => Array.from(document.querySelectorAll<HTMLElement>(sel)).find((el) => (el.textContent || '').trim() === text) || null;
+  // Same reasoning as the search box above: name the control that is missing and stop,
+  // rather than `?.`-ing the click away and leaving the date assertions to misreport it.
+  const clickByText = (sel: string, text: string) => {
+    const el = byText(sel, text);
+    if (!el) throw new Error('no element matching ' + sel + ' has the text ' + text);
+    el.click();
+  };
   // The "+ フィルタ" button (AddFilterButton: icon + 'フィルタ')
-  byText('button', 'フィルタ').click();
-  await waitFor(() => !!byText('[data-slot="command-item"]', '日付'));
-  byText('[data-slot="command-item"]', '日付').click();   // date category → DateForm
-  await waitFor(() => document.querySelectorAll('[data-slot="popover-content"] input[type="date"]').length === 2);
-  const [fromEl, toEl] = document.querySelectorAll('[data-slot="popover-content"] input[type="date"]');
+  clickByText('button', 'フィルタ');
+  await waitFor('the filter menu to list the 日付 category', () => !!byText('[data-slot="command-item"]', '日付'));
+  clickByText('[data-slot="command-item"]', '日付'); // date category → DateForm
+  await waitFor('the date form to show its from/to inputs', () => document.querySelectorAll('[data-slot="popover-content"] input[type="date"]').length === 2);
+  const [fromEl, toEl] = document.querySelectorAll<HTMLInputElement>('[data-slot="popover-content"] input[type="date"]');
   setInput(fromEl, '2026-06-20');
   setInput(toEl, '2026-06-20');
-  byText('[data-slot="popover-content"] button', '適用').click();
-  // The grid re-renders async; poll until the visible post count settles to 2
-  // (the boundary matches) before snapshotting.
-  await waitFor(() => cards() === 2);
-  await wait(120);
-  const dateRange = dzSet();   // expect exactly dz0 + dz1 (both read 6/20 in JST)
+  const beforeApply = dzSet();
+  clickByText('[data-slot="popover-content"] button', '適用');
+  // The grid re-renders async. Wait for the boundary set to CHANGE and then to stop
+  // moving — waiting for the expected count instead would pre-assert the very thing
+  // this section checks, and a bare stability poll returns fastest when the filter
+  // has not been applied at all.
+  await waitFor('the boundary posts to be re-filtered by the applied date range', () => dzSet() !== beforeApply);
+  await waitStable('the date-filtered grid to stop moving', dzSet);
+  const dateRange = dzSet(); // expect exactly dz0 + dz1 (both read 6/20 in JST)
 
   return { smartKana, smartTypo, smartMiss, dateRange };
-})()`;
+});
 
 // TZ=Asia/Tokyo (UTC+9) so the date-filter section exercises a non-UTC boundary.
 const env = Object.assign({}, process.env, { TZ: 'Asia/Tokyo', APPDATA: tmp, HOLOGRAM_CONFIG_DIR: path.join(tmp, 'Hologram'), HOLOGRAM_SMOKE: '1', HOLOGRAM_SMOKE_EVAL: evalJs });

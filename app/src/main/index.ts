@@ -1180,8 +1180,14 @@ if (!gotSingleInstanceLock) {
 
     if (SMOKE) {
       const shot = process.env.HOLOGRAM_SMOKE_SHOT;
-      (getWin() as BrowserWindow).webContents.on('console-message', (_e, level, message) => {
-        console.log(`[renderer:${level}] ${message}`);
+      // Electron 36 replaced this event's positional arguments with a single
+      // details object, so the old `(_e, level, message)` form had been quietly
+      // logging `[renderer:undefined] undefined` for every renderer message —
+      // which is worse than not forwarding at all, because the harness output
+      // looked like the renderer had simply stayed quiet (#986). The waits now
+      // report what they were waiting for through this channel.
+      (getWin() as BrowserWindow).webContents.on('console-message', (details) => {
+        console.log(`[renderer:${details.level}] ${details.message}`);
       });
       let done = false;
       const quit = (tag) => {

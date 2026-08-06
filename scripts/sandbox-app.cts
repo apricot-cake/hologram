@@ -250,7 +250,7 @@ function cdpReady(port: number): Promise<boolean> {
   });
 }
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const { waitFor } = require('./lib-wait.cts');
 
 function printConnectHint(port: number) {
   console.log(`sandbox instance up: CDP on 127.0.0.1:${port}`);
@@ -318,16 +318,25 @@ async function start(opts: StartOptions) {
   });
   child.unref();
 
-  for (let i = 0; i < 66; i++) {
-    if (await cdpReady(port)) {
-      writeInstance(repoRoot, { pid: child.pid as number, port });
-      if (seeded && !opts.real) console.log(`seeded 12 fixture posts into ${saveFolder}`);
-      if (notice) console.log(`⚠ ${notice}`);
-      printConnectHint(port);
-      return;
-    }
-    if (child.pid && !isAlive(child.pid)) break;
-    await sleep(300);
+  // The port answering is the post-condition; an instance that exited on the way
+  // stops the wait early rather than spending the whole budget on a dead process.
+  const up = await waitFor(
+    `the sandbox instance to answer CDP on :${port}`,
+    async () => {
+      if (child.pid && !isAlive(child.pid)) throw new Error('the instance exited before its CDP port answered');
+      return cdpReady(port);
+    },
+    { timeoutMs: 20_000, pollMs: 300 },
+  ).then(
+    () => true,
+    () => false,
+  );
+  if (up) {
+    writeInstance(repoRoot, { pid: child.pid as number, port });
+    if (seeded && !opts.real) console.log(`seeded 12 fixture posts into ${saveFolder}`);
+    if (notice) console.log(`⚠ ${notice}`);
+    printConnectHint(port);
+    return;
   }
   console.error('FAIL sandbox instance did not come up (CDP never answered)');
   process.exit(1);
@@ -350,7 +359,9 @@ async function stop() {
     process.exit(1);
   }
   process.kill(inst.pid);
-  for (let i = 0; i < 20 && isAlive(inst.pid); i++) await sleep(250);
+  // The process being gone is the post-condition. A timeout is swallowed: the
+  // check below names the pid that outlived its kill, which is the finding.
+  await waitFor(`pid ${inst.pid} to exit after the kill`, () => !isAlive(inst.pid), { timeoutMs: 5000, pollMs: 250 }).catch(() => {});
   if (isAlive(inst.pid)) {
     console.error(`FAIL pid ${inst.pid} still alive after kill`);
     process.exit(1);

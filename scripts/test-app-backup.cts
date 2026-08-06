@@ -33,6 +33,7 @@ const { electronPath: resolveElectron } = require('./lib-electron-path.cts');
 
 const electronPath = resolveElectron();
 const { seedLibrary } = require('./lib-seed-library.cts');
+const { evalSource } = require('./lib-wait.cts');
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-bk-'));
 const configDir = path.join(tmp, 'Hologram');
@@ -130,26 +131,32 @@ const lateFilePath = path.join(saveFolder, LATE_FILE);
 (async () => {
   // launch A: output dir nested inside the save folder must be rejected (overlap);
   // then run 1 (fresh copy of the 4 seed posts) and run 2 (idempotent — nothing changed).
-  const evalA = `(async () => {
-    const wait = (ms) => new Promise(r => setTimeout(r, ms));
-    await wait(400);
-    const bad = await window.hologram.setBackup({ dir: ${JSON.stringify(path.join(saveFolder, 'nested'))} });
-    const overlapRejected = !!(bad && bad.ok === false && bad.error === 'overlap');
-    const good = await window.hologram.setBackup({ dir: ${JSON.stringify(outDir)} });
-    const dirSet = !!(good && good.backup && good.backup.dir);
+  const evalA = evalSource(
+    async ({ waitFor }, args) => {
+      const h = (window as any).hologram;
+      // The library answering with the seeded posts is what the 400ms that used to
+      // sit here was hoping for: the database is open and holds all 8, which run 1
+      // below counts.
+      await waitFor('the library to report the seeded posts', async () => ((await h.listPosts()).posts || []).length >= args.wantPosts);
+      const bad = await h.setBackup({ dir: args.nestedDir });
+      const overlapRejected = !!(bad && bad.ok === false && bad.error === 'overlap');
+      const good = await h.setBackup({ dir: args.outDir });
+      const dirSet = !!(good && good.backup && good.backup.dir);
 
-    // Don't hardcode the count — assert against fileCount, which is the media lane's
-    // own tally. The one extra write is the DB lane's first generation (#233), which
-    // the same run creates and carries over.
-    const r1 = await window.hologram.runBackup();
-    const run1 = !!(r1 && r1.ok && r1.fileCount >= 8 && r1.written === r1.fileCount + 1 && r1.pruned === 0 && !r1.pruneSkipped);
+      // Don't hardcode the count — assert against fileCount, which is the media lane's
+      // own tally. The one extra write is the DB lane's first generation (#233), which
+      // the same run creates and carries over.
+      const r1 = await h.runBackup();
+      const run1 = !!(r1 && r1.ok && r1.fileCount >= 8 && r1.written === r1.fileCount + 1 && r1.pruned === 0 && !r1.pruneSkipped);
 
-    // idempotent — assets are immutable, nothing new to copy or prune
-    const r2 = await window.hologram.runBackup();
-    const run2 = !!(r2 && r2.ok && r2.written === 0 && r2.pruned === 0 && !r2.pruneSkipped);
+      // idempotent — assets are immutable, nothing new to copy or prune
+      const r2 = await h.runBackup();
+      const run2 = !!(r2 && r2.ok && r2.written === 0 && r2.pruned === 0 && !r2.pruneSkipped);
 
-    return { overlapRejected, dirSet, run1, run2 };
-  })()`;
+      return { overlapRejected, dirSet, run1, run2 };
+    },
+    { wantPosts: records.length, nestedDir: path.join(saveFolder, 'nested'), outDir },
+  );
   const rA = await launch(evalA);
 
   // DB lane (#301 / #233): run1 must have written a generation through the SQLite
@@ -171,11 +178,11 @@ const lateFilePath = path.join(saveFolder, LATE_FILE);
   // still picked up by the next run.
   fs.writeFileSync(lateFilePath, JSON.stringify({ notes: ['A'] }, null, 2));
 
-  const evalB = `(async () => {
-    const e1 = await window.hologram.runBackup();
+  const evalB = evalSource(async (_waits) => {
+    const e1 = await (window as any).hologram.runBackup();
     const edit1 = !!(e1 && e1.ok && e1.written >= 1 && !e1.pruneSkipped);
     return { edit1 };
-  })()`;
+  });
   const rB = await launch(evalB);
 
   // Change it in place. Nothing a backup carries changes after it is written, so
@@ -183,31 +190,35 @@ const lateFilePath = path.join(saveFolder, LATE_FILE);
   // oversight (see runBackup's comment).
   fs.writeFileSync(lateFilePath, JSON.stringify({ notes: ['A', 'B'] }, null, 2));
 
-  const evalC = `(async () => {
-    const e2 = await window.hologram.runBackup();
-    const writeOnce = !!(e2 && e2.ok && e2.written === 0 && !e2.pruneSkipped);
-    const e3 = await window.hologram.runBackup();
-    const editIdempotent = !!(e3 && e3.ok && e3.written === 0 && !e3.pruneSkipped);
+  const evalC = evalSource(
+    async (_waits, args) => {
+      const h = (window as any).hologram;
+      const e2 = await h.runBackup();
+      const writeOnce = !!(e2 && e2.ok && e2.written === 0 && !e2.pruneSkipped);
+      const e3 = await h.runBackup();
+      const editIdempotent = !!(e3 && e3.ok && e3.written === 0 && !e3.pruneSkipped);
 
-    // delete one post → since #233 the destination MOVES its file under .trash/
-    // instead of deleting it: a backup keeps a pending deletion pending. The trash
-    // sidecar the delete writes is new, so the same run copies that one over.
-    await window.hologram.deletePost(${JSON.stringify(ids[0] + '.jpg')});
-    const r3 = await window.hologram.runBackup();
-    const trashMoved = !!(r3 && r3.ok && r3.moved === 1 && r3.pruned === 0 && !r3.pruneSkipped);
+      // delete one post → since #233 the destination MOVES its file under .trash/
+      // instead of deleting it: a backup keeps a pending deletion pending. The trash
+      // sidecar the delete writes is new, so the same run copies that one over.
+      await h.deletePost(args.firstImage);
+      const r3 = await h.runBackup();
+      const trashMoved = !!(r3 && r3.ok && r3.moved === 1 && r3.pruned === 0 && !r3.pruneSkipped);
 
-    // collapse src (clear-all wipes every post asset) → guard MUST hold the prune
-    // and leave the destination untouched. Reason is shrink/empty depending on what
-    // is left at the root; either is a valid trip.
-    await window.hologram.clearAll();
-    const r4 = await window.hologram.runBackup();
-    const guardHeld = !!(r4 && r4.ok && r4.pruned === 0 && (r4.pruneSkipped === 'empty' || r4.pruneSkipped === 'shrink'));
+      // collapse src (clear-all wipes every post asset) → guard MUST hold the prune
+      // and leave the destination untouched. Reason is shrink/empty depending on what
+      // is left at the root; either is a valid trip.
+      await h.clearAll();
+      const r4 = await h.runBackup();
+      const guardHeld = !!(r4 && r4.ok && r4.pruned === 0 && (r4.pruneSkipped === 'empty' || r4.pruneSkipped === 'shrink'));
 
-    // The destination root should still hold what r3 left there (the guard stopped
-    // every deletion). r3.fileCount counts the whole media lane, so the two entries
-    // that live under .trash/ come off to get the root's own count.
-    return { writeOnce, editIdempotent, trashMoved, guardHeld, expectRoot: r3.fileCount - 2 };
-  })()`;
+      // The destination root should still hold what r3 left there (the guard stopped
+      // every deletion). r3.fileCount counts the whole media lane, so the two entries
+      // that live under .trash/ come off to get the root's own count.
+      return { writeOnce, editIdempotent, trashMoved, guardHeld, expectRoot: r3.fileCount - 2 };
+    },
+    { firstImage: ids[0] + '.jpg' },
+  );
   const rC = await launch(evalC);
 
   const r = Object.assign({}, rA, rB, rC);
@@ -249,10 +260,10 @@ const lateFilePath = path.join(saveFolder, LATE_FILE);
   const identityAdopted = fs.existsSync(identityFile);
   fs.writeFileSync(identityFile, JSON.stringify({ libraryId: 'another-library', lastRunAt: null }));
   const rootBeforeMismatch = countBackupRoot();
-  const evalD = `(async () => {
-    const r = await window.hologram.runBackup();
+  const evalD = evalSource(async (_waits) => {
+    const r = await (window as any).hologram.runBackup();
     return { mismatchRefused: !!(r && r.ok === false && r.error === 'library-mismatch') };
-  })()`;
+  });
   const rD = await launch(evalD);
   // Refused means refused: nothing copied, nothing pruned, and the claim itself
   // left alone (a refused run must not quietly re-adopt the destination).

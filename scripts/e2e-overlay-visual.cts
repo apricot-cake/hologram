@@ -7,7 +7,20 @@
 //
 //   node scripts/e2e-overlay-visual.cts
 
-const { launchOverlayBrowser, openFixture, wait } = require('./lib-overlay-e2e.cts');
+const { launchOverlayBrowser, openFixture } = require('./lib-overlay-e2e.cts');
+const { sleep, waitFor } = require('./lib-wait.cts');
+
+// A programmatic scroll has an observable end: the page is AT the offset and the
+// browser has painted a frame there — which is when the overlay's borrowed
+// transform is on screen and a getBoundingClientRect means anything. Two rAFs,
+// because the first one is the frame that applies the scroll.
+async function scrollPage(page: any, y: number): Promise<void> {
+  await page.evaluate((want: number) => window.scrollTo(0, want), y);
+  await page.waitForFunction((want: number) => window.scrollY === want, y);
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+}
+
+const noOverlay = (page: any) => page.evaluate(() => !document.querySelector('[data-hologram-overlay]'));
 
 const HTML = `<!doctype html>
 <html><head><meta charset="utf-8"><style>
@@ -61,12 +74,32 @@ const HTML = `<!doctype html>
       const banner = document.querySelector('hologram-extension-ui')?.shadowRoot?.querySelector('[data-hologram-save-banner]');
       if (banner) await Promise.all(banner.getAnimations().map((animation) => animation.finished.catch(() => {})));
     });
-    await wait(100); // chrome.storage.local logging is best-effort and asynchronous
-    const diagnosticEntries = await overlay.browser.serviceWorkers()[0].evaluate(async () => {
-      const all = await (globalThis as any).chrome.storage.local.get(null);
-      return Object.entries(all)
-        .filter(([key]) => key.startsWith('diaglog_'))
-        .map(([, value]) => value);
+    // chrome.storage.local logging is best-effort and asynchronous, so the entry
+    // itself is the post-condition. A timeout is swallowed on purpose: the
+    // explicit check further down reports what the log DID hold, which is a more
+    // useful failure than "waited 10s".
+    const readDiagnostics = () =>
+      overlay.browser.serviceWorkers()[0].evaluate(async () => {
+        const all = await (globalThis as any).chrome.storage.local.get(null);
+        return Object.entries(all)
+          .filter(([key]) => key.startsWith('diaglog_'))
+          .map(([, value]) => value);
+      });
+    let diagnosticEntries: any[] = [];
+    await waitFor('the failed save to reach the extension diagnostic log', async () => {
+      diagnosticEntries = await readDiagnostics();
+      return diagnosticEntries.some((entry: any) => entry?.phase === 'fail' && typeof entry?.error === 'string');
+    }).catch(() => {});
+    // The corner's face is a SEPARATE element from the banner, updated down a
+    // separate path, so neither the banner appearing nor its animation finishing
+    // says anything about it (#982). Nothing here waited for it: the diagnostic-log
+    // wait above happened to cover the gap on a fast machine, and on a busy runner
+    // it did not — `main` went red on 286c87c reading `save` where `failed` was
+    // expected, and reported it as a broken LAYOUT because every other number in
+    // the same assertion was correct. Waiting on the face itself makes the timeout
+    // say what actually did not happen.
+    await page.waitForSelector('[data-hologram-overlay][data-hologram-face="failed"]', { timeout: 5000 }).catch(() => {
+      throw new Error('OVERLAY_FAILURE_FACE_FAIL: the corner never switched to the failed face after the save failed');
     });
     const failureUi = await page.evaluate(() => {
       const banner = document.querySelector('hologram-extension-ui')?.shadowRoot?.querySelector('[data-hologram-save-banner]');
@@ -112,8 +145,12 @@ const HTML = `<!doctype html>
     if (process.env.HOLOGRAM_OVERLAY_SCREENSHOT) {
       await page.screenshot({ path: process.env.HOLOGRAM_OVERLAY_SCREENSHOT });
     }
-    await wait(3000); // banner + retry dwell end before the scroll checks
-    const failureCleared = await page.evaluate(() => !document.querySelector('hologram-extension-ui')?.shadowRoot?.querySelector('[data-hologram-save-banner]'));
+    // The dwell time is a spec, but its END is observable: wait for the banner to
+    // actually leave rather than for a number that has to exceed it. The check
+    // below still reports the failure (waitFor's timeout is swallowed).
+    const bannerGone = () => page.evaluate(() => !document.querySelector('hologram-extension-ui')?.shadowRoot?.querySelector('[data-hologram-save-banner]'));
+    await waitFor('the failure banner to finish its dwell and leave', bannerGone, { timeoutMs: 15_000 }).catch(() => {});
+    const failureCleared = await bannerGone();
     if (!failureCleared) throw new Error('OVERLAY_FAILURE_BANNER_DISMISS_FAIL: failure banner did not leave');
 
     const before = await page.evaluate(() => {
@@ -125,8 +162,10 @@ const HTML = `<!doctype html>
       return { deltaTop: buttonRect.top - mediaRect.top };
     });
     if (!before) throw new Error('test control disappeared before the scroll check');
-    await page.evaluate(() => window.scrollTo(0, 80));
-    await wait(25); // before hover cleanup; the control must use the same scroll transform
+    // Measured after the scroll has painted but before hover cleanup could run
+    // (SCROLL_HOVER_SETTLE_MS is 100ms, two frames are ~32): the control must be
+    // using the same scroll transform as the picture it sits on.
+    await scrollPage(page, 80);
     const scroll = await page.evaluate((previous) => {
       const button = document.querySelector('[data-hologram-overlay]')?.getBoundingClientRect();
       const media = document.querySelector('[data-testid="tweetPhoto"]')?.getBoundingClientRect();
@@ -134,8 +173,7 @@ const HTML = `<!doctype html>
     }, before);
     if (!scroll) throw new Error('OVERLAY_SCROLL_TRACKING_FAIL: control does not share the media scroll position');
 
-    await page.evaluate(() => window.scrollTo(0, 0));
-    await wait(150);
+    await scrollPage(page, 0);
     const photoBeforeModal = await photo.boundingBox();
     if (!photoBeforeModal) throw new Error('test photo disappeared before modal check');
     await page.mouse.move(photoBeforeModal.x + photoBeforeModal.width / 2, photoBeforeModal.y + photoBeforeModal.height / 2);
@@ -144,8 +182,8 @@ const HTML = `<!doctype html>
     // Opening a modal without moving the pointer recreates the real failure:
     // the old background control must not remain above the dialog.
     await page.evaluate(() => ((document.querySelector('#composeDialog') as HTMLElement).hidden = false));
-    await wait(250);
-    const modalClear = await page.evaluate(() => !document.querySelector('[data-hologram-overlay]'));
+    await waitFor('the background control to leave once a modal is open', () => noOverlay(page)).catch(() => {});
+    const modalClear = await noOverlay(page);
     if (!modalClear) throw new Error('OVERLAY_MODAL_OCCLUSION_FAIL: background control remained while a modal was open');
 
     await page.evaluate(() => {
@@ -160,8 +198,14 @@ const HTML = `<!doctype html>
     // still on the picture, so the hover is still on: occlusion is asked about
     // the POINTER, and asking it about the control's corner instead is what
     // took the button away mid-scroll on x.com (#347).
-    await page.evaluate(() => window.scrollTo(0, 190));
-    await wait(250);
+    await scrollPage(page, 190);
+    // Fixed on purpose: this asserts the control is NOT taken away, so the wait
+    // has to outlast overlay.ts's SCROLL_HOVER_SETTLE_MS (100ms) — the timer that
+    // used to clear the hover on the mere fact of a scroll. Waiting for a
+    // post-condition here would mean waiting for nothing to happen, which passes
+    // instantly and checks nothing.
+    // biome-ignore lint/plugin: window in which the settle timer must NOT fire
+    await sleep(250);
     const headerHold = await page.evaluate(() => !!document.querySelector('[data-hologram-overlay]'));
     if (!headerHold) throw new Error('OVERLAY_HEADER_HOVER_LOST_FAIL: control vanished while the pointer was still on the picture');
 
@@ -171,8 +215,8 @@ const HTML = `<!doctype html>
     const photoUnderHeader = await photo.boundingBox();
     if (!photoUnderHeader) throw new Error('test photo disappeared during the header check');
     await page.mouse.move(photoUnderHeader.x + photoUnderHeader.width / 2, 40);
-    await wait(250);
-    const headerClear = await page.evaluate(() => !document.querySelector('[data-hologram-overlay]'));
+    await waitFor('the control to leave once the pointer is on the fixed header', () => noOverlay(page)).catch(() => {});
+    const headerClear = await noOverlay(page);
     if (!headerClear) throw new Error('OVERLAY_HEADER_OCCLUSION_FAIL: control remained while the pointer was on the fixed header');
 
     // #659: the viewer IS a `[role="dialog"][aria-modal="true"]` itself. The

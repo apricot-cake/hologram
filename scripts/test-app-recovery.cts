@@ -17,6 +17,7 @@ const appDir = path.join(__dirname, '..', 'app');
 const { electronPath: resolveElectron } = require('./lib-electron-path.cts');
 
 const electronPath = resolveElectron();
+const { evalSource } = require('./lib-wait.cts');
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-rec-'));
 const configDir = path.join(tmp, 'Hologram');
@@ -50,11 +51,15 @@ function launch(evalJs) {
   });
 }
 
-const getCfgEval = `(async () => {
-  await new Promise(r => setTimeout(r, 400));
-  const c = await window.hologram.getConfig();
+const getCfgEval = evalSource(async ({ waitFor }) => {
+  // Recovery happens in main before the config is answerable; a config that
+  // names a folder is the observable end of it. Reading whatever is there after
+  // a guessed 400ms was the same bet with no way to say it had lost.
+  const cfg = () => (window as any).hologram.getConfig();
+  await waitFor('the recovered config to name a save folder', async () => !!(await cfg())?.saveFolder);
+  const c = await cfg();
   return { saveFolder: c && c.saveFolder };
-})()`;
+});
 
 (async () => {
   // launch 1: healthy config → the redundant pointer should be written on startup

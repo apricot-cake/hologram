@@ -51,7 +51,7 @@ const freePort = (): Promise<number> =>
     });
   });
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const { sleep, waitFor, evalSource } = require('./lib-wait.cts');
 
 function cdpList(port: number): Promise<any[]> {
   return new Promise((resolve, reject) => {
@@ -95,59 +95,95 @@ async function cdpConnect(wsUrl: string) {
 
 // Runs inside the renderer. Everything after the probes is a hold: the harness
 // needs the app alive while it drives CDP past the navigation guard.
-const evalJs = `(async () => {
-  const out = {};
-  // The standalone image window, opened FIRST so the CDP pass has something of
-  // ours to drive that is not this document: navigating the renderer out from
-  // under this script would take its JS context (and this result) with it.
-  out.viewerOpened = (await window.hologram.openImageWindow('${PNG}')) === true;
-  out.href = location.href;
-  out.origin = location.origin;
+const evalJs = evalSource(
+  async ({ sleep, neverHappens }, args) => {
+    const out: Record<string, any> = {};
+    // The standalone image window, opened FIRST so the CDP pass has something of
+    // ours to drive that is not this document: navigating the renderer out from
+    // under this script would take its JS context (and this result) with it.
+    out.viewerOpened = (await (window as any).hologram.openImageWindow(args.png)) === true;
+    out.href = location.href;
+    out.origin = location.origin;
 
-  // The policy that is actually on the wire (not the constant in main).
-  const doc = await fetch(location.pathname);
-  out.csp = doc.headers.get('content-security-policy') || '';
-  out.nosniff = doc.headers.get('x-content-type-options') || '';
+    // The policy that is actually on the wire (not the constant in main).
+    const doc = await fetch(location.pathname);
+    out.csp = doc.headers.get('content-security-policy') || '';
+    out.nosniff = doc.headers.get('x-content-type-options') || '';
 
-  // The renderer's own module script, as the page itself names it.
-  const mod = document.querySelector('script[type="module"]');
-  out.moduleLoaded = !!(window.hologram && document.body.children.length > 0);
-  out.moduleType = mod ? (await fetch(mod.src)).headers.get('content-type') : 'no module script';
-  out.styled = document.styleSheets.length > 0;
+    // The renderer's own module script, as the page itself names it.
+    const mod = document.querySelector<HTMLScriptElement>('script[type="module"]');
+    out.moduleLoaded = !!((window as any).hologram && document.body.children.length > 0);
+    out.moduleType = mod ? (await fetch(mod.src)).headers.get('content-type') : 'no module script';
+    out.styled = document.styleSheets.length > 0;
 
-  // Escapes and unknown types. A status is the answer either way — what must not
-  // happen is bytes from OUTSIDE out/renderer coming back.
-  const codes = {};
-  for (const u of ['app://bundle/%2e%2e/%2e%2e/package.json', 'app://bundle/../package.json', 'app://bundle/nope.html', 'app://bundle/hologram.db']) {
-    try { const r = await fetch(u); codes[u] = r.status + (r.status === 200 ? ' ' + (await r.text()).slice(0, 40) : ''); } catch (e) { codes[u] = 'threw'; }
-  }
-  out.codes = codes;
+    // Escapes and unknown types. A status is the answer either way — what must not
+    // happen is bytes from OUTSIDE out/renderer coming back.
+    const codes: Record<string, string> = {};
+    for (const u of ['app://bundle/%2e%2e/%2e%2e/package.json', 'app://bundle/../package.json', 'app://bundle/nope.html', 'app://bundle/hologram.db']) {
+      try {
+        const r = await fetch(u);
+        codes[u] = r.status + (r.status === 200 ? ' ' + (await r.text()).slice(0, 40) : '');
+      } catch {
+        codes[u] = 'threw';
+      }
+    }
+    out.codes = codes;
 
-  // ADR 0012: library bytes stay behind IPC.
-  try { const a = await fetch('asset://img/${PNG}'); out.assetFetch = 'READ status ' + a.status; } catch (e) { out.assetFetch = 'blocked'; }
-  // ...while the picture still LOADS as a subresource, which is the whole point
-  // of asset:// and would be an easy thing to break with a stricter img-src.
-  out.assetImg = await new Promise((r) => { const i = new Image(); i.onload = () => r(i.naturalWidth > 0); i.onerror = () => r(false); i.src = 'asset://img/${PNG}'; });
+    // ADR 0012: library bytes stay behind IPC.
+    try {
+      const a = await fetch(`asset://img/${args.png}`);
+      out.assetFetch = 'READ status ' + a.status;
+    } catch {
+      out.assetFetch = 'blocked';
+    }
+    // ...while the picture still LOADS as a subresource, which is the whole point
+    // of asset:// and would be an easy thing to break with a stricter img-src.
+    out.assetImg = await new Promise((r) => {
+      const i = new Image();
+      i.onload = () => r(i.naturalWidth > 0);
+      i.onerror = () => r(false);
+      i.src = `asset://img/${args.png}`;
+    });
 
-  // The navigation guard, from inside the page.
-  const before = location.href;
-  try { location.href = 'app://bundle/other.html'; } catch (e) {}
-  await new Promise((r) => setTimeout(r, 800));
-  out.navBlocked = location.href === before;
+    // The navigation guard, from inside the page.
+    const before = location.href;
+    try {
+      location.href = 'app://bundle/other.html';
+    } catch {}
+    // The assertion is that this navigation NEVER commits, so the window IS the
+    // check — neverHappens spends all of it on purpose and names the case if it
+    // ever does. (A commit would also reject the eval from main — see #917.)
+    out.navBlocked = await neverHappens('a navigation to app://bundle/other.html', () => location.href !== before, 800);
 
-  // frame-ancestors 'none' — measured, because <meta> would have ignored it.
-  const f = document.createElement('iframe');
-  f.src = location.href;
-  document.body.appendChild(f);
-  await new Promise((r) => setTimeout(r, 1200));
-  let framed = 'unknown';
-  try { framed = f.contentDocument && f.contentDocument.body && f.contentDocument.body.children.length ? 'LOADED' : 'empty'; } catch (e) { framed = 'opaque'; }
-  out.iframe = framed;
-  f.remove();
+    // frame-ancestors 'none' — measured, because <meta> would have ignored it.
+    const f = document.createElement('iframe');
+    f.src = location.href;
+    document.body.appendChild(f);
+    // The assertion is that this frame NEVER gets a document of ours, so the window
+    // IS the check — a frame that loaded late would otherwise read as blocked.
+    // A cross-origin (opaque) frame throws on access, which is also "not ours".
+    const framed = await neverHappens(
+      'the renderer to appear inside its own iframe',
+      () => {
+        try {
+          return !!(f.contentDocument && f.contentDocument.body && f.contentDocument.body.children.length);
+        } catch {
+          return false;
+        }
+      },
+      1200,
+    );
+    out.iframe = framed ? 'blocked' : 'LOADED';
+    f.remove();
 
-  await new Promise((r) => setTimeout(r, 9000)); // hold for the CDP pass
-  return out;
-})()`;
+    // Fixed and deliberate: the app has to stay alive while the harness drives CDP
+    // past the navigation guard. The harness ends the run, not this eval.
+    // biome-ignore lint/plugin: a hold, sized to outlast the harness's CDP pass
+    await sleep(9000);
+    return out;
+  },
+  { png: PNG },
+);
 
 async function main() {
   const cdpPort = await freePort();
@@ -180,16 +216,19 @@ async function main() {
   let cdpNote = '';
   try {
     let page: any = null;
-    for (let i = 0; i < 60 && !page; i++) {
-      await sleep(500);
-      try {
-        // The image window, not the renderer — see the eval's first line.
-        page = (await cdpList(cdpPort)).find((t) => t.type === 'page' && String(t.url).startsWith('asset://'));
-      } catch {
-        /* devtools endpoint not up yet */
-      }
-    }
-    if (!page) throw new Error('viewer window target never appeared');
+    await waitFor(
+      'the viewer window to appear as an asset:// target on the debugging port',
+      async () => {
+        try {
+          // The image window, not the renderer — see the eval's first line.
+          page = (await cdpList(cdpPort)).find((t) => t.type === 'page' && String(t.url).startsWith('asset://'));
+        } catch {
+          /* devtools endpoint not up yet */
+        }
+        return !!page;
+      },
+      { timeoutMs: 30_000, pollMs: 500 },
+    );
     // #640's replacement identity, measured against the process we spawned.
     portPid = listeningPid(cdpPort);
     // A second host on the scheme would be a second origin nobody designed. The
@@ -199,6 +238,9 @@ async function main() {
     await send('Page.enable');
     await send('Runtime.enable');
     await send('Page.navigate', { url: 'app://elsewhere/index.html' });
+    // Fixed: what the next line measures is whether this host became a document
+    // at all, so neither outcome is a post-condition that is sure to arrive.
+    // biome-ignore lint/plugin: whether this host becomes a document is what is measured
     await sleep(2000);
     const r = await send('Runtime.evaluate', { expression: '[location.href, document.body ? document.body.innerText.slice(0, 40) : ""].join(" | ")', returnByValue: true });
     foreignHost = String(r?.result?.value || '');
@@ -234,7 +276,7 @@ async function main() {
   check('CSP が応答ヘッダで届いている', String(r.csp || '').includes("default-src 'self'"));
   check("CSP に frame-ancestors 'none' が入っている（<meta> では無視される1本）", String(r.csp || '').includes("frame-ancestors 'none'"));
   check('nosniff が付いている', r.nosniff === 'nosniff');
-  check('自分自身を iframe に入れられない＝frame-ancestors が効いている', r.iframe === 'empty' || r.iframe === 'opaque');
+  check('自分自身を iframe に入れられない＝frame-ancestors が効いている', r.iframe === 'blocked');
   check('out/renderer の外は返らない（%2e%2e / .. とも）', !codeOf('app://bundle/%2e%2e/%2e%2e/package.json').startsWith('200') && !codeOf('app://bundle/../package.json').startsWith('200'));
   check('未知の拡張子は配らない（415）', codeOf('app://bundle/hologram.db').startsWith('415'));
   check('存在しないパスは 404', codeOf('app://bundle/nope.html').startsWith('404'));

@@ -12,7 +12,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { JSDOM } from 'jsdom';
-import { expect, test } from 'vitest';
+import { expect, test, vi } from 'vitest';
 
 const BUNDLE = fs.readFileSync(path.join(import.meta.dirname, '..', 'extension', '.output', 'chrome-mv3-release', 'capture.js'), 'utf8');
 
@@ -55,15 +55,21 @@ async function runOn(url: string, auto: boolean): Promise<'single' | 'auto' | 'n
     },
   } as any;
 
+  // The two modes are exclusive branches of startCapture (extension/utils/capture.ts) and each
+  // announces itself, so 'none' means "still starting up" (createI18n, the first collection) —
+  // never an end state either way. Poll for the announcement instead of guessing how long it takes.
+  const mode = (): 'single' | 'auto' | 'none' => {
+    const uiRoot = (window.document.querySelector('hologram-extension-ui') as any)?.shadowRoot;
+    if (uiRoot?.querySelector('[data-hologram-bulk-banner]')) return 'auto';
+    // The single-shot path marks itself via this global (its own banner has no data attribute)
+    if ((window as any).__snsPostSaveActive === true) return 'single';
+    return 'none';
+  };
+
   if (auto) (window as any).__hologramAutoCapture = true;
   window.eval(BUNDLE);
-  await new Promise((r) => setTimeout(r, 300)); // Until createI18n() and the first collection finish
-
-  const uiRoot = (window.document.querySelector('hologram-extension-ui') as any)?.shadowRoot;
-  if (uiRoot?.querySelector('[data-hologram-bulk-banner]')) return 'auto';
-  // The single-shot path marks itself via this global (its own banner has no data attribute)
-  if ((window as any).__snsPostSaveActive === true) return 'single';
-  return 'none';
+  await vi.waitFor(() => expect(mode()).not.toBe('none'), { timeout: 5000 });
+  return mode();
 }
 
 test('Alt+S は普通のタイムラインで単発のまま', async () => {

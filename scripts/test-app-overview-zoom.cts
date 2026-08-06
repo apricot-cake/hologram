@@ -20,6 +20,7 @@ const { electronPath: resolveElectron } = require('./lib-electron-path.cts');
 
 const electronPath = resolveElectron();
 const { seedLibrary } = require('./lib-seed-library.cts');
+const { evalSource } = require('./lib-wait.cts');
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-overview-zoom-'));
 const configDir = path.join(tmp, 'Hologram');
@@ -57,18 +58,30 @@ seedLibrary(configDir, records);
 
 // Fire the wheel event over the grid (the handler only looks inside the scroll surface).
 // Firing straight at window makes target === window, which gets ignored as outside the scroll area.
-const evalJs = `(async () => {
+const evalJs = evalSource(async ({ waitFor, waitStable, neverHappens }) => {
   const grid = document.querySelector('[data-slot="post-grid"]');
-  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  // Named rather than optional-chained: every measurement below reads this element, so a
+  // missing grid has to stop the run under its own name instead of turning into a NaN
+  // that the value checks would report as "the cells never shrank".
+  if (!grid) throw new Error('the post grid is missing');
   // The size axis is only observable from outside as "how big are the cells" (the path
   // that wrote a CSS variable was removed in #618) — measure the width of an actually
   // rendered card. Columns stretch to fill the width, so this ends up reading the result
   // of "how many columns fit at that setting" rather than the raw minimum column width.
-  const size = () => { const c = grid.querySelector('[data-slot="post-card"]'); return c ? Math.round(c.getBoundingClientRect().width) : Number.NaN; };
-  const fire = (deltaY, x, y) => {
+  const size = () => {
+    const c = grid.querySelector('[data-slot="post-card"]');
+    return c ? Math.round(c.getBoundingClientRect().width) : Number.NaN;
+  };
+  const fire = (deltaY: number, x?: number, y?: number) => {
     const r = grid.getBoundingClientRect();
     grid.dispatchEvent(new WheelEvent('wheel', { deltaY, ctrlKey: true, clientX: x == null ? r.left + 20 : x, clientY: y == null ? r.top + 20 : y, bubbles: true, cancelable: true }));
   };
+
+  // Resolved here, above the waits that close over it — same reasoning as the grid: the
+  // scroll surface is what every anchor measurement reads, so its absence stops the run
+  // under its own name.
+  const scroller = document.querySelector('[data-slot="content-scroll"]');
+  if (!scroller) throw new Error('the content scroll surface is missing');
 
   // --- Anchor preservation (#282) ---
   // Does the post that was being looked at stay at the same height on screen before and
@@ -79,21 +92,10 @@ const evalJs = `(async () => {
   // finishes, and would misread a state where the scroll happened over still-short content
   // (i.e. it had nowhere to go anyway) as "didn't drift". In practice the fixed-sleep
   // version broke this way 2 times out of 3. So wait for the state instead.
-  const waitFor = async (fn, ms) => {
-    for (let i = 0; i * 50 < ms; i++) { if (fn()) return true; await sleep(50); }
-    return false;
-  };
+  //
   // Wait until the scroll position stops moving (the change applies on an rAF, finalizes
   // 150ms later, and after that another relayout-and-settle pass follows for the measurement).
-  const settle = async () => {
-    let last = Number.NaN, stable = 0;
-    for (let i = 0; i < 60 && stable < 3; i++) {
-      await sleep(50);
-      const s = Math.round(scroller.scrollTop);
-      if (s === last) stable++;
-      else { stable = 0; last = s; }
-    }
-  };
+  const settle = () => waitStable('the scroll position to stop moving', () => Math.round(scroller.scrollTop), 3000);
   // Twin of settle() above, but for the SIZE axis instead of scrollTop — and unlike
   // a plain stability poll it must never read "the value has not moved yet" as
   // "settled", which is the trap this harness kept falling into.
@@ -116,42 +118,43 @@ const evalJs = `(async () => {
   //
   // So: wait for the size to LEAVE the value it had before the wheel, then wait for
   // it to stop moving.
-  const settleFrom = async (from, ms) => {
-    const moved = await waitFor(() => { const s = size(); return Number.isFinite(s) && s !== from; }, ms);
+  const settleFrom = async (label: string, from: number, ms: number) => {
+    const moved = await waitFor(
+      'the cell size to leave ' + from + 'px after ' + label,
+      () => {
+        const s = size();
+        return Number.isFinite(s) && s !== from;
+      },
+      ms,
+    );
     if (!moved) return from;
-    let last = Number.NaN, stable = 0;
-    for (let i = 0; i * 50 < ms && stable < 3; i++) {
-      await sleep(50);
-      const s = size();
-      if (s === last) stable++;
-      else { stable = 0; last = s; }
-    }
+    await waitStable('the cell size to stop moving after ' + label, size, ms);
     return size();
   };
   // The opposite assertion — that a notch does NOT move the size — cannot be a
   // settle at all: "unchanged" is exactly what a settle reports fastest, so it would
-  // pass without ever outliving the commit. Hold for the whole window instead and
-  // report the moment the size leaves.
-  const holdSize = async (from, ms) => {
-    for (let i = 0; i * 50 < ms; i++) {
-      await sleep(50);
-      const s = size();
-      if (Number.isFinite(s) && s !== from) return false;
-    }
-    return true;
-  };
-  const scroller = document.querySelector('[data-slot="content-scroll"]');
+  // pass without ever outliving the commit. neverHappens holds for the whole window
+  // instead and reports the moment the size leaves.
+  const holdSize = (from: number, ms: number) =>
+    neverHappens(
+      'the cell size to move while the track is already at its end',
+      () => {
+        const s = size();
+        return Number.isFinite(s) && s !== from;
+      },
+      ms,
+    );
   // Wait until the full-content height stands up, i.e. until the virtual grid finishes its first layout pass.
-  const laidOut = await waitFor(() => scroller.scrollHeight > scroller.clientHeight * 4, 8000);
+  const laidOut = await waitFor('the virtual grid to stand up a full-length scroll height', () => scroller.scrollHeight > scroller.clientHeight * 4, 8000);
   scroller.scrollTop = 2000;
-  const scrolled = await waitFor(() => Math.abs(scroller.scrollTop - 2000) < 2, 3000);
+  const scrolled = await waitFor('the scroll position to land at 2000px', () => Math.abs(scroller.scrollTop - 2000) < 2, 3000);
   const sr = scroller.getBoundingClientRect();
-  const seen = () => [...grid.querySelectorAll('[data-slot="post-card"]')].map((c) => [c, c.getBoundingClientRect()]).filter(([, r]) => r.bottom > sr.top && r.top < sr.bottom);
+  const seen = () => [...grid.querySelectorAll('[data-slot="post-card"]')].map((c): [Element, DOMRect] => [c, c.getBoundingClientRect()]).filter(([, box]) => box.bottom > sr.top && box.top < sr.bottom);
   // Assigning scrollTop directly is a "big jump" — until the virtual grid rebuilds its
   // render window, it still holds cells from the previous location. Reading right after
   // scrollTop **alone** settles can see an empty screen (the trap called out in #282's own
   // body; measured hitting it 2 times out of 3), so wait until cells are actually visible.
-  const windowed = await waitFor(() => seen().length > 0, 8000);
+  const windowed = await waitFor('the virtual grid to rebuild its render window at the new scroll position', () => seen().length > 0, 8000);
   await settle();
   // THE BASELINE IS TAKEN HERE, not at the top of this script. A card's box only carries the
   // size axis once the virtual grid has laid out for real; before that first pass it is a
@@ -160,7 +163,14 @@ const evalJs = `(async () => {
   // "cells shrink" compared 51 against 2 and failed while the zoom itself had worked (#818).
   // Local runs never saw it because the layout landed before the first statement ran; the
   // runner is simply slower, which is the same reason the waits above exist at all.
-  const sized = await waitFor(() => { const s = size(); return Number.isFinite(s) && s >= 48; }, 8000);
+  const sized = await waitFor(
+    'a real card box to carry the size axis (the baseline measurement)',
+    () => {
+      const s = size();
+      return Number.isFinite(s) && s >= 48;
+    },
+    8000,
+  );
   const start = size();
   const scrolledTo = Math.round(scroller.scrollTop);
   const midY = sr.top + sr.height / 2;
@@ -172,22 +182,27 @@ const evalJs = `(async () => {
   // With "show info" off, cells carry no text, so the one grabbed is identified by the
   // "displayed image" instead (cells carry no key attribute — #618).
   // Thumbnail width changes with the size axis, so drop the URL query and compare only which file it is.
-  const srcOf = (c) => { const el = c && c.querySelector('[data-slot="post-card-media"]'); return el ? (el.getAttribute('src') || '').split('?')[0] : null; };
+  const srcOf = (c: Element | null) => {
+    const el = c && c.querySelector('[data-slot="post-card-media"]');
+    return el ? (el.getAttribute('src') || '').split('?')[0] : null;
+  };
   const anchorKey = srcOf(target);
-  if (target) fire(-120, r0.left + r0.width / 2, r0.top + r0.height / 2); // zoom in one notch
+  // `target` and `r0` are the two halves of the same lookup — both are set exactly when a
+  // card was visible, so testing both here is the same condition, spelled so tsc can see it.
+  if (target && r0) fire(-120, r0.left + r0.width / 2, r0.top + r0.height / 2); // zoom in one notch
   // The alignment rides on the very commit that applies the size, so wait for the
   // size to actually move before letting the scroll position settle — otherwise
   // "moved" is read while the burst has not been applied at all.
-  if (target) await settleFrom(start, 8000);
+  if (target) await settleFrom('zooming in one notch', start, 8000);
   await settle();
   const moved = Math.round(scroller.scrollTop) !== scrolledTo; // did alignment actually kick in
-  const held = anchorKey ? [...grid.querySelectorAll('[data-slot="post-card"]')].find(c => srcOf(c) === anchorKey) : null;
+  const held = anchorKey ? [...grid.querySelectorAll('[data-slot="post-card"]')].find((c) => srcOf(c) === anchorKey) : null;
   const drift = held && r0 ? Math.round(held.getBoundingClientRect().top - r0.top) : 9999;
   const anchorReady = laidOut && scrolled && windowed && !!anchorKey;
   // Return to the original size before entering the series below (start was already read above).
   const zoomed = size();
   fire(120);
-  await settleFrom(zoomed, 8000);
+  await settleFrom('zooming back out to the starting size', zoomed, 8000);
   await settle();
 
   // Pull all the way down to the floor (stops at the track's end — further notches are
@@ -195,7 +210,7 @@ const evalJs = `(async () => {
   // synchronously would read the pre-change value — wait for the 150ms settle before reading.
   const beforePull = size();
   for (let i = 0; i < 40; i++) fire(120);
-  const small = await settleFrom(beforePull, 8000);
+  const small = await settleFrom('pulling all the way down to the floor', beforePull, 8000);
   // Persisting gridSize is a SEPARATE, later event than the size becoming visible:
   // the cells reach their new width on the live column width, the pref is only
   // written when the burst settles. Reading it once right after the size lands
@@ -203,11 +218,17 @@ const evalJs = `(async () => {
   // pref to catch up with what is on screen instead (they agree to within the 1px
   // the stretch rounds away).
   let persistedSize = Number.NaN;
-  for (let i = 0; i * 50 < 8000; i++) {
-    persistedSize = (await window.hologram.getPrefs()).gridSize;
-    if (Math.abs(persistedSize - small) <= 1) break;
-    await sleep(50);
-  }
+  // window.hologram is the preload bridge; scripts/ has no declaration for it, so the
+  // shape is named here at the one place this harness reads it.
+  const prefs = () => (window as unknown as { hologram: { getPrefs(): Promise<{ gridSize: number }> } }).hologram.getPrefs();
+  await waitFor(
+    'the persisted gridSize to catch up with the cells on screen',
+    async () => {
+      persistedSize = (await prefs()).gridSize;
+      return Math.abs(persistedSize - small) <= 1;
+    },
+    8000,
+  );
   // Turning it further while pinned to the edge doesn't move the size any more. **Not
   // running the finalize step** can't actually be verified here — at this scale (200
   // records) finalizing is nearly free and triggers neither a DOM node swap nor a thumbnail
@@ -219,9 +240,9 @@ const evalJs = `(async () => {
   const stableAtLimit = await holdSize(small, 1500);
   // Zoom back in (zoom-in is deltaY<0)
   for (let i = 0; i < 3; i++) fire(-120);
-  const back = await settleFrom(small, 8000);
+  const back = await settleFrom('zooming back in three notches', small, 8000);
   return [start, small, persistedSize, back, stableAtLimit, anchorReady ? 1 : 0, drift, moved ? 1 : 0, sized ? 1 : 0].join(',');
-})()`;
+});
 
 const env = Object.assign({}, process.env, {
   APPDATA: tmp,

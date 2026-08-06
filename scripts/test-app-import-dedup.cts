@@ -40,6 +40,7 @@ const path = require('node:path');
 const appDir = path.join(__dirname, '..', 'app');
 const { electronPath: resolveElectron } = require('./lib-electron-path.cts');
 const { openDatabase } = require(path.join(appDir, 'src', 'main', 'lib-db.ts'));
+const { evalSource } = require('./lib-wait.cts');
 
 const electronPath = resolveElectron();
 
@@ -95,32 +96,51 @@ async function buildFixtures() {
   };
 }
 
-const evalJsFor = (zips: Record<string, string>) => `(async () => {
-  const z = ${JSON.stringify(zips)};
-  const imp = (key, mode) => window.hologram.importLegacyZip(z[key], mode);
-  // captureIds are import-<Date.now()>-<seq>; space the calls out so two batches
-  // can't share a millisecond stamp.
-  const gap = () => new Promise((r) => setTimeout(r, 5));
-  const r1 = await imp('abc'); await gap();
-  // C's URL is already in the library -> the batch stops and asks (#34).
-  const ask = await imp('abc'); await gap();
-  const r2 = await imp('abc', 'skip'); await gap();
-  const r3 = await imp('d'); await gap();
-  const r4 = await imp('aa'); await gap();
-  const r5 = await imp('ee'); await gap();
-  const { posts } = await window.hologram.listPosts();
-  const c = posts.find((p) => p.url === 'https://x.com/u/status/777');
-  await window.hologram.deletePost(c.image); await gap();
-  const r6 = await imp('c'); await gap();
-  // 'replace': F's first import is retired by its second, tags and all.
-  await imp('f'); await gap();
-  const r7 = await imp('f2', 'replace'); await gap();
-  const after = (await window.hologram.listPosts()).posts.filter((p) => p.url === 'https://x.com/u/status/888');
-  const s = (r) => r.imported + '/' + r.skipped;
-  const askShape = ask.needsChoice ? 'dup' + ask.duplicates : s(ask);
-  const replaced = after.length === 1 && after[0].tags.slice().sort().join(',') === ['あたらしいタグ', 'ふるいタグ'].sort().join(',') ? 'replaced' : 'BAD:' + JSON.stringify(after.map((p) => p.tags));
-  return [s(r1), askShape, s(r2), s(r3), s(r4), s(r5), s(r6), s(r7), replaced].join(' ');
-})()`;
+const evalJsFor = (zips: Record<string, string>) =>
+  evalSource(
+    async ({ sleep }, args) => {
+      const z = args.zips;
+      const h = (window as any).hologram;
+      const imp = (key: string, mode?: string) => h.importLegacyZip(z[key], mode);
+      // captureIds are import-<Date.now()>-<seq>; space the calls out so two batches
+      // can't share a millisecond stamp.
+      // biome-ignore lint/plugin: the delay IS the spec — captureIds embed Date.now(), so consecutive batches have to land in different milliseconds. There is nothing to observe; 5ms is one tick past the collision.
+      const gap = () => sleep(5);
+      const r1 = await imp('abc');
+      await gap();
+      // C's URL is already in the library -> the batch stops and asks (#34).
+      const ask = await imp('abc');
+      await gap();
+      const r2 = await imp('abc', 'skip');
+      await gap();
+      const r3 = await imp('d');
+      await gap();
+      const r4 = await imp('aa');
+      await gap();
+      const r5 = await imp('ee');
+      await gap();
+      const { posts } = await h.listPosts();
+      // Named rather than optional-chained: the trashed post IS what the next two
+      // rounds are about, so a missing one has to stop the run and say so.
+      const c = posts.find((p) => p.url === 'https://x.com/u/status/777');
+      if (!c) throw new Error('the imported post carrying the C url is missing from the library');
+      await h.deletePost(c.image);
+      await gap();
+      const r6 = await imp('c');
+      await gap();
+      // 'replace': F's first import is retired by its second, tags and all.
+      await imp('f');
+      await gap();
+      const r7 = await imp('f2', 'replace');
+      await gap();
+      const after = (await h.listPosts()).posts.filter((p) => p.url === 'https://x.com/u/status/888');
+      const s = (r) => r.imported + '/' + r.skipped;
+      const askShape = ask.needsChoice ? 'dup' + ask.duplicates : s(ask);
+      const replaced = after.length === 1 && after[0].tags.slice().sort().join(',') === ['あたらしいタグ', 'ふるいタグ'].sort().join(',') ? 'replaced' : 'BAD:' + JSON.stringify(after.map((p) => p.tags));
+      return [s(r1), askShape, s(r2), s(r3), s(r4), s(r5), s(r6), s(r7), replaced].join(' ');
+    },
+    { zips },
+  );
 
 buildFixtures().then((zips) => {
   const env = Object.assign({}, process.env, {

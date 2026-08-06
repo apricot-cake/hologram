@@ -21,8 +21,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { JSDOM } from 'jsdom';
-import { afterAll, beforeAll, describe, expect, test } from 'vitest';
+import { afterAll, beforeAll, describe, expect, test, vi } from 'vitest';
 import { asUser } from './lib-user-event.ts';
+
+// #986: the shared wait contract. Required with require() rather than import
+// because lib-wait.cts is a CommonJS module (module.exports), which this
+// project's bundler resolution does not model as named exports.
+const { neverHappens } = require('./lib-wait.cts');
 
 // The shape of post the x branch in overlay.ts targets. data-rect-top declares the media
 // box's geometry (jsdom lays nothing out), and data-rect-size narrows its size.
@@ -191,7 +196,12 @@ const saveBanners = (): any[] => Array.from((window.document.querySelector('holo
 // face is it" without depending on localized copy. The copy itself is checked by other tests.
 const marks = () => controls().filter((el) => el.getAttribute('data-hologram-face') === 'mark');
 const saveButtons = () => controls().filter((el) => el.getAttribute('data-hologram-face') === 'save');
-const settle = () => new Promise((r) => setTimeout(r, 400)); // clears the 300ms query debounce
+// overlay.ts batches its "is this saved?" queries behind QUERY_DEBOUNCE_MS (300) — until that
+// timer fires, nothing has been sent and there is nothing to observe. 400 is that number plus a
+// margin. Both timers are real and queued on the same clock, so a loaded machine delays them
+// together and never reorders them.
+// biome-ignore lint/plugin: overlay.ts's 300ms QUERY_DEBOUNCE_MS is the spec — the delay IS what is being waited out
+const settle = () => new Promise((r) => setTimeout(r, 400));
 
 // overlay.ts decides what the pointer is over by "coordinates" (a real pointermove always
 // carries clientX/clientY). It doesn't decide by which element the event happened on = the mark
@@ -411,7 +421,14 @@ describe('スクロール中の追従（#347）', () => {
   });
 
   test('ホバー中の絵の中でスクロールしてもコントロールは残る', async () => {
-    await new Promise((r) => setTimeout(r, 120)); // clears scroll settling
+    // A non-event: the control must still be there once the scroll burst has settled. 120ms is
+    // overlay.ts's SCROLL_HOVER_SETTLE_MS (100) plus margin — spending that window is the check,
+    // since a post-condition wait would pass on its first poll while the timer was still armed.
+    // (lib-wait's neverHappens is renderer-side source text and cannot be imported here.)
+    // Spends its window on purpose: the point is that SCROLL_HOVER_SETTLE_MS (100ms)
+    // passes without the control leaving. neverHappens says that in its name, so it
+    // needs no suppression the way a bare delay would.
+    await neverHappens('the hovered control to disappear across the settle window', () => marks().length === 0, 120);
     expect(marks()[0]?.parentElement).toBe(boxOf('p1'));
   });
 
@@ -434,8 +451,9 @@ describe('スクロール中の追従（#347）', () => {
   });
 
   test('ポインタから外れて行った絵のコントロールは消える', async () => {
-    await new Promise((r) => setTimeout(r, 120));
-    expect(controls()).toHaveLength(0);
+    // The opposite of the test above: here the settle timer is supposed to clear the control, so
+    // the disappearance itself is the post-condition to wait on.
+    await vi.waitFor(() => expect(controls()).toHaveLength(0));
 
     rectTop('#p1 [data-testid="tweetPhoto"]', '100');
     rectTop('#p2 [data-testid="tweetPhoto"]', '400');
@@ -643,9 +661,10 @@ describe('保存に失敗したとき', () => {
   });
 
   test('しばらくするとボタンへ戻り、やり直せる', async () => {
-    await new Promise((r) => setTimeout(r, 2700)); // clears the failure display's dwell time
-
-    expect(saveButtons()).toHaveLength(1);
+    // The failure face reverts to a button after overlay.ts's ERROR_MS (2500). The face swap is
+    // observable, so wait for it instead of sleeping past the dwell: the timeout is the bound a
+    // slow runner is allowed, not the price every run pays.
+    await vi.waitFor(() => expect(saveButtons()).toHaveLength(1), { timeout: 8000 });
     saveReply = { ok: true, metaOk: true };
     hoverAway();
   });

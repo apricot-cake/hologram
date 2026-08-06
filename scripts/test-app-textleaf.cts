@@ -23,6 +23,7 @@ const { electronPath: resolveElectron } = require('./lib-electron-path.cts');
 
 const electronPath = resolveElectron();
 const { seedLibrary } = require('./lib-seed-library.cts');
+const { evalSource } = require('./lib-wait.cts');
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-tl-'));
 const configDir = path.join(tmp, 'Hologram');
@@ -55,48 +56,64 @@ for (let i = 0; i < texts.length; i++) {
 }
 seedLibrary(configDir, records);
 
-const evalJs = `(async () => {
-  const wait = (ms) => new Promise(r => setTimeout(r, ms));
+const evalJs = evalSource(async ({ waitFor }) => {
   const cards = () => document.querySelectorAll('[data-slot="post-grid"] [data-slot="post-card"]').length;
   // Filter chips live in the FilterChips component ([data-slot=filter-chips]); each chip
   // is a direct span child. Only text terms are active in this test, so counting all
   // chips counts the text chips.
   const chipRow = () => document.querySelector('[data-slot="filter-chips"]');
-  const textChips = () => (chipRow() ? chipRow().querySelectorAll(':scope > span').length : 0);
-  const waitFor = async (fn, ms = 4000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (fn()) return true; await wait(40); } return false; };
-  await waitFor(() => cards() >= 3);
+  const chipText = () => {
+    const row = chipRow();
+    return row ? row.textContent || '' : '';
+  };
+  const textChips = () => {
+    const row = chipRow();
+    return row ? row.querySelectorAll(':scope > span').length : 0;
+  };
+  await waitFor('the grid to show all 3 seeded posts', () => cards() >= 3);
   // The searchbox component's Autocomplete input (no #searchBox id since P2④; the ja
   // placeholder is the stable accessible handle).
-  const sb = document.querySelector('input[placeholder="テキスト・ユーザー名で検索"]');
+  const sb = document.querySelector<HTMLInputElement>('input[placeholder="テキスト・ユーザー名で検索"]');
+  // Named rather than optional-chained: every step below drives this input, so its
+  // absence has to stop the run and say so instead of letting the assertions report
+  // an empty chip row.
+  if (!sb) throw new Error('the search box input is missing from the filter bar');
   // React controlled input: write via the prototype setter + 'input'
+  const nativeSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+  if (!nativeSetter) throw new Error('HTMLInputElement.prototype has no value setter to drive the controlled search box');
   const setVal = (v) => {
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(sb, v);
+    nativeSetter.call(sb, v);
     sb.dispatchEvent(new Event('input', { bubbles: true }));
   };
-  const r = {};
+  const r: Record<string, any> = {};
+  // Typing is debounced 150ms before it reaches the leaf (search-box-builder), so
+  // every step below waits for the term to LAND — never for the count it is about
+  // to assert, which the pre-click state would already satisfy.
   // A: typing「ねこ」→ one text chip + the smart matcher hits the katakana body text → 1
   setVal('ねこ');
-  await wait(240);
-  r.chipTyping = textChips();       // 1 (the editing leaf is already a chip)
-  r.cardsKana = cards();            // 1 (single smart search: hiragana <-> katakana normalization)
+  await waitFor('the typed term to show as a chip and narrow the grid to its one match', () => chipText().includes('ねこ') && cards() === 1);
+  r.chipTyping = textChips(); // 1 (the editing leaf is already a chip)
+  r.cardsKana = cards(); // 1 (single smart search: hiragana <-> katakana normalization)
   // B: Enter confirms — box clears, the term chip stays
   sb.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
-  await wait(140);
-  r.boxAfterEnter = sb.value;       // ''
-  r.chipAfterEnter = textChips();   // 1
+  await waitFor('the search box to empty when Enter confirms the term', () => sb.value === '');
+  r.boxAfterEnter = sb.value; // ''
+  r.chipAfterEnter = textChips(); // 1
   // C: a second term → a second text chip (both must hold — it's AND — so 0 cards)
   setVal('いぬ');
-  await wait(240);
-  r.chips2 = textChips();           // 2
-  r.cardsAnd = cards();             // 0 (no post matches ねこ AND いぬ)
+  await waitFor('the second term to join the chip row and leave the grid empty', () => chipText().includes('いぬ') && cards() === 0);
+  r.chips2 = textChips(); // 2
+  r.cardsAnd = cards(); // 0 (no post matches ねこ AND いぬ)
   // D: the second chip's ✕ removes just that term → back to 1 chip / 1 card
-  const xBtns = chipRow().querySelectorAll(':scope > span > button[aria-label]');
+  const row = chipRow();
+  if (!row) throw new Error('the filter chip row is gone before the ✕ that should remove the second term');
+  const xBtns = row.querySelectorAll<HTMLElement>(':scope > span > button[aria-label]');
   xBtns[xBtns.length - 1].click();
-  await wait(240);
-  r.chipsAfterX = textChips();      // 1
-  r.cardsAfterX = cards();          // 1 (back to just ねこ)
+  await waitFor('the second term to leave the chip row and its match to come back', () => !chipText().includes('いぬ') && cards() === 1);
+  r.chipsAfterX = textChips(); // 1
+  r.cardsAfterX = cards(); // 1 (back to just ねこ)
   return r;
-})()`;
+});
 
 const env = Object.assign({}, process.env, { APPDATA: tmp, HOLOGRAM_CONFIG_DIR: path.join(tmp, 'Hologram'), HOLOGRAM_SMOKE: '1', HOLOGRAM_SMOKE_EVAL: evalJs });
 const child = spawn(electronPath, ['.'], { cwd: appDir, env, stdio: ['inherit', 'pipe', 'inherit'] });

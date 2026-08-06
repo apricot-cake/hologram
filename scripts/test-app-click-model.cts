@@ -32,6 +32,7 @@ const { readEvalResult } = require('./lib-eval-result.cts');
 
 const electronPath = resolveElectron();
 const { seedLibrary } = require('./lib-seed-library.cts');
+const { evalSource } = require('./lib-wait.cts');
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-clickmodel-'));
 const configDir = path.join(tmp, 'Hologram');
@@ -64,38 +65,56 @@ ids.forEach((id, i) => {
 });
 seedLibrary(configDir, records);
 
-const evalJs = `(async () => {
-  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-  const waitFor = async (fn, ms = 5000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (fn()) return true; await sleep(40); } return false; };
-  const byId = (id) => document.getElementById(id);
-  const postCards = () => [...document.querySelectorAll('[data-slot="post-grid"] [data-slot="post-card"]')];
+const evalJs = evalSource(async ({ waitFor, waitStable, neverHappens }) => {
+  const postCards = () => [...document.querySelectorAll<HTMLElement>('[data-slot="post-grid"] [data-slot="post-card"]')];
   // A card is addressed the way a person would address it: by what it says. The cells
   // carry no key/index attribute any more (#618) — the seeded posts read 本文0/1/2.
-  const cardOf = (n) => postCards().find(c => (c.textContent || '').includes('本文' + n));
-  const nameOf = (c) => ((c.textContent || '').match(/本文(\\d)/) || [])[0] || '?';
-  const selectedCards = () => postCards().filter(c => c.hasAttribute('data-selected'));
+  const cardOf = (n) => postCards().find((c) => (c.textContent || '').includes('本文' + n));
+  // Named + thrown rather than optional-chained wherever a card IS the step: a missing
+  // card has to stop the run and say so, instead of skipping the gesture and leaving a
+  // later assertion to report something unrelated.
+  const cardMust = (n) => {
+    const c = cardOf(n);
+    if (!c) throw new Error('the card 本文' + n + ' is missing from the grid');
+    return c;
+  };
+  const nameOf = (c) => ((c.textContent || '').match(/本文(\d)/) || [])[0] || '?';
+  const selectedCards = () => postCards().filter((c) => c.hasAttribute('data-selected'));
   const selectedKeys = () => selectedCards().map(nameOf).sort();
   const selectedCard = () => selectedCards()[0] || null;
-  const selectedIndex = () => { const c = selectedCard(); return c ? postCards().indexOf(c) : -1; };
+  const selectedIndex = () => {
+    const c = selectedCard();
+    return c ? postCards().indexOf(c) : -1;
+  };
   const arrow = (key) => document.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }));
-  const click = (el, mods) => el && el.dispatchEvent(new MouseEvent('click', Object.assign({ bubbles: true }, mods)));
+  const click = (el, mods?) => el && el.dispatchEvent(new MouseEvent('click', Object.assign({ bubbles: true }, mods)));
   const dblclick = (el) => el && el.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
   // The panel has no id of its own (P2⑦) — data-slot is the hook, same as the
   // parts inside it.
-  const insp = () => document.querySelector('[data-slot="inspector"]');
-  const inspVisible = () => { const el = insp(); return !!el && !el.hidden; };
+  const insp = () => document.querySelector<HTMLElement>('[data-slot="inspector"]');
+  const inspVisible = () => {
+    const el = insp();
+    return !!el && !el.hidden;
+  };
+  const inspMust = () => {
+    const el = insp();
+    if (!el) throw new Error('the inspector panel is missing from the DOM');
+    return el;
+  };
   // The peek overlay is conditionally rendered (P2⑦). Since #62 it is a shadcn Dialog, so
   // the scrim outlives the close by one fade — [data-open] is the open state, not presence.
   const peekOpen = () => !!document.querySelector('[data-slot="lightbox"][data-open]');
-  const errors = [];
+  const errors: string[] = [];
   window.addEventListener('error', (e) => errors.push(String((e && e.message) || e)));
-  const out = {};
+  const out: Record<string, any> = {};
 
-  await waitFor(() => postCards().length >= 3);
+  await waitFor('the grid to show all 3 seeded posts', () => postCards().length >= 3);
   // The layout these cases were written against, reported so a failure says WHICH layout it
   // failed in (#975): the arrow/Home/End assertions read DOM indices, which only line up
   // while the whole seeded set is inside the virtual window.
-  out.viewport = { w: innerWidth, h: innerHeight, cards: postCards().length, grid: Math.round(document.querySelector('[data-slot="post-grid"]').getBoundingClientRect().width) };
+  const grid = document.querySelector('[data-slot="post-grid"]');
+  if (!grid) throw new Error('the post grid is missing from the DOM');
+  out.viewport = { w: innerWidth, h: innerHeight, cards: postCards().length, grid: Math.round(grid.getBoundingClientRect().width) };
 
   // A. post cards have no ℹ / ○ hover parts (they were retired in #143)
   // Nothing appears on hover at all now (confirmed as Case A): no ℹ, no 🏷, no ○ ring, no highlight.
@@ -107,54 +126,72 @@ const evalJs = `(async () => {
 
   // B. plain click = single-select + inspector (post kind, no poster head)
   click(cardOf(0));
-  out.inspOpenedB = await waitFor(inspVisible);
-  out.inspIsPost = inspVisible() && !!insp().querySelector('[data-slot="inspector-post"]');
-  await sleep(60);
+  out.inspOpenedB = await waitFor('the inspector to open on the clicked post card', inspVisible);
+  const inspB = insp();
+  out.inspIsPost = !!inspB && !inspB.hidden && !!inspB.querySelector('[data-slot="inspector-post"]');
+  // Waiting on "the clicked card is selected" and then reading the WHOLE selection keeps
+  // the assertion live: a click that also left another card selected still fails.
+  await waitFor('the clicked card to show as selected', () => {
+    const c = cardOf(0);
+    return !!c && c.hasAttribute('data-selected');
+  });
   out.selAfterB = selectedKeys().join(',');
 
   // C. inspector preview thumbnail → quick-view lightbox (peek); Esc closes it
-  const thumb = insp().querySelector('[data-slot="inspector-thumb"]');
+  const thumb = inspMust().querySelector('[data-slot="inspector-thumb"]');
   out.thumbPeekable = !!(thumb && thumb.getAttribute('data-peek') === 'true');
   click(thumb);
-  out.lightboxOpened = await waitFor(() => peekOpen());
+  out.lightboxOpened = await waitFor('the quick-view lightbox to open from the inspector thumbnail', () => peekOpen());
   document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-  out.lightboxClosed = await waitFor(() => !peekOpen());
+  out.lightboxClosed = await waitFor('the quick-view lightbox to close on Esc', () => !peekOpen());
 
   // D. Ctrl-click adds a second card (plain click above kept c1 selected)
   click(cardOf(1), { ctrlKey: true });
-  await sleep(60);
+  await waitFor('the Ctrl-clicked card to join the selection', () => {
+    const c = cardOf(1);
+    return !!c && c.hasAttribute('data-selected');
+  });
   out.selAfterD = selectedKeys().join(',');
 
   // D2. Space peeks the selected card — but only with a SINGLE selection (two are
   // selected now, so Space must NOT open the lightbox), then collapse to one and retry.
   document.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', code: 'Space', bubbles: true }));
-  await sleep(80);
-  out.spaceIgnoredForMulti = !(peekOpen());
+  // "Must not open" has no post-condition to wait for, so this window is spent on
+  // purpose: it gives a wrong lightbox time to appear (#986).
+  out.spaceIgnoredForMulti = await neverHappens('the lightbox to open on Space while two cards are selected', () => peekOpen(), 300);
   click(cardOf(0)); // collapse to a single selection
-  await sleep(60);
+  await waitFor('the selection to collapse back to a single card', () => selectedCards().length === 1);
   document.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', code: 'Space', bubbles: true }));
-  out.spacePeeked = await waitFor(() => peekOpen());
+  out.spacePeeked = await waitFor('the lightbox to peek the one selected card on Space', () => peekOpen());
   document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-  await waitFor(() => !peekOpen());
+  await waitFor('the peeked lightbox to close again on Esc', () => !peekOpen());
 
   // D3. Arrow keys move the single selection through the grid (P2⑥), and the
   // inspector follows — the pair that makes continuous tagging a composition. Starts from
   // the MIDDLE card so both directions have somewhere to go whatever the sort is.
   click(cardOf(1));
-  await sleep(60);
-  const startIdx = postCards().indexOf(cardOf(1));
+  await waitFor('the middle card to become the single selection', () => {
+    const c = cardOf(1);
+    return selectedCards().length === 1 && !!c && c.hasAttribute('data-selected');
+  });
+  const startIdx = postCards().indexOf(cardMust(1));
   arrow('ArrowRight');
-  await sleep(80);
+  // Waits for the selection to LEAVE where it was, then measures the step separately —
+  // waiting for "one card to the right" would be the assertion itself.
+  await waitFor('the selection to move off the middle card after →', () => selectedIndex() !== startIdx);
   out.arrowRightSel = selectedKeys().join(',');
   out.arrowRightStep = selectedIndex() - startIdx;
-  out.arrowFollowsInspector = !!selectedCard() && selectedCard().hasAttribute('data-inspected');
+  const afterArrow = selectedCard();
+  out.arrowFollowsInspector = !!afterArrow && afterArrow.hasAttribute('data-inspected');
   arrow('ArrowLeft');
   arrow('ArrowLeft');
-  await sleep(80);
+  // Two keys in a row have an intermediate position, so "moved" is not enough here:
+  // wait for the index to stop changing instead of for any particular value.
+  await waitStable('the selection to settle after ← ←', () => selectedIndex());
   out.arrowLeftStep = selectedIndex() - startIdx;
   // Clamps at the first card instead of wrapping to the last.
   arrow('ArrowLeft');
-  await sleep(80);
+  await waitStable('the selection to settle after ← at the first card', () => selectedIndex());
   out.arrowClampedAtStart = selectedIndex() === 0;
 
   // D3b. Home/End (#672) jump straight to the two ends arrow movement never reached,
@@ -163,41 +200,47 @@ const evalJs = `(async () => {
   // (already there — nothing should churn or throw).
   const lastIdx = postCards().length - 1;
   arrow('End');
-  await sleep(80);
+  await waitFor('the selection to jump away from the first card on End', () => selectedIndex() !== 0);
   out.endSelIndex = selectedIndex();
-  out.endFollowsInspector = !!selectedCard() && selectedCard().hasAttribute('data-inspected');
+  const afterEnd = selectedCard();
+  out.endFollowsInspector = !!afterEnd && afterEnd.hasAttribute('data-inspected');
   arrow('End');
-  await sleep(80);
+  // A no-op has nothing to wait FOR — wait for the index to stop moving and then read it.
+  await waitStable('the selection to stay put on a second End', () => selectedIndex());
   out.endIsIdempotent = selectedIndex() === lastIdx;
   arrow('Home');
-  await sleep(80);
+  await waitFor('the selection to jump away from the last card on Home', () => selectedIndex() !== lastIdx);
   out.homeSelIndex = selectedIndex();
 
   // D3c. Home/End must NOT hijack a text field's own caret-to-line-start/end motion
   // (#672 accept criteria) — the search box input is real (SearchBox.tsx), so focus it
   // and confirm the grid selection stays put on Home *targeted at the input*, exactly
   // the guard arrow keys already get.
-  const searchInput = document.querySelector('input[aria-label="テキスト・ユーザー名で検索"]');
+  const searchInput = document.querySelector<HTMLInputElement>('input[aria-label="テキスト・ユーザー名で検索"]');
   out.searchInputFound = !!searchInput;
   if (searchInput) {
     searchInput.focus();
     const beforeGuardIdx = selectedIndex();
     searchInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Home', bubbles: true }));
-    await sleep(60);
-    out.homeIgnoredInSearchBox = selectedIndex() === beforeGuardIdx;
+    // Both guards prove a NON-event, so each window is spent in full on purpose (#986).
+    out.homeIgnoredInSearchBox = await neverHappens('the grid selection to move on Home inside the search box', () => selectedIndex() !== beforeGuardIdx, 300);
     searchInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true }));
-    await sleep(60);
-    out.endIgnoredInSearchBox = selectedIndex() === beforeGuardIdx;
+    out.endIgnoredInSearchBox = await neverHappens('the grid selection to move on End inside the search box', () => selectedIndex() !== beforeGuardIdx, 300);
     searchInput.blur();
   }
 
   // The 投稿者 nav's active state tracks browseMode (grids are CSS-hidden, not
   // unmounted, so poster cards stay in the DOM — the active nav is the mode marker).
-  const navActive = () => { const b = [...document.querySelectorAll('button')].find(x => (x.textContent || '').trim() === '投稿者'); return !!(b && b.hasAttribute('data-active') && b.getAttribute('data-active') !== 'false'); };
+  const navActive = () => {
+    const b = [...document.querySelectorAll('button')].find((x) => (x.textContent || '').trim() === '投稿者');
+    return !!(b && b.hasAttribute('data-active') && b.getAttribute('data-active') !== 'false');
+  };
 
   // E. switch to the posters view → poster cards carry no ℹ button
-  [...document.querySelectorAll('button')].find(b => (b.textContent || '').trim() === '投稿者')?.click();
-  out.posterCardsShown = await waitFor(() => navActive() && document.querySelectorAll('[data-slot="poster-grid"] [data-slot="poster-card"]').length >= 1);
+  const posterNav = [...document.querySelectorAll('button')].find((b) => (b.textContent || '').trim() === '投稿者');
+  if (!posterNav) throw new Error('the 投稿者 nav button is missing from the sidebar');
+  posterNav.click();
+  out.posterCardsShown = await waitFor('the posters view to become active and show its poster cards', () => navActive() && document.querySelectorAll('[data-slot="poster-grid"] [data-slot="poster-card"]').length >= 1);
   // Poster cards have no hover parts either = counted the same way as A.
   // This used to count [data-slot="poster-info"], but after tag-pop was removed
   // (1512e839) that ℹ button is gone everywhere in the app, so the count would always be
@@ -209,21 +252,27 @@ const evalJs = `(async () => {
   out.posterCardParts = document.querySelectorAll('[data-slot="poster-grid"] [data-slot="poster-card"] *').length; // same control as A
 
   // F. plain click a poster → poster inspector (has the poster head block)
-  document.querySelector('[data-slot="poster-grid"] [data-slot="poster-card"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-  out.inspOpenedF = await waitFor(inspVisible);
-  out.inspIsPoster = inspVisible() && !!insp().querySelector('[data-slot="inspector-poster"]');
+  const posterCardMust = () => {
+    const c = document.querySelector<HTMLElement>('[data-slot="poster-grid"] [data-slot="poster-card"]');
+    if (!c) throw new Error('the posters view has no poster card to click');
+    return c;
+  };
+  posterCardMust().dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  out.inspOpenedF = await waitFor('the inspector to open on the clicked poster card', inspVisible);
+  const inspF = insp();
+  out.inspIsPoster = !!inspF && !inspF.hidden && !!inspF.querySelector('[data-slot="inspector-poster"]');
 
   // G. double-click a poster → drill into their posts (browseMode leaves posters)
-  dblclick(document.querySelector('[data-slot="poster-grid"] [data-slot="poster-card"]'));
-  out.drilledIn = await waitFor(() => !navActive());
+  dblclick(posterCardMust());
+  out.drilledIn = await waitFor('the double-clicked poster to drill into their posts', () => !navActive());
 
   // H. double-click a post → the image view (in-tab history destination)
   dblclick(postCards()[0]);
-  out.imageViewActive = await waitFor(() => !!document.querySelector('[data-slot="image-tab-view"]'));
+  out.imageViewActive = await waitFor('the image view to open on the double-clicked post', () => !!document.querySelector('[data-slot="image-tab-view"]'));
 
   out.errors = errors;
   return JSON.stringify(out);
-})()`;
+});
 
 const env = Object.assign({}, process.env, {
   APPDATA: tmp,

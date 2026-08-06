@@ -26,6 +26,7 @@ const { electronPath: resolveElectron } = require('./lib-electron-path.cts');
 
 const electronPath = resolveElectron();
 const { seedLibrary } = require('./lib-seed-library.cts');
+const { evalSource } = require('./lib-wait.cts');
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-rb-'));
 const configDir = path.join(tmp, 'Hologram');
@@ -94,16 +95,29 @@ function launch(evalJs): Promise<Record<string, any>> {
   // carries it to the destination (so the listing's "also at the destination"
   // has something true to report). Only AFTER that does the library gain the tag
   // the rollback is supposed to undo.
-  const evalA = `(async () => {
-    const wait = (ms) => new Promise(r => setTimeout(r, ms));
-    await wait(400);
-    await window.hologram.setBackup({ dir: ${JSON.stringify(outDir)} });
-    const r1 = await window.hologram.runBackup();
-    await window.hologram.updateTags(${JSON.stringify(seeded[0].image)}, [${JSON.stringify(TAG_AFTER)}]);
-    const posts = await window.hologram.listPosts();
-    const tagged = (posts.posts.find(p => p.captureId === ${JSON.stringify(seeded[0].captureId)}) || {}).tags || [];
-    return { backedUp: !!(r1 && r1.ok), taggedBefore: tagged.includes(${JSON.stringify(TAG_AFTER)}) };
-  })()`;
+  const evalA = evalSource(
+    async ({ sleep }, args) => {
+      const hologram = (window as any).hologram;
+      // Kept as a delay on purpose, and it is the one place in this repo where
+      // that is not a smell (#989): what has to be true before a DESTRUCTIVE
+      // database replace is that startup's own database work has finished, and
+      // nothing observable says so. Waiting on a post-condition instead makes it
+      // WORSE — asking for listPosts() re-primes the database immediately before
+      // the rollback closes and renames it, and the rename then loses to the
+      // reopen (EPERM on Windows). Measured: 20/20 green with this delay against
+      // 3 reds in 21 with the post-condition. Remove this once #989 stops the
+      // reopen; until then a shorter wait is a worse test, not a faster one.
+      // biome-ignore lint/plugin: no observable post-condition exists for "startup's database work has settled" — see #989
+      await sleep(400);
+      await hologram.setBackup({ dir: args.outDir });
+      const r1 = await hologram.runBackup();
+      await hologram.updateTags(args.firstImage, [args.tagAfter]);
+      const posts = await hologram.listPosts();
+      const tagged = (posts.posts.find((p) => p.captureId === args.firstCaptureId) || {}).tags || [];
+      return { backedUp: !!(r1 && r1.ok), taggedBefore: tagged.includes(args.tagAfter) };
+    },
+    { outDir, firstImage: seeded[0].image, firstCaptureId: seeded[0].captureId, tagAfter: TAG_AFTER },
+  );
   const rA = await launch(evalA);
 
   const generation = generationsOf(saveFolder)[0] || null;
@@ -117,20 +131,26 @@ function launch(evalJs): Promise<Record<string, any>> {
   seedLibrary(configDir, [late]);
 
   // launch B: list, roll back, and read the library out again afterwards.
-  const evalB = `(async () => {
-    const wait = (ms) => new Promise(r => setTimeout(r, ms));
-    await wait(400);
-    const list = await window.hologram.listDbGenerations();
-    const listed = !!(list && list.length === 1 && list[0].name === ${JSON.stringify(generation)} && list[0].atDestination === true && list[0].size > 0);
+  const evalB = evalSource(
+    async ({ sleep }, args) => {
+      const hologram = (window as any).hologram;
+      // Same reason as launch A, and it matters more here: the rollback is on the
+      // next line. See #989.
+      // biome-ignore lint/plugin: no observable post-condition exists for "startup's database work has settled" — see #989
+      await sleep(400);
+      const list = await hologram.listDbGenerations();
+      const listed = !!(list && list.length === 1 && list[0].name === args.generation && list[0].atDestination === true && list[0].size > 0);
 
-    const res = await window.hologram.rollbackDbGeneration(${JSON.stringify(generation)});
-    const rolledBack = !!(res && res.ok && res.reregistered === 1);
+      const res = await hologram.rollbackDbGeneration(args.generation);
+      const rolledBack = !!(res && res.ok && res.reregistered === 1);
 
-    const posts = await window.hologram.listPosts();
-    const ids = posts.posts.map(p => p.captureId).sort();
-    const tagged = (posts.posts.find(p => p.captureId === ${JSON.stringify(seeded[0].captureId)}) || {}).tags || [];
-    return { listed, rolledBack, ids, tagGone: !tagged.includes(${JSON.stringify(TAG_AFTER)}) };
-  })()`;
+      const posts = await hologram.listPosts();
+      const ids = posts.posts.map((p) => p.captureId).sort();
+      const tagged = (posts.posts.find((p) => p.captureId === args.firstCaptureId) || {}).tags || [];
+      return { listed, rolledBack, ids, tagGone: !tagged.includes(args.tagAfter) };
+    },
+    { generation, firstCaptureId: seeded[0].captureId, tagAfter: TAG_AFTER },
+  );
   const rB = await launch(evalB);
 
   const expectedIds = [...seeded.map((p) => p.captureId), late.captureId].sort();

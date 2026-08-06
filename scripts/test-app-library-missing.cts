@@ -16,6 +16,7 @@ const appDir = path.join(__dirname, '..', 'app');
 const { electronPath: resolveElectron } = require('./lib-electron-path.cts');
 
 const electronPath = resolveElectron();
+const { evalSource } = require('./lib-wait.cts');
 
 function launch(configDir: string, evalJs: string): Promise<Record<string, any>> {
   return new Promise((resolve) => {
@@ -60,12 +61,15 @@ function check(name: string, ok: boolean, detail: string) {
     fs.mkdirSync(configDir, { recursive: true });
     fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolder: missingFolder }));
 
-    const evalJs = `(async () => {
-      const status = await window.hologram.getLibraryStatus();
-      const clear = await window.hologram.clearAll();
-      const move = await window.hologram.moveSaveFolder(${JSON.stringify(path.join(tmp, 'elsewhere'))});
-      return { status, clear, move };
-    })()`;
+    const evalJs = evalSource(
+      async (_waits, args) => {
+        const status = await (window as any).hologram.getLibraryStatus();
+        const clear = await (window as any).hologram.clearAll();
+        const move = await (window as any).hologram.moveSaveFolder(args.elsewhere);
+        return { status, clear, move };
+      },
+      { elsewhere: path.join(tmp, 'elsewhere') },
+    );
     const r = await launch(configDir, evalJs);
 
     check('A1: startup detects the missing explicit save folder', !!(r.status && r.status.missing === true && r.status.path === missingFolder), JSON.stringify(r.status));
@@ -87,13 +91,16 @@ function check(name: string, ok: boolean, detail: string) {
     fs.writeFileSync(path.join(movedLibrary, 'abcd1234.jpg'), 'not a real jpeg, existence is what matters');
     fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolder: missingFolder }));
 
-    const evalJs = `(async () => {
-      const before = await window.hologram.getLibraryStatus();
-      const apply = await window.hologram.applyRepoint(${JSON.stringify(movedLibrary)});
-      const after = await window.hologram.getLibraryStatus();
-      const cfg = await window.hologram.getConfig();
-      return { before, apply, after, cfg };
-    })()`;
+    const evalJs = evalSource(
+      async (_waits, args) => {
+        const before = await (window as any).hologram.getLibraryStatus();
+        const apply = await (window as any).hologram.applyRepoint(args.movedLibrary);
+        const after = await (window as any).hologram.getLibraryStatus();
+        const cfg = await (window as any).hologram.getConfig();
+        return { before, apply, after, cfg };
+      },
+      { movedLibrary },
+    );
     const r = await launch(configDir, evalJs);
 
     check('B1: apply-repoint succeeds against an existing (non-empty) folder', !!(r.apply && r.apply.ok === true && r.apply.saveFolder === movedLibrary), JSON.stringify(r.apply));
@@ -115,7 +122,9 @@ function check(name: string, ok: boolean, detail: string) {
     fs.mkdirSync(saveFolder, { recursive: true });
     fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolder, backup: { dir: missingBackupDir } }));
 
-    const evalJs = `(async () => { return await window.hologram.runBackup(); })()`;
+    const evalJs = evalSource(async () => {
+      return await (window as any).hologram.runBackup();
+    });
     const r = await launch(configDir, evalJs);
 
     check('C1: runBackup refuses with error="dest-missing"', !!(r && r.ok === false && r.error === 'dest-missing'), JSON.stringify(r));
@@ -134,7 +143,9 @@ function check(name: string, ok: boolean, detail: string) {
     fs.mkdirSync(backupDir, { recursive: true });
     fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolder: missingFolder, backup: { dir: backupDir } }));
 
-    const evalJs = `(async () => { return await window.hologram.runBackup(); })()`;
+    const evalJs = evalSource(async () => {
+      return await (window as any).hologram.runBackup();
+    });
     const r = await launch(configDir, evalJs);
 
     check('D1: runBackup refuses with error="src-missing" rather than reporting an empty-but-ok backup', !!(r && r.ok === false && r.error === 'src-missing'), JSON.stringify(r));

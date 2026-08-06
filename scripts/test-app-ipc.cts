@@ -23,6 +23,7 @@ const { electronPath: resolveElectron } = require('./lib-electron-path.cts');
 const electronPath = resolveElectron();
 const { openDatabase } = require(path.join(appDir, 'src', 'main', 'lib-db.ts'));
 const { seedLibrary } = require('./lib-seed-library.cts');
+const { evalSource } = require('./lib-wait.cts');
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-ipc-'));
 const configDir = path.join(tmp, 'Hologram');
@@ -57,16 +58,17 @@ fs.writeFileSync(path.join(saveFolder, 'dummy-0004-media-0.mp4'), Buffer.from('f
 fs.writeFileSync(path.join(saveFolder, 'dummy-0004-poster.jpg'), jpeg);
 seedLibrary(configDir, records);
 
-const evalJs = `(async () => {
-  await window.hologram.updateTags('dummy-0001.jpg', ['tagX']);
-  await window.hologram.deletePost('dummy-0002.jpg');
-  await window.hologram.updateTags('dummy-0003.jpg', ['tagY'], { userKind: 'plain', tagReviewed: true });
-  await window.hologram.deletePost('dummy-0003.jpg');
-  await window.hologram.restorePost('dummy-0003.jpg');
-  await window.hologram.deletePost('dummy-0004.jpg');
-  const { posts } = await window.hologram.listPosts();
+const evalJs = evalSource(async () => {
+  const h = (window as any).hologram;
+  await h.updateTags('dummy-0001.jpg', ['tagX']);
+  await h.deletePost('dummy-0002.jpg');
+  await h.updateTags('dummy-0003.jpg', ['tagY'], { userKind: 'plain', tagReviewed: true });
+  await h.deletePost('dummy-0003.jpg');
+  await h.restorePost('dummy-0003.jpg');
+  await h.deletePost('dummy-0004.jpg');
+  const { posts } = await h.listPosts();
   return posts.length;
-})()`;
+});
 
 const env = Object.assign({}, process.env, {
   APPDATA: tmp,

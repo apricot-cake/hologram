@@ -56,7 +56,7 @@ const PORT_SPAN = 40;
 
 const NO_THROTTLE = ['--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows', '--disable-features=CalculateNativeWinOcclusion'];
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const { sleep, waitFor } = require('./lib-wait.cts');
 
 // ---- options ---------------------------------------------------------------
 
@@ -428,14 +428,10 @@ async function main() {
   const child = launch(opts, port, env);
   child.unref();
 
-  let up = false;
-  for (let i = 0; i < 200; i++) {
-    if (await cdpReady(port)) {
-      up = true;
-      break;
-    }
-    await sleep(300);
-  }
+  const up = await waitFor(`the ${opts.mode} arm to answer CDP on :${port}`, () => cdpReady(port), { timeoutMs: 60_000, pollMs: 300 }).then(
+    () => true,
+    () => false,
+  );
   if (!up) {
     console.error('FAIL app did not come up (CDP never answered)');
     try {
@@ -451,8 +447,12 @@ async function main() {
   await cdp.send('Page.enable');
   await cdp.send('Runtime.enable');
 
-  // Let first paint, the initial query and the thumbnail decodes settle before
-  // the baseline - otherwise reload #1 absorbs all of startup and looks like a leak.
+  // Fixed on purpose: this is a MEASUREMENT settle, not a test wait. Let first
+  // paint, the initial query and the thumbnail decodes finish before the
+  // baseline - otherwise reload #1 absorbs all of startup and looks like a leak.
+  // Ending it the moment some condition holds would move the baseline from run
+  // to run, which is the one thing this probe cannot have.
+  // biome-ignore lint/plugin: measurement settle — every run must start the same distance in
   await sleep(6000);
 
   const samples: Sample[] = [];
@@ -464,21 +464,21 @@ async function main() {
       if (opts.mode === 'hmr') {
         const before = cdp.hot.count;
         touchHmrTarget(original, i);
-        let applied = false;
-        for (let w = 0; w < 60; w++) {
-          if (cdp.hot.count > before) {
-            applied = true;
-            break;
-          }
-          await sleep(250);
-        }
+        const applied = await waitFor(`step ${i}'s hot update to be applied`, () => cdp.hot.count > before, { timeoutMs: 15_000, pollMs: 250 }).then(
+          () => true,
+          () => false,
+        );
         if (!applied) hotMissed++;
       } else {
         const loaded = cdp.once('Page.loadEventFired', 20000);
         await cdp.send('Page.reload', { ignoreCache: false });
         await loaded;
       }
-      await sleep(2500); // query + thumbnail decode after load / re-render after a hot update
+      // Fixed for the same reason as the baseline settle above: every sample has
+      // to be taken the same distance past its reload, or the series compares
+      // nothing. (query + thumbnail decode after load / re-render after a hot update)
+      // biome-ignore lint/plugin: measurement settle — every sample must sit the same distance past its reload
+      await sleep(2500);
       samples.push(await measure(cdp, i, root));
     }
   } finally {

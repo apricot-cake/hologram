@@ -12,16 +12,31 @@ const appDir = path.join(__dirname, '..', 'app');
 const { electronPath: resolveElectron } = require('./lib-electron-path.cts');
 
 const electronPath = resolveElectron();
+const { evalSource } = require('./lib-wait.cts');
+
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-logging-'));
 const configDir = path.join(tmp, 'Hologram');
 const logPath = path.join(configDir, 'logs', 'main.log');
+
+// The throw is scheduled rather than raised inline: what is under test is that an
+// UNCAUGHT renderer error reaches the log, and an inline throw would be caught by
+// the eval's own promise chain instead.
+const evalJs = evalSource(
+  () =>
+    new Promise((resolve) => {
+      setTimeout(() => {
+        throw new Error('renderer-log-smoke');
+      }, 50);
+      setTimeout(() => resolve('scheduled'), 200);
+    }),
+);
 
 const env = {
   ...process.env,
   APPDATA: tmp,
   HOLOGRAM_CONFIG_DIR: configDir,
   HOLOGRAM_SMOKE: '1',
-  HOLOGRAM_SMOKE_EVAL: "new Promise((resolve) => { setTimeout(() => { throw new Error('renderer-log-smoke') }, 50); setTimeout(() => resolve('scheduled'), 200) })",
+  HOLOGRAM_SMOKE_EVAL: evalJs,
 };
 
 const child = spawn(electronPath, ['.'], { cwd: appDir, env, stdio: 'pipe' });
