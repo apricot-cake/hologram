@@ -8,7 +8,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
 import { copyLibraryInto, relocateLibrary, sweepStragglers, verifyAndCleanup } from '../app/src/main/lib-migrate';
 
 function mkroot() {
@@ -293,7 +293,10 @@ describe('relocateLibrary（全体の統率）', () => {
     expect(res).toMatchObject({ ok: true, leftover: 1 });
     expect(events.find((p) => p.phase === 'done').leftover).toBe(1);
 
-    await new Promise((r) => setTimeout(r, 400));
+    // The scheduled sweep (sweepDelayMs: 50) announces itself: it emits 'straggler' only after
+    // sweepStragglers has resolved, by which point late.jpg has moved and the emptied src shell
+    // is gone — so this one event gates all three assertions below.
+    await vi.waitFor(() => expect(events.some((p) => p.phase === 'straggler')).toBe(true));
 
     expect(events.find((p) => p.phase === 'straggler').moved).toBe(1);
     expect(read(dest, 'late.jpg')).toBe('LATE');

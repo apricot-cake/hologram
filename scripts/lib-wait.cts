@@ -66,6 +66,22 @@ async function waitFor(label: string, fn: () => unknown, options: WaitOptions = 
   }
 }
 
+// The inverse assertion, for the Node half. Resolves when `fn` stayed falsy for the
+// whole window and throws naming `label` when it did not.
+//
+// This one is SUPPOSED to spend its full timeout — that is what makes it the honest
+// way to write "prove X does not happen", and why the lint rule does not ask it to
+// justify itself the way a bare `sleep` has to. Keep the window short.
+async function neverHappens(label: string, fn: () => unknown, timeoutMs: number, options: { pollMs?: number } = {}): Promise<void> {
+  const pollMs = options.pollMs ?? POLL_MS;
+  const until = Date.now() + timeoutMs;
+  for (;;) {
+    if (await fn()) throw new Error(`happened within ${timeoutMs}ms but should not have: ${label}`);
+    if (Date.now() >= until) return;
+    await sleep(pollMs);
+  }
+}
+
 // Source text for the renderer half. Interpolate it at the top of a harness eval:
 //
 //   const evalJs = `(async () => {
@@ -174,4 +190,4 @@ ${rendererWaits(options)}
 })()`;
 }
 
-module.exports = { sleep, waitFor, rendererWaits, evalSource, DEFAULT_TIMEOUT_MS, POLL_MS, RENDERER_BUDGET_MS };
+module.exports = { sleep, waitFor, neverHappens, rendererWaits, evalSource, DEFAULT_TIMEOUT_MS, POLL_MS, RENDERER_BUDGET_MS };

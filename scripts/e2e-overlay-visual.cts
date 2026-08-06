@@ -90,6 +90,17 @@ const HTML = `<!doctype html>
       diagnosticEntries = await readDiagnostics();
       return diagnosticEntries.some((entry: any) => entry?.phase === 'fail' && typeof entry?.error === 'string');
     }).catch(() => {});
+    // The corner's face is a SEPARATE element from the banner, updated down a
+    // separate path, so neither the banner appearing nor its animation finishing
+    // says anything about it (#982). Nothing here waited for it: the diagnostic-log
+    // wait above happened to cover the gap on a fast machine, and on a busy runner
+    // it did not — `main` went red on 286c87c reading `save` where `failed` was
+    // expected, and reported it as a broken LAYOUT because every other number in
+    // the same assertion was correct. Waiting on the face itself makes the timeout
+    // say what actually did not happen.
+    await page.waitForSelector('[data-hologram-overlay][data-hologram-face="failed"]', { timeout: 5000 }).catch(() => {
+      throw new Error('OVERLAY_FAILURE_FACE_FAIL: the corner never switched to the failed face after the save failed');
+    });
     const failureUi = await page.evaluate(() => {
       const banner = document.querySelector('hologram-extension-ui')?.shadowRoot?.querySelector('[data-hologram-save-banner]');
       // The corner's own element is the shadow HOST since #310; the disc that

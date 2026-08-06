@@ -3,7 +3,17 @@ import { describe, expect, it } from 'vitest';
 // The contract the harnesses depend on (#986). The renderer half cannot be
 // imported — it is source text meant for executeJavaScript — so it is exercised
 // the only way it runs: evaluated, then called.
-const { sleep, waitFor, rendererWaits, evalSource } = require('./lib-wait.cts');
+const { sleep, waitFor, neverHappens, rendererWaits, evalSource } = require('./lib-wait.cts');
+
+describe('neverHappens (Node side)', () => {
+  it('resolves when the condition never holds', async () => {
+    await expect(neverHappens('the lightbox to open', () => false, 30, { pollMs: 5 })).resolves.toBeUndefined();
+  });
+
+  it('names the condition when it does hold', async () => {
+    await expect(neverHappens('the lightbox to open', () => true, 30, { pollMs: 5 })).rejects.toThrow(/happened within 30ms but should not have: the lightbox to open/);
+  });
+});
 
 describe('waitFor (Node side)', () => {
   it('resolves as soon as the condition holds', async () => {
