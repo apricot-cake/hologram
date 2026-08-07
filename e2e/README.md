@@ -51,7 +51,7 @@ npm run test:e2e:update  # 正解画像を撮り直す
 
 ## サンドボックス
 
-1ケースにつき `mkdtemp` の設定ディレクトリ＋ライブラリを作り、終了時に消す。`HOLOGRAM_SANDBOX=1` でネイティブホスト登録もしないので、実ライブラリ（`~/.hologram`／`~/Hologram/library`）にも実 Chrome の登録にも触れない。
+1ケースにつき `mkdtemp` の設定ディレクトリ＋ライブラリを作り、終了時に消す。`HOLOGRAM_SANDBOX=1` でネイティブホスト登録もしないので、実 config dir（Windows は `%APPDATA%\Hologram`）／`~/Hologram/library` にも実 Chrome の登録にも触れない。
 
 ## いま赤いことが分かっているもの
 

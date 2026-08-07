@@ -2,7 +2,7 @@
 // opt-in gate, on-disk status, download orchestration and deletion built on
 // lib-model-fetch.ts. Every case uses small fake registry entries (real
 // SHA-256 of a few fixed bytes) and an explicit `root` tmp dir — never the
-// real registry's 23MB onnx file and never the real ~/.hologram/models.
+// real registry's 23MB onnx file and never the real config dir's models/.
 //
 // lib-model-manager.ts pulls in lib-ml-runtime.ts for aiFeaturesEnabled() /
 // modelsRoot(), which imports Electron's utilityProcess, electron-log, and
@@ -211,7 +211,7 @@ describe('推論経路がネットワークへ出ない', () => {
   });
 });
 
-describe('「削除」の後に ~/.hologram/models にファイルが残らない', () => {
+describe('「削除」の後に config dir の models/ にファイルが残らない', () => {
   test('モデルのディレクトリごと消え、空になった org ディレクトリも残らない', async () => {
     const entry = makeEntry('acme/nine', 'rev1');
     serveEntry(entry, [FILE_A, FILE_B]);

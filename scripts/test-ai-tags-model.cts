@@ -36,7 +36,7 @@ const MODEL_REPO = 'SmilingWolf/wd-vit-tagger-v3';
 const MODEL_REV = '7f6b584d0bd3f55c4531f14ba3d4761b2bccdc0f';
 const MODEL_FILES = ['model.onnx', 'selected_tags.csv'];
 const MODEL_SUBPATH = path.join('SmilingWolf', `wd-vit-tagger-v3@${MODEL_REV}`);
-// Outside the repo and outside ~/.hologram: 378MB should survive worktree churn
+// Outside the repo and outside the config dir: 378MB should survive worktree churn
 // and must never land in the real config dir.
 const MODEL_CACHE = path.join(os.tmpdir(), 'hologram-ai-tags-models', MODEL_SUBPATH);
 

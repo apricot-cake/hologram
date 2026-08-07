@@ -17,7 +17,7 @@
 
 ## 決定1: モデルは端末資産として設定ディレクトリに置き、取得だけを自前で持つ
 
-- **置き場は `~/.hologram/models/<org>/<name>@<rev>/`**（`lib-ml-runtime.ts` の `modelsRoot()`＝`configDir()/models`）。保存フォルダの外に置く＝バックアップ（#233）とエクスポート（#57）は保存フォルダしか歩かないので、モデルがそこへ紛れ込む経路が構造的に無い。**ADR 0025 が `hologram.db` をライブラリの中へ移した後も、モデルは外に残る**＝DB はそのライブラリの一部だがモデルは端末の資産で、ライブラリをコピーした時に付いてこない方が正しい。
+- **置き場は config dir の `models/<org>/<name>@<rev>/`**（`lib-ml-runtime.ts` の `modelsRoot()`＝`configDir()/models`）。保存フォルダの外に置く＝バックアップ（#233）とエクスポート（#57）は保存フォルダしか歩かないので、モデルがそこへ紛れ込む経路が構造的に無い。**ADR 0025 が `hologram.db` をライブラリの中へ移した後も、モデルは外に残る**＝DB はそのライブラリの一部だがモデルは端末の資産で、ライブラリをコピーした時に付いてこない方が正しい。
 - **`rev` は Hugging Face のコミットハッシュで固定する**。ブランチやタグは使わない＝同じアプリのビルドが日によって違うバイトを引かないため。
 - **推論・前処理・モデル配置の流儀は `@huggingface/transformers`（transformers.js）に寄せ、取得だけ自前に残す**（`lib-model-fetch.ts`）。理由は2つ。①**SHA-256 検証を差し込む場所がライブラリ側に無い**（取得がライブラリ内で完結する）②**取得経路を同意ゲートの内側へ1本化する**＝ライブラリに取らせると「推論を呼んだ瞬間に、モデルが無ければ黙って取りに行く」経路が残り、「AI 機能を有効にした時に限り接続する」という説明が破れる。推論側は `env.allowRemoteModels = false` を立て、通信を封じてある。
 - **コード内レジストリが真実源**（`lib-model-registry.ts`）＝`{ id, rev, files[{path, sha256, bytes}], licenseNote }`。THIRD-PARTY-NOTICES.md と設定「AI機能」ページの表示はここから出る（同期は `scripts/model-registry.test.ts` が検査）。ハッシュは採録時に実測して焼き込む＝取得元から都度もらうと、検証が「検出したいはずのズレと同じ値」を基準にしてしまう。
@@ -28,7 +28,7 @@
 
 ## 決定2: 派生データは別ファイルの SQLite に置き、真実源には1行も書かない
 
-- **`~/.hologram/derived.db`**（`hologram.db` とは別ファイル・better-sqlite3 ＋ Kysely＝既存スタックのまま）。解析出力を `posts` 系のテーブルへ混ぜない。
+- **config dir の `derived.db`**（`hologram.db` とは別ファイル・better-sqlite3 ＋ Kysely＝既存スタックのまま）。解析出力を `posts` 系のテーブルへ混ぜない。
 - **「再構築できる側」と「真実源」で復旧規則を変える**＝`derived.db` は `quick_check` が通らなければ**捨てて作り直す**（`openDerivedDatabase`）。`hologram.db` が同じ状態なら `DatabaseCorruptError` を投げて人の判断を仰ぐ。1つの DB に同居させると、この2つの規則を「このテーブルは真実源ではない」という約束事だけで分けることになる。
 - **完全撤去はファイルの削除**。消してもライブラリは1件も失われない。
 - **キーの約束は `captureId` ＋ `assetRef`（`image` / `video` / `file` / `media[seq]`）＋ `segment`**（PDF はページ番号 0..N-1、静止画は 0）。1レコードが複数の実体を持ちうることと、1実体が複数ページを持ちうることの両方に対応する。本基盤が出したのは全ジョブ種が共有する `derived_progress` 1本だけで、その主キーは `(captureId, assetRef, jobKind)`、セグメントは `indexedSegments` / `totalSegments` として持つ。機能ごとのテーブルは各機能 Issue が同じ規約で足す。

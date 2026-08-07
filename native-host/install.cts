@@ -164,7 +164,8 @@ function writeLauncher({ exe, runAsNode, bridgePath }: WriteLauncherArgs): strin
     // Chrome spawns this launcher with the browser's environment, not the one
     // the installer ran in, so an isolated installation has to BAKE its config
     // dir in — otherwise the development host would start a bridge that resolves
-    // the real ~/.hologram and writes into the real library (#732).
+    // the real config dir (%APPDATA%\Hologram) and writes into the real library
+    // (#732).
     if (process.env.HOLOGRAM_CONFIG_DIR) lines.push(`set "HOLOGRAM_CONFIG_DIR=${configDir()}"`);
     if (runAsNode) lines.push('set ELECTRON_RUN_AS_NODE=1');
     lines.push(`"${exeRef}" "${bridgePath}" %*`);

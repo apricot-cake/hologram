@@ -1174,7 +1174,7 @@ if (!gotSingleInstanceLock) {
       /* ignore */
     }
     // Dev server and sandbox runs never capture, so skip host registration —
-    // no HKCU writes and no native-host copy into the shared ~/.hologram.
+    // no HKCU writes and no native-host copy into the shared config dir.
     if (!SMOKE && !SANDBOX && !DEV_SERVER_URL) ensureHostRegistered();
     // Before createWindow: the window's very first load IS an app:// request.
     registerAppProtocol();

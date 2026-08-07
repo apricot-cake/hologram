@@ -11,8 +11,8 @@
 //
 // Models are addressed by directory rather than by Hugging Face repo id on
 // purpose: transformers.js only joins env.localModelPath for ids that match its
-// repo-id shape, and the `<modelId>@<rev>` layout #98 chose for
-// ~/.hologram/models does not (the '@' fails the check), so an id would be
+// repo-id shape, and the `<modelId>@<rev>` layout #98 chose for the config
+// dir's models/ does not (the '@' fails the check), so an id would be
 // resolved against the CWD instead. An absolute path skips that rule entirely
 // and leaves the naming scheme to #832.
 

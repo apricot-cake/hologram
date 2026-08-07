@@ -3,8 +3,8 @@
 // Orchestrates lib-model-registry.ts against lib-model-fetch.ts (#832, parent
 // #98): the opt-in gate, per-model on-disk status, download, and deletion.
 // ipc-model.ts is the only caller in production; everything here takes an
-// optional registry/root override so tests never touch the real
-// ~/.hologram/models or the real registry entry's 23MB onnx file.
+// optional registry/root override so tests never touch the real config dir's
+// models/ or the real registry entry's 23MB onnx file.
 //
 // What this module deliberately does NOT do:
 //   - talk to transformers.js or the inference child (lib-ml-runtime.ts,
