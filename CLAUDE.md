@@ -6,7 +6,7 @@ Hologram = ウェブのコンテンツ（現対応はSNS投稿）を出自・エ
 
 # ストレージと実行環境
 - 配置は`~/.hologram`(config/ログ)と`saveFolder`(既定`~/Hologram/library`)＝AppData外（MSIX仮想化でのライブラリ消失事故対策・2026-06-23）。⚠️**「必須」の根拠は 2026-08-06 に失効**＝仮想化はもう起きない（#1003）＝`config` を`%APPDATA%\Hologram`へ戻す設計が#232にある（**ライブラリ側は別**＝#232が既に製品判断へ書き換え済みで、位置は変えない）。**それでも今すぐ戻さない**＝今回の発見自体が Claude Desktop の構成が変わった証明で逆方向にも変わりうる＝戻すなら分岐を検知する仕組みとセット（#232のコメント）
-- **アプリ起動は`HologramLaunch`タスク経由**＝理由はもう仮想化ではなく、①`--remote-debugging-port=9222`が固定で付く②その引数が実機を名指しする唯一の目印（⚠️タスク以外で起動された個体はこの目印を持たない＝#1004）。**UIを作り込む間はHMRを使ってよい**＝`REMOTE_DEBUGGING_PORT=9222 npm run dev --workspace=app`でCDPも同時に使える（#1003・キャプチャ経路の確認だけは実機で）。テストは`HOLOGRAM_CONFIG_DIR`でサンドボックス化。手順はdocs/build.md「コード変更の反映」「検証ルール」
+- **アプリ起動は`restart-app.ps1`**＝理由はもう仮想化ではなく、①`--remote-debugging-port=9222`が固定で付く②その引数が実機を名指しする唯一の目印（⚠️この経路以外で起動された個体はこの目印を持たない＝#1004）。⚠️**スケジュールタスク`HologramLaunch`経由は2026-08-07に撤去**（#1008＝`Start-Process`でも「起動元シェルの子にならない」が得られると実測。タスク自体の削除は未決でユーザー待ち）。**UIを作り込む間はHMRを使ってよい**＝`REMOTE_DEBUGGING_PORT=9222 npm run dev --workspace=app`でCDPも同時に使える（#1003・キャプチャ経路の確認だけは実機で）。テストは`HOLOGRAM_CONFIG_DIR`でサンドボックス化。手順はdocs/build.md「コード変更の反映」「検証ルール」
 
 # ルール
 - lint/format＝Biome（`npm run lint`／2.5.6完全固定・設定と固定理由は biome.jsonc）

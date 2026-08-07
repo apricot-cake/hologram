@@ -1131,7 +1131,7 @@ if (!gotSingleInstanceLock) {
     if (haltIfStorageRedirected()) return;
     // Bind the taskbar/Alt-Tab identity to the appId so Windows shows our window
     // icon (not electron.exe's) in dev too. electron-builder sets this for the
-    // installed exe; setting it here covers the HologramLaunch dev run.
+    // installed exe; setting it here covers the restart-app.ps1 dev run.
     app.setAppUserModelId('com.hologram.app');
     log.eventLogger.startLogging();
     log.info('Starting Hologram', { packaged: app.isPackaged, version: app.getVersion() });
