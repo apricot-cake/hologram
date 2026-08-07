@@ -628,13 +628,21 @@ async function searchFullText(query: string, limit?: number) {
 // redirected location. Returns true when it halted, so the caller can bail out
 // of the rest of the whenReady callback.
 function haltIfStorageRedirected(): boolean {
-  const targets: Array<{ label: string; dir: string }> = [
-    { label: '設定フォルダ', dir: configDir() },
-    { label: 'ライブラリの保存先', dir: getSaveFolder() },
+  const targets: Array<{ label: string; dir: string; ensureDir: boolean }> = [
+    // configDir is ours to create, and a fresh install has not made it yet — a
+    // guard that cannot run on first launch is not a guard.
+    { label: '設定フォルダ', dir: configDir(), ensureDir: true },
+    // ⚠️ NEVER create the save folder. Its absence is #37's signal that a drive
+    // is unplugged or a synced folder vanished, and clear-all / relocation /
+    // backup all refuse on the strength of it. The first cut of this guard
+    // mkdir'd both and silently erased that signal (2026-08-07: five checks in
+    // test-app-library-missing.cts went green-but-wrong). A save folder that is
+    // genuinely gone lands in 'check-failed' below and stays #37's business.
+    { label: 'ライブラリの保存先', dir: getSaveFolder(), ensureDir: false },
   ];
   const hits: string[] = [];
-  for (const { label, dir } of targets) {
-    const result = checkForRedirect(dir);
+  for (const { label, dir, ensureDir } of targets) {
+    const result = checkForRedirect(dir, { ensureDir });
     // check-failed (dir missing, no permission, ...) is deliberately NOT treated
     // as a hit — #1009's 3rd acceptance criterion: a check that could not run
     // must never block startup the way a check that found the problem does.

@@ -55,24 +55,41 @@ export interface RedirectCheckDeps {
   realpathNative?: (file: string) => string;
 }
 
+export interface RedirectCheckOptions {
+  /**
+   * mkdir `dir` (recursive) before probing. **Off by default, and that default is
+   * load-bearing** — see the warning below. Turn it on only for a directory this
+   * app owns and may create, i.e. configDir.
+   */
+  ensureDir?: boolean;
+  /** Injected filesystem calls — tests only. */
+  deps?: RedirectCheckDeps;
+}
+
 /**
  * Writes a throwaway probe into `dir`, resolves the probe's real path, deletes it,
- * and classifies the result. `dir` is mkdir'd first (recursive, idempotent) so a
- * fresh install's not-yet-created configDir does not read as a false "check
- * failed" — but ONLY configDir should be passed a directory that is fine to
- * create: the caller must NOT do this for the user's save folder (index.ts's
- * `#37` comment on why a missing save folder is never recreated implicitly still
- * applies — passing a missing save folder here is expected to land in
- * 'check-failed', not conjure the directory back).
+ * and classifies the result.
+ *
+ * ⚠️ **Never pass `ensureDir` for the user's save folder.** A missing save folder
+ * is a SIGNAL, not an inconvenience: #37's detection reads "the folder is gone" as
+ * an unplugged drive or a vanished synced folder, and refuses clear-all, relocation
+ * and backup on the strength of it. Creating it here deletes the signal — measured
+ * on 2026-08-07, when the first cut of this guard called mkdir on both directories
+ * and turned all five checks in test-app-library-missing.cts green-but-wrong
+ * (`existsSync(missingFolder)=true`). configDir is different: this app owns it, a
+ * fresh install has not made it yet, and a guard that cannot run on first launch is
+ * not a guard.
  *
  * Any failure along the way — mkdir, write, or realpath itself throwing (missing
  * dir, no permission, a locked-down sandbox) — resolves to 'check-failed', never
  * 'redirected'. #1009's 3rd acceptance criterion: a check that could not run must
- * never be treated the same as a check that ran and found the problem. Cleanup
- * (unlink) is best-effort and never turns a completed check into a failure — a
- * leftover probe file is harmless.
+ * never be treated the same as a check that ran and found the problem. So a save
+ * folder that is genuinely gone lands in 'check-failed' here and is left for #37's
+ * own detection to report. Cleanup (unlink) is best-effort and never turns a
+ * completed check into a failure — a leftover probe file is harmless.
  */
-export function checkForRedirect(dir: string, deps: RedirectCheckDeps = {}): RedirectCheck {
+export function checkForRedirect(dir: string, options: RedirectCheckOptions = {}): RedirectCheck {
+  const deps = options.deps ?? {};
   const mkdirSync = deps.mkdirSync ?? ((d: string) => fs.mkdirSync(d, { recursive: true }));
   const writeFileSync = deps.writeFileSync ?? ((f: string, data: string) => fs.writeFileSync(f, data));
   const unlinkSync = deps.unlinkSync ?? ((f: string) => fs.unlinkSync(f));
@@ -80,7 +97,7 @@ export function checkForRedirect(dir: string, deps: RedirectCheckDeps = {}): Red
 
   const probePath = path.join(dir, `.hologram-realpath-probe-${process.pid}-${Date.now()}`);
   try {
-    mkdirSync(dir);
+    if (options.ensureDir) mkdirSync(dir);
     writeFileSync(probePath, '');
   } catch (err) {
     return { status: 'check-failed', error: (err as Error).message };
