@@ -5,17 +5,13 @@ description: Hologram アプリを起動して動きを確かめる時の経路�
 
 # run-hologram — アプリを起動して確かめる
 
-正本は `docs/build.md`（「コード変更の反映」「検証ルール（隔離4段構え）」）。ここはその選択部分だけを抜いたもので、矛盾があれば `docs/build.md` が勝つ。
+正本は `docs/build.md`（「起動経路」「CDP で繋ぐ先の選び方」「コード変更の反映」「検証ルール（隔離4段構え）」）。ここはそこから実際に手を動かすときのコマンドだけを抜いたもので、矛盾があれば `docs/build.md` が勝つ。
 
 **起動した先で CDP を叩くなら skill `verify-with-cdp` を先に読む**（合成マウスでレンダラを固める・スクショが固着/白紙/ハングする・拡張の診断は観測点を間違えると全部 false に見える、といった罠がまとまっている）。worktree からテストや拡張検証を回すなら skill `test-in-worktree`。
 
 ## 実機（:9222）は `restart-app.ps1` で起こす
 
-⚠️**旧理由（MSIX 仮想化）は 2026-08-06 に失効した**＝Claude Code 本体がパッケージ外へ移り、FS も HKCU も読み書きとも実体になった（#1003・4経路を実測。うち HKCU 書きはユーザーが regedit で目視）。**直接起動が登録を壊すことはもう無い**＝メモリ `sandbox-appdata-registry-divergence` が正。⚠️**スケジュールタスク `HologramLaunch` 経由は 2026-08-07 に撤去**（#1008）＝タスクが最後に買っていた「起動元シェルの子にならない」は `Start-Process` でも得られると実測した（生存・CDP 接続・停止フィルタの3点）。
-
-いま**この経路を通す理由は2つだけ**＝①スクリプトが `--remote-debugging-port=9222` を固定で付ける ②起動経路が1本に揃い、下のコマンドがその引数を目印に実機だけを名指しできる。⚠️**この経路以外で起動された個体はこの目印を持たないので選べない**（2026-08-06 に実際に遭遇＝#1004）。
-
-**HMR で足りるなら `electron-vite dev` を使ってよい**（下の「どのインスタンスで検証するか」4番）。
+**なぜこの経路を通すか（`HologramLaunch` タスクの去就・環境変数の継承・MSIX の失効を含む）は docs/build.md「起動経路」が正本**＝ここはコマンドだけ。
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\Users\apricot\local\dev\hologram\restart-app.ps1
@@ -23,7 +19,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\Users\apricot\local\d
 
 停止（graceful close）と起動が中に入っている＝**別途 kill してから叩かない**。再起動は確認を取らずに行ってよい。
 
-⚠️**手で止める必要がある時も、止める相手はパスでなくコマンドラインで選ぶ**＝`Path -like '*hologram*'`（旧版）は **worktree の検証で走っている Electron も巻き添えにする**。ハーネスは自分のツリーの `node_modules/electron` を使い（`scripts/lib-electron-path.cts`）、worktree はリポジトリの内側にあるので同じ条件に合う＝並行セッションのテストを黙って赤にできてしまう。`--remote-debugging-port=9222` を付けるのは `restart-app.ps1` だけなので、これが実機を名指しする唯一の目印（2026-08-05・docs/build.md が正）。⚠️**このフィルタは browser と renderer の2プロセスを返す**（Chromium が子へも同じフラグを渡す）＝数が合わないと読まない。
+⚠️**手で止める必要がある時も、止める相手はパスでなくコマンドラインで選ぶ**（理由＝worktree の Electron を巻き添えにしうる。docs/build.md「起動経路」が正）。⚠️**このフィルタは browser と renderer の2プロセスを返す**（Chromium が子へも同じフラグを渡す）＝数が合わないと読まない。
 
 ```powershell
 Get-CimInstance Win32_Process -Filter "Name='electron.exe'" | Where-Object { $_.CommandLine -like '*--remote-debugging-port=9222*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
@@ -43,12 +39,12 @@ Get-CimInstance Win32_Process -Filter "Name='electron.exe'" | Where-Object { $_.
 
 ## どのインスタンスで検証するか（既定＝隔離）
 
-実機（:9222）に触るのは**実ライブラリでの最終確認とキャプチャ経路の確認だけ**。
+**どれを選ぶか（実機／HMR／サンドボックス／テストハーネスの使いどころ）は docs/build.md「CDP で繋ぐ先の選び方」「検証ルール（隔離4段構え）」が正本**＝ここはコマンドだけ。実機（:9222）に触るのは実ライブラリでの最終確認とキャプチャ経路の確認だけ。
 
-1. **挙動・自動テスト → SMOKE 隔離**: `HOLOGRAM_SMOKE=1` ＋ `HOLOGRAM_CONFIG_DIR=<tmp>`。隠しウィンドウ・自動終了。雛形は `scripts/test-app-tagtypes.cts`。ユーザーが本体アプリを触っていても結果に混ざらない。
-2. **見た目・モーション → サンドボックス2台目**: `node scripts/sandbox-app.cts` で可視・常駐のインスタンスを起動。CDP ポートはツリーのパスから決まる（起動時に表示・`.sandbox/instance.json`）。**接続は `CDP_PORT=sandbox node scripts/cdp-verify.cts`**＝そのツリーの記録から解決するので番号を持ち回らない。終了は `node scripts/sandbox-app.cts stop`。HKCU も共有 config も触らないので実機と共存でき、worktree ごとに独立する。**他ツリーのサンドボックスへ番号で繋ごうとすると止まる**（#640＝繋がったまま成功するのが唯一の失敗の顔だった）。
+1. **挙動・自動テスト → SMOKE 隔離**: `HOLOGRAM_SMOKE=1` ＋ `HOLOGRAM_CONFIG_DIR=<tmp>`。雛形は `scripts/test-app-tagtypes.cts`。
+2. **見た目・モーション → サンドボックス2台目**: `node scripts/sandbox-app.cts` で起動。**接続は `CDP_PORT=sandbox node scripts/cdp-verify.cts`**（そのツリーの記録から解決するので番号を持ち回らない）。終了は `node scripts/sandbox-app.cts stop`。
 3. **実機（:9222）**: `restart-app.ps1` で起動したウィンドウへ CDP 接続。短く済ませ、混ざった疑いがあれば撮り直す。
-4. **UI を作り込む間 → HMR（`electron-vite dev`）**（2026-08-06 解禁・#1003）: `REMOTE_DEBUGGING_PORT=9222 npm run dev --workspace=app`。**CDP も同時に使える**＝electron-vite がこの環境変数を読んで `--remote-debugging-port` を Electron へ渡す（`node scripts/cdp-verify.cts eval …` がそのまま通る・実測で `document.title` と実ライブラリ 10.2K 件を取得）。renderer は HMR、main は保存で自動再起動＝**ビルド→再起動の往復が消える**。⚠️**キャプチャ経路の確認には使わない**＝dev は `ensureHostRegistered()` を呼ばない設計（`app/src/main/index.ts` が `DEV_SERVER_URL` のとき除外）なので、ホスト登録の自己修復が働かない。⚠️実機と同時には起こせない（single-instance lock）。
+4. **UI を作り込む間 → HMR（`electron-vite dev`）**: `REMOTE_DEBUGGING_PORT=9222 npm run dev --workspace=app`。`node scripts/cdp-verify.cts eval …` がそのまま通る。
 
 CSS の transition や inline 配置は隠しウィンドウでは再現しないので、見た目の確認を SMOKE で済ませようとしない。
 

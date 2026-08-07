@@ -140,7 +140,7 @@ REMOTE_DEBUGGING_PORT=9222 npm run dev --workspace=app
 
 renderer は HMR、main は保存で自動再起動。**CDP も同時に使える**＝electron-vite の `startElectron()` がこの環境変数を読んで `--remote-debugging-port` を Electron へ渡すので、`node scripts/cdp-verify.cts eval …` がそのまま通る（実測＝`document.title` と実ライブラリ 10.2K 件を取得できた）。任意の引数を足したいなら `ELECTRON_CLI_ARGS`（JSON 配列）も読まれる。
 
-**使い分け**＝UI を作り込む間は HMR、**キャプチャ経路とホスト登録の確認は `restart-app.ps1` で起こした実機**。dev は `ensureHostRegistered()` を呼ばない設計（`app/src/main/index.ts` が `DEV_SERVER_URL` のとき除外）なので、登録の自己修復が働かない。実機とは single-instance lock で排他になる＝同時には起こせない。
+**使い分けは下の「CDP で繋ぐ先の選び方」の表を見る**（実機と HMR、どちらでどこまで確認できるかをそこで一覧にした）。
 
 ⚠️**旧記述「`electron-vite dev` は使わない」の理由（MSIX 仮想化）は失効した**＝下の「起動経路」を参照。
 
@@ -169,14 +169,25 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File <repo>\restart-app.ps1
 - ⚠️**仮想化が復活する可能性は残る**＝#1003 の発見自体が Claude Desktop の構成が変わったことの証明で、逆方向にも変わりうる。判定は `(Get-Item <path>).Target` が `…\Packages\Claude_pzs8sxrjxfjjc\LocalCache\…` を返すかどうか。
 - `npm start` 経由は cmd ウィンドウが出るため使わない（electron.exe はGUIアプリなのでコンソールは出ない）。
 
+### CDP で繋ぐ先の選び方（#1010）
+
+`node scripts/cdp-verify.cts eval "…"` / `shot` が繋げる相手は現在4種類ある。**この表が正**＝種類が増減したらここだけ直す（`scripts/cdp-verify.cts` のヘッダーと skill `run-hologram` はここを指すだけで、起こし方・ポートの記述を持たない）。
+
+| 相手 | 起こし方 | ポート | いつ使う |
+| --- | --- | --- | --- |
+| 実機 | `restart-app.ps1`（`Start-Process` で `electron.exe` を直接起動。旧 `HologramLaunch` タスク経由は2026-08-07に撤去＝#1008。**このマシンにタスク自体が残っている可能性はあるが、起動経路としては使っていない**） | 9222 固定（スクリプトが `--remote-debugging-port=9222` を付与＝実機を名指しする唯一の目印） | 実ライブラリでの最終確認・キャプチャ経路（拡張→bridge）の確認だけ |
+| HMR（開発サーバー） | `REMOTE_DEBUGGING_PORT=9222 npm run dev --workspace=app`（#1003） | 9222（`electron-vite` がこの環境変数を読んで Electron へ同じ引数を渡す） | UI を作り込む間（ビルド→再起動の往復が消える）。⚠️`ensureHostRegistered()` を呼ばない設計なのでキャプチャ経路の確認には使わない。実機とは single-instance lock で排他＝同時には起こせない |
+| サンドボックス | `node scripts/sandbox-app.cts`（可視・常駐の2台目） | 動的（9333〜9432・作業ツリーのパスから決まり `.sandbox/instance.json` に記録）。接続は `CDP_PORT=sandbox node scripts/cdp-verify.cts …`（そのツリーの記録から解決＝番号を持ち回らない）。終了は `node scripts/sandbox-app.cts stop` | 見た目・モーションの確認（隠しウィンドウでは CSS transition や inline 配置が再現しない）。HKCU・共有 `~/.hologram` に触れないので実機・他 worktree と安全に共存する |
+| テストハーネス | `test-app-*.cts` のうち CDP を使うもの（`test-app-asset-csp.cts`・`test-app-renderer-origin.cts` など。大半の `test-app-*.cts` は `HOLOGRAM_SMOKE_EVAL` 経由の結果だけを stdout へ返すので CDP ポート自体を持たない）が `spawn` 時に自前で立てる | 動的（`freePort()` が `net.createServer().listen(0, …)` で OS に空きポートを確保→即 close。サンドボックスの `instance.json` のような記録は無い＝スクリプト自身が同じプロセス内で `cdpList()` / `listeningPid()` を呼んで使い切り、外部への公開はしない） | 通常は外部から `cdp-verify.cts` を繋がない（スクリプトが自己完結）。ハングを外から診るときだけ `Get-CimInstance Win32_Process -Filter "Name='electron.exe'"` のコマンドラインから `--remote-debugging-port=NNNN` を読んでポートを特定する |
+
 ## 検証ルール（隔離4段構え）
 
 **検証は隔離インスタンスで行う（既定）。実機 :9222 に触るのは「実ライブラリでの最終確認」と「キャプチャ経路（拡張→bridge）」だけ**。
 
 1. **挙動・自動テスト＝SMOKE 隔離**: `HOLOGRAM_SMOKE=1` ＋ `HOLOGRAM_CONFIG_DIR=<tmp>`（雛形は `scripts/test-app-tagtypes.cts`）。隠しウィンドウ・自動終了。別プロセス・別 config なので、**ユーザーが本体アプリを操作していても結果に混ざりようがない**。実機を使う限り、ユーザーの操作が混入したかを事前に防ぐ手段も、事後に検知する手段も無い（2026-07-20 に実測で確認＝CDP `Input.*` で撃ったイベントは人間の操作と同じく `isTrusted: true` になり区別できない。ページ内合成の `el.click()` だけが `false`）。だから防ぐのでなく、混入しても困らない場所へ検証を寄せる。
-2. **見た目・モーション＝サンドボックスインスタンス**: `node scripts/sandbox-app.cts` で**可視・常駐の2台目**を起動する（CSS transition や inline 配置は隠しウィンドウでは再現しないため、従来は実機に頼っていた層）。作業ツリー直下 `.sandbox/`（gitignore）に config・シード済みフィクスチャライブラリを永続化し、CDP ポートは**ツリーのパスから決まる**（9333〜9432 の範囲・起動時に表示・`.sandbox/instance.json` にツリーごと記録）。接続は `CDP_PORT=sandbox node scripts/cdp-verify.cts`（そのツリーの記録から解決＝番号を持ち回らない）、終了は `node scripts/sandbox-app.cts stop`。**cdp-verify はサンドボックスポートに繋ぐ前に、そこで動いているアプリがこのツリーから起動されたものかを突き合わせて、違えば止まる**＝並行 worktree が同じポートを取り合っても、他人のインスタンスを自分のものとして駆動したまま成功する経路が無い（#640。ポートの決定性は「毎回同じ番号へ戻れる」ための便宜で、安全弁は突き合わせの方）。`HOLOGRAM_SANDBOX=1` でホスト登録をスキップするため **HKCU・共有 `~/.hologram` に一切触れない**＝実機と安全に共存でき、worktree ごとに独立するので並行セッションの検証が衝突しない。インスタンスロックは（アプリ名, userData）単位で userData は config dir に固定されている＝2台目の起動をロックは妨げない。**実データでしか出ない問題（実ライブラリの多様性・規模で崩れる表示や性能／特定の実投稿で再現するバグ）は `--real` でシードする**（下記）。
+2. **見た目・モーション＝サンドボックスインスタンス**: `node scripts/sandbox-app.cts` で**可視・常駐の2台目**を起動する（CSS transition や inline 配置は隠しウィンドウでは再現しないため、従来は実機に頼っていた層）。起こし方・接続コマンド・ポートの決まり方は上の「CDP で繋ぐ先の選び方」参照。ここでは安全性だけ＝**cdp-verify はサンドボックスポートに繋ぐ前に、そこで動いているアプリがこのツリーから起動されたものかを突き合わせて、違えば止まる**＝並行 worktree が同じポートを取り合っても、他人のインスタンスを自分のものとして駆動したまま成功する経路が無い（#640。ポートの決定性は「毎回同じ番号へ戻れる」ための便宜で、安全弁は突き合わせの方）。`HOLOGRAM_SANDBOX=1` でホスト登録をスキップするため **HKCU・共有 `~/.hologram` に一切触れない**＝実機と安全に共存でき、worktree ごとに独立するので並行セッションの検証が衝突しない。インスタンスロックは（アプリ名, userData）単位で userData は config dir に固定されている＝2台目の起動をロックは妨げない。**実データでしか出ない問題（実ライブラリの多様性・規模で崩れる表示や性能／特定の実投稿で再現するバグ）は `--real` でシードする**（下記）。
 3. **実入力・実ピクセルの自動テスト＝Playwright（`npm run test:e2e`・#14）**: 上の1と2の間を埋める層。ケースごとに使い捨ての config dir とライブラリを作り、`HOLOGRAM_SANDBOX=1` ＋ `HOLOGRAM_START_INACTIVE=1` で**見えるが最背面のウィンドウ**を起こし、実ポインタ・実キーで駆動して要素単位のスクリーンショットを撮る。1と違って合成イベントではないので「クリックが届かない」型が捕まり、2と違って人手も常駐インスタンスも要らない。**ユーザーの前面は奪わない**（フォーカスを取らずに z 順の最背面へ送る＝入力は CDP 経由でフォーカス不要）。詳細は `e2e/README.md`。
-4. **実機（:9222）**: `restart-app.ps1` で起動したウィンドウへ CDP 接続する。スクリプトが `--remote-debugging-port=9222` を恒久付与するので、この経路なら常に :9222 でデバッグ可能。⚠️**旧記述「直接起動はコンテナ内＝仮想化でキャプチャが壊れる」は失効**（#1003）＝いまスクリプトを通す理由は、引数が固定されることと、その引数が実機を名指しする唯一の目印になること（#1004）。**スケジュールタスク経由も 2026-08-07 に撤去**（#1008・上の「起動経路」）。実機での検証は短く済ませ、混ざった疑いがあれば撮り直す。**HMR で足りる検証は `REMOTE_DEBUGGING_PORT=9222 npm run dev --workspace=app`**＝同じ :9222 で CDP が使え、ビルド→再起動の往復が消える（キャプチャ経路の確認だけは実機で行う）。
+4. **実機（:9222）／HMR**: `restart-app.ps1` で起動したウィンドウ、または `REMOTE_DEBUGGING_PORT=9222 npm run dev --workspace=app` の HMR へ CDP 接続する。起こし方・ポート・使い分けは上の「CDP で繋ぐ先の選び方」参照。⚠️**旧記述「直接起動はコンテナ内＝仮想化でキャプチャが壊れる」は失効**（#1003）。実機での検証は短く済ませ、混ざった疑いがあれば撮り直す。
 
 **並行セッションで共有のままの装置**（worktree でもサンドボックスでも隔離されない）: `node native-host/install.cts` の再配備・拡張のリロード・実機の再起動の3つ。並行セッションの実行中にこれらを行う時だけは、相手の検証を壊しうるので重ねない（`ccd_session_mgmt` で実態確認）。**この確認先は並行セッションであって、ユーザーではない**＝重なりが無いと分かったらそのまま実行する（可否を尋ねて止まらない）。「共有資源だから」は他セッションを調べる理由であって、検証を保留する理由ではない。
 
