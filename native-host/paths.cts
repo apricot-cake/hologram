@@ -27,7 +27,10 @@
 // on purpose: the very fact that the host's layout changed once means it can
 // change back, and the failure mode is silent (the 2026-06 incident only
 // surfaced as "I saved it but the library does not show it"). #232 pairs the
-// move with a check that detects a LocalCache-redirected path at startup.
+// move with a check that detects a LocalCache-redirected path at startup —
+// that check now exists (#1009, app/src/main/lib-storage-redirect-guard.ts) and
+// runs against configDir()/the save folder as they resolve TODAY, so #232 can
+// move the default once it lands.
 // The LIBRARY default is a separate question and does not move — see #232, where
 // its rationale is already a product decision rather than this one.
 
