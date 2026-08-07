@@ -20,6 +20,13 @@
 // A copy that exists only under the workspace (app/node_modules/@vitejs/plugin-react
 // today) is fine — one copy, no disagreement possible.
 //
+// Scope is the ROOT package-lock.json alone, and `extension/` is deliberately not
+// in it: the root lockfile declares `workspaces: ["app"]` and carries no entry
+// whose path starts with `extension`, because extension/ is a standalone npm
+// project with its own lockfile and no workspaces of its own. There is no
+// root/workspace pair there for anything to land in twice, so adding a direct
+// dependency to extension/package.json cannot make this guard red.
+//
 // The fix when this goes red is `npm dedupe --legacy-peer-deps` (the flag for the
 // same electron-vite peer conflict scripts/setup.cts explains); see docs/build.md.
 
