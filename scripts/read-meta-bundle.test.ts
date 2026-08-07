@@ -118,6 +118,72 @@ test('<title> フォールバックも実体参照を解いて返す（#894）',
   expect(result.metaSource.title).toBe('title');
 });
 
+// #902, the other half of #894: metatags were fixed by reading `<meta>` off the
+// DOM, but microdata and RDFa are assembled by the library from its own read of
+// the serialized HTML, so their values still arrived with the references in
+// them. Only these two formats are decoded (read-meta.ts's decodeBucket) — the
+// JSON-LD case below is the other side of that rule.
+test('microdata の値が実体参照を解いて返る（#902）', async () => {
+  const html = `<!doctype html><html><head><title>Fallback</title></head><body>
+    <div itemscope itemtype="http://schema.org/Article">
+      <span itemprop="headline">Tom &amp; Jerry &mdash; microdata</span>
+      <meta itemprop="description" content="Cats &amp; mice &mdash; see https://x.example/s?q=1&ampersand=2" />
+      <div itemprop="author" itemscope itemtype="http://schema.org/Person">
+        <span itemprop="name">Ada &amp; Co.</span>
+        <link itemprop="url" href="https://blog.example/authors/tom&amp;jerry" />
+      </div>
+    </div>
+  </body></html>`;
+  const result = await runOn(html, 'https://blog.example/posts/tom-and-jerry');
+
+  expect(result.title).toBe('Tom & Jerry — microdata');
+  expect(result.metaSource.title).toBe('microdata');
+  expect(result.author.name).toBe('Ada & Co.');
+  // The one field of this tier that is a URL rather than cosmetic text.
+  expect(result.author.url).toBe('https://blog.example/authors/tom&jerry');
+  // `&ampersand` is a LEGACY semicolon-less reference: HTML's text rules would
+  // decode `&amp` and leave `ersand=2` behind. decodeHTMLAttribute is used
+  // precisely so that a query string written that way is left intact — the
+  // #894 corruption from the other direction.
+  expect(result.description).toBe('Cats & mice — see https://x.example/s?q=1&ampersand=2');
+});
+
+test('RDFa の値が実体参照を解いて返る（#902）', async () => {
+  const html = `<!doctype html><html><head><title>Fallback</title></head><body>
+    <div vocab="https://schema.org/" typeof="Article">
+      <span property="headline">Tom &amp; Jerry &mdash; RDFa</span>
+      <meta property="description" content="Cats &amp; mice &mdash; a study." />
+      <div property="author" typeof="Person">
+        <span property="name">Ada &amp; Co.</span>
+      </div>
+    </div>
+  </body></html>`;
+  const result = await runOn(html, 'https://blog.example/posts/tom-and-jerry');
+
+  expect(result.title).toBe('Tom & Jerry — RDFa');
+  expect(result.metaSource.title).toBe('rdfa');
+  expect(result.description).toBe('Cats & mice — a study.');
+  expect(result.author.name).toBe('Ada & Co.');
+});
+
+// The complement of the two above: JSON-LD comes from a <script> element's raw
+// text, which carries no references at all, so a literal `&amp;` in it is text
+// the author actually wrote. Decoding that bucket too would corrupt it.
+test('JSON-LD のリテラル &amp; は復号されない（#902）', async () => {
+  const html = `<!doctype html><html><head><title>Fallback</title>
+    <script type="application/ld+json">
+      {"@context":"https://schema.org","@type":"Article","headline":"Escaping HTML: write &amp; for an ampersand","description":"&mdash; is an em dash."}
+    </script>
+  </head><body>
+    <div itemscope itemtype="http://schema.org/Person"><span itemprop="name">Ada &amp; Co.</span></div>
+  </body></html>`;
+  const result = await runOn(html, 'https://blog.example/posts/escaping-html');
+
+  expect(result.title).toBe('Escaping HTML: write &amp; for an ampersand');
+  expect(result.description).toBe('&mdash; is an em dash.');
+  expect(result.metaSource.title).toBe('jsonld');
+});
+
 test('canonical が別オリジン＝タブの URL が使われる', async () => {
   const html = `<!doctype html><html><head>
     <link rel="canonical" href="https://syndicate.example/copy/of/this/page" />
