@@ -1,6 +1,6 @@
 'use strict';
 
-import { app, BrowserWindow, protocol } from 'electron';
+import { app, BrowserWindow, dialog, protocol } from 'electron';
 import chokidar, { type FSWatcher } from 'chokidar';
 import log from 'electron-log/main';
 import fs from 'node:fs';
@@ -28,6 +28,7 @@ import { relocateLibrary } from './lib-migrate.ts';
 // what remains here is the assembly plus the record pipeline every part of it
 // shares (config → DB → inbox → renderer).
 import { configDir, defaultLibraryDir, installer, pixivRefererFor, downloadAvatar, clearAllBlockReason } from './native-host.ts';
+import { checkForRedirect } from './lib-storage-redirect-guard.ts';
 import { readConfig, writeConfig, getSaveFolder, readSavePointer, initSaveFolderRedundancy, isConfigCorrupt, invalidateConfigCache, saveFolderStatus, migrateToLibraries, recordLibraryOpened, listRecentLibraries, removeRecentLibrary, readAiConfig, writeAiConfig } from './lib-config.ts';
 import { mimeForFile, registerImageProtocol, thumbnailBytes } from './lib-thumbnails.ts';
 import { sharedJobPool } from './lib-job-pool.ts';
@@ -612,6 +613,46 @@ async function searchFullText(query: string, limit?: number) {
   return searchPostsFts(handle.sqlite, query, limit);
 }
 
+// --- Storage redirect guard (#1009) ---
+// Halts startup with a blocking dialog if configDir or the effective save folder
+// is being silently redirected by OS storage virtualization — see
+// lib-storage-redirect-guard.ts for why and how this is detected. Called as the
+// very first thing inside whenReady, before initSaveFolderRedundancy or anything
+// else reads/writes either directory.
+//
+// A dialog rather than a log line: the 2026-06-23 incident (~9082 items,
+// paths.cts's header) happened with warnings sitting unread in main.log the whole
+// time — a warning nobody reads is not a mitigation. showMessageBoxSync blocks
+// until dismissed, and app.exit(1) right after means nothing past this point
+// (window creation, host registration, opening the database) ever touches the
+// redirected location. Returns true when it halted, so the caller can bail out
+// of the rest of the whenReady callback.
+function haltIfStorageRedirected(): boolean {
+  const targets: Array<{ label: string; dir: string }> = [
+    { label: '設定フォルダ', dir: configDir() },
+    { label: 'ライブラリの保存先', dir: getSaveFolder() },
+  ];
+  const hits: string[] = [];
+  for (const { label, dir } of targets) {
+    const result = checkForRedirect(dir);
+    // check-failed (dir missing, no permission, ...) is deliberately NOT treated
+    // as a hit — #1009's 3rd acceptance criterion: a check that could not run
+    // must never block startup the way a check that found the problem does.
+    if (result.status !== 'redirected') continue;
+    log.error(`storage redirect detected (#1009): ${label} (${dir}) resolves to ${result.realPath}`);
+    hits.push(`${label}\n本来の場所: ${dir}\n実際の書き込み先: ${result.realPath}`);
+  }
+  if (!hits.length) return false;
+  dialog.showMessageBoxSync({
+    type: 'error',
+    title: 'Hologram を起動できません',
+    message: 'データが本来と違う場所へ保存される状態を検出しました',
+    detail: `${hits.join('\n\n')}\n\nこのまま起動するとデータが見えない場所に保存されるため、起動を中止しました。`,
+  });
+  app.exit(1);
+  return true;
+}
+
 // --- Native host registration (idempotent, on each launch) ---
 function ensureHostRegistered() {
   try {
@@ -1084,6 +1125,10 @@ if (!gotSingleInstanceLock) {
   }
 
   app.whenReady().then(() => {
+    // #1009: the very first thing, before ANYTHING else touches configDir or the
+    // save folder (the eventLogger line right below is itself a write into
+    // configDir/logs).
+    if (haltIfStorageRedirected()) return;
     // Bind the taskbar/Alt-Tab identity to the appId so Windows shows our window
     // icon (not electron.exe's) in dev too. electron-builder sets this for the
     // installed exe; setting it here covers the HologramLaunch dev run.
