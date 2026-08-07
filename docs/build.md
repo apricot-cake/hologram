@@ -41,6 +41,25 @@ Dependabot（#395）の更新 PR で新バージョンが来たときも、確�
 ⚠️**本体の node_modules を junction で借りると typecheck が壊れる**。`mklink /J` で root/app/extension をリンクしても、本体は **pnpm レイアウト**（各パッケージが `.pnpm` ストアへの symlink）なので junction 越しに react / react-dom / jsx-runtime / sonner 等が解決できず、renderer の `.tsx` が大量の TS2307・TS7026 を吐く。**変更したファイル自体のエラーが 0 でもその中に埋もれる**＝切り分けは `tsc 出力 | grep <対象ファイル>` で対象ファイル起因だけを見る。型検査をちゃんと通したいなら素直に `npm run setup`（重いが確実）。
 
 install が済めば `npm test`・`npm run typecheck`・アプリ起動ハーネス（`test-app-*.cts`）がすべて worktree で緑になる。各自 `HOLOGRAM_CONFIG_DIR` の mkdtemp サンドボックスで実 Electron を起動するので本体アプリにも実ライブラリにも触らない＝**実機 CDP(:9222) を奪わずに実経路を検証したい時の既定手段**（並行セッションが居る時は特に）。
+## 重複解決を残さない（#891）
+
+**`app/package.json` が宣言したバージョンで実際にビルドされているか**は、依存が root（`node_modules/`）とワークスペース（`app/node_modules/`）に二重に入った瞬間に崩れる。#858 で起きた実例:
+
+- `app` の `vite` を `^8.1.0 → ^8.2.0` に上げた
+- npm は**最小差分**で `app/node_modules/vite@8.2.0` を足しただけで、root に既にいた `8.1.5` を動かさなかった（Dependabot が作るロックファイルは常にこの形になる）
+- **ビルドを回すのは root へ hoist された `electron-vite`** ＝その `require('vite')` は root の 8.1.5 を拾う。`npm run build --workspace=app` のログは宣言（`^8.2.0`）と食い違う `vite v8.1.5` を出していた
+
+**壊れるのは宣言と実態の一致だけで、テストは全部緑のまま通る。** ビルドログのバージョン表示を目で読む以外に気付く手段が無かった。
+
+**畳み方**:
+
+```
+npm dedupe --legacy-peer-deps
+```
+
+`--legacy-peer-deps` が要る理由は上の表と同じ（electron-vite の peer 範囲）。⚠️**`npm dedupe` は宣言レンジ内で再解決する**＝畳む対象以外も範囲内の新しい版へ動く（2026-08-07 実測: vite 8.1.5→8.2.1 のほかに `undici` 8.9.0→8.10.0 などが一緒に動き、逆に共通解へ落ちる形で下がるもの〔`semver` 7.8.5→7.7.4〕もあった）。**ロックファイルだけの変更で `package.json` のレンジは動かない**が、差分は「重複を消した分」より広くなる。
+
+**再発は `scripts/lockfile-dedupe.test.ts` が捕まえる**（`npm test` ＝ `npm run check` と `ci.yml` に乗る）。見ているのは **root とワークスペースが同じパッケージを二重に持っていないこと**の1点だけ。⚠️**「同じ名前が2バージョン以上ある」を禁じているのではない**＝推移依存どうしのレンジが合わずに複数版が並ぶのは正常で、このロックファイルにも66件ある（`semver`・`minimatch`・`chalk` 等）。root とワークスペースの組だけが特別なのは、**そこが同じ宣言の落ちうる2か所**＝2つあれば「ワークスペースが何を宣言したか」で利用者の意見が割れるから。`app/node_modules/` にしか無いもの（現在は `@vitejs/plugin-react`）は1つきりなので対象外。
 
 ## commit 前の自動整形（#994）
 
