@@ -58,7 +58,7 @@ description: Hologram を CDP（Chrome DevTools Protocol）で計測・撮影・
 - `setPosterTags(data)` = `{tags:{...}}` **ラップが正しい**（main が `data.tags` を取り出す）。
 - 鉄則: ①set 前にディスクのファイルをバックアップ ②set 後に get で読み返して shape と件数を確認 ③検証後はダミーを除去して再 get で 0 件＋ディスク diff が IDENTICAL であることを確認。ダミーには識別プレフィックス（例 `__vt_`）を付ける。
 - renderer の関数スコープ変数（`posterTags`/`tagTypes`）は set 後に `location.reload()` しないと反映されない（起動時ロードでしか読まれない）。
-- **Node が読む JSON を PowerShell で書かない**（機序と正しい書き方は skill `windows-scripting`）。ここでの帰結が重い＝`~/.hologram/config.json` が BOM 付きになると次回起動で**デフォルト上書き**され `extensionId` まで消える（実害 2026-06-13）。CDP 越しの `window.hologram.setPref` でも書ける。
+- **Node が読む JSON を PowerShell で書かない**（機序と正しい書き方は skill `windows-scripting`）。ここでの帰結が重い＝config dir（Windows は `%APPDATA%\Hologram`）の `config.json` が BOM 付きになると次回起動で**デフォルト上書き**され `extensionId` まで消える（実害 2026-06-13）。CDP 越しの `window.hologram.setPref` でも書ける。
 
 ## 拡張を診断する
 
@@ -66,7 +66,7 @@ description: Hologram を CDP（Chrome DevTools Protocol）で計測・撮影・
 - resident.js は自己完結バンドルなので**ページ側からビルドの新旧は判別できない**。判別できるのは `chrome://extensions` のロード元・更新時刻か diag.html の `devBuild` だけ。
 - **⛔ 注入の生死を `dispatchEvent` で作ったイベントで判定しない**（実害 2026-07-31・共通分は skill `browser-extension-verify`）。**Hologram でこれが効く範囲**＝`utils/user-gesture.ts` の `userOnly`（#323 の信頼境界）が**保存を開始・応答・終了させる全ハンドラ**（投稿を選ぶクリック・重複警告の3つの答え・ドロップゾーンを出す `dragstart` とコミットする `drop`・ホバーの保存ボタン・取込の停止・セッションを捨てるキーと右クリック）に掛かっていて、`isTrusted !== true` を設計どおり無言で捨てる。trusted なイベントを作れるのは CDP の `Input.*` だけ（`user-gesture.ts` の冒頭コメントが明記）。
   - **「痕跡ゼロ」も注入の否定にならない**＝`hologram-extension-ui` を作るのは `ui-root.ts` の `ensureUiRoot()` だけで、唯一の呼び出し元は `status-surface.ts`（出すものが無い間は生成されない）。`<hologram-corner-control>` は画像ごとに、保存済みの印かホバー時の保存ボタンとしてだけ挿入される。**素のタイムラインで custom element 0 は健全な状態。**
-- **アイコン無反応の一次診断は `~/.hologram/capture.log`**: click 行なし＝クリックが SW に届いていない（別ウィンドウ/別アイコンの疑い）／`phase:"skip"`＝非 http タブ／`phase:"fail"`＝executeScript のエラー内容つき。
+- **アイコン無反応の一次診断は config dir（Windows は `%APPDATA%\Hologram`）の `capture.log`**: click 行なし＝クリックが SW に届いていない（別ウィンドウ/別アイコンの疑い）／`phase:"skip"`＝非 http タブ／`phase:"fail"`＝executeScript のエラー内容つき。
 - **全自動テストは `scripts/e2e-capture-test.cts`**（使い捨て Chrome＋SW evaluate で activateOnTab 相当 → バナー → 保存 → API 照合 → 掃除）。⚠️SW 注入の files リストは `background.ts` と**手動同期**＝本体の注入リストを変えたら e2e も直す。
 - 拡張 ID は manifest `key` から決定的に計算できる: `SHA256(base64decode(key))` の先頭16バイトを a〜p の16進アルファベットへ。
 - **`chrome-extension://`（拡張自身のページ）へは `location.href` 代入で遷移できる**（MCP の navigate は URL 頭に https:// を強制付与するため）。ただし他拡張のページは触れない。**⛔ この回避策は `chrome://` に効かない**＝別スキーム。`chrome://extensions` でのリロード・有効/無効・エラー確認は自分でやらずユーザーに依頼する。

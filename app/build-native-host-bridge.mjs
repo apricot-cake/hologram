@@ -36,7 +36,7 @@ const outDir = path.join(repoRoot, 'native-host', 'dist');
 // single combined build hoists that shared code into a third file that each
 // entry require()s by relative path — which silently breaks deployBridge()
 // (native-host/install.cts), which copies ONLY the single bridge.js file into
-// ~/.hologram. Two independent builds keep each output a fully self-contained
+// the config dir. Two independent builds keep each output a fully self-contained
 // single file, matching what deployBridge assumes.
 async function buildEntry(name, emptyOutDir) {
   await build({

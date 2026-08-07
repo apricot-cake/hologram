@@ -54,7 +54,8 @@ never refused over it.
 `bridge.cts` and the modules it requires are **bundled** into
 `native-host/dist/bridge.js` (one file, node builtins external) by
 `app/build-native-host-bridge.mjs`, and it is that bundle — not the sources — that
-`install.cts` deploys into `~/.hologram` for the generated launcher to run. The
+`install.cts` deploys into the config dir (`%APPDATA%\Hologram` on Windows, see
+`paths.cts`) for the generated launcher to run. The
 deployed host therefore resolves no modules at runtime: it can use npm deps, and
 no host source can be left behind on deploy. Edit a host source → re-build →
 re-run install.
@@ -70,7 +71,7 @@ directly (see `app/src/main/index.ts`), so no rebuild is needed there.
 
 ## Config
 
-`<configDir>/config.json` (Windows: `~/.hologram/config.json`):
+`<configDir>/config.json` (Windows: `%APPDATA%\Hologram\config.json`):
 
 ```json
 { "saveFolder": "D:\\Hologram" }

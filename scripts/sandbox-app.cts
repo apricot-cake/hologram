@@ -27,7 +27,7 @@
 //     config dir, and Electron's single-instance lock is keyed on userData, so
 //     this instance coexists with the real app.
 //   - HOLOGRAM_SANDBOX=1 → app/src/main/index.ts skips native host registration (no HKCU
-//     writes, no copy into the shared ~/.hologram).
+//     writes, no copy into the shared config dir).
 //   - config.json is always written BEFORE first launch, pointing saveFolder at
 //     the sandbox library — an unconfigured launch would fall back to the real
 //     default library dir.

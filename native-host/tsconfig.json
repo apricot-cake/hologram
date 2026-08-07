@@ -13,7 +13,8 @@
   // app (type-stripped, no build), and the tests require the bridge sources
   // directly. bridge.cts is no longer deployed as raw source — it is bundled
   // (app/build-native-host-bridge.mjs → dist/bridge.js, CJS output) and the BUNDLE is what
-  // lands in ~/.hologram — but the sources keep the CJS shape the bundler reads.
+  // lands in the config dir (paths.cts's configDir()) — but the sources keep the CJS shape
+  // the bundler reads.
   //
   // post-key.mts is the one ESM file here, because it is the one module a layer
   // OUTSIDE this directory ES-imports (app/src/renderer/src/services/records.ts re-exports it —

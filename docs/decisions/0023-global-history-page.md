@@ -11,7 +11,7 @@
 
 ### 保存先
 
-ライブラリ DB（`~/.hologram` ではない）の `history` テーブル。行が captureId／フォルダ ID／タグ名を指す以上、履歴はライブラリに属する（`tabs` テーブルと同じ帰属）。
+ライブラリ DB（config dir ではない）の `history` テーブル。行が captureId／フォルダ ID／タグ名を指す以上、履歴はライブラリに属する（`tabs` テーブルと同じ帰属）。
 
 ```sql
 CREATE TABLE history (

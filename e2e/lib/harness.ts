@@ -91,7 +91,7 @@ async function launch(options: LaunchOptions): Promise<{ hologram: Hologram; clo
       APPDATA: tmp,
       HOLOGRAM_CONFIG_DIR: configDir,
       // Skips native-host registration: no HKCU writes, no copy into the shared
-      // ~/.hologram. A run cannot touch the real library or the real Chrome's
+      // config dir. A run cannot touch the real library or the real Chrome's
       // view of it.
       HOLOGRAM_SANDBOX: '1',
       HOLOGRAM_START_INACTIVE: '1',

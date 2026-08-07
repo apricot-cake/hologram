@@ -10,7 +10,7 @@
 //      native-messaging framing work (ping + save + sidecar written).
 //   2. config.json parses (reports the resolved save folder).
 //   3. the save folder (or its nearest existing ancestor) is writable.
-//   4. (win32) the native-host MANIFEST under ~/.hologram resolves (launcher exists,
+//   4. (win32) the native-host MANIFEST under the config dir (%APPDATA%\Hologram) resolves (launcher exists,
 //      allows an extension origin). The HKCU pointer is reported as INFO only — an
 //      in-container `reg query` reads the virtual hive and can't be trusted.
 //   5. the DEPLOYED bridge (configDir/bridge.js) matches the built bundle —
@@ -136,7 +136,7 @@ function checkWritable() {
 }
 
 // --- check 4: native host registration (win32) ---
-// Hard-check the MANIFEST FILE under configDir() (~/.hologram).
+// Hard-check the MANIFEST FILE under configDir() (Windows: %APPDATA%\Hologram).
 // The HKCU pointer is reported separately as a soft INFO line (checkRegistryPointer)
 // rather than hard-failed. The original reason expired on 2026-08-06 (#1003): a shell
 // under the MSIX Claude container used to read a VIRTUAL hive, making any `reg query`
@@ -144,7 +144,7 @@ function checkWritable() {
 // could be promoted to a hard check. Left soft until someone confirms it does not fire
 // spuriously on a machine that has never registered the host (e.g. a fresh worktree).
 // The authoritative signals for "is capture working" remain a real-Chrome capture plus
-// ~/.hologram/bridge.log / capture.log.
+// the config dir's bridge.log / capture.log (Windows: %APPDATA%\Hologram).
 function checkRegistration() {
   if (process.platform !== 'win32') return { name: 'host registration', ok: true, soft: true, detail: 'skipped (non-win32)' };
   const manifestPath = path.join(configDir(), `${install.HOST_NAME}.json`);
@@ -170,7 +170,7 @@ function checkRegistryPointer() {
   const key = `HKCU\\Software\\Google\\Chrome\\NativeMessagingHosts\\${install.HOST_NAME}`;
   // Was "this reads the VIRTUAL hive" until 2026-08-06 (#1003) — the MSIX container no
   // longer wraps this process, so the value below IS what the real Chrome consults.
-  const caveat = 'reports the real hive since 2026-08-06; a capture + ~/.hologram/bridge.log is still the end-to-end proof';
+  const caveat = "reports the real hive since 2026-08-06; a capture + the config dir's bridge.log is still the end-to-end proof";
   try {
     const out = execFileSync('reg', ['query', key, '/ve'], { encoding: 'utf8' });
     const m = out.match(/REG_SZ\s+(.+?)\s*$/m);

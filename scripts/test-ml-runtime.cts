@@ -33,7 +33,7 @@ const { electronPath: resolveElectron } = require('./lib-electron-path.cts');
 const MODEL_REPO = 'Xenova/all-MiniLM-L6-v2';
 const MODEL_REV = '751bff37182d3f1213fa05d7196b954e230abad9';
 const MODEL_FILES = ['config.json', 'tokenizer.json', 'tokenizer_config.json', 'onnx/model_quantized.onnx'];
-// Outside the repo and outside ~/.hologram: a download this slow should survive
+// Outside the repo and outside the config dir: a download this slow should survive
 // worktree churn, and it must never land in the real library or config dir.
 const MODEL_CACHE = path.join(os.tmpdir(), 'hologram-ml-smoke-models', ...MODEL_REPO.split('/').slice(0, -1), `${MODEL_REPO.split('/').pop()}@${MODEL_REV}`);
 

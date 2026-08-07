@@ -5,7 +5,7 @@ Hologram = ウェブのコンテンツ（現対応はSNS投稿）を出自・エ
 射程・機能の採否＝docs/scope.md／詳細=docs/architecture.md／**設計判断とその理由＝docs/decisions/（ADR・1決定1ファイル・実装まで進んだ設計はIssueからここへ昇格）**／ビルド・実機検証=docs/build.md／テスト一覧=docs/testing.md／**確定した用語（UI日本語⇔コード英語）と「固有名を付けない」と決めた領域＝docs/glossary.md（新語をここで作らない）**／機能説明=README.md／残タスク=GitHub Issues＋Project「Hologram Backlog」（apricot-cake/hologram）。実装のhow・私的文脈はメモリ`hologram-backlog`、訴求の物差し（文言を書く前に読む）はメモリ`hologram-positioning`（ともにrepo外）
 
 # ストレージと実行環境
-- 配置は`~/.hologram`(config/ログ)と`saveFolder`(既定`~/Hologram/library`)＝AppData外（MSIX仮想化でのライブラリ消失事故対策・2026-06-23）。⚠️**「必須」の根拠は 2026-08-06 に失効**＝仮想化はもう起きない（#1003）＝`config` を`%APPDATA%\Hologram`へ戻す設計が#232にある（**ライブラリ側は別**＝#232が既に製品判断へ書き換え済みで、位置は変えない）。**それでも今すぐ戻さない**＝今回の発見自体が Claude Desktop の構成が変わった証明で逆方向にも変わりうる＝戻すなら分岐を検知する仕組みとセット（#232のコメント）
+- 配置は`config`（Windows既定`%APPDATA%\Hologram`＝Electronの`userData`と同一）と`saveFolder`（既定`~/Hologram/library`＝AppData外）＝**2026-08-07（#232）に config を`~/.hologram`から OS 標準位置へ戻した**。旧配置はMSIX仮想化でのライブラリ消失事故対策（2026-06-23）だったが、その根拠は2026-08-06に失効済み（#1003＝仮想化はもう起きない）。戻す前提だった #1009 の起動時ガード（ADR 0028）が着地済みなので、分岐が起きれば起動時に検知して止まる。**移行コードは無い**（リリース前で既存configは作者の手元1台のみ・移動は作業手順として一回きり実施）。**ライブラリ側は対象外**＝`saveFolder`の位置は製品判断（データ所有・Zotero前例・クラウド同期圏外）でAppData外のまま変えない。
 - **アプリ起動は`restart-app.ps1`**＝理由はもう仮想化ではなく、①`--remote-debugging-port=9222`が固定で付く②その引数が実機を名指しする唯一の目印（⚠️この経路以外で起動された個体はこの目印を持たない＝#1004）。⚠️**スケジュールタスク`HologramLaunch`経由は2026-08-07に撤去**（#1008＝`Start-Process`でも「起動元シェルの子にならない」が得られると実測。タスク自体の削除は未決でユーザー待ち）。**UIを作り込む間はHMRを使ってよい**＝`REMOTE_DEBUGGING_PORT=9222 npm run dev --workspace=app`でCDPも同時に使える（#1003・キャプチャ経路の確認だけは実機で）。テストは`HOLOGRAM_CONFIG_DIR`でサンドボックス化。手順はdocs/build.md「コード変更の反映」「検証ルール」
 
 # ルール

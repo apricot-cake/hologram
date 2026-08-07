@@ -119,6 +119,6 @@ Everything is stored in a local folder; nothing is sent to any server. See [PRIV
 ### Where your data lives
 
 - **Library** (images + metadata): a plain folder you choose — default `~/Hologram/library`
-- **Settings**: `~/.hologram`
+- **Settings**: your OS's standard app-settings location (e.g. `%APPDATA%\Hologram` on Windows)
 
 Both live outside the app's installation, so **uninstalling the app never deletes them**. To remove everything, delete these two folders yourself.

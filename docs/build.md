@@ -56,7 +56,7 @@ Dependabot（#395）の更新 PR で新バージョンが来たときも、確�
 
 `.githooks/post-merge` が、**本体ツリーへ main を取り込んだ時**に `extension/` 等の変更を見て `npm run deploy:ext` を走らせる（有効化は `npm run setup` の `git config core.hooksPath .githooks`）。常駐プロセスもポーリングも無い。
 
-Chrome は unpacked 拡張のファイルが変わっても自分では読み直さないので、差し替えだけでは `chrome://extensions` のクリックが残る。それを消すのが #650 の自己リロード＝`deploy:ext` が `~/.hologram/extension-build.json` にビルドIDを告知し、ネイティブホストが全ての返信にそれを乗せ、拡張が（保存・一括取込・キャプチャUIが終わるのを待ってから）自分で `chrome.runtime.reload()` を呼ぶ。**リンク worktree は告知しない**＝サブエージェントのビルドが日常の拡張を動かすことはない。
+Chrome は unpacked 拡張のファイルが変わっても自分では読み直さないので、差し替えだけでは `chrome://extensions` のクリックが残る。それを消すのが #650 の自己リロード＝`deploy:ext` が config dir（Windows は `%APPDATA%\Hologram`）の `extension-build.json` にビルドIDを告知し、ネイティブホストが全ての返信にそれを乗せ、拡張が（保存・一括取込・キャプチャUIが終わるのを待ってから）自分で `chrome.runtime.reload()` を呼ぶ。**リンク worktree は告知しない**＝サブエージェントのビルドが日常の拡張を動かすことはない。
 
 順序は「差し替えてから告知」。まだ disk に無いビルドを告知するのは、`scripts/build-extension.cts` の検証が防いでいる `DISABLE_RELOAD`（不完全な出力を読んだ Chrome が拡張を無効化し、ファイルが揃っても戻らない）そのもの。
 
@@ -144,7 +144,7 @@ renderer は HMR、main は保存で自動再起動。**CDP も同時に使え�
 
 ⚠️**旧記述「`electron-vite dev` は使わない」の理由（MSIX 仮想化）は失効した**＝下の「起動経路」を参照。
 
-native-host のブリッジ（Chrome が起動する常駐プロセス）を変更した場合は `npm run build:native-host-bridge --workspace=app` でバンドルを作り直してから `node native-host/install.cts` で `~/.hologram` へ再配備（アプリ再起動は不要）。native-host のブリッジ（Chrome が起動する常駐プロセス）を変更した場合は `npm run build:native-host-bridge --workspace=app` でバンドルを作り直してから `node native-host/install.cts` で `~/.hologram` へ再配備（アプリ再起動は不要）。
+native-host のブリッジ（Chrome が起動する常駐プロセス）を変更した場合は `npm run build:native-host-bridge --workspace=app` でバンドルを作り直してから `node native-host/install.cts` で config dir（Windows は `%APPDATA%\Hologram`）へ再配備（アプリ再起動は不要）。
 
 **再起動は `restart-app.ps1` で行う**（停止 ＋ 起動をまとめてある）。Claude が実行する最小形:
 
@@ -183,7 +183,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File <repo>\restart-app.ps1
 | --- | --- | --- | --- |
 | 実機 | `restart-app.ps1`（`Start-Process` で `electron.exe` を直接起動。旧 `HologramLaunch` タスク経由は2026-08-07に撤去＝#1008。**このマシンにタスク自体が残っている可能性はあるが、起動経路としては使っていない**） | 9222 固定（スクリプトが `--remote-debugging-port=9222` を付与）。**この個体を選ぶ目印はもうポートではなく実行ファイルパスの厳密一致**（#1004 案 C′・上の「止める相手は…」参照）＝ショートカット等で引数なしに起動された個体も `restart-app.ps1` で止められるが、CDP の 9222 はこのスクリプトから起動した個体にしか開かない | 実ライブラリでの最終確認・キャプチャ経路（拡張→bridge）の確認だけ |
 | HMR（開発サーバー） | `REMOTE_DEBUGGING_PORT=9222 npm run dev --workspace=app`（#1003） | 9222（`electron-vite` がこの環境変数を読んで Electron へ同じ引数を渡す） | UI を作り込む間（ビルド→再起動の往復が消える）。⚠️`ensureHostRegistered()` を呼ばない設計なのでキャプチャ経路の確認には使わない。実機とは single-instance lock で排他＝同時には起こせない |
-| サンドボックス | `node scripts/sandbox-app.cts`（可視・常駐の2台目） | 動的（9333〜9432・作業ツリーのパスから決まり `.sandbox/instance.json` に記録）。接続は `CDP_PORT=sandbox node scripts/cdp-verify.cts …`（そのツリーの記録から解決＝番号を持ち回らない）。終了は `node scripts/sandbox-app.cts stop` | 見た目・モーションの確認（隠しウィンドウでは CSS transition や inline 配置が再現しない）。HKCU・共有 `~/.hologram` に触れないので実機・他 worktree と安全に共存する |
+| サンドボックス | `node scripts/sandbox-app.cts`（可視・常駐の2台目） | 動的（9333〜9432・作業ツリーのパスから決まり `.sandbox/instance.json` に記録）。接続は `CDP_PORT=sandbox node scripts/cdp-verify.cts …`（そのツリーの記録から解決＝番号を持ち回らない）。終了は `node scripts/sandbox-app.cts stop` | 見た目・モーションの確認（隠しウィンドウでは CSS transition や inline 配置が再現しない）。HKCU・共有 config dir（`%APPDATA%\Hologram`）に触れないので実機・他 worktree と安全に共存する |
 | テストハーネス | `test-app-*.cts` のうち CDP を使うもの（`test-app-asset-csp.cts`・`test-app-renderer-origin.cts` など。大半の `test-app-*.cts` は `HOLOGRAM_SMOKE_EVAL` 経由の結果だけを stdout へ返すので CDP ポート自体を持たない）が `spawn` 時に自前で立てる | 動的（`freePort()` が `net.createServer().listen(0, …)` で OS に空きポートを確保→即 close。サンドボックスの `instance.json` のような記録は無い＝スクリプト自身が同じプロセス内で `cdpList()` / `listeningPid()` を呼んで使い切り、外部への公開はしない） | 通常は外部から `cdp-verify.cts` を繋がない（スクリプトが自己完結）。ハングを外から診るときだけ `Get-CimInstance Win32_Process -Filter "Name='electron.exe'"` のコマンドラインから `--remote-debugging-port=NNNN` を読んでポートを特定する |
 
 ## 検証ルール（隔離4段構え）
@@ -191,7 +191,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File <repo>\restart-app.ps1
 **検証は隔離インスタンスで行う（既定）。実機 :9222 に触るのは「実ライブラリでの最終確認」と「キャプチャ経路（拡張→bridge）」だけ**。
 
 1. **挙動・自動テスト＝SMOKE 隔離**: `HOLOGRAM_SMOKE=1` ＋ `HOLOGRAM_CONFIG_DIR=<tmp>`（雛形は `scripts/test-app-tagtypes.cts`）。隠しウィンドウ・自動終了。別プロセス・別 config なので、**ユーザーが本体アプリを操作していても結果に混ざりようがない**。実機を使う限り、ユーザーの操作が混入したかを事前に防ぐ手段も、事後に検知する手段も無い（2026-07-20 に実測で確認＝CDP `Input.*` で撃ったイベントは人間の操作と同じく `isTrusted: true` になり区別できない。ページ内合成の `el.click()` だけが `false`）。だから防ぐのでなく、混入しても困らない場所へ検証を寄せる。
-2. **見た目・モーション＝サンドボックスインスタンス**: `node scripts/sandbox-app.cts` で**可視・常駐の2台目**を起動する（CSS transition や inline 配置は隠しウィンドウでは再現しないため、従来は実機に頼っていた層）。起こし方・接続コマンド・ポートの決まり方は上の「CDP で繋ぐ先の選び方」参照。ここでは安全性だけ＝**cdp-verify はサンドボックスポートに繋ぐ前に、そこで動いているアプリがこのツリーから起動されたものかを突き合わせて、違えば止まる**＝並行 worktree が同じポートを取り合っても、他人のインスタンスを自分のものとして駆動したまま成功する経路が無い（#640。ポートの決定性は「毎回同じ番号へ戻れる」ための便宜で、安全弁は突き合わせの方）。`HOLOGRAM_SANDBOX=1` でホスト登録をスキップするため **HKCU・共有 `~/.hologram` に一切触れない**＝実機と安全に共存でき、worktree ごとに独立するので並行セッションの検証が衝突しない。インスタンスロックは（アプリ名, userData）単位で userData は config dir に固定されている＝2台目の起動をロックは妨げない。**実データでしか出ない問題（実ライブラリの多様性・規模で崩れる表示や性能／特定の実投稿で再現するバグ）は `--real` でシードする**（下記）。
+2. **見た目・モーション＝サンドボックスインスタンス**: `node scripts/sandbox-app.cts` で**可視・常駐の2台目**を起動する（CSS transition や inline 配置は隠しウィンドウでは再現しないため、従来は実機に頼っていた層）。起こし方・接続コマンド・ポートの決まり方は上の「CDP で繋ぐ先の選び方」参照。ここでは安全性だけ＝**cdp-verify はサンドボックスポートに繋ぐ前に、そこで動いているアプリがこのツリーから起動されたものかを突き合わせて、違えば止まる**＝並行 worktree が同じポートを取り合っても、他人のインスタンスを自分のものとして駆動したまま成功する経路が無い（#640。ポートの決定性は「毎回同じ番号へ戻れる」ための便宜で、安全弁は突き合わせの方）。`HOLOGRAM_SANDBOX=1` でホスト登録をスキップするため **HKCU・共有 config dir（`%APPDATA%\Hologram`）に一切触れない**＝実機と安全に共存でき、worktree ごとに独立するので並行セッションの検証が衝突しない。インスタンスロックは（アプリ名, userData）単位で userData は config dir に固定されている＝2台目の起動をロックは妨げない。**実データでしか出ない問題（実ライブラリの多様性・規模で崩れる表示や性能／特定の実投稿で再現するバグ）は `--real` でシードする**（下記）。
 3. **実入力・実ピクセルの自動テスト＝Playwright（`npm run test:e2e`・#14）**: 上の1と2の間を埋める層。ケースごとに使い捨ての config dir とライブラリを作り、`HOLOGRAM_SANDBOX=1` ＋ `HOLOGRAM_START_INACTIVE=1` で**見えるが最背面のウィンドウ**を起こし、実ポインタ・実キーで駆動して要素単位のスクリーンショットを撮る。1と違って合成イベントではないので「クリックが届かない」型が捕まり、2と違って人手も常駐インスタンスも要らない。**ユーザーの前面は奪わない**（フォーカスを取らずに z 順の最背面へ送る＝入力は CDP 経由でフォーカス不要）。詳細は `e2e/README.md`。
 4. **実機（:9222）／HMR**: `restart-app.ps1` で起動したウィンドウ、または `REMOTE_DEBUGGING_PORT=9222 npm run dev --workspace=app` の HMR へ CDP 接続する。起こし方・ポート・使い分けは上の「CDP で繋ぐ先の選び方」参照。⚠️**旧記述「直接起動はコンテナ内＝仮想化でキャプチャが壊れる」は失効**（#1003）。実機での検証は短く済ませ、混ざった疑いがあれば撮り直す。
 
@@ -201,7 +201,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File <repo>\restart-app.ps1
 - **実機で異常を見たら、まず自分の駆動の残留を疑う**（ユーザー操作のせいにする誤帰属を先に潰す）。1スクリプトに多数のフローを詰めない＝駆動は目的1つに絞る（絡むと解析不能になる）。
 - スクショは画像トークンが重いので、数値で足りる検証（computed style / コントラスト比など）は画像を撮らず JS 計測で済ます。
 
-### 保存が失敗した時に見るログ（`~/.hologram/`）
+### 保存が失敗した時に見るログ（config dir、Windows は `%APPDATA%\Hologram\`）
 
 **`capture.log` が保存イベントの正本**＝1行1イベントの JSON。**1つの保存は複数行になり、`saveId` で束ねて読む**（保存を試みたページが振る値で、拡張・サービスワーカー・ネイティブホストの3プロセスを通って同じ値が乗る）。**保存の可否を知りたければここを読む。**
 
@@ -315,7 +315,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File <repo>\restart-app.ps1
 
 ホストまで届かなかった分は拡張側の chrome.storage リングバッファにも積まれ、`chrome-extension://<id>/diag.html` で読める。
 
-**同じ診断ページの `protocol` が、拡張とホストの契約版を並べて出す**（#205）＝`extension` はページを開いた拡張の版、`host` は ping に答えたホストが名乗った版、`skew` が `host-old`（アプリ側が古い）／`host-new`（拡張が古い）／`match`。`hostAnswered:false` はホストが起動できていない場合で、その時 `host` が null なのは版が古いからではない（`nativeTest` が理由を持つ）。⚠️**`hostAnswered:true` で `host:null` は「版を名乗らないホスト」＝この仕組みより前のバイナリが `~/.hologram/bridge.js` に残っている**という意味で、`skew` は `host-old` になる。保存が通っていてもこの状態は正常ではない（配備し損ねたホストが動き続けたのが #511）。保存側では、ずれている間は保存のたびにバナーが「Hologram アプリを更新してください」（逆なら拡張）を出す＝**保存は止まらない**。
+**同じ診断ページの `protocol` が、拡張とホストの契約版を並べて出す**（#205）＝`extension` はページを開いた拡張の版、`host` は ping に答えたホストが名乗った版、`skew` が `host-old`（アプリ側が古い）／`host-new`（拡張が古い）／`match`。`hostAnswered:false` はホストが起動できていない場合で、その時 `host` が null なのは版が古いからではない（`nativeTest` が理由を持つ）。⚠️**`hostAnswered:true` で `host:null` は「版を名乗らないホスト」＝この仕組みより前のバイナリが config dir の `bridge.js`（Windows は `%APPDATA%\Hologram\bridge.js`）に残っている**という意味で、`skew` は `host-old` になる。保存が通っていてもこの状態は正常ではない（配備し損ねたホストが動き続けたのが #511）。保存側では、ずれている間は保存のたびにバナーが「Hologram アプリを更新してください」（逆なら拡張）を出す＝**保存は止まらない**。
 
 ### サンドボックスへの実データシード（`--real`・#286）
 

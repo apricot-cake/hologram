@@ -445,7 +445,7 @@ const MIGRATIONS: Migration[] = [
     up: (db) => db.exec(`ALTER TABLE posts ADD COLUMN linkCard TEXT;`),
   },
   // #145: the global history page's backing store. Rows are library-scoped (not
-  // ~/.hologram — a captureId/folder/tag reference only resolves against ITS
+  // the config dir — a captureId/folder/tag reference only resolves against ITS
   // library, see the Issue's 2026-08-02 design comment §3), one row per #144
   // PUSH entry (replace entries — live typing, gallery paging, sort — are never
   // recorded; the renderer decides push vs replace before appending). `state` is

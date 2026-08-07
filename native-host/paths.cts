@@ -5,32 +5,40 @@
 //
 // The bridge cannot ask Electron where its userData is, so both sides must
 // resolve the SAME absolute path independently. The Electron app pins this by
-// calling app.setPath('userData', configDir()) at startup.
+// calling app.setPath('userData', configDir()) at startup — so this directory
+// also holds whatever Chromium itself keeps in userData (Cache, Local Storage,
+// Preferences, ...), not just our own files.
 //
 // Override order: HOLOGRAM_CONFIG_DIR (explicit) wins, else a per-OS default:
-//   Windows : ~/.hologram      (NOT %APPDATA% — see below)
+//   Windows : %APPDATA%\Hologram        (Roaming AppData — Electron's own default)
 //   macOS   : ~/Library/Application Support/Hologram
 //   Linux   : $XDG_CONFIG_HOME/Hologram (or ~/.config/Hologram)
 //
-// Why Windows avoids %APPDATA%: when the app (or our tooling) is driven from
-// inside an MSIX-packaged host — e.g. the Claude desktop app — child processes
-// get %APPDATA%/HKCU storage virtualization: writes silently divert to a private
-// per-package LocalCache and diverge from what the user's real app/Chrome see
-// (the 2026-06 save-folder divergence, ~9082 items). A dotfile under the
-// (non-virtualized) home dir is the SAME real path for every process. Tests
-// isolate by pointing HOLOGRAM_CONFIG_DIR at a sandbox dir.
+// Windows used to default to ~/.hologram (a dotfile under the home dir) to dodge
+// MSIX storage virtualization: when driven from inside an MSIX-packaged host,
+// child processes got %APPDATA%/HKCU writes silently diverted to a private
+// per-package LocalCache, diverging from what the user's real app/Chrome saw
+// (the 2026-06 save-folder divergence, ~9082 items). That virtualization is not
+// happening in this environment any more (2026-08-06, #1003) — the packaged host
+// moved outside the package, and FS/HKCU reads and writes were measured as real —
+// so the workaround was retired in #232 and Windows now uses the OS-standard
+// location like the other two platforms. If the host's layout ever changes back,
+// #1009's startup guard (app/src/main/lib-storage-redirect-guard.ts) detects a
+// LocalCache-redirected configDir()/save folder and refuses to start rather than
+// silently diverging again.
 //
-// NOTE (2026-08-06, #1003): that virtualization is not happening any more —
-// Claude Code moved outside the package, and FS/HKCU reads and writes were all
-// measured as real. So this is no longer a hard requirement, and #232 plans to
-// move the config default back to %APPDATA%\Hologram. It has not been moved yet
-// on purpose: the very fact that the host's layout changed once means it can
-// change back, and the failure mode is silent (the 2026-06 incident only
-// surfaced as "I saved it but the library does not show it"). #232 pairs the
-// move with a check that detects a LocalCache-redirected path at startup —
-// that check now exists (#1009, app/src/main/lib-storage-redirect-guard.ts) and
-// runs against configDir()/the save folder as they resolve TODAY, so #232 can
-// move the default once it lands.
+// #232 intentionally shipped WITHOUT migration code: pre-release, the only
+// existing config directory is the author's own machine, moved by hand once as
+// a one-off operational step (not a design the app carries forward). Do not add
+// a fallback that reads the old ~/.hologram if the new location is empty — the
+// prior attempt at that shape (migrateConfigDirFromAppData, removed 891a6ba) sat
+// around as a permanent no-op with a real hazard: an unconfigured launch could
+// pick up a stale left-behind config.
+//
+// HOLOGRAM_CONFIG_DIR itself stays for a different reason now: test isolation
+// (each test/sandbox run points it at its own mkdtemp dir), not dodging
+// virtualization.
+//
 // The LIBRARY default is a separate question and does not move — see #232, where
 // its rationale is already a product decision rather than this one.
 
@@ -42,7 +50,10 @@ const APP_NAME = 'Hologram';
 function configDir(): string {
   if (process.env.HOLOGRAM_CONFIG_DIR) return process.env.HOLOGRAM_CONFIG_DIR;
   if (process.platform === 'win32') {
-    return path.join(os.homedir(), '.hologram');
+    // Read from the environment rather than joining homedir() + 'AppData/Roaming':
+    // folder redirection and roaming profiles move %APPDATA% off that default
+    // relative path, and the join would silently miss it.
+    return path.join(process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'), APP_NAME);
   }
   if (process.platform === 'darwin') {
     return path.join(os.homedir(), 'Library', 'Application Support', APP_NAME);

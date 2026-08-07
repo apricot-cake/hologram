@@ -42,7 +42,7 @@ export default defineConfig({
     // Node is the default; the four suites that exercise browser-side extension
     // code opt into jsdom per file via a `@vitest-environment jsdom` docblock.
     environment: 'node',
-    // Sandboxes ~/.hologram per test file (CLAUDE.md: never let a test see the
+    // Sandboxes the config dir per test file (CLAUDE.md: never let a test see the
     // real config dir).
     setupFiles: [path.resolve(__dirname, 'scripts/vitest.setup.ts')],
     // Builds the extension when its output is stale, so the suites that read

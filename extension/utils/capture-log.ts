@@ -1,5 +1,5 @@
-// The vocabulary of ~/.hologram/capture.log, and the page side's way of writing
-// to it (#507, #519).
+// The vocabulary of the config dir's capture.log (Windows: %APPDATA%\Hologram),
+// and the page side's way of writing to it (#507, #519).
 //
 // This log's job is to answer, from disk and long afterwards, "what happened to
 // that save?" — and three times running it could not, because it recorded only
