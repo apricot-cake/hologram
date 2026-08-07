@@ -119,9 +119,11 @@ async function launch(options: LaunchOptions): Promise<{ hologram: Hologram; clo
   // …and it finished on the WIDE side of the breakpoint, which is the layout every flow case
   // is written against. CONTENT_SIZE is derived so that it cannot be otherwise (#649), but the
   // request is not the outcome: setContentSize is clamped to the work area, so a display
-  // narrower than the request would silently hand every case the narrow layout. Asked the way
-  // the app asks it — the same media query layout-mode.ts builds — so this follows the
-  // breakpoint too, and it is asked once per launch rather than once in one spec.
+  // narrower than the request would silently hand every case the narrow layout. Asked as a
+  // media query built from layout-mode.ts's own number — so this follows the breakpoint too
+  // — and asked once per launch rather than once in one spec. (The app no longer asks the
+  // question itself: nothing in it reshapes by width since #975/#981. What still depends on
+  // the answer is the SUITE — grid columns, card indices and the pixel baselines.)
   const side = await page.evaluate((bp) => ({ width: window.innerWidth, wide: matchMedia(`(min-width: ${bp}px)`).matches }), WIDE_MIN_PX);
   if (!side.wide) throw new Error(`E2E ウィンドウが narrow 側で起動しました（実測 ${side.width}px ／ wide の下限 ${WIDE_MIN_PX}px）。要求した ${CONTENT_SIZE.width}px が画面の作業領域に収まらなかったか、幅の算出がブレークポイントから外れています。`);
 

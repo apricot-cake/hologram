@@ -22,7 +22,7 @@ const e2eDir = path.join(__dirname, '..', 'e2e');
 /** e2e/lib/viewport.ts as it would be if the layout's breakpoint were `breakpoint`. */
 async function viewportAtBreakpoint(breakpoint: number) {
   vi.resetModules();
-  vi.doMock(layoutModeModule, () => ({ WIDE_MIN_PX: breakpoint, isWide: () => true, subscribe: () => () => {} }));
+  vi.doMock(layoutModeModule, () => ({ WIDE_MIN_PX: breakpoint }));
   try {
     return await import('../e2e/lib/viewport.ts');
   } finally {

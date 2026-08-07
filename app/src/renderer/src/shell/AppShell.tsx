@@ -32,7 +32,6 @@ import { LIMITS, type PanelKey, cachedWidth, clampWidth, loadWidth, persistWidth
 import { isVisible as inspectorIsVisible, load as inspectorLoad, subscribeVisible as subscribeInspectorVisible } from '../services/inspector-panel.ts';
 import { registerScroller } from '../services/content-area.ts';
 import { hologramImageTabSource, isActive as imageViewIsActive } from '../services/image-tab.ts';
-import { isWide as isWideLayout, subscribe as layoutSubscribe } from '../services/layout-mode.ts';
 import { load as panelsLoad } from '../services/panels.ts';
 import { load as shortcutOverridesLoad } from '../services/shortcut-registry.ts';
 import { get as storeGet, subscribe as storeSubscribe } from '../services/store.ts';
@@ -158,7 +157,11 @@ export function AppShell() {
   // #245's bulk hide is not read here any more: both readers of the mask now ask for
   // themselves — inspector-panel.ts's isVisible() ANDs it in, and LeftSidebar reads it to
   // pick its collapsible mode. This file only has to make sure the state is loaded (below).
-  const wide = useSyncExternalStore(layoutSubscribe, isWideLayout);
+  // The window's width is not read here either (#988). It had one subscriber left over from
+  // #981 — a useSyncExternalStore whose value nothing used — and re-rendering the shell on a
+  // breakpoint crossing buys nothing once no shape below is width-linked: #975 docked the
+  // inspector at every width and #981 fixed the sidebar to the rail. The breakpoint itself
+  // still has an owner (services/layout-mode.ts); it just has no reader inside the app.
   // The inspector is a docked column at every width (#975), so its visibility is the
   // toggle and #245's bulk hide — nothing about the window's size or the selection. The
   // formula itself lives in inspector-panel.ts (P2⑦): the renderer modules outside React
