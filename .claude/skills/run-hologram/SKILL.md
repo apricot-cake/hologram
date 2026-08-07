@@ -19,10 +19,11 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\Users\apricot\local\d
 
 停止（graceful close）と起動が中に入っている＝**別途 kill してから叩かない**。再起動は確認を取らずに行ってよい。
 
-⚠️**手で止める必要がある時も、止める相手はパスでなくコマンドラインで選ぶ**（理由＝worktree の Electron を巻き添えにしうる。docs/build.md「起動経路」が正）。⚠️**このフィルタは browser と renderer の2プロセスを返す**（Chromium が子へも同じフラグを渡す）＝数が合わないと読まない。
+⚠️**手で止める必要がある時も、止める相手は解決済み `electron.exe` パスの厳密な前方一致で選ぶ**（理由＝コマンドラインの `--remote-debugging-port` で選ぶと引数なしで起動された個体〔スタートメニューのショートカット等〕を選べず、パスの部分一致で選ぶと worktree の Electron を巻き添えにしうる。docs/build.md「起動経路」が正＝#1004 案 C′）。⚠️**このフィルタは browser と、同じ exe を使う子プロセス全部（renderer・gpu-process・utility）を返す**（Chromium が子へも同じ実行ファイルを使う）＝数が合わないと読まない。
 
 ```powershell
-Get-CimInstance Win32_Process -Filter "Name='electron.exe'" | Where-Object { $_.CommandLine -like '*--remote-debugging-port=9222*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
+$electron = 'C:\Users\apricot\local\dev\hologram\node_modules\electron\dist\electron.exe'
+Get-CimInstance Win32_Process -Filter "Name='electron.exe'" | Where-Object { $_.CommandLine -like "`"$electron`"*" -or $_.CommandLine -like "$electron *" } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
 ```
 
 ⚠️**自分で `electron.exe` を直接起こす時は `HOLOGRAM_CONFIG_DIR` の残りに注意**＝直接 spawn は呼び出したシェルの環境を継承するので、実機がサンドボックス config で上がり空のライブラリが出る（`restart-app.ps1` は spawn 直前に `HOLOGRAM_*` を落としてこれを防いでいる）。
