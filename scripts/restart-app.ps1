@@ -59,9 +59,13 @@
 # What a direct launch does NOT inherit for free is the task's clean environment, so the
 # env block below builds one. See the comment there.
 
-$app     = Join-Path $PSScriptRoot 'app'
-$logFile = Join-Path $HOME '.hologram\restart-app.log'
-$port    = 9222
+# This script lives in scripts/ alongside the other dev-instance tooling
+# (sandbox-app.cts, cdp-verify.cts), so every repo path below hangs off the PARENT of
+# $PSScriptRoot. Right-clicking it still works from here.
+$repoRoot = Split-Path $PSScriptRoot -Parent
+$app      = Join-Path $repoRoot 'app'
+$logFile  = Join-Path $HOME '.hologram\restart-app.log'
+$port     = 9222
 
 # electron lives under app/node_modules or the repo root, depending on how npm
 # felt like hoisting: app/ is a workspace, so npm lifts its dependencies to the
@@ -69,7 +73,7 @@ $port    = 9222
 # both rather than baking one in.
 $electron = @(
   (Join-Path $app 'node_modules\electron\dist\electron.exe'),
-  (Join-Path $PSScriptRoot 'node_modules\electron\dist\electron.exe')
+  (Join-Path $repoRoot 'node_modules\electron\dist\electron.exe')
 ) | Where-Object { Test-Path $_ } | Select-Object -First 1
 
 # Label the window so a right-click launch is self-explanatory (guarded: some hosts lack RawUI).
@@ -139,7 +143,7 @@ $signalled = $false
 $deadline  = (Get-Date).AddSeconds(20)
 do {
   try {
-    $probe = Start-Process -FilePath $electron -ArgumentList "`"$app`" --hologram-quit" -WorkingDirectory $PSScriptRoot -Wait -PassThru -ErrorAction Stop
+    $probe = Start-Process -FilePath $electron -ArgumentList "`"$app`" --hologram-quit" -WorkingDirectory $repoRoot -Wait -PassThru -ErrorAction Stop
   } catch {
     Stop-WithError("終了の合図を送れませんでした: $($_.Exception.Message)")
   }
@@ -179,7 +183,7 @@ $portMarkerBefore = Get-Content $activePortFile -Raw -ErrorAction SilentlyContin
 # be, and the task never had one.
 Write-Host 'Hologram(electron) を起動しています...' -ForegroundColor Cyan
 try {
-  Start-Process -FilePath $electron -ArgumentList "`"$app`" --remote-debugging-port=$port" -WorkingDirectory $PSScriptRoot -ErrorAction Stop
+  Start-Process -FilePath $electron -ArgumentList "`"$app`" --remote-debugging-port=$port" -WorkingDirectory $repoRoot -ErrorAction Stop
 } catch {
   Stop-WithError("Hologram の起動に失敗しました: $($_.Exception.Message)")
 }

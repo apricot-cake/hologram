@@ -14,7 +14,7 @@ description: Hologram アプリを起動して動きを確かめる時の経路�
 **なぜこの経路を通すか（`HologramLaunch` タスクの去就・環境変数の継承・MSIX の失効を含む）は docs/build.md「起動経路」が正本**＝ここはコマンドだけ。
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\Users\apricot\local\dev\hologram\restart-app.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\Users\apricot\local\dev\hologram\scripts\restart-app.ps1
 ```
 
 停止（graceful close）と起動が中に入っている＝**別途 kill してから叩かない**。再起動は確認を取らずに行ってよい。

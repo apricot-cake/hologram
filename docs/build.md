@@ -85,7 +85,7 @@ dev サーバーは `localhost:51731` 固定。二重起動は別 port へ逃げ
 
 ⚠️**待ち受けは IPv6 の `::1`**（WXT が Vite の既定でバインドする＝2026-08-04 実測）。**生死を見るコードで `127.0.0.1` を指さない**＝IPv4 では繋がらず、動いているサーバーを「落ちている」と報告する。実際 `open-dev-profile.cts` の `dev server:` 行はこの誤りで、ずっと down と出していた（同日修正・判定は `scripts/lib-dev-server.cts` に集約）。拡張自身は `http://localhost:51731/...` を読むので実害は診断だけに出ていた。
 
-**サーバーは可視のコンソールウィンドウで走る**（2026-08-04。**窓の開き方・止め方の作法そのものは Windows 全般の話＝skill `windows-scripting` が正本**で、ここは Hologram 側の値と事情だけを書く）＝端末を持たない呼び出し（Claude セッション・タスクランナー）から `npm run dev:ext` が起きた時、`scripts/dev-extension.cts` は自分では走らず、`Hologram dev:ext` というタイトルの新しいコンソールを開いてそちらへサーバーを渡し、呼び出した側へは即座に戻る。**人が端末で打った時は分離しない**＝そのまま目の前で走る（Ctrl+C と WXT のキーバインドが効くのはこちら）。`CI` 環境変数がある時と Windows 以外でも分離しない。
+**サーバーは可視のコンソールウィンドウで走る**（2026-08-04）＝端末を持たない呼び出し（Claude セッション・タスクランナー）から `npm run dev:ext` が起きた時、`scripts/dev-extension.cts` は自分では走らず、`Hologram dev:ext` というタイトルの新しいコンソールを開いてそちらへサーバーを渡し、呼び出した側へは即座に戻る。**人が端末で打った時は分離しない**＝そのまま目の前で走る（Ctrl+C と WXT のキーバインドが効くのはこちら）。`CI` 環境変数がある時と Windows 以外でも分離しない。
 
 - **理由は「走っているかどうかが外から見えること」**＝端末なしで起こすと、出力は呼び出した側が選んだスクラッチファイルへ消え、そのセッションの外からはサーバーが上がっているのかどうかも分からない。見えないサーバーは二重に起こされ、何日も動きっぱなしになる。ウィンドウがあれば、リビルド行・リロード行・ポート衝突がそこに全部出る。
 - **窓はタスクバーの状態表示を兼ねる**（2026-08-04）＝**窓の主は node**（`start … node scripts/dev-extension.cts` で開く＝間に `cmd /k` を挟まない）なので、タスクバーのボタンに **Node のアイコン**が出る。**窓がある＝サーバーが生きている**で、止まれば窓ごと消える＝「動いているか」を見るために `open-dev-profile.cts --print` を打つ必要が無い。
@@ -149,7 +149,7 @@ native-host のブリッジ（Chrome が起動する常駐プロセス）を変�
 **再起動は `restart-app.ps1` で行う**（停止 ＋ 起動をまとめてある）。Claude が実行する最小形:
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File <repo>\restart-app.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File <repo>\scripts\restart-app.ps1
 ```
 
 **止める相手はもう探さない＝アプリ本人に終了を伝える**（2026-08-07 変更）。`restart-app.ps1` は `--hologram-quit` を付けた使い捨ての Electron を起こす＝single-instance ロックを取り損ねて argv がロック保持者へ渡り、**保持者が自分で `app.quit()` する**（`app/src/main/restart-signal.ts` ＋ `index.ts` の `second-instance`）。`before-quit` の後始末（saved-index フラッシュ・ウィンドウ位置・DB クローズ）が走るのは旧 `CloseMainWindow()` と同じ。
@@ -167,7 +167,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File <repo>\restart-app.ps1
 
 ⚠️**プロセス照合は「フリーズ時の保険」としてだけ残っている**（`Get-HologramProcs`）＝合図に20秒応答しない個体はメッセージループが止まっているので、実行ファイルパスの厳密一致で強制終了する。**この経路は同じツリーのサンドボックスと、Chrome が起こした native-messaging ブリッジ（`electron.exe "%APPDATA%\Hologram\bridge.js"`＝同じバイナリを使う）を巻き添えにする**ので、スクリプトはその旨を表示してから実行する。⚠️**旧方式は再起動のたびにこの2つを道連れにしていた**（2026-08-07 実測＝旧フィルタが返した9 pid にサンドボックスとブリッジの両方が入っていた）。⚠️**フィルタには browser プロセスと、同じ exe を使う子プロセス全部が掛かる**（renderer だけでなく gpu-process・utility も。Chromium が同じ実行ファイルを子にも使うため）＝browser を殺せば子も落ちるので実害は無いが、「1個だけ返るはず」と読むと数が合わない。
 
-ユーザーのワンクリックは `restart-app.ps1` を右クリック →「PowerShell で実行」（窓は出るが終了時に自動で閉じる）。`restart-app.ps1` は graceful close ＋ 起動 ＋ 目印の確認をまとめてある。
+ユーザーのワンクリックは `scripts/restart-app.ps1` を右クリック →「PowerShell で実行」（窓は出るが終了時に自動で閉じる）。**2026-08-07 にリポジトリ直下から `scripts/` へ移した**＝他の開発インスタンス用ツール（`sandbox-app.cts`・`cdp-verify.cts`）と同じ場所。`restart-app.ps1` は graceful close ＋ 起動 ＋ 目印の確認をまとめてある。
 
 ### 起動経路
 
