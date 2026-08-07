@@ -4,12 +4,14 @@
 # Launch: right-click this file -> "Run with PowerShell" (a window shows and closes on
 # success; on a manual launch it stays open on failure). Claude also runs it headlessly.
 #
-# --remote-debugging-port=9222 is the point of this script. It does two jobs:
-#   1. the resident instance is always CDP-debuggable, without anyone remembering a flag.
-#   2. it is the ONLY marker that identifies the real instance. The stop half below (and
-#      the equivalent one-liner in docs/build.md) selects by it, precisely so a worktree's
-#      test Electron is not killed along with it. An instance started some other way has
-#      no marker and cannot be selected — that happened on 2026-08-06 (#1004).
+# --remote-debugging-port=9222 makes the resident instance CDP-debuggable, without anyone
+# remembering a flag. It used to double as the ONLY marker that identifies the real
+# instance for the stop half below, but that broke on 2026-08-06 (#1004): an instance
+# started without the flag (the Start Menu shortcut launches electron.exe directly, with
+# no arguments — turned out to be how the user starts the app day to day) had no marker
+# and could not be selected. The stop half now selects by the resolved $electron path
+# instead (see the comment on Get-HologramProcs below), so it finds the real instance
+# whether or not it was launched with the flag.
 #
 # This used to go through a 'HologramLaunch' scheduled task. TWO reasons, both now gone:
 #
@@ -77,15 +79,20 @@ if (-not $electron) {
 # CloseMainWindow lets the app finish its 'close' handler (which writes config) before exit;
 # a forced kill mid-write used to truncate config.json.
 #
-# Picked by COMMAND LINE, not by executable path: a test harness running in a worktree uses
-# that tree's own node_modules\electron, and worktrees live inside the repo — so a
-# '*hologram*' path match (what this used to do) also swept up whatever a parallel session
-# was testing with. Only this script adds --remote-debugging-port=9222, so it names the real
-# instance exactly. (It matches the browser process and its renderer child, which Chromium
-# gives the same flag; killing the browser takes the child with it either way.)
+# Picked by the resolved $ELECTRON PATH, front-anchored — not by a '*hologram*' substring
+# (swept up worktree Electrons too, since worktrees live inside the repo; fixed 2026-08-05)
+# and not by the --remote-debugging-port argument (missed instances started without it —
+# the Start Menu shortcut is one; #1004). A worktree's test/sandbox Electron uses that
+# tree's OWN node_modules\electron, i.e. a different exe path, so it still is not matched:
+# measured 2026-08-07 with the real instance and a worktree sandbox running at once, exe
+# paths differed as expected. Windows quotes the exe in the command line when there's
+# nothing that forces it not to (Start-Process, a Start Menu shortcut) but not always (a
+# bare child_process.spawn(path, args) with no shell needs no quoting when path has no
+# spaces) — match both forms. (It matches the browser process and its renderer child, which
+# Chromium gives the same flag; killing the browser takes the child with it either way.)
 function Get-HologramProcs {
   Get-CimInstance Win32_Process -Filter "Name='electron.exe'" -ErrorAction SilentlyContinue |
-    Where-Object { $_.CommandLine -like "*--remote-debugging-port=$port*" } |
+    Where-Object { $_.CommandLine -like "`"$electron`"*" -or $_.CommandLine -like "$electron *" } |
     ForEach-Object { Get-Process -Id $_.ProcessId -ErrorAction SilentlyContinue }
 }
 Write-Host 'Hologram(electron) を停止しています...' -ForegroundColor Cyan
@@ -124,15 +131,15 @@ try {
   Stop-WithError("Hologram の起動に失敗しました: $($_.Exception.Message)")
 }
 
-# Post-condition: the new instance carries the marker. That is what makes it findable by
-# the stop half above and by docs/build.md's one-liner, so it is worth one bounded wait
-# rather than trusting that a launched process is a running app.
+# Post-condition: the new instance is actually up. Get-HologramProcs finds it by $electron
+# path (same function as the stop half above and docs/build.md's one-liner), so it is worth
+# one bounded wait rather than trusting that a launched process is a running app.
 for ($i = 0; $i -lt 40; $i++) {
   if (Get-HologramProcs) { break }
   Start-Sleep -Milliseconds 250
 }
 if (-not (Get-HologramProcs)) {
-  Stop-WithError("起動したはずの Hologram が見つかりません（--remote-debugging-port=$port を持つ electron.exe が10秒経っても現れませんでした）")
+  Stop-WithError("起動したはずの Hologram が見つかりません（$electron から起動された electron.exe が10秒経っても現れませんでした）")
 }
 
 Write-Host "完了（Hologram を起動しました。CDP: 127.0.0.1:$port）。" -ForegroundColor Green
