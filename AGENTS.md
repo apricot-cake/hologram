@@ -12,4 +12,4 @@ Hologram リポジトリまたはその worktree を対象に作業するとき�
 
 # 拡張の実機検証
 
-拡張の開発は日常利用とは別の Chrome プロファイルで行う（#732）。専用 worktree から開発サーバーを起動しても日常の Chrome には影響しないので、配信元の取り合いは無い。日常の Chrome に載るのは `npm run deploy:ext` を通った検証済み release だけで、昇格は本体ツリーの `post-merge` フックが行う。手順と実機検証は skill `test-in-worktree` / `verify-extension` が正本。
+拡張の開発は日常利用とは別の Chrome プロファイルで行う（#732）。専用 worktree から開発サーバーを起動しても日常の Chrome には影響しないので、配信元の取り合いは無い。日常の Chrome に載るのは `npm run deploy:ext` を通った検証済み release だけで、昇格は本体ツリーの `post-merge` フックが行う。手順と実機検証は `docs/build.md`「拡張機能の開発・配布」が正本。

@@ -34,6 +34,14 @@ Dependabot（#395）の更新 PR で新バージョンが来たときも、確�
 
 （`extension/` 側は独立した npm プロジェクトで、postinstall が `wxt prepare`（tsconfig が extend する `.wxt/` の型を生成する）を走らせるため、プレーンな `npm install` を別途行う。**Electron 本体の手動取得は上記どちらのフラグとも無関係に今も必要**＝pin している electron@43.2.0 自体に postinstall が無い。）
 
+### worktree で回すとき
+
+`git worktree add` で作った fresh worktree には **node_modules が無い**。node_modules は**2層**にある＝リポジトリ root（`app/` は npm ワークスペースなので root の install に相乗り）と `extension/`。typecheck は各層の `node_modules/typescript/bin/tsc` を使う（`scripts/typecheck.cts`）。`npm test` は Vitest＝root の devDependency なので、**install 無しで走るテストは無い**＝`npm run setup` を済ませる。
+
+⚠️**本体の node_modules を junction で借りると typecheck が壊れる**。`mklink /J` で root/app/extension をリンクしても、本体は **pnpm レイアウト**（各パッケージが `.pnpm` ストアへの symlink）なので junction 越しに react / react-dom / jsx-runtime / sonner 等が解決できず、renderer の `.tsx` が大量の TS2307・TS7026 を吐く。**変更したファイル自体のエラーが 0 でもその中に埋もれる**＝切り分けは `tsc 出力 | grep <対象ファイル>` で対象ファイル起因だけを見る。型検査をちゃんと通したいなら素直に `npm run setup`（重いが確実）。
+
+install が済めば `npm test`・`npm run typecheck`・アプリ起動ハーネス（`test-app-*.cts`）がすべて worktree で緑になる。各自 `HOLOGRAM_CONFIG_DIR` の mkdtemp サンドボックスで実 Electron を起動するので本体アプリにも実ライブラリにも触らない＝**実機 CDP(:9222) を奪わずに実経路を検証したい時の既定手段**（並行セッションが居る時は特に）。
+
 ## commit 前の自動整形（#994）
 
 `.githooks/pre-commit` が、ステージ済みファイルに `biome check --write` を掛けて直し直後の内容を自動で再ステージする（有効化は `npm run setup` の `git config core.hooksPath .githooks`＝post-merge と共通）。Biome が自動修正できない違反（parse エラー等）に当たった時だけ commit を止める。緊急時は `git commit --no-verify` で外せる。
@@ -207,6 +215,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File <repo>\scripts\restart-a
 - **稼働中の実機は確認なく駆動してよい**（リロード・カード選択・ビュー開閉・スクショまで一気に自律で）。ユーザーの作業状態を保存する義務も、事前に声をかける義務も無い（2026-07-19 にユーザーが明示。それ以前は「今は触らないでください」と伝える運用だったが、**チャットの声かけはユーザーが画面を見ている保証が無く警告として機能しない**＝2026-07-20 に撤去）。開いたオーバーレイを閉じる程度の後片付けはする。
 - **実機で異常を見たら、まず自分の駆動の残留を疑う**（ユーザー操作のせいにする誤帰属を先に潰す）。1スクリプトに多数のフローを詰めない＝駆動は目的1つに絞る（絡むと解析不能になる）。
 - スクショは画像トークンが重いので、数値で足りる検証（computed style / コントラスト比など）は画像を撮らず JS 計測で済ます。
+- **粒度**＝pure-logic の増分は「該当 unit が緑＋biome clean＋対象ファイルの tsc 0 件」で1段階の検証として足りる。実機 E2E は UI 増分が溜まった節目でまとめて行う。
 
 ### 保存が失敗した時に見るログ（config dir、Windows は `%APPDATA%\Hologram\`）
 
