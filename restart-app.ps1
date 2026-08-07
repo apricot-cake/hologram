@@ -1,38 +1,49 @@
-﻿# Restart the Hologram viewer (Electron) through a scheduled task, so every launch is
-# identical and carries the CDP port.
-#
-# Why a scheduled task instead of launching electron.exe directly:
-#   1. The action carries --remote-debugging-port=9222, so the resident instance is always
-#      CDP-debuggable for the real-machine verify workflow (docs/build.md).
-#   2. That argument is also the ONLY marker that identifies the real instance. The stop
-#      command in docs/build.md selects by it, precisely so a worktree's test Electron is
-#      not killed along with it. An instance started some other way has no marker and
-#      cannot be selected — that happened on 2026-08-06 (#1004).
-#
-# The ORIGINAL reason was different and has expired (2026-08-06, #1003): Claude's shell
-# used to live inside the MSIX-packaged Claude desktop app, so a directly-spawned
-# electron.exe was a child of that container with HKCU + filesystem virtualized, and the
-# app would register the native-messaging host into a private hive the real Chrome could
-# not see. Claude Code now runs outside the package; FS and HKCU reads and writes were all
-# measured as real (the HKCU write was confirmed by the user in regedit). Direct launches
-# no longer break registration. Note the layout changed once and could change back — the
-# check is whether (Get-Item <path>).Target points into ...\Packages\<pkg>\LocalCache\...
+﻿# Restart the Hologram viewer (Electron) so every launch is identical and carries the CDP
+# port that the real-machine verify workflow connects to (docs/build.md).
 #
 # Launch: right-click this file -> "Run with PowerShell" (a window shows and closes on
 # success; on a manual launch it stays open on failure). Claude also runs it headlessly.
+#
+# --remote-debugging-port=9222 is the point of this script. It does two jobs:
+#   1. the resident instance is always CDP-debuggable, without anyone remembering a flag.
+#   2. it is the ONLY marker that identifies the real instance. The stop half below (and
+#      the equivalent one-liner in docs/build.md) selects by it, precisely so a worktree's
+#      test Electron is not killed along with it. An instance started some other way has
+#      no marker and cannot be selected — that happened on 2026-08-06 (#1004).
+#
+# This used to go through a 'HologramLaunch' scheduled task. TWO reasons, both now gone:
+#
+#   - The ORIGINAL one expired on 2026-08-06 (#1003): Claude's shell used to live inside
+#     the MSIX-packaged Claude desktop app, so a directly-spawned electron.exe was a child
+#     of that container with HKCU + filesystem virtualized, and the app would register the
+#     native-messaging host into a private hive the real Chrome could not see. Claude Code
+#     now runs outside the package; FS and HKCU reads and writes were all measured as real.
+#     Note the layout changed once and could change back — the check is whether
+#     (Get-Item <path>).Target points into ...\Packages\<pkg>\LocalCache\...
+#   - After that, all the task still bought was "the launched app is not a child of the
+#     calling shell". Measured on 2026-08-07 (#1008): Start-Process gives that too. An
+#     Electron launched this way outlived both the powershell.exe that started it and the
+#     agent shell above that, kept answering CDP (scripts/cdp-verify.cts connected to it),
+#     and was selected by the command-line filter below — while an instance on a different
+#     port was correctly NOT selected. So the ~40 lines of task registration, action-drift
+#     detection and self-healing bought nothing, and cost a failure mode of their own:
+#     Start-ScheduledTask reports SUCCESS even when its Execute does not exist, so a stale
+#     action printed 完了 while nothing started. Start-Process throws instead.
+#
+# The task may still exist on this machine; this script no longer creates, repairs or uses
+# it. Whether to delete it is open (the user may have a shortcut pointing at it) — #1008.
+#
+# What a direct launch does NOT inherit for free is the task's clean environment, so the
+# spawn below builds one. See the comment there.
 
-$app      = Join-Path $PSScriptRoot 'app'
-$taskName = 'HologramLaunch'
-$logFile  = Join-Path $HOME '.hologram\restart-app.log'
-$desiredArgs = "`"$app`" --remote-debugging-port=9222"
+$app     = Join-Path $PSScriptRoot 'app'
+$logFile = Join-Path $HOME '.hologram\restart-app.log'
+$port    = 9222
 
 # electron lives under app/node_modules or the repo root, depending on how npm
 # felt like hoisting: app/ is a workspace, so npm lifts its dependencies to the
 # root whenever nothing pins a conflicting version. Both are normal, so probe
-# both rather than baking one in — the hardcoded app/ path made the task launch
-# a file that wasn't there, and Start-ScheduledTask reports SUCCESS for that
-# (the failure only shows up as LastTaskResult 0x80070002 afterwards), so this
-# script printed 完了 while nothing started.
+# both rather than baking one in.
 $electron = @(
   (Join-Path $app 'node_modules\electron\dist\electron.exe'),
   (Join-Path $PSScriptRoot 'node_modules\electron\dist\electron.exe')
@@ -57,35 +68,9 @@ function Stop-WithError($message) {
   exit 1
 }
 
-# A missing binary has to be caught HERE. Registering the task with an empty
-# Execute throws something unrelated, and launching a task whose Execute does
-# not exist looks like success from PowerShell's side.
 if (-not $electron) {
   Stop-WithError("electron.exe が見つかりません（app/node_modules と リポジトリ直下の node_modules の両方を確認しました）。`n" +
     "npm run setup を実行してください（npm rebuild electron は成功と表示しますがダウンロードしません）")
-}
-
-# Self-heal: (re)register the task when it is MISSING or when its stored action has DRIFTED
-# from the current paths/args (e.g. the repo moved/renamed, or the port arg changed). The
-# create-only-if-missing form would silently keep launching a stale path; comparing the
-# action every run auto-corrects that and costs nothing when unchanged.
-$existing = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
-$drift = $true
-if ($existing -and $existing.Actions.Count -ge 1) {
-  $a = $existing.Actions[0]
-  if ($a.Execute -eq $electron -and $a.Arguments -eq $desiredArgs) { $drift = $false }
-}
-if ($drift) {
-  Write-Host 'HologramLaunch タスクを登録/修復しています...' -ForegroundColor Cyan
-  try {
-    $action    = New-ScheduledTaskAction -Execute $electron -Argument $desiredArgs
-    $principal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" -LogonType Interactive -RunLevel Limited
-    $settings  = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit ([TimeSpan]::Zero) -MultipleInstances Parallel
-    $t = New-ScheduledTask -Action $action -Principal $principal -Settings $settings -Description 'Launch the Hologram Electron app with CDP on :9222 for verify, from a single known path. On-demand only; triggered by restart-app.ps1.'
-    Register-ScheduledTask -TaskName $taskName -InputObject $t -Force -ErrorAction Stop | Out-Null
-  } catch {
-    Stop-WithError("HologramLaunch タスクの登録に失敗しました: $($_.Exception.Message)")
-  }
 }
 
 # Two-stage shutdown of ONLY the real instance (leave other Electron apps alone).
@@ -95,11 +80,12 @@ if ($drift) {
 # Picked by COMMAND LINE, not by executable path: a test harness running in a worktree uses
 # that tree's own node_modules\electron, and worktrees live inside the repo — so a
 # '*hologram*' path match (what this used to do) also swept up whatever a parallel session
-# was testing with. '--remote-debugging-port=9222' is added by the HologramLaunch task and
-# nothing else, so it names the real instance exactly. See docs/build.md.
+# was testing with. Only this script adds --remote-debugging-port=9222, so it names the real
+# instance exactly. (It matches the browser process and its renderer child, which Chromium
+# gives the same flag; killing the browser takes the child with it either way.)
 function Get-HologramProcs {
   Get-CimInstance Win32_Process -Filter "Name='electron.exe'" -ErrorAction SilentlyContinue |
-    Where-Object { $_.CommandLine -like '*--remote-debugging-port=9222*' } |
+    Where-Object { $_.CommandLine -like "*--remote-debugging-port=$port*" } |
     ForEach-Object { Get-Process -Id $_.ProcessId -ErrorAction SilentlyContinue }
 }
 Write-Host 'Hologram(electron) を停止しています...' -ForegroundColor Cyan
@@ -115,14 +101,39 @@ Get-HologramProcs | Stop-Process -Force -ErrorAction SilentlyContinue
 
 Start-Sleep -Milliseconds 500
 
-# Relaunch OUTSIDE the sandbox via the Task Scheduler service. Surface failure LOUDLY: the
-# old instance is already killed, so a swallowed failure would leave NO app and NO error.
-Write-Host 'HologramLaunch で起動しています...' -ForegroundColor Cyan
+# Give the app the environment the scheduled task used to give it for free. A direct
+# Start-Process inherits THIS shell's environment, and the shells that run this script are
+# frequently ones a verify workflow has exported into: HOLOGRAM_CONFIG_DIR would point the
+# "real" app at a sandbox config (measured — it comes up on an empty library and looks like
+# data loss), HOLOGRAM_SANDBOX would skip native-host registration, HOLOGRAM_SMOKE would
+# hide the window. ELECTRON_RENDERER_URL would load the renderer from a dev server that is
+# not running. APPDATA is restored from the shell folder, which ignores the env override.
+Get-ChildItem Env: | Where-Object { $_.Name -like 'HOLOGRAM_*' } | ForEach-Object { Remove-Item "Env:$($_.Name)" -ErrorAction SilentlyContinue }
+Remove-Item Env:ELECTRON_RENDERER_URL -ErrorAction SilentlyContinue
+$env:APPDATA = [Environment]::GetFolderPath('ApplicationData')
+
+# Surface failure LOUDLY: the old instance is already killed, so a swallowed failure would
+# leave NO app and NO error. Start-Process throws when the executable is missing, and the
+# marker check below catches an instance that started and died on the way up.
+# -WorkingDirectory pins the cwd: this script is run from wherever the caller happened to
+# be, and the task never had one.
+Write-Host 'Hologram(electron) を起動しています...' -ForegroundColor Cyan
 try {
-  Start-ScheduledTask -TaskName $taskName -ErrorAction Stop
+  Start-Process -FilePath $electron -ArgumentList "`"$app`" --remote-debugging-port=$port" -WorkingDirectory $PSScriptRoot -ErrorAction Stop
 } catch {
-  Stop-WithError("HologramLaunch の起動に失敗しました: $($_.Exception.Message)")
+  Stop-WithError("Hologram の起動に失敗しました: $($_.Exception.Message)")
 }
 
-Write-Host '完了（HologramLaunch を起動しました）。' -ForegroundColor Green
+# Post-condition: the new instance carries the marker. That is what makes it findable by
+# the stop half above and by docs/build.md's one-liner, so it is worth one bounded wait
+# rather than trusting that a launched process is a running app.
+for ($i = 0; $i -lt 40; $i++) {
+  if (Get-HologramProcs) { break }
+  Start-Sleep -Milliseconds 250
+}
+if (-not (Get-HologramProcs)) {
+  Stop-WithError("起動したはずの Hologram が見つかりません（--remote-debugging-port=$port を持つ electron.exe が10秒経っても現れませんでした）")
+}
+
+Write-Host "完了（Hologram を起動しました。CDP: 127.0.0.1:$port）。" -ForegroundColor Green
 Start-Sleep -Milliseconds 800
