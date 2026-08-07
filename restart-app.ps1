@@ -5,13 +5,34 @@
 # success; on a manual launch it stays open on failure). Claude also runs it headlessly.
 #
 # --remote-debugging-port=9222 makes the resident instance CDP-debuggable, without anyone
-# remembering a flag. It used to double as the ONLY marker that identifies the real
-# instance for the stop half below, but that broke on 2026-08-06 (#1004): an instance
-# started without the flag (the Start Menu shortcut launches electron.exe directly, with
-# no arguments — turned out to be how the user starts the app day to day) had no marker
-# and could not be selected. The stop half now selects by the resolved $electron path
-# instead (see the comment on Get-HologramProcs below), so it finds the real instance
-# whether or not it was launched with the flag.
+# remembering a flag. It is ONLY that now: it used to double as the marker the stop half
+# below picked the real instance by, which is why an instance started from the Start Menu
+# shortcut (no arguments) could not be stopped (#1004). The stop half no longer looks at
+# arguments, or at processes at all — see below.
+#
+# STOPPING: the app is asked to quit; nothing is hunted down and killed.
+#
+#   A throwaway launch carrying --hologram-quit loses Electron's single-instance lock and
+#   hands its argv to whoever holds it; the holder quits itself (app/src/main/index.ts, via
+#   restart-signal.ts). The lock is keyed on app name + userData, i.e. on WHICH CONFIG DIR
+#   an instance opened — which is the actual definition of "the real app" and the one thing
+#   no external filter could ever read. Everything this script matched on before was a
+#   proxy for it and each proxy failed on one side: a '*hologram*' path substring swept up
+#   worktree test instances (2026-08-05), the --remote-debugging-port marker missed
+#   instances launched without it (#1004), and the exact exe path still could not tell the
+#   real app from a sandbox started out of THIS tree (scripts/sandbox-app.cts runs the
+#   identical binary and differs only by env). A sandbox holds a different lock, so it
+#   simply never hears the signal now.
+#
+#   The same throwaway launch doubles as the probe for "is it gone yet": exit 3 means an
+#   instance was there and has been told to quit, exit 0 means nothing was running. Polling
+#   that is what lets the new instance start only once the lock is actually free — asking
+#   Windows for a process list to find that out would put the guessing straight back in.
+#
+#   Process matching survives in Get-HologramProcs as the FROZEN-APP FALLBACK only: an
+#   instance whose message loop is stuck never answers the signal. It is a last resort and
+#   it does over-match (a sandbox from this tree shares the exe path), so it runs only after
+#   the polite path has timed out, and it says so.
 #
 # This used to go through a 'HologramLaunch' scheduled task. TWO reasons, both now gone:
 #
@@ -26,17 +47,17 @@
 #     calling shell". Measured on 2026-08-07 (#1008): Start-Process gives that too. An
 #     Electron launched this way outlived both the powershell.exe that started it and the
 #     agent shell above that, kept answering CDP (scripts/cdp-verify.cts connected to it),
-#     and was selected by the command-line filter below — while an instance on a different
-#     port was correctly NOT selected. So the ~40 lines of task registration, action-drift
-#     detection and self-healing bought nothing, and cost a failure mode of their own:
-#     Start-ScheduledTask reports SUCCESS even when its Execute does not exist, so a stale
-#     action printed 完了 while nothing started. Start-Process throws instead.
+#     and was selected by the command-line filter of the day — while an instance on a
+#     different port was correctly NOT selected. So the ~40 lines of task registration,
+#     action-drift detection and self-healing bought nothing, and cost a failure mode of
+#     their own: Start-ScheduledTask reports SUCCESS even when its Execute does not exist,
+#     so a stale action printed 完了 while nothing started. Start-Process throws instead.
 #
 # The task may still exist on this machine; this script no longer creates, repairs or uses
 # it. Whether to delete it is open (the user may have a shortcut pointing at it) — #1008.
 #
 # What a direct launch does NOT inherit for free is the task's clean environment, so the
-# spawn below builds one. See the comment there.
+# env block below builds one. See the comment there.
 
 $app     = Join-Path $PSScriptRoot 'app'
 $logFile = Join-Path $HOME '.hologram\restart-app.log'
@@ -75,38 +96,15 @@ if (-not $electron) {
     "npm run setup を実行してください（npm rebuild electron は成功と表示しますがダウンロードしません）")
 }
 
-# Two-stage shutdown of ONLY the real instance (leave other Electron apps alone).
-# CloseMainWindow lets the app finish its 'close' handler (which writes config) before exit;
-# a forced kill mid-write used to truncate config.json.
-#
-# Picked by the resolved $ELECTRON PATH, front-anchored — not by a '*hologram*' substring
-# (swept up worktree Electrons too, since worktrees live inside the repo; fixed 2026-08-05)
-# and not by the --remote-debugging-port argument (missed instances started without it —
-# the Start Menu shortcut is one; #1004). A worktree's test/sandbox Electron uses that
-# tree's OWN node_modules\electron, i.e. a different exe path, so it still is not matched:
-# measured 2026-08-07 with the real instance and a worktree sandbox running at once, exe
-# paths differed as expected. Windows quotes the exe in the command line when there's
-# nothing that forces it not to (Start-Process, a Start Menu shortcut) but not always (a
-# bare child_process.spawn(path, args) with no shell needs no quoting when path has no
-# spaces) — match both forms. (It matches the browser process and its renderer child, which
-# Chromium gives the same flag; killing the browser takes the child with it either way.)
-function Get-HologramProcs {
-  Get-CimInstance Win32_Process -Filter "Name='electron.exe'" -ErrorAction SilentlyContinue |
-    Where-Object { $_.CommandLine -like "`"$electron`"*" -or $_.CommandLine -like "$electron *" } |
-    ForEach-Object { Get-Process -Id $_.ProcessId -ErrorAction SilentlyContinue }
+# Refuse to spawn anything when the app is not built, BEFORE the stop loop rather than at
+# the launch below: `electron <app>` with no main entry puts an OS modal ("Unable to find
+# Electron app at ...") in front of whatever the user is doing, once per launch — and the
+# stop loop launches repeatedly, so an unbuilt tree would produce a stack of them. Same
+# precondition scripts/lib-electron-path.cts enforces for the test harnesses (#460).
+$appEntry = Join-Path $app 'out\main\index.js'
+if (-not (Test-Path $appEntry)) {
+  Stop-WithError("app がビルドされていません（$appEntry が有りません）。`nnpm run build --workspace=app を実行してください")
 }
-Write-Host 'Hologram(electron) を停止しています...' -ForegroundColor Cyan
-$procs = Get-HologramProcs
-foreach ($p in $procs) { try { $p.CloseMainWindow() | Out-Null } catch { } }
-
-# Wait up to ~5s for a clean exit, then force-kill only stragglers.
-for ($i = 0; $i -lt 25; $i++) {
-  Start-Sleep -Milliseconds 200
-  if (-not (Get-HologramProcs)) { break }
-}
-Get-HologramProcs | Stop-Process -Force -ErrorAction SilentlyContinue
-
-Start-Sleep -Milliseconds 500
 
 # Give the app the environment the scheduled task used to give it for free. A direct
 # Start-Process inherits THIS shell's environment, and the shells that run this script are
@@ -115,13 +113,68 @@ Start-Sleep -Milliseconds 500
 # data loss), HOLOGRAM_SANDBOX would skip native-host registration, HOLOGRAM_SMOKE would
 # hide the window. ELECTRON_RENDERER_URL would load the renderer from a dev server that is
 # not running. APPDATA is restored from the shell folder, which ignores the env override.
+#
+# This has to happen BEFORE the stop loop, not just before the launch: the single-instance
+# lock the signal travels on is keyed on userData, so a leftover HOLOGRAM_CONFIG_DIR would
+# aim the "please quit" at whatever sandbox that variable names instead of at the real app.
 Get-ChildItem Env: | Where-Object { $_.Name -like 'HOLOGRAM_*' } | ForEach-Object { Remove-Item "Env:$($_.Name)" -ErrorAction SilentlyContinue }
 Remove-Item Env:ELECTRON_RENDERER_URL -ErrorAction SilentlyContinue
 $env:APPDATA = [Environment]::GetFolderPath('ApplicationData')
 
-# Surface failure LOUDLY: the old instance is already killed, so a swallowed failure would
+$configDir = Join-Path $env:APPDATA 'Hologram'
+
+# FALLBACK ONLY — see the header. Front-anchored on the resolved $electron path (Windows
+# quotes the exe in the command line when nothing forces it not to, but not always, so match
+# both forms). It catches every instance run from this binary, INCLUDING a sandbox started
+# from this tree, which is why nothing but a timed-out signal may reach it.
+function Get-HologramProcs {
+  Get-CimInstance Win32_Process -Filter "Name='electron.exe'" -ErrorAction SilentlyContinue |
+    Where-Object { $_.CommandLine -like "`"$electron`"*" -or $_.CommandLine -like "$electron *" } |
+    ForEach-Object { Get-Process -Id $_.ProcessId -ErrorAction SilentlyContinue }
+}
+
+Write-Host 'Hologram(electron) に終了を伝えています...' -ForegroundColor Cyan
+$stopped   = $false
+$signalled = $false
+$deadline  = (Get-Date).AddSeconds(20)
+do {
+  try {
+    $probe = Start-Process -FilePath $electron -ArgumentList "`"$app`" --hologram-quit" -WorkingDirectory $PSScriptRoot -Wait -PassThru -ErrorAction Stop
+  } catch {
+    Stop-WithError("終了の合図を送れませんでした: $($_.Exception.Message)")
+  }
+  # 0 = nothing was running, 3 = an instance was there and has been told to quit.
+  # Anything else means the app died on the way up rather than answering, and retrying
+  # would just repeat it — app/src/main/restart-signal.ts owns these numbers.
+  if ($probe.ExitCode -eq 0) { $stopped = $true; break }
+  if ($probe.ExitCode -ne 3) {
+    Stop-WithError("終了の合図に予期しない終了コードが返りました（$($probe.ExitCode)）。app のビルドが壊れている可能性があります: npm run build --workspace=app")
+  }
+  $signalled = $true
+  Start-Sleep -Milliseconds 250
+} while ((Get-Date) -lt $deadline)
+
+if (-not $stopped) {
+  # The polite path timed out: the app is up but its message loop is not answering.
+  # This is the over-matching path — say so, because it can take a sandbox instance
+  # started from this same tree with it.
+  Write-Host '応答がないため、実行ファイルのパス一致で強制終了します（このツリーから起動したサンドボックスも巻き添えになります）。' -ForegroundColor Yellow
+  Get-HologramProcs | Stop-Process -Force -ErrorAction SilentlyContinue
+  Start-Sleep -Milliseconds 500
+}
+
+# Post-condition for the launch below: Chromium writes DevToolsActivePort into userData when
+# the debug port opens, with a per-process UUID on the second line, and it is the config dir
+# that makes an instance the real one. So "this file's content changed" means the new
+# instance is up AND its CDP port is actually open — a stronger check than the old "some
+# electron.exe exists", and one that needs no process matching. Read after the stop so a
+# file the outgoing instance removed on its way out counts as a change too.
+$activePortFile = Join-Path $configDir 'DevToolsActivePort'
+$portMarkerBefore = Get-Content $activePortFile -Raw -ErrorAction SilentlyContinue
+
+# Surface failure LOUDLY: the old instance is already gone, so a swallowed failure would
 # leave NO app and NO error. Start-Process throws when the executable is missing, and the
-# marker check below catches an instance that started and died on the way up.
+# post-condition below catches an instance that started and died on the way up.
 # -WorkingDirectory pins the cwd: this script is run from wherever the caller happened to
 # be, and the task never had one.
 Write-Host 'Hologram(electron) を起動しています...' -ForegroundColor Cyan
@@ -131,16 +184,19 @@ try {
   Stop-WithError("Hologram の起動に失敗しました: $($_.Exception.Message)")
 }
 
-# Post-condition: the new instance is actually up. Get-HologramProcs finds it by $electron
-# path (same function as the stop half above and docs/build.md's one-liner), so it is worth
-# one bounded wait rather than trusting that a launched process is a running app.
-for ($i = 0; $i -lt 40; $i++) {
-  if (Get-HologramProcs) { break }
+$up = $false
+for ($i = 0; $i -lt 80; $i++) {
+  $now = Get-Content $activePortFile -Raw -ErrorAction SilentlyContinue
+  if ($now -and $now -ne $portMarkerBefore) { $up = $true; break }
   Start-Sleep -Milliseconds 250
 }
-if (-not (Get-HologramProcs)) {
-  Stop-WithError("起動したはずの Hologram が見つかりません（$electron から起動された electron.exe が10秒経っても現れませんでした）")
+if (-not $up) {
+  Stop-WithError("起動したはずの Hologram が CDP を開きませんでした（$activePortFile が20秒経っても更新されませんでした）")
 }
 
-Write-Host "完了（Hologram を起動しました。CDP: 127.0.0.1:$port）。" -ForegroundColor Green
+if ($signalled) {
+  Write-Host "完了（動いていた Hologram を終了させ、起動し直しました。CDP: 127.0.0.1:$port）。" -ForegroundColor Green
+} else {
+  Write-Host "完了（Hologram を起動しました。CDP: 127.0.0.1:$port）。" -ForegroundColor Green
+}
 Start-Sleep -Milliseconds 800
