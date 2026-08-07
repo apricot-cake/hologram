@@ -66,6 +66,13 @@ on:
       - 'native-host/**'
       - 'scripts/**'
       - '!scripts/make-icons.cjs'
+      # Windows-only launcher for the developer's own machine. Nothing in this job runs
+      # or lints PowerShell, so an edit to it can only spend three Windows minutes on a
+      # file none of the shards touch. It moved here from the repo root on 2026-08-07,
+      # which is what put it inside scripts/** in the first place. The handshake it
+      # depends on IS covered — by test-app-restart-signal.cts, which lives in app/**'s
+      # blast radius through app/src/main/restart-signal.ts and in scripts/** itself.
+      - '!scripts/restart-app.ps1'
       - 'package.json'
       - 'package-lock.json'
       - 'playwright.config.ts'
