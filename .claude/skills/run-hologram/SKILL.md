@@ -14,12 +14,19 @@ description: Hologram アプリを起動して動きを確かめる時の経路�
 **なぜこの経路を通すか（`HologramLaunch` タスクの去就・環境変数の継承・MSIX の失効を含む）は docs/build.md「起動経路」が正本**＝ここはコマンドだけ。
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\Users\apricot\local\dev\hologram\restart-app.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\Users\apricot\local\dev\hologram\scripts\restart-app.ps1
 ```
 
 停止（graceful close）と起動が中に入っている＝**別途 kill してから叩かない**。再起動は確認を取らずに行ってよい。
 
-⚠️**手で止める必要がある時も、止める相手は解決済み `electron.exe` パスの厳密な前方一致で選ぶ**（理由＝コマンドラインの `--remote-debugging-port` で選ぶと引数なしで起動された個体〔スタートメニューのショートカット等〕を選べず、パスの部分一致で選ぶと worktree の Electron を巻き添えにしうる。docs/build.md「起動経路」が正＝#1004 案 C′）。⚠️**このフィルタは browser と、同じ exe を使う子プロセス全部（renderer・gpu-process・utility）を返す**（Chromium が子へも同じ実行ファイルを使う）＝数が合わないと読まない。
+⚠️**手で止める必要がある時も、プロセスを探して殺さない**＝`--hologram-quit` を付けた使い捨ての Electron を起こすと、single-instance ロックの保持者（＝実機）が自分で終了する。⚠️**シェルに `HOLOGRAM_CONFIG_DIR` が残っていると、合図はその config を開いている個体（サンドボックス）へ行く**＝先に落とす。理由と経緯は docs/build.md「起動経路」が正。
+
+```powershell
+$electron = 'C:\Users\apricot\local\dev\hologram\node_modules\electron\dist\electron.exe'
+(Start-Process $electron -ArgumentList '"C:\Users\apricot\local\dev\hologram\app" --hologram-quit' -Wait -PassThru).ExitCode  # 3=居た（終了を伝えた） / 0=誰も居ない
+```
+
+⚠️**下の強制終了は、フリーズして合図に応答しない時だけ**＝実行ファイルパスの一致は**同じツリーから起こしたサンドボックスと、Chrome が起こした native-messaging ブリッジ（同じバイナリで `bridge.js` を走らせている）も巻き添えにする**（2026-08-07 実測）。⚠️**このフィルタは browser と、同じ exe を使う子プロセス全部（renderer・gpu-process・utility）を返す**（Chromium が子へも同じ実行ファイルを使う）＝数が合わないと読まない。
 
 ```powershell
 $electron = 'C:\Users\apricot\local\dev\hologram\node_modules\electron\dist\electron.exe'

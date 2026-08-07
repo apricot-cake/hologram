@@ -45,6 +45,7 @@ import { runMlSmoke } from './ml-smoke.ts';
 import { runAiTagsModelSmoke, runAiTagsSmoke } from './ai-tags-smoke.ts';
 import { stopMlRuntime } from './lib-ml-runtime.ts';
 import { shouldWarnMissingDebugPort } from './startup-debug-port.ts';
+import { EXIT_NO_INSTANCE, EXIT_SIGNALLED, hasQuitSignal } from './restart-signal.ts';
 // IPC handler modules, extracted from this file (mechanical move — logic unchanged).
 // Each exposes register(ctx); ctx is built after the core functions below and passed
 // in at the top-level registration site (see registerExtractedIpc, before whenReady).
@@ -1107,12 +1108,33 @@ const SANDBOX = process.env.HOLOGRAM_SANDBOX === '1';
 // Single instance: a second launch focuses the existing window instead of
 // opening a duplicate (which would fight over the shared userData/cache).
 // Skipped under SMOKE so isolated headless test runs never block each other.
+//
+// The same lock is how restart-app.ps1 stops the app: a throwaway launch
+// carrying --hologram-quit loses the lock, its argv reaches the holder, and the
+// holder quits itself. restart-signal.ts has why that replaced picking a process
+// out of the machine's electron.exe list.
+const QUIT_SIGNAL = hasQuitSignal(process.argv);
 const gotSingleInstanceLock = SMOKE || app.requestSingleInstanceLock();
 if (!gotSingleInstanceLock) {
-  app.quit();
+  // The holder was handed our argv inside requestSingleInstanceLock, so there is
+  // nothing left to do. app.exit rather than app.quit: this process owns no state
+  // to flush, and the script reads the code to learn whether anything was running.
+  app.exit(QUIT_SIGNAL ? EXIT_SIGNALLED : 0);
+} else if (QUIT_SIGNAL) {
+  // Won the lock, which means nothing was running. This launch must NOT become
+  // the app — it carries no debug port and nobody asked for a window. Reporting
+  // "nothing to stop" is its whole job.
+  app.exit(EXIT_NO_INSTANCE);
 } else {
   if (!SMOKE) {
-    app.on('second-instance', () => {
+    app.on('second-instance', (_event, argv) => {
+      // restart-app.ps1's stop half. app.quit, not app.exit: the before-quit
+      // teardown (saved-index flush, window bounds, db close) is exactly what the
+      // old CloseMainWindow() call was there to preserve.
+      if (hasQuitSignal(argv)) {
+        app.quit();
+        return;
+      }
       // #32 St1: a second launch opens ANOTHER window rather than only focusing the
       // first one (design: "2回目起動＝新規ウィンドウを開く") — UNLESS this run was
       // itself started minimized/inactive (a verification harness restart), where the
@@ -1148,7 +1170,7 @@ if (!gotSingleInstanceLock) {
     // can catch (a Start Menu shortcut with stale arguments, in the case that led
     // to filing the issue).
     if (shouldWarnMissingDebugPort(process.argv, app.isPackaged)) {
-      log.warn('Launched without --remote-debugging-port: CDP verification and the marker-based stop command in docs/build.md will not find this process (#1004)');
+      log.warn('Launched without --remote-debugging-port: CDP verification cannot attach to this process (#1004). Stopping it still works — restart-app.ps1 asks the app to quit over the single-instance lock, not by matching this flag.');
     }
     // Recover/refresh the redundant save-folder pointer FIRST, so the rest of startup
     // (watcher, listPosts, native host) sees a config repaired from the pointer rather

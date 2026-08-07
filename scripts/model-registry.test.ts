@@ -73,7 +73,7 @@ describe('scripts/test-ml-runtime.cts の埋め込みコピーとの一致', () 
 });
 
 describe('THIRD-PARTY-NOTICES.md との一致', () => {
-  const notices = fs.readFileSync(path.join(__dirname, '..', 'THIRD-PARTY-NOTICES.md'), 'utf8');
+  const notices = fs.readFileSync(path.join(__dirname, '..', 'docs', 'THIRD-PARTY-NOTICES.md'), 'utf8');
 
   test('レジストリの各モデルの id と licenseNote が配布物の表記に載っている', () => {
     for (const entry of MODEL_REGISTRY) {

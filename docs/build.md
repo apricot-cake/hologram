@@ -85,7 +85,7 @@ dev サーバーは `localhost:51731` 固定。二重起動は別 port へ逃げ
 
 ⚠️**待ち受けは IPv6 の `::1`**（WXT が Vite の既定でバインドする＝2026-08-04 実測）。**生死を見るコードで `127.0.0.1` を指さない**＝IPv4 では繋がらず、動いているサーバーを「落ちている」と報告する。実際 `open-dev-profile.cts` の `dev server:` 行はこの誤りで、ずっと down と出していた（同日修正・判定は `scripts/lib-dev-server.cts` に集約）。拡張自身は `http://localhost:51731/...` を読むので実害は診断だけに出ていた。
 
-**サーバーは可視のコンソールウィンドウで走る**（2026-08-04。**窓の開き方・止め方の作法そのものは Windows 全般の話＝skill `windows-scripting` が正本**で、ここは Hologram 側の値と事情だけを書く）＝端末を持たない呼び出し（Claude セッション・タスクランナー）から `npm run dev:ext` が起きた時、`scripts/dev-extension.cts` は自分では走らず、`Hologram dev:ext` というタイトルの新しいコンソールを開いてそちらへサーバーを渡し、呼び出した側へは即座に戻る。**人が端末で打った時は分離しない**＝そのまま目の前で走る（Ctrl+C と WXT のキーバインドが効くのはこちら）。`CI` 環境変数がある時と Windows 以外でも分離しない。
+**サーバーは可視のコンソールウィンドウで走る**（2026-08-04）＝端末を持たない呼び出し（Claude セッション・タスクランナー）から `npm run dev:ext` が起きた時、`scripts/dev-extension.cts` は自分では走らず、`Hologram dev:ext` というタイトルの新しいコンソールを開いてそちらへサーバーを渡し、呼び出した側へは即座に戻る。**人が端末で打った時は分離しない**＝そのまま目の前で走る（Ctrl+C と WXT のキーバインドが効くのはこちら）。`CI` 環境変数がある時と Windows 以外でも分離しない。
 
 - **理由は「走っているかどうかが外から見えること」**＝端末なしで起こすと、出力は呼び出した側が選んだスクラッチファイルへ消え、そのセッションの外からはサーバーが上がっているのかどうかも分からない。見えないサーバーは二重に起こされ、何日も動きっぱなしになる。ウィンドウがあれば、リビルド行・リロード行・ポート衝突がそこに全部出る。
 - **窓はタスクバーの状態表示を兼ねる**（2026-08-04）＝**窓の主は node**（`start … node scripts/dev-extension.cts` で開く＝間に `cmd /k` を挟まない）なので、タスクバーのボタンに **Node のアイコン**が出る。**窓がある＝サーバーが生きている**で、止まれば窓ごと消える＝「動いているか」を見るために `open-dev-profile.cts --print` を打つ必要が無い。
@@ -149,18 +149,25 @@ native-host のブリッジ（Chrome が起動する常駐プロセス）を変�
 **再起動は `restart-app.ps1` で行う**（停止 ＋ 起動をまとめてある）。Claude が実行する最小形:
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File <repo>\restart-app.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File <repo>\scripts\restart-app.ps1
 ```
 
-**止める相手は解決済みの `$electron` パスの厳密な前方一致で選ぶ**（2026-08-07 修正・#1004 案 C′）。経緯は3段:
+**止める相手はもう探さない＝アプリ本人に終了を伝える**（2026-08-07 変更）。`restart-app.ps1` は `--hologram-quit` を付けた使い捨ての Electron を起こす＝single-instance ロックを取り損ねて argv がロック保持者へ渡り、**保持者が自分で `app.quit()` する**（`app/src/main/restart-signal.ts` ＋ `index.ts` の `second-instance`）。`before-quit` の後始末（saved-index フラッシュ・ウィンドウ位置・DB クローズ）が走るのは旧 `CloseMainWindow()` と同じ。
 
-1. **〜2026-08-04＝実行ファイルの「パス」に `'*hologram*'` を含むか**（`Get-Process electron | Where-Object { $_.Path -like '*hologram*' }`）。worktree はリポジトリの内側にあるので同じ条件に合い、並行セッションが `test-app-*.cts` や `e2e/flows` を回している最中に実機を再起動すると相手のテストを巻き添えで殺して赤にできた（隔離されているのは config とライブラリであって、プロセスの選び方ではない）。2026-08-05 に発覚。
-2. **2026-08-05〜2026-08-07＝コマンドラインの `--remote-debugging-port=9222`**。この引数を付けるのは `restart-app.ps1` だけなので巻き添えは消えたが、**それ以外の経路で起動された個体（引数なし）は選べない**という別の穴があった。その個体の正体はユーザーが日常アプリを起こす経路（スタートメニューのショートカット）そのものだったと判明（#1004）。
-3. **現行＝実行ファイルの絶対パス**（`$electron`。`app/node_modules` か リポジトリ直下 `node_modules` のどちらかへ `restart-app.ps1` が解決したもの）の厳密な前方一致。引数の有無に関わらず選べる一方、1 で巻き添えにした worktree は**自分のツリーの `node_modules\electron` を使う**ので当たらない——**巻き添えは部分一致（`'*hologram*'`）だったから起きたのであって、厳密一致は当たらない**（2026-08-07・実機と worktree サンドボックスを同時起動して exe パスが異なることを実測）。
+**探すのをやめた理由**＝実機を実機たらしめているのは**どの config dir（userData）を開いたか**であり、それは**プロセスの外から読めない**。外から掛けるフィルタは全部その代用で、代用は必ずどちらかに外れた。経緯は4段:
 
-⚠️**フィルタには browser プロセスと、同じ exe を使う子プロセス全部が掛かる**（renderer だけでなく gpu-process・utility も。Chromium が同じ実行ファイルを子にも使うため）＝browser を殺せば子も落ちるので実害は無いが、「1個だけ返るはず」と読むと数が合わない。
+1. **〜2026-08-04＝実行ファイルの「パス」に `'*hologram*'` を含むか**（`Get-Process electron | Where-Object { $_.Path -like '*hologram*' }`）。worktree はリポジトリの内側にあるので同じ条件に合い、並行セッションが `test-app-*.cts` や `e2e/flows` を回している最中に実機を再起動すると相手のテストを巻き添えで殺して赤にできた（隔離されているのは config とライブラリであって、プロセスの選び方ではない）。2026-08-05 に発覚＝**取りすぎ**側の失敗。
+2. **2026-08-05〜2026-08-07＝コマンドラインの `--remote-debugging-port=9222`**。この引数を付けるのは `restart-app.ps1` だけなので巻き添えは消えたが、**それ以外の経路で起動された個体（引数なし）は選べない**＝**取りこぼし**側の失敗。その個体の正体はユーザーが日常アプリを起こす経路（スタートメニューのショートカット）そのものだったと判明（#1004）。
+3. **2026-08-07＝実行ファイルの絶対パスの厳密な前方一致**（#1004 案 C′）。1 の巻き添え（worktree は自分のツリーの `node_modules\electron` を使う）も 2 の取りこぼしも消えたが、**同じツリーから起こしたサンドボックス（`scripts/sandbox-app.cts`）とは区別できない**＝同じバイナリを走らせ、違いは環境変数だけ。2026-08-07 に実測＝本体ツリーのサンドボックスの pid をこのフィルタが選んだ。
+4. **現行＝single-instance ロックに載せた合図**。ロックの鍵は（アプリ名, userData）＝**まさに区別したかった軸そのもの**なので、合図が届くのは実機だけ。サンドボックスや別 config のテストは別のロックを持つので原理的に無関係。**実測**（2026-08-07）＝本体ツリーでサンドボックスを起こしたまま `restart-app.ps1` を実行し、実機だけが再起動してサンドボックス（pid・CDP ポート）は生存した。
 
-ユーザーのワンクリックは `restart-app.ps1` を右クリック →「PowerShell で実行」（窓は出るが終了時に自動で閉じる）。`restart-app.ps1` は graceful close ＋ 起動 ＋ 目印の確認をまとめてある。
+**「古い個体が消えたか」も同じ合図で待つ**＝`--hologram-quit` 付き起動の終了コードが `3`（動いている個体が居た＝終了を伝えた）か `0`（誰も居ない）。`0` になるまで繰り返す＝ロックが空いたことをプロセス一覧に頼らず知る。番号の正は `app/src/main/restart-signal.ts` で、PowerShell 側は import できないため `scripts/restart-signal.test.ts` が値を固定している。
+
+**起動の事後条件は `%APPDATA%\Hologram\DevToolsActivePort` の内容が変わること**＝Chromium がデバッグポートを開く時に userData へ書くファイル（2行目はプロセスごとの UUID）。「electron.exe が居る」より強く**CDP が実際に開いたところまで**確かめられ、プロセス照合も要らない。
+
+⚠️**プロセス照合は「フリーズ時の保険」としてだけ残っている**（`Get-HologramProcs`）＝合図に20秒応答しない個体はメッセージループが止まっているので、実行ファイルパスの厳密一致で強制終了する。**この経路は同じツリーのサンドボックスと、Chrome が起こした native-messaging ブリッジ（`electron.exe "%APPDATA%\Hologram\bridge.js"`＝同じバイナリを使う）を巻き添えにする**ので、スクリプトはその旨を表示してから実行する。⚠️**旧方式は再起動のたびにこの2つを道連れにしていた**（2026-08-07 実測＝旧フィルタが返した9 pid にサンドボックスとブリッジの両方が入っていた）。⚠️**フィルタには browser プロセスと、同じ exe を使う子プロセス全部が掛かる**（renderer だけでなく gpu-process・utility も。Chromium が同じ実行ファイルを子にも使うため）＝browser を殺せば子も落ちるので実害は無いが、「1個だけ返るはず」と読むと数が合わない。
+
+ユーザーのワンクリックは `scripts/restart-app.ps1` を右クリック →「PowerShell で実行」（窓は出るが終了時に自動で閉じる）。**2026-08-07 にリポジトリ直下から `scripts/` へ移した**＝他の開発インスタンス用ツール（`sandbox-app.cts`・`cdp-verify.cts`）と同じ場所。`restart-app.ps1` は graceful close ＋ 起動 ＋ 目印の確認をまとめてある。
 
 ### 起動経路
 
@@ -171,7 +178,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File <repo>\restart-app.ps1
 - ⚠️**代わりに1つ増えた＝環境変数の継承**（実測）。タスクはユーザープロファイルから環境を組み立てるが、`Start-Process` は**呼び出したシェルの環境をそのまま渡す**。検証ワークフローが `HOLOGRAM_CONFIG_DIR` を export 済みのシェルからこのスクリプトを叩くと、**実機がサンドボックスの config で上がる**（空のライブラリが出る＝データ消失に見える）。`restart-app.ps1` は spawn の直前に `HOLOGRAM_*` と `ELECTRON_RENDERER_URL` を落とし、`APPDATA` を `[Environment]::GetFolderPath('ApplicationData')`（env の上書きを見ないシェルフォルダ）から復元する。
 - **実測**（2026-08-07・#1008。実機を止めないよう `:9223` ＋ 隔離 config で実施）: ①`Start-Process` で起こした Electron は、起動元の `powershell.exe` とその上のエージェントシェルの両方が終了した後も生存（親 pid は死んだ番号のまま＝孤児化が正常）②その個体へ `scripts/cdp-verify.cts` が接続でき、`document.title` を取得③`--remote-debugging-port=9223` のコマンドラインフィルタがその個体を選び、同時に `--remote-debugging-port=9222` のフィルタは**空**を返した（別ポートの個体を巻き込まない）。停止→再起動の一往復も新スクリプトで通した。
 - ⚠️**`HologramLaunch` タスクはこのマシンに残っている可能性がある**＝スクリプトはもう作らず・直さず・使わない。**削除するかは未決**。**タスクとスタートメニューのショートカットは無関係と判明**（2026-08-07・#1004）＝`%APPDATA%\Microsoft\Windows\Start Menu\Programs\Hologram.lnk` は `electron.exe` を直接叩いており、タスクを経由しない。タスクを消してもショートカットは壊れない。残ったまま放置するとリポ移動でアクションが腐り、`Start-ScheduledTask` は成功を返すので**何も起きないのに成功に見える**。
-- ⚠️**`--remote-debugging-port=9222` は `restart-app.ps1` 以外で起動された個体には無い**＝2026-08-06 に実際にそういう個体（`electron.exe "<repo>\app"` だけ）が動いていた＝#1004。**その個体の正体は2026-08-07に特定**＝上記のスタートメニューのショートカット（`Arguments` に引数が無い）そのもので、一度きりの事故ではなくユーザーが日常アプリを起こすたび再発する経路。**タスクを外しても入口が1本なのは変わらない**（むしろ「タスク経由か否か」という見かけの2系統が消えた）。**対処は3本**（#1004）＝①ショートカットの `Arguments` に `--remote-debugging-port=9222` を足す＝「あれば尚良い」止まり（`.lnk` の書き換えはパーミッション分類器に拒否され自動化できないためユーザーの手が要り、実施は未確認）②非パッケージ起動で引数が無いときは `main.log` に warn を残す（`app/src/main/startup-debug-port.ts`）＝ショートカットが直っていない間も、検証しようとした人がログでこの個体だと気付ける（実装済み・#1018）③**停止コマンドが選べない、という症状自体は2026-08-07に別解で解決**＝上の「止める相手は…」が実行ファイルパスの厳密一致に変わったため、この目印（9222）を持たない個体でも `restart-app.ps1` で止められる。**残る限界は CDP**＝引数なしで起動された個体に 9222 は開かないので、そこへ繋ぐには変わらず `restart-app.ps1` で起こし直す必要がある。
+- ⚠️**`--remote-debugging-port=9222` は `restart-app.ps1` 以外で起動された個体には無い**＝2026-08-06 に実際にそういう個体（`electron.exe "<repo>\app"` だけ）が動いていた＝#1004。**その個体の正体は2026-08-07に特定**＝上記のスタートメニューのショートカット（`Arguments` に引数が無い）そのもので、一度きりの事故ではなくユーザーが日常アプリを起こすたび再発する経路。**タスクを外しても入口が1本なのは変わらない**（むしろ「タスク経由か否か」という見かけの2系統が消えた）。**対処は3本**（#1004）＝①ショートカットの `Arguments` に `--remote-debugging-port=9222` を足す＝「あれば尚良い」止まり（`.lnk` の書き換えはパーミッション分類器に拒否され自動化できないためユーザーの手が要り、実施は未確認）②非パッケージ起動で引数が無いときは `main.log` に warn を残す（`app/src/main/startup-debug-port.ts`）＝ショートカットが直っていない間も、検証しようとした人がログでこの個体だと気付ける（実装済み・#1018）③**停止コマンドが選べない、という症状自体は2026-08-07に別解で解決**＝上の「止める相手は…」が single-instance ロックに載せた合図に変わり、引数も実行ファイルパスも見なくなったため、この目印（9222）を持たない個体でも `restart-app.ps1` で止められる。**残る限界は CDP だけ**＝引数なしで起動された個体に 9222 は開かないので、そこへ繋ぐには変わらず `restart-app.ps1` で起こし直す必要がある（①はそのための「あれば尚良い」であって、停止のためではもう無い）。
 - ⚠️**仮想化が復活する可能性は残る**＝#1003 の発見自体が Claude Desktop の構成が変わったことの証明で、逆方向にも変わりうる。判定は `(Get-Item <path>).Target` が `…\Packages\Claude_pzs8sxrjxfjjc\LocalCache\…` を返すかどうか。
 - `npm start` 経由は cmd ウィンドウが出るため使わない（electron.exe はGUIアプリなのでコンソールは出ない）。
 
@@ -181,7 +188,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File <repo>\restart-app.ps1
 
 | 相手 | 起こし方 | ポート | いつ使う |
 | --- | --- | --- | --- |
-| 実機 | `restart-app.ps1`（`Start-Process` で `electron.exe` を直接起動。旧 `HologramLaunch` タスク経由は2026-08-07に撤去＝#1008。**このマシンにタスク自体が残っている可能性はあるが、起動経路としては使っていない**） | 9222 固定（スクリプトが `--remote-debugging-port=9222` を付与）。**この個体を選ぶ目印はもうポートではなく実行ファイルパスの厳密一致**（#1004 案 C′・上の「止める相手は…」参照）＝ショートカット等で引数なしに起動された個体も `restart-app.ps1` で止められるが、CDP の 9222 はこのスクリプトから起動した個体にしか開かない | 実ライブラリでの最終確認・キャプチャ経路（拡張→bridge）の確認だけ |
+| 実機 | `restart-app.ps1`（`Start-Process` で `electron.exe` を直接起動。旧 `HologramLaunch` タスク経由は2026-08-07に撤去＝#1008。**このマシンにタスク自体が残っている可能性はあるが、起動経路としては使っていない**） | 9222 固定（スクリプトが `--remote-debugging-port=9222` を付与）。**この個体を止めるのに目印はもう使わない**＝single-instance ロックに載せた合図（上の「止める相手は…」参照）なので、ショートカット等で引数なしに起動された個体も `restart-app.ps1` で止められる。ただし CDP の 9222 はこのスクリプトから起動した個体にしか開かない | 実ライブラリでの最終確認・キャプチャ経路（拡張→bridge）の確認だけ |
 | HMR（開発サーバー） | `REMOTE_DEBUGGING_PORT=9222 npm run dev --workspace=app`（#1003） | 9222（`electron-vite` がこの環境変数を読んで Electron へ同じ引数を渡す） | UI を作り込む間（ビルド→再起動の往復が消える）。⚠️`ensureHostRegistered()` を呼ばない設計なのでキャプチャ経路の確認には使わない。実機とは single-instance lock で排他＝同時には起こせない |
 | サンドボックス | `node scripts/sandbox-app.cts`（可視・常駐の2台目） | 動的（9333〜9432・作業ツリーのパスから決まり `.sandbox/instance.json` に記録）。接続は `CDP_PORT=sandbox node scripts/cdp-verify.cts …`（そのツリーの記録から解決＝番号を持ち回らない）。終了は `node scripts/sandbox-app.cts stop` | 見た目・モーションの確認（隠しウィンドウでは CSS transition や inline 配置が再現しない）。HKCU・共有 config dir（`%APPDATA%\Hologram`）に触れないので実機・他 worktree と安全に共存する |
 | テストハーネス | `test-app-*.cts` のうち CDP を使うもの（`test-app-asset-csp.cts`・`test-app-renderer-origin.cts` など。大半の `test-app-*.cts` は `HOLOGRAM_SMOKE_EVAL` 経由の結果だけを stdout へ返すので CDP ポート自体を持たない）が `spawn` 時に自前で立てる | 動的（`freePort()` が `net.createServer().listen(0, …)` で OS に空きポートを確保→即 close。サンドボックスの `instance.json` のような記録は無い＝スクリプト自身が同じプロセス内で `cdpList()` / `listeningPid()` を呼んで使い切り、外部への公開はしない） | 通常は外部から `cdp-verify.cts` を繋がない（スクリプトが自己完結）。ハングを外から診るときだけ `Get-CimInstance Win32_Process -Filter "Name='electron.exe'"` のコマンドラインから `--remote-debugging-port=NNNN` を読んでポートを特定する |

@@ -1,9 +1,9 @@
 // Unit test for the launch-marker check (app/src/main/startup-debug-port.ts).
 // --remote-debugging-port is the only thing restart-app.ps1 adds that lets
-// scripts/cdp-verify.cts and the marker-based stop command in docs/build.md pick
-// this app's real instance out of every electron.exe on the machine. A Start Menu
-// shortcut with stale arguments turned out to launch the app without it — silently,
-// with no error (#1004). Pure logic = no Electron needed.
+// scripts/cdp-verify.cts attach to this app's real instance. A Start Menu shortcut
+// with stale arguments turned out to launch the app without it — silently, with no
+// error (#1004). Stopping the app no longer depends on it (see
+// scripts/restart-signal.test.ts). Pure logic = no Electron needed.
 
 import { describe, expect, test } from 'vitest';
 import { shouldWarnMissingDebugPort } from '../app/src/main/startup-debug-port';

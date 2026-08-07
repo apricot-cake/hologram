@@ -114,7 +114,7 @@ Preparing for release (including publishing the extension to the Chrome Web Stor
 
 ## Privacy
 
-Everything is stored in a local folder; nothing is sent to any server. See [PRIVACY.md](PRIVACY.md) for details.
+Everything is stored in a local folder; nothing is sent to any server. See [PRIVACY.md](docs/PRIVACY.md) for details.
 
 ### Where your data lives
 
