@@ -54,6 +54,10 @@ child.on('close', (code) => {
     if (code !== 0) throw new Error(`Electron exited ${code}\n${output}`);
     if (!log.includes('Starting Hologram')) throw new Error(`main startup log missing\n${log}`);
     if (!log.includes('renderer-log-smoke')) throw new Error(`renderer error log missing\n${log}`);
+    // #1004: this spawn (like a stray Start Menu shortcut launch) carries no
+    // --remote-debugging-port, so the dev-only warn from startup-debug-port.ts
+    // should show up here — proof the check fires on a real, non-packaged instance.
+    if (!log.includes('Launched without --remote-debugging-port')) throw new Error(`missing-marker warning missing (#1004)\n${log}`);
     console.log(`PASS app logging: ${logPath}`);
   } catch (error) {
     console.error(error.stack || error);

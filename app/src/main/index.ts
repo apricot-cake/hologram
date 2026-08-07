@@ -44,6 +44,7 @@ import { installDevRendererCsp, registerAppProtocol } from './app-protocol.ts';
 import { runMlSmoke } from './ml-smoke.ts';
 import { runAiTagsModelSmoke, runAiTagsSmoke } from './ai-tags-smoke.ts';
 import { stopMlRuntime } from './lib-ml-runtime.ts';
+import { shouldWarnMissingDebugPort } from './startup-debug-port.ts';
 // IPC handler modules, extracted from this file (mechanical move — logic unchanged).
 // Each exposes register(ctx); ctx is built after the core functions below and passed
 // in at the top-level registration site (see registerExtractedIpc, before whenReady).
@@ -1143,6 +1144,12 @@ if (!gotSingleInstanceLock) {
     app.setAppUserModelId('com.hologram.app');
     log.eventLogger.startLogging();
     log.info('Starting Hologram', { packaged: app.isPackaged, version: app.getVersion() });
+    // #1004: see startup-debug-port.ts for why this matters and what launches this
+    // can catch (a Start Menu shortcut with stale arguments, in the case that led
+    // to filing the issue).
+    if (shouldWarnMissingDebugPort(process.argv, app.isPackaged)) {
+      log.warn('Launched without --remote-debugging-port: CDP verification and the marker-based stop command in docs/build.md will not find this process (#1004)');
+    }
     // Recover/refresh the redundant save-folder pointer FIRST, so the rest of startup
     // (watcher, listPosts, native host) sees a config repaired from the pointer rather
     // than the empty default when config was truncated. (2026-06-23 incident.)
