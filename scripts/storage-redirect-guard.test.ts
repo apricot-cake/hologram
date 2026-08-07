@@ -39,60 +39,107 @@ describe('classifyRealPath — pure classifier', () => {
 });
 
 describe('checkForRedirect — probe write → realpath → cleanup', () => {
-  test('通常環境: mkdir/write/realpath が全部そのまま返り、redirected を含まなければ ok', () => {
+  // A Windows-style literal on purpose (this guard exists for a Windows failure
+  // mode), but the ASSERTIONS must not depend on the separator: the probe path is
+  // built with path.join, which yields '/' on the Linux CI runner. The first cut
+  // of this file asserted startsWith('...\\') and so passed on Windows and failed
+  // in CI (2026-08-07).
+  const DIR = 'C:\\Users\\me\\.hologram';
+  const probed = (calls: string[], kind: string) => calls.some((c) => c.startsWith(`${kind}:${DIR}`) && c.includes('.hologram-realpath-probe-'));
+
+  test('ensureDir 付き: mkdir/write/realpath が全部そのまま返り、redirected を含まなければ ok', () => {
     const calls: string[] = [];
-    const result = checkForRedirect('C:\\Users\\me\\.hologram', {
-      mkdirSync: (d) => calls.push(`mkdir:${d}`),
-      writeFileSync: (f) => calls.push(`write:${f}`),
-      realpathNative: (f) => {
-        calls.push(`realpath:${f}`);
-        return f; // no redirection — resolves to the same path it was given
+    const result = checkForRedirect(DIR, {
+      ensureDir: true,
+      deps: {
+        mkdirSync: (d) => calls.push(`mkdir:${d}`),
+        writeFileSync: (f) => calls.push(`write:${f}`),
+        realpathNative: (f) => {
+          calls.push(`realpath:${f}`);
+          return f; // no redirection — resolves to the same path it was given
+        },
+        unlinkSync: (f) => calls.push(`unlink:${f}`),
       },
-      unlinkSync: (f) => calls.push(`unlink:${f}`),
     });
     expect(result).toEqual({ status: 'ok' });
     // probe was actually written into the target dir and cleaned up afterward
-    expect(calls[0]).toBe('mkdir:C:\\Users\\me\\.hologram');
-    expect(calls.some((c) => c.startsWith('write:C:\\Users\\me\\.hologram\\'))).toBe(true);
-    expect(calls.some((c) => c.startsWith('unlink:C:\\Users\\me\\.hologram\\'))).toBe(true);
+    expect(calls[0]).toBe(`mkdir:${DIR}`);
+    expect(probed(calls, 'write')).toBe(true);
+    expect(probed(calls, 'unlink')).toBe(true);
+  });
+
+  test('⚠️ 既定では mkdir しない（保存先を作り直すと #37 の欠落検知が死ぬ）', () => {
+    const calls: string[] = [];
+    checkForRedirect(DIR, {
+      deps: {
+        mkdirSync: (d) => calls.push(`mkdir:${d}`),
+        writeFileSync: () => {},
+        realpathNative: (f) => f,
+        unlinkSync: () => {},
+      },
+    });
+    expect(calls).toEqual([]);
+  });
+
+  test('保存先が消えていたら check-failed で、フォルダは作り直さない', () => {
+    const calls: string[] = [];
+    const result = checkForRedirect('D:\\gone-library', {
+      deps: {
+        mkdirSync: (d) => calls.push(`mkdir:${d}`),
+        writeFileSync: () => {
+          throw new Error('ENOENT: no such file or directory');
+        },
+        realpathNative: () => {
+          throw new Error('should not be reached');
+        },
+        unlinkSync: () => {},
+      },
+    });
+    expect(result.status).toBe('check-failed');
+    expect(calls).toEqual([]); // the missing folder stays missing — that IS the signal
   });
 
   test('realpath が LocalCache 配下を返したら redirected（#1009 の核心のテスト）', () => {
-    const result = checkForRedirect('C:\\Users\\me\\.hologram', {
-      mkdirSync: () => {},
-      writeFileSync: () => {},
-      realpathNative: () => 'C:\\Users\\me\\AppData\\Local\\Packages\\Some.Package_xyz\\LocalCache\\Roaming\\Hologram\\probe',
-      unlinkSync: () => {},
+    const result = checkForRedirect(DIR, {
+      deps: {
+        writeFileSync: () => {},
+        realpathNative: () => 'C:\\Users\\me\\AppData\\Local\\Packages\\Some.Package_xyz\\LocalCache\\Roaming\\Hologram\\probe',
+        unlinkSync: () => {},
+      },
     });
     expect(result.status).toBe('redirected');
     expect(result).toMatchObject({ realPath: expect.stringContaining('LocalCache') });
   });
 
-  test('probe が書けない場合は check-failed であって redirected ではない（受け入れ条件3）', () => {
+  test('ensureDir 付きで mkdir が失敗したら check-failed であって redirected ではない（受け入れ条件3）', () => {
     const result = checkForRedirect('Z:\\does-not-exist', {
-      mkdirSync: () => {
-        throw new Error('ENOENT: no such directory');
+      ensureDir: true,
+      deps: {
+        mkdirSync: () => {
+          throw new Error('ENOENT: no such directory');
+        },
+        writeFileSync: () => {
+          throw new Error('should not be reached');
+        },
+        realpathNative: () => {
+          throw new Error('should not be reached');
+        },
+        unlinkSync: () => {},
       },
-      writeFileSync: () => {
-        throw new Error('should not be reached');
-      },
-      realpathNative: () => {
-        throw new Error('should not be reached');
-      },
-      unlinkSync: () => {},
     });
     expect(result.status).toBe('check-failed');
   });
 
   test('write は成功したが realpath が失敗しても check-failed（redirected を騙らない）', () => {
     const unlinked: string[] = [];
-    const result = checkForRedirect('C:\\Users\\me\\.hologram', {
-      mkdirSync: () => {},
-      writeFileSync: () => {},
-      realpathNative: () => {
-        throw new Error('permission denied');
+    const result = checkForRedirect(DIR, {
+      deps: {
+        writeFileSync: () => {},
+        realpathNative: () => {
+          throw new Error('permission denied');
+        },
+        unlinkSync: (f) => unlinked.push(f),
       },
-      unlinkSync: (f) => unlinked.push(f),
     });
     expect(result.status).toBe('check-failed');
     // even on failure, cleanup of the probe is still attempted
@@ -100,12 +147,13 @@ describe('checkForRedirect — probe write → realpath → cleanup', () => {
   });
 
   test('unlink（掃除）が失敗しても判定結果は変わらない（best-effort cleanup）', () => {
-    const result = checkForRedirect('C:\\Users\\me\\.hologram', {
-      mkdirSync: () => {},
-      writeFileSync: () => {},
-      realpathNative: (f) => f,
-      unlinkSync: () => {
-        throw new Error('locked by another process');
+    const result = checkForRedirect(DIR, {
+      deps: {
+        writeFileSync: () => {},
+        realpathNative: (f) => f,
+        unlinkSync: () => {
+          throw new Error('locked by another process');
+        },
       },
     });
     expect(result).toEqual({ status: 'ok' });
