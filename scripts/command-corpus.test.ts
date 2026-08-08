@@ -11,6 +11,7 @@
 import { beforeEach, describe, expect, test } from 'vitest';
 import { makeCommands } from '../app/src/renderer/src/services/command-builder';
 import * as R from '../app/src/renderer/src/services/command-registry';
+import { store } from '../app/src/renderer/src/services/store';
 
 // The search box surface (same options as SearchBox.tsx) and the palette surface (same as CommandPalette.tsx)
 const SEARCHBOX: R.QueryOptions = { sections: ['tag', 'user'], limit: { tag: 6, user: 4 } };
@@ -36,7 +37,6 @@ let folderList: any[];
 let posterTags: { value: string; count: number }[];
 let posterFolders: { id: string; name: string }[];
 let performed: string[];
-let mode: string;
 
 // The buildUsers stub matches the real shape (posts with a url folded per-poster into an array).
 const usersOf = (all: any[]): any[] => {
@@ -62,14 +62,15 @@ beforeEach(() => {
   posterTags = [{ value: '常連', count: 4 }];
   posterFolders = [{ id: 'pf1', name: '追いかけ中' }];
   performed = [];
-  mode = 'posts';
+  // The browse mode the entries branch on is hologramStore's own key — the same
+  // one the app writes, so the tests move the app's state rather than a stub.
+  store.setState({ browseMode: 'posts' });
   makeCommands({
     t: (key) => key,
     allPosts: () => posts,
     buildUsers: () => usersOf(posts),
     listFolders: () => folderList,
     folderPath: (id) => (id === 'f1' ? 'お気に入り' : ''),
-    getBrowseMode: () => mode,
     addTab: () => performed.push('addTab'),
     openTagManagementTab: () => performed.push('openTagManagementTab'),
     openHistoryEntry: (e) => performed.push(`openHistoryEntry:${e.u}`),
@@ -168,7 +169,7 @@ describe('操作系コマンド', () => {
 
   test('フィルタ全解除はモードで宛先が変わる（項目自体は消えない）', () => {
     run('cmdClearFilters');
-    mode = 'posters';
+    store.setState({ browseMode: 'posters' });
     run('cmdClearFilters');
     expect(performed).toEqual(['resetAllFilters', 'resetPosterFilters']);
   });
@@ -212,7 +213,7 @@ describe('チップ帯インライン入力の面（#148）', () => {
 
 describe('語彙は見ているビューのもの（#148）', () => {
   beforeEach(() => {
-    mode = 'posters';
+    store.setState({ browseMode: 'posters' });
   });
 
   test('投稿者ビューでは投稿側のタグ・投稿者・フォルダを出さない', () => {
@@ -235,7 +236,7 @@ describe('語彙は見ているビューのもの（#148）', () => {
   });
 
   test('投稿ビューへ戻れば投稿側の語彙に戻る（provider は出し分けるだけ）', () => {
-    mode = 'posts';
+    store.setState({ browseMode: 'posts' });
     expect(titlesOf(R.queryEntries('風景', PALETTE), 'tag')).toEqual(['風景']);
     expect(titlesOf(R.queryEntries('常連', PALETTE), 'tag')).toEqual([]);
   });

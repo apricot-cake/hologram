@@ -8,7 +8,7 @@
 // The store is imported directly rather than injected (#1054): its two accessors
 // were the only deps here typed against free-form string keys, and the typed
 // store makes the injection pay for nothing — no test substitutes them.
-// postQB/browseMode and the render/sidebar callbacks are still owned by
+// postQB and the render/sidebar callbacks are still owned by
 // viewer.ts, so they're injected as deps — same ctx pattern as
 // query-builder.ts/kind-menu-builder.ts.
 import { get as confirmGet } from './confirm.ts';
@@ -24,7 +24,6 @@ export interface SearchBoxDeps {
   addFilter(leaf: { type: string; [k: string]: any }): HologramQueryLeaf | null;
   removeNode(node: HologramQueryLeaf): void;
   treeLeaves(tree: HologramQueryGroup): HologramQueryLeaf[];
-  getBrowseMode(): string;
   afterQueryChange(): void;
   renderPosts(): void;
   renderPosters(): void;
@@ -92,7 +91,7 @@ export function makeSearchBox(deps: SearchBoxDeps) {
     clearTimeout(_searchRenderTimer);
     _searchRenderTimer = setTimeout(() => {
       asLiveSearch(() => {
-        if (deps.getBrowseMode() === 'posters') {
+        if (store.getState().browseMode === 'posters') {
           deps.renderPosters();
           return;
         }
@@ -137,7 +136,7 @@ export function makeSearchBox(deps: SearchBoxDeps) {
     // confirmed/picked state is what the entry should hold), then END the burst.
     onPick: (it) => asLiveSearch(() => searchEditing.pick(it), true),
     onConfirmText: () => {
-      if (deps.getBrowseMode() === 'posts' && searchQuery().trim()) {
+      if (store.getState().browseMode === 'posts' && searchQuery().trim()) {
         clearTimeout(_searchRenderTimer); // beat the debounce so the leaf holds the latest value
         asLiveSearch(() => searchEditing.confirm(), true);
       }

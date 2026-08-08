@@ -16,10 +16,11 @@ import { recentHistory } from './history.ts';
 import { open as openHistoryPanel } from './history-panel.ts';
 import { toggle as togglePanels } from './panels.ts';
 import { open as openSettings } from './settings.ts';
+import { store } from './store.ts';
 import { hologramTabsSource } from './tabs.ts';
 
 // deps = what the app supplies (the library's actual data, the folder list, tab operations,
-// query reset/apply, the current mode, copy). settings / store / tabs / searchbox are real ES
+// query reset/apply, copy). settings / store / tabs / searchbox are real ES
 // modules with no state, so they're imported directly. folders.ts is NOT imported directly,
 // because it pulls in ipc/i18n — which would make this whole module unreadable without a stub
 // (keeping it so the entry lineup can be verified standalone just by swapping deps).
@@ -29,7 +30,6 @@ export interface CommandDeps {
   buildUsers(): HologramUserAgg[];
   listFolders(): HologramFolder[];
   folderPath(id: string): string;
-  getBrowseMode(): string;
   addTab(): void;
   /** #21: opens (or focuses) the tag management page tab. */
   openTagManagementTab(): void;
@@ -67,7 +67,7 @@ export function makeCommands(deps: CommandDeps): void {
       id: 'cmd:clear-filters',
       section: 'command',
       title: t('cmdClearFilters'),
-      perform: () => (deps.getBrowseMode() === 'posters' ? deps.resetPosterFilters() : deps.resetAllFilters()),
+      perform: () => (store.getState().browseMode === 'posters' ? deps.resetPosterFilters() : deps.resetAllFilters()),
     },
     {
       id: 'cmd:view-grid',
@@ -75,13 +75,13 @@ export function makeCommands(deps: CommandDeps): void {
       title: t('cmdViewGrid'),
       // Moves only the layout axis — doesn't touch the Square thumbnails / Show info switches
       // (the #618/#630 orthogonal-key split. The palette is not a surface that remembers display state).
-      perform: () => (deps.getBrowseMode() === 'posters' ? setPosterLayout(false) : setLayout(false)),
+      perform: () => (store.getState().browseMode === 'posters' ? setPosterLayout(false) : setLayout(false)),
     },
     {
       id: 'cmd:view-list',
       section: 'command',
       title: t('cmdViewList'),
-      perform: () => (deps.getBrowseMode() === 'posters' ? setPosterLayout(true) : setLayout(true)),
+      perform: () => (store.getState().browseMode === 'posters' ? setPosterLayout(true) : setLayout(true)),
     },
     // Bulk-visibility toggle (#245). The name states the action, not the state — the palette
     // row is never rewritten to match the state at the moment it opened (a row that swaps
@@ -159,7 +159,7 @@ export function makeCommands(deps: CommandDeps): void {
   // poster view). Splitting this into two providers switched by mode is what keeps the
   // section lineup and ordering running through one queryEntries (rather than growing a
   // separate candidate generator per surface).
-  const posters = () => deps.getBrowseMode() === 'posters';
+  const posters = () => store.getState().browseMode === 'posters';
   registerProvider({
     id: 'corpus',
     entries: (query) => {

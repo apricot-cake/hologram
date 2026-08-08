@@ -45,7 +45,6 @@ import {
   handleGlobalTabShortcut,
   handleSelectionContextmenu,
   handleDisplayStoreChange,
-  handleBrowseModeStoreChange,
   handlePosterDisplayStoreChange,
   handleSearchQueryStoreChange,
 } from '../services/orchestrator.ts';
@@ -237,7 +236,7 @@ function SelectionContextMenu() {
 }
 
 // External-store / IPC subscriptions: hologramStore keys (both grids' display axes /
-// browseMode / searchQuery), the search-mode toggle, shared folder changes, and the
+// searchQuery), the search-mode toggle, shared folder changes, and the
 // fs-watch posts-changed hint. React owns the subscribe() registration (mounted once
 // for the app's lifetime). The store/search-mode handlers are guard+action logic that
 // still lives in orchestrator.ts, imported directly as live bindings — "cut out and
@@ -251,14 +250,12 @@ function SelectionContextMenu() {
 function StoreSubscriptions() {
   useEffect(() => {
     const unsubDisplay = subscribeDisplay(() => handleDisplayStoreChange());
-    const unsubBrowseMode = subscribeKey('browseMode', () => handleBrowseModeStoreChange());
     const unsubPosterDisplay = subscribePosterDisplay(() => handlePosterDisplayStoreChange());
     const unsubSearchQuery = subscribeKey('searchQuery', () => handleSearchQueryStoreChange());
     foldersOnChange((kind) => handleFolderChange(kind));
     onPostsChanged(() => handlePostsChanged());
     return () => {
       unsubDisplay();
-      unsubBrowseMode();
       unsubPosterDisplay();
       unsubSearchQuery();
     };

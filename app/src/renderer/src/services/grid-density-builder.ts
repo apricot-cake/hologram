@@ -26,7 +26,6 @@ export interface GridDensityDeps {
   hologramPostGridSource: { setLiveColumnWidth(px: number | null): void; setZoomAnchor(anchor: ZoomAnchor | null): void };
   renderPosts(inPlace?: boolean): void;
   renderPosters(): void;
-  getBrowseMode(): string;
 }
 
 // The size-slider track, as data for a React-driven control. For the auto-fill views the
@@ -186,7 +185,7 @@ export function makeGridDensity(deps: GridDensityDeps) {
   // whether the step actually moves anything (there IS a size axis here, and this isn't
   // already the min/max stop) is decided inside the action, not the guard.
   function stepSize(dir: 1 | -1) {
-    const posters = deps.getBrowseMode() === 'posters';
+    const posters = store.getState().browseMode === 'posters';
     const tr = posters ? computePosterSizeTrack() : computeSizeTrack();
     // No size axis here (poster list view), or only one stop is geometrically possible.
     if (!tr || tr.single) return;
@@ -253,7 +252,7 @@ export function makeGridDensity(deps: GridDensityDeps) {
     const notches = _zoomNotches;
     _zoomNotches = 0;
     if (!notches) return;
-    const posters = deps.getBrowseMode() === 'posters';
+    const posters = store.getState().browseMode === 'posters';
     const tr = posters ? computePosterSizeTrack() : computeSizeTrack();
     if (!tr || tr.single) return;
     const next = Math.max(tr.min, Math.min(tr.max, tr.value + notches * tr.step));
@@ -291,7 +290,7 @@ export function makeGridDensity(deps: GridDensityDeps) {
         cancelAnimationFrame(_zoomRaf);
         applyPendingZoom();
       }
-      const posters = deps.getBrowseMode() === 'posters';
+      const posters = store.getState().browseMode === 'posters';
       // Whatever happens below, the burst ends here: the next one resolves its own
       // anchor from wherever the cursor is then.
       const ending = _zoomAnchor;
