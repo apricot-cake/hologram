@@ -75,10 +75,11 @@ const bridge = {
   setPref: async (key: string, value: unknown) => setPref(key, value),
 };
 
-// Stand-in for screen width (layout-mode.ts). Since one of `isVisible`'s inputs is
-// width, this lets the test drive wide<->narrow = it provides only the same shape
-// as the real matchMedia (matches + change event), and `fireWidth` fires the
-// listener.
+// Stand-in for screen width. Width was once an input to `isVisible` (#259's narrow
+// slide-over), so the two cases below drive wide<->narrow and assert that it no
+// longer moves the answer — the guard against that coming back. It provides only the
+// same shape as the real matchMedia (matches + change event), and `fireWidth` fires
+// the listener. Nothing under test subscribes any more, which is the point.
 let mediaListener: ((e: { matches: boolean }) => void) | null = null;
 let mediaMatches = true;
 function fireWidth(wide: boolean): void {
