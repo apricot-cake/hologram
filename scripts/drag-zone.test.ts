@@ -100,7 +100,8 @@ window.chrome = {
 // #44: the in-page UI lives inside a shared ShadowRoot (ui-root.ts), not
 // directly under body. Since this boundary is what keeps the host page's CSS
 // from reaching in and this CSS from leaking out, the test also looks inside the boundary, same as the real thing.
-const uiRoot = () => (window.document.querySelector('hologram-extension-ui') as any)?.shadowRoot;
+const uiHost = () => window.document.querySelector('hologram-extension-ui') as any;
+const uiRoot = () => uiHost()?.shadowRoot;
 const zone = () => (uiRoot()?.getElementById('__hologramDropZone') ?? null) as any;
 const ring = () => zone()?.querySelector('.ring') as any;
 const label = () => zone()?.querySelector('.label') as any;
@@ -145,6 +146,15 @@ describe('投稿の絵をドラッグすると idle 状態でゾーンが出る'
   test('idle: 待機状態でリングを持つ', () => {
     expect(state()).toBe('idle');
     expect(ring()).not.toBeNull();
+  });
+
+  // #1057 (WCAG 2.2 SC 3.1.2): ホストページの言語はサイト側のもので、この UI の
+  // 言語は i18n.ts が navigator.language から決めたもの＝一致する保証が無い。
+  // shadow host が名乗らないとページ側の宣言が継承され、読み上げが別言語になる。
+  // ここでは上のヒントが英語で出ている（jsdom の navigator.language は en-US）
+  // ので、宣言もそれと同じ en でなければならない。
+  test('shadow host が中の文言の言語を名乗る', () => {
+    expect(uiHost().lang).toBe('en');
   });
 });
 

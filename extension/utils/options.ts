@@ -9,6 +9,8 @@
 //
 // Wrapped in an IIFE for the same reason as diag.ts: tsc compiles every
 // extension file as one program, so top-level names must stay unique.
+import { servedLocale } from './locale.ts';
+
 export function startOptions(): void {
   // Both read by overlay.js (content script) and written only here.
   // Absent = the defaults overlay.js ships with: the mark is always shown
@@ -31,6 +33,11 @@ export function startOptions(): void {
     // checkboxes does not tell that reader whose settings they are (#44).
     const title = chrome.i18n && chrome.i18n.getMessage('optionsTitle');
     if (title) document.title = title;
+    // Every string below is about to be replaced, so the document has to stop
+    // claiming to be the language of the fallback markup (#1057, WCAG 2.2
+    // SC 3.1.1). servedLocale, not getUILanguage() straight: `_locales` holds ja
+    // and en, so an fr-FR Chrome is reading the English table — see locale.ts.
+    if (chrome.i18n) document.documentElement.lang = servedLocale(chrome.i18n.getUILanguage());
     const setText = (id: string, key: string) => {
       const el = document.getElementById(id);
       const text = chrome.i18n && chrome.i18n.getMessage(key);

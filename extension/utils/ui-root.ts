@@ -22,6 +22,7 @@
 // host serving `style-src 'none'` kills a <style> even inside a shadow root,
 // while `adoptedStyleSheets` is not a CSP-guarded sink at all (measured, #270 —
 // see tokens.ts for the full table). x.com ships exactly that policy.
+import { markUiLanguage } from './locale.ts';
 import { ensureTokens, withCurrentTokenSheet } from './tokens.ts';
 import componentsCss from './components.css?inline';
 
@@ -119,6 +120,9 @@ export function ensureUiRoot(): ShadowRoot | null {
     // A single-page app can move or drop nodes wholesale; re-attach rather than
     // hand back a root that is no longer in the document.
     if (!existing.isConnected) parent.appendChild(existing);
+    // Re-asserted rather than trusted: a host page that rewrites the subtree can
+    // have dropped the attribute off an element it can see (#1057).
+    markUiLanguage(existing);
     ensureTokens();
     adoptCurrentStyles(existing.shadowRoot);
     return existing.shadowRoot;
@@ -127,6 +131,7 @@ export function ensureUiRoot(): ShadowRoot | null {
   try {
     const host = existing || document.createElement(HOST_TAG);
     for (const [property, value] of Object.entries(HOST_STYLE)) host.style.setProperty(property, value, 'important');
+    markUiLanguage(host);
     const root = host.attachShadow({ mode: 'open' });
     adoptCurrentStyles(root);
     if (!host.isConnected) parent.appendChild(host);
