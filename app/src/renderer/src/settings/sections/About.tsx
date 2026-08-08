@@ -17,6 +17,10 @@ const REPO_URL = 'https://github.com/apricot-cake/hologram';
 const LINKS = [
   { key: 'aboutLinkRepo', url: REPO_URL },
   { key: 'aboutLinkReleases', url: `${REPO_URL}/releases` },
+  // /issues/new/choose, not /issues: the chooser is where .github/ISSUE_TEMPLATE/
+  // config.yml fans out to Q&A, Ideas and the security advisory form, so one link
+  // reaches every venue.
+  { key: 'aboutLinkFeedback', url: `${REPO_URL}/issues/new/choose` },
   { key: 'aboutLinkLicense', url: `${REPO_URL}/blob/main/LICENSE` },
 ] as const;
 
@@ -53,7 +57,7 @@ export function About() {
       <div className="mt-1 max-w-sm text-sm text-balance">{t('aboutTagline')}</div>
       <div className="text-muted-foreground/70 mt-2 text-xs">{info ? `Electron ${info.electron} · Chromium ${info.chromium} · Node ${info.node}` : ''}</div>
       <Separator className="my-4 max-w-48" />
-      <div className="flex items-center gap-5">
+      <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2">
         {LINKS.map(({ key, url }) => (
           <Button
             key={key}
