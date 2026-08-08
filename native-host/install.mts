@@ -1,34 +1,39 @@
-'use strict';
-
 // Registers (or removes) the Hologram native messaging host so Chrome/Edge
 // can launch the bridge.
 //
 // Used two ways:
-//   - dev CLI:        node native-host/install.cts  [uninstall]
+//   - dev CLI:        node native-host/install.mts  [uninstall]
 //                     (launcher runs the bridge with this Node binary)
-//   - Electron app:   require('.../native-host/install.cts').install({ exe, runAsNode:true })
+//   - Electron app:   require('.../native-host/install.mts').install({ exe, runAsNode:true })
 //                     (launcher runs the bridge with the Electron binary in
 //                      ELECTRON_RUN_AS_NODE mode, so no system Node is needed)
+//
+// This module is ESM loaded as RAW SOURCE by an Electron main process that is
+// bundled to CommonJS — a synchronous require() of an .mts file, which Node
+// supports since require(esm) (and type-strips on the way in). That is why the
+// module stays free of top-level await: require(esm) refuses a module that has
+// one, and the app's registration runs synchronously at startup.
 
-const fs = require('node:fs');
-const path = require('node:path');
-const os = require('node:os');
-const { execFileSync } = require('node:child_process');
+import fs from 'node:fs';
+import path from 'node:path';
+import os from 'node:os';
+import { execFileSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
-const { configDir } = require('./paths.cts');
+import { configDir } from './paths.mts';
 
 // The registered host name. Environment-driven for exactly the same reason
-// configDir() is (paths.cts): the DEVELOPMENT registration (#732) is this same
+// configDir() is (paths.mts): the DEVELOPMENT registration (#732) is this same
 // installer pointed at a different name and a different config dir, and the
 // manifest path, the registry key and allowed_origins all have to move together
 // or the pair silently half-registers. Native messaging routes on this name, so
 // it — not a second extension id — is what keeps a capture made while developing
 // out of the real library.
-const DEFAULT_HOST_NAME = 'com.hologram.host';
-const HOST_NAME = process.env.HOLOGRAM_NATIVE_HOST_NAME || DEFAULT_HOST_NAME;
-// The bundle (bridge.cts + its local modules in one file), not the sources —
+export const DEFAULT_HOST_NAME = 'com.hologram.host';
+export const HOST_NAME = process.env.HOLOGRAM_NATIVE_HOST_NAME || DEFAULT_HOST_NAME;
+// The bundle (bridge.mts + its local modules in one file), not the sources —
 // built by app/build-native-host-bridge.mjs. See deployBridge().
-const BRIDGE_PATH = path.join(__dirname, 'dist', 'bridge.js');
+export const BRIDGE_PATH = path.join(path.dirname(fileURLToPath(import.meta.url)), 'dist', 'bridge.js');
 const DEPLOYED_BRIDGE = 'bridge.js';
 
 // Copy the bridge into the (ASCII) config dir and run it from there. The repo
@@ -37,7 +42,7 @@ const DEPLOYED_BRIDGE = 'bridge.js';
 // must reference an ASCII location only.
 //
 // What gets deployed is the BUNDLE: one file with no runtime module resolution
-// left. Deploying the raw sources instead meant listing every module bridge.cts
+// left. Deploying the raw sources instead meant listing every module bridge.mts
 // require()s here, and a module added upstream but missed in that list crashed
 // the spawned host on startup ("Error when communicating with the native
 // messaging host") with no further hint. One file has no list to fall out of
@@ -67,7 +72,7 @@ function sanitizeExtensionId(id: unknown): string | null {
 
 // The unpacked extension's ID (path-derived, shown in chrome://extensions).
 // Stored in config.json by the app so we never commit a key to the repo.
-function readExtensionId(): string | null {
+export function readExtensionId(): string | null {
   try {
     const cfg = JSON.parse(fs.readFileSync(path.join(configDir(), 'config.json'), 'utf8').replace(/^\uFEFF/, ''));
     if (cfg) return sanitizeExtensionId(cfg.extensionId);
@@ -77,11 +82,11 @@ function readExtensionId(): string | null {
   return null;
 }
 
-function launcherPath(): string {
+export function launcherPath(): string {
   return path.join(configDir(), process.platform === 'win32' ? 'hologram-host.bat' : 'hologram-host.sh');
 }
 
-function manifestPath(): string {
+export function manifestPath(): string {
   return path.join(configDir(), `${HOST_NAME}.json`);
 }
 
@@ -89,7 +94,7 @@ function manifestPath(): string {
 // whereas the main working tree has a .git DIRECTORY. Electron lives several
 // levels below that marker, so walk upward from the runtime rather than relying
 // on a worktree naming convention.
-function isLinkedWorktreeRuntime(exe: string): boolean {
+export function isLinkedWorktreeRuntime(exe: string): boolean {
   let dir = path.dirname(path.resolve(exe));
   while (true) {
     try {
@@ -113,7 +118,7 @@ interface PreserveSharedRegistrationArgs {
 // path into the user's real launcher makes every browser save fail as soon as
 // that worktree is removed. An explicit config override is an isolated test
 // environment, so registration there remains allowed.
-function shouldPreserveSharedRegistration({ exe, runAsNode, configDirOverride = process.env.HOLOGRAM_CONFIG_DIR }: PreserveSharedRegistrationArgs): boolean {
+export function shouldPreserveSharedRegistration({ exe, runAsNode, configDirOverride = process.env.HOLOGRAM_CONFIG_DIR }: PreserveSharedRegistrationArgs): boolean {
   return runAsNode && !configDirOverride && isLinkedWorktreeRuntime(exe);
 }
 
@@ -250,7 +255,7 @@ function persistExtensionId(id: string | null): void {
 // current behavior for every build, so the dedicated keys are added rather
 // than relied on as a substitute — they're inert, not harmful, if a given
 // build only ever reads Chrome's key.
-function windowsRegistryKeys(): string[] {
+export function windowsRegistryKeys(): string[] {
   return [
     `HKCU\\Software\\Google\\Chrome\\NativeMessagingHosts\\${HOST_NAME}`,
     `HKCU\\Software\\Microsoft\\Edge\\NativeMessagingHosts\\${HOST_NAME}`,
@@ -260,7 +265,7 @@ function windowsRegistryKeys(): string[] {
   ];
 }
 
-function unixManifestDirs(): string[] {
+export function unixManifestDirs(): string[] {
   const home = os.homedir();
   if (process.platform === 'darwin') {
     return [
@@ -286,12 +291,12 @@ interface InstallOptions {
   extensionId?: unknown;
 }
 
-function install({ exe = process.execPath, runAsNode = false, extensionId }: InstallOptions = {}) {
+export function install({ exe = process.execPath, runAsNode = false, extensionId }: InstallOptions = {}) {
   if (shouldPreserveSharedRegistration({ exe, runAsNode })) {
     const launcher = launcherPath();
     const manifest = manifestPath();
     if (!fs.existsSync(launcher) || !fs.existsSync(manifest)) {
-      throw new Error('Refusing to register the real native messaging host with a disposable Git worktree runtime. Run "node native-host/install.cts" from the main working tree first.');
+      throw new Error('Refusing to register the real native messaging host with a disposable Git worktree runtime. Run "node native-host/install.mts" from the main working tree first.');
     }
     return { launcher, manifest, configDir: configDir(), extensionId: readExtensionId(), preserved: true };
   }
@@ -324,7 +329,7 @@ function install({ exe = process.execPath, runAsNode = false, extensionId }: Ins
 // Rewrite only the manifest's allowed_origins, preserving the existing launcher
 // (so we never clobber a working launcher with one that points at a non-ASCII
 // exe path). Falls back to a full install if no manifest exists yet.
-function updateAllowedOrigin(extensionId: unknown) {
+export function updateAllowedOrigin(extensionId: unknown) {
   const extId = sanitizeExtensionId(extensionId);
   const mp = manifestPath();
   let manifest: any;
@@ -338,7 +343,7 @@ function updateAllowedOrigin(extensionId: unknown) {
   return { manifest: mp, extensionId: extId };
 }
 
-function uninstall(): void {
+export function uninstall(): void {
   if (process.platform === 'win32') {
     for (const key of windowsRegistryKeys()) {
       try {
@@ -374,33 +379,21 @@ function uninstall(): void {
 
 // Where deployBridge() puts the bundle. Exported so diagnostics (scripts/self-test)
 // check the file the launcher actually runs, not a path they spell out themselves.
-function deployedBridgePath(): string {
+export function deployedBridgePath(): string {
   return path.join(configDir(), DEPLOYED_BRIDGE);
 }
 
-module.exports = {
-  install,
-  DEFAULT_HOST_NAME,
-  uninstall,
-  updateAllowedOrigin,
-  readExtensionId,
-  HOST_NAME,
-  BRIDGE_PATH,
-  deployedBridgePath,
-  launcherPath,
-  manifestPath,
-  isLinkedWorktreeRuntime,
-  shouldPreserveSharedRegistration,
-  windowsRegistryKeys,
-  unixManifestDirs,
-};
-
-if (require.main === module) {
+// Only act as the CLI when this module IS the process entry. `require.main ===
+// module` is the CommonJS spelling and has no ESM equivalent that survives the
+// two ways this file is loaded (raw source under Node's type stripping, and a
+// synchronous require(esm) from the Electron main process), so compare the entry
+// path instead.
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   if (process.argv[2] === 'uninstall') {
     uninstall();
     console.log(`Removed native messaging host "${HOST_NAME}".`);
   } else {
-    // Optional: `node install.cts <extensionId>` to set the allowed extension.
+    // Optional: `node install.mts <extensionId>` to set the allowed extension.
     const argId = process.argv[2];
     const result = install(argId ? { extensionId: argId } : {});
     console.log(`Installed native messaging host "${HOST_NAME}".`);

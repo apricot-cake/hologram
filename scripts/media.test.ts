@@ -52,7 +52,7 @@ beforeAll(async () => {
     return new Response('nope', { status: 500 });
   }) as typeof fetch;
 
-  ({ handleSave, downloadMedia, downloadAvatar } = await import('../native-host/bridge.cts'));
+  ({ handleSave, downloadMedia, downloadAvatar } = await import('../native-host/bridge.mts'));
 });
 
 afterAll(() => {

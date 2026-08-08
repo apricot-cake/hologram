@@ -2,12 +2,12 @@
 // in, e.g. undici) into native-host/dist/*.js — one file per entry, node
 // builtins external, everything else inlined. Two entries need this, for two
 // different reasons:
-//   - bridge.cts: the process Chrome spawns per native-messaging connection.
-//     It runs from the ASCII config dir (see native-host/install.cts's
+//   - bridge.mts: the process Chrome spawns per native-messaging connection.
+//     It runs from the ASCII config dir (see native-host/install.mts's
 //     deployBridge), so bundling makes the deployed artifact ONE file with no
 //     runtime module resolution left (a missed file used to crash the host with
 //     no hint beyond "Error when communicating with the native messaging host").
-//   - media-download.cts: required directly by the PACKAGED Electron main
+//   - media-download.mts: required directly by the PACKAGED Electron main
 //     process (app/src/main/index.ts). electron-builder copies native-host/ as
 //     a raw extraResource — no node_modules — so a require() of the raw source
 //     crashed on startup with "Cannot find module 'undici'". In dev, main
@@ -32,10 +32,10 @@ const outDir = path.join(repoRoot, 'native-host', 'dist');
 
 // Each entry gets its OWN Rollup build (not one multi-entry build) so the two
 // outputs never share an extracted chunk. bridge.js and media-download.js both
-// pull in media-download.cts's code (bridge.cts requires it directly), and a
+// pull in media-download.mts's code (bridge.mts requires it directly), and a
 // single combined build hoists that shared code into a third file that each
 // entry require()s by relative path — which silently breaks deployBridge()
-// (native-host/install.cts), which copies ONLY the single bridge.js file into
+// (native-host/install.mts), which copies ONLY the single bridge.js file into
 // the config dir. Two independent builds keep each output a fully self-contained
 // single file, matching what deployBridge assumes.
 async function buildEntry(name, emptyOutDir) {
@@ -43,6 +43,21 @@ async function buildEntry(name, emptyOutDir) {
     root: repoRoot,
     configFile: false,
     logLevel: 'warn',
+    // The sources are ESM but the output format is CJS, and the bundler answers
+    // `import.meta` with an empty object there — so bridge.mts's entry guard
+    // (argv[1] vs its own path, the ESM stand-in for `require.main === module`)
+    // would compare against undefined and the deployed host would never read
+    // stdin. Silent: the process starts, answers nothing, and Chrome reports
+    // only "Error when communicating with the native messaging host".
+    //
+    // This is the substitution Rollup applies on its own and the one
+    // electron-vite already emits into app/out/main/index.js for the same
+    // ESM-source/CJS-output pair — spelled out here because this build has no
+    // electron-vite config behind it.
+    // The `node:` prefix is load-bearing: bare "url" goes through Vite's
+    // browser-compat resolver and comes out as an externalized stub, which
+    // throws the moment the guard runs.
+    define: { 'import.meta.url': 'require("node:url").pathToFileURL(__filename).href' },
     build: {
       outDir,
       emptyOutDir, // only the FIRST build may empty the shared dist/ dir
@@ -50,7 +65,7 @@ async function buildEntry(name, emptyOutDir) {
       minify: false,
       sourcemap: false,
       lib: {
-        entry: path.join(repoRoot, 'native-host', `${name}.cts`),
+        entry: path.join(repoRoot, 'native-host', `${name}.mts`),
         formats: ['cjs'],
         fileName: () => `${name}.js`,
       },

@@ -156,12 +156,14 @@ const WORKAROUNDS: Workaround[] = [
   { flag: '--legacy-peer-deps', label: 'electron-vite の peer 範囲と vite 8 の衝突', upstream: 'https://github.com/alex8088/electron-vite/releases', check: peerCheck },
 ];
 
-// Same shape as bridge.cts: installing only happens when this file is RUN (see the
+// Same shape as bridge.mts: installing only happens when this file is RUN (see the
 // require.main guard at the bottom), so a test can require() it and exercise the
-// probes against fixture trees. `module.exports` rather than `export` because this
-// is a .cts run by Node's type stripping, which only erases types — real export
-// statements would be a syntax error at runtime (see scripts/tsconfig.json's
-// erasableSyntaxOnly).
+// probes against fixture trees. `module.exports` rather than `export` because a
+// .cts is CommonJS whatever its contents, and this one runs un-built under Node's
+// type stripping — an `export` statement here is a runtime syntax error, not an
+// erasable annotation. The cost is that tsc reads NO exports off this assignment,
+// which is what keeps several suites out of scripts/tsconfig.test.json; the fix is
+// the one native-host/ took in #1052 (become .mts), not a change here.
 module.exports = { sqliteCheck, peerCheck, WORKAROUNDS, decideFlags };
 
 // Split out so a test can check the FLAGS a set of verdicts produces, not just the

@@ -20,9 +20,9 @@
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { configDir } = require('../native-host/paths.cts');
+const { configDir } = require('../native-host/paths.mts');
 const { fetchPostMetadata } = require('../extension/utils/extractor/index.ts');
-const { downloadAvatar, pixivRefererFor } = require('../native-host/media-download.cts');
+const { downloadAvatar, pixivRefererFor } = require('../native-host/media-download.mts');
 const { openDatabase } = require('../app/src/main/lib-db.ts');
 const { postsFromDb } = require('../app/src/main/lib-db-query.ts');
 const { makeTagResolver, preparePostStmts, writePost } = require('../app/src/main/lib-db-record-writer.ts');

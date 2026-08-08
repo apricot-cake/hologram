@@ -344,7 +344,7 @@ async function runCanary(platforms: string[], dryRun: boolean): Promise<number> 
 // endpoint. Rough on purpose (baselines are per post type, the stored payloads
 // are whatever was saved) — it points at the field, it does not judge.
 function inspectPayloads(filter: string | null, limit: number) {
-  const { configDir, defaultLibraryDir } = require('../native-host/paths.cts');
+  const { configDir, defaultLibraryDir } = require('../native-host/paths.mts');
   const { openDatabase } = require('../app/src/main/lib-db.ts');
   const { unpackRawPayload } = require('../native-host/raw-payload.mts');
   // #176: hologram.db lives inside the save folder now, not configDir (ADR 0025).

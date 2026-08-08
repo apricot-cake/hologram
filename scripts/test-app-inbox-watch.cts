@@ -37,7 +37,7 @@ fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolde
 const jpeg = Buffer.from('/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACP/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AfwH/2Q==', 'base64');
 
 // Writes ONLY into .hologram-inbox/new + the screenshot file — no sidecar, the
-// same artifacts bridge.cts's handleSave produces post-#299.
+// same artifacts bridge.mts's handleSave produces post-#299.
 async function saveViaInbox(id) {
   fs.writeFileSync(path.join(saveFolder, `${id}.jpg`), jpeg);
   const rec = normalizePostRecord({ captureId: id, image: `${id}.jpg`, url: `https://x.com/u/status/${id}`, platform: 'x', text: 't' });

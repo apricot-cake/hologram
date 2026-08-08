@@ -71,30 +71,34 @@
   // augmentation (__hologramAutoCapture) from it, and without the file the augmentation
   // reads as a property the DOM's Window does not have.
   "include": ["**/*.test.ts", "vitest.setup.ts", "vitest.global-setup.ts", "lib-capture-rig.ts", "lib-user-event.ts", "vite-client.d.ts", "../app/src/renderer/src/types/**/*.d.ts", "../extension/types/globals.d.ts"],
-  // 51 of the 182 suites do not compile yet; the other 131 are checked. TWO causes
+  // 35 of the 182 suites do not compile yet; the other 147 are checked. TWO causes
   // remain, and only the second is the drift this project exists to catch:
   //
-  //   (a) imports a .cts module that exports via `module.exports = {...}` (21 suites,
-  //       4 of which also hit (b)) — native-host's bridge.cts / media-download.cts /
-  //       config-recovery.cts / paths.cts, and scripts' own lib-sandbox-instance.cts,
-  //       gen-extension-tokens.cts and friends. They read as having no named exports:
+  //   (a) imports a .cts module that exports via `module.exports = {...}` (5 suites) —
+  //       scripts' own lib-sandbox-instance.cts, gen-extension-tokens.cts,
+  //       lib-schema-canary.cts and friends. They read as having no named exports:
   //       TS2459 on a direct import, TS2339 through require() or a dynamic import. Not
   //       drift; a module-format gap, and the one cause that will keep catching NEW
-  //       suites, because a .cts helper next to a .ts suite is a normal shape here.
+  //       suites, because a .cts helper next to a .ts suite is still a normal shape in
+  //       scripts/.
   //
   //       ⚠️ THE OBVIOUS FIX DOES NOT WORK, measured on 2026-08-08: a second project on
   //       `module: nodenext` reports the SAME TS2459. TypeScript does not infer
   //       CommonJS exports from a `module.exports = {...}` assignment in a .ts/.cts
   //       file at all — that inference is for JS files (allowJs), and no module setting
   //       turns it on. Nor can the sources declare it: `export =` is the construct tsc
-  //       would understand, and `erasableSyntaxOnly` (set by both
-  //       native-host/tsconfig.json and scripts/tsconfig.json, because those files run
-  //       un-built under Node's type stripping) rejects it. That leaves two real
-  //       options — a hand-written .d.cts beside each module (a second copy of the
-  //       contract, i.e. the very thing #635 exists to prevent), or making those
-  //       directories ESM. Neither is a tsconfig change: do not reopen this by editing
-  //       this file.
-  //   (b) fixtures that have drifted from the ambient shapes (34 suites) — HologramPost /
+  //       would understand, and `erasableSyntaxOnly` (set by scripts/tsconfig.json,
+  //       because those files run un-built under Node's type stripping) rejects it.
+  //       Not a tsconfig change: do not reopen this by editing this file.
+  //
+  //       THE FIX THAT WORKS is to make the directory ESM, and #1052 did it for
+  //       native-host/ — the five .cts modules there became .mts with real
+  //       `export`s, and **16 suites came off this list in one move** (51 → 35).
+  //       Node's require(esm) is what made it legal: the Electron main process still
+  //       loads install.mts as raw source by computed path, synchronously, from a CJS
+  //       bundle. scripts/ is the same move waiting to happen (91 .cts files, 16 of
+  //       them with module.exports), and it is what would retire cause (a) for good.
+  //   (b) fixtures that have drifted from the ambient shapes (30 suites) — HologramPost /
   //       HologramUserAgg / HologramQueryLeaf / HologramNavEntry / ModelRegistryEntry
   //       literals missing required members, wrong arity, wrong element types. THIS is
   //       the real debt, and each one is an instance of exactly the bug #635 was filed
@@ -110,8 +114,11 @@
   //       had been asserting against a shape buildUsers never produces. Annotate the
   //       helper first, then read what goes red; that is the bug, not the annotation.
   //
-  // TWO causes are gone (2026-08-08), and they took 17 suites off this list with them.
-  // Both were properties of this project's own settings, not of the suites:
+  // THREE causes are gone (2026-08-08), and they took 33 suites off this list with
+  // them. None of the three was a property of the suites:
+  //   - the native-host half of cause (a), 16 suites: #1052 made that directory ESM.
+  //     Nothing in those suites changed — they were quarantined for the shape of the
+  //     modules they import, and the modules changed shape.
   //   - the electron one (was cause (c)): the `electron` entry in `paths` redirected
   //     app/src/main's ipcMain / BrowserWindow / dialog / utilityProcess to the
   //     renderer's shim, which declares none of them. Dropping the redirect (see the
@@ -130,25 +137,16 @@
   "exclude": [
     "archive-db-export.test.ts",
     "archive-db-import.test.ts",
-    "avatar-fill.test.ts",
     "background-wiring.test.ts",
-    "bridge-query.test.ts",
     "bridge-ssrf.test.ts",
     "bulk-capture.test.ts",
     "capture-overlay.test.ts",
-    "config-cache.test.ts",
-    "config-recovery.test.ts",
     "content-fixtures.test.ts",
     "contrast-parity.test.ts",
-    "db-inbox.test.ts",
-    "db-replaces.test.ts",
     "db-schema.test.ts",
     "db-write.test.ts",
     "db.test.ts",
-    "drag.test.ts",
     "electron-path-guard.test.ts",
-    // #71: imports native-host/paths.cts + bridge.cts (module.exports) — cause (a).
-    "extension-contact.test.ts",
     // Cause (a), on scripts/gen-extension-tokens.cts. The three errors that are not
     // TS2459 are that same gap's fallout: build()'s return type is lost with the
     // export, so its Maps read as Map<unknown, unknown>.
@@ -156,19 +154,9 @@
     "folder-nesting.test.ts",
     "folders-merge.test.ts",
     "image-zoom.test.ts",
-    // #176: dynamic-imports native-host/config-recovery.cts (same pattern as
-    // config-cache.test.ts above) — same module-format friction.
-    "lib-config-libraries.test.ts",
     "lib-db-integrity.test.ts",
     "listing.test.ts",
     "mastodon-url.test.ts",
-    "media-download-custom-emoji.test.ts",
-    // #181: named-imports downloadLinkCardThumbnail from native-host/media-download.cts
-    // (module.exports) — cause (a), exactly like media-download-custom-emoji.test.ts
-    // right above, which unit-tests the neighbouring downloader the same way.
-    "media-download-link-card.test.ts",
-    "media-limits.test.ts",
-    "media.test.ts",
     "metadata-correctness.test.ts",
     "metadata-origin.test.ts",
     "migrate.test.ts",
@@ -176,16 +164,17 @@
     // (b). (It was quarantined for the electron pull through lib-ml-runtime.ts →
     // native-host.ts; that cause is gone, this one is its own.)
     "model-manager.test.ts",
-    "native-host-install.test.ts",
+    // Cause (b), and #1052 sharpened it rather than fixing it: PostRecordInput's
+    // `media` is now Partial<MediaItemShape>[] instead of a shallow Partial's full
+    // MediaItemShape[], so what is left here is the fixture passing a number where a
+    // string goes and a null where an item goes.
     "post-record.test.ts",
     "records.test.ts",
     "sandbox-instance.test.ts",
     "sandbox-real-seed.test.ts",
     "save-error-i18n.test.ts",
     "save-folder-guard.test.ts",
-    "save-post-empty.test.ts",
     "save-post-video.test.ts",
-    "saved-index.test.ts",
     "schema-canary.test.ts",
     "tabstate.test.ts",
     "transfer-roundtrip.test.ts",

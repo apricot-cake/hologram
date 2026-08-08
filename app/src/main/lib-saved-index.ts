@@ -5,7 +5,7 @@
 // app is closed (#5 St6 / #299). Replaces the old approach of having the
 // bridge rebuild its own snapshot straight from every sidecar — the bridge no
 // longer writes sidecars at all, so it has nothing left to scan; the DB is the
-// one place that still knows every post's URL. See bridge.cts's
+// one place that still knows every post's URL. See bridge.mts's
 // "Saved-post index" comment for the read side (this module only builds the
 // map; index.ts owns writing it to configDir/bridge-saved-index.json,
 // debounced + atomic).
@@ -80,7 +80,7 @@ interface SavedIndexFile {
 }
 
 // First post to claim a postKey wins the entry's captureId (same
-// "informational, not authoritative" tolerance bridge.cts's old sidecar rescan
+// "informational, not authoritative" tolerance bridge.mts's old sidecar rescan
 // already had for two posts that collapse to the same key) — the badge only
 // needs SOME captureId to answer "yes, saved".
 //
@@ -137,7 +137,7 @@ function buildSavedIndex(sqlite: Database.Database, trash: readonly TrashedInput
       continue;
     }
     // A url-less picture is kept only from the FIRST record to claim the key
-    // (bridge.cts's mergeSavedEntry says the same for its own two sources): its
+    // (bridge.mts's mergeSavedEntry says the same for its own two sources): its
     // position means something inside its own record and nowhere else.
     for (const url of media) {
       if (!url || entry.media.includes(url)) continue;

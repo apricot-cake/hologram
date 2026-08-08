@@ -26,7 +26,7 @@ const env = vi.hoisted(() => ({ dir: '' }));
 
 vi.mock('../app/src/main/native-host.ts', async () => {
   // Use the real save-folder resolution logic (we want to exercise getSaveFolder's recovery path too).
-  const { resolveSaveFolder } = await import('../native-host/config-recovery.cts');
+  const { resolveSaveFolder } = await import('../native-host/config-recovery.mts');
   return {
     configDir: () => env.dir,
     defaultLibraryDir: () => path.join(env.dir, 'default-library'),
@@ -244,7 +244,7 @@ describe('キャッシュはディスクより先に進まない', () => {
 
 describe('invalidateConfigCache', () => {
   // Why this escape hatch exists: there are paths that write config.json without going through
-  // writeConfig, such as registering the extension ID (native-host/install.cts).
+  // writeConfig, such as registering the extension ID (native-host/install.mts).
   test('無効化したあとは外の書き換えが必ず出てくる', async () => {
     const { readConfig, writeConfig, invalidateConfigCache } = await freshModule();
     writeConfig({ theme: 'dark' });

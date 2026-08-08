@@ -39,11 +39,11 @@ const DEV_HOST_NAME = 'com.hologram.host.dev';
 const DEV_CONFIG_DIR = process.env.HOLOGRAM_DEV_CONFIG_DIR || path.join(os.homedir(), '.hologram-dev');
 
 // Set BEFORE requiring the installer: both the host name and the config dir are
-// read at module load, exactly like paths.cts reads HOLOGRAM_CONFIG_DIR.
+// read at module load, exactly like paths.mts reads HOLOGRAM_CONFIG_DIR.
 process.env.HOLOGRAM_CONFIG_DIR = DEV_CONFIG_DIR;
 process.env.HOLOGRAM_NATIVE_HOST_NAME = DEV_HOST_NAME;
 
-const installer = require('../native-host/install.cts');
+const installer = require('../native-host/install.mts');
 
 function seedConfig(): void {
   fs.mkdirSync(DEV_CONFIG_DIR, { recursive: true });

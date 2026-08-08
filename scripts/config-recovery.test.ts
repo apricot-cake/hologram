@@ -1,9 +1,9 @@
 // Unit tests for save-folder recovery and the destructive-operation gate
-// (native-host/config-recovery.cts). Added in response to the 2026-06-23 library loss incident.
+// (native-host/config-recovery.mts). Added in response to the 2026-06-23 library loss incident.
 // Pure logic — no Electron needed.
 
 import { describe, expect, test } from 'vitest';
-import { clearAllBlockReason, libraryIsMissing, resolveSaveFolder } from '../native-host/config-recovery.cts';
+import { clearAllBlockReason, libraryIsMissing, resolveSaveFolder } from '../native-host/config-recovery.mts';
 
 const DEFAULT = 'C:/default/lib';
 

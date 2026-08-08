@@ -1,5 +1,5 @@
 // downloadCustomEmojis (#290): the shared custom-emoji store, unit-tested
-// in-process (no subprocess spawn needed -- media-download.cts is a plain
+// in-process (no subprocess spawn needed -- media-download.mts is a plain
 // module, same reasoning avatar-fill.test.ts gives for testing
 // pixivRefererFor directly). fetch is stubbed (vi.stubGlobal), same
 // convention as extractor-quoted.test.ts.
@@ -18,7 +18,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import { downloadCustomEmojis } from '../native-host/media-download.cts';
+import { downloadCustomEmojis } from '../native-host/media-download.mts';
 
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64');
 

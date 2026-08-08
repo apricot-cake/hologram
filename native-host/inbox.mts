@@ -4,11 +4,10 @@
 // queue into the DB at startup and on change. Confirmed design: issue #299's
 // 2026-07-25 comment ("disk format" / "native-host's publishing procedure").
 //
-// Kept Electron-free (node builtins only) so both native-host/bridge.cts
-// (CJS, via require) and app/src/main's inbox consumer (ESM) share ONE
-// envelope format and ONE atomic-write implementation — the same
-// cross-boundary role post-record.mts and post-key.mts already play, and the
-// same reason this is .mts while its native-host siblings are .cts.
+// Kept Electron-free (node builtins only) so both native-host/bridge.mts and
+// app/src/main's inbox consumer share ONE envelope format and ONE atomic-write
+// implementation — the same cross-boundary role post-record.mts and
+// post-key.mts already play.
 //
 // Disk layout, under <saveFolder>/.hologram-inbox/:
 //   tmp/       in-progress writes. Never read by the consumer or the mirror.
@@ -36,11 +35,11 @@ const INBOX_DIRNAME = '.hologram-inbox';
 const ENVELOPE_FORMAT = 'hologram-inbox';
 const ENVELOPE_VERSION = 1;
 
-// A post.capture eventId IS the record's captureId (bridge.cts's uniqueBase
+// A post.capture eventId IS the record's captureId (bridge.mts's uniqueBase
 // output: "<epochMillis>-<hex>", optionally suffixed "-<n>" on collision) —
-// the same SAFE_ID shape bridge.cts already enforces before a capture reaches
+// the same SAFE_ID shape bridge.mts already enforces before a capture reaches
 // this module, checked again here since this module has its own callers
-// (the consumer parses envelopes bridge.cts never touches).
+// (the consumer parses envelopes bridge.mts never touches).
 const SAFE_EVENT_ID = /^[0-9]{1,20}-[0-9a-f]{1,8}(?:-\d+)?$/i;
 
 interface InboxEnvelope {
@@ -84,7 +83,7 @@ function sha256Hex(data: string): string {
   return createHash('sha256').update(data, 'utf8').digest('hex');
 }
 
-// Builds the envelope for a normalized record. The caller (bridge.cts) has
+// Builds the envelope for a normalized record. The caller (bridge.mts) has
 // already run the record through normalizePostRecord — this module does not
 // re-normalize, so a producer that skips normalization gets whatever it
 // handed in verified back to it, not silently patched.

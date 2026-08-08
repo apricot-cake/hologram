@@ -1,6 +1,6 @@
 // #894 — why a media download failed has to survive the best-effort contract.
 //
-// Every downloader in media-download.cts answers a failure with null so the save
+// Every downloader in media-download.mts answers a failure with null so the save
 // (or import, or backfill) carries on without it. That is deliberate, but it used
 // to erase the reason as well: an HTTP 403, an address the SSRF guard refused, an
 // unsupported content-type and a socket reset were one and the same null, which is
@@ -43,11 +43,11 @@ beforeAll(async () => {
   dir = path.join(process.env.HOLOGRAM_CONFIG_DIR as string, 'diag');
   fs.mkdirSync(dir, { recursive: true });
   global.fetch = ((url: unknown) => respond(String(url))) as typeof fetch;
-  // media-download.cts exports via `module.exports`, which this project's bundler
+  // media-download.mts exports via `module.exports`, which this project's bundler
   // resolution cannot model (tsconfig.test.json's cause (a)). The cast keeps this
   // suite inside the type-checked set rather than joining the quarantine list its
   // two sibling media-download suites sit on.
-  const mediaDownload = (await import('../native-host/media-download.cts')) as any;
+  const mediaDownload = (await import('../native-host/media-download.mts')) as any;
   ({ downloadMedia, saveStillImage, subscribeMediaFailures, createGuardedLookup } = mediaDownload);
 });
 

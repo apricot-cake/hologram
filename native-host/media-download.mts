@@ -1,30 +1,28 @@
-'use strict';
-
 // Shared best-effort media downloader (original media + author avatars).
 //
 // Extracted from the bridge so the SAME SSRF guard, size/time caps, save-wide
 // byte budget, and manual redirect handling are reused by every path that pulls
 // remote images into the library:
-//   - native-host/bridge.cts          (capture / drag save)
+//   - native-host/bridge.mts          (capture / drag save)
 //   - app/src/main/index.ts                    (import-posts)
 //   - scripts/backfill-metadata.cts   (backfill + existing-data avatar fill)
 // Keeping it in ONE place means the security-sensitive guard never drifts apart
 // between callers. Every function here is best-effort: a failure returns null and
 // is the caller's cue to drop that file — it must never throw the save/import.
 
-const fs = require('node:fs');
-const path = require('node:path');
-const net = require('node:net');
-const dns = require('node:dns');
-const crypto = require('node:crypto');
-const diagnosticsChannel = require('node:diagnostics_channel');
-const { once } = require('node:events');
-const { Agent, setGlobalDispatcher } = require('undici');
+import fs from 'node:fs';
+import path from 'node:path';
+import net from 'node:net';
+import dns from 'node:dns';
+import crypto from 'node:crypto';
+import diagnosticsChannel from 'node:diagnostics_channel';
+import { once } from 'node:events';
+import { Agent, setGlobalDispatcher } from 'undici';
 
 // --- Failure diagnostics (#894) -------------------------------------------------
 // Every download here is best-effort: a failure returns null and the caller drops
 // that file. That contract is right — but it also means a save that dies of
-// "announced media, nothing downloaded" (bridge.cts's handleSavePost) used to
+// "announced media, nothing downloaded" (bridge.mts's handleSavePost) used to
 // leave NO trace of WHY: an HTTP 403, a refused DNS answer, an unsupported
 // content-type and a socket reset were all the same `null`. #894 is exactly that
 // dead end, so each failure now publishes a reason on a diagnostics channel and
@@ -36,8 +34,8 @@ const { Agent, setGlobalDispatcher } = require('undici');
 // internals without owning where they are written (undici, this module's own HTTP
 // stack, does the same — see its DiagnosticsChannel.md). With no subscriber the
 // publish is a `hasSubscribers` check, so an import that wants nothing pays
-// nothing. bridge.cts subscribes and writes one capture.log line per failure.
-const MEDIA_FAILURE_CHANNEL = 'hologram:media-download:failure';
+// nothing. bridge.mts subscribes and writes one capture.log line per failure.
+export const MEDIA_FAILURE_CHANNEL = 'hologram:media-download:failure';
 type MediaFailureReason =
   // before any request went out
   | 'not-https' // not a string / not an https URL
@@ -62,7 +60,7 @@ type MediaFailureReason =
   | 'empty-body'
   | 'sniff-unsupported' // application/octet-stream whose bytes are not a type we take
   | 'threw'; // anything that escaped as an exception (network, rename, mkdir)
-interface MediaFailure {
+export interface MediaFailure {
   reason: MediaFailureReason;
   // The URL the caller asked for. Null only when it was not a string at all.
   url?: string | null;
@@ -97,7 +95,7 @@ function reportMediaFailure(info: MediaFailure): void {
 // in the bridge means the host process dies mid-save. Diagnostics must never be
 // able to cost more than the thing they describe, so a subscriber's failure is
 // swallowed here — the same best-effort rule the log writers already follow.
-function subscribeMediaFailures(onFailure: (info: MediaFailure) => void): () => void {
+export function subscribeMediaFailures(onFailure: (info: MediaFailure) => void): () => void {
   const handler = (msg: unknown) => {
     try {
       onFailure(msg as MediaFailure);
@@ -130,7 +128,7 @@ function describeError(err: unknown): string {
 // avif, html error pages, ...) is skipped rather than saved. Kept separate from
 // VIDEO_MIME_EXT below (also used for the avatar-extension probe, which is
 // never a video).
-const MEDIA_MIME_EXT: Record<string, string> = {
+export const MEDIA_MIME_EXT: Record<string, string> = {
   'image/jpeg': 'jpg',
   'image/jpg': 'jpg',
   'image/png': 'png',
@@ -138,7 +136,7 @@ const MEDIA_MIME_EXT: Record<string, string> = {
   'image/gif': 'gif',
 };
 // Supported video content types (#119 St1: X / Misskey / Mastodon direct URLs).
-const VIDEO_MIME_EXT: Record<string, string> = {
+export const VIDEO_MIME_EXT: Record<string, string> = {
   'video/mp4': 'mp4',
   'video/webm': 'webm',
   'video/quicktime': 'mov',
@@ -147,7 +145,7 @@ const VIDEO_MIME_EXT: Record<string, string> = {
 // the animation has no single-file form short of transcoding it, which would
 // mean carrying an encoder). Its own table so a zip can never land on a still
 // or video entry, where nothing could display it.
-const ARCHIVE_MIME_EXT: Record<string, string> = {
+export const ARCHIVE_MIME_EXT: Record<string, string> = {
   'application/zip': 'zip',
 };
 // Content types that mean "I don't know what this is" rather than naming a
@@ -157,12 +155,12 @@ const ARCHIVE_MIME_EXT: Record<string, string> = {
 // below). Every other unlisted type is still refused unread.
 const SNIFFABLE_TYPES = new Set(['application/octet-stream']);
 const SNIFF_BYTES = 16; // enough for every signature below
-const MAX_MEDIA = 12; // cap attachments per post
-const MAX_MEDIA_BYTES = 25 * 1024 * 1024; // skip anything larger (still images)
-const MAX_VIDEO_BYTES = 200 * 1024 * 1024; // videos run far bigger than photos
+export const MAX_MEDIA = 12; // cap attachments per post
+export const MAX_MEDIA_BYTES = 25 * 1024 * 1024; // skip anything larger (still images)
+export const MAX_VIDEO_BYTES = 200 * 1024 * 1024; // videos run far bigger than photos
 // An original-size ugoira archive is dozens of full-resolution frames, so it
 // sits with the videos rather than the stills.
-const MAX_ARCHIVE_BYTES = 200 * 1024 * 1024;
+export const MAX_ARCHIVE_BYTES = 200 * 1024 * 1024;
 // Byte budget for ONE save operation, on top of the per-file caps (#389). Those
 // caps bound a single response, not the click: 12 attachments at the video cap
 // is ~2.4GB of network and disk driven by one save. 512MB clears every shape our
@@ -170,13 +168,13 @@ const MAX_ARCHIVE_BYTES = 200 * 1024 * 1024;
 // so no legitimate post is refused, and matches the largest single file any
 // supported platform accepts (X video, 512MB) — a save that wants more is not a
 // real post.
-const MAX_SAVE_BYTES = 512 * 1024 * 1024;
+export const MAX_SAVE_BYTES = 512 * 1024 * 1024;
 // Attachments in flight at once. Bodies stream to disk, so memory no longer
 // scales with this number; 2 keeps a multi-image post from serializing into a
 // wait as long as the sum of its downloads.
-const MEDIA_CONCURRENCY = 2;
-const MEDIA_TIMEOUT_MS = 12000; // per-image abort
-const VIDEO_TIMEOUT_MS = 60000; // videos take longer to pull down than a still
+export const MEDIA_CONCURRENCY = 2;
+export const MEDIA_TIMEOUT_MS = 12000; // per-image abort
+export const VIDEO_TIMEOUT_MS = 60000; // videos take longer to pull down than a still
 const MAX_MEDIA_REDIRECTS = 4; // bound redirect chains
 
 interface UgoiraFrame {
@@ -196,7 +194,7 @@ interface MediaEntry {
   poster?: string | null;
   frames?: UgoiraFrame[];
 }
-interface MediaDescriptor {
+export interface MediaDescriptor {
   url: string;
   alt: string | null;
   width: number | null;
@@ -235,7 +233,7 @@ interface ByteBudget {
   remaining(): number;
   take(bytes: number): boolean;
 }
-function createByteBudget(total: number = MAX_SAVE_BYTES): ByteBudget {
+export function createByteBudget(total: number = MAX_SAVE_BYTES): ByteBudget {
   const ctrl = new AbortController();
   let spent = 0;
   return {
@@ -282,7 +280,7 @@ function isPrivateIPv4(ip: string): boolean {
   if (a >= 224) return true; // multicast + reserved (224-255)
   return false;
 }
-function isPrivateIp(ip: string): boolean {
+export function isPrivateIp(ip: string): boolean {
   const fam = net.isIP(ip);
   if (fam === 4) return isPrivateIPv4(ip);
   if (fam === 6) {
@@ -313,7 +311,7 @@ function isPrivateIp(ip: string): boolean {
 // Replace the connector's normal DNS lookup with an all-address guard. Returning
 // the verified records to net.connect (with autoSelectFamily enabled below)
 // preserves A/AAAA fallback while pinning the connection to this exact set.
-function createGuardedLookup(resolveAll = dns.lookup) {
+export function createGuardedLookup(resolveAll = dns.lookup) {
   return (hostname, options, callback) => {
     resolveAll(hostname, { ...options, all: true }, (err, addresses) => {
       if (err) {
@@ -361,7 +359,7 @@ setGlobalDispatcher(MEDIA_DISPATCHER);
 
 // Validate one URL: https + (if an IP literal) a public range + not an obvious
 // local hostname. Returns the parsed URL on success, or null.
-function checkMediaUrl(urlStr: string): URL | null {
+export function checkMediaUrl(urlStr: string): URL | null {
   let u: URL;
   try {
     u = new URL(urlStr);
@@ -384,7 +382,7 @@ function checkMediaUrl(urlStr: string): URL | null {
 // This mirrors what every browser does with a supplied
 // application/octet-stream (WHATWG mimesniff), and it is a stricter check than
 // the header path: here the bytes themselves have to agree.
-function sniffMagic(head: Buffer): string | null {
+export function sniffMagic(head: Buffer): string | null {
   if (head.length >= 3 && head[0] === 0xff && head[1] === 0xd8 && head[2] === 0xff) return 'image/jpeg';
   if (head.length >= 8 && head.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return 'image/png';
   if (head.length >= 12 && head.subarray(0, 4).toString('latin1') === 'RIFF' && head.subarray(8, 12).toString('latin1') === 'WEBP') return 'image/webp';
@@ -563,7 +561,7 @@ async function downloadToFile(url: unknown, referer: unknown, limits: FetchLimit
 
 // Download one still image to <dir>/<stem>.<ext> (the drag-save's own artwork,
 // avatars). Callers that save a whole post go through downloadMedia instead.
-async function saveStillImage(url: unknown, referer: unknown, dir: string, stem: string, budget: ByteBudget = createByteBudget()): Promise<SavedFile | null> {
+export async function saveStillImage(url: unknown, referer: unknown, dir: string, stem: string, budget: ByteBudget = createByteBudget()): Promise<SavedFile | null> {
   return downloadToFile(url, referer, STILL_LIMITS, dir, stem, budget);
 }
 
@@ -587,7 +585,7 @@ function descriptorOf(entry: MediaEntry, file: string): MediaDescriptor {
 // `file`, `type` stays unset) instead of vanishing entirely — only a true
 // double failure (no poster AND no animation) drops the item, same as an
 // unfetchable photo. Returns null on that full failure (caller drops it).
-async function downloadOneMedia(entry: MediaEntry | null | undefined, dir: string, base: string, i: number, budget: ByteBudget = createByteBudget()): Promise<MediaDescriptor | null> {
+export async function downloadOneMedia(entry: MediaEntry | null | undefined, dir: string, base: string, i: number, budget: ByteBudget = createByteBudget()): Promise<MediaDescriptor | null> {
   if (!entry) return null;
   const limits = entry.type === 'ugoira' ? ARCHIVE_LIMITS : entry.type === 'video' || entry.type === 'gif' ? VIDEO_LIMITS : null;
   if (!limits) {
@@ -618,7 +616,7 @@ async function downloadOneMedia(entry: MediaEntry | null | undefined, dir: strin
 // MEDIA_CONCURRENCY transfers are open at a time, so neither sockets, disk
 // writes, nor buffered chunks scale with the attachment count (#389). Ordering
 // survives because each worker writes to its own index.
-async function downloadMedia(mediaList: unknown, dir: string, base: string, budget: ByteBudget = createByteBudget()): Promise<MediaDescriptor[]> {
+export async function downloadMedia(mediaList: unknown, dir: string, base: string, budget: ByteBudget = createByteBudget()): Promise<MediaDescriptor[]> {
   if (!Array.isArray(mediaList) || !mediaList.length) return [];
   const list: MediaEntry[] = mediaList.slice(0, MAX_MEDIA);
   const saved: (MediaDescriptor | null)[] = new Array(list.length).fill(null);
@@ -656,8 +654,8 @@ async function downloadMedia(mediaList: unknown, dir: string, base: string, budg
 // Returns the folder-relative path 'avatars/<hash>.<ext>' (forward slash = the
 // canonical sidecar form) or null; like media, a failure never fails the save.
 // Legacy sidecars keep their <captureId>-avatar.<ext> files untouched.
-const AVATAR_SUBDIR = 'avatars';
-async function downloadAvatar(avatar: unknown, referer: unknown, dir: string, budget: ByteBudget = createByteBudget()): Promise<string | null> {
+export const AVATAR_SUBDIR = 'avatars';
+export async function downloadAvatar(avatar: unknown, referer: unknown, dir: string, budget: ByteBudget = createByteBudget()): Promise<string | null> {
   if (typeof avatar !== 'string' || !avatar) return null;
   const hash = crypto.createHash('sha1').update(avatar).digest('hex').slice(0, 16);
   const sub = path.join(dir, AVATAR_SUBDIR);
@@ -686,7 +684,7 @@ async function downloadAvatar(avatar: unknown, referer: unknown, dir: string, bu
 // never the linked article's origin. The 2026-07-27 security review's
 // cross-origin-Referer concern (recorded on #181, addressed to a page-fetch
 // design like #122's) therefore does not arise for this download.
-async function downloadLinkCardThumbnail(url: unknown, dir: string, base: string, budget: ByteBudget = createByteBudget()): Promise<string | null> {
+export async function downloadLinkCardThumbnail(url: unknown, dir: string, base: string, budget: ByteBudget = createByteBudget()): Promise<string | null> {
   const got = await saveStillImage(url, undefined, dir, `${base}-linkcard`, budget);
   return got ? got.file : null;
 }
@@ -699,7 +697,7 @@ interface CustomEmojiEntry {
 // shortcode/url plus the shared store's folder-relative filename, or null on
 // that one emoji's own failure (never fails the whole save — same best-effort
 // contract as downloadAvatar/downloadMedia).
-interface CustomEmojiDescriptor {
+export interface CustomEmojiDescriptor {
   shortcode: string;
   url: string;
   file: string | null;
@@ -724,8 +722,8 @@ const MAX_EMOJI = 30; // cap distinct :shortcode: emoji per post
 // One emoji failing to download never drops the others or the save (per-entry
 // try/catch) — file stays null and the viewer falls back to the bare
 // :shortcode: text, same convention as a failed avatar or media item.
-const EMOJI_SUBDIR = 'emoji';
-async function downloadCustomEmojis(list: unknown, dir: string, budget: ByteBudget = createByteBudget()): Promise<CustomEmojiDescriptor[]> {
+export const EMOJI_SUBDIR = 'emoji';
+export async function downloadCustomEmojis(list: unknown, dir: string, budget: ByteBudget = createByteBudget()): Promise<CustomEmojiDescriptor[]> {
   if (!Array.isArray(list) || !list.length) return [];
   const sub = path.join(dir, EMOJI_SUBDIR);
   const out: CustomEmojiDescriptor[] = [];
@@ -758,7 +756,7 @@ async function downloadCustomEmojis(list: unknown, dir: string, budget: ByteBudg
 // pixiv avatars on i.pximg.net 403 without a pixiv Referer. When a caller has an
 // avatar URL but no stored referer (legacy import data predates avatarReferer),
 // derive it from the host so the download isn't rejected.
-function pixivRefererFor(url: unknown): string | undefined {
+export function pixivRefererFor(url: unknown): string | undefined {
   try {
     const h = new URL(url as string).hostname.toLowerCase();
     if (h === 'pximg.net' || h.endsWith('.pximg.net')) return 'https://www.pixiv.net/';
@@ -767,33 +765,3 @@ function pixivRefererFor(url: unknown): string | undefined {
   }
   return undefined;
 }
-
-module.exports = {
-  saveStillImage,
-  downloadOneMedia,
-  downloadMedia,
-  downloadAvatar,
-  downloadCustomEmojis,
-  downloadLinkCardThumbnail,
-  createByteBudget,
-  subscribeMediaFailures,
-  MEDIA_FAILURE_CHANNEL,
-  AVATAR_SUBDIR,
-  EMOJI_SUBDIR,
-  pixivRefererFor,
-  checkMediaUrl,
-  sniffMagic,
-  isPrivateIp,
-  createGuardedLookup,
-  MEDIA_MIME_EXT,
-  VIDEO_MIME_EXT,
-  ARCHIVE_MIME_EXT,
-  MAX_MEDIA,
-  MAX_MEDIA_BYTES,
-  MAX_VIDEO_BYTES,
-  MAX_ARCHIVE_BYTES,
-  MAX_SAVE_BYTES,
-  MEDIA_CONCURRENCY,
-  MEDIA_TIMEOUT_MS,
-  VIDEO_TIMEOUT_MS,
-};

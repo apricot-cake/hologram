@@ -37,7 +37,7 @@ beforeAll(async () => {
   fs.mkdirSync(configDir, { recursive: true });
   fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolder }));
 
-  const { handleSavePost } = await import('../native-host/bridge.cts');
+  const { handleSavePost } = await import('../native-host/bridge.mts');
   vi.stubGlobal('fetch', async (url: string) => (url === VIDEO_URL ? new Response(mp4, { status: 200, headers: { 'content-type': 'video/mp4' } }) : new Response(jpeg, { status: 200, headers: { 'content-type': 'image/jpeg' } })));
   try {
     // The shape the extension hands over for X's bulk intake (#362): a video is announced with type:'video' and a poster.

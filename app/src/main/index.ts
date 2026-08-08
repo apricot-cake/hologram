@@ -376,7 +376,7 @@ function getDbWriter() {
 }
 
 // The bridge's other half of the "saved" badge (#5 St6 / #299 — see
-// bridge.cts's "Saved-post index" comment): a small postKey->captureId map
+// bridge.mts's "Saved-post index" comment): a small postKey->captureId map
 // rebuilt from the DB and written to configDir, NOT the save folder (so it never
 // lands next to the library's media). Debounced + atomic (tmp + rename);
 // best-effort because a stale/missing file just makes the bridge fall back
@@ -623,7 +623,7 @@ async function searchFullText(query: string, limit?: number) {
 // else reads/writes either directory.
 //
 // A dialog rather than a log line: the 2026-06-23 incident (~9082 items,
-// paths.cts's header) happened with warnings sitting unread in main.log the whole
+// paths.mts's header) happened with warnings sitting unread in main.log the whole
 // time — a warning nobody reads is not a mitigation. showMessageBoxSync blocks
 // until dismissed, and app.exit(1) right after means nothing past this point
 // (window creation, host registration, opening the database) ever touches the
@@ -676,7 +676,7 @@ function ensureHostRegistered() {
     console.error('Failed to register native messaging host:', err);
   } finally {
     // install() can write config.json without going through writeConfig (#61 —
-    // install.cts persistExtensionId). No id is passed here, so today it never
+    // install.mts persistExtensionId). No id is passed here, so today it never
     // does; drop the cache regardless, so the cache's correctness does not rest
     // on an argument at a call site far from lib-config.ts.
     invalidateConfigCache();

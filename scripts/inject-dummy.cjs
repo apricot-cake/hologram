@@ -14,15 +14,16 @@
 // Why .cjs (not .cts): as the ELECTRON entry it must load via the classic CommonJS
 // loader so Electron's require('electron') injection applies — a .ts/.cts entry goes
 // through Node 22's ESM CJS-translator where that injection is absent (require dies
-// with ERR_MODULE_NOT_FOUND). require('../native-host/paths.cts') below still works:
-// a classic require() of a .cts sibling type-strips it fine. Plain JS anyway, so .cjs
+// with ERR_MODULE_NOT_FOUND). require('../native-host/paths.mts') below still works:
+// Node's require(esm) loads that ESM sibling synchronously and type-strips it on the
+// way in (it has no top-level await). Plain JS anyway, so .cjs
 // costs no type coverage. Do NOT rename back to .cts. (See make-icons.cjs for detail.)
 
 const { app, BrowserWindow } = require('electron');
 const fs = require('node:fs');
 const _os = require('node:os');
 const path = require('node:path');
-const { configDir, defaultLibraryDir } = require('../native-host/paths.cts');
+const { configDir, defaultLibraryDir } = require('../native-host/paths.mts');
 
 function resolveFolder() {
   const arg = process.argv.find((a, i) => i >= 2 && !a.startsWith('--') && !a.endsWith('.js'));

@@ -254,7 +254,7 @@ export interface VersionStamp {
 //
 // ABSENT for everyone who did not build the extension themselves: the host
 // publishes it only when the build has written the stamp file this reads (see
-// bridge.cts's readExtBuild), and a released host on a released install never
+// bridge.mts's readExtBuild), and a released host on a released install never
 // finds one. Optional on the wire and never required by a reader, exactly like
 // the version stamp — an older host sends none and the extension then simply has
 // nothing to compare against.

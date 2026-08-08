@@ -4,7 +4,7 @@
 // extractor-quoted.test.ts / post-record.test.ts / db-query.test.ts each stop one
 // layer short of buildRecord (extractor unit / normalizePostRecord unit / DB
 // round-trip). This test goes through the actual buildRecord() the extension
-// calls, then the real bridge.cts process (same spawn-and-frame pattern as
+// calls, then the real bridge.mts process (same spawn-and-frame pattern as
 // bridge.test.ts), so a regression in either wiring point fails here rather than
 // passing silently again.
 //
@@ -28,7 +28,7 @@ import { buildRecord } from '../extension/utils/background';
 // Minimal 1x1 JPEG (same fixture bridge.test.ts uses).
 const jpegB64 = '/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACP/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AfwH/2Q==';
 
-describe('quotedPost/replyToPost/poll が buildRecord から bridge.cts まで往復する（#751 / #179）', () => {
+describe('quotedPost/replyToPost/poll が buildRecord から bridge.mts まで往復する（#751 / #179）', () => {
   const quoteCaptureId = '1717500000000-a001';
   let quoteTmp: string;
   let quoteSaveFolder: string;
@@ -83,7 +83,7 @@ describe('quotedPost/replyToPost/poll が buildRecord から bridge.cts まで�
     // Same shape an extractor hands buildRecord: url/platform/text plus the two
     // #180 sidecars. Routed through the real buildRecord(), not hand-typed as the
     // wire message — that's what makes this catch a regression in buildRecord
-    // itself rather than only in bridge.cts's marshalling.
+    // itself rather than only in bridge.mts's marshalling.
     const meta = { url: 'https://x.com/alice/status/1', platform: 'x', text: 'hi, quoting and replying', quotedPost, replyToPost, poll, linkCard };
     const metadata = buildRecord(meta, { captureId: quoteCaptureId, capturedAt: '2026-08-02T00:00:00.000Z', postUrl: meta.url, sendPlatform: 'x', extra: { image: `${quoteCaptureId}.jpg` } });
 
@@ -91,7 +91,7 @@ describe('quotedPost/replyToPost/poll が buildRecord から bridge.cts まで�
     const header = Buffer.alloc(4);
     header.writeUInt32LE(msg.length, 0);
 
-    const child = spawn(process.execPath, [path.join(import.meta.dirname, '..', 'native-host', 'bridge.cts')], {
+    const child = spawn(process.execPath, [path.join(import.meta.dirname, '..', 'native-host', 'bridge.mts')], {
       env: { ...process.env, APPDATA: quoteTmp, HOLOGRAM_CONFIG_DIR: configDir },
       stdio: ['pipe', 'pipe', 'inherit'],
     });

@@ -1,4 +1,4 @@
-// Tests for the SSRF/size-limit guard in native-host/bridge.cts#saveStillImage.
+// Tests for the SSRF/size-limit guard in native-host/bridge.mts#saveStillImage.
 // Runs in-process by swapping out global.fetch (no network needed). What's checked:
 //   - private/reserved IP literal addresses (loopback, link-local/cloud metadata, RFC1918, ULA,
 //     IPv6 ::1, IPv4-mapped IPv6 in both dotted and hex notation) are rejected before fetch is
@@ -14,8 +14,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { Agent, getGlobalDispatcher, setGlobalDispatcher } from 'undici';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
-import { saveStillImage } from '../native-host/bridge.cts';
-import { createGuardedLookup } from '../native-host/media-download.cts';
+import { saveStillImage } from '../native-host/bridge.mts';
+import { createGuardedLookup } from '../native-host/media-download.mts';
 
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64');
 
@@ -170,7 +170,7 @@ describe('createGuardedLookup', () => {
 // A regression guard for the "wiring" of the implementation itself. The createGuardedLookup
 // tests above only check the guard's logic, and the setGlobalDispatcher test below registers
 // its own test Agent and checks undici's path = neither actually checks "does
-// media-download.cts really register the guard as the process default". After #431 made the
+// media-download.mts really register the guard as the process default". After #431 made the
 // per-call dispatcher assertion unnecessary and it was removed, deleting setGlobalDispatcher
 // from the implementation entirely still left this whole file green (= the guard could be a
 // pass-through and nothing would notice), so this closes that gap.
@@ -179,7 +179,7 @@ describe('createGuardedLookup', () => {
 // network is needed):
 //   EHOSTUNREACH = the guard rejected it at resolution time = the wiring is live
 //   ECONNREFUSED = it actually connected to loopback with no guard in place = a pass-through
-test('media-download.cts を読み込むとガード付き dispatcher がプロセス既定になる', async () => {
+test('media-download.mts を読み込むとガード付き dispatcher がプロセス既定になる', async () => {
   const err: any = await realFetch('https://localhost:59237/x.png', { redirect: 'manual' } as any).then(
     () => null,
     (e: unknown) => e,
@@ -197,7 +197,7 @@ test('media-download.cts を読み込むとガード付き dispatcher がプロ�
 // before it ever reaches the connector (= createGuardedLookup), because that older-shape
 // handler is missing the v2-only method the v8 Request requires ("invalid onRequestStart
 // method"). Registering it as the process default via setGlobalDispatcher and calling with no
-// per-call option is the same wiring as native-host/media-download.cts's implementation = this
+// per-call option is the same wiring as native-host/media-download.mts's implementation = this
 // test matches that.
 test('Node の実 fetch が setGlobalDispatcher 経由でガード付き lookup を呼ぶ', async () => {
   let dispatcherLookupCalled = false;

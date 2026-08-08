@@ -17,10 +17,10 @@
 // Why orphan media exists at all despite #299's inbox-replay recovery:
 // ipc-transfer.ts's ZIP-import and drag-import handlers write posts directly
 // via writePost (lib-db-record-writer.ts), bypassing BOTH the sidecar (a
-// normal save no longer writes one — see bridge.cts's handleSave) and the
+// normal save no longer writes one — see bridge.mts's handleSave) and the
 // inbox queue (its own comment: "no sidecar/inbox event for it to notice").
 // A DB loss leaves their media files with no trail to replay — captureId's
-// own naming convention (epochMillis-hex, native-host/bridge.cts's SAFE_ID)
+// own naming convention (epochMillis-hex, native-host/bridge.mts's SAFE_ID)
 // is the only recoverable fact, hence "minimal record synthesis".
 //
 // Electron-free (better-sqlite3 + node builtins only), mirroring lib-db-inbox.ts.
@@ -37,7 +37,7 @@ import { fillMediaDims } from './lib-media-dims.ts';
 import { makeTagResolver, preparePostStmts, writePost } from './lib-db-record-writer.ts';
 import { parseJsonLoose } from './lib-json.ts';
 
-// Mirrors native-host/bridge.cts's SAFE_ID — the captureId shape every
+// Mirrors native-host/bridge.mts's SAFE_ID — the captureId shape every
 // producer writes as a bare filename base (<captureId>.<ext>). Attached-media
 // files (<base>-media-N.<ext>, <base>-poster.<ext>) never match this alone,
 // so they are never mistaken for an orphan POST's own primary artifact.

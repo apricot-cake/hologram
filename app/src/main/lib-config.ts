@@ -29,7 +29,7 @@ const CONFIG_PATH = path.join(configDir(), 'config.json');
 // dropped by our own writes. That is deliberate, and it is the safety property
 // of this module rather than a nicety:
 //   - config.json is documented as hand-editable (native-host/README.md) and the
-//     installer CLI (native-host/install.cts persistExtensionId) writes into it
+//     installer CLI (native-host/install.mts persistExtensionId) writes into it
 //     from a SEPARATE process, so "every writer is in this process" is false.
 //   - every writer here is read-modify-write, so a stale read does not just
 //     return an old value — the next writeConfig persists it back and silently
@@ -119,7 +119,7 @@ function readConfig() {
 /**
  * Force the next read to go back to the file. For the one in-process writer that
  * does NOT come through writeConfig: native-host's installer persists
- * extensionId into config.json itself (install.cts persistExtensionId).
+ * extensionId into config.json itself (install.mts persistExtensionId).
  */
 function invalidateConfigCache() {
   cached = null;

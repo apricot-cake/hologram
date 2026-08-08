@@ -1,5 +1,3 @@
-'use strict';
-
 // Save-folder recovery + destructive-op gating (added after the 2026-06-23
 // library-loss incident). config.json holding the only copy of saveFolder meant a
 // single truncation could silently drop the library to the empty default. We keep a
@@ -22,7 +20,7 @@ interface ResolveSaveFolderResult {
 //   pointer          — path read from the redundant saveFolder.path file (or null)
 //   pointerExists     — whether `pointer` resolves to a real directory on disk
 //   defaultDir        — the shared default library dir (last resort)
-function resolveSaveFolder({ configSaveFolder, pointer, pointerExists, defaultDir }: ResolveSaveFolderArgs): ResolveSaveFolderResult {
+export function resolveSaveFolder({ configSaveFolder, pointer, pointerExists, defaultDir }: ResolveSaveFolderArgs): ResolveSaveFolderResult {
   if (typeof configSaveFolder === 'string' && configSaveFolder.trim()) {
     return { folder: configSaveFolder, source: 'config' };
   }
@@ -48,7 +46,7 @@ interface ClearAllBlockReasonArgs {
 //   hasExplicitSaveFolder  — config currently carries a non-empty saveFolder
 //   hasPointer             — the redundant pointer file exists (a folder was chosen before)
 //   libraryMissing         — see libraryIsMissing below
-function clearAllBlockReason({ configCorrupt, hasExplicitSaveFolder, hasPointer, libraryMissing }: ClearAllBlockReasonArgs): 'corrupt' | 'missing' | 'lost' | null {
+export function clearAllBlockReason({ configCorrupt, hasExplicitSaveFolder, hasPointer, libraryMissing }: ClearAllBlockReasonArgs): 'corrupt' | 'missing' | 'lost' | null {
   if (configCorrupt) return 'corrupt';
   // The configured folder itself is gone: never wipe (and never lazily
   // recreate it) while we cannot see what is actually there (#37).
@@ -68,8 +66,6 @@ interface LibraryIsMissingArgs {
 // only fires for an EXPLICIT saveFolder: a fresh install (no explicit folder,
 // resolving through the default dir) is never "missing", it just has not
 // captured anything yet, and the default dir is created on demand.
-function libraryIsMissing({ hasExplicitSaveFolder, folderExists }: LibraryIsMissingArgs): boolean {
+export function libraryIsMissing({ hasExplicitSaveFolder, folderExists }: LibraryIsMissingArgs): boolean {
   return hasExplicitSaveFolder && !folderExists;
 }
-
-module.exports = { resolveSaveFolder, clearAllBlockReason, libraryIsMissing };

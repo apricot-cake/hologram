@@ -9,7 +9,7 @@
 
 ## 決定
 
-- **起動時、explicit な保存先が実在しなければ `missing` 状態とする**。mkdir しない・既定フォルダへフォールバックしない。判定はネイティブホストと共有の純関数（`native-host/config-recovery.cts` の `libraryIsMissing`）。
+- **起動時、explicit な保存先が実在しなければ `missing` 状態とする**。mkdir しない・既定フォルダへフォールバックしない。判定はネイティブホストと共有の純関数（`native-host/config-recovery.mts` の `libraryIsMissing`）。
 - **`missing` 中は書き込み系 IPC を拒否する**（全削除・ZIP/画像/クリップボードからの取込・既存の移行「保存先を変更」）。`clearAllBlockReason` に `missing` 理由を追加し、既存の `corrupt`/`lost` と同列に扱う。
 - **UI は専用の画面で置き換える**（`empty/LibraryMissingState.tsx`）。DB 由来の投稿一覧は保存先の実在に関わらず返るため、既存の「空のライブラリ」画面（`libraryEmptyVariant`）には乗せず、投稿の有無に関係なく表示を差し替える。旧パスを表示し、「再試行」（実在チェックのやり直し）と「フォルダを再指定」を提供する。
 - **「フォルダを再指定」＝repoint を新設**（コピーを伴わない config 書き換えのみ）。既存の「保存先を変更」はコピー移行（現在の保存先から読み出す）が前提で、消失時は読み出し元が無い。選択先にライブラリの手がかり（`.trash`／`.hologram-inbox`／メディアファイル）が無ければ確認ダイアログで警告する。

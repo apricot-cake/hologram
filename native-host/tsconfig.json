@@ -1,35 +1,45 @@
 {
   // TypeScript stage 2, native-host half (BACKLOG 採用#1「残り②」= P3): the
-  // native-messaging-host layer (bridge.cts + install.cts + paths.cts +
-  // media-download.cts + config-recovery.cts).
+  // native-messaging-host layer (bridge.mts + install.mts + paths.mts +
+  // media-download.mts + config-recovery.mts).
   //
   // Separate project from tsconfig.node.json / tsconfig.web.json because
   // this is a THIRD runtime: a standalone Node process (spawned by Chrome via
-  // native messaging, or via the Electron binary in ELECTRON_RUN_AS_NODE mode),
-  // never imported by ESM import — only by CommonJS require() (computed-path
-  // from app/src/main/index.ts, or a relative require() between these files themselves).
-  // These files stay .cts (not .mts) and CommonJS for two reasons that outlived
-  // the deploy change: install.cts is require()d as raw source by the Electron
-  // app (type-stripped, no build), and the tests require the bridge sources
-  // directly. bridge.cts is no longer deployed as raw source — it is bundled
-  // (app/build-native-host-bridge.mjs → dist/bridge.js, CJS output) and the BUNDLE is what
-  // lands in the config dir (paths.cts's configDir()) — but the sources keep the CJS shape
-  // the bundler reads.
+  // native messaging, or via the Electron binary in ELECTRON_RUN_AS_NODE mode).
   //
-  // post-key.mts is the one ESM file here, because it is the one module a layer
-  // OUTSIDE this directory ES-imports (app/src/renderer/src/services/records.ts re-exports it —
-  // the URL→identity-key rule has to have a single implementation). A .cts
-  // could not play that role: tsc reads no exports off `module.exports`, and
-  // giving a .cts real `export` statements breaks the raw-source loads below.
+  // Every file here is ESM (.mts, real `import`/`export`). It was CommonJS until
+  // #1052, on a constraint that had expired: the Electron main process loads
+  // install.mts as RAW SOURCE by computed absolute path, and its own bundle is
+  // CJS, so the load has to be a synchronous require(). Node's require(esm) makes
+  // that legal — a CJS caller can require() an ESM module (and type-strip it on
+  // the way in) as long as the module has no top-level await, which none of these
+  // do. Measured on Electron 43 / Node 24.18 before the conversion.
   //
-  // Sibling requires use the explicit .cts extension (require('./paths.cts'),
-  // not require('./paths')) because that is what the source-loading paths
-  // (Electron require of install.cts, the tests) resolve at runtime; the bundler
-  // follows the same specifiers. Plain require() calls aren't
-  // cross-file type-checked by tsc (require() types as NodeRequire → any);
-  // that already matches how app/src/main/index.ts's own dynamic computed-path
-  // require() of this directory works (see tsconfig.node.json) — each file's
-  // OWN logic is still checked, just not the require() contract between them.
+  // What the CJS shape cost: tsc reads NO exports off a `module.exports = {...}`
+  // assignment in a .ts/.cts file — that inference exists for allowJs JS files
+  // only, and no `module` setting turns it on (measured 2026-08-08). So every
+  // suite that imported one of these modules reported TS2459 and had to be
+  // excluded from type-checking entirely (21 of them, scripts/tsconfig.test.json's
+  // cause (a)). `export =` is the construct tsc would have understood, and
+  // erasableSyntaxOnly below rejects it. ESM is the only shape that is both
+  // loadable un-built and readable by tsc.
+  //
+  // Specifiers name real TS extensions ('./paths.mts', not './paths.js') because
+  // that is what every consumer resolves as written: Node's type stripping, the
+  // bridge bundler, and Vitest. Unlike the require() calls this replaced, they
+  // ARE cross-file type-checked — the contract between these modules is now
+  // checked, not just each file's own logic.
+  //
+  // post-key.mts predates the conversion as the one ESM file here, because it is
+  // the one module a layer OUTSIDE this directory ES-imports
+  // (app/src/renderer/src/services/records.ts re-exports it — the URL→identity-key
+  // rule has to have a single implementation).
+  //
+  // bridge.mts is not deployed as raw source: it is bundled
+  // (app/build-native-host-bridge.mjs → dist/bridge.js, CJS output) and the BUNDLE
+  // is what lands in the config dir (paths.mts's configDir()). Its entry guard is
+  // an argv[1]-vs-import.meta.url comparison rather than `require.main === module`,
+  // which has no ESM spelling that survives both that bundle and the raw source.
   //
   // noImplicitAny stays OFF (same rationale as main/renderer): plain JS-shaped
   // code where internal lambda params would each need annotation noise.
@@ -52,7 +62,7 @@
     "isolatedModules": true,
     "strict": true,
     "noImplicitAny": false,
-    // Caught errors stay `any` — bridge.cts/install.cts report `err.message` at
+    // Caught errors stay `any` — bridge.mts/install.mts report `err.message` at
     // several sites; leaving these `any` keeps behavior byte-identical instead
     // of forcing instanceof Error guards.
     "useUnknownInCatchVariables": false,
@@ -69,5 +79,5 @@
     "typeRoots": ["../node_modules/@types", "../app/node_modules/@types"],
     "types": ["node"]
   },
-  "files": ["bridge.cts", "install.cts", "paths.cts", "media-download.cts", "config-recovery.cts", "post-key.mts", "post-record.mts", "inbox.mts", "raw-payload.mts", "protocol.mts"]
+  "files": ["bridge.mts", "install.mts", "paths.mts", "media-download.mts", "config-recovery.mts", "post-key.mts", "post-record.mts", "inbox.mts", "raw-payload.mts", "protocol.mts"]
 }

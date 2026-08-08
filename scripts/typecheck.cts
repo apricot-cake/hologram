@@ -12,10 +12,10 @@
 //      (src/main/*.ts + src/preload/*.ts, stage 2/3; bundled by electron-vite's
 //      main/preload targets — #156 retired the former un-built .mts type-strip
 //      execution these files used to run under).
-//   3. native-host/tsconfig.json  — the native-messaging-host CJS layer
-//      (bridge.cts + install.cts + paths.cts + media-download.cts +
-//      config-recovery.cts, stage 2/3; a THIRD standalone-Node runtime, .cts,
-//      no DOM; runs un-built via the same Node type-stripping)
+//   3. native-host/tsconfig.json  — the native-messaging-host layer
+//      (bridge.mts + install.mts + paths.mts + media-download.mts +
+//      config-recovery.mts, stage 2/3; a THIRD standalone-Node runtime, ESM
+//      since #1052, no DOM; runs un-built via the same Node type-stripping)
 //   4. extension/tsconfig.json    — the Chrome extension (MV3) browser layer,
 //      stage 2/3; a FOURTH runtime (real browser, no type-stripping) — the one
 //      layer is built by WXT/Vite.

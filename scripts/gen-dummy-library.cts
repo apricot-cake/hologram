@@ -55,7 +55,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const zlib = require('node:zlib');
 const crypto = require('node:crypto');
-const { configDir, defaultLibraryDir } = require('../native-host/paths.cts');
+const { configDir, defaultLibraryDir } = require('../native-host/paths.mts');
 const { openDatabase } = require('../app/src/main/lib-db.ts');
 const { makeTagResolver, preparePostStmts, writePost } = require('../app/src/main/lib-db-record-writer.ts');
 

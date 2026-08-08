@@ -22,7 +22,7 @@
 // WHEN IT IS INERT, which is nearly always. Two independent gates have to be
 // open: this bundle must have been given a build id (EXT_BUILD_ID, minted by
 // scripts/build-extension.cts), and the host must find a stamp file that the
-// same script wrote (native-host/paths.cts's extensionBuildStampPath). A
+// same script wrote (native-host/paths.mts's extensionBuildStampPath). A
 // released, store-installed extension talking to a released host has neither, so
 // the comparison below never has two values to compare.
 //

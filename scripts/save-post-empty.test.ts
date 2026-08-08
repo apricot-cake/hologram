@@ -39,7 +39,7 @@ beforeAll(async () => {
   fs.mkdirSync(configDir, { recursive: true });
   fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolder }));
 
-  ({ handleSavePost } = await import('../native-host/bridge.cts'));
+  ({ handleSavePost } = await import('../native-host/bridge.mts'));
 });
 
 // The actual shape hit in practice (2026-07-26, bulk intake from x-bookmarks): the

@@ -1,5 +1,5 @@
 // downloadLinkCardThumbnail (#181): the OGP card's thumbnail, unit-tested
-// in-process (no subprocess spawn needed — media-download.cts is a plain
+// in-process (no subprocess spawn needed — media-download.mts is a plain
 // module, same reasoning media-download-custom-emoji.test.ts gives). fetch is
 // stubbed (vi.stubGlobal), same convention as that file.
 //
@@ -17,7 +17,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import { downloadLinkCardThumbnail } from '../native-host/media-download.cts';
+import { downloadLinkCardThumbnail } from '../native-host/media-download.mts';
 
 const JPEG = Buffer.from('/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACP/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AfwH/2Q==', 'base64');
 

@@ -1,5 +1,5 @@
 // Smoke test for the Native Messaging bridge. Frame a 'save' message and feed it
-// into bridge.cts (swapping the config directory so a temp save folder is used),
+// into bridge.mts (swapping the config directory so a temp save folder is used),
 // and check that the JPEG and inbox envelope (#5 St6 / #299 — the successor to
 // writing sidecars directly) are written and that the ack shape is correct.
 
@@ -47,7 +47,7 @@ beforeAll(async () => {
   const header = Buffer.alloc(4);
   header.writeUInt32LE(msg.length, 0);
 
-  const child = spawn(process.execPath, [path.join(import.meta.dirname, '..', 'native-host', 'bridge.cts')], {
+  const child = spawn(process.execPath, [path.join(import.meta.dirname, '..', 'native-host', 'bridge.mts')], {
     env: { ...process.env, APPDATA: tmp, HOLOGRAM_CONFIG_DIR: configDir },
     stdio: ['pipe', 'pipe', 'inherit'],
   });
@@ -102,7 +102,7 @@ describe('返信は種類を問わず版を名乗る（#205）', () => {
 });
 
 // Feed multiple frames into a single connection and read back all the returned frames.
-// bridge.cts naturally exits once it finishes reading stdin, so waiting for close won't miss anything.
+// bridge.mts naturally exits once it finishes reading stdin, so waiting for close won't miss anything.
 async function askHost(configRoot: string, messages: unknown[]): Promise<any[]> {
   const configDir = path.join(configRoot, 'Hologram');
   const frames = messages.map((m) => {
@@ -111,7 +111,7 @@ async function askHost(configRoot: string, messages: unknown[]): Promise<any[]> 
     header.writeUInt32LE(body.length, 0);
     return Buffer.concat([header, body]);
   });
-  const child = spawn(process.execPath, [path.join(import.meta.dirname, '..', 'native-host', 'bridge.cts')], {
+  const child = spawn(process.execPath, [path.join(import.meta.dirname, '..', 'native-host', 'bridge.mts')], {
     env: { ...process.env, APPDATA: configRoot, HOLOGRAM_CONFIG_DIR: configDir },
     stdio: ['pipe', 'pipe', 'inherit'],
   });
@@ -245,7 +245,7 @@ describe('customEmojis のダウンロードが往復する（#290）', () => {
     const header = Buffer.alloc(4);
     header.writeUInt32LE(msg.length, 0);
 
-    const child = spawn(process.execPath, [path.join(import.meta.dirname, '..', 'native-host', 'bridge.cts')], {
+    const child = spawn(process.execPath, [path.join(import.meta.dirname, '..', 'native-host', 'bridge.mts')], {
       env: { ...process.env, APPDATA: emojiTmp, HOLOGRAM_CONFIG_DIR: configDir },
       stdio: ['pipe', 'pipe', 'inherit'],
     });

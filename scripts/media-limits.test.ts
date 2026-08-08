@@ -80,7 +80,7 @@ beforeAll(async () => {
     return new Response('nope', { status: 404 });
   }) as typeof fetch;
 
-  ({ downloadMedia, createByteBudget, MAX_SAVE_BYTES, MEDIA_CONCURRENCY, MAX_MEDIA } = await import('../native-host/media-download.cts'));
+  ({ downloadMedia, createByteBudget, MAX_SAVE_BYTES, MEDIA_CONCURRENCY, MAX_MEDIA } = await import('../native-host/media-download.mts'));
 });
 
 afterAll(() => {

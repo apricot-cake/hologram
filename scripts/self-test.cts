@@ -25,14 +25,14 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-const { configDir, defaultLibraryDir } = require('../native-host/paths.cts');
-const install = require('../native-host/install.cts');
+const { configDir, defaultLibraryDir } = require('../native-host/paths.mts');
+const install = require('../native-host/install.mts');
 
-// The built bundle, which is what install deploys — comparing against bridge.cts
+// The built bundle, which is what install deploys — comparing against bridge.mts
 // would report a false STALE for every build (the deployed file is bundled output).
 const REPO_BRIDGE = install.BRIDGE_PATH;
 
-// Minimal valid 1x1 JPEG (shared with test-bridge.cts).
+// Minimal valid 1x1 JPEG (shared with test-bridge.mts).
 const JPEG_B64 = '/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0a' + 'HBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAA' + 'AAAAAAAAAAAACP/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AfwH/2Q==';
 
 function frame(obj) {
@@ -149,7 +149,7 @@ function checkRegistration() {
   if (process.platform !== 'win32') return { name: 'host registration', ok: true, soft: true, detail: 'skipped (non-win32)' };
   const manifestPath = path.join(configDir(), `${install.HOST_NAME}.json`);
   if (!fs.existsSync(manifestPath)) {
-    return { name: 'host registration', ok: false, detail: `manifest missing (${manifestPath}) — run: node native-host/install.cts` };
+    return { name: 'host registration', ok: false, detail: `manifest missing (${manifestPath}) — run: node native-host/install.mts` };
   }
   try {
     const man = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
@@ -185,13 +185,13 @@ function checkRegistryPointer() {
 function checkDeployedBridge() {
   const deployed = install.deployedBridgePath();
   if (!fs.existsSync(deployed)) {
-    return { name: 'deployed bridge', ok: false, detail: `missing (${deployed}) — run: node native-host/install.cts` };
+    return { name: 'deployed bridge', ok: false, detail: `missing (${deployed}) — run: node native-host/install.mts` };
   }
   if (!fs.existsSync(REPO_BRIDGE)) {
     return { name: 'deployed bridge', ok: false, detail: `no bundle to compare against (${REPO_BRIDGE}) — run "npm run build:native-host-bridge" in app/` };
   }
   const same = fs.readFileSync(deployed, 'utf8') === fs.readFileSync(REPO_BRIDGE, 'utf8');
-  return same ? { name: 'deployed bridge', ok: true, detail: 'matches the built bundle' } : { name: 'deployed bridge', ok: false, detail: 'STALE — differs from native-host/dist/bridge.js. Re-build, then re-run: node native-host/install.cts' };
+  return same ? { name: 'deployed bridge', ok: true, detail: 'matches the built bundle' } : { name: 'deployed bridge', ok: false, detail: 'STALE — differs from native-host/dist/bridge.js. Re-build, then re-run: node native-host/install.mts' };
 }
 
 // --- check: the DEPLOYED bridge actually runs (not just matches by content) ---
@@ -203,7 +203,7 @@ function deployedBridgePing() {
   return new Promise<any>((resolve) => {
     const deployed = install.deployedBridgePath();
     if (!fs.existsSync(deployed)) {
-      resolve({ name: 'deployed bridge runs', ok: false, detail: `missing (${deployed}) — run: node native-host/install.cts` });
+      resolve({ name: 'deployed bridge runs', ok: false, detail: `missing (${deployed}) — run: node native-host/install.mts` });
       return;
     }
     const child = spawn(process.execPath, [deployed], { stdio: ['pipe', 'pipe', 'pipe'] });

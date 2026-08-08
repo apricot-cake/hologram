@@ -1,4 +1,4 @@
-// Pure unit guards for native-host/install.cts. A linked worktree's Electron is
+// Pure unit guards for native-host/install.mts. A linked worktree's Electron is
 // disposable, and must never become an executable that gets persisted into the
 // user-shared Native Messaging launcher. The main tree, and an explicitly isolated
 // config directory, remain valid registration sources.
@@ -7,7 +7,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterAll, afterEach, beforeAll, describe, expect, test } from 'vitest';
-import { HOST_NAME, isLinkedWorktreeRuntime, shouldPreserveSharedRegistration, unixManifestDirs, windowsRegistryKeys } from '../native-host/install.cts';
+import { HOST_NAME, isLinkedWorktreeRuntime, shouldPreserveSharedRegistration, unixManifestDirs, windowsRegistryKeys } from '../native-host/install.mts';
 
 let root: string;
 let mainExe: string;

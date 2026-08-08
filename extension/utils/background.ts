@@ -1428,7 +1428,7 @@ export function startBackground(): void {
     port.onDisconnect.addListener(done);
     try {
       // The host reads its stdin in a loop and answers each framed message, so
-      // one connection carries the whole batch (native-host/bridge.cts).
+      // one connection carries the whole batch (native-host/bridge.mts).
       for (const queued of batch) port.postMessage({ type: 'log', entry: queued.entry } satisfies HostRequest);
     } catch {
       done();
@@ -1714,7 +1714,7 @@ function buildRecord(meta, { captureId, capturedAt, postUrl, sendPlatform, repla
       // #290: the post's own :shortcode: custom emoji (Misskey/Mastodon only —
       // see extractor/types.ts's CustomEmoji). Announced here; the bridge
       // downloads each one into the shared emoji/ store and fills its `file`,
-      // the same avatar-store pattern media-download.cts's downloadAvatar uses.
+      // the same avatar-store pattern media-download.mts's downloadAvatar uses.
       customEmojis: meta.customEmojis || [],
       // The acquisition originals (#292), still as received text — the native
       // host compresses, hashes and caps them (native-host/raw-payload.mts).

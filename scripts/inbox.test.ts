@@ -89,7 +89,7 @@ describe('writeInboxEvent', () => {
     // the tmp file itself has a different name (pid+random), so it doesn't trip the wx
     // flag itself, but the rename destination new/<eventId>.json does get overwritten
     // (fs.rename's default behavior). Preventing double-issuance is the caller's
-    // responsibility (bridge.cts's uniqueBase); this layer does not guarantee that
+    // responsibility (bridge.mts's uniqueBase); this layer does not guarantee that
     // "content already committed once is never silently destroyed" —
     // what actually needs verifying is the exclusivity of the tmp file name (do both
     // succeed when two are written concurrently, and does neither leave an orphan
