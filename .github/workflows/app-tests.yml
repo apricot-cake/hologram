@@ -43,30 +43,54 @@ name: App tests
 # What a job name no longer says, the log does: the pool prints one `ok`/`FAIL`
 # line per script and repeats the failing names on its last line (#829).
 #
-# `pull_request` AND `push` to main, with NO path filter on either — the same two
-# changes ci.yml made on 2026-08-08, for the same two reasons (that file carries the
-# survey of what vitejs/vite, wxt-dev/wxt, biomejs/biome, microsoft/vscode and
-# electron/electron actually do). What is specific to THIS workflow:
+# `pull_request` AND `push` to main, both PATH-FILTERED — the same pair of decisions
+# ci.yml made on 2026-08-08, and that file carries the full reasoning (the survey of
+# what vitejs/vite, wxt-dev/wxt, biomejs/biome and microsoft/vscode actually do, and
+# why the filter outlived the plan to make these checks required). What is specific
+# to THIS workflow:
 #
-#   - running the real-Electron layers on every pull request is not a stretch of the
-#     norm: vscode runs pr-linux-test / pr-darwin-test / pr-linux-cli-test on PRs,
-#     unfiltered. This is the layer whose absence before a merge is felt most — it is
-#     the only one that boots the app and the extension at all.
-#   - the allow-list `paths` (#993) had to go before these shards could be REQUIRED,
-#     because a workflow skipped by paths leaves its check Pending and blocks the
-#     merge forever (GitHub's documented behaviour; a job skipped by `if:` reports
-#     Success instead, but that needs a change-detection step, and #993 removed the
-#     last one this repo had after it went silently dead).
+#   - running the real-Electron layers on pull requests is not a stretch of the norm:
+#     vscode runs pr-linux-test / pr-darwin-test / pr-linux-cli-test on PRs. This is
+#     the layer whose absence before a merge is felt most — it is the only one that
+#     boots the app and the extension at all.
+#   - the filter matters more here than it does there, because a shard costs three
+#     Windows minutes rather than one Linux minute. The allow-list below is the
+#     difference between a docs-only pull request finishing in seconds and it
+#     occupying three runners for nothing.
 #
-# What it costs: a docs-only or PowerShell-only change now spends three Windows
-# minutes on shards that touch none of it. That was worth avoiding when Windows
-# minutes were metered; the repository is public (#75), so they are free, and the
-# thing being bought — no unchecked merge — is the point of the whole change.
+# ⚠️ The same warning as ci.yml's, and it bites harder here because this list is an
+# ALLOW-list: anything not named below does not run, so a new top-level directory is
+# invisible to these shards until someone adds it. NOT RUN AND GREEN LOOK THE SAME in
+# `gh pr checks`. The backstop is the nightly `schedule`, which no filter applies to.
 on:
   push:
     branches: [main]
+    paths: &app-test-paths
+      - 'app/**'
+      - 'extension/**'
+      - 'native-host/**'
+      - 'scripts/**'
+      - '!scripts/make-icons.cjs'
+      # Windows-only launcher for the developer's own machine. Nothing in this job runs
+      # or lints PowerShell, so an edit to it can only spend three Windows minutes on a
+      # file none of the shards touch. It moved here from the repo root on 2026-08-07,
+      # which is what put it inside scripts/** in the first place. The handshake it
+      # depends on IS covered — by test-app-restart-signal.cts, which lives in app/**'s
+      # blast radius through app/src/main/restart-signal.ts and in scripts/** itself.
+      - '!scripts/restart-app.ps1'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'playwright.config.ts'
+      - 'vitest.config.ts'
+      - '.github/workflows/app-tests.yml'
+      - '.github/actions/setup-app-tests/**'
   pull_request:
     branches: [main]
+    # Same list as the push trigger above, by YAML anchor rather than by copy: two
+    # hand-maintained copies of an allow-list drift, and the drift is invisible
+    # (a path in one but not the other just means the check silently stops running
+    # on one of the two events).
+    paths: *app-test-paths
   schedule:
     # 18:37 UTC = 03:37 JST. Off the hour and outside 22:00-02:00 UTC on purpose:
     # scheduled runs queue behind everyone else's, and those are the peaks.
