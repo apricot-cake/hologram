@@ -25,7 +25,7 @@ Hologram is **free and open source** (MIT). Your library is nothing but ordinary
 - **Not only posts** — local files join the same library. Images and video get the full treatment; a PDF or an archive is kept as a collected item, sharing the same tags, folders and search.
 - **Organize and search freely** — filter by tag, in-text hashtag, platform, date, engagement, and author. Tag aliases keep the different spellings of one thing together.
 - **Read it however suits the moment** — a grid for illustrations, a list for text, a timeline feed for drifting back through your saves, or a small always-on-top window beside your drawing app.
-- **Everything stays with you** — your data lives on your PC as ordinary files. Nothing is sent to any server; open it in another tool or move the whole library whenever you like.
+- **Everything stays with you** — your data lives on your PC as ordinary files. We run no server of our own, and the only traffic that leaves your machine is fetching a post's details and whatever you ask for yourself. Open it in another tool or move the whole library whenever you like.
 - **Backup & portability** — export/import as a ZIP, mirror to another folder on a schedule, keep several separate libraries.
 
 ## What goes in it
@@ -114,7 +114,7 @@ Preparing for release (including publishing the extension to the Chrome Web Stor
 
 ## Privacy
 
-Everything is stored in a local folder; nothing is sent to any server. See [PRIVACY.md](docs/PRIVACY.md) for details.
+Everything is stored in a local folder you choose, and we run no server of our own (no account, nothing relayed through us). Network traffic goes only to the platform a post belongs to, and to whatever you explicitly ask for — an external search, for instance. See [PRIVACY.md](docs/PRIVACY.md) for details.
 
 ### Where your data lives
 
