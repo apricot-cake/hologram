@@ -1,5 +1,3 @@
-'use strict';
-
 // Resolves the shared config directory used by BOTH the native messaging
 // bridge (plain Node, spawned by Chrome) and the Electron desktop app.
 //
@@ -42,12 +40,12 @@
 // The LIBRARY default is a separate question and does not move — see #232, where
 // its rationale is already a product decision rather than this one.
 
-const path = require('node:path');
-const os = require('node:os');
+import path from 'node:path';
+import os from 'node:os';
 
-const APP_NAME = 'Hologram';
+export const APP_NAME = 'Hologram';
 
-function configDir(): string {
+export function configDir(): string {
   if (process.env.HOLOGRAM_CONFIG_DIR) return process.env.HOLOGRAM_CONFIG_DIR;
   if (process.platform === 'win32') {
     // Read from the environment rather than joining homedir() + 'AppData/Roaming':
@@ -79,7 +77,7 @@ function configDir(): string {
 // the Windows case was justified by MSIX storage virtualization (avoid %LOCALAPPDATA%).
 // That reason expired on 2026-08-06 (#1003); the placement stayed and the other two
 // platforms were brought in line with it, on the rationale above.
-function defaultLibraryDir(): string {
+export function defaultLibraryDir(): string {
   return path.join(os.homedir(), APP_NAME, 'library');
 }
 
@@ -93,21 +91,19 @@ function defaultLibraryDir(): string {
 // bridge is spawned by Chrome from a registry entry and has no idea where the
 // repository is. Absent on every machine that has not built the extension, which
 // is what makes the whole path inert for released installs.
-function extensionBuildStampPath(): string {
+export function extensionBuildStampPath(): string {
   return path.join(configDir(), 'extension-build.json');
 }
 
 // #71: the ONE signal the app has that the extension is installed and has ever
 // talked to it. A native-messaging host is a one-shot process Chrome spawns per
-// connection (see bridge.cts's header) — there is no live heartbeat to ask "is
+// connection (see bridge.mts's header) — there is no live heartbeat to ask "is
 // it connected right now", so the bridge instead touches this marker whenever it
 // processes a check ({type:'query'}) or a save, and the app treats the file's
 // mere PRESENCE as "has ever made contact" (empty/EmptyState.tsx's firstRun vs.
 // the install-guide variant, #71). The content is a bare ISO timestamp and nothing
 // else is ever written into it — no extension id, browser name, or URL — because
 // the app never reads the content, only checks existence.
-function extensionContactPath(): string {
+export function extensionContactPath(): string {
   return path.join(configDir(), 'extension-contact.json');
 }
-
-module.exports = { configDir, defaultLibraryDir, extensionBuildStampPath, extensionContactPath, APP_NAME };

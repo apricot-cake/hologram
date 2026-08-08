@@ -96,7 +96,7 @@ export interface ConfigSummary {
  * explicit save folder, not a cached flag — the renderer re-asks this after a
  * retry or a repoint rather than listening for a push. `path` is null only
  * when there is no explicit save folder at all (fresh install), in which case
- * `missing` is always false — see native-host/config-recovery.cts's
+ * `missing` is always false — see native-host/config-recovery.mts's
  * libraryIsMissing.
  */
 export interface LibraryStatus {
@@ -106,7 +106,7 @@ export interface LibraryStatus {
 
 /**
  * get-extension-contact (#71): whether the native-messaging bridge has EVER
- * touched its contact marker (native-host/paths.cts's extensionContactPath) —
+ * touched its contact marker (native-host/paths.mts's extensionContactPath) —
  * i.e. the extension is installed and has processed at least one check/save.
  * The renderer's only use for this is empty/EmptyState.tsx's firstRun variant:
  * no contact yet means "show the install guide instead" (services/

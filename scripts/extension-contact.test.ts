@@ -1,7 +1,7 @@
 // #71: the marker the bridge touches on every check/save, and the ONLY signal
 // the app has that the extension has ever talked to it (empty/EmptyState.tsx's
 // install-guide variant vs. the ordinary firstRun one). Covers the marker path
-// itself (paths.cts) and the touch (bridge.cts) — the dispatch loop that decides
+// itself (paths.mts) and the touch (bridge.mts) — the dispatch loop that decides
 // WHEN to call it is exercised end-to-end only by the real native-messaging E2E
 // suite (scripts/lib-native-host-e2e.cts), not here.
 
@@ -16,8 +16,8 @@ let touchExtensionContact: any;
 beforeAll(async () => {
   configDir = process.env.HOLOGRAM_CONFIG_DIR as string;
   fs.mkdirSync(configDir, { recursive: true });
-  ({ extensionContactPath } = await import('../native-host/paths.cts'));
-  ({ touchExtensionContact } = await import('../native-host/bridge.cts'));
+  ({ extensionContactPath } = await import('../native-host/paths.mts'));
+  ({ touchExtensionContact } = await import('../native-host/bridge.mts'));
 });
 
 describe('拡張コンタクトのマーカー（#71）', () => {

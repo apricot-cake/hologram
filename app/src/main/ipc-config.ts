@@ -7,7 +7,7 @@
 // (used only by these handlers).
 //
 // get-extension-contact (#71) reads a marker OUTSIDE config.json (native-host/
-// paths.cts's extensionContactPath, touched by the bridge — see that module's
+// paths.mts's extensionContactPath, touched by the bridge — see that module's
 // header) rather than going through ctx: it is a plain existence check with no
 // dependency on any mutable main-process state, so it imports the path helper
 // directly the same way lib-config.ts / lib-thumbnails.ts do.
@@ -77,7 +77,7 @@ function register(ctx: IpcContext) {
   ipcMain.handle('get-library-status', (): LibraryStatus => getLibraryStatus());
 
   // #71: whether the bridge has EVER touched its contact marker — see this
-  // file's header and paths.cts's extensionContactPath. A fresh existence
+  // file's header and paths.mts's extensionContactPath. A fresh existence
   // check every call, same shape as get-library-status above; nothing writes
   // this file from the app side, so there is no cache to invalidate.
   ipcMain.handle('get-extension-contact', (): ExtensionContactStatus => ({ contacted: fs.existsSync(extensionContactPath()) }));

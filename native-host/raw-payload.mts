@@ -17,7 +17,7 @@
 // acquisition code chose to hand over, so those cannot leak in by accident.
 //
 // Kept Electron-free (node builtins only) and .mts for the same reason as
-// post-record.mts and inbox.mts: native-host/bridge.cts require()s it from CJS
+// post-record.mts and inbox.mts: native-host/bridge.mts require()s it from CJS
 // and app/src/main imports it as ESM, and both sides must agree on ONE shape.
 
 import { createHash } from 'node:crypto';

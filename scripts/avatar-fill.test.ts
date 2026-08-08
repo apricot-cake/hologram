@@ -10,7 +10,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
-import { pixivRefererFor } from '../native-host/media-download.cts';
+import { pixivRefererFor } from '../native-host/media-download.mts';
 import { openDatabase } from '../app/src/main/lib-db';
 import { postsByIds } from '../app/src/main/lib-db-query';
 import { makeTagResolver, preparePostStmts, writePost } from '../app/src/main/lib-db-record-writer';

@@ -2,7 +2,7 @@
 
 // One-file download-verify-commit for the model manager (#832, parent #98).
 // Electron-free (fetch + node:fs/crypto only) so it is unit-testable against a
-// stubbed global fetch, the same convention native-host/media-download.cts's
+// stubbed global fetch, the same convention native-host/media-download.mts's
 // tests use (vi.stubGlobal('fetch', ...)).
 //
 // Contract: fetchModelFile never leaves a file at `dest` whose bytes do not

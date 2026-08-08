@@ -7,7 +7,7 @@
 // Why this exists: #1003 confirmed (2026-08-06) that MSIX storage virtualization is
 // NOT happening in this environment right now — but that was true because the HOST
 // process (Claude Code) happened to move outside its package, not because the
-// mechanism itself went away. paths.cts's header explains why Windows' configDir
+// mechanism itself went away. paths.mts's header explains why Windows' configDir
 // still avoids %APPDATA% on principle: the 2026-06-23 incident (~9082 saved items
 // diverging into a per-package LocalCache nobody looked at) surfaced only as
 // "I saved it but it's not in the library" — a silent failure mode, not a crash.
@@ -39,7 +39,7 @@ export type RedirectCheck = { status: 'ok' } | { status: 'redirected'; realPath:
  * with no filesystem or Electron involved.
  *
  * `\Packages\<pkg>\LocalCache\` is MSIX's per-package virtual store layout — the one
- * concrete shape the 2026-06-23 divergence took (paths.cts's header) — so both
+ * concrete shape the 2026-06-23 divergence took (paths.mts's header) — so both
  * segments must be present; a path that merely mentions "Packages" or "LocalCache"
  * on its own (a folder literally named that, a copy under a backup drive) is not
  * this failure mode and must not false-positive into it.

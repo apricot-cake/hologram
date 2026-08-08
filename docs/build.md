@@ -173,7 +173,7 @@ renderer は HMR、main は保存で自動再起動。**CDP も同時に使え�
 
 ⚠️**旧記述「`electron-vite dev` は使わない」の理由（MSIX 仮想化）は失効した**＝下の「起動経路」を参照。
 
-native-host のブリッジ（Chrome が起動する常駐プロセス）を変更した場合は `npm run build:native-host-bridge --workspace=app` でバンドルを作り直してから `node native-host/install.cts` で config dir（Windows は `%APPDATA%\Hologram`）へ再配備（アプリ再起動は不要）。
+native-host のブリッジ（Chrome が起動する常駐プロセス）を変更した場合は `npm run build:native-host-bridge --workspace=app` でバンドルを作り直してから `node native-host/install.mts` で config dir（Windows は `%APPDATA%\Hologram`）へ再配備（アプリ再起動は不要）。
 
 **再起動は `restart-app.ps1` で行う**（停止 ＋ 起動をまとめてある）。Claude が実行する最小形:
 
@@ -233,7 +233,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File <repo>\scripts\restart-a
 3. **実入力・実ピクセルの自動テスト＝Playwright（`npm run test:e2e`・#14）**: 上の1と2の間を埋める層。ケースごとに使い捨ての config dir とライブラリを作り、`HOLOGRAM_SANDBOX=1` ＋ `HOLOGRAM_START_INACTIVE=1` で**見えるが最背面のウィンドウ**を起こし、実ポインタ・実キーで駆動して要素単位のスクリーンショットを撮る。1と違って合成イベントではないので「クリックが届かない」型が捕まり、2と違って人手も常駐インスタンスも要らない。**ユーザーの前面は奪わない**（フォーカスを取らずに z 順の最背面へ送る＝入力は CDP 経由でフォーカス不要）。詳細は `e2e/README.md`。
 4. **実機（:9222）／HMR**: `restart-app.ps1` で起動したウィンドウ、または `REMOTE_DEBUGGING_PORT=9222 npm run dev --workspace=app` の HMR へ CDP 接続する。起こし方・ポート・使い分けは上の「CDP で繋ぐ先の選び方」参照。⚠️**旧記述「直接起動はコンテナ内＝仮想化でキャプチャが壊れる」は失効**（#1003）。実機での検証は短く済ませ、混ざった疑いがあれば撮り直す。
 
-**並行セッションで共有のままの装置**（worktree でもサンドボックスでも隔離されない）: `node native-host/install.cts` の再配備・拡張のリロード・実機の再起動の3つ。並行セッションの実行中にこれらを行う時だけは、相手の検証を壊しうるので重ねない（`ccd_session_mgmt` で実態確認）。**この確認先は並行セッションであって、ユーザーではない**＝重なりが無いと分かったらそのまま実行する（可否を尋ねて止まらない）。「共有資源だから」は他セッションを調べる理由であって、検証を保留する理由ではない。
+**並行セッションで共有のままの装置**（worktree でもサンドボックスでも隔離されない）: `node native-host/install.mts` の再配備・拡張のリロード・実機の再起動の3つ。並行セッションの実行中にこれらを行う時だけは、相手の検証を壊しうるので重ねない（`ccd_session_mgmt` で実態確認）。**この確認先は並行セッションであって、ユーザーではない**＝重なりが無いと分かったらそのまま実行する（可否を尋ねて止まらない）。「共有資源だから」は他セッションを調べる理由であって、検証を保留する理由ではない。
 
 - **稼働中の実機は確認なく駆動してよい**（リロード・カード選択・ビュー開閉・スクショまで一気に自律で）。ユーザーの作業状態を保存する義務も、事前に声をかける義務も無い（2026-07-19 にユーザーが明示。それ以前は「今は触らないでください」と伝える運用だったが、**チャットの声かけはユーザーが画面を見ている保証が無く警告として機能しない**＝2026-07-20 に撤去）。開いたオーバーレイを閉じる程度の後片付けはする。
 - **実機で異常を見たら、まず自分の駆動の残留を疑う**（ユーザー操作のせいにする誤帰属を先に潰す）。1スクリプトに多数のフローを詰めない＝駆動は目的1つに絞る（絡むと解析不能になる）。
@@ -378,7 +378,7 @@ electron-builder, win/nsis。
 - **`app/package.json` の `electron` は範囲指定でなく固定版**（`43.2.0`。`^43.0.0` に戻さないこと）。electron-builder は配布するランタイムの実バージョンを知る必要があり、まず `<projectDir>/node_modules/electron` を読む。`app/` は npm ワークスペースなので electron はリポジトリ直下へ巻き上げられて `app/node_modules` には存在せず、electron-builder は `app/package.json` の指定へフォールバックする＝そこが範囲だと解決できず `Cannot compute electron version from installed node modules` で停止する（2026-07-28 実測。25系でも同じ＝バージョン退行ではなく #156 のワークスペース化の影響）。electron-builder 自身が案内する回避は「package.json で固定版にする」か「設定に `electronVersion` を書く」の2つで、後者は同じ版を2箇所に書くことになるため前者を採用（VS Code など実運用の Electron アプリも固定版が通例）。
 - **`electronFuses` で `grantFileProtocolExtraPrivileges: false` を焼いてある**（#7・[ADR 0022](decisions/0022-renderer-served-from-app-scheme.md)）。レンダラは `app://bundle` から配るので `file://` の追加特権はもう要らない＝Electron 公式チェックリスト 18 の「`file://` を避けて独自プロトコルを使う」を最後まで満たす。⚠️**fuse はパッケージ済みバイナリにしか効かない**＝`npm run check` でも `node scripts/run-app-tests.cts`（unpackaged Electron）でも何ひとつ確かめられない。この行を触ったら `npm run dist --workspace=app` して `app/dist/win-unpacked/Hologram.exe` を実際に起動すること。焼けたかどうかは `node -e "require('@electron/fuses').getCurrentFuseWire('app/dist/win-unpacked/Hologram.exe').then(w=>console.log(w))"` で読める（`48`=無効・`49`=有効）。他の fuse は Electron の既定のままで、点検は別件。
 
-- ⚠️**`RunAsNode` は有効のまま固定する（ハードニングの一括適用をしない）**＝native messaging のブリッジは `ELECTRON_RUN_AS_NODE` で自分自身を Node として起動する経路に乗っている（`app/src/main/index.ts` が `install({ runAsNode: true })` を呼び、`native-host/install.cts` がその前提でランチャーを書く）。この fuse を切ると**拡張からの保存が全て「native messaging host と通信不可」で落ちる**（`process.fork` も同時に壊れる）。ハードニングのチェックリストは軒並みこれを「無効化せよ」と書いているので、**鵜呑みにせず fuse ごとに判断する**。上と同じ理由でパッケージ済みバイナリでしか確かめられない＝触ったら `npm run dist --workspace=app` して、実ビルドで拡張から1件保存するところまで通すこと。
+- ⚠️**`RunAsNode` は有効のまま固定する（ハードニングの一括適用をしない）**＝native messaging のブリッジは `ELECTRON_RUN_AS_NODE` で自分自身を Node として起動する経路に乗っている（`app/src/main/index.ts` が `install({ runAsNode: true })` を呼び、`native-host/install.mts` がその前提でランチャーを書く）。この fuse を切ると**拡張からの保存が全て「native messaging host と通信不可」で落ちる**（`process.fork` も同時に壊れる）。ハードニングのチェックリストは軒並みこれを「無効化せよ」と書いているので、**鵜呑みにせず fuse ごとに判断する**。上と同じ理由でパッケージ済みバイナリでしか確かめられない＝触ったら `npm run dist --workspace=app` して、実ビルドで拡張から1件保存するところまで通すこと。
 - **`asarUnpack` に `better-sqlite3` を入れてある**。`.node` は asar 内から読めないため、これが無いと配布ビルドでのみ DB が開けない。将来コード署名を入れる際は、asar の外に出たこのバイナリも署名対象に含める。
 - **ローカル推論のランタイム（#831）で `files` / `asarUnpack` が増えた**。`@huggingface/transformers` が引き連れてくる3つ（onnxruntime-node・onnxruntime-web・sharp）はいずれもネイティブか、asar 内から開けないファイルを持つ。
   - `asarUnpack` に `onnxruntime-node/**`・`onnxruntime-web/dist/**`・`sharp/**`・`@img/**`。前2つは `.node` と `.dll`、および **file:// URL で開かれる `.wasm`** のため（asar の中は OS から見えない）。パスの読み替えは `src/main/lib-ml-protocol.ts` の `asarUnpackedPath` が1か所で持つ。

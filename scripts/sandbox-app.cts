@@ -51,7 +51,7 @@ const appDir = path.join(repoRoot, 'app');
 const { electronPath: resolveElectron } = require('./lib-electron-path.cts');
 const { makePng, seedRealSandbox, DEFAULT_MAX_DIM } = require('./lib-sandbox-real-seed.cts');
 const { seedLibrary } = require('./lib-seed-library.cts');
-const { configDir: realConfigDir, defaultLibraryDir } = require('../native-host/paths.cts');
+const { configDir: realConfigDir, defaultLibraryDir } = require('../native-host/paths.mts');
 const { PORT_MIN, PORT_SPAN, clearInstance, foreignSandboxAt, readInstance, sandboxPortBase, writeInstance } = require('./lib-sandbox-instance.cts');
 
 const electronPath = resolveElectron();

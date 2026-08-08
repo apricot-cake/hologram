@@ -64,7 +64,7 @@ seedLibrary(configDir, [
 ]);
 
 process.env.HOLOGRAM_CONFIG_DIR = configDir;
-const bridge = require(path.join(__dirname, '..', 'native-host', 'bridge.cts'));
+const bridge = require(path.join(__dirname, '..', 'native-host', 'bridge.mts'));
 
 // One "what does the extension see right now" reading. The cache is dropped
 // first because this process holds the index for the life of a port, and the

@@ -16,7 +16,7 @@
 // HOW THE BROWSER FINDS OUT. Chrome does not re-read an unpacked extension when
 // its files change, so the swap alone would still cost a click in
 // chrome://extensions. It doesn't, because of #650: this script publishes the
-// deployed build's token to native-host/paths.cts's extensionBuildStampPath, the
+// deployed build's token to native-host/paths.mts's extensionBuildStampPath, the
 // native host puts that token on every reply, and the extension — which already
 // talks to the host on every save and every badge query — notices the folder it
 // came from now holds a different build and calls chrome.runtime.reload() on
@@ -30,7 +30,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 
-const { configDir, extensionBuildStampPath } = require('../native-host/paths.cts');
+const { configDir, extensionBuildStampPath } = require('../native-host/paths.mts');
 const { buildId, releaseDir } = require('./build-extension.cts');
 
 const ROOT = path.join(__dirname, '..');

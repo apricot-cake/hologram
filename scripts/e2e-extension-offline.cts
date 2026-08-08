@@ -193,7 +193,7 @@ async function waitForLog(configDir: string, file: string, matches: (text: strin
 
     // Both lines land a little AFTER the files above: the bridge writes the JPEG
     // and the envelope first and appends its outcome line once that work returned
-    // (native-host/bridge.cts, logSaveOutcome). Reading once therefore races the
+    // (native-host/bridge.mts, logSaveOutcome). Reading once therefore races the
     // host, and a loaded machine loses it — which is how this went red the first
     // time four of these ran at a time (#968). Same shape, and the same fix, as
     // the wait e2e-extension-timeout.cts already had.

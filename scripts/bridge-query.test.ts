@@ -63,7 +63,7 @@ beforeAll(async () => {
   fs.mkdirSync(saveFolder, { recursive: true });
   fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolder }));
 
-  ({ handleQuery, noteSaved, _resetSavedIndex } = await import('../native-host/bridge.cts'));
+  ({ handleQuery, noteSaved, _resetSavedIndex } = await import('../native-host/bridge.mts'));
 
   writeSavedIndex([{ captureId: '1700000000000-aa', url: 'https://x.com/someone/status/111' }], SNAP_MS);
   _resetSavedIndex();

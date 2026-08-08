@@ -169,7 +169,7 @@ function isSafeEntryName(name) {
 // Library entries are single-segment EXCEPT the two shared stores, which are
 // exactly '<store>/<basename>' (forward slash only — ZIP canonical form; one
 // level, each segment held to the same single-segment rule). avatars/ predates
-// #290; emoji/ is #290's own shared custom-emoji store (media-download.cts's
+// #290; emoji/ is #290's own shared custom-emoji store (media-download.mts's
 // downloadCustomEmojis).
 function isSafeLibraryPath(name) {
   if (isSafeEntryName(name)) return true;

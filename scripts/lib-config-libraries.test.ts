@@ -12,7 +12,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 const env = vi.hoisted(() => ({ dir: '' }));
 
 vi.mock('../app/src/main/native-host.ts', async () => {
-  const { resolveSaveFolder } = await import('../native-host/config-recovery.cts');
+  const { resolveSaveFolder } = await import('../native-host/config-recovery.mts');
   return {
     configDir: () => env.dir,
     defaultLibraryDir: () => path.join(env.dir, 'default-library'),

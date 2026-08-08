@@ -9,7 +9,7 @@ import { afterEach, beforeAll, describe, expect, test, vi } from 'vitest';
 
 const png = Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex');
 
-// Since bridge.cts resolves configDir at load time, place config.json first and
+// Since bridge.mts resolves configDir at load time, place config.json first and
 // then do a dynamic import (using the HOLOGRAM_CONFIG_DIR sandbox that setup prepared).
 let handleSaveDragged: any;
 let saveFolder: string;
@@ -20,7 +20,7 @@ beforeAll(async () => {
   fs.mkdirSync(configDir, { recursive: true });
   fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolder }));
 
-  ({ handleSaveDragged } = await import('../native-host/bridge.cts'));
+  ({ handleSaveDragged } = await import('../native-host/bridge.mts'));
 });
 
 afterEach(() => {

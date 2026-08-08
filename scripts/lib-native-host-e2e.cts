@@ -11,7 +11,7 @@ const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 
 const ROOT = path.join(__dirname, '..');
-const BRIDGE_SOURCE = path.join(ROOT, 'native-host', 'bridge.cts');
+const BRIDGE_SOURCE = path.join(ROOT, 'native-host', 'bridge.mts');
 
 function registerNativeHost(hostName: string, manifestPath: string): () => void {
   if (process.platform === 'win32') {

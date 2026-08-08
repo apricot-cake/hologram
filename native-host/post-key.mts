@@ -12,13 +12,10 @@
 // design). metadata.ts's parsePostUrl stays a separate concern — it parses a URL
 // into platform + id + API endpoint for FETCHING a post, not into an identity key.
 //
-// The one .mts in native-host/ (everything else here is .cts — see tsconfig.json).
-// It has to be ESM because the renderer ES-imports it: TypeScript reads no exports
-// off a .cts file's `module.exports` assignment, and giving a .cts real `export`
-// statements would break the raw-source loads this directory depends on (Node's
-// type stripping erases types, it cannot transform ESM syntax into CJS). The
-// bridge's require() of it resolves at bundle time (app/build-native-host-bridge.mjs) for the
-// deployed host, and through Node's require(esm) for the source-level tests.
+// The FIRST .mts in native-host/, back when everything else here was .cts. It
+// had to be ESM because the renderer ES-imports it, and TypeScript reads no
+// exports off a `module.exports` assignment. #1052 made that the whole
+// directory's shape rather than this one file's exception — see tsconfig.json.
 
 // Returns null when the URL isn't a recognized post permalink (unparseable, or a
 // profile / search / home page). null means "don't group", never "no match".

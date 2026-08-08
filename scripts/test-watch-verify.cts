@@ -40,7 +40,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const Database = require('better-sqlite3');
 const { fetchPostMetadata } = require('../extension/utils/extractor/index.ts');
-const { configDir, defaultLibraryDir } = require('../native-host/paths.cts');
+const { configDir, defaultLibraryDir } = require('../native-host/paths.mts');
 
 const POLL_MS = 2000;
 

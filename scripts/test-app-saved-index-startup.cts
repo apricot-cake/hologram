@@ -52,7 +52,7 @@ seedLibrary(configDir, [
 ]);
 
 process.env.HOLOGRAM_CONFIG_DIR = configDir;
-const bridge = require(path.join(__dirname, '..', 'native-host', 'bridge.cts'));
+const bridge = require(path.join(__dirname, '..', 'native-host', 'bridge.mts'));
 
 const snapshotMissingBeforeLaunch = !fs.existsSync(SNAPSHOT_FILE);
 // The bug reproduction: with no snapshot, the bridge's other two sources (journal,

@@ -12,8 +12,8 @@
     "dev": "npm run build:theme-boot && npm run build:native-host-bridge && electron-vite dev",
     "build": "npm run build:theme-boot && npm run build:native-host-bridge && electron-vite build",
     "dist": "npm run build && electron-builder",
-    "register-host": "node ../native-host/install.cts",
-    "unregister-host": "node ../native-host/install.cts uninstall",
+    "register-host": "node ../native-host/install.mts",
+    "unregister-host": "node ../native-host/install.mts uninstall",
     "typecheck": "npm run typecheck:node && npm run typecheck:web",
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json",
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json"

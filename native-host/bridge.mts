@@ -1,5 +1,3 @@
-'use strict';
-
 // Hologram native messaging host.
 //
 // Chrome spawns this process per connection (chrome.runtime.connectNative).
@@ -23,39 +21,36 @@
 // are already in the library, so the timeline can mark saved posts (#54). That
 // path still writes nothing into the save folder — see the saved-post index.
 
-const fs = require('node:fs');
-const path = require('node:path');
-const _os = require('node:os');
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const { configDir, defaultLibraryDir, extensionBuildStampPath, extensionContactPath } = require('./paths.cts');
+import { configDir, defaultLibraryDir, extensionBuildStampPath, extensionContactPath } from './paths.mts';
 // Best-effort remote-image download (original media + avatars) lives in a shared
 // module so the SSRF guard / size caps are identical across capture, import and
-// backfill. See media-download.cts.
-const { downloadMedia, downloadAvatar, downloadCustomEmojis, downloadLinkCardThumbnail, saveStillImage, createByteBudget, subscribeMediaFailures } = require('./media-download.cts');
+// backfill. See media-download.mts.
+import { downloadMedia, downloadAvatar, downloadCustomEmojis, downloadLinkCardThumbnail, saveStillImage, createByteBudget, subscribeMediaFailures } from './media-download.mts';
+import type { CustomEmojiDescriptor, MediaDescriptor } from './media-download.mts';
 // Same pure resolver the desktop app uses, so the bridge and app pick the SAME
 // save folder — including recovering from the redundant pointer. See readSaveFolder.
-const { resolveSaveFolder } = require('./config-recovery.cts');
+import { resolveSaveFolder } from './config-recovery.mts';
 // The ONE URL→identity-key rule, shared with the renderer's grouping. See
 // post-key.mts and the saved-post index below.
-const { postKeyOf } = require('./post-key.mts');
+import { postKeyOf } from './post-key.mts';
 // The shared record shape + normalization builder (#5 St2 / #295), so a
 // bridge-built record carries the exact same fields the DB writer expects.
-const { normalizePostRecord, recordHoldsContent } = require('./post-record.mts');
+import { normalizePostRecord, recordHoldsContent } from './post-record.mts';
 // The durable intake queue's envelope format + atomic writer (#5 St6 / #299).
-const { buildEnvelope, writeInboxEvent, inboxNewDir, parseInboxEnvelope } = require('./inbox.mts');
+import { buildEnvelope, writeInboxEvent, inboxNewDir, parseInboxEnvelope } from './inbox.mts';
 // The acquisition originals (#292): the extension hands over response bodies as
 // received; compressing, hashing and capping them happens HERE, on the trusted
 // side of the native-messaging boundary, so the browser never decides how much
 // of an original is worth keeping.
-const { packRawPayloads } = require('./raw-payload.mts');
+import { packRawPayloads } from './raw-payload.mts';
 // The message contract itself (#400), shared with the extension: what a request
 // looks like, what an ack looks like, and the one parse that turns a received
 // frame into either. No handler below reads a raw field off the wire.
-// Typed unlike every other require() here (a plain one resolves to `any` — see
-// native-host/tsconfig.json): the whole point of the contract is that the parse
-// returns a narrowed union, and an `any` at this one line would hand every
-// handler back the untyped message this Issue removed.
-const { parseHostFrame, isCaptureId, stampProtocol } = require('./protocol.mts') as typeof import('./protocol.mts');
+import { parseHostFrame, isCaptureId, stampProtocol } from './protocol.mts';
 type BulkAck = import('./protocol.mts').BulkAck;
 type CaptureAck = import('./protocol.mts').CaptureAck;
 type DraggedAck = import('./protocol.mts').DraggedAck;
@@ -108,9 +103,9 @@ function readExtBuild(): string | null {
 // or a save, so the app can tell "the extension has never talked to us" apart
 // from "it has, but the library is still empty" (empty/EmptyState.tsx's
 // firstRun variant). Only the file's EXISTENCE is ever read back — see
-// paths.cts's extensionContactPath — so a failure here is swallowed like every
+// paths.mts's extensionContactPath — so a failure here is swallowed like every
 // other diagnostic write in this file rather than risking a save.
-function touchExtensionContact(): void {
+export function touchExtensionContact(): void {
   try {
     fs.mkdirSync(configDir(), { recursive: true });
     fs.writeFileSync(extensionContactPath(), new Date().toISOString(), 'utf8');
@@ -128,7 +123,7 @@ function touchExtensionContact(): void {
 // generation (capture.log.1) at ~2MB so it can't grow unbounded.
 const CAPTURE_LOG_MAX = 2 * 1024 * 1024;
 
-function appendLog(entry: Record<string, unknown>): void {
+export function appendLog(entry: Record<string, unknown>): void {
   try {
     const file = path.join(configDir(), 'capture.log');
     try {
@@ -157,7 +152,7 @@ function appendLog(entry: Record<string, unknown>): void {
 // failure can happen before any handler is entered (the guarded DNS lookup runs
 // inside fetch).
 subscribeMediaFailures((info) => {
-  appendLog(Object.assign({ stage: 'media', phase: 'fail' }, info));
+  appendLog({ stage: 'media', phase: 'fail', ...info });
 });
 
 // One capture.log line saying this host has RECEIVED a save and started on it
@@ -229,7 +224,7 @@ function readSaveFolder(): string {
   } catch {
     // No config yet (or unreadable) — fall through to pointer / default.
   }
-  let pointer = null;
+  let pointer: string | null = null;
   try {
     pointer = fs.readFileSync(path.join(configDir(), 'saveFolder.path'), 'utf8').trim() || null;
   } catch {
@@ -424,7 +419,7 @@ function statMtimeMs(p: string): number {
 // drains the inbox. Updates the live map too: within one port's lifetime the
 // badge must light on the post the user just saved without waiting for any
 // file to settle.
-function noteSaved(url: unknown, captureId: string, media?: unknown): void {
+export function noteSaved(url: unknown, captureId: string, media?: unknown): void {
   const key = postKeyOf(typeof url === 'string' ? url : null);
   if (!key) return;
   const urls = mediaUrlsOf({ media });
@@ -595,7 +590,7 @@ function savedIndex(folder: string): SavedIndex {
 // own index already applies that rule; it is re-applied here because the saved
 // half has two more sources behind it (the journal and the inbox rescan) that the
 // app's snapshot could not have known about.
-function handleQuery(req: QueryRequest): QueryAck {
+export function handleQuery(req: QueryRequest): QueryAck {
   // Guarded despite the contract's string[], because this handler is ALSO
   // called directly by its unit tests (scripts/bridge-query.test.ts): the badge
   // query is a read, and answering an empty result beats throwing inside it.
@@ -626,7 +621,7 @@ function handleQuery(req: QueryRequest): QueryAck {
 // blocks already do by convention in this file.
 async function downloadSavedLinkCard(linkCard: any, saveFolder: string, base: string, budget): Promise<any> {
   if (!linkCard || !linkCard.url) return null;
-  let thumbnailFile = null;
+  let thumbnailFile: string | null = null;
   if (linkCard.thumbnail) {
     try {
       thumbnailFile = await downloadLinkCardThumbnail(linkCard.thumbnail, saveFolder, base, budget);
@@ -637,7 +632,7 @@ async function downloadSavedLinkCard(linkCard: any, saveFolder: string, base: st
   return { url: linkCard.url, title: linkCard.title || null, description: linkCard.description || null, thumbnailFile };
 }
 
-async function handleSave(req: SaveRequest): Promise<CaptureAck> {
+export async function handleSave(req: SaveRequest): Promise<CaptureAck> {
   // Re-checked, not merely trusted: parseHostRequest has already applied
   // CAPTURE_ID_PATTERN, but this id becomes a FILENAME, and a path-escape guard
   // that only holds when the caller took one particular route is not a guard.
@@ -670,7 +665,7 @@ async function handleSave(req: SaveRequest): Promise<CaptureAck> {
   // Best-effort original-media download. A failure here must NEVER fail the save:
   // the screenshot + inbox envelope are the primary artifacts. The envelope is
   // written LAST so media[].file reflects exactly what landed on disk.
-  let savedMedia = [];
+  let savedMedia: MediaDescriptor[] = [];
   try {
     savedMedia = await downloadMedia(meta.media, saveFolder, base, budget);
   } catch {
@@ -681,7 +676,7 @@ async function handleSave(req: SaveRequest): Promise<CaptureAck> {
   // avatarFile null (the viewer hides it) and never fails the save. Shared
   // store (avatars/<urlhash>.<ext>): a re-save of the same author reuses the
   // existing file instead of writing another copy.
-  let avatarFile = null;
+  let avatarFile: string | null = null;
   try {
     avatarFile = await downloadAvatar(meta.avatar, meta.avatarReferer, saveFolder, budget);
   } catch {
@@ -691,7 +686,7 @@ async function handleSave(req: SaveRequest): Promise<CaptureAck> {
   // #289: the poster's banner image, into the SAME shared avatars/ store as
   // the avatar just above (2026-08-02 "バナーは実体保存する" decision) — same
   // best-effort contract, same URL-hash dedup, no separate store.
-  let bannerFile = null;
+  let bannerFile: string | null = null;
   try {
     bannerFile = await downloadAvatar(meta.banner, undefined, saveFolder, budget);
   } catch {
@@ -701,7 +696,7 @@ async function handleSave(req: SaveRequest): Promise<CaptureAck> {
   // #290: the post's own :shortcode: custom emoji, into the shared emoji/
   // store — same best-effort contract as the avatar just above (one emoji's
   // fetch failure never fails the save or drops the others).
-  let customEmojis = [];
+  let customEmojis: CustomEmojiDescriptor[] = [];
   try {
     customEmojis = await downloadCustomEmojis(meta.customEmojis, saveFolder, budget);
   } catch {
@@ -712,18 +707,21 @@ async function handleSave(req: SaveRequest): Promise<CaptureAck> {
   // downloadSavedLinkCard's comment for the best-effort contract.
   const linkCard = await downloadSavedLinkCard(meta.linkCard, saveFolder, base, budget);
 
-  const record = normalizePostRecord(
-    Object.assign({}, meta, {
-      captureId: base,
-      image: `${base}.jpg`,
-      media: savedMedia,
-      avatarFile,
-      bannerFile,
-      customEmojis,
-      linkCard,
-      raw: packRawPayloads(meta.rawPayloads),
-    }),
-  );
+  // Spread, not Object.assign: the fields below OVERRIDE the announced ones the
+  // extension sent (media[] especially — announced URLs in, downloaded files
+  // out). Object.assign types its result as an INTERSECTION, so `media` would
+  // read as "announced AND downloaded", a shape neither side produces.
+  const record = normalizePostRecord({
+    ...meta,
+    captureId: base,
+    image: `${base}.jpg`,
+    media: savedMedia,
+    avatarFile,
+    bannerFile,
+    customEmojis,
+    linkCard,
+    raw: packRawPayloads(meta.rawPayloads),
+  });
   // Commit point: the rename into new/ inside writeInboxEvent is what makes
   // this capture durable (#299 design comment). A throw here (disk full, tmp
   // create collision) is caught upstream and returned as { ok:false, error }.
@@ -767,7 +765,7 @@ async function handleSave(req: SaveRequest): Promise<CaptureAck> {
 // permanently prevents. Failing here costs a retry; succeeding here costs the
 // post. recordHoldsContent is the shared rule (post-record.mts), and the badge
 // index applies the SAME rule so shells written before this fix stop answering.
-async function handleSavePost(req: SavePostRequest): Promise<BulkAck> {
+export async function handleSavePost(req: SavePostRequest): Promise<BulkAck> {
   const captureId = isCaptureId(req.captureId) ? req.captureId : null; // see handleSave
   if (!captureId) throw new Error('Invalid captureId');
 
@@ -791,7 +789,7 @@ async function handleSavePost(req: SavePostRequest): Promise<BulkAck> {
   }
   if (announced && !savedMedia.length) throw new Error('Media download produced no files');
 
-  let avatarFile = null;
+  let avatarFile: string | null = null;
   try {
     avatarFile = await downloadAvatar(meta.avatar, meta.avatarReferer, saveFolder, budget);
   } catch {
@@ -799,7 +797,7 @@ async function handleSavePost(req: SavePostRequest): Promise<BulkAck> {
   }
 
   // #289: see handleSave — same shared avatars/ store, same best-effort contract.
-  let bannerFile = null;
+  let bannerFile: string | null = null;
   try {
     bannerFile = await downloadAvatar(meta.banner, undefined, saveFolder, budget);
   } catch {
@@ -807,7 +805,7 @@ async function handleSavePost(req: SavePostRequest): Promise<BulkAck> {
   }
 
   // #290: see handleSave — same shared emoji/ store, same best-effort contract.
-  let customEmojis = [];
+  let customEmojis: CustomEmojiDescriptor[] = [];
   try {
     customEmojis = await downloadCustomEmojis(meta.customEmojis, saveFolder, budget);
   } catch {
@@ -817,18 +815,17 @@ async function handleSavePost(req: SavePostRequest): Promise<BulkAck> {
   // #181: see handleSave — same best-effort contract.
   const linkCard = await downloadSavedLinkCard(meta.linkCard, saveFolder, base, budget);
 
-  const record = normalizePostRecord(
-    Object.assign({}, meta, {
-      captureId: base,
-      image: null,
-      media: savedMedia,
-      avatarFile,
-      bannerFile,
-      customEmojis,
-      linkCard,
-      raw: packRawPayloads(meta.rawPayloads),
-    }),
-  );
+  const record = normalizePostRecord({
+    ...meta, // overridden below — see handleSave
+    captureId: base,
+    image: null,
+    media: savedMedia,
+    avatarFile,
+    bannerFile,
+    customEmojis,
+    linkCard,
+    raw: packRawPayloads(meta.rawPayloads),
+  });
   // Nothing of the post arrived — see this function's comment. Thrown before
   // the envelope is written AND before noteSaved, so the post stays unsaved and
   // unbadged: the next intake run offers it again instead of skipping it.
@@ -851,7 +848,7 @@ async function handleSavePost(req: SavePostRequest): Promise<BulkAck> {
 // pictures were already in the library. This is the same "illustration record"
 // shape an imported library item produces. captureId is the normal
 // epochMillis-hex form, so it passes SAFE_ID.
-async function handleSaveDragged(req: SaveDraggedRequest): Promise<DraggedAck> {
+export async function handleSaveDragged(req: SaveDraggedRequest): Promise<DraggedAck> {
   const captureId = isCaptureId(req.captureId) ? req.captureId : null; // see handleSave
   if (!captureId) throw new Error('Invalid captureId');
   if (!req.imageUrl) throw new Error('Missing image URL');
@@ -866,21 +863,21 @@ async function handleSaveDragged(req: SaveDraggedRequest): Promise<DraggedAck> {
   const imageFile = got.file;
 
   const meta = req.metadata;
-  let avatarFile = null;
+  let avatarFile: string | null = null;
   try {
     avatarFile = await downloadAvatar(meta.avatar, meta.avatarReferer, saveFolder, budget);
   } catch {
     avatarFile = null;
   }
   // #289: see handleSave — same shared avatars/ store, same best-effort contract.
-  let bannerFile = null;
+  let bannerFile: string | null = null;
   try {
     bannerFile = await downloadAvatar(meta.banner, undefined, saveFolder, budget);
   } catch {
     bannerFile = null;
   }
   // #290: see handleSave — same shared emoji/ store, same best-effort contract.
-  let customEmojis = [];
+  let customEmojis: CustomEmojiDescriptor[] = [];
   try {
     customEmojis = await downloadCustomEmojis(meta.customEmojis, saveFolder, budget);
   } catch {
@@ -895,7 +892,7 @@ async function handleSaveDragged(req: SaveDraggedRequest): Promise<DraggedAck> {
   // source:'drag' marks the image as the artwork itself (not a post screenshot),
   // so the image-view shows it. Mirrors the migrated records' source marker.
   const media = [{ url: req.imageUrl, file: imageFile }];
-  const record = normalizePostRecord(Object.assign({}, meta, { captureId: base, image: imageFile, media, source: 'drag', avatarFile, bannerFile, customEmojis, linkCard, raw: packRawPayloads(meta.rawPayloads) }));
+  const record = normalizePostRecord({ ...meta, captureId: base, image: imageFile, media, source: 'drag', avatarFile, bannerFile, customEmojis, linkCard, raw: packRawPayloads(meta.rawPayloads) }); // spread: see handleSave
   await writeInboxEvent(saveFolder, buildEnvelope(record));
   noteSaved(record.url, base, record.media); // see handleSave
 
@@ -904,8 +901,14 @@ async function handleSaveDragged(req: SaveDraggedRequest): Promise<DraggedAck> {
 
 // --- stdin reader: buffer bytes and process complete messages ---
 // Only act as a real native-messaging host when executed directly. When this
-// module is require()'d (by a test), skip the reader and expose internals.
-if (require.main === module) {
+// module is imported (by a test), skip the reader and expose internals.
+//
+// The entry-path comparison replaces `require.main === module`, which has no ESM
+// equivalent that holds for both shapes this code runs in: the raw source under
+// Node's type stripping (argv[1] is this file), and the CJS bundle the launcher
+// actually executes (dist/bridge.js, where import.meta.url resolves to that
+// bundle and argv[1] names it).
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   logLine(`launched argv=${JSON.stringify(process.argv.slice(2))} saveFolder=${readSaveFolder()}`);
   let buffer = Buffer.alloc(0);
 
@@ -1012,4 +1015,10 @@ if (require.main === module) {
 // _resetSavedIndex is a test seam: the index caches for the life of the process,
 // which is right for a real host (one process per port) and wrong for a test file
 // that walks several save folders in a row.
-module.exports = { handleSave, handleSavePost, handleSaveDragged, downloadMedia, downloadAvatar, saveStillImage, createByteBudget, appendLog, handleQuery, noteSaved, touchExtensionContact, _resetSavedIndex: () => (savedIndexCache = null) };
+// Re-exported from media-download.mts: the tests reach the downloader through
+// the bridge (the caller whose caps and budget they are asserting), and the same
+// re-export is what app/src/main gets when it loads the bundle.
+export { downloadMedia, downloadAvatar, saveStillImage, createByteBudget };
+
+// Test-only: drops the saved-post index cache so a suite can re-seed the folder.
+export const _resetSavedIndex = () => (savedIndexCache = null);

@@ -3,8 +3,8 @@
 // so a record built by ANY producer ends up with the exact same keys.
 //
 // Today three places independently assemble what is supposed to be the same
-// "illustration record" (bridge.cts's comment name for it):
-//   - native-host/bridge.cts's handleSave/handleSaveDragged (captures)
+// "illustration record" (bridge.mts's comment name for it):
+//   - native-host/bridge.mts's handleSave/handleSaveDragged (captures)
 //   - app/src/main/ipc-transfer.ts's import-posts (ZIP import) — its own hand-listed
 //     ~30 fields, found (2026-07-18 codebase pass, #5 comment) to already be
 //     missing media[] and replyToId that the other two producers carry
@@ -24,14 +24,11 @@
 // builder, so this is the one place that guarantees no producer's raw text
 // reaches the library unnormalized.
 //
-// Kept Electron-free (node builtins and its .mts siblings only) so it
-// unit-tests in plain node under both the native-host CJS runtime (via require,
-// like bridge.cts requires media-download.cts) and the app's ESM runtime — the
-// same cross-boundary role native-host/post-key.mts already plays, and the same
-// reason this is .mts while its native-host siblings are .cts (see that
-// file's comment for the mechanics).
+// Kept Electron-free (node builtins and its siblings in this directory only) so
+// it unit-tests in plain node under both the native-host runtime and the app's
+// — the same cross-boundary role native-host/post-key.mts already plays.
 //
-// St2 creates the type + builder only. Rewiring bridge.cts and app/src/main/ipc-transfer.ts
+// St2 creates the type + builder only. Rewiring bridge.mts and app/src/main/ipc-transfer.ts
 // to build records THROUGH this (instead of their own ad hoc field lists) is
 // St5/St6's job (#295) — this file is inert until then.
 
@@ -309,9 +306,21 @@ export interface PostRecordShape {
 
 // Every field a producer may hand in, all optional — the builder supplies
 // whatever is missing. captureId is the one field every producer computes
-// itself (uniqueBase-derived in bridge.cts, stamp+seq-derived in
+// itself (uniqueBase-derived in bridge.mts, stamp+seq-derived in
 // app/src/main/ipc-transfer.ts) and is required here for the same reason.
-export type PostRecordInput = Partial<Omit<PostRecordShape, 'captureId'>> & { captureId: string };
+//
+// `media` is spelled out because a plain Partial<> is SHALLOW: it made the
+// items themselves full MediaItemShapes, which no producer has ever passed.
+// normMedia() below reads each member off `unknown` and fills in the rest, and
+// that is what the two real producers rely on — the bridge hands over what the
+// downloader committed (no `posterFile` unless there was a poster frame), and
+// the drag path hands over `{ url, file }` alone. The mismatch was invisible
+// while these modules were CommonJS, because tsc could read no exports off
+// them and every cross-module call typed as `any` (#1052).
+export type PostRecordInput = Partial<Omit<PostRecordShape, 'captureId' | 'media'>> & {
+  captureId: string;
+  media?: Partial<MediaItemShape>[];
+};
 
 function normStr(v: unknown): string | null {
   return typeof v === 'string' && v ? v : null;
