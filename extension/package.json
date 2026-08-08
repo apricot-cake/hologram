@@ -17,7 +17,8 @@
     "tokens": "node ../scripts/gen-extension-tokens.cts"
   },
   "dependencies": {
-    "@marbec/web-auto-extractor": "2.2.1"
+    "@marbec/web-auto-extractor": "2.2.1",
+    "entities": "8.0.0"
   },
   "devDependencies": {
     "@types/chrome": "^0.2.5",

@@ -1,6 +1,8 @@
 import WebAutoExtractor from '@marbec/web-auto-extractor';
+import { decodeHTMLAttribute } from 'entities/decode';
 import { chooseWebMeta } from '../utils/extractor/web-meta.ts';
 import type { PageMetaExtractedMessage } from '../utils/messages.ts';
+import type { WaeBucket } from '@marbec/web-auto-extractor';
 import type { WebMetaResult } from '../utils/extractor/web-meta.ts';
 
 // #239: reads schema.org (JSON-LD/microdata/RDFa), OGP, Dublin Core and
@@ -36,8 +38,8 @@ import type { WebMetaResult } from '../utils/extractor/web-meta.ts';
 // attributes: `.content` is the decoded value, straight from the reference
 // implementation of HTML entity decoding. No decoding of our own, and nothing
 // re-parsed. The library keeps the job only it can do (JSON-LD / microdata /
-// RDFa); note that microdata and RDFa values still carry entities — that is
-// the same defect in the fields this one does not feed, tracked separately.
+// RDFa) — and what it hands back from those two formats is decoded below
+// (#902).
 //
 // Shape matches what chooseWebMeta already consumes (lowerMetaMap): keyed by
 // the page's own spelling, values as arrays, `<head>` only, plus the `<title>`
@@ -58,6 +60,47 @@ function metatagsFromDom(doc: Document): Record<string, string[]> {
   return out;
 }
 
+// #902, the other half of the same defect: microdata and RDFa are assembled by
+// the library out of its own read of the serialized HTML, so `Tom &amp; Jerry
+// &mdash; 記事名` reaches chooseWebMeta with the references still in it. The
+// `<meta>` trick above cannot help here — these values come from `itemprop`
+// elements' text and from `content`/`href` attributes all over the body, not
+// from a handful of tags with a decoded DOM property to read.
+//
+// WHY A DEPENDENCY. `entities` is the decoder htmlparser2/cheerio/parse5 use;
+// it is the ecosystem's standard answer, table-complete (`&mdash;` `&nbsp;`
+// and the rest, not just the five URL-critical ones) and needs no HTML to be
+// re-parsed to get an answer. It has no dependencies of its own, and is a
+// DIRECT dependency of extension/ at a pinned version (ADR 0002), not a
+// transitive one borrowed from somewhere else in the tree. Cost, measured
+// 2026-08-07: read-meta.js 17.5KB -> 56.0KB, nearly all of it the named-
+// reference table. That bundle is read from disk and injected once per
+// bookmark save — no network, no per-page cost.
+//
+// WHY THE ATTRIBUTE MODE. `decodeHTMLAttribute` differs from `decodeHTML` on
+// exactly one thing: the legacy semicolon-less references (`&amp` followed by
+// an alphanumeric or `=`) are left alone instead of decoded. Text-mode there
+// would rewrite the query string `?a=1&ampersand=2` to `?a=1&ersand=2` — the
+// #894 corruption again, just from the other direction — and microdata feeds
+// author.url. Everything a real page writes (`&amp;`, `&mdash;`, `&#39;`,
+// `&#x2014;`) is terminated and decodes identically in both modes.
+//
+// NOT APPLIED TO JSON-LD: that bucket comes from a `<script>` element's raw
+// text, which carries no references at all, so decoding it would corrupt a
+// literal `&amp;` an author actually wrote (this issue's own acceptance
+// condition). Keys are left as-is too — they are `@type`/property names that
+// chooseWebMeta matches against fixed spellings.
+function decodeDeep(value: unknown): unknown {
+  if (typeof value === 'string') return decodeHTMLAttribute(value);
+  if (Array.isArray(value)) return value.map(decodeDeep);
+  if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([key, v]) => [key, decodeDeep(v)]));
+  return value;
+}
+
+function decodeBucket(bucket: WaeBucket | undefined): WaeBucket {
+  return decodeDeep(bucket || {}) as WaeBucket;
+}
+
 export default defineUnlistedScript(() => {
   const fallback: WebMetaResult = { title: null, description: null, author: null, published: null, siteName: null, image: null, url: location.href, metaSource: {} };
   let result: WebMetaResult;
@@ -67,7 +110,7 @@ export default defineUnlistedScript(() => {
     // never the raw (possibly relative) attribute text.
     const canonical = (document.querySelector('link[rel="canonical"]') as HTMLLinkElement | null)?.href || null;
     const parsed = new WebAutoExtractor().parse(document.documentElement.outerHTML);
-    result = chooseWebMeta({ ...parsed, metatags: metatagsFromDom(document) }, { pageUrl: location.href, canonicalHref: canonical, baseURI: document.baseURI });
+    result = chooseWebMeta({ ...parsed, metatags: metatagsFromDom(document), microdata: decodeBucket(parsed.microdata), rdfa: decodeBucket(parsed.rdfa) }, { pageUrl: location.href, canonicalHref: canonical, baseURI: document.baseURI });
   } catch {
     // A parse failure must not leave the save hanging until background.ts's
     // deadline fires (#507's own reasoning) — an empty read degrades exactly
