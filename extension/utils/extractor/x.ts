@@ -680,9 +680,14 @@ const x: Extractor = {
     // already the original — name=orig on them answers 200 with byte-identical
     // content (measured on live X, 2026-07-28), so rewriting would only add a
     // duplicate candidate URL.
-    if (!mediaHostIs(url, 'pbs.twimg.com') || !url.includes('/media/')) return null;
+    //
+    // Not mediaHostIs: this runs in the background service worker on a URL
+    // the API already returned as absolute, not in a content script with a
+    // `location` to resolve against — mediaHostIs's `location.origin` base
+    // throws there (dom.ts's own header: DOM-phase, read at call time).
     try {
       const u = new URL(url);
+      if (u.hostname !== 'pbs.twimg.com' || !u.pathname.startsWith('/media/')) return null;
       u.searchParams.set('name', 'orig');
       return u.href;
     } catch {
