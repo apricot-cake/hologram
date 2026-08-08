@@ -58,7 +58,6 @@ export interface PostGridBuilderDeps {
   smokeCapture: boolean;
   fileSrc(file: string, w?: number): string;
   shape(): DisplayShape;
-  multiOnly(): boolean;
   gridThumbW(): number;
   listThumbW(): number;
   sortValue(): string;
@@ -70,7 +69,6 @@ export interface PostGridBuilderDeps {
   resolve(key: string): string;
   snapshotState(): unknown;
   syncTitleAndPersist(): void;
-  getBrowseMode(): string;
   renderPosters(keepLimit?: boolean): void;
   onPostsLoaded(): void;
   showDetail(g: HologramPostGroup, opts?: { focusTags?: boolean }): void;
@@ -172,7 +170,7 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
       allPosts = [..._postsById.values()];
       markPostsMutated();
       stickyRecs.clear(); // on a screen refresh (reload), clean out the mutation-survivor entries
-      if (deps.getBrowseMode() === 'posters') deps.renderPosters(keepLimit);
+      if (store.getState().browseMode === 'posters') deps.renderPosters(keepLimit);
       else renderPosts(keepLimit);
       reconcileFolders();
       // The open image view re-derives live via services/image-tab.ts's
@@ -339,7 +337,7 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
       sections = _lastSections; // same build → same buckets, no need to re-walk it
     } else {
       viewGroups = groupRecords(deps.getFilteredPosts());
-      if (deps.multiOnly()) viewGroups = viewGroups.filter((g) => g.files.length > 1 || g.records.some((r) => stickyRecs.has(r.captureId)));
+      if (store.getState().multiOnly) viewGroups = viewGroups.filter((g) => g.files.length > 1 || g.records.some((r) => stickyRecs.has(r.captureId)));
       sections = buildDateSections(viewGroups, deps.sortValue(), deps.t);
     }
 

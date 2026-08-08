@@ -108,7 +108,6 @@ export let showTabMenu: (id: string, at: { clientX: number; clientY: number }) =
 // registration rather than something the strip owns.
 export let handleGlobalTabShortcut: (e: KeyboardEvent) => void;
 export let handleDisplayStoreChange: () => void;
-export let handleBrowseModeStoreChange: () => void;
 export let handlePosterDisplayStoreChange: () => void;
 export let handleSearchQueryStoreChange: () => void;
 export let navBack: () => void;
@@ -348,7 +347,7 @@ export function endFilterEditSession(): void {
   // 'timeline' case to listing.ts's switch) means every reader of sortValue()
   // (getFilteredPosts, the month-section builder, the engagement/captured-date
   // relevance gates) picks it up for free through the existing 'date-desc' path.
-  const sortValue = () => (browseMode === 'timeline' ? 'date-desc' : store.getState().sortPost);
+  const sortValue = () => (store.getState().browseMode === 'timeline' ? 'date-desc' : store.getState().sortPost);
 
   // --- Query Field ---
   const ENG_TYPE_LABELS: Record<string, string> = {
@@ -409,7 +408,7 @@ export function endFilterEditSession(): void {
   // Back/forward through the per-tab view history (nav's state machine, the Alt+←/→ +
   // mouse-side-button handlers, and the tab bar/CRUD below) moved to tabs-builder.ts
   // during the viewer.ts decomposition; tabsCtl is constructed further below
-  // (after postQB/postGrid/browseMode/multiOnly are in scope) and its handlers are
+  // (after postQB/postGrid are in scope) and its handlers are
   // assigned to the module-scope exports at that construction site.
 
   // The empty state's CTAs are its own component's onClick now (empty/EmptyState.tsx),
@@ -453,8 +452,8 @@ export function endFilterEditSession(): void {
   // scope — no TDZ workaround needed, unlike the old taggingApi indirection.
   const { showKindMenu } = makeKindMenu({ tagKindOf, tagKindOfName, tagIdOf: (name) => tagIdOf(name), kindLabel, t: getMessage });
   // Facet aggregation (facetCounts) + value-flyout row models (qfValues) moved to
-  // facets.ts — 3rd extraction slice. Runtime couplings are injected: reassigned
-  // lets (allPosts/multiOnly) as getters, and
+  // facets.ts — 3rd extraction slice. Runtime couplings are injected: the
+  // grid-owned collections (allPosts) as getters, and
   // consts declared after this point (posterQB / pfStore / the listing.ts
   // products) as deferred arrow wrappers — a direct ref here would hit TDZ at
   // wiring time; the wrappers only run when a flyout opens.
@@ -513,7 +512,8 @@ export function endFilterEditSession(): void {
   // (The delegated #filterRows listener lived here — the last delegated listener of the old
   // facet-row column. Its container went with the shell cutover and the column itself
   // with P3 #6, so every row it routed is either the filter bar's (adding filters) or
-  // gone. multiOnly survives as tab state only; see setMultiOnly below.)
+  // gone. multiOnly survives as tab state only — hologramStore's key, written by
+  // tabs-builder's own state restore.)
 
   // --- Tag area: the Tags row opens ONE flyout listing every general tag
   // (no Kind). The Work/Character kinded tags get their own rows; general tags stay a
@@ -547,7 +547,6 @@ export function endFilterEditSession(): void {
     markPostsMutated: () => postGrid.markPostsMutated(),
     renderPosts: (keepLimit) => postGrid.renderPosts(keepLimit),
     getViewGroups: () => postGrid.getViewGroups(),
-    getInspectedKey: () => inspectedKey,
     showDetail: (g) => showDetail(g), // showDetail (inspector) is declared far below — deferred
     refreshPosterTagFields: (key) => refreshPosterTagFields(key), // refreshPosterTagFields (posterGrid) is declared far below — deferred
     getPosterFolderStore: () => posterGrid.pfStore, // posterGrid is declared far below — deferred
@@ -569,8 +568,10 @@ export function endFilterEditSession(): void {
   // allPosts/_postsById/loadPosts/renderPosts and the render-reuse guard moved to
   // post-grid-builder.ts (the "allPosts ownership transfer") — postGrid is
   // constructed below, after buildUsers/postQB are in scope.
-  let browseMode = 'posts'; // 'posts' | 'posters' | 'trash' | 'timeline' (what the content area browses) — per-tab now: the tab's current history entry decides (#144 confirmed (pending item 3); #183 added timeline)
-  let multiOnly = false; // show only items with more than one image
+  // What the content area browses ('posts' | 'posters' | 'trash' | 'timeline') and
+  // the "more than one image" narrowing are hologramStore keys ('browseMode' /
+  // 'multiOnly'), not closure state mirrored into it: the components and the
+  // builders read the same key, so there is one value and one place to write it.
   // SMOKE capture: the hidden screenshot instance never has anything "on-screen",
   // so content-visibility:auto skips painting every card and loading=lazy images
   // never fetch → blank grid. Launched via ?smoke=1, we flip both off (CSS class
@@ -599,18 +600,11 @@ export function endFilterEditSession(): void {
   // Grouping state (manualGroups/ungrouped/stickyRecs, persisted via main:
   // manual-groups.json / ungrouped.json) moved to post-grid-builder.ts along with
   // viewGroups — see postGrid below.
-  // postIdKey of the group shown in the inspector (ring marker). Mirrored into
-  // hologramStore so the grid/poster cells derive their own '.inspected' ring via
-  // useSyncExternalStore — no more manual repaint()/pushPosterModel() calls to
-  // refresh the ring on open/close (the store notify does that reactively).
-  let inspectedKey: string | null = null;
-  function setInspectedKey(key: string | null) {
-    inspectedKey = key;
-    store.setState({ inspectedKey: key });
-  }
-  // (A write of null used to sit here to establish the initial value, because the
-  // untyped store answered `undefined` until someone had written the key. The typed
-  // store declares it — see services/store.ts's INITIAL.)
+  // postIdKey of the group shown in the inspector (ring marker) is hologramStore's
+  // 'inspectedKey' — the grid/poster cells derive their own '.inspected' ring from
+  // it via useSyncExternalStore, and the builders that open/close the inspector
+  // (inspector-builder / poster-grid-builder / undo-builder) read and write that
+  // same key directly, so there is nothing here to mirror.
   // Display density (card/tile/list) + tile/card/list size slider, for both the
   // post grid and the poster grid, moved to grid-density-builder.ts during the
   // viewer.ts decomposition. renderPosts/renderPosters are forward
@@ -621,7 +615,6 @@ export function endFilterEditSession(): void {
     hologramPostGridSource,
     renderPosts: (inPlace) => renderPosts(inPlace),
     renderPosters: () => renderPosters(),
-    getBrowseMode: () => browseMode,
   });
   const { gridThumbW, listThumbW } = gridDensity;
   // Post-grid selection state (Set + shift-range anchor) lives in
@@ -815,7 +808,6 @@ export function endFilterEditSession(): void {
     smokeCapture: SMOKE_CAPTURE,
     fileSrc,
     shape: currentShape,
-    multiOnly: () => multiOnly,
     gridThumbW,
     listThumbW,
     sortValue,
@@ -825,7 +817,6 @@ export function endFilterEditSession(): void {
     resolve: (key) => aliases.resolve(key), // #23 St1
     snapshotState: () => tabsCtl.snapshotState(), // tabsCtl is constructed below — deferred forward reference
     syncTitleAndPersist: () => tabsCtl.syncTitleAndPersist(),
-    getBrowseMode: () => browseMode,
     renderPosters: (keepLimit) => renderPosters(keepLimit),
     onPostsLoaded: () => {
       // The open image view re-derives live via services/image-tab.ts's
@@ -911,11 +902,6 @@ export function endFilterEditSession(): void {
     // restored tab reproduces the order it was showing.
     getShuffleSeed: () => store.getState().shuffleSeed,
     setShuffleSeed: (v) => store.setState({ shuffleSeed: v || '' }),
-    getMultiOnly: () => multiOnly,
-    setMultiOnly: (v) => {
-      multiOnly = v;
-      store.setState({ multiOnly: multiOnly }); // mirror into the store — the sidebar/Tabs sources read it directly
-    },
     searchQuery: () => searchQuery(), // makeSearchBox() is wired far below — deferred
     setSearchBoxValue: (v) => setSearchBoxValue(v),
     rebindEditingTextLeaf: () => rebindEditingTextLeaf(),
@@ -923,7 +909,6 @@ export function endFilterEditSession(): void {
     setLastRenderedState: (json) => postGrid.setLastRenderedState(json),
     getAllPostsCount: () => postGrid.getAllPosts().length,
     resetAllFilters: () => resetAllFilters(),
-    getBrowseMode: () => browseMode,
     setBrowseModeLite: (m) => setBrowseModeLite(m), // setBrowseModeLite is declared far below — deferred
     contentScrollTop: () => contentScrollTop(),
     scrollContentTo: (y) => scrollContentTo(y),
@@ -1192,9 +1177,9 @@ export function endFilterEditSession(): void {
   // Open/close chrome, the inline tag editor (add/toggle/adopt-source-tag +
   // homonym check), the group dissolve/regroup buttons, and the Esc/outside-click
   // dismiss guards moved to inspector-builder.ts during the viewer.ts
-  // decomposition. inspectedKey/setInspectedKey stay here — other not-yet-
-  // extracted clusters read/write them too (poster card click below, undo,
-  // browse-mode switch) — inspector-builder.ts only gets the accessor pair.
+  // decomposition. The inspected key itself is hologramStore's 'inspectedKey' —
+  // this module's other readers/writers (the poster card click below, undo, the
+  // browse-mode switch) all go to that key, so nothing is passed in for it.
   const inspector = makeInspector({
     t: getMessage,
     fileSrc,
@@ -1217,8 +1202,6 @@ export function endFilterEditSession(): void {
     markPostsMutated,
     renderPosts,
     keepCurrentVisible,
-    getInspectedKey: () => inspectedKey,
-    setInspectedKey,
     getActiveTabId,
     closeTab,
     imageTabShowing: () => imageTabCtl.isShowing(), // primitive read — live, not a snapshot
@@ -1251,7 +1234,6 @@ export function endFilterEditSession(): void {
     // bulkTag is constructed just below — deferred since it needs this
     // selectionCtl's own selectedRecords.
     openBulkTagDialog: () => bulkTag.openBulkTagDialog(),
-    getBrowseMode: () => browseMode, // orchestrator.ts `let`, read live
     copyGroupImage: (g) => postGrid.copyGroupImage(g),
     openQuickView: (g) => lightboxOpen(buildGroupGalleryItems(g)[0]), // Space peek (single image, #143)
     showDetail: (g) => showDetail(g), // arrow movement swaps the inspector, same as a plain click
@@ -1334,20 +1316,16 @@ export function endFilterEditSession(): void {
   // that has not been through here cannot be written. collections retired (now a
   // sidebar folder list).
   const normalizeBrowseMode = (mode: string): HologramBrowseMode => (mode === 'posters' ? 'posters' : mode === 'trash' ? 'trash' : mode === 'timeline' ? 'timeline' : 'posts');
-  // The light half: flip the mode state (let + store mirror + stale-detail close)
-  // WITHOUT rendering. applyEntry (tabs-builder) uses this so a history restore
-  // renders exactly once — its own kind-specific render right after.
+  // The light half: write the mode (+ close a stale detail) WITHOUT rendering.
+  // applyEntry (tabs-builder) uses this so a history restore renders exactly once
+  // — its own kind-specific render right after.
   // No pref write anywhere: mode is per-tab state on the history entry now (#144
   // confirmed (pending item 3) — the old global browseMode pref is retired; a new tab opens posts).
   function setBrowseModeLite(raw: string) {
     const mode = normalizeBrowseMode(raw);
-    if (browseMode === mode) return;
-    browseMode = mode;
-    // Mirror into the store so the React components (LeftSidebar active state, App's
-    // ShellClasses body.browse-posters — CSS hides the inactive grid) reflect the
-    // mode even when an INTERNAL setter drove us. Safe against recursion: the
-    // store's set is value-guarded, and browseMode === mode by now so the
-    // subscribe handler's guard skips.
+    if (store.getState().browseMode === mode) return;
+    // The store IS the mode: the React components (LeftSidebar active state, the
+    // grid hosts) and the builders that branch on it all read this one key.
     store.setState({ browseMode: mode });
     dismissDetail(); // a stale post/poster detail shouldn't survive the switch — but the panel itself should
   }
@@ -1362,7 +1340,7 @@ export function endFilterEditSession(): void {
     // updated synchronously above; defer the heavy grid render past a paint so the
     // switch shows INSTANTLY instead of blocking on renderPosts/Posters.
     const render = () => {
-      if (browseMode !== mode) return;
+      if (store.getState().browseMode !== mode) return;
       // The trash reads .trash/ instead of the library, and records NO history entry
       // — it is not a view a tab can be restored into (see normalizeBrowseMode).
       if (mode === 'trash') trashRefresh();
@@ -1376,15 +1354,15 @@ export function endFilterEditSession(): void {
   // the destination is a place to move TO: hide the view, then let setBrowseMode
   // render and record the grid entry — even for the current mode (setBrowseMode
   // still renders, and with activeImageTab cleared that render records the entry
-  // the store's same-value guard would otherwise swallow, stranding the view on the
-  // image). Off the image view the store stays the interface, so its same-value
-  // guard keeps pressing the active destination a no-op — UNLESS that destination
-  // is filtered (#812): "ライブラリ"/"投稿者" name the whole set, so landing on a
-  // filtered subset reads as broken. Pressing the destination (fresh arrival or a
-  // repeat click on the one already open) resets ONLY that side's filters —
-  // resetAllFilters/resetPosterFilters already record their own history entry, so
-  // Alt+← undoes a reset the same as any other filter change. A destination with
-  // nothing to reset stays the untouched no-op (no stray render/history entry).
+  // the same-mode check below would otherwise swallow, stranding the view on the
+  // image). Off the image view, pressing the destination already open is a no-op
+  // — UNLESS that destination is filtered (#812): "ライブラリ"/"投稿者" name the
+  // whole set, so landing on a filtered subset reads as broken. Pressing the
+  // destination (fresh arrival or a repeat click on the one already open) resets
+  // ONLY that side's filters — resetAllFilters/resetPosterFilters already record
+  // their own history entry, so Alt+← undoes a reset the same as any other filter
+  // change. A destination with nothing to reset stays the untouched no-op (no
+  // stray render, no stray history entry).
   browseTo = (raw) => {
     const mode = normalizeBrowseMode(raw);
     const posters = mode === 'posters';
@@ -1394,22 +1372,14 @@ export function endFilterEditSession(): void {
       imageTabCtl.hideImageView();
       if (hasFilters) reset();
       setBrowseMode(mode);
-    } else {
-      if (hasFilters) reset();
-      store.setState({ browseMode: mode });
+      return;
     }
-  };
-  // Browse mode is the left sidebar's (hologramStore 'browseMode').
-  // React owns the active state + glass thumb; orchestrator reacts to a mode change by running
-  // the heavy switch. The idempotent guard skips the no-op set from the pref restore
-  // below, so the loop stays one-way (component → store → orchestrator, never back). React owns
-  // the subscribe() registration (StoreSubscriptions, App.tsx), importing this directly;
-  // this stays the guard + action logic. Assigned (not a hoisted declaration) so the
-  // module-scope `export let` above is what gets set.
-  handleBrowseModeStoreChange = function () {
-    const m = store.getState().browseMode;
-    if (m === browseMode) return;
-    setBrowseMode(m);
+    if (hasFilters) reset();
+    // setBrowseMode always renders and records, so the "already there" case is
+    // gated here. This used to be spelled as a write to hologramStore that came
+    // back through a subscribe handler — one value, written and read by the same
+    // module, with React's subscription registration as a detour in between.
+    if (store.getState().browseMode !== mode) setBrowseMode(mode);
   };
 
   // --- Poster grid (Poster view) ------------------------------------------
@@ -1453,7 +1423,6 @@ export function endFilterEditSession(): void {
     buildUsers,
     getAllPosts: postGrid.getAllPosts,
     groupRecords: postGrid.groupRecords,
-    getInspectedKey: () => inspectedKey, // #23 St1
     markPostsMutated: () => postGrid.markPostsMutated(), // #23 St1
     namedPosters, // #23 St1 — the merge picker's candidate population
     posterQBGetTree: () => posterQB.getTree(),
@@ -1469,7 +1438,6 @@ export function endFilterEditSession(): void {
     // rule as the post panel's: × is the docked column's one way off the screen,
     // so it stores the preference.
     closeDetail,
-    setInspectedKey,
     onPosterRendered: () => tabsCtl.syncPosterTitleAndPersist(),
   });
   const { pfStore, posterFolderById, deletePosterFolder, renderPosters, openPosterPosts, jumpToPoster, refreshPosterTagFields, showPosterDetail, showPosterMenu } = posterGrid;
@@ -1605,7 +1573,7 @@ export function endFilterEditSession(): void {
       if (char.length) out.push({ ghead: kindLabel('character') }, ...char);
       return out;
     };
-    if (browseMode === 'posters') {
+    if (store.getState().browseMode === 'posters') {
       const vc = valuesCat(posterQB, POSTER_FACET_OPTS);
       const cats: FilterCat[] = [vc('poster-platform', getMessage('sbPosterPlatformTitle'), 'platform', false), vc('poster-tag', getMessage('sbPosterTagsTitle'), 'tag', true, { valuesFn: combinedTagValues('poster-tag', 'poster-work', 'poster-character') })];
       if (qfValues('poster-instance').length) cats.push(vc('poster-instance', getMessage('qfInstance'), 'instance', true));
@@ -1719,7 +1687,7 @@ export function endFilterEditSession(): void {
   // leaves collect per type into an "is not" chip (pending decision, option A). Recomputed on every tree
   // change — the component subscribes to the postQueryTree/posterQueryTree store keys.
   activeFilters = function (): ActiveFilter[] {
-    const posters = browseMode === 'posters';
+    const posters = store.getState().browseMode === 'posters';
     const qb = posters ? posterQB : postQB;
     const opts = posters ? POSTER_FACET_OPTS : POST_FACET_OPTS;
     const labelOf = posters ? posterFilterLabel : filterLabel;
@@ -1860,7 +1828,6 @@ export function endFilterEditSession(): void {
     addFilter: (f) => postQB.addFilter(f),
     removeNode: (n) => postQB.removeNode(n),
     treeLeaves,
-    getBrowseMode: () => browseMode,
     afterQueryChange: () => afterQueryChange(),
     renderPosts: () => renderPosts(),
     renderPosters: () => renderPosters(),
@@ -1887,7 +1854,6 @@ export function endFilterEditSession(): void {
     // Only static folders can be a destination (a saved search means replacing the query — a different action).
     listFolders: () => folders.staticFolders(),
     folderPath: (id) => folders.pathOf(id),
-    getBrowseMode: () => browseMode,
     addTab: () => tabsCtl.addTab(),
     openTagManagementTab: () => tabsCtl.openTagManagementTab(),
     openHistoryEntry: (e) => tabsCtl.openHistoryEntry(e),
@@ -1931,7 +1897,7 @@ export function endFilterEditSession(): void {
   // in-progress body-text term, on the premise that "what was typed was only for finding
   // the filter". The chip-band input is not the full-text search field, so it must never
   // get caught up in that.
-  addFilterToCurrentView = (filter) => (browseMode === 'posters' ? posterQB.addFilter(filter) : addFilter(filter));
+  addFilterToCurrentView = (filter) => (store.getState().browseMode === 'posters' ? posterQB.addFilter(filter) : addFilter(filter));
 
   // The display popover's sort Select calls this. Sort lives in the tab state (persisted
   // per tab via renderPosts→persist), not a separate global pref — that double-storage

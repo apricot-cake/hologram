@@ -13,9 +13,9 @@
 // deliberately never mirrored to the store (every read site calls it directly,
 // to avoid a second copy) — this recomputes the same thing from
 // what IS mirrored: query.ts's buildShadow(postQueryTree) is the exact function
-// postQB.shadow() calls internally. searchQuery/sortPost were already mirrored;
-// multiOnly is mirrored for this source's sake (viewer.ts, alongside
-// sortPost). allPostsCount covers the tab title's item count.
+// postQB.shadow() calls internally. searchQuery/sortPost/multiOnly all live in
+// the store, so this source reads them where their writers wrote them.
+// allPostsCount covers the tab title's item count.
 //
 // tabTitleOf itself stays viewer-constructed (tab-state.ts's makeTabLabels
 // with viewer's t/folderName/etc deps, which this file has no access to) —

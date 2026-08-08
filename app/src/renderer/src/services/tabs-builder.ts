@@ -39,8 +39,6 @@ export interface TabsBuilderDeps {
   setSortValue(v: string): void;
   getShuffleSeed(): string;
   setShuffleSeed(v: string): void;
-  getMultiOnly(): boolean;
-  setMultiOnly(v: boolean): void;
   searchQuery(): string;
   setSearchBoxValue(v: string | null | undefined): void;
   rebindEditingTextLeaf(): void;
@@ -48,9 +46,8 @@ export interface TabsBuilderDeps {
   setLastRenderedState(json: string): void;
   getAllPostsCount(): number;
   resetAllFilters(): void;
-  getBrowseMode(): string;
-  // Flip the mode WITHOUT rendering / recording (browseMode let + store mirror +
-  // closeDetail only) — applyEntry runs the right render itself right after.
+  // Flip the mode WITHOUT rendering / recording (the store write + closeDetail
+  // only) — applyEntry runs the right render itself right after.
   // #183: 'timeline' rides the same per-tab history as 'posts' (same postQB
   // state shape, see snapshotState/applyState) — it is a third value here, not
   // a fourth deps method, for exactly that reason.
@@ -109,7 +106,7 @@ export function makeTabsController(deps: TabsBuilderDeps) {
       sort: deps.getSortValue(),
       // Rides along with the sort key so a restored tab reproduces its shuffle (#118).
       shuffleSeed: deps.getShuffleSeed(),
-      multi: deps.getMultiOnly(),
+      multi: store.getState().multiOnly,
     };
   }
   // Poster-side view state — the 'posters' entry payload (mirror of snapshotState).
@@ -122,11 +119,11 @@ export function makeTabsController(deps: TabsBuilderDeps) {
   function snapshotEntry(): HologramNavEntry {
     const iv = store.getState().activeImageTab;
     if (iv) return entryOf('image', { recs: iv.recs, idx: iv.idx });
-    if (deps.getBrowseMode() === 'posters') return entryOf('posters', snapshotPosterState());
+    if (store.getState().browseMode === 'posters') return entryOf('posters', snapshotPosterState());
     // #183: timeline's state is the SAME snapshotState() posts uses (postQB
     // tree/search/sort/shuffleSeed/multi) — only the entry's `kind` differs, so
     // applyEntry below can tell which mode to restore into.
-    if (deps.getBrowseMode() === 'timeline') return entryOf('timeline', snapshotState());
+    if (store.getState().browseMode === 'timeline') return entryOf('timeline', snapshotState());
     return entryOf('posts', snapshotState());
   }
   // push/replace router around nav.record: a one-shot replace flag (sort changes —
@@ -161,7 +158,7 @@ export function makeTabsController(deps: TabsBuilderDeps) {
     // #183: renderPosts() (post-grid-builder.ts) is now the render path for BOTH
     // posts and timeline — this guard has to let both through, and the
     // recordEntry below tags the entry with whichever one is actually live.
-    const mode = deps.getBrowseMode();
+    const mode = store.getState().browseMode;
     if (mode !== 'posts' && mode !== 'timeline') return; // hidden-grid render while browsing posters
     if (onTagsTab()) return;
     const snap = snapshotState();
@@ -177,7 +174,7 @@ export function makeTabsController(deps: TabsBuilderDeps) {
   // are history now that mode is per-tab (#144 pending decision 3).
   function syncPosterTitleAndPersist() {
     if (store.getState().activeImageTab) return;
-    if (deps.getBrowseMode() !== 'posters') return;
+    if (store.getState().browseMode !== 'posters') return;
     if (onTagsTab()) return;
     if (restoringState) return;
     recordEntry(entryOf('posters', snapshotPosterState()));
@@ -193,7 +190,7 @@ export function makeTabsController(deps: TabsBuilderDeps) {
     deps.rebindEditingTextLeaf(); // resume editing the restored term instead of duplicating it
     deps.setSortValue(s.sort);
     deps.setShuffleSeed(s.shuffleSeed || ''); // pre-#118 states have none — random then re-seeds on pick
-    deps.setMultiOnly(!!s.multi);
+    store.setState({ multiOnly: !!s.multi });
     deps.renderPosts();
     restoringState = false;
     document.title = deps.tabTitleOf(s, { allCount: deps.getAllPostsCount() }).text + ' — Hologram';
@@ -280,7 +277,7 @@ export function makeTabsController(deps: TabsBuilderDeps) {
   // The nav Back/Forward disabled state used to be part of a pushed activebar model; the
   // activebar component now self-derives everything else from hologramStore, but
   // nav's canBack/canForward live in a closure (the history stack), not the store — so this
-  // is the one remaining mirror-on-change (same shape as multiOnly/qfCat elsewhere).
+  // is the one remaining mirror-on-change.
   function updateNavButtons() {
     store.setState({ navCanBack: nav.canBack() });
     store.setState({ navCanForward: nav.canForward() });
@@ -649,11 +646,11 @@ export function makeTabsController(deps: TabsBuilderDeps) {
         deps.rebindEditingTextLeaf();
         deps.setSortValue(at.state.sort || 'date-desc');
         deps.setShuffleSeed(at.state.shuffleSeed || ''); // #118 — restore the shuffle order with its sort
-        deps.setMultiOnly(!!at.state.multi);
+        store.setState({ multiOnly: !!at.state.multi });
         // #183: timeline's state fields are identical to posts' (loaded above) —
         // the ONLY thing left to restore is which mode a tab last showed. Default
-        // (browseMode's own initial value) is already 'posts', so this only has
-        // work to do on the timeline branch.
+        // (the store's own initial browseMode) is already 'posts', so this only
+        // has work to do on the timeline branch.
         if (cur && cur.kind === 'timeline') deps.setBrowseModeLite('timeline');
       }
       nav.adopt(at); // adopt the persisted stack (or seed from the restored view)

@@ -20,6 +20,7 @@ import { registerShortcut, tryRun } from './shortcut-registry.ts';
 import { applyPosterTagRecords, getPosterTags } from './tags.ts';
 import { applyFolderItems as applyLibraryFolderItems } from './folders.ts';
 import { restore as restorePosterAliases, type PosterAliasGroup } from './aliases.ts';
+import { store } from './store.ts';
 
 export interface UndoBuilderDeps {
   showToast(msg: unknown): void;
@@ -28,10 +29,6 @@ export interface UndoBuilderDeps {
   markPostsMutated(): void;
   renderPosts(keepLimit?: boolean): void;
   getViewGroups(): HologramPostGroup[];
-  // inspectedKey is an orchestrator.ts `let` (read/written outside this cluster too)
-  // — this module only gets the accessor, same shape as posterReturn/
-  // inspectedKey in poster-grid-builder.ts/inspector-builder.ts.
-  getInspectedKey(): string | null;
   showDetail(g: HologramPostGroup): void;
   refreshPosterTagFields(key: string): void;
   // The poster-folder store is posterGrid's (pfStore) and is built after this
@@ -76,7 +73,7 @@ export function makeUndoController(deps: UndoBuilderDeps) {
     deps.renderPosts(true);
     // Keep the inspector in sync if it's showing the affected group (undo isn't fired
     // while typing in the add input, so a full re-render here is safe).
-    const inspectedKey = deps.getInspectedKey();
+    const inspectedKey = store.getState().inspectedKey;
     if (panelIsVisible() && inspectedKey) {
       const fresh = deps.getViewGroups().find((g2) => postIdKey(g2.rep) === inspectedKey);
       if (fresh) deps.showDetail(fresh);
@@ -92,7 +89,7 @@ export function makeUndoController(deps: UndoBuilderDeps) {
     // an undo only ever restores the RAW names, which is the half the user edited.
     const current = getPosterTags();
     applyPosterTagRecords(changes.map((c) => ({ key: c.target, tags: nextList(current[c.target]?.tags, c) })));
-    const inspectedKey = deps.getInspectedKey();
+    const inspectedKey = store.getState().inspectedKey;
     if (panelIsVisible() && typeof inspectedKey === 'string' && inspectedKey.indexOf('poster:') === 0) {
       deps.refreshPosterTagFields(inspectedKey.slice('poster:'.length));
     }
@@ -104,9 +101,9 @@ export function makeUndoController(deps: UndoBuilderDeps) {
   }
 
   function applyPosterFolderItems(changes: DirectedChange[]) {
-    const store = deps.getPosterFolderStore();
-    if (!store) return;
-    for (const c of changes) store.applyItems(c.target, c.add, c.remove);
+    const pfStore = deps.getPosterFolderStore();
+    if (!pfStore) return;
+    for (const c of changes) pfStore.applyItems(c.target, c.add, c.remove);
     deps.onPosterFolderMembershipChanged();
   }
 

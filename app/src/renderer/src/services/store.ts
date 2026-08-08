@@ -23,11 +23,9 @@
 //     remembering to reach for the batching call.
 //
 // subscribeWithSelector is what keeps the per-key subscriptions the imperative
-// layer relies on: `store.subscribe(s => s.browseMode, cb)` fires only when that
-// slice actually changes. That equality check is load-bearing, not an
-// optimization — orchestrator.ts's setBrowseModeLite writes the mode it is
-// already on to mirror an internal switch, and relies on the no-op NOT
-// re-entering the subscribe handler (see its comment).
+// layer relies on: `store.subscribe(s => s.postGroups, cb)` fires only when that
+// slice actually changes, so a write that lands the same value costs the
+// subscribers nothing.
 import { createStore } from 'zustand/vanilla';
 import { subscribeWithSelector } from 'zustand/middleware';
 import { shallow } from 'zustand/shallow';

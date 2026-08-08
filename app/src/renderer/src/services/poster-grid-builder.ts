@@ -64,11 +64,6 @@ export interface PosterGridBuilderDeps {
   setSearchBoxValue(v: string): void;
   setBrowseMode(mode: string, opts?: { silent?: boolean }): void;
   closeDetail(): void;
-  setInspectedKey(key: string | null): void;
-  // #23 St1: name-merging — same-person section, card-menu merge/unlink, undo.
-  // getInspectedKey mirrors inspector-builder.ts's own accessor (a viewer.ts
-  // `let` read/written outside this cluster too).
-  getInspectedKey(): string | null;
   markPostsMutated(): void;
   namedPosters(): HologramUserAgg[];
   // Fresh poster render → tabs-builder records a 'posters' entry on the per-tab
@@ -358,7 +353,7 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
     // the shell derives that from state, so the write both fought React and contradicted
     // #243 — a poster card click would reveal a panel the user had closed, and leave it
     // revealed until the next render happened to disagree. Post cards never did this.
-    deps.setInspectedKey('poster:' + u.key); // post + poster cards clear/set their ring reactively (hologramStore subscribe)
+    store.setState({ inspectedKey: 'poster:' + u.key }); // post + poster cards clear/set their ring reactively (hologramStore subscribe)
   }
 
   // Poster context menu (right-click a poster card): jump to that poster's posts + assign to
@@ -454,12 +449,12 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
   // (orchestrator.ts wires undo-builder.ts's onPosterAliasChanged to this).
   function refreshAfterAliasChange() {
     renderPosters(true);
-    const key = deps.getInspectedKey();
+    const key = store.getState().inspectedKey;
     if (typeof key !== 'string' || key.indexOf('poster:') !== 0) return;
     const resolved = aliases.resolve(key.slice('poster:'.length));
     const u = deps.buildUsers().find((x) => x.key === resolved);
     if (u) showPosterDetail(u);
-    else deps.setInspectedKey(null); // every post this key ever named is gone — mirrors inspector-builder.ts's inspectedSubjectExists dismissal (that subscription only watches post data, not alias structure, so this is its own guard)
+    else store.setState({ inspectedKey: null }); // every post this key ever named is gone — mirrors inspector-builder.ts's inspectedSubjectExists dismissal (that subscription only watches post data, not alias structure, so this is its own guard)
   }
 
   // Manual merge (#23 St1 UI): confirm ("post data doesn't change"), then union

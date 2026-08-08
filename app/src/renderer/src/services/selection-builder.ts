@@ -19,6 +19,7 @@ import { refresh as trashRefresh } from './trash-view.ts';
 import { get as confirmGet, open as confirmOpen } from './confirm.ts';
 import { isOpen as settingsIsOpen } from './settings.ts';
 import { isTypingTarget, registerShortcut, tryRun } from './shortcut-registry.ts';
+import { store } from './store.ts';
 
 export interface SelectionBarDeps {
   t(key: string, subs?: ReadonlyArray<string | number | null | undefined>): string;
@@ -34,9 +35,6 @@ export interface SelectionBarDeps {
   // openBulkTagDialog lives in bulk-tag-builder.ts — a deferred dep, same shape
   // as jumpToPoster/showToast in inspector-builder.ts.
   openBulkTagDialog(): void;
-  // browseMode is a viewer.ts `let` (read/written outside this cluster too) — a
-  // getter since its value changes over the module's lifetime.
-  getBrowseMode(): string;
   // Copying an image is post-grid-builder.ts's (it owns the density → file
   // choice and the IPC); this module only owns the Ctrl+C gesture and its guards.
   copyGroupImage(g: HologramPostGroup): void;
@@ -172,7 +170,7 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
     if (confirmGet() || lightboxIsOpen()) return false;
     if (settingsIsOpen()) return false;
     if (imageViewIsActive()) return false; // the grid's selection is not on screen (#656) — same guard as Ctrl+C/Space/arrow nav below
-    if (deps.getBrowseMode() !== 'posts') return false; // select-all is post-grid only (posters/collections excluded)
+    if (store.getState().browseMode !== 'posts') return false; // select-all is post-grid only (posters/collections excluded)
     if (deps.getViewGroups().length === 0) return false;
     return true;
   }
@@ -207,7 +205,7 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
     if (confirmGet() || lightboxIsOpen()) return false;
     if (settingsIsOpen()) return false;
     if (imageViewIsActive()) return false;
-    if (deps.getBrowseMode() !== 'posts') return false;
+    if (store.getState().browseMode !== 'posts') return false;
     if (String(window.getSelection() || '')) return false; // the user highlighted post text — that's what they mean to copy
     return selection.selectedGroups(deps.getViewGroups(), postIdKey).length === 1;
   }
@@ -236,7 +234,7 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
     if (confirmGet() || lightboxIsOpen()) return false;
     if (settingsIsOpen()) return false;
     if (imageViewIsActive()) return false;
-    if (deps.getBrowseMode() !== 'posts') return false;
+    if (store.getState().browseMode !== 'posts') return false;
     return selection.selectedGroups(deps.getViewGroups(), postIdKey).length === 1;
   }
   function doQuickView() {
@@ -299,7 +297,7 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
     if (confirmGet() || lightboxIsOpen()) return;
     if (settingsIsOpen()) return;
     if (imageViewIsActive()) return;
-    if (deps.getBrowseMode() !== 'posts') return;
+    if (store.getState().browseMode !== 'posts') return;
     const groups = deps.getViewGroups();
     if (groups.length === 0) return;
     e.preventDefault(); // the grid scrolls on arrows/Home/End otherwise, and the selection would slide out of view

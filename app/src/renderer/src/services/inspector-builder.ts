@@ -5,10 +5,9 @@
 // panel, and the Esc/outside-click dismiss guards all move here. inspector.ts (the
 // open/refresh/close/get/subscribe bridge to the React component) stays untouched —
 // this module is one of its two consumers (Inspector.tsx is the other).
-// inspectedKey/setInspectedKey stay viewer.ts-owned (many not-yet-extracted
-// clusters — poster card clicks, undo, browse-mode switch — read/write it too;
-// same "shared cross-cutting state stays at the call site, builder takes a
-// getter/setter dep" shape as posterReturn in poster-grid-builder.ts).
+// 'inspectedKey' is cross-cutting state (poster card clicks, undo and the
+// browse-mode switch read/write it too), so it lives in the store and every
+// one of those readers goes to the store for it — no getter/setter dep pair.
 import { hostOf, userKey } from './query.ts';
 import { posterProfileUrl } from './profile-url.ts';
 import { formatCount, localeDate, localeDateTime } from './format.ts';
@@ -22,6 +21,7 @@ import { isAnySelectOpen } from './open-select-registry.ts';
 import { subscribe as subscribePostsData } from './posts-data.ts';
 import { postIdKey, postKeyOf, captureFile, persistManualGroups, persistUngrouped, quotedCardModelOf } from './records.ts';
 import { isOpen as settingsIsOpen } from './settings.ts';
+import { store } from './store.ts';
 import { sameTags, setTagKind as tagsSetTagKind } from './tags.ts';
 import { applyTagWrite, updateTags as postsUpdateTags } from './posts.ts';
 import { hologramIpc } from './ipc.ts';
@@ -57,10 +57,6 @@ export interface InspectorBuilderDeps {
   markPostsMutated(): void;
   renderPosts(keepLimit?: boolean): void;
   keepCurrentVisible(): void;
-  // inspectedKey stays a viewer.ts `let` (read/written outside this cluster too) —
-  // this module only gets the accessor pair, same shape as posterReturn above.
-  getInspectedKey(): string | null;
-  setInspectedKey(key: string | null): void;
   getActiveTabId(): string | null;
   closeTab(id: string | null | undefined): void;
   // imageTabShowing is a viewer.ts `let` (image-tab.ts consumer) — a
@@ -112,7 +108,7 @@ export function makeInspector(deps: InspectorBuilderDeps) {
   // the toggle-hunting #243 exists to remove.
   function dismissDetail() {
     inspectorClose();
-    deps.setInspectedKey(null);
+    store.setState({ inspectedKey: null });
   }
 
   // === The inspected subject has to keep existing (#633) ===
@@ -157,7 +153,7 @@ export function makeInspector(deps: InspectorBuilderDeps) {
     return deps.getAllPosts().some((p) => postIdKey(p) === key);
   }
   subscribePostsData(() => {
-    const key = deps.getInspectedKey();
+    const key = store.getState().inspectedKey;
     if (key == null || inspectedSubjectExists(key)) return;
     dismissDetail();
   });
@@ -180,7 +176,7 @@ export function makeInspector(deps: InspectorBuilderDeps) {
   panelSubscribe(() => {
     if (panelIsOpen()) return;
     inspectorClose();
-    deps.setInspectedKey(null); // grid/poster cells clear their own ring reactively (hologramStore subscribe)
+    store.setState({ inspectedKey: null }); // grid/poster cells clear their own ring reactively (hologramStore subscribe)
   });
   function persistManual() {
     persistManualGroups(deps.getManualGroups());
@@ -256,7 +252,7 @@ export function makeInspector(deps: InspectorBuilderDeps) {
     deps.pushUndo(changes);
     deps.markPostsMutated();
     deps.renderPosts(true);
-    const fresh = deps.getViewGroups().find((g2) => postIdKey(g2.rep) === deps.getInspectedKey());
+    const fresh = deps.getViewGroups().find((g2) => postIdKey(g2.rep) === store.getState().inspectedKey);
     refreshInspectorTagFields(fresh);
   }
 
@@ -293,7 +289,7 @@ export function makeInspector(deps: InspectorBuilderDeps) {
   // second edit computed from stale tags writes the wrong set — removing a tag
   // from a card that had gained one in between would drop both, because the stale
   // `prev` never had the newer tag in it.
-  const freshGroup = (g: HologramPostGroup) => deps.getViewGroups().find((gg) => postIdKey(gg.rep) === deps.getInspectedKey()) || g;
+  const freshGroup = (g: HologramPostGroup) => deps.getViewGroups().find((gg) => postIdKey(gg.rep) === store.getState().inspectedKey) || g;
 
   // Add (typed input / picker click) or toggle (picker click only) a tag on the
   // inspected group, then check for a same-name-character homonym ONLY when the tag was newly
@@ -618,7 +614,7 @@ export function makeInspector(deps: InspectorBuilderDeps) {
           x,
           y,
           () => {
-            const g2 = deps.getViewGroups().find((gg) => postIdKey(gg.rep) === deps.getInspectedKey());
+            const g2 = deps.getViewGroups().find((gg) => postIdKey(gg.rep) === store.getState().inspectedKey);
             if (g2) refreshInspectorTagFields(g2);
           },
           tagId ?? null,
@@ -632,7 +628,7 @@ export function makeInspector(deps: InspectorBuilderDeps) {
     // Ring-mark the inspected card so swapping content stays traceable — the grid
     // cell derives its own ring reactively (hologramStore subscribe), so no manual
     // DOM classList reach-in / repaint() is needed here.
-    deps.setInspectedKey(postIdKey(p));
+    store.setState({ inspectedKey: postIdKey(p) });
   }
 
   // Esc leaves the image-tab detail view (Eagle-style) and nothing else here. It does not

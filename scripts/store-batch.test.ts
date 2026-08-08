@@ -43,7 +43,7 @@ describe('setState — 複数キーを1パスで', () => {
     off();
   });
 
-  test('値が変わらないキーは通知しない（browseMode の同値書き込みが無音である根拠）', () => {
+  test('値が変わらないキーは通知しない（キー単位購読の等値判定そのもの）', () => {
     let calls = 0;
     store.setState({ browseMode: 'posts' });
     const off = subscribeKey('browseMode', () => calls++);
@@ -125,7 +125,6 @@ describe('post-grid-builder — renderPosts は2つのキーを1パスで押す'
       smokeCapture: false,
       fileSrc: (f: string) => f,
       shape: () => ({}) as any,
-      multiOnly: () => false,
       gridThumbW: () => 280,
       listThumbW: () => 88,
       sortValue: () => 'date-desc', // 日付軸あり = sections が作られる
@@ -135,7 +134,6 @@ describe('post-grid-builder — renderPosts は2つのキーを1パスで押す'
       resolve: (k: string) => k,
       snapshotState: () => ({}),
       syncTitleAndPersist: () => {},
-      getBrowseMode: () => 'posts',
       renderPosters: () => {},
       onPostsLoaded: () => {},
       showDetail: () => {},
