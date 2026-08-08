@@ -2,7 +2,7 @@
 // (see types.ts's ResolvedUser doc comment). A 'user' leaf only carries the tree's own
 // userKey string (services/query.ts's userKey - platform + ':' + (userId or
 // '@'+screenName)) and a display label, neither of which is a usable site handle on its
-// own (CLAUDE.md/#207's own note: "fromUserのハンドル解決はレコード実データ依存"). The
+// own (#207's own note: "fromUserのハンドル解決はレコード実データ依存"). The
 // real per-platform identity lives on the POST records themselves - `screenName`,
 // already shaped correctly per platform by every extractor (see services/profile-url.ts's
 // ProfileUrlSubject comment, which this mirrors exactly): x/bluesky = the bare handle,

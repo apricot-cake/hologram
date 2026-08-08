@@ -4,9 +4,9 @@
 // picker and share-link modules are NOT ported (out of scope - see the Issue).
 //
 // This whole directory is pure logic - no DOM, no Electron, no i18n runtime. Drop /
-// approximation NOTES are raw Japanese strings (CLAUDE.md "本体UIと同じ流儀" - the note
-// text is data shown in a tooltip, not chrome, so it does not go through the message
-// table the way the popover's own labels do).
+// approximation NOTES are raw Japanese strings, written in the same register as the rest
+// of the app's UI - the note text is data shown in a tooltip, not chrome, so it does not
+// go through the message table the way the popover's own labels do.
 //
 // Confidence note (read before trusting a platform's operator table): #822 (2026-08-03)
 // ran the equivalence harness (scripts/check-websearch-equivalence.cts - see resolve.ts's

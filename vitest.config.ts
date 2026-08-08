@@ -42,8 +42,8 @@ export default defineConfig({
     // Node is the default; the four suites that exercise browser-side extension
     // code opt into jsdom per file via a `@vitest-environment jsdom` docblock.
     environment: 'node',
-    // Sandboxes the config dir per test file (CLAUDE.md: never let a test see the
-    // real config dir).
+    // Sandboxes the config dir per test file (docs/build.md「検証ルール（隔離4段構え）」:
+    // never let a test see the real config dir).
     setupFiles: [path.resolve(__dirname, 'scripts/vitest.setup.ts')],
     // Builds the extension when its output is stale, so the suites that read
     // extension/.output/chrome-mv3 (the jsdom bundle suites and the manifest
