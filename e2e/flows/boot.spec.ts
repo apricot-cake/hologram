@@ -17,6 +17,19 @@ test('起動するとシードした投稿がグリッドに並ぶ', async ({ la
   await expect(page.locator('[data-slot="inspector"]')).toBeVisible();
 });
 
+// #1057: the window has to say which language it came up in. Asserted here because
+// the whole chain has to run for real — main reads config.json, the renderer resolves
+// it, and src/app/root.tsx writes it onto the document before the mount this awaits.
+// Both directions, because index.html's static value is ja: a case that only checked
+// ja would pass with nothing written at all.
+test('表示言語の設定が文書の lang 属性に出る', async ({ launchHologram }) => {
+  const ja = await launchHologram({ language: 'ja' });
+  await expect(ja.page.locator('html')).toHaveAttribute('lang', 'ja');
+
+  const en = await launchHologram({ language: 'en' });
+  await expect(en.page.locator('html')).toHaveAttribute('lang', 'en');
+});
+
 test('投稿が無いライブラリでは初回の空状態が出る', async ({ launchHologram }) => {
   const { page } = await launchHologram({ posts: [] });
 

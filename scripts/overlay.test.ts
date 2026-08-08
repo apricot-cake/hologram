@@ -404,6 +404,14 @@ describe('savedBadgeMode の三値', () => {
     expect(marks()[0].shadowRoot).toBeTruthy();
     expect(disc(marks()[0]).parentNode).toBe(marks()[0].shadowRoot);
   });
+
+  // #1057 (WCAG 2.2 SC 3.1.2): この操作子は読み上げ名しか持たない（上のテストの
+  // とおり画面には何も書かない）ので、どの言語で読まれるかがそのまま出力の質。
+  // ホストページの lang が継承されると、上で確認した英語の名前が別言語として
+  // 読まれる＝ホスト要素自身が名乗る必要がある。
+  test('ホスト要素が読み上げ名の言語を名乗る', () => {
+    expect(marks()[0].lang).toBe('en');
+  });
 });
 
 // Since the control lives inside the media box, it moves together with it in the same compositing
