@@ -7,8 +7,11 @@ import { beforeEach, describe, expect, test } from 'vitest';
 import * as Q from '../app/src/renderer/src/services/query';
 import * as R from '../app/src/renderer/src/services/records';
 
-const leaf = (type: string, value?: unknown, extra?: object) => Object.assign({ kind: 'cond', type, value }, extra);
-const group = (op: string, children: any[], neg?: boolean) => ({ kind: 'group', op, neg: !!neg, children });
+// The return types are what make these fixtures a contract rather than a shape
+// that happens to work: without them `kind` widens to `string` and every call
+// site silently stops matching HologramQueryLeaf / HologramQueryGroup (#635).
+const leaf = (type: string, value?: unknown, extra?: object): HologramQueryLeaf => ({ kind: 'cond', type, value, ...extra });
+const group = (op: 'and' | 'or', children: HologramQueryNode[], neg?: boolean): HologramQueryGroup => ({ kind: 'group', op, neg: !!neg, children });
 const dLocal = (s: string) => new Date(s); // build a post with a Date interpreted as local time
 
 const post = (over?: object) =>
@@ -194,20 +197,20 @@ describe('葉の述語', () => {
 describe('user: 名寄せ（membersOf）', () => {
   test('membersOf 未注入なら完全一致のまま（既存動作の据え置き）', () => {
     const p = Q.makePostPredOf({ isInFolder: () => false });
-    expect(p({ type: 'user', value: 'misskey:misskey.io:u123' })(post())).toBe(true);
-    expect(p({ type: 'user', value: 'x:@other' })(post())).toBe(false);
+    expect(p({ kind: 'cond', type: 'user', value: 'misskey:misskey.io:u123' })(post())).toBe(true);
+    expect(p({ kind: 'cond', type: 'user', value: 'x:@other' })(post())).toBe(false);
   });
 
   test('membersOf が返す集合のどれかに一致すれば真', () => {
     const p = Q.makePostPredOf({ isInFolder: () => false, membersOf: (key) => (key === 'x:primary' ? ['x:primary', 'misskey:misskey.io:u123'] : [key]) });
     // The leaf was saved with the group's primary key, but this post's own raw
     // userKey is the OTHER member (misskey:misskey.io:u123) — still a match.
-    expect(p({ type: 'user', value: 'x:primary' })(post())).toBe(true);
+    expect(p({ kind: 'cond', type: 'user', value: 'x:primary' })(post())).toBe(true);
   });
 
   test('自分がメンバーでないグループには当たらない', () => {
     const p = Q.makePostPredOf({ isInFolder: () => false, membersOf: (key) => (key === 'x:primary' ? ['x:primary', 'x:@someone-else'] : [key]) });
-    expect(p({ type: 'user', value: 'x:primary' })(post())).toBe(false); // post()'s own key is misskey:misskey.io:u123, not in this group
+    expect(p({ kind: 'cond', type: 'user', value: 'x:primary' })(post())).toBe(false); // post()'s own key is misskey:misskey.io:u123, not in this group
   });
 });
 
@@ -374,20 +377,20 @@ describe('text: URL 照合', () => {
   const misskeyPost = R.stampPost(post());
 
   test('フル URL の貼り付けが当たる', () => {
-    expect(predOfU({ type: 'text', value: 'https://x.com/foo/status/123' })(xPost)).toBe(true);
+    expect(predOfU({ kind: 'cond', type: 'text', value: 'https://x.com/foo/status/123' })(xPost)).toBe(true);
   });
 
   test('twitter.com の貼り付けが x.com 保存分に postKey で当たる', () => {
-    expect(predOfU({ type: 'text', value: 'https://twitter.com/foo/status/123' })(xPost)).toBe(true);
+    expect(predOfU({ kind: 'cond', type: 'text', value: 'https://twitter.com/foo/status/123' })(xPost)).toBe(true);
   });
 
   test('ドメイン断片も URL に当たる', () => {
-    expect(predOfU({ type: 'text', value: 'misskey.io' })(misskeyPost)).toBe(true);
+    expect(predOfU({ kind: 'cond', type: 'text', value: 'misskey.io' })(misskeyPost)).toBe(true);
   });
 
   test('引用元 URL の貼り付けが、引用した投稿に当たる', () => {
     const quoter = R.stampPost(post({ quotedUrl: 'https://x.com/bar/status/999' }));
-    expect(predOfU({ type: 'text', value: 'https://twitter.com/bar/status/999' })(quoter)).toBe(true);
+    expect(predOfU({ kind: 'cond', type: 'text', value: 'https://twitter.com/bar/status/999' })(quoter)).toBe(true);
   });
 
   // #181: linkCard.url names an arbitrary external page, not a supported
@@ -395,15 +398,15 @@ describe('text: URL 照合', () => {
   // (unlike quotedUrl just above, which also matches by normalized key).
   test('リンクカードの行き先 URL の貼り付けが、共有した投稿に当たる', () => {
     const sharer = R.stampPost(post({ linkCard: { url: 'https://example.com/some/article', title: 'A', description: null } } as any));
-    expect(predOfU({ type: 'text', value: 'https://example.com/some/article' })(sharer)).toBe(true);
+    expect(predOfU({ kind: 'cond', type: 'text', value: 'https://example.com/some/article' })(sharer)).toBe(true);
   });
 
   test('URL 形でない語は URL 一致では当たらない', () => {
-    expect(predOfU({ type: 'text', value: 'notes' })(misskeyPost)).toBe(false);
+    expect(predOfU({ kind: 'cond', type: 'text', value: 'notes' })(misskeyPost)).toBe(false);
   });
 
   test('URL の貼り付けは smart matcher を経由せず exact 経路で当たる', () => {
-    expect(predOfU({ type: 'text', value: 'https://misskey.io/notes/abc' })(misskeyPost)).toBe(true);
+    expect(predOfU({ kind: 'cond', type: 'text', value: 'https://misskey.io/notes/abc' })(misskeyPost)).toBe(true);
   });
 });
 
@@ -419,15 +422,48 @@ describe('makePosterPredOf', () => {
     posterTagEntriesOf: (key: string) => posterTags.get(key) || [],
     folderById: (id: string) => posterFolders.get(id) || null,
   });
-  const poster = (over?: object) => Object.assign({ key: 'x:@aaa', platform: 'x', instance: '', latest: '2026-05-10T12:00:00Z', lastCapture: '2026-06-01T00:00:00Z', authorCreatedAt: '2020-01-01T00:00:00Z' }, over || {});
+  // Every member of HologramUserAgg, not just the ones these cases read: the
+  // return type is the point (#635). A fixture that carries six of fourteen
+  // fields tests a shape buildUsers never produces, and stays green while it
+  // does — `members`/`platforms`/`instances` in particular are what
+  // posterPredOf's platform and instance leaves actually match against.
+  const poster = (over?: Partial<HologramUserAgg>): HologramUserAgg => {
+    const m = {
+      key: 'x:@aaa',
+      platform: 'x',
+      screenName: 'aaa',
+      displayName: 'あああ',
+      avatarFile: '',
+      followers: null,
+      authorCreatedAt: '2020-01-01T00:00:00Z',
+      instance: '',
+      latest: '2026-05-10T12:00:00Z',
+      firstPost: '2026-01-01T00:00:00Z',
+      lastCapture: '2026-06-01T00:00:00Z',
+      firstCapture: '2026-01-02T00:00:00Z',
+      count: 1,
+      ...over,
+    };
+    // The plural fields are DERIVED unless the case names them, the same way
+    // buildUsers (services/users.ts) fills them for an ungrouped poster. They
+    // cannot be plain defaults: posterPredOf's platform / instance leaves match
+    // against these, not the singular fields, so `poster({ instance: 'x' })`
+    // with a fixed `instances: []` would silently stop matching (#23 St1).
+    return {
+      ...m,
+      members: over?.members ?? [m.key],
+      platforms: over?.platforms ?? [m.platform],
+      instances: over?.instances ?? (m.instance ? [m.instance] : []),
+    };
+  };
 
   test('platform の一致・不一致', () => {
-    expect(posterPredOf({ type: 'platform', value: 'x' })(poster())).toBe(true);
-    expect(posterPredOf({ type: 'platform', value: 'misskey' })(poster())).toBe(false);
+    expect(posterPredOf({ kind: 'cond', type: 'platform', value: 'x' })(poster())).toBe(true);
+    expect(posterPredOf({ kind: 'cond', type: 'platform', value: 'misskey' })(poster())).toBe(false);
   });
 
   test('instance の一致', () => {
-    expect(posterPredOf({ type: 'instance', value: 'misskey.io' })(poster({ instance: 'misskey.io' }))).toBe(true);
+    expect(posterPredOf({ kind: 'cond', type: 'instance', value: 'misskey.io' })(poster({ instance: 'misskey.io' }))).toBe(true);
   });
 
   // #23 St1: a merged poster's group can span platforms/instances — buildUsers
@@ -436,21 +472,21 @@ describe('makePosterPredOf', () => {
   // フィルタ＝メンバーのいずれかが一致").
   describe('名寄せ（platforms/instances の和集合、#23 St1）', () => {
     test('platforms に含まれていれば、単数の platform と食い違っても一致', () => {
-      expect(posterPredOf({ type: 'platform', value: 'bluesky' })(poster({ platform: 'x', platforms: ['x', 'bluesky'] }))).toBe(true);
+      expect(posterPredOf({ kind: 'cond', type: 'platform', value: 'bluesky' })(poster({ platform: 'x', platforms: ['x', 'bluesky'] }))).toBe(true);
     });
 
     test('platforms が無ければ単数の platform にフォールバックする', () => {
-      expect(posterPredOf({ type: 'platform', value: 'x' })(poster({ platforms: undefined }))).toBe(true);
+      expect(posterPredOf({ kind: 'cond', type: 'platform', value: 'x' })(poster({ platforms: undefined }))).toBe(true);
     });
 
     test('instances も同様に和集合で一致', () => {
-      expect(posterPredOf({ type: 'instance', value: 'mastodon.social' })(poster({ instance: 'misskey.io', instances: ['misskey.io', 'mastodon.social'] }))).toBe(true);
+      expect(posterPredOf({ kind: 'cond', type: 'instance', value: 'mastodon.social' })(poster({ instance: 'misskey.io', instances: ['misskey.io', 'mastodon.social'] }))).toBe(true);
     });
   });
 
   test('tag は注入した posterTagEntriesOf 経由（タグ無しでも落ちない）', () => {
-    expect(posterPredOf({ type: 'tag', value: 'Ave Mujica' })(poster())).toBe(true);
-    expect(posterPredOf({ type: 'tag', value: '作画' })(poster({ key: 'x:@none' }))).toBe(false);
+    expect(posterPredOf({ kind: 'cond', type: 'tag', value: 'Ave Mujica' })(poster())).toBe(true);
+    expect(posterPredOf({ kind: 'cond', type: 'tag', value: '作画' })(poster({ key: 'x:@none' }))).toBe(false);
   });
 
   // #810: the poster side matches by entity first, for the same two reasons the
@@ -462,16 +498,16 @@ describe('makePosterPredOf', () => {
       posterTagEntriesOf: (key: string) => (key === 'p:a' ? [entry(A, 'alice', 'alice(東方)')] : [entry(B, 'alice', 'alice(紅魔郷)')]),
       folderById: () => null,
     });
-    const p = (key: string) => Object.assign({ key }, { platform: '', instance: '', latest: '', lastCapture: '', authorCreatedAt: '' });
+    const p = (key: string): HologramUserAgg => poster({ key, platform: '', instance: '', latest: '', lastCapture: '', authorCreatedAt: '', members: [key], platforms: [''] });
 
     test('id を持つリーフは同名のもう一方に当たらない', () => {
-      expect(homonymPredOf({ type: 'tag', value: 'alice', tagId: A })(p('p:a'))).toBe(true);
-      expect(homonymPredOf({ type: 'tag', value: 'alice', tagId: A })(p('p:b'))).toBe(false);
+      expect(homonymPredOf({ kind: 'cond', type: 'tag', value: 'alice', tagId: A })(p('p:a'))).toBe(true);
+      expect(homonymPredOf({ kind: 'cond', type: 'tag', value: 'alice', tagId: A })(p('p:b'))).toBe(false);
     });
 
     test('id の無いリーフは名前で両方に当たる（移行前の保存検索）', () => {
-      expect(homonymPredOf({ type: 'tag', value: 'alice' })(p('p:a'))).toBe(true);
-      expect(homonymPredOf({ type: 'tag', value: 'alice' })(p('p:b'))).toBe(true);
+      expect(homonymPredOf({ kind: 'cond', type: 'tag', value: 'alice' })(p('p:a'))).toBe(true);
+      expect(homonymPredOf({ kind: 'cond', type: 'tag', value: 'alice' })(p('p:b'))).toBe(true);
     });
 
     test('リーフの id は実効集合と照合される（親タグで子だけのポスターが当たる）', () => {
@@ -481,19 +517,19 @@ describe('makePosterPredOf', () => {
         posterTagEntriesOf: () => [entry(child, 'レミリア'), entry(parent, '東方')],
         folderById: () => null,
       });
-      expect(withParent({ type: 'tag', value: '東方', tagId: parent })(p('p:c'))).toBe(true);
+      expect(withParent({ kind: 'cond', type: 'tag', value: '東方', tagId: parent })(p('p:c'))).toBe(true);
     });
   });
 
   test('folder はメンバーだけ一致し、未知フォルダは空集合', () => {
-    expect(posterPredOf({ type: 'folder', value: 'fo-1' })(poster())).toBe(true);
-    expect(posterPredOf({ type: 'folder', value: 'fo-1' })(poster({ key: 'x:@zzz' }))).toBe(false);
-    expect(posterPredOf({ type: 'folder', value: 'fo-none' })(poster())).toBe(false);
+    expect(posterPredOf({ kind: 'cond', type: 'folder', value: 'fo-1' })(poster())).toBe(true);
+    expect(posterPredOf({ kind: 'cond', type: 'folder', value: 'fo-1' })(poster({ key: 'x:@zzz' }))).toBe(false);
+    expect(posterPredOf({ kind: 'cond', type: 'folder', value: 'fo-none' })(poster())).toBe(false);
   });
 
   // The default field is latest, and to is before the next day's midnight (the same localDayRange convention as the post side)
   describe('date', () => {
-    const pMay10 = { type: 'date', from: '2026-05-10', to: '2026-05-10' };
+    const pMay10 = leaf('date', undefined, { from: '2026-05-10', to: '2026-05-10' });
 
     test('既定の latest がその日のローカル 23:59 を含む', () => {
       expect(posterPredOf(pMay10)(poster({ latest: dLocal('2026-05-10T23:59:00').toISOString() }))).toBe(true);
@@ -504,7 +540,7 @@ describe('makePosterPredOf', () => {
     });
 
     test('dateField=lastCapture を参照できる', () => {
-      expect(posterPredOf({ type: 'date', dateField: 'lastCapture', from: '2026-06-01', to: '2026-06-01' })(poster({ lastCapture: dLocal('2026-06-01T10:00:00').toISOString() }))).toBe(true);
+      expect(posterPredOf({ kind: 'cond', type: 'date', dateField: 'lastCapture', from: '2026-06-01', to: '2026-06-01' })(poster({ lastCapture: dLocal('2026-06-01T10:00:00').toISOString() }))).toBe(true);
     });
 
     test('フィールドが欠けていれば不一致', () => {
@@ -513,7 +549,7 @@ describe('makePosterPredOf', () => {
   });
 
   test('未知の型は素通し（true）', () => {
-    expect(posterPredOf({ type: 'workspace' })(poster())).toBe(true);
+    expect(posterPredOf({ kind: 'cond', type: 'workspace' })(poster())).toBe(true);
   });
 });
 
@@ -650,7 +686,7 @@ describe('純ヘルパ', () => {
 
   test('localDayRange の to は翌日ローカル0時（排他）で、空は null', () => {
     const ldr = Q.localDayRange('2026-05-10', '2026-05-10');
-    expect(ldr.to.getTime() - ldr.from.getTime()).toBe(24 * 3600 * 1000);
+    expect(ldr.to!.getTime() - ldr.from!.getTime()).toBe(24 * 3600 * 1000);
 
     expect(Q.localDayRange('', '')).toMatchObject({ from: null, to: null });
   });
@@ -764,11 +800,11 @@ describe('木の変異ドメイン', () => {
 
     test('type+value で重複排除し、label は保つ', () => {
       expect(sh.filter((f: any) => f.type === 'tag')).toHaveLength(1);
-      expect(sh.find((f: any) => f.type === 'tag').label).toBe('ラベル');
+      expect(sh.find((f: any) => f.type === 'tag')!.label).toBe('ラベル');
     });
 
     test('date / engagement は kind・neg を落として素通し', () => {
-      const dt = sh.find((f: any) => f.type === 'date');
+      const dt = sh.find((f: any) => f.type === 'date')!;
       expect(dt.from).toBe('2026-01-01');
       expect(dt.kind).toBeUndefined();
       expect(dt.neg).toBeUndefined();
@@ -815,7 +851,7 @@ describe('木の変異ドメイン', () => {
 
   describe('wrapAllInGroup', () => {
     test('旧 root が op ごと1グループに包まれ、新しい root は and', () => {
-      const w = Q.wrapAllInGroup(group('or', [leaf('tag', 'a'), leaf('tag', 'b')]));
+      const w = Q.wrapAllInGroup(group('or', [leaf('tag', 'a'), leaf('tag', 'b')]))!;
 
       expect(w.op).toBe('and');
       expect(w.children).toHaveLength(1);
@@ -824,7 +860,7 @@ describe('木の変異ドメイン', () => {
     });
 
     test('単独条件を括ると折り畳みで実質 no-op', () => {
-      const ws = Q.wrapAllInGroup(group('and', [leaf('tag', 'a')]));
+      const ws = Q.wrapAllInGroup(group('and', [leaf('tag', 'a')]))!;
       expect(ws.children).toHaveLength(1);
       expect(ws.children[0].kind).toBe('cond');
     });
@@ -835,7 +871,10 @@ describe('木の変異ドメイン', () => {
   });
 
   test('cloneTree は深くコピーし、_ で始まる一時フィールドを全階層で落とす', () => {
-    const dirty = { kind: 'group', op: 'and', neg: false, _compiled: () => 1, children: [{ kind: 'cond', type: 'text', value: 'q', _memo: { big: true } }] };
+    // `as`, not a return-type annotation: `_compiled` / `_memo` are exactly what
+    // this case is about, and HologramQueryGroup declares no index signature, so
+    // an annotated literal would be rejected for carrying them.
+    const dirty = { kind: 'group', op: 'and', neg: false, _compiled: () => 1, children: [{ kind: 'cond', type: 'text', value: 'q', _memo: { big: true } }] } as HologramQueryGroup;
     const clean = Q.cloneTree(dirty);
 
     expect(clean).not.toBe(dirty);
@@ -858,7 +897,7 @@ describe('ファセットのドメイン', () => {
   describe('facetViewOf', () => {
     test('正準形をクラスタ/単独/除外へ分解する', () => {
       const t = group('and', [group('or', [leaf('platform', 'x'), leaf('platform', 'misskey')]), leaf('tag', 'a'), leaf('date', undefined, { from: '2026-01-01' }), leaf('tag', 'b', { neg: true })]);
-      const v = Q.facetViewOf(t, OPTS);
+      const v = Q.facetViewOf(t, OPTS)!;
 
       expect(v.clusters).toHaveLength(2);
       expect(v.singles).toHaveLength(1);
@@ -867,13 +906,13 @@ describe('ファセットのドメイン', () => {
     });
 
     test('単一値型の裸2葉（恒偽 AND）は or に修復する', () => {
-      const v = Q.facetViewOf(group('and', [leaf('platform', 'x'), leaf('platform', 'misskey')]), OPTS);
+      const v = Q.facetViewOf(group('and', [leaf('platform', 'x'), leaf('platform', 'misskey')]), OPTS)!;
       expect(v.clusters[0].op).toBe('or');
       expect(v.clusters[0].leaves).toHaveLength(2);
     });
 
     test('多値型の裸2葉は and のまま（root AND の意味を保つ）', () => {
-      expect(Q.facetViewOf(group('and', [leaf('tag', 'a'), leaf('tag', 'b')]), OPTS).clusters[0].op).toBe('and');
+      expect(Q.facetViewOf(group('and', [leaf('tag', 'a'), leaf('tag', 'b')]), OPTS)!.clusters[0].op).toBe('and');
     });
 
     test.each([
@@ -895,7 +934,8 @@ describe('ファセットのドメイン', () => {
       expect(Q.canonicalizeFacet(t, OPTS)).toBe(true);
       expect(t.children[0]).toMatchObject({ kind: 'group', op: 'and' });
       expect(t.children[0].children).toHaveLength(2);
-      expect(t.children[1].type).toBe('date');
+      // children[1] は葉のはず、というのがこの並べ替えの主張そのもの＝union の絞り込みで書く。
+      expect((t.children[1] as HologramQueryLeaf).type).toBe('date');
       expect(t.children[2].neg).toBe(true);
     });
 
