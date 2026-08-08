@@ -40,6 +40,52 @@ if [ -z "$changed" ]; then
   exit 0
 fi
 
+# DEPENDENCIES BEFORE THE BUILD (#897). A merge that brings a NEW dependency
+# leaves node_modules older than the lockfile that arrived beside it, and the
+# promotion below then dies on an import nothing can resolve — measured on
+# 2026-08-04, when extension/package-lock.json carried @marbec/web-auto-extractor
+# and extension/node_modules was two days old: the deploy failed, and the daily
+# Chrome kept the previous build until someone noticed by hand.
+#
+# Installed only when the lockfile MOVED IN THIS MERGE. Merges that touch the
+# extension are routine; merges that change its dependencies are rare. Installing
+# unconditionally would put tens of seconds on every promotion to cover the few.
+#
+# `ci`, never `install`: nobody is watching this run. `npm install` re-resolves
+# and can write back to the lockfile that was just merged (the `hasInstallScript`
+# line that reappears on its own is the example this repo has hit), so an
+# unattended `install` would quietly edit a committed file. `ci` installs exactly
+# what the lockfile says and never rewrites it.
+if [ -n "$(git diff --name-only "$ORIG_HEAD" HEAD -- extension/package-lock.json)" ]; then
+  echo "[hologram] extension/package-lock.json moved in this merge — installing the extension's dependencies first"
+  # extension/ is its own npm project, so this is its own install (scripts/setup.cts
+  # does the same). It takes NONE of setup's workaround flags: that tree has no peer
+  # conflict, and --ignore-scripts would skip its postinstall — `wxt prepare`, which
+  # generates the .wxt types the extension's tsconfig extends. --no-audit/--no-fund
+  # for setup.cts's reason: a registry round trip and a banner nobody reads.
+  if ! npm --prefix extension ci --no-audit --no-fund; then
+    echo "[hologram] npm ci failed in extension/ — NOT building, because ci removes node_modules before installing and what is left cannot build." >&2
+    echo "[hologram] The daily Chrome keeps running the previously deployed build." >&2
+    echo "[hologram] fix the install, then run: npm --prefix extension ci && npm run deploy:ext" >&2
+    exit 0
+  fi
+fi
+
+# The ROOT lockfile is REPORTED, not installed. The promotion does depend on the
+# root tree — every extension build runs scripts/gen-extension-tokens.cts, which
+# requires postcss from it — but a root `npm ci` here would remove node_modules
+# while the daily app is running out of it: the live Electron holds
+# node_modules/electron/dist/** and better-sqlite3's .node open, so the removal
+# fails partway and leaves a tree with dependencies missing (docs/build.md,
+# 2026-07-27). A stale build is recoverable; that is not. Recovery here is also
+# not a single command a hook could stand in for — `npm run setup` decides the two
+# install workarounds and re-fetches Electron's ~225MB runtime — so this says what
+# moved and leaves the timing to the author.
+if [ -n "$(git diff --name-only "$ORIG_HEAD" HEAD -- package-lock.json)" ]; then
+  echo "[hologram] the root package-lock.json moved too. It is NOT installed here (that would delete node_modules under the running app)." >&2
+  echo "[hologram] if the build below fails on a missing dependency: close the app, then run npm run setup" >&2
+fi
+
 echo "[hologram] merged changes touch the extension — deploying a verified release into the daily Chrome"
 if npm run deploy:ext; then
   exit 0
