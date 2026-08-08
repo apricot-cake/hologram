@@ -4,7 +4,7 @@
 // host_permissions because its CORS is restricted). There is no public official
 // API — likes/replies/text/author/date/media only, no reposts/bookmarks/views.
 
-import { anySrc, findAncestorContainerLink, hostnameMatches, parseMediaUrlPath, prepareScopedCaptureState } from './dom.ts';
+import { anySrc, findAncestorContainerLink, hostnameMatches, mediaHostIs, parseMediaUrlPath, prepareScopedCaptureState } from './dom.ts';
 import { parseCount } from './dom-meta.ts';
 import { emptyRecord, normalizeHashtags, readJsonKeepingRaw, toIso } from './record.ts';
 import type { DomMeta, Extractor, LinkCard, MediaIdentity, MediaItem, Poll, PostMediaElement, PostRecord, QuotedPost } from './types.ts';
@@ -21,7 +21,7 @@ const HOSTS = ['x.com', 'twitter.com'];
 // tweet_video_thumb/ on GIF posts — all three inside the post's own
 // videoPlayer box, never on an avatar or a card.
 const POST_MEDIA_PATHS = ['media', 'amplify_video_thumb', 'ext_tw_video_thumb', 'tweet_video_thumb'];
-const POST_MEDIA_PREFIXES = POST_MEDIA_PATHS.map((p) => `pbs.twimg.com/${p}/`);
+const POST_MEDIA_PATH_PREFIXES = POST_MEDIA_PATHS.map((p) => `/${p}/`);
 // Same allowlist, as the media key's path capture. Built once — mediaKey runs
 // per picture per overlay pass.
 const POST_MEDIA_KEY = new RegExp(`pbs\\.twimg\\.com/(${POST_MEDIA_PATHS.join('|')})/([^/.?:]+)`);
@@ -680,9 +680,14 @@ const x: Extractor = {
     // already the original — name=orig on them answers 200 with byte-identical
     // content (measured on live X, 2026-07-28), so rewriting would only add a
     // duplicate candidate URL.
-    if (!url.includes('pbs.twimg.com/media/')) return null;
+    //
+    // Not mediaHostIs: this runs in the background service worker on a URL
+    // the API already returned as absolute, not in a content script with a
+    // `location` to resolve against — mediaHostIs's `location.origin` base
+    // throws there (dom.ts's own header: DOM-phase, read at call time).
     try {
       const u = new URL(url);
+      if (u.hostname !== 'pbs.twimg.com' || !u.pathname.startsWith('/media/')) return null;
       u.searchParams.set('name', 'orig');
       return u.href;
     } catch {
@@ -758,7 +763,7 @@ const x: Extractor = {
       const pid = decodeURIComponent(postId);
       return { postId: pid, link: `https://x.com/${sn}/status/${pid}` };
     },
-    isPostMedia: (el) => anySrc(el, (src) => POST_MEDIA_PREFIXES.some((prefix) => src.includes(prefix))),
+    isPostMedia: (el) => anySrc(el, (src) => mediaHostIs(src, 'pbs.twimg.com') && POST_MEDIA_PATH_PREFIXES.some((prefix) => src.includes(prefix))),
   },
 
   overlay: {
