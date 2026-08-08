@@ -1,0 +1,65 @@
+name: Link check
+
+# The floor under docs-only changes. ci.yml ignores `**/*.md` and `docs/**` on purpose
+# (#993), and app-tests.yml never matched them, so until this workflow a change that
+# touched nothing but markdown ran NO checks at all until the nightly. The cheapest thing
+# that can actually be wrong in such a change is a relative link that stopped resolving,
+# and that is not hypothetical: moving PRIVACY.md and THIRD-PARTY-NOTICES.md into docs/
+# on 2026-08-07 broke every link to them, and the fix depended on someone remembering to
+# grep. (One of those references was live code — scripts/model-registry.test.ts reads the
+# notices file — so that half went red on its own. The links in README.md did not.)
+#
+# --offline ON PURPOSE. External URLs break for reasons that have nothing to do with this
+# repository — a site reorganises, a host rate-limits a CI runner, a domain lapses — and a
+# check that goes red on someone else's outage is one people learn to ignore, which costs
+# more than it buys. Only links pointing INSIDE the repository are verified. External
+# rot is real but belongs to a review pass, not to a gate on every docs edit.
+#
+# The globs are listed rather than `**/*.md`: that pattern also walks node_modules (every
+# dependency ships a README) and .claude/worktrees, which holds whole checkouts of this
+# repo. `git ls-files '*.md'` on 2026-08-07 put every tracked markdown file under one of
+# the paths below — a new top-level directory with docs in it has to be added here.
+#
+# lychee rather than remark-validate-links (the npm-side equivalent): this needs no
+# `npm ci` in the job, which keeps a docs-only push at a few seconds instead of a minute,
+# and adds no dependency to package.json. The cost is that it is the first third-party
+# action in this repository — pinned by SHA like every actions/* use here, and Dependabot
+# already watches the github-actions ecosystem.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '**/*.md'
+      - '.github/workflows/link-check.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: link-check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  links:
+    name: Relative links resolve
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Check relative links
+        uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
+        with:
+          args: >-
+            --offline
+            --no-progress
+            './*.md'
+            './.claude/skills/**/*.md'
+            './.github/**/*.md'
+            './docs/**/*.md'
+            './e2e/**/*.md'
+            './native-host/**/*.md'
+            './scripts/**/*.md'
+          fail: true
