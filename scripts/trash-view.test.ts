@@ -39,7 +39,7 @@ vi.mock('../app/src/renderer/src/services/ui.ts', () => ({ notify: () => {}, esc
 
 import { close as confirmClose, get as confirmGet } from '../app/src/renderer/src/services/confirm';
 import { makeGroupRecords } from '../app/src/renderer/src/services/records';
-import { get as storeGet } from '../app/src/renderer/src/services/store';
+import { store } from '../app/src/renderer/src/services/store';
 import * as trashView from '../app/src/renderer/src/services/trash-view';
 
 const groupRecords = makeGroupRecords({ manualGroups: () => [], ungrouped: () => new Set<string>() });
@@ -88,9 +88,9 @@ describe('ゴミ箱の読み込み', () => {
   });
 
   test('グリッドの items はストア経由で、空のときだけ null（セルを畳む合図）', async () => {
-    expect((storeGet('trashGroups') as any[]).length).toBe(2);
+    expect((store.getState().trashGroups as any[]).length).toBe(2);
     await load([]);
-    expect(storeGet('trashGroups')).toBeNull();
+    expect(store.getState().trashGroups).toBeNull();
     expect(trashView.getSnapshot().count).toBe(0);
   });
 

@@ -8,7 +8,7 @@ import { importFromClipboard } from '../services/clipboard-intake.ts';
 import { hologramIpc } from '../services/ipc.ts';
 import { libraryEmptyVariant } from '../services/library-status.ts';
 import { resetAllFilters, resetPosterFilters, runZipImport } from '../services/orchestrator.ts';
-import { get as storeGet, subscribe as storeSubscribe } from '../services/store.ts';
+import { store, subscribeKey } from '../services/store.ts';
 
 // #71: the store submission does not exist yet (pre-release — see Issue #71's
 // release-order note: this Issue ships last, after the extension is public).
@@ -38,24 +38,24 @@ const EXTENSION_STORE_URL = 'https://chrome.google.com/webstore/category/extensi
 // it gates on 'libraryLoaded' so a grid mid-load never reads as "confirmed empty" —
 // see that module's header for why postGroups/posterGroups alone couldn't tell the
 // two apart, and empty/LibraryLoading.tsx for what fills the gap while loading.
-const subPostGroups = (cb: () => void) => storeSubscribe('postGroups', cb);
-const getPostGroups = () => storeGet('postGroups') as any[] | null | undefined;
-const subAllPostsCount = (cb: () => void) => storeSubscribe('allPostsCount', cb);
-const getAllPostsCount = () => (storeGet('allPostsCount') as number | undefined) ?? 0;
-const subPosterGroups = (cb: () => void) => storeSubscribe('posterGroups', cb);
-const getPosterGroups = () => storeGet('posterGroups') as any[] | undefined; // never explicitly null — see library-status.ts
-const subAllUsersCount = (cb: () => void) => storeSubscribe('allUsersCount', cb);
-const getAllUsersCount = () => (storeGet('allUsersCount') as number | undefined) ?? 0;
-const subSearchQuery = (cb: () => void) => storeSubscribe('searchQuery', cb);
-const getSearchQuery = () => (storeGet('searchQuery') as string | undefined) ?? '';
-const subMode = (cb: () => void) => storeSubscribe('browseMode', cb);
-const getMode = () => (storeGet('browseMode') as string | undefined) ?? 'posts';
-const subLibraryLoaded = (cb: () => void) => storeSubscribe('libraryLoaded', cb);
-const getLibraryLoaded = () => !!storeGet('libraryLoaded');
+const subPostGroups = (cb: () => void) => subscribeKey('postGroups', cb);
+const getPostGroups = () => store.getState().postGroups;
+const subAllPostsCount = (cb: () => void) => subscribeKey('allPostsCount', cb);
+const getAllPostsCount = () => store.getState().allPostsCount;
+const subPosterGroups = (cb: () => void) => subscribeKey('posterGroups', cb);
+const getPosterGroups = () => store.getState().posterGroups; // never explicitly null — see library-status.ts
+const subAllUsersCount = (cb: () => void) => subscribeKey('allUsersCount', cb);
+const getAllUsersCount = () => store.getState().allUsersCount;
+const subSearchQuery = (cb: () => void) => subscribeKey('searchQuery', cb);
+const getSearchQuery = () => store.getState().searchQuery;
+const subMode = (cb: () => void) => subscribeKey('browseMode', cb);
+const getMode = () => store.getState().browseMode;
+const subLibraryLoaded = (cb: () => void) => subscribeKey('libraryLoaded', cb);
+const getLibraryLoaded = () => store.getState().libraryLoaded;
 // #71: seeded once at boot by App.tsx's LibraryStatusGate (get-extension-contact) —
 // see library-status.ts's libraryEmptyVariant for how this splits firstRun in two.
-const subExtensionContacted = (cb: () => void) => storeSubscribe('extensionContacted', cb);
-const getExtensionContacted = () => !!storeGet('extensionContacted');
+const subExtensionContacted = (cb: () => void) => subscribeKey('extensionContacted', cb);
+const getExtensionContacted = () => store.getState().extensionContacted;
 
 export function EmptyState() {
   const mode = useSyncExternalStore(subMode, getMode);

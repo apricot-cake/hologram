@@ -19,7 +19,7 @@ import { compile as searchCompile } from './search.ts';
 import { postKeyOf } from './records.ts';
 import * as folders from './folders.ts';
 import { membersOf as aliasMembersOf } from './aliases.ts';
-import { set as storeSet } from './store.ts';
+import { store } from './store.ts';
 
 // Facet type schemas (revision ④) — the "All"/"Any"-capable multi-value types and the
 // standalone (never-clustered) types, per view. Exported so the redesign filter bar
@@ -86,7 +86,7 @@ export function makePostQueryBuilder(deps: PostQueryBuilderDeps) {
   // Establish an initial value (emptyTree()) before any mutation, so a future
   // reader never sees undefined — setTree only runs on tab restore, which may
   // not happen before the first render of a brand-new tab.
-  storeSet('postQueryTree', JSON.parse(JSON.stringify(qb.getTree())));
+  store.setState({ postQueryTree: JSON.parse(JSON.stringify(qb.getTree())) });
   return { qb, predOf };
 }
 
@@ -118,6 +118,6 @@ export function makePosterQueryBuilder(deps: PosterQueryBuilderDeps) {
   // Establish an initial value (emptyTree()) before any mutation — posters have
   // no tabs/setTree restore path, so this is the ONLY populator until the first
   // filter interaction.
-  storeSet('posterQueryTree', JSON.parse(JSON.stringify(qb.getTree())));
+  store.setState({ posterQueryTree: JSON.parse(JSON.stringify(qb.getTree())) });
   return { qb };
 }

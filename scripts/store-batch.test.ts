@@ -1,101 +1,64 @@
-// Unit tests for the renderer store's batched write (#871) and for the one place
+// Unit tests for the renderer store's multi-key write (#871) and for the one place
 // that needed it: the post grid source combines TWO store keys ('postGroups' and
 // 'postSections', where the sections index into the groups) into one model, so a
 // reader that wakes up between two separate writes sees a model whose sections
 // belong to the previous build. That torn model is what corrupted masonic's
 // position cache and crashed the grid with "Invalid value used as weak map key".
 //
-// The store is a module singleton, so every test below uses its own key names.
+// #1054 turned the store into a zustand vanilla store, and the tests moved with it.
+// What used to be covered here with invented key names ('a1', 'b1', ...) — that the
+// notify pass dedupes callbacks, that an unsubscribe mid-pass is safe — was testing a
+// hand-written loop that no longer exists; those are the library's contract now. What
+// is still OURS is below, and it is written against the real keys, because the typed
+// store has no others: a multi-key write is ONE pass with no torn state in it, and a
+// same-value write is silent (orchestrator.ts's setBrowseModeLite writes the mode it
+// is already on and relies on that silence to not re-enter its own handler).
 import { describe, expect, test } from 'vitest';
-import { get, set, setMany, subscribe } from '../app/src/renderer/src/services/store';
+import { store, subscribeKey, subscribeKeys } from '../app/src/renderer/src/services/store';
 import { hologramPostGridSource } from '../app/src/renderer/src/services/grid';
 import { makePostGridBuilder } from '../app/src/renderer/src/services/post-grid-builder';
 import { stampPost } from '../app/src/renderer/src/services/records';
 
-describe('setMany', () => {
-  test('書いたキーの購読者を呼ぶ／触っていないキーの購読者は呼ばない', () => {
-    const seen: string[] = [];
-    subscribe('a1', () => seen.push('a1'));
-    subscribe('b1', () => seen.push('b1'));
-    subscribe('c1', () => seen.push('c1'));
-    setMany({ a1: 1, b1: 2 });
-    expect(seen.sort()).toEqual(['a1', 'b1']);
-    expect(get('a1')).toBe(1);
-    expect(get('b1')).toBe(2);
-  });
-
+describe('setState — 複数キーを1パスで', () => {
   test('2つのキーを購読する同じコールバックは1回だけ呼ばれる（#871 の核心）', () => {
     let calls = 0;
     const cb = () => {
       calls++;
     };
-    subscribe('a2', cb);
-    subscribe('b2', cb);
-    setMany({ a2: 1, b2: 2 });
+    const off = subscribeKeys(['postGroups', 'postSections'], cb);
+    store.setState({ postGroups: [{ id: 'g0' }] as any, postSections: [] });
     expect(calls).toBe(1);
+    off();
   });
 
   test('通知の時点で両方のキーが新しい値になっている（裂けた状態を読ませない）', () => {
     const observed: Array<[unknown, unknown]> = [];
-    const cb = () => observed.push([get('a3'), get('b3')]);
-    set('a3', 'old-a');
-    set('b3', 'old-b');
-    subscribe('a3', cb);
-    subscribe('b3', cb);
-    setMany({ a3: 'new-a', b3: 'new-b' });
-    expect(observed).toEqual([['new-a', 'new-b']]);
+    store.setState({ postGroups: null, postSections: null });
+    const cb = () => observed.push([store.getState().postGroups, store.getState().postSections]);
+    const off = subscribeKeys(['postGroups', 'postSections'], cb);
+    const groups = [{ id: 'g0' }] as any;
+    const sections = [{ key: '2026-8', startIndex: 0, count: 1 }] as any;
+    store.setState({ postGroups: groups, postSections: sections });
+    expect(observed).toEqual([[groups, sections]]);
+    off();
   });
 
-  test('値が変わらないキーは通知しない／全部同値ならパスごと走らない', () => {
+  test('値が変わらないキーは通知しない（browseMode の同値書き込みが無音である根拠）', () => {
     let calls = 0;
-    set('a4', 1);
-    set('b4', 2);
-    subscribe('a4', () => calls++);
-    subscribe('b4', () => calls++);
-    setMany({ a4: 1, b4: 2 });
+    store.setState({ browseMode: 'posts' });
+    const off = subscribeKey('browseMode', () => calls++);
+    store.setState({ browseMode: 'posts' });
     expect(calls).toBe(0);
-    setMany({ a4: 1, b4: 99 }); // b4 だけ変わる
+    store.setState({ browseMode: 'posters' });
     expect(calls).toBe(1);
-  });
-
-  test('全変更購読（キーなし subscribe）も1バッチにつき1回', () => {
-    let calls = 0;
-    subscribe(() => calls++);
-    setMany({ a5: 1, b5: 2, c5: 3 });
-    expect(calls).toBe(1);
-  });
-
-  // 購読者はパスの開始時点で固定される（Redux の dispatch と同じ契約）＝途中の
-  // 解除は「そのパスには効かないが次からは効く」。呼び出し中に Set を書き換えて
-  // 走査が壊れるのを避けるためで、set() の [...s] スナップショットからの引き継ぎ。
-  test('パスの途中で解除しても落ちない（そのパスには効かず、次のパスから効く）', () => {
-    const seen: string[] = [];
-    const offB = subscribe('b6', () => seen.push('b6'));
-    subscribe('a6', () => {
-      seen.push('a6');
-      offB();
-    });
-    setMany({ a6: 1, b6: 2 });
-    expect(seen).toEqual(['a6', 'b6']);
-    seen.length = 0;
-    setMany({ a6: 10, b6: 20 });
-    expect(seen).toEqual(['a6']);
-  });
-
-  test('set() は1キーの setMany と同じ（通知1回・値が入る）', () => {
-    let calls = 0;
-    subscribe('a7', () => calls++);
-    set('a7', 'x');
-    expect(get('a7')).toBe('x');
-    expect(calls).toBe(1);
-    set('a7', 'x'); // 同値は通知しない（従来どおり）
-    expect(calls).toBe(1);
+    off();
+    store.setState({ browseMode: 'posts' });
   });
 });
 
 // The regression this whole change exists for. post-grid-builder pushes both keys
-// with ONE setMany; here we push them the same way and assert what a subscriber
-// actually observes. Before the fix (two set() calls) the first pass handed out a
+// in ONE setState; here we push them the same way and assert what a subscriber
+// actually observes. Before the fix (two single-key writes) the first pass handed out a
 // model carrying the NEW items with the PREVIOUS build's section ranges.
 describe('post grid source — items と sections は必ず同じビルドで観測される', () => {
   const build = (n: number, sections: Array<{ key: string; startIndex: number; count: number }>) => ({
@@ -126,13 +89,13 @@ describe('post grid source — items と sections は必ず同じビルドで観
       { key: '2026-7', startIndex: 0, count: 25 },
       { key: '2026-6', startIndex: 25, count: 15 },
     ]);
-    setMany({ postGroups: first.groups, postSections: first.sections });
+    store.setState({ postGroups: first.groups as any, postSections: first.sections as any });
     expect(notifications).toBe(1);
 
     // 2回目: 検索で絞り込まれて5件・1セクションへ。旧セクションのまま新 items を
     // 読むと startIndex+count が 40 のままで、5件の配列をはみ出す。
     const second = build(5, [{ key: '2026-7', startIndex: 0, count: 5 }]);
-    setMany({ postGroups: second.groups, postSections: second.sections });
+    store.setState({ postGroups: second.groups as any, postSections: second.sections as any });
     expect(notifications).toBe(2);
 
     expect(observed.map((o) => o.items)).toEqual([40, 5]);
@@ -142,15 +105,15 @@ describe('post grid source — items と sections は必ず同じビルドで観
   test('空の結果もペアで落ちる（items=null なら sections も null）', () => {
     const observed: Array<[unknown, unknown]> = [];
     hologramPostGridSource.subscribe(() => {
-      observed.push([get('postGroups'), get('postSections')]);
+      observed.push([store.getState().postGroups, store.getState().postSections]);
     });
-    setMany({ postGroups: null, postSections: null });
+    store.setState({ postGroups: null, postSections: null });
     expect(observed).toEqual([[null, null]]);
   });
 });
 
 // The same invariant driven through the real writer, so splitting the push back
-// into two storeSet calls fails here rather than only in the running app.
+// into two single-key writes fails here rather than only in the running app.
 describe('post-grid-builder — renderPosts は2つのキーを1パスで押す', () => {
   const post = (id: string, iso: string) => stampPost({ url: `https://x.com/u/status/${id}`, date: iso, image: `${id}.jpg`, captureId: id });
 
@@ -187,12 +150,11 @@ describe('post-grid-builder — renderPosts は2つのキーを1パスで押す'
 
     const observed: Array<{ items: number; over: boolean; sections: number }> = [];
     const record = () => {
-      const items = (get('postGroups') as unknown[] | null) || [];
-      const secs = (get('postSections') as Array<{ startIndex: number; count: number }> | null) || [];
+      const items = (store.getState().postGroups as unknown[] | null) || [];
+      const secs = (store.getState().postSections as Array<{ startIndex: number; count: number }> | null) || [];
       observed.push({ items: items.length, sections: secs.length, over: secs.some((s) => s.startIndex + s.count > items.length) });
     };
-    subscribe('postGroups', record);
-    subscribe('postSections', record);
+    subscribeKeys(['postGroups', 'postSections'], record);
 
     builder.renderPosts();
     // 検索が効いて7月の1件だけになる = セクションは2つ→1つ、範囲も縮む

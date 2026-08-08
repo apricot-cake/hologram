@@ -8,7 +8,7 @@ import { t } from '../_shared/i18n.ts';
 import { hologramImageTabSource, isActive as imageViewIsActive } from '../services/image-tab.ts';
 import { postIdKey } from '../services/records.ts';
 import { isAllSelected, selectedGroups } from '../services/selection.ts';
-import { get as storeGet, subscribe as storeSubscribe } from '../services/store.ts';
+import { store, subscribeKey } from '../services/store.ts';
 import { selectionClear, selectionDelete, selectionFolder, selectionGroup, selectionSelectAll, selectionTag } from '../services/orchestrator.ts';
 
 // Bottom floating selection bar (redesign §3-4 / P2⑥) — a Google-Photos / Linear-type
@@ -53,12 +53,12 @@ import { selectionClear, selectionDelete, selectionFolder, selectionGroup, selec
 // horizontal padding. Below it the short forms are used.
 const FULL_LABEL_MIN_W = 670;
 
-const subSelectedSet = (cb: () => void) => storeSubscribe('selectedSet', cb);
-const getSelectedSet = () => storeGet('selectedSet') as Set<string> | undefined;
-const subPostGroups = (cb: () => void) => storeSubscribe('postGroups', cb);
-const getPostGroups = () => storeGet('postGroups') as HologramPostGroup[] | null | undefined;
-const subBrowseMode = (cb: () => void) => storeSubscribe('browseMode', cb);
-const getBrowseMode = () => storeGet('browseMode') as string | undefined;
+const subSelectedSet = (cb: () => void) => subscribeKey('selectedSet', cb);
+const getSelectedSet = () => store.getState().selectedSet;
+const subPostGroups = (cb: () => void) => subscribeKey('postGroups', cb);
+const getPostGroups = () => store.getState().postGroups;
+const subBrowseMode = (cb: () => void) => subscribeKey('browseMode', cb);
+const getBrowseMode = () => store.getState().browseMode;
 // Does the bar's own box still fit the full labels? Watching the element (not the
 // viewport) is what makes this correct when the inspector opens or the sidebar collapses
 // — both change the room available here without the window changing size at all.

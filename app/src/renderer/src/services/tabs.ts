@@ -27,7 +27,7 @@
 // switchTab/closeTab/… directly, #621) — this file only computes the model, it never
 // mutates tab state.
 import { buildShadow } from './query.ts';
-import { get as storeGet, subscribe as storeSubscribe } from './store.ts';
+import { store, subscribeKeys } from './store.ts';
 
 type TabTitleOf = (state: any, ctx: { allCount?: number | null }) => { text: string; iconType: string };
 type TabsConfig = { tabTitleOf: TabTitleOf; tabIcons: Record<string, string>; pinSvg: string; closeTitle?: string; newTitle?: string; postersTitle?: string; trashTitle?: string; imageFallbackTitle?: string; tagManageTitle?: string };
@@ -72,12 +72,12 @@ function navKindOf(t: HologramTab): 'posts' | 'posters' | 'image' | 'timeline' {
 // Mirrors what postQB.shadow() computes internally, from the SAME mirrored
 // tree (query-chips.ts's state half) — no second shadow copy lives in the store.
 function liveActiveState() {
-  const tree = storeGet('postQueryTree');
+  const tree = store.getState().postQueryTree;
   return {
     f: tree ? buildShadow(tree) : [],
-    search: storeGet('searchQuery') || '',
-    sort: storeGet('sortPost'),
-    multi: !!storeGet('multiOnly'),
+    search: store.getState().searchQuery,
+    sort: store.getState().sortPost,
+    multi: store.getState().multiOnly,
   };
 }
 
@@ -85,10 +85,10 @@ function get(): HologramTabsModel | null {
   const tt = tabTitleOf;
   const icons = tabIcons;
   if (!tt || !icons) return null;
-  const rawTabs: HologramTab[] | undefined = storeGet('tabs');
+  const rawTabs: HologramTab[] | undefined = store.getState().tabs;
   if (!rawTabs) return null; // not yet loaded by viewer's initTabs()
-  const activeTabId = storeGet('activeTabId');
-  const allCount = storeGet('allPostsCount') || 0;
+  const activeTabId = store.getState().activeTabId;
+  const allCount = store.getState().allPostsCount;
   const tabs = rawTabs.map((t) => {
     const isActive = t.id === activeTabId;
     // #21: a tag-management tab has no query state and no "current view" to
@@ -97,7 +97,7 @@ function get(): HologramTabsModel | null {
     if (t.specialKind === 'tags') {
       return { id: t.id, title: tagManageTitle, icon: t.pinned ? pinSvg : icons.tag, active: isActive, pinned: !!t.pinned, showClose: !t.pinned && rawTabs.length > 1 };
     }
-    const kind = isActive ? (storeGet('activeImageTab') ? 'image' : storeGet('browseMode') === 'posters' ? 'posters' : storeGet('browseMode') === 'trash' ? 'trash' : storeGet('browseMode') === 'timeline' ? 'timeline' : 'posts') : navKindOf(t);
+    const kind = isActive ? (store.getState().activeImageTab ? 'image' : store.getState().browseMode === 'posters' ? 'posters' : store.getState().browseMode === 'trash' ? 'trash' : store.getState().browseMode === 'timeline' ? 'timeline' : 'posts') : navKindOf(t);
     // Trash (#268) — only ever the ACTIVE tab, since the trash records no history
     // entry (navKindOf can never answer 'trash'). The strip says where the tab is
     // looking, and while it is looking at the trash the old grid title would lie.
@@ -145,4 +145,4 @@ export const hologramTabsSource = {
     return () => subs.delete(cb);
   },
 };
-for (const k of ['tabs', 'activeTabId', 'postQueryTree', 'searchQuery', 'sortPost', 'multiOnly', 'allPostsCount', 'browseMode', 'activeImageTab']) storeSubscribe(k, notify);
+subscribeKeys(['tabs', 'activeTabId', 'postQueryTree', 'searchQuery', 'sortPost', 'multiOnly', 'allPostsCount', 'browseMode', 'activeImageTab'], notify);

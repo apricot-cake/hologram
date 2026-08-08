@@ -18,14 +18,16 @@
 // ctx: { storeKey?, predOf, onChange, singleValueTypes?, noDupTypes?,
 //        multiValueTypes?, standaloneTypes?, onLeafMutated? }
 import { emptyTree, hasLeafValue, hasSameLeaf, removeCondsMatching as removeCondsMatchingQ, buildShadow, canonicalizeFacet, facetViewOf, facetAdd, cleanupTree, sameLeaf, detachNode, treeParentMap, evalNode } from './query.ts';
-import { set as storeSet } from './store.ts';
+import { store } from './store.ts';
 
 // Local shape for the ctx contract documented in the file-top comment
 // (createQueryBuilder's ctx: any stays loose — the renderer project doesn't see
 // HologramQueryLeaf/HologramQueryGroup — so this is typed only for this module's
 // own body).
 interface QbCtx {
-  storeKey?: string;
+  // Which of the two query trees this builder owns. The union (rather than a bare
+  // string) is what lets syncShadow below write through the computed key.
+  storeKey?: 'postQueryTree' | 'posterQueryTree';
   predOf: (f: HologramQueryLeaf) => (item: any) => boolean;
   onChange: () => void;
   singleValueTypes?: string[];
@@ -64,7 +66,7 @@ export function createQueryBuilder(ctx: QbCtx) {
   // — calls syncShadow), so one push here covers all of them.
   const syncShadow = () => {
     shadow = buildShadow(tree);
-    if (ctx.storeKey) storeSet(ctx.storeKey, JSON.parse(JSON.stringify(tree)));
+    if (ctx.storeKey) store.setState({ [ctx.storeKey]: JSON.parse(JSON.stringify(tree)) });
   };
   // One canonical refresh after any tree mutation: rebuild the shadow (which
   // pushes the tree into the store), then let the view re-render — the store

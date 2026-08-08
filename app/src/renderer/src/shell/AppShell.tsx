@@ -34,7 +34,7 @@ import { registerScroller } from '../services/content-area.ts';
 import { hologramImageTabSource, isActive as imageViewIsActive } from '../services/image-tab.ts';
 import { load as panelsLoad } from '../services/panels.ts';
 import { load as shortcutOverridesLoad } from '../services/shortcut-registry.ts';
-import { get as storeGet, subscribe as storeSubscribe } from '../services/store.ts';
+import { store, subscribeKey, subscribeKeys } from '../services/store.ts';
 import { signalShellReady } from '../services/shell-ready.ts';
 import { AppToolbar } from './AppToolbar.tsx';
 import { InspectorToggle } from './InspectorToggle.tsx';
@@ -63,31 +63,23 @@ import { WindowControls } from './WindowControls.tsx';
 // docs/decisions/0027-sidebar-is-a-rail-only.md.
 
 // Which of the three destinations the content column shows (posts / posters / trash).
-const subBrowseMode = (cb: () => void) => storeSubscribe('browseMode', cb);
-const getBrowseMode = () => (storeGet('browseMode') as string | undefined) ?? 'posts';
+const subBrowseMode = (cb: () => void) => subscribeKey('browseMode', cb);
+const getBrowseMode = () => store.getState().browseMode;
 // #21: a fourth destination, orthogonal to browseMode -- whether the ACTIVE tab
 // is the tag management tab (a per-tab flag, tabs-builder.ts's openTagManagementTab)
 // rather than a browse view. Reads the same 'tabs'/'activeTabId' store keys
 // services/tabs.ts's model already derives its own tab-strip entries from.
-const subIsTagsTab = (cb: () => void) => {
-  const u1 = storeSubscribe('tabs', cb);
-  const u2 = storeSubscribe('activeTabId', cb);
-  return () => {
-    u1();
-    u2();
-  };
-};
+const subIsTagsTab = (cb: () => void) => subscribeKeys(['tabs', 'activeTabId'], cb);
 const getIsTagsTab = () => {
-  const tabs = (storeGet('tabs') as HologramTab[] | undefined) || [];
-  const activeId = storeGet('activeTabId');
-  return tabs.find((t) => t.id === activeId)?.specialKind === 'tags';
+  const { tabs, activeTabId } = store.getState();
+  return tabs.find((t) => t.id === activeTabId)?.specialKind === 'tags';
 };
 // #37: is the save folder missing on disk right now? Seeded by App.tsx's
 // LibraryStatusGate on boot. When true, LibraryMissingState replaces the three
 // destinations below instead of the grids rendering DB-backed posts whose media
 // files are not actually there (the DB is independent of the save folder since #302).
-const subLibraryMissing = (cb: () => void) => storeSubscribe('libraryMissing', cb);
-const getLibraryMissing = () => !!storeGet('libraryMissing');
+const subLibraryMissing = (cb: () => void) => subscribeKey('libraryMissing', cb);
+const getLibraryMissing = () => store.getState().libraryMissing;
 
 // A panel's width, on the same two tiers as the open/closed state above (cache first,
 // config.json reconciled a tick later). The default is a thunk rather than a number so

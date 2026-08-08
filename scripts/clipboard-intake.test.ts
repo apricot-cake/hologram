@@ -470,7 +470,7 @@ describe('renderer: Ctrl+V の判定', () => {
   test('ゴミ箱を開いている間は発火しない', async () => {
     const intake = await freshIntake();
     const store = await import('../app/src/renderer/src/services/store');
-    store.set('browseMode', 'trash');
+    store.store.setState({ browseMode: 'trash' });
     try {
       const k = key({ key: 'v', ctrlKey: true });
       intake.handleShortcutClipboardKey(k.ev);
@@ -478,12 +478,12 @@ describe('renderer: Ctrl+V の判定', () => {
       expect(calls).toHaveLength(0);
       expect(k.wasPrevented()).toBe(false);
       // Going back to the library resumes intake as before = what blocks it is the destination, not a lock.
-      store.set('browseMode', 'posts');
+      store.store.setState({ browseMode: 'posts' });
       intake.handleShortcutClipboardKey(key({ key: 'v', ctrlKey: true }).ev);
       await settle();
       expect(calls).toHaveLength(1);
     } finally {
-      store.set('browseMode', 'posts');
+      store.store.setState({ browseMode: 'posts' });
     }
   });
 

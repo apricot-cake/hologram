@@ -272,8 +272,11 @@ interface HologramFolderStore {
  * with no manager-modal model in between (that model, and the modal itself, are retired). */
 type HologramPersistedFolderStore = HologramFolderStore & { load(): Promise<void>; reload(): Promise<void>; subscribe(cb: () => void): () => void };
 
-// services/store.ts is a real ES module now — get/set/subscribe are
-// imported directly by every consumer; no ambient HologramStore/Window merge
-// exists anywhere anymore. The old duplicated `interface Window { hologramSelection }`
-// (once the only Window-merge in this file) is gone too — selection.ts is a real
-// ES module now.
+// services/store.ts is a zustand vanilla store (#1054), imported directly by every
+// consumer; its state type lives in that file, not here, so no ambient
+// HologramStore/Window merge exists anywhere anymore. (Several shapes it holds ARE
+// declared above — HologramTab / HologramQueryGroup / HologramPostGroup /
+// HologramDateSection / HologramUserAgg — which is why e2e/tsconfig.json includes
+// this file as well as globals.d.ts.) The old duplicated
+// `interface Window { hologramSelection }` (once the only Window-merge in this
+// file) is gone too — selection.ts is a real ES module now.

@@ -17,7 +17,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { t } from '../_shared/i18n.ts';
 import { hologramIpc } from '../services/ipc.ts';
 import { treeLeaves } from '../services/query.ts';
-import { get as storeGet } from '../services/store.ts';
+import { store } from '../services/store.ts';
 import { buildWebSearchState } from './adapter.ts';
 import { close as contextClose, get as contextGet, subscribe as contextSubscribe } from './context-panel.ts';
 import { buildGoogleFallback } from './googleFallback.ts';
@@ -218,7 +218,7 @@ function WebSearchPanelBody({ tree }: { tree: HologramQueryGroup | null }) {
 
 export function WebSearchPanel({ tree }: { tree?: HologramQueryGroup | null }) {
   const [open, setOpen] = useState(false);
-  const activeTree = (tree ?? (storeGet('postQueryTree') as HologramQueryGroup | undefined)) || null;
+  const activeTree = (tree ?? store.getState().postQueryTree) || null;
 
   return (
     <Popover open={open} onOpenChange={setOpen}>

@@ -20,12 +20,12 @@ import { cn } from '@/lib/utils';
 import { t } from '../_shared/i18n.ts';
 import { scroller } from '../services/content-area.ts';
 import { scrollSectionToTop } from '../services/section-nav.ts';
-import { get as storeGet, subscribe as storeSubscribe } from '../services/store.ts';
+import { store, subscribeKey } from '../services/store.ts';
 
-const subSections = (cb: () => void) => storeSubscribe('postSections', cb);
-const getSections = () => (storeGet('postSections') as HologramDateSection[] | null) ?? null;
-const subBrowseMode = (cb: () => void) => storeSubscribe('browseMode', cb);
-const getBrowseMode = () => (storeGet('browseMode') as string | undefined) ?? 'posts';
+const subSections = (cb: () => void) => subscribeKey('postSections', cb);
+const getSections = () => store.getState().postSections;
+const subBrowseMode = (cb: () => void) => subscribeKey('browseMode', cb);
+const getBrowseMode = () => store.getState().browseMode;
 
 /** How long the rail stays up after the last scroll event. */
 const IDLE_MS = 1200;

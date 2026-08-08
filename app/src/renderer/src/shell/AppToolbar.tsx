@@ -26,14 +26,15 @@ import { t } from '../_shared/i18n.ts';
 import { open as openPalette } from '../services/command-registry.ts';
 import { hologramImageTabSource, isActive as imageViewIsActive } from '../services/image-tab.ts';
 import { subscribeQueueCount } from '../services/triage-builder.ts';
-import { get as storeGet, subscribe as storeSubscribe } from '../services/store.ts';
+import { store, subscribeKey } from '../services/store.ts';
+import type { HologramStoreState } from '../services/store.ts';
 import { navBack, navForward, openTriage, triageQueueCount } from '../services/orchestrator.ts';
 
-const subKey = (key: string) => (cb: () => void) => storeSubscribe(key, cb);
+const subKey = (key: keyof HologramStoreState) => (cb: () => void) => subscribeKey(key, cb);
 const subBack = subKey('navCanBack');
-const getBack = (): boolean => !!storeGet('navCanBack');
+const getBack = (): boolean => store.getState().navCanBack;
 const subForward = subKey('navCanForward');
-const getForward = (): boolean => !!storeGet('navCanForward');
+const getForward = (): boolean => store.getState().navCanForward;
 // An image view is showing — asked of services/image-tab.ts, the module that builds the
 // stage, so the toolbar and the shell cannot disagree about which one is on screen (P2⑫).
 // The band stays — every browser keeps its toolbar row on every tab — but what it carries

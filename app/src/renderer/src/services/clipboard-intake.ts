@@ -27,7 +27,7 @@ import { isOpen as lightboxIsOpen } from './lightbox.ts';
 import { isActive as imageViewIsActive } from './image-tab.ts';
 import { isOpen as settingsIsOpen } from './settings.ts';
 import { isTypingTarget, registerShortcut, tryRun } from './shortcut-registry.ts';
-import { get as storeGet } from './store.ts';
+import { store } from './store.ts';
 import { importClipboard } from './posts.ts';
 import { formatDate } from './format.ts';
 import { notify } from './ui.ts';
@@ -76,7 +76,7 @@ function canExecutePaste(e: KeyboardEvent): boolean {
   // a grid the user is not looking at. Asked of the store, like every other guard
   // above asks its own module — reading a body class would be the DOM sniffing #153
   // rules out, and it made the class exist for no other reader.
-  if (storeGet('browseMode') === 'trash') return false;
+  if (store.getState().browseMode === 'trash') return false;
   return true;
 }
 

@@ -6,7 +6,7 @@ import { t } from '../_shared/i18n.ts';
 import { open as confirmOpen } from '../services/confirm.ts';
 import { getLibraryStatus, pickRepointFolder, applyRepoint } from '../services/library-path.ts';
 import { notify } from '../services/ui.ts';
-import { get as storeGet, set as storeSet, subscribe as storeSubscribe } from '../services/store.ts';
+import { store, subscribeKey } from '../services/store.ts';
 
 // #37: replaces the whole content column (AppShell) when the CURRENT save folder is
 // missing on disk — moved, renamed, or the drive that held it is unmounted, from
@@ -18,10 +18,10 @@ import { get as storeGet, set as storeSet, subscribe as storeSubscribe } from '.
 // App.tsx's LibraryStatusGate on boot (services/library-path.ts's getLibraryStatus,
 // a fresh statSync every call — there is no push channel, see index.ts's
 // refreshLibraryStatus comment) and refreshed here after Retry/repoint.
-const subMissing = (cb: () => void) => storeSubscribe('libraryMissing', cb);
-const getMissing = () => !!storeGet('libraryMissing');
-const subPath = (cb: () => void) => storeSubscribe('libraryMissingPath', cb);
-const getPath = () => (storeGet('libraryMissingPath') as string | null | undefined) ?? null;
+const subMissing = (cb: () => void) => subscribeKey('libraryMissing', cb);
+const getMissing = () => store.getState().libraryMissing;
+const subPath = (cb: () => void) => subscribeKey('libraryMissingPath', cb);
+const getPath = () => store.getState().libraryMissingPath;
 
 export function LibraryMissingState() {
   const missing = useSyncExternalStore(subMissing, getMissing);
@@ -32,8 +32,8 @@ export function LibraryMissingState() {
   const refresh = async () => {
     try {
       const status = await getLibraryStatus();
-      storeSet('libraryMissing', !!(status && status.missing));
-      storeSet('libraryMissingPath', (status && status.path) || null);
+      store.setState({ libraryMissing: !!(status && status.missing) });
+      store.setState({ libraryMissingPath: (status && status.path) || null });
       if (!status || !status.missing) notify(t('libraryMissingResolved'));
     } catch {
       /* leave the screen up — the user can retry again */
@@ -54,8 +54,8 @@ export function LibraryMissingState() {
     try {
       const res = await applyRepoint(dest);
       if (res && res.ok) {
-        storeSet('libraryMissing', false);
-        storeSet('libraryMissingPath', null);
+        store.setState({ libraryMissing: false });
+        store.setState({ libraryMissingPath: null });
         notify(t('libraryMissingRepointDone'));
       } else {
         notify(t('saveFolderErrGeneric'));

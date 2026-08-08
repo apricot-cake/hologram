@@ -28,7 +28,7 @@ import { open as menuOpen } from './menu.ts';
 import { imageTabGroup, imageTabTitleOf } from './records.ts';
 import { isOpen as settingsIsOpen } from './settings.ts';
 import { isTypingTarget, registerShortcut, tryRun } from './shortcut-registry.ts';
-import { get as storeGet, set as storeSet } from './store.ts';
+import { store } from './store.ts';
 import { hologramTabsSource } from './tabs.ts';
 
 export interface TabsBuilderDeps {
@@ -82,15 +82,15 @@ const NAV_CAP = 60;
 
 export function makeTabsController(deps: TabsBuilderDeps) {
   // --- hologramStore-backed tab list (tabs/activeTabId) ---
-  const getTabs = (): HologramTab[] => storeGet('tabs') || [];
-  const setTabs = (arr: HologramTab[]) => storeSet('tabs', arr);
+  const getTabs = (): HologramTab[] => store.getState().tabs;
+  const setTabs = (arr: HologramTab[]) => store.setState({ tabs: arr });
   function mutateTabs(fn: (arr: HologramTab[]) => HologramTab[] | undefined) {
     const copy = getTabs().slice();
     const result = fn(copy);
     setTabs(result || copy);
   }
-  const getActiveTabId = (): string | null => storeGet('activeTabId') ?? null;
-  const setActiveTabId = (id: string | null) => storeSet('activeTabId', id);
+  const getActiveTabId = (): string | null => store.getState().activeTabId;
+  const setActiveTabId = (id: string | null) => store.setState({ activeTabId: id });
   const activeTab = () => getTabs().find((t) => t.id === getActiveTabId());
   let appBooted = false; // gate history until initTabs has applied the saved view (avoids a spurious empty entry from the early prefs render)
   function markBooted() {
@@ -120,7 +120,7 @@ export function makeTabsController(deps: TabsBuilderDeps) {
   // Current view as a history entry — image beats mode (the image view overlays
   // whichever grid the tab was browsing); used to seed fresh histories on adopt.
   function snapshotEntry(): HologramNavEntry {
-    const iv = storeGet('activeImageTab');
+    const iv = store.getState().activeImageTab;
     if (iv) return entryOf('image', { recs: iv.recs, idx: iv.idx });
     if (deps.getBrowseMode() === 'posters') return entryOf('posters', snapshotPosterState());
     // #183: timeline's state is the SAME snapshotState() posts uses (postQB
@@ -157,7 +157,7 @@ export function makeTabsController(deps: TabsBuilderDeps) {
     return activeTab()?.specialKind === 'tags';
   }
   function syncTitleAndPersist() {
-    if (storeGet('activeImageTab')) return; // grid renders under the image view are background refreshes
+    if (store.getState().activeImageTab) return; // grid renders under the image view are background refreshes
     // #183: renderPosts() (post-grid-builder.ts) is now the render path for BOTH
     // posts and timeline — this guard has to let both through, and the
     // recordEntry below tags the entry with whichever one is actually live.
@@ -176,7 +176,7 @@ export function makeTabsController(deps: TabsBuilderDeps) {
   // fresh renderPosters() records a 'posters' entry — poster filters/sort/search
   // are history now that mode is per-tab (#144 pending decision 3).
   function syncPosterTitleAndPersist() {
-    if (storeGet('activeImageTab')) return;
+    if (store.getState().activeImageTab) return;
     if (deps.getBrowseMode() !== 'posters') return;
     if (onTagsTab()) return;
     if (restoringState) return;
@@ -282,8 +282,8 @@ export function makeTabsController(deps: TabsBuilderDeps) {
   // nav's canBack/canForward live in a closure (the history stack), not the store — so this
   // is the one remaining mirror-on-change (same shape as multiOnly/qfCat elsewhere).
   function updateNavButtons() {
-    storeSet('navCanBack', nav.canBack());
-    storeSet('navCanForward', nav.canForward());
+    store.setState({ navCanBack: nav.canBack() });
+    store.setState({ navCanForward: nav.canForward() });
   }
   function navBack() {
     if (nav.back()) persistTabsDebounced();

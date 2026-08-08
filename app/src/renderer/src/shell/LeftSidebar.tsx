@@ -39,7 +39,7 @@ import { Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupActio
 import { BackupStatus } from '../backup/BackupStatus.tsx';
 import { HistoryPanelBody } from '../history/HistoryPanel.tsx';
 import { t } from '../_shared/i18n.ts';
-import { get as storeGet, subscribe as storeSubscribe } from '../services/store.ts';
+import { store, subscribeKey } from '../services/store.ts';
 import { open as openSettings } from '../services/settings.ts';
 import { open as openPalette } from '../services/command-registry.ts';
 import { anchor as historyAnchor, close as closeHistory, isOpen as historyIsOpen, open as openHistory, subscribe as historySubscribe } from '../services/history-panel.ts';
@@ -60,8 +60,8 @@ import type { PinItem } from '../../../main/ipc-payloads.ts';
 // the store IS the interface — orchestrator.ts subscribes and runs the heavy
 // switch (handleBrowseModeStoreChange → setBrowseMode); the store.set idempotent
 // guard means no echo loop.
-const subBrowse = (cb: () => void) => storeSubscribe('browseMode', cb);
-const getBrowse = (): string => (storeGet('browseMode') as string) || 'posts';
+const subBrowse = (cb: () => void) => subscribeKey('browseMode', cb);
+const getBrowse = (): string => store.getState().browseMode;
 
 // Library folders (folders.json). folders.ts owns the data + a mutation-notify
 // channel (onChange); load() resolves once the file is read. React mounts before
@@ -109,8 +109,8 @@ function usePosterFolders(): HologramFolder[] {
 // mutation — the same channel the activebar reads. A saved search is "applied"
 // when the current tree equals the saved one; there is no separate applied-id
 // state to keep in sync, so editing a chip simply stops the row from matching.
-const subPostTree = (cb: () => void) => storeSubscribe('postQueryTree', cb);
-const getPostTree = () => storeGet('postQueryTree') as HologramQueryGroup | undefined;
+const subPostTree = (cb: () => void) => subscribeKey('postQueryTree', cb);
+const getPostTree = () => store.getState().postQueryTree;
 // Compare through the persistence clone so a tree that has been to disk and back
 // compares equal to a freshly built one (the compile memos are the only difference).
 const treeKey = (tree: HologramQueryGroup | null | undefined) => (tree?.children?.length ? JSON.stringify(cloneTree(tree)) : '');

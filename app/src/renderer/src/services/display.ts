@@ -19,7 +19,7 @@
 // ten legal states, no new concept (same extend-don't-bundle rule this module already
 // follows). See `avatarDisabled` below for why its disabled condition runs the
 // OPPOSITE way from `square`/`info`'s.
-import { get as storeGet, set as storeSet, subscribe as storeSubscribe } from './store.ts';
+import { store, subscribeKey } from './store.ts';
 
 /** The four store keys that make up a display state. */
 export const DISPLAY_KEYS = ['layout', 'squareThumbs', 'showInfo', 'showAvatar'] as const;
@@ -38,16 +38,16 @@ export interface DisplayShape {
 /** Defaults = grid, original aspect, info on (what the old `view: 'card'` drew), avatar on. */
 export function currentShape(): DisplayShape {
   return {
-    list: storeGet('layout') === 'list',
-    square: storeGet('squareThumbs') === true,
-    info: storeGet('showInfo') !== false,
-    avatar: storeGet('showAvatar') !== false,
+    list: store.getState().layout === 'list',
+    square: store.getState().squareThumbs === true,
+    info: store.getState().showInfo !== false,
+    avatar: store.getState().showAvatar !== false,
   };
 }
 
 /** Fires on any of the three keys — callers that re-derive the whole shape. */
 export function subscribeShape(cb: () => void): () => void {
-  const unsubs = DISPLAY_KEYS.map((k) => storeSubscribe(k, cb));
+  const unsubs = DISPLAY_KEYS.map((k) => subscribeKey(k, cb));
   return () => {
     for (const u of unsubs) u();
   };
@@ -88,16 +88,16 @@ export const gutterFor = (shape: DisplayShape): number => (shape.list ? 14 : sha
 
 /** Set one axis. Writing the store is the whole action — every reader subscribes. */
 export function setLayout(list: boolean): void {
-  storeSet('layout', list ? 'list' : 'grid');
+  store.setState({ layout: list ? 'list' : 'grid' });
 }
 export function setSquare(on: boolean): void {
-  storeSet('squareThumbs', on);
+  store.setState({ squareThumbs: on });
 }
 export function setInfo(on: boolean): void {
-  storeSet('showInfo', on);
+  store.setState({ showInfo: on });
 }
 export function setAvatar(on: boolean): void {
-  storeSet('showAvatar', on);
+  store.setState({ showAvatar: on });
 }
 
 // The avatar switch disables on the OPPOSITE condition from square/info: those go
@@ -143,13 +143,13 @@ export interface PosterShape {
 /** Defaults = grid, info on (what the old `posterView: 'card'` drew). */
 export function currentPosterShape(): PosterShape {
   return {
-    list: storeGet('posterLayout') === 'list',
-    info: storeGet('posterShowInfo') !== false,
+    list: store.getState().posterLayout === 'list',
+    info: store.getState().posterShowInfo !== false,
   };
 }
 
 export function subscribePosterShape(cb: () => void): () => void {
-  const unsubs = POSTER_DISPLAY_KEYS.map((k) => storeSubscribe(k, cb));
+  const unsubs = POSTER_DISPLAY_KEYS.map((k) => subscribeKey(k, cb));
   return () => {
     for (const u of unsubs) u();
   };
@@ -177,8 +177,8 @@ export const clampPosterGridSize = (px: number, info: boolean): number => Math.m
 export const posterGutterFor = (shape: PosterShape): number => (shape.list ? 4 : shape.info ? 14 : 10);
 
 export function setPosterLayout(list: boolean): void {
-  storeSet('posterLayout', list ? 'list' : 'grid');
+  store.setState({ posterLayout: list ? 'list' : 'grid' });
 }
 export function setPosterInfo(on: boolean): void {
-  storeSet('posterShowInfo', on);
+  store.setState({ posterShowInfo: on });
 }

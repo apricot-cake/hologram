@@ -27,7 +27,7 @@ import { listPostsDelta, deletePost, clearAll } from './posts.ts';
 import { refresh as trashRefresh } from './trash-view.ts';
 import { hologramIpc } from './ipc.ts';
 import { sync as syncPostsData } from './posts-data.ts';
-import { set as storeSet, setMany as storeSetMany } from './store.ts';
+import { store } from './store.ts';
 import { userKey } from './query.ts';
 import * as folders from './folders.ts';
 import * as selection from './selection.ts';
@@ -120,7 +120,7 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
   // in-place edit) is reachable from ONE place instead of scattered pushes.
   function markPostsMutated() {
     _allPostsGeneration++;
-    storeSet('allPostsCount', allPosts.length);
+    store.setState({ allPostsCount: allPosts.length });
     syncPostsData(allPosts);
   }
   function getAllPosts() {
@@ -168,7 +168,7 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
       // the single signal empty/EmptyState.tsx (via services/library-status.ts)
       // uses to tell 'still loading' apart from 'confirmed empty' (#682). posts
       // and posters share this cache, so one flag covers both grids.
-      storeSet('libraryLoaded', true);
+      store.setState({ libraryLoaded: true });
       allPosts = [..._postsById.values()];
       markPostsMutated();
       stickyRecs.clear(); // on a screen refresh (reload), clean out the mutation-survivor entries
@@ -351,7 +351,7 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
       // The EmptyState component derives 'firstRun'/'filtered' itself from this same key +
       // 'allPostsCount' + 'searchQuery' — one less push.
       // ONE notify pass for both keys — see the paired push below (#871).
-      storeSetMany({ postGroups: null, postSections: null }); // #47: no rows, no month sections either
+      store.setState({ postGroups: null, postSections: null }); // #47: no rows, no month sections either
       // Nothing else to do here. The grid host unmounts itself on the null push, and
       // the empty state decides from the SAME store keys whether it has something to
       // say (empty/EmptyState.tsx) — both used to be shown and hidden from this
@@ -372,7 +372,7 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
     // pushing them separately gives every subscriber a torn intermediate state —
     // new items measured against the previous build's section ranges, which is
     // what corrupted masonic's position cache and crashed the grid.
-    storeSetMany({ postGroups: viewGroups, postSections: sections }); // #47 — sections is null when the sort has no date axis
+    store.setState({ postGroups: viewGroups, postSections: sections }); // #47 — sections is null when the sort has no date axis
     _lastRenderGen = _allPostsGeneration; // mark the generation of this build
     _lastViewGroups = viewGroups;
     _lastSections = sections;
