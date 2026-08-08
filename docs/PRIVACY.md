@@ -71,4 +71,6 @@ The platform responses listed under **The browser extension** are also kept, com
 
 ## Contact
 
-For questions or concerns, please open an issue at https://github.com/apricot-cake/hologram/issues.
+- **A question about this policy, or about what leaves your machine** — ask in [Discussions → Q&A](https://github.com/apricot-cake/hologram/discussions/categories/q-a).
+- **Hologram sends something this policy does not describe** — that is a bug; please [report it](https://github.com/apricot-cake/hologram/issues/new?template=bug_report.yml).
+- **A security vulnerability** — report it privately through the [advisory form](https://github.com/apricot-cake/hologram/security/advisories/new), never as a public issue. See [SECURITY.md](../.github/SECURITY.md).

@@ -1,0 +1,92 @@
+name: Bug report
+description: Something in the app or the extension does not work as described.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report this.
+
+        **This form is for things that are broken.** A question belongs in [Q&A](https://github.com/apricot-cake/hologram/discussions/categories/q-a), an idea for a new feature in [Ideas](https://github.com/apricot-cake/hologram/discussions/categories/ideas), and a security problem in the [private advisory form](https://github.com/apricot-cake/hologram/security/advisories/new) — never here.
+
+        **Please do not paste the path to your library, or the text of a saved post.** Neither is needed to reproduce a bug.
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Which part
+      options:
+        - The desktop app
+        - The browser extension
+        - Saving from the browser, across both
+        - Not sure
+    validations:
+      required: true
+
+  - type: input
+    id: app-version
+    attributes:
+      label: App version
+      description: "Settings (the gear, bottom-left) → About."
+      placeholder: "1.2.3"
+    validations:
+      required: true
+
+  - type: input
+    id: os
+    attributes:
+      label: OS
+      placeholder: "Windows 11 24H2"
+    validations:
+      required: true
+
+  - type: input
+    id: browser
+    attributes:
+      label: Browser
+      description: "Only if the extension is involved."
+      placeholder: "Chrome 141"
+
+  - type: input
+    id: site
+    attributes:
+      label: Which site
+      description: "X, Bluesky, Misskey, Mastodon, pixiv, or somewhere else on the web. The site name is enough — no URL needed."
+      placeholder: "pixiv"
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: "What you did, in the order you did it."
+      value: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected-actual
+    attributes:
+      label: What you expected, and what happened instead
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Log excerpt
+      description: |
+        Optional. The app writes to `%APPDATA%\Hologram\logs\main.log`. Paste only the lines around the failure — the whole file is not useful, and it may contain paths you would rather not share.
+      render: text
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before you send
+      options:
+        - label: "I searched the existing issues and this is not already reported."
+          required: true
+        - label: "I removed my library path and any post text from what I wrote above."
+          required: true
