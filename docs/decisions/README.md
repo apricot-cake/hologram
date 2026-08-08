@@ -35,7 +35,7 @@
 | [0007](0007-horizontal-tabs-not-vertical.md) | タブは上部水平に置く（縦タブを採らない） | 採用 |
 | [0008](0008-single-smart-search.md) | 検索モードの切替を廃し単一のスマート検索にする | 採用 |
 | [0009](0009-bottom-floating-selection-bar.md) | 選択中の操作は底部中央のフローティングバーに置く | 採用 |
-| [0010](0010-sqlite-as-the-metadata-truth-source.md) | メタデータの正本を SQLite に置き、ファイルは実体だけを持つ | 採用（DB配置の条項のみ 0023 へ置き換え） |
+| [0010](0010-sqlite-as-the-metadata-truth-source.md) | メタデータの正本を SQLite に置き、ファイルは実体だけを持つ | 採用（DB配置の条項のみ 0025 へ置き換え） |
 | [0011](0011-preserve-acquisition-payloads.md) | 取得したペイロードを原本として残し、正規化フィールドへの昇格だけを実需で絞る | 採用 |
 | [0012](0012-asset-documents-are-raster-only.md) | ライブラリのファイルを「文書」にしてよいのはラスタ画像だけにし、asset 応答自体にも CSP を載せる | 採用 |
 | [0013](0013-accent-color-scoped-to-selection-and-active-state.md) | アクセント色は選択・作用中の状態表示だけに使う | 採用 |
@@ -43,7 +43,7 @@
 | [0015](0015-archives-are-streamed-by-path.md) | アーカイブはバイト列でなくパスで受け渡し、main が fd からストリームする | 採用 |
 | [0016](0016-one-candidate-engine-three-faces.md) | 「タイプ→候補」のエンジンは1つ・面は3つにする | 採用 |
 | [0017](0017-no-grid-motion-view-transitions-retired.md) | グリッドの切替はすべて即時にし、View Transitions を使わない | 採用 |
-| [0018](0018-labeled-navigation-rail-default.md) | 左サイドバーの既定をラベル付きナビゲーションレールにする | 採用 |
+| [0018](0018-labeled-navigation-rail-default.md) | 左サイドバーの既定をラベル付きナビゲーションレールにする | 一部置き換え（0027 へ） |
 | [0019](0019-detect-missing-save-and-backup-paths.md) | 保存先・バックアップ先はパスの実在を検証し、消失を静かに再作成しない | 採用 |
 | [0020](0020-triage-mode-reuses-235-undo-and-a-client-side-queue.md) | 高速トリアージモードはフルスクリーン Dialog・キューはクライアント側計算・undo は #235 のスタックを再利用する | 採用 |
 | [0021](0021-panel-toggles-are-instant.md) | パネルの開閉も即時にする（サイドバー・詳細パネル） | 採用 |
