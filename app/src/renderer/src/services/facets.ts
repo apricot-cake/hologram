@@ -183,9 +183,9 @@ export function makeFacets(deps: {
         // unparseable one) — migration-imported images and the like (#85/#84).
         // Narrower than the old "no platform" bucket now that platform-less-but-
         // domained records get their own row above; still carried as the
-        // 'platform'/'__none' leaf (this project is pre-release — see CLAUDE.md's
-        // no-backward-compat-for-personal-library rule — so redefining what that
-        // sentinel counts needs no migration). The matching predicate lives in
+        // 'platform'/'__none' leaf (this project is pre-release — see docs/scope.md's
+        // "採否の物差しに使わないもの" — so redefining what that sentinel counts needs
+        // no migration). The matching predicate lives in
         // query-builder.ts (not query.ts) — this round's file split keeps #180 off
         // query.ts/extension/, so the platform-leaf predicate augmentation for
         // '__none' and the new 'domain' leaf type both live in that wiring layer.

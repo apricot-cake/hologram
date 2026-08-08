@@ -50,8 +50,8 @@ const PREF_KEYS = [
 // `viewMode` / `posterViewMode` (card/tile/list) and their per-density size keys are
 // no longer written by anyone; these read a config.json left by an older build so the
 // app opens on the display the user last chose. Pre-release scaffolding: delete these
-// four, and their call sites in get-prefs, before 1.0 (CLAUDE.md "pre-release,
-// there is no such thing as 'someone else's library'").
+// four, and their call sites in get-prefs, before 1.0 (docs/scope.md "採否の物差しに
+// 使わないもの": pre-release, there is no such thing as "someone else's library").
 const legacyDensity = (cfg: HologramConfig): string => (['card', 'tile', 'list'].includes(cfg.viewMode) ? cfg.viewMode : 'card');
 const legacyGridSize = (cfg: HologramConfig): number | null => {
   const px = legacyDensity(cfg) === 'tile' ? cfg.imageTileSize : cfg.cardSize;
