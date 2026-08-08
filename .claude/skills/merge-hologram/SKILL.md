@@ -20,7 +20,8 @@ description: hologram で PR をマージする時の、このリポジトリ固
 
 **`ci.yml` も `app-tests.yml` も `main` への push でだけ走る**（#996 で `pull_request` トリガーを撤去）。必須チェックも 2026-08-06 に外れている＝**PR 上の緑はマージの条件ではなく、マージが唯一のゲート**。
 
-- **マージしたら `main` を本体チェックアウトへ `git pull` し、CI の結果まで見届ける**。PR 側で待つものは無い（CodeQL だけが PR で走る）。
+- **マージしたら `main` を本体チェックアウトへ `git pull` し、CI の結果まで見届ける**。**PR 側で待つものは無い。**
+- ⚠️**CodeQL は PR で走るが必須ではない**（ruleset に `required_status_checks` が無い）＝`gh pr view <N> --json mergeStateStatus` が **`UNSTABLE` のままマージしてよい**。`UNSTABLE` は「必須でないチェックが未完か赤い」であって、止まっているのは **`BLOCKED`** のときだけ。**`CLEAN` を待たない**＝2026-08-08 に CodeQL の完了を80秒待ってからマージした実例があるが、待つ理由は無かった。
 - **赤い `main` は他の何より先に直す**＝これが「マージ前に検査しない」ことの引き換え（正本は `docs/testing.md`）。
 - `paths-ignore` / `paths` で絞ってあるので、docs だけの変更では `ci.yml` が走らない。**走らなかったことと緑は別**＝受け皿は夜間の `schedule`。
 
