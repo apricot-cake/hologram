@@ -132,8 +132,15 @@ function htmlToText(html) {
   let s = String(html)
     .replace(/<br\s*\/?>/gi, '\n')
     .replace(/<\/p>\s*<p>/gi, '\n\n')
-    .replace(/<\/?p>/gi, '')
-    .replace(/<[^>]+>/g, '');
+    .replace(/<\/?p>/gi, '');
+  // Strip tags to a FIXPOINT, not in one pass: a single pass can splice a fresh
+  // tag out of what it left behind (`<scr<b>ipt>` → `<script>`), so the loop is
+  // what makes the result actually tag-free (CodeQL js/incomplete-multi-character-sanitization).
+  let previous: string;
+  do {
+    previous = s;
+    s = s.replace(/<[^>]+>/g, '');
+  } while (s !== previous);
   s = s
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')

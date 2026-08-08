@@ -4,7 +4,7 @@
 // host_permissions and credentials so a logged-in user can read R-18 /
 // follower-only works).
 
-import { anySrc, findAncestorContainerLink, hostnameMatches, mediaSrcs, normalizeRect, parseMediaUrlPath, prepareScopedCaptureState } from './dom.ts';
+import { anySrc, findAncestorContainerLink, hostnameMatches, mediaHostIs, mediaSrcs, normalizeRect, parseMediaUrlPath, prepareScopedCaptureState } from './dom.ts';
 import { emptyRecord, htmlToText, normalizeHashtags, readJsonKeepingRaw, toIso } from './record.ts';
 import type { Extractor, MediaIdentity, MediaItem, PostMediaElement, PostRect, PostRecord } from './types.ts';
 
@@ -422,7 +422,7 @@ const pixiv: Extractor = {
     },
     // The <id>_p<N> filename is what makes a pximg URL an artwork page rather
     // than a novel cover or a user icon (both live on i.pximg.net too).
-    isPostMedia: (el) => anySrc(el, (src) => src.includes('i.pximg.net') && PXIMG_ARTWORK_ID.test(src)),
+    isPostMedia: (el) => anySrc(el, (src) => mediaHostIs(src, 'i.pximg.net') && PXIMG_ARTWORK_ID.test(src)),
   },
 
   overlay: {

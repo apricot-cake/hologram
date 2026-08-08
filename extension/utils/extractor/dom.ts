@@ -64,6 +64,18 @@ function anySrc(el: PostMediaElement, test: (src: string) => boolean): boolean {
   return mediaSrcs(el).some(test);
 }
 
+// The host a media URL is actually served from. Parsed, never substring-matched:
+// `https://evil.example/?x=i.pximg.net` contains the CDN's name without being it,
+// so `src.includes(host)` answers yes for any page that can put the string in a
+// URL it controls (CodeQL js/incomplete-url-substring-sanitization).
+function mediaHostIs(src: string, host: string): boolean {
+  try {
+    return new URL(src, location.origin).hostname === host;
+  } catch {
+    return false;
+  }
+}
+
 interface ParsedMediaPath {
   match: RegExpMatchArray;
   url: string;
@@ -126,5 +138,5 @@ function mediaTreeDistance(a: Element, b: Element): number {
   return Number.POSITIVE_INFINITY;
 }
 
-export { anySrc, findAncestorContainerLink, hostnameMatches, mediaSrcs, mediaTreeDistance, normalizeRect, parseMediaUrlPath, prepareScopedCaptureState };
+export { anySrc, findAncestorContainerLink, hostnameMatches, mediaHostIs, mediaSrcs, mediaTreeDistance, normalizeRect, parseMediaUrlPath, prepareScopedCaptureState };
 export type { ParsedMediaPath };

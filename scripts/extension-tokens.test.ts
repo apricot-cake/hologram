@@ -155,13 +155,21 @@ describe('拡張コードとの噛み合わせ', () => {
     // SOURCES would make the tokens only this generated file names (the 4
     // motion tokens) fall over into "unused".
     for (const rel of SOURCES.filter((f) => path.basename(f) !== 'tokens.generated.ts')) {
-      const text = read(rel)
-        .replace(/\/\*[\s\S]*?\*\//g, '')
-        .replace(/^\s*\/\/.*$/gm, '')
-        // Strip HTML comments too = the extension pages' .html files have a
-        // third comment style. Without stripping it, the issue number (`#269`)
-        // would trip as a hex color, failing with a message that reads like "a color was hardcoded".
-        .replace(/<!--[\s\S]*?-->/g, '');
+      // Strip to a FIXPOINT: one pass can leave the delimiters of a comment it
+      // did not open behind, spliced back into a new one (`<!-<!-- -->->`), so
+      // the loop is what makes the text actually comment-free.
+      let text = read(rel);
+      let previous: string;
+      do {
+        previous = text;
+        text = text
+          .replace(/\/\*[\s\S]*?\*\//g, '')
+          .replace(/^\s*\/\/.*$/gm, '')
+          // Strip HTML comments too = the extension pages' .html files have a
+          // third comment style. Without stripping it, the issue number (`#269`)
+          // would trip as a hex color, failing with a message that reads like "a color was hardcoded".
+          .replace(/<!--[\s\S]*?-->/g, '');
+      } while (text !== previous);
       for (const [hit] of text.matchAll(COLOR)) offenders.push(`${rel}: ${hit}`);
     }
     expect(offenders.sort()).toEqual([]);
