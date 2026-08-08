@@ -147,7 +147,10 @@ async function startFakeDrive(): Promise<FakeDrive> {
         res.writeHead(200, { location: `${state.base}/upload/session/${session}`, 'content-type': 'application/json' });
         return res.end('{}');
       }
-      const boundary = /boundary=(.+)$/.exec(req.headers['content-type'] || '')?.[1];
+      // `[^;]+` rather than `(.+)$`: the parameter ends at the next `;`, and an
+      // end-anchored `.+` re-scans the whole header from every start position
+      // (CodeQL js/polynomial-redos).
+      const boundary = /boundary=([^;]+)/.exec(req.headers['content-type'] || '')?.[1];
       if (!boundary) return json(res, 400, { error: { code: 400, status: 'INVALID_ARGUMENT' } });
       const parts = multipartParts(body, boundary);
       if (parts.length !== 2) return json(res, 400, { error: { code: 400, status: 'INVALID_ARGUMENT' } });

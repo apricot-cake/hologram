@@ -41,7 +41,7 @@ function defaultStack(): string {
 // itself has to be spelled without needing one.
 const BACKSLASH = String.fromCharCode(92);
 const DQUOTE = String.fromCharCode(34);
-function quoteFamily(name: string): string {
+export function quoteFamily(name: string): string {
   const escaped = name
     .split(BACKSLASH)
     .join(BACKSLASH + BACKSLASH)

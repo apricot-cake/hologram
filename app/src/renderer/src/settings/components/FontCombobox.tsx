@@ -2,6 +2,7 @@ import { Combobox } from '@base-ui/react/combobox';
 import { useEffect, useRef, useState } from 'react';
 import type { KeyboardEvent } from 'react';
 import { setSelectOpen } from '../../services/open-select-registry.ts';
+import { quoteFamily } from '../../services/ui-font-api.ts';
 import { t } from '../../_shared/i18n.ts';
 
 // Interface-font picker (Settings → Appearance, #137). Base UI Combobox again
@@ -110,7 +111,7 @@ export function FontCombobox({ value, onPreview, onCommit }: { value: string; on
             <Combobox.Empty className="px-2 py-1.5 text-xs text-muted-foreground">{t('uiFontNoMatch')}</Combobox.Empty>
             <Combobox.List>
               {(family: string) => (
-                <Combobox.Item key={family} value={family} className="flex cursor-default items-center rounded-sm px-2 py-1 text-xs select-none data-highlighted:bg-muted" style={{ fontFamily: `"${family.replace(/"/g, '\\"')}"` }}>
+                <Combobox.Item key={family} value={family} className="flex cursor-default items-center rounded-sm px-2 py-1 text-xs select-none data-highlighted:bg-muted" style={{ fontFamily: quoteFamily(family) }}>
                   {family}
                 </Combobox.Item>
               )}

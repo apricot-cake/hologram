@@ -1064,8 +1064,18 @@ describe('imageDragged の振り分け（#450）', () => {
   const X_POST_URL = 'https://x.com/alice/status/1';
   const POSTER = 'https://pbs.twimg.com/amplify_video_thumb/1/img/abc.jpg';
 
+  // Host, not substring: the URL under test carries the post URL in its query,
+  // so `includes()` would answer yes for a request to somewhere else entirely.
+  const isSyndication = (url: unknown) => {
+    try {
+      return new URL(String(url)).hostname === 'cdn.syndication.twimg.com';
+    } catch {
+      return false;
+    }
+  };
+
   function mockSyndication(mediaDetails: unknown[]) {
-    vi.stubGlobal('fetch', async (url: unknown) => (String(url).includes('cdn.syndication.twimg.com') ? new Response(JSON.stringify({ text: 'hi', user: { screen_name: 'alice', id_str: '1' }, mediaDetails }), { status: 200, headers: { 'content-type': 'application/json' } }) : new Response('{}', { status: 404 })));
+    vi.stubGlobal('fetch', async (url: unknown) => (isSyndication(url) ? new Response(JSON.stringify({ text: 'hi', user: { screen_name: 'alice', id_str: '1' }, mediaDetails }), { status: 200, headers: { 'content-type': 'application/json' } }) : new Response('{}', { status: 404 })));
   }
 
   afterEach(() => vi.unstubAllGlobals());
