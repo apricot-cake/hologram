@@ -121,10 +121,11 @@ jobs:
       # Since #883 the default branch carries a ruleset that requires one, and a
       # personal repository cannot put GitHub Actions in a ruleset's bypass list —
       # that is an organization-only field, confirmed by the API rejecting it. So
-      # the bot opens a PR and lets auto-merge land it. There is nothing left to
-      # wait for: the required checks were removed on 2026-08-06 and #996 dropped
-      # the pull_request trigger, so the PR carries no checks and merges at once.
-      # The baselines are verified by the run that follows on main.
+      # the bot opens a PR and lets auto-merge land it. As of 2026-08-08 that PR
+      # carries the same checks as any other — ci.yml and app-tests.yml run on
+      # `pull_request` again, and neither is path-filtered any more — so auto-merge
+      # waits for them rather than landing at once. That wait costs nothing here:
+      # this job already runs unattended at 03:07 JST.
       - name: Carry the baseline forward
         if: steps.canary.outputs.code == '0' || steps.canary.outputs.code == '2'
         env:
@@ -146,12 +147,12 @@ jobs:
               --base "${GITHUB_REF_NAME}" \
               --head "$branch" \
               --title 'chore(canary): carry the schema baselines forward' \
-              --body 'API スキーマカナリア（#465）の基準スナップショットを持ち越す自動 PR。差分は `scripts/canary/snapshots/` のみで、`updatedAt` だけの回は PR 自体が作られない。auto-merge が即座に着地させる（PR では CI が走らない＝#996）。'
+              --body 'API スキーマカナリア（#465）の基準スナップショットを持ち越す自動 PR。差分は `scripts/canary/snapshots/` のみで、`updatedAt` だけの回は PR 自体が作られない。auto-merge が着地させる＝この PR でも他と同じく ci / app-tests が走るので、その分だけ待つ。'
             # --auto rather than an immediate merge: the repository requires a PR
             # even for bots, and this call fails loudly if auto-merge is ever
-            # turned off — better than leaving the PR open and unnoticed. Nothing
-            # is being waited for since #996 removed the pull_request trigger and
-            # the merge gate is gone (2026-08-06), so it lands right away.
+            # turned off — better than leaving the PR open and unnoticed. Since
+            # 2026-08-08 there is also something for it to wait on: this PR's own
+            # ci / app-tests runs.
             gh pr merge "$branch" --auto --squash --delete-branch
             exit 0
           fi

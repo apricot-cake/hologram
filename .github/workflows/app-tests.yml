@@ -43,42 +43,30 @@ name: App tests
 # What a job name no longer says, the log does: the pool prints one `ok`/`FAIL`
 # line per script and repeats the failing names on its last line (#829).
 #
-# No `pull_request` trigger since #996: the merge-result run it produced was
-# never read once CI stopped being a merge gate (2026-08-06), so every change
-# was checked twice — once on refs/pull/N/merge, once on what landed. The cost
-# is that two branches which pass alone and break together now break main and
-# are caught there, not before.
+# `pull_request` AND `push` to main, with NO path filter on either — the same two
+# changes ci.yml made on 2026-08-08, for the same two reasons (that file carries the
+# survey of what vitejs/vite, wxt-dev/wxt, biomejs/biome, microsoft/vscode and
+# electron/electron actually do). What is specific to THIS workflow:
 #
-# `paths` (#993) replaces a hand-written docs-only detection step that called
-# `gh api .../files` on a PR number and went dead the moment #996 dropped the
-# `pull_request` trigger (no PR to look up on push — every push ran every
-# shard). This list is an allow-list, not an exclusion, because what this
-# workflow actually needs to see is narrow: anything not listed here defaults
-# to NOT running. A change that should have triggered this and doesn't will
-# still be caught by the nightly `schedule` run below, which `paths` cannot
-# filter — that run always sees everything.
+#   - running the real-Electron layers on every pull request is not a stretch of the
+#     norm: vscode runs pr-linux-test / pr-darwin-test / pr-linux-cli-test on PRs,
+#     unfiltered. This is the layer whose absence before a merge is felt most — it is
+#     the only one that boots the app and the extension at all.
+#   - the allow-list `paths` (#993) had to go before these shards could be REQUIRED,
+#     because a workflow skipped by paths leaves its check Pending and blocks the
+#     merge forever (GitHub's documented behaviour; a job skipped by `if:` reports
+#     Success instead, but that needs a change-detection step, and #993 removed the
+#     last one this repo had after it went silently dead).
+#
+# What it costs: a docs-only or PowerShell-only change now spends three Windows
+# minutes on shards that touch none of it. That was worth avoiding when Windows
+# minutes were metered; the repository is public (#75), so they are free, and the
+# thing being bought — no unchecked merge — is the point of the whole change.
 on:
   push:
     branches: [main]
-    paths:
-      - 'app/**'
-      - 'extension/**'
-      - 'native-host/**'
-      - 'scripts/**'
-      - '!scripts/make-icons.cjs'
-      # Windows-only launcher for the developer's own machine. Nothing in this job runs
-      # or lints PowerShell, so an edit to it can only spend three Windows minutes on a
-      # file none of the shards touch. It moved here from the repo root on 2026-08-07,
-      # which is what put it inside scripts/** in the first place. The handshake it
-      # depends on IS covered — by test-app-restart-signal.cts, which lives in app/**'s
-      # blast radius through app/src/main/restart-signal.ts and in scripts/** itself.
-      - '!scripts/restart-app.ps1'
-      - 'package.json'
-      - 'package-lock.json'
-      - 'playwright.config.ts'
-      - 'vitest.config.ts'
-      - '.github/workflows/app-tests.yml'
-      - '.github/actions/setup-app-tests/**'
+  pull_request:
+    branches: [main]
   schedule:
     # 18:37 UTC = 03:37 JST. Off the hour and outside 22:00-02:00 UTC on purpose:
     # scheduled runs queue behind everyone else's, and those are the peaks.
