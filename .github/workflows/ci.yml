@@ -21,6 +21,14 @@ name: CI
 # token. Excluded here rather than enumerated: lint/typecheck touch nearly every
 # file, so a new directory should be checked by default, not silently skipped
 # because nobody added it to an allow-list.
+#
+# The `schedule` below is what that exclusion falls back on. `paths-ignore` only
+# applies to `push`, so the nightly run always sees the whole tree — including a
+# docs/ or *.md change that lint or tsc would in fact have had something to say
+# about (a code fence is not the only thing that lives in markdown; a moved file
+# referenced from a config is not markdown at all). app-tests.yml has kept its
+# nightly for exactly this and schema-canary.yml runs in the same window; this
+# layer was the one still missing it.
 on:
   push:
     branches: [main]
@@ -28,6 +36,13 @@ on:
       - '**/*.md'
       - 'docs/**'
       - 'assets/**'
+  schedule:
+    # 18:17 UTC = 03:17 JST. Off the hour and outside 22:00-02:00 UTC for the same
+    # reason as app-tests.yml — scheduled runs queue behind everyone else's, and
+    # those are the peaks. Twenty minutes ahead of app-tests' 03:37 and ten behind
+    # schema-canary's 03:07, so the three nightly jobs do not contend for runners.
+    - cron: '17 18 * * *'
+  workflow_dispatch:
 
 # Default token to read-only; no job in this workflow needs to write anything.
 permissions:
