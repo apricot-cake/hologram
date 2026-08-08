@@ -31,7 +31,6 @@
     "electron-vite": "^5.0.0",
     "koffi": "^3.1.4",
     "react": "^19.1.0",
-    "react-aria-components": "^1.20.0",
     "react-dom": "^19.1.0",
     "react-zoom-pan-pinch": "^4.0.3",
     "shadcn": "^4.16.1",

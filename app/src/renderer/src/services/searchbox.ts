@@ -1,5 +1,5 @@
 // Searchbox bridge: connects viewer.ts (search DATA + business logic) to the
-// searchbox React component (react-aria ComboBox owning the input + suggest dropdown).
+// searchbox React component (Base UI Autocomplete owning the input + suggest popup).
 // The handlers are functions, so they ride this dedicated bridge instead of the
 // serializable hologramStore — same reasoning as menu.ts / kind-menu.ts. The component
 // loads before viewer.ts finishes booting (viewer awaits hologramI18n first), so it
