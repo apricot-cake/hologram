@@ -40,7 +40,28 @@
       "includes": ["**/app/src/renderer/src/components/ui/**"],
       "linter": {
         "rules": {
-          "correctness": { "useExhaustiveDependencies": "off" }
+          "correctness": { "useExhaustiveDependencies": "off" },
+          // 同じ vendored 理由。label.tsx は `<label {...props} />` を返すだけの薄い
+          // ラッパで、対になる control は**呼び出し側**が渡す＝この1ファイルだけを見て
+          // 判定できる情報が無い（呼び出し側は上のグローバル設定で検査される）。
+          "a11y": { "noLabelWithoutControl": "off" }
+        }
+      }
+    },
+    {
+      // 検査用フィクスチャは **X / pixiv / Mastodon / Misskey / Bluesky の DOM を再現した
+      // もの**＝自前のマークアップではない。extractor が依存するセレクタ/testid を持つこと
+      // だけが存在理由なので、`lang` や `alt` を足せば「再現」でなくなる（それらの実サイトが
+      // 出していないものを検査対象に混ぜることになる）。a11y の 177 件のうち **131 件が
+      // ここ**で、これを外さないと自前 UI の 46 件が埋もれる。
+      //
+      // `app/src/renderer/public/vendor` を files.includes で外しているのと同じ「他所の
+      // マークアップ」扱い。a11y だけに絞るのは、フィクスチャにも効かせたい規則（構文
+      // エラーなど）まで落とさないため。
+      "includes": ["**/scripts/fixtures/**"],
+      "linter": {
+        "rules": {
+          "a11y": { "preset": "none" }
         }
       }
     },
@@ -68,7 +89,12 @@
   },
   // CSS は対象外: design-tokens.css は「1トークン=1行・light/dark ブロック対」の
   // 手組み構造で、test-token-parity / test-contrast-parity がこの書式を正規表現で
-  // 解析する（＝整形はテストの前提を壊す）。CSS の大半は index.html 内で元々対象外。
+  // 解析する（＝整形はテストの前提を壊す）。
+  //
+  // かつては index.html の <style> ブロックにも同じ方針を及ぼすため style/
+  // noDescendingSpecificity と complexity/noImportantStyles を切っていたが、
+  // **index.html に <style> はもう無い**（#621 で React ホスト div だけになった）＝
+  // 両方とも指摘 0 件の死んだ無効化だったので撤去した。
   "css": {
     "formatter": { "enabled": false },
     "linter": { "enabled": false },
@@ -91,42 +117,64 @@
     "rules": {
       "preset": "recommended",
       // 無効化はすべて「リポの意図的イディオム/方針との衝突」。正しさ系は全て有効のまま。
+      //
+      // a11y は preset ごとの無効化から**ルール単位**へ（そうしろと前のコメント自身が
+      // 書いていた）。指摘は 21 件（2026-07-22 実測）とされていたが、測り直すと **177 件**。
+      // ただし内訳の 131 件は `scripts/fixtures/**`（X / pixiv 等の DOM を再現した検査用
+      // HTML）で、これは overrides で対象外にした＝**自前の UI に在るのは 46 件**。うち
+      // 9 件を直し、37 件が下の「方針として切る」側に落ちた。
+      //
+      // 有効にしたもの＝a11y の目標とは独立に「そもそもバグ」の側。とくに useButtonType は
+      // form 内の `<button>` が既定で submit になる事故を止める規則で、キーボード操作の話
+      // ではない。**自前 UI での違反が現時点 0 のルールも有効にしてある**＝直す作業は無く、
+      // 新規の混入だけを止める。
       "a11y": {
-        // デスクトップアプリとして a11y/キーボード操作を目標に掲げていないため
-        // 一括で無効化している。指摘は 21 件（2026-07-22 実測）で、方針を変える
-        // 場合は全体を戻すのでなくルール単位で有効化する。
-        "preset": "none"
+        "recommended": true,
+        // Switch / Checkbox は Radix ベースの shadcn 部品で、DOM 上は
+        // `<button role="switch|checkbox">`＝Biome の既定リスト（input/select/textarea）
+        // に載らない。`<label><Switch/>テキスト</label>` は正しい書き方なので、規則を
+        // 切るのではなくこのオプションで部品名を教える（この設定項目の用途そのもの）。
+        "noLabelWithoutControl": { "level": "error", "options": { "inputComponents": ["Switch", "Checkbox"] } },
+        // ここから下が「キーボード操作を目標に掲げない」方針が実際に効く範囲。div/span に
+        // クリックを付ける（ポインタ前提の）操作系で、直すというのは role・tabIndex・キー
+        // ハンドラを足すこと＝方針そのものの変更になる。戻すならこの5つを1つずつ。
+        "noStaticElementInteractions": "off", // 8件
+        "noNoninteractiveElementInteractions": "off", // 13件
+        "useKeyWithClickEvents": "off", // 7件
+        "useSemanticElements": "off", // 5件（div+role を意味要素へ置換＝上と同じ層）
+        "useFocusableInteractive": "off", // 自前 UI では 0 件だが上と同じ層なので揃える
+        // 収集した動画にキャプションは存在しない（ユーザーが保存した原本を再生するだけで
+        // 字幕トラックの出所が無い）＝直しようがなく、抑制コメントを4箇所に置く方が悪い。
+        "useMediaCaption": "off"
       },
       "style": {
-        "useTemplate": "off", // 文字列連結が主流イディオム（360件）＝置換は無価値なチャーン
-        "useSingleVarDeclarator": "off", // let a, b; スタイルを許容
-        "noParameterAssign": "off", // 引数の正規化再代入（v = coerce(v)）は常用パターン
-        // index.html 内 <style> の CSS 検査（2.x の HTML サポートで新規に発火）。
-        // css.linter.enabled: false と同じ「CSS は対象外」方針の対象（このファイルの
-        // CSS 冒頭コメント参照）＝埋め込み <style> にも同じ理由で及ぼす。
-        "noDescendingSpecificity": "off"
+        "useTemplate": "off", // 文字列連結が主流イディオム（377件）＝置換は無価値なチャーン
+        "useSingleVarDeclarator": "off", // let a, b; スタイルを許容（21件）
+        "noParameterAssign": "off" // 引数の正規化再代入（v = coerce(v)）は常用パターン（10件）
       },
       "complexity": {
-        "useOptionalChain": "off", // a && a.b イディオムが 245 箇所（2026-07-22 実測）＝一括書換は blame を汚すだけで得るものがない
-        "noForEach": "off", // forEach は許容
-        "useArrowFunction": "off", // function 式は hoisting/this 都合で意図的な箇所あり
-        "noImportantStyles": "off" // 上の noDescendingSpecificity と同じ「CSS は対象外」方針
+        "useOptionalChain": "off", // a && a.b イディオムが 407 箇所＝一括書換は blame を汚すだけで得るものがない
+        "noForEach": "off", // forEach は許容（35件）
+        "useArrowFunction": "off" // function 式は hoisting/this 都合で意図的な箇所あり（28件）
       },
       "suspicious": {
-        "noAssignInExpressions": "off", // while ((m = re.exec())) 等のイディオム
-        "noArrayIndexKey": "off", // 島はモデル丸ごと再pushで index key が正（部分並べ替えをしない）
-        "noRedundantUseStrict": "off", // Biome は .js を ESM 扱い＝CJS/plain-script の 'use strict' は本物。削ると sloppy 化の実害
-        // 明示 any が 380 箇所（2026-07-22 実測）。境界を越えるペイロード（IPC・
-        // 拡張⇄ホスト間のメッセージ）の契約として意図的に置いたものを含むため、
-        // 有効化するなら段階的な型付けとセットで行う。
+        "noAssignInExpressions": "off", // while ((m = re.exec())) 等のイディオム（36件）
+        "noArrayIndexKey": "off", // 島はモデル丸ごと再pushで index key が正（部分並べ替えをしない・22件）
+        "noRedundantUseStrict": "off", // Biome は .js を ESM 扱い＝CJS/plain-script の 'use strict' は本物。削ると sloppy 化の実害（193件）
+        // 明示 any が **1443 箇所**。境界を越えるペイロード（IPC・拡張⇄ホスト間の
+        // メッセージ）の契約として意図的に置いたものを含むため、有効化するなら段階的な
+        // 型付けとセットで行う。⚠️ここは「380件」と書いてあったが実測は3.8倍だった
+        // ＝**この設定のどの件数も手で維持しない**。判断し直すときは測り直す:
+        //   npx biome lint --only=<group>/<rule> .
+        // （--only は設定で off の規則も強制的に有効化して数えられる）
         "noExplicitAny": "off",
         // forEach コールバックが値を返すのを禁じる新ルール（2.x 新規）。noForEach
         // で許容した簡潔アロー body の forEach（f => add(f)）が軒並み該当する＝同一
-        // イディオムへの追加規制であって別問題ではない。
+        // イディオムへの追加規制であって別問題ではない（26件）。
         "useIterableCallbackReturn": "off"
       },
       "performance": {
-        "noDelete": "off" // delete はサイドカー/JSON のキー除去の正道（性能文脈でない）
+        "noDelete": "off" // delete はサイドカー/JSON のキー除去の正道（性能文脈でない・13件）
       }
     }
   }

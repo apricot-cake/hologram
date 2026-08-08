@@ -180,7 +180,12 @@ export function BackupStatus() {
     // are one hover away. Desktop apps put ambient sync state exactly here — a small
     // always-visible indicator with the detail on hover (VS Code's and Obsidian's status
     // bars, the OneDrive / Dropbox tray icon).
-    <span data-slot="backup-status" title={full} aria-label={full} className={`mx-auto inline-flex size-8 shrink-0 items-center justify-center rounded-md text-[var(--text-muted)] ${TONE[m.kind]}`}>
+    // role="img" because a bare <span> is role=generic, which supports no
+    // accessible name — the aria-label below was being dropped. The glyph IS the
+    // content here (it says what the backup is doing), so an image with a text
+    // alternative is what it is, and the alternative is the same string the
+    // title shows on hover.
+    <span data-slot="backup-status" role="img" title={full} aria-label={full} className={`mx-auto inline-flex size-8 shrink-0 items-center justify-center rounded-md text-[var(--text-muted)] ${TONE[m.kind]}`}>
       {m.kind === 'done' ? <IconDone /> : m.kind === 'syncing' ? <IconSync /> : <IconWarn />}
     </span>
   );
