@@ -15,7 +15,7 @@
 import { Bookmark, X } from 'lucide-react';
 import { useState, useSyncExternalStore } from 'react';
 import { type ActiveFilter, activeFilters, type FilterCat, filterCategories, saveCurrentSearch } from '../services/orchestrator.ts';
-import { get as storeGet, subscribe as storeSubscribe } from '../services/store.ts';
+import { store, subscribeKey } from '../services/store.ts';
 import { CatIcon } from './index.tsx';
 import { promptName } from '../prompt/Prompt.tsx';
 import { FormEditor } from './FormEditor.tsx';
@@ -30,12 +30,15 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 // ignores edits to the inactive mode's tree.
 const TREE_KEYS = ['browseMode', 'postQueryTree', 'posterQueryTree'] as const;
 const subActive = (cb: () => void) => {
-  const unsubs = TREE_KEYS.map((k) => storeSubscribe(k, cb));
+  const unsubs = TREE_KEYS.map((k) => subscribeKey(k, cb));
   return () => {
     for (const u of unsubs) u();
   };
 };
-const getActive = () => storeGet(storeGet('browseMode') === 'posters' ? 'posterQueryTree' : 'postQueryTree');
+const getActive = () => {
+  const s = store.getState();
+  return s.browseMode === 'posters' ? s.posterQueryTree : s.postQueryTree;
+};
 
 // The mode word shown inside the chip: except for exclusions, all for an AND cluster,
 // any for a 2+-value OR cluster. A lone positive value needs no word ("tag: cat").
@@ -122,7 +125,7 @@ export function FilterChips() {
   // empty 40px row. The accepted tradeoff is that the grid shifts down when the first
   // chip appears — no transition softens that, per the Issue's decision.
   if (chips.length === 0) return null;
-  const posters = storeGet('browseMode') === 'posters';
+  const posters = store.getState().browseMode === 'posters';
   return (
     <div data-slot="filter-chips" className="flex flex-wrap items-center gap-1.5 py-1.5">
       {chips.map((f, i) => (

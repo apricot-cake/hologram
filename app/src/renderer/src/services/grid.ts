@@ -10,7 +10,7 @@
 
 import { currentPosterShape, currentShape, DISPLAY_KEYS, gutterFor, POSTER_DISPLAY_KEYS, posterGutterFor } from './display.ts';
 import type { DisplayShape, PosterShape } from './display.ts';
-import { get as storeGet, subscribe as storeSubscribe } from './store.ts';
+import { store, subscribeKeys } from './store.ts';
 import type { ZoomAnchor } from './zoom-anchor.ts';
 //
 // Both grids (post and poster) were converted from a PUSHED
@@ -114,17 +114,17 @@ function makePostGridSource() {
   // 'browseMode' is in this list for the timeline's sake (#183): its layout
   // branch below reads it directly, and a mode switch alone (no display-axis or
   // size change) must still repaint with the new layout.
-  for (const k of ['postGroups', 'postSections', ...DISPLAY_KEYS, 'gridSize', 'listThumb', 'browseMode']) storeSubscribe(k, notify);
+  subscribeKeys(['postGroups', 'postSections', ...DISPLAY_KEYS, 'gridSize', 'listThumb', 'browseMode'], notify);
   function computeModel(): HologramGridModel | null {
     if (!config) return null;
-    const items = storeGet('postGroups');
+    const items = store.getState().postGroups;
     if (items == null) return null; // undefined (nothing rendered yet) or explicit null (grid empty)
     if (items !== lastItems) {
       lastItems = items;
       itemsKeySeq++;
     }
-    const mode = (storeGet('browseMode') as string | undefined) || 'posts';
-    const layout = mode === 'timeline' ? timelineLayout(currentShape(), storeGet('listThumb') || 88) : postLayout(currentShape(), storeGet('gridSize') || 280, storeGet('listThumb') || 88);
+    const mode = store.getState().browseMode;
+    const layout = mode === 'timeline' ? timelineLayout(currentShape(), store.getState().listThumb) : postLayout(currentShape(), store.getState().gridSize, store.getState().listThumb);
     return {
       ...layout,
       mode,
@@ -139,13 +139,13 @@ function makePostGridSource() {
       onAspect: config.onAspect,
       // #47 — month sections for a date sort (null otherwise). These index INTO
       // `items`, so the two must never be read apart: post-grid-builder.ts pushes
-      // them with ONE storeSetMany, which is what makes a single computeModel()
-      // see both halves of the same build. (#871: two separate storeSet calls
-      // meant two synchronous notify passes, and the first one produced a model
-      // carrying the new items with the PREVIOUS build's section ranges. Same
+      // them in ONE setState, which is what makes a single computeModel() see both
+      // halves of the same build. (#871: two separate single-key writes meant two
+      // synchronous notify passes, and the first one produced a model carrying the
+      // new items with the PREVIOUS build's section ranges. Same
       // store is not the same push — no itemsKey bump can cover that, because the
       // second pass leaves `items` identical and only moves the ranges.)
-      sections: (storeGet('postSections') as HologramDateSection[] | null) ?? null,
+      sections: store.getState().postSections,
       paint: ++paintSeq,
     } as HologramGridModel;
   }
@@ -220,17 +220,17 @@ function makePosterGridSource() {
       }
     }
   };
-  for (const k of ['posterGroups', ...POSTER_DISPLAY_KEYS, 'posterGridSize']) storeSubscribe(k, notify);
+  subscribeKeys(['posterGroups', ...POSTER_DISPLAY_KEYS, 'posterGridSize'], notify);
   function computeModel(): HologramGridModel | null {
     if (!config) return null;
-    const items = storeGet('posterGroups');
+    const items = store.getState().posterGroups;
     if (items == null) return null; // undefined until the first renderPosters() — after that it's always an array (possibly empty), never explicitly cleared to null (unlike posts, poster has no innerHTML-clear ordering constraint to preserve)
     if (items !== lastItems) {
       lastItems = items;
       itemsKeySeq++;
     }
     return {
-      ...posterLayout(currentPosterShape(), storeGet('posterGridSize') || 200),
+      ...posterLayout(currentPosterShape(), store.getState().posterGridSize),
       items,
       itemsKey: itemsKeySeq,
       modelOf: config.modelOf,
@@ -280,17 +280,17 @@ function makeTrashGridSource() {
       }
     }
   };
-  for (const k of ['trashGroups', ...DISPLAY_KEYS, 'gridSize', 'listThumb']) storeSubscribe(k, notify);
+  subscribeKeys(['trashGroups', ...DISPLAY_KEYS, 'gridSize', 'listThumb'], notify);
   function computeModel(): HologramGridModel | null {
     if (!config) return null;
-    const items = storeGet('trashGroups');
+    const items = store.getState().trashGroups;
     if (items == null) return null; // undefined (never loaded) or explicit null (trash empty)
     if (items !== lastItems) {
       lastItems = items;
       itemsKeySeq++;
     }
     return {
-      ...postLayout(currentShape(), storeGet('gridSize') || 280, storeGet('listThumb') || 88),
+      ...postLayout(currentShape(), store.getState().gridSize, store.getState().listThumb),
       items,
       itemsKey: itemsKeySeq,
       modelOf: config.modelOf,

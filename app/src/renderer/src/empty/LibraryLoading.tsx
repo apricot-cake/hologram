@@ -1,6 +1,6 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import { Skeleton } from '@/components/ui/skeleton';
-import { get as storeGet, subscribe as storeSubscribe } from '../services/store.ts';
+import { store, subscribeKey } from '../services/store.ts';
 
 // Loading placeholder for the two library grids (posts/posters), shown for the
 // stretch between "the window opened" and "the library's first load landed"
@@ -16,10 +16,10 @@ import { get as storeGet, subscribe as storeSubscribe } from '../services/store.
 // the existing shadcn Skeleton (components/ui/skeleton.tsx) — shadcn's own
 // docs describe it as "a placeholder while content is loading" — not a new
 // loading primitive.
-const subLibraryLoaded = (cb: () => void) => storeSubscribe('libraryLoaded', cb);
-const getLibraryLoaded = () => !!storeGet('libraryLoaded');
-const subMode = (cb: () => void) => storeSubscribe('browseMode', cb);
-const getMode = () => (storeGet('browseMode') as string | undefined) ?? 'posts';
+const subLibraryLoaded = (cb: () => void) => subscribeKey('libraryLoaded', cb);
+const getLibraryLoaded = () => store.getState().libraryLoaded;
+const subMode = (cb: () => void) => subscribeKey('browseMode', cb);
+const getMode = () => store.getState().browseMode;
 
 // Below ~300ms a human doesn't register the wait, so a skeleton that appears
 // and immediately vanishes reads as a flash of noise rather than progress —

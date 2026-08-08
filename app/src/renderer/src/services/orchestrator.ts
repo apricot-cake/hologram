@@ -52,7 +52,8 @@ import { makeImageTabController } from './image-tab-builder.ts';
 import { hologramImageTabSource } from './image-tab.ts';
 import { subscribe as subscribePostsData } from './posts-data.ts';
 import { makeTriage } from './triage-builder.ts';
-import { get as storeGet, set as storeSet, subscribe as storeSubscribe } from './store.ts';
+import { store, subscribeKey } from './store.ts';
+import type { HologramBrowseMode } from './store.ts';
 import { hologramIpc } from './ipc.ts';
 
 // Boot readiness signal + the boot/subscription handlers below: real ES exports now,
@@ -347,7 +348,7 @@ export function endFilterEditSession(): void {
   // 'timeline' case to listing.ts's switch) means every reader of sortValue()
   // (getFilteredPosts, the month-section builder, the engagement/captured-date
   // relevance gates) picks it up for free through the existing 'date-desc' path.
-  const sortValue = () => (browseMode === 'timeline' ? 'date-desc' : (storeGet('sortPost') as string) || 'date-desc');
+  const sortValue = () => (browseMode === 'timeline' ? 'date-desc' : store.getState().sortPost);
 
   // --- Query Field ---
   const ENG_TYPE_LABELS: Record<string, string> = {
@@ -605,9 +606,11 @@ export function endFilterEditSession(): void {
   let inspectedKey: string | null = null;
   function setInspectedKey(key: string | null) {
     inspectedKey = key;
-    storeSet('inspectedKey', key);
+    store.setState({ inspectedKey: key });
   }
-  storeSet('inspectedKey', null); // establish the initial value (store.get() is undefined otherwise)
+  // (A write of null used to sit here to establish the initial value, because the
+  // untyped store answered `undefined` until someone had written the key. The typed
+  // store declares it — see services/store.ts's INITIAL.)
   // Display density (card/tile/list) + tile/card/list size slider, for both the
   // post grid and the poster grid, moved to grid-density-builder.ts during the
   // viewer.ts decomposition. renderPosts/renderPosters are forward
@@ -863,7 +866,7 @@ export function endFilterEditSession(): void {
     sortValue,
     // Shuffle seed (#118) — hologramStore 'shuffleSeed', snapshotted per tab like the
     // sort key itself. Only the 'random' sort reads it.
-    shuffleSeed: () => (storeGet('shuffleSeed') as string) || '',
+    shuffleSeed: () => store.getState().shuffleSeed,
     searchQuery: () => searchQuery(),
     buildUsers,
     posterQBEval: (u) => posterQB.eval(u),
@@ -871,7 +874,7 @@ export function endFilterEditSession(): void {
     // Poster sort's single source is hologramStore 'sortPoster' (the display popover writes it);
     // default 'count' when unset (poster sort isn't persisted, so it resets on reload — same
     // as the old closure default).
-    posterSort: () => (storeGet('sortPoster') as string) || 'count',
+    posterSort: () => store.getState().sortPoster,
     // Collections migrated to sidebar folders; the collection-sort UI is gone, so
     // listing.js's filteredFolders() is dormant smart-collection foundation and
     // is never called here. This getter satisfies its contract with the default
@@ -903,15 +906,15 @@ export function endFilterEditSession(): void {
     getSortValue: sortValue,
     // A restore WRITES the key and nothing else: renderPosts is the caller's own next
     // step, so going through setPostSort() here would push a duplicate history entry.
-    setSortValue: (v) => storeSet('sortPost', v),
+    setSortValue: (v) => store.setState({ sortPost: v }),
     // The shuffle seed travels with the sort key in the tab snapshot (#118), so a
     // restored tab reproduces the order it was showing.
-    getShuffleSeed: () => (storeGet('shuffleSeed') as string) || '',
-    setShuffleSeed: (v) => storeSet('shuffleSeed', v || ''),
+    getShuffleSeed: () => store.getState().shuffleSeed,
+    setShuffleSeed: (v) => store.setState({ shuffleSeed: v || '' }),
     getMultiOnly: () => multiOnly,
     setMultiOnly: (v) => {
       multiOnly = v;
-      storeSet('multiOnly', multiOnly); // mirror into the store — the sidebar/Tabs sources read it directly
+      store.setState({ multiOnly: multiOnly }); // mirror into the store — the sidebar/Tabs sources read it directly
     },
     searchQuery: () => searchQuery(), // makeSearchBox() is wired far below — deferred
     setSearchBoxValue: (v) => setSearchBoxValue(v),
@@ -926,8 +929,8 @@ export function endFilterEditSession(): void {
     scrollContentTo: (y) => scrollContentTo(y),
     getPosterTree: () => posterQB.getTree(), // posterQB is constructed far below — deferred
     setPosterTree: (t) => posterQB.setTree(t),
-    getPosterSort: () => (storeGet('sortPoster') as string) || 'count',
-    setPosterSort: (v) => storeSet('sortPoster', v),
+    getPosterSort: () => store.getState().sortPoster,
+    setPosterSort: (v) => store.setState({ sortPoster: v }),
     renderPosters: () => renderPosters(),
     showImageView: (recs, idx) => imageTabCtl.showImageView(recs, idx), // imageTabCtl is constructed just below — deferred
     hideImageView: () => imageTabCtl.hideImageView(),
@@ -1326,14 +1329,18 @@ export function endFilterEditSession(): void {
   // a tab restored after a restart comes back on its grid. Leaving the trash is
   // therefore always a plain move to another destination (or a history step, which
   // applies its own kind through setBrowseModeLite below).
-  const normalizeBrowseMode = (mode: string) => (mode === 'posters' ? 'posters' : mode === 'trash' ? 'trash' : mode === 'timeline' ? 'timeline' : 'posts'); // collections retired (now a sidebar folder list)
+  // The gate every browse-mode write goes through — anything unrecognized lands on
+  // 'posts'. Its return type IS HologramBrowseMode (the store's own union), so a mode
+  // that has not been through here cannot be written. collections retired (now a
+  // sidebar folder list).
+  const normalizeBrowseMode = (mode: string): HologramBrowseMode => (mode === 'posters' ? 'posters' : mode === 'trash' ? 'trash' : mode === 'timeline' ? 'timeline' : 'posts');
   // The light half: flip the mode state (let + store mirror + stale-detail close)
   // WITHOUT rendering. applyEntry (tabs-builder) uses this so a history restore
   // renders exactly once — its own kind-specific render right after.
   // No pref write anywhere: mode is per-tab state on the history entry now (#144
   // confirmed (pending item 3) — the old global browseMode pref is retired; a new tab opens posts).
-  function setBrowseModeLite(mode: string) {
-    mode = normalizeBrowseMode(mode);
+  function setBrowseModeLite(raw: string) {
+    const mode = normalizeBrowseMode(raw);
     if (browseMode === mode) return;
     browseMode = mode;
     // Mirror into the store so the React components (LeftSidebar active state, App's
@@ -1341,7 +1348,7 @@ export function endFilterEditSession(): void {
     // mode even when an INTERNAL setter drove us. Safe against recursion: the
     // store's set is value-guarded, and browseMode === mode by now so the
     // subscribe handler's guard skips.
-    storeSet('browseMode', mode);
+    store.setState({ browseMode: mode });
     dismissDetail(); // a stale post/poster detail shouldn't survive the switch — but the panel itself should
   }
   // Switches the content area between the post grid and the poster grid (same tab).
@@ -1378,8 +1385,8 @@ export function endFilterEditSession(): void {
   // resetAllFilters/resetPosterFilters already record their own history entry, so
   // Alt+← undoes a reset the same as any other filter change. A destination with
   // nothing to reset stays the untouched no-op (no stray render/history entry).
-  browseTo = (mode) => {
-    mode = normalizeBrowseMode(mode);
+  browseTo = (raw) => {
+    const mode = normalizeBrowseMode(raw);
     const posters = mode === 'posters';
     const reset = posters ? resetPosterFilters : mode === 'posts' ? resetAllFilters : null;
     const hasFilters = !!reset && (treeLeaves((posters ? posterQB : postQB).getTree()).length > 0 || searchQuery().trim() !== '');
@@ -1389,7 +1396,7 @@ export function endFilterEditSession(): void {
       setBrowseMode(mode);
     } else {
       if (hasFilters) reset();
-      storeSet('browseMode', mode);
+      store.setState({ browseMode: mode });
     }
   };
   // Browse mode is the left sidebar's (hologramStore 'browseMode').
@@ -1400,7 +1407,7 @@ export function endFilterEditSession(): void {
   // this stays the guard + action logic. Assigned (not a hoisted declaration) so the
   // module-scope `export let` above is what gets set.
   handleBrowseModeStoreChange = function () {
-    const m = storeGet('browseMode');
+    const m = store.getState().browseMode;
     if (m === browseMode) return;
     setBrowseMode(m);
   };
@@ -1802,7 +1809,7 @@ export function endFilterEditSession(): void {
   });
   // Poster-mode sort. Single source = hologramStore 'sortPoster' (the display popover's
   // Select writes it on pick); re-render when it changes — one trigger, no dual source.
-  storeSubscribe('sortPoster', () => {
+  subscribeKey('sortPoster', () => {
     if (tabsCtl.isRestoring()) return; // applyEntry/initTabs wrote the store — they drive their own render
     // A sort change rewrites the current history entry instead of pushing (#144 confirmed (pending item 2)).
     tabsCtl.setNavReplaceNext();
@@ -1849,8 +1856,6 @@ export function endFilterEditSession(): void {
   // local const here — resetAllFilters (above) and postQB's onLeafMutated/
   // isEditingLeaf deps still reference it directly.
   const searchBox = makeSearchBox({
-    storeGet,
-    storeSet,
     getTree: () => postQB.getTree(),
     addFilter: (f) => postQB.addFilter(f),
     removeNode: (n) => postQB.removeNode(n),
@@ -1914,7 +1919,7 @@ export function endFilterEditSession(): void {
     fileSrc,
     openResult: (query, captureId) => {
       tabsCtl.openTextSearchTab(query);
-      const groups = storeGet('postGroups') as HologramPostGroup[] | null;
+      const groups = store.getState().postGroups;
       const g = groups?.find((gr) => gr.records.some((r) => r.captureId === captureId));
       if (g) showDetail(g);
     },
@@ -1936,13 +1941,13 @@ export function endFilterEditSession(): void {
   // coming back to random show the same order until the user re-rolls.
   setPostSort = (v: string) => {
     if (v === sortValue()) return;
-    storeSet('sortPost', v);
-    if (v === 'random' && !storeGet('shuffleSeed')) storeSet('shuffleSeed', newShuffleSeed());
+    store.setState({ sortPost: v });
+    if (v === 'random' && !store.getState().shuffleSeed) store.setState({ shuffleSeed: newShuffleSeed() });
     tabsCtl.setNavReplaceNext();
     renderPosts();
   };
   rerollShuffle = () => {
-    storeSet('shuffleSeed', newShuffleSeed());
+    store.setState({ shuffleSeed: newShuffleSeed() });
     tabsCtl.setNavReplaceNext();
     renderPosts();
   };

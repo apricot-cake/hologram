@@ -2,8 +2,12 @@
 // text-leaf state machine (search-editing.ts) and the suggestion-pick bridge to
 // the searchbox React component (searchbox.ts) already exist as real ES modules —
 // this module is the view-specific glue that used to live inline in viewer.ts:
-// the hologramStore 'searchQuery' getter/setter (with the echo guard that tells
-// typing apart from programmatic writes) and the debounced re-render on typing.
+// the store's `searchQuery` getter/setter (with the echo guard that tells typing
+// apart from programmatic writes) and the debounced re-render on typing.
+//
+// The store is imported directly rather than injected (#1054): its two accessors
+// were the only deps here typed against free-form string keys, and the typed
+// store makes the injection pay for nothing — no test substitutes them.
 // postQB/browseMode and the render/sidebar callbacks are still owned by
 // viewer.ts, so they're injected as deps — same ctx pattern as
 // query-builder.ts/kind-menu-builder.ts.
@@ -13,10 +17,9 @@ import { makeSearchEditing } from './search-editing.ts';
 import { focusSearchBox, init as initSearchBox } from './searchbox.ts';
 import { isOpen as settingsIsOpen } from './settings.ts';
 import { isTypingTarget, registerShortcut, tryRun } from './shortcut-registry.ts';
+import { store } from './store.ts';
 
 export interface SearchBoxDeps {
-  storeGet(key: string): unknown;
-  storeSet(key: string, value: unknown): void;
   getTree(): HologramQueryGroup;
   addFilter(leaf: { type: string; [k: string]: any }): HologramQueryLeaf | null;
   removeNode(node: HologramQueryLeaf): void;
@@ -36,12 +39,12 @@ export function makeSearchBox(deps: SearchBoxDeps) {
   // setSearchBoxValue caller triggers its own re-render, so feeding the echo into
   // the typing pipeline would double-render and churn the editing text leaf.
   function searchQuery() {
-    return String(deps.storeGet('searchQuery') || '');
+    return store.getState().searchQuery;
   }
   let _searchEcho = '';
   function setSearchBoxValue(v: string | null | undefined) {
     _searchEcho = String(v ?? '');
-    deps.storeSet('searchQuery', _searchEcho);
+    store.setState({ searchQuery: _searchEcho });
   }
 
   const searchEditing = makeSearchEditing({
@@ -111,7 +114,7 @@ export function makeSearchBox(deps: SearchBoxDeps) {
       .replace(/\s+/g, ' ')
       .trim();
     if (!v) return;
-    deps.storeSet('searchQuery', v);
+    store.setState({ searchQuery: v });
     focusSearchBox(); // show WHERE the term landed, and leave the caret in it
   }
 

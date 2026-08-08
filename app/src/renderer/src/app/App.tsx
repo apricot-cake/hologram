@@ -25,7 +25,7 @@ import { onPostsChanged } from '../services/posts.ts';
 import { getLibraryStatus, getExtensionContact } from '../services/library-path.ts';
 import { subscribePosterShape as subscribePosterDisplay, subscribeShape as subscribeDisplay } from '../services/display.ts';
 import { onChange as foldersOnChange } from '../services/folders.ts';
-import { set as storeSet, subscribe as storeSubscribe } from '../services/store.ts';
+import { store, subscribeKey } from '../services/store.ts';
 import {
   viewerReady,
   bootApp,
@@ -98,14 +98,14 @@ function LibraryStatusGate() {
   useEffect(() => {
     getLibraryStatus()
       .then((status) => {
-        storeSet('libraryMissing', !!(status && status.missing));
-        storeSet('libraryMissingPath', (status && status.path) || null);
+        store.setState({ libraryMissing: !!(status && status.missing) });
+        store.setState({ libraryMissingPath: (status && status.path) || null });
       })
       .catch(() => {
         /* leave the default (not missing) — the normal grid still tries to load */
       });
     getExtensionContact()
-      .then((status) => storeSet('extensionContacted', !!(status && status.contacted)))
+      .then((status) => store.setState({ extensionContacted: !!(status && status.contacted) }))
       .catch(() => {
         /* leave the default (undefined/falsy) — reads as "no contact yet", the
          * safer of the two wrong guesses (worst case: the guide flashes once). */
@@ -251,9 +251,9 @@ function SelectionContextMenu() {
 function StoreSubscriptions() {
   useEffect(() => {
     const unsubDisplay = subscribeDisplay(() => handleDisplayStoreChange());
-    const unsubBrowseMode = storeSubscribe('browseMode', () => handleBrowseModeStoreChange());
+    const unsubBrowseMode = subscribeKey('browseMode', () => handleBrowseModeStoreChange());
     const unsubPosterDisplay = subscribePosterDisplay(() => handlePosterDisplayStoreChange());
-    const unsubSearchQuery = storeSubscribe('searchQuery', () => handleSearchQueryStoreChange());
+    const unsubSearchQuery = subscribeKey('searchQuery', () => handleSearchQueryStoreChange());
     foldersOnChange((kind) => handleFolderChange(kind));
     onPostsChanged(() => handlePostsChanged());
     return () => {

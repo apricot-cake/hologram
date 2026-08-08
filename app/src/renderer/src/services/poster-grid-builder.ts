@@ -29,7 +29,7 @@ import * as folders from './folders.ts';
 import * as aliases from './aliases.ts';
 import { open as confirmOpen } from './confirm.ts';
 import { open as aliasPickerOpen } from '../services/alias-picker.ts';
-import { set as storeSet } from './store.ts';
+import { store } from './store.ts';
 import type { UndoChange } from './undo.ts';
 import type { NotifyAction } from './ui.ts';
 
@@ -161,12 +161,12 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
       // computed here (buildUsers() is the generation-cached poster roll-up — the
       // OLD code only ever called it in this branch too, so this preserves the
       // same laziness, not a new cost).
-      storeSet('allUsersCount', deps.buildUsers().length);
-      storeSet('posterGroups', posterList); // [] — React renders an empty grid (no cards)
+      store.setState({ allUsersCount: deps.buildUsers().length });
+      store.setState({ posterGroups: posterList }); // [] — React renders an empty grid (no cards)
       if (!keepLimit) deps.onPosterRendered(); // the zero-result state also records/persists (mirrors the post grid)
       return;
     }
-    storeSet('posterGroups', posterList);
+    store.setState({ posterGroups: posterList });
     if (!keepLimit) deps.onPosterRendered(); // per-tab history record + persist (#144 — posters entries ride the same stack)
   }
 

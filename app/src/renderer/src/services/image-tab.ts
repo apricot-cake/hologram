@@ -19,7 +19,7 @@
 // took over supplying the callbacks.
 import { get as getPostsData, subscribe as subscribePostsData } from './posts-data.ts';
 import { imageTabGroup } from './records.ts';
-import { get as storeGet, subscribe as storeSubscribe } from './store.ts';
+import { store, subscribeKeys } from './store.ts';
 
 type Gallery = { buildGroupGalleryItems(g: any): { src: string; alt: string; video: boolean; ugoira?: { file: string; frames: { file: string; delay: number }[] }; poster?: string }[] };
 let gallery: Gallery | null = null;
@@ -56,7 +56,7 @@ function dispatchClose() {
 }
 
 function get(): HologramImageTabModel | null {
-  const active = storeGet('activeImageTab');
+  const active = store.getState().activeImageTab;
   if (!active || !gallery || !labels) return null;
   const byId = byIdMap();
   const g = imageTabGroup({ id: active.id, recs: active.recs }, (id) => byId.get(id));
@@ -67,7 +67,7 @@ function get(): HologramImageTabModel | null {
     tabId: active.id,
     items,
     idx: Math.max(0, Math.min(active.idx, items.length - 1)),
-    inspectorOpen: storeGet('inspectedKey') != null,
+    inspectorOpen: store.getState().inspectedKey != null,
     labels,
     onIndexChange: dispatchIndex,
     onToggleInspector: dispatchToggleInspector,
@@ -105,5 +105,5 @@ export const hologramImageTabSource = {
     };
   },
 };
-for (const k of ['activeImageTab', 'inspectedKey']) storeSubscribe(k, notify);
+subscribeKeys(['activeImageTab', 'inspectedKey'], notify);
 subscribePostsData(notify);

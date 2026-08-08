@@ -23,7 +23,7 @@
 // address a record by its captureId, which main recovers with baseOf().
 import { open as confirmOpen } from './confirm.ts';
 import { postIdKey, stampPost } from './records.ts';
-import { set as storeSet } from './store.ts';
+import { store } from './store.ts';
 import { deleteFromTrash, emptyTrash, listTrash, restorePost } from './trash.ts';
 import { notify } from './ui.ts';
 
@@ -104,7 +104,7 @@ export async function refresh(): Promise<void> {
   loaded = true;
   // null (not []) unmounts the grid's cells synchronously — same sentinel the post
   // grid uses (see services/grid.ts's computeModel).
-  storeSet('trashGroups', groups.length ? groups : null);
+  store.setState({ trashGroups: groups.length ? groups : null });
   publish();
 }
 

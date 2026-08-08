@@ -12,10 +12,13 @@
 // query/mutate API. A real ES module now — its exports are imported directly by
 // the orchestrator and the bottom FloatingBar component (selection/).
 
-import { get as storeGet, set as storeSet } from './store.ts';
+import { store } from './store.ts';
 
+// A copy, not the stored set: the store holds it as ReadonlySet because nothing
+// may mutate a published selection in place (the identity IS the change signal —
+// see the store push below), and every caller here builds a new set anyway.
 function current(): Set<string> {
-  return storeGet('selectedSet') || new Set<string>();
+  return new Set(store.getState().selectedSet);
 }
 
 let anchor: number | null = null;
@@ -74,7 +77,7 @@ export function toggle(idx: number, key: string, shiftKey: boolean, groups: Holo
     next.add(key);
     anchor = idx;
   }
-  storeSet('selectedSet', next);
+  store.setState({ selectedSet: next });
 }
 
 // Plain click (#143): collapse the selection to just this one card and make it
@@ -82,12 +85,12 @@ export function toggle(idx: number, key: string, shiftKey: boolean, groups: Holo
 // using toggle() above (add-remove / range).
 export function selectOnly(idx: number, key: string) {
   anchor = idx;
-  storeSet('selectedSet', new Set<string>([key]));
+  store.setState({ selectedSet: new Set<string>([key]) });
 }
 
 export function clear() {
   anchor = null;
-  storeSet('selectedSet', new Set<string>());
+  store.setState({ selectedSet: new Set<string>() });
 }
 
 // --- Marquee (drag range selection, #484) ---------------------------------
@@ -115,7 +118,7 @@ export function updateMarquee(indices: number[], groups: HologramPostGroup[], po
   // band touched — the start of the run, which is where continuing with the
   // keyboard reads right. (`indices` arrives ascending from marquee.hitIndices.)
   anchor = indices.length ? indices[0] : marqueeAnchor;
-  storeSet('selectedSet', next);
+  store.setState({ selectedSet: next });
 }
 
 export function endMarquee() {
@@ -131,7 +134,7 @@ export function cancelMarquee() {
   const base = marqueeBase;
   anchor = marqueeAnchor;
   endMarquee();
-  storeSet('selectedSet', new Set<string>(base ?? []));
+  store.setState({ selectedSet: new Set<string>(base ?? []) });
 }
 
 // Unconditional select-all (Ctrl/Cmd+A): every group in, regardless of the
@@ -140,7 +143,7 @@ export function selectAll(groups: HologramPostGroup[], postIdKey: PostIdKey) {
   const next = new Set(current());
   groups.forEach((g) => next.add(postIdKey(g.rep)));
   anchor = null;
-  storeSet('selectedSet', next);
+  store.setState({ selectedSet: next });
 }
 
 // Select-all/deselect-all button + toolbar shortcut: flips between everything selected

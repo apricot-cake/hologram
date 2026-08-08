@@ -11,7 +11,7 @@ import { imageTabGroup, imageTabTitleOf } from './records.ts';
 import { isVisible as panelIsVisible, setOpen as panelSetOpen } from './inspector-panel.ts';
 import { reveal as panelsReveal } from './panels.ts';
 import { genTabId, navEntryUrl } from './tab-state.ts';
-import { set as storeSet } from './store.ts';
+import { store } from './store.ts';
 
 export interface ImageTabBuilderDeps {
   t(key: string, subs?: ReadonlyArray<string | number | null | undefined>): string;
@@ -81,7 +81,7 @@ export function makeImageTabController(deps: ImageTabBuilderDeps) {
   // the whole React model from this (crossed with posts-data.ts for library
   // changes, and 'inspectedKey' for the inspector state).
   function publish(recs: string[], idx: number) {
-    storeSet('activeImageTab', { id: deps.getActiveTabId() || '', recs, idx });
+    store.setState({ activeImageTab: { id: deps.getActiveTabId() || '', recs, idx } });
   }
 
   // Stamp the image title onto the active tab (auto-title — cleared by
@@ -131,7 +131,7 @@ export function makeImageTabController(deps: ImageTabBuilderDeps) {
   function hideImageView() {
     if (!imageViewShowing) return;
     imageViewShowing = false;
-    storeSet('activeImageTab', null); // → ImageTabHost renders nothing, the content column comes back
+    store.setState({ activeImageTab: null }); // → ImageTabHost renders nothing, the content column comes back
     deps.dismissDetail(); // the open detail belonged to the image view; grid tabs reopen it per card
   }
 

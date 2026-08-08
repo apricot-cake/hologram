@@ -28,20 +28,18 @@ import { avatarDisabled, currentPosterShape, currentShape, DISPLAY_KEYS, POSTER_
 import type { HologramSizeTrack } from '../services/grid-density-builder.ts';
 import { applyPostSize, applyPosterSize, getPostSizeTrack, getPosterSizeTrack, rerollShuffle, setPostSort } from '../services/orchestrator.ts';
 import { isHidden as panelsAreHidden, setHidden as setPanelsHidden, subscribe as panelsSubscribe } from '../services/panels.ts';
-import { get as storeGet, set as storeSet, subscribe as storeSubscribe } from '../services/store.ts';
+import { store, subscribeKey, subscribeKeys } from '../services/store.ts';
+import type { HologramStoreState } from '../services/store.ts';
 
-const subKey = (key: string) => (cb: () => void) => storeSubscribe(key, cb);
+const subKey = (key: keyof HologramStoreState) => (cb: () => void) => subscribeKey(key, cb);
 
 // Subscribe to several store keys at once (any change fires cb) — the size track depends
 // on the display shape AND the active layout's size, which live in separate store keys.
-const subMany = (keys: string[]) => (cb: () => void) => {
-  const unsubs = keys.map((k) => storeSubscribe(k, cb));
-  return () => unsubs.forEach((u) => u());
-};
+const subMany = (keys: readonly (keyof HologramStoreState)[]) => (cb: () => void) => subscribeKeys(keys, cb);
 const subPostSize = subMany([...DISPLAY_KEYS, 'gridSize', 'listThumb']);
-const postSizeSnap = () => `${shapeSnapshot()}|${storeGet('gridSize')}|${storeGet('listThumb')}`;
+const postSizeSnap = () => `${shapeSnapshot()}|${store.getState().gridSize}|${store.getState().listThumb}`;
 const subPosterSize = subMany([...POSTER_DISPLAY_KEYS, 'posterGridSize']);
-const posterSizeSnap = () => `${posterShapeSnapshot()}|${storeGet('posterGridSize')}`;
+const posterSizeSnap = () => `${posterShapeSnapshot()}|${store.getState().posterGridSize}`;
 
 // Sort option tables (value = the sort key the listing pipeline reads; key = i18n
 // label).
@@ -124,16 +122,16 @@ function SizeSlider({ track, onDrag, onCommit }: { track: HologramSizeTrack; onD
 // Sort Select. Both sorts are plain store keys now: the post sort used to be a hidden
 // <select> in the shell that this drove with a synthetic 'change' event (#153 category
 // 3), and it is setPostSort() — a real function call — instead.
-function SortSelect_({ storeKey, apply, options }: { storeKey: string; apply?: (value: string) => void; options: { value: string; key: string }[] }) {
-  const subscribe = useCallback((cb: () => void) => storeSubscribe(storeKey, cb), [storeKey]);
-  const getVal = useCallback((): string => (storeGet(storeKey) as string) ?? options[0].value, [storeKey, options]);
+function SortSelect_({ storeKey, apply, options }: { storeKey: 'sortPost' | 'sortPoster'; apply?: (value: string) => void; options: { value: string; key: string }[] }) {
+  const subscribe = useCallback((cb: () => void) => subscribeKey(storeKey, cb), [storeKey]);
+  const getVal = useCallback((): string => store.getState()[storeKey], [storeKey]);
   const value = useSyncExternalStore(subscribe, getVal);
   const items = useMemo(() => Object.fromEntries(options.map((o) => [o.value, t(o.key)])), [options]);
   const choose = useCallback(
     (next: string | null) => {
       if (next == null) return; // Base UI passes null on clear — never our case
       if (apply) apply(next);
-      else storeSet(storeKey, next);
+      else store.setState({ [storeKey]: next });
     },
     [apply, storeKey],
   );
@@ -162,7 +160,7 @@ function PostControls() {
   const sizeTrack = usePostSizeTrack();
   // Random is the one sort with something left to say after it is picked: the order is
   // seeded, so re-rolling is how you get a different one (#118).
-  const sort = useSyncExternalStore(subKey('sortPost'), () => (storeGet('sortPost') as string) || 'date-desc');
+  const sort = useSyncExternalStore(subKey('sortPost'), () => store.getState().sortPost);
   return (
     <>
       <Row label={t('sbSortTitle')}>
@@ -294,7 +292,7 @@ function PanelControls() {
 }
 
 export function DisplayMenu() {
-  const mode = useSyncExternalStore(subKey('browseMode'), () => (storeGet('browseMode') as string) || 'posts');
+  const mode = useSyncExternalStore(subKey('browseMode'), () => store.getState().browseMode);
   return (
     <Popover>
       <PopoverTrigger

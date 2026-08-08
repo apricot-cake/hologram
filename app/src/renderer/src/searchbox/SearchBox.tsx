@@ -21,7 +21,7 @@ import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from 'r
 import type { ComponentType, KeyboardEvent } from 'react';
 import { type CommandEntry, type CommandSection, type QueryOptions, queryEntries } from '../services/command-registry.ts';
 import { handlers as sbHandlers, registerFocus } from '../services/searchbox.ts';
-import { get as storeGet, set as storeSet, subscribe as storeSubscribe } from '../services/store.ts';
+import { store, subscribeKey } from '../services/store.ts';
 
 // This face's lineup: tags and posters only (the palette adds commands, tabs and
 // folders). The counts are the ones the old buildSuggest used — a dropdown under a
@@ -32,8 +32,8 @@ const SUG_ICON: Partial<Record<CommandSection, ComponentType<{ className?: strin
 const handlers = () => sbHandlers() || null;
 
 export function SearchBox({ placeholder }: { placeholder?: string }) {
-  const subscribe = useCallback((cb: () => void) => storeSubscribe('searchQuery', cb), []);
-  const value = useSyncExternalStore(subscribe, () => String(storeGet('searchQuery') || ''));
+  const subscribe = useCallback((cb: () => void) => subscribeKey('searchQuery', cb), []);
+  const value = useSyncExternalStore(subscribe, () => store.getState().searchQuery);
   // Highlight tracking for bare Enter: with an item highlighted Base UI commits
   // it (the Item's onClick fires), so onKeyDown must only confirm free text when
   // nothing is highlighted. Tracked via onItemHighlighted — state, not DOM
@@ -94,7 +94,7 @@ export function SearchBox({ placeholder }: { placeholder?: string }) {
         // An item press echoes the item's label into the input; the pick itself
         // already cleared the value through the store — swallow the echo.
         if (details.reason === 'item-press') return;
-        storeSet('searchQuery', v);
+        store.setState({ searchQuery: v });
       }}
       onItemHighlighted={(it) => {
         highlightedRef.current = it;

@@ -31,6 +31,12 @@
     "types": ["node"]
   },
   // The renderer globals the specs read through page.evaluate (window.hologram)
-  // come from the app's own declaration file rather than being re-declared here.
-  "include": ["**/*.ts", "../playwright.config.ts", "../app/src/renderer/src/types/globals.d.ts"]
+  // come from the app's own declaration files rather than being re-declared here.
+  // BOTH are listed: globals.d.ts carries the window surface, and
+  // renderer-globals.d.ts carries the ambient data shapes (HologramTab /
+  // HologramQueryGroup / HologramPostGroup / …) that the renderer modules a spec
+  // pulls in are written against — services/store.ts's state type names five of
+  // them, so without this file the whole renderer half of the program fails to
+  // resolve here while compiling fine everywhere else.
+  "include": ["**/*.ts", "../playwright.config.ts", "../app/src/renderer/src/types/globals.d.ts", "../app/src/renderer/src/types/renderer-globals.d.ts"]
 }

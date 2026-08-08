@@ -16,7 +16,7 @@ import { clampGridSize, clampPosterGridSize, currentPosterShape, currentShape, G
 import { gridWidth, scroller } from './content-area.ts';
 import { sizeFor, sliderTrack, trackCols, thumbW } from './geometry.ts';
 import { isTypingTarget, registerShortcut, tryRun } from './shortcut-registry.ts';
-import { set as storeSet } from './store.ts';
+import { store } from './store.ts';
 import { resolveZoomAnchor } from './zoom-anchor.ts';
 import type { ZoomAnchor } from './zoom-anchor.ts';
 import type { AppPrefs } from '../../../main/ipc-payloads.ts';
@@ -41,6 +41,24 @@ export interface HologramSizeTrack {
   single: boolean;
 }
 
+// The three store keys a size track mirrors into. They double as the pref names
+// (the pref and the store key are the same word for all three), and every one of
+// them holds a number — which is what lets the settled size be written through a
+// computed key without loosening the store's type.
+type HologramSizeKey = 'gridSize' | 'listThumb' | 'posterGridSize';
+
+// What viewSizeState/posterSizeState hand back: the live value, its bounds, and
+// where the settled value goes. Named so those two literals stay typed as
+// HologramSizeKey rather than widening to string.
+interface SizeState {
+  get(): number;
+  set(v: number): void;
+  min: number;
+  max: number;
+  pref: HologramSizeKey;
+  columns?: boolean;
+}
+
 export function makeGridDensity(deps: GridDensityDeps) {
   // --- Post grid: size state (the display SHAPE lives in display.ts) ---
   let gridSize = 280; // grid: column width px (pref gridSize)
@@ -61,7 +79,7 @@ export function makeGridDensity(deps: GridDensityDeps) {
   // one column, no dead notches). The list is a full-width stack, so its track maps
   // straight to the thumbnail px. Right = larger. While dragging only the live column
   // width updates; persisting + re-requesting thumbnails happens on release.
-  function viewSizeState() {
+  function viewSizeState(): SizeState {
     const shape = currentShape();
     if (shape.list)
       return {
@@ -72,7 +90,6 @@ export function makeGridDensity(deps: GridDensityDeps) {
         min: LIST_MIN,
         max: LIST_MAX,
         pref: 'listThumb',
-        storeKey: 'listThumb',
         columns: false,
       };
     return {
@@ -85,7 +102,6 @@ export function makeGridDensity(deps: GridDensityDeps) {
       min: gridMin(shape.info),
       max: GRID_MAX,
       pref: 'gridSize',
-      storeKey: 'gridSize',
       columns: true,
     };
   }
@@ -103,8 +119,8 @@ export function makeGridDensity(deps: GridDensityDeps) {
     deps.hologramIpc.setPref(st.pref, st.get());
     // The settled size mirrors into hologramStore — the post-grid source derives
     // columnWidth/itemHeightEstimate from it. Clear the live-drag override so a
-    // later VIEW change (which reads a different storeKey) can't see a stale value.
-    storeSet(st.storeKey, st.get());
+    // later VIEW change (which reads a different key) can't see a stale value.
+    store.setState({ [st.pref]: st.get() });
     deps.hologramPostGridSource.setLiveColumnWidth(null);
     // In-place: a size change re-lays out the SAME set of posts. That is what the flag
     // means here — reuse the grouped set instead of re-filtering ~9k records, and skip
@@ -320,7 +336,7 @@ export function makeGridDensity(deps: GridDensityDeps) {
       const clamped = clampGridSize(gridSize, shape.info);
       if (clamped !== gridSize) {
         gridSize = clamped;
-        storeSet('gridSize', gridSize);
+        store.setState({ gridSize: gridSize });
         deps.hologramIpc.setPref('gridSize', gridSize);
       }
     }
@@ -337,7 +353,7 @@ export function makeGridDensity(deps: GridDensityDeps) {
   // has a column width, the list has none (a poster row is a fixed line — GitHub's
   // contributor rows have no size control either), so the list returns null and the
   // caller hides the slider.
-  function posterSizeState() {
+  function posterSizeState(): SizeState | null {
     if (currentPosterShape().list) return null;
     return {
       get: () => posterGridSize,
@@ -386,7 +402,7 @@ export function makeGridDensity(deps: GridDensityDeps) {
     st.set(size);
     // Mirror into hologramStore — the poster grid source derives columnWidth from it,
     // same as the post grid does with gridSize.
-    storeSet(st.pref, size);
+    store.setState({ [st.pref]: size });
     deps.hologramIpc.setPref(st.pref, size);
   }
 
@@ -410,7 +426,7 @@ export function makeGridDensity(deps: GridDensityDeps) {
       const clamped = clampPosterGridSize(posterGridSize, shape.info);
       if (clamped !== posterGridSize) {
         posterGridSize = clamped;
-        storeSet('posterGridSize', posterGridSize);
+        store.setState({ posterGridSize: posterGridSize });
         deps.hologramIpc.setPref('posterGridSize', posterGridSize);
       }
     }
@@ -426,12 +442,12 @@ export function makeGridDensity(deps: GridDensityDeps) {
   function restorePrefs(prefs: AppPrefs) {
     _restoring = true;
     try {
-      storeSet('layout', prefs.layoutMode === 'list' ? 'list' : 'grid');
-      storeSet('squareThumbs', prefs.squareThumbs === true);
-      storeSet('showInfo', prefs.showInfo !== false);
-      storeSet('showAvatar', prefs.showAvatar !== false);
-      storeSet('posterLayout', prefs.posterLayoutMode === 'list' ? 'list' : 'grid');
-      storeSet('posterShowInfo', prefs.posterShowInfo !== false);
+      store.setState({ layout: prefs.layoutMode === 'list' ? 'list' : 'grid' });
+      store.setState({ squareThumbs: prefs.squareThumbs === true });
+      store.setState({ showInfo: prefs.showInfo !== false });
+      store.setState({ showAvatar: prefs.showAvatar !== false });
+      store.setState({ posterLayout: prefs.posterLayoutMode === 'list' ? 'list' : 'grid' });
+      store.setState({ posterShowInfo: prefs.posterShowInfo !== false });
     } finally {
       _restoring = false;
       _shapeSig = shapeSnapshot();
@@ -441,18 +457,18 @@ export function makeGridDensity(deps: GridDensityDeps) {
     // "Show info" switch the block above has just restored.
     if (Number.isFinite(prefs.posterGridSize)) {
       posterGridSize = clampPosterGridSize(prefs.posterGridSize as number, currentPosterShape().info);
-      storeSet('posterGridSize', posterGridSize);
+      store.setState({ posterGridSize: posterGridSize });
     }
     // Post-grid sizes also mirror into hologramStore (see setViewSize). The grid's
     // saved width is clamped against the CURRENT "Show info" switch, which the block
     // above has already restored.
     if (Number.isFinite(prefs.gridSize)) {
       gridSize = clampGridSize(prefs.gridSize as number, currentShape().info);
-      storeSet('gridSize', gridSize);
+      store.setState({ gridSize: gridSize });
     }
     if (Number.isFinite(prefs.listThumb)) {
       listThumb = Math.max(LIST_MIN, Math.min(LIST_MAX, prefs.listThumb as number));
-      storeSet('listThumb', listThumb);
+      store.setState({ listThumb: listThumb });
     }
   }
 

@@ -276,9 +276,9 @@ describe('renderer: 画面に出ているか（isVisible）', () => {
     const { panel, store } = await freshWorld();
     fireWidth(false);
     expect(panel.isVisible()).toBe(true); // nothing selected: the column stands on its placeholder (#244)
-    store.set('inspectedKey', 'post:1');
+    store.store.setState({ inspectedKey: 'post:1' });
     expect(panel.isVisible()).toBe(true);
-    store.set('inspectedKey', null);
+    store.store.setState({ inspectedKey: null });
     expect(panel.isVisible()).toBe(true);
   });
 
@@ -291,7 +291,7 @@ describe('renderer: 画面に出ているか（isVisible）', () => {
     panel.setOpen(false); // (1) the panel itself
     panels.setHidden(true); // (2) bulk mask
     fireWidth(false); // not an input any more (#975)
-    store.set('inspectedKey', 'post:1'); // nor this one
+    store.store.setState({ inspectedKey: 'post:1' }); // nor this one
     expect(notified).toBe(2);
     off();
     panel.setOpen(true);

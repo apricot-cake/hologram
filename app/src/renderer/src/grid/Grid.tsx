@@ -13,18 +13,17 @@ import { useGridModel, VirtualGridHost } from '../_shared/VirtualGrid.tsx';
 import type { GridCellProps } from '../_shared/VirtualGrid.tsx';
 import { SectionedGridHost } from '../_shared/SectionedGrid.tsx';
 import { selectionClickBackground, selectionMarquee } from '../services/orchestrator.ts';
-import { get as storeGet, subscribe as storeSubscribe } from '../services/store.ts';
+import { store, subscribeKey } from '../services/store.ts';
 
 // modelOf() re-reads live viewer state on every render, so a source repaint refreshes
 // visible cells. The inspected ring and the selection are NOT part of that closure-read
 // model — both are derived straight from hologramStore ('inspectedKey' / 'selectedSet',
 // real subscriptions), so opening the inspector or toggling a selection re-renders the
 // right cell with no repaint needed.
-const subInspected = (cb: () => void) => storeSubscribe('inspectedKey', cb);
-const getInspected = () => (storeGet('inspectedKey') as string | null | undefined) ?? null;
-const EMPTY_SELECTION: ReadonlySet<string> = new Set();
-const subSelected = (cb: () => void) => storeSubscribe('selectedSet', cb);
-const getSelected = () => (storeGet('selectedSet') as ReadonlySet<string> | undefined) ?? EMPTY_SELECTION;
+const subInspected = (cb: () => void) => subscribeKey('inspectedKey', cb);
+const getInspected = () => store.getState().inspectedKey;
+const subSelected = (cb: () => void) => subscribeKey('selectedSet', cb);
+const getSelected = () => store.getState().selectedSet;
 
 export function PostCell({ index, data }: GridCellProps) {
   const model = useGridModel();
