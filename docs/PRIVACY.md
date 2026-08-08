@@ -44,7 +44,8 @@ Some parts of the app hand a URL to your normal browser. Nothing is sent when th
 
 - **Open the post, or the author's profile** — the platform's own URL, as recorded with the save.
 - **Reverse image search** (`saucenao.com`, `ascii2d.net`) — opens that service with the **platform's public media URL** for the item in the query string, so the service fetches the picture from the platform itself. Your local copy is not uploaded. The URL identifies the post's image on the platform where it was published.
-- **Web search** — translates the filters you currently have applied (keywords, hashtags, author handles, dates) into a search URL for X, Bluesky, Misskey, Mastodon, pixiv, or Google, and opens it. The words that travel are the words in your filters.
+- **Web search from your filters** — translates the filters you currently have applied (keywords, hashtags, author handles, dates) into a search URL for X, Bluesky, Misskey, Mastodon, pixiv, or Google, and opens it. The words that travel are the words in your filters.
+- **Web search for selected text** — right-clicking text you have selected inside a saved post offers to search the web for it, which opens a Google query. What travels is the text you selected (its first 1000 characters).
 
 These open in your browser, under whatever session and settings your browser already has.
 
