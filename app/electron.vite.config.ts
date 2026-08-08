@@ -10,8 +10,8 @@ import { DEV_CSP_NONCE } from './src/main/renderer-csp.ts';
 
 const r = (...segs: string[]) => path.resolve(__dirname, ...segs);
 
-// The CJS 'use-sync-external-store' shim (react-aria / react-stately transitive
-// dep) keeps a literal require("react") in bundled output — externals are
+// The CJS 'use-sync-external-store' shim (@base-ui/react + @base-ui/utils
+// transitive dep) keeps a literal require("react") in bundled output — externals are
 // global-mapped only for ESM imports — and throws at load. React 18+ has the
 // hook natively; point both import specifiers at a 1-line ESM re-export.
 // Array form: order matters (the more specific shim/index.js must precede shim).

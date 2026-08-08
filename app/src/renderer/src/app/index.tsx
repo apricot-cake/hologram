@@ -1,6 +1,6 @@
 // Single-bundle entry — side-effect imports of every React component. electron-vite's
 // renderer build (see electron.vite.config.ts) bundles this one barrel via Rollup/Vite so
-// shared code (React, masonic, react-aria-components, _shared/{VirtualGrid,
+// shared code (React, masonic, @base-ui/react, _shared/{VirtualGrid,
 // i18n,tip}) is bundled ONCE instead of duplicated per component. (Formerly a hand-rolled
 // islands/build.mjs producing ONE IIFE for all islands — retired when the renderer moved
 // to electron-vite; see #156.)
