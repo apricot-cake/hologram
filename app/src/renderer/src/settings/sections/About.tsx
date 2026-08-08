@@ -42,6 +42,10 @@ export function About() {
   return (
     <div className="flex flex-col items-center gap-1.5 py-6 text-center">
       <div className="mb-3">
+        {/* biome-ignore lint/a11y/noAriaHiddenOnFocusable: a <canvas> is only focusable
+            through fallback CONTENT (interactive children), and this one has none — it
+            is a decorative animated logo. The rule's fix (drop aria-hidden) would make a
+            screen reader announce an unlabeled canvas, i.e. strictly worse. */}
         <canvas ref={canvasRef} width={352} height={352} className="size-32" aria-hidden="true" />
       </div>
       <div className="text-2xl font-semibold tracking-tight">Hologram</div>
