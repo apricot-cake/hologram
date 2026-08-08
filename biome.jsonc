@@ -43,6 +43,18 @@
           "correctness": { "useExhaustiveDependencies": "off" }
         }
       }
+    },
+    {
+      // Vitest スイートだけ非 null アサーションを許す（#635 の型チェック導入で必要に
+      // なった）。テストが `find()` の結果や null を返しうる API の戻り値を使う時、
+      // 「ここには必ず在る」がそのまま主張なので `!` が最短の表現になる＝外れていれば
+      // その場で落ちて検知される。実装側では引き続き禁止（ここだけの緩和）。
+      "includes": ["**/scripts/*.test.ts"],
+      "linter": {
+        "rules": {
+          "style": { "noNonNullAssertion": "off" }
+        }
+      }
     }
   ],
   "formatter": {
