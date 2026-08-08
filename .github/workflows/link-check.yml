@@ -26,8 +26,19 @@ name: Link check
 # action in this repository — pinned by SHA like every actions/* use here, and Dependabot
 # already watches the github-actions ecosystem.
 
+# `pull_request` was added on 2026-08-08 with the same reasoning as ci.yml's — a
+# broken relative link is worth seeing before the merge, not after. This one KEEPS
+# its `paths`, because unlike ci.yml and app-tests.yml it is deliberately NOT a
+# required check: a workflow filtered by paths leaves its check Pending on a run it
+# skips, which is only harmless as long as nothing waits for it. If this ever becomes
+# required, the filter has to go the way theirs did.
 on:
   push:
+    branches: [main]
+    paths:
+      - '**/*.md'
+      - '.github/workflows/link-check.yml'
+  pull_request:
     branches: [main]
     paths:
       - '**/*.md'

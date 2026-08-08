@@ -4,38 +4,39 @@ name: CI
 # Node and runs on any OS. The Electron-launch harness and Playwright e2e layers
 # land in a later stage alongside #14, on a Windows runner.
 #
-# `push` to main only — no `pull_request` (#996). The pair used to be deliberate
-# (#883): `pull_request` tested refs/pull/N/merge, the merge result, and the
-# ruleset required it green before a merge. That gate was removed on 2026-08-06,
-# so nothing waits for that run any more — it produced a result nobody read while
-# the same check ran again on what landed. One change, two identical runs.
+# `pull_request` AND `push` to main, with NO path filter on either. Both halves of
+# that were measured against what real projects in this stack do, not argued from
+# first principles (2026-08-08 survey of vitejs/vite, wxt-dev/wxt, biomejs/biome,
+# microsoft/vscode, electron/electron):
 #
-# What this costs: the merge result is no longer checked BEFORE it lands, only
-# after. Two branches that pass alone and break together now break main and get
-# caught there — hence the rule that a red main is fixed before anything else.
+#   - every one of them runs its check layer on `pull_request`; vscode's pr.yml has
+#     no `push` trigger at all. Zero of them check only what has already landed.
+#     #996 had dropped the trigger because the merge gate was gone on 2026-08-06 and
+#     the run "produced a result nobody read" — but a result does not have to be
+#     waited on to be useful. It only has to be visible before the merge. The cost
+#     of not having it was paid on 2026-08-07: #1015 landed a red
+#     storage-redirect-guard suite that was red in the branch alone (not a
+#     two-branch interaction), and the next commit — a docs-only one — inherited
+#     that red main.
+#   - the path filter has to go before this check can be REQUIRED, which is the
+#     point of restoring the trigger. GitHub's own guidance is explicit: a workflow
+#     skipped by `paths`/`paths-ignore` leaves its checks Pending forever, so a
+#     required check must not be filtered that way (a job skipped by an `if:`
+#     reports Success and is fine; a workflow skipped by paths does not).
+#     Dropping the filter outright rather than moving it into a job-level `if:`
+#     costs about a minute of Linux time on a docs-only change and needs no
+#     change-detection step — and this repository has already had one of those go
+#     silently dead (#993 removed a `gh api .../files` step that could not work on
+#     a push event). Nothing to maintain is worth more than the minute.
 #
-# `paths-ignore` (#993) replaces a hand-written docs-only detection step that
-# called `gh api .../files` on a PR number. It went dead the moment #996 dropped
-# the `pull_request` trigger — a push event has no PR to look up, so it always
-# ran the full suite. Standard GitHub path filtering needs no script and no
-# token. Excluded here rather than enumerated: lint/typecheck touch nearly every
-# file, so a new directory should be checked by default, not silently skipped
-# because nobody added it to an allow-list.
-#
-# The `schedule` below is what that exclusion falls back on. `paths-ignore` only
-# applies to `push`, so the nightly run always sees the whole tree — including a
-# docs/ or *.md change that lint or tsc would in fact have had something to say
-# about (a code fence is not the only thing that lives in markdown; a moved file
-# referenced from a config is not markdown at all). app-tests.yml has kept its
-# nightly for exactly this and schema-canary.yml runs in the same window; this
-# layer was the one still missing it.
+# The `schedule` below no longer has a filter to fall back on, but it keeps its
+# other job: catching what a day of stacked changes breaks, in the same window as
+# app-tests.yml and schema-canary.yml.
 on:
   push:
     branches: [main]
-    paths-ignore:
-      - '**/*.md'
-      - 'docs/**'
-      - 'assets/**'
+  pull_request:
+    branches: [main]
   schedule:
     # 18:17 UTC = 03:17 JST. Off the hour and outside 22:00-02:00 UTC for the same
     # reason as app-tests.yml — scheduled runs queue behind everyone else's, and
