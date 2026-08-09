@@ -1,14 +1,13 @@
 'use strict';
 
-// Posts IPC handlers, extracted from main.js (mechanical move — logic unchanged).
-// list-posts / list-posts-delta are thin wrappers over the core index functions
-// (which stay in main.js with the delta bookkeeping); image-data-url reads one file
-// from the save folder as a data: URL. Core helpers arrive via ctx.
+// 投稿の IPC ハンドラ。main.js から切り出した（機械的な移動＝ロジックは変えていない）。
+// list-posts と list-posts-delta は、コアの索引の関数（差分の帳簿と一緒に main.js に残る）の
+// 薄い包み。image-data-url は保存先フォルダのファイル1つを data: の URL として読む。コアの補助は
+// ctx 経由で届く。
 //
-// The ugoira pair (#506) sits here for the reason image-data-url does: each is a
-// read of ONE file out of the save folder, through the same containment check.
-// What they are not is a second copy of the archive machinery — the zip stays on
-// disk and only the requested frame crosses this boundary (ADR 0015).
+// うごイラの対（#506）がここに居るのは image-data-url と同じ理由。どちらも、同じ内包の確認を
+// 通して、保存先フォルダからファイル1つを読むもの。書庫の仕掛けの2つ目の複製ではない＝zip は
+// ディスクに留まり、この境界を越えるのは求められたフレームだけ（ADR 0015）。
 import { ipcMain } from 'electron';
 import fs from 'node:fs';
 import { readUgoiraFrame, ugoiraFramesPresent } from './lib-archive.ts';
@@ -18,11 +17,11 @@ function register(ctx: IpcContext) {
   const { listPosts, listPostsDelta, searchFullText, resolveInFolder, mimeForFile } = ctx;
 
   ipcMain.handle('list-posts', () => listPosts());
-  // senderId (#32 St1): main keeps the delta baseline PER RENDERER now — see
-  // ipc-context.ts's listPostsDelta doc comment.
+  // senderId（#32 St1）: main は今、差分の基準をレンダラーごとに持つ＝ipc-context.ts の
+  // listPostsDelta の doc コメントを参照。
   ipcMain.handle('list-posts-delta', (_e, haveBaseline) => listPostsDelta(!!haveBaseline, _e.sender.id));
-  // #29: cross-tab full-text search — bm25() rank per posts_fts hit (relevance
-  // order only; the renderer decides which posts match, see fulltext.ts).
+  // #29: タブをまたぐ全文検索＝posts_fts のヒットごとの bm25() の順位（関連順だけ。どの投稿が
+  // 一致するかを決めるのはレンダラー。fulltext.ts を参照）。
   ipcMain.handle('search-full-text', (_e, query, limit) => searchFullText(typeof query === 'string' ? query : '', typeof limit === 'number' ? limit : undefined));
 
   ipcMain.handle('image-data-url', async (_e, image) => {
@@ -36,12 +35,11 @@ function register(ctx: IpcContext) {
     }
   });
 
-  // Only a .zip inside the save folder reaches a ZIP reader through this door:
-  // ugoira is the one media kind the library stores as an archive.
+  // この入口から ZIP の読み手へ届くのは、保存先フォルダの中の .zip だけ。うごイラは、ライブラリ
+  // が書庫として保存する唯一のメディアの種別。
   const ugoiraPath = (file: unknown) => (typeof file === 'string' && /\.zip$/i.test(file) ? resolveInFolder(file) : null);
 
-  // Asked once before playback starts — see ugoiraFramesPresent for why the
-  // answer is all-or-nothing.
+  // 再生が始まる前に1回だけ尋ねる＝答えが全か無かである理由は ugoiraFramesPresent を参照。
   ipcMain.handle('ugoira-frames-present', async (_e, file, names) => {
     const p = ugoiraPath(file);
     if (!p) return false;
@@ -52,9 +50,9 @@ function register(ctx: IpcContext) {
     }
   });
 
-  // One frame's bytes, or null. The renderer wraps them in a Blob it can decode;
-  // nothing is base64'd on the way (that inflation is what made the old
-  // whole-archive data: URL expensive).
+  // フレーム1枚分のバイト列、または null。レンダラーはそれを、自分が復号できる Blob で包む。
+  // 途中で base64 にするものは無い（その膨張こそ、昔の書庫を丸ごと data: の URL にするやり方を
+  // 高くしていたもの）。
   ipcMain.handle('ugoira-frame', async (_e, file, name) => {
     const p = ugoiraPath(file);
     if (!p) return null;

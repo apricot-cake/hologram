@@ -1,16 +1,15 @@
-// The window size a harness run gets (HOLOGRAM_SMOKE=1).
+// ハーネスの実行（HOLOGRAM_SMOKE=1）が受け取るウィンドウの大きさ。
 //
-// WHY IT IS NOT THE ORDINARY DEFAULT. The harness scripts (scripts/test-app-*.cts) drive the
-// real renderer and read the DOM the virtual grid actually rendered, so they are written
-// against the WIDE layout — the same premise e2e/lib/viewport.ts spells out for the Playwright
-// suite (#649). They had been inheriting the ordinary 1100px default, which is on the NARROW
-// side of layout-mode.ts's breakpoint. That went unnoticed for as long as narrow only changed
-// how the inspector was presented: an overlay left the grid at full width, so the cards landed
-// where the cases expected. #975 docks the panel at every width, so narrow now means a grid
-// that is 320px narrower, fewer cards inside the virtual window, and DOM indices that stop
-// lining up with what the cases assert.
+// なぜ通常の既定ではないのか。ハーネスのスクリプト（scripts/test-app-*.cts）は本物のレンダラーを
+// 動かし、仮想グリッドが実際に描いた DOM を読むので、広いレイアウトを前提に書かれている＝
+// e2e/lib/viewport.ts が Playwright のスイートについて明文化しているのと同じ前提（#649）。それら
+// は通常の 1100px の既定を受け継いでいたが、それは layout-mode.ts のブレークポイントの狭い側に
+// 当たる。狭いことが詳細パネルの見せ方しか変えなかった間は、それが気づかれなかった。オーバーレイ
+// はグリッドを全幅のままにしたので、カードは事例が期待するところへ着地した。#975 はどの幅でも
+// パネルを据え置くので、今や狭いということは、グリッドが 320px 狭く、仮想の窓に入るカードが減り、
+// DOM の添字が事例の主張と揃わなくなることを意味する。
 //
-// The value is a literal rather than derived, because main must not import renderer modules to
-// reach layout-mode.ts. scripts/harness-viewport.test.ts is what keeps the two from drifting:
-// it fails if this width ever falls to the narrow side of the breakpoint.
+// この値は導出ではなくリテラル。main は layout-mode.ts へ手を伸ばすためにレンダラーのモジュールを
+// import してはいけないため。両者がずれないよう保つのは scripts/harness-viewport.test.ts で、この
+// 幅がブレークポイントの狭い側へ落ちたら失敗する。
 export const SMOKE_WINDOW = { width: 1440, height: 900 };

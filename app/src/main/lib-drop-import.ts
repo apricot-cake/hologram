@@ -1,20 +1,19 @@
 'use strict';
 
-// Recursive walk for the window-drop door (#234): turns a drop's root paths
-// (files and/or folders, resolved by preload's webUtils.getPathForFile) into a
-// flat, counted list — nothing is written here. The count has to come from a
-// walk that already finished (#234's design comment: the recursive walk
-// completes BEFORE the renderer asks "N 件を取り込みますか？", never while
-// still running) — ipc-transfer.ts's collect-dropped-paths handler calls this
-// and hands the count to that question; import-dropped-paths only runs once
-// the answer is yes, over the SAME list this returned (no second walk).
+// ウィンドウへのドロップの入口（#234）のための再帰の走査。ドロップのルートのパス（ファイルや
+// フォルダ。preload の webUtils.getPathForFile が解決したもの）を、平坦で件数の分かる一覧に
+// する＝ここでは何も書かない。件数は、既に終わった走査から来なければならない（#234 の設計
+// コメント: 再帰の走査は、レンダラーが "N 件を取り込みますか？" と尋ねる前に完了する。走って
+// いる最中ではない）＝ipc-transfer.ts の collect-dropped-paths のハンドラがこれを呼び、その
+// 件数をあの問いへ渡す。import-dropped-paths が走るのは答えが是のときだけで、対象はこれが返した
+// のと同じ一覧（2回目の走査は無い）。
 //
-// Shares the hidden/junk-name filter with the watch-folder door
-// (lib-watch-import.ts's isHiddenOrJunk) so "what counts as noise" has one
-// definition. Adds its own symlink/junction refusal (lstat, never followed) —
-// the watch door's chokidar scan is depth:0 and never recurses into a
-// subfolder, so it never had to decide this; a folder drop does, and the
-// design calls out looping through a symlink as the risk to guard against.
+// 隠しファイルとごみの名前の絞り込みは、監視フォルダの入口（lib-watch-import.ts の
+// isHiddenOrJunk）と共有するので、「何を雑音と数えるか」の定義は1つ。こちらは自前で
+// シンボリックリンクとジャンクションの拒否を足す（lstat を使い、決して辿らない）＝監視の入口の
+// chokidar の走査は depth:0 でサブフォルダへ再帰しないので、これを決める必要が一度も無かった。
+// フォルダのドロップには必要で、設計はシンボリックリンクを通ってループすることを、守るべき
+// リスクとして名指ししている。
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -27,12 +26,12 @@ async function walk(entryPath: string, out: DroppedFile[]): Promise<void> {
   try {
     st = await fs.promises.lstat(entryPath);
   } catch {
-    return; // gone between the drop and this walk
+    return; // ドロップからこの走査までの間に消えた
   }
-  // Never followed, files or folders alike — a folder symlink/junction is the
-  // loop risk the design calls out; a file symlink is rare enough (Windows
-  // users do not casually mklink individual files) that one rule for both
-  // keeps this simple instead of needing two.
+  // ファイルでもフォルダでも決して辿らない＝フォルダのシンボリックリンクやジャンクションが、
+  // 設計の名指しするループのリスク。ファイルのシンボリックリンクは十分に珍しい（Windows の
+  // 利用者が個々のファイルを気軽に mklink することはない）ので、両方に1つの規則を当てる方が、
+  // 2つ要るより単純に済む。
   if (st.isSymbolicLink()) return;
   if (isHiddenOrJunk(path.basename(entryPath))) return;
   if (st.isDirectory()) {
@@ -45,7 +44,7 @@ async function walk(entryPath: string, out: DroppedFile[]): Promise<void> {
     for (const name of names) await walk(path.join(entryPath, name), out);
     return;
   }
-  if (!st.isFile()) return; // device/socket/etc — not a collectable item
+  if (!st.isFile()) return; // デバイスやソケットなど＝取り込む対象ではない
   out.push({ path: entryPath, ext: (path.extname(entryPath).slice(1) || 'bin').toLowerCase() });
 }
 

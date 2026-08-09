@@ -1,20 +1,18 @@
 'use strict';
 
-// The renderer-delta primitive for the DB-backed post list.
+// DB を裏に持つ投稿の一覧について、レンダラーへの差分を作る原始的な部分。
 //
-// The window holds the full post set and main ships only what moved, so a
-// refresh after a capture costs one small IPC message instead of re-serializing
-// the whole library (~450ms at 9k records). Main owns the "what did I last
-// deliver" state; this stays a pure function so it unit-tests directly.
+// ウィンドウが投稿の全件を持ち、main は動いたものだけを送るので、保存の後の更新は、ライブラリを
+// 丸ごと直列化し直す（9千件で約450ms）代わりに小さな IPC のメッセージ1通で済む。「最後に何を
+// 届けたか」の状態は main が持つ。ここは純粋な関数のままなので、そのまま単体テストできる。
 //
-// The stamp is posts.updatedAt straight out of the DB. Before #302 it was the
-// sidecar file's mtimeMs, because the DB was a derived index and a producer
-// could edit a record without bumping updatedAt; now every write goes through
-// the DB itself (writePost always sets updatedAt), so the row's own stamp is
-// the change signal and no filesystem bookkeeping is involved.
+// 刻印は DB から直接取った posts.updatedAt。#302 より前はサイドカーのファイルの mtimeMs だった。
+// DB が派生の索引で、生産者が updatedAt を上げずにレコードを編集できたため。今はすべての書き込みが
+// DB 自体を通る（writePost は必ず updatedAt を設定する）ので、行自身の刻印が変化の合図であり、
+// ファイルシステムの帳簿は一切絡まない。
 
-// lastSent / stamps: captureId -> updatedAt. added = records that are new or
-// whose stamp moved; removed = ids that are no longer present.
+// lastSent と stamps は captureId → updatedAt。added は新しいか刻印が動いたレコード、removed は
+// もう存在しない id。
 function computeDelta<T extends { captureId: string }>(lastSent: Map<string, unknown>, posts: T[], stamps: Map<string, unknown>) {
   const added: T[] = [];
   for (const p of posts) {

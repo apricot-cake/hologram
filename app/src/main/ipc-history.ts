@@ -1,11 +1,10 @@
 'use strict';
 
-// Global history page (#145) IPC handlers. Library-scoped (the `history` table
-// lives in the SAME database as posts/tabs — see lib-db-write.ts's header on
-// appendHistory), so these follow get-folders' shape (getSaveFolder ? … : empty),
-// not get-tabs' isPrimarySender guard: history is shared library state like
-// folders/tags, not a per-window tab strip (#32 St1's "他窓は読み書きとも遮断"
-// reasoning doesn't apply here).
+// 全体の履歴のページ（#145）の IPC ハンドラ。ライブラリに閉じている（`history` テーブルは
+// posts や tabs と同じデータベースにある＝lib-db-write.ts の appendHistory についてのヘッダを
+// 参照）ので、get-tabs の isPrimarySender の番人ではなく get-folders の形（getSaveFolder ? … :
+// 空）に倣う。履歴はフォルダやタグと同じくライブラリで共有する状態であって、ウィンドウごとの
+// タブの帯ではない（#32 St1 の "他窓は読み書きとも遮断" の論法はここには当てはまらない）。
 import { ipcMain } from 'electron';
 import type { IpcContext } from './ipc-context.ts';
 import type { HistoryQueryResult, OkResult } from './ipc-payloads.ts';
@@ -13,8 +12,8 @@ import type { HistoryQueryResult, OkResult } from './ipc-payloads.ts';
 function register(ctx: IpcContext) {
   const { getSaveFolder, getDbWriter } = ctx;
 
-  // Fire-and-forget from the renderer's push-time hook (services/history.ts's
-  // recordPush) — the renderer never awaits this beyond swallowing a rejection.
+  // レンダラーの push 時のフック（services/history.ts の recordPush）からの投げっぱなし＝
+  // レンダラーは拒否を握り潰す以上にこれを待つことがない。
   ipcMain.handle('append-history', (_e, row): OkResult => {
     if (!getSaveFolder()) return { ok: false };
     try {

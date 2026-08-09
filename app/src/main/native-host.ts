@@ -1,31 +1,29 @@
 'use strict';
 
-// The native-host/ modules this process loads by COMPUTED path (#227), lifted
-// out of index.ts so the modules that need them (lib-config.ts wants configDir /
-// defaultLibraryDir / resolveSaveFolder, lib-thumbnails.ts wants configDir) can
-// import them instead of receiving them from the assembly.
+// このプロセスが計算したパスで読み込む native-host/ のモジュール（#227）。index.ts から持ち上げて
+// あるので、これらを必要とするモジュール（lib-config.ts は configDir / defaultLibraryDir /
+// resolveSaveFolder を、lib-thumbnails.ts は configDir を欲しがる）は、組み立ての側から受け取る
+// のではなく自分で import できる。
 //
-// They stay dynamic requires rather than static imports because the specifier
-// is an absolute path resolved at runtime: native-host/ lives OUTSIDE app/ and
-// sits in a different place per build. In dev, electron-vite emits the whole
-// main layer to app/out/main/index.js, so native-host (a repo-root sibling of
-// app/) is three levels up; when packaged it ships as an extraResource under
-// resources/native-host. A bundler can follow neither, and must not — those
-// files are shipped as raw source beside the app, not bundled into it.
+// 静的な import ではなく動的な require のままなのは、指定子が実行時に解決される絶対パスだから。
+// native-host/ は app/ の外にあり、ビルドごとに置き場所が違う。開発では electron-vite が main の
+// 層を丸ごと app/out/main/index.js へ出すので、native-host（リポジトリのルートで app/ と並ぶ）は
+// 3階層上。パッケージ済みでは resources/native-host の下に extraResource として配られる。
+// バンドラはそのどちらも追えないし、追ってはいけない＝あのファイルはアプリの中へ束ねるのではなく、
+// アプリの隣に生のソースとして配るもの。
 //
-// The targets are ESM (.mts) while this bundle is CJS, and the require() is
-// SYNCHRONOUS anyway: Node's require(esm) loads an ES module from CommonJS as
-// long as it has no top-level await, and type-strips it on the way in. That is
-// what let native-host/ stop being CommonJS in #1052 — a dynamic `await import()`
-// was never an option here, because electron-vite emits this layer as CJS (no
-// top-level await) and ensureHostRegistered() runs during startup.
+// 対象は ESM（.mts）でこちらのバンドルは CJS だが、require() はどのみち同期。Node の require(esm)
+// は、トップレベル await さえ無ければ CommonJS から ES モジュールを読み込み、取り込む途中で型を
+// 剥がす。#1052 で native-host/ が CommonJS をやめられたのはそれのおかげ＝動的な `await import()`
+// はここでは初めから選べなかった。electron-vite がこの層を CJS として出す（トップレベル await が
+// 使えない）し、ensureHostRegistered() は起動の最中に走るため。
 
 import { app } from 'electron';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 
-// CJS require + __dirname reconstructed for ESM.
+// ESM のために組み直した CJS の require と __dirname。
 const nodeRequire = createRequire(import.meta.url);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -34,22 +32,21 @@ const nativeHostDir = app.isPackaged ? path.join(process.resourcesPath, 'native-
 const { configDir, defaultLibraryDir, extensionContactPath } = nodeRequire(path.join(nativeHostDir, 'paths.mts'));
 const installer = nodeRequire(path.join(nativeHostDir, 'install.mts'));
 
-// Best-effort avatar download for the legacy ZIP import (same SSRF guard/caps as capture,
-// same shared avatars/ store — downloadAvatar dedupes by avatar URL).
+// 旧形式の ZIP 取り込みのための、できる範囲でのアバターのダウンロード（保存と同じ SSRF の番人と
+// 上限、同じ共有の avatars/ のストア＝downloadAvatar はアバターの URL で重複を取り除く）。
 //
-// media-download.mts requires the npm package undici. In dev, requiring the raw
-// source resolves it fine (repo-root node_modules), so dev keeps requiring the
-// source directly — edit-and-restart needs no rebuild. But electron-builder
-// copies native-host/ as a raw extraResource with no node_modules, so a packaged
-// build must require the pre-bundled copy (undici inlined) that
-// app/build-native-host-bridge.mjs produces at native-host/dist/media-download.js
-// — requiring the raw source there crashed on startup with "Cannot find module
-// 'undici'".
+// media-download.mts は npm の undici を require する。開発では生のソースを require しても問題
+// なく解決する（リポジトリのルートの node_modules）ので、開発では今までどおりソースを直接
+// require する＝編集して再起動するのにビルドが要らない。ただし electron-builder は native-host/
+// を node_modules 抜きの生の extraResource として写すので、パッケージ済みのビルドは
+// app/build-native-host-bridge.mjs が native-host/dist/media-download.js に作る、前もって束ねた
+// 複製（undici をインライン化したもの）を require しなければならない＝あちらで生のソースを
+// require すると、起動時に "Cannot find module 'undici'" でクラッシュした。
 const mediaDownloadPath = app.isPackaged ? path.join(nativeHostDir, 'dist', 'media-download.js') : path.join(nativeHostDir, 'media-download.mts');
 const { pixivRefererFor, downloadAvatar } = nodeRequire(mediaDownloadPath);
 
-// Save-folder resolution + clear-all gating. Shared with the native host (which
-// must resolve the SAME save folder), so it lives alongside paths.mts in native-host/.
+// 保存先フォルダの解決と、clear-all のゲート。native host（同じ保存先フォルダを解決しなければ
+// ならない）と共有するので、native-host/ の paths.mts と並んで置いてある。
 const { resolveSaveFolder, clearAllBlockReason } = nodeRequire(path.join(nativeHostDir, 'config-recovery.mts'));
 
 export { configDir, defaultLibraryDir, extensionContactPath, installer, pixivRefererFor, downloadAvatar, resolveSaveFolder, clearAllBlockReason };

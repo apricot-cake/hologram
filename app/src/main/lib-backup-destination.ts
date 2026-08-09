@@ -1,78 +1,72 @@
 'use strict';
 
-// Backup destination adapters (#233).
+// バックアップ先のアダプタ（#233）。
 //
-// The engine in lib-backup.ts decides WHAT the backup should contain; a
-// destination decides HOW bytes get there. #233 splits the two so the second
-// destination kind — a cloud account reached over OAuth — is a new
-// implementation of this interface rather than a second copy of the engine
-// ("先行すると宛先アダプタを二度組むことになる").
+// lib-backup.ts のエンジンはバックアップに何を含めるべきかを決め、宛先はバイトがどうやってそこへ
+// 至るかを決める。#233 がこの2つを分けたのは、2つ目の宛先の種別＝OAuth 越しに届くクラウドの
+// アカウント＝が、エンジンの2つ目の複製ではなく、このインターフェースの新しい実装になるように
+// （"先行すると宛先アダプタを二度組むことになる"）。
 //
-// The four operations are the intersection of what a plain folder and the
-// consumer cloud drive APIs both offer, and they are the four the engine
-// actually needs: enumerate what is already there, put a file, move a file
-// (trash in and out — never a re-upload), delete a file. Paths are relative to
-// the destination root and always use '/' as the separator, so the same
-// relative name addresses a folder entry and a cloud object.
+// この4つの操作は、素のフォルダと個人向けクラウドドライブの API の両方が備えているものの共通部分
+// であり、エンジンが実際に必要とする4つでもある。既にあるものを列挙する、ファイルを置く、ファイルを
+// 移す（ゴミ箱への出し入れ＝アップロードし直すことは決してない）、ファイルを消す。パスは宛先の
+// ルートからの相対で、区切りは常に '/' なので、同じ相対の名前がフォルダのエントリとクラウドの
+// オブジェクトの両方を指せる。
 //
-// The fifth pair — read/write the destination's IDENTITY — is #176's
-// requirement: the destination records which library it belongs to, and the
-// engine refuses to run when that does not match the library currently open.
-// Without it, opening library B while A's destination is still configured lets
-// the "delete what the source no longer has" rule prune A's backup down to B's
-// contents. restic does the same thing (its repository config carries a unique
-// id that identifies the repository "regardless of local or remote").
+// 5つ目の対＝宛先の同一性を読む・書く＝は #176 の要求。宛先は自分がどのライブラリのものかを記録し、
+// それが今開いているライブラリと一致しなければエンジンは実行を断る。これが無いと、A の宛先を
+// 設定したままライブラリ B を開いたとき、「元が持たなくなったものを消す」という規則が、A の
+// バックアップを B の中身まで刈り込んでしまう。restic も同じことをしている（そのリポジトリの設定は、
+// "regardless of local or remote" にリポジトリを同定する一意の id を持つ）。
 //
-// v1 ships the local-folder adapter only. The OAuth adapters are #233's later
-// stage; registering an OAuth client is not something this code can do for the
-// user, so nothing here pretends the cloud kinds exist yet.
+// v1 が配るのはローカルフォルダのアダプタだけ。OAuth のアダプタは #233 の後の段。OAuth の
+// クライアントの登録は、このコードが利用者の代わりにやれることではないので、ここにクラウドの種別が
+// もう在るふりをするものは無い。
 
 import fs from 'node:fs';
 import path from 'node:path';
 
 import { commitFileAtomic } from './lib-atomic.ts';
 
-/** What `list()` reports per file — enough to spot a changed mutable file. */
+/** `list()` がファイルごとに報告するもの＝書き換わるファイルの変化に気づくのに足りるだけ。 */
 export interface DestinationEntry {
   size: number;
   mtimeMs: number;
 }
 
-/** Whose backup this is, as recorded at the destination root. */
+/** これが誰のバックアップかを、宛先のルートに記録したもの。 */
 export interface DestinationIdentity {
   libraryId: string;
   lastRunAt: string | null;
 }
 
 export interface BackupDestination {
-  /** Discriminator for logs and status; 'local-folder' is the only v1 value. */
+  /** ログと状態のための判別子。v1 の値は 'local-folder' だけ。 */
   readonly kind: string;
-  /** Where the backup lives, for messages the user reads. */
+  /** バックアップの在り処。利用者が読むメッセージのため。 */
   readonly location: string;
-  /** Every file under the destination root, keyed by '/'-separated relative path. */
+  /** 宛先のルート以下のすべてのファイル。'/' 区切りの相対パスをキーにする。 */
   list(): Promise<Map<string, DestinationEntry>>;
-  /** Copies `srcFile` in, replacing whatever is at `rel`. */
+  /** `srcFile` をコピーして入れ、`rel` にあるものを置き換える。 */
   put(rel: string, srcFile: string, mtimeMs?: number | null): Promise<void>;
-  /** Relocates an existing entry without moving its bytes twice. */
+  /** 既にあるエントリを、バイトを2度動かさずに移す。 */
   move(fromRel: string, toRel: string): Promise<void>;
   remove(rel: string): Promise<void>;
-  /** null when the destination has never been claimed (or is unreadable). */
+  /** 宛先が一度も所有を宣言されていない（か、読めない）ときは null。 */
   readIdentity(): Promise<DestinationIdentity | null>;
   writeIdentity(identity: DestinationIdentity): Promise<void>;
 }
 
-// Backups go into a named subfolder of the folder the user picked, never into
-// its top level: the picked folder is usually an existing drive root or a
-// documents folder with the user's own files in it, and the engine deletes
-// entries it does not recognise.
+// バックアップは、利用者が選んだフォルダの下の名前の付いたサブフォルダへ入る。その直下へは決して
+// 入れない。選ばれるフォルダは大抵、既にあるドライブのルートか、利用者自身のファイルの入った
+// ドキュメントのフォルダで、エンジンは自分の知らないエントリを消すため。
 const BACKUP_SUBDIR = 'Hologram-backup';
 
-// The destination's own bookkeeping, at its root. Deliberately NOT reported by
-// list(): the engine deletes destination entries the library does not have, and
-// this one has no counterpart in the library by design.
+// 宛先自身の帳簿。そのルートに置く。意図して list() では報告しない。エンジンはライブラリが
+// 持たない宛先のエントリを消すが、これは設計上ライブラリ側に対応するものを持たないため。
 const IDENTITY_FILE = '.hologram-backup.json';
 
-/** The tmp artifacts the engine's own writes leave behind mid-copy. */
+/** エンジン自身の書き込みが、コピーの途中で残す tmp の残り物。 */
 const TMP_RE = /\.tmp(-\d+)?$/i;
 
 function backupRoot(dir: string): string {
@@ -88,7 +82,7 @@ function createLocalFolderDestination(dir: string): BackupDestination {
     try {
       entries = await fs.promises.readdir(sub ? path.join(root, ...sub.split('/')) : root, { withFileTypes: true });
     } catch {
-      return; // not created yet, or unreadable — treated as empty
+      return; // まだ作られていないか、読めない＝空として扱う
     }
     for (const e of entries) {
       if (TMP_RE.test(e.name)) continue;
@@ -103,7 +97,7 @@ function createLocalFolderDestination(dir: string): BackupDestination {
         const st = await fs.promises.stat(abs(rel));
         into.set(rel, { size: st.size, mtimeMs: st.mtimeMs });
       } catch {
-        /* vanished between readdir and stat */
+        /* readdir と stat の間に消えた */
       }
     }
   }
@@ -123,15 +117,14 @@ function createLocalFolderDestination(dir: string): BackupDestination {
         dest,
         async (tmp) => {
           await fs.promises.copyFile(srcFile, tmp);
-          // Carry the source mtime over (floored to the ms utimes can set) so a
-          // destination restored back into place keeps the library's own
-          // timestamps.
+          // 元の mtime を持ち越す（utimes が設定できるミリ秒へ切り捨てる）。宛先を元の場所へ
+          // 復元したとき、ライブラリ自身の時刻が保たれるように。
           if (typeof mtimeMs === 'number') {
             try {
               const t = new Date(Math.floor(mtimeMs));
               await fs.promises.utimes(tmp, t, t);
             } catch {
-              /* best-effort */
+              /* できる範囲で */
             }
           }
         },
@@ -150,9 +143,8 @@ function createLocalFolderDestination(dir: string): BackupDestination {
       try {
         const parsed = JSON.parse(await fs.promises.readFile(path.join(root, IDENTITY_FILE), 'utf8'));
         const libraryId = parsed?.libraryId;
-        // A file we cannot make sense of reads as "unclaimed" rather than as a
-        // mismatch: refusing every future run over a corrupt byte would be a
-        // worse failure than adopting the destination again.
+        // 意味の取れないファイルは、食い違いではなく「誰のものでもない」と読む。1バイトの破損を
+        // 理由に以後のすべての実行を断る方が、その宛先をもう一度引き受けるより大きな失敗になる。
         if (typeof libraryId !== 'string' || !libraryId) return null;
         return { libraryId, lastRunAt: typeof parsed.lastRunAt === 'string' ? parsed.lastRunAt : null };
       } catch {

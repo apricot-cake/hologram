@@ -21,12 +21,12 @@ import { inboxNewDir, ensureInboxDirs } from '../../../native-host/inbox.mts';
 import { parseJsonLoose } from './lib-json.ts';
 import { writeFileAtomicSync } from './lib-atomic.ts';
 import { TRASH_SUBDIR, resolveInSaveFolder } from './lib-save-folder-path.ts';
-// Save-folder relocation engine (copy+catch-up → flip → verified cleanup → sweep).
+// 保存先フォルダの移設エンジン（コピー＋追いつき → 切り替え → 検証済みの後始末 → 掃き寄せ）。
 import { relocateLibrary } from './lib-migrate.ts';
-// Subsystems extracted from this file (#227) — mechanical moves, logic unchanged.
-// Each module's header states what it took and what it deliberately left behind;
-// what remains here is the assembly plus the record pipeline every part of it
-// shares (config → DB → inbox → renderer).
+// このファイルから切り出したサブシステム（#227）＝機械的な移動で、ロジックは変えていない。
+// 各モジュールのヘッダに、何を持って行き、何を意図して残したかが書いてある。ここに残るのは
+// 組み立てと、そのすべてが共有するレコードのパイプライン（設定 → DB → 取込キュー →
+// レンダラー）。
 import { configDir, defaultLibraryDir, installer, pixivRefererFor, downloadAvatar, clearAllBlockReason } from './native-host.ts';
 import { checkForRedirect } from './lib-storage-redirect-guard.ts';
 import { readConfig, writeConfig, getSaveFolder, readSavePointer, initSaveFolderRedundancy, isConfigCorrupt, invalidateConfigCache, saveFolderStatus, migrateToLibraries, recordLibraryOpened, listRecentLibraries, removeRecentLibrary, readAiConfig, writeAiConfig } from './lib-config.ts';
@@ -46,9 +46,9 @@ import { runAiTagsModelSmoke, runAiTagsSmoke } from './ai-tags-smoke.ts';
 import { stopMlRuntime } from './lib-ml-runtime.ts';
 import { shouldWarnMissingDebugPort } from './startup-debug-port.ts';
 import { EXIT_NO_INSTANCE, EXIT_SIGNALLED, hasQuitSignal } from './restart-signal.ts';
-// IPC handler modules, extracted from this file (mechanical move — logic unchanged).
-// Each exposes register(ctx); ctx is built after the core functions below and passed
-// in at the top-level registration site (see registerExtractedIpc, before whenReady).
+// このファイルから切り出した IPC ハンドラのモジュール（機械的な移動＝ロジックは変えていない）。
+// それぞれ register(ctx) を公開する。ctx は下のコア関数の後で組み立て、トップレベルの登録箇所で
+// 渡す（whenReady の前、registerExtractedIpc を参照）。
 import * as ipcOrganize from './ipc-organize.ts';
 import * as ipcPosts from './ipc-posts.ts';
 import * as ipcConfig from './ipc-config.ts';
@@ -66,68 +66,63 @@ import * as ipcModel from './ipc-model.ts';
 import { createWatchImportManager } from './lib-watch-import.ts';
 import type { IpcContext } from './ipc-context.ts';
 
-// Pin userData to the SAME directory the native host reads its config from, so
-// the bridge (plain Node, spawned by Chrome) and this app always agree.
-// Must run before app is ready.
+// userData を、Native Messaging ブリッジが設定を読むのと同じディレクトリに固定する。ブリッジ
+// （Chrome が起動する素の Node）とこのアプリの見ている先が常に一致するように。
+// app が ready になる前に走らせる必要がある。
 app.setPath('userData', configDir());
 
-// Keep diagnostics next to the configuration shared with the native host, rather
-// than Electron's AppData default: a log that lives somewhere other than the config
-// it describes is hard to read together with it. (This was originally about MSIX
-// storage virtualization splitting the two apart — that no longer happens as of
-// 2026-08-06, #1003 — but sitting beside the config is the right place regardless.)
+// 診断は Electron の AppData 既定ではなく、ブリッジと共有している設定の隣に置く。説明の対象で
+// ある設定と別の場所にあるログは、設定と突き合わせて読みにくい。（元は MSIX のストレージ仮想化が
+// 両者を引き離すという話だった＝2026-08-06 以降は起きない、#1003＝が、設定の隣というのは
+// それとは関係なく正しい置き場。）
 log.transports.file.resolvePathFn = () => path.join(configDir(), 'logs', 'main.log');
-// We own the preload bridge, so electron-log must not register a second preload
-// script for every session. app/src/preload/index.ts imports electron-log/preload instead.
+// preload のブリッジはこちらが持っているので、electron-log にセッションごとの2本目の preload
+// スクリプトを登録させない。代わりに app/src/preload/index.ts が electron-log/preload を
+// import する。
 log.initialize({ preload: false });
 log.errorHandler.startCatching({ showDialog: false });
 
-// A rejected ELECTRON_RENDERER_URL is reported HERE rather than in lib-window.ts,
-// which resolves it: that module's body runs before the lines above, so the same
-// warning written there would land in electron-log's default file instead of the
-// log this app keeps beside its config (#381 / #227).
+// 弾いた ELECTRON_RENDERER_URL を報告するのは、それを解決する lib-window.ts ではなくここ。
+// あのモジュールの本体は上の行より先に走るため、同じ警告をあちらに書くと、このアプリが設定の隣に
+// 置いているログではなく electron-log の既定ファイルへ出てしまう（#381 / #227）。
 if (process.env.ELECTRON_RENDERER_URL && devServer.rejected) {
   log.warn('Ignoring ELECTRON_RENDERER_URL, loading the bundled renderer', { reason: devServer.rejected });
 }
 
-// The two custom schemes this app serves, declared in ONE call: Electron
-// requires registerSchemesAsPrivileged to run before ready and to be called only
-// once, so a second registration site is not an option (a new scheme goes in
-// this array).
-//   asset:// — images and video from the (arbitrary) save folder, so the
-//     renderer can lazy-load them by filename without disabling webSecurity or
-//     holding every image in JS memory. Handler: lib-thumbnails.ts.
-//   app://   — the built renderer itself (#7). Handler: app-protocol.ts, which
-//     also says why neither scheme gets corsEnabled.
+// このアプリが提供する2つのカスタムスキームを、1回の呼び出しで宣言する。Electron は
+// registerSchemesAsPrivileged を ready の前に、かつ1回だけ呼ぶことを求めるので、2か所目の登録
+// 箇所は取れない（スキームを増やすならこの配列に足す）。
+//   asset:// ＝（任意の場所にある）保存先フォルダの画像と動画。レンダラーが webSecurity を切る
+//     ことも、全画像を JS のメモリに抱えることもなく、ファイル名で遅延読み込みできる。ハンドラは
+//     lib-thumbnails.ts。
+//   app://   ＝ ビルド済みのレンダラーそのもの（#7）。ハンドラは app-protocol.ts。どちらの
+//     スキームにも corsEnabled を付けない理由もそこに書いてある。
 protocol.registerSchemesAsPrivileged([
   { scheme: 'asset', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } },
   { scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true } },
 ]);
 
-// --- Config ---
-// config.json reads/writes, the corruption guard and the redundant save-folder
-// pointer were extracted to ./lib-config.ts (imported above).
+// --- 設定 ---
+// config.json の読み書き、破損の番人、冗長化した保存先フォルダのポインタは ./lib-config.ts へ
+// 切り出した（上で import している）。
 
-// Watch .hologram-inbox/new (#5 St6 / #299) — the ONE thing that writes into the
-// library from outside the app. Since #302 there is no second watcher on the save
-// folder itself: nothing writes per-post JSON there any more (#298 moved in-app
-// edits to the DB, #299 routed native-host saves through this queue), so watching
-// the folder for record changes would be watching for something that can no longer
-// happen. Media files DO still land there, but they arrive as part of an inbox
-// envelope and are visible through it.
+// .hologram-inbox/new を監視する（#5 St6 / #299）＝アプリの外からライブラリへ書き込む唯一の
+// 経路。#302 以降、保存先フォルダ自体を見る2本目の監視は無い。投稿ごとの JSON をそこへ書くものは
+// もう無いので（#298 でアプリ内の編集は DB へ、#299 で native host の保存はこのキューへ回った）、
+// レコードの変化を求めてフォルダを見張るのは、もう起こり得ないことを見張ることになる。メディア
+// ファイルは今もそこへ着地するが、取込キューのエンベロープの一部として届き、それ越しに見える。
 //
-// Any change here is worth a full reconcile rather than a targeted one: drainInbox
-// is cheap to re-run (already-applied events cost one indexed SELECT each —
-// lib-db-inbox.ts's module comment), and an inbox filename isn't a safe per-event
-// hint (a rename FROM tmp/, a mid-write partial, or a segment-compaction removal
-// could all fire here). Directory created first (design comment: "at startup,
-// create the inbox directory first, then set up the watcher") so the watch target always exists.
-// Consumes any pending `replaces` marker (#34) — the duplicate-save warning's
-// "replace" answer, which the native host can only write down (write-once) and
-// the app has to carry out. Drains the inbox first, because the record that
-// carries the marker is normally still sitting in it. Never throws: a
-// replacement that cannot be finished leaves its marker set and is retried on
-// the next pass, which is strictly better than failing whatever asked.
+// ここでの変化は、狙いを絞った照合ではなく全件の照合に値する。drainInbox は再実行が安く（適用
+// 済みのイベントは索引の効いた SELECT 1回ずつ＝lib-db-inbox.ts のモジュールコメント）、取込
+// キューのファイル名はイベント単位のヒントとして安全ではない（tmp/ からの rename、書き込み途中の
+// 断片、セグメント圧縮による削除のどれでもここが発火し得る）。監視対象が常に存在するよう、
+// ディレクトリを先に作る（設計コメント: "at startup, create the inbox directory first, then set
+// up the watcher"）。
+// 保留中の `replaces` マーカー（#34）があれば消化する＝重複保存の警告に対する「置き換える」の
+// 回答で、native host は書き留めること（write-once）しかできず、実行するのはアプリの側。先に
+// 取込キューを流し込む。マーカーを持つレコードは通常まだそこに残っているため。例外は投げない。
+// 完了できなかった置き換えはマーカーを立てたまま残り、次のパスで再試行される。呼び出し元を
+// 失敗させるよりそちらが確実に良い。
 async function sweepReplacements() {
   const folder = getSaveFolder();
   const trashDir = getTrashDir();
@@ -138,7 +133,7 @@ async function sweepReplacements() {
     const report = await applyPendingReplacements({ sqlite: handle.sqlite, folder, trashDir, mediaExts: LIBRARY_MEDIA_EXTS });
     for (const r of report.applied) log.info(`replaced capture ${r.oldId} with ${r.newId} (#34) — the old capture is in the trash`);
     for (const f of report.failed) log.warn(`replacement ${f.oldId} -> ${f.newId} failed, will retry: ${f.error}`);
-    // The badge index still names the retired capture until it is rebuilt.
+    // 印の索引は、作り直されるまで退役したキャプチャを名指ししたままになる。
     if (report.applied.length) scheduleSavedIndexWrite(handle);
   } catch (err) {
     log.error('replacement sweep failed:', err);
@@ -147,29 +142,27 @@ async function sweepReplacements() {
 
 let inboxWatcher: FSWatcher | null = null;
 let inboxWatchDebounce: any = null;
-// chokidar (#11), not fs.watch: cross-platform normalization and a single
-// rename-detection story instead of chasing platform-specific fs.watch quirks
-// ourselves. This directory only ever holds files arriving into the inbox, so
-// depth: 0 (this dir's own entries, no recursion) is enough, and
-// ignoreInitial matches fs.watch's behavior of never firing for what was
-// already there when the watch started.
+// fs.watch ではなく chokidar（#11）。プラットフォーム差の正規化と、rename 検出の筋が1本に
+// まとまる。プラットフォーム固有の fs.watch の癖を自前で追い回さずに済む。このディレクトリに
+// 入るのは取込キューへ到着したファイルだけなので depth: 0（このディレクトリ直下のエントリだけ、
+// 再帰しない）で足り、ignoreInitial は「監視を始めた時点で既にあったものには発火しない」という
+// fs.watch の挙動に合う。
 function watchInboxFolder() {
   if (inboxWatcher) {
     const closing = inboxWatcher;
     void closing.close().catch(() => {
-      /* already closed */
+      /* 既に閉じている */
     });
     inboxWatcher = null;
   }
   const folder = getSaveFolder();
   if (!folder) return;
-  // #37: never mkdir the save folder back into existence here. getSaveFolder()
-  // returns an EXPLICIT config value verbatim even when nothing is there any
-  // more (moved/renamed/unmounted outside the app) — before this check,
-  // ensureInboxDirs below unconditionally recreated the folder (plus its empty
-  // .hologram-inbox tree) on every launch, which is exactly the "looks like a
-  // fresh empty library" failure this Issue exists to stop. Skip the watch
-  // entirely; refreshLibraryStatus() is what surfaces this to the renderer.
+  // #37: ここで保存先フォルダを mkdir で作り直すことは一切しない。getSaveFolder() は、そこに
+  // もう何も無くても（アプリの外で移動・改名・アンマウントされた）設定の明示値をそのまま返す。
+  // このチェックを入れる前は、下の ensureInboxDirs が起動のたびに無条件でフォルダを（空の
+  // .hologram-inbox の木ごと）作り直していた。この Issue が止めようとしている「まっさらな空の
+  // ライブラリに見える」不具合そのもの。監視は丸ごと省く。これをレンダラーへ出すのは
+  // refreshLibraryStatus()。
   if (!fs.existsSync(folder)) {
     log.warn('save folder is missing — not watching or recreating it', { folder });
     return;
@@ -180,12 +173,12 @@ function watchInboxFolder() {
     inboxWatcher.on('all', () => {
       clearTimeout(inboxWatchDebounce);
       inboxWatchDebounce = setTimeout(() => {
-        // The sweep runs BEFORE the event so the renderer's refetch already
-        // sees the replacement settled — otherwise a "replace" save would show
-        // both records for one refresh cycle and then quietly lose one.
+        // 掃き寄せはイベントより前に走らせる。レンダラーの再取得の時点で置き換えが片付いて
+        // いるように。そうしないと「置き換える」で保存したとき、1回の更新周期だけ両方の
+        // レコードが見えて、その後に片方が黙って消える。
         void sweepReplacements().finally(() => {
-          // null = full reconcile — see the function comment for why this
-          // watcher never tries to ship a targeted hint.
+          // null ＝ 全件の照合。この監視が狙いを絞ったヒントを送ろうとしない理由は関数の
+          // コメントを参照。
           broadcast('posts-changed', null);
         });
       }, 400);
@@ -195,46 +188,39 @@ function watchInboxFolder() {
   }
 }
 
-// The one funnel for a renderer broadcast. Every module that pushes
-// 'posts-changed' goes through here (ctx.send, the backup engine, the
-// watch-import manager, this file's own inbox watcher), which makes it the
-// single place the index queue (#834) can learn that records may need jobs —
-// rather than five call sites each having to remember to tell it. Every other
-// channel is relayed to sendToWin untouched.
+// レンダラーへの配信を通す唯一の口。'posts-changed' を投げるモジュールは全部ここを通る
+// （ctx.send、バックアップエンジン、監視取り込みのマネージャ、このファイル自身の取込キューの
+// 監視）。そのおかげで、レコードにジョブが要るかもしれないと索引キュー（#834）が知る場所が1か所
+// で済む＝5か所の呼び出し側がそれぞれ伝え忘れないよう気を配らずに済む。ほかのチャンネルは
+// そのまま sendToWin へ中継する。
 function broadcast(channel: string, ...args: unknown[]) {
   if (channel === 'posts-changed') notifyRecordsChanged();
   sendToWin(channel, ...args);
 }
 
-// --- Posts (DB-backed, #5) ---
-// The renderer's post array comes from SQLite (lib-db-query.ts): a cold launch is
-// a SELECT, not tens of thousands of readFileSync+JSON.parse calls. Since #302
-// there is no folder scan left at all — the DB is the truth source, so reading it
-// needs no reconciliation against disk first, and the only intake that has to be
-// picked up is the inbox queue (drainInbox, one indexed SELECT per already-applied
-// event).
+// --- 投稿（DB が裏、#5） ---
+// レンダラーが持つ投稿の配列は SQLite から来る（lib-db-query.ts）。コールドな起動は SELECT 1回
+// であって、数万回の readFileSync+JSON.parse ではない。#302 以降、フォルダの走査はもう一切ない
+// ＝DB が正本なので、読む前にディスクと突き合わせる必要はなく、拾わなければならない取り込みは
+// 取込キューだけ（drainInbox、適用済みのイベント1件につき索引の効いた SELECT 1回）。
 //
-// hologram.db lives INSIDE the save folder (ADR 0010, revised by #176): the
-// database is what a library IS now, so a library is a single self-contained
-// folder — copy it and the copy carries its own posts, backup it and the
-// generation store (lib-db-generations.ts) travels with the same folder it
-// restores into. The 2026-07-21 cloud-sync worry ADR 0010's original text
-// raised (a sync client racing a live write) is handled the same way #95/#101
-// already handle it for the rest of the library: a warning at pick time
-// (save-folder-guard.ts's cloudSyncProviderOf), not a special location for one
-// file. thumb-cache stays in configDir — it is genuinely local/not portable,
-// unlike the database.
+// hologram.db は保存先フォルダの中にある（ADR 0010、#176 で改訂）。今やデータベースこそが
+// ライブラリの実体なので、ライブラリは自己完結した1つのフォルダになる＝コピーすればコピーが
+// 自分の投稿を連れて行くし、バックアップすれば世代ストア（lib-db-generations.ts）が復元先と同じ
+// フォルダについて回る。ADR 0010 の元の文が挙げていた 2026-07-21 のクラウド同期の懸念（同期
+// クライアントが生きた書き込みと競合する）は、ライブラリの残りについて #95/#101 が既にやって
+// いるのと同じ扱いにする＝選択時の警告（save-folder-guard.ts の cloudSyncProviderOf）であって、
+// 1ファイルのための特別な置き場ではない。thumb-cache は configDir に残る＝データベースと違って
+// 本当にローカルで、持ち運べない。
 
-// Copies the newest DB generation over `file` if one exists — called only when
-// `file` is about to be created fresh (missing, or corrupt-and-just-deleted) so a
-// real restore point wins over an empty database. There is no on-disk fallback
-// truth source to re-derive from any more, so a generation — when one exists — is
-// strictly better than empty. #299's inbox replay (ensurePostsSynced's
-// drainInboxLogged) then catches up whatever happened after the snapshot, and
-// #301's orphan synthesis (run-orphan-recovery) can recover what neither the
-// snapshot nor the inbox saw. (latestRestorableSnapshot is lib-backup.ts's: it
-// prefers the library's own generation store and falls back to a backup
-// destination's copy of it — #233.)
+// DB の世代が残っていれば、その最新を `file` へ上書きコピーする。呼ばれるのは `file` がこれから
+// 新規に作られるときだけ（存在しない、または破損していて今削除した）で、空のデータベースより
+// 本物の復元ポイントが勝つように。作り直しの元になるディスク上の正本はもう無いので、世代がある
+// ならそれは空より確実に良い。この後、#299 の取込キューの再生（ensurePostsSynced の
+// drainInboxLogged）がスナップショット以降に起きたことを追いつかせ、#301 の孤児の合成
+// （run-orphan-recovery）がスナップショットにも取込キューにも見えなかったものを回収できる。
+// （latestRestorableSnapshot は lib-backup.ts のもの。ライブラリ自身の世代ストアを優先し、
+// 無ければバックアップ先にあるその複製を代わりに使う＝#233。）
 function restoreFromSnapshotIfAvailable(file: string): boolean {
   const snapshot = latestRestorableSnapshot();
   if (!snapshot || !fs.existsSync(snapshot)) return false;
@@ -248,41 +234,40 @@ function restoreFromSnapshotIfAvailable(file: string): boolean {
   }
 }
 
-// #37: the current save-folder status (missing on disk or not) for the
-// renderer's get-library-status IPC — a fresh saveFolderStatus() read on every
-// call, not a cached flag. The renderer re-invokes this at boot and after a
-// retry/repoint, which is all "detection" this module does; there is no
-// dedicated poll (fs.watch does not notice a directory disappearing anyway).
+// #37: レンダラーの get-library-status IPC 向けに、保存先フォルダの現在の状態（ディスク上に
+// 無いかどうか）を返す＝呼ばれるたびに saveFolderStatus() を読み直すのであって、キャッシュした
+// 旗ではない。レンダラーは起動時と、再試行・指し直しの後にこれを呼び直す。このモジュールがやる
+// 「検出」はそれで全部で、専用のポーリングは無い（そもそも fs.watch はディレクトリが消えたことに
+// 気づかない）。
 function refreshLibraryStatus() {
   const status = saveFolderStatus();
   if (status.missing) log.warn('save folder is missing', { folder: status.folder });
   return { missing: status.missing, path: status.folder };
 }
-// Live check for write-guards (clear-all / import* / relocate) — a fresh
-// statSync, not the cached push above, so a drive that comes back mid-session
-// (remounted, folder restored) unblocks writes without requiring a restart.
+// 書き込みの防ぎ（clear-all / import* / relocate）が使う生きた確認＝上のキャッシュされた通知
+// ではなく statSync を打ち直すので、セッションの途中で戻ってきたドライブ（再マウント、フォルダの
+// 復旧）は、再起動を求めずに書き込みを解放する。
 function isLibraryMissing() {
   return saveFolderStatus().missing;
 }
 
 let dbHandle: { db: any; sqlite: any } | null = null;
-// One name for the live database file, because more than one caller needs it now
-// (#233's rollback replaces it wholesale). Inside the CURRENT save folder
-// (#176) — switching libraries means this resolves somewhere else the moment
-// config.saveFolder is flipped, which is exactly what switchLibrary below relies on.
+// 生きているデータベースファイルの名前を1か所に。今は複数の呼び出し元が要る（#233 のロール
+// バックはこれを丸ごと置き換える）。場所は現在の保存先フォルダの中（#176）＝ライブラリを
+// 切り替えると、config.saveFolder が切り替わった瞬間にこれは別の場所を指す。下の switchLibrary
+// が頼っているのはまさにそこ。
 function dbFile() {
   return path.join(getSaveFolder(), 'hologram.db');
 }
-// Whether the CURRENTLY open dbHandle's library has already been recorded into
-// config.libraries[] (#176's "recent libraries" list + per-library backup/
-// integrity home) this open. Reset alongside dbHandle itself in closeDb(), so
-// every distinct open — cold start, a rollback's file swap, a switchLibrary —
-// records exactly once, whichever of those callers triggers the next ensureDb().
+// 今開いている dbHandle のライブラリを、この open で config.libraries[] へ記録済みかどうか
+// （#176 の "最近使ったライブラリ" の一覧＋ライブラリごとのバックアップ・整合性の置き場）。
+// closeDb() で dbHandle 自体と一緒にリセットするので、別々の open ＝コールドスタート、ロール
+// バックのファイル差し替え、switchLibrary＝は、そのどれが次の ensureDb() を引くにせよ、ちょうど
+// 1回ずつ記録する。
 let libraryRecorded = false;
-// Closes the live handle and forgets it, so the next ensureDb() opens whatever
-// is on disk. Callers: #233's rollback (swaps the file underneath — an open
-// connection would neither see nor tolerate that) and #176's switchLibrary
-// (the folder itself is about to change).
+// 生きているハンドルを閉じて忘れる。次の ensureDb() がディスク上にあるものを開くように。
+// 呼び出し元は #233 のロールバック（足元でファイルを差し替える＝開いたままの接続はそれを見る
+// ことも許容することもできない）と #176 の switchLibrary（フォルダ自体がこれから変わる）。
 function closeDb() {
   try {
     dbHandle?.sqlite.close();
@@ -292,22 +277,19 @@ function closeDb() {
   dbHandle = null;
   libraryRecorded = false;
 }
-// #176: the database is now INSIDE the save folder, so a folder that is
-// missing on disk (moved/renamed/unmounted outside the app, #37) means the
-// database is unreachable too — unlike before #176, where it lived in
-// configDir and every DB-backed handler (get-tabs, get-tag-types, …) kept
-// working regardless of the media folder's state. Refusing cleanly here, with
-// a message that names what happened, is strictly better than letting
-// better-sqlite3's own "Cannot open database because the directory does not
-// exist" (or worse, letting it silently mkdir a fresh empty one) reach the
-// renderer as an opaque IPC rejection — LibraryMissingState.tsx already
-// replaces the whole content column for exactly this state.
+// #176: データベースは保存先フォルダの中に入ったので、ディスク上に無いフォルダ（アプリの外で
+// 移動・改名・アンマウントされた、#37）はデータベースにも届かないことを意味する。#176 より前は
+// configDir にあり、DB を裏に持つハンドラ（get-tabs、get-tag-types、…）はメディアフォルダの
+// 状態に関係なく動き続けていた。better-sqlite3 自身の "Cannot open database because the
+// directory does not exist"（さらに悪く、黙って空のものを mkdir すること）が不透明な IPC の
+// 拒否としてレンダラーへ届くより、何が起きたかを名指しするメッセージを付けてここできれいに断る
+// 方が確実に良い。まさにこの状態のために、LibraryMissingState.tsx が本文の列を丸ごと差し替える。
 function ensureDb() {
   if (dbHandle) return dbHandle;
-  // Teardown has already closed the library (before-quit, bottom of this file).
-  // Timers armed at startup keep firing while the quit runs, and opening a fresh
-  // connection for one of them would run migrations, a history prune and a
-  // recordLibraryOpened against a library nobody is looking at any more.
+  // 後片付けがすでにライブラリを閉じている（before-quit、このファイルの末尾）。起動時に仕掛けた
+  // タイマーは終了処理の最中も発火し続ける。そのうちの1つのために新しい接続を開けば、もう誰も
+  // 見ていないライブラリに対してマイグレーション・履歴の刈り込み・recordLibraryOpened を
+  // 走らせることになる。
   if (quitting) throw new Error('the app is quitting — not reopening the library database');
   if (saveFolderStatus().missing) throw new Error('save folder is missing — cannot open the library database');
   const file = dbFile();
@@ -320,7 +302,7 @@ function ensureDb() {
       try {
         fs.rmSync(file + suffix, { force: true });
       } catch {
-        /* best-effort */
+        /* できる範囲で */
       }
     }
     restoreFromSnapshotIfAvailable(file);
@@ -336,9 +318,9 @@ function ensureDb() {
   }
   migratePosterKeyHost(dbHandle.sqlite);
   backfillPosterProfiles(dbHandle.sqlite);
-  // #145 design §5: "掃除＝DB を開いた時に1回" — ensureDb is memoized (the early
-  // return above), so this only runs on an actual fresh open: app launch, and
-  // #176's library switch (closeDb() clears dbHandle, the next call reopens here).
+  // #145 設計 §5:「掃除＝DB を開いた時に1回」＝ensureDb はメモ化されている（上の早期リターン）
+  // ので、これが走るのは本当に新しく開いたときだけ。アプリの起動と、#176 のライブラリ切り替え
+  // （closeDb() が dbHandle を消し、次の呼び出しがここで開き直す）。
   try {
     createDbWriter(dbHandle.sqlite).pruneHistory();
   } catch (err) {
@@ -347,14 +329,13 @@ function ensureDb() {
   return dbHandle;
 }
 
-// One-time, pre-release migration (#176): installs that predate this change
-// have hologram.db sitting in configDir (ADR 0010's original location). Move it
-// — and its WAL/SHM sidecars, so no stale journal is left orphaned — into the
-// save folder before anything opens either path. Only runs when the OLD file
-// exists and the NEW one does not; a fresh install or an already-migrated one
-// no-ops on a single fs.existsSync each. Delete this once no installed copy
-// predates #176 (project convention: a one-time migration is a work step, not
-// part of the design — see ADR 0010's revision note).
+// リリース前の1回限りのマイグレーション（#176）。この変更より前のインストールは hologram.db が
+// configDir にある（ADR 0010 の元の場所）。どちらのパスも開かれる前に、それを＝古いジャーナルが
+// 孤立して残らないよう WAL/SHM のサイドカーごと＝保存先フォルダへ移す。走るのは古いファイルが
+// あって新しいファイルが無いときだけ。新規インストールや移行済みのものは、それぞれ
+// fs.existsSync 1回で何もしない。#176 より前のインストールが1つも残らなくなったらこれは削除する
+// （プロジェクトの作法として、1回限りのマイグレーションは作業の工程であって設計の一部ではない
+// ＝ADR 0010 の改訂注記を参照）。
 function migrateDbIntoSaveFolder() {
   const folder = getSaveFolder();
   if (!folder || !fs.existsSync(folder)) return;
@@ -375,40 +356,34 @@ function getDbWriter() {
   return createDbWriter(ensureDb().sqlite);
 }
 
-// The bridge's other half of the "saved" badge (#5 St6 / #299 — see
-// bridge.mts's "Saved-post index" comment): a small postKey->captureId map
-// rebuilt from the DB and written to configDir, NOT the save folder (so it never
-// lands next to the library's media). Debounced + atomic (tmp + rename);
-// best-effort because a stale/missing file just makes the bridge fall back
-// further to its journal + loose-inbox rescan, never wrong, only slower to
-// reflect an app-side change.
+// ブリッジが出す "saved" の印（#5 St6 / #299＝bridge.mts の "Saved-post index" コメントを参照）
+// のもう半分。DB から作り直した小さな postKey→captureId の対応表を、保存先フォルダではなく
+// configDir へ書く（ライブラリのメディアの隣に落ちないように）。デバウンス＋アトミック（tmp ＋
+// rename）。できる範囲でよく、古かったり無かったりするファイルは、ブリッジをその先のジャーナル
+// ＋loose な取込キューの再走査を代わりに使わせるだけ。間違うことはなく、アプリ側の変更が反映される
+// のが遅くなるだけ。
 let savedIndexTimer: any = null;
-// Set once ensurePostsSynced has primed the snapshot for this process (#466):
-// without it, a launch that drains nothing from the inbox and recovers no
-// orphans never calls scheduleSavedIndexWrite at all, so the bridge answers
-// saved-status queries from its journal + loose-inbox fallback indefinitely
-// even though the DB itself has the record.
+// このプロセスで ensurePostsSynced がスナップショットを一度用意したら立てる（#466）。これが
+// 無いと、取込キューから何も流し込まず孤児も回収しなかった起動では scheduleSavedIndexWrite が
+// 一度も呼ばれず、DB 自体にはレコードがあるのに、ブリッジは保存状態の問い合わせにいつまでも
+// ジャーナル＋loose な取込キューという代わりの手段から答えることになる。
 let savedIndexPrimed = false;
-// Wired to the backup engine's noteLibraryMutation once that exists (further
-// down — it needs this pipeline, so it cannot be constructed above it). This
-// function is the single funnel every library change already passes through
-// (an inbox drain, a trash operation, an import, an orphan recovery), which
-// makes it the honest place for the backup lanes to learn that something
-// changed: the media lane starts its "right after the save" countdown and the
-// DB lane counts toward its next generation (#233).
+// バックアップエンジンの noteLibraryMutation ができ次第そこへ繋ぐ（もっと下＝このパイプラインを
+// 必要とするので、これより上では組み立てられない）。この関数は、ライブラリへの変更がすでに全部
+// 通っている唯一の口（取込キューの流し込み、ゴミ箱の操作、取り込み、孤児の回収）なので、何かが
+// 変わったとバックアップのレーンが知る場所として正直なところ。メディアのレーンは「保存の直後」
+// のカウントダウンを始め、DB のレーンは次の世代へ向けて数える（#233）。
 let onLibraryMutation: (() => void) | null = null;
-// The write itself, factored out so #176's switchLibrary can run it
-// IMMEDIATELY after opening the new library instead of waiting on the
-// debounce below — the extension's "saved" badge has to reflect the new
-// library right away, not up to 1.5s late (during which a re-save of
-// something already in THIS library would misreport as new).
+// 書き込みそのもの。#176 の switchLibrary が、下のデバウンスを待たずに新しいライブラリを開いた
+// 直後すぐ走らせられるよう切り出した＝拡張機能の "saved" の印は、最大1.5秒遅れではなく即座に
+// 新しいライブラリを映さなければならない（その間に、このライブラリに既にあるものを保存し直すと、
+// 新規だと誤って報告されてしまう）。
 async function writeSavedIndexNow(handle: { sqlite: any }) {
   try {
-    // The trash half (#158) comes off the filesystem, not the DB: a trashed
-    // post has no posts row at all. listTrashRecords is what the trash view
-    // itself reads with, so a planted record is normalized here too (#324).
-    // A trash folder that cannot be read yields no notices rather than
-    // failing the whole write — the saved half is the more important one.
+    // ゴミ箱の側（#158）は DB ではなくファイルシステムから来る。ゴミ箱へ入れた投稿には
+    // posts の行がそもそも無い。listTrashRecords はゴミ箱の表示自体が読むのに使うものなので、
+    // 仕込まれたレコードもここで正規化される（#324）。読めないゴミ箱フォルダは、書き込み全体を
+    // 失敗させるのではなく通知を1件も出さない＝保存済みの側の方が重要。
     const trashDir = getTrashDir();
     const trash = trashDir ? (await listTrashRecords(trashDir)).map((r) => ({ captureId: r.captureId, url: r.url, trashedAt: r.trashedAt })) : [];
     const data = buildSavedIndex(handle.sqlite, trash);
@@ -416,13 +391,13 @@ async function writeSavedIndexNow(handle: { sqlite: any }) {
     fs.mkdirSync(dir, { recursive: true });
     writeFileAtomicSync(path.join(dir, SAVED_INDEX_FILE), JSON.stringify(data));
   } catch {
-    /* best-effort — the bridge falls back to journal + loose-inbox scanning */
+    /* できる範囲で＝ブリッジはジャーナル＋loose な取込キューの走査を代わりに使う */
   }
 }
-// What the debounce is still holding, so quitting can finish it (below). Two
-// separate states, because a write is lost either way: `pending` is a change
-// whose timer has not fired yet, `inFlight` is a fired timer whose write has
-// not landed yet (the trash half reads `.trash/` asynchronously).
+// デバウンスがまだ抱えているもの。終了処理がそれを完了できるように（下）。状態を2つに分けて
+// あるのは、どちらでも書き込みが失われるため。`pending` はタイマーがまだ発火していない変更、
+// `inFlight` は発火済みだが書き込みがまだ着地していないもの（ゴミ箱の側は `.trash/` を非同期に
+// 読む）。
 let savedIndexPending: { sqlite: any } | null = null;
 let savedIndexInFlight: Promise<void> | null = null;
 function scheduleSavedIndexWrite(handle: { sqlite: any }) {
@@ -436,46 +411,42 @@ function scheduleSavedIndexWrite(handle: { sqlite: any }) {
     });
   }, 1500);
 }
-// Deleting a post and closing the app inside the 1.5s debounce used to drop the
-// rewrite entirely: the timer dies with the process, so the extension kept
-// answering "saved" for a post sitting in the trash until the next launch —
-// exactly the stale badge #158 exists to prevent. Awaited from before-quit.
+// 投稿を削除して1.5秒のデバウンスの内にアプリを閉じると、以前は書き直しが丸ごと落ちていた。
+// タイマーはプロセスと一緒に死ぬので、ゴミ箱にある投稿について拡張機能は次の起動まで "saved" と
+// 答え続けた＝#158 が防ぐために存在する、まさにその古くなった印。before-quit から await する。
 async function flushSavedIndexWrite() {
   clearTimeout(savedIndexTimer);
   const handle = savedIndexPending;
   savedIndexPending = null;
-  // In-flight first: it was scheduled earlier, and the file must end up holding
-  // the LATER of the two states.
+  // 飛行中のものが先。そちらの方が先に予約されていて、ファイルには2つの状態のうち後の方が
+  // 残らなければならない。
   if (savedIndexInFlight) await savedIndexInFlight;
   if (handle) await writeSavedIndexNow(handle);
 }
 
-// Drains .hologram-inbox/new into the DB (#5 St6 / #299) — one receipted,
-// transactional apply per envelope, loose files kept afterward (see
-// lib-db-inbox.ts). Logs whatever it skipped (missing media, a hash/post
-// conflict, a corrupt or unknown-version envelope, an apply that threw) so a
-// stuck capture is diagnosable; never throws — drainInbox itself never lets one
-// bad file stop the rest (#920 made that hold for unforeseen exceptions too, by
-// quarantining the envelope into .hologram-inbox/failed/), and a synchronous fs
-// error here (folder briefly unavailable) just means this pass found nothing,
-// not a reason to fail the caller's sync.
+// .hologram-inbox/new を DB へ流し込む（#5 St6 / #299）＝エンベロープ1件につき受領記録の付いた
+// トランザクション適用が1回、その後も loose ファイルは残す（lib-db-inbox.ts を参照）。飛ばした
+// ものは何であれログに出す（メディアが無い、ハッシュ／投稿の衝突、壊れたか版の分からない
+// エンベロープ、例外を投げた適用）ので、詰まったキャプチャは追える。例外は投げない＝drainInbox
+// 自体、1つの悪いファイルで残りを止めることは決してないし（#920 で、エンベロープを
+// .hologram-inbox/failed/ へ隔離することにより、想定外の例外についてもそれが成り立つように
+// なった）、ここでの同期的な fs エラー（フォルダが一時的に使えない）は、このパスが何も見つけ
+// なかったという意味でしかなく、呼び出し元の同期を失敗させる理由ではない。
 function drainInboxLogged(folder: string, sqlite: any) {
   try {
     const report = drainInbox(folder, sqlite);
-    // Names the captureIds that actually reached the library (#519). Only
-    // skips and failures were logged before, so "the save succeeded but the
-    // post is not in the library" had no record on this side at all — and the
-    // host's own `bridge/ok` line in capture.log stops at "written to disk".
-    // The captureId is what joins the two logs; a save's whole path is
-    // therefore readable across them, which is why this stays in main.log
-    // rather than being appended to a file another process owns.
+    // 実際にライブラリまで届いた captureId を名指しする（#519）。以前は飛ばしたものと失敗した
+    // ものしかログに出ておらず、「保存は成功したのに投稿がライブラリに無い」はこちら側に記録が
+    // 一切なかった。host 自身が capture.log に出す `bridge/ok` の行も「ディスクに書いた」で
+    // 止まる。2つのログを繋ぐのが captureId で、だからこそ保存の経路全体が両者にまたがって
+    // 読める。これを、別のプロセスが持つファイルへ追記するのではなく main.log に置いているのは
+    // そのため。
     if (report.applied.length) log.info(`inbox applied ${report.applied.length}: ${report.applied.join(' ')}`);
     for (const s of report.skipped) {
       const line = `inbox drain skipped ${s.file}: ${s.reason}${s.detail ? ` (${s.detail})` : ''}`;
-      // The enumerated skips are expected states (media still syncing, a
-      // conflicting replay); apply-failed is an envelope we could not explain
-      // and quarantined (#920), so it is louder — it appears once, not every
-      // drain, and points at a file that is now sitting in failed/.
+      // 列挙された skip は想定内の状態（メディアがまだ同期中、衝突する再生）。apply-failed は
+      // 説明が付かず隔離したエンベロープ（#920）なので、こちらは大きく出す。毎回の流し込みでは
+      // なく1回だけ現れ、いま failed/ にあるファイルを指す。
       if (s.reason === 'apply-failed') log.error(line);
       else log.warn(line);
     }
@@ -488,12 +459,11 @@ function drainInboxLogged(folder: string, sqlite: any) {
   }
 }
 
-// Idle-time compaction (#5 St6 / #299 design comment, "retention volume and
-// compaction"): debounced like scheduleSnapshot/scheduleSavedIndexWrite so a burst of
-// saves triggers it once, after things settle, rather than on every single
-// drain. compactInbox itself no-ops below its 1,000-loose-event threshold, so
-// calling this after every drain costs one COUNT-equivalent query in the
-// common case.
+// 暇なときの圧縮（#5 St6 / #299 の設計コメント "retention volume and compaction"）。
+// scheduleSnapshot / scheduleSavedIndexWrite と同じくデバウンスしてあるので、保存が固まって来て
+// も、流し込みのたびではなく落ち着いてから1回だけ動く。compactInbox 自体、loose なイベント
+// 1,000件のしきい値を下回れば何もしないので、流し込みのたびにこれを呼んでも普通は COUNT 相当の
+// 問い合わせ1回で済む。
 let compactionTimer: any = null;
 function scheduleInboxCompaction(folder: string, sqlite: any) {
   clearTimeout(compactionTimer);
@@ -507,32 +477,28 @@ function scheduleInboxCompaction(folder: string, sqlite: any) {
   }, 1500);
 }
 
-// Opens the DB and drains the intake queue — everything that has to happen
-// before the posts table can be considered current. Returns the open handle
-// (null if no save folder is set yet). Write handlers share this because a
-// post-level DB write assumes its captureId already has a posts row, and an IPC
-// call is not guaranteed to arrive after the renderer's own first listPosts().
+// DB を開いて取込キューを流し込む＝posts テーブルを最新と見なせるようになるまでに起きなければ
+// ならないこと全部。開いたハンドルを返す（保存先フォルダがまだ設定されていなければ null）。
+// 書き込みのハンドラがこれを共有するのは、投稿単位の DB 書き込みが、その captureId に posts の
+// 行が既にあることを前提とするため。IPC の呼び出しがレンダラー自身の最初の listPosts() より後に
+// 届く保証は無い。
 function ensurePostsSynced() {
   const folder = getSaveFolder();
   if (!folder) return null;
-  // #176: a switchLibrary() is mid-flight (between closing the old database
-  // and opening the new one) — a stray caller here (most concretely, the
-  // startup-scheduled sweepReplacements/purgeOldTrash/integrity-check timers,
-  // which are not part of switchLibrary's own "stop writes" phase because
-  // they are one-shot rather than something with a flag to check) must not
-  // call ensureDb() itself: it would either reopen the OLD library a moment
-  // before switchLibrary's own writeConfig flips the pointer, or race the
-  // close/reopen pair outright. Treating this exactly like "no library" is
-  // what every caller already handles — and so is a quit that has already closed
-  // the database (see ensureDb): those same one-shot timers used to reach the
-  // closed handle and log an "inbox drain failed: TypeError: The database
-  // connection is not open" pair on every single exit.
+  // #176: switchLibrary() が飛行中（古いデータベースを閉じてから新しいものを開くまでの間）。
+  // ここへ紛れ込んだ呼び出し元（具体的には起動時に仕掛けた sweepReplacements / purgeOldTrash /
+  // 整合性チェックのタイマー。旗を見るような作りではなく一発ものなので、switchLibrary 自身の
+  // 「書き込みを止める」相には入っていない）が、自分で ensureDb() を呼んではいけない。
+  // switchLibrary 自身の writeConfig がポインタを切り替える直前に古いライブラリを開き直すか、
+  // 閉じる／開き直すの組と正面から競合するかのどちらかになる。これを「ライブラリが無い」と
+  // まったく同じに扱えば、どの呼び出し元も既に対応できている。データベースを閉じ終えた終了処理も
+  // 同じ（ensureDb を参照）。以前は同じ一発もののタイマーが閉じたハンドルへ届き、終了のたびに
+  // "inbox drain failed: TypeError: The database connection is not open" の2行を出していた。
   if (switching || quitting) return null;
   const handle = ensureDb();
-  // Prime the snapshot regardless of whether this pass finds anything to
-  // drain — buildSavedIndex is two indexed SELECTs, cheap enough to run
-  // unconditionally on every launch rather than tracking file freshness
-  // against the DB's last write.
+  // このパスが流し込むものを見つけたかどうかに関係なくスナップショットを用意する＝
+  // buildSavedIndex は索引の効いた SELECT 2回で、DB の最終書き込みに対してファイルの鮮度を
+  // 追いかけるより、起動のたびに無条件で走らせて構わない程度に安い。
   if (!savedIndexPrimed) {
     savedIndexPrimed = true;
     scheduleSavedIndexWrite(handle);
@@ -548,32 +514,28 @@ async function listPosts() {
   return { saveFolder: getSaveFolder(), posts };
 }
 
-// Delta variant for the renderer. Serializing all ~9k records over IPC on every
-// refresh costs ~450ms, so the window holds the full set and main ships only
-// added/updated/removed records. `haveBaseline` is the renderer asserting it still
-// holds the last full set; when either side lacks one (cold main, folder switch, or
-// a renderer that reloaded and lost its cache) we resend a full snapshot and both
-// sides re-sync.
+// レンダラー向けの差分版。更新のたびに約9千件のレコード全部を IPC 越しに直列化すると約450ms
+// かかるので、ウィンドウが全件を持ち、main は追加・更新・削除されたレコードだけを送る。
+// `haveBaseline` は、最後の全件をまだ持っているというレンダラーの申告。どちらかの側にそれが無い
+// とき（main が冷えている、フォルダの切り替え、読み込み直してキャッシュを失ったレンダラー）は
+// 全件のスナップショットを送り直し、両側で同期を取り直す。
 //
-// One shape, no hints: reading every post is a single SELECT now, so the delta is
-// always computed against a fresh full read and is always reliable. Before #302
-// this branched on an fs-watch filename hint, because the alternative was
-// re-reading tens of thousands of sidecars to find out what moved — the hint
-// existed to avoid a cost the DB doesn't have.
+// 形は1つ、ヒントは無し。今や全投稿を読むのは SELECT 1回なので、差分は常に読み直した全件に対して
+// 計算され、常に信頼できる。#302 より前はここが fs-watch のファイル名ヒントで分岐していた。何が
+// 動いたかを知る代わりの手段が、数万件のサイドカーを読み直すことだったため＝ヒントは、DB には
+// 無いコストを避けるために存在していた。
 //
-// #32 St1 (highest-priority correctness fix in the design doc): this baseline used
-// to be ONE `_deltaFolder`/`_lastSent` pair for the whole process, which was fine
-// while there was only ever one renderer calling in. With a second window it silently
-// broke — window B's delta call would overwrite window A's "what did I last see"
-// bookkeeping, so A's NEXT call computed its delta against B's baseline instead of
-// its own and could drop updates it was never actually shown. Keyed by the calling
-// webContents' id instead, so two windows polling in the same tick can never step on
-// each other; an entry is dropped when its window closes (see the
-// 'web-contents-created' listener below) so this never grows unbounded across a
-// session with many opened/closed windows.
+// #32 St1（設計文書で最優先の正しさの修正）: この基準はかつてプロセス全体で
+// `_deltaFolder`/`_lastSent` の1組だった。呼んでくるレンダラーが1つしかない間はそれで良かった。
+// 2つ目のウィンドウが出た時点で黙って壊れた＝ウィンドウ B の差分呼び出しがウィンドウ A の
+// 「最後に何を見たか」の帳簿を上書きし、A の次の呼び出しは自分のではなく B の基準に対して差分を
+// 計算して、実際には一度も見せていない更新を落とし得た。代わりに呼び出し元の webContents の id を
+// キーにしてあるので、同じティックでポーリングする2つのウィンドウが互いを踏むことはない。
+// ウィンドウが閉じたらそのエントリは捨てる（下の 'web-contents-created' のリスナーを参照）ので、
+// ウィンドウを何度も開閉するセッションでもここが無制限に育つことはない。
 interface DeltaBaseline {
   folder: string | null;
-  lastSent: Map<string, unknown>; // captureId -> updatedAt last delivered to THIS renderer
+  lastSent: Map<string, unknown>; // captureId → このレンダラーへ最後に届けた updatedAt
 }
 const _deltaBySender = new Map<number, DeltaBaseline>();
 async function listPostsDelta(haveBaseline: boolean, senderId: number) {
@@ -596,58 +558,54 @@ async function listPostsDelta(haveBaseline: boolean, senderId: number) {
   _deltaBySender.set(senderId, { folder, lastSent: stamps });
   return { saveFolder: folder, full: false, added, removed };
 }
-// Every webContents this process ever creates (every window, plus the standalone
-// image-viewer popup — harmless, it never calls list-posts-delta) is watched here so
-// a closed window's entry above is dropped rather than kept forever.
+// このプロセスが作る webContents は全部（すべてのウィンドウと、単体の画像ビューアのポップアップ
+// ＝害は無い、list-posts-delta を呼ばない）ここで見張る。閉じたウィンドウの上のエントリを、
+// 永遠に持ち続けるのではなく捨てるため。
 app.on('web-contents-created', (_e, contents) => {
   contents.once('destroyed', () => _deltaBySender.delete(contents.id));
 });
 
-// #29: cross-tab full-text search. Read-only over the same synced DB listPosts
-// uses — no separate sync path, so a hit is never staler than the grid itself.
-// The renderer decides which posts match (services/fulltext.ts runs the same
-// matcher the in-tab quick search uses, over fields posts_fts does not index
-// yet — #288); this only supplies bm25() relevance order for whichever of
-// those hits posts_fts also covers.
+// #29: タブをまたぐ全文検索。listPosts が使うのと同じ同期済みの DB に対する読み取り専用＝別の
+// 同期の経路は無いので、ヒットがグリッド自体より古くなることはない。どの投稿が一致するかを
+// 決めるのはレンダラー（services/fulltext.ts が、posts_fts のまだ索引していない欄も含めて、
+// タブ内のクイック検索と同じ照合を走らせる＝#288）。ここが供給するのは、そのヒットのうち
+// posts_fts も覆っているものについての bm25() の関連順だけ。
 async function searchFullText(query: string, limit?: number) {
   const handle = ensurePostsSynced();
   if (!handle) return [];
   return searchPostsFts(handle.sqlite, query, limit);
 }
 
-// --- Storage redirect guard (#1009) ---
-// Halts startup with a blocking dialog if configDir or the effective save folder
-// is being silently redirected by OS storage virtualization — see
-// lib-storage-redirect-guard.ts for why and how this is detected. Called as the
-// very first thing inside whenReady, before initSaveFolderRedundancy or anything
-// else reads/writes either directory.
+// --- ストレージのリダイレクトの番人（#1009） ---
+// configDir か実効の保存先フォルダが OS のストレージ仮想化に黙ってリダイレクトされているなら、
+// ブロッキングのダイアログを出して起動を止める＝なぜ、どうやって検出するかは
+// lib-storage-redirect-guard.ts を参照。whenReady の中で最初に呼ぶ。initSaveFolderRedundancy
+// より前、どちらのディレクトリを読み書きするものより前。
 //
-// A dialog rather than a log line: the 2026-06-23 incident (~9082 items,
-// paths.mts's header) happened with warnings sitting unread in main.log the whole
-// time — a warning nobody reads is not a mitigation. showMessageBoxSync blocks
-// until dismissed, and app.exit(1) right after means nothing past this point
-// (window creation, host registration, opening the database) ever touches the
-// redirected location. Returns true when it halted, so the caller can bail out
-// of the rest of the whenReady callback.
+// ログの1行ではなくダイアログにしてある。2026-06-23 の事故（約9082件、paths.mts のヘッダ）は、
+// その間ずっと main.log に警告が読まれないまま置かれた状態で起きた＝誰も読まない警告は対策では
+// ない。showMessageBoxSync は閉じられるまでブロックし、その直後の app.exit(1) は、ここから先
+// （ウィンドウの生成、host の登録、データベースを開くこと）がリダイレクト先に触れることは一切
+// ないことを意味する。止めたときは true を返すので、呼び出し元は whenReady のコールバックの
+// 残りを打ち切れる。
 function haltIfStorageRedirected(): boolean {
   const targets: Array<{ label: string; dir: string; ensureDir: boolean }> = [
-    // configDir is ours to create, and a fresh install has not made it yet — a
-    // guard that cannot run on first launch is not a guard.
+    // configDir を作るのはこちらの仕事で、新規インストールではまだ作られていない＝初回起動で
+    // 走れない番人は番人ではない。
     { label: '設定フォルダ', dir: configDir(), ensureDir: true },
-    // ⚠️ NEVER create the save folder. Its absence is #37's signal that a drive
-    // is unplugged or a synced folder vanished, and clear-all / relocation /
-    // backup all refuse on the strength of it. The first cut of this guard
-    // mkdir'd both and silently erased that signal (2026-08-07: five checks in
-    // test-app-library-missing.cts went green-but-wrong). A save folder that is
-    // genuinely gone lands in 'check-failed' below and stays #37's business.
+    // ⚠️ 保存先フォルダを作ることは一切しない。それが無いことは、ドライブが外れたか同期フォルダ
+    // が消えたという #37 の合図で、clear-all／移設／バックアップはいずれもそれを根拠に断る。
+    // この番人の最初の版は両方を mkdir し、その合図を黙って消していた（2026-08-07:
+    // test-app-library-missing.cts の5件のチェックが、緑だが誤りの状態になった）。本当に
+    // 無くなった保存先フォルダは下の 'check-failed' に落ち、#37 の管轄のままになる。
     { label: 'ライブラリの保存先', dir: getSaveFolder(), ensureDir: false },
   ];
   const hits: string[] = [];
   for (const { label, dir, ensureDir } of targets) {
     const result = checkForRedirect(dir, { ensureDir });
-    // check-failed (dir missing, no permission, ...) is deliberately NOT treated
-    // as a hit — #1009's 3rd acceptance criterion: a check that could not run
-    // must never block startup the way a check that found the problem does.
+    // check-failed（ディレクトリが無い、権限が無い、…）は意図してヒット扱いにしない＝#1009 の
+    // 3つ目の受け入れ基準。走れなかったチェックが、問題を見つけたチェックと同じように起動を
+    // 止めてはいけない。
     if (result.status !== 'redirected') continue;
     log.error(`storage redirect detected (#1009): ${label} (${dir}) resolves to ${result.realPath}`);
     hits.push(`${label}\n本来の場所: ${dir}\n実際の書き込み先: ${result.realPath}`);
@@ -663,68 +621,65 @@ function haltIfStorageRedirected(): boolean {
   return true;
 }
 
-// --- Native host registration (idempotent, on each launch) ---
+// --- native host の登録（何度実行しても同じ、起動ごと） ---
 function ensureHostRegistered() {
   try {
-    // Always (re)write the launcher: install() now routes a non-ASCII Electron
-    // path through an ASCII directory junction (see native-host/install.js), so
-    // refreshing on every launch is safe and self-heals an old broken launcher
-    // that pointed straight at a mangled non-ASCII path. extensionId is read
-    // from config by install() when present.
+    // ランチャーは毎回書き（直）す。install() は今や非 ASCII の Electron パスを ASCII の
+    // ディレクトリジャンクション経由にする（native-host/install.js を参照）ので、起動ごとの
+    // 書き直しは安全で、化けた非 ASCII のパスを直に指していた古い壊れたランチャーを自分で
+    // 直せる。extensionId は、設定にあれば install() が読む。
     installer.install({ exe: process.execPath, runAsNode: true });
   } catch (err) {
     console.error('Failed to register native messaging host:', err);
   } finally {
-    // install() can write config.json without going through writeConfig (#61 —
-    // install.mts persistExtensionId). No id is passed here, so today it never
-    // does; drop the cache regardless, so the cache's correctness does not rest
-    // on an argument at a call site far from lib-config.ts.
+    // install() は writeConfig を通さずに config.json を書き得る（#61＝install.mts の
+    // persistExtensionId）。ここでは id を渡さないので今のところ実際には書かない。それでも
+    // キャッシュは捨てる。キャッシュの正しさが、lib-config.ts から遠い呼び出し箇所の引数に
+    // 依存しないように。
     invalidateConfigCache();
   }
 }
 
-// --- Image protocol ---
-// The asset:// handler, the mime table and the thumbnail pool/cache behind ?w=N
-// were extracted to ./lib-thumbnails.ts (registered via registerImageProtocol
-// below, which takes resolveInFolder from here).
+// --- 画像のプロトコル ---
+// asset:// のハンドラ、MIME の表、?w=N の裏にあるサムネイルのプールとキャッシュは
+// ./lib-thumbnails.ts へ切り出した（下の registerImageProtocol 経由で登録する。あちらは
+// ここから resolveInFolder を受け取る）。
 
 // --- IPC ---
-// Config / prefs / tabs handlers (get-config / get-extension-contact / get-prefs /
-// set-pref / app-info / get-tabs / set-tabs / window-control) were extracted to
-// ./ipc-config.js (registered via ipcConfig.register below).
+// 設定・環境設定・タブのハンドラ（get-config / get-extension-contact / get-prefs / set-pref /
+// app-info / get-tabs / set-tabs / window-control）は ./ipc-config.js へ切り出した（下の
+// ipcConfig.register 経由で登録する）。
 
-// Posts handlers (list-posts / list-posts-delta / image-data-url) were extracted to
-// ./ipc-posts.js (registered via ipcPosts.register below).
+// 投稿のハンドラ（list-posts / list-posts-delta / image-data-url）は ./ipc-posts.js へ
+// 切り出した（下の ipcPosts.register 経由で登録する）。
 
-// Organization-layer handlers (tag-types / ungrouped / manual-groups /
-// folders / collections / poster-folders / poster-tags) were extracted to
-// ./ipc-organize.js (registered via registerOrganize(ipcCtx) below).
+// 整理の層のハンドラ（tag-types / ungrouped / manual-groups / folders / collections /
+// poster-folders / poster-tags）は ./ipc-organize.js へ切り出した（下の
+// registerOrganize(ipcCtx) 経由で登録する）。
 
-// Window / shell handlers (open-external / open-image-window) were extracted to
-// ./ipc-window.js (registered via ipcWindow.register below).
+// ウィンドウ・シェルのハンドラ（open-external / open-image-window）は ./ipc-window.js へ
+// 切り出した（下の ipcWindow.register 経由で登録する）。
 
-// --- File helpers (all confined to the save folder) ---
-// The rule itself (which shapes a name may take, and the containment check on
-// what it resolves to) lives in lib-save-folder-path.ts — Electron-free, so it is
-// unit-testable and so the inbox drain and the trash sweep share the SAME copy.
+// --- ファイルの補助（すべて保存先フォルダの中に閉じる） ---
+// 規則そのもの（名前が取り得る形と、解決先に対する内包の確認）は lib-save-folder-path.ts に
+// ある＝Electron に依存しないので単体テストでき、取込キューの流し込みとゴミ箱の掃き寄せが同じ実体を
+// 共有する。
 //
-// What stays here is the binding to the live save folder: this is the rule EVERY
-// file handler shares (image-data-url, the trash sweeps, drag-out), so the
-// already-bound form belongs to the assembly that hands it to all of them rather
-// than to the first caller.
+// ここに残るのは、生きている保存先フォルダへの束縛。これはすべてのファイルハンドラが共有する
+// 規則（image-data-url、ゴミ箱の掃き寄せ、ドラッグでの持ち出し）なので、束縛済みの形は、最初の
+// 呼び出し元ではなく、それを全員へ渡す組み立ての側に属する。
 function resolveInFolder(name: string): string | null {
   return resolveInSaveFolder(getSaveFolder(), name);
 }
 
-// Every extension a downloaded library file can carry. NOT a "can the viewer
-// show it" list: a pixiv ugoira archive is a .zip nothing displays directly
-// (#119 St3), and it belongs here because the sweeps below enumerate a
-// capture's files — one missed extension leaves an orphan behind.
+// ダウンロードしたライブラリのファイルが取り得る拡張子の全部。「表示側が表示できるか」の一覧
+// ではない。pixiv のうごイラのアーカイブは、直接表示するものが何も無い .zip だが（#119 St3）、
+// 下の掃き寄せがキャプチャのファイルを列挙するのでここに属する＝拡張子を1つ取りこぼせば孤児が残る。
 const LIBRARY_MEDIA_EXTS = ['jpg', 'jpeg', 'jfif', 'png', 'webp', 'gif', 'avif', 'svg', 'mp4', 'webm', 'mov', 'm4v', 'zip'];
 
-// Recover the captureId base from a filename. The argument may be the primary
-// image (<base>.<ext>), a poster (<base>-poster.<ext>), or the media file
-// itself. Strip the -poster marker first, then any extension.
+// ファイル名から captureId の base を取り戻す。引数は主画像（<base>.<ext>）、poster 画像
+// （<base>-poster.<ext>）、メディアファイルそのもののいずれでもよい。先に -poster の印を
+// 剥がし、次に拡張子を剥がす。
 function baseOf(name) {
   return path
     .basename(name || '')
@@ -732,15 +687,15 @@ function baseOf(name) {
     .replace(/\.[a-z0-9]+$/i, '');
 }
 
-// --- Trash (soft delete) ---
-// TRASH_SUBDIR is imported, not declared here: the directory this writes into and
-// the directory resolveInFolder will serve out of have to be the same one (#267).
+// --- ゴミ箱（ソフト削除） ---
+// TRASH_SUBDIR はここで宣言せず import する。ここが書き込むディレクトリと、resolveInFolder が
+// 配信元にするディレクトリは同じでなければならない（#267）。
 const TRASH_DAYS = 30;
 function getTrashDir() {
   const folder = getSaveFolder();
   return folder ? path.join(folder, TRASH_SUBDIR) : null;
 }
-// Delete items in trash older than TRASH_DAYS. Called at startup.
+// ゴミ箱の中で TRASH_DAYS より古いものを削除する。起動時に呼ぶ。
 async function purgeOldTrash() {
   const trashDir = getTrashDir();
   if (!trashDir) return;
@@ -759,7 +714,7 @@ async function purgeOldTrash() {
       const rec = parseJsonLoose(await fs.promises.readFile(path.join(trashDir, f), 'utf8'));
       if (rec.trashedAt && Date.parse(rec.trashedAt) < cutoff) toPurge.add(id);
     } catch {
-      /* corrupt sidecar — skip */
+      /* 壊れたサイドカー＝飛ばす */
     }
   }
   if (!toPurge.size) return;
@@ -773,46 +728,43 @@ async function purgeOldTrash() {
       }
     }
   }
-  // An expired record's "it is in the trash" notice has to expire with it
-  // (#158): the post is gone for good now, and the index is the only thing the
-  // bridge reads. Nothing else would rewrite it — this pass touches no DB row.
-  // Guarded because purgeOldTrash is fire-and-forget (a startup timer, nothing
-  // awaits it), so a database that will not open must not surface here as an
-  // unhandled rejection — the files are already gone either way.
+  // 期限切れのレコードについての「ゴミ箱にある」という通知も、一緒に期限切れにしなければ
+  // ならない（#158）。投稿はもう完全に消えていて、ブリッジが読むのは索引だけ。ほかに書き直す
+  // ものは無い＝このパスは DB の行に触れない。purgeOldTrash は投げっぱなし（起動時のタイマーで、
+  // 誰も await しない）なので、開けないデータベースが未処理の拒否としてここに出てこないよう
+  // 囲ってある。どちらにせよファイルはもう消えている。
   try {
     scheduleSavedIndexWrite(ensureDb());
   } catch {
-    /* the index keeps the stale notice until the next write; the purge itself stands */
+    /* 索引は次の書き込みまで古い通知を持ち続ける。削除そのものは成立している */
   }
 }
 
-// Trash + tag-mutation handlers (delete-post / list-trash / restore-post / empty-trash /
-// delete-from-trash / update-tags) were extracted to ./ipc-trash.js (registered via
-// ipcTrash.register below).
+// ゴミ箱とタグ更新のハンドラ（delete-post / list-trash / restore-post / empty-trash /
+// delete-from-trash / update-tags）は ./ipc-trash.js へ切り出した（下の ipcTrash.register
+// 経由で登録する）。
 
-// Transfer handlers (import-legacy-zip / clear-all / export-save / export-complete /
-// import-complete) were extracted to ./ipc-transfer.js (registered via ipcTransfer.register
-// below); exportStamp moved there too.
+// 移送のハンドラ（import-legacy-zip / clear-all / export-save / export-complete /
+// import-complete）は ./ipc-transfer.js へ切り出した（下の ipcTransfer.register 経由で
+// 登録する）。exportStamp もそちらへ移した。
 
-// --- Backup ---
-// The two-lane engine, its schedule, the destination validators and the #301
-// integrity pass were extracted to ./lib-backup.ts. The engine is instantiated
-// here because it needs the record pipeline above (a run must sync the DB
-// before it snapshots it or counts orphans against it).
+// --- バックアップ ---
+// 2レーンのエンジン、その予定、宛先の検証、#301 の整合性のパスは ./lib-backup.ts へ切り出した。
+// エンジンをここで生成するのは、上のレコードのパイプラインを必要とするため（実行は、スナップ
+// ショットを取る前・それに対して孤児を数える前に DB を同期しなければならない）。
 const { runBackup, listDbGenerations, rollbackDbGeneration, armBackupSchedule, runStartupIntegrityCheck, runOrphanRecovery, noteLibraryMutation, isBusy: isBackupEngineBusy } = createBackupEngine({ ensurePostsSynced, scheduleSavedIndexWrite, send: broadcast, dbFile, closeDb });
 onLibraryMutation = noteLibraryMutation;
 const watchImport = createWatchImportManager({ readConfig, writeConfig, getSaveFolder, isLibraryMissing, ensurePostsSynced, send: broadcast });
 
-// --- Library switch (#176) ---------------------------------------------
-// Generalizes #37's repoint now that the database moved INTO the library
-// folder (see dbFile()'s comment): repoint used to be a copy-free pointer flip
-// because the database stayed in configDir regardless of what saveFolder
-// pointed at, so nothing else had to happen. Now the database itself has to
-// close, the pointer flips, and a database is opened (or created, or restored
-// from a snapshot — ensureDb() already does all three) at the new location.
-// One function, every caller that changes which library is open goes through
-// it: the Settings "切り替え"/"新規作成" flow, a "最近使ったライブラリ" row,
-// and apply-repoint below (#37's escape hatch for a missing save folder).
+// --- ライブラリの切り替え（#176） ---------------------------------------
+// データベースがライブラリフォルダの中へ移った今（dbFile() のコメントを参照）、#37 の指し直しを
+// 一般化したもの。指し直しはかつてコピーの要らないポインタの切り替えだった。saveFolder が何を
+// 指していてもデータベースは configDir に留まったので、ほかに何も起きる必要が無かった。今は
+// データベース自体を閉じ、ポインタを切り替え、新しい場所でデータベースを開く（あるいは作る、
+// あるいはスナップショットから復元する＝ensureDb() が既に3つともやっている）。関数は1つ。
+// どのライブラリが開いているかを変える呼び出し元は全部ここを通る。設定の "切り替え"/"新規作成"
+// の流れ、"最近使ったライブラリ" の行、そして下の apply-repoint（保存先フォルダが無いときの
+// #37 の逃げ道）。
 let switching = false;
 async function waitForBackupEngineIdle(maxMs = 15000) {
   const start = Date.now();
@@ -829,11 +781,10 @@ async function switchLibrary(dest: string): Promise<{ ok: true; saveFolder: stri
   switching = true;
   const from = getSaveFolder();
   try {
-    // Stop everything that writes into the CURRENT library before it closes.
-    // The inbox watcher is closed outright (not re-armed until the new
-    // library is open); the two backup-engine lanes are awaited rather than
-    // interrupted — closeDb() mid-generation-write would tear the very file
-    // the DB lane is snapshotting FROM.
+    // 現在のライブラリへ書き込むものを、閉じる前に全部止める。取込キューの監視はきっぱり閉じる
+    // （新しいライブラリが開くまで仕掛け直さない）。バックアップエンジンの2つのレーンは中断では
+    // なく待つ＝世代の書き込みの途中で closeDb() を呼べば、DB のレーンがスナップショットを
+    // 取っている当のファイルを引き裂くことになる。
     if (inboxWatcher) {
       const closing = inboxWatcher;
       inboxWatcher = null;
@@ -842,22 +793,21 @@ async function switchLibrary(dest: string): Promise<{ ok: true; saveFolder: stri
     await waitForBackupEngineIdle();
 
     closeDb();
-    savedIndexPrimed = false; // the next library primes its own saved-index snapshot
+    savedIndexPrimed = false; // 次のライブラリは自分の saved-index のスナップショットを自分で用意する
 
     const cfg = readConfig();
     cfg.saveFolder = dest;
     writeConfig(cfg);
 
     try {
-      // ensureDb() already does everything the classification implied: opens
-      // hologram.db as-is ('has-db'), restores the newest generation snapshot
-      // before opening when the file is missing ('evidence-no-db' — the
-      // existing recovery path, no new machinery), or creates a fresh one
-      // ('empty'). recordLibraryOpened (inside ensureDb) also fires here.
+      // 分類が示していたことは、ensureDb() が既に全部やっている。hologram.db をそのまま開く
+      // （'has-db'）、ファイルが無ければ開く前に最新の世代のスナップショットを復元する
+      // （'evidence-no-db'＝既にある回収の経路で、新しい仕掛けは無い）、新しく作る（'empty'）。
+      // recordLibraryOpened（ensureDb の中）もここで動く。
       ensureDb();
     } catch (err: any) {
-      // Nothing durable happened before this point that a plain re-point back
-      // can't undo: roll the pointer back and reopen the library we left.
+      // ここまでに、ただ指し直して戻すだけでは取り消せないような永続的なことは何も起きて
+      // いない。ポインタを戻し、離れたライブラリを開き直す。
       log.error(`switchLibrary: could not open the database at ${dest} — rolling back to ${from}:`, err);
       const back = readConfig();
       back.saveFolder = from;
@@ -865,49 +815,45 @@ async function switchLibrary(dest: string): Promise<{ ok: true; saveFolder: stri
       try {
         ensureDb();
       } catch {
-        /* leaves dbHandle null — LibraryMissingState/empty-state UI takes over */
+        /* dbHandle は null のまま＝LibraryMissingState と空状態の UI が引き継ぐ */
       }
       switching = false;
       watchInboxFolder();
       void watchImport.refresh();
       return { ok: false, error: 'open-failed' };
     }
-    // The new database is open and stable from here on — drop the guard now
-    // rather than in the outer finally, so ensurePostsSynced() below (and
-    // anything a startup timer fires concurrently) sees the new library
-    // immediately instead of being held off until this whole function returns.
+    // ここから先、新しいデータベースは開いていて安定している＝外側の finally ではなく今すぐ
+    // 番人を下ろす。下の ensurePostsSynced()（と、起動時のタイマーが同時に動かすもの）が、この
+    // 関数全体が返るまで待たされず、すぐ新しいライブラリを見られるように。
     switching = false;
 
-    // Re-wire everything that was stopped above, against the NEW library.
+    // 上で止めたものを全部、新しいライブラリに対して繋ぎ直す。
     watchInboxFolder();
     void watchImport.refresh();
     _deltaBySender.clear();
-    // #834: every captureId the queue was still holding belongs to the library
-    // that just closed. Dropping them (rather than letting them run out) also
-    // resets the scan bound, so the full re-walk below starts from scratch
-    // against the new library's records.
+    // #834: キューがまだ抱えていた captureId は全部、今閉じたライブラリのもの。（走り切らせる
+    // のではなく）捨てることで走査の境界もリセットされるので、下の全件の歩き直しが新しい
+    // ライブラリのレコードに対してゼロから始まる。
     clearIndexQueue();
-    // A debounce still holding the PREVIOUS library's handle is dropped rather
-    // than flushed: the write below supersedes it, and letting it land
-    // afterwards — on its own timer, or through the quit flush — would put the
-    // library the user just left back into the index the extension reads.
+    // 前のライブラリのハンドルをまだ抱えているデバウンスは、吐き出さずに捨てる。下の書き込みが
+    // それに取って代わるし、後から着地させると＝自分のタイマーで、あるいは終了時の吐き出しで＝
+    // 利用者がたった今離れたライブラリを、拡張機能が読む索引へ戻してしまう。
     clearTimeout(savedIndexTimer);
     savedIndexPending = null;
     const synced = ensurePostsSynced();
-    // Immediate, not the debounced scheduleSavedIndexWrite — see
-    // writeSavedIndexNow's comment.
+    // デバウンスされた scheduleSavedIndexWrite ではなく即時＝writeSavedIndexNow の
+    // コメントを参照。
     if (synced) await writeSavedIndexNow(synced);
     requestBackfill({ full: true });
 
-    // Reload every window against the new library — but AFTER this call's own
-    // reply has had a chance to land, not inline. Reloading here destroyed the
-    // calling frame first, so the renderer awaiting switch-library got neither a
-    // value nor a rejection (it simply never settled): the "切り替えました" toast
-    // was torn down with it, and anything the caller did next died mid-flight.
-    // #233's rollback already reloads on this delay for exactly this reason —
-    // lib-window.ts owns the constant and the rest of the argument. Found by the
-    // nightly suite, where the harness's post-switch IPC call lost the race on a
-    // slow runner and hung until the 60s smoke backstop (Refs #917).
+    // すべてのウィンドウを新しいライブラリに対して読み込み直す。ただし、この呼び出し自身の返答が
+    // 着地する余地を作った後で、その場ではない。ここで読み込み直すと呼び出し元のフレームが先に
+    // 壊れ、switch-library を await していたレンダラーは値も拒否も受け取れなかった（単に決着
+    // しなかった）。"切り替えました" のトーストも一緒に片付けられ、呼び出し元が次にやることは
+    // 飛行中に死んだ。#233 のロールバックがまさに同じ理由で既にこの遅延で読み込み直している＝
+    // 定数と残りの論拠は lib-window.ts が持つ。夜間のスイートで見つかった。遅いランナーで
+    // ハーネスの切り替え後の IPC 呼び出しが競争に負け、60秒のスモークの受け皿まで止まっていた
+    // （Refs #917）。
     setTimeout(() => {
       for (const w of getWindows()) {
         if (!w.isDestroyed()) w.webContents.reload();
@@ -920,22 +866,20 @@ async function switchLibrary(dest: string): Promise<{ ok: true; saveFolder: stri
   }
 }
 
-// --- Window ---
-// Bounds persistence, the navigation lockdown and createWindow were extracted to
-// ./lib-window.ts, which also owns the `win` binding (getWin / sendToWin).
+// --- ウィンドウ ---
+// 位置と大きさの永続化、ナビゲーションの封鎖、createWindow は ./lib-window.ts へ切り出した。
+// あちらは `win` の束縛（getWin / sendToWin）も持つ。
 
-// --- Extracted IPC registration ---
-// The handlers below used to be inline ipcMain.handle(...) calls in this file. They
-// were moved to ./ipc-*.js modules verbatim; each exposes register(ctx). We build one
-// ctx exposing the core helpers/state the handlers close over and register them here,
-// at the same top-level point (before whenReady) the inline handlers ran — ipcMain.handle
-// has no ordering dependency on app-ready, and keeping registration top-level avoids
-// racing an early renderer IPC. Mutable state (win, config-corrupt flag, delta) is
-// exposed via accessors, never by value, so the closures read the live binding.
-// The annotation is the point (#228): `IpcContext` (./ipc-context.ts) is what
-// every register(ctx) is typed against, so a helper renamed or reshaped here is
-// a build error rather than a runtime one on the boundary that carries
-// clear-all / import-complete / move-save-folder.
+// --- 切り出した IPC の登録 ---
+// 下のハンドラは、かつてこのファイルの中に直に書かれた ipcMain.handle(...) の呼び出しだった。
+// 一字一句そのまま ./ipc-*.js のモジュールへ移し、それぞれが register(ctx) を公開している。
+// ハンドラが閉じ込めているコアの補助と状態を出す ctx を1つ組み立て、直書きのハンドラが走って
+// いたのと同じトップレベルの地点（whenReady の前）でここに登録する＝ipcMain.handle は app-ready
+// に対する順序の依存を持たないし、登録をトップレベルに置けば早すぎるレンダラーの IPC と競争せずに
+// 済む。書き換わる状態（win、設定破損の旗、差分）は値ではなくアクセサ経由で出すので、クロージャは
+// 生きている束縛を読む。型注釈こそが要点（#228）。すべての register(ctx) が型付けされる相手が
+// `IpcContext`（./ipc-context.ts）なので、ここで補助を改名したり形を変えたりすれば、clear-all /
+// import-complete / move-save-folder を運ぶこの境界で、実行時ではなくビルドのエラーになる。
 function registerExtractedIpc() {
   const ctx: IpcContext = {
     getSaveFolder,
@@ -954,10 +898,9 @@ function registerExtractedIpc() {
     readAiConfig,
     writeAiConfig: (patch) => {
       const next = writeAiConfig(patch);
-      // #834: a record skipped because AI features were off leaves NO trace —
-      // that is the point (nothing to clean up when the user says no). So the
-      // moment the gate opens, the only way to find those records again is to
-      // walk the library once more.
+      // #834: AI の機能が切れていたために飛ばしたレコードは痕跡を一切残さない＝それが要点
+      // （利用者が断ったときに片付けるものが無い）。だからゲートが開いた瞬間、そのレコードを
+      // もう一度見つける手立てはライブラリをもう一度歩くことだけ。
       if (next.enabled) requestBackfill({ full: true });
       return next;
     },
@@ -1004,9 +947,9 @@ function registerExtractedIpc() {
     },
     send: broadcast,
     sendExcept: sendToOtherWins,
-    // #32 St1: the tabs.json guard (ipc-config.ts's get-tabs/set-tabs) — only the
-    // PRIMARY window's sender may read or write it, so this is a no-op check, not a
-    // per-call-site branch a future caller could forget.
+    // #32 St1: tabs.json の番人（ipc-config.ts の get-tabs/set-tabs）＝主ウィンドウの送り手
+    // だけが読み書きできる。だからこれは（主ウィンドウにとっては）何もしない確認であって、
+    // 将来の呼び出し元が忘れ得る呼び出し箇所ごとの分岐ではない。
     isPrimarySender: (webContentsId) => getWin()?.webContents.id === webContentsId,
     openNewWindow: () => {
       createWindow(true, { secondary: true });
@@ -1032,17 +975,17 @@ function registerExtractedIpc() {
 }
 registerExtractedIpc();
 
-// #834: the index queue's binding to this assembly. Every dependency is a read
-// or a write this file already owns, which is what lets the queue itself stay
-// Electron-free and know nothing about where a record or a file comes from.
+// #834: 索引キューとこの組み立ての接続。依存は全部、このファイルが既に持っている読みか書き。
+// だからこそキュー自体は Electron に依存せず、レコードやファイルがどこから来るのかを何も知らずに
+// 済む。
 //
-// The database reads go through ensurePostsSynced rather than straight to a
-// handle, for its #176 guard: a scan chunk that fires mid-switchLibrary gets
-// null (treated as "no library") instead of the database that is being closed.
+// データベースの読みはハンドルへ直行せず ensurePostsSynced を通す。その #176 の番人のため＝
+// switchLibrary の途中で発火した走査の塊は、閉じかけのデータベースではなく null（「ライブラリが
+// 無い」として扱われる）を受け取る。
 function startIndexQueueForApp() {
-  // Registered here rather than at import time so the kinds exist before the
-  // first plan and not a moment earlier. #50's kind declares requiresModel, so
-  // registering it costs nothing while the opt-in is off or the model absent.
+  // import の時ではなくここで登録するので、種別は最初の計画より前に、しかしそれより一瞬でも
+  // 早くはならずに揃う。#50 の種別は requiresModel を宣言しているため、オプトインが切れて
+  // いるかモデルが無い間は、登録しても何のコストにもならない。
   registerAiTagsJob();
   startIndexQueue({
     pool: sharedJobPool,
@@ -1064,83 +1007,79 @@ function startIndexQueueForApp() {
           const st = await fs.promises.stat(absPath);
           return { size: st.size };
         } catch {
-          return null; // gone from disk since the scan saw the row
+          return null; // 走査が行を見てからディスクから消えた
         }
       },
       readFile: (absPath) => fs.promises.readFile(absPath),
-      // The grid's own thumbnail cache — #98's design gives the index no
-      // rasterizer of its own, so a visual job reads exactly the picture the
-      // tile does (lib-thumbnails.ts's thumbnailBytes).
+      // グリッド自身のサムネイルのキャッシュ＝#98 の設計は索引に自前のラスタライザを与えない
+      // ので、視覚のジョブはタイルが読むのとまったく同じ絵を読む（lib-thumbnails.ts の
+      // thumbnailBytes）。
       thumbnail: thumbnailBytes,
     },
     onJobError: (candidate, err) => log.warn('[index] job failed', { jobKind: candidate.jobKind, captureId: candidate.record.captureId, assetRef: candidate.asset.ref, error: (err as Error)?.message }),
-    // sendToWin, not broadcast: this is progress about the queue, not a claim
-    // that the library's records changed.
+    // broadcast ではなく sendToWin。これはキューの進捗であって、ライブラリのレコードが変わった
+    // という主張ではない。
     onStatusChange: (status) => sendToWin('index-queue-progress', status),
   });
 }
 
-// Side-effect-free launch check: skips host registration, hides the window,
-// and quits once the renderer has loaded. Run with HOLOGRAM_SMOKE=1.
+// 副作用の無い起動チェック。host の登録を飛ばし、ウィンドウを隠し、レンダラーが読み込まれたら
+// 終了する。HOLOGRAM_SMOKE=1 を付けて走らせる。
 const SMOKE = process.env.HOLOGRAM_SMOKE === '1';
 
-// The harnesses look up controls by their Japanese labels, and the language they
-// get is normally the machine's: the 'auto' language pref resolves through
-// navigator.language (src/renderer/src/services/i18n.ts). So the same suite that
-// passes on a Japanese development machine went red on an en-US CI runner, and the
-// English UI reads as missing controls rather than as a different language. Pin it
-// for harness runs; HOLOGRAM_LANG overrides for a run that wants the other one.
-// Must be set before the app is ready, which is why it lives here.
+// ハーネスは日本語のラベルで操作子を引く。そして得られる言語は普通そのマシンのもの＝'auto' の
+// 言語設定は navigator.language を通して解決される（src/renderer/src/services/i18n.ts）。だから
+// 日本語の開発機で通る同じスイートが en-US の CI ランナーで赤になり、英語の UI は別の言語では
+// なく操作子が無いように読める。ハーネスの実行では言語を固定する。もう一方で走らせたいときは
+// HOLOGRAM_LANG が上書きする。app が ready になる前に設定しなければならず、だからここにある。
 //
-// HOLOGRAM_LANG is honored on its own, not only under SMOKE, because the Playwright
-// suite (e2e/) reads the same labels off a VISIBLE window — it launches through the
-// sandbox path, not the smoke one, and would otherwise get the runner's language.
+// HOLOGRAM_LANG は SMOKE の下だけでなく単独でも効く。Playwright のスイート（e2e/）が同じラベルを
+// 見えているウィンドウから読むため＝あちらはスモークの経路ではなくサンドボックスの経路で起動する
+// ので、そうしないとランナーの言語になってしまう。
 const HARNESS_LANG = process.env.HOLOGRAM_LANG || (SMOKE ? 'ja' : '');
 if (HARNESS_LANG) app.commandLine.appendSwitch('lang', HARNESS_LANG);
 
-// Sandbox verify instance (scripts/sandbox-app.cts): a visible, persistent
-// second instance on an isolated HOLOGRAM_CONFIG_DIR. Unlike SMOKE it stays
-// interactive, but like SMOKE it must never touch machine-shared state — host
-// registration would point the real Chrome's HKCU manifest entry at the
-// sandbox config dir and break real captures.
+// サンドボックスの検証用インスタンス（scripts/sandbox-app.cts）。隔離した
+// HOLOGRAM_CONFIG_DIR の上で動く、見えていて残り続ける2つ目のインスタンス。SMOKE と違って
+// 対話できるままだが、SMOKE と同じくマシン共有の状態には一切触れてはいけない＝host の登録を
+// すると、本物の Chrome の HKCU のマニフェスト項目がサンドボックスの設定ディレクトリを指し、
+// 本物の保存が壊れる。
 const SANDBOX = process.env.HOLOGRAM_SANDBOX === '1';
 
-// Single instance: a second launch focuses the existing window instead of
-// opening a duplicate (which would fight over the shared userData/cache).
-// Skipped under SMOKE so isolated headless test runs never block each other.
+// 単一インスタンス。2回目の起動は、重複を開く（共有の userData とキャッシュを取り合う）のでは
+// なく既にあるウィンドウへフォーカスする。隔離したヘッドレスのテスト実行が互いを塞がないよう、
+// SMOKE の下では飛ばす。
 //
-// The same lock is how restart-app.ps1 stops the app: a throwaway launch
-// carrying --hologram-quit loses the lock, its argv reaches the holder, and the
-// holder quits itself. restart-signal.ts has why that replaced picking a process
-// out of the machine's electron.exe list.
+// restart-app.ps1 がアプリを止めるのも同じロック。--hologram-quit を持った使い捨ての起動が
+// ロックを取り損ね、その argv がロックの保持者へ届き、保持者が自分で終了する。それがマシンの
+// electron.exe の一覧からプロセスを選ぶやり方に取って代わった理由は restart-signal.ts にある。
 const QUIT_SIGNAL = hasQuitSignal(process.argv);
 const gotSingleInstanceLock = SMOKE || app.requestSingleInstanceLock();
 if (!gotSingleInstanceLock) {
-  // The holder was handed our argv inside requestSingleInstanceLock, so there is
-  // nothing left to do. app.exit rather than app.quit: this process owns no state
-  // to flush, and the script reads the code to learn whether anything was running.
+  // requestSingleInstanceLock の中で保持者へこちらの argv を渡してあるので、もうやることは
+  // 無い。app.quit ではなく app.exit。このプロセスは吐き出すべき状態を持たないし、スクリプトは
+  // 何かが動いていたかを終了コードで知る。
   app.exit(QUIT_SIGNAL ? EXIT_SIGNALLED : 0);
 } else if (QUIT_SIGNAL) {
-  // Won the lock, which means nothing was running. This launch must NOT become
-  // the app — it carries no debug port and nobody asked for a window. Reporting
-  // "nothing to stop" is its whole job.
+  // ロックを取れた＝何も動いていなかったということ。この起動はアプリになってはいけない＝
+  // デバッグポートを持たないし、誰もウィンドウを求めていない。「止めるものが無い」と報告するのが
+  // 仕事の全部。
   app.exit(EXIT_NO_INSTANCE);
 } else {
   if (!SMOKE) {
     app.on('second-instance', (_event, argv) => {
-      // restart-app.ps1's stop half. app.quit, not app.exit: the before-quit
-      // teardown (saved-index flush, window bounds, db close) is exactly what the
-      // old CloseMainWindow() call was there to preserve.
+      // restart-app.ps1 の止める側。app.exit ではなく app.quit。before-quit の後片付け
+      // （saved-index の吐き出し、ウィンドウの位置と大きさ、db を閉じる）こそ、古い
+      // CloseMainWindow() の呼び出しが守っていたもの。
       if (hasQuitSignal(argv)) {
         app.quit();
         return;
       }
-      // #32 St1: a second launch opens ANOTHER window rather than only focusing the
-      // first one (design: "2回目起動＝新規ウィンドウを開く") — UNLESS this run was
-      // itself started minimized/inactive (a verification harness restart), where the
-      // old "surface what's already running" behavior is still what is wanted: a new
-      // window would leave the original invisible and defeat the harness's "did the
-      // restart bring the window back" check.
+      // #32 St1: 2回目の起動は、最初のウィンドウにフォーカスするだけでなく別のウィンドウを開く
+      // （設計: "2回目起動＝新規ウィンドウを開く"）。ただし、この実行自体が最小化・非アクティブで
+      // 始まった場合（検証ハーネスの再起動）は別で、そこでは古い「既に動いているものを前に出す」
+      // 挙動が今も望みのもの。新しいウィンドウを開くと元のウィンドウが見えないままになり、
+      // ハーネスの「再起動でウィンドウが戻ったか」の確認が成り立たなくなる。
       const launchedHidden = process.env.HOLOGRAM_START_MINIMIZED === '1' || process.env.HOLOGRAM_START_INACTIVE === '1';
       if (launchedHidden) {
         const w = getWin();
@@ -1156,68 +1095,65 @@ if (!gotSingleInstanceLock) {
   }
 
   app.whenReady().then(() => {
-    // #1009: the very first thing, before ANYTHING else touches configDir or the
-    // save folder (the eventLogger line right below is itself a write into
-    // configDir/logs).
+    // #1009: 何より先に。ほかの何かが configDir や保存先フォルダに触れる前（すぐ下の
+    // eventLogger の行自体が configDir/logs への書き込み）。
     if (haltIfStorageRedirected()) return;
-    // Bind the taskbar/Alt-Tab identity to the appId so Windows shows our window
-    // icon (not electron.exe's) in dev too. electron-builder sets this for the
-    // installed exe; setting it here covers the restart-app.ps1 dev run.
+    // タスクバーと Alt-Tab の同一性を appId に結び付け、開発中も Windows が（electron.exe の
+    // ではなく）こちらのウィンドウアイコンを出すようにする。インストール済みの exe には
+    // electron-builder がこれを設定する。ここで設定するのは restart-app.ps1 の開発実行を
+    // 覆うため。
     app.setAppUserModelId('com.hologram.app');
     log.eventLogger.startLogging();
     log.info('Starting Hologram', { packaged: app.isPackaged, version: app.getVersion() });
-    // #1004: see startup-debug-port.ts for why this matters and what launches this
-    // can catch (a Start Menu shortcut with stale arguments, in the case that led
-    // to filing the issue).
+    // #1004: これがなぜ効くのか、どんな起動を捕まえられるのか（Issue を立てるに至った件では、
+    // 古い引数の付いたスタートメニューのショートカット）は startup-debug-port.ts を参照。
     if (shouldWarnMissingDebugPort(process.argv, app.isPackaged)) {
       log.warn('Launched without --remote-debugging-port: CDP verification cannot attach to this process (#1004). Stopping it still works — restart-app.ps1 asks the app to quit over the single-instance lock, not by matching this flag.');
     }
-    // Recover/refresh the redundant save-folder pointer FIRST, so the rest of startup
-    // (watcher, listPosts, native host) sees a config repaired from the pointer rather
-    // than the empty default when config was truncated. (2026-06-23 incident.)
+    // 冗長化した保存先フォルダのポインタの回復・更新を最初にやる。起動の残り（監視、listPosts、
+    // native host）が、設定が切り詰められていたときに空の既定ではなくポインタから直した設定を
+    // 見るように。（2026-06-23 の事故。）
     initSaveFolderRedundancy();
-    // #176: fold any pre-#176 flat backup/integrity config into libraries[],
-    // then move a pre-#176 hologram.db from configDir into the save folder.
-    // Order matters — the migration below needs libraries[] to already be an
-    // array (it does not create the entry itself; recordLibraryOpened does
-    // that the first time this library is actually opened, below).
+    // #176: #176 より前の平坦なバックアップ・整合性の設定があれば libraries[] へ畳み込み、
+    // 次に #176 より前の hologram.db を configDir から保存先フォルダへ移す。順序が効く＝下の
+    // マイグレーションは libraries[] が既に配列であることを必要とする（項目自体は作らない。
+    // それをやるのは、このライブラリが実際に初めて開かれたときの recordLibraryOpened で、下）。
     migrateToLibraries();
     migrateDbIntoSaveFolder();
-    // #37: log the initial verdict once at boot — refreshLibraryStatus() itself
-    // is called again by the renderer's get-library-status on mount, so this is
-    // observability only (main.log), not the source of truth the UI reads.
+    // #37: 起動時に最初の判定を1回だけログへ出す＝refreshLibraryStatus() 自体は、載せるときに
+    // レンダラーの get-library-status からもう一度呼ばれるので、これは観測のため（main.log）
+    // だけであって、UI が読む正本ではない。
     refreshLibraryStatus();
-    // Fresh install (no explicit save folder): make sure the default library dir
-    // exists so folder/tag writes don't fail before the first capture. Explicit
-    // user-picked folders are left untouched.
+    // 新規インストール（保存先フォルダの明示が無い）では、既定のライブラリのディレクトリが
+    // あることを確かめる。最初のキャプチャより前にフォルダやタグの書き込みが失敗しないように。
+    // 利用者が明示して選んだフォルダには手を触れない。
     try {
       if (!readConfig().saveFolder) fs.mkdirSync(defaultLibraryDir(), { recursive: true });
     } catch {
-      /* ignore */
+      /* 無視する */
     }
-    // Dev server and sandbox runs never capture, so skip host registration —
-    // no HKCU writes and no native-host copy into the shared config dir.
+    // 開発サーバーとサンドボックスの実行は保存しないので、host の登録を飛ばす＝HKCU への
+    // 書き込みも、共有の設定ディレクトリへの native-host のコピーも無い。
     if (!SMOKE && !SANDBOX && !DEV_SERVER_URL) ensureHostRegistered();
-    // Before createWindow: the window's very first load IS an app:// request.
+    // createWindow より前。ウィンドウの一番最初の読み込みが app:// のリクエストそのもの。
     registerAppProtocol();
     registerImageProtocol({ resolveInFolder });
-    // Prod serves the renderer's CSP on the app:// response itself; dev gets the
-    // same policy pinned onto the Vite dev server's responses (renderer-csp.ts).
+    // 本番はレンダラーの CSP を app:// の応答自体に載せて配る。開発では同じ方針を Vite の
+    // 開発サーバーの応答に留め付ける（renderer-csp.ts）。
     installDevRendererCsp(DEV_ORIGIN);
     installNavigationGuards();
     const startMin = !SMOKE && process.env.HOLOGRAM_START_MINIMIZED === '1';
-    // Verification launches (the sandbox second instance, a restart driven from a
-    // session) must not interrupt whatever the user is doing on screen. Minimizing
-    // is not an option here: the window has to keep compositing so CSS transitions
-    // and real layout are observable, which is the whole reason a verify run opens
-    // a window instead of using the SMOKE hidden one.
+    // 検証のための起動（サンドボックスの2つ目のインスタンス、セッションから駆動する再起動）は、
+    // 画面で利用者がやっていることを邪魔してはいけない。ここで最小化は選べない。CSS の遷移と
+    // 実際のレイアウトを観測できるよう、ウィンドウは合成を続けなければならず、検証の実行が
+    // SMOKE の隠しウィンドウを使わずにウィンドウを開くのはまさにそのため。
     const startInactive = !SMOKE && !startMin && process.env.HOLOGRAM_START_INACTIVE === '1';
-    createWindow(!SMOKE && !startMin && !startInactive); // both → create hidden, then show without activating below
-    // A sandbox seeded from the real library (#286) holds a snapshot of real post
-    // text and, when a capture was pinpointed, real media — so anything captured
-    // from this window is personal data. The notice is drawn INSIDE the page
-    // rather than printed to the console, because a screenshot has to carry it;
-    // re-applied on every load so a renderer reload cannot drop it.
+    createWindow(!SMOKE && !startMin && !startInactive); // どちらも → 隠して作り、下でアクティブにせずに見せる
+    // 本物のライブラリから種を取ったサンドボックス（#286）は、本物の投稿テキストのスナップ
+    // ショットを持ち、キャプチャを名指しした場合は本物のメディアも持つ＝このウィンドウから
+    // 撮ったものは何であれ個人データ。注意書きはコンソールへ出さずページの中に描く。スクリーン
+    // ショットがそれを載せなければならないため。読み込みのたびに当て直すので、レンダラーの
+    // 読み込み直しがそれを落とすことはできない。
     if (SANDBOX && process.env.HOLOGRAM_SANDBOX_NOTICE && getWin()) {
       const notice = process.env.HOLOGRAM_SANDBOX_NOTICE;
       (getWin() as BrowserWindow).webContents.on('did-finish-load', () => {
@@ -1235,41 +1171,38 @@ if (!gotSingleInstanceLock) {
     }
     watchInboxFolder();
     void watchImport.refresh();
-    // #34: a "replace" answered while the app was closed is only a marker on the
-    // new record until now — this is where it becomes the replacement. Outside
-    // the SMOKE guard below and ahead of purgeOldTrash: the capture it retires
-    // should start its 30 trash days today, and the harness that proves the
-    // app-closed path works boots in exactly that mode.
+    // #34: アプリが閉じている間に答えた「置き換える」は、今までは新しいレコードの上のマーカー
+    // でしかない＝ここで置き換えになる。下の SMOKE の囲いの外、かつ purgeOldTrash より前。
+    // これが退役させるキャプチャはゴミ箱の30日を今日から始めるべきだし、アプリが閉じている経路が
+    // 働くことを示すハーネスはまさにそのモードで起動する。
     setTimeout(() => void sweepReplacements(), 1500);
     if (!SMOKE) {
-      armBackupSchedule(); // start the interval schedule
-      // Startup catch-up: run once if more than the interval has passed since last time (the run missed while closed).
+      armBackupSchedule(); // 一定間隔の予定を始める
+      // 起動時の追いつき。前回から間隔より長く経っていれば1回走らせる（閉じている間に逃した実行）。
       const bk = readBackupConfig();
       if (bk.dir && bk.interval) {
         const last = bk.lastRunAt ? Date.parse(bk.lastRunAt) : 0;
         if (!last || Date.now() - last >= backupIntervalMs(bk)) setTimeout(() => runBackup('startup-overdue'), 4000);
       }
-      setTimeout(() => purgeOldTrash(), 6000); // expire old trash entries on startup
-      // #834: the resumable backfill. Deliberately late and deliberately after
-      // the window exists — the first scroll is the moment the pool's priority
-      // rule has to hold, and starting the walk before there is anything to
-      // compete with would prove nothing. Nothing is queued at all until a
-      // feature registers a job kind (#48/#49/#50/#51).
+      setTimeout(() => purgeOldTrash(), 6000); // 起動時に古いゴミ箱の項目を期限切れにする
+      // #834: 途中から再開できる埋め戻し。意図して遅く、意図してウィンドウができた後に。
+      // プールの優先規則が成り立たなければならないのは最初のスクロールの瞬間で、競合するものが
+      // 何も無いうちに歩き始めても何も示せない。機能がジョブの種別を登録するまで
+      // （#48/#49/#50/#51）、そもそも何もキューに入らない。
       setTimeout(() => startIndexQueueForApp(), 8000);
-      // Startup integrity check (#301): needs to work even when backup isn't configured, so
-      // it opens the DB itself independent of runBackup (runBackup early-returns on !b.dir
-      // and never opens the DB).
+      // 起動時の整合性チェック（#301）。バックアップが設定されていなくても働く必要があるので、
+      // runBackup とは独立に自分で DB を開く（runBackup は !b.dir で早期リターンし、DB を
+      // 開かない）。
       setTimeout(() => runStartupIntegrityCheck(), 5000);
     }
 
     if (SMOKE) {
       const shot = process.env.HOLOGRAM_SMOKE_SHOT;
-      // Electron 36 replaced this event's positional arguments with a single
-      // details object, so the old `(_e, level, message)` form had been quietly
-      // logging `[renderer:undefined] undefined` for every renderer message —
-      // which is worse than not forwarding at all, because the harness output
-      // looked like the renderer had simply stayed quiet (#986). The waits now
-      // report what they were waiting for through this channel.
+      // Electron 36 はこのイベントの位置引数を1つの details オブジェクトに置き換えた。そのため
+      // 古い `(_e, level, message)` の形は、レンダラーのメッセージすべてについて黙って
+      // `[renderer:undefined] undefined` を出していた＝まったく転送しないより悪い。ハーネスの
+      // 出力が、レンダラーが単に黙っていたように見えるため（#986）。今は待ちの処理が、何を待って
+      // いたのかをこのチャンネルで報告する。
       (getWin() as BrowserWindow).webContents.on('console-message', (details) => {
         console.log(`[renderer:${details.level}] ${details.message}`);
       });
@@ -1280,20 +1213,18 @@ if (!gotSingleInstanceLock) {
         console.log(tag);
         app.quit();
       };
-      // executeJavaScript's promise belongs to the frame the script ran in: let
-      // that frame navigate away mid-eval and the promise never settles — not
-      // resolved, not rejected. The harness then has nothing to wait on but the
-      // 60s backstop below, and reports its checks against a missing
-      // EVAL_RESULT, which reads as "the feature returned undefined" rather than
-      // "the page reloaded underneath the eval" (Refs #917). Losing an eval to a
-      // reload is a legitimate outcome — a library switch reloads every window
-      // on purpose; taking a minute to say so is not.
-      // 'did-navigate' — a main-frame navigation that COMMITTED — is the signal,
-      // not 'did-start-navigation'. An eval is allowed to start navigations that
-      // go nowhere, and one of them does it on purpose:
-      // test-app-renderer-origin.cts assigns location.href to prove the
-      // navigation guard refuses it, then carries on in the very same frame.
-      // Only a commit replaces the document out from under the script.
+      // executeJavaScript の promise は、スクリプトが走ったフレームのもの。評価の途中でその
+      // フレームが別の場所へ遷移すれば、promise は決着しない＝解決もしないし拒否もしない。
+      // そうなるとハーネスは下の60秒の受け皿しか待つものが無く、EVAL_RESULT が無いまま
+      // チェックを報告する。それは「ページが評価の足元で読み込み直された」ではなく「機能が
+      // undefined を返した」と読める（Refs #917）。読み込み直しで評価を失うこと自体は正当な
+      // 結末＝ライブラリの切り替えは意図してすべてのウィンドウを読み込み直す。それを伝えるのに
+      // 1分かけるのは正当ではない。
+      // 合図は 'did-start-navigation' ではなく 'did-navigate'＝コミットされたメインフレームの
+      // 遷移。評価がどこにも行かない遷移を始めるのは許されていて、そのうち1つは意図して
+      // やっている。test-app-renderer-origin.cts は、ナビゲーションの番人がそれを断ることを
+      // 示すために location.href へ代入し、その後まったく同じフレームで続きを進める。
+      // スクリプトの足元で文書を差し替えるのはコミットだけ。
       const evalInRenderer = (wc: Electron.WebContents, script: string) =>
         new Promise((resolve, reject) => {
           const onNavigated = (_e: Electron.Event, url: string) => reject(new Error(`the renderer navigated to ${url} while the eval was still running`));
@@ -1304,9 +1235,9 @@ if (!gotSingleInstanceLock) {
         });
       (getWin() as BrowserWindow).webContents.once('did-finish-load', () =>
         setTimeout(async () => {
-          // #831: one local inference through the utilityProcess runtime, with
-          // the window kept busy at the same time. ml-smoke.ts says why the
-          // check has to run inside the real app.
+          // #831: utilityProcess のランタイム経由でローカル推論を1回、同時にウィンドウを
+          // 忙しくさせたまま。このチェックが本物のアプリの中で走らなければならない理由は
+          // ml-smoke.ts に書いてある。
           if (process.env.HOLOGRAM_ML_SMOKE_MODEL) {
             try {
               console.log('ML_SMOKE_RESULT', JSON.stringify(await runMlSmoke(process.env.HOLOGRAM_ML_SMOKE_MODEL, getWin())));
@@ -1314,9 +1245,9 @@ if (!gotSingleInstanceLock) {
               console.log('ML_SMOKE_ERR', e.message);
             }
           }
-          // #50: the channel order nativeImage actually uses, and the tensor
-          // the real image stack produces. Offline and model-free — see
-          // ai-tags-smoke.ts for why it cannot be a unit test.
+          // #50: nativeImage が実際に使うチャンネルの並びと、本物の画像スタックが作るテンソル。
+          // オフラインでモデルも要らない＝なぜ単体テストにできないかは ai-tags-smoke.ts を
+          // 参照。
           if (process.env.HOLOGRAM_AI_TAGS_SMOKE === '1') {
             try {
               console.log('AI_TAGS_SMOKE_RESULT', JSON.stringify(runAiTagsSmoke()));
@@ -1324,8 +1255,8 @@ if (!gotSingleInstanceLock) {
               console.log('AI_TAGS_SMOKE_ERR', e.message);
             }
           }
-          // #50: one real inference, model and all. Needs the network the first
-          // time, so it is the "needs network" group, not run-app-tests.cts.
+          // #50: モデルも含めた本物の推論を1回。初回はネットワークが要るので、
+          // run-app-tests.cts ではなく「ネットワークが要る」組に入る。
           if (process.env.HOLOGRAM_AI_TAGS_SMOKE_IMAGE) {
             try {
               console.log('AI_TAGS_MODEL_RESULT', JSON.stringify(await runAiTagsModelSmoke(process.env.HOLOGRAM_AI_TAGS_SMOKE_IMAGE.split(path.delimiter))));
@@ -1352,23 +1283,21 @@ if (!gotSingleInstanceLock) {
           quit('SMOKE_OK');
         }, 1300),
       );
-      // Backstop for a renderer that never answers, not a budget for the eval: the
-      // eval scripts carry their own waitFor timeouts, so a real hang still ends here
-      // while a legitimately long flow (multi-step UI harnesses) is not cut off
-      // mid-run — which reads as "no eval result" and is easy to misread as a bug.
-      // 25s was too close to be that backstop: the nightly Windows runner put
-      // test-app-import-dedup (3.6s locally, no waits of its own — just ZIP imports over
-      // the runner's disk) straight into SMOKE_TIMEOUT, and test-app-image-zoom against
-      // the same wall (#818). A hang still ends well inside run-app-tests.cts's own 120s
-      // spawn timeout; the slow-but-honest run now finishes instead of being cut off.
+      // 答えを返さないレンダラーのための受け皿であって、評価の予算ではない。評価スクリプトは
+      // 自分の waitFor のタイムアウトを持っているので、本物のハングは今もここで終わる一方、
+      // 正当に長い流れ（複数手順の UI ハーネス）は途中で切られない＝切られると「評価の結果が
+      // 無い」と読め、不具合と取り違えやすい。その受け皿として25秒は近すぎた。夜間の Windows
+      // ランナーは test-app-import-dedup（手元では3.6秒、自前の待ちは無く、ランナーのディスク
+      // 越しの ZIP 取り込みだけ）をそのまま SMOKE_TIMEOUT に落とし、test-app-image-zoom も
+      // 同じ壁に当てた（#818）。ハングは今も run-app-tests.cts 自身の120秒の spawn タイム
+      // アウトの十分内側で終わる。遅いが正直な実行は、切られずに完走するようになった。
       setTimeout(() => quit('SMOKE_TIMEOUT'), 60000);
       return;
     }
 
-    // Start minimized when launched on the user's behalf, WITHOUT stealing focus or
-    // flashing the taskbar button: show inactive (no focus → no FlashWindowEx), then
-    // minimize and explicitly clear any pending attention flash. (A normal launch
-    // opens a focused window.)
+    // 利用者に代わって起動されたときは最小化で始める。フォーカスを奪わず、タスクバーのボタンも
+    // 光らせない。非アクティブで見せ（フォーカス無し → FlashWindowEx 無し）、最小化し、保留中の
+    // 注意喚起の点滅を明示的に消す。（通常の起動はフォーカスの当たったウィンドウを開く。）
     if (startMin && getWin()) {
       (getWin() as BrowserWindow).once('ready-to-show', () => {
         const w = getWin() as BrowserWindow;
@@ -1378,12 +1307,12 @@ if (!gotSingleInstanceLock) {
       });
     }
 
-    // Start visible but behind whatever the user already has open. showInactive()
-    // covers only half of that — it skips activation, but the window still lands on
-    // top of the z-order, measured on Windows 11. That is upstream's settled
-    // position, not a bug: "showInactive() should maintain the Z order" was closed
-    // as wontfix (electron#9941), and Electron exposes moveTop() with no counterpart.
-    // So the window is pushed down through the Win32 call Windows provides for it.
+    // 見えてはいるが、利用者が既に開いているものの後ろで始める。showInactive() が覆うのはその
+    // 半分だけ＝アクティブ化は飛ばすが、ウィンドウは今も z 順の最前面に着地する（Windows 11 で
+    // 実測）。これは不具合ではなく上流の確定した立場で、"showInactive() should maintain the Z
+    // order" は wontfix として閉じられ（electron#9941）、Electron は moveTop() を出しているのに
+    // 対になるものを出していない。だからウィンドウは、Windows がそのために用意している Win32 の
+    // 呼び出しで下へ押し下げる。
     if (startInactive && getWin()) {
       (getWin() as BrowserWindow).once('ready-to-show', () => {
         const w = getWin() as BrowserWindow;
@@ -1403,21 +1332,21 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
 
-// Set once the pending saved-index write has been flushed, so the re-issued
-// quit below falls through to the teardown instead of holding the app again.
+// 保留中の saved-index の書き込みを吐き出したら立てる。下で出し直す終了が、アプリをもう一度
+// 引き止めるのではなく後片付けへ抜けるように。
 let quitFlushed = false;
-// Set once the teardown below has closed the library, so nothing reopens or
-// re-uses it while the process winds down (ensureDb / ensurePostsSynced read
-// it). Deliberately NOT set on the first, deferred pass: that one holds the
-// quit open precisely so the pending saved-index write can still read the DB.
+// 下の後片付けがライブラリを閉じたら立てる。プロセスが畳まれていく間に何かがそれを開き直したり
+// 使い回したりしないように（ensureDb / ensurePostsSynced が読む）。最初の、先送りするパスでは
+// 意図して立てない。あのパスは、保留中の saved-index の書き込みがまだ DB を読めるようにと、
+// まさにそのために終了を引き止めている。
 let quitting = false;
 
 app.on('before-quit', (e) => {
-  // Hold the quit for one round trip, the way Electron's own docs have async
-  // shutdown work done (preventDefault, finish, quit again). The flush reads the
-  // database, so it has to happen before the close below. Capped: the trash half
-  // touches the save folder, which can be a network path, and a quit must not be
-  // hostage to it — a dropped write is only a stale badge, a stuck quit is worse.
+  // Electron 自身のドキュメントが非同期の終了処理をやらせている形（preventDefault して、
+  // 終わらせて、もう一度 quit）に倣い、終了を1往復だけ引き止める。吐き出しはデータベースを読む
+  // ので、下の close より前に起きなければならない。上限を切ってある。ゴミ箱の側は保存先フォルダ
+  // に触れ、そこはネットワークのパスであり得るし、終了がそれに人質に取られてはいけない＝落ちた
+  // 書き込みは古くなった印にすぎないが、止まった終了はもっと悪い。
   if (!quitFlushed && (savedIndexPending || savedIndexInFlight)) {
     e.preventDefault();
     quitFlushed = true;
@@ -1425,14 +1354,13 @@ app.on('before-quit', (e) => {
     return;
   }
   quitting = true;
-  // closeDb rather than a bare sqlite.close(): it also FORGETS the handle.
-  // Leaving the closed connection in place made every startup timer that
-  // outlived the quit (the #34 replacement sweep, most visibly) hand
-  // better-sqlite3 a dead connection, and each one logged a TypeError stack on
-  // the way out — noise indistinguishable from a real fault when reading the
-  // tail of a nightly run. Nothing reopens it: `quitting` is set above.
+  // 素の sqlite.close() ではなく closeDb。あちらはハンドルを忘れもする。閉じた接続をその場に
+  // 残しておくと、終了より長く生きた起動時のタイマー（一番目立つのは #34 の置き換えの掃き寄せ）が
+  // 揃って better-sqlite3 へ死んだ接続を渡し、それぞれが出際に TypeError のスタックをログへ
+  // 出していた＝夜間実行の末尾を読むとき、本物の障害と見分けの付かない雑音。開き直すものは
+  // 無い。`quitting` は上で立ててある。
   closeDb();
-  // A utilityProcess is not a child of the app's exit path; left alone it can
-  // outlive the window it was started for (#831).
+  // utilityProcess はアプリの終了経路の子ではない。放っておくと、そのために起こしたウィンドウ
+  // より長く生き得る（#831）。
   stopMlRuntime();
 });

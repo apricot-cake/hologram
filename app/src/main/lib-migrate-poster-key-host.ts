@@ -1,37 +1,31 @@
 'use strict';
 
-// ⚠️ Scaffolding — remove before release (#791 tracks the removal).
+// ⚠️ 足場＝リリース前に削除する（削除は #791 が追う）。
 //
-// One-time rewrite of every stored posterKey for the two instance-scoped
-// platforms (misskey/mastodon) from the pre-#791 host-less form
-// (`<platform>:<id>`) to the host-qualified form query.ts's userKey() now
-// produces (`<platform>:<host>:<id>`) — see that function's header comment for
-// why an actor id needs the host at all. Runs once per database (the
-// store_state gate below), called from index.ts's ensureDb() right after
-// opening the handle.
+// インスタンス単位の2つのプラットフォーム（misskey / mastodon）について、保存済みの posterKey を
+// #791 より前のホスト無しの形（`<platform>:<id>`）から、query.ts の userKey() が今作るホスト付き
+// の形（`<platform>:<host>:<id>`）へ、1回だけ書き換える＝そもそもアクターの id になぜホストが要る
+// のかは、あの関数のヘッダのコメントを参照。データベースごとに1回だけ走り（下の store_state の
+// ゲート）、index.ts の ensureDb() から、ハンドルを開いた直後に呼ばれる。
 //
-// Only touches the tables that persist a posterKey as DATA rather than
-// deriving it live from a post: poster_tags, poster_folder_items,
-// poster_alias_group_members, plus poster_alias_groups.primaryKey (always one
-// of its group's member keys per aliases.ts's merge(), so it has to move in
-// lockstep with poster_alias_group_members or the group's "primary is a
-// member" invariant breaks).
+// 触るのは、posterKey を投稿から実時間で導くのではなくデータとして永続化しているテーブルだけ。
+// poster_tags、poster_folder_items、poster_alias_group_members、それと
+// poster_alias_groups.primaryKey（aliases.ts の merge() により、これは常にそのグループの成員の
+// キーのどれかなので、poster_alias_group_members と歩調を揃えて動かないと、グループの「主キーは
+// 成員である」という不変条件が壊れる）。
 //
-// The host for an old key is read back off the SAME posts row userKey() would
-// compute it from today (platform + userId, or platform + screenName when
-// userId is empty) — the identical id rule query.ts's userKey uses. A key
-// with no resolvable host (every matching post already deleted, or none of
-// them carry a URL) is left as-is: userKey() falls back to the SAME hostless
-// form for exactly that case, so an unmigrated old-form row still matches the
-// live key nothing currently produces without a host, never an orphaned one.
+// 古いキーに対するホストは、userKey() が今日それを計算するのと同じ posts の行から読み戻す
+// （platform ＋ userId、userId が空なら platform ＋ screenName）＝query.ts の userKey が使うのと
+// 同一の id の規則。ホストを解決できないキー（一致する投稿がすべて既に削除されているか、どれも
+// URL を持たない）はそのままにする。userKey() はまさにその場合に同じホスト無しの形を代わりに
+// 使うので、移行していない古い形の行は、今のところホスト無しでは何も作られない生きたキーと今も
+// 一致する。孤児になることはない。
 //
-// Already-collided data (two different instances' same-named posters that
-// were, before #791, indistinguishable under one old-form key) cannot be
-// un-collided by this migration — there is only one stored row to rewrite,
-// and it moves to whichever instance the key map resolves to (the first
-// matching post found). That is a pre-existing data-loss the bug already
-// caused, not something this migration introduces; #791's fix is that it
-// cannot happen again going forward.
+// 既に衝突しているデータ（#791 より前、1つの古い形のキーの下で見分けの付かなかった、別々の
+// インスタンスの同名の投稿者）を、このマイグレーションが解きほぐすことはできない＝書き換える
+// 保存済みの行は1つしか無く、それはキーの対応表が解決した方のインスタンス（最初に見つかった
+// 一致する投稿）へ移る。それはこの不具合が既に引き起こしていた既存のデータの喪失であって、この
+// マイグレーションが持ち込むものではない。#791 の修正は、今後それが二度と起きないという点。
 
 import type Database from 'better-sqlite3';
 
@@ -47,10 +41,10 @@ function hostOf(url: string | null | undefined): string {
   }
 }
 
-// Every old-form posterKey this database's OWN posts can resolve a host for,
-// mapped to its new-form replacement. First post found for a given old key
-// wins (posts have no defined iteration order here — any one instance's post
-// under that key is as good as another for picking the host).
+// このデータベース自身の投稿からホストを解決できる古い形の posterKey の全部を、新しい形の
+// 置き換え先へ対応付けたもの。ある古いキーについて最初に見つかった投稿が勝つ（ここでの投稿に
+// 決まった反復の順序は無い＝ホストを選ぶ目的では、そのキーの下のどのインスタンスの投稿でも同じ
+// だけ役に立つ）。
 function buildKeyMap(sqlite: Database.Database): Map<string, string> {
   const map = new Map<string, string>();
   for (const platform of INSTANCE_PLATFORMS) {
@@ -71,7 +65,7 @@ function rewriteColumn(sqlite: Database.Database, table: string, column: string,
   for (const [oldKey, newKey] of keyMap) update.run(newKey, oldKey);
 }
 
-/** Idempotent — no-ops once store_state records the migration as done. */
+/** 何度実行しても同じ＝store_state がこの移行を済みと記録した後は何もしない。 */
 export function migratePosterKeyHost(sqlite: Database.Database): void {
   const already = sqlite.prepare('SELECT value FROM store_state WHERE key = ?').get(MIGRATED_KEY) as { value: string } | undefined;
   if (already?.value === '1') return;

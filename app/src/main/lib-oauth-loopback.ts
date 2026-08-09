@@ -1,61 +1,54 @@
 'use strict';
 
-// The loopback redirect listener (#233, RFC 8252 §7.3).
+// ループバックのリダイレクトのリスナー（#233、RFC 8252 §7.3）。
 //
-// A desktop app cannot keep a client secret, so the authorization code comes
-// back to a socket on this machine instead. Three properties matter and each is
-// enforced here rather than by the caller:
+// デスクトップのアプリはクライアントシークレットを持てないので、認可コードは代わりにこのマシンの
+// ソケットへ返ってくる。効く性質が3つあり、そのいずれも呼び出し元ではなくここで守る。
 //
-//   bound to 127.0.0.1   the IP literal, never the name `localhost`: a hosts
-//                        entry can move the name, and both providers document
-//                        the literal as the one to register (§8.3).
-//   open only while the authorization is in flight   the window in which
-//                        anything can reach this port is the window the user
-//                        spends in the consent screen, and it closes on the
-//                        first accepted response, on timeout, or on cancel.
-//   state must match     a response whose `state` is not the one this listener
-//                        was opened with is discarded WITHOUT ending the wait
-//                        (§8.9 / RFC 9700 §2.1) — a forged redirect must not be
-//                        able to cancel the real one either.
+//   127.0.0.1 に束縛する   名前の `localhost` ではなく IP のリテラル。hosts の項目は名前を
+//                          動かせるし、どちらの提供元も、登録すべきものとしてリテラルを
+//                          記している（§8.3）。
+//   認可が飛行中の間だけ開く   このポートへ何かが届き得る窓は、利用者が同意の画面で過ごす窓と
+//                          等しく、最初に受け入れた応答・タイムアウト・取り消しのいずれかで
+//                          閉じる。
+//   state が一致すること   このリスナーを開いたときの `state` と違う応答は、待ちを終わらせずに
+//                          捨てる（§8.9 / RFC 9700 §2.1）＝偽装したリダイレクトが、本物の方を
+//                          取り消せてもいけない。
 //
-// What #233's 6/7 asked for and this cannot do:
-//   * SO_EXCLUSIVEADDRUSE on Windows. Node exposes no setsockopt, and libuv
-//     deliberately sets neither SO_REUSEADDR nor SO_EXCLUSIVEADDRUSE on Windows
-//     (src/win/tcp.c says SO_EXCLUSIVEADDRUSE "does check all sockets,
-//     regardless of state", i.e. it would fail on TIME_WAIT). Adding a native
-//     addon for one socket option is a worse trade than the exposure it closes,
-//     so the defence in depth is the other three properties above plus PKCE: a
-//     code delivered to a hijacked listener is not exchangeable without the
-//     verifier, which never leaves this process.
-//   * Listening on [::1] as well. Microsoft does not support the IPv6 loopback
-//     as a redirect URI at all, and Google's redirect is the v4 literal we
-//     build, so the browser has nowhere else to arrive. A second family would
-//     be an unused socket.
+// #233 の 6/7 が求めていて、ここでは実現できないもの:
+//   * Windows での SO_EXCLUSIVEADDRUSE。Node は setsockopt を公開していないし、libuv は Windows で
+//     SO_REUSEADDR も SO_EXCLUSIVEADDRUSE も意図して設定しない（src/win/tcp.c いわく
+//     SO_EXCLUSIVEADDRUSE は "does check all sockets, regardless of state"、つまり TIME_WAIT で
+//     失敗してしまう）。ソケットのオプション1つのためにネイティブのアドオンを足すのは、それが
+//     塞ぐ露出に見合わない取引なので、多層の守りは上の残り3つの性質＋PKCE＝乗っ取られたリスナー
+//     へ届いたコードは、verifier 無しには交換できない。そして verifier はこのプロセスから出ない。
+//   * [::1] でも待ち受けること。Microsoft は IPv6 のループバックをリダイレクトの URI として
+//     そもそも対応していないし、Google のリダイレクトはこちらが組み立てる v4 のリテラルなので、
+//     ブラウザにはほかに着く先が無い。2つ目のアドレスファミリは、使われないソケットになる。
 
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 
-/** How long the user has in the consent screen before the listener gives up. */
+/** リスナーが諦めるまでに、利用者が同意の画面で使える時間。 */
 const DEFAULT_TIMEOUT_MS = 5 * 60 * 1000;
 
 export interface LoopbackCallback {
   readonly code: string;
-  /** RFC 9207 issuer, when the provider sends one. */
+  /** 提供元が送ってきた場合の RFC 9207 の issuer。 */
   readonly iss: string | null;
 }
 
 export interface LoopbackListener {
-  /** The port actually bound — the redirect URI is built from it. */
+  /** 実際に束縛したポート＝リダイレクトの URI はこれから組み立てる。 */
   readonly port: number;
-  /** Resolves with the code once a response carrying `state` arrives. */
+  /** `state` を載せた応答が届いたら、コードとともに解決する。 */
   waitForCallback(state: string, timeoutMs?: number): Promise<LoopbackCallback>;
-  /** Idempotent; safe to call from a finally. */
+  /** 何度実行しても同じ。finally から呼んで安全。 */
   close(): void;
 }
 
-// The pages the browser lands on. Self-contained (a redirect target that pulls
-// in a stylesheet would be a request to somewhere else at the worst moment) and
-// in Japanese, because they are UI.
+// ブラウザが着地するページ。自己完結させてあり（スタイルシートを取りに行くリダイレクト先は、
+// 最悪の瞬間に別のどこかへリクエストを出すことになる）、UI なので日本語。
 function page(title: string, body: string): string {
   return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><title>${title}</title><style>
 body{font-family:system-ui,"Segoe UI",sans-serif;margin:0;display:flex;min-height:100vh;align-items:center;justify-content:center;background:#f6f7f9;color:#1c1e21}
@@ -71,8 +64,8 @@ const PAGE_STRAY = page('この応答は受け付けられません', 'Hologram 
 function send(res: http.ServerResponse, status: number, html: string): void {
   res.writeHead(status, {
     'content-type': 'text/html; charset=utf-8',
-    // Nothing here should be cached or reachable from another page: the URL
-    // being served carries an authorization code.
+    // ここのものはキャッシュされてはいけないし、別のページから届いてもいけない。配っている
+    // URL が認可コードを載せているため。
     'cache-control': 'no-store',
     'referrer-policy': 'no-referrer',
   });
@@ -80,20 +73,20 @@ function send(res: http.ServerResponse, status: number, html: string): void {
 }
 
 /**
- * Binds the listener. `port` is a provider's fixed registration port, or null
- * for an ephemeral one (Google ignores the port when matching; Microsoft does
- * not — see lib-oauth-providers.ts).
+ * リスナーを束縛する。`port` は提供元が登録した固定のポート。一時的なポートでよければ null
+ * （Google は突き合わせのときポートを見ないが、Microsoft は見る＝lib-oauth-providers.ts を
+ * 参照）。
  */
 async function startLoopbackListener(port: number | null): Promise<LoopbackListener> {
   const server = http.createServer();
-  // A stalled connection must not hold the port after the flow is over.
+  // 止まった接続が、流れの終わった後もポートを掴んでいてはいけない。
   server.keepAliveTimeout = 1000;
 
   await new Promise<void>((resolve, reject) => {
     const onError = (err: NodeJS.ErrnoException) => {
-      // A fixed-port provider whose port is taken cannot fall back to another
-      // one: the registered redirect URI names this port. Say so plainly rather
-      // than let "EADDRINUSE" surface as the whole explanation.
+      // 固定ポートの提供元は、そのポートが取られていても別のポートを代わりに使えない。登録済み
+      // のリダイレクトの URI がこのポートを名指ししているため。"EADDRINUSE" が説明の全部として
+      // 表に出るのに任せず、はっきりそう言う。
       if (err.code === 'EADDRINUSE' && port) reject(new Error(`loopback port ${port} is already in use`));
       else reject(err);
     };
@@ -107,9 +100,9 @@ async function startLoopbackListener(port: number | null): Promise<LoopbackListe
   const bound = (server.address() as AddressInfo).port;
   let settled = false;
   let closed = false;
-  // Set while a caller is waiting, so closing the listener ENDS that wait
-  // instead of leaving it to time out minutes later. Callers close in a
-  // `finally`, which is exactly the path a cancelled authorization takes.
+  // 呼び出し元が待っている間だけ立てる。リスナーを閉じれば、数分後のタイムアウトに任せるのでは
+  // なくその待ちが終わるように。呼び出し元は `finally` で閉じるし、それはまさに取り消された認可が
+  // 通る経路。
   let cancelWait: ((err: Error) => void) | null = null;
 
   const close = () => {
@@ -129,22 +122,20 @@ async function startLoopbackListener(port: number | null): Promise<LoopbackListe
           settled = true;
           clearTimeout(timer);
           fn();
-          // The listener's job ends with the first accepted response; the
-          // socket closes with it rather than lingering for the app's life.
+          // リスナーの仕事は最初に受け入れた応答で終わる。ソケットもそれと一緒に閉じ、アプリの
+          // 寿命の間ぐずぐず残ったりしない。
           close();
         };
         const timer = setTimeout(() => finish(() => reject(new Error('timed out waiting for the authorization response'))), timeoutMs);
         cancelWait = (err) => finish(() => reject(err));
 
         server.on('request', (req, res) => {
-          // The code arrives in the query string of a GET; anything else is not
-          // the provider.
+          // コードは GET のクエリ文字列で届く。それ以外は提供元ではない。
           const url = new URL(req.url || '/', `http://127.0.0.1:${bound}`);
           const params = url.searchParams;
           const got = params.get('state');
           if (!got || got !== state) {
-            // Discarded, and the wait continues: a forged response must not be
-            // able to end the real authorization either.
+            // 捨てて、待ちは続ける。偽装した応答が、本物の認可を終わらせられてもいけない。
             send(res, 400, PAGE_STRAY);
             return;
           }

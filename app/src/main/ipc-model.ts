@@ -1,9 +1,9 @@
 'use strict';
 
-// Model manager IPC (#832, parent #98): list/download/delete over the
-// registry lib-model-manager.ts owns. Progress is pushed as
-// `model-download-progress` (ctx.send), the same push-during-invoke shape
-// ipc-transfer.ts's save-folder-progress uses for a long-running relocation.
+// モデルマネージャの IPC（#832、親は #98）。lib-model-manager.ts が持つ登録簿に対する
+// 一覧・ダウンロード・削除。進捗は `model-download-progress` として送る（ctx.send）。
+// ipc-transfer.ts の save-folder-progress が長時間の移設に使っているのと同じ、invoke の最中に
+// 送る形。
 import { ipcMain } from 'electron';
 import type { IpcContext } from './ipc-context.ts';
 import type { ModelInfo, OkResult } from './ipc-payloads.ts';
@@ -17,9 +17,8 @@ function register(ctx: IpcContext) {
     const status = await downloadModel(String(id), {
       onProgress: (p) => ctx.send('model-download-progress', p),
     });
-    // Arriving and leaving are the only two events that change what the index
-    // queue may plan (#50): a model appearing is what makes the backlog
-    // eligible, and one being deleted is what takes its output away again.
+    // 索引のキューが何を計画してよいかを変える出来事は、到着と退去の2つだけ（#50）。モデルが
+    // 現れることが積み残しを対象にし、モデルが消えることがその出力を再び取り去る。
     onAiTagsModelChanged();
     return status;
   });

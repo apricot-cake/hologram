@@ -1,30 +1,27 @@
 'use strict';
 
-// The app's one job pool (#834, parent #98).
+// このアプリで唯一のジョブのプール（#834、親は #98）。
 //
-// This is lib-thumbnails.ts's own pool (`runThumbJob`), generalized. It was
-// built for one reason and still exists for it: nativeImage decode/resize/
-// toJPEG is synchronous on the main process's single JS thread, so the burst of
-// asset://…?w= requests a first scroll fires would otherwise execute back-to-back
-// as one long synchronous run that starves every other IPC/UI message. Funnelling
-// heavy work through a small pool that yields to the event loop (setImmediate)
-// between jobs is what keeps the main thread breathing, and generalizing it does
-// not dilute that — thumbnails keep the exact same admission rule they had.
+// 実体は lib-thumbnails.ts 自身のプール（`runThumbJob`）を一般化したもの。作られた理由は1つで、
+// 今もその理由のために在る。nativeImage の復号・縮小・toJPEG はメインプロセスの唯一の JS
+// スレッドの上で同期に走るので、最初のスクロールが投げる asset://…?w= のリクエストの群れは、
+// そうしないと立て続けに1つの長い同期の実行になり、ほかのあらゆる IPC・UI のメッセージを飢え
+// させる。重い仕事を、ジョブの間でイベントループへ譲る（setImmediate）小さなプールへ集約する
+// ことが、メインスレッドに息を続けさせている。一般化してもそれは薄まらない＝サムネイルは今まで
+// とまったく同じ入場の規則を保つ。
 //
-// What the generalization adds is a SECOND class of work: the background index
-// jobs (#48/#49/#50/#51, scheduled by lib-index-queue.ts). Those must never make
-// the grid stutter, so they are not merely queued behind interactive work — a
-// background job is only ever STARTED while no interactive job is queued or
-// running. Four features each running their own全件 sweep is precisely what #834
-// exists to prevent; one pool is where concurrency, priority and pause live.
+// 一般化が足すのは、2つ目の種類の仕事＝背景の索引のジョブ（#48/#49/#50/#51。lib-index-queue.ts
+// が予定を立てる）。あれらは決してグリッドを引っかからせてはいけないので、単に対話的な仕事の
+// 後ろに並ぶだけではない。背景のジョブが開始されるのは、対話的なジョブが1つもキューにも実行中
+// にも無いときだけ。4つの機能がそれぞれ自分の全件の掃き寄せを走らせることこそ、#834 が防ぐために
+// 在るもの。同時実行数・優先度・一時停止が住むのは、この1つのプール。
 //
-// Not preemptive, and deliberately so: a background job already in flight runs to
-// completion (there is no way to interrupt a synchronous decode mid-call), so the
-// worst an arriving thumbnail request waits is one background job. That bounds
-// the stall by the job kinds' own size caps (lib-index-jobs.ts's maxInputBytes /
-// maxSegments) rather than by anything this module can enforce.
+// 横取りはしないし、それは意図してのこと。既に飛行中の背景のジョブは最後まで走る（同期の復号を
+// 途中で中断する手段は無い）ので、到着したサムネイルの要求が待つのは最悪でも背景のジョブ1つ分。
+// つまり止まる時間は、このモジュールが強制できる何かではなく、ジョブの種別自身の大きさの上限
+// （lib-index-jobs.ts の maxInputBytes / maxSegments）で抑えられる。
 //
-// Electron-free (no imports at all) so it unit-tests in plain node.
+// Electron に依存しない（そもそも import が1つも無い）ので、素の node で単体テストできる。
 
 export type JobPriority = 'interactive' | 'background';
 
@@ -37,9 +34,9 @@ export interface JobPoolStats {
 }
 
 export interface JobPoolOptions {
-  /** Ceiling across BOTH classes. Default 2 — lib-thumbnails.ts's THUMB_POOL. */
+  /** 両方の種類を合わせた上限。既定は 2＝lib-thumbnails.ts の THUMB_POOL と同じ。 */
   concurrency?: number;
-  /** Of that ceiling, how many may be background jobs. Default 1. */
+  /** その上限のうち、背景のジョブが占めてよい数。既定は 1。 */
   backgroundConcurrency?: number;
 }
 
@@ -62,17 +59,16 @@ export function createJobPool(options: JobPoolOptions = {}) {
   function start(job: QueuedJob, priority: JobPriority) {
     if (priority === 'interactive') interactiveRunning++;
     else backgroundRunning++;
-    // setImmediate, not a direct call: this is the yield. Without it a queue
-    // drain would run every job in one synchronous turn, which is the stutter
-    // the pool exists to remove.
+    // 直接の呼び出しではなく setImmediate。これが譲り。これが無いと、キューの送り出しが
+    // すべてのジョブを1回の同期のターンで走らせてしまい、それがこのプールの取り除くために
+    // 在る引っかかり。
     setImmediate(async () => {
       try {
         job.resolve(await job.fn());
       } catch (err) {
-        // Unlike the pre-#834 runThumbJob, a failure REJECTS rather than
-        // resolving null: an index job's caller has to be able to tell "produced
-        // nothing" from "threw". lib-thumbnails.ts keeps its old null by
-        // catching at its own call site.
+        // #834 より前の runThumbJob と違い、失敗は null で解決するのではなく拒否する。索引の
+        // ジョブの呼び出し元は「何も作らなかった」と「投げた」を区別できなければならない。
+        // lib-thumbnails.ts は自分の呼び出し箇所で捕まえることで、昔の null を保つ。
         job.reject(err);
       } finally {
         if (priority === 'interactive') interactiveRunning--;
@@ -86,17 +82,16 @@ export function createJobPool(options: JobPoolOptions = {}) {
     while (interactiveRunning + backgroundRunning < concurrency && interactiveQueue.length) {
       start(interactiveQueue.shift() as QueuedJob, 'interactive');
     }
-    // Background admission is strictly narrower: everything above, AND no
-    // interactive work anywhere in the system. That is the whole of "UI より低い
-    // 優先度" — a queue position would not be enough, because a background job
-    // holding a slot delays the very first tile of a scroll.
+    // 背景の入場は厳密により狭い。上の条件すべてに加えて、系のどこにも対話的な仕事が無いこと。
+    // それが "UI より低い優先度" の全部＝キューでの位置だけでは足りない。枠を掴んだ背景のジョブ
+    // が、スクロールの一番最初のタイルを遅らせてしまうため。
     while (!backgroundPaused && backgroundQueue.length && backgroundRunning < backgroundConcurrency && interactiveRunning + backgroundRunning < concurrency && interactiveRunning === 0 && interactiveQueue.length === 0) {
       start(backgroundQueue.shift() as QueuedJob, 'background');
     }
   }
 
   return {
-    /** Queues `fn`; resolves with its value, rejects with whatever it threw. */
+    /** `fn` をキューへ入れる。その値で解決し、投げたものがあればそれで拒否する。 */
     run<T>(fn: () => T | Promise<T>, opts: { priority?: JobPriority } = {}): Promise<T> {
       return new Promise<T>((resolve, reject) => {
         const job: QueuedJob = { fn, resolve, reject };
@@ -105,7 +100,7 @@ export function createJobPool(options: JobPoolOptions = {}) {
         pump();
       });
     },
-    /** Stops STARTING background jobs. In-flight ones still finish (see the header). */
+    /** 背景のジョブの開始を止める。飛行中のものは今までどおり終わる（ヘッダを参照）。 */
     pauseBackground(): void {
       backgroundPaused = true;
     },
@@ -117,7 +112,7 @@ export function createJobPool(options: JobPoolOptions = {}) {
     isBackgroundPaused(): boolean {
       return backgroundPaused;
     },
-    /** Drops every not-yet-started background job (library switch / clear-all). */
+    /** まだ開始していない背景のジョブを全部捨てる（ライブラリの切り替え・clear-all）。 */
     clearBackground(): void {
       backgroundQueue.length = 0;
     },
@@ -136,8 +131,8 @@ export function createJobPool(options: JobPoolOptions = {}) {
 export type JobPool = ReturnType<typeof createJobPool>;
 
 /**
- * The process-wide pool. Thumbnails (interactive) and the index queue
- * (background) share it — the point of #834 is that there is exactly one place
- * where "how much heavy work may run at once" is decided.
+ * プロセス全体で1つのプール。サムネイル（対話的）と索引のキュー（背景）がこれを共有する＝
+ * #834 の要点は、「重い仕事を一度にどれだけ走らせてよいか」を決める場所がちょうど1つある
+ * ことにある。
  */
 export const sharedJobPool: JobPool = createJobPool({ concurrency: 2, backgroundConcurrency: 1 });
