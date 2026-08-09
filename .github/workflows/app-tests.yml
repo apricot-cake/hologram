@@ -43,54 +43,36 @@ name: App tests
 # What a job name no longer says, the log does: the pool prints one `ok`/`FAIL`
 # line per script and repeats the failing names on its last line (#829).
 #
-# `pull_request` AND `push` to main, both PATH-FILTERED — the same pair of decisions
-# ci.yml made on 2026-08-08, and that file carries the full reasoning (the survey of
-# what vitejs/vite, wxt-dev/wxt, biomejs/biome and microsoft/vscode actually do, and
-# why the filter outlived the plan to make these checks required). What is specific
-# to THIS workflow:
+# `pull_request` AND `push` to main, NEITHER path-filtered AT THE TRIGGER — the
+# allow-list moved into the `changed` job below. ci.yml carries the shared reasoning
+# for the trigger pair (the survey of what vitejs/vite, wxt-dev/wxt, biomejs/biome and
+# microsoft/vscode actually do). What is specific to THIS workflow:
 #
 #   - running the real-Electron layers on pull requests is not a stretch of the norm:
 #     vscode runs pr-linux-test / pr-darwin-test / pr-linux-cli-test on PRs. This is
 #     the layer whose absence before a merge is felt most — it is the only one that
 #     boots the app and the extension at all.
-#   - the filter matters more here than it does there, because a shard costs three
-#     Windows minutes rather than one Linux minute. The allow-list below is the
-#     difference between a docs-only pull request finishing in seconds and it
-#     occupying three runners for nothing.
+#   - the allow-list still earns its keep here, because a shard costs three Windows
+#     minutes rather than one Linux minute (ci.yml dropped its filter outright for
+#     exactly that reason inverted). But it can no longer sit on the trigger:
+#     `Electron harnesses / extension e2e` is a REQUIRED status check again
+#     (2026-08-09), and a workflow skipped by `paths` leaves its check Pending
+#     forever. So detection became a job and the shards read it through `if:` —
+#     vitejs/vite's ci.yml is built the same way (`changed` job → `if:
+#     needs.changed…` → an aggregate job that reports either way), and it is what
+#     GitHub's own community answer points to for skipped-but-required checks, since
+#     the docs describe the trap without offering a fix.
 #
-# ⚠️ The same warning as ci.yml's, and it bites harder here because this list is an
-# ALLOW-list: anything not named below does not run, so a new top-level directory is
-# invisible to these shards until someone adds it. NOT RUN AND GREEN LOOK THE SAME in
-# `gh pr checks`. The backstop is the nightly `schedule`, which no filter applies to.
+# ⚠️ It is still an ALLOW-list: anything the `changed` job does not name leaves the
+# shards unrun, so a new top-level directory is invisible until someone adds it. What
+# is no longer true is that the skip can HIDE — the aggregate job always reports, and
+# it prints what it skipped. The nightly `schedule` remains the backstop and ignores
+# the list entirely.
 on:
   push:
     branches: [main]
-    paths: &app-test-paths
-      - 'app/**'
-      - 'extension/**'
-      - 'native-host/**'
-      - 'scripts/**'
-      - '!scripts/make-icons.cjs'
-      # Windows-only launcher for the developer's own machine. Nothing in this job runs
-      # or lints PowerShell, so an edit to it can only spend three Windows minutes on a
-      # file none of the shards touch. It moved here from the repo root on 2026-08-07,
-      # which is what put it inside scripts/** in the first place. The handshake it
-      # depends on IS covered — by test-app-restart-signal.cts, which lives in app/**'s
-      # blast radius through app/src/main/restart-signal.ts and in scripts/** itself.
-      - '!scripts/restart-app.ps1'
-      - 'package.json'
-      - 'package-lock.json'
-      - 'playwright.config.ts'
-      - 'vitest.config.ts'
-      - '.github/workflows/app-tests.yml'
-      - '.github/actions/setup-app-tests/**'
   pull_request:
     branches: [main]
-    # Same list as the push trigger above, by YAML anchor rather than by copy: two
-    # hand-maintained copies of an allow-list drift, and the drift is invisible
-    # (a path in one but not the other just means the check silently stops running
-    # on one of the two events).
-    paths: *app-test-paths
   schedule:
     # 18:37 UTC = 03:37 JST. Off the hour and outside 22:00-02:00 UTC on purpose:
     # scheduled runs queue behind everyone else's, and those are the peaks.
@@ -105,12 +87,65 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # The allow-list that used to be the trigger's `paths`. It is a job now for the one
+  # reason given at the top of this file: the aggregate check below is required, and a
+  # workflow the `paths` filter skips never reports at all.
+  changed:
+    name: Get changed files
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      # schedule / workflow_dispatch have no diff to look at, and those runs are the
+      # backstop — they always do the whole suite.
+      relevant: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || steps.filter.outputs.app == 'true' }}
+    steps:
+      # Needed for the `push` event only (the action reads the diff with git there,
+      # fetching more history itself if the base is deeper than `initial-fetch-depth`);
+      # on `pull_request` it goes through the API and would not need a checkout.
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Match the allow-list
+        id: filter
+        if: github.event_name == 'pull_request' || github.event_name == 'push'
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        with:
+          # NOT the default `some`, which IGNORES `!` patterns outright — under it the
+          # two exclusions below would silently do nothing and `scripts/**` would match
+          # everything again. Under `some-with-excludes` a file has to match at least
+          # one rule and none of the negated ones, and an exclusion is final (no later
+          # pattern pulls the file back in). That is the same reading GitHub's own
+          # `paths` gave this list before it moved here.
+          predicate-quantifier: 'some-with-excludes'
+          filters: |
+            app:
+              - 'app/**'
+              - 'extension/**'
+              - 'native-host/**'
+              - 'scripts/**'
+              - '!scripts/make-icons.cjs'
+              # Windows-only launcher for the developer's own machine. Nothing in this
+              # job runs or lints PowerShell, so an edit to it can only spend three
+              # Windows minutes on a file none of the shards touch. It moved here from
+              # the repo root on 2026-08-07, which is what put it inside scripts/** in
+              # the first place. The handshake it depends on IS covered — by
+              # test-app-restart-signal.cts, which lives in app/**'s blast radius
+              # through app/src/main/restart-signal.ts and in scripts/** itself.
+              - '!scripts/restart-app.ps1'
+              - 'package.json'
+              - 'package-lock.json'
+              - 'playwright.config.ts'
+              - 'vitest.config.ts'
+              - '.github/workflows/app-tests.yml'
+              - '.github/actions/setup-app-tests/**'
+
   # Shards 1 and 2 — every script that boots its own sandboxed process, four at a
   # time inside each shard. The scripts are invoked through the aggregator rather
   # than through their npm scripts, which would each rebuild the extension that
   # `npm run setup` already built.
   pooled:
     name: 'Shard: app + extension tests (${{ matrix.shard }}/2)'
+    needs: changed
+    if: needs.changed.outputs.relevant == 'true'
     runs-on: windows-latest
     # Locally the whole suite is ~2.5 minutes of tests; the ceiling is set well
     # above the expected runner time only to stop a hung Electron from burning the
@@ -139,6 +174,8 @@ jobs:
   # about the change under test.
   flows:
     name: 'Shard: E2E flows'
+    needs: changed
+    if: needs.changed.outputs.relevant == 'true'
     runs-on: windows-latest
     timeout-minutes: 30
     steps:
@@ -153,27 +190,48 @@ jobs:
   # forever so the shard layout can change without touching the ruleset (#937).
   # `always()`, not the default: without it a shard that is skipped or cancelled
   # leaves this job skipped too, and a skipped job reports no failure — the required
-  # check would go green over tests that never ran. So it runs unconditionally and
-  # treats anything other than `success` as red.
+  # check would go green over tests that never ran.
+  #
+  # This is also the job that makes the required check reachable on a docs-only pull
+  # request: the shards skip, this one still runs and reports.
   app-tests:
     name: Electron harnesses / extension e2e
-    needs: [pooled, flows]
+    needs: [changed, pooled, flows]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Require every shard to be green
+      - name: Require every shard to be green (or deliberately skipped)
         shell: bash
         env:
-          SHARDS: ${{ toJSON(needs) }}
+          RESULTS: ${{ toJSON(needs) }}
         run: |
-          echo "$SHARDS"
-          bad="$(echo "$SHARDS" | jq -r 'to_entries | map(select(.value.result != "success") | "\(.key)=\(.value.result)") | join(", ")')"
+          echo "$RESULTS"
+          # `changed` is held to success on its own: it is what decides whether a skip
+          # below is legitimate, so if IT failed we have no basis to call anything a
+          # deliberate skip.
+          detect="$(echo "$RESULTS" | jq -r '.changed.result')"
+          if [ "$detect" != "success" ]; then
+            echo "::error::change detection did not succeed (changed=$detect) — refusing to report green"
+            exit 1
+          fi
+          shards="$(echo "$RESULTS" | jq 'del(.changed)')"
+          # `skipped` passes HERE AND ONLY HERE, because the only thing that skips
+          # these two is `changed` answering "no file in the allow-list moved".
+          # Anything else — failure, cancelled — is red.
+          bad="$(echo "$shards" | jq -r 'to_entries | map(select(.value.result != "success" and .value.result != "skipped") | "\(.key)=\(.value.result)") | join(", ")')"
           if [ -n "$bad" ]; then
             echo "::error::app-tests shard(s) not green: $bad"
             exit 1
           fi
-          echo "all shards green"
+          # Say the skip out loud. A silent skip is the failure mode the trigger's
+          # `paths` filter used to have — green and never-ran looking the same.
+          skipped="$(echo "$shards" | jq -r 'to_entries | map(select(.value.result == "skipped") | .key) | join(", ")')"
+          if [ -n "$skipped" ]; then
+            echo "::notice::no file in the allow-list changed — shards skipped: $skipped"
+          else
+            echo "all shards green"
+          fi
 
   # scripts/e2e-capture-test.cts — the live-site canary — is NOT in any shard. It reads
   # the real platforms, and X serves no post DOM to a signed-out browser, so on a runner
